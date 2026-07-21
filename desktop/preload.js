@@ -11,6 +11,10 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
   isDesktop: true,
   windowId,
   openExternal: (url) => ipcRenderer.send("desktop:open-external", url),
+  // Close this window (Chrome parity: closing the last tab closes the window).
+  closeWindow: () => ipcRenderer.send("window:close-self"),
+  // Move this window by a pixel delta (single-tab drag = move the window).
+  moveWindowBy: (dx, dy) => ipcRenderer.send("window:move-by", dx, dy),
   webTab: {
     ensure: (id, url) => ipcRenderer.send("webtab:ensure", id, url),
     navigate: (id, url) => ipcRenderer.send("webtab:navigate", id, url),
@@ -69,6 +73,19 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     onRolledBack: subscribe("tab-transfer:rolled-back"),
     onFinalizeOrphaned: subscribe("tab-transfer:finalize-orphaned"),
     onStageIncoming: subscribe("tab-transfer:stage-incoming"),
+    // Cross-window drop cue: this window is (or is no longer) the hover target
+    // of a drag happening in another window. cb(true) on enter, cb(false) on
+    // leave. Mirrors onStageIncoming.
+    onTransferHover: (cb) => {
+      const enter = (_e) => cb(true);
+      const leave = (_e) => cb(false);
+      ipcRenderer.on("tab-transfer:hover-enter", enter);
+      ipcRenderer.on("tab-transfer:hover-leave", leave);
+      return () => {
+        ipcRenderer.removeListener("tab-transfer:hover-enter", enter);
+        ipcRenderer.removeListener("tab-transfer:hover-leave", leave);
+      };
+    },
   },
 });
 

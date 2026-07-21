@@ -161,6 +161,27 @@ function makeWindowContext(id, win) {
 const windows = new Map();
 const contextsByBrowserWindowId = new Map();
 let lastFocusedWindowId = null;
+// Cross-window drop cue: the id of the window the drag cursor currently hovers
+// (a mergeable OpenProgram window that is NOT the drag source). That window
+// shows an "add tab here" affordance while it holds this slot. Enter/leave are
+// pushed from the existing window-at-cursor poll so no second loop is needed.
+let currentHoverTargetId = null;
+
+/** Point the cross-window hover cue at `id` (or null to clear). Sends
+ *  hover-leave to the previously highlighted window and hover-enter to the new
+ *  one, so at most one destination window is ever highlighted. */
+function setTransferHoverTarget(id) {
+  if (id === currentHoverTargetId) return;
+  const prev = currentHoverTargetId ? windows.get(currentHoverTargetId) : null;
+  if (prev && !prev.win.isDestroyed()) {
+    prev.win.webContents.send("tab-transfer:hover-leave");
+  }
+  currentHoverTargetId = id;
+  const next = id ? windows.get(id) : null;
+  if (next && !next.win.isDestroyed()) {
+    next.win.webContents.send("tab-transfer:hover-enter");
+  }
+}
 
 const transferDecisionFile = () =>
   path.join(app.getPath("userData"), "tab-transfers.json");
@@ -587,9 +608,13 @@ function makeTransferCoordinator(options = {}) {
     transaction.lockedRecordIds.clear();
   }
 
-  function closeDetached(transaction) {
-    if (!transaction.detachedWindowId) return;
-    const destination = windowRegistry.get(transaction.detachedWindowId);
+  /** Destroy a staged tear-off window (rollback / rejected commit). Takes the
+   *  id rather than the transaction so a caller can unlink it FIRST — `closed`
+   *  fires synchronously and contextDestroyed must not still see this window as
+   *  the transaction's destination. */
+  function closeDetached(detachedWindowId) {
+    if (!detachedWindowId) return;
+    const destination = windowRegistry.get(detachedWindowId);
     if (!isLive(destination)) return;
     destination.pendingTransferToken = null;
     allowedWindowCloses.add(destination.id);
@@ -619,7 +644,7 @@ function makeTransferCoordinator(options = {}) {
     if (destination?.pendingTransferToken === transaction.token) {
       destination.pendingTransferToken = null;
     }
-    if (closeHidden) closeDetached(transaction);
+    if (closeHidden) closeDetached(transaction.detachedWindowId);
   }
 
   function notifyTerminal(transaction, status) {
@@ -730,6 +755,8 @@ function makeTransferCoordinator(options = {}) {
       timer: null,
       undoTimer: null,
       detachedWindowId: null,
+      /** In-flight window boot, so concurrent detach() calls share one. */
+      detachPromise: null,
       placement: null,
       sourceEmpty: false,
       commitIndeterminate: false,
@@ -875,7 +902,11 @@ function makeTransferCoordinator(options = {}) {
     clearActive(transaction);
     notifyTerminal(transaction, "committed");
     const detached = liveContext(transaction.detachedWindowId);
-    if (detached) detached.win.show();
+    // Drop-to-place: the torn-off window is created hidden at release and
+    // revealed HERE, once the destination renderer has staged the tab, so it
+    // never flashes empty first — then fades in at the drop point instead of
+    // popping.
+    if (detached) showWindowSmoothly(detached.win);
     if (decision.requiredRoles.length === 0) {
       try {
         deleteDecision(transaction.token);
@@ -1317,8 +1348,24 @@ function makeTransferCoordinator(options = {}) {
       return null;
     }
     if (transaction.detachedWindowId) return transaction.detachedWindowId;
+    // Idempotence has to latch on the in-flight BOOT, not just the finished
+    // window: a single leave-the-strip event can call detach() while a
+    // release's detach() is still awaiting createWindow. A completed-only
+    // guard lets both through and tears off two windows, one of which is
+    // instantly orphaned.
+    if (transaction.detachPromise) return transaction.detachPromise;
+    const booting = detachUnlatched(transaction, token);
+    transaction.detachPromise = booting;
+    try {
+      return await booting;
+    } finally {
+      transaction.detachPromise = null;
+    }
+  }
+
+  async function detachUnlatched(transaction, token) {
     const windowId = `window-${makeToken()}`;
-    const destination = await createDetachedWindow({ windowId, show: false });
+    const destination = await createDetachedWindow({ windowId, show: false, detached: true });
     if (activeTransfers.get(token) !== transaction || transaction.status !== "prepared") {
       allowedWindowCloses.add(destination.id);
       try {
@@ -1328,6 +1375,10 @@ function makeTransferCoordinator(options = {}) {
       }
       return null;
     }
+    // Chrome drops the torn-off window where the tab was released, not at
+    // the saved window position. Move it while it is still hidden so the
+    // reposition is never visible.
+    centerHiddenWindowOnCursor(destination.win);
     transaction.detachedWindowId = destination.id;
     transaction.destinationId = destination.id;
     destination.pendingTransferToken = token;
@@ -1557,7 +1608,14 @@ function ensureView(ctx, id, url) {
     wc.on("page-title-updated", noteVisit);
     wc.on("page-favicon-updated", (_event, favicons) => {
       record.faviconUrl = Array.isArray(favicons) ? favicons[0] || "" : "";
+      sendState(record, { faviconUrl: record.faviconUrl });
       noteVisit();
+    });
+    // 新页面没有 favicon 时不会再触发 page-favicon-updated——导航提交时先清
+    // 掉上一页的图标，否则 tab 会一直挂着旧站点的 icon。
+    wc.on("did-navigate", () => {
+      record.faviconUrl = "";
+      sendState(record, { faviconUrl: "" });
     });
     if (url && isWebUrl(url)) void loadView(record, url).catch(() => {});
   }
@@ -1782,6 +1840,21 @@ function registerWebTabIpc() {
       /* invalid url, ignore */
     }
   });
+  // Renderer closed its last tab → close its window. macOS keeps the app
+  // alive with no windows (see window-all-closed), so this never quits.
+  ipcMain.on("window:close-self", (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.close();
+  });
+  // Single-tab drag moves the whole window. The renderer sends absolute cursor
+  // deltas from drag start; main repositions its frame. Runs in the main
+  // process so it isn't starved by the macOS modal drag loop the way a
+  // renderer's own frame math would be — and it never fights app-region.
+  ipcMain.on("window:move-by", (event, dx, dy) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return;
+    const [x, y] = win.getPosition();
+    win.setPosition(Math.round(x + dx), Math.round(y + dy));
+  });
 }
 
 function registerTabTransferIpc() {
@@ -1834,10 +1907,12 @@ function registerTabTransferIpc() {
     return !!ctx && tabTransfers.destinationUndone(ctx, token, ok);
   });
   ipcMain.handle("tab-transfer:cancel", (event, token) => {
+    setTransferHoverTarget(null); // drag ended — clear any hover highlight
     const ctx = contextForSender(event);
     return !!ctx && tabTransfers.cancel(ctx, token);
   });
   ipcMain.handle("tab-transfer:detach", (event, token) => {
+    setTransferHoverTarget(null); // detached into a new window — clear highlight
     const ctx = contextForSender(event);
     return ctx ? tabTransfers.detach(ctx, token) : null;
   });
@@ -1856,26 +1931,49 @@ function registerTabTransferIpc() {
     if (!ctx) return null;
     const { screen } = require("electron");
     const point = screen.getCursorScreenPoint();
+    // Resolve the hover target, then push enter/leave cues from this same poll
+    // (the renderer already calls this each frame during a detaching drag).
+    const hits = [];
     for (const candidate of windows.values()) {
       if (candidate === ctx) continue;
       if (candidate.win.isDestroyed() || !candidate.win.isVisible()) continue;
+      // An early tear-off window is visible and sits right under the
+      // cursor by construction — it must never be reported as a drop
+      // target, or the release would "deliver" the tab back into it.
+      if (candidate.pendingTransferToken) continue;
       const bounds = candidate.win.getBounds();
+      // Merge targets only the TOP TAB STRIP, not the whole window. Dropping a
+      // tab anywhere in the content area must NOT merge (that felt far too
+      // eager). The strip band is the traffic-light row height — a tab dropped
+      // below it is not a merge.
+      const STRIP_BAND_PX = 52;
       if (
         point.x >= bounds.x && point.x < bounds.x + bounds.width
-        && point.y >= bounds.y && point.y < bounds.y + bounds.height
+        && point.y >= bounds.y && point.y < bounds.y + STRIP_BAND_PX
       ) {
-        // ponytail: first hit, no z-order tiebreak — overlapping windows
-        // resolve by map order; add z-order ranking if it ever matters.
-        return candidate.id;
+        hits.push(candidate);
       }
     }
-    return null;
+    // Overlapping windows: the topmost window under the cursor wins, never map
+    // order (which could pick an occluded window behind the one the user sees).
+    // Electron exposes no true global z-order, so approximate: an actually
+    // focused window is on top; otherwise the most-recently-focused one
+    // (lastFocusedWindowId) is; ties fall back to map order deterministically.
+    const rank = (c) =>
+      c.win.isFocused() ? 2 : c.id === lastFocusedWindowId ? 1 : 0;
+    const hit = hits.reduce(
+      (best, c) => (best === null || rank(c) > rank(best) ? c : best),
+      null,
+    );
+    setTransferHoverTarget(hit ? hit.id : null);
+    return hit ? hit.id : null;
   });
   // Hand a prepared token to another live window so its renderer stages
   // the incoming transfer (the pointer path has no DOM drop event there).
   ipcMain.handle("tab-transfer:deliver", (event, token, windowId) => {
     const ctx = contextForSender(event);
     const target = windows.get(windowId);
+    setTransferHoverTarget(null); // drop committed — never leave a window lit
     if (!ctx || !target || target.win.isDestroyed()) return false;
     target.win.webContents.send("tab-transfer:stage-incoming", { token });
     return true;
@@ -1911,14 +2009,85 @@ function buildMenu() {
 
 // --------------------------------------------------------------------- boot
 
+/** Place a window under the cursor (Chrome drops a torn-off window where
+ *  you released it).
+ *
+ *  `clamp` decides whether the result is confined to the display work area.
+ *  It must be true for the INITIAL hidden placement (a window that boots
+ *  half off-screen is a bug), and false for every follow frame during the
+ *  drag: clamping per frame makes a window dragged toward a screen edge
+ *  slide ALONG that edge instead of tracking the cursor. Chrome lets a
+ *  dragged window hang off the edge, so we do too — the cursor itself is on
+ *  a real display, which keeps the window on a sane one. */
+function centerHiddenWindowOnCursor(win, { clamp = true } = {}) {
+  if (!win || win.isDestroyed()) return;
+  const { screen } = require("electron");
+  const point = screen.getCursorScreenPoint();
+  const area = screen.getDisplayNearestPoint(point).workArea;
+  const { width, height } = win.getBounds();
+  // Cursor sits over the grabbed tab, so anchor the window's title strip
+  // just under the pointer — the held tab stays under the cursor and the
+  // (now modestly-sized) window body opens below, on-screen.
+  const rawX = point.x - width / 2;
+  const rawY = point.y - 20;
+  const x = Math.round(
+    clamp
+      ? Math.min(Math.max(rawX, area.x), area.x + area.width - width)
+      : rawX,
+  );
+  const y = Math.round(
+    clamp
+      ? Math.min(Math.max(rawY, area.y), area.y + area.height - height)
+      : rawY,
+  );
+  win.setBounds({ x, y, width, height });
+}
+
+/** Show a detached window without the instant pop: start transparent, then
+ *  ease opacity to 1 over ~140ms. setOpacity is a no-op on some Linux WMs,
+ *  in which case this degrades to today's plain show(). */
+function showWindowSmoothly(win) {
+  if (!win || win.isDestroyed()) return;
+  let reduceMotion = false;
+  try {
+    reduceMotion = require("electron").nativeTheme.prefersReducedMotion === true;
+  } catch {
+    /* older Electron without the flag — keep the fade */
+  }
+  // setOpacity is unreliable on Linux WMs; fall back to a plain show there.
+  if (process.platform === "linux" || reduceMotion) {
+    win.show();
+    return;
+  }
+  win.setOpacity(0);
+  win.show();
+  const duration = 140;
+  const start = Date.now();
+  const step = () => {
+    if (win.isDestroyed()) return;
+    const t = Math.min((Date.now() - start) / duration, 1);
+    win.setOpacity(t);
+    if (t < 1) setTimeout(step, 16);
+  };
+  step();
+}
+
 async function createWindow(options = {}) {
   const state = loadWindowState();
   const windowId = options.windowId || "main";
+  // A torn-off window is positioned at the drop point (centerHiddenWindowOnCursor
+  // in detachUnlatched), so it must NOT inherit the parent's saved (often
+  // full-screen) bounds — a 1440×851 window anchored at the cursor spills
+  // off-screen and reads as "nothing appeared". Give detached windows a
+  // modest, movable size.
+  const detached = options.detached === true;
+  const width = detached ? Math.min(1100, state.width) : state.width;
+  const height = detached ? Math.min(720, state.height) : state.height;
   const win = new BrowserWindow({
     x: state.x,
     y: state.y,
-    width: state.width,
-    height: state.height,
+    width,
+    height,
     show: options.show !== false,
     backgroundColor: "#141416",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : undefined,
@@ -1940,6 +2109,12 @@ async function createWindow(options = {}) {
     saveWindowState(win);
   });
   win.on("closed", () => cleanupWindowContext(ctx));
+  // A tear-off window may be revealed mid-drag, long before the
+  // commit path would have shown it. Record when the renderer has actually
+  // painted so that reveal can wait for it instead of flashing an empty
+  // frame. (Windows created shown are unaffected — nothing reads this.)
+  ctx.readyToShow = false;
+  win.once("ready-to-show", () => { ctx.readyToShow = true; });
   // External links from the app itself (not web tabs) open in the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
     try {

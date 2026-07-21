@@ -185,6 +185,44 @@
   text-align: center;
 }
 
+/* Folder tree: the twisty and the folder glyph sit before the title, and
+   a row highlights while a dragged node hovers over it. */
+.bookmark-twisty {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.bookmark-twisty:hover { color: var(--text-bright); }
+.bookmark-node-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.bookmark-row[data-drop-target="true"] {
+  background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
+  outline: 1px solid var(--accent-blue);
+}
+/* Between-row insertion point for sibling reordering. Collapsed to a
+   thin strip until a drag hovers it, so it never shifts the list. */
+.bookmark-drop-zone {
+  height: 4px;
+  margin: -2px 0;
+  border-radius: 2px;
+  position: relative;
+  z-index: 1;
+}
+.bookmark-drop-zone[data-drop-target="true"] {
+  background: var(--accent-blue);
+}
+
 /* Collapsed: hide view content + nav labels (the latter is inherited
    from .sidebar.collapsed rules in 02-sidebar.css). */
 .right-sidebar.collapsed .right-view-host { display: none; }
@@ -1076,6 +1114,13 @@
 /* ============ Web browsing history ============ */
 /* The history page is a center tab now (builtin-tab-pane.tsx); it reuses
    the bookmark row styles above, plus this timestamp cell. */
+.browsing-history-favicon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
 .browsing-history-time {
   flex-shrink: 0;
   padding-right: 2px;

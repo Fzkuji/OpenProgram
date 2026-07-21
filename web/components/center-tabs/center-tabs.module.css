@@ -476,24 +476,115 @@
    不铺底就会透出下面的 tab，看起来"重叠成一团"。 */
 .tab[data-pointer-drag="true"],
 .compoundTab[data-pointer-drag="true"] {
-  transition: none;
+  /* transform 绝不能进 transition —— 它由 JS 每帧直写来跟手。
+     只让 detach 态的视觉属性（缩放/透明度/阴影）平滑过渡，
+     缩放走 scale，与 translateX 各自独立，互不打架。 */
+  transition: scale 140ms ease-out, opacity 140ms ease-out,
+    box-shadow 140ms ease-out;
   position: relative;
   z-index: 30;
   opacity: 1;
   background: var(--bg-primary);
   color: var(--text-bright);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  transform-origin: center;
 }
 /* 拖动中的 tab 不画左侧分隔条（它已脱离栏内节奏）。 */
 .tab[data-pointer-drag="true"]::before {
   background: transparent;
 }
-/* 纵向拖离 strip 进入 detach 态：半透明只作为"松手拆出新窗口"的提示。
+/* 纵向拖离 strip 进入 detach 态：拎起来的缩略图 + "松手拆成新窗口" 的明确提示。
    此时抬到最上层，且不参与栏内让位，不会和邻居内容糊在一起。 */
 .tab[data-detach-intent="true"],
 .compoundTab[data-detach-intent="true"] {
   opacity: 0.7;
   z-index: 40;
+  /* 越过 detach 阈值时轻微缩小，像被"拎起来"的缩略图。用 scale 属性而不是
+     transform，跟手的 translateX 才不会被覆盖。 */
+  scale: 0.92;
+  /* accent 描边 + 抬升：明确表示"松手会拆成独立窗口"。 */
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
+}
+/* "New window" 提示条：跟随光标的浮动胶囊。由组件 portal 进 .center-body，
+   position:fixed 定位在指针右下方——不能画在被拖 tab 上，因为标签栏容器
+   .tabsFlow 有 overflow:hidden/auto，会把上下溢出裁掉导致提示看不见。
+   pointer-events:none 且不属于被拖元素，pointer capture 不受影响。 */
+.detachCue {
+  position: fixed;
+  /* 偏到指针右下方，不压在手指/光标下面。 */
+  transform: translate(14px, 16px);
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  padding: 8px 15px;
+  border-radius: 999px;
+  background: var(--accent-blue);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+/* 目标窗口的"在此打开"提示：另一窗口的 tab 悬停到本窗口时，只在顶部标签栏
+   显示——整条 .strip 一层淡强调底 + 下缘强调线，外加一枚小胶囊挂在 strip
+   下沿。绝不画在页面内容区（否则像分屏）。pointer-events:none，不挡释放。
+   与源窗口的 detachCue 由光标位置互斥。 */
+.strip[data-transfer-hover] {
+  position: relative;
+  background:
+    color-mix(in oklch, var(--accent-orange) 16%, var(--tabrow-bg));
+  box-shadow: inset 0 -2px 0 var(--accent-orange);
+}
+/* Desktop: the leftmost 88px (traffic-light inset) belong to the parent
+   .desktop-tab-row, NOT .strip — tint it too so the whole top bar reads as one
+   continuous highlighted band, edge to edge. :has() so the parent reacts to the
+   child's data-transfer-hover without threading a prop up. */
+:global(.desktop-tab-row):has(.strip[data-transfer-hover]) {
+  background: color-mix(in oklch, var(--accent-orange) 16%, var(--tabrow-bg));
+  /* 底边强调线要连到最左端（红绿灯占位区属于本行、不属于 .strip），
+     否则线会在左端断开。与 .strip 的 inset 底边同色同高，拼成整条。 */
+  box-shadow: inset 0 -2px 0 var(--accent-orange);
+}
+.transferHoverPill {
+  position: absolute;
+  left: 50%;
+  top: calc(100% - 2px);
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding: 6px 13px;
+  border-radius: 999px;
+  background: var(--accent-orange);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 650;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  animation: transferHoverIn 120ms ease-out;
+}
+@keyframes transferHoverIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .transferHoverPill {
+    animation: none;
+  }
 }
 /* Chrome 式实时让位：before/after 不画插入线，被越过的 tab 用 transform
    平滑滑开（见 computeLiveShifts）。拖动只重排，没有合并高亮。 */
@@ -501,6 +592,11 @@
   .tab,
   .compoundTab {
     transition-duration: 0ms;
+  }
+  /* detach 的缩略图缩放也一并跳过，只保留半透明提示。 */
+  .tab[data-detach-intent="true"],
+  .compoundTab[data-detach-intent="true"] {
+    scale: 1;
   }
 }
 
@@ -566,13 +662,21 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 4px 8px;
+  padding: 2px 2px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
 }
 .splitPickerTitle {
   flex: 1;
+  min-width: 0;
   color: var(--text-bright);
   font-size: 13px;
   font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .splitPickerClose {
   display: flex;
@@ -729,6 +833,12 @@
   flex-shrink: 0;
 }
 .tabActive .tabIcon { color: var(--text-bright); }
+
+.tabFavicon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
 
 .tabName {
   /* 撑满图标和 ✕ 之间的全部空间：短标题够不到右缘 → 渐隐不生效、✕ 紧随

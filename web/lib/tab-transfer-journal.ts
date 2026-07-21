@@ -44,7 +44,11 @@ export type TabDropPlacement =
   | { kind: "before"; targetTabId: string }
   | { kind: "merge"; targetTabId: string; groupId?: string; memberIndex?: number }
   | { kind: "after"; targetTabId: string }
-  | { kind: "strip-end" };
+  // consumePlaceholder: replace a fresh window's lone empty placeholder with
+  // the incoming tab instead of sitting beside it. Set ONLY when a detached
+  // window pulls its own pending token at startup — never on a user-initiated
+  // merge into an existing window, whose lone "New chat" is a real tab.
+  | { kind: "strip-end"; consumePlaceholder?: boolean };
 
 export interface SessionTransferSnapshot {
   activeChatKey: string | null;

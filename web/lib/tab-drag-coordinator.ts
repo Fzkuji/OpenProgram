@@ -75,9 +75,11 @@ export function createTabDragCoordinator(): {
 
 /** Pointer travel (px) before a pressed tab becomes a drag. */
 export const DRAG_START_THRESHOLD_PX = 4;
-/** Vertical pointer distance (px) from the press point that flips a
- *  pointer drag into detach-to-new-window mode. */
-export const DETACH_DISTANCE_PX = 48;
+/** Hysteresis band (px) around the tab strip's vertical edges. Detach begins
+ *  the instant the cursor leaves the strip's rectangle by this much (Chrome
+ *  has no distance dead-zone), and only comes home when the cursor is back
+ *  this far inside — so a cursor resting on the edge does not thrash. */
+export const DETACH_HYSTERESIS_PX = 8;
 
 /** Share of a neighbour the dragged tab must cover before they swap.
  *  Overlap ÷ neighbour width, so unequal widths behave correctly; for

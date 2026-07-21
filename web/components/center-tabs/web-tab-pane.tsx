@@ -248,6 +248,10 @@ function DesktopWebTabPane({
         updateWebTab(tabId, { url: state.url });
       }
       if (state.title) updateWebTab(tabId, { title: state.title });
+      // 空串是有意义的（导航到无 favicon 的页面 → 清图标），不能按真值过滤。
+      if (state.faviconUrl !== undefined) {
+        updateWebTab(tabId, { faviconUrl: state.faviconUrl });
+      }
       if (state.loading !== undefined) setLoading(state.loading);
       if (state.canGoBack !== undefined) setCanGoBack(state.canGoBack);
       if (state.canGoForward !== undefined) setCanGoForward(state.canGoForward);

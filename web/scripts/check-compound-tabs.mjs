@@ -122,9 +122,11 @@ assert.deepEqual(drag.resolveTabDropIntent(rect, 300, target), {
   targetTabId: "target",
 });
 
-// Pointer drag contract: 4px start threshold, 48px vertical detach.
+// Pointer drag contract: 4px start threshold, geometric detach with an
+// 8px hysteresis band around the strip's edges (no distance dead-zone).
 assert.equal(drag.DRAG_START_THRESHOLD_PX, 4);
-assert.equal(drag.DETACH_DISTANCE_PX, 48);
+assert.equal(drag.DETACH_HYSTERESIS_PX, 8);
+assert.equal(drag.DETACH_DISTANCE_PX, undefined, "the distance dead-zone is gone");
 
 // Dragging in the strip is PURE REORDER — Chrome's model. Every merge
 // measure is gone; splitting is an explicit context-menu action.
@@ -590,12 +592,15 @@ globalThis.localStorage = {
   removeItem: (key) => storageValues.delete(key),
 };
 
-const storeSource = await readFile(
-  new URL("../lib/state/center-tabs-store.ts", import.meta.url),
+// The persisted payload shape now lives in its own persistence module
+// (the store re-exports the type); its single interface definition is
+// asserted there.
+const persistenceSource = await readFile(
+  new URL("../lib/state/center-tabs-persistence.ts", import.meta.url),
   "utf8",
 );
 assert.equal(
-  storeSource.match(/export interface CenterTabsPersistedPayload/g)?.length,
+  persistenceSource.match(/export interface CenterTabsPersistedPayload/g)?.length,
   1,
   "the unified persisted payload has one exported definition",
 );

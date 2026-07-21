@@ -10,17 +10,36 @@
  * The rows reuse the shared `.bookmark-*` / `.bookmarks-*` vocabulary
  * from right-dock.css — same list grammar, just laid out in a wider
  * centered column with a page header and a select-and-delete mode.
+ * Bookmarks is a folder TREE (Chrome's bookmark manager): rows nest by
+ * depth, folders collapse, and any row can be dragged into a folder.
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { Bookmark, Check, Globe, Pencil, Search, Trash2, X } from "lucide-react";
-
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  readBookmarks,
-  removeBookmark,
-  renameBookmark,
+  Bookmark,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  Globe,
+  Pencil,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
+
+import { FolderPlusIcon, type AnimatedNavIconHandle } from "@/components/animated-icons";
+import {
+  BOOKMARKS_ROOT_ID,
+  createFolder,
+  deleteNode,
+  findNode,
+  moveNode,
+  readBookmarkTree,
+  renameNode,
   subscribeBookmarks,
-  type Bookmark as BookmarkItem,
+  type BookmarkFolder,
+  type BookmarkNode,
 } from "@/lib/bookmarks";
 import {
   desktopBridge,
@@ -77,36 +96,278 @@ function PageFrame({
   );
 }
 
+/** A node matches if it, or anything under it, matches the needle — so
+ *  searching keeps the folders that lead to a hit. */
+function matchesQuery(node: BookmarkNode, needle: string): boolean {
+  if (!needle) return true;
+  if (node.title.toLowerCase().includes(needle)) return true;
+  return node.kind === "folder"
+    ? node.children.some((child) => matchesQuery(child, needle))
+    : node.url.toLowerCase().includes(needle);
+}
+
 function BookmarksPage() {
   const { text } = useTranslation();
-  const [bookmarks, setBookmarks] = useState<BookmarkItem[]>(readBookmarks);
+  const [tree, setTree] = useState<BookmarkFolder>(readBookmarkTree);
   const [query, setQuery] = useState("");
-  const [editingUrl, setEditingUrl] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropId, setDropId] = useState<string | null>(null);
+  // Between-row insertion point: which sibling list, and where in it.
+  const [dropAt, setDropAt] = useState<{ parentId: string; index: number } | null>(null);
+  const newFolderIconRef = useRef<AnimatedNavIconHandle>(null);
 
   useEffect(() => {
-    const refresh = () => setBookmarks(readBookmarks());
+    const refresh = () => setTree(readBookmarkTree());
     refresh();
     return subscribeBookmarks(refresh);
   }, []);
 
   const needle = query.trim().toLowerCase();
-  const filtered = bookmarks.filter(
-    (bookmark) =>
-      !needle ||
-      bookmark.title.toLowerCase().includes(needle) ||
-      bookmark.url.toLowerCase().includes(needle),
-  );
 
-  function saveRename(url: string) {
-    renameBookmark(url, draftTitle);
-    setEditingUrl(null);
+  function saveRename(id: string) {
+    renameNode(id, draftTitle);
+    setEditingId(null);
+  }
+
+  function toggleCollapsed(id: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function clearDrag() {
+    setDragId(null);
+    setDropId(null);
+    setDropAt(null);
+  }
+
+  /** Drop onto a folder row moves into it; drop on the page background
+   *  moves back out to the root. */
+  function handleDrop(parentId: string) {
+    if (dragId) moveNode(dragId, parentId);
+    clearDrag();
+  }
+
+  /** Drop on the gap between two rows reorders among siblings. The
+   *  dragged node is spliced out before being re-inserted, so an index
+   *  after its own old slot shifts down by one. */
+  function handleReorderDrop(parentId: string, index: number) {
+    if (dragId) {
+      const siblings = findNode(tree, parentId);
+      const from =
+        siblings && siblings.kind === "folder"
+          ? siblings.children.findIndex((child) => child.id === dragId)
+          : -1;
+      moveNode(dragId, parentId, from >= 0 && from < index ? index - 1 : index);
+    }
+    clearDrag();
+  }
+
+  /** The insertion line between two sibling rows. */
+  function dropZone(parentId: string, index: number, depth: number) {
+    const active = dropAt?.parentId === parentId && dropAt.index === index;
+    return (
+      <div
+        className="bookmark-drop-zone"
+        style={{ marginInlineStart: depth * 16 }}
+        data-drop-target={active ? "true" : undefined}
+        onDragOver={(event) => {
+          if (!dragId) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = "move";
+          setDropId(null);
+          setDropAt({ parentId, index });
+        }}
+        onDragLeave={() => setDropAt(null)}
+        onDrop={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          handleReorderDrop(parentId, index);
+        }}
+      />
+    );
   }
 
   const saveLabel = text("Save bookmark title", "保存书签标题");
   const cancelLabel = text("Cancel editing", "取消编辑");
   const editLabel = text("Edit bookmark title", "编辑书签标题");
   const deleteLabel = text("Delete bookmark", "删除书签");
+  const newFolderLabel = text("New folder", "新建文件夹");
+  const expandLabel = text("Expand folder", "展开文件夹");
+  const collapseLabel = text("Collapse folder", "折叠文件夹");
+
+  /** A sibling list, with an insertion zone before every row and one
+   *  after the last — so any position among the siblings is reachable.
+   *  Zones carry the index into the real (unfiltered) children, which is
+   *  what moveNode wants; a search hides rows, so the gaps would point at
+   *  the wrong slots and reordering is left out while one is active. */
+  function renderChildren(parent: BookmarkFolder, depth: number): React.ReactNode[] {
+    const out: React.ReactNode[] = [];
+    parent.children.forEach((child, index) => {
+      if (!matchesQuery(child, needle)) return;
+      if (!needle) {
+        out.push(
+          <div key={`zone-${parent.id}-${index}`}>{dropZone(parent.id, index, depth)}</div>,
+        );
+      }
+      out.push(renderNode(child, depth));
+    });
+    if (!needle && out.length > 0) {
+      out.push(
+        <div key={`zone-${parent.id}-end`}>
+          {dropZone(parent.id, parent.children.length, depth)}
+        </div>,
+      );
+    }
+    return out;
+  }
+
+  function renderNode(node: BookmarkNode, depth: number): React.ReactNode {
+    if (!matchesQuery(node, needle)) return null;
+    const editing = editingId === node.id;
+    const isFolder = node.kind === "folder";
+    // A search always shows its hits, however deep they sit.
+    const open = isFolder && (!collapsed.has(node.id) || Boolean(needle));
+    return (
+      <div key={node.id}>
+        <div
+          className="bookmark-row"
+          style={{ marginInlineStart: depth * 16 }}
+          data-drop-target={dropId === node.id ? "true" : undefined}
+          draggable={!editing}
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = "move";
+            setDragId(node.id);
+          }}
+          onDragEnd={clearDrag}
+          onDragOver={
+            isFolder && dragId && dragId !== node.id
+              ? (event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  event.dataTransfer.dropEffect = "move";
+                  setDropId(node.id);
+                }
+              : undefined
+          }
+          onDragLeave={isFolder ? () => setDropId(null) : undefined}
+          onDrop={
+            isFolder
+              ? (event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  handleDrop(node.id);
+                }
+              : undefined
+          }
+        >
+          <div className="bookmark-row-main">
+            {isFolder ? (
+              <button
+                type="button"
+                className="bookmark-twisty"
+                onClick={() => toggleCollapsed(node.id)}
+                title={open ? collapseLabel : expandLabel}
+                aria-label={open ? collapseLabel : expandLabel}
+              >
+                {open ? (
+                  <ChevronDown size={14} aria-hidden="true" />
+                ) : (
+                  <ChevronRight size={14} aria-hidden="true" />
+                )}
+              </button>
+            ) : null}
+            {isFolder ? (
+              <Folder size={14} aria-hidden="true" className="bookmark-node-icon" />
+            ) : null}
+            {editing ? (
+              <input
+                className="bookmark-title-input"
+                value={draftTitle}
+                onChange={(event) => setDraftTitle(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") saveRename(node.id);
+                  if (event.key === "Escape") setEditingId(null);
+                }}
+                aria-label={editLabel}
+                autoFocus
+              />
+            ) : (
+              <button
+                type="button"
+                className="bookmark-title"
+                onClick={() =>
+                  isFolder
+                    ? toggleCollapsed(node.id)
+                    : useCenterTabs.getState().openWebTab(node.url)
+                }
+                title={node.title}
+              >
+                {node.title}
+              </button>
+            )}
+            <div className="bookmark-actions">
+              {editing ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => saveRename(node.id)}
+                    title={saveLabel}
+                    aria-label={saveLabel}
+                  >
+                    <Check size={14} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingId(null)}
+                    title={cancelLabel}
+                    aria-label={cancelLabel}
+                  >
+                    <X size={14} aria-hidden="true" />
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(node.id);
+                    setDraftTitle(node.title);
+                  }}
+                  title={editLabel}
+                  aria-label={editLabel}
+                >
+                  <Pencil size={14} aria-hidden="true" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => deleteNode(node.id)}
+                title={deleteLabel}
+                aria-label={deleteLabel}
+              >
+                <Trash2 size={14} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+          {node.kind === "bookmark" ? (
+            <span className="bookmark-url" title={node.url}>
+              {node.url}
+            </span>
+          ) : null}
+        </div>
+        {isFolder && open ? renderChildren(node, depth + 1) : null}
+      </div>
+    );
+  }
+
+  const rows = renderChildren(tree, 0);
 
   return (
     <PageFrame
@@ -115,95 +376,38 @@ function BookmarksPage() {
       query={query}
       onQueryChange={setQuery}
       searchPlaceholder={text("Search bookmarks", "搜索书签")}
+      action={
+        <button
+          type="button"
+          className={styles.builtinClear}
+          onClick={() => createFolder(newFolderLabel)}
+          onMouseEnter={() => newFolderIconRef.current?.startAnimation()}
+          onMouseLeave={() => newFolderIconRef.current?.stopAnimation()}
+          title={newFolderLabel}
+          aria-label={newFolderLabel}
+        >
+          <FolderPlusIcon ref={newFolderIconRef} size={14} aria-hidden="true" />
+          <span>{newFolderLabel}</span>
+        </button>
+      }
     >
-      {bookmarks.length === 0 ? (
+      {tree.children.length === 0 ? (
         <div className="bookmarks-empty">
           {text("No bookmarks yet", "还没有书签")}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : rows.length === 0 ? (
         <div className="bookmarks-empty">
           {text("No matching bookmarks", "没有匹配的书签")}
         </div>
       ) : (
-        <div className="bookmarks-list">
-          {filtered.map((bookmark) => {
-            const editing = editingUrl === bookmark.url;
-            return (
-              <div className="bookmark-row" key={bookmark.url}>
-                <div className="bookmark-row-main">
-                  {editing ? (
-                    <input
-                      className="bookmark-title-input"
-                      value={draftTitle}
-                      onChange={(event) => setDraftTitle(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") saveRename(bookmark.url);
-                        if (event.key === "Escape") setEditingUrl(null);
-                      }}
-                      aria-label={editLabel}
-                      autoFocus
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      className="bookmark-title"
-                      onClick={() =>
-                        useCenterTabs.getState().openWebTab(bookmark.url)
-                      }
-                      title={bookmark.title}
-                    >
-                      {bookmark.title}
-                    </button>
-                  )}
-                  <div className="bookmark-actions">
-                    {editing ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => saveRename(bookmark.url)}
-                          title={saveLabel}
-                          aria-label={saveLabel}
-                        >
-                          <Check size={14} aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingUrl(null)}
-                          title={cancelLabel}
-                          aria-label={cancelLabel}
-                        >
-                          <X size={14} aria-hidden="true" />
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingUrl(bookmark.url);
-                          setDraftTitle(bookmark.title);
-                        }}
-                        title={editLabel}
-                        aria-label={editLabel}
-                      >
-                        <Pencil size={14} aria-hidden="true" />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => removeBookmark(bookmark.url)}
-                      title={deleteLabel}
-                      aria-label={deleteLabel}
-                    >
-                      <Trash2 size={14} aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-                <span className="bookmark-url" title={bookmark.url}>
-                  {bookmark.url}
-                </span>
-              </div>
-            );
-          })}
+        <div
+          className="bookmarks-list"
+          onDragOver={(event) => {
+            if (dragId) event.preventDefault();
+          }}
+          onDrop={() => handleDrop(BOOKMARKS_ROOT_ID)}
+        >
+          {rows}
         </div>
       )}
     </PageFrame>
@@ -219,6 +423,20 @@ function formatVisitedAt(value: number, locale: string): string {
     minute: "2-digit",
     ...(sameDay ? {} : { month: "short", day: "numeric" }),
   });
+}
+
+/** 历史行的站点图标：加载失败或没有 favicon 时退回 Globe（同 tab 条）。 */
+function HistoryFavicon({ url }: { url: string }) {
+  const [broken, setBroken] = useState(false);
+  if (!url || broken) return <Globe size={16} aria-hidden="true" />;
+  return (
+    <img
+      className="browsing-history-favicon"
+      src={url}
+      alt=""
+      onError={() => setBroken(true)}
+    />
+  );
 }
 
 function HistoryPage() {
@@ -312,6 +530,7 @@ function HistoryPage() {
               key={`${entry.url}:${entry.visitedAt}`}
             >
               <div className="bookmark-row-main">
+                <HistoryFavicon url={entry.faviconUrl} />
                 <button
                   type="button"
                   className="bookmark-title"

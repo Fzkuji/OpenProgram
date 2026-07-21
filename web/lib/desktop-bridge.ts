@@ -72,6 +72,8 @@ export interface DesktopWebTabState {
   loading?: boolean;
   canGoBack?: boolean;
   canGoForward?: boolean;
+  /** "" means the new page has no favicon — clear the tab's icon. */
+  faviconUrl?: string;
 }
 
 export interface DesktopWebTabBounds {
@@ -154,6 +156,9 @@ export interface DesktopTabTransferApi {
   sourceRemoved(token: string, ok: boolean, empty: boolean): Promise<boolean>;
   destinationUndone(token: string, ok: boolean): Promise<boolean>;
   cancel(token: string): Promise<boolean>;
+  /** Drop-to-place: create the torn-off window at the drop point on release
+   *  and reveal it at commit. Returns the new window id, or null if the
+   *  transfer did not commit. */
   detach(token: string): Promise<string | null>;
   /** Pointer-drop hit test: id of another OpenProgram window under the
    *  cursor, or null. Read-only — no transfer state changes. */
@@ -162,6 +167,10 @@ export interface DesktopTabTransferApi {
    *  incoming transfer itself (pointer drops have no DOM drop event). */
   deliver(token: string, targetWindowId: string): Promise<boolean>;
   onStageIncoming(cb: (detail: { token: string }) => void): () => void;
+  /** Cross-window drop cue: subscribes to hover-enter/leave for a drag
+   *  happening in ANOTHER window. cb(true) when this window becomes the
+   *  hover target, cb(false) when it stops being it. Mirrors onStageIncoming. */
+  onTransferHover(cb: (entering: boolean) => void): () => void;
   claimPending(windowId: string): Promise<string | null>;
   pendingTerminal(windowId: string): Promise<Array<{
     token: string;
@@ -203,6 +212,10 @@ export interface DesktopBridge {
   readonly windowId: string;
   /** shell.openExternal — http/https only. */
   openExternal(url: string): void;
+  /** Close this window (last tab closed → close window). */
+  closeWindow?(): void;
+  /** Move this window by a pixel delta (single-tab drag = move window). */
+  moveWindowBy?(dx: number, dy: number): void;
   webTab: DesktopWebTabApi;
   tabTransfer: DesktopTabTransferApi;
   /** Absent in shells older than the browsing-history build. */
@@ -1211,7 +1224,7 @@ export async function recoverPendingTabTransfers(
   try {
     const token = await transfer.claimPending(bridge.windowId);
     if (token && !journaledTokens.has(token)) {
-      await stageIncomingTransfer(bridge, token, { kind: "strip-end" });
+      await stageIncomingTransfer(bridge, token, { kind: "strip-end", consumePlaceholder: true });
     }
     // A token already represented by a recovered journal entry resumes
     // through that entry (idempotent) — staging again would double-insert.

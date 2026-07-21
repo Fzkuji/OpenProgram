@@ -21,7 +21,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
-import { Bookmark, CirclePlus, FileText, Globe, GripVertical, History, Plus, X } from "lucide-react";
+import { Bookmark, CirclePlus, FileText, Globe, GripVertical, History, Plus, SquareArrowOutUpRight, X } from "lucide-react";
 
 import {
   MessageCircleIcon,
@@ -39,7 +39,7 @@ import {
   type CenterTabGroup,
 } from "@/lib/state/center-tab-groups";
 import {
-  DETACH_DISTANCE_PX,
+  DETACH_HYSTERESIS_PX,
   DRAG_START_THRESHOLD_PX,
   dragCoordinator,
   resolveTabDropIntent,
@@ -63,6 +63,16 @@ import { fileDraftKey, fileDrafts } from "@/lib/state/files-shared";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./center-tabs.module.css";
+import {
+  computeLiveShifts,
+  closeGapShifts,
+  collectPointerDropTargets,
+  shiftStyle,
+  visibleStripBounds,
+  slotOverlapRatio,
+  pickPointerDropTarget,
+  type PointerDropTarget,
+} from "./tab-strip-geometry";
 
 let removePreparedReleaseListener: (() => void) | null = null;
 
@@ -110,111 +120,6 @@ function snapshotTabDragSubject(subject: TabDragSubject): TabDragSubject {
   };
 }
 
-/** Flex gap between strip entries — keep in sync with .strip/.tabsFlow gap. */
-const STRIP_GAP = 8;
-
-/**
- * Chrome-style live reorder: while a drag hovers a before/after zone,
- * every entry between the dragged unit and the assumed insertion point
- * slides one drag-width aside (transform only — layout never changes,
- * so hit targets stay stable). Internal compound reorders keep their
- * own FLIP.
- */
-function computeLiveShifts(
-  entries: ReturnType<typeof centerTabStripEntries>,
-  draggedIds: ReadonlySet<string>,
-  marker: TabDropIntent | null,
-  dragWidth: number,
-): Map<string, number> {
-  const shifts = new Map<string, number>();
-  if (!marker || marker.mode === "merge" || dragWidth <= 0) return shifts;
-  // ponytail: the merge guard is vestigial for drags (they only ever
-  // produce before/after now) but keeps the helper total for any caller.
-  const targetIndex = entries.findIndex((entry) =>
-    entry.kind === "group"
-      ? entry.group.memberIds.includes(marker.targetTabId)
-      : entry.tabId === marker.targetTabId,
-  );
-  if (targetIndex < 0) return shifts;
-  const sourceIndex = entries.findIndex((entry) =>
-    entry.kind === "group"
-      ? entry.group.memberIds.every((tabId) => draggedIds.has(tabId))
-      : draggedIds.has(entry.tabId),
-  );
-  const targetEntry = entries[targetIndex];
-  if (
-    sourceIndex < 0
-    && targetEntry.kind === "group"
-    && targetEntry.group.memberIds.some((tabId) => draggedIds.has(tabId))
-  ) {
-    // Segment dragged over its own compound — internal FLIP territory.
-    return shifts;
-  }
-  const step = dragWidth + STRIP_GAP;
-  const insertion = targetIndex + (marker.mode === "after" ? 1 : 0);
-  if (sourceIndex >= 0) {
-    if (insertion === sourceIndex || insertion === sourceIndex + 1) return shifts;
-    if (insertion > sourceIndex) {
-      for (let i = sourceIndex + 1; i < insertion; i++) {
-        shifts.set(entries[i].id, -step);
-      }
-    } else {
-      for (let i = insertion; i < sourceIndex; i++) {
-        shifts.set(entries[i].id, step);
-      }
-    }
-  } else {
-    // No same-strip source (cross-window drag or segment leaving its
-    // group) — open a gap at the insertion point.
-    for (let i = insertion; i < entries.length; i++) {
-      shifts.set(entries[i].id, step);
-    }
-  }
-  return shifts;
-}
-
-/** Static slot geometry captured at drag start — hit tests always run
- *  against these unshifted rects, so slid-aside bystanders can never
- *  oscillate under the dragged tab (Chrome's stability property). */
-interface PointerDropTarget {
-  tabId: string;
-  groupId?: string;
-  memberIndex?: number;
-  left: number;
-  width: number;
-}
-
-function collectPointerDropTargets(flow: HTMLElement): PointerDropTarget[] {
-  const state = useCenterTabs.getState();
-  const entries = centerTabStripEntries({
-    tabIds: state.tabs.map((tab) => tab.id),
-    groups: state.groups,
-  });
-  const targets: PointerDropTarget[] = [];
-  for (const entry of entries) {
-    const memberIds = entry.kind === "group" ? entry.group.memberIds : [entry.tabId];
-    memberIds.forEach((tabId, index) => {
-      const inner = flow.querySelector<HTMLElement>(
-        `[data-tab-id="${CSS.escape(tabId)}"]`,
-      );
-      const root = inner?.parentElement;
-      if (!root) return;
-      const rect = root.getBoundingClientRect();
-      const target: PointerDropTarget = entry.kind === "group"
-        ? {
-            tabId,
-            groupId: entry.group.id,
-            memberIndex: index + 1,
-            left: rect.left,
-            width: rect.width,
-          }
-        : { tabId, left: rect.left, width: rect.width };
-      targets.push(target);
-    });
-  }
-  return targets;
-}
-
 /** One in-flight pointer drag. Lives in a ref — pointermove writes the
  *  dragged element's transform directly (no re-render per frame); only
  *  intent changes (marker/shifts) go through React state. */
@@ -227,6 +132,13 @@ interface PointerDragState {
   startY: number;
   started: boolean;
   detaching: boolean;
+  /** Cursor is over another OpenProgram window (from the windowAtCursor poll).
+   *  A merge target even when the geometric detach test never fired. */
+  overWindow: boolean;
+  /** Last cursor SCREEN position — a single-tab window follows the cursor by
+   *  applying frame-to-frame screen deltas (client coords jump as it moves). */
+  lastScreenX: number;
+  lastScreenY: number;
   originLeft: number;
   width: number;
   minTx: number;
@@ -235,81 +147,12 @@ interface PointerDragState {
   /** Latest clamped offset, re-applied after each React commit. */
   lastTx: number;
   lastIntent: TabDropIntent | null;
+  /** Tab strip's vertical span (viewport px), snapshotted at drag start.
+   *  Detach intent triggers geometrically when the cursor leaves this band;
+   *  drop-to-place, so the torn-off window is only created at release. */
+  stripTop: number;
+  stripBottom: number;
   teardown(): void;
-}
-
-/** Inline shift style for a bystander tab.
- *
- * Returns `undefined` — NOT `{ transform: "" }` — when the entry has no
- * shift, and the dragged tab never gets one. That matters: the dragged
- * tab's own transform is written imperatively every pointermove, and if
- * this prop ever emitted a transform for it, React would overwrite the
- * live drag offset on the next re-render (markers change several times
- * per drag), snapping the tab back to its slot for a frame. On a fast
- * flick that discarded offset is large, so the tab visibly flies. Keeping
- * the key absent leaves the imperative value untouched.
- */
-function shiftStyle(shiftX: number): React.CSSProperties | undefined {
-  return shiftX ? { transform: `translateX(${shiftX}px)` } : undefined;
-}
-
-/** Visible horizontal span a dragged tab may occupy. Desktop uses the
- *  scrollable flow's own box (its client width, not the wider scrolled
- *  content); browser mode has no flow box (display:contents) so the
- *  strip's padded content box stands in. The "+" button sits outside the
- *  flow's max-width, so the flow's right edge already excludes it. */
-function visibleStripBounds(
-  flow: HTMLElement | null,
-  strip: HTMLElement | null,
-): { left: number; right: number } | null {
-  if (flow && flow.getClientRects().length > 0) {
-    const rect = flow.getBoundingClientRect();
-    return { left: rect.left, right: rect.left + flow.clientWidth };
-  }
-  if (!strip) return null;
-  const rect = strip.getBoundingClientRect();
-  const style = getComputedStyle(strip);
-  return {
-    left: rect.left + (Number.parseFloat(style.paddingLeft) || 0),
-    right: rect.right - (Number.parseFloat(style.paddingRight) || 0),
-  };
-}
-
-/** Fraction of `slot` covered by `dragged` — the reorder measure: once
- *  the dragged tab covers half of a neighbour, they swap. Using overlap
- *  (not the dragged centre) keeps it correct for unequal widths. */
-function slotOverlapRatio(
-  slot: Pick<PointerDropTarget, "left" | "width">,
-  dragged: { left: number; width: number },
-): number {
-  if (slot.width <= 0) return 0;
-  const overlap =
-    Math.min(slot.left + slot.width, dragged.left + dragged.width)
-    - Math.max(slot.left, dragged.left);
-  return overlap <= 0 ? 0 : Math.min(1, overlap / slot.width);
-}
-
-/** Nearest slot to the dragged tab's center (containment wins). */
-function pickPointerDropTarget(
-  targets: PointerDropTarget[],
-  centerX: number,
-): PointerDropTarget | null {
-  let best: PointerDropTarget | null = null;
-  let bestDistance = Infinity;
-  for (const target of targets) {
-    const distance =
-      centerX >= target.left && centerX <= target.left + target.width
-        ? 0
-        : Math.min(
-            Math.abs(centerX - target.left),
-            Math.abs(centerX - target.left - target.width),
-          );
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = target;
-    }
-  }
-  return best;
 }
 
 function isChatRoute(pathname: string) {
@@ -357,6 +200,32 @@ export function CenterTabStrip() {
   const [draggedIds, setDraggedIds] = useState<ReadonlySet<string>>(new Set());
   const [dropMarker, setDropMarker] = useState<TabDropIntent | null>(null);
   const [dragWidth, setDragWidth] = useState(0);
+  /** True once the drag crosses the detach threshold: the tab is leaving,
+   *  so the strip closes its slot (see detachShifts). */
+  const [detaching, setDetaching] = useState(false);
+  /** Floating "New window" cue position while detaching. Portaled outside the
+   *  strip (which clips vertical overflow), tracks the pointer. Null = hidden. */
+  const [detachCue, setDetachCue] = useState<{ x: number; y: number } | null>(null);
+  /** True while the detach cursor is over ANOTHER OpenProgram window (a merge
+   *  target). Suppresses the "New window" pill — that window shows its own
+   *  "Add tab here" cue instead, so the two are mutually exclusive by location. */
+  const [detachOverTarget, setDetachOverTarget] = useState(false);
+  const detachHoverPollRef = useRef(false);
+  const [detachCueHost, setDetachCueHost] = useState<Element | null>(null);
+  useEffect(() => {
+    setDetachCueHost(detachCue ? document.querySelector(".center-body") : null);
+  }, [detachCue !== null]);
+  // Cross-window drop cue (destination side): true while a drag in ANOTHER
+  // window hovers this one, meaning release will merge the tab in here. Driven
+  // by main via the window-at-cursor poll, mirrored through onTransferHover.
+  // Confined to the TOP TAB STRIP — a page-body glow would read as "split".
+  const [transferHover, setTransferHover] = useState(false);
+  useEffect(() => {
+    const bridge = desktopBridge();
+    const sub = bridge?.tabTransfer.onTransferHover;
+    if (!sub) return;
+    return sub((entering) => setTransferHover(entering));
+  }, []);
   const [dragAnnouncement, setDragAnnouncement] = useState("");
   const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null);
   const [splitPickerTabId, setSplitPickerTabId] = useState<string | null>(null);
@@ -773,7 +642,13 @@ export function CenterTabStrip() {
   });
 
   // Live-reorder geometry for this render: entry id → translateX px.
-  const liveShifts = computeLiveShifts(stripEntries, draggedIds, dropMarker, dragWidth);
+  // While detaching there is no drop marker (the tab is leaving the strip),
+  // so instead every entry after the dragged one slides left to close the
+  // vacated slot. Both paths ride the same `transform 160ms ease` on .tab,
+  // so the gap closes smoothly rather than snapping shut.
+  const liveShifts = detaching
+    ? closeGapShifts(stripEntries, draggedIds, dragWidth)
+    : computeLiveShifts(stripEntries, draggedIds, dropMarker, dragWidth);
 
   // The dragged tab's transform is written imperatively on every
   // pointermove, but React owns that element's style prop and drops the
@@ -793,6 +668,9 @@ export function CenterTabStrip() {
     setDraggedIds(new Set());
     setDropMarker(null);
     setDragWidth(0);
+    setDetaching(false);
+    setDetachCue(null);
+    setDetachOverTarget(false);
   }
 
   function cancelDrag(announce = false) {
@@ -878,7 +756,8 @@ export function CenterTabStrip() {
   }
 
   /** Escape / pointercancel / window blur: return-home animation plus
-   *  full coordinator + token + marker cleanup. */
+   *  full coordinator + token + marker cleanup. Drop-to-place, so there is no
+   *  mid-drag window to dispose — the tab simply slides home. */
   function cancelPointerDrag() {
     const started = teardownPointerDrag();
     cancelDrag(started);
@@ -933,6 +812,9 @@ export function CenterTabStrip() {
       startY: event.clientY,
       started: false,
       detaching: false,
+      overWindow: false,
+      lastScreenX: event.screenX,
+      lastScreenY: event.screenY,
       originLeft: 0,
       width: 0,
       minTx: 0,
@@ -940,6 +822,8 @@ export function CenterTabStrip() {
       targets: [],
       lastTx: 0,
       lastIntent: null,
+      stripTop: 0,
+      stripBottom: 0,
       teardown() {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
@@ -991,6 +875,11 @@ export function CenterTabStrip() {
       drag.maxTx = bounds
         ? Math.max(bounds.left - unitRect.left, bounds.right - unitRect.right)
         : Infinity;
+      // Vertical strip band for the geometric detach trigger. Prefer the
+      // strip container's box; fall back to the dragged unit's own rect.
+      const stripRect = (stripRef.current ?? drag.element).getBoundingClientRect();
+      drag.stripTop = stripRect.top;
+      drag.stripBottom = stripRect.bottom;
       drag.element.setAttribute("data-pointer-drag", "true");
       try {
         drag.element.setPointerCapture(drag.pointerId);
@@ -1001,29 +890,117 @@ export function CenterTabStrip() {
       setDraggedIds(new Set(drag.subject.tabIds));
       setDragAnnouncement(text("Dragging tab", "正在拖动标签"));
     }
-    // The tab body follows the pointer, clamped to the slot span.
-    const tx = Math.min(Math.max(dx, drag.minTx), drag.maxTx);
-    drag.lastTx = tx;
-    drag.element.style.transform = `translateX(${tx}px)`;
+    // Single-tab window: dragging the lone tab moves the WHOLE window (nothing
+    // to reorder). Move via main-process IPC using frame-to-frame SCREEN
+    // deltas (client coords jump when the window itself moves). This coexists
+    // with merge: the moment the cursor is over ANOTHER window (overWindow,
+    // set by the poll below) we stop moving and let release deliver the merge.
+    const bridge = desktopBridge();
+    const hasTransferToken = Boolean(dragCoordinator.current()?.transferToken);
+    const isSoloWindow =
+      Boolean(bridge?.moveWindowBy) && useCenterTabs.getState().tabs.length === 1;
+    if (isSoloWindow) {
+      // The lone tab NEVER moves relative to its strip — the WINDOW moves under
+      // it. Move the window every frame, even while hovering another window:
+      // stopping mid-drag (to "prepare a merge") produced a visible stutter.
+      // Whether it merges is decided at release by the live hit test, so the
+      // window can keep tracking the cursor right up to release. Tab stays at 0.
+      bridge!.moveWindowBy!(
+        e.screenX - drag.lastScreenX,
+        e.screenY - drag.lastScreenY,
+      );
+      drag.lastScreenX = e.screenX;
+      drag.lastScreenY = e.screenY;
+      drag.lastTx = 0;
+      drag.element.style.transform = "translateX(0)";
+    } else {
+      // In-strip reorder clamps the tab to the visible slot span. But once the
+      // drag leaves the strip / hovers another window (detach or merge intent,
+      // from last frame), the tab should track the cursor FREELY — never freeze
+      // at the strip edge. Whether it actually merges is decided at release by
+      // the live hit test, so free movement here costs nothing.
+      // Always clamp the tab to the visible slot span — the same limit that
+      // keeps it from vanishing off the edge in a plain reorder. Detach/merge
+      // must NOT lift that clamp (that let the tab run out to the window edge
+      // and nearly clip). Intent is shown by the floating "New window" pill and
+      // the detach-intent style, never by the tab body leaving its row.
+      const tx = Math.min(Math.max(dx, drag.minTx), drag.maxTx);
+      drag.lastTx = tx;
+      drag.element.style.transform = `translateX(${tx}px)`;
+    }
 
-    // Detach: pulled DETACH_DISTANCE_PX off the strip (needs a desktop
-    // transfer token) — release then opens a new window, or lands in
-    // another OpenProgram window when the cursor is over one.
-    const detachCapable = Boolean(dragCoordinator.current()?.transferToken);
-    drag.detaching = detachCapable && Math.abs(dy) > DETACH_DISTANCE_PX;
+    // Detach: cursor left the strip's vertical band (needs a desktop
+    // transfer token) — Chrome has no distance dead-zone, so the trigger is
+    // purely geometric. Small hysteresis so a cursor on the edge does not
+    // thrash: enter detach when clearly below the bottom (or above the top),
+    // come home only when clearly back inside the band.
+    // A single-tab window never tears its lone tab into a NEW empty window
+    // (the user was explicit: one tab, no new window). It only ever moves the
+    // window (above) or merges onto another window (overWindow). So detach is
+    // gated off whenever this is a solo window.
+    const detachCapable = hasTransferToken && !isSoloWindow;
+    const belowStrip = e.clientY > drag.stripBottom + DETACH_HYSTERESIS_PX;
+    const aboveStrip = e.clientY < drag.stripTop - DETACH_HYSTERESIS_PX;
+    const insideBand =
+      e.clientY < drag.stripBottom - DETACH_HYSTERESIS_PX
+      && e.clientY > drag.stripTop + DETACH_HYSTERESIS_PX;
+    let nextDetaching = drag.detaching;
+    if (detachCapable && (belowStrip || aboveStrip)) nextDetaching = true;
+    else if (insideBand) nextDetaching = false;
+    if (nextDetaching !== drag.detaching) setDetaching(nextDetaching);
+    drag.detaching = nextDetaching;
+    // Drop-to-place: while dragging out of the strip the tab shows detach-intent
+    // (translucent, accent outline) plus a floating "New window" pill near the
+    // cursor. The pill is portaled outside .tabsFlow — that 40px strip clips
+    // vertical overflow, so an on-tab pill above/below is invisible. No window
+    // is created mid-drag; it is torn off at release (onPointerDragUp).
     drag.element.toggleAttribute("data-detach-intent", drag.detaching);
+    setDetachCue(
+      drag.detaching ? { x: e.clientX, y: e.clientY } : null,
+    );
+    // Poll the window under the cursor (same read-only hit test used at
+    // release) for the ENTIRE drag once a transfer token exists — NOT only
+    // while detaching. main drives each destination window's hover cue from
+    // this poll and clears it on a null return, so the highlight is adaptive:
+    // it follows the cursor off a window (→ null → hover-leave) and back on,
+    // never latching. It also hides the source "New window" pill over a target.
+    // One in-flight call at a time; no second loop. Gated on the raw token
+    // (NOT detachCapable) so a SOLO window still polls — it can't detach, but
+    // it must detect another window under the cursor to merge onto it.
+    if (hasTransferToken && !detachHoverPollRef.current) {
+      if (bridge?.tabTransfer.windowAtCursor) {
+        detachHoverPollRef.current = true;
+        void bridge.tabTransfer
+          .windowAtCursor()
+          .then((id) => {
+            const over = id !== null;
+            setDetachOverTarget(over);
+            // Cursor over ANOTHER OpenProgram window ⇒ this is a merge, even
+            // when its top strip sits at the same Y as our own strip band (so
+            // the geometric below/above test never fired). Record it on the
+            // drag so release delivers instead of committing an in-strip
+            // reorder — "drag onto another window → merge".
+            drag.overWindow = over;
+          })
+          .catch(() => {})
+          .finally(() => {
+            detachHoverPollRef.current = false;
+          });
+      }
+    }
     if (drag.detaching) {
       drag.lastIntent = null;
       publishDropMarker(null);
       return;
     }
+    if (detachOverTarget) setDetachOverTarget(false);
 
     // In-strip dragging is PURE REORDER. A neighbour yields as soon as the
     // dragged tab covers HALF of it — measured as overlap ÷ neighbour
     // width, so unequal tab widths behave correctly (for equal widths this
     // is exactly "the dragged tab's leading edge passed the neighbour's
     // midpoint"). Splitting is a context-menu action, never a drag outcome.
-    const draggedRect = { left: drag.originLeft + tx, width: drag.width };
+    const draggedRect = { left: drag.originLeft + drag.lastTx, width: drag.width };
     const centerX = draggedRect.left + drag.width / 2;
     const selfIndex = drag.targets.findIndex((slot) =>
       drag.selfIds.has(slot.tabId),
@@ -1106,19 +1083,28 @@ export function CenterTabStrip() {
       clearDragState();
       return;
     }
-    if (drag.detaching) {
+    // Drop-to-place: the tab is torn off at RELEASE, not mid-drag. Released
+    // outside the strip → deliver into the window under the cursor, else
+    // detach into a new window created at the drop point. overWindow covers
+    // the "dragged onto another window's top strip" case where the cursor
+    // never left our own strip's Y band so the geometric test stayed false.
+    // Cross-window outcome (merge or detach). Enter whenever this drag COULD
+    // leave the window — geometrically detaching, or the poll saw another
+    // window (overWindow). But the poll is latched/async, so the FINAL outcome
+    // is decided by a fresh windowAtCursor at release, not by that stale flag:
+    // dragging over a window and then away must NOT merge.
+    if (drag.detaching || drag.overWindow) {
       restorePointerDragElement(drag.element, true);
       const token = prepared.transferToken;
       const bridge = desktopBridge();
+      const wantsDetach = drag.detaching; // geometric tear-off intent at release
       dragCoordinator.clear(); // main / the destination owns the token now
       clearDragState();
       if (!bridge || !token) return;
       void (async () => {
         try {
-          // Another OpenProgram window under the cursor takes the tab
-          // (staged at its strip end); otherwise detach into a new window.
-          // ponytail: strip-end placement, no per-slot geometry on the
-          // destination — refine placement if cross-window ordering matters.
+          // Live hit test at the instant of release — the single source of
+          // truth for "is the cursor over another window right now?".
           const targetWindowId =
             (await bridge.tabTransfer.windowAtCursor?.()) ?? null;
           if (
@@ -1126,6 +1112,14 @@ export function CenterTabStrip() {
             && (await bridge.tabTransfer.deliver?.(token, targetWindowId))
           ) {
             setDragAnnouncement(text("Tab moved", "标签已移动"));
+            return;
+          }
+          // No window under the cursor. Only a real geometric tear-off spawns
+          // a new window; a drag that merely hovered a window and moved away
+          // (or a solo window) just releases the token and snaps back.
+          if (!wantsDetach) {
+            void bridge.tabTransfer.cancel?.(token);
+            setDragAnnouncement(text("Tab move cancelled", "标签移动已取消"));
             return;
           }
           const detachedWindowId = await bridge.tabTransfer.detach(token);
@@ -1339,7 +1333,11 @@ export function CenterTabStrip() {
   }, [tabMenu]);
 
   return (
-    <div ref={stripRef} className={styles.strip}>
+    <div
+      ref={stripRef}
+      className={styles.strip}
+      data-transfer-hover={transferHover || undefined}
+    >
       {/* tab 流容器：浏览器模式 display:contents 零影响；桌面模式限宽，
          让＋号既跟随 tab、又最深只顶到右栏图标轴线（见 module css）。 */}
       <div
@@ -1493,6 +1491,34 @@ export function CenterTabStrip() {
             splitPickerHost,
           )
         : null}
+      {/* Floating detach cue: portaled into .center-body so it escapes the
+         strip's overflow clip. pointer-events:none and NOT a child of the
+         captured tab, so pointer capture is untouched. */}
+      {detachCue && detachCueHost && !detachOverTarget
+        ? createPortal(
+            <div
+              className={styles.detachCue}
+              style={{ left: detachCue.x, top: detachCue.y }}
+              aria-hidden="true"
+            >
+              <SquareArrowOutUpRight size={14} />
+              {text("New window", "新窗口")}
+            </div>,
+            detachCueHost,
+          )
+        : null}
+      {/* Cross-window drop cue (destination side): a drag from another window
+         is hovering this one, so release merges the tab in here. Confined to
+         the TOP TAB STRIP — the .strip gets a subtle accent highlight (see
+         data-transfer-hover) plus this pill pinned at the strip's bottom edge.
+         Rendered as a direct child of .strip (NOT inside the overflow-clipped
+         .tabsFlow) and pointer-events:none so it never blocks the drop. */}
+      {transferHover ? (
+        <div className={styles.transferHoverPill} aria-hidden="true">
+          <CirclePlus size={14} />
+          {text("Drop to open here", "松开以在此打开")}
+        </div>
+      ) : null}
       <span className={styles.dragAnnouncement} role="status" aria-live="polite">
         {dragAnnouncement}
       </span>
@@ -1551,7 +1577,7 @@ function CompoundTabItem({
   const rootRef = useRef<HTMLDivElement>(null);
   const segmentOffsets = useRef(new Map<string, number>());
   const previousOrder = useRef<string[]>(group.memberIds);
-  const orderKey = group.memberIds.join(" ");
+  const orderKey = group.memberIds.join("\0");
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
@@ -1703,6 +1729,8 @@ function TabItem({
   // 入场动画只在挂载那一次播；播完摘掉 class（.tabEnter 的 overflow:hidden
   // 不能留着，否则会裁掉活动 tab 的 fillet）。
   const [entering, setEntering] = useState(enter);
+  // 记住加载失败的那个 URL（而不是一个 bool），换站点后新图标还能再试。
+  const [brokenFavicon, setBrokenFavicon] = useState("");
   useEffect(() => {
     if (active) tabRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
     if (!active || typeof ResizeObserver === "undefined") return;
@@ -1767,7 +1795,16 @@ function TabItem({
           ) : tab.kind === "file" ? (
             <FileText size={13} />
           ) : tab.kind === "web" ? (
-            <Globe size={13} />
+            tab.faviconUrl && tab.faviconUrl !== brokenFavicon ? (
+              <img
+                className={styles.tabFavicon}
+                src={tab.faviconUrl}
+                alt=""
+                onError={() => setBrokenFavicon(tab.faviconUrl ?? "")}
+              />
+            ) : (
+              <Globe size={13} />
+            )
           ) : tab.kind === "builtin" ? (
             tab.page === "history" ? <History size={13} /> : <Bookmark size={13} />
           ) : (

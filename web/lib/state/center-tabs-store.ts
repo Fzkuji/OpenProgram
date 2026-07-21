@@ -18,7 +18,6 @@
  * session store's currentSessionId / titles into this store.
  */
 import { create } from "zustand";
-import { pendingTransfers } from "@/lib/pending-transfer-projection";
 import {
   findCenterTabGroup,
   focusCenterTabGroupMember,
@@ -27,7 +26,6 @@ import {
   moveCenterTab,
   moveCenterTabGroup,
   moveCenterTabGroupMember,
-  normalizeCenterTabLayout,
   ungroupCenterTab,
 } from "@/lib/state/center-tab-groups";
 import type {
@@ -39,12 +37,49 @@ import type {
   TabDropPlacement,
   TransferJournalEntry,
 } from "@/lib/tab-transfer-journal";
+import {
+  builtinTabId,
+  fileTabId,
+  hostnameOf,
+  nextNtpId,
+  sessionTabId,
+  webTabId,
+} from "@/lib/state/center-tab-ids";
+// Re-exported for callers that still import these from this module.
+export {
+  builtinTabId,
+  fileTabId,
+  normalizeWebUrl,
+  sessionTabId,
+  webTabId,
+} from "@/lib/state/center-tab-ids";
+export type { BuiltinPage } from "@/lib/state/center-tab-ids";
+import type { BuiltinPage } from "@/lib/state/center-tab-ids";
+import {
+  clampSplitRatio,
+  desktopWindowId,
+  draftTab,
+  normalizeCenterTabsPayload,
+  orderTabs,
+  persistCenterTabsPayload,
+  persistedState,
+  readCenterTabsPayload,
+  replaceGroupTabId,
+} from "@/lib/state/center-tabs-persistence";
+import type {
+  CenterTabsPersistedPayload,
+  CenterTabsPersistedState,
+} from "@/lib/state/center-tabs-persistence";
+// Re-exported for callers that still import these from this module.
+export {
+  DRAFT_SESSION_TAB_ID,
+  rebaseCenterTabsPayload,
+} from "@/lib/state/center-tabs-persistence";
+export type {
+  CenterTabsPersistedPayload,
+} from "@/lib/state/center-tabs-persistence";
 
 export type CenterTabKind = "session" | "file" | "web" | "ntp" | "builtin";
-
-/** Built-in pages that live in the center as their own tab (Chrome's
- *  chrome://bookmarks / chrome://history). One tab per page, ever. */
-export type BuiltinPage = "bookmarks" | "history";
 
 export interface CenterTab {
   id: string;
@@ -64,107 +99,15 @@ export interface CenterTab {
   /** Web tabs only — current http(s) URL (may drift from the id
    *  after in-pane navigation). */
   url?: string;
+  /** Web tabs only — favicon URL reported by the desktop shell; the
+   *  strip falls back to the Globe icon when absent or unloadable. */
+  faviconUrl?: string;
   /** Builtin tabs only — which built-in page this tab shows. */
   page?: BuiltinPage;
   /** Unsaved-changes marker — strip shows ● instead of ✕. Set via
    *  setTabDirty by whoever owns the tab's content (file editor). */
   dirty?: boolean;
 }
-
-/** Legacy singleton id, kept only to migrate persisted pre-multi-draft tabs. */
-export const DRAFT_SESSION_TAB_ID = "s:draft";
-/** New-tab 页不再是单例（Chrome 行为：＋ 想开几个开几个），每个实例一个
- *  唯一 id。时间戳 + 自增序号，避免与持久化恢复的旧 id 撞车。 */
-let ntpSeq = 0;
-function nextNtpId(): string {
-  return `ntp:${Date.now().toString(36)}:${(ntpSeq++).toString(36)}`;
-}
-
-function nextDraftSessionId(): string {
-  return `local_${crypto.randomUUID()}`;
-}
-
-function draftTab(sessionId = nextDraftSessionId()): CenterTab {
-  return {
-    id: sessionTabId(sessionId),
-    kind: "session",
-    title: "",
-    sessionId,
-    draft: true,
-  };
-}
-
-export function sessionTabId(sessionId: string): string {
-  return `s:${sessionId}`;
-}
-export function fileTabId(projectId: string, path: string): string {
-  return `f:${projectId}:${path}`;
-}
-export function webTabId(url: string): string {
-  return `w:${url}`;
-}
-export function builtinTabId(page: BuiltinPage): string {
-  return `b:${page}`;
-}
-
-/** Normalize user input into a browsable http(s) URL: trims, prefixes
- *  bare domains with https://, and rejects every other scheme
- *  (javascript:, data:, file:, …). Returns null when not navigable. */
-/** Chrome 地址栏（omnibox）语义：像 URL 的输入按 URL 打开，其余一律
- *  转搜索，绝不静默失败。此前 "bilibili"（无点）会拼成 https://bilibili
- *  → DNS 白屏，含空格的中文词直接被忽略——两种都表现为"浏览器打不开"。
- *  返回 null 仅当输入为空。 */
-export function normalizeWebUrl(input: string): string | null {
-  const raw = input.trim();
-  if (!raw) return null;
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) {
-    try {
-      const u = new URL(raw);
-      if ((u.protocol === "http:" || u.protocol === "https:") && u.hostname) {
-        return u.href;
-      }
-    } catch {
-      /* 有 scheme 但解析不了 → 当搜索词 */
-    }
-    return webSearchUrl(raw);
-  }
-  // 无 scheme：无空格且主机段像域名（带点 / localhost / IPv6）才按 URL
-  const hostish = raw.split("/")[0];
-  const urlLike =
-    !/\s/.test(raw) &&
-    (hostish.includes(".") ||
-      /^localhost(:\d+)?$/i.test(hostish) ||
-      /^\[[0-9a-f:]+\]/i.test(hostish));
-  if (urlLike) {
-    try {
-      const u = new URL(`https://${raw}`);
-      if (u.hostname) return u.href;
-    } catch {
-      /* fall through to search */
-    }
-  }
-  return webSearchUrl(raw);
-}
-
-function webSearchUrl(query: string): string {
-  return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-}
-
-function hostnameOf(url: string): string {
-  try {
-    return new URL(url).hostname || url;
-  } catch {
-    return url;
-  }
-}
-
-const LEGACY_TABS_STORAGE_KEY = "centerTabs";
-const LEGACY_SPLIT_STORAGE_KEY = "openprogram.webSplit";
-const DEFAULT_SPLIT_RATIO = 0.44;
-const MIN_SPLIT_RATIO = 0.30;
-const MAX_SPLIT_RATIO = 0.70;
-const clampSplitRatio = (ratio: number) =>
-  Math.min(MAX_SPLIT_RATIO, Math.max(MIN_SPLIT_RATIO, ratio));
 
 // A missing non-local tab normally means a legacy caller that predates the
 // center-tab UI, so its ACK is still allowed to activate the session. Preserve
@@ -173,358 +116,14 @@ const clampSplitRatio = (ratio: number) =>
 // and are cleared by an explicit reopen.
 const closedSessionAckTombstones = new Set<string>();
 
-interface LegacyPersistedTabs {
-  tabs: CenterTab[];
-  activeId: string | null;
-}
-
-interface LegacyPersistedSplit {
-  tabId: string | null;
-  ratio: number;
-}
-
-export interface CenterTabsPersistedPayload {
-  version: 2;
-  tabs: CenterTab[];
-  activeId: string | null;
-  groups: CenterTabGroup[];
-  splitWebTabId: string | null;
-  splitRatio: number;
-}
-
-type CenterTabsPersistedState = Omit<CenterTabsPersistedPayload, "version">;
-
-function desktopWindowId(): string | null {
-  if (typeof window === "undefined") return null;
+/** Ask the desktop shell to close THIS window (last tab closed → close window,
+ *  Chrome parity). No-op off desktop or if the bridge lacks the method. */
+function requestDesktopWindowClose(): void {
+  if (typeof window === "undefined") return;
   const bridge = (window as unknown as {
-    openprogramDesktop?: { isDesktop?: boolean; windowId?: string };
+    openprogramDesktop?: { closeWindow?: () => void };
   }).openprogramDesktop;
-  if (!bridge?.isDesktop) return null;
-  return typeof bridge.windowId === "string" && bridge.windowId
-    ? bridge.windowId
-    : "main";
-}
-
-function centerTabsStorageKey(windowId = desktopWindowId()): string {
-  return windowId ? `centerTabs:${windowId}` : LEGACY_TABS_STORAGE_KEY;
-}
-
-function splitGroupId(sessionId: string, webId: string): string {
-  return `g:split:${sessionId}:${webId}`;
-}
-
-function replaceGroupTabId(
-  groups: readonly CenterTabGroup[],
-  oldId: string,
-  newId: string,
-): CenterTabGroup[] {
-  return groups.map((group) => ({
-    ...group,
-    memberIds: group.memberIds.map((id) => id === oldId ? newId : id),
-    visibleIds: group.visibleIds.map((id) => id === oldId ? newId : id),
-    focusedId: group.focusedId === oldId ? newId : group.focusedId,
-  }));
-}
-
-function orderTabs(tabs: readonly CenterTab[], tabIds: readonly string[]): CenterTab[] {
-  const byId = new Map<string, CenterTab>();
-  for (const tab of tabs) {
-    if (!byId.has(tab.id)) byId.set(tab.id, tab);
-  }
-  return tabIds.flatMap((id) => {
-    const tab = byId.get(id);
-    return tab ? [tab] : [];
-  });
-}
-
-function normalizeCenterTabsPayload(
-  input: Partial<CenterTabsPersistedPayload>,
-  clearDirty = false,
-): CenterTabsPersistedPayload {
-  const sourceTabs = Array.isArray(input.tabs) ? input.tabs : [];
-  const tabs = sourceTabs.map((tab) => {
-    if (tab.id === DRAFT_SESSION_TAB_ID) return draftTab();
-    return clearDirty && tab.dirty ? { ...tab, dirty: false } : tab;
-  });
-  let layout = normalizeCenterTabLayout({
-    tabIds: tabs.map((tab) => tab.id),
-    groups: Array.isArray(input.groups) ? input.groups : [],
-  });
-  const activeId = layout.tabIds.includes(input.activeId ?? "")
-    ? input.activeId ?? null
-    : layout.tabIds[0] ?? null;
-  let splitWebTabId = typeof input.splitWebTabId === "string" &&
-      tabs.some((tab) => tab.id === input.splitWebTabId && tab.kind === "web")
-    ? input.splitWebTabId
-    : null;
-
-  const activeTab = tabs.find((tab) => tab.id === activeId);
-  if (activeTab?.kind === "session" && splitWebTabId) {
-    const splitId = splitWebTabId;
-    const activeGroup = findCenterTabGroup(layout.groups, activeTab.id);
-    const memberIndex = activeGroup
-      ? activeGroup.memberIds
-          .filter((id) => id !== splitId)
-          .indexOf(activeTab.id) + 1
-      : 1;
-    const grouped = groupCenterTabs(
-      layout,
-      splitId,
-      activeTab.id,
-      memberIndex,
-      splitGroupId(activeTab.id, splitId),
-    );
-    if (grouped.accepted) {
-      const splitGroup = findCenterTabGroup(grouped.layout.groups, activeTab.id);
-      layout = splitGroup
-        ? normalizeCenterTabLayout({
-            ...grouped.layout,
-            groups: grouped.layout.groups.map((group) => group.id === splitGroup.id
-              ? {
-                  ...group,
-                  visibleIds: [activeTab.id, splitId],
-                  focusedId: activeTab.id,
-                }
-              : group),
-          })
-        : grouped.layout;
-    } else {
-      splitWebTabId = null;
-    }
-  }
-
-  const activeGroup = activeId
-    ? findCenterTabGroup(layout.groups, activeId)
-    : undefined;
-  if (activeGroup && activeId && activeGroup.focusedId !== activeId) {
-    layout = focusCenterTabGroupMember(layout, activeGroup.id, activeId);
-  }
-  const normalizedTabs = orderTabs(tabs, layout.tabIds);
-  return {
-    version: 2,
-    tabs: normalizedTabs,
-    activeId,
-    groups: layout.groups,
-    splitWebTabId,
-    splitRatio:
-      typeof input.splitRatio === "number" && Number.isFinite(input.splitRatio)
-        ? clampSplitRatio(input.splitRatio)
-        : DEFAULT_SPLIT_RATIO,
-  };
-}
-
-function insertByReference(
-  ids: string[],
-  id: string,
-  reference: readonly string[],
-): void {
-  const referenceIndex = reference.indexOf(id);
-  for (let index = referenceIndex - 1; index >= 0; index -= 1) {
-    const previousIndex = ids.indexOf(reference[index]);
-    if (previousIndex >= 0) {
-      ids.splice(previousIndex + 1, 0, id);
-      return;
-    }
-  }
-  for (let index = referenceIndex + 1; index < reference.length; index += 1) {
-    const nextIndex = ids.indexOf(reference[index]);
-    if (nextIndex >= 0) {
-      ids.splice(nextIndex, 0, id);
-      return;
-    }
-  }
-  ids.push(id);
-}
-
-function normalizedRebasedGroup(
-  group: CenterTabGroup,
-  memberIds: string[],
-  visibleIds: string[],
-  focusedId: string | undefined,
-): CenterTabGroup | null {
-  if (memberIds.length < 2) return null;
-  const visible = visibleIds.filter((id, index) =>
-    memberIds.includes(id) && visibleIds.indexOf(id) === index).slice(0, 2);
-  return {
-    ...group,
-    memberIds,
-    visibleIds: visible,
-    focusedId: focusedId && memberIds.includes(focusedId)
-      ? focusedId
-      : visible[0] ?? memberIds[0],
-  };
-}
-
-export function rebaseCenterTabsPayload(
-  current: CenterTabsPersistedPayload,
-  entry: TransferJournalEntry,
-  targetName: "before" | "after",
-): CenterTabsPersistedPayload {
-  const target = targetName === "before"
-    ? entry.beforeCenterTabs
-    : entry.afterCenterTabs;
-  const opposite = targetName === "before"
-    ? entry.afterCenterTabs
-    : entry.beforeCenterTabs;
-  const affected = new Set(entry.payload.tabs.map((tab) => tab.id));
-  const targetTabs = new Map(target.tabs.map((tab) => [tab.id, tab]));
-  const targetIds = target.tabs.map((tab) => tab.id);
-  const tabs = current.tabs.filter((tab) =>
-    !affected.has(tab.id) || targetTabs.has(tab.id));
-  const tabIds = tabs.map((tab) => tab.id);
-  for (const id of targetIds) {
-    if (!affected.has(id) || tabIds.includes(id)) continue;
-    const tab = targetTabs.get(id);
-    if (!tab) continue;
-    insertByReference(tabIds, id, targetIds);
-    const at = tabIds.indexOf(id);
-    tabs.splice(at, 0, structuredClone(tab));
-  }
-
-  let groups = current.groups.flatMap((group) => {
-    const memberIds = group.memberIds.filter((id) => !affected.has(id));
-    const visibleIds = group.visibleIds.filter((id) => !affected.has(id));
-    const normalized = normalizedRebasedGroup(
-      group,
-      memberIds,
-      visibleIds,
-      group.focusedId,
-    );
-    return normalized ? [normalized] : [];
-  });
-  for (const targetGroup of target.groups) {
-    const affectedMembers = targetGroup.memberIds.filter((id) =>
-      affected.has(id) && tabIds.includes(id));
-    if (affectedMembers.length === 0) continue;
-    const groupIndex = groups.findIndex((group) => group.id === targetGroup.id);
-    const existing = groupIndex >= 0 ? groups[groupIndex] : null;
-    const groupedElsewhere = new Set(groups.flatMap((group) => group.memberIds));
-    const memberIds = existing
-      ? [...existing.memberIds]
-      : targetGroup.memberIds.filter((id) =>
-        !affected.has(id) && tabIds.includes(id) && !groupedElsewhere.has(id));
-    for (const id of targetGroup.memberIds) {
-      if (!affected.has(id) || memberIds.includes(id) || !tabIds.includes(id)) continue;
-      insertByReference(memberIds, id, targetGroup.memberIds);
-    }
-    const visibleIds = existing
-      ? [...existing.visibleIds]
-      : targetGroup.visibleIds.filter((id) => memberIds.includes(id));
-    for (const id of targetGroup.visibleIds) {
-      if (affected.has(id) && memberIds.includes(id) && !visibleIds.includes(id)) {
-        visibleIds.push(id);
-      }
-    }
-    const normalized = normalizedRebasedGroup(
-      targetGroup,
-      memberIds,
-      visibleIds,
-      existing?.focusedId ?? targetGroup.focusedId,
-    );
-    if (!normalized) continue;
-    if (groupIndex >= 0) groups[groupIndex] = normalized;
-    else groups = [...groups, normalized];
-  }
-
-  const hasTab = (id: string | null): boolean =>
-    id !== null && tabIds.includes(id);
-  let activeId = current.activeId;
-  if (current.activeId === opposite.activeId) activeId = target.activeId;
-  if (!hasTab(activeId)) activeId = hasTab(target.activeId) ? target.activeId : null;
-  let splitWebTabId = current.splitWebTabId;
-  if (current.splitWebTabId === opposite.splitWebTabId) {
-    splitWebTabId = target.splitWebTabId;
-  }
-  if (!hasTab(splitWebTabId)) splitWebTabId = null;
-  const splitRatio = current.splitRatio === opposite.splitRatio
-    ? target.splitRatio
-    : current.splitRatio;
-
-  return normalizeCenterTabsPayload({
-    version: 2,
-    tabs: orderTabs(tabs, tabIds),
-    activeId,
-    groups,
-    splitWebTabId,
-    splitRatio,
-  });
-}
-
-function persistCenterTabsPayload(
-  state: Pick<CenterTabsState, "tabs" | "activeId" | "groups" | "splitWebTabId" | "splitRatio">,
-): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const key = centerTabsStorageKey();
-    let projected = normalizeCenterTabsPayload({
-      version: 2,
-      tabs: state.tabs,
-      activeId: state.activeId,
-      groups: state.groups,
-      splitWebTabId: state.splitWebTabId,
-      splitRatio: state.splitRatio,
-    });
-    for (const entry of pendingTransfers().reverse()) {
-      projected = rebaseCenterTabsPayload(projected, entry, "before");
-    }
-    const serialized = JSON.stringify(projected);
-    localStorage.setItem(key, serialized);
-    return localStorage.getItem(key) === serialized;
-  } catch {
-    return false;
-  }
-}
-
-function parsePayload(raw: string | null): Partial<CenterTabsPersistedPayload> | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Partial<CenterTabsPersistedPayload>;
-    return Array.isArray(parsed.tabs) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function readLegacySplit(): LegacyPersistedSplit {
-  try {
-    const raw = localStorage.getItem(LEGACY_SPLIT_STORAGE_KEY);
-    if (!raw) return { tabId: null, ratio: DEFAULT_SPLIT_RATIO };
-    const parsed = JSON.parse(raw) as Partial<LegacyPersistedSplit>;
-    return {
-      tabId: typeof parsed.tabId === "string" ? parsed.tabId : null,
-      ratio: typeof parsed.ratio === "number" && Number.isFinite(parsed.ratio)
-        ? clampSplitRatio(parsed.ratio)
-        : DEFAULT_SPLIT_RATIO,
-    };
-  } catch {
-    return { tabId: null, ratio: DEFAULT_SPLIT_RATIO };
-  }
-}
-
-function readCenterTabsPayload(): CenterTabsPersistedPayload {
-  const empty = normalizeCenterTabsPayload({});
-  if (typeof window === "undefined") return empty;
-  const windowId = desktopWindowId();
-  const key = centerTabsStorageKey(windowId);
-  const current = parsePayload(localStorage.getItem(key));
-  if (current?.version === 2) return normalizeCenterTabsPayload(current, true);
-
-  // The unkeyed browser payload is also the legacy source. Only the main
-  // desktop window may claim it; secondary windows must start isolated.
-  const legacy = windowId && windowId !== "main"
-    ? null
-    : current ?? parsePayload(localStorage.getItem(LEGACY_TABS_STORAGE_KEY));
-  if (!legacy) return empty;
-  const split = readLegacySplit();
-  const migrated = normalizeCenterTabsPayload({
-    tabs: (legacy as LegacyPersistedTabs).tabs,
-    activeId: (legacy as LegacyPersistedTabs).activeId,
-    groups: Array.isArray(legacy.groups) ? legacy.groups : [],
-    splitWebTabId: legacy.splitWebTabId ?? split.tabId,
-    splitRatio: legacy.splitRatio ?? split.ratio,
-  }, true);
-  persistCenterTabsPayload(migrated);
-  return migrated;
+  bridge?.closeWindow?.();
 }
 
 export interface CenterTabsState {
@@ -572,7 +171,10 @@ export interface CenterTabsState {
   setSplitRatio: (ratio: number) => void;
   /** Update a web tab's url/title in place (address-bar navigation,
    *  later title reporting from the sidecar browser). Id stays fixed. */
-  updateWebTab: (id: string, patch: { url?: string; title?: string }) => void;
+  updateWebTab: (
+    id: string,
+    patch: { url?: string; title?: string; faviconUrl?: string },
+  ) => void;
   /** Unsaved-changes marker groundwork — content owners call this;
    *  the strip renders ● instead of ✕ while dirty. */
   setTabDirty: (id: string, dirty: boolean) => void;
@@ -590,16 +192,6 @@ export interface CenterTabsState {
    *  the new-tab page). */
   closeTab: (id: string) => void;
   renameSessionTab: (sessionId: string, title: string) => void;
-}
-
-function persistedState(payload: CenterTabsPersistedPayload): CenterTabsPersistedState {
-  return {
-    tabs: payload.tabs,
-    activeId: payload.activeId,
-    groups: payload.groups,
-    splitWebTabId: payload.splitWebTabId,
-    splitRatio: payload.splitRatio,
-  };
 }
 
 function commitCenterTabsState(
@@ -1016,8 +608,17 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         const title =
           patch.title ??
           (patch.url && patch.url !== tab.url ? hostnameOf(patch.url) : tab.title);
-        if (url === tab.url && title === tab.title) return {};
-        const tabs = s.tabs.map((t) => (t.id === id ? { ...t, url, title } : t));
+        // Navigating to a new site drops the old site's icon unless the
+        // caller supplies one (main.js clears it on did-navigate too).
+        const faviconUrl =
+          patch.faviconUrl ??
+          (patch.url && patch.url !== tab.url ? undefined : tab.faviconUrl);
+        if (url === tab.url && title === tab.title && faviconUrl === tab.faviconUrl) {
+          return {};
+        }
+        const tabs = s.tabs.map((t) =>
+          t.id === id ? { ...t, url, title, faviconUrl } : t
+        );
         return commitCenterTabsState(s, { tabs });
       }),
 
@@ -1093,7 +694,15 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           activeId = (tabs[idx] ?? tabs[idx - 1])?.id ?? null;
         }
         if (tabs.length === 0) {
-          // 关掉最后一个 tab → 兜底给一个新 New-tab 页（栏不能空）。
+          if (desktopWindowId()) {
+            // Chrome parity: closing a desktop window's last tab closes the
+            // WINDOW (main handles "last window ⇒ stay open, don't quit").
+            // Ask the shell to close; keep the strip non-empty meanwhile so
+            // the brief render before the window goes away has a valid tab.
+            requestDesktopWindowClose();
+          }
+          // Browser mode (and the transient desktop frame above) can't show an
+          // empty strip — fall back to a fresh New-tab page.
           const ntp: CenterTab = { id: nextNtpId(), kind: "ntp", title: "" };
           tabs = [ntp];
           activeId = ntp.id;
@@ -1166,11 +775,37 @@ function transferredActiveId(payload: DesktopTransferPayload): string | null {
     ?? null;
 }
 
+/**
+ * A lone unmodified placeholder — an ntp "New tab" page or an empty draft
+ * "New chat" session (draft:true, still title "", never navigated). Same
+ * consumable predicate the store uses when navigating an active ntp/draft
+ * replaces it in place rather than adding a tab.
+ */
+function isConsumablePlaceholder(tab: CenterTab): boolean {
+  return tab.kind === "ntp" || (tab.kind === "session" && tab.draft === true);
+}
+
 function transferredPayloadAfter(
   before: CenterTabsPersistedPayload,
   payload: DesktopTransferPayload,
   placement: TabDropPlacement,
 ): CenterTabsPersistedPayload | null {
+  // A tab delivered into a fresh window (its sole tab an empty placeholder)
+  // must consume that placeholder, not sit beside it. Consume ONLY on a plain
+  // strip-end append: the incoming tabs replace the placeholder outright and
+  // the result is well-formed (delivered tabs inserted from an empty base, one
+  // becomes active, no dangling group/target left behind). A positioned drop
+  // (before/after/merge) targets the placeholder itself, so it must survive —
+  // consuming it would leave the placement referencing a tab that no longer
+  // exists, which is exactly the "delivered tab disappears" report.
+  if (
+    placement.kind === "strip-end" &&
+    placement.consumePlaceholder === true &&
+    before.tabs.length === 1 &&
+    isConsumablePlaceholder(before.tabs[0])
+  ) {
+    before = { ...before, tabs: [], groups: [], activeId: null };
+  }
   const transferIds = payload.tabs.map((tab) => tab.id);
   const allTabs = [...before.tabs, ...payload.tabs];
   const targetId = placement.kind === "strip-end" ? null : placement.targetTabId;

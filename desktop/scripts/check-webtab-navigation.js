@@ -46,13 +46,26 @@ function createFakeClock() {
       return id;
     },
     clearTimeout(id) { pending.delete(id); },
+    setInterval(callback, delay) {
+      const id = nextId++;
+      const timer = { id, callback, delay, dueAt: now + delay, repeat: true };
+      pending.set(id, timer);
+      all.set(id, timer);
+      return id;
+    },
+    clearInterval(id) { pending.delete(id); },
     advance(ms) {
       now += ms;
       const ready = [...pending.values()]
         .filter((timer) => timer.dueAt <= now)
         .sort((a, b) => a.dueAt - b.dueAt || a.id - b.id);
       for (const timer of ready) {
-        if (!pending.delete(timer.id)) continue;
+        if (!pending.has(timer.id)) continue;
+        if (timer.repeat) {
+          timer.dueAt = now + timer.delay;
+        } else {
+          pending.delete(timer.id);
+        }
         timer.callback();
       }
     },
@@ -62,6 +75,10 @@ function createFakeClock() {
 }
 
 const clock = createFakeClock();
+
+// Set by a test just before a boot to hold that window's ready-to-show,
+// so the "reveal only a painted window" guard is observable.
+let deferReadyToShowNextWindow = false;
 
 class FakeBrowserWindow {
   constructor(options) {
@@ -97,6 +114,18 @@ const fakeElectron = {
     quit() {},
   },
   BrowserWindow: FakeBrowserWindow,
+  // Cursor + display stubs for the tear-off placement paths. `cursorPoint`
+  // is moved by the tests to drive centerHiddenWindowOnCursor; the single
+  // display's work area is deliberately smaller than the display so the
+  // clamped / unclamped distinction is observable.
+  screen: {
+    getCursorScreenPoint() { return { ...fakeElectron.cursorPoint }; },
+    getDisplayNearestPoint() {
+      return { workArea: { x: 0, y: 0, width: 1440, height: 900 } };
+    },
+  },
+  cursorPoint: { x: 700, y: 40 },
+  nativeTheme: { prefersReducedMotion: false },
   WebContentsView: class {
     constructor() {
       generatedNativeViews += 1;
@@ -126,13 +155,17 @@ const sandbox = {
   encodeURIComponent,
   setTimeout: clock.setTimeout,
   clearTimeout: clock.clearTimeout,
+  setInterval: clock.setInterval,
+  clearInterval: clock.clearInterval,
   process,
   __dirname: path.join(__dirname, ".."),
   __filename: path.join(__dirname, "..", "main.js"),
   require(id) {
     if (id === "electron") return fakeElectron;
     if (id === "http") return fakeHttp;
-    if (id === "./tab-transfer-store") return require("../tab-transfer-store.js");
+    // Relative requires inside main.js resolve against THIS file, not
+    // main.js — map the desktop-local modules explicitly.
+    if (id.startsWith("./")) return require(path.join(__dirname, "..", id));
     return require(id);
   },
 };
@@ -210,7 +243,22 @@ function fakeWindow(id) {
       on() {},
     },
     on(event, handler) { listeners.set(event, handler); },
+    // Renderers are "already painted" by default so existing tests are
+    // unaffected; a test sets `deferReadyToShow` before the boot to hold
+    // ready-to-show and fires it manually via `emitReadyToShow()`.
+    deferReadyToShow: deferReadyToShowNextWindow,
+    once(event, handler) {
+      if (event !== "ready-to-show") { listeners.set(event, handler); return; }
+      if (this.deferReadyToShow) { this.pendingReadyToShow = handler; return; }
+      handler();
+    },
+    emitReadyToShow() {
+      const handler = this.pendingReadyToShow;
+      this.pendingReadyToShow = null;
+      handler?.();
+    },
     isDestroyed() { return this.destroyed; },
+    isFocused() { return focusedWindow === this; },
     show() { this.shown = true; },
     close() {
       this.closeCalls += 1;
@@ -221,7 +269,16 @@ function fakeWindow(id) {
       this.destroyed = true;
       this.listeners.get("closed")?.();
     },
-    getBounds() { return { x: 0, y: 0, width: 800, height: 600 }; },
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+    boundsCalls: [],
+    opacities: [],
+    getBounds() { return { ...this.bounds }; },
+    setBounds(value) {
+      this.bounds = { ...this.bounds, ...value };
+      this.boundsCalls.push({ ...this.bounds });
+    },
+    isVisible() { return this.shown && !this.destroyed; },
+    setOpacity(value) { this.opacities.push(value); },
     loadURL(url) { this.loadedUrl = url; return Promise.resolve(); },
   };
   fakeWindows.push(win);
@@ -2098,6 +2155,79 @@ async function checkRejectCancelExpiryDetachAndClaim() {
   );
 }
 
+/** Drop-to-place tear-off: at RELEASE the renderer calls detach(), which
+ *  creates the window hidden at the drop point (clamped so it never spawns
+ *  offscreen), shares one boot across concurrent calls, and is revealed at
+ *  commit (covered by the commit-reveal path above). A cancelled token closes
+ *  its window so nothing is orphaned. No mid-drag window, no live-follow. */
+async function checkOnDemandTearOffBootAndFollow() {
+  const sourceWin = fakeWindow(140);
+  const sourceCtx = registerContext("detach-source", sourceWin);
+
+  // --- EXACTLY ONE window per tear-off: +1 on detach, 0 after cancel ---
+  // Regression guard for the old double-window bug (mid-drag beginDetach
+  // created one window and the release path created another). Drop-to-place
+  // creates the window once, at release.
+  const liveCount = () =>
+    [...hooks.windows.values()].filter((c) => !c.win.destroyed).length;
+  const oneToken = prepareThroughIpc(sourceWin, webTransferPayload(["one-web"]));
+  fakeElectron.cursorPoint = { x: 700, y: 40 };
+  const countBefore = liveCount();
+  const oneId = await hooks.tabTransfers.detach(sourceCtx, oneToken);
+  assert.equal(
+    liveCount(),
+    countBefore + 1,
+    "a single tear-off must create exactly one window",
+  );
+  // A repeat detach for the same token is idempotent — still one window.
+  assert.equal(await hooks.tabTransfers.detach(sourceCtx, oneToken), oneId,
+    "a repeat detach must return the same window, never create a second");
+  assert.equal(liveCount(), countBefore + 1, "an idempotent detach must not add a window");
+  assert.equal(hooks.tabTransfers.cancel(sourceCtx, oneToken), true);
+  assert.equal(liveCount(), countBefore, "cancel must leave zero new windows (no orphan)");
+
+  // --- created hidden at the drop point, clamped on-screen -------------
+  const clampToken = prepareThroughIpc(sourceWin, webTransferPayload(["clamp-web"]));
+  fakeElectron.cursorPoint = { x: 10, y: 10 };
+  const clampId = await hooks.tabTransfers.detach(sourceCtx, clampToken);
+  const clampCtx = hooks.windows.get(clampId);
+  assert.equal(clampCtx.win.shown, false, "the tear-off window must boot hidden (revealed at commit)");
+  // A window whose width/2 would put it at x=-390 is clamped onto the work
+  // area, so the drop point is never offscreen.
+  assert.equal(clampCtx.win.bounds.x, 0, "the drop-point placement must be clamped on-screen");
+  assert.equal(hooks.tabTransfers.cancel(sourceCtx, clampToken), true);
+  assert.equal(
+    clampCtx.win.destroyed,
+    true,
+    "cancelling the token must close its window, leaving no orphan",
+  );
+
+  // --- concurrent detaches share one boot: never orphan a second window
+  // (a release races the window-at-cursor hit test, both may call detach()).
+  const commitToken = prepareThroughIpc(sourceWin, webTransferPayload(["commit-web"]));
+  fakeElectron.cursorPoint = { x: 700, y: 40 };
+  const before = new Set(hooks.windows.keys());
+  const bootA = hooks.tabTransfers.detach(sourceCtx, commitToken);
+  const bootB = hooks.tabTransfers.detach(sourceCtx, commitToken);
+  const [idA, idB] = await Promise.all([bootA, bootB]);
+  assert.equal(idA, idB, "concurrent detaches must resolve to one window");
+  const created = [...hooks.windows.keys()].filter((id) => !before.has(id));
+  assert.deepEqual(
+    created,
+    [idA],
+    "a release must boot exactly one window, never orphan a second",
+  );
+  const commitCtx = hooks.windows.get(idA);
+  assert.equal(hooks.tabTransfers.cancel(sourceCtx, commitToken), true);
+  assert.equal(
+    commitCtx.win.destroyed,
+    true,
+    "cancelling the token must destroy its window, leaving no orphan",
+  );
+
+  fakeElectron.cursorPoint = { x: 700, y: 40 };
+}
+
 async function checkInspectedDestinationCloseClearsPreparedToken() {
   const sourceWin = fakeWindow(103);
   const destinationWin = fakeWindow(104);
@@ -3238,6 +3368,20 @@ assert.doesNotMatch(source, /\bconst views = new Map\(\)/);
 assert.doesNotMatch(source, /\bvisibleViewId\b/);
 assert.match(source, /ipcMain\.on\("webtab:sync-visible"/);
 assert.match(source, /ipcMain\.on\("tab-transfer:prepare"/);
+// Cross-window drop cue channels + clean teardown (no stuck highlight).
+assert.match(source, /tab-transfer:hover-enter/, "main must push the hover-enter cue");
+assert.match(source, /tab-transfer:hover-leave/, "main must push the hover-leave cue");
+assert.match(source, /function setTransferHoverTarget/,
+  "main must funnel the hover cue through one tracker so at most one window lights up");
+for (const handler of ["cancel", "detach", "deliver"]) {
+  const start = source.indexOf(`ipcMain.handle("tab-transfer:${handler}"`);
+  const body = source.slice(start, start + 400);
+  assert.match(body, /setTransferHoverTarget\(null\)/,
+    `drag end (${handler}) must clear the hover highlight`);
+}
+assert.match(preloadSource, /onTransferHover/, "preload must expose onTransferHover");
+assert.match(preloadSource, /"tab-transfer:hover-enter"[\s\S]*?"tab-transfer:hover-leave"/,
+  "preload onTransferHover must subscribe both hover channels");
 assert.match(source, /event\.returnValue\s*=/);
 assert.match(source, /TRANSFER_TIMEOUT_MS\s*=\s*15_000/);
 assert.match(source, /status:\s*"destination-staged"/);
@@ -3246,6 +3390,107 @@ assert.match(source, /putTransferDecision/);
 const menuStart = source.indexOf("function buildMenu");
 const menuEnd = source.indexOf("// --------------------------------------------------------------------- boot");
 assert.doesNotMatch(source.slice(menuStart, menuEnd), /mainWindow/);
+
+// Cross-window drop cue: window-at-cursor must push hover-enter to the window
+// under the cursor and hover-leave to the previously highlighted one, never to
+// the drag source, and clear all on drag end (deliver / detach / cancel).
+async function checkCrossWindowHoverCue() {
+  for (const id of [...hooks.windows.keys()]) hooks.windows.delete(id);
+  const srcWin = fakeWindow(910);
+  const winB = fakeWindow(911);
+  const winC = fakeWindow(912);
+  for (const w of [srcWin, winB, winC]) w.show();
+  srcWin.bounds = { x: 0, y: 0, width: 100, height: 100 };
+  winB.bounds = { x: 200, y: 0, width: 100, height: 100 };
+  winC.bounds = { x: 400, y: 0, width: 100, height: 100 };
+  const src = registerContext("hover-src", srcWin);
+  registerContext("hover-b", winB);
+  registerContext("hover-c", winC);
+  const atCursor = ipcHandlers.get("tab-transfer:window-at-cursor");
+  const ev = { sender: srcWin.webContents };
+  const sentTo = (win, chan) =>
+    win.sent.some(([c]) => c === chan);
+
+  // Cursor over the SOURCE window: no target, and the source never lights up.
+  fakeElectron.cursorPoint = { x: 50, y: 50 };
+  assert.equal(await atCursor(ev), null, "source under cursor is not a target");
+  assert.equal(sentTo(srcWin, "tab-transfer:hover-enter"), false,
+    "the source window must never highlight itself");
+
+  // Cursor over window B: B gets hover-enter.
+  fakeElectron.cursorPoint = { x: 250, y: 50 };
+  assert.equal(await atCursor(ev), "hover-b");
+  assert.ok(sentTo(winB, "tab-transfer:hover-enter"), "B must get hover-enter");
+
+  // Cursor moves to window C: B gets hover-leave, C gets hover-enter.
+  winB.sent.length = 0;
+  fakeElectron.cursorPoint = { x: 450, y: 50 };
+  assert.equal(await atCursor(ev), "hover-c");
+  assert.ok(sentTo(winB, "tab-transfer:hover-leave"), "B must get hover-leave when cursor leaves it");
+  assert.ok(sentTo(winC, "tab-transfer:hover-enter"), "C must get hover-enter");
+
+  // Adaptive: cursor moves to EMPTY desktop (over no window) → the lit window
+  // (C) must clear immediately, never latch. Then back over C → C re-lights.
+  winC.sent.length = 0;
+  fakeElectron.cursorPoint = { x: 900, y: 900 };
+  assert.equal(await atCursor(ev), null, "empty desktop is not a target");
+  assert.ok(sentTo(winC, "tab-transfer:hover-leave"),
+    "cursor over empty desktop must clear the previously-lit window (no stuck highlight)");
+  winC.sent.length = 0;
+  fakeElectron.cursorPoint = { x: 450, y: 50 };
+  assert.equal(await atCursor(ev), "hover-c");
+  assert.ok(sentTo(winC, "tab-transfer:hover-enter"), "moving back over C must re-light it");
+
+  // Drag ends via detach: the highlighted window (C) gets hover-leave.
+  winC.sent.length = 0;
+  await ipcHandlers.get("tab-transfer:detach")(ev, "tok-none").catch(() => {});
+  assert.ok(sentTo(winC, "tab-transfer:hover-leave"),
+    "drag end (detach) must clear the current highlight — no stuck window");
+
+  for (const id of ["hover-src", "hover-b", "hover-c"]) hooks.windows.delete(id);
+}
+
+// Overlapping windows under the cursor: the topmost (focused) window wins, not
+// map order — otherwise the hover targets a window hidden behind another.
+async function checkCrossWindowHoverZOrder() {
+  for (const id of [...hooks.windows.keys()]) hooks.windows.delete(id);
+  const srcWin = fakeWindow(920);
+  const lowWin = fakeWindow(921); // registered first → wins on map order
+  const topWin = fakeWindow(922); // registered later, but focused → on top
+  for (const w of [srcWin, lowWin, topWin]) w.show();
+  // src off to the side; low and top fully overlap the same region.
+  srcWin.bounds = { x: 0, y: 0, width: 100, height: 100 };
+  lowWin.bounds = { x: 200, y: 0, width: 100, height: 100 };
+  topWin.bounds = { x: 200, y: 0, width: 100, height: 100 };
+  const src = registerContext("z-src", srcWin);
+  registerContext("z-low", lowWin);
+  registerContext("z-top", topWin);
+  const atCursor = ipcHandlers.get("tab-transfer:window-at-cursor");
+  const ev = { sender: srcWin.webContents };
+
+  fakeElectron.cursorPoint = { x: 250, y: 50 };
+  // Without a focus signal the two are tied — map order would answer, and does.
+  focusedWindow = null;
+  assert.equal(await atCursor(ev), "z-low", "tie falls back to deterministic map order");
+  // Focus the later-registered (visually top) window: it must now win the overlap.
+  focusedWindow = topWin;
+  assert.equal(
+    await atCursor(ev),
+    "z-top",
+    "the focused (topmost) window wins the overlap, never the occluded map-order one",
+  );
+  // Even when the SOURCE window overlaps and is focused, it is still excluded —
+  // the hit resolves to one of the other windows, never the source.
+  srcWin.bounds = { x: 200, y: 0, width: 100, height: 100 };
+  focusedWindow = srcWin;
+  assert.ok(
+    ["z-low", "z-top"].includes(await atCursor(ev)),
+    "the drag source is excluded from the hit test even when topmost under the cursor",
+  );
+
+  for (const id of ["z-src", "z-low", "z-top"]) hooks.windows.delete(id);
+  focusedWindow = null;
+}
 
 Promise.all([
   checkLoadView(),
@@ -3264,10 +3509,13 @@ Promise.all([
     await checkDestinationUndoDeadlineDelegatesJournal();
     await checkAtomicReparentAndMetadataOnlyTransfer();
     await checkRejectCancelExpiryDetachAndClaim();
+    await checkOnDemandTearOffBootAndFollow();
     await checkInspectedDestinationCloseClearsPreparedToken();
     await checkPrecommitFailurePathsAndDynamicRoles();
     await checkSourceEmptyDurabilityAndRestartAcknowledgements();
     await checkOrphanFinalizationPendingTerminalAndWindowClose();
+    await checkCrossWindowHoverCue();
+    await checkCrossWindowHoverZOrder();
     assert.equal(rendererQueue.length, 0, "all fake renderer deliveries must be flushed");
     console.log("webtab navigation checks passed");
   })

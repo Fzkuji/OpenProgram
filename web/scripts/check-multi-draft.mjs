@@ -417,4 +417,93 @@ assert.equal(
   "openBuiltinTab must never duplicate a builtin tab",
 );
 
+// Tearing a tab into a NEW window: the fresh window bootstraps with a lone
+// empty placeholder ("New chat" draft or ntp). Delivering the torn-off tab
+// must CONSUME that placeholder, not sit beside it (else two tabs appear).
+const { insertTransferredTabs, sessionTabId: sTabId } = tabsModule;
+const deliver = (id) => ({
+  tabs: [{ id: sTabId(id), kind: "session", title: "Torn", sessionId: id, draft: false }],
+  source: { windowId: "w1", kind: "tab" },
+  fileDrafts: [],
+  chats: [{ chatKey: id, wasActive: true }],
+});
+
+for (const placeholder of [
+  { id: "s:local_x", kind: "session", title: "", sessionId: "local_x", draft: true },
+  { id: "ntp:x", kind: "ntp", title: "" },
+]) {
+  useCenterTabs.setState({ tabs: [placeholder], activeId: placeholder.id, groups: [] });
+  // The real new-window self-pull passes consumePlaceholder: true (desktop-bridge
+  // claimPending); only that flag consumes the lone empty placeholder. Merging
+  // into an EXISTING window (L459 below) omits it, so the target tab survives.
+  const r = insertTransferredTabs(
+    deliver("torn1"),
+    { kind: "strip-end", consumePlaceholder: true },
+    { persist: false },
+  );
+  assert.ok(r.ok, "delivery into a fresh window succeeds");
+  assert.deepEqual(
+    useCenterTabs.getState().tabs.map((t) => t.id),
+    [sTabId("torn1")],
+    `an empty ${placeholder.kind} placeholder is consumed by the delivered tab`,
+  );
+}
+
+// A window with a real tab (or a draft the user typed into) keeps it: ADD.
+useCenterTabs.setState({
+  tabs: [{ id: sTabId("real"), kind: "session", title: "Real", sessionId: "real", draft: false }],
+  activeId: sTabId("real"),
+  groups: [],
+});
+const added = insertTransferredTabs(deliver("torn2"), { kind: "strip-end" }, { persist: false });
+assert.ok(added.ok);
+assert.deepEqual(
+  useCenterTabs.getState().tabs.map((t) => t.id),
+  [sTabId("real"), sTabId("torn2")],
+  "delivery into a window with real tabs appends, never consumes",
+);
+
+// (b) MERGE onto a lone draft: the draft is the merge target, so it must NOT
+// be consumed — the result is a group of [draft, delivered], nothing lost.
+useCenterTabs.setState({
+  tabs: [{ id: "s:local_merge", kind: "session", title: "", sessionId: "local_merge", draft: true }],
+  activeId: "s:local_merge",
+  groups: [],
+});
+const merged = insertTransferredTabs(
+  deliver("torn3"),
+  { kind: "merge", targetTabId: "s:local_merge" },
+  { persist: false },
+);
+assert.ok(merged.ok, "merge onto a lone draft succeeds");
+assert.deepEqual(
+  useCenterTabs.getState().tabs.map((t) => t.id),
+  ["s:local_merge", sTabId("torn3")],
+  "merge onto a lone draft keeps the draft as the merge target — never consumed",
+);
+assert.equal(
+  useCenterTabs.getState().groups.length,
+  1,
+  "merge onto a lone draft forms one group of [draft, delivered]",
+);
+assert.deepEqual(
+  useCenterTabs.getState().groups[0].memberIds,
+  ["s:local_merge", sTabId("torn3")],
+  "the merge group contains both the draft and the delivered tab",
+);
+
+// (c) a lone REAL (non-draft) tab is never a placeholder: strip-end appends.
+useCenterTabs.setState({
+  tabs: [{ id: sTabId("realsolo"), kind: "session", title: "Real", sessionId: "realsolo", draft: false }],
+  activeId: sTabId("realsolo"),
+  groups: [],
+});
+const appendedReal = insertTransferredTabs(deliver("torn4"), { kind: "strip-end" }, { persist: false });
+assert.ok(appendedReal.ok);
+assert.deepEqual(
+  useCenterTabs.getState().tabs.map((t) => t.id),
+  [sTabId("realsolo"), sTabId("torn4")],
+  "a lone real tab is kept; strip-end appends beside it",
+);
+
 console.log("multi-draft checks passed");

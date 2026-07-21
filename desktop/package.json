@@ -6,6 +6,7 @@
   "main": "main.js",
   "scripts": {
     "dev": "electron .",
+    "check": "npm run check:webtabs && npm run check:tab-transfer-store",
     "check:webtabs": "node scripts/check-webtab-navigation.js",
     "check:tab-transfer-store": "node scripts/check-tab-transfer-store.js",
     "icon:build": "bash scripts/build-icon.sh",
