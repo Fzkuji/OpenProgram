@@ -10,6 +10,7 @@
  * the same MENU_PANEL / itemCls every other menu in the app uses.
  */
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Bookmark, History, MoreVertical, Plus, Settings, SquarePlus } from "lucide-react";
 
@@ -42,6 +43,59 @@ export function MainMenu() {
   // Electron row once main.js exposes a create-window channel.
   const canOpenWindow = !desktopBridge();
   const label = text("Main menu", "主菜单");
+
+  // Desktop shell: the menu is a top-layer WebContentsView (covers native
+  // web tabs a DOM menu can't). Same actions as the Radix rows below,
+  // routed back through onAction.
+  const mainMenu = desktopBridge()?.mainMenu;
+  useEffect(() => {
+    if (!mainMenu) return;
+    return mainMenu.onAction((id) => {
+      switch (id) {
+        case "new-tab":
+          openNewTabPage();
+          break;
+        case "bookmarks":
+          openBuiltinTab("bookmarks");
+          break;
+        case "history":
+          openBuiltinTab("history");
+          break;
+        case "settings":
+          router.push("/settings");
+          break;
+      }
+    });
+  }, [mainMenu, openNewTabPage, openBuiltinTab, router]);
+
+  if (mainMenu) {
+    return (
+      <button
+        type="button"
+        className={styles.menuBtn}
+        title={label}
+        aria-label={label}
+        onClick={(e) => {
+          // Anchor: panel right edge sits 8px from the window's right (the
+          // same gutter the tab-strip buttons keep), and its top edge sits on
+          // the tab-strip's bottom divider so it covers the content below.
+          const strip = e.currentTarget.closest<HTMLElement>(
+            `.${styles.strip}`,
+          );
+          const dividerY = strip
+            ? Math.round(strip.getBoundingClientRect().bottom)
+            : Math.round(e.currentTarget.getBoundingClientRect().bottom);
+          const theme = document.documentElement.dataset.theme;
+          mainMenu.open({
+            anchor: { rightInset: 8, top: dividerY, vw: window.innerWidth },
+            theme: theme === "dark" || theme === "light" ? theme : undefined,
+          });
+        }}
+      >
+        <MoreVertical size={16} />
+      </button>
+    );
+  }
 
   return (
     <DropdownMenu>

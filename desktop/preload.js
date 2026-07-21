@@ -33,6 +33,20 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       return () => ipcRenderer.removeListener("webtab:state", listener);
     },
   },
+  // Main-menu overlay. The ⋮ menu is a top-layer WebContentsView (so it
+  // covers native web tabs a DOM menu can't). open() from the real UI
+  // window, choose()/close() from the overlay document, onAction() back on
+  // the real UI window. One preload serves both documents.
+  mainMenu: {
+    open: (opts) => ipcRenderer.send("main-menu:open", opts),
+    close: () => ipcRenderer.send("main-menu:close"),
+    choose: (id) => ipcRenderer.send("main-menu:choose", id),
+    onAction: (cb) => {
+      const listener = (_event, id) => cb(id);
+      ipcRenderer.on("main-menu:action", listener);
+      return () => ipcRenderer.removeListener("main-menu:action", listener);
+    },
+  },
   history: {
     list: (options) => ipcRenderer.invoke("history:list", options),
     remove: (url, visitedAt) =>

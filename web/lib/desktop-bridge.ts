@@ -207,6 +207,20 @@ export interface DesktopHistoryApi {
   clear(): Promise<boolean>;
 }
 
+/** The ⋮ main-menu overlay: a top-layer WebContentsView the desktop
+ *  shell opens so the menu covers native web-tab views. `open` from the
+ *  UI window; `onAction` receives the chosen action id back in the UI
+ *  window. Anchor: panel right edge sits `rightInset` px from the window
+ *  right (measured against `vw`), top edge on the strip divider `top`. */
+export interface DesktopMainMenuApi {
+  open(opts: {
+    anchor: { rightInset: number; top: number; vw: number };
+    theme?: "light" | "dark";
+  }): void;
+  close(): void;
+  onAction(cb: (id: string) => void): () => void;
+}
+
 export interface DesktopBridge {
   readonly isDesktop: true;
   readonly windowId: string;
@@ -218,6 +232,8 @@ export interface DesktopBridge {
   moveWindowBy?(dx: number, dy: number): void;
   webTab: DesktopWebTabApi;
   tabTransfer: DesktopTabTransferApi;
+  /** Top-layer ⋮ menu overlay. Absent in shells older than this build. */
+  mainMenu?: DesktopMainMenuApi;
   /** Absent in shells older than the browsing-history build. */
   history?: DesktopHistoryApi;
 }

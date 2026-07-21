@@ -1748,6 +1748,7 @@ function clearOwnedViews(ctx) {
 }
 
 function cleanupWindowContext(ctx) {
+  closeMainMenu(ctx);
   tabTransfers.contextDestroyed(ctx);
   clearOwnedViews(ctx);
   ctx.views.clear();
@@ -1759,7 +1760,135 @@ function cleanupWindowContext(ctx) {
   if (lastFocusedWindowId === ctx.id) lastFocusedWindowId = null;
 }
 
+// -------------------------------------------------------------- main menu
+//
+// The ⋮ main menu is its own top-layer WebContentsView loading the app's
+// /menu-overlay/main-menu route, added AFTER the web-tab views so it
+// covers them (a DOM Radix menu can't, since native views paint above the
+// DOM). Singleton per window; closes on outside click (its own blur),
+// Esc, window blur/resize, and after a choice.
+const MAIN_MENU_WIDTH = 224;
+const MAIN_MENU_HEIGHT = 220;
+// Extra room around the panel so its drop shadow isn't clipped by the
+// view's own edge (the panel itself is smaller than the view).
+const MAIN_MENU_GUTTER = 24;
+
+function menuOverlayUrl(theme) {
+  let origin = "http://127.0.0.1:" + WEB_PORT;
+  try {
+    origin = new URL(START_URL).origin;
+  } catch (_e) {
+    /* keep fallback */
+  }
+  const q = new URLSearchParams();
+  if (theme === "dark" || theme === "light") q.set("theme", theme);
+  return origin + "/menu-overlay/main-menu?" + q.toString();
+}
+
+function closeMainMenu(ctx) {
+  if (!ctx || !ctx.mainMenuView) return;
+  const view = ctx.mainMenuView;
+  ctx.mainMenuView = null;
+  try {
+    if (!ctx.win.isDestroyed()) ctx.win.contentView.removeChildView(view);
+  } catch (_e) {
+    /* already detached */
+  }
+  try {
+    view.webContents.close();
+  } catch (_e) {
+    /* already closed */
+  }
+}
+
+function openMainMenu(ctx, opts) {
+  if (!ctx || ctx.win.isDestroyed()) return;
+  closeMainMenu(ctx);
+  const view = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      transparent: true,
+      additionalArguments: [`--openprogram-window-id=${ctx.id}`],
+    },
+  });
+  view.setBackgroundColor("#00000000");
+  ctx.mainMenuView = view;
+  ctx.win.contentView.addChildView(view);
+
+  // Anchor: the panel's right edge sits `rightInset` (8px, the tab-strip
+  // gutter) from the window's right; its top edge sits on the strip's bottom
+  // divider so the menu covers the content below. The view is GUTTER wider
+  // and taller than the panel on every side (transparent room for the drop
+  // shadow), so the panel is inset by GUTTER inside the view — offset the
+  // view accordingly. The renderer measures against its own viewport, so use
+  // the viewport width it reports, not getContentBounds (which can disagree).
+  const anchor = (opts && opts.anchor) || {};
+  const { width: cbW } = ctx.win.getContentBounds();
+  const winW = Number(anchor.vw) || cbW;
+  const rightInset = Number.isFinite(anchor.rightInset) ? anchor.rightInset : 8;
+  const panelTop = Number.isFinite(anchor.top) ? anchor.top : 40;
+  const viewW = MAIN_MENU_WIDTH + MAIN_MENU_GUTTER * 2;
+  const viewH = MAIN_MENU_HEIGHT + MAIN_MENU_GUTTER * 2;
+  // Panel right edge = winW - rightInset. Panel right = view.x + GUTTER + WIDTH.
+  let x = Math.round(winW - rightInset - MAIN_MENU_WIDTH - MAIN_MENU_GUTTER);
+  const minX = -MAIN_MENU_GUTTER; // panel left at window 0
+  x = Math.round(Math.max(minX, x));
+  // Panel top = panelTop. Panel top = view.y + GUTTER.
+  const y = Math.round(panelTop - MAIN_MENU_GUTTER);
+  view.setBounds({ x, y, width: viewW, height: viewH });
+
+  const theme = opts && opts.theme;
+  view.webContents
+    .loadURL(menuOverlayUrl(theme))
+    .then(() => {
+      if (ctx.mainMenuView === view && !view.webContents.isDestroyed()) {
+        view.webContents.focus();
+      }
+    })
+    .catch(() => {});
+  // Outside click steals focus from this view → close.
+  view.webContents.on("blur", () => {
+    if (ctx.mainMenuView === view) closeMainMenu(ctx);
+  });
+}
+
+// The menu overlay runs in a WebContentsView, whose webContents does NOT
+// resolve via BrowserWindow.fromWebContents — find its owning window by
+// matching the sender against each context's mainMenuView.
+function contextForMenuSender(event) {
+  const fromWindow = contextForSender(event);
+  if (fromWindow) return fromWindow;
+  const sender = event?.sender;
+  if (!sender) return null;
+  for (const ctx of windows.values()) {
+    if (
+      ctx.mainMenuView
+      && !ctx.win.isDestroyed()
+      && ctx.mainMenuView.webContents === sender
+    ) {
+      return ctx;
+    }
+  }
+  return null;
+}
+
 function registerWebTabIpc() {
+  ipcMain.on("main-menu:open", (event, opts) => {
+    const ctx = contextForSender(event);
+    if (ctx) openMainMenu(ctx, opts || {});
+  });
+  ipcMain.on("main-menu:close", (event) => {
+    const ctx = contextForMenuSender(event);
+    if (ctx) closeMainMenu(ctx);
+  });
+  ipcMain.on("main-menu:choose", (event, id) => {
+    const ctx = contextForMenuSender(event);
+    if (!ctx) return;
+    ctx.win.webContents.send("main-menu:action", id);
+    closeMainMenu(ctx);
+  });
   ipcMain.on("webtab:ensure", (event, id, url) => {
     const ctx = contextForSender(event);
     if (ctx) ensureView(ctx, id, url);
@@ -2104,6 +2233,11 @@ async function createWindow(options = {}) {
   windows.set(windowId, ctx);
   contextsByBrowserWindowId.set(win.id, ctx);
   win.on("focus", () => { lastFocusedWindowId = ctx.id; });
+  // The main-menu overlay is anchored to the ⋮ button; a window blur or
+  // resize invalidates its position — dismiss it. (Its own view blur
+  // handles outside clicks inside the window.)
+  win.on("blur", () => closeMainMenu(ctx));
+  win.on("resize", () => closeMainMenu(ctx));
   win.on("close", (event) => {
     if (tabTransfers.windowClosing(ctx, event)) return;
     saveWindowState(win);
