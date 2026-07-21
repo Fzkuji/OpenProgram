@@ -7,9 +7,140 @@
    visual weight in the user-menu footer and other UI text. */
 @import "@fontsource-variable/inter";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* v4 auto-detects sources from the CSS file's location, but this app is a
+   sub-package of a larger monorepo, so scope the scan explicitly to the
+   web/ source dirs (was `content: [...]` in tailwind.config.ts). */
+@source ".";
+@source "../components";
+@source "../pages";
+
+/* Dark mode is toggled by a `.dark` class on an ancestor (was
+   `darkMode: ["class"]` in the old tailwind.config.ts). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens → Tailwind utility names. Mirrors app/styles/base.css
+   (:root), which stays the single source of truth — this block only
+   hands Tailwind the utility aliases (was theme.extend in
+   tailwind.config.ts). CSS vars remain usable via `var(--xxx)` too. */
+@theme {
+  /* generic shadcn-style slots */
+  --color-border: var(--border);
+  --color-border-light: var(--border-light);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  /* text / bg roles — auto theme-aware via var(--xxx) */
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-bright: var(--text-bright);
+  --color-text-muted: var(--text-muted);
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-bg-hover: var(--bg-hover);
+  --color-bg-hover-contrast: var(--bg-hover-contrast);
+  --color-bg-input: var(--bg-input);
+  --color-bg-selected: var(--bg-selected);
+  --color-user-msg-bg: var(--user-msg-bg);
+  --color-assistant-msg-bg: var(--assistant-msg-bg);
+
+  /* fixed accents */
+  --color-accent-blue: var(--accent-blue);
+  --color-accent-green: var(--accent-green);
+  --color-accent-red: var(--accent-red);
+  --color-accent-yellow: var(--accent-yellow);
+  --color-accent-purple: var(--accent-purple);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-orange: var(--accent-orange);
+
+  /* sidebar nav colors — diverge from text-* in light mode */
+  --color-nav-color: var(--nav-color);
+  --color-nav-color-hover: var(--nav-color-hover);
+
+  /* radius. `--radius-lg` is defined in base.css :root as 12px; naming it
+     the same here would self-reference, so inline the literal (kept in
+     sync with base.css). --radius-md aliases base.css's --radius. */
+  --radius-lg: 12px;
+  --radius-md: var(--radius);
+  --radius-sm: 6px;
+  --radius-composer-corner: var(--composer-corner);
+
+  /* families. base.css :root already defines --font-mono / --font-sans;
+     re-aliasing them here would self-reference, so inline the same stacks
+     (kept in sync with base.css). */
+  --font-mono: "JetBrains Mono", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", ui-monospace, monospace;
+  --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+
+  /* font sizes → text-fs-* */
+  --text-fs-sm: var(--fs-sm);
+  --text-fs-base: var(--fs-base);
+  --text-fs-md: var(--fs-md);
+  --text-fs-lg: var(--fs-lg);
+
+  /* spacing aliases */
+  --spacing-composer-button: var(--composer-button-size);
+  --spacing-composer-offset: var(--composer-button-offset);
+  --spacing-composer-pad: var(--composer-bottom-row-pad);
+  --spacing-composer-row: var(--composer-bottom-row-h);
+  --spacing-sidebar-w: var(--sidebar-width);
+  --spacing-detail-w: var(--detail-width);
+
+  /* transition timing */
+  --ease-composer: cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  /* animations */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-spin-refresh: spin-refresh 0.6s ease-in-out;
+}
+
+@keyframes accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
+}
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
+}
+@keyframes spin-refresh {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* v4 compat: Tailwind v4 changed the default border / divider / ring
+   colour from gray-200 to `currentColor`, and the default ring width
+   from 3px to 1px. Every bare `border` / `divide` / `ring` utility in
+   the codebase was written against the v3 defaults, so restore them
+   here to keep the upgrade pixel-identical. (Official v4 migration
+   guide's recommended shim.) */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+}
 
 /* shadcn token bridge so shadcn/ui components keep working */
 :root {
