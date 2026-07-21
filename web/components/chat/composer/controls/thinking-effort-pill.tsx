@@ -255,7 +255,7 @@ const ThinkingEffortSliderPill = React.forwardRef<
              标题→标签 16、标签→轨 10。header（muted 维度 + bright 值
              + help）、Faster/Smarter 两端标签、点刻度滑轨。 */
           <div
-            className={`effort-card ${value === "max" ? "effort-ultra" : ""} rounded-[12px] border border-[var(--border-popover)] bg-[var(--surface-popover)] p-[10px] shadow-(--shadow-popover)`}
+            className={`effort-card ${value === "max" ? "effort-ultra" : ""} rounded-[12px] border border-[var(--border-popover)] bg-[var(--surface-popover)] p-[10px] shadow-[var(--shadow-popover)]`}
           >
             <div className="flex items-center gap-[6px] text-[13px] leading-[18px]">
               <span className="text-text-muted">{text("Effort", "思考力度")}</span>

@@ -26,7 +26,7 @@ export const MENU_PANEL =
   // 6px 衬、行自带圆角 hover（用户点名不要 Claude 的通铺行）。
   "flex max-h-[60vh] flex-col overflow-y-auto rounded-[10px] " +
   "border border-[var(--border-popover)] " +
-  "bg-[var(--surface-popover)] p-[6px] shadow-(--shadow-popover)";
+  "bg-[var(--surface-popover)] p-[6px] shadow-[var(--shadow-popover)]";
 
 export const GROUP_LABEL =
   // Claude 实测：标题 12px / 行 13px，块高 21px、底缘贴第一行。
