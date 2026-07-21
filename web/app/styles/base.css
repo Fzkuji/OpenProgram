@@ -1,5 +1,10 @@
 /* ===== Reset & Base ===== */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* Tailwind v4's preflight (in @layer base) already applies
+   box-sizing:border-box, margin:0 and padding:0. Re-declaring it here as
+   an UNLAYERED `*` rule made it beat every `@layer utilities` spacing
+   utility (px-2, p-4, …) — unlayered rules always win over layered ones —
+   which zeroed out all Tailwind padding across the app. Removed; preflight
+   covers it. */
 
 :root {
   /* Layout & typography (shared) */

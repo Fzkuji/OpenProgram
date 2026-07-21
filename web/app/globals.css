@@ -126,19 +126,20 @@
   to { transform: rotate(360deg); }
 }
 
-/* v4 compat: Tailwind v4 changed the default border / divider / ring
-   colour from gray-200 to `currentColor`, and the default ring width
-   from 3px to 1px. Every bare `border` / `divide` / `ring` utility in
-   the codebase was written against the v3 defaults, so restore them
-   here to keep the upgrade pixel-identical. (Official v4 migration
-   guide's recommended shim.) */
+/* v4 compat: v4's default border colour is `currentColor` (v3 was
+   gray-200). ~43 bare `border` utilities across cards / inputs / dialogs /
+   popovers were written for the v3 default and now paint in text colour
+   (the orange picker ring, dark input outlines, etc.). Restore the app
+   hairline the v4-recommended way — the official `*` border shim — using
+   our own `--border` token as the value. CSS-module separators (sidebar,
+   tab strip, composer) already set `var(--border)` explicitly and are
+   unaffected; elements with an explicit `border-[...]` colour win on
+   specificity. */
 @layer base {
   *,
   ::after,
-  ::before,
-  ::backdrop,
-  ::file-selector-button {
-    border-color: var(--color-gray-200, currentColor);
+  ::before {
+    border-color: var(--border);
   }
 }
 
