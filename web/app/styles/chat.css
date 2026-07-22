@@ -1302,25 +1302,88 @@
      故不能用固定 left:100%）。translateY(-50%) 让卡片纵向对齐命中条中点。 */
   transform: translateY(-50%);
   width: 300px;
-  /* 弹层统一配方：popover 白面 + 10px 圆角 + 真 border + 投影。 */
+  /* 复刻 codex 预览卡：深灰面板 + 微亮细边，无投影。 */
   background: var(--surface-popover);
-  border: 1px solid var(--border-popover);
-  border-radius: 10px;
-  padding: 8px 10px;
-  box-shadow: var(--shadow-popover);
+  border: 1px solid color-mix(in srgb, var(--text-bright) 9%, transparent);
+  border-radius: 14px;
+  padding: 12px 14px;
   pointer-events: none;
 }
+/* codex 风格：顶行 = 用户输入，亮色、单行截断（像标题）。 */
 .msg-rail-card-text {
-  color: var(--text-primary);
-  font-size: 13px;
-  line-height: 1.4;
+  color: var(--text-bright);
+  font-size: 14px;
+  line-height: 1.45;
   overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.msg-rail-card-text * {
+  display: inline;
+  white-space: nowrap;
+}
+.msg-rail-card .user-attachments { margin-top: 8px; }
+/* 下面 = 模型输出开头，灰色多行，无分隔线。
+   卡内一切块间距统一 6px（含摘要内部的 markdown 段间距），否则
+   标题→摘要(块间距) 和 摘要段落之间(p 间距) 一疏一密。 */
+.msg-rail-card-reply {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  /* 行钳截断（整行 + 省略号）。max-height 截不准——markdown 段落
+     的 margin 会让第三行被拦腰切半。内部块级全部压成 inline，段落
+     间补一个空格，摘要就是参照那种连续一段灰字。 */
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   word-break: break-word;
 }
-.msg-rail-card .user-attachments { margin-top: 6px; }
+.msg-rail-card-reply * {
+  display: inline;
+  margin: 0;
+}
+.msg-rail-card-reply p::after,
+.msg-rail-card-reply li::after {
+  content: " ";
+}
+/* 卡片内 markdown 标题不放大（两段均已压成 inline，无边距问题）。 */
+.msg-rail-card-text h1,
+.msg-rail-card-text h2,
+.msg-rail-card-text h3,
+.msg-rail-card-text h4,
+.msg-rail-card-reply h1,
+.msg-rail-card-reply h2,
+.msg-rail-card-reply h3,
+.msg-rail-card-reply h4 {
+  font-size: inherit;
+  font-weight: 600;
+}
+.msg-rail-card .turn-files-chips { margin-top: 6px; gap: 12px; }
+/* 卡内文件行学 GPT/codex：去胶囊，小文档图标 + 灰文件名，和上文
+   完全左对齐（胶囊的内边距会让文字看着缩进、三段对不齐）。 */
+.msg-rail-card .turn-files-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.msg-rail-card .turn-files-chip::before {
+  content: "";
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  background: currentColor;
+  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M15 2v5h5"/></svg>')
+    center / contain no-repeat;
+}
 
 /* 一行态的 attach 卡（顶层 /task 斜杠路径仍用）：头部即全部。 */
 .attach-card[data-expanded="0"] .attach-card-header { border-bottom: none; }

@@ -320,7 +320,7 @@ export function ProjectBadge() {
       <PopoverContent
         side="top"
         align="start"
-        sideOffset={6}
+        sideOffset={10}
         className="w-auto border-0 bg-transparent p-0 shadow-none"
       >
         <ProjectMenu onClose={() => setOpen(false)} />

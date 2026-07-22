@@ -5,14 +5,11 @@ import * as PopoverPrimitive from "@radix-ui/react-popover"
 
 import { cn } from "@/lib/utils"
 
-// Default to modal so an open popover (channel / project / agent /
-// permission picker) behaves like Chrome/Claude: a pointer-events shield
-// covers the rest of the page, so hovering other buttons doesn't fire
-// their hover styles or tooltips. Callers can still pass `modal={false}`.
-const Popover = (
-  props: React.ComponentProps<typeof PopoverPrimitive.Root>,
-) => <PopoverPrimitive.Root modal {...props} />
-Popover.displayName = "Popover"
+// NON-modal on purpose. Modal mode's pointer-events shield killed ALL
+// page interaction while a menu was open (no scrolling, no window drag) —
+// far more than the ask. The real requirement — "no tooltips while a
+// menu is open" — is handled by a guard inside HoverTip itself.
+const Popover = PopoverPrimitive.Root
 
 const PopoverTrigger = PopoverPrimitive.Trigger
 

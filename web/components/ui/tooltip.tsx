@@ -52,11 +52,15 @@ function HoverTip({ label, children, side = "top" }: HoverTipProps) {
         onOpenChange={(next) => {
           // trigger 挂着已打开的弹层（PopoverTrigger/Menu 会标
           // aria-expanded="true"）时不再冒提示——弹窗里自带解释，
-          // 提示只会和弹窗叠在一起。
+          // 提示只会和弹窗叠在一起。页面上任何菜单/弹层开着时也不
+          // 冒（轻量守卫，替代 modal 的全页交互屏蔽）。
           if (
             next &&
             (triggerRef.current?.getAttribute("aria-expanded") === "true" ||
-              !pointerInside.current)
+              !pointerInside.current ||
+              document.querySelector(
+                '[data-radix-popper-content-wrapper] :is([role="dialog"],[role="menu"])',
+              ) != null)
           ) {
             return
           }

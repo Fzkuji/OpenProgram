@@ -12,7 +12,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
+import { Markdown } from "@/lib/format-utils/markdown";
 import { parseUserAttachments, UserAttachments } from "./user-attachments";
+import { TurnFilesChips } from "./turn-files-chips";
 
 const EMPTY_ORDER: string[] = [];
 
@@ -21,7 +23,15 @@ const BASE_W = 9; // 静息宽度 px
 const MAX_EXTRA_W = 26; // 放大最多再加的宽度 px
 const GAP = 10; // 刻度间距 px（固定，不随消息数压缩；超长时 rail 内部滚动）
 
-function useUserMessages(): Array<{ id: string; content: string; preview: string }> {
+type RailMsg = {
+  id: string;
+  content: string;
+  preview: string;
+  assistantId?: string;
+  assistantSummary?: string;
+};
+
+function useUserMessages(): RailMsg[] {
   // 订阅稳定引用（selector 里造新数组会无限重渲染，React #185），
   // 派生列表用 useMemo。
   const sid = useSessionStore((s) => s.currentSessionId);
@@ -29,14 +39,34 @@ function useUserMessages(): Array<{ id: string; content: string; preview: string
     (sid ? s.messageOrder[sid] : undefined) || EMPTY_ORDER);
   const byId = useSessionStore((s) => s.messagesById);
   return useMemo(() => {
-    const out: Array<{ id: string; content: string; preview: string }> = [];
-    for (const id of order) {
-      const m = byId[id];
+    const out: RailMsg[] = [];
+    for (let i = 0; i < order.length; i++) {
+      const m = byId[order[i]];
       if (!m || m.role !== "user") continue;
       if (m.display === "runtime") continue;
       const preview = (m.content || "").replace(/\s+/g, " ").trim();
       if (!preview) continue;
-      out.push({ id, content: m.content || "", preview: preview.slice(0, 60) });
+      // 紧随其后的第一条非-runtime 助手回复：取它的 id + 开头摘要。
+      let assistantId: string | undefined;
+      let assistantSummary: string | undefined;
+      for (let j = i + 1; j < order.length; j++) {
+        const a = byId[order[j]];
+        if (!a) continue;
+        if (a.role === "user") break;
+        if (a.role !== "assistant" || a.display === "runtime") continue;
+        assistantId = a.id;
+        const t = a.blocks?.find((b) => b.type === "text")?.text ?? a.content ?? "";
+        // 保留原始空白/换行，让预览卡按 markdown 渲染；只按长度截断。
+        assistantSummary = t.trim().slice(0, 200);
+        break;
+      }
+      out.push({
+        id: order[i],
+        content: m.content || "",
+        preview: preview.slice(0, 60),
+        assistantId,
+        assistantSummary: assistantSummary || undefined,
+      });
     }
     return out;
   }, [order, byId]);
@@ -76,15 +106,37 @@ function scrollToMsg(id: string): void {
 }
 
 /** 单条消息的预览卡 — 只有悬停/聚焦那条才渲染（惰性解析附件）。 */
-function PreviewCard({ content, top, left }: { content: string; top: number; left: number }) {
+function PreviewCard({
+  content,
+  top,
+  left,
+  assistantSummary,
+  assistantId,
+}: {
+  content: string;
+  top: number;
+  left: number;
+  assistantSummary?: string;
+  assistantId?: string;
+}) {
   const { attachments, text } = useMemo(
     () => parseUserAttachments(content),
     [content],
   );
   return (
     <div className="msg-rail-card" style={{ top, left }} role="presentation">
-      {text ? <div className="msg-rail-card-text">{text}</div> : null}
+      {text ? (
+        <div className="msg-rail-card-text">
+          <Markdown source={text} />
+        </div>
+      ) : null}
       <UserAttachments items={attachments} />
+      {assistantSummary ? (
+        <div className="msg-rail-card-reply">
+          <Markdown source={assistantSummary} />
+        </div>
+      ) : null}
+      {assistantId ? <TurnFilesChips assistantMsgId={assistantId} /> : null}
     </div>
   );
 }
@@ -213,13 +265,19 @@ export function MessageRail() {
           const r = el?.getBoundingClientRect();
           const top = el && ar && r ? r.top - ar.top + r.height / 2 : 0;
           const rail = railRef.current?.getBoundingClientRect();
-          // 贴在 rail 右缘外侧 8px。
-          const left = rail && ar ? rail.right - ar.left + 8 : 0;
+          // 用"最宽刻度"的静态几何算 left（rail 左缘 + 左内边距 12 +
+          // 最大刻度宽 + 8px 间隙）。不能用 rail.right：坡度加宽会把
+          // rail 撑宽，初次 hover 时按旧宽度定位的卡片会压在线上。
+          const left = rail && ar
+            ? rail.left - ar.left + 12 + BASE_W + MAX_EXTRA_W + 12
+            : 0;
           return (
             <PreviewCard
               content={msgs[hoverIdx].content}
               top={top}
               left={left}
+              assistantSummary={msgs[hoverIdx].assistantSummary}
+              assistantId={msgs[hoverIdx].assistantId}
             />
           );
         })()
