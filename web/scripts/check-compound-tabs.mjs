@@ -122,10 +122,12 @@ assert.deepEqual(drag.resolveTabDropIntent(rect, 300, target), {
   targetTabId: "target",
 });
 
-// Pointer drag contract: 4px start threshold, geometric detach with an
-// 8px hysteresis band around the strip's edges (no distance dead-zone).
-assert.equal(drag.DRAG_START_THRESHOLD_PX, 4);
-assert.equal(drag.DETACH_HYSTERESIS_PX, 8);
+// Pointer drag contract: 6px start threshold (≈ Chrome slop); detach needs
+// the cursor a full tab-height (40px) past the strip edge, so a small twitch
+// doesn't close the slot. Come-home is asymmetric (strip rect) — see
+// check-center-tabs.mjs.
+assert.equal(drag.DRAG_START_THRESHOLD_PX, 6);
+assert.equal(drag.DETACH_HYSTERESIS_PX, 40);
 assert.equal(drag.DETACH_DISTANCE_PX, undefined, "the distance dead-zone is gone");
 
 // Dragging in the strip is PURE REORDER — Chrome's model. Every merge

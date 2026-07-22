@@ -73,13 +73,21 @@ export function createTabDragCoordinator(): {
   };
 }
 
-/** Pointer travel (px) before a pressed tab becomes a drag. */
-export const DRAG_START_THRESHOLD_PX = 4;
-/** Hysteresis band (px) around the tab strip's vertical edges. Detach begins
- *  the instant the cursor leaves the strip's rectangle by this much (Chrome
- *  has no distance dead-zone), and only comes home when the cursor is back
- *  this far inside — so a cursor resting on the edge does not thrash. */
-export const DETACH_HYSTERESIS_PX = 8;
+/** Pointer travel (px) before a pressed tab becomes a drag. 6px ≈ Chrome's
+ *  own tab slop, so a slightly shaky press no longer starts a drag. */
+export const DRAG_START_THRESHOLD_PX = 6;
+/** How far (px) the cursor must clear the strip's top/bottom edge before a
+ *  detach (tear-off) begins. Sized to a full tab-height (~40px strip) so
+ *  detach + the slot-close animation only fire once the tab is genuinely
+ *  pulled a whole row out — a small twitch past the edge no longer reads as
+ *  the neighbours filling the gap "before the tab had left".
+ *
+ *  Come-home (cancel) is asymmetric on purpose: the moment the cursor is
+ *  back INSIDE the strip rectangle it cancels, no inner dead-band. A single
+ *  symmetric band this large is impossible on a 40px strip (its inside would
+ *  be empty), so entry uses this margin while come-home only needs the strip
+ *  rect — see the move handler. */
+export const DETACH_HYSTERESIS_PX = 40;
 
 /** Share of a neighbour the dragged tab must cover before they swap.
  *  Overlap ÷ neighbour width, so unequal widths behave correctly; for

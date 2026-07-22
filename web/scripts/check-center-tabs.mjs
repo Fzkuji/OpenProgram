@@ -215,12 +215,12 @@ assert.match(pointerMove, /e\.clientY > drag\.stripBottom \+ DETACH_HYSTERESIS_P
   "detach must begin when the cursor leaves the strip's bottom edge");
 assert.match(pointerMove, /e\.clientY < drag\.stripTop - DETACH_HYSTERESIS_PX/,
   "detach must also begin when the cursor leaves the strip's top edge");
-// Hysteresis: come home only when clearly back INSIDE the band, so a cursor
-// resting on the edge does not thrash between attached and detached.
-assert.match(pointerMove, /e\.clientY < drag\.stripBottom - DETACH_HYSTERESIS_PX/,
-  "coming home must require the cursor clearly inside the bottom edge");
-assert.match(pointerMove, /e\.clientY > drag\.stripTop \+ DETACH_HYSTERESIS_PX/,
-  "coming home must require the cursor clearly inside the top edge");
+// Asymmetric hysteresis: ENTER detach a full tab-height past the edge (above),
+// but COME HOME the moment the cursor is back inside the strip rectangle — a
+// symmetric inner band that wide is impossible on a ~40px strip. So cancel is
+// keyed on the plain strip rect, not an inner-inset band.
+assert.match(pointerMove, /e\.clientY <= drag\.stripBottom && e\.clientY >= drag\.stripTop/,
+  "coming home (cancel) must trigger as soon as the cursor is back inside the strip rect");
 // Drop-to-place: leaving the strip only shows detach-intent (translucent,
 // slot closed). No window is created mid-drag — macOS starves JS timers
 // during the button-held modal loop, so live cursor-follow is impossible.

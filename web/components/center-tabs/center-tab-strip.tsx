@@ -65,7 +65,6 @@ import { useTranslation } from "@/lib/i18n";
 import styles from "./center-tabs.module.css";
 import {
   computeLiveShifts,
-  closeGapShifts,
   collectPointerDropTargets,
   shiftStyle,
   visibleStripBounds,
@@ -171,6 +170,11 @@ function labelOf(
   if (tab.draft) return text("New chat", "新会话");
   return tab.title || t("sidebar.untitled");
 }
+
+/** Stable empty shift map — used while detaching, when neighbours must not
+ *  move to fill the leaving tab's slot. A shared frozen instance avoids a new
+ *  Map every render. */
+const EMPTY_SHIFTS: ReadonlyMap<string, number> = new Map();
 
 export function CenterTabStrip() {
   const router = useRouter();
@@ -642,12 +646,15 @@ export function CenterTabStrip() {
   });
 
   // Live-reorder geometry for this render: entry id → translateX px.
-  // While detaching there is no drop marker (the tab is leaving the strip),
-  // so instead every entry after the dragged one slides left to close the
-  // vacated slot. Both paths ride the same `transform 160ms ease` on .tab,
-  // so the gap closes smoothly rather than snapping shut.
+  // While detaching, the dragged tab is being pulled OUT to a new window
+  // but hasn't left yet — the user wants its slot to stay put (the
+  // neighbours must NOT slide in to fill it), so that dragging back in
+  // simply cancels with nothing to un-shift. The gap only closes once the
+  // tab is actually gone (removed from stripEntries at release), which the
+  // normal layout handles. So detaching contributes no shifts; only an
+  // in-strip reorder (with a drop marker) moves neighbours.
   const liveShifts = detaching
-    ? closeGapShifts(stripEntries, draggedIds, dragWidth)
+    ? EMPTY_SHIFTS
     : computeLiveShifts(stripEntries, draggedIds, dropMarker, dragWidth);
 
   // The dragged tab's transform is written imperatively on every
@@ -939,14 +946,29 @@ export function CenterTabStrip() {
     // window (above) or merges onto another window (overWindow). So detach is
     // gated off whenever this is a solo window.
     const detachCapable = hasTransferToken && !isSoloWindow;
+    // Asymmetric hysteresis: ENTER detach only after the cursor clears the
+    // strip edge by a full tab-height (so the slot doesn't close on a small
+    // twitch), but CANCEL (come home) the moment the cursor is back inside
+    // the strip rectangle — a symmetric inner band this wide is impossible
+    // on a ~40px strip. This makes "drag out to detach, drag back in to
+    // cancel" work at the strip edge, not one tab-height inside it.
     const belowStrip = e.clientY > drag.stripBottom + DETACH_HYSTERESIS_PX;
     const aboveStrip = e.clientY < drag.stripTop - DETACH_HYSTERESIS_PX;
     const insideBand =
-      e.clientY < drag.stripBottom - DETACH_HYSTERESIS_PX
-      && e.clientY > drag.stripTop + DETACH_HYSTERESIS_PX;
+      e.clientY <= drag.stripBottom && e.clientY >= drag.stripTop;
     let nextDetaching = drag.detaching;
     if (detachCapable && (belowStrip || aboveStrip)) nextDetaching = true;
-    else if (insideBand) nextDetaching = false;
+    else if (insideBand) {
+      nextDetaching = false;
+      // Dragging back INTO the strip cancels the tear-off. Clear the
+      // cross-window intent here too — otherwise `overWindow`, which only
+      // clears on the next async hit-test poll, can lag and make release
+      // (`drag.detaching || drag.overWindow`) still detach/merge even
+      // though the cursor is home. Synchronising it with come-home makes
+      // "drag out to detach, drag back in to cancel" reliable.
+      drag.overWindow = false;
+      setDetachOverTarget(false);
+    }
     if (nextDetaching !== drag.detaching) setDetaching(nextDetaching);
     drag.detaching = nextDetaching;
     // Drop-to-place: while dragging out of the strip the tab shows detach-intent
