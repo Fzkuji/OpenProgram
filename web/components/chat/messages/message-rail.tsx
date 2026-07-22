@@ -190,6 +190,28 @@ export function MessageRail() {
     };
   }, [msgs]);
 
+  // 条带封顶：尽量高（贴着 80vh 上限），但底缘停在 composer（含
+  // Local/项目 chip 行）上方 12px——锚点 sticky 在 45%，纯 CSS 公式
+  // 对不准真实 composer 高度，直接量几何算。
+  useEffect(() => {
+    const rail = railRef.current;
+    const area = document.getElementById("chatArea");
+    const ia = document.querySelector('[class*="inputArea"]');
+    if (!rail || !area || !ia) return;
+    const fit = () => {
+      const ar = area.getBoundingClientRect();
+      const iaTop = ia.getBoundingClientRect().top;
+      const center = ar.top + ar.height * 0.45; // .msg-rail-anchor 的 sticky 位置
+      const half = Math.min(center - ar.top - 16, iaTop - 12 - center);
+      rail.style.maxHeight = `${Math.max(120, Math.round(half * 2))}px`;
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(area);
+    ro.observe(ia);
+    return () => ro.disconnect();
+  }, [msgs.length]);
+
   // 条带区域整块吞掉滚轮：条自己能滚就滚自己（0.5×，原生增量太冲），
   // 滚不动也绝不透传给聊天区——鼠标压在条带上时聊天永远不动。React
   // 的 onWheel 是 passive 的没法 preventDefault，挂原生监听。
