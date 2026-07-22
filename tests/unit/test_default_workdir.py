@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.agent.internals._workdir import apply_default_workdir, session_workdir_for
+from openprogram.agent.internals._workdir import (
+    apply_default_workdir,
+    project_workdir_for,
+    session_workdir_for,
+)
 
 
 class _FakeRuntime:
@@ -71,6 +75,45 @@ def test_apply_default_workdir_unknown_session(store):
     rt = _FakeRuntime()
     assert apply_default_workdir(rt, "nope") is None
     assert rt.calls == 0
+
+
+class _FakeProject:
+    def __init__(self, path, is_default=False):
+        self.path = path
+        self.is_default = is_default
+
+
+def _bind_project(monkeypatch, proj):
+    from openprogram.store import project_store
+    monkeypatch.setattr(project_store, "project_for_session",
+                        lambda sid: proj)
+
+
+def test_project_workdir_for_prefers_project_path(store, tmp_path, monkeypatch):
+    proj_dir = tmp_path / "myproj"
+    proj_dir.mkdir()
+    _bind_project(monkeypatch, _FakeProject(str(proj_dir)))
+    assert project_workdir_for("sess1") == proj_dir
+    rt = _FakeRuntime()
+    applied = apply_default_workdir(rt, "sess1")
+    assert applied == proj_dir
+    assert rt.last_workdir == str(proj_dir)
+
+
+def test_project_workdir_for_default_project_falls_back(store, tmp_path, monkeypatch):
+    """The default project never overrides the session workdir."""
+    _bind_project(monkeypatch, _FakeProject(str(tmp_path), is_default=True))
+    assert project_workdir_for("sess1") is None
+    rt = _FakeRuntime()
+    applied = apply_default_workdir(rt, "sess1")
+    assert applied is not None
+    assert applied.name == "workdir"
+
+
+def test_project_workdir_for_missing_dir_falls_back(store, tmp_path, monkeypatch):
+    """A bound project whose path vanished must not become the cwd."""
+    _bind_project(monkeypatch, _FakeProject(str(tmp_path / "gone")))
+    assert project_workdir_for("sess1") is None
 
 
 def test_apply_default_workdir_swallows_setter_exception(store):

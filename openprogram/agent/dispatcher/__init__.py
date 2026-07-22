@@ -392,6 +392,15 @@ def process_user_turn(
         _active_wt = _wt_mgr.find_active_for_session(req.session_id)
         if _active_wt is not None:
             _worktree_token = _set_wt(_active_wt.worktree_path)
+        else:
+            # No explicit worktree → default this turn's tool cwd to the
+            # session's bound (non-default) project path. Resolved fresh
+            # every turn, so a mid-chat set_session_project takes effect
+            # on the next turn without moving the session repo.
+            from openprogram.agent.internals._workdir import project_workdir_for
+            _proj_wd = project_workdir_for(req.session_id)
+            if _proj_wd is not None:
+                _worktree_token = _set_wt(str(_proj_wd))
     except Exception:
         _worktree_token = None
     # Layer 6 (Claude Code's shouldDefer / ToolSearch): install a

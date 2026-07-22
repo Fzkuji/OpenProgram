@@ -462,6 +462,30 @@ async def handle_chat(ws, cmd: dict):
         peer=new_peer,
     )
     session_id = conv["id"]
+
+    # Project binding MUST happen before the first DB write below (the
+    # title backfill / run-config / _append_msg all update_session with
+    # create_if_missing=True, which would materialise the session repo
+    # at the home root). create_session is the only path that can place
+    # the repo inside the project (<project>/.openprogram/sessions/<id>/),
+    # so when the composer sent the picker's project_id with the first
+    # message, create the session with it right here. Existing sessions
+    # are untouched — mid-chat project switches go through
+    # set_session_project and never move the repo.
+    project_id = (cmd.get("project_id") or "").strip() or None
+    if project_id:
+        try:
+            from openprogram.agent.session_db import default_db as _proj_db
+            _pdb = _proj_db()
+            if _pdb.get_session(session_id) is None:
+                _pdb.create_session(
+                    session_id,
+                    agent_id or _s._default_agent_id(),
+                    project_id=project_id,
+                )
+        except Exception:
+            pass
+
     from openprogram.agent.session_config import save_session_run_config
     run_cfg = save_session_run_config(
         session_id,

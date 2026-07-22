@@ -292,8 +292,11 @@ def with_tool_runtime_prompt(system_prompt: str, tools: Optional[list]) -> str:
     if not names:
         return system_prompt
 
+    # Per-turn cwd: prefer the worktree / project path bound to the
+    # worktree ContextVar (see internals/_model_tools.py — kept in sync).
     from openprogram.paths import get_default_workdir
-    cwd = get_default_workdir()
+    from openprogram.worktree.context import current_worktree_path
+    cwd = current_worktree_path() or get_default_workdir()
     has_bash = "bash" in names
     lines = [
         "Runtime tool context:",

@@ -1,5 +1,7 @@
 "use client";
 
+import { useSessionStore } from "@/lib/session-store";
+
 /**
  * Chat send path — owned by the React composer.
  *
@@ -153,6 +155,16 @@ export function sendChatMessage({
   // directly). So a `run gui_agent ...` typed in the textarea is just
   // ordinary chat text to the LLM now — no special `exec_thinking_effort`
   // override here.
+  // Project picked on a not-yet-created chat: ride the first message so
+  // the backend can create the session repo INSIDE the project directory
+  // (the post-ack set_session_project arrives after the repo already
+  // exists at the home root, too late to relocate it). Not consumed
+  // here — wsHandleChatAck still sends set_session_project as the
+  // idempotent meta/reverse-index bind and clears the pending entry.
+  const pendingProjectId = sessionId
+    ? useSessionStore.getState().pendingProjectsByChat[sessionId]
+    : null;
+
   const payload: Record<string, unknown> = {
     action: "chat",
     text,
@@ -164,6 +176,9 @@ export function sendChatMessage({
   };
   if (serviceTier) {
     payload.service_tier = serviceTier;
+  }
+  if (pendingProjectId) {
+    payload.project_id = pendingProjectId;
   }
   if (attachments && attachments.length > 0) {
     // Backend (ws_actions/chat.py) reads ``attachments`` and dispatcher

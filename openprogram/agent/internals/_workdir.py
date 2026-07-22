@@ -33,10 +33,32 @@ def session_workdir_for(session_id: str) -> Optional[Path]:
         return None
 
 
-def apply_default_workdir(runtime, session_id: str) -> Optional[Path]:
-    """Point ``runtime`` at this session's workdir/ as the default cwd.
+def project_workdir_for(session_id: str) -> Optional[Path]:
+    """The session's bound NON-DEFAULT project path, or ``None``.
 
-    A no-op when:
+    Resolved fresh on every call (no caching) so a mid-chat
+    ``set_session_project`` changes the default cwd from the next
+    turn on. The default project never counts — ad-hoc sessions keep
+    the historical session-workdir behaviour."""
+    if not session_id:
+        return None
+    try:
+        from openprogram.store import project_store as _projects
+        proj = _projects.project_for_session(session_id)
+        if proj is not None and not proj.is_default and proj.path:
+            p = Path(proj.path).expanduser()
+            if p.is_dir():
+                return p
+    except Exception:
+        pass
+    return None
+
+
+def apply_default_workdir(runtime, session_id: str) -> Optional[Path]:
+    """Point ``runtime`` at this session's default cwd.
+
+    Resolution order: the session's bound (non-default) project path,
+    falling back to the session repo's ``workdir/``. A no-op when:
       * runtime is None,
       * the session has no resolvable workdir,
       * the runtime lacks ``set_workdir``.
@@ -47,7 +69,7 @@ def apply_default_workdir(runtime, session_id: str) -> Optional[Path]:
     """
     if runtime is None or not session_id:
         return None
-    wd = session_workdir_for(session_id)
+    wd = project_workdir_for(session_id) or session_workdir_for(session_id)
     if wd is None:
         return None
     set_workdir = getattr(runtime, "set_workdir", None)
