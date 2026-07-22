@@ -1260,22 +1260,11 @@
   max-height: 80vh;
   overflow-y: auto;
   overflow-x: visible; /* 预览卡弹到右侧，别被裁掉 */
-  /* 细、低调滚动条 */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-light) transparent;
+  /* 自己能滚，但不画滚动条——刻度即位置指示，再叠一根滚动条是噪声。 */
+  scrollbar-width: none;
 }
 .msg-rail::-webkit-scrollbar {
-  width: 6px;
-}
-.msg-rail::-webkit-scrollbar-thumb {
-  background: var(--border-light);
-  border-radius: 6px;
-}
-.msg-rail::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
-.msg-rail::-webkit-scrollbar-track {
-  background: transparent;
+  display: none;
 }
 .msg-rail-dash {
   height: 2.5px;
