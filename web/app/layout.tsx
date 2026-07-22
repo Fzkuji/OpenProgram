@@ -94,6 +94,14 @@ export default async function RootLayout({
 
                 var lang = localStorage.getItem('agentic_locale') || 'en';
                 document.documentElement.setAttribute('lang', lang === 'zh' ? 'zh-CN' : 'en');
+
+                // 左侧栏收起状态也要赶在首帧之前打上：SSR HTML 是展开
+                // 的，等 React 水合再改就会先画一帧展开、再播收起动画。
+                // CSS 里 html[data-sidebar-closed] #sidebar 强制收起宽度；
+                // 水合完成后由 Sidebar 组件移除该属性接管。
+                if (localStorage.getItem('sidebarOpen') === '0') {
+                  document.documentElement.setAttribute('data-sidebar-closed', '');
+                }
               } catch (e) {}
             })();`,
           }}

@@ -574,6 +574,21 @@ html.is-desktop .app { height: auto; flex: 1 1 auto; min-height: 0; }
 .sidebar.collapsed .sidebar-nav-label { display: none; }
 .sidebar.collapsed .sidebar-nav-action { display: none; }
 
+/* 水合前的收起态：layout.tsx 的内联脚本读 localStorage 后在 <html>
+   上打 data-sidebar-closed。SSR HTML 是展开的，React 水合前浏览器
+   已经把它画出来了——这里在首帧就把宽度按死成收起，避免"先展开
+   再收起"的闪动。水合后 Sidebar 组件移除该属性、类名接管。 */
+html[data-sidebar-closed] #sidebar {
+  width: 49px !important;
+  min-width: 49px !important;
+  transition: none !important;
+  overflow: hidden !important;
+}
+html[data-sidebar-closed] #sidebar .sidebar-nav-label,
+html[data-sidebar-closed] #sidebar .sidebar-nav-action {
+  display: none;
+}
+
 /* React UserMenuFooter companion-class overrides — base styling
    lives in user-menu-footer.module.css. Only sidebar-level concerns
    (collapse animation, centered avatar) go here.

@@ -34,7 +34,7 @@
  *                  reads it stays in sync.
  */
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useLayoutEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 // Sidebar icons. The six nav glyphs (functions / skills / plugins / mcp /
@@ -121,13 +121,28 @@ export function Sidebar() {
   const hasFavorites =
     (availableFunctions || []).some((f) => favSet.has(f.name));
 
-  // On mount, sync from localStorage. Also publish to the legacy
-  // global so any code still reading `window.sidebarOpen` agrees.
-  useEffect(() => {
+  // 挂载时从 localStorage 同步。必须在首次绘制前（useLayoutEffect）：
+  // useEffect 在绘制后才跑，收起状态刷新页面会先画一帧展开、再播
+  // 收起动画。右侧栏没这毛病，左侧栏也不该有。也回写 legacy 全局
+  // `window.sidebarOpen`。
+  useLayoutEffect(() => {
     const persisted = readPersistedSidebarOpen();
     setOpen(persisted);
     (window as unknown as { sidebarOpen?: boolean }).sidebarOpen = persisted;
   }, []);
+  // 水合前由 layout.tsx 内联脚本打上的强制收起属性，要等 DOM 上的
+  // collapsed 类名和持久化状态一致后才摘。不能无条件摘：并发水合下
+  // layout effect 里的 setOpen 不保证同步刷新，第一次 effect 跑的时
+  // 候类名可能还是展开态——那时摘掉属性就会露一帧展开再播收起动画
+  // （实测 t=311ms 正是这个洞）。
+  useEffect(() => {
+    const el = document.getElementById("sidebar");
+    if (!el) return;
+    const wantCollapsed = !readPersistedSidebarOpen();
+    if (el.classList.contains("collapsed") === wantCollapsed) {
+      document.documentElement.removeAttribute("data-sidebar-closed");
+    }
+  }, [open]);
 
   function toggleSidebar() {
     setOpen((prev) => {
