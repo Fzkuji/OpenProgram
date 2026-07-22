@@ -140,17 +140,17 @@ export function PlusMenuItem({
         <span className={styles.plusMenuLabel}>{label}</span>
       </div>
       <div className={styles.plusMenuRight}>
-        {/* 文法 A：勾 = 14px ink；trailing（子菜单箭头/提示）常驻，
-            不再被勾顶掉——Tools 行开着时也要能看见 › 子菜单提示。 */}
+        {/* 文法 A：勾 = 14px ink。trailing（如 Tools 行的设置齿轮）画在
+            勾的左边——学 claude.ai 环境菜单：⚙ 在 ✓ 左侧，行为分开。 */}
+        {trailing != null ? (
+          <span style={{ fontSize: 12, color: "var(--text-muted)", display: "inline-flex" }}>{trailing}</span>
+        ) : null}
         {active ? (
           <CheckIcon
             ref={checkRef}
             size={14}
             style={{ color: "var(--text-bright)" }}
           />
-        ) : null}
-        {trailing != null ? (
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{trailing}</span>
         ) : null}
       </div>
     </div>

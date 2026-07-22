@@ -1227,7 +1227,28 @@
 }
 .plusMenuRight {
   display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: currentColor;
+}
+/* Tools 行勾左边的 ⚙ 按钮：点它才弹 Tool Profile 子面板。 */
+.plusMenuGear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.plusMenuGear:hover,
+.plusMenuGear[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--text-bright) 10%, transparent);
+  color: var(--text-bright);
 }
 
 /* Thinking-effort pill (`<ThinkingEffortPill />` in composer/index.tsx)

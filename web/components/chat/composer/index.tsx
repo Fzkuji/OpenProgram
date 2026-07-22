@@ -22,7 +22,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { Menu } from "@base-ui-components/react/menu";
 import { MonitorIcon } from "@/components/animated-icons";
-import { ChevronRight, Paperclip } from "lucide-react";
+import { Paperclip, Settings } from "lucide-react";
 import { GROUP_LABEL } from "../top-bar/menu-styles";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useRouter } from "next/navigation";
@@ -1285,23 +1285,37 @@ export function Composer() {
 
                     <Menu.Separator className={styles.plusMenuDivider} />
 
-                    {/* Tools — a toggle row that ALSO opens a cascading
-                        "Tool Profile" submenu. base-ui SubmenuRoot owns the
-                        hover-open + flip; the submenu's Positioner uses
-                        side="top" so it flies UP (space permitting, else it
-                        flips). The row click toggles tools (via PlusMenuItem's
-                        onClick, which bubbles) — the SubmenuTrigger itself
-                        doesn't close the outer menu. */}
+                    {/* Tools — 行点击 = 开关；勾左边的 ⚙ 点击才弹
+                        "Tool Profile" 子面板（学 claude.ai 环境菜单：
+                        ⚙ 与 ✓ 并排、行为分开）。悬停整行不再飞出子
+                        菜单——触发器只剩小小的 ⚙。 */}
                     <Menu.SubmenuRoot>
-                      <Menu.SubmenuTrigger className={styles.plusMenuRow}>
+                      <Menu.Item
+                        className={styles.plusMenuRow}
+                        closeOnClick={false}
+                        onClick={() => toggleTools()}
+                      >
                         <PlusMenuItem
                           active={toolsEnabled}
-                          onClick={toggleTools}
+                          onClick={noop}
                           icon={<ToolsIcon size={16} />}
                           label={text("Tools", "工具")}
-                          trailing={<ChevronRight size={14} aria-hidden="true" />}
+                          trailing={
+                            <Menu.SubmenuTrigger
+                              render={
+                                <button
+                                  type="button"
+                                  className={styles.plusMenuGear}
+                                  aria-label={text("Tool profile", "工具配置")}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Settings size={14} />
+                                </button>
+                              }
+                            />
+                          }
                         />
-                      </Menu.SubmenuTrigger>
+                      </Menu.Item>
                       <Menu.Portal>
                         <Menu.Positioner side="right" align="end" sideOffset={6} style={{ zIndex: 200 }}>
                           <Menu.Popup

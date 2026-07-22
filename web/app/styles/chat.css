@@ -1279,6 +1279,9 @@
 }
 .msg-rail-dash {
   height: 2.5px;
+  /* flex 列会把子项压扁塞进 max-height：不禁 shrink 的话 60+ 条刻度
+     被压成头发丝、容器也永不溢出（滚动随之失效）。 */
+  flex-shrink: 0;
   border: none;
   padding: 0;
   border-radius: 999px;   /* 圆头（GPT 风格）*/
