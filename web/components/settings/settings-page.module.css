@@ -431,33 +431,12 @@
 .providersStickyHeader {
   padding: 0 0 8px;
 }
-.providersStickyHeader > .providersSearch { margin-top: 0; }
 .providersSidebar > .providersGroupLabel { margin-top: 20px; }
 /* First group label sits directly under the sticky header — keep
    the gap tight (8px) so the "Enabled" label visually attaches to
    the search box above. Later group breaks ("Not enabled") get the
    larger 20px margin from the rule above. */
 .providersStickyHeader + .providersGroupLabel { margin-top: 8px; }
-.providersSearch {
-  position: relative;
-}
-.providersSearch input {
-  width: 100%;
-  height: var(--ui-button-h);
-  padding: 0 12px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--ui-button-radius);
-  color: var(--text-primary);
-  font-size: 14px;
-  outline: none;
-}
-.providersSearch input:focus {
-  border-color: var(--accent-blue);
-}
-.providersSearch input::placeholder {
-  color: var(--text-muted);
-}
 .providersGroupLabel {
   font-size: 12px;
   font-weight: 600;
@@ -822,20 +801,6 @@
   width: auto;
   padding: 0 6px;
   font-family: var(--font-mono);
-}
-.modelSearch {
-  margin-bottom: 8px;
-}
-.modelSearch input {
-  width: 100%;
-  height: 30px;
-  padding: 0 10px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: var(--ui-button-radius);
-  color: var(--text-primary);
-  font-size: 14px;
-  outline: none;
 }
 /* `.miniAction` — fetch / bulk-toggle buttons are the shadcn
    <Button variant="outline" size="sm"> now. */

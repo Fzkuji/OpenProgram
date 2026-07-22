@@ -24,6 +24,7 @@ import { ProviderItem } from "./provider-item";
 import { AddCustomProvider } from "./add-custom-provider";
 import type { Provider } from "./types";
 import styles from "../settings-page.module.css";
+import { SearchInput } from "@/components/ui/search-input";
 import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
 import { refreshAgentChip } from "./types";
 import { useTranslation } from "@/lib/i18n";
@@ -142,14 +143,11 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
         <div className={styles.providersLayout}>
           <div className={styles.providersSidebar} ref={sidebarRef}>
             <div className={styles.providersStickyHeader}>
-              <div className={styles.providersSearch}>
-                <input
-                  type="search"
-                  placeholder={text("Search providers...", "搜索 Provider...")}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
+              <SearchInput
+                placeholder={text("Search providers...", "搜索 Provider...")}
+                value={search}
+                onChange={setSearch}
+              />
               <AddCustomProvider
                 onCreated={(id) => {
                   invalidate("/api/providers/list");

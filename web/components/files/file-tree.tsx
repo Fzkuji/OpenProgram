@@ -41,6 +41,7 @@ import {
 import { ConfirmDialog } from "@/components/sidebar/sessions-list/confirm-dialog";
 import { TreeContextMenu, treeClipboard } from "./tree-context-menu";
 import styles from "./files-panel.module.css";
+import { SearchInput } from "@/components/ui/search-input";
 
 export interface TreeEntry {
   name: string;
@@ -586,12 +587,11 @@ export function FileTree({
     <div className={styles.treeCol}>
       <div className={styles.treeHeader}>
         {headerExtra}
-        <input
-          className={styles.treeFilter}
+        <SearchInput
+          className="flex-1 min-w-0"
           value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+          onChange={setFilter}
           placeholder={text("Filter files…", "筛选文件…")}
-          spellCheck={false}
         />
         <button
           type="button"

@@ -21,6 +21,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./functions-page.module.css";
+import { SearchInput } from "@/components/ui/search-input";
 import { cls, RenameInput, ProfileNavRow } from "./functions-page-parts";
 import { ConfirmDialog } from "@/components/sidebar/sessions-list/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -437,12 +438,11 @@ export function FunctionsPage() {
         <div className={styles.topbar}>
           <span className={styles.title}>{t("nav.functions")}</span>
           <div className={styles.toolbar}>
-            <input
-              type="text"
-              className={styles.search}
+            <SearchInput
+              className="flex-1 max-w-[320px]"
               placeholder={text("Search functions...", "搜索函数...")}
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={setSearch}
             />
             <CustomSelect
               value={sort}

@@ -23,7 +23,6 @@ import {
   Folder,
   Globe,
   Pencil,
-  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -47,6 +46,7 @@ import {
 } from "@/lib/desktop-bridge";
 import { useCenterTabs, type BuiltinPage } from "@/lib/state/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
+import { SearchInput } from "@/components/ui/search-input";
 import styles from "./center-tabs.module.css";
 
 const HISTORY_LIST_LIMIT = 200;
@@ -81,15 +81,13 @@ function PageFrame({
           <h1 className={styles.builtinTitle}>{title}</h1>
           {action}
         </div>
-        <div className="bookmarks-search">
-          <Search size={14} aria-hidden="true" />
-          <input
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder={searchPlaceholder}
-            aria-label={searchPlaceholder}
-          />
-        </div>
+        <SearchInput
+          className="mx-1 mb-2.5"
+          value={query}
+          onChange={onQueryChange}
+          placeholder={searchPlaceholder}
+          aria-label={searchPlaceholder}
+        />
         {children}
       </div>
     </div>

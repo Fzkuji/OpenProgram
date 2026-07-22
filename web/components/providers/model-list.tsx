@@ -2,10 +2,10 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
-import { Search, Eye, Video, Wrench, Brain, FileText, Trash2 } from "lucide-react";
+import { Eye, Video, Wrench, Brain, FileText, Trash2 } from "lucide-react";
 import { api } from "@/lib/net/api";
 import type { Provider, Capability } from "@/lib/types";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -109,23 +109,12 @@ export function ModelList({ provider }: { provider: Provider }) {
             ({enabledCount}/{models?.length ?? 0} enabled)
           </span>
         </h3>
-        <div className="relative w-56">
-          <Search
-            className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
-            style={{ color: "var(--text-muted)" }}
-          />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search models"
-            className="h-8 pl-7 text-[12px]"
-            style={{
-              background: "var(--bg-input)",
-              borderColor: "var(--border)",
-              color: "var(--text-primary)",
-            }}
-          />
-        </div>
+        <SearchInput
+          className="w-56"
+          value={q}
+          onChange={setQ}
+          placeholder="Search models"
+        />
       </div>
 
       {isLoading ? (

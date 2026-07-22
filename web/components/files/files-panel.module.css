@@ -234,21 +234,6 @@
   flex-shrink: 0;
 }
 
-.treeFilter {
-  flex: 1;
-  min-width: 0;
-  height: 28px; /* 刻度：28 = tab/二级行/紧凑输入 */
-  box-sizing: border-box;
-  font-size: 12px;
-  padding: 0 8px;
-  color: var(--text-bright);
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  outline: none;
-}
-.treeFilter:focus { border-color: var(--text-dim); }
-.treeFilter::placeholder { color: var(--text-dim); }
 
 .iconBtn {
   display: flex;

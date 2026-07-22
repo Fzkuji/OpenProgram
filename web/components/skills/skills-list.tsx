@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSkills, type Skill } from "@/lib/state/skills-store";
 import { Switch } from "@/components/ui/switch";
+import { SearchInput } from "@/components/ui/search-input";
 import { useTranslation } from "@/lib/i18n";
 import {
   type AnimatedNavIconHandle,
@@ -296,11 +297,11 @@ export function SkillsList() {
   return (
     <div>
       <div className="mb-3 flex items-center gap-1">
-        <input
+        <SearchInput
+          className="flex-1 min-w-0"
           value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+          onChange={setFilter}
           placeholder={text("Search skills...", "搜索技能...")}
-          className="flex-1 min-w-0 rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-secondary)] h-[var(--ui-button-h)] px-2 text-sm placeholder:text-[var(--text-muted)] outline-none transition-colors focus:border-[color:var(--accent-blue)]"
         />
         <button
           onClick={() => setSearchBody((v) => !v)}

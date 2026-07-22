@@ -1241,23 +1241,49 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: 8px 4px;
+  /* 横向留出更大的命中区，鼠标不必精准压在细线上；纵向留白让首尾条
+     上下也有可悬停余量。 */
+  padding: 10px 12px;
   pointer-events: auto;
+  /* 间距固定不压缩；刻度太多时封顶并内部纵向滚动，不再挤成一坨。
+     translateY(-50%) 基于实际渲染高度，封顶后仍整体居中。 */
+  max-height: 80vh;
+  overflow-y: auto;
+  overflow-x: visible; /* 预览卡弹到右侧，别被裁掉 */
+  /* 细、低调滚动条 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-light) transparent;
+}
+.msg-rail::-webkit-scrollbar {
+  width: 6px;
+}
+.msg-rail::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 6px;
+}
+.msg-rail::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+.msg-rail::-webkit-scrollbar-track {
+  background: transparent;
 }
 .msg-rail-dash {
-  height: 3px;
+  height: 2.5px;
   border: none;
   padding: 0;
-  border-radius: 2px;
+  border-radius: 999px;   /* 圆头（GPT 风格）*/
   background: var(--text-muted);
-  opacity: 0.5;
-  cursor: pointer;
-  /* Dock 式放大：宽度由 JS 逐帧给，过渡 ~120ms 抹平。 */
-  transition: width 120ms ease-out, opacity var(--transition),
-    background var(--transition);
+  opacity: 0.45;
+  cursor: default;
+  /* 坡度即时跟手：极短 width 过渡抹掉跳变，不拖沓。 */
+  transition: width 45ms linear, opacity 80ms ease-out, background 80ms ease-out;
 }
-.msg-rail-dash:hover,
-.msg-rail-dash:focus-visible { opacity: 0.9; }
+/* .hovered 由 JS 按光标最近刻度加（含缝隙），不依赖压中 2px 的 button。 */
+.msg-rail-dash.hovered,
+.msg-rail-dash:focus-visible {
+  opacity: 1;
+  background: var(--text-bright, #f8f8f6);
+}
 .msg-rail-dash:focus-visible {
   outline: 2px solid var(--accent, #4a9eff);
   outline-offset: 2px;
@@ -1272,7 +1298,8 @@
 /* 单条预览卡：跟随悬停刻度垂直定位，弹在刻度右侧。 */
 .msg-rail-card {
   position: absolute;
-  left: calc(100% + 8px);
+  /* top / left 由 JS 按命中条实时 rect 相对 anchor 定位（rail 可内部滚动，
+     故不能用固定 left:100%）。translateY(-50%) 让卡片纵向对齐命中条中点。 */
   transform: translateY(-50%);
   width: 300px;
   /* 弹层统一配方：popover 白面 + 10px 圆角 + 真 border + 投影。 */
@@ -2096,6 +2123,16 @@
 .dag-flash {
   animation: dagFlash 1.3s ease-out 1;
   border-radius: 6px;
+}
+
+/* 消息导航点击 → 强调那条气泡：橙色背景闪烁一下（滚到位后触发）。 */
+@keyframes railFlash {
+  0%   { background-color: var(--bg-tertiary); }
+  18%  { background-color: color-mix(in srgb, var(--accent-blue) 50%, var(--bg-tertiary)); }
+  100% { background-color: var(--bg-tertiary); }
+}
+.rail-flash {
+  animation: railFlash 1.6s ease-out 1;
 }
 
 /* ===== Unified function-call card ===== */

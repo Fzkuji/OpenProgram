@@ -67,32 +67,6 @@
    view — bookmarks and web history are center tabs now
    (components/center-tabs/builtin-tab-pane.tsx) — but these row styles
    are the vocabulary those pages are built from, so they stay global. */
-.bookmarks-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 4px 10px;
-  padding: 7px 9px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  color: var(--text-muted);
-  background: var(--bg-primary);
-}
-.bookmarks-search input {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  color: var(--text-primary);
-  background: transparent;
-  font: inherit;
-  font-size: 13px;
-}
-.bookmarks-search input::placeholder { color: var(--text-muted); }
-.bookmarks-search input:focus-visible {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 2px;
-}
 .bookmarks-list {
   display: flex;
   min-height: 0;

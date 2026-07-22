@@ -323,6 +323,13 @@ button, input, select, textarea, optgroup {
 [role="dialog"] > :focus-visible {
   outline: none;
 }
+/* SearchInput draws its own focus on the wrapping container
+   (focus-within → accent-blue border), so the inner <input> must not
+   also paint the coral :focus-visible ring — that stacked a second,
+   offset orange outline outside the container. */
+.search-input-field:focus-visible {
+  outline: none;
+}
 /* Display serif for hero text (welcome title). System serif only —
    no font files shipped. */
 .display-serif {

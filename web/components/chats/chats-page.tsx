@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./chats-page.module.css";
+import { SearchInput } from "@/components/ui/search-input";
 import { useTranslation, type Locale } from "@/lib/i18n";
 import { formatRelativeTime } from "@/lib/format-utils/format";
 import {
@@ -208,12 +209,11 @@ export function ChatsPage() {
         <div className={styles.topbar}>
           <span className={styles.title}>{t("nav.chats")}</span>
           <div className={styles.toolbar}>
-            <input
-              type="text"
-              className={styles.search}
+            <SearchInput
+              className="flex-1 max-w-[320px]"
               placeholder={text("Search chats...", "搜索会话...")}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={setQuery}
             />
             <CustomSelect
               value={sort}

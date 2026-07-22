@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
+import { SearchInput } from "@/components/ui/search-input";
 import { AddMarketplaceDialog } from "../dialogs/add-marketplace-dialog";
 
 interface IndexItem {
@@ -112,21 +113,12 @@ export function MarketplaceBrowser() {
     <div className="space-y-5">
       {/* Search + sort */}
       <div className="flex items-center gap-2">
-        <div className="relative flex-1">
-          <svg
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]"
-            width="14" height="14" viewBox="0 0 20 20" fill="currentColor"
-          >
-            <path fillRule="evenodd" clipRule="evenodd"
-              d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" />
-          </svg>
-          <input
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder={text("Search plugins...", "搜索插件...")}
-            className="w-full rounded-[var(--ui-button-radius)] border border-[var(--border)] bg-[var(--bg-input)] h-[var(--ui-button-h)] pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition-colors focus:border-[color:var(--accent-blue)]"
-          />
-        </div>
+        <SearchInput
+          className="flex-1"
+          value={filter}
+          onChange={setFilter}
+          placeholder={text("Search plugins...", "搜索插件...")}
+        />
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as SortKey)}

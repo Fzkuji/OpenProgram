@@ -168,7 +168,7 @@
   /* Right padding reserves space for the absolute-positioned action
      button (send / stop) that lives at the wrapper level in chat mode:
      10 (right offset) + 24 (button size) + 8 (breathing space) = 42. */
-  padding: 13px 42px 13px 16px;
+  padding: 12px 42px 12px 14px;
   flex-shrink: 0;
 }
 .inputField {
@@ -184,31 +184,29 @@
   background: none;
   border: none;
   color: var(--text-bright);
-  font-size: 14px;
+  font-size: 15px;
   font-family: var(--font-sans);
   outline: none;
   resize: none;
-  /* Claude Code measured: 14px / 18px text; the 44px single-line row
-     comes from the top row's 13px vertical padding. */
-  min-height: 18px;
+  min-height: 22px;
   max-height: 200px;
-  /* Inner padding so the caret / text sits noticeably inside the
-     wrapper's rounded edge. The row already pads 16px from the
-     wrapper; an extra 8px on each side puts the text at 24px from
-     the edge so it never reads as touching the rounded curve. */
-  padding: 0 8px;
-  line-height: 18px;
+  /* 行内左右各 2px 微内边距；配合行 14px 左内边距，文字距圆角边约 16px。 */
+  padding: 0 2px;
+  line-height: 22px;
   flex: 1;
   overflow: hidden;
 }
 .chatPlaceholder {
   position: absolute;
-  inset: 0 8px auto;
-  height: 18px;
-  line-height: 18px;
+  /* 垂直居中对齐 input 文字（不再顶部锚定），左右与 input 的 2px 内边距对齐。 */
+  top: 50%;
+  left: 2px;
+  right: 2px;
+  transform: translateY(-50%);
+  line-height: 22px;
   color: var(--text-muted);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 15px;
   overflow: hidden;
   pointer-events: none;
   text-overflow: ellipsis;

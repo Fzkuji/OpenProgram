@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import styles from "../settings-page.module.css";
+import { SearchInput } from "@/components/ui/search-input";
 import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
 import { useTranslation } from "@/lib/i18n";
 import { SearchProviderDetail } from "./detail";
@@ -117,14 +118,11 @@ export function SearchProvidersSection() {
         <div className={styles.providersLayout}>
           <div className={styles.providersSidebar}>
             <div className={styles.providersStickyHeader}>
-              <div className={styles.providersSearch}>
-                <input
-                  type="search"
-                  placeholder={text("Search backends...", "搜索后端...")}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
+              <SearchInput
+                placeholder={text("Search backends...", "搜索后端...")}
+                value={search}
+                onChange={setSearch}
+              />
             </div>
           {active.length > 0 && (
             <>

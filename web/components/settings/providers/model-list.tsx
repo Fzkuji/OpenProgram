@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { ProviderIcon } from "../provider-icon";
 
 import styles from "../settings-page.module.css";
+import { SearchInput } from "@/components/ui/search-input";
 import { formatCtx, refreshAgentChip, type Model, type Provider } from "./types";
 import { useTranslation } from "@/lib/i18n";
 
@@ -167,14 +168,12 @@ export function ModelList({
           </Button>
         </span>
       </div>
-      <div className={styles.modelSearch}>
-        <input
-          type="search"
-          placeholder={text("Search models...", "搜索模型...")}
-          value={search}
-          onChange={(e) => onSearch(e.target.value)}
-        />
-      </div>
+      <SearchInput
+        className="mb-2"
+        placeholder={text("Search models...", "搜索模型...")}
+        value={search}
+        onChange={onSearch}
+      />
       <div className={styles.modelList}>
         {filtered.map((m) => (
           <ModelRow

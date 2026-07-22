@@ -586,46 +586,6 @@
   flex-shrink: 0;
 }
 
-.searchWrap {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  transition: border-color 0.15s;
-}
-
-.searchWrap:focus-within {
-  border-color: var(--accent-blue);
-}
-
-.searchInput {
-  flex: 1;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--text-primary);
-  font-size: 14px;
-  min-width: 0;
-}
-
-.searchInput::placeholder {
-  color: var(--text-muted);
-}
-
-.searchClear {
-  background: none;
-  border: none;
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: 12px;
-  padding: 0 2px;
-  line-height: 1;
-}
 
 .searchClear:hover {
   color: var(--text-bright);

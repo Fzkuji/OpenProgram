@@ -39,6 +39,7 @@ import type {
   WikiPage,
 } from "./types";
 import styles from "./memory-page.module.css";
+import { SearchInput } from "@/components/ui/search-input";
 
 export function MemoryPage() {
   const { t, text, locale } = useTranslation();
@@ -236,22 +237,12 @@ export function MemoryPage() {
               <div className={styles.tree}>
               {/* Search + refresh */}
               <div className={styles.treeToolbar}>
-                <div className={styles.searchWrap}>
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" width="12" height="12" strokeLinecap="round">
-                    <circle cx="7" cy="7" r="4.5"/>
-                    <path d="M10.5 10.5L14 14"/>
-                  </svg>
-                  <input
-                    type="text"
-                    className={styles.searchInput}
-                    placeholder={text("Search pages...", "搜索页面...")}
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                  {search && (
-                    <button className={styles.searchClear} onClick={() => setSearch("")} title={text("Clear", "清除")}>✕</button>
-                  )}
-                </div>
+                <SearchInput
+                  className="flex-1"
+                  placeholder={text("Search pages...", "搜索页面...")}
+                  value={search}
+                  onChange={setSearch}
+                />
                 <button
                   className={styles.iconBtn}
                   onClick={fetchWikiPages}

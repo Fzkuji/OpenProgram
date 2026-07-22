@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import fx from "@/components/functions/functions-page.module.css";
+import { SearchInput } from "@/components/ui/search-input";
 import styles from "./projects-page.module.css";
 import { useTranslation } from "@/lib/i18n";
 import { FoldersIcon, FolderPlusIcon } from "@/components/animated-icons";
@@ -118,12 +119,11 @@ export function ProjectsPage() {
         <div className={fx.topbar}>
           <span className={fx.title}>{text("Projects", "项目")}</span>
           <div className={fx.toolbar}>
-            <input
-              type="text"
-              className={fx.search}
+            <SearchInput
+              className="flex-1 max-w-[320px]"
               placeholder={text("Search projects...", "搜索项目...")}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={setQuery}
             />
           </div>
         </div>
