@@ -41,6 +41,7 @@ import { AgentSelector } from "./agent-selector";
 import { installLegacyWrappers, legacyTopbarReady } from "./window-bridge";
 
 export { ProjectBadge } from "./project-menu";
+export { WorkingDirChips } from "./working-dir-chips";
 export { PermissionBadge } from "./permission-menu";
 
 /**

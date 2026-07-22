@@ -163,6 +163,54 @@
   white-space: nowrap;
 }
 
+/* Working-dir chips — claude.ai-style per-directory chips right of the
+   project chip. Same neutral palette as .project-badge; ✕ is dim until
+   hovered so the row stays quiet. */
+.runtime-badge.workdir-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.workdir-badge .workdir-icon {
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+.workdir-badge .badge-short {
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workdir-badge .workdir-remove {
+  flex-shrink: 0;
+  cursor: pointer;
+  opacity: 0.5;
+}
+.workdir-badge .workdir-remove:hover {
+  opacity: 1;
+  color: var(--text-bright);
+}
+/* Icon-only add button — square-ish padding, interactive like the
+   project chip. <button> reset: inherit font, no default chrome. */
+.runtime-badge.workdir-add-badge {
+  padding: 2px 5px;
+  cursor: pointer;
+  font: inherit;
+}
+.runtime-badge.workdir-add-badge:hover {
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  color: var(--text-bright);
+}
+
 /* Hover tooltips (topbar chips + message actions) — Claude-style:
    NO border, a solid badge a touch lighter than the surface ("泛白"),
    crisp text. Geometry / shadow / animation live on the Tailwind

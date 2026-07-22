@@ -42,7 +42,7 @@ import { ContextBadge } from "../context-badge";
 // Session-scope chips relocated from the dismantled 48px topbar row —
 // each carries its own popover menu (project-menu / agent-selector /
 // permission-menu submodules under ../top-bar).
-import { AgentBadge, PermissionBadge, ProjectBadge } from "../top-bar";
+import { AgentBadge, PermissionBadge, ProjectBadge, WorkingDirChips } from "../top-bar";
 import { ChannelMenu } from "../top-bar/channel-menu";
 import {
   Popover,
@@ -1566,6 +1566,7 @@ export function Composer() {
       <div className={styles.envChips}>
         <StatusChip />
         <ProjectBadge />
+        <WorkingDirChips />
       </div>
       {/* composerStack wraps {slashClip, inputWrapper} so the slash
           menu's vertical anchor is the wrapper's top edge — not a
