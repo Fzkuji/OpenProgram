@@ -1531,6 +1531,18 @@ function isWebUrl(u) {
   }
 }
 
+// 地址栏导航（Chrome 式）还允许 file://——输入本地路径直接打开本地
+// 文件/目录。弹窗（setWindowOpenHandler）仍只放行 web，网页不能把
+// 视图带去本地文件。
+function isTabUrl(u) {
+  try {
+    const p = new URL(u).protocol;
+    return p === "http:" || p === "https:" || p === "file:";
+  } catch {
+    return false;
+  }
+}
+
 function loadView(record, url) {
   const pending = record.navigation;
   if (pending && pending.url === url) return pending.promise;
@@ -1617,13 +1629,13 @@ function ensureView(ctx, id, url) {
       record.faviconUrl = "";
       sendState(record, { faviconUrl: "" });
     });
-    if (url && isWebUrl(url)) void loadView(record, url).catch(() => {});
+    if (url && isTabUrl(url)) void loadView(record, url).catch(() => {});
   }
   return record;
 }
 
 async function navigateView(ctx, id, url) {
-  if (!url || !isWebUrl(url)) return null;
+  if (!url || !isTabUrl(url)) return null;
   const record = recordFor(ctx, id) || ensureView(ctx, id, "");
   return record ? loadView(record, url) : null;
 }
@@ -1690,7 +1702,7 @@ function hideView(ctx, id) {
 async function activateView(ctx, id, url) {
   let record;
   if (url) {
-    if (!isWebUrl(url)) return null;
+    if (!isTabUrl(url)) return null;
     record = recordFor(ctx, id) || ensureView(ctx, id, "");
     if (!record || !showView(ctx, id)) return null;
     record = await navigateView(ctx, id, url);

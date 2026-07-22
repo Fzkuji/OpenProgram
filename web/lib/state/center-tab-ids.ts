@@ -49,10 +49,20 @@ export function normalizeWebUrl(input: string): string | null {
       if ((u.protocol === "http:" || u.protocol === "https:") && u.hostname) {
         return u.href;
       }
+      // Chrome 式：file:// 直接放行，本地文件/目录在页内打开。
+      if (u.protocol === "file:") return u.href;
     } catch {
       /* 有 scheme 但解析不了 → 当搜索词 */
     }
     return webSearchUrl(raw);
+  }
+  // Chrome 式：绝对路径（/Users/… 等）→ file:// 导航到本地位置。
+  if (raw.startsWith("/")) {
+    try {
+      return new URL(`file://${raw}`).href;
+    } catch {
+      return webSearchUrl(raw);
+    }
   }
   // 无 scheme：无空格且主机段像域名（带点 / localhost / IPv6）才按 URL
   const hostish = raw.split("/")[0];
