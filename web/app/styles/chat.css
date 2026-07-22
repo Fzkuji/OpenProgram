@@ -1259,9 +1259,8 @@
   padding: 10px 12px;
   pointer-events: auto;
   /* 间距固定不压缩；刻度太多时封顶并内部纵向滚动，不再挤成一坨。
-     translateY(-50%) 基于实际渲染高度，封顶后仍整体居中。
-     第二项：矮窗口里别让条带下探到 composer 那排 chip 上。 */
-  max-height: min(80vh, calc(100vh - 400px));
+     translateY(-50%) 基于实际渲染高度，封顶后仍整体居中。 */
+  max-height: 80vh;
   overflow-y: auto;
   overflow-x: visible; /* 预览卡弹到右侧，别被裁掉 */
   /* 自己能滚，但不画滚动条——刻度即位置指示，再叠一根滚动条是噪声。 */
