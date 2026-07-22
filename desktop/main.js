@@ -2292,7 +2292,89 @@ async function createWindow(options = {}) {
   return ctx;
 }
 
+// Electron renders file:// files but leaves directories blank. Serve a
+// Chrome-style listing for directories; everything else passes through.
+function registerFileDirectoryListing() {
+  const { protocol, session, net } = require("electron");
+  const url = require("url");
+  const passthrough = (request) =>
+    net.fetch(request.url, { bypassCustomProtocolHandlers: true });
+  const escapeHtml = (s) =>
+    s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  const formatSize = (bytes) => {
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${bytes} B`;
+  };
+  // webtab 的 BrowserView 走 persist:webtabs 分区，默认 session 的
+  // protocol.handle 对它不生效——必须在该分区的 session 上注册。
+  // 默认 session 也注册一份，覆盖将来不带分区的视图。
+  const handler = (request) => {
+    try {
+      const dirPath = url.fileURLToPath(request.url);
+      if (!fs.statSync(dirPath).isDirectory()) return passthrough(request);
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      const byName = (a, b) => a.name.localeCompare(b.name);
+      // ponytail: hidden files listed in place, sorted with the rest
+      const dirs = entries.filter((e) => e.isDirectory()).sort(byName);
+      const files = entries.filter((e) => !e.isDirectory()).sort(byName);
+      const row = (entry) => {
+        const isDir = entry.isDirectory();
+        const href = encodeURI(
+          url.pathToFileURL(path.join(dirPath, entry.name)).href + (isDir ? "/" : ""),
+        );
+        let size = "";
+        if (!isDir) {
+          try {
+            size = formatSize(fs.statSync(path.join(dirPath, entry.name)).size);
+          } catch (_e) {
+            /* unreadable entry — show without size */
+          }
+        }
+        return `<li><a href="${href}">${escapeHtml(entry.name)}${isDir ? "/" : ""}</a><span class="size">${size}</span></li>`;
+      };
+      const parent = path.dirname(dirPath);
+      const parentRow =
+        parent !== dirPath
+          ? `<li><a href="${encodeURI(url.pathToFileURL(parent).href + "/")}">..</a><span class="size"></span></li>`
+          : "";
+      const listingHtml = `<!doctype html>
+<meta charset="utf-8">
+<title>${escapeHtml(dirPath)}</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 24px; color: #333; background: #fff; }
+  h1 { font-size: 15px; font-weight: 600; word-break: break-all; }
+  ul { list-style: none; padding: 0; max-width: 720px; }
+  li { display: flex; justify-content: space-between; gap: 16px; line-height: 1.9; border-bottom: 1px solid #f0f0f0; }
+  a { color: #1a5fb4; text-decoration: none; word-break: break-all; }
+  a:hover { text-decoration: underline; }
+  .size { color: #999; font-size: 12px; white-space: nowrap; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #ddd; background: #1e1e1e; }
+    li { border-color: #333; }
+    a { color: #6ea8e8; }
+    .size { color: #777; }
+  }
+</style>
+<h1>${escapeHtml(dirPath)}</h1>
+<ul>${parentRow}${dirs.map(row).join("")}${files.map(row).join("")}</ul>`;
+      return new Response(listingHtml, {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    } catch (_e) {
+      return passthrough(request);
+    }
+  };
+  protocol.handle("file", handler);
+  session.fromPartition("persist:webtabs").protocol.handle("file", handler);
+}
+
 app.whenReady().then(() => {
+  registerFileDirectoryListing();
   registerWebTabIpc();
   registerTabTransferIpc();
   buildMenu();

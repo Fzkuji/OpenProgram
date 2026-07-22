@@ -417,26 +417,50 @@ function IframeWebTabPane({ tabId, url }: { tabId: string; url: string }) {
           <ExternalLink size={14} />
         </button>
       </div>
-      <div className={styles.webHint}>
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+      {url.startsWith("file:") ? (
+        /* Browsers silently block file:// in iframes — say so instead of
+           showing a blank frame. */
+        <div
+          className={styles.webFrame}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--text-dim)",
+            fontSize: "13px",
+            padding: "24px",
+            textAlign: "center",
+          }}
+        >
           {text(
-            "If the page stays blank, the site refuses embedding — open it externally.",
-            "页面空白说明该站点拒绝内嵌，请点右上角外部打开。",
+            "Local files can only be opened in the desktop app.",
+            "本地文件仅能在桌面应用中打开。",
           )}
-        </span>
-        <button type="button" className={styles.webHintLink} onClick={openExternal}>
-          <ExternalLink size={11} />
-          {text("Open externally", "外部打开")}
-        </button>
-      </div>
-      <iframe
-        key={frameEpoch}
-        className={styles.webFrame}
-        src={url}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-        referrerPolicy="no-referrer"
-        title={text("Web page", "网页")}
-      />
+        </div>
+      ) : (
+        <>
+          <div className={styles.webHint}>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+              {text(
+                "If the page stays blank, the site refuses embedding — open it externally.",
+                "页面空白说明该站点拒绝内嵌，请点右上角外部打开。",
+              )}
+            </span>
+            <button type="button" className={styles.webHintLink} onClick={openExternal}>
+              <ExternalLink size={11} />
+              {text("Open externally", "外部打开")}
+            </button>
+          </div>
+          <iframe
+            key={frameEpoch}
+            className={styles.webFrame}
+            src={url}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            referrerPolicy="no-referrer"
+            title={text("Web page", "网页")}
+          />
+        </>
+      )}
     </div>
   );
 }
