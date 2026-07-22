@@ -84,9 +84,10 @@
   display: flex;
   flex-direction: column;
   /* 内容列和 .chat-messages 消息列同宽同轴（共用 --chat-column-max，
-     空间够就扩）；输入框右缘对齐消息头像列。inputArea 自带 24px 侧
-     padding，正好对应消息列的 48px 呼吸量。 */
-  max-width: var(--chat-column-max);
+     空间够就扩）；输入框右缘对齐消息头像列。紧凑时同列一样每侧留
+     56px（inputArea 24px padding + 这里再收 32px），左侧车道让给
+     消息刻度条。 */
+  max-width: min(var(--chat-column-max), calc(100% - 64px));
   margin: 0 auto;
   background: var(--bg-tertiary);
   border: none;
@@ -481,7 +482,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: var(--chat-column-max);
+  max-width: min(var(--chat-column-max), calc(100% - 64px));
   margin: 0 auto 10px;
   min-width: 0;
   overflow-x: auto;
@@ -990,7 +991,7 @@
      edge (measured claude.ai/code: acceptBtn.x == promptBox.x,
      ring.right == box.right). 10px visual gap above (measured box
      bottom → controls-row top). */
-  max-width: var(--chat-column-max);
+  max-width: min(var(--chat-column-max), calc(100% - 64px));
   margin: 10px auto 0;
   padding: 0;
   min-height: 20px;

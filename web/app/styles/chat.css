@@ -227,7 +227,10 @@
      (ChatGPT/Claude). 宽度随聊天区自适应，封顶 --chat-column-max；
      左右留 48px 呼吸，别顶到聊天区边。 */
   width: 100%;
-  max-width: min(var(--chat-column-max), calc(100% - 48px));
+  /* 每侧最少 56px 留白：左侧要装下消息刻度条（8px 起步 + 12px 衬
+     + 刻度），否则条带和输入框在 x 上必然打架。宽窗口时列照样扩到
+     --chat-column-max，这个下限只在紧凑时起作用。 */
+  max-width: min(var(--chat-column-max), calc(100% - 112px));
   margin: 0 auto;
   /* Bottom padding gives the latest message room to scroll up to the
      top of the viewport so the assistant reply lands underneath it
@@ -1256,11 +1259,15 @@
      上下也有可悬停余量。 */
   padding: 10px 12px;
   pointer-events: auto;
+  /* 车道 = 列左侧的留白（(聊天区宽 − 列宽)/2），条带只准住在这条
+     车道里，超出的部分裁掉——绝不横向侵入输入框/消息列的 x 范围。 */
+  max-width: calc((100cqw - 100%) / 2 - 14px);
+  overflow-x: hidden;
   /* 间距固定不压缩；刻度太多时封顶并内部纵向滚动，不再挤成一坨。
      translateY(-50%) 基于实际渲染高度，封顶后仍整体居中。 */
   max-height: 80vh;
   overflow-y: auto;
-  overflow-x: visible; /* 预览卡弹到右侧，别被裁掉 */
+  /* 预览卡是条带的兄弟节点，不受这里的 overflow 裁剪。 */
   /* 自己能滚，但不画滚动条——刻度即位置指示，再叠一根滚动条是噪声。 */
   scrollbar-width: none;
   /* 上下缘渐隐：溢出的刻度淡出而不是被硬切一刀。 */
