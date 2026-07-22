@@ -158,10 +158,6 @@
   --surface-popover: #30302e;
   --border-popover: rgba(255, 255, 255, 0.12);
   --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.4);
-  /* 向上弹的菜单：主投影镜像朝上；下缘只留一圈收得很紧的短影
-     （blur 8 / spread -2 ≈ 伸出 6px），有过渡但压不到下方触发按钮。 */
-  --shadow-popover-up: 0 -8px 24px rgba(0, 0, 0, 0.4),
-    0 2px 8px -2px rgba(0, 0, 0, 0.3);
   --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.3);
   --shadow-sidebar-left: 4px 0 20px rgba(0, 0, 0, 0.28);
   --shadow-sidebar-right: -4px 0 20px rgba(0, 0, 0, 0.28);
@@ -221,8 +217,6 @@
      浮层需要更明确的边界。shadow 只负责投影。 */
   --border-popover: rgba(10, 10, 10, 0.12);
   --shadow-popover: 0 8px 24px rgba(20, 20, 19, 0.16);
-  --shadow-popover-up: 0 -8px 24px rgba(20, 20, 19, 0.16),
-    0 2px 8px -2px rgba(20, 20, 19, 0.12);
   --shadow-dialog: 0 10px 30px rgba(20, 20, 19, 0.10);
   --shadow-sidebar-left: 4px 0 16px rgba(20, 20, 19, 0.06);
   --shadow-sidebar-right: -4px 0 16px rgba(20, 20, 19, 0.06);
@@ -335,15 +329,6 @@ button, input, select, textarea, optgroup {
    offset orange outline outside the container. */
 .search-input-field:focus-visible {
   outline: none;
-}
-/* Menus that open UPWARD (data-side="top", e.g. the composer chips'
-   project / channel menus) mirror their shadow upward, away from the
-   trigger below. The default downward 8px-offset shadow landed exactly
-   on the trigger chip and dimmed it; raising the chip's z-index can't
-   fix that (it sits inside a z:5 stacking context and can never beat
-   the body-level portal), so shape the shadow instead. */
-[data-radix-popper-content-wrapper] [data-side="top"] {
-  box-shadow: var(--shadow-popover-up);
 }
 /* Display serif for hero text (welcome title). System serif only —
    no font files shipped. */

@@ -43,6 +43,14 @@
      which read as a font mismatch. */
   font-weight: 500;
 }
+/* 菜单开着的那个触发 chip：composer 的 :has 规则把 inputArea 提到
+   portal 之上，chip 画在菜单阴影上层——但透明底的 chip 会把画在
+   下层的阴影透出来，看着仍被压暗。开态补一层不透明底（= 页面
+   底色，视觉零变化），阴影就透不上来。 */
+.runtime-badge[aria-expanded="true"],
+.status-badge[aria-expanded="true"] {
+  background: var(--bg-primary);
+}
 .badge-short {
   font-weight: 500;
   flex-shrink: 0;
@@ -77,11 +85,13 @@
   border: 1px solid color-mix(in srgb, var(--accent-green) 22%, transparent);
   cursor: pointer;
 }
-/* `[data-state="open"]` keeps the trigger lit while its popover is open
-   (radix stamps data-state on the trigger), so the chip reads as "active"
-   the whole time the menu is showing — not just on hover. */
+/* `[aria-expanded="true"]` keeps the trigger lit while its popover is open,
+   so the chip reads as "active" the whole time the menu is showing — not
+   just on hover. 不用 data-state：HoverTip 的 TooltipTrigger 和
+   PopoverTrigger 都往同一个 span 写 data-state，落上去的是 tooltip 的
+   （永远不是 "open"）；aria-expanded 只有 popover 写。 */
 .status-badge:hover,
-.status-badge[data-state="open"] {
+.status-badge[aria-expanded="true"] {
   background: color-mix(in srgb, var(--accent-green) 18%, transparent);
 }
 /* Initial / probing state — yellow until the worker has actually
@@ -93,7 +103,7 @@
   border-color: color-mix(in srgb, var(--accent-yellow) 22%, transparent);
 }
 .status-badge.connecting:hover,
-.status-badge.connecting[data-state="open"] {
+.status-badge.connecting[aria-expanded="true"] {
   background: color-mix(in srgb, var(--accent-yellow) 18%, transparent);
 }
 /* Status badge carries a source name (potentially long, e.g.
@@ -131,7 +141,7 @@
   min-width: 0;
 }
 .runtime-badge.project-badge:hover,
-.runtime-badge.project-badge[data-state="open"] {
+.runtime-badge.project-badge[aria-expanded="true"] {
   background: color-mix(in srgb, var(--text-primary) 12%, transparent);
   color: var(--text-bright);
 }
@@ -900,7 +910,7 @@
   border-color: color-mix(in srgb, var(--accent-orange) 25%, transparent);
 }
 .runtime-badge.agent-badge:hover,
-.runtime-badge.agent-badge[data-state="open"] {
+.runtime-badge.agent-badge[aria-expanded="true"] {
   background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
   border-color: color-mix(in srgb, var(--accent-orange) 35%, transparent);
 }
@@ -924,7 +934,7 @@
   background: color-mix(in srgb, var(--text-muted) 12%, transparent);
 }
 .runtime-badge.permission-badge:hover,
-.runtime-badge.permission-badge[data-state="open"] {
+.runtime-badge.permission-badge[aria-expanded="true"] {
   background: color-mix(in srgb, var(--text-muted) 22%, transparent);
 }
 /* The topbar agent / channel / branch dropdowns are React popovers

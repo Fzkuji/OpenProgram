@@ -6,6 +6,16 @@
 .inputArea {
   /* 底部留白实测 Claude = 13px（控件行到视口底），原 24 太空。 */
   padding: 12px 24px 13px;
+}
+/* Composer 里某个 chip 的菜单开着时，把 inputArea 整个层叠上下文
+   临时提到 portal（z-50）之上：触发按钮画在菜单阴影之上，不被
+   覆盖。菜单面板向上弹、和 composer 不重叠，所以不会被反盖。
+   按钮的 z-index 单独抬没用——它锁在本上下文（z:5）里，永远比
+   不过 body 层的 portal。菜单一关即还原。 */
+.inputArea:has([aria-expanded="true"]) {
+  z-index: 51;
+}
+.inputArea {
   background: transparent;
   /* 80%-ink text token shared by env pills + compact controls (measured
      from claude.ai/code: rgba(10,10,10,0.8) on light). --text-bright is
@@ -439,7 +449,7 @@
   height: auto;
 }
 .inputOptions :global(.runtime-badge.permission-badge:hover),
-.inputOptions :global(.runtime-badge.permission-badge[data-state="open"]) {
+.inputOptions :global(.runtime-badge.permission-badge[aria-expanded="true"]) {
   background: transparent;
   filter: brightness(1.2);
 }
@@ -528,11 +538,11 @@
   padding: 0 2px;
 }
 .envChips :global(.status-badge:hover),
-.envChips :global(.status-badge[data-state="open"]),
+.envChips :global(.status-badge[aria-expanded="true"]),
 .envChips :global(.status-badge.connecting:hover),
-.envChips :global(.status-badge.connecting[data-state="open"]),
+.envChips :global(.status-badge.connecting[aria-expanded="true"]),
 .envChips :global(.runtime-badge.project-badge:hover),
-.envChips :global(.runtime-badge.project-badge[data-state="open"]) {
+.envChips :global(.runtime-badge.project-badge[aria-expanded="true"]) {
   background: color-mix(in srgb, var(--text-bright) 6%, var(--env-pill-bg));
   color: var(--text-bright);
 }
@@ -562,7 +572,7 @@
   color: var(--text-muted);
 }
 .agentChips :global(.runtime-badge.agent-badge:hover),
-.agentChips :global(.runtime-badge.agent-badge[data-state="open"]) {
+.agentChips :global(.runtime-badge.agent-badge[aria-expanded="true"]) {
   background: transparent;
   color: var(--text-primary);
 }
@@ -1003,9 +1013,9 @@
   color: var(--ink-80) !important;
 }
 .controlsRow :global(.runtime-badge.permission-badge:hover),
-.controlsRow :global(.runtime-badge.permission-badge[data-state="open"]),
+.controlsRow :global(.runtime-badge.permission-badge[aria-expanded="true"]),
 .controlsRow :global(.runtime-badge.agent-badge:hover),
-.controlsRow :global(.runtime-badge.agent-badge[data-state="open"]) {
+.controlsRow :global(.runtime-badge.agent-badge[aria-expanded="true"]) {
   background: var(--bg-hover);
   color: var(--text-bright) !important;
   filter: none;
