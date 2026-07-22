@@ -510,7 +510,8 @@
 .envChips :global(.status-badge.connecting),
 .envChips :global(.status-badge.disconnected),
 .envChips :global(.status-badge.paused),
-.envChips :global(.runtime-badge.project-badge) {
+.envChips :global(.runtime-badge.project-badge),
+.envChips :global(.runtime-badge.workdir-badge) {
   height: 24px;
   min-height: 24px;
   max-height: 24px;
@@ -531,7 +532,8 @@
 }
 /* pill 内部件统一：图标 14px、状态点 8px——杜绝视觉高差 */
 .envChips :global(.status-badge) svg,
-.envChips :global(.runtime-badge.project-badge) svg {
+.envChips :global(.runtime-badge.project-badge) svg,
+.envChips :global(.runtime-badge.workdir-badge) svg {
   width: 14px;
   height: 14px;
 }
@@ -549,7 +551,8 @@
 .envChips :global(.status-badge.connecting:hover),
 .envChips :global(.status-badge.connecting[aria-expanded="true"]),
 .envChips :global(.runtime-badge.project-badge:hover),
-.envChips :global(.runtime-badge.project-badge[aria-expanded="true"]) {
+.envChips :global(.runtime-badge.project-badge[aria-expanded="true"]),
+.envChips :global(.runtime-badge.workdir-badge:hover) {
   background: color-mix(in srgb, var(--text-bright) 6%, var(--env-pill-bg));
   color: var(--text-bright);
 }
