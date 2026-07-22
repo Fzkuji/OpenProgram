@@ -227,9 +227,7 @@
      (ChatGPT/Claude). 宽度随聊天区自适应，封顶 --chat-column-max；
      左右留 48px 呼吸，别顶到聊天区边。 */
   width: 100%;
-  /* 紧凑时每侧留 56px：左边那 56px 是消息刻度条的地盘（条带
-     8px 起步 + ~35px 命中区），列不许和它挤到一块。 */
-  max-width: min(var(--chat-column-max), calc(100% - 112px));
+  max-width: min(var(--chat-column-max), calc(100% - 48px));
   margin: 0 auto;
   /* Bottom padding gives the latest message room to scroll up to the
      top of the viewport so the assistant reply lands underneath it
