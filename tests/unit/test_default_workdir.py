@@ -31,8 +31,13 @@ class _NoWorkdirRuntime:
 def store(tmp_path, monkeypatch):
     from openprogram.store.session.session_store import SessionStore
     from openprogram.agent import session_db as sdb_mod
+    from openprogram.store import project_store
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_db", lambda: s)
+    # 与真实项目注册表隔离：默认无绑定、无默认项目，让"回落会话
+    # workdir"的老用例仍然测得到那条链。
+    monkeypatch.setattr(project_store, "project_for_session", lambda sid: None)
+    monkeypatch.setattr(project_store, "get_default_project", lambda: None)
     s.create_session("sess1", "chat", title="t")
     s.append_message("sess1", {
         "id": "u1", "role": "user", "content": "hi",
@@ -100,14 +105,22 @@ def test_project_workdir_for_prefers_project_path(store, tmp_path, monkeypatch):
     assert rt.last_workdir == str(proj_dir)
 
 
-def test_project_workdir_for_default_project_falls_back(store, tmp_path, monkeypatch):
-    """The default project never overrides the session workdir."""
+def test_project_workdir_for_default_project_path_used(store, tmp_path, monkeypatch):
+    """默认项目的路径（用户主目录）同样生效——绝不能漏成进程 cwd。"""
     _bind_project(monkeypatch, _FakeProject(str(tmp_path), is_default=True))
-    assert project_workdir_for("sess1") is None
+    assert project_workdir_for("sess1") == tmp_path
     rt = _FakeRuntime()
-    applied = apply_default_workdir(rt, "sess1")
-    assert applied is not None
-    assert applied.name == "workdir"
+    assert apply_default_workdir(rt, "sess1") == tmp_path
+
+
+def test_project_workdir_for_unbound_uses_default_project(store, tmp_path, monkeypatch):
+    """未绑定项目的会话回落到默认项目路径（chip 显示的就是它）。"""
+    from openprogram.store import project_store
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(project_store, "get_default_project",
+                        lambda: _FakeProject(str(home), is_default=True))
+    assert project_workdir_for("sess1") == home
 
 
 def test_project_workdir_for_missing_dir_falls_back(store, tmp_path, monkeypatch):

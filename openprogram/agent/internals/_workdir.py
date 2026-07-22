@@ -34,18 +34,24 @@ def session_workdir_for(session_id: str) -> Optional[Path]:
 
 
 def project_workdir_for(session_id: str) -> Optional[Path]:
-    """The session's bound NON-DEFAULT project path, or ``None``.
+    """The session's project path (bound project, else the default
+    project), or ``None``.
 
     Resolved fresh on every call (no caching) so a mid-chat
     ``set_session_project`` changes the default cwd from the next
-    turn on. The default project never counts — ad-hoc sessions keep
-    the historical session-workdir behaviour."""
+    turn on. The default project counts too — its path is the user's
+    home, and that's what the topbar chip shows for ad-hoc sessions.
+    Falling through to ``os.getcwd()`` would leak the SERVER's launch
+    directory (the OpenProgram repo) into every chat, which is exactly
+    the bug this exists to fix."""
     if not session_id:
         return None
     try:
         from openprogram.store import project_store as _projects
         proj = _projects.project_for_session(session_id)
-        if proj is not None and not proj.is_default and proj.path:
+        if proj is None:
+            proj = _projects.get_default_project()
+        if proj is not None and proj.path:
             p = Path(proj.path).expanduser()
             if p.is_dir():
                 return p
