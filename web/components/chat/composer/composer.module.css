@@ -7,12 +7,13 @@
   /* 底部留白实测 Claude = 13px（控件行到视口底），原 24 太空。 */
   padding: 12px 24px 13px;
 }
-/* Composer 里某个 chip 的菜单开着时，把 inputArea 整个层叠上下文
-   临时提到 portal（z-50）之上：触发按钮画在菜单阴影之上，不被
-   覆盖。菜单面板向上弹、和 composer 不重叠，所以不会被反盖。
-   按钮的 z-index 单独抬没用——它锁在本上下文（z:5）里，永远比
-   不过 body 层的 portal。菜单一关即还原。 */
-.inputArea:has([aria-expanded="true"]) {
+/* envChips（Local / 项目那排）的菜单开着时，把 inputArea 整个层叠
+   上下文临时提到 portal（z-50）之上：触发按钮画在菜单阴影之上，
+   不被覆盖。这排菜单向上弹、和 composer 不重叠，所以不会被反盖。
+   只限 envChips——controlsRow（模型/权限等）的菜单又高又罩在输入
+   框上方，提升会让输入框反盖菜单下缘。按钮的 z-index 单独抬没
+   用——它锁在本上下文（z:5）里，永远比不过 body 层的 portal。 */
+.inputArea:has(.envChips [aria-expanded="true"]) {
   z-index: 51;
 }
 .inputArea {
