@@ -1302,6 +1302,10 @@ export function Composer() {
                           label={text("Tools", "工具")}
                           trailing={
                             <Menu.SubmenuTrigger
+                              // 默认 openOnHover 下 base-ui 会 ignoreMouse
+                              // ——鼠标点击被吞掉，⚙ 点了没反应。关掉后
+                              // click 才是开关。
+                              openOnHover={false}
                               render={
                                 <button
                                   type="button"

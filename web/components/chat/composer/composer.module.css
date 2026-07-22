@@ -1237,13 +1237,16 @@
   gap: 6px;
   color: currentColor;
 }
-/* Tools 行勾左边的 ⚙ 按钮：点它才弹 Tool Profile 子面板。 */
+/* Tools 行勾左边的 ⚙ 按钮：点它才弹 Tool Profile 子面板。
+   按钮 22px、图标 14px 居中，比裸 14px 的勾多出 4px 衬——用负
+   右边距抵掉，让 ⚙ 图标和其他行的 ✓ 落在同一竖列上。 */
 .plusMenuGear {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 22px;
   height: 22px;
+  margin-right: -4px;
   padding: 0;
   border: none;
   border-radius: 6px;
