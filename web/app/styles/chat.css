@@ -227,7 +227,9 @@
      (ChatGPT/Claude). 宽度随聊天区自适应，封顶 --chat-column-max；
      左右留 48px 呼吸，别顶到聊天区边。 */
   width: 100%;
-  max-width: min(var(--chat-column-max), calc(100% - 48px));
+  /* 紧凑时每侧留 56px：左边那 56px 是消息刻度条的地盘（条带
+     8px 起步 + ~35px 命中区），列不许和它挤到一块。 */
+  max-width: min(var(--chat-column-max), calc(100% - 112px));
   margin: 0 auto;
   /* Bottom padding gives the latest message room to scroll up to the
      top of the viewport so the assistant reply lands underneath it
@@ -1257,8 +1259,9 @@
   padding: 10px 12px;
   pointer-events: auto;
   /* 间距固定不压缩；刻度太多时封顶并内部纵向滚动，不再挤成一坨。
-     translateY(-50%) 基于实际渲染高度，封顶后仍整体居中。 */
-  max-height: 80vh;
+     translateY(-50%) 基于实际渲染高度，封顶后仍整体居中。
+     第二项：矮窗口里别让条带下探到 composer 那排 chip 上。 */
+  max-height: min(80vh, calc(100vh - 400px));
   overflow-y: auto;
   overflow-x: visible; /* 预览卡弹到右侧，别被裁掉 */
   /* 自己能滚，但不画滚动条——刻度即位置指示，再叠一根滚动条是噪声。 */
