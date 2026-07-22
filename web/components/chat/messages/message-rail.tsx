@@ -149,6 +149,8 @@ export function MessageRail() {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const dashRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // wheel 原生监听要用到 idxFromY，但它每次渲染重建；用 ref 转接。
+  const idxFromYRef = useRef<((y: number) => number | null) | null>(null);
 
   // 当前可视消息跟随：滚动时取视口上缘 40% 处之前最近的一条用户消息。
   useEffect(() => {
@@ -188,6 +190,24 @@ export function MessageRail() {
     };
   }, [msgs]);
 
+  // 条带区域整块吞掉滚轮：条自己能滚就滚自己（0.5×，原生增量太冲），
+  // 滚不动也绝不透传给聊天区——鼠标压在条带上时聊天永远不动。React
+  // 的 onWheel 是 passive 的没法 preventDefault，挂原生监听。
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (rail.scrollHeight > rail.clientHeight) {
+        rail.scrollTop += e.deltaY * 0.5;
+        setHoverIdx(idxFromYRef.current?.(e.clientY) ?? null);
+      }
+    };
+    rail.addEventListener("wheel", onWheel, { passive: false });
+    return () => rail.removeEventListener("wheel", onWheel);
+  }, [msgs.length]);
+
   if (msgs.length < 2) return null;
 
   // 以命中条为中心的直线坡度：命中条最长，向外每条线性递减，第 SPAN
@@ -217,6 +237,7 @@ export function MessageRail() {
     }
     return best;
   };
+  idxFromYRef.current = idxFromY;
 
   return (
     <div className="msg-rail-anchor">

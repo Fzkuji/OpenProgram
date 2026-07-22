@@ -107,6 +107,10 @@
 }
 :global([data-theme="light"]) .inputWrapper {
   background: rgba(255, 255, 255, 0.8);
+  /* 半透明底会把滚到输入框后面的消息气泡/头像透出来（发送瞬间
+     尤其明显，看着像"头像和气泡错位"）——加毛玻璃把穿透内容糊掉。 */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 0 0 1px rgba(10, 10, 10, 0.1),
     0 2px 8px rgba(20, 20, 19, 0.04);
 }

@@ -1262,6 +1262,14 @@
   overflow-x: visible; /* 预览卡弹到右侧，别被裁掉 */
   /* 自己能滚，但不画滚动条——刻度即位置指示，再叠一根滚动条是噪声。 */
   scrollbar-width: none;
+  /* 上下缘渐隐：溢出的刻度淡出而不是被硬切一刀。 */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 28px,
+    black calc(100% - 28px),
+    transparent
+  );
 }
 .msg-rail::-webkit-scrollbar {
   display: none;
