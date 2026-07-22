@@ -355,8 +355,39 @@ export function useWS(): void {
         case "branch_checked_out":
           onBranchCheckedOut(d as never);
           return true;
+        // Broadcast after set_working_dirs succeeds — the backend is the
+        // source of truth, so it overwrites any optimistic UI update.
+        case "working_dirs":
+          import("@/lib/session-store").then(({ useSessionStore }) => {
+            const dd = (d || {}) as { session_id?: string; dirs?: unknown };
+            if (!dd.session_id) return;
+            useSessionStore
+              .getState()
+              .setAdditionalWorkingDirs(
+                dd.session_id,
+                Array.isArray(dd.dirs) ? (dd.dirs as string[]) : [],
+              );
+          });
+          return true;
         case "session_loaded":
           loadSessionData(d as never);
+          // Restore the session's additional working directories from the
+          // persisted settings (refresh / device switch recovery).
+          {
+            const dd = d as Record<string, unknown> | null;
+            const sid = dd?.id;
+            const settings = dd?.settings as
+              | Record<string, unknown>
+              | undefined;
+            const dirs = settings?.additional_working_dirs;
+            if (typeof sid === "string" && sid && Array.isArray(dirs)) {
+              import("@/lib/session-store").then(({ useSessionStore }) => {
+                useSessionStore
+                  .getState()
+                  .setAdditionalWorkingDirs(sid, dirs as string[]);
+              });
+            }
+          }
           // Pull the branch list for the freshly-loaded session. The DAG's
           // branch-name badges draw from _branchesByConv, which nothing
           // else fills on a plain load (only rename/delete events and the

@@ -678,6 +678,7 @@ async def handle_load_session(ws, cmd: dict):
                     "tools_override": run_cfg.tools_override,
                     "thinking_effort": run_cfg.thinking_effort,
                     "permission_mode": run_cfg.permission_mode,
+                    "additional_working_dirs": run_cfg.additional_working_dirs,
                 },
                 "run_active": _s._is_run_active(conv["id"]),
                 "status": (_ddb().get_session(session_id) or {}).get("status", "idle"),
@@ -861,6 +862,47 @@ async def handle_remove_permission_rule(ws, cmd: dict):
     _mutate_project_rule(cmd, add=False)
 
 
+# ── 会话额外工作目录（additional-working-directories.md §3.2）──
+# 整表替换语义：前端算好增删后发完整列表，幂等、无"重复添加/删不存在"分支。
+# 校验失败整帧拒绝（error 帧带原因），不做部分写入。
+
+async def handle_set_working_dirs(ws, cmd: dict):
+    """整表替换会话的额外工作目录。dirs 逐条 expanduser + 必须是存在的目录，
+    非法条目整帧拒绝，全部合法才落库并广播 working_dirs 帧。"""
+    from pathlib import Path
+    from openprogram.webui import server as _s
+    session_id = (cmd.get("session_id") or "").strip()
+    raw_dirs = cmd.get("dirs")
+    if not session_id or not isinstance(raw_dirs, list):
+        await ws.send_text(json.dumps({
+            "type": "error",
+            "data": {"message": "set_working_dirs requires session_id and dirs (list)"},
+        }))
+        return
+    dirs: list[str] = []
+    for d in raw_dirs:
+        expanded = Path(str(d)).expanduser()
+        if not expanded.is_dir():
+            await ws.send_text(json.dumps({
+                "type": "error",
+                "data": {"message": f"Not a directory: {d}"},
+            }))
+            return
+        # 存 expanduser 后的绝对路径字符串（不 realpath——用户看到自己选的
+        # 路径，归一化交给 check_path_safety 消费端）。
+        dirs.append(str(expanded))
+    from openprogram.agent.session_config import save_session_run_config
+    from openprogram.webui.ws_actions.chat import _db_agent_id
+    save_session_run_config(
+        session_id,
+        agent_id=_db_agent_id(session_id),
+        additional_working_dirs=dirs,
+    )
+    _s._broadcast(json.dumps({"type": "working_dirs", "data": {
+        "session_id": session_id, "dirs": dirs,
+    }}))
+
+
 async def handle_search_messages(ws, cmd: dict):
     """FTS-backed search across past sessions."""
     from openprogram.webui import server as _s
@@ -1024,6 +1066,7 @@ ACTIONS = {
     "follow_up_answer": handle_follow_up_answer,
     "question_reply": handle_question_reply,
     "question_reject": handle_question_reject,
+    "set_working_dirs": handle_set_working_dirs,
     "search_messages": handle_search_messages,
     "list_sessions": handle_list_sessions,
     "list_permission_rules": handle_list_permission_rules,

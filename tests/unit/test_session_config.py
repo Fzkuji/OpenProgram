@@ -86,3 +86,27 @@ def test_thinking_aliases_normalize(tmp_db: SessionDB) -> None:
     )
     assert cfg.thinking_effort == "max"
     assert reasoning_from_config(cfg) == "max"
+
+
+def test_additional_working_dirs_round_trip(tmp_db: SessionDB) -> None:
+    # 额外工作目录 save/load 往返（additional-working-directories.md §3.6）。
+    tmp_db.create_session("c1", "main")
+    cfg = save_session_run_config(
+        "c1",
+        agent_id="main",
+        additional_working_dirs=["/tmp/a", "/tmp/b"],
+    )
+    assert cfg.additional_working_dirs == ["/tmp/a", "/tmp/b"]
+    assert load_session_run_config("c1").additional_working_dirs == ["/tmp/a", "/tmp/b"]
+
+    # None = 不动（聊天路径不会误清既有配置）。
+    cfg = save_session_run_config("c1", agent_id="main", thinking_effort="high")
+    assert cfg.additional_working_dirs == ["/tmp/a", "/tmp/b"]
+
+    # _as_str_list 清洗：空串被丢弃、非字符串转 str；[] 显式清空。
+    cfg = save_session_run_config(
+        "c1", agent_id="main", additional_working_dirs=["", "/tmp/c"],
+    )
+    assert cfg.additional_working_dirs == ["/tmp/c"]
+    cfg = save_session_run_config("c1", agent_id="main", additional_working_dirs=[])
+    assert cfg.additional_working_dirs == []

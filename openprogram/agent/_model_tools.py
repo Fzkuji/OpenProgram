@@ -283,7 +283,11 @@ def _raise_model_unavailable(requested) -> None:
     raise LLMError(message=msg, reason=ErrorReason.INVALID_REQUEST, retryable=False)
 
 
-def with_tool_runtime_prompt(system_prompt: str, tools: Optional[list]) -> str:
+def with_tool_runtime_prompt(
+    system_prompt: str,
+    tools: Optional[list],
+    additional_working_dirs: Optional[list] = None,
+) -> str:
     if not tools:
         return system_prompt
 
@@ -301,6 +305,15 @@ def with_tool_runtime_prompt(system_prompt: str, tools: Optional[list]) -> str:
     lines = [
         "Runtime tool context:",
         f"- Current working directory: {cwd}",
+    ]
+    if additional_working_dirs:
+        # 会话挂载的额外工作目录（additional-working-directories.md §3.4）：
+        # 只扩模型认知与围栏白名单，不改变主 cwd。
+        lines.append(
+            "- Additional working directories (equally writable): "
+            f"{', '.join(additional_working_dirs)}"
+        )
+    lines += [
         f"- Available tools for this turn: {', '.join(names)}",
         "- Scope every filesystem operation (read/list/glob/grep/bash) "
         "to the smallest known target, ideally under the working "

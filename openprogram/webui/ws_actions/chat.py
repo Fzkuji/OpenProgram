@@ -497,6 +497,9 @@ async def handle_chat(ws, cmd: dict):
         toolset=tools_profile,
         thinking_effort=thinking_effort,
         permission_mode=permission_mode,
+        # 草稿会话（尚无 session_id）在首条消息落地额外工作目录的唯一通道
+        # （additional-working-directories.md §3.3）。None = 不动既有配置。
+        additional_working_dirs=cmd.get("additional_working_dirs"),
     )
     conv["tools_enabled"] = run_cfg.tools_enabled
     conv["tools_override"] = run_cfg.tools_override

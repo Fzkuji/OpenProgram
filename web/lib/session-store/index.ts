@@ -137,6 +137,14 @@ interface ConvState {
   dropChatDraft: (key: string) => void;
   setPendingProject: (chatKey: string, projectId: string) => void;
   takePendingProject: (chatKey: string) => string | null;
+  /** Additional working directories per session (server-persisted session
+   *  data, NOT a composer preference — never mirrored to localStorage).
+   *  Keyed by session id; drafts use their provisional local_* key, which
+   *  the backend adopts as the real session id on first send. Written from
+   *  three sources: `session_loaded.data.settings`, the `working_dirs`
+   *  broadcast frame, and optimistic UI updates from the project menu. */
+  additionalWorkingDirsBySession: Record<string, string[]>;
+  setAdditionalWorkingDirs: (sessionKey: string, dirs: string[]) => void;
   setMessages: (sessionId: string, msgs: ChatMsg[]) => void;
   appendMessage: (sessionId: string, msg: ChatMsg) => void;
   updateMessage: (sessionId: string, msgId: string, patch: Partial<ChatMsg>) => void;
@@ -575,6 +583,15 @@ export const useSessionStore = create<ConvState>((set) => ({
       }));
       return { pendingProjectsByChat };
     }),
+
+  additionalWorkingDirsBySession: {},
+  setAdditionalWorkingDirs: (sessionKey, dirs) =>
+    set((s) => ({
+      additionalWorkingDirsBySession: {
+        ...s.additionalWorkingDirsBySession,
+        [sessionKey]: dirs,
+      },
+    })),
 
   takePendingProject: (chatKey) => {
     let projectId: string | null = null;

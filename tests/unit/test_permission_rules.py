@@ -232,6 +232,47 @@ def test_path_safety(tmp_path):
     assert not check_path_safety("CON", [d])["safe"]                           # DOS device
 
 
+def test_path_is_safe_additional_dir_allows(tmp_path, monkeypatch):
+    # 额外工作目录内的写目标放行（additional-working-directories.md §3.1）。
+    from openprogram.agent.internals._approval import _path_is_safe
+    cwd = tmp_path / "cwd"; cwd.mkdir()
+    extra = tmp_path / "extra"; extra.mkdir()
+    monkeypatch.chdir(cwd)
+    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
+                      additional_working_dirs=[str(extra)])
+    assert _path_is_safe("write_file", {"path": str(extra / "f.txt")}, req)
+
+
+def test_path_is_safe_outside_all_dirs_blocks(tmp_path, monkeypatch):
+    # 主目录 + 额外目录都不包含 → 拦。
+    from openprogram.agent.internals._approval import _path_is_safe
+    cwd = tmp_path / "cwd"; cwd.mkdir()
+    extra = tmp_path / "extra"; extra.mkdir()
+    outside = tmp_path / "outside"; outside.mkdir()
+    monkeypatch.chdir(cwd)
+    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
+                      additional_working_dirs=[str(extra)])
+    assert not _path_is_safe("write_file", {"path": str(outside / "f.txt")}, req)
+
+
+def test_path_is_safe_uses_worktree_contextvar(tmp_path, monkeypatch):
+    # 围栏基准与 system prompt 同源：ContextVar 绑定的项目 cwd 优先于
+    # os.getcwd()（服务器进程启动目录）。
+    from openprogram.agent.internals._approval import _path_is_safe
+    import openprogram.worktree.context as wt_ctx
+    proc_cwd = tmp_path / "proc"; proc_cwd.mkdir()
+    project = tmp_path / "project"; project.mkdir()
+    monkeypatch.chdir(proc_cwd)
+    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web")
+    token = wt_ctx._current_worktree_path.set(str(project))
+    try:
+        assert _path_is_safe("write_file", {"path": str(project / "f.txt")}, req)
+        # 进程 cwd 不再是围栏基准。
+        assert not _path_is_safe("write_file", {"path": str(proc_cwd / "f.txt")}, req)
+    finally:
+        wt_ctx._current_worktree_path.reset(token)
+
+
 def test_is_dangerous_allow_rule():
     from openprogram.functions.tools.file_safety import is_dangerous_allow_rule
     assert is_dangerous_allow_rule("bash", "python:*")   # interpreter

@@ -827,6 +827,7 @@ def _run_loop_blocking(
     system_prompt = _with_tool_runtime_prompt(
         agent_profile.get("system_prompt") or "",
         tools,
+        additional_working_dirs=getattr(req, "additional_working_dirs", None),
     )
     if deferred_catalog:
         block = deferred_catalog_text(deferred_catalog)

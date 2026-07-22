@@ -180,6 +180,17 @@ export function sendChatMessage({
   if (pendingProjectId) {
     payload.project_id = pendingProjectId;
   }
+  // Additional working directories picked before the session exists ride
+  // the chat frame (backend persists them via save_session_run_config on
+  // session create). Harmless on existing sessions — same list the
+  // backend already has. Keyed by the same chat key as pendingProjects:
+  // drafts use their local_* key, which the backend adopts as the id.
+  const additionalWorkingDirs = sessionId
+    ? useSessionStore.getState().additionalWorkingDirsBySession[sessionId]
+    : null;
+  if (additionalWorkingDirs && additionalWorkingDirs.length > 0) {
+    payload.additional_working_dirs = additionalWorkingDirs;
+  }
   if (attachments && attachments.length > 0) {
     // Backend (ws_actions/chat.py) reads ``attachments`` and dispatcher
     // (TurnRequest.attachments) folds them into the user message as

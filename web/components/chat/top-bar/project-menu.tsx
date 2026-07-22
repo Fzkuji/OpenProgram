@@ -14,7 +14,7 @@
  * Positioning / click-outside come from the shadcn <Popover> in index.tsx.
  */
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Check, Folder } from "lucide-react";
+import { Check, Folder, Plus, X } from "lucide-react";
 import {
   type AnimatedNavIconHandle,
   FolderOpenIcon,
@@ -37,6 +37,15 @@ function notifyProjectChanged() {
   window.dispatchEvent(new Event("project-changed"));
 }
 
+/** Stable empty list so the zustand selector doesn't churn renders. */
+const NO_WORKING_DIRS: string[] = [];
+
+/** Compact display for a directory path — keep the last two segments. */
+function shortenPath(path: string): string {
+  const segments = path.split("/").filter(Boolean);
+  return segments.length > 2 ? "…/" + segments.slice(-2).join("/") : path;
+}
+
 interface Project {
   id: string;
   name: string;
@@ -57,6 +66,72 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Additional working directories — server-persisted session data kept
+  // in the session store (never localStorage). Drafts key by their
+  // provisional local_* chat key.
+  const workingDirsKey = sessionId ?? activeChatKey;
+  const workingDirs = useSessionStore((s) =>
+    workingDirsKey
+      ? s.additionalWorkingDirsBySession[workingDirsKey] ?? NO_WORKING_DIRS
+      : NO_WORKING_DIRS,
+  );
+  const setAdditionalWorkingDirs = useSessionStore(
+    (s) => s.setAdditionalWorkingDirs,
+  );
+
+  // Whole-list replace: optimistic store write first (instant UI), then
+  // `set_working_dirs` to the backend — its `working_dirs` broadcast is
+  // authoritative and overwrites the optimistic value. Draft chats (no
+  // real session yet) only write the store; the first chat frame carries
+  // the list (legacy-send.ts) so the backend persists it on creation.
+  function applyWorkingDirs(dirs: string[]) {
+    if (!workingDirsKey) return;
+    setAdditionalWorkingDirs(workingDirsKey, dirs);
+    const isDraft = !sessionId || sessionId.startsWith("local_");
+    if (!isDraft) {
+      void wsRequest(
+        "set_working_dirs",
+        { session_id: sessionId, dirs },
+        "working_dirs",
+        (d) => (d as { session_id?: string }).session_id === sessionId,
+      );
+    }
+  }
+
+  // "＋ Add folder" → same OS-native directory chooser as openFolder(),
+  // but the picked path extends the session's working-dir list instead
+  // of binding a project.
+  async function addWorkingDir() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/pick-folder", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      const data = res.ok
+        ? ((await res.json()) as { path?: string | null; unsupported?: boolean })
+        : null;
+      if (data?.path) {
+        if (!workingDirs.includes(data.path)) {
+          applyWorkingDirs([...workingDirs, data.path]);
+        }
+      } else if (!data || data.unsupported) {
+        setErr(
+          text(
+            "Couldn't open the system folder picker — restart the worker.",
+            "无法打开系统文件夹选择器 — 请重启 worker。",
+          ),
+        );
+      }
+      // data.path == null (and supported) → user cancelled; no-op.
+    } catch {
+      setErr(text("Couldn't open the folder picker.", "无法打开文件夹选择器。"));
+    }
+    setBusy(false);
+  }
 
   const refresh = useCallback(async () => {
     const data = await wsRequest<{
@@ -190,6 +265,28 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
         <Folder size={14} strokeWidth={2} className="shrink-0 opacity-70" />
         <span className="flex-1">{text("Open folder…", "打开文件夹…")}</span>
       </div>
+      <div className={MENU_SEPARATOR} />
+
+      <div className={GROUP_LABEL}>{text("Working folders", "工作目录")}</div>
+      {workingDirs.map((dir) => (
+        <div key={dir} className={itemCls(false)} title={dir}>
+          <span className="min-w-0 flex-1 truncate">{shortenPath(dir)}</span>
+          <X
+            size={13}
+            className="shrink-0 cursor-pointer opacity-50 hover:opacity-100"
+            aria-label={text("Remove folder", "移除文件夹")}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!busy) applyWorkingDirs(workingDirs.filter((d) => d !== dir));
+            }}
+          />
+        </div>
+      ))}
+      <div className={itemCls(false)} onClick={() => !busy && addWorkingDir()}>
+        <Plus size={14} strokeWidth={2} className="shrink-0 opacity-70" />
+        <span className="flex-1">{text("Add folder…", "添加文件夹…")}</span>
+      </div>
+
       {err ? (
         <div className="px-[8px] pb-[3px] pt-[1px] text-[11px] text-[var(--accent-orange)]">
           {err}

@@ -75,10 +75,15 @@ def _path_is_safe(tool_name: str, args: dict, req: "TurnRequest") -> bool:
     import os
     from openprogram.functions.permission_rule import parse_command
     from openprogram.functions.tools.file_safety import check_path_safety
+    from openprogram.worktree.context import current_worktree_path
     path = parse_command(tool_name, args)
     if not path:
         return True  # 无路径参数（如 glob/grep）视为安全
-    work_dirs = [os.getcwd(), *getattr(req, "additional_working_dirs", [])]
+    # 围栏基准与 system prompt 的 cwd 同源（_model_tools 同一 ContextVar）：
+    # dispatcher 每 turn 把真实 cwd（worktree / 项目路径）绑进
+    # current_worktree_path，进程 getcwd 只是无绑定时的回落。
+    work_dirs = [current_worktree_path() or os.getcwd(),
+                 *getattr(req, "additional_working_dirs", [])]
     return check_path_safety(path, work_dirs)["safe"]
 
 
