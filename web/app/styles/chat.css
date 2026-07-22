@@ -222,11 +222,12 @@
 
 .chat-messages {
   flex: 1;
-  /* Content column matches the composer width (800) and centers, so the
+  /* Content column matches the composer width and centers, so the
      conversation and the input box share one column / center axis
-     (ChatGPT/Claude). */
+     (ChatGPT/Claude). 宽度随聊天区自适应，封顶 --chat-column-max；
+     左右留 48px 呼吸，别顶到聊天区边。 */
   width: 100%;
-  max-width: 800px;
+  max-width: min(var(--chat-column-max), calc(100% - 48px));
   margin: 0 auto;
   /* Bottom padding gives the latest message room to scroll up to the
      top of the viewport so the assistant reply lands underneath it
