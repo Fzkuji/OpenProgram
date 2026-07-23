@@ -212,10 +212,26 @@ export interface DesktopHistoryApi {
  *  UI window; `onAction` receives the chosen action id back in the UI
  *  window. Anchor: panel right edge sits `rightInset` px from the window
  *  right (measured against `vw`), top edge on the strip divider `top`. */
+export interface DesktopContextMenuItem {
+  id: string;
+  label: string;
+  disabled?: boolean;
+}
+
 export interface DesktopMainMenuApi {
   open(opts: {
-    anchor: { rightInset: number; top: number; vw: number };
+    /** Main menu: right-inset anchor. Generic context menu (`items`
+     *  given): panel top-left at {x, y}, clamped inside the window. */
+    anchor:
+      | { rightInset: number; top: number; vw: number }
+      | { x: number; y: number; vw: number; vh: number };
     theme?: "light" | "dark";
+    /** Present → generic context-menu overlay instead of the ⋮ menu.
+     *  Namespace the ids (e.g. "tabmenu:*") — every onAction subscriber
+     *  shares one channel and must recognise only its own prefix. */
+    items?: DesktopContextMenuItem[];
+    width?: number;
+    height?: number;
   }): void;
   close(): void;
   onAction(cb: (id: string) => void): () => void;

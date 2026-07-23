@@ -251,6 +251,42 @@ export function CenterTabStrip() {
   const stripRef = useRef<HTMLDivElement>(null);
   const tabsFlowRef = useRef<HTMLDivElement>(null);
   const canMoveToNewWindow = Boolean(desktopBridge());
+  // Desktop shell: the tab context menu is a top-layer overlay (see
+  // openTabMenu). The subject tab and the dispatcher live in refs so the
+  // once-registered onAction listener always sees the current render's
+  // handlers. The channel is shared with MainMenu — only "tabmenu:*" ids
+  // are ours.
+  const overlayMenuTabIdRef = useRef<string | null>(null);
+  const overlayMenuDispatchRef = useRef<(action: string) => void>(() => {});
+  overlayMenuDispatchRef.current = (action) => {
+    const tabId = overlayMenuTabIdRef.current;
+    if (!tabId) return;
+    switch (action) {
+      case "move-left":
+        moveMenuTab(tabId, -1);
+        break;
+      case "move-right":
+        moveMenuTab(tabId, 1);
+        break;
+      case "split":
+        openSplitPicker(tabId);
+        break;
+      case "ungroup":
+        removeMenuTabFromGroup(tabId);
+        break;
+      case "new-window":
+        moveMenuTabToNewWindow(tabId);
+        break;
+    }
+  };
+  useEffect(() => {
+    const mainMenu = desktopBridge()?.mainMenu;
+    if (!mainMenu) return;
+    return mainMenu.onAction((id) => {
+      if (!id.startsWith("tabmenu:")) return;
+      overlayMenuDispatchRef.current(id.slice("tabmenu:".length));
+    });
+  }, []);
 
   // The ＋ no longer needs rail alignment: the main menu button owns the
   // reserved right column, so ＋ is a plain flex item after the tab flow
@@ -433,6 +469,47 @@ export function CenterTabStrip() {
     const left = "clientX" in event ? event.clientX : rect.left;
     const top = "clientY" in event ? event.clientY : rect.bottom;
     setFocusedTabId(tabId);
+    // Desktop shell: the menu must paint above native web-tab views, which
+    // always draw over the DOM — route it through the top-layer overlay
+    // (same mechanism as the ⋮ main menu). Ids carry the "tabmenu:" prefix
+    // so the shared main-menu:action channel disambiguates subscribers.
+    const mainMenu = desktopBridge()?.mainMenu;
+    if (mainMenu) {
+      overlayMenuTabIdRef.current = tabId;
+      const theme = document.documentElement.dataset.theme;
+      mainMenu.open({
+        anchor: { x: left, y: top, vw: window.innerWidth, vh: window.innerHeight },
+        theme: theme === "dark" || theme === "light" ? theme : undefined,
+        items: [
+          {
+            id: "tabmenu:move-left",
+            label: text("Move left", "向左移动"),
+            disabled: !canMoveMenuTab(tabId, -1),
+          },
+          {
+            id: "tabmenu:move-right",
+            label: text("Move right", "向右移动"),
+            disabled: !canMoveMenuTab(tabId, 1),
+          },
+          {
+            id: "tabmenu:split",
+            label: text("New split view with this tab", "与此标签页新建分屏"),
+            disabled: !canOpenSplitPicker(tabId),
+          },
+          {
+            id: "tabmenu:ungroup",
+            label: text("Remove from group", "移出分组"),
+            disabled: !findCenterTabGroup(useCenterTabs.getState().groups, tabId),
+          },
+          {
+            id: "tabmenu:new-window",
+            label: text("Move to new window", "移至新窗口"),
+            disabled: !canMoveToNewWindow,
+          },
+        ],
+      });
+      return;
+    }
     setTabMenu({
       tabId,
       left: Math.min(Math.max(8, left), Math.max(8, window.innerWidth - 208)),

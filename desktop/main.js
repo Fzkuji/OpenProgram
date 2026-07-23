@@ -1784,8 +1784,14 @@ const MAIN_MENU_HEIGHT = 220;
 // Extra room around the panel so its drop shadow isn't clipped by the
 // view's own edge (the panel itself is smaller than the view).
 const MAIN_MENU_GUTTER = 24;
+// Generic context-menu overlay (opts.items given): panel width default
+// matches the DOM .tabMenu (200px); height derives from the row count —
+// itemCls rows are 24px, MENU_PANEL adds 6px padding + 1px border each side.
+const CONTEXT_MENU_WIDTH = 200;
+const CONTEXT_MENU_ROW_HEIGHT = 24;
+const CONTEXT_MENU_CHROME = 16;
 
-function menuOverlayUrl(theme) {
+function menuOverlayUrl(theme, items) {
   let origin = "http://127.0.0.1:" + WEB_PORT;
   try {
     origin = new URL(START_URL).origin;
@@ -1794,7 +1800,12 @@ function menuOverlayUrl(theme) {
   }
   const q = new URLSearchParams();
   if (theme === "dark" || theme === "light") q.set("theme", theme);
-  return origin + "/menu-overlay/main-menu?" + q.toString();
+  if (items) q.set("items", JSON.stringify(items));
+  return (
+    origin
+    + (items ? "/menu-overlay/context-menu?" : "/menu-overlay/main-menu?")
+    + q.toString()
+  );
 }
 
 function closeMainMenu(ctx) {
@@ -1837,23 +1848,53 @@ function openMainMenu(ctx, opts) {
   // view accordingly. The renderer measures against its own viewport, so use
   // the viewport width it reports, not getContentBounds (which can disagree).
   const anchor = (opts && opts.anchor) || {};
-  const { width: cbW } = ctx.win.getContentBounds();
+  const { width: cbW, height: cbH } = ctx.win.getContentBounds();
   const winW = Number(anchor.vw) || cbW;
-  const rightInset = Number.isFinite(anchor.rightInset) ? anchor.rightInset : 8;
-  const panelTop = Number.isFinite(anchor.top) ? anchor.top : 40;
-  const viewW = MAIN_MENU_WIDTH + MAIN_MENU_GUTTER * 2;
-  const viewH = MAIN_MENU_HEIGHT + MAIN_MENU_GUTTER * 2;
-  // Panel right edge = winW - rightInset. Panel right = view.x + GUTTER + WIDTH.
-  let x = Math.round(winW - rightInset - MAIN_MENU_WIDTH - MAIN_MENU_GUTTER);
-  const minX = -MAIN_MENU_GUTTER; // panel left at window 0
-  x = Math.round(Math.max(minX, x));
-  // Panel top = panelTop. Panel top = view.y + GUTTER.
-  const y = Math.round(panelTop - MAIN_MENU_GUTTER);
-  view.setBounds({ x, y, width: viewW, height: viewH });
+  const winH = Number(anchor.vh) || cbH;
+  const items = Array.isArray(opts && opts.items) ? opts.items : null;
+  let panelW;
+  let panelH;
+  let panelX;
+  let panelY;
+  if (items) {
+    // Generic context menu: panel top-left at anchor {x, y}, clamped to an
+    // 8px margin inside the window (same clamp the DOM tab menu used).
+    panelW = Number(opts.width) || CONTEXT_MENU_WIDTH;
+    panelH = Number(opts.height)
+      || items.length * CONTEXT_MENU_ROW_HEIGHT + CONTEXT_MENU_CHROME;
+    panelX = Math.min(
+      Math.max(8, Number(anchor.x) || 0),
+      Math.max(8, winW - panelW - 8),
+    );
+    panelY = Math.min(
+      Math.max(8, Number(anchor.y) || 0),
+      Math.max(8, winH - panelH - 8),
+    );
+  } else {
+    // Main menu: panel right edge sits `rightInset` from the window right,
+    // top edge on the strip's bottom divider.
+    panelW = MAIN_MENU_WIDTH;
+    panelH = MAIN_MENU_HEIGHT;
+    const rightInset = Number.isFinite(anchor.rightInset)
+      ? anchor.rightInset
+      : 8;
+    panelX = Math.max(0, winW - rightInset - panelW);
+    panelY = Number.isFinite(anchor.top) ? anchor.top : 40;
+  }
+  const viewW = panelW + MAIN_MENU_GUTTER * 2;
+  const viewH = panelH + MAIN_MENU_GUTTER * 2;
+  // Panel is inset by GUTTER inside the view (transparent room for the
+  // drop shadow) — offset the view accordingly.
+  view.setBounds({
+    x: Math.round(panelX - MAIN_MENU_GUTTER),
+    y: Math.round(panelY - MAIN_MENU_GUTTER),
+    width: viewW,
+    height: viewH,
+  });
 
   const theme = opts && opts.theme;
   view.webContents
-    .loadURL(menuOverlayUrl(theme))
+    .loadURL(menuOverlayUrl(theme, items))
     .then(() => {
       if (ctx.mainMenuView === view && !view.webContents.isDestroyed()) {
         view.webContents.focus();
