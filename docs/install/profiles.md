@@ -13,33 +13,35 @@ OPENPROGRAM_PROFILE=dev openprogram  # or the env var — equivalent (the flag w
 
 `--profile` is a global flag: put it before the subcommand and it applies to every subcommand — `openprogram --profile dev sessions list`, `openprogram --profile dev restart`, and so on.
 
-## Ports: one pair per instance
+## Ports: one per instance
 
-The defaults are frontend 18100, backend 18109. Three ways to change them:
+Each instance listens on a single port (API, WebSocket, and the web UI together). The default is 18100. Three ways to change it:
 
 ```bash
 # 1. Persist into that profile's config (recommended — no flags needed on later starts)
-openprogram --profile dev ports --backend 18209 --frontend 18200
+openprogram --profile dev ports --frontend 18200
 
-# 2. Environment variables, override one run
-OPENPROGRAM_BACKEND_PORT=18209 OPENPROGRAM_WEB_PORT=18200 openprogram web
+# 2. Environment variable, override one run
+OPENPROGRAM_WEB_PORT=18200 openprogram web
 
-# 3. Command-line flags, this `openprogram web` invocation only
-openprogram web --port 18209 --web-port 18200
+# 3. Command-line flag, this `openprogram web` invocation only
+openprogram web --port 18200
 ```
+
+`OPENPROGRAM_BACKEND_PORT` and `ports --backend` still work as legacy aliases for the same single port (the worker logs a warning when the env var is used).
 
 `ports` writes into the current profile's config, so each profile remembers its own ports.
 
 ## Example: stable + development pair
 
-The stable instance uses the default profile and default ports; the development instance uses the `dev` profile on 18200/18209:
+The stable instance uses the default profile and default port; the development instance uses the `dev` profile on 18200:
 
 ```bash
 # Stable instance (daily use)
 openprogram web                        # http://localhost:18100
 
-# Development instance: write the ports into the dev profile (once)
-openprogram --profile dev ports --backend 18209 --frontend 18200
+# Development instance: write the port into the dev profile (once)
+openprogram --profile dev ports --frontend 18200
 
 # From then on, start it like this
 openprogram --profile dev web          # http://localhost:18200

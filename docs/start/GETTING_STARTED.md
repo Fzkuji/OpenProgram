@@ -37,7 +37,7 @@ Sanity check: `openprogram providers` lists the detected credentials.
 openprogram web
 ```
 
-This starts the backend and the Next.js frontend together and opens your browser at **http://localhost:18100** (not :18109 — that's the backend API port). Change ports with `openprogram ports --backend <p> --frontend <p>`.
+This starts the background worker and opens your browser at **http://localhost:18100** — a single port serving the web UI, the API, and the WebSocket. Change it with `openprogram ports --frontend <p>`.
 
 ## Step 4: Send your first message
 

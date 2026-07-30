@@ -7,15 +7,15 @@ The keys in `~/.openprogram/config.json`, what `openprogram config` can read and
 ```bash
 openprogram config list              # every setting: value, group, apply mode
 openprogram config get ui.port
-openprogram config set ui.web_port 8101
+openprogram config set ui.port 8101
 ```
 
 The settings registry is defined in `openprogram/config_schema.py` (the single source of truth; the setup wizard, the TUI settings page, and the Web settings page all render from it). Every setting is labeled with an apply mode: `live` takes effect immediately, `next_start` takes effect the next time the worker starts.
 
 | key | Group | Meaning | Default | Applies |
 |-----|------|------|------|------|
-| `ui.port` | Ports | backend (FastAPI, API + WebSocket) port | 18109 | next start |
-| `ui.web_port` | Ports | frontend (Web UI) port | 18100 | next start |
+| `ui.port` | Ports | the single worker port (API + WebSocket + web UI) | 18100 | next start |
+| `ui.web_port` | Ports | legacy alias for the single port (kept for the deprecation window) | 18100 | next start |
 | `ui.open_browser` | Ports | whether `openprogram web` opens the browser automatically | true | next start |
 | `search.default_provider` | Search | default web search provider; `auto` picks the highest-priority configured one | auto | live |
 | `memory.backend` | Memory | `local` (on-disk memory tools) or `none` (disabled) | local | next start |
@@ -54,10 +54,9 @@ Set these in the shell that launches `openprogram` (or the worker). Every one ha
 
 | Variable | Purpose | Code |
 |------|------|------|
-| `OPENPROGRAM_BACKEND_PORT` | backend port (default 18109); below explicit flags, above the persisted preference | `openprogram/worker/lifecycle.py`, `openprogram/_cli_cmds/web.py` |
-| `OPENPROGRAM_WEB_PORT` | frontend port (default 18100) | `openprogram/_cli_cmds/web.py` |
-| `OPENPROGRAM_BACKEND_URL` | URL the frontend uses to reach the backend (read by Next.js rewrites); normally set automatically | `openprogram/worker/web.py` |
-| `OPENPROGRAM_NO_WEB` | `1` = the worker does not start the web frontend | `openprogram/worker/web.py` |
+| `OPENPROGRAM_WEB_PORT` | the single worker port (default 18100); below explicit flags, above the persisted preference | `openprogram/worker/lifecycle.py`, `openprogram/_cli_cmds/web.py` |
+| `OPENPROGRAM_BACKEND_PORT` | legacy alias for `OPENPROGRAM_WEB_PORT` from the dual-port era; the worker logs a warning when it is read | `openprogram/worker/lifecycle.py` |
+| `OPENPROGRAM_NO_WEB` | `1` = the worker skips the frontend build gate and does not serve the web UI | `openprogram/worker/runner.py` |
 | `OPENPROGRAM_WEB_NO_FRONTEND` | `1` = `openprogram web` skips the frontend and starts only the backend | `openprogram/_cli_cmds/web.py` |
 | `OPENPROGRAM_DOCS_BASE` | Mount path of the docs site (default `/docs/`; must start and end with `/`) | `tools/docs_site/build.py` |
 

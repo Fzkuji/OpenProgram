@@ -1,5 +1,7 @@
 # Web UI Ports — Architecture, Configuration, and Conflict Handling
 
+> Superseded by [single-port.md](single-port.md) (implemented in commit 8b79804b): the dual-port architecture below no longer matches the runtime. Kept as an engineering record.
+
 How OpenProgram chooses, configures, and defends the ports its web UI runs
 on. Covers the two-port present, the single-port target, the configuration
 surface (`openprogram ports`), and what happens when a port is occupied.

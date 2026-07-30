@@ -31,24 +31,21 @@ openprogram restart    # 重启（改了代码或配置之后用）
 `openprogram status` 的输出示例：
 
 ```
-openprogram: running (PID 82472, port 18109, up 48m)
+openprogram: running (PID 82472, port 18100, up 48m)
   logs: ~/.openprogram/worker.log
 ```
 
 ## 端口
 
-| 端口 | 用途 | 默认值 |
-|------|------|--------|
-| backend | FastAPI 后端（API + WebSocket），TUI 和 Web UI 都连它 | 18109 |
-| frontend | Next.js 前端（浏览器里打开的地址） | 18100 |
+worker 只监听一个端口（默认 18100），承载全部内容：API、WebSocket（TUI 和 Web UI 都连它）以及 web UI 本身——浏览器里打开的就是这个地址。
 
 持久化修改：
 
 ```bash
-openprogram ports --backend 8102 --frontend 8101
+openprogram ports --frontend 8101
 ```
 
-单次运行覆盖：环境变量 `OPENPROGRAM_BACKEND_PORT` / `OPENPROGRAM_WEB_PORT`，或 `openprogram web --port <backend> --web-port <frontend>`。优先级：显式参数 → 环境变量 → 持久化偏好 → 默认值。
+单次运行覆盖：环境变量 `OPENPROGRAM_WEB_PORT`，或 `openprogram web --port <p>`。优先级：显式参数 → 环境变量 → 持久化偏好 → 默认值。`OPENPROGRAM_BACKEND_PORT` 是同一端口的遗留别名，被读到时 worker 会打警告。
 
 ## 日志
 

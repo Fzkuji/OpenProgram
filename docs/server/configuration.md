@@ -34,8 +34,7 @@ Every setting has an apply mode: `live` (takes effect immediately) or `next star
 
 | key | Meaning | Default | Applies |
 |-----|------|------|------|
-| `ui.port` | backend (FastAPI) port | 18109 | next start |
-| `ui.web_port` | frontend (Web UI) port | 18100 | next start |
+| `ui.port` | the single worker port (API + WebSocket + web UI); `ui.web_port` is a legacy alias | 18100 | next start |
 | `ui.open_browser` | whether `openprogram web` opens the browser automatically | true | next start |
 | `search.default_provider` | default web search provider (`auto` picks the highest-priority configured one) | auto | live |
 | `memory.backend` | memory backend: `local` (on disk) or `none` (disabled) | local | next start |
@@ -45,11 +44,11 @@ Every setting has an apply mode: `live` (takes effect immediately) or `next star
 
 ## Port shortcut
 
-`openprogram ports` is the dedicated writer for `ui.port` / `ui.web_port`:
+`openprogram ports` is the dedicated writer for the port preference:
 
 ```bash
-openprogram ports                        # view
-openprogram ports --backend 8102 --frontend 8101   # persist a change
+openprogram ports                    # view
+openprogram ports --frontend 8101    # persist a change (--backend is a legacy alias)
 ```
 
 ## Network proxy
@@ -83,4 +82,4 @@ openprogram --profile dev            # run an independent instance on ~/.openpro
 OPENPROGRAM_PROFILE=dev openprogram status
 ```
 
-Combined with different `OPENPROGRAM_BACKEND_PORT` / `OPENPROGRAM_WEB_PORT` values, several services can run at once. For installation, see [Profiles](../install/profiles.md).
+Combined with different `OPENPROGRAM_WEB_PORT` values, several services can run at once. For installation, see [Profiles](../install/profiles.md).

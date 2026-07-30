@@ -34,8 +34,7 @@ openprogram config set <key> <value> # 改一个设置
 
 | key | 含义 | 默认 | 生效 |
 |-----|------|------|------|
-| `ui.port` | backend（FastAPI）端口 | 18109 | next start |
-| `ui.web_port` | frontend（Web UI）端口 | 18100 | next start |
+| `ui.port` | worker 单端口（API + WebSocket + web UI）；`ui.web_port` 是遗留别名 | 18100 | next start |
 | `ui.open_browser` | `openprogram web` 是否自动打开浏览器 | true | next start |
 | `search.default_provider` | 默认 web 搜索 provider（`auto` 选优先级最高的已配置项） | auto | live |
 | `memory.backend` | 记忆后端：`local`（磁盘）或 `none`（禁用） | local | next start |
@@ -45,11 +44,11 @@ openprogram config set <key> <value> # 改一个设置
 
 ## 端口的快捷命令
 
-`openprogram ports` 是 `ui.port` / `ui.web_port` 的专用写入口：
+`openprogram ports` 是端口偏好的专用写入口：
 
 ```bash
-openprogram ports                        # 查看
-openprogram ports --backend 8102 --frontend 8101   # 持久化修改
+openprogram ports                    # 查看
+openprogram ports --frontend 8101    # 持久化修改（--backend 是遗留别名）
 ```
 
 ## 网络代理
@@ -77,4 +76,4 @@ openprogram --profile dev            # 用 ~/.openprogram-dev/ 跑一套独立�
 OPENPROGRAM_PROFILE=dev openprogram status
 ```
 
-配合不同的 `OPENPROGRAM_BACKEND_PORT` / `OPENPROGRAM_WEB_PORT` 可以同时跑多套服务。安装方式见[安装](../install/profiles.md)。
+配合不同的 `OPENPROGRAM_WEB_PORT` 可以同时跑多套服务。安装方式见[安装](../install/profiles.md)。

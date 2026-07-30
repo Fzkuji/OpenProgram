@@ -37,7 +37,7 @@ export GEMINI_API_KEY=...               # Gemini（GOOGLE_API_KEY 也可以）
 openprogram web
 ```
 
-它会同时启动后端和 Next.js 前端，并打开浏览器到 **http://localhost:18100**（不是 :18109，那是后端 API 端口）。改端口用 `openprogram ports --backend <p> --frontend <p>`。
+它会启动后台 worker 并打开浏览器到 **http://localhost:18100**——web UI、API 和 WebSocket 共用这一个端口。改端口用 `openprogram ports --frontend <p>`。
 
 ## 第 4 步：发第一条消息
 

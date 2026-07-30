@@ -4,7 +4,7 @@ OpenProgram can be used three ways: the Web UI in a browser, the TUI in a termin
 
 ## Three clients, one service
 
-All three interfaces share the same local background service (called the worker in the code): a resident process hosting the FastAPI + WebSocket backend (port 18109 by default) plus optional chat-channel adapters. The Web UI and the terminal TUI both connect to it over WebSocket; if no worker is running, the TUI starts one automatically.
+All three interfaces share the same local background service (called the worker in the code): a resident process hosting the FastAPI + WebSocket backend and the web UI itself, all on a single port (18100 by default), plus optional chat-channel adapters. The Web UI and the terminal TUI both connect to it over WebSocket; if no worker is running, the TUI starts one automatically.
 
 Sessions all live in `~/.openprogram/sessions/` (each session is a git repository), and all three interfaces read and write the same store. As a result:
 

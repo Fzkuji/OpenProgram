@@ -26,14 +26,13 @@ echo 'export PATH="$(python3 -m site --user-base)/bin:$PATH"' >> ~/.zshrc
 
 ## Web UI 端口被占用
 
-启动 worker 前设置以下环境变量之一：
+启动 worker 前设置这个环境变量（API、WebSocket 和 web UI 共用一个端口）：
 
 ```bash
-export OPENPROGRAM_WEB_PORT=8101         # 前端（默认 18100）
-export OPENPROGRAM_BACKEND_PORT=8102     # FastAPI（默认 18109）
+export OPENPROGRAM_WEB_PORT=8101         # 单端口（默认 18100）
 ```
 
-或持久化该偏好：`openprogram ports --backend 8102 --frontend 8101`。
+或持久化该偏好：`openprogram ports --frontend 8101`。`OPENPROGRAM_BACKEND_PORT` 是同一端口的遗留别名。
 
 ## 本地开发安装（多仓库）
 
@@ -63,7 +62,7 @@ rm -f Research-Agent-Harness && ln -s "$RESEARCH_HARNESS_DIR" Research-Agent-Har
 
 `openprogram doctor` 会运行一次快速的端到端检查：Python/Node/git
 工具链、技能和插件能否加载、provider 凭据、MCP server、磁盘缓存，
-以及 worker 是否在 :18109 监听。`openprogram rescue` 在诊断之外
+以及 worker 是否在 :18100 监听。`openprogram rescue` 在诊断之外
 还会直接打印修复命令。在提 issue 之前先读一遍它们的输出。
 
 ## `import openprogram` 报 ModuleNotFoundError

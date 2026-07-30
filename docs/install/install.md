@@ -66,7 +66,7 @@ The installer is **idempotent** — re-run it any time to repair or update.
 | 1 | Verify / install **Python 3.11+, Node 20+, git** | macOS `brew` / Linux `apt`·`dnf`·`pacman` / Windows `winget`. Best-effort. |
 | 2 | **Python env** | Active `venv`/conda if any, else creates `./.venv`. Override: `--python` / `-Python`. This is the "wherever you want" location. |
 | 3 | **OpenProgram** editable install (`pip install -e .`) | The host + base deps. |
-| 4 | **Web UI** — `npm install && npm run build` in `web/` | Next.js frontend on **:18100**, backend on **:18109**. `--minimal` skips the build (the worker builds on first start). |
+| 4 | **Web UI** — `npm install && npx next build` in `web/` | Builds the static export (`web/out/`) the Python worker serves on **:18100**. Node is needed at build time only. `--minimal` skips the build (the worker builds on first start). |
 | 5 | **Ink TUI** — `npm install && npm run build` in `cli/` | POSIX only; Windows uses the Rich REPL. `--minimal` skips. |
 | 6 | **Agent programs (opt-in)** — menu when a terminal is attached, or `--programs <research\|wiki\|gui\|all>` | **No program installs by default.** When selected: `research` / `wiki` are pure Python, cloned into `functions/agentics/` as in-tree git checkouts that auto-register (`research` needs nothing beyond openprogram; `wiki` adds Jinja2 + PyYAML); `gui` pulls PyTorch (~300 MB — the CPU wheel is auto-selected on GPU-less Linux; ~3 GB only on CUDA boxes). Add any of them later with `openprogram programs install <name>`. |
 | 7 | **Browser tool + channels** | `pip install -e .[all]` + `playwright install chromium` (~150 MB). `--minimal` skips. Heavier stealth browsers / agent-browser stay opt-in — see [Extras](#extras). |
@@ -196,12 +196,13 @@ Auto-adopts an installed Claude Code / Codex / Gemini CLI. Check with `openprogr
 
 ## Ports
 
+One port serves everything — the FastAPI worker hosts the API, the WebSocket, and the web UI static export:
+
 | Port | Service | Notes |
 |------|---------|-------|
-| **18100** | Next.js **frontend** — open this | `http://localhost:18100` |
-| **18109** | FastAPI **backend** (API + WebSocket) | proxied by the frontend; no HTML pages |
+| **18100** | Python worker (API + WebSocket + web UI) | `http://localhost:18100` |
 
-Change with `openprogram ports --backend <p> --frontend <p>`.
+Change with `openprogram ports --frontend <p>` (or `OPENPROGRAM_WEB_PORT` for one run).
 
 ---
 
@@ -214,7 +215,7 @@ Everything beyond `pip`. The installer handles every "auto" row.
 | Item | Required for | How | Platform | Auto? |
 |------|--------------|-----|----------|-------|
 | Python ≥ 3.11 | everything | system / pyenv / conda | all | check |
-| Node.js ≥ 20 + npm | web UI, TUI | nodejs.org / pkg mgr | all | install |
+| Node.js ≥ 20 + npm | web UI build, TUI (build time only — runtime is Python) | nodejs.org / pkg mgr | all | install |
 | git | sessions are git repos | pkg mgr | all | install |
 | `web/node_modules` | web UI (:18100) | `npm install` in `web/` | all | **auto** |
 | `cli/` Ink bundle | TUI | `npm install && npm run build` in `cli/` | macOS/Linux | **auto** |
@@ -242,9 +243,9 @@ macOS without Xcode CLT — Apple Vision is just faster. Full GUI specifics:
 
 ## Troubleshooting
 
-- **`openprogram web` showed a page that won't load / only the backend came up.**
-  The Next.js `node_modules` weren't installed. Re-run the installer, then open
-  **http://localhost:18100** (not :18109).
+- **`openprogram web` showed a page that won't load.**
+  The web UI static export (`web/out/`) wasn't built — the `web/` `node_modules`
+  weren't installed. Re-run the installer, then open **http://localhost:18100**.
 - **`pip` can't reinstall: `WinError 32 … openprogram.exe is being used`.**
   Stop the running `openprogram web` / worker first, then re-run.
 - **`gui_agent` doesn't appear in the UI.** Restart the worker (or Refresh the

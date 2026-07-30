@@ -1,6 +1,6 @@
 # Image Sources
 
-This directory keeps the editable image sources used by documentation and the WebUI. Runtime copies live under `web/` so Next.js can serve them.
+This directory keeps the editable image sources used by documentation and the WebUI. Runtime copies live under `web/` and end up in the static export (`web/out/`) the worker serves.
 
 ## WebUI Tab Icon
 

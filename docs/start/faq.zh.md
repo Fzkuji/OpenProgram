@@ -2,16 +2,16 @@
 
 这页收集安装和日常使用中最常见的问题，每条都给出对应的命令解法。
 
-## 端口 18100 或 18109 被占用怎么办？
+## 端口 18100 被占用怎么办？
 
-先看当前配置的端口，再改成空闲的：
+OpenProgram 只监听一个端口（API、WebSocket 和 web UI 同端口，默认 18100）。先看当前配置的端口，再改成空闲的：
 
 ```bash
-openprogram ports                              # 查看当前端口
-openprogram ports --backend 18119 --frontend 18110   # 持久修改，下次启动生效
+openprogram ports                    # 查看当前端口
+openprogram ports --frontend 18110   # 持久修改，下次启动生效
 ```
 
-只想改一次运行，用环境变量 `OPENPROGRAM_BACKEND_PORT` / `OPENPROGRAM_WEB_PORT` 覆盖。如果占端口的是残留进程，`lsof -ti:18100 | xargs kill` 释放后重启。
+只想改一次运行，用环境变量 `OPENPROGRAM_WEB_PORT` 覆盖。如果占端口的是残留进程，`lsof -ti:18100 | xargs kill` 释放后重启。
 
 ## provider 没被检测到 / "No provider available"？
 
@@ -40,7 +40,7 @@ worker 启动时也会在后台自动检查更新（每 6 小时至多一次）�
 
 ## `openprogram web` 打开的页面加载不出来？
 
-打开的必须是 **http://localhost:18100**（前端），不是 :18109（后端 API，没有 HTML 页面）。如果 18100 上什么都没有，多半是 web UI 没构建——重新运行 `./scripts/install.sh` 即可。
+打开的是 **http://localhost:18100**——web UI 和 API 共用的单端口。如果 18100 上什么都没有，多半是 web UI 没构建——重新运行 `./scripts/install.sh` 即可。
 
 ## 服务好像没起来 / 行为异常，怎么排查？
 

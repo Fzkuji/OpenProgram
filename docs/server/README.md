@@ -31,24 +31,21 @@ openprogram restart    # restart (after code or config changes)
 Example output of `openprogram status`:
 
 ```
-openprogram: running (PID 82472, port 18109, up 48m)
+openprogram: running (PID 82472, port 18100, up 48m)
   logs: ~/.openprogram/worker.log
 ```
 
-## Ports
+## Port
 
-| Port | Purpose | Default |
-|------|------|--------|
-| backend | FastAPI backend (API + WebSocket); both the TUI and the Web UI connect to it | 18109 |
-| frontend | Next.js frontend (the address you open in the browser) | 18100 |
+The worker listens on a single port (default 18100) that serves everything: the API, the WebSocket (both the TUI and the Web UI connect to it), and the web UI itself — the address you open in the browser.
 
 Persistent change:
 
 ```bash
-openprogram ports --backend 8102 --frontend 8101
+openprogram ports --frontend 8101
 ```
 
-One-off override: the environment variables `OPENPROGRAM_BACKEND_PORT` / `OPENPROGRAM_WEB_PORT`, or `openprogram web --port <backend> --web-port <frontend>`. Precedence: explicit flags → environment variables → persisted preference → defaults.
+One-off override: the environment variable `OPENPROGRAM_WEB_PORT`, or `openprogram web --port <p>`. Precedence: explicit flag → environment variable → persisted preference → default. `OPENPROGRAM_BACKEND_PORT` is a legacy alias for the same port; the worker logs a warning when it is used.
 
 ## Logs
 

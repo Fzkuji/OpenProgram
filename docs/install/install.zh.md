@@ -59,7 +59,7 @@ openprogram web                               # or the browser UI -> http://loca
 | 1 | 校验 / 安装 **Python 3.11+, Node 20+, git** | macOS `brew` / Linux `apt`·`dnf`·`pacman` / Windows `winget`。尽力而为。 |
 | 2 | **Python 环境** | 若存在活动的 `venv`/conda 则使用，否则创建 `./.venv`。覆盖方式：`--python` / `-Python`。这就是那个“你想放哪儿就放哪儿”的位置。 |
 | 3 | **OpenProgram** 可编辑安装（`pip install -e .`） | 宿主 + 基础依赖。 |
-| 4 | **Web UI** —— 在 `web/` 中执行 `npm install && npm run build` | Next.js 前端运行在 **:18100**，后端运行在 **:18109**。`--minimal` 会跳过构建（worker 会在首次启动时构建）。 |
+| 4 | **Web UI** —— 在 `web/` 中执行 `npm install && npx next build` | 构建静态导出（`web/out/`），由 Python worker 在 **:18100** 上直接提供。Node 只在构建期需要。`--minimal` 会跳过构建（worker 会在首次启动时构建）。 |
 | 5 | **Ink TUI** —— 在 `cli/` 中执行 `npm install && npm run build` | 仅限 POSIX；Windows 使用 Rich REPL。`--minimal` 跳过。 |
 | 6 | **agent 程序（可选，opt-in）** —— 有终端时弹菜单挑，或 `--programs <research\|wiki\|gui\|all>` | **默认不装任何程序。** 选中后：`research` / `wiki` 是纯 Python，以树内 git checkout 的形式克隆进 `functions/agentics/` 并自动注册（`research` 除 openprogram 外无其他依赖；`wiki` 另需 Jinja2 + PyYAML）；`gui` 会拉取 PyTorch（约 300 MB —— 无 GPU 的 Linux 自动选 CPU wheel，仅 CUDA 机器约 3 GB）。装完后随时可用 `openprogram programs install <name>` 再补。 |
 | 7 | **浏览器工具 + channels** | `pip install -e .[all]` + `playwright install chromium`（约 150 MB）。`--minimal` 跳过。更重的 stealth 浏览器 / agent-browser 仍需主动开启 —— 见 [Extras](#extras)。 |
@@ -177,12 +177,13 @@ export ANTHROPIC_API_KEY=sk-ant-...             # …or an API key (Windows: $en
 
 ## 端口
 
+一个端口承载全部——FastAPI worker 同时提供 API、WebSocket 和 web UI 静态导出：
+
 | 端口 | 服务 | 说明 |
 |------|---------|-------|
-| **18100** | Next.js **前端** —— 打开这个 | `http://localhost:18100` |
-| **18109** | FastAPI **后端**（API + WebSocket） | 由前端代理；无 HTML 页面 |
+| **18100** | Python worker（API + WebSocket + web UI） | `http://localhost:18100` |
 
-使用 `openprogram ports --backend <p> --frontend <p>` 修改。
+使用 `openprogram ports --frontend <p>` 修改（单次运行可用 `OPENPROGRAM_WEB_PORT`）。
 
 ---
 
@@ -195,7 +196,7 @@ export ANTHROPIC_API_KEY=sk-ant-...             # …or an API key (Windows: $en
 | 项目 | 用于 | 方式 | 平台 | 自动？ |
 |------|--------------|-----|----------|-------|
 | Python ≥ 3.11 | 所有功能 | system / pyenv / conda | 全部 | 校验 |
-| Node.js ≥ 20 + npm | web UI、TUI | nodejs.org / 包管理器 | 全部 | 安装 |
+| Node.js ≥ 20 + npm | web UI 构建、TUI（仅构建期，运行期只有 Python） | nodejs.org / 包管理器 | 全部 | 安装 |
 | git | 会话即 git 仓库 | 包管理器 | 全部 | 安装 |
 | `web/node_modules` | web UI (:18100) | 在 `web/` 中执行 `npm install` | 全部 | **auto** |
 | `cli/` Ink bundle | TUI | 在 `cli/` 中执行 `npm install && npm run build` | macOS/Linux | **auto** |
@@ -223,9 +224,9 @@ export ANTHROPIC_API_KEY=sk-ant-...             # …or an API key (Windows: $en
 
 ## 故障排查
 
-- **`openprogram web` 显示了一个加载不出来的页面 / 只有后端起来了。**
-  Next.js 的 `node_modules` 没有安装。重新运行安装脚本，然后打开
-  **http://localhost:18100**（不是 :18109）。
+- **`openprogram web` 显示了一个加载不出来的页面。**
+  web UI 静态导出（`web/out/`）没构建——`web/` 的 `node_modules` 没有安装。
+  重新运行安装脚本，然后打开 **http://localhost:18100**。
 - **`pip` 无法重装：`WinError 32 … openprogram.exe is being used`。**
   先停掉正在运行的 `openprogram web` / worker，然后重新运行。
 - **`gui_agent` 没有出现在 UI 中。** 重启 worker（或在 Functions 页面点

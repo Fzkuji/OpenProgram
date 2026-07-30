@@ -7,15 +7,15 @@
 ```bash
 openprogram config list              # 全部设置：值、分组、生效方式
 openprogram config get ui.port
-openprogram config set ui.web_port 8101
+openprogram config set ui.port 8101
 ```
 
 设置注册表定义在 `openprogram/config_schema.py`（单一事实来源，setup 向导、TUI 设置页、Web 设置页都从它渲染）。每个设置标注生效方式：`live` 立即生效，`next_start` 下次启动 worker 生效。
 
 | key | 分组 | 含义 | 默认 | 生效 |
 |-----|------|------|------|------|
-| `ui.port` | Ports | backend（FastAPI，API + WebSocket）端口 | 18109 | next start |
-| `ui.web_port` | Ports | frontend（Web UI）端口 | 18100 | next start |
+| `ui.port` | Ports | worker 单端口（API + WebSocket + web UI） | 18100 | next start |
+| `ui.web_port` | Ports | 单端口的遗留别名（弃用过渡期保留） | 18100 | next start |
 | `ui.open_browser` | Ports | `openprogram web` 是否自动开浏览器 | true | next start |
 | `search.default_provider` | Search | 默认 web 搜索 provider，`auto` 选优先级最高的已配置项 | auto | live |
 | `memory.backend` | Memory | `local`（磁盘记忆工具）或 `none`（禁用） | local | next start |
@@ -54,10 +54,9 @@ openprogram config set ui.web_port 8101
 
 | 变量 | 用途 | 代码 |
 |------|------|------|
-| `OPENPROGRAM_BACKEND_PORT` | backend 端口（默认 18109）；优先级低于显式参数、高于持久化偏好 | `openprogram/worker/lifecycle.py`、`openprogram/_cli_cmds/web.py` |
-| `OPENPROGRAM_WEB_PORT` | frontend 端口（默认 18100） | `openprogram/_cli_cmds/web.py` |
-| `OPENPROGRAM_BACKEND_URL` | 前端访问 backend 的 URL（Next.js rewrites 读取），一般自动设置 | `openprogram/worker/web.py` |
-| `OPENPROGRAM_NO_WEB` | `1` = worker 不启动 web 前端 | `openprogram/worker/web.py` |
+| `OPENPROGRAM_WEB_PORT` | worker 单端口（默认 18100）；优先级低于显式参数、高于持久化偏好 | `openprogram/worker/lifecycle.py`、`openprogram/_cli_cmds/web.py` |
+| `OPENPROGRAM_BACKEND_PORT` | `OPENPROGRAM_WEB_PORT` 的遗留别名（双端口时代残留）；worker 读到时会打警告 | `openprogram/worker/lifecycle.py` |
+| `OPENPROGRAM_NO_WEB` | `1` = worker 跳过前端构建检查，不提供 web UI | `openprogram/worker/runner.py` |
 | `OPENPROGRAM_WEB_NO_FRONTEND` | `1` = `openprogram web` 跳过前端只起 backend | `openprogram/_cli_cmds/web.py` |
 | `OPENPROGRAM_DOCS_BASE` | 文档站的挂载路径（默认 `/docs/`，须以 `/` 开头和结尾） | `tools/docs_site/build.py` |
 

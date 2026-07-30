@@ -26,14 +26,13 @@ echo 'export PATH="$(python3 -m site --user-base)/bin:$PATH"' >> ~/.zshrc
 
 ## Web UI port in use
 
-Set one of these env vars before starting the worker:
+Set this env var before starting the worker (one port serves API, WebSocket, and web UI):
 
 ```bash
-export OPENPROGRAM_WEB_PORT=8101         # frontend (defaults to 18100)
-export OPENPROGRAM_BACKEND_PORT=8102     # FastAPI (defaults to 18109)
+export OPENPROGRAM_WEB_PORT=8101         # single port (defaults to 18100)
 ```
 
-Or persist the preference: `openprogram ports --backend 8102 --frontend 8101`.
+Or persist the preference: `openprogram ports --frontend 8101`. `OPENPROGRAM_BACKEND_PORT` is a legacy alias for the same port.
 
 ## Local-development install (multi-repo)
 
@@ -64,7 +63,7 @@ location if you rename a parent folder.
 `openprogram doctor` runs a fast end-to-end check: the
 Python/Node/git toolchain, skills and plugins loading, provider
 credentials, MCP servers, disk cache, and whether the worker is
-listening on :18109. `openprogram rescue` goes beyond diagnosis
+listening on :18100. `openprogram rescue` goes beyond diagnosis
 and prints the fix commands directly. Read their output before
 raising an issue.
 

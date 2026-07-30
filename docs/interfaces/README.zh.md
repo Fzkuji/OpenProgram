@@ -4,7 +4,7 @@ OpenProgram 有三种使用方式：浏览器里的 Web UI、终端里的 TUI、
 
 ## 三个客户端，一个服务
 
-三种界面共用同一个本地后台服务（代码里叫 worker）：一个常驻进程，承载 FastAPI + WebSocket 后端（默认 18109 端口）和可选的聊天渠道适配器。Web UI 和终端 TUI 都通过 WebSocket 连接它；没有 worker 在跑时，TUI 会自动拉起一个。
+三种界面共用同一个本地后台服务（代码里叫 worker）：一个常驻进程，在单个端口（默认 18100）上承载 FastAPI + WebSocket 后端和 web UI 本身，外加可选的聊天渠道适配器。Web UI 和终端 TUI 都通过 WebSocket 连接它；没有 worker 在跑时，TUI 会自动拉起一个。
 
 会话统一存放在 `~/.openprogram/sessions/`（每个会话是一个 git 仓库），三种界面读写同一个存储。因此：
 

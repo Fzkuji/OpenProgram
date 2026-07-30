@@ -2,16 +2,16 @@
 
 The most common questions from installation and daily use, each with the command that solves it.
 
-## Port 18100 or 18109 is already in use?
+## Port 18100 is already in use?
 
-Check the currently configured ports, then move to free ones:
+OpenProgram listens on a single port (API, WebSocket, and web UI together; default 18100). Check the currently configured port, then move to a free one:
 
 ```bash
-openprogram ports                              # show current ports
-openprogram ports --backend 18119 --frontend 18110   # persistent change, takes effect on next start
+openprogram ports                    # show current port
+openprogram ports --frontend 18110   # persistent change, takes effect on next start
 ```
 
-To change just one run, override with the environment variables `OPENPROGRAM_BACKEND_PORT` / `OPENPROGRAM_WEB_PORT`. If the port is held by a leftover process, free it with `lsof -ti:18100 | xargs kill` and restart.
+To change just one run, override with the environment variable `OPENPROGRAM_WEB_PORT`. If the port is held by a leftover process, free it with `lsof -ti:18100 | xargs kill` and restart.
 
 ## Provider not detected / "No provider available"?
 
@@ -40,7 +40,7 @@ The worker also auto-checks for updates in the background at startup (at most on
 
 ## The page opened by `openprogram web` won't load?
 
-The page to open is **http://localhost:18100** (the frontend), not :18109 (the backend API, which serves no HTML). If nothing is on 18100 at all, the web UI most likely wasn't built — re-run `./scripts/install.sh`.
+The page to open is **http://localhost:18100** — the single port that serves both the web UI and the API. If nothing is on 18100 at all, the web UI most likely wasn't built — re-run `./scripts/install.sh`.
 
 ## The service doesn't seem to be up / behaves oddly — how do I debug?
 
