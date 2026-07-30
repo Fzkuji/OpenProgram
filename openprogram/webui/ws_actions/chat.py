@@ -1,4 +1,4 @@
-"""Chat WS actions: chat / retry_node / retry_function /
+"""Chat WS actions: chat / retry_function /
 set_conversation_channel.
 
 The ``chat`` action is the sole turn entry point from the web UI. The
@@ -657,34 +657,6 @@ async def handle_chat(ws, cmd: dict):
         ).start()
 
 
-async def handle_retry_node(ws, cmd: dict):
-    from openprogram.webui import server as _s
-    node_path = cmd.get("node_path")
-    session_id = cmd.get("session_id")
-    params_override = cmd.get("params")
-    _s._log(f"[retry] received retry_node: session_id={session_id}, node_path={node_path}, params_override={params_override}")
-    if not node_path or not session_id:
-        _s._log("[retry] missing node_path or session_id, aborting")
-        await ws.send_text(json.dumps({
-            "type": "chat_response",
-            "data": {"type": "error",
-                     "content": "Retry failed: missing node_path or session_id",
-                     "session_id": session_id or "", "msg_id": "err"},
-        }))
-        return
-    msg_id = str(uuid.uuid4())[:8]
-    await ws.send_text(json.dumps({
-        "type": "chat_ack",
-        "data": {"session_id": session_id, "msg_id": msg_id},
-    }))
-    _s._log(f"[retry] starting retry thread msg_id={msg_id}")
-    threading.Thread(
-        target=_s._retry_node,
-        args=(session_id, msg_id, node_path, params_override),
-        daemon=True,
-    ).start()
-
-
 def _last_call_node(session_id: str, func_name: str):
     """The most recent TOP-LEVEL ``func_name`` code node in the session,
     or ``None`` if the function was never called there.
@@ -1140,7 +1112,6 @@ async def handle_rewind(ws, cmd: dict):
 
 ACTIONS = {
     "chat": handle_chat,
-    "retry_node": handle_retry_node,
     "retry_function": handle_retry_function,
     "set_conversation_channel": handle_set_conversation_channel,
     "compact": handle_compact,

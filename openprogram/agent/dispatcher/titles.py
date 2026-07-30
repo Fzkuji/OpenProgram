@@ -157,7 +157,7 @@ def _maybe_auto_title(db, session_id: str, session: dict,
 
     try:
         turn_count = len([
-            m for m in (db.get_messages(session_id) or [])
+            m for m in (db.get_branch(session_id) or [])
             if m.get("role") == "assistant"
         ])
     except Exception:
@@ -186,7 +186,7 @@ def _maybe_auto_title(db, session_id: str, session: dict,
 
     def _bg():
         try:
-            msgs = db.get_messages(session_id) or []
+            msgs = db.get_branch(session_id) or []
         except Exception:
             msgs = []
         if msgs:
@@ -245,7 +245,7 @@ def fn_form_llm_title(db, session_id: str, stage1_title: str) -> None:
     Stamps ``_auto_titled`` and broadcasts ``session_updated``.
     """
     try:
-        msgs = db.get_messages(session_id) or []
+        msgs = db.get_branch(session_id) or []
     except Exception:
         msgs = []
     result_text = ""
