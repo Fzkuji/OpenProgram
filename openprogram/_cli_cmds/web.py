@@ -1,11 +1,8 @@
-"""``openprogram web`` handler — start the backend AND the Next.js frontend.
+"""``openprogram web`` handler — start the single-port worker (whole UI).
 
-Historically ``openprogram web`` only started the FastAPI backend on
-:18109; the Next.js dev server on :18100 (which serves the actual UI and
-proxies ``/api`` + ``/ws`` back to :18109) had to be launched by hand with
-``cd web && npm run dev``. That split is the source of the recurring
-"only the backend came up / page won't open" confusion, so this command
-now brings up both — the single ``openprogram web`` is the whole UI.
+Single-port architecture: the FastAPI worker serves the API, ``/ws`` AND
+the Next.js static export (``web/out/``) on one port, so this command
+just spawns the detached worker and opens the browser at that port.
 
 The frontend is auto-started only for a source checkout (the ``web/``
 dir with ``node_modules`` sits next to the package — true for an editable
@@ -198,13 +195,13 @@ def _stop_frontend(proc: subprocess.Popen | None) -> None:
 
 
 def _cmd_web(port, open_browser, web_port=None):
-    """Start the web UI (backend + frontend).
+    """Start the web UI (single port — API, /ws and the frontend export).
 
     ``port`` / ``web_port`` / ``open_browser`` = None means "use the
     user's stored pref" (``openprogram ports`` / ``openprogram setup
-    ui``), falling back to the defaults if none set. Resolution order for
-    each port: explicit arg → env (``OPENPROGRAM_BACKEND_PORT`` /
-    ``OPENPROGRAM_WEB_PORT``) → stored pref → module default.
+    ui``). Single-port resolution: explicit --web-port → explicit
+    --port (legacy alias) → env / pref / default via
+    ``resolve_worker_port``.
     """
     try:
         from openprogram.webui import start_web
@@ -213,33 +210,19 @@ def _cmd_web(port, open_browser, web_port=None):
         print("Install with: pip install openprogram[web]")
         sys.exit(1)
 
-    if port is None or open_browser is None:
+    if open_browser is None:
         try:
             from openprogram.setup import read_ui_prefs
-            prefs = read_ui_prefs()
-            if port is None:
-                port = prefs["port"]
-            if open_browser is None:
-                open_browser = prefs["open_browser"]
+            open_browser = read_ui_prefs()["open_browser"]
         except Exception:
             pass
-    if port is None:
-        port = 18109
     if open_browser is None:
         open_browser = True
 
-    # Frontend port: explicit --web-port > env > stored pref > default.
+    from openprogram.worker.lifecycle import resolve_worker_port
     if web_port is None:
-        env_wp = os.environ.get("OPENPROGRAM_WEB_PORT")
-        if env_wp:
-            web_port = int(env_wp)
-    if web_port is None:
-        try:
-            from openprogram.setup import read_ui_prefs
-            web_port = read_ui_prefs().get("web_port")
-        except Exception:
-            pass
-    web_port = int(web_port) if web_port else _FRONTEND_PORT
+        web_port = port  # --port is a legacy alias for the single port
+    port = web_port = int(web_port) if web_port else resolve_worker_port()
 
     # Backend port already held? Binding again raises a bare errno-48
     # traceback, so detect it up front — but distinguish OUR backend
@@ -249,8 +232,7 @@ def _cmd_web(port, open_browser, web_port=None):
     if _port_in_use(port):
         ours = _backend_is_ours(port)
         if ours is True:
-            ui = (f"http://localhost:{web_port}"
-                  if _port_in_use(web_port) else f"http://localhost:{port}")
+            ui = f"http://localhost:{port}"
             print(f"openprogram web is already running (port {port} in use).")
             print(f"  Open the UI:  {ui}")
             print("  Or stop the other instance first:  pkill -f 'openprogram web'")
@@ -270,20 +252,19 @@ def _cmd_web(port, open_browser, web_port=None):
         print("  different backend port:  openprogram setup ui")
         sys.exit(1)
 
-    # Start the backend + frontend as a DETACHED background service, then
-    # free the terminal — same machinery the TUI path already uses
-    # (cli_ink.py:_resolve_worker_port → spawn_detached). The worker's
-    # ``worker run`` brings up BOTH the backend (:18109) and the bundled
-    # Next.js frontend (:18100) itself (runner.py start_web +
-    # start_web_frontend), so we don't boot them in-process here. This is
-    # why closing the terminal no longer kills the web UI — the worker has
-    # no controlling TTY and survives. Stop it with ``openprogram stop``.
+    # Start the worker as a DETACHED background service, then free the
+    # terminal — same machinery the TUI path already uses
+    # (cli_ink.py:_resolve_worker_port → spawn_detached). ``worker run``
+    # serves API + /ws + the frontend export on the single port
+    # (runner.py start_web + webui/frontend.py), so we don't boot it
+    # in-process here. This is why closing the terminal doesn't kill the
+    # web UI — the worker has no controlling TTY and survives. Stop it
+    # with ``openprogram stop``.
     from openprogram.worker import spawn_detached
 
     # Honour an explicit --port / --web-port on the detached path: the
-    # worker resolves ports from these envs (runner.py / worker/web.py),
+    # worker resolves its port from this env (lifecycle.resolve_worker_port),
     # not from function args.
-    os.environ.setdefault("OPENPROGRAM_BACKEND_PORT", str(port))
     os.environ.setdefault("OPENPROGRAM_WEB_PORT", str(web_port))
 
     rc = spawn_detached()

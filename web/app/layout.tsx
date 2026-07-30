@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 import "./globals.css";
 import { Providers } from "./providers";
-import { FONT_COOKIE, FONT_STACKS, coerceFontKey } from "@/lib/prefs/font-stacks";
 
 // Google Fonts (next/font/google) was hitting fonts.googleapis.com at
 // build/request time. When that domain is unreachable (locally proxied,
@@ -24,24 +22,14 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // Read the font preference from the cookie DURING SSR and inline the
-  // resolved stack onto <html>. This is what makes the very first
-  // painted frame already show the user's chosen font — no default
-  // flash, no dependency on a client script winning the race with
-  // first paint. localStorage can't do this: the server can't see it.
-  const cookieStore = await cookies();
-  const fontKey = coerceFontKey(cookieStore.get(FONT_COOKIE)?.value);
-  const ssrFontSans = FONT_STACKS[fontKey];
-
+  // Static export: no request-time cookies. The synchronous <head>
+  // script below reads the font cookie and sets --font-sans before
+  // first paint, so the chosen font still shows without a flash.
   return (
-    <html
-      lang="en"
-      suppressHydrationWarning
-      style={{ ["--font-sans" as string]: ssrFontSans }}
-    >
+    <html lang="en" suppressHydrationWarning>
       <head>
         {/*
           Apply persisted theme + language before React hydrates so the

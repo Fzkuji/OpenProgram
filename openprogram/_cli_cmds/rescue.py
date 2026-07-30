@@ -170,8 +170,9 @@ def _probe_default_agent() -> Finding:
 
 
 def _probe_worker_port() -> Finding:
-    """Backend port 18109 — listening, free, or held by someone unrelated?"""
-    port = 18109
+    """Worker port — listening, free, or held by someone unrelated?"""
+    from openprogram.worker.lifecycle import resolve_worker_port
+    port = resolve_worker_port()
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(0.4)
     try:
@@ -193,7 +194,7 @@ def _probe_worker_port() -> Finding:
         return Finding(
             "WARN", f"Port :{port}", "in use by an unknown process",
             fix=f"Stop whatever owns :{port}, or change "
-                "OPENPROGRAM_BACKEND_PORT.",
+                "OPENPROGRAM_WEB_PORT.",
         )
     except OSError:
         return Finding(

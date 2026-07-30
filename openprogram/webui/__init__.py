@@ -7,7 +7,7 @@ except via lazy imports in the CLI.
 
 Usage:
     from openprogram.webui import start_web
-    start_web(port=18109)
+    start_web(port=18100)
 
 Or from CLI:
     agentic web
@@ -17,7 +17,7 @@ Or from CLI:
 from openprogram.webui.server import start_server, stop_server
 
 
-def start_web(port: int = 18109, open_browser: bool = False):
+def start_web(port: int = 18100, open_browser: bool = False):
     """
     Start the web UI server in a background thread.
 
@@ -25,7 +25,7 @@ def start_web(port: int = 18109, open_browser: bool = False):
     as @agentic_function calls are made.
 
     Args:
-        port: Port to serve on (default 18109).
+        port: Port to serve on (default 18100).
         open_browser: Whether to open a browser tab automatically.
 
     Returns:

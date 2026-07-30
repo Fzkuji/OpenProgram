@@ -220,7 +220,7 @@ install_web() {
     step "building web production bundle"
     ( cd "$HOST_ROOT/web" && npm run build ) || warn "web build failed — the worker retries on first start"
   fi
-  ok "web UI ready (frontend :18100, backend :18109)"
+  ok "web UI ready (single port :18100)"
 }
 
 # ---- 5. Ink TUI (deps + build; POSIX only) -----------------------------------

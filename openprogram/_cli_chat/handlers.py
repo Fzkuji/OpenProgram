@@ -90,7 +90,8 @@ def _handle_slash(cmd: str, console, rt,
         return False
 
     if verb == "web":
-        port = 18109
+        from openprogram.worker.lifecycle import resolve_worker_port
+        port = resolve_worker_port()
         if args:
             try:
                 port = int(args[0])

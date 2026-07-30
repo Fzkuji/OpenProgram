@@ -6,6 +6,7 @@ import { useSkills, type Skill } from "@/lib/state/skills-store";
 import { Switch } from "@/components/ui/switch";
 import { SearchInput } from "@/components/ui/search-input";
 import { useTranslation } from "@/lib/i18n";
+import { pushPath } from "@/lib/shallow-nav";
 import {
   type AnimatedNavIconHandle,
   FolderCodeIcon,
@@ -66,7 +67,7 @@ function SkillLeaf({ skill, depth }: { skill: Skill; depth: number }) {
   return (
     <div
       role="button"
-      onClick={() => router.push(`/skills/${skill.name.split("/").map(encodeURIComponent).join("/")}`)}
+      onClick={() => pushPath(`/skills/${skill.name.split("/").map(encodeURIComponent).join("/")}`)}
       style={{
         paddingLeft: 8 + depth * 16,
         // Tint the active row with the page-wide accent so light mode

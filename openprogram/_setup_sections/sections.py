@@ -202,9 +202,7 @@ def run_ui_section() -> int:
     if rc != 0:
         return rc
     p = read_ui_prefs()
-    if p["port"] == p["web_port"]:
-        print("Note: backend and frontend ports are equal — the frontend won't "
-              "start until they differ.")
+    # Single-port: equal backend/frontend prefs are the normal state.
     print(f"UI: backend={p['port']}, frontend={p['web_port']}, "
           f"open_browser={p['open_browser']}")
     print("Takes effect on the next `openprogram web` / `openprogram worker` start.")

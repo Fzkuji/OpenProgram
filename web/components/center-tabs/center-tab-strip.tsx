@@ -63,6 +63,7 @@ import { fileDraftKey, fileDrafts } from "@/lib/state/files-shared";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./center-tabs.module.css";
+import { pushPath } from "@/lib/shallow-nav";
 import {
   computeLiveShifts,
   collectPointerDropTargets,
@@ -394,7 +395,7 @@ export function CenterTabStrip() {
     const sid = useSessionStore.getState().currentSessionId;
     if (tab.sessionId) {
       if (tab.sessionId !== sid || !pathname.startsWith("/s/")) {
-        router.push("/s/" + tab.sessionId);
+        pushPath("/s/" + tab.sessionId);
       }
     } else if (pathname !== "/chat") {
       router.push("/chat"); // draft tab → new-chat route (resets in place)
@@ -404,7 +405,16 @@ export function CenterTabStrip() {
   // Active center-tab focus is the single session-navigation trigger. Store
   // imports and close fallback converge on activeId; clicking the already
   // active session increments the request so it can recover from another route.
+  const activationMounted = useRef(false);
   useEffect(() => {
+    if (!activationMounted.current) {
+      activationMounted.current = true;
+      // Initial mount on a non-chat deep link (/skills/x, /settings/…):
+      // the persisted active session tab must NOT hijack the route the
+      // user actually opened. Later activeId changes are real user tab
+      // switches and navigate as before.
+      if (!isChatRoute(pathname)) return;
+    }
     const tab = useCenterTabs.getState().tabs.find(
       (candidate) => candidate.id === activeId,
     );

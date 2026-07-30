@@ -92,6 +92,7 @@ import { useSlashMenu } from "./slash/use-slash-menu";
 import { useThinkingEffort } from "./controls/use-thinking-effort";
 import { useToolsToggles } from "./controls/use-tools-toggles";
 import styles from "./composer.module.css";
+import { pushPath } from "@/lib/shallow-nav";
 
 /** Don't recall a user message longer than this through ↑/↓ history
  *  cycling. Long messages (full pasted code, expanded tokens, etc.)
@@ -1113,7 +1114,7 @@ export function Composer() {
               sid;
             if (sid !== currentSessionId) {
               setCurrentConv(sid);
-              router.push(`/s/${encodeURIComponent(sid)}`);
+              pushPath(`/s/${encodeURIComponent(sid)}`);
             }
           }
         }

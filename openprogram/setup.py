@@ -171,12 +171,13 @@ def write_search_default_provider(name: str | None) -> None:
     update_config(_mut)
 
 
-# Default ports. Uncommon 5-digit values in the registered-port range
-# (< 49152, so they never collide with the OS ephemeral range); the
-# 18xxx block is rarely used by mainstream services. ``port`` is the
-# FastAPI backend (also the single port once the static-SPA migration
-# lands); ``web_port`` is the transitional Next.js frontend.
-DEFAULT_BACKEND_PORT = 18109
+# Default port. Uncommon 5-digit value in the registered-port range
+# (< 49152, so it never collides with the OS ephemeral range); the
+# 18xxx block is rarely used by mainstream services. Single-port
+# architecture: the FastAPI worker serves the API, /ws AND the frontend
+# static export on one port. ``web_port`` remains as the preferred pref
+# name; ``port`` is the legacy backend-port pref, kept as an alias.
+DEFAULT_BACKEND_PORT = 18100
 DEFAULT_WEB_PORT = 18100
 
 

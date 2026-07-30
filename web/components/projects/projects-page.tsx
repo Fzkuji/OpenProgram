@@ -17,6 +17,7 @@ import { wsRequest } from "@/lib/net/ws-request";
 import { formatRelativeTime } from "@/lib/format-utils/format";
 import { PermissionsSection } from "./permissions-section";
 import { ProjectConfigSection } from "./project-config-section";
+import { pushPath } from "@/lib/shallow-nav";
 
 interface Project {
   id: string;
@@ -206,7 +207,7 @@ export function ProjectsPage() {
                             <li
                               key={s.id}
                               className={styles.sessionRow}
-                              onClick={() => router.push("/s/" + s.id)}
+                              onClick={() => pushPath("/s/" + s.id)}
                             >
                               <span className={styles.sessionAvatar}>{initial}</span>
                               <div className={styles.sessionBody}>

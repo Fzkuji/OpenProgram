@@ -9,6 +9,7 @@ import type { SkillDetail } from "@/lib/state/skills-store";
 import { useTranslation, type Locale } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 import styles from "./skills-page.module.css";
+import { pushPath } from "@/lib/shallow-nav";
 
 type Tab = "skill" | "files" | "versions";
 
@@ -245,7 +246,7 @@ export function SkillDetailPage({ name }: { name: string }) {
                 // preamble at send time. Land on the current chat
                 // session if one is open, otherwise on /chat.
                 setComposerInput(`/skill ${detail.name} `);
-                router.push(currentSessionId ? `/s/${currentSessionId}` : "/chat");
+                pushPath(currentSessionId ? `/s/${currentSessionId}` : "/chat");
               }}>{text("Use in chat", "在对话中使用")} →</Button>
             )}
             {canEdit && !editing && (

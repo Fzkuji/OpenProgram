@@ -15,12 +15,10 @@ def main():
         description="Start the Agentic Programming web UI.",
     )
     parser.add_argument(
-        "--port", "-p", type=int, default=18109,
-        help="Port to serve on (default: 18109)",
+        "--port", "-p", type=int, default=None,
+        help="Port to serve on (default: resolved single port, 18100)",
     )
-    # 默认不弹浏览器：18109 是 API 后端，真正的 UI 是 Next 前端
-    # （:18100）。之前默认 webbrowser.open 导致每次重启后端都往用户
-    # 浏览器里弹一个没内容的后端页。
+    # 默认不弹浏览器；--browser 可以弹（单端口后本进程就是完整 UI）。
     parser.add_argument(
         "--browser", action="store_true",
         help="Open a browser window at the backend port after start",
@@ -33,7 +31,11 @@ def main():
 
     from openprogram.webui import start_web
 
-    thread = start_web(port=args.port, open_browser=args.browser)
+    port = args.port
+    if port is None:
+        from openprogram.worker.lifecycle import resolve_worker_port
+        port = resolve_worker_port()
+    thread = start_web(port=port, open_browser=args.browser)
 
     print("Press Ctrl+C to stop.")
     try:

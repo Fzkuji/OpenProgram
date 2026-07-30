@@ -38,7 +38,7 @@ def _port_available(port: int) -> bool:
     Sets ``SO_REUSEADDR`` before ``bind()`` so a port that only sits
     in ``TIME_WAIT`` (left by a worker we just stopped) is reported
     as available. Without this, every quick restart shifts the
-    backend off ``18109`` to a random port for ~60s, which forces a
+    worker off its fixed port to a random port for ~60s, which forces a
     Next.js bundle rebuild + makes every open browser tab lose its
     WebSocket. ``uvicorn`` also sets ``SO_REUSEADDR`` on its server
     socket, so the actual subsequent bind succeeds too.
@@ -166,22 +166,13 @@ def run_foreground() -> int:
         )
         return 1
 
-    # Bring up the webui first — that's the worker's primary job.
-    # Backend port is fixed (default 18109) so the bundled Next.js
-    # frontend's rewrites compile against a stable target.
+    # Bring up the webui first — that's the worker's primary job. Single
+    # port: this process serves the API, /ws AND the frontend export.
     import os
     from openprogram.webui import start_web
+    from .lifecycle import resolve_worker_port
 
-    # Backend port: env override → stored UI pref → default 18109.
-    fixed_port = os.environ.get("OPENPROGRAM_BACKEND_PORT")
-    if fixed_port:
-        fixed_port = int(fixed_port)
-    else:
-        try:
-            from openprogram.setup import read_ui_prefs
-            fixed_port = int(read_ui_prefs()["port"])
-        except Exception:
-            fixed_port = 18109
+    fixed_port = resolve_worker_port(warn_legacy=True)
     port = fixed_port
     if not _port_available(port):
         # The fixed port is genuinely held by another live listener
@@ -194,10 +185,10 @@ def run_foreground() -> int:
         port = _find_free_port()
         if owner is not None:
             who = "another openprogram instance" if owner.is_ours else "a foreign process"
-            print(f"[worker] backend port {fixed_port} is held by {who} — {owner.detail}")
+            print(f"[worker] port {fixed_port} is held by {who} — {owner.detail}")
             if not owner.is_ours:
                 print(f"[worker]   free it (`lsof -ti:{fixed_port} | xargs kill`) "
-                      f"or set OPENPROGRAM_BACKEND_PORT to keep the fixed port.")
+                      f"or set OPENPROGRAM_WEB_PORT to keep the fixed port.")
         print(f"[worker] falling back to free port {port} (UI URL will track this port).")
     start_web(port=port, open_browser=False)
     write_port_file(port)
@@ -216,16 +207,17 @@ def run_foreground() -> int:
 
     threading.Thread(target=_warm_providers, daemon=True, name="provider-warmup").start()
 
-    # Frontend (Next.js). Optional — falls back gracefully if node/npm
-    # missing or OPENPROGRAM_NO_WEB is set.
-    try:
-        from .web import start_web_frontend, stop_web_frontend
-        web_proc = start_web_frontend(backend_port=port)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[worker] web frontend failed to start: {exc}")
-        web_proc = None
-        def stop_web_frontend(_p):  # fallback noop
-            return None
+    # Frontend build gate — the static export (web/out/) is served by
+    # this same process; just make sure it's fresh. Synchronous: the UI
+    # isn't usable before it exists anyway. Failure is non-fatal (the
+    # API/TUI still work; / returns 503 with a hint).
+    if os.environ.get("OPENPROGRAM_NO_WEB", "").strip() not in ("1", "true", "yes"):
+        try:
+            from openprogram.webui.frontend import ensure_frontend_built
+            print("[worker] web: checking frontend export…")
+            ensure_frontend_built()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[worker] web: frontend build failed: {exc}")
 
     stop_event, channel_threads = _start_channel_threads()
     if channel_threads:
@@ -313,7 +305,6 @@ def run_foreground() -> int:
             t.join(timeout=max(0.1, _join_deadline - time.time()))
             if t.is_alive():
                 print(f"[{label}] still running; drops on process exit")
-        stop_web_frontend(web_proc, timeout=2.0)
     finally:
         lock.release()
         clear_pid_file()

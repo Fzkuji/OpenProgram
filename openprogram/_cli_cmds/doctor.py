@@ -131,13 +131,15 @@ def _check_disk_cache() -> tuple[bool, str, str]:
 
 def _check_backend_port() -> tuple[bool, str, str]:
     import socket
+    from openprogram.worker.lifecycle import resolve_worker_port
+    port = resolve_worker_port()
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        s.connect(("127.0.0.1", 18109))
+        s.connect(("127.0.0.1", port))
         s.close()
-        return True, "worker on :18109", "reachable"
+        return True, f"worker on :{port}", "reachable"
     except OSError:
-        return False, "worker on :18109", "not running — `openprogram worker run`"
+        return False, f"worker on :{port}", "not running — `openprogram worker run`"
 
 
 def _human(n: int) -> str:

@@ -8,6 +8,7 @@ import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { pushPath } from "@/lib/shallow-nav";
 
 interface Props {
   fn: AgenticFunction;
@@ -56,7 +57,7 @@ export function FunctionRunDialog({ fn, onClose }: Props) {
     } catch (e) {
       console.error("function call failed:", e);
     }
-    router.push(curSession ? `/s/${curSession}` : "/chat");
+    pushPath(curSession ? `/s/${curSession}` : "/chat");
     onClose();
   }
 

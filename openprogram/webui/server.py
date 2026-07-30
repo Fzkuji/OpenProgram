@@ -1151,9 +1151,9 @@ def create_app():
     from ._auth_routes import router as _auth_router
     app.include_router(_auth_router)
 
-    # Frontend is served separately from web/ (Next.js). This process only
-    # serves /api/* and /ws. Run `cd web && npm run dev` and point the browser
-    # at http://localhost:18100 — Next will proxy /api/* and /ws back to us.
+    # Frontend: the Next.js static export (web/out/) is served by this
+    # same process — mount_frontend() is called LAST below so every API
+    # route registered here wins over the SPA catch-all.
 
     @app.on_event("startup")
     async def _capture_loop():
@@ -1435,6 +1435,11 @@ def create_app():
     from openprogram.webui.routes import docs as _routes_docs
     _routes_docs.register(app)
 
+    # Frontend static export + SPA fallback — must stay the LAST
+    # registration so its catch-all GET never shadows an API route.
+    from openprogram.webui.frontend import mount_frontend
+    mount_frontend(app)
+
     return app
 
 
@@ -1445,7 +1450,7 @@ def create_app():
 _server_thread: Optional[threading.Thread] = None
 
 
-def start_server(port: int = 18109, open_browser: bool = False) -> threading.Thread:
+def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thread:
     """
     Start the visualization server in a background daemon thread.
 
@@ -1509,12 +1514,8 @@ def start_server(port: int = 18109, open_browser: bool = False) -> threading.Thr
     print(f"OpenProgram API running at {url}")
 
     if open_browser:
-        # 本服务只有 API，没有 HTML 路由——UI 是 web/ 的 Next 前端
-        # （:18100）。要弹就弹前端页，弹后端只会打开一页 JSON 404。
-        import os
-        ui_url = os.environ.get(
-            "OPENPROGRAM_FRONTEND_URL", "http://localhost:18100"
-        )
+        # 单端口：本进程既是 API 也托管前端静态导出，直接弹自己。
+        ui_url = url
 
         def _open():
             import time

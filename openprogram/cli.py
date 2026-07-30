@@ -583,7 +583,7 @@ def build_parser() -> argparse.ArgumentParser:
     # ---- web --------------------------------------------------------------
     p_web = sub.add_parser("web", help="Start the Web UI")
     p_web.add_argument("--port", type=int, default=None,
-        help="Backend port for this run (default: stored pref, then 18109)")
+        help="Port for this run (default: stored pref, then 18100)")
     p_web.add_argument("--web-port", type=int, default=None,
         help="Frontend port for this run (default: stored pref, then 18100)")
     p_web.add_argument("--no-browser", action="store_true", help="Don't open browser")
@@ -591,9 +591,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_ports = sub.add_parser("ports",
         help="Show or set the web UI ports (backend / frontend); takes effect next start")
     p_ports.add_argument("--backend", type=int, default=None, metavar="PORT",
-        help="Persist the FastAPI backend (API + WebSocket) port. Default 18109.")
+        help="Legacy alias for --frontend (ports are merged). Default 18100.")
     p_ports.add_argument("--frontend", type=int, default=None, metavar="PORT",
-        help="Persist the Next.js frontend (web UI) port. Default 18100.")
+        help="Persist the single web UI port. Default 18100.")
 
     # ---- config (scriptable settings: the same schema the TUI edits) ------
     p_config = sub.add_parser("config",
@@ -1125,9 +1125,7 @@ def main():
             print("Override one run via env:  OPENPROGRAM_BACKEND_PORT / OPENPROGRAM_WEB_PORT")
             return
         prefs = set_ui_ports(backend_port=args.backend, web_port=args.frontend)
-        if prefs["port"] == prefs["web_port"]:
-            print(f"Warning: backend and frontend are both {prefs['port']} — they must "
-                  "differ (until the single-port build lands) or the frontend won't start.")
+        # Single-port: equal backend/frontend prefs are the normal state.
         print("Saved. Takes effect on the next `openprogram web` / `openprogram worker` start.")
         print(f"  backend  (API + WebSocket):  {prefs['port']}")
         print(f"  frontend (web UI):           {prefs['web_port']}")

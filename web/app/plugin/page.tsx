@@ -1,12 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 
+// Static export has no dynamic segments: /plugin/<name>/<slug...> is
+// served by the worker's SPA fallback with this page's HTML; name and
+// slug are resolved client-side from the pathname.
 export default function PluginWebPage() {
-  const params = useParams<{ name: string; slug: string[] }>();
-  const name = params?.name;
-  const slugArr = Array.isArray(params?.slug) ? params.slug : [];
+  const pathname = usePathname() || "";
+  const { name, slugArr } = useMemo(() => {
+    const parts = pathname.split("/").filter(Boolean); // ["plugin", name, ...slug]
+    return {
+      name: parts[1] ? decodeURIComponent(parts[1]) : undefined,
+      slugArr: parts.slice(2).map(decodeURIComponent),
+    };
+  }, [pathname]);
   const [hasWeb, setHasWeb] = useState<boolean | null>(null);
   const [err, setErr] = useState<string>("");
 

@@ -131,8 +131,7 @@ export function invalidateFileRead(projectId: string, path: string): void {
   latestFileMtime.delete(path);
 }
 
-/** URL of the backend raw-bytes endpoint (proxied by
- * app/files/[...path]/route.ts so the worker port stays live). */
+/** URL of the worker's raw-bytes endpoint (same origin — single port). */
 export function rawFileUrl(projectId: string, path: string): string {
   return `/files/raw?project_id=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}`;
 }

@@ -15,7 +15,7 @@
  * main-menu overlay page.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { itemCls, MENU_PANEL } from "@/components/chat/top-bar/menu-styles";
@@ -40,7 +40,7 @@ function mainMenuBridge(): MainMenuBridge | null {
   return api ?? null;
 }
 
-export default function ContextMenuOverlayPage() {
+function ContextMenuOverlayPage() {
   const params = useSearchParams();
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -160,5 +160,14 @@ export default function ContextMenuOverlayPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+// Static export: useSearchParams needs a Suspense boundary at prerender.
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <ContextMenuOverlayPage />
+    </Suspense>
   );
 }

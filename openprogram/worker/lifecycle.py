@@ -48,7 +48,7 @@ def read_worker_port() -> Optional[int]:
     can't be parsed. Verifies liveness so a stale port file from a
     crashed prior worker doesn't get handed out.
 
-    Also falls back to a TCP probe of the default port (18109) so a
+    Also falls back to a TCP probe of the default port (18100) so a
     foreground ``openprogram web`` — which doesn't write the
     lock/pid/port files — is still discoverable by
     HTTP-client commands like ``openprogram mcp list``. Returns the
@@ -71,19 +71,43 @@ def read_worker_port() -> Optional[int]:
     return None
 
 
-def _default_webui_port() -> int:
-    """Default backend port, honouring ``OPENPROGRAM_BACKEND_PORT``.
+def resolve_worker_port(*, warn_legacy: bool = False) -> int:
+    """Single-port resolution (docs/reference/design/cli/single-port.md).
+
+    Priority: ``OPENPROGRAM_WEB_PORT`` (the single port) →
+    ``OPENPROGRAM_BACKEND_PORT`` (legacy alias from the dual-port era) →
+    UI pref ``web_port`` → UI pref ``port`` → 18100.
 
     Multi-instance setups (a stable and a dev worker side by side)
-    differ only by profile + this env var; probing a hard-coded 18109
-    would discover the OTHER instance's backend and report its port
-    as this worker's (e.g. a just-spawned dev worker printing
-    "port 18109" while it actually serves 18209).
+    differ only by profile + env; a dev alias that still sets BOTH env
+    vars gets the web one (e.g. 18200 wins over 18209).
     """
+    for env_name, legacy in (("OPENPROGRAM_WEB_PORT", False),
+                             ("OPENPROGRAM_BACKEND_PORT", True)):
+        raw = os.environ.get(env_name, "").strip()
+        if raw:
+            try:
+                port = int(raw)
+            except ValueError:
+                continue
+            if legacy and warn_legacy:
+                print("[worker] OPENPROGRAM_BACKEND_PORT is a legacy alias — "
+                      "web and backend ports are merged; use OPENPROGRAM_WEB_PORT")
+            return port
     try:
-        return int(os.environ.get("OPENPROGRAM_BACKEND_PORT", "") or 18109)
-    except ValueError:
-        return 18109
+        from openprogram.setup import _read_config
+        ui = _read_config().get("ui") or {}
+        for key in ("web_port", "port"):
+            if ui.get(key):
+                return int(ui[key])
+    except Exception:
+        pass
+    return 18100
+
+
+def _default_webui_port() -> int:
+    """Default worker port for TCP probing — same resolution as startup."""
+    return resolve_worker_port()
 
 
 def _probe_tcp_listening(port: int, host: str = "127.0.0.1",
@@ -102,7 +126,7 @@ def find_running_webui() -> tuple[Optional[int], Optional[int], str]:
 
     - ``(port, pid, "managed")`` — ``worker.lock`` + ``worker.pid`` say
       a worker is alive; this is the well-supported path.
-    - ``(18109, None, "unmanaged")`` — no lock/pid, but a process is
+    - ``(18100, None, "unmanaged")`` — no lock/pid, but a process is
       listening on the conventional default port. Almost always a
       foreground ``openprogram web``. The PID isn't resolved
       cross-platform-cheaply, so callers that just want to talk

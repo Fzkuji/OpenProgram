@@ -15,6 +15,7 @@ import styles from "./chats-page.module.css";
 import { SearchInput } from "@/components/ui/search-input";
 import { useTranslation, type Locale } from "@/lib/i18n";
 import { formatRelativeTime } from "@/lib/format-utils/format";
+import { pushPath } from "@/lib/shallow-nav";
 import {
   type AnimatedNavIconHandle,
   ClockIcon,
@@ -285,7 +286,7 @@ export function ChatsPage() {
                             conv={c}
                             locale={locale}
                             untitled={t("sidebar.untitled")}
-                            onClick={() => router.push(`/s/${c.id}`)}
+                            onClick={() => pushPath(`/s/${c.id}`)}
                           />
                         ))}
                       </div>
@@ -300,7 +301,7 @@ export function ChatsPage() {
                     conv={c}
                     locale={locale}
                     untitled={t("sidebar.untitled")}
-                    onClick={() => router.push(`/s/${c.id}`)}
+                    onClick={() => pushPath(`/s/${c.id}`)}
                   />
                 ))}
               </div>

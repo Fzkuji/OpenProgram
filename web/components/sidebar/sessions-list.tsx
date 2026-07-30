@@ -56,6 +56,7 @@ import {
 import styles from "./sidebar.module.css";
 
 import { ConfirmDialog } from "./sessions-list/confirm-dialog";
+import { pushPath } from "@/lib/shallow-nav";
 import {
   type LegacyConv,
   type SessionWindow,
@@ -224,7 +225,7 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
     // focus-or-create, so this is a no-op when the tab already exists.
     useCenterTabs.getState().openSessionTab(id, title);
     if (id === currentId && pathname === "/s/" + id) return;
-    router.push("/s/" + id);
+    pushPath("/s/" + id);
   }
 
   const [confirm, setConfirm] = useState<{

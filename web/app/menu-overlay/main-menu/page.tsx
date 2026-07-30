@@ -14,7 +14,7 @@
  * and the main process routes the action back to the real UI window.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Bookmark, History, Plus, Settings } from "lucide-react";
 
@@ -49,7 +49,7 @@ interface Row {
   shortcut?: string;
 }
 
-export default function MainMenuOverlayPage() {
+function MainMenuOverlayPage() {
   const params = useSearchParams();
   const { text } = useTranslation();
   const [active, setActive] = useState(0);
@@ -154,5 +154,14 @@ export default function MainMenuOverlayPage() {
         })}
       </div>
     </div>
+  );
+}
+
+// Static export: useSearchParams needs a Suspense boundary at prerender.
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <MainMenuOverlayPage />
+    </Suspense>
   );
 }

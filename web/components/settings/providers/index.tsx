@@ -28,6 +28,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
 import { refreshAgentChip } from "./types";
 import { useTranslation } from "@/lib/i18n";
+import { pushPath } from "@/lib/shallow-nav";
 
 // Re-export ApiKey for search-providers-section.tsx (the only other
 // consumer outside this subdirectory).
@@ -91,7 +92,7 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
   const selectProvider = useCallback(
     (id: string) => {
       setSelectedId(id);
-      router.push(`/settings/providers/${encodeURIComponent(id)}`);
+      pushPath(`/settings/providers/${encodeURIComponent(id)}`);
     },
     [router],
   );
