@@ -53,9 +53,46 @@ def _load() -> dict[str, Any]:
                 data = {}
         except Exception:
             data = {}
+        if data:
+            _write_disk_cache(data)
+        else:
+            # models.dev is unreachable from some networks (CN direct
+            # connections get reset) and the worker often starts without
+            # proxy env (desktop spawn, launchd). Any previously
+            # successful fetch is better than an empty catalogue.
+            data = _read_disk_cache()
         _cache["data"] = data
         _cache["fetched_at"] = time.time()
         return data
+
+
+def _disk_cache_path():
+    from openprogram.worker.paths import state_dir
+
+    return state_dir() / "cache" / "models_dev.json"
+
+
+def _write_disk_cache(data: dict[str, Any]) -> None:
+    import json
+
+    try:
+        path = _disk_cache_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        tmp.replace(path)
+    except Exception:
+        pass
+
+
+def _read_disk_cache() -> dict[str, Any]:
+    import json
+
+    try:
+        data = json.loads(_disk_cache_path().read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
 
 def _normalise(raw: dict[str, Any]) -> dict[str, Any]:
