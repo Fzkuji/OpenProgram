@@ -1025,6 +1025,8 @@ from openprogram.webui._chat_helpers import (
 
 async def _websocket_handler(ws):
     """WebSocket endpoint for real-time chat streaming."""
+    from starlette.websockets import WebSocketDisconnect
+
     await ws.accept()
 
     # Install the global store→WS broadcaster on first connection. We can't
@@ -1056,6 +1058,10 @@ async def _websocket_handler(ws):
                 except json.JSONDecodeError:
                     pass
 
+    except WebSocketDisconnect as e:
+        # Normal client departure (refresh/close, codes 1000/1001/1005) —
+        # one quiet line, no stack; a traceback here buries real errors.
+        _log(f"[ws] client disconnected ({e.code})")
     except Exception:
         import logging
         # structured + carries the traceback; never dumps a raw trace to stdout
