@@ -436,13 +436,27 @@ class SessionStore:
                     # later step that re-opens (e.g. commit_turn) would
                     # persist the rebuilt object's stale head over their
                     # in-memory update.
-                    idx.rebuild_from_paths(
-                        git.list_history(),
-                        git.read_meta(),
-                        _node_conv_predecessor,
-                        _node_caller,
-                    )
-                    git.mark_synced()
+                    disk_meta = git.read_meta()
+                    disk_hist = git.list_history()
+                    # A concurrent reader can land here between
+                    # create_session's set_meta() and its _persist_meta()
+                    # — the repo exists (some other write initialized it)
+                    # but meta.json is still empty/absent on disk. Blindly
+                    # rebuilding then resets the index and throws away the
+                    # just-populated in-memory meta (source/channel/peer_*
+                    # silently vanished). Disk with nothing in it is never
+                    # a more truthful view than populated memory, so skip
+                    # the rebuild instead of destroying state.
+                    if not disk_meta and not disk_hist and (idx.meta or idx.head_id):
+                        pass
+                    else:
+                        idx.rebuild_from_paths(
+                            disk_hist,
+                            disk_meta,
+                            _node_conv_predecessor,
+                            _node_caller,
+                        )
+                        git.mark_synced()
                 return cached
             sdir = self._session_dir(session_id)
             if not sdir.exists() and not create_if_missing:
@@ -1034,6 +1048,12 @@ class SessionStore:
         for t in tips:
             nid = t["head_msg_id"]
             if nid.startswith("summary_"):
+                continue
+            if nid.startswith("k_") and nid != idx.head_id:
+                # k_ ids are only ever minted by compaction copies; a k_
+                # chain that isn't the live head is residue from an
+                # earlier compaction (incl. legacy rows without the
+                # original_id back-pointer) — never a checkout target.
                 continue
             node = idx.nodes_by_id.get(nid)
             orig = ((getattr(node, "metadata", None) or {}).get("original_id")
