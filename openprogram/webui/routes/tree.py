@@ -304,9 +304,15 @@ def register(app):
         sending, roughly how much history the next message will include.
         """
         from openprogram.agent.session_db import default_db
+        from openprogram.context.persistence import original_ids
 
         branch = default_db().get_branch(session_id, head_id) or []
-        node_ids = [m["id"] for m in branch if m.get("id")]
+        # After a compaction the branch is made of ``summary_``/``k_``
+        # rows, none of which the DAG paints (graph_layout/filter.py
+        # strips them). Translating back through ``original_id`` keeps
+        # the two id spaces intersecting — otherwise the frontend gets
+        # a node set disjoint from what's drawn and dims the whole graph.
+        node_ids = original_ids(branch)
         return JSONResponse(content={
             "session_id": session_id,
             "node_ids": node_ids,

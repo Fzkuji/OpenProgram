@@ -24,6 +24,35 @@ import uuid
 from typing import Any, Optional
 
 
+def _original_id_of(msg: dict) -> Optional[str]:
+    """The id of the real DAG node ``msg`` ultimately came from.
+
+    A second compaction copies rows that are themselves copies, so
+    prefer an ``original_id`` already on the row — that keeps the
+    pointer aimed at the node the DAG actually draws instead of at an
+    intermediate ``k_`` copy that is itself filtered out.
+    """
+    return msg.get("original_id") or msg.get("id")
+
+
+def original_ids(msgs: list[dict]) -> list[str]:
+    """Translate a branch's ids to the ids the DAG paints.
+
+    ``k_`` kept-tail copies resolve through their ``original_id``
+    back-reference; ``summary_`` nodes are dropped (the DAG filters
+    them out, so there is nothing to light up). Rows written before
+    the back-reference existed have no ``original_id`` and pass
+    through unchanged — they simply stay dark, as they did before.
+    """
+    out: list[str] = []
+    for m in msgs:
+        mid = m.get("id")
+        if not mid or str(mid).startswith("summary_"):
+            continue
+        out.append(_original_id_of(m) or mid)
+    return out
+
+
 class Persister:
     """Writes summary nodes to SessionDB."""
 
@@ -89,6 +118,15 @@ class Persister:
             row = dict(original)
             row["id"] = new_id
             row["predecessor"] = prev
+            # Back-reference to the row this copy was made from. The DAG
+            # filters ``k_``/``summary_`` ids out of the layout (they'd
+            # paint the conversation twice), so /context-range must be
+            # able to translate a kept-tail id back to the node actually
+            # drawn — otherwise the two id spaces don't intersect and
+            # every node dims after a compaction.
+            # Append-only: rows written before this existed simply have
+            # no ``original_id`` and are returned untranslated.
+            row["original_id"] = _original_id_of(original)
             # If a message has an attachment manifest in ``extra``,
             # keep it — but blow away any aging metadata so future
             # ager passes treat the re-parented copy as fresh.

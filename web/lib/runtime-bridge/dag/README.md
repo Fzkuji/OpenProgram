@@ -76,7 +76,7 @@ the renderer never has to fold or hide synthetic cards.
 |-------------|------------------|--------------------------------------------|
 | conv chain  | `parent_id`      | solid coloured S-curve (branch colour)     |
 | sub-call    | `caller`         | same S-curve, treated as conv parent for branch-op nodes |
-| spawn       | `function="task"` → attach pointer chain → sub-branch conv root | dot-dash grey |
+| spawn       | `function="task"` → attach pointer chain → sub-branch conv root | dot-dash in the **child branch's lane colour** (dag-rendering.md §3) |
 | reference   | `attach_ref` on `function="attach"`/`"merge"` | dashed marching-ants (CSS animation) |
 
 ## Pass pipeline (top of `pipeline.ts`'s `render()`)

@@ -292,3 +292,64 @@ def test_followup_reply_without_attach_reparents_to_receiver():
     assert by["fu_reply"]["predecessor"] == "l1"  # 挂回收到回流的那轮
     assert by["fu_reply"]["_depth"] > by["l1"]["_depth"]
     assert by["fu_reply"]["_lane"] == by["l1"]["_lane"]
+
+
+def test_fork_lanes_pack_without_gaps():
+    """连续 retry 出的多条 fork 分支按实际占用列紧贴排，中间不留空列。
+
+    dag-layout-spec.html 场景 3 是权威：lane0 占列 0~2，fork 自己的竖线
+    占列 3，fork 的节点落在列 4。第二条 fork 同理接着排——竖线列 6、节点
+    列 7。规则③"下一条分支从上一条实际占用的最右列 +1 开始"里的那 +1
+    就是竖线列，不是被浪费的空列。
+
+    锁住这个是因为 lane 分配器本身是自增计数器（lane.py），真正的列号
+    由 graph_layout/__init__.py 的 _offset 重映射；两者一旦脱节，图就会
+    横向散开一片空白。
+    """
+    by = _annotate([
+        _root(),
+        {"id": "u1", "role": "user", "caller": "ROOT", "created_at": 1},
+        {"id": "l1", "role": "assistant", "predecessor": "u1", "created_at": 2},
+        # 对 u1 的两次改写：同 predecessor 的后续 sibling，各自开分支
+        {"id": "u1b", "role": "user", "caller": "ROOT",
+         "predecessor": "u1", "created_at": 3},
+        {"id": "l1b", "role": "assistant", "predecessor": "u1b", "created_at": 4},
+        {"id": "u1c", "role": "user", "caller": "ROOT",
+         "predecessor": "u1", "created_at": 5},
+        {"id": "l1c", "role": "assistant", "predecessor": "u1c", "created_at": 6},
+    ])
+    # 主干占列 0~2
+    assert _col(by["ROOT"]) == 0
+    assert _col(by["u1"]) == 1
+    assert _col(by["l1"]) == 2
+    # 第一条 fork：竖线列 3，节点列 4~5
+    assert _col(by["u1b"]) == 4
+    assert _col(by["l1b"]) == 5
+    # 第二条 fork 紧贴第一条：竖线列 6，节点列 7~8——不是列 10、12
+    assert _col(by["u1c"]) == 7
+    assert _col(by["l1c"]) == 8
+    assert _no_overlap(by)
+
+
+def test_collapsed_subtree_shifts_fork_left():
+    """规则②③：主干的子调用不在可见集里时，它不占列，fork 跟着左移。
+
+    lane0 只有 user(1)+llm(2) 时 fork 节点在列 4；主干多一个 tier=3 的
+    工具节点，fork 就得整体右移到列 5。空列绝不保留。
+    """
+    base = [
+        _root(),
+        {"id": "u1", "role": "user", "caller": "ROOT", "created_at": 1},
+        {"id": "l1", "role": "assistant", "predecessor": "u1", "created_at": 2},
+        {"id": "u1b", "role": "user", "caller": "ROOT",
+         "predecessor": "u1", "created_at": 4},
+    ]
+    collapsed = _annotate(base)
+    expanded = _annotate(base + [
+        # 工具挂 caller，无 predecessor → tier=3，把 lane0 撑到列 3
+        {"id": "t1", "role": "tool", "caller": "l1", "created_at": 3},
+    ])
+    assert _col(collapsed["u1b"]) == 4
+    assert _col(expanded["t1"]) == 3
+    assert _col(expanded["u1b"]) == 5
+    assert _no_overlap(expanded)

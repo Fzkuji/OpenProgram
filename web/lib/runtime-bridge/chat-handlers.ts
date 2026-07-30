@@ -592,6 +592,13 @@ export function handleChatResponse(data: ChatResponseData): void {
     handleContextStats(data as ContextStatsData, sid);
     return;
   }
+  if (type === "compaction_finished") {
+    // 压缩把保留尾部重挂到摘要节点下，活跃分支的节点集合整个换了一批。
+    // Context tab 的明暗靠 /context-range 的 node_ids，不刷新就停在压缩前
+    // 的旧集合上 → 整图全暗。
+    if (targetsActive && sid) W.refreshHistoryContextRange?.(sid);
+    return;
+  }
   if (type === "status") {
     handleStatusResponse(data as StatusResponseData, sid, targetsActive);
     return;

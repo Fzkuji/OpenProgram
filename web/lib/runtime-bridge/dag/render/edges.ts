@@ -5,7 +5,7 @@
  *   * conv chain — solid coloured, vertical trunk + horizontal branch.
  *   * fork bridge — dashed marching-ants from main sibling to fork trunk.
  *   * attach_ref — dashed marching-ants from source branch tip to attach node.
- *   * spawn — dot-dash grey from task node to sub-branch root.
+ *   * spawn — dot-dash from task node to sub-branch root, in the sub-branch's lane colour.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

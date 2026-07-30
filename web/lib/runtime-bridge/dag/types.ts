@@ -56,7 +56,10 @@ export const LANE_COLORS = [
   "#5aad4e", // green
   "#d4843a", // orange
   "#9d6fe0", // purple
-  "#e0445a", // red
+  // 不用红色相：错误描边是 #e5534b（render/nodes.ts），lane 色若也是红
+  // 会和"这个节点出错了"撞色。改用深青，与 #2db3d5 / #35b89a / #52c4c4
+  // 的明度和饱和度都拉开。
+  "#1f8a8a", // deep teal
   "#2db3d5", // cyan
   "#e0b020", // gold
   "#35b89a", // teal
