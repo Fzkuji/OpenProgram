@@ -78,15 +78,28 @@ export function findCenterTabGroup(
 }
 
 /** Tabs that can join `subjectId` in a split view: every other tab in the
- *  window except members of the subject's own group (those are no-ops). */
+ *  window except members of the subject's own group (those are no-ops) and
+ *  except a second session tab.
+ *
+ *  Session tabs are excluded from each other because the chat surface is a
+ *  singleton — one shell, one WebSocket, one set of DOM ids, mounted once in
+ *  AppShell and merely revealed by session tabs. resolveCenterTabPanes
+ *  therefore folds every visible session tab into ONE "session" pane, so
+ *  pairing two chats would build a group that still renders a single pane.
+ *  Offering that pairing is what made "New split view" look broken. */
 export function splitCandidates(
   tabs: readonly CenterTab[],
   groups: readonly CenterTabGroup[],
   subjectId: string,
 ): CenterTab[] {
   const ownGroup = findCenterTabGroup(groups, subjectId);
+  const subject = tabs.find((tab) => tab.id === subjectId);
+  const subjectIsSession = subject?.kind === "session";
   return tabs.filter(
-    (tab) => tab.id !== subjectId && !ownGroup?.memberIds.includes(tab.id),
+    (tab) =>
+      tab.id !== subjectId
+      && !ownGroup?.memberIds.includes(tab.id)
+      && !(subjectIsSession && tab.kind === "session"),
   );
 }
 

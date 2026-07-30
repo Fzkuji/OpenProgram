@@ -1774,12 +1774,43 @@ const MAIN_MENU_HEIGHT = 220;
 // Extra room around the panel so its drop shadow isn't clipped by the
 // view's own edge (the panel itself is smaller than the view).
 const MAIN_MENU_GUTTER = 24;
-// Generic context-menu overlay (opts.items given): panel width default
-// matches the DOM .tabMenu (200px); height derives from the row count —
-// itemCls rows are 24px, MENU_PANEL adds 6px padding + 1px border each side.
+// Generic context-menu overlay (opts.items given): the initial bounds are a
+// GUESS (rows are 24px tall, MENU_PANEL adds 6px padding + 1px border per
+// side) that only has to survive the first paint — the overlay document
+// measures its own panel and sends main-menu:resize with the real pixel size,
+// which re-clamps the view against the same window margins. Estimating width
+// from label text here would need font metrics the main process doesn't have.
 const CONTEXT_MENU_WIDTH = 200;
 const CONTEXT_MENU_ROW_HEIGHT = 24;
 const CONTEXT_MENU_CHROME = 16;
+
+/** Context-menu panel top-left, clamped to an 8px margin inside the window. */
+function clampContextMenuPanel(anchor, panelW, panelH) {
+  return {
+    x: Math.min(Math.max(8, anchor.x), Math.max(8, anchor.winW - panelW - 8)),
+    y: Math.min(Math.max(8, anchor.y), Math.max(8, anchor.winH - panelH - 8)),
+  };
+}
+
+/** The overlay document measured its own panel — resize the host view to the
+ *  real size and re-clamp it against the window edges. Only context menus
+ *  (which have a stored anchor) participate; the fixed-size main menu ignores
+ *  this. */
+function resizeMenuOverlay(ctx, size) {
+  const view = ctx && ctx.mainMenuView;
+  const anchor = ctx && ctx.mainMenuAnchor;
+  if (!view || !anchor || view.webContents.isDestroyed()) return;
+  const panelW = Math.max(1, Math.round(Number(size && size.width) || 0));
+  const panelH = Math.max(1, Math.round(Number(size && size.height) || 0));
+  if (!panelW || !panelH) return;
+  const { x, y } = clampContextMenuPanel(anchor, panelW, panelH);
+  view.setBounds({
+    x: Math.round(x - MAIN_MENU_GUTTER),
+    y: Math.round(y - MAIN_MENU_GUTTER),
+    width: panelW + MAIN_MENU_GUTTER * 2,
+    height: panelH + MAIN_MENU_GUTTER * 2,
+  });
+}
 
 function menuOverlayUrl(theme, items) {
   let origin = "http://127.0.0.1:" + WEB_PORT;
@@ -1802,6 +1833,7 @@ function closeMainMenu(ctx) {
   if (!ctx || !ctx.mainMenuView) return;
   const view = ctx.mainMenuView;
   ctx.mainMenuView = null;
+  ctx.mainMenuAnchor = null;
   try {
     if (!ctx.win.isDestroyed()) ctx.win.contentView.removeChildView(view);
   } catch (_e) {
@@ -1852,15 +1884,14 @@ function openMainMenu(ctx, opts) {
     panelW = Number(opts.width) || CONTEXT_MENU_WIDTH;
     panelH = Number(opts.height)
       || items.length * CONTEXT_MENU_ROW_HEIGHT + CONTEXT_MENU_CHROME;
-    panelX = Math.min(
-      Math.max(8, Number(anchor.x) || 0),
-      Math.max(8, winW - panelW - 8),
-    );
-    panelY = Math.min(
-      Math.max(8, Number(anchor.y) || 0),
-      Math.max(8, winH - panelH - 8),
-    );
+    // Remember the anchor + viewport so main-menu:resize can re-clamp the
+    // view once the overlay reports its measured panel size.
+    ctx.mainMenuAnchor = { x: Number(anchor.x) || 0, y: Number(anchor.y) || 0, winW, winH };
+    const clamped = clampContextMenuPanel(ctx.mainMenuAnchor, panelW, panelH);
+    panelX = clamped.x;
+    panelY = clamped.y;
   } else {
+    ctx.mainMenuAnchor = null;
     // Main menu: panel right edge sits `rightInset` from the window right,
     // top edge on the strip's bottom divider.
     panelW = MAIN_MENU_WIDTH;
@@ -1925,6 +1956,10 @@ function registerWebTabIpc() {
   ipcMain.on("main-menu:close", (event) => {
     const ctx = contextForMenuSender(event);
     if (ctx) closeMainMenu(ctx);
+  });
+  ipcMain.on("main-menu:resize", (event, size) => {
+    const ctx = contextForMenuSender(event);
+    if (ctx) resizeMenuOverlay(ctx, size);
   });
   ipcMain.on("main-menu:choose", (event, id) => {
     const ctx = contextForMenuSender(event);

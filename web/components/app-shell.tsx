@@ -517,10 +517,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     tabs,
     activeGroup?.focusedId ?? activeId,
   );
-  const panes =
-    isDesktop && activeGroup && splitAvailable
-      ? compoundPanes
-      : focusedPanes;
+  // Split is a DOM layout concern, so it works in the browser too — web
+  // tabs there are iframes, which pane like any other element. The only
+  // desktop-specific part is the native web view, whose bounds already
+  // follow the pane rect (WebTabPane → registerVisibleWebTabBounds).
+  // Below the two panes' combined minimum width there is no room to split,
+  // so fall back to the focused tab alone.
+  const panes = activeGroup && splitAvailable ? compoundPanes : focusedPanes;
   const showDivider = panes.length === 2;
   const sessionPaneIndex = panes.findIndex((pane) => pane.kind === "session");
   useEffect(() => {

@@ -29,6 +29,7 @@ interface ContextMenuItem {
 interface MainMenuBridge {
   choose(id: string): void;
   close(): void;
+  resize?(size: { width: number; height: number }): void;
 }
 
 function mainMenuBridge(): MainMenuBridge | null {
@@ -73,6 +74,28 @@ function ContextMenuOverlayPage() {
     document.documentElement.style.background = "transparent";
     document.body.style.background = "transparent";
   }, [params]);
+
+  // main.js can only guess the overlay's size before this document exists
+  // (it has no font metrics), so it sizes the host view from a row-count
+  // estimate and we correct it here: measure the laid-out panel — which is
+  // `max-content` wide with nowrap rows, so it is exactly as wide as the
+  // longest label — and report it back. Without this, long labels wrapped
+  // inside the 200px guess and tall menus were clipped.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const report = () => {
+      const rect = panel.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        mainMenuBridge()?.resize?.({ width: rect.width, height: rect.height });
+      }
+    };
+    report();
+    // Web fonts can land after first paint and change the intrinsic width.
+    const observer = new ResizeObserver(report);
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [items]);
 
   const choose = (item: ContextMenuItem) => {
     if (item.disabled) return;
@@ -123,21 +146,39 @@ function ContextMenuOverlayPage() {
 
   return (
     // The view is 24px (gutter) wider/taller than the panel on every side
-    // for the drop shadow. Pin the panel top-LEFT into the inset box —
+    // for the drop shadow. Pin the panel top-LEFT at the gutter offset —
     // main.js places the view so the panel's top-left lands on the anchor.
+    // Deliberately no right/bottom: the box must not constrain the panel's
+    // intrinsic size, since that size is what gets measured and reported.
     <div
       style={{
         position: "absolute",
         top: 24,
-        right: 24,
-        bottom: 24,
         left: 24,
         display: "flex",
         justifyContent: "flex-start",
         alignItems: "flex-start",
       }}
     >
-      <div ref={panelRef} className={MENU_PANEL} style={{ width: "100%" }} role="menu">
+      {/* `max-content` (not 100%) so the panel is exactly as wide as its
+         longest nowrap row — the measured size is then reported back to
+         main.js, which resizes the host view to match. A minimum keeps
+         short menus from looking cramped. */}
+      <div
+        ref={panelRef}
+        className={MENU_PANEL}
+        // MENU_PANEL caps at 60vh and scrolls — but here `vh` is the tiny
+        // overlay view, not the window, so that cap would clip the panel
+        // before it can be measured. The overlay is sized to the panel, so
+        // let it grow and drop the scroll.
+        style={{
+          width: "max-content",
+          minWidth: 180,
+          maxHeight: "none",
+          overflow: "visible",
+        }}
+        role="menu"
+      >
         {items.map((item, i) => (
           <div
             key={item.id}
@@ -155,7 +196,9 @@ function ContextMenuOverlayPage() {
             }}
             onClick={() => choose(item)}
           >
-            <span className="flex-1">{item.label}</span>
+            {/* nowrap: the panel is max-content wide, so a wrapping label
+               would instead collapse the panel to the narrowest line. */}
+            <span className="flex-1 whitespace-nowrap">{item.label}</span>
           </div>
         ))}
       </div>
