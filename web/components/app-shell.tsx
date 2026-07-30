@@ -363,18 +363,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }).renderHistoryGraph;
       if (render) render([], null);
 
-      // Execution Detail panel lives in the right sidebar. Reset it to
-      // the empty-state placeholder the HTML template ships with. If
-      // the DOM hasn't mounted yet (first render), the template
-      // already has the empty state, so skipping is harmless.
-      const detailBody = document.getElementById("detailBody");
-      if (detailBody) {
-        detailBody.innerHTML =
-          `<div class="detail-empty">${t("right.no_execution")}<br/>` +
-          `<span>${t("right.no_execution_hint")}</span></div>`;
-      }
-      const detailTitle = document.getElementById("detailTitle");
-      if (detailTitle) detailTitle.textContent = "";
+      // Execution Detail panel lives in the right sidebar and is
+      // rendered by React (`DetailPanel`). Clearing the store's
+      // selection drops it back to the empty state — writing
+      // `#detailBody.innerHTML` here would fight React for that node.
+      useSessionStore.getState().closeDetail();
     }
     // The React `<Sidebar />` renders nav items synchronously on mount,
     // so depending on `pathname` alone is sufficient now — no need to

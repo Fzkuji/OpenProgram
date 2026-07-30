@@ -15,7 +15,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { HGW } from "../types";
+import { HGW, type GNode } from "../types";
+import { useSessionStore, type DetailNode } from "../../../session-store";
 import {
   _collapsed,
   _currentHead,
@@ -77,6 +78,52 @@ export function _onEdgeDblclick(targetId: string): void {
   }
 }
 
+/** Find a graph node by id in the flat ``_lastGraph`` cache. */
+function _graphNode(id: string): GNode | null {
+  if (!_lastGraph) return null;
+  for (const n of _lastGraph) if (String(n.id) === id) return n;
+  return null;
+}
+
+/**
+ * Build the right-rail DetailNode for a DAG node.
+ *
+ * Field accessors mirror ``dag/tooltip.ts`` (``preview ?? content ??
+ * output`` for the body, ``llm`` for model/token meta) so the panel and
+ * the hover card never disagree about what a node contains.
+ */
+function _detailFor(node: GNode): DetailNode {
+  const outRaw = node.preview ?? node.content ?? node.output ?? "";
+  const out = typeof outRaw === "string" ? outRaw : String(outRaw);
+  const isTool = node.role === "tool";
+  const meta = (node.llm || {}) as Record<string, unknown>;
+  const params: Record<string, unknown> = {};
+  if (isTool && typeof node.input === "string" && node.input) {
+    params.input = node.input;
+  }
+  if (node.attach_label) params.label = node.attach_label;
+  if (node.attach_ref) params.head_id = node.attach_ref;
+  if (node.attach_source_commit_id) {
+    params.source_commit_id = node.attach_source_commit_id;
+  }
+  if (typeof meta.model === "string" && meta.model) params.model = meta.model;
+  if (typeof meta.input_tokens === "number") params.input_tokens = meta.input_tokens;
+  if (typeof meta.output_tokens === "number") params.output_tokens = meta.output_tokens;
+  const name =
+    (isTool && typeof node.name === "string" && node.name ? node.name : "") ||
+    (typeof node.function === "string" ? node.function : "") ||
+    (typeof node.role === "string" ? node.role : "node");
+  return {
+    path: String(node.id),
+    name,
+    status: node.is_error ? "error" : String(node.status || "success"),
+    params: Object.keys(params).length ? params : undefined,
+    output: node.is_error ? undefined : out || undefined,
+    error: node.is_error ? out || "error" : undefined,
+    node_type: isTool ? "tool" : String(node.role || ""),
+  };
+}
+
 /** Install document-level click / dblclick listeners. ``rerender`` is
  *  invoked after a collapse toggle so the panel rebuilds with the new
  *  ``_collapsed`` state. */
@@ -87,6 +134,12 @@ export function _installInteractionHandlers(rerender: () => void): void {
     if (!g) return;
     const id = g.getAttribute("data-msg-id");
     if (!id) return;
+    // Selecting a node always populates the right rail's Details view.
+    // This is orthogonal to collapse/scroll below: a collapsible node
+    // both folds and shows its details, matching the pre-DAG-rewrite
+    // behaviour where every node click drove `showDetail`.
+    const gn = _graphNode(id);
+    if (gn) useSessionStore.getState().showDetail(_detailFor(gn), true);
     if (g.getAttribute("data-internal") === "1"
         && g.getAttribute("data-collapsible") !== "1") {
       const owner = g.getAttribute("data-owner");

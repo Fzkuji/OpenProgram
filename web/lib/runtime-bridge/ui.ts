@@ -533,127 +533,19 @@ interface DetailNode {
   expose?: string;
 }
 
+/**
+ * Legacy global entry point (``window.showDetail``) for the right-rail
+ * Details view.
+ *
+ * This used to build the panel's HTML itself and write it into
+ * ``#detailBody``. That div is now rendered by React
+ * (``right-sidebar.tsx``'s ``DetailPanel``), so painting it from here
+ * both fought React over the same node and duplicated the markup. The
+ * function now just hands the node to the store and lets React render.
+ */
 export function showDetail(node: DetailNode): void {
   W.selectedPath = node.path;
-  // Flag the selection in the store too. This function paints
-  // #detailBody itself (below) so it must NOT set `detailNode` — that
-  // would make React render a second copy — but the right sidebar keys
-  // its Detail/Context switch off "is something selected", and without
-  // this a DAG click opened Detail with no way back to History.
-  useSessionStore.getState().setNodeSelected(true);
-  const panel = document.getElementById("detailPanel");
-  const title = document.getElementById("detailTitle");
-  const body = document.getElementById("detailBody");
-  if (!panel || !body) return;
-
-  panel.classList.remove("collapsed");
-  W.rightDock?.show("detail");
-  if (title) title.textContent = node.name;
-
-  const escHtml = W.escHtml || ((s: unknown) => String(s));
-  const escAttr = W.escAttr || ((s: unknown) => String(s));
-  const statusIcon =
-    node.status === "success" ? "&#10003;" : node.status === "error" ? "&#10007;" : "&#9679;";
-  const dur = (node.duration_ms || 0) > 0 ? Math.round(node.duration_ms!) + "ms" : "running...";
-
-  let html =
-    '<div class="detail-section"><div class="detail-section-title">Status</div>' +
-    '<div class="detail-badge ' +
-    node.status +
-    '">' +
-    statusIcon +
-    " " +
-    node.status +
-    " &middot; " +
-    dur +
-    "</div></div>";
-
-  html +=
-    '<div class="detail-section"><div class="detail-section-title">Path</div>' +
-    '<div class="detail-field-value">' +
-    escHtml(node.path) +
-    "</div></div>";
-
-  if (node.prompt) {
-    html +=
-      '<div class="detail-section"><div class="detail-section-title">Prompt / Docstring</div>' +
-      '<div class="detail-code">' +
-      escHtml(node.prompt) +
-      "</div></div>";
-  }
-
-  if (node.params && Object.keys(node.params).length > 0) {
-    const dp: Record<string, unknown> = {};
-    for (const dk in node.params) {
-      if (dk !== "runtime" && dk !== "callback") dp[dk] = node.params[dk];
-    }
-    if (Object.keys(dp).length > 0) {
-      html +=
-        '<div class="detail-section"><div class="detail-section-title">Parameters</div>' +
-        '<div class="detail-code">' +
-        escHtml(JSON.stringify(dp, null, 2)) +
-        "</div></div>";
-    }
-  }
-
-  if (node.output != null) {
-    html +=
-      '<div class="detail-section"><div class="detail-section-title">Output</div>' +
-      '<div class="detail-code">' +
-      escHtml(
-        typeof node.output === "string"
-          ? node.output
-          : JSON.stringify(node.output, null, 2),
-      ) +
-      "</div></div>";
-  }
-
-  if (node.error) {
-    html +=
-      '<div class="detail-section"><div class="detail-section-title">Error</div>' +
-      '<div class="detail-code" style="color:var(--accent-red)">' +
-      escHtml(node.error) +
-      "</div></div>";
-  }
-
-  if (node.node_type === "exec") {
-    const content = (node.params && node.params._content) || "";
-    html +=
-      '<div class="detail-section"><div class="detail-section-title">LLM Input</div>' +
-      '<div class="detail-code">→ ' +
-      escHtml(content) +
-      "</div></div>";
-    if (node.raw_reply != null) {
-      html +=
-        '<div class="detail-section"><div class="detail-section-title">LLM Reply</div>' +
-        '<div class="detail-code">← ' +
-        escHtml(node.raw_reply) +
-        "</div></div>";
-    }
-  } else if (node.raw_reply != null) {
-    html +=
-      '<div class="detail-section"><div class="detail-section-title">Raw LLM Reply</div>' +
-      '<div class="detail-code">' +
-      escHtml(node.raw_reply) +
-      "</div></div>";
-  }
-
-  if (node.attempts && node.attempts.length > 0) {
-    html +=
-      '<div class="detail-section"><div class="detail-section-title">Attempts (' +
-      node.attempts.length +
-      ')</div><div class="detail-code">' +
-      escHtml(JSON.stringify(node.attempts, null, 2)) +
-      "</div></div>";
-  }
-
-  html +=
-    '<div class="detail-section"><div class="detail-section-title">Expose</div>' +
-    '<div class="detail-field-value">' +
-    escHtml(node.expose || "io") +
-    "</div></div>";
-
-  body.innerHTML = html;
+  useSessionStore.getState().showDetail(node as never);
 }
 
 export function closeDetail(): void {

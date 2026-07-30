@@ -252,7 +252,11 @@ interface ConvState {
 
   /** Node currently shown in the right-rail detail panel. */
   detailNode: DetailNode | null;
-  showDetail: (node: DetailNode) => void;
+  /** Populate the Details view with ``node``. Switches the right rail
+   *  to Details unless ``keepView`` — the DAG passes it so clicking a
+   *  node in the History view loads the details without yanking the
+   *  user off the graph they are navigating. */
+  showDetail: (node: DetailNode, keepView?: boolean) => void;
   closeDetail: () => void;
   /** "A DAG node is selected" — true for BOTH selection paths: React
    *  callers via showDetail, and the legacy runtime-bridge showDetail
@@ -774,9 +778,11 @@ export const useSessionStore = create<ConvState>((set) => ({
     }),
 
   detailNode: null,
-  showDetail: (node) =>
+  showDetail: (node, keepView) =>
     set((s) => {
-      const next = { ...s.rightDock, open: true, view: "detail" };
+      const next = keepView
+        ? { ...s.rightDock, open: true }
+        : { ...s.rightDock, open: true, view: "detail" };
       persistRightDock(next);
       return { detailNode: node, nodeSelected: true, rightDock: next };
     }),

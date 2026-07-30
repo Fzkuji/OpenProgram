@@ -48,6 +48,7 @@ import {
   PanelLeftOpenIcon,
 } from "../animated-icons";
 import { FileTree } from "../files/file-tree";
+import { renderMarkdown, useMarkdownReady } from "../chat/messages/markdown";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
 
@@ -492,6 +493,83 @@ function HighlightModeToggle() {
   );
 }
 
+/**
+ * One labelled block in the Details view.
+ *
+ * Value rendering, in order:
+ *   * non-string (params, attempts) → pretty JSON in the code block;
+ *   * a string that parses as a JSON object/array → re-indented JSON,
+ *     so a tool result that arrived as one long `{"a":1,...}` line is
+ *     readable instead of a wrapped wall;
+ *   * a string that reads as Markdown (fences / headings / lists /
+ *     tables / links) → the *chat* markdown renderer, so LLM replies
+ *     look the same here as in the bubble;
+ *   * anything else → plain preformatted text.
+ *
+ * `.detail-code` already scrolls at max-height 300px, so long values
+ * stay contained without new CSS.
+ */
+function looksLikeMarkdown(s: string): boolean {
+  return /(^|\n)\s*(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|\|)|```|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*/.test(s);
+}
+
+function DetailBlock({
+  title,
+  value,
+  danger,
+}: {
+  title: string;
+  value: unknown;
+  danger?: boolean;
+}) {
+  // Subscribe to the markdown-ready gate so a block painted before the
+  // shared `renderMd` global lands re-renders once it does.
+  useMarkdownReady();
+  if (value === undefined || value === null) return null;
+
+  let body: React.ReactNode;
+  if (typeof value !== "string") {
+    body = <div className="detail-code">{JSON.stringify(value, null, 2)}</div>;
+  } else {
+    const trimmed = value.trim();
+    let pretty: string | null = null;
+    if (/^[[{]/.test(trimmed)) {
+      try {
+        pretty = JSON.stringify(JSON.parse(trimmed), null, 2);
+      } catch {
+        pretty = null;
+      }
+    }
+    if (pretty !== null) {
+      body = <div className="detail-code">{pretty}</div>;
+    } else if (!danger && looksLikeMarkdown(value)) {
+      body = (
+        <div
+          className="detail-code chat-text"
+          style={{ whiteSpace: "normal", fontFamily: "inherit" }}
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(value) }}
+        />
+      );
+    } else {
+      body = (
+        <div
+          className="detail-code"
+          style={danger ? { color: "var(--accent-red)" } : undefined}
+        >
+          {value}
+        </div>
+      );
+    }
+  }
+
+  return (
+    <div className="detail-section">
+      <div className="detail-section-title">{title}</div>
+      {body}
+    </div>
+  );
+}
+
 function DetailPanel() {
   const { t } = useTranslation();
   const node = useSessionStore((s) => s.detailNode);
@@ -529,64 +607,37 @@ function DetailPanel() {
         <div className="detail-field-value">{node.path}</div>
       </div>
 
-      {node.prompt ? (
-        <div className="detail-section">
-          <div className="detail-section-title">Prompt / Docstring</div>
-          <div className="detail-code">{node.prompt}</div>
-        </div>
-      ) : null}
+      <DetailBlock title="Prompt / Docstring" value={node.prompt || null} />
 
-      {filteredParams && Object.keys(filteredParams).length > 0 ? (
-        <div className="detail-section">
-          <div className="detail-section-title">Parameters</div>
-          <div className="detail-code">{JSON.stringify(filteredParams, null, 2)}</div>
-        </div>
-      ) : null}
+      <DetailBlock
+        title="Parameters"
+        value={
+          filteredParams && Object.keys(filteredParams).length > 0
+            ? filteredParams
+            : null
+        }
+      />
 
-      {node.output != null ? (
-        <div className="detail-section">
-          <div className="detail-section-title">Output</div>
-          <div className="detail-code">
-            {typeof node.output === "string" ? node.output : JSON.stringify(node.output, null, 2)}
-          </div>
-        </div>
-      ) : null}
+      <DetailBlock title="Output" value={node.output ?? null} />
 
-      {node.error ? (
-        <div className="detail-section">
-          <div className="detail-section-title">Error</div>
-          <div className="detail-code" style={{ color: "var(--accent-red)" }}>{node.error}</div>
-        </div>
-      ) : null}
+      <DetailBlock title="Error" value={node.error || null} danger />
 
       {node.node_type === "exec" ? (
         <>
-          {node.params?._content ? (
-            <div className="detail-section">
-              <div className="detail-section-title">LLM Input</div>
-              <div className="detail-code">{"→ "}{String(node.params._content)}</div>
-            </div>
-          ) : null}
-          {node.raw_reply != null ? (
-            <div className="detail-section">
-              <div className="detail-section-title">LLM Reply</div>
-              <div className="detail-code">{"← "}{node.raw_reply}</div>
-            </div>
-          ) : null}
+          <DetailBlock
+            title="LLM Input"
+            value={node.params?._content != null ? String(node.params._content) : null}
+          />
+          <DetailBlock title="LLM Reply" value={node.raw_reply ?? null} />
         </>
-      ) : node.raw_reply != null ? (
-        <div className="detail-section">
-          <div className="detail-section-title">Raw LLM Reply</div>
-          <div className="detail-code">{node.raw_reply}</div>
-        </div>
-      ) : null}
+      ) : (
+        <DetailBlock title="Raw LLM Reply" value={node.raw_reply ?? null} />
+      )}
 
-      {node.attempts && node.attempts.length > 0 ? (
-        <div className="detail-section">
-          <div className="detail-section-title">Attempts ({node.attempts.length})</div>
-          <div className="detail-code">{JSON.stringify(node.attempts, null, 2)}</div>
-        </div>
-      ) : null}
+      <DetailBlock
+        title={`Attempts (${node.attempts?.length || 0})`}
+        value={node.attempts && node.attempts.length > 0 ? node.attempts : null}
+      />
 
       <div className="detail-section">
         <div className="detail-section-title">Render / Compress</div>
