@@ -7,10 +7,10 @@
  *     node → card shows. Mouse leaves the node → card hides
  *     immediately. The card itself is ``pointer-events: none`` so
  *     moving the cursor across it doesn't "stick" the popup.
- *   * **Collapsed by default, expanded after a dwell.** The first
- *     200ms of hover shows a compact card (1 input line + 1 output
- *     line). If the cursor stays on the node for ``DWELL_MS``
- *     additional time, the card expands to show every schema field.
+ *   * **Delayed, two-stage reveal.** Nothing shows while the cursor
+ *     just sweeps across nodes; after ``SHOW_DELAY_MS`` of hover the
+ *     compact card appears (1 input line + 1 output line), and after
+ *     ``SHOW_DELAY_MS + DWELL_MS`` total it expands to every field.
  *   * **Position next to the node, not the mouse.** Default to the
  *     right of the node's bounding box; flip to the left if it
  *     would overflow the panel. Vertical anchor follows the node's
@@ -25,13 +25,15 @@
 
 import { type GNode } from "./types";
 
-const DWELL_MS = 3000;       // hover-stay before expansion
+const SHOW_DELAY_MS = 2000;  // hover-stay before the compact card appears
+const DWELL_MS = 3000;       // further hover-stay before expansion (5s total)
 const COLLAPSED_VAL = 80;    // chars per row in collapsed view
 const EXPANDED_VAL = 600;    // chars per block in expanded view
 const GAP = 10;              // px gap between node and card
 
 let _tooltip: HTMLDivElement | null = null;
 let _dwellTimer = 0;
+let _showTimer = 0;
 let _currentId: string | null = null;
 
 export function ensureTooltip(body: HTMLElement): HTMLDivElement {
@@ -47,6 +49,10 @@ export function hideTooltip(): void {
     window.clearTimeout(_dwellTimer);
     _dwellTimer = 0;
   }
+  if (_showTimer) {
+    window.clearTimeout(_showTimer);
+    _showTimer = 0;
+  }
   _currentId = null;
   if (_tooltip) {
     _tooltip.classList.remove("visible");
@@ -60,6 +66,10 @@ export function resetTooltip(): void {
   if (_dwellTimer) {
     window.clearTimeout(_dwellTimer);
     _dwellTimer = 0;
+  }
+  if (_showTimer) {
+    window.clearTimeout(_showTimer);
+    _showTimer = 0;
   }
 }
 
@@ -77,8 +87,17 @@ export function showTooltip(
 
   if (id !== _currentId) {
     _currentId = id;
-    _render(tip, node, /* expanded */ false);
+    tip.classList.remove("visible");
+    tip.classList.remove("expanded");
+    if (_showTimer) window.clearTimeout(_showTimer);
     if (_dwellTimer) window.clearTimeout(_dwellTimer);
+    // 停留 SHOW_DELAY_MS 才出小卡——扫过节点不弹窗。
+    _showTimer = window.setTimeout(() => {
+      if (_currentId !== id || !_tooltip) return;
+      _render(_tooltip, node, /* expanded */ false);
+      _tooltip.classList.add("visible");
+      _position(_tooltip, body, nodeRect);
+    }, SHOW_DELAY_MS);
     _dwellTimer = window.setTimeout(() => {
       // Only expand if we're still hovering the same node.
       if (_currentId === id && _tooltip) {
@@ -96,10 +115,11 @@ export function showTooltip(
           if (_currentId === id && _tooltip) _position(_tooltip, body, nodeRect);
         }, 220);
       }
-    }, DWELL_MS);
+    }, SHOW_DELAY_MS + DWELL_MS);
   }
-  tip.classList.add("visible");
-  _position(tip, body, nodeRect);
+  // Repeated mousemoves over the same node only re-position an
+  // already-visible card — they must not bypass the show delay.
+  if (tip.classList.contains("visible")) _position(tip, body, nodeRect);
 }
 
 // ── render ─────────────────────────────────────────────────────────
