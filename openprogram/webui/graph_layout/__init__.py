@@ -40,7 +40,7 @@ def annotate_graph(
     # the two branches never overlap. Collapsed sub-calls don't exist in
     # ``tier``, so they take no column — the fork packs tight against
     # what's actually visible.
-    from ._common import predecessor_of
+    from ._common import predecessor_of, caller_of
 
     # nodes grouped by lane; first node = the lane's earliest (by depth).
     lane_nodes: dict[int, list[str]] = {}
@@ -65,8 +65,16 @@ def annotate_graph(
             lane_offset[ln] = 0
             return 0
         first = lane_first.get(ln)
-        forked_from = predecessor_of(by_id, by_id[first]) if first else None
-        # base lane = the lane the fork diverged from.
+        # base lane = the lane this branch diverged from. A retry fork
+        # diverges along ``predecessor``; a spawn branch root has no
+        # predecessor and hangs off its ``caller`` (the spawn node)
+        # instead — same geometry, so resolve either edge.
+        forked_from = None
+        if first:
+            forked_from = (
+                predecessor_of(by_id, by_id[first])
+                or caller_of(by_id, by_id[first])
+            )
         base_lane = lane.get(forked_from) if forked_from else None
         first_tier = tier.get(first, 0) if first else 0
         if base_lane is not None:

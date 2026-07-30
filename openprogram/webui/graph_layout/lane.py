@@ -95,7 +95,13 @@ def compute_lane(
                     continue
                 # spawn 分支根不是 turn 内 sub-call：它开启新分支，第 2 趟
                 # 扫描时自取新 lane（dag-rendering.md 场景 10）。
-                if by_id[kid].get("source") == "agent_spawn":
+                # 例外：caller 就是 ROOT 时（跨会话 spawn 落到目标会话，
+                # 场景 12 右半），它不是从某一轮旁边长出来的侧枝，而是本
+                # 会话的头一条对话——正常留在 lane 0。
+                if (
+                    by_id[kid].get("source") == "agent_spawn"
+                    and not is_root(by_id[cur])
+                ):
                     continue
                 stack.append(kid)
             # Conversation continuation: predecessor children stay in lane

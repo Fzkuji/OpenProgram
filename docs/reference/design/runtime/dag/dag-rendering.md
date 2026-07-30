@@ -98,9 +98,14 @@ where the spawn edge is drawn from, not its own indent):
 
 ### depth — which row
 
-Top to bottom in order of occurrence (predecessor chain + seq). A branch that forks off
-**starts on the same row** as the position it forked from; a spawn branch starts on the
-**same row as the spawn call node** (whichever row the spawn happens on, the dispatched branch starts there — spec.html scene 10).
+Rows are allocated by a **preorder walk of the structural parent tree**: every visible
+node takes its own row, and a subtree pushes the siblings below it down by however many
+rows it occupies (NOT "hops to root" — that stacked all children of one parent on a
+single row and broke scenes 3/5/6/7/11/12; aligned to spec.html on 2026-07-31). Two
+exceptions keep their anchor's row because they grow sideways, not down: a fork sibling
+sits on the **same row** as the sibling it rewrites (scene 3), and a spawn branch root
+sits on the **same row as the spawn call node** (scene 10). Cross-session spawns land as
+the target session's own conversation chain (lane 0), not a side branch (scene 12).
 
 ---
 
