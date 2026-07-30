@@ -248,3 +248,40 @@ Item-by-item against this spec. All 8 gaps were implemented on
 | 6 | attach pointer still drawn as a square in the viewport | scenes 8/10 | ✅ backend filters it (display=runtime) + graph_builder stamps the ref onto the embed host (attach_returns); edges.ts draws the long-dash return line |
 | 7 | cross-session spawn has no ↗ mark on either side (target silently hangs on ROOT, source leaves no trace) | §4 badges | ✅ graph_builder stamps spawn_remote (target side); nodes.ts draws ↗ (source-side spawn_out rendering ready, awaiting a data source that stamps it) |
 | 8 | spawn root tier computation not per the "conversation-layer user=1" ruling | §1 tier | ✅ graph_layout: tier=1 / same-row depth / new lane; task_followup without an attach pointer re-parents onto the receiving turn (filter.py fallback) |
+
+## 9. Context tab semantics (decided 2026-07-31)
+
+The History panel has two highlight modes (`HighlightMode` in
+`web/lib/runtime-bridge/dag/types.ts`); until this section the spec only
+covered the drawing itself, not the Context mode's meaning. Ruling:
+
+- **Viewport** — the visible set is the conversation bubbles currently
+  intersecting the chat scroll window (`render/visibility.ts`). Pure UI
+  affordance; no backend semantics.
+- **Context** — the visible set is **exactly the node ids the next LLM call
+  will carry as context**, served by
+  `GET /api/sessions/{id}/context-range`: the active branch walked back from
+  head, stopping at the most recent compaction summary. Nodes outside the
+  set draw dimmed; nodes inside keep the white fill.
+
+Compaction interaction (the part that used to be broken):
+
+- `insert_summary_node` re-parents the kept tail as `k_<hex>` copies and the
+  DAG deliberately never draws `summary_`/`k_` nodes
+  (`graph_layout/filter.py`) — the graph keeps showing the ORIGINAL rows.
+  Each `k_` copy therefore stores an `original_id` back-pointer
+  (`context/persistence.py`), and `/context-range` translates through it
+  (`original_ids()`), so the id space returned always matches what the graph
+  draws. Legacy rows without the back-pointer pass through untranslated and
+  simply don't highlight — acceptable decay, no migration.
+- After compaction the summarised prefix falls out of the set → it dims;
+  the kept tail keeps highlighting. This IS the compaction visualization —
+  a separate summary-node glyph stays rejected (session-dag.md's ruling:
+  no 4th role). If a future need arises for an explicit "N turns compacted
+  here" marker, it must be a badge on the first kept node, not a node.
+- `compaction_finished` must refresh the context range
+  (`chat-handlers.ts`); the Context tab is event-driven like everything
+  else — the frontend never computes context membership itself.
+- Context ids that have no drawn node (e.g. `display=runtime`
+  task-followup rows) are silently ignored: they are context, but not
+  graph.

@@ -215,3 +215,31 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注。验证工�
 | 6 | attach 指针在 viewport 仍画成方块 | 场景 8/10 | ✅ 后端 display=runtime 过滤 + graph_builder 把 ref 戳到嵌入位置（attach_returns），edges.ts 画回流长虚线 |
 | 7 | 跨会话 spawn 两侧都无 ↗ 角标（目标侧静默挂 ROOT，源侧毫无痕迹） | 第四节徽标 | ✅ graph_builder 打 spawn_remote 标（目标侧）；nodes.ts 画 ↗（源侧 spawn_out 渲染就绪，等数据源打标） |
 | 8 | spawn 根 tier 计算未按"对话层 user=1"裁决 | 第一节 tier | ✅ graph_layout tier=1 / depth 同行 / lane 开新分支；task_followup 无 attach 时挂回接收轮（filter.py 兜底） |
+
+## 9. Context tab 语义（2026-07-31 定案）
+
+History 面板有两个高亮模式（`web/lib/runtime-bridge/dag/types.ts` 的
+`HighlightMode`）；在本节之前规范只覆盖绘制本身，未定义 Context 模式的含义。裁定：
+
+- **Viewport** —— 可见集 = 当前聊天滚动窗口内相交的对话气泡
+  （`render/visibility.ts`）。纯 UI 便利，无后端语义。
+- **Context** —— 可见集 = **下一次 LLM 调用将携带的节点 id 集合**，由
+  `GET /api/sessions/{id}/context-range` 提供：从 head 回溯活跃分支，止于
+  最近一次压缩摘要。集合外的节点变暗，集合内保持白色填充。
+
+与压缩的联动（曾经坏掉的部分）：
+
+- `insert_summary_node` 把保留尾部复制为 `k_<hex>` 行重新挂链，而 DAG 刻意
+  不画 `summary_`/`k_` 节点（`graph_layout/filter.py`）——图上一直显示的是
+  **原始行**。因此每个 `k_` 副本存 `original_id` 回指
+  （`context/persistence.py`），`/context-range` 经 `original_ids()` 翻译，
+  返回的 id 空间恒与图上画的一致。无回指的旧数据原样透传、不高亮——可接受
+  的衰减，不做迁移。
+- 压缩后被摘要的前缀落出集合 → 变暗；保留尾部维持高亮。**这就是压缩的可视
+  化**——独立的摘要节点图形仍然否决（session-dag.md 的裁定：不加第 4 种
+  role）。将来若需要显式"此处压缩了 N 轮"标记，必须做成首个保留节点上的
+  徽章，不得做成节点。
+- `compaction_finished` 必须触发 context range 刷新（`chat-handlers.ts`）；
+  Context tab 和其他一切一样事件驱动——前端永不自行计算上下文成员关系。
+- 集合中没有对应图节点的 id（如 `display=runtime` 的 task-followup 行）
+  静默忽略：它们在上下文里，但不在图上。
