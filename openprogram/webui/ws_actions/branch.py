@@ -204,7 +204,9 @@ def build_branches_payload(session_id: str | None) -> dict:
                     # on demand. Pulling chat content as the label was
                     # confusing (the panel filled up with assistant
                     # reply text) and didn't match git mental model.
-                    name = mid[:8]
+                    # Compaction k_ tips display under their original id
+                    # (dag-rendering.md §9 — internals never leak).
+                    name = (row.get("display_msg_id") or mid)[:8]
                 rows.append({
                     "head_msg_id": mid,
                     "name": name,

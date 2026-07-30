@@ -1024,6 +1024,25 @@ class SessionStore:
                     "created_at": main_node.created_at,
                     "updated_at": main_node.created_at,
                 })
+        # Compaction chains (dag-rendering.md §9): a summary_ head is
+        # machinery, not a branch; a k_ tip IS the pre-compaction tail
+        # (persistence.py stamps original_id on the copies) — show it
+        # under the original id and drop the stale original-chain tip
+        # that would otherwise appear as a duplicate branch.
+        claimed_originals: set[str] = set()
+        kept: list[dict[str, Any]] = []
+        for t in tips:
+            nid = t["head_msg_id"]
+            if nid.startswith("summary_"):
+                continue
+            node = idx.nodes_by_id.get(nid)
+            orig = ((getattr(node, "metadata", None) or {}).get("original_id")
+                    if node else None)
+            if orig:
+                t["display_msg_id"] = orig
+                claimed_originals.add(orig)
+            kept.append(t)
+        tips = [t for t in kept if t["head_msg_id"] not in claimed_originals]
         tips.sort(key=lambda r: r.get("updated_at") or 0, reverse=True)
         return tips
 

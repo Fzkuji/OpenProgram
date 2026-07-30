@@ -104,3 +104,45 @@ def test_persister_stamps_original_id_on_kept_tail():
 def test_recompaction_keeps_pointing_at_the_real_node():
     """二次压缩复制的是 k_ 行本身，回指不能退化成中间那份副本。"""
     assert _original_id_of({"id": "k_new", "original_id": "u2"}) == "u2"
+
+
+def test_list_branches_hides_compaction_machinery(tmp_path):
+    """After compaction the branch panel shows ONE branch for the live
+    chain — displayed under the original id — and no summary_/stale
+    original-chain duplicates (dag-rendering.md §9)."""
+    import time
+
+    from openprogram.store import SessionStore
+
+    db = SessionStore(tmp_path / "sessions-git")
+    db.create_session("s1", agent_id="a")
+    prev = None
+    for mid in ("u1", "u1_reply", "u2", "u2_reply"):
+        db.append_message("s1", {
+            "id": mid,
+            "role": "assistant" if mid.endswith("_reply") else "user",
+            "content": mid, "predecessor": prev, "timestamp": time.time(),
+        })
+        prev = mid
+    # 压缩：摘要 + 尾部 k_ 副本（带回指），head 移到 k_ 尾
+    db.append_message("s1", {
+        "id": "summary_ff00", "role": "system", "content": "sum",
+        "predecessor": None, "timestamp": time.time(),
+    })
+    for orig, kid in (("u2", "k_aa11"), ("u2_reply", "k_bb22")):
+        db.append_message("s1", {
+            "id": kid, "role": "assistant" if orig.endswith("_reply") else "user",
+            "content": orig, "original_id": orig,
+            "predecessor": "summary_ff00" if kid == "k_aa11" else "k_aa11",
+            "timestamp": time.time(),
+        })
+    db.set_head("s1", "k_bb22")
+
+    tips = db.list_branches("s1")
+    ids = [t["head_msg_id"] for t in tips]
+    assert not any(i.startswith("summary_") for i in ids)
+    k_tips = [t for t in tips if t["head_msg_id"] == "k_bb22"]
+    assert len(k_tips) == 1
+    assert k_tips[0].get("display_msg_id") == "u2_reply"
+    # 旧链残留 tip（u2_reply）被去重掉
+    assert "u2_reply" not in ids
