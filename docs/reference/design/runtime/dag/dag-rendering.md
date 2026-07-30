@@ -170,10 +170,11 @@ itself):
 
 ## 5. Branch-name badge
 
-- **Anchoring**: **directly below** the branch chain's **last conversation-layer node**,
-  one row down (execution-layer nodes are not considered; in the default view the
-  execution subtree is folded into the ⚒ badge, so nothing crosses the cell below and
-  the badge sits straight underneath).
+- **Anchoring** (amended 2026-07-31): **directly below the branch's deepest currently
+  visible node**, one row down. In the default (folded) view that is the last
+  conversation-layer node; when the execution subtree is expanded the badge follows the
+  bottom-most expanded node and moves back up on collapse. Branch membership = lane
+  (expanded execution nodes share their turn's lane).
 - **Edge avoidance**: only when an edge crosses the anchor cell (the descending line of
   an expanded execution subtree, or the conversation continuing) does the badge shift
   half a column left — a badge never sits on an edge. Expanding/collapsing the execution

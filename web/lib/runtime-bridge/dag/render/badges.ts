@@ -49,9 +49,9 @@ export function drawBadges(
   rows.forEach((b) => {
     const hid = b.head_msg_id as string | undefined;
     if (!hid) return;
-    // 锚定＝分支链**最后一个对话层节点**的正下方（不看执行层节点，执行
-    // 层展开收起不挪 badge）。从 head 沿 predecessor/caller 链上溯，取第
-    // 一个可见的对话层节点。
+    // 第一步：从 head 沿 predecessor/caller 链上溯，取第一个可见的对话
+    // 层节点，确定分支归属（lane）；最终锚点在下面按"lane 内最深可见
+    // 节点"再算。
     const isConvLayer = (n: GNode): boolean =>
       (n.role === "user" || n.role === "assistant")
       && n.display !== "runtime" && n.display !== "root" && !n._runNode;
@@ -70,7 +70,25 @@ export function drawBadges(
       cur = raw ? ((raw.predecessor as string) || (raw.caller as string) || undefined) : undefined;
     }
     if (!node) return;
-    const p = pos(node);
+    // 锚定＝该分支**当前可见的最深节点**正下方（2026-07-31 裁定，
+    // dag-rendering.md §5）：执行子树展开时徽章跟到最底下的节点，
+    // 收起时自动回到会话层节点。分支归属按 lane——展开的执行节点
+    // 与所属轮次同 lane。
+    const lane = (node as any)._lane ?? 0;
+    let deepest: GNode = node;
+    let deepestP = pos(node);
+    Object.keys(tree.byId).forEach((id) => {
+      const n = tree.byId[id];
+      if (((n as any)._lane ?? 0) !== lane) return;
+      if (n.display === "root" || n.display === "runtime") return;
+      const np = pos(n);
+      if (np.y > deepestP.y || (np.y === deepestP.y && np.x > deepestP.x)) {
+        deepest = n;
+        deepestP = np;
+      }
+    });
+    node = deepest;
+    const p = deepestP;
     let bx = p.x;
     let by = p.y + 28;
     // 避让：锚位正下方有竖线穿过（对话延续 / 展开的执行子树在同一列往
