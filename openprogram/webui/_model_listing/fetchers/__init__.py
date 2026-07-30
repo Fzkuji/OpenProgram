@@ -99,7 +99,6 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
 
     from ..providers import _FETCH_MODELS_PROVIDERS, _default_api_for, _label
     from ..sources import enrich as _enrich_from_community
-    from ..storage import _is_custom_provider
 
     fetcher = _load_fetcher(provider_id)
     # Providers that speak the Anthropic Messages wire format (minimax,
@@ -111,14 +110,19 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
         fetcher = _load_fetcher("anthropic")
     if fetcher is None and provider_id in _FETCH_MODELS_PROVIDERS:
         fetcher = _fetch_openai_compat
-    # Custom (user-added) providers: config-only OpenAI-compatible endpoints
-    # with no dir / models.dev entry. Their /models is the standard
-    # OpenAI-compatible list, so route them through the generic fetcher — it
-    # resolves base_url + key from config/AuthStore. On failure the generic
-    # fetcher returns {"error": ...}, which _browse_models degrades to empty
-    # (never caches a failure as success).
-    if fetcher is None and _is_custom_provider(provider_id):
-        fetcher = _fetch_openai_compat
+    # Anything else with a resolvable base URL — custom (user-added)
+    # providers AND models.dev community providers with no dir of their own —
+    # gets the generic OpenAI-compatible fetcher, which resolves base_url +
+    # key from config/AuthStore/catalogue. Without this fallthrough a
+    # credentialed community provider never saw its real /v1/models (only the
+    # models.dev snapshot), despite the listing advertising supports_fetch.
+    # On failure the generic fetcher returns {"error": ...}, which
+    # _browse_models degrades to the models.dev rows (never caches a failure
+    # as success).
+    if fetcher is None:
+        from ..storage import _resolve_base_url
+        if _resolve_base_url(provider_id):
+            fetcher = _fetch_openai_compat
     if fetcher is None:
         return {"error": (
             f"{_label(provider_id)} has no list-models API available. "
@@ -241,10 +245,12 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
          their stored spec (an upstream blip must not drop the user's
          selection).
 
-    Returns ``{"fetched": N, "refreshed": [...], ...}`` on success,
-    ``{"error": "..."}`` on failure.
+    Returns ``{"fetched": N, "refreshed": [...]}``; when the credentialed
+    official-API fetch errored, the same dict additionally carries
+    ``"error"`` (rows may still be the models.dev fallback) so the UI can
+    show the failure instead of a false "Fetched N".
     """
-    from ..listing import list_models_for_provider
+    from ..listing import _browse_models_with_error
     from ..storage import (
         _cache_lock,
         _read_providers_cfg,
@@ -252,16 +258,12 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
         _write_providers_cfg,
     )
 
-    # Force-refresh browse (bypasses the short-TTL cache). Also surfaces the
-    # official-API error to the caller if the fetch failed outright.
-    rows = list_models_for_provider(provider_id, force_refresh=True)
-    # Upstream match source = the live browse ONLY. list_models_for_provider
-    # also layers in config-stored rows (so offline custom providers stay
-    # visible); matching against those would "refresh" a spec from its own
-    # stored copy and defeat the absent-upstream guard.
-    from ..listing import _browse_models
-
-    live = _browse_models(provider_id)
+    # ONE force-refresh browse (bypasses the short-TTL cache and re-primes it
+    # for the settings page). This live result is also the upstream match
+    # source — config-layered rows (offline custom providers) must NOT be
+    # matched against, or a spec would "refresh" from its own stored copy and
+    # defeat the absent-upstream guard.
+    live, error = _browse_models_with_error(provider_id, force_refresh=True)
     by_id = {r.get("id"): r for r in live if r.get("id")}
 
     refreshed: list[str] = []
@@ -289,11 +291,14 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
         from openprogram.providers import enabled_models as _mg
         _mg.reload()
 
-    return {
+    out = {
         "provider": provider_id,
-        "fetched": len(rows),
+        "fetched": len(live),
         "refreshed": refreshed,
     }
+    if error:
+        out["error"] = error
+    return out
 
 
 __all__ = ["fetch_models_remote", "fetch_and_normalize", "_load_fetcher"]

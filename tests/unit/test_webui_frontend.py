@@ -112,3 +112,9 @@ def test_build_gate_errors_without_out_and_npm(out_tree, monkeypatch):
     monkeypatch.setattr(frontend.shutil, "which", lambda _: None)
     with pytest.raises(RuntimeError, match="npm is not in PATH"):
         frontend.ensure_frontend_built()
+
+
+def test_unknown_api_path_is_404_not_spa(client):
+    r = client.get("/api/definitely-not-a-route")
+    assert r.status_code == 404
+    assert "text/html" not in r.headers.get("content-type", "")

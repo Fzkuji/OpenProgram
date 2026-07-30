@@ -42,14 +42,29 @@ def _reset_browse_cache() -> None:
 def _enabled_ids(pcfg: dict[str, Any]) -> set[str]:
     """Ids the user has enabled for a provider.
 
-    Spec rows (``providers.<p>.models``) are the source of truth; the legacy
-    ``enabled_models`` id list is a fallback for a not-yet-migrated config.
+    Spec rows (``providers.<p>.models``) are the source of truth — a row with
+    an explicit ``enabled: false`` (a disabled manual row, kept so the user's
+    hand-typed id survives the toggle) does NOT count. The legacy
+    ``enabled_models`` id list is a fallback only when there are no spec rows
+    at all (a not-yet-migrated config).
     """
-    spec_ids = {r.get("id") for r in (pcfg.get("models") or []) if r.get("id")}
-    return spec_ids or set(pcfg.get("enabled_models") or [])
+    rows = pcfg.get("models") or []
+    if rows:
+        return {
+            r.get("id") for r in rows
+            if r.get("id") and r.get("enabled") is not False
+        }
+    return set(pcfg.get("enabled_models") or [])
 
 
 def _browse_models(provider_id: str, force_refresh: bool = False) -> list[dict[str, Any]]:
+    """Rows-only wrapper around :func:`_browse_models_with_error`."""
+    return _browse_models_with_error(provider_id, force_refresh)[0]
+
+
+def _browse_models_with_error(
+    provider_id: str, force_refresh: bool = False
+) -> tuple[list[dict[str, Any]], str | None]:
     """Live model list for a provider: official-API list (when credentialed)
     ⊕ models.dev rows, merged in memory — NEVER persisted.
 
@@ -61,13 +76,16 @@ def _browse_models(provider_id: str, force_refresh: bool = False) -> list[dict[s
       3. models.dev also unavailable → empty list (caller still layers in
          config manual rows / enabled specs on top).
 
-    Cached for ``_BROWSE_TTL_SECONDS`` per provider unless ``force_refresh``.
+    Returns ``(rows, error)`` — ``error`` is the official-API failure message
+    when a credentialed fetch errored (rows may still carry the models.dev
+    fallback), ``None`` otherwise. Cached for ``_BROWSE_TTL_SECONDS`` per
+    provider unless ``force_refresh``.
     """
     if not force_refresh:
         with _browse_lock:
             hit = _browse_cache.get(provider_id)
             if hit and (time.time() - hit[0]) < _BROWSE_TTL_SECONDS:
-                return [dict(r) for r in hit[1]]
+                return [dict(r) for r in hit[1]], None
 
     from .provider_models import _models_dev_for
     from .providers import _is_configured
@@ -77,6 +95,7 @@ def _browse_models(provider_id: str, force_refresh: bool = False) -> list[dict[s
 
     official: list[dict[str, Any]] = []
     fetch_failed = False
+    error: str | None = None
     if _is_configured(provider_id):
         try:
             res = fetch_and_normalize(provider_id)
@@ -90,6 +109,7 @@ def _browse_models(provider_id: str, force_refresh: bool = False) -> list[dict[s
             # empty result as a success — after the user pastes a key the list
             # must refresh, not stay empty until TTL expiry.
             fetch_failed = True
+            error = (res.get("error") if isinstance(res, dict) else None) or "fetch failed"
 
     rows: list[dict[str, Any]]
     if official:
@@ -115,7 +135,7 @@ def _browse_models(provider_id: str, force_refresh: bool = False) -> list[dict[s
     if not (fetch_failed and not rows):
         with _browse_lock:
             _browse_cache[provider_id] = (time.time(), [dict(r) for r in rows])
-    return rows
+    return rows, error
 
 
 def supports_fast(provider_id: str | None, model_id: str | None) -> bool:
@@ -185,10 +205,15 @@ def list_providers() -> list[dict[str, Any]]:
 
     Two source-of-truth tiers merged:
 
-      1. **Static registry** — providers with at least one ``Model``
-         row in ``providers/enabled_models.py``. These have a baked-
-         in ``Model.base_url`` and known model ids the runtime can
-         dispatch against on day one.
+      1. **Static tier** — every provider shipped as a
+         ``providers/<p>/provider.json`` dir (``_shipped_provider_ids``),
+         plus anything with rows in the runtime registry. Enumerated
+         from the shipped dirs, NOT from ``ENABLED_MODELS`` — the
+         registry is enabled-only since the enabled-models migration,
+         so a fresh install has it empty and the subscription providers
+         (openai-codex / claude-code / gemini-subscription, none of
+         which models.dev lists) must still get a sidebar row to log
+         into.
 
       2. **Community catalogue** (``sources.models_dev``) — every
          provider models.dev knows about, including ones we don't
@@ -206,6 +231,8 @@ def list_providers() -> list[dict[str, Any]]:
     from openprogram.auth.aliases import resolve as _resolve_alias
     from openprogram.auth.login_methods import login_methods as _login_methods
 
+    from openprogram.providers._provider_meta import provider_base_url
+
     from .providers import (
         _CLI_PROVIDERS,
         _FETCH_MODELS_PROVIDERS,
@@ -213,6 +240,7 @@ def list_providers() -> list[dict[str, Any]]:
         _is_configured,
         _label,
         _prettify,
+        _shipped_provider_ids,
         _synth_env_var,
     )
     from .setup_hints import _setup_hint
@@ -223,9 +251,68 @@ def list_providers() -> list[dict[str, Any]]:
     cfg = _read_providers_cfg()
     result: list[dict[str, Any]] = []
 
-    # Tier 1: HTTP providers from the static registry
+    # models.dev catalogue, keyed by id — shared by every tier (base-url /
+    # doc-url fill, the fetchable-by-generic-fetcher set, tier-2 enumeration).
+    md_provs: dict[str, dict[str, Any]] = {
+        p["id"]: p for p in models_dev.list_providers() if p.get("id")
+    }
+
+    def _entry(pid: str, pcfg: dict[str, Any], default_base_url: str) -> dict[str, Any]:
+        """Fields with ONE canonical computation across all tiers. A provider
+        can move tiers over its lifetime (enabling a community model promotes
+        it into tier 1; a custom provider's registered rows do the same), so
+        any field computed per-tier eventually diverges — that's the bug class
+        62483bac fixed twice and this helper closes for good."""
+        custom = pcfg.get("source") == "custom"
+        e: dict[str, Any] = {
+            "id": pid,
+            # Custom providers carry the user's chosen label in config; every
+            # other id routes through the override map → models.dev → prettify.
+            "label": (pcfg.get("label") or _prettify(pid)) if custom else _label(pid),
+            "kind": "api",
+            "enabled": bool(pcfg.get("enabled", False)),
+            "configured": _is_configured(pid),
+            # Synthesised key label for custom providers (Detail shows
+            # AccountManager when api_key_env is truthy). Display only — keys
+            # resolve from the AuthStore by pid.
+            "api_key_env": _env_var_for(pid) or (_synth_env_var(pid) if custom else None),
+            "default_base_url": default_base_url,
+            "base_url": pcfg.get("base_url") or "",
+            "use_responses_api": bool(pcfg.get("use_responses_api", False)),
+            # A fetch path exists: a shipped/mapped fetcher, the OpenAI-compat
+            # allowlist, a custom provider (generic fetcher against its
+            # base_url), or a models.dev-known community endpoint.
+            "supports_fetch": bool(
+                custom
+                or pid in _FETCH_MODELS_PROVIDERS
+                or _load_fetcher(pid) is not None
+                or pid in md_provs
+            ),
+        }
+        if custom:
+            e["custom"] = True
+        hint = _setup_hint(pid)
+        if hint:
+            e["setup_hint"] = hint
+        # Native login methods (OAuth / device-code / import-from-CLI) the web
+        # can drive — excluding plain api_key, which the ApiKey field already
+        # handles. Single source of truth: openprogram/auth/login_methods.py.
+        native = [
+            {"id": mid, "label": label}
+            for mid, label in _login_methods(pid)
+            if mid != "api_key"
+        ]
+        if native:
+            e["login_methods"] = native
+        doc = (md_provs.get(pid) or {}).get("doc_url")
+        if doc:
+            e["doc_url"] = doc
+        return e
+
+    # Tier 1: static tier — shipped provider dirs ∪ runtime-registry providers
+    # (the latter adds config-defined custom providers with registered rows).
     seen: set[str] = set()
-    for pid in get_providers():
+    for pid in sorted(set(get_providers()) | _shipped_provider_ids()):
         # An id that's a known alias of another provider (e.g. legacy
         # ``chatgpt-subscription`` → ``openai-codex``) must not surface as its
         # own sidebar row — it's the same service. The canonical id carries it.
@@ -234,94 +321,52 @@ def list_providers() -> list[dict[str, Any]]:
         seen.add(pid)
         pcfg = cfg.get(pid, {})
         models = get_models(pid)
-        custom = pcfg.get("custom_models") or []
+        custom_models = pcfg.get("custom_models") or []
         enabled_ids = _enabled_ids(pcfg)
-        all_ids = {m.id for m in models} | {c.get("id") for c in custom if c.get("id")}
-        default_base = models[0].base_url if models and models[0].base_url else ""
-        entry = {
-            "id": pid,
-            "label": _label(pid),
-            "kind": "api",
-            "enabled": bool(pcfg.get("enabled", False)),
-            "configured": _is_configured(pid),
-            # Config-defined custom providers reach this tier once their spec
-            # rows register at runtime; they still need the synthesised key
-            # label (Detail shows AccountManager when api_key_env is truthy)
-            # and the custom badge, same as tier 3.
-            "api_key_env": _env_var_for(pid)
-            or (_synth_env_var(pid) if pcfg.get("source") == "custom" else None),
-            "default_base_url": default_base,
-            "base_url": pcfg.get("base_url") or "",
-            "use_responses_api": bool(pcfg.get("use_responses_api", False)),
-            "supports_fetch": (pid in _FETCH_MODELS_PROVIDERS) or (_load_fetcher(pid) is not None),
-            # Intentional semantics change (enabled-models migration): get_models
-            # now reads the enabled-only ENABLED_MODELS registry, so this is the
-            # ENABLED count, not the full catalogue count. The first screen is
-            # meta-only by design — the full browse list loads per-provider.
-            "model_count": len(models) + len(custom),
-            "enabled_model_count": sum(1 for mid in all_ids if mid in enabled_ids),
+        all_ids = {m.id for m in models} | {
+            c.get("id") for c in custom_models if c.get("id")
         }
-        if pcfg.get("source") == "custom":
-            entry["custom"] = True
-        hint = _setup_hint(pid)
-        if hint:
-            entry["setup_hint"] = hint
-        # Native login methods (OAuth / device-code / import-from-CLI) the web
-        # can drive — excluding plain api_key, which the ApiKey field already
-        # handles. Empty for key-only providers, so the UI only renders a
-        # "Sign in" panel where there's a real native flow. Single source of
-        # truth: openprogram/auth/login_methods.py (import hoisted above).
-        native = [
-            {"id": mid, "label": label}
-            for mid, label in _login_methods(pid)
-            if mid != "api_key"
-        ]
-        if native:
-            entry["login_methods"] = native
+        default_base = (
+            (models[0].base_url if models and models[0].base_url else "")
+            or provider_base_url(pid)
+            or (md_provs.get(pid) or {}).get("base_url")
+            or ""
+        )
+        entry = _entry(pid, pcfg, default_base)
+        entry.update({
+            # Enabled count when the user has enabled anything (get_models
+            # reads the enabled-only registry; the first screen is meta-only
+            # by design); pre-enable, fall back to the community catalogue
+            # count so "OpenRouter has 233 models" still reads at a glance.
+            "model_count": (len(models) + len(custom_models))
+            or len((md_provs.get(pid) or {}).get("model_ids") or []),
+            "enabled_model_count": sum(1 for mid in all_ids if mid in enabled_ids),
+        })
         result.append(entry)
 
-    # Tier 2: community-catalogue providers we don't have a static
-    # entry for. Configurable (paste key + Fetch); ``model_count`` is
-    # what models.dev says is available pre-fetch, so the user sees
-    # "OpenRouter has 233 models" without enabling anything first.
-    for md_prov in models_dev.list_providers():
-        pid = md_prov.get("id")
-        if not pid or pid in seen:
+    # Tier 2: community-catalogue providers we don't ship a dir for.
+    # Configurable (paste key + Fetch); ``model_count`` is what models.dev
+    # says is available pre-fetch.
+    for pid, md_prov in md_provs.items():
+        if pid in seen:
             continue
         if _resolve_alias(pid) != pid:
             continue
         seen.add(pid)
         pcfg = cfg.get(pid, {})
-        custom = pcfg.get("custom_models") or []
+        custom_models = pcfg.get("custom_models") or []
         enabled_ids = _enabled_ids(pcfg)
         community_ids = set(md_prov.get("model_ids") or [])
-        custom_ids = {c.get("id") for c in custom if c.get("id")}
-        result.append({
-            "id": pid,
-            # Route through _label so manual overrides (_PROVIDER_LABELS)
-            # win for community-tier providers too — e.g. relabel the
-            # MiniMax Token-Plan rows by region word instead of bare
-            # domain. Falls back to the models.dev label, then the id.
-            "label": _label(pid),
-            "kind": "api",
-            "enabled": bool(pcfg.get("enabled", False)),
-            "configured": _is_configured(pid),
-            "api_key_env": _env_var_for(pid),
-            "default_base_url": md_prov.get("base_url") or "",
-            "base_url": pcfg.get("base_url") or "",
-            "use_responses_api": bool(pcfg.get("use_responses_api", False)),
-            # Every OpenAI-compatible provider models.dev knows about
-            # is fetch-able by default; the dispatcher falls through to
-            # ``_fetch_openai_compat`` when the provider ships no
-            # ``list_models.py`` of its own.
-            "supports_fetch": True,
+        custom_ids = {c.get("id") for c in custom_models if c.get("id")}
+        entry = _entry(pid, pcfg, md_prov.get("base_url") or "")
+        entry.update({
             "model_count": len(community_ids | custom_ids),
             "enabled_model_count": sum(
                 1 for mid in (community_ids | custom_ids) if mid in enabled_ids
             ),
-            "doc_url": md_prov.get("doc_url"),
             "community_source": "models.dev",
         })
+        result.append(entry)
 
     # CLI-backed providers (currently empty, kept for forward-compat)
     for cli in _CLI_PROVIDERS:
@@ -355,25 +400,12 @@ def list_providers() -> list[dict[str, Any]]:
         models_cfg = pcfg.get("models") or []
         enabled_ids = _enabled_ids(pcfg)
         all_ids = {r.get("id") for r in models_cfg if r.get("id")}
-        base = pcfg.get("base_url") or ""
-        custom_rows.append({
-            "id": pid,
-            "label": pcfg.get("label") or _prettify(pid),
-            "kind": "api",
-            "custom": True,
-            "enabled": bool(pcfg.get("enabled", False)),
-            "configured": _is_configured(pid),
-            # Synthesised label so the frontend renders the API-keys section for
-            # a custom pid (Detail shows AccountManager when api_key_env is
-            # truthy). Display only — keys resolve from the AuthStore by pid.
-            "api_key_env": _env_var_for(pid) or _synth_env_var(pid),
-            "default_base_url": base,
-            "base_url": base,
-            "use_responses_api": bool(pcfg.get("use_responses_api", False)),
-            "supports_fetch": True,
+        entry = _entry(pid, pcfg, pcfg.get("base_url") or "")
+        entry.update({
             "model_count": len(all_ids),
             "enabled_model_count": sum(1 for mid in all_ids if mid in enabled_ids),
         })
+        custom_rows.append(entry)
     custom_rows.sort(key=lambda x: x["label"].lower())
     result.extend(custom_rows)
     return result

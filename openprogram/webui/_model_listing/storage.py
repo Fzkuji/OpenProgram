@@ -270,6 +270,13 @@ def _repair_over_merged_specs(providers: dict[str, dict[str, Any]]) -> bool:
         if not rows:
             continue
         enabled = set(pcfg.get("enabled_models") or [])
+        if not enabled:
+            # No legacy ``enabled_models`` list → the v1 bulk-merge never
+            # touched this provider, so every manual-tagged row here is a
+            # genuine user action (``add_manual_model`` also writes
+            # ``source: "manual"``). Pruning would silently delete the user's
+            # hand-typed models on the next process start.
+            continue
         kept = [
             r for r in rows
             if r.get("source") != "manual" or r.get("id") in enabled
@@ -556,7 +563,9 @@ def delete_custom_provider(provider_id: str) -> dict[str, Any]:
     """Delete a custom provider's config key. Refuses non-custom providers.
 
     Leaves the AuthStore credential pool on disk (don't silently drop the
-    user's key) — only the config marker + spec rows go.
+    user's key) — only the config marker + spec rows go. A top-level
+    ``default_provider``/``default_model`` pointing at the deleted id is
+    cleared too, so a restart doesn't probe a provider that no longer exists.
     """
     pid = (provider_id or "").strip().lower()
     with _cache_lock:
@@ -566,6 +575,15 @@ def delete_custom_provider(provider_id: str) -> dict[str, Any]:
             return {"ok": False, "error": f"{pid!r} is not a custom provider"}
         del cfg[pid]
         _write_providers_cfg(cfg)
+        try:
+            from openprogram.webui.server import _load_config, _save_config
+            root = _load_config()
+            if root.get("default_provider") == pid:
+                root.pop("default_provider", None)
+                root.pop("default_model", None)
+                _save_config(root)
+        except Exception:
+            pass  # best-effort cleanup; the startup probe degrades gracefully
     return {"ok": True, "id": pid, "removed": True}
 
 

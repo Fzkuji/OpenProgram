@@ -149,6 +149,20 @@ _ENV_API_KEYS: dict[str, str | None] = {
 _PROVIDER_DEFAULT_API: dict[str, str] = {}
 
 
+def _shipped_provider_ids() -> set[str]:
+    """Provider ids shipped in this package (the sidebar's static tier).
+
+    Enumerated from ``providers/<dir>/provider.json`` files that declare an
+    ``endpoints`` map — that's what separates a real dispatchable provider
+    from a wire-format metadata dir (``openai_completions`` etc. ship a
+    provider.json with thinking specs only). Plus ``claude-code``, which has
+    no dir of its own (it rides the anthropic runtime / credential pool) but
+    must still get a sidebar row on a fresh install.
+    """
+    from openprogram.providers._provider_meta import shipped_provider_ids
+    return set(shipped_provider_ids()) | {"claude-code"}
+
+
 def _prettify(provider_id: str) -> str:
     return " ".join(w.capitalize() for w in provider_id.replace("_", "-").split("-"))
 

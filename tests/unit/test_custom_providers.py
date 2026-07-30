@@ -187,6 +187,7 @@ def test_list_providers_surfaces_custom_tier3(mem_cfg, monkeypatch):
     monkeypatch.setattr(P, "get_models", lambda pid: [])
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
     monkeypatch.setattr(cat, "_is_configured", lambda pid: False)
+    monkeypatch.setattr(cat, "_shipped_provider_ids", lambda: set())
     mem_cfg["frontier-intelligence"] = {
         "enabled": True,
         "source": "custom",
@@ -217,6 +218,7 @@ def test_custom_row_sorts_last(mem_cfg, monkeypatch):
     })])
     monkeypatch.setattr(cat, "_label", lambda pid: pid)
     monkeypatch.setattr(cat, "_is_configured", lambda pid: False)
+    monkeypatch.setattr(cat, "_shipped_provider_ids", lambda: set())
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
     # A custom provider whose label alphabetically sorts BEFORE "zzz-provider"
     # must still land at the end.

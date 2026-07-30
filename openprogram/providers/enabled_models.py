@@ -98,6 +98,10 @@ def _load() -> dict[str, Model]:
         for row in (pcfg.get("models") or []):
             if not isinstance(row, dict):
                 continue
+            # A disabled manual row (kept in config so the user's hand-typed
+            # id survives the toggle) must not enter the runtime registry.
+            if row.get("enabled") is False:
+                continue
             try:
                 m = _build_model_from_row(row, provider_id, endpoints)
             except Exception:

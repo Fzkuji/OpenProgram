@@ -90,6 +90,26 @@ def resolved_endpoints(provider_id: str) -> dict:
     return {"default": {"api": api, "base_url": base}}
 
 
+def shipped_provider_ids() -> list[str]:
+    """Ids of every provider shipped as ``providers/<dir>/provider.json``
+    with a non-empty ``endpoints`` map. Dirs whose provider.json carries
+    only wire-format metadata (thinking specs — ``openai_completions``,
+    ``openai_responses``, ``google_gemini_cli``) are not providers a user
+    can enable and are excluded by the endpoints check."""
+    out: list[str] = []
+    for d in sorted(_ROOT.iterdir()):
+        f = d / "provider.json"
+        if not f.is_file():
+            continue
+        try:
+            j = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if j.get("endpoints"):
+            out.append(j.get("id") or d.name.replace("_", "-"))
+    return out
+
+
 def provider_endpoints(provider_id: str) -> dict:
     """Full endpoint map {name: {api, base_url}}, resolving empty provider
     dirs via alias / models.dev (see :func:`resolved_endpoints`)."""

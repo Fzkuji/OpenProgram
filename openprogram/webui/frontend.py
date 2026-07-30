@@ -145,6 +145,11 @@ def mount_frontend(app) -> None:
     @app.get("/{full_path:path}", include_in_schema=False)
     async def _serve_frontend(full_path: str):  # noqa: ANN202
         rel = full_path.strip("/")
+        # Machine prefixes never fall back to HTML: an unregistered
+        # /api/... (typo'd fetch, removed endpoint) must 404, not return
+        # the SPA shell with a 200.
+        if rel.split("/", 1)[0] in ("api", "ws", "files"):
+            return PlainTextResponse("not found", status_code=404)
         target = (out / rel) if rel else (out / "index.html")
         try:
             resolved = target.resolve()

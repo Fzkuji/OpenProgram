@@ -184,6 +184,7 @@ def test_list_providers_hides_alias_provider_row(monkeypatch):
     monkeypatch.setattr(P, "get_models", lambda pid: [_mk(pid)])
     monkeypatch.setattr(cat, "_label", lambda pid: pid)
     monkeypatch.setattr(cat, "_is_configured", lambda pid: True)
+    monkeypatch.setattr(cat, "_shipped_provider_ids", lambda: set())
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
     monkeypatch.setattr(st, "_read_providers_cfg", lambda: {
         "openai-codex": {"enabled": True},
