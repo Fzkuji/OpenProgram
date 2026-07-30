@@ -409,11 +409,13 @@ export function CenterTabStrip() {
   useEffect(() => {
     if (!activationMounted.current) {
       activationMounted.current = true;
-      // Initial mount on a non-chat deep link (/skills/x, /settings/…):
+      // Initial mount on a deep link (/skills/x, /settings/…, /s/<id>):
       // the persisted active session tab must NOT hijack the route the
-      // user actually opened. Later activeId changes are real user tab
-      // switches and navigate as before.
-      if (!isChatRoute(pathname)) return;
+      // user actually opened — /s/<id> deep links included; the
+      // pathname-watcher effect adopts that session into a tab instead.
+      // Later activeId changes are real user tab switches and navigate
+      // as before.
+      if (!isChatRoute(pathname) || pathname.startsWith("/s/")) return;
     }
     const tab = useCenterTabs.getState().tabs.find(
       (candidate) => candidate.id === activeId,
