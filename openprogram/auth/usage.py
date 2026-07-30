@@ -203,4 +203,41 @@ def report_success(provider_id: str, profile_id: str, credential_id: str) -> Non
         pass
 
 
-__all__ = ["acquire_pooled", "classify_failure", "report_failure", "report_success"]
+def stored_but_unusable(provider_id: str) -> Optional[str]:
+    """One-line diagnosis when the provider HAS stored credentials but
+    ``acquire_pooled`` returned None — every credential is revoked /
+    needs_reauth / billing_blocked / cooling down. ``None`` when there are no
+    stored credentials at all (the caller's plain "no key configured" message
+    is then accurate). Never raises."""
+    try:
+        from .store import get_store
+
+        creds = [
+            c
+            for pool in get_store().list_pools()
+            if pool.provider_id == provider_id
+            for c in pool.credentials
+        ]
+        if not creds:
+            return None
+        worst = next((c for c in creds if c.status != "valid"), creds[0])
+        detail = (worst.last_error or "").strip()
+        if len(detail) > 200:
+            detail = detail[:200] + "…"
+        n = len(creds)
+        head = (
+            f"{n} stored key(s) for '{provider_id}' are unusable "
+            f"(status: {worst.status})"
+        )
+        return f"{head}. Last error: {detail}" if detail else head
+    except Exception:
+        return None
+
+
+__all__ = [
+    "acquire_pooled",
+    "classify_failure",
+    "report_failure",
+    "report_success",
+    "stored_but_unusable",
+]

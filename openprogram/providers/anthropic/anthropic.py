@@ -599,8 +599,10 @@ async def stream_simple(
         # No credential anywhere — fail precisely instead of sending an
         # empty x-api-key header (a misleading upstream 401).
         from ..utils.errors import ErrorReason, LLMError
+        from ...auth import usage as _auth_usage
+        _diag = _auth_usage.stored_but_unusable(model.provider)
         raise LLMError(
-            message=(
+            message=_diag or (
                 f"No API key configured for provider '{model.provider}'. "
                 f"Add one in Settings -> Providers, or run: "
                 f"openprogram providers login {model.provider} --api-key"

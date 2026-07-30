@@ -99,8 +99,8 @@ def _browse_models_with_error(
     if _is_configured(provider_id):
         try:
             res = fetch_and_normalize(provider_id)
-        except Exception:
-            res = {"error": "fetch raised"}
+        except Exception as exc:
+            res = {"error": f"fetch failed: {type(exc).__name__}: {exc}"}
         if isinstance(res, dict) and isinstance(res.get("models"), list):
             official = res["models"]
         else:

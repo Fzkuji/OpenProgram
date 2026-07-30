@@ -273,8 +273,11 @@ async def stream_simple(
             # fall back to the OPENAI_API_KEY env var (wrong key, wrong
             # provider, misleading 401s).
             from ..utils.errors import ErrorReason, LLMError
+            # "No key" and "key stored but dead (quota / revoked)" are very
+            # different user problems — diagnose which one this is.
+            _diag = _auth_usage.stored_but_unusable(model.provider)
             raise LLMError(
-                message=(
+                message=_diag or (
                     f"No API key configured for provider '{model.provider}'. "
                     f"Add one in Settings → Providers, or run: "
                     f"openprogram providers login {model.provider} --api-key"
