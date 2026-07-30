@@ -269,6 +269,17 @@ export function CenterTabStrip() {
       case "move-right":
         moveMenuTab(tabId, 1);
         break;
+      case "close": {
+        const tab = useCenterTabs.getState().tabs.find((x) => x.id === tabId);
+        if (tab) onTabClose({ stopPropagation: () => {} } as React.SyntheticEvent, tab);
+        break;
+      }
+      case "close-others":
+        closeMenuTabs(tabId, false);
+        break;
+      case "close-right":
+        closeMenuTabs(tabId, true);
+        break;
       case "split":
         openSplitPicker(tabId);
         break;
@@ -504,6 +515,20 @@ export function CenterTabStrip() {
             disabled: !canMoveMenuTab(tabId, 1),
           },
           {
+            id: "tabmenu:close",
+            label: text("Close tab", "关闭标签页"),
+          },
+          {
+            id: "tabmenu:close-others",
+            label: text("Close other tabs", "关闭其他标签页"),
+            disabled: closableTabsAround(tabId, false).length === 0,
+          },
+          {
+            id: "tabmenu:close-right",
+            label: text("Close tabs to the right", "关闭右侧标签页"),
+            disabled: closableTabsAround(tabId, true).length === 0,
+          },
+          {
             id: "tabmenu:split",
             label: text("New split view with this tab", "与此标签页新建分屏"),
             disabled: !canOpenSplitPicker(tabId),
@@ -697,6 +722,42 @@ export function CenterTabStrip() {
         tab.sessionId,
       );
       void deleteAttachments(tab.sessionId);
+    }
+  }
+
+  /** Tabs the "close others / close to the right" menu items would act
+   *  on, in strip order. Group members count individually — closing
+   *  "others" from inside a group still clears the rest of the strip,
+   *  which is what every browser does. `after` restricts to tabs that
+   *  sit past the subject. */
+  function closableTabsAround(tabId: string, after: boolean): CenterTab[] {
+    const state = useCenterTabs.getState();
+    const order = centerTabStripEntries({
+      tabIds: state.tabs.map((tab) => tab.id),
+      groups: state.groups,
+    }).flatMap((entry) =>
+      entry.kind === "group" ? entry.group.memberIds : [entry.tabId],
+    );
+    const at = order.indexOf(tabId);
+    if (at < 0) return [];
+    const ids = after ? order.slice(at + 1) : order.filter((id) => id !== tabId);
+    return ids
+      .map((id) => state.tabs.find((tab) => tab.id === id))
+      .filter((tab): tab is CenterTab => !!tab);
+  }
+
+  /** Bulk close. Routed through onTabClose one tab at a time so each
+   *  keeps its dirty-check prompt and exit animation — a bulk path that
+   *  skipped those would silently discard unsaved file edits. */
+  function closeMenuTabs(tabId: string, after: boolean) {
+    const victims = closableTabsAround(tabId, after);
+    setTabMenu(null);
+    returnFocusToMenuInvoker(tabId);
+    for (const tab of victims) {
+      onTabClose(
+        { stopPropagation: () => {} } as React.SyntheticEvent,
+        tab,
+      );
     }
   }
 
@@ -1543,6 +1604,36 @@ export function CenterTabStrip() {
             onClick={() => moveMenuTab(tabMenu.tabId, 1)}
           >
             {text("Move right", "向右移动")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={styles.tabMenuItem}
+            onClick={() => {
+              const tab = tabs.find((x) => x.id === tabMenu.tabId);
+              setTabMenu(null);
+              if (tab) onTabClose({ stopPropagation: () => {} } as React.SyntheticEvent, tab);
+            }}
+          >
+            {text("Close tab", "关闭标签页")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={styles.tabMenuItem}
+            disabled={closableTabsAround(tabMenu.tabId, false).length === 0}
+            onClick={() => closeMenuTabs(tabMenu.tabId, false)}
+          >
+            {text("Close other tabs", "关闭其他标签页")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={styles.tabMenuItem}
+            disabled={closableTabsAround(tabMenu.tabId, true).length === 0}
+            onClick={() => closeMenuTabs(tabMenu.tabId, true)}
+          >
+            {text("Close tabs to the right", "关闭右侧标签页")}
           </button>
           <button
             type="button"
