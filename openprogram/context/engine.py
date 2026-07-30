@@ -595,15 +595,28 @@ class DefaultContextEngine(ContextEngine):
 
         # head_seq excludes the trailing user node (guard #2): find the
         # last active-branch user node and cap head_seq just below it.
+        #
+        # The branch tip at prepare() time is the just-inserted assistant
+        # PLACEHOLDER (dispatcher step 3b writes it and moves head before
+        # the loop runs), so the shape is [..., userN, placeholderN].
+        # Skip the in-flight placeholder (empty llm node) when walking
+        # back — breaking on it left head_seq=None, which rendered BOTH
+        # the trailing user node and the empty placeholder, so the model
+        # saw the current user message twice (once from the DAG render,
+        # once as the live prompt). See test_retry_branch_isolation.py.
         head_seq = None
         for nid in reversed(branch_ids):
             n = graph.nodes.get(nid)
             if n is None:
                 continue
+            if n.is_llm() and not (n.output or "").strip():
+                # in-flight assistant placeholder — keep walking
+                continue
             if n.is_user():
                 head_seq = n.seq - 1
                 break
-            # a non-user trailing node means nothing to exclude
+            # a non-user, non-placeholder trailing node (completed
+            # reply) means nothing to exclude
             break
 
         read_ids = render_context(graph, head_seq=head_seq, frame_entry_seq=-1)
