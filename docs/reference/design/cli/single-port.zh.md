@@ -107,9 +107,20 @@ Electron 壳 → Python worker（FastAPI，单端口）
   构建时烘端口。`/ws` 目标天然正确，因为它就是页面加载来源。
 - **API 路由永远优先于静态。** 前端挂载注册在最后，SPA 回退只处理没有
   任何 router 认领的路径。
-- **Node 只在构建期。** 运行时依赖：Python + 打包后的 worker。（路线图
-  第 2 步 Electron 监管 worker、第 3 步 PyInstaller 捆绑，在此基础上另
-  出设计文档。）
+- **Node 只在构建期。** 运行时依赖：Python + worker。（路线图第 2 步
+  Electron 监管 worker、第 3 步零依赖安装，在此基础上另出设计文档。）
+
+## 路线图
+
+1. **单端口**（本文）：worker 托管前端，Node 降为构建期依赖。
+2. **壳监工**：Electron 负责 spawn/监视/重启 worker，配真实状态页
+   （首启引导进度也走它）。
+3. **零依赖安装（uv 引导）**：安装包只带 Electron + 预构建 `out/` +
+   独立 uv 二进制（约 15 MB）。首次启动 `uv python install` 拉取
+   python-build-standalone 的独立 Python（装进应用私有目录，不碰系统），
+   再按锁文件 `uv sync` 装依赖；之后启动直接复用。必须默认配国内镜像
+   （`UV_PYTHON_INSTALL_MIRROR` + 国内 PyPI 源），否则首启卡死。
+   不用 PyInstaller。
 
 ## 5. 风险
 

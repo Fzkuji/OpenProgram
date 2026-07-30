@@ -117,9 +117,22 @@ The backend port becomes *the* port. Web-port knobs are retired:
   it is the same origin the page loaded from.
 - **API routes always win over static.** The frontend mount registers last;
   the SPA fallback runs only for paths no router claimed.
-- **Node is build-time only.** Runtime dependencies: Python + the packaged
-  worker. (Step 2 of the roadmap — Electron supervising the worker — and
-  step 3 — PyInstaller bundling — build on this and get their own docs.)
+- **Node is build-time only.** Runtime dependencies: Python + the worker.
+  (Step 2 of the roadmap — Electron supervising the worker — and step 3 —
+  zero-dependency install — build on this and get their own docs.)
+
+## Roadmap context
+
+1. **Single port** (this doc): worker serves the frontend; Node becomes
+   build-time only.
+2. **Shell supervises worker**: Electron spawns/watches/restarts the worker
+   with a real status page (covers first-run bootstrap progress too).
+3. **Zero-dependency install via uv**: the packaged app ships Electron +
+   prebuilt `out/` + the standalone `uv` binary (~15 MB). First launch runs
+   `uv python install` (python-build-standalone, app-private, never touches
+   the system) and `uv sync` from the lockfile; later launches reuse the
+   installed environment. Mirrors (`UV_PYTHON_INSTALL_MIRROR`, CN PyPI
+   mirror) are mandatory for first-run reliability in China. No PyInstaller.
 
 ## 5. Risks
 
