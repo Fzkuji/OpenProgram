@@ -5,6 +5,7 @@ import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 import { SearchInput } from "@/components/ui/search-input";
+import { Button } from "@/components/ui/button";
 import { AddMarketplaceDialog } from "../dialogs/add-marketplace-dialog";
 
 interface IndexItem {
@@ -179,17 +180,18 @@ export function MarketplaceBrowser() {
               <option key={m.id} value={m.id}>{m.name}</option>
             ))}
           </select>
-          <button className={styles.btn} onClick={() => setAddOpen(true)}>+ {text("Add", "添加")}</button>
+          <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>+ {text("Add", "添加")}</Button>
           {selectedId && (
-            <button
-              className={styles.btnDanger}
+            <Button
+              size="sm"
+              variant="destructive"
               onClick={async () => {
                 if (!confirm(text("Remove this marketplace?", "移除这个 Marketplace？"))) return;
                 await removeMarketplace(selectedId);
                 setSelectedId("");
                 setItems([]);
               }}
-            >{text("Remove", "移除")}</button>
+            >{text("Remove", "移除")}</Button>
           )}
         </div>
 
@@ -263,13 +265,14 @@ function PluginCard({
             <span key={t} className="rounded bg-[var(--bg-tertiary)] px-1.5 py-[1px]">{t}</span>
           ))}
         </div>
-        <button
+        <Button
+          size="sm"
+          variant={installed ? "outline" : "default"}
           onClick={onInstall}
           disabled={installing}
-          className={installed ? styles.btn : styles.btnPrimary}
         >
           {installing ? text("Installing...", "安装中...") : installed ? text("Reinstall", "重新安装") : text("Install", "安装")}
-        </button>
+        </Button>
       </div>
     </div>
   );

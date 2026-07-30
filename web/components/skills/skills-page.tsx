@@ -5,9 +5,8 @@ import { useSkills } from "@/lib/state/skills-store";
 import { SkillsList } from "./skills-list";
 import { NewSkillDialog } from "./new-skill-dialog";
 import { DiscoverySources } from "./discovery";
-import { Button } from "@/components/ui/button";
+import { ManagePageHeader, managePageStyles as styles } from "@/components/ui/manage-page";
 import { useTranslation } from "@/lib/i18n";
-import styles from "./skills-page.module.css";
 
 type Tab = "browse" | "discovery";
 
@@ -22,40 +21,25 @@ export function SkillsPage() {
   return (
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
     <div className={styles.view}>
-      <div className={styles.topbar}>
-        <span className={styles.title}>{t("nav.skills")}</span>
-        <div className={styles.tabs}>
-          <button
-            onClick={() => setTab("browse")}
-            className={`${styles.tabBtn} ${tab === "browse" ? styles.active : ""}`}
-          >
-            {text("Browse", "浏览")} ({skills.length})
-          </button>
-          <button
-            onClick={() => setTab("discovery")}
-            className={`${styles.tabBtn} ${tab === "discovery" ? styles.active : ""}`}
-          >
-            {text("Discovery", "发现")}
-          </button>
-        </div>
-        <div className={styles.toolbar}>
-          <Button size="sm" onClick={() => setNewOpen(true)}>{text("New skill", "新建技能")}</Button>
-        </div>
-      </div>
+      <ManagePageHeader
+        title={t("nav.skills")}
+        tabs={[
+          { id: "browse", label: text("Browse", "浏览"), count: skills.length },
+          { id: "discovery", label: text("Discovery", "发现") },
+        ]}
+        activeTab={tab}
+        onTabChange={(id) => setTab(id as Tab)}
+        actions={[
+          { label: t("sidebar.refresh"), onClick: () => { void fetchSkills(); } },
+          { label: text("New skill", "新建技能"), onClick: () => setNewOpen(true), primary: true },
+        ]}
+      />
 
       {error && <div className={styles.errorBar}>{error}</div>}
 
-      {tab === "browse" ? (
-        <div className={styles.singleColumn}>
-          <SkillsList />
-        </div>
-      ) : (
-        <div className={styles.singleColumn}>
-          <div className={styles.singleColumnInner}>
-            <DiscoverySources />
-          </div>
-        </div>
-      )}
+      <div className={styles.body}>
+        {tab === "browse" ? <SkillsList /> : <DiscoverySources />}
+      </div>
 
       <NewSkillDialog open={newOpen} onClose={() => setNewOpen(false)} />
     </div>

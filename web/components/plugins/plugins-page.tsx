@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import styles from "./plugins.module.css";
+import { ManagePageHeader, managePageStyles as shared } from "@/components/ui/manage-page";
 import { usePluginsStore } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
 import { InstalledList } from "./views/installed-list";
@@ -21,28 +22,22 @@ export function PluginsPage() {
 
   return (
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
-    <div className={styles.view}>
-      <div className={styles.topbar}>
-        <div className={styles.title}>{t("nav.plugins")}</div>
-        <div className={styles.tabs}>
-          <button
-            className={tab === "installed" ? styles.tabActive : styles.tab}
-            onClick={() => setTab("installed")}
-          >{text("Installed", "已安装")} ({plugins.length})</button>
-          <button
-            className={tab === "marketplace" ? styles.tabActive : styles.tab}
-            onClick={() => setTab("marketplace")}
-          >Marketplace</button>
-          <button
-            className={tab === "errors" ? styles.tabActive : styles.tab}
-            onClick={() => setTab("errors")}
-          >{text("Errors", "错误")} ({errCount})</button>
-        </div>
-        <div className={styles.spacer} />
-        <button className={styles.btn} onClick={() => refresh()}>{t("sidebar.refresh")}</button>
-        <button className={styles.btnPrimary} onClick={() => setInstallOpen(true)}>+ {text("Install", "安装")}</button>
-      </div>
-      <div className={styles.body}>
+    <div className={shared.view}>
+      <ManagePageHeader
+        title={t("nav.plugins")}
+        tabs={[
+          { id: "installed", label: text("Installed", "已安装"), count: plugins.length },
+          { id: "marketplace", label: "Marketplace" },
+          { id: "errors", label: text("Errors", "错误"), count: errCount },
+        ]}
+        activeTab={tab}
+        onTabChange={(id) => setTab(id as typeof tab)}
+        actions={[
+          { label: t("sidebar.refresh"), onClick: () => { void refresh(); } },
+          { label: text("Install", "安装"), onClick: () => setInstallOpen(true), primary: true },
+        ]}
+      />
+      <div className={shared.body}>
         {tab === "installed" && <InstalledList />}
         {tab === "marketplace" && <MarketplaceBrowser />}
         {tab === "errors" && <PluginErrors />}

@@ -3,28 +3,21 @@
 /**
  * /mcp — MCP server management page.
  *
- * Outer shell is identical to /functions (functions-page.tsx):
- *   <div className="main">
- *     <div className={styles.view}>
- *       <div className={styles.topbar}>...</div>
- *       <div className={styles.body}>
- *         <div className={styles.serversNav}>...</div>
- *         <div className={styles.content}>...</div>
- *       </div>
- *     </div>
- *   </div>
- *
- * Same heights, same borders, same nav-row visuals as the
- * folders nav. Everything inside the right pane uses the shared
- * CSS variables (--border, --text-bright, --accent-blue, ...)
- * instead of bespoke colours.
+ * Outer chrome (64px header with title + tab pill + action buttons,
+ * the split body grid, the empty state) comes from
+ * components/ui/manage-page, shared verbatim with /skills and
+ * /plugins so the three management pages read as one system.
+ * What stays local to this module is the master-detail server rail:
+ * connection-state dot, tool count, and the right-hand DetailView.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 import { PlugZapIcon } from "@/components/animated-icons";
+import { SearchInput } from "@/components/ui/search-input";
+import { ManagePageHeader, managePageStyles as shared } from "@/components/ui/manage-page";
 
 import { CatalogDialog } from "./mcp-catalog-dialog";
 import {
@@ -47,6 +40,7 @@ export function McpPage() {
   const [editing, setEditing] = useState<EditTarget | null>(null);
   const [busy, setBusy] = useState<BusyAction>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [filter, setFilter] = useState("");
 
   // ``reload`` only refreshes the server list; it never touches
   // ``selected``. Selection bookkeeping lives in a separate effect
@@ -242,46 +236,57 @@ export function McpPage() {
 
   const selectedServer = servers.find((s) => s.name === selected) || null;
 
+  const shownServers = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return servers;
+    return servers.filter((s) => s.name.toLowerCase().includes(q));
+  }, [servers, filter]);
+
   return (
     <div className="main">
-      <div className={styles.view}>
-        <div className={styles.topbar}>
-          <span className={styles.title}>{t("nav.mcp")}</span>
-          <div className={styles.toolbar}>
-            <button className={styles.actionBtn} onClick={() => void reload()}>
-              {t("sidebar.refresh")}
-            </button>
-            <button
-              className={styles.actionBtn}
-              onClick={() => setCatalogOpen(true)}
-            >
-              {text("Browse catalog", "浏览目录")}
-            </button>
-            <button
-              className={cn(styles.actionBtn, styles.actionBtnPrimary)}
-              onClick={openAdd}
-            >
-              + {text("Add server", "添加服务器")}
-            </button>
-          </div>
-        </div>
+      <div className={shared.view}>
+        <ManagePageHeader
+          title={t("nav.mcp")}
+          tabs={[
+            {
+              id: "servers",
+              label: text("Servers", "服务器"),
+              count: servers.length,
+            },
+          ]}
+          activeTab="servers"
+          actions={[
+            { label: t("sidebar.refresh"), onClick: () => { void reload(); } },
+            { label: text("Browse catalog", "浏览目录"), onClick: () => setCatalogOpen(true) },
+            { label: text("Add server", "添加服务器"), onClick: openAdd, primary: true },
+          ]}
+        />
 
-        <div className={styles.body}>
+        <div className={shared.splitBody}>
           <div className={styles.serversNav}>
+            <div className={styles.navSearch}>
+              <SearchInput
+                value={filter}
+                onChange={setFilter}
+                placeholder={text("Search servers...", "搜索服务器...")}
+              />
+            </div>
             {loading && servers.length === 0 ? (
               <div className={styles.serverItem} style={{ cursor: "default" }}>
                 <span className={styles.serverName} style={{ color: "var(--text-muted)" }}>
                   {text("Loading...", "加载中...")}
                 </span>
               </div>
-            ) : servers.length === 0 ? (
+            ) : shownServers.length === 0 ? (
               <div className={styles.serverItem} style={{ cursor: "default" }}>
                 <span className={styles.serverName} style={{ color: "var(--text-muted)" }}>
-                  {text("No servers", "没有服务器")}
+                  {filter.trim()
+                    ? text("No matches", "没有匹配结果")
+                    : text("No servers", "没有服务器")}
                 </span>
               </div>
             ) : (
-              servers.map((s) => {
+              shownServers.map((s) => {
                 const { dotCls } = stateBadge(s);
                 return (
                   <div
