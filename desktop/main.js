@@ -20,8 +20,8 @@ const {
   clearHistory,
 } = require("./browsing-history-store");
 
-// 测试期全部走开发版 18200；正式发布改回 18100
-const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18200";
+// 单实例：worker 单端口 18100（详见 docs/reference/design/cli/single-port.md）
+const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18100";
 const START_URL =
   process.env.OPENPROGRAM_DESKTOP_URL || `http://127.0.0.1:${WEB_PORT}/chat`;
 const WORKER_COMMAND = "openprogram worker start";
@@ -70,17 +70,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function spawnWorker() {
   // ponytail: PATH first, then the known miniconda location; no config for more.
-  // 18200 = 开发实例：openprogram 二进制靠 env 切 dev profile（openprogram-dev
-  // 只是 shell alias，spawn 不到），否则拉起的是 stable worker、端口对不上。
-  const env =
-    WEB_PORT === "18200"
-      ? {
-          ...process.env,
-          OPENPROGRAM_PROFILE: "dev",
-          OPENPROGRAM_BACKEND_PORT: "18209",
-          OPENPROGRAM_WEB_PORT: "18200",
-        }
-      : process.env;
+  const env = { ...process.env, OPENPROGRAM_WEB_PORT: WEB_PORT };
   const start = (bin, onFail) => {
     const child = spawn(bin, ["worker", "start"], {
       detached: true,
