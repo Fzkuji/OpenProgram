@@ -255,7 +255,14 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
     # Force-refresh browse (bypasses the short-TTL cache). Also surfaces the
     # official-API error to the caller if the fetch failed outright.
     rows = list_models_for_provider(provider_id, force_refresh=True)
-    by_id = {r.get("id"): r for r in rows if r.get("id")}
+    # Upstream match source = the live browse ONLY. list_models_for_provider
+    # also layers in config-stored rows (so offline custom providers stay
+    # visible); matching against those would "refresh" a spec from its own
+    # stored copy and defeat the absent-upstream guard.
+    from ..listing import _browse_models
+
+    live = _browse_models(provider_id)
+    by_id = {r.get("id"): r for r in live if r.get("id")}
 
     refreshed: list[str] = []
     with _cache_lock:

@@ -244,7 +244,12 @@ def list_providers() -> list[dict[str, Any]]:
             "kind": "api",
             "enabled": bool(pcfg.get("enabled", False)),
             "configured": _is_configured(pid),
-            "api_key_env": _env_var_for(pid),
+            # Config-defined custom providers reach this tier once their spec
+            # rows register at runtime; they still need the synthesised key
+            # label (Detail shows AccountManager when api_key_env is truthy)
+            # and the custom badge, same as tier 3.
+            "api_key_env": _env_var_for(pid)
+            or (_synth_env_var(pid) if pcfg.get("source") == "custom" else None),
             "default_base_url": default_base,
             "base_url": pcfg.get("base_url") or "",
             "use_responses_api": bool(pcfg.get("use_responses_api", False)),
@@ -256,6 +261,8 @@ def list_providers() -> list[dict[str, Any]]:
             "model_count": len(models) + len(custom),
             "enabled_model_count": sum(1 for mid in all_ids if mid in enabled_ids),
         }
+        if pcfg.get("source") == "custom":
+            entry["custom"] = True
         hint = _setup_hint(pid)
         if hint:
             entry["setup_hint"] = hint
@@ -410,12 +417,14 @@ def list_models_for_provider(
     out: list[dict[str, Any]] = []
     all_rows = _browse_models(provider_id, force_refresh=force_refresh)
     present = {r.get("id") for r in all_rows}
-    # Manual rows the user typed by hand live only in config, never in the
-    # live browse result — layer them in. Both the new spec rows tagged
-    # source="manual" and the legacy custom_models key.
-    manual_sources = [
-        r for r in (pcfg.get("models") or []) if r.get("source") == "manual"
-    ] + list(pcfg.get("custom_models") or [])
+    # Config rows absent from the live browse result — layer them in, or
+    # they'd be invisible (and un-toggleable) whenever the provider's
+    # /v1/models is unreachable and models.dev doesn't know the endpoint
+    # (typical for custom providers). Covers manual rows, legacy
+    # custom_models, and enabled spec rows alike.
+    manual_sources = list(pcfg.get("models") or []) + list(
+        pcfg.get("custom_models") or []
+    )
     for cm in manual_sources:
         cmid = cm.get("id") or ""
         if cmid and cmid not in present:
