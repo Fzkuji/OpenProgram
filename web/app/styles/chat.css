@@ -342,32 +342,34 @@
 .peer-session-pane .message {
   padding: 12px 0;
 }
-/* The 36px inset exists to line the user bubble's right edge up with the
-   assistant text in the wide column. In a split pane that inset is a
-   meaningful slice of the width, so shrink it and let the bubble use
-   more of the pane. */
-.peer-session-pane .message.user .message-content {
-  max-width: 88%;
-  margin-right: 8px;
-}
-/* Avatars are absolutely positioned into the column's side gutters,
-   which the peer pane doesn't have — they'd overlap the text. */
+/* Split panes hide the avatar column to save width, so EVERY 36px
+   avatar-gutter inset must go together: content padding, stream-body
+   margins, typing indicator, assistant footer. Missing any one of them
+   leaves that element misaligned by 36px against the rest. */
 .peer-session-pane .message-header {
   display: none;
 }
-/* The base rule pads 36px on each side to clear the absolutely-positioned
-   avatars. With those hidden above, that 72px is pure loss in a narrow
-   pane — it was the largest single contributor to the collapsed bubbles. */
 .peer-session-pane .message-content {
   min-width: 0;
   padding-left: 0;
   padding-right: 0;
   overflow-wrap: anywhere;
 }
-/* Same 36px avatar-gutter alignment, same reasoning. */
+.peer-session-pane .chat-stream-body {
+  margin-left: 0;
+  margin-right: 0;
+}
 .peer-session-pane .message.assistant > .typing-indicator,
 .peer-session-pane .message.assistant .message-actions-footer {
   padding-left: 0;
+}
+/* User bubble + its footer keep the same (small) right edge together. */
+.peer-session-pane .message.user .message-content {
+  max-width: 88%;
+  margin-right: 8px;
+}
+.peer-session-pane .message.user .message-actions-footer {
+  margin-right: 8px;
 }
 
 .message {
