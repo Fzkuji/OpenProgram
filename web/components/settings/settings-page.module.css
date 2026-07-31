@@ -914,3 +914,93 @@
 .searchSetupSteps li {
   padding-left: 2px;
 }
+
+/* 主题网格 / 自定义 CSS 这两块的值列要吃满剩余宽度——`.row` 是
+   space-between，`.value` 默认按内容收缩，网格会塌成一列。 */
+.valueWide {
+  flex: 1;
+  min-width: 0;
+  margin-left: 24px;
+}
+
+/* ===== 主题选择器 ==========================================
+   沿用 `.rowTop` 的"标签在上、值列是一块网格"的排版语言（和头像
+   样式选择器同构）。每张卡是一小块主题预览：底色 + 三颗强调点，
+   取值直接来自该主题的 token，所以新增主题不用改这里的样式。 */
+.themeGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+.themeCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  text-align: left;
+}
+.themeCard:hover {
+  border-color: var(--border-light);
+}
+.themeCard.active {
+  border-color: var(--accent-orange);
+  background: var(--bg-hover);
+}
+/* 预览块自身带 data-theme，所以里面的 var() 解析成那套主题的取值——
+   预览即真值，不需要在 TS 里再抄一份色号。 */
+.themeSwatch {
+  height: 34px;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.themeDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.themeCardLabel {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.themeCard.active .themeCardLabel {
+  color: var(--text-bright);
+}
+
+/* 自定义 CSS 输入框（Obsidian 式）。 */
+.customCssArea {
+  width: 100%;
+  min-height: 160px;
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  resize: vertical;
+}
+.customCssArea:focus {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+  border-color: transparent;
+}
+.customCssHint {
+  margin-top: 6px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}

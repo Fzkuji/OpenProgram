@@ -42,19 +42,41 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `(function () {
               try {
-                var saved = localStorage.getItem('agentic_theme') || 'auto';
+                // 主题：和 lib/prefs/theme-pref.ts 保持一致。
+                // 存量值 'dark'/'light' 曾经指暖奶油那套，现在这两个名字
+                // 归中性主题——含义冲突，所以是**一次性迁移**（按 schema
+                // 标记判断），不是每次读取都翻译；否则用户选中性 Light
+                // 一刷新就被翻回 beige-light，永远选不上。
+                var LEGACY = { dark: 'beige-dark', light: 'beige-light' };
+                if (localStorage.getItem('agentic_theme_schema') !== '2') {
+                  var old = localStorage.getItem('agentic_theme');
+                  if (old && LEGACY[old]) localStorage.setItem('agentic_theme', LEGACY[old]);
+                  localStorage.setItem('agentic_theme_schema', '2');
+                }
+                function readTheme() {
+                  return localStorage.getItem('agentic_theme') || 'auto';
+                }
                 function apply(t) {
                   if (t === 'auto') {
                     var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-                  } else {
-                    document.documentElement.setAttribute('data-theme', t);
+                    t = dark ? 'beige-dark' : 'beige-light';
                   }
+                  document.documentElement.setAttribute('data-theme', t);
                 }
-                apply(saved);
+                apply(readTheme());
                 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
-                  if ((localStorage.getItem('agentic_theme') || 'auto') === 'auto') apply('auto');
+                  if (readTheme() === 'auto') apply('auto');
                 });
+
+                // 用户自定义 CSS（Obsidian 式）：首帧前注入，避免闪一下
+                // 内置主题再被自定义值覆盖。
+                var css = localStorage.getItem('agentic_custom_css');
+                if (css) {
+                  var st = document.createElement('style');
+                  st.id = 'user-custom-css';
+                  st.textContent = css;
+                  document.head.appendChild(st);
+                }
 
                 // Font is already inlined by SSR from the cookie. Re-read
                 // the cookie (source of truth) and re-apply only if it
@@ -65,7 +87,7 @@ export default function RootLayout({
                   system: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif",
                   inter:  "'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif",
                   serif:  "'Source Serif Pro', 'Iowan Old Style', Georgia, 'Times New Roman', 'Songti SC', SimSun, 'Noto Serif CJK SC', serif",
-                  mono:   "'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, 'PingFang SC', 'Microsoft YaHei', monospace"
+                  mono:   "'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, 'PingFang SC', 'Microsoft YaHei', monospace"
                 };
                 var cm = document.cookie.match(/(?:^|;\\s*)agentic_font=([^;]+)/);
                 var cookieFont = cm && cm[1];
@@ -80,7 +102,10 @@ export default function RootLayout({
                   document.cookie = 'agentic_font=' + f + '; path=/; max-age=31536000; samesite=lax';
                 }
 
-                var lang = localStorage.getItem('agentic_locale') || 'en';
+                // 没存过就看浏览器语言（zh* → zh，其余 en）。和
+                // lib/i18n/index.ts 的 readStored() 逻辑必须一致。
+                var lang = localStorage.getItem('agentic_locale')
+                  || (/^zh/i.test(navigator.language || '') ? 'zh' : 'en');
                 document.documentElement.setAttribute('lang', lang === 'zh' ? 'zh-CN' : 'en');
 
                 // 左侧栏收起状态也要赶在首帧之前打上：SSR HTML 是展开

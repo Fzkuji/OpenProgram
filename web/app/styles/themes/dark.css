@@ -1,0 +1,52 @@
+/* dark — 中性冷灰深色。
+   和 beige-dark 的区别只在底色一族：去掉暖调，走 #1e1e20 / #252529
+   这一类纯中性灰；珊瑚强调色保持不变（全产品统一的动作色）。
+   主题文件即数据：整套 token 契约在这里填满一遍。 */
+[data-theme="dark"] {
+  --bg-primary: #1e1e20;
+  --bg-secondary: #171719;
+  --bg-tertiary: #252529;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-hover-contrast: #0f0f11;
+  --bg-input: #2a2a2e;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-light: rgba(255, 255, 255, 0.12);
+  --text-primary: #b6b6bb;    /* 7.0:1 on --bg-primary */
+  --text-secondary: #92929a;  /* 4.8:1 */
+  --text-bright: #ededf0;
+  --text-muted: #74747c;      /* 3.1:1 — 仅用于次要元数据 */
+  --nav-color: #b6b6bb;
+  --nav-color-hover: #ededf0;
+  --bg-selected: rgba(255, 255, 255, 0.10);
+  --user-msg-bg: #252529;
+  --assistant-msg-bg: #1e1e20;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --surface-popover: #252529;
+  --border-popover: rgba(255, 255, 255, 0.12);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.4);
+  --shadow-sidebar-left: 4px 0 20px rgba(0, 0, 0, 0.34);
+  --shadow-sidebar-right: -4px 0 20px rgba(0, 0, 0, 0.34);
+  --effort-off-bg: #303035;
+  --primary-foreground: #ffffff;
+  --success-soft: #82a98a;
+  --warning-soft: #ddb25f;
+  --danger-soft: #d06a5f;
+  --stream-tool: var(--accent-cyan);
+  --stream-info: var(--accent-yellow);
+
+  --selection-bg: color-mix(in srgb, var(--accent-orange) 25%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent-orange) 50%, transparent);
+  --scrim: rgba(0, 0, 0, 0.55);
+  --scrim-strong: rgba(0, 0, 0, 0.75);
+  --surface-tooltip: #45454b;
+  --text-on-tooltip: #ffffff;
+  --composer-ring: rgba(255, 255, 255, 0.08);
+  --composer-ring-focus: rgba(255, 255, 255, 0.16);
+  --chip-bg: var(--bg-tertiary);
+  --chip-ring: var(--border-light);
+  --meter-fill: #5b9cf8;
+  --meter-track: rgba(255, 255, 255, 0.08);
+  color-scheme: dark;
+}

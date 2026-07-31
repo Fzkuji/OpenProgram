@@ -37,9 +37,6 @@
   bottom: 0;
   z-index: 5;
 }
-:global([data-theme="light"]) .inputArea {
-  --surface-solid: color-mix(in srgb, #ffffff 80%, var(--bg-primary));
-}
 /* Bottom fade mask: solid at the bottom (hides chat content scrolling
    behind the composer) fading to transparent at the top — so there's no
    hard black band, but content doesn't leak out around/under the input
@@ -99,26 +96,24 @@
   padding: 0;
   /* Claude Code measured ring: 1px hairline via box-shadow (no layout
      shift), slightly stronger on focus. */
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 1px var(--composer-ring);
   overflow: hidden;
   transition: box-shadow 180ms ease,
     height var(--composer-height-transition);
 }
 .inputWrapper:focus-within {
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+  box-shadow: 0 0 0 1px var(--composer-ring-focus);
 }
 :global([data-theme="light"]) .inputWrapper {
-  background: rgba(255, 255, 255, 0.8);
+  background: color-mix(in srgb, var(--bg-input) 80%, transparent);
   /* 半透明底会把滚到输入框后面的消息气泡/头像透出来（发送瞬间
      尤其明显，看着像"头像和气泡错位"）——加毛玻璃把穿透内容糊掉。 */
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 0 0 1px rgba(10, 10, 10, 0.1),
-    0 2px 8px rgba(20, 20, 19, 0.04);
+  box-shadow: 0 0 0 1px var(--composer-ring), var(--shadow-sm);
 }
 :global([data-theme="light"]) .inputWrapper:focus-within {
-  box-shadow: 0 0 0 1px rgba(10, 10, 10, 0.18),
-    0 2px 8px rgba(20, 20, 19, 0.04);
+  box-shadow: 0 0 0 1px var(--composer-ring-focus), var(--shadow-sm);
 }
 /* fn-form / question / approval keep the OLD internal layout: the
    controls row renders inside the wrapper (absolute, bottom-anchored)
@@ -359,8 +354,8 @@
   padding: 0;
   border: none;
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.55);
-  color: white;
+  background: var(--scrim);
+  color: #fff;
   cursor: pointer;
   font-size: 11px;
   line-height: 1;
@@ -375,7 +370,7 @@
   opacity: 1;
 }
 .imageAttachRemove:hover {
-  background: rgba(0, 0, 0, 0.75);
+  background: var(--scrim-strong);
 }
 .imageAttachError {
   font-size: 11px;
@@ -490,14 +485,8 @@
   scrollbar-width: none;
   /* Pill fill: dark = filled tertiary; light = --bg-input (#fdfcf9 —
      near-white, matches the measured solid #ffffff). */
-  --env-pill-bg: var(--bg-tertiary);
-  --env-pill-ring: var(--border-light);
-}
-:global([data-theme="light"]) .envChips {
-  --env-pill-bg: #ffffff; /* 实测 Claude pill = 纯白 */
-  /* 实测 Claude ring：中性黑 10%——不能用暖灰 #dedcd1，
-     那个和奶油背景同色，白底上等于没描边。 */
-  --env-pill-ring: rgba(10, 10, 10, 0.1);
+  --env-pill-bg: var(--chip-bg);
+  --env-pill-ring: var(--chip-ring);
 }
 .envChips::-webkit-scrollbar { display: none; }
 .envChips > * { flex-shrink: 0; }
@@ -528,7 +517,7 @@
      inset 让描边压在内缘、边界清晰;外扩 ring 会和投影糊在一起。 */
   box-shadow:
     inset 0 0 0 1px var(--env-pill-ring),
-    0 1px 2px rgba(10, 10, 10, 0.04);
+    var(--shadow-sm);
   color: var(--ink-80);
 }
 /* pill 内部件统一：图标 14px、状态点 8px——杜绝视觉高差 */
@@ -728,7 +717,7 @@
 }
 .sendBtn:not(:disabled) {
   background: var(--accent-fill, var(--accent-orange));
-  color: #fff;
+  color: var(--primary-foreground);
 }
 .sendBtn:not(:disabled):hover {
   background: var(--accent-orange-hover, var(--accent-orange));

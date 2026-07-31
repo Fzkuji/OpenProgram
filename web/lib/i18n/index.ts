@@ -10,7 +10,19 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-export type Locale = "en" | "zh";
+/**
+ * 支持的语言，**顺序即 text() 的实参顺序**：text(en, zh)。
+ * 加一门语言＝在这里追加一项，然后所有 text() 调用点在末尾补一个实参
+ * （不补也不会崩，缺参回落到 LOCALES[0]）。
+ */
+export const LOCALES = ["en", "zh"] as const;
+export type Locale = (typeof LOCALES)[number];
+
+/** 从变体数组里按当前语言取一条，缺失回落到第一门语言（英文）。 */
+function pick(loc: Locale, variants: string[]): string {
+  const i = LOCALES.indexOf(loc);
+  return variants[i] ?? variants[0];
+}
 
 const STORAGE_KEY = "agentic_locale";
 
@@ -19,9 +31,13 @@ const STORAGE_KEY = "agentic_locale";
 const subscribers = new Set<(loc: Locale) => void>();
 
 function readStored(): Locale {
-  if (typeof window === "undefined") return "en";
+  if (typeof window === "undefined") return LOCALES[0];
   const v = localStorage.getItem(STORAGE_KEY);
-  return v === "zh" ? "zh" : "en";
+  if (v && (LOCALES as readonly string[]).includes(v)) return v as Locale;
+  // 没存过就看浏览器语言（zh* → zh，其余英文）。layout.tsx 的
+  // pre-paint 脚本用的是同一套判断，两处要一起改。
+  const nav = typeof navigator !== "undefined" ? navigator.language : "";
+  return /^zh/i.test(nav || "") ? ("zh" as Locale) : LOCALES[0];
 }
 
 let current: Locale = "en";
@@ -40,8 +56,8 @@ export function getLocale(): Locale {
   return current;
 }
 
-export function translateText(en: string, zh: string): string {
-  return current === "zh" ? zh : en;
+export function translateText(...variants: string[]): string {
+  return pick(current, variants);
 }
 
 // Per-key dictionary. Top-level keys are stable identifiers; the
@@ -329,6 +345,10 @@ export function useTranslation() {
     const row = DICT[key];
     return (row && (row[loc] ?? row.en)) || String(key);
   }, [loc]);
-  const text = useCallback((en: string, zh: string): string => (loc === "zh" ? zh : en), [loc]);
+  // 变参：实参顺序对齐 LOCALES。现有 1069 个 text(en, zh) 调用点不用改。
+  const text = useCallback(
+    (...variants: string[]): string => pick(loc, variants),
+    [loc],
+  );
   return { t, text, locale: loc, setLocale };
 }

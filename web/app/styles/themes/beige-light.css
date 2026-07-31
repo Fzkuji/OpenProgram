@@ -1,0 +1,80 @@
+/* beige-light — 暖奶油浅色（Claude 风格）
+   主题文件即数据：每个文件把整套 token 契约填满一遍。
+   新增主题就照抄一份改值，不需要动任何组件。 */
+[data-theme="beige-light"] {
+  --bg-primary: #faf9f5;
+  --bg-secondary: #f0eee5;
+  --bg-tertiary: #e8e6dc;
+  --bg-hover: rgba(20, 20, 19, 0.05);
+  --bg-hover-contrast: #ffffff;
+  --bg-input: #fdfcf9;
+  --border: rgba(20, 20, 19, 0.08); /* subtle hairline */
+  --border-light: #dedcd1;          /* strong hairline */
+  /* Claude light text tiers: ink #141413 (bright), body #3d3d3a
+     (Claude's text-200 tier — the brief's four tiers skip it),
+     secondary #5e5d59, muted #91908c. The dim tier #b0aea7 has no
+     token; use it inline for placeholders if a component needs it. */
+  --text-primary: #3d3d3a;
+  --text-secondary: #5e5d59;
+  --text-bright: #141413;
+  --text-muted: #91908c;
+  --nav-color: #5e5d59;       /* lighter than text-primary so light-mode icons aren't black */
+  --nav-color-hover: #141413; /* same as text-bright */
+  --bg-selected: rgba(20, 20, 19, 0.08); /* selected row, one step above hover */
+  /* Claude chat surfaces: user bubble is the raised warm grey; the
+     assistant message sits flat on the page (no bubble tint). */
+  --user-msg-bg: #f0eee5;
+  --assistant-msg-bg: #faf9f5;
+  /* Claude light is flat: hairlines + tint carry elevation, shadows
+     stay barely-there. */
+  --shadow-sm: 0 1px 2px rgba(20, 20, 19, 0.04);
+  --shadow: 0 2px 8px rgba(20, 20, 19, 0.05);
+  /* Popover / menu surface — pure white card, visibly raised off the
+     cream page (Claude style), ring baked into the shadow. */
+  --surface-popover: #ffffff;
+  /* 弹层边缘 = 真 border（--border-popover）而非藏在 shadow 里的
+     ring——ring 反复被反馈"看不见"。0.12 比 pill 发丝线(0.1)深半档，
+     浮层需要更明确的边界。shadow 只负责投影。 */
+  --border-popover: rgba(10, 10, 10, 0.12);
+  --shadow-popover: 0 8px 24px rgba(20, 20, 19, 0.16);
+  --shadow-dialog: 0 10px 30px rgba(20, 20, 19, 0.10);
+  --shadow-sidebar-left: 4px 0 16px rgba(20, 20, 19, 0.06);
+  --shadow-sidebar-right: -4px 0 16px rgba(20, 20, 19, 0.06);
+  /* Collapsed `off` effort-pill chip — light-theme counterpart. */
+  --effort-off-bg: #e8e6dc;
+  /* Deeper coral in light mode — the shared `#d97757` only reaches
+     2.96:1 as TEXT against the cream background; this darker coral
+     hits 4.01:1 on --bg-primary. Fills that must stay brand-bright
+     use `--accent-fill` (see :root), which does not flip per theme. */
+  --accent-orange: #c15f3c;
+  /* Deeper amber for the same reason — `#d4a346` is 2.18:1 as text
+     on cream; this one is 3.60:1. */
+  --accent-yellow: #a67c2e;
+  /* White-on-coral, same as dark. */
+  --primary-foreground: #ffffff;
+  /* Soft danger-tier accents — a touch deeper than the dark-theme set
+     so they hold contrast against the cream light background. */
+  --success-soft: #5f8a67;
+  --warning-soft: #b98f3d;
+  --danger-soft: #b04a3f;
+  /* Stream-terminal text on the light --bg-tertiary inset: bright
+     cyan/amber wash out (1.6–1.8:1), so drop to darker tones. */
+  --stream-tool: #0d6e77; /* teal, 4.78:1 on #e8e6dc */
+  --stream-info: var(--text-secondary);
+  color-scheme: light;
+
+  /* ===== Phase 2 语义 token ===== */
+  --selection-bg: color-mix(in srgb, var(--accent-orange) 25%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent-orange) 50%, transparent);
+  --scrim: rgba(0, 0, 0, 0.45);
+  --scrim-strong: rgba(0, 0, 0, 0.65);
+  /* 浅色主题下 tooltip 反色：深墨底白字（实测 Claude）。 */
+  --surface-tooltip: #141413;
+  --text-on-tooltip: #ffffff;
+  --composer-ring: rgba(10, 10, 10, 0.1);
+  --composer-ring-focus: rgba(10, 10, 10, 0.18);
+  --chip-bg: #ffffff;
+  --chip-ring: rgba(10, 10, 10, 0.1);
+  --meter-fill: #3b82f6;
+  --meter-track: var(--bg-tertiary);
+}

@@ -6,6 +6,16 @@
    Inter has the high x-height we need to match Claude's Anthropic Sans
    visual weight in the user-menu footer and other UI text. */
 @import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* 主题即数据 —— 每个文件是一整套 token 契约。新增主题＝加一个文件 +
+   在这里 import + 在 lib/prefs/theme-pref.ts 的 THEME_IDS 里登记。
+   必须排在 styles.css（内含 base.css 的 :root 兜底）之后。 */
+@import "./styles/themes/beige-dark.css";
+@import "./styles/themes/beige-light.css";
+@import "./styles/themes/dark.css";
+@import "./styles/themes/light.css";
+@import "./styles/themes/aurora.css";
 
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -87,7 +97,7 @@
   /* families. base.css :root already defines --font-mono / --font-sans;
      re-aliasing them here would self-reference, so inline the same stacks
      (kept in sync with base.css). */
-  --font-mono: "JetBrains Mono", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", ui-monospace, monospace;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", ui-monospace, monospace;
   --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
 
   /* font sizes → text-fs-* */

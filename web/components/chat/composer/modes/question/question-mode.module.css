@@ -161,7 +161,7 @@
   border-radius: 999px;
   border: none;
   background: var(--accent-orange);
-  color: #fff;
+  color: var(--primary-foreground);
   font-family: var(--font-sans);
   font-size: var(--fs-base);
   font-weight: 600;

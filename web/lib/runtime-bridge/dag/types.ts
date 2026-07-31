@@ -48,32 +48,9 @@ export const NODE_R = 5;
 export const PAD_X = 18;
 export const PAD_Y = 16;
 
-// Index 0 is the trunk colour; 1..N-1 are side-branch colours, picked
-// by a hash of the branch's leaf id. Distinct, evenly-spread hues so
-// neighbouring branches never read as the same colour.
-export const LANE_COLORS = [
-  "#4f8ef7", // blue        (trunk)
-  "#5aad4e", // green
-  "#d4843a", // orange
-  "#9d6fe0", // purple
-  // 不用红色相：错误描边是 #e5534b（render/nodes.ts），lane 色若也是红
-  // 会和"这个节点出错了"撞色。改用深青，与 #2db3d5 / #35b89a / #52c4c4
-  // 的明度和饱和度都拉开。
-  "#1f8a8a", // deep teal
-  "#2db3d5", // cyan
-  "#e0b020", // gold
-  "#35b89a", // teal
-  "#e066b3", // magenta
-  "#6b8dd6", // slate blue
-  "#8fbf3f", // lime
-  "#d9694f", // coral
-  "#52c4c4", // aqua
-  "#b08be0", // lavender
-  "#c79a4a", // tan
-  "#e08a3a", // amber
-  "#6fae6f", // sage
-  "#d05fa0", // rose
-];
+// Categorical branch palette — 唯一定义在 lib/format-utils/lane-colors.ts
+// （叶子模块，本文件模块作用域取 window 不能被 SSR 侧引用）。
+export { LANE_COLORS } from "@/lib/format-utils/lane-colors";
 
 /** Layout parent: predecessor (对话链父)优先；没有对话前驱时 fallback 到
  *  caller（子调用/挂根父）。每轮/每分支的第一个 user 节点约定 predecessor

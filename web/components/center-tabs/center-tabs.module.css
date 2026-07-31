@@ -524,7 +524,7 @@
   padding: 8px 15px;
   border-radius: 999px;
   background: var(--accent-blue);
-  color: #fff;
+  color: var(--primary-foreground);
   font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.01em;
@@ -564,7 +564,7 @@
   padding: 6px 13px;
   border-radius: 999px;
   background: var(--accent-orange);
-  color: #fff;
+  color: var(--primary-foreground);
   font-size: 12px;
   font-weight: 650;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
@@ -609,7 +609,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-primary);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-popover);
   -webkit-app-region: no-drag;
 }
 
@@ -654,7 +654,7 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-primary);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-popover);
   overflow-y: auto;
   -webkit-app-region: no-drag;
 }

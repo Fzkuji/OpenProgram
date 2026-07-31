@@ -16,18 +16,51 @@ import {
   sourceOf,
   type AvatarConfig,
 } from "@/components/avatar";
+import {
+  useThemePref,
+  AUTO_DARK,
+  type ThemePref,
+} from "@/lib/prefs/theme-pref";
 import styles from "./settings-page.module.css";
 
-type Theme = "light" | "auto" | "dark";
+/** 选择器里的条目顺序。'auto' 排最前（默认值）。 */
+const THEME_CHOICES: ThemePref[] = [
+  "auto",
+  "beige-dark",
+  "beige-light",
+  "dark",
+  "light",
+  "aurora",
+  "custom",
+];
 
-function applyTheme(theme: Theme) {
-  if (theme === "auto") {
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
-  } else {
-    document.documentElement.setAttribute("data-theme", theme);
-  }
-}
+/** 自定义 CSS 的起手模板 —— 直接写在 placeholder 里，复制即用。
+ *  只列必须覆写的一组；其余 token 不写就继承 :root 兜底值。 */
+const CUSTOM_CSS_TEMPLATE = `[data-theme="custom"] {
+  color-scheme: dark;
+
+  /* 表面 */
+  --bg-primary: #1e1e20;
+  --bg-secondary: #171719;
+  --bg-tertiary: #252529;
+  --bg-input: #2a2a2e;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-selected: rgba(255, 255, 255, 0.10);
+
+  /* 文字（四档） */
+  --text-bright: #ededf0;
+  --text-primary: #b6b6bb;
+  --text-secondary: #92929a;
+  --text-muted: #74747c;
+
+  /* 边框 */
+  --border: rgba(255, 255, 255, 0.07);
+  --border-light: rgba(255, 255, 255, 0.12);
+
+  /* 强调色 */
+  --accent-orange: #d97757;
+  --accent-fill: #d97757;
+}`;
 
 const FONT_OPTIONS: FontKey[] = ["system", "inter", "serif", "mono"];
 
@@ -344,27 +377,23 @@ function UserSection() {
 }
 
 export function GeneralSection() {
-  const { t, locale, setLocale } = useTranslation();
+  const { t, text, locale, setLocale } = useTranslation();
   const { font, setFont } = useFontPref();
-  const [theme, setThemeState] = useState<Theme>("auto");
+  const { theme, setTheme, customCss, setCustomCss } = useThemePref();
 
-  useEffect(() => {
-    const saved = (localStorage.getItem("agentic_theme") || "auto") as Theme;
-    setThemeState(saved);
-    applyTheme(saved);
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => {
-      if (localStorage.getItem("agentic_theme") === "auto") applyTheme("auto");
-    };
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
+  // 卡片上的预览块直接挂对应的 data-theme，让 var() 解析成那套主题的
+  // 真实取值——不用在 TS 里再抄一份色号。'auto' 预览用它解析到的深色。
+  const previewTheme = (id: ThemePref) => (id === "auto" ? AUTO_DARK : id);
 
-  function pickTheme(next: Theme) {
-    localStorage.setItem("agentic_theme", next);
-    setThemeState(next);
-    applyTheme(next);
-  }
+  const THEME_LABELS: Record<ThemePref, string> = {
+    auto: text("Auto", "跟随系统"),
+    "beige-dark": text("Beige Dark", "暖色深"),
+    "beige-light": text("Beige Light", "暖色浅"),
+    dark: text("Dark", "深色"),
+    light: text("Light", "浅色"),
+    aurora: text("Aurora", "极光"),
+    custom: text("Custom", "自定义"),
+  };
 
   return (
     <div className={styles.page}>
@@ -376,24 +405,70 @@ export function GeneralSection() {
         <section>
           <h3 className={styles.sectionTitle}>{t("general.section.preferences")}</h3>
           <div className={styles.card}>
-            <div className={styles.row}>
+            <div className={styles.row + " " + styles.rowTop}>
               <div className={styles.label}>{t("general.appearance")}</div>
-              <div className={styles.value}>
-                <div className={styles.themeSwitcher}>
-                  {(["light", "auto", "dark"] as const).map((th) => (
+              <div className={styles.value + " " + styles.valueWide}>
+                <div className={styles.themeGrid}>
+                  {THEME_CHOICES.map((id) => (
                     <button
-                      key={th}
+                      key={id}
+                      type="button"
                       className={
-                        styles.themeBtn + (theme === th ? " " + styles.active : "")
+                        styles.themeCard +
+                        (theme === id ? " " + styles.active : "")
                       }
-                      onClick={() => pickTheme(th)}
+                      onClick={() => setTheme(id)}
+                      title={THEME_LABELS[id]}
                     >
-                      {t(`general.theme.${th}` as
-                        | "general.theme.light"
-                        | "general.theme.auto"
-                        | "general.theme.dark")}
+                      <span
+                        className={styles.themeSwatch}
+                        data-theme={previewTheme(id)}
+                      >
+                        <span
+                          className={styles.themeDot}
+                          style={{ background: "var(--accent-orange)" }}
+                        />
+                        <span
+                          className={styles.themeDot}
+                          style={{ background: "var(--accent-green)" }}
+                        />
+                        <span
+                          className={styles.themeDot}
+                          style={{ background: "var(--text-primary)" }}
+                        />
+                      </span>
+                      <span className={styles.themeCardLabel}>
+                        {THEME_LABELS[id]}
+                      </span>
                     </button>
                   ))}
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.row + " " + styles.rowTop}>
+              <div className={styles.label}>
+                {text("Custom CSS", "自定义 CSS")}
+              </div>
+              <div className={styles.value + " " + styles.valueWide}>
+                <textarea
+                  className={styles.customCssArea}
+                  value={customCss}
+                  spellCheck={false}
+                  // Chrome 会在刷新时"恢复"表单里上一次的文本，这会盖掉
+                  // 受控值——用户看到的和实际生效的 CSS 就对不上了。
+                  // 真值在 localStorage，这里必须关掉浏览器自动恢复。
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  placeholder={CUSTOM_CSS_TEMPLATE}
+                  onChange={(e) => setCustomCss(e.target.value)}
+                />
+                <div className={styles.customCssHint}>
+                  {text(
+                    'Define [data-theme="custom"] and pick the "Custom" theme above. Unset tokens fall back to the default palette. Applies live, saved in this browser.',
+                    '定义 [data-theme="custom"] 后在上方选择"自定义"主题。未覆写的 token 回落到默认取值。即时生效，仅保存在本浏览器。',
+                  )}
                 </div>
               </div>
             </div>

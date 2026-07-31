@@ -19,13 +19,9 @@ export interface BranchWindow {
   _branchLaneColorMap?: Record<string, string>;
 }
 
-// Fallback palette — kept in sync with history-graph.ts LANE_COLORS.
-// Normally the per-branch colour comes from `_branchLaneColorMap`.
-export const LANE_COLORS = [
-  "#4f8ef7", "#5aad4e", "#d4843a", "#9d6fe0", "#e0445a", "#2db3d5",
-  "#e0b020", "#35b89a", "#e066b3", "#6b8dd6", "#8fbf3f", "#d9694f",
-  "#52c4c4", "#b08be0", "#c79a4a", "#e08a3a", "#6fae6f", "#d05fa0",
-];
+// Fallback palette — 唯一定义在 lib/format-utils/lane-colors.ts。
+// 正常情况下每个分支的颜色来自 `_branchLaneColorMap`。
+export { LANE_COLORS } from "@/lib/format-utils/lane-colors";
 
 export function wsSend(payload: unknown): void {
   const w = window as unknown as BranchWindow;

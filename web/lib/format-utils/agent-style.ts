@@ -9,14 +9,8 @@
  * multi-agent chats stay visually consistent across reloads.
  */
 
-// Kept in sync with web/components/right-sidebar/branches-panel.tsx
-// LANE_COLORS — change both together so the chat avatar matches the
-// branch dot in the right rail.
-const PALETTE = [
-  "#4f8ef7", "#5aad4e", "#d4843a", "#9d6fe0", "#e0445a", "#2db3d5",
-  "#e0b020", "#35b89a", "#e066b3", "#6b8dd6", "#8fbf3f", "#d9694f",
-  "#52c4c4", "#b08be0", "#c79a4a", "#e08a3a", "#6fae6f", "#d05fa0",
-];
+// 分支点色 / 头像色共用同一份 categorical 调色板。
+import { LANE_COLORS as PALETTE } from "./lane-colors";
 
 // FNV-1a 32-bit. Cheap, stable, no deps. We just want N-bucketed
 // hashing of strings — anything sub-millisecond is fine.

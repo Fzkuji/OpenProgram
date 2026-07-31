@@ -1,0 +1,55 @@
+/* light — 中性白/灰浅色。
+   beige-light 的冷调对照版：#ffffff / #f5f5f7 一族，不带奶油暖调。
+   浅色主题下珊瑚和琥珀作为**文字色**对比度不够，所以和 beige-light
+   一样覆写 --accent-orange / --accent-yellow 两个（其余继承 :root）。 */
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f7;
+  --bg-tertiary: #ebebef;
+  --bg-hover: rgba(10, 10, 15, 0.05);
+  --bg-hover-contrast: #ffffff;
+  --bg-input: #ffffff;
+  --border: rgba(10, 10, 15, 0.09);
+  --border-light: #dcdce2;
+  --text-primary: #3a3a40;    /* 10.4:1 on white */
+  --text-secondary: #5c5c64;  /* 6.6:1 */
+  --text-bright: #131317;
+  --text-muted: #8c8c94;      /* 3.1:1 — 仅次要元数据 */
+  --nav-color: #5c5c64;
+  --nav-color-hover: #131317;
+  --bg-selected: rgba(10, 10, 15, 0.08);
+  --user-msg-bg: #f5f5f7;
+  --assistant-msg-bg: #ffffff;
+  --shadow-sm: 0 1px 2px rgba(10, 10, 15, 0.05);
+  --shadow: 0 2px 8px rgba(10, 10, 15, 0.06);
+  --surface-popover: #ffffff;
+  --border-popover: rgba(10, 10, 15, 0.12);
+  --shadow-popover: 0 8px 24px rgba(10, 10, 15, 0.16);
+  --shadow-dialog: 0 10px 30px rgba(10, 10, 15, 0.12);
+  --shadow-sidebar-left: 4px 0 16px rgba(10, 10, 15, 0.07);
+  --shadow-sidebar-right: -4px 0 16px rgba(10, 10, 15, 0.07);
+  --effort-off-bg: #ebebef;
+  /* 深一档珊瑚 / 琥珀：品牌值作为文字色在白底上过不了 AA。 */
+  --accent-orange: #c15f3c;
+  --accent-yellow: #96701f;
+  --primary-foreground: #ffffff;
+  --success-soft: #5f8a67;
+  --warning-soft: #b98f3d;
+  --danger-soft: #b04a3f;
+  --stream-tool: #0d6e77;
+  --stream-info: var(--text-secondary);
+
+  --selection-bg: color-mix(in srgb, var(--accent-orange) 25%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent-orange) 50%, transparent);
+  --scrim: rgba(0, 0, 0, 0.45);
+  --scrim-strong: rgba(0, 0, 0, 0.65);
+  --surface-tooltip: #131317;
+  --text-on-tooltip: #ffffff;
+  --composer-ring: rgba(10, 10, 15, 0.1);
+  --composer-ring-focus: rgba(10, 10, 15, 0.2);
+  --chip-bg: #ffffff;
+  --chip-ring: rgba(10, 10, 15, 0.1);
+  --meter-fill: #3b82f6;
+  --meter-track: var(--bg-tertiary);
+  color-scheme: light;
+}

@@ -1,0 +1,71 @@
+/* beige-dark — 暖奶油深色（Claude 风格，本产品默认外观）
+   主题文件即数据：每个文件把整套 token 契约填满一遍。
+   新增主题就照抄一份改值，不需要动任何组件。 */
+[data-theme="beige-dark"] {
+  --bg-primary: #262624;
+  --bg-secondary: #1f1e1b;
+  --bg-tertiary: #30302e;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-hover-contrast: #141413;
+  --bg-input: #333331;
+  --border: rgba(255, 255, 255, 0.06);       /* subtle hairline */
+  --border-light: rgba(255, 255, 255, 0.10); /* strong hairline */
+  --text-primary: #b8b5ad;
+  --text-secondary: #94928b; /* 4.87:1 on --bg-primary (#84827c was 3.95) */
+  --text-bright: #f0efea;
+  --text-muted: #757370; /* 3.21:1 on --bg-primary (#6a6864 was 2.73) */
+  --nav-color: #b8b5ad;       /* nav default — same as text-primary in dark */
+  --nav-color-hover: #f0efea; /* nav hover — same as text-bright */
+  --bg-selected: rgba(255, 255, 255, 0.10); /* selected row, one step above hover */
+  /* Claude chat surfaces: user bubble is a raised warm grey; the
+     assistant message sits flat on the page (no bubble tint). */
+  --user-msg-bg: #30302e;
+  --assistant-msg-bg: #262624;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  /* Popover / menu surface — the ONE elevated card every floating menu
+     uses (see components/chat/top-bar/menu-styles.ts MENU_PANEL). The
+     shadow carries its own 1px ring, so panels need no border. */
+  --surface-popover: #30302e;
+  --border-popover: rgba(255, 255, 255, 0.12);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.3);
+  --shadow-sidebar-left: 4px 0 20px rgba(0, 0, 0, 0.28);
+  --shadow-sidebar-right: -4px 0 20px rgba(0, 0, 0, 0.28);
+  /* Collapsed `off` effort-pill chip. Solid, a step above --bg-input
+     so it reads as a distinct chip on the dark composer. */
+  --effort-off-bg: #3a3a38;
+  /* Text colour on coral primary buttons — Claude uses white-on-coral
+     in both themes. */
+  --primary-foreground: #ffffff;
+  /* Soft danger-tier accents — used for the permission chip + menu so
+     the tier colour reads calm (a step lighter than the base
+     success/warning/danger) on the dark surface. */
+  --success-soft: #82a98a;
+  --warning-soft: #ddb25f;
+  --danger-soft: #d06a5f;
+  /* Stream-terminal text colours (chat.css .stream-terminal). Bright
+     accents read fine on the dark inset; light overrides below. */
+  --stream-tool: var(--accent-cyan);
+  --stream-info: var(--accent-yellow);
+  color-scheme: dark;
+
+  /* ===== Phase 2 语义 token（原本散在各 CSS 里的硬编码色） ===== */
+  --selection-bg: color-mix(in srgb, var(--accent-orange) 25%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent-orange) 50%, transparent);
+  /* 全屏/图片遮罩。深色主题下就是黑纱。 */
+  --scrim: rgba(0, 0, 0, 0.55);
+  --scrim-strong: rgba(0, 0, 0, 0.75);
+  /* Tooltip 与页面反色：深色主题下用比表面更亮的一块灰。 */
+  --surface-tooltip: #4a4a47;
+  --text-on-tooltip: #ffffff;
+  /* 输入框（composer）外圈发丝线，常态 / 聚焦。 */
+  --composer-ring: rgba(255, 255, 255, 0.08);
+  --composer-ring-focus: rgba(255, 255, 255, 0.14);
+  /* 环境 pill 芯片底 + 描边。 */
+  --chip-bg: var(--bg-tertiary);
+  --chip-ring: var(--border-light);
+  /* 用量条（context breakdown）：蓝色刻意区别于珊瑚色动作色。 */
+  --meter-fill: #5b9cf8;
+  --meter-track: rgba(255, 255, 255, 0.08);
+}

@@ -63,6 +63,9 @@ export const FONT_STACKS: Record<FontKey, string> = {
     "serif",
   ].join(", "),
   mono: [
+    // 本地打包（见 app/globals.css 的 @fontsource-variable import），
+    // 不依赖系统装没装。后面的兜底保持原样。
+    "'JetBrains Mono Variable'",
     "'JetBrains Mono'",
     "ui-monospace",
     "Menlo",

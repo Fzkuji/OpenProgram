@@ -1,0 +1,62 @@
+/* aurora — 饱和深色：靛蓝/紫罗兰底 + 高饱和强调。
+   唯一一个覆写强调色族的内置主题（其余主题都沿用产品珊瑚色）：
+   这个主题的存在意义就是"换一整套颜色"，所以连 accent 一起换成
+   青绿主色。文字类 token 全部按 AA（≥4.5:1）核过对比度。 */
+[data-theme="aurora"] {
+  --bg-primary: #171528;
+  --bg-secondary: #110f1e;
+  --bg-tertiary: #211e37;
+  --bg-hover: rgba(160, 140, 255, 0.10);
+  --bg-hover-contrast: #0b0a14;
+  --bg-input: #221f38;
+  --border: rgba(180, 165, 255, 0.10);
+  --border-light: rgba(180, 165, 255, 0.18);
+  --text-primary: #c4c0e0;    /* 8.6:1 on --bg-primary */
+  --text-secondary: #9d99c0;  /* 5.5:1 */
+  --text-bright: #f2f0ff;
+  --text-muted: #7b77a0;      /* 3.4:1 — 仅次要元数据 */
+  --nav-color: #c4c0e0;
+  --nav-color-hover: #f2f0ff;
+  --bg-selected: rgba(160, 140, 255, 0.18);
+  --user-msg-bg: #241f3d;
+  --assistant-msg-bg: #171528;
+  --shadow-sm: 0 1px 2px rgba(6, 4, 18, 0.4);
+  --shadow: 0 4px 12px rgba(6, 4, 18, 0.45);
+  --surface-popover: #241f3d;
+  --border-popover: rgba(180, 165, 255, 0.20);
+  --shadow-popover: 0 8px 24px rgba(6, 4, 18, 0.6);
+  --shadow-dialog: 0 12px 32px rgba(6, 4, 18, 0.55);
+  --shadow-sidebar-left: 4px 0 20px rgba(6, 4, 18, 0.45);
+  --shadow-sidebar-right: -4px 0 20px rgba(6, 4, 18, 0.45);
+  --effort-off-bg: #2d2849;
+  /* 这个主题换掉整套强调色：动作色走极光青绿。 */
+  --accent-orange: #4fd6c0;
+  --accent-fill: #35b8a4;
+  --accent-orange-hover: #2ea38f;
+  --accent-green: #5fd39a;
+  --accent-red: #ff6b8a;
+  --accent-yellow: #ffc861;
+  --accent-purple: #b990ff;
+  --accent-cyan: #63dcff;
+  /* 青绿填充上是深色字（浅色填充配白字会糊）。 */
+  --primary-foreground: #0d1a1a;
+  --success-soft: #6cd3a2;
+  --warning-soft: #f0c46b;
+  --danger-soft: #ff8298;
+  --stream-tool: var(--accent-cyan);
+  --stream-info: var(--accent-yellow);
+
+  --selection-bg: color-mix(in srgb, var(--accent-purple) 30%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent-cyan) 60%, transparent);
+  --scrim: rgba(6, 4, 18, 0.6);
+  --scrim-strong: rgba(6, 4, 18, 0.8);
+  --surface-tooltip: #35304f;
+  --text-on-tooltip: #f2f0ff;
+  --composer-ring: rgba(180, 165, 255, 0.14);
+  --composer-ring-focus: rgba(99, 220, 255, 0.4);
+  --chip-bg: var(--bg-tertiary);
+  --chip-ring: var(--border-light);
+  --meter-fill: #63dcff;
+  --meter-track: rgba(180, 165, 255, 0.12);
+  color-scheme: dark;
+}

@@ -46,7 +46,7 @@
      invalid-at-computed-value-time, collapsing --font-mono to empty
      and dropping every mono column to the browser default. Start the
      chain at real, always-present font names. */
-  --font-mono: 'JetBrains Mono', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', ui-monospace, monospace;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', ui-monospace, monospace;
   /* SSR default. The runtime inline script in layout.tsx overrides
      this per agentic_font in localStorage, but it can lose the race
      with first paint on a cold load — so this SSR value must already
@@ -132,8 +132,11 @@
   --fs-lg: 20px;
 }
 
-/* Dark theme (default) — Claude dark palette */
-:root, [data-theme="dark"] {
+/* :root 兜底 —— 取值等同 beige-dark（产品默认外观）。
+   具名主题全部搬到 app/styles/themes/ 下，由 globals.css import；
+   这里留一份完整取值，是为了 data-theme 是未知值（用户自定义主题
+   片段没写全、或存量 localStorage 里的旧值）时页面仍然画得出来。 */
+:root {
   --bg-primary: #262624;
   --bg-secondary: #1f1e1b;
   --bg-tertiary: #30302e;
@@ -181,70 +184,25 @@
   --stream-tool: var(--accent-cyan);
   --stream-info: var(--accent-yellow);
   color-scheme: dark;
-}
 
-/* Light theme — Claude light palette */
-[data-theme="light"] {
-  --bg-primary: #faf9f5;
-  --bg-secondary: #f0eee5;
-  --bg-tertiary: #e8e6dc;
-  --bg-hover: rgba(20, 20, 19, 0.05);
-  --bg-hover-contrast: #ffffff;
-  --bg-input: #fdfcf9;
-  --border: rgba(20, 20, 19, 0.08); /* subtle hairline */
-  --border-light: #dedcd1;          /* strong hairline */
-  /* Claude light text tiers: ink #141413 (bright), body #3d3d3a
-     (Claude's text-200 tier — the brief's four tiers skip it),
-     secondary #5e5d59, muted #91908c. The dim tier #b0aea7 has no
-     token; use it inline for placeholders if a component needs it. */
-  --text-primary: #3d3d3a;
-  --text-secondary: #5e5d59;
-  --text-bright: #141413;
-  --text-muted: #91908c;
-  --nav-color: #5e5d59;       /* lighter than text-primary so light-mode icons aren't black */
-  --nav-color-hover: #141413; /* same as text-bright */
-  --bg-selected: rgba(20, 20, 19, 0.08); /* selected row, one step above hover */
-  /* Claude chat surfaces: user bubble is the raised warm grey; the
-     assistant message sits flat on the page (no bubble tint). */
-  --user-msg-bg: #f0eee5;
-  --assistant-msg-bg: #faf9f5;
-  /* Claude light is flat: hairlines + tint carry elevation, shadows
-     stay barely-there. */
-  --shadow-sm: 0 1px 2px rgba(20, 20, 19, 0.04);
-  --shadow: 0 2px 8px rgba(20, 20, 19, 0.05);
-  /* Popover / menu surface — pure white card, visibly raised off the
-     cream page (Claude style), ring baked into the shadow. */
-  --surface-popover: #ffffff;
-  /* 弹层边缘 = 真 border（--border-popover）而非藏在 shadow 里的
-     ring——ring 反复被反馈"看不见"。0.12 比 pill 发丝线(0.1)深半档，
-     浮层需要更明确的边界。shadow 只负责投影。 */
-  --border-popover: rgba(10, 10, 10, 0.12);
-  --shadow-popover: 0 8px 24px rgba(20, 20, 19, 0.16);
-  --shadow-dialog: 0 10px 30px rgba(20, 20, 19, 0.10);
-  --shadow-sidebar-left: 4px 0 16px rgba(20, 20, 19, 0.06);
-  --shadow-sidebar-right: -4px 0 16px rgba(20, 20, 19, 0.06);
-  /* Collapsed `off` effort-pill chip — light-theme counterpart. */
-  --effort-off-bg: #e8e6dc;
-  /* Deeper coral in light mode — the shared `#d97757` only reaches
-     2.96:1 as TEXT against the cream background; this darker coral
-     hits 4.01:1 on --bg-primary. Fills that must stay brand-bright
-     use `--accent-fill` (see :root), which does not flip per theme. */
-  --accent-orange: #c15f3c;
-  /* Deeper amber for the same reason — `#d4a346` is 2.18:1 as text
-     on cream; this one is 3.60:1. */
-  --accent-yellow: #a67c2e;
-  /* White-on-coral, same as dark. */
-  --primary-foreground: #ffffff;
-  /* Soft danger-tier accents — a touch deeper than the dark-theme set
-     so they hold contrast against the cream light background. */
-  --success-soft: #5f8a67;
-  --warning-soft: #b98f3d;
-  --danger-soft: #b04a3f;
-  /* Stream-terminal text on the light --bg-tertiary inset: bright
-     cyan/amber wash out (1.6–1.8:1), so drop to darker tones. */
-  --stream-tool: #0d6e77; /* teal, 4.78:1 on #e8e6dc */
-  --stream-info: var(--text-secondary);
-  color-scheme: light;
+  /* ===== Phase 2 语义 token（原本散在各 CSS 里的硬编码色） ===== */
+  --selection-bg: color-mix(in srgb, var(--accent-orange) 25%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent-orange) 50%, transparent);
+  /* 全屏/图片遮罩。深色主题下就是黑纱。 */
+  --scrim: rgba(0, 0, 0, 0.55);
+  --scrim-strong: rgba(0, 0, 0, 0.75);
+  /* Tooltip 与页面反色：深色主题下用比表面更亮的一块灰。 */
+  --surface-tooltip: #4a4a47;
+  --text-on-tooltip: #ffffff;
+  /* 输入框（composer）外圈发丝线，常态 / 聚焦。 */
+  --composer-ring: rgba(255, 255, 255, 0.08);
+  --composer-ring-focus: rgba(255, 255, 255, 0.14);
+  /* 环境 pill 芯片底 + 描边。 */
+  --chip-bg: var(--bg-tertiary);
+  --chip-ring: var(--border-light);
+  /* 用量条（context breakdown）：蓝色刻意区别于珊瑚色动作色。 */
+  --meter-fill: #5b9cf8;
+  --meter-track: rgba(255, 255, 255, 0.08);
 }
 
 html, body {
@@ -306,12 +264,12 @@ button, input, select, textarea, optgroup {
 
 /* ===== Shared Claude-style primitives ===== */
 /* Warm coral-tinted text selection, readable in both themes. */
-::selection { background: rgba(217, 119, 87, 0.25); }
+::selection { background: var(--selection-bg); }
 /* Keyboard focus ring — coral at low alpha instead of the browser
    blue. :focus-visible only, so mouse clicks stay ring-free.
    Component rules with their own focus styling override this. */
 :focus-visible {
-  outline: 2px solid rgba(217, 119, 87, 0.5);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 /* Popover / dropdown / menu panels receive programmatic focus when they
@@ -637,7 +595,7 @@ html[data-sidebar-closed] #sidebar .sidebar-nav-action {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: #f5f5f2;
+  background: var(--bg-secondary);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -218,12 +218,9 @@
 .hover-tip {
   /* Claude 实物是深墨底白字（浅色主题反色）：#141413 底、白字、13px。
      深色主题给一块更亮的灰底保持反差。 */
-  background: var(--surface-tooltip, #141413);
-  color: #fff;
+  background: var(--surface-tooltip);
+  color: var(--text-on-tooltip);
   border: none;
-}
-[data-theme="dark"] .hover-tip {
-  background: #4a4a47;
 }
 
 /* The topbar branch dropdown is the React <BranchMenu /> (shadcn
@@ -1423,7 +1420,7 @@
   background: var(--text-bright, #f8f8f6);
 }
 .msg-rail-dash:focus-visible {
-  outline: 2px solid var(--accent, #4a9eff);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .msg-rail-dash.active {
@@ -1948,12 +1945,8 @@
    on the light white card; in dark, --bg-tertiary EQUALS
    --surface-popover, so a translucent white step keeps it visible. */
 .context-breakdown-panel {
-  --usage-bar: #5b9cf8;
-  --usage-track: rgba(255, 255, 255, 0.08);
-}
-[data-theme="light"] .context-breakdown-panel {
-  --usage-bar: #3b82f6;
-  --usage-track: var(--bg-tertiary);
+  --usage-bar: var(--meter-fill);
+  --usage-track: var(--meter-track);
 }
 
 /* Composer bottom-row container. Declared globally (not in the CSS
