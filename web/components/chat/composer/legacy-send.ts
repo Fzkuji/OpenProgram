@@ -49,6 +49,12 @@ interface SendMessageBridgeArgs {
    *  the provider request body. */
   serviceTier?: string;
   attachments?: ChatAttachment[];
+  /** Set when the turn targets a session that is NOT the focused one
+   *  (a split-view peer pane). The WS payload is identical — only the
+   *  focused-shell side effects are skipped, since `setWelcomeVisible`
+   *  and `setRunning` are singletons belonging to the focused chat and
+   *  flipping them from a background send would corrupt its UI. */
+  background?: boolean;
 }
 
 interface SendWindow {
@@ -135,6 +141,7 @@ export function sendChatMessage({
   webSearchEnabled,
   serviceTier,
   attachments,
+  background = false,
 }: SendMessageBridgeArgs): boolean {
   const w = window as unknown as SendWindow;
   const ws = w.ws;
@@ -148,7 +155,9 @@ export function sendChatMessage({
   }
 
   // Hide the welcome panel right away — before the ack round-trip.
-  w.setWelcomeVisible?.(false);
+  // Skipped for background sends: the welcome panel belongs to the
+  // focused chat shell, not to the peer session being written to.
+  if (!background) w.setWelcomeVisible?.(false);
 
   // The legacy `run ...` typed-command path is gone (Track A removed
   // the backend parser; fn-form submits now POST /api/function/{name}
@@ -236,6 +245,10 @@ export function sendChatMessage({
       started_at: Date.now() / 1000,
     });
   }
-  w.setRunning?.(true);
+  // `setRunning` is the focused shell's global run flag (drives its send/stop
+  // button). A background turn must not flip it — the focused chat isn't the
+  // one running. Per-session run state still lands via the store's
+  // `setRunningTaskFor` on chat_ack, which is what the peer pane reads.
+  if (!background) w.setRunning?.(true);
   return true;
 }

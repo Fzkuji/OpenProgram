@@ -32,7 +32,10 @@ export function draftTab(sessionId = nextDraftSessionId()): CenterTab {
 
 const LEGACY_TABS_STORAGE_KEY = "centerTabs";
 const LEGACY_SPLIT_STORAGE_KEY = "openprogram.webSplit";
-const DEFAULT_SPLIT_RATIO = 0.44;
+const DEFAULT_SPLIT_RATIO = 0.5;
+// ponytail: 0.44 was the old web-split default; persisted values equal to it
+// migrate to the new even split, user-dragged ratios are kept.
+const LEGACY_DEFAULT_SPLIT_RATIO = 0.44;
 const MIN_SPLIT_RATIO = 0.30;
 const MAX_SPLIT_RATIO = 0.70;
 export const clampSplitRatio = (ratio: number) =>
@@ -172,7 +175,9 @@ export function normalizeCenterTabsPayload(
     groups: layout.groups,
     splitWebTabId,
     splitRatio:
-      typeof input.splitRatio === "number" && Number.isFinite(input.splitRatio)
+      typeof input.splitRatio === "number" &&
+      Number.isFinite(input.splitRatio) &&
+      input.splitRatio !== LEGACY_DEFAULT_SPLIT_RATIO
         ? clampSplitRatio(input.splitRatio)
         : DEFAULT_SPLIT_RATIO,
   };

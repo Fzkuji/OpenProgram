@@ -373,4 +373,28 @@ assert.match(
   "chat_ack must consume the channel choice carried by the first payload",
 );
 
+// A background send (split-view peer pane) writes the same `chat` payload but
+// must NOT touch the focused shell's singleton UI flags. If either of these
+// stops being guarded, sending from a peer pane corrupts the focused chat:
+// its welcome panel would hide and its send button would flip to Stop.
+const legacySend = readFileSync(
+  new URL("../components/chat/composer/legacy-send.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  legacySend,
+  /if \(!background\) w\.setWelcomeVisible\?\.\(false\);/,
+  "background sends must not hide the focused shell's welcome panel",
+);
+assert.match(
+  legacySend,
+  /if \(!background\) w\.setRunning\?\.\(true\);/,
+  "background sends must not flip the focused shell's run flag",
+);
+assert.match(
+  legacySend,
+  /background = false,/,
+  "background must default off so the focused composer is unaffected",
+);
+
 console.log("provisional send checks passed");

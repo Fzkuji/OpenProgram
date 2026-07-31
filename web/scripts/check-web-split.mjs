@@ -38,7 +38,7 @@ const emptyCenterPayload = {
   activeId: null,
   groups: [],
   splitWebTabId: null,
-  splitRatio: 0.44,
+  splitRatio: 0.45,
 };
 const emptySessionSnapshot = {
   activeChatKey: null,
@@ -569,7 +569,7 @@ secondaryTabs.setState({
   activeId: "s:existing",
   groups: [],
   splitWebTabId: null,
-  splitRatio: 0.44,
+  splitRatio: 0.45,
 });
 assert.equal(secondaryTabsModule.persistCurrentCenterTabsPayload(), true);
 const secondaryTabBytes = values.get("centerTabs:secondary");
@@ -871,7 +871,7 @@ secondaryTabsModule.replaceCenterTabsPayload({
   activeId: "s:target",
   groups: [],
   splitWebTabId: null,
-  splitRatio: 0.44,
+  splitRatio: 0.45,
 }, { persist: false });
 const segmentPlacements = [
   { kind: "strip-end" },
@@ -940,7 +940,7 @@ secondaryTabsModule.replaceCenterTabsPayload({
     focusedId: "w:segment-b",
   }],
   splitWebTabId: null,
-  splitRatio: 0.44,
+  splitRatio: 0.45,
 }, { persist: false });
 const segmentRemoval = secondaryTabsModule.removeTransferredTabs(
   ["w:segment-b"],
@@ -1031,7 +1031,7 @@ const projectionBeforeCenter = {
   activeId: "s:existing",
   groups: [],
   splitWebTabId: null,
-  splitRatio: 0.44,
+  splitRatio: 0.45,
 };
 secondaryTabsModule.replaceCenterTabsPayload(projectionBeforeCenter, { persist: false });
 secondarySessionModule.applySessionTransfer(effectSessionSnapshot, { persist: false });
@@ -1196,7 +1196,7 @@ const concurrentBase = {
   activeId: "s:existing",
   groups: [],
   splitWebTabId: null,
-  splitRatio: 0.44,
+  splitRatio: 0.45,
 };
 secondaryTabsModule.replaceCenterTabsPayload(concurrentBase, { persist: true });
 secondarySessionModule.applySessionTransfer(effectSessionSnapshot, { persist: true });
@@ -2080,7 +2080,7 @@ useCenterTabs.setState({
   activeId: "s:chat",
   groups: [],
   splitWebTabId: null,
-  splitRatio: 0.44,
+  splitRatio: 0.45,
 });
 const id = useCenterTabs.getState().openWebTabInSplit("https://example.com/");
 assert.equal(id, "w:https://example.com/");
@@ -2088,7 +2088,7 @@ assert.equal(useCenterTabs.getState().activeId, "s:chat");
 assert.equal(useCenterTabs.getState().splitWebTabId, id);
 assert.deepEqual(useCenterTabs.getState().groups[0].memberIds, ["s:chat", id]);
 assert.equal(JSON.parse(values.get("centerTabs")).splitWebTabId, id);
-assert.equal(JSON.parse(values.get("centerTabs")).splitRatio, 0.44);
+assert.equal(JSON.parse(values.get("centerTabs")).splitRatio, 0.45);
 useCenterTabs.setState({
   tabs: [
     { id: "s:chat", kind: "session", title: "Chat", sessionId: "chat" },
@@ -2097,7 +2097,7 @@ useCenterTabs.setState({
   activeId: "s:chat",
   groups: [],
   splitWebTabId: id,
-  splitRatio: 0.44,
+  splitRatio: 0.45,
 });
 useCenterTabs.getState().openWebTabInSplit("https://example.com/");
 assert.equal(useCenterTabs.getState().activeId, "s:chat");
@@ -2225,7 +2225,7 @@ const t5Base = {
   activeId: "s:home",
   groups: [],
   splitWebTabId: null,
-  splitRatio: 0.44,
+  splitRatio: 0.45,
 };
 const t5Payload = {
   tabs: [{ id: "w:moved", kind: "web", title: "Moved", url: "https://moved.test/" }],

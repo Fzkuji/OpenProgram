@@ -15,20 +15,29 @@
  * needs a second connection or subscription — a peer session streams live
  * because its rows come out of the same store.
  *
- * Clicking the pane calls `setActive(tabId)`, which swaps which session
- * owns the singleton shell (and the URL, right rail, DAG, composer). The
- * two panes therefore trade places rather than both being interactive.
+ * The pane has its own lightweight composer, so BOTH sessions can be
+ * typed into without swapping focus first. Sends reuse
+ * `sendChatMessage({ sessionId, background: true })` — the same WS
+ * payload the main composer writes; `background` only skips the two
+ * focused-shell side effects (`setWelcomeVisible` / `setRunning`), which
+ * are singletons owned by the focused chat.
  *
- * ponytail: read-along + click-to-focus, not a second full chat surface.
- * A per-pane composer needs the singleton shell parameterized first —
- * add it when someone actually needs to type into both panes at once.
+ * Clicking the pane background still calls `setActive(tabId)` to swap
+ * which session owns the full shell (right rail, DAG, URL, the rich
+ * composer with model picker / attachments / slash commands).
+ *
+ * ponytail: plain textarea + send button, no model picker / attachments /
+ * slash menu / steer handling. Those live in the full composer — focus
+ * the pane to get them. Promote if peer-side attachments are actually
+ * needed.
  */
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useMessageIds, useSessionStore } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { readChatScroll, writeChatScroll } from "@/lib/state/chat-scroll";
 import { wsSend } from "@/components/sidebar/sessions-list/helpers";
+import { sendChatMessage } from "./composer/legacy-send";
 import { useTranslation } from "@/lib/i18n";
 
 import { MessageRow } from "./messages/message-list";
@@ -100,8 +109,60 @@ export function PeerSessionPane({
     }
   }, [ids.length]);
 
+  // Per-session run state, straight from the store — no new global. This is
+  // the same slice `chat_ack` writes via `setRunningTaskFor`, so the peer's
+  // pending state is independent of the focused shell's `isRunning`.
   const streaming = useSessionStore((s) =>
     sessionId ? Boolean(s.runningTasks[sessionId]) : false,
+  );
+
+  /* ---- Peer composer ------------------------------------------------- */
+
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const submit = useCallback(() => {
+    const trimmed = draft.trim();
+    if (!trimmed || !sessionId || streaming) return;
+    // Same per-session settings the full composer would use for THIS
+    // session — not the focused one's. `composerSettings` on the store is
+    // the focused session's live slice, so read the by-session map instead.
+    const store = useSessionStore.getState();
+    const settings = store.composerSettingsBySession[sessionId];
+    const handled = sendChatMessage({
+      text: trimmed,
+      sessionId,
+      thinking: settings?.thinking ?? "",
+      toolsEnabled: settings?.tools ?? false,
+      webSearchEnabled: settings?.webSearch ?? false,
+      background: true,
+    });
+    // Keep the text on a failed write so a reconnect can retry it.
+    if (!handled) return;
+    setDraft("");
+    // Optimistic bubble: `sendChatMessage` stashes the text on
+    // `__pendingUserTextBySession`, and `chat_ack` turns it into the user
+    // turn + reply placeholder keyed to THIS session. That round-trip is
+    // fast, and going through it keeps ids consistent with the server.
+  }, [draft, sessionId, streaming]);
+
+  // Auto-grow the textarea up to the max-height, then let it scroll.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, [draft]);
+
+  // Enter sends, Shift+Enter newlines — same as the main composer.
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+        e.preventDefault();
+        submit();
+      }
+    },
+    [submit],
   );
 
   // `flex: 1` (not just height) — the .center-split-* wrapper is a flex row
@@ -143,7 +204,7 @@ export function PeerSessionPane({
         </span>
         {streaming ? <span className="thinking-spinner" aria-hidden="true" /> : null}
         <span style={{ marginLeft: "auto", opacity: 0.7 }}>
-          {text("click to focus", "点击聚焦")}
+          {text("click to expand", "点击展开")}
         </span>
       </div>
       {/* `minWidth: 0` on both the scroller and the column: without it a
@@ -177,6 +238,68 @@ export function PeerSessionPane({
             ids.map((id) => <MessageRow key={id} id={id} />)
           )}
         </div>
+      </div>
+      {/* Lightweight composer. `stopPropagation` on pointerdown so typing
+          here doesn't trigger the pane's focus-swap. */}
+      <div
+        className="peer-session-composer"
+        onPointerDown={(e) => e.stopPropagation()}
+        style={{
+          flex: "0 0 auto",
+          display: "flex",
+          alignItems: "flex-end",
+          gap: 8,
+          padding: 10,
+          borderTop: "1px solid var(--border, rgba(128,128,128,.2))",
+        }}
+      >
+        <textarea
+          ref={inputRef}
+          value={draft}
+          rows={1}
+          disabled={!sessionId}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={
+            streaming
+              ? text("Running…", "运行中…")
+              : text("Send a message…", "发送消息…")
+          }
+          style={{
+            flex: 1,
+            minWidth: 0,
+            resize: "none",
+            maxHeight: 120,
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: "1px solid var(--border, rgba(128,128,128,.25))",
+            background: "var(--bg-tertiary, transparent)",
+            color: "inherit",
+            font: "inherit",
+            fontSize: 14,
+            lineHeight: 1.5,
+            outline: "none",
+          }}
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!draft.trim() || !sessionId || streaming}
+          title={text("Send", "发送")}
+          style={{
+            flex: "0 0 auto",
+            padding: "8px 14px",
+            borderRadius: 10,
+            border: "none",
+            cursor: draft.trim() && !streaming ? "pointer" : "default",
+            opacity: draft.trim() && !streaming ? 1 : 0.45,
+            background: "var(--accent-fill, #4a7)",
+            color: "var(--primary-foreground, #fff)",
+            fontSize: 13,
+          }}
+        >
+          {text("Send", "发送")}
+        </button>
       </div>
     </div>
   );
