@@ -1507,7 +1507,8 @@
   border-radius: 0;
 }
 .msg-rail-card .turn-files-row { padding: 1px 0; }
-.msg-rail-card .turn-files-row + .turn-files-row { border-top: none; }
+.msg-rail-card .turn-files-file + .turn-files-file { border-top: none; }
+.msg-rail-card .turn-files-diff { padding: 4px 0 6px; border-top: none; }
 .msg-rail-card .turn-files-summary {
   padding: 0 0 3px;
   border-bottom: none;
@@ -2102,8 +2103,36 @@
   gap: 8px;
   padding: 4px 10px;
 }
-.turn-files-row + .turn-files-row {
+/* Each file is a wrapper div (row + optional diff), so the separator
+   hangs off the wrapper, not off row-to-row adjacency. */
+.turn-files-file + .turn-files-file {
   border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+/* The whole row toggles the inline diff — the caret is the hint, the
+   hover tint is the target. Buttons inside stopPropagation. */
+.turn-files-row.is-toggle { cursor: pointer; }
+.turn-files-row.is-toggle:hover {
+  background: color-mix(in srgb, var(--bg-hover) 60%, transparent);
+}
+.turn-files-caret {
+  flex: 0 0 auto;
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  color: var(--text-muted);
+}
+.turn-files-caret svg { width: 100%; height: 100%; }
+
+/* Inline diff block: full width of the card, its own horizontal scroll
+   so a long line never widens the chat column, and a 60vh cap with
+   vertical scroll so a big diff can't push the rest of the turn away. */
+.turn-files-diff {
+  padding: 6px 10px 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  background: color-mix(in srgb, var(--bg-primary) 55%, transparent);
 }
 
 .turn-files-name {
@@ -2121,11 +2150,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   direction: rtl; /* long paths ellipsize on the LEFT — the tail names the file */
-}
-.turn-files-name.is-clickable { cursor: pointer; }
-.turn-files-name.is-clickable:hover {
-  color: var(--text-primary);
-  text-decoration: underline;
 }
 
 .turn-files-stat {

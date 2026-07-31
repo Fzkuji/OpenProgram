@@ -259,31 +259,6 @@ interface ConvState {
    *  that paints #detailBody itself. Gates the Detail/Context switch. */
   nodeSelected: boolean;
   setNodeSelected: (selected: boolean) => void;
-
-  /** Unified diff currently shown in the right-rail Details view, set by
-   *  a turn file card's "Review". Independent of `detailNode` (that one
-   *  describes a DAG execution node); whichever was opened last wins. */
-  fileDiff: FileDiffView | null;
-  /** Show `diff` in Details and switch the right rail to it. */
-  showFileDiff: (diff: FileDiffView) => void;
-  closeFileDiff: () => void;
-}
-
-/** A single file's unified diff for one turn. */
-export interface FileDiffView {
-  /** Absolute path (identity — a path may repeat across turns). */
-  path: string;
-  /** Project-relative path, for display. */
-  rel: string;
-  assistantMsgId: string;
-  /** Unified diff text; empty while loading. */
-  diff: string;
-  /** True when the diff was reconstructed against current disk content
-   *  rather than the turn's shadow commit, so it may include later
-   *  turns' edits. */
-  approximate: boolean;
-  loading?: boolean;
-  error?: string | null;
 }
 
 export interface DetailNode {
@@ -798,17 +773,6 @@ export const useSessionStore = create<ConvState>((set) => ({
     set({ detailNode: null, nodeSelected: false }),
   nodeSelected: false,
   setNodeSelected: (selected) => set({ nodeSelected: selected }),
-
-  fileDiff: null,
-  showFileDiff: (diff) =>
-    set((s) => {
-      const next = { ...s.rightDock, open: true, view: "detail" };
-      persistRightDock(next);
-      // nodeSelected gates the Detail/Context view switch; a diff is a
-      // selection too, otherwise Details opens with no way back.
-      return { fileDiff: diff, nodeSelected: true, rightDock: next };
-    }),
-  closeFileDiff: () => set({ fileDiff: null }),
 }));
 
 // A scope store's setters update its own instance first (so the pane repaints

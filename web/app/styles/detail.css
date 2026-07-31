@@ -157,50 +157,12 @@
    .indicator-dot pulse-opacity, defined in chat.css. */
 
 
-/* ===== Per-turn file diff (Details view) =====
-   Rendered by components/right-sidebar/file-diff-view.tsx from the
-   `turn_file_diff` WS action. Hand-rolled unified-diff colouring: the
-   parser tags each row add/del/hunk/meta/ctx and these rules paint it.
-   Two gutter columns carry the old/new line numbers. */
-
-.file-diff {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.file-diff-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.file-diff-path {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  direction: rtl; /* keep the filename tail visible on long paths */
-}
-.file-diff-close {
-  flex: 0 0 auto;
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: var(--text-muted);
-}
-.file-diff-close:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
+/* ===== Per-turn file diff =====
+   Rendered by components/chat/messages/unified-diff.tsx from the
+   `turn_file_diff` WS action, inline under a turn's file-edit card.
+   Hand-rolled unified-diff colouring: the parser tags each row
+   add/del/hunk/meta/ctx and these rules paint it. Two gutter columns
+   carry the old/new line numbers. */
 
 .file-diff-note {
   margin-bottom: 8px;

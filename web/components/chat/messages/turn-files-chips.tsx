@@ -2,20 +2,27 @@
 
 /**
  * Per-turn file edit card — the list of files an assistant turn changed,
- * with per-file +N/-N counts and Undo / Review actions.
+ * with per-file +N/-N counts, an inline diff preview and Undo.
  *
  * Fires `list_turn_files` over the shared WS once the bubble is no
  * longer streaming; renders nothing when the turn touched no files
  * (the common case for chat-only replies, so empty state stays quiet).
  *
- * Actions:
- *   Undo   → `revert_turn`, restoring every file this turn touched to
- *            its pre-turn state. Turn-scoped, not per-file, so the row
- *            hosting the button is just the affordance's location.
- *   Review → `turn_file_diff`, rendered in the right rail's Details.
+ * Interaction:
+ *   Click the ROW   → expand/collapse a full-width unified diff right
+ *                     under it, fetched once via `turn_file_diff` and
+ *                     cached in component state. Several rows may be
+ *                     open at once; the diff reads in the chat column
+ *                     instead of the narrow right rail.
+ *   ↗ (row action)  → open the file as a center editor tab.
+ *   Undo            → `revert_turn`, restoring every file this turn
+ *                     touched. Turn-scoped, not per-file, so the row
+ *                     hosting the button is just the affordance's spot.
  *
- * Clicking the file NAME still opens it as a center file tab, which is
- * what the chips did before and what people already reach for.
+ * Both buttons stopPropagation so they never toggle the diff.
+ * The filename itself is deliberately NOT the editor link any more:
+ * with the whole row toggling the diff, a nested link inside it would
+ * be two overlapping targets on one label. The ↗ icon separates them.
  */
 import { useCallback, useEffect, useState } from "react";
 
@@ -24,7 +31,13 @@ import { useTranslation } from "@/lib/i18n";
 import { showToast } from "@/lib/format-utils/toast";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
-import { EyeIcon, UndoIcon } from "@/components/animated-icons";
+import {
+  ArrowUpRightIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  UndoIcon,
+} from "@/components/animated-icons";
+import { UnifiedDiff } from "./unified-diff";
 
 /** One changed file, as returned by `list_turn_files`. */
 interface TurnFile {
@@ -33,6 +46,14 @@ interface TurnFile {
   op: string;
   added: number;
   removed: number;
+}
+
+/** Cached `turn_file_diff` answer for one path. */
+interface DiffState {
+  loading: boolean;
+  diff: string;
+  approximate: boolean;
+  error?: string | null;
 }
 
 function wsSend(payload: unknown): boolean {
@@ -51,17 +72,20 @@ function basename(p: string): string {
 export function TurnFilesChips({ assistantMsgId }: { assistantMsgId: string }) {
   const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
-  const showFileDiff = useSessionStore((s) => s.showFileDiff);
   const [files, setFiles] = useState<TurnFile[] | null>(null);
   // "reverting" drives the optimistic grey-out; "reverted" is the
   // settled state. The backend also stamps metadata.reverted on the
   // node, which is what makes this survive a reload.
   const [reverting, setReverting] = useState(false);
   const [reverted, setReverted] = useState(false);
+  // Which paths are expanded, and the diff cached per path. Kept apart
+  // so collapsing and re-expanding doesn't re-fetch.
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [diffs, setDiffs] = useState<Record<string, DiffState>>({});
 
-  // 点文件名 → 中间栏文件 tab（与右栏 FileTree 点文件同一通路）。
+  // ↗ → 中间栏文件 tab（与右栏 FileTree 点文件同一通路）。
   // checkpoint manifest 记的是绝对路径，openFileTab 要项目相对路径，
-  // 所以拿会话项目根剥前缀；落在项目外的文件保持纯展示。
+  // 所以拿会话项目根剥前缀；落在项目外的文件没有这个入口。
   const openFileTab = useCenterTabs((s) => s.openFileTab);
   const project = useCurrentProject();
   const toRelative = useCallback(
@@ -147,14 +171,16 @@ export function TurnFilesChips({ assistantMsgId }: { assistantMsgId: string }) {
     ws.addEventListener("message", onMsg);
   }
 
-  function review(f: TurnFile) {
-    if (!sessionId) return;
-    // Open the panel immediately in a loading state so the click lands
-    // before the round-trip, then fill it in when the diff arrives.
-    showFileDiff({
-      path: f.path, rel: f.rel || basename(f.path),
-      assistantMsgId, diff: "", approximate: false, loading: true,
-    });
+  /** Toggle the inline diff for one file, fetching it the first time. */
+  function toggle(f: TurnFile) {
+    const wasOpen = open[f.path];
+    setOpen((s) => ({ ...s, [f.path]: !wasOpen }));
+    if (wasOpen || diffs[f.path] || !sessionId) return;
+
+    setDiffs((s) => ({
+      ...s,
+      [f.path]: { loading: true, diff: "", approximate: false },
+    }));
     const ok = wsSend({
       action: "turn_file_diff",
       session_id: sessionId,
@@ -164,11 +190,13 @@ export function TurnFilesChips({ assistantMsgId }: { assistantMsgId: string }) {
     const w = window as Window & { ws?: WebSocket };
     const ws = w.ws;
     if (!ok || !ws) {
-      showFileDiff({
-        path: f.path, rel: f.rel || basename(f.path),
-        assistantMsgId, diff: "", approximate: false,
-        error: text("Not connected", "连接已断开"),
-      });
+      setDiffs((s) => ({
+        ...s,
+        [f.path]: {
+          loading: false, diff: "", approximate: false,
+          error: text("Not connected", "连接已断开"),
+        },
+      }));
       return;
     }
     const onMsg = (ev: MessageEvent) => {
@@ -178,14 +206,15 @@ export function TurnFilesChips({ assistantMsgId }: { assistantMsgId: string }) {
         const d = data.data ?? {};
         if (d.assistant_msg_id !== assistantMsgId || d.path !== f.path) return;
         ws.removeEventListener("message", onMsg);
-        showFileDiff({
-          path: f.path,
-          rel: f.rel || basename(f.path),
-          assistantMsgId,
-          diff: d.diff ?? "",
-          approximate: Boolean(d.approximate),
-          error: d.error ?? null,
-        });
+        setDiffs((s) => ({
+          ...s,
+          [f.path]: {
+            loading: false,
+            diff: d.diff ?? "",
+            approximate: Boolean(d.approximate),
+            error: d.error ?? null,
+          },
+        }));
       } catch {
         /* ignore */
       }
@@ -222,50 +251,94 @@ export function TurnFilesChips({ assistantMsgId }: { assistantMsgId: string }) {
       {files.map((f) => {
         const rel = toRelative(f.path);
         const label = f.rel || basename(f.path);
+        const isOpen = Boolean(open[f.path]);
+        const d = diffs[f.path];
         return (
-          <div className="turn-files-row" key={f.path}>
-            {rel !== null ? (
-              <button
-                type="button"
-                className="turn-files-name is-clickable"
-                title={f.path}
-                onClick={() => openFileTab(project!.id, rel)}
-              >
-                {label}
-              </button>
-            ) : (
-              <span className="turn-files-name" title={f.path}>{label}</span>
-            )}
-            <span className="turn-files-stat is-add">+{f.added ?? 0}</span>
-            <span className="turn-files-stat is-del">-{f.removed ?? 0}</span>
-            <span className="turn-files-actions">
-              <button
-                type="button"
-                className="turn-files-action"
-                onClick={() => review(f)}
-                title={text("Review changes", "查看改动")}
-              >
-                <span className="turn-files-action-icon"><EyeIcon /></span>
-                {text("Review", "查看")}
-              </button>
-              <button
-                type="button"
-                className="turn-files-action"
-                onClick={undo}
-                disabled={reverting || reverted}
-                title={text(
-                  "Undo every file this turn changed",
-                  "撤回本轮修改的所有文件",
+          <div className="turn-files-file" key={f.path}>
+            <div
+              className="turn-files-row is-toggle"
+              role="button"
+              tabIndex={0}
+              aria-expanded={isOpen}
+              title={f.path}
+              onClick={() => toggle(f)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  toggle(f);
+                }
+              }}
+            >
+              <span className="turn-files-caret">
+                {isOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
+              </span>
+              <span className="turn-files-name">{label}</span>
+              <span className="turn-files-stat is-add">+{f.added ?? 0}</span>
+              <span className="turn-files-stat is-del">-{f.removed ?? 0}</span>
+              <span className="turn-files-actions">
+                {rel !== null ? (
+                  <button
+                    type="button"
+                    className="turn-files-action"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openFileTab(project!.id, rel);
+                    }}
+                    title={text("Open in editor", "在编辑器打开")}
+                  >
+                    <span className="turn-files-action-icon">
+                      <ArrowUpRightIcon />
+                    </span>
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="turn-files-action"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    undo();
+                  }}
+                  disabled={reverting || reverted}
+                  title={text(
+                    "Undo every file this turn changed",
+                    "撤回本轮修改的所有文件",
+                  )}
+                >
+                  <span className="turn-files-action-icon"><UndoIcon /></span>
+                  {reverting
+                    ? text("Reverting…", "撤回中…")
+                    : reverted
+                      ? text("Reverted", "已撤回")
+                      : text("Undo", "撤回")}
+                </button>
+              </span>
+            </div>
+
+            {isOpen ? (
+              <div className="turn-files-diff">
+                {d?.approximate ? (
+                  <div className="file-diff-note">
+                    {text(
+                      "Approximate — compared against the file's current contents, so later edits may appear.",
+                      "近似差异——与文件当前内容比较，可能包含后续轮次的改动。",
+                    )}
+                  </div>
+                ) : null}
+                {d?.loading || !d ? (
+                  <div className="file-diff-empty">
+                    {text("Loading diff…", "正在加载差异…")}
+                  </div>
+                ) : d.error ? (
+                  <div className="file-diff-empty is-error">{d.error}</div>
+                ) : d.diff ? (
+                  <UnifiedDiff diff={d.diff} />
+                ) : (
+                  <div className="file-diff-empty">
+                    {text("No textual changes.", "没有文本改动。")}
+                  </div>
                 )}
-              >
-                <span className="turn-files-action-icon"><UndoIcon /></span>
-                {reverting
-                  ? text("Reverting…", "撤回中…")
-                  : reverted
-                    ? text("Reverted", "已撤回")
-                    : text("Undo", "撤回")}
-              </button>
-            </span>
+              </div>
+            ) : null}
           </div>
         );
       })}
