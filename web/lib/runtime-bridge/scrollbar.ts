@@ -84,10 +84,7 @@ function install(el: HTMLElement): void {
   }
 
   el.addEventListener("scroll", () => schedule(true), { passive: true });
-  // Reposition on hover but don't reveal — macOS-style: the thumb only
-  // appears while actually scrolling. Revealing on mouseenter made the
-  // bar flash every time the cursor crossed between split panes.
-  el.addEventListener("mouseenter", () => schedule(false));
+  el.addEventListener("mouseenter", () => schedule(true));
 
   if (typeof ResizeObserver !== "undefined") {
     new ResizeObserver(() => schedule(false)).observe(el);
