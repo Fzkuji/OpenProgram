@@ -241,6 +241,7 @@ export function FileTree({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; type: "file" | "dir" } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(
     async (path: string) => {
@@ -340,9 +341,12 @@ export function FileTree({
   }
 
   /** "Reveal in file tree" from elsewhere in the app (the per-turn file
-   *  edit card): expand every ancestor and select the row. Wired as a
-   *  window CustomEvent so the caller needs no ref into this tree.
-   *  ponytail: reuses expandChain + the existing `selected` state. */
+   *  edit card): expand every ancestor, select the row, then — once the
+   *  async dir loads have actually rendered it — scroll it into view and
+   *  flash it, so a deeply nested file is findable without hunting.
+   *  Wired as a window CustomEvent so the caller needs no ref into this
+   *  tree. ponytail: reuses expandChain + the existing `selected` state. */
+  const revealTarget = useRef<string | null>(null);
   useEffect(() => {
     const onReveal = (ev: Event) => {
       const d = (ev as CustomEvent<{ projectId?: string; path?: string }>).detail;
@@ -350,9 +354,24 @@ export function FileTree({
       setFilter(""); // rows only render in tree mode
       expandChain(parentOf(d.path));
       setSelected({ path: d.path, type: "file" });
+      revealTarget.current = d.path;
     };
     window.addEventListener("project-file-reveal-in-tree", onReveal);
     return () => window.removeEventListener("project-file-reveal-in-tree", onReveal);
+  });
+  // After every render: if a reveal is pending and its row now exists
+  // (ancestor dirs finished their async loads), scroll + flash once.
+  useEffect(() => {
+    const path = revealTarget.current;
+    if (!path) return;
+    const row = rootRef.current?.querySelector<HTMLElement>(
+      `[data-tree-path="${CSS.escape(path)}"]`,
+    );
+    if (!row) return; // ancestors still loading — retry on next render
+    revealTarget.current = null;
+    row.scrollIntoView({ block: "center" });
+    row.classList.add(styles.treeRowFlash);
+    setTimeout(() => row.classList.remove(styles.treeRowFlash), 1200);
   });
 
   /** Directory a create targets: selected dir → itself, selected file
@@ -569,6 +588,7 @@ export function FileTree({
       return (
         <div
           key={full}
+          data-tree-path={full}
           className={`${styles.treeRow} ${full === activePath ? styles.treeRowActive : ""} ${selectedCls}`}
           style={{ paddingLeft: FILE_PAD + depth * INDENT }}
           onClick={() => {
@@ -600,7 +620,7 @@ export function FileTree({
   }
 
   return (
-    <div className={styles.treeCol}>
+    <div className={styles.treeCol} ref={rootRef}>
       <div className={styles.treeHeader}>
         {headerExtra}
         <SearchInput

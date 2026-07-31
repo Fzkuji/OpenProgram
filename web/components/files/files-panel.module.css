@@ -298,6 +298,15 @@
   background: var(--bg-tertiary);
 }
 
+/* One-shot flash after "reveal in file tree" scrolls a row into view. */
+.treeRowFlash {
+  animation: treeRowFlash 1.2s ease-out;
+}
+@keyframes treeRowFlash {
+  0%, 45% { background: color-mix(in srgb, var(--accent-orange) 22%, transparent); }
+  100% { background: var(--bg-tertiary); }
+}
+
 /* Inline create/rename editor sitting in a 22px row. */
 .treeInput {
   flex: 1;
