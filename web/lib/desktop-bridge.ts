@@ -674,10 +674,9 @@ function destinationSessionAfter(
       const tab = payload.tabs.find((item) => item.sessionId === chat.chatKey);
       after.activeChatKey = chat.chatKey;
       after.currentSessionId = tab?.draft ? null : chat.chatKey;
-      after.composerInput = chat.activeComposerInput ?? chat.composerDraft ?? "";
-      if (chat.activeComposerSettings) {
-        after.composerSettings = chat.activeComposerSettings;
-      }
+      // The focused chat's live draft and settings are no longer separate
+      // fields — they ARE `composerDrafts[activeChatKey]` /
+      // `composerSettingsBySession[activeChatKey]`, already written above.
     }
   }
   return after;
@@ -704,10 +703,8 @@ function sourceSessionAfter(
     after.currentSessionId = active?.kind === "session" && !active.draft
       ? key
       : null;
-    after.composerInput = (key && after.composerDrafts[key]) || "";
-    if (key && after.composerSettingsBySession[key]) {
-      after.composerSettings = after.composerSettingsBySession[key];
-    }
+    // Nothing else to move: the newly focused chat's draft and settings are
+    // whatever its entries in the keyed maps already say.
   }
   return after;
 }
@@ -831,10 +828,6 @@ export function buildTransferPayload(
       }
       const choice = draftChannelChoiceFor(host, chatKey);
       if (choice) chat.draftChannelChoice = structuredClone(choice);
-      if (wasActive) {
-        chat.activeComposerInput = session.composerInput;
-        chat.activeComposerSettings = structuredClone(session.composerSettings);
-      }
       chats.push(chat);
     } else if (tab.kind === "file" && tab.projectId && tab.path) {
       const key = fileDraftKey(tab.projectId, tab.path);

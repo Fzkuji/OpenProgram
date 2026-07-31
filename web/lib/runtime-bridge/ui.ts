@@ -45,14 +45,13 @@ export function setRunning(running: boolean): void {
   W.isRunning = running;
   if (!running) W.isPaused = false;
 
-  // The React composer's send/stop button reads ``runningTask !== null``
-  // from the session-store, not this legacy flag. Bridge them so
-  // ``running_task`` WS events (which land in legacy handlers and
-  // call ``setRunning(true)``) actually flip the button.
+  // The React composer's send/stop button reads its own session scope's
+  // ``running``, not this legacy flag. Bridge them via the keyed setter so
+  // ``running_task`` WS events (which land in legacy handlers and call
+  // ``setRunning(true)``) actually flip the button.
   const w = W as unknown as {
     __sessionStore?: {
       getState: () => {
-        setRunningTask: (t: unknown) => void;
         setRunningTaskFor: (sid: string, t: unknown) => void;
       };
     };

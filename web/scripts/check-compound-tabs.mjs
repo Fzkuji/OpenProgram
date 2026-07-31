@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { registerHooks } from "node:module";
+import { fileURLToPath } from "node:url";
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -9,6 +11,17 @@ registerHooks({
         url: new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href,
         shortCircuit: true,
       };
+    }
+    // Extensionless relative imports between source modules (Node needs the
+    // extension; TypeScript and the Next build resolve them on their own).
+    if (specifier.startsWith(".") && !/\.[a-z]+$/.test(specifier)) {
+      // Append to href, not to pathname: pathname is percent-encoded and
+      // re-parsing it against the same base double-encodes any space in the
+      // repo path.
+      const base = new URL(specifier, context.parentURL).href;
+      const file = `${base}.ts`;
+      const url = existsSync(fileURLToPath(file)) ? file : `${base}/index.ts`;
+      return { url, shortCircuit: true };
     }
     return nextResolve(specifier, context);
   },

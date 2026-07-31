@@ -29,6 +29,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
+import { useSessionScope } from "@/lib/session-store/session-scope";
 import {
   draftChannelChoiceFor,
   dropDraftChannelChoice,
@@ -155,25 +156,16 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // session's running task, not a global flag. This is what lets the
   // user switch from a running session A to session B and immediately
   // send a new message in B while A is still streaming.
-  const runningTask = useSessionStore((s) => {
-    const sessionId = bound ?? s.activeChatKey ?? s.currentSessionId;
-    return sessionId ? (s.runningTasks[sessionId] ?? null) : null;
-  });
-  // Draft text. Unbound reads the live `composerInput` slice (unchanged).
-  // Bound reads its own session's persisted draft, so the two panes type
-  // independently and neither disturbs the focused live slice.
-  const input = useSessionStore((s) =>
-    bound === null ? s.composerInput : (s.composerDrafts[bound] ?? ""),
-  );
+  const runningTask = useSessionScope((s) => s.running);
+  // Draft text — this scope's, always. No focused-session fallback: the
+  // single-session shell provides a scope too.
+  const input = useSessionScope((s) => s.draft);
+  const setInput = useSessionScope((s) => s.setDraft);
+  // Submit captures the owner key up front and clears THAT chat's draft when
+  // the async send resolves, which may be a different chat than this scope by
+  // then. Goes through the global keyed setter, which pushes into the owner's
+  // scope store as well as persisting.
   const setComposerInputFor = useSessionStore((s) => s.setComposerInputFor);
-  const setInputUnbound = useSessionStore((s) => s.setComposerInput);
-  const setInput = useCallback(
-    (value: string) => {
-      if (bound === null) setInputUnbound(value);
-      else setComposerInputFor(bound, value);
-    },
-    [bound, setInputUnbound, setComposerInputFor],
-  );
   const focusTick = useSessionStore((s) => s.composerFocusTick);
 
   // History recall — user messages from the active session, ordered
@@ -452,35 +444,19 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     toggleWebSearch,
   } = useToolsToggles();
   // Per-turn "Fast" speed tier → sent as service_tier:"priority". Now
-  // per-session (store's composerSettings.fast, persisted + isolated per
+  // per-session (this scope's settings.fast, persisted + isolated per
   // chat like the other toggles). The backend forwards it to the provider
   // request body and no-ops for providers that don't read service_tier.
-  const fastEnabled = useSessionStore((s) =>
-    bound === null
-      ? s.composerSettings.fast
-      : (s.composerSettingsBySession[bound]?.fast ?? s.composerSettings.fast),
-  );
+  const fastEnabled = useSessionScope((s) => s.settings.fast);
   // 有的模型没有 Fast 档（service_tier）——后端 agent_settings 按当前
   // 模型下发 chat.fast；不支持就整个隐藏开关/chip，也不随消息发送。
   const fastSupported = useSessionStore((s) => !!s.agentSettings?.chat?.fast);
-  const setComposerSettingsRaw = useSessionStore((s) => s.setComposerSettings);
-  const setComposerSettings = useCallback(
-    (patch: Parameters<typeof setComposerSettingsRaw>[0]) =>
-      bound === null
-        ? setComposerSettingsRaw(patch)
-        : setComposerSettingsRaw(patch, bound),
-    [bound, setComposerSettingsRaw],
-  );
+  const setComposerSettings = useSessionScope((s) => s.patchSettings);
   const toggleFast = () => setComposerSettings({ fast: !fastEnabled });
   // Unattended toggle: nobody watching → withhold the agent's user-question
   // tool. Mirror the per-session UI flag to the backend via set_attended so
   // the tool-resolution gate matches (attended = !unattended).
-  const unattended = useSessionStore((s) =>
-    bound === null
-      ? s.composerSettings.unattended
-      : (s.composerSettingsBySession[bound]?.unattended
-         ?? s.composerSettings.unattended),
-  );
+  const unattended = useSessionScope((s) => s.settings.unattended);
   const toggleUnattended = () => {
     const next = !unattended;
     setComposerSettings({ unattended: next });
@@ -641,9 +617,10 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     return () => document.removeEventListener("pointerdown", onDoc);
   }, [setThinkingMenuOpen]);
 
-  // /context 面板开关放 store —— badge（右下角圆环）负责渲染浮动弹窗，
-  // /context slash 命令只需把它打开，弹窗即锚定圆环向上展开。
-  const setContextPanelFor = useSessionStore((s) => s.setContextPanelFor);
+  // /context 面板开关放本会话的 scope —— badge（右下角圆环）负责渲染浮动
+  // 弹窗，/context slash 命令只需把它打开，弹窗即锚定圆环向上展开。分屏时
+  // 两个 composer 各自一份，点一个不会两边同时弹。
+  const setContextPanelOpen = useSessionScope((s) => s.setContextPanelOpen);
 
   // Slash menu (state + open/close timing + command dispatch).
   const slash = useSlashMenu({
@@ -651,7 +628,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     input,
     textareaRef,
     send,
-    openContextPanel: () => setContextPanelFor(bound ?? currentSessionId ?? null),
+    openContextPanel: () => setContextPanelOpen(true),
   });
 
   /* ---- Submit -------------------------------------------------------- */

@@ -8,6 +8,11 @@ import {
 } from "@/lib/session-draft-persistence";
 import type { DraftChannelChoiceHost } from "../runtime-bridge/draft-channel-choice";
 import type { SessionTransferSnapshot } from "../tab-transfer-journal";
+import {
+  dropSessionStore,
+  installScopeWriteThrough,
+  pushToSessionStore,
+} from "./session-scope-registry";
 
 
 export type {
@@ -79,14 +84,9 @@ interface ConvState {
    *  activeChatKey. The entry is consumed once chat_ack confirms that
    *  the provisional session exists on the backend. */
   pendingProjectsByChat: Record<string, string>;
-  /** Currently running task (show Stop button).
-   *  Deprecated single-session field — read ``runningTasks[sid]``
-   *  instead. Kept here so legacy ``setRunning(false)`` keeps working
-   *  while callers migrate. */
-  runningTask: RunningTask | null;
   /** Per-session running task map. Drives the composer send/stop
-   *  button (current session) and the sidebar breathing indicator
-   *  (all sessions). */
+   *  button (via each session's scope store) and the sidebar breathing
+   *  indicator (all sessions). */
   runningTasks: Record<string, RunningTask>;
   /** Paused flag. */
   paused: boolean;
@@ -151,7 +151,6 @@ interface ConvState {
   /** Truncate messages at and after msgId. Used by retry to drop the
    *  stale reply before the new one streams in. */
   truncateFrom: (sessionId: string, msgId: string) => void;
-  setRunningTask: (t: RunningTask | null) => void;
   /** Set / clear the running task for a specific session. Pass null
    *  to clear. Used by the per-session running-task WS events so two
    *  sessions can have independent run state. */
@@ -172,31 +171,26 @@ interface ConvState {
   transcriptLoadingId: string | null;
   setTranscriptLoading: (id: string | null) => void;
 
-  /** Controlled value of the Composer's textarea. Lifted into the
-   *  store so outside callers (welcome example buttons, retry
-   *  helpers, etc.) can fill the input. */
-  composerInput: string;
-  /** Per-session draft cache. Persisted to localStorage so unsent text
-   *  survives refresh and session switching. ``composerInput`` is the
-   *  live draft for the *current* session and stays mirrored here. */
+  /** Per-session draft cache, keyed by sessionId (or "__new__" for the
+   *  not-yet-created next chat). Persisted to localStorage so unsent text
+   *  survives refresh and session switching. Components read their own
+   *  session's draft through `useSessionScope`; this map is the durable
+   *  backing store those scope instances seed from and write through to. */
   composerDrafts: Record<string, string>;
+  /** Write the focused chat's draft. Outside callers with no scope (legacy
+   *  bridges, slash helpers) use it; scoped components go through
+   *  `useSessionScope`. */
   setComposerInput: (s: string) => void;
   /** Update a captured chat owner's draft without changing whichever
    *  chat is visible when an async operation completes. */
   setComposerInputFor: (chatKey: string | null, s: string) => void;
   /** Per-session composer settings (tool toggles + thinking effort).
-   *  Like composerDrafts: keyed by sessionId (or "__new__" for the
-   *  not-yet-created next chat), persisted to localStorage so they
-   *  survive refresh AND stay isolated per session on switch.
-   *  ``composerSettings`` is the LIVE value for the current session;
-   *  ``composerSettingsBySession`` is the per-session cache it mirrors. */
-  composerSettings: ComposerSettings;
+   *  Like composerDrafts: keyed by sessionId (or "__new__"), persisted to
+   *  localStorage so they survive refresh AND stay isolated per session. */
   composerSettingsBySession: Record<string, ComposerSettings>;
-  /** Patch a session's composer settings (live + cache + persist).
-   *  Omit `chatKey` to target the focused session (the default, and what
-   *  the focused composer uses). Pass an explicit key to patch another
-   *  session — a split-view pane binds its own composer that way, and
-   *  the focused session's live `composerSettings` is left untouched. */
+  /** Patch a session's composer settings (cache + persist). Omit `chatKey`
+   *  to target the focused session. Scoped components pass their own key
+   *  via `useSessionScope().patchSettings`. */
   setComposerSettings: (
     patch: Partial<ComposerSettings>,
     chatKey?: string | null,
@@ -205,11 +199,6 @@ interface ConvState {
    *  Composer reacts to changes in this counter via useEffect. */
   composerFocusTick: number;
   focusComposer: () => void;
-
-  /** /context 浮动弹窗：存"哪个会话的面板开着"（null = 关）。分屏时
-   *  两个 composer 各渲染一个 badge，按会话区分才不会两边同时弹。*/
-  contextPanelFor: string | null;
-  setContextPanelFor: (sid: string | null) => void;
 
   /** When non-null, the Composer swaps its textarea for a parameter
    *  form for this function. Submit builds a `run <name> ...` command
@@ -369,36 +358,36 @@ function switchChat(
   nextKey: string,
   currentSessionId: string | null,
 ): Partial<ConvState> {
+  // Drafts and settings already live in the keyed maps — each session's
+  // scope store writes through on every keystroke — so switching focus no
+  // longer has to save the outgoing session or load the incoming one. All
+  // that is left is promoting the "__new__" placeholder to a real key when
+  // an unsent chat gets an id.
   const oldKey = state.activeChatKey ?? state.currentSessionId ?? COMPOSER_NEW_KEY;
+  const promoting = oldKey === COMPOSER_NEW_KEY && nextKey !== COMPOSER_NEW_KEY;
+
   const drafts = { ...state.composerDrafts };
-  if (oldKey === COMPOSER_NEW_KEY && nextKey !== COMPOSER_NEW_KEY) {
-    if (!(nextKey in drafts)) drafts[nextKey] = state.composerInput;
+  if (promoting) {
+    if (!(nextKey in drafts) && drafts[COMPOSER_NEW_KEY] !== undefined) {
+      drafts[nextKey] = drafts[COMPOSER_NEW_KEY];
+    }
     delete drafts[COMPOSER_NEW_KEY];
-  } else {
-    drafts[oldKey] = state.composerInput;
   }
-  const nextInput = drafts[nextKey] ?? "";
   persistComposerDrafts(drafts);
 
   const settingsMap = { ...state.composerSettingsBySession };
-  if (oldKey === COMPOSER_NEW_KEY && nextKey !== COMPOSER_NEW_KEY) {
-    if (!(nextKey in settingsMap)) settingsMap[nextKey] = state.composerSettings;
+  if (promoting) {
+    if (!(nextKey in settingsMap) && settingsMap[COMPOSER_NEW_KEY]) {
+      settingsMap[nextKey] = settingsMap[COMPOSER_NEW_KEY];
+    }
     delete settingsMap[COMPOSER_NEW_KEY];
-  } else {
-    settingsMap[oldKey] = state.composerSettings;
   }
-  const nextSettings = settingsMap[nextKey] ?? { ...DEFAULT_COMPOSER_SETTINGS };
   persistComposerSettingsMap(settingsMap);
 
   return {
     currentSessionId,
     activeChatKey: nextKey === COMPOSER_NEW_KEY ? null : nextKey,
-    runningTask: currentSessionId
-      ? (state.runningTasks[currentSessionId] ?? null)
-      : null,
-    composerInput: nextInput,
     composerDrafts: drafts,
-    composerSettings: nextSettings,
     composerSettingsBySession: settingsMap,
     fnFormFunction: null,
     fnFormClosing: false,
@@ -434,7 +423,6 @@ export const useSessionStore = create<ConvState>((set) => ({
   currentSessionId: null,
   activeChatKey: null,
   pendingProjectsByChat: initialSessionDraftState.pendingProjectsByChat,
-  runningTask: null,
   runningTasks: {},
   paused: false,
   providerInfo: null,
@@ -499,6 +487,7 @@ export const useSessionStore = create<ConvState>((set) => ({
       // ids in pasteStore).
       const nextDrafts = { ...s.composerDrafts };
       delete nextDrafts[id];
+      dropSessionStore(id);
       const nextPendingProjects = { ...s.pendingProjectsByChat };
       delete nextPendingProjects[id];
       persistComposerDrafts(nextDrafts);
@@ -561,6 +550,7 @@ export const useSessionStore = create<ConvState>((set) => ({
       delete drafts[key];
       delete settings[key];
       delete pendingProjects[key];
+      dropSessionStore(key);
       persistComposerDrafts(drafts);
       persistComposerSettingsMap(settings);
       updateSessionDraftState((state) => ({
@@ -572,12 +562,7 @@ export const useSessionStore = create<ConvState>((set) => ({
         composerSettingsBySession: settings,
         pendingProjectsByChat: pendingProjects,
         ...(s.activeChatKey === key
-          ? {
-              activeChatKey: null,
-              currentSessionId: null,
-              composerInput: "",
-              composerSettings: { ...DEFAULT_COMPOSER_SETTINGS },
-            }
+          ? { activeChatKey: null, currentSessionId: null }
           : {}),
       };
     }),
@@ -666,20 +651,16 @@ export const useSessionStore = create<ConvState>((set) => ({
       };
     }),
 
-  setRunningTask: (t) => set({ runningTask: t }),
   setRunningTaskFor: (sessionId, t) =>
     set((s) => {
       const next = { ...s.runningTasks };
       if (t) next[sessionId] = t;
       else delete next[sessionId];
-      // Mirror to the legacy single-task field if this is the active
-      // session, so anything still reading ``runningTask`` (e.g. older
-      // call sites) keeps in sync with the composer's view.
-      const isCurrent = s.currentSessionId === sessionId;
-      return {
-        runningTasks: next,
-        runningTask: isCurrent ? t : s.runningTask,
-      };
+      // Keep the session's scope store (what its composer actually renders
+      // from) in step — this setter is the entry point for WS frames and
+      // legacy bridges, which have no React context to write through.
+      pushToSessionStore(sessionId, { running: t });
+      return { runningTasks: next };
     }),
   setPaused: (p) => set({ paused: p }),
   setProviderInfo: (p) => set({ providerInfo: p }),
@@ -694,11 +675,6 @@ export const useSessionStore = create<ConvState>((set) => ({
   transcriptLoadingId: null,
   setTranscriptLoading: (id) => set({ transcriptLoadingId: id }),
 
-  // Hydrate the live draft for the "new session" placeholder at module
-  // load — same pattern as ``rightDock`` above. SSR sees an empty
-  // string (readComposerDrafts returns {} on the server); the client
-  // shadows it with whatever survived in localStorage.
-  composerInput: initialSessionDraftState.composerDrafts[COMPOSER_NEW_KEY] ?? "",
   composerDrafts: initialSessionDraftState.composerDrafts,
   setComposerInput: (s) =>
     set((state) => {
@@ -707,48 +683,37 @@ export const useSessionStore = create<ConvState>((set) => ({
       // Persist on every keystroke. Cheap (one JSON.stringify per
       // session-count) and matches the "right dock" pattern above.
       persistComposerDrafts(drafts);
-      return { composerInput: s, composerDrafts: drafts };
+      pushToSessionStore(sid, { draft: s });
+      return { composerDrafts: drafts };
     }),
   setComposerInputFor: (chatKey, s) =>
     set((state) => {
       const sid = chatKey ?? COMPOSER_NEW_KEY;
       const drafts = { ...state.composerDrafts, [sid]: s };
       persistComposerDrafts(drafts);
-      const visibleKey =
-        state.activeChatKey ?? state.currentSessionId ?? COMPOSER_NEW_KEY;
-      return visibleKey === sid
-        ? { composerInput: s, composerDrafts: drafts }
-        : { composerDrafts: drafts };
+      pushToSessionStore(sid, { draft: s });
+      return { composerDrafts: drafts };
     }),
   composerSettingsBySession: initialSessionDraftState.composerSettingsBySession,
-  composerSettings:
-    initialSessionDraftState.composerSettingsBySession[COMPOSER_NEW_KEY]
-      ?? { ...DEFAULT_COMPOSER_SETTINGS },
   setComposerSettings: (patch, chatKey) =>
     set((state) => {
       const visibleKey =
         state.activeChatKey ?? state.currentSessionId ?? COMPOSER_NEW_KEY;
       const sid = chatKey === undefined ? visibleKey : (chatKey ?? COMPOSER_NEW_KEY);
-      // Patch onto THAT session's own settings, not the focused live slice —
-      // otherwise a background pane would inherit the focused chat's values.
+      // Patch onto THAT session's own settings — no live slice to inherit
+      // from, so a background pane can never pick up the focused chat's
+      // values.
       const base =
-        sid === visibleKey
-          ? state.composerSettings
-          : (state.composerSettingsBySession[sid] ?? DEFAULT_COMPOSER_SETTINGS);
+        state.composerSettingsBySession[sid] ?? DEFAULT_COMPOSER_SETTINGS;
       const next = { ...base, ...patch };
       const map = { ...state.composerSettingsBySession, [sid]: next };
       persistComposerSettingsMap(map);
-      // Only mirror into the live slice when we patched the focused session.
-      return sid === visibleKey
-        ? { composerSettings: next, composerSettingsBySession: map }
-        : { composerSettingsBySession: map };
+      pushToSessionStore(sid, { settings: next });
+      return { composerSettingsBySession: map };
     }),
   composerFocusTick: 0,
   focusComposer: () =>
     set((state) => ({ composerFocusTick: state.composerFocusTick + 1 })),
-
-  contextPanelFor: null,
-  setContextPanelFor: (sid) => set({ contextPanelFor: sid }),
 
   fnFormFunction: null,
   fnFormPrefill: null,
@@ -810,6 +775,15 @@ export const useSessionStore = create<ConvState>((set) => ({
   setNodeSelected: (selected) => set({ nodeSelected: selected }),
 }));
 
+// A scope store's setters update its own instance first (so the pane repaints
+// on the same tick), then land here for persistence and for the keyed maps
+// that the sidebar, transfer journal and legacy bridges read.
+installScopeWriteThrough({
+  draft: (sid, value) => useSessionStore.getState().setComposerInputFor(sid, value),
+  settings: (sid, patch) => useSessionStore.getState().setComposerSettings(patch, sid),
+  running: (sid, task) => useSessionStore.getState().setRunningTaskFor(sid, task),
+});
+
 function draftChoiceHost(): DraftChannelChoiceHost {
   return typeof window === "undefined"
     ? {}
@@ -825,8 +799,6 @@ export function snapshotSessionTransfer(
   return {
     activeChatKey: state.activeChatKey,
     currentSessionId: state.currentSessionId,
-    composerInput: state.composerInput,
-    composerSettings: structuredClone(state.composerSettings),
     composerDrafts: structuredClone(state.composerDrafts),
     composerSettingsBySession: structuredClone(state.composerSettingsBySession),
     pendingProjectsByChat: structuredClone(state.pendingProjectsByChat),
@@ -846,17 +818,23 @@ export function applySessionTransfer(
   host._pendingChannelChoice = snapshot.activeChatKey
     ? (host.__pendingChannelChoices[snapshot.activeChatKey] ?? null)
     : null;
+  const drafts = structuredClone(snapshot.composerDrafts);
+  const settings = structuredClone(snapshot.composerSettingsBySession);
   useSessionStore.setState({
     activeChatKey: snapshot.activeChatKey,
     currentSessionId: snapshot.currentSessionId,
-    composerInput: snapshot.composerInput,
-    composerSettings: structuredClone(snapshot.composerSettings),
-    composerDrafts: structuredClone(snapshot.composerDrafts),
-    composerSettingsBySession: structuredClone(
-      snapshot.composerSettingsBySession,
-    ),
+    composerDrafts: drafts,
+    composerSettingsBySession: settings,
     pendingProjectsByChat: structuredClone(snapshot.pendingProjectsByChat),
   });
+  // Any scope store already alive for a transferred chat is holding the
+  // pre-transfer values; re-seed it from what just landed.
+  for (const key of Object.keys({ ...drafts, ...settings })) {
+    pushToSessionStore(key, {
+      ...(drafts[key] !== undefined ? { draft: drafts[key] } : {}),
+      ...(settings[key] ? { settings: settings[key] } : {}),
+    });
+  }
   return options.persist
     ? replaceSessionDraftState({
       version: 1,

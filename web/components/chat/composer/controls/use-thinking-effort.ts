@@ -65,7 +65,7 @@ export interface ThinkingEffortHook {
 
 export function useThinkingEffort(): ThinkingEffortHook {
   // `stored` is the user's raw last pick — now per-session (store's
-  // composerSettings.thinking, persisted + isolated per chat). "" means
+  // scope's settings.thinking, persisted + isolated per chat). "" means
   // "no explicit pick" → fall through to DEFAULT/backend default below.
   // It is NOT sent as-is — the exposed `thinking` is always re-derived
   // against the CURRENT model's options (clamp).

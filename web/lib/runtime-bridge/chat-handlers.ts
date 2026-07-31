@@ -472,7 +472,6 @@ export function handleRunningTask(rt: unknown): void {
             msgId: string,
             patch: Record<string, unknown>,
           ) => void;
-          setRunningTask?: (task: unknown) => void;
           setRunningTaskFor?: (
             sessionId: string,
             task: unknown,

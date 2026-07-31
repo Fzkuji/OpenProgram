@@ -2,7 +2,7 @@
 
 /**
  * Permission-mode selector state (per-session, persisted in the store's
- * composerSettings). Six fixed modes — no provider polling like thinking.
+ * session scope's settings). Six fixed modes — no provider polling like thinking.
  * See docs/design/runtime/permission-model.md §2.1 / §4.5.
  */
 import { useCallback, useState } from "react";

@@ -28,6 +28,7 @@ import { WelcomeScreen } from "./chat/welcome-screen";
 import { MessageList } from "./chat/messages/message-list";
 import { PeerSessionPane } from "./chat/peer-session-pane";
 import { useSessionStore } from "@/lib/session-store";
+import { SessionScopeProvider } from "@/lib/session-store/session-scope";
 import { applyChatWsMessage, appendLocalUserTurn } from "@/lib/net/chat-stream";
 import { convToChatMsgs } from "@/lib/conv-mapper";
 import { useColResize } from "@/lib/use-col-resize";
@@ -127,6 +128,25 @@ declare global {
 // Routes where the right sidebar (History / Execution Detail) is
 // relevant. Functions / Chats / Settings don't need it, so it's hidden
 // there even though the DOM persists.
+/**
+ * The single-session composer, scoped to whichever chat is focused.
+ *
+ * Split panes each declare their own scope (`PeerSessionPane`); this is the
+ * non-split counterpart, and its existence is what lets the Composer drop
+ * every "no scope → read the focused global slice" fallback. `__new__` stands
+ * in before any chat exists — the same placeholder key the draft maps use.
+ */
+function FocusedComposer() {
+  const sid = useSessionStore(
+    (s) => s.activeChatKey ?? s.currentSessionId ?? "__new__",
+  );
+  return (
+    <SessionScopeProvider sid={sid}>
+      <Composer />
+    </SessionScopeProvider>
+  );
+}
+
 function isChatRoute(pathname: string) {
   return pathname === "/chat" || pathname.startsWith("/s/");
 }
@@ -687,7 +707,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div style={{ display: showChat ? "contents" : "none" }}>
         <RightSidebar />
       </div>
-      {composerMount && createPortal(<Composer />, composerMount)}
+      {composerMount && createPortal(<FocusedComposer />, composerMount)}
       {welcomeMount && createPortal(<WelcomeScreen />, welcomeMount)}
       {messagesMount && createPortal(<MessageList />, messagesMount)}
       {/* Headless — keeps the legacy topbar-updater wrappers installed

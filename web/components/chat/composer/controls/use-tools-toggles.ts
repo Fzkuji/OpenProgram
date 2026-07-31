@@ -3,7 +3,7 @@
 /**
  * Tools / Web-Search toggle state for the composer's plus menu.
  *
- * Per-session now: backed by the store's ``composerSettings`` (keyed by
+ * Per-session now: backed by the enclosing session scope's ``settings`` (keyed by
  * sessionId, persisted to localStorage), so each chat keeps its own
  * tool picks and they survive refresh + session switch. (Used to be two
  * global localStorage keys shared by every session.)

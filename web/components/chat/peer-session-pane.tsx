@@ -26,7 +26,7 @@ import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { readChatScroll, writeChatScroll } from "@/lib/state/chat-scroll";
 import { wsSend } from "@/components/sidebar/sessions-list/helpers";
 import { Composer } from "./composer";
-import { ComposerSessionProvider } from "./composer/composer-session";
+import { SessionScopeProvider } from "@/lib/session-store/session-scope";
 import { useTranslation } from "@/lib/i18n";
 
 import { MessageRow } from "./messages/message-list";
@@ -226,14 +226,15 @@ export function PeerSessionPane({
           )}
         </div>
       </div>
-      {/* Full composer, bound to this pane's session. The provider is what
-          the control hooks (thinking effort / tools / permission mode) read
-          so they target this session instead of the focused one. */}
+      {/* Full composer, scoped to this pane's session. The scope is what the
+          composer and its control hooks (draft, run state, thinking effort,
+          tools, permission mode, /context panel) read, so everything here
+          targets this session rather than the focused one. */}
       {sessionId ? (
         <div ref={composerHostRef} className="peer-session-composer-host">
-          <ComposerSessionProvider value={sessionId}>
+          <SessionScopeProvider sid={sessionId}>
             <Composer sessionId={sessionId} />
-          </ComposerSessionProvider>
+          </SessionScopeProvider>
         </div>
       ) : null}
     </div>

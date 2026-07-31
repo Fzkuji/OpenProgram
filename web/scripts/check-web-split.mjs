@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { registerHooks } from "node:module";
+import { fileURLToPath } from "node:url";
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -15,6 +17,17 @@ registerHooks({
         url: new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href,
         shortCircuit: true,
       };
+    }
+    // Extensionless relative imports between source modules (Node needs the
+    // extension; TypeScript and the Next build resolve them on their own).
+    if (specifier.startsWith(".") && !/\.[a-z]+$/.test(specifier)) {
+      // Append to href, not to pathname: pathname is percent-encoded and
+      // re-parsing it against the same base double-encodes any space in the
+      // repo path.
+      const base = new URL(specifier, context.parentURL).href;
+      const file = `${base}.ts`;
+      const url = existsSync(fileURLToPath(file)) ? file : `${base}/index.ts`;
+      return { url, shortCircuit: true };
     }
     return nextResolve(specifier, context);
   },
@@ -43,15 +56,6 @@ const emptyCenterPayload = {
 const emptySessionSnapshot = {
   activeChatKey: null,
   currentSessionId: null,
-  composerInput: "",
-  composerSettings: {
-    thinking: "",
-    tools: true,
-    webSearch: false,
-    fast: false,
-    unattended: false,
-    permission_mode: "",
-  },
   composerDrafts: {},
   composerSettingsBySession: {},
   pendingProjectsByChat: {},
@@ -87,7 +91,6 @@ const journalEntry = (token, role = "destination") => ({
   afterSession: {
     ...emptySessionSnapshot,
     activeChatKey: "local_one",
-    composerInput: "hello",
     composerDrafts: { local_one: "hello" },
   },
   beforeFileDrafts: [],
@@ -348,8 +351,6 @@ const sessionSnapshot = secondarySessionModule.snapshotSessionTransfer(["local_o
 secondarySession.setState({
   activeChatKey: null,
   currentSessionId: null,
-  composerInput: "",
-  composerSettings: emptySessionSnapshot.composerSettings,
   composerDrafts: {},
   composerSettingsBySession: {},
   pendingProjectsByChat: {},
@@ -361,8 +362,6 @@ assert.deepEqual(
   {
     activeChatKey: secondarySession.getState().activeChatKey,
     currentSessionId: secondarySession.getState().currentSessionId,
-    composerInput: secondarySession.getState().composerInput,
-    composerSettings: secondarySession.getState().composerSettings,
     composerDrafts: secondarySession.getState().composerDrafts,
     composerSettingsBySession: secondarySession.getState().composerSettingsBySession,
     pendingProjectsByChat: secondarySession.getState().pendingProjectsByChat,
@@ -371,8 +370,6 @@ assert.deepEqual(
   {
     activeChatKey: originalSession.activeChatKey,
     currentSessionId: originalSession.currentSessionId,
-    composerInput: originalSession.composerInput,
-    composerSettings: originalSession.composerSettings,
     composerDrafts: originalSession.composerDrafts,
     composerSettingsBySession: originalSession.composerSettingsBySession,
     pendingProjectsByChat: originalSession.pendingProjectsByChat,
@@ -419,8 +416,6 @@ sourceTransferModule.applySessionTransfer({
   ...sourceBeforeCommit,
   activeChatKey: null,
   currentSessionId: null,
-  composerInput: "",
-  composerSettings: emptySessionSnapshot.composerSettings,
   composerDrafts: withoutKey(sourceBeforeCommit.composerDrafts, "local_move"),
   composerSettingsBySession: withoutKey(
     sourceBeforeCommit.composerSettingsBySession,
@@ -447,8 +442,6 @@ destinationTransferModule.applySessionTransfer({
   ...destinationBeforeCommit,
   activeChatKey: "local_move",
   currentSessionId: null,
-  composerInput: sourceBeforeCommit.composerInput,
-  composerSettings: sourceBeforeCommit.composerSettings,
   composerDrafts: {
     ...destinationBeforeCommit.composerDrafts,
     local_move: sourceBeforeCommit.composerDrafts.local_move,
@@ -497,7 +490,6 @@ const rollbackSourceBefore = rollbackSourceModule.snapshotSessionTransfer(["loca
 rollbackSourceModule.applySessionTransfer({
   ...rollbackSourceBefore,
   activeChatKey: null,
-  composerInput: "",
   composerDrafts: {},
 }, { persist: false });
 rollbackSourceModule.applySessionTransfer(rollbackSourceBefore, { persist: true });
@@ -514,7 +506,6 @@ const rollbackDestinationBefore = rollbackDestinationModule.snapshotSessionTrans
 rollbackDestinationModule.applySessionTransfer({
   ...rollbackDestinationBefore,
   activeChatKey: "local_keep",
-  composerInput: "keep me",
   composerDrafts: { local_keep: "keep me" },
 }, { persist: false });
 rollbackDestinationModule.applySessionTransfer(
@@ -1046,7 +1037,6 @@ const projectionAfterSession = {
   ...effectSessionSnapshot,
   activeChatKey: "moving",
   currentSessionId: null,
-  composerInput: "transferred",
   composerDrafts: {
     ...effectSessionSnapshot.composerDrafts,
     moving: "transferred",
@@ -1112,7 +1102,6 @@ assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), [
 ]);
 assert.equal(secondaryTabs.getState().activeId, "s:user");
 assert.equal(secondarySession.getState().composerDrafts.user, "user edit");
-assert.equal(secondarySession.getState().composerInput, "user edit");
 const committedProjectionCenter = JSON.parse(values.get("centerTabs:secondary"));
 assert.deepEqual(committedProjectionCenter.tabs.map((tab) => tab.id), [
   "s:existing",
@@ -1229,7 +1218,6 @@ assert.deepEqual(
 );
 assert.equal(secondarySession.getState().composerDrafts.alpha, undefined);
 assert.equal(secondarySession.getState().composerDrafts["user-two"], "user two edit");
-assert.equal(secondarySession.getState().composerInput, "user two edit");
 const afterRollbackCenter = JSON.parse(values.get("centerTabs:secondary"));
 assert.deepEqual(
   afterRollbackCenter.tabs.map((tab) => tab.id),
@@ -2582,7 +2570,6 @@ assert.doesNotMatch(
   });
   useSessionStore.setState({
     activeChatKey: "chatA",
-    composerInput: "live text",
     composerDrafts: { chatA: "draft text" },
     composerSettingsBySession: { chatA: { model: "m1" } },
     pendingProjectsByChat: { chatA: "proj" },
@@ -2621,8 +2608,6 @@ assert.doesNotMatch(
       composerSettings: { model: "m1" },
       pendingProjectId: "proj",
       draftChannelChoice: { channel: "web" },
-      activeComposerInput: "live text",
-      activeComposerSettings: useSessionStore.getState().composerSettings,
     },
   ]);
   const segmentPayload = bridgeModule.buildTransferPayload(

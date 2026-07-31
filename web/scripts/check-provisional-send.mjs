@@ -1,14 +1,26 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
+import { fileURLToPath } from "node:url";
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier.startsWith("@/")) {
-      const base = new URL(`../${specifier.slice(2)}`, import.meta.url);
-      const file = new URL(`${base.pathname}.ts`, base);
-      const url = existsSync(file) ? file : new URL(`${base.pathname}/index.ts`, base);
-      return { url: url.href, shortCircuit: true };
+      const base = new URL(`../${specifier.slice(2)}`, import.meta.url).href;
+      const file = `${base}.ts`;
+      const url = existsSync(fileURLToPath(file)) ? file : `${base}/index.ts`;
+      return { url, shortCircuit: true };
+    }
+    // Extensionless relative imports between source modules (Node needs the
+    // extension; TypeScript and the Next build resolve them on their own).
+    if (specifier.startsWith(".") && !/\.[a-z]+$/.test(specifier)) {
+      // Append to href, not to pathname: pathname is percent-encoded and
+      // re-parsing it against the same base double-encodes any space in the
+      // repo path.
+      const base = new URL(specifier, context.parentURL).href;
+      const file = `${base}.ts`;
+      const url = existsSync(fileURLToPath(file)) ? file : `${base}/index.ts`;
+      return { url, shortCircuit: true };
     }
     return nextResolve(specifier, context);
   },
@@ -397,9 +409,10 @@ assert.match(
   "background must default off so the focused composer is unaffected",
 );
 
-// A bound (split-pane) composer must not write the focused session's live
-// `composerSettings` slice — otherwise typing in one pane would retarget the
-// other pane's tool toggles / thinking effort.
+// A split-pane composer must not retarget another session's tool toggles or
+// thinking effort. There is no longer a live `composerSettings` slice to leak
+// into — every write is keyed — so assert the behaviour directly instead of
+// the old mirror-guard's source shape.
 const storeSrc = readFileSync(
   new URL("../lib/session-store/index.ts", import.meta.url),
   "utf8",
@@ -409,10 +422,34 @@ assert.match(
   /setComposerSettings: \(patch, chatKey\) =>/,
   "setComposerSettings must accept an explicit target session",
 );
-assert.match(
+assert.doesNotMatch(
   storeSrc,
-  /return sid === visibleKey\s*\?\s*\{ composerSettings: next, composerSettingsBySession: map \}\s*:\s*\{ composerSettingsBySession: map \};/,
-  "patching a non-focused session must leave the live slice untouched",
+  /\bcomposerSettings:/,
+  "the focused-session live settings mirror must stay deleted",
+);
+assert.doesNotMatch(
+  storeSrc,
+  /\bcomposerInput\b/,
+  "the focused-session live draft mirror must stay deleted",
+);
+
+const settingsStore = (await import("@/lib/session-store")).useSessionStore;
+settingsStore.getState().setCurrentDraft("focused_chat");
+settingsStore.getState().setComposerSettings({ thinking: "high" });
+settingsStore.getState().setComposerSettings({ tools: false }, "background_chat");
+assert.equal(
+  settingsStore.getState().composerSettingsBySession.focused_chat.thinking,
+  "high",
+);
+assert.equal(
+  settingsStore.getState().composerSettingsBySession.focused_chat.tools,
+  true,
+  "patching a background session must not touch the focused one",
+);
+assert.equal(
+  settingsStore.getState().composerSettingsBySession.background_chat.thinking,
+  "",
+  "a background session must not inherit the focused chat's settings",
 );
 
 console.log("provisional send checks passed");

@@ -29,8 +29,6 @@ export interface ChatTransferState {
   pendingProjectId?: string;
   draftChannelChoice?: PendingChannelChoice;
   wasActive: boolean;
-  activeComposerInput?: string;
-  activeComposerSettings?: ComposerSettings;
 }
 
 export interface DesktopTransferPayload {
@@ -50,11 +48,15 @@ export type TabDropPlacement =
   // merge into an existing window, whose lone "New chat" is a real tab.
   | { kind: "strip-end"; consumePlaceholder?: boolean };
 
+/** What a window hands over when a tab moves to another window.
+ *
+ *  Only the keyed maps travel. The focused session's live draft and settings
+ *  used to ride along as their own fields, but they were a duplicate of
+ *  `composerDrafts[activeChatKey]` / `composerSettingsBySession[activeChatKey]`
+ *  and the receiving window can look them up itself. */
 export interface SessionTransferSnapshot {
   activeChatKey: string | null;
   currentSessionId: string | null;
-  composerInput: string;
-  composerSettings: ComposerSettings;
   composerDrafts: Record<string, string>;
   composerSettingsBySession: Record<string, ComposerSettings>;
   pendingProjectsByChat: Record<string, string>;
@@ -246,8 +248,6 @@ export function rebaseSessionSnapshot(
   const result: SessionTransferSnapshot = {
     activeChatKey: adoptActive ? target.activeChatKey : current.activeChatKey,
     currentSessionId: adoptActive ? target.currentSessionId : current.currentSessionId,
-    composerInput: adoptActive ? target.composerInput : current.composerInput,
-    composerSettings: adoptActive ? target.composerSettings : current.composerSettings,
     composerDrafts: { ...current.composerDrafts },
     composerSettingsBySession: { ...current.composerSettingsBySession },
     pendingProjectsByChat: { ...current.pendingProjectsByChat },

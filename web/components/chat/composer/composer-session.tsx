@@ -1,53 +1,27 @@
 "use client";
 
 /**
- * Which session a Composer subtree is bound to.
+ * Composer-facing view of the enclosing session scope.
  *
  * The Composer and its control hooks (thinking effort, tool toggles,
- * permission mode) historically read "the focused session" straight off the
- * store — `composerSettings` is the live slice for whatever chat is focused.
- * That's correct for the single-composer layout, but a split view renders
- * TWO composers side by side and each must read and write its own session.
+ * permission mode) each need "this composer's settings" — which used to mean
+ * "the focused session's, unless a split pane overrode it". That conditional
+ * is gone: every composer now renders inside a `SessionScopeProvider`
+ * (`app-shell` wraps the single-session one, `PeerSessionPane` wraps each
+ * split pane), so there is exactly one answer and no fallback to get wrong.
  *
- * Rather than thread a `sessionId` prop through every hook, the Composer
- * publishes its target here and the hooks read it. An absent provider means
- * "the focused session", which is exactly the old behavior — so the
- * non-split path is unchanged.
+ * These two hooks stay as named helpers because the control hooks read like
+ * prose with them, not because they hide any branching.
  */
-import { createContext, useContext } from "react";
+import { useSessionScope } from "@/lib/session-store/session-scope";
+import type { ComposerSettings } from "@/lib/session-store";
 
-import { useSessionStore } from "@/lib/session-store";
-
-/** `null` = follow the focused session (default, pre-split behavior). */
-const ComposerSessionContext = createContext<string | null>(null);
-
-export const ComposerSessionProvider = ComposerSessionContext.Provider;
-
-/** The chat key this composer subtree targets, or `null` to follow focus. */
-export function useComposerSessionKey(): string | null {
-  return useContext(ComposerSessionContext);
+/** This subtree's composer settings. */
+export function useBoundComposerSettings(): ComposerSettings {
+  return useSessionScope((s) => s.settings);
 }
 
-/**
- * This subtree's composer settings. Bound panes read their own session's
- * entry; unbound (focused) composers read the live slice exactly as before.
- */
-export function useBoundComposerSettings() {
-  const bound = useComposerSessionKey();
-  return useSessionStore((s) =>
-    bound === null
-      ? s.composerSettings
-      : (s.composerSettingsBySession[bound] ?? s.composerSettings),
-  );
-}
-
-/**
- * `setComposerSettings` pre-bound to this subtree's session. Unbound
- * composers get the plain setter (targets the focused session).
- */
+/** Patch this subtree's composer settings. */
 export function useBoundSetComposerSettings() {
-  const bound = useComposerSessionKey();
-  const set = useSessionStore((s) => s.setComposerSettings);
-  return (patch: Parameters<typeof set>[0]) =>
-    bound === null ? set(patch) : set(patch, bound);
+  return useSessionScope((s) => s.patchSettings);
 }

@@ -1,10 +1,15 @@
-# Web state layer: current shape and the multi-page container plan
+# Web state layer: per-session stores
 
-This page explains, from zero, where the web frontend keeps its state today,
-which parts of it are already per-session and which are still a single global
-value, why the recent split-view work kept producing bugs, and what the state
-layer should become so that "two sessions on screen at once" stops being a
-special case.
+This page explains, from zero, where the web frontend keeps its state, why the
+split-view work kept producing bugs, and the decision taken to stop it: **one
+Zustand store instance per session, with genuinely shared data left in the
+global store**. Section 6 records that decision and section 7 tracks the
+migration against it.
+
+The inventory in sections 2 to 5 describes the state layer as it was before
+that work began. It is kept because it is what makes the decision legible —
+each field it lists as a problem is either fixed in stage 1 or still queued in
+stage 2.
 
 No frontend expertise is assumed. The three ideas you need are introduced
 first, and everything after that is an inventory of real code with
@@ -16,16 +21,21 @@ first, and everything after that is an inventory of real code with
 
 **A store is a shared box of variables.** The web UI uses
 [zustand](https://github.com/pmndrs/zustand), a small library where you create
-one object holding both data (`currentSessionId`, `composerInput`) and the
+one object holding both data (`currentSessionId`, `composerDrafts`) and the
 functions that change it (`setCurrentConv`, `setComposerInput`). Any component
 anywhere in the page can read any field from that box without it being passed
 down through props. The main box is
 `web/lib/session-store/index.ts:411`.
 
 **A component subscribes to a slice.** When a component calls
-`useSessionStore((s) => s.composerInput)`, React re-renders that component
-whenever `composerInput` changes, and only then. The selector function is the
+`useSessionStore((s) => s.conversations)`, React re-renders that component
+whenever `conversations` changes, and only then. The selector function is the
 subscription.
+
+**A store can be created more than once.** Nothing about zustand requires a
+single global box. `createStore` can be called per session, and a React
+context can hand each subtree the instance that belongs to it. That is the
+shape section 6 settles on.
 
 **A component can be rendered more than once.** React components are
 templates. `<Composer />` appears once in the normal layout and twice in a
@@ -38,10 +48,10 @@ root cause of most of section 5.
 
 ## 2. The main store: field-by-field inventory
 
-`web/lib/session-store/index.ts` (906 lines) declares its shape in the
-`ConvState` interface at `web/lib/session-store/index.ts:46` and its initial
-values at `web/lib/session-store/index.ts:411`. Every field below is
-classified into one of three groups.
+`web/lib/session-store/index.ts` declares its shape in the `ConvState`
+interface and its initial values in the `create<ConvState>` call. Every field
+below is classified into one of three groups. Line numbers are as of the
+pre-migration snapshot; fields marked **removed in stage 1** no longer exist.
 
 ### Group A — already isolated per session
 
@@ -63,7 +73,7 @@ should converge on.
 | `additionalWorkingDirsBySession` | `web/lib/session-store/index.ts:146` | extra working directories per session |
 | `composerDrafts` | `web/lib/session-store/index.ts:182` | unsent composer text per session, persisted to localStorage |
 | `composerSettingsBySession` | `web/lib/session-store/index.ts:194` | tool toggles / thinking effort per session, persisted |
-| `contextPanelFor` | `web/lib/session-store/index.ts:211` | *which* session has the `/context` popover open — a single field used as a per-session flag; see section 5 |
+| `contextPanelFor` | `web/lib/session-store/index.ts:211` | *which* session has the `/context` popover open — a single field used as a per-session flag; see section 5. **Removed in stage 1**: it is now `contextPanelOpen` on each session's own store. |
 
 `pendingDecisions` (`web/lib/session-store/index.ts:244`) is a hybrid worth
 calling out: it is a flat FIFO array, but each entry carries its own
@@ -84,9 +94,9 @@ overwrites the first or is forced to read the first's value.
 | --- | --- | --- |
 | `currentSessionId` | `web/lib/session-store/index.ts:74` | "the" active session. With two panes there are two, and one is merely the *focused* one. |
 | `activeChatKey` | `web/lib/session-store/index.ts:77` | same, for unsent drafts using a provisional `local_*` id |
-| `runningTask` | `web/lib/session-store/index.ts:86` | explicitly documented as deprecated in favour of `runningTasks[sid]`; kept alive only so legacy `setRunning(false)` callers keep working. Mirrored on write at `web/lib/session-store/index.ts:678`. |
-| `composerInput` | `web/lib/session-store/index.ts:178` | the *live* draft of the focused session; a mirror of `composerDrafts[focused]`. Written on every keystroke at `web/lib/session-store/index.ts:703`. |
-| `composerSettings` | `web/lib/session-store/index.ts:193` | the *live* settings of the focused session; a mirror of `composerSettingsBySession[focused]`. Mirror logic at `web/lib/session-store/index.ts:727`. |
+| `runningTask` | `web/lib/session-store/index.ts:86` | deprecated in favour of `runningTasks[sid]`; kept alive only so legacy `setRunning(false)` callers kept working. **Removed in stage 1.** |
+| `composerInput` | `web/lib/session-store/index.ts:178` | the *live* draft of the focused session; a mirror of `composerDrafts[focused]`. **Removed in stage 1.** |
+| `composerSettings` | `web/lib/session-store/index.ts:193` | the *live* settings of the focused session; a mirror of `composerSettingsBySession[focused]`. **Removed in stage 1.** |
 | `composerFocusTick` | `web/lib/session-store/index.ts:206` | a counter bumped to ask "the" composer to focus its textarea; with two composers it is ambiguous which one obeys |
 | `fnFormFunction` | `web/lib/session-store/index.ts:217` | which function's parameter form has replaced the textarea. Belongs to one composer, not the app. |
 | `fnFormPrefill` | `web/lib/session-store/index.ts:226` | prefilled arguments for that form |
@@ -235,26 +245,27 @@ The consumer then compares against its own session id
 const panelOpen = useSessionStore((s) => s.contextPanelFor != null && s.contextPanelFor === sid);
 ```
 
-This is the whole design pattern in miniature. The state did not become
-per-pane storage; it became **identified by session**, so each rendered copy
-can ask "is this mine?" and only one answers yes.
+That is the keyed-global pattern in miniature, and it works: each rendered
+copy asks "is this mine?" and only one answers yes.
 
-The same shape already exists for `composerDrafts` and
-`composerSettingsBySession`. Every remaining Group B field is a place where
-this transformation has not happened yet.
+It is also the pattern section 6 declines to generalise. Every consumer still
+has to compare against the right id, and a consumer that compares against the
+wrong one — or against the focused session — is still type-correct. Under the
+per-session store this field is just `contextPanelOpen`, a plain boolean in
+the instance that belongs to the badge's own session, with no comparison to
+get wrong.
 
 ### The mirror problem
 
-`composerInput` and `composerSettings` are worse than plain globals: they are
-**mirrors**. The real data lives in the keyed maps, and these two fields hold a
-duplicate copy for whichever session is focused. Every write must update both
-(`web/lib/session-store/index.ts:703` for input,
-`web/lib/session-store/index.ts:727` for settings), and every session switch
-must swap the mirror over (`switchChat` at
-`web/lib/session-store/index.ts:367`).
+`composerInput` and `composerSettings` were worse than plain globals: they
+were **mirrors**. The real data lived in the keyed maps, and these two fields
+held a duplicate copy for whichever session was focused. Every write had to
+update both, and every session switch had to swap the mirror over
+(`switchChat`).
 
-The mirror also leaks into components. `web/components/chat/composer/index.tsx:166`
-must branch on whether it is bound:
+The mirror also leaked into components.
+`web/components/chat/composer/index.tsx:166` had to branch on whether it was
+bound:
 
 ```ts
 const input = useSessionStore((s) =>
@@ -262,144 +273,178 @@ const input = useSessionStore((s) =>
 );
 ```
 
-The same three-line ternary is repeated for `fast`
-(`web/components/chat/composer/index.tsx:460`) and `unattended`
-(`web/components/chat/composer/index.tsx:480`), and again inside
-`web/components/chat/composer/composer-session.tsx:39`. Each repetition is an
-opportunity to get the fallback wrong. The mirror is also what
-`web/lib/desktop-bridge.ts:677` and `web/lib/tab-transfer-journal.ts:249` have
-to reconstruct when moving a session between windows.
+The same three-line ternary was repeated for `fast` and `unattended`, and
+again inside `composer-session.tsx`. Each repetition was an opportunity to get
+the fallback wrong, and the `bound === null` arm meant the wrong answer was
+"silently use the focused session" rather than an error. The mirror was also
+what `desktop-bridge.ts` and `tab-transfer-journal.ts` had to reconstruct when
+moving a session between windows.
+
+Stage 1 deleted all of it. The scope owns the live value, so there is nothing
+to mirror, no fallback arm, and nothing for the transfer path to rebuild.
 
 ---
 
-## 6. The design: session scope as a container
+## 6. The design: one store instance per session
 
-### Core concept
+### The decision
 
-A **session scope** is a declaration, made by a React component, that says
-"everything below me in the component tree belongs to session X". Every
-session-aware hook reads that declaration and automatically operates on that
-session's slice. Components stop naming sessions and stop reading global active
-slices; they just read "my session's draft", and the provider decides which
-one that is.
+**Each session gets its own Zustand store instance. Genuinely shared data
+stays in the single global store.**
 
-The mechanism already exists in one corner of the codebase.
-`web/components/chat/composer/composer-session.tsx:22` creates a React context
-holding a chat key, and `web/components/chat/composer/composer-session.tsx:35`
-exposes a hook that resolves it:
+A component does not name a session and does not read a global active slice.
+It reads "my draft", and the enclosing `SessionScopeProvider` decides whose.
+Rendering the same component twice against two sessions is then the ordinary
+case rather than the case that breaks: the two copies are subscribed to two
+different stores and cannot collide, because there is nothing shared to
+collide over.
 
-```ts
-export function useBoundComposerSettings() {
-  const bound = useComposerSessionKey();
-  return useSessionStore((s) =>
-    bound === null
-      ? s.composerSettings
-      : (s.composerSettingsBySession[bound] ?? s.composerSettings),
-  );
-}
-```
-
-The split pane wraps its composer in it at
-`web/components/chat/peer-session-pane.tsx:234`, and three control hooks
-already consume it: `use-permission-mode.ts:48`, `use-tools-toggles.ts:29`, and
-`use-thinking-effort.ts:73` (all under
-`web/components/chat/composer/controls/`).
-
-**The proposal is to promote this from a composer-local trick to the state
-layer's primary access pattern.** Two changes make it general:
-
-1. The provider moves up. Instead of wrapping only the composer, a
-   `SessionScopeProvider` wraps each pane's entire subtree — message list,
-   composer, context badge, welcome screen. The single-pane layout gets one
-   too, wrapping the whole chat view with the focused session.
-2. The `null` fallback goes away. Today `null` means "follow the focused
-   session", which preserves old behaviour but leaves the global-read path
-   legal. Once every subtree is wrapped, an unscoped read becomes a bug, and a
-   lint rule can forbid components from touching `s.composerInput`,
-   `s.currentSessionId`, or `s.fnFormFunction` directly.
-
-### Three layers
+The split is by *ownership*, not by storage shape:
 
 | Layer | Contains | Access |
 | --- | --- | --- |
-| **Global state** | `wsStatus`, `agentSettings`, `conversations` (the list), `rightDock`, preferences | read directly from the store |
-| **Session state container** | `sessions: Record<sid, SessionState>`, each holding `messages`, `draft`, `settings`, `running`, `panels`, `scroll` | read only through scope-aware hooks |
+| **Global store** | `wsStatus`, `agentSettings`, `conversations` (the list), `messagesById`, `rightDock`, and the durable per-session maps (`composerDrafts`, `composerSettingsBySession`, `runningTasks`) | `useSessionStore` |
+| **Per-session store instance** | this session's `draft`, `settings`, `running`, `contextPanelOpen` | `useSessionScope`, inside a `SessionScopeProvider` |
 | **View state** | tab strip, pane layout, split ratio, which pane has focus | `center-tabs-store`; belongs to the window, not a session |
 
-The target session slice, gathering today's scattered maps:
+### The pieces
 
-```ts
-interface SessionState {
-  messageIds: string[];
-  draft: string;
-  settings: ComposerSettings;
-  running: RunningTask | null;
-  head: string | null;
-  tokens: TokenUsage | null;
-  contextWindow: number | null;
-  tree: TreeNode | null;
-  additionalWorkingDirs: string[];
-  panels: { contextOpen: boolean; fnForm: FnFormState | null };
-  transcriptLoading: boolean;
-  welcomeVisible: boolean;
-}
-```
+`web/lib/session-store/session-scope-registry.ts` holds the store factory and
+a module-level `Map<sid, store>`. Instances are cached and **survive pane
+unmount** — tabbing away and back keeps the draft you were typing. They are
+dropped only when the session itself is deleted (`dropSessionStore`, called
+from `removeConversation` and `dropChatDraft`).
 
-Whether this is literally one nested map or stays as today's parallel
-`Record<sid, T>` maps is an implementation detail with real performance
-consequences — a nested object means any write to one session invalidates
-subscribers of the whole `sessions` object unless selectors are written
-carefully. **Keeping the parallel-map layout and changing only the access
-pattern is the cheaper path**, and it is what the migration below assumes.
-`messagesById` stays flat and global, since it is keyed by message id and
-already benefits from being shared.
+`web/lib/session-store/session-scope.tsx` is the React layer:
+`SessionScopeProvider sid=…` and `useSessionScope(selector)`.
 
-The distinction that matters is not the storage shape. It is that **no
-component reads a session field without a scope**.
+**There is no unbound path.** `useSessionScope` throws when no provider
+encloses the component rather than falling back to the focused session. A
+silent fallback is precisely the bug this layer removes, and it would surface
+only in a split view after a specific interaction sequence; throwing makes a
+missing wrap obvious on the first render. Two providers exist and between them
+cover every composer: `FocusedComposer` in
+`web/components/app-shell.tsx` wraps the single-session composer with the
+focused chat key, and `PeerSessionPane` wraps each split pane with its own.
+
+### Why instances rather than a keyed global slice
+
+Both shapes stop the collision. The instance-per-session shape was chosen
+because it removes the *possibility* of writing the bug, not just the current
+instances of it. With a keyed global slice every consumer still has to supply
+the right key on every read and write, and supplying the wrong one — or
+omitting it and getting the focused session — stays type-correct. With an
+instance, the key is supplied once by the provider and the component has no
+way to name another session accidentally.
+
+It also keeps subscriptions naturally narrow: a keystroke in one session
+notifies only that session's subscribers, with no selector care required.
+
+### Durable state still belongs to the global store
+
+Instances hold live state. Anything that must outlive the tab — localStorage
+persistence, the tab-transfer wire format, the sidebar's cross-session views —
+stays in the global keyed maps. The two are kept in step in both directions:
+
+- **Scope → global.** A scope setter updates its own instance first (so the
+  pane repaints on the same tick), then writes through to the global keyed
+  setter. The hooks are installed by the global store at module init via
+  `installScopeWriteThrough`, which is what keeps the import one-directional.
+- **Global → scope.** `setComposerInputFor`, `setComposerSettings` and
+  `setRunningTaskFor` call `pushToSessionStore`, so a WS frame, a legacy
+  bridge, or a window-to-window tab transfer lands in the live instance too.
+
+The instance seeds from the global maps on first render, which is what makes
+remount-after-reload show the persisted draft rather than an empty box.
+
+### Consequence: the mirrors are gone
+
+Because the scope owns the live value, the global store no longer needs a
+"live slice for the focused session" copy of it. `composerInput`,
+`composerSettings` and `runningTask` were deleted outright, along with
+`contextPanelFor` (a single field used as a per-session flag). The focused
+session's draft is now simply `composerDrafts[activeChatKey]`, computed where
+it is needed instead of stored twice.
+
+### Considered and rejected: a global store with scope tags
+
+The alternative was to keep one global store and make every session-scoped
+field a `Record<sid, T>` map, with a React context supplying the key so
+consumers read `map[scopeKey]` rather than a global. `contextPanelFor` is that
+pattern in miniature: it stores *which* session has the panel open, and each
+badge asks "is this mine?".
+
+It works, and it is a smaller diff. It was rejected because it leaves the
+failure mode alive: the key is still passed on every access, an omitted key
+still silently means "the focused session", and nothing in the type system
+distinguishes a correct read from a mis-scoped one. The parts of it that were
+right — parallel `Record<sid, T>` maps rather than one nested `sessions`
+object, `messagesById` staying flat and global — carry over unchanged, since
+those maps are exactly what the instances persist through.
 
 ---
 
 ## 7. Migration path
 
-### Stage 1 — eliminate the active-slice mirrors
+### Stage 1 — stand up the scope, delete the mirrors — **done**
 
-Remove `composerInput` and `composerSettings` as stored fields. Every read goes
-through the scope; the focused session's scope resolves to
-`composerDrafts[focused]` and `composerSettingsBySession[focused]`.
+Built `session-scope-registry.ts` (store factory, instance map, write-through
+hooks) and `session-scope.tsx` (`SessionScopeProvider`, `useSessionScope`).
 
-Files involved:
+Deleted from the global store: `composerInput`, `composerSettings`,
+`runningTask`, `contextPanelFor`, plus the setters `setRunningTask` and
+`setContextPanelFor`.
 
-- `web/lib/session-store/index.ts` — delete both fields, rewrite
-  `setComposerInput` (`:703`), `setComposerInputFor` (`:712`),
-  `setComposerSettings` (`:727`), and drop the mirror-swapping half of
-  `switchChat` (`:367`).
-- `web/components/chat/composer/composer-session.tsx` — the `null` branches at
-  `:39` and `:51` collapse to a focused-session lookup.
-- `web/components/chat/composer/index.tsx` — the ternaries at `:166`, `:460`,
-  `:480` become plain scoped reads.
-- `web/lib/tab-transfer-journal.ts:249` and `web/lib/desktop-bridge.ts:677`,
-  `:707`, `:835` — these serialize the mirror across window moves and must be
-  reworked to carry only the keyed maps plus a focused key.
+Migration points:
 
-Risks: the snapshot/restore path is the sharp edge. `snapshotSessionTransfer`
-(`web/lib/session-store/index.ts:819`) and `applySessionTransfer`
-(`web/lib/session-store/index.ts:840`) both carry `composerInput` and
-`composerSettings` in the wire format, so the transfer journal's shape changes
-and stale persisted blobs must degrade gracefully. Second risk: a lost draft on
-session switch, since `switchChat` currently stores the outgoing session's live
-text into the map — with no mirror there is nothing to store, but the ordering
-between "write keystroke to map" and "change focused key" must be verified.
+- `switchChat` no longer saves the outgoing session's text or loads the
+  incoming one — both already live in the keyed maps. All that remains is
+  promoting the `__new__` placeholder key when an unsent chat gets a real id.
+- `web/components/chat/composer/index.tsx` — the four
+  `bound === null ? global : keyed[bound]` ternaries (draft, `fast`,
+  `unattended`, settings setter) collapsed to plain `useSessionScope` reads.
+  `bound` survives only for what it actually distinguishes: `background: true`
+  on send, and per-pane DOM id suffixes.
+- `web/components/chat/composer/composer-session.tsx` — reduced to two
+  one-line helpers over the scope; the context and the `null` fallback are
+  gone. The three control hooks (`use-thinking-effort`, `use-tools-toggles`,
+  `use-permission-mode`) needed no change, since they consume those helpers.
+- `web/components/app-shell.tsx` — the portalled `<Composer />` became
+  `<FocusedComposer />`, which wraps it in a provider keyed on
+  `activeChatKey ?? currentSessionId ?? "__new__"`. This is what let the
+  unbound branch be deleted rather than merely bypassed.
+- `web/components/chat/peer-session-pane.tsx` — swapped
+  `ComposerSessionProvider` for `SessionScopeProvider`, so the pane's whole
+  composer subtree (draft, run state, settings, `/context`) is scoped, not
+  just the control hooks.
+- `web/components/chat/context-badge.tsx` — `contextPanelFor === sid` became
+  `useSessionScope(s => s.contextPanelOpen)`.
+- Wire format: `SessionTransferSnapshot` dropped `composerInput` /
+  `composerSettings`, and `ChatTransferState` dropped `activeComposerInput` /
+  `activeComposerSettings`. All four were duplicates of the keyed entry for
+  `activeChatKey`, which the receiving window can look up itself.
+  `desktop-bridge.ts` and `tab-transfer-journal.ts` follow.
+- Legacy bridges: `runtime-bridge/ui.ts` and `chat-handlers.ts` already
+  preferred `setRunningTaskFor`; their dead `setRunningTask` declarations were
+  removed. That keyed setter now also pushes into the live instance.
 
-Scale: one store file, three composer files, two persistence files. Small
-surface, high blast radius on drafts — this stage deserves a manual pass
-through the type/refresh/switch/split sequence.
+Verification: `npx tsc --noEmit` clean, `npx next build` passes, all ten
+`npm run check` suites pass. `check-provisional-send` traded a source-shape
+assertion about the old mirror guard for a behavioural one (patching a
+background session leaves the focused one alone, and does not let the
+background session inherit its values); `check-multi-draft` and
+`check-web-split` now read the focused draft as
+`composerDrafts[activeChatKey]`. The five harnesses' module resolvers also
+gained an extensionless-relative-import clause and a `fileURLToPath` fix for
+repo paths containing spaces.
 
-### Stage 2 — move the remaining Group B fields into the container
+### Stage 2 — move the remaining Group B fields into the scope
 
-Field by field, in rough order of independence:
+Each remaining field becomes a property of `SessionScopeState` and its
+consumers switch to `useSessionScope`. In rough order of independence:
 
 1. `fnFormFunction` / `fnFormPrefill` / `fnFormForkOf` / `fnFormClosing` →
-   `sessions[sid].panels.fnForm`. Touches
+   one `fnForm` property on the scope. Touches
    `web/components/chat/composer/modes/resolve-mode.ts:18`,
    `web/components/chat/composer/modes/fn-form/use-fn-form-state.ts`,
    `use-fn-form-wrapper.ts`, `web/lib/use-pending-run-function.ts`,
@@ -413,15 +458,12 @@ Field by field, in rough order of independence:
 2. `welcomeVisible`, `transcriptLoadingId` → per-session booleans. Consumers:
    `web/components/chat/welcome-screen.tsx`,
    `web/components/chat/messages/message-list.tsx`.
-3. `runningTask` → delete; `runningTasks[sid]` is already authoritative and the
-   mirror at `web/lib/session-store/index.ts:678` disappears with it. Requires
-   auditing legacy `setRunning` callers.
-4. `composerFocusTick` → per-session counter, so focusing one pane's textarea
+3. `composerFocusTick` → per-session counter, so focusing one pane's textarea
    does not yank the other.
-5. `branchInfo`, `statusBadge`, `paused`, `providerInfo` → per-session. These
+4. `branchInfo`, `statusBadge`, `paused`, `providerInfo` → per-session. These
    feed the topbar, which shows the *focused* session, so the topbar reads the
    focused scope and nothing else changes visually.
-6. `currentSessionId` / `activeChatKey` → keep as *global focus pointers* in
+5. `currentSessionId` / `activeChatKey` → keep as *global focus pointers* in
    the view layer. They stop meaning "the session" and start meaning "the
    focused pane's session", which is what `center-tabs-store` already tracks
    via `activeId`. This is the last one to move and the one that most affects
@@ -433,8 +475,9 @@ mis-scoped composer would either swallow another session's question or show it
 twice. The fn-form group is the largest single change because eight files
 consume it.
 
-Scale: roughly fifteen to twenty files, but decomposable into six independent
-commits, each individually verifiable.
+Scale: roughly fifteen to twenty files, decomposable into five independent
+commits, each individually verifiable. The scope infrastructure already exists,
+so each field is a move rather than a new mechanism.
 
 ### Stage 3 — retire the legacy `window.*` layer
 
@@ -481,10 +524,10 @@ and be correct.
 The same applies to `rightDock` itself, the topbar badges' *display* (they show
 the focused session by definition), and the settings pages' stores.
 
-**Storage shape is not being redesigned.** The migration changes how state is
-*accessed*, not necessarily how it is laid out. Collapsing today's parallel
-`Record<sid, T>` maps into one nested `sessions` object is optional, carries
-subscription-granularity risk, and is not required for correctness.
+**The durable maps keep their shape.** The parallel `Record<sid, T>` maps in
+the global store stay as they are; they are what the per-session instances
+seed from and persist through. Collapsing them into one nested `sessions`
+object is not planned and is not required for correctness.
 
 **More than two panes is not in scope.** The scope mechanism happens to make
 N panes work, but nothing here is designed or verified for N > 2.
@@ -493,11 +536,11 @@ N panes work, but nothing here is designed or verified for N > 2.
 
 ## 9. Effort by stage
 
-| Stage | Files touched | Main risk |
-| --- | --- | --- |
-| 1 — remove active-slice mirrors | ~6 (store, 3 composer, 2 persistence) | draft loss on switch; transfer-journal wire format changes |
-| 2 — Group B into the container | ~15–20, splittable into 6 commits | fn-form open-target semantics; `pendingDecisions` routing |
-| 3 — retire `window.*` | ~13 runtime-bridge modules + DOM shell | silently dropped WebSocket frames; partial completion is worse than either endpoint |
+| Stage | Files touched | Main risk | Status |
+| --- | --- | --- | --- |
+| 1 — scope infrastructure, delete the mirrors | 2 new, ~10 edited (store, composer, app-shell, peer pane, badge, 2 persistence, 2 bridges), 5 check harnesses | draft loss on switch; transfer-journal wire format changes | done |
+| 2 — remaining Group B fields into the scope | ~15–20, splittable into 5 commits | fn-form open-target semantics; `pendingDecisions` routing | queued |
+| 3 — retire `window.*` | ~13 runtime-bridge modules + DOM shell | silently dropped WebSocket frames; partial completion is worse than either endpoint | queued |
 
 Stages 1 and 2 are independently shippable and each leaves the codebase in a
 better state than it found it. Stage 3 is not, and should be treated as a
