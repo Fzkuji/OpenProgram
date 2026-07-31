@@ -26,7 +26,10 @@ import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   type BucketKey,
   activityTs,
+  bucketIsOlder,
   bucketKey,
+  bucketLabel,
+  bucketSortKey,
   labelFor,
 } from "@/components/sidebar/sessions-list/helpers";
 import {
@@ -38,7 +41,7 @@ import {
 type SortKey = "recent" | "oldest" | "title";
 type StatusFilter = "all" | "active" | "archived";
 
-type FilterId = "all" | BucketKey;
+type FilterId = "all" | "today" | "past7" | "past30" | "older";
 
 export function ChatsPage() {
   const { t, text, locale } = useTranslation();
@@ -91,27 +94,36 @@ export function ChatsPage() {
   }, [conversations, query, statusFilter, sort, untitled]);
 
   const counts = useMemo(() => {
-    const c = { all: searched.length, today: 0, past7: 0, past30: 0, older: 0 } as Record<FilterId, number>;
-    for (const x of searched) c[bucketKey(activityTs(x), nowTs)]++;
+    const c: Record<FilterId, number> = { all: searched.length, today: 0, past7: 0, past30: 0, older: 0 };
+    for (const x of searched) {
+      const k = bucketKey(activityTs(x), nowTs);
+      c[bucketIsOlder(k) ? "older" : (k as FilterId)]++;
+    }
     return c;
   }, [searched, nowTs]);
 
   // Apply the active filter on top of the searched list.
   const items = useMemo(() => {
     if (filter === "all") return searched;
-    return searched.filter((c) => bucketKey(activityTs(c), nowTs) === filter);
+    return searched.filter((c) => {
+      const k = bucketKey(activityTs(c), nowTs);
+      return filter === "older" ? bucketIsOlder(k) : k === filter;
+    });
   }, [searched, filter, nowTs]);
 
   // Group items by recency bucket when showing "All" so the user gets
   // visual date headers — same shape as Functions' category sections.
   const grouped = useMemo(() => {
     if (filter !== "all") return null;
-    const out: Partial<Record<BucketKey, ConvSummary[]>> = {};
+    const out = new Map<BucketKey, ConvSummary[]>();
     for (const c of items) {
       const b = bucketKey(activityTs(c), nowTs);
-      (out[b] ??= []).push(c);
+      if (!out.has(b)) out.set(b, []);
+      out.get(b)!.push(c);
     }
-    return out;
+    return Array.from(out.entries()).sort((a, b) =>
+      bucketSortKey(a[0]).localeCompare(bucketSortKey(b[0])),
+    );
   }, [items, filter, nowTs]);
 
   // Same open path as the sidebar's switchTo: focus-or-create the
@@ -142,11 +154,10 @@ export function ChatsPage() {
       ],
     },
   ];
-  const sectionLabels: Record<BucketKey, string> = {
+  const fixedLabels = {
     today: text("Today", "今天"),
     past7: text("Last 7 days", "最近 7 天"),
     past30: text("Last 30 days", "最近 30 天"),
-    older: text("Older", "更早"),
   };
 
   return (
@@ -219,15 +230,15 @@ export function ChatsPage() {
               </div>
             ) : grouped ? (
               <>
-                {(["today", "past7", "past30", "older"] as const)
-                  .filter((b) => grouped[b]?.length)
-                  .map((b) => (
+                {grouped
+                  .filter(([, rows]) => rows.length)
+                  .map(([b, rows]) => (
                     <div className={styles.section} key={b}>
                       <div className={styles.sectionHeader}>
-                        {sectionLabels[b]} ({grouped[b]!.length})
+                        {bucketLabel(b, locale, fixedLabels)} ({rows.length})
                       </div>
                       <div>
-                        {grouped[b]!.map((c) => (
+                        {rows.map((c) => (
                           <ChatRow
                             key={c.id}
                             conv={c}

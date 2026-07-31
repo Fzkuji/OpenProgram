@@ -58,10 +58,11 @@ import styles from "./sidebar.module.css";
 import { ConfirmDialog } from "./sessions-list/confirm-dialog";
 import { pushPath } from "@/lib/shallow-nav";
 import {
-  type BucketKey,
   type LegacyConv,
   type SessionWindow,
   bucketKey,
+  bucketLabel,
+  bucketSortKey,
   wsSend,
   labelFor,
 } from "./sessions-list/helpers";
@@ -423,6 +424,7 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
         groupBy: view.groupBy,
         sort: view.sort,
         nowTs,
+        locale,
         isWorking,
         labels: {
           pinned: t("sidebar.pinned"),
@@ -430,7 +432,6 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
           today: t("sidebar.today"),
           past7: t("sidebar.activity_7d"),
           past30: t("sidebar.activity_30d"),
-          older: t("sidebar.older"),
           working: t("sidebar.working"),
           completed: t("sidebar.completed"),
         },
@@ -600,6 +601,7 @@ interface SectionOpts {
   groupBy: "none" | "state" | "project" | "flat";
   sort: "recency" | "created" | "title";
   nowTs: number;
+  locale: string;
   isWorking: (id: string) => boolean;
   labels: {
     pinned: string;
@@ -607,7 +609,6 @@ interface SectionOpts {
     today: string;
     past7: string;
     past30: string;
-    older: string;
     working: string;
     completed: string;
   };
@@ -617,19 +618,13 @@ function _dateBucket(
   ts: number,
   nowTs: number,
   labels: SectionOpts["labels"],
+  locale: string,
 ): { key: string; label: string } {
-  // ponytail: four coarse buckets — per-day headers piled up to ~30 in a
-  // month. Reuses the existing "Past 7/30 days" filter wording.
-  // Bucketing itself lives in helpers.bucketKey, shared with /chats so
-  // both surfaces agree on what "Today" means.
+  // Today / 7d / 30d, then current-year months, then years. Bucketing,
+  // ordering and month/year labels all live in helpers, shared with
+  // /chats so both surfaces agree on what "Today" means.
   const k = bucketKey(ts, nowTs);
-  const order: Record<BucketKey, string> = {
-    today: "b0_today",
-    past7: "b1_past7",
-    past30: "b2_past30",
-    older: "b9_older",
-  };
-  return { key: order[k], label: labels[k] };
+  return { key: bucketSortKey(k), label: bucketLabel(k, locale, labels) };
 }
 
 function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
@@ -661,7 +656,7 @@ function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
     // 日期分桶按最后活跃时间："Today" = 今天动过的会话，与 recency
     // 排序一致（否则今天聊过的老会话会挂在旧日期桶里）。
     const b = _dateBucket(
-      c.updated_at || c.created_at || 0, o.nowTs, o.labels,
+      c.updated_at || c.created_at || 0, o.nowTs, o.labels, o.locale,
     );
     if (!buckets.has(b.key)) buckets.set(b.key, { key: b.key, label: b.label, items: [] });
     buckets.get(b.key)!.items.push(c);

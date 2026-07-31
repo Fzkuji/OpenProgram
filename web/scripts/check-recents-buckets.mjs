@@ -82,7 +82,9 @@ assert.equal(bucketKey(at(2026, 7, 31, 1), now), "today", "same calendar day = t
 assert.equal(bucketKey(at(2026, 7, 30, 20), now), "past7", "yesterday evening is not today");
 assert.equal(bucketKey(at(2026, 7, 25), now), "past7");
 assert.equal(bucketKey(at(2026, 7, 10), now), "past30");
-assert.equal(bucketKey(at(2026, 5, 1), now), "older");
+// Beyond 30 days: same-year months bucket by month, previous years by year.
+assert.equal(bucketKey(at(2026, 5, 1), now), "m-2026-4", "current-year month bucket");
+assert.equal(bucketKey(at(2025, 11, 20), now), "y-2025", "previous-year bucket");
 // A conversation created long ago but active today buckets as today.
 assert.equal(
   bucketKey(activityTs({ created_at: at(2026, 1, 1), updated_at: at(2026, 7, 31, 9) }), now),

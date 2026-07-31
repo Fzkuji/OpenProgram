@@ -57,7 +57,9 @@ export interface LegacyConv {
  *  "within the last 24 hours". Shared by the sidebar Recents list and
  *  the /chats page so both bucket identically. Label lookup is the
  *  caller's job — each surface words its own headers. */
-export type BucketKey = "today" | "past7" | "past30" | "older";
+/** "today" | "past7" | "past30" | "m-<year>-<month0>" (current-year month
+ *  older than 30 days) | "y-<year>" (previous years). */
+export type BucketKey = string;
 
 export function bucketKey(ts: number, nowTs: number): BucketKey {
   const d = new Date((ts || nowTs) * 1000);
@@ -68,7 +70,50 @@ export function bucketKey(ts: number, nowTs: number): BucketKey {
   if (diff <= 0) return "today";
   if (diff <= 7) return "past7";
   if (diff <= 30) return "past30";
-  return "older";
+  if (d.getFullYear() === now.getFullYear()) return `m-${d.getFullYear()}-${d.getMonth()}`;
+  return `y-${d.getFullYear()}`;
+}
+
+/** Whether a bucket is one of the dynamic ">30 days" ones. */
+export function bucketIsOlder(k: BucketKey): boolean {
+  return k.startsWith("m-") || k.startsWith("y-");
+}
+
+/** Lexicographic sort key: ascending sort yields newest bucket first
+ *  (today, 7d, 30d, then months newest-first, then years newest-first). */
+export function bucketSortKey(k: BucketKey): string {
+  if (k === "today") return "a0";
+  if (k === "past7") return "a1";
+  if (k === "past30") return "a2";
+  if (k.startsWith("m-")) {
+    const [, y, m] = k.split("-");
+    return `b-${9999 - Number(y)}-${String(11 - Number(m)).padStart(2, "0")}`;
+  }
+  if (k.startsWith("y-")) return `c-${9999 - Number(k.slice(2))}`;
+  return "z";
+}
+
+/** Human label for a bucket. The three fixed buckets take their i18n
+ *  strings from the caller; month/year buckets format themselves. */
+export function bucketLabel(
+  k: BucketKey,
+  locale: string,
+  fixed: { today: string; past7: string; past30: string },
+): string {
+  if (k === "today") return fixed.today;
+  if (k === "past7") return fixed.past7;
+  if (k === "past30") return fixed.past30;
+  if (k.startsWith("m-")) {
+    const [, y, m] = k.split("-").map(Number);
+    return new Intl.DateTimeFormat(locale.startsWith("zh") ? "zh-CN" : "en-US", {
+      month: "long",
+    }).format(new Date(y, m, 1));
+  }
+  if (k.startsWith("y-")) {
+    const y = k.slice(2);
+    return locale.startsWith("zh") ? `${y} 年` : y;
+  }
+  return k;
 }
 
 /** The timestamp both surfaces bucket & recency-sort by: last activity,
