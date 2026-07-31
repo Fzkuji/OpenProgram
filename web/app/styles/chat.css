@@ -324,10 +324,11 @@
      where `.chat-messages` reserves 25vh for it). The pane measures its
      composer and publishes the real height as --peer-composer-h; the
      fallback covers the first frame before that lands. */
-  /* 40px side gutters keep the transcript's breathing room (the main
-     column has 36px avatar insets + centering doing this job); the
-     column still centers and caps like the main chat. */
-  padding: 12px 40px var(--peer-composer-h, 180px) 40px;
+  /* Side gutters: the composer's visible box starts 56px in (24px
+     inputArea padding + 32px stack inset), and the design keeps the
+     input WIDER than the transcript — so the text column insets past
+     it, 64px per side. */
+  padding: 12px 64px var(--peer-composer-h, 180px) 64px;
   margin: 0 auto;
 }
 /* The composer floats OVER the transcript rather than taking a flex row —
