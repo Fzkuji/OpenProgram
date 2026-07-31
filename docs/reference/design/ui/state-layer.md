@@ -285,6 +285,49 @@ to mirror, no fallback arm, and nothing for the transfer path to rebuild.
 
 ---
 
+## 5b. How the industry handles this
+
+Every application that can show several copies of the same surface at once
+has to solve this problem. Three approaches dominate.
+
+**Approach 1: one small independent store per page.** No global store for
+instance state — each editor/panel creates its own state object when it
+opens and destroys it when it closes. VS Code is the canonical example: it
+opens any number of editor groups, each group and each editor instance owns
+its own state object, mutually invisible; "which editor is focused" is the
+only top-level fact. Zustand (our state library) officially supports this
+store-per-instance usage. Strongest isolation; the cost is that data shared
+across pages (the session list, preferences) needs a separate layer, and
+the two layers must be wired together.
+
+**Approach 2: one global store, keyed by ID inside, with a scope tag on
+the component tree.** Still a single store, but all instance state lives in
+`{ id → data }` dictionaries; the root of a component tree declares "this
+tree belongs to ID x" via React Context (our Provider), and components
+inside automatically read their own slot. Redux's official normalization
+guidance is this idea; TanStack Query goes further — every cache entry is
+keyed, and "the current one" does not exist as a concept. Slack- and
+Discord-style multi-channel UIs mostly work this way. Shared and instance
+data live in one store, which makes debugging and cross-session features
+(sidebar list, global search) easy; the discipline, however, is by
+convention only — one sneaky read of the global "current session" pointer
+regresses the whole thing.
+
+**Approach 3: physical isolation.** The browser's answer — every tab is a
+separate OS process, so state cannot leak even on purpose. Chrome is the
+extreme case: a browser process owns the global state (tab strip,
+bookmarks, settings) while each tab's content runs in its own renderer
+process, communicating only via IPC. Chrome pays that price for a reason
+specific to it: it runs untrusted third-party code, so isolation doubles as
+a security boundary (Site Isolation against Spectre-class attacks).
+In-app split views run the app's own code and nobody pays process-level
+memory and IPC costs just to keep data apart.
+
+This project chose approach 1 (next section); approach 2 is preserved as
+the considered-and-rejected alternative at the end of §6.
+
+---
+
 ## 6. The design: one store instance per session
 
 ### The decision
