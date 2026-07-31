@@ -41,8 +41,9 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
 
   // 点 badge 弹出 /context 分类分解面板（随时看当前会话 context 构成）。
   // open 状态放 store，好让 /context slash 命令也能切它。
-  const panelOpen = useSessionStore((s) => s.contextPanelOpen);
-  const setPanelOpen = useSessionStore((s) => s.setContextPanelOpen);
+  const panelOpen = useSessionStore((s) => s.contextPanelFor != null && s.contextPanelFor === sid);
+  const setPanelFor = useSessionStore((s) => s.setContextPanelFor);
+  const setPanelOpen = (open: boolean) => setPanelFor(open ? sid : null);
   // 当前分支头：切分支时 store.heads 会更新，弹窗据此重取该分支的上下文。
   const headId = useSessionStore((s) => (sid ? s.heads[sid] : undefined));
 

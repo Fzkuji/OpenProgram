@@ -643,7 +643,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
 
   // /context 面板开关放 store —— badge（右下角圆环）负责渲染浮动弹窗，
   // /context slash 命令只需把它打开，弹窗即锚定圆环向上展开。
-  const openContextPanel = useSessionStore((s) => s.setContextPanelOpen);
+  const setContextPanelFor = useSessionStore((s) => s.setContextPanelFor);
 
   // Slash menu (state + open/close timing + command dispatch).
   const slash = useSlashMenu({
@@ -651,7 +651,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     input,
     textareaRef,
     send,
-    openContextPanel: () => openContextPanel(true),
+    openContextPanel: () => setContextPanelFor(bound ?? currentSessionId ?? null),
   });
 
   /* ---- Submit -------------------------------------------------------- */
@@ -1581,7 +1581,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
                 </div>
               </HoverTip>
             ) : null}
-            <ContextBadge />
+            <ContextBadge sessionId={bound ?? undefined} />
           </div>
     </>
   );

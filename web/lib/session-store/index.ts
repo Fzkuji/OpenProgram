@@ -206,9 +206,10 @@ interface ConvState {
   composerFocusTick: number;
   focusComposer: () => void;
 
-  /** /context 浮动弹窗开关（由右下角圆环 badge 渲染，/context slash 也切它）。*/
-  contextPanelOpen: boolean;
-  setContextPanelOpen: (open: boolean) => void;
+  /** /context 浮动弹窗：存"哪个会话的面板开着"（null = 关）。分屏时
+   *  两个 composer 各渲染一个 badge，按会话区分才不会两边同时弹。*/
+  contextPanelFor: string | null;
+  setContextPanelFor: (sid: string | null) => void;
 
   /** When non-null, the Composer swaps its textarea for a parameter
    *  form for this function. Submit builds a `run <name> ...` command
@@ -746,8 +747,8 @@ export const useSessionStore = create<ConvState>((set) => ({
   focusComposer: () =>
     set((state) => ({ composerFocusTick: state.composerFocusTick + 1 })),
 
-  contextPanelOpen: false,
-  setContextPanelOpen: (open) => set({ contextPanelOpen: open }),
+  contextPanelFor: null,
+  setContextPanelFor: (sid) => set({ contextPanelFor: sid }),
 
   fnFormFunction: null,
   fnFormPrefill: null,

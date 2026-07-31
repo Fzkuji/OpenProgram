@@ -84,7 +84,9 @@ function install(el: HTMLElement): void {
   }
 
   el.addEventListener("scroll", () => schedule(true), { passive: true });
-  el.addEventListener("mouseenter", () => schedule(true));
+  // Reposition on hover but don't reveal — the thumb only appears while
+  // actually scrolling (macOS style), not when the cursor enters the pane.
+  el.addEventListener("mouseenter", () => schedule(false));
 
   if (typeof ResizeObserver !== "undefined") {
     new ResizeObserver(() => schedule(false)).observe(el);
