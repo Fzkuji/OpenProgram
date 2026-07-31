@@ -5,6 +5,7 @@ Web UI surfaces — the surface system, indicator dots, attachment handling, cha
 - [`invariants.md`](invariants.md) — cross-module UI invariants (walk the list before touching related modules)
 - [`chat-turn-visual-spec.html`](chat-turn-visual-spec.html) — chat-turn visual spec (execution timeline + manual function runs + message minimap; interactive demo, single source of truth)
 - [`interaction-feedback.md`](interaction-feedback.md) — the 0ms interaction-feedback rule (optimistic state first, data backfills)
+- [`state-layer.md`](state-layer.md) — web state layer: per-session vs global inventory, and the session-scope container plan
 - [`composer-interaction-modes.md`](composer-interaction-modes.md) — composer interaction modes
 - [`attachment-handling.md`](attachment-handling.md) — attachment handling ([rendered](attachment-handling.html))
 - [`gui-agent-context.md`](gui-agent-context.md) — GUI agent context flow
