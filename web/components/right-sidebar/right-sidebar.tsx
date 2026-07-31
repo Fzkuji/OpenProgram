@@ -48,6 +48,7 @@ import {
   PanelLeftOpenIcon,
 } from "../animated-icons";
 import { FileTree } from "../files/file-tree";
+import { FileDiffView } from "./file-diff-view";
 import { renderMarkdown, useMarkdownReady } from "../chat/messages/markdown";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
@@ -573,6 +574,18 @@ function DetailBlock({
 function DetailPanel() {
   const { t } = useTranslation();
   const node = useSessionStore((s) => s.detailNode);
+  const fileDiff = useSessionStore((s) => s.fileDiff);
+
+  // A file diff takes over the Details view while it's open — "Review"
+  // on a turn's edit card is an explicit request to look at THIS file,
+  // so it wins over whatever DAG node happened to be selected.
+  if (fileDiff) {
+    return (
+      <div id="detailBody" className="detail-body">
+        <FileDiffView />
+      </div>
+    );
+  }
 
   if (!node) {
     return (

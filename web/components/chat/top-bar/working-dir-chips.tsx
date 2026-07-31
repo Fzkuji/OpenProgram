@@ -26,6 +26,7 @@ import { HoverTip } from "@/components/ui/tooltip";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws-request";
+import { useBoundChat } from "./bound-chat";
 import { GROUP_LABEL, MENU_PANEL, MENU_SEPARATOR, itemCls } from "./menu-styles";
 
 /** Stable empty list so the zustand selector doesn't churn renders. */
@@ -47,8 +48,7 @@ interface Project {
 
 export function WorkingDirChips() {
   const { text } = useTranslation();
-  const sessionId = useSessionStore((s) => s.currentSessionId);
-  const activeChatKey = useSessionStore((s) => s.activeChatKey);
+  const { sessionId, chatKey: activeChatKey } = useBoundChat();
   const workingDirsKey = sessionId ?? activeChatKey;
   const workingDirs = useSessionStore((s) =>
     workingDirsKey

@@ -15,7 +15,7 @@
 import { useEffect, useState } from "react";
 import { Check, ChevronRight } from "lucide-react";
 
-import { useSessionStore } from "@/lib/session-store";
+import { useBoundChat } from "./bound-chat";
 import { mirrorUpsertConv } from "@/lib/runtime-bridge/conv-store-mirror";
 import { setDraftChannelChoice } from "@/lib/runtime-bridge/draft-channel-choice";
 import { useTranslation } from "@/lib/i18n";
@@ -60,8 +60,7 @@ function brandFor(plat: string): string {
 
 export function ChannelMenu({ onClose }: { onClose: () => void }) {
   const { text } = useTranslation();
-  const sessionId = useSessionStore((s) => s.currentSessionId);
-  const activeChatKey = useSessionStore((s) => s.activeChatKey);
+  const { sessionId, chatKey: activeChatKey } = useBoundChat();
   const [rows, setRows] = useState<ChannelAccount[] | null>(null);
 
   useEffect(() => {

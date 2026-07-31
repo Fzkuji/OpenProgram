@@ -1498,29 +1498,24 @@
   font-size: inherit;
   font-weight: 600;
 }
-.msg-rail-card .turn-files-chips { margin-top: 6px; gap: 12px; }
-/* 卡内文件行学 GPT/codex：去胶囊，小文档图标 + 灰文件名，和上文
-   完全左对齐（胶囊的内边距会让文字看着缩进、三段对不齐）。 */
-.msg-rail-card .turn-files-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0;
+/* 预览卡里的编辑卡去掉外框，跟上文左对齐（卡片边框在这个尺度上
+   太重）；行内的 +N/-N 与 hover 操作仍沿用上面的通用规则。 */
+.msg-rail-card .turn-files-card {
+  margin-top: 6px;
   border: none;
-  border-radius: 0;
   background: none;
+  border-radius: 0;
+}
+.msg-rail-card .turn-files-row { padding: 1px 0; }
+.msg-rail-card .turn-files-row + .turn-files-row { border-top: none; }
+.msg-rail-card .turn-files-summary {
+  padding: 0 0 3px;
+  border-bottom: none;
+}
+.msg-rail-card .turn-files-name {
   font-family: var(--font-sans);
   font-size: 13px;
   color: var(--text-muted);
-}
-.msg-rail-card .turn-files-chip::before {
-  content: "";
-  width: 13px;
-  height: 13px;
-  flex-shrink: 0;
-  background: currentColor;
-  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M15 2v5h5"/></svg>')
-    center / contain no-repeat;
 }
 
 /* 一行态的 attach 卡（顶层 /task 斜杠路径仍用）：头部即全部。 */
@@ -2069,38 +2064,116 @@
 }
 
 
-/* Per-turn modified-files chips at the bottom of an assistant bubble.
+/* Per-turn file edit card at the bottom of an assistant bubble.
    Populated lazily via the `list_turn_files` WS action; absent when
-   the turn touched no files (chat-only replies). */
-.turn-files-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+   the turn touched no files (chat-only replies). One row per file:
+   path · +N · -N · Undo/Review (revealed on hover). */
+.turn-files-card {
   margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
 }
-.turn-files-chip {
+/* An undone turn reads as inert — greyed and struck through, so a
+   reverted card is distinguishable at a glance from a live one. */
+.turn-files-card[data-reverting="1"],
+.turn-files-card[data-reverted="1"] {
+  opacity: 0.55;
+}
+.turn-files-card[data-reverted="1"] .turn-files-name {
+  text-decoration: line-through;
+}
+
+.turn-files-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.turn-files-count { font-weight: 500; }
+
+.turn-files-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+}
+.turn-files-row + .turn-files-row {
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+.turn-files-name {
+  flex: 1 1 auto;
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 11px;
-  line-height: 1.4;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
+  line-height: 1.5;
+  text-align: left;
   color: var(--text-secondary);
+  background: none;
+  border: none;
+  padding: 0;
   white-space: nowrap;
-  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
+  direction: rtl; /* long paths ellipsize on the LEFT — the tail names the file */
 }
-/* 项目内的文件 chip 可点开中间栏文件 tab（button 形态），hover
-   反馈沿用 .tl-btn 的 bg-hover 惯例。 */
-.turn-files-chip.is-clickable {
+.turn-files-name.is-clickable { cursor: pointer; }
+.turn-files-name.is-clickable:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.turn-files-stat {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.turn-files-stat.is-add { color: var(--accent-green); }
+.turn-files-stat.is-del { color: var(--accent-red); }
+
+/* Actions stay hidden until the row is hovered — the counts are the
+   information, the buttons are the affordance. Keyboard focus reveals
+   them too, otherwise they'd be unreachable without a mouse. */
+.turn-files-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.turn-files-row:hover .turn-files-actions,
+.turn-files-actions:focus-within {
+  opacity: 1;
+}
+.turn-files-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 5px;
+  background: none;
   cursor: pointer;
+  font-size: 11px;
+  color: var(--text-muted);
 }
-.turn-files-chip.is-clickable:hover {
+.turn-files-action:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+.turn-files-action:disabled { cursor: default; opacity: 0.7; }
+.turn-files-action-icon {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+}
+.turn-files-action-icon svg { width: 100%; height: 100%; }
 
 
 /* AttachCard — a pointer row written when this turn referenced a

@@ -420,22 +420,30 @@ def process_user_turn(
         _project_baseline = _pc.snapshot_baseline(req.session_id)
     except Exception:
         _project_baseline = None
+    # Expose the GraphStore via ContextVar so deep code (Runtime.exec,
+    # ask_user, @agentic_function decorator, and the file-checkpoint
+    # helper behind write/edit/apply_patch) writes land in the same DAG
+    # without threading the store through every layer.
+    #
+    # Bound BEFORE — and independently of — the DAG runtime below. It
+    # used to live inside that try, so a create_runtime() failure (no
+    # provider configured, or an exhausted auth pool, which is routine
+    # when the chat runtime is a different provider entirely) left
+    # _store unbound for the whole turn. checkpoint_before_edit needs
+    # _store AND _current_turn_id, so it silently no-op'd: no
+    # file_backups/, hence no per-turn file list, no diff, no undo.
+    # The store needs a session, not a provider — so it binds regardless.
+    _store_token = _store_var.set(_GraphStore(db, req.session_id))
     try:
         from openprogram.providers.registry import create_runtime as _create_rt
         _dag_runtime = _create_rt()
         _runtime_token = _current_runtime_var.set(_dag_runtime)
-        # Expose the GraphStore via ContextVar so deep code
-        # (Runtime.exec, ask_user, @agentic_function decorator)
-        # writes land in the same SQLite DAG without threading the
-        # store through every layer.
-        _store_token = _store_var.set(_GraphStore(db, req.session_id))
     except Exception:
         # No provider configured / runtime construction blew up.
-        # Skip the install; @agentic_function will still work, just
-        # without its nodes landing in the DAG.
+        # Skip only the runtime; @agentic_function will still work, just
+        # without an auto-injected runtime.
         _dag_runtime = None
         _runtime_token = None
-        _store_token = None
 
     # 3b. Persist an assistant *placeholder* row so the row exists in
     #     the DB before tool_execution_end events start firing. This

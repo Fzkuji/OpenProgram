@@ -208,3 +208,168 @@ def test_query_action_failure_emits_error_envelope(env) -> None:
                     if c["payload"].get("type") == "error"]
     assert len(err_payloads) == 1
     assert "boom" in err_payloads[0]["payload"]["content"].lower()
+
+
+def test_write_tool_checkpoints_when_dag_runtime_unavailable(
+    env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A WebUI turn that edits a file must leave a checkpoint behind.
+
+    Regression: ``_store`` used to be bound inside the same try/except as
+    the DAG runtime, so a ``create_runtime()`` failure (no provider, or an
+    exhausted auth pool — routine when the chat runtime is a different
+    provider) left it unbound for the whole turn. ``checkpoint_before_edit``
+    needs ``_store`` AND ``_current_turn_id``, so it silently no-op'd and
+    no ``file_backups/`` was ever written — which made list_turn_files
+    empty and the whole per-turn file review UI dark.
+
+    Forcing create_runtime to raise reproduces the real failure exactly.
+    """
+    from openprogram.store.snapshot.checkpoint.paths import turn_manifest_path
+    from openprogram.functions.tools.write.write import write as write_tool
+
+    srv, db, _captured = env
+
+    # The env fixture only patches `session_db.default_db`; turn_files
+    # (like all read-side code) resolves `default_store()` directly, so
+    # pin the singleton too or it reads the developer's real sessions.
+    monkeypatch.setattr(
+        "openprogram.store.session.session_store._default_store", db,
+        raising=False,
+    )
+    # Other suites setattr a real attribute over the lazy
+    # `openprogram.store.default_store` re-export, which permanently
+    # shadows the __getattr__ hook — pin it so this passes in-suite too.
+    monkeypatch.setattr(
+        "openprogram.store.default_store", lambda: db, raising=False,
+    )
+
+    monkeypatch.setattr(
+        "openprogram.providers.registry.create_runtime",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("auth pool exhausted")),
+    )
+
+    target = tmp_path / "undo_test.txt"
+    user_msg_id = "u-write"
+    assistant_msg_id = user_msg_id + "_reply"
+
+    conv = srv._get_or_create_session("c1", agent_id="main")
+    srv._append_msg(conv, {
+        "id": user_msg_id, "role": "user", "content": "create the file",
+        "timestamp": time.time(), "source": "web",
+    })
+
+    orig = D._run_loop_blocking
+
+    # Stand in for the LLM issuing a write tool call: run the real write
+    # tool mid-turn, exactly where the agent loop would. `write` is an
+    # AgentTool, so it goes through its async execute().
+    def _w(*, req, history, on_event, cancel_event, **_):
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            res = loop.run_until_complete(write_tool.execute(
+                "call-write",
+                {"file_path": str(target), "content": "hello from the agent\n"},
+                None, None,
+            ))
+        finally:
+            loop.close()
+        assert "Error" not in str(res), f"write tool failed: {res}"
+        return orig(req=req, history=history, on_event=on_event,
+                    cancel_event=cancel_event,
+                    stream_fn=make_text_stream("created it"))
+
+    with patch.object(D, "_run_loop_blocking", _w):
+        srv._execute_in_context(
+            "c1", user_msg_id, "query",
+            query="create the file", thinking_effort=None, tools_flag=None,
+        )
+
+    assert target.read_text() == "hello from the agent\n"
+
+    # The checkpoint exists and is keyed to THIS turn — that manifest is
+    # what list_turn_files / turn_file_diff / revert_turn all read.
+    session_dir = db._session_dir("c1")
+    manifest = turn_manifest_path(Path(session_dir), assistant_msg_id)
+    assert manifest.exists(), "no file_backups manifest — checkpoint no-op'd"
+
+    from openprogram.store.snapshot.checkpoint import CheckpointStore
+    backed = CheckpointStore(Path(session_dir)).list_backed_paths(assistant_msg_id)
+    assert str(target) in backed
+
+    # ...and the WS action the UI actually calls now returns that file,
+    # which is the symptom the user reported (empty list → no card).
+    from openprogram.webui.ws_actions import turn_files as tf
+    listed = tf._list_files("c1", assistant_msg_id)
+    assert [f["path"] for f in listed["files"]] == [str(target)]
+    assert listed["files"][0]["op"] == "add"
+
+
+def test_shadow_git_commits_on_webui_turn(
+    env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """finalize_turn runs on the WebUI path, so the shadow-git commit
+    (and its before/after stamp) happens for web chats too — that stamp
+    is what makes turn_file_diff exact rather than approximate."""
+    from types import SimpleNamespace
+    from openprogram.functions.tools.write.write import write as write_tool
+
+    srv, db, _captured = env
+
+    # See the sibling test: pin the read-side singleton as well.
+    monkeypatch.setattr(
+        "openprogram.store.session.session_store._default_store", db,
+        raising=False,
+    )
+    # Other suites setattr a real attribute over the lazy
+    # `openprogram.store.default_store` re-export, which permanently
+    # shadows the __getattr__ hook — pin it so this passes in-suite too.
+    monkeypatch.setattr(
+        "openprogram.store.default_store", lambda: db, raising=False,
+    )
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    target = project / "undo_test.txt"
+    shadow_root = tmp_path / "shadow"
+    shadow_root.mkdir()
+
+    user_msg_id = "u-shadow"
+    assistant_msg_id = user_msg_id + "_reply"
+    conv = srv._get_or_create_session("c1", agent_id="main")
+    srv._append_msg(conv, {
+        "id": user_msg_id, "role": "user", "content": "create it",
+        "timestamp": time.time(), "source": "web",
+    })
+
+    orig = D._run_loop_blocking
+
+    def _w(*, req, history, on_event, cancel_event, **_):
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(write_tool.execute(
+                "call-write",
+                {"file_path": str(target), "content": "shadowed\n"},
+                None, None,
+            ))
+        finally:
+            loop.close()
+        return orig(req=req, history=history, on_event=on_event,
+                    cancel_event=cancel_event,
+                    stream_fn=make_text_stream("done"))
+
+    with patch("openprogram.store.shadow_git.store._shadow_root",
+               return_value=shadow_root), \
+         patch("openprogram.store.project.project_commit._project_for",
+               return_value=SimpleNamespace(path=str(project))), \
+         patch.object(D, "_run_loop_blocking", _w):
+        srv._execute_in_context(
+            "c1", user_msg_id, "query",
+            query="create it", thinking_effort=None, tools_flag=None,
+        )
+
+    _git, idx = db._open("c1")
+    meta = (idx.nodes_by_id[assistant_msg_id].metadata or {}).get("shadow_git")
+    assert meta and meta.get("after"), "no shadow_git stamp from the webui turn"

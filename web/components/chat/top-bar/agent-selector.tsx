@@ -16,7 +16,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { useSessionStore } from "@/lib/session-store";
+import { useBoundChat } from "./bound-chat";
 import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -39,7 +39,7 @@ export function AgentSelector({
   currentModel?: string;
   onClose: () => void;
 }) {
-  const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const { sessionId: currentSessionId } = useBoundChat();
   const { t, text } = useTranslation();
   const { data: models } = useQuery({
     queryKey: ["models-enabled"],

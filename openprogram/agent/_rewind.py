@@ -91,7 +91,7 @@ def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
     answered this user message, then return the user message text
     so the frontend can prefill the composer.
     """
-    from openprogram.agent._revert import revert_turn
+    from openprogram.agent.internals._revert import revert_turn
 
     try:
         from openprogram.store.session.session_store import default_store

@@ -130,14 +130,52 @@ class ShadowGitStore:
             self._git("reset", "--mixed", "HEAD", check=False)
             return None
 
-    def diff(self, sha1: str, sha2: str = "HEAD") -> str:
-        """Diff between two commits in the shadow repo."""
+    def head_sha(self) -> Optional[str]:
+        """Current HEAD sha, or None if the repo has no commits / failed."""
+        if not self._ensure_init():
+            return None
+        try:
+            return self._git("rev-parse", "HEAD").strip() or None
+        except Exception:
+            return None
+
+    def diff(self, sha1: str, sha2: str = "HEAD", path: str = "") -> str:
+        """Diff between two commits, optionally limited to one path.
+
+        ``path`` is relative to the project root.
+        """
         if not self._ensure_init():
             return ""
+        args = ["diff", sha1, sha2]
+        if path:
+            args += ["--", path]
         try:
-            return self._git("diff", sha1, sha2)
+            return self._git(*args)
         except Exception:
             return ""
+
+    def numstat(self, sha1: str, sha2: str = "HEAD") -> dict[str, tuple[int, int]]:
+        """``{rel_path: (added, removed)}`` between two commits.
+
+        Binary files report ``-``/``-`` in numstat; they map to (0, 0).
+        """
+        if not self._ensure_init():
+            return {}
+        try:
+            out = self._git("diff", "--numstat", sha1, sha2)
+        except Exception:
+            return {}
+        result: dict[str, tuple[int, int]] = {}
+        for line in out.splitlines():
+            parts = line.split("\t")
+            if len(parts) != 3:
+                continue
+            add, rem, rel = parts
+            try:
+                result[rel] = (int(add), int(rem))
+            except ValueError:
+                result[rel] = (0, 0)
+        return result
 
     def restore_file(self, sha: str, file_path: str, dest: str) -> bool:
         """Restore a single file from a shadow commit to ``dest``.

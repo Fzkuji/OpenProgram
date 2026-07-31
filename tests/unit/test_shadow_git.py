@@ -153,3 +153,36 @@ def test_deleted_file_tracked(store: ShadowGitStore, project_dir: Path):
 
     d = store.diff(sha1, sha2)
     assert "delete_me.txt" in d
+
+
+def test_head_sha_returns_current_commit(store: ShadowGitStore, project_dir: Path):
+    f = project_dir / "h.py"
+    f.write_text("a\n")
+    sha = store.commit_turn("t1", [str(f)])
+    assert store.head_sha() == sha
+
+
+def test_numstat_counts_added_and_removed(store: ShadowGitStore, project_dir: Path):
+    f = project_dir / "n.py"
+    f.write_text("one\ntwo\nthree\n")
+    sha1 = store.commit_turn("t1", [str(f)])
+    f.write_text("one\nTWO\nthree\nfour\n")
+    sha2 = store.commit_turn("t2", [str(f)])
+
+    stats = store.numstat(sha1, sha2)
+    assert stats["n.py"] == (2, 1)
+
+
+def test_diff_can_be_limited_to_one_path(store: ShadowGitStore, project_dir: Path):
+    a = project_dir / "a.py"
+    b = project_dir / "b.py"
+    a.write_text("a1\n")
+    b.write_text("b1\n")
+    sha1 = store.commit_turn("t1", [str(a), str(b)])
+    a.write_text("a2\n")
+    b.write_text("b2\n")
+    sha2 = store.commit_turn("t2", [str(a), str(b)])
+
+    only_a = store.diff(sha1, sha2, "a.py")
+    assert "a.py" in only_a
+    assert "b.py" not in only_a

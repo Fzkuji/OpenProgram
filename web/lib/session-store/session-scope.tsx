@@ -24,7 +24,7 @@
  * to them.
  */
 import { createContext, useContext, useRef } from "react";
-import { useStore, type StoreApi } from "zustand";
+import { createStore, useStore, type StoreApi } from "zustand";
 
 import { useSessionStore } from "./index";
 import {
@@ -101,3 +101,26 @@ export function useSessionScope<T>(selector: (s: SessionScopeState) => T): T {
 export function useScopedSessionId(): string {
   return useSessionScope((s) => s.sid);
 }
+
+/**
+ * This subtree's session id, or `null` when nothing scopes it.
+ *
+ * For chips that render both inside a per-session composer and (historically)
+ * in the unscoped topbar: inside a provider they must follow their own pane,
+ * outside one they fall back to the focused session. Everything with a single
+ * call site should use `useScopedSessionId` and keep the missing-wrap error.
+ */
+export function useOptionalScopedSessionId(): string | null {
+  const store = useContext(SessionScopeContext);
+  return useStore(
+    store ?? EMPTY_SCOPE_STORE,
+    (s) => (store ? s.sid : null),
+  );
+}
+
+// Hooks can't be called conditionally, so the no-provider case subscribes to
+// this inert store instead of skipping `useStore`. Kept out of the registry:
+// it stands for "no session", not for one named `__unscoped__`.
+const EMPTY_SCOPE_STORE = createStore<SessionScopeState>(
+  () => ({ sid: "" }) as SessionScopeState,
+);

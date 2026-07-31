@@ -31,6 +31,85 @@ from openprogram.agent.dispatcher.titles import (
 )
 
 
+def commit_turn_to_shadow_git(
+    session_id: str, assistant_msg_id: str, user_text: str = "",
+) -> Optional[str]:
+    """Mirror this turn's file changes into the project's shadow repo.
+
+    The shadow repo (``~/.openprogram/shadow-git/<hash>/``) is entirely
+    separate from the user's ``.git``, so per-turn diffs work even when
+    the project is not a git repo at all. The checkpoint manifest is the
+    changed-file list — every write tool checkpoints before editing, so
+    it is exactly the set of paths this turn touched.
+
+    Stamps ``metadata['shadow_git'] = {repo, before, after}`` on the
+    assistant node: ``before`` is the shadow HEAD prior to this turn,
+    ``after`` the new commit. That pair is all ``turn_file_diff`` needs
+    to render a unified diff for the turn.
+
+    Best-effort: returns the new sha, or None when there is no bound
+    project / nothing changed / anything fails. Never raises — a shadow
+    bookkeeping glitch must not break the conversation.
+    """
+    try:
+        from openprogram.store import default_store
+        from openprogram.store.shadow_git import ShadowGitStore
+        from openprogram.store.snapshot.checkpoint import CheckpointStore
+        from openprogram.store.project import project_commit as _pc
+
+        project = _pc._project_for(session_id)
+        if project is None:
+            return None
+        store = default_store()
+        paths = CheckpointStore(
+            store._session_dir(session_id)).list_backed_paths(assistant_msg_id)
+        if not paths:
+            return None
+
+        shadow = ShadowGitStore(project.path)
+        before = shadow.head_sha()
+        first_line = (user_text or "").strip().splitlines()
+        after = shadow.commit_turn(
+            assistant_msg_id, list(paths),
+            (first_line[0][:60] if first_line else "") or "turn",
+        )
+        if not after:
+            return None
+
+        pair = store._open(session_id)
+        if pair is None:
+            return after
+        git, idx = pair
+        node = idx.nodes_by_id.get(assistant_msg_id)
+        if node is None:
+            return after
+        node.metadata = {
+            **(node.metadata or {}),
+            "shadow_git": {
+                "repo": project.path, "before": before, "after": after,
+            },
+        }
+        # Per-node metadata lives in the node's history file (not
+        # meta.json) — rewrite it so the stamp survives a worker
+        # restart, mirroring the project_commit stamp above.
+        import json as _json
+        role = (node.role or "x")[0]
+        fp = git.path / "history" / f"{node.seq:04d}-{role}-{node.id}.json"
+        if fp.exists():
+            tmp = fp.with_suffix(".json.tmp")
+            tmp.write_text(
+                _json.dumps(node.to_dict(), ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+            tmp.replace(fp)
+        return after
+    except Exception:
+        import logging
+        logging.getLogger(__name__).debug(
+            "shadow-git turn commit skipped", exc_info=True)
+        return None
+
+
 def finalize_turn(
     *,
     db,
@@ -266,6 +345,10 @@ def finalize_turn(
                 pass
     except Exception:
         pass
+
+    # 6.93. Shadow-git commit — see commit_turn_to_shadow_git.
+    commit_turn_to_shadow_git(
+        req.session_id, assistant_msg_id, req.user_text or "")
 
     # 6.95. Evict old per-turn file-backup snapshots beyond the soft cap.
     # The snapshots (checkpoints/<turn>/) are full copies written before

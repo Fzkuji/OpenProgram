@@ -29,6 +29,7 @@ import { HoverTip } from "@/components/ui/tooltip";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws-request";
+import { useBoundChat } from "./bound-chat";
 import { CHECK_SLOT, CHECK_SLOT_PAD, GROUP_LABEL, MENU_PANEL, MENU_SEPARATOR, itemCls } from "./menu-styles";
 
 /** Fired whenever the conversation's project changes so the topbar chip
@@ -47,10 +48,9 @@ interface Project {
 
 export function ProjectMenu({ onClose }: { onClose: () => void }) {
   const { text } = useTranslation();
-  const sessionId = useSessionStore((s) => s.currentSessionId);
-  const activeChatKey = useSessionStore((s) => s.activeChatKey);
+  const { sessionId, chatKey: activeChatKey } = useBoundChat();
   const pendingProjectId = useSessionStore((s) =>
-    s.activeChatKey ? s.pendingProjectsByChat[s.activeChatKey] ?? null : null,
+    activeChatKey ? s.pendingProjectsByChat[activeChatKey] ?? null : null,
   );
   const setPendingProject = useSessionStore((s) => s.setPendingProject);
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -214,10 +214,9 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
  */
 export function ProjectBadge() {
   const { text } = useTranslation();
-  const sessionId = useSessionStore((s) => s.currentSessionId);
-  const activeChatKey = useSessionStore((s) => s.activeChatKey);
+  const { sessionId, chatKey: activeChatKey } = useBoundChat();
   const pendingProjectId = useSessionStore((s) =>
-    s.activeChatKey ? s.pendingProjectsByChat[s.activeChatKey] ?? null : null,
+    activeChatKey ? s.pendingProjectsByChat[activeChatKey] ?? null : null,
   );
   const takePendingProject = useSessionStore((s) => s.takePendingProject);
   const [open, setOpen] = useState(false);

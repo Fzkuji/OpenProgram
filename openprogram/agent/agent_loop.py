@@ -483,8 +483,62 @@ async def _stream_assistant_response(
 _BASH_LIKE_TOOLS = frozenset({"bash"})
 
 
+# Directories never worth walking for agent-authored edits: VCS
+# internals, dependency trees, build output, caches. Skipping them is
+# what keeps the recursive scan cheap in a real project.
+_SCAN_SKIP_DIRS = frozenset({
+    ".git", ".hg", ".svn", "node_modules", "__pycache__", ".venv", "venv",
+    "env", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".next",
+    "dist", "build", "target", ".gradle", ".idea", ".cache", "vendor",
+    ".terraform", "site-packages", ".openprogram",
+})
+# Bounds so a bash run inside a huge tree can't stall the turn. Depth 6
+# reaches normal source layouts; the file cap is a hard stop.
+_SCAN_MAX_DEPTH = 6
+_SCAN_MAX_FILES = 20000
+
+
+def _walk_scan(root: str):
+    """Yield (path, (mtime_ns, size)) for files under ``root``.
+
+    Recursive but bounded: skips dot-entries and `_SCAN_SKIP_DIRS`, stops
+    at `_SCAN_MAX_DEPTH` and `_SCAN_MAX_FILES`. Shared by the before and
+    after passes so both see exactly the same file set — if they diverged,
+    the diff would report phantom changes.
+    """
+    import os
+
+    seen = 0
+    stack = [(root, 0)]
+    while stack:
+        path, depth = stack.pop()
+        try:
+            entries = list(os.scandir(path))
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    if entry.name in _SCAN_SKIP_DIRS or depth >= _SCAN_MAX_DEPTH:
+                        continue
+                    stack.append((entry.path, depth + 1))
+                elif entry.is_file(follow_symlinks=False):
+                    st = entry.stat(follow_symlinks=False)
+                    yield entry.path, (st.st_mtime_ns, st.st_size)
+                    seen += 1
+                    if seen >= _SCAN_MAX_FILES:
+                        return
+            except OSError:
+                continue
+
+
 def _snapshot_cwd(tool_name: str) -> dict[str, tuple[float, int]] | None:
-    """For bash-like tools, record mtime+size of files in cwd (shallow).
+    """For bash-like tools, record mtime+size of files under cwd.
+
+    Walks subdirectories (bounded — see `_walk_scan`), because bash can
+    write anywhere in the tree, not just the top level.
 
     Returns None for non-bash tools (they have their own per-file backup).
     """
@@ -494,17 +548,7 @@ def _snapshot_cwd(tool_name: str) -> dict[str, tuple[float, int]] | None:
         import os
         from openprogram.worktree.context import current_worktree_path
         cwd = current_worktree_path() or os.getcwd()
-        snap: dict[str, tuple[float, int]] = {}
-        for entry in os.scandir(cwd):
-            if entry.name.startswith("."):
-                continue
-            if entry.is_file(follow_symlinks=False):
-                try:
-                    st = entry.stat(follow_symlinks=False)
-                    snap[entry.path] = (st.st_mtime_ns, st.st_size)
-                except OSError:
-                    pass
-        return snap
+        return dict(_walk_scan(cwd))
     except Exception:
         return None
 
@@ -522,17 +566,16 @@ def _checkpoint_changed_files(
         from openprogram.store.snapshot.checkpoint.helpers import checkpoint_before_edit
 
         cwd = current_worktree_path() or os.getcwd()
-        for entry in os.scandir(cwd):
-            if entry.name.startswith("."):
-                continue
-            if entry.is_file(follow_symlinks=False):
-                try:
-                    st = entry.stat(follow_symlinks=False)
-                    prev = pre.get(entry.path)
-                    if prev is None or prev != (st.st_mtime_ns, st.st_size):
-                        checkpoint_before_edit(entry.path)
-                except OSError:
-                    pass
+        post = dict(_walk_scan(cwd))
+        for path, stat in post.items():
+            prev = pre.get(path)
+            if prev is None or prev != stat:
+                checkpoint_before_edit(path)
+        # ponytail: bash-only deletions stay unrecoverable. The file is
+        # already gone by the time we look, and checkpoint_before_edit
+        # would record it pre_existing=False — which makes revert_turn
+        # DELETE the path rather than restore it. Catching deletes needs
+        # a pre-turn content copy, not a post-hoc stat diff.
     except Exception:
         pass
 
