@@ -82,7 +82,7 @@ all live in the runtime.
 enter @agentic_function       → write a code node (status=running)
                               → set the _call_id ContextVar to point at this node
 runtime.exec() in the body    → write an llm node under the current _call_id
-                              → the node's called_by = _call_id
+                              → the node's caller = _call_id
 exit the function (return / except) → backfill the same code node's output / status
 ```
 

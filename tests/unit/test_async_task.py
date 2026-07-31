@@ -321,3 +321,61 @@ def test_runner_pool_backpressure(store_fixture, fake_worker, monkeypatch):
     for t in ids:
         final = runner.await_task(t, timeout=5.0)
         assert final.status in (TaskStatus.COMPLETED, TaskStatus.ERRORED)
+
+
+def test_runner_releases_bookkeeping_after_completion(store_fixture, fake_worker,
+                                                      monkeypatch):
+    """Both _tasks AND _done_events must be emptied once a task ends.
+
+    _done_events used to be written on spawn and never popped, leaking
+    one threading.Event per task for the process lifetime. Popping it
+    is safe because await_task grabs its reference before waiting.
+    """
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    _, barrier, _, _ = fake_worker
+    from openprogram.agent.task import get_runner, TaskStatus
+    runner = get_runner()
+    barrier.set()  # let workers run straight through
+    ids = [
+        runner.spawn_task(
+            session_id="p1", prompt=f"n{i}", agent_id="main",
+            parent_msg_id="a1",
+        )
+        for i in range(5)
+    ]
+    for t in ids:
+        assert runner.await_task(t, timeout=5.0).status == TaskStatus.COMPLETED
+    # Give the finally-block a beat to run after the last status write.
+    for _ in range(50):
+        if not runner._tasks and not runner._done_events:
+            break
+        time.sleep(0.02)
+    assert runner._tasks == {}, "task entries leaked"
+    assert runner._done_events == {}, "done-events leaked"
+
+
+def test_runner_await_after_completion_still_returns(store_fixture, fake_worker,
+                                                     monkeypatch):
+    """await_task on an already-finished task works with no done-event.
+
+    Once _done_events is popped, a late waiter falls through to the
+    terminal-status check and returns immediately.
+    """
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    _, barrier, _, _ = fake_worker
+    from openprogram.agent.task import get_runner, TaskStatus
+    runner = get_runner()
+    barrier.set()
+    tid = runner.spawn_task(
+        session_id="p1", prompt="quick", agent_id="main", parent_msg_id="a1",
+    )
+    assert runner.await_task(tid, timeout=5.0).status == TaskStatus.COMPLETED
+    # Second await, long after the event was dropped, must not hang.
+    started = time.time()
+    again = runner.await_task(tid, timeout=5.0)
+    assert again.status == TaskStatus.COMPLETED
+    assert time.time() - started < 1.0

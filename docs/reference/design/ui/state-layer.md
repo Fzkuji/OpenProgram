@@ -25,7 +25,7 @@ one object holding both data (`currentSessionId`, `composerDrafts`) and the
 functions that change it (`setCurrentConv`, `setComposerInput`). Any component
 anywhere in the page can read any field from that box without it being passed
 down through props. The main box is
-`web/lib/session-store/index.ts:411`.
+`web/lib/session-store/index.ts:400`.
 
 **A component subscribes to a slice.** When a component calls
 `useSessionStore((s) => s.conversations)`, React re-renders that component
@@ -79,7 +79,7 @@ should converge on.
 calling out: it is a flat FIFO array, but each entry carries its own
 `sessionId` (`web/lib/session-store/types.ts:60`), and the composer filters
 the queue down to its own session at
-`web/components/chat/composer/index.tsx:352`. Functionally it is already
+`web/components/chat/composer/index.tsx:344`. Functionally it is already
 session-scoped; structurally it is a list that every consumer must filter
 correctly.
 
@@ -513,7 +513,7 @@ consumers switch to `useSessionScope`. In rough order of independence:
    the runtime bridge.
 
 Risks: `pendingDecisions` routing must be re-checked at each step — it is
-filtered by `sessionId` at `web/components/chat/composer/index.tsx:352`, and a
+filtered by `sessionId` at `web/components/chat/composer/index.tsx:344`, and a
 mis-scoped composer would either swallow another session's question or show it
 twice. The fn-form group is the largest single change because eight files
 consume it.

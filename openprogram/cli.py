@@ -91,7 +91,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
         "agents", "sessions", "channels", "config", "programs", "skills", "plugins", "doctor",
         "providers", "web", "resume", "init", "doctor", "browser",
         "worker", "update", "memory", "mcp",
-        "stop", "status", "restart", "help",
+        "stop", "status", "restart", "upgrade", "help",
     }
     bypass_flags = {
         "--print", "-p", "--help", "-h", "--version", "--print-prompt",
@@ -284,6 +284,7 @@ def build_parser() -> argparse.ArgumentParser:
             "    status          is the background service running? (PID, port, uptime)\n"
             "    stop            stop it (web UI stays up until you do)\n"
             "    restart         restart it (after changing code / config)\n"
+            "    upgrade         update the code, then restart only if it works\n"
             "\n"
             "  setup & config\n"
             "    setup           first-run setup wizard\n"
@@ -677,6 +678,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show whether the background service is running (PID, port, uptime).")
     sub.add_parser("restart",
         help="Restart the background service (picks up new code / config).")
+
+    # ---- upgrade ----------------------------------------------------------
+    p_upgrade = sub.add_parser("upgrade",
+        help="Update to the latest code through a gated step chain "
+             "(preflight, build, cold-start probe, restart, verify). "
+             "Use this instead of `restart` after pulling code.")
+    upgrade_sub = p_upgrade.add_subparsers(dest="upgrade_verb", metavar="verb")
+    p_upgrade_status = upgrade_sub.add_parser("status",
+        help="Show the channel, current sha, target sha, and whether an "
+             "update is available. Read-only.")
+    # Repeated on the subparser so both `upgrade --json status` and the
+    # natural `upgrade status --json` work.
+    p_upgrade_status.add_argument("--json", action="store_true",
+        help="Emit JSON")
+    p_upgrade_status.add_argument("--channel", metavar="NAME",
+        help="Report against this channel instead of the configured one.")
+    p_upgrade.add_argument("--channel", metavar="NAME",
+        help="Release line to follow (default: stable). Persisted as the "
+             "`update.channel` setting.")
+    p_upgrade.add_argument("--dry-run", action="store_true",
+        help="Print the planned steps and change nothing.")
+    p_upgrade.add_argument("--no-restart", action="store_true",
+        help="Stop after the probe — build and verify the new code without "
+             "restarting the running instance.")
+    p_upgrade.add_argument("--yes", "-y", action="store_true",
+        help="Skip the confirmation a downgrade would otherwise require.")
+    p_upgrade.add_argument("--json", action="store_true", help="Emit JSON")
 
     # ---- channels ---------------------------------------------------------
     p_channels = sub.add_parser("channels",
@@ -1283,6 +1311,9 @@ def main():
     if args.command == "restart":
         from openprogram import worker as _worker
         sys.exit(_worker.restart_worker())
+    if args.command == "upgrade":
+        from openprogram._cli_cmds.upgrade import _cmd_upgrade
+        sys.exit(_cmd_upgrade(args))
     if args.command == "status":
         from openprogram import worker as _worker
         from openprogram.worker import services as _services

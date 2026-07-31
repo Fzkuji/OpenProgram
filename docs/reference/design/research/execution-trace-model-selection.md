@@ -120,4 +120,4 @@ span = { id, parent_id, name/kind, start, end, status, attributes, events[] }
 ## Relationship to the design doc
 
 This document is a **selection study** (why go with span). The concrete data model + context retrieval + the implementation design for merging the two call paths
-is in `docs/design/runtime/session-dag.md` (authoritative); the call-flow skeleton is in `agent-call-flow.md`.
+is in `docs/reference/design/runtime/session-dag.md` (authoritative); the call-flow skeleton is in `agent-call-flow.md`.

@@ -197,8 +197,10 @@ export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeP
       : { label: "下一题 ›", onClick: () => setIdx((i) => Math.min(steps.length - 1, i + 1)), primary: true };
     onAction({ navButtons: steps.length > 1 ? [prev, nextOrSend] : [nextOrSend] });
     return () => onAction(null);
+    // ``answers`` matters: submit() closes over it, so without this dep
+    // an edit made after allAnswered flipped would send a stale snapshot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, atFirst, atLast, allAnswered, q.id]);
+  }, [idx, atFirst, atLast, allAnswered, q.id, answers]);
 
   if (!cur) return null;
 

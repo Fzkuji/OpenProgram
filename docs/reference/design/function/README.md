@@ -12,6 +12,7 @@ moved to the user guide:
 | Topic | Source |
 |---|---|
 | Function/tool calling framework (`@function` / `@agentic_function`, shared registry, gating, deferred loading) | [`function-calling-unification.md`](function-calling-unification.md) |
+| Decorator usage, metadata spec, the tool-call loop, pure-python helpers | product pages under [`capabilities/agentic-programming/`](../../../capabilities/agentic-programming/README.md) — these are the single home; the former design duplicates here were deleted |
 
 ## Implementation files
 

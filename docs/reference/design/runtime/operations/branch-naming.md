@@ -4,7 +4,7 @@ Status: **decided (the four decisions are settled; ready to implement)** · Crea
 
 > Let DAG fork branches be named automatically too. **Use the session naming mechanism (`titles.py`) as a reference,
 > but borrow only the two-stage + progressive + lock skeleton; the placeholder, prompt, counter, and fields are
-> deliberately not aligned with session** at several points (reasons given in each section). For the session baseline see `docs/design/runtime/session/name.md`.
+> deliberately not aligned with session** at several points (reasons given in each section). For the session baseline see `docs/reference/design/runtime/session/name.md`.
 
 ## 1. Goals
 

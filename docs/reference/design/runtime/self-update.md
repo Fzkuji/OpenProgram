@@ -1,7 +1,9 @@
 # Self-update: staying usable while OpenProgram modifies itself
 
-*Design note, 2026-08-01. Status: approved direction; phase 1 is current
-practice, phases 2–3 unimplemented.*
+*Design note, 2026-08-01. Status: phase 1 is current practice; phase 2 is
+implemented (`openprogram upgrade`, `openprogram/_cli_cmds/upgrade.py`,
+user docs at `docs/server/upgrading.md`); phase 3 unimplemented — a failed
+verify prints the manual rollback command instead of rolling back.*
 
 ## 1. Problem
 

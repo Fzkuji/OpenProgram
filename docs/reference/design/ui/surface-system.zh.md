@@ -123,17 +123,18 @@ sm / md / lg 的阶梯——一旦你选定 list 还是 button，
 ```
 set         height               radius             css tokens
 ─────────────────────────────────────────────────────────────────
-list        32 px                6 px               --ui-list-h
+list        32 px                10 px              --ui-list-h
                                                     --ui-list-radius
 ─────────────────────────────────────────────────────────────────
-button      30 px (slightly      8 px               --ui-button-h
+button      30 px (slightly      10 px              --ui-button-h
             shorter than list)                      --ui-button-radius
 ─────────────────────────────────────────────────────────────────
 ```
 
 为什么 button 比 list 矮：panel 表面上的胶囊在视觉上
-不应当压过它旁边的侧边栏行。略大的圆角（8 对 6）在不
-比拼高度的前提下区分了二者。
+不应当压过它旁边的侧边栏行。两套共用同一个 10px 圆角
+—— Claude 的形状语言把列表行和小按钮都放在 10px，把
+12px（`--radius-lg`）留给卡片和面板。
 
 为什么套内无变体：当设计允许一个槽位从 sm / md / lg
 中挑选时，每位作者都会开始与设计讨价还价；结果就是

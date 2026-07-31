@@ -453,7 +453,7 @@ Your output will be parsed into a decision — emit one JSON object.
 
 <git_status>                                                     ← L2 order=2 git status
 Branch: main
-M docs/design/context/context-composition.md
+M docs/reference/design/context/context-composition.md
 </git_status>
 
 <todo>                                                           ← L2 order=3 todo
@@ -510,7 +510,7 @@ Your output is stored by literature, fed to extract_framework next.
 
 <git_status>                                                     ← L2 git status
 Branch: main
-M docs/design/context/context-composition.md
+M docs/reference/design/context/context-composition.md
 </git_status>
 
 <todo>                                                           ← L2 todo
@@ -559,7 +559,7 @@ Your output will be parsed into a stage name.
 
 <git_status>                                                     ← L2 git status
 Branch: main
-M docs/design/context/context-composition.md
+M docs/reference/design/context/context-composition.md
 A openprogram/context/components.py
 </git_status>
 
@@ -617,7 +617,7 @@ Your output is passed to generate_ideas as the per-idea novelty verdict.
 
 <git_status>                                                     ← L2 git status
 Branch: main
-M docs/design/context/context-composition.md
+M docs/reference/design/context/context-composition.md
 </git_status>
 
 <todo>                                                           ← L2 todo
@@ -684,4 +684,4 @@ All of the following are in place:
 - `context-comparison.md` — component comparison with reference projects (source for finding gaps)
 - `context-compaction.md` — context-compaction design (text-level four-stage pipeline + DAG-level node visibility pruning)
 - `../providers/request-build.md` — downstream: Context translated into each vendor's wire + cache landing
-- `agentic-self-recursion.md` — `_situational_prefix`, the prototype of the L2 situation
+- `../runtime/execution/agentic-self-recursion.md` — `_situational_prefix`, the prototype of the L2 situation

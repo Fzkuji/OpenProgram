@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development。每任务 checkbox 跟踪。
 
-**Goal:** 落地 `docs/design/providers/models/models.md` 的最终设计：系统只持久化用户启用的模型（完整规格存 `config.json` 的 `providers.<p>.models`），可选模型列表改为设置页实时查询（不落盘），删除 752 行手写 `models.json` 与 `models.fetched.json` 持久化机制，配置合一到 `provider.json`，最终注册表改名 `ENABLED_MODELS`。
+**Goal:** 落地 `docs/reference/design/providers/models/models.md` 的最终设计：系统只持久化用户启用的模型（完整规格存 `config.json` 的 `providers.<p>.models`），可选模型列表改为设置页实时查询（不落盘），删除 752 行手写 `models.json` 与 `models.fetched.json` 持久化机制，配置合一到 `provider.json`，最终注册表改名 `ENABLED_MODELS`。
 
-**Architecture:** 设计文档 = `docs/design/providers/models/models.md`（目标态第 1–7 节，迁移即本计划）。核心：`get_model()` 查的、聊天页显示的、用户勾选的必须是物理上同一份数据（config 里的启用规格）。「启用」动作 = 浏览行 ⊕ provider.json 的 model_overrides ⊕ endpoints 解析的 api/base_url ⊕ thinking 推导 → 完整规格写入 config。
+**Architecture:** 设计文档 = `docs/reference/design/providers/models/models.md`（目标态第 1–7 节，迁移即本计划）。核心：`get_model()` 查的、聊天页显示的、用户勾选的必须是物理上同一份数据（config 里的启用规格）。「启用」动作 = 浏览行 ⊕ provider.json 的 model_overrides ⊕ endpoints 解析的 api/base_url ⊕ thinking 推导 → 完整规格写入 config。
 
 **Tech Stack:** Python 3, pydantic (Model), pytest（`python3 -m pytest`；若有 `.venv-test/bin/python` 优先用它）。前端 web/ 尽量零改动（保持 API 响应形状）。
 
@@ -100,4 +100,4 @@
 
 - 端到端冒烟：启动 webui →（模拟）启用一个模型 → config 出现规格行 → `get_model` 命中 → 构造请求参数含正确 api/base_url/headers。
 - 多 wire 组合各 exec 一次构造（fixture 层面）：openai-completions / anthropic-messages / google-generative-ai / openai-responses。
-- 设计文档 `docs/design/providers/models/models.md` 第 8.1/8.2 节更新为已完成状态。
+- 设计文档 `docs/reference/design/providers/models/models.md` 第 8.1/8.2 节更新为已完成状态。

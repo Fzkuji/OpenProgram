@@ -192,8 +192,18 @@ agent_spawn 那样的隔离，隔离规则见 `ui/invariants.md` 规则 7）。
 ```
 web/lib/runtime-bridge/dag/
   pipeline.ts        调度：passes → layout → edges → nodes → badges → visibility
-  passes/            数据变换（merge runs、执行子树聚合、collapse）
-  layout/            lane / tier / depth（本文第一节的实现）
+  passes/            数据变换，按顺序：
+    merge-runs.ts               合并同一节点的连续 run
+    collapse-runtime-pairs.ts   把老式 display=runtime 的 user/assistant 包装对折成
+                                一行（`caller` 边 schema 之前，包装行自身没有聊天内容，
+                                单独画就是重复一列）
+    demote-decoration-cards.ts  把 LLM 触发的 runtime 卡片改挂，避免"一条回复既有卡片
+                                子节点又有后续 user 轮"被误判成 fork（那会把图劈成两条 lane）
+    apply-collapse.ts           折叠执行子树、出 ⚒N 徽标
+  layout/            lane / depth（本文第一节的实现）。
+                     **tier 不在这里算**——由后端
+                     `openprogram/webui/graph_layout/tier.py` 算好随节点下发，
+                     前端只消费。
   render/edges.ts    第三节的线型表
   render/nodes.ts    第四节的形状 + 状态描边 + 徽标
   render/badges.ts   第五节的分支名 badge
@@ -201,7 +211,8 @@ web/lib/runtime-bridge/dag/
 ```
 
 后端 `openprogram/webui/graph_builder.py` 产出节点数组（含 `branch_name` stamp、
-caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注。验证工具：
+caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier 具体在
+`graph_layout/tier.py`**。验证工具：
 `python tools/dag_dump.py <session_id>` 打印 lane/tier/depth + ASCII 网格。
 
 ## 八、与实现的已知差距（2026-07-10 盘点；同日全部落地）

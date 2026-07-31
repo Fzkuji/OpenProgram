@@ -231,17 +231,26 @@ class TaskRunner:
         # thread don't leak into the worker. Each task gets its own
         # context — the worker function rebinds session_id explicitly.
         ctx = contextvars.copy_context()
-        # Capture future *before* registering so cancel_task can find it.
+        # Register *before* submitting: a fast task can reach the
+        # finally-pop in _run_one before this thread gets the lock,
+        # which would leave the entry orphaned in _tasks forever.
+        # "future" is filled in right after submit, under the same lock.
+        entry: dict = {
+            "event": cancel_ev,
+            "future": None,
+            "session_id": session_id,
+        }
+        with self._lock:
+            self._tasks[task.id] = entry
+            self._done_events[task.id] = done_ev
         future: Future = self._pool.submit(
             ctx.run, self._run_one, task.id, cancel_ev, done_ev,
         )
         with self._lock:
-            self._tasks[task.id] = {
-                "event": cancel_ev,
-                "future": future,
-                "session_id": session_id,
-            }
-            self._done_events[task.id] = done_ev
+            # The worker may already have finished and popped the entry;
+            # only attach the future if it's still the live one.
+            if self._tasks.get(task.id) is entry:
+                entry["future"] = future
 
         # Mark queued. The transition pending→queued is allowed; the
         # worker may have already flipped it to running by the time
@@ -641,6 +650,12 @@ class TaskRunner:
             self._wake_done(task_id)
             with self._lock:
                 self._tasks.pop(task_id, None)
+                # Drop the done-event too, else it leaks one Event per
+                # task for the process lifetime. Waiters already hold a
+                # reference (await_task reads it before waiting) and it
+                # is set by _wake_done above; anyone arriving later sees
+                # the task is terminal and returns without waiting.
+                self._done_events.pop(task_id, None)
 
     # Internals
 

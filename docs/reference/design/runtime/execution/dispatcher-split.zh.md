@@ -1,6 +1,6 @@
 # 将 `agent/dispatcher.py` 拆分为按职责划分的包
 
-状态：**进行中** · 已删除死代码（1fab7479） · 步骤 0 建包 · 步骤 1 types.py · 步骤 2 titles.py + forced_tool.py · 步骤 3a runtime_attach.py（`_wrap_agentic_runtime_block`） · 步骤 4 finalize.py（阶段 6） · 步骤 5a persistence.py（阶段 5 助手消息持久化） · `__init__.py` 现已 <1000 行 · 负责人：agent/runtime · 创建时间：2026-06-04
+状态：**进行中** · 已删除死代码（1fab7479） · 步骤 0 建包 · 步骤 1 types.py · 步骤 2 titles.py + forced_tool.py · 步骤 3a runtime_attach.py（`_wrap_agentic_runtime_block`） · 步骤 4 finalize.py（阶段 6） · 步骤 5a persistence.py（阶段 5 助手消息持久化） · `__init__.py` 现为 1234 行（原 1928 行；`turn.py` + `loop.py` 尚未拆分） · 负责人：agent/runtime · 创建时间：2026-06-04
 
 > **测试接缝说明（步骤 3 期间发现）。** dispatcher 的单元测试在**包**对象上
 > monkeypatch 了 `D._resolve_model` / `D._load_agent_profile` / `D._run_loop_blocking`，
@@ -84,7 +84,7 @@ dispatcher/
 挂载 runtime → 运行循环 → 持久化助手消息 → 收尾 → 发出结果，每一步都是对兄弟
 模块中一个具名函数的调用。错误分类（阶段 4 / 循环的 except）与循环一起保留在
 `loop.py` 中，与
-`docs/design/providers/reliability/error-taxonomy-propagation.md` 保持一致。
+`docs/reference/design/providers/reliability/error-taxonomy-propagation.md` 保持一致。
 
 ## 4. 迁移顺序（爆炸半径最小者优先）
 

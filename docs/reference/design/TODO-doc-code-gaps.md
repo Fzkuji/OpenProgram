@@ -42,15 +42,6 @@ This file records the divergences between the design docs and the actual code, o
 
 ## Implementation lag (design is valid but the code has not fully caught up)
 
-### context/cross-turn-tool-context.md
-- The "tool aging + one-line semantic stub" strategy is fully described in the doc
-- `openprogram/context/tool_aging/` exists but the implementation diverges from the doc
-- Sync the doc once the implementation is finished.
-
-### providers/model-catalog-final.md
-- The full pipeline of models.dev auto-update TTL + overwrite-save of the fetched data has not fully landed
-- The model-list fetch logic exists but the auto-refresh mechanism is not implemented.
-
 ---
 
 ## Missing content
@@ -60,7 +51,7 @@ This file records the divergences between the design docs and the actual code, o
 - There is no corresponding design doc.
 
 ### runtime/ is missing a dispatcher design doc
-- `agent/dispatcher/__init__.py` is a 530-line core module
+- `agent/dispatcher/__init__.py` is a 1234-line core module — it **breaches the 1000-line rule** that `runtime/execution/dispatcher-split.md` set for itself (the split brought it down from 1928, but `turn.py` + `loop.py` are still pending)
 - There is no standalone design doc (dispatcher-split.md only discusses the split, it is not a full design).
 
 ---
@@ -70,7 +61,7 @@ This file records the divergences between the design docs and the actual code, o
 The following docs were audited and are fully consistent with the code; no changes needed:
 
 - `runtime/controllability-and-three-surface-sync.md` — attended/unattended, graceful stop, and three-surface sync are all implemented
-- `runtime/user-input-requests.md` — Phase 1+2 have landed (QuestionRegistry, the three Transports including the newly added TTYTransport)
+- `runtime/operations/user-input-requests.md` — Phase 1+2 have landed (QuestionRegistry, the three Transports including the newly added TTYTransport)
 - `function/function-calling-unification.md` — already uses the "profiles" terminology, consistent with the code
 - `extension-gating/implementation.md` — paths are now correct
 - `context/context.md` (merged from contextgit and four others + the overview diagram) — status markers are correct
@@ -91,7 +82,7 @@ The following docs were audited and are fully consistent with the code; no chang
   - The situational hint (`runtime._situational_prefix`) is injected at the start of the user turn, telling the model "you are inside X, calling X = infinite recursion, use the lower-level tools", with the docstring demoted to the back → directly negating the premise "this should route to wiki_agent".
   - Backstop: `_MAX_AGENTIC_RECURSION_DEPTH=5`, counted per function name; exceeding 5 levels for the same name raises `RecursionError`.
   - self-deny has been removed, the tool list contains the function itself, relying on guidance rather than hiding.
-  - Design doc: `docs/design/runtime/execution/agentic-self-recursion.md`; tests: `tests/agentic_programming/test_self_recursion_guard.py` (8 cases).
+  - Design doc: `docs/reference/design/runtime/execution/agentic-self-recursion.md`; tests: `tests/agentic_programming/test_self_recursion_guard.py` (8 cases).
 - **Remaining** (to do, see #2): scoping the toolset for each harness's exec + detecting cross-function cycles (A→B→A) (currently only direct self-recursion is guarded).
 - Session record: `~/.openprogram/sessions/local_d125e9a9c3/history/`
   the context_tree shows 7 levels of nesting (4d76→0c07→0964→c6f9→f1c9→4379→8746→100c).

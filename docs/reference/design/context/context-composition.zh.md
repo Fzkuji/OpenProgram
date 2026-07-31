@@ -508,7 +508,7 @@ Your output will be parsed into a decision — emit one JSON object.
 
 <git_status>                                                     ← L2 order=2 git 状态
 Branch: main
-M docs/design/context/context-composition.md
+M docs/reference/design/context/context-composition.md
 </git_status>
 
 <todo>                                                           ← L2 order=3 待办
@@ -568,7 +568,7 @@ Your output is stored by literature, fed to extract_framework next.
 
 <git_status>                                                     ← L2 git 状态
 Branch: main
-M docs/design/context/context-composition.md
+M docs/reference/design/context/context-composition.md
 </git_status>
 
 <todo>                                                           ← L2 待办
@@ -619,7 +619,7 @@ Your output will be parsed into a stage name.
 
 <git_status>                                                     ← L2 git 状态
 Branch: main
-M docs/design/context/context-composition.md
+M docs/reference/design/context/context-composition.md
 A openprogram/context/components.py
 </git_status>
 
@@ -681,7 +681,7 @@ Your output is passed to generate_ideas as the per-idea novelty verdict.
 
 <git_status>                                                     ← L2 git 状态
 Branch: main
-M docs/design/context/context-composition.md
+M docs/reference/design/context/context-composition.md
 </git_status>
 
 <todo>                                                           ← L2 待办

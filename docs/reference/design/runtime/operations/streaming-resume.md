@@ -116,7 +116,7 @@ This ensures no orphan msgs are left "running forever" after a backend restart.
 
 ## Schema Changes (Phase 1)
 
-`openprogram/store/_msg_adapter.py::_node_to_msg`:
+`openprogram/store/session/_msg_adapter.py::_node_to_msg`:
 
 - On write, reflect `node.metadata.status` / `started_at` / `last_update_at`
   into the msg dict

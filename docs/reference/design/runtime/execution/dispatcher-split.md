@@ -1,6 +1,6 @@
 # Splitting `agent/dispatcher.py` into a responsibility-scoped package
 
-Status: **in progress** · dead-code removed (1fab7479) · step 0 package · step 1 types.py · step 2 titles.py + forced_tool.py · step 3a runtime_attach.py (`_wrap_agentic_runtime_block`) · step 4 finalize.py (phase 6) · step 5a persistence.py (phase 5 assistant persist) · `__init__.py` now <1000 lines · Owner: agent/runtime · Created: 2026-06-04
+Status: **in progress** · dead-code removed (1fab7479) · step 0 package · step 1 types.py · step 2 titles.py + forced_tool.py · step 3a runtime_attach.py (`_wrap_agentic_runtime_block`) · step 4 finalize.py (phase 6) · step 5a persistence.py (phase 5 assistant persist) · `__init__.py` now 1234 lines (down from 1928; `turn.py` + `loop.py` still pending) · Owner: agent/runtime · Created: 2026-06-04
 
 > **Test seam note (discovered during step 3).** The dispatcher unit tests
 > monkeypatch `D._resolve_model` / `D._load_agent_profile` / `D._run_loop_blocking`
@@ -88,7 +88,7 @@ dispatcher/
 attach runtime → run loop → persist assistant → finalize → emit result, each a
 named call into the sibling modules. The error taxonomy classification (phase 4
 / the loop's except) stays co-located with the loop in `loop.py`, matching
-`docs/design/providers/reliability/error-taxonomy-propagation.md`.
+`docs/reference/design/providers/reliability/error-taxonomy-propagation.md`.
 
 ## 4. Migration order (smallest blast radius first)
 

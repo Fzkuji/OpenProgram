@@ -17,7 +17,7 @@
 [zustand](https://github.com/pmndrs/zustand)——一个小库，创建一个对象，里面既放数据
 （`currentSessionId`、`composerDrafts`），也放修改数据的函数（`setCurrentConv`、
 `setComposerInput`）。页面任何位置的组件都能直接读这个盒子里的任何字段，不需要一层层
-传 props。主盒子在 `web/lib/session-store/index.ts:411`。
+传 props。主盒子在 `web/lib/session-store/index.ts:400`。
 
 **组件订阅一个切片。** 组件调用 `useSessionStore((s) => s.conversations)` 时，只有
 `conversations` 变化才会触发它重新渲染。那个选择器函数就是订阅关系。
@@ -35,7 +35,7 @@
 
 `web/lib/session-store/index.ts`（906 行）在 `ConvState` 接口
 （`web/lib/session-store/index.ts:46`）里声明形状，在
-`web/lib/session-store/index.ts:411` 给初值。下面把每个字段归入三类之一。
+`web/lib/session-store/index.ts:400` 给初值。下面把每个字段归入三类之一。
 
 ### A 类 —— 已按会话隔离
 
@@ -61,7 +61,7 @@
 `pendingDecisions`（`web/lib/session-store/index.ts:244`）是个值得单独说的混合体：
 它是扁平的 FIFO 数组，但每一项自带 `sessionId`
 （`web/lib/session-store/types.ts:60`），composer 在
-`web/components/chat/composer/index.tsx:352` 把队列过滤到自己的会话。功能上已经按
+`web/components/chat/composer/index.tsx:344` 把队列过滤到自己的会话。功能上已经按
 会话隔离，结构上是一份需要每个消费方都正确过滤的列表。
 
 ### B 类 —— 全局单例，但语义属于某个会话
@@ -403,7 +403,7 @@ React context 提供键，让消费方读 `map[scopeKey]` 而不是读全局。`
    跟踪的东西。这是最后动的一个，也是对 runtime bridge 影响最大的一个。
 
 风险：每一步都要重新核查 `pendingDecisions` 的路由——它在
-`web/components/chat/composer/index.tsx:352` 按 `sessionId` 过滤，作用域搞错的 composer
+`web/components/chat/composer/index.tsx:344` 按 `sessionId` 过滤，作用域搞错的 composer
 要么吞掉另一个会话的提问，要么把它显示两遍。fn-form 这一组是单项最大的改动，因为有八个
 文件消费它。
 

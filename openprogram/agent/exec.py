@@ -70,6 +70,7 @@ async def exec_command(
     process = await asyncio.create_subprocess_exec(command, *args, **kwargs)
 
     killed = False
+    timed_out = False
 
     def kill_proc():
         nonlocal killed
@@ -102,25 +103,53 @@ async def exec_command(
     timeout_task = None
     if opts.timeout and opts.timeout > 0:
         async def _do_timeout():
+            nonlocal timed_out
             await asyncio.sleep(opts.timeout / 1000)
+            timed_out = True
             kill_proc()
         timeout_task = asyncio.create_task(_do_timeout())
 
+    comm_error: Exception | None = None
     try:
         stdout_bytes, stderr_bytes = await process.communicate()
-    except Exception:
+    except Exception as e:  # noqa: BLE001
         stdout_bytes, stderr_bytes = b"", b""
+        comm_error = e
     finally:
         if cancel_task:
             cancel_task.cancel()
         if timeout_task:
             timeout_task.cancel()
 
-    code = process.returncode if process.returncode is not None else 0
+    stdout = stdout_bytes.decode("utf-8", errors="replace")
+    stderr = stderr_bytes.decode("utf-8", errors="replace")
+
+    code = process.returncode
+    if code is None:
+        # We never reaped an exit status (communicate() raised, or the
+        # kill left the process unwaited). Killed or not, this is NOT a
+        # success — reporting 0 makes the caller treat a timed-out or
+        # cancelled command as if it had run cleanly.
+        code = 124 if timed_out else 1
+    elif killed and code == 0:
+        # Killed but the process still managed to exit 0 (raced the
+        # signal). The command did not complete on its own terms.
+        code = 124 if timed_out else 1
+
+    if timed_out:
+        note = f"timed out after {opts.timeout / 1000:g}s"
+    elif killed:
+        note = "killed (cancelled)"
+    elif comm_error is not None:
+        note = f"failed to read process output: {comm_error}"
+    else:
+        note = ""
+    if note:
+        stderr = (stderr + "\n" if stderr else "") + f"[exec] {note}"
 
     return ExecResult(
-        stdout=stdout_bytes.decode("utf-8", errors="replace"),
-        stderr=stderr_bytes.decode("utf-8", errors="replace"),
+        stdout=stdout,
+        stderr=stderr,
         code=code,
         killed=killed,
     )

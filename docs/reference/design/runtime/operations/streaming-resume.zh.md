@@ -115,7 +115,7 @@ worker 启动时：
 
 ## Schema 改动 (Phase 1)
 
-`openprogram/store/_msg_adapter.py::_node_to_msg`：
+`openprogram/store/session/_msg_adapter.py::_node_to_msg`：
 
 - 写入时把 `node.metadata.status` / `started_at` / `last_update_at`
   反映到 msg dict

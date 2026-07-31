@@ -131,18 +131,19 @@ button, height and radius are locked. CSS variables in
 ```
 set         height               radius             css tokens
 ─────────────────────────────────────────────────────────────────
-list        32 px                6 px               --ui-list-h
+list        32 px                10 px              --ui-list-h
                                                     --ui-list-radius
 ─────────────────────────────────────────────────────────────────
-button      30 px (slightly      8 px               --ui-button-h
+button      30 px (slightly      10 px              --ui-button-h
             shorter than list)                      --ui-button-radius
 ─────────────────────────────────────────────────────────────────
 ```
 
 Why button shorter than list: a pill on the panel surface should
-not visually outweigh the sidebar rows it sits next to. The
-slightly larger radius (8 vs 6) differentiates the two without
-competing on height.
+not visually outweigh the sidebar rows it sits next to. Both sets
+share the same 10 px radius — the Claude shape language puts list
+rows and small buttons at 10 px and reserves 12 px
+(`--radius-lg`) for cards and panels.
 
 Why no in-set variants: when the design lets one slot pick from
 sm / md / lg, every author starts negotiating with the design;

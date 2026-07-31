@@ -37,7 +37,7 @@
 
 **根因**：`models.json`（喂给 MODELS）是手写死的，没有任何机制自动更新它；而 Fetch/models.dev 是活的、会更新，但它们的结果进不了 MODELS。
 
-**注**：`models_generated.py` 顶部注释写着原设计意图是「Fetch 直接改写这个文件，无需手维护」，但当前实现没做到 —— Fetch 写的是 `models.fetched.json`，和 MODELS 读的 `models.json` 是两个文件。设计文档 `docs/design/providers/models/models.md` 描述的「models.dev 为主数据源 + 分层叠加」只在链 B 实现了，链 A（MODELS）没接上。
+**注**：`models_generated.py` 顶部注释写着原设计意图是「Fetch 直接改写这个文件，无需手维护」，但当前实现没做到 —— Fetch 写的是 `models.fetched.json`，和 MODELS 读的 `models.json` 是两个文件。设计文档 `docs/reference/design/providers/models/models.md` 描述的「models.dev 为主数据源 + 分层叠加」只在链 B 实现了，链 A（MODELS）没接上。
 
 ---
 
@@ -56,7 +56,7 @@
 
 ## 四、设计文档说的目标状态（供参考）
 
-`docs/design/providers/models/models.md`（最终设计已重写，含目标运行逻辑 + 迁移路径）：
+`docs/reference/design/providers/models/models.md`（最终设计已重写，含目标运行逻辑 + 迁移路径）：
 - 第 1 节：每个 provider 自包含（配置都在 `providers/<p>/` 下）。
 - 第 6 节「三层叠加」、第 7 节「models.dev 的角色」：models.dev 是主数据源，提供模型列表 + 价格 + 能力；`thinking.json` 补充思考档位（这套已有 `thinking_catalog` 自动推导）；MODELS schema 必填字段只有 `id/name/api/provider/base_url`，其中 `api`+`base_url` 来自 `provider.json`。
 - 第 9 节自己承认：「当前代码并非如此，MODELS 只从静态文件加载」，即上面第二节的裂缝。

@@ -4,7 +4,7 @@ Status: **decided（四条决策已定，可实现）** · Created: 2026-06-28
 
 > 让 DAG fork 分支也能自动命名。**以 session 命名机制（`titles.py`）为参照，
 > 但只借两阶段 + 渐进 + 锁的骨架；占位、prompt、计数、字段几处有意不对齐
-> session**（理由见各节）。session 基准见 `docs/design/runtime/session/name.md`。
+> session**（理由见各节）。session 基准见 `docs/reference/design/runtime/session/name.md`。
 
 ## 一、目标
 

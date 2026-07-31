@@ -4,7 +4,7 @@
 > 关联: [`agent-worktree.md`](../execution/agent-worktree.md)、[`memory-v2.md`](../../memory/memory-v2.md)
 > (实体层)、[`git-as-entity-memory.md`](../../memory/git-as-entity-memory.md)。
 > 代码: `store/snapshot/checkpoint/`、`store/shadow_git/`、
-> `store/read_tracking.py`、`agent/_revert.py`、`worktree/`。
+> `store/snapshot/read_tracking.py`、`agent/internals/_revert.py`、`worktree/`。
 
 ---
 
@@ -140,24 +140,22 @@ bash 工具的覆盖在 `_execute_tool_calls`（`agent_loop.py`，所有工具�
 
 ```python
 #### agent_loop.py — _execute_tool_calls 内部
-if tool_name == "bash":
-    pre_snapshot = _snapshot_cwd(cwd)       # 记录文件 mtime+size
-    result = tool.execute(...)
-    _checkpoint_changed_files(cwd, pre_snapshot)  # 对比，变更文件补做 checkpoint
-else:
-    result = tool.execute(...)               # write/edit 内部已有精确备份
+pre_snapshot = _snapshot_cwd(tool_call.name)   # 非 bash 类工具返回 None
+result = tool.execute(...)                     # write/edit 内部已有精确备份
+_checkpoint_changed_files(tool_call.name, pre_snapshot)  # 对比，变更文件补做 checkpoint
 ```
 
-`_snapshot_cwd`：扫描 cwd 下的文件，记录 `{path: (mtime_ns, size)}`，跳过 dotfile 目录。
-`_checkpoint_changed_files`：对比前后快照，对新增/修改的文件调用 `checkpoint_before_edit`。
-
-**已知限制**：当前快照只扫描 cwd 顶层文件，子目录中的变更暂未覆盖（可后续改为递归扫描）。
+`_snapshot_cwd(tool_name)`：只对 bash 类工具生效（`_BASH_LIKE_TOOLS`）。递归扫描工作目录
+（有活跃 worktree 时用 worktree 路径），记录 `{path: (mtime_ns, size)}`，并把每个文件的
+**执行前内容**拷进临时 staging 目录——否则命令跑完再从原路径备份，存下的已经是改后的内容。
+超过 `_STAGE_MAX_BYTES` 的大文件跳过 staging。
+`_checkpoint_changed_files`：对比前后快照，对新增/修改的文件从 staging 副本做 checkpoint。
 
 ---
 
 ## 5. 并发防护: read-before-edit (前置闸)
 
-`store/read_tracking.py`。整套机制的安全地基: 保证 agent 永远不会在"用户刚改过、agent 还没看到"的文件上盲写, 于是落进 ① checkpoint 和 ② shadow git 的每一笔都是**干净的 agent 改动**, 回退时不会误伤用户。
+`store/snapshot/read_tracking.py`。整套机制的安全地基: 保证 agent 永远不会在"用户刚改过、agent 还没看到"的文件上盲写, 于是落进 ① checkpoint 和 ② shadow git 的每一笔都是**干净的 agent 改动**, 回退时不会误伤用户。
 
 照搬 Claude Code 的 Edit/Write 契约:
 - **`read` 记基线** —— 读文件时记下它的指纹 `(mtime_ns, size, sha1)`。
@@ -338,7 +336,6 @@ Checkpoint、Shadow git、沙箱都是自动运行的底层机制，不暴露为
 
 | 项 | 说明 |
 |---|---|
-| bash checkpoint 递归扫描 | 当前只扫 cwd 顶层，子目录变更未覆盖 |
 | UI 明示当前会话的"主回退路径" | 后端就绪, 待前端 |
 | 容器沙箱（远期） | research_agent 等无人值守场景，需 Docker 集成 |
 

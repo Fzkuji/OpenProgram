@@ -66,9 +66,10 @@ Node:
   output       回复 / 返回值 / 用户文本
   status       running | success | error | cancelled
 
-  caller       谁调出我（子调用父 id）；顶层节点 = ROOT
-  predecessor  聊天里我前面是谁（对话链父 id）；首条 user 为空
+  caller       谁调出我（子调用父 id）；顶层节点没有
   attributes   元信息（token / model / source / expose …）
+               metadata["predecessor"] —— 聊天里我前面是谁（对话链父 id）。
+               **不是顶层字段**，见下。
   reads        这次调用读了哪些节点（渲染上下文用，不是结构边）
 ```
 
@@ -76,10 +77,15 @@ Node:
 
 一个节点有**两种父关系**，各用一条边，互不干扰：
 
-| 边 | 字段 | 含义 | 谁有它 |
+| 边 | 存在哪 | 含义 | 谁有它 |
 |---|---|---|---|
-| **子调用边** | `caller` | 谁调用了我执行 | 所有节点（顶层 = ROOT） |
-| **对话链边** | `predecessor` | 聊天顺序上我接在谁后面 | user / llm（首条 user 为空） |
+| **子调用边** | `caller`（`Call` 顶层字段，`context/nodes.py:95`） | 谁调用了我执行 | 只有真正被子调用的节点；普通顶层 assistant 回复**留空** |
+| **对话链边** | `metadata["predecessor"]`（**不是**顶层字段） | 聊天顺序上我接在谁后面 | user / llm（首条 user 为空） |
+
+**存储上的不对称——最容易搞错的地方**：只有 `caller` 是 `Call` dataclass 上的真实字段。
+`predecessor` 存在 **metadata 里面**，由 `store/session/_msg_adapter.py:101-107` 归一化成
+`meta["predecessor"]` 供 predecessor 索引使用。往 `Graph.from_dict` 传顶层 `predecessor` 会被
+**静默丢弃**（`context/nodes.py:346` 当作 legacy 字段 pop 掉），写了没用也不报错。
 
 **为什么两条都要——分支必须靠 `predecessor` 区分。** 用户 retry 一句话，同一位置
 冒出两个孩子，光靠 seq（时间）排不出"哪个孩子接哪条分支线"，必须有一条明确的
@@ -98,7 +104,7 @@ Node:
 | (ROOT) | 空 | 空 | None | None（容器） |
 | user | ROOT | 上一轮的 llm 回复（首条为空） | None | 用户文本 |
 | llm | 触发它的节点（顶层=本轮 user；函数内=那个 code 节点） | 本轮 user | system（可选） | 模型回复 |
-| code | 调它的节点（模型 tool_use=那个 llm；手动调=ROOT） | 当前分支 head（手动调时） | 函数参数 | 返回值 |
+| code | 调它的节点（模型 tool_use=那个 llm；**手动调=空**） | 当前分支 head（手动调时；根层为显式 `"ROOT"`） | 函数参数 | 返回值 |
 
 > 循环（for/while）不占节点——执行轨迹不记代码结构。循环跑 N 次 = 同一父下 N 个
 > 兄弟（按 seq 排）；可视化时折叠成 ×N（纯显示，数据仍是 N 个节点）。
@@ -205,8 +211,10 @@ placeholder / anchor / 辅助行。**SessionStore 里的 code 子树是唯一真
 
 三者对同一次调用必须产出一致的视图（同 id、同形状、同输出）。
 
-**caller 由调用方决定：** 用户手动调 → caller=ROOT；模型 tool_use → caller=该 llm
-节点；函数内部调 → caller=外层 code 节点（`_call_id` ContextVar 透传）。
+**caller 由调用方决定：** 用户手动调 → **caller 为空**（无外层 `@agentic_function`，
+靠 `metadata.predecessor` 挂进对话链：活跃分支 head，根层为显式 `"ROOT"`，见
+`function.py:186-204`）；模型 tool_use → caller=该 llm 节点；函数内部调 → caller=外层
+code 节点（`_call_id` ContextVar 透传）。
 
 **head_id 永不悬空：** 函数调用完成后 head 推进到真实的 code 节点 id，绝不指向
 不存在的 placeholder，否则刷新渲染空白。

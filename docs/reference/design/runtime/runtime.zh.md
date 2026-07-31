@@ -82,7 +82,7 @@ provider 层只关心"把请求发出去、把回复拿回来"。重试 / 节流
 进入 @agentic_function       → 写一个 code 节点 (status=running)
                               → 设 _call_id ContextVar 指向此节点
 函数体里 runtime.exec()      → 在当前 _call_id 下写一个 llm 节点
-                              → 节点的 called_by = _call_id
+                              → 节点的 caller = _call_id
 退出函数(return / except)     → 回填同一 code 节点的 output / status
 ```
 

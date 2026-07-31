@@ -318,7 +318,7 @@ In dependency order:
 | 11 | `web/components/chat/messages/attach-card.tsx` | Render the status badge (running / done / cancelled / error) |
 | 12 | `openprogram/agent/dispatcher.py::process_user_turn` | On startup, check `OPENPROGRAM_TASK_WORKERS` and initialize the runner singleton (idempotent) |
 | 13 | Tests | unit: state machine, runner submit + cancel + crash recovery; integration: spawn → await, N concurrent, cancel mid-flight (D13) |
-| 14 | `docs/design/runtime/async-task-lifecycle.md` | This document |
+| 14 | `docs/reference/design/runtime/async-task-lifecycle.md` | This document |
 
 ---
 

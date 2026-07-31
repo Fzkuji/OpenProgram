@@ -126,7 +126,7 @@ This is the biggest difference from an ordinary docs site, so the implementation
 ## 8. Navigation Generation Rules
 
 - Scan all `*.md` under `docs/` plus the 11 hand-written `*.html` files.
-- Directory = group: `docs/design/runtime/` → group "Runtime"; the group title prefers the top-level heading of that directory's `README.md`, falling back to a prettified directory name if absent.
+- Directory = group: `docs/reference/design/runtime/` → group "Runtime"; the group title prefers the top-level heading of that directory's `README.md`, falling back to a prettified directory name if absent.
 - Ordering within a group: `README.md` first, the rest by filename; a frontmatter `order` can be supported later.
 - Exclusions: `docs/_site/`, `docs/images/`, `docs/slides/`, `*/archive/` (archives collapsed or excluded by default, pending confirmation).
 - Top-level loose pages (`docs/*.md` such as GETTING_STARTED, install) go into the "Guides" group.
@@ -146,6 +146,6 @@ Commit at the end of each step (following the commit-directly-to-main convention
 ## 10. Open Items (Confirmed)
 
 1. **Color scheme** ✅: chosen by the implementer for "eye comfort" (light not glaring, dark not pure black).
-2. **archive directory** ✅: delete outright, don't include in the site. Already deleted `docs/archive/`, `docs/design/archive/`, `docs/design/proactive/_research_archive/`, 18 files in total.
+2. **archive directory** ✅: delete outright, don't include in the site. Already deleted `docs/archive/` and `docs/reference/design/archive/`. `docs/reference/design/proactive/_research_archive/` was **not** fully cleared — 3 files remain (`evaluation.md`, `replay.md`, `threat-model.md`); they are excluded from the site by the leading underscore, not by deletion.
 3. **Committing output** ✅: `docs/_site/` is committed into git.
 4. **Hosting** ✅: do it the optimal way — wire it into the worker's single-port route `/docs`.

@@ -42,15 +42,6 @@
 
 ## 实施滞后（设计有效但代码未完全跟上）
 
-### context/cross-turn-tool-context.md
-- "tool aging + 1 行语义 stub" 策略文档描述完整
-- `openprogram/context/tool_aging/` 存在但实现与文档有偏差
-- 待实施完成后同步文档
-
-### providers/model-catalog-final.md
-- models.dev 自动更新 TTL + fetched 覆盖式保存的完整流水线未完全落地
-- 模型列表拉取逻辑存在但自动刷新机制未实现
-
 ---
 
 ## 内容缺失
@@ -60,7 +51,7 @@
 - 没有对应的设计文档
 
 ### runtime/ 缺 dispatcher 设计文档
-- `agent/dispatcher/__init__.py` 是 530 行的核心模块
+- `agent/dispatcher/__init__.py` 是 1234 行的核心模块——**已突破** `runtime/execution/dispatcher-split.md` 给自己定的 1000 行上限（拆分把它从 1928 行降下来了，但 `turn.py` + `loop.py` 仍未做）
 - 没有独立的设计文档（dispatcher-split.md 只讨论拆分，不是完整设计）
 
 ---
@@ -70,7 +61,7 @@
 以下文档经审计与代码完全一致，无需修改：
 
 - `runtime/controllability-and-three-surface-sync.md` — attended/unattended、graceful stop、三端同步均已实现
-- `runtime/user-input-requests.md` — Phase 1+2 已落地（QuestionRegistry、三种 Transport 含新增的 TTYTransport）
+- `runtime/operations/user-input-requests.md` — Phase 1+2 已落地（QuestionRegistry、三种 Transport 含新增的 TTYTransport）
 - `function/function-calling-unification.md` — 已使用 "profiles" 术语，与代码一致
 - `extension-gating/implementation.md` — 路径已正确
 - `context/context.md`（合并自 contextgit 等五份 + 总图）— 状态标记正确
@@ -91,7 +82,7 @@
   - 处境提示(`runtime._situational_prefix`)注入 user turn 开头,告诉模型「你在 X 体内、调 X = 无限递归、用底层工具」,docstring 降级置后 → 直接否定「该路由给 wiki_agent」的前提。
   - 兜底:`_MAX_AGENTIC_RECURSION_DEPTH=5`,per-function-name 计数,同名超 5 层抛 `RecursionError`。
   - self-deny 已删,工具列表含函数自己,靠引导不靠屏蔽。
-  - 设计文档:`docs/design/runtime/execution/agentic-self-recursion.md`;测试:`tests/agentic_programming/test_self_recursion_guard.py`(8 用例)。
+  - 设计文档:`docs/reference/design/runtime/execution/agentic-self-recursion.md`;测试:`tests/agentic_programming/test_self_recursion_guard.py`(8 用例)。
 - **遗留**（待做，见 #2）：各 harness 的 exec 限定工具集 + 跨函数环(A→B→A)识别(当前只防直接自递归)。
 - 会话记录：`~/.openprogram/sessions/local_d125e9a9c3/history/`
   context_tree 展示 7 层嵌套(4d76→0c07→0964→c6f9→f1c9→4379→8746→100c)。

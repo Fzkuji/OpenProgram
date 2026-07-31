@@ -252,7 +252,8 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
     "server": [
         ("Overview", "概览", ["server/README.md"]),
         ("Operations", "运维", [
-            "server/configuration.md", "server/troubleshooting.md"]),
+            "server/configuration.md", "server/upgrading.md",
+            "server/troubleshooting.md"]),
     ],
     "reference": [
         ("Overview", "概览", ["reference/README.md"]),
@@ -308,7 +309,8 @@ PAGE_ORDER: dict[str, int] = {
     "integrations/openclaw.md": 1,
     "server/README.md": 0,
     "server/configuration.md": 1,
-    "server/troubleshooting.md": 2,
+    "server/upgrading.md": 2,
+    "server/troubleshooting.md": 3,
     "reference/README.md": 0,
     "reference/API.md": 1,
     "reference/api": 2,

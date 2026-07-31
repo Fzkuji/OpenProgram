@@ -15,7 +15,7 @@ catalog 兜底。一次性迁移器搬旧 JSON。
 
 ## Global Constraints
 
-- 设计源文档：`docs/design/providers/auth/credential-connection-unification.md`（每个任务的依据）。
+- 设计源文档：`docs/reference/design/providers/auth/credential-connection-unification.md`（每个任务的依据）。
 - **不做旧格式运行时兼容**：`_payload_from_dict` 只认新结构；旧结构靠一次性迁移器转换，转换后旧格式不再支持。
 - 凭据 schema 版本常量 `CREDENTIAL_SCHEMA_VERSION` 随本次结构变更 +1（旧 JSON 的 `v` 值触发迁移，不触发 `AuthCorruptCredentialError`）。
 - `Credential.metadata` 与展示信息（邮箱/名字/org）保持原地，不进 `CredentialData`、不进 `ResolvedConnection`。

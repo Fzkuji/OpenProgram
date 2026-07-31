@@ -2,8 +2,34 @@
 from __future__ import annotations
 
 import importlib
+import subprocess
+from pathlib import Path
 
 from fastapi.responses import JSONResponse
+
+_HEAD_SHA: str | None = None
+
+
+def _head_sha() -> str:
+    """Git sha of the checkout serving this process, or "" when it isn't a
+    checkout. Cached — it cannot change without a restart, and
+    ``openprogram upgrade`` polls this endpoint in a loop."""
+    global _HEAD_SHA
+    if _HEAD_SHA is None:
+        _HEAD_SHA = ""
+        try:
+            import openprogram
+            root = Path(openprogram.__file__).resolve().parents[1]
+            if (root / ".git").exists():
+                res = subprocess.run(
+                    ["git", "rev-parse", "HEAD"], cwd=str(root),
+                    capture_output=True, text=True, timeout=5,
+                )
+                if res.returncode == 0:
+                    _HEAD_SHA = res.stdout.strip()
+        except Exception:
+            _HEAD_SHA = ""
+    return _HEAD_SHA
 
 
 def register(app):
@@ -27,6 +53,9 @@ def register(app):
             "status": "ok",
             "checked_at": _time.time(),
             "uptime_seconds": int(_time.time() - _s._SERVER_START_TIME),
+            # Which code is actually serving — `openprogram upgrade`
+            # verifies the restarted instance against this.
+            "sha": _head_sha(),
         }
         try:
             from openprogram.agent.session_db import default_db

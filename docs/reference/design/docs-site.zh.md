@@ -126,7 +126,7 @@ docs/_site/                   ← 构建产物（git 忽略或按需提交）
 ## 八、导航生成规则
 
 - 扫描 `docs/` 下所有 `*.md` 与 11 篇手写 `*.html`。
-- 目录即分组：`docs/design/runtime/` → 分组 "Runtime"，组标题优先取该目录 `README.md` 的一级标题，无则用目录名美化。
+- 目录即分组：`docs/reference/design/runtime/` → 分组 "Runtime"，组标题优先取该目录 `README.md` 的一级标题，无则用目录名美化。
 - 组内排序：`README.md` 置顶，其余按文件名；后期可支持 frontmatter `order`。
 - 排除：`docs/_site/`、`docs/images/`、`docs/slides/`、`*/archive/`（归档默认折叠或排除，待确认）。
 - 顶层散页（`docs/*.md` 如 GETTING_STARTED、install）归入 "Guides" 组。
@@ -146,6 +146,6 @@ docs/_site/                   ← 构建产物（git 忽略或按需提交）
 ## 十、开放项（已确认）
 
 1. **配色** ✅：由实现方按"护眼"自定（浅色不刺眼、深色非纯黑）。
-2. **archive 目录** ✅：直接删除，不进站点。已删 `docs/archive/`、`docs/design/archive/`、`docs/design/proactive/_research_archive/` 共 18 文件。
+2. **archive 目录** ✅：直接删除，不进站点。已删 `docs/archive/`、`docs/reference/design/archive/`。`docs/reference/design/proactive/_research_archive/` **没有删干净**——还剩 3 个文件（`evaluation.md`、`replay.md`、`threat-model.md`）；它们靠下划线前缀被站点排除，不是靠删除。
 3. **产物入库** ✅：`docs/_site/` 提交进 git。
 4. **托管方式** ✅：做到最优 —— 接进 worker 单端口路由 `/docs`。

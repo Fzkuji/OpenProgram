@@ -1,5 +1,10 @@
 # 统一 session 上下文创建
 
+> 状态：S1 + S2 已落地。`session_context` 位于
+> `openprogram/store/session/context.py`；research harness `main.py` 已用它包住
+> `research_agent`。S3（dispatcher）与 S4（process_runner / 测试）**尚未完成**——
+> 两处仍各自手抄 set/reset 逻辑。下面的问题陈述描述的是 S1 之前的状态。
+
 ## 问题(为什么写这篇)
 
 OpenProgram 的几个核心能力——**函数 docstring 自动进 prompt**、**DAG 持久化**、
@@ -15,7 +20,7 @@ OpenProgram 的几个核心能力——**函数 docstring 自动进 prompt**、*
   docstring 写了详细指令,但命令行跑时模型收不到 → 退化成"What would you like to
   do"对话。**同一个函数,网页端正常、命令行不正常。**
 - `process_runner`(子进程)和 tests 各自**手抄了一遍** dispatcher 的 set/reset
-  逻辑(`process_runner.py:149-174`、`tests/.../test_runtime_exec_dag.py`)——
+  逻辑(`process_runner.py` 约 190-230 行、`tests/.../test_runtime_exec_dag.py`)——
   证明这块缺一个共享单元。
 
 核心矛盾:**装了 OpenProgram,不管命令行还是网页,行为就该一致**。现在不一致,

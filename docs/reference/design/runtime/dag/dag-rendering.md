@@ -226,8 +226,21 @@ node, hanging under its lane structure) remain drawable.
 ```
 web/lib/runtime-bridge/dag/
   pipeline.ts        orchestration: passes → layout → edges → nodes → badges → visibility
-  passes/            data transforms (merge runs, execution-subtree aggregation, collapse)
-  layout/            lane / tier / depth (the implementation of section 1)
+  passes/            data transforms, applied in order:
+    merge-runs.ts               merge consecutive runs of the same node
+    collapse-runtime-pairs.ts   fold a legacy display=runtime user/assistant
+                                wrapper pair into a single row (pre-`caller`-edge
+                                schema left the wrapper with no chat content of
+                                its own, so it duplicated the column)
+    demote-decoration-cards.ts  re-stamp LLM-triggered runtime cards so a reply
+                                with both a card child and a follow-up user turn
+                                isn't mistaken for a fork (which would split the
+                                figure into two lanes)
+    apply-collapse.ts           fold execution subtrees, emit the ⚒N badge
+  layout/            lane / depth (the implementation of section 1).
+                     **tier is NOT computed here** — the backend computes it in
+                     `openprogram/webui/graph_layout/tier.py` and ships it on the
+                     node; the front end only consumes the value.
   render/edges.ts    the line-style table of section 3
   render/nodes.ts    the shapes + status strokes + badges of section 4
   render/badges.ts   the branch-name badge of section 5
@@ -236,7 +249,7 @@ web/lib/runtime-bridge/dag/
 
 The backend `openprogram/webui/graph_builder.py` produces the node array (including the
 `branch_name` stamp, caller/predecessor), and `graph_layout/` does the lane/tier/depth
-annotation. Verification tool: `python tools/dag_dump.py <session_id>` prints
+annotation — **tier specifically in `graph_layout/tier.py`**. Verification tool: `python tools/dag_dump.py <session_id>` prints
 lane/tier/depth + an ASCII grid.
 
 ## 8. Known gaps vs. the implementation (2026-07-10 inventory; all landed same day)

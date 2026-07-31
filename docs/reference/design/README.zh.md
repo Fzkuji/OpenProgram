@@ -10,13 +10,18 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 |---|---|
 | [`context/context.md`](context/context.md) | Context 层：pipeline + DAG 存储 + ContextCommit + compaction/render + attach/merge + 跨轮工具 + 缺口 |
 | [`context/context-composition.md`](context/context-composition.md) | 目标状态：按调用分层（L0/L1/L2）+ 情境上下文 |
+| [`context/context-comparison.md`](context/context-comparison.md) | 与参考项目的 context 方案对比 |
+| [`context/context-compaction.html`](context/context-compaction.html) | Context 压缩（已渲染） |
 
 ## memory/ — 记忆系统（实体 + 抽象）
 
 | Doc | Topic |
 |---|---|
 | [`memory/README.md`](memory/README.md) | 记忆系统总览：架构、设计原则、实施状态 |
+| [`memory/memory.md`](memory/memory.md) | 记忆子系统概览 |
+| [`memory/memory-v2.md`](memory/memory-v2.md) | 记忆 v2：实体/抽象两层 + 溯源导航式回忆 |
 | [`memory/entity-memory.md`](memory/entity-memory.md) | 实体记忆：Session-Git + Project-Git，按生命周期组织 |
+| [`memory/git-as-entity-memory.md`](memory/git-as-entity-memory.md) | 用 Git 做实体记忆：Session-Git + Project-Git |
 | [`memory/virtual-memory.md`](memory/virtual-memory.md) | 抽象记忆：Timeline + Graph + Core，按类型 × 生命周期组织 |
 
 ## proactive/ — 事件层 + 主动性（事件驱动）
@@ -49,19 +54,29 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | Doc | Topic |
 |---|---|
 | [`runtime/runtime.md`](runtime/runtime.md) | Runtime API 行为（另见 [`../api/runtime.md`](../api/runtime.md)） |
-| [`runtime/user-input-requests.md`](runtime/operations/user-input-requests.md) | runtime.ask/confirm 等用户输入 |
+| [`runtime/operations/user-input-requests.md`](runtime/operations/user-input-requests.md) | runtime.ask/confirm 等用户输入 |
 | [`runtime/controllability-and-three-surface-sync.md`](runtime/controllability-and-three-surface-sync.md) | 值守/无人值守开关 + 中途干预 + 优雅停 + 三端同步 |
 | [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 三端同步实施细节 |
 | [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | 统一 session context |
-| [`runtime/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree 行为 |
-| [`runtime/async-task-lifecycle.md`](runtime/execution/async-task-lifecycle.md) | 异步任务生命周期 |
-| [`runtime/streaming-resume.md`](runtime/operations/streaming-resume.md) | 流式 + 恢复 |
-| [`runtime/file-management.md`](runtime/operations/file-management.md) | 回退层（commit / worktree） |
-| [`runtime/multi-agent-revert-todo.md`](runtime/operations/multi-agent-revert-todo.md) | 多 agent 回退 TODO |
-| [`runtime/session-dag.md`](runtime/dag/session-dag.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / called_by 边 / render_context）+ 两路径合并设计（8 步全完成） |
+| [`runtime/execution/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree 行为 |
+| [`runtime/execution/async-task-lifecycle.md`](runtime/execution/async-task-lifecycle.md) | 异步任务生命周期 |
+| [`runtime/operations/streaming-resume.md`](runtime/operations/streaming-resume.md) | 流式 + 恢复 |
+| [`runtime/operations/file-management.md`](runtime/operations/file-management.md) | 回退层（commit / worktree） |
+| [`runtime/operations/multi-agent-revert-todo.md`](runtime/operations/multi-agent-revert-todo.md) | 多 agent 回退 TODO |
+| [`runtime/dag/session-dag.md`](runtime/dag/session-dag.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / called_by 边 / render_context）+ 两路径合并设计（8 步全完成） |
 | [`runtime/dag/dag-rendering.md`](runtime/dag/dag-rendering.md) | **权威渲染规范**：布局/连线/图例/默认可见性，12 场景 |
 | [`runtime/dag/branch-collaboration.md`](runtime/dag/branch-collaboration.md) | 分支协作（通信 / 派活 / 合并）设计与实现步骤 |
-| [`runtime/dispatcher-split.md`](runtime/execution/dispatcher-split.md) | Dispatcher 拆分设计 |
+| [`runtime/execution/dispatcher-split.md`](runtime/execution/dispatcher-split.md) | Dispatcher 拆分设计 |
+| [`runtime/execution/next-step-decision.md`](runtime/execution/next-step-decision.md) | 下一步决策（模型如何选择接下来执行什么） |
+| [`runtime/execution/agentic-self-recursion.md`](runtime/execution/agentic-self-recursion.md) | Agentic 自递归（[已渲染](runtime/execution/agentic-self-recursion.html)） |
+| [`runtime/operations/rewind.md`](runtime/operations/rewind.md) | Rewind 回退 |
+| [`runtime/operations/branch-naming.md`](runtime/operations/branch-naming.md) | 分支命名（[已渲染](runtime/operations/branch-naming.html)） |
+| [`runtime/session/README.md`](runtime/session/README.md) | Session 子系统：数据模型、存储、命名、列表、生命周期 |
+| [`runtime/self-update.md`](runtime/self-update.zh.md) | 自我更新：一边改自己一边保持可用 |
+| [`runtime/permission-model.md`](runtime/permission-model.md) | 权限系统设计 |
+| [`runtime/agent-collaboration.md`](runtime/agent-collaboration.md) | Agent 协作：分支间通信原语 |
+| [`runtime/tool-toggle-management.md`](runtime/tool-toggle-management.md) | 工具开关 / 工具集管理设计 |
+| [`runtime/additional-working-directories.md`](runtime/additional-working-directories.md) | 会话多工作目录设计 |
 
 ## providers/ — LLM provider、凭证、模型目录、thinking/effort
 
@@ -81,6 +96,9 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`providers/reliability/error-taxonomy-propagation.md`](providers/reliability/error-taxonomy-propagation.md) | 错误分类 + 传播 |
 | [`providers/reliability/llm-fault-tolerance.md`](providers/reliability/llm-fault-tolerance.md) | LLM 容错（调研） |
 | [`providers/reliability/error-and-timeout-mechanism.html`](providers/reliability/error-and-timeout-mechanism.html) | 错误 + 超时机制（已渲染） |
+| [`providers/network-proxy.md`](providers/network-proxy.md) | 出站网络代理——调研、对比、统一设计 |
+| [`providers/auth/credential-connection-unification.md`](providers/auth/credential-connection-unification.md) | 凭证/连接统一 |
+| [`providers/PROBLEM-models-and-bailian.md`](providers/PROBLEM-models-and-bailian.md) | 当前问题：模型清单与百炼 provider（未解问题记录） |
 
 ## function/ — function 与工具调用
 
@@ -102,6 +120,9 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`cli/slash-commands-references.md`](cli/slash-commands-references.md) | 斜杠命令参考快照 |
 | [`cli/drop-run-command.md`](cli/drop-run-command.md) | 从 Web UI 触发的函数执行路径 |
 | [`cli/cli-naming.md`](cli/cli-naming.md) | CLI 命名 |
+| [`cli/single-port.md`](cli/single-port.md) | 单端口架构 |
+| [`cli/config-write-safety.md`](cli/config-write-safety.md) | 配置写入安全——原子 `update_config` |
+| [`cli/tui-upgrade.md`](cli/tui-upgrade.md) | TUI 升级 |
 
 ## channels/ — 消息通道
 
@@ -122,6 +143,8 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`ui/attachment-handling.md`](ui/attachment-handling.md) | 附件处理（[已渲染](ui/attachment-handling.html)） |
 | [`ui/composer-interaction-modes.md`](ui/composer-interaction-modes.md) | Composer 交互模式 |
 | [`ui/gui-agent-context.md`](ui/gui-agent-context.md) | GUI agent 上下文流转 |
+| [`ui/state-layer.md`](ui/state-layer.zh.md) | Web 状态层：会话级 vs 全局 store，会话作用域容器方案 |
+| [`ui/project-workspace.md`](ui/project-workspace.md) | 项目工作区——文件、标签页、多会话（[原型](ui/project-workspace-prototype.html)） |
 
 ## integrations/ — MCP、skills/plugins、harness 标准
 
@@ -141,13 +164,30 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | Doc | Topic |
 |---|---|
 | [`usage-metering.md`](usage-metering.md) | Usage 子系统（token/cost 记账、ledger、收口点、子进程、消费层） |
+| [`framework-overview.md`](framework-overview.md) | 框架总览：一次对话从输入到产出 |
+| [`docs-site.md`](docs-site.zh.md) | 文档站本身（构建、导航、双语路由） |
 
-## archive/
+## research/ — 调研
 
-历史审计、演示以及被取代的文档存放在
-`archive/`（已随迭代清理） 中以便追溯，不作为实现指导。
+| Doc | Topic |
+|---|---|
+| [`research/execution-trace-model-selection.md`](research/execution-trace-model-selection.md) | Agent 执行轨迹的数据模型选型（span 概念、创新点） |
 
-最近归档：
+## plans/ — 带日期的实施计划
+
+| Doc | Topic |
+|---|---|
+| [`plans/proactive-implementation.md`](plans/proactive-implementation.md) | 主动性层实施计划 |
+| [`plans/cache-control-passthrough.md`](plans/cache-control-passthrough.md) | Anthropic `cache_control` 逐块透传（已落地） |
+| [`plans/2026-07-08-credential-connection-unification.md`](plans/2026-07-08-credential-connection-unification.md) | 凭证/连接统一迁移 |
+| [`plans/2026-07-08-enabled-models-migration.md`](plans/2026-07-08-enabled-models-migration.md) | Enabled-models 迁移 |
+| [`plans/2026-07-08-provider-self-contained-migration.md`](plans/2026-07-08-provider-self-contained-migration.md) | Provider 自包含迁移 |
+
+## 已删除的文档
+
+不存在 `archive/` 目录：被取代的文档是直接删除的，需要时从 git 历史找回。
+
+历史上删除过：
 - `model-catalog-dynamic.md` / `model-catalog-per-provider.md` — 迭代草稿，被 `models.md` 取代
 - `claude-code-meridian-profile.md` — Meridian proxy 已砍，纯历史
 - `*-references.md` — 调研快照/原始研究笔记（slash-commands / tui-upgrade / user-input-requests）

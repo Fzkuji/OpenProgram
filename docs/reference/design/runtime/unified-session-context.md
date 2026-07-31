@@ -1,5 +1,11 @@
 # Unified session context creation
 
+> Status: S1 + S2 shipped. `session_context` lives at
+> `openprogram/store/session/context.py`; the research harness `main.py` wraps
+> `research_agent` with it. S3 (dispatcher) and S4 (process_runner / tests) are
+> **not done** — both still hand-copy the set/reset logic. The problem statement
+> below describes the pre-S1 state.
+
 ## Problem (why this doc exists)
 
 Several of OpenProgram's core capabilities — **automatically injecting a function's docstring into the prompt**, **DAG persistence**,
@@ -15,7 +21,7 @@ This context is **only set up by the dispatcher (the web / chat entry point)**, 
   docstrings of `design_experiments` / `write_section` contain detailed instructions, but on a command-line run the model never receives them → the agent degrades into a "What would you like to
   do" conversation. **The same function works on the web but not on the command line.**
 - `process_runner` (the subprocess) and the tests each **hand-copied** the dispatcher's set/reset
-  logic (`process_runner.py:149-174`, `tests/.../test_runtime_exec_dag.py`) —
+  logic (`process_runner.py` ~190-230, `tests/.../test_runtime_exec_dag.py`) —
   proof that this area is missing a shared unit.
 
 The core tension: **once OpenProgram is installed, behavior should be identical whether you run from the command line or the web**. Today it is not, and

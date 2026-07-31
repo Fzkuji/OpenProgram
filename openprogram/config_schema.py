@@ -70,6 +70,17 @@ def _search_choices() -> list[str]:
         return ["auto"]
 
 
+def _update_channels() -> list[str]:
+    """Channel names known to ``openprogram upgrade``. Best-effort — a
+    broken import degrades to the built-in default rather than breaking
+    the whole settings read."""
+    try:
+        from openprogram._cli_cmds.upgrade import CHANNELS
+        return sorted(CHANNELS)
+    except Exception:
+        return ["stable"]
+
+
 def _coerce(widget: str, value: Any) -> Any:
     if widget == "number":
         return int(value)
@@ -119,6 +130,13 @@ SETTINGS: list[SettingSpec] = [
         label="Memory backend", widget="enum", apply=APPLY_NEXT_START,
         default="local", choices=lambda: ["local", "none"],
         help="`local` = on-disk memory tool; `none` = disabled.",
+    ),
+    SettingSpec(
+        key="update.channel", path=("update", "channel"), group="Updates",
+        label="Update channel", widget="enum", apply=APPLY_LIVE,
+        default="stable", choices=_update_channels,
+        help="Which line of releases `openprogram upgrade` follows. "
+             "`stable` tracks origin/main.",
     ),
 ]
 

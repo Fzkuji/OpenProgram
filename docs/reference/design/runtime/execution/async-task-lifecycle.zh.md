@@ -318,7 +318,7 @@ agent spawn 一个 30 分钟的 deep research task，10 分钟后用户在 UI �
 | 11 | `web/components/chat/messages/attach-card.tsx` | 渲染 status badge (running / done / cancelled / error) |
 | 12 | `openprogram/agent/dispatcher.py::process_user_turn` | 启动时检查 `OPENPROGRAM_TASK_WORKERS` 并初始化 runner 单例（idempotent） |
 | 13 | Tests | unit：state machine、runner submit + cancel + crash 恢复；integration：spawn → await、并发 N、cancel mid-flight (D13) |
-| 14 | `docs/design/runtime/async-task-lifecycle.md` | 本文档 |
+| 14 | `docs/reference/design/runtime/async-task-lifecycle.md` | 本文档 |
 
 ---
 

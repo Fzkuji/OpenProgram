@@ -2,7 +2,7 @@
 
 Design goal: merge OpenProgram's currently scattered, mutually disconnected "command sources" — the CLI hardcoded table, the Web composer hardcoded table, `/api/plugins/commands`, MCP prompts, and skills — into a single **unified slash-command registry**: five layers, one format, one rendering pipeline, one UI.
 
-For the reference implementations, see `docs/design/cli/slash-commands-references.md`. Wherever this document says "borrow from X," it means we directly reuse that project's design choice.
+For the reference implementations, see `docs/reference/design/cli/slash-commands-references.md`. Wherever this document says "borrow from X," it means we directly reuse that project's design choice.
 
 ---
 
@@ -353,4 +353,4 @@ L4 / L5 are user-written and do not auto-update.
 
 L0 (builtin) tracks the OpenProgram version.
 
-`docs/design/cli/slash-commands-references.md` periodically rescans the implementations of the five reference projects; when new designs are found, return to §2/§3 of this document to add fields, without breaking existing frontmatter (extra fields go into extras).
+`docs/reference/design/cli/slash-commands-references.md` periodically rescans the implementations of the five reference projects; when new designs are found, return to §2/§3 of this document to add fields, without breaking existing frontmatter (extra fields go into extras).

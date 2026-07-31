@@ -3,8 +3,8 @@
 Status: **decided (final model, implementation begins)** · Created: 2026-06-19 · Finalized: 2026-06-20
 
 > This document is the **authoritative design** for the agent execution record: (1) data structure (what the single graph stores), (2) how context is retrieved from the graph, (3) how to draw it, (4) how the two existing call paths (chat / function) merge into one.
-> For the rationale behind the model choice, see `docs/research/execution-trace-model-selection.md` (the span concept + what's novel).
-> For the call flow diagram, see `agent-call-flow.svg` (the full unified runtime flow, including retry/approval/nesting).
+> For the rationale behind the model choice, see [`../../research/execution-trace-model-selection.md`](../../research/execution-trace-model-selection.md) (the span concept + what's novel).
+> For the call flow diagram, see [`../agent-call-flow.svg`](../agent-call-flow.svg) (the full unified runtime flow, including retry/approval/nesting).
 >
 > **Visualization**: `session-dag.svg` ((1) a real session as a single graph, (2) context retrieval: chat accumulation vs function pop, (3) the two views).
 
@@ -75,9 +75,10 @@ Node(span):
   output       reply / return value / user text
   status       running | success | error | cancelled
 
-  caller       who invoked me (sub-call parent id). Top-level node = ROOT.
-  predecessor  who came before me in the chat (conversation-chain parent id). First user is empty.
+  caller       who invoked me (sub-call parent id). A top-level node has none.
   attributes   metadata (token/model/source/expose…); LLM leaf fields align with gen_ai.*
+               metadata["predecessor"] — who came before me in the chat
+               (conversation-chain parent id). NOT a top-level field; see below.
   reads        which nodes this LLM call read (references, used to render context; not a structural edge)
 ```
 
@@ -85,14 +86,25 @@ Node(span):
 
 A node has **two kinds of parent relationship**, both previously named `called_by` (one at the node's top level, one stuffed into metadata). The name clash → the code repeatedly couldn't tell which one it was reading → the root cause of a string of branching/rendering bugs. **They are now split into two explicit fields**:
 
-| Edge | Field | Meaning | Who has it |
+| Edge | Where it is stored | Meaning | Who has it |
 |---|---|---|---|
-| **Sub-call edge** | `caller` | who invoked me to execute | all nodes (top-level = ROOT) |
-| **Conversation-chain edge** | `predecessor` | who I follow in chat order | user / llm (first user is empty) |
+| **Sub-call edge** | `caller` (top-level `Call` field, `context/nodes.py:95`) | who invoked me to execute | only nodes that really were sub-called; a normal top-level assistant reply leaves it **empty** |
+| **Conversation-chain edge** | `metadata["predecessor"]` (**not** a top-level field) | who I follow in chat order | user / llm (first user is empty) |
 
-Why both are needed: **forks (branches) must be distinguished by `predecessor`**. When the user retries a message, two children sprout at the same position; seq (time) alone can't tell "which child follows which branch line", so there must be an explicit "who I follow" edge. A single-edge model (only caller + seq) cannot get around branching.
+**Storage asymmetry — the part that is easy to get wrong**: only `caller` is a real field on the `Call`
+dataclass. `predecessor` lives **inside metadata**, written by
+`store/session/_msg_adapter.py:101-107`, which normalises it into `meta["predecessor"]` so the
+predecessor index can find it. A top-level `predecessor` passed into `Graph.from_dict` is **silently
+dropped** (`context/nodes.py:346` pops it as a legacy field), so writing one has no effect and raises
+no error. §6 describes the same split correctly.
 
-> For the naming rationale / refactor landing, see `docs/design/runtime/edge-field-rename.md`.
+Note also that `caller` is *not* universally populated: it is reserved for sub-call semantics, so
+only attach-pointer rows (side-children of a user turn) set it at top level. This is what lets
+`list_branches`' "has caller → skip" filter hide those rows without hiding normal assistant replies.
+
+Why both edges are needed: **forks (branches) must be distinguished by `predecessor`**. When the user retries a message, two children sprout at the same position; seq (time) alone can't tell "which child follows which branch line", so there must be an explicit "who I follow" edge. A single-edge model (only caller + seq) cannot get around branching.
+
+> For the naming rationale / refactor landing, see [`../operations/edge-field-rename.md`](../operations/edge-field-rename.md).
 
 ### The Two Edges for the Three Roles
 
@@ -101,7 +113,7 @@ Why both are needed: **forks (branches) must be distinguished by `predecessor`**
 | (root) | empty (the only true root) | empty | None | None (session container) |
 | user | **ROOT** | the previous turn's llm reply (first one is empty) | None | user text |
 | llm | the node that triggered it (top-level = this turn's user; inside a function = that code node) | this turn's user | system (optional) | model reply |
-| code | the node that called it (model tool_use → that llm; manual call = ROOT) | current branch head (for manual calls) | function args | return value |
+| code | the node that called it (model tool_use → that llm; **manual call = empty**) | current branch head (for manual calls; `"ROOT"` at root level) | function args | return value |
 
 ## 3. Loops Are Not Nodes
 
@@ -129,7 +141,7 @@ for/while loops **occupy no node** (the execution trace doesn't record code stru
 | User sends a message | user | user | ROOT | circle |
 | LLM reply | llm | llm | user | triangle |
 | LLM calls a tool | code | code | llm | square |
-| User manually calls a function | code | code | ROOT | square |
+| User manually calls a function | code | code | empty (attaches via `predecessor`) | square |
 | Function internally calls an LLM | llm | llm | code | triangle |
 | Function internally calls a sub-function | code | code | code | square |
 
@@ -235,11 +247,11 @@ Ruling: **SessionStore's code subtree is the single source of truth; both the re
 
 | Trigger | code node caller | How it's decided |
 |---|---|---|
-| User manually calls a function (fn-form / Functions panel) | `ROOT` | no LLM reply as parent; hung directly on ROOT |
+| User manually calls a function (fn-form / Functions panel) | empty | no enclosing `@agentic_function`, so `caller` stays empty; the node attaches to the conversation via `metadata.predecessor` (the active branch head, or an explicit `"ROOT"` at root level) — `function.py:186-204` |
 | LLM calls a function (tool_use) | the id of that LLM reply node | the model reply triggered it |
 | Function internally calls a sub-function / calls an LLM | the outer code node id | `_call_id` ContextVar propagates the current frame |
 
-In implementation, the decorator reads the `_call_id` ContextVar to decide `caller`; the call entry point (the wrapper in `runtime_attach.py`) sets this ContextVar to the real caller before execution (user manual call = `"ROOT"`, LLM call = LLM reply id), and resets it after execution.
+In implementation, the decorator reads the `_call_id` ContextVar to decide `caller` (`openprogram/agentic_programming/function.py`); the call entry point (the wrapper in `openprogram/agent/dispatcher/runtime_attach.py`) sets this ContextVar to the real caller before execution and resets it after. For a user manual call there is no caller, so `_call_id` is unset and `caller` ends up empty — the conversation attachment is carried by `metadata.predecessor` instead.
 
 ### head_id Never Dangles
 
@@ -263,37 +275,54 @@ The `@agentic_function` tool body runs in a separate subprocess (`openprogram/ag
 ## 8. Implementation: The Two Merges (Stepwise, With Decision Conclusions)
 
 Two paths currently coexist:
-- **Chat**: `process_user_turn` → `engine.prepare` (`_assemble_messages`, real ToolCall/ToolResult chain + aging + attachments + compaction) → `agent_loop`; records via `insert_placeholder` / `persist_assistant_message` (writes the token columns + blocks + parent_id).
+- **Chat**: `process_user_turn` → `engine.prepare` (`_assemble_messages`, real ToolCall/ToolResult chain + aging + attachments + compaction) → `agent_loop`; records via `insert_placeholder` / `persist_assistant_message` (writes the token columns + blocks + the conversation-chain edge).
 - **exec**: `_open_model_call_node` → `render_context` + `render_dag_messages` → `_close_model_call_node`.
 
 Goal: unify into one — both go through "one graph + render_context + unified recording primitives".
 
 ### Key Decisions (must be settled before starting, verified against the code)
 
-**Decision 0: the parent_id chain is not removed — storage has the chain, retrieval doesn't look at the chain.**
-The earlier idea of "make the top level peer-level, remove the parent_id chain" would break: `get_branch` (session_store.py:742) takes a branch along parent_id, and **fork/rewind/trunk traversal (session_store.py:800) / compaction (engine.py:314) / branch deletion (branch.py:443) all depend on it**; branch.py has no forked_from, a fork is just a new node whose parent_id points to the divergence point.
-**Conclusion**: the storage layer **keeps the parent_id chain** (the branch skeleton, untouched); "top-level peer-level visibility" is implemented in the **retrieval layer** — `render_context` already doesn't look at parent_id, it only goes by seq (nodes.py:586). The single graph + seq retrieval (peer-level) coexists with the parent_id branch skeleton, orthogonally. **This is exactly "the same graph ≠ stringing into a chain": storage can have a chain (for branches), retrieval doesn't look at the chain (peer-level by seq).**
+**Decision 0: landed — `parent_id` removed, superseded by `metadata["predecessor"]`.**
+This decision originally read "the parent_id chain is not removed", on the grounds that `get_branch`,
+fork/rewind/trunk traversal, compaction and branch deletion all walked it. That has since been
+**carried out in the opposite direction**: `parent_id` is **fully removed from the codebase** — a grep
+over `store/` and `context/` returns no hits. The conversation-chain edge it used to carry is now
+`metadata["predecessor"]` (§2), and the branch walk lives on at
+`store/session/session_store.py:817` (`get_branch`), reading the predecessor index rather than a
+`parent_id` column.
+
+**What survives from the original reasoning** is the part that was actually about the model, not the
+column: storage keeps a chain (so branches/forks stay expressible), while retrieval does **not** walk
+the chain — `render_context` goes purely by seq. **"The same graph ≠ stringing into a chain": storage
+can have a chain (for branches), retrieval doesn't look at the chain (peer-level by seq).**
 
 **Decision 1: the two kinds of code node must be rendered differently (the first pitfall of merging).**
 - The code node for a model tool_use: has a tool_call_id (currently hidden inside the synthetic id `{assistant_msg_id}_t_{tid}`, dispatcher:462) → **must** be ToolCall/ToolResult (otherwise the provider rejects an orphan tool_use).
 - The code node for code directly calling an @agentic_function (function.py:132): **has no** tool_call_id → a user/assistant text pair (which is what render.py:100 currently does).
-**Conclusion**: give the node an explicit `metadata.tool_call_id` (only present for model tool_use); `render_dag_messages` splits into two paths by it. ToolCall must be **placed inside the AssistantMessage.content of its owning llm node** (currently render emits each node independently, which is wrong for ToolCall — the tool node must be grouped into its llm node by called_by). Backward compat for old sessions: `{id}_t_{tid}` can still be parsed out for tid.
+**Conclusion**: give the node an explicit `metadata.tool_call_id` (only present for model tool_use); `render_dag_messages` splits into two paths by it. ToolCall must be **placed inside the AssistantMessage.content of its owning llm node** (currently render emits each node independently, which is wrong for ToolCall — the tool node must be grouped into its llm node by `caller`). Backward compat for old sessions: `{id}_t_{tid}` can still be parsed out for tid.
 
-**Decision 2: unify the status vocabulary.** Chat uses completed/cancelled/error, exec uses success/error. Unify into one set (completed/error/cancelled), otherwise `_node_to_msg` (_msg_adapter.py:117) defaults + the streaming recovery UI will misjudge exec nodes.
+**Decision 2: unify the status vocabulary.** Chat uses completed/cancelled/error, exec uses completed/error. Unify into one set (completed/error/cancelled), otherwise `_node_to_msg` (_msg_adapter.py:117) defaults + the streaming recovery UI will misjudge exec nodes.
 
 **Decision 3: unified recording primitives — every llm node fills all fields, no chat/function distinction.**
-`open_call_node(role, name, system, content, called_by, reads, parent_id=None, tool_call_id=None, source=None, status="running") -> id`
-`close_call_node(id, output, status, usage=None, blocks=None)`
 
-**Key: fields are treated identically for all llm nodes; there is no such thing as "chat fields" and "function fields".** Currently the two paths each fill their own and each lack the other's (chat has token/blocks/parent_id/source, lacks called_by/reads; function has called_by/reads, lacks token/blocks) — this is **implementation debt, not design**. After unification, **both sides fill everything**:
+The recording pair is **not** a pair of free functions. As implemented they are private `Runtime`
+methods:
+
+`Runtime._open_model_call_node(...) -> id` (`agentic_programming/runtime.py:664`)
+`Runtime._close_model_call_node(id, reply=..., status=...)` (`agentic_programming/runtime.py:718`)
+
+Note the close side takes **`reply`**, not `output`. (An earlier draft of this decision named them
+`open_call_node` / `close_call_node` with an `output` parameter; no such names exist in the code.)
+
+**Key: fields are treated identically for all llm nodes; there is no such thing as "chat fields" and "function fields".** Currently the two paths each fill their own and each lack the other's (chat has token/blocks/predecessor/source, lacks caller/reads; function has caller/reads, lacks token/blocks) — this is **implementation debt, not design**. After unification, **both sides fill everything**:
 
 | Field | What it does | Current gap → after unification |
 |---|---|---|
 | token columns (usage) | metering/cost | function node lacks it (`_close_model_call_node` doesn't write it) → **fill in**: a model call inside a function costs money too, must be recorded |
 | blocks + tool_calls | front-end bubble thinking/text/tool order + replay | function node lacks it → **fill in**: replies inside functions also have structure |
-| called_by | the caller (who invoked this llm) | chat node lacks it (improvised with parent_id) → **fill in**: chat's llm also has a caller (this turn's user/ROOT) |
+| caller | who invoked this llm | chat node lacks it (it used to improvise with `parent_id`, now removed) → **fill in**: chat's llm also has a caller (this turn's user/ROOT) |
 | reads | which history nodes this read | chat node lacks it → **fill in**: chat model calls also read history |
-| parent_id | branch/fork skeleton | both need it |
+| `metadata["predecessor"]` | branch/fork skeleton (conversation-chain edge; replaced the removed `parent_id`) | both need it |
 | source / status | source / final state | both need it (for status see the unified vocabulary in Decision 2) |
 
 It's not "fill on demand" (that amounts to tacitly endorsing them being different); it's **fill everything + close each side's current gap**. `_close_model_call_node` currently drops usage/blocks; fill them in when unifying.
@@ -331,7 +360,7 @@ Each item must be handled before merging. ⚠ = a landmine (not handling it blow
 | 1 | Reading context | get_branch flat list | render_context + render_dag_messages | both go through render_context (chat = frame=-1) | |
 | 2 | Tool node rendering | real ToolCall/ToolResult (has tool_call_id) | text pair (no id) | render splits into two paths by tool_call_id (Decision 1) | ⚠ |
 | 3 | system prompt | profile.system_prompt + tool block + deferred + plan (memory is injected by agent_loop each time) | self.system (often empty) + skills | one project-wide unified, shared (Decision 6) | ⚠ |
-| 4 | Recording fields | token columns/blocks/parent_id/source | called_by/reads | unified primitives fill everything, close each side's gap (Decision 3) | ⚠ |
+| 4 | Recording fields | token columns/blocks/predecessor/source | caller/reads | unified primitives fill everything, close each side's gap (Decision 3) | ⚠ |
 | 5 | status vocabulary | completed/cancelled/error/**failed** | success/error | unify into one set (Decision 2) | |
 | 6 | Engine entry | direct agent_loop | AgentSession (retry/replace_messages wrapper) → agent_loop | both go through agent_loop; factor the wrapper into common | |
 | 7 | Automatic retry | none (turn level only) | AgentSession loop level | factor out to wrap a unified loop (Decision 5) | ⚠ |
@@ -360,14 +389,14 @@ Each item must be handled before merging. ⚠ = a landmine (not handling it blow
 | 1 | Add `tool_call_id` discrimination to the node + render splits into two paths (ToolCall grouped into the llm node) | **independent** · additive | ✅ done |
 | 2 | Unify status vocabulary + close_call_node fills usage/blocks fields (Decision 3 fill everything) | independent | ✅ done |
 | 3 | render closes the 5 gaps (tool chain/ToolResult/images/aging/summary) | depends on 1+2 | ✅ done |
-| 4 | Switch chat context to render_context (flag-gated, default OFF) | depends on 3 | ✅ done — enabled via `context.render=dag` |
+| 4 | Switch chat context to render_context | depends on 3 | ✅ done — **DAG render is the default ON**; `engine.py:231` tests `.get("render") != "legacy"`, so the only opt-out is setting `context.render=legacy` |
 | 5 | Unified recording: chat persist rewritten to Call objects (skip _msg_to_node) | depends on 2 | ✅ done — all 5 persist points changed, with except fallback |
 | 6 | Unify error metadata + cancelled status | high risk | ✅ done — error carries type/trace; cancel writes cancelled not error |
 | 7 | Split finalize into shared trunk + unify tool filtering | high risk | ✅ verified no change needed: finalize is chat-exclusive (title/git/status), exec is covered within the chat turn; metering is already unified at the stream.py chokepoint; the tool filtering policies are fundamentally different (user permission vs developer-defined) |
 | 8 | Draw the visualization to the new model (ROOT + top-level peer + within-turn nesting + loop fold ×N) | independent · pure front-end | to do |
 
 Steps 1/2/8 can ship independently; 3→4 and 2→5 are the coupled main line; 6/7 are the high-risk zone (cancellation/retry/error/finalize/tool filtering), touching dispatcher persistence and control flow — do them with dedicated focus and thorough regression.
-Forks currently rely on parent_id (kept by Decision 0); **no fork change is needed for this merge**; forked_from is a more distant conceptual cleanup, not done this time.
+Forks now rely on `metadata["predecessor"]` (`parent_id` removed, Decision 0); **no fork change is needed for this merge**; forked_from is a more distant conceptual cleanup, not done this time.
 
 ## Related Files
 - `openprogram/context/nodes.py` — Call + render_context (retrieval, already supports a single graph)

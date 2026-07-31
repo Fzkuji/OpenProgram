@@ -10,7 +10,7 @@ touched — pure read-only audit.
 Usage:
     openprogram worker restart            # MANDATORY first (spawn/long-lived worker)
     # ... run one fn-form call in the UI, let it finish ...
-    python docs/design/runtime/verify_fn_call_invariants.py <session_id>
+    python docs/reference/design/runtime/verify_fn_call_invariants.py <session_id>
 
 Exit code 0 = all invariants hold; 1 = a violation was found.
 """

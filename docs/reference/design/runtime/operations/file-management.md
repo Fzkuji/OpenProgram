@@ -4,7 +4,7 @@
 > Related: [`agent-worktree.md`](../execution/agent-worktree.md), [`memory-v2.md`](../../memory/memory-v2.md)
 > (entity layer), [`git-as-entity-memory.md`](../../memory/git-as-entity-memory.md).
 > Code: `store/snapshot/checkpoint/`, `store/shadow_git/`,
-> `store/read_tracking.py`, `agent/_revert.py`, `worktree/`.
+> `store/snapshot/read_tracking.py`, `agent/internals/_revert.py`, `worktree/`.
 
 ---
 
@@ -140,24 +140,24 @@ bash coverage is implemented in `_execute_tool_calls` (`agent_loop.py`, the sing
 
 ```python
 #### agent_loop.py — inside _execute_tool_calls
-if tool_name == "bash":
-    pre_snapshot = _snapshot_cwd(cwd)       # record file mtime+size
-    result = tool.execute(...)
-    _checkpoint_changed_files(cwd, pre_snapshot)  # compare, supplement a checkpoint for changed files
-else:
-    result = tool.execute(...)               # write/edit already have a precise backup internally
+pre_snapshot = _snapshot_cwd(tool_call.name)   # returns None for non-bash-like tools
+result = tool.execute(...)                     # write/edit already have a precise backup internally
+_checkpoint_changed_files(tool_call.name, pre_snapshot)  # compare, supplement a checkpoint for changed files
 ```
 
-`_snapshot_cwd`: scans the files under cwd, recording `{path: (mtime_ns, size)}`, skipping dotfile directories.
-`_checkpoint_changed_files`: compares the before/after snapshots and calls `checkpoint_before_edit` for added/modified files.
-
-**Known limitation**: the current snapshot only scans the top-level files under cwd; changes in subdirectories are not yet covered (this could later be changed to a recursive scan).
+`_snapshot_cwd(tool_name)`: only takes effect for bash-like tools (`_BASH_LIKE_TOOLS`). It scans the
+working directory recursively (using the worktree path when a worktree is active), records
+`{path: (mtime_ns, size)}`, and copies each file's **pre-execution content** into a temporary staging
+directory — otherwise, backing up from the original path after the command has run would already store
+the modified content. Files larger than `_STAGE_MAX_BYTES` skip staging.
+`_checkpoint_changed_files`: compares the before/after snapshots and checkpoints added/modified files
+from their staging copies.
 
 ---
 
 ## 5. Concurrency Guard: read-before-edit (the Front Gate)
 
-`store/read_tracking.py`. The safety foundation of the whole mechanism: it guarantees the agent never blindly writes over a file that "the user just changed but the agent hasn't seen yet," so every entry that lands in ① checkpoint and ② shadow git is a **clean agent change**, and rollback won't accidentally harm the user.
+`store/snapshot/read_tracking.py`. The safety foundation of the whole mechanism: it guarantees the agent never blindly writes over a file that "the user just changed but the agent hasn't seen yet," so every entry that lands in ① checkpoint and ② shadow git is a **clean agent change**, and rollback won't accidentally harm the user.
 
 It copies Claude Code's Edit/Write contract:
 - **`read` records the baseline** — when reading a file, record its fingerprint `(mtime_ns, size, sha1)`.
@@ -338,7 +338,6 @@ Checkpoint, Shadow git, and the sandbox are all automatically running low-level 
 
 | Item | Description |
 |---|---|
-| Recursive scan for bash checkpoint | Currently only scans the top level of cwd; subdirectory changes are not covered |
 | UI indication of the current session's "main rollback path" | Backend is ready, frontend pending |
 | Container sandbox (long term) | Unattended scenarios such as research_agent, requiring Docker integration |
 

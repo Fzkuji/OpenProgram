@@ -13,9 +13,10 @@ Two endpoints:
   message body. Limits payload size + blocks reads outside ``root`` so
   random users with a webui port open can't exfiltrate /etc/passwd.
 
-Both are read-only and scoped to the requested root (defaults to
-``os.getcwd()``). The composer passes whatever workdir was picked for
-the active session so search ranges match what the agent would see.
+Both are read-only and scoped to the requested root. An explicit
+``root`` is only accepted when it falls under an allowed root (the
+project root or a session workdir) — see ``_resolve_root`` — so the
+containment check isn't defeated by simply asking for ``root=/etc``.
 """
 from __future__ import annotations
 
@@ -130,24 +131,53 @@ def register(app) -> None:
 def _resolve_root(root: str | None) -> Path:
     """Return an absolute, existing directory.
 
-    Lookup order when ``root`` is empty / None:
+    Empty / None ``root`` → :func:`_default_root`.
+
+    An explicit ``root`` is NOT honoured as-is — it must resolve to (or
+    inside) one of the allowed roots from :func:`_allowed_roots`.
+    Otherwise the containment check in the routes below would be
+    vacuous: an attacker passing ``?root=/etc&path=passwd`` would get a
+    root they fully control, and every path is "inside" it.
+    """
+    if root:
+        p = Path(os.path.expanduser(root)).resolve()
+        allowed = _allowed_roots()
+        if not any(p == a or p.is_relative_to(a) for a in allowed):
+            raise HTTPException(status_code=400,
+                                detail=f"root not allowed: {root}")
+        if not p.is_dir():
+            raise HTTPException(status_code=400,
+                                detail=f"root not a directory: {root}")
+        return p
+    return _default_root()
+
+
+def _allowed_roots() -> list[Path]:
+    """Roots a caller may legitimately select via ``?root=``.
+
+    The default project root plus the per-session workdirs (the
+    composer passes a session workdir when expanding ``@`` mentions).
+    """
+    roots = [_default_root()]
+    try:
+        from openprogram.paths import get_state_dir
+        sessions = Path(get_state_dir()).resolve() / "sessions"
+        if sessions.is_dir():
+            roots.append(sessions)
+    except Exception:  # noqa: BLE001
+        pass
+    return roots
+
+
+def _default_root() -> Path:
+    """The project root, in lookup order:
 
       1. ``OPENPROGRAM_PROJECT_ROOT`` env var (deployment override).
       2. The directory containing ``openprogram/`` — i.e. the package
          parent. Works when the user launched ``openprogram worker run``
          from the project root, which is the common case.
       3. Process cwd.
-
-    Explicit ``root`` is honoured as-is (still resolved + existence-
-    checked) so the composer can pass per-session workdirs once we add
-    that wiring.
     """
-    if root:
-        p = Path(os.path.expanduser(root)).resolve()
-        if not p.is_dir():
-            raise HTTPException(status_code=400,
-                                detail=f"root not a directory: {root}")
-        return p
     env = os.environ.get("OPENPROGRAM_PROJECT_ROOT")
     if env:
         p = Path(os.path.expanduser(env)).resolve()
