@@ -206,9 +206,9 @@ def _file_diff(session_id: str, assistant_msg_id: str, path: str) -> dict:
         rows = [r for r in _manifest_entries(session_dir, assistant_msg_id)
                 if r["path"] == path]
     except Exception as e:  # noqa: BLE001
-        return {"diff": "", "approximate": True, "error": f"{type(e).__name__}: {e}"}
+        return {"diff": "", "approximate": False, "error": f"{type(e).__name__}: {e}"}
     if not rows:
-        return {"diff": "", "approximate": True,
+        return {"diff": "", "approximate": False,
                 "error": f"{path!r} not recorded for this turn"}
 
     row = rows[0]
@@ -218,7 +218,10 @@ def _file_diff(session_id: str, assistant_msg_id: str, path: str) -> dict:
     text = "".join(difflib.unified_diff(
         before, after, fromfile=f"a/{name}", tofile=f"b/{name}",
     ))
-    return {"diff": text, "approximate": True}
+    # An empty diff is exact, not approximate: there is no textual change
+    # to be wrong about. Flagging it would show a warning banner over
+    # "No textual changes", which reads as a failure rather than a result.
+    return {"diff": text, "approximate": bool(text.strip())}
 
 
 async def _run(fn) -> Any:

@@ -14,10 +14,13 @@
  *                     cached in component state. Several rows may be
  *                     open at once; the diff reads in the chat column
  *                     instead of the narrow right rail.
- *   ↗ (row action)  → open the file as a center editor tab.
+ *   ↗ (row action)  → open the file as a center editor tab SPLIT beside
+ *                     the chat, in this turn's diff mode, scrolled to
+ *                     the first changed line.
+ *   Folder (row)    → reveal the file in the right rail's project tree.
  *   Undo            → `revert_turn`, restoring every file this turn
- *                     touched. Turn-scoped, not per-file, so the row
- *                     hosting the button is just the affordance's spot.
+ *                     touched. Turn-scoped, so it sits in the multi-file
+ *                     header; a single file keeps it on its row.
  *
  * Both buttons stopPropagation so they never toggle the diff.
  * The filename itself is deliberately NOT the editor link any more:
@@ -29,15 +32,20 @@ import { useCallback, useEffect, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { showToast } from "@/lib/format-utils/toast";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { fileTabId, sessionTabId, useCenterTabs } from "@/lib/state/center-tabs-store";
+import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { useCurrentProject } from "@/lib/state/files-shared";
 import {
   ArrowUpRightIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  FolderOpenIcon,
   UndoIcon,
 } from "@/components/animated-icons";
-import { UnifiedDiff } from "./unified-diff";
+import { UnifiedDiff, parseUnifiedDiff } from "./unified-diff";
+
+/** Rows past this collapse behind a "Show all N" toggle. */
+const COLLAPSE_AFTER = 5;
 
 /** One changed file, as returned by `list_turn_files`. */
 interface TurnFile {
@@ -88,6 +96,7 @@ export function TurnFilesChips({ assistantMsgId }: { assistantMsgId: string }) {
   // 所以拿会话项目根剥前缀；落在项目外的文件没有这个入口。
   const openFileTab = useCenterTabs((s) => s.openFileTab);
   const project = useCurrentProject();
+  const [showAll, setShowAll] = useState(false);
   const toRelative = useCallback(
     (p: string): string | null => {
       if (!project?.path) return null;
@@ -222,10 +231,86 @@ export function TurnFilesChips({ assistantMsgId }: { assistantMsgId: string }) {
     ws.addEventListener("message", onMsg);
   }
 
+  /** First changed line of a cached diff, so the opened tab lands on the
+   *  change. Not cached yet → no hint; never blocks the click on a fetch. */
+  function firstChangedLine(path: string): number | undefined {
+    const diff = diffs[path]?.diff;
+    if (!diff) return undefined;
+    const rows = parseUnifiedDiff(diff);
+    const add = rows.find((r) => r.kind === "add" && r.newNo);
+    if (add) return Number(add.newNo);
+    const hunk = rows.find((r) => r.kind === "hunk");
+    const m = hunk && /\+(\d+)/.exec(hunk.text);
+    return m ? Number(m[1]) : undefined;
+  }
+
+  /** ↗ — open the file beside the chat, landing on this turn's change.
+   *  Already split? Just focus it; regrouping would shuffle the panes. */
+  function openBesideChat(f: TurnFile, rel: string) {
+    const line = firstChangedLine(f.path);
+    openFileTab(project!.id, rel, {
+      diffSessionId: sessionId ?? undefined,
+      diffMsgId: assistantMsgId,
+      scrollToLine: line,
+      highlightLines: line ? [line, line] : undefined,
+    });
+    const id = fileTabId(project!.id, rel);
+    const s = useCenterTabs.getState();
+    const group = findCenterTabGroup(s.groups, id);
+    if (group) {
+      s.focusGroupMember(group.id, id);
+      return;
+    }
+    // Group with the session tab this card lives in — that's the chat
+    // the user is reading, so the file lands beside it as a second pane.
+    const chatId = sessionId ? sessionTabId(sessionId) : null;
+    if (chatId && s.tabs.some((t) => t.id === chatId) && s.groupTab(id, chatId, 1)) {
+      const g = findCenterTabGroup(useCenterTabs.getState().groups, id);
+      if (g) useCenterTabs.getState().focusGroupMember(g.id, id);
+      return;
+    }
+    s.setActive(id);
+  }
+
+  function revealInTree(rel: string) {
+    const w = window as Window & { rightDock?: { show?: (v: string) => void } };
+    w.rightDock?.show?.("files");
+    window.dispatchEvent(
+      new CustomEvent("project-file-reveal-in-tree", {
+        detail: { projectId: project!.id, path: rel },
+      }),
+    );
+  }
+
   if (!files || files.length === 0) return null;
 
   const totalAdded = files.reduce((n, f) => n + (f.added || 0), 0);
   const totalRemoved = files.reduce((n, f) => n + (f.removed || 0), 0);
+  const hasHeader = files.length > 1;
+  const shown = showAll ? files : files.slice(0, COLLAPSE_AFTER);
+
+  const undoButton = (
+    <button
+      type="button"
+      className="turn-files-action"
+      onClick={(e) => {
+        e.stopPropagation();
+        undo();
+      }}
+      disabled={reverting || reverted}
+      title={text(
+        "Undo every file this turn changed",
+        "撤回本轮修改的所有文件",
+      )}
+    >
+      <span className="turn-files-action-icon"><UndoIcon /></span>
+      {reverting
+        ? text("Reverting…", "撤回中…")
+        : reverted
+          ? text("Reverted", "已撤回")
+          : text("Undo", "撤回")}
+    </button>
+  );
 
   return (
     <div
@@ -235,20 +320,20 @@ export function TurnFilesChips({ assistantMsgId }: { assistantMsgId: string }) {
     >
       {/* Summary line only earns its row when there's more than one
           file — for a single edit it would just restate the row below. */}
-      {files.length > 1 ? (
+      {hasHeader ? (
         <div className="turn-files-summary">
           <span className="turn-files-count">
-            {text(
-              `${files.length} files changed`,
-              `${files.length} 个文件已修改`,
-            )}
+            {text(`Edited ${files.length} files`, `已编辑 ${files.length} 个文件`)}
           </span>
           <span className="turn-files-stat is-add">+{totalAdded}</span>
           <span className="turn-files-stat is-del">-{totalRemoved}</span>
+          {/* Undo is turn-scoped, so the header is its home whenever
+              there is one; a single file keeps it on its row. */}
+          <span className="turn-files-summary-actions">{undoButton}</span>
         </div>
       ) : null}
 
-      {files.map((f) => {
+      {shown.map((f) => {
         const rel = toRelative(f.path);
         const label = f.rel || basename(f.path);
         const isOpen = Boolean(open[f.path]);
@@ -277,40 +362,36 @@ export function TurnFilesChips({ assistantMsgId }: { assistantMsgId: string }) {
               <span className="turn-files-stat is-del">-{f.removed ?? 0}</span>
               <span className="turn-files-actions">
                 {rel !== null ? (
-                  <button
-                    type="button"
-                    className="turn-files-action"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openFileTab(project!.id, rel);
-                    }}
-                    title={text("Open in editor", "在编辑器打开")}
-                  >
-                    <span className="turn-files-action-icon">
-                      <ArrowUpRightIcon />
-                    </span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="turn-files-action"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        revealInTree(rel);
+                      }}
+                      title={text("Reveal in file tree", "在文件树中定位")}
+                    >
+                      <span className="turn-files-action-icon">
+                        <FolderOpenIcon />
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="turn-files-action"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openBesideChat(f, rel);
+                      }}
+                      title={text("Jump to the change", "跳转到本次改动")}
+                    >
+                      <span className="turn-files-action-icon">
+                        <ArrowUpRightIcon />
+                      </span>
+                    </button>
+                  </>
                 ) : null}
-                <button
-                  type="button"
-                  className="turn-files-action"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    undo();
-                  }}
-                  disabled={reverting || reverted}
-                  title={text(
-                    "Undo every file this turn changed",
-                    "撤回本轮修改的所有文件",
-                  )}
-                >
-                  <span className="turn-files-action-icon"><UndoIcon /></span>
-                  {reverting
-                    ? text("Reverting…", "撤回中…")
-                    : reverted
-                      ? text("Reverted", "已撤回")
-                      : text("Undo", "撤回")}
-                </button>
+                {hasHeader ? null : undoButton}
               </span>
             </div>
 
@@ -319,8 +400,8 @@ export function TurnFilesChips({ assistantMsgId }: { assistantMsgId: string }) {
                 {d?.approximate ? (
                   <div className="file-diff-note">
                     {text(
-                      "Approximate — compared against the file's current contents, so later edits may appear.",
-                      "近似差异——与文件当前内容比较，可能包含后续轮次的改动。",
+                      "Approximate diff — the file changed after this turn, so unrelated edits may show.",
+                      "近似差异——该文件在本轮之后又被改动过，可能显示无关的编辑。",
                     )}
                   </div>
                 ) : null}
@@ -342,6 +423,18 @@ export function TurnFilesChips({ assistantMsgId }: { assistantMsgId: string }) {
           </div>
         );
       })}
+
+      {files.length > COLLAPSE_AFTER ? (
+        <button
+          type="button"
+          className="turn-files-more"
+          onClick={() => setShowAll((v) => !v)}
+        >
+          {showAll
+            ? text("Collapse", "收起")
+            : text(`Show all ${files.length}`, `显示全部 ${files.length} 个`)}
+        </button>
+      ) : null}
     </div>
   );
 }

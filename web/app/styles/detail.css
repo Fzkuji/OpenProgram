@@ -192,9 +192,31 @@
   line-height: 1.55;
 }
 
+/* min-width: max-content makes each row as wide as its own content, so when
+   .file-diff-body scrolls horizontally the tint follows the CONTENT width
+   instead of stopping at the visible edge. */
 .file-diff-line {
   display: flex;
+  min-width: max-content;
   white-space: pre;
+}
+/* Change indicator strip at the far left of the gutter: solid for adds,
+   diagonal dashes for deletes. Transparent (not absent) on ctx/meta/hunk so
+   every line kind keeps the same horizontal alignment. */
+.file-diff-line::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 3px;
+  align-self: stretch;
+  background: transparent;
+}
+.file-diff-line.is-add::before { background: var(--accent-green); }
+.file-diff-line.is-del::before {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--accent-red) 0 2px,
+    transparent 2px 4px
+  );
 }
 /* Tinted with color-mix so the same rule reads correctly on light and
    dark themes — a fixed rgba() would wash out on one of them. */
@@ -220,8 +242,11 @@
   user-select: none;
   font-variant-numeric: tabular-nums;
 }
+/* flex-grow so short lines still stretch the tint to the right edge, but
+   flex-shrink: 0 so a long line pushes the row wider instead of being
+   squeezed back to the container width. */
 .file-diff-text {
-  flex: 1 1 auto;
+  flex: 1 0 auto;
   padding: 0 8px 0 4px;
   color: var(--text-primary);
 }

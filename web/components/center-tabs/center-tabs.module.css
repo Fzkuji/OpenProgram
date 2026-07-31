@@ -1055,6 +1055,40 @@
   flex-direction: column;
 }
 
+/* Per-turn diff body (Unified / Side-by-side). Scrolls on its own so
+   the toolbar stays put, same as the viewer it replaces. */
+.diffHost {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 0;
+}
+
+/* The FileViewer stays mounted in diff mode so the editor buffer and
+   its read survive a mode switch — hidden, not unmounted. */
+.viewerHost {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.viewerHidden { display: none; }
+
+/* "Jump to the change" landing flash — a brief tint over the body,
+   cleared after ~2s by the pane. */
+.fileBody[data-flash="1"] .viewerHost {
+  animation: fileJumpFlash 2s ease-out 1;
+}
+@keyframes fileJumpFlash {
+  0%,
+  40% {
+    background: color-mix(in srgb, var(--accent-yellow, var(--accent-green)) 16%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 /* ---- Web tab pane -------------------------------------------------- */
 
 .webPane {

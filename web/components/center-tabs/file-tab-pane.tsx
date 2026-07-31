@@ -23,6 +23,10 @@ import { Download } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { fileTabId, useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
+  SideBySideDiff,
+  UnifiedDiff,
+} from "@/components/chat/messages/unified-diff";
+import {
   type FileReadResult,
   fileDraftKey,
   fileDrafts,
@@ -56,6 +60,18 @@ interface EditorBuffer {
   baseMtime: number;
 }
 
+/** Which body a file tab shows. "file" is the plain editor (the only
+ *  option when the tab carries no per-turn diff context). */
+type ViewMode = "unified" | "split" | "file";
+
+/** Cached `turn_file_diff` answer for this tab's turn. */
+interface TabDiff {
+  loading: boolean;
+  diff: string;
+  approximate: boolean;
+  error?: string | null;
+}
+
 export function FileTabPane({
   projectId,
   path,
@@ -83,6 +99,60 @@ export function FileTabPane({
   const dot = base.lastIndexOf(".");
   const ext = dot > 0 ? base.slice(dot + 1) : "";
   const isMarkdown = ext === "md";
+
+  // Per-turn diff context, set when the tab was opened from a turn's
+  // file-edit card. Read off the tab itself so it survives tab
+  // switches without this pane owning the state.
+  const tabId = fileTabId(projectId, path);
+  const tab = useCenterTabs((s) => s.tabs.find((t) => t.id === tabId));
+  const diffSessionId = tab?.diffSessionId;
+  const diffMsgId = tab?.diffMsgId;
+  const scrollToLine = tab?.scrollToLine;
+  const highlightLines = tab?.highlightLines;
+  // Images/PDF have no meaningful text diff — those tabs go straight to
+  // the existing preview no matter how they were opened.
+  const diffable = !IMAGE_EXTS.has(ext) && ext !== "pdf";
+  const hasDiff = Boolean(diffSessionId && diffMsgId && diffable);
+
+  const [mode, setMode] = useState<ViewMode>("file");
+  const [diff, setDiff] = useState<TabDiff | null>(null);
+
+  // Default to the diff when the tab arrives with a turn context, and
+  // back to the plain file when that context is cleared/absent.
+  useEffect(() => {
+    setMode(hasDiff ? "unified" : "file");
+  }, [hasDiff, diffSessionId, diffMsgId, path]);
+
+  // Fetch this turn's diff once per (turn, path).
+  useEffect(() => {
+    if (!hasDiff) {
+      setDiff(null);
+      return;
+    }
+    let alive = true;
+    setDiff({ loading: true, diff: "", approximate: false });
+    void filesWsRequest<{
+      path?: string;
+      diff?: string;
+      approximate?: boolean;
+      error?: string;
+    }>(
+      "turn_file_diff",
+      { session_id: diffSessionId, assistant_msg_id: diffMsgId, path },
+      "turn_file_diff_result",
+    ).then((res) => {
+      if (!alive) return;
+      setDiff({
+        loading: false,
+        diff: res?.diff ?? "",
+        approximate: Boolean(res?.approximate),
+        error: res?.error ?? (res ? null : text("Not connected", "连接已断开")),
+      });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [hasDiff, diffSessionId, diffMsgId, path, text]);
   // Images/PDF are never text-editable; binary / too-large reads have
   // no content; a truncated read must stay read-only (saving the cut
   // buffer would destroy the file's tail).
@@ -150,7 +220,6 @@ export function FileTabPane({
   // fileDrafts), so the dot must too — it's what arms the strip's
   // discard-confirm on close. Save/revert clear it through this same
   // effect; a confirmed discard closes the whole tab.
-  const tabId = fileTabId(projectId, path);
   const setTabDirty = useCenterTabs((s) => s.setTabDirty);
   useEffect(() => {
     // Load gap (no buffer for the CURRENT path yet): leave the dot
@@ -158,6 +227,34 @@ export function FileTabPane({
     if (bufferForPath === null) return;
     setTabDirty(tabId, dirty);
   }, [tabId, dirty, bufferForPath, setTabDirty]);
+
+  // "Jump to the change": scroll the target line into view once the
+  // body exists, and flash it for ~2s so the eye lands on it. Runs in
+  // the editor/preview body; diff bodies open at the top of the hunk,
+  // which is already the change.
+  // ponytail: line height read off the rendered gutter rather than
+  // hardcoded, so it survives a font-size change.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [flash, setFlash] = useState(false);
+  useEffect(() => {
+    if (!scrollToLine || mode !== "file" || !loadedForPath) return;
+    const host = bodyRef.current;
+    if (!host) return;
+    const gutter = host.querySelector<HTMLElement>("[data-line-metric]")
+      ?? host.querySelector<HTMLElement>("pre, textarea");
+    const lineH = gutter
+      ? parseFloat(getComputedStyle(gutter).lineHeight) || 0
+      : 0;
+    if (lineH) {
+      const scroller = host.querySelector<HTMLElement>("textarea, pre") ?? host;
+      // Put the target a few lines below the top edge instead of flush
+      // against it, so its context is visible too.
+      scroller.scrollTop = Math.max(0, (scrollToLine - 4) * lineH);
+    }
+    setFlash(true);
+    const t = setTimeout(() => setFlash(false), 2000);
+    return () => clearTimeout(t);
+  }, [scrollToLine, mode, loadedForPath, path]);
 
   const save = async () => {
     if (saving || conflict) return; // Cmd+S has no disabled state
@@ -251,7 +348,7 @@ export function FileTabPane({
           ))}
         </span>
         <span className={styles.toolbarSpacer} />
-        {dirty ? (
+        {dirty && mode === "file" ? (
           <>
             <button
               type="button"
@@ -270,7 +367,35 @@ export function FileTabPane({
             </button>
           </>
         ) : null}
-        {isMarkdown ? (
+        {/* View switch — only when this tab knows which turn it came
+            from. Unified / Side-by-side render that turn's diff; the
+            third option is the ordinary editor. */}
+        {hasDiff ? (
+          <span className={styles.mdToggle}>
+            <button
+              type="button"
+              className={`${styles.mdToggleBtn} ${mode === "unified" ? styles.mdToggleActive : ""}`}
+              onClick={() => setMode("unified")}
+            >
+              {text("Unified", "统一视图")}
+            </button>
+            <button
+              type="button"
+              className={`${styles.mdToggleBtn} ${mode === "split" ? styles.mdToggleActive : ""}`}
+              onClick={() => setMode("split")}
+            >
+              {text("Side-by-side", "并排对比")}
+            </button>
+            <button
+              type="button"
+              className={`${styles.mdToggleBtn} ${mode === "file" ? styles.mdToggleActive : ""}`}
+              onClick={() => setMode("file")}
+            >
+              {text("File", "原文件")}
+            </button>
+          </span>
+        ) : null}
+        {isMarkdown && mode === "file" ? (
           <span className={styles.mdToggle}>
             <button
               type="button"
@@ -297,7 +422,36 @@ export function FileTabPane({
           <Download size={14} />
         </a>
       </div>
-      <div className={styles.fileBody}>
+      <div className={styles.fileBody} ref={bodyRef} data-flash={flash ? "1" : "0"}>
+        {mode !== "file" ? (
+          <div className={styles.diffHost}>
+            {diff?.approximate ? (
+              <div className="file-diff-note">
+                {text(
+                  "Approximate diff — the file changed after this turn, so unrelated edits may show.",
+                  "近似差异——该文件在本轮之后又被改动过，可能混入无关的修改。",
+                )}
+              </div>
+            ) : null}
+            {!diff || diff.loading ? (
+              <div className="file-diff-empty">
+                {text("Loading diff…", "正在加载差异…")}
+              </div>
+            ) : diff.error ? (
+              <div className="file-diff-empty is-error">{diff.error}</div>
+            ) : diff.diff ? (
+              mode === "split" ? (
+                <SideBySideDiff diff={diff.diff} />
+              ) : (
+                <UnifiedDiff diff={diff.diff} />
+              )
+            ) : (
+              <div className="file-diff-empty">
+                {text("No textual changes.", "没有文本改动。")}
+              </div>
+            )}
+          </div>
+        ) : null}
         {conflict ? (
           <div className={fileStyles.conflictNote}>
             {text(
@@ -317,6 +471,12 @@ export function FileTabPane({
             {text("Save failed.", "保存失败。")}
           </div>
         ) : null}
+        {/* Kept MOUNTED in diff mode (just hidden): it owns the file
+            read that seeds the editor buffer, so unmounting it would
+            re-fetch and drop an unsaved draft on every mode switch. */}
+        <div
+          className={mode === "file" ? styles.viewerHost : styles.viewerHidden}
+        >
         <FileViewer
           key={viewerEpoch}
           projectId={projectId}
@@ -333,6 +493,7 @@ export function FileTabPane({
           }
           onLoaded={setLoaded}
         />
+        </div>
       </div>
     </div>
   );

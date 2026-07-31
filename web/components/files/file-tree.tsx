@@ -339,6 +339,22 @@ export function FileTree({
     for (const d of chain) if (dirs[d] === undefined) load(d);
   }
 
+  /** "Reveal in file tree" from elsewhere in the app (the per-turn file
+   *  edit card): expand every ancestor and select the row. Wired as a
+   *  window CustomEvent so the caller needs no ref into this tree.
+   *  ponytail: reuses expandChain + the existing `selected` state. */
+  useEffect(() => {
+    const onReveal = (ev: Event) => {
+      const d = (ev as CustomEvent<{ projectId?: string; path?: string }>).detail;
+      if (!d?.path || (d.projectId && d.projectId !== projectId)) return;
+      setFilter(""); // rows only render in tree mode
+      expandChain(parentOf(d.path));
+      setSelected({ path: d.path, type: "file" });
+    };
+    window.addEventListener("project-file-reveal-in-tree", onReveal);
+    return () => window.removeEventListener("project-file-reveal-in-tree", onReveal);
+  });
+
   /** Directory a create targets: selected dir → itself, selected file
    *  → its parent, nothing selected → project root. */
   function startCreate(kind: "file" | "dir", dir?: string) {

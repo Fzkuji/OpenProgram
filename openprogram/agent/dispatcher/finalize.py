@@ -31,6 +31,57 @@ from openprogram.agent.dispatcher.titles import (
 )
 
 
+def _shadow_root_for(session_id: str, paths: list[str]) -> Optional[str]:
+    """Which directory to treat as the project root for this turn.
+
+    Order: the bound project (the old behavior), else the turn's actual
+    cwd the same way the dispatcher resolves it (active worktree, then
+    ``project_workdir_for``). Whatever we pick must actually CONTAIN the
+    changed paths — ``ShadowGitStore.commit_turn`` silently skips any
+    path outside the root — so a root that doesn't is replaced by the
+    common ancestor of the changed paths.
+    """
+    from pathlib import Path
+
+    candidates: list[str] = []
+    try:
+        from openprogram.store.project import project_commit as _pc
+        project = _pc._project_for(session_id)
+        if project is not None and project.path:
+            candidates.append(project.path)
+    except Exception:
+        pass
+    try:
+        from openprogram.worktree.context import current_worktree_path
+        wt = current_worktree_path()
+        if wt:
+            candidates.append(wt)
+    except Exception:
+        pass
+    try:
+        from openprogram.agent.internals._workdir import project_workdir_for
+        wd = project_workdir_for(session_id)
+        if wd is not None:
+            candidates.append(str(wd))
+    except Exception:
+        pass
+
+    resolved = [Path(p).resolve() for p in paths]
+    for cand in candidates:
+        root = Path(cand).expanduser().resolve()
+        if all(p == root or root in p.parents for p in resolved):
+            return str(root)
+
+    # ponytail: no candidate contains the edits — commit under their
+    # common ancestor so the diff exists at all.
+    import os
+    common = os.path.commonpath([str(p) for p in resolved])
+    root = Path(common)
+    if root.is_file():
+        root = root.parent
+    return str(root) if root.is_dir() else None
+
+
 def commit_turn_to_shadow_git(
     session_id: str, assistant_msg_id: str, user_text: str = "",
 ) -> Optional[str]:
@@ -47,26 +98,32 @@ def commit_turn_to_shadow_git(
     ``after`` the new commit. That pair is all ``turn_file_diff`` needs
     to render a unified diff for the turn.
 
-    Best-effort: returns the new sha, or None when there is no bound
-    project / nothing changed / anything fails. Never raises — a shadow
-    bookkeeping glitch must not break the conversation.
+    The project root is resolved by :func:`_shadow_root_for` — a bound
+    project when there is one, else the turn's actual working root. Most
+    real sessions are in no project's ``session_ids``, so requiring one
+    meant no stamp was ever written and every diff fell back to the
+    approximate difflib path.
+
+    Best-effort: returns the new sha, or None when nothing changed /
+    anything fails. Never raises — a shadow bookkeeping glitch must not
+    break the conversation.
     """
     try:
         from openprogram.store import default_store
         from openprogram.store.shadow_git import ShadowGitStore
         from openprogram.store.snapshot.checkpoint import CheckpointStore
-        from openprogram.store.project import project_commit as _pc
 
-        project = _pc._project_for(session_id)
-        if project is None:
-            return None
         store = default_store()
         paths = CheckpointStore(
             store._session_dir(session_id)).list_backed_paths(assistant_msg_id)
         if not paths:
             return None
 
-        shadow = ShadowGitStore(project.path)
+        root = _shadow_root_for(session_id, list(paths))
+        if root is None:
+            return None
+
+        shadow = ShadowGitStore(root)
         before = shadow.head_sha()
         first_line = (user_text or "").strip().splitlines()
         after = shadow.commit_turn(
@@ -86,7 +143,12 @@ def commit_turn_to_shadow_git(
         node.metadata = {
             **(node.metadata or {}),
             "shadow_git": {
-                "repo": project.path, "before": before, "after": after,
+                # The store's own resolved root, not the raw candidate:
+                # commit_turn relativized under it, so turn_file_diff
+                # must relativize under the identical path or the rel
+                # names disagree and every diff comes back empty.
+                "repo": str(shadow.project_path),
+                "before": before, "after": after,
             },
         }
         # Per-node metadata lives in the node's history file (not

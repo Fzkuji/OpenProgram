@@ -96,6 +96,15 @@ export interface CenterTab {
   projectId?: string;
   /** File tabs only — project-relative, "/"-separated. */
   path?: string;
+  /** File tabs only — the turn this file was opened FROM. Both set
+   *  ⇒ the pane can fetch that turn's diff and defaults to showing
+   *  it instead of the raw file. */
+  diffSessionId?: string;
+  diffMsgId?: string;
+  /** File tabs only — 1-based line to scroll to on open, briefly
+   *  highlighted (with `highlightLines`, an inclusive [from, to]). */
+  scrollToLine?: number;
+  highlightLines?: [number, number];
   /** Web tabs only — current http(s) URL (may drift from the id
    *  after in-pane navigation). */
   url?: string;
@@ -107,6 +116,16 @@ export interface CenterTab {
   /** Unsaved-changes marker — strip shows ● instead of ✕. Set via
    *  setTabDirty by whoever owns the tab's content (file editor). */
   dirty?: boolean;
+}
+
+/** Extra context a file-tab opener may carry: which turn's diff to
+ *  show, and where to jump. All optional — the plain 2-arg
+ *  `openFileTab(projectId, path)` stays the raw-editor open. */
+export interface FileTabOptions {
+  diffSessionId?: string;
+  diffMsgId?: string;
+  scrollToLine?: number;
+  highlightLines?: [number, number];
 }
 
 // A missing non-local tab normally means a legacy caller that predates the
@@ -161,7 +180,11 @@ export interface CenterTabsState {
   claimDraftSessionTab: () => string;
   /** First acknowledgement: keep the same tab/id and clear draft state. */
   markSessionReady: (sessionId: string) => void;
-  openFileTab: (projectId: string, path: string) => void;
+  openFileTab: (
+    projectId: string,
+    path: string,
+    options?: FileTabOptions,
+  ) => void;
   /** Focus-or-create a web tab for `url` (must already be a valid
    *  http(s) URL — run user input through normalizeWebUrl first). */
   openWebTab: (url: string) => void;
@@ -490,21 +513,41 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         return commitCenterTabsState(s, { tabs });
       }),
 
-    openFileTab: (projectId, path) =>
-      set((s) =>
-        focusOrCreate(
+    openFileTab: (projectId, path, options) =>
+      set((s) => {
+        const id = fileTabId(projectId, path);
+        const opened = focusOrCreate(
           s,
-          fileTabId(projectId, path),
+          id,
           () => ({
-            id: fileTabId(projectId, path),
+            id,
             kind: "file",
             title: path.split("/").pop() || path,
             projectId,
             path,
+            ...options,
           }),
           [],
-        ),
-      ),
+        );
+        // Reopening the same path must not keep a stale diff/jump
+        // context: overwrite it (undefined options clear it) so the
+        // tab always reflects the LATEST open.
+        const tabs = opened.tabs ?? s.tabs;
+        return {
+          ...opened,
+          tabs: tabs.map((t) =>
+            t.id === id
+              ? {
+                  ...t,
+                  diffSessionId: options?.diffSessionId,
+                  diffMsgId: options?.diffMsgId,
+                  scrollToLine: options?.scrollToLine,
+                  highlightLines: options?.highlightLines,
+                }
+              : t,
+          ),
+        };
+      }),
 
     // Deterministic id ⇒ focusOrCreate already enforces the singleton:
     // a second "open bookmarks" focuses the existing tab.

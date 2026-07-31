@@ -1513,6 +1513,10 @@
   padding: 0 0 3px;
   border-bottom: none;
 }
+.msg-rail-card .turn-files-more {
+  padding: 3px 0;
+  border-top: none;
+}
 .msg-rail-card .turn-files-name {
   font-family: var(--font-sans);
   font-size: 13px;
@@ -2096,6 +2100,31 @@
   color: var(--text-muted);
 }
 .turn-files-count { font-weight: 500; }
+/* Undo lives here when there's a header. Pushed right, and unlike the
+   per-row actions it stays visible — it's the card's primary action. */
+.turn-files-summary-actions {
+  margin-left: auto;
+  display: flex;
+  flex: 0 0 auto;
+}
+
+/* Show all / Collapse — a quiet footer row, not a button-looking button. */
+.turn-files-more {
+  display: block;
+  width: 100%;
+  padding: 4px 10px;
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  background: none;
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+  color: var(--text-muted);
+}
+.turn-files-more:hover {
+  background: color-mix(in srgb, var(--bg-hover) 60%, transparent);
+  color: var(--text-primary);
+}
 
 .turn-files-row {
   display: flex;

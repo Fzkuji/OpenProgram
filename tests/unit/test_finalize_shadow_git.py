@@ -115,13 +115,107 @@ def test_stamp_survives_reload(store, tmp_path):
     assert (idx.nodes_by_id[msg_id].metadata or {}).get("shadow_git")
 
 
-def test_no_project_is_noop(store, tmp_path):
-    """Ad-hoc sessions (no bound project) skip shadow git entirely."""
+def test_no_project_falls_back_to_working_root(store, tmp_path):
+    """A session bound to NO project still gets a shadow commit + stamp.
+
+    Most real sessions are in no project's ``session_ids``, so requiring
+    a bound project meant the stamp was never written and every diff fell
+    back to the approximate difflib path.
+    """
     session_id, msg_id = "s_fin_noproj", "u1_reply"
     _seed(store, session_id, msg_id)
-    with patch("openprogram.store.project.project_commit._project_for",
+
+    project = tmp_path / "workroot"
+    project.mkdir()
+    target = project / "app.py"
+    target.write_text("first\n")
+    CheckpointStore(store._session_dir(session_id)).backup_before_edit(
+        msg_id, str(target))
+    target.write_text("first\nsecond\n")
+
+    shadow_root = tmp_path / "shadow"
+    shadow_root.mkdir()
+    with patch("openprogram.store.shadow_git.store._shadow_root",
+               return_value=shadow_root), \
+         patch("openprogram.store.project.project_commit._project_for",
+               return_value=None), \
+         patch("openprogram.worktree.context.current_worktree_path",
+               return_value=str(project)):
+        sha = commit_turn_to_shadow_git(session_id, msg_id, "edit")
+
+    assert sha
+    _git, idx = store._open(session_id)
+    meta = (idx.nodes_by_id[msg_id].metadata or {}).get("shadow_git")
+    assert meta is not None
+    assert meta["after"] == sha
+    assert Path(meta["repo"]) == project.resolve()
+
+
+def test_no_project_no_workdir_uses_common_ancestor(store, tmp_path):
+    """With no project AND no resolvable cwd, the changed paths' own
+    common ancestor becomes the root — otherwise ``_safe_rel`` would skip
+    every path and we'd silently commit nothing."""
+    session_id, msg_id = "s_fin_ancestor", "u1_reply"
+    _seed(store, session_id, msg_id)
+
+    project = tmp_path / "loose"
+    (project / "pkg").mkdir(parents=True)
+    target = project / "pkg" / "mod.py"
+    target.write_text("a\n")
+    CheckpointStore(store._session_dir(session_id)).backup_before_edit(
+        msg_id, str(target))
+    target.write_text("a\nb\n")
+
+    shadow_root = tmp_path / "shadow"
+    shadow_root.mkdir()
+    with patch("openprogram.store.shadow_git.store._shadow_root",
+               return_value=shadow_root), \
+         patch("openprogram.store.project.project_commit._project_for",
+               return_value=None), \
+         patch("openprogram.worktree.context.current_worktree_path",
+               return_value=None), \
+         patch("openprogram.agent.internals._workdir.project_workdir_for",
                return_value=None):
-        assert commit_turn_to_shadow_git(session_id, msg_id, "x") is None
+        assert commit_turn_to_shadow_git(session_id, msg_id, "edit")
+
+
+def test_turn_file_diff_is_exact_after_fallback_commit(store, tmp_path, monkeypatch):
+    """End to end: the fallback stamp makes turn_file_diff exact.
+
+    This is the bug the fallback exists to fix — without a stamp the
+    handler falls through to difflib and flags ``approximate``.
+    """
+    from openprogram.webui.ws_actions.turn_files import _file_diff
+
+    session_id, msg_id = "s_fin_diff", "u1_reply"
+    _seed(store, session_id, msg_id)
+
+    project = tmp_path / "workroot"
+    project.mkdir()
+    target = project / "app.py"
+    target.write_text("first\n")
+    CheckpointStore(store._session_dir(session_id)).backup_before_edit(
+        msg_id, str(target))
+    target.write_text("first\nsecond\n")
+
+    shadow_root = tmp_path / "shadow"
+    shadow_root.mkdir()
+    monkeypatch.setattr(
+        "openprogram.store.session.session_store.default_store",
+        lambda: store, raising=False,
+    )
+    with patch("openprogram.store.shadow_git.store._shadow_root",
+               return_value=shadow_root), \
+         patch("openprogram.store.project.project_commit._project_for",
+               return_value=None), \
+         patch("openprogram.worktree.context.current_worktree_path",
+               return_value=str(project)):
+        assert commit_turn_to_shadow_git(session_id, msg_id, "edit")
+        result = _file_diff(session_id, msg_id, str(target))
+
+    assert result.get("error") is None
+    assert result["approximate"] is False
+    assert "+second" in result["diff"]
 
 
 def test_turn_touching_no_files_is_noop(store, tmp_path):

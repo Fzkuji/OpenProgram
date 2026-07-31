@@ -1,0 +1,74 @@
+/* Side-by-side diff — two aligned columns over the same parse the
+   unified view uses. Each row is a fixed 50/50 grid inside a
+   max-content-wide body, so long lines scroll horizontally without
+   the two sides drifting out of alignment. */
+
+.body {
+  overflow-x: auto;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-width: max-content;
+}
+
+/* Hunk / meta banners span both columns. */
+.span {
+  min-width: max-content;
+  padding: 0 8px;
+  white-space: pre;
+  color: var(--text-muted);
+}
+.span.hunk {
+  background: var(--bg-tertiary);
+}
+
+.cell {
+  display: flex;
+  min-width: max-content;
+  white-space: pre;
+  /* The divider between the old and new column. */
+  border-right: 1px solid var(--border-subtle, var(--border));
+}
+.row > .cell:last-child { border-right: none; }
+
+/* A side with no counterpart (unbalanced del/add run): keep the row
+   height without claiming to be content. */
+.filler {
+  background: color-mix(in srgb, var(--text-muted) 6%, transparent);
+}
+
+.no {
+  flex: 0 0 auto;
+  width: 34px;
+  padding: 0 6px;
+  text-align: right;
+  color: var(--text-dim, var(--text-muted));
+  opacity: 0.7;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* grow so the tint reaches the column edge, no shrink so a long line
+   widens the row instead of being squeezed (mirrors .file-diff-text). */
+.text {
+  flex: 1 0 auto;
+  padding: 0 8px 0 4px;
+}
+
+.add {
+  background: color-mix(in srgb, var(--accent-green) 14%, transparent);
+}
+.add .text { color: var(--accent-green); }
+
+.del {
+  background: color-mix(in srgb, var(--accent-red) 14%, transparent);
+}
+.del .text { color: var(--accent-red); }
+
+.meta { color: var(--text-muted); }
