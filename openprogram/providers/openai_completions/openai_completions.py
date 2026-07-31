@@ -380,6 +380,18 @@ async def stream_simple(
                         output=getattr(u, "completion_tokens", 0) or 0,
                         total_tokens=getattr(u, "total_tokens", 0) or 0,
                     )
+                    # Cached-prefix tokens. Two wire conventions:
+                    # OpenAI-style `prompt_tokens_details.cached_tokens`
+                    # and DeepSeek-style top-level `prompt_cache_hit_tokens`.
+                    # Both report prompt_tokens INCLUSIVE of the cached part,
+                    # so split it out (same semantics as openai_responses.py).
+                    pd = getattr(u, "prompt_tokens_details", None)
+                    cached = (getattr(pd, "cached_tokens", 0) or 0) if pd else 0
+                    if not cached:
+                        cached = getattr(u, "prompt_cache_hit_tokens", 0) or 0
+                    if cached:
+                        usage.cache_read = cached
+                        usage.input = max(0, usage.input - cached)
                     # Check for reasoning tokens
                     details = getattr(u, "completion_tokens_details", None)
                     if details:
