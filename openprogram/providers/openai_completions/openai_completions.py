@@ -47,6 +47,36 @@ from .._shared.transform_messages import transform_messages as _transform_messag
 from .._shared.validate_modalities import validate_input_modalities
 
 
+def _usage_from_chunk(u: Any) -> Usage:
+    """Parse a completions-API usage payload into our Usage.
+
+    Cached-prefix tokens arrive in two wire conventions — OpenAI-style
+    ``prompt_tokens_details.cached_tokens`` and DeepSeek-style top-level
+    ``prompt_cache_hit_tokens``. Both report ``prompt_tokens`` INCLUSIVE
+    of the cached part, so split it out (same semantics as
+    openai_responses.py). Reasoning tokens are likewise split out of
+    ``completion_tokens``.
+    """
+    usage = Usage(
+        input=getattr(u, "prompt_tokens", 0) or 0,
+        output=getattr(u, "completion_tokens", 0) or 0,
+        total_tokens=getattr(u, "total_tokens", 0) or 0,
+    )
+    pd = getattr(u, "prompt_tokens_details", None)
+    cached = (getattr(pd, "cached_tokens", 0) or 0) if pd else 0
+    if not cached:
+        cached = getattr(u, "prompt_cache_hit_tokens", 0) or 0
+    if cached:
+        usage.cache_read = cached
+        usage.input = max(0, usage.input - cached)
+    details = getattr(u, "completion_tokens_details", None)
+    if details:
+        reasoning_tokens = getattr(details, "reasoning_tokens", 0) or 0
+        if reasoning_tokens:
+            usage.output = (getattr(u, "completion_tokens", 0) or 0) - reasoning_tokens
+    return usage
+
+
 def _uses_developer_role(model: Model) -> bool:
     """Check if model uses 'developer' role instead of 'system'.
 
@@ -374,30 +404,7 @@ async def stream_simple(
             async for chunk in stream:
                 # Process usage from chunks
                 if chunk.usage:
-                    u = chunk.usage
-                    usage = Usage(
-                        input=getattr(u, "prompt_tokens", 0) or 0,
-                        output=getattr(u, "completion_tokens", 0) or 0,
-                        total_tokens=getattr(u, "total_tokens", 0) or 0,
-                    )
-                    # Cached-prefix tokens. Two wire conventions:
-                    # OpenAI-style `prompt_tokens_details.cached_tokens`
-                    # and DeepSeek-style top-level `prompt_cache_hit_tokens`.
-                    # Both report prompt_tokens INCLUSIVE of the cached part,
-                    # so split it out (same semantics as openai_responses.py).
-                    pd = getattr(u, "prompt_tokens_details", None)
-                    cached = (getattr(pd, "cached_tokens", 0) or 0) if pd else 0
-                    if not cached:
-                        cached = getattr(u, "prompt_cache_hit_tokens", 0) or 0
-                    if cached:
-                        usage.cache_read = cached
-                        usage.input = max(0, usage.input - cached)
-                    # Check for reasoning tokens
-                    details = getattr(u, "completion_tokens_details", None)
-                    if details:
-                        reasoning_tokens = getattr(details, "reasoning_tokens", 0) or 0
-                        if reasoning_tokens:
-                            usage.output = (getattr(u, "completion_tokens", 0) or 0) - reasoning_tokens
+                    usage = _usage_from_chunk(chunk.usage)
 
                 if not chunk.choices:
                     continue
