@@ -48,7 +48,6 @@ import {
 import { ConvMenu } from "./conv-menu";
 import { RecentsFilter } from "./recents-filter";
 import { SectionHeader } from "./section-header";
-import { SearchInput } from "@/components/ui/search-input";
 import {
   sidebarNavIconClass,
   sidebarNavItemClass,
@@ -81,10 +80,6 @@ interface SidebarProject {
 }
 
 const COLLAPSED_PROJECTS_KEY = "sidebar_collapsed_projects";
-
-/** Row count at which the sidebar search box appears. Below this the
- *  whole list fits on screen and the box is pure noise. */
-const SEARCH_MIN_ROWS = 8;
 
 function readCollapsedProjects(): Set<string> {
   try {
@@ -214,8 +209,6 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
 
   // Collapsed group names (only relevant when grouping is on).
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  // Sidebar title search. Transient by design — see the filter below.
-  const [query, setQuery] = useState("");
   // Transient "Link copied" toast.
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -329,17 +322,9 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
 
   const visible = (() => {
     let arr = convArr;
-    // Title search — the sidebar's own transient narrowing (not a saved
-    // view pref: a stale query on next load would look like data loss).
-    // Matching a title also reveals archived rows, so a search always
-    // finds what you typed regardless of the Status filter.
-    const q = query.trim().toLowerCase();
-    if (q) {
-      arr = arr.filter((c) => labelFor(c, "").toLowerCase().includes(q));
-    }
     // All sessions are shown — no filtering of empty/placeholder rows.
-    if (!q && view.status === "active") arr = arr.filter((c) => !c.archived);
-    else if (!q && view.status === "archived") arr = arr.filter((c) => !!c.archived);
+    if (view.status === "active") arr = arr.filter((c) => !c.archived);
+    else if (view.status === "archived") arr = arr.filter((c) => !!c.archived);
     // Last-activity window — updated_at（后端随消息追加维护），老行
     // 无 updated_at 时退回 created_at。"all" = no window.
     if (view.lastActivity !== "all") {
@@ -393,7 +378,6 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
   // around their matches. (status "all" widens, so it doesn't count;
   // "archived" narrows.) Empty project groups are always hidden.
   const filtering =
-    !!query.trim() ||
     view.status === "archived" ||
     view.lastActivity !== "all" ||
     (view.project !== "" && view.project !== "all");
@@ -525,7 +509,7 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
         // button on its right just like a populated Recents header. Not
         // collapsible (nothing to collapse), so no chevron.
         <SectionHeader
-          name={query ? text("No matches", "没有匹配的会话") : t("sidebar.no_conversations")}
+          name={t("sidebar.no_conversations")}
           collapsible={false}
           collapsed={false}
           onToggle={() => {}}
@@ -561,20 +545,6 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
 
   return (
     <>
-      {/* Search appears only once the list is long enough to need it —
-          below the threshold the rows are all on screen anyway and the
-          box would just be sidebar noise. A live query keeps it mounted
-          so clearing the last match can't yank the input away. */}
-      {convArr.length >= SEARCH_MIN_ROWS || query ? (
-        <div className="px-[8px] pb-[6px]">
-          <SearchInput
-            value={query}
-            onChange={setQuery}
-            placeholder={text("Search chats...", "搜索会话...")}
-            aria-label={text("Search chats", "搜索会话")}
-          />
-        </div>
-      ) : null}
       {body}
       {/* "Clear all" only when there are conversations to clear — an
           empty list shows just the "No conversations yet" header. It
