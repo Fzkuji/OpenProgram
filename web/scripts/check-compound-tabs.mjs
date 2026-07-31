@@ -319,6 +319,16 @@ assert.equal(drag.SWAP_OVERLAP_RATIO, 0.5);
   );
   // A lone tab has nothing to pair with.
   assert.deepEqual(splitCandidates([pickerTabs[0]], [], "a"), []);
+  // Two chats can now split against each other.
+  const twoSessions = [
+    { id: "a", kind: "session", title: "A" },
+    { id: "a2", kind: "session", title: "A2" },
+  ];
+  assert.deepEqual(
+    splitCandidates(twoSessions, [], "a").map((t) => t.id),
+    ["a2"],
+    "a session tab can pair with another session tab",
+  );
 }
 
 const broken = groups.normalizeCenterTabLayout({
@@ -493,12 +503,24 @@ const sessionsOnly = {
   visibleIds: ["s:a", "s:b"],
   focusedId: "s:b",
 };
-assert.deepEqual(groups.resolveCenterTabPanes(sessionsOnly, paneTabs, "s:b"), [{
-  key: "session",
-  kind: "session",
-  activeTabId: "s:b",
-  memberIds: ["s:a", "s:b"],
-}]);
+// Two chats split side by side: the focused one keeps the singleton chat
+// shell, the other renders as a read-along peer pane.
+assert.deepEqual(groups.resolveCenterTabPanes(sessionsOnly, paneTabs, "s:b"), [
+  { key: "peer:s:a", kind: "peer", tabId: "s:a" },
+  {
+    key: "session",
+    kind: "session",
+    activeTabId: "s:b",
+    memberIds: ["s:a", "s:b"],
+  },
+]);
+// Focus swaps which side is the live shell; ordering follows the tabs.
+assert.deepEqual(
+  groups
+    .resolveCenterTabPanes({ ...sessionsOnly, focusedId: "s:a" }, paneTabs, "s:a")
+    .map((pane) => pane.kind),
+  ["session", "peer"],
+);
 
 const sessionAndWeb = {
   ...sessionsOnly,

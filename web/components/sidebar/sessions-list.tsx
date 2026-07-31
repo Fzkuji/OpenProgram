@@ -59,8 +59,10 @@ import styles from "./sidebar.module.css";
 import { ConfirmDialog } from "./sessions-list/confirm-dialog";
 import { pushPath } from "@/lib/shallow-nav";
 import {
+  type BucketKey,
   type LegacyConv,
   type SessionWindow,
+  bucketKey,
   wsSend,
   labelFor,
 } from "./sessions-list/helpers";
@@ -442,12 +444,12 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
           pinned: t("sidebar.pinned"),
           recents: t("sidebar.recents"),
           today: t("sidebar.today"),
-          yesterday: t("sidebar.yesterday"),
+          past7: t("sidebar.activity_7d"),
+          past30: t("sidebar.activity_30d"),
           older: t("sidebar.older"),
           working: t("sidebar.working"),
           completed: t("sidebar.completed"),
         },
-        dateLocale: locale === "zh" ? "zh-CN" : undefined,
       });
 
   // The filter button rides on the FIRST section header's right (Claude
@@ -455,7 +457,7 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
   // sort → one header-less section) or empty, a thin right-aligned row
   // carries it instead so it's always reachable.
   // Every labelled section is collapsible — date buckets (Today /
-  // Yesterday / …) just as much as State / Project — each with the
+  // Past 7 days / …) just as much as State / Project — each with the
   // small right-side ⌄ toggle. (A flat title-sort run has no header,
   // so nothing to collapse there.)
   const collapsible = true;
@@ -613,7 +615,7 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
  *   - groupBy "state"   → Working (a task running) / Completed
  *   - groupBy "project" → handled in SessionsList (registry folder tree)
  *   - groupBy "none"    → date buckets when sorted by recency
- *                         (Pinned / Today / Yesterday / <date> / Older),
+ *                         (Pinned / Today / Past 7 days / Past 30 days / Older),
  *                         or a single flat header-less run when sorted
  *                         by title
  * `items` keep the incoming order (already pinned-first + sorted), so
@@ -633,39 +635,31 @@ interface SectionOpts {
     pinned: string;
     recents: string;
     today: string;
-    yesterday: string;
+    past7: string;
+    past30: string;
     older: string;
     working: string;
     completed: string;
   };
-  dateLocale?: string;
 }
 
 function _dateBucket(
   ts: number,
   nowTs: number,
   labels: SectionOpts["labels"],
-  dateLocale?: string,
 ): { key: string; label: string } {
-  const d = new Date((ts || nowTs) * 1000);
-  const now = new Date(nowTs * 1000);
-  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const diff = Math.round((today - day) / 86_400_000);
-  if (diff <= 0) return { key: "b0_today", label: labels.today };
-  if (diff === 1) return { key: "b1_yesterday", label: labels.yesterday };
-  if (diff <= 30) {
-    const sameYear = d.getFullYear() === now.getFullYear();
-    return {
-      key: "b2_" + day,
-      label: d.toLocaleDateString(dateLocale, {
-        month: "short",
-        day: "numeric",
-        ...(sameYear ? {} : { year: "numeric" }),
-      }),
-    };
-  }
-  return { key: "b9_older", label: labels.older };
+  // ponytail: four coarse buckets — per-day headers piled up to ~30 in a
+  // month. Reuses the existing "Past 7/30 days" filter wording.
+  // Bucketing itself lives in helpers.bucketKey, shared with /chats so
+  // both surfaces agree on what "Today" means.
+  const k = bucketKey(ts, nowTs);
+  const order: Record<BucketKey, string> = {
+    today: "b0_today",
+    past7: "b1_past7",
+    past30: "b2_past30",
+    older: "b9_older",
+  };
+  return { key: order[k], label: labels[k] };
 }
 
 function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
@@ -697,7 +691,7 @@ function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
     // 日期分桶按最后活跃时间："Today" = 今天动过的会话，与 recency
     // 排序一致（否则今天聊过的老会话会挂在旧日期桶里）。
     const b = _dateBucket(
-      c.updated_at || c.created_at || 0, o.nowTs, o.labels, o.dateLocale,
+      c.updated_at || c.created_at || 0, o.nowTs, o.labels,
     );
     if (!buckets.has(b.key)) buckets.set(b.key, { key: b.key, label: b.label, items: [] });
     buckets.get(b.key)!.items.push(c);

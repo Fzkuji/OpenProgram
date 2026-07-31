@@ -6,16 +6,29 @@
  * Shell mirrors /functions and /memory: sticky topbar with title +
  * toolbar (search, New chat), 287px nav rail on the left with quick
  * date / channel filters, content column on the right showing chats
- * grouped by recency. Sessions stream in via WebSocket
- * (list_sessions → sessions_list events).
+ * grouped by recency.
+ *
+ * Data comes from the SAME source as the sidebar Recents list: the
+ * session store, which the runtime-bridge keeps authoritative from the
+ * `sessions_list` WS event. This page used to open a second WebSocket
+ * and maintain its own summary map, which drifted from the sidebar
+ * (dropped `archived` / `updated_at`, so the status filter was dead and
+ * recency was computed off creation time).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import styles from "./chats-page.module.css";
 import { SearchInput } from "@/components/ui/search-input";
 import { useTranslation, type Locale } from "@/lib/i18n";
 import { formatRelativeTime } from "@/lib/format-utils/format";
 import { pushPath } from "@/lib/shallow-nav";
+import { useSessionStore, type ConvSummary } from "@/lib/session-store";
+import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import {
+  type BucketKey,
+  activityTs,
+  bucketKey,
+  labelFor,
+} from "@/components/sidebar/sessions-list/helpers";
 import {
   type AnimatedNavIconHandle,
   ClockIcon,
@@ -25,157 +38,89 @@ import {
 type SortKey = "recent" | "oldest" | "title";
 type StatusFilter = "all" | "active" | "archived";
 
-interface ConvSummary {
-  id: string;
-  title: string;
-  created_at?: number;
-  has_session?: boolean;
-  preview?: string;
-  archived?: boolean;
-}
-
-type FilterId =
-  | "all"
-  | "today"
-  | "week"
-  | "month"
-  | "older";
-
-const DAY = 86400;
-
-function bucketOf(ts: number): Exclude<FilterId, "all"> {
-  const now = Date.now() / 1000;
-  const age = now - (ts || 0);
-  if (age < DAY) return "today";
-  if (age < DAY * 7) return "week";
-  if (age < DAY * 30) return "month";
-  return "older";
-}
+type FilterId = "all" | BucketKey;
 
 export function ChatsPage() {
   const { t, text, locale } = useTranslation();
-  const router = useRouter();
-  const [convs, setConvs] = useState<Record<string, ConvSummary>>({});
+  // Same store the sidebar Recents list reads — one pipeline, no second
+  // WebSocket. Adds / renames / deletes / archive flags land here the
+  // moment the runtime-bridge processes `sessions_list`.
+  const conversations = useSessionStore((s) => s.conversations);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterId>("all");
   const [sort, setSort] = useState<SortKey>("recent");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const wsRef = useRef<WebSocket | null>(null);
 
+  // Bucketing is relative to "now"; pin it per render pass so every row
+  // in one pass is bucketed against the same instant, and re-pin it on a
+  // timer so a page left open overnight doesn't keep yesterday's rows
+  // under "Today".
+  const [nowTs, setNowTs] = useState(() => Math.floor(Date.now() / 1000));
   useEffect(() => {
-    let cancelled = false;
-    let reconnect: ReturnType<typeof setTimeout> | null = null;
-
-    function connect() {
-      if (cancelled) return;
-      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(`${proto}//${window.location.host}/ws`);
-      wsRef.current = ws;
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ action: "list_sessions" }));
-      };
-      ws.onclose = () => {
-        if (!cancelled) reconnect = setTimeout(connect, 2000);
-      };
-      ws.onerror = () => {
-        try {
-          ws.close();
-        } catch {
-          /* ignore */
-        }
-      };
-      ws.onmessage = (e) => {
-        let msg: { type?: string; data?: ConvSummary[]; session_id?: string };
-        try {
-          msg = JSON.parse(e.data);
-        } catch {
-          return;
-        }
-        if (msg.type === "session_deleted" && msg.session_id) {
-          setConvs((prev) => {
-            const next = { ...prev };
-            delete next[msg.session_id!];
-            return next;
-          });
-          return;
-        }
-        if (msg.type === "sessions_list") {
-          const list = msg.data ?? [];
-          setConvs((prev) => {
-            const next = { ...prev };
-            for (const c of list) {
-              const cur = next[c.id] ?? { id: c.id, title: c.title };
-              next[c.id] = {
-                ...cur,
-                title: c.title,
-                created_at: c.created_at,
-                has_session: c.has_session,
-                preview: c.preview,
-              };
-            }
-            return next;
-          });
-        }
-      };
-    }
-
-    connect();
-    return () => {
-      cancelled = true;
-      if (reconnect) clearTimeout(reconnect);
-      try {
-        wsRef.current?.close();
-      } catch {
-        /* ignore */
-      }
-    };
+    const id = setInterval(() => setNowTs(Math.floor(Date.now() / 1000)), 60_000);
+    return () => clearInterval(id);
   }, []);
+
+  const untitled = t("sidebar.untitled");
 
   // Per-bucket counts for the nav badges (always computed against the
   // search-filtered list so the counts agree with what's visible).
   const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
-    let arr = Object.values(convs);
+    let arr = Object.values(conversations) as ConvSummary[];
     if (q) {
-      arr = arr.filter((c) => (c.title || "").toLowerCase().includes(q));
+      // Match the label the row actually renders (channel brand +
+      // preview fallback), not just the raw title — otherwise searching
+      // for text you can see on screen returns nothing.
+      arr = arr.filter((c) => labelFor(c, untitled).toLowerCase().includes(q));
     }
     if (statusFilter === "active") {
       arr = arr.filter((c) => !c.archived);
     } else if (statusFilter === "archived") {
-      arr = arr.filter((c) => c.archived);
+      arr = arr.filter((c) => !!c.archived);
     }
-    arr.sort((a, b) => {
-      if (sort === "recent") return (b.created_at ?? 0) - (a.created_at ?? 0);
-      if (sort === "oldest") return (a.created_at ?? 0) - (b.created_at ?? 0);
-      // title
-      return (a.title || "").localeCompare(b.title || "");
+    arr = [...arr].sort((a, b) => {
+      // "recent" / "oldest" follow last activity, like the sidebar's
+      // recency sort — a conversation you replied in today is recent
+      // even if it was created months ago.
+      if (sort === "recent") return activityTs(b) - activityTs(a);
+      if (sort === "oldest") return activityTs(a) - activityTs(b);
+      return labelFor(a, untitled).localeCompare(labelFor(b, untitled));
     });
     return arr;
-  }, [convs, query, statusFilter, sort]);
+  }, [conversations, query, statusFilter, sort, untitled]);
 
   const counts = useMemo(() => {
-    const c = { all: searched.length, today: 0, week: 0, month: 0, older: 0 } as Record<FilterId, number>;
-    for (const x of searched) c[bucketOf(x.created_at ?? 0)]++;
+    const c = { all: searched.length, today: 0, past7: 0, past30: 0, older: 0 } as Record<FilterId, number>;
+    for (const x of searched) c[bucketKey(activityTs(x), nowTs)]++;
     return c;
-  }, [searched]);
+  }, [searched, nowTs]);
 
   // Apply the active filter on top of the searched list.
   const items = useMemo(() => {
     if (filter === "all") return searched;
-    return searched.filter((c) => bucketOf(c.created_at ?? 0) === filter);
-  }, [searched, filter]);
+    return searched.filter((c) => bucketKey(activityTs(c), nowTs) === filter);
+  }, [searched, filter, nowTs]);
 
   // Group items by recency bucket when showing "All" so the user gets
   // visual date headers — same shape as Functions' category sections.
   const grouped = useMemo(() => {
     if (filter !== "all") return null;
-    const out: Partial<Record<Exclude<FilterId, "all">, ConvSummary[]>> = {};
+    const out: Partial<Record<BucketKey, ConvSummary[]>> = {};
     for (const c of items) {
-      const b = bucketOf(c.created_at ?? 0);
+      const b = bucketKey(activityTs(c), nowTs);
       (out[b] ??= []).push(c);
     }
     return out;
-  }, [items, filter]);
+  }, [items, filter, nowTs]);
+
+  // Same open path as the sidebar's switchTo: focus-or-create the
+  // session's center tab, THEN navigate. Navigating alone left the chat
+  // with no tab when the user had closed it, so /s/<id> rendered empty.
+  function openChat(c: ConvSummary) {
+    useCenterTabs.getState().openSessionTab(c.id, labelFor(c, untitled));
+    pushPath(`/s/${c.id}`);
+  }
 
   const navGroups: Array<{
     label: string;
@@ -191,16 +136,16 @@ export function ChatsPage() {
       label: text("By recency", "按时间"),
       items: [
         { id: "today", name: text("Today", "今天") },
-        { id: "week", name: text("Last 7 days", "最近 7 天") },
-        { id: "month", name: text("Last 30 days", "最近 30 天") },
+        { id: "past7", name: text("Last 7 days", "最近 7 天") },
+        { id: "past30", name: text("Last 30 days", "最近 30 天") },
         { id: "older", name: text("Older", "更早") },
       ],
     },
   ];
-  const sectionLabels: Record<Exclude<FilterId, "all">, string> = {
+  const sectionLabels: Record<BucketKey, string> = {
     today: text("Today", "今天"),
-    week: text("Last 7 days", "最近 7 天"),
-    month: text("Last 30 days", "最近 30 天"),
+    past7: text("Last 7 days", "最近 7 天"),
+    past30: text("Last 30 days", "最近 30 天"),
     older: text("Older", "更早"),
   };
 
@@ -229,9 +174,11 @@ export function ChatsPage() {
               value={statusFilter}
               onChange={setStatusFilter}
               options={[
-                { value: "all", label: text("All", "全部") },
-                { value: "active", label: text("Active sessions", "活动会话") },
-                { value: "archived", label: text("No session", "无会话") },
+                // Wording matches the sidebar's Recents → Status filter;
+                // these drive the same `archived` flag.
+                { value: "all", label: t("sidebar.status_all") },
+                { value: "active", label: t("sidebar.status_active") },
+                { value: "archived", label: t("sidebar.status_archived") },
               ]}
             />
           </div>
@@ -272,7 +219,7 @@ export function ChatsPage() {
               </div>
             ) : grouped ? (
               <>
-                {(["today", "week", "month", "older"] as const)
+                {(["today", "past7", "past30", "older"] as const)
                   .filter((b) => grouped[b]?.length)
                   .map((b) => (
                     <div className={styles.section} key={b}>
@@ -285,8 +232,8 @@ export function ChatsPage() {
                             key={c.id}
                             conv={c}
                             locale={locale}
-                            untitled={t("sidebar.untitled")}
-                            onClick={() => pushPath(`/s/${c.id}`)}
+                            untitled={untitled}
+                            onClick={() => openChat(c)}
                           />
                         ))}
                       </div>
@@ -300,8 +247,8 @@ export function ChatsPage() {
                     key={c.id}
                     conv={c}
                     locale={locale}
-                    untitled={t("sidebar.untitled")}
-                    onClick={() => pushPath(`/s/${c.id}`)}
+                    untitled={untitled}
+                    onClick={() => openChat(c)}
                   />
                 ))}
               </div>
@@ -324,8 +271,10 @@ function ChatRow({
   untitled: string;
   onClick: () => void;
 }) {
-  const title = conv.title || untitled;
-  const initial = title.replace(/^\s+/, "").slice(0, 1).toUpperCase() || "?";
+  // Same label the sidebar renders: channel brand prefix, placeholder
+  // titles resolved to the preview, "[attached: …]" markers stripped.
+  const title = labelFor(conv, untitled);
+  const initial = title.replace(/^[\s[]+/, "").slice(0, 1).toUpperCase() || "?";
   return (
     <div className={styles.row} onClick={onClick}>
       <div className={styles.rowAvatar}>{initial}</div>
@@ -335,7 +284,9 @@ function ChatRow({
           <span title={String(conv.id)}>{conv.id.slice(0, 12)}</span>
         </div>
       </div>
-      <div className={styles.rowTime}>{formatRelativeTime(conv.created_at ?? 0, locale)}</div>
+      {/* Last activity — the same timestamp the list sorts and buckets
+          by, so the row's own time can't contradict its date section. */}
+      <div className={styles.rowTime}>{formatRelativeTime(activityTs(conv), locale)}</div>
     </div>
   );
 }

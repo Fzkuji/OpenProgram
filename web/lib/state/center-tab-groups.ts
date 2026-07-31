@@ -18,6 +18,7 @@ export interface CenterTabLayout {
 
 export type CenterTabPane =
   | { key: "session"; kind: "session"; activeTabId: string; memberIds: string[] }
+  | { key: string; kind: "peer"; tabId: string }
   | { key: string; kind: "tab"; tabId: string };
 
 export type CenterTabStripEntry =
@@ -78,28 +79,19 @@ export function findCenterTabGroup(
 }
 
 /** Tabs that can join `subjectId` in a split view: every other tab in the
- *  window except members of the subject's own group (those are no-ops) and
- *  except a second session tab.
+ *  window except members of the subject's own group (those are no-ops).
  *
- *  Session tabs are excluded from each other because the chat surface is a
- *  singleton — one shell, one WebSocket, one set of DOM ids, mounted once in
- *  AppShell and merely revealed by session tabs. resolveCenterTabPanes
- *  therefore folds every visible session tab into ONE "session" pane, so
- *  pairing two chats would build a group that still renders a single pane.
- *  Offering that pairing is what made "New split view" look broken. */
+ *  Session+session pairs are allowed: the focused session keeps the
+ *  singleton chat shell and the other renders as a read-along
+ *  `<PeerSessionPane />` (see resolveCenterTabPanes). */
 export function splitCandidates(
   tabs: readonly CenterTab[],
   groups: readonly CenterTabGroup[],
   subjectId: string,
 ): CenterTab[] {
   const ownGroup = findCenterTabGroup(groups, subjectId);
-  const subject = tabs.find((tab) => tab.id === subjectId);
-  const subjectIsSession = subject?.kind === "session";
   return tabs.filter(
-    (tab) =>
-      tab.id !== subjectId
-      && !ownGroup?.memberIds.includes(tab.id)
-      && !(subjectIsSession && tab.kind === "session"),
+    (tab) => tab.id !== subjectId && !ownGroup?.memberIds.includes(tab.id),
   );
 }
 
@@ -336,6 +328,12 @@ export function resolveCenterTabPanes(
   const panes: CenterTabPane[] = [];
   for (const tab of visibleTabs) {
     if (tab.kind === "session") {
+      // The focused session owns the singleton chat shell; any other
+      // visible session gets its own read-along peer pane.
+      if (focusedSessionId && tab.id !== focusedSessionId) {
+        panes.push({ key: `peer:${tab.id}`, kind: "peer", tabId: tab.id });
+        continue;
+      }
       if (sessionAdded || !focusedSessionId) continue;
       panes.push({
         key: "session",

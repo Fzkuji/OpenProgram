@@ -305,6 +305,49 @@
   padding-bottom: 180px;
 }
 
+/* Peer pane (the read-along half of a chat+chat split view). It reuses
+   .chat-area / .chat-messages for bubble styling, but sits in a much
+   narrower flex column and renders no message rail. The base
+   `calc(100% - 112px)` gutter reserves rail space that doesn't exist
+   here, and at pane widths it collapses the content column toward zero —
+   which is what squeezed bubbles to one character wide and stacked CJK
+   text vertically. Drop the gutter to a plain padding and let the column
+   use the full pane width. */
+.peer-session-pane .chat-messages {
+  max-width: 100%;
+  padding: 12px 16px 24px 16px;
+}
+.peer-session-pane .message {
+  padding: 12px 0;
+}
+/* The 36px inset exists to line the user bubble's right edge up with the
+   assistant text in the wide column. In a split pane that inset is a
+   meaningful slice of the width, so shrink it and let the bubble use
+   more of the pane. */
+.peer-session-pane .message.user .message-content {
+  max-width: 88%;
+  margin-right: 8px;
+}
+/* Avatars are absolutely positioned into the column's side gutters,
+   which the peer pane doesn't have — they'd overlap the text. */
+.peer-session-pane .message-header {
+  display: none;
+}
+/* The base rule pads 36px on each side to clear the absolutely-positioned
+   avatars. With those hidden above, that 72px is pure loss in a narrow
+   pane — it was the largest single contributor to the collapsed bubbles. */
+.peer-session-pane .message-content {
+  min-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  overflow-wrap: anywhere;
+}
+/* Same 36px avatar-gutter alignment, same reasoning. */
+.peer-session-pane .message.assistant > .typing-indicator,
+.peer-session-pane .message.assistant .message-actions-footer {
+  padding-left: 0;
+}
+
 .message {
   padding: 16px 24px;
   max-width: 100%;

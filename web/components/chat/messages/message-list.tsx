@@ -75,7 +75,7 @@ function dispatch(msg: ChatMsg) {
   return <AssistantBubble msg={msg} />;
 }
 
-const MessageRow = memo(function MessageRow({ id }: { id: string }) {
+export const MessageRow = memo(function MessageRow({ id }: { id: string }) {
   const msg = useMessageById(id);
   if (!msg) return null;
   return dispatch(msg);

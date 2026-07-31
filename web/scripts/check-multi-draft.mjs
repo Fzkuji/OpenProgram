@@ -5,10 +5,10 @@ import { registerHooks } from "node:module";
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier.startsWith("@/")) {
-      return {
-        url: new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href,
-        shortCircuit: true,
-      };
+      const base = new URL(`../${specifier.slice(2)}`, import.meta.url);
+      const file = new URL(`${base.pathname}.ts`, base);
+      const url = existsSync(file) ? file : new URL(`${base.pathname}/index.ts`, base);
+      return { url: url.href, shortCircuit: true };
     }
     return nextResolve(specifier, context);
   },

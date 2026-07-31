@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier.startsWith("@/")) {
-      return {
-        url: new URL(`../${specifier.slice(2)}.ts`, import.meta.url).href,
-        shortCircuit: true,
-      };
+      const base = new URL(`../${specifier.slice(2)}`, import.meta.url);
+      const file = new URL(`${base.pathname}.ts`, base);
+      const url = existsSync(file) ? file : new URL(`${base.pathname}/index.ts`, base);
+      return { url: url.href, shortCircuit: true };
     }
     return nextResolve(specifier, context);
   },
@@ -319,7 +319,8 @@ assert.match(composer, /const shouldActivate = sessionAckIsActive\(sid\);/);
 assert.match(composer, /useCenterTabs\.getState\(\)\.markSessionReady\(sid\);/);
 assert.match(
   composer,
-  /if \(shouldActivate\) \{[\s\S]*setCurrentConv\(sid\);[\s\S]*router\.push/,
+  // Navigation is shallow now (lib/shallow-nav pushPath), not router.push.
+  /if \(shouldActivate\) \{[\s\S]*setCurrentConv\(sid\);[\s\S]*pushPath\(`\/s\//,
 );
 assert.match(composer, /const submitOwnerKey = activeChatKey \?\? currentSessionId;/);
 assert.match(

@@ -179,28 +179,48 @@ const uiBridge = readFileSync(
   new URL("../lib/runtime-bridge/ui.ts", import.meta.url),
   "utf8",
 );
+// The legacy DAG showDetail now delegates to the store's showDetail,
+// which sets nodeSelected: true itself (see lib/session-store/index.ts).
 assert.match(
   uiBridge,
-  /setNodeSelected\(true\)/,
-  "the legacy DAG showDetail must flag the selection for the React switch",
+  /useSessionStore\.getState\(\)\.showDetail\(/,
+  "the legacy DAG showDetail must hand the node to the store",
+);
+assert.match(
+  sessionStore,
+  /showDetail: \(node, keepView\) =>[\s\S]*nodeSelected: true/,
+  "the store's showDetail must flag the selection for the React switch",
 );
 assert.match(
   uiBridge,
   /setNodeSelected\(false\)/,
   "closing the detail panel must clear the selection flag",
 );
+assert.match(
+  sessionStore,
+  /closeDetail: \(\) =>\s*set\(\{ detailNode: null, nodeSelected: false \}\)/,
+  "the store's closeDetail must clear the selection flag too",
+);
 // It must NOT set detailNode — that would double-render the panel.
 assert.doesNotMatch(
   uiBridge,
-  /showDetail: \(node\)|setState\(\{ detailNode/,
+  /setState\(\{ detailNode/,
   "the legacy bridge must not populate detailNode (React would render a second copy)",
 );
 assert.match(rightSidebar, /<SessionViewSwitch current=\{VIEW_DETAIL\} \/>/);
 assert.match(rightSidebar, /<SessionViewSwitch current=\{VIEW_CONTEXT\} \/>/);
 assert.match(rightSidebar, /<SessionViewSwitch current=\{VIEW_HISTORY\} \/>/);
+// The bookmarks search box is the shared <SearchInput>; its focus
+// indicator is the container's accent border (the inner input's own
+// :focus-visible ring is deliberately suppressed in base.css).
+const searchInput = readFileSync(
+  new URL("../components/ui/search-input.tsx", import.meta.url),
+  "utf8",
+);
 assert.match(
-  rightDockCss,
-  /\.bookmarks-search input:focus-visible\s*\{[^}]*outline:\s*(?!0)[^;}]+;/s,
+  searchInput,
+  /focus-within:border-\[color:var\(--accent-blue\)\]/,
+  "the search box must show a visible focus indicator",
 );
 assert.match(
   rightDockCss,

@@ -88,6 +88,14 @@ export function RecentsFilter() {
     ];
   }, [conversations, t]);
 
+  const archivedCount = useMemo(
+    () =>
+      Object.values(conversations || {}).filter(
+        (c) => (c as { archived?: boolean }).archived,
+      ).length,
+    [conversations],
+  );
+
   // Any non-default selection lights the trigger so an active filter
   // is visible without opening the menu.
   const active =
@@ -139,6 +147,7 @@ export function RecentsFilter() {
               ["archived", t("sidebar.status_archived")],
               ["all", t("sidebar.status_all")],
             ]}
+            counts={{ archived: archivedCount }}
             onPick={(status) => setRecentsView({ status })}
           />
           <Row<string>
@@ -207,11 +216,14 @@ function Row<T extends string>({
   options,
   onPick,
   separateLast,
+  counts,
 }: {
   label: string;
   value: T;
   options: [T, string][];
   onPick: (v: T) => void;
+  /** Optional per-option count badge (e.g. how many archived sessions). */
+  counts?: Partial<Record<T, number>>;
   /** Render a divider before the last option (e.g. "None" in Group by). */
   separateLast?: boolean;
 }) {
@@ -235,6 +247,11 @@ function Row<T extends string>({
                 ) : null}
                 <DM.Item onSelect={() => onPick(val)} className={rowCls}>
                   <span className="flex-1 text-left">{optLabel}</span>
+                  {counts?.[val] ? (
+                    <span className="shrink-0 text-text-muted tabular-nums">
+                      {counts[val]}
+                    </span>
+                  ) : null}
                   {selected ? (
                     <Check size={14} className="shrink-0" style={{ color: "var(--accent-orange)" }} />
                   ) : (

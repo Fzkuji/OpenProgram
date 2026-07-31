@@ -52,6 +52,31 @@ export interface LegacyConv {
   unread?: boolean;
 }
 
+/** Recency bucket key for a conversation timestamp, on CALENDAR-day
+ *  boundaries (not rolling 24h windows) so "Today" means "today", not
+ *  "within the last 24 hours". Shared by the sidebar Recents list and
+ *  the /chats page so both bucket identically. Label lookup is the
+ *  caller's job — each surface words its own headers. */
+export type BucketKey = "today" | "past7" | "past30" | "older";
+
+export function bucketKey(ts: number, nowTs: number): BucketKey {
+  const d = new Date((ts || nowTs) * 1000);
+  const now = new Date(nowTs * 1000);
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const diff = Math.round((today - day) / 86_400_000);
+  if (diff <= 0) return "today";
+  if (diff <= 7) return "past7";
+  if (diff <= 30) return "past30";
+  return "older";
+}
+
+/** The timestamp both surfaces bucket & recency-sort by: last activity,
+ *  falling back to creation for rows the backend hasn't stamped yet. */
+export function activityTs(c: { updated_at?: number; created_at?: number }): number {
+  return c.updated_at || c.created_at || 0;
+}
+
 const CHANNEL_BRAND: Record<string, string> = {
   wechat: "WeChat",
   discord: "Discord",
@@ -70,7 +95,12 @@ function isPlaceholderTitle(t: string): boolean {
   return false;
 }
 
-export function displayTitle(c: LegacyConv): string {
+/** The only fields displayTitle / labelFor actually read. Kept narrower
+ *  than LegacyConv so the store's ConvSummary (whose `status` is a plain
+ *  string) can be labelled too — both the sidebar and /chats call these. */
+export type LabelableConv = Pick<LegacyConv, "title" | "preview" | "channel">;
+
+export function displayTitle(c: LabelableConv): string {
   const raw = (c.title || "").trim();
   if (isPlaceholderTitle(raw)) return "";
   // The title often is the first user message verbatim, including the
@@ -82,7 +112,7 @@ export function displayTitle(c: LegacyConv): string {
   return t.length > 30 ? t.slice(0, 30) + "…" : t;
 }
 
-export function labelFor(c: LegacyConv, untitled: string): string {
+export function labelFor(c: LabelableConv, untitled: string): string {
   // Channel conversations get a bracketed brand prefix (no account, no
   // colon): "[WeChat] <title>". The title itself is the LLM-generated
   // real title (same two-phase naming as normal sessions); only the

@@ -518,6 +518,15 @@ export function loadSessionData(data: LegacyConv): void {
     /* ignore */
   }
   W._branchesPanelCollapsed = true;
+  // A session loaded while NOT focused still needs its messages in the
+  // React store — that's what a split-view peer pane renders from.
+  // `renderSessionMessages` below is the only path that feeds the store,
+  // and it's gated on `currentSessionId` because the rest of what it does
+  // is legacy-DOM work for the focused chat. Feed the store directly here
+  // so a peer's transcript lands without touching the focused session.
+  if (id !== W.currentSessionId) {
+    W.__feedStoreFromConv?.(convs[id] as LegacyConv);
+  }
   if (id === W.currentSessionId) {
     W.refreshStatusSource?.();
     refreshChannelBadge();

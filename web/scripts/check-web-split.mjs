@@ -1545,9 +1545,14 @@ const sessionPair = {
   focusedId: "s:b",
 };
 const sessionPanes = resolveCenterTabPanes(sessionPair, paneTabs, "s:b");
-assert.equal(sessionPanes.length, 1, "two sessions share the singleton chat pane");
-assert.equal(sessionPanes[0].kind, "session");
-assert.equal(sessionPanes[0].activeTabId, "s:b");
+assert.equal(sessionPanes.length, 2, "two sessions split into two panes");
+assert.deepEqual(
+  sessionPanes.map((pane) => pane.kind),
+  ["peer", "session"],
+  "the unfocused session renders as a read-along peer pane",
+);
+assert.equal(sessionPanes[0].tabId, "s:a");
+assert.equal(sessionPanes[1].activeTabId, "s:b");
 
 const sessionWebPanes = resolveCenterTabPanes({
   ...sessionPair,
@@ -1901,7 +1906,8 @@ assert.match(
 );
 assert.match(
   appShellSource,
-  /const panes =\s*isDesktop && activeGroup && splitAvailable\s*\? compoundPanes\s*:\s*focusedPanes;/,
+  // No isDesktop gate: split is purely a measured-width decision now.
+  /const panes = activeGroup && splitAvailable \? compoundPanes : focusedPanes;/,
 );
 assert.match(
   appShellSource,

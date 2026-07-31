@@ -26,6 +26,7 @@ import { Composer } from "./chat/composer";
 import { LegacyTopbarBridge } from "./chat/top-bar";
 import { WelcomeScreen } from "./chat/welcome-screen";
 import { MessageList } from "./chat/messages/message-list";
+import { PeerSessionPane } from "./chat/peer-session-pane";
 import { useSessionStore } from "@/lib/session-store";
 import { applyChatWsMessage, appendLocalUserTurn } from "@/lib/net/chat-stream";
 import { convToChatMsgs } from "@/lib/conv-mapper";
@@ -543,9 +544,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       : { order: 2 };
   }
 
-  function renderTabPane(tabId: string) {
+  function renderTabPane(tabId: string, kind: "peer" | "tab") {
     const tab = tabs.find((candidate) => candidate.id === tabId);
     if (!tab) return null;
+    if (kind === "peer") {
+      return (
+        <PeerSessionPane
+          tabId={tab.id}
+          sessionId={tab.sessionId ?? null}
+          title={tab.title}
+        />
+      );
+    }
     if (tab.kind === "file" && tab.projectId && tab.path) {
       return <FileTabPane projectId={tab.projectId} path={tab.path} />;
     }
@@ -655,7 +665,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {showChat
             ? panes.map((pane, index) => {
                 if (pane.kind === "session") return null;
-                const content = renderTabPane(pane.tabId);
+                const content = renderTabPane(pane.tabId, pane.kind);
                 if (!content) return null;
                 return (
                   <div
