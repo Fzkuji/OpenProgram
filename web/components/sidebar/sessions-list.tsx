@@ -431,7 +431,6 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
           recents: t("sidebar.recents"),
           today: t("sidebar.today"),
           past7: t("sidebar.activity_7d"),
-          past30: t("sidebar.activity_30d"),
           working: t("sidebar.working"),
           completed: t("sidebar.completed"),
         },
@@ -608,7 +607,6 @@ interface SectionOpts {
     recents: string;
     today: string;
     past7: string;
-    past30: string;
     working: string;
     completed: string;
   };

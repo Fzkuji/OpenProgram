@@ -41,7 +41,7 @@ import {
 type SortKey = "recent" | "oldest" | "title";
 type StatusFilter = "all" | "active" | "archived";
 
-type FilterId = "all" | "today" | "past7" | "past30" | "older";
+type FilterId = "all" | "today" | "past7" | "older";
 
 export function ChatsPage() {
   const { t, text, locale } = useTranslation();
@@ -94,7 +94,7 @@ export function ChatsPage() {
   }, [conversations, query, statusFilter, sort, untitled]);
 
   const counts = useMemo(() => {
-    const c: Record<FilterId, number> = { all: searched.length, today: 0, past7: 0, past30: 0, older: 0 };
+    const c: Record<FilterId, number> = { all: searched.length, today: 0, past7: 0, older: 0 };
     for (const x of searched) {
       const k = bucketKey(activityTs(x), nowTs);
       c[bucketIsOlder(k) ? "older" : (k as FilterId)]++;
@@ -149,7 +149,6 @@ export function ChatsPage() {
       items: [
         { id: "today", name: text("Today", "今天") },
         { id: "past7", name: text("Last 7 days", "最近 7 天") },
-        { id: "past30", name: text("Last 30 days", "最近 30 天") },
         { id: "older", name: text("Older", "更早") },
       ],
     },
@@ -157,7 +156,6 @@ export function ChatsPage() {
   const fixedLabels = {
     today: text("Today", "今天"),
     past7: text("Last 7 days", "最近 7 天"),
-    past30: text("Last 30 days", "最近 30 天"),
   };
 
   return (

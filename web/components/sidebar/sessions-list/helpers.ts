@@ -57,8 +57,8 @@ export interface LegacyConv {
  *  "within the last 24 hours". Shared by the sidebar Recents list and
  *  the /chats page so both bucket identically. Label lookup is the
  *  caller's job — each surface words its own headers. */
-/** "today" | "past7" | "past30" | "m-<year>-<month0>" (current-year month
- *  older than 30 days) | "y-<year>" (previous years). */
+/** "today" | "past7" | "m-<year>-<month0>" (current-year month beyond
+ *  7 days) | "y-<year>" (previous years). */
 export type BucketKey = string;
 
 export function bucketKey(ts: number, nowTs: number): BucketKey {
@@ -69,22 +69,20 @@ export function bucketKey(ts: number, nowTs: number): BucketKey {
   const diff = Math.round((today - day) / 86_400_000);
   if (diff <= 0) return "today";
   if (diff <= 7) return "past7";
-  if (diff <= 30) return "past30";
   if (d.getFullYear() === now.getFullYear()) return `m-${d.getFullYear()}-${d.getMonth()}`;
   return `y-${d.getFullYear()}`;
 }
 
-/** Whether a bucket is one of the dynamic ">30 days" ones. */
+/** Whether a bucket is one of the dynamic ">7 days" month/year ones. */
 export function bucketIsOlder(k: BucketKey): boolean {
   return k.startsWith("m-") || k.startsWith("y-");
 }
 
 /** Lexicographic sort key: ascending sort yields newest bucket first
- *  (today, 7d, 30d, then months newest-first, then years newest-first). */
+ *  (today, 7d, then months newest-first, then years newest-first). */
 export function bucketSortKey(k: BucketKey): string {
   if (k === "today") return "a0";
   if (k === "past7") return "a1";
-  if (k === "past30") return "a2";
   if (k.startsWith("m-")) {
     const [, y, m] = k.split("-");
     return `b-${9999 - Number(y)}-${String(11 - Number(m)).padStart(2, "0")}`;
@@ -93,16 +91,15 @@ export function bucketSortKey(k: BucketKey): string {
   return "z";
 }
 
-/** Human label for a bucket. The three fixed buckets take their i18n
+/** Human label for a bucket. The fixed buckets take their i18n
  *  strings from the caller; month/year buckets format themselves. */
 export function bucketLabel(
   k: BucketKey,
   locale: string,
-  fixed: { today: string; past7: string; past30: string },
+  fixed: { today: string; past7: string },
 ): string {
   if (k === "today") return fixed.today;
   if (k === "past7") return fixed.past7;
-  if (k === "past30") return fixed.past30;
   if (k.startsWith("m-")) {
     const [, y, m] = k.split("-").map(Number);
     return new Intl.DateTimeFormat(locale.startsWith("zh") ? "zh-CN" : "en-US", {
