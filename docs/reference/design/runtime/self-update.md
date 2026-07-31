@@ -111,12 +111,28 @@ writes progress to a sentinel file the new worker reads on boot, so the
 first chat turn after an upgrade can report "upgraded to <sha>" or "rolled
 back: <reason>".
 
-### 4.4 What stays out of scope
+### 4.4 Extension points (design for, don't build yet)
+
+Kept open deliberately so later needs slot in without reshaping the
+command:
+
+- **Channels.** `upgrade` never hard-codes a ref: it resolves
+  `channel → target ref` through one function, with a single built-in
+  channel today (`stable → origin/main`). Adding `beta → origin/beta` or
+  `dev → <worktree branch>` later is a table entry plus a persisted
+  `update.channel` config key (OpenClaw's model), not a rewrite. CLI shape
+  reserves `upgrade --channel <name>` and `upgrade status` from day one.
+- **Distribution methods.** The step chain is expressed as
+  *resolve target → materialize → verify → activate*. Today "materialize"
+  is `git checkout`; a future pip/npm package install implements the same
+  four verbs (with OpenClaw-style staged install as its "materialize").
+  Steps 5–7 (probe, restart, verify) are distribution-agnostic already.
+- **Update source.** Target resolution takes a remote name, defaulting to
+  `origin` — a fork or private mirror is a config value.
+
+### 4.5 What stays out of scope
 
 - Hot code reload / fd handover — restart is seconds and sessions survive.
-- npm-style staged package installs — source checkout + git is our only
-  distribution today; `git checkout` of a known sha *is* the rollback
-  mechanism, no tree swap needed.
 - Automatic background updates — the user (or their agent) initiates.
 
 ## 5. Failure modes
@@ -138,6 +154,8 @@ back: <reason>".
   practice.
 - **Phase 2**: `openprogram upgrade` with the step chain of §4.2 minus
   rollback: preflight, checkout, deps, build, probe, restart, verify. Add
-  the `sha` field to `/healthz`.
+  the `sha` field to `/healthz`. Internally structured around the §4.4
+  extension points (channel table, four-verb step chain) even though only
+  one channel and one distribution method exist.
 - **Phase 3**: automatic rollback on verify failure, sentinel reporting
   into the first post-upgrade chat turn, supervisor back-off pinning.
