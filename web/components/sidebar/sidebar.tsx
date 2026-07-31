@@ -181,7 +181,26 @@ export function Sidebar() {
   }, []);
 
   function newChat() {
-    const draftId = useCenterTabs.getState().openDraftSessionTab();
+    // Focus-or-create（浏览器地址栏语义）：已经开着的"新会话"界面
+    // ——未发消息的草稿会话 tab 或 NTP tab——直接跳过去，而不是每点
+    // 一次就多冒一个 tab。真想多开几个空会话用 tab 条上的 ＋。
+    const s = useCenterTabs.getState();
+    const existingDraft = s.tabs.find(
+      (t) => t.kind === "session" && t.draft && t.sessionId,
+    );
+    const existingNtp = existingDraft ? null : s.tabs.find((t) => t.kind === "ntp");
+    let draftId: string;
+    if (existingDraft) {
+      if (s.activeId !== existingDraft.id) s.setActive(existingDraft.id);
+      draftId = existingDraft.sessionId!;
+    } else if (existingNtp) {
+      // NTP 是"新标签页"界面：占住它并转成草稿会话，语义同在 NTP 里
+      // 点 New session。
+      if (s.activeId !== existingNtp.id) s.setActive(existingNtp.id);
+      draftId = useCenterTabs.getState().claimDraftSessionTab();
+    } else {
+      draftId = s.openDraftSessionTab();
+    }
     const w = window as unknown as { newSession?: (draftId?: string) => void };
     if (typeof w.newSession === "function") {
       w.newSession(draftId);
