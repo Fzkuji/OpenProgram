@@ -20,7 +20,12 @@ from openprogram.webui._model_listing import storage as st
 
 
 @pytest.fixture(autouse=True)
-def _reset_cache():
+def _reset_cache(tmp_path, monkeypatch):
+    # Isolate the disk-cache fallback too (22d98d80): on a dev machine
+    # ~/.openprogram/cache/models_dev.json exists, and a failed fetch
+    # deliberately serves it — which would mask the fail-TTL behaviour
+    # these tests pin down.
+    monkeypatch.setattr(md, "_disk_cache_path", lambda: tmp_path / "models_dev.json")
     md._cache.update({"data": None, "fetched_at": 0.0})
     yield
     md._cache.update({"data": None, "fetched_at": 0.0})
@@ -101,3 +106,22 @@ def test_tier2_providers_appear_in_list_providers(monkeypatch):
     row = next(p for p in listing.list_providers() if p["id"] == "togetherai")
     assert row["community_source"] == "models.dev"
     assert row["model_count"] == 1
+
+
+def test_failed_fetch_falls_back_to_disk_cache(monkeypatch, tmp_path):
+    """When the network is down but a previous success was persisted,
+    _load serves the stale catalogue instead of an empty dict."""
+    import json
+
+    (tmp_path / "models_dev.json").write_text(
+        json.dumps({"openrouter": {"models": {"x": {}}}}), encoding="utf-8"
+    )
+
+    def _get(url, timeout=10):
+        raise RuntimeError("network down")
+
+    import httpx
+    monkeypatch.setattr(httpx, "get", _get)
+
+    data = md._load()
+    assert data and "openrouter" in data
