@@ -114,12 +114,12 @@ async function copyText(value: string): Promise<void> {
   document.body.removeChild(ta);
 }
 
-/* VS Code-ish geometry: 12px per depth level; folder rows lead with a
-   14px chevron + 4px gap, so file rows (no chevron) indent 18px extra
-   to align their icon with the folder glyph. */
-const INDENT = 12;
+/* VS Code-ish geometry: 16px per depth level; folder rows lead with a
+   14px chevron + 6px flex gap (see .treeRow), so file rows (no chevron)
+   indent 20px extra so their icon sits exactly under the folder glyph. */
+const INDENT = 16;
 const ROW_PAD = 4;
-const FILE_PAD = ROW_PAD + 18;
+const FILE_PAD = ROW_PAD + 20;
 
 /** Extension bucket → icon + colour (existing accent tokens only). */
 const ICON_BUCKETS: [Set<string>, typeof File, string | undefined][] = [
@@ -506,7 +506,7 @@ export function FileTree({
           {creating.kind === "dir" ? (
             <>
               <ChevronRight size={14} className={styles.chevron} />
-              <Folder size={14} className={styles.treeIcon} />
+              <Folder size={14} className={styles.treeIconFolder} />
             </>
           ) : (
             <File size={14} className={styles.treeIcon} />
@@ -560,7 +560,7 @@ export function FileTree({
                 size={14}
                 className={`${styles.chevron} ${isOpen ? styles.chevronOpen : ""}`}
               />
-              <Folder size={14} className={styles.treeIcon} />
+              <Folder size={14} className={styles.treeIconFolder} />
               {renaming === full ? (
                 <InlineNameInput
                   initial={e.name}
@@ -668,7 +668,7 @@ export function FileTree({
                     title={path}
                   >
                     <ChevronRight size={14} className={styles.chevron} />
-                    <Folder size={14} className={styles.treeIcon} />
+                    <Folder size={14} className={styles.treeIconFolder} />
                     <span className={styles.treePath}>{path}</span>
                   </div>
                 ) : (

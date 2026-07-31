@@ -332,6 +332,14 @@
   color: var(--text-dim);
 }
 
+/* Folders get the editor-conventional warm tint (filled) so directory
+   structure reads at a glance against the mono file glyphs. */
+.treeIconFolder {
+  flex-shrink: 0;
+  color: var(--accent-yellow);
+  fill: color-mix(in srgb, var(--accent-yellow) 30%, transparent);
+}
+
 /* Children of one expanded folder. Rows inside stay full-width (so
    hover spans the panel); the 1px indent guide is drawn at the parent
    chevron's center via --guide-x set inline per depth. Always visible
