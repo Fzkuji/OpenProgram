@@ -491,7 +491,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
             </>
           )}
           {!streaming && msg.id ? (
-            <TurnFilesChips assistantMsgId={msg.id} />
+            <TurnFilesChips assistantMsgId={msg.id} blocks={msg.blocks} />
           ) : null}
         </div>
       )}

@@ -41,6 +41,10 @@ class SessionMemoryIndex:
     head_id: Optional[str] = None
     meta: dict = field(default_factory=dict)
     next_seq: int = 0
+    # Every seq currently held by a node. Guards against handing out a
+    # seq an abandoned node already owns (see ``append``); a set instead
+    # of scanning nodes_by_seq keeps append O(1) on long sessions.
+    _taken_seqs: set[int] = field(default_factory=set)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     # Mutations
@@ -56,6 +60,15 @@ class SessionMemoryIndex:
         """
         with self._lock:
             if node.seq < 0:
+                # Skip any seq already taken. A turn abandoned mid-stream
+                # (crash / lost worker) leaves its llm node on disk holding
+                # a seq while the counter can come back lower after a
+                # rebuild, and the next user message would then collide
+                # with it — two nodes at the same seq, one history filename
+                # each, ordering undefined. Advancing past occupied seqs
+                # costs nothing and makes a collision unrepresentable.
+                while self.next_seq in self._taken_seqs:
+                    self.next_seq += 1
                 node.seq = self.next_seq
                 self.next_seq += 1
             else:
@@ -65,6 +78,7 @@ class SessionMemoryIndex:
                     self.next_seq = node.seq + 1
             self.nodes_by_id[node.id] = node
             self.nodes_by_seq.append(node)
+            self._taken_seqs.add(node.seq)
             if predecessor:
                 self.children_by_predecessor.setdefault(predecessor, []).append(node.id)
             if caller:
@@ -142,6 +156,7 @@ class SessionMemoryIndex:
             self.children_by_caller.clear()
             self.head_id = None
             self.meta.clear()
+            self._taken_seqs.clear()
             self.next_seq = 0
 
     def rebuild_from_paths(

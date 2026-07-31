@@ -1169,6 +1169,9 @@ class SessionStore:
                     continue
                 # Remove from sorted list (linear scan; tiny lists in practice)
                 idx.nodes_by_seq = [n for n in idx.nodes_by_seq if n.id != nid]
+                # Free the seq so append can reuse it (the collision guard
+                # in SessionMemoryIndex.append reads this set).
+                idx._taken_seqs.discard(node.seq)
                 # Detach from children indices
                 for parent, kids in list(idx.children_by_predecessor.items()):
                     if nid in kids:
@@ -1234,8 +1237,10 @@ class SessionStore:
         if node_id not in idx.nodes_by_id:
             return False
         with idx._lock:
-            idx.nodes_by_id.pop(node_id, None)
+            _removed = idx.nodes_by_id.pop(node_id, None)
             idx.nodes_by_seq = [n for n in idx.nodes_by_seq if n.id != node_id]
+            if _removed is not None:
+                idx._taken_seqs.discard(_removed.seq)
             for parent, kids in list(idx.children_by_predecessor.items()):
                 if node_id in kids:
                     kids.remove(node_id)

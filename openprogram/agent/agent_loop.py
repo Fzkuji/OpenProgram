@@ -534,30 +534,90 @@ def _walk_scan(root: str):
                 continue
 
 
-def _snapshot_cwd(tool_name: str) -> dict[str, tuple[float, int]] | None:
-    """For bash-like tools, record mtime+size of files under cwd.
+# Per-file cap on the pre-command content staging. A bash turn in a
+# tree full of large binaries would otherwise copy gigabytes to stage
+# files it will probably never touch.
+_STAGE_MAX_BYTES = 5 * 1024 * 1024
+
+
+class _BashPreState:
+    """Pre-command view of the tree: stat map + staged copies of contents.
+
+    The stat map alone can only say WHICH files changed; restoring them
+    needs the bytes as they were BEFORE the command ran, which is why
+    every candidate is copied to ``stage_dir`` up front. Files over
+    `_STAGE_MAX_BYTES` are still stat-tracked (so the change is noticed)
+    but not staged — see `staged` for which ones have bytes.
+    """
+
+    __slots__ = ("stats", "stage_dir", "staged")
+
+    def __init__(self, stats: dict, stage_dir: str, staged: dict[str, str]):
+        self.stats = stats
+        self.stage_dir = stage_dir
+        self.staged = staged
+
+    def cleanup(self) -> None:
+        import shutil
+        shutil.rmtree(self.stage_dir, ignore_errors=True)
+
+
+def _snapshot_cwd(tool_name: str) -> _BashPreState | None:
+    """For bash-like tools, record cwd file stats AND stage their contents.
 
     Walks subdirectories (bounded — see `_walk_scan`), because bash can
-    write anywhere in the tree, not just the top level.
+    write anywhere in the tree, not just the top level. Each scanned file
+    is copied into a temp staging dir so that after the command runs we
+    can checkpoint the *pre-command* bytes; checkpointing from the live
+    path at that point would archive the already-modified content and
+    make Undo a silent no-op.
 
     Returns None for non-bash tools (they have their own per-file backup).
     """
     if tool_name not in _BASH_LIKE_TOOLS:
         return None
     try:
+        import logging
         import os
+        import shutil
+        import tempfile
         from openprogram.worktree.context import current_worktree_path
+
         cwd = current_worktree_path() or os.getcwd()
-        return dict(_walk_scan(cwd))
+        stats = dict(_walk_scan(cwd))
+        stage_dir = tempfile.mkdtemp(prefix="op-bash-ckpt-")
+        staged: dict[str, str] = {}
+        skipped = 0
+        for i, (path, (_mtime, size)) in enumerate(stats.items()):
+            if size > _STAGE_MAX_BYTES:
+                skipped += 1
+                continue
+            dst = os.path.join(stage_dir, f"{i:06d}")
+            try:
+                shutil.copy2(path, dst)
+                staged[path] = dst
+            except OSError:
+                continue
+        if skipped:
+            logging.getLogger(__name__).debug(
+                "bash checkpoint: %d file(s) over %d bytes not staged; "
+                "their pre-command contents are unrecoverable",
+                skipped, _STAGE_MAX_BYTES,
+            )
+        return _BashPreState(stats, stage_dir, staged)
     except Exception:
         return None
 
 
 def _checkpoint_changed_files(
     tool_name: str,
-    pre: dict[str, tuple[float, int]] | None,
+    pre: "_BashPreState | None",
 ) -> None:
-    """Compare post-execution file state to *pre* and checkpoint any changes."""
+    """Compare post-execution file state to *pre* and checkpoint any changes.
+
+    Backups are written from the staged pre-command copy, not from the
+    live path — by now the command has already rewritten it.
+    """
     if pre is None or tool_name not in _BASH_LIKE_TOOLS:
         return
     try:
@@ -568,16 +628,27 @@ def _checkpoint_changed_files(
         cwd = current_worktree_path() or os.getcwd()
         post = dict(_walk_scan(cwd))
         for path, stat in post.items():
-            prev = pre.get(path)
-            if prev is None or prev != stat:
-                checkpoint_before_edit(path)
-        # ponytail: bash-only deletions stay unrecoverable. The file is
-        # already gone by the time we look, and checkpoint_before_edit
-        # would record it pre_existing=False — which makes revert_turn
-        # DELETE the path rather than restore it. Catching deletes needs
-        # a pre-turn content copy, not a post-hoc stat diff.
+            prev = pre.stats.get(path)
+            if prev is not None and prev == stat:
+                continue
+            # Modified file → back up the staged pre-image. Otherwise the
+            # file did not exist pre-command (or was too big to stage), so
+            # point at a path that cannot exist: the checkpoint then records
+            # pre_existing=False and Undo deletes the file, which is right
+            # for a creation and the only safe answer for an unstaged one.
+            src = pre.staged.get(path) or os.path.join(pre.stage_dir, "__absent__")
+            checkpoint_before_edit(path, src)
+        # ponytail: bash-only deletions stay unrecoverable. Restoring them
+        # would mean checkpointing every staged file, not just the changed
+        # ones — a full pre-turn copy of the tree in the manifest. Add when
+        # deletion-undo is actually asked for.
     except Exception:
         pass
+    finally:
+        try:
+            pre.cleanup()
+        except Exception:
+            pass
 
 
 async def _execute_tool_calls(
@@ -656,7 +727,14 @@ async def _execute_tool_calls(
                 ))
 
             pre_snapshot = _snapshot_cwd(tool_call.name)
-            result = await tool.execute(tool_call.id, validated_args, cancel_event, on_update)
+            try:
+                result = await tool.execute(tool_call.id, validated_args, cancel_event, on_update)
+            except BaseException:
+                # A raising / cancelled bash may still have written files,
+                # so checkpoint before re-raising — and either way this is
+                # what frees the staging dir.
+                _checkpoint_changed_files(tool_call.name, pre_snapshot)
+                raise
             _checkpoint_changed_files(tool_call.name, pre_snapshot)
         except Exception as e:
             result = AgentToolResult(

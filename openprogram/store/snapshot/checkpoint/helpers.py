@@ -18,8 +18,12 @@ from __future__ import annotations
 from .store import CheckpointStore
 
 
-def checkpoint_before_edit(abs_path: str) -> None:
+def checkpoint_before_edit(abs_path: str, content_src: str | None = None) -> None:
     """Checkpoint ``abs_path`` before the current turn edits it.
+
+    ``content_src``, when given, is the path the backup bytes are read
+    from instead of ``abs_path`` — for callers that staged a pre-edit
+    copy because they can only reach this helper after the write.
 
     Silent no-op when:
       * there is no active session (``_store`` ContextVar unset);
@@ -38,7 +42,8 @@ def checkpoint_before_edit(abs_path: str) -> None:
         if shim is None or not turn_id:
             return
         session_dir = shim.store._session_dir(shim.session_id)
-        CheckpointStore(session_dir).backup_before_edit(turn_id, abs_path)
+        CheckpointStore(session_dir).backup_before_edit(
+            turn_id, abs_path, content_src=content_src)
     except Exception:
         return
 

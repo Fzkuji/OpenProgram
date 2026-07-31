@@ -2080,6 +2080,16 @@
   background: var(--bg-tertiary);
   overflow: hidden;
 }
+/* Shown when every file-writing tool call in the turn errored and no
+   checkpoint was recorded — the reply claimed an edit that never landed.
+   Deliberately quiet: a muted line, not an alert box, because the tool
+   card above already shows the error in full. */
+.turn-files-failed-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary, var(--text-secondary));
+  opacity: 0.85;
+}
 /* An undone turn reads as inert — greyed and struck through, so a
    reverted card is distinguishable at a glance from a live one. */
 .turn-files-card[data-reverting="1"],

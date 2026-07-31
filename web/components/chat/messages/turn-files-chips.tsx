@@ -30,6 +30,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
+import type { AssistantBlock } from "@/lib/session-store/types";
 import { useTranslation } from "@/lib/i18n";
 import { showToast } from "@/lib/format-utils/toast";
 import { fileTabId, sessionTabId, useCenterTabs } from "@/lib/state/center-tabs-store";
@@ -77,7 +78,33 @@ function basename(p: string): string {
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
-export function TurnFilesChips({ assistantMsgId }: { assistantMsgId: string }) {
+/** Tools whose whole job is writing to a file — the same three that call
+ *  `checkpoint_before_edit` on the backend (openprogram/functions/tools). */
+const FILE_WRITING_TOOLS = new Set(["write", "edit", "apply_patch"]);
+
+/**
+ * True when this turn tried to change files and every attempt errored.
+ *
+ * The signal is the tool calls themselves, not the reply text: a turn
+ * that only CLAIMS an edit in prose gives us nothing reliable to check
+ * (see the note in the component below), whereas "called edit, edit
+ * returned an error, checkpoint list is empty" is unambiguous.
+ */
+function allFileWritesFailed(blocks?: AssistantBlock[]): boolean {
+  if (!blocks) return false;
+  const writes = blocks.filter(
+    (b) => b.type === "tool" && FILE_WRITING_TOOLS.has((b.tool || "").toLowerCase()),
+  );
+  return writes.length > 0 && writes.every((b) => b.is_error === true);
+}
+
+export function TurnFilesChips({
+  assistantMsgId,
+  blocks,
+}: {
+  assistantMsgId: string;
+  blocks?: AssistantBlock[];
+}) {
   const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const [files, setFiles] = useState<TurnFile[] | null>(null);
@@ -282,7 +309,30 @@ export function TurnFilesChips({ assistantMsgId }: { assistantMsgId: string }) {
     );
   }
 
-  if (!files || files.length === 0) return null;
+  // `files` is the checkpoint list: empty means this turn changed nothing
+  // on disk. Pair that with "every file-writing tool call errored" and the
+  // reply's claim of an edit is demonstrably wrong, so say so under the
+  // bubble.
+  //
+  // Deliberately NOT flagged: a turn that made ZERO tool calls and merely
+  // narrates an edit it never attempted. Detecting that needs prose
+  // matching ("I edited X", "已修改"), which misfires on the model quoting
+  // the user, describing a plan, or explaining someone else's diff — a
+  // false "this didn't happen" badge on a correct answer is worse than a
+  // missed one. No tool call, no signal, no notice.
+  if (!files || files.length === 0) {
+    if (allFileWritesFailed(blocks)) {
+      return (
+        <div className="turn-files-failed-note">
+          {text(
+            "File changes in this turn did not go through.",
+            "本轮文件操作未成功执行。",
+          )}
+        </div>
+      );
+    }
+    return null;
+  }
 
   const totalAdded = files.reduce((n, f) => n + (f.added || 0), 0);
   const totalRemoved = files.reduce((n, f) => n + (f.removed || 0), 0);

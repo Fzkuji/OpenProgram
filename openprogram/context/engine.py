@@ -633,6 +633,31 @@ class DefaultContextEngine(ContextEngine):
             return cb in branch_id_set
         read_ids = [nid for nid in read_ids if _in_branch(nid)]
 
+        # Drop abandoned assistant turns. A stream that died mid-flight
+        # (crashed worker, dropped connection) leaves an llm node with
+        # status "running" and empty output sitting IN the branch, and
+        # rendering it feeds the model a contentless assistant message
+        # between two user messages — some providers reject that outright,
+        # and it teaches the model that empty replies are acceptable.
+        # A node that owns tool calls is kept regardless: its ToolCall
+        # entries have to hang off an assistant message or the following
+        # tool_result is orphaned.
+        owns_tool_call = {
+            (graph.nodes[nid].caller or "")
+            for nid in read_ids
+            if nid in graph.nodes and graph.nodes[nid].is_code()
+        }
+
+        def _is_abandoned(nid: str) -> bool:
+            n = graph.nodes.get(nid)
+            if n is None or not n.is_llm():
+                return False
+            if (n.output or "").strip() or nid in owns_tool_call:
+                return False
+            return ((n.metadata or {}).get("status") or "") == "running"
+
+        read_ids = [nid for nid in read_ids if not _is_abandoned(nid)]
+
         history_dir = None
         try:
             _sdir_fn = getattr(db, "_session_dir", None)

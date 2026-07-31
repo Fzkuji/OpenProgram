@@ -36,10 +36,24 @@ class CheckpointStore:
 
     # Write side
 
-    def backup_before_edit(self, turn_id: str, abs_path: str) -> None:
+    def backup_before_edit(
+        self,
+        turn_id: str,
+        abs_path: str,
+        *,
+        content_src: str | Path | None = None,
+    ) -> None:
         """Idempotent checkpoint. Captures the file's state pre-edit;
         records ``pre_existing=False`` if the path doesn't exist yet
-        so ``restore_turn`` knows to delete-instead-of-restore."""
+        so ``restore_turn`` knows to delete-instead-of-restore.
+
+        ``content_src`` overrides where the bytes come from, for callers
+        that can only checkpoint AFTER the write happened (the bash
+        fallback in agent_loop stages copies before running the command,
+        then hands the staged copy here). ``abs_path`` still names the
+        restore target either way. ``content_src`` pointing at a missing
+        path means "this file did not exist pre-edit".
+        """
         if not turn_id or not abs_path:
             return
         backup_name = path_basename(abs_path)
@@ -50,7 +64,7 @@ class CheckpointStore:
         backup_dir = turn_backup_dir(self.session_dir, turn_id)
         backup_dir.mkdir(parents=True, exist_ok=True)
 
-        src = Path(abs_path)
+        src = Path(content_src) if content_src is not None else Path(abs_path)
         if not src.exists():
             manifest.record(man_path, backup_name, abs_path, pre_existing=False)
             return
