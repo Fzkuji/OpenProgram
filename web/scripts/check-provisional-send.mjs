@@ -397,4 +397,22 @@ assert.match(
   "background must default off so the focused composer is unaffected",
 );
 
+// A bound (split-pane) composer must not write the focused session's live
+// `composerSettings` slice — otherwise typing in one pane would retarget the
+// other pane's tool toggles / thinking effort.
+const storeSrc = readFileSync(
+  new URL("../lib/session-store/index.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  storeSrc,
+  /setComposerSettings: \(patch, chatKey\) =>/,
+  "setComposerSettings must accept an explicit target session",
+);
+assert.match(
+  storeSrc,
+  /return sid === visibleKey\s*\?\s*\{ composerSettings: next, composerSettingsBySession: map \}\s*:\s*\{ composerSettingsBySession: map \};/,
+  "patching a non-focused session must leave the live slice untouched",
+);
+
 console.log("provisional send checks passed");

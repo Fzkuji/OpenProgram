@@ -7,7 +7,10 @@
  */
 import { useCallback, useState } from "react";
 
-import { useSessionStore } from "@/lib/session-store";
+import {
+  useBoundComposerSettings,
+  useBoundSetComposerSettings,
+} from "../composer-session";
 import { useTranslation } from "@/lib/i18n";
 
 export type PermissionMode =
@@ -41,8 +44,9 @@ export interface PermissionModeHook {
 }
 
 export function usePermissionMode(): PermissionModeHook {
-  const stored = useSessionStore((s) => s.composerSettings.permission_mode);
-  const setComposerSettings = useSessionStore((s) => s.setComposerSettings);
+  // Bound to this composer subtree's session (../composer-session).
+  const stored = useBoundComposerSettings().permission_mode;
+  const setComposerSettings = useBoundSetComposerSettings();
   const { text } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const mode = (stored as PermissionMode) || DEFAULT_MODE;

@@ -324,13 +324,16 @@ export function resolveCenterTabPanes(
   const focusedSessionId = group && sessionIds.includes(group.focusedId)
     ? group.focusedId
     : sessionIds[0];
+  // Two sessions visible together = symmetric split: BOTH render as React
+  // panes and the singleton legacy shell is not used at all (it can only
+  // exist once, so it can't back either side fairly). A lone session still
+  // gets the legacy shell — that's the unchanged, non-split path.
+  const symmetricSessions = sessionIds.length > 1;
   let sessionAdded = false;
   const panes: CenterTabPane[] = [];
   for (const tab of visibleTabs) {
     if (tab.kind === "session") {
-      // The focused session owns the singleton chat shell; any other
-      // visible session gets its own read-along peer pane.
-      if (focusedSessionId && tab.id !== focusedSessionId) {
+      if (symmetricSessions) {
         panes.push({ key: `peer:${tab.id}`, kind: "peer", tabId: tab.id });
         continue;
       }

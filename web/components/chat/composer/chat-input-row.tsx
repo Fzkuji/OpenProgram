@@ -31,6 +31,10 @@ interface ChatInputRowProps {
   setCaretPos: (n: number) => void;
   /** Placeholder hint (e.g. "type to steer the running task…" while busy). */
   placeholder?: string;
+  /** DOM id for the textarea. Defaults to the singleton
+   *  "composer-chat-input"; a split-view pane passes a per-session id so
+   *  two mounted composers don't collide on one id. */
+  inputId?: string;
 
   /* ---- paste chips ------------------------------------------------- */
   pastedEntries: PastedEntry[];
@@ -57,6 +61,7 @@ export function ChatInputRow({
   onBlur,
   setCaretPos,
   placeholder,
+  inputId = "composer-chat-input",
   pastedEntries,
   pasteMissing,
   removePaste,
@@ -84,7 +89,7 @@ export function ChatInputRow({
           )}
           <textarea
             ref={textareaRef}
-            id="composer-chat-input"
+            id={inputId}
             name="chat_input"
             autoComplete="off"
             aria-label="create / run / edit or ask anything... (type / for commands)"

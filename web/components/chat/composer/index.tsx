@@ -134,21 +134,46 @@ const POPUP_STATIC_RESET: React.CSSProperties = {
   marginBottom: 0,
 };
 
-export function Composer() {
+/**
+ * @param boundSessionId  Render this composer against a SPECIFIC session
+ *   instead of whichever one is focused. Split view passes it so each pane
+ *   owns an independent composer (own draft, own settings, own run state,
+ *   sends with `background: true`). Omitted — the default and the only
+ *   pre-split behavior — everything below resolves to the focused session
+ *   exactly as before.
+ */
+export function Composer({ sessionId: boundSessionId }: { sessionId?: string } = {}) {
   const { text } = useTranslation();
-  const currentSessionId = useSessionStore((s) => s.currentSessionId);
-  const activeChatKey = useSessionStore((s) => s.activeChatKey);
+  const bound = boundSessionId ?? null;
+  const focusedSessionId = useSessionStore((s) => s.currentSessionId);
+  const focusedChatKey = useSessionStore((s) => s.activeChatKey);
+  // A bound composer answers for ITS session on both axes; an unbound one
+  // keeps the focused-session semantics verbatim.
+  const currentSessionId = bound ?? focusedSessionId;
+  const activeChatKey = bound ?? focusedChatKey;
   // Per-session running state: send/stop button binds to the current
   // session's running task, not a global flag. This is what lets the
   // user switch from a running session A to session B and immediately
   // send a new message in B while A is still streaming.
   const runningTask = useSessionStore((s) => {
-    const sessionId = s.activeChatKey ?? s.currentSessionId;
+    const sessionId = bound ?? s.activeChatKey ?? s.currentSessionId;
     return sessionId ? (s.runningTasks[sessionId] ?? null) : null;
   });
-  const input = useSessionStore((s) => s.composerInput);
-  const setInput = useSessionStore((s) => s.setComposerInput);
+  // Draft text. Unbound reads the live `composerInput` slice (unchanged).
+  // Bound reads its own session's persisted draft, so the two panes type
+  // independently and neither disturbs the focused live slice.
+  const input = useSessionStore((s) =>
+    bound === null ? s.composerInput : (s.composerDrafts[bound] ?? ""),
+  );
   const setComposerInputFor = useSessionStore((s) => s.setComposerInputFor);
+  const setInputUnbound = useSessionStore((s) => s.setComposerInput);
+  const setInput = useCallback(
+    (value: string) => {
+      if (bound === null) setInputUnbound(value);
+      else setComposerInputFor(bound, value);
+    },
+    [bound, setInputUnbound, setComposerInputFor],
+  );
   const focusTick = useSessionStore((s) => s.composerFocusTick);
 
   // History recall — user messages from the active session, ordered
@@ -157,9 +182,10 @@ export function Composer() {
   // ``messageOrder[currentSessionId]`` filtered to user role. Resets
   // automatically whenever the session changes via the useEffect below.
   const messagesById = useSessionStore((s) => s.messagesById);
-  const messageOrder = useSessionStore((s) =>
-    s.currentSessionId ? s.messageOrder[s.currentSessionId] : undefined,
-  );
+  const messageOrder = useSessionStore((s) => {
+    const sid = bound ?? s.currentSessionId;
+    return sid ? s.messageOrder[sid] : undefined;
+  });
   const history = React.useMemo<string[]>(() => {
     if (!messageOrder) return [];
     const out: string[] = [];
@@ -244,7 +270,7 @@ export function Composer() {
     onPickImages,
     onFileInputChange,
     clearAfterSubmit: clearAttachmentsAfterSubmit,
-  } = useComposerAttachments();
+  } = useComposerAttachments(bound);
 
   // Refs declared up-front so the @file mention hook below can
   // reference them. The other refs (wrapper, sendBtn, plus menu,
@@ -429,19 +455,34 @@ export function Composer() {
   // per-session (store's composerSettings.fast, persisted + isolated per
   // chat like the other toggles). The backend forwards it to the provider
   // request body and no-ops for providers that don't read service_tier.
-  const fastEnabled = useSessionStore((s) => s.composerSettings.fast);
+  const fastEnabled = useSessionStore((s) =>
+    bound === null
+      ? s.composerSettings.fast
+      : (s.composerSettingsBySession[bound]?.fast ?? s.composerSettings.fast),
+  );
   // 有的模型没有 Fast 档（service_tier）——后端 agent_settings 按当前
   // 模型下发 chat.fast；不支持就整个隐藏开关/chip，也不随消息发送。
   const fastSupported = useSessionStore((s) => !!s.agentSettings?.chat?.fast);
-  const setComposerSettings = useSessionStore((s) => s.setComposerSettings);
-  const toggleFast = () =>
-    setComposerSettings({ fast: !useSessionStore.getState().composerSettings.fast });
+  const setComposerSettingsRaw = useSessionStore((s) => s.setComposerSettings);
+  const setComposerSettings = useCallback(
+    (patch: Parameters<typeof setComposerSettingsRaw>[0]) =>
+      bound === null
+        ? setComposerSettingsRaw(patch)
+        : setComposerSettingsRaw(patch, bound),
+    [bound, setComposerSettingsRaw],
+  );
+  const toggleFast = () => setComposerSettings({ fast: !fastEnabled });
   // Unattended toggle: nobody watching → withhold the agent's user-question
   // tool. Mirror the per-session UI flag to the backend via set_attended so
   // the tool-resolution gate matches (attended = !unattended).
-  const unattended = useSessionStore((s) => s.composerSettings.unattended);
+  const unattended = useSessionStore((s) =>
+    bound === null
+      ? s.composerSettings.unattended
+      : (s.composerSettingsBySession[bound]?.unattended
+         ?? s.composerSettings.unattended),
+  );
   const toggleUnattended = () => {
-    const next = !useSessionStore.getState().composerSettings.unattended;
+    const next = !unattended;
     setComposerSettings({ unattended: next });
     if (currentSessionId) {
       send({ action: "set_attended", session_id: currentSessionId, attended: !next });
@@ -606,6 +647,7 @@ export function Composer() {
 
   // Slash menu (state + open/close timing + command dispatch).
   const slash = useSlashMenu({
+    boundSessionId: bound,
     input,
     textareaRef,
     send,
@@ -715,6 +757,9 @@ export function Composer() {
     const handled = sendChatMessage({
       text: expanded,
       sessionId: submitOwnerKey,
+      // A bound (split-pane) composer writes the same payload but must not
+      // flip the focused shell's welcome/run singletons.
+      background: bound !== null,
       attachments: attachmentsPayload.length > 0 ? attachmentsPayload : undefined,
       thinking,
       toolsEnabled,
@@ -1463,14 +1508,14 @@ export function Composer() {
                 survive — the window-bridge looks elements up by id. */}
             <div className={styles.agentChips}>
               <AgentBadge
-                id="chatAgentBadge"
+                id={bound ? `chatAgentBadge-${bound}` : "chatAgentBadge"}
                 kind="chat"
                 locked={!!chatAgent.locked}
                 provider={chatAgent.provider}
                 model={chatAgent.model}
               />
               <AgentBadge
-                id="execAgentBadge"
+                id={bound ? `execAgentBadge-${bound}` : "execAgentBadge"}
                 kind="exec"
                 locked={false}
                 provider={execAgent.provider}
@@ -1565,7 +1610,7 @@ export function Composer() {
           anchored absolute, so this row grows the composer upward
           without shifting the transcript. */}
       <div className={styles.envChips}>
-        <StatusChip />
+        <StatusChip owningId={bound === null} />
         <ProjectBadge />
         <WorkingDirChips />
       </div>
@@ -1636,6 +1681,7 @@ export function Composer() {
             textareaRef={textareaRef}
             input={input}
             setInput={setInput}
+            inputId={bound ? `composer-chat-input-${bound}` : undefined}
             placeholder={isRunning
               ? text("type to steer the running task…", "输入以干预正在运行的任务…")
               : undefined}
@@ -1804,12 +1850,13 @@ export function Composer() {
  *  the connection tone on its colour; a hidden `.indicator-dot` stays
  *  inside purely for the runtime bridge (see inline comment).
  *
- *  This instance HOLDS `id="statusBadge"`: the legacy ui.ts updaters
- *  (lib/runtime-bridge/ui.ts) guard on that id before pushing status
- *  into the store, and `setStatusDotHealth` looks up `.indicator-dot`
- *  inside it. Exactly one element may carry the id — the tab strip's
- *  StatusDot copy is being removed. */
-function StatusChip() {
+ *  Exactly ONE instance may hold `id="statusBadge"`: the legacy ui.ts
+ *  updaters (lib/runtime-bridge/ui.ts) guard on that id before pushing
+ *  status into the store, and `setStatusDotHealth` looks up
+ *  `.indicator-dot` inside it. In a split view both panes render a chip,
+ *  so only the unbound (focused-following) one claims the id via
+ *  `owningId`; the other renders the same chrome without it. */
+function StatusChip({ owningId = true }: { owningId?: boolean }) {
   const { text } = useTranslation();
   const statusBadge = useSessionStore((s) => s.statusBadge);
   const [open, setOpen] = useState(false);
@@ -1873,7 +1920,7 @@ function StatusChip() {
       >
         <PopoverTrigger asChild>
           <span
-            id="statusBadge"
+            {...(owningId ? { id: "statusBadge" } : {})}
             role="button"
             className={`status-badge${toneClass}`}
           >

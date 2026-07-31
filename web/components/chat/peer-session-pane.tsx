@@ -1,43 +1,32 @@
 "use client";
 
 /**
- * Peer session pane — the SECOND chat in a chat+chat split view.
+ * One session pane in a split view.
  *
- * The primary chat surface is a singleton: one legacy `#chatView` shell
- * (hardcoded `#chatArea` / `#chatMessages` ids, the composer portal, the
- * DAG + right-rail bindings) mounted once in `AppShell`. Cloning it would
- * duplicate those ids and break every `getElementById` caller in
- * `lib/runtime-bridge/*`.
+ * In a split view BOTH panes render this — they are symmetric. Neither is
+ * the legacy `#chatView` shell: that shell is a singleton (hardcoded
+ * `#chatArea` / `#chatMessages` ids read by ~10 modules under
+ * `lib/runtime-bridge/`), so it can't be mounted twice. AppShell hides it
+ * entirely while split, and each pane renders pure React instead: the same
+ * `MessageRow`s off `useSessionStore` plus a full `<Composer sessionId=… />`.
  *
- * So the peer pane is a thin read-along view instead: it renders the same
- * `MessageRow`s off `useSessionStore`, which already keys messages by
- * session id and is fed by the single multiplexed WebSocket. Nothing
- * needs a second connection or subscription — a peer session streams live
- * because its rows come out of the same store.
+ * Both panes are always live. Each composer owns its session's draft,
+ * settings and run state, and sends with `background: true`, so typing in
+ * one never disturbs the other. There is no click-to-activate and no
+ * position swapping.
  *
- * The pane has its own lightweight composer, so BOTH sessions can be
- * typed into without swapping focus first. Sends reuse
- * `sendChatMessage({ sessionId, background: true })` — the same WS
- * payload the main composer writes; `background` only skips the two
- * focused-shell side effects (`setWelcomeVisible` / `setRunning`), which
- * are singletons owned by the focused chat.
- *
- * Clicking the pane background still calls `setActive(tabId)` to swap
- * which session owns the full shell (right rail, DAG, URL, the rich
- * composer with model picker / attachments / slash commands).
- *
- * ponytail: plain textarea + send button, no model picker / attachments /
- * slash menu / steer handling. Those live in the full composer — focus
- * the pane to get them. Promote if peer-side attachments are actually
- * needed.
+ * "Focus" here is only bookkeeping — which session the URL, tab highlight,
+ * right rail and DAG follow. Interacting with a pane sets it silently
+ * (`setActive`), which changes no layout and interrupts no input.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { useMessageIds, useSessionStore } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { readChatScroll, writeChatScroll } from "@/lib/state/chat-scroll";
 import { wsSend } from "@/components/sidebar/sessions-list/helpers";
-import { sendChatMessage } from "./composer/legacy-send";
+import { Composer } from "./composer";
+import { ComposerSessionProvider } from "./composer/composer-session";
 import { useTranslation } from "@/lib/i18n";
 
 import { MessageRow } from "./messages/message-list";
@@ -53,15 +42,23 @@ export function PeerSessionPane({
 }) {
   const { text } = useTranslation();
   const setActive = useCenterTabs((s) => s.setActive);
+  const activeId = useCenterTabs((s) => s.activeId);
   const ids = useMessageIds(sessionId);
   const areaRef = useRef<HTMLDivElement | null>(null);
   const scrollKey = sessionId ? `peer:${sessionId}` : null;
 
+  // Interacting with a pane makes it the focused one for bookkeeping
+  // purposes (URL, tab highlight, right rail, DAG). Silent: no layout
+  // change, no swap, and the other pane's composer keeps its state and
+  // focus. Skipped when already focused so typing doesn't churn the store.
+  const claimFocus = useCallback(() => {
+    if (activeId !== tabId) setActive(tabId);
+  }, [activeId, tabId, setActive]);
+
   // Nothing else loads a session that isn't the focused one, so after a
-  // page refresh the peer pane's store entry is empty and the pane renders
-  // blank. Ask for the transcript ourselves. `loadSessionData` feeds the
-  // store for non-focused sessions, so the reply lands without disturbing
-  // the focused chat (we never touch currentSessionId here).
+  // page refresh a pane's store entry is empty and renders blank. Ask for
+  // the transcript ourselves. `loadSessionData` feeds the store for
+  // non-focused sessions, so the reply lands without disturbing the other.
   //
   // On a hard refresh the socket usually isn't open yet at mount, so retry
   // on a short interval until it is.
@@ -85,92 +82,87 @@ export function PeerSessionPane({
     return () => clearInterval(timer);
   }, [sessionId, ids.length]);
 
-  // Own scroll state, keyed per session and stored the same way the
-  // primary pane stores its own — the two never share a position.
+  // Reserve the composer's real height as scroller padding. The composer is
+  // `position:absolute; bottom:0` and floats over the transcript (same as
+  // the main shell, which reserves a flat 25vh). Ours varies with the input
+  // row / attachment chips / fn-form, so measure it and publish the value
+  // as a CSS var the .chat-messages padding reads.
+  const composerHostRef = useRef<HTMLDivElement | null>(null);
+  const paneRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const host = composerHostRef.current;
+    const pane = paneRef.current;
+    if (!host || !pane) return;
+    // Measure the composer ROOT, not the host. The host is
+    // `position:absolute` and its only child (`.inputArea`) is absolutely
+    // positioned too, so the host's own box collapses to 0 height —
+    // measuring it yielded a useless 24px. `.inputArea` is the Composer's
+    // root element and the provider around it renders no DOM, so the
+    // host's first element child IS that root.
+    const target = host.firstElementChild as HTMLElement | null;
+    if (!target) return;
+    const apply = () => {
+      const h = target.offsetHeight;
+      if (h > 0) {
+        pane.style.setProperty("--peer-composer-h", `${Math.round(h) + 24}px`);
+      }
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(target);
+    return () => ro.disconnect();
+  }, [sessionId]);
+
+  // Stick-to-bottom. Same rule the main shell's useChatAreaStick uses: track
+  // whether the user is parked near the bottom, and re-pin as content grows.
+  // A ResizeObserver on the message column (rather than a message-count
+  // effect) is what catches streamed text deltas too, not just new bubbles.
+  const stuckRef = useRef(true);
+  const columnRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const area = areaRef.current;
+    const column = columnRef.current;
+    if (!area || !column) return;
+    const pin = () => {
+      if (!stuckRef.current) return;
+      area.scrollTop = area.scrollHeight;
+      if (scrollKey) writeChatScroll(window.sessionStorage, scrollKey, area.scrollTop);
+    };
+    const ro = new ResizeObserver(pin);
+    ro.observe(column);
+    return () => ro.disconnect();
+  }, [scrollKey]);
+
+  // Own scroll state, keyed per session — the panes never share a position.
   useEffect(() => {
     const area = areaRef.current;
     if (!area || !scrollKey) return;
     const saved = readChatScroll(window.sessionStorage, scrollKey);
     area.scrollTop = saved ?? area.scrollHeight;
+    stuckRef.current =
+      area.scrollHeight - area.scrollTop - area.clientHeight < 80;
     const onScroll = () => {
+      stuckRef.current =
+        area.scrollHeight - area.scrollTop - area.clientHeight < 80;
       writeChatScroll(window.sessionStorage, scrollKey, area.scrollTop);
     };
     area.addEventListener("scroll", onScroll, { passive: true });
     return () => area.removeEventListener("scroll", onScroll);
   }, [scrollKey]);
 
-  // Follow the tail while the user is parked at the bottom, so a peer
-  // session that is streaming stays readable without interaction.
-  useEffect(() => {
-    const area = areaRef.current;
-    if (!area) return;
-    if (area.scrollHeight - area.scrollTop - area.clientHeight < 120) {
-      area.scrollTop = area.scrollHeight;
-    }
-  }, [ids.length]);
-
-  // Per-session run state, straight from the store — no new global. This is
-  // the same slice `chat_ack` writes via `setRunningTaskFor`, so the peer's
-  // pending state is independent of the focused shell's `isRunning`.
   const streaming = useSessionStore((s) =>
     sessionId ? Boolean(s.runningTasks[sessionId]) : false,
-  );
-
-  /* ---- Peer composer ------------------------------------------------- */
-
-  const [draft, setDraft] = useState("");
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
-
-  const submit = useCallback(() => {
-    const trimmed = draft.trim();
-    if (!trimmed || !sessionId || streaming) return;
-    // Same per-session settings the full composer would use for THIS
-    // session — not the focused one's. `composerSettings` on the store is
-    // the focused session's live slice, so read the by-session map instead.
-    const store = useSessionStore.getState();
-    const settings = store.composerSettingsBySession[sessionId];
-    const handled = sendChatMessage({
-      text: trimmed,
-      sessionId,
-      thinking: settings?.thinking ?? "",
-      toolsEnabled: settings?.tools ?? false,
-      webSearchEnabled: settings?.webSearch ?? false,
-      background: true,
-    });
-    // Keep the text on a failed write so a reconnect can retry it.
-    if (!handled) return;
-    setDraft("");
-    // Optimistic bubble: `sendChatMessage` stashes the text on
-    // `__pendingUserTextBySession`, and `chat_ack` turns it into the user
-    // turn + reply placeholder keyed to THIS session. That round-trip is
-    // fast, and going through it keeps ids consistent with the server.
-  }, [draft, sessionId, streaming]);
-
-  // Auto-grow the textarea up to the max-height, then let it scroll.
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }, [draft]);
-
-  // Enter sends, Shift+Enter newlines — same as the main composer.
-  const onKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-        e.preventDefault();
-        submit();
-      }
-    },
-    [submit],
   );
 
   // `flex: 1` (not just height) — the .center-split-* wrapper is a flex row
   // with no explicit height, so the pane fills its slot by flexing.
   return (
     <div
+      ref={paneRef}
       className="peer-session-pane"
-      onPointerDown={() => setActive(tabId)}
+      data-pane-focused={activeId === tabId ? "true" : "false"}
+      onFocusCapture={claimFocus}
+      onPointerDownCapture={claimFocus}
       style={{
         display: "flex",
         flexDirection: "column",
@@ -178,6 +170,7 @@ export function PeerSessionPane({
         minWidth: 0,
         minHeight: 0,
         overflow: "hidden",
+        position: "relative",
       }}
     >
       <div
@@ -203,9 +196,6 @@ export function PeerSessionPane({
           {title}
         </span>
         {streaming ? <span className="thinking-spinner" aria-hidden="true" /> : null}
-        <span style={{ marginLeft: "auto", opacity: 0.7 }}>
-          {text("click to expand", "点击展开")}
-        </span>
       </div>
       {/* `minWidth: 0` on both the scroller and the column: without it a
           flex child refuses to shrink below its content's intrinsic
@@ -215,11 +205,8 @@ export function PeerSessionPane({
         className="chat-area peer-session-area"
         style={{ flex: 1, minHeight: 0, minWidth: 0, overflowY: "auto" }}
       >
-        {/* `minHeight: 100%` so the column fills the scroller even when
-            empty — otherwise a zero-height child leaves the pane's middle
-            unclickable, which is exactly what made clicks in the blank
-            area do nothing. */}
         <div
+          ref={columnRef}
           className="chat-messages"
           style={{ minWidth: 0, minHeight: "100%" }}
         >
@@ -239,68 +226,16 @@ export function PeerSessionPane({
           )}
         </div>
       </div>
-      {/* Lightweight composer. `stopPropagation` on pointerdown so typing
-          here doesn't trigger the pane's focus-swap. */}
-      <div
-        className="peer-session-composer"
-        onPointerDown={(e) => e.stopPropagation()}
-        style={{
-          flex: "0 0 auto",
-          display: "flex",
-          alignItems: "flex-end",
-          gap: 8,
-          padding: 10,
-          borderTop: "1px solid var(--border, rgba(128,128,128,.2))",
-        }}
-      >
-        <textarea
-          ref={inputRef}
-          value={draft}
-          rows={1}
-          disabled={!sessionId}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={
-            streaming
-              ? text("Running…", "运行中…")
-              : text("Send a message…", "发送消息…")
-          }
-          style={{
-            flex: 1,
-            minWidth: 0,
-            resize: "none",
-            maxHeight: 120,
-            padding: "8px 10px",
-            borderRadius: 10,
-            border: "1px solid var(--border, rgba(128,128,128,.25))",
-            background: "var(--bg-tertiary, transparent)",
-            color: "inherit",
-            font: "inherit",
-            fontSize: 14,
-            lineHeight: 1.5,
-            outline: "none",
-          }}
-        />
-        <button
-          type="button"
-          onClick={submit}
-          disabled={!draft.trim() || !sessionId || streaming}
-          title={text("Send", "发送")}
-          style={{
-            flex: "0 0 auto",
-            padding: "8px 14px",
-            borderRadius: 10,
-            border: "none",
-            cursor: draft.trim() && !streaming ? "pointer" : "default",
-            opacity: draft.trim() && !streaming ? 1 : 0.45,
-            background: "var(--accent-fill, #4a7)",
-            color: "var(--primary-foreground, #fff)",
-            fontSize: 13,
-          }}
-        >
-          {text("Send", "发送")}
-        </button>
-      </div>
+      {/* Full composer, bound to this pane's session. The provider is what
+          the control hooks (thinking effort / tools / permission mode) read
+          so they target this session instead of the focused one. */}
+      {sessionId ? (
+        <div ref={composerHostRef} className="peer-session-composer-host">
+          <ComposerSessionProvider value={sessionId}>
+            <Composer sessionId={sessionId} />
+          </ComposerSessionProvider>
+        </div>
+      ) : null}
     </div>
   );
 }

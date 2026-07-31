@@ -12,7 +12,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { useSessionStore } from "@/lib/session-store";
+import {
+  useBoundComposerSettings,
+  useBoundSetComposerSettings,
+} from "../composer-session";
 
 const DEFAULT_THINKING: ThinkingEffort = "medium";
 const FALLBACK_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -66,8 +69,9 @@ export function useThinkingEffort(): ThinkingEffortHook {
   // "no explicit pick" → fall through to DEFAULT/backend default below.
   // It is NOT sent as-is — the exposed `thinking` is always re-derived
   // against the CURRENT model's options (clamp).
-  const storedRaw = useSessionStore((s) => s.composerSettings.thinking);
-  const setComposerSettings = useSessionStore((s) => s.setComposerSettings);
+  // Bound to this composer subtree's session (../composer-session).
+  const storedRaw = useBoundComposerSettings().thinking;
+  const setComposerSettings = useBoundSetComposerSettings();
   const stored: ThinkingEffort = storedRaw || DEFAULT_THINKING;
   const [menuOpen, setMenuOpen] = useState(false);
   // `_thinkingConfig` is mutated in place by legacy providers.js when

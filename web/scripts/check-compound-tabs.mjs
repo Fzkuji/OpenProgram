@@ -503,24 +503,27 @@ const sessionsOnly = {
   visibleIds: ["s:a", "s:b"],
   focusedId: "s:b",
 };
-// Two chats split side by side: the focused one keeps the singleton chat
-// shell, the other renders as a read-along peer pane.
+// Two chats split side by side are SYMMETRIC: both render as React panes
+// and the singleton legacy shell backs neither (it can only exist once).
 assert.deepEqual(groups.resolveCenterTabPanes(sessionsOnly, paneTabs, "s:b"), [
   { key: "peer:s:a", kind: "peer", tabId: "s:a" },
-  {
-    key: "session",
-    kind: "session",
-    activeTabId: "s:b",
-    memberIds: ["s:a", "s:b"],
-  },
+  { key: "peer:s:b", kind: "peer", tabId: "s:b" },
 ]);
-// Focus swaps which side is the live shell; ordering follows the tabs.
+// Which session is focused changes no layout — both stay peer panes, same
+// order. Focus is only bookkeeping (URL / right rail / DAG).
 assert.deepEqual(
-  groups
-    .resolveCenterTabPanes({ ...sessionsOnly, focusedId: "s:a" }, paneTabs, "s:a")
-    .map((pane) => pane.kind),
-  ["session", "peer"],
+  groups.resolveCenterTabPanes({ ...sessionsOnly, focusedId: "s:a" }, paneTabs, "s:a"),
+  [
+    { key: "peer:s:a", kind: "peer", tabId: "s:a" },
+    { key: "peer:s:b", kind: "peer", tabId: "s:b" },
+  ],
+  "focus must not reorder or reshape the panes",
 );
+// A LONE session still uses the legacy singleton shell — the unchanged,
+// non-split path.
+assert.deepEqual(groups.resolveCenterTabPanes(undefined, paneTabs, "s:a"), [
+  { key: "session", kind: "session", activeTabId: "s:a", memberIds: ["s:a"] },
+]);
 
 const sessionAndWeb = {
   ...sessionsOnly,

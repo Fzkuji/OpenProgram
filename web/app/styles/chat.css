@@ -315,7 +315,29 @@
    use the full pane width. */
 .peer-session-pane .chat-messages {
   max-width: 100%;
-  padding: 12px 16px 24px 16px;
+  /* The base rule's `flex: 1` pins the column to the scroller's height
+     (the pane's .chat-area is display:flex), so content overflows the box
+     and bottom padding can't extend the scroll range. Let it grow. */
+  flex: none;
+  /* Bottom padding clears the composer, which is `position:absolute;
+     bottom:0` and floats OVER the scroll area (same as the main shell,
+     where `.chat-messages` reserves 25vh for it). The pane measures its
+     composer and publishes the real height as --peer-composer-h; the
+     fallback covers the first frame before that lands. */
+  padding: 12px 16px var(--peer-composer-h, 180px) 16px;
+}
+/* The composer floats OVER the transcript rather than taking a flex row —
+   same as the main shell, where `.inputArea` is absolutely anchored inside
+   `#chatView`. Taking it out of flow is what lets the scroll area own the
+   full pane height; the reserved `--peer-composer-h` padding above is what
+   keeps the last bubble clear of it. Anchoring here (not on the pane) means
+   `.inputArea`'s `bottom:0` lands on the pane's bottom edge. */
+.peer-session-composer-host {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
 }
 .peer-session-pane .message {
   padding: 12px 0;

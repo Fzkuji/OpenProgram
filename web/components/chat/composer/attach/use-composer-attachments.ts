@@ -84,7 +84,16 @@ function releaseAttachmentPreviews(data: StoredAttachments): StoredAttachments {
   };
 }
 
-export function useComposerAttachments(): UseComposerAttachmentsResult {
+/**
+ * @param boundChatKey  Bind attachments to THIS chat instead of the focused
+ *   one (split-view pane). Also suppresses the window-level drag listeners:
+ *   those are global, and with two composers mounted both would fire on a
+ *   single drop. The unbound (focused) instance keeps owning window drops.
+ */
+export function useComposerAttachments(
+  boundChatKey?: string | null,
+): UseComposerAttachmentsResult {
+  const isBound = boundChatKey != null;
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const [pendingDocs, setPendingDocs] = useState<PendingDoc[]>([]);
@@ -100,7 +109,8 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
 
   // Per-chat persistence (IndexedDB). Provisional local_* draft ids are
   // stable too, so multiple unsent chats keep independent attachments.
-  const activeChatKey = useSessionStore((s) => s.activeChatKey);
+  const focusedChatKey = useSessionStore((s) => s.activeChatKey);
+  const activeChatKey = boundChatKey ?? focusedChatKey;
   const mountedRef = useRef(true);
   const lifecycleEpochRef = useRef(0);
   const activeChatKeyRef = useRef<string | null>(activeChatKey);
@@ -557,6 +567,9 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
       }
       await processDroppedFiles(dropped);
     }
+    // Only the focused (unbound) composer listens at window level — two
+    // sets of listeners would route one drop into both sessions.
+    if (isBound) return;
     window.addEventListener("dragenter", onEnter);
     window.addEventListener("dragleave", onLeave);
     window.addEventListener("dragover", blockNav);
@@ -567,7 +580,7 @@ export function useComposerAttachments(): UseComposerAttachmentsResult {
       window.removeEventListener("dragover", blockNav);
       window.removeEventListener("drop", routeDrop);
     };
-  }, [processDroppedFiles]);
+  }, [processDroppedFiles, isBound]);
 
   const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (e.dataTransfer.types.includes("Files")) {

@@ -1548,11 +1548,11 @@ const sessionPanes = resolveCenterTabPanes(sessionPair, paneTabs, "s:b");
 assert.equal(sessionPanes.length, 2, "two sessions split into two panes");
 assert.deepEqual(
   sessionPanes.map((pane) => pane.kind),
-  ["peer", "session"],
-  "the unfocused session renders as a read-along peer pane",
+  ["peer", "peer"],
+  "a chat+chat split is symmetric — neither side takes the singleton shell",
 );
 assert.equal(sessionPanes[0].tabId, "s:a");
-assert.equal(sessionPanes[1].activeTabId, "s:b");
+assert.equal(sessionPanes[1].tabId, "s:b");
 
 const sessionWebPanes = resolveCenterTabPanes({
   ...sessionPair,

@@ -57,6 +57,8 @@ interface UseSlashMenuArgs {
   send: (payload: unknown) => boolean;
   /** /context 命令触发：打开 token breakdown 面板。 */
   openContextPanel?: () => void;
+  /** Split-view pane: target this session instead of the focused one. */
+  boundSessionId?: string | null;
 }
 
 export interface SlashMenuHook {
@@ -76,10 +78,20 @@ export interface SlashMenuHook {
   runCommand: (text: string) => boolean;
 }
 
-export function useSlashMenu({ input, textareaRef, send, openContextPanel }: UseSlashMenuArgs): SlashMenuHook {
-  const currentSessionId = useSessionStore((s) => s.currentSessionId);
+export function useSlashMenu({ input, textareaRef, send, openContextPanel, boundSessionId }: UseSlashMenuArgs): SlashMenuHook {
+  const focusedSessionId = useSessionStore((s) => s.currentSessionId);
+  // A split-view pane targets its own session; unbound follows focus.
+  const currentSessionId = boundSessionId ?? focusedSessionId;
   const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
-  const setComposerInput = useSessionStore((s) => s.setComposerInput);
+  const setComposerInputFor = useSessionStore((s) => s.setComposerInputFor);
+  const setComposerInputUnbound = useSessionStore((s) => s.setComposerInput);
+  const setComposerInput = useCallback(
+    (value: string) =>
+      boundSessionId == null
+        ? setComposerInputUnbound(value)
+        : setComposerInputFor(boundSessionId, value),
+    [boundSessionId, setComposerInputUnbound, setComposerInputFor],
+  );
   const skills = useSkills((s) => s.skills);
   const fetchSkills = useSkills((s) => s.fetchSkills);
 

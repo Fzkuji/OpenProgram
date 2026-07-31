@@ -192,9 +192,15 @@ interface ConvState {
    *  ``composerSettingsBySession`` is the per-session cache it mirrors. */
   composerSettings: ComposerSettings;
   composerSettingsBySession: Record<string, ComposerSettings>;
-  /** Patch the current session's composer settings (live + cache +
-   *  persist). */
-  setComposerSettings: (patch: Partial<ComposerSettings>) => void;
+  /** Patch a session's composer settings (live + cache + persist).
+   *  Omit `chatKey` to target the focused session (the default, and what
+   *  the focused composer uses). Pass an explicit key to patch another
+   *  session — a split-view pane binds its own composer that way, and
+   *  the focused session's live `composerSettings` is left untouched. */
+  setComposerSettings: (
+    patch: Partial<ComposerSettings>,
+    chatKey?: string | null,
+  ) => void;
   /** Bump to ask the Composer to call .focus() on its textarea. The
    *  Composer reacts to changes in this counter via useEffect. */
   composerFocusTick: number;
@@ -717,13 +723,24 @@ export const useSessionStore = create<ConvState>((set) => ({
   composerSettings:
     initialSessionDraftState.composerSettingsBySession[COMPOSER_NEW_KEY]
       ?? { ...DEFAULT_COMPOSER_SETTINGS },
-  setComposerSettings: (patch) =>
+  setComposerSettings: (patch, chatKey) =>
     set((state) => {
-      const sid = state.activeChatKey ?? state.currentSessionId ?? COMPOSER_NEW_KEY;
-      const next = { ...state.composerSettings, ...patch };
+      const visibleKey =
+        state.activeChatKey ?? state.currentSessionId ?? COMPOSER_NEW_KEY;
+      const sid = chatKey === undefined ? visibleKey : (chatKey ?? COMPOSER_NEW_KEY);
+      // Patch onto THAT session's own settings, not the focused live slice —
+      // otherwise a background pane would inherit the focused chat's values.
+      const base =
+        sid === visibleKey
+          ? state.composerSettings
+          : (state.composerSettingsBySession[sid] ?? DEFAULT_COMPOSER_SETTINGS);
+      const next = { ...base, ...patch };
       const map = { ...state.composerSettingsBySession, [sid]: next };
       persistComposerSettingsMap(map);
-      return { composerSettings: next, composerSettingsBySession: map };
+      // Only mirror into the live slice when we patched the focused session.
+      return sid === visibleKey
+        ? { composerSettings: next, composerSettingsBySession: map }
+        : { composerSettingsBySession: map };
     }),
   composerFocusTick: 0,
   focusComposer: () =>

@@ -11,7 +11,10 @@
 
 import { useCallback } from "react";
 
-import { useSessionStore } from "@/lib/session-store";
+import {
+  useBoundComposerSettings,
+  useBoundSetComposerSettings,
+} from "../composer-session";
 
 export interface ToolsTogglesHook {
   tools: boolean;
@@ -21,17 +24,21 @@ export interface ToolsTogglesHook {
 }
 
 export function useToolsToggles(): ToolsTogglesHook {
-  const tools = useSessionStore((s) => s.composerSettings.tools);
-  const webSearch = useSessionStore((s) => s.composerSettings.webSearch);
-  const setComposerSettings = useSessionStore((s) => s.setComposerSettings);
+  // Bound to this composer subtree's session — the focused one unless a
+  // split-view pane provided its own (see ../composer-session).
+  const settings = useBoundComposerSettings();
+  const setComposerSettings = useBoundSetComposerSettings();
+  const { tools, webSearch } = settings;
 
   const toggleTools = useCallback(
-    () => setComposerSettings({ tools: !useSessionStore.getState().composerSettings.tools }),
-    [setComposerSettings],
+    () => setComposerSettings({ tools: !tools }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tools],
   );
   const toggleWebSearch = useCallback(
-    () => setComposerSettings({ webSearch: !useSessionStore.getState().composerSettings.webSearch }),
-    [setComposerSettings],
+    () => setComposerSettings({ webSearch: !webSearch }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [webSearch],
   );
 
   return { tools, webSearch, toggleTools, toggleWebSearch };
