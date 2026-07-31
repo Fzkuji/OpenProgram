@@ -482,7 +482,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: min(var(--chat-column-max), calc(100% - 64px));
+  /* +2px: align to the box's outset 1px ring edge (see .controlsRow). */
+  max-width: min(calc(var(--chat-column-max) + 2px), calc(100% - 62px));
   margin: 0 auto 10px;
   min-width: 0;
   overflow-x: auto;
@@ -988,13 +989,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  /* Same 768px column as the box and the env pills. ZERO horizontal
-     padding: the permission button's BOX left edge == box left edge,
-     and the context ring (last item) ends flush with the box's right
-     edge (measured claude.ai/code: acceptBtn.x == promptBox.x,
-     ring.right == box.right). 10px visual gap above (measured box
-     bottom → controls-row top). */
-  max-width: min(var(--chat-column-max), calc(100% - 64px));
+  /* Same column as the box and the env pills, widened by 1px per side:
+     the box's hairline ring is an OUTSET box-shadow, so its visual
+     edge sits 1px outside the wrapper box. Matching that edge keeps
+     the first/last controls (and the popovers they anchor) flush with
+     the input's visible border instead of 1px inside it. */
+  max-width: min(calc(var(--chat-column-max) + 2px), calc(100% - 62px));
   margin: 10px auto 0;
   padding: 0;
   min-height: 20px;
