@@ -351,13 +351,14 @@ and must produce the same card.
 ## Appendix: Implementation Status
 
 The data model, edges, invariants, spawn primitive, edge-pure branch walks
-(§2–§5), and §6 path-native membership are implemented; the code in
-`openprogram/context/nodes.py` and `openprogram/store/session/session_store.py`
-is authoritative for details. The following designed sections are not yet
-landed:
+(§2–§5), §6 path-native membership, and §7 (single assembler,
+`context/system_prompt` nodes, memory-prefetch relocation) are implemented;
+the code in `openprogram/context/nodes.py`,
+`openprogram/context/components.py`,
+`openprogram/context/system_prompt_node.py`, and
+`openprogram/store/session/session_store.py` is authoritative for details.
+The following designed section is not yet landed:
 
-- §7 entirely — single assembler, `context/system_prompt` nodes, memory
-  prefetch relocation.
 - §8 entirely — `covers`-based summary nodes, the advance-only aging boundary, render manifests,
   write-path spill, single-pipeline enforcement. The current compaction
   machinery predates the write invariant and is explicitly exempted from it
@@ -366,6 +367,9 @@ landed:
 ## Related Files
 
 - `openprogram/context/nodes.py` — Call schema + render_context
+- `openprogram/context/components.py` — the one system-prompt assembler (§7)
+- `openprogram/context/system_prompt_node.py` — `context/system_prompt`
+  recording + `context/*` hiding (§7)
 - `openprogram/context/render.py` — render_dag_messages
 - `openprogram/store/session/session_store.py` — append invariant, get_branch,
   spawn_branch, list_branches

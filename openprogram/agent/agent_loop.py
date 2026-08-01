@@ -80,6 +80,50 @@ def _latest_user_text(messages: list) -> str:
     return ""
 
 
+def _inject_memory_prefetch(llm_messages: list, block: str) -> bool:
+    """Prepend ``block`` to the last user message's text, in place.
+
+    session-dag.md §7 — prefetched memory belongs to the turn that recalled
+    it, not to the session-constant system prompt. Tool results carry role
+    ``toolResult``, so the last ``role == "user"`` message is always the
+    conversational turn. Returns True when a message was modified.
+    """
+    prefix = block.rstrip() + "\n\n"
+    for msg in reversed(llm_messages or []):
+        role = getattr(msg, "role", None) or (
+            msg.get("role") if isinstance(msg, dict) else None)
+        if role != "user":
+            continue
+        content = getattr(msg, "content", None)
+        if content is None and isinstance(msg, dict):
+            content = msg.get("content")
+        if isinstance(content, str):
+            _set_content(msg, prefix + content)
+            return True
+        if isinstance(content, list):
+            for part in content:
+                ptype = getattr(part, "type", None) or (
+                    part.get("type") if isinstance(part, dict) else None)
+                if ptype != "text":
+                    continue
+                if isinstance(part, dict):
+                    part["text"] = prefix + str(part.get("text") or "")
+                else:
+                    part.text = prefix + (getattr(part, "text", "") or "")
+                return True
+            # Image/file-only turn: no text part to prefix — leave it alone
+            # rather than inventing a block ordering the provider may reject.
+        return False
+    return False
+
+
+def _set_content(msg, value) -> None:
+    if isinstance(msg, dict):
+        msg["content"] = value
+    else:
+        msg.content = value
+
+
 def _memory_sync_turn(messages: list, final_message) -> None:
     """Best-effort post-turn write to journal memory.
 
@@ -343,24 +387,28 @@ async def _stream_assistant_response(
         else:
             llm_messages = result
 
-    # Per-turn memory prefetch — extract the latest user message and
-    # ask the memory subsystem for relevant snippets. The result is
-    # already fenced as <memory-context>; we append it to the system
-    # prompt for THIS LLM call only (never persisted to history). The
-    # frozen core.md block stays at the top of the system prompt so
-    # the LLM's prefix cache still hits.
-    prefetch_block = ""
-    latest_user_text = _latest_user_text(messages)
-    if latest_user_text:
-        try:
-            from openprogram.memory.builtin import BuiltinMemoryProvider
-            prefetch_block = BuiltinMemoryProvider().prefetch(latest_user_text)
-        except Exception:
-            prefetch_block = ""
+    # Per-turn memory prefetch — extract the latest user message and ask the
+    # memory subsystem for relevant snippets. The result is already fenced as
+    # <memory-context>; it renders as a PREFIX BLOCK INSIDE the current user
+    # message (session-dag.md §7), never on the system prompt. Prefetch
+    # changes with every new user input, so appending it to the system prompt
+    # invalidated the provider's cached prefix for the ENTIRE history on every
+    # turn — the single largest source of avoidable input cost. In the user
+    # turn it only ever invalidates the tail it sits in.
+    prefetch_block = context.memory_prefetch
+    if prefetch_block is None:
+        prefetch_block = ""
+        latest_user_text = _latest_user_text(messages)
+        if latest_user_text:
+            try:
+                from openprogram.memory.builtin import BuiltinMemoryProvider
+                prefetch_block = BuiltinMemoryProvider().prefetch(latest_user_text)
+            except Exception:
+                prefetch_block = ""
 
     sys_prompt = context.system_prompt or None
     if prefetch_block:
-        sys_prompt = (sys_prompt or "") + "\n\n" + prefetch_block
+        _inject_memory_prefetch(llm_messages, prefetch_block)
 
     # Build LLM context
     # Layer 6 (Claude Code shouldDefer): re-split the tools list per

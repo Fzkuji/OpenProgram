@@ -318,6 +318,30 @@ _current_stream_fn: contextvars.ContextVar[Optional[Any]] = contextvars.ContextV
 )
 
 
+def _exec_system_prompt(inline: str, tools: Optional[list]) -> str:
+    """Assemble the function-body system prompt through the ONE assembler
+    (session-dag.md §7).
+
+    The runtime has no AgentSpec, so it passes the active agent id (falling
+    back to the default agent) plus its own ``self.system`` as the inline
+    layer. Any failure degrades to the bare inline string — a function call
+    must never die because a context component misbehaved.
+    """
+    try:
+        from openprogram.context.components import build_system_prompt
+        from openprogram.agent.internals._model_tools import load_agent_profile
+        from openprogram.agent.management import manager as _A
+        profile = dict(load_agent_profile(
+            getattr(_A, "DEFAULT_AGENT_ID", "main")))
+        if inline:
+            profile["system_prompt"] = inline
+        else:
+            profile.pop("system_prompt", None)
+        return build_system_prompt(profile, tools=tools)
+    except Exception:
+        return inline
+
+
 def _situational_prefix(
     fn_name: str,
     fn_doc: str,
@@ -1617,7 +1641,16 @@ class Runtime:
             ctx, _sp_unused = _build_pi_context(standalone_prefix + (content or []))
             history = []
             current = ctx.messages[0]
-        system_prompt = getattr(self, "system", "") or ""
+        # One assembler (session-dag.md §7): a model call inside a function
+        # body gets the same project background as the chat model, so the
+        # provider prefix cache is shared. ``self.system`` — the per-runtime
+        # override — feeds the assembler's inline_prompt layer; the skills
+        # block stays appended here because it is exec's *own* skill dirs
+        # (``Runtime(skills=...)``), which the agent-level skills_index
+        # component doesn't know about.
+        system_prompt = _exec_system_prompt(
+            getattr(self, "system", "") or "", agent_tools,
+        )
 
         skills_block = self._skills_block()
         if skills_block:

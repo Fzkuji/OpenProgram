@@ -209,6 +209,18 @@ def process_user_turn(
             user_caller_id = session.get("head_id")
     else:
         user_caller_id = req.branch_from
+    # Memory prefetch belongs to THIS turn, not to the system prompt
+    # (session-dag.md §7). Recall it here, where the user node id is known,
+    # so it can be stamped on the node for replay; the agent loop renders it
+    # as a prefix block inside the wire user message. Recomputing it per LLM
+    # call would be pointless — it only ever varies with the user's input.
+    memory_prefetch = ""
+    if req.user_text:
+        try:
+            from openprogram.memory.builtin import BuiltinMemoryProvider
+            memory_prefetch = BuiltinMemoryProvider().prefetch(req.user_text) or ""
+        except Exception:
+            memory_prefetch = ""
     user_msg: dict[str, Any] = {
         "id": user_msg_id,
         "role": "user",
@@ -239,6 +251,9 @@ def process_user_turn(
     # branch chain), so leaving it visible doesn't pollute main.
     if req.source in {"task_followup", "merge_turn"}:
         user_msg["display"] = "runtime"
+    if memory_prefetch:
+        # Replay reproduces the exact wire user message from the node.
+        user_msg["memory_prefetch"] = memory_prefetch
     # Persist a lightweight attachment manifest (count + media types)
     # so /resume + the search picker can show "[2 images]" badges
     # without re-loading the base64 blobs. Full data still goes to
@@ -830,60 +845,22 @@ def _run_loop_blocking(
                 else:
                     _wrapped.append(_t)
             tools = _wrapped
-    # Layer 6 catalog text in the system prompt. We do NOT split
-    # ``tools`` here — the agent_loop re-splits before every provider
-    # call so newly-loaded deferred tools show up on the next turn
-    # automatically. We only peek at the *initial* catalog so the LLM
-    # sees the deferred names from turn 1. After tool_search loads
-    # a name, that name still appears in this catalog block (the
-    # prompt is fixed for the dispatcher turn), but its full schema
-    # arrives via the agent_loop's per-call split — so the LLM has
-    # both the listing for discoverability and the schema for use.
-    deferred_catalog: list[tuple[str, str]] = []
-    if tools:
-        from openprogram.functions import (
-            deferred_catalog_text,
-            split_tools_for_dispatch,
-        )
-        _, deferred_catalog = split_tools_for_dispatch(tools)
-    system_prompt = _with_tool_runtime_prompt(
-        agent_profile.get("system_prompt") or "",
-        tools,
+    # One assembler (session-dag.md §7). The tool-runtime block, the Layer 6
+    # deferred-tool catalog and the plan-mode reminder are registered
+    # components now — the dispatcher no longer hand-appends anything, so the
+    # string the engine budgets is the string that ships.
+    #
+    # We do NOT split ``tools`` for dispatch here — the agent_loop re-splits
+    # before every provider call so newly-loaded deferred tools show up with
+    # full schema on the next call. The catalog component only lists the
+    # *initial* deferred names so the LLM can discover them from turn 1.
+    from openprogram.context.components import build_system_prompt
+    system_prompt = build_system_prompt(
+        agent_profile,
+        tools=tools,
         additional_working_dirs=getattr(req, "additional_working_dirs", None),
+        plan_mode=_plan_mode.is_plan_mode(req.session_id),
     )
-    if deferred_catalog:
-        block = deferred_catalog_text(deferred_catalog)
-        if block:
-            system_prompt = (
-                f"{system_prompt.rstrip()}\n\n{block}".strip()
-            )
-    # Plan-mode reminder. Text adapted from Anthropic's Claude Code
-    # plan-mode attachment (``references/claude-code-leaked/src/utils/
-    # messages.ts``) — the opening "Plan mode is active... supercedes
-    # any other instructions" sentence is theirs, kept because it
-    # phrases the override priority unambiguously.
-    if _plan_mode.is_plan_mode(req.session_id):
-        system_prompt = (
-            f"{system_prompt.rstrip()}\n\n"
-            "<plan-mode>\n"
-            "Plan mode is active. The user indicated that they do not "
-            "want you to execute yet — you MUST NOT make any edits, "
-            "run any non-readonly tools (including changing configs, "
-            "running shell commands, or making commits), or otherwise "
-            "make any changes to the system. This supercedes any other "
-            "instructions you have received.\n\n"
-            "Workflow:\n"
-            "1. Explore the codebase with read, glob, grep until you "
-            "understand the existing structure.\n"
-            "2. Draft a concrete implementation plan.\n"
-            "3. Submit the plan via `exit_plan_mode(plan=...)` for "
-            "user approval. Do NOT ask the user about the plan in "
-            "free-form text — exit_plan_mode IS how you ask.\n\n"
-            "If the user rejects the plan, revise it based on the "
-            "rejection message and call exit_plan_mode again. Stay in "
-            "plan mode until exit_plan_mode succeeds.\n"
-            "</plan-mode>"
-        ).strip()
     model = _resolve_model(agent_profile, req.model_override)
 
     # Route history through the context engine: applies tool-result
@@ -895,6 +872,11 @@ def _run_loop_blocking(
     _ctx_engine = resolve_engine_for(agent_profile)
     _ctx_engine.on_session_start(req.session_id)
     db = default_db()
+    # The prompt is recorded, not implied (session-dag.md §7): append a
+    # context/system_prompt node whenever the assembled text's hash moves.
+    # No-op when it didn't — a stable prompt records once per session.
+    from openprogram.context.system_prompt_node import record_system_prompt
+    record_system_prompt(db, req.session_id, system_prompt)
     session = db.get_session(req.session_id) or {}
     prep = _ctx_engine.prepare(
         agent=agent_profile,
@@ -902,6 +884,7 @@ def _run_loop_blocking(
         history=history,
         model=model,
         tools=tools,
+        system_prompt=system_prompt,
     )
 
     # Snip: free operation — remove oldest turns before trying the
@@ -924,6 +907,7 @@ def _run_loop_blocking(
                     history=history,
                     model=model,
                     tools=tools,
+                    system_prompt=system_prompt,
                 )
                 on_event({"type": "chat_response",
                           "data": {"type": "snip",
@@ -958,6 +942,7 @@ def _run_loop_blocking(
                     history=history,
                     model=model,
                     tools=tools,
+                    system_prompt=system_prompt,
                 )
                 on_event({"type": "chat_response",
                           "data": {"type": "context_collapse",
@@ -993,6 +978,7 @@ def _run_loop_blocking(
                     history=history,
                     model=model,
                     tools=tools,
+                    system_prompt=system_prompt,
                 )
         except Exception as e:  # noqa: BLE001
             # Auto-compact must never crash the turn.
@@ -1002,10 +988,20 @@ def _run_loop_blocking(
                                "error": f"{type(e).__name__}: {e}",
                                "user_initiated": False}})
 
+    # Memory recalled for this turn (session-dag.md §7). ``process_user_turn``
+    # stamped it on the user node; read it back from the branch so the block
+    # the loop renders is byte-identical to the one replay will reproduce.
+    _memory_prefetch = ""
+    for _m in reversed(history or []):
+        if _m.get("role") == "user":
+            _memory_prefetch = _m.get("memory_prefetch") or ""
+            break
+
     context = AgentContext(
         system_prompt=system_prompt,
         messages=prep.agent_messages,
         tools=tools,
+        memory_prefetch=_memory_prefetch,
     )
 
     # _default_convert_to_llm filters out non-LLM messages (e.g. our

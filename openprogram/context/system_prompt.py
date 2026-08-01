@@ -1,16 +1,9 @@
-"""Layered system-prompt composer.
+"""Back-compat shim for the system-prompt assembler.
 
-Order of blocks (top-to-bottom — earliest blocks are stickiest in
-prefix cache):
-
-    1. Identity banner   ("You are <name>...")
-    2. Workspace files   (AGENTS.md → SOUL.md → USER.md)
-    3. Inline prompt     (agent.system_prompt)
-    4. Skill index       (one-line per enabled skill)
-    5. Memory block      (persistent BuiltinMemoryProvider block)
-
-Each component uses XML tags as delimiters (e.g. ``<environment>``,
-``<situation>``); no outer fence is needed.
+The ONE assembler lives in ``context.components`` (session-dag.md §7) — it
+holds the component registry and every layer. This module only forwards, so
+existing ``from openprogram.context.system_prompt import build_system_prompt``
+imports keep working. New code should import from ``context.components``.
 """
 from __future__ import annotations
 
@@ -25,92 +18,6 @@ def build_system_prompt(agent: Any, **kwargs: Any) -> str:
     """
     from openprogram.context.components import build_system_prompt as _assemble
     return _assemble(agent, **kwargs)
-
-
-def _compose(agent: Any) -> str:
-    from openprogram.agent.management import workspace as _workspace
-
-    parts: list[str] = []
-
-    agent_id = _attr(agent, "id", "") or ""
-    identity = _attr(agent, "identity", None)
-    name = (_attr(identity, "name", "") or _attr(agent, "name", "")
-            or agent_id).strip()
-    header = f"You are {name} (agent_id={agent_id})."
-    mentions = _attr(identity, "mention_patterns", None) or []
-    if mentions:
-        header += " Users may address you via: " + ", ".join(mentions) + "."
-    parts.append(header)
-
-    if agent_id:
-        for reader in (_workspace.read_agents_md,
-                       _workspace.read_soul_md,
-                       _workspace.read_user_md):
-            block = (reader(agent_id) or "").strip()
-            if block:
-                parts.append(block)
-
-    inline = (_attr(agent, "system_prompt", "") or "").strip()
-    if inline:
-        parts.append(inline)
-
-    skill_index = _enabled_skills_summary(agent)
-    if skill_index:
-        parts.append(skill_index)
-
-    try:
-        from openprogram.memory.builtin import BuiltinMemoryProvider
-        mem_block = BuiltinMemoryProvider().system_prompt_block()
-        if mem_block.strip():
-            parts.append(mem_block)
-    except Exception:
-        pass
-
-    if not parts:
-        return ""
-    return "\n\n".join(parts)
-
-
-def _enabled_skills_summary(agent: Any) -> str:
-    try:
-        from openprogram.agentic_programming import (
-            default_skill_dirs, load_skills,
-        )
-    except Exception:
-        return ""
-    try:
-        skills = load_skills(default_skill_dirs())
-    except Exception:
-        return ""
-    if not skills:
-        return ""
-    disabled_obj = _attr(agent, "skills", None) or {}
-    if isinstance(disabled_obj, dict):
-        disabled = set(disabled_obj.get("disabled") or [])
-    else:
-        disabled = set(_attr(disabled_obj, "disabled", None) or [])
-    enabled = [s for s in skills if s.name not in disabled]
-    if not enabled:
-        return ""
-    lines = ["Skills available on demand:"]
-    for s in enabled[:20]:
-        desc = (getattr(s, "description", "") or "").strip()
-        if desc:
-            desc = desc.splitlines()[0][:80]
-            lines.append(f"  · {s.name} — {desc}")
-        else:
-            lines.append(f"  · {s.name}")
-    if len(enabled) > 20:
-        lines.append(f"  ... (+{len(enabled) - 20} more)")
-    return "\n".join(lines)
-
-
-def _attr(obj: Any, name: str, default: Any) -> Any:
-    if obj is None:
-        return default
-    if isinstance(obj, dict):
-        return obj.get(name, default)
-    return getattr(obj, name, default)
 
 
 __all__ = ["build_system_prompt"]

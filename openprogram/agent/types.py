@@ -117,6 +117,13 @@ class AgentContext(BaseModel):
     system_prompt: str = ""
     messages: list[AgentMessage] = Field(default_factory=list)
     tools: list[AgentTool] | None = None
+    # Memory recalled for THIS turn, rendered as a prefix block inside the
+    # wire user message rather than appended to the system prompt — which is
+    # what keeps the system prompt byte-stable across turns (session-dag.md
+    # §7). Empty string = nothing recalled. The dispatcher supplies it (it
+    # also stamps it on the user node); the loop falls back to recalling it
+    # itself for entry points that don't.
+    memory_prefetch: str | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 

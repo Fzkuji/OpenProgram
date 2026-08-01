@@ -31,6 +31,20 @@ Layer = Literal["L0", "L1", "L2"]
 _channel_var: contextvars.ContextVar[str] = contextvars.ContextVar(
     "_channel_var", default="",
 )
+# Session-dag.md §7: the tool-runtime block, the deferred-tool catalog and the
+# plan-mode reminder used to be hand-appended by the dispatcher after calling
+# the assembler. They are components like everything else; the per-call inputs
+# they need (the resolved tool list, extra working dirs, plan-mode flag) ride
+# these contextvars so builder signatures stay single-arg.
+_tools_var: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar(
+    "_tools_var", default=None,
+)
+_working_dirs_var: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar(
+    "_working_dirs_var", default=None,
+)
+_plan_mode_var: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "_plan_mode_var", default=False,
+)
 
 
 def _attr(obj: Any, name: str, default: Any) -> Any:
@@ -84,6 +98,9 @@ def assemble(
     layers: list[Layer],
     *,
     channel: str = "",
+    tools: Optional[list] = None,
+    additional_working_dirs: Optional[list] = None,
+    plan_mode: bool = False,
 ) -> list[str]:
     """Collect → sort by order → filter by condition → build → drop empties.
 
@@ -91,9 +108,13 @@ def assemble(
     layers (layers are concatenated in the order requested; within each layer
     components are ordered by ``order``).
 
-    ``channel`` is exposed to builders via ``_channel_var`` (contextvar) so
-    existing single-arg builders need no signature change."""
+    ``channel`` / ``tools`` / ``additional_working_dirs`` / ``plan_mode`` are
+    exposed to builders via contextvars so existing single-arg builders need
+    no signature change."""
     token = _channel_var.set(channel)
+    t_tools = _tools_var.set(tools)
+    t_dirs = _working_dirs_var.set(additional_working_dirs)
+    t_plan = _plan_mode_var.set(plan_mode)
     try:
         parts: list[str] = []
         for layer in layers:
@@ -108,6 +129,9 @@ def assemble(
                     parts.append(str(text))
         return parts
     finally:
+        _plan_mode_var.reset(t_plan)
+        _working_dirs_var.reset(t_dirs)
+        _tools_var.reset(t_tools)
         _channel_var.reset(token)
 
 
@@ -117,13 +141,32 @@ _FENCE_OPEN = ""
 _FENCE_CLOSE = ""
 
 
-def build_system_prompt(agent: Any, *, channel: str = "") -> str:
+def build_system_prompt(
+    agent: Any,
+    *,
+    channel: str = "",
+    tools: Optional[list] = None,
+    additional_working_dirs: Optional[list] = None,
+    plan_mode: bool = False,
+) -> str:
     """Compose the system prompt from registered L0 + L1-project components.
 
+    The ONE assembler (session-dag.md §7): every model call — top-level chat,
+    function body, budget accounting — goes through here, so the counted
+    string is the wire string.
+
     ``channel`` (e.g. "telegram", "discord") is threaded through to builders
-    that emit platform-specific rendering guidance."""
+    that emit platform-specific rendering guidance. ``tools`` drives the
+    tool-runtime block and the deferred-tool catalog; ``plan_mode`` appends
+    the plan-mode reminder."""
     try:
-        parts = assemble(agent, ["L0", "L1"], channel=channel)
+        parts = assemble(
+            agent, ["L0", "L1"],
+            channel=channel,
+            tools=tools,
+            additional_working_dirs=additional_working_dirs,
+            plan_mode=plan_mode,
+        )
         if not parts:
             return ""
         return _FENCE_OPEN + "\n\n".join(parts) + _FENCE_CLOSE
@@ -404,6 +447,70 @@ def _build_git_repo_flag(agent: Any) -> str:
 
 
 register(ContextComponent("git_repo_flag", "L1", 15, _build_git_repo_flag))
+
+
+# Session-dag.md §7 — blocks the dispatcher used to append by hand after
+# calling the assembler. They live here now so the assembler is the single
+# producer of the wire system prompt.
+
+def _build_tool_runtime(agent: Any) -> str:
+    tools = _tools_var.get()
+    if not tools:
+        return ""
+    from openprogram.agent.internals._model_tools import tool_runtime_block
+    return tool_runtime_block(tools, _working_dirs_var.get())
+
+
+def _build_deferred_catalog(agent: Any) -> str:
+    """Layer 6 catalog: the deferred tools' names, so the model can discover
+    (and ``tool_search``) them even though their schemas aren't shipped."""
+    tools = _tools_var.get()
+    if not tools:
+        return ""
+    from openprogram.functions import (
+        deferred_catalog_text, split_tools_for_dispatch,
+    )
+    _, deferred = split_tools_for_dispatch(list(tools))
+    if not deferred:
+        return ""
+    return deferred_catalog_text(deferred) or ""
+
+
+# Text adapted from Anthropic's Claude Code plan-mode attachment
+# (``references/claude-code-leaked/src/utils/messages.ts``) — the opening
+# "Plan mode is active... supercedes any other instructions" sentence is
+# theirs, kept because it phrases the override priority unambiguously.
+_PLAN_MODE_TEXT = (
+    "<plan-mode>\n"
+    "Plan mode is active. The user indicated that they do not "
+    "want you to execute yet — you MUST NOT make any edits, "
+    "run any non-readonly tools (including changing configs, "
+    "running shell commands, or making commits), or otherwise "
+    "make any changes to the system. This supercedes any other "
+    "instructions you have received.\n\n"
+    "Workflow:\n"
+    "1. Explore the codebase with read, glob, grep until you "
+    "understand the existing structure.\n"
+    "2. Draft a concrete implementation plan.\n"
+    "3. Submit the plan via `exit_plan_mode(plan=...)` for "
+    "user approval. Do NOT ask the user about the plan in "
+    "free-form text — exit_plan_mode IS how you ask.\n\n"
+    "If the user rejects the plan, revise it based on the "
+    "rejection message and call exit_plan_mode again. Stay in "
+    "plan mode until exit_plan_mode succeeds.\n"
+    "</plan-mode>"
+)
+
+
+def _build_plan_mode(agent: Any) -> str:
+    return _PLAN_MODE_TEXT if _plan_mode_var.get() else ""
+
+
+register(ContextComponent("tool_runtime", "L1", 20, _build_tool_runtime))
+register(ContextComponent("deferred_catalog", "L1", 25, _build_deferred_catalog))
+# Plan mode last: it overrides everything above it, and it toggles, so keeping
+# it at the tail limits the cache-prefix damage when it flips.
+register(ContextComponent("plan_mode", "L1", 90, _build_plan_mode))
 
 
 # Prompt injection detection

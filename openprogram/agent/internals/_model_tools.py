@@ -310,13 +310,30 @@ def with_tool_runtime_prompt(
     tools: Optional[list],
     additional_working_dirs: Optional[list] = None,
 ) -> str:
-    if not tools:
+    """Legacy convenience wrapper around :func:`tool_runtime_block`.
+
+    Production assembly goes through ``context.components`` (session-dag.md
+    §7); this stays for direct callers/tests that want the concatenation.
+    """
+    block = tool_runtime_block(tools, additional_working_dirs)
+    if not block:
         return system_prompt
+    return f"{system_prompt.rstrip()}\n\n{block}".strip()
+
+
+def tool_runtime_block(
+    tools: Optional[list],
+    additional_working_dirs: Optional[list] = None,
+) -> str:
+    """The "Runtime tool context:" block — cwd, per-turn tool names, and the
+    filesystem-scoping guidance. Empty string when there are no tools."""
+    if not tools:
+        return ""
 
     names = [getattr(t, "name", "") for t in tools]
     names = [n for n in names if n]
     if not names:
-        return system_prompt
+        return ""
 
     # Per-turn cwd: the dispatcher binds the session's worktree OR bound
     # project path to the worktree ContextVar before prompt assembly, so
@@ -353,8 +370,7 @@ def with_tool_runtime_prompt(
     else:
         lines.append("- Shell command execution is not available in this transport; use filesystem/search tools such as list, read, glob, and grep when possible.")
 
-    tool_prompt = "\n".join(lines)
-    return f"{system_prompt.rstrip()}\n\n{tool_prompt}".strip()
+    return "\n".join(lines)
 
 
 def log_resolved_tools(req: "TurnRequest", tools: Optional[list]) -> None:

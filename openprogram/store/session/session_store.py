@@ -902,6 +902,11 @@ class SessionStore:
             _node_to_msg(n, session_id) for n in idx.all_nodes()
             if (n.metadata or {}).get("display") != "root"
             and not (n.metadata or {}).get("rewound")
+            # ``context/*`` nodes record what the context pipeline sent
+            # (session-dag.md §7). They are machinery, not conversation, and
+            # stay out of every chat/transcript view. ``get_nodes`` is the
+            # raw view for the code that does want them.
+            and not str(n.name or "").startswith("context/")
         ]
         if limit is not None:
             msgs = msgs[-limit:]
@@ -1090,6 +1095,11 @@ class SessionStore:
                 ):
                     continue
             if (node.metadata or {}).get("display") == "root":
+                continue
+            # ``context/*`` nodes (system_prompt, summary) are context
+            # machinery, never a branch you can check out — session-dag.md
+            # §7 reserves the name and hides them from the chat views.
+            if str(node.name or "").startswith("context/"):
                 continue
             # Attach-pointer rows ride the assistant role but are
             # side-calls, not real branch tips. Old writes didn't

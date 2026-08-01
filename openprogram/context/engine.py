@@ -96,6 +96,7 @@ class ContextEngine:
                 history: list[dict],
                 model: Any,
                 tools: list[Any] | None = None,
+                system_prompt: Optional[str] = None,
                 ) -> TurnPrep:
         raise NotImplementedError
 
@@ -197,6 +198,7 @@ class DefaultContextEngine(ContextEngine):
                 history: list[dict],
                 model: Any,
                 tools: list[Any] | None = None,
+                system_prompt: Optional[str] = None,
                 ) -> TurnPrep:
         decision: list[str] = []
         session_id = (session or {}).get("id") or ""
@@ -258,7 +260,11 @@ class DefaultContextEngine(ContextEngine):
             prepare_history(compacted_history, session_id)
             agent_messages = self._assemble_messages(compacted_history)
 
-        system_prompt = self._build_system_prompt(agent)
+        # session-dag.md §7: the caller (dispatcher) assembled the wire
+        # prompt already — budget THAT string, never a second assembly.
+        # Standalone callers that pass nothing get one built here.
+        if system_prompt is None:
+            system_prompt = self._build_system_prompt(agent, tools=tools)
 
         # 4. Allocate budget.
         budget = self.budgets.allocate(
@@ -551,9 +557,9 @@ class DefaultContextEngine(ContextEngine):
                     continue
         return out
 
-    def _build_system_prompt(self, agent: Any) -> str:
-        from openprogram.context.system_prompt import build_system_prompt
-        return build_system_prompt(agent)
+    def _build_system_prompt(self, agent: Any, *, tools: Any = None) -> str:
+        from openprogram.context.components import build_system_prompt
+        return build_system_prompt(agent, tools=tools)
 
     def _build_messages_from_dag(
         self,
