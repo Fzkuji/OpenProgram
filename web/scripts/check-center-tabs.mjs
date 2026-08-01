@@ -517,7 +517,7 @@ assert.match(strip, /role="menuitem"/);
 assert.match(strip, /function moveMenuTab/);
 const moveMenuTab = strip.slice(
   strip.indexOf("function moveMenuTab"),
-  strip.indexOf("function addMenuTabToSplit"),
+  strip.indexOf("function canOpenSplitPicker"),
 );
 assert.match(moveMenuTab, /moveGroupMember\(/);
 assert.match(moveMenuTab, /ungroupTab\(/);
