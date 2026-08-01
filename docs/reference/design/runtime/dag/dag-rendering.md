@@ -1,9 +1,9 @@
 # DAG Rendering Spec (Layout · Edges · Legend · Default Visibility)
 
-> How the right-panel Viewport minimap draws the DAG: where each node goes, what
-> each edge looks like, and what the user sees by default. **This document is the
-> authoritative implementation standard** — write the layout code to match it, and
-> when something breaks, check against it. For the data semantics (nodes, the two
+> How the session graph draws: where each node goes, what each edge looks like,
+> and what the user sees by default. **This document is the authoritative
+> implementation standard** — write the layout code to match it, and when
+> something breaks, check against it. For the data semantics (nodes, the two
 > edges) see `session-dag.md`; this document only covers the drawing.
 >
 > Every rule comes with an example. **The SVG scenario figures in
@@ -12,6 +12,37 @@
 > aggregation, 12 status & badge legend, 13 badge anchoring & collision). The ASCII
 > figures in this file are a text-mode digest, equivalent to the html; on conflict
 > the html wins.
+
+---
+
+## Where the graph lives: a center perspective
+
+The graph is one of the chat pane's two **perspectives**, not a side panel. Each
+center tab is either on the conversation transcript or on the context graph, and
+the pair of controls at the pane's top-right switches between them — a
+perspective toggle plus a `…` menu of session actions, following Obsidian's
+per-pane controls. The perspective is per tab, so parking one session on the
+graph leaves the others on their transcripts.
+
+Giving the graph the full column width is the point: a branchy session needs
+lanes, tiers and branch badges that a 288px rail truncates.
+
+| Piece | Where |
+|---|---|
+| Perspective state | `CenterTab.dagView` (`web/lib/state/center-tabs-store.ts`) — not persisted; a reload opens on the transcript |
+| Controls | `web/components/chat/view-controls.tsx` |
+| Graph host | `web/components/chat/dag-view.tsx` — renders `#historyPanel` + `.history-body`, the elements `pipeline.ts` and `render/visibility.ts` select |
+| Perspective swap | `.center-pane-chat[data-center-view]` in `web/app/styles/chat.css` |
+
+Both surfaces stay mounted and swap by `display`: the renderer paints into the
+host on every capture regardless of which perspective is showing, so unmounting
+would blank the graph until the next one. The host's `ResizeObserver`
+(`_wirePanelResize`) is what re-flows the layout — a perspective switch, a
+split-view drag and a window resize all reach it the same way.
+
+Clicking a node in the graph fills the right sidebar's Details / Context views;
+those views stay in the sidebar because they read one selected node, not the
+whole session.
 
 ---
 
@@ -250,14 +281,16 @@ The backend `openprogram/webui/graph_builder.py` produces the node array (includ
 annotation — **tier specifically in `graph_layout/tier.py`**. Verification tool: `python tools/dag_dump.py <session_id>` prints
 lane/tier/depth + an ASCII grid.
 
-## 8. Context tab semantics
+## 8. Context highlight-mode semantics
 
-The History panel has two highlight modes (`HighlightMode` in
-`web/lib/runtime-bridge/dag/types.ts`):
+The graph perspective has two highlight modes (`HighlightMode` in
+`web/lib/runtime-bridge/dag/types.ts`), switched from the rail above the graph:
 
 - **Viewport** — the visible set is the conversation bubbles currently
   intersecting the chat scroll window (`render/visibility.ts`). Pure UI
-  affordance; no backend semantics.
+  affordance; no backend semantics. While the pane is ON the graph perspective
+  the transcript is hidden and measures 0×0, so `_recomputeVisibility` keeps the
+  last known set instead of reading every bubble as invisible.
 - **Context** — the visible set is **exactly the node ids the next LLM call
   will carry as context**, served by
   `GET /api/sessions/{id}/context-range`: the active branch walked back from
@@ -280,7 +313,7 @@ Compaction interaction:
   "N turns compacted here" marker, it must be a badge on the first kept
   node, not a node.
 - `compaction_finished` must refresh the context range
-  (`chat-handlers.ts`); the Context tab is event-driven like everything
+  (`chat-handlers.ts`); the Context mode is event-driven like everything
   else — the frontend never computes context membership itself.
 - Context ids that have no drawn node (e.g. `display=runtime`
   task-followup rows) are silently ignored: they are context, but not

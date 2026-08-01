@@ -27,6 +27,8 @@ import { LegacyTopbarBridge } from "./chat/top-bar";
 import { WelcomeScreen } from "./chat/welcome-screen";
 import { MessageList } from "./chat/messages/message-list";
 import { PeerSessionPane } from "./chat/peer-session-pane";
+import { DagView } from "./chat/dag-view";
+import { ViewControls } from "./chat/view-controls";
 import { useSessionStore } from "@/lib/session-store";
 import { SessionScopeProvider } from "@/lib/session-store/session-scope";
 import { useColResize } from "@/lib/use-col-resize";
@@ -351,6 +353,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const activeId = useCenterTabs((s) => s.activeId);
   const activeTab = tabs.find((tab) => tab.id === activeId);
   const activeKind = activeTab?.kind ?? "session";
+  // Session tabs carry their own perspective (transcript / context DAG).
+  const activeTabDagView = activeKind === "session" && !!activeTab?.dagView;
   const activeGroup = activeId
     ? findCenterTabGroup(groups, activeId)
     : undefined;
@@ -494,13 +498,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           {/* Chat shell is mounted ONCE at the layout level and kept
              alive across session switches AND non-session tabs. This
-             is what makes the WS + DOM + right sidebar state persist. */}
+             is what makes the WS + DOM + right sidebar state persist.
+             The context-DAG perspective is a SIBLING of that shell,
+             also always mounted: the DAG renderer paints into its host
+             DOM on every capture, so unmounting it would blank the
+             graph until the next one. `data-center-view` swaps which of
+             the two is visible (see .center-pane-chat in chat.css) —
+             a display flip, so the perspective toggle is instant. */}
           <div
             className={
-              sessionPaneIndex < 0
+              (sessionPaneIndex < 0
                 ? "center-single-pane"
-                : centerPaneClassName(sessionPaneIndex)
+                : centerPaneClassName(sessionPaneIndex)) + " center-pane-chat"
             }
+            data-center-view={activeTabDagView ? "dag" : "session"}
             style={
               sessionPaneIndex < 0
                 ? { display: "none" }
@@ -508,6 +519,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             }
           >
             <PageShell page="chat" />
+            <DagView visible={activeTabDagView} />
+            <ViewControls />
           </div>
           {showChat && showDivider ? (
             <div

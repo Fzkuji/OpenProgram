@@ -2625,3 +2625,76 @@
 .effort-ultra .slider-tick {
   display: none;
 }
+
+
+/* ═══ Center perspectives: transcript ⇄ session context DAG ═══════════
+   The chat pane hosts BOTH surfaces at once and swaps them with
+   `display`. Keeping the graph mounted matters: the DAG renderer paints
+   into `#historyPanel .history-body` on every WebSocket capture whether
+   or not it is on screen, so unmounting would blank it until the next
+   one. The pane is a real flex box (not the `display: contents` of
+   `.center-single-pane`) so the floating view controls have something to
+   position against. */
+.center-pane-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+.center-pane-chat[data-center-view="dag"] #chatView {
+  display: none;
+}
+
+/* The DAG host, center-width. `.history-body` (right-dock.css) is the
+   scroll box the renderer writes the SVG into and the one its
+   ResizeObserver watches — so a perspective switch, a split-view drag
+   and a window resize all re-flow the graph through the same path. */
+.dag-view {
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* Branch list + highlight-mode switch: a fixed-width rail above the
+   graph, capped so a long branch list can't eat the canvas. */
+.dag-view-rail {
+  flex: 0 0 auto;
+  max-height: 40%;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Obsidian-style pane controls: perspective toggle + `…` overflow,
+   floating at the pane's top-right over whichever surface is showing. */
+.chat-view-controls {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.chat-view-control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.chat-view-control-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.chat-view-control-btn[aria-pressed="true"] {
+  color: var(--text-bright);
+}

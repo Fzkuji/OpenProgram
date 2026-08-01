@@ -913,4 +913,58 @@ assert.match(
   "the split picker is absolutely positioned against the center body",
 );
 
+// ---- center perspectives: transcript ⇄ session context DAG ----------
+// The graph moved out of the right sidebar into the chat pane, switched by
+// the Obsidian-style controls at the pane's top-right. State is per tab.
+const centerTabsStore = readFileSync(
+  new URL("../lib/state/center-tabs-store.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  centerTabsStore,
+  /setTabDagView: \(id, dagView\) =>/,
+  "the per-tab perspective setter must live in the center-tabs store",
+);
+// Both surfaces stay mounted: the DAG renderer paints into its host on every
+// capture, so unmounting it would blank the graph until the next one.
+assert.match(
+  appShell,
+  /<PageShell page="chat" \/>\s*<DagView visible=\{activeTabDagView\} \/>\s*<ViewControls \/>/,
+  "the chat pane must host the transcript, the DAG and the view controls together",
+);
+assert.match(
+  appShell,
+  /data-center-view=\{activeTabDagView \? "dag" : "session"\}/,
+  "the perspective must be a display swap driven off the active tab",
+);
+const chatCss = readFileSync(
+  new URL("../app/styles/chat.css", import.meta.url),
+  "utf8",
+);
+assert.match(
+  chatCss,
+  /\.center-pane-chat\[data-center-view="dag"\] #chatView \{\s*display: none;/,
+  "the DAG perspective must hide the transcript",
+);
+const viewControls = readFileSync(
+  new URL("../components/chat/view-controls.tsx", import.meta.url),
+  "utf8",
+);
+// Tooltip names the CURRENT perspective and what the click does (Obsidian).
+assert.match(viewControls, /Current view: context graph\. Click to switch/);
+assert.match(viewControls, /Current view: conversation\. Click to switch/);
+// The overflow menu is a second entry point for actions the Recents row
+// already ships — same WS verbs, nothing invented here.
+for (const verb of [
+  "rename_session",
+  "update_session_flags",
+  "delete_session",
+]) {
+  assert.match(
+    viewControls,
+    new RegExp(`action: "${verb}"`),
+    `the session menu must reuse the ${verb} verb`,
+  );
+}
+
 console.log("center-tabs checks passed");

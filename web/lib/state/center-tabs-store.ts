@@ -116,6 +116,11 @@ export interface CenterTab {
   /** Unsaved-changes marker — strip shows ● instead of ✕. Set via
    *  setTabDirty by whoever owns the tab's content (file editor). */
   dirty?: boolean;
+  /** Session tabs only — which perspective the center shows: the
+   *  transcript (falsy, the default) or the session context DAG.
+   *  Per tab, so parking one session on the graph doesn't move the
+   *  others. Not persisted: a reload starts on the transcript. */
+  dagView?: boolean;
 }
 
 /** Extra context a file-tab opener may carry: which turn's diff to
@@ -198,6 +203,8 @@ export interface CenterTabsState {
   /** Unsaved-changes marker groundwork — content owners call this;
    *  the strip renders ● instead of ✕ while dirty. */
   setTabDirty: (id: string, dirty: boolean) => void;
+  /** Flip a session tab between the transcript and the context DAG. */
+  setTabDagView: (id: string, dagView: boolean) => void;
   /** Retarget a file tab after its file was renamed/moved on disk:
    *  new deterministic id + title (basename), order and active state
    *  preserved. If a tab already exists at the new id, the stale tab
@@ -667,6 +674,14 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         const tab = s.tabs.find((t) => t.id === id);
         if (!tab || !!tab.dirty === dirty) return {};
         const tabs = s.tabs.map((t) => (t.id === id ? { ...t, dirty } : t));
+        return commitCenterTabsState(s, { tabs });
+      }),
+
+    setTabDagView: (id, dagView) =>
+      set((s) => {
+        const tab = s.tabs.find((t) => t.id === id);
+        if (!tab || !!tab.dagView === dagView) return {};
+        const tabs = s.tabs.map((t) => (t.id === id ? { ...t, dagView } : t));
         return commitCenterTabsState(s, { tabs });
       }),
 

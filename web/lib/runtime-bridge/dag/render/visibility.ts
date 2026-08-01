@@ -115,6 +115,11 @@ export function _recomputeVisibility(): void {
   const container = document.getElementById("chatMessages");
   if (!container) return;
   const rect = area.getBoundingClientRect();
+  // The transcript is hidden (the pane is on the DAG perspective, see
+  // components/chat/dag-view.tsx), so every bubble measures 0×0. That is
+  // "no information", not "nothing is visible" — recomputing here would
+  // blank the white fill on every node. Keep the last known set.
+  if (rect.width === 0 && rect.height === 0) return;
   const bubbles = container.querySelectorAll("[data-msg-id], [data-msg-ids]");
   const newSet: Record<string, boolean> = Object.create(null);
   for (let i = 0; i < bubbles.length; i++) {

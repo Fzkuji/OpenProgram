@@ -230,7 +230,6 @@ const DICT = {
   // Right sidebar panels
   "right.resize_panel": { en: "Drag to resize panel", zh: "拖动调整面板宽度" },
   "right.toggle_panel": { en: "Toggle panel", zh: "切换面板" },
-  "right.history": { en: "History", zh: "历史" },
   "right.context": { en: "Context", zh: "上下文" },
   "right.executions": { en: "Executions", zh: "执行" },
   "right.context_tooltip": {

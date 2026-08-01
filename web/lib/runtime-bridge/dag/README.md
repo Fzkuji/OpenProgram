@@ -1,8 +1,11 @@
 # DAG renderer
 
-Self-contained SVG renderer for the right-rail mini-DAG (PyCharm-style
-conversation history view). Imported for side effects by
-`web/components/app-shell.tsx` via `./index`; exposes
+Self-contained SVG renderer for the session context DAG (PyCharm-style
+conversation history view). It paints into `#historyPanel .history-body`,
+hosted by the chat pane's graph perspective
+(`web/components/chat/dag-view.tsx`) — see
+`docs/reference/design/runtime/dag/dag-rendering.md`. Imported for side
+effects by `web/components/app-shell.tsx` via `./index`; exposes
 `renderHistoryGraph` / `repaintBranchTags` / `setHistoryContextRange`
 / `refreshHistoryContextRange` / `recomputeHistoryVisibility` /
 `setHistoryHighlightMode` / `getHistoryHighlightMode` on `window.*`

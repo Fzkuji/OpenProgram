@@ -5,12 +5,15 @@
  * web/public/js/shared/right-dock.js (shell only).
  *
  * Mirrors the left `<Sidebar />`: this component renders the visible
- * shell (icon rail + content host with the History / Detail / Branches
- * view children) but the *inner* content of each view is still owned
- * by legacy JS (history-graph.js writes into `.history-body`, ui.js
- * writes into `#detailBody` / `#detailTitle`, conversations.js writes
- * into `#branchesPanel`). We keep those legacy IDs as plain divs so the
- * still-loaded shared JS keeps painting into them without modification.
+ * shell (icon rail + content host with the Files / Worktrees / Detail /
+ * Context view children). Some inner content is still painted by legacy
+ * JS through stable ids (ui.js writes `#detailBody` / `#detailTitle`),
+ * so those ids stay plain divs here.
+ *
+ * The session context DAG is NOT here: it is a center perspective
+ * (`components/chat/dag-view.tsx`), reached from the chat pane's
+ * top-right view toggle. Clicking a node in that graph is what
+ * populates the Detail / Context views below.
  *
  * Open / view state lives in `useSessionStore.rightDock` and is
  * persisted to `localStorage` under the same keys the legacy
@@ -25,7 +28,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
-import { BranchesPanel } from "./branches";
 import { ContextCommitTimeline } from "./context-commit-timeline";
 import { WorktreesPanel } from "./worktrees";
 import {
@@ -48,20 +50,17 @@ import { renderMarkdown, useMarkdownReady } from "../chat/messages/markdown";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
 import { setRightDockApi } from "@/lib/right-dock";
-import { setHistoryHighlightMode } from "@/lib/runtime-bridge/dag";
 
-// View IDs that round-trip through the `data-view` attribute. Matches
-// the legacy template exactly: "history" picks `<div data-view="history">`,
+// View IDs that round-trip through the `data-view` attribute — e.g.
 // "detail" picks `<div data-view="detail">`.
-const VIEW_HISTORY = "history";
+const VIEW_WORKTREES = "worktrees";
 const VIEW_DETAIL = "detail";
 const VIEW_CONTEXT = "context";
 const VIEW_FILES = "files";
 
 // Right sidebar mirrors the left's default width (288px) so the page
-// loads symmetric. Users can drag-widen the right side for the History
-// DAG, but the width is not persisted — every reload resets to the
-// default, by request.
+// loads symmetric. Users can drag-widen it, but the width is not
+// persisted — every reload resets to the default, by request.
 const RIGHT_W_MIN = 240;
 const RIGHT_W_MAX = 720;
 const RIGHT_W_DEFAULT = 288;
@@ -77,7 +76,7 @@ export function RightSidebar() {
   // Animated nav icons (pqoqubbw/icons), driven from each row's / the
   // toggle button's hover.
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
-  const historyIconRef = useRef<AnimatedNavIconHandle>(null);
+  const worktreesIconRef = useRef<AnimatedNavIconHandle>(null);
   const filesIconRef = useRef<AnimatedNavIconHandle>(null);
   // Files 视图的树 scope：当前中央 tab 的项目（文件 tab 自带
   // projectId；会话/新标签页回落到会话绑定的项目）。
@@ -165,11 +164,10 @@ export function RightSidebar() {
     if (!open) setRightDockOpen(true);
   }
 
-  // `data-view` attr is preserved so the legacy CSS rules in
-  // 09-right-dock.css (`.right-sidebar[data-view="history"]
-  // .right-view[data-view="history"] { display: flex }`) keep working
-  // unchanged. The .collapsed class drives the icon-rail-only width
-  // (defined in 02-sidebar.css).
+  // The `data-view` attr drives which child of `.right-view-host` shows
+  // (`.right-sidebar[data-view="files"] .right-view[data-view="files"]
+  // { display: flex }` in right-dock.css). The .collapsed class drives
+  // the icon-rail-only width (defined in 02-sidebar.css).
   return (
     <aside
       id="rightSidebar"
@@ -253,22 +251,25 @@ export function RightSidebar() {
         <div
           className={
             sidebarNavItemClass + " right-nav-item" +
-            (view === VIEW_HISTORY ? " " + sidebarNavItemActiveClass : "")
+            (view === VIEW_WORKTREES ? " " + sidebarNavItemActiveClass : "")
           }
-          data-view={VIEW_HISTORY}
-          onClick={() => onNavClick(VIEW_HISTORY)}
-          onMouseEnter={() => historyIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => historyIconRef.current?.stopAnimation?.()}
+          data-view={VIEW_WORKTREES}
+          onClick={() => onNavClick(VIEW_WORKTREES)}
+          onMouseEnter={() => worktreesIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => worktreesIconRef.current?.stopAnimation?.()}
           role="button"
+          title={text("Worktrees", "工作树")}
         >
           <span className={sidebarNavIconClass}>
-            <GitGraphIcon ref={historyIconRef} size={20} />
+            <GitGraphIcon ref={worktreesIconRef} size={20} />
           </span>
-          <span className={sidebarNavLabelClass}>{t("right.history")}</span>
+          <span className={sidebarNavLabelClass}>
+            {text("Worktrees", "工作树")}
+          </span>
         </div>
         {/* Detail / Context 不进图标轨：图标轨是并列的顶层入口，而这两个
-            是 DAG 节点的从属面板。它们的入口在 History 视图内的
-            <SessionViewSwitch />（选中节点后出现）。 */}
+            是 DAG 节点的从属面板。选中 DAG 节点时它们自己弹出，彼此之间
+            靠 <SessionViewSwitch /> 切换。 */}
         <div
           className={
             sidebarNavItemClass + " right-nav-item" +
@@ -299,12 +300,11 @@ export function RightSidebar() {
             </div>
           )}
         </div>
-        {/* History view: branches panel (top, conversations.js fills it)
-            + history graph body (history-graph.js renders the DAG into
-            `.history-body`). Both IDs/classes match the legacy template
-            so existing query selectors keep working. */}
-        <div id="historyPanel" className="right-view" data-view={VIEW_HISTORY}>
-          <HistoryGraphPanel />
+        {/* Worktrees view. The session DAG used to sit here as well;
+            it is now a CENTER perspective (see components/chat/dag-view.tsx)
+            so the graph gets the full column width. */}
+        <div className="right-view" data-view={VIEW_WORKTREES}>
+          <WorktreesPanel />
         </div>
         {/* Detail view: ui.js showDetail() writes innerHTML into
             #detailBody and textContent into #detailTitle. The template
@@ -324,32 +324,10 @@ export function RightSidebar() {
 }
 
 /**
- * History view: the React <BranchesPanel /> on top, the history-graph
- * DAG body below. The SVG is still built by `renderHistoryGraph()` in
- * `web/public/js/shared/history-graph.js`, which selects
- * `#historyPanel .history-body` and replaces its children.
- */
-function HistoryGraphPanel() {
-  // 分支入口只保留下方的 BranchesPanel（带 HEAD 标记的列表）。原顶栏搬来
-  // 的 BranchBadge chip 与它信息重复，已删。
-  return (
-    <>
-      <BranchesPanel />
-      <WorktreesPanel />
-      <SessionViewSwitch current={VIEW_HISTORY} />
-      <HighlightModeToggle />
-      <div className="history-body"></div>
-    </>
-  );
-}
-
-/**
  * Entry point for the two DAG-subordinate views. Detail and Context are
  * not top-level destinations (no icon-rail row): they only mean anything
- * once a node is selected, so their switch lives inside the History view
- * and appears once there is a selection. Rendered inside Detail/Context
- * too, which is how those views get back to History without going
- * through the imperative `rightDock.show(...)` handle.
+ * once a node in the center DAG perspective is selected, so the switch
+ * appears once there is a selection and lets the two swap places.
  *
  * `nodeSelected` (not `detailNode`) is the gate, because both selection
  * paths set it: React callers via the store's showDetail, and the DAG's
@@ -357,13 +335,12 @@ function HistoryGraphPanel() {
  * and would otherwise leave the switch hidden.
  */
 function SessionViewSwitch({ current }: { current: string }) {
-  const { t, text } = useTranslation();
+  const { text } = useTranslation();
   const selected = useSessionStore((s) => s.nodeSelected);
   const setRightDockView = useSessionStore((s) => s.setRightDockView);
   if (!selected) return null;
 
   const options: Array<{ view: string; label: string }> = [
-    { view: VIEW_HISTORY, label: t("right.history") },
     { view: VIEW_DETAIL, label: text("Details", "详情") },
     { view: VIEW_CONTEXT, label: text("Context", "上下文") },
   ];
@@ -391,59 +368,6 @@ function SessionViewSwitch({ current }: { current: string }) {
     </div>
   );
 }
-
-
-/** Toggle: white-fill on DAG nodes follows the chat scroll
- *  position (viewport) or the next-LLM-call context range
- *  (context). Drives ``setHistoryHighlightMode`` in the DAG module. */
-function HighlightModeToggle() {
-  const { t } = useTranslation();
-  const [mode, setMode] = useState<"viewport" | "context">("viewport");
-  function pick(next: "viewport" | "context") {
-    setMode(next);
-    setHistoryHighlightMode(next);
-  }
-  const style = (active: boolean): React.CSSProperties => ({
-    flex: 1,
-    padding: "4px 8px",
-    fontSize: 12,
-    fontFamily: "inherit",
-    border: "1px solid var(--border)",
-    background: active ? "var(--bg-hover)" : "transparent",
-    color: active ? "var(--text-bright)" : "var(--text-muted)",
-    cursor: "pointer",
-    borderRadius: 6,
-    transition: "background 0.15s, color 0.15s",
-  });
-  return (
-    <div
-      style={{
-        display: "flex",
-        gap: 4,
-        padding: "6px 8px",
-        borderBottom: "1px solid var(--border)",
-      }}
-    >
-      <button
-        type="button"
-        onClick={() => pick("viewport")}
-        style={style(mode === "viewport")}
-        title={t("right.viewport_tooltip")}
-      >
-        {t("right.viewport")}
-      </button>
-      <button
-        type="button"
-        onClick={() => pick("context")}
-        style={style(mode === "context")}
-        title={t("right.context_highlight_tooltip")}
-      >
-        {t("right.context")}
-      </button>
-    </div>
-  );
-}
-
 /**
  * One labelled block in the Details view.
  *

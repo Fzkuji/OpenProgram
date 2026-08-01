@@ -1,13 +1,39 @@
 # DAG 渲染规范（布局 · 连线 · 图例 · 默认可见性）
 
-> 右栏 Viewport 的 DAG 小地图怎么画：每个节点放哪、每条线什么样、默认给用户看
-> 什么。**本文是权威实现标准**——布局代码照此写，出问题对照本文查。数据语义
-> （节点、两条边）见 `session-dag.md`；本文只管画。
+> 会话图怎么画：每个节点放哪、每条线什么样、默认给用户看什么。**本文是权威
+> 实现标准**——布局代码照此写，出问题对照本文查。数据语义（节点、两条边）见
+> `session-dag.md`；本文只管画。
 >
 > 每条规则配示例。**SVG 场景图以 `dag-layout-spec.html` 为权威**（共 13 个
 > 场景：1–7 基础布局，8 merge，9 分支间通信，10 spawn 派活回流，11 执行子树
 > 聚合，12 状态与徽标图例，13 badge 锚定与碰撞）。本文的 ASCII 图是文字版
 > 速览，与 html 等价；冲突时以 html 为准。
+
+---
+
+## 图在哪：中央的一个视角
+
+图是聊天面板两个**视角**之一，不是侧面板。每个中央 tab 要么在会话记录视角、
+要么在上下文图视角，面板右上角那对控件负责切换——一个视角切换按钮加一个 `…`
+会话操作菜单，照 Obsidian 的面板控件做。视角按 tab 记忆，把一个会话停在图上
+不影响其他会话。
+
+给图整列宽度是关键：分支多的会话要摆开 lane、tier 和分支名 badge，288px 的
+侧栏装不下。
+
+| 部件 | 位置 |
+|---|---|
+| 视角状态 | `CenterTab.dagView`（`web/lib/state/center-tabs-store.ts`）——不持久化，刷新后回到会话记录 |
+| 控件 | `web/components/chat/view-controls.tsx` |
+| 图的宿主 | `web/components/chat/dag-view.tsx`——渲染 `#historyPanel` + `.history-body`，即 `pipeline.ts` 与 `render/visibility.ts` 选取的元素 |
+| 视角切换 | `web/app/styles/chat.css` 的 `.center-pane-chat[data-center-view]` |
+
+两个界面同时挂载，靠 `display` 互换：无论当前显示哪个视角，渲染器每次 capture
+都往宿主里画，卸载会让图空到下一次 capture。重排靠宿主的 `ResizeObserver`
+（`_wirePanelResize`）——切视角、拖分屏、改窗口大小都走同一条路。
+
+点击图上的节点填充右侧栏的详情 / 上下文视图；这两个视图留在侧栏，因为它们读
+的是选中的单个节点，不是整个会话。
 
 ---
 
@@ -212,13 +238,15 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier �
 `graph_layout/tier.py`**。验证工具：
 `python tools/dag_dump.py <session_id>` 打印 lane/tier/depth + ASCII 网格。
 
-## 八、Context tab 语义
+## 八、Context 高亮模式语义
 
-History 面板有两个高亮模式（`web/lib/runtime-bridge/dag/types.ts` 的
-`HighlightMode`）：
+图视角有两个高亮模式（`web/lib/runtime-bridge/dag/types.ts` 的
+`HighlightMode`），在图上方的横条里切换：
 
 - **Viewport** —— 可见集 = 当前聊天滚动窗口内相交的对话气泡
-  （`render/visibility.ts`）。纯 UI 便利，无后端语义。
+  （`render/visibility.ts`）。纯 UI 便利，无后端语义。面板停在图视角时会话
+  记录是隐藏的、量出来 0×0，此时 `_recomputeVisibility` 保留上一次的集合，
+  不把所有气泡读成不可见。
 - **Context** —— 可见集 = **下一次 LLM 调用将携带的节点 id 集合**，由
   `GET /api/sessions/{id}/context-range` 提供：从 head 回溯活跃分支，止于
   最近一次压缩摘要。集合外的节点变暗，集合内保持白色填充。
@@ -236,7 +264,7 @@ History 面板有两个高亮模式（`web/lib/runtime-bridge/dag/types.ts` 的
   种 role）。将来若需要显式"此处压缩了 N 轮"标记，必须做成首个保留节点上的
   徽章，不得做成节点。
 - `compaction_finished` 必须触发 context range 刷新（`chat-handlers.ts`）；
-  Context tab 和其他一切一样事件驱动——前端永不自行计算上下文成员关系。
+  Context 模式和其他一切一样事件驱动——前端永不自行计算上下文成员关系。
 - 集合中没有对应图节点的 id（如 `display=runtime` 的 task-followup 行）
   静默忽略：它们在上下文里，但不在图上。
 

@@ -28,16 +28,16 @@
   display: none;
   flex-direction: column;
 }
-.right-sidebar[data-view="history"] .right-view[data-view="history"],
+.right-sidebar[data-view="worktrees"] .right-view[data-view="worktrees"],
 .right-sidebar[data-view="detail"] .right-view[data-view="detail"],
 .right-sidebar[data-view="context"] .right-view[data-view="context"],
 .right-sidebar[data-view="files"] .right-view[data-view="files"] {
   display: flex;
 }
 
-/* Detail / Context 的入口开关（选中 DAG 节点后出现在 History 视图内，
-   以及这两个视图自身的顶部）。它们不是图标轨的并列入口，是节点的从属
-   视图，所以开关跟着节点走。几何同 HighlightModeToggle。 */
+/* Detail / Context 的入口开关（在中央 DAG 视角里选中节点后出现在这两个
+   视图顶部）。它们不是图标轨的并列入口，是节点的从属视图，所以开关跟着
+   节点走。几何同 DAG 视角里的高亮模式开关。 */
 .session-view-switch {
   display: flex;
   flex-shrink: 0;

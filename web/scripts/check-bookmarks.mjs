@@ -215,7 +215,22 @@ assert.doesNotMatch(
 );
 assert.match(rightSidebar, /<SessionViewSwitch current=\{VIEW_DETAIL\} \/>/);
 assert.match(rightSidebar, /<SessionViewSwitch current=\{VIEW_CONTEXT\} \/>/);
-assert.match(rightSidebar, /<SessionViewSwitch current=\{VIEW_HISTORY\} \/>/);
+// The session DAG is a CENTER perspective, so the sidebar hosts neither
+// its render target nor a rail entry for it; the switch is Detail⇄Context.
+assert.doesNotMatch(
+  rightSidebar,
+  /historyPanel|history-body|VIEW_HISTORY/,
+  "the DAG host must stay out of the right sidebar",
+);
+const dagView = readFileSync(
+  new URL("../components/chat/dag-view.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  dagView,
+  /id="historyPanel"[\s\S]*className="history-body"/,
+  "the center DAG view must keep the host ids the renderer selects",
+);
 // The bookmarks search box is the shared <SearchInput>; its focus
 // indicator is the container's accent border (the inner input's own
 // :focus-visible ring is deliberately suppressed in base.css).
@@ -242,7 +257,7 @@ assert.doesNotMatch(rightSidebar, /right-sidebar-panel|rounded-(?:lg|xl|2xl|3xl)
 // The bookmarks nav row is gone from the icon rail (it is a main-menu
 // entry now, asserted above). The rail keeps only the top-level
 // destinations that describe the CURRENT session/context.
-assert.match(rightSidebar, /data-view=\{VIEW_HISTORY\}/, "history rail entry missing");
+assert.match(rightSidebar, /data-view=\{VIEW_WORKTREES\}/, "worktrees rail entry missing");
 assert.match(rightSidebar, /data-view=\{VIEW_FILES\}/, "files rail entry missing");
 
 function parseTsx(text, name) {
