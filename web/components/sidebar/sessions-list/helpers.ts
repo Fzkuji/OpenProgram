@@ -151,7 +151,9 @@ export function displayTitle(c: LabelableConv): string {
   // not raw attachment text — before truncating to 30 chars.
   const parsed = parseUserAttachments(raw);
   const t = parsed.text.trim() || parsed.attachments[0]?.filename || raw;
-  return t.length > 30 ? t.slice(0, 30) + "…" : t;
+  // 不再拼 "…" 硬截断——溢出交给行内 CSS（右缘渐隐 + 悬停跑马灯）。
+  // 只做超长兜底，防止整条首消息灌进 DOM。
+  return t.length > 120 ? t.slice(0, 120) : t;
 }
 
 export function labelFor(c: LabelableConv, untitled: string): string {
@@ -169,7 +171,7 @@ export function labelFor(c: LabelableConv, untitled: string): string {
     let pv = parsed.text.trim();
     if (!pv && parsed.attachments.length > 0) pv = parsed.attachments[0].filename;
     pv = pv || String(c.preview).trim();
-    real = pv.length > 30 ? pv.slice(0, 30) + "…" : pv;
+    real = pv.length > 120 ? pv.slice(0, 120) : pv;
   }
   if (brand && real) return `[${brand}] ${real}`;
   if (brand) return `[${brand}]`;
