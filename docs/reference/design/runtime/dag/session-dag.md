@@ -164,6 +164,35 @@ having multiple conversation children is a fork. No special node type exists:
 | LLM retry | llm1 (P=user1) | llm1' (P=user1) | predecessor |
 | Tool retry | code (C=llm1) | code' (C=llm1) | caller |
 
+### Failure and retry
+
+**An error is a terminal state, not a missing one.** A turn that raises is
+finalized exactly like one that succeeds: the node is written with
+`status=error`, the turn is committed to git, and head stops on the error node.
+The failed turn is a fact about the session, and the record says so.
+
+Skipping finalization on the error path would leave the git timeline with a
+hole precisely where something went wrong — the one place the history is worth
+having. It would also leave a retry forking from a predecessor whose commit was
+never written. A user cancel terminates the same way with `status=cancelled`.
+
+The steps that finalization runs on an error path are the ones that keep the
+record whole: the git commit, the project commit, the shadow-git commit, and
+snapshot eviction. The steps that presuppose a completed reply — context-commit
+backfill, usage feedback, auto-titling — are meaningless for a turn that has no
+reply and are skipped.
+
+Retry needs no separate mechanism. It is an ordinary fork: the retry node takes
+the failed node's predecessor, which is what makes it a sibling rather than a
+successor. Two consequences follow from the ordinary rules:
+
+- **The failed line is kept.** The error node stays in the graph and stays
+  reachable. Checking out its branch shows exactly what happened.
+- **The failed line is not in the retry's context.** `render_context` walks the
+  active branch, and the error node is not on it. The retry never sees the
+  error it is retrying. Nothing filters by status to achieve this — branch
+  isolation already does it.
+
 ### Spawn
 
 `SessionStore.spawn_branch(session_id, caller_node_id, *, source, name=…)` is

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import subprocess
 import threading
 import time
@@ -42,6 +43,9 @@ from typing import Optional
 
 
 DEFAULT_PROJECT_ID = "default"
+
+
+_log = logging.getLogger(__name__)
 
 
 class ProjectStoreError(RuntimeError):
@@ -572,8 +576,8 @@ def load_project_settings(project_id: str) -> dict:
         if p.exists():
             data = json.loads(p.read_text(encoding="utf-8"))
             return data if isinstance(data, dict) else {}
-    except Exception:
-        pass
+    except (OSError, json.JSONDecodeError) as e:
+        _log.warning("project settings unreadable at %s: %s", p, e)
     return {}
 
 
@@ -588,8 +592,9 @@ def save_project_settings(project_id: str, settings: dict) -> None:
         p.write_text(
             json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8",
         )
-    except Exception:
-        pass
+    except (OSError, TypeError, ValueError) as e:
+        _log.warning("project settings NOT saved for %s at %s: %s",
+                     project_id, p, e)
 
 
 def get_default_project() -> Project:

@@ -13,10 +13,13 @@ See docs/design/runtime/dispatcher-split.md.
 """
 from __future__ import annotations
 
+import logging
 import time
 from typing import Optional
 
 from openprogram.agent.dispatcher.types import EventCallback, _noop
+
+_log = logging.getLogger(__name__)
 
 
 def dispatch_forced_tool_call(
@@ -98,12 +101,11 @@ def dispatch_forced_tool_call(
     finally:
         try:
             _reset_cid(_cid_token)
-        except Exception:
-            pass
-        try:
-            _clear_cancel(session_id)
-        except Exception:
-            pass
+        except ValueError:
+            _log.debug("call-id contextvar reset in foreign context",
+                       exc_info=True)
+        # Retires this turn's cancel token; the next turn opens its own.
+        _clear_cancel(session_id)
         # Subprocess wrote every nested Call directly to the per-session
         # git history via its OWN SessionStore. Parent worker's cached
         # SessionMemoryIndex never observed those writes — drop the
@@ -114,7 +116,10 @@ def dispatch_forced_tool_call(
             from openprogram.agent.session_db import default_db as _ddb
             _ddb().invalidate_cache(session_id)
         except Exception:
-            pass
+            # A stale cache shows the pre-subprocess snapshot until the next
+            # write; recoverable, but worth a breadcrumb.
+            _log.debug("session cache invalidation failed for %s",
+                       session_id, exc_info=True)
         # fn-form / direct-run is a standalone call — the user msg + the
         # top-level code node ARE the main branch. Without advancing
         # head_id to that code node, HEAD stays pinned to the user msg
@@ -130,7 +135,8 @@ def dispatch_forced_tool_call(
                 from openprogram.agent.session_db import default_db as _ddb
                 _ddb().update_session(session_id, head_id=_rt_id)
             except Exception:
-                pass
+                _log.warning("failed to advance head for session %s",
+                             session_id, exc_info=True)
 
     if out.get("killed"):
         # If the subprocess was SIGKILLed before it could finalize the
@@ -153,7 +159,10 @@ def dispatch_forced_tool_call(
                         },
                     )
         except Exception:
-            pass
+            # Rows left at "running" never clear in the UI — log loudly.
+            _log.warning(
+                "failed to mark running rows cancelled for session %s",
+                session_id, exc_info=True)
         return {
             "runtime_msg_id": None,
             "ok": False,
@@ -186,7 +195,9 @@ def dispatch_forced_tool_call(
                         },
                     )
         except Exception:
-            pass
+            _log.warning(
+                "failed to mark running rows errored for session %s",
+                session_id, exc_info=True)
         return {"runtime_msg_id": None, "ok": False, "error": out["error"]}
     return {
         "runtime_msg_id": out.get("runtime_msg_id"),

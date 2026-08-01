@@ -119,10 +119,11 @@ def run_query(
     from openprogram.functions.permission_rule import load_merged_rules as _load_merged_rules
 
     _s._register_active_runtime(session_id, runtime)
+    # Fresh token for this turn: registering it retires whatever the
+    # previous turn left behind, so a stop aimed at that turn cannot
+    # short-circuit this one.
     _chat_cancel_event = threading.Event()
     _s._register_cancel_event(session_id, _chat_cancel_event)
-    if _s._is_cancelled(session_id):
-        _chat_cancel_event.set()
 
     tool_calls_collected: list[dict] = []
     # Live block accumulator. Each tool_use opens a new

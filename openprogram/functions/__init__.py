@@ -110,10 +110,34 @@ DEFAULT_TOOLS: list[str] = [
 ]
 
 
-# 常驻工具：schema 一直带在请求里（不 defer）。= DEFAULT_TOOLS 的安全常用集
-# + tool_search 引导器。full 里其余工具默认 defer，用到时 tool_search 加载。
+# DEFAULT_TOOLS 里**可用但不常驻**的工具：仍在 default 预设中（模型随时能用），
+# 但完整 JSON Schema 不进每轮请求，只在 deferred catalog 里占一行 name+description，
+# 模型按需 tool_search 加载。可用性与常驻性是两件事——这个集合把它们解耦。
+#
+# 入选标准：schema 大 + 调用频率低。四个大头合计 ~2.5k token，占常驻 ~7.9k 的三分之一，
+# 而绝大多数会话一次都不调它们。
+DEFERRED_DEFAULT_TOOLS: set = {
+    # 1052 tok。进 plan mode 有两条路：用户在 web chip / TUI 选 "Plan mode"
+    # 档位（agent/plan_mode.py sync_tier，不经此工具），或模型自己判断要规划。
+    # 后者罕见，且一旦 plan mode 激活，plan_mode 系统提示块会明确点名
+    # exit_plan_mode，模型据此 tool_search 加载即可。UI 入口不依赖它常驻。
+    "enter_plan_mode",
+    # 644 tok。只在 plan mode 内有意义；plan 提示块已指名要调它。
+    "exit_plan_mode",
+    # 1172 tok，最大单个 schema。浏览器自动化是明确的小众意图，用户说
+    # "打开网页/截图" 时模型再加载，日常编码会话完全用不到。
+    "playwright_browser",
+    # 378 tok。跨 session/branch 通信，多分支协作场景才用得上。
+    "message_branch",
+}
+
+# 常驻工具：schema 一直带在请求里（不 defer）。= DEFAULT_TOOLS 减去上面的冷门大块，
+# 再加 tool_search 引导器（它是加载其余工具的唯一入口，永不 defer）。
+# full 里 DEFAULT_TOOLS 之外的工具也默认 defer。
 # 这是治「exec 默认全塞 ~14000 token」的唯一旋钮 —— 保守取，宁多勿缺。
-RESIDENT_TOOLS: set = set(DEFAULT_TOOLS) | {"tool_search"}
+RESIDENT_TOOLS: set = (
+    (set(DEFAULT_TOOLS) - DEFERRED_DEFAULT_TOOLS) | {"tool_search"}
+)
 
 
 # Hermes-style named presets. ``default`` is the always-on minimal
@@ -544,6 +568,7 @@ __all__ = [
     "tool_search",
     # Layer 6 — default deferral of cold full-toolset tools
     "RESIDENT_TOOLS",
+    "DEFERRED_DEFAULT_TOOLS",
     "apply_default_deferral",
 ]
 

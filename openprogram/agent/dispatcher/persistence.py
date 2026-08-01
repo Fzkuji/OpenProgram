@@ -21,11 +21,14 @@ See docs/design/runtime/dispatcher-split.md.
 """
 from __future__ import annotations
 
+import logging
 import json
 import time
 
 from openprogram.agent.internals._model_tools import is_anthropic_family as _is_anthropic_family
 from openprogram.agent.internals._turn_lifecycle import mark_terminal_status as _mark_terminal_status
+
+_log = logging.getLogger(__name__)
 
 
 def persist_assistant_message(
@@ -91,7 +94,9 @@ def persist_assistant_message(
                 has_usage = True
                 token_source = "anthropic_count_api"
         except Exception:
-            pass
+            # Fallback token counting is a network call; on failure the turn
+            # keeps the provider-reported (or estimated) usage.
+            _log.debug("anthropic token count fallback failed", exc_info=True)
     assistant_msg = {
         "id": assistant_msg_id,
         "role": "assistant",
@@ -197,7 +202,9 @@ def persist_assistant_message(
         if _mf:
             assistant_msg["render_manifest"] = _mf
     except Exception:
-        pass
+        # Without the manifest an exact replay of this prompt is not
+        # reproducible, but the turn itself is unaffected.
+        _log.debug("render manifest capture failed", exc_info=True)
     if _placeholder_inserted:
         # Update the placeholder row in place — same id, now with
         # final content + tool_calls/blocks. Writes Call fields

@@ -142,6 +142,29 @@ ROOT
 | LLM 重试 | llm1 (P=user1) | llm1' (P=user1) | predecessor |
 | 工具重试 | code (C=llm1) | code' (C=llm1) | caller |
 
+### 失败与重试
+
+**error 是终态，不是缺失态。** 抛异常的一轮和成功的一轮走完全相同的收尾：节点以
+`status=error` 写入，本轮提交进 git，head 停在这个 error 节点上。失败的这一轮是会话
+里发生过的事实，记录里就得这么写。
+
+在错误路径上跳过收尾，会恰好在出问题的地方给 git 时间线留一个洞——而那正是历史最值
+得留存的位置。它还会让重试从一个从未写过 commit 的 predecessor 上分叉。用户取消同样
+按终态收尾，写 `status=cancelled`。
+
+错误路径上仍然执行的收尾步骤，是那些维持记录完整性的步骤：git 提交、项目提交、
+shadow-git 提交、快照淘汰。那些以"已有完整回复"为前提的步骤——context-commit 回填、
+用量反馈、自动起标题——对没有回复的一轮没有意义，跳过。
+
+重试不需要单独机制。它就是一次普通 fork：重试节点取失败节点的 predecessor，这一点使
+它成为兄弟而非后继。由普通规则直接推出两个结果：
+
+- **失败的那条线保留。** error 节点留在图里且仍可达。切到它那条分支就能看到当时到底
+  发生了什么。
+- **失败的那条线不进入重试的上下文。** `render_context` 沿活跃分支行走，error 节点不
+  在这条分支上。重试永远看不到它正在重试的那个错误。这里没有任何按 status 的过滤，分
+  支隔离本身已经做到了。
+
 ### Spawn
 
 `SessionStore.spawn_branch(session_id, caller_node_id, *, source, name=…)` 是开

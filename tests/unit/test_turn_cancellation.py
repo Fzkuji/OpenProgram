@@ -1,0 +1,287 @@
+"""Per-turn cancellation tokens.
+
+The invariant under test: a stop trips the token of the turn running *now*
+and nothing else. A token retired at turn end can never affect the next
+turn, which is what removes the need for any cleanup-time flag reset.
+
+See docs/reference/design/runtime/execution/turn-cancellation.md.
+"""
+from __future__ import annotations
+
+import threading
+
+import pytest
+
+from openprogram.webui import _pause_stop as ps
+from openprogram.agentic_programming.function import CancelledError
+
+
+@pytest.fixture(autouse=True)
+def _clean_registry():
+    """Each test starts and ends with an empty token registry."""
+    with ps._cancel_flags_lock:
+        ps._current_tokens.clear()
+    yield
+    with ps._cancel_flags_lock:
+        ps._current_tokens.clear()
+
+
+# --- token lifecycle -------------------------------------------------------
+
+def test_no_turn_means_nothing_to_cancel():
+    """Between turns a stop is a no-op, not a flag that poisons what runs next."""
+    ps.mark_cancelled("s1")
+    assert ps.is_cancelled("s1") is False
+
+
+def test_cancel_trips_the_running_turn():
+    token = ps.begin_turn("s1")
+    ps.mark_cancelled("s1")
+    assert token.is_cancelled() is True
+    assert ps.is_cancelled("s1") is True
+
+
+def test_stop_does_not_leak_into_the_next_turn():
+    """The regression this design exists to prevent."""
+    first = ps.begin_turn("s1")
+    ps.mark_cancelled("s1")
+    assert first.is_cancelled() is True
+
+    ps.end_turn("s1", first)
+    second = ps.begin_turn("s1")
+
+    assert second.is_cancelled() is False
+    assert ps.is_cancelled("s1") is False
+
+
+def test_late_stop_cannot_reach_a_finished_turn():
+    """A stop racing turn teardown lands on a retired token and dies there."""
+    token = ps.begin_turn("s1")
+    ps.end_turn("s1", token)
+
+    ps.mark_cancelled("s1")
+
+    assert token.is_cancelled() is False
+    assert token.retired is True
+
+
+def test_retired_token_reports_cancel_refused():
+    token = ps.begin_turn("s1")
+    assert token.cancel() is True
+    token.retire()
+    assert token.cancel() is False
+
+
+def test_begin_turn_retires_the_previous_token():
+    """A turn that never called end_turn cannot hold the session hostage."""
+    stale = ps.begin_turn("s1")
+    fresh = ps.begin_turn("s1")
+
+    assert stale.retired is True
+    assert fresh.retired is False
+    assert ps.current_token("s1") is fresh
+
+
+def test_end_turn_does_not_retire_a_successor():
+    """Late teardown from turn N must not kill turn N+1."""
+    first = ps.begin_turn("s1")
+    second = ps.begin_turn("s1")
+
+    ps.end_turn("s1", first)  # turn 1 finishing late
+
+    assert ps.current_token("s1") is second
+    assert second.retired is False
+
+
+def test_sessions_are_independent():
+    a = ps.begin_turn("sA")
+    b = ps.begin_turn("sB")
+    ps.mark_cancelled("sA")
+
+    assert a.is_cancelled() is True
+    assert b.is_cancelled() is False
+
+
+# --- the signal every layer checks ----------------------------------------
+
+def test_registered_event_is_the_token_event():
+    """Call sites owning an Event still get one token everything shares."""
+    ev = threading.Event()
+    ps.register_cancel_event("s1", ev)
+
+    ps.mark_cancelled("s1")
+
+    assert ev.is_set() is True, "the LLM call / tool layer waits on this Event"
+    assert ps.is_cancelled("s1") is True
+
+
+def test_tripping_the_event_directly_is_visible_as_cancelled():
+    ev = threading.Event()
+    ps.register_cancel_event("s1", ev)
+    ev.set()
+    assert ps.is_cancelled("s1") is True
+
+
+def test_clear_cancel_retires_rather_than_resets():
+    ev = threading.Event()
+    ps.register_cancel_event("s1", ev)
+    ps.mark_cancelled("s1")
+
+    ps.clear_cancel("s1")
+
+    assert ps.current_token("s1") is None
+    assert ps.is_cancelled("s1") is False
+
+
+# --- enforcement: every frame in the turn checks the one token -------------
+
+def test_cancel_hook_raises_inside_a_cancelled_turn():
+    """@agentic_function entry and Runtime.exec go through this hook."""
+    ps.begin_turn("s1")
+    tok = ps.set_current_session_id("s1")
+    try:
+        ps._cancel_hook()  # not cancelled yet → no raise
+        ps.mark_cancelled("s1")
+        with pytest.raises(CancelledError):
+            ps._cancel_hook()
+    finally:
+        ps.reset_current_session_id(tok)
+
+
+def test_check_cancelled_matches_the_hook():
+    """Long-running tool bodies poll this between heavy stages."""
+    ps.begin_turn("s1")
+    tok = ps.set_current_session_id("s1")
+    try:
+        ps.mark_cancelled("s1")
+        with pytest.raises(CancelledError):
+            ps.check_cancelled()
+    finally:
+        ps.reset_current_session_id(tok)
+
+
+def test_hook_is_silent_after_the_turn_ends():
+    """Work continuing past turn end is not killed by that turn's stop."""
+    token = ps.begin_turn("s1")
+    tok = ps.set_current_session_id("s1")
+    try:
+        ps.mark_cancelled("s1")
+        ps.end_turn("s1", token)
+        ps.check_cancelled()  # must not raise
+    finally:
+        ps.reset_current_session_id(tok)
+
+
+def test_hook_is_a_noop_with_no_session_bound():
+    """CLI / tests / headless run outside any turn."""
+    ps.check_cancelled()
+
+
+def test_context_bound_token_wins_over_the_registry():
+    """A nested frame checks its own turn's token, not whatever is current.
+
+    Cancelling the frame's own turn must stop that frame even though the
+    session registry has already moved on to a newer turn.
+    """
+    mine = ps.begin_turn("s1")
+    ps.mark_cancelled("s1")           # stop aimed at THIS turn
+
+    tok_t = ps._current_token.set(mine)
+    tok_s = ps.set_current_session_id("s1")
+    try:
+        # The session hands over to a fresh turn while this frame is live.
+        ps.begin_turn("s1")
+        assert ps.is_cancelled("s1") is False, "registry moved to a clean turn"
+
+        # The frame still belongs to the cancelled turn, so it must abort.
+        with pytest.raises(CancelledError):
+            ps.check_cancelled()
+    finally:
+        ps.reset_current_session_id(tok_s)
+        ps._current_token.reset(tok_t)
+
+
+def test_a_new_turn_does_not_cancel_a_frame_of_the_old_one():
+    """The mirror case: an uncancelled frame stays uncancelled."""
+    mine = ps.begin_turn("s1")
+    tok_t = ps._current_token.set(mine)
+    tok_s = ps.set_current_session_id("s1")
+    try:
+        ps.begin_turn("s1")
+        ps.mark_cancelled("s1")   # stops the NEW turn, not this frame
+        ps.check_cancelled()      # must not raise
+    finally:
+        ps.reset_current_session_id(tok_s)
+        ps._current_token.reset(tok_t)
+
+
+# --- no thread leak --------------------------------------------------------
+
+def test_cancel_bridge_thread_exits_when_the_turn_ends():
+    """The dispatcher's thread→asyncio bridge must not park forever.
+
+    Mirrors the bridge in dispatcher._run_loop_blocking: a watcher thread
+    waits on the turn's Event and exits once the turn is over.
+    """
+    cancel_event = threading.Event()
+    turn_over = threading.Event()
+    fired: list[bool] = []
+
+    def _watch():
+        while not (cancel_event.wait(0.01) or turn_over.is_set()):
+            pass
+        if cancel_event.is_set():
+            fired.append(True)
+
+    t = threading.Thread(target=_watch, name="turn-cancel-bridge")
+    t.start()
+
+    turn_over.set()          # the turn finished without being cancelled
+    t.join(timeout=2.0)
+
+    assert not t.is_alive(), "bridge thread leaked past the end of the turn"
+    assert fired == [], "bridge must not report a cancel that never happened"
+
+
+def test_cancel_bridge_thread_reports_a_real_cancel():
+    cancel_event = threading.Event()
+    turn_over = threading.Event()
+    fired: list[bool] = []
+
+    def _watch():
+        while not (cancel_event.wait(0.01) or turn_over.is_set()):
+            pass
+        if cancel_event.is_set():
+            fired.append(True)
+
+    t = threading.Thread(target=_watch, name="turn-cancel-bridge")
+    t.start()
+    cancel_event.set()
+    t.join(timeout=2.0)
+
+    assert not t.is_alive()
+    assert fired == [True]
+
+
+def test_many_turns_leave_no_live_threads():
+    """Thread count returns to baseline after a run of turns."""
+    baseline = threading.active_count()
+    threads = []
+    for _ in range(20):
+        cancel_event = threading.Event()
+        turn_over = threading.Event()
+
+        def _watch(ce=cancel_event, to=turn_over):
+            while not (ce.wait(0.01) or to.is_set()):
+                pass
+
+        t = threading.Thread(target=_watch, name="turn-cancel-bridge")
+        t.start()
+        threads.append((t, turn_over))
+
+    for t, turn_over in threads:
+        turn_over.set()
+    for t, _ in threads:
+        t.join(timeout=2.0)
+
+    assert threading.active_count() <= baseline, "threads leaked across turns"

@@ -17,14 +17,27 @@
 
 ## 打包 / 分发
 
-3. **pip wheel 缺数据文件**（`pyproject.toml:174` 无 package-data，也无
-   MANIFEST.in）：25 个 `provider.json`、`claude_models.json`、静态资源全
-   不进 wheel，pip 安装的用户 provider 列表为空且无报错
-   （`providers/_provider_meta.py:94` 静默吞异常）。修法明确（加
-   package-data + 把静默吞改成告警），但当前唯一分发方式是源码检出，
-   属于"何时值得修"的问题。
-4. **`requirements.txt` 与 `pyproject.toml` 手工双维护**，注释自认
-   "keep in sync"。建议删掉 requirements.txt 或改为由 pyproject 生成。
+3. ~~**pip wheel 缺数据文件**~~ —— 已修。`pyproject.toml` 现有
+   `[tool.setuptools.package-data]`，49 个运行时数据文件（27 个
+   `provider.json`、2 个 `claude_models.json`、2 个 bundled SKILL.md、
+   webui 静态资源与 `*_meta.json`）进 wheel；`packages.find` 排除
+   `openprogram.functions.agentics.*`（各 harness 是独立仓库，由
+   `openprogram programs install` 拉取）。干净 venv 装 wheel 后
+   `openprogram --help` / `web --help` 正常，22 个 provider 可见。
+
+   遗留：`providers/_provider_meta.py` 读 provider.json 时仍静默吞异常，
+   数据文件损坏（而非缺失）依然表现为"provider 列表为空且无报错"。
+   与打包无关，属独立的错误处理问题。
+
+   不打包的两项，均为构建产物且已 gitignore：`web/out/`（Next.js 导出，
+   `webui/frontend.py:ensure_frontend_built` 在缺失时用 `npx next build`
+   重建）、`docs/_site/`（文档站，`webui/routes/docs.py` 按 mtime 重建）。
+   两者都由仓库根目录解析路径（`parents[2]` / `parents[3]`），装进
+   site-packages 后取不到——要支持"pip 装完即可用 web UI"，需先把它们
+   改成包内资源。属独立课题。
+4. ~~**`requirements.txt` 与 `pyproject.toml` 手工双维护**~~ —— 已修。
+   `requirements.txt` 改成一行 `-e .`（外加说明注释），pyproject 成为
+   依赖的唯一真相源。全仓无任何 README / 文档 / CI 引用被破坏。
 
 ## 前端
 

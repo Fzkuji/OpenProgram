@@ -21,11 +21,14 @@ we track the split so an engine can tell "we're sending 100K tokens but
 from __future__ import annotations
 
 import json
+import logging
 import time
 from threading import Lock
 from typing import Any, Optional
 
 from openprogram.context.types import UsageState
+
+_log = logging.getLogger(__name__)
 
 
 class UsageTracker:
@@ -198,8 +201,12 @@ class UsageTracker:
                 **{self.storage_key: json.dumps(data, default=str)},
             )
         except Exception:
-            # Persistence is best-effort; in-memory cache stays correct
-            pass
+            # Persistence is best-effort; the in-memory cache stays correct,
+            # so the turn continues on accurate numbers either way.
+            _log.debug(
+                "usage persistence failed for session %s", session_id,
+                exc_info=True,
+            )
 
 
 # Process-wide singleton — like a registry, but with state.

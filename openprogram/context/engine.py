@@ -44,6 +44,7 @@ subclasses commonly want to override on its own.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from typing import Any, Callable, Optional
 
@@ -60,6 +61,8 @@ from openprogram.context.types import (
 )
 from openprogram.context.usage import UsageTracker, default_tracker as _usage_tracker
 
+
+_log = logging.getLogger(__name__)
 
 EventCallback = Callable[[dict], None]
 
@@ -254,12 +257,13 @@ class DefaultContextEngine(ContextEngine):
             decision.append(f"usage:source={usage.source}")
 
         # 6. Note any active summary id stamped on session.extra_meta.
-        summary_id = None
-        try:
-            extra_meta = (session or {}).get("extra_meta") or {}
-            summary_id = extra_meta.get("_last_summary_id")
-        except Exception:
-            pass
+        # ``session`` may be None or carry a non-dict extra_meta from an
+        # older record; both are handled without a guard.
+        extra_meta = (session or {}).get("extra_meta")
+        summary_id = (
+            extra_meta.get("_last_summary_id")
+            if isinstance(extra_meta, dict) else None
+        )
 
         return TurnPrep(
             system_prompt=system_prompt,
@@ -351,7 +355,12 @@ class DefaultContextEngine(ContextEngine):
                     _last_compacted_at=time.time(),
                 )
             except Exception:
-                pass
+                # Losing this silently makes the next turn recompact the
+                # same range, so it is worth a log line.
+                _log.warning(
+                    "failed to persist compaction summary state for session %s",
+                    session_id, exc_info=True,
+                )
             self.usage.record_compaction(session_id)
 
         new_history = db.get_branch(session_id) or history
@@ -389,17 +398,14 @@ class DefaultContextEngine(ContextEngine):
                 "used_previous_summary": result.used_previous_summary,
             }})
 
-        # 事件层 tap（懒 import 防循环）
-        try:
-            from openprogram.agent.event_bus import emit_safe
-            emit_safe("context.compacted", "system",
-                      {"ok": result.ok,
-                       "tokens_before": result.tokens_before,
-                       "tokens_after": result.tokens_after,
-                       "reason": result.reason},
-                      {"session": session_id})
-        except Exception:
-            pass
+        # 事件层 tap（懒 import 防循环）。emit_safe 自己吞异常，无需再包一层。
+        from openprogram.agent.event_bus import emit_safe
+        emit_safe("context.compacted", "system",
+                  {"ok": result.ok,
+                   "tokens_before": result.tokens_before,
+                   "tokens_after": result.tokens_after,
+                   "reason": result.reason},
+                  {"session": session_id})
 
         return result
 
@@ -431,14 +437,11 @@ class DefaultContextEngine(ContextEngine):
                 "budget_pct": pct,
                 "source": commit.source,
             }})
-            # 事件层 tap（懒 import 防循环）
-            try:
-                from openprogram.agent.event_bus import emit_safe
-                emit_safe("context.compaction_recommended", "system",
-                          {"budget_pct": round(pct, 3)},
-                          {"session": session_id})
-            except Exception:
-                pass
+            # 事件层 tap（懒 import 防循环）。emit_safe 自己吞异常。
+            from openprogram.agent.event_bus import emit_safe
+            emit_safe("context.compaction_recommended", "system",
+                      {"budget_pct": round(pct, 3)},
+                      {"session": session_id})
 
     # ---- Internals -----------------------------------------------------
 

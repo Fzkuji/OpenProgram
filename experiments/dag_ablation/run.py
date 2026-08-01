@@ -104,6 +104,62 @@ def unsupported_vars(variant: str) -> list[str]:
     return sorted(k for k in VARIANTS[variant] if k not in SUPPORTED_ENV)
 
 
+# ------------------------------------------------------------- no-script mode
+#
+# The four ``log_*`` tasks ask questions ABOUT a large log fixture ("which
+# endpoint is slowest", "dedupe these errors"). An agent has two honest ways
+# to answer: read the log through the harness (every line lands in context —
+# what the DAG machinery is actually being measured on), or write a throwaway
+# Python/awk script and read only its printed answer (context stays flat, the
+# harness is bypassed).
+#
+# Both are legitimate agent behaviour, so we measure BOTH rather than picking
+# one: the default variant leaves the choice to the model, and --no-script
+# forbids the scripting escape hatch so the in-context path is exercised.
+# Comparing the two is the point — see README "Two readings of the log tasks".
+
+NO_SCRIPT_TASKS = frozenset({
+    "log_dedupe_report", "log_grep_refactor", "log_mine_errors", "log_slowest",
+})
+
+# Appended verbatim to the task instruction. Bans computing the answer
+# out-of-context without banning the tools outright (the agent still needs
+# bash/read to LOOK at the log — it just cannot make a program do the
+# aggregation for it).
+NO_SCRIPT_SUFFIX = """
+
+## Additional constraint for this run
+
+Do not write, generate, or execute any script, program, or one-liner (Python,
+shell, awk, sed, jq, or otherwise) whose purpose is to compute, aggregate,
+count, sort, or summarize the answer for you. Do not pipe log contents through
+any command that reduces them (grep -c, sort, uniq, wc, head applied to get the
+result, etc.).
+
+You must read the relevant log content yourself and work out the answer by
+reading it. Use plain file reads to see the data. Deliverable files that the
+task asks you to write are of course still expected — the ban is on
+outsourcing the ANALYSIS to a program, not on producing the requested output.
+"""
+
+
+NO_SCRIPT_SUFFIX_LABEL = "+no-script"
+
+
+def apply_no_script(task: str, prompt: str, enabled: bool) -> str:
+    """Append the no-script constraint for the log_* tasks when enabled."""
+    if enabled and task in NO_SCRIPT_TASKS:
+        return prompt.rstrip() + "\n" + NO_SCRIPT_SUFFIX
+    return prompt
+
+
+def variant_label(variant: str, constrained: bool) -> str:
+    """Variant name as recorded in results — suffixed when the row actually
+    carried the no-script constraint. Keeps the two readings of a log task
+    from colliding under one key when results are grouped by variant."""
+    return f"{variant}{NO_SCRIPT_SUFFIX_LABEL}" if constrained else variant
+
+
 # ---------------------------------------------------------------- tasks
 
 def list_tasks() -> list[str]:
@@ -263,12 +319,22 @@ def collect_usage(db_path: str, t0: float, t1: float) -> dict:
 
 def run_trial(task: str, variant: str, model: str | None, trial: int,
               *, dry_run: bool, reference: bool, timeout: int,
-              keep: bool) -> dict:
+              keep: bool, no_script: bool = False) -> dict:
     prompt = open(os.path.join(TASKS_DIR, task, "task.md")).read()
+    prompt = apply_no_script(task, prompt, no_script)
     workdir = tempfile.mkdtemp(prefix=f"dagabl-{task}-")
     profile = f"dagabl{uuid.uuid4().hex[:10]}"
+    # The suffix only lands on the log_* tasks, so a --no-script sweep over
+    # "all" produces rows where some tasks ran unmodified. Record what THIS
+    # row actually got, not what the flag asked for, so the analysis never
+    # has to re-derive it.
+    constrained = no_script and task in NO_SCRIPT_TASKS
     row: dict = {
-        "task": task, "variant": variant, "model": model, "trial": trial,
+        "task": task,
+        "variant": variant_label(variant, constrained),
+        "base_variant": variant,
+        "no_script": constrained,
+        "model": model, "trial": trial,
         "mode": "reference" if reference else ("dry-run" if dry_run else "live"),
         "unsupported_env": unsupported_vars(variant),
         "profile": profile, "started_at": time.time(),
@@ -344,6 +410,11 @@ def main(argv=None) -> int:
                     help="overlay the reference solution and grade it; "
                          "validates the graders, no LLM")
     ap.add_argument("--keep", action="store_true", help="keep temp workdirs")
+    ap.add_argument("--no-script", action="store_true",
+                    help="forbid computing log_* answers with a script, so the "
+                         "agent must read the log in context. Only affects the "
+                         "four log_* tasks; their rows get the "
+                         f"'{NO_SCRIPT_SUFFIX_LABEL}' variant suffix.")
     ap.add_argument("--i-know-this-costs-money", action="store_true",
                     dest="paid", help="required for a real billed run")
     args = ap.parse_args(argv)
@@ -370,8 +441,9 @@ def main(argv=None) -> int:
 
     os.makedirs(args.out, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
+    variant_tag = args.variant + ("_no-script" if args.no_script else "")
     path = os.path.join(args.out,
-                        f"{stamp}_{args.variant}_{args.task.replace(',', '+')}.jsonl")
+                        f"{stamp}_{variant_tag}_{args.task.replace(',', '+')}.jsonl")
 
     n_ok = 0
     with open(path, "w") as f:
@@ -379,11 +451,12 @@ def main(argv=None) -> int:
             for trial in range(args.trials):
                 row = run_trial(task, args.variant, args.model, trial,
                                 dry_run=args.dry_run, reference=args.reference,
-                                timeout=args.timeout, keep=args.keep)
+                                timeout=args.timeout, keep=args.keep,
+                                no_script=args.no_script)
                 f.write(json.dumps(row) + "\n")
                 f.flush()
                 n_ok += row["score"] >= 1.0
-                print(f"{task:22} {args.variant:14} trial={trial} "
+                print(f"{task:22} {row['variant']:14} trial={trial} "
                       f"score={row['score']:.2f} "
                       f"wall={row.get('wall_s', 0):.1f}s "
                       f"in={row.get('usage', {}).get('input_tokens', 0)} "

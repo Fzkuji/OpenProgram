@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import threading
 import time
@@ -26,6 +27,8 @@ from typing import Any, Iterable, Optional
 
 from openprogram.agent.event_bus import emit_safe
 from openprogram.agent.session_config import reasoning_from_config, SessionRunConfig
+
+_log = logging.getLogger(__name__)
 
 
 # Type aliases + the parent sentinel + the TurnRequest / TurnResult
@@ -59,7 +62,7 @@ from openprogram.agent.dispatcher.runtime_attach import _wrap_agentic_runtime_bl
 # finalize.py / persistence.py hold phase-6 bookkeeping and phase-5
 # assistant persistence; called by process_user_turn (internal — not
 # re-exported for external callers).
-from openprogram.agent.dispatcher.finalize import finalize_turn
+from openprogram.agent.dispatcher.finalize import finalize_error_turn, finalize_turn
 from openprogram.agent.dispatcher.persistence import persist_assistant_message
 
 # Lifecycle helpers (placeholder insert / status flip / error fold) —
@@ -147,7 +150,9 @@ def process_user_turn(
                 session_id=_cur.session_id or req.session_id,
             ))
     except Exception:
-        pass
+        # Usage metering is observability, never a reason to fail a turn;
+        # a miss only mis-attributes this turn's token counts.
+        _log.debug("usage context binding failed", exc_info=True)
 
     # Plan-mode session context: expose ``req.session_id`` so the
     # enter_plan_mode / exit_plan_mode tool bodies can flip the
@@ -281,7 +286,12 @@ def process_user_turn(
                 output="", metadata={"display": "root"},
             ))
     except Exception:
-        pass
+        # Without a root the session graph is disconnected, so this is a
+        # real defect even though the turn can still proceed.
+        _log.warning(
+            "failed to seed ROOT node for session %s",
+            req.session_id, exc_info=True,
+        )
 
     if not req.user_already_persisted:
         # Write the user node as a Call directly — same shape the DAG
@@ -492,7 +502,9 @@ def process_user_turn(
     try:
         db.update_session(req.session_id, status="running")
     except Exception:
-        pass
+        _log.warning(
+            "failed to mark session %s running", req.session_id, exc_info=True,
+        )
 
     # 4. Run the agent loop. Errors below get caught and reported as
     #    a system message so the conversation isn't left in a stuck
@@ -551,35 +563,39 @@ def process_user_turn(
                     _tname = meta.get("tool") or evt.get("tool") or ""
                     if _tname in _agentic_tool_names:
                         return
-                    try:
-                        from openprogram.agent.session_db import (
-                            default_db as _db,
-                        )
-                        from openprogram.context.nodes import Call, ROLE_CODE
-                        from openprogram.store import GraphStoreShim
+                    from openprogram.agent.session_db import (
+                        default_db as _db,
+                    )
+                    from openprogram.context.nodes import Call, ROLE_CODE
+                    from openprogram.store import GraphStoreShim
 
-                        _tool_name = (meta.get("tool")
-                                      or evt.get("tool") or "")
-                        _node = Call(
-                            id=f"{assistant_msg_id}_t_{tid}",
-                            created_at=time.time(),
-                            role=ROLE_CODE,
-                            name=_tool_name,
-                            input=meta.get("input") or {},
-                            output=str(evt.get("result") or ""),
-                            caller=assistant_msg_id,
-                            metadata={
-                                "tool_call_id": tid,
-                                "is_error": bool(evt.get("is_error")),
-                            },
-                        )
-                        GraphStoreShim(
-                            _db(), req.session_id,
-                        ).append(_node)
-                    except Exception:
-                        pass
+                    _tool_name = (meta.get("tool")
+                                  or evt.get("tool") or "")
+                    _node = Call(
+                        id=f"{assistant_msg_id}_t_{tid}",
+                        created_at=time.time(),
+                        role=ROLE_CODE,
+                        name=_tool_name,
+                        input=meta.get("input") or {},
+                        output=str(evt.get("result") or ""),
+                        caller=assistant_msg_id,
+                        metadata={
+                            "tool_call_id": tid,
+                            "is_error": bool(evt.get("is_error")),
+                        },
+                    )
+                    GraphStoreShim(
+                        _db(), req.session_id,
+                    ).append(_node)
             except Exception:
-                pass
+                # Event-tap boundary: this runs inside the provider's stream
+                # callback, so raising here would abort a turn that is
+                # otherwise fine. A dropped tool node costs history fidelity,
+                # which is worth a log line.
+                _log.warning(
+                    "failed to persist tool node for session %s",
+                    req.session_id, exc_info=True,
+                )
 
         # _agentic_tool_names is filled by _run_loop_blocking once it
         # resolves the tool list — used below in step 5 to filter
@@ -650,7 +666,24 @@ def process_user_turn(
         try:
             db.update_session(req.session_id, head_id=head_for_next, status="failed")
         except Exception:
-            pass
+            _log.warning(
+                "failed to record error status for session %s",
+                req.session_id, exc_info=True,
+            )
+        # An error is a terminal state, not a missing one: finalize the turn
+        # so the error node gets the same bookkeeping (context commit, git
+        # commit, snapshot eviction) a successful turn gets. Without this the
+        # git timeline has a hole exactly where something went wrong, and a
+        # retry forks from a predecessor whose commit was never written.
+        finalize_error_turn(
+            db=db,
+            req=req,
+            session=session,
+            assistant_msg_id=head_for_next or assistant_msg_id,
+            _project_baseline=_project_baseline,
+            on_event=on_event,
+            error_text=err_text,
+        )
         # Classify the failure into the structured taxonomy (an LLMError
         # carries its own reason; anything else is classified) so the webui can
         # render a retryable rate-limit differently from a fatal auth/context
@@ -659,6 +692,7 @@ def process_user_turn(
             from openprogram.providers.utils.errors import taxonomy_fields
             _e_reason, _e_retryable, _e_retry_after = taxonomy_fields(e)
         except Exception:
+            _log.debug("error taxonomy classification failed", exc_info=True)
             _e_reason = _e_retryable = _e_retry_after = None
         on_event({"type": "chat_response",
                   "data": {"type": "error", "session_id": req.session_id,
@@ -682,6 +716,8 @@ def process_user_turn(
         # exception, AND inside the early-return above (finally fires
         # before return is actually executed). Guarded because attach
         # may have silently failed (no provider configured).
+        # ValueError is what ContextVar.reset raises when the token came
+        # from a different context — the only failure worth tolerating here.
         try:
             if _runtime_token is not None:
                 _current_runtime_var.reset(_runtime_token)
@@ -690,13 +726,13 @@ def process_user_turn(
             if _turn_id_token is not None:
                 _turn_id_var.reset(_turn_id_token)
             if _worktree_token is not None:
-                try:
-                    from openprogram.worktree.context import reset_worktree
-                    reset_worktree(_worktree_token)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                from openprogram.worktree.context import reset_worktree
+                reset_worktree(_worktree_token)
+        except ValueError:
+            _log.debug(
+                "context var teardown ran in a foreign context for session %s",
+                req.session_id, exc_info=True,
+            )
 
     # 5. Persist the assistant message (phase 5) — extracted to
     #    persistence.py (dispatcher-split step 5). Returns the
@@ -757,7 +793,10 @@ def process_user_turn(
         else:
             db.update_session(req.session_id, status="idle")
     except Exception:
-        pass
+        # A stuck "running" status is visible in the UI, so log it.
+        _log.warning(
+            "failed to mark session %s finished", req.session_id, exc_info=True,
+        )
 
     # 7. Final result event for clients that wait for the synchronous
     #    "the turn is done" signal.
@@ -914,7 +953,12 @@ def _run_loop_blocking(
                                    "session_id": req.session_id,
                                    "turns_removed": n_snipped}})
         except Exception:
-            pass
+            # Failing to snip means the oversized context goes to the model
+            # and the provider rejects it — worth knowing about.
+            _log.warning(
+                "history snip failed for session %s",
+                req.session_id, exc_info=True,
+            )
 
     # Auto-compact: when budget STILL crosses the threshold after
     # snip, run the full LLM summariser INLINE.
@@ -999,6 +1043,12 @@ def _run_loop_blocking(
     )
 
     # Async drain that forwards each AgentEvent → on_event envelope.
+    # Released once the drain loop is done so the cancel-bridge thread
+    # exits when the turn ends normally. Without it the thread parks on
+    # ``cancel_event.wait()`` for the life of the process — one leaked
+    # thread per turn.
+    _turn_over = threading.Event()
+
     async def _drain() -> tuple[str, dict, list[dict]]:
         loop_cancel = asyncio.Event()
         if cancel_event is not None:
@@ -1009,9 +1059,17 @@ def _run_loop_blocking(
             asyncio_loop = asyncio.get_running_loop()
 
             def _watch():
-                cancel_event.wait()
-                asyncio_loop.call_soon_threadsafe(loop_cancel.set)
-            threading.Thread(target=_watch, daemon=True).start()
+                while not (cancel_event.wait(0.1) or _turn_over.is_set()):
+                    pass
+                if cancel_event.is_set():
+                    try:
+                        asyncio_loop.call_soon_threadsafe(loop_cancel.set)
+                    except RuntimeError:
+                        # Loop already closed — the turn finished first.
+                        pass
+            threading.Thread(
+                target=_watch, daemon=True, name="turn-cancel-bridge",
+            ).start()
 
         # Single code path: history (trimmed of the new user_msg)
         # plus UserMessage prompt added by agent_loop exactly once.
@@ -1167,7 +1225,7 @@ def _run_loop_blocking(
                                             json.dumps(_args, default=str)
                                             if _args is not None else None
                                         )
-                                    except Exception:
+                                    except (TypeError, ValueError):
                                         _input = None
                                     ordered_blocks_out.append({
                                         "type": "tool",
@@ -1176,7 +1234,12 @@ def _run_loop_blocking(
                                         "input": _input,
                                     })
                         except Exception:
-                            pass
+                            # Provider block shapes vary; a normalisation miss
+                            # costs one rendered block, not the turn.
+                            _log.debug(
+                                "provider block normalisation failed",
+                                exc_info=True,
+                            )
 
         return "".join(final_text_parts).strip(), usage_total, tool_calls
 
@@ -1185,6 +1248,9 @@ def _run_loop_blocking(
     try:
         return loop.run_until_complete(_drain())
     finally:
+        # Let the cancel-bridge thread exit before the loop it would post to
+        # is gone.
+        _turn_over.set()
         loop.close()
 
 

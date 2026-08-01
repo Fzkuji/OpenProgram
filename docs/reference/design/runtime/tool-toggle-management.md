@@ -121,7 +121,7 @@ At run time this feeds the existing dict-override channel (`_model_tools.py:397-
 
 **C — the dict override supports layering web_search**:
 
-The dict-override branch (`_model_tools.py:397-421`) has to recognize a `web_search` key in addition to `enabled` / `disabled` / `allowed` / `toolset`. Because web_search is not in DEFAULT_TOOLS, storing the intent while the dict branch ignores the key would produce an expansion without web_search, and the toggle would do nothing. So C is a prerequisite for B: if web_search is missing after expansion, `agent_tools(names=[...]+["web_search"])` supplies it. A provider's builtin web_search (the `openai_codex.py:376` kind) is an alternative path whose availability varies by provider (see §7).
+The dict-override branch (`_model_tools.py:397-421`) has to recognize a `web_search` key in addition to `enabled` / `disabled` / `allowed` / `toolset`. Because web_search is not in DEFAULT_TOOLS, storing the intent while the dict branch ignores the key would produce an expansion without web_search, and the toggle would do nothing. So C is a prerequisite for B: if web_search is missing after expansion, `agent_tools(names=[...]+["web_search"])` supplies it. A provider's builtin web_search (the `openai_codex.py:376` kind) is an alternative path whose availability varies by provider (see §8).
 
 **`list[str]` means "the user hand-picked these"** (for example `["web_search"]` for a web-search-only session): `tools_override_from_config` passes it through verbatim and the list branch of `_model_tools.py` expands it by name. It no longer carries a materialized snapshot of all tools — "all tools" is always expanded live from `{enabled: True}` intent.
 
@@ -141,7 +141,102 @@ When the design is correct, all of the following hold at once, and they are also
 
 ---
 
-## 7. Known boundaries
+## 7. Deferred loading: availability is not residency
+
+§4.1 established that the tool array is billed on every turn. Toggles decide
+which tools are **available**; deferred loading decides which of those pay for
+their JSON Schema on every turn. These are separate axes, and conflating them
+is what made the resident cost grow with the tool count.
+
+### 7.1 The two states of an available tool
+
+An available tool ships in one of two forms:
+
+- **Resident** — full JSON Schema in the provider's tools array, every turn.
+- **Deferred** — one `name: description` line in the system prompt's catalog.
+  The model loads the schema on demand by calling `tool_search`, after which
+  it is resident for the remainder of the session.
+
+A deferred tool is **not disabled**. The model can still call it; it just has
+to load the schema first. A disabled tool is absent from both the array and
+the catalog and cannot be called at all.
+
+### 7.2 The split
+
+`split_tools_for_dispatch(tools)` (`functions/_runtime.py`) partitions the
+resolved toolset into `(provider_tools, catalog)` by reading each tool's
+`_defer` sidecar attribute, minus the session's already-loaded set:
+
+- not deferred → provider array
+- deferred and in the session's loaded set → provider array
+- deferred and not yet loaded → catalog
+
+The loaded set lives in a ContextVar (`install_loaded_deferred`, seeded per
+session by the dispatcher; `mark_deferred_loaded` adds to it from inside
+`tool_search`). The agent loop re-splits **before every provider call**, so a
+tool loaded mid-turn carries its schema on the next call within the same turn.
+
+### 7.3 Which tools are deferred
+
+`apply_default_deferral()` runs once at import and marks
+`_defer = name not in RESIDENT_TOOLS`. Two groups end up deferred:
+
+1. Everything in the `full` exposure whitelist but outside `DEFAULT_TOOLS` —
+   memory, worktree, browser, image, and the other cold tools. These were
+   never in the default set, so deferral costs nothing.
+2. `DEFERRED_DEFAULT_TOOLS` — tools that stay in `DEFAULT_TOOLS` (available
+   by default) but are big and rarely called, so they are not resident:
+
+   | tool | schema | why it is not resident |
+   |---|---|---|
+   | `playwright_browser` | ~1170 tok | Largest single schema. Browser automation is an explicit, narrow intent; a coding session never touches it. |
+   | `enter_plan_mode` | ~1050 tok | Plan mode is normally entered by the user via the tier chip / TUI (`plan_mode.sync_tier`), which does not go through this tool. The model entering plan mode on its own judgement is the rare path. |
+   | `exit_plan_mode` | ~640 tok | Only meaningful while plan mode is active, and the plan-mode prompt block names it explicitly, so the model knows to load it. |
+   | `message_branch` | ~380 tok | Cross-session/branch messaging, only used in multi-branch collaboration. |
+
+`tool_search` itself is never deferred — it is the only way to load anything
+else, so deferring it would be a deadlock. This is asserted twice: the
+`RESIDENT_TOOLS` union and an explicit guard in `apply_default_deferral`.
+
+Effect: the default resident array drops from ~7.9k to ~4.7k tokens per turn,
+a ~41% cut, with no tool becoming unavailable.
+
+### 7.4 Interaction with the cache prefix (§4.2)
+
+Loading a deferred tool appends to the tools array and therefore **rewrites
+the cache prefix**, exactly as §4.2 describes for any toolset change. This is
+a one-time cost per tool per session, paid only when the model actually needs
+the tool, and it is why the defer list targets tools that are rarely used
+rather than tools that are merely large: a tool loaded in most sessions would
+trade a fixed saving for a recurring cache miss.
+
+### 7.5 The catalog is an assembler component
+
+The catalog is not hand-appended by the dispatcher. It is a registered
+context component (`deferred_catalog`, L1 order 25, in `context/components.py`)
+built by `_build_deferred_catalog`, so the string the engine budgets is the
+string that ships. The component reads the tools from a ContextVar and returns
+empty when nothing is deferred.
+
+Budget accounting follows the same split: `_estimate_one_tool`
+(`context/budget.py`) prices a deferred tool at its catalog line and a
+resident tool at its full schema plus wrapper, so the reported context
+breakdown matches what is actually sent.
+
+### 7.6 Properties that should hold
+
+Regression coverage lives in `tests/context/test_tool_defer.py`:
+
+- no member of `DEFERRED_DEFAULT_TOOLS` appears in the resident array of a
+  fresh session, nor in `RESIDENT_TOOLS`
+- every one of them appears in the catalog, and in the assembled system prompt
+- `tool_search` moves a deferred tool into the provider array and out of the
+  catalog
+- `tool_search` is never deferred; `apply_default_deferral` is idempotent
+
+---
+
+## 8. Known boundaries
 
 - **Provider builtin web_search vs. web_search in the tool array** (an either/or in change C): codex / OpenAI Responses is confirmed to use the builtin `opts["web_search"]` (`openai_codex.py:376`); Anthropic and other providers need checking one by one. Until that is settled, the safe "web_search layered in as a tool name" path stays.
 - **The `allowed` semantics of the dict override**: today `allowed` (`_model_tools.py:406`) filters DEFAULT_TOOLS rather than the full set. This change does not extend that.
@@ -149,9 +244,9 @@ When the design is correct, all of the following hold at once, and they are also
 
 ---
 
-## 8. Implementation status
+## 9. Implementation status
 
-### 8.1 Carrying files
+### 9.1 Carrying files
 
 | File | What it carries |
 |---|---|
@@ -159,19 +254,19 @@ When the design is correct, all of the following hold at once, and they are also
 | `openprogram/webui/ws_actions/chat.py` | passes `tools_profile` / `web_search_flag` through as **intent** to `save_session_run_config(toolset=, web_search=)`; the single-element list from "tools=False + web_search=True → `["web_search"]`" is an explicit user pick, not a full snapshot |
 | `openprogram/agent/_model_tools.py` | web_search layering in the dict-override branch (`resolve_tools`, ~397-421): `_overlay_web_search` adds web_search after expansion via either the toolset or the names path when the intent asks for it and the result lacks it |
 
-### 8.2 Key design points (do not break)
+### 9.2 Key design points (do not break)
 
 - **Expansion must be deterministic**: the tool array is at the root of the prompt cache prefix, and any ordering wobble misses the whole cache. Today `agent_tools` returns in names/registry order, which is naturally stable, and `tests/unit/test_tool_expansion_deterministic.py` locks that in. **When changing `agent_tools` / `_filter_agent_tools` later, do not introduce `set()` iteration or dict churn that breaks the order** — the cache would fail silently (no error, just quietly more expensive).
 - **Never materialize "all tools" into a list stored on the session**: all tools are always expanded live from `{enabled: True}` intent. `list[str]` denotes only the few tools a user explicitly picked. This is the design's hard line.
 - **Do not touch history**: tool toggles govern what can be called next, and never filter or rewrite historical tool_use (that would break tool_use↔tool_result pairing and cause a provider 400).
 
-### 8.3 Tests (regression protection)
+### 9.3 Tests (regression protection)
 
 - `tests/unit/test_tool_expansion_deterministic.py` — deterministic expansion (stable cache prefix)
 - `tests/unit/test_session_config_tools_intent.py` — intent round-trip, verbatim pass-through of user-picked lists, and end to end: the expanded intent includes new tools (message_branch / list_sessions) and web_search layering takes effect
 - `tests/unit/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` — `tools=True` produces `{enabled:True}` intent rather than a list snapshot
 
-### 8.4 Extension points
+### 9.4 Extension points
 
-- **Provider builtin web_search** (§7): web_search currently uses the "layer in the tool name" path; once builtin support is confirmed per provider, it can be switched at `_overlay_web_search`.
+- **Provider builtin web_search** (§8): web_search currently uses the "layer in the tool name" path; once builtin support is confirmed per provider, it can be switched at `_overlay_web_search`.
 - **New intent dimensions** (restricting tools per channel, say): add a key to the dict intent and handle it in the dict branch of `resolve_tools` — do not revert to storing an expanded list.

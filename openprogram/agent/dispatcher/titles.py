@@ -46,6 +46,7 @@ from openprogram.agent.internals._model_tools import (
 )
 
 logger = logging.getLogger(__name__)
+_log = logger
 
 _TITLE_SYSTEM_PROMPT = """\
 Generate a concise title (3-7 words) that captures the main topic of this conversation.
@@ -180,7 +181,8 @@ def _maybe_auto_title(db, session_id: str, session: dict,
                               _auto_titled=True,
                               _title_gen_count=1)
         except Exception:
-            pass
+            _log.debug("auto-title write failed for session %s",
+                       session_id, exc_info=True)
     else:
         truncated_title = None
 

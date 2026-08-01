@@ -91,7 +91,8 @@ def _project_for(session_id: str):
     try:
         from openprogram.store import project_store as _projects
         proj = _projects.project_for_session(session_id)
-    except Exception:
+    except (ImportError, OSError, ValueError) as e:
+        logger.debug("project lookup failed for %s: %s", session_id, e)
         return None
     if proj is None or proj.is_default or not proj.path:
         return None
@@ -113,7 +114,8 @@ def _has_active_worktree(session_id: str) -> bool:
     try:
         from openprogram.worktree.manager import get_manager
         return get_manager().find_active_for_session(session_id) is not None
-    except Exception:
+    except Exception as e:  # noqa: BLE001 — optional subsystem, never block a turn
+        logger.debug("worktree lookup failed for %s: %s", session_id, e)
         return False
 
 
@@ -142,8 +144,8 @@ def _notify_autoinit_blocked(session_id: str, proj, blocker: str, on_event) -> N
                 ),
             },
         })
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001 — caller-supplied sink, must not break the turn
+        logger.debug("on_event(autoinit_blocked) sink failed for %s: %s", session_id, e)
 
 
 def snapshot_baseline(session_id: str) -> Optional[set[str]]:
@@ -162,7 +164,9 @@ def snapshot_baseline(session_id: str) -> Optional[set[str]]:
     if _has_active_worktree(session_id):
         return None  # rule B: yield to the worktree, don't touch real dir
     try:
-        from openprogram.store.project.project_store import ProjectGit
+        from openprogram.store.project.project_store import (
+            ProjectGit, ProjectStoreError,
+        )
         pg = ProjectGit(proj.path)
         if not pg.exists():
             # Not a git repo yet. Auto-init MUST happen now, at turn
@@ -180,7 +184,7 @@ def snapshot_baseline(session_id: str) -> Optional[set[str]]:
             # Fresh repo, baseline committed → clean tree now.
             return set()
         return pg.dirty_paths()
-    except Exception as e:  # noqa: BLE001
+    except (ProjectStoreError, OSError) as e:
         logger.debug("project baseline snapshot failed for %s: %s", session_id, e)
         return None
 
@@ -208,7 +212,9 @@ def commit_turn_changes(
     if _has_active_worktree(session_id):
         return None  # rule B: the worktree owns the edits this turn
     try:
-        from openprogram.store.project.project_store import ProjectGit
+        from openprogram.store.project.project_store import (
+            ProjectGit, ProjectStoreError,
+        )
         pg = ProjectGit(proj.path)
         # Auto-init already happened (if it could) at turn START in
         # snapshot_baseline — that's the only point the tree was
@@ -225,7 +231,7 @@ def commit_turn_changes(
         label = (first_line[0][:60] if first_line else "") or "turn"
         msg = f"[agent {session_id[:8]}] {label}"
         result = pg.commit_agent_changes(msg, baseline=baseline)
-    except Exception as e:  # noqa: BLE001
+    except (ProjectStoreError, OSError) as e:
         logger.debug("project auto-commit failed for %s: %s", session_id, e)
         return None
 
@@ -251,8 +257,9 @@ def commit_turn_changes(
                         ),
                     },
                 })
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 — caller-supplied sink
+                logger.debug(
+                    "on_event(dirty_tree) sink failed for %s: %s", session_id, e)
         return None
 
     if result:

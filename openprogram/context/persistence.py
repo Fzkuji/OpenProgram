@@ -27,9 +27,12 @@ the engine and summarizer respectively.
 """
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from typing import Optional
+
+_log = logging.getLogger(__name__)
 
 # Summary nodes render as an llm turn (they are a model-written recap),
 # and carry this name so renderers/UI can recognise them without an id
@@ -131,7 +134,12 @@ class Persister:
             if head_id in covered_ids:
                 db.set_head(session_id, summary_id)
         except Exception:
-            pass
+            # A head left inside the covered range renders the summarized
+            # span again; loud enough to diagnose, not fatal to the turn.
+            _log.warning(
+                "failed to move head onto summary %s for session %s",
+                summary_id, session_id, exc_info=True,
+            )
 
         return summary_id
 

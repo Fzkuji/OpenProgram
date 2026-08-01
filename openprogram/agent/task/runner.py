@@ -444,17 +444,11 @@ class TaskRunner:
             unregister_cancel_event,
             set_current_session_id,
             reset_current_session_id,
-            clear_cancel,
         )
         sid_token = set_current_session_id(session_id)
+        # Opens this turn's token; the previous turn's is retired by the
+        # same call, so a stop fired against it cannot reach us.
         register_cancel_event(session_id, cancel_ev)
-        # Reset any stale cancel flag from a previous turn on this
-        # session — otherwise a /api/stop fired against a prior turn
-        # would short-circuit ours.
-        try:
-            clear_cancel(session_id)
-        except Exception:
-            pass
 
         # If this task is bound to an agent worktree, bind the
         # _current_worktree_path ContextVar so bash / edit / write /

@@ -28,10 +28,13 @@ the context only resets the ContextVars; it never deletes the session.
 """
 from __future__ import annotations
 
+import logging
 import uuid as _uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator, Optional
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -105,7 +108,8 @@ def session_context(
         try:
             from openprogram.providers.registry import create_runtime as _mk
             rt = _mk()
-        except Exception:
+        except Exception as e:  # noqa: BLE001 — provider config is optional
+            _log.debug("runtime creation skipped (no usable provider): %s", e)
             rt = None
 
     tid = turn_id or f"turn_{_short_uuid()}"
@@ -122,7 +126,9 @@ def session_context(
                             turn_id=tid, created=created)
     finally:
         for var, token in reversed(installed):
+            # A token minted in another context (var.reset across a
+            # different Context) raises ValueError; nothing to undo then.
             try:
                 var.reset(token)
-            except Exception:
-                pass
+            except ValueError as e:
+                _log.debug("ContextVar reset skipped for %r: %s", var, e)

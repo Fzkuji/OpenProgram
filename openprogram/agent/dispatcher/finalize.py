@@ -23,12 +23,15 @@ docs/design/runtime/dispatcher-split.md.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 
 from openprogram.agent.dispatcher.titles import (
     _maybe_auto_title,
     maybe_auto_name_branch,
 )
+
+_log = logging.getLogger(__name__)
 
 
 def _shadow_root_for(session_id: str, paths: list[str]) -> Optional[str]:
@@ -417,10 +420,70 @@ def finalize_turn(
     # each edit; without this they grow unbounded. Cap is per-session and
     # generous (gc.MAX_TURNS); we run it every turn-end since it's a cheap
     # mtime sort + rmtree of only the excess. Best-effort.
+    _evict_old_snapshots(req.session_id)
+
+
+def _evict_old_snapshots(session_id: str) -> None:
+    """Drop per-turn snapshots beyond the soft cap. Best-effort."""
     try:
         from openprogram.store import default_store
         from openprogram.store.snapshot.checkpoint import gc_evict_old
-        _sdir = default_store()._session_dir(req.session_id)
-        gc_evict_old(_sdir)
+        gc_evict_old(default_store()._session_dir(session_id))
     except Exception:
-        pass
+        _log.debug(
+            "snapshot eviction failed for session %s", session_id, exc_info=True,
+        )
+
+
+def finalize_error_turn(
+    *,
+    db,
+    req: "Any",
+    session: dict,
+    assistant_msg_id: str,
+    _project_baseline,
+    on_event,
+    error_text: Optional[str] = None,
+) -> None:
+    """Terminate a turn that raised, so failure is a recorded state.
+
+    An error node is a legitimate terminal node: it is committed like any
+    other turn and stays on the branch as head. The success-path steps that
+    depend on a completed assistant reply (context-commit backfill, usage
+    feedback, auto-title) are meaningless here and skipped; the steps that
+    keep the record whole — git commit, project commit, shadow git, snapshot
+    eviction — all run. A retry then forks from this node's predecessor and
+    the failed line stays visible without entering the retry's context.
+    """
+    _msg_src = (req.user_text or "").strip().splitlines()
+    _msg = (_msg_src[0][:60] if _msg_src else "") or "turn"
+
+    # Git commit the failed turn — the hole in the timeline this closes is
+    # the entire point of finalizing on the error path.
+    try:
+        if hasattr(db, "commit_turn"):
+            db.commit_turn(req.session_id, f"turn (error): {_msg}")
+    except Exception:
+        _log.warning(
+            "git commit failed for errored turn in session %s",
+            req.session_id, exc_info=True,
+        )
+
+    # Project auto-commit: the agent may well have edited files before
+    # failing, and those edits are just as real as a successful turn's.
+    try:
+        from openprogram.store import project_commit as _pc
+        _pc.commit_turn_changes(
+            req.session_id, req.user_text or "",
+            _project_baseline, on_event=on_event,
+        )
+    except Exception:
+        _log.debug(
+            "project auto-commit failed for errored turn in session %s",
+            req.session_id, exc_info=True,
+        )
+
+    # Shadow-git commit — self-guarded.
+    commit_turn_to_shadow_git(req.session_id, assistant_msg_id, req.user_text or "")
+
+    _evict_old_snapshots(req.session_id)

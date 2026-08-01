@@ -107,6 +107,7 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-timeout>=2.3",
+    "ruff>=0.16",
 ]
 # The LLM SDKs (anthropic / openai / google-genai) and the web stack are
 # in the base `dependencies` above — installed by default, no separate
@@ -175,6 +176,34 @@ Documentation = "https://github.com/Fzkuji/OpenProgram/tree/main/docs"
 
 [tool.setuptools.packages.find]
 include = ["openprogram*"]
+# Nested agentic-program harnesses are separate repos vendored into the
+# working tree (gitignored, each with its own .venv/ and multi-GB model
+# artifacts). They are installed at runtime by `openprogram programs
+# install <name>`, never shipped in this wheel.
+exclude = ["openprogram.functions.agentics.*"]
+
+[tool.setuptools.package-data]
+# Non-.py files the package reads at RUNTIME. Without these the wheel
+# installs but blows up on first use: `openprogram providers` finds zero
+# providers, the web UI 404s its own assets, bundled skills vanish.
+"openprogram" = [
+    # Provider registry — endpoints/model metadata read by
+    # providers/_provider_meta.py and enabled_models.py.
+    "providers/provider.json",
+    "providers/*/provider.json",
+    "providers/claude_models.json",
+    "providers/*/claude_models.json",
+    # Bundled skills discovered by skills/loader.py:_bundled_dir().
+    "skills_bundled/*/SKILL.md",
+    "skills_bundled/*/*.md",
+    # Web UI: legacy static pages still mounted, plus the Functions and
+    # Programs page metadata read by webui/routes/tree.py.
+    "webui/static/*.html",
+    "webui/static/css/*.css",
+    "webui/static/js/*.js",
+    "webui/functions_meta.json",
+    "webui/programs_meta.json",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -187,3 +216,47 @@ addopts = "-m 'not slow'"
 # freezing the whole suite (a blind ws receive_text did exactly that once).
 timeout = 120
 timeout_method = "thread"
+
+[tool.ruff]
+# Ruff enforces the exception-handling gate described in
+# docs/reference/design/error-handling.md. It is not a general style gate —
+# formatting and import order are deliberately left alone.
+target-version = "py311"
+
+[tool.ruff.lint]
+# E722  bare `except:` — swallows KeyboardInterrupt and SystemExit too.
+# S110  `try`/`except`/`pass` — an exception discarded with no log, no
+#       comment, and no fallback. This is the rule that finds hidden bugs.
+select = ["E722", "S110"]
+
+[tool.ruff.lint.per-file-ignores]
+# The gate is enforced on the three core paths — openprogram/store/,
+# openprogram/context/ and openprogram/agent/dispatcher/ — which are clean.
+# Everywhere else still carries several hundred pre-existing sites; turning
+# the rules on globally would produce a gate nobody can pass, so those paths
+# are muted here and cleaned up path by path. To extend the gate, clean a
+# directory and delete its line below.
+"openprogram/agent/agent.py" = ["E722", "S110"]
+"openprogram/agent/internals/*" = ["E722", "S110"]
+"openprogram/agent/task/*" = ["E722", "S110"]
+"openprogram/agent/tools/*" = ["E722", "S110"]
+"openprogram/agent/[!d]*" = ["E722", "S110"]
+"openprogram/agentic_programming/*" = ["E722", "S110"]
+"openprogram/auth/*" = ["E722", "S110"]
+"openprogram/channels/*" = ["E722", "S110"]
+"openprogram/cli/*" = ["E722", "S110"]
+"openprogram/commands/*" = ["E722", "S110"]
+"openprogram/contextgit/*" = ["E722", "S110"]
+"openprogram/functions/*" = ["E722", "S110"]
+"openprogram/memory/*" = ["E722", "S110"]
+"openprogram/providers/*" = ["E722", "S110"]
+"openprogram/skills/*" = ["E722", "S110"]
+"openprogram/usage/*" = ["E722", "S110"]
+"openprogram/webui/*" = ["E722", "S110"]
+"openprogram/worker/*" = ["E722", "S110"]
+"openprogram/worktree/*" = ["E722", "S110"]
+"openprogram/*.py" = ["E722", "S110"]
+"tests/*" = ["E722", "S110"]
+"tools/*" = ["E722", "S110"]
+"scripts/*" = ["E722", "S110"]
+"experiments/*" = ["E722", "S110"]

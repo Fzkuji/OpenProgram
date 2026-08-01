@@ -21,8 +21,11 @@ Layers (see design doc §一):
 from __future__ import annotations
 
 import contextvars
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal, Optional
+
+_log = logging.getLogger(__name__)
 
 Layer = Literal["L0", "L1", "L2"]
 
@@ -270,7 +273,9 @@ def _build_memory(agent: Any) -> str:
         if mem_block.strip():
             return mem_block
     except Exception:
-        pass
+        # Memory is an optional subsystem: an unavailable or broken
+        # provider degrades to no memory block, never a failed turn.
+        _log.debug("memory system prompt block unavailable", exc_info=True)
     return ""
 
 

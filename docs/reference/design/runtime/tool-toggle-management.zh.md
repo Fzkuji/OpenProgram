@@ -113,7 +113,7 @@ session 该存的最小意图：
 - `tools_override_from_config`（`:82-93`）输出 **dict 意图** 而非 list：`tools_enabled is False` → `[]`；否则 → `{"enabled": True if enabled else None, "toolset": <preset>, "disabled": [...], "web_search": <bool>}`。不写 list[str] 快照。
 
 **C — dict-override 支持 web_search 叠加**：
-dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed/toolset` 外还需识别 `web_search` 键。因为 web_search 不在 DEFAULT_TOOLS 里，若只存意图而 dict 分支不认这个键，展开结果就不含 web_search，开关失效。所以 C 是 B 的必需前置：展开后缺 web_search 则由 `agent_tools(names=[...]+["web_search"])` 补上。provider 内建 web_search（`openai_codex.py:376` 那种）是另一条可选路径，取决于各 provider 支持度（见 §7）。
+dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed/toolset` 外还需识别 `web_search` 键。因为 web_search 不在 DEFAULT_TOOLS 里，若只存意图而 dict 分支不认这个键，展开结果就不含 web_search，开关失效。所以 C 是 B 的必需前置：展开后缺 web_search 则由 `agent_tools(names=[...]+["web_search"])` 补上。provider 内建 web_search（`openai_codex.py:376` 那种）是另一条可选路径，取决于各 provider 支持度（见 §8）。
 
 **`list[str]` 仅表示用户显式精选**（如 web-search-only 的 `["web_search"]`）：
 `tools_override_from_config` 原样透传，`_model_tools.py` 的 list 分支照名字展开。
@@ -135,7 +135,86 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 
 ---
 
-## 7. 已知边界
+## 7. 延迟加载：可用 ≠ 常驻
+
+§4.1 已确认工具数组每轮计费。开关决定哪些工具**可用**，延迟加载（defer）决定这些
+可用工具里哪些每轮为自己的 JSON Schema 付费。这是两条独立的轴，把它们混为一谈正是
+常驻成本随工具数量线性增长的原因。
+
+### 7.1 可用工具的两种形态
+
+一个可用工具以两种形态之一进入请求：
+
+- **常驻（resident）**——完整 JSON Schema 进 provider 的 tools 数组，每轮都带。
+- **延迟（deferred）**——在系统提示的目录里只占 `name: description` 一行。模型需要
+  时调 `tool_search` 加载 schema，此后本会话内它就是常驻的。
+
+延迟工具**不是被禁用**：模型照样能调，只是得先加载 schema。禁用的工具则同时不在
+数组和目录里，根本无法调用。
+
+### 7.2 切分逻辑
+
+`split_tools_for_dispatch(tools)`（`functions/_runtime.py`）读每个工具的 `_defer`
+边车属性，减去本会话已加载集合，把解析后的工具集切成 `(provider_tools, catalog)`：
+
+- 非 defer → 进 provider 数组
+- defer 且在已加载集合里 → 进 provider 数组
+- defer 且未加载 → 进目录
+
+已加载集合存在 ContextVar 里（`install_loaded_deferred` 由 dispatcher 每会话初始化；
+`mark_deferred_loaded` 由 `tool_search` 内部写入）。agent loop 在**每次 provider 调用前**
+重新切分，所以轮内中途加载的工具在同一轮的下一次调用就带上 schema。
+
+### 7.3 哪些工具被 defer
+
+`apply_default_deferral()` 在 import 末尾跑一次，按 `_defer = name not in RESIDENT_TOOLS`
+打标。两类工具落到 defer：
+
+1. 在 `full` 暴露白名单里但不在 `DEFAULT_TOOLS` 中的——memory、worktree、browser、
+   image 等冷门工具。它们本来就不在默认集，defer 不损失什么。
+2. `DEFERRED_DEFAULT_TOOLS`——仍留在 `DEFAULT_TOOLS`（默认可用）但体积大、调用少，
+   因此不常驻：
+
+   | 工具 | schema | 为什么不常驻 |
+   |---|---|---|
+   | `playwright_browser` | ~1170 tok | 单个 schema 最大。浏览器自动化是明确且小众的意图，编码会话完全不碰。 |
+   | `enter_plan_mode` | ~1050 tok | plan mode 通常由用户经档位 chip / TUI 进入（`plan_mode.sync_tier`），不走这个工具。模型自行判断进 plan 是罕见路径。 |
+   | `exit_plan_mode` | ~640 tok | 只在 plan mode 激活时有意义，且 plan-mode 提示块已明确点名它，模型据此知道要加载。 |
+   | `message_branch` | ~380 tok | 跨 session / branch 通信，只在多分支协作时用到。 |
+
+`tool_search` 自身永不 defer——它是加载其它一切的唯一入口，defer 它会死锁。这一点有
+双重保险：`RESIDENT_TOOLS` 的并集，以及 `apply_default_deferral` 里的显式 guard。
+
+效果：默认常驻数组从每轮 ~7.9k 降到 ~4.7k token，约减 41%，且没有任何工具变得不可用。
+
+### 7.4 与缓存前缀的相互作用（§4.2）
+
+加载一个延迟工具会向 tools 数组追加元素，因而**重写缓存前缀**——正是 §4.2 描述的任何
+工具集变动的后果。这是每工具每会话一次性的代价，且只在模型真正需要该工具时才付。这
+也是 defer 名单挑"少用"而非单纯挑"大"的原因：一个多数会话都会用到的工具，defer 等于
+拿固定节省换反复的缓存未命中。
+
+### 7.5 目录是装配器组件
+
+目录不由 dispatcher 手工拼接。它是注册的上下文组件（`deferred_catalog`，L1 order 25，
+在 `context/components.py`），由 `_build_deferred_catalog` 构建，所以引擎计入预算的
+字符串就是实际发出的字符串。该组件从 ContextVar 读工具列表，无 defer 工具时返回空串。
+
+预算口径同样跟随这个切分：`_estimate_one_tool`（`context/budget.py`）把 defer 工具按
+目录行计价、常驻工具按完整 schema 加包装计价，因此上下文明细与实际发送量一致。
+
+### 7.6 应当成立的性质
+
+回归保护在 `tests/context/test_tool_defer.py`：
+
+- 新会话的常驻数组里不出现任何 `DEFERRED_DEFAULT_TOOLS` 成员，`RESIDENT_TOOLS` 里也没有
+- 它们全都出现在目录里，以及装配后的系统提示里
+- `tool_search` 能把延迟工具移入 provider 数组、移出目录
+- `tool_search` 永不被 defer；`apply_default_deferral` 幂等
+
+---
+
+## 8. 已知边界
 
 - **provider 内建 web_search vs 工具数组 web_search**（改 C 二选一）：codex/OpenAI Responses 确认走内建 `opts["web_search"]`（`openai_codex.py:376`）；Anthropic / 其它 provider 需逐个核对。确认前保留"web_search 作为工具名叠加"的稳妥路径。
 - **dict-override 的 `allowed` 语义**：当前 `allowed`（`_model_tools.py:406`）是对 DEFAULT_TOOLS 过滤、不是 full 全集；本次不扩这块。
@@ -143,9 +222,9 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 
 ---
 
-## 8. 实现状态
+## 9. 实现状态
 
-### 8.1 承载文件
+### 9.1 承载文件
 
 | 文件 | 承担什么 |
 |---|---|
@@ -153,7 +232,7 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 | `openprogram/webui/ws_actions/chat.py` | 把 `tools_profile` / `web_search_flag` 作为**意图**透传给 `save_session_run_config(toolset=, web_search=)`；"tools=False + web_search=True → `["web_search"]`" 这一单元素 list 属用户精选，不是全量快照 |
 | `openprogram/agent/_model_tools.py` | dict-override 分支（`resolve_tools`，~397-421）的 `web_search` 叠加：`_overlay_web_search` 在 toolset / names 两条路径展开后，若意图含 web_search 且结果缺它则补上 |
 
-### 8.2 关键设计点（别破坏）
+### 9.2 关键设计点（别破坏）
 
 - **展开必须确定性**：工具数组在 prompt 缓存前缀根部，顺序一抖整段缓存 miss。当前
   `agent_tools` 按 names/registry 顺序返回，天然稳定——`tests/unit/test_tool_expansion_deterministic.py`
@@ -164,7 +243,7 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 - **不改历史**：工具开关只控制"接下来能调什么"，不过滤/重写历史 tool_use（会破坏
   tool_use↔tool_result 配对 → provider 400）。
 
-### 8.3 测试（回归保护）
+### 9.3 测试（回归保护）
 
 - `tests/unit/test_tool_expansion_deterministic.py` — 展开确定性（缓存前缀稳定）
 - `tests/unit/test_session_config_tools_intent.py` — 意图往返、用户精选 list 原样透传、
@@ -172,9 +251,9 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 - `tests/unit/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` —
   `tools=True` 产出 `{enabled:True}` 意图而非 list 快照
 
-### 8.4 扩展点
+### 9.4 扩展点
 
-- **provider 内建 web_search**（§7）：web_search 当前走"工具名叠加"路径；若确认各 provider
+- **provider 内建 web_search**（§8）：web_search 当前走"工具名叠加"路径；若确认各 provider
   支持内建 web_search，可在 `_overlay_web_search` 处切换。
 - **新意图维度**（如按 channel 限工具）：往 dict 意图加键 + 在 `resolve_tools` dict
   分支处理，不要回到"存展开列表"的形态。

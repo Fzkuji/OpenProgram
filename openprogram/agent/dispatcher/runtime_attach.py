@@ -20,10 +20,13 @@ See docs/design/runtime/dispatcher-split.md.
 """
 from __future__ import annotations
 
+import logging
 import os
 import time
 
 from openprogram.agent.dispatcher.types import EventCallback, TurnRequest
+
+_log = logging.getLogger(__name__)
 
 
 def _wrap_agentic_runtime_block(
@@ -233,7 +236,8 @@ def _wrap_agentic_runtime_block(
         try:
             db.invalidate_cache(req.session_id)
         except Exception:
-            pass
+            _log.debug("session cache invalidation failed for %s",
+                       req.session_id, exc_info=True)
         # DEBUG: inspect what build_exec_dag sees after invalidate_cache.
         # Gated behind ``OPENPROGRAM_DEBUG_DISPATCHER`` because the
         # ``[dispatcher.debug]`` line was landing in the user-facing chat
@@ -279,8 +283,10 @@ def _wrap_agentic_runtime_block(
         execute=_runtime_block_execute,
     )
     for _attr in ("_is_agentic", "_defer"):
+        # A frozen/slotted tool object rejects the copy; the wrapper just
+        # loses an optional marker attribute.
         try:
             setattr(wrapped, _attr, getattr(agent_tool, _attr, None))
-        except Exception:
-            pass
+        except AttributeError:
+            _log.debug("could not copy %s onto tool wrapper", _attr)
     return wrapped

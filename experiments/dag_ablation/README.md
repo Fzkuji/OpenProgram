@@ -73,6 +73,54 @@ trial has a private profile, so the window contains only that trial's rows.
 above `_NODE_RENDER_CAP` (32 000 chars), so they are the tasks designed to
 trip tool aging and node spill.
 
+## Two readings of the log tasks (`--no-script`)
+
+The log tasks have two honest solutions, and which one the agent picks decides
+whether the DAG machinery is exercised at all:
+
+- **In-context** — read the log through the harness. Every line passes through
+  the context window, so tool aging and node spill are on the critical path.
+  This is the behaviour the ablation is meant to measure.
+- **Scripted** — write a throwaway Python/awk one-liner and read back only its
+  printed answer. Context stays flat, and the harness is bypassed. A capable
+  model prefers this, which makes the ablation switches look inert.
+
+Rather than declare one of them correct, the bed measures both:
+
+```bash
+# free choice — the model does whatever it would normally do
+python run.py --task all --variant full --model <m> --i-know-this-costs-money
+
+# scripting banned on the four log_* tasks — forces the in-context path
+python run.py --task all --variant full --no-script --model <m> \
+              --i-know-this-costs-money
+```
+
+`--no-script` appends a fixed instruction (`NO_SCRIPT_SUFFIX` in `run.py`)
+banning any script, program, or pipeline that computes, aggregates or
+summarizes the answer. Reading files to look at the data is still allowed, and
+deliverable files the task asks for are still expected — only outsourcing the
+*analysis* is forbidden.
+
+It applies to the four `log_*` tasks only. Under `--task all` the other tasks
+run unmodified in the same sweep, so the rows record what each trial actually
+got rather than what the flag asked for:
+
+| field | meaning |
+|---|---|
+| `variant` | `full+no-script` when the row carried the constraint, else `full` |
+| `base_variant` | the `--variant` value, always unsuffixed |
+| `no_script` | bool — whether this row got the suffix |
+
+So `summarize.py --by variant` separates the two readings on its own, and
+`--by base_variant` collapses them back together. Output files are also
+tagged (`<stamp>_full_no-script_<tasks>.jsonl`), so the paired runs never
+overwrite each other.
+
+Report both. A gap between them is the interesting result: it quantifies how
+much of the measured effect depends on the agent choosing to keep the data in
+context.
+
 ## Missing product switches (input for §8)
 
 `--variant` values other than `full` are **not faithful today**. The runner

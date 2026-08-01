@@ -81,7 +81,8 @@ def _projects_default_id_safe() -> str:
     try:
         from openprogram.store.project.project_store import DEFAULT_PROJECT_ID
         return DEFAULT_PROJECT_ID
-    except Exception:
+    except ImportError as e:
+        _log.debug("project_store unavailable, using literal default id: %s", e)
         return "default"
 
 
@@ -313,8 +314,9 @@ class SessionStore:
                 encoding="utf-8",
             )
             tmp.replace(self._locations_path())
-        except OSError:
-            pass
+        except OSError as e:
+            _log.warning("locations.json NOT saved (%s); session placement "
+                         "may be lost on restart", e)
 
     def _record_location(self, session_id: str, repo_dir: Path) -> None:
         """Persist that ``session_id``'s repo lives at ``repo_dir`` (an
@@ -385,8 +387,8 @@ class SessionStore:
                     if text:
                         text = text.strip().replace("\n", " ")
                         entry["preview"] = (text[:77] + "…") if len(text) > 80 else text
-                except Exception:
-                    pass
+                except Exception as e:  # noqa: BLE001 — preview is cosmetic
+                    _log.debug("preview backfill failed for %s: %s", sid, e)
                 self._index[sid] = entry
             except (OSError, json.JSONDecodeError):
                 continue
@@ -422,10 +424,7 @@ class SessionStore:
                 to_delete.append(sid)
         for sid in to_delete:
             self._index.pop(sid, None)
-            try:
-                shutil.rmtree(self._session_dir(sid), ignore_errors=True)
-            except Exception:
-                pass
+            shutil.rmtree(self._session_dir(sid), ignore_errors=True)
         # Capacity: trim oldest archived sessions beyond the limit.
         dirty = bool(to_delete)
         if len(self._index) > self._CAPACITY_LIMIT:
@@ -434,11 +433,7 @@ class SessionStore:
             excess = len(self._index) - self._CAPACITY_LIMIT
             for sid, _ in archived[:excess]:
                 self._index.pop(sid, None)
-                try:
-                    import shutil
-                    shutil.rmtree(self._session_dir(sid), ignore_errors=True)
-                except Exception:
-                    pass
+                shutil.rmtree(self._session_dir(sid), ignore_errors=True)
                 dirty = True
         if dirty:
             self._save_index()
@@ -464,8 +459,9 @@ class SessionStore:
                 encoding="utf-8",
             )
             tmp.replace(p)
-        except OSError:
-            pass
+        except OSError as e:
+            _log.warning("index.json NOT saved (%s); session list may be "
+                         "stale until the next rebuild", e)
         self._index_dirty = False
 
     def _schedule_index_flush(self) -> None:
@@ -688,7 +684,9 @@ class SessionStore:
             if (not proj.is_default) and proj.path:
                 repo_dir = Path(proj.path).expanduser() / ".openprogram" / "sessions" / session_id
                 self._record_location(session_id, repo_dir)
-        except Exception:
+        except Exception as e:  # noqa: BLE001 — never block session creation
+            _log.warning("project resolution failed for %s (%s); falling back "
+                         "to the default project", session_id, e)
             project_id = project_id or _projects_default_id_safe()
 
         pair = self._open(session_id, create_if_missing=True)
@@ -754,8 +752,9 @@ class SessionStore:
             try:
                 from openprogram.store import project_store as _projects
                 _projects.bind_session(session_id, project_id)
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 — reverse index is best-effort
+                _log.warning("session %s NOT bound to project %s: %s",
+                             session_id, project_id, e)
 
     def update_session(self, session_id: str, **fields: Any) -> None:
         pair = self._open(session_id, create_if_missing=True)
@@ -818,8 +817,9 @@ class SessionStore:
         try:
             from openprogram.store import project_store as _projects
             _projects.unbind_session(session_id)
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001 — reverse index is best-effort
+            _log.warning("session %s NOT unbound from its project: %s",
+                         session_id, e)
 
     def list_sessions(
         self,
@@ -899,9 +899,9 @@ class SessionStore:
                 meta = dict(node.metadata or {})
                 meta["spilled"] = stamp
                 node.metadata = meta
-        except Exception:
+        except Exception as e:  # noqa: BLE001
             # Spilling is an optimisation; never block the write.
-            pass
+            _log.debug("spill skipped for %s: %s", session_id, e)
 
     def append_message(self, session_id: str, msg: dict[str, Any]) -> None:
         pair = self._open(session_id, create_if_missing=True)
@@ -1049,8 +1049,9 @@ class SessionStore:
         if name:
             try:
                 self.set_branch_name(session_id, node.id, name)
-            except Exception:  # noqa: BLE001
-                pass
+            except (OSError, ValueError, KeyError) as e:
+                _log.warning("branch name %r NOT recorded for %s: %s",
+                             name, node.id, e)
         return node.id
 
     # Head
@@ -1127,12 +1128,14 @@ class SessionStore:
                     for _pid in pids[1:]:
                         try:
                             _peer = load_commit(self, _pid, session_id=session_id)
-                        except Exception:
+                        except Exception as e:  # noqa: BLE001 — one bad peer must not
+                            # drop the rest of the merge scan.
+                            _log.debug("merge peer %s unreadable: %s", _pid, e)
                             _peer = None
                         if _peer is not None and _peer.head_node_id:
                             merged.add(_peer.head_node_id)
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001 — commit subsystem is optional here
+            _log.debug("merge-head scan skipped for %s: %s", session_id, e)
         for node in idx.all_nodes():
             # Skip sub-call nodes — anything living INSIDE a function
             # run. Two shapes: a tool/code node with a real caller
