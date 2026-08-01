@@ -1,426 +1,548 @@
-# Agent 协作：一个分支间通信原语
+# Agent collaboration: one cross-branch communication primitive
 
-整套 agent 协作收敛成**一个原语：分支间通信**。一个 agent 能派生别的 agent、能给
-别的分支/别的 session 发消息、能把几条分支的内容汇给一个模型综合——这些表面上不同
-的操作，**底层是同一件事**：往某条分支投递内容 → 触发那条分支跑一轮 → 结果自动回送
-发起方。全部做成工具调用，全部建在已有的事件层上。
+All of agent collaboration collapses into **a single primitive: cross-branch
+communication**. An agent can spawn other agents, send messages to other
+branches or other sessions, and pull several branches together for one model to
+synthesize. These look like different operations, but **underneath they are the
+same thing**: deliver content to a branch, trigger that branch to run a turn,
+and send the result back to the caller automatically. Everything is a tool call,
+and everything is built on the existing event layer.
 
-> 范围：本文是设计，不含代码。实现状态见末节。
+> Scope: this is design, not code. Implementation status is in the final section.
 
 ---
 
-## 0. 核心：只有一个原语
+## 0. Core: there is only one primitive
 
-整套协作只有一个原语：
+The whole collaboration story has exactly one primitive:
 
-> **分支间通信** = 往一条分支（同 session 另一分支 / 跨 session / 当场新建的 /
-> 已存在的）**投递内容** → **触发**那条分支跑一轮（模型读到投来的内容）→ 结果
-> **自动回送**发起方（追加一条新消息 + 触发发起方跑一轮，发起方醒来读到、继续）。
+> **Cross-branch communication** = **deliver content** to a branch (another
+> branch of the same session, a different session, one created on the spot, or
+> one that already exists) → **trigger** that branch to run a turn (the model
+> reads the delivered content) → the result is **sent back automatically** to
+> the caller (append a new message + trigger the caller to run a turn, so the
+> caller wakes up, reads it, and continues).
 
-所有协作操作都是这个原语的**参数化**：
+Every collaboration operation is a **parameterization** of that primitive:
 
-| 操作 | 是通信的哪种用法 |
+| Operation | Which use of communication it is |
 |---|---|
-| **派生子 agent** | **新建**一条分支 + 投消息 + 自动回 |
-| **发消息给某分支** | 往**已存在**分支投消息 + 自动回 |
-| **综合多条分支** | 投递时**带多个来源**分支的内容，让目标模型综合 |
+| **Spawn a sub-agent** | **Create** a branch + deliver a message + auto-reply |
+| **Message a branch** | Deliver a message to an **existing** branch + auto-reply |
+| **Synthesize several branches** | Deliver content from **multiple source** branches so the target model synthesizes |
 
-投来的内容一定被目标模型读取并使用。数量任意（派生能派 N 个、综合能合 N 条、发消息
-也能群发），不是区分维度。三种用法共用一条投递→触发→回送的路径。
+Delivered content is always read and used by the target model. Count is
+arbitrary (spawn can create N, synthesis can merge N, a message can go to many),
+so it is not a distinguishing dimension. All three uses share one
+deliver → trigger → reply-back path.
 
-`attach` 不是操作，是通信结果在 DAG 上的"回流连线"画法（标记结果从哪条分支回来）。
+`attach` is not an operation. It is how a communication result is drawn as a
+"return edge" on the DAG (marking which branch the result came back from).
 
 ---
 
-## 1. 名词对齐（沿用现有抽象，不发明）
+## 1. Vocabulary (reuse existing abstractions, invent nothing)
 
-| 概念 | 定义 | 来源 |
+| Concept | Definition | Source |
 |---|---|---|
-| **session** | 一个独立会话，有 `session_id`，对应一个 git 仓库 | `SessionStore` |
-| **branch（分支）** | `(session_id, head_id)` 对。同 session 不同 head = 同会话两条分支；不同 session = 跨会话 | `merge.py` 已确立，同/跨 session 走同一路径 |
-| **投递** | 往某分支追加一条消息节点 | `append_message`（任意 session_id，无权限限制） |
-| **触发** | 让某分支跑一轮 agent | `process_user_turn(TurnRequest(...))` |
-| **自动回送** | 目标答完，把回复作为新输入喂回发起方 + 触发它跑 | `TaskRunner._dispatch_followup`（已存在） |
-| **attach 连线** | DAG 上标记"结果从哪条分支回流来"的指针节点（只画图） | `write_attach_pointer_for_spawn` |
+| **session** | An independent conversation with a `session_id`, backed by one git repository | `SessionStore` |
+| **branch** | A `(session_id, head_id)` pair. Different heads in the same session = two branches of one conversation; different sessions = cross-conversation | Established in `merge.py`; same-session and cross-session take the same path |
+| **deliver** | Append a message node to a branch | `append_message` (any session_id, no permission restriction) |
+| **trigger** | Make a branch run one agent turn | `process_user_turn(TurnRequest(...))` |
+| **auto reply-back** | When the target finishes, feed its reply back to the caller as new input + trigger it to run | `TaskRunner._dispatch_followup` (already exists) |
+| **attach edge** | The pointer node on the DAG marking "which branch the result flowed back from" (drawing only) | `write_attach_pointer_for_spawn` |
 
-DAG 画法已在 `dag/dag-live.html` 定稿（分支间通信场景：异步、send 瞬间返回、回复异步
-回送、通信点线 hover 显示；派生=子分支服务场景；回流=软连接线）。
+The DAG rendering is already settled in `dag/dag-live.html` (cross-branch
+communication scenario: asynchronous, send returns instantly, reply comes back
+asynchronously, communication point-line shown on hover; spawn = sub-branch
+service scenario; return flow = soft link edge).
 
 ---
 
-## 2. 原语的工具形态
+## 2. The primitive as tools
 
-把原语包成 agent 能调的工具。**一个核心工具 + 两个列举工具**。
+Wrap the primitive into tools an agent can call. **One core tool plus two
+listing tools.**
 
-### 2.1 `message_branch` — 分支间通信（核心，唯一的协作原语）
+### 2.1 `message_branch` — cross-branch communication (the core, the only collaboration primitive)
 
 ```
 message_branch(
-    message: str,                       # 投给目标的内容/指令
-    target: str = "new",                # 见下方 target 取值
-    sources: list[str] = [],            # 额外带上这些分支的内容一起投（综合多条时用）
-    agent_id: str = "main",             # 目标用哪个 agent
-    wait: bool = false,                 # false=异步(默认,瞬间返回)；true=同步等回复
+    message: str,                       # content/instruction delivered to the target
+    target: str = "new",                # see target values below
+    sources: list[str] = [],            # also carry content from these branches (used when synthesizing)
+    agent_id: str = "main",             # which agent the target runs as
+    wait: bool = false,                 # false=async (default, returns instantly); true=block for the reply
 ) -> str
 ```
 
-**`target` 取值——创建分支和发消息是同一参数的不同取值：**
+**`target` values — creating a branch and sending a message are different values of the same parameter:**
 
-| target | 含义 |
+| target | Meaning |
 |---|---|
-| `"new"` | 从 ROOT 全新创建一条分支（新 session），投 message 让它跑 |
-| `"new:sid:msg_id"` | 从某节点 fork 出一条新分支，投 message 让它跑 |
-| `"sid:head"` | 往一条已存在分支投 message |
+| `"new"` | Create a brand-new branch from ROOT (new session), deliver message, let it run |
+| `"new:sid:msg_id"` | Fork a new branch from a node, deliver message, let it run |
+| `"sid:head"` | Deliver message to an existing branch |
 
-**创建分支不是独立操作，就是 `target` 取 `new` / `new:…`**。三种用法：
+**Creating a branch is not a separate operation; it is just `target` set to
+`new` / `new:…`.** Three uses:
 
-- **创建并跑（派生 / 开新会话 / fork）**：`target="new"` 或 `"new:sid:msg_id"` →
-  新建分支 + 投 message，它跑完自动回流。（想建几条，就调几次，各自异步并行。）
-- **发消息给已有分支/session**：`target="sid:head"` → 往那条分支投 message，触发它
-  跑一轮，答完自动回送。跨 session 同一路径（target 是任意 session）。
-- **综合多条分支**：`sources=["s1:h1","s2:h2",...]` → 投递时把这几条分支的内容一起
-  带上，目标模型读完综合。数量任意。可与任意 target 组合。
+- **Create and run (spawn / open a new session / fork)**: `target="new"` or
+  `"new:sid:msg_id"` → new branch + deliver message; when it finishes, the
+  result flows back automatically. (Want several? Call several times, each
+  asynchronous and parallel.)
+- **Message an existing branch/session**: `target="sid:head"` → deliver message
+  to that branch, trigger one turn, and the answer is sent back automatically.
+  Cross-session uses the same path (target can be any session).
+- **Synthesize several branches**: `sources=["s1:h1","s2:h2",...]` → carry the
+  content of those branches along with the delivery so the target model reads
+  and synthesizes them. Count is arbitrary. Combines with any target.
 
-**统一执行流程**（无论哪种用法）：
-1. 解析 `target`：`new` → 新建 session + 空 `branch_from`；`new:sid:msg_id` →
-   在 sid 里 `branch_from=msg_id` fork；`sid:head` → `set_head` 切到该分支。
-2. 组装投递内容：`message` +（若有 `sources`）把每条来源分支的内容附上。
-3. 投递 + 触发：`process_user_turn(TurnRequest(session_id=目标, user_text=投递内容,
-   branch_from=fork 起点))` → 目标分支跑一轮，**模型读到投来的全部内容**。
-4. **回送**：
-   - `wait=false`（默认）：瞬间返回"已投递 + delivery_id"，发起方不阻塞继续；目标
-     答完，`_dispatch_followup` **自动**把回复作为新消息喂回发起方 session + 触发它
-     跑一轮，发起方醒来读到。
-   - `wait=true`：阻塞等目标答完，直接返回回复文本。
-- 事件：投递 emit `branch.message_sent`；回送 emit `branch.message_replied`（见 §3）。
+**Unified execution flow** (whichever use it is):
+1. Resolve `target`: `new` → new session with empty `branch_from`;
+   `new:sid:msg_id` → fork inside sid with `branch_from=msg_id`; `sid:head` →
+   `set_head` to that branch.
+2. Assemble the delivered content: `message` plus (if `sources` is given) the
+   content of each source branch.
+3. Deliver and trigger: `process_user_turn(TurnRequest(session_id=target,
+   user_text=delivered content, branch_from=fork point))` → the target branch
+   runs one turn and **the model reads everything delivered**.
+4. **Reply back**:
+   - `wait=false` (default): returns "delivered + delivery_id" instantly, the
+     caller keeps going unblocked; when the target finishes,
+     `_dispatch_followup` **automatically** feeds the reply into the caller
+     session as a new message + triggers it to run a turn, so the caller wakes
+     up and reads it.
+   - `wait=true`: blocks until the target finishes and returns the reply text
+     directly.
+- Events: delivery emits `branch.message_sent`; reply-back emits
+  `branch.message_replied` (see §3).
 
-### 2.2 多条来源喂多少内容（综合的关键）
+### 2.2 How much content each source contributes (the key to synthesis)
 
-`sources` 里每条分支怎么喂给目标模型——**先让每条分支自我总结，再汇集总结**：
+How each branch in `sources` is fed to the target model — **have each branch
+summarize itself first, then collect the summaries**:
 
-1. 对每条 source 分支，先让它产出一个**面向本次通信的总结**（"把你这条分支的结论
-   浓缩成要点"），复用 `branch_summarization`。
-2. 把这些总结拼成 `<branch label="...">总结</branch>` 块，连同 `message` 一起投给
-   目标模型综合。
+1. For each source branch, first produce a **summary aimed at this
+   communication** ("condense the conclusions of your branch into key points"),
+   reusing `branch_summarization`.
+2. Concatenate those summaries into `<branch label="...">summary</branch>`
+   blocks and deliver them together with `message` for the target model to
+   synthesize.
 
-这样不爆 context、能带很多条、交给模型的是浓缩要点而非原始长对话。统一走"自我总结"，
-不设"喂全文/喂摘要"的参数选择。
+This keeps context from blowing up, allows many sources, and hands the model
+condensed points instead of raw long conversations. Everything goes through
+"self-summarization"; there is no "full text vs. summary" parameter choice.
 
-### 2.3 `list_sessions` / `list_branches` — 看见对方（通信的前提）
+### 2.3 `list_sessions` / `list_branches` — seeing each other (a precondition for communication)
 
 ```
 list_sessions(limit=50, agent_id?, source?) -> str      # db.list_sessions
 list_branches(session_id?) -> str                        # db.list_branches
 ```
 
-通信前要能指定 target/sources，所以得先列出有哪些 session、每个有哪些分支
-（`(session_id, head_id)` + name）。这是"两个 agent 互相看见"的入口。数据层 + WS
-handler 已有（`handle_list_sessions` / `handle_list_branches`），只缺包成工具。
+Before communicating you need to name a target/sources, so you first have to
+list which sessions exist and which branches each one has (`(session_id,
+head_id)` + name). This is the entry point for "two agents seeing each other".
+The data layer and WS handlers already exist (`handle_list_sessions` /
+`handle_list_branches`); only the tool wrappers are missing.
 
-### 2.4 新建分支要有名字
+### 2.4 New branches must have names
 
-`message_branch` 每次 `target="new"` / `"new:…"` 创建分支，**都必须给分支一个名字**
-——否则 web 端只能显示 8 位 hex 短号，一堆分支分不清谁是谁。
+Every time `message_branch` creates a branch with `target="new"` / `"new:…"`,
+**the branch must be given a name** — otherwise the web UI can only show an
+8-digit hex short id and a pile of branches becomes indistinguishable.
 
-- **立刻有名（Stage 1）**：创建时把一个简短 label 传给 `run_agent_turn(... label=…)`
-  → `store.set_branch_name`。label 从投递的 `message` 摘一句（截断到 ~24 字），或让
-  模型在调用时显式带一个名字。这样分支一出生就有可读名，不用等 LLM。
-- **后台自动改好名（Stage 2）**：分支正常聊起来后，由 `finalize_turn` 在 `turns`
-  命中阈值 `{1,6,16,40}` 时，后台线程用 LLM 依据分支内容生成更贴切的标题，覆盖
-  Stage 1 的临时名。规则见 [branch-naming](operations/branch-naming.md)——那里定义
-  了命名的分级、锁、触发点；本节只强调：**message_branch 派生的分支和用户手动
-  fork 的分支，走同一套命名（都要 Stage 1 占位名 + Stage 2 自动改名），不能漏。**
+- **Named immediately (Stage 1)**: at creation, pass a short label to
+  `run_agent_turn(... label=…)` → `store.set_branch_name`. The label is taken
+  from the delivered `message` (truncated to ~24 characters), or the model
+  supplies a name explicitly in the call. This way a branch has a readable name
+  from birth, with no wait on an LLM.
+- **Renamed automatically in the background (Stage 2)**: once the branch is
+  actually in conversation, `finalize_turn` fires when `turns` hits the
+  thresholds `{1,6,16,40}`, and a background thread uses an LLM to generate a
+  more fitting title from the branch content, overwriting the Stage 1 temporary
+  name. The rules are in [branch-naming](operations/branch-naming.md), which
+  defines the naming tiers, locks, and trigger points. This section only
+  stresses one thing: **branches spawned by message_branch and branches the user
+  forks by hand use the same naming path (both get a Stage 1 placeholder name
+  plus Stage 2 automatic renaming); neither may be skipped.**
 
-### 2.5 回送节点落在哪：续接发起方分支，不拼主线
+### 2.5 Where the reply-back node lands: continue the caller's branch, not the mainline
 
-异步回送（`wait=false`）时，`_dispatch_followup` 把目标分支的回复作为一个
-**synthetic user-role turn** 喂回发起方 session。**关键规则：这个回送节点的
-`predecessor` 必须指向"发起 message_branch 的那个节点"（caller），不是发起方
-session 当前的 `head_id`。**
+For asynchronous reply-back (`wait=false`), `_dispatch_followup` feeds the
+target branch's reply into the caller session as a **synthetic user-role turn**.
+**Key rule: the `predecessor` of that reply-back node must point at "the node
+that issued message_branch" (the caller), not at the caller session's current
+`head_id`.**
 
-为什么：
-- 用 `head_id` 当 predecessor → 回送被**拼到主线尾巴**。如果发起方在等待期间又聊了
-  别的，回送会莫名其妙接在那后面，DAG 上看不出这是"某次派生的回流"。
-- 用 caller 当 predecessor → 回送**从当初发起的那个点续接**，在 DAG 上是发起方分支
-  的自然延续（和 attach 指针的落位一致：attach 也挂 `predecessor = caller_msg_id`）。
+Why:
+- Using `head_id` as predecessor → the reply is **stitched onto the tail of the
+  mainline**. If the caller chatted about something else while waiting, the
+  reply lands inexplicably after that, and the DAG gives no hint that this is
+  "the return flow of a particular spawn".
+- Using the caller as predecessor → the reply **continues from the point where
+  it was issued**, a natural extension of the caller's branch in the DAG
+  (matching where the attach pointer lands: attach also hangs off
+  `predecessor = caller_msg_id`).
 
-DAG 形状：`发起节点 ──caller──> 子分支(点划线 spawn edge)`，子分支跑完，回送 user
-节点 `──predecessor──> 发起节点`，续在发起节点之后。发起方读到回送、再回应，继续这条
-链。子分支本身是并列的独立一支（从发起点 fork 出去），**不并回主线**。
+DAG shape: `caller node ──caller──> sub-branch (dash-dot spawn edge)`; once the
+sub-branch finishes, the reply-back user node goes
+`──predecessor──> caller node`, continuing after the caller node. The caller
+reads the reply, responds, and the chain continues. The sub-branch itself is a
+parallel independent branch (forked off the caller node) and **does not merge
+back into the mainline**.
 
-实现上，回送的 `TurnRequest` 必须显式带上发起点（caller_msg_id）作为 `branch_from`；
-`process_user_turn` 在缺省时取 session `head_id` 当 predecessor，那会把回送接到主线尾巴。
+In implementation, the reply-back `TurnRequest` must carry the caller point
+(caller_msg_id) explicitly as `branch_from`; when it is omitted,
+`process_user_turn` takes the session `head_id` as predecessor, which stitches
+the reply onto the tail of the mainline.
 
 ---
 
-## 3. 底座：事件层（整个设计，自包含）
+## 3. Foundation: the event layer (the whole design, self-contained)
 
-通信原语建在事件层上。这里把事件层完整写清——它是框架级的统一事件流
-（`openprogram/agent/event_bus.py` + `tool_gate.py` + `event_bridges.py`），通信只是
-它的又一组源 + 消费者。
+The communication primitive is built on the event layer. This section spells the
+event layer out in full — it is the framework-wide unified event stream
+(`openprogram/agent/event_bus.py` + `tool_gate.py` + `event_bridges.py`), and
+communication is just one more set of sources and consumers on it.
 
-### 3.1 为什么有事件层
+### 3.1 Why an event layer exists
 
-框架里"某件事发生了"的信号分散在多套机制里（agent loop 的 AgentEvent、auth 的
-`_emit`、context 的 on_event、channels 的 WS 广播、memory 的 poll、store 的日志）。
-事件层把它们统一成**一条总线：源往里 emit，消费者从里 subscribe，源和消费者互不
-认识**——想"在某时机做某事"，订阅对应类型即可。
+Signals for "something happened" were scattered across several mechanisms in the
+framework (AgentEvent in the agent loop, `_emit` in auth, on_event in context, WS
+broadcast in channels, poll in memory, logging in store). The event layer unifies
+them into **one bus: sources emit into it, consumers subscribe from it, and the
+two never know about each other** — to "do something at a certain moment", just
+subscribe to the matching type.
 
-### 3.2 Event 模型
+### 3.2 The Event model
 
-核心三样（是什么事 + 内容 + 时间）固定；关联信息放进开放的 metadata 口袋，不写死。
+The three essentials (what happened, its content, when) are fixed; correlation
+information goes into an open metadata pocket rather than being hard-coded.
 
 ```python
 @dataclass(frozen=True)
 class Event:
-    id: str          # 唯一编号
-    ts: float        # 发生时间
-    type: str        # 是什么事（见 §3.4）
-    origin: str      # 谁引起的：user / agent / tool / system / proactive
-    payload: dict    # 这件事的内容（命令、文件路径、哪条分支收到消息……）
-    metadata: dict   # 开放口袋：{"session":..., "turn":..., "lane":...}，需要才塞
+    id: str          # unique id
+    ts: float        # when it happened
+    type: str        # what happened (see §3.4)
+    origin: str      # who caused it: user / agent / tool / system / proactive
+    payload: dict    # the content of this event (command, file path, which branch got a message, ...)
+    metadata: dict   # open pocket: {"session":..., "turn":..., "lane":...}, filled only when needed
 ```
 
-session/turn/lane 进口袋不做固定字段：它们是外加关联、对一半事件（auth/channel）没
-意义；开放 dict 让以后加关联维度不改模型。`make_event(type, origin, payload, metadata)`
-会自动从 ContextVar 填上当前 session/turn。
+session/turn/lane go in the pocket rather than becoming fixed fields: they are
+extra correlations and mean nothing for half the events (auth/channel), and an
+open dict lets new correlation dimensions be added later without changing the
+model. `make_event(type, origin, payload, metadata)` fills in the current
+session/turn automatically from ContextVars.
 
-### 3.3 进程级单例总线
+### 3.3 A process-level singleton bus
 
-所有组件（webui、agent loop、channels、memory、auth、task runner、通信工具）都在
-**同一个 worker 进程**里（各是 daemon 线程），所以总线是**进程级单例** `get_event_bus()`。
-同进程所有线程拿同一实例，直接 emit/subscribe，不跨进程桥接。
+All components (webui, agent loop, channels, memory, auth, task runner,
+communication tools) live in **the same worker process** (each as a daemon
+thread), so the bus is a **process-level singleton** `get_event_bus()`. Every
+thread in the process gets the same instance and emits/subscribes directly, with
+no cross-process bridging.
 
 ```python
-bus.emit(event)                              # 广播，fire-and-forget，不阻塞调用方
-bus.subscribe(handler, types={...})          # 按类型订阅，返回 unsubscribe
-emit_safe(type, origin, payload, metadata)   # 源用：构建+emit，吞掉一切异常
-emit_ws_frame(frame)                         # 源用：把现成 WS 帧经总线送前端（解耦 webui）
+bus.emit(event)                              # broadcast, fire-and-forget, never blocks the caller
+bus.subscribe(handler, types={...})          # subscribe by type, returns unsubscribe
+emit_safe(type, origin, payload, metadata)   # for sources: build + emit, swallowing all exceptions
+emit_ws_frame(frame)                         # for sources: send a ready-made WS frame to the frontend via the bus (decouples webui)
 ```
 
-### 3.4 两类事件源 + 现有全部事件类型
+### 3.4 Two kinds of event source + every existing event type
 
-| | A 类：agent 活动（带 turn） | B 类：系统状态（可能没 agent 在跑） |
+| | Class A: agent activity (has a turn) | Class B: system state (maybe no agent running) |
 |---|---|---|
-| 例子 | 用户消息、模型回复、工具前后、文件改、turn 结束、子任务起止 | 凭据限流、上下文溢出、外部消息进、技能变 |
+| Examples | user message, model reply, before/after tool, file change, turn end, subtask start/stop | credential rate limit, context overflow, inbound external message, skill change |
 
-**框架现有的事件类型**：
+**Event types the framework already has:**
 
-| 类 | type | 何时 | 来源 |
+| Class | type | When | Source |
 |---|---|---|---|
-| A | `user.prompt_submitted` | 用户发消息 | dispatcher |
-| A | `model.response_started`/`.completed` | 模型开始/说完 | agent_loop |
-| A | `tool.before` | 工具即将执行（**可拦截**，见 §3.5） | agent_loop |
-| A | `tool.after` | 工具执行完 | agent_loop |
-| A | `file.changed` | 文件被改 | write/edit/apply_patch |
-| A | `turn.ended` | 一轮结束 | agent_loop |
-| A | `subagent.started`/`.ended` | 子任务起止 | TaskRunner |
-| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/耗尽/轮换 | event_bridges←AuthStore |
-| B | `context.compaction_recommended`/`.compacted` | 上下文到阈值/已压缩 | context/engine |
-| B | `channel.message_inbound` | 外部消息进 | channels |
-| B | `memory.ingest_started`/`.ended` | wiki ingest 起止 | memory watcher |
-| B | `skills.changed`/`plugins.update_available` | 技能改/插件新版 | webui watcher |
+| A | `user.prompt_submitted` | User sends a message | dispatcher |
+| A | `model.response_started`/`.completed` | Model starts / finishes speaking | agent_loop |
+| A | `tool.before` | Tool is about to execute (**interceptable**, see §3.5) | agent_loop |
+| A | `tool.after` | Tool finished executing | agent_loop |
+| A | `file.changed` | A file was modified | write/edit/apply_patch |
+| A | `turn.ended` | A turn finished | agent_loop |
+| A | `subagent.started`/`.ended` | Subtask start/stop | TaskRunner |
+| B | `credential.cooldown`/`.exhausted`/`.rotated` | Credential throttled / exhausted / rotated | event_bridges←AuthStore |
+| B | `context.compaction_recommended`/`.compacted` | Context hit threshold / was compacted | context/engine |
+| B | `channel.message_inbound` | External message arrives | channels |
+| B | `memory.ingest_started`/`.ended` | Wiki ingest start/stop | memory watcher |
+| B | `skills.changed`/`plugins.update_available` | Skill changed / new plugin version | webui watcher |
 
-**通信引入的事件**（A 类）：
+**Events introduced by communication** (class A):
 
-| type | 何时 | origin | payload 关键字段 |
+| type | When | origin | Key payload fields |
 |---|---|---|---|
-| `branch.message_sent` | message_branch 投递 | agent | from, to, sources, delivery_id, is_new, chain |
-| `branch.message_replied` | 目标答完自动回送 | agent | from, to, delivery_id, is_error |
-| `branch.created` / `.started` / `.failed` / `.cancelled` | 分支状态转换 | agent | branch, parent, agent_id, status |
-| `sessions.listed` / `branches.listed` | 列举 | agent | count |
+| `branch.message_sent` | message_branch delivers | agent | from, to, sources, delivery_id, is_new, chain |
+| `branch.message_replied` | Target finishes and replies back automatically | agent | from, to, delivery_id, is_error |
+| `branch.created` / `.started` / `.failed` / `.cancelled` | Branch state transitions | agent | branch, parent, agent_id, status |
+| `sessions.listed` / `branches.listed` | Listing | agent | count |
 
-`chain`（派生链）走 metadata，用于深度防循环（§5.1）；状态事件支持进度监听/审计/排查。
+`chain` (the spawn chain) travels in metadata and is used for depth-based loop
+prevention (§5.1); state events support progress monitoring, auditing, and
+troubleshooting.
 
-通信复用已有 `subagent.started`/`.ended`（派生用法时 TaskRunner 照发）。
+Communication reuses the existing `subagent.started`/`.ended` (TaskRunner emits
+them as usual for the spawn use).
 
-### 3.5 两种交互：观察 vs 拦截
+### 3.5 Two interaction modes: observe vs. intercept
 
-- **观察型（默认，异步）**：emit 出去，订阅者异步收到，源不等。绝大多数事件走这条。
-- **拦截型（仅 `tool.before`，同步）**：工具执行前能让下游说"别执行"。单一入口
-  `_execute_tool_calls` 在 `tool.execute()` 前有同步问询点（`tool_gate.py`
-  `register_tool_gate`）。必须快（不许调 LLM）；多方表态取最严；对 subagent 也生效
-  （在 approval 包装外，`permission_mode=bypass` 关不掉它）。**通信工具
-  `message_branch` 走它做值守拦截**（见 §5）。
+- **Observation (default, asynchronous)**: emit and go; subscribers receive
+  asynchronously and the source does not wait. The vast majority of events work
+  this way.
+- **Interception (only `tool.before`, synchronous)**: downstream can say "do not
+  execute" before a tool runs. The single entry point `_execute_tool_calls` has a
+  synchronous consultation point before `tool.execute()` (`tool_gate.py`,
+  `register_tool_gate`). It must be fast (no LLM calls); when multiple parties
+  weigh in, the strictest answer wins; it also applies to subagents (it sits
+  outside the approval wrapper, and `permission_mode=bypass` cannot turn it off).
+  **The communication tool `message_branch` uses it for unattended
+  interception** (see §5).
 
-### 3.6 通信怎么用事件层
+### 3.6 How communication uses the event layer
 
-- 每个通信动作 `emit_safe(...)`（投递、回送、列举）—— proactive / 审计 / 前端刷新
-  都是这条流的订阅者，互不耦合。
-- **前端通知统一走 `emit_ws_frame(frame)`**：跨 session 时目标 session 的前端经总线
-  收到 `ws.frame` 事件、webui 订阅后原样广播，两边前端实时看到"收到来自 X 的消息"
-  "X 回复了"。前端零改协议、通信工具不认识 webui。
-- **值守拦截走 `tool.before` 同步点**：投递是副作用，无人值守 + deny 时拦下要求确认。
+- Every communication action calls `emit_safe(...)` (delivery, reply-back,
+  listing) — proactive, auditing, and frontend refresh are all subscribers to
+  that one stream, mutually uncoupled.
+- **Frontend notifications all go through `emit_ws_frame(frame)`**: for
+  cross-session traffic, the target session's frontend receives a `ws.frame`
+  event via the bus, webui subscribes and rebroadcasts it verbatim, and both
+  frontends see "message received from X" and "X replied" in real time. The
+  frontend protocol needs no changes, and the communication tool knows nothing
+  about webui.
+- **Unattended interception uses the synchronous `tool.before` point**: delivery
+  is a side effect, so under an unattended + deny policy it is held for
+  confirmation.
 
-### 3.7 一条原则
+### 3.7 One principle
 
-**不是所有调用都是事件，只有"有消费者想响应"的时机才是。** 上表按这条筛选，通信引入的
-几个事件都有确定的响应方（前端渲染、proactive、审计）。演进方向是只加不改：新增事件类型、
-给 payload 加字段都不影响既有订阅者（它们只读自己关心的字段）。
-
----
-
-## 4. 端到端：两个 agent 互相看见 + 通信
-
-A、B 同时在跑（同 session 不同分支，或不同 session）：
-
-1. **看见**：A 调 `list_sessions` → 看到 B；`list_branches` → 看到 B 的活跃分支
-   `(B_session, B_head)`。
-2. **发**：A 调 `message_branch("...", target="B_session:B_head")` → 瞬间返回，
-   A 继续。
-3. **B 收到**：消息进 B 分支（B 那边一个 △"收到 A 的消息"），B 跑一轮答它（△）。
-   两边前端经 ws.frame 实时看到。
-4. **回送 A**：B 答完，`_dispatch_followup` 自动把回复追加到 A 末尾（△）+ 触发 A
-   跑一轮，A 醒来读到、可继续。
-5. **可循环**：A 再 `message_branch` 给 B……两条分支各自不阻塞、不串行。
-
-派生（target="new"）和综合（带 sources）是同一流程的另两种参数，不另列。
+**Not every call is an event; only moments that some consumer wants to react to
+are.** The tables above are filtered by that rule, and every event communication
+introduces has a definite responder (frontend rendering, proactive, auditing).
+Evolution is additive only: new event types and new payload fields never affect
+existing subscribers (they read only the fields they care about).
 
 ---
 
-## 5. 健壮性与安全
+## 4. End to end: two agents see each other and communicate
 
-通信会创建分支、触发别的分支跑、跨 session 写——这些副作用必须有边界。
+A and B run at the same time (different branches of one session, or different
+sessions):
 
-### 5.1 递归派生 + 死循环防护
+1. **See**: A calls `list_sessions` → sees B; `list_branches` → sees B's active
+   branch `(B_session, B_head)`.
+2. **Send**: A calls `message_branch("...", target="B_session:B_head")` →
+   returns instantly and A carries on.
+3. **B receives**: the message lands in B's branch (a △ "message from A" on B's
+   side), and B runs a turn to answer it (△). Both frontends see it live via
+   ws.frame.
+4. **Reply back to A**: when B finishes, `_dispatch_followup` automatically
+   appends the reply to the end of A (△) + triggers A to run a turn; A wakes up,
+   reads it, and can continue.
+5. **Repeatable**: A can `message_branch` B again — neither branch blocks and
+   nothing is serialized.
 
-**允许递归派生**（子分支能再 `message_branch` 派子分支，做多层任务分解），靠以下防爆：
-
-- **深度上限**：每次投递在 Event metadata 里带一条**派生链**（`chain: [发起分支, …,
-  当前]`）。`message_branch` 执行时若链长 ≥ `MAX_DEPTH`（默认 8），拒绝并把理由回给
-  模型。回送（自动 followup）继承同一条链，不重置——所以 A↔B 互发的来回也算进深度，
-  到顶自动停。
-- **自发拒绝**：target 指向**发起分支自己**（直接环）立即拒绝。
-- 链信息只在 metadata 流转，不进模型可见内容。
-
-### 5.2 并发上限 + 排队
-
-- 派生走 `TaskRunner` 线程池，上限 `OPENPROGRAM_TASK_WORKERS`（默认 4）。一次派几十
-  个：超出上限的**排队**，槽位空出再跑，不打爆。
-- 可选 **token 预算**：一次协作的总派生数 / 总 token 设上限，到顶拒绝新派生（防一个
-  失控分解派出几百个）。文档默认不强制，留参数。
-
-### 5.3 取消传播（级联）
-
-- 取消一个分支时，**它派出的所有子分支也被中断**：维护"活跃子分支"列表（线程锁保护），
-  取消时遍历 `child.interrupt`，复用 `TaskRunner` 现有 cancel + `kill_active_runtime`。
-- 子分支优雅关闭（cleanup），不留僵尸线程/子进程。
-
-### 5.4 发给"正在跑"的分支（竞态）
-
-A 给 B 发消息时 B 可能正跑一轮。**不打断、不丢弃——排队**：消息追加到 B 分支后，等 B
-当前这轮结束再触发处理它（OpenCode 的 pendingWake 思路）。B 空闲则立即触发。
-
-### 5.5 失败回送
-
-子/目标分支失败（崩溃 / 超时 / 模型报错）：**也回送**，回送内容带 `is_error` + 原因
-（"B 失败了：<原因>"），发起方模型读到后自行决定重发/换路/放弃。**不内置重试/熔断**
-——父是模型，由它判断比固定策略好。
-
-### 5.6 结果截断
-
-回送内容超过 `max_result_chars`（复用 `@function` 的 30k 默认）就**截断头尾 + 存完整
-文件**，回送里给文件路径。巨量中间结果不撑爆发起方 context、不阻塞主流程。
-
-### 5.7 子分支的身份 / 最小权限
-
-- `agent_id` 指定子分支用哪个 agent（不同 agent = 不同 system + 工具集 + 模型）。
-- model 支持 `inherit`（继承发起方模型），也可显式指定更弱的。
-- **默认子分支权限不高于发起方**（最小权限）；危险工具（删文件等）仍走 §5.8 拦截，
-  `permission_mode=bypass` 关不掉拦截点。
-- 子分支**只看到投递消息及其后的响应**，不继承发起方完整历史（省 context + 隔离）。
-
-### 5.8 值守拦截 + 校验
-
-- `message_branch` 走事件层 `tool.before` 同步问询点：无人值守 + deny 策略时拦下要求
-  确认（对子分支也生效，在 approval 包装外）。
-- 投递前校验 `target`（非 "new"）真实存在（`db.get_session` 非 None），不存在报错、
-  不静默新建。沿用三层门控（check_fn / can_use / requires_approval）。
-
-### 5.9 分支可见性
-
-分支标记 **内部（子派生）vs 用户可见**：内部分支只能被 `message_branch` 触发，不进
-UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent 寻址）。
-
-### 5.10 明确不做（及理由）
-
-- **parentID 额外字段**：`(session_id, head_id)` + caller/predecessor 已构成树，DAG
-  已画，不再加冗余字段。
-- **ID 前缀分类**（fork_/msg_）：现有 id + name 足够寻址，不加。
-- **重试 / 熔断策略**：失败回送给模型，由模型决定，不内置固定策略（见 §5.5）。
-- **内置聚合函数**（投票 / 全部成功等）：综合就是把 sources 喂给模型让它综合（§2.2），
-  模型综合比预设聚合灵活，不做固定聚合算子。
+Spawn (target="new") and synthesis (with sources) are two more parameterizations
+of the same flow and are not listed separately.
 
 ---
 
-## 6. 前后端清单
+## 5. Robustness and safety
 
-**后端（工具，`openprogram/functions/tools/agent_collab/`）**
-- `message_branch.py` — 唯一核心：投递 + 触发 + 自动回送 + 多源自我总结
-- `list_sessions.py` / `list_branches.py` — 复用 db.list_*
-- 各工具 `emit_safe(...)`；跨 session 通知用 `emit_ws_frame`
+Communication creates branches, triggers other branches to run, and writes
+across sessions. Those side effects need boundaries.
 
-**后端（复用既有组件）**
-- `TaskRunner`（线程池并发、await、cancel、_dispatch_followup 自动回送、attach 连线）
-- `SessionStore`（list/append/set_head/commit/get）
+### 5.1 Recursive spawning + infinite-loop protection
+
+**Recursive spawning is allowed** (a sub-branch can `message_branch` further
+sub-branches for multi-level task decomposition), kept in check by:
+
+- **Depth limit**: every delivery carries a **spawn chain** in Event metadata
+  (`chain: [issuing branch, …, current]`). When `message_branch` runs and the
+  chain length is ≥ `MAX_DEPTH` (default 8), it refuses and returns the reason to
+  the model. Reply-back (the automatic followup) inherits the same chain and does
+  not reset it, so back-and-forth between A and B counts toward the depth and
+  stops automatically at the ceiling.
+- **Self-send refusal**: a target pointing at **the issuing branch itself** (a
+  direct cycle) is refused immediately.
+- Chain information flows only in metadata and never enters model-visible
+  content.
+
+### 5.2 Concurrency limit + queueing
+
+- Spawning runs on the `TaskRunner` thread pool, capped by
+  `OPENPROGRAM_TASK_WORKERS` (default 4). Spawn dozens at once and anything over
+  the cap **queues**, running as slots free up, without blowing anything up.
+- Optional **token budget**: cap the total spawns / total tokens for one
+  collaboration and refuse new spawns at the ceiling (guards against one runaway
+  decomposition spawning hundreds). Not enforced by default in this document; the
+  parameter is left available.
+
+### 5.3 Cancellation propagation (cascading)
+
+- Cancelling a branch **also interrupts every sub-branch it spawned**: maintain
+  an "active sub-branches" list (protected by a thread lock) and on cancellation
+  walk it calling `child.interrupt`, reusing TaskRunner's existing cancel plus
+  `kill_active_runtime`.
+- Sub-branches shut down gracefully (cleanup), leaving no zombie threads or
+  subprocesses.
+
+### 5.4 Sending to a branch that is "already running" (race)
+
+When A messages B, B may be mid-turn. **Do not interrupt, do not drop — queue**:
+append the message to B's branch and trigger processing once B's current turn
+ends (the pendingWake idea from OpenCode). If B is idle, trigger immediately.
+
+### 5.5 Failure reply-back
+
+If the sub/target branch fails (crash / timeout / model error), **it still
+replies back**, with `is_error` and the reason in the content ("B failed:
+<reason>"), and the caller's model decides for itself whether to resend, reroute,
+or give up. **No built-in retry or circuit breaker** — the parent is a model, and
+its judgment beats a fixed policy.
+
+### 5.6 Result truncation
+
+If the reply-back content exceeds `max_result_chars` (reusing the 30k default
+from `@function`), it is **truncated head and tail and the full text is stored in
+a file**, with the file path included in the reply. Huge intermediate results do
+not blow up the caller's context or block the main flow.
+
+### 5.7 Sub-branch identity / least privilege
+
+- `agent_id` picks which agent the sub-branch runs as (different agent =
+  different system prompt + toolset + model).
+- model supports `inherit` (inherit the caller's model), or an explicitly weaker
+  one.
+- **By default a sub-branch has no more privilege than its caller** (least
+  privilege); dangerous tools (deleting files and the like) still go through the
+  §5.8 interception, which `permission_mode=bypass` cannot disable.
+- A sub-branch **sees only the delivered message and the responses after it**,
+  and does not inherit the caller's full history (saves context and isolates).
+
+### 5.8 Unattended interception + validation
+
+- `message_branch` goes through the event layer's synchronous `tool.before`
+  consultation point: under an unattended + deny policy it is held for
+  confirmation (this also applies to sub-branches, sitting outside the approval
+  wrapper).
+- Before delivering, validate that `target` (when not "new") actually exists
+  (`db.get_session` is not None); if it does not, raise an error rather than
+  silently creating it. The existing three-layer gating (check_fn / can_use /
+  requires_approval) still applies.
+
+### 5.9 Branch visibility
+
+Branches are marked **internal (sub-spawned) vs. user-visible**: an internal
+branch can only be triggered by `message_branch` and does not appear in the UI's
+session picker (but it is still drawn in the DAG and can be listed by
+list_branches so agents can address it).
+
+### 5.10 Explicitly out of scope (and why)
+
+- **An extra parentID field**: `(session_id, head_id)` plus caller/predecessor
+  already forms the tree and the DAG already draws it, so no redundant field.
+- **ID prefix classification** (fork_/msg_): existing id + name are enough for
+  addressing, so no.
+- **Retry / circuit-breaker policy**: failures are replied back to the model and
+  the model decides; no fixed built-in policy (see §5.5).
+- **Built-in aggregation functions** (voting, all-succeeded, etc.): synthesis
+  means feeding sources to the model and letting it synthesize (§2.2). A model
+  synthesizing is more flexible than a preset aggregation, so no fixed
+  aggregation operators.
+
+---
+
+## 6. Backend and frontend checklist
+
+**Backend (tools, `openprogram/functions/tools/agent_collab/`)**
+- `message_branch.py` — the one core: deliver + trigger + auto reply-back +
+  multi-source self-summarization
+- `list_sessions.py` / `list_branches.py` — reuse db.list_*
+- Each tool calls `emit_safe(...)`; cross-session notifications use
+  `emit_ws_frame`
+
+**Backend (reused existing components)**
+- `TaskRunner` (thread-pool concurrency, await, cancel, _dispatch_followup auto
+  reply-back, attach edges)
+- `SessionStore` (list/append/set_head/commit/get)
 - `dispatcher.process_user_turn`
-- `branch_summarization`（多源自我总结）
-- `event_bus`（emit_safe / emit_ws_frame）
+- `branch_summarization` (multi-source self-summarization)
+- `event_bus` (emit_safe / emit_ws_frame)
 
-**前端（`web/`）**
-- session / branch 列表面板（已有 WS handler）+ "选 target → 发消息"交互入口
-- 收到 `branch.message_sent` / `branch.message_replied`（经 ws.frame）→ 在对应
-  session 的 DAG / 消息流渲染通信节点 + 回流软连接线（hover 显示，dag-live 已定稿）
-- 派生进度复用现有 `task_status` 帧 + tasks 面板
+**Frontend (`web/`)**
+- Session / branch list panel (WS handlers already exist) + a "pick target →
+  send message" interaction entry point
+- On `branch.message_sent` / `branch.message_replied` (via ws.frame) → render
+  communication nodes plus the return-flow soft link edge in that session's DAG /
+  message stream (shown on hover; dag-live is already settled)
+- Spawn progress reuses the existing `task_status` frame + the tasks panel
 
 ---
 
-## 7. 可验证的行为
+## 7. Verifiable behaviors
 
-设计成立时，下列行为各自独立可验证。验证手段是 webui（`cd web && npm run build` +
-`openprogram worker restart`）或事件日志（`OPENPROGRAM_EVENT_LOG=1`）。
+If the design holds, each behavior below is independently verifiable. Verify
+through the webui (`cd web && npm run build` + `openprogram worker restart`) or
+the event log (`OPENPROGRAM_EVENT_LOG=1`).
 
-| 行为 | 表现 |
+| Behavior | What you see |
 |---|---|
-| 派生（`target="new"`） | agent 调一次，新建分支跑一轮，结果自动 followup 回发起方；事件 message_sent/replied 在事件日志可见 |
-| 列举 | `list_sessions` / `list_branches` 列出真实的多 session / 多分支 |
-| 发给同 session 已有分支 | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
-| 跨 session | A 发给别的 session 走同一路径；两边前端经 ws.frame 实时更新 |
-| 多源综合 | 带 2 条 source 分支，每条先自我总结，目标模型综合出新回答 |
-| 健壮性（§5） | A↔B 互发到 MAX_DEPTH 自动停；派 30 个排队不打爆；取消父→子全停；给正跑的 B 发消息排队等它结束；子失败父收到 is_error；超大结果截断给文件路径 |
-| 安全（§5.7-5.9） | deny 下被 tool.before 拦；不存在的 target 报错；子分支权限不高于父、不进 UI 选择列表 |
-| 前端 | webui 里选分支发消息，DAG 出现通信节点 + hover 软连接线 |
+| Spawn (`target="new"`) | The agent calls once, a new branch runs a turn, and the result automatically follows up back to the caller; message_sent/replied events are visible in the event log |
+| Listing | `list_sessions` / `list_branches` list the real multiple sessions / multiple branches |
+| Send to an existing branch in the same session | A sends to branch B of the same session, A does not block, B runs a turn, the reply returns to A automatically |
+| Cross-session | A sending to another session takes the same path; both frontends update live via ws.frame |
+| Multi-source synthesis | With 2 source branches, each summarizes itself first and the target model synthesizes a new answer |
+| Robustness (§5) | A↔B back-and-forth stops automatically at MAX_DEPTH; spawning 30 queues without blowing up; cancelling the parent stops every child; messaging a running B queues until its turn ends; the parent receives is_error when a child fails; oversized results are truncated with a file path |
+| Safety (§5.7-5.9) | Under deny it is held by tool.before; a nonexistent target raises an error; sub-branches have no more privilege than the parent and stay out of the UI picker |
+| Frontend | Pick a branch in the webui and send a message; the DAG shows communication nodes + the soft link edge on hover |
 
 ---
 
-## 8. 关键文件速查
+## 8. Key file reference
 
-| 事 | 位置 |
+| Thing | Location |
 |---|---|
-| 子 agent 派生 + 自动回送 | `openprogram/agent/sub_agent_run.py`、`agent/task/runner.py`（spawn_task / _dispatch_followup） |
-| 工具范本 + 注册 | `openprogram/functions/tools/task/task.py`、`functions/_runtime.py`（@function） |
-| session/branch 数据层 | `openprogram/store/session/session_store.py`（list_sessions:658 / list_branches:832 / append_message:706 / set_head:814 / commit_turn:455） |
-| 触发某 session 跑一轮 | `openprogram/agent/dispatcher/__init__.py`（process_user_turn:97） |
-| 多源自我总结 | `openprogram/agent/compaction/branch_summarization.py` |
-| 列表 WS handler | `webui/ws_actions/session.py:825`、`branch.py:221` |
-| attach 连线（仅画图） | `openprogram/agent/sub_agent_run.py`（write_attach_pointer_for_spawn） |
-| 事件总线 | `openprogram/agent/event_bus.py`（emit_safe / emit_ws_frame） |
+| Sub-agent spawn + auto reply-back | `openprogram/agent/sub_agent_run.py`, `agent/task/runner.py` (spawn_task / _dispatch_followup) |
+| Tool template + registration | `openprogram/functions/tools/task/task.py`, `functions/_runtime.py` (@function) |
+| session/branch data layer | `openprogram/store/session/session_store.py` (list_sessions:658 / list_branches:832 / append_message:706 / set_head:814 / commit_turn:455) |
+| Trigger a session to run a turn | `openprogram/agent/dispatcher/__init__.py` (process_user_turn:97) |
+| Multi-source self-summarization | `openprogram/agent/compaction/branch_summarization.py` |
+| List WS handlers | `webui/ws_actions/session.py:825`, `branch.py:221` |
+| attach edge (drawing only) | `openprogram/agent/sub_agent_run.py` (write_attach_pointer_for_spawn) |
+| Event bus | `openprogram/agent/event_bus.py` (emit_safe / emit_ws_frame) |
 
-> 注："综合多条"由 `message_branch(sources=[...])` 提供，不另设独立工具。底层
-> `_merge.py` 的多父 ContextCommit 血缘记录被复用来记下"这次综合来自哪几条分支"。
+> Note: "synthesize several branches" is provided by
+> `message_branch(sources=[...])`; there is no separate tool. The multi-parent
+> ContextCommit lineage record in the underlying `_merge.py` is reused to record
+> "which branches this synthesis came from".
 
 ---
 
-## 附：实现状态
+## Appendix: implementation status
 
-事件层（§3）、`TaskRunner`、`SessionStore`、`process_user_turn`、`branch_summarization`
-以及 `_dispatch_followup` 的自动回送均已存在，`message_branch` 及两个列举工具建在其上。
+The event layer (§3), `TaskRunner`, `SessionStore`, `process_user_turn`,
+`branch_summarization`, and the automatic reply-back in `_dispatch_followup` all
+already exist; `message_branch` and the two listing tools are built on top of
+them.
 
-两处与本设计尚有出入，需要在实现时补齐：
+Two points still diverge from this design and need to be closed during
+implementation:
 
-- **派生分支的命名（§2.4）**：`message_branch` 调 `run_agent_turn` 时需传 label 以获得
-  Stage 1 占位名，并接上 `finalize_turn` 的 Stage 2 自动改名触发；两者缺一时派生分支
-  在 web 端只显示 8 位 hex 短号。
-- **回送节点的落位（§2.5）**：`_dispatch_followup` 构造 `TurnRequest` 时需显式指定
-  `branch_from` 为发起点（caller_msg_id），否则 `process_user_turn` 取 session `head_id`
-  当 predecessor，回送会被接到主线尾巴而非发起分支。
+- **Naming spawned branches (§2.4)**: when `message_branch` calls
+  `run_agent_turn`, it must pass a label to get a Stage 1 placeholder name, and
+  it must hook into the Stage 2 automatic rename triggered by `finalize_turn`.
+  Miss either one and the spawned branch shows only an 8-digit hex short id in
+  the web UI.
+- **Where the reply-back node lands (§2.5)**: when `_dispatch_followup` builds
+  the `TurnRequest`, it must set `branch_from` explicitly to the caller point
+  (caller_msg_id); otherwise `process_user_turn` takes the session `head_id` as
+  predecessor and the reply is stitched onto the tail of the mainline instead of
+  the caller's branch.

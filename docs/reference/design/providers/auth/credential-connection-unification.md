@@ -1,118 +1,147 @@
-# 凭据连接信息统一（一个 Credential + 一个解析出口）
+# Credential connection unification (one Credential, one resolution point)
 
-发一次请求所需的一切都集中在**一个**凭据结构里，再由**一个**解析出口交给 wire
-层。凭据不会在中途被压成一根 `api_key` 字符串，`base_url` 不再只属于模型，
-"是不是 OAuth"也不靠 token 前缀去猜。
+Everything a request needs lives in **one** credential structure, and **one**
+resolution point hands it to the wire layer. A credential is never squeezed down
+to a bare `api_key` string along the way, `base_url` no longer belongs to the
+model alone, and "is this OAuth?" is not guessed from a token prefix.
 
-由此，一把 key 可以带自己的 `base_url`：同一个 `openai-completions` 协议下，
-一把 key 打官方端点、另一把 key 打阿里云百炼 `compatible-mode/v1`，不需要为每个
-兼容端点预建一份模型清单。
+As a result, a single key can carry its own `base_url`: under the same
+`openai-completions` protocol, one key hits the official endpoint while another
+hits Alibaba Cloud Bailian's `compatible-mode/v1`, with no need to pre-build a
+model list for every compatible endpoint.
 
-本文是 [unified-auth-storage.md](./unified-auth-storage.md) 的一次具体化：那份
-文档定的是"一个存储、一套登录、跨界面统一"的整体方向；本文只收敛其中的
-**payload 结构层**，不涉及登录注册表、存储路径、刷新所有权等议题。
+This document makes [unified-auth-storage.md](./unified-auth-storage.md)
+concrete. That document sets the overall direction of "one store, one login
+flow, unified across interfaces"; this one narrows in on the **payload
+structure layer** only, and does not touch the login registry, storage paths, or
+refresh ownership.
 
 ---
 
-## 一次请求需要两样东西
+## A request needs two things
 
-发一次 LLM 请求要知道**打到哪个地址（base_url）**和**用哪个鉴权值（key/token）**。
-如果这两样各走各的线，凭据就只能贡献其中一半：
+Sending an LLM request requires knowing **which address to hit (base_url)** and
+**which auth value to use (key/token)**. When these two travel on separate
+tracks, a credential can only contribute half of the answer:
 
-- **base_url 线**：模型清单里每条模型写死一个 `base_url` → 加载成 `Model` →
-  wire 层直接读 `model.base_url`。全程只跟模型绑定，不经过凭据。
-- **鉴权值线**：AuthStore 的 `CredentialPool` 存凭据 → wire 层调
-  `auth.usage.acquire_pooled(provider)` → 内部 `mgr.acquire_sync()` 拿到完整的
-  `Credential` 对象。
+- **The base_url track**: every model in the model list hardcodes a `base_url` →
+  loaded into `Model` → the wire layer reads `model.base_url` directly. It is
+  bound to the model throughout and never passes through the credential.
+- **The auth value track**: AuthStore's `CredentialPool` stores credentials →
+  the wire layer calls `auth.usage.acquire_pooled(provider)` → internally
+  `mgr.acquire_sync()` obtains the complete `Credential` object.
 
-如果最后一步把 `Credential` 压成一个 str 再交出去（按 6 种 payload 各自抽出一根
-字符串：`ApiKeyPayload→api_key`、`OAuth/DeviceCode→access_token`、
-`CliDelegated→读外部文件`、`external_process/sso→None`），那么凭据知道的
-base_url、headers 以及自己的 kind 就全部丢失。后果有两个：凭据里即使存了
-`base_url`，wire 层也读不到；anthropic wire 只能靠 `"sk-ant-oat" in key`
-猜这是不是 OAuth token，因为 kind 信息也一并没了。
+If the last step squeezes `Credential` into a str before handing it over
+(pulling one string out of each of the 6 payloads: `ApiKeyPayload→api_key`,
+`OAuth/DeviceCode→access_token`, `CliDelegated→read external file`,
+`external_process/sso→None`), then the base_url, headers, and kind the
+credential knows about are all lost. Two consequences follow: even when a
+credential stores a `base_url`, the wire layer cannot read it; and the anthropic
+wire can only guess whether a token is OAuth via `"sk-ant-oat" in key`, because
+the kind information is gone too.
 
-所以解析出口交出的不是一根字符串，而是一次请求所需的完整连接信息。
+So the resolution point hands over not a string, but the complete connection
+information a request needs.
 
-## 一个凭据结构
+## One credential structure
 
-`openprogram/auth/types.py` 用**一个** `CredentialData`（承载在
-`Credential.payload` 位置）覆盖所有验证方式，而不是每种验证各建一个子类型。
-不同验证方式的信息量差异是真实的 —— 简单验证信息少、复杂验证信息多 —— 因此
-共性字段固定，差异部分放进一个 `data` 字典：
+`openprogram/auth/types.py` uses **one** `CredentialData` (carried in the
+`Credential.payload` slot) to cover every authentication method, instead of a
+separate subtype per method. The differences in how much information each method
+carries are real — simple authentication carries little, complex authentication
+carries more — so the shared fields are fixed and the varying part goes into a
+`data` dictionary:
 
 ```python
 @dataclass
 class CredentialData:
-    # —— 共性字段：所有验证方式都在同一位置回答的「发请求要用什么」——
+    # -- Shared fields: every auth method answers "what does a request use"
+    #    in the same place --
     kind: str                     # "api_key" | "oauth" | "device_code" |
                                   # "cli_delegated" | "external_process" | "sso"
-    auth_value: str = ""          # 最终要放进 Authorization/x-api-key 的鉴权值：
-                                  #   api_key 类 → key 本身
-                                  #   oauth/device → access_token
-                                  #   cli_delegated → 空（运行时从外部文件读，见 data）
-    base_url: str = ""            # 该凭据指定的端点；空 ⇒ 用清单里的默认值（见解析规则）
-    headers: dict = field(default_factory=dict)   # 该凭据附带的额外请求头；多数为空
+    auth_value: str = ""          # the auth value that ends up in Authorization/x-api-key:
+                                  #   api_key kinds -> the key itself
+                                  #   oauth/device -> access_token
+                                  #   cli_delegated -> empty (read from an external file at
+                                  #                    runtime, see data)
+    base_url: str = ""            # endpoint specified by this credential; empty => use the
+                                  # list default (see resolution rules)
+    headers: dict = field(default_factory=dict)   # extra request headers carried by this
+                                                  # credential; usually empty
 
-    # —— 差异容器：某种验证特有的一切都进这里 ——
+    # -- Variation container: everything specific to one auth method goes here --
     data: dict = field(default_factory=dict)
 ```
 
-`data` 里按 kind 放各自私有的字段，不预留成正式字段，这样一份 api_key 凭据不会
-带着一堆空的 oauth 字段：
+`data` holds the fields private to each kind rather than reserving them as
+formal fields, so an api_key credential does not carry a pile of empty oauth
+fields:
 
-| kind | `auth_value` | `data` 里装什么 |
+| kind | `auth_value` | what goes in `data` |
 |---|---|---|
-| `api_key` | key 本身 | （通常空） |
+| `api_key` | the key itself | (usually empty) |
 | `oauth` | access_token | `refresh_token` / `expires_at_ms` / `client_id` / `token_endpoint` / `scope` / `id_token` |
 | `device_code` | access_token | `refresh_token` / `expires_at_ms` / `device_code_flow_id` |
-| `cli_delegated` | 空 | `store_path` / `access_key_path` / `refresh_key_path` / `expires_key_path` |
-| `external_process` | 空 | `command` / `parses` / `json_key_path` / `cache_seconds` |
-| `sso` | 空 | `broker` / `subject` |
+| `cli_delegated` | empty | `store_path` / `access_key_path` / `refresh_key_path` / `expires_key_path` |
+| `external_process` | empty | `command` / `parses` / `json_key_path` / `cache_seconds` |
+| `sso` | empty | `broker` / `subject` |
 
-**展示信息不进 payload。** 账号邮箱、显示名、org id 等留在 `Credential.metadata`
-（UI 渲染它、manager 不解释它）。它们不影响请求怎么发，是 UI 与用量统计的消费
-对象；混进连接信息只会让"要用的"和"给人看的"再次纠缠。
+**Display information stays out of the payload.** Account email, display name,
+org id and the like remain in `Credential.metadata` (the UI renders it, the
+manager does not interpret it). They do not affect how a request is sent; they
+are consumed by the UI and usage statistics. Mixing them into connection
+information only re-entangles "what to use" with "what to show".
 
-## 一个解析出口
+## One resolution point
 
-一个函数把凭据翻译成 wire 层真正要用的连接信息：
+A single function translates a credential into the connection information the
+wire layer actually uses:
 
 ```python
 @dataclass
 class ResolvedConnection:
-    kind: str                     # 凭据类型——wire 判 OAuth 不再靠 key 前缀猜
-    auth_value: str               # 已解析好的鉴权值（cli_delegated 已现读外部文件填好）
-    base_url: str | None          # 凭据指定的端点；None ⇒ 让 wire 回退到 model.base_url
-    headers: dict                 # 凭据附带的额外请求头（默认空）
+    kind: str                     # credential type -- the wire no longer guesses OAuth
+                                  # from a key prefix
+    auth_value: str               # the resolved auth value (cli_delegated is already
+                                  # filled in by reading the external file)
+    base_url: str | None          # endpoint specified by the credential; None => let the
+                                  # wire fall back to model.base_url
+    headers: dict                 # extra request headers carried by the credential
+                                  # (empty by default)
 
 def resolve_connection(cred: Credential) -> ResolvedConnection | None:
-    """把一份 Credential 翻译成一次请求的连接信息。
-    cli_delegated 在此现读外部文件取 token（保持它「外部 CLI 权威」的语义）。
-    external_process/sso 未落地 → 返回 None，调用方按当前逻辑向下一层回退。"""
+    """Translate one Credential into the connection information for a request.
+    cli_delegated reads the external file here to obtain the token (preserving its
+    "the external CLI is authoritative" semantics).
+    external_process/sso are not implemented -> return None, and the caller falls
+    through to the next layer per its current logic."""
 ```
 
-`auth.usage.acquire_pooled` 返回 `(conn: ResolvedConnection, profile, cred_id)`
-而不是 `(token: str, profile, cred_id)`，这样凭据知道的连接信息不会在半路丢失。
-它内部本就持有完整的 `cred`，只是把末尾的字符串抽取换成 `resolve_connection`。
+`auth.usage.acquire_pooled` returns `(conn: ResolvedConnection, profile,
+cred_id)` instead of `(token: str, profile, cred_id)`, so the connection
+information the credential knows about is not lost midway. It already holds the
+complete `cred` internally; only the final string extraction is replaced by
+`resolve_connection`.
 
-## wire 层：凭据优先，清单兜底
+## Wire layer: credential first, model list as fallback
 
-各 wire（`openai_completions` / `openai_responses` / `anthropic`）统一按这套规则
-取值：
+Every wire (`openai_completions` / `openai_responses` / `anthropic`) reads
+values by the same rules:
 
 ```python
-conn = <来自 acquire_pooled 的 ResolvedConnection，或 None>
+conn = <ResolvedConnection from acquire_pooled, or None>
 api_key  = conn.auth_value if conn else opts.api_key
 base_url = (conn.base_url if conn and conn.base_url else None) or model.base_url
 headers  = { **(model.headers or {}), **(conn.headers if conn else {}), **(opts.headers or {}) }
 is_oauth = bool(conn and conn.kind in ("oauth", "device_code"))
 ```
 
-**规则一句话：凭据带了 `base_url` 就用凭据的，没带就用模型的默认值。** 于是官方
-openai / deepseek / anthropic 照常工作（凭据不填 base_url），而接入百炼只需在存
-key 时填上 `base_url = https://…maas.aliyuncs.com/compatible-mode/v1`，该凭据的
-请求就打到百炼，其余不受影响。
+**The rule in one sentence: if the credential carries a `base_url`, use the
+credential's; otherwise use the model's default.** So official openai / deepseek
+/ anthropic keep working as before (their credentials leave base_url empty),
+while connecting to Bailian only requires filling in
+`base_url = https://…maas.aliyuncs.com/compatible-mode/v1` when storing the key.
+That credential's requests then go to Bailian, and nothing else is affected.
 
 ```
 Credential(CredentialData{auth_value, base_url, headers, kind, data})
@@ -120,62 +149,78 @@ Credential(CredentialData{auth_value, base_url, headers, kind, data})
       └─(resolve_connection)─► ResolvedConnection{kind, auth_value, base_url, headers}
             │
             └─ wire: base_url = conn.base_url or model.base_url  ─► AsyncClient(...)
-                     模型清单里的 base_url 仅作 conn.base_url 为空时的兜底默认
+                     the model list's base_url is only the fallback default
+                     when conn.base_url is empty
 ```
 
-## 影响范围
+## Scope of impact
 
-**改动：**
-- `openprogram/auth/types.py`：6 个 payload 类合并为一个 `CredentialData`；
-  `_payload_to_dict`/`_payload_from_dict` 随之简化为单类型序列化
-  （`kind` + 扁平字段 + `data`）。
-- `openprogram/auth/resolver.py`：`resolve_connection` 取代返回裸 str 的路径。
-- `openprogram/auth/usage.py`：`acquire_pooled` 返回 `ResolvedConnection` 三元组。
-- 各 wire（`openai_completions.py` / `openai_responses/*` /
-  `anthropic/anthropic.py`）：按上面的取值规则处理鉴权、base_url、headers 与
-  oauth 判定。
-- 读 payload 具体字段的地方（manager 的 OAuth 刷新读 `refresh_token`/`expires`、
-  delegated 读外部文件路径等）：改为从 `CredentialData.data[...]` 取。
+**Changes:**
+- `openprogram/auth/types.py`: the 6 payload classes merge into one
+  `CredentialData`; `_payload_to_dict`/`_payload_from_dict` simplify accordingly
+  into single-type serialization (`kind` + flat fields + `data`).
+- `openprogram/auth/resolver.py`: `resolve_connection` replaces the path that
+  returned a bare str.
+- `openprogram/auth/usage.py`: `acquire_pooled` returns a `ResolvedConnection`
+  triple.
+- The wires (`openai_completions.py` / `openai_responses/*` /
+  `anthropic/anthropic.py`): handle auth, base_url, headers, and the oauth
+  decision by the rules above.
+- Places that read specific payload fields (the manager's OAuth refresh reading
+  `refresh_token`/`expires`, delegated reading external file paths, and so on):
+  switch to reading from `CredentialData.data[...]`.
 
-**保留：**
-- 模型清单里的 `base_url` 仍在，作为凭据未指定时的默认值。内置 provider 开箱
-  即用不变。
-- `Credential.metadata` 与 OAuth 的邮箱等展示信息，UI 与用量统计照旧读取。
-- 登录注册表、存储路径、刷新所有权、跨界面统一等议题不在本文范围内。
+**Retained:**
+- The `base_url` in the model list stays, as the default when a credential does
+  not specify one. Built-in providers work out of the box as before.
+- `Credential.metadata` and display information such as the OAuth email are read
+  by the UI and usage statistics as before.
+- The login registry, storage paths, refresh ownership, and cross-interface
+  unification are out of scope here.
 
-## 旧格式：一次性迁移
+## Old format: one-time migration
 
-运行时（`_payload_from_dict` / `resolve_connection`）只认新结构。读到旧的
-6-payload JSON（带 `__type__` 判别符）是错误，不是回退路径。既有凭据由一个
-一次性迁移器搬到新结构，用户无需重新登录。
+The runtime (`_payload_from_dict` / `resolve_connection`) recognizes only the
+new structure. Reading old 6-payload JSON (carrying the `__type__`
+discriminator) is an error, not a fallback path. Existing credentials are moved
+to the new structure by a one-time migrator, and users do not need to log in
+again.
 
-`openprogram/auth/_migrate_payload.py` 把每个
-`~/.openprogram/auth/<provider>/<profile>.json` 里的旧 `payload` 就地转成新的
-`CredentialData`，原子写回（沿用 store 的 write→fsync→replace）。转换规则：
+`openprogram/auth/_migrate_payload.py` converts the old `payload` in each
+`~/.openprogram/auth/<provider>/<profile>.json` in place into the new
+`CredentialData` and writes it back atomically (reusing the store's
+write→fsync→replace). Conversion rules:
 
-| 旧 `__type__` | → 新 `kind` | `auth_value` | `data`（其余字段整体搬入） |
+| old `__type__` | → new `kind` | `auth_value` | `data` (remaining fields moved over wholesale) |
 |---|---|---|---|
-| `ApiKeyPayload` | `api_key` | `api_key` | `{}`（`base_url`/`headers` 若旧无则空） |
+| `ApiKeyPayload` | `api_key` | `api_key` | `{}` (`base_url`/`headers` empty if absent in the old form) |
 | `OAuthPayload` | `oauth` | `access_token` | `refresh_token` `expires_at_ms` `scope` `client_id` `token_endpoint` `id_token` `extra` |
 | `DeviceCodePayload` | `device_code` | `access_token` | `refresh_token` `expires_at_ms` `device_code_flow_id` |
 | `CliDelegatedPayload` | `cli_delegated` | `""` | `store_path` `access_key_path` `refresh_key_path` `expires_key_path` |
 | `ExternalProcessPayload` | `external_process` | `""` | `command` `parses` `json_key_path` `cache_seconds` |
 | `SsoPayload` | `sso` | `""` | `broker` `subject` |
 
-迁移器是幂等的：payload 已是新结构（有 `kind` 顶层字段、无 `__type__`）则跳过。
-首次 `AuthStore` 加载时自动运行，也可用 `openprogram auth migrate` 手动触发。
-`_rotation/_active/_disabled/_order.json` 等不含 `credentials` 的管理文件没有
-payload，迁移器跳过它们。
+The migrator is idempotent: a payload already in the new structure (top-level
+`kind` field present, no `__type__`) is skipped. It runs automatically on the
+first `AuthStore` load, and can also be triggered manually with
+`openprogram auth migrate`. Management files that contain no `credentials`, such
+as `_rotation/_active/_disabled/_order.json`, have no payload, and the migrator
+skips them.
 
-## 测试
+## Tests
 
-- `resolve_connection`：每种 kind 各一条 —— api_key 带/不带 base_url、oauth 出
-  access_token、cli_delegated 现读外部文件、external_process/sso 返回 None。
-- 序列化往返：`CredentialData` → dict → `CredentialData` 字段一致（含 `data`）。
-- wire 取值规则：凭据带 base_url 用凭据的，不带用 `model.base_url`；
-  `kind=oauth` 时 `is_oauth` 为真且不依赖前缀。
-- 端到端：存一把带 `base_url=百炼` 的 `api_key` 凭据，跑 `openai-completions`
-  验证客户端 base_url 指向百炼，而官方 openai 凭据仍指向默认端点。
-- 迁移器：旧 `ApiKeyPayload/OAuthPayload/CliDelegatedPayload` JSON 各一条，
-  迁移后 `kind`/`auth_value`/`data` 正确且无 `__type__`；对已是新结构的文件
-  幂等跳过；管理文件（`_rotation.json` 等）不被改动。
+- `resolve_connection`: one case per kind — api_key with and without base_url,
+  oauth yielding access_token, cli_delegated reading the external file live,
+  external_process/sso returning None.
+- Serialization round trip: `CredentialData` → dict → `CredentialData` with
+  identical fields (including `data`).
+- Wire value rules: a credential with base_url wins, without one
+  `model.base_url` is used; with `kind=oauth`, `is_oauth` is true without
+  depending on any prefix.
+- End to end: store an `api_key` credential with `base_url=Bailian`, run
+  `openai-completions`, and verify the client's base_url points at Bailian while
+  the official openai credential still points at the default endpoint.
+- Migrator: one old `ApiKeyPayload/OAuthPayload/CliDelegatedPayload` JSON each,
+  with correct `kind`/`auth_value`/`data` and no `__type__` after migration;
+  idempotent skip for files already in the new structure; management files
+  (`_rotation.json` and friends) left untouched.

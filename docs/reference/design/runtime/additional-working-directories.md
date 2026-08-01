@@ -1,50 +1,51 @@
-# 会话多工作目录（Additional Working Directories）设计
+# Additional working directories for a session
 
-一个会话除主工作目录（绑定项目路径）外，可挂任意多个"额外工作目录"。语义对齐 Claude Code 的 "Add another folder"（`additionalWorkingDirectories`）：**额外目录只扩权限围栏和模型认知，不改变主 cwd，不改变会话存储位置**。
+Beyond its main working directory (the bound project path), a session can mount any number of "additional working directories". The semantics match Claude Code's "Add another folder" (`additionalWorkingDirectories`): **an additional directory only widens the permission fence and the model's awareness. It does not change the main cwd, and it does not change where the session is stored.**
 
-项目路径 → 会话 cwd 的链路由 `project_workdir_for` 承担，围栏部分见 `docs/reference/design/runtime/permission-model.md` §3.5。
+The project path → session cwd link is handled by `project_workdir_for`; the fence side is covered in `docs/reference/design/runtime/permission-model.md` §3.5.
 
 ---
 
-## 1. 语义（做什么、不做什么）
+## 1. Semantics (what it does and does not do)
 
-| 维度 | 主工作目录 | 额外工作目录 |
+| Dimension | Main working directory | Additional working directory |
 |---|---|---|
-| 模型 cwd（system prompt、`--cd`、工具 ContextVar） | ✅ 项目路径 | ❌ 不变 |
-| 会话仓库/产物存储位置 | ✅ `<project>/.openprogram/sessions/` | ❌ 不变 |
-| acceptEdits 围栏白名单（`check_path_safety` 的 `working_dirs`） | ✅ | ✅ 加入 |
-| system prompt 告知模型 | ✅ "Current working directory" | ✅ 新增一行列出 |
-| 存储 | 项目绑定（project_store） | 会话级 `SessionRunConfig.additional_working_dirs`（session meta，schemaless） |
+| Model cwd (system prompt, `--cd`, tool ContextVar) | ✅ project path | ❌ unchanged |
+| Session repository / artifact storage location | ✅ `<project>/.openprogram/sessions/` | ❌ unchanged |
+| acceptEdits fence allowlist (`working_dirs` of `check_path_safety`) | ✅ | ✅ added |
+| Announced to the model in the system prompt | ✅ "Current working directory" | ✅ one extra line listing them |
+| Storage | project-bound (project_store) | session-level `SessionRunConfig.additional_working_dirs` (session meta, schemaless) |
 
-不做（对齐 Claude Code 也不做或本项目无载体）：
-- 不从额外目录加载 CLAUDE.md / 项目级 settings —— 权限规则仍只跟主项目走。
-- 不做目录级只读/读写分级 —— 白名单是二值的，进了就是可写安全区。
-- 不做全局（跨会话）额外目录 —— 载体是会话 meta，跨会话需求用项目解决。
+Out of scope (either Claude Code does not do it either, or this project has no carrier for it):
 
-扩展点（未来要做时从哪下手）：条目从 `str` 升级为带属性对象时，只需改 `_as_str_list` 的解析与 `check_path_safety` 的消费端，存储 schemaless 无迁移；MCP roots / 多根 IDE 工作区如需接入，同一字段即是唯一权威。
+- CLAUDE.md and project-level settings are not loaded from additional directories. Permission rules still follow the main project only.
+- There is no per-directory read-only / read-write grading. The allowlist is binary: once in, a directory is a writable safe zone.
+- There are no global (cross-session) additional directories. The carrier is session meta; cross-session needs are served by projects.
 
-## 2. 数据链路
+Extension points (where to start when these are needed): when entries are upgraded from `str` to attributed objects, only the parsing in `_as_str_list` and the consumer in `check_path_safety` have to change, and schemaless storage means no migration. If MCP roots or multi-root IDE workspaces are wired in, the same field is the single source of truth.
 
-`additional_working_dirs` 从会话配置一路流到路径围栏：
+## 2. Data path
+
+`additional_working_dirs` flows from session config all the way to the path fence:
 
 ```
 UI / ws action
    ↓
-SessionRunConfig.additional_working_dirs        session_config.py:61（字段）:79（load）:127（save）
+SessionRunConfig.additional_working_dirs        session_config.py:61 (field) :79 (load) :127 (save)
    ↓ load_session_run_config
 TurnRequest.additional_working_dirs             dispatcher/types.py:112
-   ↑ 填充：webui/_execute/chat.py:259、channels/_conversation.py:243
+   ↑ populated by: webui/_execute/chat.py:259, channels/_conversation.py:243
    ↓
 _path_is_safe → check_path_safety(path, dirs)   internals/_approval.py:72-82 → functions/tools/file_safety.py:63
 ```
 
-`save_session_run_config(..., additional_working_dirs=...)` 接受该参数，传 None 表示不改动，聊天路径因此不会误清已有目录。
+`save_session_run_config(..., additional_working_dirs=...)` accepts the parameter; passing `None` means "leave unchanged", so the chat path never accidentally clears existing directories.
 
-## 3. 各环节设计
+## 3. Design, stage by stage
 
-### 3.1 后端：围栏基准
+### 3.1 Backend: the fence baseline
 
-围栏的工作目录集在 `openprogram/agent/internals/_approval.py:81` 组装：
+The fence's working-directory set is assembled in `openprogram/agent/internals/_approval.py:81`:
 
 ```python
 from openprogram.worktree.context import current_worktree_path
@@ -52,94 +53,92 @@ work_dirs = [current_worktree_path() or os.getcwd(),
              *getattr(req, "additional_working_dirs", [])]
 ```
 
-基准取 `current_worktree_path()`（dispatcher 每 turn 把真实 cwd——worktree 或项目路径——绑进这个 ContextVar，见 `dispatcher/__init__.py:387-403`），进程 `getcwd` 只作回落。这与 system prompt 的 cwd 同源（`_model_tools.py:322`）——模型被告知的 cwd 和围栏认可的 cwd 永远是同一个目录。若二者不一致，模型改项目内文件会被围栏判为"工作区外"，acceptEdits 不放行、反复弹审批。`worktree.context` 只依赖 stdlib，无循环 import。
+The baseline comes from `current_worktree_path()` — the dispatcher binds the real cwd (worktree or project path) into that ContextVar on every turn, see `dispatcher/__init__.py:387-403` — and the process `getcwd` is only a fallback. This shares a source with the cwd in the system prompt (`_model_tools.py:322`), so the cwd the model is told about and the cwd the fence honors are always the same directory. If they diverge, edits to files inside the project are judged "outside the workspace", acceptEdits does not let them through, and approval prompts fire repeatedly. `worktree.context` depends on stdlib only, so there is no import cycle.
 
-### 3.2 后端：ws action `set_working_dirs`
+### 3.2 Backend: the `set_working_dirs` ws action
 
-落 `openprogram/webui/ws_actions/session.py`（与其它会话配置 action 同居）。**整表替换**语义（前端算好增删后发完整列表）——幂等、无"重复添加/删不存在"的边界分支：
+It lives in `openprogram/webui/ws_actions/session.py`, alongside the other session-config actions. The semantics are **whole-list replacement** — the frontend computes the additions and removals and sends the complete list. That is idempotent and removes the "already added / removing something absent" edge cases:
 
 ```python
 async def handle_set_working_dirs(ws, cmd: dict):
-    """整表替换会话的额外工作目录。dirs 逐条 expanduser + 必须是存在的目录,
-    非法条目整帧拒绝(error 帧带原因),不做部分写入。"""
-    # 校验通过 → save_session_run_config(session_id, agent_id=..., additional_working_dirs=dirs)
-    # → 广播 {"type": "working_dirs", "data": {"session_id", "dirs"}}
+    """Replace the session's additional working directories wholesale. Each dir is
+    expanduser'd and must be an existing directory. An invalid entry rejects the whole
+    frame (an error frame carries the reason); there are no partial writes."""
+    # validation passes → save_session_run_config(session_id, agent_id=..., additional_working_dirs=dirs)
+    # → broadcast {"type": "working_dirs", "data": {"session_id", "dirs"}}
 ```
 
-校验规则：`Path(d).expanduser()` 后 `is_dir()`；存的是 expanduser 后的绝对路径字符串（不 realpath——用户看到自己选的路径，realpath 归一交给 `check_path_safety` 消费端，它本来就做）。
+Validation rule: `Path(d).expanduser()` must satisfy `is_dir()`. What is stored is the expanded absolute path string, not the realpath — the user sees the path they picked, and realpath normalization is left to the `check_path_safety` consumer, which already does it.
 
-### 3.3 后端：`session_loaded` 回带 + 首条消息携带
+### 3.3 Backend: returned in `session_loaded`, carried on the first message
 
-- `ws_actions/session.py:676-681` 的 `data.settings` 带上 `additional_working_dirs`——刷新/换端后前端据此恢复列表。
-- `ws_actions/chat.py` 的 `handle_chat`：`cmd.get("additional_working_dirs")` 非 None 时传入 `save_session_run_config`。这是草稿会话（尚无 session_id）在首条消息落地目录的唯一通道，与 `permission_mode` 等既有字段同一模式。
+- `data.settings` in `ws_actions/session.py:676-681` includes `additional_working_dirs`, so the frontend restores the list after a refresh or a client switch.
+- `handle_chat` in `ws_actions/chat.py`: when `cmd.get("additional_working_dirs")` is not None, it is passed to `save_session_run_config`. This is the only channel through which a draft session (one that has no session_id yet) can persist directories on its first message, and it follows the same pattern as existing fields such as `permission_mode`.
 
-### 3.4 后端：system prompt 告知模型
+### 3.4 Backend: telling the model in the system prompt
 
-`with_tool_runtime_prompt` 接受可选参 `additional_working_dirs: list[str] | None = None`，dispatcher 调用处传 `req.additional_working_dirs`。在 "Current working directory" 行后列出（有则出现，空则无此行）：
+`with_tool_runtime_prompt` takes an optional `additional_working_dirs: list[str] | None = None`, and the dispatcher call site passes `req.additional_working_dirs`. The directories are listed after the "Current working directory" line — the line appears only when the list is non-empty:
 
 ```
 - Additional working directories (equally writable): /a, /b
 ```
 
-`internals/_model_tools.py` 与 `agent/_model_tools.py` 两份副本保持一致，遵循文件头的 "kept in sync" 约定。
+The two copies in `internals/_model_tools.py` and `agent/_model_tools.py` stay identical, per the "kept in sync" convention stated in the file headers.
 
-### 3.5 前端：ProjectBadge 菜单内的目录区
+### 3.5 Frontend: the directory section in the ProjectBadge menu
 
-入口放项目 chip 菜单（`web/components/chat/top-bar/project-menu.tsx`，shadcn Popover）——目录归属感和项目一致，不新增 chip 不占 composer 宽度。菜单尾部加一节：
+The entry point is the project chip menu (`web/components/chat/top-bar/project-menu.tsx`, a shadcn Popover). Directories belong with the project, no new chip is added, and composer width is untouched. A section is appended to the menu:
 
 ```
 ──────────────
-工作目录
+Working directories
   ~/Documents/foo        ✕
   /Volumes/data/bar      ✕
-  ＋ 添加文件夹
+  ＋ Add folder
 ```
 
-- "＋ 添加文件夹" → `POST /api/pick-folder`（现成原生选择器，桌面端同样走它）→ 取到路径后把新列表 `wsSend({action:"set_working_dirs", session_id, dirs})`，同时**乐观更新**本地状态（即时反馈原则），`working_dirs` 广播帧到达后以后端为准。
-- ✕ 同一 action 发去掉该项的列表。
-- 会话无 id（草稿）时只更新本地状态，首条 chat 帧携带（§3.3）。
+- "＋ Add folder" calls `POST /api/pick-folder` (the existing native picker, used on desktop too). Once a path comes back, the new list is sent with `wsSend({action:"set_working_dirs", session_id, dirs})` and local state is **updated optimistically** (the instant-feedback principle); when the `working_dirs` broadcast arrives, the backend value wins.
+- ✕ sends the same action with the list minus that entry.
+- When the session has no id yet (a draft), only local state updates, and the list rides along on the first chat frame (§3.3).
 
-状态放 session-store：`additionalWorkingDirsBySession: Record<string, string[]>`（完整词，不缩写），来源三处——`session_loaded.data.settings`、`working_dirs` 广播、乐观更新。不进 `ComposerSettings`/localStorage：这是服务端持久化的会话数据，不是端上偏好。
+State lives in the session store as `additionalWorkingDirsBySession: Record<string, string[]>` (full words, no abbreviations), fed from three sources: `session_loaded.data.settings`, the `working_dirs` broadcast, and optimistic updates. It does not go into `ComposerSettings` or localStorage, because this is server-persisted session data, not a client-side preference.
 
-### 3.6 测试
+### 3.6 Tests
 
-跟随既有文件风格：
-- `tests/unit/test_session_config.py`：`additional_working_dirs` save/load 往返（含 None 不动、`_as_str_list` 清洗）。
-- `tests/unit/test_permission_rules.py`：`_path_is_safe` 三例——额外目录内放行、目录外拦、ContextVar 绑定的项目 cwd 内放行（monkeypatch `current_worktree_path`）。
-- `tests/unit/test_ws_working_dirs.py`：ws action 的合法写入+广播、非目录整帧拒绝、`session_loaded` 回带。
+Following the style of the existing files:
 
-## 4. 数据流总览
+- `tests/unit/test_session_config.py`: `additional_working_dirs` save/load round-trip, including "None leaves it unchanged" and `_as_str_list` sanitizing.
+- `tests/unit/test_permission_rules.py`: three `_path_is_safe` cases — allowed inside an additional directory, blocked outside it, and allowed inside the project cwd bound to the ContextVar (monkeypatching `current_worktree_path`).
+- `tests/unit/test_ws_working_dirs.py`: the ws action's valid write plus broadcast, whole-frame rejection for a non-directory, and the `session_loaded` round-trip.
+
+## 4. End-to-end flow
 
 ```
-ProjectBadge 菜单 ＋添加文件夹
-   │ POST /api/pick-folder（原生对话框）
+ProjectBadge menu ＋ Add folder
+   │ POST /api/pick-folder (native dialog)
    ▼
-wsSend set_working_dirs {session_id, dirs}     （草稿会话 → 随首条 chat 帧）
+wsSend set_working_dirs {session_id, dirs}     (draft session → rides on the first chat frame)
    ▼
-handle_set_working_dirs：校验 → save_session_run_config → 广播 working_dirs
+handle_set_working_dirs: validate → save_session_run_config → broadcast working_dirs
    ▼
-session meta（schemaless，无迁移）
-   ▼ 每 turn load_session_run_config
+session meta (schemaless, no migration)
+   ▼ load_session_run_config on every turn
 TurnRequest.additional_working_dirs
-   ├─→ _path_is_safe：[current_worktree_path() or getcwd(), *dirs] → check_path_safety
-   └─→ with_tool_runtime_prompt：system prompt 列出额外目录
+   ├─→ _path_is_safe: [current_worktree_path() or getcwd(), *dirs] → check_path_safety
+   └─→ with_tool_runtime_prompt: system prompt lists the additional directories
 ```
 
-## 5. 关键性质（改动时守住）
+## 5. Key properties to preserve
 
-以下四条是设计的红线，任何改动都要保持：
+These four are the design's hard lines; any change has to keep them:
 
-- 额外目录**只入围栏与提示词**——任何把它接到 cwd 切换、存储位置的改动都违反 §1 语义表。
-- 围栏基准与 system prompt 的 cwd 必须**同源**（`current_worktree_path()` 优先）——模型认知与权限判定不一致会造成"模型以为能写、围栏拦下"的循环审批。
-- `set_working_dirs` 是整表替换且校验失败整帧拒绝——不存在部分写入的中间态。
-- 存储 schemaless（session meta），旧会话读回缺字段 → 空列表，无迁移。
+- Additional directories affect **only the fence and the prompt**. Wiring them into cwd switching or storage location violates the semantics table in §1.
+- The fence baseline and the system prompt cwd must come from the **same source** (`current_worktree_path()` first). A mismatch produces the "the model thinks it can write, the fence blocks it" approval loop.
+- `set_working_dirs` is a whole-list replacement, and a failed validation rejects the entire frame. There is no partially written intermediate state.
+- Storage is schemaless (session meta). Old sessions missing the field read back an empty list, with no migration.
 
 ---
 
-## 附：实现状态
+## Appendix: implementation status
 
-`SessionRunConfig.additional_working_dirs` 字段、`load_session_run_config` →
-`TurnRequest` → `_path_is_safe` 的读取链路、以及
-`save_session_run_config(..., additional_working_dirs=...)` 的写入参数均已存在。
-§3.2 的 `set_working_dirs` ws action 与 §3.5 的 ProjectBadge 菜单目录区是本设计新增的
-写入口。
+The `SessionRunConfig.additional_working_dirs` field, the read path `load_session_run_config` → `TurnRequest` → `_path_is_safe`, and the `save_session_run_config(..., additional_working_dirs=...)` write parameter all exist. The `set_working_dirs` ws action in §3.2 and the ProjectBadge directory section in §3.5 are the write entry points this design adds.

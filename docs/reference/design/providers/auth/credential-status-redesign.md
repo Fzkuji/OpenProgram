@@ -78,4 +78,4 @@ notification; the accounts panel is only for diagnosis.
   → restored loop; the account record carries no `cooling` field, and a
   `rate_limited` credential past its window reports `valid`.
 - `web .. account-manager.tsx` — status renders as
-  有效 / 限流中 / 欠费停用 / 需重新验证 / 已失效.
+  valid / rate limited / billing blocked / needs re-authentication / revoked.

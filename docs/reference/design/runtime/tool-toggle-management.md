@@ -1,180 +1,177 @@
-# 工具开关 / 工具集管理设计
+# Tool toggles and toolset management
 
-> 所有 `file:line` 经代码核对。核心原则一句话：**会话只存"开关意图"，绝不存"展开后的工具名列表"——工具表每次运行时从 registry 实时展开，这样新增工具对所有历史会话自动生效。**
+> Every `file:line` has been checked against the code. The core principle in one sentence: **a session stores toggle *intent* only, never an expanded list of tool names. The tool array is expanded from the registry at run time, so a newly added tool automatically reaches every historical session.**
 
 ---
 
-## 1. 工具集如何确定
+## 1. How the toolset is determined
 
-### 1.1 优先级链
+### 1.1 The priority chain
 
-一次 turn 给模型的工具，由 `_resolve_tools(agent_profile, req.tools_override, source)` 算出（`dispatcher/__init__.py:764` → `_model_tools.py:385`）。优先级：
+The tools handed to the model on a turn are computed by `_resolve_tools(agent_profile, req.tools_override, source)` (`dispatcher/__init__.py:764` → `_model_tools.py:385`). Priority:
 
-| 顺序 | 来源 | 行为 |
+| Order | Source | Behavior |
 |---|---|---|
-| 1 | `override`（per-turn / per-session） | `_model_tools.py:385` `wanted = override if override is not None else profile.get("tools")` |
-| 2 | agent profile 的 `tools` | override 为 None 时回落 |
-| 3 | 都没有 → `agent_tools(only_available=True)`（= DEFAULT_TOOLS） | `_model_tools.py:386-391` |
+| 1 | `override` (per-turn / per-session) | `_model_tools.py:385` `wanted = override if override is not None else profile.get("tools")` |
+| 2 | the agent profile's `tools` | used when override is None |
+| 3 | neither → `agent_tools(only_available=True)` (= DEFAULT_TOOLS) | `_model_tools.py:386-391` |
 
-`override` 的取值分别处理：
-- `[]` → 关闭所有工具（`:392-393`）
-- **`dict`**（`enabled`/`disabled`/`allowed`/`toolset`）→ **意图式**，运行时实时展开（`:397-421`）。这是会话该存的形态。
-- **`list[str]`** → `agent_tools(names=[...])`，按名字固定（`:423-428`）。仅用于表示用户显式精选的少数工具。
+The possible values of `override` are handled separately:
 
-session 配置经 `tools_override_from_config(cfg)` 转成 override（`session_config.py:82-93`），消费点：webui `_execute/chat.py:105`、channels `_conversation.py:238`。
+- `[]` → all tools off (`:392-393`)
+- **`dict`** (`enabled` / `disabled` / `allowed` / `toolset`) → **intent form**, expanded live at run time (`:397-421`). This is the form a session should store.
+- **`list[str]`** → `agent_tools(names=[...])`, pinned by name (`:423-428`). Used only to express a small set the user explicitly hand-picked.
 
-### 1.2 反面形态：把"意图"提前物化成"列表快照"
+Session config is turned into an override by `tools_override_from_config(cfg)` (`session_config.py:82-93`); the consumers are webui `_execute/chat.py:105` and channels `_conversation.py:238`.
 
-会话若在写入时就把开关意图展开成 `list[str]` 存下，工具集便被冻结在写入那一刻。
-webui 的 `handle_chat` 在拼 `tools_flag` 时有**两处**会这样做，是本设计要消除的形态：
+### 1.2 The anti-pattern: materializing intent into a list snapshot
 
-**路径 A — 选了非 full 的工具 profile**（`ws_actions/chat.py:321-328`）：
+If a session expands toggle intent into a `list[str]` at write time, the toolset is frozen at that moment. `handle_chat` in webui does exactly this in **two places** while assembling `tools_flag`, and eliminating them is the point of this design.
+
+**Path A — a non-full tool profile is selected** (`ws_actions/chat.py:321-328`):
+
 ```python
 if tools_profile and tools_flag is True:
     resolved = _at(toolset=tools_profile, only_available=True)
     if resolved is not None:
-        tools_flag = [t.name for t in resolved]   # ← toolset 被提前展开成 list
+        tools_flag = [t.name for t in resolved]   # ← the toolset is expanded early into a list
 ```
-toolset 本应"存 preset 名、运行时展开"，这里却当场展开。
 
-**路径 B — 开了 Web Search**（`chat.py:336-356`）：
+A toolset is supposed to be "store the preset name, expand at run time", but here it is expanded on the spot.
+
+**Path B — Web Search is enabled** (`chat.py:336-356`):
+
 ```python
 if web_search_flag:
     ...
     elif tools_flag is True:
-        base = list(_DEFAULT_TOOLS)        # ← 整张 DEFAULT_TOOLS 物化成字面量
+        base = list(_DEFAULT_TOOLS)        # ← the whole DEFAULT_TOOLS is materialized as a literal
     ...
-    tools_flag = base                       # ← tools_flag 从 True/None 变成 list[str]
+    tools_flag = base                       # ← tools_flag turns from True/None into list[str]
 ```
-注意 `:348-353`：即便 `tools_flag is None`（"跟随 profile"），开了 web_search 也会 `base = list(DEFAULT_TOOLS)`，连"跟随 profile"的意图也被抹平。
 
-> 两条路径互相独立，A 在 B 之前执行。两条都必须走意图透传，只改其中一条不足以消除物化。
+Note `:348-353`: even when `tools_flag is None` ("follow the profile"), enabling web_search sets `base = list(DEFAULT_TOOLS)`, flattening away the "follow the profile" intent too.
 
-### 1.3 快照对老会话的影响
+> The two paths are independent, and A runs before B. Both have to pass intent through; fixing only one does not eliminate materialization.
 
-物化出的 list 一路存进 DB：
+### 1.3 What a snapshot does to old sessions
+
+A materialized list is persisted all the way to the DB:
+
 1. `chat.py:482-488` → `save_session_run_config(tools=<list>)`
-2. `session_config.py:111-113` `_normalize_tools_value`：list → `(enabled=True, override=[名字])`，写入 `tools_enabled`/`tools_override` 两列
-3. 之后每个 turn：`load_session_run_config` → `tools_override_from_config` 命中 `:85-86` `if cfg.tools_override: return list(cfg.tools_override)`，**原样吐回老快照**
-4. 该 list 进 `_model_tools.py:423-428` 走 `agent_tools(names=[...])`，**只认快照里那些名字**
+2. `session_config.py:111-113` `_normalize_tools_value`: list → `(enabled=True, override=[names])`, written to the `tools_enabled` / `tools_override` columns
+3. On every later turn: `load_session_run_config` → `tools_override_from_config` hits `:85-86` `if cfg.tools_override: return list(cfg.tools_override)`, **returning the old snapshot verbatim**
+4. That list reaches `_model_tools.py:423-428` and goes through `agent_tools(names=[...])`, **honoring only the names in the snapshot**
 
-**后果**：往 DEFAULT_TOOLS（`functions/__init__.py:69`）加新工具（如 list_sessions / message_branch）后，**所有曾经开过 web_search 或选过非 full profile 的会话**永远拿当初那张名字列表，看不到新工具。
+**Consequence**: after a new tool is added to DEFAULT_TOOLS (`functions/__init__.py:69`) — list_sessions or message_branch, say — **every session that ever enabled web_search or picked a non-full profile** keeps its original name list forever and never sees the new tool.
 
-对比：从没动过这两个开关的会话存的是 `tools_enabled=True`（bool），`:87-90` 每次实时返回 `list(DEFAULT_TOOLS)`，新工具自动可见。**差异 = "存 bool/意图" vs "存物化 list"。**
+By contrast, a session that never touched either toggle stores `tools_enabled=True` (a bool), and `:87-90` returns `list(DEFAULT_TOOLS)` live on each turn, so new tools appear automatically. **The difference is "store a bool / intent" versus "store a materialized list".**
 
 ---
 
-## 2. 其他项目怎么做（共识）
+## 2. How other projects do it (the consensus)
 
-| 项目 | 存什么 | 怎么避免过期 |
+| Project | What is stored | How staleness is avoided |
 |---|---|---|
-| **opencode** | per-session `tools: Record<name, boolean>` 意图映射 | 工具表每 turn 由 live registry 现建，再用意图过滤（`config.ts:552`、`session/tools.ts:86`） |
-| **claude-code** | `--tools`（选择，哨兵 `""`=无/`"default"`=全）+ `--allowedTools`/`--disallowedTools`（allow/deny 模式串） | 内置集是常量，只存"选择/允许/拒绝意图"，运行时求交（`main.tsx:988`） |
-| **pi-ai** | builtin 开关 + extension 工具分开管 | 关 builtin 是布尔意图，不影响 extension 实时装载 |
-| **hermes** | named preset（toolset 名） | 存 preset **名**，运行时展开（我们的 `TOOLSETS` 移植自此） |
+| **opencode** | per-session `tools: Record<name, boolean>` intent map | the tool table is built fresh from the live registry each turn, then filtered by intent (`config.ts:552`, `session/tools.ts:86`) |
+| **claude-code** | `--tools` (a selection, with sentinels `""`=none / `"default"`=all) plus `--allowedTools` / `--disallowedTools` (allow/deny pattern strings) | the builtin set is a constant; only selection / allow / deny intent is stored, and the intersection is taken at run time (`main.tsx:988`) |
+| **pi-ai** | builtin toggles and extension tools managed separately | turning builtins off is boolean intent and does not affect live extension loading |
+| **hermes** | a named preset (toolset name) | stores the preset **name** and expands at run time (our `TOOLSETS` is ported from it) |
 
-**共识：三家无一例外存"开关意图"（布尔 / allow-deny / preset 名），从不冻结展开后的工具清单。** 真正的工具表永远请求时从 live registry 现场展开。
+**The consensus, without exception: all of them store toggle intent (booleans, allow/deny, or preset names) and never freeze an expanded tool list.** The real tool array is always expanded from the live registry at request time.
 
 ---
 
-## 3. 核心原则：存【意图】不存【列表】
+## 3. The core principle: store *intent*, not a *list*
 
-session 该存的最小意图：
+The minimum intent a session should store:
 
-| 字段 | 含义 | 取值 |
+| Field | Meaning | Values |
 |---|---|---|
-| tools 全开/全关 | 主开关 | `True` / `False` / `None`(跟随 profile) |
-| web_search | 在主开关结果上**叠加** web_search | `bool` |
-| preset 名 | 选了哪套 toolset | `"full"` / `"research"` / … / `None` |
-| 用户显式禁用 | 手动关掉的少数工具名 | `list[str]`（短） |
+| tools on/off | the master toggle | `True` / `False` / `None` (follow the profile) |
+| web_search | **layered on top of** the master toggle's result | `bool` |
+| preset name | which toolset was picked | `"full"` / `"research"` / … / `None` |
+| explicitly disabled | the few tool names turned off by hand | `list[str]` (short) |
 
-运行时喂给已有 dict-override 通道（`_model_tools.py:397-421`）实时展开。这样：加新工具 → 老会话下一 turn 自动获得；删工具/改 preset → 自动跟随；存档体积 O(用户动过的几项)。我们现有的 dict-override 分支和 `tools_enabled=True` bool 分支**已经是这个形态**——只有上面两条物化路径退化成了 list。
-
----
-
-## 4. 工具开关与上下文 / 缓存 / 历史的影响（已逐条核对）
-
-1. **工具数组算不算 token**：ContextCommit 的 `total_tokens` **不含**工具数组（commit 数据类无 tools 字段，`commit/types.py:104-140`）；但 provider 请求侧工具数组**计费**（`anthropic.py:601` 随请求发出）。→ 工具集大小对 compaction 预算不可见，但对每 turn 真实输入成本可见。
-2. **缓存**：工具数组在**缓存前缀根部**（`cache_policy.py:80-89`，第一个 breakpoint 打在最后一个工具，仅 Anthropic/Bedrock explicit 模式）。→ **任何对工具数组的增删改都改写缓存前缀 → 整段 prompt 缓存 miss**。**硬约束：展开必须确定性**（稳定排序+去重），同一意图每次展开逐字节一致，缓存才命中。
-3. **历史里有、当前工具表没有的调用**：历史 tool_use/tool_result 从 message 渲染（`anthropic.py:328-451`），与当前 `context.tools` 无关，能正常回放；但模型这 turn 无法再发起该调用。→ **改造不要根据当前工具表过滤/重写历史 tool_use**（破坏 tool_use↔tool_result 配对会 400）。
-4. **ContextCommit 重放不受影响**：commit 不存工具数组，工具集是请求期产物。→ 把工具快照从存档拿掉**不动任何 commit 重放语义**，降低改造风险。
+At run time this feeds the existing dict-override channel (`_model_tools.py:397-421`) and is expanded live. As a result: a new tool reaches old sessions on their next turn; deleted tools and preset changes are followed automatically; the stored payload is O(the few things the user changed). The existing dict-override branch and the `tools_enabled=True` bool branch **are already in this form** — only the two materializing paths above have degraded into lists.
 
 ---
 
-## 5. 三个承载点
+## 4. Effects on context, cache, and history (checked item by item)
 
-**A — chat.py 透传意图**（`ws_actions/chat.py:321-328` 与 `:336-356`）：
-- profile 路径：把 **preset 名**透传（走 dict-override 的 `toolset` 字段），不展开成 `[t.name for t in resolved]`。
-- web_search 路径：把 web_search 作为**叠加意图**透传，`tools_flag` 保持 True/None，不改写成 list。
-
-**B — session_config 存意图**：
-- `SessionRunConfig`（`session_config.py:12-18`）带 `web_search: Optional[bool]` 与 preset 名字段。
-- load/save（`:20-79`）读写这两项。
-- `tools_override_from_config`（`:82-93`）输出 **dict 意图** 而非 list：`tools_enabled is False` → `[]`；否则 → `{"enabled": True if enabled else None, "toolset": <preset>, "disabled": [...], "web_search": <bool>}`。不写 list[str] 快照。
-
-**C — dict-override 支持 web_search 叠加**：
-dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed/toolset` 外还需识别 `web_search` 键。因为 web_search 不在 DEFAULT_TOOLS 里，若只存意图而 dict 分支不认这个键，展开结果就不含 web_search，开关失效。所以 C 是 B 的必需前置：展开后缺 web_search 则由 `agent_tools(names=[...]+["web_search"])` 补上。provider 内建 web_search（`openai_codex.py:376` 那种）是另一条可选路径，取决于各 provider 支持度（见 §7）。
-
-**`list[str]` 仅表示用户显式精选**（如 web-search-only 的 `["web_search"]`）：
-`tools_override_from_config` 原样透传，`_model_tools.py` 的 list 分支照名字展开。
-它不再承载"全部工具的物化快照"——全部工具永远由 `{enabled: True}` 意图实时展开。
+1. **Does the tool array count as tokens**: ContextCommit's `total_tokens` **excludes** the tool array (the commit dataclass has no tools field, `commit/types.py:104-140`), but the provider request **is billed** for the tool array (`anthropic.py:601`, sent with the request). So toolset size is invisible to the compaction budget but visible in the real input cost of every turn.
+2. **Caching**: the tool array sits at the **root of the cache prefix** (`cache_policy.py:80-89`; the first breakpoint is placed at the last tool, Anthropic/Bedrock explicit mode only). So **any addition, removal, or reordering of the tool array rewrites the cache prefix and misses the entire prompt cache**. **Hard constraint: expansion must be deterministic** (stable sort plus dedup) so the same intent expands byte-identically every time and the cache hits.
+3. **Calls present in history but absent from the current tool array**: historical tool_use / tool_result are rendered from the message (`anthropic.py:328-451`), independent of the current `context.tools`, and replay fine — the model simply cannot issue that call on this turn. So **do not filter or rewrite historical tool_use based on the current tool array** (breaking tool_use↔tool_result pairing causes a 400).
+4. **ContextCommit replay is unaffected**: commits do not store the tool array; the toolset is a request-time artifact. Removing the tool snapshot from storage therefore **changes no commit replay semantics**, which keeps the risk of the change low.
 
 ---
 
-## 6. 应当成立的性质
+## 5. Three places that carry the design
 
-设计正确时，下列性质同时成立，它们也是回归验证的着眼点：
+**A — chat.py passes intent through** (`ws_actions/chat.py:321-328` and `:336-356`):
 
-- **展开确定性**：同一意图连续展开两次逐元素相等（排序稳定 + 去重），避免 §4.2 的缓存抖动。
-- **意图往返**：存 `web_search=True` 读回 True；旧会话无该字段读回 None 不报错。
-- **dict 输出**：`enabled=True` → dict 含 enabled；带 web_search → 展开含 web_search；`enabled=False` → `[]`。
-- **写入不物化**：新建会话开 web_search 或选 research 后，DB 里 `tools_override` 为 NULL 或 dict，不是全量 list。
-- **新工具自动可见**：`{enabled: True}` 意图展开后含最新加进 DEFAULT_TOOLS 的工具（如 message_branch / list_sessions）。
-- **缓存稳定**：意图不变的会话连发两 turn，provider usage 显示第二 turn 命中缓存、工具集未抖动。
-- **各写入端一致**：全仓不存在第二处 `list(_DEFAULT_TOOLS)` / `[t.name for t in` 式物化；webui/channels/TUI（`session.py`、`cli/src/ws/client.ts`）凡能开 web_search / 选 profile 的写入端都透传意图。
+- Profile path: pass the **preset name** through (via the `toolset` field of the dict override) instead of expanding it into `[t.name for t in resolved]`.
+- web_search path: pass web_search through as **layered intent**; `tools_flag` stays True/None and is not rewritten into a list.
+
+**B — session_config stores intent**:
+
+- `SessionRunConfig` (`session_config.py:12-18`) carries `web_search: Optional[bool]` and a preset-name field.
+- load/save (`:20-79`) read and write both.
+- `tools_override_from_config` (`:82-93`) emits a **dict intent** rather than a list: `tools_enabled is False` → `[]`; otherwise → `{"enabled": True if enabled else None, "toolset": <preset>, "disabled": [...], "web_search": <bool>}`. No `list[str]` snapshot is written.
+
+**C — the dict override supports layering web_search**:
+
+The dict-override branch (`_model_tools.py:397-421`) has to recognize a `web_search` key in addition to `enabled` / `disabled` / `allowed` / `toolset`. Because web_search is not in DEFAULT_TOOLS, storing the intent while the dict branch ignores the key would produce an expansion without web_search, and the toggle would do nothing. So C is a prerequisite for B: if web_search is missing after expansion, `agent_tools(names=[...]+["web_search"])` supplies it. A provider's builtin web_search (the `openai_codex.py:376` kind) is an alternative path whose availability varies by provider (see §7).
+
+**`list[str]` means "the user hand-picked these"** (for example `["web_search"]` for a web-search-only session): `tools_override_from_config` passes it through verbatim and the list branch of `_model_tools.py` expands it by name. It no longer carries a materialized snapshot of all tools — "all tools" is always expanded live from `{enabled: True}` intent.
 
 ---
 
-## 7. 已知边界
+## 6. Properties that should hold
 
-- **provider 内建 web_search vs 工具数组 web_search**（改 C 二选一）：codex/OpenAI Responses 确认走内建 `opts["web_search"]`（`openai_codex.py:376`）；Anthropic / 其它 provider 需逐个核对。确认前保留"web_search 作为工具名叠加"的稳妥路径。
-- **dict-override 的 `allowed` 语义**：当前 `allowed`（`_model_tools.py:406`）是对 DEFAULT_TOOLS 过滤、不是 full 全集；本次不扩这块。
-- **工具数组的精确 token 数**属服务端口径，本仓库静态测不出，仅确认"计费且在缓存前缀"。
+When the design is correct, all of the following hold at once, and they are also what regression testing looks at:
+
+- **Deterministic expansion**: expanding the same intent twice in a row yields element-wise equal results (stable ordering plus dedup), avoiding the cache thrash of §4.2.
+- **Intent round-trip**: storing `web_search=True` reads back True; an old session lacking the field reads back None without error.
+- **Dict output**: `enabled=True` → a dict containing enabled; with web_search → the expansion contains web_search; `enabled=False` → `[]`.
+- **Writes do not materialize**: after a new session enables web_search or picks research, `tools_override` in the DB is NULL or a dict, never a full list.
+- **New tools appear automatically**: expanding `{enabled: True}` intent includes the tools most recently added to DEFAULT_TOOLS (message_branch, list_sessions).
+- **Cache stability**: a session with unchanged intent sends two turns back to back and provider usage shows a cache hit on the second, with no toolset thrash.
+- **All writers agree**: no second `list(_DEFAULT_TOOLS)` or `[t.name for t in` materialization exists anywhere in the repo; webui, channels, and the TUI (`session.py`, `cli/src/ws/client.ts`) all pass intent through wherever web_search can be enabled or a profile picked.
 
 ---
 
-## 8. 实现状态
+## 7. Known boundaries
 
-### 8.1 承载文件
+- **Provider builtin web_search vs. web_search in the tool array** (an either/or in change C): codex / OpenAI Responses is confirmed to use the builtin `opts["web_search"]` (`openai_codex.py:376`); Anthropic and other providers need checking one by one. Until that is settled, the safe "web_search layered in as a tool name" path stays.
+- **The `allowed` semantics of the dict override**: today `allowed` (`_model_tools.py:406`) filters DEFAULT_TOOLS rather than the full set. This change does not extend that.
+- **The exact token count of the tool array** is a server-side figure and cannot be measured statically in this repo; all that is confirmed is that it is billed and sits in the cache prefix.
 
-| 文件 | 承担什么 |
+---
+
+## 8. Implementation status
+
+### 8.1 Carrying files
+
+| File | What it carries |
 |---|---|
-| `openprogram/agent/session_config.py` | `SessionRunConfig` 的 `web_search` / `toolset` 意图字段；`save/load` 读写它们（存 git session meta，不需改 DB schema——`update_session(**fields)` 任意 key 透传）；`tools_override_from_config` 输出 **dict 意图**（`{enabled, toolset, web_search}`）供实时展开，不物化整张工具表；`list[str]` 仅用于用户显式精选，原样透传 |
-| `openprogram/webui/ws_actions/chat.py` | 把 `tools_profile` / `web_search_flag` 作为**意图**透传给 `save_session_run_config(toolset=, web_search=)`；"tools=False + web_search=True → `["web_search"]`" 这一单元素 list 属用户精选，不是全量快照 |
-| `openprogram/agent/_model_tools.py` | dict-override 分支（`resolve_tools`，~397-421）的 `web_search` 叠加：`_overlay_web_search` 在 toolset / names 两条路径展开后，若意图含 web_search 且结果缺它则补上 |
+| `openprogram/agent/session_config.py` | the `web_search` / `toolset` intent fields of `SessionRunConfig`; `save`/`load` for them (stored in git session meta, so no DB schema change — `update_session(**fields)` passes arbitrary keys through); `tools_override_from_config` emits **dict intent** (`{enabled, toolset, web_search}`) for live expansion instead of materializing the tool table; `list[str]` is reserved for explicit user picks and passed through verbatim |
+| `openprogram/webui/ws_actions/chat.py` | passes `tools_profile` / `web_search_flag` through as **intent** to `save_session_run_config(toolset=, web_search=)`; the single-element list from "tools=False + web_search=True → `["web_search"]`" is an explicit user pick, not a full snapshot |
+| `openprogram/agent/_model_tools.py` | web_search layering in the dict-override branch (`resolve_tools`, ~397-421): `_overlay_web_search` adds web_search after expansion via either the toolset or the names path when the intent asks for it and the result lacks it |
 
-### 8.2 关键设计点（别破坏）
+### 8.2 Key design points (do not break)
 
-- **展开必须确定性**：工具数组在 prompt 缓存前缀根部，顺序一抖整段缓存 miss。当前
-  `agent_tools` 按 names/registry 顺序返回，天然稳定——`tests/unit/test_tool_expansion_deterministic.py`
-  锁住它。**以后改 `agent_tools` / `_filter_agent_tools` 切勿引入 `set()` 迭代 /
-  dict churn 破坏顺序**，否则缓存会无声失效（不报错，只是悄悄变贵）。
-- **绝不把"全部工具"物化成 list 存进会话**：全部工具永远由 `{enabled: True}` 意图
-  实时展开。`list[str]` 只表示用户显式精选的少数工具。这是整个设计的红线。
-- **不改历史**：工具开关只控制"接下来能调什么"，不过滤/重写历史 tool_use（会破坏
-  tool_use↔tool_result 配对 → provider 400）。
+- **Expansion must be deterministic**: the tool array is at the root of the prompt cache prefix, and any ordering wobble misses the whole cache. Today `agent_tools` returns in names/registry order, which is naturally stable, and `tests/unit/test_tool_expansion_deterministic.py` locks that in. **When changing `agent_tools` / `_filter_agent_tools` later, do not introduce `set()` iteration or dict churn that breaks the order** — the cache would fail silently (no error, just quietly more expensive).
+- **Never materialize "all tools" into a list stored on the session**: all tools are always expanded live from `{enabled: True}` intent. `list[str]` denotes only the few tools a user explicitly picked. This is the design's hard line.
+- **Do not touch history**: tool toggles govern what can be called next, and never filter or rewrite historical tool_use (that would break tool_use↔tool_result pairing and cause a provider 400).
 
-### 8.3 测试（回归保护）
+### 8.3 Tests (regression protection)
 
-- `tests/unit/test_tool_expansion_deterministic.py` — 展开确定性（缓存前缀稳定）
-- `tests/unit/test_session_config_tools_intent.py` — 意图往返、用户精选 list 原样透传、
-  端到端：意图展开含新工具（message_branch/list_sessions）+ web_search 叠加生效
-- `tests/unit/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` —
-  `tools=True` 产出 `{enabled:True}` 意图而非 list 快照
+- `tests/unit/test_tool_expansion_deterministic.py` — deterministic expansion (stable cache prefix)
+- `tests/unit/test_session_config_tools_intent.py` — intent round-trip, verbatim pass-through of user-picked lists, and end to end: the expanded intent includes new tools (message_branch / list_sessions) and web_search layering takes effect
+- `tests/unit/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` — `tools=True` produces `{enabled:True}` intent rather than a list snapshot
 
-### 8.4 扩展点
+### 8.4 Extension points
 
-- **provider 内建 web_search**（§7）：web_search 当前走"工具名叠加"路径；若确认各 provider
-  支持内建 web_search，可在 `_overlay_web_search` 处切换。
-- **新意图维度**（如按 channel 限工具）：往 dict 意图加键 + 在 `resolve_tools` dict
-  分支处理，不要回到"存展开列表"的形态。
+- **Provider builtin web_search** (§7): web_search currently uses the "layer in the tool name" path; once builtin support is confirmed per provider, it can be switched at `_overlay_web_search`.
+- **New intent dimensions** (restricting tools per channel, say): add a key to the dict intent and handle it in the dict branch of `resolve_tools` — do not revert to storing an expanded list.
