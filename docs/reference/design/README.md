@@ -66,7 +66,7 @@ supporting notes / investigations that should not override it.
 | [`runtime/operations/streaming-resume.md`](runtime/operations/streaming-resume.md) | Streaming + resume |
 | [`runtime/operations/file-management.md`](runtime/operations/file-management.md) | Revert layers (commit / worktree) |
 | [`runtime/operations/multi-agent-revert-todo.md`](runtime/operations/multi-agent-revert-todo.md) | Multi-agent revert TODO |
-| [`runtime/dag/session-dag.md`](runtime/dag/session-dag.md) | **authoritative** Session DAG data model (one graph / 3 node roles user·llm·code / caller+predecessor edges / render_context) + two-path merge design (all 8 steps done) |
+| [`runtime/dag/session-dag.md`](runtime/dag/session-dag.md) | **authoritative** Session DAG data model (one graph / 3 node roles user·llm·code / caller+predecessor edges / spawn / rendering / assembly / compaction) |
 | [`runtime/dag/dag-rendering.md`](runtime/dag/dag-rendering.md) | **authoritative rendering spec**: layout / edges / legend / default visibility, 12 scenarios |
 | [`runtime/dag/branch-collaboration.md`](runtime/dag/branch-collaboration.md) | Branch collaboration (communication / dispatch / merge) design and implementation steps |
 | [`runtime/execution/dispatcher-split.md`](runtime/execution/dispatcher-split.md) | Dispatcher split design |

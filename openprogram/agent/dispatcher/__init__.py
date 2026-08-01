@@ -294,7 +294,7 @@ def process_user_turn(
                     _user_meta["extra"] = _raw_extra
             if req.branch_from is None and req.spawn_caller:
                 # Spawn branch root — created by the store primitive
-                # (session-dag-v2 Decision 1): predecessor=None, caller
+                # (session-dag.md): predecessor=None, caller
                 # = the spawning node, head registered. Never
                 # hand-assembled here.
                 db.spawn_branch(

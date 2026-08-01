@@ -1,407 +1,368 @@
-# Session DAG Model — Data Structure + Context Retrieval + The Two Merges (Final)
+# Session DAG — Design
 
-Status: **decided (final model, implementation begins)** · Created: 2026-06-19 · Finalized: 2026-06-20
-
-> This document is the **authoritative design** for the agent execution record: (1) data structure (what the single graph stores), (2) how context is retrieved from the graph, (3) how to draw it, (4) how the two existing call paths (chat / function) merge into one.
-> For the rationale behind the model choice, see [`../../research/execution-trace-model-selection.md`](../../research/execution-trace-model-selection.md) (the span concept + what's novel).
-> For the call flow diagram, see [`../agent-call-flow.svg`](../agent-call-flow.svg) (the full unified runtime flow, including retry/approval/nesting).
->
-> **Visualization**: `session-dag.svg` ((1) a real session as a single graph, (2) context retrieval: chat accumulation vs function pop, (3) the two views).
+> This document is the authoritative design of the agent execution record: the
+> data model, its edges and invariants, branching and spawn, context rendering,
+> context assembly, and compaction. For the rationale behind choosing this model,
+> see [`../../research/execution-trace-model-selection.md`](../../research/execution-trace-model-selection.md).
+> For the call-flow diagram, see [`../agent-call-flow.svg`](../agent-call-flow.svg).
+> The visual rendering spec (layout, edges, legend, default visibility) is
+> [`dag-rendering.md`](dag-rendering.md) — that file stays authoritative for
+> drawing; this file covers semantics only.
 
 ![Model visualization](session-dag.svg)
 
-## 1. Final Conclusion (a Single Graph)
+## 1. Overview and Motivation
 
-The entire session = **one single DAG with a unique root** (not split into multiple independent traces, and no dangling turns).
+An entire session is **one single DAG with a unique root**. Every user message,
+every LLM call, every function call is a node in the same graph, sharing one
+monotonically increasing `seq`. The graph is simultaneously:
 
-- **Root node (session root)**: one root per session, representing "this session / this user" (it is main). Top-level user nodes hang under it — this is the aggregation point that connects multiple turns into a single graph. **A spawn branch's root does NOT hang on ROOT**: its caller points at the node that initiated it (§2.3), and connectivity to ROOT still holds via that initiating node, so the "single connected graph" invariant is not broken. (Exception: a cross-session spawn's branch root, whose caller points into another session's graph — within this session it hangs on ROOT and the render layer marks it with a ↗ badge; see the legend in `dag-rendering.md`.)
-- **Node (span)**: one of three roles — user / llm / code. A single data structure; an LLM call is always the same kind of llm node, never split by whether it was "triggered by the user" or "triggered by a function". (The root node itself can be seen as a special session node, with no input/output.)
-- **Two edges** (see §2 · Edges):
-  - `caller` (who invoked me) — the sub-call edge. An LLM calling a tool, a function calling a sub-function; the caller of a top-level node is ROOT.
-  - `predecessor` (who came before me in the chat) — the conversation-chain edge. Forks/branches are distinguished by it.
-  - Both are directed and acyclic. **The previous design conflated these two into a single `called_by`, which was wrong** (see §2).
-- **Shared seq**: one monotonically increasing seq across the whole graph (global temporal order).
-- **Multiple top-level turns**: the `caller` of each turn's user is the **root** (hung under ROOT, siblings); its `predecessor` points to the **previous turn's reply** (conversation order). Branches are distinguished by predecessor, time is ordered by seq.
-- **Nesting within a turn**: a function call is a `caller` subtree.
-- **Context**: on this **single graph**, retrieved by `seq + frame + expose` (`render_context`).
+- the **persistence record** — the only durable account of what happened;
+- the **runtime context** — every LLM call's context is a rendering of one
+  path through this graph;
+- the **display source** — chat transcript, call tree, and minimap are all
+  projections of the same nodes.
 
-### Why It Must Be a Single Graph With a Root (Not Independent Trace + Session)
+This fusion is the point of the design. Observability stacks (LangSmith,
+Datadog) split each request into an independent trace and group traces with a
+session tag, because they only observe after the fact and never read the record
+back. This system does read it back: `render_context` retrieves history by
+walking the same graph under the same `seq`, so turns must live in one connected
+graph. A unique root plus a shared `seq` is the hard constraint that makes it
+one graph — without the root, each top-level node would be an isolated root of
+its own disconnected graph.
 
-The industry (LangSmith/Datadog) splits each request into an independent trace and groups them with a session tag — because they do **post-hoc observation** and never read context back. We can't do that: **our `render_context` retrieves history relying on "the same graph, the same seq".** Once split into independent graphs, the llm in turn N can no longer see the earlier turns (cross-graph retrieval fails), and top-level conversational continuity breaks.
+What is claimable as novel is the fusion itself: the recorded call tree *is*
+the runtime context, each call queries it by frame scope + per-function expose,
+and all nodes are retained for fork and replay. The individual ingredients
+(ContextVar call-stack tracking, graph forking) are common; the whole is not.
 
-To make the turns truly form "a single graph" without dangling, we need a **root** to hang each turn onto (each turn's user has `caller=root`). Otherwise each top-level user has an empty `caller` = multiple isolated roots = multiple graphs, broken again. **A root + shared seq is the hard constraint that makes "a single graph".**
+## 2. Data Model
 
-### Key Distinction: Hanging Under the Same Root ≠ Stringing Into a Chain
+### Node (Call)
 
-These two things were previously conflated; they are in fact orthogonal:
-
-Distinguish the two concepts (each edge handles one):
-
-| | Meaning | Which edge |
-|---|---|---|
-| **Hung under the same root** | Each turn's user has `caller=ROOT`; turns are siblings under the root (no dangling) | `caller` |
-| **Conversation order** | Turn 2's user `predecessor` points to turn 1's reply (chat ordering) | `predecessor` |
-
-`caller` makes all top-level nodes converge onto ROOT (a single graph); `predecessor` expresses chat ordering and
-distinguishes branches. The two are orthogonal, each uses its own edge, and they don't interfere.
+One data structure covers everything. An LLM call is always the same kind of
+`llm` node whether the user or a function triggered it.
 
 ```
-One graph (shared seq, unique root). Each node has two edges: caller(C) / predecessor(P)
-ROOT          session root
-├ user1  seq0  C=ROOT  P=empty    ┐ the caller of top-level users is always ROOT (hung on root)
-│  └ llm1 seq1 C=user1 P=user1    │ conversation order is chained by predecessor:
-├ user2  seq2  C=ROOT  P=llm1     │   user2.P=llm1 (follows turn 1's reply)
-│  └ llm2 seq3 C=user2 P=user2    │   user3.P=llm2
-├ user3  seq4  C=ROOT  P=llm2     ┘
-│  └ llm3 seq5 C=user3 P=user3
-   render_context(frame=-1) → take all nodes with seq<5 → both prior turns visible ✓
-```
-
-> Note: following `caller` from ROOT you can reach any node (a single connected graph); following `predecessor` you can
-> reconstruct the chat order and distinguish branches. A fork = the same predecessor having multiple children.
-
-## 2. Node Structure
-
-```
-Node(span):
+Call:
   id           unique identifier
   seq          monotonically increasing integer, global temporal order (the sole sort key)
   created_at   wall-clock (for humans, not for sorting)
 
-  role         "user" | "llm" | "code"   ← only determines rendering, doesn't split the essence
+  role         "user" | "llm" | "code"   ← determines rendering, not essence
   name         model id / function name / user name
 
   input        prompt / function args / None
   output       reply / return value / user text
-  status       running | success | error | cancelled
+  status       running | completed | error | cancelled
 
-  caller       who invoked me (sub-call parent id). A top-level node has none.
-  attributes   metadata (token/model/source/expose…); LLM leaf fields align with gen_ai.*
-               metadata["predecessor"] — who came before me in the chat
-               (conversation-chain parent id). NOT a top-level field; see below.
-  reads        which nodes this LLM call read (references, used to render context; not a structural edge)
+  caller       who invoked me (sub-call parent id); empty on nodes that were not sub-called
+  predecessor  who came before me in the chat (conversation-chain parent id);
+               top-level schema field — the ONLY place this edge lives
+  reads        which nodes this LLM call read (references for rendering, not a structural edge)
+  metadata     token usage / model / source / expose / tool_call_id …
+               LLM leaf fields align with gen_ai.*
 ```
 
-### Edges: Two of Them, Don't Conflate Into One Again
+Defined in `openprogram/context/nodes.py`.
 
-A node has **two kinds of parent relationship**, both previously named `called_by` (one at the node's top level, one stuffed into metadata). The name clash → the code repeatedly couldn't tell which one it was reading → the root cause of a string of branching/rendering bugs. **They are now split into two explicit fields**:
+### The three roles and ROOT
 
-| Edge | Where it is stored | Meaning | Who has it |
+| Scenario | role | caller | predecessor |
 |---|---|---|---|
-| **Sub-call edge** | `caller` (top-level `Call` field, `context/nodes.py:95`) | who invoked me to execute | only nodes that really were sub-called; a normal top-level assistant reply leaves it **empty** |
-| **Conversation-chain edge** | `metadata["predecessor"]` (**not** a top-level field) | who I follow in chat order | user / llm (first user is empty) |
+| Session root (ROOT) | user (special, `display=root`) | empty | empty |
+| User sends a message | user | ROOT | previous turn's llm reply; `"ROOT"` sentinel on the session's first node |
+| LLM reply | llm | this turn's user (top-level) or the enclosing code node | this turn's user |
+| LLM calls a tool | code | that llm node | — |
+| User manually calls a function | code | empty | current branch head (or `"ROOT"` at root level) |
+| Function calls an LLM / sub-function | llm / code | the enclosing code node | — |
 
-**Storage asymmetry — the part that is easy to get wrong**: only `caller` is a real field on the `Call`
-dataclass. `predecessor` lives **inside metadata**, written by
-`store/session/_msg_adapter.py:101-107`, which normalises it into `meta["predecessor"]` so the
-predecessor index can find it. A top-level `predecessor` passed into `Graph.from_dict` is **silently
-dropped** (`context/nodes.py:346` pops it as a legacy field), so writing one has no effect and raises
-no error. §6 describes the same split correctly.
+Loops are not nodes: a loop running N times is N siblings under the same parent
+(ordered by `seq`); visualization may fold repeats into ×N, but the data keeps
+all N nodes. A function call is exactly one code node — no anchor, placeholder,
+or auxiliary node ever accompanies it.
 
-Note also that `caller` is *not* universally populated: it is reserved for sub-call semantics, so
-only attach-pointer rows (side-children of a user turn) set it at top level. This is what lets
-`list_branches`' "has caller → skip" filter hide those rows without hiding normal assistant replies.
+### Status vocabulary
 
-Why both edges are needed: **forks (branches) must be distinguished by `predecessor`**. When the user retries a message, two children sprout at the same position; seq (time) alone can't tell "which child follows which branch line", so there must be an explicit "who I follow" edge. A single-edge model (only caller + seq) cannot get around branching.
+One set for all nodes: `running | completed | error | cancelled`. Chat and
+function paths use the same vocabulary; error nodes carry structured
+type/trace metadata, and a user cancel writes `cancelled`, never `error`.
 
-> For the naming rationale / refactor landing, see [`../operations/edge-field-rename.md`](../operations/edge-field-rename.md).
+## 3. Edges and Invariants
 
-### The Two Edges for the Three Roles
+### Two edges, never conflated
 
-| role | caller (sub-call parent) | predecessor (conversation-chain parent) | input | output |
-|---|---|---|---|---|
-| (root) | empty (the only true root) | empty | None | None (session container) |
-| user | **ROOT** | the previous turn's llm reply (first one is empty) | None | user text |
-| llm | the node that triggered it (top-level = this turn's user; inside a function = that code node) | this turn's user | system (optional) | model reply |
-| code | the node that called it (model tool_use → that llm; **manual call = empty**) | current branch head (for manual calls; `"ROOT"` at root level) | function args | return value |
-
-## 3. Loops Are Not Nodes
-
-for/while loops **occupy no node** (the execution trace doesn't record code structure). A loop running N times = N siblings under the same parent (ordered by seq). When visualizing, many repeats are folded into ×N (purely display; the data is still N nodes).
-
-- Top-level multiple turns (the chat while) = N peer-level user/llm at the top level
-- A for inside a function = N children under that code node
-
-## 4. Context Retrieval (Implemented, Reused)
-
-`render_context(graph, head_seq, frame_entry_seq, render_range)` — selects reads on the **single graph**:
-
-- **Top-level chat** (frame=-1): all nodes are in-frame, **fully visible** (accumulation) → all prior turns of the conversation are fed in.
-- **Function within a turn** (frame = that code node's seq): pre-frame (history up to the root) + in-frame (the function's own internal progress) are visible; the internals of other functions are popped per `expose` (io by default exposes only input/output).
-
-**Top-level = add everything (no hierarchical selection, it should be flat); within a turn = frame+expose hierarchical selection.** The same render_context, each layer takes what it needs. This mechanism is **already supported in the current state**; no change needed.
-
-## 5. The Complete Node System
-
-### Node Types
-
-| Scenario | Node | role | caller | DAG shape |
-|---|---|---|---|---|
-| Session root | ROOT | user | empty | diamond |
-| User sends a message | user | user | ROOT | circle |
-| LLM reply | llm | llm | user | triangle |
-| LLM calls a tool | code | code | llm | square |
-| User manually calls a function | code | code | empty (attaches via `predecessor`) | square |
-| Function internally calls an LLM | llm | llm | code | triangle |
-| Function internally calls a sub-function | code | code | code | square |
-
-All nodes have only three roles: user, llm, code. Two edges: `caller` (sub-call) + `predecessor` (conversation chain). ROOT is the unique root.
-
-**Function-call node principle**: whatever function was called, that function is the one and only node in the DAG. Absolutely no anchor, placeholder, or any auxiliary node (the three data flows — persistence/real-time/refresh — are in §6).
-
-### Branches (fork)
-
-A branch = an alternative possibility at the same position (a parallel world). **A branch node's `predecessor` is exactly the same as the node it replaces** — the same predecessor now having multiple children is a fork.
-
-| Scenario | Replaced node | Branch node | Shared predecessor |
+| Edge | Field | Meaning | Who has it |
 |---|---|---|---|
-| User resends a message | user2 (predecessor=llm1) | user2' (predecessor=llm1) | llm1 |
-| LLM retry | llm1 (predecessor=user1) | llm1' (predecessor=user1) | user1 |
-| Tool retry | code search (caller=llm1) | code search' (caller=llm1) | llm1 (caller) |
+| **Sub-call edge** | `caller` | who invoked me to execute | only genuinely sub-called nodes; a normal top-level assistant reply leaves it empty |
+| **Conversation-chain edge** | `predecessor` | who I follow in chat order | user / llm nodes |
 
-No special handling needed — a branch node is just an ordinary node sharing the same `predecessor` as the replaced node (tool retry shares `caller`). Which one is currently active is tracked by the HEAD pointer. In the DAG graph, branches are connected to their peer siblings with dashed lines, offset to the right into a separate column.
-
-### Viewport Layout Rules
-
-> The authoritative spec for the drawing is in `dag-rendering.md` (layout · edges ·
-> legend · default visibility). This section keeps only the semantic essentials:
-
-The DAG viewport (the minimap in the right-hand panel) renders nodes in a tree-indent fashion. Core rules:
-
-1. **tier (horizontal column position) has two layers**: the conversation layer is fixed
-   by role (ROOT=0, user=1 — including spawn branch roots and hand-back nodes,
-   llm/merge=2); the execution layer goes by call depth (code=3, deeper sub-calls =
-   caller's tier + 1). A spawn root's caller points at a deep node, but it is a
-   conversation-layer user, so its tier is still 1 — caller only decides where the spawn
-   edge is drawn from, not its indent (ruling recorded in section 1 of `dag-rendering.md`).
-
-2. **depth (vertical row position) is ordered by seq DFS**, with fork siblings aligned to the same row.
-
-3. **lane (branch column)**: the trunk is lane=0, fork siblings each occupy their own lane.
-
-4. **Edges**:
-   - trunk user nodes draw their edge from the ROOT column (the tier=0 vertical trunk + the tier=1 horizontal branch)
-   - llm draws its edge from user (tier=1 vertical + tier=2 horizontal)
-   - tool draws its edge from llm (tier=2 vertical + tier=3 horizontal)
-   - fork siblings are connected to each other with an animated dashed line
-   - within a fork branch, edges are drawn normally parent→child
-
-5. **Collapsing** only collects sub-calls (the caller relationship), not the subsequent turns on the conversation chain.
+Both are directed and acyclic. `caller` makes all top-level nodes converge onto
+ROOT (one connected graph); `predecessor` expresses chat order and
+distinguishes branches. They are orthogonal:
 
 ```
-Normal two-turn conversation:
-◇ ROOT (tier=0)
-├─ ○ user1 (tier=1)
-│  └─ △ llm1 (tier=2)
-├─ ○ user2 (tier=1)    ← back to the same column
-│  └─ △ llm2 (tier=2)
-
-With fork/retry:
-◇ ROOT
-├─ ○ user1          ┈┈┈  ○ user1' (animated dashed connection)
-│  └─ △ llm1              └─ △ llm1'
-├─ ○ user2
-│  └─ △ llm2
-
-With a tool call:
-◇ ROOT
-├─ ○ user1
-│  └─ △ llm1
-│     └─ ■ code(web_search) (tier=3)
-
-With a manual function call:
-◇ ROOT
-├─ ○ user1
-│  └─ △ llm1
-├─ ■ gui_agent (tier=1, hung on ROOT)
-│  ├─ ■ gui_step (tier=2)
-│  │  └─ △ llm(internal) (tier=3)
-│  └─ ■ conclusion (tier=2)
-│     └─ △ llm(internal) (tier=3)
-├─ ○ user2
-│  └─ △ llm2
+One graph (shared seq, unique root). Each node: caller(C) / predecessor(P)
+ROOT
+├ user1  seq0  C=ROOT  P="ROOT"   ┐ top-level users hang on ROOT via caller;
+│  └ llm1 seq1 C=user1 P=user1    │ conversation order chains via predecessor:
+├ user2  seq2  C=ROOT  P=llm1     │   user2.P=llm1, user3.P=llm2
+│  └ llm2 seq3 C=user2 P=user2    │ a fork = one predecessor with multiple
+├ user3  seq4  C=ROOT  P=llm2     ┘ conversation children
 ```
 
-### Two Views (Same Data)
+Why two edges: forks must be distinguished by `predecessor`. When the user
+retries a message, two children sprout at the same position; `seq` alone cannot
+tell which child follows which branch line. A single-edge model (caller + seq)
+cannot express branching.
 
-| View | How it traverses |
-|---|---|
-| Chat stream | top-level user + its llm, ordered by seq, with function nesting folded |
-| Call tree | fully expanded along caller; loop siblings folded ×N |
+### `predecessor` is a schema field
 
-## 6. Function-Call Persistence (Three Data Flows)
+`predecessor` is a top-level field on `Call` — the only storage location.
+Serialization writes it top-level; there is no metadata mirror and no legacy
+read path. Enforcing the edge in the schema, rather than validating metadata
+after the fact, is what makes readers able to rely on it: a mislinked branch
+cannot be un-corrupted by a linter, so the append path must refuse to create
+one.
 
-> This section is merged from the deleted `fn-call-persist-redesign.md` (its content is folded in here). It grounds §5's "Function-call node principle" into implementation: how a single function call travels along the three data flows ("persistence / real-time WS / refresh load", respectively) and who is the single source of truth.
+### Write invariant
 
-### The Single Source of Truth: the code-node subtree in SessionStore
+Enforced in the store's append path (`openprogram/store/session/session_store.py`):
+**every ROOT-level conversational node (role user/llm, no real caller) must
+carry a `predecessor`.** A violating append raises `PredecessorMissingError`
+instead of silently forking the session at ROOT. The legal exceptions:
 
-In storage, a single function call has **only** the code node (and its internal llm/code child nodes) — no anchor, no placeholder, no `display=runtime` auxiliary rows. All three data flows are projections of this code subtree:
+- the **session's first node** and **explicit root forks** — these carry the
+  sentinel `predecessor="ROOT"` (not empty), so retrying the first message
+  creates a legitimate ROOT-level sibling that the invariant admits;
+- **spawn branch roots** — created only through `spawn_branch()` (§4), with
+  `predecessor=None` and `caller` pointing at the spawning node;
+- **`ask_user` answer nodes** — a user node with non-None `input` is a callee
+  reply inside a call, not a conversational turn;
+- **compaction summary nodes** — legal chain members per §8.
 
-- **Persistence state (authoritative)**: the `@agentic_function` decorator, on execution return, writes this call as a code node (`openprogram/agentic_programming/function.py`), whose `caller` points to the real caller. Child nodes (LLMs / sub-functions called inside the function) have their `caller` point to it. This subtree is the single source of truth.
-- **Real-time state (projection)**: during function execution, `live_progress` (`openprogram/webui/_exec_dag.py`) rebuilds the subtree from SessionStore every ~1.2s using `build_exec_dag`, and broadcasts a `tree_update` frame to drive the front-end card filling. **The real-time state also reads SessionStore, not a separate in-memory dataset.** When the function finishes it flushes the final state once (`status=completed` + final output), and the same front-end card flips to complete.
-- **Refresh state (projection)**: on page refresh, `handle_load_session` (`openprogram/webui/ws_actions/session.py`) + `conv-mapper` (front-end) rebuild the same card from SessionStore's code node. **The refresh state must produce the same card as the real-time state** (same id, same shape, same output), only missing the intermediate animation.
+### Read invariant
 
-Ruling: **SessionStore's code subtree is the single source of truth; both the real-time WS frame and the refresh load are its projections.** All three must produce a consistent view of the same call (one card, one square node, consistent caller).
+`get_branch` and `list_branches` walk edges only — no caller fallback, no seq
+stitching, no heuristics. A node without a `predecessor` must be a legal branch
+terminus (spawn root, ROOT itself, or the session's first node); anything else
+is broken data and raises `BrokenPredecessorChainError` with the offending node
+id. Broken data surfaces; it is never guessed around.
 
-### caller Is Decided by the Caller (Two Kinds of code Node)
+## 4. Branches and Spawn
 
-| Trigger | code node caller | How it's decided |
-|---|---|---|
-| User manually calls a function (fn-form / Functions panel) | empty | no enclosing `@agentic_function`, so `caller` stays empty; the node attaches to the conversation via `metadata.predecessor` (the active branch head, or an explicit `"ROOT"` at root level) — `function.py:186-204` |
-| LLM calls a function (tool_use) | the id of that LLM reply node | the model reply triggered it |
-| Function internally calls a sub-function / calls an LLM | the outer code node id | `_call_id` ContextVar propagates the current frame |
+### Fork
 
-In implementation, the decorator reads the `_call_id` ContextVar to decide `caller` (`openprogram/agentic_programming/function.py`); the call entry point (the wrapper in `openprogram/agent/dispatcher/runtime_attach.py`) sets this ContextVar to the real caller before execution and resets it after. For a user manual call there is no caller, so `_call_id` is unset and `caller` ends up empty — the conversation attachment is carried by `metadata.predecessor` instead.
+A branch is an alternative possibility at the same position. **A branch node's
+`predecessor` equals that of the node it replaces** — the same predecessor
+having multiple conversation children is a fork. No special node type exists:
 
-### head_id Never Dangles
-
-After a function call completes, the session `head_id` advances to **the real code node id**, never pointing to some placeholder/anchor id that no longer exists. Both the user-manual-call path (`dispatch_forced_tool_call`) and the LLM-call path (`process_user_turn` finalize) must advance head to the code node. Otherwise HEAD dangles → `linear_history` can't reach it → refresh renders an empty Welcome.
-
-### Subprocess Execution (spawn, not fork)
-
-The `@agentic_function` tool body runs in a separate subprocess (`openprogram/agent/process_runner.py`), so the stop button can SIGKILL the entire process group for millisecond-level abort. **The subprocess is `spawn` (a fresh interpreter), not `fork`** — because the parent worker has already loaded PyTorch/libomp, and forking would SIGSEGV on the child's first BLAS call. What spawn means:
-
-- The subprocess **re-imports the on-disk code** (it doesn't inherit the parent's in-memory module objects), so after a code change the subprocess always uses the new code.
-- But the parent worker is a **long-lived process**: it first runs the outer wrapper + starts the `live_progress` poller, which use the old module objects in the parent worker's memory. **You must run `openprogram worker restart` so the parent worker also re-imports the new code**, otherwise the change "doesn't take effect".
-- The subprocess writes the code subtree using its own SessionStore; the parent worker's cache can't see it, so after execution you must `invalidate_cache` to make the parent worker read the on-disk truth.
-- The `.pyc` cache invalidates by source mtime, and normally is not the cause of "the change didn't take effect"; the real culprit is not restarting the long-lived parent worker.
-
-**Definite conclusion: after changing function-call-related code, `openprogram worker restart` is both sufficient and necessary; `PYTHONDONTWRITEBYTECODE` is not needed.**
-
-## 7. What's Novel (the Moat — Don't Claim the Parts)
-
-**What's claimable is the fusion**: the recorded call tree **is itself the runtime context**; each call queries it by "frame scope + per-function expose", and all nodes are retained (for fork/replay). No framework does the whole thing (LangGraph has graph retention + fork but no read-back as context / no pop; StackMemory has stack scoping but relies on search + drops summaries). **Don't separately claim "ContextVar call-stack tracking" or "graph fork" — those are common.** See the research document for details.
-
-## 8. Implementation: The Two Merges (Stepwise, With Decision Conclusions)
-
-Two paths currently coexist:
-- **Chat**: `process_user_turn` → `engine.prepare` (`_assemble_messages`, real ToolCall/ToolResult chain + aging + attachments + compaction) → `agent_loop`; records via `insert_placeholder` / `persist_assistant_message` (writes the token columns + blocks + the conversation-chain edge).
-- **exec**: `_open_model_call_node` → `render_context` + `render_dag_messages` → `_close_model_call_node`.
-
-Goal: unify into one — both go through "one graph + render_context + unified recording primitives".
-
-### Key Decisions (must be settled before starting, verified against the code)
-
-**Decision 0: landed — `parent_id` removed, superseded by `metadata["predecessor"]`.**
-This decision originally read "the parent_id chain is not removed", on the grounds that `get_branch`,
-fork/rewind/trunk traversal, compaction and branch deletion all walked it. That has since been
-**carried out in the opposite direction**: `parent_id` is **fully removed from the codebase** — a grep
-over `store/` and `context/` returns no hits. The conversation-chain edge it used to carry is now
-`metadata["predecessor"]` (§2), and the branch walk lives on at
-`store/session/session_store.py:817` (`get_branch`), reading the predecessor index rather than a
-`parent_id` column.
-
-**What survives from the original reasoning** is the part that was actually about the model, not the
-column: storage keeps a chain (so branches/forks stay expressible), while retrieval does **not** walk
-the chain — `render_context` goes purely by seq. **"The same graph ≠ stringing into a chain": storage
-can have a chain (for branches), retrieval doesn't look at the chain (peer-level by seq).**
-
-**Decision 1: the two kinds of code node must be rendered differently (the first pitfall of merging).**
-- The code node for a model tool_use: has a tool_call_id (currently hidden inside the synthetic id `{assistant_msg_id}_t_{tid}`, dispatcher:462) → **must** be ToolCall/ToolResult (otherwise the provider rejects an orphan tool_use).
-- The code node for code directly calling an @agentic_function (function.py:132): **has no** tool_call_id → a user/assistant text pair (which is what render.py:100 currently does).
-**Conclusion**: give the node an explicit `metadata.tool_call_id` (only present for model tool_use); `render_dag_messages` splits into two paths by it. ToolCall must be **placed inside the AssistantMessage.content of its owning llm node** (currently render emits each node independently, which is wrong for ToolCall — the tool node must be grouped into its llm node by `caller`). Backward compat for old sessions: `{id}_t_{tid}` can still be parsed out for tid.
-
-**Decision 2: unify the status vocabulary.** Chat uses completed/cancelled/error, exec uses completed/error. Unify into one set (completed/error/cancelled), otherwise `_node_to_msg` (_msg_adapter.py:117) defaults + the streaming recovery UI will misjudge exec nodes.
-
-**Decision 3: unified recording primitives — every llm node fills all fields, no chat/function distinction.**
-
-The recording pair is **not** a pair of free functions. As implemented they are private `Runtime`
-methods:
-
-`Runtime._open_model_call_node(...) -> id` (`agentic_programming/runtime.py:664`)
-`Runtime._close_model_call_node(id, reply=..., status=...)` (`agentic_programming/runtime.py:718`)
-
-Note the close side takes **`reply`**, not `output`. (An earlier draft of this decision named them
-`open_call_node` / `close_call_node` with an `output` parameter; no such names exist in the code.)
-
-**Key: fields are treated identically for all llm nodes; there is no such thing as "chat fields" and "function fields".** Currently the two paths each fill their own and each lack the other's (chat has token/blocks/predecessor/source, lacks caller/reads; function has caller/reads, lacks token/blocks) — this is **implementation debt, not design**. After unification, **both sides fill everything**:
-
-| Field | What it does | Current gap → after unification |
-|---|---|---|
-| token columns (usage) | metering/cost | function node lacks it (`_close_model_call_node` doesn't write it) → **fill in**: a model call inside a function costs money too, must be recorded |
-| blocks + tool_calls | front-end bubble thinking/text/tool order + replay | function node lacks it → **fill in**: replies inside functions also have structure |
-| caller | who invoked this llm | chat node lacks it (it used to improvise with `parent_id`, now removed) → **fill in**: chat's llm also has a caller (this turn's user/ROOT) |
-| reads | which history nodes this read | chat node lacks it → **fill in**: chat model calls also read history |
-| `metadata["predecessor"]` | branch/fork skeleton (conversation-chain edge; replaced the removed `parent_id`) | both need it |
-| source / status | source / final state | both need it (for status see the unified vocabulary in Decision 2) |
-
-It's not "fill on demand" (that amounts to tacitly endorsing them being different); it's **fill everything + close each side's current gap**. `_close_model_call_node` currently drops usage/blocks; fill them in when unifying.
-
-**Decision 4: the render gaps before switching chat to render_context (verified — only 1 item is a real blocker).**
-Originally thought to be 5 items; after checking the code:
-- (a) ToolCall/ToolResult chain + (b) ToolResultMessage type → **done** (step 1).
-- (c) images/attachments → **not a gap**: `_assemble_messages` itself also only sends TextContent, doesn't render history images (the two sides match). The current turn's images are injected in the dispatcher's outer layer (`__init__.py:892`), neither renderer touches them. History image rendering needs Decision 7's node image references, **deferred** (documented).
-- (d) tool-result aging → **a real blocker, done** (step 3): the render outer layer's `_aged_code_ids` preprocessing — keep the last TAIL_TURNS=3 llm nodes intact, fold earlier code nodes into `[aged]` stubs (reusing tool_aging.summarize), no storage change.
-- (e) compaction/summary nodes → **not a blocker, deferred**: render_context doesn't produce a summary id, and the LLM summary is currently `None` (engine.py:623 "added in phase 5"). When re-enabling compaction, prepend the active summary in the render outer layer (`AssistantMessage("[Summary]…")`), without adding a 4th role to the DAG.
-
-**Decision 5: factor automatic retry into a policy function that wraps `run_once`.** `_run_with_retry` (session.py:178) depends on the Agent object; what the dispatcher calls is a bare agent_loop (dispatcher:917) + asyncio.Event cancellation. Factor out a "retry policy (retriable check + backoff + rerun + drop last assistant)" wrapping a single `run_once()→final AssistantMessage`, with the dispatcher's `_drain` (dispatcher:870) as run_once. Pitfall: rerun re-sends the prompt → the second time must continue-from-context (mimic session.py:230); placeholder/persist must run once **after** the retry loop, not each time.
-
-**Decision 6: the system prompt is project-wide unified, part of the trunk, not chat-exclusive.**
-Currently the two sides' system differs: chat uses the dispatcher-assembled one (identity + project memory + tool catalog + plan mode), exec uses `self.system` (runtime.py:1451, often empty) + skills. **This causes: (1) inconsistent prefix → KV cache misses → cost explosion; (2) the model inside a function lacks project memory/instructions → loses background.**
-**Conclusion: one unified system prompt for the whole project (identity + project memory + unified tool list + skills), shared by all model calls (chat / inside function bodies), unchanged from start to finish by default.** A constant prefix → maximal cache hits; the model inside a function also has full background.
-- **Not separated** (not one for chat and one for functions).
-- **No splitting off a "mutable tail segment"** (the tool list is unified too, not varying by call site — once it varies the prefix varies, and with long context everything misses).
-- **Exceptions via customization**: an individual agent call that only does a minimal job and doesn't need the full context can explicitly declare a slim system at that call site. This is a deliberate user choice accepting the "cache miss" cost; it belongs to the **usage layer**, and this data model / call-flow layer doesn't elaborate on it.
-- **"Don't call the wrong tool inside a function" (e.g. wiki_agent self-recursion) is decoupled from this decision** — solve it with **situational guidance + a recursion-depth cap as a backstop** (the model autonomously declines to call based on the situation + same-name beyond 5 levels throws `RecursionError`), **not by changing system's tool list** (that would break the unified prefix). Key consistency point: the situational hint goes at the **start of the user turn** (content that varies per function), the system prefix stays constant, which fits this decision exactly. See `runtime/execution/agentic-self-recursion.md` for details. (The old version blocked tools via deny, now abandoned.)
-- Meaning correction: previously drawing the system prompt as a "chat-exclusive hook" was **wrong**; it belongs to the trunk. Compaction (budget gatekeeping) is likewise a **shared** outer step, not chat-exclusive.
-
-**Decision 7: node content is multimodal (text / image / file collectively called "content"); images are not special and not a hook.**
-Previously drawing "image injection" as a hook was **wrong** — an image is just user input, no different from text, all of it is content of a user node. There is no split of "text goes into the node, images go through a hook". render_context fetching a node = fetching all of its content (including images).
-- The current code, to save the FTS5 search index, doesn't store the image base64 into the node and only keeps a "[N images]" manifest (dispatcher:241) → causing **history-turn images to not be fetched back by render_context** (the image body isn't in the node). This is a storage compromise, **not how the model should be**.
-- **The correct approach**: store images in node content as a **reference/path** (the image body goes in the attachments directory, the node stores the path). This way the node content is complete (text + image reference) without bloating the index (the index holds the path, not base64); render_context fetches the node → render loads the image by reference.
-- **Model layer: image = node content, no special handling, no hook.** "Where the image body lives" is a storage optimization, decoupled from the model. (This item can be done separately later; it doesn't block unifying the text context.)
-
-### Full List of Differences Between the Two Paths (verified against code · implementation checklist)
-
-Each item must be handled before merging. ⚠ = a landmine (not handling it blows up at runtime: cancellation fails / retries double / side effects lost). **Unifying principle: nearly all asymmetry is implementation debt, default to leveling everything to "both sides consistent", unless there's a genuine reason for exclusivity.**
-
-| # | Difference | Chat (dispatcher) | Function (runtime.exec) | Unification direction | Risk |
-|---|---|---|---|---|---|
-| 1 | Reading context | get_branch flat list | render_context + render_dag_messages | both go through render_context (chat = frame=-1) | |
-| 2 | Tool node rendering | real ToolCall/ToolResult (has tool_call_id) | text pair (no id) | render splits into two paths by tool_call_id (Decision 1) | ⚠ |
-| 3 | system prompt | profile.system_prompt + tool block + deferred + plan (memory is injected by agent_loop each time) | self.system (often empty) + skills | one project-wide unified, shared (Decision 6) | ⚠ |
-| 4 | Recording fields | token columns/blocks/predecessor/source | caller/reads | unified primitives fill everything, close each side's gap (Decision 3) | ⚠ |
-| 5 | status vocabulary | completed/cancelled/error/**failed** | success/error | unify into one set (Decision 2) | |
-| 6 | Engine entry | direct agent_loop | AgentSession (retry/replace_messages wrapper) → agent_loop | both go through agent_loop; factor the wrapper into common | |
-| 7 | Automatic retry | none (turn level only) | AgentSession loop level | factor out to wrap a unified loop (Decision 5) | ⚠ |
-| 8 | Compaction/budget | yes (engine.prepare + inline before call) | none | lift to a shared outer layer | ⚠ |
-| 9 | Attachments/images | ImageContent injection | usually none | image = node content stored as reference (Decision 7) | |
-| 10 | Streaming channel | on_event→WebSocket envelope | on_stream callback | both have streaming, bridge the channels into one | |
-| 11 | Auto title | finalize has it | none | see #H (finalize side effects) | |
-| A | **Cancellation mechanism** | threading.Event→asyncio, cooperative abort without throwing | poll a global flag + **throw** ExecInterrupt | unify driving both kinds (and the chat path must arm exec cancellation) | ⚠ |
-| B | **Retry layers** | 0 layers + no deadline | AgentSession + exec second layer + wall-clock timeout/Retry-After | unify into one layer with a deadline, don't stack | ⚠ |
-| C | **Error handling** | swallowed into AssistantMessage then folded | **throws** a structured error upward | unify into one (close(status=error)) | ⚠ |
-| D | **Who sets ContextVars** | sets _store/_turn_id/_runtime/plan/deferred | only sets tool/stream/policy, **inherits** the former | unify the entry to set everything, exec inherits unchanged | ⚠ |
-| E | Metering scope | opens UsageContext(call_kind=chat) | inherits the caller, doesn't open | unify opening at the entry, exec inherits | |
-| F | **Tool filtering** | channel+MCP+plan filtering + approval wrapper + agentic-block wrapper + deferred catalog | default all-on, only deny; no approval/plan/block wrapper | unify the filter chain; preventing the wrong tool inside a function (e.g. wiki_agent recursion) is solved by this, not by changing system | ⚠ |
-| G | steering/mid-flight injection | agent_loop handles it | AgentSession doesn't, it's a no-op | unify the hookup if exec is to be interruptible | |
-| H | **finalize side effects** | head advance + context-commit backfill + tool concatenation + usage feedback + git commit + project auto-commit + backup cleanup | only _close_model_call_node | split into shared trunk + entry hook, don't lose side effects | ⚠ |
-| I | Auto-compaction location | inline before call (independent of #8 prepare) | none | merge into #8's shared outer layer | |
-| J | Mid-flight tool-row persistence | writes a role=tool DB row (visible on refresh) | accumulates last_blocks in memory | unify mid-flight persisting | |
-| K | session status | manages running→done + registers the active runtime | doesn't touch | keep as an entry hook | |
-
-> Essence: **the lower layer (the agent_loop engine + storage + render_context) has long been shared; all the differences are in the periphery (reading/recording/cancellation/retry/error/finalize/tool filtering/cleanup).** These peripheral differences are more numerous and deeper than imagined — A/B/C/H/F are the most lethal, and a naive merge would blow up.
-
-### Landing Order (dependency-sorted, each step independently verified)
-
-| Step | What to do | Independence | Verification |
+| Scenario | Replaced node | Branch node | Shared edge |
 |---|---|---|---|
-| 1 | Add `tool_call_id` discrimination to the node + render splits into two paths (ToolCall grouped into the llm node) | **independent** · additive | ✅ done |
-| 2 | Unify status vocabulary + close_call_node fills usage/blocks fields (Decision 3 fill everything) | independent | ✅ done |
-| 3 | render closes the 5 gaps (tool chain/ToolResult/images/aging/summary) | depends on 1+2 | ✅ done |
-| 4 | Switch chat context to render_context | depends on 3 | ✅ done — **DAG render is the default ON**; `engine.py:231` tests `.get("render") != "legacy"`, so the only opt-out is setting `context.render=legacy` |
-| 5 | Unified recording: chat persist rewritten to Call objects (skip _msg_to_node) | depends on 2 | ✅ done — all 5 persist points changed, with except fallback |
-| 6 | Unify error metadata + cancelled status | high risk | ✅ done — error carries type/trace; cancel writes cancelled not error |
-| 7 | Split finalize into shared trunk + unify tool filtering | high risk | ✅ verified no change needed: finalize is chat-exclusive (title/git/status), exec is covered within the chat turn; metering is already unified at the stream.py chokepoint; the tool filtering policies are fundamentally different (user permission vs developer-defined) |
-| 8 | Draw the visualization to the new model (ROOT + top-level peer + within-turn nesting + loop fold ×N) | independent · pure front-end | to do |
+| User resends a message | user2 (P=llm1) | user2' (P=llm1) | predecessor |
+| LLM retry | llm1 (P=user1) | llm1' (P=user1) | predecessor |
+| Tool retry | code (C=llm1) | code' (C=llm1) | caller |
 
-Steps 1/2/8 can ship independently; 3→4 and 2→5 are the coupled main line; 6/7 are the high-risk zone (cancellation/retry/error/finalize/tool filtering), touching dispatcher persistence and control flow — do them with dedicated focus and thorough regression.
-Forks now rely on `metadata["predecessor"]` (`parent_id` removed, Decision 0); **no fork change is needed for this merge**; forked_from is a more distant conceptual cleanup, not done this time.
+### Spawn
+
+`SessionStore.spawn_branch(session_id, caller_node_id, *, source, name=…)` is
+the **only** way to open a spawn branch. It creates the branch-root user node
+(`predecessor=None`, `caller=caller_node_id`, `metadata.source`,
+`metadata.spawn_branch_root=True`), registers it as head, and returns its id.
+Spawn call sites (task runner, collaboration messages, background agents) call
+the primitive and never hand-assemble edges, so a new call site cannot get the
+edge wrong.
+
+A spawn branch root does **not** hang on ROOT: its `caller` points at the node
+that initiated it, which keeps the single-connected-graph invariant via that
+node. (Exception: a cross-session spawn's branch root points into another
+session's graph; within this session it hangs on ROOT and the renderer marks
+it with a ↗ badge — see the legend in [`dag-rendering.md`](dag-rendering.md).)
+
+Spawn branches have clean context: `get_branch` on a spawn branch stops at the
+spawn root and does not leak into the parent branch via the caller edge. The
+chat view of a spawn branch shows only the branch's own history.
+
+## 5. Head Pointer and Branch Management
+
+- **head**: the session tracks a `head_id` — the tip of the currently active
+  branch. Every write path advances it to a real node id; after a function call
+  completes, head moves to the actual code node, never to a placeholder. A
+  dangling head would make the branch walk unreachable and render an empty
+  session.
+- **get_branch(session_id, head_id)**: walks the predecessor chain from head to
+  its terminus and returns the linear history of that branch.
+- **list_branches(session_id)**: enumerates branch tips (conversation nodes
+  with no conversation child). The "main" tip is found by walking from the
+  earliest conversation root down the primary-child path — matching the lane-0
+  trunk the user visually identifies as main. Spawn roots never appear among
+  predecessor children (their predecessor is None), so no special-casing is
+  needed. Branch names live in the session meta under `branches: {head_id: name}`.
+
+## 6. Context Rendering
+
+`render_context` is the single retrieval primitive. Its membership rule, stated
+once:
+
+> **A node is in the rendering iff its nearest ROOT-level ancestor (via
+> `caller`) is on the predecessor spine of `head_id`, and the frame/expose
+> rules admit it.**
+
+The primitive walks the predecessor chain from `head_id` to the branch
+terminus, then admits each spine node's caller-subtree filtered by frame and
+expose. `seq` remains the sort key but is not the membership test — membership
+is path-native, so branch isolation is a property of the walk, not a post-hoc
+set intersection in the engine. The engine's job shrinks to: resolve head →
+call the primitive → hand nodes to `render_dag_messages`.
+
+Frame semantics:
+
+- **Top-level chat** (frame = −1): every spine turn is fully visible —
+  accumulation; all prior turns of the branch are fed in, flat.
+- **Inside a function** (frame = that code node's seq): pre-frame history plus
+  the function's own in-frame progress are visible; other functions' internals
+  are popped per their `expose` setting (`io` by default exposes only
+  input/output).
+
+The primitive is **pure**: no disk writes on the read path. Anything that must
+touch disk (large-node spill) happens on the write path (§8).
+
+Rendering tool nodes: a code node carrying `metadata.tool_call_id` (model
+tool_use) renders as a real ToolCall/ToolResult pair grouped into its owning
+llm node's assistant message; a code node without one (direct function call)
+renders as a text pair. Two views project the same data: the chat stream
+(top-level user + llm by seq, nesting folded) and the call tree (fully expanded
+along `caller`, loop siblings folded ×N).
+
+## 7. Context Assembly
+
+### One system prompt, one assembler
+
+There is a single project-wide system prompt (identity + project memory +
+unified tool list + skills), produced by **one assembler** —
+`context.build_system_prompt(agent_profile, tools, mode)` — and shared by every
+model call, whether top-level chat or inside a function body. The budget counts
+the exact string that ships; assembler output equals wire output.
+
+The prompt is constant by default from session start to finish. A constant
+prefix maximizes provider KV-cache hits, and a model inside a function gets the
+same project background as the chat model. Consequences:
+
+- **Not split** into a chat prompt and a function prompt.
+- **No mutable tail segment**: the tool list is unified too; once it varies per
+  call site, the prefix varies and long-context caching collapses.
+- **Exceptions are a usage-layer choice**: an individual call that wants a slim
+  system prompt declares it explicitly at the call site, deliberately accepting
+  the cache miss.
+- Preventing wrong tool use inside a function (e.g. self-recursion) is solved
+  by situational guidance at the start of the user turn plus a recursion-depth
+  cap — never by varying the system tool list. See
+  [`../execution/agentic-self-recursion.md`](../execution/agentic-self-recursion.md).
+
+### The prompt is recorded, not implied
+
+Whenever the assembled prompt's hash changes (session start, toolset change,
+plan-mode toggle), the store appends a `role=code` node
+`name="context/system_prompt"`, `caller=ROOT`, output = the full text, on the
+current branch. Rendering pins the latest such node on the spine as the wire
+system message. Replaying any historical call reproduces the prompt that was
+actually sent. No fourth role is introduced; `context/*` names are reserved and
+hidden from the chat transcript (the same mechanism that hides summary nodes).
+
+### Memory prefetch lives in the user turn
+
+Prefetched memory renders as a prefix block inside the **current user node's**
+wire message and is stored in that node's metadata (`memory_prefetch`). The
+system prompt and tools segment stays byte-stable across turns (history
+cache-hits), and replay sees exactly what the model saw. The block is not aged;
+it dies with its turn like any other user content.
+
+### Multimodal content
+
+Images and files are node content, no different from text — no injection hook.
+The node stores a reference (the body lives in the attachments directory), so
+content is complete without bloating the search index. `render_context`
+fetching a node fetches all of its content; render loads the image by
+reference.
+
+## 8. Compaction and Aging
+
+### Summary nodes join the chain
+
+Compaction is an append-only graph rewrite. A summary node is `role=llm`,
+`name="context/summary"`, `predecessor` = the predecessor of the first node it
+covers, `metadata.covers = [first_seq, last_seq]`. The head moves to a node
+whose predecessor is the summary node. The kept tail is **not** cloned:
+rendering walks the spine through the summary node, skips nodes whose seq falls
+inside `covers`, and keeps everything after. Compaction appends two nodes
+(summary + new head link), creates zero clones and zero orphans, and the old
+spine survives intact as a sibling branch for rollback. `covers` gives clone
+semantics with zero duplication — clones would create a second id space every
+consumer must translate.
+
+### Aging is a ratchet, and rendering is replayable
+
+The tail-turns aging boundary advances only at turn commit, never mid-turn (a
+per-call rolling boundary breaks the cache prefix every call). Each llm node
+records `metadata.render_manifest = {policy_version, aged_before_seq,
+spilled: [...]}` at the moment the call is made. Replaying a call means
+rendering with the manifest's recorded policy, not today's — the same graph
+renders the same bytes on any day.
+
+### Spill on write, one pipeline
+
+A node larger than the spill threshold is spilled to disk when it is
+**recorded** (once, deterministic), never when it happens to be rendered — the
+read path stays side-effect-free, as §6 requires. The DAG render is the **only**
+context pipeline: there is no fallback assembly path. If the render raises, the
+turn fails visibly with the error. Silent fallbacks hide broken pipelines; loud
+failure is the feature.
+
+## 9. Storage Layer
+
+Sessions persist in a git-backed store (`openprogram/store/session/`):
+
+- one `GitSession` per session on disk under `<state>/sessions/<id>/`;
+- one in-memory `SessionMemoryIndex` per session, lazy-loaded, holding the
+  node-by-id / children-by-predecessor indexes the walks use;
+- `head_id` and branch names live in the session's `meta.json`;
+- the store persists raw nodes + meta only; context commits belong to the
+  commit subsystem.
+
+The function body of an `@agentic_function` runs in a **spawned** subprocess
+(fresh interpreter, not fork — the parent has PyTorch/libomp loaded and a fork
+would SIGSEGV on the child's first BLAS call), so stop can SIGKILL the process
+group. The subprocess writes its code subtree through its own SessionStore; the
+parent invalidates its cache after execution to read the on-disk truth. The
+SessionStore code subtree is the single source of truth for a function call;
+the real-time WebSocket frame and the refresh load are both projections of it
+and must produce the same card.
+
+## Appendix: Implementation Status
+
+The data model, edges, invariants, spawn primitive, edge-pure branch walks
+(§2–§5), and the frame/expose rendering machinery are implemented; the code in
+`openprogram/context/nodes.py` and `openprogram/store/session/session_store.py`
+is authoritative for details. The following designed sections are not yet
+landed:
+
+- §6 path-native membership — `render_context` still selects by seq window;
+  branch isolation currently happens as an engine-side intersection.
+- §7 entirely — single assembler, `context/system_prompt` nodes, memory
+  prefetch relocation.
+- §8 entirely — `covers`-based summary nodes, aging ratchet, render manifests,
+  write-path spill, single-pipeline enforcement. The current compaction
+  machinery predates the write invariant and is explicitly exempted from it
+  until this section lands.
 
 ## Related Files
-- `openprogram/context/nodes.py` — Call + render_context (retrieval, already supports a single graph)
-- `openprogram/context/render.py` — render_dag_messages (S1 changes here)
-- `openprogram/agent/dispatcher/__init__.py` — get_branch / agent_loop entry (S2/S3)
-- `openprogram/agent/dispatcher/persistence.py`, `agent/internals/_turn_lifecycle.py` — chat records (S4)
-- `openprogram/agentic_programming/runtime.py` — exec / _open/_close_model_call_node (S1/S4)
-- `openprogram/store/session/session_store.py` — get_branch / storage (S2)
+
+- `openprogram/context/nodes.py` — Call schema + render_context
+- `openprogram/context/render.py` — render_dag_messages
+- `openprogram/store/session/session_store.py` — append invariant, get_branch,
+  spawn_branch, list_branches
+- `openprogram/agent/dispatcher/__init__.py` — chat entry, agent loop
+- `openprogram/agentic_programming/runtime.py` — function-body model calls
+- [`dag-rendering.md`](dag-rendering.md) — visual rendering spec (authoritative
+  for drawing)

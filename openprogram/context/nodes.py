@@ -93,7 +93,7 @@ class Call:
     output: Any = None
 
     caller: str = ""
-    # Conversation-chain parent (session-dag-v2 Decision 1). Top-level
+    # Conversation-chain parent (session-dag.md). Top-level
     # schema field, the ONLY place the conv edge lives. ``None`` on the
     # session's first node and on spawn branch roots.
     predecessor: Optional[str] = None

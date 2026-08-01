@@ -96,7 +96,7 @@ def _projects_default_id_safe() -> str:
 def _node_conv_predecessor(payload_or_call) -> Optional[str]:
     """Return the conv-chain predecessor of a node (or None).
 
-    session-dag-v2 Decision 1: the edge is the top-level
+    session-dag.md: the edge is the top-level
     ``predecessor`` field — nowhere else.
     """
     if isinstance(payload_or_call, Call):
@@ -106,7 +106,7 @@ def _node_conv_predecessor(payload_or_call) -> Optional[str]:
 
 class PredecessorMissingError(ValueError):
     """A ROOT-level conversational node was appended without a
-    ``predecessor`` (session-dag-v2 Decision 1 write invariant).
+    ``predecessor`` (session-dag.md write invariant).
 
     Only the session's first node and spawn branch roots may open a
     new root; anything else would silently fork the session at ROOT.
@@ -178,7 +178,7 @@ def _check_append_invariant(session_id: str, idx, node: Call,
     if _is_spawn_root(meta):
         return
     # Compaction machinery (summary roots / k_ clones) predates the
-    # invariant and is redesigned by session-dag-v2 Decision 4 — out of
+    # invariant and is redesigned by session-dag.md §8 — out of
     # Decision 1's scope, so it keeps its (illegal) shape for now.
     nid = str(node.id or "")
     if nid.startswith("summary_") or nid.startswith("k_"):
@@ -920,7 +920,7 @@ class SessionStore:
         if not head or head not in idx.nodes_by_id:
             return []
 
-        # Pure predecessor-edge walk (session-dag-v2 Decision 1). A
+        # Pure predecessor-edge walk (session-dag.md). A
         # node without a predecessor must be a legal branch terminus
         # (spawn root / ROOT / session first node) — anything else is
         # broken data and raises. No caller/seq heuristics.
@@ -946,7 +946,7 @@ class SessionStore:
             and not (n.metadata or {}).get("rewound")
         ]
 
-    # Spawn primitive (session-dag-v2 Decision 1)
+    # Spawn primitive (session-dag.md)
 
     def spawn_branch(
         self,
@@ -1032,7 +1032,7 @@ class SessionStore:
             and (n.metadata or {}).get("display") != "root"
             and not _is_spawn_root(n.metadata or {})
         ]
-        # Pure predecessor-edge walk (session-dag-v2 Decision 1): from
+        # Pure predecessor-edge walk (session-dag.md): from
         # the earliest root, follow the primary (first-registered) conv
         # child until the chain ends. Spawn branch roots never appear
         # in ``children_by_predecessor`` (their predecessor is None),

@@ -1,4 +1,4 @@
-"""session-dag-v2 Decision 1 — ``predecessor`` as a top-level schema
+"""session-dag.md — ``predecessor`` as a top-level schema
 field, write-side invariant, and the ``spawn_branch`` store primitive.
 
 Covers:

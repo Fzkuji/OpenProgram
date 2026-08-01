@@ -2,7 +2,7 @@
 
 Agent execution runtime — the run loop, worktrees, async tasks, streaming/resume, the DAG model, and revert layers.
 
-- [`dag/session-dag.md`](dag/session-dag.md) — **authoritative**: the execution-record data model (one single graph / three node roles user·llm·code / caller+predecessor edges / render_context retrieval) + the two-path merge implementation design
+- [`dag/session-dag.md`](dag/session-dag.md) — **authoritative**: the execution-record data model (one single graph / three node roles user·llm·code / caller+predecessor edges / render_context retrieval)
 - [`dag/dag-rendering.md`](dag/dag-rendering.md) — **authoritative rendering spec**: layout / edges / legend / default visibility, 12 scenarios
 - [`dag/branch-collaboration.md`](dag/branch-collaboration.md) — branch collaboration (communication / dispatch / merge) design and implementation steps
 - [`execution/agent-call-flow.md`](execution/agent-call-flow.md) — the call-flow skeleton (turn / loop, orthogonal to the node model)

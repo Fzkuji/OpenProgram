@@ -74,7 +74,7 @@ spawn 一个 sub-agent 分支有三个入口：`task()` 同步路径
 （agent/task/runner.py）、`message_branch`
 （functions/tools/agent_collab/）。三者对 clean 模式必须一致地传
 `spawn_caller=<发起节点>`，使分支根节点 `caller` 指向发起它的那轮
-（session-dag.md §2.3），而不是挂在 ROOT 上。改 spawn 语义时三个入口
+（session-dag.md §4），而不是挂在 ROOT 上。改 spawn 语义时三个入口
 一起改，一起测。
 
 被 spawn 的 agent **一律不得再委托**——根治手段是工具清单级的：

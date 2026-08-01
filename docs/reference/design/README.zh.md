@@ -63,7 +63,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`runtime/operations/streaming-resume.md`](runtime/operations/streaming-resume.md) | 流式 + 恢复 |
 | [`runtime/operations/file-management.md`](runtime/operations/file-management.md) | 回退层（commit / worktree） |
 | [`runtime/operations/multi-agent-revert-todo.md`](runtime/operations/multi-agent-revert-todo.md) | 多 agent 回退 TODO |
-| [`runtime/dag/session-dag.md`](runtime/dag/session-dag.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / called_by 边 / render_context）+ 两路径合并设计（8 步全完成） |
+| [`runtime/dag/session-dag.md`](runtime/dag/session-dag.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / caller+predecessor 边 / spawn / 渲染 / 装配 / 压缩） |
 | [`runtime/dag/dag-rendering.md`](runtime/dag/dag-rendering.md) | **权威渲染规范**：布局/连线/图例/默认可见性，12 场景 |
 | [`runtime/dag/branch-collaboration.md`](runtime/dag/branch-collaboration.md) | 分支协作（通信 / 派活 / 合并）设计与实现步骤 |
 | [`runtime/execution/dispatcher-split.md`](runtime/execution/dispatcher-split.md) | Dispatcher 拆分设计 |
