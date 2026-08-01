@@ -1,13 +1,11 @@
 # Project workspace — files, tabs, and multi-session
 
-Design record, 2026-07-16. Status: **proposed, not implemented.**
-
-Goal: grow the web UI from "chat with a project chip" into a usable
-workspace — browse and view the project's files in multiple tabs, run
-several sessions per project, and give the chat page a per-session
-overview panel (outputs / subagents / sources). Reference shape: the
-three-pane layout used by hosted agent products (chat left, tabbed file
-viewer center, file tree right; project list as an expandable table).
+The web UI is a workspace, not just "chat with a project chip": the
+project's files are browsable and viewable in multiple tabs, a project
+carries several sessions, and the chat page has a per-session overview
+panel (outputs / subagents / sources). The layout follows the three-pane
+shape hosted agent products use — chat left, tabbed file viewer center,
+file tree right, with the project list as an expandable table.
 
 ## 1. What already exists (reuse, don't rebuild)
 
@@ -18,7 +16,7 @@ viewer center, file tree right; project list as an expandable table).
 | `/projects` page (list + settings/sessions/info tabs) | `web/components/projects/projects-page.tsx` | evolves into the new list page |
 | Chat component tree (composer, messages, top-bar) | `web/components/chat/` | workspace left pane |
 | Right sidebar shell (history/detail/context views) | `web/components/right-sidebar/` | chat overview panel |
-| Memory page editor (edit/preview mode, save) | `web/components/memory/` | file editing (phase 5) |
+| Memory page editor (edit/preview mode, save) | `web/components/memory/` | file editing (slice 5) |
 | `wsRequest` helper + ws action registry | `web/lib/net/ws-request.ts`, `webui/server.py` | all new APIs |
 | `/api/pick-folder` native folder picker | `web/app/api/pick-folder` | add-project flow |
 
@@ -37,7 +35,7 @@ other action modules.
 | `project_file_read` | `project_id`, `path` | `{content, size, mtime, truncated}` for text; `{binary: true}` / `{too_large: true}` guards |
 | `session_artifacts` | `session_id` | `{outputs: [...], subagents: [...], sources: [...]}` (see §5) |
 
-Phase 5 adds `project_file_write`, `project_file_create`,
+Slice 5 adds `project_file_write`, `project_file_create`,
 `project_file_rename`, `project_file_delete`.
 
 One HTTP route on the existing Starlette app in `webui/server.py` for
@@ -80,17 +78,13 @@ Next route `web/app/(shell)/projects/[id]/page.tsx`, three panes:
   persisted to `localStorage` keyed by project id (reopen the workspace,
   your tabs are back). Viewers by extension: code/text with line numbers
   + syntax highlight, markdown with rendered/source toggle, images via
-  `/files/raw`, everything else a download card. Read-only in phase 1.
+  `/files/raw`, everything else a download card. Read-only until slice 5.
 * **Left — chat.** The existing chat view mounted with an explicit
   `sessionId`, plus a session switcher in its header: the project's
   sessions (from `list_project_sessions`) in a dropdown + "new session"
   (created pre-bound to the project via `set_session_project`).
   Multi-session = fast switching within the workspace; the sidebar's
   recents keep working as before.
-
-The chat-view decoupling (route-singleton → `<ChatView sessionId>`)
-is the one real refactor in this plan and is why chat lands in phase 2,
-after the file panes already work.
 
 **Agent ↔ files linkage** (cheap, high value): file paths in tool-call
 rows of the transcript become clickable and open in the center tabs —
@@ -128,36 +122,33 @@ Server-side this is a scan over the session's persisted tool calls —
 no new storage; it's derived data, recomputed on demand and updated
 incrementally from the event stream while the session runs.
 
-## 6. Phasing
+## 6. Build order
 
-| Phase | Ships | Risk |
+The workspace is built in independently shippable slices, ordered so
+the riskiest work lands last and the first slice alone already delivers
+the core value — attach a project, browse it, view files in multiple
+tabs.
+
+| Slice | Contains | Risk |
 |---|---|---|
-| **v1** | files WS actions + `/files/raw` + `/projects/[id]` with tree + multi-tab read-only viewer | low — all new code, no refactor |
-| **v2** | chat mounted in the workspace left pane, per-project session switcher + new-session | medium — chat-view decoupling |
-| **v3** | `/projects` expandable table, `updated_at`, rename | low |
-| **v4** | chat right-sidebar Overview (outputs/subagents/sources) + transcript file-path links into workspace | low-medium |
-| **v5** | file management: edit + save (memory-page editor pattern), create/rename/delete, upload/download | medium — write-path safety |
+| **1** | files WS actions + `/files/raw` + `/projects/[id]` with tree + multi-tab read-only viewer | low — all new code, no refactor |
+| **2** | chat mounted in the workspace left pane, per-project session tabs + new-session | medium |
+| **3** | `/projects` expandable table, `updated_at`, rename | low |
+| **4** | chat right-sidebar Overview (outputs/subagents/sources) + transcript file-path links into workspace | low-medium |
+| **5** | file management: edit + save (memory-page editor pattern), create/rename/delete, upload/download | medium — write-path safety |
 
-Each phase is independently shippable; v1 alone already delivers the
-core ask — attach a project, browse it, view files in multiple tabs.
-
-## 7. Addendum 2026-07-16 — unified tab model, run tabs
-
-Decided after reviewing the prototype:
+## 7. The tab model
 
 * **Everything is a tab, one project per workspace.** Tab kinds:
   `session` (a chat), `file`, and later `run` (a program/workflow
-  execution). One shared Tab component and interaction set; **two tab
-  groups**, not one strip — sessions dock left, files center-right — so
-  a chat and the file it is editing stay visible side by side (the core
-  loop). Dragging a session tab into the other group can come later for
-  two-chats-side-by-side. The workspace is hard-scoped to a single
-  project; cross-project mixing is intentionally impossible.
+  execution), all sharing one Tab component and one interaction set.
+  The workspace is hard-scoped to a single project; cross-project
+  mixing is intentionally impossible.
 * **No separate workspace route.** The panes live inside the persistent
-  chat surface (AppShell) and slide in/out; the chat-view decoupling
-  refactor from §3 is dropped. v2 becomes "session tab group" instead
-  of a session dropdown.
-* **Run tabs / workflow visualization** (future phase): workflows stay
+  chat surface (AppShell) and slide in/out, so the chat view needs no
+  route-singleton decoupling and multi-session is a tab concern rather
+  than a session dropdown.
+* **Run tabs / workflow visualization**: workflows stay
   plain Python functions (prompts in docstrings, single entry point) —
   no graph DSL. The execution graph is *derived* from the event stream
   the harness already records (`webui/_exec_dag.py`, `graph_builder.py`,
@@ -167,11 +158,11 @@ Decided after reviewing the prototype:
   record-first — arbitrary Python control flow becomes a graph with
   zero instrumentation.
 
-## 8. Addendum 2026-07-16 (later) — the browser model, final shape
+## 8. The browser model
 
-Two intermediate layouts (stacked side panel; fullscreen workspace mode)
-both read as cluttered. The approved end state drops modes entirely and
-adopts one mental model: **the app is a browser.**
+There are no layout modes. One mental model covers the whole shell:
+**the app is a browser.** The alternatives considered — a stacked side
+panel, and a fullscreen workspace mode — both read as cluttered.
 
 * **Center = tab container.** Session tabs and file tabs (later run
   tabs) share one browser-style strip; ＋ opens a new-tab page (new
@@ -195,16 +186,18 @@ adopts one mental model: **the app is a browser.**
   a second content region never has to be carved out — anything new
   becomes a tab, not a pane.
 
-Prototype: `project-workspace-prototype.html` (v3). This supersedes the
-two-tab-group layout from §7; the run-tab and one-project scoping
-decisions there still stand.
+Prototype: `project-workspace-prototype.html`.
 
-## 9. Non-goals (for now)
+## 9. Non-goals
 
 * No embedded terminal, no git panel — the agent does those through chat.
 * No CodeMirror/Monaco dependency; editing reuses the textarea
   edit/preview pattern from the memory page until it measurably falls
   short.
-* No file watching/live reload of the tree in v1; a refresh button per
-  directory node suffices until sessions mutate files often enough to
-  justify fs-events plumbing.
+* No file watching/live reload of the tree in the first slice; a refresh
+  button per directory node suffices until sessions mutate files often
+  enough to justify fs-events plumbing.
+
+## Appendix: Implementation Status
+
+Designed, not yet built.

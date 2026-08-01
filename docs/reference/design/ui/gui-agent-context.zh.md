@@ -1,6 +1,6 @@
 # GUI agent — 调用结构与上下文流
 
-本文档记录 `gui_agent` 在当前 `expose` / `render_range` 默认语义下的上下文是怎么流动的，以及每个 `@agentic_function` 上的装饰器参数为什么这么设。
+本文档说明 `gui_agent` 在 `expose` / `render_range` 默认语义下的上下文是怎么流动的，以及每个 `@agentic_function` 上的装饰器参数为什么这么设。
 
 参考：
 - 装饰器语义：[`agentic-programming/function-metadata.md`](../../../capabilities/agentic-programming/writing-functions/function-metadata.md)
@@ -81,21 +81,15 @@ verify_step 是被动判断："上一步做的事情，从当前截图看成功�
 
 总结要写出"最终屏幕上 visibly 是什么"，不要写"step 3 干了什么、step 7 又干了什么"那种过程叙述。`callers=0` + 在 prompt 里硬约束"用屏幕上具体可见的文字"。
 
-## 4. 跟旧版本的差异
+### 曾考虑的替代方案：所有函数一律全墙
 
-之前的代码用了 `{"callers": 0, "subcalls": 0}` 全墙策略，再通过 Python 显式构造 feedback dict 一层层往下传。问题是 planner 真的只看得到上一步的 feedback，看不到完整 trace，会出现重复执行同样动作的 bug。
+另一条路是到处全墙——每个函数都用 `{"callers": 0, "subcalls": 0}`——再通过 Python 显式构造 feedback dict 一层层往下传。没有采用，是因为这样 planner 只看得到上一步的 feedback，看不到完整 trace，会重复执行同样的动作。
 
-现在的设计：
+让 planner 走 DAG 默认行为看见历史，就完全免掉了显式累加，只有真正需要隔离的 leaf（verify / conclusion / 工具型判断器）才显式带 `callers=0`。这也意味着不存在"top-level 是特例"的分支——gui_agent 顶层和它内部的 gui_step 走完全相同的 `render_context` 代码路径。
 
-- planner 走 DAG 默认行为天然看见历史（不再需要显式累加）
-- 隔离需要的 leaf（verify / conclusion / 工具型判断器）显式 `callers=0`
-- 不再有"top-level 是特例"的分支 —— gui_agent 顶层和它内部的 gui_step 都走完全相同的 render_context 代码路径
+同理也不需要单独的 "collapsed" 暴露模式。`expose="io"` 的语义就是 frame 自己的 input/output 露、frame 内部的 LLM 藏，嵌套子函数用自己的 `expose` 决定它的 io 露不露——不存在"既要露 io 又要藏嵌套孙子"的中间情形需要覆盖。
 
-旧的 "collapsed 模式提议"、"hidden 副作用"、"子函数 io 冗余"等分析都已经不适用：
-- 旧 "io 漏点：露 code 子调用"分析过时——`expose="io"` 现在的语义就是 frame-自己的 input/output 露、frame 内部的 LLM 藏；嵌套子函数自己再用自己的 expose 决定它的 io 露不露
-- 不再需要 "collapsed" 模式——`expose="io"` 默认就把内部 LLM 藏好，子函数的 io 在它自己的 expose 决定下要么露要么藏，没有"既要露 io 又要藏嵌套孙子"的中间需要
-
-## 5. 改完后需要观察什么
+## 4. 需要观察什么
 
 - 长 task 跑下来 plan_next_action 的 prompt 会不会因为 gui_step 链太长而过大。如果有 token 压力，给 `plan_next_action` 或 `gui_agent` 加 `render_range={"callers": N}` 显式截断最近 N 个 gui_step
 - screenshot 是 image 节点，N 张大图会撑爆 context。可能要走"压缩老 screenshot 为文字描述"路径，但那是 prompt 层的优化，不是 render_range 层的事

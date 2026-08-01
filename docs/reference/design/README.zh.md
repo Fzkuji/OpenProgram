@@ -194,7 +194,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 
 ## TODO-doc-code-gaps.md
 
-[`TODO-doc-code-gaps.md`](TODO-doc-code-gaps.md) — 审计发现的文档与代码不对齐待修项，按优先级排列。修完一条删一条。
+[`TODO-doc-code-gaps.md`](TODO-doc-code-gaps.md) — 文档与代码不一致的待修项，按优先级排列。修完一条删一条。
 
 ## 约定
 

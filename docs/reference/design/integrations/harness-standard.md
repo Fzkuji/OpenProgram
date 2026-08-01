@@ -1,14 +1,13 @@
 # Harness Standard — how an agentic program plugs into OpenProgram
 
-> Status: standard / spec. The contract every **harness** (a self-contained
-> agentic program shipped as its own repo) must satisfy so that cloning it
-> into OpenProgram's `agentics/` folder makes it **auto-detected and usable
-> with no host edits**. The three first-party harnesses (GUI / Research /
-> Wiki) are the reference implementations; third parties follow the same
-> rules.
+> This document is the contract every **harness** (a self-contained agentic
+> program shipped as its own repo) satisfies, so that cloning it into
+> OpenProgram's `agentics/` folder makes it **auto-detected and usable with
+> no host edits**. The three first-party harnesses (GUI / Research / Wiki)
+> are the reference implementations; third parties follow the same rules.
 > Related: [`../installing-harnesses.md`](../../../capabilities/installing-harnesses.md)
 > (install procedure), `openprogram/functions/_registry.py` (the loader),
-> `openprogram/functions/_programs.py` (first-party catalogue).
+> `openprogram/functions/_programs.py` (the first-party harness list).
 
 ## 0. The one rule that matters
 
@@ -147,14 +146,14 @@ work dir; Wiki: a vault path; GUI: vision model + platform backend). The
 ## 6. Discovery & hot-reload (host side — what a harness can rely on)
 
 - **Startup:** the host imports every matching folder under `agentics/`.
-- **Hot-reload (planned):** the host watches `agentics/` and, when a new
-  folder appears, runs the same discovery on it and broadcasts a
+- **Hot-reload:** the host watches `agentics/` and, when a new folder
+  appears, runs the same discovery on it and broadcasts a
   `programs:changed` event so the web UI lists the new harness without a
   restart. A harness needs to do nothing special — just satisfy §1.
-- **First-party catalogue:** GUI / Research / Wiki are also listed in
+- **First-party listing:** GUI / Research / Wiki are also named in
   `_programs.py` so `openprogram programs install <name>` can clone them
-  by name. Third-party harnesses skip the catalogue and are installed by
-  cloning into `agentics/` directly; discovery treats them identically.
+  by name. Third-party harnesses are installed by cloning into `agentics/`
+  directly; discovery treats them identically.
 
 ## 7. Conformance checklist (for a harness author)
 
@@ -171,16 +170,16 @@ work dir; Wiki: a vault path; GUI: vision model + platform backend). The
 - [ ] Own third-party deps declared; heavy/native ones behind an extra.
 - [ ] Platform-unsupported → `AGENTIC_FUNCTIONS = []`, not a crash.
 
-## 8. Where the three first-party harnesses stand today (gap list)
+## Appendix: Implementation Status
 
-Captured from a survey of the current repos — these are the changes
-needed to bring them to this standard (tracked for when we update them):
+The three first-party harnesses do not yet fully conform to this standard.
+The remaining gaps:
 
-| Harness | Conforms? | Gap to close |
+| Harness | Conformance | Gap to close |
 |---|---|---|
-| **Wiki** | ✅ closest | `agentics/__init__.py` + `AGENTIC_FUNCTIONS` + `try/except` already present. Fix: default vault path uses retired `~/.agentic/memory/wiki` → move under `get_state_dir()`. Drop `openprogram` git dep. |
-| **GUI** | ⚠ partial | Exposes functions but no single standard `<pkg>/agentics/__init__.py` with `AGENTIC_FUNCTIONS`; decorators are spread across modules. Add the entry module. Keep heavy deps behind an extra (already partly done). Windows path: degrade to `[]`, don't crash. Drop `openprogram` git dep. |
-| **Research** | ❌ non-conforming | **No `agentics/` sub-package at all** — uses its own `registry.py`, so the host's auto-discovery can't see it. Add `research_harness/agentics/__init__.py` exposing `AGENTIC_FUNCTIONS`. Drop `openprogram` git dep. |
+| **Wiki** | closest | `agentics/__init__.py`, `AGENTIC_FUNCTIONS`, and the `try/except` are all present. The default vault path still uses the retired `~/.agentic/memory/wiki` and belongs under `get_state_dir()`. |
+| **GUI** | partial | Exposes functions but has no single `<pkg>/agentics/__init__.py` with `AGENTIC_FUNCTIONS`; the decorators are spread across modules, so the entry module still has to be added. Heavy deps are partly behind an extra already. The Windows path must degrade to `[]` rather than crash. |
+| **Research** | non-conforming | Has no `agentics/` sub-package — it uses its own `registry.py`, which the host's auto-discovery cannot see. It needs `research_harness/agentics/__init__.py` exposing `AGENTIC_FUNCTIONS`. |
 
-All three currently declare `openprogram @ git+…` as a dependency (§4
-violation) — removing that is a shared fix.
+All three still declare `openprogram @ git+…` as a dependency, which §4
+rules out; removing it is a shared fix.

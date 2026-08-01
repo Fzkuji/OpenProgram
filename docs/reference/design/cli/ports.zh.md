@@ -1,8 +1,10 @@
 # Web UI 端口 — 架构、配置与冲突处理
 
-OpenProgram 如何为其 web UI 选择、配置并守护运行端口。涵盖当前的双端口
-方案、单端口目标、配置入口（`openprogram ports`），以及端口被占用时会
-发生什么。
+> [single-port.zh.md](single-port.zh.md) 描述的单端口架构取代了本文所述的
+> 双端口拆分。
+
+OpenProgram 在双端口拆分下如何为其 web UI 选择、配置并守护运行端口：两个
+角色、配置入口（`openprogram ports`），以及端口被占用时会发生什么。
 
 ## 端口一览
 
@@ -30,8 +32,8 @@ rewrite）。
 - openclaw 出于同样的原因做了同样的选择 —— 它的 gateway 被固定在
   `18789`。
 
-这两个值相邻只是为了便于记忆；并没有任何要求必须如此。在双端口架构存续
-期间，它们 **必须不同**。
+这两个值相邻只是为了便于记忆；并没有任何要求必须如此。在双端口架构下，
+它们 **必须不同**。
 
 ## 配置
 
@@ -105,12 +107,12 @@ openprogram ports --frontend 9100                    # 只设置其中一个
 | 空闲 | 绑定并启动 | 绑定并启动 |
 | 被 **我们的** 实例占用 | 复用它，将浏览器指向该 UI | worker 锁已经阻止了第二个 worker |
 | 被 **我们** 遗留的 Next（frontend）占用 | 不适用 | `_reclaim_web_port` 仅杀死孤立的 `next-server`，然后绑定 |
-| 被一个 **外部** 程序占用 | 拒绝；打印 *谁* 在占用它（PID + cmdline）以及如何释放它或更改端口；**不要** 在该端口打开浏览器 | 标识占用者，然后 **响亮地** 回退到一个空闲端口（UI URL 随之更新）—— worker 还托管着 channels，因此它仍必须启动起来 |
+| 被一个 **外部** 程序占用 | 拒绝；打印 *谁* 在占用它（PID + cmdline）以及如何释放它或更改端口；**不要** 在该端口打开浏览器 | 标识占用者，然后回退到一个空闲端口并报告（UI URL 随之更新）—— worker 还托管着 channels，因此它仍必须启动起来 |
 | 刚刚退出（TIME_WAIT） | uvicorn 的 `SO_REUSEADDR` 重新绑定它 | `_port_available` 使用 `SO_REUSEADDR`，因此快速的自我重启 **不会** 漂移 |
 
 唯一刻意保留的不对称：`openprogram web` 是一个前台 UI 命令，因此外部抢占
 者是硬性中止。worker 是一个长期运行的宿主，同时承载 channels *和*
-webui，因此它会保持运行（响亮且带诊断的回退），而非彻底拒绝。
+webui，因此它会保持运行，回退到另一个端口并给出诊断信息，而非彻底拒绝。
 
 ## 与 openclaw 的关系
 
@@ -127,13 +129,11 @@ openclaw 将其 gateway 固定在 `18789`，并在三个层面处理冲突；Ope
 （只在 SSH-tunnel 路径上），因此它的 gateway 启动"端口被占用"错误无法
 标识占用者。OpenProgram 将占用者诊断接入到了真正的启动路径中。
 
-## 单端口的未来
+## 与单端口架构的关系
 
-双端口拆分是过渡性的。计划中的迁移（见
-[`attachment-handling.md`](../ui/attachment-handling.md) 的同期工作以及
-项目的单端口笔记）会将 Next.js SPA 静态导出，并由 FastAPI backend 提供
-服务，从而收拢为 **一个** 同时提供 UI 与 API 的端口（`18109`）。届时
-frontend 端口、它单独的启动器、代理以及 `worker/web.py` 的大部分都将
-消失 —— 而"frontend 端口被占用"将不再是一种可能的状态。`openprogram
-ports` 入口保留；一旦只剩单个端口，`--frontend` 就只是变成一个 no-op
-别名。
+双端口拆分是过渡性的。[`single-port.zh.md`](single-port.zh.md) 将 Next.js
+SPA 静态导出，并由 FastAPI backend 提供服务，从而收拢为 **一个** 同时提供
+UI 与 API 的端口。在那里，frontend 端口、它单独的启动器、代理以及
+`worker/web.py` 的大部分都不存在，"frontend 端口被占用"也不是一种可能的
+状态。`openprogram ports` 入口保留；只剩单个端口时，`--frontend` 变成一个
+no-op 别名。

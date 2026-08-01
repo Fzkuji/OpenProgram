@@ -1,43 +1,31 @@
 # Composer interaction modes — the input box as the unified catch point for "user decisions"
 
-Status: **Shipped** (2026-06-14). All five steps implemented and self-verified in the browser, committed step by step.
-as-built: modes framework skeleton (26685949) → question mode + removal of the floating popup (bc144b8c) →
-backend approval merge (73a094be) → approval mode + rejection with reason (27c05faa) → conflict queueing +
-timeout reclaim (c0c8956e). The only deviation from the original design: the first version of fn-form is still
-rendered inline by the composer (it was the original template for "input-box transformation" to begin with), and was not formally
-placed into the modes registry — question / approval go through registry-style mode components; folding fn-form into the registry is left as a follow-up cleanup (non-blocking).
-
 ## In one sentence
 
-Upgrade the chat input box (composer) from "can only type" into a **container that can switch between several shapes**.
+The chat input box (composer) is not just a text field but a **container that switches between several shapes**.
 Each shape is a "transformation" (mode): filling in a function form is one, answering a runtime.ask question
 is another, approving a tool is another. Every interaction that **requires a user decision** is presented by transforming in place inside the input box,
 rather than each popping its own floating window. Each mode has its own folder and follows the same interface,
 so any new interaction either directly reuses an existing mode or derives from one.
 
-## Why do it this way
+## Why one catch point
 
-Right now the frontend has two mutually inconsistent ways of presenting "the user needs to act":
-
-| Interaction | How it's presented today | Paradigm |
-|---|---|---|
-| Running an @agentic_function | The input box **transforms in place into a parameter form** (fn-form), Send becomes "Run" | input-box transformation ✅ |
-| runtime.ask asking a question | A **standalone floating card** in the middle of the screen (question-prompt.tsx, portaled to body) | floating popup ❌ |
-| Tool approval (permission ask) | **No UI** (dead in production, only tests resolve it in the background) | none ❌ |
-
-Three interactions where it's "the user's turn": one transforms in place, one floats, one is missing. The user's attention gets
-dragged to different places, and the code is written separately for each. **Unify into one place**: every "it's the user's turn" happens in the input box,
-the user's gaze never leaves the input area; the frontend has a single catch point for "user decisions".
+Three interactions put the turn back on the user: running an `@agentic_function`,
+answering a `runtime.ask` question, and approving a tool execution. Presented
+separately — one as an in-place form, one as a floating card, one with no UI at
+all — the user's attention is dragged to different places and each path is coded
+on its own. Presenting all three in the input box keeps the user's gaze in the
+input area and gives the frontend a single catch point for user decisions.
 
 This also aligns with the event layer: the event layer is a unified event stream, and any "requires a user decision" event (question.asked,
 the future approval.asked / form.asked) should land on the frontend at **the same exit** — the input box's
 mode container, which picks a transformation to present it. One backend registry (QuestionRegistry), one
 frontend catch point (composer), one event path.
 
-## Current state: fn-form is already the template for a "transformation"
+## fn-form: the template for a transformation
 
-Reading `web/components/chat/composer/` gives the facts — fn-form already got "input-box transformation"
-right, and the new framework makes its implicit conventions explicit and accommodates more modes:
+fn-form is the reference shape; the mode framework makes its conventions explicit
+so more modes can follow them:
 
 * **Trigger state in the store**: `session-store.ts`'s `fnFormFunction` (+ `fnFormClosing`),
   `openFnForm(fn)` / `closeFnForm()`. Non-empty = currently in fn-form shape.
@@ -49,9 +37,8 @@ right, and the new framework makes its implicit conventions explicit and accommo
   with disabled / title also changing with the current shape.
 * **Components**: `fn-form/fn-form.tsx` (the shape) + `fn-form-fields.tsx` (field rendering).
 
-The question (runtime.ask) doesn't go through this today; it's a standalone floating popup (`web/components/ui/question-prompt.tsx`,
-listens for the `op:question-asked` window event, sends `question_reply`/`question_reject`).
-This design retires it and turns it into a mode.
+`runtime.ask` follows the same conventions as a `question` mode rather than as a
+standalone floating popup.
 
 ## Model: container + transformation (mode)
 
@@ -71,7 +58,7 @@ both have in-place transformation animations (reusing `outgoingLayer` cross-fade
 
 ### The unified interface of a mode
 
-Each mode is a **self-contained unit** that exposes the same contract to the container (draft, to be finalized at implementation time):
+Each mode is a **self-contained unit** that exposes the same contract to the container:
 
 ```ts
 interface ComposerMode<TState> {
@@ -97,8 +84,8 @@ web/components/chat/composer/
   modes/
     index.ts            # mode registry (id → ComposerMode), the container looks up against this
     types.ts            # the ComposerMode interface
-    fn-form/            # the existing fn-form migrated in, as the first mode
-    question/           # runtime.ask (absorbs question-prompt's logic, drops the floating popup)
+    fn-form/            # the function parameter form
+    question/           # runtime.ask
     approval/           # tool approval (a derivative of question)
   index.tsx             # container: reads the current mode, looks it up, renders Body + takes over Send
 ```
@@ -108,8 +95,8 @@ which is "deriving from an existing transformation".
 
 ## Three communication shapes: direct store / request / broadcast (don't mix them)
 
-Each mode is about "how it's triggered to enter, and how the user's action is returned afterward". Reading the code you'll find they go through **three
-different channels**, distinguished by a one-sentence rule: **only consider the bus when crossing a process/network boundary; a state change in the same place
+A mode is defined by how it is triggered and how the user's action is returned. These go through **three
+different channels**, distinguished by one rule: **only consider the bus when crossing a process/network boundary; a state change in the same place
 changes the store directly; to have the backend do one thing and give a definite reply, use a request (HTTP/RPC), not a broadcast.**
 
 | Shape | Channel | Example | Why |
@@ -122,27 +109,28 @@ changes the store directly; to have the backend do one thing and give a definite
 click run (**request**: POST initiates, returns session_id) → the function runs in a subprocess, with dynamic backflow (**broadcast**:
 run events / mid-flight `runtime.ask` both go through the event layer → WS). Three segments, three channels, each taking the fittest tool.
 
-Counterexample (to prevent stepping on it later): don't make "initiate a run" a fire-and-forget bus event — then you can't get the
-`session_id`, and the frontend has no way to navigate to / bind the session. Use a request to initiate, broadcast for the process.
+Initiating a run is never a fire-and-forget bus event: that loses the
+`session_id`, leaving the frontend with no way to navigate to or bind the
+session. A request initiates; a broadcast reports the process.
 
 ## How events route in
 
 > This section only covers the third row of the table above — **broadcast**: how "requires a user decision" events emitted by the backend through the event layer
 > land on the composer. The **reply** after the user acts is the second row (request/WS action), see the table above.
 
-The backend unchangedly sends "requires a user decision" frames through the event layer (`question.asked`, which approval also goes through after the merge,
-see below). Frontend:
+The backend sends "requires a user decision" frames through the event layer as
+`question.asked`, which approval also uses. On the frontend:
 
-1. `use-ws.ts` receives `question.asked` → currently turns it into the `op:question-asked` window event
-   for the popup. Change to: write into the store's `pendingDecision` (envelope).
+1. `use-ws.ts` receives `question.asked` and writes the envelope into the store's
+   `pendingDecision`.
 2. The composer container subscribes to `pendingDecision`: if non-empty, it picks a mode based on `kind`
    (`ask`/`confirm` → question, `approval` → approval) and enters that shape.
-3. The user acts in the input area → the mode's primary/secondary sends `question_reply` /
-   `question_reject` (reusing the existing WS actions, the backend's `_resolve_question` collection point unchanged).
-4. Answered elsewhere first / stop → the backend broadcasts `question.replied`/`rejected` → the frontend clears
-   `pendingDecision`, exits the mode (reusing the existing "reclaim" logic).
+3. The user acts in the input area → the mode's primary/secondary action sends `question_reply` /
+   `question_reject`; the backend collects them at `_resolve_question`.
+4. Answered elsewhere first, or stopped → the backend broadcasts `question.replied`/`rejected` → the frontend clears
+   `pendingDecision` and exits the mode.
 
-**Mutual exclusion and priority (decided, 2026-06-13)**: only one mode is presented at a time, with two rules —
+**Mutual exclusion and priority**: only one mode is presented at a time, under two rules —
 
 * **Queue among system decisions**: two "the system needs a user decision" events (e.g. question arrives first, then
   approval) → FIFO queue, one at a time. After the previous one is answered, the next is presented automatically. No stacking,
@@ -151,61 +139,41 @@ see below). Frontend:
   decision → directly **cancel** the fn-form (the user opened it actively, discarding it doesn't matter), letting the system decision occupy
   the input area. No stashing, no restoring.
 
-That is: `pendingDecision` is a FIFO queue; when the head is non-empty it occupies the input area. A new system decision is enqueued;
-if a user-active mode (fn-form) is showing at the moment, clear it and then show the head. Simple implementation, no stack, no snapshot.
+`pendingDecision` is therefore a FIFO queue: a non-empty head occupies the input area, a new system decision is enqueued,
+and a user-opened fn-form on screen is cleared before the head is shown. No stack, no snapshot.
 
 ## Backend: approval merged into QuestionRegistry
 
-So that "approval" also goes through the same event path → lands on the same composer catch point, the backend merges
-`_approval.py` into `QuestionRegistry` (user-input-requests.md, point 6):
+So that approval travels the same event path to the same composer catch point, approval lives in
+`QuestionRegistry` rather than in a registry of its own (user-input-requests.md, point 6):
 
-* `await_user_approval` no longer uses a standalone `ApprovalRegistry` + a custom
-  `approval_request` envelope, but registers a `kind="approval"` PendingQuestion
+* `await_user_approval` registers a `kind="approval"` PendingQuestion
   (prompt = "Allow executing {tool}?", options = ["Allow", "Reject"], detail = parameter summary),
   and sends `question.asked` through the event layer.
 * The async wait reuses `asyncio.to_thread(ev.wait, timeout)` (the tool execute is a coroutine,
   it can't synchronously block the loop).
 * The boolean result is mapped from the question's three states: answered "Allow" → True; declined / timeout → False.
-* `ApprovalRegistry` is retired; the `approval_registry()` accessor is kept as a thin shim or its callers migrated;
-  the two dispatcher approval tests are rewritten to go through QuestionRegistry.
+* `approval_registry()` returns the unified QuestionRegistry; there is no separate
+  `ApprovalRegistry` and no custom `approval_request` envelope.
 
-After the merge: one registry, one event (question.asked), one frontend catch point. Approval is incidentally
-**revived** (it had no UI before).
+One registry, one event (`question.asked`), one frontend catch point.
 
-## Retirements (done)
+## Presentation decisions
 
-* The `web/components/ui/question-prompt.tsx` floating popup + app-shell mount → deleted.
-* `_approval.py`'s `ApprovalRegistry` / `approval_request` envelope → deleted;
-  `approval_registry()` returns the unified QuestionRegistry.
+* **approval dangerous summary**: the full command/parameters are shown, truncated
+  head-and-tail when too long. No dangerous-token highlighting.
+* **Reject with reason**: approval's secondary action accepts a text reason, and that
+  reason becomes the tool error text returned to the model.
+* **Timeout**: a mode waiting on the user finishes as declined on timeout, exits
+  automatically, and leaves a one-line note in the input area ("no response, timed out").
 
-## Landing order (each step independently verified, all done)
+## Appendix: Implementation Status
 
-1. ✅ **Framework skeleton** (26685949): `modes/types.ts` (the ComposerMode interface) +
-   `modes/index.ts` (the registry). The first version of fn-form is still inline (see the Status deviation note).
-2. ✅ **question mode** (bc144b8c): `modes/question/`, runtime.ask presented in the input box
-   in place; remove the floating popup; use-ws → the store's pendingDecisions queue. Verified end to end with a real subprocess.
-3. ✅ **Backend approval merge** (73a094be): `await_user_approval` goes through QuestionRegistry
-   (kind=approval), sends question.asked through the event layer; ApprovalRegistry retired; the two
-   dispatcher approval tests migrated to the unified registry + event bus contract.
-4. ✅ **approval mode** (27c05faa): `modes/approval/`, a derivative of question —
-   dangerous summary (tool name + parameters) + Allow/Reject + rejection with reason (the reason becomes tool error text).
-   Verified end to end with a real subprocess (including the subprocess approval bridge).
-5. ✅ **Conflict queueing + timeout reclaim** (c0c8956e): FIFO queue one at a time; a user-active fn-form
-   colliding with a system decision is cancelled; on timeout, question.rejected is broadcast through the transport to reclaim the card
-   (fixed the real bug of "the timed-out card hanging stuck"). Preemption verified in the browser.
-
-Each step can be self-verified in the browser and committed independently.
-
-## Decisions (decided, 2026-06-13)
-
-* **Same-screen conflict**: FIFO queue; system decisions queue, one at a time; a user-actively-opened fn-form colliding with
-  a system decision is cancelled directly (see above).
-* **approval dangerous summary**: show the full command/parameters, truncating when too long (keep head and tail); no dangerous-token
-  highlighting (the first version keeps it simple).
-* **Reject with reason**: approval's secondary allows attaching a text reason, and the reason becomes the tool error
-  text returned to the model (opencode's approach).
-* **timeout**: a mode occupying the input area while waiting for the user, on timeout finishes as declined, auto-exits the mode, and gives a one-line prompt in the
-  input area ("no response, timed out").
+The modes framework, the question mode, the backend approval merge, the approval
+mode with rejection-by-reason, and FIFO conflict queueing with timeout reclaim are
+all implemented. fn-form is still rendered inline by the composer rather than
+through the modes registry; folding it in is a pending cleanup that does not
+change behaviour.
 
 ## Related
 

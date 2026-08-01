@@ -1,34 +1,33 @@
 # Usage Metering Subsystem Design
 
-Status: In progress (2026-06)
-Author: design and implementation driven together
-
 ## 1. Goals
 
-Ensure **every LLM call** in the framework has its tokens / model / cost recorded with no gaps, carrying source labels, time series, and aggregation by model / source / session. This supports the visualization panel and cost accounting, and leaves extension points for future quotas, rate limiting, budget alerts, and export.
+**Every LLM call** in the framework has its tokens, model, and cost recorded with no gaps, carrying source labels, time series, and aggregation by model / source / session. This supports the visualization panel and cost accounting, and leaves extension points for quotas, rate limiting, budget alerts, and export.
 
-An explicit compromise we will not make: we keep no compatibility code for the old cumulative snapshot-style accounting; old responsibilities that should be split or deleted will be split or deleted.
+Accounting keeps no compatibility path for cumulative snapshot-style records; a responsibility that should be split or deleted is split or deleted.
 
-## 2. Diagnosis of the Current State (before implementation)
+## 2. What the Accounting Must Cover
 
-Every LLM call ultimately goes through `providers/stream.py`'s `stream_simple()` (streaming) / `complete_simple()` (non-streaming, which runs stream_simple internally). The returned `AssistantMessage` carries `usage` (a `Usage` object: input/output/cache_read/cache_write/total_tokens/cost).
+Every LLM call ultimately goes through `providers/stream.py`'s `stream_simple()` (streaming) / `complete_simple()` (non-streaming, which runs stream_simple internally). The returned `AssistantMessage` carries `usage` (a `Usage` object: input/output/cache_read/cache_write/total_tokens/cost). That makes `stream.py` the one place where a complete record of a call is available, so it is where metering collects.
 
-Accounting only covers "the main path that goes through engine", in two layers:
-- Message level: `dispatcher/persistence.py` writes tokens into the assistant message's history columns (used for the per-message pill).
-- Session cumulative level: `context/usage.py`'s `UsageTracker.record_turn()` writes into the git session meta's `_usage` (only cumulative totals — no time series, no per-model, no per-source, no cost).
+Two pre-existing accounting layers stay in place and answer different questions:
 
-Three fundamental problems:
+- Message level: `dispatcher/persistence.py` writes tokens into the assistant message's history columns — the data behind the per-message pill.
+- Compaction budget: `context/usage.py`'s `UsageTracker.record_turn()` writes into the git session meta's `_usage`, the state a compaction decision reads.
 
-1. **The collection point is not unified.** `stream.py` itself does no accounting; accounting happens in the dispatcher one layer up. Meanwhile `memory/llm_bridge.py` calls `api_provider.stream_simple()` directly and bypasses stream.py entirely. "Went through stream_simple" ≠ "was accounted for".
+Neither is a billing account. The session meta `_usage` is a cumulative snapshot: it cannot be aggregated across sessions, cannot be queried by time bucket, and carries no per-model, per-source, or cost breakdown. Metering therefore adds a third, separate record — an append-only event stream — rather than extending either.
 
-2. **Storage is a cumulative snapshot, not a stream of events.** The session meta `_usage` cannot be aggregated across sessions, cannot be queried by time bucket, and has no per-model index.
+Three properties decide the design:
 
-3. **Coupled responsibilities.** `UsageTracker` simultaneously does accounting, compaction threshold estimation (`estimated_input`/`record_compaction`), and hot-path budget caching — three concerns with entirely different lifecycles and consumers.
+1. **One collection point.** Accounting sits inside `stream.py` itself, not in a caller one layer up. A path that reaches a provider by another route (as `memory/llm_bridge.py` once did by calling `api_provider.stream_simple()` directly) is routed back through `stream.py` instead of being metered separately, so "went through stream_simple" and "was accounted for" mean the same thing.
 
-**List of unaccounted paths** (calling complete_simple/stream_simple directly, bypassing engine):
-`context/summarize.py`, `agent/compaction/compaction.py`, `agent/compaction/branch_summarization.py`, `functions/tools/mixture_of_agents`, `memory/llm_bridge.py`, and `@agentic_function` subprocesses (`process_runner.py`, where the in-process singleton tracker is invisible to the main process and the returned result contains no usage).
+2. **Events, not snapshots.** One row per call, append-only, so any aggregation is a query rather than a schema change.
 
-One favorable fact: `providers/models.py:calculate_cost(model, usage)` can already compute cost from `Model.cost`. The metering layer only needs to ensure it gets called at the collection point; no new pricing logic is required.
+3. **Separated responsibilities.** Billing accounting, compaction threshold estimation, and hot-path budget caching have different lifecycles and consumers, and live in different objects.
+
+Paths that reach the provider outside the chat loop — `context/summarize.py`, `functions/tools/mixture_of_agents`, `memory/llm_bridge.py`, and `@agentic_function` subprocesses (`process_runner.py`) — are all covered by the same collection point plus an explicit source scope.
+
+`providers/models.py:calculate_cost(model, usage)` already computes cost from `Model.cost`. The metering layer calls it at the collection point; no new pricing logic exists.
 
 ## 3. Layered Architecture
 
@@ -49,7 +48,6 @@ New module `openprogram/metering/`:
 - `context.py` — contextvar + `usage_scope()` / `current_usage_context()` / `snapshot()` / `apply_snapshot()`
 - `ledger.py` — `UsageLedger` (SQLite backend + aggregation queries)
 - `recorder.py` — `UsageRecorder` (collection point, best-effort)
-- `subprocess.py` — subprocess accounting bridge
 - `__init__.py` — facade
 
 Placed at the top level as `metering/` rather than under `context/`: metering is a cross-cutting concern (providers/agent/memory/functions all depend on it), and putting it under context would create a reverse `providers → context` dependency. `metering/` depends only on `providers/types` (pure data), with no cycle.
@@ -70,7 +68,7 @@ Provenance: `token_source` ("provider_usage"|"anthropic_count_api"|"estimate"), 
 
 Tradeoff: cost is flattened rather than a nested UsageCost → SQLite columnization, SUM needs no JSON parsing; token_source as a single column → the panel can mark a row as "estimated" to avoid misleading cost figures.
 
-## 5. Propagating the Source Label: contextvar primary, explicit metadata override as fallback
+## 5. Propagating the Source Label
 
 The underlying `stream_simple` does not know who called it. Three ways to pass it:
 
@@ -80,18 +78,18 @@ The underlying `stream_simple` does not know who called it. Three ways to pass i
 | `SimpleStreamOptions.metadata` | Field already exists | Easy to miss in deep calls; also doesn't reach when memory bypasses stream.py |
 | **contextvar** | One line `with usage_scope(...)`, async Tasks inherit automatically | Not propagated automatically across processes/threads (needs an explicit snapshot) |
 
-We adopt contextvar as primary + explicit metadata override. `metering/context.py`:
+The contextvar is primary, with an explicit metadata override as fallback. `metering/context.py`:
 `usage_scope(call_kind, call_label, parent_session_id, agent_id)` context manager, set/reset the contextvar, supports nested merge. `current_usage_context()` reads it. `snapshot()`/`apply_snapshot()` serialize across processes.
 
 Boundary notes: asyncio Tasks created by default use `copy_context()`, so stream_simple downstream of create_task can read the correct scope. Thread boundaries (run_in_executor/raw Thread) do not inherit → call apply_snapshot at the entry point. The process fork boundary copies the contextvar's current value (favorable for process_runner fork), but spawn does not → snapshot/apply_snapshot as the reliable path.
 
 recorder merge priority: `metadata.usage` > contextvar > default `unknown`.
 
-## 6. Collection Point: wrap stream.py + pull memory back in
+## 6. Collection Point
 
-Wrap an accounting decorator around `stream.py`'s `stream()`/`stream_simple()`, and pull `memory/llm_bridge.py` back into stream.py.
+An accounting decorator wraps `stream.py`'s `stream()`/`stream_simple()`, and `memory/llm_bridge.py` goes through stream.py rather than around it.
 
-Rationale:
+Why here:
 1. stream.py is the semantic boundary of "one logical LLM call", already does api_key resolution / provider lookup, and can obtain the model (with cost) + the final AssistantMessage.usage.
 2. stream() is a generator, so the wrapping approach = when consuming done/error, extract final_message.usage → `calculate_cost` → read the contextvar → assemble a UsageEvent → recorder. Streaming is not blocked; accounting fires exactly once on the terminal event.
 3. Not the api_registry layer: ApiProvider is a Protocol, each implementation has its own stream_simple, so collecting there means either changing the Protocol (invasive to every provider) or wrapping the registry (scattered wrap points). stream.py is the single-function collection point.
@@ -103,7 +101,7 @@ The dispatcher's existing `persist_assistant_message` (the messages columns) is 
 
 ## 7. Storage: a standalone global SQLite ledger
 
-Drop stuffing a cumulative dict into session meta. Create a new `~/.openprogram/usage.db` with a single append-only table:
+The ledger is a standalone `~/.openprogram/usage.db`, not a cumulative dict in session meta. It holds a single append-only table:
 
 ```sql
 CREATE TABLE usage_events (
@@ -134,45 +132,42 @@ The backend is abstracted as an interface (append/query), defaulting to SQLite, 
 
 ## 8. Subprocess Boundary
 
-`@agentic_function` subprocesses: fork runs the tool body, and the subprocess's internal LLM calls (gui_agent, etc.) have a default_tracker that is an in-process singleton the main process cannot see.
+A `@agentic_function` runs its body in a subprocess, and the subprocess's internal LLM calls (gui_agent, etc.) have a default_tracker that is an in-process singleton the main process cannot see.
 
-Approach: **the subprocess writes the shared SQLite ledger directly (the ledger is the source of truth)**.
+**The subprocess writes the shared SQLite ledger directly; the ledger is the source of truth.**
 - The subprocess opens the same usage.db (WAL is multi-process safe), its own recorder appends directly, and `origin_pid` marks the source. No second accounting pass by the main process is needed (avoiding double counting).
 - SIGKILL risk: an already-appended event is correct in the DB (flushed to disk by WAL) — those tokens really were spent; a call that did not finish before the kill received no done event, is not accounted for, which matches "never fabricate".
 
-**Implementation as landed (differences from the first-draft approach)**: `process_runner.py` uses **spawn rather than fork** (the parent worker has already loaded PyTorch/libomp/Cocoa, and these libraries are in an unsafe state after fork and would SIGSEGV). spawn does not copy contextvars, so we rely on explicit parameter passing: on the parent side, `run_agentic_in_subprocess` calls `metering.context.snapshot()` to serialize the current UsageContext into a dict, passed as a new `usage_ctx_snapshot` parameter to `_child_entry`; on the child side the entry point (after `os.setpgrp()`) calls `apply_snapshot()` to restore it. The ledger's `_connect()` detects a change in `os.getpid()` and automatically reopens the sqlite connection (the old handle is unusable after fork/spawn), so the subprocess automatically gets its own handle to write the shared WAL db. **There is no separate `metering/subprocess.py`** — snapshot/restore directly reuses `context.py`'s `snapshot()`/`apply_snapshot()`, and process_runner only adds two call sites, which is more restrained than a standalone module. The result pickle does not yet send usage_summary back (the panel can already query the events written by the subprocess from the ledger in real time, so immediate display adds no value).
+`process_runner.py` uses **spawn rather than fork**: the parent worker has already loaded PyTorch/libomp/Cocoa, and these libraries are in an unsafe state after fork and would SIGSEGV. spawn does not copy contextvars, so the scope is passed explicitly — on the parent side, `run_agentic_in_subprocess` calls `metering.context.snapshot()` to serialize the current UsageContext into a dict, passed as the `usage_ctx_snapshot` parameter to `_child_entry`; on the child side the entry point (after `os.setpgrp()`) calls `apply_snapshot()` to restore it. The ledger's `_connect()` detects a change in `os.getpid()` and reopens the sqlite connection (the old handle is unusable after fork/spawn), so the subprocess gets its own handle onto the shared WAL db.
 
-## 9. Extension Hooks (not implemented)
+Snapshot/restore reuses `context.py`'s `snapshot()`/`apply_snapshot()` and process_runner adds two call sites; there is no separate `metering/subprocess.py` module for the boundary. The result pickle does not carry a usage_summary back — the panel queries the subprocess's events from the ledger directly, so returning them adds nothing.
+
+## 9. Extension Hooks (designed, not built)
 
 - per-user: add `user_id` to UsageEvent (defaults to single user, multi-tenancy injected via usage_scope), query(group_by=["user_id"]).
 - rate limiting/alerts: UsageRecorder.record() exposes a list of post-record hooks (register_usage_hook), event-driven and non-blocking on the hot path.
 - export: add export(format, filters) to the ledger backend interface, or a JSONL mirror backend.
 - remote aggregation: swap the backend for a push OTLP/collector implementation, with the event schema unchanged.
 
-## 10. Deletion / Refactor List
+## 10. Boundary with UsageTracker
 
-### 10.1 Actually Executed (landed in Phase 4)
+`UsageTracker` (`context/usage.py`) and `UsageLedger` have separate responsibilities and coexist without reading or writing each other.
 
-- **Deleted the entire `agent/compaction/` directory** (`__init__.py`/`compaction.py`/`branch_summarization.py`/`utils.py`, about 1180 lines): confirmed no external import, no dynamic reference, no side-effect loading — it is genuinely dead code.
-- **`webui/routes/usage.py` fully rewritten**: changed from scanning `session_db` + reading session meta `_usage` to querying `UsageLedger`; added `/api/usage/trend` (day/hour bucket time series) and a by_kind breakdown, with inputs supporting since/until.
+Tracker is the **compaction budget state machine**. It answers, for `ContextEngine.prepare/compact`, what the real input_tokens were last turn, what the cache hit rate was, and whether to compact — sub-μs hot-path reads, cached per session, persisted to session meta `_usage`. That persistence is the compaction decision's state, not a billing ledger.
 
-### 10.2 Revised Plan: UsageTracker is kept, not split
+Ledger is **billing accounting**: append-only, cross-process, with per-model / per-source / time series.
 
-The first draft planned to split `UsageTracker` (context/usage.py) into 3 responsibilities, delete `record_turn`/`_persist`/`_load_from_db`, and extract `context/budget_state.py`. **This was vetoed during implementation**, for these reasons:
+The two have different consumers, lifecycles, and data shapes, so merging them would couple them rather than simplify. `UsageState` and session meta `_usage` stay as they are because compaction reads them.
 
-- `UsageTracker` and `UsageLedger` **already have separate responsibilities** and do not conflict. Tracker is the **compaction budget state machine** — it answers, for `ContextEngine.prepare/compact`, "what was the real input_tokens last turn, what was the cache hit rate, should we compact" — with sub-μs hot-path reads, caching per session, writing to session meta `_usage` (persistence of the compaction decision, not a billing ledger). Ledger is **billing accounting** — append-only, cross-process, with per-model/per-source/time series. The two have entirely different consumers, lifecycles, and data shapes; forcing a merge would instead couple them.
-- Deleting `record_turn` would touch `engine.after_turn`, a core hot path (the context compaction chain) unrelated to this task, violating the surgical-change principle, introducing regression risk, with zero benefit (session meta `_usage` is tiny, harmless to keep).
-- Extracting `budget_state.py` is "splitting for the sake of splitting" — Tracker is currently a clean single-responsibility implementation (despite the name Tracker, it is in essence budget state), and there is no real pain point to address.
+Metering reuses without modifying: `models.py:calculate_cost`, `_event_parsing.py:extract_usage`, `dispatcher/persistence.py` message columns, `types.py:Usage/UsageCost`.
 
-Conclusion: **Tracker is kept as is**, and `UsageState`/session meta `_usage` are kept as is (compaction uses them). Billing accounting is handled entirely by the new Ledger, which coexists with Tracker, neither reading nor writing the other.
+## Appendix: Implementation Status
 
-Untouched (inputs to metering, reused): `models.py:calculate_cost`, `_event_parsing.py:extract_usage`, `dispatcher/persistence.py` message columns, `types.py:Usage/UsageCost`.
+Sections 1–8 and 10 are implemented. `webui/routes/usage.py` queries the ledger and serves `/api/usage/summary` and `/api/usage/trend` (day/hour bucket time series plus a by_kind breakdown, with since/until inputs); the frontend panel draws a trend line, by_source bars, a per-model table, and a cost card.
 
-## 11. Phased Implementation (all complete)
+Two design notes worth keeping, because the code shape is not obvious from the design alone:
 
-- **Phase 0 ✅**: metering foundation (event/context/ledger/recorder + unit tests), no behavior change.
-- **Phase 1 ✅**: stream.py collection point; dispatcher chat wrapped in usage_scope. Key fix: the consumer of the async generator (agent_loop) does a `return` directly upon receiving the done event, suspending the generator at the `yield` — so accounting after the loop never executes. Changed to **account at the terminal event, before the yield** (a `recorded` flag prevents double counting).
-- **Phase 2 ✅**: summarize / mixture_of_agents(proposer+aggregator) wrapped in usage_scope; memory/llm_bridge pulled back from directly calling `api_provider.stream_simple` to going through `providers.stream_simple` (so the collection point takes effect) + wrapped in `usage_scope(call_kind="memory")`. (The compaction/branch path disappeared along with the deletion in §10.1, so no wrapping needed.)
-- **Phase 3 ✅**: UsageContext passthrough for spawn subprocesses (snapshot/apply_snapshot via parameter, see §8 implementation as landed); ledger pid re-check auto-reconnect. Did not implement sending result usage_summary back (the panel can already query it in real time).
-- **Phase 4 ✅**: deleted the `agent/compaction/` dead code; switched the usage route to the ledger. **Did not split UsageTracker** (see §10.2 revised plan).
-- **Phase 5 ✅**: `/api/usage/summary`+`/api/usage/trend` query the ledger; the frontend panel has a trend line (ResizeObserver real-pixel drawing, avoiding viewBox stretch distortion) + by_source horizontal bars + a per-model table + a cost card; the color scheme uses `--accent-blue` (the brand warm orange). Did not implement the CLI `op usage` (left as a hook, to be added as needed).
+- Accounting fires **at the terminal event, before the yield**, guarded by a `recorded` flag. The consumer of the async generator (`agent_loop`) returns directly on the done event, which suspends the generator at its `yield` — anything placed after the loop would never run.
+- The former `agent/compaction/` directory (about 1180 lines) was dead code with no import, dynamic reference, or side-effect load, and was deleted; nothing in it needed a usage scope.
+
+Designed but not built: §9 extension hooks, and a CLI `op usage` command.

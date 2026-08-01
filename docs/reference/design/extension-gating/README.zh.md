@@ -73,13 +73,13 @@ Plugin **不在**这个列表中 —— plugin 是宿主层面的“贡献者”
 3. **categories**（非空，仅 skill）—— 若该项的 category 不匹配，则拒绝
 4. **required**（仅 MCP）—— 单独的硬性检查：若任一 required 模式匹配不到任何已安装项，则本轮整个 agent 不可用
 
-精确名称是 fnmatch 的退化情形（`"bash"` 只匹配 `bash`）。通配符（`*`、`?`、`[abc]`）之所以可用，是因为我们使用了 `fnmatch.fnmatchcase`。
+精确名称是 fnmatch 的退化情形（`"bash"` 只匹配 `bash`）。通配符（`*`、`?`、`[abc]`）可用，是因为匹配走的是 `fnmatch.fnmatchcase`。
 
 ---
 
 ## 为什么是这个结构
 
-我们把 claude-code 的**按类型分字段结构**（`tools: []`、`disallowedTools: []`、`mcpServers: []`）与 opencode 的 `permission: Ruleset` 的**通配符表达力**结合在了一起。结果是：
+该结构把 claude-code 的**按类型分字段结构**（`tools: []`、`disallowedTools: []`、`mcpServers: []`）与 opencode `permission: Ruleset` 的**通配符表达力**结合起来：
 
 - 易读 —— 每个字段名都说明了它门控的是什么
 - 易写 —— `disabled: [anthropic-skills/*]` 一行搞定，而不用写五行

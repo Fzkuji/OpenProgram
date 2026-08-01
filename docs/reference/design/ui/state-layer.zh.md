@@ -1,13 +1,11 @@
 # Web 状态层：每会话独立 store
 
-这一页从零解释 web 前端的状态存放在哪里、分屏改造为什么反复出 bug，以及为止住它而拍板
-的方案：**每个会话一个 Zustand store 实例，真正共享的数据留在全局 store**。第 6 节记录
-这个决定，第 7 节按它跟踪迁移进度。
+web 前端的状态存放方式是：**每个会话一个 Zustand store 实例，真正共享的数据放在唯一的
+全局 store**。这一页说明每类状态各自存在哪里、这条分界线为什么划在这里，以及换成别的
+安排会出什么问题。
 
-第 2 到 5 节的盘点描述的是这项工作开始之前的状态层。保留它是因为正是它让那个决定读得懂
-——它列为问题的每个字段，要么已在阶段 1 修掉，要么还排在阶段 2。
-
-不预设前端知识。先介绍必要概念，之后全部是对照真实代码的盘点，引用格式为 `文件:行号`。
+不预设前端知识。先介绍必要概念，再是对照真实代码的盘点（引用格式为 `文件:行号`），
+第 6 节给出方案本身。
 
 ---
 
@@ -33,14 +31,15 @@
 
 ## 2. 主 store 逐字段盘点
 
-`web/lib/session-store/index.ts`（906 行）在 `ConvState` 接口
+`web/lib/session-store/index.ts` 在 `ConvState` 接口
 （`web/lib/session-store/index.ts:46`）里声明形状，在
-`web/lib/session-store/index.ts:400` 给初值。下面把每个字段归入三类之一。
+`web/lib/session-store/index.ts:400` 给初值。下面把每个字段归入三类之一。标注**已删除**
+的字段列在这里，是因为它们说明了这套设计排除掉什么；代码里已经没有它们了。
 
-### A 类 —— 已按会话隔离
+### A 类 —— 按会话隔离
 
 这些字段是 `Record<sessionId, T>` 形态的表。同屏两个会话不会冲突，因为各读各的键。
-整个 store 应该收敛到这个形状。
+全局 store 收敛到的就是这个形状。
 
 | 字段 | 声明位置 | 内容 |
 | --- | --- | --- |
@@ -56,7 +55,7 @@
 | `additionalWorkingDirsBySession` | `web/lib/session-store/index.ts:146` | 每会话附加工作目录 |
 | `composerDrafts` | `web/lib/session-store/index.ts:182` | 每会话未发送草稿文本，持久化到 localStorage |
 | `composerSettingsBySession` | `web/lib/session-store/index.ts:194` | 每会话工具开关/思考强度，持久化 |
-| `contextPanelFor` | `web/lib/session-store/index.ts:211` | `/context` 浮窗开在*哪个*会话上——单字段当按会话标志用，见第 5 节。**阶段 1 已删除**：现在是每会话 store 上的 `contextPanelOpen`。 |
+| `contextPanelFor` | `web/lib/session-store/index.ts:211` | `/context` 浮窗开在*哪个*会话上——单字段当按会话标志用，见第 5 节。**已删除**：现在是每会话 store 上的 `contextPanelOpen`。 |
 
 `pendingDecisions`（`web/lib/session-store/index.ts:244`）是个值得单独说的混合体：
 它是扁平的 FIFO 数组，但每一项自带 `sessionId`
@@ -73,9 +72,9 @@
 | --- | --- | --- |
 | `currentSessionId` | `web/lib/session-store/index.ts:74` | "那个"活动会话。两个窗格时有两个，其中一个只是*聚焦*的那个 |
 | `activeChatKey` | `web/lib/session-store/index.ts:77` | 同上，用于未发送草稿的临时 `local_*` id |
-| `runningTask` | `web/lib/session-store/index.ts:86` | 已废弃，应读 `runningTasks[sid]`；保留只为让旧的 `setRunning(false)` 调用方还能用。**阶段 1 已删除。** |
-| `composerInput` | `web/lib/session-store/index.ts:178` | 聚焦会话的*活动*草稿；是 `composerDrafts[focused]` 的镜像。**阶段 1 已删除。** |
-| `composerSettings` | `web/lib/session-store/index.ts:193` | 聚焦会话的*活动*设置；是 `composerSettingsBySession[focused]` 的镜像。**阶段 1 已删除。** |
+| `runningTask` | `web/lib/session-store/index.ts:86` | 已废弃，应读 `runningTasks[sid]`；保留只为让旧的 `setRunning(false)` 调用方还能用。**已删除。** |
+| `composerInput` | `web/lib/session-store/index.ts:178` | 聚焦会话的*活动*草稿；是 `composerDrafts[focused]` 的镜像。**已删除。** |
+| `composerSettings` | `web/lib/session-store/index.ts:193` | 聚焦会话的*活动*设置；是 `composerSettingsBySession[focused]` 的镜像。**已删除。** |
 | `composerFocusTick` | `web/lib/session-store/index.ts:206` | 自增计数器，用来让"那个"composer 聚焦输入框；两个 composer 时无法确定谁该响应 |
 | `fnFormFunction` | `web/lib/session-store/index.ts:217` | 哪个函数的参数表单替换了输入框。属于某一个 composer，不属于整个应用 |
 | `fnFormPrefill` | `web/lib/session-store/index.ts:226` | 该表单的预填参数 |
@@ -90,8 +89,8 @@
 | `detailNode` | `web/lib/session-store/index.ts:261` | 右栏显示的选中 DAG 节点 |
 | `nodeSelected` | `web/lib/session-store/index.ts:271` | "有 DAG 节点被选中"的闸门 |
 
-`detailNode` 和 `nodeSelected` 列在这里是因为它们*描述*某个会话的 DAG，但它们是容器化
-工作明确的非目标——见第 8 节。
+`detailNode` 和 `nodeSelected` 列在这里是因为它们*描述*某个会话的 DAG，但它们是明确的
+非目标——见第 9 节。
 
 ### C 类 —— 真正应该全局
 
@@ -166,9 +165,9 @@
 
 ---
 
-## 5. 分屏改造为什么频出 bug
+## 5. 全局单值会导致的失效模式
 
-模式永远是同一个：
+每个 B 类字段都以同一种方式失效：
 
 > 组件渲染了两份，但它读的状态只有一份。
 
@@ -182,10 +181,10 @@
 
 `/context` 徽标位于 composer 内部，点击弹出该会话上下文构成的分解浮窗。
 
-如果它当初写成一个普通布尔值 `contextPanelOpen`，分屏会渲染两个徽标，都订阅那一个布尔
+如果写成一个普通的全局布尔值 `contextPanelOpen`，分屏会渲染两个徽标，都订阅那一个布尔
 值。点任意一个徽标会**同时**弹出两个浮窗，关掉一个则两个都关。
 
-修复方式见 `web/lib/session-store/index.ts:209`：不再存"开没开"，改存**开在哪个会话上**：
+全局分键的答案是：不存"开没开"，改存**开在哪个会话上**：
 
 ```ts
 /** /context 浮动弹窗：存"哪个会话的面板开着"（null = 关）。分屏时
@@ -206,13 +205,14 @@ const panelOpen = useSessionStore((s) => s.contextPanelFor != null && s.contextP
 ——或者跟聚焦会话比较——在类型上依然合法。在每会话 store 下，这个字段就是
 `contextPanelOpen`，一个属于徽标自己那个会话的普通布尔值，没有比较可以搞错。
 
-### 镜像问题
+### 镜像更糟
 
-`composerInput` 和 `composerSettings` 比普通全局值更糟：它们是**镜像**。真数据在按键
-存的表里，这两个字段为聚焦的那个会话额外存一份副本。每次写都必须更新两处，每次切会话
-都必须把镜像换过去（`switchChat`）。
+**镜像**——一个全局字段存着分键表里聚焦会话那一项的副本——比普通全局值更糟。
+`composerInput` 和 `composerSettings` 就是这样的两处。每次写都必须更新两份副本，每次切
+会话都必须把镜像换过去（`switchChat`）。
 
-镜像还渗进了组件。`web/components/chat/composer/index.tsx:166` 必须按是否绑定分支：
+镜像还会渗进组件，组件不得不按"是否绑定了明确的会话"分支
+（`web/components/chat/composer/index.tsx:166`）：
 
 ```ts
 const input = useSessionStore((s) =>
@@ -222,10 +222,10 @@ const input = useSessionStore((s) =>
 
 同样的三行三元在 `fast` 和 `unattended` 上重复，在 `composer-session.tsx` 里又重复一次。
 每一次重复都是一次把兜底写错的机会，而且 `bound === null` 那一支意味着写错的后果是
-"静默用聚焦会话"，而不是报错。窗口间搬移会话时，`desktop-bridge.ts` 和
-`tab-transfer-journal.ts` 也不得不重建这份镜像。
+"静默用聚焦会话"，而不是报错。跨窗口搬移会话的路径（`desktop-bridge.ts`、
+`tab-transfer-journal.ts`）也不得不重建这份镜像。
 
-阶段 1 把这些全删了。活值归作用域所有，于是没有镜像可言、没有兜底分支，传输路径也没有
+在第 6 节的方案下，活值归作用域所有，于是没有镜像可言、没有兜底分支，传输路径也没有
 东西需要重建。
 
 ---
@@ -259,8 +259,6 @@ Chrome 是最极端的例子：主进程管标签条/书签/设置等全局态�
 ---
 
 ## 6. 方案：每个会话一个独立 store 实例
-
-### 拍板的决定
 
 **每个会话拥有自己的 Zustand store 实例。真正共享的数据留在唯一的全局 store。**
 
@@ -314,12 +312,11 @@ composer，`PeerSessionPane` 用各自的会话 id 包住每个分屏窗格。
 
 实例首次渲染时从全局表取种子值，这是"刷新后重新挂载能看到持久化草稿而不是空框"的原因。
 
-### 后果：镜像字段没了
+### 没有镜像字段
 
-因为活值归实例所有，全局 store 不再需要"聚焦会话的活切片"这份副本。`composerInput`、
-`composerSettings`、`runningTask` 被直接删除，`contextPanelFor`（一个当按会话标志用的
-单字段）同样删除。聚焦会话的草稿现在就是 `composerDrafts[activeChatKey]`，在需要的地方
-算出来，而不是存两份。
+因为活值归实例所有，全局 store 不持有"聚焦会话的活切片"这份副本。没有 `composerInput`、
+`composerSettings`、`runningTask`，也没有 `contextPanelFor`。聚焦会话的草稿就是
+`composerDrafts[activeChatKey]`，在需要的地方算出来，而不是存两份。
 
 ### 曾考虑的替代方案：全局仓库 + 作用域标签
 
@@ -333,109 +330,54 @@ React context 提供键，让消费方读 `map[scopeKey]` 而不是读全局。`
 保持扁平且全局——原样保留，因为这些表正是实例赖以持久化的东西。
 
 ---
+## 7. B 类字段各自的归属
 
-## 7. 迁移路径
+每个 B 类字段都成为 `SessionScopeState` 上的一个属性，由 `useSessionScope` 读取，
+下面两处例外除外。
 
-### 阶段 1 —— 搭作用域、删镜像 —— **已完成**
+- `fnFormFunction` / `fnFormPrefill` / `fnFormForkOf` / `fnFormClosing` 合成作用域上
+  的一个 `fnForm` 属性。侧栏和收藏列表在*打开*表单时并不知道该由哪个窗格承载，因此
+  它们指定一个明确的目标会话——这是一个真实的行为决策，不是机械映射。消费方：
+  `web/components/chat/composer/modes/resolve-mode.ts:18`、
+  `web/components/chat/composer/modes/fn-form/use-fn-form-state.ts`、
+  `use-fn-form-wrapper.ts`、`web/lib/use-pending-run-function.ts`、
+  `web/components/sidebar/favorites-list.tsx`、
+  `web/components/sidebar/sidebar.tsx`、
+  `web/components/chat/messages/runtime-block.tsx`、
+  `web/lib/runtime-bridge/functions-panel.ts`。
+- `welcomeVisible`、`transcriptLoadingId` 是每会话布尔值，消费方为
+  `web/components/chat/welcome-screen.tsx` 和
+  `web/components/chat/messages/message-list.tsx`。
+- `composerFocusTick` 是每会话计数器，这样聚焦一个窗格的输入框不会把另一个拽走。
+- `branchInfo`、`statusBadge`、`paused`、`providerInfo` 按会话分。它们喂给顶栏，而顶栏
+  显示的是*聚焦*会话，所以顶栏读聚焦作用域。
+- `currentSessionId` / `activeChatKey` 留在视图层，作为**全局聚焦指针**。它们不表示
+  "那个会话"，而是表示"聚焦窗格的会话"，这正是 `center-tabs-store` 已经用 `activeId`
+  跟踪的东西。
 
-新建 `session-scope-registry.ts`（store 工厂、实例表、写穿钩子）和
-`session-scope.tsx`（`SessionScopeProvider`、`useSessionScope`）。
-
-从全局 store 删除：`composerInput`、`composerSettings`、`runningTask`、
-`contextPanelFor`，以及 setter `setRunningTask`、`setContextPanelFor`。
-
-各迁移点：
-
-- `switchChat` 不再保存切出会话的文本、也不再载入切入会话的——两者本来就在分键表里。
-  剩下的只有：未发送会话拿到真实 id 时，把 `__new__` 占位键提升过去。
-- `web/components/chat/composer/index.tsx` —— 四处
-  `bound === null ? 全局 : keyed[bound]` 三元（草稿、`fast`、`unattended`、设置 setter）
-  收敛成普通的 `useSessionScope` 读取。`bound` 只保留它真正区分的东西：发送时的
-  `background: true`，以及各窗格的 DOM id 后缀。
-- `web/components/chat/composer/composer-session.tsx` —— 缩成两个基于作用域的单行 helper；
-  context 和 `null` 兜底都没了。三个控件 hook（`use-thinking-effort`、
-  `use-tools-toggles`、`use-permission-mode`）无需改动，因为它们消费的正是这两个 helper。
-- `web/components/app-shell.tsx` —— portal 出去的 `<Composer />` 换成
-  `<FocusedComposer />`，由它用 `activeChatKey ?? currentSessionId ?? "__new__"` 包一层
-  provider。正是这一步让无绑定分支可以被删掉，而不只是被绕开。
-- `web/components/chat/peer-session-pane.tsx` —— `ComposerSessionProvider` 换成
-  `SessionScopeProvider`，于是窗格的整棵 composer 子树（草稿、运行态、设置、`/context`）
-  都在作用域内，而不只是控件 hook。
-- `web/components/chat/context-badge.tsx` —— `contextPanelFor === sid` 换成
-  `useSessionScope(s => s.contextPanelOpen)`。
-- 线上格式：`SessionTransferSnapshot` 去掉 `composerInput` / `composerSettings`，
-  `ChatTransferState` 去掉 `activeComposerInput` / `activeComposerSettings`。这四个都是
-  `activeChatKey` 对应分键项的副本，接收窗口自己查得到。`desktop-bridge.ts` 和
-  `tab-transfer-journal.ts` 随之简化。
-- 遗留桥接：`runtime-bridge/ui.ts` 和 `chat-handlers.ts` 本来就优先用
-  `setRunningTaskFor`，把它们已死的 `setRunningTask` 声明删掉。那个分键 setter 现在还会
-  同时推进活实例。
-
-验证：`npx tsc --noEmit` 干净，`npx next build` 通过，`npm run check` 十个套件全绿。
-`check-provisional-send` 把一条针对旧镜像守卫的源码形状断言换成了行为断言（改后台会话的
-设置不影响聚焦会话，后台会话也不会继承聚焦会话的值）；`check-multi-draft` 和
-`check-web-split` 改为按 `composerDrafts[activeChatKey]` 读聚焦草稿。五个检查脚本的模块
-解析器另外补了"无扩展名相对导入"分支，以及仓库路径含空格时的 `fileURLToPath` 修正。
-
-### 阶段 2 —— 剩余 B 类字段逐个入容器
-
-剩下每个字段都变成 `SessionScopeState` 上的一个属性，消费方改用 `useSessionScope`。
-按大致的独立程度排序：
-
-1. `fnFormFunction` / `fnFormPrefill` / `fnFormForkOf` / `fnFormClosing` →
-   作用域上的一个 `fnForm` 属性。涉及
-   `web/components/chat/composer/modes/resolve-mode.ts:18`、
-   `web/components/chat/composer/modes/fn-form/use-fn-form-state.ts`、
-   `use-fn-form-wrapper.ts`、`web/lib/use-pending-run-function.ts`、
-   `web/components/sidebar/favorites-list.tsx`、
-   `web/components/sidebar/sidebar.tsx`、
-   `web/components/chat/messages/runtime-block.tsx`、
-   `web/lib/runtime-bridge/functions-panel.ts`。注意侧栏和收藏列表在*打开*表单时并不知道
-   该由哪个窗格承载——它们需要一个明确的目标会话，这是一个真实的行为决策，不是机械移植。
-2. `welcomeVisible`、`transcriptLoadingId` → 每会话布尔值。消费方：
-   `web/components/chat/welcome-screen.tsx`、
-   `web/components/chat/messages/message-list.tsx`。
-3. `composerFocusTick` → 每会话计数器，这样聚焦一个窗格的输入框不会把另一个拽走。
-4. `branchInfo`、`statusBadge`、`paused`、`providerInfo` → 每会话。它们喂给顶栏，而顶栏
-   显示的是*聚焦*会话，所以顶栏读聚焦作用域，视觉上没有其他变化。
-5. `currentSessionId` / `activeChatKey` → 保留为视图层的*全局聚焦指针*。它们不再表示
-   "那个会话"，而是表示"聚焦窗格的会话"，这正是 `center-tabs-store` 已经用 `activeId`
-   跟踪的东西。这是最后动的一个，也是对 runtime bridge 影响最大的一个。
-
-风险：每一步都要重新核查 `pendingDecisions` 的路由——它在
+`pendingDecisions` 的路由依赖这套作用域划分正确：它在
 `web/components/chat/composer/index.tsx:344` 按 `sessionId` 过滤，作用域搞错的 composer
-要么吞掉另一个会话的提问，要么把它显示两遍。fn-form 这一组是单项最大的改动，因为有八个
-文件消费它。
+要么吞掉另一个会话的提问，要么把它显示两遍。
 
-规模：大约十五到二十个文件，可拆成五次独立提交，每次都能单独验证。作用域基础设施已经
-就位，所以每个字段都是搬家，不是新造机制。
+## 8. 遗留的 `window.*` 层是过渡态
 
-### 阶段 3 —— 遗留 `window.*` 退役
-
-这一阶段在阶段 2 完成前不能开始，因为 bridge 的路由闸门读的是 `W.currentSessionId`，而
-在 store 把"聚焦"和"那个会话"区分开之前，没有正确的替代品。
-
-退役条件，必须全部成立：
+第 4 节描述的 `window.*` 层不属于这套设计，它正是 store 要取代的东西。下列条件全部成立
+后即可移除：
 
 1. `web/lib/runtime-bridge/chat-handlers.ts` 和 `conversations.ts` 里每一处
-   `data.session_id === W.currentSessionId` 闸门都换成按 `data.session_id` 分键的 store
-   写入，让后台会话的帧能落地而不是被丢弃。
-2. `window.conversations` 没有任何 store 按键表覆盖不到的读取方；此时
-   `web/lib/runtime-bridge/conv-store-mirror.ts` 从承重件变成多余件。
+   `data.session_id === W.currentSessionId` 闸门都成为按 `data.session_id` 分键的 store
+   写入，让后台会话的帧能落地而不是被丢弃。这要求 store 先把"聚焦"和"那个会话"区分开，
+   也就是第 7 节的聚焦指针所做的事。
+2. `window.conversations` 没有任何 store 按键表覆盖不到的读取方，此时
+   `web/lib/runtime-bridge/conv-store-mirror.ts` 就不再是必需的，可以直接删掉。
 3. `W.isRunning` 没有读取方；`runningTasks` 覆盖它。
-4. 单例的 `#chatView` DOM shell 消失，处处换成 `PeerSessionPane` 已经证明可行的 React
-   路径。这是最重的前置条件——大约十个 runtime-bridge 模块靠写死的 id 访问它。
+4. 单例的 `#chatView` DOM shell 消失，换成 `PeerSessionPane` 已经证明可行的 React 路径。
+   这是最重的一条——大约十个 runtime-bridge 模块靠写死的 id 访问那个 shell。
 
-风险：这一阶段出错的表现是静默丢 WebSocket 帧，而不是渲染错误。每移除一个闸门，都需要
-配套验证那个帧仍然到达它的会话。
+闸门移除出错的表现是静默丢 WebSocket 帧，而不是渲染出明显错误的东西，因此每移除一个
+闸门都需要配套验证那个帧仍然到达它的会话。
 
-规模：整个 `web/lib/runtime-bridge/`（十三个模块加 `dag` 子目录）。规模最大的一个阶段，
-也是唯一一个"做一半比两个端点都差"的阶段——因此应排在最后，并按模块以一次持续的推进
-完成，而不是零敲碎打。
-
----
-
-## 8. 非目标
+## 9. 非目标
 
 **右栏与 DAG 保持单份，跟随聚焦会话。** `detailNode` 和 `nodeSelected`
 （`web/lib/session-store/index.ts:261`、`:271`）保持全局。没有任何东西把它们渲染两份：
@@ -454,19 +396,25 @@ React context 提供键，让消费方读 `map[scopeKey]` 而不是读全局。`
 
 ---
 
-## 9. 各阶段开销
+## 附录：实现状态
 
-| 阶段 | 涉及文件 | 主要风险 | 状态 |
-| --- | --- | --- | --- |
-| 1 —— 搭作用域、删镜像 | 新增 2 个，改动约 10 个（store、composer、app-shell、分屏窗格、徽标、2 个持久化、2 个桥接），外加 5 个检查脚本 | 切会话丢草稿；传输日志格式变更 | 已完成 |
-| 2 —— 剩余 B 类字段入作用域 | 约 15–20 个，可拆成 5 次提交 | fn-form 打开目标的语义；`pendingDecisions` 路由 | 待做 |
-| 3 —— `window.*` 退役 | 约 13 个 runtime-bridge 模块加 DOM shell | 静默丢 WebSocket 帧；做一半比两个端点都差 | 待做 |
+第 6 节的作用域基础设施已就位——`session-scope-registry.ts`（store 工厂、实例表、
+写穿钩子）和 `session-scope.tsx`（`SessionScopeProvider`、`useSessionScope`）；镜像也
+已消失：全局 store 里不再有 `composerInput`、`composerSettings`、`runningTask`、
+`contextPanelFor`，线上格式（`SessionTransferSnapshot`、`ChatTransferState`）也不再
+携带聚焦会话分键项的副本。
 
-阶段 1 和 2 可独立交付，各自都让代码库比动手前更好。阶段 3 不是，应当作为一个独立项目
-对待，而不是渐进清理。
+尚未落地：
+
+- 第 7 节——剩余的 B 类字段仍在全局 store 里。每个都是搬到 `SessionScopeState` 上，
+  不是新造机制，大约十五到二十个文件，可拆成五次独立可验证的提交。fn-form 那一组最大，
+  因为有八个文件消费它。
+- 第 8 节——遗留 `window.*` 层仍是非分屏路径的消息渲染、会话切换、分支徽标刷新以及
+  大部分 WebSocket 帧路由的默认路径。退役它涉及整个 `web/lib/runtime-bridge/`（十三个
+  模块加 `dag` 子目录），也是唯一一处"做一半比两个端点都差"的地方，因此排在最后，
+  按模块以一次持续的推进完成。
 
 ---
-
 ## 相关
 
 - [`composer-interaction-modes.zh.md`](composer-interaction-modes.zh.md) ——

@@ -73,13 +73,13 @@ For a single extension (one tool, one skill, one MCP server):
 3. **categories** (non-empty, skill only) — if item's category not matched, reject
 4. **required** (MCP only) — separate hard check: if any required pattern matches nothing installed, the whole agent is unavailable for this turn
 
-Exact names are the trivial case of fnmatch (`"bash"` matches only `bash`). Wildcards (`*`, `?`, `[abc]`) work because we use `fnmatch.fnmatchcase`.
+Exact names are the trivial case of fnmatch (`"bash"` matches only `bash`). Wildcards (`*`, `?`, `[abc]`) work because matching goes through `fnmatch.fnmatchcase`.
 
 ---
 
 ## Why this shape
 
-We combined the **per-type field structure** from claude-code (`tools: []`, `disallowedTools: []`, `mcpServers: []`) with the **wildcard expressiveness** from opencode's `permission: Ruleset`. The result:
+The shape combines claude-code's **per-type field structure** (`tools: []`, `disallowedTools: []`, `mcpServers: []`) with the **wildcard expressiveness** of opencode's `permission: Ruleset`:
 
 - Easy to read — each field name says what it gates
 - Easy to write — `disabled: [anthropic-skills/*]` is one line, not five

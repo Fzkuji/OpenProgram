@@ -1,123 +1,148 @@
-# Research: what data model to use for agent execution traces — choosing span
+# Execution Trace Data Model — Choosing Span
 
-Type: research / route selection (not a design doc; it does not cover how to implement, only "why take this route + the state of the field")
-Date: 2026-06-19
+> This document establishes why agent execution traces use the span data model:
+> what the model is, what the alternatives are, and why span is the route.
 
-## One-line conclusion
+## Conclusion
 
-For the execution trace of a single agent task run (user messages, LLM calls, tool/function calls, nesting, loops),
-**adopt the span data model** (id + parent_id + start/end + attributes + status, with parent_id linking them into a tree).
-This is 15 years of industry consensus in the observability field, and the entire LLM-agent tracing community has already converged on it.
-Our existing `Call` + `called_by` is already a half-baked span — the direction is right, we just need to straighten it out according to the span spec,
-**without bringing in a heavyweight OTel SDK** — only align the data shape + attribute naming (`gen_ai.*`), preserving future interoperability.
+The execution trace of an agent task run — user messages, LLM calls,
+tool/function calls, nesting, loops — uses the **span data model**: id +
+parent_id + start/end + attributes + status, with parent_id linking spans into
+a tree. Span is fifteen years of consensus in observability, and the LLM-agent
+tracing community has converged on it. `Call` + `called_by` is already a span in
+all but naming, so the work is alignment with the span spec rather than a
+rewrite. No heavyweight OTel SDK is adopted; only the data shape and the
+attribute naming (`gen_ai.*`) are aligned, which preserves interoperability.
 
-## Why this needs research (our problem)
+## The problem
 
-An agent system is essentially "a large model running code as an interpreter": the user gives a task → the large model repeatedly calls functions/tools →
-the functions in turn call the large model (nesting + recursion). We need to record "what actually ran this time." The sticking points:
-- **An LLM call must be one kind of node**; it must not split into two kinds depending on whether it was "triggered by the user" or "triggered by a function."
-- **Calls are nested** (parent→child, with returns); **loops are siblings** (siblings under the same parent, not one calling the other).
-- We need to be able to draw both the **chat line** (the time flow) and the **call tree** (the nesting).
+An agent system is a large model running code as an interpreter: the user gives
+a task, the model repeatedly calls functions and tools, and the functions call
+the model in turn (nesting plus recursion). The record must capture what
+actually ran. Three requirements constrain the model:
 
-This is exactly the problem the observability field solved long ago — one request passes through multiple services, with nested calls, and needs to be traced.
-The shape is completely isomorphic to our agent.
+- **An LLM call is one kind of node.** It must not split into two kinds
+  depending on whether the user or a function triggered it.
+- **Calls nest** (parent to child, with returns); **loops are flat** (siblings
+  under one parent, not one calling the next).
+- Both the **chat line** (time flow) and the **call tree** (nesting) must be
+  drawable from the same record.
+
+Observability solved this problem long ago: one request crosses several
+services, with nested calls, and has to be traced. The shape is isomorphic to
+the agent case.
 
 ## State of the field
 
-### What field is this
+### The field
 
-**observability**, sub-field **distributed tracing**.
-The three pillars: metrics (numeric statistics) / logs / **traces**. Spans live inside traces —
-one trace = one span tree, one span = one operation with a start and end.
+**Observability**, sub-field **distributed tracing**. The three pillars are
+metrics (numeric statistics), logs, and **traces**. Spans live inside traces:
+one trace is one span tree, one span is one operation with a start and an end.
 
-### History: it fragmented, then merged into a single standard
+### History: fragmented, then unified
 
 | Time | Event |
 |---|---|
-| 2010 | Google **Dapper** paper, defines span |
+| 2010 | Google **Dapper** paper defines span |
 | 2012 | Twitter open-sources Zipkin |
 | 2015 | Uber builds Jaeger; OpenTracing standard |
-| 2018 | Google/Microsoft also create OpenCensus (**two standards fighting**) |
-| 2019 | The two merge into **OpenTelemetry (OTel)**, the standards war ends |
+| 2018 | Google/Microsoft create OpenCensus (two competing standards) |
+| 2019 | The two merge into **OpenTelemetry (OTel)**; the standards war ends |
 | 2021 | OTel tracing spec v1.0 stabilizes |
-| 2023-24 | OTel becomes the second most active CNCF project (after Kubernetes) |
+| 2023-24 | OTel becomes the second most active CNCF project, after Kubernetes |
 
-What this means for a cautious selector: **this field has already been shaken out** (there were once competing standards), and OTel is what survived. It is not a new thing, not a gamble.
+For a cautious selector this matters: the field has already been through its
+shakeout, competing standards included, and OTel is what survived. It is
+neither new nor a bet.
 
-### Is OTel real consensus — yes
+### OTel is real consensus
 
-A CNCF project, built jointly by **AWS / Google / Microsoft / Datadog / Splunk / Honeycomb / Grafana / Dynatrace**.
-These are companies that compete with each other, yet they maintain the same standard together — this is the strongest signal of "a real standard rather than hype."
+A CNCF project built jointly by **AWS, Google, Microsoft, Datadog, Splunk,
+Honeycomb, Grafana, and Dynatrace**. Companies that compete with each other
+maintain the same standard together, which is the strongest available signal of
+a real standard rather than hype.
 
-### Competitors — almost all use span
+### Alternatives — nearly all use span
 
 | Solution | Uses span? |
 |---|---|
-| Commercial APM (Datadog / New Relic / Honeycomb / Lightstep) | All do, and are natively compatible with OTel spans; they differ only in storage/query |
-| Chrome Trace / Perfetto (Google's other system) | Different lineage (browser/Android performance), but **also that "timed nested interval" span shape** |
-| eBPF tracing (Pixie / Cilium) | Different layer (kernel-level); what they produce is also spans — it is a collection method, not a competing model |
-| "Use only flat logs, no span tree" (early Honeycomb / Stripe) | **The only genuinely different philosophy**, but even its chief proponents later moved to span |
+| Commercial APM (Datadog / New Relic / Honeycomb / Lightstep) | All do, natively compatible with OTel spans; they differ only in storage and query |
+| Chrome Trace / Perfetto | Different lineage (browser and Android performance), but the same timed-nested-interval shape as span |
+| eBPF tracing (Pixie / Cilium) | Different layer (kernel level); what they produce is also spans — a collection method, not a competing model |
+| Flat logs with no span tree (early Honeycomb, Stripe) | The one genuinely different philosophy, though its main proponents later moved to span |
 
-**For modeling "nested execution," span is whole-industry consensus, with no second credible model.**
+For modeling nested execution, span is industry-wide consensus with no second
+credible model.
 
-### Decisive evidence: the LLM-agent tracing community has already converged on span
+### The LLM-agent tracing community has converged on span
 
-New tools built specifically for agent tracing all use span:
+Tools built specifically for agent tracing all use span:
 
-| Tool | Uses what |
+| Tool | Model |
 |---|---|
-| **OTel GenAI spec** | Official `gen_ai.*` attributes (model name, token counts…), with dedicated span conventions for LLM/tool/agent-step |
-| **Langfuse** | observation tree (span/generation/event), natively ingests OTel spans |
+| **OTel GenAI spec** | Official `gen_ai.*` attributes (model name, token counts), with dedicated span conventions for LLM, tool, and agent-step |
+| **Langfuse** | Observation tree (span/generation/event), natively ingests OTel spans |
 | **Arize Phoenix** | Built directly on OTel (OpenInference conventions) |
-| **LangSmith** (LangChain) | "run tree" — nested Runs with parent-child + start/end, **which is a span tree**, plus OTel interop |
-| **OpenLLMetry / W&B Weave / Braintrust** | All OTel span |
+| **LangSmith** (LangChain) | Run tree — nested Runs with parent-child plus start/end, which is a span tree, with OTel interop |
+| **OpenLLMetry / W&B Weave / Braintrust** | OTel span |
 
-For the problem we want to solve, they have all given the same answer: **one agent run = one span tree**.
+They all answer the same question the same way: one agent run is one span tree.
 
-## How the span model resolves our sticking points
+## How span satisfies the requirements
 
 ```
 span = { id, parent_id, name/kind, start, end, status, attributes, events[] }
 ```
 
-| Our requirement | How span satisfies it |
+| Requirement | How span satisfies it |
 |---|---|
-| The large model is one node that does not change form | A span does not split based on "who called it" — this is an OTel iron rule; HTTP/internal-function/background-task are all spans, differing only in kind/attributes |
-| Nested calls | `parent_id` points to the parent; the child interval nests inside the parent; return = span end |
-| Loops are siblings | Multiple sibling spans under the same parent, ordered by time, with no parent-child relation between siblings — exactly "a loop is not a call" |
-| Chat line + call tree | parent_id gives the tree; the start time gives the timeline; the same data, two views |
-| Context references (reads) | Attached as the span's `events[]`, opening no extra child node and not polluting the tree |
-| Async/background causality | OTel's `links` edge (we call it `caused_by`), for cases that are not strictly nested |
+| The LLM node keeps one form | A span does not split by who called it — an OTel rule; HTTP, internal function, and background task are all spans, differing only in kind and attributes |
+| Nested calls | `parent_id` points at the parent; the child interval nests inside the parent's; return is the span end |
+| Loops are flat | Several sibling spans under one parent, ordered by time, with no parent-child relation between siblings — exactly "a loop is not a call" |
+| Chat line plus call tree | parent_id gives the tree, start time gives the timeline; one dataset, two views |
+| Context references (reads) | Attached as the span's `events[]`, opening no extra child node and leaving the tree clean |
+| Async and background causality | OTel's `links` edge (named `caused_by` here), for cases that do not nest strictly |
 
-## Drawbacks of span (recorded honestly)
+## Drawbacks of span
 
-1. **fan-out overhead**: one span per small operation; with many agent loops the spans explode, requiring sampling/aggregation.
-2. **The tree assumes clean parent-child**: when an agent has shared state, retries, or DAG flows (not a strict tree), the mapping is awkward — partially solved by `links`/`caused_by` edges; this is a known rough spot.
-3. **token/cost/evaluation** are not native to span; they are attached via attributes (`gen_ai.*` is exactly what does this).
+1. **Fan-out cost.** One span per small operation; long agent loops produce many
+   spans, so sampling or aggregation is needed.
+2. **The tree assumes clean parent-child structure.** Shared state, retries, and
+   DAG flows map awkwardly onto a strict tree. `links`/`caused_by` edges cover
+   part of this; the rest is a known rough edge.
+3. **Token, cost, and evaluation data are not native to span.** They attach as
+   attributes, which is what `gen_ai.*` is for.
 
-## Distance from the current state — very close
+## Distance from the current model
 
-| Current state | span | Gap |
+| Current | span | Gap |
 |---|---|---|
 | `Call.id` | span id | Same |
-| `called_by` | parent_id | Same (it is exactly this) |
+| `called_by` | parent_id | Same edge |
 | `role` | name/kind | Similar |
 | `output` | status + attributes | Present |
-| `seq` | start (ordering) | Roughly |
-| `metadata.parent_id` (conversation order, hidden away) | siblings ordered by start, **this edge is not needed** | An extra one that should be deleted |
-| `reads` (not yet enabled) | span events[] | Concept matches, implementation still to be filled in |
+| `seq` | start (ordering) | Approximately |
+| `metadata.parent_id` (conversation order, stored in metadata) | siblings ordered by start; this edge is not needed | An extra edge to remove |
+| `reads` (not yet enabled) | span events[] | Concept matches, implementation pending |
 
-## Route recommendation
+## Route
 
-1. **Adopt the span data model** (id / parent_id / start-end / attributes / status).
-2. **Align attribute naming toward OTel `gen_ai.*`** (model, token, cost), preserving the possibility of exporting to OTel in the future.
-3. **Do not bring in a heavyweight OTel SDK** — borrow only the data shape, manage internal storage ourselves, and avoid binding to the SDK prematurely.
-4. Straighten out the existing `Call` + `called_by` per the span spec: delete the conversation edge hidden in metadata (siblings ordered by time),
-   straighten out the wire layer of role, attach reads as span events, and add a `caused_by` edge for async.
+1. **Use the span data model**: id, parent_id, start/end, attributes, status.
+2. **Align attribute naming with OTel `gen_ai.*`** (model, token, cost), keeping
+   OTel export possible later.
+3. **Do not adopt a heavyweight OTel SDK.** Borrow the data shape only, manage
+   internal storage directly, and avoid binding to the SDK prematurely.
+4. Align `Call` + `called_by` with the span spec: drop the conversation edge
+   held in metadata (siblings order by time), settle the wire layer of `role`,
+   attach reads as span events, and add a `caused_by` edge for async.
 
-> To be verified (confirm the current version before citing): OTel's CNCF graduation status, and the stability tier of the GenAI semantic conventions — this area iterates fast.
+> To verify before citing, since this area iterates quickly: OTel's CNCF
+> graduation status, and the stability tier of the GenAI semantic conventions.
 
 ## Relationship to the design doc
 
-This document is a **selection study** (why go with span). The concrete data model + context retrieval + the implementation design for merging the two call paths
-is in `docs/reference/design/runtime/session-dag.md` (authoritative); the call-flow skeleton is in `agent-call-flow.md`.
+This is the selection study — why span. The concrete data model, context
+retrieval, and the design that merges the two call paths live in
+[`../runtime/dag/session-dag.md`](../runtime/dag/session-dag.md), which is
+authoritative; the call-flow skeleton is in `agent-call-flow.md`.

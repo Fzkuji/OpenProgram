@@ -1,6 +1,6 @@
 # GUI agent — call structure & context flow
 
-This document records how context flows through `gui_agent` under the current
+This document describes how context flows through `gui_agent` under the
 `expose` / `render_range` default semantics, and why each `@agentic_function`'s
 decorator arguments are set the way they are.
 
@@ -100,35 +100,28 @@ The summary should state "what is visibly on the final screen", not narrate
 "step 3 did this, step 7 did that". `callers=0` plus a hard constraint in the
 prompt to "use the concrete text visible on screen".
 
-## 4. Difference from the old version
+### Considered and rejected: walling every function off
 
-The earlier code used a full-wall `{"callers": 0, "subcalls": 0}` strategy and
-then explicitly built a feedback dict in Python and threaded it down level by
-level. The problem was that the planner could really only see the previous step's
-feedback, not the full trace, leading to a bug where it repeatedly performed the
-same action.
+The alternative is a full wall everywhere — `{"callers": 0, "subcalls": 0}` on
+every function — with a feedback dict built explicitly in Python and threaded
+down level by level. It is rejected because the planner then sees only the
+previous step's feedback rather than the full trace, and repeatedly performs
+the same action.
 
-The current design:
+Letting the planner read history through the DAG's default behaviour removes
+the explicit accumulation entirely, and only the leaves that genuinely need
+isolation (verify / conclusion / tool-style judges) carry an explicit
+`callers=0`. It also means there is no "top level is a special case" branch:
+the gui_agent top level and the gui_step inside it go through exactly the same
+`render_context` code path.
 
-- the planner sees history naturally via the DAG default behavior (no more
-  explicit accumulation)
-- isolate the leaves that need it (verify / conclusion / tool-style judges) with
-  an explicit `callers=0`
-- there's no longer a "top-level is a special case" branch — the gui_agent top
-  level and the gui_step inside it go through exactly the same render_context code
-  path
+A separate "collapsed" exposure mode is likewise unnecessary. `expose="io"`
+means the frame's own input/output is exposed and the LLM inside the frame is
+hidden, and a nested sub-function decides whether its own io is exposed through
+its own `expose` — so there is no in-between case of "expose io while hiding
+nested grandchildren" left to cover.
 
-The old analyses about a "collapsed mode proposal", "hidden side effects",
-"sub-function io redundancy" no longer apply:
-- the old "io leak: exposing code sub-calls" analysis is outdated — `expose="io"`
-  now means: the frame's own input/output is exposed, the LLM inside the frame is
-  hidden; a nested sub-function decides whether its own io is exposed via its own
-  expose
-- a "collapsed" mode is no longer needed — `expose="io"` hides the inner LLM by
-  default, and a sub-function's io is either exposed or hidden under its own
-  expose; there's no in-between need to "expose io while hiding nested grandchildren"
-
-## 5. What to watch after the change
+## 4. What to watch
 
 - For long tasks, plan_next_action's prompt may grow large because the gui_step
   chain gets long. Under token pressure, give `plan_next_action` or `gui_agent` a

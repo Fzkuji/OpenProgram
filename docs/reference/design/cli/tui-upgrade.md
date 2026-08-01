@@ -1,137 +1,147 @@
-# TUI upgrade: transcript rendering & interaction
+# TUI Transcript Rendering and Interaction
 
-Status: proposed (2026-06) — research done, implementation not started.
-Companion: [user-input-requests.md](../runtime/operations/user-input-requests.md) (mid-run questions; its TUI surface lands here).
+> This document is the design of the Ink TUI's transcript display and
+> interaction: how tool calls render, how output folds and expands, how
+> commands and keybindings are declared, and how mid-run prompts are
+> presented. Companion:
+> [user-input-requests.md](../runtime/operations/user-input-requests.md)
+> (mid-run questions; their TUI surface is specified here).
 
-## Goal
+## 1. Goal
 
-Bring the Ink TUI's transcript display and interaction up to the level of
-Claude Code and opencode: tool calls that collapse without losing
-information, a ctrl+o expanded transcript view, structured diff rendering,
-message queueing while busy, and a keybinding system with discoverability.
+The transcript should show tool calls that collapse without losing
+information, offer a ctrl+o expanded transcript view, render diffs
+structurally, queue messages while the agent is busy, and expose keybindings
+that a user can discover and override.
 
-## Current state (audit summary)
+## 2. Starting point
 
-The base is solid: vendored hermes-ink cell-grid renderer with mouse
-tracking + ScrollBox, 4 themes with live preview, rich BottomBar
-(tokens/context%/cache/permission mode), command palette (ctrl+k), fish
-autosuggest, @file completion, per-session drafts, full account/channel
-flows. What's missing is concentrated in the transcript itself:
+The TUI base provides a vendored hermes-ink cell-grid renderer with mouse
+tracking and ScrollBox, four themes with live preview, a BottomBar showing
+tokens / context% / cache / permission mode, a command palette (ctrl+k),
+fish-style autosuggest, `@file` completion, per-session drafts, and the
+account and channel flows. The gaps this design closes are concentrated in
+the transcript itself:
 
-- Tool output is hard-folded at 6 lines (`Turn.tsx` MAX_LINES) with **no
-  expand affordance at all** — no keybind, no verbose mode.
-- Tool args are one truncated line; no per-tool rendering (every tool looks
-  the same).
-- No diff rendering anywhere; `/diff` dumps raw `git diff` text.
-- Streaming text shows raw markdown source, then visually jumps when the
-  final render lands (`Turn.tsx:123`); `renderMarkdown` is un-memoized under
-  a full-redraw renderer.
-- `follow_up_question` / `approval_request` envelopes are typed in
-  `ws/client.ts` but **silently dropped** — agent questions time out, the
-  `ask` permission mode is unreachable (shift+tab only cycles bypass↔auto).
-- `/resume` rebuilds the transcript from role+content only — tool history
-  is lost (`useWsEvents.ts:326-336`).
-- Tool results are matched to calls **by tool name** (server stream events
-  carry no call id) — concurrent same-name calls mis-attribute.
-- Busy = input locked (`submitText` returns); no message queueing.
-- The `ui/` kit (ModalProvider/Confirm/Form/MultiSelect/Toast) is built but
-  only used by the `--demo` screen; the REPL still runs a 24-state
+- Tool output folds hard at 6 lines (`Turn.tsx` MAX_LINES) with no way to
+  expand it — no keybind, no verbose mode.
+- Tool args are one truncated line; there is no per-tool rendering, so every
+  tool looks the same.
+- There is no diff rendering; `/diff` prints raw `git diff` text.
+- Streaming text shows raw markdown source and jumps visually when the final
+  render lands (`Turn.tsx:123`); `renderMarkdown` is un-memoized under a
+  full-redraw renderer.
+- `follow_up_question` and `approval_request` envelopes are typed in
+  `ws/client.ts` but dropped without notice, so agent questions time out and
+  the `ask` permission mode is unreachable (shift+tab only cycles
+  bypass↔auto).
+- `/resume` rebuilds the transcript from role and content only, losing tool
+  history (`useWsEvents.ts:326-336`).
+- Tool results are matched to calls by tool name, because server stream
+  events carry no call id, so concurrent same-name calls are mis-attributed.
+- Busy means input is locked (`submitText` returns early); there is no
+  message queueing.
+- The `ui/` kit (ModalProvider / Confirm / Form / MultiSelect / Toast) is
+  built but used only by the `--demo` screen; the REPL runs a 24-state
   `pickerKind` enum.
 
-## What we adopt, and from where
+## 3. Transcript rendering
 
-From **Claude Code** (information density — see references doc for file
-pointers into `references/claude-code-leaked/src`):
+Information density follows Claude Code's approach (file pointers into
+`references/claude-code-leaked/src` are in the references document).
 
-1. **Tool renderer interface.** Each tool gets render hooks (use-line /
-   progress / result / error), with one shared shell: status dot
-   (`⏺` queued-dim / running-blink / done-green / error-red) + bold name +
-   parenthesized arg summary, result indented under a `⎿` gutter. Two
-   glyphs carry all tool state; no boxes.
-2. **"3 lines + `… +N lines (ctrl+o to expand)`" truncation**, with their
-   two refinements: if only 1 line is hidden, just show it; pre-truncate
-   huge outputs by chars and estimate the remaining line count.
-3. **Quantified one-line summaries** per tool instead of ellipsis cuts:
-   `Read 52 lines`, `Added 5 lines, removed 2 lines` + diff, `Found 8
-   files`, `Done (12 calls · 48k tokens · 2m 10s)` for sub-runs.
-4. **ctrl+o = frozen-snapshot transcript screen** (a separate Screen state,
-   not in-place expansion): freeze the message list, re-render everything
-   expanded, footer with exit hints; ctrl+e inside = show-all (no
-   truncation at all).
-5. **Composite spinner line**: `✻ verb… (esc to interrupt · 42s · ↓ 3.2k
-   tokens)` with progressive width gating — we already have the spinner
-   and the token stats, this is a merge.
+1. **Tool renderer interface.** Each tool gets render hooks (use-line,
+   progress, result, error) sharing one shell: a status dot (`⏺` dim when
+   queued, blinking while running, green on completion, red on error), the
+   bold tool name, a parenthesized arg summary, and the result indented
+   under a `⎿` gutter. Two glyphs carry all tool state; there are no boxes.
+2. **Truncation at 3 lines** with `… +N lines (ctrl+o to expand)`, plus two
+   refinements: if only one line is hidden, show it instead; pre-truncate
+   huge outputs by character count and estimate the remaining line count.
+3. **Quantified one-line summaries** per tool rather than ellipsis cuts:
+   `Read 52 lines`, `Added 5 lines, removed 2 lines` followed by a diff,
+   `Found 8 files`, and `Done (12 calls · 48k tokens · 2m 10s)` for sub-runs.
+4. **ctrl+o opens a frozen-snapshot transcript screen** — a separate Screen
+   state rather than in-place expansion. It freezes the message list,
+   re-renders everything expanded, and shows exit hints in the footer;
+   ctrl+e inside it shows everything with no truncation at all.
+5. **A composite spinner line**: `✻ verb… (esc to interrupt · 42s · ↓ 3.2k
+   tokens)`, with progressive width gating. The spinner and the token stats
+   already exist separately; this merges them.
 6. **Queued messages while busy**: typing during a run queues the message
-   (dim, above the input), ↑ recalls it for editing, queue flushes between
-   turns.
+   (dim, above the input), ↑ recalls it for editing, and the queue flushes
+   between turns.
 
-From **opencode** (interaction architecture — see references doc for
-pointers into `references/opencode/packages/opencode/src`):
+Diff rendering is written in-house: line numbers, add/remove coloring, three
+context lines, used by edit-style tool results and by `/diff`. Markdown
+rendering goes through marked-terminal and is memoized per turn, which
+matters under a renderer that redraws every frame.
 
-7. **Command registry as single source of truth**: one declaration per
-   command (name/title/category/keybind/slash-name/enabled) drives
-   keybindings, the ctrl+k palette, slash commands, and live key hints in
-   footers. Fixes the existing registry/handler drift (`/branch` etc.
-   implemented but unlisted; `/memory` etc. listed but stubbed).
-8. **Keybind definitions table + user overrides**: defaults + descriptions
-   declared once, generating the config schema (fits the existing
-   schema-driven settings design); unknown keys error; `"none"` disables.
-9. **Question/permission prompts replace the input box** (a three-way slot:
-   Prompt | QuestionPrompt | ApprovalPrompt) instead of a modal — the
-   transcript stays visible and scrollable, esc semantics stay clear.
-   This is the landing site for user-input-requests.md's TUI surface.
-10. **In-row danger confirmation** (press again to confirm, row turns red)
-    instead of nested confirm layers, for destructive picker actions.
+The renderer itself is not replaced. The vendored hermes-ink already has
+mouse tracking and ScrollBox, so switching to OpenTUI buys nothing here.
 
-Explicitly **not** adopted: switching renderers (OpenTUI). Our vendored
-hermes-ink already has mouse tracking and ScrollBox; markdown lands via
-marked-terminal; diff we write ourselves. Renderer swap is out of scope.
+## 4. Command and interaction architecture
 
-## Phases
+Interaction structure follows opencode (pointers into
+`references/opencode/packages/opencode/src` are in the references document).
 
-### P0 — transcript density (pure TUI, no server changes)
+7. **One command registry as the single source of truth.** Each command is
+   declared once (name, title, category, keybind, slash-name, enabled), and
+   that declaration drives keybindings, the ctrl+k palette, slash commands,
+   and the live key hints in footers. A single table is what keeps registry
+   and handlers from drifting apart — `/branch` implemented but unlisted,
+   `/memory` listed but stubbed.
+8. **A keybind definitions table with user overrides.** Defaults and
+   descriptions are declared once and generate the config schema, which fits
+   the existing schema-driven settings design. Unknown keys are an error;
+   `"none"` disables a binding.
+9. **Question and permission prompts replace the input box** through a
+   three-way slot (Prompt | QuestionPrompt | ApprovalPrompt) instead of a
+   modal. The transcript stays visible and scrollable and esc keeps a single
+   clear meaning. This is the TUI surface of user-input-requests.md, handling
+   `follow_up_question` and `approval_request` and making the `ask`
+   permission mode reachable.
+10. **In-row danger confirmation** for destructive picker actions: pressing
+    the key again confirms and the row turns red, instead of a nested
+    confirm layer.
 
-- Tool render shell: `⏺` status dot + name + arg summary, `⎿` result
-  gutter; per-tool renderers for bash/read/write/edit/grep + generic
-  fallback (`tool [k=v, …]`).
-- 3-line truncation with `… +N lines (ctrl+o to expand)` + the 1-line and
-  huge-output refinements.
-- ctrl+o transcript screen (frozen snapshot, all expanded, q/esc exits,
-  ctrl+e show-all; reuse TranscriptViewport scrolling).
-- Diff component (line numbers, add/remove coloring, 3 context lines);
-  used by edit-style tool results and `/diff`.
-- Memoize `renderMarkdown` per turn (cheap, big win under full-redraw).
+REPL pickers move from the `pickerKind` enum onto the ModalProvider/Form kit;
+the change is mechanical and can be done one picker at a time.
 
-Acceptance: a run with mixed tools reads as two-line entries; ctrl+o shows
-everything; an edit shows a colored diff; long bash output folds with an
-accurate +N count.
+## 5. Server support
 
-### P1 — interaction
+Two pieces of the design need data the server does not currently send:
 
-- Queued messages while busy + ↑ to edit queue.
-- Composite spinner/status line (verb · esc hint · elapsed · ↓ tokens).
-- Command registry unification (palette/slash/keys from one table) and the
-  keybind definitions table with `~/.openprogram` overrides; `?` shortcut
-  help generated from the same table.
+- Tool stream events carry a `call_id`, so the TUI matches results by id
+  rather than by name and concurrent same-name calls are attributed
+  correctly.
+- `conversation_loaded` carries tool blocks, so `/resume` restores tool
+  history.
 
-### P2 — fixes & convergence (needs small server changes)
+Both touch `_event_parsing.py` and dispatcher event emission, which is shared
+with the event_bus work.
 
-- Server: include a `call_id` in tool stream events; TUI matches results by
-  id (fixes concurrent same-name mis-attribution).
-- Server: `conversation_loaded` carries tool blocks; `/resume` restores
-  tool history.
-- Question/approval prompts in the input slot — implements the TUI side of
-  user-input-requests.md (handles `follow_up_question` and
-  `approval_request`, makes the `ask` permission mode reachable).
-- Migrate REPL pickers from `pickerKind` enum to ModalProvider/Form kit
-  (mechanical; do opportunistically per picker).
+## 6. Constraints
 
-## Risks
+- The cell-grid renderer redraws everything per frame, so the heavier
+  per-turn rendering above depends on memoizing markdown and diff output.
+- ctrl+o is safe as a global key: terminal flow control uses ctrl+s and
+  ctrl+q.
 
-- The cell-grid renderer redraws everything per frame; P0 adds heavier
-  per-turn rendering — memoization (markdown, diff) is part of P0, not an
-  afterthought.
-- ctrl+o as a global key must not collide with terminal flow control
-  (it doesn't; ctrl+s/ctrl+q do).
-- P2's server changes touch `_event_parsing.py` / dispatcher event
-  emission — coordinate with the in-flight event_bus work.
+## Appendix: Implementation Status
+
+Research is complete; implementation has not started. The intended landing
+order is:
+
+- **P0 — transcript density** (pure TUI, no server changes): tool render
+  shell, 3-line truncation, the ctrl+o transcript screen, the diff
+  component, memoized `renderMarkdown`. Accepted when a run with mixed tools
+  reads as two-line entries, ctrl+o shows everything, an edit shows a
+  colored diff, and long bash output folds with an accurate +N count.
+- **P1 — interaction**: queued messages with ↑ editing, the composite
+  spinner/status line, command registry unification, the keybind definitions
+  table with `~/.openprogram` overrides, and `?` shortcut help generated
+  from the same table.
+- **P2 — server-dependent items**: `call_id` in tool stream events, tool
+  blocks in `conversation_loaded`, question/approval prompts in the input
+  slot, and the REPL picker migration.

@@ -83,7 +83,7 @@ auth-adjacent.
 
 1. Pick the deepest noun namespace the command belongs to. If none
    exists, create one — but reuse existing namespaces whenever the
-   command is a siblings of existing commands.
+   command is a sibling of existing commands.
 2. Pick the verb. Prefer verbs already used elsewhere in the CLI
    (`list`, `add`, `remove`, `set`, `status`) over inventing new ones.
 3. Wire it under the appropriate `argparse` subparser tree, following

@@ -1,9 +1,9 @@
 # Interaction feedback — the 0ms rule
 
-**Policy (standing):** every user click that starts something slower than
+Every user click that starts something slower than
 ~100ms gets INSTANT visible feedback. An optimistic transitional state renders
 immediately (0ms, client-side); real data backfills when it arrives; failures
-roll back with a visible error. *"点完之后没有反馈很折磨。"*
+roll back with a visible error.
 
 Never let a click sit with no visible change while a round-trip is in flight.
 
@@ -15,7 +15,7 @@ Never let a click sit with no visible change while a round-trip is in flight.
    session store (an optimistic flag / status patch on the message or store
    object — never parallel bookkeeping).
 2. **Fast server confirm** — the backend acknowledges. For function runs the
-   dispatcher pre-creates the run's node at dispatch (commit `4712f368`), so a
+   dispatcher pre-creates the run's node at dispatch, so a
    `load_session` ~0.13s after the click returns the real pending card and
    `chat_ack {function_run:true}` triggers immediate hydration. The hydrate's
    `setMessages` replaces the whole transcript, so a client placeholder keyed
@@ -38,20 +38,20 @@ false it runs `revert` + toasts. Used by the surfaces whose confirm path is a
 `load_session` reload (retry, version switcher). Surfaces with a purely local
 transient (stop, fn-form placeholder, branch checkout) inline the pattern.
 
-## Per-surface inventory
+## Per-surface behaviour
 
-| Surface | First 100ms BEFORE | First 100ms AFTER | Status |
-|---|---|---|---|
-| Chat send | welcome hides (0ms); user bubble + reply placeholder land on `chat_ack` (~1 RT) | unchanged — send already optimistic enough; bubble on ack | OK |
-| Stop button | runningTask cleared + assistant patched to `[cancelled by user]` at 0ms | unchanged | OK (already optimistic) |
-| **Function-call Retry** | nothing — card stays on old version until run completes + reload | card flips to spinner body + "running", switcher → N+1/N+1, at 0ms; reload backfills; 10s revert | **DONE** |
-| **fn-form / welcome submit** | welcome hides + run flag flips; blank transcript gap until ~0.13s hydrate | pending runtime card inserted into transcript at 0ms; hydrate replaces it seamlessly; POST failure removes it + error toast | **DONE** |
-| **Runtime `< N/M >` switcher** | POST checkout → load_session; no visual change until reload | current card → spinner body + target sibling index at 0ms; reload swaps content; 10s revert | **DONE** |
-| **Chat message `< N/M >` switcher** | `busy` dims buttons; label unchanged until reload | `N/M` label advances to target at 0ms; reload backfills; failure reverts label + toast | **DONE** |
-| **Branches panel checkout** | WS checkout + load_session; row highlight unchanged until reload | clicked row highlighted active at 0ms; real `branch.active` supersedes; 10s self-clear | **DONE** |
-| Chat Retry / Edit / Branch / Rewind | `setBusy(true)` dims buttons; `setRunActive` greys Edit/Retry | unchanged — busy flag is adequate transitional feedback | OK (adequate) |
-| Session switch (sidebar) | `router.push`; cached messages render on route change | unchanged — store already holds prior messages | OK |
-| Enable/disable models · tools · toggles | local store flip, instant | unchanged | OK |
+| Surface | First 100ms after the click |
+|---|---|
+| Chat send | welcome hides at 0ms; user bubble + reply placeholder land on `chat_ack` (~1 round trip) |
+| Stop button | runningTask cleared and the assistant message patched to `[cancelled by user]` at 0ms |
+| Function-call Retry | card flips to a spinner body + "running", switcher → N+1/N+1, at 0ms; reload backfills; 10s revert |
+| fn-form / welcome submit | a pending runtime card is inserted into the transcript at 0ms; hydration replaces it seamlessly; a POST failure removes it and toasts |
+| Runtime `< N/M >` switcher | current card → spinner body + target sibling index at 0ms; reload swaps content; 10s revert |
+| Chat message `< N/M >` switcher | the `N/M` label advances to the target at 0ms; reload backfills; failure reverts the label and toasts |
+| Branches panel checkout | the clicked row is highlighted active at 0ms; the real `branch.active` supersedes it; 10s self-clear |
+| Chat Retry / Edit / Branch / Rewind | `setBusy(true)` dims the buttons and `setRunActive` greys Edit/Retry — the busy flag is the transitional feedback |
+| Session switch (sidebar) | `router.push`; the store already holds the prior messages, so cached messages render on route change |
+| Enable/disable models · tools · toggles | local store flip, instant |
 
 New optimistic states use the store's existing machinery (`updateMessage`
 status/tree patches, `siblingIndex`, `setRunningTaskFor`, `appendMessage`

@@ -1,6 +1,6 @@
-# Skills & Plugins — Design Draft v2 (best-of-breed, full-featured)
+# Skills & Plugins
 
-Goal: incorporate **all** of the skill & plugin capabilities from claude-code / opencode / hermes, swapping in equivalents wherever the stack differs, and differentiate by optimizing on the host advantages unique to us.
+The skill and plugin system covers the capabilities of claude-code, opencode, and hermes, substituting equivalents wherever the stack differs, and adds capabilities that follow from OpenProgram's own host surfaces.
 
 Reference implementations:
 - `references/claude-code-leaked/src/{skills,plugins,commands/{skills,plugin}}`
@@ -198,7 +198,7 @@ web/components/plugins/
 
 ---
 
-## 4. Unique optimizations (none of the three have them / all are weak)
+## 4. Capabilities beyond the three reference implementations
 
 1. **First-class plugin sidebar items**: manifest `sidebar: [...]` → automatically injected into the sidebar, on par with built-in navigation
 2. **Skill invocation trace**: each SkillTool call records `{ skill, injected_md_hash, accessed_refs, ts }`, visualized in the right panel / `/skills/[name]/trace`
@@ -213,7 +213,7 @@ web/components/plugins/
 
 ---
 
-## 5. Coverage confirmation of capabilities from the three sources
+## 5. Coverage of the three reference implementations
 
 **claude-code**: bundled skills ✓, SKILL.md frontmatter ✓, SkillTool tool invocation ✓, Marketplace / AddMarketplace / BrowseMarketplace / ManageMarketplaces ✓, ManagePlugins / DiscoverPlugins / ValidatePlugin / PluginErrors / PluginOptionsDialog / PluginTrustWarning / UnifiedInstalledCell ✓, ReloadPlugins ✓, the five entrypoints commands/skills/agents/hooks/mcpServers ✓
 
@@ -223,35 +223,17 @@ web/components/plugins/
 
 ---
 
-## 6. Phased delivery
+## Appendix: Implementation Status
 
-- **M1 Skills, full** (covering the skill capabilities of all three)
-  - Five-source loader + watchdog + WS
-  - SKILL.md parsing (including triggers / category / optional)
-  - `/skills` page + bundled default set
-  - SkillTool built-in tool + invoke trace
-  - Remote discovery (opencode equivalent)
+The design is complete; delivery is ordered in four blocks, each usable on its own:
 
-- **M2 Plugins, local**
-  - Unified parsing of the three manifests
-  - Installation from the four sources pip / npm / git / path
-  - Layered sandbox + trust
-  - Injection of the commands / skills / mcpServers / providers / hooks / agents entrypoints
-  - Installed / Errors pages + Validate / Options / Reload
+- **Skills** — five-source loader, watchdog and WS broadcast, SKILL.md parsing (triggers / category / optional), the `/skills` page and bundled default set, the SkillTool built-in tool with invoke trace, and remote discovery.
+- **Plugins, local** — unified parsing of the three manifests; installation from pip / npm / git / path; layered sandbox and trust; injection of the commands / skills / mcpServers / providers / hooks / agents entrypoints; the Installed and Errors pages with Validate / Options / Reload.
+- **Plugins, frontend and sidebar** — `web` entrypoint asset mounting, `/plugin/[name]/[...slug]` dynamic rendering, sidebar registration items.
+- **Marketplace** — multiple marketplaces with the claude-code schema adapter, plus the BrowseMarketplace / AddMarketplace / DiscoverPlugins surfaces.
 
-- **M3 Plugins, frontend and sidebar**
-  - `web` entrypoint asset mounting
-  - `/plugin/[name]/[...slug]` dynamic rendering
-  - Sidebar registration items
+Three points are left open and do not block the blocks above:
 
-- **M4 Marketplace, full set**
-  - Multiple marketplaces, claude-code schema adapter
-  - Porting BrowseMarketplace / AddMarketplace / DiscoverPlugins
-
----
-
-## 7. To confirm (not blocking, but pick one)
-
-1. `~/.openprogram/` or reuse some existing global directory per current project conventions
-2. How the Provider plugin entrypoint aligns with OpenProgram's existing provider abstraction (need to look at `openprogram/providers/`)
-3. Whether the Hook event names align with claude-code (PreToolUse, etc.)
+1. Whether skills and plugins live under `~/.openprogram/` or reuse an existing global directory.
+2. How the Provider plugin entrypoint aligns with the existing abstraction in `openprogram/providers/`.
+3. Whether hook event names match claude-code's (PreToolUse and the rest).

@@ -2,7 +2,7 @@
 
 设计目标：把 OpenProgram 现在散落在 CLI 写死表、Web composer 写死表、`/api/plugins/commands`、MCP prompts、skills 这几条互不相通的"指令源"，合并成一份**统一的 slash 命令登记表**，五个层级、一份格式、一套渲染、一个 UI。
 
-参照实现见 `docs/reference/design/cli/slash-commands-references.md`。本文档凡是写"照搬 X"的地方，意思是直接复用那个项目的设计选择。
+这些选择所参照的实现见 [`slash-commands-references.zh.md`](slash-commands-references.zh.md)。本文档凡是写某项设计取自某个项目的地方，意思是直接复用那个项目的设计选择。
 
 ---
 
@@ -178,7 +178,7 @@ handler 形式两种：
 - `!` 反引号块 → 跑 shell，stdout 进日志，exit code 决定 allow/deny
 - `built-in:<id>` → 调 host 注册的命名 handler（首发不做，留接口）
 
-需要等 hooks 子系统补齐"拦截 / 改写"语义后才完整可用。本节先把 schema 占住，避免后面破坏性变更。
+等 hooks 子系统具备拦截与改写语义后，本节才完整可用。schema 先在这里定下来，后续加入时就不构成破坏性变更。
 
 ---
 
@@ -309,22 +309,24 @@ CLI：
 
 `openprogram/_cli_chat/handlers.py:_handle_slash` 改造：先查 registry，命中后走 dispatch；未命中再走目前那串写死的 if/else（这部分逐步迁移成 type: local 的 builtin 命令）。
 
-### 10.4 迁移路径
+### 10.4 建设顺序
+
+各部分独立可发布，按依赖顺序落地：
 
 ```
-Phase 1  扫描器 + frontmatter + 渲染 + registry + /api/commands   [基础]
-Phase 2  L4 (~/.openprogram/commands) + L5 (.openprogram/commands)
-Phase 3  L3 skills 自动注入 (skills/loader 暴露 to_command_spec())
-Phase 4  L2 mcp prompts 自动注入 (mcp/registry 已有 list_prompts)
-Phase 5  L1 plugins 接入新表（plugins/loader 已有 _commands，做一层 adapter）
-Phase 6  context: fork 接 task 工具
-Phase 7  paths / requires 触发条件评估
-Phase 8  watcher 热重载
-Phase 9  builtin 命令逐步迁移成 type: local + frontmatter
-Phase 10 hooks 字段在 hooks 子系统升级后启用
+1  扫描器 + frontmatter + 渲染 + registry + /api/commands   [基础]
+2  L4 (~/.openprogram/commands) + L5 (.openprogram/commands)
+3  L3 skills 自动注入（skills/loader 暴露 to_command_spec()）
+4  L2 mcp prompts 自动注入（mcp/registry 已有 list_prompts）
+5  L1 plugins 接入新表（plugins/loader 已有 _commands，加一层 adapter）
+6  context: fork 接 task 工具
+7  paths / requires 触发条件评估
+8  watcher 热重载
+9  builtin 命令迁移成 type: local + frontmatter
+10 hooks 字段在 hooks 子系统升级后启用
 ```
 
-每个 Phase 独立可发布；Phase 1-2 + 5 完成时已经能给用户带来主要价值。
+第 1-2 项加第 5 项合起来已经交付了用户可见的大部分价值。
 
 ---
 
@@ -353,4 +355,4 @@ L4 / L5 用户写的，不自动更新。
 
 L0（builtin）跟随 OpenProgram 版本。
 
-`docs/reference/design/cli/slash-commands-references.md` 周期性重扫五家参考项目的实现，发现新设计后回到本文档 §2/§3 增补字段，不破坏既有 frontmatter（额外字段进 extras）。
+[`slash-commands-references.zh.md`](slash-commands-references.zh.md) 记录五家参考项目实现斜杠命令的方式，并周期性重扫。在那里发现的新设计，作为字段增补进本文档 §2/§3，不破坏既有 frontmatter（额外字段进 extras）。

@@ -73,7 +73,7 @@ openprogram tools login github                   (future)
 - ❌ `openprogram providerAuth login` —— camelCase 命名，违反
   名词栈规则（应为两个词：`providers auth`）。
 - ❌ `openprogram list-providers` —— 带连字符的动名复合词，
-  把动词锁死在名词里。应用 `providers list`。
+  把动词固定在名词里，无法复用。应用 `providers list`。
 - ❌ `openprogram providers listing` —— 错误的动词形式。
 
 ## 如何添加新命令

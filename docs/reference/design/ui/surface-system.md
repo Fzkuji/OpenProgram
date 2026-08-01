@@ -108,18 +108,12 @@ Pick per surface:
 - **Destructive** (Delete, Remove, Force) →
   `variant="destructive"`. Red-text default, red fill on hover.
 
-## Today's audit (2026-05-28)
-
-- 20 call sites use `variant="outline"`, 8 ghost, 3 secondary,
-  3 destructive, **1 default**.
-- That distribution reads loud and clear: most authors reach for
-  outline by reflex (it's the shadcn default visually), so
-  primary actions everywhere are getting the muted "hover accent"
-  pattern instead of the brand fill.
-- Migrating those 20 outline buttons to `default` where they
-  actually represent a primary action is the next concrete step
-  — saved for a separate pass since each call site needs a
-  human decision about primary vs secondary intent.
+The failure mode to watch for is `outline` used where `default`
+belongs. `outline` is what shadcn looks like out of the box, so
+authors reach for it by reflex, and primary actions end up with
+the muted hover-accent treatment instead of the brand fill.
+Correcting it is per-call-site work, because only a human can say
+whether a given action is primary or secondary.
 
 ## Size system — two sets, no in-set variants
 
@@ -146,14 +140,14 @@ rows and small buttons at 10 px and reserves 12 px
 (`--radius-lg`) for cards and panels.
 
 Why no in-set variants: when the design lets one slot pick from
-sm / md / lg, every author starts negotiating with the design;
-the result is the audit we saw on `Button` (5 size options,
-chaotic distribution). Two fixed sets is enforceable.
+sm / md / lg, every author negotiates with the design instead of
+following it, and the sizes drift apart. Two fixed sets is
+enforceable.
 
 Backward-compat for `Button`: `size="sm" | "lg" | "icon-sm"` are
-kept as aliases for the 33 + ... existing call sites but they
-resolve to the same height as `default`. The token names are
-the source of truth.
+kept as aliases for existing call sites, but they resolve to the
+same height as `default`. The token names are the source of
+truth.
 
 ## Don'ts
 

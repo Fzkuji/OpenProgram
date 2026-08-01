@@ -1,46 +1,47 @@
-# 配置写入安全 —— 原子化的 `update_config`
+# 配置写入安全 —— 设计
 
-状态：**面向 web 的写入已落地（步骤 1–3）** · 步骤 4 遗留 · 负责人：core/config · 创建于：2026-06-04
+> 本文是 `config.json` 如何被安全修改的权威设计：唯一的原子入口、它背后的
+> 两把锁，以及哪些写入方必须经由它。关于「一个设置项是什么」，见
+> [`cli-redesign.zh.md`](cli-redesign.zh.md)。
 
-优化路线图第 5 项。承接此前的配置 IO 收口工作：该工作让 webui 委托给
-`setup._read_config`/`_write_config` 并强制 0o600。
+## 1. 危险所在
 
-## 1. 问题
+`config.json` 是单个 JSON 文件，被分散在多个界面、多个进程中的写入方修改：
 
-`config.json` 由分离的 `_read_config()` … `_write_config()` 调用进行修改，
-中间夹着改动 —— 一次非原子的 read-modify-write —— 来自多个位置，
-彼此之间**没有共享锁**：
-
-- `config_schema.set_setting`（`config_schema.py:253,288`）—— TUI `/config` + web
-  System 标签页 + `openprogram config`。
-- `routes/config.py:save_config` —— web 端的 "Save API keys" 表单（读取 config、
-  合并 `api_keys`、写回）。
-- `setup.py:set_ui_ports` / `write_search_default_provider`（`135,176`）。
+- `config_schema.set_setting` —— TUI 的 `/config` 面板、web 的 System 标签页，
+  以及 `openprogram config`。
+- `routes/config.py:save_config` —— web 端的 "Save API keys" 表单。
+- `setup.py:set_ui_ports` 与 `write_search_default_provider`。
 - `_setup_sections/*` —— `openprogram setup` 向导。
+- `storage.py` —— providers 段。
 
-`storage.py` 已经用一个模块级 `threading.Lock`（`_cache_lock`）对它的
-**providers** 段写入做了串行化，但该锁是该模块私有的 ——
-上面那些写入方并不会去拿它。
+对共享文件做 read-modify-write，只有在一把覆盖整个序列的锁之下才是正确的。
+没有这把锁，两个写入方会各自读到相同的起始状态、各自应用自己的改动，后写的
+那次丢弃先写的那次。这里两种并发范围都会出现：
 
-于是两个并发写入方发生竞争，后写的那次覆盖掉先写的那次：
-- 进程内：一次 TUI 工具开关（`set_setting`）和一次 web api-key 保存
-  （`save_config`）都跑在 **worker** 进程里；没有共享锁，其中一个就会
-  覆盖另一个。
-- 跨进程：`openprogram config` / `openprogram setup` 是**独立的进程**，
-  在 worker 写同一个文件时也在写它 —— `threading` 锁无法跨进程感知。
+- **进程内。** TUI 的工具开关与 web 的 api-key 保存都跑在 worker 进程里，
+  位于不同线程。
+- **跨进程。** `openprogram config` 与 `openprogram setup` 是独立进程，会在
+  worker 写同一个文件的同时写它。`threading` 锁跨进程不可见，帮不上忙。
 
-## 2. 设计
+模块私有的锁同样解决不了问题：`storage.py` 用 `_cache_lock` 把自己的
+providers 写入串行化，但没有别的写入方会去拿这把锁，所以它只能保护该模块
+不与自身冲突，仅此而已。
 
-在 `setup.py` 中提供一个原子入口：
+## 2. 唯一的原子入口
+
+`setup.update_config` 是修改配置局部的唯一正确方式。它接收一个 mutator，
+在整个 read-modify-write 期间持有两把锁，并返回修改后的配置：
 
 ```python
-_config_write_lock = threading.Lock()          # 进程内（worker 线程）
+_config_write_lock = threading.Lock()          # in-process (worker threads)
 
 def update_config(mutator: Callable[[dict], None]) -> dict:
-    """对 config.json 做原子的 read-modify-write。同时持有一个进程内锁和一个
-    跨进程文件锁（config.json.lock，经由 filelock），读取当前 config，原地
-    应用 mutator(cfg)，写回（0o600），并返回它。这是修改 config 某一部分的
-    唯一正确方式 —— 绝不要分开调用 read_config() + write_config()，那样会竞争。"""
+    """Atomic read-modify-write of config.json. Holds an in-process lock AND a
+    cross-process file lock (config.json.lock, via filelock), reads the current
+    config, applies mutator(cfg) in place, writes it back (0o600), returns it.
+    The ONLY correct way to change part of the config — never read_config() +
+    write_config() separately, which races."""
     with _config_write_lock:
         with FileLock(str(get_config_path()) + ".lock", timeout=10):
             cfg = _read_config()
@@ -49,31 +50,32 @@ def update_config(mutator: Callable[[dict], None]) -> dict:
             return cfg
 ```
 
-- `filelock`（3.16.1，已是依赖项）提供跨进程锁；`threading.Lock` 提供进程内
-  锁（filelock 在单个进程内是可重入的，但线程锁让 read-modify-write 这段临界区
-  在 worker 的各线程之间也保持原子）。
-- `_read_config` / `_write_config` 仍保留给只读 / 整体替换使用；只有
-  read-modify-write 迁移到 `update_config`。
+两把锁都是必需的，没有一把是多余的。`filelock` 覆盖跨进程的情形。
+`threading.Lock` 覆盖 worker 自己的线程：`filelock` 在同一进程内是可重入的，
+仅靠它会让两个 worker 线程在临界区内交错。
 
-## 3. 迁移
+mutator 这种形式正是让该 API 难以被误用的原因。调用方拿不到跨越锁边界的
+配置 dict，因此无法在稍后把它写回去——它在 mutator 之外从不接收这样一个 dict。
 
-1. **（已完成，935685c4）** 给 `setup.py` 加上 `update_config` 加一个单元测试
-   （两个“并发”的 mutator 被串行化；结果同时反映两者）。
-2. **（已完成，1c21d43d）** 把两个面向 web 的竞争方 ——
-   `config_schema.set_setting`（`_set_at` 分支和 `tools.disabled` 分支都算）
-   以及 `routes/config.py:save_config`（api_keys 合并）—— 迁移到 `update_config`。
-3. **（已完成，0cc67aed）** 把 `setup.py` 自己的 `set_ui_ports` /
-   `write_search_default_provider` 迁移到 `update_config`。（面向 web 的 config
-   写入路径现已全部原子化。）
-4. **（遗留）** 迁移 `_setup_sections/*` 中 `openprogram setup` 向导的写入方，
-   并让 `storage.py` 的 providers 段写入也走 `update_config`，从而做到跨进程安全
-   （它们今天在进程内是安全的，靠的是私有的 `_cache_lock`；缺口在于并发的
-   CLI/向导写入）。这两者都偏 CLI 侧 / 概率低于上面已经关闭的 web 竞争。
+`_read_config` 与 `_write_config` 保留下来，用于只读访问与整体替换。
+只有 read-modify-write 需要经由 `update_config`。
 
-每一步：重启 worker、`/healthz`、从 web 端保存一个设置 + 一个 api key、
-确认两者都持久化（没有被覆盖）、测试通过。
+## 3. 范围
 
-## 4. 非目标
+本设计只涉及写入的原子性。schema 定义与取值校验属于 `config_schema`
+（[`cli-redesign.zh.md`](cli-redesign.zh.md) 第 3 节），存储格式仍是 JSON。
+这里要确立的性质是：每一次写入都是原子的，且与其他任何写入互斥。
 
-不是 config schema/校验方面的改动（那是 `config_schema` 的事）；也不是要弃用
-JSON。只是让每一次写入都原子且互斥。
+## 附录：实现状态
+
+`update_config` 已存在于 `setup.py`，并有一个单元测试断言两个并发 mutator
+会串行执行、且结果同时反映两者的改动。
+
+已迁移：`config_schema.set_setting`（`_set_at` 与 `tools.disabled` 两个分支）、
+`routes/config.py:save_config`（api_keys 合并），以及 `setup.py` 自身的
+`set_ui_ports` / `write_search_default_provider`。所有面向 web 的配置写入路径
+都已原子化。
+
+尚未迁移：`_setup_sections/*` 向导的写入方，以及 `storage.py` 的 providers 段
+写入。两者目前在进程内是安全的（后者依靠 `_cache_lock`）；未闭合的缺口是来自
+另一个进程的 CLI 或向导并发写入。

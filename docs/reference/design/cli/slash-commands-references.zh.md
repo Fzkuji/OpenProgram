@@ -1,8 +1,10 @@
 # 斜杠命令 — 参考实现快照
 
-调研于 2026-05-25。每个项目记录：来源目录、frontmatter 字段、模板语法、执行模式、参数解析、UI、安全。
+每个参考项目记录七个方面：来源目录、frontmatter 字段、模板语法、执行模式、
+参数解析、UI、安全。
 
-参考项目都跟随上游持续演进。当下游想再次同步时，回到这里逐项 diff，把新增设计抽进 `slash-commands.md` 的字段表。
+参考项目都跟随上游持续演进。需要再次同步时，回到这里逐项 diff，把新增设计
+抽进 `slash-commands.zh.md` 的字段表。
 
 参考路径：`/Users/fzkuji/Documents/LLM Agent Harness/OpenProgram/references/`
 
@@ -262,7 +264,10 @@ hermes       →  inline shell 带 timeout + platform filter
 pi-mono      →  纯反例
 ```
 
-**OpenProgram 的设计选择**：把 claude-code 整套照搬，opencode 的 `$0-9 + arguments[]` 合进来，openclaw 的 `requires` 单独保留，hermes 的 timeout 思想用在 `!` shell 块，pi-mono 的"硬编码 builtin"只用于 type: local 的内置命令。
+**OpenProgram 的设计选择**：把 claude-code 整套采用，opencode 的 `$0-9` 与
+`arguments[]` 合进来，openclaw 的 `requires` 单独保留为一个字段，hermes 的
+timeout 思想用在 `!` shell 块，pi-mono 的硬编码 builtin 只用于 type: local
+的内置命令。
 
 ---
 
@@ -270,13 +275,14 @@ pi-mono      →  纯反例
 
 定期（例如每个季度）执行：
 
-1. `cd references && git pull` 拉所有参考项目最新
-2. 对照本文件每个项目的字段表，发现：
-   - 新增字段 → 评估是否进 `slash-commands.md` §7 字段权威表
-   - 新增模板语法 → 评估是否进 §3 命令体语法表
+1. `cd references && git pull` 更新所有参考项目。
+2. 用上面每个项目的字段表与上游逐项对照：
+   - 新增字段 → 评估是否进 `slash-commands.zh.md` §7 字段权威表
+   - 新增模板语法 → 评估是否进 §3
    - 新增执行模式 → 评估是否进 §4
    - 新增安全约束 → 进 §9
-3. 更新本文件的"调研于 YYYY-MM-DD"
-4. 在 `slash-commands.md` §12 末尾追加 changelog 条目
+3. 把变化更新进本文件。
 
-如果上游做了破坏性变更（比如 claude-code 改了 frontmatter 字段名），**不跟随**——我们的 frontmatter 是稳定 contract，向后兼容优先。把别名映射写在 `frontmatter.py` 的 `_ALIAS_MAP` 里即可读懂旧/新两套写法。
+如果上游做了破坏性变更（比如 claude-code 改了 frontmatter 字段名），**不跟随**。
+OpenProgram 的 frontmatter 是稳定 contract，向后兼容优先；把别名映射写在
+`frontmatter.py` 的 `_ALIAS_MAP` 里，新旧两套写法都能解析。

@@ -1,7 +1,9 @@
 # MCP Tool Integration
 
-Status: **implemented** (stdio transport only).
-Related code: `openprogram/mcp/`.
+> This document is the design of the MCP client layer: the role OpenProgram
+> plays in the protocol, where the module lives, how servers are configured
+> and connected, and how MCP tools reach the LLM. Related code:
+> `openprogram/mcp/`.
 
 ## In one sentence
 
@@ -53,7 +55,7 @@ For a full side-by-side, see `references/opencode/packages/opencode/src/mcp/`. O
 
 | Field | Description |
 |------|------|
-| `type` | Currently only `"local"` (stdio) is supported. `"remote"` (HTTP/SSE + OAuth) is reserved; opencode has it, we haven't done it yet |
+| `type` | `"local"` (stdio) is the supported transport. `"remote"` (HTTP/SSE + OAuth) is a reserved value, held for the transport opencode implements |
 | `command` | Subprocess command + argument list |
 | `env` | Environment variables injected into the subprocess (the base environment is inherited from the parent process; this overrides / appends to it) |
 | `enabled` | Set false to temporarily disable a server without deleting its config |
@@ -172,19 +174,18 @@ An `isError=True` return is reflected in `details["is_error"]`, and what the LLM
 
 Fix: `from openprogram import paths as _paths`, and look up the attribute live on every call to `_paths.get_state_dir()`. Watch out: if the test suite adds a new paths monkeypatch, confirm our `config.py` still goes through the module reference.
 
-## Current limitations
+## Appendix: Implementation Status
 
-1. **stdio only**. HTTP/SSE/OAuth are still to come (the `MCPServerConfig.type` field already holds the slot).
-2. **`tools/*` only**. MCP also has `prompts/*` `resources/*` `sampling/*`, none of which is wired up yet — we have no corresponding concept in our framework.
-3. **A config change requires a worker restart**. There is no hot reload of the server list; there is no `restart` between `MCPClient.start()` and `stop()`.
-4. **Multiple callers serialize on the ClientSession lock**. `MCPClient._call_lock` queues concurrent calls to the same server; this isn't a performance problem (an MCP server is single-flight to begin with), but note that one slow tool will block other tool calls on the same server.
-5. **No tool-list caching**. The supervisor pulls `list_tools` once at startup and never asks again; if an MCP server adds/removes tools mid-flight, we won't see it (the protocol has a `tools/list_changed` notification, which we don't listen for).
-6. **`_loaded` is a module global**. Tests have to reset it before re-testing; see the `tests/integration/test_mcp_client.py::_reset_mcp_loader_flag` fixture.
+The design above is implemented over the stdio transport. The boundaries of
+what is built:
 
-## Possible follow-ups
+1. **stdio is the only transport.** HTTP/SSE/OAuth are unimplemented; the `MCPServerConfig.type` field holds the slot for them. Wiring them up means a remote transport plus an OAuth provider, for which opencode's `mcp/auth.ts` and `mcp/oauth-provider.ts` are the reference.
+2. **`tools/*` is the only protocol surface consumed.** MCP also defines `prompts/*`, `resources/*`, and `sampling/*`, none of which has a corresponding concept in the framework. `sampling/createMessage` would let a server borrow the client's LLM for inference; the client rejects such requests today.
+3. **A config change takes effect on worker restart.** The server list is not hot-reloaded, and `MCPClient` has no `restart` between `start()` and `stop()`. A `restart_server(name)` API would remove the need to restart the whole worker.
+4. **Concurrent calls to one server serialize on the ClientSession lock.** `MCPClient._call_lock` queues them. This is not a performance problem — an MCP server is single-flight to begin with — but one slow tool blocks other tool calls on the same server.
+5. **The tool list is read once.** The supervisor pulls `list_tools` at startup and never asks again, so tools a server adds or removes mid-flight are invisible. The protocol's `tools/list_changed` notification is not listened for.
+6. **`_loaded` is a module global.** Tests reset it before re-testing; see the `tests/integration/test_mcp_client.py::_reset_mcp_loader_flag` fixture.
 
-- Wire up remote transport (HTTP / SSE) + an OAuth provider — copy opencode's `mcp/auth.ts` + `mcp/oauth-provider.ts`
-- Listen for `tools/list_changed` and register tools at runtime
-- Have the webui settings page render `server_status()`, visualizing each server's status, error message, tool count, and most recent call result
-- A `restart_server(name)` API — without restarting the whole worker
-- Wire up the `sampling/createMessage` capability — a server can reverse-borrow the client's LLM to do inference (the client doesn't implement this today and will reject such requests)
+The webui settings page does not yet render `server_status()`; doing so would
+surface each server's status, error message, tool count, and most recent call
+result.

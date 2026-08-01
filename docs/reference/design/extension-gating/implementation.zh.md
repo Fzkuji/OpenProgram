@@ -6,7 +6,7 @@
 
 ```
 openprogram/agent/management/
-  ├─ gating.py              ← 共享辅助模块 (NEW)
+  ├─ gating.py              ← 共享辅助模块
   └─ manager.py             ← AgentSpec schema (规范结构体)
 
 openprogram/agent/
@@ -151,11 +151,11 @@ def _apply_mcp_gate(tool_list):
 | Tool | 当 `resolve_tools()` 为 `agent_loop` 构建 `tools=[...]` 参数时 | `_model_tools.py` |
 | MCP | 同 tool（MCP 工具通过同一条 `agent_tools()` 流水线浮现） | `_model_tools.py` (`_apply_mcp_gate`) |
 
-我们曾考虑在调用栈更早处放置单一的 `apply_all_gates(profile, ...)` 收口点。我们否决了它，因为这三个点的“输入列表长什么样”各不相同 —— skills 是带有 category 字段的 `Skill` 对象，tools 是裸字符串，MCP 工具是带命名空间的字符串。共享辅助函数（`match_any`、`gate`、`check_required`）覆盖了约 90% 的逻辑；各调用点之间仅输入形态不同。
+在调用栈更早处放置单一的 `apply_all_gates(profile, ...)` 收口点这一方案被否决，因为这三个落点的输入形态各不相同 —— skills 是带 category 字段的 `Skill` 对象，tools 是裸字符串，MCP 工具是带命名空间的字符串。共享辅助函数（`match_any`、`gate`、`check_required`）覆盖了大部分逻辑，各调用点之间仅输入形态不同。
 
 ## 向后兼容
 
-带有 `skills: ["pdf", "drawio"]`（裸列表而非 dict）的旧 agent 配置会在加载时被规范化。我们已在 `AgentSpec.from_dict` 中将 `skills: list` → `skills: {disabled: list}` 迁移，因此现有配置无需任何修改即可继续工作。
+带有 `skills: ["pdf", "drawio"]`（裸列表而非 dict）的旧 agent 配置会在加载时被规范化：`AgentSpec.from_dict` 把 `skills: list` 迁移为 `skills: {disabled: list}`，因此现有配置无需任何修改即可继续工作。
 
 同样，`tools: ["bash", "read"]` 仍然有效 —— 列表形式被视为白名单（旧的 `enabled` 语义）。
 
@@ -166,4 +166,4 @@ def _apply_mcp_gate(tool_list):
 - `openprogram/_cli_cmds/doctor.py` —— 健康检查会枚举已安装的 skills/tools/MCP，并在启动时暴露门控错误。
 - WS 冒烟测试 —— 在带有 disabled 模式的配置下运行 `/skill X`，会在聊天记录中返回拒绝消息。
 
-若 `match_any` 的语义某天偏离 `fnmatch.fnmatchcase`（例如我们某天加入 `**` 递归 glob 支持），再补充正式的单元测试。
+若 `match_any` 的语义某天偏离 `fnmatch.fnmatchcase`（例如加入 `**` 递归 glob 支持），再补充正式的单元测试。

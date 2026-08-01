@@ -1,236 +1,400 @@
-# OpenProgram 框架总览：一次对话从输入到产出
+# Framework Overview — One Conversation from Input to Output
 
-> 本文所有 `file:line` 直接取自当前代码库（CodeGraph 索引校验 + 逐处核对）。不含推断；未实现/TODO 的部分集中在末尾「已知边界」。
->
-> 这是把整个框架**串起来**的一篇——单轮/多轮上下文、事件层、agent 运行、协作、DAG，在「一次对话的时间轴」上怎么咬合。
+> This document ties the whole framework together: how single-turn and
+> multi-turn context, the event layer, the agent run, collaboration, and the DAG
+> mesh along the timeline of one conversation. Every `file:line` reference points
+> at the current code. Parts that are designed but not yet landed are collected
+> in "Known Boundaries" at the end.
 
-**贯穿全文的一句话：整个框架靠一个进程级事件总线把各子系统解耦相连。** dispatcher、agent loop、工具执行、存储、协作彼此不直接调用对方的 UI/广播逻辑，而是 `emit` 一个事件，谁关心谁订阅（`event_bus.py:141` `emit` / `:159` `subscribe`）。事件层有两条 lane：**异步旁观**（`EventBus`，谁也拦不住正在发生的事）和**同步问询**（`tool_gate`，全框架唯一能拦住工具执行的点）。
+**One sentence runs through the whole document: the subsystems are decoupled and
+connected by a single process-wide event bus.** The dispatcher, the agent loop,
+tool execution, storage, and collaboration never call each other's UI or
+broadcast logic. They `emit` an event, and whoever cares subscribes
+(`event_bus.py:141` `emit` / `:159` `subscribe`). The event layer has two lanes:
+**asynchronous observation** (`EventBus` — nobody can stop what is already
+happening) and **synchronous consultation** (`tool_gate` — the one place in the
+framework that can stop a tool from executing).
 
 ---
 
-## 第一部分　一次对话的生命周期（主线）
+## Part One — The Lifecycle of One Conversation
 
-以「用户输入一句话」为起点，真实数据流如下。每步标注：发生在哪、emit 什么事件、单轮 vs 多轮差异、分支（branch）如何体现。
+The data flow starts at "the user types a sentence". Each step records where it
+happens, what event it emits, how single-turn differs from multi-turn, and how a
+branch shows up.
 
-### 数据流（时间轴）
+### Data flow (timeline)
 
 ```
-用户输入一句话
+user types a sentence
    │
-   ▼  [入口] process_user_turn(req)              dispatcher/__init__.py:97（同步，内部起 asyncio loop 跑到完）
+   ▼  [entry] process_user_turn(req)              dispatcher/__init__.py:97 (sync; runs its own asyncio loop to completion)
    │
-   ├─▶ 1. session 建立/加载                       :175 get_session / :177 create_session
+   ├─▶ 1. session created / loaded                 :175 get_session / :177 create_session
    │
-   ├─▶ 2. 历史解析（分支在此第一次体现）           :186–198
-   │       branch_from=INHERIT_PARENT → db.get_branch() 沿活跃分支父链回走（= 多轮）
-   │       branch_from=None           → []（根级 fork，从空起）
-   │       branch_from="<node_id>"    → db.get_branch(sid,node)（兄弟 fork，看到分叉点为止）
+   ├─▶ 2. history resolution (branches first appear here)   :186–198
+   │       branch_from=INHERIT_PARENT → db.get_branch() walks the active branch's parent chain (= multi-turn)
+   │       branch_from=None           → [] (root-level fork, starts empty)
+   │       branch_from="<node_id>"    → db.get_branch(sid, node) (sibling fork, sees history up to the fork point)
    │
-   ├─▶ 3. 持久化 user 消息（先写后跑，崩了也留痕）   :258–312；写成 DAG Call 节点 caller=ROOT（:298）
-   │       emit chat_ack(:314) + user_message(:326)  ← 让 UI 实时显示
-   │       emit_safe("user.prompt_submitted")        :346  ← 进事件总线
+   ├─▶ 3. user message persisted (written before the run, so a crash still leaves a record)   :258–312
+   │       written as a DAG Call node with caller=ROOT (:298)
+   │       emit chat_ack(:314) + user_message(:326)  ← live UI display
+   │       emit_safe("user.prompt_submitted")        :346  ← onto the event bus
    │
-   ├─▶ 4. 绑定 turn 上下文（ContextVar）            :366–436
-   │       _current_turn_id.set(assistant_msg_id) :379   ← turn 内任何协程都读得到同一 turn id
-   │       _store.set(GraphStoreShim)            :435   ← 深层 runtime/工具/@agentic_function 写同一 DAG
+   ├─▶ 4. turn context bound (ContextVar)           :366–436
+   │       _current_turn_id.set(assistant_msg_id) :379   ← every coroutine in the turn reads the same turn id
+   │       _store.set(GraphStoreShim)            :435   ← deep runtime / tools / @agentic_function write the same DAG
    │       assistant_msg_id = user_msg_id+"_reply" :164
-   │       写 assistant 占位行 + set_head           :460；status="running" :464
+   │       assistant placeholder row written + set_head  :460; status="running" :464
    │
-   ├─▶ 5. ★ 调模型前：上下文引擎先跑一遍 ★          _run_loop_blocking :754
-   │       a. ContextEngine.prepare(...)           :885  ← DAG 历史渲染成 LLM messages（TurnPrep）
+   ├─▶ 5. ★ before the model call: the context engine runs ★   _run_loop_blocking :754
+   │       a. ContextEngine.prepare(...)           :885  ← DAG history rendered into LLM messages (TurnPrep)
    │       b. should_auto_compact(prep)?           :896
-   │            是 → snip（免费删最老 turn）不够 → compact（LLM 压缩）→ 重新 prepare（:907/:941/:976）
-   │       c. 拼出 prompt（loop 内只加一次，避免破坏 prompt 缓存）
-   │       d. agent_loop([prompt], context, ...)   :1074 → 进核心循环（见下 §核心循环）
+   │            yes → snip (free: drop the oldest turn); still over → compact (LLM summarization) → prepare again (:907/:941/:976)
+   │       c. assemble the prompt (added once per loop, so the prompt cache prefix stays intact)
+   │       d. agent_loop([prompt], context, ...)   :1074 → into the core loop (see below)
    │
-   ├─▶ 6. 持久化 assistant 消息                     persist_assistant_message :676（persistence.py:31）
+   ├─▶ 6. assistant message persisted             persist_assistant_message :676 (persistence.py:31)
    │
-   ├─▶ 7. finalize（收尾，context 子系统在这里做 3 件事）  finalize_turn :711 / dispatcher/finalize.py:175
-   │       · head/token 更新
-   │       · ContextCommit 回填                      finalize.py:283
-   │       · ctx_engine.after_turn(...)             finalize.py:308 → engine.py:437
-   │            ↑ 这里才 emit "context.compaction_recommended"（按预算算 pct）
-   │       · git commit_turn(:356) + 项目自动提交(:369 commit_turn_changes)
-   │       · auto-title、usage 反馈、快照淘汰
+   ├─▶ 7. finalize (three context-subsystem jobs happen here)   finalize_turn :711 / dispatcher/finalize.py:175
+   │       · head / token update
+   │       · ContextCommit backfill                finalize.py:283
+   │       · ctx_engine.after_turn(...)            finalize.py:308 → engine.py:437
+   │            ↑ this is where "context.compaction_recommended" is emitted (pct computed against the budget)
+   │       · git commit_turn(:356) + project auto-commit (:369 commit_turn_changes)
+   │       · auto-title, usage feedback, snapshot eviction
    │       db.update_session(status="idle"/"done")  :727/:729
    │
-   └─▶ emit chat_response(:735) → 返回 TurnResult(:739)
+   └─▶ emit chat_response(:735) → return TurnResult(:739)
 ```
 
-### 入口：dispatcher
+### Entry point: the dispatcher
 
-`process_user_turn(req, *, on_event, cancel_event)` 是全框架**唯一**对话入口（`dispatcher/__init__.py:97`）。它是**同步**的，便于 channel worker 线程直接调用，内部自起 asyncio loop 跑 `agent_loop` 到完。返回 `TurnResult`（`dispatcher/types.py:102`）。
+`process_user_turn(req, *, on_event, cancel_event)` is the framework's **only**
+conversation entry point (`dispatcher/__init__.py:97`). It is **synchronous** so a
+channel worker thread can call it directly; internally it starts its own asyncio
+loop and runs `agent_loop` to completion. It returns a `TurnResult`
+(`dispatcher/types.py:102`).
 
-### turn_id 绑 ContextVar——框架解耦的另一根脊柱
+### turn_id bound to a ContextVar — the other spine of the decoupling
 
-`_current_turn_id.set(assistant_msg_id)`（`:379`）是关键：ContextVar 沿 asyncio task 传播，turn 内**任何**协程（工具执行、`@agentic_function`、`message_branch`）都读得到同一 turn id，从而把文件备份、子分支父锚点都归到正确的 assistant 消息上。同时绑 `_store`（`:435`）让深层 runtime 写同一 SQLite DAG，无需层层透传。`finally` 块成功/异常/提前 return 都会 `reset`。
+`_current_turn_id.set(assistant_msg_id)` (`:379`) is what makes depth-independent
+attribution work. A ContextVar propagates along asyncio tasks, so **any**
+coroutine within the turn — tool execution, `@agentic_function`,
+`message_branch` — reads the same turn id, which routes file backups and
+sub-branch parent anchors to the correct assistant message. `_store` is bound the
+same way (`:435`) so deep runtime code writes into the same SQLite DAG without
+threading a handle through every signature. The `finally` block resets both on
+success, exception, and early return alike.
 
-### 上下文组装：单轮 / 多轮 / 分支
+### Context assembly: single-turn / multi-turn / branch
 
-历史解析集中在 `:186–198`，**分支在数据流里第一次体现**：
+History resolution lives at `:186–198`, and this is where branching **first
+shows up in the data flow**:
 
-| 情况 | branch_from | 取的历史 | 含义 |
+| Case | branch_from | History taken | Meaning |
 |---|---|---|---|
-| 普通追加 | `INHERIT_PARENT` | `db.get_branch(sid)` 沿活跃分支父链回走 | **多轮**：看到当前分支全部历史 |
-| 根级 fork | `None` | `[]` | LLM 从空起 |
-| 兄弟 fork | `"<node_id>"` | `db.get_branch(sid, node_id)` | 看到分叉点为止，不被活跃分支污染 |
+| Normal append | `INHERIT_PARENT` | `db.get_branch(sid)` walks the active branch's parent chain | **multi-turn**: the whole history of the current branch |
+| Root-level fork | `None` | `[]` | the LLM starts from nothing |
+| Sibling fork | `"<node_id>"` | `db.get_branch(sid, node_id)` | history up to the fork point, uncontaminated by the active branch |
 
-**单轮 vs 多轮唯一差别就是 `get_branch` 回走出来的链长度**：单轮链上只有刚写的 user 节点（挂在 ROOT 下），多轮则是一条完整父链。
+**The only difference between single-turn and multi-turn is the length of the
+chain `get_branch` walks back**: single-turn holds just the user node written a
+moment ago (hanging under ROOT), multi-turn holds a full parent chain.
 
-> **分支怎么"写"出来**（上面讲的是怎么"读"）：fork 的写入侧 = 给 user 节点指一个非 active-tail 的 caller（存储层 `set_head` 改 UI 指针），或 `message_branch` 起新根（见 §⑤）。读=三种 get_branch，写=换 head 指针 / 新建根。
+> The read side is the three `get_branch` cases above. The write side of a fork
+> is either pointing a user node's caller at something other than the active tail
+> (`set_head` in the storage layer moves the UI pointer), or starting a new root
+> through `message_branch` (see §⑤). Read = three `get_branch` variants; write =
+> move the head pointer or create a new root.
 
-### ★ 调模型前：上下文引擎先跑一遍（每轮自动压缩主路径）★
+### ★ Before the model call: the context engine runs (the per-turn auto-compaction path) ★
 
-这是最容易被忽略、但每个 turn 都发生的一层。step 5 的实体是 `_run_loop_blocking`（`dispatcher/__init__.py:754`），它在进 `agent_loop` **之前**：
+This layer is easy to overlook and happens on every turn. Step 5 is
+`_run_loop_blocking` (`dispatcher/__init__.py:754`), which runs **before**
+entering `agent_loop`:
 
-1. `ContextEngine.prepare(agent, session, history, model, tools)`（`:885` → `engine.py:194`）：把 DAG 历史**渲染成 LLM 输入** messages（默认走 DAG 渲染 `_build_messages_from_dag` `engine.py:558`；config `context.render="legacy"` 回退到 commit-chain）。返回 `TurnPrep`（`context/types.py:102`）。
-2. `should_auto_compact(prep)`（`:896`）为真时——**这是上下文超预算时真正触发的链路**：先 `snip`（免费删最老 turn），不够再 `_ctx_engine.compact(...)`（LLM 压缩），然后**重新 prepare**（三段重试 `:907`/`:941`/`:976`）。
-3. 拼出 prompt（loop 内只加一次，避免重复破坏 prompt 缓存）。
-4. `agent_loop([prompt], context, config, ...)`（`:1074`）进核心循环。
+1. `ContextEngine.prepare(agent, session, history, model, tools)` (`:885` →
+   `engine.py:194`) renders the DAG history **into LLM input messages** (DAG
+   rendering `_build_messages_from_dag` `engine.py:558` by default; setting
+   `context.render="legacy"` falls back to the commit chain). It returns a
+   `TurnPrep` (`context/types.py:102`).
+2. When `should_auto_compact(prep)` (`:896`) is true — **this is the path that
+   actually fires when context exceeds the budget** — `snip` runs first (free:
+   drop the oldest turn); if that is not enough, `_ctx_engine.compact(...)` (LLM
+   summarization) runs, then **prepare runs again** (a three-stage retry at
+   `:907`/`:941`/`:976`).
+3. The prompt is assembled (added once per loop, so the cached prefix is not
+   broken by repetition).
+4. `agent_loop([prompt], context, config, ...)` (`:1074`) enters the core loop.
 
-> 这条「turn 开头先压一遍」和末尾「idle-gap microcompact」是两条不同的压缩路径，别混（见 §③）。
+> "Compact once at the start of the turn" and the "idle-gap microcompact" at the
+> end are two different compaction paths (see §③).
 
-### 核心循环：调模型 → 工具 → 回灌 → 循环
+### Core loop: call the model → tools → feed results back → repeat
 
-`agent_loop`（`agent_loop.py:114`）建 `EventStream`，内部 `_run_loop`（`:205`）的内循环（`:236`）：
+`agent_loop` (`agent_loop.py:114`) builds an `EventStream`; the inner loop of
+`_run_loop` (`:205`, loop at `:236`) does:
 
-1. push `AgentEventTurnStart`（多轮每轮都 push，`:246`）。
-2. `_stream_assistant_response` 调模型（`:260`）。emit `model.response_started`（`:442`）/ `model.response_completed`（`:466`）。
-3. 抽 `ToolCall`（`:273`）。有工具 → `_execute_tool_calls`（`:278`），结果 append 回 context（**回灌**，`:288–290`）。
-4. push `AgentEventTurnEnd` + emit `turn.ended`（`:292–293`）。
-5. 无更多工具且无 steering/follow-up → break。
+1. push `AgentEventTurnStart` (pushed on every inner turn, `:246`).
+2. `_stream_assistant_response` calls the model (`:260`), emitting
+   `model.response_started` (`:442`) and `model.response_completed` (`:466`).
+3. extract `ToolCall`s (`:273`). If there are tools, `_execute_tool_calls`
+   (`:278`) runs and the results are appended back into the context (`:288–290`).
+4. push `AgentEventTurnEnd` + emit `turn.ended` (`:292–293`).
+5. break when there are no more tools and no steering / follow-up.
 
-硬上限 `MAX_INNER_ITERATIONS = 50`（`:226`），防无限「再调一个工具」。
+`MAX_INNER_ITERATIONS = 50` (`:226`) is the hard cap against an endless "just one
+more tool".
 
-### 工具执行：tool.before 拦截
+### Tool execution: the tool.before interception
 
-`_execute_tool_calls`（`agent_loop.py:654`）对每个 tool call：
+`_execute_tool_calls` (`agent_loop.py:654`) does this for each tool call:
 
-1. push `AgentEventToolStart`（`:675`）+ 插件 hook `TOOL_BEFORE_USE`（`:686`，best-effort）。
-2. **事件层 tool.before**：`make_event("tool.before",...)` + `emit`（`:695`）——一份事件，异步旁观和同步问询共用。
-3. **同步 gate**：`decide_tool_gate(before_ev)`（`:701`）。**全框架唯一能拦住工具执行的点**（`tool_gate.py:53`）：任一 gate 返回 deny 即拦（理由合并），gate 抛错按 allow（fail-open）。被拦 `raise ToolGateDenied`（`:708`），deny 理由作为 error tool result 回模型。**对 subagent 也生效**——gate 在 `permission_mode` approval 包装之外，`bypass` 关不掉它（`tool_gate.py:14–15`）。
-4. `tool.execute(...)`（`:731`），前后做 cwd 快照 + 文件 checkpoint。
-5. push `AgentEventToolEnd`（`:758/:766`）+ emit `tool.after`（`:772`）。
-6. 组 `ToolResultMessage` 回灌（`:792`）。每次工具后检查 steering（`:806`），命中则跳过剩余工具、回灌 steering。
+1. push `AgentEventToolStart` (`:675`) + the plugin hook `TOOL_BEFORE_USE`
+   (`:686`, best-effort).
+2. **event-layer tool.before**: `make_event("tool.before",...)` + `emit` (`:695`)
+   — one event serving both the asynchronous observers and the synchronous
+   consultation.
+3. **synchronous gate**: `decide_tool_gate(before_ev)` (`:701`), **the one place
+   in the framework that can stop a tool** (`tool_gate.py:53`). Any gate
+   returning deny blocks the call (reasons merged); a gate that raises counts as
+   allow (fail-open). A blocked call raises `ToolGateDenied` (`:708`) and the deny
+   reason goes back to the model as an error tool result. **It applies to
+   subagents too** — the gate sits outside the `permission_mode` approval
+   wrapper, so `bypass` cannot switch it off (`tool_gate.py:14–15`).
+4. `tool.execute(...)` (`:731`), with a cwd snapshot + file checkpoint taken
+   around it.
+5. push `AgentEventToolEnd` (`:758/:766`) + emit `tool.after` (`:772`).
+6. assemble a `ToolResultMessage` and feed it back (`:792`). Steering is checked
+   after each tool (`:806`); when it hits, the remaining tools are skipped and the
+   steering message is fed back instead.
 
-### 持久化 + finalize（context 子系统在这步做三件事）
+### Persistence + finalize
 
-- 出错路径（`:605–639`）：错误折进占位行或独立 error 节点，`head_id` 移到失败 turn（`:612/:618/:622`）。
-- 成功路径：`persist_assistant_message`（`:676`，`dispatcher/persistence.py:31`）写 assistant 消息 → `finalize_turn`（`:711`，`dispatcher/finalize.py:175`）。**finalize 里 context 子系统做三件事**：① head/token 更新 ② **ContextCommit 回填**（`finalize.py:283`，把这轮压缩决策固化成不可变 per-turn commit）③ **`after_turn`**（`finalize.py:308` → `engine.py:437`，**这里才发 `context.compaction_recommended`**：usage 回灌 + 按预算算 pct）。随后 git `commit_turn`（`finalize.py:356`）+ 项目自动提交（`:369`）。
+- Error path (`:605–639`): the error is folded into the placeholder row or a
+  standalone error node, and `head_id` moves to the failed turn
+  (`:612/:618/:622`).
+- Success path: `persist_assistant_message` (`:676`,
+  `dispatcher/persistence.py:31`) writes the assistant message, then
+  `finalize_turn` (`:711`, `dispatcher/finalize.py:175`) runs. **The context
+  subsystem does three things inside finalize**: (1) head/token update;
+  (2) **ContextCommit backfill** (`finalize.py:283`, freezing this turn's
+  compaction decision into an immutable per-turn commit); (3) **`after_turn`**
+  (`finalize.py:308` → `engine.py:437`, **where `context.compaction_recommended`
+  is emitted**: usage feedback + pct against the budget). Then git `commit_turn`
+  (`finalize.py:356`) + the project auto-commit (`:369`).
 
-### DAG 更新——贯穿全程，不是单独一步
+### DAG updates run throughout, not as a separate step
 
-user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_function` 内部节点，都通过 `_store` ContextVar 落入同一 `GraphStoreShim`，turn 末 `commit_turn`（`session_store.py:504`）把整棵工作树作为一次 turn 提交——append-only、无可变"当前态"镜像文件，两个 agent 并发写不会撞同一文件。
+The user node (`:298`), the assistant placeholder, every tool result, and the
+nodes inside an `@agentic_function` all land in the same `GraphStoreShim` through
+the `_store` ContextVar. At the end of the turn `commit_turn`
+(`session_store.py:504`) commits the whole working tree as one turn — append-only,
+with no mutable "current state" mirror file, so two agents writing concurrently
+never collide on the same file.
 
 ---
 
-## 第二部分　分层参考（查细节）
+## Part Two — Layer Reference
 
-### 事件全表（核心：子系统靠它解耦相连）
+### Event table
 
-实际在发的事件（全仓 `emit_safe` / `emit_ws_frame` / `make_event` 扫描 + 核对）。两类：进总线的 typed 事件（异步旁观 + 同步问询）和透传前端的 `ws.frame`。
+The events actually in flight. Two kinds: typed events on the bus (asynchronous
+observation + synchronous consultation), and `ws.frame` envelopes passed through
+to the front end.
 
-| 事件 type | 谁发（file:line） | 谁收 | 备注 |
+| Event type | Emitted by (file:line) | Consumed by | Notes |
 |---|---|---|---|
-| `user.prompt_submitted` | dispatcher `:346` | proactive observer（`proactive/state.py:61`） | 用户消息已提交 |
-| `tool.before` | agent_loop `:695` | **tool_gate（同步）** + 旁观 | 唯一拦截位 |
-| `tool.after` | agent_loop `:772` | 旁观 | 携带 `is_error` |
-| `turn.ended` | agent_loop `:267/:293` | 旁观 | 每个内循环 turn 结束 |
-| `model.response_started` | agent_loop `:442` | 旁观 | 模型流开始 |
-| `model.response_completed` | agent_loop `:466` | proactive 收尾策略 | 收尾时机检查 |
-| `subagent.started` / `.ended` | task/runner `:115`（origin=`system`，session 显式传参，因 worker 线程 ContextVar 不可靠） | 旁观 | 子 agent 状态漏斗 |
-| `branch.message_sent` | message_branch `:266` | 旁观 + `ws.frame` | from/to/is_new/sources |
-| `branch.message_replied` | message_branch `:344` | 旁观 + `ws.frame` | 含 is_error |
-| `question.asked` | questions `:164`（同时 `emit_ws_frame` `:161` 成前端卡片） | channels question bridge（`_question_bridge.py:43`） | 既进总线又发 ws 帧 |
-| `question.replied` | questions `:275`（`resolve_question_and_broadcast:262`） | 前端 | **只走 ws 帧** |
-| `question.rejected` | questions `:173/:276` | 前端按"收回"处理 | **只走 ws 帧** |
-| `context.compaction_recommended` | **engine `after_turn` `:437`**（finalize 里调） | UI / proactive | 按预算算 pct |
-| `context.compacted` | context 引擎 | UI / 旁观 | 压缩已发生 |
-| `file.changed` | functions watcher 等 | 旁观 | 文件变更 |
-| `channel.message_inbound` | channels | 旁观 | 入站消息 |
-| `memory.ingest_started` / `.ended` | memory | 旁观 | 记忆摄入 |
-| `skills.changed` / `plugins.update_available` / `sessions.listed` / `branches.listed` | 各子系统 | UI / 旁观 | 列表与可用更新 |
-| `ws.frame`（`event_bus.py:115`） | 外部源 `emit_ws_frame`（`:118`） | `webui/server.py:1192`（原样广播） | 透传信封：外部源不直连 webui `_broadcast` |
+| `user.prompt_submitted` | dispatcher `:346` | proactive observer (`proactive/state.py:61`) | user message committed |
+| `tool.before` | agent_loop `:695` | **tool_gate (synchronous)** + observers | the only interception point |
+| `tool.after` | agent_loop `:772` | observers | carries `is_error` |
+| `turn.ended` | agent_loop `:267/:293` | observers | each inner-loop turn ends |
+| `model.response_started` | agent_loop `:442` | observers | model stream begins |
+| `model.response_completed` | agent_loop `:466` | proactive wrap-up policies | wrap-up timing check |
+| `subagent.started` / `.ended` | task/runner `:115` (origin=`system`, session passed explicitly because a worker thread's ContextVar is unreliable) | observers | subagent state funnel |
+| `branch.message_sent` | message_branch `:266` | observers + `ws.frame` | from/to/is_new/sources |
+| `branch.message_replied` | message_branch `:344` | observers + `ws.frame` | carries is_error |
+| `question.asked` | questions `:164` (also `emit_ws_frame` `:161` for the front-end card) | channels question bridge (`_question_bridge.py:43`) | both on the bus and as a ws frame |
+| `question.replied` | questions `:275` (`resolve_question_and_broadcast:262`) | front end | **ws frame only** |
+| `question.rejected` | questions `:173/:276` | front end (handled as "withdrawn") | **ws frame only** |
+| `context.compaction_recommended` | **engine `after_turn` `:437`** (called from finalize) | UI / proactive | pct against the budget |
+| `context.compacted` | context engine | UI / observers | compaction happened |
+| `file.changed` | functions watcher and others | observers | file change |
+| `channel.message_inbound` | channels | observers | inbound message |
+| `memory.ingest_started` / `.ended` | memory | observers | memory ingestion |
+| `skills.changed` / `plugins.update_available` / `sessions.listed` / `branches.listed` | various subsystems | UI / observers | lists and available updates |
+| `ws.frame` (`event_bus.py:115`) | external sources via `emit_ws_frame` (`:118`) | `webui/server.py:1192` (broadcast verbatim) | passthrough envelope: external sources never touch webui `_broadcast` directly |
 
-**订阅侧实际位点**：proactive 引擎订阅**全部**事件再按 `on` 过滤（`proactive/engine.py:145`）；webui 只订 `ws.frame`（`server.py:1192`）；channels question bridge 只订 `question.asked`（`_question_bridge.py:43`）。
+**Subscriber sites**: the proactive engine subscribes to **all** events and
+filters by `on` (`proactive/engine.py:145`); the webui subscribes only to
+`ws.frame` (`server.py:1192`); the channels question bridge subscribes only to
+`question.asked` (`_question_bridge.py:43`).
 
-**事件契约**：`emit` 是 fire-and-forget，handler 抛错绝不反噬发射方（`event_bus.py:141–157` + `_call:182–198` 打 stderr）；async handler 无 loop 时跳过；`emit_safe`（`:96`）整体 try/swallow——「事件层绝不破坏调用方代码路径」。
-
----
-
-### ① 存储层　SessionStore，分支 = (session, head)
-
-**职责**：每 session 一个 git 仓 + 内存索引；append-only、无可变当前态镜像。
-**关键文件**：`store/session/session_store.py`、`store/session/memory_index.py`。
-**关键机制**：
-- `_open(sid)`（`:413`）返回 `(GitSession, SessionMemoryIndex)`，LRU 缓存、容量淘汰；索引可从 git 无损重建。
-- **分支 = (session, head 指针)**：`get_branch(sid[, head])`（`:817` / `memory_index.py:101`）沿 `predecessor`/`caller` 父链回走；`set_head`（`:880`）改的是 meta 里单值的 UI 指针。fork 只是从某 node 起再走一条链，互不污染。
-- `commit_turn(sid, msg)`（`:504`）：把工作树作为一次 turn 提交。
-**对外事件**：`sessions.listed`、`branches.listed`。
-
-### ② 事件层　总线 + tool.before 拦截
-
-**职责**：进程级 fan-out，解耦所有子系统。
-**关键文件**：`agent/event_bus.py`、`agent/tool_gate.py`、`agent/questions.py`。
-**关键机制**：
-- `EventBus`（`:129`）：typed `subscribe(handler, types=...)`（`:159`）+ legacy channel `on`（`:208`）；进程单例 `get_event_bus()`（`:241`，双检锁）。
-- **tool.before 同步拦截**：`register_tool_gate`（`tool_gate.py:38`）/ `decide_tool_gate`（`:53`），取最严、fail-open。gate 必须快，不许调 LLM / 慢 IO。
-- 问询子系统：`QuestionRegistry`（`questions.py:61`，进程级待答表、claim-once、线程安全）。
-**对外事件**：见上表。
-
-### ③ 上下文引擎　组装 / 压缩 / ContextCommit
-
-**职责**：把 DAG 历史渲染成 LLM 输入，并做压缩决策。
-**关键文件**：`context/engine.py`、`context/microcompact.py`、`context/references.py`、`context/render.py`、`context/commit/`、`context/rules/`、`context/tool_aging/`；finalize 在 `agent/dispatcher/finalize.py`（不在 context/ 下）。
-**关键机制**：
-- `ContextEngine.prepare(...)`（`engine.py:194`）返回 `TurnPrep`（`context/types.py:102`）。默认从 DAG 渲染（`_build_messages_from_dag:558`），失败回退 legacy（`:218–220`，免得一个坏 commit 拖垮整个 turn）。
-- **两条压缩路径**（别混）：
-  - **turn-start auto-compact（主）**：`should_auto_compact` 为真 → `snip`（免费删最老 turn）→ 不够则 `compact`（LLM 压缩）→ re-prepare。在 `_run_loop_blocking` 里，每轮调模型前（见第一部分 step 5）。
-  - **idle-gap microcompact（次）**：`microcompact.py:76`，**仅空闲 > 3600s 触发**（`GAP_THRESHOLD_SECONDS:45`，prompt 缓存到期后清理"零额外成本"），保留最近 5 个 tool_result，更老的大结果替占位符。**非破坏性**（返回拷贝，不动 DAG 节点）。
-- **引用扫描**：`ReferenceTracker.build`（`references.py:114`）廉价子串扫描，标记被后文引用的 tool_result 避免被压。（注：目前结果仅用于日志，ContextCommit 规则尚未消费它，见已知边界。）
-- **ContextCommit**（`commit/types.py:104`）：每 turn 的压缩决策固化成不可变 commit；`finalize_turn` 回填（`dispatcher/finalize.py:283`）。
-- **`after_turn`**（`engine.py:437`，finalize 里调 `dispatcher/finalize.py:308`）：usage 回灌 + 发 `context.compaction_recommended`。
-**对外事件**：`context.compaction_recommended`、`context.compacted`。
-
-### ④ agent 运行　loop + 工具注册 + 子 agent
-
-**职责**：驱动「模型↔工具」循环，执行工具，派生子 agent。
-**关键文件**：`agent/agent_loop.py`、`agent/agent.py`、`agent/sub_agent_run.py`、`providers/utils/event_stream.py`、`agent/management/gating.py`。
-**关键机制**：
-- `EventStream`（`event_stream.py:15`）：async-iterable + 终值；provider dict 事件归一成 typed。
-- `agent_loop` / `_run_loop`（`:114/:205`，硬上限 50 `:226`）+ `_execute_tool_calls`（`:654`）。
-- `Agent` 支持 `steer`（中途插队）/ `follow_up`（收尾追加）/ `prompt`。
-- **工具/技能/MCP 静态准入**：`gate(name, disabled, allowed, categories)`（`management/gating.py:38`，fnmatch，解析序 disabled→allowed→categories）。注意：这是**静态准入**（agent.json 声明谁能用），与 ② 的 `tool_gate` 运行时拦截是两回事。
-- **子 agent**：`run_agent_turn(sid, prompt, agent_id, branch_from, label)`（`sub_agent_run.py:41`）内部就是再调一次 `process_user_turn`（`:96`），用 `source="agent_spawn"`、`permission_mode="bypass"`（`:89`）。返回 `AgentTurnResult`（`:32`，`head_id`=新分支 tip）；`label` 经 `set_branch_name` 成命名分支（`:109`）。
-**对外事件**：`model.response_started/completed`、`turn.ended`、`subagent.started/ended`（后者由 task/runner 发）。
-
-### ⑤ 协作　message_branch + 跨 session + 防护
-
-**职责**：分支/会话之间投递消息、跑分支、把回复带回来。
-**关键文件**：`functions/tools/agent_collab/message_branch.py`、`functions/tools/agent_collab/list_branches.py`。
-**关键机制**：
-- `message_branch(message, target, sources, agent_id, wait)`（`:393` → `_message_branch_impl:186`）。
-- target 语义（`_parse_target:167`）：`new`（当前 session 新根）/ `new:SID:MSG_ID`（fork 某节点继承其链）/ `SID:HEAD`（投到已存在分支 = 从其 head 再跑一轮）。
-- 父锚点 `_resolve_parent`（`:74`）读 dispatcher 的 session/turn ContextVar，**turn id 缺失时回退到 session head**（修了"no active parent turn"）。
-- **sources 综合**：`_gather_sources`（`:128`）把每个源分支 tip 文本包成 `<branch source=...>` 块前置给目标模型综合。
-- 异步（默认）交给 task runner（`run_agent_turn_async`），跑完写 attach pointer 并 dispatch followup 回**发起方** session（回复自动回流）。
-- **防护**：深度守卫 `MAX_SPAWN_DEPTH=8`（`:35`，判定在 `:209`，子继承 depth+1，A↔B 来回也计入）；自指守卫（投给自己当前 turn 直接拒）；目标 session 必须存在不静默创建；超大回复 `_clip_result`（`:365`，>30000 字存文件返回路径）；tool.before 拦截（值守可拦）。
-**对外事件**：`branch.message_sent`（`:266`）、`branch.message_replied`（`:344`）；并 `emit_ws_frame("branch_message",...)`（`_emit_branch_ui:107`）在发起方聊天流显示「已发送/已回复」行。
+**Event contract**: `emit` is fire-and-forget, and a handler that raises never
+propagates back to the emitter (`event_bus.py:141–157` + `_call:182–198` prints to
+stderr); an async handler with no running loop is skipped; `emit_safe` (`:96`)
+wraps the whole thing in try/swallow. The event layer never breaks the caller's
+code path.
 
 ---
 
-## 已知边界（gaps / TODO，如实记录）
+### ① Storage — SessionStore, branch = (session, head)
 
-- **tool.before 仅「观察 + deny」，尚不能 mutate/veto-by-plugin**：插件 hook `TOOL_BEFORE_USE` 注释明确写 future-work（`agent_loop.py:682–684`）。
-- **gate 的 "ask" 三态尚未完全接 ApprovalRegistry**：`Gate.ask` 注释「接 ApprovalRegistry，后续单元接」（`proactive/actions.py:29`）；"critical fail-closed" 分级也待规则层进场（`tool_gate.py:13`）。
-- **引用扫描结果未被 ContextCommit 规则消费**：目前仅用于日志（`engine.py:204–212`）。
-- **DAG 渲染回退路径与正常路径并存**：坏 commit 时 fall back 到 legacy（`engine.py:218–220`）。
-- **核心入口无覆盖测试**：`process_user_turn` / `agent_loop` 若干路径标注「⚠️ no covering tests found」。
-- **worker 线程 ContextVar 不可靠**：`subagent.started/ended` 因此由 session 显式传参（`agent/task/runner.py:111–115`）；`message_branch._resolve_parent` 为此加了 head 回退。
-- **`ContextEngine.after_turn` 有两层**：抽象基类桩 `engine.py:124` 为 `pass`；**具体引擎实现 `engine.py:437` 才是真正在干活的**（usage 回灌 + 发 compaction_recommended），由 `dispatcher/finalize.py:308` 调用。
+**Responsibility**: one git repo plus an in-memory index per session;
+append-only, with no mutable current-state mirror.
+**Key files**: `store/session/session_store.py`, `store/session/memory_index.py`.
+**Mechanisms**:
+- `_open(sid)` (`:413`) returns `(GitSession, SessionMemoryIndex)`, LRU-cached and
+  evicted by capacity; the index can be rebuilt losslessly from git.
+- **branch = (session, head pointer)**: `get_branch(sid[, head])` (`:817` /
+  `memory_index.py:101`) walks the `predecessor`/`caller` parent chain; `set_head`
+  (`:880`) moves a single-valued UI pointer stored in meta. A fork is simply
+  another chain walked from some node, and the two never contaminate each other.
+- `commit_turn(sid, msg)` (`:504`) commits the working tree as one turn.
+**Events**: `sessions.listed`, `branches.listed`.
+
+### ② Event layer — bus + tool.before interception
+
+**Responsibility**: process-wide fan-out that decouples every subsystem.
+**Key files**: `agent/event_bus.py`, `agent/tool_gate.py`, `agent/questions.py`.
+**Mechanisms**:
+- `EventBus` (`:129`): typed `subscribe(handler, types=...)` (`:159`) + legacy
+  channel `on` (`:208`); process singleton `get_event_bus()` (`:241`,
+  double-checked locking).
+- **synchronous tool.before interception**: `register_tool_gate`
+  (`tool_gate.py:38`) / `decide_tool_gate` (`:53`), taking the strictest verdict
+  and failing open. A gate must be fast — no LLM calls, no slow IO.
+- Question subsystem: `QuestionRegistry` (`questions.py:61`) — a process-wide
+  pending table, claim-once, thread-safe.
+**Events**: see the table above.
+
+### ③ Context engine — assembly / compaction / ContextCommit
+
+**Responsibility**: render DAG history into LLM input and make compaction
+decisions.
+**Key files**: `context/engine.py`, `context/microcompact.py`,
+`context/references.py`, `context/render.py`, `context/commit/`,
+`context/rules/`, `context/tool_aging/`; finalize lives in
+`agent/dispatcher/finalize.py`, not under `context/`.
+**Mechanisms**:
+- `ContextEngine.prepare(...)` (`engine.py:194`) returns a `TurnPrep`
+  (`context/types.py:102`). It renders from the DAG by default
+  (`_build_messages_from_dag:558`) and falls back to legacy on failure
+  (`:218–220`), so one bad commit does not take down the whole turn.
+- **Two compaction paths** (distinct):
+  - **turn-start auto-compact (primary)**: `should_auto_compact` true → `snip`
+    (free: drop the oldest turn) → still over, `compact` (LLM summarization) →
+    re-prepare. Lives in `_run_loop_blocking`, before each model call (Part One,
+    step 5).
+  - **idle-gap microcompact (secondary)**: `microcompact.py:76`, triggered
+    **only after more than 3600s idle** (`GAP_THRESHOLD_SECONDS:45` — cleanup at
+    zero extra cost once the prompt cache has expired). It keeps the 5 most recent
+    tool_results and replaces older large ones with placeholders. It is
+    **non-destructive**: it returns a copy and does not touch DAG nodes.
+- **Reference scan**: `ReferenceTracker.build` (`references.py:114`) is a cheap
+  substring scan marking tool_results referenced by later text so they escape
+  compaction. Its results currently feed logging only; the ContextCommit rules do
+  not consume them yet (see Known Boundaries).
+- **ContextCommit** (`commit/types.py:104`): each turn's compaction decision
+  frozen into an immutable commit, backfilled by `finalize_turn`
+  (`dispatcher/finalize.py:283`).
+- **`after_turn`** (`engine.py:437`, called from `dispatcher/finalize.py:308`):
+  usage feedback + emitting `context.compaction_recommended`.
+**Events**: `context.compaction_recommended`, `context.compacted`.
+
+### ④ Agent run — loop + tool registration + subagents
+
+**Responsibility**: drive the model↔tool loop, execute tools, spawn subagents.
+**Key files**: `agent/agent_loop.py`, `agent/agent.py`, `agent/sub_agent_run.py`,
+`providers/utils/event_stream.py`, `agent/management/gating.py`.
+**Mechanisms**:
+- `EventStream` (`event_stream.py:15`): async-iterable plus a terminal value;
+  provider dict events are normalized into typed ones.
+- `agent_loop` / `_run_loop` (`:114/:205`, hard cap 50 at `:226`) +
+  `_execute_tool_calls` (`:654`).
+- `Agent` supports `steer` (interject mid-run), `follow_up` (append at wrap-up),
+  and `prompt`.
+- **Static admission for tools / skills / MCP**: `gate(name, disabled, allowed,
+  categories)` (`management/gating.py:38`, fnmatch, resolved in the order
+  disabled→allowed→categories). This is *static* admission — agent.json declaring
+  who may use what — and is a separate mechanism from ②'s runtime `tool_gate`
+  interception.
+- **Subagents**: `run_agent_turn(sid, prompt, agent_id, branch_from, label)`
+  (`sub_agent_run.py:41`) is another call into `process_user_turn` (`:96`) with
+  `source="agent_spawn"` and `permission_mode="bypass"` (`:89`). It returns an
+  `AgentTurnResult` (`:32`, `head_id` = the new branch tip); `label` becomes a
+  named branch via `set_branch_name` (`:109`).
+**Events**: `model.response_started/completed`, `turn.ended`,
+`subagent.started/ended` (the last pair emitted by task/runner).
+
+### ⑤ Collaboration — message_branch + cross-session + guards
+
+**Responsibility**: deliver messages between branches and sessions, run the
+target branch, and bring the reply back.
+**Key files**: `functions/tools/agent_collab/message_branch.py`,
+`functions/tools/agent_collab/list_branches.py`.
+**Mechanisms**:
+- `message_branch(message, target, sources, agent_id, wait)` (`:393` →
+  `_message_branch_impl:186`).
+- Target semantics (`_parse_target:167`): `new` (a new root in the current
+  session) / `new:SID:MSG_ID` (fork a node and inherit its chain) / `SID:HEAD`
+  (deliver to an existing branch = run one more turn from its head).
+- The parent anchor `_resolve_parent` (`:74`) reads the dispatcher's session/turn
+  ContextVars and **falls back to the session head when the turn id is missing**.
+- **Source aggregation**: `_gather_sources` (`:128`) wraps each source branch's
+  tip text in a `<branch source=...>` block and prepends it for the target model
+  to synthesize.
+- Asynchronous delivery (the default) is handed to the task runner
+  (`run_agent_turn_async`); when the run completes it writes an attach pointer and
+  dispatches a follow-up back to the **initiating** session, so replies flow back
+  automatically.
+- **Guards**: the depth guard `MAX_SPAWN_DEPTH=8` (`:35`, checked at `:209`;
+  children inherit depth+1, and an A↔B round trip counts too); a self-reference
+  guard (messaging your own current turn is rejected outright); the target session
+  must already exist and is never silently created; oversized replies go through
+  `_clip_result` (`:365`, >30000 chars are written to a file and the path is
+  returned); and tool.before interception applies (an attended gate can block it).
+**Events**: `branch.message_sent` (`:266`), `branch.message_replied` (`:344`);
+plus `emit_ws_frame("branch_message",...)` (`_emit_branch_ui:107`), which renders
+a "sent / replied" line in the initiator's chat stream.
 
 ---
 
-## 主线锚点速查
+## Known Boundaries
 
-dispatcher 入口 `dispatcher/__init__.py:97`；turn_id 绑定 `:379`；历史/分支解析 `:186–198`；user 节点写入 `:298`；**调模型前 prepare/auto-compact** `_run_loop_blocking :885/:896/:1074`；finalize `:711`/`dispatcher/finalize.py:175`（ContextCommit 回填 `:283`、after_turn `:308`→`engine.py:437`）。事件总线 `event_bus.py:141/159/241`；tool.before 拦截 `agent_loop.py:695/:701` + `tool_gate.py:53`。上下文 `engine.py:194` + 两条压缩路径（auto-compact `_run_loop_blocking:896` / microcompact `microcompact.py:76`）。agent loop `agent_loop.py:114/205/654`；子 agent `sub_agent_run.py:41`。协作 `message_branch.py:186/393`，深度上限 `:35`。
+- **tool.before observes and denies but cannot mutate or veto by plugin**: the
+  plugin hook `TOOL_BEFORE_USE` is explicitly marked future work
+  (`agent_loop.py:682–684`).
+- **The gate's three-state "ask" is not wired to ApprovalRegistry yet**:
+  `Gate.ask` is noted as pending that connection (`proactive/actions.py:29`), and
+  the "critical fail-closed" tier awaits the rules layer (`tool_gate.py:13`).
+- **Reference-scan results are not consumed by ContextCommit rules**: they feed
+  logging only (`engine.py:204–212`).
+- **The DAG render keeps a fallback path alongside the normal one**: a bad commit
+  falls back to legacy (`engine.py:218–220`).
+- **The core entry points lack covering tests**: several paths through
+  `process_user_turn` / `agent_loop` are marked "no covering tests found".
+- **A worker thread's ContextVar is unreliable**: `subagent.started/ended`
+  therefore pass the session explicitly (`agent/task/runner.py:111–115`), and
+  `message_branch._resolve_parent` carries a head fallback for the same reason.
+- **`ContextEngine.after_turn` exists at two levels**: the abstract base stub
+  (`engine.py:124`) is `pass`; the concrete engine implementation
+  (`engine.py:437`) is the one doing the work (usage feedback + emitting
+  compaction_recommended), called from `dispatcher/finalize.py:308`.
+
+---
+
+## Anchor Quick Reference
+
+Dispatcher entry `dispatcher/__init__.py:97`; turn_id binding `:379`;
+history/branch resolution `:186–198`; user node write `:298`; **prepare /
+auto-compact before the model call** `_run_loop_blocking :885/:896/:1074`;
+finalize `:711` / `dispatcher/finalize.py:175` (ContextCommit backfill `:283`,
+after_turn `:308` → `engine.py:437`). Event bus `event_bus.py:141/159/241`;
+tool.before interception `agent_loop.py:695/:701` + `tool_gate.py:53`. Context
+`engine.py:194` plus the two compaction paths (auto-compact
+`_run_loop_blocking:896` / microcompact `microcompact.py:76`). Agent loop
+`agent_loop.py:114/205/654`; subagents `sub_agent_run.py:41`. Collaboration
+`message_branch.py:186/393`, depth cap `:35`.

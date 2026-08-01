@@ -1,12 +1,12 @@
 # Implementation map
 
-Where the gating model lives in the code. Use this when touching the implementation.
+Where the gating model lives in the code. Read this when touching the implementation.
 
 ## File map
 
 ```
 openprogram/agent/management/
-  ├─ gating.py              ← shared helper module (NEW)
+  ├─ gating.py              ← shared helper module
   └─ manager.py             ← AgentSpec schema (the canonical struct)
 
 openprogram/agent/
@@ -96,7 +96,7 @@ The function accepts either:
 - `wanted: dict` — `{enabled?, disabled, allowed, toolset?}` shape from the agent profile.
 - `wanted: None` — fall through to `agent_tools(source=..., only_available=True)`.
 
-Wildcard gating happens at lines 238-262:
+Wildcard gating happens in the dict branch:
 
 ```python
 if isinstance(wanted, dict):
@@ -110,7 +110,7 @@ if isinstance(wanted, dict):
     ]
 ```
 
-The earlier `enabled: list[str]` form still wins (it's the explicit override). New `disabled`/`allowed` patterns kick in only when `enabled` is absent.
+The `enabled: list[str]` form still wins, being the explicit override; `disabled`/`allowed` patterns apply only when `enabled` is absent.
 
 ## Gate site 3 — MCP
 
@@ -151,19 +151,19 @@ Each gate runs at the point where the LLM is about to see the extension:
 | Tool | When `resolve_tools()` builds the `tools=[...]` arg for `agent_loop` | `_model_tools.py` |
 | MCP | Same as tool (MCP tools surface through the same `agent_tools()` pipeline) | `_model_tools.py` (`_apply_mcp_gate`) |
 
-We considered putting a single `apply_all_gates(profile, ...)` chokepoint earlier in the stack. We rejected it because the three sites have different "what does the input list look like" — skills have a `Skill` object with a category field, tools are bare strings, MCP tools are namespaced strings. The shared helpers (`match_any`, `gate`, `check_required`) cover ~90% of the logic; only the input shape differs per call site.
+A single `apply_all_gates(profile, ...)` chokepoint earlier in the stack is rejected because the three sites take different input shapes — skills arrive as a `Skill` object with a category field, tools as bare strings, MCP tools as namespaced strings. The shared helpers (`match_any`, `gate`, `check_required`) cover most of the logic; only the input shape differs per call site.
 
 ## Backward compatibility
 
-Old agent profiles with `skills: ["pdf", "drawio"]` (a bare list, not a dict) are normalised at load time. We already migrate `skills: list` → `skills: {disabled: list}` in `AgentSpec.from_dict`, so existing profiles keep working with no edits.
+Old agent profiles with `skills: ["pdf", "drawio"]` (a bare list, not a dict) are normalised at load time: `AgentSpec.from_dict` migrates `skills: list` → `skills: {disabled: list}`, so existing profiles keep working with no edits.
 
 Similarly `tools: ["bash", "read"]` continues to be valid — the list form is treated as a whitelist (the old `enabled` semantics).
 
 ## Testing
 
-There are no dedicated unit tests for `gating.py` yet — `match_any` is `fnmatch.fnmatchcase` + iteration so the logic is one-liner trivial. Integration testing happens through:
+There are no dedicated unit tests for `gating.py` — `match_any` is `fnmatch.fnmatchcase` plus iteration, so the logic is one line. Integration coverage comes through:
 
 - `openprogram/_cli_cmds/doctor.py` — health check enumerates installed skills/tools/MCP and surfaces gating errors at start-up.
 - WS smoke test — `/skill X` with a disabled-pattern profile returns the rejection message in the chat transcript.
 
-Add proper unit tests if `match_any` semantics ever diverge from `fnmatch.fnmatchcase` (e.g. if we ever add `**` recursive-glob support).
+Add proper unit tests if `match_any` semantics ever diverge from `fnmatch.fnmatchcase` (for example if `**` recursive-glob support is added).

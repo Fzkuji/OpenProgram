@@ -1,13 +1,12 @@
 # Harness 标准 —— agentic 程序如何接入 OpenProgram
 
-> 状态：标准 / 规范。每个 **harness**（一个作为独立 repo 发布的自包含
-> agentic 程序）都必须满足的契约，使得将其克隆进 OpenProgram 的
-> `agentics/` 文件夹后即可 **被自动检测并直接使用，无需改动 host**。
-> 三个第一方 harness（GUI / Research / Wiki）是参考实现；第三方遵循同样的
-> 规则。
+> 本文档给出每个 **harness**（一个作为独立 repo 发布的自包含 agentic
+> 程序）所满足的契约，使得将其克隆进 OpenProgram 的 `agentics/` 文件夹后
+> 即可 **被自动检测并直接使用，无需改动 host**。三个第一方 harness
+> （GUI / Research / Wiki）是参考实现；第三方遵循同样的规则。
 > 相关：[`../installing-harnesses.md`](../../../capabilities/installing-harnesses.md)
 > （安装流程）、`openprogram/functions/_registry.py`（加载器）、
-> `openprogram/functions/_programs.py`（第一方目录）。
+> `openprogram/functions/_programs.py`（第一方 harness 清单）。
 
 ## 0. 唯一重要的规则
 
@@ -134,13 +133,12 @@ vault 路径；GUI：vision 模型 + 平台 backend）。**标准规定的是机
 ## 6. 发现与热重载（host 端 —— harness 可以依赖的东西）
 
 - **启动：** host 导入 `agentics/` 下每个匹配的文件夹。
-- **热重载（计划中）：** host 监视 `agentics/`，当出现一个新文件夹时，对其
-  运行同样的发现流程，并广播一个 `programs:changed` 事件，使 web UI 无需重启
-  即可列出新 harness。harness 不需要做任何特殊处理 —— 满足 §1 即可。
-- **第一方目录：** GUI / Research / Wiki 还被列在 `_programs.py` 中，于是
+- **热重载：** host 监视 `agentics/`，当出现一个新文件夹时，对其运行同样的
+  发现流程，并广播一个 `programs:changed` 事件，使 web UI 无需重启即可列出
+  新 harness。harness 不需要做任何特殊处理 —— 满足 §1 即可。
+- **第一方清单：** GUI / Research / Wiki 还被列在 `_programs.py` 中，于是
   `openprogram programs install <name>` 能按名字把它们克隆下来。第三方
-  harness 跳过该目录，直接通过克隆进 `agentics/` 来安装；发现流程对它们一视
-  同仁。
+  harness 直接通过克隆进 `agentics/` 来安装；发现流程对它们一视同仁。
 
 ## 7. 合规清单（供 harness 作者使用）
 
@@ -157,16 +155,15 @@ vault 路径；GUI：vision 模型 + 平台 backend）。**标准规定的是机
 - [ ] 声明了自己的第三方依赖；重 / 原生依赖放在一个 extra 之后。
 - [ ] 平台不支持 → `AGENTIC_FUNCTIONS = []`，而非崩溃。
 
-## 8. 三个第一方 harness 当前的状态（差距清单）
+## 附录：实现状态
 
-来自对当前各 repo 的一次梳理 —— 这些是把它们带到本标准所需的改动（已记录，
-留待我们更新它们时处理）：
+三个第一方 harness 尚未完全符合本标准，剩余差距如下：
 
-| Harness | 是否合规？ | 待补齐的差距 |
+| Harness | 符合程度 | 待补齐的差距 |
 |---|---|---|
-| **Wiki** | ✅ 最接近 | `agentics/__init__.py` + `AGENTIC_FUNCTIONS` + `try/except` 均已具备。需修：默认 vault 路径用了已废弃的 `~/.agentic/memory/wiki` → 移至 `get_state_dir()` 下。去掉 `openprogram` git 依赖。 |
-| **GUI** | ⚠ 部分合规 | 暴露了函数，但没有单一标准的、带 `AGENTIC_FUNCTIONS` 的 `<pkg>/agentics/__init__.py`；装饰器散落在多个模块里。补上入口模块。把重依赖保留在一个 extra 之后（已部分完成）。Windows 路径：降级为 `[]`，不要崩溃。去掉 `openprogram` git 依赖。 |
-| **Research** | ❌ 不合规 | **根本没有 `agentics/` 子 package** —— 使用它自己的 `registry.py`，因此 host 的自动发现看不到它。补上 `research_harness/agentics/__init__.py` 暴露 `AGENTIC_FUNCTIONS`。去掉 `openprogram` git 依赖。 |
+| **Wiki** | 最接近 | `agentics/__init__.py`、`AGENTIC_FUNCTIONS`、`try/except` 均已具备。默认 vault 路径仍用着已废弃的 `~/.agentic/memory/wiki`，应移至 `get_state_dir()` 下。 |
+| **GUI** | 部分符合 | 暴露了函数，但没有单一的、带 `AGENTIC_FUNCTIONS` 的 `<pkg>/agentics/__init__.py`；装饰器散落在多个模块里，仍需补上入口模块。重依赖已部分放在 extra 之后。Windows 路径需降级为 `[]`，而非崩溃。 |
+| **Research** | 不符合 | 没有 `agentics/` 子 package —— 它使用自己的 `registry.py`，host 的自动发现看不到。需补上 `research_harness/agentics/__init__.py` 暴露 `AGENTIC_FUNCTIONS`。 |
 
-三者目前都把 `openprogram @ git+…` 声明为依赖（违反 §4）—— 去掉它是一个
-共通的修复。
+三者都仍把 `openprogram @ git+…` 声明为依赖，而 §4 排除了这种做法；去掉它
+是一个共通的修复。

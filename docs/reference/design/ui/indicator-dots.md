@@ -1,18 +1,14 @@
 # Indicator dot system
 
-Status / activity dots are scattered across the chat UI in four
-incompatible forms — different sizes, different shapes (Unicode
-glyph vs DOM element), different breathing animations, different
-CSS classes. The mismatch is most visible when a header `●`
-glyph stacks above a body `.pending-pulse` element: the glyph
-carries a character-box left side-bearing, the element doesn't,
-and the two dots fail to line up on the same vertical column.
+Status and activity dots across the chat UI are one class,
+`.indicator-dot`, with modifier classes for size, colour, and
+animation. A single class is what keeps dots aligned: when each
+site draws its own dot, sizes and forms drift apart, and a header
+`●` glyph stacked above a body element never lines up on the same
+vertical column — the glyph carries a character-box left
+side-bearing and the element does not.
 
-This document proposes a unified system. The first step (sized
-slot equal to the `●` glyph advance width) is implemented; the
-rest is staged for follow-up.
-
-## Inventory of existing dots
+## The dots this replaced
 
 ```
 class                          size     form        animation          uses
@@ -26,17 +22,13 @@ class                          size     form        animation          uses
 .attach-card-status-dot        6×6      element     opacity 1.2s       attach card
 ```
 
-Inconsistencies:
+Four axes drifted: box width (6 / 7 / 10 / 12.8), form (glyph vs
+element), animation period (1.2 / 1.4 / 1.5s), and a separate CSS
+class per site all doing the same job.
 
-- box width (6 / 7 / 10 / 12.8)
-- form (glyph vs element)
-- animation period (1.2 / 1.4 / 1.5s)
-- per-site CSS classes that all do the same job
+## The system
 
-## Target system
-
-One class `.indicator-dot` with modifier classes for size,
-colour, and animation. The **outer box is always the width of
+**The outer box is always the width of
 the `●` glyph at 14px font (~12.8px)**, so dots align with header
 glyphs and across rows without per-call-site nudges. The visual
 disc is painted by `::before` centred inside, which keeps layout
@@ -77,7 +69,9 @@ stable while the optional scale animation runs.
                                    50%   {transform:scale(1.15)} }
 ```
 
-## Migration plan
+## Class mapping
+
+The four legacy classes map onto the unified one as follows:
 
 ```
 old                                        new
@@ -92,7 +86,7 @@ CSS — drop  .pulse, .pending-pulse, .status-dot[.ok/.warn/.err],
             .attach-card-status-dot
 ```
 
-Touched files (8 JSX call sites, 2 CSS files):
+Call sites (8 JSX, 2 CSS files):
 
 - `web/components/chat/messages/execution-dag/index.tsx` (header `●`)
 - `web/components/chat/messages/runtime-block.tsx` (header `●` + pending body)
@@ -103,14 +97,7 @@ Touched files (8 JSX call sites, 2 CSS files):
 - `web/components/chat/top-bar/index.tsx` (provider status)
 - `web/app/styles/chat.css`, `web/app/styles/detail.css`
 
-## Status
+## Appendix: Implementation Status
 
-- **Step 1 (done)** — `.pending-pulse` outer box widened to 12.8px
-  to match the `●` glyph slot; visual disc moved to `::before` so
-  the existing scale animation no longer perturbs layout. This
-  fixes the immediate misalignment between `Function call` header
-  and `Running…` body without touching the other dot variants.
-
-- **Step 2 (done)** — `.indicator-dot` class added with size /
-  colour / animation modifiers; the four legacy classes are gone
-  and the eight call sites migrated. See commit `40cef5a2`.
+Implemented. The four legacy classes are gone and all eight call
+sites use `.indicator-dot`.

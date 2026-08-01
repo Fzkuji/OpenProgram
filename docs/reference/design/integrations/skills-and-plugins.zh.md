@@ -1,6 +1,6 @@
-# Skills & Plugins — 设计稿 v2（博采众长，全功能）
+# Skills & Plugins
 
-目标：把 claude-code / opencode / hermes 三家的 skill & plugin 能力**全部**纳入，遇到栈不同就换等价物，并在我们独有的宿主优势上做差异化优化。
+skill 与 plugin 系统覆盖 claude-code、opencode、hermes 三家的能力，遇到栈不同就换等价物，并在 OpenProgram 自身的宿主界面上补充能力。
 
 参考实现：
 - `references/claude-code-leaked/src/{skills,plugins,commands/{skills,plugin}}`
@@ -198,7 +198,7 @@ web/components/plugins/
 
 ---
 
-## 4. 独有优化（三家都没有 / 都很弱）
+## 4. 超出三家参考实现的能力
 
 1. **Plugin 一等公民侧栏项**：manifest `sidebar: [...]` → 自动注入侧栏，等同内置导航
 2. **Skill 调用 trace**：每次 SkillTool 调用记录 `{ skill, injected_md_hash, accessed_refs, ts }`，右栏 / `/skills/[name]/trace` 可视化
@@ -213,7 +213,7 @@ web/components/plugins/
 
 ---
 
-## 5. 来自三家的能力清单覆盖确认
+## 5. 对三家参考实现的覆盖
 
 **claude-code**：bundled skills ✓、SKILL.md frontmatter ✓、SkillTool 工具调用 ✓、Marketplace / AddMarketplace / BrowseMarketplace / ManageMarketplaces ✓、ManagePlugins / DiscoverPlugins / ValidatePlugin / PluginErrors / PluginOptionsDialog / PluginTrustWarning / UnifiedInstalledCell ✓、ReloadPlugins ✓、commands/skills/agents/hooks/mcpServers 五入口 ✓
 
@@ -223,35 +223,17 @@ web/components/plugins/
 
 ---
 
-## 6. 分期落地
+## 附录：实现状态
 
-- **M1 Skills 全量**（覆盖三家 skill 能力）
-  - 五来源 loader + watchdog + WS
-  - SKILL.md 解析（含 triggers / category / optional）
-  - `/skills` 页面 + bundled 默认集
-  - SkillTool 内置工具 + invoke trace
-  - 远端 discovery（opencode 等价物）
+设计已完备，落地分四块，每块自身可用：
 
-- **M2 Plugins 本地**
-  - 三 manifest 统一解析
-  - pip / npm / git / path 四种来源安装
-  - 沙箱分层 + trust
-  - commands / skills / mcpServers / providers / hooks / agents 入口注入
-  - Installed / Errors 页面 + Validate / Options / Reload
+- **Skills** —— 五来源 loader、watchdog 与 WS 广播、SKILL.md 解析（triggers / category / optional）、`/skills` 页面与 bundled 默认集、SkillTool 内置工具与 invoke trace、远端 discovery。
+- **Plugins 本地** —— 三 manifest 统一解析；pip / npm / git / path 四种来源安装；沙箱分层与 trust；commands / skills / mcpServers / providers / hooks / agents 入口注入；Installed 与 Errors 页面，含 Validate / Options / Reload。
+- **Plugins 前端与侧栏** —— `web` entrypoint 资源挂载、`/plugin/[name]/[...slug]` 动态渲染、sidebar 注册项。
+- **Marketplace** —— 多 marketplace 与 claude-code schema 适配，以及 BrowseMarketplace / AddMarketplace / DiscoverPlugins 界面。
 
-- **M3 Plugins 前端与侧栏**
-  - `web` entrypoint 资源挂载
-  - `/plugin/[name]/[...slug]` 动态渲染
-  - sidebar 注册项
+三个待定项，不阻塞上述任何一块：
 
-- **M4 Marketplace 全套**
-  - 多 marketplace、claude-code schema 适配
-  - BrowseMarketplace / AddMarketplace / DiscoverPlugins 移植
-
----
-
-## 7. 待确认（不阻塞，但要选一下）
-
-1. `~/.openprogram/` 还是沿用现有项目约定的某个全局目录
-2. Provider plugin 入口怎么和 OpenProgram 现有 provider 抽象对齐（要看 `openprogram/providers/`）
-3. Hook 事件命名是否对齐 claude-code（PreToolUse 等）
+1. skills 与 plugins 放在 `~/.openprogram/` 还是沿用现有的某个全局目录。
+2. Provider plugin 入口如何与 `openprogram/providers/` 现有抽象对齐。
+3. Hook 事件命名是否对齐 claude-code（PreToolUse 等）。

@@ -1,10 +1,11 @@
 # Web UI Ports — Architecture, Configuration, and Conflict Handling
 
-> Superseded by [single-port.md](single-port.md) (implemented in commit 8b79804b): the dual-port architecture below no longer matches the runtime. Kept as an engineering record.
+> The single-port architecture described in [single-port.md](single-port.md)
+> replaces the dual-port split covered here.
 
 How OpenProgram chooses, configures, and defends the ports its web UI runs
-on. Covers the two-port present, the single-port target, the configuration
-surface (`openprogram ports`), and what happens when a port is occupied.
+on under the dual-port split: the two roles, the configuration surface
+(`openprogram ports`), and what happens when a port is occupied.
 
 ## Ports at a glance
 
@@ -34,7 +35,7 @@ collide with something already running:
   pinned to `18789`.
 
 The two values are adjacent only for memorability; nothing requires it.
-They **must differ** while the two-port architecture stands.
+Under the dual-port architecture they **must differ**.
 
 ## Configuration
 
@@ -109,13 +110,13 @@ a random port. This mirrors openclaw. All probing lives in one module,
 | free | binds, starts | binds, starts |
 | held by **our** instance | reuse it, point the browser at the UI | the worker lock already prevents a second worker |
 | held by **our** leftover Next (frontend) | n/a | `_reclaim_web_port` kills only the orphaned `next-server`, then binds |
-| held by a **foreign** program | refuse; print *who* holds it (PID + cmdline) + how to free it or change the port; do **not** open a browser at it | name the holder, then fall back to a free port **loudly** (the UI URL tracks it) — the worker also hosts channels, so it must still come up |
+| held by a **foreign** program | refuse; print *who* holds it (PID + cmdline) + how to free it or change the port; do **not** open a browser at it | name the holder, then fall back to a free port and report it (the UI URL tracks it) — the worker also hosts channels, so it must still come up |
 | recently-exited (TIME_WAIT) | uvicorn's `SO_REUSEADDR` rebinds it | `_port_available` uses `SO_REUSEADDR`, so a quick self-restart does **not** drift |
 
 The one deliberate asymmetry: `openprogram web` is a foreground UI command,
 so a foreign squatter is a hard stop. The worker is a long-running host for
-channels *and* the webui, so it stays up (loud, diagnosed fallback) rather
-than refusing entirely.
+channels *and* the webui, so it stays up, falling back to another port with
+a diagnostic message, rather than refusing entirely.
 
 ## Relationship to openclaw
 
@@ -133,13 +134,12 @@ path (only on the SSH-tunnel path), so its gateway-start "port in use"
 error can't name the holder. OpenProgram wires the owner diagnostic into
 the actual start path.
 
-## Single-port future
+## Relationship to the single-port architecture
 
-The two-port split is transitional. The planned migration (see
-[`attachment-handling.md`](../ui/attachment-handling.md) sibling work and the
-project's single-port notes) static-exports the Next.js SPA and serves it
-from the FastAPI backend, collapsing to **one** port (`18109`) that serves
-both UI and API. At that point the frontend port, its separate launcher,
-the proxy, and most of `worker/web.py` go away — and "frontend port in
-use" stops being a possible state. The `openprogram ports` surface stays;
-`--frontend` simply becomes a no-op alias once there's a single port.
+The two-port split is transitional. [`single-port.md`](single-port.md)
+static-exports the Next.js SPA and serves it from the FastAPI backend,
+collapsing to **one** port that serves both UI and API. There the frontend
+port, its separate launcher, the proxy, and most of `worker/web.py` do not
+exist, and "frontend port in use" is not a possible state. The
+`openprogram ports` surface stays; `--frontend` becomes a no-op alias with
+a single port.

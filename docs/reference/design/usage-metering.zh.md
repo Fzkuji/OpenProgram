@@ -1,34 +1,33 @@
 # Usage Metering 子系统设计
 
-状态：实施中（2026-06）
-作者：设计 + 实现一体推进
-
 ## 1. 目标
 
-让框架内**每一次 LLM 调用**的 token / 模型 / 成本被无遗漏地记录，带来源标签、时间序列、按模型/来源/会话分组的聚合能力，支撑可视化面板与成本核算，并为未来的配额、限流、预算告警、导出预留扩展口。
+框架内**每一次 LLM 调用**的 token、模型、成本都被无遗漏地记录，带来源标签、时间序列、按模型/来源/会话分组的聚合能力，支撑可视化面板与成本核算，并为配额、限流、预算告警、导出预留扩展口。
 
-明确不做的妥协：不为旧的累积快照式记账保留兼容代码；旧职责该拆该删则拆删。
+记账不为累积快照式的旧记录保留兼容路径；该拆该删的职责就拆就删。
 
-## 2. 现状诊断（实施前）
+## 2. 记账需要覆盖什么
 
-LLM 调用最终都过 `providers/stream.py` 的 `stream_simple()`（流式）/ `complete_simple()`（非流式，内部跑 stream_simple）。返回的 `AssistantMessage` 带 `usage`（`Usage` 对象：input/output/cache_read/cache_write/total_tokens/cost）。
+LLM 调用最终都过 `providers/stream.py` 的 `stream_simple()`（流式）/ `complete_simple()`（非流式，内部跑 stream_simple）。返回的 `AssistantMessage` 带 `usage`（`Usage` 对象：input/output/cache_read/cache_write/total_tokens/cost）。这使 `stream.py` 成为唯一能拿到一次调用完整记录的位置，metering 就在这里收口。
 
-记账只覆盖「走 engine 的主路径」，两层：
-- 消息级：`dispatcher/persistence.py` 把 token 写进 assistant 消息历史列（单条消息 pill 用）。
-- 会话累积级：`context/usage.py` 的 `UsageTracker.record_turn()` 写进 git session meta 的 `_usage`（只有累积总数，无时间序列、无 per-model、无 per-source、无成本）。
+已有的两层记账保留，各自回答不同问题：
 
-三个根本问题：
+- 消息级：`dispatcher/persistence.py` 把 token 写进 assistant 消息历史列——单条消息 pill 的数据。
+- compaction 预算：`context/usage.py` 的 `UsageTracker.record_turn()` 写进 git session meta 的 `_usage`，是压缩决策读取的状态。
 
-1. **收口点不统一**。`stream.py` 本身不记账，记账在更上层的 dispatcher；而 `memory/llm_bridge.py` 直接调 `api_provider.stream_simple()` 连 stream.py 都绕过。"过了 stream_simple" ≠ "被记账"。
+两者都不是计费账。session meta `_usage` 是累积快照：无法跨 session 聚合、无法按时间桶查询、无 per-model / per-source / 成本分解。所以 metering 新增第三份独立记录——一条 append-only 事件流——而不是扩展这两者中的任何一个。
 
-2. **存储是累积快照不是流水**。session meta `_usage` 无法跨 session 聚合、无法按时间桶查询、无 per-model 索引。
+三条性质决定设计：
 
-3. **职责耦合**。`UsageTracker` 同时干记账、compaction 阈值估算（`estimated_input`/`record_compaction`）、热路径 budget 缓存——三者生命周期与消费者完全不同。
+1. **单一收口点**。记账在 `stream.py` 内部，不在上层调用方。任何以其它途径抵达 provider 的路径（例如 `memory/llm_bridge.py` 曾直调 `api_provider.stream_simple()`）都被拉回经 `stream.py`，而不是单独记账，因此"过了 stream_simple"与"被记账"是同一件事。
 
-**漏记路径清单**（直接调 complete_simple/stream_simple 绕过 engine）：
-`context/summarize.py`、`agent/compaction/compaction.py`、`agent/compaction/branch_summarization.py`、`functions/tools/mixture_of_agents`、`memory/llm_bridge.py`，以及 `@agentic_function` 子进程（`process_runner.py`，进程内单例 tracker 主进程收不到，返回结果不含 usage）。
+2. **流水而非快照**。一次调用一行、只追加，任何聚合都是一次查询而非一次 schema 变更。
 
-一个有利事实：`providers/models.py:calculate_cost(model, usage)` 已能从 `Model.cost` 算成本。metering 层只需在收口点确保它被调用，不必新建定价逻辑。
+3. **职责分离**。计费记账、compaction 阈值估算、热路径 budget 缓存的生命周期与消费者各不相同，分属不同对象。
+
+聊天主循环之外抵达 provider 的路径——`context/summarize.py`、`functions/tools/mixture_of_agents`、`memory/llm_bridge.py`，以及 `@agentic_function` 子进程（`process_runner.py`）——都由同一个收口点加一个显式来源 scope 覆盖。
+
+`providers/models.py:calculate_cost(model, usage)` 已能从 `Model.cost` 算成本。metering 层在收口点调用它，不新建定价逻辑。
 
 ## 3. 分层架构
 
@@ -49,7 +48,6 @@ LLM 调用最终都过 `providers/stream.py` 的 `stream_simple()`（流式）/ 
 - `context.py` — contextvar + `usage_scope()` / `current_usage_context()` / `snapshot()` / `apply_snapshot()`
 - `ledger.py` — `UsageLedger`（SQLite 后端 + 聚合查询）
 - `recorder.py` — `UsageRecorder`（收口，best-effort）
-- `subprocess.py` — 子进程账目桥
 - `__init__.py` — 门面
 
 放顶层 `metering/` 而非 `context/` 之下：metering 是横切关注点（providers/agent/memory/functions 都依赖），放 context 会制造 `providers → context` 反向依赖。`metering/` 只依赖 `providers/types`（纯数据），无环。
@@ -70,7 +68,7 @@ tokens（provider 权威值，缺失为 0）：`input_tokens`、`output_tokens`�
 
 取舍：cost 拍平而非嵌套 UsageCost → SQLite 列化、SUM 无需 JSON 解析；token_source 单列 → 面板可标注"估算"避免误导成本。
 
-## 5. 来源标签传递：contextvar 为主，metadata 显式覆盖兜底
+## 5. 来源标签传递
 
 底层 `stream_simple` 不知道自己被谁调。三种传法：
 
@@ -80,18 +78,18 @@ tokens（provider 权威值，缺失为 0）：`input_tokens`、`output_tokens`�
 | `SimpleStreamOptions.metadata` | 字段已有 | 深层调用易漏；memory 绕过 stream.py 时也到不了 |
 | **contextvar** | 一行 `with usage_scope(...)`，async Task 自动继承 | 跨进程/线程不自动传播（需显式快照） |
 
-采用 contextvar 为主 + metadata 显式覆盖。`metering/context.py`：
+contextvar 为主，metadata 显式覆盖兜底。`metering/context.py`：
 `usage_scope(call_kind, call_label, parent_session_id, agent_id)` 上下文管理器，set/reset contextvar，支持嵌套 merge。`current_usage_context()` 读。`snapshot()`/`apply_snapshot()` 跨进程序列化。
 
 边界说明：asyncio 建 Task 默认 `copy_context()`，stream_simple 在 create_task 下游能读对 scope。线程边界（run_in_executor/裸 Thread）不继承 → 入口 apply_snapshot。进程边界 fork 拷贝 contextvar 当前值（对 process_runner fork 有利），但 spawn 不行 → snapshot/apply_snapshot 作可靠路径。
 
 recorder 合并优先级：`metadata.usage` > contextvar > 默认 `unknown`。
 
-## 6. 收口点：stream.py 包装 + 把 memory 拉回
+## 6. 收口点
 
-在 `stream.py` 的 `stream()`/`stream_simple()` 包记账装饰器，并把 `memory/llm_bridge.py` 拉回 stream.py。
+记账装饰器包在 `stream.py` 的 `stream()`/`stream_simple()` 上，`memory/llm_bridge.py` 经 stream.py 而非绕过它。
 
-理由：
+为什么收在这里：
 1. stream.py 是"一次逻辑 LLM 调用"的语义边界，已做 api_key 解析/provider 查找，能拿到 model(含 cost)+最终 AssistantMessage.usage。
 2. stream() 是 generator，包装方式 = 消费 done/error 时提取 final_message.usage → `calculate_cost` → 读 contextvar → 组 UsageEvent → recorder。流式不阻塞，记账只在终止 event 触发一次。
 3. 不选 api_registry 层：ApiProvider 是 Protocol，每实现各自 stream_simple，收口要么改 Protocol（侵入所有 provider）要么包 registry（包装点分散）。stream.py 是唯一单函数收口。
@@ -103,7 +101,7 @@ dispatcher 现有 `persist_assistant_message`（messages 列）**保留不动**�
 
 ## 7. 存储：独立全局 SQLite ledger
 
-废弃 session meta 塞累积 dict。新建 `~/.openprogram/usage.db` 一张 append-only 表：
+ledger 是独立的 `~/.openprogram/usage.db`，而不是 session meta 里的累积 dict，一张 append-only 表：
 
 ```sql
 CREATE TABLE usage_events (
@@ -134,45 +132,42 @@ WAL 模式，支持子进程并发追加。SQLite 用 stdlib `sqlite3`，零外�
 
 ## 8. 子进程边界
 
-`@agentic_function` 子进程：fork 跑 tool body，子进程内 LLM 调用（gui_agent 等）的 default_tracker 是进程内单例，主进程收不到。
+`@agentic_function` 在子进程跑函数体，子进程内 LLM 调用（gui_agent 等）的 default_tracker 是进程内单例，主进程收不到。
 
-方案：**子进程直接写共享 SQLite ledger（账本真相）**。
+**子进程直接写共享 SQLite ledger，ledger 即真相来源。**
 - 子进程打开同一 usage.db（WAL 多进程安全），自己 recorder 直接 append，`origin_pid` 标记来源。无需主进程二次入账（避免双计）。
 - SIGKILL 风险：已 append 的 event 在库中（WAL 落盘）是正确的——那些 token 确实花了；被杀前未完成调用没收到 done event，不入账，符合"绝不编造"。
 
-**实施落地（与初版方案的差异）**：`process_runner.py` 用的是 **spawn 而非 fork**（父 worker 已加载 PyTorch/libomp/Cocoa，fork 后这些库处于不安全状态会 SIGSEGV）。spawn 不复制 contextvar，所以靠显式参数传递：父侧 `run_agentic_in_subprocess` 调 `metering.context.snapshot()` 把当前 UsageContext 序列化为 dict，作为 `_child_entry` 的新增参数 `usage_ctx_snapshot`；子侧入口（`os.setpgrp()` 之后）调 `apply_snapshot()` 还原。ledger 的 `_connect()` 检测到 `os.getpid()` 变化会自动重开 sqlite 连接（fork/spawn 后旧 handle 不可用），子进程因此自动拿到独立 handle 写共享 WAL db。**没有单独的 `metering/subprocess.py`**——快照/还原直接复用 `context.py` 的 `snapshot()`/`apply_snapshot()`，process_runner 只多两处调用，比独立模块更克制。result pickle 暂未回传 usage_summary（面板已能从 ledger 实时查到子进程写入的 event，即时显示无额外价值）。
+`process_runner.py` 用的是 **spawn 而非 fork**：父 worker 已加载 PyTorch/libomp/Cocoa，fork 后这些库处于不安全状态会 SIGSEGV。spawn 不复制 contextvar，所以 scope 显式传递——父侧 `run_agentic_in_subprocess` 调 `metering.context.snapshot()` 把当前 UsageContext 序列化为 dict，作为 `_child_entry` 的 `usage_ctx_snapshot` 参数传入；子侧入口（`os.setpgrp()` 之后）调 `apply_snapshot()` 还原。ledger 的 `_connect()` 检测到 `os.getpid()` 变化会重开 sqlite 连接（fork/spawn 后旧 handle 不可用），子进程因此拿到自己的 handle 写共享 WAL db。
 
-## 9. 可扩展留口（不实现）
+快照/还原复用 `context.py` 的 `snapshot()`/`apply_snapshot()`，process_runner 增加两处调用；这条边界没有单独的 `metering/subprocess.py` 模块。result pickle 不回传 usage_summary——面板直接从 ledger 查子进程写入的 event，回传没有额外价值。
+
+## 9. 可扩展留口（已设计，未实现）
 
 - per-user：UsageEvent 加 `user_id`（默认单用户，多租户由 usage_scope 注入），query(group_by=["user_id"])。
 - 限流/告警：UsageRecorder.record() 暴露 post-record hook 列表（register_usage_hook），事件驱动不阻塞热路径。
 - 导出：ledger 后端接口加 export(format, filters) 或 JSONL 镜像后端。
 - 远程聚合：后端换 push OTLP/collector 实现，event schema 不变。
 
-## 10. 删除 / 重构清单
+## 10. 与 UsageTracker 的边界
 
-### 10.1 实际执行（Phase 4 落地）
+`UsageTracker`（`context/usage.py`）与 `UsageLedger` 职责分离，并存且互不读写。
 
-- **删 `agent/compaction/`** 整个目录（`__init__.py`/`compaction.py`/`branch_summarization.py`/`utils.py`，约 1180 行）：确认无任何外部 import、无动态引用、非副作用加载，是真死代码。
-- **`webui/routes/usage.py` 完全重写**：从扫 `session_db` + 读 session meta `_usage` 改为查 `UsageLedger`；新增 `/api/usage/trend`（day/hour bucket 时序）与 by_kind 分解，入参支持 since/until。
+Tracker 是 **compaction 预算状态机**：给 `ContextEngine.prepare/compact` 回答上一轮真实 input_tokens 是多少、cache 命中率多少、是否该压缩——热路径 sub-μs 读、按 session 缓存、持久化到 session meta `_usage`。那份持久化是压缩决策的状态，不是计费账本。
 
-### 10.2 改方案：UsageTracker 保留，不拆
+Ledger 是**计费记账**：append-only、跨进程、带 per-model / per-source / 时间序列。
 
-初版计划把 `UsageTracker`（context/usage.py）拆 3 职责、删 `record_turn`/`_persist`/`_load_from_db`、抽 `context/budget_state.py`。**实施时否决了这条**，原因：
+两者消费者、生命周期、数据形状不同，合并只会造成耦合而非简化。`UsageState` 与 session meta `_usage` 原样保留，因为 compaction 在读。
 
-- `UsageTracker` 与 `UsageLedger` **职责本就分离**，不冲突。Tracker 是 **compaction 预算状态机**——给 `ContextEngine.prepare/compact` 回答"上一轮真实 input_tokens 是多少、cache 命中率多少、是否该压缩"，热路径 sub-μs 读、按 session 缓存、写 session meta `_usage`（compaction 决策的持久化，不是计费账本）。Ledger 是 **计费记账**——append-only、跨进程、带 per-model/per-source/时间序列。两者消费者、生命周期、数据形状完全不同，强行合并反而耦合。
-- 删 `record_turn` 会触碰 `engine.after_turn` 这条与本任务无关的核心热路径（context 压缩链路），违反 surgical-change 原则、引入回归风险，且收益为零（session meta `_usage` 体量极小，留着无害）。
-- `budget_state.py` 抽取是"为拆而拆"——Tracker 当前就是单一职责的干净实现（标题虽叫 Tracker，实质是 budget state），没有真实痛点要解。
+metering 复用但不修改：`models.py:calculate_cost`、`_event_parsing.py:extract_usage`、`dispatcher/persistence.py` 消息列、`types.py:Usage/UsageCost`。
 
-结论：**Tracker 原样保留**，`UsageState`/session meta `_usage` 原样保留（compaction 在用）。计费记账完全由新的 Ledger 承担，与 Tracker 并存、互不读写。
+## 附录：实现状态
 
-不动（metering 的输入，复用）：`models.py:calculate_cost`、`_event_parsing.py:extract_usage`、`dispatcher/persistence.py` 消息列、`types.py:Usage/UsageCost`。
+第 1–8 节与第 10 节已实现。`webui/routes/usage.py` 查 ledger，提供 `/api/usage/summary` 与 `/api/usage/trend`（day/hour bucket 时序，加 by_kind 分解，入参支持 since/until）；前端面板绘制趋势折线、by_source 横条、per-model 表与成本卡。
 
-## 11. 分阶段实施（全部完成）
+两点值得记下，因为仅看设计推不出代码形状：
 
-- **Phase 0 ✅**：metering 地基（event/context/ledger/recorder + 单测），无行为变更。
-- **Phase 1 ✅**：stream.py 收口；dispatcher chat 包 usage_scope。关键修复：async generator 的消费者（agent_loop）在收到 done event 时直接 `return`，把生成器挂起在 `yield` 处——循环后记账永不执行。改为**在 terminal event 处、yield 之前就记账**（`recorded` flag 防双计）。
-- **Phase 2 ✅**：summarize / mixture_of_agents(proposer+aggregator) 包 usage_scope；memory/llm_bridge 从直调 `api_provider.stream_simple` 拉回经 `providers.stream_simple`（让收口生效）+ 包 `usage_scope(call_kind="memory")`。（compaction/branch 路径随 §10.1 删除而消失，无需包。）
-- **Phase 3 ✅**：spawn 子进程 UsageContext 透传（snapshot/apply_snapshot via 参数，见 §8 实施落地）；ledger pid 重检自动重连。未做 result usage_summary 回传（面板已能实时查到）。
-- **Phase 4 ✅**：删 `agent/compaction/` 死代码；usage 路由换 ledger。**未拆 UsageTracker**（见 §10.2 改方案）。
-- **Phase 5 ✅**：`/api/usage/summary`+`/api/usage/trend` 查 ledger；前端面板趋势折线（ResizeObserver 真实像素绘制，避免 viewBox 拉伸失真）+ by_source 横条 + per-model 表 + 成本卡；配色用 `--accent-blue`（品牌暖橙）。未做 CLI `op usage`（留口，按需补）。
+- 记账在**终止 event 处、yield 之前**触发，由 `recorded` flag 防双计。async generator 的消费者（`agent_loop`）在收到 done event 时直接 return，把生成器挂起在 `yield` 处——放在循环之后的代码永不执行。
+- 原 `agent/compaction/` 目录（约 1180 行）是死代码，无任何 import、动态引用或副作用加载，已删除；其中没有任何路径需要 usage scope。
+
+已设计未实现：第 9 节的扩展留口，以及 CLI `op usage` 命令。

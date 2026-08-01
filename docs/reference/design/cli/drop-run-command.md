@@ -1,10 +1,10 @@
-# 统一 @agentic_function 执行路径
+# Unified `@agentic_function` Execution Path
 
-Status: implemented, with legacy comments still being cleaned up.
+There is one execution path for `@agentic_function` calls. Whether the user
+triggers a function from the UI or the model selects it as a tool, execution
+lands in the same runtime-block wrapper.
 
-## 当前执行路径
-
-UI 主动触发和 LLM 工具调用都应走同一条 runtime-block 路径：
+## Execution path
 
 ```text
 Web UI
@@ -16,8 +16,8 @@ Web UI
             runtime.exec(...)
 ```
 
-LLM 自己选择工具时不经过 REST endpoint，但同样进入 dispatcher 的工具执行和
-runtime-block 包装逻辑。
+A model-selected tool call skips the REST endpoint but enters the same
+dispatcher tool execution and runtime-block wrapping.
 
 ## REST endpoint
 
@@ -39,9 +39,9 @@ runtime-block 包装逻辑。
 2. the session's last workdir for this function
 3. the repository root
 
-For compatibility, older callers may still post flat function parameters at the
-top level. The server converts those fields into `kwargs` and ignores control
-keys such as `session_id` and `work_dir`.
+For compatibility, older callers may post flat function parameters at the top
+level. The server converts those fields into `kwargs` and ignores control keys
+such as `session_id` and `work_dir`.
 
 The response is:
 
@@ -52,23 +52,20 @@ The response is:
 }
 ```
 
-## Removed behavior
+## `/run` is not an execution API
 
-The typed `/run ...` chat command is no longer the function execution API.
-Function invocation from React should call `POST /api/function/{name}` directly.
+The typed `/run ...` chat command is not a function execution API. Function
+invocation from React calls `POST /api/function/{name}` directly, and so does
+the retry UI.
 
-The backend parser keeps `/run ...` as plain user text rather than converting it
-to `action="run"`. Retry UI should also use `POST /api/function/{name}`.
+The backend parser keeps `/run ...` as plain user text rather than converting
+it to `action="run"`. Neither `/api/run/{name}` nor a WebSocket
+`action="run"` exists.
 
-## Remaining cleanup
-
-Some implementation comments and type names still say `/run` or `runtime block`
-because the UI component name predates the unified endpoint. Those comments are
-historical wording; they do not define a separate execution path.
-
+Some implementation comments and type names still read `/run` or
+`runtime block` because the UI component name predates the unified endpoint.
+That wording is historical and does not define a separate execution path.
 Search targets when cleaning naming:
 
 - `rg "/run|api/run|action=run|action=\"run\"" openprogram web`
 - `rg "runtime block|RuntimeBlock" web openprogram`
-
-Do not reintroduce `/api/run/{name}` or WebSocket `action="run"` for new code.

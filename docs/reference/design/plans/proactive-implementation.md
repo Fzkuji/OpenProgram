@@ -1,91 +1,133 @@
-# Implementation Plan: Wiring the Proactive Layer into the Existing Code
+# Wiring the Proactive Layer into the Code — Design
 
-> See [`../design/proactive/`](../proactive/README.md) for the design. This document only covers **how to wire that
-> design into the existing OpenProgram code**: wiring points (file:line), which existing mechanisms to reuse, the phasing, and how to verify.
-> The "what/why" of the design is not here; if there is a conflict, the design docs take precedence.
+> The proactive design itself lives in [`../proactive/`](../proactive/README.md).
+> This document covers only where that design meets the existing OpenProgram
+> code: which mechanisms it reuses, where events are emitted, where the gate
+> mounts, and what its enforcement actually covers. On any conflict the design
+> documents win.
 
-Code landing spots: upgrade the event layer in place at `openprogram/agent/event_bus.py` (Event + type-based subscription + process-level singleton),
-with taps added in the individual source files; the `openprogram/proactive/` package is only created at the "new consumer enters" step (the rule layer).
-Event model = the three core fields + an open metadata pocket (see design `event-layer.md` §1; turn/session are not fixed fields).
+## 1. Where the code lives
 
-## Existing mechanisms to reuse
+The event layer is an in-place upgrade of `openprogram/agent/event_bus.py`:
+`Event`, subscription by event type, and a process-level singleton. Taps live in
+the individual source files that already know when something happened, not in a
+central collector. The `openprogram/proactive/` package holds the rule layer and
+is created only when the first rule consumer arrives; the event layer is useful
+on its own before then.
 
-The "existing reusable parts" the design repeatedly mentions, with their real locations:
+The event model is the three core fields plus an open `metadata` pocket (design
+`event-layer.md` §1). `turn` and `session` travel in metadata rather than as
+fixed fields, so a source that has no notion of a turn is not forced to invent
+one.
+
+## 2. Mechanisms reused rather than rebuilt
+
+Each role the design describes already has a working implementation in the
+codebase:
 
 | Role in the design | Existing mechanism | Location |
 |---|---|---|
-| In-process event fan-out | `EventBus` (already implemented but idle; dispatcher/agent_loop bypass it with direct callbacks) | `openprogram/agent/event_bus.py:14-60` |
-| The gate's `ask` path | `ApprovalRegistry` + `_wrap_with_approval` (request → block and wait → approve/deny; deny returns an is_error tool result) | `openprogram/agent/_approval.py:77-174` |
-| The observer's `Prepare` background task | `TaskRunner.spawn_task` (ThreadPoolExecutor, state machine, task_status broadcast) | `openprogram/agent/task/runner.py` |
-| The landing slot for `Inject` | memory prefetch injected into the system prompt + steering messages | `openprogram/agent/agent_loop.py:343-354` |
-| Event causality / rewind / branching | session git DAG (nodes carry parent_id / caller) | `openprogram/contextgit/` |
-| The gate's hard enforcement point | the single point through which all chat tool calls pass | `openprogram/agent/agent_loop.py` `_execute_tool_calls` |
+| In-process event fan-out | `EventBus` — implemented but idle; dispatcher and agent_loop bypassed it with direct callbacks | `openprogram/agent/event_bus.py` |
+| The gate's `ask` path | `ApprovalRegistry` + `_wrap_with_approval`: request, block and wait, approve or deny; a denial returns an is_error tool result | `openprogram/agent/_approval.py` |
+| The observer's `Prepare` background task | `TaskRunner.spawn_task` — ThreadPoolExecutor, state machine, task_status broadcast | `openprogram/agent/task/runner.py` |
+| Landing slot for `Inject` | memory prefetch into the system prompt plus steering messages | `openprogram/agent/agent_loop.py` |
+| Event causality, rewind, branching | the session git DAG, whose nodes carry parent_id / caller | `openprogram/contextgit/` |
+| The gate's hard enforcement point | the single point every chat tool call passes through | `agent_loop.py` `_execute_tool_calls` |
 
-## Event tap wiring points
+## 3. Event taps
 
-Emit the design's Event from these locations in the existing code (most of these convert an existing callback/event into a CanonicalEvent):
+Events are emitted from the places that already detect the underlying fact.
+Most taps convert an existing callback or internal event into a canonical event
+rather than adding new detection:
 
-| Event | Wiring point | Current state |
+| Event | Source | Nature of the tap |
 |---|---|---|
-| `user.prompt_submitted` | `dispatcher/__init__.py` phase 2 (persist user message) | chat_ack/chat_response broadcast already exists; add a tap |
-| `model.response_started` | `agent_loop.py:429` (AgentEventMessageStart) | event already exists; convert to CanonicalEvent |
-| `model.response_completed` | `agent_loop.py:452` (AgentEventMessageEnd) | same as above |
-| `tool.before` | `agent_loop.py:495` (existing no-op `dispatch_hook(TOOL_BEFORE_USE)`) | upgrade the observe-only hook into a PRL gate tap |
-| `tool.after` | `agent_loop.py:564` (`dispatch_hook(TOOL_AFTER_USE)`) | same as above |
-| `subagent.started/completed` | `task/runner.py:96-113` (task_status broadcast) | convert to CanonicalEvent |
-| `permission.requested` | `_approval.py` (approval_request envelope) | add a tap |
-| `artifact.file.changed` | `file_backup.backup_before_edit` + `project_commit` | add a new emit |
+| `user.prompt_submitted` | `dispatcher/__init__.py`, at user-message persistence | added alongside the existing chat_ack / chat_response broadcast, outside the persistence branch so both paths emit |
+| `model.response_started` | `agent_loop.py`, AgentEventMessageStart | conversion of an existing event |
+| `model.response_completed` | `agent_loop.py`, AgentEventMessageEnd | conversion of an existing event |
+| `tool.before` | `agent_loop.py`, the previously no-op `dispatch_hook(TOOL_BEFORE_USE)` | the observe-only hook becomes the gate's query point |
+| `tool.after` | `agent_loop.py`, `dispatch_hook(TOOL_AFTER_USE)` | conversion of an existing hook |
+| `subagent.started` / `completed` | `task/runner.py`, the task_status broadcast | conversion, funnelled through `_broadcast_task_status` |
+| `permission.requested` | `_approval.py`, the approval_request envelope | added tap |
+| `artifact.file.changed` | `file_backup.backup_before_edit` and `project_commit` | new emission after a successful write |
 
-## gate integration points
+## 4. Gate mounting and honest coverage
 
-- **chat path (hard)**: `_execute_tool_calls` in `agent_loop.py`; the gate is chained in before `tool.execute`.
-  All chat tools pass through this point, so it is hard enforcement.
-- **agentic nested path**: `_pre_invocation_hooks` in `function.py:50-89` (the cancel check is already mounted at this
-  point). This is an optional mount point; declare its coverage truthfully and don't pretend it covers everything.
-- The gate takes effect on subagent turns, **independently of `permission_mode`**, and is not turned off by the
-  `permission_mode="bypass"` at `sub_agent_run.py:88` (this plugs an existing hole; see design `invariants.md` and `execution-model.md` §2).
+The gate mounts at two places with genuinely different guarantees, and the
+difference is stated rather than papered over.
 
-## Prepare integration
+**Chat path — hard enforcement.** The gate is chained into
+`_execute_tool_calls` in `agent_loop.py`, ahead of `tool.execute`. Every chat
+tool call passes through this one point, so nothing routes around the gate.
 
-Reuse `TaskRunner.spawn_task`, but inject a restricted tool allowlist (no bash/write/network). A separate small pool
-with concurrency 1-2, preemptible by user tasks, yielding on 429 (see design `execution-model.md` §3).
+**Agentic nested path — optional mount.** `_pre_invocation_hooks` in
+`function.py`, where the cancel check already hangs. This is a mount point, not
+a chokepoint; its coverage is declared for what it is and no claim of total
+coverage is made for nested calls.
 
-## Holes to fix along the way
+The gate takes effect on subagent turns **independently of `permission_mode`**.
+In particular it is not disabled by the `permission_mode="bypass"` set in
+`sub_agent_run.py` — that bypass is an existing hole this design closes (design
+`invariants.md` and `execution-model.md` §2).
 
-`@function` tool execution currently **does not write a DAG node** (only `@agentic_function` does), so the DAG tree is incomplete.
-If auditing needs to rely on the DAG for causal traceback, this must be filled first; this design instead records the full set independently in `events.jsonl`, listing the DAG hole as a known item that
-does not block the proactive rollout.
+## 5. Prepare execution
 
-## Phasing (corresponds to the five-step migration in `framework-evolution.md` §4)
+`Prepare` reuses `TaskRunner.spawn_task` with a restricted tool allowlist that
+excludes bash, write, and network tools. It runs in a separate small pool at
+concurrency 1–2, is preemptible by user tasks, and yields on 429 (design
+`execution-model.md` §3).
 
-| Step | Content | Nature | Status |
-|---|---|---|---|
-| **1** | Enable the bus + integrate class-A sources | pure addition | ✅ Landed 2026-06-13 (commits e06b2db6 / 2915849b / 9b15ccac / dd8cb843); a real turn validated the full sequence |
-| **2** | `file.changed` + the `tool.before` synchronous query point | pure addition | ✅ Landed 2026-06-13 (commit 89e16a10); file.changed live-verified, gate end-to-end tested |
-| **3** | Class-B source bridging: real auth bridge + context/channels/memory/webui source taps | pure addition | ✅ Landed 2026-06-13 (commit 5cc967df); skills.changed live-verified, 5 unit tests for the auth bridge. Note: worker cwd=home, so the project skills directory is ~/skills |
-| **4** | Switch webui to a subscriber: external sources emit `ws.frame`, webui subscribes and broadcasts as-is | reroute existing path | ✅ Landed 2026-06-13 (commits 99678165 + 4c5a5ede); WS probe verified that task_status's four states reach the frontend through the new chain |
-| **5** | New consumer enters: the `openprogram/proactive/` rule layer (Policy / blocking / observing) | pure addition | ⏳ Acceptance: proactive does not touch subsystem internals and works purely via subscription |
+## 6. A known gap, deliberately not blocking
 
-## Implementation already landed (steps 1–2 as-built)
+`@function` tool execution does not write a DAG node; only `@agentic_function`
+does. The DAG tree is therefore incomplete as a causal record. If auditing had
+to rely on the DAG for causal traceback, this would have to be filled first.
+Instead the design records the full event set independently in `events.jsonl`,
+which makes the DAG gap a known item rather than a prerequisite.
+
+## 7. Verification approach
+
+Every wiring change is checked the same way: `py_compile`, the relevant unit
+tests, `openprogram worker restart`, a healthy `/healthz`, and a real message
+sent through the web UI (frontend changes need `cd web && npm run build` first).
+
+Event ordering is checked by restarting the worker with
+`OPENPROGRAM_EVENT_LOG=1` and running a turn that calls a tool. The log must
+show `user.prompt_submitted → model.response_started → tool.before →
+tool.after → model.response_completed → turn.ended` in that order, each entry
+carrying session and turn in its metadata.
+
+## Appendix: Implementation Status
+
+The migration runs in five steps, four of them landed. The bus was enabled and
+the in-agent sources connected; `file.changed` and the synchronous `tool.before`
+query point followed; then the external-source bridge (a real auth bridge plus
+taps in context, channels, memory, and the web UI); then the web UI was
+converted from an emitter into a subscriber, with external sources emitting
+`ws.frame` envelopes that the web UI forwards unchanged. Steps one through four
+are pure additions except the fourth, which reroutes an existing path. The fifth
+step — the `openprogram/proactive/` rule layer with its policy, blocking, and
+observing behaviour — has not landed; its acceptance criterion is that proactive
+touches no subsystem internals and works purely by subscription.
+
+As built, the pieces sit here:
 
 | Part | Location |
 |---|---|
-| Event / make_event / emit_safe / subscribe(types=) / get_event_bus / event-log subscriber | `openprogram/agent/event_bus.py` |
-| Synchronous query point (register_tool_gate / decide_tool_gate / ToolGateDenied) | `openprogram/agent/tool_gate.py` |
-| tool.before observe+query, tool.after, model.\*, turn.ended taps | `openprogram/agent/agent_loop.py` |
-| user.prompt_submitted (emitted on both paths, outside the persistence branch) | `openprogram/agent/dispatcher/__init__.py` |
-| subagent.started/ended (status funnel) | `openprogram/agent/task/runner.py` `_broadcast_task_status` |
-| file.changed (after a successful write, lazy import) | five spots across the write / edit / apply_patch tools |
-| Class-B bridge (auth subscribe-and-translate, idempotently installed at worker startup) | `openprogram/agent/event_bridges.py` + `worker/runner.py` |
-| Class-B source taps | `context/engine.py` (compaction ×2), `channels/_conversation.py`, `memory/session_watcher.py` (×2), `webui/server.py` (skills/plugins) |
-| Step-4 passthrough-envelope emit_ws_frame + webui `_subscribe_event_bus` subscribe-and-forward | `agent/event_bus.py`, `webui/server.py` |
-| Step-4 external-source decoupling (no longer imports webui) | `task/runner.py`, `sub_agent_run.py`, `worktree/manager.py`, `functions/watcher.py`, `channels/_broadcast.py` |
+| `Event` / `make_event` / `emit_safe` / `subscribe(types=)` / `get_event_bus` / the event-log subscriber | `openprogram/agent/event_bus.py` |
+| Synchronous query point: `register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | `openprogram/agent/tool_gate.py` |
+| `tool.before` observe and query, `tool.after`, `model.*`, `turn.ended` taps | `openprogram/agent/agent_loop.py` |
+| `user.prompt_submitted` | `openprogram/agent/dispatcher/__init__.py` |
+| `subagent.started` / `ended` | `openprogram/agent/task/runner.py` `_broadcast_task_status` |
+| `file.changed`, emitted after a successful write via lazy import | five sites across the write / edit / apply_patch tools |
+| External-source bridge, installed idempotently at worker startup | `openprogram/agent/event_bridges.py` + `worker/runner.py` |
+| External source taps | `context/engine.py` (compaction, ×2), `channels/_conversation.py`, `memory/session_watcher.py` (×2), `webui/server.py` (skills / plugins) |
+| `emit_ws_frame` passthrough envelope + `_subscribe_event_bus` forwarding | `agent/event_bus.py`, `webui/server.py` |
+| External sources decoupled from the web UI import | `task/runner.py`, `sub_agent_run.py`, `worktree/manager.py`, `functions/watcher.py`, `channels/_broadcast.py` |
 | Unit tests (30) | `tests/agent/test_event_bus.py`, `test_tool_gate.py`, `test_event_bridges.py` |
 
-## Verification
-
-Common to every step: `py_compile` + the relevant unit tests + `openprogram worker restart` + `/healthz` healthy +
-send a real message through webui (frontend changes need `cd web && npm run build`).
-Step 1 specific: restart the worker with `OPENPROGRAM_EVENT_LOG=1`, run a turn with a tool call, and confirm that the log
-shows, in order, `user.prompt_submitted → model.response_started → tool.before → tool.after →
-model.response_completed → turn.ended`, with metadata carrying session/turn.
+Live validation covered the full event sequence on a real turn, `file.changed`,
+an end-to-end gate test, `skills.changed`, and a WebSocket probe confirming that
+all four task_status states reach the frontend through the new chain. One
+environment note carried forward: the worker's working directory is the home
+directory, so the project skills directory resolves to `~/skills`.

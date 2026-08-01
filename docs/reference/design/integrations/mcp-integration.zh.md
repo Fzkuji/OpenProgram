@@ -1,7 +1,8 @@
 # MCP 工具集成
 
-Status: **implemented**(stdio transport only)。
-关联代码:`openprogram/mcp/`。
+> 本文是 MCP 客户端层的设计：OpenProgram 在协议中扮演的角色、模块位置、
+> server 如何配置与连接，以及 MCP 工具如何到达 LLM。
+> 关联代码：`openprogram/mcp/`。
 
 ## 一句话概括
 
@@ -172,19 +173,16 @@ opencode 是 lazy:服务实例化时不连,首次 `tools()` 调用才 spawn。�
 
 修复:`from openprogram import paths as _paths`,每次调 `_paths.get_state_dir()` 现查 attribute。监控:test 套件如果加新的 paths monkeypatch,确认我们的 `config.py` 仍然走 module reference。
 
-## 当前限制
+## 附录：实现状态
 
-1. **只支持 stdio**。HTTP/SSE/OAuth 待补(`MCPServerConfig.type` 字段已留位)。
-2. **只支持 `tools/*`**。MCP 还有 `prompts/*` `resources/*` `sampling/*`,目前没接入——我们框架内没对应概念。
-3. **配置改了必须重启 worker**。没有热重载 server 列表;`MCPClient.start()` 和 `stop()` 之间没有 `restart`。
-4. **多 caller serialise 在 ClientSession lock**。`MCPClient._call_lock` 让同一 server 的并发调用排队;不是性能问题(MCP server 本来也是单飞行),但要注意一个慢工具会阻塞同 server 的其他工具调用。
-5. **没做 tool 列表缓存**。supervisor 启动时拉 `list_tools` 一次,后续不再问;如果 MCP server 中途加/删工具,我们看不到(协议有 `tools/list_changed` notification,我们没监听)。
-6. **`_loaded` 是模块全局**。测试要重置才能复测,见 `tests/integration/test_mcp_client.py::_reset_mcp_loader_flag` fixture。
+上述设计已在 stdio 传输上实现。已建成部分的边界：
 
-## 后续可做
+1. **stdio 是唯一的传输方式。** HTTP/SSE/OAuth 尚未实现，`MCPServerConfig.type` 字段为它们留了位置。接通它们需要远程传输加一个 OAuth provider，可参考 opencode 的 `mcp/auth.ts` 与 `mcp/oauth-provider.ts`。
+2. **只消费 `tools/*` 这一个协议面。** MCP 还定义了 `prompts/*`、`resources/*`、`sampling/*`，框架内都没有对应概念。`sampling/createMessage` 允许 server 反向借用 client 的 LLM 做推理，目前 client 会拒绝这类请求。
+3. **配置改动在 worker 重启后生效。** server 列表不做热重载，`MCPClient` 在 `start()` 与 `stop()` 之间没有 `restart`。提供 `restart_server(name)` API 可以免去重启整个 worker。
+4. **对同一 server 的并发调用在 ClientSession 锁上串行。** `MCPClient._call_lock` 让它们排队。这不是性能问题——MCP server 本来就是单飞行的——但一个慢工具会阻塞同 server 上的其他工具调用。
+5. **工具列表只读取一次。** supervisor 在启动时拉一次 `list_tools`，之后不再询问，因此 server 中途增删的工具不可见。协议的 `tools/list_changed` 通知没有被监听。
+6. **`_loaded` 是模块全局变量。** 测试需要重置后才能复测，见 `tests/integration/test_mcp_client.py::_reset_mcp_loader_flag` fixture。
 
-- 接 remote transport(HTTP / SSE)+ OAuth provider — 抄 opencode `mcp/auth.ts` + `mcp/oauth-provider.ts`
-- 监听 `tools/list_changed`,运行期补注册
-- webui 设置页面渲染 `server_status()`,可视化每个 server 的状态、错误信息、tool 数量、最近一次调用结果
-- `restart_server(name)` API — 不用重启整个 worker
-- 接 `sampling/createMessage` capability — server 可反向借 client 的 LLM 做推理(目前 client 不实现,会 reject 这种请求)
+webui 设置页面尚未渲染 `server_status()`；渲染它可以展示每个 server 的状态、
+错误信息、工具数量与最近一次调用结果。

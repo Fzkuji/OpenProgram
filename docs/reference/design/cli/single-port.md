@@ -1,32 +1,33 @@
 # Single-Port Architecture
 
-Status: design approved, not yet implemented.
-Companion: [ports.md](ports.md) (current dual-port semantics — superseded by this doc once implemented).
+> This document describes the single-port runtime: one process, one port, the
+> Python worker as sole origin. For the dual-port split it replaces, see
+> [ports.md](ports.md).
 
-## 1. Problem
+## 1. The problem with three processes
 
-The runtime is three processes with a fragile dependency chain:
+The dual-port runtime is three processes with a fragile dependency chain:
 
 ```
 Electron shell → Next.js server (Node, web port) → Python worker (backend port)
 ```
 
-- Next `rewrites()` bakes the `/ws` proxy target **at build time**. A build run
-  without the right profile env silently points `/ws` at a dead port and every
-  client shows "disconnected". Two workarounds exist solely for this:
+- Next `rewrites()` fixes the `/ws` proxy target **at build time**. A build run
+  without the right profile env points `/ws` at a dead port, and every client
+  shows "disconnected". Two workarounds exist solely for this:
   `_patch_manifest_ports` regex-rewriting `.next/routes-manifest.json`
   (`openprogram/worker/web.py`), and the `/api/[...path]` route handler
   re-reading `worker.port` per request.
-- The worker spawns and babysits the Next server: ~330 lines in
+- The worker spawns and supervises the Next server: ~330 lines in
   `openprogram/worker/web.py` for port reclaim, orphan `next-server` killing,
   BUILD_ID watching, manifest patching, parent-PID watch
   (`web/scripts/with-parent-watch.mjs`).
 - Users need Node at runtime just to render a UI that is already 100%
   client-side.
 
-## 2. Why the merge is cheap
+## 2. Why merging the two is cheap
 
-Verified against the current tree:
+The frontend has nothing that requires a Node server:
 
 - The app shell is loaded with `next/dynamic` + `ssr: false`
   (`web/app/(shell)/layout.tsx`); every real page is `"use client"`.
@@ -35,7 +36,8 @@ Verified against the current tree:
 - The only two route handlers (`app/api/[...path]`, `app/files/[...path]`)
   are proxies to the worker — the origin server under single-port.
 - The worker's FastAPI app already serves static content (`/docs` docs-site
-  mount, `/files/raw`) and has `docs_url=None`, so no route collisions.
+  mount, `/files/raw`) and has `docs_url=None`, so there are no route
+  collisions.
 
 ## 3. Design
 
@@ -43,118 +45,123 @@ One process, one port. The Python worker serves everything:
 
 ```
 Electron shell → Python worker (FastAPI, single port)
-                   ├─ /ws            native WebSocket (already index-0 route)
-                   ├─ /api/*         native routers (already exist)
-                   ├─ /files/raw     already exists
-                   ├─ /docs/*        already exists
+                   ├─ /ws            native WebSocket (index-0 route)
+                   ├─ /api/*         native routers
+                   ├─ /files/raw
+                   ├─ /docs/*
                    └─ /*             Next static export (out/) + SPA fallback
 ```
 
-### 3.1 Frontend becomes a static export
+### 3.1 The frontend is a static export
 
 `web/next.config.mjs`:
 
 - `output: "export"` → `next build` emits plain HTML/JS/CSS into `web/out/`.
-- Delete `rewrites()` and `resolveBackend()` entirely — nothing to bake.
-- Frontend code talks to its own origin (`/ws`, `/api/...` relative URLs —
-  already the case).
+- No `rewrites()` and no `resolveBackend()` — there is no proxy target to
+  resolve.
+- Frontend code talks to its own origin (`/ws`, `/api/...` relative URLs).
 
 Dynamic page segments (`(shell)/s/[sessionId]`, `(shell)/skills/[...name]`,
 `(shell)/settings/providers/[providerId]`, `plugin/[name]/[...slug]`) are
 route markers that render null or resolve params client-side from
 `pathname`. Static export rejects them without `generateStaticParams`, so
-**delete the page files** and let the SPA fallback (3.2) serve the shell for
-those paths. Client-side routing already handles the rest. Any segment that
-turns out to do real work keeps a `generateStaticParams` returning one
-placeholder instead.
+those page files do not exist; the SPA fallback (3.2) serves the shell for
+those paths and client-side routing handles the rest. A segment that does
+real work keeps a `generateStaticParams` returning one placeholder instead.
 
-Delete: `app/api/[...path]/route.ts`, `app/files/[...path]/route.ts`.
+`app/api/[...path]/route.ts` and `app/files/[...path]/route.ts` do not exist.
 
-### 3.2 Worker serves the export
+### 3.2 The worker serves the export
 
-New module `openprogram/webui/frontend.py`, mounted last in `create_app()`:
+`openprogram/webui/frontend.py`, mounted last in `create_app()`:
 
 - Static files from `web/out/` (immutable cache headers for `/_next/static`,
   no-cache for HTML).
 - SPA fallback: any GET not matching a file or an API route returns the
   shell HTML (`out/chat.html` — the app redirects `/` → `/chat` and resolves
   everything else from `pathname`).
-- Build gate: reuse the `_ensure_built` idea — if `web/out/` is missing or
-  older than `web/` sources, run `npm run build` once at startup. Node is
-  then a **build-time** dependency only; a packaged release ships `out/`
-  pre-built and never invokes Node.
+- Build gate: if `web/out/` is missing or older than `web/` sources, run
+  `npm run build` once at startup. Node is then a **build-time** dependency
+  only; a packaged release ships `out/` pre-built and never invokes Node.
 
-### 3.3 Delete the process babysitting
+### 3.3 No process supervision
 
-- `openprogram/worker/web.py` — entire file (spawn, port reclaim, manifest
-  patch, BUILD_ID watcher).
-- `web/scripts/with-parent-watch.mjs`.
-- `start_web_frontend` call in `openprogram/worker/runner.py`.
+Nothing spawns or watches a Node process. `openprogram/worker/web.py`
+(spawn, port reclaim, manifest patch, BUILD_ID watcher),
+`web/scripts/with-parent-watch.mjs`, and the `start_web_frontend` call in
+`openprogram/worker/runner.py` have no counterpart here.
 
 ### 3.4 Port semantics
 
-The backend port becomes *the* port. Web-port knobs are retired:
+The backend port is *the* port; web-port knobs are retired:
 
-| | before | after |
+| | dual-port | single-port |
 |---|---|---|
 | stable | web 18100 / backend 18109 | **18100** |
 | dev | web 18200 / backend 18209 | **18200** |
 
-- `OPENPROGRAM_WEB_PORT` and `web_port` UI pref: accepted as aliases for the
-  backend port during a deprecation window (log a warning), then removed.
-- `worker.port` file: unchanged (still the single source of truth for
-  discovery).
-- Electron `desktop/main.js`: `WEB_PORT` constant stays (18200 dev / 18100
-  release) — it now simply *is* the worker port; the three usage sites
-  (start URL, origin check, navigation guard) need no structural change.
-- `scripts/promote_stable.sh`: `npm run build` now emits `out/`; no other
-  change.
+- `OPENPROGRAM_WEB_PORT` and the `web_port` UI pref are accepted as aliases
+  for the backend port during a deprecation window (logging a warning), then
+  removed.
+- `worker.port` file: unchanged, still the single source of truth for
+  discovery.
+- Electron `desktop/main.js`: the `WEB_PORT` constant (18200 dev / 18100
+  release) simply *is* the worker port; the three usage sites (start URL,
+  origin check, navigation guard) need no structural change.
+- `scripts/promote_stable.sh`: `npm run build` emits `out/`.
 
 ## 4. Invariants
 
-- **Backend is the sole origin.** No proxy layer, no second server, no
-  build-time port baking anywhere. `/ws` target is trivially correct because
-  it is the same origin the page loaded from.
+- **The backend is the sole origin.** No proxy layer, no second server, no
+  port fixed at build time anywhere. The `/ws` target is correct by
+  construction because it is the same origin the page loaded from.
 - **API routes always win over static.** The frontend mount registers last;
   the SPA fallback runs only for paths no router claimed.
-- **Node is build-time only.** Runtime dependencies: Python + the worker.
-  (Step 2 of the roadmap — Electron supervising the worker — and step 3 —
-  zero-dependency install — build on this and get their own docs.)
+- **Node is build-time only.** Runtime dependencies are Python plus the
+  worker.
 
-## Roadmap context
+## 5. Trade-offs
 
-1. **Single port** (this doc): worker serves the frontend; Node becomes
-   build-time only.
-2. **Shell supervises worker**: Electron spawns/watches/restarts the worker
-   with a real status page (covers first-run bootstrap progress too).
-3. **Zero-dependency install via uv**: the packaged app ships Electron +
-   prebuilt `out/` + the standalone `uv` binary (~15 MB). First launch runs
-   `uv python install` (python-build-standalone, app-private, never touches
-   the system) and `uv sync` from the lockfile; later launches reuse the
-   installed environment. Mirrors (`UV_PYTHON_INSTALL_MIRROR`, CN PyPI
-   mirror) are mandatory for first-run reliability in China. No PyInstaller.
+- Dev iteration loses `next dev` HMR against the merged origin. `npm run dev`
+  keeps working by pointing at a running worker through a dev-only env
+  (`NEXT_PUBLIC_BACKEND_ORIGIN`) read by the ws/api client helpers; the
+  production code path stays origin-relative.
+- A dynamic segment that actually rendered content would 404 its deep link
+  once its page file is gone. The SPA fallback covers this, and each of the
+  four segments is verified individually.
+- `out/` can go stale after pulling frontend changes. The startup build gate
+  (mtime check) covers it, and `openprogram restart` after `git pull` is the
+  documented workflow.
 
-## 5. Risks
-
-- Dev iteration loses `next dev` HMR against the merged origin. Mitigation:
-  keep `npm run dev` working by pointing it at a running worker via a
-  dev-only env (`NEXT_PUBLIC_BACKEND_ORIGIN`) used by the ws/api client
-  helpers when set; production code path stays origin-relative.
-- A deleted dynamic segment that actually rendered content would 404 its
-  deep link. Covered by the SPA fallback; verify each of the four segments
-  during implementation.
-- Stale `out/` after pulling frontend changes. The startup build gate
-  (mtime check) covers it; `openprogram restart` after `git pull` already
-  is the documented workflow.
-
-## 6. Acceptance
+## 6. Acceptance criteria
 
 1. `openprogram` (dev profile) starts exactly one listening port; `lsof`
    shows no `next-server`.
-2. Fresh page load on `/chat`, `/s/<id>`, `/settings/providers/<id>`,
+2. Fresh page loads on `/chat`, `/s/<id>`, `/settings/providers/<id>`, and
    `/skills/<name>` all render; `/ws` connects; `/api/pick-folder` works.
-3. Kill the worker: the page (already loaded) shows disconnected; restart
-   reconnects. No orphan processes on any port.
+3. Killing the worker leaves an already-loaded page showing disconnected;
+   restarting reconnects. No orphan processes on any port.
 4. A build run with **no** profile env produces a working instance — the
-   baked-port failure class is gone by construction.
+   fixed-at-build-time port failure class is gone by construction.
 5. Full test suite passes; desktop app repackaged and verified.
+
+## Roadmap context
+
+Single port is the first of three steps toward a zero-dependency install:
+
+1. **Single port** (this document): the worker serves the frontend; Node
+   becomes build-time only.
+2. **Shell supervises worker**: Electron spawns, watches, and restarts the
+   worker with a real status page, covering first-run bootstrap progress.
+3. **Zero-dependency install via uv**: the packaged app ships Electron, the
+   prebuilt `out/`, and the standalone `uv` binary (~15 MB). First launch
+   runs `uv python install` (python-build-standalone, app-private, never
+   touching the system Python) and `uv sync` from the lockfile; later
+   launches reuse the installed environment. Mirrors
+   (`UV_PYTHON_INSTALL_MIRROR`, a CN PyPI mirror) are required for first-run
+   reliability in China. No PyInstaller.
+
+## Appendix: Implementation Status
+
+The design is approved. Steps 2 and 3 of the roadmap build on this one and
+get their own documents.

@@ -1,228 +1,112 @@
-# Change Plan: Pass `cache_control` on content blocks through to the Anthropic API
+# Cache-Control Passthrough — Design
 
-## Goal
+> How a caller-placed `cache_control` mark on a content block reaches the
+> Anthropic Messages API request body unchanged, so the prompt cache breakpoint
+> lands where the caller wants it rather than where the provider guesses.
 
-Allow OpenProgram callers (such as the screenspot locator in GUI-Agent-Harness) to
-explicitly mark `"cache_control": {"type": "ephemeral"}` on a given content block in
-`runtime.exec(content=[...])`, and ensure that mark reaches the Anthropic
-Messages API request body verbatim, so that a prompt cache breakpoint is set right
-after "the block the caller specified".
+## 1. The problem
 
-Current problem: the `cache_control` a caller writes into a content dict is dropped
-inside OpenProgram, making it impossible to place a cache breakpoint at a custom
-location. Right now only the "last block" breakpoint added automatically by the
-provider takes effect, and the last block (image / dynamic text) is different on
-every request, so the cache hit rate is 0.
+A caller such as the screenspot locator in GUI-Agent-Harness knows which part of
+its prompt is stable: a long fixed rule block, followed by dynamic text and a
+screenshot. It wants the cache breakpoint right after that stable prefix.
 
-Scope: this only applies to **anthropic**-class providers (the native Anthropic API,
-the Claude Code subscription via proxy, any anthropic-messages interface). The
-OpenAI / codex class uses automatic prefix caching and does not read cache_control;
-this plan does not concern them.
+Without passthrough, a `cache_control` key written into a content dict is
+dropped inside OpenProgram, and the only breakpoint that survives is the one the
+provider adds automatically on the last block. The last block is the image or
+the dynamic text, which differs on every request, so the cache never hits.
 
-## Constraints
+Scope: **anthropic**-class providers only — the native Anthropic API, the Claude
+Code subscription through a proxy, and any anthropic-messages interface. The
+OpenAI and codex classes use automatic prefix caching and never read
+`cache_control`; the field is inert for them.
 
-- All three changes are "add an optional field + conditionally preserve it"; **when
-  cache_control is not passed, behavior is exactly the same as today**, with zero
-  regression for all existing callers.
-- Do not touch the provider's existing "automatically place a breakpoint on the last
-  block" logic (the two `is_last and cache_control` segments); just additionally let
-  a breakpoint explicitly marked by the caller be preserved too.
-- The value of cache_control is a dict (e.g. `{"type": "ephemeral"}`, or one with
-  `ttl`), passed through verbatim; OpenProgram does not parse or validate its
-  contents.
+## 2. The passthrough path
 
-## Change list (3 in total)
+`cache_control` is an optional field carried unchanged across three layers.
 
-### Change 1 — `openprogram/providers/types.py`: add an optional field to the data classes
+**Content types** (`openprogram/providers/types.py`). `TextContent` and
+`ImageContent` each carry `cache_control: dict | None = None`. Video and audio
+do not — nothing marks them today. The value is an opaque dict such as
+`{"type": "ephemeral"}`, possibly with a `ttl`. OpenProgram never parses or
+validates its contents; whatever the caller writes is what Anthropic receives.
 
-Add an optional field `cache_control` to each of the `TextContent` and `ImageContent`
-pydantic models, giving the cache mark a slot to live in.
+**Context building** (`openprogram/agentic_programming/runtime.py`,
+`_build_pi_context`). When the caller's `content: list[dict]` is converted into
+`TextContent` / `ImageContent` objects, each block's `cache_control` is copied
+onto the object. The `role == "system"` text block is an exception: it is
+extracted into `system_text` and does not carry a per-block breakpoint, because
+system breakpoints are placed separately by the Anthropic provider's
+`_build_system`.
 
-`TextContent` (currently around lines 153-156):
-```python
-class TextContent(BaseModel):
-    type: Literal["text"] = "text"
-    text: str
-    text_signature: str | None = None
-    cache_control: dict | None = None        # new
-```
+**Wire building** (`openprogram/providers/anthropic/anthropic.py`,
+`_build_messages`). When API blocks are reconstructed from the content objects,
+a block whose object carries `cache_control` gets the field written into the
+generated dict. This applies to the list-content branch of `UserMessage`; the
+string-content branch, `AssistantMessage`, and `ToolResultMessage` have no
+per-block caller marks and are unaffected.
 
-`ImageContent` (currently around lines 173-176):
-```python
-class ImageContent(BaseModel):
-    type: Literal["image"] = "image"
-    data: str  # base64 encoded
-    mime_type: str  # e.g. "image/jpeg"
-    cache_control: dict | None = None        # new
-```
+A call that passes no `cache_control` produces a request body identical to one
+built before the field existed. Every existing caller is unaffected.
 
-Note: only the Text and Image classes are needed (screenspot's fixed-rule prefix is
-text, the image is image). Video/Audio are not needed for now and can be left alone.
+## 3. Automatic breakpoint versus caller breakpoint
 
-### Change 2 — `openprogram/agentic_programming/runtime.py`: carry the field in `_build_pi_context`
+The provider still places a breakpoint on the last block of a message on its
+own. The rule that reconciles the two:
 
-`_build_pi_context` (currently around lines 1343-1405), when converting the caller's
-`content: list[dict]` into `TextContent` / `ImageContent` objects, currently only
-takes text / data / mime and drops the `cache_control` in the dict. Change it to
-carry it along.
+> If any block in a message carries a caller-placed `cache_control`, the
+> provider does not auto-place a breakpoint on that message's last block at all.
 
-Currently (around lines 1388-1392):
-```python
-        if btype == "text":
-            parts.append(TextContent(type="text", text=block["text"]))
-        elif btype == "image":
-            data, mime = _load_media(block, _media_defaults["image"])
-            parts.append(ImageContent(type="image", data=data, mime_type=mime))
-```
+The check is `caller_marked = any("cache_control" in b for b in
+content_blocks)`. This is stronger than merely declining to overwrite the last
+block. When the caller marks a stable prefix early in the message, an automatic
+breakpoint on the dynamic tail block would waste one of the four available slots
+and pin the cache boundary past the very content that changes every request.
+Suppressing it entirely keeps the caller's intent as the only breakpoint in that
+message.
 
-Change to:
-```python
-        if btype == "text":
-            parts.append(TextContent(
-                type="text",
-                text=block["text"],
-                cache_control=block.get("cache_control"),
-            ))
-        elif btype == "image":
-            data, mime = _load_media(block, _media_defaults["image"])
-            parts.append(ImageContent(
-                type="image",
-                data=data,
-                mime_type=mime,
-                cache_control=block.get("cache_control"),
-            ))
-```
+## 4. Boundaries the caller must respect
 
-Note: the `role == "system"` text block is split out separately into system_text at
-lines 1381-1386; that branch does not involve cache breakpoints (system breakpoints
-are handled separately by the anthropic provider's _build_system), so leave it
-unchanged.
+**Minimum cacheable prefix.** A breakpoint only caches when the content before
+it is at least 1024 tokens (2048 for Haiku). Below that, Anthropic **silently
+ignores it** — no error, no hit. A caller that marks a short prefix sees
+`cache_read` stay at 0 and will look for a bug in the passthrough that is not
+there.
 
-### Change 3 — `openprogram/providers/anthropic/anthropic.py`: preserve the field in `_build_messages`
+**Four breakpoints per request.** OpenProgram already adds roughly two on its
+own (the system block and the last block). Exceeding four makes Anthropic return
+400. A caller has roughly two slots to work with.
 
-`_build_messages` (currently around lines 304-398), when reconstructing the API
-blocks sent to Anthropic from `TextContent` / `ImageContent`, currently only writes
-type/text/source and drops the `cache_control` on the object again. Change it so
-that if the object carries it, it is written into the generated block.
+**Proxy fidelity.** When the Claude Code subscription goes through the Meridian
+proxy, a proxy that strips `cache_control` from the body keeps `cache_read` at 0
+regardless of what OpenProgram sends. This is a proxy-layer property and has to
+be verified separately; sending the same fixed prefix twice and checking that
+the second response reports `cache_read > 0` tests OpenProgram and the proxy
+together.
 
-Currently (around lines 332-344, the list-content branch of UserMessage):
-```python
-                for block in msg.content:
-                    if isinstance(block, TextContent):
-                        text = sanitize_surrogates(block.text)
-                        if text.strip():
-                            content_blocks.append({"type": "text", "text": text})
-                    elif isinstance(block, ImageContent):
-                        content_blocks.append({
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": block.mime_type,
-                                "data": block.data,
-                            },
-                        })
-```
+**Other providers.** OpenAI and codex block construction reads fields
+individually (`.text` / `.data` in `openai_completions` and
+`_shared/transform_messages`), and the two `model_dump()` calls in the responses
+and codex paths dump the options object rather than a content block, so the new
+optional field never leaks into their request bodies. `TextContent.model_dump()`
+round-trips cleanly, so persistence is unaffected.
 
-Change to:
-```python
-                for block in msg.content:
-                    if isinstance(block, TextContent):
-                        text = sanitize_surrogates(block.text)
-                        if text.strip():
-                            b: dict[str, Any] = {"type": "text", "text": text}
-                            if getattr(block, "cache_control", None):
-                                b["cache_control"] = block.cache_control
-                            content_blocks.append(b)
-                    elif isinstance(block, ImageContent):
-                        b = {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": block.mime_type,
-                                "data": block.data,
-                            },
-                        }
-                        if getattr(block, "cache_control", None):
-                            b["cache_control"] = block.cache_control
-                        content_blocks.append(b)
-```
+## 5. Caller-side work, not OpenProgram's
 
-Unchanged: the `if is_last and cache_control and content_blocks:` segment
-(around lines 345-346) that immediately follows — the "automatically place a
-breakpoint on the last block" logic — must not be deleted. It can coexist with
-"caller-explicit marking": Anthropic allows multiple cache_control breakpoints in a
-single request (up to 4).
+Splitting a prompt so its fixed rules form the first text block and marking that
+block is a caller change — for screenspot, in
+`GUI-Agent-Harness/screenspot_locator.py`. Prefix-caching optimization for the
+OpenAI and codex classes needs only that the caller put its stable prefix first,
+with no OpenProgram change at all.
 
-Same-name branches that do not need changing: the "content is str" branch at lines
-322-328 does not involve per-block marking by the caller, leave it alone; the
-AssistantMessage starting at line 350 and the ToolResultMessage starting at line 383
-are left alone.
+## Appendix: Implementation Status
 
-## Verification (self-check by the implementer after completion)
-
-1. Static: for a call that does not pass cache_control, the generated request body is
-   field-for-field identical to before the change (you can do a snapshot comparison
-   against the request body of an existing unit test).
-2. Pass-through: construct an exec with
-   `content=[{"type":"text","text":"X","cache_control":{"type":"ephemeral"}}, ...]`
-   and assert that the messages[...]['content'][0] ultimately sent to Anthropic carries
-   `"cache_control": {"type": "ephemeral"}`.
-3. Hit: send the same fixed prefix twice as real requests (through the Anthropic
-   endpoint / proxy actually in use); the second response's usage should have
-   `cache_read` > 0, and `cache_creation` > 0 only on the first.
-   —— this step also verifies "whether the proxy in use passes the body through": if
-   the proxy drops cache_control, cache_read will stay at 0, indicating the proxy
-   does not pass it through and the proxy layer needs separate handling.
-
-## Out of scope for this plan (done separately on the harness side)
-
-- Splitting the fixed-rule segment of each screenspot prompt into "first text block +
-  set cache_control", with dynamic content and the image arranged after it. This is a
-  caller-side change (GUI-Agent-Harness/screenspot_locator.py), not part of
-  OpenProgram.
-- Prefix caching optimization for the OpenAI / codex class (only requires the harness
-  to put the prefix up front, without touching OpenProgram).
-
-## Implementation status (landed)
-
-All three changes are implemented (commit `2f253405`), with unit tests added
-(`tests/unit/test_cache_control_passthrough.py`, 6 cases):
-
-- `types.py`: `TextContent` / `ImageContent` each gained `cache_control: dict | None = None`.
-- `runtime._build_pi_context`: carries `block.get("cache_control")` onto `TextContent` /
-  `ImageContent`.
-- `anthropic._build_messages`: writes `cache_control` from the object into the generated
-  API block.
-- The auto-breakpoint's "do not override the caller" is done more robustly than the
-  original plan: it uses
-  `caller_marked = any("cache_control" in b for b in content_blocks)` to decide —
-  **as long as any block in this message is marked with a breakpoint by the caller, it
-  no longer auto-places a breakpoint on the last block at all** (not just refraining
-  from overriding the last block). This way, when the caller marks a stable prefix
-  block earlier in the message, it neither wastes an extra breakpoint slot nor moves
-  the cache hit point to the dynamic tail block.
-
-Test coverage: full-chain pass-through (runtime→anthropic body), image pass-through,
-byte-identical body when not passed, auto-breakpoint working as usual when there is no
-caller breakpoint, no override when the caller marks the last block, and auto-breakpoint
-suppressed when the caller marks an earlier block.
-
-### Verification conclusions / confirmed boundaries
-
-- **Zero leakage for non-Anthropic providers** (verified): OpenAI/codex block
-  construction reads fields one by one — `.text` / `.data` (`openai_completions:96`,
-  `_shared/transform_messages`); those two `model_dump()` calls (responses/codex) dump
-  the **options object**, not the content block, so the new optional field is inert for
-  them; `TextContent.model_dump()` round-trips cleanly too (persistence-safe).
-- **Anthropic minimum cacheable token count**: a breakpoint only really caches when its
-  prefix is ≥ 1024 tokens (2048 for Haiku); otherwise it is **silently ignored — no
-  error and no hit**. The caller (screenspot) must ensure the marked fixed prefix is
-  long enough, otherwise `cache_read` stays at 0 even with the breakpoint added. Read
-  this together with verification step 3 above.
-- **At most 4 breakpoints**: OpenProgram already auto-adds ~2 (the system block + the
-  last block). If the caller's own breakpoints plus these exceed 4, Anthropic returns
-  400 outright. The caller has roughly only ~2 slots left.
-- **Proxy pass-through** (already mentioned in the plan): when the claude-code
-  subscription goes through the Meridian proxy, if the proxy swallows cache_control,
-  `cache_read` will always be 0 — that is a proxy-layer matter and needs separate
-  verification.
+Implemented across `providers/types.py`, `runtime._build_pi_context`, and
+`anthropic._build_messages`, with the auto-breakpoint suppression rule of §3.
+Covered by `tests/unit/test_cache_control_passthrough.py` (six cases):
+full-chain passthrough from runtime to the Anthropic body, image passthrough,
+byte-identical body when the field is absent, the automatic breakpoint still
+working when there is no caller mark, no overwrite when the caller marks the
+last block, and auto-breakpoint suppression when the caller marks an earlier
+block. The non-Anthropic no-leak property in §4 was verified by reading the
+OpenAI and codex block construction paths. Proxy passthrough is the one boundary
+still unverified in practice.

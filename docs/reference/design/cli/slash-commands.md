@@ -2,7 +2,7 @@
 
 Design goal: merge OpenProgram's currently scattered, mutually disconnected "command sources" — the CLI hardcoded table, the Web composer hardcoded table, `/api/plugins/commands`, MCP prompts, and skills — into a single **unified slash-command registry**: five layers, one format, one rendering pipeline, one UI.
 
-For the reference implementations, see `docs/reference/design/cli/slash-commands-references.md`. Wherever this document says "borrow from X," it means we directly reuse that project's design choice.
+For the reference implementations these choices draw on, see [`slash-commands-references.md`](slash-commands-references.md). Wherever this document says a design is taken from a project, it means that project's design choice is reused directly.
 
 ---
 
@@ -178,7 +178,7 @@ Two handler forms:
 - `!` backtick block → run shell, stdout goes to the log, exit code decides allow/deny
 - `built-in:<id>` → call a host-registered named handler (not in the first release; interface left open)
 
-This is only fully usable once the hooks subsystem completes its "intercept / rewrite" semantics. This section reserves the schema first to avoid breaking changes later.
+This becomes fully usable once the hooks subsystem gains intercept and rewrite semantics. The schema is fixed here first so that adding it later is not a breaking change.
 
 ---
 
@@ -309,22 +309,24 @@ CLI:
 
 `openprogram/_cli_chat/handlers.py:_handle_slash` is reworked: first check the registry, and on a hit go through dispatch; on a miss, fall back to the current hardcoded if/else chain (which is gradually migrated into type: local builtin commands).
 
-### 10.4 Migration Path
+### 10.4 Build Order
+
+The pieces are independently shippable and land in dependency order:
 
 ```
-Phase 1  scanner + frontmatter + rendering + registry + /api/commands   [foundation]
-Phase 2  L4 (~/.openprogram/commands) + L5 (.openprogram/commands)
-Phase 3  L3 skills auto-injection (skills/loader exposes to_command_spec())
-Phase 4  L2 mcp prompts auto-injection (mcp/registry already has list_prompts)
-Phase 5  L1 plugins onboarded onto the new table (plugins/loader already has _commands, add an adapter layer)
-Phase 6  context: fork wired to the task tool
-Phase 7  paths / requires trigger-condition evaluation
-Phase 8  watcher hot reload
-Phase 9  builtin commands gradually migrated to type: local + frontmatter
-Phase 10 hooks field enabled after the hooks subsystem is upgraded
+1  scanner + frontmatter + rendering + registry + /api/commands   [foundation]
+2  L4 (~/.openprogram/commands) + L5 (.openprogram/commands)
+3  L3 skills auto-injection (skills/loader exposes to_command_spec())
+4  L2 mcp prompts auto-injection (mcp/registry already has list_prompts)
+5  L1 plugins onboarded onto the new table (plugins/loader already has _commands, plus an adapter layer)
+6  context: fork wired to the task tool
+7  paths / requires trigger-condition evaluation
+8  watcher hot reload
+9  builtin commands migrated to type: local + frontmatter
+10 hooks field enabled after the hooks subsystem is upgraded
 ```
 
-Each Phase is independently shippable; once Phase 1-2 + 5 are done, most of the user value is already delivered.
+Items 1-2 and 5 together deliver most of the user-visible value.
 
 ---
 
@@ -353,4 +355,4 @@ L4 / L5 are user-written and do not auto-update.
 
 L0 (builtin) tracks the OpenProgram version.
 
-`docs/reference/design/cli/slash-commands-references.md` periodically rescans the implementations of the five reference projects; when new designs are found, return to §2/§3 of this document to add fields, without breaking existing frontmatter (extra fields go into extras).
+[`slash-commands-references.md`](slash-commands-references.md) records how the five reference projects implement slash commands and is rescanned periodically. New designs found there are added as fields in §2/§3 of this document, without breaking existing frontmatter (extra fields go into extras).

@@ -16,51 +16,52 @@ supporting notes / investigations that should not override it.
 | [`context/context-comparison.md`](context/context-comparison.md) | Context approaches compared against reference projects |
 | [`context/context-compaction.html`](context/context-compaction.html) | Context compaction (rendered) |
 
-## memory/ — 记忆系统（实体 + 抽象）
+## memory/ — memory system (entity + abstract)
 
 | Doc | Topic |
 |---|---|
-| [`memory/README.md`](memory/README.md) | 记忆系统总览：架构、设计原则、实施状态 |
+| [`memory/README.md`](memory/README.md) | Memory system overview: architecture, design principles, implementation status |
 | [`memory/memory.md`](memory/memory.md) | Memory subsystem overview |
 | [`memory/memory-v2.md`](memory/memory-v2.md) | Memory v2: entity/virtual two-tier + provenance-navigated recall |
-| [`memory/entity-memory.md`](memory/entity-memory.md) | 实体记忆：Session-Git + Project-Git，按生命周期组织 |
+| [`memory/entity-memory.md`](memory/entity-memory.md) | Entity memory: Session-Git + Project-Git, organized by lifecycle |
 | [`memory/git-as-entity-memory.md`](memory/git-as-entity-memory.md) | Entity memory on Git: Session-Git + Project-Git |
-| [`memory/virtual-memory.md`](memory/virtual-memory.md) | 抽象记忆：Timeline + Graph + Core，按类型 × 生命周期组织 |
+| [`memory/virtual-memory.md`](memory/virtual-memory.md) | Abstract memory: Timeline + Graph + Core, organized by type × lifecycle |
 
-## proactive/ — 事件层 + 主动性（事件驱动）
+## proactive/ — event layer + proactivity (event-driven)
 
-分两块：**事件底座**（一条统一事件流，给整个框架用）+ **主动性应用**（规则订阅事件流出手）。
-两块解耦，可只做底座。先读 event-layer 建立整体认识。
+Two parts: the **event base** (one unified event stream for the whole framework) and
+**proactivity applications** (rules subscribe to the stream and act). They are decoupled,
+so the base is usable alone. Read event-layer first for the overall picture.
 
-事件底座：
-
-| Doc | Topic |
-|---|---|
-| [`proactive/event-layer.md`](proactive/event-layer.md) | 统一 Event 模型 + 框架定位 + 框架图 + 事件边界与演进（**已落地：A/B 类事件全在发，gate 可拦**，[可视化](proactive/event-layer.html)） |
-| [`proactive/framework-evolution.md`](proactive/framework-evolution.md) | 框架演进：现状 → 目标 → 五步迁移（步 1·2·3 ✅，[可视化](proactive/framework-evolution.html)） |
-
-主动性应用（建在底座上）：
+Event base:
 
 | Doc | Topic |
 |---|---|
-| [`proactive/overview.md`](proactive/overview.md) | 跟着一个场景走一遍（拦 `rm -rf`），规则 / 出手 / 状态等概念就地讲 |
-| [`proactive/events-and-state.md`](proactive/events-and-state.md) | 状态怎么从事件累加（fold）出来——规则能"记住过去"的原理 |
-| [`proactive/execution-model.md`](proactive/execution-model.md) | 规则（Policy）怎么写；挡路的 / 旁观的两类有何不同 |
-| [`proactive/policies-mvp.md`](proactive/policies-mvp.md) | 三条样板规则，照着写新规则 |
-| [`proactive/invariants.md`](proactive/invariants.md) | 框架自己要守的底线（主要是别绕成死循环） |
+| [`proactive/event-layer.md`](proactive/event-layer.md) | Unified Event model, framework placement, diagram, event boundaries (**landed: class A/B events all emitted, gate can block**, [visualization](proactive/event-layer.html)) |
+| [`proactive/framework-evolution.md`](proactive/framework-evolution.md) | Framework evolution: current → target → five migration steps (steps 1·2·3 done, [visualization](proactive/framework-evolution.html)) |
 
-> 论文/生产级内容（离线回放验证、对抗安全、评估骨架）已归档在
-> `proactive/_research_archive/`，以后做加固再取回。
+Proactivity applications (built on the base):
+
+| Doc | Topic |
+|---|---|
+| [`proactive/overview.md`](proactive/overview.md) | One scenario end to end (blocking `rm -rf`), introducing rules / actions / state in place |
+| [`proactive/events-and-state.md`](proactive/events-and-state.md) | How state folds out of events — why a rule can remember the past |
+| [`proactive/execution-model.md`](proactive/execution-model.md) | How to write a Policy; blocking vs observing rules |
+| [`proactive/policies-mvp.md`](proactive/policies-mvp.md) | Three sample rules to copy when writing new ones |
+| [`proactive/invariants.md`](proactive/invariants.md) | Invariants the framework itself must hold (chiefly: no feedback loops) |
+
+> Paper/production-grade material (offline replay validation, adversarial safety,
+> evaluation skeleton) is archived under `proactive/_research_archive/`.
 
 ## runtime/ — agent execution, DAG, async, revert, controllability
 
 | Doc | Topic |
 |---|---|
 | [`runtime/runtime.md`](runtime/runtime.md) | Runtime API behaviour (see also [`../api/runtime.md`](../api/runtime.md)) |
-| [`runtime/operations/user-input-requests.md`](runtime/operations/user-input-requests.md) | runtime.ask/confirm 等用户输入 |
-| [`runtime/controllability-and-three-surface-sync.md`](runtime/controllability-and-three-surface-sync.md) | 值守/无人值守开关 + 中途干预 + 优雅停 + 三端同步 |
-| [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 三端同步实施细节 |
-| [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | 统一 session context |
+| [`runtime/operations/user-input-requests.md`](runtime/operations/user-input-requests.md) | User input via runtime.ask/confirm |
+| [`runtime/controllability-and-three-surface-sync.md`](runtime/controllability-and-three-surface-sync.md) | Attended/unattended toggle, mid-run intervention, graceful stop, three-surface sync |
+| [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 three-surface sync implementation detail |
+| [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | Unified session context |
 | [`runtime/execution/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree behaviour |
 | [`runtime/execution/async-task-lifecycle.md`](runtime/execution/async-task-lifecycle.md) | Async task lifecycle |
 | [`runtime/operations/streaming-resume.md`](runtime/operations/streaming-resume.md) | Streaming + resume |
@@ -76,32 +77,32 @@ supporting notes / investigations that should not override it.
 | [`runtime/operations/branch-naming.md`](runtime/operations/branch-naming.md) | Branch naming ([rendered](runtime/operations/branch-naming.html)) |
 | [`runtime/session/README.md`](runtime/session/README.md) | Session subsystem: data model, storage, naming, listing, lifecycle |
 | [`runtime/self-update.md`](runtime/self-update.md) | Self-update: staying usable while OpenProgram modifies itself |
-| [`runtime/permission-model.md`](runtime/permission-model.md) | 权限系统设计 |
-| [`runtime/agent-collaboration.md`](runtime/agent-collaboration.md) | Agent 协作：分支间通信原语 |
-| [`runtime/tool-toggle-management.md`](runtime/tool-toggle-management.md) | 工具开关 / 工具集管理设计 |
-| [`runtime/additional-working-directories.md`](runtime/additional-working-directories.md) | 会话多工作目录设计 |
+| [`runtime/permission-model.md`](runtime/permission-model.md) | Permission system design |
+| [`runtime/agent-collaboration.md`](runtime/agent-collaboration.md) | Agent collaboration: cross-branch communication primitives |
+| [`runtime/tool-toggle-management.md`](runtime/tool-toggle-management.md) | Tool toggles / toolset management design |
+| [`runtime/additional-working-directories.md`](runtime/additional-working-directories.md) | Multiple working directories per session |
 
 ## providers/ — LLM providers, credentials, model catalog, thinking/effort
 
 | Doc | Topic |
 |---|---|
-| [`providers/request-build.md`](providers/request-build.md) | 请求构建流程 |
-| [`providers/models/models.md`](providers/models/models.md) | 模型目录最终设计 |
-| [`providers/models/thinking-effort.md`](providers/models/thinking-effort.md) | Thinking / effort 子系统（级别定义、数据流、各 provider wire 格式、UI picker） |
+| [`providers/request-build.md`](providers/request-build.md) | Request build pipeline |
+| [`providers/models/models.md`](providers/models/models.md) | Model catalog, final design |
+| [`providers/models/thinking-effort.md`](providers/models/thinking-effort.md) | Thinking / effort subsystem (level definitions, data flow, per-provider wire formats, UI picker) |
 | [`providers/models/fast-tier.md`](providers/models/fast-tier.md) | The Fast tier: two-tier detection, storage, wires |
-| [`providers/auth/claude-code-direct-oauth.md`](providers/auth/claude-code-direct-oauth.md) | claude-code 直连订阅（砍 Meridian） |
+| [`providers/auth/claude-code-direct-oauth.md`](providers/auth/claude-code-direct-oauth.md) | claude-code direct subscription auth (Meridian dropped) |
 | [`providers/auth/credential-validation-unification.md`](providers/auth/credential-validation-unification.md) | Unified credential validation |
-| [`providers/auth/unified-auth-storage.md`](providers/auth/unified-auth-storage.md) | 统一认证存储 |
-| [`providers/auth/unified-account-management.md`](providers/auth/unified-account-management.md) | 统一账号管理 + 轮换 |
-| [`providers/auth/credential-status-redesign.md`](providers/auth/credential-status-redesign.md) | 凭证状态重设计 |
+| [`providers/auth/unified-auth-storage.md`](providers/auth/unified-auth-storage.md) | Unified auth storage |
+| [`providers/auth/unified-account-management.md`](providers/auth/unified-account-management.md) | Unified account management + rotation |
+| [`providers/auth/credential-status-redesign.md`](providers/auth/credential-status-redesign.md) | Credential status redesign |
 | [`providers/auth/api-key-resolution-unification.md`](providers/auth/api-key-resolution-unification.md) | API key resolution unification |
 | [`providers/reliability/error-retry.md`](providers/reliability/error-retry.md) | Error + retry handling |
 | [`providers/reliability/error-taxonomy-propagation.md`](providers/reliability/error-taxonomy-propagation.md) | Error taxonomy + propagation |
-| [`providers/reliability/llm-fault-tolerance.md`](providers/reliability/llm-fault-tolerance.md) | LLM fault tolerance（调研） |
+| [`providers/reliability/llm-fault-tolerance.md`](providers/reliability/llm-fault-tolerance.md) | LLM fault tolerance (investigation) |
 | [`providers/reliability/error-and-timeout-mechanism.html`](providers/reliability/error-and-timeout-mechanism.html) | Error + timeout mechanism (rendered) |
 | [`providers/network-proxy.md`](providers/network-proxy.md) | Outbound network proxy — survey, comparison, unified design |
 | [`providers/auth/credential-connection-unification.md`](providers/auth/credential-connection-unification.md) | Credential/connection unification |
-| [`providers/PROBLEM-models-and-bailian.md`](providers/PROBLEM-models-and-bailian.md) | 当前问题：模型清单与百炼 provider（未解问题记录） |
+| [`providers/PROBLEM-models-and-bailian.md`](providers/PROBLEM-models-and-bailian.md) | Open problem: model list and the Bailian provider |
 
 ## function/ — function & tool calling
 
@@ -144,7 +145,7 @@ supporting notes / investigations that should not override it.
 | [`ui/surface-system.md`](ui/surface-system.md) | Surface system |
 | [`ui/indicator-dots.md`](ui/indicator-dots.md) | Indicator dots |
 | [`ui/attachment-handling.md`](ui/attachment-handling.md) | Attachment handling ([rendered](ui/attachment-handling.html)) |
-| [`ui/composer-interaction-modes.md`](ui/composer-interaction-modes.md) | Composer 交互模式 |
+| [`ui/composer-interaction-modes.md`](ui/composer-interaction-modes.md) | Composer interaction modes |
 | [`ui/gui-agent-context.md`](ui/gui-agent-context.md) | GUI agent context flow |
 | [`ui/state-layer.md`](ui/state-layer.md) | Web state layer: per-session vs global stores, session-scope container plan |
 | [`ui/project-workspace.md`](ui/project-workspace.md) | Project workspace — files, tabs, multi-session ([prototype](ui/project-workspace-prototype.html)) |
@@ -166,8 +167,8 @@ Extension gating design + reference comparison — see
 
 | Doc | Topic |
 |---|---|
-| [`usage-metering.md`](usage-metering.md) | Usage 子系统（token/cost 记账、ledger、收口点、子进程、消费层） |
-| [`framework-overview.md`](framework-overview.md) | 框架总览：一次对话从输入到产出 |
+| [`usage-metering.md`](usage-metering.md) | Usage subsystem (token/cost accounting, ledger, collection point, subprocesses, consumers) |
+| [`framework-overview.md`](framework-overview.md) | Framework overview: one conversation from input to output |
 | [`docs-site.md`](docs-site.md) | The documentation site itself (build, nav, bilingual routing) |
 
 ## research/ — investigations
@@ -192,13 +193,13 @@ There is no `archive/` directory: superseded docs were deleted outright rather
 than moved aside. Recover them from git history if needed.
 
 Previously removed:
-- `model-catalog-dynamic.md` / `model-catalog-per-provider.md` — 迭代草稿，被 `models.md` 取代
-- `claude-code-meridian-profile.md` — Meridian proxy 已砍，纯历史
-- `*-references.md` — 调研快照/原始研究笔记（slash-commands / tui-upgrade / user-input-requests）
+- `model-catalog-dynamic.md` / `model-catalog-per-provider.md` — iteration drafts, superseded by `models.md`
+- `claude-code-meridian-profile.md` — the Meridian proxy was dropped; purely historical
+- `*-references.md` — investigation snapshots / raw research notes (slash-commands / tui-upgrade / user-input-requests)
 
 ## TODO-doc-code-gaps.md
 
-[`TODO-doc-code-gaps.md`](TODO-doc-code-gaps.md) — 审计发现的文档与代码不对齐待修项，按优先级排列。修完一条删一条。
+[`TODO-doc-code-gaps.md`](TODO-doc-code-gaps.md) — Places where the docs and the code disagree, ordered by priority. Delete an entry once it is fixed.
 
 ## Conventions
 

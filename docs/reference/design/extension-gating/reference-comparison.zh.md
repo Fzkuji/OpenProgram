@@ -1,10 +1,10 @@
 # 参考实现对比
 
-我们研究过的三个框架是如何控制"某个 agent 可以使用哪些扩展"的。在考虑设计变更之前阅读本文，这样你就能知道哪些方案已经尝试过了。
+三个参考框架是如何控制"某个 agent 可以使用哪些扩展"的。在考虑设计变更之前阅读本文，这样你就能知道哪些方案已经尝试过了。
 
 ## 横向对比
 
-| 维度 | **claude-code-leaked** | **opencode** | **hermes** | **OpenProgram（我们）** |
+| 维度 | **claude-code-leaked** | **opencode** | **hermes** | **OpenProgram** |
 |---|---|---|---|---|
 | 是否存在按 agent 的门控 | ✅ | ✅ | 部分（仅 channel 级别） | ✅ |
 | 机制 | 按类型的显式列表 | 单个 `permission: Ruleset` | YAML adapter 配置 | 按类型的列表 + fnmatch 通配符 |
@@ -34,11 +34,11 @@ const AgentJsonSchema = z.object({
 
 **模式**：每种扩展类型都有自己的列表字段。列表是精确名称——没有通配符。阅读很容易（"这个 agent 用了这些工具"），但在覆盖宽泛场景时书写很啰嗦。
 
-**它们比我们做得更进一步的地方**：
+**它更进一步的地方**：
 
 - `mcpServers` 既可以是对一个现有 server 的*引用*（`"slack"`），也可以是一个*内联定义*——agent 可以自带 MCP 配置，而无需全局注册。
-- `requiredMcpServers` 在缺失时会让整个 agent 不可用（我们以 `mcp.required` 的形式采纳了这一点）。
-- `hooks` 是按 agent 的——它们在 agent 启动时注册 session 作用域的 hook。我们通过 `openprogram/plugins/hooks.py` 提供了全局 hook 分发，但尚无按 agent 的作用域。
+- `requiredMcpServers` 在缺失时会让整个 agent 不可用 —— 本设计以 `mcp.required` 的形式采纳。
+- `hooks` 是按 agent 的 —— 在 agent 启动时注册 session 作用域的 hook。OpenProgram 只有 `openprogram/plugins/hooks.py` 的全局 hook 分发，没有按 agent 的作用域。
 
 ## opencode
 
@@ -57,13 +57,13 @@ Info = Schema.Struct({
 
 **模式**：每个 agent 一份 ruleset，按 glob 匹配带命名空间的权限键（`tools:`、`mcp:`、`skills:`）。每条规则是一个 `{pattern, action}` 对；首条匹配生效。
 
-**它们比我们做得更进一步的地方**：
+**它更进一步的地方**：
 
 - 单一事实来源——新增一种扩展类型只需选定一个命名空间前缀（`prompts:*`）；无需改 schema。
 - 模式组合——一条规则就能表达在按类型方案里需要好几条才能表达的内容（`{pattern: "mcp:*", action: "deny"}` 会禁用所有 MCP）。
 - 权衡：更抽象——用户必须学习模式语法。
 
-**我们为什么没有采用 opencode 风格**：我们已经为 tools 提供了按类型的 `tools.disabled`，并且为对齐又加上了 `skills` 和 `mcp`。迁移到单一 ruleset 将是纯粹的重构，除了语法上的收益之外没有新能力。如果我们将来新增第 4 种被门控的类型，值得重新考虑。
+**为什么不采用 opencode 风格**：tools 已有按类型的 `tools.disabled`，`skills` 与 `mcp` 沿用同一形态。迁移到单一 ruleset 是纯重构，除语法上的收益之外没有新能力。若将来新增第 4 种被门控的类型，值得重新考虑。
 
 ## hermes
 
@@ -71,20 +71,20 @@ Info = Schema.Struct({
 
 Hermes 以 platform adapter 为中心（Discord、Slack、ntfy、…）。每个 adapter 都附带一个带权限的 `plugin.yaml`，但它是 **channel 级别**的（该 adapter 在网络上被允许做什么），而非 agent 级别的（该 agent 角色被允许做什么）。没有与 agent-profile 门控对应的东西。
 
-**我们从 hermes 采纳了什么**：在这一层没有采纳任何东西。
+**从 hermes 采纳的**：这一层没有采纳任何东西。
 
-## 决策依据（我们为什么走到了这里）
+## 设计理由
 
-我们一开始照搬了 claude-code 的按类型字段形态，因为：
+本模型沿用 claude-code 的按类型字段形态，因为：
 
-1. 在这次设计讨论之前，我们就已经有了 `AgentSpec.skills.disabled` 和 `AgentSpec.tools.disabled`——沉没成本偏向于延续。
+1. `AgentSpec.skills.disabled` 与 `AgentSpec.tools.disabled` 本就存在，延续这一形态没有额外成本。
 2. 这种形态是自解释的（`tools.disabled` 准确地说明了它的作用）。
 3. 往同一个结构体里加 `allowed` / `categories` / `required` 是机械化的工作。
 
-随后我们加上了 fnmatch 通配符，因为：
+fnmatch 通配符叠加在这一形态之上，因为：
 
 1. 实现起来很简单（单个辅助函数 `match_any`）。
 2. 在不放弃"每类型一个字段"清晰性的前提下，解决了纯列表方案啰嗦的问题。
 3. 向后兼容——精确名称是 fnmatch 的平凡情形。
 
-最终结果是"claude-code 骨架 + opencode 通配符"。如果未来某个框架引入了一个有实质差异的模型，回头看本文并考虑迁移。
+最终形态是 claude-code 骨架加 opencode 通配符。如果未来某个框架引入了一个有实质差异的模型，回头看本文并考虑迁移。
