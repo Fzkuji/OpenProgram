@@ -189,14 +189,6 @@ class PasteStore {
 
 export const pasteStore = new PasteStore();
 
-// Expose to window for diagnostics (Chrome MCP probing, browser
-// devtools). Harmless in prod — it's just a reference to the same
-// in-memory store the React composer reads.
-if (typeof window !== "undefined") {
-  (window as unknown as { __pasteStore?: PasteStore }).__pasteStore =
-    pasteStore;
-}
-
 /** Format a placeholder token for an entry. The composer textarea
  *  displays this in place of the pasted content. */
 export function placeholderToken(entry: PastedEntry): string {

@@ -139,10 +139,7 @@ const closedSessionAckTombstones = new Set<string>();
  *  Chrome parity). No-op off desktop or if the bridge lacks the method. */
 function requestDesktopWindowClose(): void {
   if (typeof window === "undefined") return;
-  const bridge = (window as unknown as {
-    openprogramDesktop?: { closeWindow?: () => void };
-  }).openprogramDesktop;
-  bridge?.closeWindow?.();
+  window.openprogramDesktop?.closeWindow?.();
 }
 
 export interface CenterTabsState {

@@ -19,6 +19,8 @@ import { useUserProfile } from "@/lib/prefs/user-profile";
 import { MessageActions } from "./message-actions";
 import { useAvatarAlign } from "./use-avatar-align";
 import { UserAttachments, parseUserAttachments } from "./user-attachments";
+import { setRunActive } from "@/lib/runtime-bridge/chat-handlers";
+import { getSocket } from "@/lib/runtime-bridge/state";
 
 function EditBox({
   msg,
@@ -55,12 +57,10 @@ function EditBox({
         return r.json();
       })
       .then(() => {
-        (
-          window as unknown as { setRunActive?: (a: boolean) => void }
-        ).setRunActive?.(true);
-        const w = window as Window & { ws?: WebSocket };
-        if (w.ws && w.ws.readyState === WebSocket.OPEN) {
-          w.ws.send(
+        setRunActive(true);
+        const sock = getSocket();
+        if (sock && sock.readyState === WebSocket.OPEN) {
+          sock.send(
             JSON.stringify({ action: "load_session", session_id: sessionId }),
           );
         }

@@ -5,14 +5,15 @@
  *
  * `availableFunctions` and `programsMeta` are now read from the zustand
  * `useFunctions` store (pushed by the `functions_list` WS handler in
- * use-ws.ts). `sidebarOpen` is still read from `window` since it's
- * toggled by legacy UI code.
+ * use-ws.ts). `sidebarOpen` lives on the shared `runtimeState` singleton,
+ * which non-React modules mutate directly, so it is polled.
  */
 
 import { useEffect, useState } from "react";
 import type { AgenticFunction } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
 import { useFunctions } from "@/lib/state/functions-store";
+import { runtimeState } from "@/lib/runtime-bridge/state";
 
 interface FunctionsMeta {
   favorites: string[];
@@ -36,8 +37,7 @@ export function useWindowGlobals(): WindowGlobalsState {
 
   useEffect(() => {
     const id = setInterval(() => {
-      const cur =
-        (window as unknown as { sidebarOpen?: boolean }).sidebarOpen ?? true;
+      const cur = runtimeState.sidebarOpen ?? true;
       setSidebarOpen((prev) => (prev === cur ? prev : cur));
     }, 250);
     return () => clearInterval(id);
@@ -50,8 +50,8 @@ export function useWindowGlobals(): WindowGlobalsState {
   };
 }
 
-/** Subscribe to just currentSessionId — now reads from the React store
- *  instead of polling window.currentSessionId at 250ms. */
+/** Subscribe to just currentSessionId — reads from the React store, no
+ *  polling. */
 export function useCurrentSessionId(): string | null {
   return useSessionStore((s) => s.currentSessionId);
 }

@@ -178,6 +178,4 @@ export function initOverlayScrollbars(): void {
       el.dispatchEvent(new Event("scroll"));
     });
   });
-  (window as unknown as { installOverlayScrollbar?: typeof install }).installOverlayScrollbar =
-    install;
 }

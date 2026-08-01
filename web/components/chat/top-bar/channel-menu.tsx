@@ -7,7 +7,7 @@
  * Slack) grouped by platform, plus a "Local" row for no binding.
  * Picking one binds the current conversation to that channel
  * (`set_conversation_channel` over WS) — or, for a brand-new chat with
- * no session yet, stashes the choice on `window._pendingChannelChoice`.
+ * no session yet, stashes the choice via `setDraftChannelChoice`.
  *
  * Positioning / click-outside / portal are handled by the shadcn
  * <Popover> in `index.tsx`; this component just renders the rows.
@@ -17,7 +17,17 @@ import { Check, ChevronRight } from "lucide-react";
 
 import { useBoundChat } from "./bound-chat";
 import { mirrorUpsertConv } from "@/lib/runtime-bridge/conv-store-mirror";
-import { setDraftChannelChoice } from "@/lib/runtime-bridge/draft-channel-choice";
+import {
+  draftChannelChoiceHost,
+  setDraftChannelChoice,
+} from "@/lib/runtime-bridge/draft-channel-choice";
+import {
+  channelIcon,
+  currentChannelChoice,
+  fetchChannelAccounts,
+  refreshChannelBadge,
+} from "@/lib/runtime-bridge/conversations";
+import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { SettingsIcon } from "@/components/animated-icons";
@@ -37,15 +47,6 @@ interface ChannelAccount {
   enabled?: boolean;
 }
 
-interface ChannelWindow {
-  fetchChannelAccounts?: () => Promise<ChannelAccount[]>;
-  _currentChannelChoice?: () => { channel: string | null; account_id: string | null };
-  _channelIcon?: (plat: string) => string;
-  refreshChannelBadge?: () => void;
-  conversations?: Record<string, { channel?: string | null; account_id?: string | null }>;
-  _pendingChannelChoice?: { channel: string | null; account_id: string | null } | null;
-  ws?: WebSocket;
-}
 
 const BRAND: Record<string, string> = {
   wechat: "WeChat",
@@ -64,28 +65,20 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
   const [rows, setRows] = useState<ChannelAccount[] | null>(null);
 
   useEffect(() => {
-    const f = (window as unknown as ChannelWindow).fetchChannelAccounts;
-    if (f) {
-      f().then(
-        (r) => setRows(r || []),
-        () => setRows([]),
-      );
-    } else {
-      setRows([]);
-    }
+    fetchChannelAccounts().then(
+      (r) => setRows(r || []),
+      () => setRows([]),
+    );
   }, []);
 
-  const w = window as unknown as ChannelWindow;
-  const cur = w._currentChannelChoice?.() ?? {
-    channel: null,
-    account_id: null,
-  };
+  const cur = currentChannelChoice();
 
   function pick(ch: string, acct: string) {
     onClose();
     if (sessionId) {
-      if (w.ws && w.ws.readyState === WebSocket.OPEN) {
-        w.ws.send(
+      const sock = getSocket();
+      if (sock && sock.readyState === WebSocket.OPEN) {
+        sock.send(
           JSON.stringify({
             action: "set_conversation_channel",
             session_id: sessionId,
@@ -94,7 +87,9 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
           }),
         );
       }
-      const conv = w.conversations?.[sessionId];
+      const conv = runtimeState.conversations[sessionId] as
+        | { channel?: string | null; account_id?: string | null }
+        | undefined;
       if (conv) {
         conv.channel = ch || null;
         conv.account_id = ch && acct ? acct : null;
@@ -103,12 +98,12 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
         mirrorUpsertConv({ ...conv, id: sessionId });
       }
     } else {
-      setDraftChannelChoice(w, activeChatKey, {
+      setDraftChannelChoice(draftChannelChoiceHost, activeChatKey, {
         channel: ch || null,
         account_id: ch ? acct || null : null,
       });
     }
-    w.refreshChannelBadge?.();
+    refreshChannelBadge();
   }
 
   // Group accounts by platform, preserving first-seen order.
@@ -146,7 +141,7 @@ export function ChannelMenu({ onClose }: { onClose: () => void }) {
               className="provider-icon"
               style={{ width: 14, height: 14 }}
               dangerouslySetInnerHTML={{
-                __html: w._channelIcon?.(g.plat) ?? "",
+                __html: channelIcon(g.plat),
               }}
             />
             <span>{brandFor(g.plat)}</span>

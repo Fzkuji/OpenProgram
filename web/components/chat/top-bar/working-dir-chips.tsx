@@ -26,6 +26,7 @@ import { HoverTip } from "@/components/ui/tooltip";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws-request";
+import { closeAllPopovers } from "@/lib/runtime-bridge/ui";
 import { useBoundChat } from "./bound-chat";
 import { GROUP_LABEL, MENU_PANEL, MENU_SEPARATOR, itemCls } from "./menu-styles";
 
@@ -114,9 +115,7 @@ export function WorkingDirChips() {
   function onOpenChange(next: boolean) {
     if (next) {
       window.dispatchEvent(new Event("topbar-close-menus"));
-      (
-        window as unknown as { _closeAllPopovers?: () => void }
-      )._closeAllPopovers?.();
+      closeAllPopovers();
     }
     setOpen(next);
   }

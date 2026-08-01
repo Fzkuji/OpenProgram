@@ -16,7 +16,7 @@
  */
 
 import type { GNode } from "../types";
-import { HGW } from "../types";
+import { runtimeState } from "../../state";
 import {
   _collapsed,
   _collapseSession,
@@ -31,7 +31,7 @@ export function _applyCollapse(graph: GNode[]): {
   hiddenCount: Record<string, number>;
   isCollapsible: (m: GNode) => boolean;
 } {
-  const sid = HGW.currentSessionId || null;
+  const sid = runtimeState.currentSessionId;
   if (sid !== _collapseSession) {
     setCollapsed(Object.create(null));
     setSeenCollapsible(Object.create(null));

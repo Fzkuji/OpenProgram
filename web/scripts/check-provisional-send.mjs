@@ -32,6 +32,24 @@ globalThis.window = {
   dispatchEvent: () => {},
   location: { pathname: "/chat" },
 };
+// The composer's `setRunning` import reaches runtime-bridge/ui + the DAG
+// module, both of which install document-level listeners at import time.
+// Seed the DOM hooks they touch so the module graph loads under Node.
+globalThis.document = {
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  getElementById: () => null,
+  querySelector: () => null,
+  querySelectorAll: () => [],
+  createElement: () => ({
+    getContext: () => null,
+    style: {},
+    classList: { add() {}, remove() {} },
+    setAttribute() {},
+    appendChild() {},
+  }),
+  body: null,
+};
 globalThis.localStorage = {
   getItem: (key) => values.get(key) ?? null,
   setItem: (key, value) => values.set(key, String(value)),
@@ -40,16 +58,21 @@ globalThis.localStorage = {
 globalThis.WebSocket = { OPEN: 1 };
 
 const sent = [];
-Object.assign(globalThis.window, {
-  ws: { readyState: 1, send: (payload) => sent.push(JSON.parse(payload)) },
-  currentSessionId: null,
-});
+
+// The socket and the active session id live on the shared runtimeState
+// module now (lib/runtime-bridge/state), not on `window`.
+const { runtimeState, setSocket } = await import(
+  "../lib/runtime-bridge/state.ts"
+);
+setSocket({ readyState: 1, send: (payload) => sent.push(JSON.parse(payload)) });
+runtimeState.currentSessionId = null;
 
 const { sendChatMessage } = await import(
   "../components/chat/composer/legacy-send.ts"
 );
+// The ack-pairing reservations live in lib/pending-user-text now.
+const pendingUserText = await import("../lib/pending-user-text.ts");
 const { useSessionStore } = await import("../lib/session-store/index.ts");
-globalThis.window.__sessionStore = useSessionStore;
 const provisional = "local_duplicate_send";
 
 const send = (text) => sendChatMessage({
@@ -64,7 +87,7 @@ assert.equal(send("first"), true);
 assert.equal(send("second"), true, "a duplicate UI submit is handled locally");
 assert.equal(sent.length, 1, "only one provisional turn may wait for its first ACK");
 assert.equal(
-  globalThis.window.__pendingUserTextBySession?.[provisional],
+  pendingUserText.getPendingUserText(provisional),
   "first",
   "a duplicate submit must not overwrite the text paired with the first ACK",
 );
@@ -83,10 +106,10 @@ const sendFailure = new Error("socket closed during send");
 const loggedSendErrors = [];
 const originalConsoleError = console.error;
 console.error = (...args) => loggedSendErrors.push(args);
-globalThis.window.ws = {
+setSocket({
   readyState: 1,
   send: () => { throw sendFailure; },
-};
+});
 let throwingResult;
 let escapedSendError = null;
 try {
@@ -103,12 +126,12 @@ try {
   console.error = originalConsoleError;
 }
 assert.equal(
-  globalThis.window.__pendingFirstAckBySession?.[throwingDraft],
-  undefined,
+  pendingUserText.hasPendingFirstAck(throwingDraft),
+  false,
   "a throwing ws.send must release the provisional first-ACK reservation",
 );
 assert.equal(
-  globalThis.window.__pendingUserTextBySession?.[throwingDraft],
+  pendingUserText.getPendingUserText(throwingDraft),
   undefined,
   "a throwing ws.send must release its pending user text",
 );
@@ -135,7 +158,7 @@ const closingSocket = {
   readyState: 1,
   send() { this.readyState = 3; },
 };
-globalThis.window.ws = closingSocket;
+setSocket(closingSocket);
 assert.equal(sendChatMessage({
   text: "retry after close",
   sessionId: closingDraft,
@@ -143,18 +166,21 @@ assert.equal(sendChatMessage({
   toolsEnabled: true,
   webSearchEnabled: false,
 }), false);
-assert.equal(globalThis.window.__pendingFirstAckBySession?.[closingDraft], undefined);
-assert.equal(globalThis.window.__pendingUserTextBySession?.[closingDraft], undefined);
+assert.equal(pendingUserText.hasPendingFirstAck(closingDraft), false);
+assert.equal(pendingUserText.getPendingUserText(closingDraft), undefined);
 assert.equal(useSessionStore.getState().runningTasks[closingDraft], undefined);
 
-globalThis.window.ws = {
+setSocket({
   readyState: 1,
   send: (payload) => sent.push(JSON.parse(payload)),
-};
+});
 
 const channelDraft = "local_channel-owner";
-globalThis.window.currentSessionId = "real-session-b";
-globalThis.window.__pendingChannelChoices = {
+runtimeState.currentSessionId = "real-session-b";
+const { draftChannelChoiceHost } = await import(
+  "../lib/runtime-bridge/draft-channel-choice.ts"
+);
+draftChannelChoiceHost.__pendingChannelChoices = {
   [channelDraft]: { channel: "wechat", account_id: "work" },
 };
 assert.equal(sendChatMessage({
@@ -316,7 +342,7 @@ const wsSendBody = composer.slice(
   composer.indexOf("function wsSend("),
   composer.indexOf("const noop"),
 );
-assert.match(wsSendBody, /try \{[\s\S]*w\.ws\.send/);
+assert.match(wsSendBody, /try \{[\s\S]*sock\.send/);
 assert.match(wsSendBody, /catch \(error\) \{[\s\S]*return false;/);
 assert.match(
   composer,
@@ -346,7 +372,7 @@ assert.match(composer, /action:\s*"set_conversation_channel"/);
 assert.match(composer, /draftChannelChoiceFor\([^,]+, dispatchSessionId\)/);
 assert.match(
   composer,
-  /if \(shouldClearLegacyRunning\([\s\S]*?dispatchSessionId,[\s\S]*?store\.activeChatKey,[\s\S]*?store\.currentSessionId,[\s\S]*?\)\) \{\s*w\.setRunning\?\.\(false\);/,
+  /if \(shouldClearLegacyRunning\([\s\S]*?dispatchSessionId,[\s\S]*?store\.activeChatKey,[\s\S]*?store\.currentSessionId,[\s\S]*?\)\) \{\s*setRunning\(false\);/,
 );
 
 const stopBody = composer.slice(
@@ -381,7 +407,7 @@ const chatHandlers = readFileSync(
 );
 assert.match(
   chatHandlers,
-  /dropDraftChannelChoice\(W, sid, isActive\);/,
+  /dropDraftChannelChoice\(choiceHost, sid, isActive\);/,
   "chat_ack must consume the channel choice carried by the first payload",
 );
 
@@ -395,12 +421,12 @@ const legacySend = readFileSync(
 );
 assert.match(
   legacySend,
-  /if \(!background\) w\.setWelcomeVisible\?\.\(false\);/,
+  /if \(!background\) setWelcomeVisible\(false\);/,
   "background sends must not hide the focused shell's welcome panel",
 );
 assert.match(
   legacySend,
-  /if \(!background\) w\.setRunning\?\.\(true\);/,
+  /if \(!background\) setRunning\(true\);/,
   "background sends must not flip the focused shell's run flag",
 );
 assert.match(

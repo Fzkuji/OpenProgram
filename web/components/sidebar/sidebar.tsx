@@ -14,9 +14,7 @@
  * Data sources (this slice):
  *   - the conversation list comes from `useSessionStore` (store.conversations,
  *     fed by the runtime-bridge via conv-store-mirror).
- *   - `useWindowGlobals` still polls `window.availableFunctions` /
- *     `window.programsMeta` (written by legacy `init.js` / WS handlers)
- *     until those migrate to the store too.
+ *   - `useWindowGlobals` reads functions / meta from the functions store.
  *   - `useSessionStore` is still used for `openFnForm` plumbing
  *     (clickFunction is the global that calls it).
  *
@@ -26,17 +24,17 @@
  *   - Memory     → /memory
  *   - Chats      → /chats
  *   - Click conv → /s/<id>
- *   - Fav click  → legacy `clickFunction()` (opens fn form via store).
- *   - Refresh    → legacy `refreshFunctions()` (re-fetch + re-render).
+ *   - Fav click  → `clickFunction()` (opens fn form via store).
+ *   - Refresh    → `refreshFunctionsList()` (re-fetch + re-render).
  *   - Collapse   → CSS class toggle on `.sidebar`, persisted to
  *                  localStorage as `sidebarOpen`. We also write
- *                  `window.sidebarOpen` so legacy code that still
- *                  reads it stays in sync.
+ *                  `runtimeState.sidebarOpen` so non-React readers
+ *                  stay in sync.
  */
 
 import { useEffect, useLayoutEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 // Sidebar icons. The six nav glyphs (functions / skills / plugins / mcp /
 // memory / chats) AND the collapse toggle use the ANIMATED line set
 // (pqoqubbw/icons — Lucide + Framer Motion, ./animated-nav-icons), each
@@ -77,6 +75,8 @@ import {
   sidebarToggleClass,
 } from "./nav-classes";
 import { useWindowGlobals } from "./use-window-globals";
+import { runtimeState } from "@/lib/runtime-bridge/state";
+import { newSession } from "@/lib/runtime-bridge/conversations";
 
 function readPersistedSidebarOpen(): boolean {
   if (typeof window === "undefined") return true;
@@ -88,7 +88,6 @@ function readPersistedSidebarOpen(): boolean {
 }
 
 export function Sidebar() {
-  const router = useRouter();
   const pathname = usePathname();
   const { t } = useTranslation();
 
@@ -123,12 +122,12 @@ export function Sidebar() {
 
   // 挂载时从 localStorage 同步。必须在首次绘制前（useLayoutEffect）：
   // useEffect 在绘制后才跑，收起状态刷新页面会先画一帧展开、再播
-  // 收起动画。右侧栏没这毛病，左侧栏也不该有。也回写 legacy 全局
-  // `window.sidebarOpen`。
+  // 收起动画。右侧栏没这毛病，左侧栏也不该有。也回写共享状态
+  // `runtimeState.sidebarOpen`。
   useLayoutEffect(() => {
     const persisted = readPersistedSidebarOpen();
     setOpen(persisted);
-    (window as unknown as { sidebarOpen?: boolean }).sidebarOpen = persisted;
+    runtimeState.sidebarOpen = persisted;
   }, []);
   // 水合前由 layout.tsx 内联脚本打上的强制收起属性，要等 DOM 上的
   // collapsed 类名和持久化状态一致后才摘。不能无条件摘：并发水合下
@@ -152,7 +151,7 @@ export function Sidebar() {
       } catch {
         /* ignore */
       }
-      (window as unknown as { sidebarOpen?: boolean }).sidebarOpen = next;
+      runtimeState.sidebarOpen = next;
       return next;
     });
   }
@@ -201,22 +200,16 @@ export function Sidebar() {
     } else {
       draftId = s.openDraftSessionTab();
     }
-    const w = window as unknown as { newSession?: (draftId?: string) => void };
-    if (typeof w.newSession === "function") {
-      w.newSession(draftId);
-    } else if (pathname !== "/chat") {
-      router.push("/chat");
-    }
+    newSession(draftId);
     return draftId;
   }
 
   function doRefresh() {
     if (refreshing) return;
     setRefreshing(true);
-    // Re-fetch /api/functions via the React-side helper; it mirrors
-    // the result into both the zustand store and the legacy
-    // `window.availableFunctions` global so React + legacy consumers
-    // stay in sync.
+    // Re-fetch /api/functions via the React-side helper; it mirrors the
+    // result into the zustand store and `runtimeState.availableFunctions`
+    // so React + non-React consumers stay in sync.
     void refreshFunctionsList();
     // Mirror legacy spin → tick → revert timing.
     const svg = refreshSvgRef.current;

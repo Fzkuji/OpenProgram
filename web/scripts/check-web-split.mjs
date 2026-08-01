@@ -339,7 +339,7 @@ secondarySession.getState().setComposerInput("secondary text");
 secondarySession.getState().setComposerSettings({ tools: false, thinking: "high" });
 secondarySession.getState().setPendingProject("local_one", "project-one");
 const channelDrafts = await import("../lib/runtime-bridge/draft-channel-choice.ts");
-channelDrafts.setDraftChannelChoice(globalThis.window, "local_one", {
+channelDrafts.setDraftChannelChoice(secondarySessionModule.draftChoiceHost(), "local_one", {
   channel: "slack",
   account_id: "team",
 });
@@ -355,8 +355,8 @@ secondarySession.setState({
   composerSettingsBySession: {},
   pendingProjectsByChat: {},
 });
-globalThis.window.__pendingChannelChoices = {};
-globalThis.window._pendingChannelChoice = null;
+secondarySessionModule.draftChoiceHost().__pendingChannelChoices = {};
+secondarySessionModule.draftChoiceHost()._pendingChannelChoice = null;
 secondarySessionModule.applySessionTransfer(sessionSnapshot, { persist: false });
 assert.deepEqual(
   {
@@ -365,7 +365,7 @@ assert.deepEqual(
     composerDrafts: secondarySession.getState().composerDrafts,
     composerSettingsBySession: secondarySession.getState().composerSettingsBySession,
     pendingProjectsByChat: secondarySession.getState().pendingProjectsByChat,
-    draftChannelChoices: globalThis.window.__pendingChannelChoices,
+    draftChannelChoices: secondarySessionModule.draftChoiceHost().__pendingChannelChoices,
   },
   {
     activeChatKey: originalSession.activeChatKey,
@@ -390,7 +390,7 @@ assert.equal(
   "project-one",
 );
 assert.deepEqual(
-  channelDrafts.draftChannelChoiceFor(globalThis.window, "local_one"),
+  channelDrafts.draftChannelChoiceFor(secondarySessionModule.draftChoiceHost(), "local_one"),
   { channel: "slack", account_id: "team" },
 );
 
@@ -399,15 +399,13 @@ const withoutKey = (map, key) => Object.fromEntries(
 );
 values.clear();
 globalThis.window.openprogramDesktop = { isDesktop: true, windowId: "transfer-a" };
-globalThis.window.__pendingChannelChoices = {};
-globalThis.window._pendingChannelChoice = null;
 const sourceTransferModule = await import("../lib/session-store/index.ts?task3-transfer-a");
 const sourceTransfer = sourceTransferModule.useSessionStore;
 sourceTransfer.getState().setCurrentDraft("local_move");
 sourceTransfer.getState().setComposerInput("move me");
 sourceTransfer.getState().setComposerSettings({ tools: false, thinking: "medium" });
 sourceTransfer.getState().setPendingProject("local_move", "project-move");
-channelDrafts.setDraftChannelChoice(globalThis.window, "local_move", {
+channelDrafts.setDraftChannelChoice(secondarySessionModule.draftChoiceHost(), "local_move", {
   channel: "discord",
   account_id: "move-account",
 });
@@ -432,8 +430,6 @@ sourceTransferModule.applySessionTransfer({
 }, { persist: true });
 
 globalThis.window.openprogramDesktop = { isDesktop: true, windowId: "transfer-b" };
-globalThis.window.__pendingChannelChoices = {};
-globalThis.window._pendingChannelChoice = null;
 const destinationTransferModule = await import("../lib/session-store/index.ts?task3-transfer-b");
 const destinationBeforeCommit = destinationTransferModule.snapshotSessionTransfer([
   "local_move",
@@ -481,8 +477,6 @@ assert.deepEqual(
 );
 
 globalThis.window.openprogramDesktop = { isDesktop: true, windowId: "rollback-a" };
-globalThis.window.__pendingChannelChoices = {};
-globalThis.window._pendingChannelChoice = null;
 const rollbackSourceModule = await import("../lib/session-store/index.ts?task3-rollback-a");
 rollbackSourceModule.useSessionStore.getState().setCurrentDraft("local_keep");
 rollbackSourceModule.useSessionStore.getState().setComposerInput("keep me");
@@ -495,8 +489,6 @@ rollbackSourceModule.applySessionTransfer({
 rollbackSourceModule.applySessionTransfer(rollbackSourceBefore, { persist: true });
 
 globalThis.window.openprogramDesktop = { isDesktop: true, windowId: "rollback-b" };
-globalThis.window.__pendingChannelChoices = {};
-globalThis.window._pendingChannelChoice = null;
 const rollbackDestinationModule = await import(
   "../lib/session-store/index.ts?task3-rollback-b"
 );
@@ -656,7 +648,7 @@ assert.equal(
 
 secondaryTabs.getState().openSessionTab("existing", "Effect write");
 secondarySession.getState().setCurrentDraft("local_one");
-channelDrafts.setDraftChannelChoice(globalThis.window, "local_one", {
+channelDrafts.setDraftChannelChoice(secondarySessionModule.draftChoiceHost(), "local_one", {
   channel: "effect-channel",
   account_id: "effect-account",
 });
@@ -1331,7 +1323,7 @@ assert.equal(recoverTransferJournalEntry(
 ), true);
 secondaryTabs.getState().openSessionTab("existing", "Startup effect write");
 secondarySession.getState().setCurrentDraft("local_one");
-channelDrafts.setDraftChannelChoice(globalThis.window, "local_one", {
+channelDrafts.setDraftChannelChoice(secondarySessionModule.draftChoiceHost(), "local_one", {
   channel: "startup-effect",
   account_id: "startup-effect",
 });
@@ -1383,7 +1375,7 @@ assert.equal(
 globalThis.localStorage.setItem = originalSetItem;
 secondaryTabs.getState().openSessionTab("existing", "Failed commit effect");
 secondarySession.getState().setCurrentDraft("local_one");
-channelDrafts.setDraftChannelChoice(globalThis.window, "local_one", {
+channelDrafts.setDraftChannelChoice(secondarySessionModule.draftChoiceHost(), "local_one", {
   channel: "failed-commit-effect",
   account_id: "failed-commit-effect",
 });
@@ -1438,7 +1430,7 @@ assert.equal(
 globalThis.localStorage.setItem = originalSetItem;
 secondaryTabs.getState().openSessionTab("existing", "Failed rollback effect");
 secondarySession.getState().setCurrentDraft("local_one");
-channelDrafts.setDraftChannelChoice(globalThis.window, "local_one", {
+channelDrafts.setDraftChannelChoice(secondarySessionModule.draftChoiceHost(), "local_one", {
   channel: "failed-rollback-effect",
   account_id: "failed-rollback-effect",
 });
@@ -2002,7 +1994,7 @@ assert.match(webTabPaneSource, /text\("Exit split view", "退出分屏"\)/);
 assert.match(webTabPaneSource, /setSplitWebTab\(null\)/);
 assert.match(webTabPaneSource, /setRightDockOpen\(false\)/);
 assert.match(webTabPaneSource, /openDraftSessionTab\(\)/);
-assert.match(webTabPaneSource, /\.newSession\?\.\(draftId\)/);
+assert.match(webTabPaneSource, /newSession\(draftId\)/);
 assert.match(
   webTabPaneSource,
   /const title = sessionState\.conversations\[routeSessionId\]\?\.title \?\? "";/,
@@ -2574,7 +2566,12 @@ assert.doesNotMatch(
     composerSettingsBySession: { chatA: { model: "m1" } },
     pendingProjectsByChat: { chatA: "proj" },
   });
-  window.__pendingChannelChoices = { chatA: { channel: "web" } };
+  const channelHostModule = await import(
+    "../lib/runtime-bridge/draft-channel-choice.ts"
+  );
+  channelHostModule.draftChannelChoiceHost.__pendingChannelChoices = {
+    chatA: { channel: "web" },
+  };
   const draftKey = filesShared.fileDraftKey("proj", "README.md");
   filesShared.fileDrafts.set(draftKey, { content: "edited", baseMtime: 1 });
 

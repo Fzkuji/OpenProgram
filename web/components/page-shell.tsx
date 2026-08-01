@@ -5,6 +5,13 @@ import { usePathname } from "next/navigation";
 
 import { usePendingRunFunction } from "@/lib/use-pending-run-function";
 import { useWS } from "@/lib/net/use-ws";
+import { runtimeState, getSocket } from "@/lib/runtime-bridge/state";
+import { useSessionStore } from "@/lib/session-store";
+import {
+  newSession,
+  renderSessionMessages,
+} from "@/lib/runtime-bridge/conversations";
+import { showHistorySkeleton } from "@/lib/runtime-bridge/dag/pipeline";
 
 type Page = "chat" | "settings" | "chats";
 
@@ -191,26 +198,22 @@ export function PageShell({ page }: { page: Page }) {
 
     return () => {
       cancelled = true;
-      const w = window as unknown as {
-        ws?: WebSocket;
-        reconnectTimer?: ReturnType<typeof setTimeout> | null;
-        _elapsedTimer?: ReturnType<typeof setInterval> | null;
-      };
       try {
-        if (w.ws) {
-          w.ws.onclose = null;
-          w.ws.close();
+        const sock = getSocket();
+        if (sock) {
+          sock.onclose = null;
+          sock.close();
         }
       } catch {
         // ignore
       }
-      if (w.reconnectTimer) {
-        clearTimeout(w.reconnectTimer);
-        w.reconnectTimer = null;
+      if (runtimeState.reconnectTimer) {
+        clearTimeout(runtimeState.reconnectTimer);
+        runtimeState.reconnectTimer = null;
       }
-      if (w._elapsedTimer) {
-        clearInterval(w._elapsedTimer);
-        w._elapsedTimer = null;
+      if (runtimeState._elapsedTimer) {
+        clearInterval(runtimeState._elapsedTimer);
+        runtimeState._elapsedTimer = null;
       }
       if (hostRef.current) hostRef.current.innerHTML = "";
     };
@@ -246,21 +249,14 @@ export function PageShell({ page }: { page: Page }) {
     // over; without this guard, that tick would call newSession()
     // and rewrite the URL back to /chat.
     if (pathname !== "/chat" && !pathname.startsWith("/s/")) return;
-    const w = window as unknown as {
-      ws?: WebSocket;
-      currentSessionId?: string | null;
-      conversations?: Record<string, unknown>;
-      renderSessionMessages?: (c: unknown) => void;
-      newSession?: () => void;
-    };
     const m = pathname.match(/^\/s\/([^/]+)/);
     const target = m ? m[1] : null;
-    if (w.currentSessionId === target) return;
-    w.currentSessionId = target;
+    if (runtimeState.currentSessionId === target) return;
+    runtimeState.currentSessionId = target;
 
     if (target === null) {
       // /chat — reset in-place (welcome screen, clear messages, state).
-      if (w.newSession) w.newSession();
+      newSession();
       return;
     }
 
@@ -268,7 +264,7 @@ export function PageShell({ page }: { page: Page }) {
     // reply below still overwrites with the authoritative capture.
     // TODO(store-migration): reads the legacy heavy conv (messages/graph)
     // for the legacy renderSessionMessages DOM path — stays on
-    // window.conversations until that renderer moves into the store.
+    // runtimeState.conversations until that renderer moves into the store.
     //
     // Only render when the cache holds a FULL capture (messages
     // present). Sidebar entries are lightweight (no messages) — feeding
@@ -276,39 +272,29 @@ export function PageShell({ page }: { page: Page }) {
     // welcome screen for a frame. In that case flip to the skeleton
     // state instead and let loadSessionData clear it when the WS reply
     // lands.
-    const cached = w.conversations?.[target] as
+    const cached = runtimeState.conversations[target] as
       | { messages?: unknown[] }
       | undefined;
-    const store = (window as unknown as {
-      __sessionStore?: {
-        getState: () => {
-          setTranscriptLoading: (id: string | null) => void;
-          setWelcomeVisible: (v: boolean) => void;
-        };
-      };
-    }).__sessionStore;
+    const store = useSessionStore;
     if (
       cached
       && Array.isArray(cached.messages)
       && cached.messages.length > 0
-      && w.renderSessionMessages
     ) {
-      try { w.renderSessionMessages(cached); } catch {}
-      try { store?.getState().setTranscriptLoading(null); } catch {}
+      try { renderSessionMessages(cached as never); } catch {}
+      try { store.getState().setTranscriptLoading(null); } catch {}
     } else {
       try {
-        store?.getState().setTranscriptLoading(target);
-        store?.getState().setWelcomeVisible(false);
+        store.getState().setTranscriptLoading(target);
+        store.getState().setWelcomeVisible(false);
       } catch {}
       // Clear the DAG panel to a skeleton too — otherwise the previous
       // session's graph lingers next to the transcript skeleton.
-      try {
-        (window as unknown as { __historyGraphSkeleton?: () => void })
-          .__historyGraphSkeleton?.();
-      } catch {}
+      try { showHistorySkeleton(); } catch {}
     }
-    if (w.ws && w.ws.readyState === WebSocket.OPEN) {
-      w.ws.send(JSON.stringify({
+    const sock = getSocket();
+    if (sock && sock.readyState === WebSocket.OPEN) {
+      sock.send(JSON.stringify({
         action: "load_session",
         session_id: target,
       }));

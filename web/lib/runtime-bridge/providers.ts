@@ -1,10 +1,8 @@
 /**
  * Provider / agent-settings / token-badge data layer.
  *
- * TS port of the legacy `public/js/shared/providers.js`. Functions are
- * bridged onto `window.*` for the still-legacy scripts (ui.js) and
- * React components; `useWS` / `conversations.ts` / `chat-handlers.ts`
- * call the exports directly.
+ * `useWS` / `conversations.ts` / `chat-handlers.ts` / the React topbar
+ * all import the exports directly — nothing here lives on `window`.
  *
  * Several functions write to legacy topbar DOM ids (`#providerBadge`,
  * `#tokenBadge`, `#chatAgentBadge`, …). Where the React topbar already
@@ -15,40 +13,25 @@
  */
 
 import { useSessionStore } from "@/lib/session-store";
+import { refreshBranchTokens } from "./conversations";
+import { escAttr, escHtml } from "./helpers";
+import { runtimeState, type ThinkingConfig } from "./state";
 
 interface AgentSide {
   provider?: string;
   model?: string;
   session_id?: string;
   locked?: boolean;
-  thinking?: unknown;
+  thinking?: ThinkingConfig;
 }
 
+/** Narrower view of `runtimeState._agentSettings` — the shared type keeps
+ *  the sides as loose records; this file needs `.provider` / `.model`. */
 interface AgentSettings {
   chat?: AgentSide;
   exec?: AgentSide;
   available?: Record<string, unknown>;
 }
-
-interface ProvWindow {
-  currentSessionId?: string | null;
-  _hasActiveSession?: boolean;
-  _agentSettings?: AgentSettings;
-  _lastChatProvider?: string | null;
-  _lastChatModel?: string | null;
-  _lastExecProvider?: string | null;
-  _lastExecModel?: string | null;
-  _thinkingEffort?: string | null;
-  _execThinkingEffort?: string | null;
-  _thinkingConfig?: unknown;
-  buildThinkingMenu?: () => void;
-  escAttr?: (s: unknown) => string;
-  escHtml?: (s: unknown) => string;
-  _refreshBranchTokens?: () => void;
-  [k: string]: unknown;
-}
-
-const W = window as unknown as ProvWindow;
 
 /* ===== Provider badge ============================================ */
 
@@ -67,14 +50,14 @@ export function updateProviderBadge(info: ProviderInfo | null | undefined): void
     if (sessBadge) sessBadge.style.display = "none";
     return;
   }
-  const hadSession = W._hasActiveSession;
-  W._hasActiveSession = !!info.session_id;
+  const hadSession = runtimeState._hasActiveSession;
+  runtimeState._hasActiveSession = !!info.session_id;
   provBadge.textContent =
     info.provider +
     (info.type ? " · " + info.type : "") +
-    (W._hasActiveSession ? " \u{1F512}" : "");
+    (runtimeState._hasActiveSession ? " \u{1F512}" : "");
   provBadge.style.display = "";
-  if (hadSession !== W._hasActiveSession) loadProviders();
+  if (hadSession !== runtimeState._hasActiveSession) loadProviders();
   if (sessBadge) {
     if (info.session_id) {
       const short = info.session_id.split("-").pop() || info.session_id.slice(-8);
@@ -90,65 +73,74 @@ export function updateProviderBadge(info: ProviderInfo | null | undefined): void
 
 /* ===== Agent settings ============================================ */
 
+/** Guards the one-shot retry below; was `(window as any)._chatRetried`. */
+let chatRetried = false;
+
 export async function loadAgentSettings(): Promise<void> {
   try {
     let url = "/api/agent_settings";
-    const sid = useSessionStore.getState().currentSessionId ?? W.currentSessionId;
+    const sid =
+      useSessionStore.getState().currentSessionId ?? runtimeState.currentSessionId;
     if (sid) {
       url += "?session_id=" + encodeURIComponent(sid);
     }
     const resp = await fetch(url);
     const newSettings = await resp.json();
-    W._agentSettings = W._agentSettings || {};
-    if (newSettings.chat) W._agentSettings.chat = newSettings.chat;
-    if (newSettings.exec) W._agentSettings.exec = newSettings.exec;
+    if (newSettings.chat) runtimeState._agentSettings.chat = newSettings.chat;
+    if (newSettings.exec) runtimeState._agentSettings.exec = newSettings.exec;
   } catch {
     return;
   }
   // Push directly to store as primary data source
   updateAgentBadges();
 
-  const as = W._agentSettings || {};
+  const as = runtimeState._agentSettings as AgentSettings;
   const newChatProv = (as.chat && as.chat.provider) || null;
   const newChatModel = (as.chat && as.chat.model) || null;
   if (
-    (W._lastChatProvider != null && newChatProv !== W._lastChatProvider) ||
-    (W._lastChatModel != null && newChatModel !== W._lastChatModel)
+    (runtimeState._lastChatProvider != null &&
+      newChatProv !== runtimeState._lastChatProvider) ||
+    (runtimeState._lastChatModel != null &&
+      newChatModel !== runtimeState._lastChatModel)
   ) {
-    W._thinkingEffort = null;
+    runtimeState._thinkingEffort = null;
   }
-  W._lastChatProvider = newChatProv;
-  W._lastChatModel = newChatModel;
+  runtimeState._lastChatProvider = newChatProv;
+  runtimeState._lastChatModel = newChatModel;
 
   const newExecProv = (as.exec && as.exec.provider) || null;
   const newExecModel = (as.exec && as.exec.model) || null;
   if (
-    (W._lastExecProvider != null && newExecProv !== W._lastExecProvider) ||
-    (W._lastExecModel != null && newExecModel !== W._lastExecModel)
+    (runtimeState._lastExecProvider != null &&
+      newExecProv !== runtimeState._lastExecProvider) ||
+    (runtimeState._lastExecModel != null &&
+      newExecModel !== runtimeState._lastExecModel)
   ) {
-    W._execThinkingEffort = null;
+    runtimeState._execThinkingEffort = null;
   }
-  W._lastExecProvider = newExecProv;
-  W._lastExecModel = newExecModel;
+  runtimeState._lastExecProvider = newExecProv;
+  runtimeState._lastExecModel = newExecModel;
 
   if (as.chat && as.chat.thinking) {
-    W._thinkingConfig = as.chat.thinking;
-    W.buildThinkingMenu?.();
+    runtimeState._thinkingConfig = as.chat.thinking;
+    // Lazy: a static `./ui` import would close the cycle
+    // ui → functions-panel → chat-handlers → providers → ui.
+    void import("./ui").then((m) => m.buildThinkingMenu());
   }
 
   // Retry once if chat provider is null but exec is set — the backend
   // may still be initializing providers on first request after restart.
-  if (!newChatProv && newExecProv && !(W as any)._chatRetried) {
-    (W as any)._chatRetried = true;
+  if (!newChatProv && newExecProv && !chatRetried) {
+    chatRetried = true;
     setTimeout(() => {
-      (W as any)._chatRetried = false;
+      chatRetried = false;
       loadAgentSettings();
     }, 2000);
   }
 }
 
 export function updateAgentBadges(): void {
-  const as = W._agentSettings;
+  const as = runtimeState._agentSettings as AgentSettings;
   if (!as) return;
   try {
     const chatValid = as.chat?.provider && as.chat?.model;
@@ -186,7 +178,7 @@ export function recordCacheWrite(sessionId: string): void {
   if (cacheTtlTimer[sessionId]) clearTimeout(cacheTtlTimer[sessionId]);
   cacheTtlTimer[sessionId] = setTimeout(() => {
     delete cacheTtlTimer[sessionId];
-    const curSid = useSessionStore.getState().currentSessionId ?? W.currentSessionId;
+    const curSid = useSessionStore.getState().currentSessionId ?? runtimeState.currentSessionId;
     if (curSid === sessionId) refreshTokenBadge();
   }, CACHE_TTL_MS);
 }
@@ -269,7 +261,7 @@ export function renderTokenBadge(data: TokenData, sessionId: string): void {
 
 export async function refreshTokenBadge(): Promise<void> {
   const badge = document.getElementById("tokenBadge");
-  const sid = useSessionStore.getState().currentSessionId ?? W.currentSessionId;
+  const sid = useSessionStore.getState().currentSessionId ?? runtimeState.currentSessionId;
   if (!badge) return;
   if (!sid) {
     badge.style.display = "none";
@@ -286,7 +278,7 @@ export async function refreshTokenBadge(): Promise<void> {
     badge.style.display = "none";
   }
   try {
-    W._refreshBranchTokens?.();
+    void refreshBranchTokens();
   } catch {
     /* ignore */
   }
@@ -314,8 +306,6 @@ export async function loadProviders(): Promise<void> {
 function renderProviders(providers: Provider[]): void {
   const el = document.getElementById("providerList");
   if (!el) return;
-  const escAttr = W.escAttr || ((s: unknown) => String(s));
-  const escHtml = W.escHtml || ((s: unknown) => String(s));
   el.innerHTML = providers
     .map((p) => {
       const isConfigured = p.configurable ? p.configured : p.available;
@@ -349,31 +339,5 @@ function renderProviders(providers: Provider[]): void {
     .join("");
 }
 
-export async function switchProvider(name: string): Promise<void> {
-  try {
-    const resp = await fetch("/api/provider/" + encodeURIComponent(name), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: useSessionStore.getState().currentSessionId ?? W.currentSessionId }),
-    });
-    const data = await resp.json();
-    if (data.switched) {
-      loadProviders();
-    } else if (data.error) {
-      alert("Switch failed: " + data.error);
-    }
-  } catch (e) {
-    alert("Switch failed: " + (e as Error).message);
-  }
-}
-
-/* ===== window bridges ============================================ */
-
-W.updateProviderBadge = updateProviderBadge;
-W.loadAgentSettings = loadAgentSettings;
-W.updateAgentBadges = updateAgentBadges;
-W._recordCacheWrite = recordCacheWrite;
-W._renderTokenBadge = renderTokenBadge;
-W.refreshTokenBadge = refreshTokenBadge;
-W.loadProviders = loadProviders;
-W.switchProvider = switchProvider;
+/* No `window.*` bridges: this module generates no inline `onclick=`
+   markup, and every consumer imports the exports directly. */

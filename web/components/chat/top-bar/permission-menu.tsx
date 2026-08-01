@@ -25,6 +25,7 @@ import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
+import { closeAllPopovers } from "@/lib/runtime-bridge/ui";
 import { Check } from "lucide-react";
 
 import {
@@ -81,9 +82,7 @@ export function PermissionBadge() {
   function onOpenChange(next: boolean) {
     if (next) {
       window.dispatchEvent(new Event("topbar-close-menus"));
-      (
-        window as unknown as { _closeAllPopovers?: () => void }
-      )._closeAllPopovers?.();
+      closeAllPopovers();
     }
     setOpen(next);
   }

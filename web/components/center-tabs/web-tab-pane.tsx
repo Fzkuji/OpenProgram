@@ -42,6 +42,7 @@ import {
 } from "@/lib/bookmarks";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useSessionStore } from "@/lib/session-store";
+import { newSession } from "@/lib/runtime-bridge/conversations";
 import styles from "./center-tabs.module.css";
 
 export function WebTabPane({ tabId, url }: { tabId: string; url: string }) {
@@ -124,8 +125,7 @@ function SplitButton({ tabId }: { tabId: string }) {
       state.setActive(activeDraft.id);
     } else {
       const draftId = state.openDraftSessionTab();
-      (window as unknown as { newSession?: (id?: string) => void })
-        .newSession?.(draftId);
+      newSession(draftId);
     }
   }
 

@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Favorite functions list — reads `window.availableFunctions` and
- * `window.programsMeta.{favorites,icons}` to produce a draggable list
+ * Favorite functions list — reads the available functions and
+ * `programsMeta.{favorites,icons}` to produce a draggable list
  * with smooth FLIP-animated reorder (framer-motion `Reorder.Group`).
  *
  * Display order = `programsMeta.favorites` array order (NOT sorted).
@@ -27,6 +27,7 @@ import {
 } from "@/components/functions/icon-picker";
 
 import { useWindowGlobals } from "./use-window-globals";
+import { runtimeState } from "@/lib/runtime-bridge/state";
 
 interface FunctionsMeta {
   favorites: string[];
@@ -37,7 +38,8 @@ interface FunctionsMeta {
 async function persistMeta(meta: FunctionsMeta): Promise<void> {
   // Publish BEFORE the network round-trip so the UI updates instantly.
   // The zustand store is the live source (sidebar + functions page read
-  // it via useFunctions); window.programsMeta stays for legacy readers.
+  // it via useFunctions); runtimeState.programsMeta mirrors it for the
+  // non-React readers.
   const fresh = {
     favorites: [...meta.favorites],
     folders: Object.fromEntries(
@@ -46,7 +48,7 @@ async function persistMeta(meta: FunctionsMeta): Promise<void> {
     icons: { ...meta.icons },
   };
   useFunctions.getState().setMeta(fresh);
-  (window as unknown as Record<string, unknown>).programsMeta = fresh;
+  runtimeState.programsMeta = fresh;
   try {
     await fetch("/api/programs/meta", {
       method: "POST",

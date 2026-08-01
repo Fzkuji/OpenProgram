@@ -32,8 +32,12 @@ import { useSessionStore } from "@/lib/session-store";
 import { useSessionScope } from "@/lib/session-store/session-scope";
 import {
   draftChannelChoiceFor,
+  draftChannelChoiceHost,
   dropDraftChannelChoice,
 } from "@/lib/runtime-bridge/draft-channel-choice";
+import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
+import { closeAllPopovers, setRunning } from "@/lib/runtime-bridge/ui";
+import { setWelcomeVisible } from "@/lib/runtime-bridge/helpers";
 import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
 import { api } from "@/lib/net/api";
 import { showToast } from "@/lib/format-utils/toast";
@@ -102,16 +106,16 @@ import { pushPath } from "@/lib/shallow-nav";
  *  the original message in the chat transcript to re-use it. */
 const HISTORY_RECALL_MAX = 5000;
 
-/* Single shared WebSocket. The legacy chat-ws.js script opens it as
-   `window.ws`; this is the only point in the React layer that touches
-   the global. When the WS layer is migrated (next slice), this helper
-   is replaced by ``useWS().send`` and the call sites stay identical. */
+/* Single shared WebSocket, owned by `lib/net/use-ws.ts` and reached
+   through `runtime-bridge/state`'s `getSocket()`. When the WS layer is
+   migrated (next slice), this helper is replaced by ``useWS().send``
+   and the call sites stay identical. */
 function wsSend(payload: unknown): boolean {
-  const w = window as Window & { ws?: WebSocket };
-  if (!w.ws || w.ws.readyState !== WebSocket.OPEN) return false;
+  const sock = getSocket();
+  if (!sock || sock.readyState !== WebSocket.OPEN) return false;
   try {
-    w.ws.send(typeof payload === "string" ? payload : JSON.stringify(payload));
-    return w.ws.readyState === WebSocket.OPEN;
+    sock.send(typeof payload === "string" ? payload : JSON.stringify(payload));
+    return sock.readyState === WebSocket.OPEN;
   } catch (error) {
     console.error("[Composer] WebSocket send failed:", error);
     return false;
@@ -400,8 +404,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // selected; with no model picked it stays hidden.
   const chatModel = useSessionStore((s) => s.agentSettings?.chat?.model);
   // Agent settings feed the relocated chat/exec model chips below —
-  // same store slice the old topbar row read (populated by the
-  // window-bridge wrappers via <LegacyTopbarBridge />).
+  // same store slice the old topbar row read (populated by
+  // `updateAgentBadges` in lib/runtime-bridge/providers.ts).
   const agentSettings = useSessionStore((s) => s.agentSettings);
   const chatAgent = agentSettings.chat || {};
   const execAgent = agentSettings.exec || {};
@@ -1030,21 +1034,9 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     if (forkOf) body.fork_of_node = forkOf;
 
     // Hide welcome panel right away (matches old sendChatMessage UX).
-    const w = window as unknown as {
-      setWelcomeVisible?: (show: boolean) => void;
-      setRunning?: (running: boolean) => void;
-      _pendingChannelChoice?: {
-        channel: string | null;
-        account_id: string | null;
-      } | null;
-      __pendingChannelChoices?: Record<
-        string,
-        { channel: string | null; account_id: string | null }
-      >;
-    };
-    const dispatchChannelChoice = draftChannelChoiceFor(w, dispatchSessionId);
-    w.setWelcomeVisible?.(false);
-    w.setRunning?.(true);
+    const dispatchChannelChoice = draftChannelChoiceFor(draftChannelChoiceHost, dispatchSessionId);
+    setWelcomeVisible(false);
+    setRunning(true);
 
     // 0ms feedback (interaction-feedback policy): drop a client-side
     // pending runtime card into the transcript right now so the user sees
@@ -1106,7 +1098,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
               account_id: dispatchChannelChoice.account_id || "",
             })
           ) {
-            dropDraftChannelChoice(w, dispatchSessionId);
+            dropDraftChannelChoice(draftChannelChoiceHost, dispatchSessionId);
           }
           // Direct fn-form dispatch has no chat_ack event. Bind a Project
           // selected on the provisional tab here, after the endpoint has
@@ -1132,8 +1124,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           const shouldActivate = sessionAckIsActive(sid);
           useCenterTabs.getState().markSessionReady(sid);
           if (shouldActivate) {
-            (window as unknown as { currentSessionId?: string }).currentSessionId =
-              sid;
+            runtimeState.currentSessionId = sid;
             if (sid !== currentSessionId) {
               setCurrentConv(sid);
               pushPath(`/s/${encodeURIComponent(sid)}`);
@@ -1156,7 +1147,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           store.activeChatKey,
           store.currentSessionId,
         )) {
-          w.setRunning?.(false);
+          setRunning(false);
         }
         // Surface the reason to the user. The backend now returns a
         // structured 400 when a non-agentic tool is invoked via
@@ -1192,9 +1183,9 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const rejectDecision = useCallback(() => {
     const d = activeDecision;
     if (!d) return;
-    const w = window as unknown as { ws?: WebSocket };
-    if (w.ws && w.ws.readyState === WebSocket.OPEN) {
-      w.ws.send(JSON.stringify({ action: "question_reject", id: d.id }));
+    const sock = getSocket();
+    if (sock && sock.readyState === WebSocket.OPEN) {
+      sock.send(JSON.stringify({ action: "question_reject", id: d.id }));
     }
     dequeueDecision(d.id);
   }, [activeDecision, dequeueDecision]);
@@ -1481,8 +1472,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
                 chat + exec models as quiet borderless text ("Opus 4.8"
                 form, restyled via .agentChips overrides — components
                 and their popovers untouched), effort pill, context
-                ring last. The chatAgentBadge / execAgentBadge ids must
-                survive — the window-bridge looks elements up by id. */}
+                ring last. */}
             <div className={styles.agentChips}>
               <AgentBadge
                 id={bound ? `chatAgentBadge-${bound}` : "chatAgentBadge"}
@@ -1852,9 +1842,7 @@ function StatusChip({ owningId = true }: { owningId?: boolean }) {
   function onOpenChange(next: boolean) {
     if (next) {
       window.dispatchEvent(new Event("topbar-close-menus"));
-      (
-        window as unknown as { _closeAllPopovers?: () => void }
-      )._closeAllPopovers?.();
+      closeAllPopovers();
     }
     setOpen(next);
   }

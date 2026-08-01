@@ -9,7 +9,7 @@
  * the same DAG fork point collapse into a single row with an attempt
  * switcher (CommitGroupRow). Item list is paginated (ItemList).
  *
- * Talks to the backend via the existing `window.ws` socket:
+ * Talks to the backend via the shared app socket (`getSocket()`):
  *   send  → {action:"list_context_commits", session_id}
  *           {action:"get_context_commit_detail", commit_id}
  *   recv  → {type:"context_commits_list",  data:{session_id, commits}}
@@ -21,6 +21,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
+import { getSocket } from "@/lib/runtime-bridge/state";
 
 import { CommitGroupRow } from "./commit-group-row";
 import type { CommitDetail, CommitMeta } from "./types";
@@ -61,7 +62,7 @@ export function ContextCommitTimeline() {
 
   // Listen to ws messages, registered once and kept alive. The
   // listener reads sessionIdRef so it survives sessionId churn and
-  // the ws-object swap on reconnect (we poll for window.ws and
+  // the ws-object swap on reconnect (we poll getSocket() and
   // re-attach when it changes).
   useEffect(() => {
     function onMsg(ev: MessageEvent) {
@@ -87,8 +88,7 @@ export function ContextCommitTimeline() {
     }
     let attached: WebSocket | null = null;
     const interval = window.setInterval(() => {
-      const w = window as unknown as { ws?: WebSocket | null };
-      const sock = w.ws || null;
+      const sock = getSocket() || null;
       if (sock === attached) return;
       if (attached) attached.removeEventListener("message", onMsg);
       attached = sock;
@@ -118,14 +118,14 @@ export function ContextCommitTimeline() {
     if (!sessionId) return;
     if (!isContextVisible) return;
     if (!turnIdle) return;
-    const w = window as unknown as { ws?: WebSocket | null };
-    if (w.ws && w.ws.readyState === WebSocket.OPEN) {
+    const sock = getSocket();
+    if (sock && sock.readyState === WebSocket.OPEN) {
       refresh();
       return;
     }
     const t = window.setInterval(() => {
-      const ww = window as unknown as { ws?: WebSocket | null };
-      if (ww.ws && ww.ws.readyState === WebSocket.OPEN) {
+      const s = getSocket();
+      if (s && s.readyState === WebSocket.OPEN) {
         window.clearInterval(t);
         refresh();
       }

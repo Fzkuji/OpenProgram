@@ -19,12 +19,13 @@ import { useSessionStore } from "@/lib/session-store";
 
 import { BranchItem } from "./branch-item";
 import { MergeModal } from "./merge-modal";
+import { runtimeState } from "@/lib/runtime-bridge/state";
+
 import {
   LANE_COLORS,
   PENDING_HEAD_PREFIX,
   wsSend,
   type BranchRow,
-  type BranchWindow,
 } from "./types";
 
 export function BranchesPanel() {
@@ -193,8 +194,7 @@ export function BranchesPanel() {
   // that session's branches so they show up in the dropdown.
   useEffect(() => {
     if (!attachOpen || !pickerScope) return;
-    const ww = window as unknown as BranchWindow;
-    if (ww._branchesByConv?.[pickerScope]) return;
+    if (runtimeState._branchesByConv[pickerScope]) return;
     wsSend({ action: "list_branches", session_id: pickerScope });
   }, [attachOpen, pickerScope]);
 
@@ -265,8 +265,8 @@ export function BranchesPanel() {
     // session_reload broadcast picks up the new attach cards.
   }
 
-  const w = window as unknown as BranchWindow;
-  const realRows = (sessionId && w._branchesByConv?.[sessionId]) || [];
+  const realRows =
+    ((sessionId && runtimeState._branchesByConv[sessionId]) as BranchRow[]) || [];
 
   // Resolve which branch head_msg_ids should animate as "running".
   // A task in non-terminal state maps to a branch via either
@@ -330,10 +330,11 @@ export function BranchesPanel() {
 
   if (!sessionId || rows.length === 0) return null;
 
-  const graphColors = w._branchLaneColorMap || {};
+  const graphColors = runtimeState._branchLaneColorMap;
   // Picker scope: null = current session, otherwise that session id.
   const pickerSid = pickerScope || sessionId;
-  const pickerRows = w._branchesByConv?.[pickerSid] || [];
+  const pickerRows =
+    (runtimeState._branchesByConv[pickerSid] as BranchRow[]) || [];
   // Targets the "Attach to" picker offers. Filter out selected source
   // branches only when we're showing the current session — selected
   // branches always live in the current session, so cross-session

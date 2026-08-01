@@ -56,9 +56,10 @@ import { MainMenu } from "./main-menu";
 import { SplitViewPicker } from "./split-view-picker";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
+  draftChannelChoiceHost,
   dropDraftChannelChoice,
-  type DraftChannelChoiceHost,
 } from "@/lib/runtime-bridge/draft-channel-choice";
+import { newSession } from "@/lib/runtime-bridge/conversations";
 import { fileDraftKey, fileDrafts } from "@/lib/state/files-shared";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
@@ -399,8 +400,7 @@ export function CenterTabStrip() {
    *  exact call path sessions-list uses (router.push on /s/<id>). */
   function activateSession(tab: CenterTab) {
     if (tab.draft && tab.sessionId) {
-      (window as unknown as { newSession?: (draftId?: string) => void })
-        .newSession?.(tab.sessionId);
+      newSession(tab.sessionId);
       return;
     }
     const sid = useSessionStore.getState().currentSessionId;
@@ -717,10 +717,7 @@ export function CenterTabStrip() {
     closeTab(tab.id);
     if (tab.draft && tab.sessionId) {
       useSessionStore.getState().dropChatDraft(tab.sessionId);
-      dropDraftChannelChoice(
-        window as unknown as DraftChannelChoiceHost,
-        tab.sessionId,
-      );
+      dropDraftChannelChoice(draftChannelChoiceHost, tab.sessionId);
       void deleteAttachments(tab.sessionId);
     }
   }

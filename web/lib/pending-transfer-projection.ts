@@ -4,9 +4,7 @@ const entriesByWindow = new Map<string, Map<string, TransferJournalEntry>>();
 
 function desktopWindowId(): string | null {
   if (typeof window === "undefined") return null;
-  const bridge = (window as unknown as {
-    openprogramDesktop?: { isDesktop?: boolean; windowId?: string };
-  }).openprogramDesktop;
+  const bridge = window.openprogramDesktop;
   if (!bridge?.isDesktop) return null;
   return typeof bridge.windowId === "string" && bridge.windowId
     ? bridge.windowId

@@ -6,7 +6,10 @@ import {
   replaceSessionDraftState,
   updateSessionDraftState,
 } from "@/lib/session-draft-persistence";
-import type { DraftChannelChoiceHost } from "../runtime-bridge/draft-channel-choice";
+import {
+  draftChannelChoiceHost,
+  type DraftChannelChoiceHost,
+} from "../runtime-bridge/draft-channel-choice";
 import type { SessionTransferSnapshot } from "../tab-transfer-journal";
 import {
   dropSessionStore,
@@ -788,10 +791,11 @@ installScopeWriteThrough({
   running: (sid, task) => useSessionStore.getState().setRunningTaskFor(sid, task),
 });
 
-function draftChoiceHost(): DraftChannelChoiceHost {
-  return typeof window === "undefined"
-    ? {}
-    : window as unknown as DraftChannelChoiceHost;
+/** The draft-channel-choice host this store reads and writes. Exported so
+ *  the check scripts, which import query-isolated copies of this module,
+ *  can reach the same instance the store itself uses. */
+export function draftChoiceHost(): DraftChannelChoiceHost {
+  return draftChannelChoiceHost;
 }
 
 export function snapshotSessionTransfer(

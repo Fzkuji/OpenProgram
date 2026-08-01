@@ -1,67 +1,150 @@
 /**
- * Global mutable state — TS port of `public/js/shared/state.js`.
+ * Cross-module mutable runtime state.
  *
- * These were top-level `var`s in the legacy script; every migrated
- * module reads/writes them via `window.*`, and the one remaining
- * legacy script (history-graph.js) reads them as bare globals (which
- * resolve to `window.*`). This module installs the initial values.
+ * These were top-level `var`s in the legacy `public/js/shared/state.js`,
+ * then lived on `window.*` while the migration to React was in flight.
+ * The legacy scripts are gone, so this is a plain module-level singleton
+ * that every consumer imports directly.
  *
- * Imported FIRST by AppShell so the globals exist before any other
- * module touches them. Idempotent — only sets a key when unset, so a
- * re-import never clobbers live state.
+ * Mutate fields on the exported `runtimeState` object; never rebind the
+ * object itself — importers hold the same reference.
  */
 
-const w = window as unknown as Record<string, unknown>;
-
-function init(key: string, value: unknown): void {
-  if (w[key] === undefined) w[key] = value;
+export interface TreeEntry {
+  path?: string;
+  name?: string;
+  [k: string]: unknown;
 }
 
-init("ws", null);
-init("trees", []);
-init("selectedPath", null);
-init("isPaused", false);
-init("expandedNodes", new Set());
-init("reconnectTimer", null);
-// session_id is derived from the URL (source of truth).
-init(
-  "currentSessionId",
-  (() => {
-    const m = window.location.pathname.match(/^\/s\/([^/]+)/);
-    return m ? m[1] : null;
-  })(),
-);
-init("conversations", {});
-init("availableFunctions", []);
-init("pendingResponses", {});
-init(
-  "sidebarOpen",
-  (() => {
-    try {
-      return localStorage.getItem("sidebarOpen") !== "0";
-    } catch {
-      return true;
-    }
-  })(),
-);
-init("_nodeCache", {});
-init("_liveTreeCollapsed", false);
-init("_lastRunCommand", null);
-init("_skipScrollToBottom", false);
-init("isRunning", false);
-init("execLogStartTime", 0);
-init("_modelList", []);
-init("_currentModel", "");
-init("_hasActiveSession", false);
-init("programsMeta", { favorites: [], folders: {} });
-init("_thinkingEffort", null);
-init("_execThinkingEffort", null);
-init("_thinkingConfig", null);
-init("_lastChatProvider", null);
-init("_lastChatModel", null);
-init("_lastExecProvider", null);
-init("_lastExecModel", null);
-init("_agentSettings", { chat: {}, exec: {}, available: {} });
-init("_elapsedTimer", null);
+export interface AgentSettings {
+  chat?: Record<string, unknown>;
+  exec?: Record<string, unknown>;
+  available?: Record<string, unknown>;
+  [k: string]: unknown;
+}
 
-export {};
+export interface ThinkingConfig {
+  options?: { value: string; desc: string }[];
+  default?: string;
+}
+
+export interface ProgramsMeta {
+  favorites?: string[];
+  folders?: Record<string, unknown>;
+  icons?: Record<string, unknown>;
+  [k: string]: unknown;
+}
+
+export interface RuntimeState {
+  /** Shared app WebSocket, owned by `lib/net/use-ws.ts`. */
+  ws: WebSocket | null;
+  /** File trees for the active session. */
+  trees: TreeEntry[];
+  /** Currently selected code-tree node path. */
+  selectedPath: string | null;
+  isPaused: boolean;
+  isRunning: boolean;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
+  /** Derived from the URL; kept in lockstep by AppShell's route effect. */
+  currentSessionId: string | null;
+  /** Heavy per-session conversation map (the sidebar mirrors summaries). */
+  conversations: Record<string, Record<string, unknown>>;
+  availableFunctions: unknown[];
+  pendingResponses: Record<string, unknown>;
+  sidebarOpen: boolean;
+  _skipScrollToBottom: boolean;
+  programsMeta: ProgramsMeta;
+  _thinkingEffort: string | null;
+  _execThinkingEffort: string | null;
+  _thinkingConfig: ThinkingConfig | null;
+  _lastChatProvider: string | null;
+  _lastChatModel: string | null;
+  _lastExecProvider: string | null;
+  _lastExecModel: string | null;
+  _agentSettings: AgentSettings;
+  _elapsedTimer: ReturnType<typeof setInterval> | null;
+  _hasActiveSession: boolean;
+  _toolsEnabled: boolean;
+  _webSearchEnabled: boolean;
+  _webSearchProviderLabel: string;
+  _webSearchProviderTier: string;
+  /** Channel/account the next send should use. Owned by
+   *  `draft-channel-choice.ts`, which proxies its host onto this field. */
+  _pendingChannelChoice: {
+    channel: string | null;
+    account_id: string | null;
+  } | null;
+  /** Branch rows per conversation, filled by `fetchBranches`. */
+  _branchesByConv: Record<string, unknown[]>;
+  /** DAG node id → lane colour, published by the DAG render pass so the
+   *  branches panel can match its rows to the graph's lanes. */
+  _branchLaneColorMap: Record<string, string>;
+  /** Message id the transcript should scroll to after the next
+   *  `load_session` that follows a branch checkout. Set by the checkout
+   *  callers, read + cleared once by `renderConversation`. */
+  _postCheckoutScrollTo: string | null;
+  /** Session id whose transcript must be reloaded when its running task
+   *  clears (a dispatched function run whose card is already on disk). */
+  __reloadOnTaskClear: string | null;
+}
+
+function initialSessionId(): string | null {
+  if (typeof window === "undefined") return null;
+  const m = window.location.pathname.match(/^\/s\/([^/]+)/);
+  return m ? m[1] : null;
+}
+
+function initialSidebarOpen(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return localStorage.getItem("sidebarOpen") !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export const runtimeState: RuntimeState = {
+  ws: null,
+  trees: [],
+  selectedPath: null,
+  isPaused: false,
+  isRunning: false,
+  reconnectTimer: null,
+  currentSessionId: initialSessionId(),
+  conversations: {},
+  availableFunctions: [],
+  pendingResponses: {},
+  sidebarOpen: initialSidebarOpen(),
+  _skipScrollToBottom: false,
+  programsMeta: { favorites: [], folders: {} },
+  _thinkingEffort: null,
+  _execThinkingEffort: null,
+  _thinkingConfig: null,
+  _lastChatProvider: null,
+  _lastChatModel: null,
+  _lastExecProvider: null,
+  _lastExecModel: null,
+  _agentSettings: { chat: {}, exec: {}, available: {} },
+  _elapsedTimer: null,
+  _hasActiveSession: false,
+  // ui.ts hydrates these from localStorage on first plus-menu render;
+  // `false` matches the previous `undefined` (falsy) starting point.
+  _toolsEnabled: false,
+  _webSearchEnabled: false,
+  _webSearchProviderLabel: "",
+  _webSearchProviderTier: "",
+  _pendingChannelChoice: null,
+  _branchesByConv: {},
+  _branchLaneColorMap: {},
+  _postCheckoutScrollTo: null,
+  __reloadOnTaskClear: null,
+};
+
+/** The shared app socket, or undefined when not connected yet. */
+export function getSocket(): WebSocket | undefined {
+  return runtimeState.ws ?? undefined;
+}
+
+export function setSocket(sock: WebSocket | null): void {
+  runtimeState.ws = sock;
+}

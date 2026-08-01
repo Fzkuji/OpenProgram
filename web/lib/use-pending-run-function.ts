@@ -10,30 +10,42 @@
  *     race). The query is stripped back to `/chat` once consumed so a
  *     refresh doesn't re-fire.
  *
- *   * `window.__pendingRunFunction = { name, cat, fn? }` — the global
+ *   * `setPendingRunFunction({ name, cat, fn? })` — the module-level
  *     stash, kept for ``FavoritesList`` (sidebar) and the inline
  *     ``editProgram`` hop, which set it just before `router.push`.
  *
  * Either way the request is passed to `openFnForm(fn)` once the matching
- * function exists in `window.availableFunctions` — polled up to 30s
+ * function exists in `runtimeState.availableFunctions` — polled up to 30s
  * (fast path ~50ms after the `functions_list` WS envelope).
  */
 
 import { useEffect } from "react";
+import { runtimeState } from "@/lib/runtime-bridge/state";
+import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
 
-interface WindowShim {
-  __pendingRunFunction?: { name: string; cat?: string } | null;
-  availableFunctions?: { name: string }[];
-  __sessionStore?: {
-    getState: () => { openFnForm: (fn: unknown) => void };
-  };
+export interface PendingRunFunction {
+  name: string;
+  cat?: string;
+  fn?: string;
+}
+
+let pending: PendingRunFunction | null = null;
+
+/** Stash a fn-form request to be drained on the next chat route. */
+export function setPendingRunFunction(req: PendingRunFunction): void {
+  pending = req;
+}
+
+/** Take and clear the stash (single-shot). */
+export function takePendingRunFunction(): PendingRunFunction | null {
+  const stash = pending;
+  pending = null;
+  return stash;
 }
 
 function takePending(): { name: string; cat: string } | null {
-  const w = window as unknown as WindowShim;
-  const stash = w.__pendingRunFunction;
+  const stash = takePendingRunFunction();
   if (stash && stash.name) {
-    w.__pendingRunFunction = null;
     return { name: stash.name, cat: stash.cat || "" };
   }
   const params = new URLSearchParams(window.location.search);
@@ -45,14 +57,11 @@ function takePending(): { name: string; cat: string } | null {
 }
 
 function tryOpen(name: string): boolean {
-  const w = window as unknown as WindowShim;
-  const fns = w.availableFunctions ?? [];
+  const fns = runtimeState.availableFunctions as AgenticFunction[];
   if (fns.length === 0) return false;
   const fn = fns.find((f) => f.name === name);
   if (!fn) return false;
-  const store = w.__sessionStore;
-  if (!store) return false;
-  store.getState().openFnForm(fn);
+  useSessionStore.getState().openFnForm(fn);
   return true;
 }
 

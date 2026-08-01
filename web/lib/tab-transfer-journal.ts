@@ -95,9 +95,7 @@ const emptyJournal = (): TransferJournalFile => ({ version: 1, entries: {} });
 
 function windowId(): string {
   if (typeof window === "undefined") return "main";
-  const bridge = (window as unknown as {
-    openprogramDesktop?: { isDesktop?: boolean; windowId?: string };
-  }).openprogramDesktop;
+  const bridge = window.openprogramDesktop;
   return bridge?.isDesktop && bridge.windowId ? bridge.windowId : "main";
 }
 

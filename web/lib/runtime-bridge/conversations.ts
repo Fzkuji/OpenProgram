@@ -1,19 +1,36 @@
 /**
  * Conversation / branch / channel data layer.
  *
- * TS port of the legacy `public/js/shared/conversations.js`. The
- * functions are still bridged onto `window.*` so the not-yet-migrated
- * legacy scripts (ui.js / init.js / history-graph.js) can call them;
- * `useWS` calls the exported functions directly. As those legacy
- * modules migrate, the `window.*` calls inside here become direct
- * imports.
- *
- * Imported for side effects by `useWS` so the `window.*` assignments
- * run before any WS event fires.
+ * TS port of the legacy `public/js/shared/conversations.js`; `useWS`
+ * calls the exported functions directly.
  */
 
 import { mirrorUpsertConv } from "./conv-store-mirror";
-import { switchDraftChannelChoice } from "./draft-channel-choice";
+import {
+  draftChannelChoiceHost,
+  switchDraftChannelChoice,
+} from "./draft-channel-choice";
+import { runtimeState, getSocket, type TreeEntry } from "./state";
+import {
+  formatProgramResultContent,
+  scrollToBottom,
+  setWelcomeVisible,
+} from "./helpers";
+import {
+  refreshStatusSource,
+  setStatusDotHealth,
+  updateContextStats,
+} from "./ui";
+import { loadAgentSettings, loadProviders, updateProviderBadge } from "./providers";
+import {
+  refreshHistoryContextRange,
+  renderHistoryGraph,
+  repaintBranchTags,
+} from "./dag";
+import { convToChatMsgs } from "@/lib/conv-mapper";
+import { navigate } from "@/lib/navigate";
+import { useSessionStore } from "@/lib/session-store";
+import { pushBranchInfo } from "@/lib/top-bar-sync";
 import {
   readChatScroll,
   restoreChatScrollIfCurrent,
@@ -46,9 +63,7 @@ interface LegacyMessage {
   [k: string]: unknown;
 }
 
-interface TreeNode {
-  path?: string;
-  name?: string;
+interface TreeNode extends TreeEntry {
   children?: TreeNode[];
   params?: Record<string, unknown>;
   output?: unknown;
@@ -70,60 +85,23 @@ interface ChannelAccount {
   configured?: boolean;
 }
 
-interface ConvWindow {
-  ws?: WebSocket | null;
-  currentSessionId?: string | null;
-  conversations?: Record<string, LegacyConv>;
-  trees?: TreeNode[];
-  pendingResponses?: Record<string, unknown>;
-  isRunning?: boolean;
-  _skipScrollToBottom?: boolean;
-  _hasActiveSession?: boolean;
-  _pendingChannelChoice?: { channel: string | null; account_id: string | null } | null;
-  __pendingChannelChoices?: Record<
-    string,
-    { channel: string | null; account_id: string | null }
-  >;
-  _branchesPanelCollapsed?: boolean;
-  _postCheckoutScrollTo?: string | null;
-  _allMessages?: LegacyMessage[];
-  _branchesByConv?: Record<string, BranchRow[]>;
-  __navigate?: (path: string) => void;
-  __sessionStore?: {
-    getState: () => {
-      activeChatKey: string | null;
-      currentSessionId: string | null;
-      setCurrentConv: (id: string | null) => void;
-      setCurrentDraft: (key: string) => void;
-      setHead?: (sessionId: string, headId: string | null) => void;
-      transcriptLoadingId?: string | null;
-      setTranscriptLoading?: (id: string | null) => void;
-    };
-  };
-  __feedStoreFromConv?: (conv: LegacyConv) => void;
-  // Bridges to still-legacy modules.
-  setStatusDotHealth?: (state: string) => void;
-  refreshStatusSource?: () => void;
-  refreshChannelBadge?: () => void;
-  refreshBranchBadge?: () => void;
-  repaintBranchTags?: () => void;
-  renderBranchesPanel?: () => void;
-  renderHistoryGraph?: (graph: unknown, active: string | null) => void;
-  refreshHistoryContextRange?: (sid: string) => void;
-  updateProviderBadge?: (info: unknown) => void;
-  loadAgentSettings?: () => void;
-  loadProviders?: () => void;
-  handleChatResponse?: (data: unknown) => void;
-  updateContextStats?: (messages: unknown[]) => void;
-  setWelcomeVisible?: (show: boolean) => void;
-  scrollToBottom?: (opts?: { force?: boolean }) => void;
-  formatProgramResultContent?: (output: unknown) => string;
-  _refreshBranchTokens?: () => void;
-  // Own exports mirrored onto window for legacy callers.
-  [k: string]: unknown;
+/** The app's single draft-channel-choice host, shared with the composer,
+ *  the top-bar channel menu and the draft-persistence layer. */
+const choiceHost = draftChannelChoiceHost;
+
+/** `runtimeState.conversations` typed as this module's richer conv shape. */
+function convs(): Record<string, LegacyConv> {
+  return runtimeState.conversations as unknown as Record<string, LegacyConv>;
 }
 
-const W = window as unknown as ConvWindow;
+/** Mirror a conversation's messages into the React store — the only feed
+ *  for a transcript that is not the focused session. */
+function feedStoreFromConv(conv: LegacyConv): void {
+  if (!conv || !conv.id) return;
+  useSessionStore
+    .getState()
+    .setMessages(conv.id, convToChatMsgs((conv.messages as never[]) || []));
+}
 
 /* ===== Channel icons ============================================= */
 
@@ -183,15 +161,14 @@ export function startChannelHealthPoll(channel: string, accountId?: string): voi
       .then((r) => r.json())
       .then((data) => {
         if (channelHealthKey !== key) return;
-        if (typeof W.setStatusDotHealth !== "function") return;
         let state = "err";
         if (data.alive) state = "ok";
         else if (data.state === "unknown") state = "warn";
-        W.setStatusDotHealth(state);
+        setStatusDotHealth(state);
       })
       .catch(() => {
         if (channelHealthKey !== key) return;
-        W.setStatusDotHealth?.("err");
+        setStatusDotHealth("err");
       });
   }
   probe();
@@ -216,8 +193,9 @@ export function fetchChannelAccounts(): Promise<ChannelAccount[]> {
   }
   return new Promise((res) => {
     channelAccountsPending = res;
-    if (W.ws && W.ws.readyState === WebSocket.OPEN) {
-      W.ws.send(JSON.stringify({ action: "list_channel_accounts" }));
+    const sock = getSocket();
+    if (sock && sock.readyState === WebSocket.OPEN) {
+      sock.send(JSON.stringify({ action: "list_channel_accounts" }));
     } else {
       channelAccountsPending = null;
       res([]);
@@ -241,28 +219,21 @@ export function onChannelAccountsMessage(rows: ChannelAccount[]): void {
 }
 
 export function currentChannelChoice(): { channel: string | null; account_id: string | null } {
-  const sid = W.currentSessionId;
-  if (sid && W.conversations?.[sid]) {
-    const c = W.conversations[sid];
+  const sid = runtimeState.currentSessionId;
+  const c = sid ? convs()[sid] : null;
+  if (c) {
     return { channel: c.channel || null, account_id: c.account_id || null };
   }
-  return W._pendingChannelChoice || { channel: null, account_id: null };
+  return choiceHost._pendingChannelChoice || { channel: null, account_id: null };
 }
 
-function refreshChannelBadge(): void {
-  W.refreshStatusSource?.();
-}
-
-/* ===== Sessions list (React owns rendering) ====================== */
-
-function renderSessions(): void {
-  // React owns this (components/sidebar/sessions-list.tsx).
+export function refreshChannelBadge(): void {
+  refreshStatusSource();
 }
 
 /* ===== Branches ================================================== */
 
-const branchesByConv: Record<string, BranchRow[]> = {};
-W._branchesByConv = branchesByConv;
+const branchesByConv = runtimeState._branchesByConv as Record<string, BranchRow[]>;
 const branchesPending: Record<string, (v: BranchRow[]) => void> = {};
 const branchTokensByConv: Record<string, Record<string, unknown>> = {};
 
@@ -285,8 +256,9 @@ export function fetchBranches(
   }
   return new Promise((res) => {
     branchesPending[sessionId] = res;
-    if (W.ws && W.ws.readyState === WebSocket.OPEN) {
-      W.ws.send(JSON.stringify({ action: "list_branches", session_id: sessionId }));
+    const sock = getSocket();
+    if (sock && sock.readyState === WebSocket.OPEN) {
+      sock.send(JSON.stringify({ action: "list_branches", session_id: sessionId }));
     } else {
       delete branchesPending[sessionId];
       res([]);
@@ -329,31 +301,27 @@ export function onBranchesListMessage(payload: BranchesListPayload): void {
     delete branchesPending[sid];
     fn(rows);
   }
-  if (sid === W.currentSessionId) {
-    W.refreshBranchBadge?.();
-    W.repaintBranchTags?.();
+  if (sid === runtimeState.currentSessionId) {
+    refreshBranchBadge();
+    repaintBranchTags();
     renderBranchesPanel();
-    if (Array.isArray(payload.graph) && typeof W.renderHistoryGraph === "function") {
-      try {
-        W.renderHistoryGraph(payload.graph, payload.active || null);
-      } catch {
-        /* ignore */
-      }
-      W.refreshHistoryContextRange?.(sid);
-      const conv = W.conversations?.[sid];
+    if (Array.isArray(payload.graph)) {
+      renderHistoryGraph(payload.graph as never[], payload.active || null);
+      refreshHistoryContextRange(sid);
+      const conv = convs()[sid];
       if (conv) {
         conv.graph = payload.graph;
         if (payload.active) conv.head_id = payload.active;
       }
       // 把当前分支头镜像进 Zustand，让订阅 store 的 React 组件（如 /context
       // 弹窗）在切分支时自动感知并重取当前分支的上下文。
-      W.__sessionStore?.getState().setHead?.(sid, payload.active || null);
+      useSessionStore.getState().setHead(sid, payload.active || null);
     }
   }
 }
 
 export async function refreshBranchTokens(): Promise<void> {
-  const sid = W.currentSessionId;
+  const sid = runtimeState.currentSessionId;
   if (!sid) return;
   try {
     const r = await fetch(
@@ -373,7 +341,7 @@ export async function refreshBranchTokens(): Promise<void> {
 }
 
 // React <BranchesPanel /> listens for this event and re-reads
-// `window._branchesByConv`.
+// `runtimeState._branchesByConv`.
 function renderBranchesPanel(): void {
   window.dispatchEvent(new Event("branches-updated"));
 }
@@ -384,15 +352,18 @@ export function onBranchCheckedOut(payload: {
 }): void {
   if (!payload || !payload.ok || !payload.session_id) return;
   delete branchesByConv[payload.session_id];
-  if (payload.session_id === W.currentSessionId && typeof W.refreshBranchBadge === "function") {
-    fetchBranches(payload.session_id).then(W.refreshBranchBadge);
+  if (payload.session_id === runtimeState.currentSessionId) {
+    fetchBranches(payload.session_id).then(() => refreshBranchBadge());
   }
 }
 
-function refreshBranchBadge(): void {
+export function refreshBranchBadge(): void {
+  // React's BranchesPanel renders off the store; the legacy #branchBadge
+  // element is optional (usually absent) so the push must come first.
+  pushBranchInfo();
   const badge = document.getElementById("branchBadge");
   if (!badge) return;
-  const sid = W.currentSessionId;
+  const sid = runtimeState.currentSessionId;
   if (!sid) {
     badge.style.display = "none";
     return;
@@ -429,32 +400,25 @@ export function newSession(draftId?: string): void {
   // Clear both session sources synchronously before SPA navigation. Otherwise
   // CenterTabStrip can observe /chat with the previous session id and replace
   // a newly claimed draft tab with that stale session.
-  W.currentSessionId = null;
-  try {
-    const store = W.__sessionStore?.getState();
-    switchDraftChannelChoice(
-      W,
-      store?.activeChatKey ?? store?.currentSessionId,
-      draftId,
-    );
-    if (draftId) store?.setCurrentDraft(draftId);
-    else store?.setCurrentConv(null);
-  } catch {
-    /* ignore */
-  }
+  runtimeState.currentSessionId = null;
+  const store = useSessionStore.getState();
+  switchDraftChannelChoice(
+    choiceHost,
+    store.activeChatKey ?? store.currentSessionId,
+    draftId,
+  );
+  if (draftId) store.setCurrentDraft(draftId);
+  else store.setCurrentConv(null);
 
   if (needsNavigation) {
-    if (W.__navigate) {
-      W.__navigate("/chat");
-    } else {
-      window.location.href = "/chat";
-      return;
-    }
+    navigate("/chat");
   } else {
     history.replaceState(null, "", "/chat");
   }
-  W.pendingResponses = {};
-  W.trees = [];
+  Object.keys(runtimeState.pendingResponses).forEach(
+    (k) => delete runtimeState.pendingResponses[k],
+  );
+  runtimeState.trees.length = 0;
   const container = document.getElementById("chatMessages");
   if (container) {
     Array.from(container.children).forEach((ch) => {
@@ -463,19 +427,12 @@ export function newSession(draftId?: string): void {
     });
   }
   refreshChannelBadge();
-  W.setWelcomeVisible?.(true);
-  renderSessions();
+  setWelcomeVisible(true);
   renderBranchesPanel();
-  if (typeof W.renderHistoryGraph === "function") {
-    try {
-      W.renderHistoryGraph([], null);
-    } catch {
-      /* ignore */
-    }
-  }
+  renderHistoryGraph([], null);
   const ctxEl = document.getElementById("contextStats");
   if (ctxEl) ctxEl.textContent = "";
-  W._hasActiveSession = false;
+  runtimeState._hasActiveSession = false;
   const provBadge = document.getElementById("providerBadge");
   if (provBadge) {
     provBadge.textContent = provBadge.textContent!.replace(" \u{1F512}", "");
@@ -485,9 +442,9 @@ export function newSession(draftId?: string): void {
     sessBadge.textContent = "no session";
     sessBadge.title = "";
   }
-  W.loadProviders?.();
-  W.loadAgentSettings?.();
-  W.refreshStatusSource?.();
+  void loadProviders();
+  void loadAgentSettings();
+  refreshStatusSource();
   Object.keys(branchesByConv).forEach((k) => delete branchesByConv[k]);
   refreshBranchBadge();
 }
@@ -497,72 +454,65 @@ export function newSession(draftId?: string): void {
 export function loadSessionData(data: LegacyConv): void {
   if (!data.messages) data.messages = [];
   const id = data.id as string;
-  const convs = W.conversations || (W.conversations = {});
+  const map = convs();
   // Merge data into existing conv. data 里没有的字段 (例如 created_at)
   // 不该被覆盖为 undefined; 显式 filter 一下 data 里的 undefined 值.
   const cleanedData: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(data)) {
     if (v !== undefined) cleanedData[k] = v;
   }
-  convs[id] = Object.assign({}, convs[id] || {}, cleanedData);
+  map[id] = Object.assign({}, map[id] || {}, cleanedData);
   // Keep the sidebar's store entry in sync with the freshly-loaded
   // session's summary fields (title / channel / preview / flags).
-  mirrorUpsertConv(convs[id] as Record<string, unknown>);
-  renderSessions();
+  mirrorUpsertConv(map[id] as Record<string, unknown>);
   // 清 transcript skeleton — 不能只在 currentSessionId 分支里清:
   // 回包晚到、用户已切走时, loading 态若还指着这个 id 也要释放。
-  try {
-    const st = W.__sessionStore?.getState();
-    if (st?.transcriptLoadingId === id) st.setTranscriptLoading?.(null);
-  } catch {
-    /* ignore */
-  }
-  W._branchesPanelCollapsed = true;
+  const st = useSessionStore.getState();
+  if (st.transcriptLoadingId === id) st.setTranscriptLoading(null);
   // A session loaded while NOT focused still needs its messages in the
   // React store — that's what a split-view peer pane renders from.
   // `renderSessionMessages` below is the only path that feeds the store,
   // and it's gated on `currentSessionId` because the rest of what it does
   // is legacy-DOM work for the focused chat. Feed the store directly here
   // so a peer's transcript lands without touching the focused session.
-  if (id !== W.currentSessionId) {
-    W.__feedStoreFromConv?.(convs[id] as LegacyConv);
+  if (id !== runtimeState.currentSessionId) {
+    feedStoreFromConv(map[id]);
+    return;
   }
-  if (id === W.currentSessionId) {
-    W.refreshStatusSource?.();
-    refreshChannelBadge();
-    delete branchesByConv[id];
-    fetchBranches(id).then(() => refreshBranchBadge());
+
+  // `refreshChannelBadge` is just `refreshStatusSource` — one call covers
+  // both of the legacy pair here.
+  refreshStatusSource();
+  delete branchesByConv[id];
+  fetchBranches(id).then(() => refreshBranchBadge());
+
+  const area = document.getElementById("chatArea");
+  const savedScroll = readChatScroll(sessionStorage, id);
+  if (savedScroll !== null) runtimeState._skipScrollToBottom = true;
+  renderSessionMessages(map[id]);
+  const fts = (data.function_trees as TreeNode[] | undefined) || [];
+  for (const ft of fts) {
+    if (ft && (ft.path || ft.name)) runtimeState.trees.push(ft);
   }
-  if (id === W.currentSessionId) {
-    const area = document.getElementById("chatArea");
-    const savedScroll = readChatScroll(sessionStorage, id);
-    const hasSavedScroll = savedScroll !== null;
-    if (hasSavedScroll) W._skipScrollToBottom = true;
-    renderSessionMessages(convs[id]);
-    const fts = (data.function_trees as TreeNode[] | undefined) || [];
-    if (fts.length > 0) {
-      const trees = W.trees || (W.trees = []);
-      for (const ft of fts) {
-        if (ft && (ft.path || ft.name)) trees.push(ft);
-      }
-    }
-    if (data.provider_info) W.updateProviderBadge?.(data.provider_info);
-    W.loadAgentSettings?.();
-    if (data.context_stats) {
-      W.handleChatResponse?.(data.context_stats);
-    } else {
-      W.updateContextStats?.(data.messages || []);
-    }
-    if (area && savedScroll !== null) {
-      requestAnimationFrame(() => {
-        restoreChatScrollIfCurrent(
-          area,
-          id,
-          W.currentSessionId ?? null,
-          savedScroll,
-        );
-      });
-    }
+  if (data.provider_info) updateProviderBadge(data.provider_info as never);
+  void loadAgentSettings();
+  if (data.context_stats) {
+    // Lazy: chat-handlers imports this module, so a static import cycles.
+    void import("./chat-handlers").then((m) =>
+      m.handleChatResponse(data.context_stats as never),
+    );
+  } else {
+    updateContextStats();
+  }
+  if (area && savedScroll !== null) {
+    requestAnimationFrame(() => {
+      restoreChatScrollIfCurrent(
+        area,
+        id,
+        runtimeState.currentSessionId ?? null,
+        savedScroll,
+      );
+    });
   }
 }
 
@@ -571,7 +521,7 @@ export function loadSessionData(data: LegacyConv): void {
 export function extractMessagesFromTree(tree: TreeNode): LegacyMessage[] {
   if (!tree || !tree.children) return [];
   const messages: LegacyMessage[] = [];
-  const fmt = W.formatProgramResultContent;
+  const fmt = formatProgramResultContent;
   for (const child of tree.children) {
     if (child.name === "_chat_query") {
       const query = child.params && child.params.query;
@@ -631,23 +581,22 @@ function clearChatMessages(container: HTMLElement | null): void {
 
 export function renderSessionMessages(conv: LegacyConv): void {
   const container = document.getElementById("chatMessages");
-  W.trees = [];
+  runtimeState.trees.length = 0;
 
-  W.__feedStoreFromConv?.(conv);
+  feedStoreFromConv(conv);
 
   if (!conv.messages || conv.messages.length === 0) {
     clearChatMessages(container);
-    W.setWelcomeVisible?.(true);
+    setWelcomeVisible(true);
     return;
   }
 
-  W.setWelcomeVisible?.(false);
+  setWelcomeVisible(false);
   clearChatMessages(container);
 
-  W._allMessages = conv.messages.slice();
-  if (typeof W.renderHistoryGraph === "function") {
-    W.renderHistoryGraph(conv.graph || [], conv.head_id || null);
-    if (W.currentSessionId) W.refreshHistoryContextRange?.(W.currentSessionId);
+  renderHistoryGraph((conv.graph as never[]) || [], conv.head_id || null);
+  if (runtimeState.currentSessionId) {
+    refreshHistoryContextRange(runtimeState.currentSessionId);
   }
   const chatContainer = document.getElementById("chatMessages");
   if (chatContainer) {
@@ -655,19 +604,15 @@ export function renderSessionMessages(conv: LegacyConv): void {
     chatContainer.setAttribute("data-run-active", isRunning ? "true" : "false");
   }
 
-  try {
-    if (!W.isRunning) {
-      Object.keys(W.pendingResponses || {}).forEach((k) => {
-        delete W.pendingResponses![k];
-      });
-    }
-  } catch {
-    /* ignore */
+  if (!runtimeState.isRunning) {
+    Object.keys(runtimeState.pendingResponses).forEach((k) => {
+      delete runtimeState.pendingResponses[k];
+    });
   }
 
-  const pivot = W._postCheckoutScrollTo;
+  const pivot = runtimeState._postCheckoutScrollTo;
   if (pivot && container) {
-    W._postCheckoutScrollTo = null;
+    runtimeState._postCheckoutScrollTo = null;
     let pivotEl: Element | null = null;
     const key = window.CSS && CSS.escape ? CSS.escape(pivot) : pivot;
     const matches = container.querySelectorAll(
@@ -678,32 +623,16 @@ export function renderSessionMessages(conv: LegacyConv): void {
       requestAnimationFrame(() => {
         (pivotEl as HTMLElement).scrollIntoView({ behavior: "auto", block: "start" });
       });
-      W._skipScrollToBottom = false;
+      runtimeState._skipScrollToBottom = false;
       return;
     }
   }
 
-  if (!W._skipScrollToBottom) W.scrollToBottom?.({ force: true });
-  W._skipScrollToBottom = false;
+  if (!runtimeState._skipScrollToBottom) scrollToBottom({ force: true });
+  runtimeState._skipScrollToBottom = false;
 }
 
-/* ===== window bridges for still-legacy callers =================== */
+/* ===== window bridge ============================================= */
 
-W._stopChannelHealthPoll = stopChannelHealthPoll;
-W._startChannelHealthPoll = startChannelHealthPoll;
-W._channelIcon = channelIcon;
-W.fetchChannelAccounts = fetchChannelAccounts;
-W._onChannelAccountsMessage = onChannelAccountsMessage;
-W._currentChannelChoice = currentChannelChoice;
-W.refreshChannelBadge = refreshChannelBadge;
-W.renderSessions = renderSessions;
-W.fetchBranches = fetchBranches;
-W._onBranchesListMessage = onBranchesListMessage;
-W._refreshBranchTokens = refreshBranchTokens;
-W.renderBranchesPanel = renderBranchesPanel;
-W._onBranchCheckedOut = onBranchCheckedOut;
-W.refreshBranchBadge = refreshBranchBadge;
-W.newSession = newSession;
-W.loadSessionData = loadSessionData;
-W.extractMessagesFromTree = extractMessagesFromTree;
-W.renderSessionMessages = renderSessionMessages;
+// Still read through `window` by components/page-shell.tsx, which paints a
+// cached transcript before this module's importers have run.

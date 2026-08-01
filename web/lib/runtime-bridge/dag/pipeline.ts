@@ -30,12 +30,12 @@
 
 import {
   type GNode,
-  HGW,
   NODE_R,
   PAD_X,
   PAD_Y,
   ROW_H,
 } from "./types";
+import { runtimeState } from "../state";
 import { computeGeometry } from "./layout/geometry";
 import {
   _branchColor,
@@ -176,7 +176,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     body.replaceChildren(empty);
     _resetTooltip();
     setLeafOfNode(Object.create(null));
-    _lastRenderedSession = (HGW.currentSessionId as string | undefined) || null;
+    _lastRenderedSession = runtimeState.currentSessionId;
     return;
   }
 
@@ -192,7 +192,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       _colorMap[id] = _branchColor(node, stableLeafOfNode);
     }
   });
-  HGW._branchLaneColorMap = _colorMap;
+  runtimeState._branchLaneColorMap = _colorMap;
 
   const headAncestors: Record<string, boolean> = Object.create(null);
   _headAncestors(tree.byId, headId).forEach((id) => {
@@ -309,12 +309,12 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   const fullById: Record<string, GNode> = Object.create(null);
   graphIn.forEach((m) => { fullById[m.id] = m; });
-  drawBadges(svg, tree, pos, stableLeafOfNode, HGW.currentSessionId || null,
+  drawBadges(svg, tree, pos, stableLeafOfNode, runtimeState.currentSessionId,
     fullById);
 
   // 会话切换后的首次绘制淡入（配合 transcript 的 session-enter），
   // 同会话的增量重绘原地替换，不闪。
-  const sess = (HGW.currentSessionId as string | undefined) || null;
+  const sess = runtimeState.currentSessionId;
   if (_lastRenderedSession !== sess) svg.classList.add("dag-enter");
   _lastRenderedSession = sess;
 

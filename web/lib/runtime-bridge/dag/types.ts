@@ -29,17 +29,6 @@ export interface GNode {
   [k: string]: any;
 }
 
-export interface HGWindow {
-  currentSessionId?: string | null;
-  _branchesByConv?: Record<string, GNode[]>;
-  _branchLaneColorMap?: Record<string, string>;
-  _postCheckoutScrollTo?: string | null;
-  ws?: WebSocket | null;
-  [k: string]: any;
-}
-
-export const HGW = window as unknown as HGWindow;
-
 // Square grid: same vertical and horizontal step so the DAG reads
 // as a chessboard layout.
 export const ROW_H = 32;
@@ -48,8 +37,7 @@ export const NODE_R = 5;
 export const PAD_X = 18;
 export const PAD_Y = 16;
 
-// Categorical branch palette — 唯一定义在 lib/format-utils/lane-colors.ts
-// （叶子模块，本文件模块作用域取 window 不能被 SSR 侧引用）。
+// Categorical branch palette — 唯一定义在 lib/format-utils/lane-colors.ts。
 export { LANE_COLORS } from "@/lib/format-utils/lane-colors";
 
 /** Layout parent: predecessor (对话链父)优先；没有对话前驱时 fallback 到

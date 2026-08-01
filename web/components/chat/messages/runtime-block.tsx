@@ -17,6 +17,8 @@
 import { useEffect, useRef, useState } from "react";
 
 import { formatUsageFooterLabel } from "@/lib/format-utils/format";
+import { renderMathIn } from "@/lib/format-utils/markdown";
+import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import {
   useSessionStore,
   type AgenticFunction,
@@ -31,14 +33,10 @@ import { StepRow, TreeStep, decodeEscapes } from "./execution-strip";
 import { ActionButton, SVG } from "./message-actions";
 import { useMarkdownReady } from "./markdown";
 
-interface RuntimeLegacyGlobals {
-  renderMathInElement?: (el: HTMLElement, opts: unknown) => void;
-}
-
 function wsSend(payload: unknown): boolean {
-  const w = window as Window & { ws?: WebSocket };
-  if (!w.ws || w.ws.readyState !== WebSocket.OPEN) return false;
-  w.ws.send(JSON.stringify(payload));
+  const sock = getSocket();
+  if (!sock || sock.readyState !== WebSocket.OPEN) return false;
+  sock.send(JSON.stringify(payload));
   return true;
 }
 
@@ -136,19 +134,11 @@ export function RuntimeBlock({
 
   useEffect(() => {
     const el = ref.current;
-    const renderMath = (window as unknown as RuntimeLegacyGlobals)
-      .renderMathInElement;
-    if (el && renderMath) {
-      try {
-        renderMath(el, {
-          delimiters: [
-            { left: "$$", right: "$$", display: true },
-            { left: "$", right: "$", display: false },
-          ],
-        });
-      } catch {
-        /* ignore */
-      }
+    if (!el) return;
+    try {
+      renderMathIn(el);
+    } catch {
+      /* ignore */
     }
   }, [tree]);
 
@@ -208,8 +198,7 @@ export function RuntimeBlock({
       },
       showToast,
     );
-    (window as Window & { __reloadOnTaskClear?: string | null }
-    ).__reloadOnTaskClear = sessionId;
+    runtimeState.__reloadOnTaskClear = sessionId;
     wsSend({ action: "retry_function", session_id: sessionId, function: fnName });
   }
 
@@ -234,8 +223,9 @@ export function RuntimeBlock({
   // fork 兄弟分支（旧运行保留在 ◀ N/M ▶ 里），语义 = 可改参数的重试。
   function editCall() {
     const root = tree as TNode | null;
-    const w = window as unknown as { availableFunctions?: AgenticFunction[] };
-    const fn = (w.availableFunctions || []).find((f) => f.name === fnName);
+    const fn = (runtimeState.availableFunctions as AgenticFunction[]).find(
+      (f) => f.name === fnName,
+    );
     if (!fn) {
       showToast(text(
         `Function ${fnName} not found.`, `找不到函数 ${fnName}。`,

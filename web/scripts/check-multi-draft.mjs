@@ -32,6 +32,24 @@ globalThis.window = {
   dispatchEvent: () => {},
   location: { pathname: "/chat" },
 };
+// The composer's `setRunning` import reaches runtime-bridge/ui + the DAG
+// module, both of which install document-level listeners at import time.
+// Seed the DOM hooks they touch so the module graph loads under Node.
+globalThis.document = {
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  getElementById: () => null,
+  querySelector: () => null,
+  querySelectorAll: () => [],
+  createElement: () => ({
+    getContext: () => null,
+    style: {},
+    classList: { add() {}, remove() {} },
+    setAttribute() {},
+    appendChild() {},
+  }),
+  body: null,
+};
 globalThis.localStorage = {
   getItem: (key) => values.get(key) ?? null,
   setItem: (key, value) => values.set(key, String(value)),
@@ -187,10 +205,15 @@ assert.equal(
 
 const sent = [];
 globalThis.WebSocket = { OPEN: 1 };
-Object.assign(globalThis.window, {
-  ws: { readyState: 1, send: (payload) => sent.push(JSON.parse(payload)) },
-  currentSessionId: null,
-});
+// The socket and the active session id live on the shared runtimeState
+// module now (lib/runtime-bridge/state), not on `window`.
+const { runtimeState, setSocket } = await import(
+  "../lib/runtime-bridge/state.ts"
+);
+// The ack-pairing reservations live in lib/pending-user-text now.
+const pendingUserText = await import("../lib/pending-user-text.ts");
+setSocket({ readyState: 1, send: (payload) => sent.push(JSON.parse(payload)) });
+runtimeState.currentSessionId = null;
 
 for (const [sessionId, text] of [[first, "one"], [second, "two"]]) {
   assert.equal(sendModule.sendChatMessage({
@@ -202,13 +225,14 @@ for (const [sessionId, text] of [[first, "one"], [second, "two"]]) {
   }), true);
 }
 assert.deepEqual(sent.map((payload) => payload.session_id), [first, second]);
-assert.deepEqual(globalThis.window.__pendingUserTextBySession, {
-  [first]: "one",
-  [second]: "two",
-});
+assert.deepEqual(
+  [pendingUserText.getPendingUserText(first), pendingUserText.getPendingUserText(second)],
+  ["one", "two"],
+);
 // Simulate both first ACKs before reusing `first` for the channel-choice
 // assertion below. The production ACK handler clears this reservation.
-globalThis.window.__pendingFirstAckBySession = {};
+pendingUserText.clearPendingFirstAck(first);
+pendingUserText.clearPendingFirstAck(second);
 
 // Legacy response bookkeeping must route by the envelope's session rather
 // than whichever tab happens to be visible when a background run completes.
@@ -250,8 +274,10 @@ assert.deepEqual(channelHost._pendingChannelChoice, {
   channel: "wechat",
   account_id: "work",
 });
-globalThis.window.__pendingChannelChoices = channelHost.__pendingChannelChoices;
-globalThis.window._pendingChannelChoice = channelHost._pendingChannelChoice;
+channelDrafts.draftChannelChoiceHost.__pendingChannelChoices =
+  channelHost.__pendingChannelChoices;
+channelDrafts.draftChannelChoiceHost._pendingChannelChoice =
+  channelHost._pendingChannelChoice;
 assert.equal(sendModule.sendChatMessage({
   text: "channel draft",
   sessionId: first,
@@ -268,9 +294,17 @@ const chatHandlers = readFileSync(
   new URL("../lib/runtime-bridge/chat-handlers.ts", import.meta.url),
   "utf8",
 );
-assert.match(chatHandlers, /const sid = responseSessionId\(data, W\.currentSessionId\);/);
-assert.match(chatHandlers, /if \(responseTargetsActiveChat\(data, W\.currentSessionId\)\) \{\s*setRunActive\(false\);/);
-assert.match(chatHandlers, /delete next\[sid\];/);
+assert.match(
+  chatHandlers,
+  /const sid = responseSessionId\(data, runtimeState\.currentSessionId\);/,
+);
+assert.match(
+  chatHandlers,
+  /if \(responseTargetsActiveChat\(data, runtimeState\.currentSessionId\)\) \{\s*setRunActive\(false\);/,
+);
+// The ACK handler must release the per-session first-ACK reservation so a
+// later turn on the same draft key isn't swallowed as a duplicate.
+assert.match(chatHandlers, /clearPendingFirstAck\(sid\);/);
 assert.match(chatHandlers, /action:\s*"set_session_project"/);
 assert.match(chatHandlers, /takePendingProject\(sid\)/);
 

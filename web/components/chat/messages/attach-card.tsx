@@ -16,6 +16,8 @@ import type { ChatMsg } from "@/lib/session-store";
 
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
+import { navigate } from "@/lib/navigate";
+import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import {
   type AnimatedNavIconHandle,
   ArrowUpRightIcon,
@@ -23,9 +25,9 @@ import {
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 
 function wsSend(payload: unknown): void {
-  const w = window as unknown as { ws?: WebSocket };
-  if (w.ws && w.ws.readyState === WebSocket.OPEN) {
-    w.ws.send(JSON.stringify(payload));
+  const sock = getSocket();
+  if (sock && sock.readyState === WebSocket.OPEN) {
+    sock.send(JSON.stringify(payload));
   }
 }
 
@@ -35,34 +37,36 @@ interface BranchRow {
   active?: boolean;
 }
 
+/** Branch rows for a session. `runtimeState._branchesByConv` is typed
+ *  loosely (`unknown[]`) because `fetchBranches` fills it; this narrows
+ *  to the shape the card reads. */
+function branchRows(sessionId: string): BranchRow[] {
+  return (runtimeState._branchesByConv[sessionId] as BranchRow[]) || [];
+}
+
 function _branchNameFor(
   sessionId: string | null | undefined,
   headId: string,
 ): string {
   if (!sessionId || !headId) return "";
-  const w = window as unknown as {
-    _branchesByConv?: Record<string, BranchRow[]>;
-  };
-  const list = w._branchesByConv?.[sessionId] || [];
+  const list = branchRows(sessionId);
   const match = list.find((b) => b.head_msg_id === headId);
   return (match?.name || "").trim();
 }
 
 function _activeHeadId(sessionId: string | null | undefined): string {
   if (!sessionId) return "";
-  const w = window as unknown as {
-    _branchesByConv?: Record<string, BranchRow[]>;
-    conversations?: Record<string, { head_id?: string }>;
-  };
   // Prefer the branch list's active flag — that's what the rest of
   // the UI uses to label the topbar chip / Branches panel HEAD pill.
-  const list = w._branchesByConv?.[sessionId] || [];
-  const active = list.find((b) => b.active);
+  const active = branchRows(sessionId).find((b) => b.active);
   if (active?.head_msg_id) return active.head_msg_id;
-  // TODO(store-migration): head_id is a legacy heavy field not carried in
-  // ConvSummary, so this still reads window.conversations. Migrate once
-  // head_id is surfaced through the store (or via the branch list alone).
-  return w.conversations?.[sessionId]?.head_id || "";
+  // TODO(store-migration): head_id is a heavy field not carried in
+  // ConvSummary, so this still reads runtimeState.conversations. Migrate
+  // once head_id is surfaced through the store (or the branch list alone).
+  const conv = runtimeState.conversations[sessionId] as
+    | { head_id?: string }
+    | undefined;
+  return conv?.head_id || "";
 }
 
 /** Look up the auto-followup user msg that the runner wrote after
@@ -170,10 +174,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
       return;
     }
     if (!targetSessionId) return;
-    const nav = (window as unknown as { __navigate?: (p: string) => void })
-      .__navigate;
-    if (nav) nav("/s/" + targetSessionId);
-    else window.location.href = "/s/" + targetSessionId;
+    navigate("/s/" + targetSessionId);
   }
 
   // Label intro: "Attached" for user-triggered attaches (Branches →

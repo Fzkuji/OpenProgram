@@ -1,14 +1,12 @@
 /**
- * One-shot WebSocket request over the global `window.ws` socket: send
+ * One-shot WebSocket request over the shared app socket: send
  * `{action, ...payload}`, resolve with the `data` of the next frame whose
  * `type` matches `responseType`. Resolves null on timeout / no socket.
  *
  * Shared by ProjectMenu, the Projects page, and rule management — anything
  * that does a request/response pair over the one worker WS.
  */
-interface WsWindow {
-  ws?: WebSocket;
-}
+import { getSocket } from "@/lib/runtime-bridge/state";
 
 export function wsRequest<T = unknown>(
   action: string,
@@ -21,7 +19,7 @@ export function wsRequest<T = unknown>(
   match?: (data: T) => boolean,
   timeoutMs = 4000,
 ): Promise<T | null> {
-  const ws = (window as unknown as WsWindow).ws;
+  const ws = getSocket();
   return new Promise((resolve) => {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       resolve(null);

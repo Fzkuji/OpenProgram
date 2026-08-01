@@ -32,6 +32,7 @@ import {
 } from "@/lib/state/files-shared";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { wsRequest } from "@/lib/net/ws-request";
+import { navigate } from "@/lib/navigate";
 import { useSessionStore } from "@/lib/session-store";
 import {
   Popover,
@@ -227,8 +228,7 @@ export function FileTree({
   });
   const openFile = (path: string) => {
     openFileTab(projectId, path);
-    (window as Window & { __navigate?: (route: string) => void })
-      .__navigate?.("/chat");
+    navigate("/chat");
   };
   const [dirs, setDirs] = useState<Record<string, DirState>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());

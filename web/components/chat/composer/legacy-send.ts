@@ -1,6 +1,22 @@
 "use client";
 
 import { useSessionStore } from "@/lib/session-store";
+import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
+import { setWelcomeVisible } from "@/lib/runtime-bridge/helpers";
+import { setRunning } from "@/lib/runtime-bridge/ui";
+import {
+  draftChannelChoiceFor,
+  draftChannelChoiceHost,
+} from "@/lib/runtime-bridge/draft-channel-choice";
+import {
+  clearPendingFirstAck,
+  clearPendingUserText,
+  getPendingUserText,
+  hasPendingFirstAck,
+  hasPendingUserText,
+  setPendingFirstAck,
+  setPendingUserText,
+} from "@/lib/pending-user-text";
 
 /**
  * Chat send path — owned by the React composer.
@@ -15,10 +31,12 @@ import { useSessionStore } from "@/lib/session-store";
  * What still rides `window.*`:
  *   - `setWelcomeVisible(false)` — hides the React <WelcomeScreen />
  *     immediately (before the ack round-trip).
- *   - `setRunning(true)` — legacy run flag (ui.js).
- *   - `_lastRunCommand` — retry helpers' fallback (chat.js retryCurrentBlock).
- *   - `_pendingChannelChoice` — first-message channel attach (channel-menu).
- *   - `_execThinkingEffort` — exec-side effort, set by the agent settings.
+ *   - `setRunning(true)` — legacy run flag (runtime-bridge/ui.ts).
+ *
+ * The ack-pairing reservations live in `lib/pending-user-text` (also
+ * read by `lib/net/chat-stream.ts` and `lib/runtime-bridge/chat-handlers.ts`),
+ * and the first-message channel attach reads `draftChannelChoiceHost`
+ * (lib/runtime-bridge/draft-channel-choice) — neither rides `window`.
  */
 
 /** One inline binary attachment delivered alongside the user message.
@@ -57,73 +75,31 @@ interface SendMessageBridgeArgs {
   background?: boolean;
 }
 
-interface SendWindow {
-  ws?: WebSocket | null;
-  currentSessionId?: string | null;
-  _execThinkingEffort?: string;
-  _lastRunCommand?: string | null;
-  _pendingChannelChoice?: { channel: string | null; account_id?: string | null } | null;
-  __pendingChannelChoices?: Record<
-    string,
-    { channel: string | null; account_id: string | null }
-  >;
-  setWelcomeVisible?: (show: boolean) => void;
-  setRunning?: (running: boolean) => void;
-  /** Pending web-originated user text, isolated by real/provisional id. */
-  __pendingUserTextBySession?: Record<string, string>;
-  __pendingFirstAckBySession?: Record<string, true>;
-  __sessionStore?: {
-    getState: () => {
-      setRunningTaskFor?: (
-        sessionId: string,
-        task: Record<string, unknown> | null,
-      ) => void;
-    };
-  };
-}
-
 function reservePendingChatSend(
-  host: SendWindow,
   sessionId: string | null,
   text: string,
 ): (() => void) | null {
   if (!sessionId) return () => {};
-  if (
-    sessionId.startsWith("local_")
-    && host.__pendingFirstAckBySession?.[sessionId]
-  ) {
+  if (sessionId.startsWith("local_") && hasPendingFirstAck(sessionId)) {
     return null;
   }
-  const previousText = host.__pendingUserTextBySession?.[sessionId];
-  const hadPreviousText = Object.prototype.hasOwnProperty.call(
-    host.__pendingUserTextBySession ?? {},
-    sessionId,
-  );
-  host.__pendingUserTextBySession = {
-    ...host.__pendingUserTextBySession,
-    [sessionId]: text,
-  };
+  const previousText = getPendingUserText(sessionId);
+  const hadPreviousText = hasPendingUserText(sessionId);
+  setPendingUserText(sessionId, text);
   if (sessionId.startsWith("local_")) {
-    host.__pendingFirstAckBySession = {
-      ...host.__pendingFirstAckBySession,
-      [sessionId]: true,
-    };
+    setPendingFirstAck(sessionId);
   }
   return () => {
-    if (host.__pendingUserTextBySession?.[sessionId] === text) {
-      const nextText = { ...host.__pendingUserTextBySession };
+    if (getPendingUserText(sessionId) === text) {
       if (hadPreviousText && previousText !== undefined) {
-        nextText[sessionId] = previousText;
+        setPendingUserText(sessionId, previousText);
       } else {
-        delete nextText[sessionId];
+        clearPendingUserText(sessionId);
       }
-      host.__pendingUserTextBySession = nextText;
     }
     if (sessionId.startsWith("local_")) {
-      const nextFirstAck = { ...host.__pendingFirstAckBySession };
-      delete nextFirstAck[sessionId];
-      host.__pendingFirstAckBySession = nextFirstAck;
-      host.__sessionStore?.getState().setRunningTaskFor?.(sessionId, null);
+      clearPendingFirstAck(sessionId);
+      useSessionStore.getState().setRunningTaskFor(sessionId, null);
     }
   };
 }
@@ -143,10 +119,9 @@ export function sendChatMessage({
   attachments,
   background = false,
 }: SendMessageBridgeArgs): boolean {
-  const w = window as unknown as SendWindow;
-  const ws = w.ws;
+  const ws = getSocket();
   if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-  const rollbackPendingSend = reservePendingChatSend(w, sessionId, text);
+  const rollbackPendingSend = reservePendingChatSend(sessionId, text);
   if (!rollbackPendingSend) {
     // A second browser event before the first ACK is already represented by
     // the in-flight provisional send. Treat it as handled without writing a
@@ -157,7 +132,7 @@ export function sendChatMessage({
   // Hide the welcome panel right away — before the ack round-trip.
   // Skipped for background sends: the welcome panel belongs to the
   // focused chat shell, not to the peer session being written to.
-  if (!background) w.setWelcomeVisible?.(false);
+  if (!background) setWelcomeVisible(false);
 
   // The legacy `run ...` typed-command path is gone (Track A removed
   // the backend parser; fn-form submits now POST /api/function/{name}
@@ -179,7 +154,7 @@ export function sendChatMessage({
     text,
     session_id: sessionId,
     thinking_effort: thinking,
-    exec_thinking_effort: w._execThinkingEffort,
+    exec_thinking_effort: runtimeState._execThinkingEffort ?? undefined,
     tools: toolsEnabled,
     web_search: webSearchEnabled,
   };
@@ -215,13 +190,12 @@ export function sendChatMessage({
   // First message of a brand-new conversation: attach the channel
   // choice from the welcome-screen picker, if any. Ignored by the
   // backend for existing convs.
-  const channelChoice =
-    sessionId
-      ? (w.__pendingChannelChoices?.[sessionId] ?? null)
-      : (w._pendingChannelChoice ?? null);
+  const channelChoice = sessionId
+    ? draftChannelChoiceFor(draftChannelChoiceHost, sessionId)
+    : (draftChannelChoiceHost._pendingChannelChoice ?? null);
   const pendingFirstTurn = sessionId
-    ? sessionId !== w.currentSessionId
-    : !w.currentSessionId;
+    ? sessionId !== runtimeState.currentSessionId
+    : !runtimeState.currentSessionId;
   if (pendingFirstTurn && channelChoice?.channel) {
     payload.channel = channelChoice.channel;
     payload.account_id = channelChoice.account_id || "";
@@ -239,7 +213,7 @@ export function sendChatMessage({
     return false;
   }
   if (sessionId?.startsWith("local_")) {
-    w.__sessionStore?.getState().setRunningTaskFor?.(sessionId, {
+    useSessionStore.getState().setRunningTaskFor(sessionId, {
       session_id: sessionId,
       msg_id: "",
       started_at: Date.now() / 1000,
@@ -249,6 +223,6 @@ export function sendChatMessage({
   // button). A background turn must not flip it — the focused chat isn't the
   // one running. Per-session run state still lands via the store's
   // `setRunningTaskFor` on chat_ack, which is what the peer pane reads.
-  if (!background) w.setRunning?.(true);
+  if (!background) setRunning(true);
   return true;
 }

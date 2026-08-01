@@ -40,6 +40,9 @@ import { CtxMenu, type CtxItem, type CtxMenuState } from "./ctx-menu";
 import { IconPicker, normalizeIcon } from "./icon-picker";
 import { FunctionCard, ToolCard, cardGridClass, cardListClass } from "./function-card";
 import { useProfileMeta } from "./use-profile-meta";
+import { runtimeState } from "@/lib/runtime-bridge/state";
+import { getLastChatPath } from "@/lib/last-chat-path";
+import { setPendingRunFunction } from "@/lib/use-pending-run-function";
 import type { FunctionInfo, FunctionsMeta } from "./types";
 
 export function FunctionsPage() {
@@ -133,12 +136,11 @@ export function FunctionsPage() {
     } catch {
       /* ignore */
     }
-    // Replace window.programsMeta with a fresh object so React
+    // Replace runtimeState.programsMeta with a fresh object so React
     // subscribers (useWindowGlobals does a ref-identity compare) see
     // the change immediately. In-place mutation keeps the same ref
     // and the sidebar would stay stale until a manual page reload.
-    const w = window as unknown as Record<string, unknown>;
-    w.programsMeta = {
+        runtimeState.programsMeta = {
       favorites: [...next.favorites],
       profiles: Object.fromEntries(
         Object.entries(next.profiles).map(([k, v]) => [k, [...v]]),
@@ -153,7 +155,6 @@ export function FunctionsPage() {
       favorites: [...next.favorites],
       icons: { ...next.icons },
     });
-    if (typeof w.renderFunctions === "function") (w.renderFunctions as () => void)();
   }, []);
 
   // Close context menu on any outside click.
@@ -232,10 +233,7 @@ export function FunctionsPage() {
   // Return to the conversation the user came from (not a blank /chat),
   // so the run opens inside that existing session.
   function chatTarget(): string {
-    return (
-      (window as unknown as { __lastChatPath?: string }).__lastChatPath ||
-      "/chat"
-    );
+    return getLastChatPath() || "/chat";
   }
 
   function runProgram(name: string, category?: string) {
@@ -270,9 +268,7 @@ export function FunctionsPage() {
   }
 
   function editProgram(name: string) {
-    (window as unknown as {
-      __pendingRunFunction?: { name: string; cat: string; fn?: string };
-    }).__pendingRunFunction = { name: "edit", cat: "", fn: name };
+    setPendingRunFunction({ name: "edit", cat: "", fn: name });
     router.push(chatTarget());
   }
 

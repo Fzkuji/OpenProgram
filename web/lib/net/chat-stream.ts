@@ -42,6 +42,7 @@ import {
   type ChatToolCall,
 } from "@/lib/session-store";
 import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
+import { getPendingUserText } from "@/lib/pending-user-text";
 
 interface StreamEvent {
   type: "text" | "thinking" | "tool_use" | "tool_result" | "sub_agent";
@@ -151,13 +152,10 @@ function handleAck(d: { session_id?: string; msg_id?: string } | undefined): voi
   // The server does NOT echo a web-originated user turn back as a
   // `user_message` broadcast (only channel/peer turns get that). So the
   // user bubble is created here, from the text the composer stashed on
-  // `window.__pendingUserTextBySession` just before sending. `chat_ack.msg_id`
+  // `lib/pending-user-text` just before sending. `chat_ack.msg_id`
   // IS the user turn's id — keying it here lets the reply (`_reply`
   // suffix) and the later result anchor to the same turn.
-  const w = window as unknown as {
-    __pendingUserTextBySession?: Record<string, string>;
-  };
-  const text = w.__pendingUserTextBySession?.[sid];
+  const text = getPendingUserText(sid);
   if (d.msg_id && typeof text === "string" && text) {
     const isRun = /^(run|create|fix)\s/i.test(text);
     appendLocalUserTurn(

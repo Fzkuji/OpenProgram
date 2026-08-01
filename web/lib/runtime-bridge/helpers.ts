@@ -1,22 +1,14 @@
 /**
  * Shared helper utilities — TS port of `public/js/shared/helpers.js`.
  *
- * Escaping, markdown, scroll-to-bottom, usage formatting, etc. Bridged
- * onto `window.*` for the still-legacy ui.js / history-graph.js.
- * Imported for side effects by AppShell.
+ * Escaping, markdown, scroll-to-bottom, usage formatting, etc.
+ * Imported for side effects by AppShell; callers import the exports.
  */
 
-interface HelpersWindow {
-  marked?: { parse(src: string, opts?: { breaks?: boolean }): string };
-  renderMathInElement?: (el: HTMLElement, opts: unknown) => void;
-  __stickToBottom?: () => boolean;
-  __stickListenerInstalled?: boolean;
-  __sessionStore?: { getState: () => { setWelcomeVisible: (v: boolean) => void } };
-  _agentSettings?: { exec?: { provider?: string } };
-  [k: string]: unknown;
-}
+import { useSessionStore } from "@/lib/session-store";
 
-const W = window as unknown as HelpersWindow;
+/** Module-local flag replacing the old `window.__stickListenerInstalled`. */
+let stickListenerInstalled = false;
 
 export function escHtml(s: unknown): string {
   if (typeof s !== "string") s = String(s ?? "");
@@ -43,7 +35,7 @@ export function truncate(s: string, len: number): string {
 export function renderMd(s: unknown): string {
   if (typeof s !== "string") s = String(s ?? "");
   let str = s as string;
-  if (W.marked) {
+  if (window.marked) {
     const mathBlocks: string[] = [];
     const stash = (m: string): string => {
       mathBlocks.push(m);
@@ -53,7 +45,7 @@ export function renderMd(s: unknown): string {
     str = str.replace(/\\\[([\s\S]*?)\\\]/g, stash);
     str = str.replace(/\\\(([\s\S]*?)\\\)/g, stash);
     str = str.replace(/\$([^$\n]+?)\$/g, stash);
-    let html = W.marked.parse(str, { breaks: true });
+    let html = window.marked.parse(str, { breaks: true });
     for (let i = 0; i < mathBlocks.length; i++) {
       html = html.replace("%%MATH" + i + "%%", mathBlocks[i]);
     }
@@ -63,10 +55,11 @@ export function renderMd(s: unknown): string {
 }
 
 export function renderMathInChat(): void {
-  if (typeof W.renderMathInElement !== "function") return;
+  const renderMath = window.renderMathInElement;
+  if (typeof renderMath !== "function") return;
   document.querySelectorAll<HTMLElement>(".md-rendered").forEach((el) => {
     if (el.dataset.mathRendered) return;
-    W.renderMathInElement!(el, {
+    renderMath(el, {
       delimiters: [
         { left: "$$", right: "$$", display: true },
         { left: "$", right: "$", display: false },
@@ -82,7 +75,7 @@ export function renderMathInChat(): void {
 let stickToBottom = true;
 
 function setupStickToBottomListener(): void {
-  if (W.__stickListenerInstalled) return;
+  if (stickListenerInstalled) return;
   const area = document.getElementById("chatArea");
   if (!area) return;
   area.addEventListener(
@@ -94,7 +87,7 @@ function setupStickToBottomListener(): void {
     },
     { passive: true },
   );
-  W.__stickListenerInstalled = true;
+  stickListenerInstalled = true;
 }
 
 export function scrollToBottom(opts?: { force?: boolean }): void {
@@ -141,7 +134,7 @@ export function setWelcomeVisible(show: boolean): void {
   // writes (inline `padding-bottom:150px`, the `.welcome-visible` class)
   // fought the stylesheet and only cleared on hide, which floated the
   // example row ~60px up and kept it there until a reload.
-  W.__sessionStore?.getState().setWelcomeVisible(!!show);
+  useSessionStore.getState().setWelcomeVisible(!!show);
 }
 
 export function addSystemMessage(text: string): void {
@@ -311,25 +304,3 @@ export function highlightPython(code: string): string {
     })
     .join("\n");
 }
-
-/* ===== window bridges ============================================ */
-
-W.escHtml = escHtml;
-W.escAttr = escAttr;
-W.truncate = truncate;
-W.renderMd = renderMd;
-W.renderMathInChat = renderMathInChat;
-W.scrollToBottom = scrollToBottom;
-W.appendToChat = appendToChat;
-W.autoResize = autoResize;
-W.setWelcomeVisible = setWelcomeVisible;
-W.addSystemMessage = addSystemMessage;
-W.parseRunCommandForDisplay = parseRunCommandForDisplay;
-W.fmtTokenNum = fmtTokenNum;
-W._buildUsageText = buildUsageText;
-W.formatUsageBadge = formatUsageBadge;
-W.formatUsageFooterLabel = formatUsageFooterLabel;
-W.formatProviderLabel = formatProviderLabel;
-W.formatProgramResultContent = formatProgramResultContent;
-W.highlightPython = highlightPython;
-W.__stickToBottom = () => stickToBottom;

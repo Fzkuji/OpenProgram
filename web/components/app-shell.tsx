@@ -29,8 +29,6 @@ import { MessageList } from "./chat/messages/message-list";
 import { PeerSessionPane } from "./chat/peer-session-pane";
 import { useSessionStore } from "@/lib/session-store";
 import { SessionScopeProvider } from "@/lib/session-store/session-scope";
-import { applyChatWsMessage, appendLocalUserTurn } from "@/lib/net/chat-stream";
-import { convToChatMsgs } from "@/lib/conv-mapper";
 import { useColResize } from "@/lib/use-col-resize";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -38,14 +36,11 @@ import {
   createSplitLayoutMeasureScheduler,
   isSplitLayoutAvailable,
 } from "@/lib/split-layout";
-// Migrated legacy modules — imported for side effects (they install
-// their `window.*` bridges for the still-legacy scripts).
-import "@/lib/runtime-bridge/state";
-import "@/lib/runtime-bridge/helpers";
-import "@/lib/runtime-bridge/ui";
-import "@/lib/runtime-bridge/providers";
-import "@/lib/runtime-bridge/functions-panel";
-import "@/lib/runtime-bridge/dag";
+import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
+import { setNavigate } from "@/lib/navigate";
+import { setLastChatPath } from "@/lib/last-chat-path";
+import { loadExternalLibs } from "@/lib/external-libs";
+import { renderHistoryGraph } from "@/lib/runtime-bridge/dag";
 import { initOverlayScrollbars } from "@/lib/runtime-bridge/scrollbar";
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
@@ -58,72 +53,8 @@ import { initOverlayScrollbars } from "@/lib/runtime-bridge/scrollbar";
 // (imported for side effects by `useWS`).
 // All legacy public/js scripts are migrated to lib/ — see the
 // `import "@/lib/..."` side-effect imports above.
-const SHARED_JS: string[] = [];
-
-const EXTERNAL_LIBS = [
-  "https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js",
-  "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js",
-  "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js",
-];
-
-function loadExternalScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const existing = Array.from(document.scripts).find(
-      (s) => s.getAttribute("data-src") === src
-    );
-    if (existing) {
-      resolve();
-      return;
-    }
-    const el = document.createElement("script");
-    el.src = src;
-    el.async = false;
-    el.setAttribute("data-app-script", "1");
-    el.setAttribute("data-src", src);
-    el.onload = () => resolve();
-    el.onerror = () => reject(new Error(`Failed to load ${src}`));
-    document.head.appendChild(el);
-  });
-}
-
-async function fetchInlineScript(src: string): Promise<{ src: string; code: string } | null> {
-  const w = window as unknown as { __scriptsLoaded?: Set<string> };
-  if (!w.__scriptsLoaded) w.__scriptsLoaded = new Set<string>();
-  if (w.__scriptsLoaded.has(src)) return null;
-  const res = await fetch(src, { cache: "no-store" });
-  if (!res.ok) throw new Error(`Failed to fetch ${src}: ${res.status}`);
-  return { src, code: await res.text() };
-}
-
-function injectInlineScript(src: string, code: string) {
-  const w = window as unknown as { __scriptsLoaded?: Set<string> };
-  if (!w.__scriptsLoaded) w.__scriptsLoaded = new Set<string>();
-  if (w.__scriptsLoaded.has(src)) return;
-  const s = document.createElement("script");
-  s.setAttribute("data-app-script", "1");
-  s.setAttribute("data-src", src);
-  s.text = code + `\n//# sourceURL=${src}\n`;
-  document.head.appendChild(s);
-  w.__scriptsLoaded.add(src);
-}
-
-function loadStylesheet(href: string) {
-  const existing = Array.from(document.styleSheets).find(
-    (s) => s.href === href
-  );
-  if (existing) return;
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = href;
-  document.head.appendChild(link);
-}
-
-declare global {
-  interface Window {
-    __sharedScriptsReady?: Promise<void>;
-    __navigate?: (path: string) => void;
-  }
-}
+// CDN libs (marked / KaTeX) live in `lib/external-libs.ts`; the shared
+// inline-script fetch+inject machinery is gone with the legacy JS.
 
 // Routes where the right sidebar (History / Execution Detail) is
 // relevant. Functions / Chats / Settings don't need it, so it's hidden
@@ -214,24 +145,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Re-run when pathname changes so we don't waste a slot prefetching
   // the route we're already on. router is stable from useRouter().
   }, [pathname, router]);
-  // Expose the React store to the legacy JS scripts so they can write
-  // through to it. Each legacy caller that touches React-owned state
-  // (setWelcomeVisible, welcome example clicks once migrated, etc.)
-  // goes through useSessionStore.getState(); this single global is
-  // their access point. Removed once every legacy caller is migrated.
+  // Debug hooks for the desktop multi-window acceptance runs, which drive
+  // the renderer over CDP and therefore can only reach the stores through
+  // `window`. Not read by any application code.
   useEffect(() => {
-    interface ConvLike { id?: string; messages?: unknown[] }
-    const w = window as unknown as {
-      __sessionStore?: unknown;
-      __applyChatWsMessage?: unknown;
-      __appendLocalUserTurn?: unknown;
-      __feedStoreFromConv?: unknown;
-    };
-    w.__sessionStore = useSessionStore;
-    // Test hooks for desktop multi-window acceptance (driven over CDP).
-    (w as Record<string, unknown>).__centerTabs = useCenterTabs;
+    window.__centerTabs = useCenterTabs;
     import("@/lib/desktop-bridge").then((m) => {
-      (w as Record<string, unknown>).__desktopTransfer = {
+      window.__desktopTransfer = {
         desktopBridge: m.desktopBridge,
         buildTransferPayload: m.buildTransferPayload,
         stageIncomingTransfer: m.stageIncomingTransfer,
@@ -239,32 +159,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         acceptedTransfers: m.acceptedTransfers,
       };
     });
-    // Phase 3 bridge — legacy chat JS feeds the React message store
-    // through these globals. Dormant until the MessageList portal is
-    // mounted; populating the store in parallel is a no-op for the
-    // still-live legacy DOM renderer.
-    w.__applyChatWsMessage = (msg: { type: string; data?: unknown }) =>
-      applyChatWsMessage(msg);
-    w.__appendLocalUserTurn = (
-      sessionId: string,
-      msgId: string,
-      text: string,
-      display?: "runtime" | "normal",
-    ) => appendLocalUserTurn(sessionId, msgId, text, display);
-    w.__feedStoreFromConv = (conv: ConvLike) => {
-      if (!conv || !conv.id) return;
-      useSessionStore
-        .getState()
-        .setMessages(
-          conv.id,
-          convToChatMsgs((conv.messages as never[]) || []),
-        );
-    };
     return () => {
-      delete w.__sessionStore;
-      delete w.__applyChatWsMessage;
-      delete w.__appendLocalUserTurn;
-      delete w.__feedStoreFromConv;
+      delete window.__centerTabs;
+      delete window.__desktopTransfer;
     };
   }, []);
 
@@ -318,31 +215,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const el = document.getElementById(id);
       if (el) el.classList.toggle("active", pathname === path);
     }
-    const close = (window as unknown as { _closeAllPopovers?: () => void })._closeAllPopovers;
-    if (close) close();
-
     // Remember the last chat route so a `/functions → run` hand-off can
-    // return to the conversation the user came from, not a blank
-    // /chat. Kept on window because it must survive leaving the chat
-    // route entirely (the store's currentSessionId is nulled then).
-    if (isChatRoute(pathname)) {
-      (window as unknown as { __lastChatPath?: string }).__lastChatPath =
-        pathname;
-    }
+    // return to the conversation the user came from, not a blank /chat.
+    // It must survive leaving the chat route entirely (the store's
+    // currentSessionId is nulled then), hence its own module.
+    if (isChatRoute(pathname)) setLastChatPath(pathname);
 
-    // Keep legacy `window.currentSessionId` in lockstep with the
-    // Next.js client route. Legacy `init.js` parses the URL exactly
-    // once at script load; SPA navigations between sessions don't
-    // re-run it, so a click on a sidebar conv updates the URL but
-    // `currentSessionId` stays pinned at whatever the previous
-    // ``chat_ack`` last wrote. The legacy model picker reads that
-    // bare global and was sending ``session_id`` of the OLD conv to
-    // ``/api/model`` — every picker click silently switched the
-    // wrong conversation.
+    // Keep `runtimeState.currentSessionId` in lockstep with the Next.js
+    // client route. It seeds itself from the URL once at module load;
+    // SPA navigations between sessions don't re-run that, so a click on
+    // a sidebar conv updates the URL while the id would otherwise stay
+    // pinned at whatever the previous ``chat_ack`` wrote — the model
+    // picker then sent ``session_id`` of the OLD conv to ``/api/model``.
     try {
       const m = pathname.match(/^\/s\/([^/]+)/);
       const sid = m ? m[1] : null;
-      (window as unknown as { currentSessionId?: string | null }).currentSessionId = sid;
+      runtimeState.currentSessionId = sid;
       // Keep the React message store's active conversation in lockstep
       // with the route so <MessageList /> shows the right stream. A
       // brand-new chat (/chat → sid null) gets its real id later from
@@ -365,7 +253,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       // client-side routing — this is the only "seen" signal the server gets.
       // (On first load the socket may not be open yet; use-ws's onopen
       // re-sends this for the current conv.)
-      const sock = (window as unknown as { ws?: WebSocket }).ws;
+      const sock = getSocket();
       if (sock && sock.readyState === WebSocket.OPEN) {
         sock.send(JSON.stringify({ action: "mark_session_read", session_id: sid }));
       }
@@ -376,13 +264,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // New chat route (/chat, no session_id): clear the persisted History
     // graph + Execution Detail panel so the user doesn't see stale
     // content from whatever conversation they were just on. /c/:id
-    // reloads both via `load_session` → conversations.js →
+    // reloads both via `load_session` → conversations.ts →
     // renderHistoryGraph + subsequent node click → showDetail.
     if (pathname === "/chat") {
-      const render = (window as unknown as {
-        renderHistoryGraph?: (g: unknown[], h: string | null) => void;
-      }).renderHistoryGraph;
-      if (render) render([], null);
+      renderHistoryGraph([], null);
 
       // Execution Detail panel lives in the right sidebar and is
       // rendered by React (`DetailPanel`). Clearing the store's
@@ -396,9 +281,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname, router, t]);
 
   useEffect(() => {
-    // Expose a client-side navigation helper vanilla JS can call instead of
-    // `window.location.href = ...` (which would full-reload and kill the shell).
-    window.__navigate = (path: string) => router.push(path);
+    // Publish client-side navigation for non-React callers, which would
+    // otherwise need `window.location.href` (a full reload killing the shell).
+    setNavigate((path: string) => router.push(path));
 
     // Intercept clicks on anchor tags that point to internal paths so they go
     // through the Next.js router instead of a full page reload.
@@ -417,34 +302,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // Overlay scrollbars (was shared/scrollbar.js).
     initOverlayScrollbars();
 
-    // First-mount init: load external libs + shared JS. Both the left
-    // sidebar and the right sidebar are real React components now
-    // (`<Sidebar />` / `<RightSidebar />` below), so no `_*.html`
-    // fetch+inject is needed at this stage.
-    const w = window as unknown as { __sharedScriptsReady?: Promise<void> };
-    if (!w.__sharedScriptsReady) {
-      w.__sharedScriptsReady = (async () => {
-        loadStylesheet(
-          "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css"
-        );
-
-        // Kick off all network fetches in parallel: 3 CDN libs + inline
-        // scripts. Serial `await` in the old version made this ~13
-        // sequential round trips on every hard refresh.
-        const externalsP = Promise.all(EXTERNAL_LIBS.map(loadExternalScript));
-        const inlineSources = SHARED_JS.map((name) => `/js/${name}`);
-        const inlineFetches = await Promise.all(inlineSources.map(fetchInlineScript));
-
-        // Execute inline scripts in declared order to preserve global
-        // dependencies (state.js defines vars other scripts reference).
-        for (let i = 0; i < inlineSources.length; i++) {
-          const f = inlineFetches[i];
-          if (f) injectInlineScript(f.src, f.code);
-        }
-
-        await externalsP;
-      })();
-    }
+    // First-mount init: kick off the CDN libs (marked / KaTeX). Everything
+    // else is a React component now, so nothing else is injected here.
+    loadExternalLibs();
 
     return () => {
       document.removeEventListener("click", onClick);

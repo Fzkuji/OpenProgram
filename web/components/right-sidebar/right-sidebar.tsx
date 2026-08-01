@@ -17,13 +17,9 @@
  * `right-dock.js` used (`rightSidebarOpen`, `rightSidebarView`) so a
  * stale tab from before the migration restores into the same state.
  *
- * Legacy globals installed here (mirror right-dock.js's public API):
- *   window.rightDock.{show, close, toggle, restore}
- *   window.toggleDetail / closeDetail
- *   window.toggleHistoryPanel / openHistoryPanel / closeHistoryPanel
- * showDetail() in ui.js calls `window.rightDock.show('detail')`; the
- * topbar branch chip calls `toggleHistoryPanel`. These shims keep that
- * working without touching the legacy JS until those callers migrate.
+ * Imperative entry points for callers that don't own this component
+ * (`rightDock.{show, close, toggle, restore}` from `lib/right-dock.ts`)
+ * are registered on mount — see `setRightDockApi` below.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -51,6 +47,8 @@ import { FileTree } from "../files/file-tree";
 import { renderMarkdown, useMarkdownReady } from "../chat/messages/markdown";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
+import { setRightDockApi } from "@/lib/right-dock";
+import { setHistoryHighlightMode } from "@/lib/runtime-bridge/dag";
 
 // View IDs that round-trip through the `data-view` attribute. Matches
 // the legacy template exactly: "history" picks `<div data-view="history">`,
@@ -113,35 +111,13 @@ export function RightSidebar() {
     document.addEventListener("mouseup", onUp);
   };
 
-  // Install window.rightDock + legacy shims so the still-loaded shared
-  // JS (ui.js showDetail, branches code, topbar history-panel toggles)
-  // can drive open/close + view switching without seeing the React
-  // store directly. Each shim resolves the current state via
+  // Register the imperative rightDock handle so callers that don't own
+  // this component (e.g. the turn file chips' "reveal in tree") can
+  // drive open/close + view switching without reaching into the React
+  // store. Each method resolves the current state via
   // useSessionStore.getState() at call time so the values are always
   // fresh — no stale closure capture.
   useEffect(() => {
-    const w = window as unknown as {
-      rightDock?: {
-        show: (view?: string) => void;
-        close: () => void;
-        toggle: (view?: string) => void;
-        restore: () => void;
-      };
-      toggleDetail?: () => void;
-      closeDetail?: () => void;
-      toggleHistoryPanel?: () => void;
-      openHistoryPanel?: () => void;
-      closeHistoryPanel?: () => void;
-    };
-    const prev = {
-      rightDock: w.rightDock,
-      toggleDetail: w.toggleDetail,
-      closeDetail: w.closeDetail,
-      toggleHistoryPanel: w.toggleHistoryPanel,
-      openHistoryPanel: w.openHistoryPanel,
-      closeHistoryPanel: w.closeHistoryPanel,
-    };
-
     function getState() {
       return useSessionStore.getState();
     }
@@ -171,34 +147,12 @@ export function RightSidebar() {
     }
     function restore() {
       // The store reads localStorage at create time; nothing to do here.
-      // Kept for legacy compatibility — right-dock.js called this after
-      // HTML inject and AppShell still references it on the fallback path.
+      // Kept for compatibility — AppShell still references it on the
+      // fallback path.
     }
 
-    w.rightDock = { show, close, toggle, restore };
-    w.toggleDetail = () => toggle(VIEW_DETAIL);
-    w.closeDetail = () => {
-      try {
-        const ws = window as unknown as { selectedPath?: unknown };
-        if ("selectedPath" in ws) ws.selectedPath = null;
-      } catch {
-        /* ignore */
-      }
-      getState().setNodeSelected(false);
-      close();
-    };
-    w.toggleHistoryPanel = () => toggle(VIEW_HISTORY);
-    w.openHistoryPanel = () => show(VIEW_HISTORY);
-    w.closeHistoryPanel = () => close();
-
-    return () => {
-      w.rightDock = prev.rightDock;
-      w.toggleDetail = prev.toggleDetail;
-      w.closeDetail = prev.closeDetail;
-      w.toggleHistoryPanel = prev.toggleHistoryPanel;
-      w.openHistoryPanel = prev.openHistoryPanel;
-      w.closeHistoryPanel = prev.closeHistoryPanel;
-    };
+    setRightDockApi({ show, close, toggle, restore });
+    return () => setRightDockApi(null);
   }, []);
 
   function onToggleRail() {
@@ -394,13 +348,13 @@ function HistoryGraphPanel() {
  * not top-level destinations (no icon-rail row): they only mean anything
  * once a node is selected, so their switch lives inside the History view
  * and appears once there is a selection. Rendered inside Detail/Context
- * too, which is how those views get back to History without the legacy
- * `window.rightDock.show(...)` global.
+ * too, which is how those views get back to History without going
+ * through the imperative `rightDock.show(...)` handle.
  *
  * `nodeSelected` (not `detailNode`) is the gate, because both selection
- * paths set it: React callers via the store's showDetail, and the legacy
- * DAG `window.showDetail` in runtime-bridge/ui.ts, which paints
- * #detailBody itself and would otherwise leave the switch hidden.
+ * paths set it: React callers via the store's showDetail, and the DAG's
+ * `showDetail` in runtime-bridge/ui.ts, which paints #detailBody itself
+ * and would otherwise leave the switch hidden.
  */
 function SessionViewSwitch({ current }: { current: string }) {
   const { t, text } = useTranslation();
@@ -441,16 +395,13 @@ function SessionViewSwitch({ current }: { current: string }) {
 
 /** Toggle: white-fill on DAG nodes follows the chat scroll
  *  position (viewport) or the next-LLM-call context range
- *  (context). Drives ``window.setHistoryHighlightMode``. */
+ *  (context). Drives ``setHistoryHighlightMode`` in the DAG module. */
 function HighlightModeToggle() {
   const { t } = useTranslation();
   const [mode, setMode] = useState<"viewport" | "context">("viewport");
   function pick(next: "viewport" | "context") {
     setMode(next);
-    const w = window as unknown as {
-      setHistoryHighlightMode?: (m: string) => void;
-    };
-    w.setHistoryHighlightMode?.(next);
+    setHistoryHighlightMode(next);
   }
   const style = (active: boolean): React.CSSProperties => ({
     flex: 1,

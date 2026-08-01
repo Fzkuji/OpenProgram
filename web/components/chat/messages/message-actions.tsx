@@ -25,6 +25,8 @@ import {
 import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { showToast } from "@/lib/format-utils/toast";
+import { setRunActive } from "@/lib/runtime-bridge/chat-handlers";
+import { runtimeState } from "@/lib/runtime-bridge/state";
 import {
   type AnimatedNavIconHandle,
   CheckIcon,
@@ -78,12 +80,6 @@ function postJson(url: string, body: unknown): Promise<unknown> {
     }
     return r.json();
   });
-}
-
-function setRunActive(active: boolean): void {
-  (
-    window as unknown as { setRunActive?: (a: boolean) => void }
-  ).setRunActive?.(active);
 }
 
 /**
@@ -177,9 +173,7 @@ export function MessageActions({
     setBusy(true);
     postJson("/api/chat/checkout", { session_id: sessionId, msg_id: msg.id })
       .then(() => {
-        (
-          window as unknown as { _postCheckoutScrollTo?: string }
-        )._postCheckoutScrollTo = msg.id;
+        runtimeState._postCheckoutScrollTo = msg.id;
         wsSend({ action: "load_session", session_id: sessionId });
       })
       .catch((err) => {
@@ -251,9 +245,7 @@ export function MessageActions({
     });
     postJson("/api/chat/checkout", { session_id: sessionId, msg_id: targetId })
       .then(() => {
-        (
-          window as unknown as { _postCheckoutScrollTo?: string }
-        )._postCheckoutScrollTo = targetId;
+        runtimeState._postCheckoutScrollTo = targetId;
         wsSend({ action: "load_session", session_id: sessionId });
       })
       .catch((err) => {

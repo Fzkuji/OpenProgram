@@ -6,6 +6,7 @@
  */
 
 import { SquarePenIcon, XIcon } from "@/components/animated-icons";
+import { getSocket } from "@/lib/runtime-bridge/state";
 
 export interface BranchRow {
   head_msg_id: string;
@@ -13,20 +14,14 @@ export interface BranchRow {
   active?: boolean;
 }
 
-export interface BranchWindow {
-  ws?: WebSocket;
-  _branchesByConv?: Record<string, BranchRow[]>;
-  _branchLaneColorMap?: Record<string, string>;
-}
-
 // Fallback palette — 唯一定义在 lib/format-utils/lane-colors.ts。
-// 正常情况下每个分支的颜色来自 `_branchLaneColorMap`。
+// 正常情况下每个分支的颜色来自 `runtimeState._branchLaneColorMap`。
 export { LANE_COLORS } from "@/lib/format-utils/lane-colors";
 
 export function wsSend(payload: unknown): void {
-  const w = window as unknown as BranchWindow;
-  if (w.ws && w.ws.readyState === WebSocket.OPEN) {
-    w.ws.send(JSON.stringify(payload));
+  const sock = getSocket();
+  if (sock && sock.readyState === WebSocket.OPEN) {
+    sock.send(JSON.stringify(payload));
   }
 }
 

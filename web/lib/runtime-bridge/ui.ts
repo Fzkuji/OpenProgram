@@ -1,40 +1,30 @@
 /**
- * UI state — run/pause, status badge, thinking menu, plus menu,
- * detail panel, code viewer.
+ * UI state — run flag, status badge, thinking menu, plus menu.
  *
- * TS port of `public/js/shared/ui.js`. Bridged onto `window.*` for the
- * still-legacy history-graph.js, inline-onclick HTML and React topbar.
- * Many functions write to legacy composer / topbar dom ids; where the
- * React component owns that chip the element is absent and the write
- * is a guarded no-op. Imported for side effects by AppShell.
+ * Consumers import these exports directly. Many functions write to
+ * legacy composer / topbar dom ids; where the React component owns
+ * that chip the element is absent and the write is a guarded no-op.
+ * Imported for side effects by AppShell.
  */
 
-import { useSessionStore } from "@/lib/session-store";
+import { useSessionStore, type StatusTone } from "@/lib/session-store";
+import { pushStatusBadge, setLastStatus } from "@/lib/top-bar-sync";
+import { startChannelHealthPoll, stopChannelHealthPoll } from "./conversations";
+import { escAttr } from "./helpers";
+import { runtimeState } from "./state";
 
+/** The ONLY reason anything below still lives on `window`: this file
+ *  generates HTML strings containing inline `onclick="…"` handlers,
+ *  which resolve against `window` at click time. Every TS consumer
+ *  imports the exports directly. Two generated-markup sites remain:
+ *  `buildThinkingMenu` (→ `setThinkingEffort`) and
+ *  `renderActiveToolChips` (→ `toggleToolsEnabled` /
+ *  `toggleWebSearchEnabled` / `_updatePlusBtnIndicator`). */
 interface UiWindow {
-  isRunning?: boolean;
-  isPaused?: boolean;
-  currentSessionId?: string | null;
-  conversations?: Record<string, { channel?: string; account_id?: string; source?: string }>;
-  selectedPath?: string | null;
-  _thinkingConfig?: { options?: { value: string; desc: string }[]; default?: string };
-  _thinkingEffort?: string | null;
-  _toolsEnabled?: boolean;
-  _webSearchEnabled?: boolean;
-  _webSearchProviderLabel?: string;
-  _webSearchProviderTier?: string;
-  _pendingChannelChoice?: { channel?: string; account_id?: string } | null;
-  rightDock?: { show: (tab: string) => void };
-  escHtml?: (s: unknown) => string;
-  escAttr?: (s: unknown) => string;
-  highlightPython?: (code: string) => string;
-  addSystemMessage?: (text: string) => void;
-  sendMessage?: () => void;
-  setInput?: (text: string) => void;
-  _startChannelHealthPoll?: (ch: string, acct: string) => void;
-  _stopChannelHealthPoll?: () => void;
-  _updatePlusBtnIndicator?: () => void;
-  [k: string]: unknown;
+  setThinkingEffort?: typeof setThinkingEffort;
+  _updatePlusBtnIndicator?: typeof updatePlusBtnIndicator;
+  toggleToolsEnabled?: typeof toggleToolsEnabled;
+  toggleWebSearchEnabled?: typeof toggleWebSearchEnabled;
 }
 
 const W = window as unknown as UiWindow;
@@ -42,29 +32,21 @@ const W = window as unknown as UiWindow;
 /* ===== Run / pause =============================================== */
 
 export function setRunning(running: boolean): void {
-  W.isRunning = running;
-  if (!running) W.isPaused = false;
+  runtimeState.isRunning = running;
+  if (!running) runtimeState.isPaused = false;
 
   // The React composer's send/stop button reads its own session scope's
   // ``running``, not this legacy flag. Bridge them via the keyed setter so
   // ``running_task`` WS events (which land in legacy handlers and call
   // ``setRunning(true)``) actually flip the button.
-  const w = W as unknown as {
-    __sessionStore?: {
-      getState: () => {
-        setRunningTaskFor: (sid: string, t: unknown) => void;
-      };
-    };
-    currentSessionId?: string;
-  };
-  const store = w.__sessionStore;
-  const sid = w.currentSessionId || "";
-  if (store?.getState && sid) {
+  const sid = runtimeState.currentSessionId || "";
+  if (sid) {
+    const store = useSessionStore.getState();
     if (running) {
       const task = { session_id: sid, msg_id: "" };
-      store.getState().setRunningTaskFor(sid, task);
+      store.setRunningTaskFor(sid, task);
     } else {
-      store.getState().setRunningTaskFor(sid, null);
+      store.setRunningTaskFor(sid, null);
     }
   }
 
@@ -92,7 +74,6 @@ const SVG_PAUSE =
 const SVG_RESUME = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
 
 function renderStatusBadge(
-  _badge: HTMLElement,
   text: string,
   klass: string,
   dotKlass: string,
@@ -103,65 +84,63 @@ function renderStatusBadge(
   // #statusBadge is owned by the React <TopBar> (StatusBadge → Laptop
   // icon). Writing innerHTML here clobbered React's render and made the
   // icon flicker back to the legacy dot. Push to the session store and
-  // let React render the chip instead.
-  const tone = dotKlass.includes("--ok")
+  // let React render the chip instead — unconditionally, since the DOM
+  // element may not exist at all.
+  const tone: StatusTone = dotKlass.includes("--ok")
     ? "ok"
     : dotKlass.includes("--warn")
       ? "warn"
       : dotKlass.includes("--err")
         ? "err"
         : "connecting";
-  const paused = klass.includes("paused");
-  const label = text.split(" · ")[0];
+  pushStatusBadge({
+    label: text.split(" · ")[0],
+    tone,
+    paused: klass.includes("paused"),
+    title: hoverTitle ?? text,
+  });
+}
+
+export function setStatusDotHealth(state: string): void {
+  const mod = state === "ok" ? "--ok" : state === "warn" ? "--warn" : state === "err" ? "--err" : "--neutral";
+  const dot = document.getElementById("statusBadge")?.querySelector(".indicator-dot");
+  if (dot) dot.className = "indicator-dot sm " + mod;
+  const tone: StatusTone =
+    state === "ok" ? "ok" : state === "warn" ? "warn" : state === "err" ? "err" : "connecting";
   try {
-    const store = (
-      W as unknown as {
-        __sessionStore?: {
-          getState: () => { setStatusBadge: (s: unknown) => void };
-        };
-      }
-    ).__sessionStore;
-    store
-      ?.getState()
-      .setStatusBadge({ label, tone, paused, title: hoverTitle ?? text });
+    const store = useSessionStore.getState();
+    store.setStatusBadge({ ...store.statusBadge, tone });
   } catch {
     /* ignore */
   }
 }
 
-export function setStatusDotHealth(state: string): void {
-  const badge = document.getElementById("statusBadge");
-  if (!badge) return;
-  const dot = badge.querySelector(".indicator-dot");
-  if (!dot) return;
-  const mod = state === "ok" ? "--ok" : state === "warn" ? "--warn" : state === "err" ? "--err" : "--neutral";
-  dot.className = "indicator-dot sm " + mod;
-}
-
 export function updateSendBtn(): void {
   const sendBtn = document.getElementById("sendBtn");
   const stopBtn = document.getElementById("stopBtn");
-  const badge = document.getElementById("statusBadge");
-  if (!sendBtn || !stopBtn) return;
 
-  if (!W.isRunning) {
-    sendBtn.innerHTML = SVG_SEND;
-    sendBtn.title = "Send message";
-    sendBtn.className = "send-btn";
-    stopBtn.style.display = "none";
-  } else if (W.isPaused) {
-    sendBtn.innerHTML = SVG_RESUME;
-    sendBtn.title = "Resume";
-    sendBtn.className = "send-btn paused-state";
-    stopBtn.style.display = "flex";
-    if (badge) renderStatusBadge(badge, "paused", "status-badge paused", "indicator-dot sm --warn");
-  } else {
-    sendBtn.innerHTML = SVG_PAUSE;
-    sendBtn.title = "Pause";
-    sendBtn.className = "send-btn";
-    stopBtn.style.display = "none";
-    if (badge) renderStatusBadge(badge, "running", "status-badge", "indicator-dot sm --ok");
+  if (sendBtn && stopBtn) {
+    if (!runtimeState.isRunning) {
+      sendBtn.innerHTML = SVG_SEND;
+      sendBtn.title = "Send message";
+      sendBtn.className = "send-btn";
+      stopBtn.style.display = "none";
+    } else if (runtimeState.isPaused) {
+      sendBtn.innerHTML = SVG_RESUME;
+      sendBtn.title = "Resume";
+      sendBtn.className = "send-btn paused-state";
+      stopBtn.style.display = "flex";
+    } else {
+      sendBtn.innerHTML = SVG_PAUSE;
+      sendBtn.title = "Pause";
+      sendBtn.className = "send-btn";
+      stopBtn.style.display = "none";
+    }
   }
+
+  // `deriveStatusBadge` already maps isPaused / isRunning → paused /
+  // running, so the plain push covers all three branches above.
+  pushStatusBadge();
 }
 
 export function updatePauseBtn(): void {
@@ -169,8 +148,7 @@ export function updatePauseBtn(): void {
 }
 
 export function updateStatus(status: string, source?: string): void {
-  const badge = document.getElementById("statusBadge");
-  if (!badge) return;
+  setLastStatus(status, source);
   const connected = status === "connected";
   const dotKlass = connected ? "indicator-dot sm --ok" : "indicator-dot sm --err";
   const text = connected ? source || "Local" : "disconnected";
@@ -180,7 +158,6 @@ export function updateStatus(status: string, source?: string): void {
       : "connected · local worker"
     : "disconnected";
   renderStatusBadge(
-    badge,
     text,
     connected ? "status-badge" : "status-badge disconnected",
     dotKlass,
@@ -194,12 +171,6 @@ export function updateStatus(status: string, source?: string): void {
 
 /* ===== Channel / title helpers =================================== */
 
-export function isPlaceholderTitle(title: string | null | undefined): boolean {
-  if (!title) return true;
-  if (title === "New conversation" || title === "Untitled") return true;
-  return /^(wechat|discord|telegram|slack)\s*[:：]\s*\S{8,}/i.test(title);
-}
-
 const CHANNEL_BRAND: Record<string, string> = {
   wechat: "WeChat",
   discord: "Discord",
@@ -212,31 +183,28 @@ function channelBrand(channel: string): string {
   return CHANNEL_BRAND[String(channel).toLowerCase()] || channel;
 }
 
-export function channelPrefixFor(channel: string, accountId?: string): string {
+function channelPrefixFor(channel: string, accountId?: string): string {
   if (!channel) return "";
   const brand = channelBrand(channel);
   return accountId ? brand + " (" + accountId + ")" : brand;
 }
 
-export function displayTitleFor(conv: { title?: string } | null): string {
-  if (!conv) return "";
-  const t = (conv.title || "").trim();
-  if (isPlaceholderTitle(t)) return "";
-  return t.length > 30 ? t.slice(0, 30) + "…" : t;
-}
-
 export function refreshStatusSource(): void {
-  const cid = W.currentSessionId ?? null;
-  const conv = cid && W.conversations ? W.conversations[cid] : null;
+  const cid = runtimeState.currentSessionId ?? null;
+  const conv = (cid ? runtimeState.conversations[cid] : null) as
+    | { channel?: string; account_id?: string; source?: string }
+    | null
+    | undefined;
 
   let ch: string | null = null;
   let acct: string | null = null;
+  const pending = runtimeState._pendingChannelChoice;
   if (conv && conv.channel) {
     ch = conv.channel;
     acct = conv.account_id || null;
-  } else if (W._pendingChannelChoice && W._pendingChannelChoice.channel) {
-    ch = W._pendingChannelChoice.channel;
-    acct = W._pendingChannelChoice.account_id || null;
+  } else if (pending && pending.channel) {
+    ch = pending.channel;
+    acct = pending.account_id || null;
   }
 
   const parts: string[] = [];
@@ -247,61 +215,17 @@ export function refreshStatusSource(): void {
   }
   updateStatus("connected", parts.join(" · "));
 
-  if (ch && typeof W._startChannelHealthPoll === "function") {
-    W._startChannelHealthPoll(ch, acct || "default");
+  if (ch) {
+    startChannelHealthPoll(ch, acct || "default");
   } else {
-    W._stopChannelHealthPoll?.();
+    stopChannelHealthPoll();
   }
-}
-
-/* ===== Pause / resume ============================================ */
-
-export function onSendBtnClick(): void {
-  if (W.isRunning) togglePause();
-  else W.sendMessage?.();
-}
-
-export function togglePause(): void {
-  const endpoint = W.isPaused ? "/api/resume" : "/api/pause";
-  fetch(endpoint, { method: "POST" })
-    .then((r) => r.json())
-    .then((data) => {
-      W.isPaused = data.paused;
-      updateSendBtn();
-    })
-    .catch(() => {});
-}
-
-export function stopExecution(): void {
-  if (!W.currentSessionId) {
-    W.isPaused = false;
-    W.isRunning = false;
-    updateSendBtn();
-    return;
-  }
-  fetch("/api/stop", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: W.currentSessionId }),
-  })
-    .then((r) => r.json())
-    .then(() => {
-      W.isPaused = false;
-      W.isRunning = false;
-      updateSendBtn();
-      W.addSystemMessage?.("Execution stopped.");
-    })
-    .catch(() => {
-      W.isPaused = false;
-      W.isRunning = false;
-      updateSendBtn();
-    });
 }
 
 /* ===== Thinking menu (legacy DOM — mostly no-op now) ============= */
 
 export function buildThinkingMenu(): void {
-  const cfg = W._thinkingConfig;
+  const cfg = runtimeState._thinkingConfig;
   if (!cfg) return;
   const menu = document.getElementById("thinkingMenu");
   const label = document.getElementById("thinkingLabel");
@@ -312,16 +236,16 @@ export function buildThinkingMenu(): void {
   if (!options.length) {
     if (selector) selector.style.display = "none";
     menu.classList.remove("open");
-    W._thinkingEffort = null;
+    runtimeState._thinkingEffort = null;
     return;
   }
   if (selector) selector.style.display = "";
 
-  let currentEffort = W._thinkingEffort;
+  let currentEffort = runtimeState._thinkingEffort;
   const values = options.map((o) => o.value);
   if (!currentEffort || values.indexOf(currentEffort) < 0) {
     currentEffort = cfg.default || values[0];
-    W._thinkingEffort = currentEffort;
+    runtimeState._thinkingEffort = currentEffort;
   }
   label.textContent = "effort: " + currentEffort;
 
@@ -367,37 +291,14 @@ export function closeAllPopovers(except?: string): void {
   if (except !== "branch") document.getElementById("branchDropdown")?.remove();
 }
 
-export function toggleThinkingMenu(e: Event): void {
-  e.stopPropagation();
-  const menu = document.getElementById("thinkingMenu");
-  const sel = document.getElementById("thinkingSelector");
-  if (!menu || !sel) return;
-  const opening = !menu.classList.contains("open");
-  if (opening) closeAllPopovers("thinking");
-  menu.classList.toggle("open", opening);
-  sel.classList.toggle("open", opening);
-}
-
 export function setThinkingEffort(level: string): void {
-  W._thinkingEffort = level;
+  runtimeState._thinkingEffort = level;
   buildThinkingMenu();
   document.getElementById("thinkingMenu")?.classList.remove("open");
   document.getElementById("thinkingSelector")?.classList.remove("open");
 }
 
 /* ===== Plus menu ================================================= */
-
-export function togglePlusMenu(e?: Event): void {
-  if (e) e.stopPropagation();
-  const menu = document.getElementById("plusMenu");
-  const btn = document.getElementById("plusBtn");
-  if (!menu) return;
-  const opening = !menu.classList.contains("open");
-  if (opening) closeAllPopovers("plus");
-  menu.classList.toggle("open", opening);
-  if (btn) btn.classList.toggle("open", opening);
-  if (opening) renderPlusMenu();
-}
 
 const PLUS_CHECK_SVG =
   '<svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">' +
@@ -407,16 +308,18 @@ const PLUS_CHECK_SVG =
 export function renderPlusMenu(): void {
   const toolsItem = document.getElementById("plusMenuTools");
   const check = document.getElementById("plusMenuToolsCheck");
-  if (toolsItem) toolsItem.classList.toggle("active", !!W._toolsEnabled);
-  if (check) check.innerHTML = W._toolsEnabled ? PLUS_CHECK_SVG : "";
+  if (toolsItem) toolsItem.classList.toggle("active", !!runtimeState._toolsEnabled);
+  if (check) check.innerHTML = runtimeState._toolsEnabled ? PLUS_CHECK_SVG : "";
 
   const wsItem = document.getElementById("plusMenuWebSearch");
   const wsCheck = document.getElementById("plusMenuWebSearchCheck");
   const wsSub = document.getElementById("plusMenuWebSearchSub");
-  if (wsItem) wsItem.classList.toggle("active", !!W._webSearchEnabled);
-  if (wsCheck) wsCheck.innerHTML = W._webSearchEnabled ? PLUS_CHECK_SVG : "";
+  if (wsItem) wsItem.classList.toggle("active", !!runtimeState._webSearchEnabled);
+  if (wsCheck) {
+    wsCheck.innerHTML = runtimeState._webSearchEnabled ? PLUS_CHECK_SVG : "";
+  }
   if (wsSub) {
-    const provName = W._webSearchProviderLabel || "";
+    const provName = runtimeState._webSearchProviderLabel || "";
     wsSub.textContent = provName ? " · " + provName : "";
   }
   updatePlusBtnIndicator();
@@ -424,7 +327,8 @@ export function renderPlusMenu(): void {
 
 export function updatePlusBtnIndicator(): void {
   const btn = document.getElementById("plusBtn");
-  const anyActive = !!W._toolsEnabled || !!W._webSearchEnabled;
+  const anyActive =
+    !!runtimeState._toolsEnabled || !!runtimeState._webSearchEnabled;
   if (btn) btn.classList.toggle("has-active", anyActive);
   renderActiveToolChips();
 }
@@ -432,9 +336,8 @@ export function updatePlusBtnIndicator(): void {
 function renderActiveToolChips(): void {
   const host = document.getElementById("activeToolChips");
   if (!host) return;
-  const escAttr = W.escAttr || ((s: unknown) => String(s));
   let chips = "";
-  if (W._toolsEnabled) {
+  if (runtimeState._toolsEnabled) {
     chips +=
       '<div class="tool-chip" data-tooltip="Tools" onclick="toggleToolsEnabled(event); _updatePlusBtnIndicator();" title="">' +
       '<span class="tool-chip-icon">' +
@@ -445,11 +348,13 @@ function renderActiveToolChips(): void {
       "</span>" +
       "</div>";
   }
-  if (W._webSearchEnabled) {
-    let label = W._webSearchProviderLabel
-      ? "Web Search · " + W._webSearchProviderLabel
+  if (runtimeState._webSearchEnabled) {
+    let label = runtimeState._webSearchProviderLabel
+      ? "Web Search · " + runtimeState._webSearchProviderLabel
       : "Web Search";
-    if (W._webSearchProviderTier) label += " · " + W._webSearchProviderTier;
+    if (runtimeState._webSearchProviderTier) {
+      label += " · " + runtimeState._webSearchProviderTier;
+    }
     chips +=
       '<div class="tool-chip" data-tooltip="' +
       escAttr(label) +
@@ -467,9 +372,12 @@ function renderActiveToolChips(): void {
 
 export function toggleToolsEnabled(e?: Event): void {
   if (e) e.stopPropagation();
-  W._toolsEnabled = !W._toolsEnabled;
+  runtimeState._toolsEnabled = !runtimeState._toolsEnabled;
   try {
-    localStorage.setItem("agentic_tools_enabled", W._toolsEnabled ? "1" : "0");
+    localStorage.setItem(
+      "agentic_tools_enabled",
+      runtimeState._toolsEnabled ? "1" : "0",
+    );
   } catch {
     /* ignore */
   }
@@ -478,16 +386,16 @@ export function toggleToolsEnabled(e?: Event): void {
 
 export function toggleWebSearchEnabled(e?: Event): void {
   if (e) e.stopPropagation();
-  W._webSearchEnabled = !W._webSearchEnabled;
+  runtimeState._webSearchEnabled = !runtimeState._webSearchEnabled;
   try {
     localStorage.setItem(
       "agentic_web_search_enabled",
-      W._webSearchEnabled ? "1" : "0",
+      runtimeState._webSearchEnabled ? "1" : "0",
     );
   } catch {
     /* ignore */
   }
-  if (W._webSearchEnabled && !W._webSearchProviderLabel) {
+  if (runtimeState._webSearchEnabled && !runtimeState._webSearchProviderLabel) {
     refreshWebSearchProviderLabel();
   }
   updatePlusBtnIndicator();
@@ -505,8 +413,8 @@ export function refreshWebSearchProviderLabel(): void {
             def ? p.id === def : p.available && p.is_default !== false,
           ) ||
           (d.providers || []).find((p: { available: boolean }) => p.available);
-        W._webSearchProviderLabel = prov ? prov.name : "";
-        W._webSearchProviderTier = prov && prov.tier ? prov.tier : "";
+        runtimeState._webSearchProviderLabel = prov ? prov.name : "";
+        runtimeState._webSearchProviderTier = prov && prov.tier ? prov.tier : "";
         renderPlusMenu();
       })
       .catch(() => {});
@@ -515,131 +423,13 @@ export function refreshWebSearchProviderLabel(): void {
   }
 }
 
-/* ===== Detail panel ============================================== */
-
-interface DetailNode {
-  path: string;
-  name: string;
-  status: string;
-  duration_ms?: number;
-  prompt?: string;
-  params?: Record<string, unknown>;
-  output?: unknown;
-  error?: string;
-  node_type?: string;
-  raw_reply?: unknown;
-  attempts?: unknown[];
-  expose?: string;
-}
-
-/**
- * Legacy global entry point (``window.showDetail``) for the right-rail
- * Details view.
- *
- * This used to build the panel's HTML itself and write it into
- * ``#detailBody``. That div is now rendered by React
- * (``right-sidebar.tsx``'s ``DetailPanel``), so painting it from here
- * both fought React over the same node and duplicated the markup. The
- * function now just hands the node to the store and lets React render.
- */
-export function showDetail(node: DetailNode): void {
-  W.selectedPath = node.path;
-  useSessionStore.getState().showDetail(node as never);
-}
-
-export function closeDetail(): void {
-  W.selectedPath = null;
-  useSessionStore.getState().setNodeSelected(false);
-  const panel = document.getElementById("detailPanel");
-  if (!panel) return;
-  panel.style.removeProperty("width");
-  panel.classList.add("collapsed");
-}
-
-export function toggleDetail(): void {
-  const panel = document.getElementById("detailPanel");
-  if (!panel) return;
-  if (!panel.classList.contains("collapsed")) {
-    panel.style.removeProperty("width");
-  }
-  panel.classList.toggle("collapsed");
-}
-
-/* ===== Code viewer =============================================== */
-
-export async function viewSource(name: string): Promise<void> {
-  try {
-    const resp = await fetch(
-      "/api/function/" + encodeURIComponent(name) + "/source",
-    );
-    const data = await resp.json();
-    if (data.error) {
-      console.warn("[viewSource] " + name + ": " + data.error);
-      return;
-    }
-    showCodeModal(name, data.source, data.category);
-  } catch (e) {
-    console.error("[viewSource] " + name + ":", e);
-  }
-}
-
-export function showCodeModal(name: string, source: string, category?: string): void {
-  let modal = document.getElementById("codeModal");
-  if (!modal) {
-    modal = document.createElement("div");
-    modal.id = "codeModal";
-    modal.className = "code-modal-overlay";
-    modal.innerHTML =
-      '<div class="code-modal">' +
-      '<div class="code-modal-header"><span class="code-modal-title" id="codeModalTitle"></span><button class="code-modal-close" onclick="closeCodeModal()">&times;</button></div>' +
-      '<div class="code-modal-body"><pre id="codeModalPre"></pre></div>' +
-      '<div class="code-modal-actions" id="codeModalActions"></div>' +
-      "</div>";
-    const m = modal;
-    m.addEventListener("click", (e) => {
-      if (e.target === m) closeCodeModal();
-    });
-    document.body.appendChild(modal);
-  }
-  const escAttr = W.escAttr || ((s: unknown) => String(s));
-  const highlight = W.highlightPython || ((c: string) => c);
-  document.getElementById("codeModalTitle")!.textContent = name;
-  document.getElementById("codeModalPre")!.innerHTML = highlight(source);
-
-  let actions = '<button class="code-modal-btn" onclick="closeCodeModal()">Close</button>';
-  if (category !== "meta") {
-    actions +=
-      '<button class="code-modal-btn" onclick="editInModal(\'' +
-      escAttr(name) +
-      "')\">Edit</button>";
-    actions +=
-      '<button class="code-modal-btn" onclick="fixFromModal(\'' +
-      escAttr(name) +
-      "')\">Fix with LLM</button>";
-  }
-  document.getElementById("codeModalActions")!.innerHTML = actions;
-  requestAnimationFrame(() => modal!.classList.add("active"));
-}
-
-export function closeCodeModal(): void {
-  document.getElementById("codeModal")?.classList.remove("active");
-}
-
-export function editInModal(name: string): void {
-  closeCodeModal();
-  W.setInput?.("I want to edit function " + name);
-}
-
-export function fixFromModal(name: string): void {
-  const instruction = prompt("What should be fixed in " + name + "?");
-  if (!instruction) return;
-  closeCodeModal();
-  W.setInput?.("fix " + name + " " + instruction);
-}
-
 /* ===== Unified click-outside + plus-menu init ==================== */
 
-document.addEventListener("click", (e) => {
+/** Close every open popover when a click lands outside it. Installed at
+ *  module load, so it has to tolerate a DOM-less host — this module is
+ *  reachable from SSR and from the Node check scripts. */
+function installClickOutside(): void {
+  document.addEventListener("click", (e) => {
   const t = e.target as HTMLElement | null;
   if (!t) return;
   if (!t.closest("#plusMenu") && !t.closest("#plusBtn")) {
@@ -662,46 +452,26 @@ document.addEventListener("click", (e) => {
     !t.closest("#execAgentBadge")
   ) {
     document.getElementById("agentSelector")?.remove();
-  }
-});
-
-try {
-  W._toolsEnabled = localStorage.getItem("agentic_tools_enabled") === "1";
-} catch {
-  W._toolsEnabled = false;
+    }
+  });
 }
-setTimeout(() => updatePlusBtnIndicator(), 0);
+
+if (typeof document !== "undefined") {
+  installClickOutside();
+  try {
+    runtimeState._toolsEnabled =
+      localStorage.getItem("agentic_tools_enabled") === "1";
+  } catch {
+    runtimeState._toolsEnabled = false;
+  }
+  setTimeout(() => updatePlusBtnIndicator(), 0);
+}
 
 /* ===== window bridges ============================================ */
+/* Only the names the generated inline `onclick="…"` markup above
+   resolves at click time. Everything else is a plain export. */
 
-W.setRunning = setRunning;
-W.updateContextStats = updateContextStats;
-W.setStatusDotHealth = setStatusDotHealth;
-W.updateSendBtn = updateSendBtn;
-W.updatePauseBtn = updatePauseBtn;
-W.updateStatus = updateStatus;
-W._isPlaceholderTitle = isPlaceholderTitle;
-W._channelPrefixFor = channelPrefixFor;
-W._displayTitleFor = displayTitleFor;
-W.refreshStatusSource = refreshStatusSource;
-W.onSendBtnClick = onSendBtnClick;
-W.togglePause = togglePause;
-W.stopExecution = stopExecution;
-W.buildThinkingMenu = buildThinkingMenu;
-W._closeAllPopovers = closeAllPopovers;
-W.toggleThinkingMenu = toggleThinkingMenu;
 W.setThinkingEffort = setThinkingEffort;
-W.togglePlusMenu = togglePlusMenu;
-W.renderPlusMenu = renderPlusMenu;
 W._updatePlusBtnIndicator = updatePlusBtnIndicator;
 W.toggleToolsEnabled = toggleToolsEnabled;
 W.toggleWebSearchEnabled = toggleWebSearchEnabled;
-W._refreshWebSearchProviderLabel = refreshWebSearchProviderLabel;
-W.showDetail = showDetail;
-W.closeDetail = closeDetail;
-W.toggleDetail = toggleDetail;
-W.viewSource = viewSource;
-W.showCodeModal = showCodeModal;
-W.closeCodeModal = closeCodeModal;
-W.editInModal = editInModal;
-W.fixFromModal = fixFromModal;

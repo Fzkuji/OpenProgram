@@ -8,10 +8,10 @@
  *   - connection status → composer status chip (composer/index.tsx,
  *     which hosts the ChannelMenu popover)
  *
- * `LegacyTopbarBridge` (rendered unconditionally by AppShell) keeps the
- * window-bridge wrappers installed: legacy DOM-mutating updaters are
- * wrapped so their state lands in the zustand store, which these chips
- * read. Dropdowns still delegate to the submodules here
+ * `LegacyTopbarBridge` (rendered unconditionally by AppShell) seeds the
+ * zustand store from the current runtime state on mount; from then on
+ * the runtime-bridge updaters push into it directly via
+ * `lib/top-bar-sync.ts`. Dropdowns still delegate to the submodules here
  * (project-menu / agent-selector / permission-menu / channel-menu).
  * 分支入口只剩右栏 History 的 BranchesPanel（原 BranchBadge chip 已删，
  * 与列表重复）。
@@ -22,6 +22,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
+import { closeAllPopovers } from "@/lib/runtime-bridge/ui";
 import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
 import {
@@ -38,38 +39,24 @@ import {
 import { HoverTip } from "@/components/ui/tooltip";
 
 import { AgentSelector } from "./agent-selector";
-import { installLegacyWrappers, legacyTopbarReady } from "./window-bridge";
+import { pushAgentSettings, pushBranchInfo, pushStatusBadge } from "@/lib/top-bar-sync";
 
 export { ProjectBadge } from "./project-menu";
 export { WorkingDirChips } from "./working-dir-chips";
 export { PermissionBadge } from "./permission-menu";
 
 /**
- * Headless bridge — installs the legacy-updater wrappers once the
- * legacy globals have loaded. Polled on a short interval because
- * providers.js / ui.js are inserted asynchronously by PageShell.
- * Must stay mounted for the whole session (AppShell renders it
- * unconditionally next to the portals); without it the status /
- * branch / agent state never reaches the store.
+ * Headless bridge — seeds the store from the current runtime state on
+ * mount so the chips render something before the first WS event. From
+ * then on the runtime-bridge updaters push on their own
+ * (`updateAgentBadges` / `refreshBranchBadge` / `updateStatus` /
+ * `updateSendBtn` / `setStatusDotHealth`).
  */
 export function LegacyTopbarBridge() {
   useEffect(() => {
-    let cancelled = false;
-    if (legacyTopbarReady()) {
-      installLegacyWrappers();
-      return;
-    }
-    const t = setInterval(() => {
-      if (cancelled) return;
-      if (legacyTopbarReady()) {
-        installLegacyWrappers();
-        clearInterval(t);
-      }
-    }, 120);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
+    pushAgentSettings();
+    pushBranchInfo();
+    pushStatusBadge();
   }, []);
   return null;
 }
@@ -129,7 +116,7 @@ export function AgentBadge({
     if (locked) return;
     if (next) {
       window.dispatchEvent(new Event("topbar-close-menus"));
-      (window as unknown as { _closeAllPopovers?: () => void })._closeAllPopovers?.();
+      closeAllPopovers();
     }
     setOpen(next);
   }

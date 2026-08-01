@@ -2,7 +2,7 @@
 
 /**
  * NewTabPage — the new-tab button's content. Exactly two entries:
- * a "New session" card (triggers window.newSession, same as the left
+ * a "New session" card (triggers newSession, same as the left
  * sidebar's New chat — the draft session tab replaces this page in
  * place) and a URL row that IS the browser entry (globe + input + Go,
  * opens a web tab). No separate Browse-web button, no caption.
@@ -35,6 +35,7 @@ import {
 } from "@/lib/ntp-shortcuts";
 import { LANE_COLORS } from "@/lib/format-utils/lane-colors";
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
+import { newSession } from "@/lib/runtime-bridge/conversations";
 import styles from "./center-tabs.module.css";
 
 /** Stable per-host colour for the initial-letter fallback tile. */
@@ -139,8 +140,7 @@ export function NewTabPage() {
 
   function onNewSession() {
     const draftId = useCenterTabs.getState().claimDraftSessionTab();
-    (window as unknown as { newSession?: (draftId?: string) => void })
-      .newSession?.(draftId);
+    newSession(draftId);
   }
 
   function go() {

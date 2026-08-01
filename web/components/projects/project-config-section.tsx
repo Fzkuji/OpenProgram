@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws-request";
+import { getSocket } from "@/lib/runtime-bridge/state";
 
 type Config = {
   permission_mode?: string;
@@ -15,7 +16,7 @@ type Config = {
 };
 
 function wsSend(payload: unknown): boolean {
-  const ws = (window as unknown as { ws?: WebSocket }).ws;
+  const ws = getSocket();
   if (!ws || ws.readyState !== WebSocket.OPEN) return false;
   ws.send(JSON.stringify(payload));
   return true;

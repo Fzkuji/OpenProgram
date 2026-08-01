@@ -5,19 +5,12 @@
 // placeholder detection, the LegacyConv shape, wsSend).
 
 import { parseUserAttachments } from "@/components/chat/messages/user-attachments";
-
-export interface SessionWindow {
-  ws?: WebSocket;
-  conversations?: Record<string, LegacyConv>;
-  currentSessionId?: string | null;
-  newSession?: () => void;
-  renderSessions?: () => void;
-}
+import { getSocket } from "@/lib/runtime-bridge/state";
 
 export function wsSend(payload: unknown): void {
-  const w = window as unknown as SessionWindow;
-  if (w.ws && w.ws.readyState === WebSocket.OPEN) {
-    w.ws.send(JSON.stringify(payload));
+  const ws = getSocket();
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(payload));
   }
 }
 

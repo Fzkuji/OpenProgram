@@ -3,11 +3,10 @@
  * shape `conversations.js` / `chat-ws.js` build) into the normalized
  * `ChatMsg[]` the React message store consumes.
  *
- * Phase 3 plumbing: `renderSessionMessages` calls this through the
- * `window.__feedStoreFromConv` bridge so the React store mirrors the
- * loaded conversation. The legacy DOM renderer still runs in parallel
- * until the cutover flip — feeding the store is additive.
+ * `renderSessionMessages` in `runtime-bridge/conversations.ts` calls
+ * `feedStoreFromConv` so the React store mirrors the loaded conversation.
  */
+import { useSessionStore } from "./session-store";
 import type { AssistantBlock, ChatMsg, ChatToolCall } from "./session-store";
 
 /** Same allowlist as the one in ``chat-stream.ts``. Hides any persisted
@@ -398,4 +397,15 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
     }
   }
   return out;
+}
+
+/** Push a loaded conversation's messages into the React message store. */
+export function feedStoreFromConv(conv: {
+  id?: string;
+  messages?: unknown[];
+} | null | undefined): void {
+  if (!conv || !conv.id) return;
+  useSessionStore
+    .getState()
+    .setMessages(conv.id, convToChatMsgs((conv.messages as LegacyMsg[]) || []));
 }

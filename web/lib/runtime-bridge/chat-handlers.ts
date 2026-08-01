@@ -4,9 +4,7 @@
  * TS port of the legacy `public/js/chat/{init,chat-ws,chat}.js`. These
  * are the WS message handlers (`chat_ack` / `chat_response` / `status`
  * / `sessions_list` / `running_task`) plus the retry / follow-up glue.
- * `useWS` calls the exported functions directly; some are still bridged
- * onto `window.*` for inline-onclick HTML, React components and the
- * not-yet-migrated legacy scripts.
+ * `useWS` calls the exported functions directly.
  *
  * Imported for side effects + `initChatPage()` by `useWS`.
  */
@@ -14,6 +12,10 @@
 import {
   extractMessagesFromTree,
   fetchBranches,
+  newSession,
+  refreshBranchBadge,
+  refreshChannelBadge,
+  refreshBranchTokens,
   renderSessionMessages,
 } from "./conversations";
 import {
@@ -24,78 +26,40 @@ import {
   responseSessionId,
   responseTargetsActiveChat,
 } from "./chat-response-routing";
-import { dropDraftChannelChoice } from "./draft-channel-choice";
+import {
+  draftChannelChoiceHost,
+  dropDraftChannelChoice,
+} from "./draft-channel-choice";
+import { runtimeState, getSocket } from "./state";
+import { escHtml, scrollToBottom, setWelcomeVisible } from "./helpers";
+import {
+  setRunning,
+  updateContextStats,
+  updatePauseBtn,
+  updatePlusBtnIndicator,
+  refreshStatusSource,
+  refreshWebSearchProviderLabel,
+} from "./ui";
+import {
+  loadAgentSettings,
+  loadProviders,
+  recordCacheWrite,
+  refreshTokenBadge,
+  renderTokenBadge,
+} from "./providers";
+import { refreshHistoryContextRange } from "./dag";
 import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
 import { writeChatScroll } from "@/lib/state/chat-scroll";
 import { useSessionStore } from "@/lib/session-store";
+import {
+  clearPendingFirstAck,
+  clearPendingUserText,
+  getPendingUserText,
+} from "@/lib/pending-user-text";
 
-interface ChatWindow {
-  ws?: WebSocket | null;
-  currentSessionId?: string | null;
-  conversations?: Record<string, Record<string, unknown>>;
-  pendingResponses?: Record<string, unknown>;
-  isPaused?: boolean;
-  isRunning?: boolean;
-  _elapsedTimer?: ReturnType<typeof setInterval> | null;
-  trees?: { path?: string; name?: string }[];
-  _thinkingEffort?: string;
-  _execThinkingEffort?: string;
-  _branchesByConv?: Record<string, unknown>;
-  _hasActiveSession?: boolean;
-  _toolsEnabled?: boolean;
-  _webSearchEnabled?: boolean;
-  _lastRunCommand?: string | null;
-  _pendingChannelChoice?: {
-    channel: string | null;
-    account_id: string | null;
-  } | null;
-  __pendingChannelChoices?: Record<
-    string,
-    { channel: string | null; account_id: string | null }
-  >;
-  __sessionStore?: {
-    getState: () => {
-      activeChatKey: string | null;
-      setContextStats: (
-        sid: string,
-        t: {
-          input: number;
-          output: number;
-          cache_read: number;
-          cache_create?: number;
-          model?: string | null;
-          provider?: string | null;
-        },
-        ctx: number | null,
-      ) => void;
-    };
-  };
-  // Bridges to still-legacy modules.
-  escHtml?: (s: unknown) => string;
-  escAttr?: (s: unknown) => string;
-  parseRunCommandForDisplay?: (t: string) => { funcName: string; params: string };
-  scrollToBottom?: (opts?: { force?: boolean }) => void;
-  setWelcomeVisible?: (show: boolean) => void;
-  addSystemMessage?: (text: string) => void;
-  setRunning?: (running: boolean) => void;
-  updatePauseBtn?: () => void;
-  loadAgentSettings?: () => void;
-  loadProviders?: () => void;
-  refreshChannelBadge?: () => void;
-  refreshBranchBadge?: () => void;
-  refreshStatusSource?: () => void;
-  refreshTokenBadge?: () => void;
-  _renderTokenBadge?: (data: unknown, sid: string) => void;
-  _recordCacheWrite?: (sid: string) => void;
-  refreshHistoryContextRange?: (sid: string) => void;
-  _refreshBranchTokens?: () => void;
-  _updatePlusBtnIndicator?: () => void;
-  _refreshWebSearchProviderLabel?: () => void;
-  renderSessions?: () => void;
-  [k: string]: unknown;
-}
-
-const W = window as unknown as ChatWindow;
+/** The app's single draft-channel-choice host (module-level, backed by
+ *  `runtimeState._pendingChannelChoice`). */
+const choiceHost = draftChannelChoiceHost;
 
 /* ===== Run-active flag =========================================== */
 
@@ -123,16 +87,17 @@ export function wsHandleChatAck(data: ChatAckData): void {
     const tabs = useCenterTabs.getState();
     const isActive = sessionAckIsActive(sid);
     tabs.markSessionReady(sid);
-    dropDraftChannelChoice(W, sid, isActive);
+    dropDraftChannelChoice(choiceHost, sid, isActive);
     const pendingProjectId =
       useSessionStore.getState().pendingProjectsByChat[sid];
+    const sock = getSocket();
     if (
       pendingProjectId &&
-      W.ws &&
-      W.ws.readyState === WebSocket.OPEN
+      sock &&
+      sock.readyState === WebSocket.OPEN
     ) {
       try {
-        W.ws.send(
+        sock.send(
           JSON.stringify({
             action: "set_session_project",
             session_id: sid,
@@ -147,12 +112,12 @@ export function wsHandleChatAck(data: ChatAckData): void {
       }
     }
     if (isActive) {
-      W.currentSessionId = sid;
+      runtimeState.currentSessionId = sid;
       if (window.location.pathname !== "/s/" + sid) {
         history.pushState(null, "", "/s/" + sid);
       }
     }
-    const convs = W.conversations || (W.conversations = {});
+    const convs = runtimeState.conversations;
     if (!convs[sid]) {
       // Seed a preview + created_at from the just-sent user text so the
       // row shows in the sidebar IMMEDIATELY (on run start), not after
@@ -160,10 +125,7 @@ export function wsHandleChatAck(data: ChatAckData): void {
       // a "New conversation"-titled row out until the backend re-lists it
       // with a preview at turn end — which read as "the chat only appears
       // after it's done".
-      const pending =
-        (W as unknown as {
-          __pendingUserTextBySession?: Record<string, string>;
-        }).__pendingUserTextBySession?.[sid] || "";
+      const pending = getPendingUserText(sid) || "";
       const preview = pending.trim().replace(/\s+/g, " ").slice(0, 80);
       convs[sid] = {
         id: sid,
@@ -173,19 +135,8 @@ export function wsHandleChatAck(data: ChatAckData): void {
         created_at: Date.now() / 1000,
       };
     }
-    delete (W as unknown as {
-      __pendingUserTextBySession?: Record<string, string>;
-    }).__pendingUserTextBySession?.[sid];
-    const pendingFirst = (W as unknown as {
-      __pendingFirstAckBySession?: Record<string, true>;
-    }).__pendingFirstAckBySession;
-    if (pendingFirst?.[sid]) {
-      const next = { ...pendingFirst };
-      delete next[sid];
-      (W as unknown as {
-        __pendingFirstAckBySession?: Record<string, true>;
-      }).__pendingFirstAckBySession = next;
-    }
+    clearPendingUserText(sid);
+    clearPendingFirstAck(sid);
     // Mirror the (seeded or pre-existing) conv into the React store so the
     // sidebar row appears IMMEDIATELY — store.conversations is the
     // sidebar's source of truth.
@@ -195,24 +146,18 @@ export function wsHandleChatAck(data: ChatAckData): void {
     // it's idempotent with the incoming running_task broadcast (which
     // overwrites the same key with a richer payload). Without this the
     // sending tab's row appears but doesn't flow until that round-trip.
-    const _store = (window as unknown as {
-      __sessionStore?: {
-        getState: () => {
-          setRunningTaskFor?: (s: string, t: unknown) => void;
-        };
-      };
-    }).__sessionStore?.getState();
-    _store?.setRunningTaskFor?.(sid, { session_id: sid, msg_id: data.msg_id || "" });
-    W.renderSessions?.();
+    useSessionStore
+      .getState()
+      .setRunningTaskFor(sid, { session_id: sid, msg_id: data.msg_id || "" });
     if (isActive) {
-      W.loadAgentSettings?.();
-      W.refreshChannelBadge?.();
+      void loadAgentSettings();
+      refreshChannelBadge();
     }
     // A fresh session never went through `load_session`, so fetch the
     // branch list now that the server registered the user turn.
-    if (W._branchesByConv) delete W._branchesByConv[sid];
+    delete runtimeState._branchesByConv[sid];
     fetchBranches(sid).then(() => {
-      if (isActive) W.refreshBranchBadge?.();
+      if (isActive) refreshBranchBadge();
     });
     if (isActive) setRunActive(true);
   }
@@ -223,14 +168,11 @@ export function wsHandleChatAck(data: ChatAckData): void {
   // tree_update path (hydrateTranscriptForTreeUpdate) stays as the fallback
   // and is a no-op once this load_session lands the card. Guarded on
   // function_run so a plain chat ack is untouched.
-  if (data.function_run && data.session_id === W.currentSessionId) {
-    const live = window as Window & {
-      ws?: WebSocket;
-      __reloadOnTaskClear?: string | null;
-    };
-    live.__reloadOnTaskClear = data.session_id;
-    if (live.ws && live.ws.readyState === WebSocket.OPEN) {
-      live.ws.send(
+  if (data.function_run && data.session_id === runtimeState.currentSessionId) {
+    runtimeState.__reloadOnTaskClear = data.session_id;
+    const sock = getSocket();
+    if (sock && sock.readyState === WebSocket.OPEN) {
+      sock.send(
         JSON.stringify({ action: "load_session", session_id: data.session_id }),
       );
     }
@@ -246,29 +188,25 @@ interface ChatResponseData {
 export function wsHandleChatResponse(data: ChatResponseData): void {
   // Cancelled envelope without a msg_id is the force-stop signal.
   if (data && data.type === "cancelled") {
-    const sid = responseSessionId(data, W.currentSessionId);
+    const sid = responseSessionId(data, runtimeState.currentSessionId);
     handleRunningTaskClear(sid ?? undefined);
-    if (!responseTargetsActiveChat(data, W.currentSessionId)) return;
+    if (!responseTargetsActiveChat(data, runtimeState.currentSessionId)) return;
     try {
       const rp = document.getElementById("runtime_pending");
       if (rp && rp.parentNode) rp.parentNode.removeChild(rp);
     } catch {
       /* ignore */
     }
-    try {
-      Object.keys(W.pendingResponses || {}).forEach((k) => {
-        delete W.pendingResponses![k];
-      });
-    } catch {
-      /* ignore */
-    }
+    Object.keys(runtimeState.pendingResponses).forEach((k) => {
+      delete runtimeState.pendingResponses[k];
+    });
     setRunActive(false);
-    W.setRunning?.(false);
+    setRunning(false);
     return;
   }
   handleChatResponse(data);
   if (data && (data.type === "result" || data.type === "error")) {
-    if (responseTargetsActiveChat(data, W.currentSessionId)) {
+    if (responseTargetsActiveChat(data, runtimeState.currentSessionId)) {
       setRunActive(false);
     }
   }
@@ -280,15 +218,15 @@ interface StatusMsg {
 }
 
 export function wsHandleStatus(msg: StatusMsg): void {
-  W.isPaused = msg.paused;
+  runtimeState.isPaused = !!msg.paused;
   if (msg.stopped) {
-    W.isRunning = false;
-    if (W._elapsedTimer) {
-      clearInterval(W._elapsedTimer);
-      W._elapsedTimer = null;
+    runtimeState.isRunning = false;
+    if (runtimeState._elapsedTimer) {
+      clearInterval(runtimeState._elapsedTimer);
+      runtimeState._elapsedTimer = null;
     }
   }
-  W.updatePauseBtn?.();
+  updatePauseBtn();
 }
 
 /* ===== sessions_list / running_task ============================== */
@@ -320,7 +258,7 @@ interface SessionRow {
 }
 
 export function handleSessionsList(data: SessionRow[]): void {
-  const convs = W.conversations || (W.conversations = {});
+  const convs = runtimeState.conversations;
   const serverIds = new Set((data || []).map((c) => c.id));
   Object.keys(convs).forEach((id) => {
     if (!serverIds.has(id)) delete convs[id];
@@ -382,25 +320,18 @@ export function handleSessionsList(data: SessionRow[]): void {
   // map (handles adds / deletes / field updates in one pass). The sidebar
   // reads store.conversations, so this is what makes the list authoritative.
   mirrorSetConvs(Object.values(convs));
-  const sid = W.currentSessionId;
+  const sid = runtimeState.currentSessionId;
   if (sid && !convs[sid]) {
-    newSessionImport();
+    newSession();
   }
-  W.renderSessions?.();
   if (sid && convs[sid]) {
-    W._hasActiveSession = true;
+    runtimeState._hasActiveSession = true;
     const provBadge = document.getElementById("providerBadge");
     if (provBadge && provBadge.textContent!.indexOf("\u{1F512}") === -1) {
       provBadge.textContent += " \u{1F512}";
     }
-    W.loadProviders?.();
+    void loadProviders();
   }
-}
-
-// `newSession` lives in conversations.ts; call it lazily through
-// window to avoid an import cycle (it's only hit on a stale id).
-function newSessionImport(): void {
-  (W.newSession as (() => void) | undefined)?.();
 }
 
 /** Patch a single conversation's title / pinned / archived / group
@@ -419,8 +350,7 @@ export function handleSessionUpdated(
   } | null,
 ): void {
   if (!data || !data.id) return;
-  const convs = W.conversations;
-  const conv = convs?.[data.id];
+  const conv = runtimeState.conversations[data.id];
   if (!conv) return;
   if (typeof data.title === "string") conv.title = data.title;
   if ("pinned" in data) conv.pinned = !!data.pinned;
@@ -429,7 +359,6 @@ export function handleSessionUpdated(
   if ("status" in data) conv.status = data.status || undefined;
   if ("unread" in data) conv.unread = !!data.unread;
   mirrorUpsertConv(conv);
-  W.renderSessions?.();
 }
 
 export function handleRunningTask(rt: unknown): void {
@@ -448,8 +377,8 @@ export function handleRunningTask(rt: unknown): void {
   //    this guard, a background session starting a turn would also
   //    flip the composer for whatever other session the user is
   //    looking at right now.
-  if (!t.session_id || t.session_id === W.currentSessionId) {
-    W.setRunning?.(true);
+  if (!t.session_id || t.session_id === runtimeState.currentSessionId) {
+    setRunning(true);
   }
 
   // 2) Mark the in-flight assistant message as "running" in the
@@ -462,43 +391,16 @@ export function handleRunningTask(rt: unknown): void {
   const sid = t.session_id;
   const mid = t.msg_id;
   if (!sid || !mid) return;
-  try {
-    const w = window as unknown as {
-      __sessionStore?: {
-        getState: () => {
-          messagesById?: Record<string, { id: string; status?: string }>;
-          updateMessage?: (
-            sessionId: string,
-            msgId: string,
-            patch: Record<string, unknown>,
-          ) => void;
-          setRunningTaskFor?: (
-            sessionId: string,
-            task: unknown,
-          ) => void;
-        };
-      };
-    };
-    const store = w.__sessionStore?.getState();
-    if (!store) return;
-    const replyId = mid + "_reply";
-    const replyMsg = store.messagesById?.[replyId];
-    if (replyMsg && store.updateMessage) {
-      store.updateMessage(sid, replyId, { status: "running" });
-    } else if (store.updateMessage) {
-      store.updateMessage(sid, mid, { status: "running" });
-    }
-    const taskPayload = {
-      session_id: sid,
-      msg_id: mid,
-      func_name: t.func_name,
-      started_at: t.started_at,
-    };
-    store.setRunningTaskFor?.(sid, taskPayload);
-  } catch {
-    // store not yet mounted (legacy-only page) — fall back to the
-    // simple button flip above.
-  }
+  const store = useSessionStore.getState();
+  const replyId = mid + "_reply";
+  const targetId = store.messagesById[replyId] ? replyId : mid;
+  store.updateMessage(sid, targetId, { status: "running" });
+  store.setRunningTaskFor(sid, {
+    session_id: sid,
+    msg_id: mid,
+    func_name: t.func_name,
+    started_at: t.started_at,
+  });
 }
 
 /** Hydrate the transcript when a function run's FIRST tree_update lands.
@@ -520,62 +422,37 @@ const hydratedTreePaths = new Set<string>();
 function hydrateTranscriptForTreeUpdate(data: ChatResponseData): void {
   const sid = (data as { session_id?: string }).session_id;
   const path = ((data as { tree?: { path?: string } }).tree || {}).path;
-  if (!sid || !path || sid !== W.currentSessionId) return;
+  if (!sid || !path || sid !== runtimeState.currentSessionId) return;
   if (hydratedTreePaths.has(path)) return;
   hydratedTreePaths.add(path);
-  try {
-    const w = window as unknown as {
-      __sessionStore?: {
-        getState: () => { messagesById?: Record<string, unknown> };
-      };
-    };
-    // Card already in the transcript (chat-issued tool call, or the
-    // session was freshly loaded) — nothing to hydrate.
-    if (w.__sessionStore?.getState().messagesById?.[path]) return;
-  } catch {
-    /* store not mounted — hydrate anyway */
-  }
-  const live = window as Window & {
-    ws?: WebSocket;
-    __reloadOnTaskClear?: string | null;
-  };
-  live.__reloadOnTaskClear = sid;
-  if (live.ws && live.ws.readyState === WebSocket.OPEN) {
-    live.ws.send(JSON.stringify({ action: "load_session", session_id: sid }));
+  // Card already in the transcript (chat-issued tool call, or the
+  // session was freshly loaded) — nothing to hydrate.
+  if (useSessionStore.getState().messagesById[path]) return;
+  runtimeState.__reloadOnTaskClear = sid;
+  const sock = getSocket();
+  if (sock && sock.readyState === WebSocket.OPEN) {
+    sock.send(JSON.stringify({ action: "load_session", session_id: sid }));
   }
 }
 
 export function handleRunningTaskClear(sessionId: string | undefined): void {
   if (!sessionId) return;
-  try {
-    const w = window as unknown as {
-      __sessionStore?: {
-        getState: () => {
-          currentSessionId?: string | null;
-          setRunningTaskFor?: (sid: string, t: unknown) => void;
-        };
-      };
-    };
-    const store = w.__sessionStore?.getState();
-    store?.setRunningTaskFor?.(sessionId, null);
-    // If the clear is for the currently-active session, also drop the
-    // legacy single-task / button state so the composer un-locks.
-    if (store?.currentSessionId === sessionId) {
-      W.setRunning?.(false);
-    }
-  } catch {
-    /* ignore */
+  const store = useSessionStore.getState();
+  store.setRunningTaskFor(sessionId, null);
+  // If the clear is for the currently-active session, also drop the
+  // legacy single-task / button state so the composer un-locks.
+  if (store.currentSessionId === sessionId) {
+    setRunning(false);
   }
   // One-shot reload requested by the Function-call Retry button: the
   // retried run is a sibling branch whose HEAD lands at run completion,
   // so re-hydrate now — the branch view then renders only the active
   // version and the old run moves behind the < N/M > switcher.
-  const flagged = window as Window & { __reloadOnTaskClear?: string | null };
-  if (flagged.__reloadOnTaskClear === sessionId) {
-    flagged.__reloadOnTaskClear = null;
-    const ws = (window as Window & { ws?: WebSocket }).ws;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: "load_session", session_id: sessionId }));
+  if (runtimeState.__reloadOnTaskClear === sessionId) {
+    runtimeState.__reloadOnTaskClear = null;
+    const sock = getSocket();
+    if (sock && sock.readyState === WebSocket.OPEN) {
+      sock.send(JSON.stringify({ action: "load_session", session_id: sessionId }));
     }
   }
 }
@@ -584,8 +461,11 @@ export function handleRunningTaskClear(sessionId: string | undefined): void {
 
 export function handleChatResponse(data: ChatResponseData): void {
   const type = data.type;
-  const sid = responseSessionId(data, W.currentSessionId);
-  const targetsActive = responseTargetsActiveChat(data, W.currentSessionId);
+  const sid = responseSessionId(data, runtimeState.currentSessionId);
+  const targetsActive = responseTargetsActiveChat(
+    data,
+    runtimeState.currentSessionId,
+  );
 
   if (type === "context_stats") {
     handleContextStats(data as ContextStatsData, sid);
@@ -595,7 +475,7 @@ export function handleChatResponse(data: ChatResponseData): void {
     // 压缩把保留尾部重挂到摘要节点下，活跃分支的节点集合整个换了一批。
     // Context tab 的明暗靠 /context-range 的 node_ids，不刷新就停在压缩前
     // 的旧集合上 → 整图全暗。
-    if (targetsActive && sid) W.refreshHistoryContextRange?.(sid);
+    if (targetsActive && sid) refreshHistoryContextRange(sid);
     return;
   }
   if (type === "status") {
@@ -613,36 +493,20 @@ export function handleChatResponse(data: ChatResponseData): void {
 
   // Final response (result / error / retry_result) -- task done.
   // Clear per-session running state from the response's session_id
-  // (NOT W.currentSessionId — the user may have switched away while
-  // the background turn was finishing). The clear helper itself
+  // (NOT runtimeState.currentSessionId — the user may have switched away
+  // while the background turn was finishing). The clear helper itself
   // flips the legacy button if the cleared session is the active one.
   handleRunningTaskClear(sid ?? undefined);
   if (targetsActive) {
-    W.loadAgentSettings?.();
-    if (typeof W.refreshTokenBadge === "function") {
-      try {
-        W.refreshTokenBadge();
-      } catch {
-        /* ignore */
-      }
-    }
+    void loadAgentSettings();
+    void refreshTokenBadge();
     if (sid) {
-      try {
-        fetchBranches(sid, { force: true }).then(() => {
-          try {
-            W._refreshBranchTokens?.();
-          } catch {
-            /* ignore */
-          }
-        });
-      } catch {
-        /* ignore */
-      }
+      fetchBranches(sid, { force: true }).then(() => refreshBranchTokens());
     }
 
-    if (W._elapsedTimer) {
-      clearInterval(W._elapsedTimer);
-      W._elapsedTimer = null;
+    if (runtimeState._elapsedTimer) {
+      clearInterval(runtimeState._elapsedTimer);
+      runtimeState._elapsedTimer = null;
     }
   }
 
@@ -651,8 +515,11 @@ export function handleChatResponse(data: ChatResponseData): void {
     (!!data.function && data.function !== "chat");
 
   // Store assistant message.
-  if (sid && W.conversations?.[sid]) {
-    const conv = W.conversations[sid] as { messages?: Record<string, unknown>[]; title?: string };
+  if (sid && runtimeState.conversations[sid]) {
+    const conv = runtimeState.conversations[sid] as {
+      messages?: Record<string, unknown>[];
+      title?: string;
+    };
     if (!conv.messages) conv.messages = [];
     const storedMsg: Record<string, unknown> = {
       role: "assistant",
@@ -674,17 +541,14 @@ export function handleChatResponse(data: ChatResponseData): void {
     // producing a second card. Only plain chat replies belong in the
     // legacy `conv.messages` mirror.
     if (!isRuntimeResult) conv.messages.push(storedMsg);
-    if (targetsActive) {
-      (W.updateContextStats as ((m: unknown[]) => void) | undefined)?.(conv.messages);
-    }
+    if (targetsActive) updateContextStats();
 
     // Conversation title.
     if (!conv.title || conv.title === "New conversation") {
       const msgs = conv.messages;
       if (msgs.length > 0) {
         conv.title = String((msgs[0].content as string) || "").slice(0, 50);
-        W.renderSessions?.();
-        if (targetsActive) W.refreshStatusSource?.();
+        if (targetsActive) refreshStatusSource();
       }
     }
   }
@@ -722,31 +586,27 @@ function handleContextStats(data: ContextStatsData, sid: string | null): void {
     };
   }
   const cacheWrite = chat.cache_write || data.cache_write_tokens || 0;
-  if (cacheWrite > 0 && sid) W._recordCacheWrite?.(sid);
+  if (cacheWrite > 0 && sid) recordCacheWrite(sid);
 
-  if (W.__sessionStore && sid) {
-    try {
-      W.__sessionStore.getState().setContextStats(
-        sid,
-        {
-          input: chat.input_tokens || 0,
-          output: chat.output_tokens || 0,
-          cache_read: chat.cache_read || 0,
-          cache_create: cacheWrite,
-          context: chat.context_tokens || 0,
-          model: data.model || null,
-          provider: (data as unknown as {provider?: string}).provider || null,
-        },
-        data.context_window || null,
-      );
-    } catch {
-      /* store not ready — a later stats event lands */
-    }
+  if (sid) {
+    useSessionStore.getState().setContextStats(
+      sid,
+      {
+        input: chat.input_tokens || 0,
+        output: chat.output_tokens || 0,
+        cache_read: chat.cache_read || 0,
+        cache_create: cacheWrite,
+        context: chat.context_tokens || 0,
+        model: data.model || null,
+        provider: (data as unknown as { provider?: string }).provider || null,
+      },
+      data.context_window || null,
+    );
   }
 
-  const targetsActive = sid !== null && sid === W.currentSessionId;
-  if (typeof W._renderTokenBadge === "function" && targetsActive) {
-    W._renderTokenBadge(
+  const targetsActive = sid !== null && sid === runtimeState.currentSessionId;
+  if (targetsActive) {
+    renderTokenBadge(
       {
         current_tokens:
           data.current_tokens ||
@@ -756,18 +616,15 @@ function handleContextStats(data: ContextStatsData, sid: string | null): void {
         cache_hit_rate: data.cache_hit_rate || 0,
         cache_read_total: data.cache_read_total || chat.cache_read || 0,
         last_assistant_usage: data.last_assistant_usage || 0,
-        last_assistant_input: data.last_assistant_input || 0,
         last_assistant_cache_read: data.last_assistant_cache_read || 0,
         last_turn_hit_rate: data.last_turn_hit_rate || 0,
-        input_total: data.input_total || 0,
         model: data.model || null,
-        source_mix: data.source_mix || null,
+        source_mix: (data.source_mix as Record<string, unknown>) || null,
       },
       sid,
     );
+    refreshHistoryContextRange(sid);
   }
-
-  if (targetsActive) W.refreshHistoryContextRange?.(sid);
 }
 
 /* ===== status response =========================================== */
@@ -785,17 +642,17 @@ function handleStatusResponse(
   if (data.context_tree) {
     const ct = data.context_tree;
     const rootKey = ct.path || ct.name;
-    const trees = W.trees || (W.trees = []);
+    const trees = runtimeState.trees;
     const idx = trees.findIndex((t) => t.path === rootKey || t.name === ct.name);
     if (idx >= 0) trees[idx] = ct;
     else trees.push(ct);
-    if (sid && W.conversations?.[sid]) {
-      const conv = W.conversations[sid] as { messages?: unknown[] };
+    if (sid && runtimeState.conversations[sid]) {
+      const conv = runtimeState.conversations[sid] as { messages?: unknown[] };
       conv.messages = extractMessagesFromTree(ct as never);
-      renderSessionMessages(W.conversations[sid] as never);
+      renderSessionMessages(runtimeState.conversations[sid] as never);
     }
   }
-  W.scrollToBottom?.();
+  scrollToBottom();
 }
 
 /* ===== follow-up question ======================================== */
@@ -811,7 +668,7 @@ function handleFollowUpQuestion(data: { question?: string }): void {
   const existing = contentArea.querySelector(".follow-up-container");
   if (existing) existing.remove();
 
-  const esc = W.escHtml || ((s: unknown) => String(s));
+  const esc = escHtml;
   const fuHtml =
     '<div class="follow-up-container" style="margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary)">' +
     '<div style="color:var(--accent-yellow);font-weight:600;margin-bottom:8px">&#9888; Follow-up Question</div>' +
@@ -829,7 +686,7 @@ function handleFollowUpQuestion(data: { question?: string }): void {
   contentArea.insertAdjacentHTML("beforeend", fuHtml);
   const inp = document.getElementById("followUpInput") as HTMLInputElement | null;
   if (inp) inp.focus();
-  W.scrollToBottom?.();
+  scrollToBottom();
 }
 
 /* ===== follow-up submit ========================================== */
@@ -841,11 +698,12 @@ export function submitFollowUp(): void {
   if (!answer) return;
   const container = inp.closest(".follow-up-container");
   if (container) container.remove();
-  if (W.ws && W.ws.readyState === 1) {
-    W.ws.send(
+  const sock = getSocket();
+  if (sock && sock.readyState === 1) {
+    sock.send(
       JSON.stringify({
         action: "follow_up_answer",
-        session_id: W.currentSessionId,
+        session_id: runtimeState.currentSessionId,
         answer,
       }),
     );
@@ -855,7 +713,7 @@ export function submitFollowUp(): void {
 /* ===== assistant message (programs-panel toast) ================== */
 
 export function addAssistantMessage(text: string): void {
-  W.setWelcomeVisible?.(false);
+  setWelcomeVisible(false);
   // The legacy bubble DOM is dropped (React owns the stream); this is
   // kept only so programs-panel.js's delete-function toast doesn't
   // throw. A real React toast can replace it later.
@@ -867,45 +725,41 @@ export function addAssistantMessage(text: string): void {
 export function initChatPage(): void {
   // Re-derive currentSessionId from the URL on every chat-page mount.
   const m = window.location.pathname.match(/^\/s\/([^/]+)/);
-  W.currentSessionId = m ? m[1] : null;
+  runtimeState.currentSessionId = m ? m[1] : null;
 
-  W.loadProviders?.();
+  void loadProviders();
   if (!window.location.pathname.match(/^\/s\//)) {
-    W.setWelcomeVisible?.(true);
+    setWelcomeVisible(true);
   }
 
   // Rehydrate the tools chip flags from localStorage.
   try {
     if (localStorage.getItem("agentic_tools_enabled") === "1") {
-      W._toolsEnabled = true;
+      runtimeState._toolsEnabled = true;
     }
     if (localStorage.getItem("agentic_web_search_enabled") === "1") {
-      W._webSearchEnabled = true;
+      runtimeState._webSearchEnabled = true;
     }
   } catch {
     /* ignore */
   }
-  W._updatePlusBtnIndicator?.();
-  W._refreshWebSearchProviderLabel?.();
+  updatePlusBtnIndicator();
+  refreshWebSearchProviderLabel();
 }
 
 // beforeunload — persist scroll position. Installed once.
 window.addEventListener("beforeunload", () => {
   const area = document.getElementById("chatArea");
-  const chatKey = W.__sessionStore?.getState().activeChatKey ?? W.currentSessionId;
+  const chatKey =
+    useSessionStore.getState().activeChatKey ?? runtimeState.currentSessionId;
   if (area && chatKey) {
     writeChatScroll(sessionStorage, chatKey, area.scrollTop);
   }
 });
 
-/* ===== window bridges ============================================ */
+/* ===== inline-handler bridge ===================================== */
 
-W.setRunActive = setRunActive;
-W._wsHandleChatAck = wsHandleChatAck;
-W._wsHandleChatResponse = wsHandleChatResponse;
-W._wsHandleStatus = wsHandleStatus;
-W._handleSessionsList = handleSessionsList;
-W._handleRunningTask = handleRunningTask;
-W.handleChatResponse = handleChatResponse;
-W.submitFollowUp = submitFollowUp;
-W.addAssistantMessage = addAssistantMessage;
+// The follow-up prompt is injected as an HTML string carrying
+// `onclick="submitFollowUp()"`, so that one name has to resolve off
+// `window` at click time. Everything else is a direct import.
+Object.assign(window, { submitFollowUp });

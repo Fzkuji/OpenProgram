@@ -63,8 +63,10 @@ import { useSessionStore } from "@/lib/session-store";
 import { fileDraftKey, fileDrafts } from "@/lib/state/files-shared";
 import {
   draftChannelChoiceFor,
-  type DraftChannelChoiceHost,
+  draftChannelChoiceHost,
 } from "@/lib/runtime-bridge/draft-channel-choice";
+import { getSocket } from "@/lib/runtime-bridge/state";
+import { hasNavigate, navigate } from "@/lib/navigate";
 
 export interface DesktopWebTabState {
   id: string;
@@ -258,10 +260,7 @@ export interface DesktopBridge {
 /** The preload-exposed bridge, or null outside the desktop shell. */
 export function desktopBridge(): DesktopBridge | null {
   if (typeof window === "undefined") return null;
-  return (
-    ((window as unknown as { openprogramDesktop?: DesktopBridge })
-      .openprogramDesktop as DesktopBridge | undefined) ?? null
-  );
+  return window.openprogramDesktop ?? null;
 }
 
 /** Native views created by THIS renderer. Main-side views orphaned by
@@ -386,9 +385,7 @@ export function destroyStaleWebViews(
 let installed = false;
 
 function showCenterSurface(): boolean {
-  const navigate = (window as Window & { __navigate?: (path: string) => void })
-    .__navigate;
-  if (!navigate) return false;
+  if (!hasNavigate()) return false;
   navigate("/chat");
   return true;
 }
@@ -400,8 +397,7 @@ function showActiveCenterTab(): void {
     active?.kind === "session" && !active.draft && active.sessionId
       ? `/s/${encodeURIComponent(active.sessionId)}`
       : "/chat";
-  (window as Window & { __navigate?: (route: string) => void })
-    .__navigate?.(path);
+  navigate(path);
 }
 
 export function visibleWebTab() {
@@ -487,7 +483,7 @@ export function installDesktopMenuHandlers(): void {
       | { op?: string; url?: string; req_id?: string }
       | undefined;
     if (!d?.req_id || (d.op !== "open" && d.op !== "active")) return;
-    const ws = (window as unknown as { ws?: WebSocket }).ws;
+    const ws = getSocket();
     if (ws?.readyState !== WebSocket.OPEN) return;
 
     if (d.op === "open") {
@@ -806,9 +802,7 @@ export function buildTransferPayload(
     tabs.push(structuredClone(tab));
   }
   const session = useSessionStore.getState();
-  const host = (typeof window === "undefined"
-    ? {}
-    : window) as unknown as DraftChannelChoiceHost;
+  const host = draftChannelChoiceHost;
   const chats: ChatTransferState[] = [];
   const payloadFileDrafts: DesktopTransferPayload["fileDrafts"] = [];
   for (const tab of tabs) {

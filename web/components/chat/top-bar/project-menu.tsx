@@ -8,7 +8,7 @@
  *     session repo is stored: <project>/.openprogram/sessions/<id>/)
  *   * bind a new folder as a project (paste an absolute path)
  *
- * Backend requests use one-shot ``window.ws`` request/response pairs
+ * Backend requests use one-shot ``wsRequest`` request/response pairs
  * (``list_projects`` → ``projects_list``, etc.). A draft-only project
  * choice is stored in the session store until chat_ack creates the session.
  * Positioning / click-outside come from the shadcn <Popover> in index.tsx.
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/popover";
 import { HoverTip } from "@/components/ui/tooltip";
 import { useSessionStore } from "@/lib/session-store";
+import { closeAllPopovers } from "@/lib/runtime-bridge/ui";
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws-request";
 import { useBoundChat } from "./bound-chat";
@@ -293,9 +294,7 @@ export function ProjectBadge() {
   function onOpenChange(next: boolean) {
     if (next) {
       window.dispatchEvent(new Event("topbar-close-menus"));
-      (
-        window as unknown as { _closeAllPopovers?: () => void }
-      )._closeAllPopovers?.();
+      closeAllPopovers();
     }
     setOpen(next);
   }

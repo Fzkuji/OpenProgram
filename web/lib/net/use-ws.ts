@@ -5,8 +5,9 @@
  *
  * React owns the WebSocket connection. All message types are dispatched
  * here — known types have explicit handlers, unknown types are surfaced
- * as `op:ws-message` window events for component-level listeners.
- * `window.ws` is kept assigned so `wsSend` helpers work unchanged.
+ * as `op:ws-message` window events for component-level listeners. The
+ * live socket is published through `runtimeState` so `wsSend` helpers
+ * and non-React modules can reach it.
  */
 import { useEffect } from "react";
 
@@ -33,43 +34,26 @@ import {
   wsHandleStatus,
 } from "@/lib/runtime-bridge/chat-handlers";
 import { mirrorUpsertConv } from "@/lib/runtime-bridge/conv-store-mirror";
-
-interface WsWindow {
-  ws?: WebSocket | null;
-  updateStatus?: (s: string) => void;
-  loadAgentSettings?: () => void;
-  currentSessionId?: string | null;
-  // Legacy handlers the hook dispatch calls until each is migrated.
-  _handleRunningTask?: (data: unknown) => void;
-  updateProviderBadge?: (data: unknown) => void;
-  loadProviders?: () => void;
-  addSystemMessage?: (text: string) => void;
-  formatProviderLabel?: (data: unknown) => string;
-  updateAgentBadges?: () => void;
-  _agentSettings?: { chat?: Record<string, unknown>; exec?: Record<string, unknown> };
-  trees?: unknown;
-  availableFunctions?: unknown;
-  conversations?: Record<string, Record<string, unknown>>;
-  updateTreeData?: (data: unknown) => void;
-  loadProgramsMeta?: () => Promise<unknown>;
-  renderFunctions?: () => void;
-  renderSessions?: () => void;
-  _onChannelAccountsMessage?: (data: unknown) => void;
-  _onBranchesListMessage?: (data: unknown) => void;
-  _onBranchCheckedOut?: (data: unknown) => void;
-  loadSessionData?: (data: unknown) => void;
-  _handleSessionsList?: (data: unknown) => void;
-  refreshStatusSource?: () => void;
-  refreshChannelBadge?: () => void;
-  __applyChatWsMessage?: (msg: unknown) => void;
-  _wsHandleChatAck?: (data: unknown) => void;
-  _wsHandleChatResponse?: (data: unknown) => void;
-  _wsHandleStatus?: (msg: unknown) => void;
-}
+import { runtimeState, setSocket } from "@/lib/runtime-bridge/state";
+import { applyChatWsMessage } from "@/lib/net/chat-stream";
+import { externalLibsReady } from "@/lib/external-libs";
+import { getQueryClient } from "@/lib/query-client";
+import {
+  loadAgentSettings,
+  loadProviders,
+  updateAgentBadges,
+  updateProviderBadge,
+} from "@/lib/runtime-bridge/providers";
+import { addSystemMessage, formatProviderLabel } from "@/lib/runtime-bridge/helpers";
+import {
+  loadProgramsMeta,
+  renderFunctions,
+} from "@/lib/runtime-bridge/functions-panel";
+import { refreshStatusSource, updateStatus } from "@/lib/runtime-bridge/ui";
+import { refreshChannelBadge } from "@/lib/runtime-bridge/conversations";
 
 export function useWS(): void {
   useEffect(() => {
-    const w = window as unknown as WsWindow;
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
@@ -89,7 +73,7 @@ export function useWS(): void {
           // Mirror into the React message store, then the
           // session/badge bookkeeping.
           try {
-            w.__applyChatWsMessage?.(msg);
+            applyChatWsMessage({ type: "chat_ack", data: d });
           } catch (err) {
             console.error("[useWS] reducer error:", err);
           }
@@ -97,7 +81,7 @@ export function useWS(): void {
           return true;
         case "chat_response":
           try {
-            w.__applyChatWsMessage?.(msg);
+            applyChatWsMessage({ type: "chat_response", data: d });
           } catch (err) {
             console.error("[useWS] reducer error:", err);
           }
@@ -108,7 +92,7 @@ export function useWS(): void {
           return true;
         case "session_reload": {
           const sid = d?.session_id as string | undefined;
-          if (sid && sid === w.currentSessionId) {
+          if (sid && sid === runtimeState.currentSessionId) {
             socket?.send(
               JSON.stringify({ action: "load_session", session_id: sid }),
             );
@@ -119,7 +103,7 @@ export function useWS(): void {
           // Branch-to-branch communication: show a line in the sender's
           // chat stream. kind: "sent" (我发给X) | "replied" (X回复了).
           const sid = d?.session_id as string | undefined;
-          if (sid && sid === w.currentSessionId) {
+          if (sid && sid === runtimeState.currentSessionId) {
             const kind = (d?.kind as string) || "sent";
             const peer = (d?.peer as string) || "?";
             const summary = (d?.summary as string) || "";
@@ -266,17 +250,17 @@ export function useWS(): void {
         }
         case "provider_info":
         case "provider_changed":
-          w.updateProviderBadge?.(d);
-          w.loadProviders?.();
+          updateProviderBadge(d as never);
+          loadProviders();
           if (msg.type === "provider_changed") {
-            w.addSystemMessage?.(
-              "Switched to " + (w.formatProviderLabel?.(d) ?? ""),
+            addSystemMessage(
+              "Switched to " + formatProviderLabel(d as never),
             );
           }
           return true;
         case "agent_settings_changed": {
           // Keep window._agentSettings in sync (backward compat)
-          const as = w._agentSettings;
+          const as = runtimeState._agentSettings;
           if (as) {
             if (d?.chat) as.chat = d.chat as Record<string, unknown>;
             if (d?.exec) as.exec = d.exec as Record<string, unknown>;
@@ -293,19 +277,17 @@ export function useWS(): void {
             });
           });
           // Still fetch full settings (includes thinking config etc.)
-          w.loadAgentSettings?.();
+          loadAgentSettings();
           // Enabled-models may have changed with the settings (Settings
           // toggles broadcast this event) — drop the query cache so every
           // tab's model picker refetches, not just the settings tab.
-          (window as Window & {
-            __queryClient?: { invalidateQueries: (f: { queryKey: string[] }) => void };
-          }).__queryClient?.invalidateQueries({ queryKey: ["models-enabled"] });
+          getQueryClient()?.invalidateQueries({ queryKey: ["models-enabled"] });
           return true;
         }
         case "chat_session_update":
-          if (d?.session_id && w._agentSettings?.chat) {
-            w._agentSettings.chat.session_id = d.session_id;
-            w.updateAgentBadges?.();
+          if (d?.session_id && runtimeState._agentSettings.chat) {
+            runtimeState._agentSettings.chat.session_id = d.session_id;
+            updateAgentBadges();
           }
           return true;
         case "full_tree": // legacy no-op
@@ -349,11 +331,11 @@ export function useWS(): void {
           });
           return true;
         case "functions_list":
-          w.availableFunctions = d || [];
+          runtimeState.availableFunctions = (d || []) as unknown[];
           import("@/lib/state/functions-store").then(({ useFunctions }) => {
             useFunctions.getState().setFunctions((d || []) as never[]);
           });
-          w.loadProgramsMeta?.().then(() => w.renderFunctions?.());
+          loadProgramsMeta().then(() => renderFunctions());
           return true;
         case "history_list": // legacy no-op
           return true;
@@ -462,16 +444,15 @@ export function useWS(): void {
           return true;
         case "session_channel_updated": {
           const sid = d?.session_id as string | undefined;
-          const conv = sid ? w.conversations?.[sid] : undefined;
+          const conv = sid ? runtimeState.conversations[sid] : undefined;
           if (d?.ok && conv) {
             conv.channel = (d.channel as string) || null;
             conv.account_id = (d.account_id as string) || null;
             conv.peer = (d.peer as string) || null;
             mirrorUpsertConv(conv as Record<string, unknown>);
-            w.renderSessions?.();
-            if (sid === w.currentSessionId) {
-              w.refreshStatusSource?.();
-              w.refreshChannelBadge?.();
+            if (sid === runtimeState.currentSessionId) {
+              refreshStatusSource();
+              refreshChannelBadge();
             }
           }
           return true;
@@ -499,10 +480,10 @@ export function useWS(): void {
       if (stopped) return;
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       socket = new WebSocket(proto + "//" + location.host + "/ws");
-      w.ws = socket;
+      setSocket(socket);
 
       socket.onopen = () => {
-        w.updateStatus?.("connected");
+        updateStatus("connected");
         if (reconnectTimer) {
           clearTimeout(reconnectTimer);
           reconnectTimer = null;
@@ -510,13 +491,13 @@ export function useWS(): void {
         // currentSessionId is derived from the URL by state.js / the
         // app-shell route effect — send agent_settings + the initial
         // session load so badges + transcript reflect the right conv.
-        w.loadAgentSettings?.();
+        loadAgentSettings();
         socket?.send(JSON.stringify({ action: "list_sessions" }));
-        if (w.currentSessionId) {
+        if (runtimeState.currentSessionId) {
           socket?.send(
             JSON.stringify({
               action: "load_session",
-              session_id: w.currentSessionId,
+              session_id: runtimeState.currentSessionId,
             }),
           );
           // Re-establish "viewing this conv" focus + clear any unread (blue
@@ -524,7 +505,7 @@ export function useWS(): void {
           socket?.send(
             JSON.stringify({
               action: "mark_session_read",
-              session_id: w.currentSessionId,
+              session_id: runtimeState.currentSessionId,
             }),
           );
         }
@@ -543,28 +524,19 @@ export function useWS(): void {
       };
 
       socket.onclose = () => {
-        w.updateStatus?.("disconnected");
+        updateStatus("disconnected");
         if (!stopped) reconnectTimer = setTimeout(connect, 2000);
       };
 
       socket.onerror = () => socket?.close();
     }
 
-    // The shared legacy scripts (state.js / helpers.js / ui.js /
-    // providers.js) are fetched + injected asynchronously by AppShell.
-    // state.js runs `var ws = null` at the global scope, so connecting
-    // before it loads would have the socket reference clobbered right
-    // after assignment. initChatPage() also depends on shared-script
-    // globals (loadProviders / setWelcomeVisible). So: wait for
-    // AppShell to publish `__sharedScriptsReady`, await it, then init.
+    // Chat rendering needs the CDN libs (marked / KaTeX) on the page, so
+    // wait for them before the first transcript paint. A load failure is
+    // not fatal — connect anyway and let markdown fall back.
     async function start(): Promise<void> {
-      const sw = window as unknown as { __sharedScriptsReady?: Promise<void> };
-      while (!stopped && !sw.__sharedScriptsReady) {
-        await new Promise((r) => setTimeout(r, 20));
-      }
-      if (stopped) return;
       try {
-        await sw.__sharedScriptsReady;
+        await externalLibsReady();
       } catch {
         /* ignore — connect anyway */
       }
@@ -586,7 +558,7 @@ export function useWS(): void {
         socket.onclose = null;
         socket.close();
       }
-      if (w.ws === socket) w.ws = null;
+      if (runtimeState.ws === socket) setSocket(null);
     };
   }, []);
 }

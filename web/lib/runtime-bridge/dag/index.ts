@@ -3,18 +3,17 @@
  *
  * Imported for side effects by ``AppShell`` (see
  * ``web/components/app-shell.tsx``). Wires the document-level click /
- * dblclick handlers, installs the ``HGW.*`` window bridges that the
- * legacy script entry points and WebSocket handlers use, and exports
- * the same surface the old ``history-graph.ts`` exported so existing
- * consumers don't change.
+ * dblclick handlers and exports the same surface the old
+ * ``history-graph.ts`` exported so existing consumers don't change.
  *
  * See ``./README.md`` for the directory layout and the pass pipeline.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { type GNode, HGW, type HighlightMode } from "./types";
-import { render, showHistorySkeleton } from "./pipeline";
+import { type GNode, type HighlightMode } from "./types";
+import { runtimeState } from "../state";
+import { render } from "./pipeline";
 import { _recomputeVisibility } from "./render/visibility";
 import { _installInteractionHandlers } from "./render/interaction";
 import {
@@ -41,7 +40,7 @@ export function renderHistoryGraph(graph: GNode[], headId: string | null): void 
 }
 
 export function repaintBranchTags(): void {
-  // Branch badges read window._branchesByConv at draw time, which is
+  // Branch badges read runtimeState._branchesByConv at draw time, which is
   // NOT part of the render signature — force the repaint past the
   // signature dedup, or a badge-only change (branches fetched after
   // the first draw) silently no-ops and the DAG never shows names.
@@ -92,19 +91,9 @@ export function setHistoryHighlightMode(mode: HighlightMode): void {
   if (_highlightMode === mode) return;
   setHighlightMode(mode);
   if (mode === "context") {
-    const sid = HGW.currentSessionId;
+    const sid = runtimeState.currentSessionId;
     if (sid) refreshHistoryContextRange(sid);
   }
   _recomputeVisibility();
 }
 
-/* ===== window bridges ============================================ */
-
-HGW.renderHistoryGraph = renderHistoryGraph;
-HGW.__historyGraphSkeleton = showHistorySkeleton;
-HGW.repaintBranchTags = repaintBranchTags;
-HGW.setHistoryContextRange = setHistoryContextRange;
-HGW.refreshHistoryContextRange = refreshHistoryContextRange;
-HGW.recomputeHistoryVisibility = recomputeHistoryVisibility;
-HGW.setHistoryHighlightMode = setHistoryHighlightMode;
-HGW.getHistoryHighlightMode = getHistoryHighlightMode;

@@ -777,7 +777,7 @@ assert.doesNotMatch(
   strip.slice(strip.indexOf("function TabItem")),
   /tabRef\.current\?\.parentElement/,
 );
-assert.match(ntp, /const draftId = useCenterTabs\.getState\(\)\.claimDraftSessionTab\(\);[\s\S]*\.newSession\?\.\(draftId\);/);
+assert.match(ntp, /const draftId = useCenterTabs\.getState\(\)\.claimDraftSessionTab\(\);[\s\S]*newSession\(draftId\);/);
 assert.match(strip, /currentSessionId === null[\s\S]*activeTab\?\.draft/);
 assert.match(strip, /closingInstances = useRef<Map<string, CenterTab>>/);
 assert.match(strip, /const \[closingIds, setClosingIds\] = useState<Set<string>>/);
@@ -876,7 +876,7 @@ const registerBoundsIndex = webTabPane.indexOf(
 assert.ok(ensureIndex >= 0 && ensureIndex < registerBoundsIndex);
 assert.equal(navigateIndex, -1);
 assert.doesNotMatch(webTabPane, /bridge\.webTab\.(?:show|hide|setBounds)\(/);
-assert.match(fileTree, /openFileTab\(projectId, path\);[\s\S]*__navigate\?\.\("\/chat"\)/);
+assert.match(fileTree, /openFileTab\(projectId, path\);[\s\S]*navigate\("\/chat"\)/);
 
 const newSession = conversations.slice(conversations.indexOf("export function newSession"));
 assert.ok(

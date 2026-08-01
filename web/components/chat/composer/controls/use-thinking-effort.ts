@@ -3,14 +3,16 @@
 /**
  * Thinking-effort selector state.
  *
- * The legacy `providers.js` writes `window._thinkingConfig = { options,
- * default }` whenever the chat-agent provider changes. We poll for that
- * (500ms is plenty since it only changes on agent switch) and re-pick a
- * default if the previously-selected effort isn't valid for the new
- * provider.
+ * `lib/runtime-bridge/providers.ts` writes `runtimeState._thinkingConfig
+ * = { options, default }` whenever the chat-agent provider changes. We
+ * poll for that (500ms is plenty since it only changes on agent switch)
+ * and re-pick a default if the previously-selected effort isn't valid
+ * for the new provider.
  */
 
 import { useCallback, useEffect, useState } from "react";
+
+import { runtimeState } from "@/lib/runtime-bridge/state";
 
 import {
   useBoundComposerSettings,
@@ -28,30 +30,17 @@ export interface ThinkingOption {
 }
 
 function readThinkingOptions(): ThinkingOption[] {
-  // SSR / pre-hydration: ``window`` is undefined. Returning the
-  // fallback (instead of throwing) lets the component render its
-  // visible pill during the very first paint — the legacy
-  // providers.js then writes _thinkingConfig client-side and the
-  // 500ms tick refreshes us into the real provider-specific list.
-  // Without this guard a ReferenceError ate the pill during SSR;
-  // hydration had to retry the subtree before it appeared, which
-  // showed up as "the effort pill sometimes doesn't display, or
-  // takes ages".
-  if (typeof window === "undefined") {
-    return FALLBACK_LEVELS.map((v) => ({ value: v }));
-  }
-  const w = window as unknown as {
-    _thinkingConfig?: { options?: ThinkingOption[] };
-  };
-  const opts = w._thinkingConfig?.options;
+  // SSR / pre-hydration: `_thinkingConfig` is still null, so the
+  // fallback renders the visible pill during the very first paint —
+  // providers.ts fills it in client-side and the 500ms tick refreshes
+  // us into the real provider-specific list.
+  const opts = runtimeState._thinkingConfig?.options;
   if (Array.isArray(opts) && opts.length > 0) return opts;
   return FALLBACK_LEVELS.map((v) => ({ value: v }));
 }
 
 function readBackendDefault(): string | undefined {
-  if (typeof window === "undefined") return undefined;
-  const w = window as unknown as { _thinkingConfig?: { default?: string } };
-  return w._thinkingConfig?.default;
+  return runtimeState._thinkingConfig?.default;
 }
 
 export interface ThinkingEffortHook {

@@ -21,7 +21,7 @@
  *
  * Flags (pinned / archived / group) and renames are persisted server-
  * side (meta.json) through WS actions; we optimistically patch the store
- * (and the legacy `window.conversations` heavy map the top-bar still
+ * (and the `runtimeState.conversations` heavy map the top-bar still
  * reads) for instant feedback before the server's echo lands.
  */
 
@@ -57,9 +57,10 @@ import styles from "./sidebar.module.css";
 
 import { ConfirmDialog } from "./sessions-list/confirm-dialog";
 import { pushPath } from "@/lib/shallow-nav";
+import { runtimeState } from "@/lib/runtime-bridge/state";
+import { newSession } from "@/lib/runtime-bridge/conversations";
 import {
   type LegacyConv,
-  type SessionWindow,
   bucketKey,
   bucketLabel,
   bucketSortKey,
@@ -96,7 +97,7 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
   const pathname = usePathname();
   const { t, text, locale } = useTranslation();
   // The sidebar's source of truth is the React store. The runtime-bridge
-  // mirrors every window.conversations summary write into it (see
+  // mirrors every runtimeState.conversations summary write into it (see
   // conv-store-mirror), so subscribing here re-renders the list the moment
   // a session is added / renamed / pinned / deleted — no polling.
   const conversations = useSessionStore((s) => s.conversations);
@@ -240,12 +241,11 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
   /* ---- action senders (optimistic patch + WS) ------------------- */
 
   // Optimistically patch BOTH the store (drives this sidebar) and the
-  // legacy window.conversations heavy map (still read by the top-bar
+  // runtimeState.conversations heavy map (still read by the top-bar
   // title / status-source badge machinery) so a rename / pin shows
   // instantly everywhere before the server's session_updated echo lands.
   function patchConv(id: string, fields: Partial<ConvSummary>) {
-    const w = window as unknown as SessionWindow;
-    const conv = w.conversations?.[id];
+    const conv = runtimeState.conversations[id];
     if (conv) Object.assign(conv, fields);
     const prev = conversations[id];
     if (prev) upsertConversation({ ...prev, ...fields, id });
@@ -277,11 +277,10 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
         ? `确定要删除「${title}」吗？`
         : `Are you sure you want to delete "${title}"?`,
       run: () => {
-        const w = window as unknown as SessionWindow;
         wsSend({ action: "delete_session", session_id: id });
-        if (w.conversations) delete w.conversations[id];
+        delete runtimeState.conversations[id];
         removeConversation(id);
-        if (w.currentSessionId === id) w.newSession?.();
+        if (runtimeState.currentSessionId === id) newSession();
       },
     });
   }
@@ -295,13 +294,12 @@ export function SessionsList({ onNewChat }: { onNewChat: () => string }) {
         ? `确定要删除全部 ${count} 个会话吗？${t("sidebar.delete_all_irreversible")}`
         : `Are you sure you want to delete all ${count} conversations? ${t("sidebar.delete_all_irreversible")}`,
       run: () => {
-        const w = window as unknown as SessionWindow;
         wsSend({ action: "clear_sessions" });
-        if (w.conversations) {
-          for (const k of Object.keys(w.conversations)) delete w.conversations[k];
+        for (const k of Object.keys(runtimeState.conversations)) {
+          delete runtimeState.conversations[k];
         }
         clearConversations();
-        w.newSession?.();
+        newSession();
       },
     });
   }

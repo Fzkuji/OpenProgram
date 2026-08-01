@@ -175,16 +175,18 @@ assert.match(
   /const selected = useSessionStore\(\(s\) => s\.nodeSelected\);/,
   "the view switch must gate on nodeSelected so both selection paths show it",
 );
-const uiBridge = readFileSync(
-  new URL("../lib/runtime-bridge/ui.ts", import.meta.url),
+// A DAG node click hands the node straight to the store's showDetail,
+// which sets nodeSelected: true itself (see lib/session-store/index.ts).
+// This used to hop through a `showDetail` wrapper in runtime-bridge/ui.ts;
+// that intermediary is gone and the click site calls the store directly.
+const dagInteraction = readFileSync(
+  new URL("../lib/runtime-bridge/dag/render/interaction.ts", import.meta.url),
   "utf8",
 );
-// The legacy DAG showDetail now delegates to the store's showDetail,
-// which sets nodeSelected: true itself (see lib/session-store/index.ts).
 assert.match(
-  uiBridge,
+  dagInteraction,
   /useSessionStore\.getState\(\)\.showDetail\(/,
-  "the legacy DAG showDetail must hand the node to the store",
+  "a DAG node click must hand the node to the store",
 );
 assert.match(
   sessionStore,
@@ -192,20 +194,21 @@ assert.match(
   "the store's showDetail must flag the selection for the React switch",
 );
 assert.match(
-  uiBridge,
-  /setNodeSelected\(false\)/,
-  "closing the detail panel must clear the selection flag",
-);
-assert.match(
   sessionStore,
   /closeDetail: \(\) =>\s*set\(\{ detailNode: null, nodeSelected: false \}\)/,
-  "the store's closeDetail must clear the selection flag too",
+  "the store's closeDetail must clear the selection flag",
 );
-// It must NOT set detailNode — that would double-render the panel.
+// Closing goes through the store — nothing hand-rolls it, and nothing
+// outside the store sets detailNode (React would render a second copy).
+assert.match(
+  appShell,
+  /useSessionStore\.getState\(\)\.closeDetail\(\)/,
+  "leaving a session must clear the detail selection through the store",
+);
 assert.doesNotMatch(
-  uiBridge,
+  dagInteraction,
   /setState\(\{ detailNode/,
-  "the legacy bridge must not populate detailNode (React would render a second copy)",
+  "the DAG must not populate detailNode (React would render a second copy)",
 );
 assert.match(rightSidebar, /<SessionViewSwitch current=\{VIEW_DETAIL\} \/>/);
 assert.match(rightSidebar, /<SessionViewSwitch current=\{VIEW_CONTEXT\} \/>/);

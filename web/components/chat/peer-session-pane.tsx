@@ -24,6 +24,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useMessageIds, useSessionStore } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { readChatScroll, writeChatScroll } from "@/lib/state/chat-scroll";
+import { getSocket } from "@/lib/runtime-bridge/state";
 import { wsSend } from "@/components/sidebar/sessions-list/helpers";
 import { Composer } from "./composer";
 import { SessionScopeProvider } from "@/lib/session-store/session-scope";
@@ -69,7 +70,7 @@ export function PeerSessionPane({
     if (!sessionId || ids.length > 0) return;
     if (requestedRef.current === sessionId) return;
     const send = () => {
-      const sock = (window as unknown as { ws?: WebSocket }).ws;
+      const sock = getSocket();
       if (!sock || sock.readyState !== WebSocket.OPEN) return false;
       requestedRef.current = sessionId;
       wsSend({ action: "load_session", session_id: sessionId });

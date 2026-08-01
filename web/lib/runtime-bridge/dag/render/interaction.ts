@@ -15,7 +15,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { HGW, type GNode } from "../types";
+import type { GNode } from "../types";
+import { getSocket, runtimeState } from "../../state";
 import { useSessionStore, type DetailNode } from "../../../session-store";
 import {
   _collapsed,
@@ -51,18 +52,19 @@ export function _scrollChatTo(msgId: string): void {
 }
 
 export async function _checkout(msgId: string): Promise<void> {
-  const sessionId = HGW.currentSessionId;
+  const sessionId = runtimeState.currentSessionId;
   if (!sessionId || !msgId) return;
   const target = _leafOfNode[msgId] || msgId;
   if (target === _currentHead) return;
-  if (HGW.ws && HGW.ws.readyState === WebSocket.OPEN) {
-    HGW._postCheckoutScrollTo = msgId;
-    HGW.ws.send(JSON.stringify({
+  const sock = getSocket();
+  if (sock && sock.readyState === WebSocket.OPEN) {
+    runtimeState._postCheckoutScrollTo = msgId;
+    sock.send(JSON.stringify({
       action: "checkout_branch",
       session_id: sessionId,
       head_msg_id: target,
     }));
-    HGW.ws.send(JSON.stringify({
+    sock.send(JSON.stringify({
       action: "load_session",
       session_id: sessionId,
     }));
@@ -126,8 +128,12 @@ function _detailFor(node: GNode): DetailNode {
 
 /** Install document-level click / dblclick listeners. ``rerender`` is
  *  invoked after a collapse toggle so the panel rebuilds with the new
- *  ``_collapsed`` state. */
+ *  ``_collapsed`` state.
+ *
+ *  Called at module load, so it has to tolerate a DOM-less host: this
+ *  module is now reachable from SSR and from the Node check scripts. */
 export function _installInteractionHandlers(rerender: () => void): void {
+  if (typeof document === "undefined") return;
   document.addEventListener("click", (e) => {
     const tgt = e.target as HTMLElement;
     const g = tgt.closest && tgt.closest(".history-node");

@@ -8,7 +8,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { type GNode, HGW } from "../types";
+import type { GNode } from "../types";
+import { getSocket, runtimeState } from "../../state";
 import { _branchColor, _svg } from "../shapes";
 
 // 量文字实际像素宽（复用一个 canvas）。标签字号 9px。原来按
@@ -36,8 +37,8 @@ export function drawBadges(
   sessionId: string | null,
   fullById: Record<string, GNode> = Object.create(null),
 ): void {
-  const rows =
-    (sessionId && HGW._branchesByConv && HGW._branchesByConv[sessionId]) || [];
+  const rows: GNode[] =
+    ((sessionId && runtimeState._branchesByConv[sessionId]) as GNode[]) || [];
   // Badges come ONLY from list_branches' active rows. Merging erases the
   // badge (git semantics) — a merged branch's name lives on in the merge
   // node's tooltip, not as a lane pill (dag-rendering.md §5).
@@ -149,15 +150,16 @@ export function drawBadges(
     if (!isActive) {
       tg.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        if (HGW.ws && HGW.ws.readyState === WebSocket.OPEN) {
-          HGW.ws.send(
+        const sock = getSocket();
+        if (sock && sock.readyState === WebSocket.OPEN) {
+          sock.send(
             JSON.stringify({
               action: "checkout_branch",
               session_id: sessionId,
               head_msg_id: hid,
             }),
           );
-          HGW.ws.send(
+          sock.send(
             JSON.stringify({
               action: "load_session",
               session_id: sessionId,

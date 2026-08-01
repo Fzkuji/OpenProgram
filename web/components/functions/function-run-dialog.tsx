@@ -9,6 +9,7 @@ import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { pushPath } from "@/lib/shallow-nav";
+import { runtimeState } from "@/lib/runtime-bridge/state";
 
 interface Props {
   fn: AgenticFunction;
@@ -44,8 +45,7 @@ export function FunctionRunDialog({ fn, onClose }: Props) {
       else if (p.type === "float") kwargs[p.name] = Number(v);
       else kwargs[p.name] = v;
     }
-    const curSession = (window as unknown as { currentSessionId?: string | null })
-      .currentSessionId;
+    const curSession = runtimeState.currentSessionId;
     const body: Record<string, unknown> = { kwargs };
     if (curSession) body.session_id = curSession;
     try {
@@ -75,10 +75,9 @@ export function FunctionRunDialog({ fn, onClose }: Props) {
         else payload[p.name] = v;
       }
       // Run into the conversation the user last had open (the chat
-      // PageShell stays mounted across routes and keeps this global
+      // PageShell stays mounted across routes and keeps this field
       // current). Falls back to a fresh session when there's none.
-      const curSession = (window as unknown as { currentSessionId?: string | null })
-        .currentSessionId;
+      const curSession = runtimeState.currentSessionId;
       if (curSession) payload._session_id = curSession;
       const r = await api.runFunction(fn.name, payload);
       setResult(JSON.stringify(r.result ?? r.error ?? r, null, 2));

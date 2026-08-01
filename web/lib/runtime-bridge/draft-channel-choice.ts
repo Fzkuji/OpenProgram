@@ -2,12 +2,16 @@ import {
   readSessionDraftState,
   updateSessionDraftState,
 } from "@/lib/session-draft-persistence";
+import { runtimeState } from "./state";
 
 export interface PendingChannelChoice {
   channel: string | null;
   account_id: string | null;
 }
 
+/** Where the pending choices live. Production uses the module-level
+ *  `draftChannelChoiceHost`; the check scripts pass their own plain
+ *  object to keep each scenario isolated. */
 export interface DraftChannelChoiceHost {
   _pendingChannelChoice?: PendingChannelChoice | null;
   __pendingChannelChoices?: Record<string, PendingChannelChoice>;
@@ -20,12 +24,21 @@ function persistChoices(choices: Record<string, PendingChannelChoice>): void {
   }));
 }
 
-if (typeof window !== "undefined") {
-  const host = window as unknown as DraftChannelChoiceHost;
-  if (!host.__pendingChannelChoices) {
-    host.__pendingChannelChoices = readSessionDraftState().draftChannelChoices;
-  }
-}
+/** The app's single choice host, seeded from persisted draft state.
+ *  `_pendingChannelChoice` is backed by `runtimeState` so that
+ *  `ui.ts:refreshStatusSource`, which reads it there, sees the writes. */
+export const draftChannelChoiceHost: DraftChannelChoiceHost = {
+  __pendingChannelChoices:
+    typeof window === "undefined"
+      ? {}
+      : readSessionDraftState().draftChannelChoices,
+  get _pendingChannelChoice(): PendingChannelChoice | null {
+    return (runtimeState._pendingChannelChoice as PendingChannelChoice | null) ?? null;
+  },
+  set _pendingChannelChoice(v: PendingChannelChoice | null | undefined) {
+    runtimeState._pendingChannelChoice = v ?? null;
+  },
+};
 
 export function setDraftChannelChoice(
   host: DraftChannelChoiceHost,
