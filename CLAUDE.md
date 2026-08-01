@@ -13,7 +13,11 @@ design 是虚拟 Tab——没有 docs/design/ 目录，nav.py 的 tab_of() 把 r
    功能改动时同步更新涉及的产品文档页——它和测试一样跟代码一起维护。
    新页要在 `tools/docs_site/nav.py` 的 `PAGE_ORDER` 里登记侧栏顺序。
 2. **工程记录**（设计稿、方案对比、实施计划、研究笔记，写给开发者自己）：
-   追加到 `docs/reference/design/` 归档，按子系统放，只增不改。不要把它们写进产品 Tab。
+   放在 `docs/reference/design/`，按子系统组织，**持续维护、与代码同步**：
+   一个主题只有一份文档，用现在时正面陈述当前设计；修订设计就改写文档本体
+   （演变历史看 git），禁止 v2 副本、"Decision N/裁决"式变更记录、日期与
+   commit sha。未实现的设计写进正文，在文末"实现状态"附录集中标注。
+   不要把工程记录写进产品 Tab。
 3. **生成参考页**（`docs/reference/cli/`、`config-keys.md`、`provider-registry.md`）：
    构建时由 `tools/docs_site/generate_reference.py` 从代码（argparse 树、
    config_schema.SETTINGS、provider.json）重新生成，已 gitignore，禁止手改——
