@@ -202,19 +202,22 @@ chat view of a spawn branch shows only the branch's own history.
 
 ## 6. Context Rendering
 
-`render_context` is the single retrieval primitive. Its membership rule, stated
-once:
+All context is retrieved from the graph through `render_context`. A single
+rule determines which nodes enter the context:
 
-> **A node is in the rendering iff its nearest ROOT-level ancestor (via
-> `caller`) is on the predecessor spine of `head_id`, and the frame/expose
-> rules admit it.**
+> **A node is rendered if and only if its nearest ROOT-level ancestor (walking
+> `caller` edges upward) lies on the predecessor chain of `head_id`, and the
+> frame/expose rules admit it.**
 
-The primitive walks the predecessor chain from `head_id` to the branch
-terminus, then admits each spine node's caller-subtree filtered by frame and
-expose. `seq` remains the sort key but is not the membership test — membership
-is path-native, so branch isolation is a property of the walk, not a post-hoc
-set intersection in the engine. The engine's job shrinks to: resolve head →
-call the primitive → hand nodes to `render_dag_messages`.
+Concretely, `render_context` walks the predecessor chain from `head_id` back
+to the start of the branch, producing the branch spine; for each spine node it
+then filters that node's caller-subtree through the frame and expose rules,
+and the surviving nodes enter the rendering. `seq` is used only for ordering
+and plays no part in this selection. Branch isolation is therefore an inherent
+property of the walk — the engine performs no filtering of its own after
+retrieval. The engine does exactly three things: resolve the head, call
+`render_context`, and pass the result to `render_dag_messages` for translation
+into provider messages.
 
 Frame semantics:
 
@@ -301,7 +304,7 @@ spine survives intact as a sibling branch for rollback. `covers` gives clone
 semantics with zero duplication — clones would create a second id space every
 consumer must translate.
 
-### Aging is a ratchet, and rendering is replayable
+### The aging boundary only advances; rendering is exactly replayable
 
 The tail-turns aging boundary advances only at turn commit, never mid-turn (a
 per-call rolling boundary breaks the cache prefix every call). Each llm node
@@ -351,7 +354,7 @@ landed:
   branch isolation currently happens as an engine-side intersection.
 - §7 entirely — single assembler, `context/system_prompt` nodes, memory
   prefetch relocation.
-- §8 entirely — `covers`-based summary nodes, aging ratchet, render manifests,
+- §8 entirely — `covers`-based summary nodes, the advance-only aging boundary, render manifests,
   write-path spill, single-pipeline enforcement. The current compaction
   machinery predates the write invariant and is explicitly exempted from it
   until this section lands.
