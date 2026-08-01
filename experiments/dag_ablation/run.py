@@ -41,63 +41,37 @@ DEFAULT_OUT = os.path.join(HERE, "results")
 # ---------------------------------------------------------------- variants
 #
 # Each variant is a dict of env vars layered onto the trial's environment.
-# NOTE (§8 input): the switches marked TODO below DO NOT EXIST in the
-# product yet — `openprogram/context/tool_aging/policy.py` holds bare
-# module constants and `render.py` derives the spill dir from the session
-# path with no off switch. Until they land, the no-aging / no-spill /
-# no-both variants are NOT faithful; see MISSING_SWITCHES and the
-# `unsupported` flag stamped into every result row.
-
-MISSING_SWITCHES = {
-    "OPENPROGRAM_TOOL_AGING": (
-        "on|off master switch for cross-turn tool aging. Read in "
-        "openprogram/context/tool_aging/policy.py and honoured by BOTH "
-        "consumers: tool_aging.prepare_history (engine.py:259) and the DAG "
-        "pre-pass render._aged_code_ids (render.py:35). Off => no turn is "
-        "ever collapsed to a [aged] stub."
-    ),
-    "OPENPROGRAM_TOOL_AGING_TAIL_TURNS": (
-        "int override for policy.TAIL_TURNS (default 3). Lets us sweep the "
-        "aging aggressiveness instead of only on/off."
-    ),
-    "OPENPROGRAM_TOOL_AGING_MAX_RESULT_CHARS": (
-        "int override for policy.MAX_TOOL_RESULT_CHARS (default 4000) — the "
-        "within-turn hard cap on a single tool_result."
-    ),
-    "OPENPROGRAM_NODE_SPILL": (
-        "on|off for the over-cap node spill-to-.txt path in "
-        "render._cap_node_text. Off => fall through to the plain "
-        "char-truncation branch with no readable artifact, which is the "
-        "E2 'no recoverable overflow' condition. Today the branch is only "
-        "skipped when large_dir is None, and large_dir is derived from the "
-        "session history dir (render._large_dir), so there is no way to "
-        "disable it from outside."
-    ),
-    "OPENPROGRAM_EXPOSE_DEFAULT": (
-        "io|llm|full|hidden — default `expose` tier for functions that do "
-        "not set one explicitly. agentic_function.__init__ currently hard "
-        "defaults to \"io\" (function.py:589) with no external override, so "
-        "the E3 sweep cannot be driven without either this env var or "
-        "editing every decorator."
-    ),
-}
+# Every switch below is implemented in the product:
+#   OPENPROGRAM_TOOL_AGING                context/tool_aging/policy.py:38
+#   OPENPROGRAM_TOOL_AGING_TAIL_TURNS     context/tool_aging/policy.py:44
+#   OPENPROGRAM_TOOL_AGING_MAX_RESULT_CHARS  context/tool_aging/policy.py:51
+#   OPENPROGRAM_NODE_SPILL                context/spill.py:36
+#   OPENPROGRAM_EXPOSE_DEFAULT            agentic_programming/function.py:129
+#   OPENPROGRAM_NODE_RENDER_CAP           context/render.py
 
 VARIANTS: dict[str, dict[str, str]] = {
     # E2 — context economization
     "full":     {},                                             # everything on
-    "no-aging": {"OPENPROGRAM_TOOL_AGING": "off"},              # TODO: unsupported
-    "no-spill": {"OPENPROGRAM_NODE_SPILL": "off"},              # TODO: unsupported
+    "no-aging": {"OPENPROGRAM_TOOL_AGING": "off"},
+    "no-spill": {"OPENPROGRAM_NODE_SPILL": "off"},
     "no-both":  {"OPENPROGRAM_TOOL_AGING": "off",
-                 "OPENPROGRAM_NODE_SPILL": "off"},              # TODO: unsupported
+                 "OPENPROGRAM_NODE_SPILL": "off"},
     # E3 — expose tier sweep
-    "expose-io":     {"OPENPROGRAM_EXPOSE_DEFAULT": "io"},      # TODO: unsupported
-    "expose-llm":    {"OPENPROGRAM_EXPOSE_DEFAULT": "llm"},     # TODO: unsupported
-    "expose-full":   {"OPENPROGRAM_EXPOSE_DEFAULT": "full"},    # TODO: unsupported
-    "expose-hidden": {"OPENPROGRAM_EXPOSE_DEFAULT": "hidden"},  # TODO: unsupported
+    "expose-io":     {"OPENPROGRAM_EXPOSE_DEFAULT": "io"},
+    "expose-llm":    {"OPENPROGRAM_EXPOSE_DEFAULT": "llm"},
+    "expose-full":   {"OPENPROGRAM_EXPOSE_DEFAULT": "full"},
+    "expose-hidden": {"OPENPROGRAM_EXPOSE_DEFAULT": "hidden"},
 }
 
 # A variant is faithful only if every env var it sets already exists.
-SUPPORTED_ENV: set[str] = {"OPENPROGRAM_NODE_RENDER_CAP"}
+SUPPORTED_ENV: set[str] = {
+    "OPENPROGRAM_NODE_RENDER_CAP",
+    "OPENPROGRAM_TOOL_AGING",
+    "OPENPROGRAM_TOOL_AGING_TAIL_TURNS",
+    "OPENPROGRAM_TOOL_AGING_MAX_RESULT_CHARS",
+    "OPENPROGRAM_NODE_SPILL",
+    "OPENPROGRAM_EXPOSE_DEFAULT",
+}
 
 
 def unsupported_vars(variant: str) -> list[str]:
