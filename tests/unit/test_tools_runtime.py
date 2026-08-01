@@ -555,16 +555,22 @@ def test_tool_search_handles_unknown_names() -> None:
 
 
 def test_deferred_catalog_text_format() -> None:
-    """The catalog text must match the format the LLM has seen in
-    training (Claude Code's wording) so it recognises the pattern."""
+    """The catalog names the loader and every deferred tool, so the model
+    can discover them and knows how to make them callable."""
     from openprogram.functions._runtime import deferred_catalog_text
     block = deferred_catalog_text([("CronCreate", "Create a cron job"),
                                     ("WebFetch",   "Fetch a URL")])
     assert "deferred tools" in block
-    assert "ToolSearch" in block
+    assert "tool_search" in block, "must name the actual registered tool"
     assert "select:" in block
     assert "CronCreate" in block
     assert "WebFetch" in block
+    # Descriptions stay out — the catalog sends bare names, and pricing
+    # (budget._estimate_one_tool) is built on that.
+    assert "Create a cron job" not in block
+    # The array is frozen for the turn, so the catalog must promise
+    # same-turn callability via the returned schema, not "next turn only".
+    assert "same turn" in block
 
     # Empty input → empty string (so callers can unconditionally concat).
     assert deferred_catalog_text([]) == ""

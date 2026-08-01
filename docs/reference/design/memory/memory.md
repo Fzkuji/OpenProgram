@@ -147,8 +147,7 @@ promoted, skipped}` so you can `cat` it to see when memory last ran.
 ## What the model actually sees
 
 At session start, the runtime adds `core.md` to the system prompt as a
-prefix block. The block is small enough (<2 KB, ~512 tokens) not to
-disturb caching. Format mirrors Hermes' `MEMORY.md / USER.md` banner:
+prefix block. Format mirrors Hermes' `MEMORY.md / USER.md` banner:
 
 ```
 ═════════════════════════════════════════════════════
@@ -162,6 +161,25 @@ ENTITY: Uses Ink for TUI
 
 [for full context use memory_recall <query>]
 ```
+
+### The 2 KB budget is enforced, not advisory
+
+`CORE_BUDGET_CHARS = 2048` caps what this block contributes. The cap is
+real: `system_prompt_block` runs the file through `strip_chrome` (dropping
+the rule-line header and the trailing pointer, which are decoration rather
+than content) and then `truncate_to_budget` before the text reaches the
+prompt. Consolidation can overshoot — the header prints the overshoot as a
+percentage — so the read path is where the budget has to hold.
+
+Truncation cuts at **section boundaries**: markdown headings are kept or
+dropped whole, so the model never reads half a thought. A single section
+larger than the whole budget falls back to the next boundary down, a
+paragraph then a sentence, so the block never ends mid-word. Whatever was
+dropped is announced in place, pointing at `memory_browse` for the rest.
+
+This matters more than its size suggests, because this block is on the
+system prompt of **every turn of every session**. Left unenforced it was
+the largest single item in the prompt, at 174% of its own stated budget.
 
 The footer points to `memory_recall` — a tool the model can call mid-turn
 to fetch a specific wiki page when it needs more detail than `core.md`

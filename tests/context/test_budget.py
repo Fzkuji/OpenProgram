@@ -78,3 +78,115 @@ def test_unknown_shaped_tool_still_falls_back():
         _defer = False
 
     assert estimate_tools_breakdown([_Opaque()])[0]["tokens"] == 20
+
+
+# --- Accuracy against the real wire ----------------------------------------
+#
+# The two halves of the estimate used to be wrong in OPPOSITE directions —
+# resident tools priced without their description (588 est / 4567 real),
+# deferred tools priced with a full description the catalog never sends
+# (4665 est / 183 real). The errors nearly cancelled, so the TOTAL looked
+# sane while both components were off by ~8x. These tests pin each half
+# separately so a future cancellation can't hide again.
+
+_TOLERANCE = 0.15
+
+
+def _wire_resident_tokens(tools) -> int:
+    """Exactly what the Anthropic provider puts on the wire per tool."""
+    import json
+    from openprogram.context.tokens import _text_tokens
+    from openprogram.providers._schema import normalize_for
+
+    return sum(
+        _text_tokens(json.dumps(
+            {"name": t.name, "description": t.description,
+             "input_schema": normalize_for(None, t.parameters, None)},
+            ensure_ascii=False, default=str,
+        ))
+        for t in tools
+    )
+
+
+def test_resident_estimate_tracks_the_real_tools_array():
+    from openprogram.functions import (
+        agent_tools, install_loaded_deferred, release_turn_tools,
+        split_tools_for_dispatch,
+    )
+    release_turn_tools()
+    install_loaded_deferred()
+    resident, _ = split_tools_for_dispatch(list(agent_tools(toolset="full")))
+    assert resident, "expected a non-empty resident toolset"
+
+    real = _wire_resident_tokens(resident)
+    est = BudgetAllocator._estimate_tools(resident)
+    assert abs(est - real) / real < _TOLERANCE, (
+        f"resident estimate {est} vs real {real} "
+        f"({100 * (est - real) / real:+.1f}%)"
+    )
+
+
+def test_deferred_catalog_estimate_tracks_the_rendered_block():
+    """The catalog only sends bare names — price the block, not the docs."""
+    from openprogram.context.breakdown import _catalog_tokens
+    from openprogram.context.tokens import _text_tokens
+    from openprogram.functions import (
+        agent_tools, deferred_catalog_text, install_loaded_deferred,
+        release_turn_tools, split_tools_for_dispatch,
+    )
+    release_turn_tools()
+    install_loaded_deferred()
+    _, catalog = split_tools_for_dispatch(list(agent_tools(toolset="full")))
+    assert catalog, "expected deferred tools"
+
+    real = _text_tokens(deferred_catalog_text(catalog))
+    est = _catalog_tokens(catalog)
+    assert abs(est - real) / real < _TOLERANCE, (
+        f"catalog estimate {est} vs real {real} "
+        f"({100 * (est - real) / real:+.1f}%)"
+    )
+
+
+def test_resident_tool_price_includes_its_description():
+    """Root cause of the 8x undercount: ``t.schema`` on a pydantic
+    AgentTool resolves to ``BaseModel.schema`` — the deprecated bound
+    METHOD — so the old ``schema or spec or parameters`` chain priced a
+    repr of a method object and dropped the description entirely."""
+    schema = {"type": "object", "properties": {"a": {"type": "string"}}}
+
+    class _Described:
+        name = "described"
+        parameters = schema
+        description = "z" * 2000
+        _defer = False
+
+    class _Bare:
+        name = "described"
+        parameters = schema
+        description = ""
+        _defer = False
+
+    with_desc = estimate_tools_breakdown([_Described()])[0]["tokens"]
+    without = estimate_tools_breakdown([_Bare()])[0]["tokens"]
+    assert with_desc > without + 300, (
+        "description must be part of a resident tool's price"
+    )
+
+
+def test_deferred_tool_price_ignores_its_description():
+    class _Fat:
+        name = "fat"
+        description = "z" * 4000
+        parameters = {"type": "object"}
+        _defer = True
+
+    class _Thin:
+        name = "fat"
+        description = ""
+        parameters = {"type": "object"}
+        _defer = True
+
+    assert (estimate_tools_breakdown([_Fat()])[0]["tokens"]
+            == estimate_tools_breakdown([_Thin()])[0]["tokens"]), (
+        "the catalog sends names only — description must not be priced"
+    )

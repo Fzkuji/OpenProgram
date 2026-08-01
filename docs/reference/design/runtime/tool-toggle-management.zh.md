@@ -146,8 +146,11 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 一个可用工具以两种形态之一进入请求：
 
 - **常驻（resident）**——完整 JSON Schema 进 provider 的 tools 数组，每轮都带。
-- **延迟（deferred）**——在系统提示的目录里只占 `name: description` 一行。模型需要
-  时调 `tool_search` 加载 schema，此后本会话内它就是常驻的。
+- **延迟（deferred）**——在系统提示的目录里只占一行**裸工具名**。模型需要时调
+  `tool_search` 加载 schema，此后从下一轮起到会话结束它都是常驻的。
+
+目录只发名字、不发描述。名字足够让模型认出候选并点名索取，同时无论 defer 多少个
+工具，整个目录都压在两百来 token。
 
 延迟工具**不是被禁用**：模型照样能调，只是得先加载 schema。禁用的工具则同时不在
 数组和目录里，根本无法调用。
@@ -162,8 +165,8 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 - defer 且未加载 → 进目录
 
 已加载集合存在 ContextVar 里（`install_loaded_deferred` 由 dispatcher 每会话初始化；
-`mark_deferred_loaded` 由 `tool_search` 内部写入）。agent loop 在**每次 provider 调用前**
-重新切分，所以轮内中途加载的工具在同一轮的下一次调用就带上 schema。
+`mark_deferred_loaded` 由 `tool_search` 内部写入）。这个集合里哪些条目真正进数组，
+每轮只决定一次——见 §7.4。
 
 ### 7.3 哪些工具被 defer
 
@@ -187,12 +190,38 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 
 效果：默认常驻数组从每轮 ~7.9k 降到 ~4.7k token，约减 41%，且没有任何工具变得不可用。
 
-### 7.4 与缓存前缀的相互作用（§4.2）
+### 7.4 工具数组以"轮"为粒度
 
-加载一个延迟工具会向 tools 数组追加元素，因而**重写缓存前缀**——正是 §4.2 描述的任何
-工具集变动的后果。这是每工具每会话一次性的代价，且只在模型真正需要该工具时才付。这
-也是 defer 名单挑"少用"而非单纯挑"大"的原因：一个多数会话都会用到的工具，defer 等于
-拿固定节省换反复的缓存未命中。
+工具数组是 Anthropic 和 OpenAI **两家缓存前缀的根**——缓存断点打在最后一个工具条目
+上，因此数组之后的一切（系统提示、记忆、整条历史）都缓存在它后面。数组一变，这些
+token 全部按原价重读。
+
+所以数组**在轮边界定格**。`freeze_turn_tools` 在 agent loop 外层循环每轮跑一次，钉住
+本轮有资格进数组的 defer 工具集合；`split_tools_for_dispatch` 读这个冻结集合，而不是
+实时的已加载集合。轮内途中的 `tool_search` 会写入已加载集合，但撑不大数组——数组以及
+扎根其上的前缀，在本轮每一次 provider 调用中都逐字节相同。下一次 `freeze_turn_tools`
+再把这期间攒下的工具一并放行。
+
+不冻结时，一次 `tool_search` 就让本轮剩余全部调用的前缀作废——而工具加载恰恰就发生在
+轮内，这个作废落在最糟的时点。按两天真实流量实测，53% 的输入 token 未命中缓存源于此。
+
+**可用性不等数组**。两条路径保证轮内加载的工具当轮即可调用：
+
+1. `tool_search` 在结果文本里直接返回**完整 schema**，形状与数组条目一致
+   （`{"name", "description", "parameters"}`），并明确写明可以立即调用。模型据此文本
+   构造调用。
+2. 派发按名字在**完整工具列表**里解析，而不是在 provider 数组里
+   （`agent_loop._execute_tool_calls`）。已加载但尚未进数组的工具，调用照常执行。
+
+所以冻结改变的只是工具**何时在数组里被公示**，从不影响它**能否被使用**。晋升的代价
+——一次前缀重写——每工具每会话只付一次，且落在轮边界上，那里本来就有新的用户消息改
+写了尾部。
+
+这也是 defer 名单挑"少用"而非单纯挑"大"的原因：一个多数会话都会用到的工具，defer 等
+于拿固定节省换反复的缓存未命中。
+
+在任何一轮之外构造 provider 数组的调用方（预算计量、`breakdown`、测试）用
+`release_turn_tools()` 退回到实时已加载集合。
 
 ### 7.5 目录是装配器组件
 
@@ -200,8 +229,17 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 在 `context/components.py`），由 `_build_deferred_catalog` 构建，所以引擎计入预算的
 字符串就是实际发出的字符串。该组件从 ContextVar 读工具列表，无 defer 工具时返回空串。
 
-预算口径同样跟随这个切分：`_estimate_one_tool`（`context/budget.py`）把 defer 工具按
-目录行计价、常驻工具按完整 schema 加包装计价，因此上下文明细与实际发送量一致。
+预算口径同样跟随这个切分。`_estimate_one_tool`（`context/budget.py`）按每个工具**实
+际发上线的东西**计价：
+
+- **常驻**——`description` **和** `parameters` schema 都算，外加少量包装。两半都要算：
+  描述约占常驻成本的 45%，只算 schema 会把数组少估好几千 token。
+- **延迟**——只算裸名字加一个换行，与 `deferred_catalog_text` 对齐。按描述给 defer 工
+  具计价会把目录高估约一个数量级，因为描述恰恰是目录不发的那部分。
+
+两半中任何一半算错都很难被发现，因为两个误差方向相反，一个看着合理的总数可以同时
+掩盖两者。因此 `tests/context/test_budget.py` 拿真实 tokenize 的上线载荷，对两半分别
+校验，各自不超 15%。
 
 ### 7.6 应当成立的性质
 
@@ -211,6 +249,8 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 - 它们全都出现在目录里，以及装配后的系统提示里
 - `tool_search` 能把延迟工具移入 provider 数组、移出目录
 - `tool_search` 永不被 defer；`apply_default_deferral` 幂等
+- 轮内 `tool_search` 不改变 provider 数组和目录；加载的工具在下一个轮边界进数组
+- `tool_search` 返回完整参数 schema；已加载但未进数组的工具仍能被派发解析
 
 ---
 
@@ -231,6 +271,8 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 | `openprogram/agent/session_config.py` | `SessionRunConfig` 的 `web_search` / `toolset` 意图字段；`save/load` 读写它们（存 git session meta，不需改 DB schema——`update_session(**fields)` 任意 key 透传）；`tools_override_from_config` 输出 **dict 意图**（`{enabled, toolset, web_search}`）供实时展开，不物化整张工具表；`list[str]` 仅用于用户显式精选，原样透传 |
 | `openprogram/webui/ws_actions/chat.py` | 把 `tools_profile` / `web_search_flag` 作为**意图**透传给 `save_session_run_config(toolset=, web_search=)`；"tools=False + web_search=True → `["web_search"]`" 这一单元素 list 属用户精选，不是全量快照 |
 | `openprogram/agent/_model_tools.py` | dict-override 分支（`resolve_tools`，~397-421）的 `web_search` 叠加：`_overlay_web_search` 在 toolset / names 两条路径展开后，若意图含 web_search 且结果缺它则补上 |
+| `openprogram/functions/_runtime.py` | defer 机制本体：`_defer` 边车、已加载集合、`freeze_turn_tools` / `release_turn_tools`（§7.4）、`split_tools_for_dispatch`、`tool_search` 及它返回的 schema、`deferred_catalog_text` |
+| `openprogram/agent/agent_loop.py` | 每轮在外层循环顶部调一次 `freeze_turn_tools`；工具调用按名字在完整工具列表里解析，因此轮内加载的工具仍可派发 |
 
 ### 9.2 关键设计点（别破坏）
 
@@ -242,6 +284,9 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
   实时展开。`list[str]` 只表示用户显式精选的少数工具。这是整个设计的红线。
 - **不改历史**：工具开关只控制"接下来能调什么"，不过滤/重写历史 tool_use（会破坏
   tool_use↔tool_result 配对 → provider 400）。
+- **工具数组只在轮边界变**（§7.4）。任何在轮内撑大数组的做法，都会作废本轮剩余部分
+  的缓存前缀。若某个工具需要更早可用，就在工具结果里把 schema 交给模型，不要往数组
+  里追加。
 
 ### 9.3 测试（回归保护）
 
@@ -250,6 +295,8 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
   端到端：意图展开含新工具（message_branch/list_sessions）+ web_search 叠加生效
 - `tests/unit/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` —
   `tools=True` 产出 `{enabled:True}` 意图而非 list 快照
+- `tests/context/test_tool_defer.py` — §7.6 的各项 defer 性质，含轮边界冻结
+- `tests/context/test_budget.py` — 工具计价两半各自对真实 tokenize 载荷校验（§7.5）
 
 ### 9.4 扩展点
 

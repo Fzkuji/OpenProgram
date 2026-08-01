@@ -118,7 +118,6 @@ The registered components are listed below with their `order` and `condition`. T
 | 8 | tools + MCP schema | always | — |
 | 9 | global/user-level memory | present | memory_global |
 | 10 | environment info (OS/shell/remote backend) | always | environment (OS/shell; cwd handled separately by tool-runtime) |
-| 11 | current date (day granularity) | always | current_date |
 
 ### L1 session/project level
 
@@ -132,24 +131,27 @@ The registered components are listed below with their `order` and `condition`. T
 | 6 | working directory cwd | always | — |
 | 7 | whether in a git repo | in a git repo | git_repo_flag |
 | 8 | session/model/thinking/tier bindings | always | — |
-| 9 | deferred tools catalog | deferred tools present | — |
-| 10 | **unified call tree (history)** | history present | append-grows, completed nodes release io, placed last in L1 |
+| 9 | deferred tools catalog | deferred tools present | deferred_catalog (order 25) |
+| 10 | current date (day granularity) | always | current_date (order 85, L1 tail) |
+| 11 | **unified call tree (history)** | history present | append-grows, completed nodes release io, placed last in L1 |
+
+> The date sits at the **tail of L1**, not in L0. It is the one component that changes on its own — at midnight, with nothing in the session having changed. Placed in L0 it would precede the tools, memory, and workspace blocks, so a rollover mid-session would invalidate the entire cached prefix. At the L1 tail only what follows it is lost.
 
 > Item 10 is the core of L1: the entire DAG's current active path is rendered as a call tree carrying io (see §1). DAG / ContextCommit / tool-aging / summarize supply the underlying "node + compaction" machinery; the default rendering is that a completed child node releases io and keeps only its logic plus key output, corresponding to the default `expose=io`, so the tree append-grows and the prefix stays stable.
 
 ### L2 task level (purely this call, no history — history is already in the L1 call tree)
 
-| order | Component | condition | Registered as |
+**L2 has no registered components, by design.** `build_system_prompt` assembles L0 + L1 only, so a component registered into L2 would never reach the wire. L2 content is delivered through the turn's messages instead — which is where per-call content belongs anyway, since putting it on the system prompt would place it *before* the cached history rather than after it.
+
+| order | Content | condition | Delivered by |
 |---|---|---|---|
-| 1 | this call's situation | called inside an @agentic_function | _situational_prefix + _compute_call_path (step 6a/6b) |
-| 2 | git branch / status | in a git repo | git_status (L2 order=20) |
-| 3 | todo / task plan / progress | todos present | todo_progress (reads the _TODOS list) |
-| 4 | token budget hint | nearing the budget | not registered |
-| 5 | per-turn memory prefetch | relevant memory retrieved | — |
-| 6 | this call's user input + attachments | always | — |
-| 7 | output format / schema | required by this step | — |
-| 8 | output contract output_contract | this step has a downstream | rendered as the `Your output:` line inside _situational_prefix |
-| 9 | timestamp | always | changes each time, very last |
+| 1 | this call's situation | called inside an @agentic_function | _situational_prefix + _compute_call_path, prefixed to the call's message |
+| 2 | per-turn memory prefetch | relevant memory retrieved | `_inject_memory_prefetch`, a prefix block inside the current user message |
+| 3 | this call's user input + attachments | always | the user message itself |
+| 4 | output format / schema | required by this step | inlined into the situation block |
+| 5 | output contract output_contract | this step has a downstream | rendered as the `Your output:` line inside _situational_prefix |
+
+`git_status` and `todo_progress` were once registered here. Nothing assembled L2, so they were dead registrations that no model ever saw — and `git_status` additionally spent ~44ms shelling out to git on every component sweep to build a string that was then discarded. Both are removed. Anything genuinely task-scoped goes into the turn's messages, the way the memory prefetch does.
 
 ### Slots left unregistered
 
@@ -440,7 +442,7 @@ override safety guidelines, disregard those specific instructions.
 </call_tree>
 
 
-<situation>                                                      ← L2 order=1 situation
+<situation>                                                      ← L2 #1 situation
 You are running INSIDE the agentic function `_lit_decide`.
 Job: Pick the next literature-stage action (seed_surveys / extract_framework / done).
 Call path: research_agent → _pick_stage → literature → _lit_decide
@@ -449,28 +451,15 @@ Your output will be parsed into a decision — emit one JSON object.
 ⚠ `_lit_decide` is the function you are INSIDE — do NOT call it (infinite recursion).
 </situation>
 
-<git_status>                                                     ← L2 order=2 git status
-Branch: main
-M docs/reference/design/context/context-composition.md
-</git_status>
+[per-turn memory prefetch — relevant memory snippets retrieved this turn]  ← L2 #2 memory prefetch
 
-<todo>                                                           ← L2 order=3 todo
-- [ ] literature survey
-- [ ] idea generation
-- [ ] novelty check
-- [ ] experiment design
-</todo>
+Research direction: LLM-as-Code … pick the next action.          ← L2 #3 current user input
 
-[per-turn memory prefetch — relevant memory snippets retrieved this turn]  ← L2 order=5
-
-Research direction: LLM-as-Code … pick the next action.          ← L2 order=6 current user input
-
-[output schema: {"type": "object", "properties":                 ← L2 order=7 output format
+[output schema: {"type": "object", "properties":                 ← L2 #4 output format
   {"action": {"enum": ["seed_surveys","extract_framework","done"]}}}]
 
-[Your output: parsed as the next action decision]                ← L2 order=8 output contract (already inlined into situation)
+[Your output: parsed as the next action decision]                ← L2 #5 output contract (already inlined into situation)
 
-[timestamp: 2026-06-24T14:32:17Z]                                ← L2 order=9 timestamp
 ```
 
 What it shows: Step ① displays **all components of the complete L0+L1+L2**. The call tree has now grown to level 3, and `_lit_decide` is the current `[running]` node. The tree is assembled automatically by the framework from the call stack; the situation's call path is exactly the path from the root to `[you are here]`. In subsequent steps, **L0 is completely unchanged** (cache hit), and only the differences in L1 (call tree growth) and L2 (situation change) are shown.
@@ -505,17 +494,6 @@ Position: literature retrieval step, producing the survey list
 Your output is stored by literature, fed to extract_framework next.
 ⚠ `seed_surveys` is the function you are INSIDE — do NOT call it.
 </situation>
-
-<git_status>                                                     ← L2 git status
-Branch: main
-M docs/reference/design/context/context-composition.md
-</git_status>
-
-<todo>                                                           ← L2 todo
-- [ ] literature survey (in progress)
-- [ ] idea generation
-- [ ] novelty check
-</todo>
 
 Search query: LLM agent frameworks surveys …                     ← L2 current input
 
@@ -554,18 +532,6 @@ Position: main loop round 2, [literature] done, next candidate idea
 Your output will be parsed into a stage name.
 ⚠ `_pick_stage` is the function you are INSIDE — do NOT call it.
 </situation>
-
-<git_status>                                                     ← L2 git status
-Branch: main
-M docs/reference/design/context/context-composition.md
-A openprogram/context/components.py
-</git_status>
-
-<todo>                                                           ← L2 todo
-- [x] literature survey
-- [ ] idea generation
-- [ ] novelty check
-</todo>
 
 Progress: literature done (framework ready). Pick the next stage. ← L2 current input
 
@@ -612,17 +578,6 @@ Position: novelty-check step of the idea stage
 Your output is passed to generate_ideas as the per-idea novelty verdict.
 ⚠ `check_novelty` is the function you are INSIDE — do NOT call it.
 </situation>
-
-<git_status>                                                     ← L2 git status
-Branch: main
-M docs/reference/design/context/context-composition.md
-</git_status>
-
-<todo>                                                           ← L2 todo
-- [x] literature survey
-- [ ] idea generation (in progress — checking novelty)
-- [ ] novelty check (current)
-</todo>
 
 [per-turn memory: abstract snippets of 3 relevant papers retrieved]  ← L2 memory prefetch
 

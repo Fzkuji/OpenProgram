@@ -15,13 +15,17 @@ from openprogram.context.tokens import estimate_message_tokens
 
 
 def _catalog_tokens(catalog: list) -> int:
-    """deferred 工具在系统提示里只占 `name: description` 一行。"""
-    total = 0
-    for name, desc in catalog:
-        total += estimate_message_tokens(
-            {"role": "system", "content": f"{name}: {desc}"}
-        )
-    return total
+    """deferred 目录块的真实成本 = 渲染出来的那段文字。
+
+    目录只发裸工具名（``deferred_catalog_text`` 用 name 拼行，描述不发），
+    所以按 name+description 计价会高估一个数量级。直接对渲染结果计数，
+    口径永远跟着渲染函数走。"""
+    if not catalog:
+        return 0
+    from openprogram.functions import deferred_catalog_text
+    return estimate_message_tokens(
+        {"role": "system", "content": deferred_catalog_text(list(catalog))}
+    )
 
 
 def compute_call_breakdown(

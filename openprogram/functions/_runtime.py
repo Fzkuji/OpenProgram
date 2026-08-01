@@ -1126,6 +1126,42 @@ _loaded_deferred: contextvars.ContextVar[Optional[set[str]]] = (
     contextvars.ContextVar("_loaded_deferred", default=None)
 )
 
+# The tools array is the ROOT of both Anthropic's and OpenAI's cached
+# prefix (cache_policy marks the last tool entry). Growing it mid-turn —
+# which is what a naive re-split after ``tool_search`` does — invalidates
+# the whole prefix for every remaining call of that turn. So the array is
+# frozen at the turn boundary: whatever ``tool_search`` loads enters the
+# array on the NEXT turn, and stays byte-identical until then.
+#
+# Availability does not wait for the array. ``tool_search`` returns the
+# loaded tool's full JSON Schema in its result text, and the dispatcher
+# resolves tool calls by name against the complete tool list (agent_loop
+# ``_execute_tool_calls``), not against the provider array — so a tool
+# loaded this turn is callable this turn.
+_frozen_turn_tools: contextvars.ContextVar[Optional[set[str]]] = (
+    contextvars.ContextVar("_frozen_turn_tools", default=None)
+)
+
+
+def freeze_turn_tools(tools: list[AgentTool]) -> None:
+    """Pin the deferred tools that may appear in the provider array for
+    the rest of this turn.
+
+    Called once at each turn boundary with the session's full tool list.
+    The frozen set is the loaded-deferred set as it stands right now;
+    anything ``tool_search`` loads afterwards is held back until the next
+    ``freeze_turn_tools`` call.
+    """
+    loaded = _loaded_deferred.get()
+    _frozen_turn_tools.set(set(loaded) if loaded else set())
+
+
+def release_turn_tools() -> None:
+    """Drop the freeze — ``split_tools_for_dispatch`` reverts to using the
+    live loaded set. Used by callers that assemble a provider array outside
+    any turn (budget accounting, breakdown, tests)."""
+    _frozen_turn_tools.set(None)
+
 
 def install_loaded_deferred(loaded: Optional[set[str]] = None) -> Any:
     """Install a session-scoped 'loaded deferred tool names' set.
@@ -1170,8 +1206,14 @@ def split_tools_for_dispatch(
 
     When the ContextVar isn't installed (no session) the loaded set
     is empty — all deferred tools land in the catalog.
+
+    Inside a turn the *frozen* set decides membership, so the array (and
+    the cache prefix rooted on it) is byte-stable across every provider
+    call of that turn. See ``freeze_turn_tools``.
     """
-    loaded = _loaded_deferred.get() or set()
+    frozen = _frozen_turn_tools.get()
+    loaded = (frozen if frozen is not None
+              else (_loaded_deferred.get() or set()))
     provider_tools: list[AgentTool] = []
     catalog: list[tuple[str, str]] = []
     for t in tools:
@@ -1230,12 +1272,37 @@ def _tool_search_impl(select: str, *, max_results: int = _TOOL_SEARCH_MAX_RESULT
     return _tool_search_by_keyword(payload, max_results=max_results)
 
 
+def _tool_schema_line(t: AgentTool) -> str:
+    """Render one loaded tool as a callable definition.
+
+    The tools array is frozen for the rest of this turn (see
+    ``freeze_turn_tools``), so this text — not the array — is what makes
+    the tool callable right now. Same encoding as a provider tool entry so
+    the model reads it the way it reads the array.
+    """
+    import json as _json
+    try:
+        params = _json.dumps(t.parameters, ensure_ascii=False, default=str)
+    except Exception:
+        params = "{}"
+    return (f'{{"name": "{t.name}", "description": {_json.dumps(t.description or "", ensure_ascii=False)}, '
+            f'"parameters": {params}}}')
+
+
+_SCHEMA_PREAMBLE = (
+    "Their full schemas follow. You can call these tools immediately, in "
+    "THIS turn, by constructing the call from the schema below — the tools "
+    "array is fixed for the remainder of this turn (it is the root of the "
+    "prompt cache), and they join it automatically on the next turn."
+)
+
+
 def _tool_search_by_name(payload: str) -> str:
     requested = [n.strip() for n in payload.split(",") if n.strip()]
     if not requested:
         return "Error: pass tool names like `select:name1,name2`."
 
-    loaded_names: list[str] = []
+    loaded: list[AgentTool] = []
     missing: list[str] = []
     lines: list[str] = []
     for name in requested:
@@ -1246,16 +1313,18 @@ def _tool_search_by_name(payload: str) -> str:
         if not getattr(t, "_defer", False):
             lines.append(f"- {name} (not deferred — already in tools array)")
             continue
-        loaded_names.append(name)
-        lines.append(f"- {name}: {t.description}")
+        loaded.append(t)
 
-    if loaded_names:
-        mark_deferred_loaded(loaded_names)
+    if loaded:
+        mark_deferred_loaded([t.name for t in loaded])
+        lines.append("<functions>")
+        lines.extend(f"<function>{_tool_schema_line(t)}</function>" for t in loaded)
+        lines.append("</functions>")
 
     head = (
-        f"Loaded {len(loaded_names)} deferred tool"
-        f"{'s' if len(loaded_names) != 1 else ''} into the next turn."
-        if loaded_names else "Loaded 0 tools."
+        f"Loaded {len(loaded)} deferred tool"
+        f"{'s' if len(loaded) != 1 else ''}. {_SCHEMA_PREAMBLE}"
+        if loaded else "Loaded 0 tools."
     )
     if missing:
         lines.append(f"\n[warning] unknown tool name(s): {', '.join(missing)}")
@@ -1320,12 +1389,12 @@ def _tool_search_by_keyword(query: str, *, max_results: int) -> str:
     head = (
         f"Loaded {len(top)} deferred tool"
         f"{'s' if len(top) != 1 else ''} matching {query!r} "
-        f"(scored, top {max_results} of {len(scored)} matches):"
+        f"(scored, top {max_results} of {len(scored)} matches). "
+        f"{_SCHEMA_PREAMBLE}"
     )
-    lines = [
-        f"- {t.name} (score {score}): {t.description.splitlines()[0]}"
-        for score, _, t in top
-    ]
+    lines = ["<functions>"]
+    lines += [f"<function>{_tool_schema_line(t)}</function>" for _, _, t in top]
+    lines.append("</functions>")
     return head + "\n" + "\n".join(lines)
 
 
@@ -1351,11 +1420,12 @@ async def _tool_search_execute(call_id, args, cancel, on_update):
 tool_search = AgentTool(
     name="tool_search",
     description=(
-        "Load deferred tools' parameter schemas into the next turn. "
-        "Before loading, deferred tools appear by name only in the "
-        "system-prompt catalog — calling them raises "
-        "InputValidationError because their JSON Schema wasn't sent. "
-        "After loading, they're callable normally.\n"
+        "Load deferred tools' parameter schemas. Deferred tools appear "
+        "by name only in the system-prompt catalog; until loaded, their "
+        "JSON Schema was never sent and you cannot construct a valid "
+        "call. This returns the full schemas, so you can call the tools "
+        "immediately in the same turn, and they join the tools array on "
+        "the next turn.\n"
         "\n"
         "Query forms:\n"
         "  `select:name1,name2`  — load these exact tools by name.\n"
@@ -1423,10 +1493,10 @@ def deferred_catalog_text(catalog: list[tuple[str, str]]) -> str:
         return ""
     body = "\n".join(name for name, _desc in catalog)
     return (
-        "The following deferred tools are now available via ToolSearch.\n"
-        "Their schemas are NOT loaded — calling them directly will fail "
-        'with InputValidationError. Use ToolSearch with query '
-        '"select:<name>[,<name>...]" to load tool schemas before calling '
-        "them:\n" + body
+        "The following deferred tools are available via tool_search.\n"
+        "Their schemas are NOT loaded, so you cannot construct a valid "
+        'call yet. Use tool_search with query "select:<name>[,<name>...]" '
+        "— it returns the full schemas, which you can use to call the "
+        "tools right away in the same turn:\n" + body
     )
 

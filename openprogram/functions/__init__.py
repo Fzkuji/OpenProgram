@@ -35,9 +35,11 @@ from ._runtime import (
     all_tools as _all_agent_tools,
     deferred_catalog_text,
     filter_for as _filter_agent_tools,
+    freeze_turn_tools,
     function,
     get as _get_agent_tool,
     install_loaded_deferred,
+    release_turn_tools,
     mark_deferred_loaded,
     register as _register_agent_tool,
     split_tools_for_dispatch,
@@ -562,8 +564,10 @@ __all__ = [
     "tool_requires_approval",
     # Layer 6 — deferred loading helpers
     "deferred_catalog_text",
+    "freeze_turn_tools",
     "install_loaded_deferred",
     "mark_deferred_loaded",
+    "release_turn_tools",
     "split_tools_for_dispatch",
     "tool_search",
     # Layer 6 — default deferral of cold full-toolset tools

@@ -2,16 +2,29 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from openprogram.functions import (
     DEFERRED_DEFAULT_TOOLS,
     RESIDENT_TOOLS,
     apply_default_deferral,
     agent_tools,
     deferred_catalog_text,
+    freeze_turn_tools,
     install_loaded_deferred,
+    release_turn_tools,
     split_tools_for_dispatch,
     tool_search,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_frozen_turn():
+    """Every test starts outside a turn, so the split reads the live loaded
+    set unless the test freezes on purpose."""
+    release_turn_tools()
+    yield
+    release_turn_tools()
 
 
 def test_resident_tools_not_deferred():
@@ -92,6 +105,95 @@ def test_tool_search_loads_a_deferred_default():
     assert name in {t.name for t in after}, "tool_search did not load the schema"
     assert name not in {n for n, _ in catalog}, "still listed as unloaded"
     install_loaded_deferred()  # reset so test order can't leak state
+
+
+# --- Turn-boundary freeze ---------------------------------------------------
+#
+# The tools array is the root of both providers' cached prefix. Growing it
+# the moment tool_search runs invalidates that prefix for the rest of the
+# turn, so the array is pinned at the turn boundary instead.
+
+
+def _load(name: str) -> None:
+    asyncio.run(tool_search.execute(
+        "call-1", {"select": f"select:{name}"}, None, None,
+    ))
+
+
+def test_tools_array_frozen_within_a_turn():
+    """tool_search mid-turn must NOT change the provider array."""
+    install_loaded_deferred()
+    apply_default_deferral()
+    tools = agent_tools(toolset="full")
+
+    freeze_turn_tools(list(tools))  # turn boundary
+    before, cat_before = split_tools_for_dispatch(list(tools))
+
+    _load("playwright_browser")
+
+    after, cat_after = split_tools_for_dispatch(list(tools))
+    assert [t.name for t in after] == [t.name for t in before], (
+        "tools array changed mid-turn — cache prefix invalidated"
+    )
+    # The system-prompt catalog is part of the same prefix, so it holds too.
+    assert cat_after == cat_before
+    install_loaded_deferred()
+
+
+def test_frozen_tool_enters_array_on_the_next_turn():
+    install_loaded_deferred()
+    apply_default_deferral()
+    tools = agent_tools(toolset="full")
+    name = "playwright_browser"
+
+    freeze_turn_tools(list(tools))
+    _load(name)
+    assert name not in {t.name for t in split_tools_for_dispatch(list(tools))[0]}
+
+    freeze_turn_tools(list(tools))  # next turn boundary
+    after, catalog = split_tools_for_dispatch(list(tools))
+    assert name in {t.name for t in after}, "not promoted on the next turn"
+    assert name not in {n for n, _ in catalog}, "still advertised as unloaded"
+    install_loaded_deferred()
+
+
+def test_tool_search_returns_the_schema_for_same_turn_use():
+    """Availability must not wait for the array: the result text carries the
+    full schema so the model can construct the call this turn."""
+    install_loaded_deferred()
+    apply_default_deferral()
+    from openprogram.functions._runtime import _tool_search_impl
+
+    text = _tool_search_impl("select:playwright_browser")
+    assert "playwright_browser" in text
+    # The parameter schema itself, not just the name + description.
+    assert '"parameters"' in text
+    assert '"properties"' in text
+    # And it says the tool is callable right now.
+    assert "THIS turn" in text
+    install_loaded_deferred()
+
+
+def test_frozen_but_unlisted_tool_still_dispatches():
+    """A tool loaded mid-turn is absent from the provider array yet must
+    still route — the dispatcher resolves by name against the full tool
+    list, which is what agent_loop._execute_tool_calls does."""
+    install_loaded_deferred()
+    apply_default_deferral()
+    tools = agent_tools(toolset="full")
+    name = "playwright_browser"
+
+    freeze_turn_tools(list(tools))
+    _load(name)
+
+    provider_array = {t.name for t in split_tools_for_dispatch(list(tools))[0]}
+    assert name not in provider_array, "precondition: not in the array yet"
+
+    # Same lookup agent_loop._execute_tool_calls performs.
+    resolved = next((t for t in tools if t.name == name), None)
+    assert resolved is not None, "loaded tool must still be dispatchable"
+    assert callable(resolved.execute)
+    install_loaded_deferred()
 
 
 def test_deferred_catalog_component_reflects_deferral():

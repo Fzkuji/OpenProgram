@@ -422,11 +422,10 @@ register(ContextComponent("platform_format", "L0", 16, _build_platform_format))
 register(ContextComponent("inline_prompt", "L0", 30, _build_inline))
 register(ContextComponent("skills_index", "L0", 40, _build_skills))
 register(ContextComponent("memory_global", "L0", 50, _build_memory))
-# Environment / date sit at the L0 tail: still session-constant but "closer to
-# changing" than identity (different machine / next day), so after the stable
-# identity+tools block. New components — nothing rendered these before.
+# Environment sits at the L0 tail: still session-constant but "closer to
+# changing" than identity (a different machine), so after the stable
+# identity+tools block.
 register(ContextComponent("environment", "L0", 60, _build_environment))
-register(ContextComponent("current_date", "L0", 70, _build_date))
 register(ContextComponent("workspace_files", "L1", 10, _build_workspace_files))
 
 
@@ -510,6 +509,11 @@ def _build_plan_mode(agent: Any) -> str:
 
 register(ContextComponent("tool_runtime", "L1", 20, _build_tool_runtime))
 register(ContextComponent("deferred_catalog", "L1", 25, _build_deferred_catalog))
+# The date is the one component guaranteed to change on its own — at
+# midnight, without anything in the session changing. From L0 it sat above
+# every tool and memory block, so the rollover invalidated the whole cached
+# prefix mid-session. At the L1 tail only the tail after it is lost.
+register(ContextComponent("current_date", "L1", 85, _build_date))
 # Plan mode last: it overrides everything above it, and it toggles, so keeping
 # it at the tail limits the cache-prefix damage when it flips.
 register(ContextComponent("plan_mode", "L1", 90, _build_plan_mode))
@@ -561,55 +565,12 @@ def _build_pi_shield(agent: Any) -> str:
 register(ContextComponent("pi_shield", "L1", 5, _build_pi_shield))
 
 
-# L2 todo progress
-
-def _build_todo_progress(agent: Any) -> str:
-    """Render the session todo list into context so the model sees outstanding
-    tasks without needing to call todo_read. See design §四' L2 #3."""
-    try:
-        from openprogram.functions.tools.todo.todo import _TODOS, _LOCK
-    except ImportError:
-        return ""
-    with _LOCK:
-        if not _TODOS:
-            return ""
-        lines = [f"- [{t['status']}] #{t['id']} {t['subject']}" for t in _TODOS]
-    return "<todo>\n" + "\n".join(lines) + "\n</todo>"
-
-
-register(ContextComponent("todo_progress", "L2", 30, _build_todo_progress))
-
-
-# L2 git status
-
-def _build_git_status(agent: Any) -> str:
-    """Current branch + short status so the model sees uncommitted changes
-    without a tool call. See design §四 L2."""
-    import os
-    import subprocess
-    cwd = os.getcwd()
-    try:
-        branch = subprocess.run(
-            ["git", "branch", "--show-current"],
-            cwd=cwd, capture_output=True, text=True, timeout=3,
-        )
-        status = subprocess.run(
-            ["git", "status", "--short"],
-            cwd=cwd, capture_output=True, text=True, timeout=3,
-        )
-        if branch.returncode != 0 or status.returncode != 0:
-            return ""
-    except Exception:
-        return ""
-    branch_name = branch.stdout.strip()
-    short = status.stdout.strip()
-    lines = [f"Branch: {branch_name}"]
-    if short:
-        lines.append(short)
-    return "<git_status>\n" + "\n".join(lines) + "\n</git_status>"
-
-
-register(ContextComponent("git_status", "L2", 20, _build_git_status))
+# L2 (task-level, this-call-only) has no registered components. The layer
+# stays in the registry and in ``assemble``'s signature because the
+# assembler is generic over layers, but ``build_system_prompt`` assembles
+# L0+L1 only — a component registered here would never reach the wire.
+# Anything task-scoped belongs in the turn's user message instead, the way
+# the memory prefetch block does (session-dag.md §7).
 
 
 __all__ = [

@@ -153,9 +153,13 @@ is what made the resident cost grow with the tool count.
 An available tool ships in one of two forms:
 
 - **Resident** — full JSON Schema in the provider's tools array, every turn.
-- **Deferred** — one `name: description` line in the system prompt's catalog.
-  The model loads the schema on demand by calling `tool_search`, after which
-  it is resident for the remainder of the session.
+- **Deferred** — one bare `name` line in the system prompt's catalog. The
+  model loads the schema on demand by calling `tool_search`, after which it
+  is resident from the next turn to the end of the session.
+
+The catalog carries names only, not descriptions. A name is enough for the
+model to recognise a candidate and ask for it, and it keeps the whole
+catalog to a couple of hundred tokens no matter how many tools are deferred.
 
 A deferred tool is **not disabled**. The model can still call it; it just has
 to load the schema first. A disabled tool is absent from both the array and
@@ -173,8 +177,8 @@ resolved toolset into `(provider_tools, catalog)` by reading each tool's
 
 The loaded set lives in a ContextVar (`install_loaded_deferred`, seeded per
 session by the dispatcher; `mark_deferred_loaded` adds to it from inside
-`tool_search`). The agent loop re-splits **before every provider call**, so a
-tool loaded mid-turn carries its schema on the next call within the same turn.
+`tool_search`). Which entries of that set actually reach the array is decided
+once per turn — see §7.4.
 
 ### 7.3 Which tools are deferred
 
@@ -201,14 +205,49 @@ else, so deferring it would be a deadlock. This is asserted twice: the
 Effect: the default resident array drops from ~7.9k to ~4.7k tokens per turn,
 a ~41% cut, with no tool becoming unavailable.
 
-### 7.4 Interaction with the cache prefix (§4.2)
+### 7.4 The tools array has turn granularity
 
-Loading a deferred tool appends to the tools array and therefore **rewrites
-the cache prefix**, exactly as §4.2 describes for any toolset change. This is
-a one-time cost per tool per session, paid only when the model actually needs
-the tool, and it is why the defer list targets tools that are rarely used
-rather than tools that are merely large: a tool loaded in most sessions would
-trade a fixed saving for a recurring cache miss.
+The tools array is the **root of the cached prefix** for both Anthropic and
+OpenAI — the cache breakpoint sits on the last tool entry, so everything
+after the array (system prompt, memory, the entire history) is cached behind
+it. Change the array and every one of those tokens is re-read at full price.
+
+Therefore the array is **frozen at the turn boundary**. `freeze_turn_tools`
+runs once per turn in the agent loop's outer loop and pins the set of
+deferred tools eligible for the array; `split_tools_for_dispatch` reads that
+frozen set instead of the live loaded set. A `tool_search` call in the middle
+of a turn adds to the loaded set but cannot grow the array — the array, and
+the prefix rooted on it, stay byte-identical for every provider call of that
+turn. The next `freeze_turn_tools` promotes whatever accumulated.
+
+Without the freeze, one `tool_search` invalidated the prefix for the whole
+remainder of the turn — and a turn is exactly when tool loading happens, so
+the invalidation landed at the worst possible moment. Measured over two days
+of real traffic this accounted for 53% of input tokens missing the cache.
+
+**Availability does not wait for the array.** Two paths make a tool loaded
+mid-turn callable in that same turn:
+
+1. `tool_search` returns the loaded tools' **full schemas** in its result
+   text, in the same `{"name", "description", "parameters"}` shape as an
+   array entry, with an explicit note that they can be called immediately.
+   The model constructs the call from that text.
+2. Dispatch resolves by name against the **complete tool list**, not the
+   provider array (`agent_loop._execute_tool_calls`). A call for a tool that
+   is loaded but not yet in the array executes normally.
+
+So the freeze changes when a tool is *advertised in the array*, never
+whether it can be *used*. The cost of the promotion — one prefix rewrite —
+is paid once per tool per session, at a turn boundary where a fresh user
+message has already changed the tail anyway.
+
+This is also why the defer list targets tools that are rarely used rather
+than tools that are merely large: a tool loaded in most sessions would trade
+a fixed saving for a recurring cache miss.
+
+Callers that build a provider array outside any turn (budget accounting,
+`breakdown`, tests) call `release_turn_tools()` to fall back to the live
+loaded set.
 
 ### 7.5 The catalog is an assembler component
 
@@ -218,10 +257,23 @@ built by `_build_deferred_catalog`, so the string the engine budgets is the
 string that ships. The component reads the tools from a ContextVar and returns
 empty when nothing is deferred.
 
-Budget accounting follows the same split: `_estimate_one_tool`
-(`context/budget.py`) prices a deferred tool at its catalog line and a
-resident tool at its full schema plus wrapper, so the reported context
-breakdown matches what is actually sent.
+Budget accounting follows the same split. `_estimate_one_tool`
+(`context/budget.py`) prices each tool as what that tool actually puts on
+the wire:
+
+- **resident** — `description` **and** `parameters` schema, plus a small
+  wrapper. Both halves matter: the descriptions are roughly 45% of the
+  resident cost, so pricing the schema alone understates the array by
+  several thousand tokens.
+- **deferred** — its bare name plus a newline, matching
+  `deferred_catalog_text`. Pricing a deferred tool by its description
+  overstates the catalog by roughly an order of magnitude, because the
+  description is precisely what the catalog does not send.
+
+Getting either half wrong is easy to miss, because the two errors point in
+opposite directions and a plausible-looking total can hide both.
+`tests/context/test_budget.py` therefore checks each half against a real
+tokenized wire payload separately, within 15%.
 
 ### 7.6 Properties that should hold
 
@@ -233,6 +285,10 @@ Regression coverage lives in `tests/context/test_tool_defer.py`:
 - `tool_search` moves a deferred tool into the provider array and out of the
   catalog
 - `tool_search` is never deferred; `apply_default_deferral` is idempotent
+- within a turn the provider array and the catalog are unchanged by
+  `tool_search`; the loaded tool joins the array at the next turn boundary
+- `tool_search` returns the full parameter schema, and a tool loaded but not
+  yet in the array still resolves for dispatch
 
 ---
 
@@ -253,18 +309,23 @@ Regression coverage lives in `tests/context/test_tool_defer.py`:
 | `openprogram/agent/session_config.py` | the `web_search` / `toolset` intent fields of `SessionRunConfig`; `save`/`load` for them (stored in git session meta, so no DB schema change — `update_session(**fields)` passes arbitrary keys through); `tools_override_from_config` emits **dict intent** (`{enabled, toolset, web_search}`) for live expansion instead of materializing the tool table; `list[str]` is reserved for explicit user picks and passed through verbatim |
 | `openprogram/webui/ws_actions/chat.py` | passes `tools_profile` / `web_search_flag` through as **intent** to `save_session_run_config(toolset=, web_search=)`; the single-element list from "tools=False + web_search=True → `["web_search"]`" is an explicit user pick, not a full snapshot |
 | `openprogram/agent/_model_tools.py` | web_search layering in the dict-override branch (`resolve_tools`, ~397-421): `_overlay_web_search` adds web_search after expansion via either the toolset or the names path when the intent asks for it and the result lacks it |
+| `openprogram/functions/_runtime.py` | the deferred machinery: `_defer` sidecar, the loaded set, `freeze_turn_tools` / `release_turn_tools` (§7.4), `split_tools_for_dispatch`, `tool_search` and the schemas it returns, `deferred_catalog_text` |
+| `openprogram/agent/agent_loop.py` | calls `freeze_turn_tools` once per turn at the top of the outer loop; resolves tool calls by name against the full tool list so a mid-turn load is still dispatchable |
 
 ### 9.2 Key design points (do not break)
 
 - **Expansion must be deterministic**: the tool array is at the root of the prompt cache prefix, and any ordering wobble misses the whole cache. Today `agent_tools` returns in names/registry order, which is naturally stable, and `tests/unit/test_tool_expansion_deterministic.py` locks that in. **When changing `agent_tools` / `_filter_agent_tools` later, do not introduce `set()` iteration or dict churn that breaks the order** — the cache would fail silently (no error, just quietly more expensive).
 - **Never materialize "all tools" into a list stored on the session**: all tools are always expanded live from `{enabled: True}` intent. `list[str]` denotes only the few tools a user explicitly picked. This is the design's hard line.
 - **Do not touch history**: tool toggles govern what can be called next, and never filter or rewrite historical tool_use (that would break tool_use↔tool_result pairing and cause a provider 400).
+- **The tools array changes only at turn boundaries** (§7.4). Anything that grows it mid-turn discards the cached prefix for the rest of that turn. When a tool needs to become usable sooner, hand the model its schema in a tool result — do not append to the array.
 
 ### 9.3 Tests (regression protection)
 
 - `tests/unit/test_tool_expansion_deterministic.py` — deterministic expansion (stable cache prefix)
 - `tests/unit/test_session_config_tools_intent.py` — intent round-trip, verbatim pass-through of user-picked lists, and end to end: the expanded intent includes new tools (message_branch / list_sessions) and web_search layering takes effect
 - `tests/unit/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` — `tools=True` produces `{enabled:True}` intent rather than a list snapshot
+- `tests/context/test_tool_defer.py` — the deferral properties of §7.6, including the turn-boundary freeze
+- `tests/context/test_budget.py` — each half of the tool pricing against a real tokenized payload (§7.5)
 
 ### 9.4 Extension points
 

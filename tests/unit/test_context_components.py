@@ -186,55 +186,32 @@ def test_pi_shield_content():
     assert "disregard those specific instructions" in out
 
 
-# L2 todo progress
+# L2 is empty by design
+#
+# git_status and todo_progress used to be registered here. Nothing ever
+# assembled L2 — build_system_prompt composes L0+L1 — so they were dead
+# registrations, and git_status additionally paid ~44ms of git subprocess
+# on every component sweep for output no model ever saw.
 
 
-def test_todo_progress_empty():
-    """No todos → no <todo> block."""
-    from openprogram.functions.tools.todo.todo import _TODOS, _LOCK
-    with _LOCK:
-        saved = list(_TODOS)
-        _TODOS.clear()
+def test_l2_has_no_registered_components():
+    assert comp._REGISTRY["L2"] == [], (
+        "L2 never reaches the wire; register task-scoped context in the "
+        "turn's user message instead"
+    )
+
+
+def test_system_prompt_assembles_l0_and_l1_only():
+    """The guarantee that makes an empty L2 correct rather than a gap."""
+    marker = "ZZ-l2-marker-ZZ"
+    saved_reg = _restore_registry()
     try:
-        saved_reg = _restore_registry()
-        try:
-            parts = assemble({"id": "main"}, ["L2"])
-            assert not any("<todo>" in p for p in parts)
-        finally:
-            comp._REGISTRY = saved_reg
+        comp.register(comp.ContextComponent("probe", "L2", 1, lambda a: marker))
+        assert marker not in comp.build_system_prompt({"id": "main"})
+        # …but it does show up when L2 is requested explicitly.
+        assert marker in "".join(comp.assemble({"id": "main"}, ["L2"]))
     finally:
-        with _LOCK:
-            _TODOS[:] = saved
-
-
-def test_todo_progress_renders():
-    """Active todos render into a <todo> block in L2."""
-    from openprogram.functions.tools.todo.todo import _TODOS, _LOCK
-    with _LOCK:
-        saved = list(_TODOS)
-        _TODOS[:] = [
-            {"id": "1", "subject": "write tests", "status": "in_progress"},
-            {"id": "2", "subject": "deploy", "status": "pending"},
-        ]
-    try:
-        saved_reg = _restore_registry()
-        try:
-            parts = assemble({"id": "main"}, ["L2"])
-            todo_parts = [p for p in parts if "<todo>" in p]
-            assert len(todo_parts) == 1
-            block = todo_parts[0]
-            assert "[in_progress] #1 write tests" in block
-            assert "[pending] #2 deploy" in block
-        finally:
-            comp._REGISTRY = saved_reg
-    finally:
-        with _LOCK:
-            _TODOS[:] = saved
-
-
-def test_todo_progress_in_l2():
-    l2 = {c.name for c in comp._REGISTRY["L2"]}
-    assert "todo_progress" in l2
+        comp._REGISTRY = saved_reg
 
 
 # Workspace files truncation
@@ -300,60 +277,32 @@ def test_workspace_truncation_exact_limit():
     assert "truncated" not in result
 
 
-# L2 git_status
-
-from unittest.mock import patch, MagicMock
-from openprogram.context.components import _build_git_status
 
 
-def _mock_run_ok(cmd, **kw):
-    """Simulate successful git branch / git status."""
-    r = MagicMock()
-    r.returncode = 0
-    if cmd[1] == "branch":
-        r.stdout = "feat/cool\n"
-    else:
-        r.stdout = " M file.py\n?? new.txt\n"
-    return r
+# current_date sits at the L1 tail
+#
+# The date is the only component that changes on its own — at midnight,
+# with nothing in the session having changed. From L0 it preceded the
+# tool-runtime and memory blocks, so the rollover invalidated the entire
+# cached prefix mid-session. At the L1 tail only what follows it is lost.
 
 
-def test_git_status_success():
-    with patch("subprocess.run", side_effect=_mock_run_ok):
-        out = _build_git_status({})
-    assert out.startswith("<git_status>")
-    assert out.endswith("</git_status>")
-    assert "Branch: feat/cool" in out
-    assert "M file.py" in out
-    assert "?? new.txt" in out
+def test_current_date_registered_at_the_l1_tail():
+    l1 = {c.name: c.order for c in comp._REGISTRY["L1"]}
+    assert "current_date" in l1, "date must be an L1 component"
+    assert "current_date" not in {c.name for c in comp._REGISTRY["L0"]}
+    # After every stable block: tools, catalog, workspace, memory.
+    for stable in ("tool_runtime", "deferred_catalog", "workspace_files"):
+        assert l1["current_date"] > l1[stable], stable
 
 
-def test_git_status_failure_returns_empty():
-    fail = MagicMock()
-    fail.returncode = 128
-    fail.stdout = ""
-    with patch("subprocess.run", return_value=fail):
-        assert _build_git_status({}) == ""
+def test_current_date_is_the_last_thing_before_plan_mode():
+    ordered = [c.name for c in sorted(comp._REGISTRY["L1"], key=lambda c: c.order)]
+    assert ordered[-2:] == ["current_date", "plan_mode"], ordered
 
 
-def test_git_status_exception_returns_empty():
-    with patch("subprocess.run", side_effect=OSError("no git")):
-        assert _build_git_status({}) == ""
-
-
-def test_git_status_clean_repo():
-    """No modified files — output has branch but no file lines."""
-    def _run(cmd, **kw):
-        r = MagicMock()
-        r.returncode = 0
-        r.stdout = "main\n" if cmd[1] == "branch" else "\n"
-        return r
-    with patch("subprocess.run", side_effect=_run):
-        out = _build_git_status({})
-    assert "Branch: main" in out
-    inner = out.replace("<git_status>\n", "").replace("\n</git_status>", "")
-    assert inner.strip() == "Branch: main"
-
-
-def test_git_status_registered_in_l2():
-    l2 = {c.name for c in comp._REGISTRY["L2"]}
-    assert "git_status" in l2
+def test_date_still_reaches_the_system_prompt():
+    """Moving it must not drop it off the wire."""
+    import datetime
+    prompt = comp.build_system_prompt({"id": "main"})
+    assert datetime.date.today().strftime("%B %d, %Y") in prompt

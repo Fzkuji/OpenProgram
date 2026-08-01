@@ -26,6 +26,7 @@ from typing import Any
 
 from openprogram.context.types import BudgetAllocation
 from openprogram.context.tokens import (
+    _text_tokens,
     estimate_history_tokens,
     estimate_message_tokens,
 )
@@ -98,38 +99,58 @@ class BudgetAllocator:
 def _estimate_one_tool(t: Any) -> tuple[int, bool]:
     """(tokens, deferred) for one tool — THE single pricing rule.
 
-    Deferred tools only occupy a catalog line ``name: description`` in the
-    system prompt (the schema is loaded on demand, never resident), same
-    accounting as breakdown._catalog_tokens / tools_deferred_catalog.
-    Resident tools cost their full JSON schema plus ~5 tokens of provider
-    metadata wrapper; a missing schema is guessed at 20.
+    Price what actually goes on the wire, per tool:
+
+    * A **deferred** tool contributes one bare NAME to the deferred
+      catalog block in the system prompt (see
+      ``functions._runtime.deferred_catalog_text``, which joins names
+      only). Pricing it by its full description over-counted the catalog
+      by an order of magnitude — 4665 estimated against 183 real.
+    * A **resident** tool ships as a provider tools-array entry:
+      ``description`` AND ``parameters`` schema, plus a few tokens of
+      name/wrapper. Counting only ``parameters`` under-counted the
+      resident toolset the other way — 588 estimated against 4567 real —
+      and the two errors cancelled just enough to make the total look
+      plausible.
     """
     import json as _json
 
     deferred = bool(getattr(t, "_defer", False))
     if deferred:
+        # One name per line in the catalog block — no description, and no
+        # per-message overhead: the whole catalog is a few lines inside ONE
+        # system-prompt block, not a message each. ``+1`` is the newline
+        # that separates this name from the next.
         name = getattr(t, "name", "") or ""
-        desc = getattr(t, "description", "") or ""
-        tokens = estimate_message_tokens(
-            {"role": "system", "content": f"{name}: {desc}"}
-        )
-        return tokens, True
+        return _text_tokens(name) + 1, True
     # Tool objects spell the JSON schema differently depending on where
-    # they came from: ``schema`` / ``spec`` / ``parameters`` (the
-    # OpenAI-shaped one, which most of our registered tools actually
-    # use). Missing ``parameters`` from this chain priced the whole
-    # resident toolset off the 20-token "unknown tool" guess — ~690
-    # tokens reported against a real ~6.8k.
-    schema = (getattr(t, "schema", None)
-              or getattr(t, "spec", None)
-              or getattr(t, "parameters", None))
-    if schema is None:
+    # they came from: ``parameters`` (the OpenAI-shaped one, which every
+    # registered AgentTool actually uses) / ``schema`` / ``spec``.
+    #
+    # ``parameters`` is consulted FIRST and the alternates only when it is
+    # absent: on a pydantic AgentTool ``t.schema`` resolves to
+    # ``BaseModel.schema`` — the deprecated bound METHOD, not data. Trying
+    # it first meant every tool priced a 78-char repr of a method object
+    # instead of its real schema.
+    schema = next(
+        (s for s in (getattr(t, "parameters", None),
+                     getattr(t, "spec", None),
+                     getattr(t, "schema", None))
+         if isinstance(s, dict)),
+        None,
+    )
+    desc = getattr(t, "description", "") or ""
+    name = getattr(t, "name", "") or ""
+    if schema is None and not desc:
         return 20, False  # unknown tool — guess
     try:
-        text = _json.dumps(schema, default=str, ensure_ascii=False)
+        schema_text = _json.dumps(schema, default=str, ensure_ascii=False)
     except Exception:
-        text = str(schema)
-    return estimate_message_tokens({"role": "tool", "content": text}) + 5, False
+        schema_text = str(schema)
+    entry = _json.dumps(
+        {"name": name, "description": desc}, ensure_ascii=False,
+    ) + schema_text
+    return estimate_message_tokens({"role": "tool", "content": entry}) + 5, False
 
 
 def estimate_tools_breakdown(tools: list[Any]) -> list[dict]:

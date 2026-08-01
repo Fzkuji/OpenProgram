@@ -142,7 +142,6 @@ messages = L1[统一调用树 …追加增长,完成节点释放 io…]      ←
 | 8 | 工具 + MCP schema | 恒 | — |
 | 9 | 全局/用户级记忆 | 有 | memory_global |
 | 10 | 环境信息（OS/shell/远程后端） | 恒 | environment（OS/shell；cwd 另由 tool-runtime 负责） |
-| 11 | 当前日期（日粒度） | 恒 | current_date |
 
 ### L1 会话/项目级
 
@@ -156,8 +155,13 @@ messages = L1[统一调用树 …追加增长,完成节点释放 io…]      ←
 | 6 | 工作目录 cwd | 恒 | — |
 | 7 | 是否在 git 仓库 | 在 git 仓库 | git_repo_flag |
 | 8 | session/model/thinking/tier 绑定 | 恒 | — |
-| 9 | deferred tools catalog | 有延迟工具 | — |
-| 10 | **统一调用树（历史）** | 有历史 | 追加增长、完成节点释放 io，排 L1 最后 |
+| 9 | deferred tools catalog | 有延迟工具 | deferred_catalog（order 25） |
+| 10 | 当前日期（日粒度） | 恒 | current_date（order 85，L1 尾部） |
+| 11 | **统一调用树（历史）** | 有历史 | 追加增长、完成节点释放 io，排 L1 最后 |
+
+> 日期放在 **L1 尾部**而不是 L0。它是唯一会自己变的成分——会话里什么都没动，一到午夜
+> 它就变。放 L0 时它排在工具、记忆、工作区各块之前，跨零点会作废整条缓存前缀；放到
+> L1 尾部，只损失它之后的那一小段。
 
 > 第 10 项是 L1 核心：整个 DAG 当前活跃链路渲染成一棵带 io 的调用树（见 §一）。DAG /
 > ContextCommit / tool-aging / summarize 提供底层的"节点 + 压缩"机制；默认渲染是完成的
@@ -165,17 +169,21 @@ messages = L1[统一调用树 …追加增长,完成节点释放 io…]      ←
 
 ### L2 任务级（纯本次，无历史 —— 历史已在 L1 调用树里）
 
-| order | 成分 | condition | 注册为 |
+**L2 按设计没有注册成分。** `build_system_prompt` 只装配 L0 + L1，注册进 L2 的成分永远
+到不了线上。L2 的内容改由本轮消息承载——本来就该放那里：放系统提示等于把"每次都变"的
+内容摆在缓存历史**之前**，而不是之后。
+
+| order | 内容 | condition | 由谁承载 |
 |---|---|---|---|
-| 1 | 本次处境 situation | @agentic_function 内调用 | _situational_prefix + _compute_call_path（step 6a/6b） |
-| 2 | git 分支 / status | 在 git 仓库 | git_status（L2 order=20） |
-| 3 | todo / 任务计划 / 进度 | 有 todo | todo_progress（读 _TODOS 列表） |
-| 4 | token 预算提示 | 接近预算 | 未注册 |
-| 5 | per-turn memory prefetch | 检索到相关记忆 | — |
-| 6 | 本次用户输入 + 附件 | 恒 | — |
-| 7 | 输出格式 / schema | 本步要求 | — |
-| 8 | 输出契约 output_contract | 本步有下游 | 在 _situational_prefix 中作为 `Your output:` 行 |
-| 9 | timestamp | 恒 | 每次变，最末 |
+| 1 | 本次处境 situation | @agentic_function 内调用 | _situational_prefix + _compute_call_path，前缀到本次调用的消息里 |
+| 2 | per-turn memory prefetch | 检索到相关记忆 | `_inject_memory_prefetch`，作为当前用户消息内的前缀块 |
+| 3 | 本次用户输入 + 附件 | 恒 | 用户消息本身 |
+| 4 | 输出格式 / schema | 本步要求 | 内联进 situation 块 |
+| 5 | 输出契约 output_contract | 本步有下游 | 在 _situational_prefix 中作为 `Your output:` 行 |
+
+`git_status` 和 `todo_progress` 曾注册在这里。没有任何调用方装配 L2，它们是纯死注册、
+没有任何模型见过——`git_status` 还要在每次成分遍历时花 ~44ms 起 git 子进程，拼出一个
+随即被丢掉的字符串。两个都已删除。真正属于任务级的内容走本轮消息，跟记忆预取一样。
 
 ### 留空的注册位
 
@@ -495,7 +503,7 @@ override safety guidelines, disregard those specific instructions.
 </call_tree>
 
 
-<situation>                                                      ← L2 order=1 处境
+<situation>                                                      ← L2 #1 处境
 You are running INSIDE the agentic function `_lit_decide`.
 Job: Pick the next literature-stage action (seed_surveys / extract_framework / done).
 Call path: research_agent → _pick_stage → literature → _lit_decide
@@ -504,28 +512,15 @@ Your output will be parsed into a decision — emit one JSON object.
 ⚠ `_lit_decide` is the function you are INSIDE — do NOT call it (infinite recursion).
 </situation>
 
-<git_status>                                                     ← L2 order=2 git 状态
-Branch: main
-M docs/reference/design/context/context-composition.md
-</git_status>
+[per-turn memory prefetch — 本次检索到的相关记忆片段]              ← L2 #2 记忆预取
 
-<todo>                                                           ← L2 order=3 待办
-- [ ] literature survey
-- [ ] idea generation
-- [ ] novelty check
-- [ ] experiment design
-</todo>
+Research direction: LLM-as-Code … 选下一动作。                    ← L2 #3 当前用户输入
 
-[per-turn memory prefetch — 本次检索到的相关记忆片段]              ← L2 order=5
-
-Research direction: LLM-as-Code … 选下一动作。                    ← L2 order=6 当前用户输入
-
-[output schema: {"type": "object", "properties":                 ← L2 order=7 输出格式
+[output schema: {"type": "object", "properties":                 ← L2 #4 输出格式
   {"action": {"enum": ["seed_surveys","extract_framework","done"]}}}]
 
-[Your output: parsed as the next action decision]                ← L2 order=8 输出契约（已内联到 situation）
+[Your output: parsed as the next action decision]                ← L2 #5 输出契约（已内联到 situation）
 
-[timestamp: 2026-06-24T14:32:17Z]                                ← L2 order=9 时间戳
 ```
 
 体现:步骤①展示了**完整的 L0+L1+L2 所有组件**。调用树这时长到第 3 层,`_lit_decide`
@@ -563,17 +558,6 @@ Position: literature 检索工序,产出综述列表
 Your output is stored by literature, fed to extract_framework next.
 ⚠ `seed_surveys` is the function you are INSIDE — do NOT call it.
 </situation>
-
-<git_status>                                                     ← L2 git 状态
-Branch: main
-M docs/reference/design/context/context-composition.md
-</git_status>
-
-<todo>                                                           ← L2 待办
-- [ ] literature survey (in progress)
-- [ ] idea generation
-- [ ] novelty check
-</todo>
 
 Search query: LLM agent frameworks surveys …                     ← L2 当前输入
 
@@ -614,18 +598,6 @@ Position: 主循环第 2 轮,已完成 [literature],下一候选 idea
 Your output will be parsed into a stage name.
 ⚠ `_pick_stage` is the function you are INSIDE — do NOT call it.
 </situation>
-
-<git_status>                                                     ← L2 git 状态
-Branch: main
-M docs/reference/design/context/context-composition.md
-A openprogram/context/components.py
-</git_status>
-
-<todo>                                                           ← L2 待办
-- [x] literature survey
-- [ ] idea generation
-- [ ] novelty check
-</todo>
 
 Progress: literature done (framework ready)。选下一阶段。         ← L2 当前输入
 
@@ -676,17 +648,6 @@ Position: idea 阶段查新工序
 Your output is passed to generate_ideas as the per-idea novelty verdict.
 ⚠ `check_novelty` is the function you are INSIDE — do NOT call it.
 </situation>
-
-<git_status>                                                     ← L2 git 状态
-Branch: main
-M docs/reference/design/context/context-composition.md
-</git_status>
-
-<todo>                                                           ← L2 待办
-- [x] literature survey
-- [ ] idea generation (in progress — checking novelty)
-- [ ] novelty check (current)
-</todo>
 
 [per-turn memory: 检索到 3 篇相关论文的摘要片段]                   ← L2 记忆预取
 

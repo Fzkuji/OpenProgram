@@ -274,6 +274,14 @@ async def _run_loop(
     inner_iterations = 0
 
     while True:
+        # Turn boundary — pin the provider tools array for every call made
+        # below. Tools that ``tool_search`` loads mid-turn stay out of the
+        # array until the next boundary so the cached prefix (rooted on the
+        # tools array) survives the turn; they are callable immediately via
+        # the schema tool_search returns. See tool-toggle-management.md §6.
+        from openprogram.functions import freeze_turn_tools
+        freeze_turn_tools(list(current_context.tools or []))
+
         has_more_tool_calls = True
         steering_after_tools: list[AgentMessage] | None = None
 
@@ -411,12 +419,11 @@ async def _stream_assistant_response(
         _inject_memory_prefetch(llm_messages, prefetch_block)
 
     # Build LLM context
-    # Layer 6 (Claude Code shouldDefer): re-split the tools list per
-    # provider call so any deferred tools loaded earlier in this loop
-    # (via ``tool_search``) appear with full schema on the very next
-    # call. ``split_tools_for_dispatch`` is cheap (single pass); the
-    # dispatcher seeded the loaded set via ``install_loaded_deferred``
-    # at session start.
+    # Layer 6 (Claude Code shouldDefer): split the tools list into the
+    # provider array. The split reads the turn-frozen set installed by
+    # ``freeze_turn_tools`` at the turn boundary, so this returns the
+    # SAME array on every call within a turn — the cached prefix rooted
+    # on the tools array survives a mid-turn ``tool_search``.
     from openprogram.functions import split_tools_for_dispatch
     _provider_tools, _ = split_tools_for_dispatch(
         list(context.tools or [])
