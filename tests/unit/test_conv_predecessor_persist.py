@@ -40,11 +40,9 @@ def _write_user_turn(db: SessionStore, sid: str, uid: str, text: str) -> None:
                          metadata={"display": "root"}))
     sess = db.get_session(sid) or {}
     pred = sess.get("head_id") or ""
-    meta = {"source": "web"}
-    if pred and pred != "ROOT":
-        meta["predecessor"] = pred
     shim.append(Call(id=uid, role=ROLE_USER, output=text,
-                     caller="ROOT", metadata=meta))
+                     caller="ROOT", predecessor=pred or "ROOT",
+                     metadata={"source": "web"}))
     db.set_head(sid, uid)
 
 
@@ -52,7 +50,7 @@ def _write_reply(db: SessionStore, sid: str, rid: str, uid: str) -> None:
     """Mirror persist_assistant_message: reply predecessor = user id."""
     shim = GraphStoreShim(db, sid)
     shim.append(Call(id=rid, role=ROLE_LLM, output="reply",
-                     metadata={"source": "web", "predecessor": uid}))
+                     predecessor=uid, metadata={"source": "web"}))
     db.set_head(sid, rid)
 
 
@@ -64,10 +62,11 @@ def _pred_on_disk(db: SessionStore, sid: str, node_id: str) -> str:
 
 
 def test_first_turn_predecessor_empty(db):
-    """Turn 1 hangs off ROOT via caller — no predecessor set."""
+    """Turn 1 anchors at ROOT explicitly (session-dag-v2 Decision 1:
+    a ROOT-level node without a predecessor is rejected)."""
     db.create_session("s1", agent_id="a")
     _write_user_turn(db, "s1", "u1", "hi")
-    assert _pred_on_disk(db, "s1", "u1") == ""
+    assert _pred_on_disk(db, "s1", "u1") == "ROOT"
 
 
 def test_second_turn_persists_predecessor(db):

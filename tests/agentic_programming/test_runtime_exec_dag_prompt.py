@@ -54,8 +54,9 @@ def test_with_store_builds_history_plus_current(rt, store):
     """Pre-fill the store with prior user + assistant messages.
     Calling the helper should return those + a fresh UserMessage
     built from ``content``."""
-    store.append(Call(role=ROLE_USER, output="hi"))
-    store.append(Call(role=ROLE_LLM, output="hello back"))
+    _u = Call(role=ROLE_USER, output="hi")
+    store.append(_u)
+    store.append(Call(role=ROLE_LLM, output="hello back", predecessor=_u.id))
 
     msgs = rt._render_history_messages(
         content=[{"type": "text", "text": "what next?"}],
@@ -114,8 +115,9 @@ def test_dag_prompt_inside_io_function_frame(rt, store):
     from openprogram.agentic_programming.function import _call_id
     from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM, ROLE_CODE
 
-    store.append(Call(role=ROLE_USER, output="find weather"))
-    store.append(Call(role=ROLE_LLM, output="let me check"))
+    _u = Call(role=ROLE_USER, output="find weather")
+    store.append(_u)
+    store.append(Call(role=ROLE_LLM, output="let me check", predecessor=_u.id))
     plan_node = Call(
         role=ROLE_CODE,
         name="plan",
@@ -154,8 +156,9 @@ def test_render_range_callers_zero_hides_history(rt, store):
     from openprogram.agentic_programming.function import _call_id
     from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM, ROLE_CODE
 
-    store.append(Call(role=ROLE_USER, output="prior chat user"))
-    store.append(Call(role=ROLE_LLM, output="prior chat reply"))
+    _u = Call(role=ROLE_USER, output="prior chat user")
+    store.append(_u)
+    store.append(Call(role=ROLE_LLM, output="prior chat reply", predecessor=_u.id))
     isolated = Call(
         role=ROLE_CODE, name="isolated", input={}, output=None,
         metadata={"expose": "io", "status": "running",

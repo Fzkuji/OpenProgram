@@ -76,7 +76,6 @@ def insert_placeholder(
             output="",
             predecessor=user_msg_id,
             metadata={
-                "predecessor": user_msg_id,
                 "source": source,
                 "status": "running",
                 "worker_id": current_worker_id(),

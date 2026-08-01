@@ -96,18 +96,12 @@ def _projects_default_id_safe() -> str:
 def _node_conv_predecessor(payload_or_call) -> Optional[str]:
     """Return the conv-chain predecessor of a node (or None).
 
-    v2 (session-dag-v2 Decision 1): the edge is the top-level
-    ``predecessor`` field. Pre-v2 rows stored it in
-    ``metadata["predecessor"]`` — read-time fallback, no rewrite.
+    session-dag-v2 Decision 1: the edge is the top-level
+    ``predecessor`` field — nowhere else.
     """
     if isinstance(payload_or_call, Call):
-        return (
-            payload_or_call.predecessor
-            or (payload_or_call.metadata or {}).get("predecessor")
-            or None
-        )
-    meta = (payload_or_call.get("metadata") or {})
-    return payload_or_call.get("predecessor") or meta.get("predecessor") or None
+        return payload_or_call.predecessor or None
+    return payload_or_call.get("predecessor") or None
 
 
 class PredecessorMissingError(ValueError):
@@ -133,10 +127,25 @@ def _is_spawn_root(meta: dict) -> bool:
     return bool(meta.get("spawn_branch_root")) or meta.get("source") == "agent_spawn"
 
 
+class BrokenPredecessorChainError(ValueError):
+    """``get_branch`` hit a node with no ``predecessor`` that is not a
+    legal branch terminus (spawn root / ROOT / session first node).
+    No heuristics — broken data raises instead of being guessed at."""
+
+    def __init__(self, session_id: str, node_id: str):
+        super().__init__(
+            f"broken predecessor chain: session={session_id!r} "
+            f"node={node_id!r} has no predecessor and is not a spawn "
+            "branch root, ROOT, or the session's first node"
+        )
+        self.session_id = session_id
+        self.node_id = node_id
+
+
 def _is_first_conv_node(idx, node) -> bool:
     """True iff ``node`` is the session's earliest ROOT-level
     conversational node — the one place a missing predecessor is a
-    legal terminus rather than pre-v2 data."""
+    legal terminus."""
     node_seq = node.seq if hasattr(node, "seq") else -1
     for rn in idx.nodes_by_seq:
         rn_seq = rn.seq if hasattr(rn, "seq") else -1
@@ -151,46 +160,14 @@ def _is_first_conv_node(idx, node) -> bool:
     return True
 
 
-def _legacy_conv_hop(idx, node) -> Optional[str]:
-    """Pre-v2 fallback for ``get_branch``: caller edge, then seq
-    stitching. Every hop is a heuristic guess, so it's logged as a
-    decision-log event. v2 data never reaches this function.
-    """
-    caller = _node_caller(node)
-    if caller and caller != "ROOT":
-        _log.warning("get_branch legacy hop: %s -> %s via caller",
-                     node.id, caller)
-        return caller
-    # ROOT-parented node with no conv predecessor: stitch to the
-    # previous ROOT-level node by seq — unless that node already has
-    # conv children (then it's the root of a different branch).
-    node_seq = node.seq if hasattr(node, "seq") else -1
-    prev = None
-    for rn in idx.nodes_by_seq:
-        if (_node_caller(rn) or "") not in ("", "ROOT"):
-            continue
-        if _node_conv_predecessor(rn):
-            continue
-        if (rn.metadata or {}).get("display") == "root":
-            continue
-        rn_seq = rn.seq if hasattr(rn, "seq") else -1
-        if rn_seq < node_seq:
-            prev = rn
-        else:
-            break
-    if prev is not None and not idx.children_by_predecessor.get(prev.id):
-        _log.warning("get_branch legacy hop: %s -> %s via seq",
-                     node.id, prev.id)
-        return prev.id
-    return None
-
-
 def _check_append_invariant(session_id: str, idx, node: Call,
                             predecessor: Optional[str],
                             caller: Optional[str]) -> None:
     """Raise ``PredecessorMissingError`` on an illegal ROOT-level append."""
     if node.role not in (ROLE_USER, ROLE_LLM):
         return
+    if node.role == ROLE_USER and node.input is not None:
+        return                       # ask_user answer node — a callee, not a turn
     if caller and caller != "ROOT":
         return                       # sub-call / spawn root (caller=spawning node)
     if predecessor:
@@ -943,20 +920,24 @@ class SessionStore:
         if not head or head not in idx.nodes_by_id:
             return []
 
-        # v2 main path: pure predecessor-edge walk. A node without a
-        # predecessor is either a legal branch root (spawn root /
-        # session first node — stop) or a pre-v2 node, in which case
-        # we drop into the legacy caller/seq stitching heuristics,
-        # each hop logged (session-dag-v2 Decision 1).
+        # Pure predecessor-edge walk (session-dag-v2 Decision 1). A
+        # node without a predecessor must be a legal branch terminus
+        # (spawn root / ROOT / session first node) — anything else is
+        # broken data and raises. No caller/seq heuristics.
         def _edge(node):
             pred = _node_conv_predecessor(node)
             if pred:
                 return pred
-            if _is_spawn_root(node.metadata or {}):
+            meta = node.metadata or {}
+            if _is_spawn_root(meta):
                 return None          # spawn branch root — legal stop
+            if meta.get("display") == "root":
+                return None          # the ROOT node itself
+            if node.role not in (ROLE_USER, ROLE_LLM):
+                return None          # code node opening a run branch
             if _is_first_conv_node(idx, node):
                 return None          # session first node — legal stop
-            return _legacy_conv_hop(idx, node)
+            raise BrokenPredecessorChainError(session_id, node.id)
 
         chain = idx.get_branch(head, _edge)
         return [
@@ -1046,47 +1027,27 @@ class SessionStore:
         # down the middle" gets the "main" label.
         roots = [
             n for n in idx.all_nodes()
-            if not n.caller and not _node_conv_predecessor(n)
+            if (not n.caller or n.caller == "ROOT")
+            and (_node_conv_predecessor(n) or "ROOT") == "ROOT"
             and (n.metadata or {}).get("display") != "root"
+            and not _is_spawn_root(n.metadata or {})
         ]
+        # Pure predecessor-edge walk (session-dag-v2 Decision 1): from
+        # the earliest root, follow the primary (first-registered) conv
+        # child until the chain ends. Spawn branch roots never appear
+        # in ``children_by_predecessor`` (their predecessor is None),
+        # so no spawn/task special-casing is needed.
         main_tip_id: Optional[str] = None
         if roots:
             cur = min(roots, key=lambda n: n.created_at).id
-            hops = 0
-            while hops < 1000:
-                hops += 1
+            seen: set[str] = set()
+            while cur not in seen:
+                seen.add(cur)
                 kids = idx.children_by_predecessor.get(cur, [])
                 if not kids:
-                    main_tip_id = cur
                     break
-                # Pick the primary child for main-lane walk: skip kids
-                # spawned by /task (``source=agent_spawn``) — those
-                # belong to a sub-agent's own lane, not main. Without
-                # this filter the walk dives into the sub-agent
-                # branch (sub-agent's user msg lands at seq < the
-                # followup turn, so it claims kids[0] by accident)
-                # and main_tip ends up on the merged sub-branch.
-                primary: Optional[str] = None
-                for kid_id in kids:
-                    kid = idx.nodes_by_id.get(kid_id)
-                    if not kid:
-                        continue
-                    if (kid.metadata or {}).get("source") == "agent_spawn":
-                        continue
-                    primary = kid_id
-                    break
-                if primary is None:
-                    main_tip_id = cur
-                    break
-                # Main trunk stops at /task spawn forks — the spawned
-                # turn (and the sub-agent's reply) belong to a new
-                # branch, same as git `checkout -b`. lane.py applies
-                # the same rule visually so the two stay in sync.
-                nxt = idx.nodes_by_id.get(primary)
-                if nxt and (nxt.metadata or {}).get("function") == "task":
-                    main_tip_id = cur
-                    break
-                cur = primary
+                cur = kids[0]
+            main_tip_id = cur
 
         merged = set((idx.meta.get("merged_heads") or []))
         # Fallback: auto-detect merged peers by scanning recent

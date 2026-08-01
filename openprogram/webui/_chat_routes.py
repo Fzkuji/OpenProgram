@@ -110,8 +110,10 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
                 "content": new_content if new_content is not None
                            else src_user.get("content", ""),
                 "timestamp": time.time(),
-                # Sibling of src_user: same parent.
-                "predecessor": src_user.get("predecessor"),
+                # Sibling of src_user: same parent. A first-turn retry
+                # forks at ROOT explicitly — a ROOT-level node without
+                # a predecessor is rejected by the store (Decision 1).
+                "predecessor": src_user.get("predecessor") or "ROOT",
                 # Lineage breadcrumbs (future tooling / debugging).
                 "forked_from": src_user.get("id"),
             }

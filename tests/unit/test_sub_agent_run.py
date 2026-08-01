@@ -79,6 +79,7 @@ def fake_dispatcher(monkeypatch):
             "content": req.user_text,
             "timestamp": 0,
             "predecessor": req.branch_from,
+            "source": req.source,
             "agent_id": req.agent_id,
         })
         store.append_message(req.session_id, {

@@ -860,18 +860,18 @@ def _append_msg(conv: dict, msg: dict) -> None:
                     _sess_now = db.get_session(cid) or {}
                     _pred = _sess_now.get("head_id") or ""
                 _umeta = {k: v for k, v in msg.items()
-                          if k not in {"id", "role", "content", "timestamp"}
+                          if k not in {"id", "role", "content", "timestamp",
+                                       "predecessor"}
                           and v is not None}
-                # ROOT is the caller, never the conv predecessor — a first
-                # turn just hangs off ROOT via caller. Only a real prior
-                # turn (reply id) becomes a predecessor edge.
-                if _pred and _pred != _ROOT_ID:
-                    _umeta["predecessor"] = _pred
+                # The conv edge is the top-level Call field (Decision 1):
+                # a real prior turn's reply id, or ROOT explicitly for a
+                # first turn / root-level fork.
                 _GS(db, cid).append(_C(
                     id=msg_id,
                     role=_RU,
                     output=msg.get("content") or "",
                     caller=_ROOT_ID,
+                    predecessor=_pred or _ROOT_ID,
                     metadata=_umeta,
                 ))
             except Exception:

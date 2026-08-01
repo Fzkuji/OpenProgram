@@ -82,7 +82,7 @@ def parent_turn(tmp_path, monkeypatch):
     # A second, earlier branch tip (not the current turn) for existing-target
     # tests — messaging the current turn (a1) trips the self-target guard.
     s.append_message("p1", {"id": "u0", "role": "user", "content": "older",
-                            "timestamp": 0, "predecessor": None})
+                            "timestamp": 0, "predecessor": "ROOT"})
     s.append_message("p1", {"id": "a0", "role": "assistant", "content": "older reply",
                             "timestamp": 0, "predecessor": "u0"})
     s.commit_turn("p1", "init")
@@ -100,6 +100,7 @@ def parent_turn(tmp_path, monkeypatch):
             "id": "head_x", "role": "assistant",
             "content": f"reply to: {prompt} (from={branch_from})",
             "predecessor": branch_from, "timestamp": 0,
+            "source": "agent_spawn",
         })
         s.commit_turn(session_id, "fake turn")
         return AgentTurnResult(

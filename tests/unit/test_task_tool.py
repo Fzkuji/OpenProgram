@@ -57,6 +57,7 @@ def fake_dispatcher(monkeypatch):
         s.append_message(req.session_id, {
             "id": u_id, "role": "user", "content": req.user_text,
             "timestamp": 0, "predecessor": req.branch_from,
+            "source": req.source,
             "agent_id": req.agent_id,
         })
         s.append_message(req.session_id, {

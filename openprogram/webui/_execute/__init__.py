@@ -155,7 +155,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
                 _, _idx = pair
                 spawn_node = _idx.nodes_by_id.get(msg_id)
                 if spawn_node:
-                    branch_from_val = (spawn_node.metadata or {}).get("predecessor")
+                    branch_from_val = spawn_node.predecessor
                     if branch_from_val:
                         fork_anchor = branch_from_val
         except Exception:

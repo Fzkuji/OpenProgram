@@ -56,12 +56,14 @@ def _msg_to_node(msg: dict) -> Call:
             decoded = _decode_extra(meta.pop("extra"))
             for k, v in decoded.items():
                 meta.setdefault(k, v)
+        # The conv edge lives ONLY on the top-level field.
+        meta.pop("predecessor", None)
         return Call(
             id=base_id,
             created_at=created_at,
             role=ROLE_USER,
             output=msg.get("content") or "",
-            predecessor=predecessor or meta.get("predecessor") or None,
+            predecessor=predecessor or None,
             metadata=meta,
         )
     if role == "tool":
@@ -99,13 +101,13 @@ def _msg_to_node(msg: dict) -> Call:
             meta.setdefault(k, v)
     if role == "system":
         meta["role"] = "system"
-    # Conv predecessor lives in metadata.predecessor (for the
-    # predecessor index). Call.caller is reserved for sub-call
-    # semantics — only attach-pointer rows (side-children of a user
-    # turn) set it, so list_branches' "has caller → skip" filter
-    # correctly hides them without hiding normal assistant nodes.
-    conv_pred = meta.get("predecessor", None) or predecessor or ""
-    meta["predecessor"] = conv_pred
+    # Conv predecessor lives ONLY on the top-level Call field.
+    # Call.caller is reserved for sub-call semantics — only
+    # attach-pointer rows (side-children of a user turn) set it, so
+    # list_branches' "has caller → skip" filter correctly hides them
+    # without hiding normal assistant nodes.
+    _meta_pred = meta.pop("predecessor", None)
+    conv_pred = predecessor or _meta_pred or ""
     is_attach = meta.get("function") == "attach"
     # Attach-pointer rows are side-children: their caller points at the
     # user turn that spawned them, so list_branches' "has caller → skip"
@@ -133,10 +135,11 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
     # persisted finished messages).
     meta.setdefault("status", "done")
 
-    # Conv-chain predecessor: field first (v2), metadata fallback
-    # (pre-v2 rows). Popped from meta so base.update(meta) can't
-    # override the migrated value with a stale copy.
-    conv_pred = node.predecessor or meta.pop("predecessor", None) or ""
+    # Conv-chain predecessor: the top-level Call field is the only
+    # source. Popped from meta so base.update(meta) can't override
+    # the wire value with a stray copy.
+    meta.pop("predecessor", None)
+    conv_pred = node.predecessor or ""
 
     if node.is_user():
         base = {

@@ -194,7 +194,7 @@ def test_create_pending_call_node_matches_wrapper_shape(tmp_path):
     assert node.caller == ""
     assert node.metadata["status"] == "running"
     assert node.metadata["expose"] == "io"
-    assert node.metadata["predecessor"] == "fork-point"
+    assert node.predecessor == "fork-point"
 
     # expose='hidden' → no node at all (matches the wrapper's no-op).
     assert create_pending_call_node(

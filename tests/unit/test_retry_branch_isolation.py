@@ -43,11 +43,8 @@ def _persist_user(db: SessionStore, sid: str, uid: str, text: str) -> None:
         shim.append(Call(id="ROOT", role=ROLE_USER, output="",
                          metadata={"display": "root"}))
     pred = (db.get_session(sid) or {}).get("head_id") or ""
-    meta = {}
-    if pred and pred != "ROOT":
-        meta["predecessor"] = pred
     shim.append(Call(id=uid, role=ROLE_USER, output=text,
-                     caller="ROOT", metadata=meta))
+                     caller="ROOT", predecessor=pred or "ROOT"))
     db.set_head(sid, uid)
 
 
@@ -76,7 +73,7 @@ def _retry_fork(db: SessionStore, sid: str, src_id: str, new_id: str) -> None:
     db.append_message(sid, {
         "role": "user", "id": new_id, "content": src.get("content", ""),
         "timestamp": time.time(),
-        "predecessor": src.get("predecessor"),
+        "predecessor": src.get("predecessor") or "ROOT",
         "forked_from": src_id,
     })
 

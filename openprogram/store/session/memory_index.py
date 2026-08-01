@@ -192,11 +192,6 @@ class SessionMemoryIndex:
                 node = Call(**kwargs)
             except TypeError:
                 continue
-            # Migration on read: pre-v2 rows carry the conv edge in
-            # metadata only — lift it onto the field in memory. Stored
-            # history is never rewritten.
-            if node.predecessor is None:
-                node.predecessor = get_predecessor(payload)
             self.append(
                 node,
                 predecessor=get_predecessor(payload),

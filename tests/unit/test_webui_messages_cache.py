@@ -283,7 +283,7 @@ def test_hydrate_returns_branch_after_set_head_change(server) -> None:
     # User retries → new branch from u1's parent (None)
     db.append_message("c1", {"id": "u1prime", "role": "user",
                               "content": "retry", "timestamp": 3.0,
-                              "predecessor": None})
+                              "predecessor": "ROOT"})
     db.append_message("c1", {"id": "a1prime", "role": "assistant",
                               "content": "new", "timestamp": 4.0,
                               "predecessor": "u1prime"})

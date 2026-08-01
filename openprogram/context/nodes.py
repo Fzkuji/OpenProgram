@@ -94,9 +94,8 @@ class Call:
 
     caller: str = ""
     # Conversation-chain parent (session-dag-v2 Decision 1). Top-level
-    # schema field; ``None`` on the session's first node and on spawn
-    # branch roots. Pre-v2 sessions stored this in
-    # ``metadata["predecessor"]`` — readers migrate on read.
+    # schema field, the ONLY place the conv edge lives. ``None`` on the
+    # session's first node and on spawn branch roots.
     predecessor: Optional[str] = None
     reads: list[str] = field(default_factory=list)
 
@@ -348,15 +347,7 @@ class Graph:
         g = cls()
         for raw in data.get("nodes", []):
             raw.pop("type", None)
-            pred = raw.pop("predecessor", None)
             n = Call(**raw)
-            # Migration on read (session-dag-v2 Decision 1): top-level
-            # first, fall back to metadata for pre-v2 nodes. Stored
-            # history is never rewritten.
-            if pred:
-                n.predecessor = pred
-            elif n.predecessor is None:
-                n.predecessor = (n.metadata or {}).get("predecessor") or None
             g.nodes[n.id] = n
             if n.seq >= g._next_seq:
                 g._next_seq = n.seq + 1

@@ -49,8 +49,8 @@ class GraphStoreShim:
         if node.id in idx.nodes_by_id:
             return
         meta = node.metadata or {}
-        # v2: top-level field first, metadata fallback for pre-v2 writers.
-        predecessor = node.predecessor or meta.get("predecessor") or ""
+        # The conv edge lives ONLY on the top-level field.
+        predecessor = node.predecessor or ""
         caller = node.caller or meta.get("caller") or ""
         from .session_store import _check_append_invariant
         _check_append_invariant(self.session_id, idx, node, predecessor, caller)

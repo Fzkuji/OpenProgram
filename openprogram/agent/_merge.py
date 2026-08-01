@@ -82,8 +82,7 @@ def _peer_final_text(
             break
         if (node.role or "") in ("assistant", "llm") and (node.output or "").strip():
             return str(node.output), head
-        meta = node.metadata or {}
-        cur = meta.get("predecessor") or node.caller or None
+        cur = node.predecessor or node.caller or None
     return "", head
 
 

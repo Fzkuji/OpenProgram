@@ -175,7 +175,7 @@ def test_same_session_two_branches_merge(store, fake_dispatcher):
     # head on peer_a to play "the other branch".
     store.append_message("peer_a", {
         "id": "u_peer_a_alt", "role": "user", "content": "alternate path",
-        "timestamp": 0, "predecessor": None,
+        "timestamp": 0, "predecessor": "ROOT",
     })
     store.append_message("peer_a", {
         "id": "a_peer_a_alt", "role": "assistant",

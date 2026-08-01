@@ -280,7 +280,8 @@ def process_user_turn(
             _shim = _GShim(db, req.session_id)
             _user_meta = {
                 k: v for k, v in user_msg.items()
-                if k not in {"id", "role", "content", "timestamp", "extra"}
+                if k not in {"id", "role", "content", "timestamp", "extra",
+                             "predecessor"}
                 and v is not None
             }
             _raw_extra = user_msg.get("extra")
@@ -312,7 +313,11 @@ def process_user_turn(
                     role=ROLE_USER,
                     output=req.user_text,
                     caller=_ROOT_ID,
-                    predecessor=user_caller_id or None,
+                    # Explicit root-level fork (branch_from=None) and
+                    # the session's first turn both anchor at ROOT
+                    # explicitly — same convention as @agentic_function
+                    # root-level runs.
+                    predecessor=user_caller_id or _ROOT_ID,
                     metadata=_user_meta,
                 )
                 _shim.append(_user_node)
