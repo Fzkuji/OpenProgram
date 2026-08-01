@@ -7,7 +7,9 @@
   --bg-tertiary: #e8e6dc;
   --bg-hover: rgba(20, 20, 19, 0.05);
   --bg-hover-contrast: #ffffff;
-  --bg-input: #fdfcf9;
+  /* 纯白：composer 以 80% 透明度叠在米色页面上，要和 --bg-primary
+     (#faf9f5) 拉开明度差，偏米的白（#fdfcf9）几乎看不出来。 */
+  --bg-input: #ffffff;
   --border: rgba(20, 20, 19, 0.08); /* subtle hairline */
   --border-light: #dedcd1;          /* strong hairline */
   /* Claude light text tiers: ink #141413 (bright), body #3d3d3a
