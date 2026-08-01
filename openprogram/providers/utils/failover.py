@@ -130,10 +130,15 @@ def resolve_fallback_models(primary_model: Any) -> list[Any]:
     for spec in (s.strip() for s in raw.split(",")):
         if not spec:
             continue
+        # spec 是 "provider/model"，get_model 签名是 (provider, model_id)：
+        # 以前整串单参传入恒 TypeError 被吞，failover 名单永远为空。
+        prov, _, mid = spec.partition("/")
         try:
-            m = get_model(spec)
+            m = get_model(prov, mid) if prov and mid else None
         except Exception:
             continue  # unconfigured / unknown fallback — skip, never crash
+        if m is None:
+            continue
         if f"{getattr(m, 'provider', '')}/{getattr(m, 'id', '')}" == prim:
             continue
         out.append(m)

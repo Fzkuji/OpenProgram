@@ -979,18 +979,32 @@ async def handle_context(ws, cmd: dict):
         tools_tokens = default_allocator._estimate_tools(tools)
 
         sys_tokens = 0
+        # 窗口从模型注册表拿：session 记的 "provider:model" 拆开再查。
+        # 老代码读不存在的 server._conversations，AttributeError 被吞，
+        # 恒回落 200k 且 system prompt 恒 0。
+        ctx_window = 0
         try:
-            from openprogram.webui import server as _s
-            conv = _s._conversations.get(session_id)
-            agent = conv.get("agent") if conv else None
-            if agent:
-                sys_prompt = build_system_prompt(agent)
-                sys_tokens = estimate_message_tokens({"role": "system", "content": sys_prompt}) if sys_prompt else 0
-                ctx_window = real_context_window(getattr(agent, "model", None))
-            else:
-                ctx_window = 200_000
+            from openprogram.agent.session_db import default_db
+            from openprogram.providers.models import get_model
+            sess = default_db().get_session(session_id) or {}
+            model_id = sess.get("model") or ""
+            provider_id = sess.get("provider_name") or ""
+            if ":" in model_id:
+                provider_id, model_id = model_id.split(":", 1)
+            model_obj = (get_model(provider_id, model_id)
+                         if provider_id and model_id else None)
+            ctx_window = real_context_window(model_obj)
         except Exception:
-            ctx_window = 200_000
+            pass
+        if not ctx_window:
+            ctx_window = 200_000  # 注册表查不到时的最后兜底
+        try:
+            from openprogram.agent.management import manager as _mgr
+            spec = _mgr.get_default()
+            sys_prompt = build_system_prompt(spec) if spec else ""
+            sys_tokens = estimate_message_tokens({"role": "system", "content": sys_prompt}) if sys_prompt else 0
+        except Exception:
+            sys_tokens = 0
 
         output_reserve = 16_384
         total_used = sys_tokens + hist_tokens + tools_tokens

@@ -249,7 +249,13 @@ def _handle_context(console, agent, session_id: str) -> bool:
         from openprogram.context.components import build_system_prompt
         from openprogram.store import _store as _store_var
 
-        model = getattr(agent, "model", None)
+        # agent.model 是 AgentModelRef(provider, id)，没有 context_window
+        # 字段，直接传 real_context_window 恒回落 128k。先查模型注册表。
+        from openprogram.providers.models import get_model
+        ref = getattr(agent, "model", None)
+        model = (get_model(getattr(ref, "provider", "") or "",
+                           getattr(ref, "id", "") or "")
+                 if ref is not None else None)
         ctx_window = real_context_window(model) if model else 200_000
 
         sys_prompt = ""
