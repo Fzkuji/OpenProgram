@@ -856,11 +856,14 @@ function ConvItem({
   // from pure white to the warm off-white (--text-primary) so it isn't
   // glaringly bright.
   const colorCls = active ? "bg-bg-hover text-text-primary" : "text-text-primary";
-  // 右缘渐隐常驻（短标题不受影响，长标题代替省略号），跑马灯滚动时
-  // 文字从渐隐区滑出来，观感和 claude.ai 一致。
-  const maskOnHover =
+  // 静止：右缘渐隐（长标题代替省略号）。滚动中：文字从左边滚出去，
+  // 渐隐罩换到左缘，让结尾滚到右对齐时完全清晰。
+  const maskIdle =
     "[-webkit-mask-image:linear-gradient(to_right,#000_70%,transparent_96%)]" +
     " [mask-image:linear-gradient(to_right,#000_70%,transparent_96%)]";
+  const maskScrolling =
+    "[-webkit-mask-image:linear-gradient(to_right,transparent_1%,#000_14%)]" +
+    " [mask-image:linear-gradient(to_right,transparent_1%,#000_14%)]";
 
   // running → finishing edge animation (unchanged from before).
   const prevRunning = useRef(running);
@@ -880,15 +883,31 @@ function ConvItem({
   // 移开立刻弹回。溢出量在 mouseenter 时实测，短标题 shift=0 不动。
   const labelOuterRef = useRef<HTMLSpanElement | null>(null);
   const labelInnerRef = useRef<HTMLSpanElement | null>(null);
+  const marqueeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [marqueeShift, setMarqueeShift] = useState(0);
+  // 悬停 1s 后开滚（延迟放 JS 定时器里，让左缘渐隐罩和滚动同帧切换）。
   function measureMarquee() {
-    const outer = labelOuterRef.current;
-    const inner = labelInnerRef.current;
-    if (!outer || !inner) return;
-    const overflow = inner.scrollWidth - outer.clientWidth;
-    // 多滚 32% 容器宽，让结尾字符滚出右缘渐隐区、完整可读。
-    setMarqueeShift(overflow > 4 ? overflow + outer.clientWidth * 0.32 : 0);
+    if (marqueeTimer.current) clearTimeout(marqueeTimer.current);
+    marqueeTimer.current = setTimeout(() => {
+      const outer = labelOuterRef.current;
+      const inner = labelInnerRef.current;
+      if (!outer || !inner) return;
+      const w = outer.clientWidth;
+      const sw = inner.scrollWidth;
+      // 尾巴落进右缘渐隐区（约 72% 起淡）就触发，不必真溢出。
+      // 滚动量：真溢出 → 恰好右对齐（结尾清晰，不再多滚）；
+      // 只是被渐隐 → 轻推到尾巴离开渐隐区为止。
+      const fadeStart = w * 0.72;
+      if (sw <= fadeStart) return;
+      setMarqueeShift(sw > w ? sw - w : sw - fadeStart);
+    }, 1000);
   }
+  function stopMarquee() {
+    if (marqueeTimer.current) clearTimeout(marqueeTimer.current);
+    marqueeTimer.current = null;
+    setMarqueeShift(0);
+  }
+  useEffect(() => stopMarquee, []);
 
   function startRename() {
     setDraft(conv.title || label);
@@ -915,7 +934,7 @@ function ConvItem({
         className={`${base} ${colorCls} ${stateCls}`}
         onClick={renaming ? undefined : onClick}
         onMouseEnter={renaming ? undefined : measureMarquee}
-        onMouseLeave={() => setMarqueeShift(0)}
+        onMouseLeave={stopMarquee}
         onContextMenu={(e) => {
           e.preventDefault();
           setMenuOpen(true);
@@ -971,7 +990,7 @@ function ConvItem({
         ) : (
           <span
             ref={labelOuterRef}
-            className={`flex-1 overflow-hidden whitespace-nowrap text-fs-base leading-[20px] ${maskOnHover}`}
+            className={`flex-1 overflow-hidden whitespace-nowrap text-fs-base leading-[20px] ${marqueeShift > 0 ? maskScrolling : maskIdle}`}
           >
             <span
               ref={labelInnerRef}
@@ -980,8 +999,8 @@ function ConvItem({
                 marqueeShift > 0
                   ? {
                       transform: `translateX(-${marqueeShift}px)`,
-                      // 1s 悬停延迟后开滚，速度约 40px/s。
-                      transition: `transform ${Math.max(600, marqueeShift * 25)}ms linear 1000ms`,
+                      // 速度约 40px/s（延迟已在定时器里）。
+                      transition: `transform ${Math.max(600, marqueeShift * 25)}ms linear`,
                     }
                   : { transform: "translateX(0)", transition: "transform 200ms ease" }
               }
