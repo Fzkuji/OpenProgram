@@ -46,20 +46,14 @@ export function PermissionsSection({ projectId }: { projectId: string }) {
 
   // 收后端广播的 permission_rules 帧（只认本项目）。
   useEffect(() => {
-    function onRules(e: Event) {
-      const ws = (e as MessageEvent).data;
-      try {
-        const m = JSON.parse(ws);
-        if (m?.type !== "permission_rules") return;
-        const d = m.data;
-        if (d?.project_id !== projectId) return;
-        setRules({ deny: d.deny ?? [], ask: d.ask ?? [], allow: d.allow ?? [] });
-      } catch { /* ignore */ }
+    function onRules(e: WindowEventMap["op:permission-rules"]) {
+      const d = e.detail;
+      if (d?.project_id !== projectId) return;
+      setRules({ deny: d.deny ?? [], ask: d.ask ?? [], allow: d.allow ?? [] });
     }
-    const sock = (window as unknown as { ws?: WebSocket }).ws;
-    sock?.addEventListener("message", onRules as EventListener);
+    window.addEventListener("op:permission-rules", onRules);
     refresh();
-    return () => sock?.removeEventListener("message", onRules as EventListener);
+    return () => window.removeEventListener("op:permission-rules", onRules);
   }, [projectId, refresh]);
 
   const add = useCallback((behavior: Behavior) => {
