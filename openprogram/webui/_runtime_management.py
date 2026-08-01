@@ -846,6 +846,7 @@ def sync_turn_usage_to_runtime(runtime, turn_usage: Optional[dict]) -> None:
             "cache_read":    int(turn_usage.get("cache_read_tokens") or 0),
             "cache_create":  int(turn_usage.get("cache_write_tokens") or 0),
             "total_tokens":  int(turn_usage.get("total_tokens") or 0),
+            "context_tokens": int(turn_usage.get("context_tokens") or 0),
         }
     except Exception:
         pass

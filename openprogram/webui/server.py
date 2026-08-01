@@ -934,6 +934,9 @@ def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, ex
                 "output_tokens": usage.get("output_tokens", 0),
                 "cache_read": usage.get("cache_read", 0),
                 "cache_create": usage.get("cache_create", 0),
+                # 最后一次调用的 prompt 体积（input+cache_read）≈ 当前
+                # 上下文占用；badge 圆环用它算百分比，不用 turn 累计值。
+                "context_tokens": usage.get("context_tokens", 0),
             }
 
     # --- Exec usage (per-function, not cumulative) ---

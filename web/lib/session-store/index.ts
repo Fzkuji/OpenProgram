@@ -105,6 +105,8 @@ interface ConvState {
     output?: number;
     cache_read?: number;
     cache_create?: number;
+    /** 最后一次 API 调用的 prompt 体积（input+cache_read）≈ 当前上下文占用。 */
+    context?: number;
     model?: string | null;
     provider?: string | null;
   }>;
@@ -121,6 +123,7 @@ interface ConvState {
       output?: number;
       cache_read?: number;
       cache_create?: number;
+      context?: number;
       model?: string | null;
       provider?: string | null;
     } | null,
@@ -450,6 +453,7 @@ export const useSessionStore = create<ConvState>((set) => ({
             output: chat.output,
             cache_read: chat.cache_read,
             cache_create: chat.cache_create,
+            context: chat.context,
             model: chat.model,
             provider: chat.provider,
           },

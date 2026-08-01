@@ -693,7 +693,7 @@ export function handleChatResponse(data: ChatResponseData): void {
 /* ===== context_stats ============================================= */
 
 interface ContextStatsData {
-  chat?: { input_tokens?: number; output_tokens?: number; cache_read?: number; cache_write?: number };
+  chat?: { input_tokens?: number; output_tokens?: number; cache_read?: number; cache_write?: number; context_tokens?: number };
   input_tokens?: number;
   output_tokens?: number;
   cache_read?: number;
@@ -733,6 +733,7 @@ function handleContextStats(data: ContextStatsData, sid: string | null): void {
           output: chat.output_tokens || 0,
           cache_read: chat.cache_read || 0,
           cache_create: cacheWrite,
+          context: chat.context_tokens || 0,
           model: data.model || null,
           provider: (data as unknown as {provider?: string}).provider || null,
         },

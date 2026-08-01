@@ -89,9 +89,12 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   const providerLabel = usage?.provider || fallbackProvider || "";
   const metaLine = [providerLabel, modelLabel].filter(Boolean).join(" · ");
 
-  // 用量百分比：input tokens / context window（拿不到 window 时给个保守默认）
+  // 用量百分比：当前上下文占用 / context window。usage.context 是最后一次
+  // API 调用的 prompt 体积（input+cache_read）；usage.input 是整个 turn 的
+  // 累计计费值，多工具调用时远超窗口（曾让圆环永远全满）。旧事件没有
+  // context 字段时退回 input+cache_read 近似。
   const win = ctxWindow && ctxWindow > 0 ? ctxWindow : 200_000;
-  const used = usage?.input || 0;
+  const used = usage?.context || (usage?.input || 0) + (usage?.cache_read || 0);
   const pct = Math.max(0, Math.min(1, used / win));
 
   // tooltip 用 Claude Code 那种「Context 用了多少/共多少 (百分比)」格式

@@ -1153,6 +1153,13 @@ def _run_loop_blocking(
                     for k in ("input_tokens", "output_tokens",
                               "cache_read_tokens", "cache_write_tokens"):
                         usage_total[k] += usage.get(k, 0)
+                    # 当前上下文占用 ≈ 最后一次调用的 prompt 体积
+                    # （input + cache_read）。turn 内多次调用的 input
+                    # 之和会远超窗口，只能用于计费，不能用于占用率。
+                    usage_total["context_tokens"] = (
+                        usage.get("input_tokens", 0)
+                        + usage.get("cache_read_tokens", 0)
+                    )
                     # Build ordered blocks from msg.content so the
                     # webui can render thinking / text / tool cards
                     # interleaved in their original LLM emission
