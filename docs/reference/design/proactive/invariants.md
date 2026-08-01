@@ -1,9 +1,9 @@
 # Invariants the Framework Must Enforce Itself
 
 Rules are something you write, and they change; but there are a few invariants that **the framework core must enforce forever** — no rule, written by anyone, may break them.
-This version has only two, and both are straightforward. Read `overview.md` before reading this one.
+There are two, and both are straightforward. Read `overview.md` before reading this one.
 
-(Note: at the research/production level there are a few more invariants concerning adversarial safety and tamper resistance. They were cut from this version and archived in `_research_archive/threat-model.md`; we'll bring them back when we do security hardening later.)
+(Note: a few further invariants concerning adversarial safety and tamper resistance belong to the research/production level. They are out of scope here and are documented in `_research_archive/threat-model.md`, which is where security hardening would start.)
 
 ## Invariant 1: The framework must not trigger itself and spiral into an infinite loop
 
@@ -48,13 +48,13 @@ This invariant is **framework-level**: rules cannot disable it or work around it
 
 ## Invariant 2: Blocking rules must not be auto-silenced because the user "got tired of" them
 
-This one leaves room for the future; for now we just state the principle clearly.
+This invariant constrains a capability the framework does not yet have, so it reads as a rule for whoever adds that capability.
 
-Down the road you may add logic like "if the user keeps ignoring some alert, automatically alert less" (auto-silencing). If you do, you **must exclude blocking rules** — safety guardrails (e.g. intercepting dangerous commands) must not auto-disable just because they "got rejected too many times."
+Logic like "if the user keeps ignoring some alert, automatically alert less" (auto-silencing) **must exclude blocking rules** — safety guardrails (e.g. intercepting dangerous commands) must not auto-disable just because they "got rejected too many times."
 
 Picture the counterexample: someone (or injected malicious content) lures the agent into repeatedly triggering dangerous-command confirmations and repeatedly clicking reject. If that could make the guardrail "think it's useless" and auto-silence itself, then the next genuinely dangerous command would have no one to intercept it.
 
-So the principle is: **auto-silencing applies only to "observer alerts" and never touches "blocking guardrails."** This version doesn't have auto-silencing yet (only a simple `cooldown_s`), but we write down this principle now so that when silencing is added later, it follows the rule.
+So the principle is: **auto-silencing applies only to "observer alerts" and never touches "blocking guardrails."** The framework's only interruption control is the simple `cooldown_s`; any silencing mechanism added on top of it inherits this constraint.
 
 ## Summary
 

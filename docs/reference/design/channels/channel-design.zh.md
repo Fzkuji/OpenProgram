@@ -2,7 +2,7 @@
 
 外部 chat 平台 (Telegram / Discord / Slack / WeChat) 通过这个子系统跟 OpenProgram 双向通讯：用户在 platform 上发消息触发 agent，agent 回复通过同一条 channel 发回去。
 
-本文档描述**实施完成后的当前形态**。设计演化历史 + 修复过的缺陷列表见 [`channel-audit.md`](./channel-audit.md)。
+本文档描述该层的结构与消息流转。该层守住的要求与不变量，以及跟 OpenClaw / hermes 的对比，见 [`channel-audit.md`](./channel-audit.md)。
 
 ## 1. 整体形态
 
@@ -165,7 +165,7 @@ def dispatch_inbound(*, channel, account_id, peer_kind, peer_id,
     return result.final_text  # 或 None (progress 模式)
 ```
 
-`_conversation.py` 自己只有 283 行（之前一个文件 588 行 5 职责）。
+`_conversation.py` 只保留这条流程；路由、session 存储、broadcast 各自在独立模块里。
 
 ### 4.3 平台差异封到底层
 
@@ -222,7 +222,7 @@ register_channel("whatsapp", WhatsAppChannel)
 ## 5. 模块清单
 
 ```
-openprogram/channels/   14 文件
+openprogram/channels/
 ├── base.py              Channel ABC + MessageHandle + send_text/edit_text(_full)
 ├── _transport.py        SendResult + 4 个平台 HTTP post/patch (统一底层)
 ├── _message.py          ChannelMessage 入站中性结构 dataclass
@@ -305,24 +305,24 @@ openprogram channels bindings
 
 ### 7.3 Web UI
 
-| 入口 | 实现 | 状态 |
-|---|---|---|
-| Topbar channel popover | `web/components/chat/top-bar/channel-menu.tsx` (168 行) | ✓ 完整 |
-| Health badge status API | `/api/channels/{platform}/{account_id}/status` 返回 alive/stale/unknown | ✓ 完整 |
-| 独立 settings 页 | — | **⚠ 缺失** |
-
-Web 端目前**没有 `/settings/channels` 配置页**。所有账号 / bindings 管理只能走 CLI。后续要做 Web 端配置 UI 的话，对应 API 加在 `openprogram/webui/routes/channels.py` 里。
-
-## 8. plugin / 扩展未来工作
-
-| 当前状态 | 后续若需扩展 |
+| 入口 | 实现 |
 |---|---|
-| 4 个内置平台 | 加 WhatsApp / Signal / Matrix / LINE 等 — 写 `Channel` 子类 + entry_point 注册 |
-| ChannelMessage 已含 `reply_to_id` / `thread_id` / `attachments` 字段 | dispatch_inbound 暂不消费, 等真实需求出现 (reply quote / thread 隔离 / 附件读取) 再接 |
-| Reaction approval (✓/✗ 确认 dangerous tool) | 未实现, hermes/OpenClaw 都有, 等用户提需求再做 |
-| Token-level text streaming | 目前只在 tool 边界 edit, 没有 reply text delta 实时 edit (rate limit 风险) |
+| Topbar channel popover | `web/components/chat/top-bar/channel-menu.tsx` |
+| Health badge status API | `/api/channels/{platform}/{account_id}/status` 返回 alive/stale/unknown |
+
+账号与 bindings 管理走 CLI。若要做 Web 端配置 UI，对应 API 加在
+`openprogram/webui/routes/channels.py` 里。
+
+## 8. 扩展点
+
+| 扩展 | 怎么做 |
+|---|---|
+| 新平台（WhatsApp / Signal / Matrix / LINE） | 写 `Channel` 子类 + entry_point 注册 |
+| reply 引用 / thread 隔离 / 附件读取 | `ChannelMessage` 已带 `reply_to_id` / `thread_id` / `attachments`，要做的是让 `dispatch_inbound` 消费它们 |
+| Reaction approval（✓/✗ 确认 dangerous tool） | adapter 侧的 reaction listener 加上接到 approval 路径的桥 |
+| Token-level text streaming | 目前只在 tool 边界 edit；按 reply text delta 编辑要权衡平台 rate limit |
 
 ## 9. 参考
 
-- [`channel-audit.md`](./channel-audit.md) — 设计演化历史 + 已修缺陷清单 + 跟 OpenClaw / Hermes 的对比
+- [`channel-audit.md`](./channel-audit.md) — 要求、不变量，以及跟 OpenClaw / Hermes 的对比
 - 各 adapter 顶部 docstring — platform-specific 协议细节

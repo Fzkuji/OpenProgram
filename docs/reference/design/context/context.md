@@ -7,14 +7,15 @@ messages / tools), and providers translate it into each vendor's wire request.
 Contract = `Context` (system / messages / tools, where content blocks may carry `cache_control`).
 This layer decides **what to feed and how to layer it**; providers decide **how to send it to a given vendor**. The two layers are decoupled.
 
-> For the target state (layering each call by stability + letting the model know its situation), see
-> [`context-composition.md`](context-composition.md); this document covers the current mechanism.
+> For how each call is layered by stability and how the model is told its situation, see
+> [`context-composition.md`](context-composition.md); this document covers the storage and
+> compaction mechanism underneath it.
 
 ---
 
-## 1. Current Pipeline
+## 1. Assembly Pipeline
 
-The main chat path has only one true context-assembly engine:
+The main chat path has one context-assembly engine:
 
 ```
 dispatcher.process_user_turn
@@ -218,34 +219,34 @@ protection (OpenCode).
 
 ---
 
-## 8. Target State and Gaps
+## 8. Relationship to the Three-Layer Composition
 
-[`context-composition.md`](context-composition.md) is this layer's target: layer each LLM call into three tiers by
-"how often it changes", serving the cache (stable content up front) while also letting the model know its situation.
+[`context-composition.md`](context-composition.md) layers each LLM call into three tiers by how often
+the content changes, which serves the cache (stable content up front) and also tells the model its
+situation. This document's mechanism supplies the material for those tiers:
 
-| Tier | Content | Change frequency | Current status |
+| Tier | Content | Change frequency | Where it comes from |
 |---|---|---|---|
-| **L0 constant** | identity / global instructions / tool list | unchanged for the whole session | ✅ engine already assembles it (not layered for caching) |
-| **L1 situation** | which function I'm a part of / who called me / which step of the program / where the output goes | changes on each new frame | ❌ **entirely missing** |
-| **L2 task** | progress within the frame / inherited upstream results / current input / output format | changes each step | ✅ engine already selects history |
-
-Gaps (by value):
-
-1. **The L1 situation layer is entirely missing** — the model doesn't know which @agentic_function it's a part of, who called it, or
-   how its output will be used. Highest value (core to the paper's LLM-as-Code thesis), with zero implementation today.
-2. **Two coexisting history-rendering paths risk parity drift** — commit-chain and dag each have their own traversal logic, and changing one
-   easily forgets the other (there was a real bug where ThinkingContent was handled only on the dag path and missed on the commit path). This should be
-   converged into one.
-3. **Auxiliary paths' system prompt doesn't follow the agent** — summarization/branch-summary use a hard-coded
-   `SUMMARIZATION_SYSTEM_PROMPT` that doesn't track the user's AGENTS.md / identity / skills.
+| **L0 constant** | identity / global instructions / tool list | unchanged for the whole session | assembled by the engine's system-prompt step (§1) |
+| **L1 situation** | which function I'm a part of / who called me / which step of the program / where the output goes | changes on each new frame | the call tree, rendered from the DAG (§2) |
+| **L2 task** | progress within the frame / inherited upstream results / current input / output format | changes each step | history selection + compaction (§1, §3) |
 
 ---
 
-## 9. Early Designs (Deprecated, Kept for Traceability)
+## Appendix: Implementation Notes
 
-We once designed a **SQLite `node_annotations` derived model**: DAG truth + one recomputable
-Annotation per node, updated by an annotator pipeline each turn, then rendered by a `build_view` pure function. It and
-ContextCommit are two ways of landing the same idea: annotation is "derived, discardable-and-recomputable + SQL table", ContextCommit is
-"immutable snapshot + git JSON". **It has been superseded by ContextCommit**; its ideas that still hold (compaction tightens monotonically,
-the view is a pure function, summaries aren't written to the DAG) have been folded into the text above. pinning / dedup / user manual pin-unpin are not yet
-fully landed under ContextCommit, and remain capabilities to be filled in.
+- Two history-rendering paths coexist, commit-chain and dag, each with its own traversal logic. They
+  are candidates for convergence into one: a change to either is easy to forget in the other, which
+  has produced a real defect before (ThinkingContent handled on the dag path and missed on the commit
+  path).
+- The auxiliary paths' system prompt does not follow the agent. Summarization and branch summary use a
+  hard-coded `SUMMARIZATION_SYSTEM_PROMPT` that does not track the user's AGENTS.md, identity, or
+  skills.
+- pinning, dedup, and user-driven manual pin/unpin are not available under ContextCommit.
+
+An earlier design used a SQLite `node_annotations` derived model: DAG as truth plus one recomputable
+Annotation per node, updated by an annotator pipeline each turn and rendered by a `build_view` pure
+function. It and ContextCommit are two ways of landing the same idea — annotation as derived,
+discardable and recomputable state in a SQL table, versus ContextCommit as an immutable snapshot in
+git JSON. ContextCommit is what the system uses; the ideas that carried over (compaction tightens
+monotonically, the view is a pure function, summaries are not written to the DAG) are described above.

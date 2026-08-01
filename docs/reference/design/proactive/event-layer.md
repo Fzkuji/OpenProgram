@@ -2,13 +2,7 @@
 
 A single unified event stream for the whole framework. proactive is just its first consumer.
 
-> **Implementation status (2026-06-13)**: §1–§5 of this doc have all landed — `Event`/`make_event`/`emit_safe`/
-> `subscribe(types=)`/`get_event_bus()` live in `openprogram/agent/event_bus.py`, the synchronous interception point is in
-> `openprogram/agent/tool_gate.py`, and the type-B bridges are in `openprogram/agent/event_bridges.py` (auth) plus
-> per-source taps. Both type-A and type-B events are being emitted. To observe: set `OPENPROGRAM_EVENT_LOG=1`, restart the worker,
-> then read `/tmp/openprogram-events.jsonl`. Remaining: step 4 (switch webui over to being a subscriber), step 5 (proactive rules layer).
-
-**Why**: the "something happened" signal in the framework is currently scattered across six unconnected mechanisms (the agent loop's
+**Why**: without this layer, the "something happened" signal in the framework is scattered across six unconnected mechanisms (the agent loop's
 AgentEvent stream, auth's `_emit`, context's on_event, the channels WS broadcast, memory's periodic poll, and the
 store's plain logging). To "do something at a certain moment", you first have to figure out which mechanism owns that moment and how to hook into it. This layer unifies them into
 **a single bus: sources emit into it, consumers subscribe from it**. (The `subscribe/_emit` at `auth/store.py:204`
@@ -48,28 +42,30 @@ new correlation dimensions later without changing the model. (Mature event syste
 It is easy to focus only on type A, but type B (auth/context/channels outside the agent loop) is often more important for proactivity. Both
 go into the same bus, and the metadata pocket naturally accommodates both — type A carries turn, type B does not, with no special case for either.
 
-## 3. Event Types (first version)
+## 3. Event Types
 
-| Class | type | When | Source (actual wiring) | Status |
-|---|---|---|---|---|
-| A | `user.prompt_submitted` | User sends a message | dispatcher (outside the persistence branch; emitted on both the webui and channel paths) | ✅ emitting |
-| A | `model.response_started`/`.completed` | Model starts / finishes its reply | agent_loop streaming start/done | ✅ emitting |
-| A | `tool.before` | Tool about to execute | agent_loop `_execute_tool_calls` (interceptable, see §5) | ✅ emitting + interceptable |
-| A | `tool.after` | Tool finished executing | agent_loop | ✅ emitting |
-| A | `file.changed` | File modified (payload carries path/op) | after a successful write in write/edit/apply_patch | ✅ emitting |
-| A | `turn.ended` | End of a turn | agent_loop (both the normal path and the error/abort paths) | ✅ emitting |
-| A | `subagent.started`/`.ended` | Subtask start/end | TaskRunner state funnel | ✅ emitting |
-| B | `credential.cooldown`/`.exhausted`/`.rotated` | Credential rate-limited / pool exhausted / rotated | `event_bridges.py` subscribes to `AuthStore` and translates | ✅ bridge installed |
-| B | `context.compaction_recommended`/`.compacted` | Context hits the threshold / has been compacted | `context/engine.py` source tap | ✅ emitting |
-| B | `channel.message_inbound` | External message arrives | `channels/_conversation.py` source tap | ✅ emitting |
-| B | `memory.ingest_started`/`.ended` | Idle-session wiki ingest start/end | `memory/session_watcher.py` source tap | ✅ emitting |
-| B | `skills.changed`/`plugins.update_available` | Skill changed / new plugin version available | webui watcher source tap | ✅ emitting (skills verified live) |
+| Class | type | When | Source (wiring) |
+|---|---|---|---|
+| A | `user.prompt_submitted` | User sends a message | dispatcher (outside the persistence branch; emitted on both the webui and channel paths) |
+| A | `model.response_started`/`.completed` | Model starts / finishes its reply | agent_loop streaming start/done |
+| A | `tool.before` | Tool about to execute | agent_loop `_execute_tool_calls` (interceptable, see §5) |
+| A | `tool.after` | Tool finished executing | agent_loop |
+| A | `file.changed` | File modified (payload carries path/op) | after a successful write in write/edit/apply_patch |
+| A | `turn.ended` | End of a turn | agent_loop (both the normal path and the error/abort paths) |
+| A | `subagent.started`/`.ended` | Subtask start/end | TaskRunner state funnel |
+| B | `credential.cooldown`/`.exhausted`/`.rotated` | Credential rate-limited / pool exhausted / rotated | `event_bridges.py` subscribes to `AuthStore` and translates |
+| B | `context.compaction_recommended`/`.compacted` | Context hits the threshold / has been compacted | `context/engine.py` source tap |
+| B | `channel.message_inbound` | External message arrives | `channels/_conversation.py` source tap |
+| B | `memory.ingest_started`/`.ended` | Idle-session wiki ingest start/end | `memory/session_watcher.py` source tap |
+| B | `skills.changed`/`plugins.update_available` | Skill changed / new plugin version available | webui watcher source tap |
+
+The set is open: §7 covers why adding a type is a zero-risk change.
 
 ## 4. Placement: a process-level singleton bus
 
 All the relevant components (webui, agent loop, channels, memory, auth, task runner) run in **the same worker
-process** (each as a daemon thread). So the bus is just a **process-level singleton** — reuse the idle `agent/event_bus.py`,
-and add a `get_event_bus()` following the existing double-checked-locking precedent of `get_store()`/`get_runner()`. Every thread in the same process gets
+process** (each as a daemon thread). So the bus is a **process-level singleton**, living in `agent/event_bus.py`,
+with a `get_event_bus()` accessor that follows the same double-checked-locking pattern as `get_store()`/`get_runner()`. Every thread in the same process gets
 the same instance and emits/subscribes directly, with no cross-process bridging needed.
 
 ```python
@@ -81,7 +77,7 @@ class EventBus:
         # subscribe by event type, receive only the few types you care about
 ```
 
-(The existing EventBus subscribes by channel and passes arbitrary data; this changes it to subscribe by event type and pass a unified Event.)
+Subscription is by event type and the payload is a unified Event, rather than subscription by channel carrying arbitrary data: a consumer names the few types it cares about and the bus does the filtering, so a consumer never receives — and never has to recognize — traffic it has no interest in.
 
 ## 5. Two Interaction Modes: Observe vs. Intercept
 
@@ -92,7 +88,7 @@ is it does not slow the framework down.
 `tool.execute()` call in the tool's single entry point `_execute_tool_calls`. Key constraints: it must be fast (no calling the LLM);
 when multiple parties weigh in, the strictest verdict wins; and it applies to subagents too (it sits outside the approval wrapper, so `permission_mode=bypass` cannot turn it off).
 
-The landed API (`openprogram/agent/tool_gate.py`):
+The API (`openprogram/agent/tool_gate.py`):
 
 ```python
 from openprogram.agent.tool_gate import register_tool_gate
@@ -104,7 +100,7 @@ unregister = register_tool_gate(
 ```
 
 The deny reason is returned to the model as an error tool result via the existing error path; deny reasons from multiple gates are merged; and a gate that
-throws an exception is treated as allowing (fail-open). Generalizing the `_approval.py` "ask (pop a confirmation)" tier is left to a later step.
+throws an exception is treated as allowing (fail-open). The "ask (pop a confirmation)" tier is a generalization of `_approval.py` rather than a second mechanism.
 
 ## 6. Architecture Diagram
 
@@ -128,8 +124,12 @@ For the framework's own functions, one line of `emit` is enough; a whole class o
 code from third parties that you can't touch needs a wrapper. **Evolution is add-only, never change**: adding an event type or adding a field to a payload is zero-risk (old subscribers
 only read what they care about), while it is changing an old structure that affects old subscribers — which is also why payload/metadata use open dicts.
 
-## 8. Landing It
+## Implementation status
 
-For the wiring points (file:line), the approach to bridging the six sources into the bus, and the step-by-step plan with verification, see
-[the implementation plan](../plans/proactive-implementation.md). Order: first consolidate type A into the bus and verify it can emit a complete
-event sequence, then add file-change events and before-tool interception, then bridge in type-B system events, and finally add lane distinction for concurrency.
+`Event` / `make_event` / `emit_safe` / `subscribe(types=)` / `get_event_bus()` live in
+`openprogram/agent/event_bus.py`, the synchronous interception point in
+`openprogram/agent/tool_gate.py`, and the type-B bridges in `openprogram/agent/event_bridges.py`
+(auth) plus the per-source taps listed in §3. Both classes of event are emitted. To observe the
+stream, set `OPENPROGRAM_EVENT_LOG=1`, restart the worker, and read `/tmp/openprogram-events.jsonl`.
+The lane distinction for concurrent execution flows (`events-and-state.md` §5) is the remaining
+piece of the model described here.

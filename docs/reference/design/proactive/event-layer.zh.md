@@ -2,13 +2,7 @@
 
 一条统一的事件流，给整个框架用。proactive 只是它第一个消费者。
 
-> **实现状态（2026-06-13）**：本篇 §1–§5 已全部落地——`Event`/`make_event`/`emit_safe`/
-> `subscribe(types=)`/`get_event_bus()` 在 `openprogram/agent/event_bus.py`，同步问询点在
-> `openprogram/agent/tool_gate.py`，B 类桥在 `openprogram/agent/event_bridges.py`（auth）+
-> 各源头 tap。A、B 两类事件都在发。观察方式：`OPENPROGRAM_EVENT_LOG=1` 重启 worker
-> 后读 `/tmp/openprogram-events.jsonl`。剩余：步 4（webui 切订阅者）、步 5（proactive 规则层）。
-
-**为什么要**：框架里"某件事发生了"的信号现在散在六套互不相通的机制里（agent loop 的
+**为什么要**：没有这一层时，框架里"某件事发生了"的信号散在六套互不相通的机制里（agent loop 的
 AgentEvent 流、auth 的 `_emit`、context 的 on_event、channels 的 WS 广播、memory 的定时 poll、
 store 的纯日志）。想"在某时机做某事"，得先搞清那个时机归哪套、怎么接。这层把它们统一成
 **一条总线：源往里 emit，消费者从里 subscribe**。（`auth/store.py:204` 的 `subscribe/_emit`
@@ -48,28 +42,30 @@ class Event:
 容易只盯 A 类，但 B 类（agent loop 之外的 auth/context/channels）对主动性常常更重要。两类都
 进同一条总线，metadata 口袋天然装得下——A 类带 turn，B 类不带，不为谁开特例。
 
-## 3. 事件类型（第一版）
+## 3. 事件类型
 
-| 类 | type | 何时 | 来源（实际接线） | 状态 |
-|---|---|---|---|---|
-| A | `user.prompt_submitted` | 用户发消息 | dispatcher（持久化分支外，webui/channel 两路都发） | ✅ 在发 |
-| A | `model.response_started`/`.completed` | 模型开始/说完回复 | agent_loop 流式 start/done | ✅ 在发 |
-| A | `tool.before` | 工具即将执行 | agent_loop `_execute_tool_calls`（可拦截，见 §5） | ✅ 在发+可拦 |
-| A | `tool.after` | 工具执行完 | agent_loop | ✅ 在发 |
-| A | `file.changed` | 文件被改（payload 带 path/op） | write/edit/apply_patch 写成功后 | ✅ 在发 |
-| A | `turn.ended` | 一轮结束 | agent_loop（正常 + error/abort 两处） | ✅ 在发 |
-| A | `subagent.started`/`.ended` | 子任务起止 | TaskRunner 状态漏斗 | ✅ 在发 |
-| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/池耗尽/轮换 | `event_bridges.py` 订阅 `AuthStore` 翻译 | ✅ 桥已装 |
-| B | `context.compaction_recommended`/`.compacted` | 上下文到阈值/已压缩 | `context/engine.py` 源头 tap | ✅ 在发 |
-| B | `channel.message_inbound` | 外部消息进来 | `channels/_conversation.py` 源头 tap | ✅ 在发 |
-| B | `memory.ingest_started`/`.ended` | 空闲会话 wiki ingest 起止 | `memory/session_watcher.py` 源头 tap | ✅ 在发 |
-| B | `skills.changed`/`plugins.update_available` | 技能改/插件有新版 | webui watcher 源头 tap | ✅ 在发（skills 已 live 验证） |
+| 类 | type | 何时 | 来源（接线） |
+|---|---|---|---|
+| A | `user.prompt_submitted` | 用户发消息 | dispatcher（持久化分支外，webui/channel 两路都发） |
+| A | `model.response_started`/`.completed` | 模型开始/说完回复 | agent_loop 流式 start/done |
+| A | `tool.before` | 工具即将执行 | agent_loop `_execute_tool_calls`（可拦截，见 §5） |
+| A | `tool.after` | 工具执行完 | agent_loop |
+| A | `file.changed` | 文件被改（payload 带 path/op） | write/edit/apply_patch 写成功后 |
+| A | `turn.ended` | 一轮结束 | agent_loop（正常 + error/abort 两处） |
+| A | `subagent.started`/`.ended` | 子任务起止 | TaskRunner 状态漏斗 |
+| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/池耗尽/轮换 | `event_bridges.py` 订阅 `AuthStore` 翻译 |
+| B | `context.compaction_recommended`/`.compacted` | 上下文到阈值/已压缩 | `context/engine.py` 源头 tap |
+| B | `channel.message_inbound` | 外部消息进来 | `channels/_conversation.py` 源头 tap |
+| B | `memory.ingest_started`/`.ended` | 空闲会话 wiki ingest 起止 | `memory/session_watcher.py` 源头 tap |
+| B | `skills.changed`/`plugins.update_available` | 技能改/插件有新版 | webui watcher 源头 tap |
+
+这张表是开放集合：§7 讲为什么加一个类型是零风险的改动。
 
 ## 4. 定位：一个进程级单例总线
 
 所有相关组件（webui、agent loop、channels、memory、auth、task runner）都跑在**同一个 worker
-进程**里（各是 daemon 线程）。所以总线就是个**进程级单例**——复用闲置的 `agent/event_bus.py`，
-照框架已有的 `get_store()`/`get_runner()` 双检锁先例加个 `get_event_bus()`。同进程所有线程拿到
+进程**里（各是 daemon 线程）。所以总线是个**进程级单例**，位于 `agent/event_bus.py`，
+访问入口 `get_event_bus()` 沿用框架已有的 `get_store()`/`get_runner()` 双检锁写法。同进程所有线程拿到
 同一实例，直接 emit/subscribe，不需要跨进程桥接。
 
 ```python
@@ -81,7 +77,8 @@ class EventBus:
         # 按事件类型订阅，只收关心的那几类
 ```
 
-（现有 EventBus 是按 channel 订阅、传任意 data；改成按事件类型订阅、传统一 Event。）
+订阅按事件类型进行、传的是统一的 Event，而不是按 channel 订阅、传任意 data：消费者报出自己关心的
+那几个类型，由总线做过滤，消费者就不会收到、也不必去辨认自己不关心的流量。
 
 ## 5. 两种交互：观察 vs 拦截
 
@@ -92,7 +89,7 @@ class EventBus:
 `_execute_tool_calls` 的 `tool.execute()` 之前加一个同步问询点。要点：必须快（不许调 LLM）；
 多方表态取最严；对 subagent 也生效（位于 approval 包装之外，`permission_mode=bypass` 关不掉它）。
 
-已落地的 API（`openprogram/agent/tool_gate.py`）：
+API（`openprogram/agent/tool_gate.py`）：
 
 ```python
 from openprogram.agent.tool_gate import register_tool_gate
@@ -104,7 +101,7 @@ unregister = register_tool_gate(
 ```
 
 deny 理由经现有错误路径作为 error tool result 回给模型；多 gate 的 deny 理由合并；gate 自身
-抛异常按放行处理（fail-open）。"ask（弹确认）"档复用 `_approval.py` 的泛化留到后续步。
+抛异常按放行处理（fail-open）。"ask（弹确认）"这一档是 `_approval.py` 的泛化，不是另起一套机制。
 
 ## 6. 框架图
 
@@ -128,8 +125,10 @@ deny 理由经现有错误路径作为 error tool result 回给模型；多 gate
 第三方碰不到的代码才要包一层。**演进只加不改**：加事件类型、给 payload 加字段都零风险（老订阅者
 只读自己关心的），改老结构才会影响老订阅者——这也是 payload/metadata 用开放 dict 的理由。
 
-## 8. 落地
+## 实现状态
 
-接线点（file:line）、把六套源桥进总线的做法、分步与验证，见
-[实施规划](../plans/proactive-implementation.md)。顺序：先把 A 类收口成总线并验证能打出完整
-事件序列，再补文件改动事件和工具前可截，再桥进 B 类系统事件，最后补并发的 lane 区分。
+`Event` / `make_event` / `emit_safe` / `subscribe(types=)` / `get_event_bus()` 在
+`openprogram/agent/event_bus.py`，同步问询点在 `openprogram/agent/tool_gate.py`，B 类桥在
+`openprogram/agent/event_bridges.py`（auth）加 §3 列出的各源头 tap。两类事件都在发。
+观察事件流：`OPENPROGRAM_EVENT_LOG=1` 重启 worker 后读 `/tmp/openprogram-events.jsonl`。
+并发执行流的 lane 区分（`events-and-state.md` §5）是这套模型里尚未落地的部分。

@@ -94,15 +94,15 @@ Proactivity applications (built on the base):
 | [`providers/auth/credential-validation-unification.md`](providers/auth/credential-validation-unification.md) | Unified credential validation |
 | [`providers/auth/unified-auth-storage.md`](providers/auth/unified-auth-storage.md) | Unified auth storage |
 | [`providers/auth/unified-account-management.md`](providers/auth/unified-account-management.md) | Unified account management + rotation |
-| [`providers/auth/credential-status-redesign.md`](providers/auth/credential-status-redesign.md) | Credential status redesign |
+| [`providers/auth/credential-status-redesign.md`](providers/auth/credential-status-redesign.md) | Credential status |
 | [`providers/auth/api-key-resolution-unification.md`](providers/auth/api-key-resolution-unification.md) | API key resolution unification |
 | [`providers/reliability/error-retry.md`](providers/reliability/error-retry.md) | Error + retry handling |
 | [`providers/reliability/error-taxonomy-propagation.md`](providers/reliability/error-taxonomy-propagation.md) | Error taxonomy + propagation |
 | [`providers/reliability/llm-fault-tolerance.md`](providers/reliability/llm-fault-tolerance.md) | LLM fault tolerance (investigation) |
 | [`providers/reliability/error-and-timeout-mechanism.html`](providers/reliability/error-and-timeout-mechanism.html) | Error + timeout mechanism (rendered) |
-| [`providers/network-proxy.md`](providers/network-proxy.md) | Outbound network proxy — survey, comparison, unified design |
+| [`providers/network-proxy.md`](providers/network-proxy.md) | Outbound network proxy |
 | [`providers/auth/credential-connection-unification.md`](providers/auth/credential-connection-unification.md) | Credential/connection unification |
-| [`providers/PROBLEM-models-and-bailian.md`](providers/PROBLEM-models-and-bailian.md) | Open problem: model list and the Bailian provider |
+| [`providers/PROBLEM-models-and-bailian.md`](providers/PROBLEM-models-and-bailian.md) | Model list and the Bailian provider |
 
 ## function/ — function & tool calling
 

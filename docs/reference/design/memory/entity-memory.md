@@ -92,7 +92,7 @@ The session title is the primary identifier by which a user recognizes a convers
 
 4. **Presentation-layer fallback**: if none of the above was triggered (the session was created through a non-dispatcher entry point, such as the harness), and the title at listing time is still empty/"New conversation"/"Untitled" → display the preview (first 80 characters of the first user message) instead.
 
-5. **No more filtering of empty placeholders**: all valid sessions are shown in the sidebar, including freshly created conversations whose title/preview is not yet ready. (Historical note: the previous-generation architecture optimistically created an empty placeholder session when "New chat" was clicked, which required a "title placeholder + empty preview → do not show" rule to hide it; now "New chat" no longer creates a session — the conversation is created lazily by the backend only when the first message is sent, at which point content already exists, so the premise for that filter no longer holds and it has been removed.)
+5. **No filtering of empty placeholders**: all valid sessions are shown in the sidebar, including freshly created conversations whose title/preview is not yet ready. "New chat" does not create a session — the conversation is created lazily by the backend only when the first message is sent, so a listed session always has content and there is nothing for such a filter to hide.
 
 #### Sequence
 
@@ -123,7 +123,7 @@ When listing all sessions, there are two sources:
 The two sources are merged, deduplicated, and sorted by `updated_at` in descending order.
 
 Display rules:
-- Validity check passes → shown (including freshly created conversations whose title/preview is not yet ready; empty placeholders are no longer filtered)
+- Validity check passes → shown (including freshly created conversations whose title/preview is not yet ready; there is no empty-placeholder filter)
 - Validity check fails → skipped
 
 The sidebar and the Chats page use the same set of display rules.
@@ -226,7 +226,7 @@ When unbinding:
 
 ## 5. Relationship to Abstract Memory
 
-Entity memory is the **single data source** for abstract memory. The distillation pipeline (Phase 2) reads the DAG nodes of session-git + the commit history of project-git, extracts events and relationships from them, and writes them into the timeline/graph of abstract memory.
+Entity memory is the **single data source** for abstract memory. The distillation pipeline reads the DAG nodes of session-git + the commit history of project-git, extracts events and relationships from them, and writes them into the timeline/graph of abstract memory.
 
 Each abstract memory carries a `Provenance` pointer back to the entity layer:
 ```python

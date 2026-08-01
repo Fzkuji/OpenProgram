@@ -197,9 +197,9 @@ probe_thinking.py 和 Fetch 的集成：
 | `webui/_model_listing/fetchers/anthropic.py` | Anthropic Fetch：从 capabilities 提取 thinking_levels |
 | `agent/session_config.py` | `VALID_THINKING` 校验、`reasoning_from_config` 转换 |
 
-## 11. 当前各模型实际档位
+## 11. 各模型实际档位
 
-浏览器验证结果（2026-06-18）：
+验证结果：
 
 | Provider | 模型 | 档位 | 来源 |
 |---|---|---|---|

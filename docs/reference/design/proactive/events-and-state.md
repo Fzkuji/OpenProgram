@@ -18,7 +18,7 @@ class Event:
     payload: dict      # the specifics of this event (what command, which file was changed, ...)
 ```
 
-Possible values for `type` (enough for now; more can be added later):
+Possible values for `type` (an open set — more can be added):
 
 | type | When it's produced | What's in payload |
 |---|---|---|
@@ -121,7 +121,7 @@ and policies will then pair A's changes with B's situation, throwing off every j
 The fix: **fold separately per "execution flow."** Each subagent has its own copy of state, with no cross-contamination. Each event carries
 a marker of "which execution flow I belong to" (using `session_id` plus a subtask identifier), and the fold groups by it.
 
-This is the only concurrency problem this version needs to handle seriously. The rest (crash recovery, tamper-proofing) is out of scope for this version.
+This is the only concurrency problem the design handles seriously. The rest (crash recovery, tamper-proofing) is out of scope.
 
 ## 6. Summary
 

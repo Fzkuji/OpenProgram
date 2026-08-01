@@ -73,7 +73,7 @@ The next identical request will fail in exactly the same way for these errors, s
 
 Layer one (AgentSession) and layer two (exec) count independently. Worst case: exec retries 3 times, and each time the inner AgentSession retries another 3 times = 9 actual API calls, with backoff bringing total elapsed time to tens of seconds before final failure.
 
-This is the result of historical accretion: the AgentSession layer is the long-standing general-purpose retry, while the exec layer is the Runtime's own protection. With both retained, their responsibilities overlap. If the AgentSession layer is confirmed to be reliably in effect, the exec layer can be lowered to `max_retries=1` (no retry), making retry a single responsibility. Currently both layers are on.
+The two layers have overlapping responsibilities: the AgentSession layer is the general-purpose retry, while the exec layer is the Runtime's own protection. Both are on. If the AgentSession layer is confirmed to be reliably in effect, the exec layer can be lowered to `max_retries=1` (no retry), making retry a single responsibility.
 
 ## Boundaries: What Retry Cannot Solve
 

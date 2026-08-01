@@ -32,29 +32,22 @@ LLM Context
 3. **Bi-temporal** — every memory records two times: `event_time` (when the thing happened) and `ingestion_time` (when it was written down). This supports time-travel queries and contradiction detection.
 4. **LLM-navigated recall** — never dump raw chat into the context. Inject only the compact map; the LLM walks back to the entity layer with tools on demand to fetch details.
 
-## Implementation Status
-
-| Phase | Content | Status |
-|-------|------|------|
-| 0 | Baseline fixes (LLM bridge / watcher / ingest) | ✅ |
-| 1 | Entity layer: Project schema + session.project_id + project-git | ✅ |
-| 2 | Distillation pipeline rewrite: read the session-git DAG → timeline + graph | ❌ Not started |
-| 3 | Recall rewrite: inject only the abstract layer + navigation tools | ❌ Not started |
-| 4 | Materialized views + hybrid search (vector) | ❌ Not started |
-| 5 | UI: Projects panel / timeline / `/memory` | ⚠️ Partial |
-
 ## Sub-documents
 
-> Versioning: `memory.md` describes the **currently shipped** linear summary
-> chain (`journal → wiki → core`, see `openprogram/memory/`); `memory-v2.md`
-> is the **target design** (entity/virtual two layers + provenance recall) that
-> supersedes v1 and is still being implemented. This README describes the v2
-> architecture.
+| Document | Content |
+|------|------|
+| [`memory-v2.md`](memory-v2.md) | The two-tier architecture: entity/virtual layers + provenance recall |
+| [`git-as-entity-memory.md`](git-as-entity-memory.md) | The entity layer's git substrate (Session-Git + Project-Git) |
+| [`entity-memory.md`](entity-memory.md) | Entity memory: Session-Git + Project-Git, organized by lifecycle |
+| [`virtual-memory.md`](virtual-memory.md) | Abstract memory: Timeline + Graph + Core, organized by type × lifecycle |
+| [`memory.md`](memory.md) | The linear summary chain (journal/wiki/core) running in `openprogram/memory/` |
 
-| Document | Content | Status |
-|------|------|------|
-| [`memory.md`](memory.md) | v1: linear summary chain (journal/wiki/core) | ✅ current |
-| [`memory-v2.md`](memory-v2.md) | v2: entity/virtual two layers + provenance recall (supersedes v1) | 🚧 design + WIP |
-| [`git-as-entity-memory.md`](git-as-entity-memory.md) | Origin of the entity layer (Session-Git + Project-Git) | reference |
-| [`entity-memory.md`](entity-memory.md) | Entity memory: Session-Git + Project-Git, organized by lifecycle | sub-design |
-| [`virtual-memory.md`](virtual-memory.md) | Abstract memory: Timeline + Graph + Core, organized by type × lifecycle | sub-design |
+## Implementation Status
+
+The entity layer is in place: the Project schema, `session.project_id`, and
+project-git are all implemented. The abstract layer is still the linear summary
+chain described in [`memory.md`](memory.md) — the distillation pipeline does not
+yet read the session-git DAG, recall does not yet inject the abstract layer
+alone, and the navigation tools are not yet registered. In the UI, the topbar
+project selector exists; the Projects panel, timeline, and `/memory` command do
+not.

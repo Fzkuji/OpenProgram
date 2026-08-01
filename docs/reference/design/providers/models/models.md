@@ -1,7 +1,6 @@
-# Model Catalog and Provider Configuration (Final Design)
+# Model Catalog and Provider Configuration
 
-> This document describes the **target runtime logic** of the model catalog: where data lives, how files interact with code, and how the backend and frontend each consume it.
-> Gaps between this design and the current code, plus the migration path, live in section 8 — sections 1–7 only ever describe the target state, never history.
+> This document describes the runtime logic of the model catalog: where data lives, how files interact with code, and how the backend and frontend each consume it.
 > Thinking-effort parameter details are covered in [thinking-effort.md](thinking-effort.md).
 
 ## 1. Architecture in one sentence
@@ -36,7 +35,7 @@ openprogram/providers/                 ← all git-tracked, read-only at runtime
 └── config.json                        ← the only user-side persistence
 ```
 
-**Naming rule: the word "catalog" is retired entirely** (historically one word for five things — the root of the naming confusion). `models_generated.py`, `thinking_catalog.py`, `_catalog_new.py`, and webui's `_model_catalog/` (→ `_model_listing/`) all retire. **The name `ENABLED_MODELS` is only valid once the dict truly holds enabled models only** — semantics change first, the name follows (see 8.2).
+**Naming rule: nothing here is called a "catalog".** One word for five different things is what made the naming confusing, so each module is named for what it holds: `enabled_models.py` for the registry, `thinking_spec.py` for the thinking declarations, and webui's `_model_listing/` for the presentation layer. The name `ENABLED_MODELS` is accurate only because the dict holds enabled models and nothing else.
 
 **Providers without a directory** (fireworks, together, …): models.dev lists them live; the user enters a key, browses, enables — no file in the package is ever needed.
 
@@ -167,37 +166,15 @@ The webui presentation layer (`_model_listing/`) does no merging or derivation �
 6. **Key compatibility**: `"<prefix>/<id>"`, alias fallback, `key_prefix` (gemini-subscription dual keys) preserved; the registry stays one mutable dict.
 7. **Many sources, one shape**: whether a row comes from an official `/v1/models`, an account-level private endpoint (codex), the models.dev community catalogue, or a hand-typed entry, it is normalised into one row shape by the single `fetch_and_normalize` function; enabling routes through the single `_upsert_spec_row` choke point into config (`_normalize_spec_row` fills the Model-schema keys); reading routes through the single `_build_model_from_row` converter into a `Model`. Each of the three choke points is exactly one; nothing may bypass them to mint its own shape.
 
-## 8. Current deviations and migration
+## 8. Implementation status
 
-> Recorded 2026-07-08. Full problem description: [../PROBLEM-models-and-bailian.md](../PROBLEM-models-and-bailian.md).
+The design above is what the code does. The registry is `ENABLED_MODELS`, defined in `enabled_models.py`; the webui presentation layer is `_model_listing/`; enabling a model copies its full spec into config; browsing is live with no disk persistence; and `thinking.json` and `cache.json` are folded into `provider.json`, so `_default_api_for` / `_resolve_base_url` read endpoints directly and the providers layer no longer reads the registry back.
 
-### 8.1 Deviations (migration complete ✅)
+Properties that any change here must preserve:
 
-> Migration steps 1–7 have all landed; every deviation below is resolved. The registry is renamed `ENABLED_MODELS` with its definition in `enabled_models.py`, `_model_catalog/` became `_model_listing/`, and `models_generated.py` / `thinking_catalog.py` / `_catalog_new.py` are retired — no "catalog" left in the code.
-
-1. **Persisting what shouldn't be persisted**: 752 hand-written `models.json` rows (22 providers, already rotted) + `models.fetched.json` (Fetch persisted into the installed package, papered over with .gitignore). Neither exists in the target state.
-2. **Two data chains**: the settings page goes through webui's `combined_models` (fetched + models.dev) while the runtime registry reads only hand-written `models.json` — the settings page can select `deepseek-v4-flash`, `get_model` cannot find it. The target state needs no merge pipeline at all: config is the only copy.
-3. **Five file kinds per provider** (provider.json / models.json / thinking.json / cache.json / models.fetched.json). Converges to one provider.json.
-4. **Probe results write back into git-tracked thinking.json** — a program writing a version-controlled file. In the target state probe only affects browse results and the spec written to config at enable time.
-5. **Inverted layering**: models.dev source and merge logic in `webui/_model_catalog/`; the providers layer reads the registry back to fill api/base_url — a cycle.
-6. **The registry holds 755 models**, named `MODELS` then `MODEL_REGISTRY`. The target holds enabled models only, renamed `ENABLED_MODELS` — **the name follows the semantics; no rename before the semantics change**.
-7. **Non-standard bailian naming**: models.dev calls the same-base_url provider `alibaba-token-plan-cn`; the reserved empty directory exists; the user asked for the standard name and deletion of `bailian/`.
-
-### 8.2 Migration order (each step commits independently, nothing breaks) — all complete ✅
-
-1. **bailian → alibaba_token_plan_cn**: rename directory + id. Small and independent — first. ✅
-2. **Enable = copy the spec**: checking a model writes the full spec (browse row ⊕ overrides ⊕ endpoints ⊕ thinking derivation) into config `providers.<p>.models`, unified with `custom_models` into one list. Existing users' `enabled_models` id lists migrate once: resolve each id against the current registry and write full specs. ✅
-3. **Runtime switches to config**: the registry loads from "config specs + provider.json fill"; `get_model` semantics unchanged. **The two chains become one here** — the 752-row `models.json` files and the fetched-file machinery become dead code. ✅
-4. **Browsing goes live**: `list_models_for_provider` splits into "available" (live browse) and "enabled" (read config); Fetch persistence is deleted (a short-TTL memory cache may remain). ✅
-5. **Delete dead data**: `git rm` the 22 `models.json` files, the fetched-file machinery, and the `.gitignore` line. ✅
-6. **Unify config**: fold `thinking.json` and `cache.json` into `provider.json`; `thinking_spec`/`cache_spec` read the new location; `_default_api_for`/`_resolve_base_url` read endpoints (cycle dissolves). ✅
-7. **Naming finish**: rename the registry to `ENABLED_MODELS` (semantics now true), definition in `enabled_models.py`; retire `models_generated.py`, `thinking_catalog.py` (folded into `thinking_spec.py`), `_catalog_new.py`, `_model_catalog/` (→ `_model_listing/`). No "catalog" left in the code. ✅
-
-### 8.3 What the migration must preserve (from prior reviews)
-
-- **Existing enablement must survive**: step 2's id → spec migration must cover all 22 providers' current enabled_models and custom_models; verify per row that `get_model` results are equivalent before and after.
-- **Aliases / dual keys**: gemini-subscription's `google-gemini-cli/*` + `gemini-subscription/*` are 10 keys with distinct names — enabled rows carry their own key and name, so this survives naturally; alias fallback logic untouched.
-- **The claude-code borrowing chain**: browse data borrowed from anthropic (`models_from`), 3 models auto-enabled after login, special fetcher — preserve each.
-- **Field-by-field fidelity**: nested `cost`, multimodal `input`, `headers` (copilot depends on it), `compat` — the spec written to config at enable time must carry all of these; before deleting the hand-written catalogs confirm every enabled row has equivalent values.
+- **Enablement survives**: a config row must resolve through `get_model` to the same `Model` it did before, for every provider.
+- **Aliases and dual keys**: gemini-subscription's `google-gemini-cli/*` and `gemini-subscription/*` are 10 keys with distinct names. Enabled rows carry their own key and name, and the alias fallback stays in place.
+- **The claude-code borrowing chain**: browse data borrowed from anthropic via `models_from`, 3 models auto-enabled after login, and its own fetcher.
+- **Field-by-field fidelity**: nested `cost`, multimodal `input`, `headers` (copilot depends on it), and `compat` all travel in the spec written to config at enable time.
 - **Verification granularity**: multi-wire providers need one exec per `(api, base_url, headers, compat)` combination.
-- Core regression tests stay green: `tests/unit/test_provider_wire_invariants.py`, `tests/unit/test_model_fetch_routing.py`.
+- `tests/unit/test_provider_wire_invariants.py` and `tests/unit/test_model_fetch_routing.py` stay green.

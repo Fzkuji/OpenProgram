@@ -360,37 +360,38 @@ action is profile management, not per-tool global toggles.
 ## User-editable entry points
 
 ```
-Entry point                     Controls                     Layer  State  Persisted in
+Entry point                     Controls                     Layer  Persisted in
 ────────────────────────────────────────────────────────────────────────────────────────
-Functions page —                create / edit / delete tool  L2b    ⬜     functions_meta.json
-  tool profiles                 profiles (named tool sets).                 → profiles: {name:[...]}
+Functions page —                create / edit / delete tool  L2b    functions_meta.json
+  tool profiles                 profiles (named tool sets).         → profiles: {name:[...]}
                                 Add/remove tools to/from a
                                 profile. Default profile =
                                 all tools on.
 
-Chat composer —                 pick which tool profile to   L2b    ⬜     session state
-  profile picker                use for this conversation.                  (sent per-turn with
-  (Tools toggle → expand        Expand the "Tools" chip to                  tools_override)
+Chat composer —                 pick which tool profile to   L2b    session state
+  profile picker                use for this conversation.          (sent per-turn with
+  (Tools toggle → expand        Expand the "Tools" chip to          tools_override)
    → profile list)              see available profiles +
                                 select one. Default = all.
 
-Chat composer —                 per-turn toggles: Tools      L2b    ✅     per-message
-  "+" menu toggles              on/off + Web Search on/off   /L5           (tools_override)
+Chat composer —                 per-turn toggles: Tools      L2b    per-message
+  "+" menu toggles              on/off + Web Search on/off   /L5    (tools_override)
 
-Agent profile                   per-agent toolset / enabled  L2b    ✅     ~/.openprogram/
-  (tools field)                 / disabled / allowed.        + L5          agents/<id>.json
-                                Can reference a tool profile                → tools: {...}
+Agent profile                   per-agent toolset / enabled  L2b    ~/.openprogram/
+  (tools field)                 / disabled / allowed.        + L5   agents/<id>.json
+                                Can reference a tool profile        → tools: {...}
                                 by name (toolset="research")
 
-Attended / unattended           withhold ask_user_question   L5     ✅     session state
-  switch (CLI/TUI/web)          when no human is watching          (system  (attended.py)
-                                                                    auto)
+Attended / unattended           withhold ask_user_question   L5     session state
+  switch (CLI/TUI/web)          when no human is watching           (attended.py; applied
+                                                                    by the system, not
+                                                                    the user)
 
-Global tool disable             blacklist a single tool      L5     ✅     config.json:
-  (Functions page / config)     everywhere — rarely used.                   tools.disabled
+Global tool disable             blacklist a single tool      L5     config.json:
+  (Functions page / config)     everywhere — rarely used.           tools.disabled
                                 Overrides any profile.
 
-Author decorator kwargs         expose / available_if /      L1/2/  ✅     in-code
+Author decorator kwargs         expose / available_if /      L1/2/  in-code
   @function(...)                defer / toolset / unsafe_in  3/6
                                 / check_fn
 ```
@@ -727,3 +728,18 @@ necessary):
 - Splitting / merging the shared registry
 - Replacing the deferred-loading mechanism with something other than
   ToolSearch
+
+## Appendix — implementation status
+
+The registry, the six gating layers, the two decorators, and the four
+runtime knobs are all in place. Two user-facing entry points described
+under "Tool profiles (Functions page)" and "User-editable entry points"
+are not built yet:
+
+- the Functions-page profile manager (create / edit / delete tool
+  profiles, persisted to `functions_meta.json`);
+- the chat-composer profile picker (choose which profile a conversation
+  uses).
+
+Until those ship, profile selection is reachable only through the
+`toolset=` argument and the agent profile's `tools.toolset` field.

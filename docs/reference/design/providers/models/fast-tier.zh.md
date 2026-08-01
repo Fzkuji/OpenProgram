@@ -1,8 +1,8 @@
 # Fast（高速）档 — 判定、存储与线路
 
-状态：已落地（2026-07-12，用户逐条裁决）。本文记录 fast 功能的代码摆放、
-数据来源与判定规则，防遗忘。姊妹文档：[`thinking-effort.md`](thinking-effort.md)
-（同为"模型能力 → UI 开关"的声明式子系统，结构刻意对齐）。
+本文记录 fast 功能的代码摆放、数据来源与判定规则。姊妹文档：
+[`thinking-effort.md`](thinking-effort.md)（同为"模型能力 → UI 开关"的声明式
+子系统，结构刻意对齐）。
 
 ## 1. Fast 是什么
 
@@ -11,7 +11,7 @@
 | 家族 | 线上形态 | 计费事实 |
 |---|---|---|
 | GPT 5.4 / 5.5 / 5.6 系 | 请求体 `service_tier: "priority"`（OpenAI 叫 priority processing） | Codex 订阅端把它列成每模型的档（"1.5x 速度、增加用量"）；哪些模型有这个档直接来自 `service_tiers`（§2.1），不靠猜 |
-| Claude Opus 4.6 / 4.7 / 4.8 | 请求体 `speed: "fast"` + 头 `anthropic-beta: fast-mode-2026-02-01` | 同样按量计费；订阅账户没充 usage credits 时 Anthropic 返回 429 "Usage credits are required for fast mode"（2026-07-12 实测），**如实透传给界面**——报错是账户问题，不代表模型不支持 |
+| Claude Opus 4.6 / 4.7 / 4.8 | 请求体 `speed: "fast"` + 头 `anthropic-beta: fast-mode-2026-02-01` | 同样按量计费；订阅账户没充 usage credits 时 Anthropic 返回 429 "Usage credits are required for fast mode"，**如实透传给界面** —— 报错是账户问题，不代表模型不支持 |
 
 其他所有模型（Gemini / DeepSeek / Qwen / Llama / MiniMax …）没有 fast 概念。
 
@@ -23,15 +23,15 @@
 1. **openai-codex → 读注册表落盘的 `Model.fast`**。这个字段不是手写的，
    来自官方 codex models 端点（见 §2.1），Fetch 时随 spec 一起写进 config，
    判定时 `get_model("openai-codex", id).fast` 直接读文件。`gpt-5.4-mini`
-   这类没有 fast 档的会精确判 False（旧手写前缀表会误判 True）。
+   这类没有 fast 档的会精确判 False，这是按 id 前缀猜做不到的。
 2. **claude-code → 手写声明表** `enabled_models.default_fast(model_id)`：
-   id 含 `opus-4-6/4-7/4-8`（连字符或点号写法）→ True。订阅端还没验证有没有
-   可拉的 models 端点，暂留手写；能拉了就照 codex 的样子换成端点落盘。
+   id 含 `opus-4-6/4-7/4-8`（连字符或点号写法）→ True。订阅端是否有可拉的
+   models 端点尚未验证，因此保持手写；确认有端点后按 codex 的方式改为端点落盘。
 3. **其余 provider → models.dev 全自动**：该模型有 `service_tier ==
    "priority"` 或 `id == "fast"` 的档 → True；没有、或目录不认识 → False。
 
-裁决记录：私有网关（如 frontier-intelligence）不特判——目录不认识就没有
-fast 按钮。需要例外时用 config 显式覆盖（§3）。
+私有网关（如 frontier-intelligence）不特判 —— 目录不认识就没有 fast 按钮。
+需要例外时用 config 显式覆盖（§3）。
 
 ### 2.1 codex 的官方数据源
 
@@ -43,9 +43,9 @@ fast 按钮。需要例外时用 config 显式覆盖（§3）。
 `originator: codex_cli_rs` + `version` 身份——后端对灰度 id（如
 `gpt-5.6-luna`）按客户端身份放行，用别的 originator 会列表有、dispatch 404。
 
-弃用 models.dev 的原因：它跟踪的是公开 API 平台目录，不是订阅入口。id 会漏
-账户跑不了的模型、context 是 API 平台数字、fast 靠 id 前缀猜（`gpt-5.4-mini`
-误判）。官方端点这三样都权威。
+这里不用 models.dev，是因为它跟踪的是公开 API 平台目录而不是订阅入口：它会列出
+账户跑不了的 id、给出 API 平台的 context 数字，而 fast 只能靠 id 前缀猜
+（`gpt-5.4-mini` 会被误判）。官方端点这三样都权威。
 
 ## 3. 存储：先读官方 → 落 config → 之后读文件
 

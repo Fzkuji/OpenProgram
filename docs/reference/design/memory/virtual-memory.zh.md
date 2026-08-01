@@ -9,14 +9,13 @@
 - **Bi-temporal**：每条记忆记两个时间——`event_time`（事情发生时）和 `ingestion_time`（记下来时）
 - **不可变追加**：旧记录不删除，冲突时标 `superseded_by`
 
-当前抽象记忆有三种类型（+ v1 过渡期的 Journal/Wiki）：
+抽象记忆有三种类型：
 
-| 类型 | 回答的问题 | 存储 | 状态 |
-|------|-----------|------|------|
-| Timeline | 何时发生了什么 | `memory/timeline/YYYY-MM.jsonl` | Phase 2 待实现 |
-| Knowledge Graph | 什么和什么是什么关系 | `memory/graph/{entities,edges}.jsonl` | Phase 2 待实现 |
-| Core.md | LLM 每次必看的最小快照 | `memory/core.md` | v1 已有，Phase 2 重写 |
-| Journal/Wiki (v1) | 同上（粗粒度） | `memory/short-term/`, `memory/wiki/` | 运行中，待被取代 |
+| 类型 | 回答的问题 | 存储 |
+|------|-----------|------|
+| Timeline | 何时发生了什么 | `memory/timeline/YYYY-MM.jsonl` |
+| Knowledge Graph | 什么和什么是什么关系 | `memory/graph/{entities,edges}.jsonl` |
+| Core.md | LLM 每次必看的最小快照 | `memory/core.md` |
 
 ## 2. Timeline（时间轴）
 
@@ -189,11 +188,9 @@ OpenProgram 记忆 — 项目: OpenProgram, 最后整理 2026-06-18
 
 覆盖式更新。每次 sleep::deep 重新生成整个文件，旧内容被完全替换。
 
-## 5. Journal/Wiki (v1 过渡)
+## 5. 跟线性总结链的关系
 
-### 5.1 当前状态
-
-v1 的三层架构仍在运行：
+[`memory.md`](memory.md) 记录的线性链用更粗的结构覆盖同一片范围：
 
 ```
 short-term/YYYY-MM-DD.md  → (sleep::light) →  wiki/<kind>/<slug>.md  → (sleep::deep) →  core.md
@@ -203,21 +200,7 @@ short-term/YYYY-MM-DD.md  → (sleep::light) →  wiki/<kind>/<slug>.md  → (sl
 - **wiki**：sleep::deep 把 short-term 事实提升为知识页面
 - **core.md**：sleep::deep 从 wiki 投影最小快照
 
-### 5.2 问题
-
-v1 管道从 `get_branch()` 渲染的对话文本读取，不读 DAG 节点。丢失了：
-- 工具调用链（agent 跑了什么、参数、结果）
-- `reads` 边（什么影响了决策）
-- project-git commit 历史
-
-### 5.3 未来
-
-Phase 2 完成后，v1 管道被新的 Timeline + Graph 取代：
-- `short-term/` → Timeline 替代
-- `wiki/` → Graph 替代
-- `core.md` → 从 Timeline + Graph 重新投影
-
-过渡期两套并存，新管道验证通过后移除旧管道。
+这条链从 `get_branch()` 渲染的对话文本读取，不读 DAG 节点，因此丢失工具调用链（agent 跑了什么、参数、结果）、`reads` 边（什么影响了决策）和 project-git commit 历史。Timeline 取代 `short-term/`，Graph 取代 `wiki/`，`core.md` 从两者重新投影。
 
 ## 6. 提炼管道（实体 → 抽象）
 
@@ -248,9 +231,9 @@ Stage 2 是最贵的（需要 LLM），可先用规则版（pattern match）起�
 
 ### 6.3 关键：直接读 DAG
 
-v1 读渲染文本。v2 直接读 session-git 里的 `Call` DAG，包括 `code` 节点（工具调用）和 `reads` 边（上下文引用）。这些是图谱投影的关键数据来源。
+管道直接读 session-git 里的 `Call` DAG，包括 `code` 节点（工具调用）和 `reads` 边（上下文引用）。这些是图谱投影的关键数据来源，改读渲染出的对话文本就会丢掉它们。
 
-读层已实现：`store/session/provenance.py` 提供 `iter_nodes_since()` / `node_provenance()` / `session_commits()` / `project_commits()`。
+读层是 `store/session/provenance.py`，提供 `iter_nodes_since()` / `node_provenance()` / `session_commits()` / `project_commits()`。
 
 ## 7. 召回机制
 
@@ -274,3 +257,7 @@ LLM 需要实体层细节时，调导航工具：
 | `memory_timeline(entity\|since\|until)` | 时间轴切片 | Virtual timeline |
 | `memory_graph_neighbors(entity, hops)` | 图的邻居 | Virtual graph |
 | `memory_search(query)` | 跨虚拟层 hybrid 搜索 | Virtual (FTS + 向量) |
+
+## 附录：实现状态
+
+提炼所需的读取层（`store/session/provenance.py`）已就位。§2、§3 描述的 Timeline 和 Graph 存储，以及 §7.2 的导航工具尚未建成；当前在跑的是 §5 描述、[`memory.md`](memory.md) 记录的线性总结链，它读的仍是渲染出的对话文本而不是 DAG。

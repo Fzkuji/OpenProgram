@@ -1,6 +1,6 @@
 # Three Template Rules
 
-The previous docs covered the mechanism; this one gives three **real rules** and walks them end to end. They are both what the first version ships and a template for writing new rules later — just copy and adapt. Before reading this, finish `overview.md` and `execution-model.md`.
+The previous docs covered the mechanism; this one gives three **real rules** and walks them end to end. They are both the rule set the design starts from and a template for writing new rules — just copy and adapt. Before reading this, finish `overview.md` and `execution-model.md`.
 
 ## Why start with only three
 
@@ -45,7 +45,7 @@ class DangerousCommandGuard:
 
 So `is_dangerous_command()` must parse a path allowlist, check the branch name, and distinguish resource types — not something as crude as `"rm -rf" in command`.
 
-**Be honest about how far it goes**: it guards against **slips and mistakes**, not against a malicious adversary. Clever bypasses (base64-encoding the command, writing it into a script and then running that, using another tool instead of bash) it can't catch any of these. This version positions it as a "guardrail against slips" and doesn't pretend to be a security boundary. Actually defending against an adversary requires a sandbox, which is a separate matter (covered in the archived threat-model).
+**Be honest about how far it goes**: it guards against **slips and mistakes**, not against a malicious adversary. Clever bypasses (base64-encoding the command, writing it into a script and then running that, using another tool instead of bash) it can't catch any of these. It is positioned as a "guardrail against slips" and does not pretend to be a security boundary. Actually defending against an adversary requires a sandbox, which is a separate matter (covered in the archived threat-model).
 
 **Relationship to the existing approval mechanism**: OpenProgram already has a tool-approval pop-up. Don't end up popping twice for the same command — let this rule's judgment attach as a "risk annotation" onto the existing approval flow, merged into a single confirmation.
 

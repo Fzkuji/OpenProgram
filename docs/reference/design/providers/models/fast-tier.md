@@ -1,7 +1,6 @@
 # Fast tier — detection, storage, and wires
 
-Status: shipped (2026-07-12, each rule user-adjudicated). This doc records
-where the fast feature's code lives, where its data comes from, and the
+Where the fast feature's code lives, where its data comes from, and the
 detection rules. Sibling doc: [`thinking-effort.md`](thinking-effort.md)
 (the same "model capability → UI toggle" declarative pattern; the structure
 is deliberately aligned).
@@ -14,7 +13,7 @@ vendor's high-speed knob:
 | Family | Wire shape | Billing reality |
 |---|---|---|
 | GPT 5.4 / 5.5 / 5.6 | body `service_tier: "priority"` (OpenAI's priority processing) | On the Codex subscription the endpoint advertises it as a per-model tier ("1.5x speed, increased usage"); which models expose it comes straight from `service_tiers` (§2.1), not a guess |
-| Claude Opus 4.6 / 4.7 / 4.8 | body `speed: "fast"` + header `anthropic-beta: fast-mode-2026-02-01` | Also pay-as-you-go; a subscription account without usage credits gets Anthropic's 429 "Usage credits are required for fast mode" (verified 2026-07-12), surfaced **as-is** — an account problem, not lack of support |
+| Claude Opus 4.6 / 4.7 / 4.8 | body `speed: "fast"` + header `anthropic-beta: fast-mode-2026-02-01` | Also pay-as-you-go; a subscription account without usage credits gets Anthropic's 429 "Usage credits are required for fast mode", surfaced **as-is** — an account problem, not lack of support |
 
 No other model family (Gemini / DeepSeek / Qwen / Llama / MiniMax…) has a
 fast tier at all.
@@ -25,20 +24,21 @@ Entry point: `openprogram/webui/_model_listing/listing.py`. Strips the
 wire-format `"provider:"` prefix first (the runtime records the current
 model as `openai-codex:gpt-5.5`).
 
-1. **openai-codex → reads the persisted `Model.fast`**. Not hand-written:
-   this field comes from the official codex models endpoint (§2.1), written
-   into config alongside the spec at Fetch time, so detection just does
-   `get_model("openai-codex", id).fast`. Tiers with no fast mode (e.g.
-   `gpt-5.4-mini`) resolve False exactly — the old id-prefix table said True.
+1. **openai-codex → reads the persisted `Model.fast`**. This field is not
+   hand-written: it comes from the official codex models endpoint (§2.1),
+   written into config alongside the spec at Fetch time, so detection is just
+   `get_model("openai-codex", id).fast`. Tiers with no fast mode (such as
+   `gpt-5.4-mini`) resolve False exactly, which an id-prefix guess cannot do.
 2. **claude-code → hand-written table** `enabled_models.default_fast`: id
    contains `opus-4-6/4-7/4-8` (hyphen or dot) → True. Its subscription
-   endpoint isn't verified yet, so it stays hand-written; swap it for
-   endpoint-backed storage (like codex) once we confirm one exists.
+   endpoint is unverified, so this stays hand-written until an endpoint-backed
+   source like codex's is confirmed to exist.
 3. **Everything else → models.dev, automatic**: a mode with `service_tier ==
    "priority"` or `id == "fast"` → True; none, or unknown provider → False.
 
-Ruling: private gateways (e.g. frontier-intelligence) are NOT special-cased —
-unknown to the catalogue means no fast button. Use the config override (§3).
+Private gateways (such as frontier-intelligence) are not special-cased —
+unknown to the catalogue means no fast button. The config override (§3) covers
+them.
 
 ### 2.1 Codex's official source
 
@@ -52,9 +52,10 @@ use the `originator: codex_cli_rs` + `version` identity — the backend
 greylists ids (e.g. `gpt-5.6-luna`) by client identity, so a different
 originator gets the model in the list but 404s at dispatch.
 
-Why models.dev was dropped: it tracks the public *API platform* catalogue, not
-the subscription front-door — leaking un-runnable ids, wrong context windows,
-and a fast flag reconstructed from an id-prefix guess that misfired.
+models.dev is not the source here because it tracks the public *API platform*
+catalogue rather than the subscription front-door: it lists un-runnable ids,
+reports the wrong context window, and can only reconstruct a fast flag from an
+id-prefix guess.
 
 ## 3. Storage: read official → write config → read the file thereafter
 

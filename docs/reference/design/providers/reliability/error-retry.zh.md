@@ -73,7 +73,7 @@ invalid api key / invalid_api_key                        ← 凭证错误
 
 第一层(AgentSession)和第二层(exec)各自独立计数。最坏情况:exec 重试 3 次,每次内部 AgentSession 又重试 3 次 = 9 次实际 API 调用,加退避总耗时可达数十秒才最终失败。
 
-这是历史叠加的结果:AgentSession 那层是早就有的通用重试,exec 那层是 Runtime 自己的保护。两层都保留时,职责重叠。如果确认 AgentSession 那层已稳定生效,exec 层可以降到 `max_retries=1`(不重试),让重试职责单一化。当前两层都开。
+两层职责重叠:AgentSession 那层是通用重试,exec 那层是 Runtime 自己的保护,两层都开着。如果确认 AgentSession 那层已稳定生效,exec 层可以降到 `max_retries=1`(不重试),让重试职责单一化。
 
 ## 边界:重试解决不了的
 

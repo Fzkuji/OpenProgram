@@ -1,87 +1,59 @@
-# Credential-validation unification
+# Credential validation
 
-Status: **in progress** · Owner: providers/webui · Last updated: 2026-06-03
+Every surface that asks "is this provider key valid?" — save, the verify button,
+the connectivity check, the CLI, TUI status rows, the setup wizard — calls one
+entry point. Adding a provider once makes it validate everywhere.
 
-## 1. Problem
+## 1. Two questions, not one
 
-"Is this provider key valid?" is answered five different ways in the codebase,
-and most of them are wrong:
+`configured` and `valid` are different facts. A key can be present in the
+environment and rejected by the provider; a key can be accepted and still have
+no balance behind it; a key can be fine while the specific model named is
+temporarily down. Status rows that show a green dot for any present key conflate
+the first two, and a validator that answers only yes/no cannot express the rest.
 
-| Surface | File · symbol | What it does | Verdict |
-| --- | --- | --- | --- |
-| Connectivity button | `webui/_model_catalog/test_provider.py::test_provider` | auth-only `GET /key` (OpenRouter) / `GET /models`, inference-ping fallback | the only correct one — but reachable from one surface |
-| Save-key verify | `webui/routes/config.py::_validate_api_key` | per-provider branch for **OpenAI / Anthropic / Google only**; `return None` (no-op) for ~17 others | silently passes invalid keys for most providers |
-| Save key | `webui/routes/config.py::save_config` | character check only, then persist | **no validation at all** |
-| Model fetch | `_model_catalog/fetchers/*` | each fetcher re-implements its own key check + 401 handling | duplicated, inconsistent |
-| Status rows | `providers/registry.py::check_providers`, `_model_catalog/providers.py::_is_configured` | env-var / file **presence** | conflates *configured* (present) with *valid* (accepted) |
+The design separates them: a cheap offline presence check answers `configured`,
+one auth-endpoint call answers `valid`, and a closed status taxonomy carries the
+distinctions between rejection, no balance, and model unavailability.
 
-Three concrete defects fall out of this:
+**Validating a credential never invokes a model.** An auth probe costs one GET
+and zero tokens; running inference to check a key spends completions to learn
+something an auth endpoint already knows.
 
-1. **The ~17-provider silent no-op.** Paste a garbage OpenRouter / DeepSeek /
-   xAI / Groq / Mistral / … key and `_validate_api_key` returns `None` →
-   "valid". Validation only existed for OpenAI/Anthropic/Google.
-2. **Validation spends completions.** The Anthropic branch did
-   `client.messages.create(...)` and the Google branch looped
-   `generate_content` over three models — i.e. it ran *inference* to check a
-   *key*. The connectivity button did the same until it was refactored to hit
-   an auth endpoint. Validating a key should never invoke a model.
-3. **`configured` ≠ `valid`.** TUI/web status rows show a green dot for any
-   present key, valid or not, and the TUI has no way to actually test one.
+This is deliberately not lazy-only validation. OpenClaw and opencode validate at
+first model use and have no save-time probe; OpenProgram keeps a save-time
+green/red indicator, so it keeps an explicit cheap auth probe — the mechanism
+both references describe for exactly that indicator.
 
-## 2. Goals & non-goals
+Out of scope: this is not a usage or quota dashboard. Balance is reported only
+where a provider exposes it cheaply, such as OpenRouter's `/key`.
 
-**Goals**
+## 2. Prior art
 
-- Validate a *credential* without invoking a *model*.
-- One entry point that every surface (save, verify button, connectivity check,
-  CLI, TUI status rows, setup wizard) calls — add a provider once, it validates
-  everywhere.
-- A closed status taxonomy that separates "key rejected" from "key fine, no
-  balance" from "key fine, that model is down right now".
+**OpenClaw** — the UI never validates. It calls one gateway RPC,
+`models.authStatus` (`ui/src/ui/controllers/model-auth-status.ts`), returning a
+`{ts, providers[]}` snapshot cached server-side for 60 s with a `refresh: true`
+bypass. Server-side (`src/gateway/server-methods/models-auth-status.ts`,
+`src/infra/provider-usage.*`) it validates off usage endpoints rather than a
+model call: `401/403` on the usage/quota endpoint means the token expired,
+anything else 4xx/5xx is reported as "HTTP n". Credential health is a separate
+rollup (`src/agents/auth-health.ts`): `ok | expiring | expired | missing |
+static`, where an OAuth profile counts as healthy if a refresh token is present
+even when the access token has expired. Results are secret-redacted — only
+`profileId/type/status/expiry`, never the token.
 
-**Non-goals**
+**opencode** — stores the key on `auth login` with no live check; the first real
+request surfaces a bad key. The catalog comes from models.dev, decoupled from
+credentials. A single `provider/error.ts` maps upstream error shapes to
+user-facing remediation strings.
 
-- Not a usage/quota dashboard (balance is reported only where a provider
-  exposes it cheaply, e.g. OpenRouter `/key`).
-- Not lazy-only. OpenClaw and opencode validate lazily at first model use and
-  have no save-time probe; OpenProgram keeps a save-time green/red indicator,
-  so we keep an explicit cheap auth probe — the thing both references say to
-  build *if* you want that indicator.
+Adopted here: the status taxonomy, the 60 s cache with force-refresh, secret
+redaction, the layering of cheap presence against one-network-call auth against
+model reachability, and the centralized status-to-message mapper.
 
-## 3. Prior art
+## 3. The entry point
 
-**OpenClaw** (`/Users/fzkuji/Documents/Agent-Infrastructure/references/openclaw`)
-
-- The UI never validates. It calls one gateway RPC, `models.authStatus`
-  (`ui/src/ui/controllers/model-auth-status.ts`), which returns a snapshot of
-  `{ts, providers[]}` and is **server-cached for 60 s** with a `refresh: true`
-  bypass after a user-initiated refresh.
-- Server-side (`src/gateway/server-methods/models-auth-status.ts`,
-  `src/infra/provider-usage.*`) it validates **parasitically off usage
-  endpoints**, not a model call: a `401/403` on the provider's usage/quota
-  endpoint = "token expired", anything else 4xx/5xx = "HTTP n".
-- Credential health is a separate rollup (`src/agents/auth-health.ts`):
-  `ok | expiring | expired | missing | static`. OAuth profiles count as healthy
-  if a refresh token is present even when the access token is expired.
-- Results are **secret-redacted** — only `profileId/type/status/expiry`, never
-  the token.
-
-**opencode** (sst/opencode)
-
-- Stores the key on `auth login` **without** a live check (store-then-fail-
-  lazily); the first real request surfaces a bad key. Catalog comes from
-  models.dev, decoupled from credentials. A single `provider/error.ts` maps
-  upstream error shapes → user-facing remediation strings.
-
-**What we adopt**: the status taxonomy, the 60 s cache + force-refresh, secret
-redaction, the layering of cheap-presence vs one-network-call auth vs
-model-reachability, and the centralized status→message mapper. **Where we
-differ**: we keep an explicit save-time auth probe (layer 1) because we want the
-indicator neither reference has.
-
-## 4. The unified entry point
-
-New module `openprogram/webui/_model_catalog/credentials.py`, re-exported from
+`openprogram/webui/_model_catalog/credentials.py`, re-exported from
 `_model_catalog/__init__.py`.
 
 ```python
@@ -111,19 +83,19 @@ class CredentialResult:
     cached: bool
 ```
 
-Thin wrappers delegate to it (back-compatible shapes preserved):
+Thin wrappers delegate to it, preserving their existing shapes:
 
-- `routes/config.py::_validate_api_key(env_var, value)` → map env_var →
-  provider_id, `validate_credential(pid, api_key=value)`, return the old
-  `error|None`.
-- `test_provider.py::test_provider(pid, model)` →
-  `validate_credential(pid, model=model)` adapted to the legacy
-  `{ok, latency_ms, model, note, error}` the React `Connectivity` component
-  reads.
-- `provider_auth_status(provider_ids=None, refresh=False)` — batch helper for
-  status rows, mirrors `models.authStatus` (60 s cache, refresh bypass).
+- `routes/config.py::_validate_api_key(env_var, value)` maps env_var to
+  provider_id, calls `validate_credential(pid, api_key=value)`, and returns the
+  `error|None` its caller expects.
+- `test_provider.py::test_provider(pid, model)` calls
+  `validate_credential(pid, model=model)` and adapts to the
+  `{ok, latency_ms, model, note, error}` shape the React `Connectivity`
+  component reads.
+- `provider_auth_status(provider_ids=None, refresh=False)` is the batch helper
+  for status rows, mirroring `models.authStatus` (60 s cache, refresh bypass).
 
-## 5. Layered validation
+## 4. Three layers
 
 | Layer | Question | Cost | When |
 | --- | --- | --- | --- |
@@ -131,11 +103,11 @@ Thin wrappers delegate to it (back-compatible shapes preserved):
 | 1 — auth acceptance | did the provider's auth endpoint accept the key? | one GET, 0 tokens | the canonical green/red check |
 | 2 — model reachability | can I reach *this named* model right now? | one inference ping | only when `model` is passed |
 
-Layer 2 is exactly today's behaviour: `429/5xx` / OpenRouter "no endpoints" →
-`valid_model_unavailable` (key proven good, model down), real bad request →
-error.
+Layer 2 exists because "the key is good but this model is down" is a real and
+distinct outcome: `429/5xx` or OpenRouter's "no endpoints" resolve to
+`valid_model_unavailable`, while a genuine bad request is an error.
 
-## 6. Per-provider-KIND probe table
+## 5. Probe per provider KIND
 
 | KIND | Providers | Layer-1 probe |
 | --- | --- | --- |
@@ -147,7 +119,9 @@ error.
 | `oauth` | openai-codex, gemini-subscription, github-copilot, claude-code, opencode | `AuthManager.acquire_sync(pid).status` (`fresh`→valid, `needs_reauth`→invalid); no network beyond an optional token refresh |
 | `cloud` | amazon-bedrock, google-vertex, azure-openai-responses | `not_applicable` for the generic probe (SigV4 / ADC / deployment-keyed) until a native list-call is added |
 
-## 7. Status-code → status (the single interpreter)
+## 6. Status-code interpretation
+
+One interpreter maps outcomes to statuses:
 
 ```
 200                                          -> valid
@@ -159,97 +133,97 @@ no credential resolvable                      -> missing
 provider has no key concept                  -> not_applicable
 ```
 
-## 8. Caching & refresh
+`valid_no_balance` is only cheaply detectable for OpenRouter (via `/key`) and
+through a layer-2 `402`. Elsewhere a `200` proves auth but not balance, so the
+result is plain `valid` until the first real call surfaces `insufficient_quota`.
 
-60 s in-process TTL keyed by `provider_id` (+ whether a model was named).
-`use_cache=False` / `refresh=True` bypasses. Results carry `cached: bool`.
-Never store or return the secret.
+## 7. Caching
 
-## 9. Surface integration
+A 60 s in-process TTL keyed by `provider_id` plus whether a model was named.
+`use_cache=False` / `refresh=True` bypasses it. Results carry `cached: bool`.
+The secret is never stored and never returned.
 
-- **Save** (`POST /api/config`): persist *first* (a slow/offline provider must
-  never block saving), then fire `validate_credential(pid, api_key=val)` and let
-  the row flip `Checking…` → green/amber/red/grey. Layer 1 only — never spend a
-  completion.
-- **Verify button** (`POST /api/config/verify`): same call, explicit `api_key`,
-  synchronous, shows status + `detail`.
-- **Connectivity check** (existing React component → `/test`→`/validate`):
-  default = layer 1; a "Test a model" affordance passes `{model}` for layer 2.
-  The existing "Model X is unavailable right now" note is the
-  `valid_model_unavailable` rendering.
-- **Status rows** (`config_schema.get_settings` + TUI + web Providers tab): two
-  columns — `Configured` (layer-0 presence, instant) and `Validated` (cached
-  layer-1, 60 s). Every row gains a `/test` action so the TUI reaches the same
-  probe the web button uses. OAuth rows render `fresh/expiring/needs_reauth`
-  distinctly.
+## 8. How each surface uses it
 
-Ambiguous-state copy (opencode `error.ts` style):
+- **Save** (`POST /api/config`): persist first, so a slow or offline provider
+  never blocks saving, then fire `validate_credential(pid, api_key=val)` and let
+  the row flip from `Checking…` to green/amber/red/grey. Layer 1 only — saving a
+  key never spends a completion.
+- **Verify button** (`POST /api/config/verify`): the same call with an explicit
+  `api_key`, synchronous, showing status plus `detail`.
+- **Connectivity check** (the React component behind `/test` → `/validate`):
+  layer 1 by default; a "Test a model" affordance passes `{model}` for layer 2.
+  The "Model X is unavailable right now" note is how `valid_model_unavailable`
+  renders.
+- **Status rows** (`config_schema.get_settings`, TUI, the web Providers tab):
+  two columns — `Configured` (layer-0 presence, instant) and `Validated`
+  (cached layer 1, 60 s). Every row carries a `/test` action, so the TUI reaches
+  the same probe as the web button. OAuth rows render `fresh` / `expiring` /
+  `needs_reauth` distinctly.
+
+Remediation copy is centralized, in the style of opencode's `error.ts`:
 `valid_no_balance` → "Key works — account has no balance. Add funds at <doc>.";
 `invalid_credential` → "Key rejected (401). Re-check the key or re-login.";
 `unknown` → "Couldn't reach <provider> to verify. Saved anyway; will validate
 on first use."; OAuth `needs_reauth` → "Login expired — run `openprogram
 providers login <pid>`."
 
-## 10. Migration plan
+## 9. Adding a provider
 
-1. **(done)** Create `credentials.py`: `CredentialResult`, status enum, per-KIND
-   probe registry; move `_credential_check` / `_is_model_unavailable` /
-   `_MODEL_DOWN_STATUSES` / `_CREDENTIAL_PROBE_PATHS` here; add the Anthropic,
-   Google and OAuth probes and the `402`/no-balance branch; implement
-   `validate_credential()` layers 0→1→(2 if model) + 60 s cache +
-   `provider_auth_status()`.
-2. **(done)** `test_provider()` delegates to `validate_credential()` and adapts
-   to the legacy dict.
-3. **(done)** `_validate_api_key()` becomes a shim → closes the ~17-provider
-   gap. Add `POST /api/providers/{name}/validate` + `GET
-   /api/providers/auth-status`; `/test` aliases `/validate`.
-4. **(staged)** Fetchers call `validate_credential(pid)` once before dispatching;
-   drop per-fetcher key-presence reimplementations.
-5. **(staged)** `check_providers()` / `_is_configured()` keep cheap presence as
-   `configured`; add cached `validated`. `config_schema.get_settings()` reads
-   both and sets `action:'/test'`.
-6. **(staged)** Fix the `<authenticated>` sentinel for bedrock / vertex — return
-   `None` + KIND `cloud` so they report `not_applicable`, not a fake green.
-7. **(staged)** Tests: outcome × KIND matrix.
+Declare its probe KIND in `credentials.py::_kind_for`; the default
+`openai_bearer` needs no declaration at all. That single line wires the provider
+into save-verify, the connectivity button, status rows, and the CLI/TUI at once.
 
-## 11. Testing matrix
+**Anthropic-wire third parties** (MiniMax and friends) are detected
+automatically: `_kind_for` returns `anthropic_compat` for any provider whose
+registry `api` is `anthropic-messages` and which isn't native `anthropic`. Three
+places must agree, or the provider half-works:
 
-outcome × KIND: `200→valid`, `401→invalid_credential`,
-`402/insufficient_quota→valid_no_balance`, OpenRouter public `/models` **not**
-mistaken for valid (must use `/key`), Anthropic without `anthropic-version`,
-OAuth `needs_reauth`, layer-2 `429→valid_model_unavailable`, offline→`unknown`,
-no key→`missing`.
-
-## 12. Adding a new provider
-
-Declare its probe KIND in `credentials.py::_kind_for` (default `openai_bearer`
-needs nothing). That single line wires it into save-verify, the connectivity
-button, status rows, and the CLI/TUI at once.
-
-**Anthropic-wire third parties** (MiniMax & friends) are auto-detected:
-`_kind_for` returns `anthropic_compat` for any provider whose registry `api`
-is `anthropic-messages` (and isn't native `anthropic`). Keep this consistent
-across three places or the provider half-works:
-- `_kind_for` → `anthropic_compat` (credential probe hits `{base}/v1/models`);
+- `_kind_for` → `anthropic_compat`, so the credential probe hits
+  `{base}/v1/models`;
 - `_model_catalog/providers.py::_PROVIDER_DEFAULT_API` must stamp
-  `anthropic-messages` (so fetched/custom rows route to the right stream fn,
-  not `POST /chat/completions`) — matching `models_generated`;
+  `anthropic-messages`, so fetched and custom rows route to the right stream
+  function rather than `POST /chat/completions` — matching `models_generated`;
 - `_model_catalog/fetchers` routes `anthropic-messages` providers to the
-  base_url-aware `_fetch_anthropic` (the OpenAI-compat `GET {base}/models`
-  404s on a `/anthropic` host).
-A drift guard test (`test_model_fetch_routing.py`) pins the api stamp to
-`models_generated`.
+  base_url-aware `_fetch_anthropic`, because the OpenAI-compatible
+  `GET {base}/models` 404s on a `/anthropic` host.
 
-## 13. Open questions
+`test_model_fetch_routing.py` pins the api stamp to `models_generated` so the
+three cannot drift apart.
 
-- `valid_no_balance` is only cheaply detectable for OpenRouter (`/key`) and via
-  a layer-2 `402`; elsewhere a `200` proves auth but not balance — accept plain
-  `valid` until first real call surfaces `insufficient_quota`.
-- Auto layer-1 on every single-key save vs defer to an explicit Verify click on
-  bulk save (throttle to avoid a burst of probes).
-- Anthropic OAuth (`ANTHROPIC_OAUTH_TOKEN`) needs `Authorization: Bearer` +
-  `anthropic-beta: oauth-…` on the same `/v1/models` probe — confirm the beta
-  value, or route it to the AuthManager path.
+## 10. Test matrix
+
+Outcome × KIND: `200→valid`, `401→invalid_credential`,
+`402/insufficient_quota→valid_no_balance`, OpenRouter's public `/models` **not**
+mistaken for valid (the probe must use `/key`), Anthropic without
+`anthropic-version`, OAuth `needs_reauth`, layer-2 `429→valid_model_unavailable`,
+offline→`unknown`, no key→`missing`.
+
+## Implementation status
+
+`credentials.py` holds `CredentialResult`, the status enum, and the per-KIND
+probe registry, with `validate_credential()` running layers 0→1→(2 when a model
+is named) plus the 60 s cache and `provider_auth_status()`. `test_provider()`
+and `_validate_api_key()` delegate to it, which is what closes the validation
+gap for the providers that previously had no probe at all;
+`POST /api/providers/{name}/validate` and `GET /api/providers/auth-status` are
+served, with `/test` aliasing `/validate`.
+
+Still to land: fetchers calling `validate_credential(pid)` once before
+dispatching instead of reimplementing key-presence checks; `check_providers()`
+and `_is_configured()` exposing a cached `validated` alongside cheap presence,
+with `config_schema.get_settings()` reading both; and bedrock/vertex reporting
+`not_applicable` rather than a placeholder-driven green.
+
+Open points:
+
+- Whether a single-key save triggers layer 1 automatically or defers to an
+  explicit Verify click on bulk save, which would need throttling to avoid a
+  burst of probes.
+- Anthropic OAuth (`ANTHROPIC_OAUTH_TOKEN`) needs `Authorization: Bearer` plus
+  `anthropic-beta: oauth-…` on the same `/v1/models` probe; either confirm the
+  beta value or route it through the AuthManager path.
 - openai-codex has no auth-only listing endpoint (the ChatGPT backend 403s), so
-  its only end-to-end probe is a layer-2 `/responses` ping — rely on AuthManager
-  `Credential.status` for the default (structural, not end-to-end) check.
+  its only end-to-end probe is a layer-2 `/responses` ping. The default check
+  relies on AuthManager `Credential.status`, which is structural rather than
+  end-to-end.

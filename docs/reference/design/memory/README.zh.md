@@ -32,28 +32,17 @@ LLM Context
 3. **Bi-temporal** — 每条记忆记两个时间：`event_time`（事情发生时）和 `ingestion_time`（记下来时）。支持时间旅行查询和矛盾检测。
 4. **LLM-navigated recall** — 不灌 raw chat 进 context。只注入紧凑地图，LLM 按需用工具走回实体层取细节。
 
-## 实施状态
-
-| Phase | 内容 | 状态 |
-|-------|------|------|
-| 0 | Baseline 修复（LLM 桥 / watcher / ingest） | ✅ |
-| 1 | 实体层：Project schema + session.project_id + project-git | ✅ |
-| 2 | 提炼管道重写：读 session-git DAG → timeline + graph | ❌ 未开始 |
-| 3 | 召回重写：只注入抽象 + 导航工具 | ❌ 未开始 |
-| 4 | 物化视图 + hybrid search（向量） | ❌ 未开始 |
-| 5 | UI：Projects 面板 / timeline / `/memory` | ⚠️ 部分 |
-
 ## 子文档
 
-> 版本说明：`memory.md` 描述**当前已落地**的线性总结链（`journal → wiki → core`，见
-> `openprogram/memory/`）；`memory-v2.md` 是**目标设计**（实体/虚拟两级 + provenance 召回），
-> 取代 v1，仍在实施中。本 README 描述的是 v2 架构。
+| 文档 | 内容 |
+|------|------|
+| [`memory-v2.md`](memory-v2.md) | 两级架构：实体/虚拟两层 + provenance 召回 |
+| [`git-as-entity-memory.md`](git-as-entity-memory.md) | 实体层的 git 底座（Session-Git + Project-Git） |
+| [`entity-memory.md`](entity-memory.md) | 实体记忆：Session-Git + Project-Git，按生命周期组织 |
+| [`virtual-memory.md`](virtual-memory.md) | 抽象记忆：Timeline + Graph + Core，按类型 × 生命周期组织 |
+| [`memory.md`](memory.md) | `openprogram/memory/` 里在跑的线性总结链（journal/wiki/core） |
 
-| 文档 | 内容 | 状态 |
-|------|------|------|
-| [`memory.md`](memory.md) | v1：线性总结链（journal/wiki/core） | ✅ 当前实现 |
-| [`memory-v2.md`](memory-v2.md) | v2：实体/虚拟两级 + provenance 召回（取代 v1） | 🚧 设计稿 + 实施中 |
-| [`git-as-entity-memory.md`](git-as-entity-memory.md) | 实体层最初设计（Session-Git + Project-Git 的由来） | 参考 |
-| [`entity-memory.md`](entity-memory.md) | 实体记忆：Session-Git + Project-Git，按生命周期组织 | 子设计 |
-| [`virtual-memory.md`](virtual-memory.md) | 抽象记忆：Timeline + Graph + Core，按类型 × 生命周期组织 | 子设计 |
+## 实现状态
+
+实体层已就位：Project schema、`session.project_id`、project-git 都已实现。抽象层目前仍是 [`memory.md`](memory.md) 描述的线性总结链——提炼管道还没读 session-git DAG，召回还没做到只注入抽象层，导航工具也尚未注册。UI 上有顶栏项目选择器；Projects 面板、timeline 和 `/memory` 命令尚未建成。
 

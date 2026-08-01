@@ -1,41 +1,34 @@
 # 错误分类传播 —— 把结构化的 LLM 错误一路传到 UI
 
-状态：**agent 边界 + 模型已落地 (079e0072)** · webui emit + 前端待办 · 负责人：providers/agent/webui · 创建于：2026-06-04
+`reason`、`retryable`、`retry_after_s` 从 provider 失败一路传到 chat-turn 错误
+事件，使 UI 渲染出一个分类清晰、可操作的错误，而不是一个不透明的字符串。
+它建立在 `openprogram/providers/utils/errors.py` 已有的分类体系之上。
 
-优化路线图条目："把结构化的 LLMError 分类体系向上传播到 provider 层之上"。基于
-`openprogram/providers/utils/errors.py` 中已有的分类体系构建。
+## 1. 为什么这套结构必须一路留存
 
-## 1. 问题
+分类体系位于 **provider-stream** 层：`providers/utils/errors.py` 定义了
+`ErrorReason`（`transport / rate_limit / authentication / authorization /
+context_length / content_policy / invalid_request / provider_internal /
+unknown`）、一个携带 `reason` + `retry_after_s` 的 `LLMError`，以及
+`classify(exc) -> (reason, retryable)`。`stream_retry` 用它来驱动退避。
 
-在 **provider-stream** 层已经存在一套丰富的、opencode 风格的错误分类体系：
-`providers/utils/errors.py` 定义了 `ErrorReason`
-(`transport / rate_limit / authentication / authorization / context_length /
-content_policy / invalid_request / provider_internal / unknown`)、一个携带
-`reason` + `retry_after_s` 的 `LLMError`，以及 `classify(exc) -> (reason, retryable)`。
-`stream_retry` 用它来驱动退避（backoff）。
+如果在该层之上把结构压扁成 `str(exc)` —— 无论是 agent 循环捕获失败，还是把
+chat-turn 错误事件塑造成 `{"type": "error", "content": "<string>"}` —— UI 就
+无法区分：
 
-但在 stream 层**之上**，这套结构就被丢弃了：
-- agent 循环捕获到失败后，将其压扁成 `str(exc)`；
-- webui 的 chat-turn 错误事件是 `{"type": "error", "content": "<string>"}`
-  (`ws_actions/chat.py`)；
-- WS 连接处理器原本会记录一段原始 traceback（已修复）。
-
-因此 **UI 无法区分**：
 - 一个 **rate limit**（可重试 —— 显示 "retrying in Ns"，甚至自动重试）与
 - 一个 **auth** 失败（致命 —— "check your API key / re-login"）与
 - 一个 **context-length** 溢出（致命 —— "the conversation is too long; compact
   or start a new chat"）与
 - 一个临时性的 **provider_internal**（可重试）之间的差别。
 
-每个失败看起来都是一个不透明的红色字符串。这是错误 UX 中最大的一处缺口。
+于是每个失败看起来都是同一个红色字符串，而且因为没有任何环节知道这是哪一类失败，
+也就无法给出对应的操作入口。
 
-## 2. 目标
+范围是**主 chat-turn 流式错误**。那些操作性错误字符串（重试与压缩失败的消息）
+保持纯文本。
 
-把 `reason` / `retryable` / `retry_after_s` 从 provider 失败一路传到 chat-turn
-错误事件，并在 UI 中渲染出一个**分类清晰、可操作**的错误。范围仅限于**主
-chat-turn 流式错误**本身 —— 那些操作性错误字符串（重试/压缩失败的消息）保持纯文本。
-
-## 3. 设计
+## 2. 设计
 
 1. **在 agent 错误边界处分类。** 在 agent turn 捕获 stream 失败的地方，如果它是
    一个 `LLMError`，就使用它的 `reason` / `retry_after_s`；否则运行
@@ -58,49 +51,41 @@ chat-turn 流式错误**本身 —— 那些操作性错误字符串（重试/�
      again."（可重试样式）
    - `invalid_request`/`unknown` → 原始 `content`（兜底）。
 
-## 4. 迁移
+## 3. 分类发生在哪里
 
-1a. **（已完成，079e0072）** 在 agent 错误边界处分类 ——
-   `errors.taxonomy_fields(exc)` + 新增的 `AssistantMessage.error_reason /
-   error_retryable / error_retry_after_s` 字段。已有单元测试（LLMError
-   透传、通用错误分类）。
-1b. **（已在全部三个 emit 点落地；尚未捕获到实时渲染）** 一个聊天失败会在三个
-   层级被捕获，现在全部通过 `taxonomy_fields` 分类并 emit
-   `reason / retryable / retry_after_s`：
-   - `agent.py`（`Agent` 类边界，079e0072）—— 供 Agent run 使用。
-   - `_execute/__init__.py` 外层 except (5efc95ab) —— action 级别的错误。
-   - **`dispatcher.py` (5c17b848) —— 真正的公共路径。** webui 的聊天 turn 通过
-     dispatcher 的 `_run_loop_blocking` 运行，其失败在 dispatcher 自己的 except
-     中被捕获；reason 经由 `TurnResult`
-     (`error_reason/error_retryable/error_retry_after_s`) 同时流入运行中的
-     dispatcher 错误事件和运行后的 `chat.py` 广播。
-   **仍未验证：** 一次实时的分类渲染。强制制造一个确定性的 provider 错误受阻于：
-   前端使用它**自己**选中的模型（codex）而非 agent 默认模型，且 codex 表现不稳定
-   （有时 401，有时成功）。更换 agent 模型并不会改变前端发送的内容。需要在选中的
-   模型上用一次真实、可复现的 provider 失败来确认。注意：持久化的错误节点只携带
-   字符串（不含 reason）—— 只有实时广播才携带；要在重新加载时渲染分类错误，需要
-   DB 节点也携带分类信息（未来）。
-2. **（已落地，可编译；尚未捕获到实时渲染，e5f95445）** assistant 气泡
-   (`assistant-bubble.tsx`) 根据 `errorReason` 渲染一个分类标题
-   （rate_limit → 重试提示，auth → 检查密钥，context → 压缩，
-   provider/transport/timeout → 临时性），下方附上原始消息；
-   `ChatResponseData` + `ChatMsg` 携带这些字段，`finalize()` 捕获它们。编译干净；
-   正常路径的聊天未回归。**仍未验证：** 一次实时的分类错误渲染 —— 本次会话未能
-   强制制造出一个确定性的 provider 失败（codex 一直成功；模型选择器 / 原始 WS /
-   store 注入各自都太繁琐）。可通过命中一个真实错误来确认（过期密钥 → "auth"；
-   一个会 503 的 OpenRouter `:free` 模型 → "provider"），或临时把
-   `default_model` 设为一个会 503 的模型。
+一次聊天失败会在三个层次被捕获，每一处都经 `taxonomy_fields` 分类并发出
+`reason / retryable / retry_after_s`：
 
-每一步单独 commit；即使前端尚未落地，后端本身也是有用的（API 消费者、日志、未来的
-channels）。
+- `agent.py` —— `Agent` 类边界，供 Agent 运行使用。
+- `_execute/__init__.py` 的外层 except —— 动作级错误。
+- `dispatcher.py` —— webui chat turn 的公共路径，它经由 dispatcher 的
+  `_run_loop_blocking` 运行。失败在 dispatcher 自己的 except 中被捕获，reason
+  经 `TurnResult`（`error_reason` / `error_retryable` / `error_retry_after_s`）
+  流入 dispatcher 的运行中错误事件与运行后的 `chat.py` 广播。
 
-## 5. 验证
+前端一侧是 `assistant-bubble.tsx`，它按 `errorReason` 渲染分类标题，下方附上
+原始消息；`ChatResponseData` 与 `ChatMsg` 携带这些字段，`finalize()` 捕获它们。
 
-诱发每一种 reason，并确认 WS 负载的 `reason/retryable` + UI 渲染：一个被拒绝的
-密钥 → `authentication`，致命，"check your key"；一个 429 → `rate_limit`，可重试，
-重试提示；一个超大的 context → `context_length`，致命，"compact"。
-`errors.classify` 已经有了对该映射的单元覆盖；再加一个测试，验证 agent 边界会
-原样保留 `LLMError` 的 reason。
+后端边界处的分类本身就有价值：API 消费方、日志以及其他 channel 都会读取 reason，
+与聊天 UI 如何呈现它无关。
+
+## 4. 验证
+
+诱发每一种 reason，确认 WS payload 的 `reason` / `retryable` 与 UI 渲染：
+被拒绝的 key 得到 `authentication`、致命、"check your key"；429 得到
+`rate_limit`、可重试、带重试提示；超长上下文得到 `context_length`、致命、
+"compact"。`errors.classify` 有覆盖该映射的单元测试，另有一条测试确认 agent
+边界原样保留 `LLMError` 的 reason。
+
+端到端复现一个确定性的 provider 失败是麻烦的地方：前端发送的是它自己选中的模型
+而非 agent 默认模型，因此改 agent 模型并不会改变实际被触发的路径。要确认实时
+渲染，需要在选中的那个模型上制造一个可重复的失败 —— 过期的 key 对应 `auth`，
+或一个会 503 的 OpenRouter `:free` 模型对应 `provider`。
+
+## 5. 局限
+
+持久化的错误节点只携带字符串，不含 reason；分类信息走的是实时广播。若要在重新
+加载后仍渲染分类错误，存储的节点也需要携带这套分类。
 
 ## 6. 非目标
 

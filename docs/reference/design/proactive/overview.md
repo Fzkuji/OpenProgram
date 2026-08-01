@@ -122,13 +122,13 @@ That's all of it. The rest of the docs each go into detail on one block of this 
 - `policies-mvp.md`: three real rules as templates
 - `invariants.md`: the bottom lines the framework itself must hold (don't loop into a deadlock)
 
-## What this version deliberately leaves out
+## What this design deliberately leaves out
 
-To keep the foundation clean, the following have been **cut** (archived in `_research_archive/`; if you want them later, they can be added without rework):
+To keep the foundation clean, the following are **out of scope** (archived in `_research_archive/`; they can be added without rework):
 
 - Persisting events to disk with crash-recovery and tamper resistance — research/production-grade reliability fit-out.
 - Offline replay (using historical sessions to validate a new rule's false-positive rate) — only needed for writing papers.
 - Adversarial security (preventing malicious injection, redacting secrets) — not needed under the simplification of treating the adversary as a well-meaning user.
-- Complex interruption budgets and automatic circuit breaking — for now, get by with the simplest cooldown (the same reminder only comes back after a while).
+- Complex interruption budgets and automatic circuit breaking — the simplest cooldown carries the load instead (the same reminder only comes back after a while).
 
-This version has just one goal: **an event-driven foundation that runs, that you can keep adding rules to, and whose rules can remember past events.**
+The design has just one goal: **an event-driven foundation that runs, that you can keep adding rules to, and whose rules can remember past events.**

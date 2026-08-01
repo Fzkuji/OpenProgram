@@ -1,6 +1,6 @@
 # LLM 调用容错与超时管理
 
-一项跨项目研究，考察参考用的 agent 框架如何稳健地调用 LLM——重试、退避、超时、连接处理、故障转移——以及 OpenProgram 在 2026-05 加固阶段之后所处的位置。
+OpenProgram 如何稳健地调用 LLM —— 重试、退避、超时、连接处理、故障转移 —— 以及参考用的 agent 框架如何解决同样的问题。
 
 研究的来源（全部位于 `references/` 下，只读）：
 
@@ -16,26 +16,26 @@
 
 ## 1. 对比矩阵
 
-| 维度 | openclaw | opencode | hermes-agent | pi-ai (codex) | OpenProgram（当前） |
+| 维度 | openclaw | opencode | hermes-agent | pi-ai (codex) | OpenProgram |
 |---|---|---|---|---|---|
 | 重试次数 | 3（+2 次内层瞬时） | 2 | 3 | 3 | 3 |
 | 退避基数 | 300 ms | 500 ms | 5 s | 1 s | 1 s |
-| 退避上限 | 30 s | 10 s | 120 s | 无 | **30 s** ✅ 新增 |
+| 退避上限 | 30 s | 10 s | 120 s | 无 | **30 s** |
 | 抖动 | 对称 / 仅正向 | ±20% | 去相关（0.5） | 无 | 对称 / 仅正向 |
 | 可重试状态码 | 408/409/429/5xx | 429/503/504/529 | 429/5xx/524 | 429/5xx | 429/5xx + 响应体模式 |
-| Retry-After | ms+秒+日期 | ms+秒+日期（上限 10s） | 无 | 无 | **ms+秒+日期** ✅ 新增 |
-| 响应体 / 空闲超时 | **30 分钟，任意字节** (undici) | 无（HTTP）/ 5 分钟（WS） | 180 s 失活，按上下文缩放 | 无 | **30 分钟任意字节 + 15 分钟数据停滞 + 2 小时上限** ✅ 新增 |
+| Retry-After | ms+秒+日期 | ms+秒+日期（上限 10s） | 无 | 无 | **ms+秒+日期** |
+| 响应体 / 空闲超时 | **30 分钟，任意字节** (undici) | 无（HTTP）/ 5 分钟（WS） | 180 s 失活，按上下文缩放 | 无 | **30 分钟任意字节 + 15 分钟数据停滞 + 2 小时上限** |
 | 连接超时 | undici 默认 | 无 / 15 s（WS） | SDK 默认 | 无 | 30 s |
 | TTFB 守卫 | 30 s（Azure） | 不适用 | 120 s（codex） | 无 | 由空闲/读取超时覆盖 |
 | HTTP 版本 | **强制 HTTP/1.1** | 默认 | 自动（h2） | — | httpx 默认（h1.1） |
-| IPv6 / Happy Eyeballs | **autoSelectFamily** | 否 | 否 | — | ❌ 缺口 |
-| TCP keepalive 调优 | undici 默认 | 否 | **SO_KEEPALIVE 30/10/3** | — | ❌ 缺口 |
-| 连接复用 | undici keep-alive | WS 连接池，55 分钟回收 | **共享 client + 失活时重建** | — | ❌ 每次调用新建 client |
-| API-key 轮换 | **是** | 否 | **是（连接池 + 冷却）** | — | ❌ 缺口 |
-| Provider/模型故障转移 | **是** | 仅 WS→HTTP | **是（链式）** | — | ❌ 缺口 |
-| 首 token 之后中断 | 报错 | 报错 | **部分结果 + 续接** | 报错 | 报错 |
+| IPv6 / Happy Eyeballs | **autoSelectFamily** | 否 | 否 | — | 强制 IPv4 的退路 |
+| TCP keepalive 调优 | undici 默认 | 否 | **SO_KEEPALIVE 30/10/3** | — | **SO_KEEPALIVE 30/10/3** |
+| 连接复用 | undici keep-alive | WS 连接池，55 分钟回收 | **共享 client + 失活时重建** | — | 按事件循环共享 client |
+| API-key 轮换 | **是** | 否 | **是（连接池 + 冷却）** | — | 是（连接池 + 冷却） |
+| Provider/模型故障转移 | **是** | 仅 WS→HTTP | **是（链式）** | — | 是（链式，需显式开启） |
+| 首 token 之后中断 | 报错 | 报错 | **部分结果 + 续接** | 报错 | 部分结果 + 续接 |
 | 调用中途刷新 OAuth | — | — | **逐请求 token provider** | 逐次调用 | 逐次调用解析 |
-| 限流 header 解析 | — | **是（x-ratelimit-*）** | 是（Nous） | — | ❌ 缺口 |
+| 限流 header 解析 | — | **是（x-ratelimit-*）** | 是（Nous） | — | 是（x-ratelimit-* / anthropic-ratelimit-*） |
 | 错误分类 | 是 | 是（带标签联合类型） | 是 | 基础 | 是（`ErrorReason`） |
 
 ---
@@ -86,88 +86,75 @@
 - 带标签联合类型的错误模型；遵循 Retry-After（上限 10s）。
 
 ### pi-ai（我们 codex 的参考）
-- `MAX_RETRIES=3`、`BASE_DELAY_MS=1000`，重试 429/5xx + 响应体模式——
-  **没有显式的响应体读取超时**；依赖 fetch + 重试。（我们旧的
-  120s httpx 读取上限是 OpenProgram 独有的添加——也就是那个 bug。）
+- `MAX_RETRIES=3`、`BASE_DELAY_MS=1000`，重试 429/5xx + 响应体模式 ——
+  **没有显式的响应体读取超时**；依赖 fetch + 重试。这里没有 120 s httpx 读取
+  上限的对应物，加上这样一个上限正是长流被误杀的原因（见 §3）。
 
 ---
 
-## 3. 我们的改动（2026-05 阶段）
+## 3. 超时策略
 
-全部在 `openprogram/providers/`：
+指导原则来自 openclaw：推理流不能带一个紧的读取超时。单一的 httpx
+`timeout=120` 浮点值把响应体读取上限卡在 120 s，在带缓冲的代理或 VPN 上会先于
+空闲预算触发 —— 一个健康的长流就是这样被杀掉的。
 
-1. **Codex 超时解耦并放宽** (`openai_codex/openai_codex.py`)：
-   - httpx `Timeout(connect=30, read=1860, write=30, pool=30)`——旧的
-     单一 `timeout=120` 浮点值把响应体读取上限卡在 120 s，
-     在带缓冲的代理/VPN 上会先于我们的空闲预算触发（即报告的那个 bug）。
-   - SSE 调控器重建为**两个预算 + 一个兜底**，对齐
-     openclaw 的“宽松、任意字节即重置”模型：
-     - `SSE_IDLE_TIMEOUT_S = 1800`（30 分钟）——“完全没有字节”，在
-       **任意**行（包括 ping）时重置 ≈ openclaw 的 `bodyTimeout`。
-     - `SSE_DATA_STALL_TIMEOUT_S = 900`（15 分钟）——**我们额外增加的**：“没有真正
-       数据”，仅在解析到事件时重置；捕获 openclaw 看不到的 ping 洪泛停滞。
-     - `SSE_TOTAL_TIMEOUT_S = 7200`（2 小时）——失控兜底。
-   - 全部可通过环境变量覆盖（`OPENPROGRAM_SSE_*`、`OPENPROGRAM_HTTPX_*`）。
+因此 codex 使用 `Timeout(connect=30, read=1860, write=30, pool=30)`，
+SSE 调控器是两个预算加一个兜底：
 
-2. **退避上限** (`utils/stream_retry.py`)：指数部分上限封顶为
-   30 s (`OPENPROGRAM_PROVIDER_STREAM_BACKOFF_MAX_S`)；更大的
-   服务器 Retry-After 仍会被遵循。
+- `SSE_IDLE_TIMEOUT_S = 1800`（30 分钟）—— "完全没有字节"，在**任意**行
+  （包括 ping）时重置，相当于 openclaw 的 `bodyTimeout`。
+- `SSE_DATA_STALL_TIMEOUT_S = 900`（15 分钟）—— "没有真正数据"，仅在解析到事件时
+  重置。它能捕获字节级超时看不到的 ping 洪泛停滞。
+- `SSE_TOTAL_TIMEOUT_S = 7200`（2 小时）—— 失控兜底。
 
-3. **Retry-After：三种形式全支持** (`utils/errors.py`)：`retry-after-ms`、
-   整数秒，以及 HTTP-date——之前仅支持秒。
+三者都可通过环境变量覆盖（`OPENPROGRAM_SSE_*`、`OPENPROGRAM_HTTPX_*`）。
 
----
+退避的指数部分上限封顶为 30 s（`OPENPROGRAM_PROVIDER_STREAM_BACKOFF_MAX_S`，
+位于 `utils/stream_retry.py`）；更大的服务器 Retry-After 仍会被遵循。
+`utils/errors.py` 解析 Retry-After 的三种形式：`retry-after-ms`、整数秒，
+以及 HTTP-date。
 
-## 4. 现已实现 vs 推迟
+## 4. 传输与恢复
 
-**已实现（`providers/utils/` 下的新模块，已接入 codex；其中
-通用模块对每个 HTTP provider 都可用）：**
+`providers/utils/` 下的模块是通用的，对每个 HTTP provider 都可用；codex 全部接入。
 
-- **集中式超时策略** (`timeouts.py`)——单一事实来源，放宽
-  到 OpenClaw 的 30 分钟级别，带上下文缩放辅助方法。
-- **稳健的 client 构建器** (`http_client.py`)：
-  - **TCP keepalive**——`SO_KEEPALIVE` + 空闲/间隔/次数 → 约 60 s 死对端
-    检测（VPN 掉线场景）。按操作系统做防御性处理；`OPENPROGRAM_TCP_KEEPALIVE=0`
-    可禁用。
-  - **强制 IPv4** 逃生口 (`OPENPROGRAM_FORCE_IPV4=1`)，用于损坏的 IPv6 VPN
-    （绑定一个 IPv4 源地址——httpx 没有 Happy-Eyeballs）。
-  - **连接复用**——`get_shared_async_client`（按事件循环作键）；codex 现在
-    跨回合复用其 TLS 连接，而不是重新握手。
-  - 通过 httpx 0.28 的 `proxy=` 实现 **代理**（修复了已移除的 `proxies=` 形式，
-    一个潜伏的崩溃）。
-- **限流 header 解析** (`rate_limit.py`)——`x-ratelimit-*` /
-  `anthropic-ratelimit-*`；codex 在某个配额桶偏低/耗尽时发出告警。
-- **部分响应恢复** (`openai_codex.py`)——在内容产生*之后*发生的瞬时流中
-  断会以 (`stop_reason="length"`) 终结这个部分回合，
-  而不是报错；永久性失败（auth/invalid/context/policy）仍然
-  硬失败。开关 `OPENPROGRAM_PARTIAL_RECOVERY=0`。
-- **Provider/模型故障转移** (`failover.py` + `agent_loop.py`)——分类器
-  （rate_limit/overloaded/server/timeout/network）+ 一个 `stream_with_failover`
-  包装器，在**内容产生之前**遇到值得故障转移的失败时，先尝试主选项再依次尝试
-  每个配置的回退项（转发事件、抑制重复的 `start`、token 已流出后绝不切换）。接入
-  回合循环时**默认关闭**：除非设置了 `OPENPROGRAM_FALLBACK_MODELS`
-  ("provider/model,provider2/model2")，否则为空操作。
-- 将 codex + gemini_cli 接入共享 client；**修复了 gemini 的
-  `timeout=120.0` 单浮点 bug**（与 codex 同类）。
-- （更早）退避**上限** + **Retry-After** 三种形式全支持。
+- **集中式超时策略**（`timeouts.py`）—— 单一事实来源，处在 OpenClaw 的 30 分钟
+  级别，带上下文缩放辅助方法。
+- **client 构建器**（`http_client.py`）：
+  - **TCP keepalive** —— `SO_KEEPALIVE` 加空闲/间隔/次数，给出约 60 s 的死对端
+    检测，对应 VPN 掉线场景。按操作系统做防御性处理；
+    `OPENPROGRAM_TCP_KEEPALIVE=0` 可关闭。
+  - **强制 IPv4** 退路（`OPENPROGRAM_FORCE_IPV4=1`）用于 IPv6 损坏的 VPN，
+    做法是绑定一个 IPv4 源地址，因为 httpx 没有 Happy Eyeballs。
+  - **连接复用** —— `get_shared_async_client` 按事件循环取键，因此 codex 跨轮次
+    复用它的 TLS 连接，而不是重新握手。
+  - **代理**经由 httpx 0.28 的 `proxy=`。
+- **限流 header 解析**（`rate_limit.py`）—— `x-ratelimit-*` 与
+  `anthropic-ratelimit-*`；codex 在某个额度桶偏低或耗尽时发出警告。
+- **部分结果恢复**（`openai_codex.py`）—— 在内容已经到达之后发生的瞬时中断，
+  会以 `stop_reason="length"` 结束这一轮的部分结果，而不是报错，因此不丢工作、
+  也不会盲目重试。永久性失败（鉴权、非法请求、上下文、策略）仍然直接失败。
+  可用 `OPENPROGRAM_PARTIAL_RECOVERY=0` 关闭。
+- **Provider/模型故障转移**（`failover.py` + `agent_loop.py`）—— 一个分类器
+  （rate_limit / overloaded / server / timeout / network）加一个
+  `stream_with_failover` 包装器：在**内容产生之前**发生值得转移的失败时，
+  依次尝试主模型和每个已配置的候选。它转发事件、抑制重复的 `start`，
+  并且在已经流出 token 之后绝不切换。默认关闭：未设置
+  `OPENPROGRAM_FALLBACK_MODELS`（`"provider/model,provider2/model2"`）时是 no-op。
+- gemini_cli 共用同一个 client，因此具有相同的超时语义，而不是自带一个单一浮点
+  超时值。
 
-**在不适用之处干净地禁用（已设计，默认关闭）：**
+**有意关闭或未构建的部分：**
 
-- **API-key 轮换**——完整机制已存在于 auth 层
-  (`auth/pool.py`：`pick` 轮换 + `mark_failure`/`report_failure` 冷却，
-  带策略与 TTL)。当一个池有 >1 个凭证时，**获取时**的轮换是自动的。
-  逐次调用的**失败冷却**上报被刻意
-  不接入实时单账户路径：把唯一的凭证拉进冷却
-  会把用户自我锁死而毫无收益。所以在单账户上，轮换
-  是干净的空操作；一旦配置了多个凭证它便自动
-  激活。热路径里没有半成品的危险代码。
-- **OAuth 逐请求 token provider**——codex 已经通过 auth manager 在每次调用时解
-  析 + 刷新 bearer；完整的 httpx 事件钩子 provider 只是
-  锦上添花，不是修复，因此略去。
+- **API-key 轮换** —— 机制位于 auth 层（`auth/pool.py`：`pick` 轮换、
+  `mark_failure` / `report_failure` 冷却，带策略与 TTL）。当一个池里有多于一份
+  凭据时，获取时的轮换是自动的。逐次调用的失败冷却上报没有接入单账号的实时路径，
+  因为让唯一一份凭据进入冷却只会把用户锁在门外而没有任何收益。单账号下轮换是
+  干净的 no-op，一旦配置了多份凭据便自行生效。
+- **逐请求 OAuth token provider** —— codex 已经在每次调用时经 auth manager 解析
+  并刷新 bearer，因此完整的 httpx event-hook provider 只会增加机制而不解决问题。
 
----
-
-## 5. 新增的可调项
+## 5. 可调项
 
 | 环境变量 | 默认值 | 含义 |
 |---|---|---|

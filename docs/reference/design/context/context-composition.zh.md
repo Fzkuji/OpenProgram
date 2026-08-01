@@ -1,18 +1,16 @@
-# 上下文组成 —— 注册式三层（目标态设计）
+# 上下文组成 —— 注册式三层
 
-Status: **已实现** · Created: 2026-06-23 · Updated: 2026-06-25
-
-> 本文定义**每次 LLM 调用喂什么**的目标态。核心不是"列出有哪些成分"(那会定死、
-> 不可扩展),而是定义**一套规则 + 注册机制**：成分如何归层、如何排序、如何按条件
-> 出现；具体成分由各功能**注册**进来,加功能不改框架。
+> 本文定义**每次 LLM 调用喂什么**。它不枚举一组固定成分——那会定死、不可扩展——而是
+> 定义**一套规则 + 注册机制**：成分如何归层、如何排序、如何按条件出现。具体成分由各
+> 功能**注册**进来，所以加功能不改框架。
 >
-> 设计来源:借鉴 Hermes 的三层(stable/context/volatile = 我们的 L0/L1/L2),但
-> **改进它的硬编码**——Hermes 的三层组装是写死的 if 链(加新指导要改中心函数),我们
-> 做成真正的注册式(开闭原则:开放扩展、关闭修改)。
+> 三层沿用 Hermes 的 stable/context/volatile 划分，对应我们的 L0/L1/L2。区别在成分怎么
+> 进到层里：Hermes 的三层组装是写死的 if 链，加新指导要改中心函数；这里的层是一个注册
+> 表——开放扩展、关闭修改。
 >
-> **命题**:论文 "LLM-as-Code,模型是程序里的一个零件"——这个零件每次被调用要知道
-> 自己的处境(我是谁/谁调我/在哪步),同时只看到该看的历史(结果,不是每个子函数的
-> 内部过程)。
+> 前提是论文的 "LLM-as-Code，模型是程序里的一个零件"：这个零件每次被调用要知道自己的
+> 处境（我是谁 / 谁调我 / 在哪步），同时只看到该看的历史——结果，而不是每个子函数的
+> 内部过程。
 
 ---
 
@@ -54,9 +52,9 @@ L1 历史**就是一棵调用树**——它本质是整个上下文 DAG 的**一
 
 ---
 
-## 二、注册模型（核心,解决扩展性）
+## 二、注册模型
 
-不枚举成分,而是定义**统一的成分接口 + 三个注册列表**。框架只管规则,成分是注册项。
+不枚举成分，而是定义**统一的成分接口 + 三个注册列表**。框架只管规则，成分是注册项。
 
 ### 成分接口
 
@@ -84,17 +82,17 @@ L0 / L1 / L2 各维护一个注册列表。框架组装时:
 最终:tools(L0)→ system(L0+L1项目层)→ messages(L1历史 + L2)
 ```
 
-### 为什么这样就不定死(回答扩展性)
+### 为什么这样保持可扩展
 
-- **加新功能**(多 agent、新 channel、新 provider、新工具指导):功能侧**注册一个
-  ContextComponent**(声明 layer/order/condition/build),**框架代码一行不改**。
-- **不需要的功能**:不注册,零负担;将来要了再注册。
-- 框架管的是**规则**(三层判据 + 排序 + 注册接口),成分是**开放集合**。这正是
-  Hermes 没做到的——它把成分硬编码进 build 函数,加一个要改中心函数。
+- **加新功能**（多 agent、新 channel、新 provider、新工具指导）：功能侧**注册一个
+  ContextComponent**，声明 layer/order/condition/build，**框架代码不改**。
+- **不需要的功能**：不注册，不产生任何开销；将来要了再注册。
+- 框架管的是**规则**（三层判据、排序、注册接口），成分是**开放集合**。Hermes 则把成分
+  硬编码进 build 函数，加一个要改那个中心函数。
 
-> 改进点(vs Hermes):Hermes 只在"记忆 provider / 平台 hint"两个接触点有注册,核心
-> 指导(工具感知/模型特定/平台格式)是 if 链硬编码。我们把注册推广到**所有成分**,
-> 包括工具指导、模型指导、平台格式——它们都是注册项,各带 condition。
+> Hermes 只在记忆 provider 和平台 hint 两个接触点有注册，核心指导（工具感知、模型特定、
+> 平台格式）是 if 链硬编码。这里注册覆盖**所有成分**，工具指导、模型指导、平台格式都
+> 包含在内——它们都是注册项，各带自己的 condition。
 
 ---
 
@@ -125,78 +123,78 @@ messages = L1[统一调用树 …追加增长,完成节点释放 io…]      ←
 
 ---
 
-## 四、当前注册成分快照
+## 四、已注册成分
 
-下面是**截至现在已注册/该注册的成分**(随功能增长,不是限制)。每个标 `order` /
-`condition` / 现状。✅=已有,➕=该加,标 condition 说明何时出现。
+下面列出已注册的成分及其 `order` 与 `condition`。这组成分随功能增长，是一份快照，不是
+限制。
 
 ### L0 系统级
 
-| order | 成分 | condition | 现状 |
+| order | 成分 | condition | 注册为 |
 |---|---|---|---|
-| 1 | 整体身份("你是 X agent") | 恒 | ✅ |
-| 2 | inline agent prompt | 有则出 | ✅ |
-| 3 | 工具强制(act-don't-ask) | 恒(可按模型) | ✅ tool_enforcement |
-| 4 | 模型特定操作指导 | 按当前 provider/model | ✅ model_guidance(_MODEL_GUIDANCE 每 provider 一条) |
-| 5 | 平台渲染格式 | 按当前 channel | ✅ platform_format(contextvar + _PLATFORM_RULES per channel) |
-| 6 | computer-use 指导 | computer-use 工具启用 | ➕(低优先) |
-| 7 | 技能索引 | 有启用技能 | ✅ |
-| 8 | 工具 + MCP schema | 恒 | ✅ |
-| 9 | 全局/用户级记忆 | 有 | ✅ |
-| 10 | 环境信息(OS/shell/远程后端) | 恒(成体系) | ✅ environment(OS/shell;cwd 另由 tool-runtime) |
-| 11 | 当前日期(日粒度) | 恒 | ✅ current_date |
+| 1 | 整体身份（"你是 X agent"） | 恒 | identity |
+| 2 | inline agent prompt | 有则出 | inline_prompt |
+| 3 | 工具强制（act-don't-ask） | 恒（可按模型） | tool_enforcement |
+| 4 | 模型特定操作指导 | 按当前 provider/model | model_guidance（_MODEL_GUIDANCE 每 provider 一条） |
+| 5 | 平台渲染格式 | 按当前 channel | platform_format（contextvar + _PLATFORM_RULES per channel） |
+| 6 | computer-use 指导 | computer-use 工具启用 | 未注册 |
+| 7 | 技能索引 | 有启用技能 | skills_index |
+| 8 | 工具 + MCP schema | 恒 | — |
+| 9 | 全局/用户级记忆 | 有 | memory_global |
+| 10 | 环境信息（OS/shell/远程后端） | 恒 | environment（OS/shell；cwd 另由 tool-runtime 负责） |
+| 11 | 当前日期（日粒度） | 恒 | current_date |
 
 ### L1 会话/项目级
 
-| order | 成分 | condition | 现状 |
+| order | 成分 | condition | 注册为 |
 |---|---|---|---|
-| 1 | 项目身份(AGENTS.md) | 有项目文件 | ✅(现状错塞 L0,应 L1) |
-| 2 | Prompt 注入检测(扫 1 再注入) | 加载项目文件时 | ✅ pi_shield + detect_injection_patterns |
-| 3 | 上下文文件截断 | 项目文件超大 | ✅ workspace_files 内 MAX_WORKSPACE_CHARS=8000 截断 |
-| 4 | 项目级记忆 | 有 | ✅(现状错塞 L0) |
-| 5 | USER.md 用户档案 | 有 | ✅ 已由 workspace_files 加载 read_user_md |
-| 6 | 工作目录 cwd | 恒 | ✅ |
-| 7 | 是否在 git 仓库 | 在 git 仓库 | ✅ git_repo_flag |
-| 8 | session/model/thinking/tier 绑定 | 恒 | ✅ |
-| 9 | deferred tools catalog | 有延迟工具 | ✅ |
-| 10 | **统一调用树(历史)** | 有历史 | ✅ DAG 现成;改造点见下。追加增长 + 完成节点释放 io,排 L1 最后 |
+| 1 | 项目身份（AGENTS.md） | 有项目文件 | workspace_files |
+| 2 | Prompt 注入检测（扫 1 再注入） | 加载项目文件时 | pi_shield + detect_injection_patterns |
+| 3 | 上下文文件截断 | 项目文件超大 | workspace_files 内 MAX_WORKSPACE_CHARS=8000 截断 |
+| 4 | 项目级记忆 | 有 | — |
+| 5 | USER.md 用户档案 | 有 | user_profile（由 workspace_files 调 read_user_md 加载） |
+| 6 | 工作目录 cwd | 恒 | — |
+| 7 | 是否在 git 仓库 | 在 git 仓库 | git_repo_flag |
+| 8 | session/model/thinking/tier 绑定 | 恒 | — |
+| 9 | deferred tools catalog | 有延迟工具 | — |
+| 10 | **统一调用树（历史）** | 有历史 | 追加增长、完成节点释放 io，排 L1 最后 |
 
-> 第 10 项是 L1 核心:整个 DAG 当前活跃链路渲染成一棵带 io 的调用树(见 §一)。现状
-> DAG / ContextCommit / tool-aging / summarize 已提供"节点 + 压缩"的底座;改造点是把
-> "完成子节点释放 io、只留逻辑 + 关键产出"做成默认渲染(对应默认 `expose=io`),让树
-> 追加增长、前缀稳定。
+> 第 10 项是 L1 核心：整个 DAG 当前活跃链路渲染成一棵带 io 的调用树（见 §一）。DAG /
+> ContextCommit / tool-aging / summarize 提供底层的"节点 + 压缩"机制；默认渲染是完成的
+> 子节点释放 io、只留逻辑 + 关键产出，对应默认 `expose=io`，让树追加增长、前缀稳定。
 
-### L2 任务级（纯本次,无历史 —— 历史已在 L1 调用树里）
+### L2 任务级（纯本次，无历史 —— 历史已在 L1 调用树里）
 
-| order | 成分 | condition | 现状 |
+| order | 成分 | condition | 注册为 |
 |---|---|---|---|
-| 1 | 本次处境 situation | @agentic_function 内调用 | ✅(step 6a/6b: _situational_prefix + _compute_call_path) |
-| 2 | git 分支 / status | 在 git 仓库 | ✅ git_status(L2 order=20) |
-| 3 | todo / 任务计划 / 进度 | 有 todo | ✅ todo_progress(读 _TODOS 列表) |
-| 4 | token 预算提示 | 接近预算 | ➕(低) |
-| 5 | per-turn memory prefetch | 检索到相关记忆 | ✅(现状错塞 system,应 L2) |
-| 6 | 本次用户输入 + 附件 | 恒 | ✅ |
-| 7 | 输出格式 / schema | 本步要求 | ✅ |
-| 8 | 输出契约 output_contract | 本步有下游 | ✅ 在 _situational_prefix 中作为 `Your output:` 行 |
-| 9 | timestamp | 恒 | ✅(每次变,最末) |
+| 1 | 本次处境 situation | @agentic_function 内调用 | _situational_prefix + _compute_call_path（step 6a/6b） |
+| 2 | git 分支 / status | 在 git 仓库 | git_status（L2 order=20） |
+| 3 | todo / 任务计划 / 进度 | 有 todo | todo_progress（读 _TODOS 列表） |
+| 4 | token 预算提示 | 接近预算 | 未注册 |
+| 5 | per-turn memory prefetch | 检索到相关记忆 | — |
+| 6 | 本次用户输入 + 附件 | 恒 | — |
+| 7 | 输出格式 / schema | 本步要求 | — |
+| 8 | 输出契约 output_contract | 本步有下游 | 在 _situational_prefix 中作为 `Your output:` 行 |
+| 9 | timestamp | 恒 | 每次变，最末 |
 
-### 不注册(我们没这功能,留机制位)
+### 留空的注册位
 
-Kanban 多 agent 协调、Nous 订阅指导、Hermes profile 机制 —— 我们无对应功能,**不注册**。
-将来真做了对应功能,它自己注册一个 ContextComponent 即可,框架不改。
+Kanban 多 agent 协调、Nous 订阅指导、Hermes profile 机制在我们这里没有对应功能，因此没
+有为它们注册任何成分。将来真做了对应功能，注册一个自己的 ContextComponent 即可，框架
+不改。
 
 ---
 
 ## 四'、各成分的 prompt 模板
 
-下面给关键成分的**可照抄 prompt 模板**:中文说明 + 英文 prompt 正文(面向模型,跟现有
-skills / situational 块一致用英文)+ 占位符 + 注册参数(layer/order/condition)。写代码
-时 `build()` 直接产出这些文本。格式学 `_situational_prefix`(`[…]` 标签)与 Hermes
-GUIDANCE(`# 标题` + `<tag>` 分块)。
+本节给出各关键成分的 prompt 模板：面向模型的英文 prompt 正文（与现有 skills、situational
+块一致用英文）、占位符、注册参数（layer/order/condition）。成分的 `build()` 直接产出这些
+文本。格式沿用 `_situational_prefix`（`[…]` 标签）与 Hermes GUIDANCE（`# 标题` + `<tag>`
+分块）。
 
-### 1. situation（L2 · order 1 · condition: 在 @agentic_function 内调用）★ 核心
+### 1. situation（L2 · order 1 · condition: 在 @agentic_function 内调用）
 
-扩展现状 `_situational_prefix`:不只防递归,补「职责 / 调用路径 / 程序位置 / 输出去向」。
+`_situational_prefix` 块不只防递归：它同时带上函数的职责、调用路径、程序位置和输出去向。
 
 分块用**成对 XML 标签**(`<situation>…</situation>`),不用 `#` 标题——边界明确,内容里
 出现 `#`/代码/markdown 都不会和分块混淆(同 Claude Code 的 `<system-reminder>` 等惯例)。
@@ -218,9 +216,9 @@ causes infinite recursion). Use lower-level tools to do the work directly.
 - `{fn_name}` 当前函数名 · `{fn_doc}` 其 docstring 首句(职责)
 - `{call_path}` 调用链,如 `research_agent → _pick_stage → literature → seed_surveys`
 - `{program_position}` 在程序的位置,如 `literature 阶段第 1 步,后续 → extract_framework`
-- `{output_contract}` 见下条(本块内联渲染,不单独成块)
+- `{output_contract}` 见下条（本块内联渲染，不单独成块）
 
-> 防递归段(最后两句)沿用现状 `_situational_prefix`;前半是新增的处境。
+> 最后两句是防递归段；它上面几行描述处境。
 
 ### 2. output_contract（L2 · 内联进 situation）
 
@@ -335,7 +333,7 @@ Today is {weekday}, {month} {day}, {year}.
 
 ## 五、默认与可配置（expose / render_range）
 
-§四是**默认**情况。"父子之间传多少历史"由两个旋钮决定(现状机制,见 `context.md`):
+§四描述的是**默认**情况。父子之间传多少历史，由两个旋钮决定（见 `context.md`）：
 
 | 旋钮 | 管什么 | 默认 | 默认效果 |
 |---|---|---|---|
@@ -371,7 +369,7 @@ L1 历史里的"调用树",**框架自动从调用栈 / DAG 生成,零大模型�
 大模型在嵌套里是一环:它调的东西中,**只有"又是 agentic 函数(还要调大模型)"的才继续
 往树里加并递归**;它调的普通工具一律忽略(否则一次模型调用调几十个工具,树会爆炸)。
 
-**节点带 io + 完成释放(方案 B 的关键)**:进树的节点**带它的实际 io**(输入 + 输出 /
+**节点带 io、完成即释放**：进树的节点**带它的实际 io**(输入 + 输出 /
 模型产出)——树本身就是完整上下文。一个子节点**跑完后释放它的 io,只留调用逻辑 + 关键
 产出**(那行 `func(...) → ✓结果`)。释放发生在树的靠后段(刚完成的那块),老前缀不动 →
 追加增长 + 末尾释放,前缀稳 → 大段命中缓存。整棵树大小由**当前活跃路径深度**决定,不由
@@ -708,7 +706,7 @@ io 已释放** —— 它是历史的安全网,不是删光。整会话上下文
 
 ---
 
-## 七、处境注入（已实现）
+## 七、处境注入
 
 每个 `@agentic_function` 内部调用 `runtime.exec` 时，框架自动注入一个 `<situation>` 块，告诉模型当前的执行处境。
 
@@ -735,21 +733,18 @@ io 已释放** —— 它是历史的安全网,不是删光。整会话上下文
 
 ---
 
-## 八、实现状态
+## 附录：实现状态
 
-以下全部已落地：
-
-1. ✅ `ContextComponent` + 三个注册表 + 组装器（`context/components.py`）。14 个组件已注册。
-2. ✅ 所有 ✅ 成分已改成注册项。➕ 仅剩 computer-use 指导和 token 预算提示（低优先级）。
-3. ✅ 对话和函数调用统一走 `render_context`（`context/nodes.py`）+ `render_dag_messages` 渲染管道。
-   对话场景 `frame_entry_seq=None`（顶层，全可见），函数调用场景由 `callers`/`subcalls`/`expose` 控制可见范围。
-4. ✅ L2 处境（`_situational_prefix` + `_compute_call_path`）已在 step 6a/6b 落地。
+- `ContextComponent`、三个注册表与组装器在 `context/components.py`，已注册 14 个组件。
+- 对话和函数调用统一走 `render_context`（`context/nodes.py`）+ `render_dag_messages` 渲染管道。对话场景 `frame_entry_seq=None`（顶层，全可见），函数调用场景由 `callers`/`subcalls`/`expose` 控制可见范围。
+- L2 处境（`_situational_prefix` + `_compute_call_path`）在 step 6a/6b 运行。
+- computer-use 指导与 token 预算提示未注册。
 
 ---
 
 ## 相关文档
-- `context.md` —— 现状机制(L1 历史由 DAG + ContextCommit 产出;expose/render_range 在那)
-- `context-comparison.md` —— 与参考项目的成分对比(查漏来源)
-- `context-compaction.md` —— 上下文压缩设计(文本级四层管道 + DAG 级节点 visibility 精简)
-- `../providers/request-build.md` —— 下游:Context 翻译成各家 wire + 缓存落地
-- `agentic-self-recursion.md` —— `_situational_prefix`,L2 处境的雏形
+- [`context.md`](context.md) —— 上下文层的机制（L1 历史由 DAG + ContextCommit 产出；expose/render_range 在那）
+- [`context-comparison.md`](context-comparison.md) —— 与参考项目的成分对比
+- [`context-compaction.html`](context-compaction.html) —— 上下文压缩设计（文本级四层管道 + DAG 级节点 visibility 精简）
+- [`../providers/request-build.md`](../providers/request-build.md) —— 下游：Context 翻译成各家 wire + 缓存落地
+- [`../runtime/execution/agentic-self-recursion.md`](../runtime/execution/agentic-self-recursion.md) —— `_situational_prefix`，L2 处境的雏形

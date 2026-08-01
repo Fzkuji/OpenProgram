@@ -92,7 +92,7 @@ Session title 是用户在列表中识别对话的主要标识。
 
 4. **展示层 Fallback**：如果以上都没有触发（session 通过非 dispatcher 入口创建，如 harness），列举时 title 仍为空/"New conversation"/"Untitled" → 用 preview（第一条 user message 前 80 字符）替代显示。
 
-5. **不再过滤空占位**：所有合法 session 都显示在侧边栏，包括刚创建、title/preview 尚未就绪的会话。（历史说明：上一代架构点 New chat 会乐观创建一条空占位 session，需要"title placeholder + preview 空 → 不显示"来藏掉它；现在 New chat 不再建 session，会话只在发第一条消息时由后端延迟创建，那时已有内容，该过滤的前提已不存在，故移除。）
+5. **不过滤空占位**：所有合法 session 都显示在侧边栏，包括刚创建、title/preview 尚未就绪的会话。New chat 不建 session，会话只在发第一条消息时由后端延迟创建，所以列出来的会话必然有内容，这类过滤没有可藏的对象。
 
 #### 时序
 
@@ -123,7 +123,7 @@ Session title 是用户在列表中识别对话的主要标识。
 两个来源合并去重后，按 `updated_at` 降序排列。
 
 展示规则：
-- 合法性校验通过 → 显示（包括 title/preview 尚未就绪的刚创建会话；不再过滤空占位）
+- 合法性校验通过 → 显示（包括 title/preview 尚未就绪的刚创建会话；没有空占位过滤）
 - 合法性校验不通过 → 跳过
 
 侧边栏和 Chats 页面使用同一套展示规则。
@@ -226,7 +226,7 @@ Agent commit 用覆盖的 user.name/email 标识，跟用户手动 commit 区分
 
 ## 5. 跟抽象记忆的关系
 
-实体记忆是抽象记忆的**唯一数据源**。提炼管道（Phase 2）读 session-git 的 DAG 节点 + project-git 的 commit 历史，从中抽取事件和关系，写入抽象记忆的 timeline/graph。
+实体记忆是抽象记忆的**唯一数据源**。提炼管道读 session-git 的 DAG 节点 + project-git 的 commit 历史，从中抽取事件和关系，写入抽象记忆的 timeline/graph。
 
 每条抽象记忆都带 `Provenance` 指针回指实体层：
 ```python

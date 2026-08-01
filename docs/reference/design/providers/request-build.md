@@ -1,7 +1,5 @@
 # Request building: Context → per-provider parameters
 
-Status: **decided** · Created: 2026-06-24
-
 > The providers layer has a single responsibility: **take a ready-made `Context`, translate it into the wire
 > request for the current provider, and apply prompt caching according to that provider's mechanism.**
 >
@@ -54,7 +52,7 @@ One translation per provider (`_build_system` / `_build_messages` / `_build_tool
 | bedrock | standalone system | `messages` | `tools` |
 
 The translation also smooths over each provider's idiosyncratic blocks: thinking-block signatures, whether tool_use arguments are objects or strings, and tool schema
-dialects (strict / additionalProperties). This part is already implemented.
+dialects (strict / additionalProperties).
 
 ## 4. Caching: three modes + a declaration layer
 
@@ -114,12 +112,13 @@ mark cache_control on blocks   Context     read cache_spec, pass through cache m
 The contract = `Context` (a content block may carry `cache_control`). How upstream builds the context is fully
 decoupled from this layer: adding a provider only touches this layer + one `cache.json`, and changing context building only touches `../context/`.
 
-## 6. Implementation (ported from opencode)
+## 6. The caching policy layer
 
-The caching policy layer copies opencode's `cache-policy.ts` + `protocols/utils/cache.ts`
-(`references/opencode/packages/llm/src/`), reproduced in Python. Delivery checklist:
+The caching policy layer follows opencode's `cache-policy.ts` +
+`protocols/utils/cache.ts` (`references/opencode/packages/llm/src/`), reproduced
+in Python:
 
-| item | file | what was taken from opencode |
+| item | file | the corresponding opencode mechanism |
 |---|---|---|
 | declaration loading | `providers/cache_spec.py` + each provider's `cache.json` | the `RESPECTS_INLINE_HINTS` "declare caching capability per provider" approach |
 | automatic breakpoint policy | `apply_cache_policy` in `providers/cache_policy.py` | `applyCachePolicy`: mark the last tool + the most recent user message, without overriding the caller's manual markers |
@@ -128,11 +127,11 @@ The caching policy layer copies opencode's `cache-policy.ts` + `protocols/utils/
 | tool-level breakpoints | the `Tool.cache_control` field + anthropic `_build_tools` passthrough | opencode's ability to mark cache on tools too |
 
 Integration point: anthropic `stream_simple` calls `apply_cache_policy` before building messages/tools;
-`_get_cache_control` is changed to read the ttl mapping and `long_ttl_endpoints` from `cache.json`, no longer hardcoded.
+`_get_cache_control` reads the ttl mapping and `long_ttl_endpoints` from `cache.json` rather than hardcoding them.
 
 bedrock is also declared as explicit, but it uses `cachePoint` (a standalone block) rather than `cache_control` attached to a block,
-and it already carries its own "place a breakpoint on the last message" logic; folding it too into the unified
-`apply_cache_policy` (tool breakpoints) is a later increment, not wired up this time — the current state works.
+and it carries its own "place a breakpoint on the last message" logic, so it stays outside the unified `apply_cache_policy`;
+folding its tool breakpoints in is a possible later increment.
 
 One difference from opencode: opencode's `system` is a segmented array and can mark a breakpoint individually on the "last system segment";
 this layer's `Context.system_prompt` is a single string, and the system breakpoint is placed by each provider's

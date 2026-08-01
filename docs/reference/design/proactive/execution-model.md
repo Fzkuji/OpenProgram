@@ -47,7 +47,7 @@ A blocking rule can only return three actions: `Gate.allow()` (let it through), 
 
 **One, it must be fast.** It sits in the middle of the path of tool execution, and the agent is waiting on its verdict before it can continue. If it's slow, the agent stalls. So a blocking rule's `evaluate` **must not do slow work**: no calling the LLM, no network reads, no reading the kind of complex state that requires on-the-spot inference. Just look at the event in front of you + simple ready-at-hand state, and give an answer immediately. `DangerousCommandGuard` only glances at the command string — very fast.
 
-**Two, it applies to subtasks as well.** OpenProgram currently sets "no approval" for subagents (`permission_mode=bypass`), meaning tools inside subtasks don't go through the approval flow. But **blocking rules must bypass this setting and block anyway** — otherwise a dangerous command could slip through simply by being stuffed into a subtask. This is an existing hole that needs to be plugged.
+**Two, it applies to subtasks as well.** OpenProgram currently sets "no approval" for subagents (`permission_mode=bypass`), meaning tools inside subtasks don't go through the approval flow. But **blocking rules must bypass this setting and block anyway** — otherwise a dangerous command could slip through simply by being stuffed into a subtask. This is why the interception point sits outside the approval wrapper rather than inside it.
 
 ## 3. The Watching Ones (observer)
 
@@ -84,13 +84,13 @@ A watching rule can do slow work (even call the LLM to judge), because it isn't 
 
 ![Event dispatch: blocking synchronous / watching asynchronous](diagrams/execution-dispatch.svg)
 
-## 5. A Few Simple Fallbacks (Good Enough for This Version)
+## 5. A Few Simple Fallbacks
 
 - **Anti-spam**: each rule has a `cooldown_s`; after acting, it won't act on the same situation again within that window. The simplest dedup is enough.
 - **Multiple rules hitting the same tool**: when blocking, if multiple rules act on the same `tool.before`, take the strictest — `deny` > `ask` > `allow`.
 - **A rule erroring out**: if a rule's `evaluate` throws an exception, the framework catches it, logs it, and treats it as returning None (don't let one rule's bug crash the whole agent).
 
-More complex interruption budgets, automatic circuit-breaking, and fine-grained fallback strategies on error — this version **doesn't do** them; they're archived in `_research_archive/`. For now we lean on `cooldown_s` as the single knob, which is enough to get the framework running and to add rules.
+More complex interruption budgets, automatic circuit-breaking, and fine-grained fallback strategies on error are **out of scope**; they're archived in `_research_archive/`. `cooldown_s` is the single knob, which is enough to get the framework running and to add rules.
 
 ## 6. What It Takes to Add a New Rule
 

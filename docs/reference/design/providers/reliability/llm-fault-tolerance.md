@@ -1,8 +1,8 @@
 # LLM-call fault tolerance & timeout management
 
-A cross-project study of how reference agent frameworks call LLMs
-robustly — retry, backoff, timeouts, connection handling, failover — and
-where OpenProgram stands after the 2026-05 hardening pass.
+How OpenProgram calls LLMs robustly — retry, backoff, timeouts, connection
+handling, failover — and how reference agent frameworks solve the same
+problems.
 
 Sources studied (all under `references/`, read-only):
 
@@ -18,26 +18,26 @@ Sources studied (all under `references/`, read-only):
 
 ## 1. The comparison matrix
 
-| Dimension | openclaw | opencode | hermes-agent | pi-ai (codex) | OpenProgram (now) |
+| Dimension | openclaw | opencode | hermes-agent | pi-ai (codex) | OpenProgram |
 |---|---|---|---|---|---|
 | Retry attempts | 3 (+2 inner transient) | 2 | 3 | 3 | 3 |
 | Backoff base | 300 ms | 500 ms | 5 s | 1 s | 1 s |
-| Backoff cap | 30 s | 10 s | 120 s | none | **30 s** ✅ new |
+| Backoff cap | 30 s | 10 s | 120 s | none | **30 s** |
 | Jitter | symmetric / positive | ±20% | decorrelated (0.5) | none | symmetric / positive |
 | Retryable status | 408/409/429/5xx | 429/503/504/529 | 429/5xx/524 | 429/5xx | 429/5xx + body patterns |
-| Retry-After | ms+sec+date | ms+sec+date (cap 10s) | none | none | **ms+sec+date** ✅ new |
-| Body / idle timeout | **30 min, any byte** (undici) | none (HTTP) / 5 min (WS) | 180 s stale, context-scaled | none | **30 min any-byte + 15 min data-stall + 2 h cap** ✅ new |
+| Retry-After | ms+sec+date | ms+sec+date (cap 10s) | none | none | **ms+sec+date** |
+| Body / idle timeout | **30 min, any byte** (undici) | none (HTTP) / 5 min (WS) | 180 s stale, context-scaled | none | **30 min any-byte + 15 min data-stall + 2 h cap** |
 | Connect timeout | undici default | none / 15 s (WS) | SDK default | none | 30 s |
 | TTFB guard | 30 s (Azure) | n/a | 120 s (codex) | none | covered by idle/read |
 | HTTP version | **force HTTP/1.1** | default | auto (h2) | — | httpx default (h1.1) |
-| IPv6 / Happy Eyeballs | **autoSelectFamily** | no | no | — | ❌ gap |
-| TCP keepalive tuning | undici default | no | **SO_KEEPALIVE 30/10/3** | — | ❌ gap |
-| Connection reuse | undici keep-alive | WS pool, 55-min recycle | **shared client + rebuild on stale** | — | ❌ per-call client |
-| API-key rotation | **yes** | no | **yes (pool + cooldowns)** | — | ❌ gap |
-| Provider/model failover | **yes** | WS→HTTP only | **yes (chain)** | — | ❌ gap |
-| After-first-token break | error | error | **partial + continue** | error | error |
+| IPv6 / Happy Eyeballs | **autoSelectFamily** | no | no | — | force-IPv4 escape hatch |
+| TCP keepalive tuning | undici default | no | **SO_KEEPALIVE 30/10/3** | — | **SO_KEEPALIVE 30/10/3** |
+| Connection reuse | undici keep-alive | WS pool, 55-min recycle | **shared client + rebuild on stale** | — | shared loop-keyed client |
+| API-key rotation | **yes** | no | **yes (pool + cooldowns)** | — | yes (pool + cooldowns) |
+| Provider/model failover | **yes** | WS→HTTP only | **yes (chain)** | — | yes (chain, opt-in) |
+| After-first-token break | error | error | **partial + continue** | error | partial + continue |
 | OAuth refresh mid-call | — | — | **per-request token provider** | per-call | per-call resolve |
-| Rate-limit header parse | — | **yes (x-ratelimit-*)** | yes (Nous) | — | ❌ gap |
+| Rate-limit header parse | — | **yes (x-ratelimit-*)** | yes (Nous) | — | yes (x-ratelimit-* / anthropic-ratelimit-*) |
 | Error classification | yes | yes (tagged union) | yes | basic | yes (`ErrorReason`) |
 
 ---
@@ -91,89 +91,83 @@ Sources studied (all under `references/`, read-only):
 
 ### pi-ai (our codex's reference)
 - `MAX_RETRIES=3`, `BASE_DELAY_MS=1000`, retries 429/5xx + body patterns —
-  **no explicit body-read timeout**; relies on fetch + retry. (Our old
-  120s httpx read cap was an OpenProgram-only addition — the bug.)
+  **no explicit body-read timeout**; relies on fetch + retry. A 120 s httpx
+  read cap has no counterpart here, which is why adding one killed healthy
+  long streams (see §3).
 
 ---
 
-## 3. What we changed (2026-05 pass)
+## 3. Timeout policy
 
-All in `openprogram/providers/`:
+The governing principle, taken from openclaw: a reasoning stream must not carry
+a tight read timeout. A single httpx `timeout=120` float caps the body read at
+120 s and fires before the idle budget over a buffering proxy or VPN, which is
+how a healthy long stream gets killed.
 
-1. **Codex timeouts decoupled & made generous** (`openai_codex/openai_codex.py`):
-   - httpx `Timeout(connect=30, read=1860, write=30, pool=30)` — the old
-     single `timeout=120` float capped the body read at 120 s, firing
-     before our idle budget over a buffering proxy/VPN (the reported bug).
-   - SSE governor rebuilt into **two budgets + a backstop**, matching
-     openclaw's "generous, reset-on-any-byte" model:
-     - `SSE_IDLE_TIMEOUT_S = 1800` (30 min) — "no bytes at all", reset on
-       **any** line (pings included) ≈ openclaw `bodyTimeout`.
-     - `SSE_DATA_STALL_TIMEOUT_S = 900` (15 min) — **our extra**: "no real
-       data", reset only on parsed events; catches ping-flood stalls
-       openclaw can't see.
-     - `SSE_TOTAL_TIMEOUT_S = 7200` (2 h) — runaway backstop.
-   - All env-overridable (`OPENPROGRAM_SSE_*`, `OPENPROGRAM_HTTPX_*`).
+Codex therefore uses `Timeout(connect=30, read=1860, write=30, pool=30)`, and
+the SSE governor is two budgets plus a backstop:
 
-2. **Backoff cap** (`utils/stream_retry.py`): exponential component capped
-   at 30 s (`OPENPROGRAM_PROVIDER_STREAM_BACKOFF_MAX_S`); a larger
-   server Retry-After is still honored.
+- `SSE_IDLE_TIMEOUT_S = 1800` (30 min) — "no bytes at all", reset on **any**
+  line, pings included. This is openclaw's `bodyTimeout` equivalent.
+- `SSE_DATA_STALL_TIMEOUT_S = 900` (15 min) — "no real data", reset only on
+  parsed events. This catches ping-flood stalls that a byte-level timeout
+  cannot see.
+- `SSE_TOTAL_TIMEOUT_S = 7200` (2 h) — a runaway backstop.
 
-3. **Retry-After: all three forms** (`utils/errors.py`): `retry-after-ms`,
-   integer seconds, and HTTP-date — previously seconds-only.
+All are env-overridable (`OPENPROGRAM_SSE_*`, `OPENPROGRAM_HTTPX_*`).
 
----
+Backoff caps its exponential component at 30 s
+(`OPENPROGRAM_PROVIDER_STREAM_BACKOFF_MAX_S`, in `utils/stream_retry.py`); a
+larger server Retry-After is still honored. `utils/errors.py` parses all three
+Retry-After forms: `retry-after-ms`, integer seconds, and HTTP-date.
 
-## 4. What's now implemented vs deferred
+## 4. Transport and recovery
 
-**Implemented (new modules under `providers/utils/`, wired into codex; the
-generic ones available to every HTTP provider):**
+The modules under `providers/utils/` are generic and available to every HTTP
+provider; codex is wired to all of them.
 
-- **Central timeout policy** (`timeouts.py`) — one source of truth, loosened
-  to OpenClaw's 30-min level, with context-scaling helpers.
-- **Robust client builder** (`http_client.py`):
-  - **TCP keepalive** — `SO_KEEPALIVE` + idle/interval/count → ~60 s dead-peer
-    detection (the VPN drop case). Defensive per-OS; `OPENPROGRAM_TCP_KEEPALIVE=0`
-    to disable.
-  - **Force-IPv4** escape hatch (`OPENPROGRAM_FORCE_IPV4=1`) for broken-IPv6 VPNs
-    (binds an IPv4 source address — httpx has no Happy-Eyeballs).
-  - **Connection reuse** — `get_shared_async_client` (loop-keyed); codex now
+- **Central timeout policy** (`timeouts.py`) — one source of truth at
+  OpenClaw's 30-min level, with context-scaling helpers.
+- **Client builder** (`http_client.py`):
+  - **TCP keepalive** — `SO_KEEPALIVE` plus idle/interval/count, giving ~60 s
+    dead-peer detection for the VPN-drop case. Applied defensively per OS;
+    `OPENPROGRAM_TCP_KEEPALIVE=0` disables it.
+  - **Force-IPv4** escape hatch (`OPENPROGRAM_FORCE_IPV4=1`) for broken-IPv6
+    VPNs, binding an IPv4 source address, since httpx has no Happy Eyeballs.
+  - **Connection reuse** — `get_shared_async_client` is loop-keyed, so codex
     reuses its TLS connection across turns instead of re-handshaking.
-  - **Proxy** via httpx 0.28 `proxy=` (fixed the removed `proxies=` form, a
-    latent crash).
-- **Rate-limit header parsing** (`rate_limit.py`) — `x-ratelimit-*` /
-  `anthropic-ratelimit-*`; codex warns when a bucket is low/exhausted.
+  - **Proxy** via httpx 0.28 `proxy=`.
+- **Rate-limit header parsing** (`rate_limit.py`) — `x-ratelimit-*` and
+  `anthropic-ratelimit-*`; codex warns when a bucket is low or exhausted.
 - **Partial-response recovery** (`openai_codex.py`) — a transient mid-stream
-  break *after* content finalizes the partial turn (`stop_reason="length"`)
-  instead of erroring; permanent failures (auth/invalid/context/policy) still
-  hard-fail. Toggle `OPENPROGRAM_PARTIAL_RECOVERY=0`.
-- **Provider/model failover** (`failover.py` + `agent_loop.py`) — classifier
-  (rate_limit/overloaded/server/timeout/network) + a `stream_with_failover`
-  wrapper that tries the primary then each configured fallback on a
-  **pre-content** failover-worthy failure (forwards events, suppresses the
-  duplicate `start`, never switches after a token streamed). Wired into the
-  turn loop **default-OFF**: a no-op unless `OPENPROGRAM_FALLBACK_MODELS`
-  ("provider/model,provider2/model2") is set.
-- Wired codex + gemini_cli to the shared client; **fixed gemini's
-  `timeout=120.0` single-float bug** (same class as codex's).
-- (earlier) backoff **cap** + **Retry-After** all three forms.
+  break *after* content arrives finalizes the partial turn with
+  `stop_reason="length"` rather than erroring, so no work is lost and no blind
+  retry follows. Permanent failures (auth, invalid, context, policy) still hard
+  fail. Toggle with `OPENPROGRAM_PARTIAL_RECOVERY=0`.
+- **Provider/model failover** (`failover.py` + `agent_loop.py`) — a classifier
+  (rate_limit / overloaded / server / timeout / network) plus a
+  `stream_with_failover` wrapper that tries the primary and then each
+  configured fallback on a **pre-content** failover-worthy failure. It forwards
+  events, suppresses the duplicate `start`, and never switches after a token has
+  streamed. Default-off: a no-op unless `OPENPROGRAM_FALLBACK_MODELS`
+  (`"provider/model,provider2/model2"`) is set.
+- gemini_cli shares the same client, so it carries the same timeout semantics
+  rather than its own single-float timeout.
 
-**Cleanly disabled where not applicable (designed, off by default):**
+**Deliberately off or not built:**
 
-- **API-key rotation** — the full machinery already exists in the auth layer
-  (`auth/pool.py`: `pick` rotation + `mark_failure`/`report_failure` cooldowns
-  with strategies and TTLs). Rotation **on acquire** is automatic when a pool
-  has >1 credential. The per-call **failure-cooldown** reporting is deliberately
-  NOT wired into the live single-account path: cooling down the only credential
-  would self-lock the user out for zero benefit. So on a single account rotation
-  is a clean no-op; it activates automatically once multiple credentials are
-  configured. No half-wired risky code in the hot path.
-- **OAuth per-request token provider** — codex already resolves + refreshes the
-  bearer per call via the auth manager; a full httpx event-hook provider is a
-  nicety, not a fix, so it's left out.
+- **API-key rotation** — the machinery lives in the auth layer (`auth/pool.py`:
+  `pick` rotation, `mark_failure` / `report_failure` cooldowns with strategies
+  and TTLs). Rotation on acquire is automatic once a pool has more than one
+  credential. Per-call failure-cooldown reporting is not wired into the live
+  single-account path, because cooling down the only credential would lock the
+  user out for no benefit. On a single account rotation is a clean no-op and
+  activates by itself once multiple credentials exist.
+- **OAuth per-request token provider** — codex already resolves and refreshes
+  the bearer per call through the auth manager, so a full httpx event-hook
+  provider would add machinery without fixing anything.
 
----
-
-## 5. Tunables added
+## 5. Tunables
 
 | Env var | Default | Meaning |
 |---|---|---|

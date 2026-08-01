@@ -9,14 +9,13 @@ Core properties:
 - **Bi-temporal**: every memory records two timestamps — `event_time` (when it happened) and `ingestion_time` (when it was written down)
 - **Immutable append**: old records are never deleted; on conflict they are tagged `superseded_by`
 
-Virtual memory currently has three types (plus the v1 transition-period Journal/Wiki):
+Virtual memory has three types:
 
-| Type | Question it answers | Storage | Status |
-|------|-----------|------|------|
-| Timeline | What happened, and when | `memory/timeline/YYYY-MM.jsonl` | To be implemented in Phase 2 |
-| Knowledge Graph | How things relate to one another | `memory/graph/{entities,edges}.jsonl` | To be implemented in Phase 2 |
-| Core.md | The minimal snapshot the LLM reads on every call | `memory/core.md` | Exists in v1, to be rewritten in Phase 2 |
-| Journal/Wiki (v1) | Same as above (coarse-grained) | `memory/short-term/`, `memory/wiki/` | Running, to be superseded |
+| Type | Question it answers | Storage |
+|------|-----------|------|
+| Timeline | What happened, and when | `memory/timeline/YYYY-MM.jsonl` |
+| Knowledge Graph | How things relate to one another | `memory/graph/{entities,edges}.jsonl` |
+| Core.md | The minimal snapshot the LLM reads on every call | `memory/core.md` |
 
 ## 2. Timeline
 
@@ -189,11 +188,10 @@ For details: memory_open_session(<id>) / memory_git_log(<project>)
 
 Overwrite-style update. Each sleep::deep regenerates the entire file, and the old contents are fully replaced.
 
-## 5. Journal/Wiki (v1 transition)
+## 5. Relationship to the linear summarization chain
 
-### 5.1 Current status
-
-The v1 three-layer architecture is still running:
+The linear chain documented in [`memory.md`](memory.md) covers the same ground
+with a coarser structure:
 
 ```
 short-term/YYYY-MM-DD.md  → (sleep::light) →  wiki/<kind>/<slug>.md  → (sleep::deep) →  core.md
@@ -203,21 +201,11 @@ short-term/YYYY-MM-DD.md  → (sleep::light) →  wiki/<kind>/<slug>.md  → (sl
 - **wiki**: sleep::deep promotes short-term facts into knowledge pages
 - **core.md**: sleep::deep projects a minimal snapshot from the wiki
 
-### 5.2 Problems
-
-The v1 pipeline reads from the conversation text rendered by `get_branch()`, not from DAG nodes. It loses:
-- Tool-call chains (what the agent ran, with what arguments and results)
-- `reads` edges (what influenced a decision)
-- project-git commit history
-
-### 5.3 Future
-
-Once Phase 2 is complete, the v1 pipeline is replaced by the new Timeline + Graph:
-- `short-term/` → replaced by Timeline
-- `wiki/` → replaced by Graph
-- `core.md` → re-projected from Timeline + Graph
-
-During the transition both run in parallel; the old pipeline is removed once the new one is validated.
+That chain reads the conversation text rendered by `get_branch()`, not DAG nodes,
+so it loses tool-call chains (what the agent ran, with what arguments and
+results), `reads` edges (what influenced a decision), and project-git commit
+history. Timeline supersedes `short-term/`, Graph supersedes `wiki/`, and
+`core.md` is re-projected from both.
 
 ## 6. Distillation pipeline (concrete → virtual)
 
@@ -248,9 +236,9 @@ Stage 2 is the most expensive (it needs an LLM); you can start with a rules-base
 
 ### 6.3 Key point: read the DAG directly
 
-v1 reads rendered text. v2 reads the `Call` DAG in session-git directly, including `code` nodes (tool calls) and `reads` edges (context references). These are the key data sources for projecting the graph.
+The pipeline reads the `Call` DAG in session-git directly, including `code` nodes (tool calls) and `reads` edges (context references). These are the key data sources for projecting the graph, and they are lost when reading rendered conversation text instead.
 
-The read layer is already implemented: `store/session/provenance.py` provides `iter_nodes_since()` / `node_provenance()` / `session_commits()` / `project_commits()`.
+The read layer is `store/session/provenance.py`, which provides `iter_nodes_since()` / `node_provenance()` / `session_commits()` / `project_commits()`.
 
 ## 7. Recall mechanism
 
@@ -274,3 +262,11 @@ When the LLM needs detail from the concrete layer, it calls a navigation tool:
 | `memory_timeline(entity\|since\|until)` | A timeline slice | Virtual timeline |
 | `memory_graph_neighbors(entity, hops)` | A node's neighbors in the graph | Virtual graph |
 | `memory_search(query)` | Hybrid search across the virtual layer | Virtual (FTS + vectors) |
+
+## Appendix: Implementation status
+
+The read layer for distillation (`store/session/provenance.py`) is in place. The
+Timeline and Graph stores described in §2 and §3, and the navigation tools in
+§7.2, are not yet built; what runs today is the linear summarization chain
+described in §5 and documented in [`memory.md`](memory.md), which still reads
+rendered conversation text rather than the DAG.

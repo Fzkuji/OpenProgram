@@ -90,15 +90,15 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`providers/auth/credential-validation-unification.md`](providers/auth/credential-validation-unification.md) | 统一凭证校验 |
 | [`providers/auth/unified-auth-storage.md`](providers/auth/unified-auth-storage.md) | 统一认证存储 |
 | [`providers/auth/unified-account-management.md`](providers/auth/unified-account-management.md) | 统一账号管理 + 轮换 |
-| [`providers/auth/credential-status-redesign.md`](providers/auth/credential-status-redesign.md) | 凭证状态重设计 |
+| [`providers/auth/credential-status-redesign.md`](providers/auth/credential-status-redesign.md) | 凭证状态 |
 | [`providers/auth/api-key-resolution-unification.md`](providers/auth/api-key-resolution-unification.md) | API key 解析统一 |
 | [`providers/reliability/error-retry.md`](providers/reliability/error-retry.md) | 错误 + 重试处理 |
 | [`providers/reliability/error-taxonomy-propagation.md`](providers/reliability/error-taxonomy-propagation.md) | 错误分类 + 传播 |
 | [`providers/reliability/llm-fault-tolerance.md`](providers/reliability/llm-fault-tolerance.md) | LLM 容错（调研） |
 | [`providers/reliability/error-and-timeout-mechanism.html`](providers/reliability/error-and-timeout-mechanism.html) | 错误 + 超时机制（已渲染） |
-| [`providers/network-proxy.md`](providers/network-proxy.md) | 出站网络代理——调研、对比、统一设计 |
+| [`providers/network-proxy.md`](providers/network-proxy.md) | 出站网络代理 |
 | [`providers/auth/credential-connection-unification.md`](providers/auth/credential-connection-unification.md) | 凭证/连接统一 |
-| [`providers/PROBLEM-models-and-bailian.md`](providers/PROBLEM-models-and-bailian.md) | 当前问题：模型清单与百炼 provider（未解问题记录） |
+| [`providers/PROBLEM-models-and-bailian.md`](providers/PROBLEM-models-and-bailian.md) | 模型清单与百炼 provider |
 
 ## function/ — function 与工具调用
 

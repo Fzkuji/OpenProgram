@@ -1,21 +1,23 @@
-# Credential status redesign — "usable or stopped", no COOLING badge
+# Credential status — usable or stopped
 
-## Problem
+A credential is either usable, or stopped for a reason the user must act on.
+There is no user-visible "cooling" state.
 
-The account pool flattened three different failure semantics into one
-`cooldown_until_ms` window, surfaced in the UI as a COOLING badge:
+## Why not a cooling window
 
-- a 404 (model not found) cooled the whole key for 30s — punishing every
-  other model on that key for one bad request;
-- a 402 (out of credits) "cooled" the key for 24h — but credits don't
-  come back by waiting, the user has to top up;
-- a 5xx cooled the key — but an upstream outage says nothing about the key.
+A pay-as-you-go API key has no natural cooling state, so collapsing different
+failures into one `cooldown_until_ms` window gives each of them the wrong
+behaviour:
 
-A pay-as-you-go API key has no natural "cooling" state. It is either
-usable, or stopped for a reason the user must act on (top up / re-auth).
-Only subscription/quota accounts (Claude Pro windows, free-tier models)
-genuinely have "wait until reset" semantics — and that is a different
-concept from key health.
+- a 404 (model not found) would cool the whole key, punishing every other model
+  on that key for one bad request;
+- a 402 (out of credits) would cool the key for hours, but credits do not come
+  back by waiting — the user has to top up;
+- a 5xx would cool the key, but an upstream outage says nothing about the key.
+
+Only subscription and quota accounts (Claude Pro windows, free-tier models)
+genuinely have "wait until reset" semantics, and that is a different concept
+from key health.
 
 ## What other frameworks do
 
@@ -32,7 +34,7 @@ concept from key health.
   with an action (402 → top up, 401 → /login, 404 → /model, quota →
   reset countdown + options menu). Settings show no transient state.
 
-## New model
+## The status model
 
 **User-visible status (persisted, shown in the accounts panel):**
 
@@ -44,36 +46,36 @@ concept from key health.
 | `revoked` | permanently dead | replace |
 | `rate_limited` | 429 — briefly throttled | auto-restores on next success / window expiry |
 
-No separate COOLING badge: the status column itself says everything.
-`rate_limited` whose window has expired reports as `valid`.
+The status column carries the whole answer, so no separate badge is needed.
+A `rate_limited` credential whose window has expired reports as `valid`.
 
 **Internal scheduling (never shown):**
 
 - 429 keeps a short `cooldown_until_ms` so multi-key rotation skips the
   throttled key; single-key setups still send (better than nothing).
-- 5xx / network errors do NOT touch the credential — transport failures
-  say nothing about key health (OpenClaw semantics).
-- Request-level 4xx (404/400/422) do NOT touch the credential (landed
-  earlier as `request_error`).
+- 5xx and network errors do not touch the credential — transport failures say
+  nothing about key health, matching OpenClaw's semantics.
+- Request-level 4xx (404/400/422) do not touch the credential; they are
+  `request_error`.
 
-**Chat side:** stream errors already render as red error bubbles with
-the provider's own message ("Insufficient Balance", …) — that is the
-user-facing notification; the accounts panel is only for diagnosis.
+**Chat side:** stream errors render as red error bubbles carrying the
+provider's own message ("Insufficient Balance", …). That is the user-facing
+notification; the accounts panel is only for diagnosis.
 
-## Changes
+## How the status is maintained
 
-1. `auth/usage.py report_failure` — only `rate_limit`, `rate_limit_long`,
-   `billing_blocked`, `needs_reauth` reach the pool; `request_error`,
-   `server_error`, `network_error` return without touching it.
-2. `auth/pool.py mark_failure` — `billing_blocked` sets the status with
-   NO cooldown timestamp (stopped until re-validated, not "wait 24h").
-3. `auth/pool.py` auto-restore — only `rate_limited` self-heals;
-   `billing_blocked` is excluded (validate is the only way back).
-4. `auth/usage.py _account_healthy` — `billing_blocked` joins
-   `revoked`/`needs_reauth` as unhealthy for rotation.
-5. `webui/routes/accounts.py` — Validate success writes
-   `status="valid"`, clears cooldown + last_error (closing the top-up →
-   Validate → restored loop); the `cooling` field is removed from the
-   account record; `rate_limited` past its window reports `valid`.
-6. `web .. account-manager.tsx` — COOLING badge removed; status renders
-   as 有效 / 限流中 / 欠费停用 / 需重新验证 / 已失效.
+- `auth/usage.py report_failure` — only `rate_limit`, `rate_limit_long`,
+  `billing_blocked`, and `needs_reauth` reach the pool; `request_error`,
+  `server_error`, and `network_error` return without touching it.
+- `auth/pool.py mark_failure` — `billing_blocked` sets the status with no
+  cooldown timestamp: stopped until re-validated, rather than a timed wait.
+- `auth/pool.py` auto-restore — only `rate_limited` self-heals;
+  `billing_blocked` is excluded, so validation is the only way back.
+- `auth/usage.py _account_healthy` — `billing_blocked` counts as unhealthy for
+  rotation alongside `revoked` and `needs_reauth`.
+- `webui/routes/accounts.py` — a successful Validate writes `status="valid"`
+  and clears the cooldown and `last_error`, which closes the top-up → Validate
+  → restored loop; the account record carries no `cooling` field, and a
+  `rate_limited` credential past its window reports `valid`.
+- `web .. account-manager.tsx` — status renders as
+  有效 / 限流中 / 欠费停用 / 需重新验证 / 已失效.

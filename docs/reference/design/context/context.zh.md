@@ -7,14 +7,14 @@ messages / tools),providers 把它翻译成各家 wire 请求。
 契约 = `Context`(system / messages / tools,content block 可带 `cache_control`)。
 本层决定**喂什么、怎么分层**;providers 决定**怎么发给某一家**。两层解耦。
 
-> 目标态(每次调用按稳定度分层 + 让模型知道自己的处境)见
-> [`context-composition.md`](context-composition.md);本文讲现状机制。
+> 每次调用如何按稳定度分层、如何让模型知道自己的处境，见
+> [`context-composition.md`](context-composition.md)；本文讲它底下的存储与压缩机制。
 
 ---
 
-## 一、现状链路
+## 一、组装链路
 
-主聊天路径只有一个真正的上下文组装引擎:
+主聊天路径有一个上下文组装引擎:
 
 ```
 dispatcher.process_user_turn
@@ -218,34 +218,29 @@ tool 保护(OpenCode)。
 
 ---
 
-## 八、目标态与缺口
+## 八、与三层组成的关系
 
-[`context-composition.md`](context-composition.md) 是这一层的目标:每次 LLM 调用按
-"多久变一次"分三层,既服务缓存(稳定的靠前),也让模型知道自己的处境。
+[`context-composition.md`](context-composition.md) 把每次 LLM 调用按"多久变一次"分三层，
+既服务缓存（稳定的靠前），也让模型知道自己的处境。本文的机制为这三层提供材料：
 
-| 层 | 内容 | 变化频率 | 现状 |
+| 层 | 内容 | 变化频率 | 材料来自 |
 |---|---|---|---|
-| **L0 恒定** | 身份 / 全局指令 / 工具清单 | 整 session 不变 | ✅ engine 已拼(未按缓存分层) |
-| **L1 处境** | 我是哪个函数的零件 / 谁调我 / 在程序哪一步 / 输出去哪 | 每进一个 frame 变 | ❌ **完全缺失** |
-| **L2 任务** | frame 内进展 / 继承的上游结果 / 当前输入 / 输出格式 | 每步变 | ✅ engine 已选历史 |
-
-缺口(按价值):
-
-1. **L1 处境层完全缺失** —— 模型不知道自己是哪个 @agentic_function 的零件、谁调它、
-   输出会被怎么用。价值最高(论文 LLM-as-Code 核心),现状零实现。
-2. **两条历史渲染路并存有 parity 风险** —— commit-chain 与 dag 各一套遍历逻辑,改一
-   条易忘另一条(曾有 ThinkingContent 只在 dag 路处理、commit 路漏的真实 bug)。该收
-   敛成一条。
-3. **辅助路径的 system prompt 不跟 agent 走** —— 总结/分支总结用硬编码的
-   `SUMMARIZATION_SYSTEM_PROMPT`,不随用户的 AGENTS.md / 身份 / 技能变。
+| **L0 恒定** | 身份 / 全局指令 / 工具清单 | 整 session 不变 | engine 的 system prompt 步骤（§一） |
+| **L1 处境** | 我是哪个函数的零件 / 谁调我 / 在程序哪一步 / 输出去哪 | 每进一个 frame 变 | 从 DAG 渲染出的调用树（§二） |
+| **L2 任务** | frame 内进展 / 继承的上游结果 / 当前输入 / 输出格式 | 每步变 | 历史选取 + 压缩（§一、§三） |
 
 ---
 
-## 九、早期方案(已废,留作追溯)
+## 附录：实现备注
 
-曾设计过一版 **SQLite `node_annotations` 派生模型**:DAG truth + 每节点一条可重算的
-Annotation,每 turn 跑 annotator 流水线更新,再 `build_view` 纯函数渲染。它和
-ContextCommit 是两种落地:annotation 是"派生可丢弃重算 + SQL 表",ContextCommit 是
-"不可变快照 + git JSON"。**已被 ContextCommit 取代**;其仍成立的思想(压缩单向收紧、
-view 纯函数、summary 不写 DAG)已并入上文。pinning / dedup / 用户手动 pin-unpin 在
-ContextCommit 下尚未全部落地,属待补能力。
+- 两条历史渲染路并存：commit-chain 与 dag 各一套遍历逻辑。它们是收敛成一条的候选——改
+  一条容易忘另一条，此前出过真实缺陷（ThinkingContent 只在 dag 路处理、commit 路漏）。
+- 辅助路径的 system prompt 不跟 agent 走：总结与分支总结用硬编码的
+  `SUMMARIZATION_SYSTEM_PROMPT`，不随用户的 AGENTS.md、身份、技能变。
+- pinning、dedup、用户手动 pin/unpin 在 ContextCommit 下不可用。
+
+早期有一版设计用 **SQLite `node_annotations` 派生模型**：DAG 为真相，每节点一条可重算的
+Annotation，每 turn 跑 annotator 流水线更新，再由 `build_view` 纯函数渲染。它和
+ContextCommit 是同一想法的两种落地——annotation 是派生、可丢弃重算的 SQL 表状态，
+ContextCommit 是 git JSON 里的不可变快照。系统用的是 ContextCommit；沿用下来的思想（压缩
+单向收紧、view 是纯函数、summary 不写 DAG）已在上文描述。

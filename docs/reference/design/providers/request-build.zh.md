@@ -1,7 +1,5 @@
 # 请求构建:Context → 各 provider 参数
 
-Status: **decided** · Created: 2026-06-24
-
 > providers 层的唯一职责:**拿到一个准备好的 `Context`,翻译成当前 provider 的 wire
 > 请求,并按该 provider 的机制落地 prompt 缓存。**
 >
@@ -53,7 +51,7 @@ system 独立的 API(Anthropic / Bedrock / Gemini)直接对应;翻译给 OpenAI 
 | bedrock | 独立 system | `messages` | `tools` |
 
 翻译还抹平各家特有的块:思考块签名、tool_use 参数是对象还是字符串、工具 schema
-方言(strict / additionalProperties)。这部分已实现。
+方言(strict / additionalProperties)。
 
 ## 四、缓存:三种 mode + 声明层
 
@@ -113,12 +111,12 @@ provider 走 `none` 兜底(和 thinking 的 OpenAI 兼容兜底同理)。
 契约 = `Context`(content block 可带 `cache_control`)。上游怎么构建上下文与本层
 完全解耦:加 provider 只动本层 + 一份 `cache.json`,改上下文构建只动 `../context/`。
 
-## 六、实现(port 自 opencode)
+## 六、缓存策略层
 
-缓存策略层照搬 opencode 的 `cache-policy.ts` + `protocols/utils/cache.ts`
-(`references/opencode/packages/llm/src/`),用 Python 复刻。落地清单:
+缓存策略层沿用 opencode 的 `cache-policy.ts` + `protocols/utils/cache.ts`
+(`references/opencode/packages/llm/src/`),用 Python 复刻:
 
-| 件 | 文件 | 抄自 opencode 的什么 |
+| 件 | 文件 | 对应的 opencode 机制 |
 |---|---|---|
 | 声明加载 | `providers/cache_spec.py` + 各 provider `cache.json` | `RESPECTS_INLINE_HINTS` 那套"按 provider 声明缓存能力" |
 | 自动断点策略 | `providers/cache_policy.py` 的 `apply_cache_policy` | `applyCachePolicy`:标最后一个 tool + 最近 user 消息,不覆盖调用方手动标记 |
@@ -127,11 +125,11 @@ provider 走 `none` 兜底(和 thinking 的 OpenAI 兼容兜底同理)。
 | tool 级断点 | `Tool.cache_control` 字段 + anthropic `_build_tools` 透传 | opencode 给 tool 也标 cache 的能力 |
 
 接入点:anthropic `stream_simple` 在构建 messages/tools 前调 `apply_cache_policy`;
-`_get_cache_control` 改读 `cache.json` 的 ttl 映射与 `long_ttl_endpoints`,不再硬编码。
+`_get_cache_control` 读 `cache.json` 的 ttl 映射与 `long_ttl_endpoints`,而不是硬编码。
 
 bedrock 也声明为 explicit,但它用 `cachePoint`(独立块)而非挂在 block 上的
-`cache_control`,且已自带"在最后一条消息打断点"的逻辑;把它也纳入统一的
-`apply_cache_policy`(tool 断点)是后续增量,本次未接 —— 现状能用。
+`cache_control`,且自带"在最后一条消息打断点"的逻辑,因此不走统一的
+`apply_cache_policy`;把它的 tool 断点纳进来是可能的后续增量。
 
 与 opencode 的一处差异:opencode 的 `system` 是分段数组,能在"最后一段 system"上
 单独标断点;本层 `Context.system_prompt` 是单字符串,system 断点由各 provider 的

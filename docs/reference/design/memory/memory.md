@@ -259,7 +259,7 @@ Everything else (file layout, sleep phases, FTS index) is implementation
 detail of the builtin provider. A plugin doesn't have to mirror the
 three-layer model.
 
-## Failure modes & current health
+## Failure modes
 
 | Symptom                          | Likely cause                                   | Fix                                     |
 |----------------------------------|------------------------------------------------|-----------------------------------------|

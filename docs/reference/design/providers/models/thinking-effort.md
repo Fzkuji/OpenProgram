@@ -198,9 +198,9 @@ When `get_thinking_spec()` cannot find a thinking.json, it returns the OpenAI-co
 | `webui/_model_listing/fetchers/anthropic.py` | Anthropic Fetch: extracts thinking_levels from capabilities |
 | `agent/session_config.py` | `VALID_THINKING` validation, `reasoning_from_config` conversion |
 
-## 11. Actual Levels Per Model Today
+## 11. Actual Levels Per Model
 
-Browser-verified results (2026-06-18):
+Verified results:
 
 | Provider | Model | Levels | Source |
 |---|---|---|---|

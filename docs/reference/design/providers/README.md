@@ -2,26 +2,26 @@
 
 Design docs for the LLM provider layer. Providers translate the framework's internal unified context (`Context`: system / messages / tools) into each vendor's API request, handling authentication, caching, errors, and the model catalog.
 
-The docs are organized into four groups by responsibility (three existing subdirectories plus one core group still to be filled in):
+The docs are organized into four groups by responsibility:
 
-## Translation + Caching (core, partially to be filled in)
+## Translation + Caching (core)
 
 How the provider-agnostic unified format is translated into each vendor's wire format, and how prompt caching is implemented per provider — the core mechanism of the providers layer.
 
-- [`request-build`](request-build.md) — **Overall design**: the unified-format Context, per-provider translation, the three caching modes, current state, and three gaps.
-- [`cache-control-passthrough`](../plans/cache-control-passthrough.md) (in `docs/plans/`) — landed: per-block passthrough of Anthropic `cache_control`.
+- [`request-build`](request-build.md) — **Overall design**: the unified-format Context, per-provider translation, and the caching modes.
+- [`cache-control-passthrough`](../plans/cache-control-passthrough.md) (in `docs/plans/`) — per-block passthrough of Anthropic `cache_control`.
 - For upstream (how content is layered and assembled, L0/L1/L2) see [`context/context-composition.md`](../context/context-composition.md).
 
 ## [auth/](auth/) — Credentials · Authentication · Accounts
 
 Resolution, validation, and storage of API keys and subscription OAuth, plus the multi-account pool and rotation.
 
-- [`credential-validation-unification`](auth/credential-validation-unification.md) — Unified credential-validation entry point
-- [`credential-status-redesign`](auth/credential-status-redesign.md) — Credential status ("available / disabled", dropping COOLING)
-- [`api-key-resolution-unification`](auth/api-key-resolution-unification.md) — Unified API key resolution chain
+- [`credential-validation-unification`](auth/credential-validation-unification.md) — The credential-validation entry point
+- [`credential-status-redesign`](auth/credential-status-redesign.md) — Credential status (usable or stopped)
+- [`api-key-resolution-unification`](auth/api-key-resolution-unification.md) — The API key resolution chain
 - [`unified-auth-storage`](auth/unified-auth-storage.md) — Self-contained auth storage
-- [`unified-account-management`](auth/unified-account-management.md) — Multi-account management + pool rotation/fallback
-- [`claude-code-direct-oauth`](auth/claude-code-direct-oauth.md) — claude-code subscription OAuth direct connection (dropping Meridian)
+- [`unified-account-management`](auth/unified-account-management.md) — Account management + pool rotation/fallback
+- [`claude-code-direct-oauth`](auth/claude-code-direct-oauth.md) — claude-code subscription OAuth direct connection
 
 ## [reliability/](reliability/) — Fault tolerance · Errors · Retries · Timeouts
 

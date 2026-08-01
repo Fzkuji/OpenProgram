@@ -359,37 +359,37 @@ Profiles 持久化在 ``functions_meta.json`` 中（与
 ## User-editable entry points
 
 ```
-Entry point                     Controls                     Layer  State  Persisted in
+Entry point                     Controls                     Layer  Persisted in
 ────────────────────────────────────────────────────────────────────────────────────────
-Functions page —                create / edit / delete tool  L2b    ⬜     functions_meta.json
-  tool profiles                 profiles (named tool sets).                 → profiles: {name:[...]}
+Functions page —                create / edit / delete tool  L2b    functions_meta.json
+  tool profiles                 profiles (named tool sets).         → profiles: {name:[...]}
                                 Add/remove tools to/from a
                                 profile. Default profile =
                                 all tools on.
 
-Chat composer —                 pick which tool profile to   L2b    ⬜     session state
-  profile picker                use for this conversation.                  (sent per-turn with
-  (Tools toggle → expand        Expand the "Tools" chip to                  tools_override)
+Chat composer —                 pick which tool profile to   L2b    session state
+  profile picker                use for this conversation.          (sent per-turn with
+  (Tools toggle → expand        Expand the "Tools" chip to          tools_override)
    → profile list)              see available profiles +
                                 select one. Default = all.
 
-Chat composer —                 per-turn toggles: Tools      L2b    ✅     per-message
-  "+" menu toggles              on/off + Web Search on/off   /L5           (tools_override)
+Chat composer —                 per-turn toggles: Tools      L2b    per-message
+  "+" menu toggles              on/off + Web Search on/off   /L5    (tools_override)
 
-Agent profile                   per-agent toolset / enabled  L2b    ✅     ~/.openprogram/
-  (tools field)                 / disabled / allowed.        + L5          agents/<id>.json
-                                Can reference a tool profile                → tools: {...}
+Agent profile                   per-agent toolset / enabled  L2b    ~/.openprogram/
+  (tools field)                 / disabled / allowed.        + L5   agents/<id>.json
+                                Can reference a tool profile        → tools: {...}
                                 by name (toolset="research")
 
-Attended / unattended           withhold ask_user_question   L5     ✅     session state
-  switch (CLI/TUI/web)          when no human is watching          (system  (attended.py)
-                                                                    auto)
+Attended / unattended           withhold ask_user_question   L5     session state
+  switch (CLI/TUI/web)          when no human is watching           (attended.py；由系统
+                                                                    应用，不经用户操作)
 
-Global tool disable             blacklist a single tool      L5     ✅     config.json:
-  (Functions page / config)     everywhere — rarely used.                   tools.disabled
+Global tool disable             blacklist a single tool      L5     config.json:
+  (Functions page / config)     everywhere — rarely used.           tools.disabled
                                 Overrides any profile.
 
-Author decorator kwargs         expose / available_if /      L1/2/  ✅     in-code
+Author decorator kwargs         expose / available_if /      L1/2/  in-code
   @function(...)                defer / toolset / unsafe_in  3/6
                                 / check_fn
 ```
@@ -723,3 +723,16 @@ openprogram/functions/agentics/*/__init__.py           @agentic_function
 - 修改 AgentTool.execute 的签名
 - 拆分 / 合并共享注册表
 - 用 ToolSearch 之外的其它机制替换 deferred-loading 机制
+
+## 附录 —— 实现状态
+
+注册表、六个门控层、两个装饰器以及四个运行时旋钮均已就位。
+“Tool profiles（Functions 页）”与“User-editable entry points”
+两节描述的两个面向用户的入口尚未实现：
+
+- Functions 页的 profile 管理器（创建 / 编辑 / 删除 tool
+  profile，持久化到 `functions_meta.json`）；
+- 聊天输入框的 profile 选择器（选择本次对话使用哪个 profile）。
+
+在它们落地之前，profile 的选择只能通过 `toolset=` 参数和
+agent profile 的 `tools.toolset` 字段触及。

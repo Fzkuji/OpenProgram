@@ -1,7 +1,6 @@
-# 模型目录与 Provider 配置（最终设计）
+# 模型目录与 Provider 配置
 
-> 本文描述模型目录的**目标运行逻辑**：数据放哪、文件与代码怎么交互、后端和前端各自怎么消费。
-> 与当前代码的差距和迁移路径集中在第 8 节——第 1–7 节永远只写目标态，不写历史。
+> 本文描述模型目录的运行逻辑：数据放哪、文件与代码怎么交互、后端和前端各自怎么消费。
 > Thinking effort 的参数细节见 [thinking-effort.md](thinking-effort.md)。
 
 ## 1. 一句话架构
@@ -36,7 +35,7 @@ openprogram/providers/                 ← 全部进 git，运行期只读
 └── config.json                        ← 唯一的用户侧持久化
 ```
 
-**命名规则：「catalog」一词整体退役**（历史上一词五用是命名混乱的根源）。`models_generated.py`、`thinking_catalog.py`、`_catalog_new.py`、webui `_model_catalog/`（→ `_model_listing/`）全部退役。**`ENABLED_MODELS` 这个名字成立的前提是它真的只装启用的模型**——语义先改，名字后改（见 8.2 迁移顺序）。
+**命名规则：这里没有任何东西叫「catalog」。** 一词五用正是命名混乱的根源，因此每个模块都按它装的东西命名：注册表是 `enabled_models.py`，thinking 声明是 `thinking_spec.py`，webui 的展示层是 `_model_listing/`。`ENABLED_MODELS` 这个名字准确，是因为这个 dict 装的确实只有启用的模型。
 
 **没有目录的 provider**（fireworks、together 等）：models.dev 实时数据里有它们，用户填 key、浏览、启用即可，包里不需要任何文件。
 
@@ -154,37 +153,15 @@ webui 展示层（`_model_listing/`）不做任何合并推导——浏览合并
 6. **key 兼容**：`"<prefix>/<id>"`、alias 回退、`key_prefix`（gemini-subscription 双 key）保留；注册表是同一个可变 dict。
 7. **多源一格**：不管来源是官方 `/v1/models`、账户级私有端点（codex）、models.dev 社区目录还是用户手填，都在 `fetch_and_normalize` 一个函数里归一成同一份行结构；启用时经 `_upsert_spec_row` 一个收口写进 config（`_normalize_spec_row` 补全 Model schema 字段）；读取时经 `_build_model_from_row` 一个转换器建成 `Model`。三处收口各只有一个，谁也不许旁路自造格式。
 
-## 8. 现状偏离与迁移
+## 8. 实现状态
 
-> 记录日期 2026-07-08。问题现象的完整描述见 [../PROBLEM-models-and-bailian.md](../PROBLEM-models-and-bailian.md)。
+上面描述的就是代码当前的行为。注册表是 `ENABLED_MODELS`，定义在 `enabled_models.py`；webui 的展示层是 `_model_listing/`；启用一个模型会把它的完整规格复制进 config；浏览是实时的、不落盘；`thinking.json` 与 `cache.json` 已并入 `provider.json`，因此 `_default_api_for` / `_resolve_base_url` 直接读 endpoints，providers 层不再反过来读注册表。
 
-### 8.1 偏离（迁移已完成 ✅）
+这里的任何改动都必须保住以下性质：
 
-> 迁移步骤 1–7 已全部落地：以下偏离均已消除。注册表改名 `ENABLED_MODELS`、定义移入 `enabled_models.py`、`_model_catalog/` → `_model_listing/`、`models_generated.py` / `thinking_catalog.py` / `_catalog_new.py` 退役，代码里不再有「catalog」。
-
-1. **持久化了不该持久化的**：752 行手写 `models.json`（22 个 provider，已腐烂）+ `models.fetched.json`（Fetch 落盘在安装包目录，靠 .gitignore 遮掩）。目标态里两者都不存在。
-2. **两条数据链**：设置页走 webui 的 `combined_models`（fetched + models.dev），运行时注册表只读手写 `models.json`——设置页能选 `deepseek-v4-flash`，`get_model` 查不到。目标态里连合并管线都不需要：只有 config 一份。
-3. **每 provider 5 类文件**（provider.json / models.json / thinking.json / cache.json / models.fetched.json）。目标态收敛为 1 份 provider.json。
-4. **probe 结果回写 git 里的 thinking.json**——程序写版本控制文件。目标态 probe 只影响浏览结果和启用时写入 config 的规格。
-5. **层次倒置**：models.dev 源和合并逻辑在 `webui/_model_catalog/`，providers 层反过来读注册表补 api/base_url，循环依赖。
-6. **注册表装了 755 个模型**，名字先后叫过 `MODELS` / `MODEL_REGISTRY`。目标态只装启用的，改名 `ENABLED_MODELS`——**名字跟着语义走，语义没改完之前不换名**。
-7. **bailian 命名不标准**：models.dev 同 base_url 的 provider 叫 `alibaba-token-plan-cn`，已有预留空目录；用户已要求改标准名、删 `bailian/`。
-
-### 8.2 迁移顺序（每步独立提交、系统不瘫）——全部完成 ✅
-
-1. **bailian → alibaba_token_plan_cn**：目录改名 + id 改 `alibaba-token-plan-cn`。独立小改，先做。✅
-2. **启用即复制规格**：设置页勾选模型时把完整规格（浏览行 ⊕ override ⊕ endpoints ⊕ thinking 推导）写进 config `providers.<p>.models`，与 `custom_models` 统一为一个列表。存量用户的 `enabled_models` id 列表一次性迁移：按当前注册表把 id 解析成完整规格写入。✅
-3. **运行时切换到 config**：注册表加载源改为「config 规格 + provider.json 填充」，`get_model` 语义不变。**两条链在这一步合一**——此后 752 行 `models.json` 和 `models.fetched.json` 机制成为死代码。✅
-4. **浏览改实时**：`list_models_for_provider` 拆成「available（实时浏览）」和「enabled（读 config）」两条路；Fetch 落盘逻辑删除（可留短 TTL 内存缓存）。✅
-5. **删除死数据**：`git rm` 22 份 `models.json`、fetched 文件机制、`.gitignore` 相关行。✅
-6. **配置合一**：`thinking.json`、`cache.json` 并入 `provider.json`；`thinking_spec`/`cache_spec` 改读新位置；`_default_api_for`/`_resolve_base_url` 改读 endpoints（循环依赖解除）。✅
-7. **命名收尾**：注册表改名 `ENABLED_MODELS`（此时语义已成立），定义移入 `enabled_models.py`；退役 `models_generated.py`、`thinking_catalog.py`（并入 `thinking_spec.py`）、`_catalog_new.py`、`_model_catalog/`（→ `_model_listing/`）。至此代码里不再有「catalog」。✅
-
-### 8.3 迁移必须保住的点（历史审查所得）
-
-- **存量启用不能丢**：步骤 2 的 id → 规格迁移必须覆盖 22 个 provider 的现有 enabled_models 与 custom_models；迁移后逐条校验 `get_model` 结果与迁移前等价。
-- **alias / 双 key**：gemini-subscription 的 `google-gemini-cli/*` + `gemini-subscription/*` 共 10 key、name 各异——启用行各自携带完整 key 与 name，天然保留；alias 回退逻辑不动。
-- **claude-code 借用链**：浏览数据借 anthropic（`models_from`）、登录后自动 enable 3 个模型、fetcher 特殊——迁移时逐一保留。
-- **逐字段保真**：`cost` 嵌套对象、`input` 多模态、`headers`（copilot 依赖）、`compat`——启用时写入 config 的规格必须含全这些字段；删除手写清单前先确认每个启用行拿得到等价值。
+- **存量启用不能丢**：对每个 provider，一条 config 行经 `get_model` 解析出的 `Model` 必须与改动前一致。
+- **alias 与双 key**：gemini-subscription 的 `google-gemini-cli/*` 与 `gemini-subscription/*` 共 10 个 key、name 各异。启用行各自携带自己的 key 与 name，alias 回退保持不变。
+- **claude-code 借用链**：浏览数据经 `models_from` 借自 anthropic、登录后自动启用 3 个模型，以及它自己的 fetcher。
+- **逐字段保真**：`cost` 嵌套对象、`input` 多模态、`headers`（copilot 依赖它）、`compat` 都随启用时写入 config 的规格一起传递。
 - **验证粒度**：多 wire provider 按每个 `(api, base_url, headers, compat)` 组合各 exec 一个模型。
-- 核心回归测试保持绿：`tests/unit/test_provider_wire_invariants.py`、`tests/unit/test_model_fetch_routing.py`。
+- `tests/unit/test_provider_wire_invariants.py` 与 `tests/unit/test_model_fetch_routing.py` 保持绿色。

@@ -1,12 +1,10 @@
-# Context Composition — Registry-Based Three Layers (Target-State Design)
+# Context Composition — Registry-Based Three Layers
 
-Status: **Implemented** · Created: 2026-06-23 · Updated: 2026-06-25
-
-> This document defines the target state for **what gets fed into each LLM call**. The core is not "listing which components exist" (that would hard-code them and prevent extension), but defining **a set of rules + a registration mechanism**: how components are assigned to layers, how they are ordered, how they appear conditionally. Concrete components are **registered** by individual features; adding a feature does not change the framework.
+> This document defines **what gets fed into each LLM call**. It does not enumerate a fixed set of components — that would hard-code them and prevent extension. It defines **a set of rules plus a registration mechanism**: how components are assigned to layers, how they are ordered, and how they appear conditionally. Concrete components are **registered** by individual features, so adding a feature does not change the framework.
 >
-> Design origin: it borrows Hermes's three layers (stable/context/volatile = our L0/L1/L2) but **improves on its hard-coding** — Hermes's three-layer assembly is a hard-wired if chain (adding new guidance means editing a central function); we make it a true registry (open/closed principle: open for extension, closed for modification).
+> The three layers follow Hermes's stable/context/volatile split, which corresponds to our L0/L1/L2. The difference is in how components reach the layers: Hermes assembles its three layers through a hard-wired if chain, so adding new guidance means editing a central function. Here the layers are a registry — open for extension, closed for modification.
 >
-> **Thesis**: the paper "LLM-as-Code — the model is one part inside a program." Each time this part is called it needs to know its situation (who am I / who called me / which step I'm at), while seeing only the history it should see (results, not the internal process of every sub-function).
+> The premise is the paper's "LLM-as-Code — the model is one part inside a program." Each time this part is called it needs to know its situation (who am I / who called me / which step I'm at), while seeing only the history it should see: results, not the internal process of every sub-function.
 
 ---
 
@@ -40,9 +38,9 @@ Once the call tree goes into L1, L2 no longer has any "history/results" — the 
 
 ---
 
-## 2. The Registration Model (Core — Solving Extensibility)
+## 2. The Registration Model
 
-Rather than enumerating components, we define **a unified component interface + three registration lists**. The framework handles only the rules; components are registration entries.
+Rather than enumerating components, the design defines **a unified component interface plus three registration lists**. The framework handles only the rules; components are registration entries.
 
 ### Component interface
 
@@ -70,13 +68,13 @@ For each layer:
 Finally: tools(L0) → system(L0 + L1 project layer) → messages(L1 history + L2)
 ```
 
-### Why this is not hard-coded (answering extensibility)
+### Why this stays extensible
 
-- **Adding a new feature** (multi-agent, new channel, new provider, new tool guidance): the feature side **registers one ContextComponent** (declaring layer/order/condition/build), and **not one line of framework code changes**.
-- **Unneeded features**: don't register them, zero overhead; register later if you need them.
-- The framework manages **rules** (three-layer criterion + ordering + registration interface); components are an **open set**. This is exactly what Hermes failed to do — it hard-coded components into the build function, so adding one requires editing the central function.
+- **Adding a new feature** (multi-agent, new channel, new provider, new tool guidance): the feature side **registers one ContextComponent**, declaring layer/order/condition/build, and **no framework code changes**.
+- **Unneeded features**: don't register them, and they cost nothing; register later if you need them.
+- The framework manages **rules** (three-layer criterion, ordering, registration interface); components are an **open set**. Hermes instead hard-codes components into its build function, so adding one requires editing that central function.
 
-> Improvement (vs Hermes): Hermes only has registration at two touch points ("memory provider / platform hint"); the core guidance (tool awareness / model-specific / platform format) is a hard-coded if chain. We generalize registration to **all components**, including tool guidance, model guidance, and platform format — they are all registration entries, each carrying its own condition.
+> Hermes has registration at two touch points only, the memory provider and the platform hint; its core guidance (tool awareness, model-specific, platform format) is a hard-coded if chain. Here registration covers **all components**, tool guidance, model guidance, and platform format included — each is a registration entry carrying its own condition.
 
 ---
 
@@ -102,70 +100,70 @@ Key points:
 
 ---
 
-## 4. Snapshot of Currently Registered Components
+## 4. Registered Components
 
-Below are the components **registered / to-be-registered as of now** (grows with features, not a limit). Each is labeled with `order` / `condition` / status. ✅ = present, ➕ = to add, the condition explains when it appears.
+The registered components are listed below with their `order` and `condition`. The set grows as features are added; it is a snapshot, not a limit.
 
 ### L0 system level
 
-| order | Component | condition | Status |
+| order | Component | condition | Registered as |
 |---|---|---|---|
-| 1 | overall identity ("you are X agent") | always | ✅ |
-| 2 | inline agent prompt | present if any | ✅ |
-| 3 | tool enforcement (act-don't-ask) | always (can be per-model) | ✅ tool_enforcement |
-| 4 | model-specific operation guidance | per current provider/model | ✅ model_guidance (_MODEL_GUIDANCE one entry per provider) |
-| 5 | platform rendering format | per current channel | ✅ platform_format (contextvar + _PLATFORM_RULES per channel) |
-| 6 | computer-use guidance | computer-use tool enabled | ➕ (low priority) |
-| 7 | skill index | enabled skills present | ✅ |
-| 8 | tools + MCP schema | always | ✅ |
-| 9 | global/user-level memory | present | ✅ |
-| 10 | environment info (OS/shell/remote backend) | always (systematic) | ✅ environment (OS/shell; cwd handled separately by tool-runtime) |
-| 11 | current date (day granularity) | always | ✅ current_date |
+| 1 | overall identity ("you are X agent") | always | identity |
+| 2 | inline agent prompt | present if any | inline_prompt |
+| 3 | tool enforcement (act-don't-ask) | always (can be per-model) | tool_enforcement |
+| 4 | model-specific operation guidance | per current provider/model | model_guidance (_MODEL_GUIDANCE, one entry per provider) |
+| 5 | platform rendering format | per current channel | platform_format (contextvar + _PLATFORM_RULES per channel) |
+| 6 | computer-use guidance | computer-use tool enabled | not registered |
+| 7 | skill index | enabled skills present | skills_index |
+| 8 | tools + MCP schema | always | — |
+| 9 | global/user-level memory | present | memory_global |
+| 10 | environment info (OS/shell/remote backend) | always | environment (OS/shell; cwd handled separately by tool-runtime) |
+| 11 | current date (day granularity) | always | current_date |
 
 ### L1 session/project level
 
-| order | Component | condition | Status |
+| order | Component | condition | Registered as |
 |---|---|---|---|
-| 1 | project identity (AGENTS.md) | project file present | ✅ (currently wrongly placed in L0, should be L1) |
-| 2 | prompt-injection detection (scan 1 before injecting) | when loading project files | ✅ pi_shield + detect_injection_patterns |
-| 3 | context file truncation | project file oversized | ✅ MAX_WORKSPACE_CHARS=8000 truncation inside workspace_files |
-| 4 | project-level memory | present | ✅ (currently wrongly placed in L0) |
-| 5 | USER.md user profile | present | ✅ already loaded by workspace_files via read_user_md |
-| 6 | working directory cwd | always | ✅ |
-| 7 | whether in a git repo | in a git repo | ✅ git_repo_flag |
-| 8 | session/model/thinking/tier bindings | always | ✅ |
-| 9 | deferred tools catalog | deferred tools present | ✅ |
-| 10 | **unified call tree (history)** | history present | ✅ DAG ready; refactor points below. Append-grows + completed nodes release io, placed last in L1 |
+| 1 | project identity (AGENTS.md) | project file present | workspace_files |
+| 2 | prompt-injection detection (scan 1 before injecting) | when loading project files | pi_shield + detect_injection_patterns |
+| 3 | context file truncation | project file oversized | MAX_WORKSPACE_CHARS=8000 truncation inside workspace_files |
+| 4 | project-level memory | present | — |
+| 5 | USER.md user profile | present | user_profile (loaded by workspace_files via read_user_md) |
+| 6 | working directory cwd | always | — |
+| 7 | whether in a git repo | in a git repo | git_repo_flag |
+| 8 | session/model/thinking/tier bindings | always | — |
+| 9 | deferred tools catalog | deferred tools present | — |
+| 10 | **unified call tree (history)** | history present | append-grows, completed nodes release io, placed last in L1 |
 
-> Item 10 is the core of L1: the entire DAG's current active path is rendered as a call tree carrying io (see §1). Currently DAG / ContextCommit / tool-aging / summarize already provide the "node + compaction" foundation; the refactor point is to make "a completed child node releases io, keeps only logic + key output" the default rendering (corresponding to the default `expose=io`), so the tree append-grows and the prefix stays stable.
+> Item 10 is the core of L1: the entire DAG's current active path is rendered as a call tree carrying io (see §1). DAG / ContextCommit / tool-aging / summarize supply the underlying "node + compaction" machinery; the default rendering is that a completed child node releases io and keeps only its logic plus key output, corresponding to the default `expose=io`, so the tree append-grows and the prefix stays stable.
 
 ### L2 task level (purely this call, no history — history is already in the L1 call tree)
 
-| order | Component | condition | Status |
+| order | Component | condition | Registered as |
 |---|---|---|---|
-| 1 | this call's situation | called inside an @agentic_function | ✅ (step 6a/6b: _situational_prefix + _compute_call_path) |
-| 2 | git branch / status | in a git repo | ✅ git_status (L2 order=20) |
-| 3 | todo / task plan / progress | todos present | ✅ todo_progress (reads the _TODOS list) |
-| 4 | token budget hint | nearing the budget | ➕ (low) |
-| 5 | per-turn memory prefetch | relevant memory retrieved | ✅ (currently wrongly placed in system, should be L2) |
-| 6 | this call's user input + attachments | always | ✅ |
-| 7 | output format / schema | required by this step | ✅ |
-| 8 | output contract output_contract | this step has a downstream | ✅ rendered as the `Your output:` line inside _situational_prefix |
-| 9 | timestamp | always | ✅ (changes each time, very last) |
+| 1 | this call's situation | called inside an @agentic_function | _situational_prefix + _compute_call_path (step 6a/6b) |
+| 2 | git branch / status | in a git repo | git_status (L2 order=20) |
+| 3 | todo / task plan / progress | todos present | todo_progress (reads the _TODOS list) |
+| 4 | token budget hint | nearing the budget | not registered |
+| 5 | per-turn memory prefetch | relevant memory retrieved | — |
+| 6 | this call's user input + attachments | always | — |
+| 7 | output format / schema | required by this step | — |
+| 8 | output contract output_contract | this step has a downstream | rendered as the `Your output:` line inside _situational_prefix |
+| 9 | timestamp | always | changes each time, very last |
 
-### Not registered (we don't have this feature, leaving a mechanism slot)
+### Slots left unregistered
 
-Kanban multi-agent coordination, Nous subscription guidance, Hermes profile mechanism — we have no corresponding features, **not registered**. If we actually build the corresponding feature later, it just registers a ContextComponent of its own; the framework doesn't change.
+Kanban multi-agent coordination, Nous subscription guidance, and the Hermes profile mechanism have no counterpart feature here, so nothing is registered for them. Building such a feature later means registering a ContextComponent of its own; the framework does not change.
 
 ---
 
 ## 4'. Prompt Templates for Each Component
 
-Below are **copy-pasteable prompt templates** for the key components: a description plus the English prompt body (model-facing, English to match the existing skills / situational blocks) + placeholders + registration parameters (layer/order/condition). When coding, `build()` directly produces this text. The format follows `_situational_prefix` (`[…]` tags) and Hermes GUIDANCE (`# heading` + `<tag>` blocks).
+This section gives the prompt template for each key component: the model-facing prompt body (in English, matching the existing skills and situational blocks), its placeholders, and its registration parameters (layer/order/condition). A component's `build()` produces this text directly. The format follows `_situational_prefix` (`[…]` tags) and Hermes GUIDANCE (`# heading` + `<tag>` blocks).
 
-### 1. situation (L2 · order 1 · condition: called inside an @agentic_function) ★ core
+### 1. situation (L2 · order 1 · condition: called inside an @agentic_function)
 
-Extends the current `_situational_prefix`: not just recursion prevention, but also adding "responsibility / call path / program position / output destination."
+The `_situational_prefix` block does more than prevent recursion: it also carries the function's responsibility, call path, program position, and output destination.
 
 Block with **paired XML tags** (`<situation>…</situation>`), not `#` headings — boundaries are explicit, and any `#`/code/markdown appearing in the content won't be confused with the block delimiters (the same convention as Claude Code's `<system-reminder>`, etc.).
 
@@ -188,7 +186,7 @@ Placeholders:
 - `{program_position}` the position in the program, e.g. `step 1 of the literature stage, next → extract_framework`
 - `{output_contract}` see the next item (rendered inline within this block, not as a separate block)
 
-> The recursion-prevention paragraph (last two sentences) carries over the current `_situational_prefix`; the first half is the newly added situation.
+> The last two sentences are the recursion-prevention paragraph; the lines above them describe the situation.
 
 ### 2. output_contract (L2 · inlined into situation)
 
@@ -297,7 +295,7 @@ Format:
 
 ## 5. Defaults and Configurability (expose / render_range)
 
-§4 is the **default** case. "How much history is passed between parent and child" is decided by two knobs (current mechanism, see `context.md`):
+§4 describes the **default** case. How much history is passed between parent and child is decided by two knobs (see `context.md`):
 
 | Knob | What it controls | Default | Default effect |
 |---|---|---|---|
@@ -326,7 +324,7 @@ The "call tree" in L1 history is **generated automatically by the framework from
 
 The criterion in essence: **will call the LLM again = has context value → record it; doesn't call the LLM = pure execution operation → don't record it.** The LLM is one link in the nesting: among the things it calls, **only those that are "also agentic functions (that will call the LLM again)" continue to be added to the tree and recursed**; the plain tools it calls are all ignored (otherwise one model call invoking dozens of tools would blow up the tree).
 
-**Nodes carry io + release on completion (the key to plan B)**: nodes that enter the tree **carry their actual io** (input + output / model output) — the tree itself is the complete context. After a child node **finishes it releases its io, keeping only the call logic + key output** (that line `func(...) → ✓result`). The release happens in the later part of the tree (the block that just completed), leaving the old prefix untouched → append-grows + tail release, stable prefix → large segments hit the cache. The whole tree's size is determined by the **depth of the current active path**, not accumulated by the total number of calls (the paper's "by call depth not accumulation").
+**Nodes carry io and release it on completion**: nodes that enter the tree **carry their actual io** (input + output / model output) — the tree itself is the complete context. After a child node **finishes it releases its io, keeping only the call logic + key output** (that line `func(...) → ✓result`). The release happens in the later part of the tree (the block that just completed), leaving the old prefix untouched → append-grows + tail release, stable prefix → large segments hit the cache. The whole tree's size is determined by the **depth of the current active path**, not accumulated by the total number of calls (the paper's "by call depth not accumulation").
 
 > This is exactly the default `expose=io`: agentic functions expose io, internal llm/plain tools collapse, completed child nodes release io. It can be overridden by expose/render_range (see §5), but **this is the default**.
 
@@ -640,7 +638,7 @@ What it shows: `generate_ideas` / `check_novelty` are **agentic functions inside
 
 ---
 
-## 7. Situation Injection (Implemented)
+## 7. Situation Injection
 
 Whenever an `@agentic_function` internally calls `runtime.exec`, the framework automatically injects a `<situation>` block telling the model its current execution situation.
 
@@ -667,21 +665,18 @@ In `_call_via_providers` in `runtime.py`, when building the current turn's user 
 
 ---
 
-## 8. Implementation Status
+## Appendix: Implementation Status
 
-All of the following are in place:
-
-1. ✅ `ContextComponent` + the three registries + the assembler (`context/components.py`). 14 components registered.
-2. ✅ All ✅ components have been converted to registration entries. The only remaining ➕ are computer-use guidance and the token budget hint (low priority).
-3. ✅ Conversation and function calls both go through `render_context` (`context/nodes.py`) + the `render_dag_messages` rendering pipeline.
-   In the conversation scenario `frame_entry_seq=None` (top level, fully visible); in the function-call scenario the visible range is controlled by `callers`/`subcalls`/`expose`.
-4. ✅ The L2 situation (`_situational_prefix` + `_compute_call_path`) is in place at step 6a/6b.
+- `ContextComponent`, the three registries, and the assembler live in `context/components.py`, with 14 components registered.
+- Conversation and function calls both go through `render_context` (`context/nodes.py`) and the `render_dag_messages` rendering pipeline. In the conversation scenario `frame_entry_seq=None` (top level, fully visible); in the function-call scenario the visible range is controlled by `callers`/`subcalls`/`expose`.
+- The L2 situation (`_situational_prefix` + `_compute_call_path`) runs at step 6a/6b.
+- Computer-use guidance and the token budget hint are not registered.
 
 ---
 
 ## Related Documents
-- `context.md` — the current mechanism (L1 history is produced by DAG + ContextCommit; expose/render_range live there)
-- `context-comparison.md` — component comparison with reference projects (source for finding gaps)
-- `context-compaction.md` — context-compaction design (text-level four-stage pipeline + DAG-level node visibility pruning)
-- `../providers/request-build.md` — downstream: Context translated into each vendor's wire + cache landing
-- `../runtime/execution/agentic-self-recursion.md` — `_situational_prefix`, the prototype of the L2 situation
+- [`context.md`](context.md) — the context layer's mechanism (L1 history is produced by DAG + ContextCommit; expose/render_range live there)
+- [`context-comparison.md`](context-comparison.md) — component comparison with reference projects
+- [`context-compaction.html`](context-compaction.html) — context-compaction design (text-level four-stage pipeline + DAG-level node visibility pruning)
+- [`../providers/request-build.md`](../providers/request-build.md) — downstream: Context translated into each vendor's wire + cache landing
+- [`../runtime/execution/agentic-self-recursion.md`](../runtime/execution/agentic-self-recursion.md) — `_situational_prefix`, the prototype of the L2 situation

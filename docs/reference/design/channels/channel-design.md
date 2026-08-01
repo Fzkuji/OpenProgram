@@ -2,7 +2,7 @@
 
 External chat platforms (Telegram / Discord / Slack / WeChat) communicate bidirectionally with OpenProgram through this subsystem: a user sends a message on a platform to trigger the agent, and the agent's reply is sent back through the same channel.
 
-This document describes **the current shape after implementation is complete**. For the design evolution history and the list of fixed defects, see [`channel-audit.md`](./channel-audit.md).
+This document describes the structure and message flow. For the requirements and invariants the layer holds to, and the comparison with OpenClaw and hermes, see [`channel-audit.md`](./channel-audit.md).
 
 ## 1. Overall Shape
 
@@ -165,7 +165,7 @@ def dispatch_inbound(*, channel, account_id, peer_kind, peer_id,
     return result.final_text  # or None (progress mode)
 ```
 
-`_conversation.py` itself is only 283 lines (previously a single file of 588 lines with 5 responsibilities).
+`_conversation.py` holds only this flow; routing, session storage, and broadcast each live in their own module.
 
 ### 4.3 Platform Differences Sealed in the Low Level
 
@@ -222,7 +222,7 @@ The 4 built-in platforms take priority; a same-named plugin is silently ignored.
 ## 5. Module Inventory
 
 ```
-openprogram/channels/   14 files
+openprogram/channels/
 ├── base.py              Channel ABC + MessageHandle + send_text/edit_text(_full)
 ├── _transport.py        SendResult + 4 platforms' HTTP post/patch (unified low level)
 ├── _message.py          ChannelMessage inbound neutral-structure dataclass
@@ -305,24 +305,24 @@ openprogram channels bindings
 
 ### 7.3 Web UI
 
-| Entry point | Implementation | Status |
-|---|---|---|
-| Topbar channel popover | `web/components/chat/top-bar/channel-menu.tsx` (168 lines) | ✓ complete |
-| Health badge status API | `/api/channels/{platform}/{account_id}/status` returns alive/stale/unknown | ✓ complete |
-| Standalone settings page | — | **⚠ missing** |
-
-The Web side currently **has no `/settings/channels` config page**. All account / bindings management can only go through the CLI. If a Web config UI is to be built later, the corresponding API should be added in `openprogram/webui/routes/channels.py`.
-
-## 8. Plugin / Extension Future Work
-
-| Current status | If extension is needed later |
+| Entry point | Implementation |
 |---|---|
-| 4 built-in platforms | add WhatsApp / Signal / Matrix / LINE etc. — write a `Channel` subclass + entry_point registration |
-| ChannelMessage already contains `reply_to_id` / `thread_id` / `attachments` fields | dispatch_inbound does not consume them yet; wire them up once a real need appears (reply quote / thread isolation / attachment reading) |
-| Reaction approval (✓/✗ to confirm a dangerous tool) | not implemented; both hermes/OpenClaw have it; build it once a user asks |
-| Token-level text streaming | currently only edits at tool boundaries; no real-time edit of reply text deltas (rate limit risk) |
+| Topbar channel popover | `web/components/chat/top-bar/channel-menu.tsx` |
+| Health badge status API | `/api/channels/{platform}/{account_id}/status` returns alive/stale/unknown |
+
+Account and bindings management goes through the CLI. A Web config UI would add
+its API in `openprogram/webui/routes/channels.py`.
+
+## 8. Extension Points
+
+| Extension | How it is done |
+|---|---|
+| A new platform (WhatsApp / Signal / Matrix / LINE) | write a `Channel` subclass + entry_point registration |
+| Reply quote / thread isolation / attachment reading | `ChannelMessage` already carries `reply_to_id` / `thread_id` / `attachments`; the work is making `dispatch_inbound` consume them |
+| Reaction approval (✓/✗ confirming a dangerous tool) | an adapter-side reaction listener plus a bridge to the approval path |
+| Token-level text streaming | edits currently happen at tool boundaries; editing on reply-text deltas has to weigh the platform rate limit |
 
 ## 9. References
 
-- [`channel-audit.md`](./channel-audit.md) — design evolution history + fixed-defect list + comparison with OpenClaw / Hermes
+- [`channel-audit.md`](./channel-audit.md) — requirements, invariants, and the comparison with OpenClaw / Hermes
 - the docstring at the top of each adapter — platform-specific protocol details

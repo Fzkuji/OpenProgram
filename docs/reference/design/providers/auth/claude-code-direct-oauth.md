@@ -1,147 +1,134 @@
-# claude-code direct subscription connection (drop Meridian)
+# claude-code direct subscription connection
 
-## Goal
+The `claude-code` provider connects directly to `api.anthropic.com` with the
+anthropic SDK, using a subscription OAuth token — the same shape as
+`openai-codex`, which reads `~/.codex/auth.json` directly and connects directly
+to `chatgpt.com/backend-api`. There is no local proxy daemon in the path.
 
-Change the `claude-code` provider from "a local Meridian proxy daemon" to "the anthropic SDK
-connecting directly to `api.anthropic.com` using a subscription OAuth token" — fully isomorphic to
-how `openai-codex` reads `~/.codex/auth.json` directly and connects directly to
-`chatgpt.com/backend-api`.
+Two constraints shape the design:
 
-Constraints (decided by the user):
-- **Keep the `claude-code` provider name** (WebUI/CLI unchanged); only swap the underlying Runtime.
-- **Don't touch the macOS Keychain**; use OpenProgram's own credential system (AuthStore +
-  the `~/.claude/.credentials.json` file).
+- The provider is named `claude-code` in the WebUI and CLI. Only the underlying
+  Runtime is Anthropic-direct; the user-facing name does not change.
+- Credentials live in OpenProgram's own system (AuthStore plus the
+  `~/.claude/.credentials.json` file). The macOS Keychain is not touched.
 
-## Background: why Meridian isn't a technical necessity
+## Why a proxy is not required
 
-`anthropic.py:245-261` has long supported direct subscription OAuth connections: when the token is
-`sk-ant-oat…`, it sends to the Messages API directly with `auth_token=<token>` +
-`anthropic-beta: claude-code-20250219,oauth-2025-04-20,…` +
-`user-agent: claude-cli/<ver>`. This is the same approach codex uses to connect directly to chatgpt.com.
-The two reasons Meridian was originally chosen no longer hold:
+`anthropic.py:245-261` supports subscription OAuth directly: when the token is
+`sk-ant-oat…`, the request goes to the Messages API with `auth_token=<token>`,
+`anthropic-beta: claude-code-20250219,oauth-2025-04-20,…`, and
+`user-agent: claude-cli/<ver>`. This is the same approach codex uses against
+chatgpt.com.
 
-- "A Max account doesn't expose an api.anthropic.com key" — true, but the subscription uses an
-  **OAuth token**, not an api-key; the direct connection uses a Bearer token + beta header and needs
-  no api-key.
-- "A third-party proxy mangled the image block into `[object Object]`" — that was a bug in some
-  proxy; sending to the Messages API directly through the official `anthropic` SDK natively supports
-  image blocks, so multimodal content isn't lost.
+The two arguments that once favoured a proxy do not hold. A Max account exposing
+no `api.anthropic.com` key is true but irrelevant — the subscription uses an
+**OAuth token**, not an api-key, and the direct connection needs only a Bearer
+token plus the beta header. And image blocks arriving as `[object Object]` was a
+bug in one particular proxy; the official `anthropic` SDK supports image blocks
+natively against the Messages API, so multimodal content survives.
 
-## The real obstacle: how the token gets in + how it refreshes
+## Credential forms
 
 | Credential form | Source | kind | refresh |
 | --- | --- | --- | --- |
 | Observe the Claude CLI | `~/.claude/.credentials.json` | `cli_delegated` | The Claude CLI refreshes itself; OpenProgram observes and re-reads |
 | Self-held api-key | `openprogram auth login anthropic --api-key` | `api_key` | Doesn't expire |
 
-Two gaps in the current state:
-1. The anthropic provider parses the token with `resolve_provider_key()`, which **explicitly excludes
-   OAuth** (`env_api_keys.py:52` comment: OAuth goes through the claude-code daemon).
-2. The resolver's `_extract_token()` returns None for `cli_delegated`
-   (`resolver.py:132-137`), so even switching to `resolve_api_key_sync` can't pull out the
-   subscription token.
+The `cli_delegated` mode mirrors codex exactly. The codex CLI maintains
+`~/.codex/auth.json` and OpenProgram re-reads the latest access_token on each
+use; likewise the Claude CLI maintains `~/.claude/.credentials.json` (a plain
+file on Linux and Windows, read directly) and OpenProgram re-reads
+`claudeAiOauth.accessToken` on each use. Refresh is the external CLI's
+responsibility, which is what makes the mode cheap.
 
-## Plan (lightweight, freeloading off the Claude CLI's refresh — identical to codex)
+## Mechanics
 
-codex's cli_delegated mode: the codex CLI maintains `~/.codex/auth.json`, and OpenProgram re-reads
-the latest access_token each time. We copy this verbatim for Claude: the Claude CLI maintains
-`~/.claude/.credentials.json` (on Linux/Win it's a file, read directly; we don't touch the mac
-Keychain), and OpenProgram re-reads `claudeAiOauth.accessToken` each time.
+**Token extraction.** `auth/resolver.py:_extract_token` re-reads `store_path`
+for a `CliDelegatedPayload` and pulls the access_token from `access_key_path`.
+This is general to the credential kind, so codex's `cli_delegated` uses the same
+path.
 
-### Change points
+**Unified resolution in the anthropic provider.** `stream_simple` in
+`providers/anthropic/anthropic.py` and `AnthropicRuntime.__init__` both resolve
+the token through `resolve_api_key_sync(provider)`, which covers OAuth,
+`cli_delegated`, and manager-driven refresh.
 
-1. **Have the resolver pull the token for cli_delegated** — `auth/resolver.py:_extract_token`
-   re-reads `store_path` for a `CliDelegatedPayload` and pulls out the access_token at
-   `access_key_path`. This is a general fix (codex's cli_delegated benefits too).
+**Registry.** `providers/registry.py` maps `"claude-code"` to the direct
+Runtime. That Runtime is lightweight: its models go through the
+`anthropic:<id>` namespace, reusing the anthropic provider's wire, and its token
+resolves from the `anthropic` pool. Model alias normalisation (opus / sonnet /
+haiku) carries over.
 
-2. **Switch the anthropic provider to unified resolution** — in
-   `providers/anthropic/anthropic.py` `stream_simple`, change token resolution from
-   `resolve_provider_key(provider)` to `resolve_api_key_sync(provider)`
-   (which includes OAuth/cli_delegated/manager-refresh). Change `AnthropicRuntime.__init__` the same way.
+**Expiry.** When a `cli_delegated` credential expires, AuthManager raises
+`AuthReadOnlyError` — the credential is read-only and cannot refresh itself —
+and the message directs the user to `claude login`. The direct path reuses this
+rather than adding its own expiry handling.
 
-3. **Switch the registry** — in `providers/registry.py`, change
-   `"claude-code"` from `_max_proxy_runtime.ClaudeCodeRuntime` to the direct-connection Runtime.
-   Keep the `claude-code` name: add a lightweight Runtime whose models go through the `anthropic:<id>`
-   namespace (reusing the anthropic provider's wire), with the token resolved from the `anthropic` pool.
-   The model alias normalization (opus/sonnet/haiku) carries over.
+The `api="claude-code-cli"` wire label is declared in
+`_claude_code_registry.py` and has no consumer; requests always go through
+Runtime to the `anthropic:<id>` Messages wire, so no wire implementation is
+involved.
 
-4. **Expiry handling** — when cli_delegated expires, AuthManager throws `AuthReadOnlyError`
-   (read-only, can't self-refresh), and the error message guides the user to `claude login`. The
-   direct-connection path reuses this; nothing extra is built.
+## Subscription login
 
-### Verification
+The direct connection covers using a token; login covers how the token arrives.
+claude-code uses the same PKCE framework as codex.
 
-- Unit: `_extract_token` re-reads the file and pulls the token for cli_delegated; the anthropic
-  provider can resolve an `sk-ant-oat` token when only a cli_delegated credential is present; the
-  registry resolves `claude-code` to the direct-connection Runtime rather than the Meridian Runtime.
-- End-to-end: after `claude login` on the local machine, run claude-code once in OpenProgram and
-  confirm it connects directly to api.anthropic.com (no Meridian process) and that multimodal image
-  blocks work.
+- **OAuth parameters** live in `auth_adapter.py`: `OAUTH_CLIENT_ID` =
+  `9d1c250a-e61b-44d9-88ed-5944d1962f5e`, authorize =
+  `claude.ai/oauth/authorize`, token = `console.anthropic.com/v1/oauth/token`,
+  redirect = `console.anthropic.com/oauth/code/callback`. `build_pkce_config()`
+  uses manual-paste mode, because Anthropic is a hosted redirect that displays
+  `code#state` rather than a loopback callback, plus token JSON.
+- **The shared PKCE framework** carries three switches for this —
+  `manual_paste_only`, `redirect_uri_override`, `token_use_json` — along with
+  `_credential_from_tokens` extraction and exchange with state, all in
+  `pkce_oauth.py`. They generalize the framework rather than special-casing
+  Anthropic inside it.
+- **Refresh** is `_anthropic_refresh` (the refresh_token is swapped for a new
+  one, JSON), registered on ProviderAuthConfig. Credentials with no
+  refresh_token, such as setup-token, no-op automatically.
+- **setup-token** goes through `import_setup_token`, which stores an oauth kind
+  with an empty refresh_token and roughly a year's expiry.
+- **Login methods** for anthropic and claude-code are `pkce_oauth` (default) and
+  `setup_token` only. Importing from `~/.claude` and pasting an api key are not
+  offered.
+- **The driver** (`login_driver`) has an anthropic pkce branch plus setup_token
+  dispatch; `_credential_provider_id` maps claude-code to anthropic so the
+  credential lands in the anthropic pool.
+- **Multiple accounts** are one profile each, reusing unified account management
+  and 429 rotation.
 
-## Implementation status (landed)
+## Account management in the WebUI
 
-1. ✅ `auth/resolver.py:_extract_token` + new `_read_delegated_token`: cli_delegated
-   re-reads `store_path` to get the access_token (codex's cli_delegated benefits too).
-2. ✅ `providers/anthropic/anthropic.py:stream_simple` + `runtime.py:AnthropicRuntime`
-   switched to `resolve_api_key_sync` (includes OAuth/cli_delegated).
-3. ✅ New `providers/anthropic/_claude_code_direct_runtime.py`: ClaudeCodeRuntime
-   connects directly, maps models to `anthropic:<id>`, resolves the token from the anthropic pool.
-4. ✅ `providers/registry.py`: `claude-code` → direct-connection Runtime (the old Meridian Runtime
-   only lingers as importable).
-5. ✅ Tests: `tests/unit/test_claude_code_direct_oauth.py` (10) added;
-   `test_runtime_key_ladder.py` mock points updated (AnthropicRuntime uses unified resolution).
-   Full unit suite: 810 passed / 4 skipped.
+claude-code's accounts go through the general account routes, not
+provider-specific ones. `webui/routes/accounts.py` maps claude-code to the
+anthropic pool via `_pool_id`, so every general route stores and fetches by
+pool, and `_api_key_env` returns `""` for claude-code, which forces
+`add_mode=login` and hides the key-paste field. `setup_hints.py` describes the
+provider as a direct Anthropic connection over subscription OAuth and explains
+the two login methods.
 
-Note: the `api="claude-code-cli"` wire label is only declared in `_claude_code_registry.py` and has
-no consumer anywhere in the repo (a dangling label); the actual request always goes through
-Runtime → the `anthropic:<id>` Messages wire, so the switch doesn't touch any wire implementation.
-Meridian's `x-meridian-profile` header injection hangs off the openai_completions chokepoint, and the
-direct-connection model api is the anthropic Messages api, so it naturally never passes through there.
+The frontend needs no claude-code branch: `account-manager.tsx` and
+`provider-login.tsx` are data-driven, so `add_mode=login` renders the two login
+buttons on its own.
 
-## Subscription login (browser OAuth + setup-token) — landed
+## Implementation status
 
-The direct connection only solves "how to use a token once you have one"; login solves "how the token
-gets in." Copy codex's PKCE framework to wire subscription login into claude-code:
+The direct connection, subscription login, and WebUI account management
+described above are all in place:
 
-- **OAuth parameters (verified working)**: `auth_adapter.py` adds `OAUTH_CLIENT_ID`
-  =`9d1c250a-e61b-44d9-88ed-5944d1962f5e`, authorize=`claude.ai/oauth/authorize`,
-  token=`console.anthropic.com/v1/oauth/token`, redirect=`console.anthropic.com/oauth/code/callback`.
-  `build_pkce_config()` uses manual-paste mode (Anthropic is a hosted-redirect that displays
-  `code#state`, not a loopback callback) + token JSON.
-- **General PKCE framework extension**: `pkce_oauth.py` adds the three switches
-  `manual_paste_only`/`redirect_uri_override`/`token_use_json` + the `_credential_from_tokens`
-  extraction + exchange with state.
-- **refresh**: `_anthropic_refresh` (refresh_token swapped for a new one, JSON), registered to
-  ProviderAuthConfig; cases without a refresh_token (setup-token) automatically no-op.
-- **setup-token**: `import_setup_token` stores oauth kind, an empty refresh_token, ~1y expiry.
-- **Login methods**: in `login_methods`, anthropic + claude-code keep only
-  `pkce_oauth` (default) + `setup_token` — **no import_from_cli, no api_key**
-  (the user explicitly deprecated importing from ~/.claude).
-- **driver**: `login_driver` adds an anthropic pkce branch + setup_token dispatch;
-  `_credential_provider_id` (claude-code→anthropic) ensures the credential lands in the anthropic pool.
-- **Multi-account**: one profile per account, reusing unified account management + 429 rotation.
+- `auth/resolver.py:_extract_token` plus `_read_delegated_token` re-read
+  `store_path` for `cli_delegated`.
+- `providers/anthropic/anthropic.py:stream_simple` and
+  `runtime.py:AnthropicRuntime` resolve through `resolve_api_key_sync`.
+- `providers/anthropic/_claude_code_direct_runtime.py` holds the direct
+  ClaudeCodeRuntime.
+- `providers/registry.py` points `claude-code` at it.
+- `tests/unit/test_claude_code_direct_oauth.py` covers the path;
+  `test_runtime_key_ladder.py` mock points target the unified resolution.
 
-## WebUI: claude-code breaks free of the Meridian account system — landed
-
-claude-code's account UI was originally hardcoded into Meridian-specific routes on both frontend and
-backend, bypassing the general login. The switch:
-
-- `webui/routes/providers.py`: delete the whole block of `/api/providers/claude-code/accounts/*`
-  literal routes (which called `_meridian_cli`; literal routes have higher priority and would
-  intercept the request).
-- `webui/routes/accounts.py`: add `_pool_id` (claude-code→anthropic), delete 5
-  `if provider=="claude-code"` short-circuits so all general routes store/fetch by pool; `_api_key_env`
-  returns "" for claude-code (forcing add_mode=login, hiding key-paste).
-- `setup_hints.py`: change the claude-code copy to "direct connection to Anthropic with a subscription
-  OAuth," delete the backend/Meridian description, and explain the two login methods.
-- The frontend `account-manager.tsx`/`provider-login.tsx` are data-driven, zero changes: backend
-  add_mode=login → automatically renders the two login buttons. Already build + worker restart + browser
-  self-check confirmed the UI is correct (two buttons, no Import, copy correct).
-
-`_meridian_cli.py`/`_max_proxy_runtime.py` and the like remain on disk but are no longer called by any route.
-
-## Disposition of Meridian remnants
-
-`_max_proxy_runtime.py` / `_claude_max_proxy_registry.py` / `_meridian_cli.py` are kept for now
-(the WebUI's "Add Claude account" P1/P2 still reference them); only the registry no longer points to
-them by default. Delete later once no references are confirmed.
+`_max_proxy_runtime.py`, `_claude_max_proxy_registry.py`, and `_meridian_cli.py`
+remain on disk but are no longer reached by any route or referenced by the
+registry. They are removable once the WebUI's remaining "Add Claude account"
+references are confirmed gone.
