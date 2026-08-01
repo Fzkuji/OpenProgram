@@ -956,14 +956,24 @@ def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, ex
 
     # Best-effort context window for the current model — frontend uses this
     # to render the input/output % bar. Falls back to None on unknown.
+    chat_model = getattr(chat_runtime, "model", None) if chat_runtime else None
+
+    # runtime 没有 _context_window_tokens 这种属性（历史遗留读取，恒为
+    # None，前端只好用 200k 保守默认）。从模型注册表拿真实窗口，和
+    # /context 面板同源。
     context_window = None
-    if chat_runtime:
+    if chat_model:
         try:
-            context_window = getattr(chat_runtime, "_context_window_tokens", None)
+            from openprogram.providers.models import get_model as _get_model
+            from openprogram.context.tokens import real_context_window
+            _prov, _mid = provider_name, str(chat_model)
+            if ":" in _mid:
+                _prov, _mid = _mid.split(":", 1)
+            _m = _get_model(_prov, _mid) if _prov and _mid else None
+            if _m is not None:
+                context_window = real_context_window(_m)
         except Exception:
             context_window = None
-
-    chat_model = getattr(chat_runtime, "model", None) if chat_runtime else None
 
     stats = {
         "type": "context_stats",

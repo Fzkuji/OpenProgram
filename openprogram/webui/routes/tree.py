@@ -389,10 +389,17 @@ def register(app):
                     "metadata": {},
                 })
 
+            # sess["model"] 存的是 "provider:model"（如 openai-codex:gpt-5.5），
+            # get_model 需要拆开的两个参数。以前整串传单参 TypeError 被吞，
+            # 窗口永远回落 128k 默认值。
             model_id = sess.get("model") or ""
+            provider_id = sess.get("provider_name") or ""
+            if ":" in model_id:
+                provider_id, model_id = model_id.split(":", 1)
             try:
                 from openprogram.providers.models import get_model as _get_model
-                model_obj = _get_model(model_id) if model_id else None
+                model_obj = (_get_model(provider_id, model_id)
+                             if provider_id and model_id else None)
             except Exception:
                 model_obj = None
             ctx_window = real_context_window(model_obj)
