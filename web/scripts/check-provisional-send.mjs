@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+
+import { readComposerSource } from "./composer-source.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -334,10 +336,10 @@ assert.equal(
   "a FileReader completion after draft close must not persist its owner",
 );
 
-const composer = readFileSync(
-  new URL("../components/chat/composer/index.tsx", import.meta.url),
-  "utf8",
-);
+// The composer is split across index.tsx and its submodules;
+// readComposerSource concatenates them in source order so the
+// assertions below read it as one text, unchanged.
+const composer = readComposerSource(import.meta.url);
 const wsSendBody = composer.slice(
   composer.indexOf("function wsSend("),
   composer.indexOf("const noop"),

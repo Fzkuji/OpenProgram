@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { readCenterTabStripSource } from "./center-tab-strip-source.mjs";
+
 const root = new URL("../", import.meta.url);
 const source = (path) => readFileSync(new URL(path, root), "utf8");
 
 const welcome = source("components/chat/welcome-screen.tsx");
 const welcomeCss = source("components/chat/welcome-screen.module.css");
 const messageList = source("components/chat/messages/message-list.tsx");
-const tabs = source("components/center-tabs/center-tab-strip.tsx");
+// The strip is split across center-tab-strip.tsx and its submodules;
+// read them as one text so the assertions below are unchanged.
+const tabs = readCenterTabStripSource(import.meta.url);
 const tabsCss = source("components/center-tabs/center-tabs.module.css");
 const conversations = source("lib/runtime-bridge/conversations.ts");
 const chatHandlers = source("lib/runtime-bridge/chat-handlers.ts");

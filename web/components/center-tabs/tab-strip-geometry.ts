@@ -67,32 +67,6 @@ export function computeLiveShifts(
   return shifts;
 }
 
-/**
- * Detach-in-progress geometry: the dragged unit is on its way out of the
- * strip, so everything after it slides one drag-width left and the slot it
- * came from closes. Same transform-only mechanism as computeLiveShifts, so
- * the existing `transform 160ms ease` on .tab animates it.
- */
-export function closeGapShifts(
-  entries: ReturnType<typeof centerTabStripEntries>,
-  draggedIds: ReadonlySet<string>,
-  dragWidth: number,
-): Map<string, number> {
-  const shifts = new Map<string, number>();
-  if (dragWidth <= 0) return shifts;
-  const sourceIndex = entries.findIndex((entry) =>
-    entry.kind === "group"
-      ? entry.group.memberIds.every((tabId) => draggedIds.has(tabId))
-      : draggedIds.has(entry.tabId),
-  );
-  if (sourceIndex < 0) return shifts;
-  const step = dragWidth + STRIP_GAP;
-  for (let i = sourceIndex + 1; i < entries.length; i++) {
-    shifts.set(entries[i].id, -step);
-  }
-  return shifts;
-}
-
 /** Static slot geometry captured at drag start — hit tests always run
  *  against these unshifted rects, so slid-aside bystanders can never
  *  oscillate under the dragged tab (Chrome's stability property). */

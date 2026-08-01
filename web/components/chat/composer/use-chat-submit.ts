@@ -1,0 +1,263 @@
+"use client";
+
+/**
+ * Chat turn submit + stop.
+ *
+ * `submit` covers three outcomes in priority order: a mid-run STEER (a
+ * message typed while a task runs is routed into the live run so the user
+ * can course-correct), a slash command, or a normal turn. A normal turn
+ * expands long-paste tokens and `@path` mentions, converts pending docs
+ * into path mentions plus `type:"document"` attachments, and hands the
+ * payload to `sendChatMessage` — the bridge that fires the optimistic user
+ * bubble, welcome-hide and running flip before the WS write.
+ *
+ * `stop` flips the UI optimistically: it clears the running task and marks
+ * the streaming assistant placeholder cancelled immediately rather than
+ * waiting for the backend's stopped envelope, which can be several seconds
+ * behind an in-flight LLM stream.
+ */
+import { useCallback } from "react";
+
+import { useSessionStore } from "@/lib/session-store";
+import { expandAtMentions } from "./attach/at-mention";
+import { expandPasteTokens, missingPasteIds } from "./paste/paste-store";
+import { sendChatMessage } from "./legacy-send";
+import { resolveFnFormSessionId } from "./modes/fn-form/session-target";
+import type { useComposerAttachments } from "./attach/use-composer-attachments";
+import type { useSlashMenu } from "./slash/use-slash-menu";
+
+type Attachments = ReturnType<typeof useComposerAttachments>;
+
+export interface ChatSubmitOptions {
+  bound: string | null;
+  input: string;
+  activeChatKey: string | null;
+  currentSessionId: string | null;
+  isRunning: boolean;
+  noEnabledModels: boolean;
+  promptNeedModel(): void;
+  send(payload: unknown): boolean;
+  setComposerInputFor(ownerKey: string | null, value: string): void;
+  setHistoryIndex(index: number): void;
+  slash: ReturnType<typeof useSlashMenu>;
+  pendingImages: Attachments["pendingImages"];
+  pendingDocs: Attachments["pendingDocs"];
+  clearAttachmentsAfterSubmit: Attachments["clearAfterSubmit"];
+  thinking: string;
+  toolsEnabled: boolean;
+  webSearchEnabled: boolean;
+  fastEnabled: boolean;
+  fastSupported: boolean;
+}
+
+export function useChatSubmit({
+  bound,
+  input,
+  activeChatKey,
+  currentSessionId,
+  isRunning,
+  noEnabledModels,
+  promptNeedModel,
+  send,
+  setComposerInputFor,
+  setHistoryIndex,
+  slash,
+  pendingImages,
+  pendingDocs,
+  clearAttachmentsAfterSubmit,
+  thinking,
+  toolsEnabled,
+  webSearchEnabled,
+  fastEnabled,
+  fastSupported,
+}: ChatSubmitOptions) {
+  const submit = useCallback(async () => {
+    const submitOwnerKey = activeChatKey ?? currentSessionId;
+    const trimmed = input.trim();
+    // While a task is running, a sent message is a MID-RUN STEER, not a new
+    // turn: route it to the live run so the user can course-correct just by
+    // typing into the same box. The running loop picks it up at its next step
+    // boundary. (Plain text only — attachments / slash go through the normal
+    // path, which is disabled while running.)
+    if (isRunning) {
+      if (!trimmed || !submitOwnerKey) return;
+      send({ action: "steer", session_id: submitOwnerKey, message: trimmed });
+      setComposerInputFor(submitOwnerKey, "");
+      return;
+    }
+    // Allow image-only submits — the LLM can answer "describe this
+    // screenshot" without text. Otherwise require at least one of
+    // text or attached image.
+    if (!trimmed && pendingImages.length === 0 && pendingDocs.length === 0) {
+      return;
+    }
+    // No enabled model → don't send. Routing a turn with nothing
+    // enabled would silently run on a pinned default (the user disabled
+    // everything on purpose). Point them at the top-bar picker instead.
+    if (noEnabledModels) {
+      promptNeedModel();
+      return;
+    }
+    // Block submit while any attachment is still being decoded — the
+    // placeholder chips have empty ``attachment.data`` / null
+    // ``content``, which would deliver broken payloads. The user
+    // sees the chips in a loading shimmer; they just need to wait.
+    if (pendingImages.some((p) => p.loading)
+        || pendingDocs.some((d) => d.loading)) {
+      return;
+    }
+    if (slash.query !== null && slash.runCommand(trimmed)) {
+      setComposerInputFor(submitOwnerKey, "");
+      slash.close();
+      return;
+    }
+    // Block submit if any paste token in the draft has lost its
+    // backing content. The chip row renders these in red and the
+    // ``sendDisabled`` guard below also disables the send button, but
+    // re-check here so an Enter-key submit can't slip through if the
+    // chip refresh hadn't fired yet.
+    if (missingPasteIds(trimmed).size > 0) return;
+    // Expand long-paste tokens (``[Pasted #N +M lines]``) back into
+    // the outgoing text so the LLM receives the real content. The
+    // entries stay in the store — they're now GC'd by the
+    // composerDrafts effect once no draft references them anymore.
+    let expanded = expandPasteTokens(trimmed);
+    // Then expand any ``@path`` mentions by reading the files via the
+    // worker's HTTP API. Mentions that fail to read stay as the
+    // original ``@path`` token (no silent data loss).
+    try {
+      const mentionResult = await expandAtMentions(expanded, null);
+      expanded = mentionResult.text;
+    } catch {
+      /* network blip — fall through with raw text */
+    }
+    // Attached docs are referenced by PATH, never inlined. Each one's
+    // bytes ride along as a ``type:"document"`` attachment; the backend
+    // saves it under the session workdir and appends " @ <abs path>" to
+    // the mention (see ws_actions/chat.py). We emit the path-less
+    // ``[attachment: …]`` mention here so the optimistic bubble + chip
+    // parser have something to show before the server-side save lands.
+    // (Docs without captured bytes — over the 25 MB cap — are dropped:
+    // there's no way to ship them, and a mention with no backing file
+    // the agent can read would only mislead it.)
+    if (pendingDocs.length > 0) {
+      // Emit a mention for EVERY doc so none vanishes silently. Docs with
+      // captured bytes get the normal path-less mention (backend appends
+      // the @path + page/line count). Docs that couldn't be read (over the
+      // size cap → dataB64 null) get an honest "too large" note instead of
+      // being dropped — the chip still shows, the model is told.
+      const mentions = pendingDocs.map((d) => {
+        const meta = `${d.ext || "file"}, ${Math.max(1, Math.round(d.sizeBytes / 1024))} KB`;
+        return d.dataB64
+          ? `[attachment: ${d.filename} (${meta})]`
+          : `[attachment: ${d.filename} (${meta}, too large — not sent)]`;
+      });
+      if (mentions.length > 0) {
+        expanded = `${mentions.join("\n")}\n\n${expanded}`;
+      }
+    }
+    const imagesPayload = pendingImages.map((p) => p.attachment);
+    const docsPayload = pendingDocs
+      .filter((d) => d.dataB64)
+      .map((d) => ({
+        type: "document" as const,
+        data: d.dataB64 as string,
+        media_type: d.mediaType || "application/octet-stream",
+        filename: d.filename,
+      }));
+    const attachmentsPayload = [...imagesPayload, ...docsPayload];
+    // Delegate to legacy `sendMessage` (chat.js) so the user bubble +
+    // welcome-hide + assistant placeholder + isRunning flip all fire
+    // before the WS payload goes out. Composer is just the trigger.
+    const handled = sendChatMessage({
+      text: expanded,
+      sessionId: submitOwnerKey,
+      // A bound (split-pane) composer writes the same payload but must not
+      // flip the focused shell's welcome/run singletons.
+      background: bound !== null,
+      attachments: attachmentsPayload.length > 0 ? attachmentsPayload : undefined,
+      thinking,
+      toolsEnabled,
+      webSearchEnabled,
+      serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
+    });
+    // The bridge already writes this exact socket. A false result means the
+    // write did not complete; keep the captured draft + attachments intact so
+    // the user can retry after reconnect instead of writing the same socket
+    // again through the raw helper.
+    if (!handled) return;
+    setComposerInputFor(submitOwnerKey, "");
+    setHistoryIndex(-1);
+    // Revoke + clear pending images / docs now that the WS payload
+    // is out the door. Hook handles URL.revokeObjectURL for each
+    // image's preview blob.
+    clearAttachmentsAfterSubmit(submitOwnerKey);
+    slash.close();
+  }, [
+    clearAttachmentsAfterSubmit,
+    activeChatKey,
+    currentSessionId,
+    input,
+    isRunning,
+    noEnabledModels,
+    pendingDocs,
+    pendingImages,
+    promptNeedModel,
+    send,
+    setComposerInputFor,
+    slash,
+    thinking,
+    toolsEnabled,
+    webSearchEnabled,
+    fastEnabled,
+    fastSupported,
+    // ponytail: `bound` and `setHistoryIndex` are stable for a composer
+    // instance, so the pre-split dep list omitted them; kept identical.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ]);
+
+  function stop() {
+    const targetSessionId = resolveFnFormSessionId(
+      currentSessionId,
+      activeChatKey,
+    );
+    if (!targetSessionId) return;
+    // Optimistic UI flip: clear runningTask immediately so the Stop
+    // button turns back into Send right when the user clicks. Don't
+    // wait for the backend's stopped envelope — the dispatcher main
+    // thread can be blocked for several seconds on an in-flight LLM
+    // stream while cancel propagates. The actual backend cleanup
+    // still runs (subprocess SIGKILL is instant; cancel hook reaches
+    // a hook point within ~1s for the chat path), it just no longer
+    // gates the UI.
+    const store = useSessionStore.getState();
+    store.setRunningTaskFor(targetSessionId, null);
+    // Also patch the running assistant placeholder (the row that
+    // would otherwise be filled in 5-6s later with the late-arriving
+    // LLM response) to a cancelled state right now. Backend's
+    // dispatcher will overwrite the persisted node with the same
+    // ``[cancelled by user]`` content + status=cancelled when its
+    // cancel-aware finalize runs, so the React store and the on-disk
+    // node converge. Without this the chat would show a Thinking
+    // spinner until the model's stream completed naturally.
+    const ids = store.messageOrder[targetSessionId] || [];
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const m = store.messagesById[ids[i]];
+      if (!m) continue;
+      if (m.role !== "assistant") continue;
+      if (m.status === "done" || m.status === "completed"
+          || m.status === "cancelled" || m.status === "error") break;
+      store.updateMessage(targetSessionId, m.id, {
+        status: "cancelled",
+        content: m.content && m.content.trim()
+          ? `${m.content}\n\n*[cancelled by user]*`
+          : "*[cancelled by user]*",
+        thinking: undefined,
+      });
+      break;
+    }
+    send({ action: "stop", session_id: targetSessionId });
+  }
+
+  return { submit, stop };
+}

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+
+import { readComposerSource } from "./composer-source.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -326,10 +328,10 @@ const attachmentHook = readFileSync(
   new URL("../components/chat/composer/attach/use-composer-attachments.ts", import.meta.url),
   "utf8",
 );
-const composerSource = readFileSync(
-  new URL("../components/chat/composer/index.tsx", import.meta.url),
-  "utf8",
-);
+// The composer is split across index.tsx and its submodules;
+// readComposerSource concatenates them in source order so the
+// assertions below read it as one text, unchanged.
+const composerSource = readComposerSource(import.meta.url);
 assert.match(attachmentHook, /attachmentsByChatRef/);
 assert.match(
   attachmentHook,

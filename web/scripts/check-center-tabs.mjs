@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
+import { readCenterTabStripSource } from "./center-tab-strip-source.mjs";
+
 const css = readFileSync(
   new URL("../components/center-tabs/center-tabs.module.css", import.meta.url),
   "utf8",
@@ -13,10 +15,11 @@ const conversations = readFileSync(
   new URL("../lib/runtime-bridge/conversations.ts", import.meta.url),
   "utf8",
 );
-const strip = readFileSync(
-  new URL("../components/center-tabs/center-tab-strip.tsx", import.meta.url),
-  "utf8",
-);
+// The strip is split across center-tab-strip.tsx and its submodules
+// (drag engine / context menu / lifecycle / drop actions / tab items);
+// readCenterTabStripSource concatenates them in source order so every
+// assertion below reads the strip as one text, exactly as before.
+const strip = readCenterTabStripSource(import.meta.url);
 // Pure strip geometry (STRIP_GAP, computeLiveShifts, shiftStyle,
 // visibleStripBounds, slotOverlapRatio, collectPointerDropTargets,
 // pickPointerDropTarget) now lives in its own module; assertions about

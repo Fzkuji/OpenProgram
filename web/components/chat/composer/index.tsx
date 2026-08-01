@@ -5,6 +5,14 @@
  * Search), thinking-effort selector, token badge, send/stop button.
  * Submits chat turns directly via the WS channel; no legacy globals.
  *
+ * The pieces live next door: ./use-chat-submit (submit + stop),
+ * ./modes/fn-form/use-fn-form-submit (function dispatch),
+ * ./paste/use-paste-tokens (long-paste chips), ./use-history-recall
+ * (↑/↓), ./use-composer-keydown (key precedence),
+ * ./controls/controls-cluster (the bottom control row),
+ * ./status-chip and ./scoped-drop-overlay. This file owns the mode
+ * switch, the wrapper layout, and the send/stop affordance.
+ *
  * Styling lives in ./composer.module.css. The page-level chat layout
  * (chat-area, welcome screen, message list, etc.) is still rendered
  * by the legacy template for the moment and will be migrated in
@@ -12,99 +20,47 @@
  */
 "use client";
 
-import React, {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Menu } from "@base-ui-components/react/menu";
-import { MonitorIcon } from "@/components/animated-icons";
-import { Paperclip, Settings } from "lucide-react";
-import { GROUP_LABEL } from "../top-bar/menu-styles";
-import { HoverTip } from "@/components/ui/tooltip";
-import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
 import { useSessionStore } from "@/lib/session-store";
 import { useSessionScope } from "@/lib/session-store/session-scope";
-import {
-  draftChannelChoiceFor,
-  draftChannelChoiceHost,
-  dropDraftChannelChoice,
-} from "@/lib/runtime-bridge/draft-channel-choice";
-import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
-import { closeAllPopovers, setRunning } from "@/lib/runtime-bridge/ui";
-import { setWelcomeVisible } from "@/lib/runtime-bridge/helpers";
-import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
+import { getSocket } from "@/lib/runtime-bridge/state";
 import { api } from "@/lib/net/api";
 import { showToast } from "@/lib/format-utils/toast";
 import { useTranslation } from "@/lib/i18n";
 
-import { ContextBadge } from "../context-badge";
 // Session-scope chips relocated from the dismantled 48px topbar row —
 // each carries its own popover menu (project-menu / agent-selector /
 // permission-menu submodules under ../top-bar).
-import { AgentBadge, PermissionBadge, ProjectBadge, WorkingDirChips } from "../top-bar";
-import { ChannelMenu } from "../top-bar/channel-menu";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { FunctionForm, visibleParams } from "./modes/fn-form/fn-form";
-import { QuestionMode, type DecisionAction } from "./modes/question/question-mode";
+import { ProjectBadge, WorkingDirChips } from "../top-bar";
+import { visibleParams } from "./modes/fn-form/fn-form";
+import { type DecisionAction } from "./modes/question/question-mode";
 import { resolveComposerMode } from "./modes/resolve-mode";
-import {
-  FastIcon,
-  OptionsIcon,
-  SendIcon,
-  StopIcon,
-  ToolsIcon,
-  UnattendedIcon,
-  WebSearchIcon,
-} from "./icons";
+import { SendIcon, StopIcon } from "./icons";
 import { type AnimatedNavIconHandle } from "@/components/animated-icons";
-import { PlusMenuItem, ToolChip } from "./controls/menu-pieces";
 import { type SlashCommand } from "./slash/slash-commands";
-import { sendChatMessage } from "./legacy-send";
-import {
-  LONG_PASTE_THRESHOLD,
-  expandPasteTokens,
-  missingPasteIds,
-  pasteStore,
-  placeholderToken,
-  referencedPasteIds,
-} from "./paste/paste-store";
-import { ChatInputRow } from "./chat-input-row";
 import { SlashMenu } from "./slash/slash-menu";
-import { collectImagesFromTransfer } from "./attach/image-attach";
-import { expandAtMentions } from "./attach/at-mention";
 import { FileTiles } from "./attach/file-tiles";
 import { useComposerAttachments } from "./attach/use-composer-attachments";
 import { useFileMention } from "./attach/use-file-mention";
 import { ImageAttachStrip } from "./attach/image-attach-strip";
-import { ThinkingEffortPill } from "./controls/thinking-effort-pill";
 import { useFnFormState } from "./modes/fn-form/use-fn-form-state";
 import { useFnFormWrapper } from "./modes/fn-form/use-fn-form-wrapper";
-import {
-  resolveFnFormSessionId,
-  shouldClearLegacyRunning,
-} from "./modes/fn-form/session-target";
+import { useFnFormSubmit } from "./modes/fn-form/use-fn-form-submit";
 import { useSlashMenu } from "./slash/use-slash-menu";
 import { useThinkingEffort } from "./controls/use-thinking-effort";
 import { useToolsToggles } from "./controls/use-tools-toggles";
+import { ControlsCluster } from "./controls/controls-cluster";
+import { usePasteTokens } from "./paste/use-paste-tokens";
+import { useHistoryRecall } from "./use-history-recall";
+import { useChatSubmit } from "./use-chat-submit";
+import { useComposerKeyDown } from "./use-composer-keydown";
+import { StatusChip } from "./status-chip";
+import { ScopedDropOverlay } from "./scoped-drop-overlay";
+import { ComposerBody } from "./composer-body";
 import styles from "./composer.module.css";
-import { pushPath } from "@/lib/shallow-nav";
-
-/** Don't recall a user message longer than this through ↑/↓ history
- *  cycling. Long messages (full pasted code, expanded tokens, etc.)
- *  are not useful to step through and bloat the persisted draft on
- *  every keystroke once recalled. The user can still scroll back to
- *  the original message in the chat transcript to re-use it. */
-const HISTORY_RECALL_MAX = 5000;
 
 /* Single shared WebSocket, owned by `lib/net/use-ws.ts` and reached
    through `runtime-bridge/state`'s `getSocket()`. When the WS layer is
@@ -123,21 +79,6 @@ function wsSend(payload: unknown): boolean {
 }
 
 const noop = () => {};
-
-// `.plusMenu` was written for the old hand-rolled portal — it carries
-// `position:absolute; bottom:100%; left:0; margin-bottom:4px` to sit
-// above the trigger. base-ui's Menu positions the *Positioner* wrapper
-// and we apply `.plusMenu` to the inner Popup panel, so those absolute
-// props would fight the Positioner's transform. Neutralize them here
-// (visuals — bg/border/radius/shadow/padding — stay untouched) so the
-// menu reads identically while base-ui's Positioner owns placement,
-// flip, and alignment (including the submenus' side="top").
-const POPUP_STATIC_RESET: React.CSSProperties = {
-  position: "static",
-  bottom: "auto",
-  left: "auto",
-  marginBottom: 0,
-};
 
 /**
  * @param boundSessionId  Render this composer against a SPECIFIC session
@@ -172,82 +113,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const setComposerInputFor = useSessionStore((s) => s.setComposerInputFor);
   const focusTick = useSessionStore((s) => s.composerFocusTick);
 
-  // History recall — user messages from the active session, ordered
-  // oldest-first to match TUI semantics: ↑ steps backwards starting at
-  // the newest, ↓ steps forward toward the live draft. Built from
-  // ``messageOrder[currentSessionId]`` filtered to user role. Resets
-  // automatically whenever the session changes via the useEffect below.
-  const messagesById = useSessionStore((s) => s.messagesById);
-  const messageOrder = useSessionStore((s) => {
-    const sid = bound ?? s.currentSessionId;
-    return sid ? s.messageOrder[sid] : undefined;
-  });
-  const history = React.useMemo<string[]>(() => {
-    if (!messageOrder) return [];
-    const out: string[] = [];
-    for (const id of messageOrder) {
-      const m = messagesById[id];
-      if (m && m.role === "user" && typeof m.content === "string"
-          && m.content.trim()
-          // Skip giant messages — recalling them into the textarea
-          // would bloat the persisted draft (the per-keystroke write
-          // to ``composerDrafts``) and is rarely useful: long messages
-          // are typically expanded pastes, not commands the user wants
-          // to step back through with ↑/↓.
-          && m.content.length <= HISTORY_RECALL_MAX) {
-        out.push(m.content);
-      }
-    }
-    return out;
-  }, [messageOrder, messagesById]);
-  const [historyIndex, setHistoryIndex] = useState<number>(-1);
-  // Reset history index when the session switches.
-  useEffect(() => {
-    setHistoryIndex(-1);
-  }, [currentSessionId]);
-
-  // Long-paste auto-attach. Subscribing to the store rerenders the chip
-  // row whenever a paste is added or removed. The store itself is a
-  // module-level singleton (process-wide) so a paste survives session
-  // switches and is referenced by id from the live composer text.
-  const [pasteTick, setPasteTick] = useState(0);
-  useEffect(() => pasteStore.subscribe(() => setPasteTick((t) => t + 1)), []);
-  const pastedEntries = React.useMemo(() => {
-    const referenced = referencedPasteIds(input);
-    // Only show chips for tokens still present in the live draft.
-    // Include lost ones (chips in "missing" state) so the user sees
-    // them and can remove the dead tokens.
-    const live = pasteStore.list().filter((e) => referenced.has(e.id));
-    const liveIds = new Set(live.map((e) => e.id));
-    const out = [...live];
-    referenced.forEach((id) => {
-      if (!liveIds.has(id)) {
-        out.push({ id, content: "", numLines: 0 });
-      }
-    });
-    return out.sort((a, b) => a.id - b.id);
-    // pasteTick is read implicitly by re-running this memo on tick bump.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input, pasteTick]);
-  const pasteMissing = React.useMemo(
-    () => missingPasteIds(input),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [input, pasteTick],
-  );
-
-  // GC paste store entries that no draft references anymore. Watches
-  // composerDrafts AND the live ``input`` (the current session's
-  // draft). Without this, removing a session leaves its pastes stuck
-  // in the store forever.
-  const composerDrafts = useSessionStore((s) => s.composerDrafts);
-  useEffect(() => {
-    const all = new Set<number>();
-    referencedPasteIds(input).forEach((id) => all.add(id));
-    for (const k in composerDrafts) {
-      referencedPasteIds(composerDrafts[k]).forEach((id) => all.add(id));
-    }
-    pasteStore.retainOnly(all);
-  }, [composerDrafts, input]);
+  const historyRecall = useHistoryRecall(bound, currentSessionId);
+  const { setHistoryIndex } = historyRecall;
 
   // Attachments — pending images, pending docs, drag-drop, file
   // picker. All state + the window-level drop-routing live in the
@@ -273,66 +140,13 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // thinking pill) get declared in their original spot.
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const onPaste = useCallback(
-    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      // Image clipboard items take priority — if the user copied a
-      // screenshot we want to attach it, never paste raw binary into
-      // the textarea. Browsers populate ``items[].kind === "file"``
-      // for image pastes from screenshot tools and most file
-      // managers; ordinary text pastes leave items empty / "string".
-      const items = e.clipboardData?.items;
-      if (items) {
-        let hasImage = false;
-        for (let i = 0; i < items.length; i++) {
-          if (items[i].kind === "file"
-              && items[i].type.startsWith("image/")) {
-            hasImage = true;
-            break;
-          }
-        }
-        if (hasImage) {
-          const pasteOwnerKey = activeChatKey;
-          e.preventDefault();
-          void collectImagesFromTransfer(e.clipboardData!)
-            .then((imgs) => addImagesForOwner(pasteOwnerKey, imgs))
-            .catch((err) => {
-              if (useSessionStore.getState().activeChatKey === pasteOwnerKey) {
-                setImageError(String(err));
-              }
-            });
-          return;
-        }
-      }
-      const text = e.clipboardData?.getData("text") ?? "";
-      if (text.length < LONG_PASTE_THRESHOLD) return;
-      // Replace the textarea selection with our placeholder token and
-      // stash the real content in the paste store.
-      e.preventDefault();
-      const entry = pasteStore.add(text);
-      const token = placeholderToken(entry);
-      const ta = e.currentTarget;
-      const start = ta.selectionStart ?? input.length;
-      const end = ta.selectionEnd ?? start;
-      const next = input.slice(0, start) + token + input.slice(end);
-      setInput(next);
-      // Place caret after the inserted token on the next frame.
-      requestAnimationFrame(() => {
-        const pos = start + token.length;
-        ta.setSelectionRange(pos, pos);
-      });
-    },
-    [activeChatKey, input, setInput, addImagesForOwner, setImageError],
-  );
-
-  // Remove a paste chip — also strips the token from the textarea.
-  const removePaste = useCallback(
-    (id: number) => {
-      const re = new RegExp(`\\[Pasted #${id} \\+\\d+ lines\\]`, "g");
-      setInput(input.replace(re, ""));
-      pasteStore.remove(id);
-    },
-    [input, setInput],
-  );
+  const { pastedEntries, pasteMissing, onPaste, removePaste } = usePasteTokens({
+    input,
+    setInput,
+    activeChatKey,
+    addImagesForOwner,
+    setImageError,
+  });
 
   const fnFormFunction = useSessionStore((s) => s.fnFormFunction);
   const closeFnFormStore = useSessionStore((s) => s.closeFnForm);
@@ -346,7 +160,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const dequeueDecision = useSessionStore((s) => s.dequeueDecision);
   const activeDecision =
     pendingDecisions.find((d) => d.sessionId === currentSessionId) ?? null;
-  const router = useRouter();
   const send = wsSend;
 
   const isRunning = runningTask !== null;
@@ -378,18 +191,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // positioning + picker all live in ./use-file-mention now. The hook
   // owns the 6 useStates + 2 effects + pickFile callback that used to
   // sit here.
-  const {
-    atToken,
-    setCaretPos,
-    fileMatches,
-    fileMenuIndex,
-    setFileMenuIndex,
-    fileMenuLoading,
-    fileMenuPos,
-    pickFile,
-    closeMenu: closeFileMenu,
-  } = useFileMention({ input, setInput, textareaRef });
-
+  const fileMention = useFileMention({ input, setInput, textareaRef });
 
   // Thinking-effort + plus-menu + tools toggles each live in their own
   // dedicated hooks now — see ./use-thinking-effort, ./use-tools-toggles.
@@ -532,7 +334,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // effort 卡真实开合（pill 内部 state 回传）——驱动 effortText 的
   // aria-expanded，卡开着时 HoverTip 不再冒 "Thinking effort" 黑提示。
   const [effortCardOpen, setEffortCardOpen] = useState(false);
-  const plusIconRef = useRef<AnimatedNavIconHandle>(null);
 
   // Wrapper height transition (open / close / A→B switch crossfade)
   // is all in one hook — see `./use-fn-form-wrapper`. `outgoingFn`
@@ -637,190 +438,27 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
 
   /* ---- Submit -------------------------------------------------------- */
 
-  const submit = useCallback(async () => {
-    const submitOwnerKey = activeChatKey ?? currentSessionId;
-    const trimmed = input.trim();
-    // While a task is running, a sent message is a MID-RUN STEER, not a new
-    // turn: route it to the live run so the user can course-correct just by
-    // typing into the same box. The running loop picks it up at its next step
-    // boundary. (Plain text only — attachments / slash go through the normal
-    // path, which is disabled while running.)
-    if (isRunning) {
-      if (!trimmed || !submitOwnerKey) return;
-      send({ action: "steer", session_id: submitOwnerKey, message: trimmed });
-      setComposerInputFor(submitOwnerKey, "");
-      return;
-    }
-    // Allow image-only submits — the LLM can answer "describe this
-    // screenshot" without text. Otherwise require at least one of
-    // text or attached image.
-    if (!trimmed && pendingImages.length === 0 && pendingDocs.length === 0) {
-      return;
-    }
-    // No enabled model → don't send. Routing a turn with nothing
-    // enabled would silently run on a pinned default (the user disabled
-    // everything on purpose). Point them at the top-bar picker instead.
-    if (noEnabledModels) {
-      promptNeedModel();
-      return;
-    }
-    // Block submit while any attachment is still being decoded — the
-    // placeholder chips have empty ``attachment.data`` / null
-    // ``content``, which would deliver broken payloads. The user
-    // sees the chips in a loading shimmer; they just need to wait.
-    if (pendingImages.some((p) => p.loading)
-        || pendingDocs.some((d) => d.loading)) {
-      return;
-    }
-    if (slash.query !== null && slash.runCommand(trimmed)) {
-      setComposerInputFor(submitOwnerKey, "");
-      slash.close();
-      return;
-    }
-    // Block submit if any paste token in the draft has lost its
-    // backing content. The chip row renders these in red and the
-    // ``sendDisabled`` guard below also disables the send button, but
-    // re-check here so an Enter-key submit can't slip through if the
-    // chip refresh hadn't fired yet.
-    if (missingPasteIds(trimmed).size > 0) return;
-    // Expand long-paste tokens (``[Pasted #N +M lines]``) back into
-    // the outgoing text so the LLM receives the real content. The
-    // entries stay in the store — they're now GC'd by the
-    // composerDrafts effect once no draft references them anymore.
-    let expanded = expandPasteTokens(trimmed);
-    // Then expand any ``@path`` mentions by reading the files via the
-    // worker's HTTP API. Mentions that fail to read stay as the
-    // original ``@path`` token (no silent data loss).
-    try {
-      const mentionResult = await expandAtMentions(expanded, null);
-      expanded = mentionResult.text;
-    } catch {
-      /* network blip — fall through with raw text */
-    }
-    // Attached docs are referenced by PATH, never inlined. Each one's
-    // bytes ride along as a ``type:"document"`` attachment; the backend
-    // saves it under the session workdir and appends " @ <abs path>" to
-    // the mention (see ws_actions/chat.py). We emit the path-less
-    // ``[attachment: …]`` mention here so the optimistic bubble + chip
-    // parser have something to show before the server-side save lands.
-    // (Docs without captured bytes — over the 25 MB cap — are dropped:
-    // there's no way to ship them, and a mention with no backing file
-    // the agent can read would only mislead it.)
-    if (pendingDocs.length > 0) {
-      // Emit a mention for EVERY doc so none vanishes silently. Docs with
-      // captured bytes get the normal path-less mention (backend appends
-      // the @path + page/line count). Docs that couldn't be read (over the
-      // size cap → dataB64 null) get an honest "too large" note instead of
-      // being dropped — the chip still shows, the model is told.
-      const mentions = pendingDocs.map((d) => {
-        const meta = `${d.ext || "file"}, ${Math.max(1, Math.round(d.sizeBytes / 1024))} KB`;
-        return d.dataB64
-          ? `[attachment: ${d.filename} (${meta})]`
-          : `[attachment: ${d.filename} (${meta}, too large — not sent)]`;
-      });
-      if (mentions.length > 0) {
-        expanded = `${mentions.join("\n")}\n\n${expanded}`;
-      }
-    }
-    const imagesPayload = pendingImages.map((p) => p.attachment);
-    const docsPayload = pendingDocs
-      .filter((d) => d.dataB64)
-      .map((d) => ({
-        type: "document" as const,
-        data: d.dataB64 as string,
-        media_type: d.mediaType || "application/octet-stream",
-        filename: d.filename,
-      }));
-    const attachmentsPayload = [...imagesPayload, ...docsPayload];
-    // Delegate to legacy `sendMessage` (chat.js) so the user bubble +
-    // welcome-hide + assistant placeholder + isRunning flip all fire
-    // before the WS payload goes out. Composer is just the trigger.
-    const handled = sendChatMessage({
-      text: expanded,
-      sessionId: submitOwnerKey,
-      // A bound (split-pane) composer writes the same payload but must not
-      // flip the focused shell's welcome/run singletons.
-      background: bound !== null,
-      attachments: attachmentsPayload.length > 0 ? attachmentsPayload : undefined,
-      thinking,
-      toolsEnabled,
-      webSearchEnabled,
-      serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
-    });
-    // The bridge already writes this exact socket. A false result means the
-    // write did not complete; keep the captured draft + attachments intact so
-    // the user can retry after reconnect instead of writing the same socket
-    // again through the raw helper.
-    if (!handled) return;
-    setComposerInputFor(submitOwnerKey, "");
-    setHistoryIndex(-1);
-    // Revoke + clear pending images / docs now that the WS payload
-    // is out the door. Hook handles URL.revokeObjectURL for each
-    // image's preview blob.
-    clearAttachmentsAfterSubmit(submitOwnerKey);
-    slash.close();
-  }, [
-    clearAttachmentsAfterSubmit,
+  const { submit, stop } = useChatSubmit({
+    bound,
+    input,
     activeChatKey,
     currentSessionId,
-    input,
     isRunning,
     noEnabledModels,
-    pendingDocs,
-    pendingImages,
     promptNeedModel,
     send,
     setComposerInputFor,
+    setHistoryIndex,
     slash,
+    pendingImages,
+    pendingDocs,
+    clearAttachmentsAfterSubmit,
     thinking,
     toolsEnabled,
     webSearchEnabled,
     fastEnabled,
     fastSupported,
-  ]);
-
-  function stop() {
-    const targetSessionId = resolveFnFormSessionId(
-      currentSessionId,
-      activeChatKey,
-    );
-    if (!targetSessionId) return;
-    // Optimistic UI flip: clear runningTask immediately so the Stop
-    // button turns back into Send right when the user clicks. Don't
-    // wait for the backend's stopped envelope — the dispatcher main
-    // thread can be blocked for several seconds on an in-flight LLM
-    // stream while cancel propagates. The actual backend cleanup
-    // still runs (subprocess SIGKILL is instant; cancel hook reaches
-    // a hook point within ~1s for the chat path), it just no longer
-    // gates the UI.
-    const store = useSessionStore.getState();
-    store.setRunningTaskFor(targetSessionId, null);
-    // Also patch the running assistant placeholder (the row that
-    // would otherwise be filled in 5-6s later with the late-arriving
-    // LLM response) to a cancelled state right now. Backend's
-    // dispatcher will overwrite the persisted node with the same
-    // ``[cancelled by user]`` content + status=cancelled when its
-    // cancel-aware finalize runs, so the React store and the on-disk
-    // node converge. Without this the chat would show a Thinking
-    // spinner until the model's stream completed naturally.
-    const ids = store.messageOrder[targetSessionId] || [];
-    for (let i = ids.length - 1; i >= 0; i--) {
-      const m = store.messagesById[ids[i]];
-      if (!m) continue;
-      if (m.role !== "assistant") continue;
-      if (m.status === "done" || m.status === "completed"
-          || m.status === "cancelled" || m.status === "error") break;
-      store.updateMessage(targetSessionId, m.id, {
-        status: "cancelled",
-        content: m.content && m.content.trim()
-          ? `${m.content}\n\n*[cancelled by user]*`
-          : "*[cancelled by user]*",
-        thinking: undefined,
-      });
-      break;
-    }
-    send({ action: "stop", session_id: targetSessionId });
-  }
+  });
 
   // Pick a slash command — argless commands run immediately, commands
   // that take arguments just fill the input so the user can type them.
@@ -836,131 +474,19 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     }
   }
 
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // Don't hijack Enter while an IME is composing — the user is
-    // confirming a Chinese / Japanese / Korean candidate, not
-    // sending. ``isComposing`` is set during the IME session;
-    // Chromium also reports keyCode 229 for the same window.
-    // Reading off ``nativeEvent`` because React's synthetic event
-    // type doesn't include the flag yet.
-    const native = e.nativeEvent as KeyboardEvent;
-    if (native.isComposing || native.keyCode === 229) {
-      return;
-    }
-    // @file mention menu takes precedence — its arrows / enter / esc /
-    // tab steer the menu, never fall through to history-recall or
-    // the slash menu.
-    if (atToken && fileMatches.length > 0) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setFileMenuIndex((i) => Math.min(fileMatches.length - 1, i + 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setFileMenuIndex((i) => Math.max(0, i - 1));
-        return;
-      }
-      if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        const picked = fileMatches[fileMenuIndex] ?? fileMatches[0];
-        if (picked) pickFile(picked);
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeFileMenu();
-        return;
-      }
-    }
-    // Fish-shell-style history recall. Mirrors the TUI's PromptInput
-    // logic (cli/src/components/PromptInput/PromptInput.tsx). Only fires
-    // when the slash menu isn't holding the arrows and the caret is on
-    // the first / last visual line of the textarea, so multi-line
-    // editing still works naturally.
-    if (e.key === "ArrowUp" && !slash.visible && !e.shiftKey
-        && !e.metaKey && !e.altKey) {
-      const ta = e.currentTarget;
-      // Enter recall mode when caret is on the first visual line and
-      // nothing is selected. Once recall mode is active (historyIndex
-      // >= 0) ↑ keeps stepping back regardless of caret position.
-      const firstNewline = input.indexOf("\n");
-      const onFirstLine = ta.selectionStart === ta.selectionEnd
-        && ta.selectionStart <= (firstNewline < 0 ? input.length : firstNewline);
-      if (history.length > 0 && (historyIndex >= 0 || onFirstLine)) {
-        e.preventDefault();
-        const next = historyIndex < 0
-          ? history.length - 1
-          : Math.max(0, historyIndex - 1);
-        setHistoryIndex(next);
-        setInput(history[next] ?? "");
-        // Move caret to end so the next ↑ keeps recalling instead of
-        // moving inside the freshly-loaded text.
-        requestAnimationFrame(() => {
-          const v = history[next] ?? "";
-          ta.setSelectionRange(v.length, v.length);
-        });
-        return;
-      }
-    }
-    if (e.key === "ArrowDown" && !slash.visible && historyIndex >= 0
-        && !e.shiftKey && !e.metaKey && !e.altKey) {
-      e.preventDefault();
-      const next = historyIndex + 1;
-      if (next >= history.length) {
-        setHistoryIndex(-1);
-        setInput("");
-      } else {
-        setHistoryIndex(next);
-        setInput(history[next] ?? "");
-      }
-      return;
-    }
-    // Any typing (non-arrow key) drops out of history-recall mode so
-    // editing a recalled entry doesn't re-snap when the user hits ↑
-    // again.
-    if (historyIndex >= 0 && e.key.length === 1) {
-      setHistoryIndex(-1);
-    }
-    // While the slash menu is open it captures the arrow keys (move the
-    // highlight), Enter (pick the highlighted command) and Escape.
-    if (slash.visible) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        slash.move(1);
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        slash.move(-1);
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        slash.close();
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        // activeIndex starts at -1 (no kbd nav yet); fall back to the
-        // first match so ``/sp<Enter>`` runs ``/spawn`` without the
-        // user having to press ArrowDown first.
-        const idx = slash.activeIndex >= 0 ? slash.activeIndex : 0;
-        const cmd = slash.matches[idx];
-        if (cmd) selectSlashCommand(cmd);
-        return;
-      }
-    }
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      void submit();
-    }
-  }
+  const onKeyDown = useComposerKeyDown({
+    input,
+    setInput,
+    fileMention,
+    historyRecall,
+    slash,
+    selectSlashCommand,
+    submit,
+  });
 
   function onMenuItemClick(cmd: SlashCommand) {
     selectSlashCommand(cmd);
   }
-
 
   /* ---- Function form submit ---------------------------------------- */
 
@@ -978,201 +504,18 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     setFnFormClosing(true);
   }, [setFnFormClosingLocal, setFnFormClosing]);
 
-  const submitFnForm = useCallback(() => {
-    if (!fnFormFunction || isRunning) return;
-    // Same gate as chat: a function run needs a model to dispatch
-    // against. With nothing enabled, prompt for one instead of letting
-    // the agent run on a pinned default.
-    if (noEnabledModels) {
-      promptNeedModel();
-      return;
-    }
-    const fn = fnFormFunction;
-    const workdirMode = fn.workdir_mode ?? "optional";
-    const wd = fnForm.workdir.trim();
-    if (workdirMode === "required" && !wd) {
-      fnForm.setError("__workdir");
-      return;
-    }
-
-    // Build typed kwargs for the new POST /api/function/{name} endpoint.
-    // Track A removed the /run text-command path entirely — fn-form
-    // submits now talk to the dispatcher's forced tool-call entry instead
-    // of round-tripping through the chat WS as `run name k=v ...` text.
-    const kwargs: Record<string, unknown> = {};
-    for (const p of visibleParams(fn)) {
-      const isBool = p.type === "bool" || p.type === "boolean";
-      const isInt = p.type === "int";
-      const isFloat = p.type === "float" || p.type === "number";
-      let v = String(fnForm.values[p.name] ?? "").trim();
-      if (!v && isBool) v = "False";
-      if (!v && !p.required) continue;
-      if (!v && p.required) {
-        fnForm.setError(p.name);
-        return;
-      }
-      if (isBool) {
-        kwargs[p.name] = v === "True" || v === "true" || v === "1";
-      } else if (isInt) {
-        const n = parseInt(v, 10);
-        kwargs[p.name] = Number.isFinite(n) ? n : v;
-      } else if (isFloat) {
-        const n = parseFloat(v);
-        kwargs[p.name] = Number.isFinite(n) ? n : v;
-      } else {
-        kwargs[p.name] = v;
-      }
-    }
-
-    const dispatchSessionId = resolveFnFormSessionId(currentSessionId, activeChatKey);
-    const body: Record<string, unknown> = { kwargs };
-    if (workdirMode !== "hidden" && wd) body.work_dir = wd;
-    if (dispatchSessionId) body.session_id = dispatchSessionId;
-    // "修改后重新运行"：以原调用为锚点 fork 兄弟分支（旧运行保留在
-    // ◀ N/M ▶ 切换里），不是在对话尾部追加一次新调用。
-    const forkOf = useSessionStore.getState().fnFormForkOf;
-    if (forkOf) body.fork_of_node = forkOf;
-
-    // Hide welcome panel right away (matches old sendChatMessage UX).
-    const dispatchChannelChoice = draftChannelChoiceFor(draftChannelChoiceHost, dispatchSessionId);
-    setWelcomeVisible(false);
-    setRunning(true);
-
-    // 0ms feedback (interaction-feedback policy): drop a client-side
-    // pending runtime card into the transcript right now so the user sees
-    // the function start instead of a blank gap until the ~0.13s hydrate.
-    // The dispatcher pre-creates the run's node and a load_session
-    // hydrate (chat_ack {function_run:true}) replaces the whole transcript
-    // — that setMessages wipes this placeholder's id, so the real card
-    // takes its place with no flicker. Only when we already have a session
-    // to key it under; a brand-new session's card lands via the post-POST
-    // navigate + hydrate.
-    let placeholderId: string | null = null;
-    if (dispatchSessionId) {
-      const store = useSessionStore.getState();
-      placeholderId = `__optimistic_fn__:${fn.name}:${Date.now()}`;
-      store.appendMessage(dispatchSessionId, {
-        id: placeholderId,
-        role: "assistant",
-        content: "",
-        display: "runtime",
-        function: fn.name,
-        status: "running",
-      });
-      store.setRunningTaskFor(dispatchSessionId, {
-        session_id: dispatchSessionId,
-        msg_id: placeholderId,
-        func_name: fn.name,
-        started_at: Date.now() / 1000,
-      });
-    }
-
-    void fetch(`/api/function/${encodeURIComponent(fn.name)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-      .then(async (r) => {
-        const j = await r.json().catch(() => null);
-        if (!r.ok) {
-          const msg =
-            j && typeof j.error === "string"
-              ? j.error
-              : `HTTP ${r.status}`;
-          throw new Error(msg);
-        }
-        // POST returns {session_id, msg_id}. If we weren't already
-        // bound to a session, navigate to /s/<sid> + flip the store's
-        // currentSessionId — without this the runtime placeholder
-        // stream-resumes into a session the chat area can't see, and
-        // the page stays blank while gui_agent runs in the background.
-        const sid = j && j.session_id;
-        if (typeof sid === "string" && sid) {
-          if (
-            dispatchSessionId
-            && dispatchChannelChoice?.channel
-            && send({
-              action: "set_conversation_channel",
-              session_id: sid,
-              channel: dispatchChannelChoice.channel,
-              account_id: dispatchChannelChoice.account_id || "",
-            })
-          ) {
-            dropDraftChannelChoice(draftChannelChoiceHost, dispatchSessionId);
-          }
-          // Direct fn-form dispatch has no chat_ack event. Bind a Project
-          // selected on the provisional tab here, after the endpoint has
-          // created/confirmed the session, and consume only that tab's entry.
-          const store = useSessionStore.getState();
-          const pendingProjectKey =
-            dispatchSessionId && store.pendingProjectsByChat[dispatchSessionId]
-              ? dispatchSessionId
-              : sid;
-          const pendingProjectId =
-            store.pendingProjectsByChat[pendingProjectKey];
-          if (
-            pendingProjectId
-            && send({
-              action: "set_session_project",
-              session_id: sid,
-              project_id: pendingProjectId,
-            })
-          ) {
-            store.takePendingProject(pendingProjectKey);
-            window.dispatchEvent(new Event("project-changed"));
-          }
-          const shouldActivate = sessionAckIsActive(sid);
-          useCenterTabs.getState().markSessionReady(sid);
-          if (shouldActivate) {
-            runtimeState.currentSessionId = sid;
-            if (sid !== currentSessionId) {
-              setCurrentConv(sid);
-              pushPath(`/s/${encodeURIComponent(sid)}`);
-            }
-          }
-        }
-      })
-      .catch((err) => {
-        console.error("function call failed:", err);
-        const store = useSessionStore.getState();
-        // Roll back the optimistic pending card + running task — the
-        // dispatch never landed, so leaving them would show a card
-        // spinning forever with no backing run.
-        if (placeholderId && dispatchSessionId) {
-          store.truncateFrom(dispatchSessionId, placeholderId);
-          store.setRunningTaskFor(dispatchSessionId, null);
-        }
-        if (shouldClearLegacyRunning(
-          dispatchSessionId,
-          store.activeChatKey,
-          store.currentSessionId,
-        )) {
-          setRunning(false);
-        }
-        // Surface the reason to the user. The backend now returns a
-        // structured 400 when a non-agentic tool is invoked via
-        // fn-form, so without this the only feedback was a silent
-        // console line — the chat panel showed nothing.
-        const msg = err instanceof Error ? err.message : String(err);
-        showToast(
-          text(`Function call failed: ${msg}`, `函数调用失败：${msg}`),
-          { tone: "error" },
-        );
-      });
-    handleFnFormClose();
-  }, [
-    currentSessionId,
-    activeChatKey,
+  const submitFnForm = useFnFormSubmit({
     fnFormFunction,
     fnForm,
-    handleFnFormClose,
+    currentSessionId,
+    activeChatKey,
     isRunning,
     noEnabledModels,
     promptNeedModel,
-    router,
     send,
     setCurrentConv,
-  ]);
+    handleFnFormClose,
+  });
 
   // decision 在场时右下角是 mode 自己的 navButtons 按钮组（见 JSX），不走
   // 这个圆形按钮，所以这里只管 fn-form / 普通聊天两种。
@@ -1234,323 +577,45 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
 
   /* ---- Render -------------------------------------------------------- */
 
-  const anyToolActive =
-    toolsEnabled || webSearchEnabled || (fastEnabled && fastSupported) || unattended;
-
   // Controls cluster — permission / plus menu / tool chips on the
   // left; model texts + effort pill + context ring on the right.
   // Rendered in exactly ONE of two containers per mode: the detached
   // .controlsRow below the wrapper (chat mode) or the legacy internal
   // .inputBottomRow (fn-form / question / approval).
   const controlsCluster = (
-    <>
-          <div className={styles.inputOptions}>
-            {/* Permission control leads the left cluster, restyled by
-                the wrapper CSS into Claude's borderless "Accept edits ⌄"
-                text form (no border / bg; popover + id untouched). */}
-            <PermissionBadge />
-            <Menu.Root
-              open={plusMenuOpen}
-              onOpenChange={(o) => {
-                setPlusMenuOpen(o);
-                // Opening the plus menu collapses the effort pill (they
-                // shared the bottom row and shouldn't be open at once).
-                if (o) setThinkingMenuOpen(false);
-              }}
-            >
-              <Menu.Trigger
-                render={
-                  <button
-                    className={`${styles.plusBtn} ${anyToolActive ? styles.hasActive : ""}`}
-                    onMouseEnter={() => plusIconRef.current?.startAnimation?.()}
-                    onMouseLeave={() => plusIconRef.current?.stopAnimation?.()}
-                    title={text("Add tools, files, and more", "添加工具、文件等")}
-                    aria-label={text("More options", "更多选项")}
-                    type="button"
-                  >
-                    <OptionsIcon ref={plusIconRef} />
-                  </button>
-                }
-              />
-
-              <Menu.Portal>
-                {/* Positioner owns placement (side/align/offset + flip);
-                    Popup is the actual panel that wears `.plusMenu`. The
-                    static reset stops the old absolute props from fighting
-                    the Positioner. */}
-                {/* 9 = 10px band gap − 1px 输入框外扩 ring（底部弹层统一）。 */}
-                <Menu.Positioner side="top" align="start" sideOffset={9} style={{ zIndex: 200 }}>
-                  <Menu.Popup
-                    className={styles.plusMenu}
-                    style={POPUP_STATIC_RESET}
-                  >
-                    {/* Attach file — a plain action; clicking it closes the
-                        menu (default Menu.Item closeOnClick behaviour).
-                        Grammar B row: 16px line icon + label. No shortcut
-                        hint — the app registers none for attach. */}
-                    <Menu.Item className={styles.plusMenuRow} onClick={() => onPickImages()}>
-                      <PlusMenuItem
-                        active={pendingImages.length > 0 || pendingDocs.length > 0}
-                        onClick={noop}
-                        icon={<Paperclip size={16} />}
-                        label={text("Add files or photos", "添加文件或照片")}
-                      />
-                    </Menu.Item>
-
-                    <Menu.Separator className={styles.plusMenuDivider} />
-
-                    {/* Tools — 行点击 = 开关；勾左边的 ⚙ 点击才弹
-                        "Tool Profile" 子面板（学 claude.ai 环境菜单：
-                        ⚙ 与 ✓ 并排、行为分开）。悬停整行不再飞出子
-                        菜单——触发器只剩小小的 ⚙。 */}
-                    <Menu.SubmenuRoot>
-                      <Menu.Item
-                        className={styles.plusMenuRow}
-                        closeOnClick={false}
-                        onClick={() => toggleTools()}
-                      >
-                        <PlusMenuItem
-                          active={toolsEnabled}
-                          onClick={noop}
-                          icon={<ToolsIcon size={16} />}
-                          label={text("Tools", "工具")}
-                          trailing={
-                            <Menu.SubmenuTrigger
-                              // 默认 openOnHover 下 base-ui 会 ignoreMouse
-                              // ——鼠标点击被吞掉，⚙ 点了没反应。关掉后
-                              // click 才是开关。
-                              openOnHover={false}
-                              render={
-                                <button
-                                  type="button"
-                                  className={styles.plusMenuGear}
-                                  aria-label={text("Tool profile", "工具配置")}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <Settings size={14} />
-                                </button>
-                              }
-                            />
-                          }
-                        />
-                      </Menu.Item>
-                      <Menu.Portal>
-                        <Menu.Positioner side="right" align="end" sideOffset={6} style={{ zIndex: 200 }}>
-                          <Menu.Popup
-                            className={styles.plusMenu}
-                            style={POPUP_STATIC_RESET}
-                          >
-                            {/* Selection submenu (grammar A): GROUP_LABEL
-                                header naming the dimension, plain rows,
-                                check on the selected one. */}
-                            <div className={GROUP_LABEL}>
-                              {text("Tool Profile", "工具配置")}
-                            </div>
-                            {Object.keys(toolProfiles).sort().map((pName) => (
-                              <Menu.Item
-                                key={pName}
-                                className={styles.plusMenuRow}
-                                onClick={() => switchProfile(pName)}
-                              >
-                                <PlusMenuItem
-                                  active={activeProfile === pName}
-                                  onClick={noop}
-                                  icon={null}
-                                  label={pName === "full"
-                                    ? text("All Tools", "全部工具")
-                                    : pName}
-                                />
-                              </Menu.Item>
-                            ))}
-                          </Menu.Popup>
-                        </Menu.Positioner>
-                      </Menu.Portal>
-                    </Menu.SubmenuRoot>
-
-                    {/* Web Search / Fast — toggles that must NOT close the
-                        menu, so closeOnClick={false}. */}
-                    <Menu.Item
-                      className={styles.plusMenuRow}
-                      closeOnClick={false}
-                      onClick={() => toggleWebSearch()}
-                    >
-                      <PlusMenuItem
-                        active={webSearchEnabled}
-                        onClick={noop}
-                        icon={<WebSearchIcon size={16} />}
-                        label={text("Web Search", "网页搜索")}
-                      />
-                    </Menu.Item>
-                    {fastSupported ? (
-                      <Menu.Item
-                        className={styles.plusMenuRow}
-                        closeOnClick={false}
-                        onClick={() => toggleFast()}
-                      >
-                        <PlusMenuItem
-                          active={fastEnabled}
-                          onClick={noop}
-                          icon={<FastIcon size={16} />}
-                          label={text("Fast", "高速")}
-                        />
-                      </Menu.Item>
-                    ) : null}
-
-                    <Menu.Separator className={styles.plusMenuDivider} />
-
-                    {/* Unattended — a toggle; keep the menu open. */}
-                    <Menu.Item
-                      className={styles.plusMenuRow}
-                      closeOnClick={false}
-                      onClick={() => toggleUnattended()}
-                    >
-                      <PlusMenuItem
-                        active={unattended}
-                        onClick={noop}
-                        icon={<UnattendedIcon size={16} />}
-                        label={text("Unattended", "无人值守")}
-                      />
-                    </Menu.Item>
-                  </Menu.Popup>
-                </Menu.Positioner>
-              </Menu.Portal>
-            </Menu.Root>
-
-            <div className={styles.activeToolChips}>
-              {/* Only ENABLED tools show as a chip here. The off ones are
-                  not rendered at all — they live in the + menu and are
-                  turned on from there. An active chip shows its × on hover
-                  to switch it back off. (The container is :empty →
-                  display:none, so all-off shows nothing.) HoverTip is a
-                  real top-layer tooltip; a CSS ::after would be cropped by
-                  the chip's overflow:hidden. */}
-              {toolsEnabled && (
-                <HoverTip label={text("Tools", "工具")}>
-                  <ToolChip
-                    icon={<ToolsIcon size={16} />}
-                    label={text("Tools", "工具")}
-                    on
-                    onToggle={toggleTools}
-                  />
-                </HoverTip>
-              )}
-              {webSearchEnabled && (
-                <HoverTip label={text("Web Search", "网页搜索")}>
-                  <ToolChip
-                    icon={<WebSearchIcon size={16} />}
-                    label={text("Web Search", "网页搜索")}
-                    on
-                    onToggle={toggleWebSearch}
-                  />
-                </HoverTip>
-              )}
-              {fastEnabled && fastSupported && (
-                <HoverTip label={text("Fast", "高速")}>
-                  <ToolChip
-                    icon={<FastIcon size={16} />}
-                    label={text("Fast", "高速")}
-                    on
-                    onToggle={toggleFast}
-                  />
-                </HoverTip>
-              )}
-              {unattended && (
-                <HoverTip label={text("Unattended", "无人值守")}>
-                  <ToolChip
-                    icon={<UnattendedIcon size={16} />}
-                    label={text("Unattended", "无人值守")}
-                    on
-                    onToggle={toggleUnattended}
-                  />
-                </HoverTip>
-              )}
-            </div>
-
-          </div>
-          <div className={styles.inputBottomRight}>
-            {/* Claude-style right cluster before the send affordance:
-                chat + exec models as quiet borderless text ("Opus 4.8"
-                form, restyled via .agentChips overrides — components
-                and their popovers untouched), effort pill, context
-                ring last. */}
-            <div className={styles.agentChips}>
-              <AgentBadge
-                id={bound ? `chatAgentBadge-${bound}` : "chatAgentBadge"}
-                kind="chat"
-                locked={!!chatAgent.locked}
-                provider={chatAgent.provider}
-                model={chatAgent.model}
-              />
-              <AgentBadge
-                id={bound ? `execAgentBadge-${bound}` : "execAgentBadge"}
-                kind="exec"
-                locked={false}
-                provider={execAgent.provider}
-                model={execAgent.model}
-              />
-            </div>
-            {/* Effort picker only when a chat model is selected. No
-                persistent "no model" indicator here by design — a
-                blocked send/run fires a transient top toast instead
-                (see ``promptNeedModel``). The `thinking` value still
-                flows to submit (uses the model default) when hidden. */}
-            {chatModel && !noEnabledModels ? (
-              <HoverTip label={text("Thinking effort", "思考力度")}>
-                {/* Wrapper is the outside-click boundary AND the anchor
-                    for the pill's floating slider (detached row). The
-                    text trigger only shows in the detached row (CSS);
-                    the morphed internal band keeps the icon pill.
-                    aria-expanded 挂在这个 div（HoverTip 的真正 trigger
-                    元素）上，卡开着时 tooltip.tsx 的拦截才生效——之前标
-                    到里层按钮，HoverTip 看的是这个 div，所以拦不住。 */}
-                <div
-                  ref={thinkingTriggerRef}
-                  className={styles.effortControl}
-                  aria-expanded={effortCardOpen}
-                >
-                  {thinkingOptions.length > 1 && (
-                    <button
-                      type="button"
-                      className={styles.effortText}
-                      // ponytail: the pill ignores its expanded/onToggle
-                      // props (internal useState) — a programmatic click
-                      // on its own (hidden) collapsed chip is the only
-                      // public "open". Lift the state into the pill if a
-                      // second caller ever needs it.
-                      onClick={() => {
-                        setPlusMenuOpen(false);
-                        thinkingTriggerRef.current
-                          ?.querySelector<HTMLElement>(".effort-pill-collapsed")
-                          ?.click();
-                      }}
-                      // 最高档 = 紫色标识（Claude 的 Ultracode 形制）。
-                      style={thinking === "max" ? { color: "#8E6BD9" } : undefined}
-                    >
-                      {thinking ? thinking[0].toUpperCase() + thinking.slice(1) : ""}
-                    </button>
-                  )}
-                  <ThinkingEffortPill
-                    // Remount on epoch bump = force-collapse (see the
-                    // outside-click handler): the pill never self-closes,
-                    // so this remount is the sole way to shut the card —
-                    // fired when composer detects a click outside it.
-                    key={effortEpoch}
-                    expanded={thinkingMenuOpen}
-                    onToggle={() => {
-                      setThinkingMenuOpen((v) => !v);
-                      setPlusMenuOpen(false);
-                    }}
-                    options={thinkingOptions}
-                    value={thinking}
-                    onChange={setThinking}
-                    onExpandedChange={setEffortCardOpen}
-                  />
-                </div>
-              </HoverTip>
-            ) : null}
-            <ContextBadge sessionId={bound ?? undefined} />
-          </div>
-    </>
+    <ControlsCluster
+      bound={bound}
+      plusMenuOpen={plusMenuOpen}
+      setPlusMenuOpen={setPlusMenuOpen}
+      onPickImages={onPickImages}
+      pendingImagesCount={pendingImages.length}
+      pendingDocsCount={pendingDocs.length}
+      toolsEnabled={toolsEnabled}
+      toggleTools={toggleTools}
+      webSearchEnabled={webSearchEnabled}
+      toggleWebSearch={toggleWebSearch}
+      fastEnabled={fastEnabled}
+      fastSupported={fastSupported}
+      toggleFast={toggleFast}
+      unattended={unattended}
+      toggleUnattended={toggleUnattended}
+      toolProfiles={toolProfiles}
+      activeProfile={activeProfile}
+      switchProfile={switchProfile}
+      chatAgent={chatAgent}
+      execAgent={execAgent}
+      chatModel={chatModel}
+      noEnabledModels={noEnabledModels}
+      thinking={thinking}
+      thinkingOptions={thinkingOptions}
+      setThinking={setThinking}
+      thinkingMenuOpen={thinkingMenuOpen}
+      setThinkingMenuOpen={setThinkingMenuOpen}
+      thinkingTriggerRef={thinkingTriggerRef}
+      effortEpoch={effortEpoch}
+      effortCardOpen={effortCardOpen}
+      setEffortCardOpen={setEffortCardOpen}
+    />
   );
 
   return (
@@ -1617,88 +682,33 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         />
         <FileTiles docs={pendingDocs} onRemove={removeDoc} />
 
-        {/* 按当前 mode 渲染输入区主体。所有「问用户」的形态（ask/confirm/
-            approval/form/ask_many）都由唯一的 QuestionMode 承接，不再分组件。 */}
-        {activeDecision ? (
-          <QuestionMode
-            key={activeDecision.id}
-            decision={activeDecision}
-            onResolve={dequeueDecision}
-            onAction={setDecisionAction}
-          />
-        ) : composerMode === "fn-form" && fnFormFunction ? (
-          <FunctionForm
-            // `key` ties to fn name so React re-mounts on every
-            // switch — the freshly mounted header/body run their own
-            // fadeIn animation, completing the crossfade with the
-            // outgoing overlay below.
-            key={fnFormFunction.name}
-            fn={fnFormFunction}
-            values={fnForm.values}
-            setValue={fnForm.setValue}
-            workdir={fnForm.workdir}
-            setWorkdir={fnForm.setWorkdir}
-            errorParam={fnForm.error}
-            closing={fnForm.closing}
-            onClose={handleFnFormClose}
-            onSubmit={submitFnForm}
-          />
-        ) : (
-          <ChatInputRow
-            textareaRef={textareaRef}
-            input={input}
-            setInput={setInput}
-            inputId={bound ? `composer-chat-input-${bound}` : undefined}
-            placeholder={isRunning
-              ? text("type to steer the running task…", "输入以干预正在运行的任务…")
-              : undefined}
-            onKeyDown={onKeyDown}
-            onPaste={onPaste}
-            onFocus={() => slash.setFocused(true)}
-            onBlur={() => slash.setFocused(false)}
-            setCaretPos={setCaretPos}
-            pastedEntries={pastedEntries}
-            pasteMissing={pasteMissing}
-            removePaste={removePaste}
-            atToken={atToken}
-            fileMatches={fileMatches}
-            fileMenuIndex={fileMenuIndex}
-            setFileMenuIndex={setFileMenuIndex}
-            fileMenuLoading={fileMenuLoading}
-            fileMenuPos={fileMenuPos}
-            pickFile={pickFile}
-          />
-        )}
-        {/* Outgoing fn-form overlay — only present during a fn → fn
-            switch. Rendered AFTER the main form so that
-            `querySelector('[data-fn-form-header]')` in the wrapper
-            height measurement matches the main form first (the
-            outgoing layer's cloned header/body would otherwise lock
-            wrapper height to the previous form's size). Absolute +
-            z-index 1 still puts it visually on top during the fade. */}
-        {outgoingFn && (
-          <div
-            key={`${outgoingFn.name}-outgoing`}
-            className={styles.outgoingLayer}
-            aria-hidden="true"
-          >
-            <FunctionForm
-              fn={outgoingFn}
-              values={{}}
-              setValue={noop}
-              workdir=""
-              setWorkdir={noop}
-              errorParam={null}
-              onClose={noop}
-              onSubmit={noop}
-              // Outgoing crossfade copy — strip input `id`s so the
-              // browser doesn't complain about duplicate-id form
-              // fields while both the live and ghost forms are
-              // mounted simultaneously during the fade.
-              ghost
-            />
-          </div>
-        )}
+        <ComposerBody
+          bound={bound}
+          composerMode={composerMode}
+          activeDecision={activeDecision}
+          dequeueDecision={dequeueDecision}
+          setDecisionAction={setDecisionAction}
+          fnFormFunction={fnFormFunction}
+          fnForm={fnForm}
+          handleFnFormClose={handleFnFormClose}
+          submitFnForm={submitFnForm}
+          outgoingFn={outgoingFn}
+          textareaRef={textareaRef}
+          input={input}
+          setInput={setInput}
+          isRunning={isRunning}
+          runningPlaceholder={text(
+            "type to steer the running task…",
+            "输入以干预正在运行的任务…",
+          )}
+          onKeyDown={onKeyDown}
+          onPaste={onPaste}
+          slash={slash}
+          fileMention={fileMention}
+          pastedEntries={pastedEntries}
+          pasteMissing={pasteMissing}
+          removePaste={removePaste}
+        />
 
         {/* Controls cluster placement: morphed modes keep the legacy
             internal bottom row — the wrapper height animation and the
@@ -1802,194 +812,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           {controlsCluster}
         </div>
       )}
-    </div>
-  );
-}
-
-
-/** Status chip — the old topbar StatusBadge chip form (tone-tinted
- *  chip + indicator dot + channel label, ChannelMenu popover), re-hosted
- *  in the env-chip row above the input box (Claude's "Local" position).
- *  Reads the same store slice the tab-strip StatusDot reads; renders
- *  the legacy `.status-badge` classes so the tone modifiers
- *  (connecting / disconnected / paused) come from the global sheet.
- *  The visible glyph is the Monitor icon (Claude's laptop) carrying
- *  the connection tone on its colour; a hidden `.indicator-dot` stays
- *  inside purely for the runtime bridge (see inline comment).
- *
- *  Exactly ONE instance may hold `id="statusBadge"`: the legacy ui.ts
- *  updaters (lib/runtime-bridge/ui.ts) guard on that id before pushing
- *  status into the store, and `setStatusDotHealth` looks up
- *  `.indicator-dot` inside it. In a split view both panes render a chip,
- *  so only the unbound (focused-following) one claims the id via
- *  `owningId`; the other renders the same chrome without it. */
-function StatusChip({ owningId = true }: { owningId?: boolean }) {
-  const { text } = useTranslation();
-  const statusBadge = useSessionStore((s) => s.statusBadge);
-  const [open, setOpen] = useState(false);
-  // Ref 挂上即进入受控模式：图标不再对自身 hover 自动播动画——
-  // 环境 pill 的图标（monitor / folder）统一静态。
-  const monitorIconRef = useRef<AnimatedNavIconHandle>(null);
-
-  // Another top-bar-family dropdown opening closes this one, so only
-  // one is ever open (same coordination event as the other chips).
-  useEffect(() => {
-    const close = () => setOpen(false);
-    window.addEventListener("topbar-close-menus", close);
-    return () => window.removeEventListener("topbar-close-menus", close);
-  }, []);
-
-  function onOpenChange(next: boolean) {
-    if (next) {
-      window.dispatchEvent(new Event("topbar-close-menus"));
-      closeAllPopovers();
-    }
-    setOpen(next);
-  }
-
-  // Tone → the legacy `.status-badge` modifier (green default, yellow
-  // connecting/paused, red disconnected) + the matching indicator-dot
-  // colour class. `paused` wins over the raw tone, mirroring the type's
-  // contract in lib/session-store/types.ts.
-  const toneClass = statusBadge.paused
-    ? " paused"
-    : statusBadge.tone === "connecting"
-      ? " connecting"
-      : statusBadge.tone === "err"
-        ? " disconnected"
-        : statusBadge.tone === "warn"
-          ? " paused"
-          : "";
-  const dotMod =
-    statusBadge.tone === "ok"
-      ? "--ok"
-      : statusBadge.tone === "err"
-        ? "--err"
-        : "--warn";
-  // Connection tone lives on the Monitor icon's colour (Claude's laptop
-  // glyph): ok inherits the pill's ink; connecting / warn / paused go
-  // yellow; disconnected goes red.
-  const iconColor =
-    statusBadge.tone === "err"
-      ? "var(--accent-red)"
-      : statusBadge.paused ||
-          statusBadge.tone === "warn" ||
-          statusBadge.tone === "connecting"
-        ? "var(--accent-yellow)"
-        : undefined;
-  const label = statusBadge.label || text("Local", "本地");
-  return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <HoverTip
-        label={statusBadge.title || text("Conversation channel", "会话渠道")}
-      >
-        <PopoverTrigger asChild>
-          <span
-            {...(owningId ? { id: "statusBadge" } : {})}
-            role="button"
-            className={`status-badge${toneClass}`}
-          >
-            {/* Hidden dot kept ONLY for lib/runtime-bridge/ui.ts
-                setStatusDotHealth(), which queries `#statusBadge
-                .indicator-dot` and rewrites its className wholesale —
-                the inline display:none survives that rewrite. The
-                visible state is the Monitor icon above. */}
-            <span
-              className={`indicator-dot sm ${dotMod}`}
-              style={{ display: "none" }}
-              aria-hidden="true"
-            />
-            <MonitorIcon
-              ref={monitorIconRef}
-              size={14}
-              style={{ color: iconColor }}
-              aria-hidden="true"
-            />
-            <span className="badge-short">{label}</span>
-          </span>
-        </PopoverTrigger>
-      </HoverTip>
-      <PopoverContent
-        side="top"
-        align="start"
-        sideOffset={6}
-        className="w-auto border-0 bg-transparent p-0 shadow-none"
-      >
-        <ChannelMenu onClose={() => setOpen(false)} />
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-/** Drop-overlay positioned over the central chat column rather than
- *  the whole window. Anchored to ``#chatArea`` by bounding rect so
- *  the sidebars stay clear. Falls back to centred-of-viewport when
- *  the element isn't found (settings / functions / etc routes). */
-function ScopedDropOverlay() {
-  const [rect, setRect] = useState<DOMRect | null>(null);
-  useLayoutEffect(() => {
-    function measure() {
-      const el = document.getElementById("chatArea")
-        // ``main`` is the shared shell wrapper used by other pages
-        // (functions / skills / mcp / memory). Fallback so drag-into-
-        // settings still shows a sensible overlay.
-        || document.querySelector(".main");
-      if (el) setRect(el.getBoundingClientRect());
-      else setRect(null);
-    }
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, []);
-
-  const style: React.CSSProperties = rect ? {
-    position: "fixed",
-    left: rect.left,
-    top: rect.top,
-    width: rect.width,
-    height: rect.height,
-  } : {
-    position: "fixed",
-    inset: 0,
-  };
-  return (
-    <div
-      style={{
-        ...style,
-        zIndex: 10_000,
-        background: "rgba(10,10,12,0.55)",
-        backdropFilter: "blur(2px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        pointerEvents: "none",
-        borderRadius: 8,
-        animation: "overlayIn 140ms ease-out",
-      }}
-    >
-      <div
-        style={{
-          padding: "32px 48px",
-          borderRadius: 14,
-          border: "2px dashed rgba(255,255,255,0.4)",
-          background: "rgba(20,20,24,0.85)",
-          color: "var(--text-primary, #f5f5f5)",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 10,
-          fontFamily: "ui-sans-serif, system-ui, sans-serif",
-        }}
-      >
-        <span style={{ fontSize: 36 }} aria-hidden>📎</span>
-        <span style={{ fontSize: 16, fontWeight: 600 }}>
-          Drop to attach
-        </span>
-        <span style={{ fontSize: 12, opacity: 0.7 }}>
-          Images preview inline · text files inline as content ·
-          others attach by name
-        </span>
-      </div>
     </div>
   );
 }

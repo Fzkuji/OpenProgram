@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
 
+import { readCenterTabStripSource } from "./center-tab-strip-source.mjs";
+
 const sourcePath = new URL("../lib/bookmarks.ts", import.meta.url);
 const sessionStorePath = new URL("../lib/session-store/index.ts", import.meta.url);
 const navigationPath = new URL("../lib/bookmark-navigation.ts", import.meta.url);
@@ -13,7 +15,8 @@ const newTabPath = new URL("../components/center-tabs/new-tab-page.tsx", import.
 // reachable") pointed at it.
 const managerPath = new URL("../components/center-tabs/builtin-tab-pane.tsx", import.meta.url);
 const mainMenuPath = new URL("../components/center-tabs/main-menu.tsx", import.meta.url);
-const stripPath = new URL("../components/center-tabs/center-tab-strip.tsx", import.meta.url);
+// The strip is split across center-tab-strip.tsx and its submodules;
+// readCenterTabStripSource concatenates them in source order.
 const appShellPath = new URL("../components/app-shell.tsx", import.meta.url);
 const tabsStorePath = new URL("../lib/state/center-tabs-store.ts", import.meta.url);
 // Deterministic tab-id helpers (builtinTabId, BuiltinPage, …) now live in
@@ -50,7 +53,7 @@ const webTab = readFileSync(webTabPath, "utf8");
 const newTab = readFileSync(newTabPath, "utf8");
 const manager = readFileSync(managerPath, "utf8");
 const mainMenu = readFileSync(mainMenuPath, "utf8");
-const strip = readFileSync(stripPath, "utf8");
+const strip = readCenterTabStripSource(import.meta.url);
 const appShell = readFileSync(appShellPath, "utf8");
 const tabsStore = readFileSync(tabsStorePath, "utf8");
 const tabIds = readFileSync(tabIdsPath, "utf8");

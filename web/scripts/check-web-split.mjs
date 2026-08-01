@@ -4,6 +4,8 @@ import { existsSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";
 
+import { readCenterTabStripSource } from "./center-tab-strip-source.mjs";
+
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === "@/lib/session-store") {
@@ -1819,10 +1821,9 @@ const appShellSource = await readFile(
   new URL("../components/app-shell.tsx", import.meta.url),
   "utf8",
 );
-const tabStripSource = await readFile(
-  new URL("../components/center-tabs/center-tab-strip.tsx", import.meta.url),
-  "utf8",
-);
+// The strip is split across center-tab-strip.tsx and its submodules;
+// readCenterTabStripSource concatenates them in source order.
+const tabStripSource = readCenterTabStripSource(import.meta.url);
 const tabsCssSource = await readFile(
   new URL("../components/center-tabs/center-tabs.module.css", import.meta.url),
   "utf8",
@@ -2520,10 +2521,7 @@ const t5SourceBase = {
 
 // Structure gates: dragstart stays synchronous and never awaits before
 // writing DataTransfer.
-const stripSource = await readFile(
-  new URL("../components/center-tabs/center-tab-strip.tsx", import.meta.url),
-  "utf8",
-);
+const stripSource = readCenterTabStripSource(import.meta.url);
 assert.doesNotMatch(
   stripSource,
   /async function onDragStart|onDragStart\s*[=:]\s*async/,
