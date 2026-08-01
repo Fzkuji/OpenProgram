@@ -607,14 +607,14 @@
   position: absolute;
   /* Chat mode (claude.ai/code measured): 24×24 square with 6px radius,
      10px inset from the box's right edge, vertically centered in the
-     44px single-line row — (44−24)/2 = 10px top. fn-form / morphed
-     modes restore the legacy 32px circle at 16px offsets below (the
-     glide hook in use-fn-form-wrapper.ts depends on that geometry and
-     drives `top` inline in that mode anyway; index.tsx clears the
-     inline value when returning to chat mode so this 10px wins
-     again). */
+     single-line row. The row is 46px (12px padding ×2 + 22px line) —
+     (46−24)/2 = 11px top. fn-form / morphed modes restore the legacy
+     32px circle at 16px offsets below (the glide hook in
+     use-fn-form-wrapper.ts depends on that geometry and drives `top`
+     inline in that mode anyway; index.tsx clears the inline value when
+     returning to chat mode so this 11px wins again). */
   right: 10px;
-  top: 10px;
+  top: 11px;
   width: 24px;
   height: 24px;
   border-radius: 6px;
