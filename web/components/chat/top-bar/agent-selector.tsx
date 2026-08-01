@@ -49,13 +49,15 @@ export function AgentSelector({
   async function pick(provider: string, model: string) {
     onClose();
     try {
-      await api.setAgentSettings({ [kind]: { provider, model } });
-      // The agent-settings write only sets the agent DEFAULT. The
-      // active conversation has a per-conv provider/model override
-      // that takes priority, so the chat pick must also go through
-      // `/api/model` or it has zero effect on the current chat.
+      // 每个会话记住自己的模型：在活跃会话里选模型只写该会话的
+      // per-conv override（/api/model），不动全局 agent 默认值——
+      // 以前这里还写 /api/agent_settings，导致所有没有 override 的
+      // 会话跟着一起换。没有活跃会话（新草稿）时才更新默认值，
+      // 让接下来创建的会话用它。
       if (kind === "chat" && currentSessionId) {
         await api.switchModel(provider, model, currentSessionId);
+      } else {
+        await api.setAgentSettings({ [kind]: { provider, model } });
       }
     } catch (e) {
       alert(t("agent.switch_failed") + String(e));
