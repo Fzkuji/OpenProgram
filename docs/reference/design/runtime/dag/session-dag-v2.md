@@ -1,7 +1,19 @@
 # Session-DAG v2 — closing the model/implementation gaps
 
-Status: DESIGN — approved decisions to be implemented before the DAG paper's
-experiments. Companion to `session-dag.md` (v1 model, still authoritative for
+Status: Decision 1 IMPLEMENTED (e1293cc0, 2026-08-02; old session data wiped
+at cutover). Decisions 2-4 approved, pending implementation.
+
+Decision 1 implementation notes (semantics fixed during landing):
+- The session's first node and explicit root forks carry the sentinel
+  `predecessor="ROOT"` (not empty) — retrying the first message creates a
+  legitimate ROOT-level sibling that the append invariant must admit.
+- Besides the two designed exceptions, ask_user answer nodes and compaction
+  (`summary_`/`k_`) nodes are exempt from the invariant until Decision 4
+  legalises compaction.
+- `get_branch` on a spawn branch now stops at the spawn root (previously it
+  leaked into the parent branch via the caller edge). Matches the clean-
+  context spawn semantics; the chat view of a spawn branch no longer shows
+  parent history. Companion to `session-dag.md` (v1 model, still authoritative for
 everything not amended here) and the two audits of 2026-08-02 (context-cost
 audit + paper-readiness audit). Each section states the problem, the decision,
 and the rejected alternative.
