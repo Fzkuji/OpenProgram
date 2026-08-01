@@ -1516,8 +1516,17 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
             )
 
         app = create_app()
+        # 默认只绑本机回环：服务无鉴权，绑 0.0.0.0 等于把会话和
+        # /accounts/…/reveal 的明文 key 暴露给整个局域网。需要多设备
+        # 访问的用户显式设置 web.host（自担风险）。
+        try:
+            from openprogram.setup import _read_config
+            _host = str((_read_config().get("web") or {}).get("host")
+                        or "127.0.0.1")
+        except Exception:
+            _host = "127.0.0.1"
         config = uvicorn.Config(
-            app, host="0.0.0.0", port=port,
+            app, host=_host, port=port,
             log_level="warning",
             access_log=False,
         )

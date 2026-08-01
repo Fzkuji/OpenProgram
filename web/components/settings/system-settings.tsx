@@ -16,7 +16,7 @@ interface Row {
   key: string;
   group: string;
   label: string;
-  widget: "number" | "toggle" | "enum" | "status";
+  widget: "number" | "toggle" | "enum" | "status" | "text";
   apply: "live" | "next_start";
   help?: string;
   value?: unknown;

@@ -120,6 +120,16 @@ SETTINGS: list[SettingSpec] = [
              "the address yourself (e.g. on a headless server).",
     ),
     SettingSpec(
+        key="web.host", path=("web", "host"), group="Ports",
+        label="Bind address", widget="text",
+        apply=APPLY_NEXT_START, default="127.0.0.1",
+        help="Network interface the server listens on. The default only "
+             "accepts connections from this machine. Setting 0.0.0.0 exposes "
+             "the UI — and every stored API key — to your whole network; the "
+             "server has no authentication, so only do that on a network you "
+             "fully trust.",
+    ),
+    SettingSpec(
         key="search.default_provider", path=("search", "default_provider"),
         group="Search", label="Default web-search provider", widget="enum",
         apply=APPLY_LIVE, default="auto", choices=_search_choices,
