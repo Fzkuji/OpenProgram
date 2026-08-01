@@ -117,12 +117,19 @@ def test_dag_prompt_inside_io_function_frame(rt, store):
 
     _u = Call(role=ROLE_USER, output="find weather")
     store.append(_u)
-    store.append(Call(role=ROLE_LLM, output="let me check", predecessor=_u.id))
+    _l = Call(role=ROLE_LLM, output="let me check", predecessor=_u.id)
+    store.append(_l)
+    # A TOP-LEVEL function run chains onto the current head via
+    # ``predecessor`` (function.py _ensure_call_node stamps head or
+    # "ROOT"). session-dag.md §6 makes membership path-native, so the
+    # edge has to be here for the frame to see its pre-frame history —
+    # it was implicit before only because selection went by seq window.
     plan_node = Call(
         role=ROLE_CODE,
         name="plan",
         input={"task": "weather"},
         output=None,
+        predecessor=_l.id,
         metadata={"expose": "io", "status": "running"},
     )
     store.append(plan_node)

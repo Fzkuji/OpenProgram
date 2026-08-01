@@ -183,6 +183,10 @@ caller 边漏进父分支。spawn 分支的聊天视图只显示本分支自己�
 保证，不需要引擎在取出之后再做过滤。引擎只做三件事：解析 head、调用
 `render_context`、把结果交给 `render_dag_messages` 翻译成 provider 消息。
 
+ROOT 本身不算 ROOT 级祖先。所有顶层对话节点都带 `caller="ROOT"`（§3——正是它让全图
+连通），若展开 ROOT 的 caller 子树，会把会话里所有兄弟分支重新放进来。ROOT 级节点
+的"最近 ROOT 级祖先"就是它自己；行走绝不展开 ROOT。
+
 frame 语义：
 
 - **顶层聊天**（frame = −1）：主链上每一轮全量可见——累加；该分支的所有历史轮平铺
@@ -281,12 +285,10 @@ WebSocket 帧与刷新加载都是它的投影，必须产出同一张卡片。
 
 ## 附录：实现状态
 
-数据模型、边、不变量、spawn 原语、纯沿边分支行走（§2–§5）以及 frame/expose 渲染机制
+数据模型、边、不变量、spawn 原语、纯沿边分支行走（§2–§5）以及 §6 的路径原生渲染
 已实现；细节以 `openprogram/context/nodes.py` 与
 `openprogram/store/session/session_store.py` 的代码为准。以下设计小节尚未落地：
 
-- §6 路径原生成员资格——`render_context` 目前仍按 seq 窗口选取；分支隔离现在发生在
-  引擎侧的集合求交。
 - §7 全部——唯一装配器、`context/system_prompt` 节点、memory prefetch 迁移。
 - §8 全部——基于 `covers` 的 summary 节点、只进不退的老化边界、render manifest、写路径
   spill、单管线强制。现有压缩机制早于写入不变量，在本节落地前被显式豁免。

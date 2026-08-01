@@ -567,13 +567,20 @@ class DefaultContextEngine(ContextEngine):
         step 4). Chat thus reads context from the one DAG, frame=-1
         (top-level: all in-frame → full accumulation).
 
-        Two parity guards vs the commit path (else the prompt diverges):
-          1. Active-branch only. ``store.load()`` returns ALL nodes incl.
-             fork/retry siblings; restrict read_ids to the active branch
-             (``db.get_branch``) so sibling branches don't leak in.
-          2. No double user message. The just-persisted user msg is in the
-             branch, but agent_loop re-adds it as the live prompt — exclude
-             the trailing user node via head_seq so it isn't rendered twice.
+        The engine does exactly what §6 leaves it: resolve the head,
+        call render_context, hand the result to render_dag_messages.
+        Branch isolation is render_context's own walk — no set
+        intersection, no caller-based re-admission patch here.
+
+        The one thing still resolved locally is WHICH head to render
+        from. agent_loop re-adds the just-persisted user message as the
+        live prompt, so rendering from the literal branch tip would feed
+        the model that message twice. The tip at prepare() time is the
+        in-flight assistant PLACEHOLDER (dispatcher step 3b writes it and
+        moves head before the loop runs), giving the shape
+        ``[..., userN, placeholderN]``; walk back past the placeholder
+        and past userN, and render from what precedes them. See
+        test_retry_branch_isolation.py.
 
         Raises on failure → prepare() catches and falls back to _assemble.
         """
@@ -588,50 +595,26 @@ class DefaultContextEngine(ContextEngine):
         shim = GraphStoreShim(db, session_id)
         graph = shim.load()
 
-        # Active-branch node ids, in branch order (guard #1).
         branch = db.get_branch(session_id) or history or []
         branch_ids = [b.get("id") for b in branch if b.get("id")]
-        branch_id_set = set(branch_ids)
 
-        # head_seq excludes the trailing user node (guard #2): find the
-        # last active-branch user node and cap head_seq just below it.
-        #
-        # The branch tip at prepare() time is the just-inserted assistant
-        # PLACEHOLDER (dispatcher step 3b writes it and moves head before
-        # the loop runs), so the shape is [..., userN, placeholderN].
-        # Skip the in-flight placeholder (empty llm node) when walking
-        # back — breaking on it left head_seq=None, which rendered BOTH
-        # the trailing user node and the empty placeholder, so the model
-        # saw the current user message twice (once from the DAG render,
-        # once as the live prompt). See test_retry_branch_isolation.py.
-        head_seq = None
+        head_id = None
         for nid in reversed(branch_ids):
             n = graph.nodes.get(nid)
             if n is None:
                 continue
             if n.is_llm() and not (n.output or "").strip():
-                # in-flight assistant placeholder — keep walking
-                continue
+                continue          # in-flight assistant placeholder
             if n.is_user():
-                head_seq = n.seq - 1
+                head_id = n.predecessor   # render from before the live prompt
                 break
-            # a non-user, non-placeholder trailing node (completed
-            # reply) means nothing to exclude
+            head_id = nid         # completed reply — nothing to exclude
             break
 
-        read_ids = render_context(graph, head_seq=head_seq, frame_entry_seq=-1)
-        # restrict to the active branch (guard #1) — but keep code sub-call
-        # nodes whose predecessor is an in-branch llm/user node (tool rows
-        # aren't on the conv branch yet carry the turn's tool calls).
-        def _in_branch(nid: str) -> bool:
-            if nid in branch_id_set:
-                return True
-            n = graph.nodes.get(nid)
-            if n is None:
-                return False
-            cb = n.caller or ""
-            return cb in branch_id_set
-        read_ids = [nid for nid in read_ids if _in_branch(nid)]
+        read_ids = (
+            render_context(graph, head_id=head_id, frame_entry_seq=-1)
+            if head_id and head_id in graph.nodes else []
+        )
 
         # Drop abandoned assistant turns. A stream that died mid-flight
         # (crashed worker, dropped connection) leaves an llm node with

@@ -19,18 +19,34 @@ from openprogram.context.nodes import (
 )
 
 
+def _spine_tip(g: Graph) -> str | None:
+    """Id of the newest node with no caller — the top-level chain tip.
+
+    session-dag.md §6 makes membership path-native: a node enters the
+    render only via ``head_id``'s predecessor chain. These fixtures are
+    plain single-branch chains, so each new top-level node links to the
+    previous one; sub-called nodes (caller set) stay off the chain and
+    ride in as caller-subtree members, exactly as in a real session.
+    """
+    top = [n for n in g.nodes.values() if not n.caller]
+    return max(top, key=lambda n: n.seq).id if top else None
+
+
 def _user(g: Graph, content: str) -> Call:
-    return g.add(Call(role=ROLE_USER, output=content))
+    return g.add(Call(role=ROLE_USER, output=content,
+                      predecessor=_spine_tip(g)))
 
 
 def _llm(g: Graph, output: str, *, caller: str = "") -> Call:
-    return g.add(Call(role=ROLE_LLM, output=output, caller=caller))
+    return g.add(Call(role=ROLE_LLM, output=output, caller=caller,
+                      predecessor=None if caller else _spine_tip(g)))
 
 
 def _code(g: Graph, name: str, *, expose: str = "io",
           caller: str = "") -> Call:
     return g.add(Call(role=ROLE_CODE, name=name, caller=caller,
-                       metadata={"expose": expose}))
+                      predecessor=None if caller else _spine_tip(g),
+                      metadata={"expose": expose}))
 
 
 # No frame: top-level chat returns the linear chain

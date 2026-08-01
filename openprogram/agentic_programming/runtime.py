@@ -609,12 +609,28 @@ class Runtime:
                     "render_range"
                 )
 
-            head_seq = max(
-                (n.seq for n in graph.nodes.values()), default=-1,
-            )
+            # §6 head: the frame's nearest ROOT-level ancestor along
+            # ``caller``. Its predecessor chain is the pre-frame history
+            # the function may see; the frame's own progress rides in as
+            # that ancestor's caller-subtree. Passing the frame node
+            # itself would be wrong for a NESTED frame — a nested code
+            # node has no predecessor, so its spine would be one node
+            # and all conversation history would vanish.
+            head_id = frame_node_id if frame_node_id in graph.nodes else None
+            seen: set[str] = set()
+            while head_id and head_id not in seen:
+                seen.add(head_id)
+                caller = graph.nodes[head_id].caller
+                if not caller or caller not in graph.nodes:
+                    break
+                head_id = caller
+            if head_id is None:
+                head_id = max(
+                    graph.nodes.values(), key=lambda n: n.seq,
+                ).id if graph.nodes else None
             read_ids = render_context(
                 graph,
-                head_seq=head_seq,
+                head_id=head_id,
                 frame_entry_seq=frame_entry_seq,
                 render_range=render_range,
             )

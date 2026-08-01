@@ -501,9 +501,77 @@ def fold_history(current_node_id: str, graph: Graph) -> list[str]:
     return out
 
 
+def _is_root(graph: Graph, node_id: str) -> bool:
+    """The session ROOT node (§2): ``metadata.display == "root"``."""
+    n = graph.nodes.get(node_id)
+    return bool(n is not None and (n.metadata or {}).get("display") == "root")
+
+
+def render_spine(graph: Graph, head_id: str) -> list[str]:
+    """The predecessor chain from ``head_id`` back to its branch
+    terminus, oldest first (session-dag.md §3 read invariant).
+
+    Pure edge walk: no caller fallback, no seq stitching. A node whose
+    ``predecessor`` is missing terminates the walk — spawn roots
+    (``predecessor=None``, §4) therefore stop the spine at the spawn
+    root and never leak into the parent branch via ``caller``. The
+    ``"ROOT"`` sentinel (session first node / explicit root fork) is not
+    a real node id and terminates too.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    cur: Optional[str] = head_id
+    while cur and cur in graph.nodes and cur not in seen:
+        seen.add(cur)
+        out.append(cur)
+        cur = graph.nodes[cur].predecessor
+    out.reverse()
+    return out
+
+
+def render_path(graph: Graph, head_id: str) -> list[str]:
+    """Every node admitted by the §6 membership rule, in seq order.
+
+    > A node is rendered iff its nearest ROOT-level ancestor (walking
+    > ``caller`` edges upward) lies on the predecessor chain of
+    > ``head_id``.
+
+    Implemented as the mirror image: take the spine (:func:`render_spine`)
+    and expand each spine node's caller-subtree. Same set, one pass, and
+    it never has to walk a node that will be discarded. ``seq`` plays no
+    part in the selection — only in the final ordering.
+
+    ROOT is the one node whose caller-subtree is NOT expanded. Every
+    top-level conversational node carries ``caller="ROOT"`` (§3: caller
+    makes top-level nodes converge onto ROOT so the graph stays
+    connected), so expanding ROOT would re-admit every sibling branch in
+    the session and dissolve branch isolation. A ROOT-level node is its
+    own nearest ROOT-level ancestor; ROOT itself is never one.
+    """
+    spine = render_spine(graph, head_id)
+    if not spine:
+        return []
+    children: dict[str, list[str]] = {}
+    for n in graph.nodes.values():
+        if n.caller:
+            children.setdefault(n.caller, []).append(n.id)
+
+    members: set[str] = set()
+    stack = list(spine)
+    while stack:
+        nid = stack.pop()
+        if nid in members:
+            continue
+        members.add(nid)
+        if not _is_root(graph, nid):
+            stack.extend(children.get(nid, ()))
+    return [n.id for n in graph if n.id in members]
+
+
 def render_context(
     graph: Graph,
     *,
+    head_id: Optional[str] = None,
     head_seq: Optional[int] = None,
     frame_entry_seq: int = -1,
     render_range: Optional[dict] = None,
@@ -511,12 +579,26 @@ def render_context(
     """Pick the ids that go into the next LLM call's ``reads``.
 
     Pure function over a Graph + a few parameters. No ContextVar
-    access — the caller decides what "current frame" means.
+    access, no disk writes, no mutation of ``graph`` — the caller
+    decides what "current frame" means.
+
+    Membership is path-native (session-dag.md §6): a node enters the
+    rendering iff its nearest ROOT-level ancestor along ``caller`` lies
+    on ``head_id``'s predecessor chain, and the frame/expose rules
+    admit it. Branch isolation is therefore a property of the walk;
+    callers do no post-hoc set filtering.
 
     Args:
         graph:            the DAG to read from.
-        head_seq:         only consider nodes with seq <= head_seq.
-                          Defaults to the graph's current max seq.
+        head_id:          the branch tip. Its predecessor chain is the
+                          spine; only spine nodes and their
+                          caller-subtrees are candidates. Defaults to
+                          the highest-seq node (``head_seq`` is applied
+                          first, so the default head is the newest node
+                          at or below the cap).
+        head_seq:         ordering cap — drop candidates with
+                          seq > head_seq. Not a selector; membership
+                          comes from ``head_id``.
         frame_entry_seq:  seq value when the current ``@agentic_function``
                           started. Nodes with seq > frame_entry_seq are
                           "in-frame" (the function's own sub-calls);
@@ -556,6 +638,22 @@ def render_context(
         head_seq = max((n.seq for n in graph.nodes.values()), default=-1)
     if head_seq < 0:
         return []
+    if head_id is None:
+        # Default head: the newest ROOT-level node at or below the cap
+        # — i.e. the top-level chain tip. A sub-called node (caller set)
+        # is never a branch tip: its predecessor is None, so it would
+        # yield a one-node spine and drop the whole conversation. A
+        # caller that knows its real branch tip passes head_id; this
+        # fallback only serves single-branch graphs.
+        candidates = [
+            n for n in graph.nodes.values()
+            if n.seq <= head_seq and not n.caller
+        ]
+        if not candidates:
+            return []
+        head_id = max(candidates, key=lambda n: n.seq).id
+    if head_id not in graph.nodes:
+        return []
 
     # callers_cap → caps pre-frame (history before the frame started).
     #   None = uncapped (the conversation stays fully visible).
@@ -586,7 +684,12 @@ def render_context(
     # function that needs a specific earlier result must thread it in
     # by hand via runtime.exec(content=[...]).
 
-    visible = [n for n in graph if n.seq <= head_seq]
+    # §6 membership: spine of head_id + each spine node's caller-subtree.
+    # ``head_seq`` only trims the tail for ordering; it selects nothing.
+    visible = [
+        graph.nodes[nid] for nid in render_path(graph, head_id)
+        if graph.nodes[nid].seq <= head_seq
+    ]
     in_frame = [n for n in visible if n.seq > frame_entry_seq]
     pre_frame = [n for n in visible if n.seq <= frame_entry_seq]
 
@@ -668,5 +771,7 @@ __all__ = [
     "branch_terminals",
     "branch_internal",
     "fold_history",
+    "render_spine",
+    "render_path",
     "render_context",
 ]

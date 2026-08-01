@@ -219,6 +219,12 @@ retrieval. The engine does exactly three things: resolve the head, call
 `render_context`, and pass the result to `render_dag_messages` for translation
 into provider messages.
 
+ROOT is not a ROOT-level ancestor. Every top-level conversational node
+carries `caller="ROOT"` (§3, which is what keeps the graph connected), so
+expanding ROOT's caller-subtree would re-admit every sibling branch in the
+session. A ROOT-level node is its own nearest ROOT-level ancestor; the walk
+never expands ROOT itself.
+
 Frame semantics:
 
 - **Top-level chat** (frame = −1): every spine turn is fully visible —
@@ -345,13 +351,11 @@ and must produce the same card.
 ## Appendix: Implementation Status
 
 The data model, edges, invariants, spawn primitive, edge-pure branch walks
-(§2–§5), and the frame/expose rendering machinery are implemented; the code in
+(§2–§5), and §6 path-native membership are implemented; the code in
 `openprogram/context/nodes.py` and `openprogram/store/session/session_store.py`
 is authoritative for details. The following designed sections are not yet
 landed:
 
-- §6 path-native membership — `render_context` still selects by seq window;
-  branch isolation currently happens as an engine-side intersection.
 - §7 entirely — single assembler, `context/system_prompt` nodes, memory
   prefetch relocation.
 - §8 entirely — `covers`-based summary nodes, the advance-only aging boundary, render manifests,
