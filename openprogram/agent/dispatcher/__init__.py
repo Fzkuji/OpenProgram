@@ -916,43 +916,8 @@ def _run_loop_blocking(
         except Exception:
             pass
 
-    # Tier 3 Context Collapse: segmented LLM summary.
-    # Runs after Snip, before full Auto-Compact.
-    if req.history_override is None and _ctx_engine.should_auto_compact(prep):
-        try:
-            from openprogram.context.collapse import collapse
-            from openprogram.context.tokens import count_tokens
-
-            def _llm_summarize(prompt: str) -> str:
-                from openprogram.agentic_programming.runtime import Runtime
-                rt = Runtime(call=req.call, model=model)
-                return rt.exec(content=[{"type": "text", "text": prompt}]) or ""
-
-            collapsed, _originals, n_collapsed = collapse(
-                prep.history_dicts,
-                llm_call=_llm_summarize,
-                token_counter=lambda msgs: count_tokens(msgs, model),
-                context_window=prep.context_window,
-            )
-            if n_collapsed > 0:
-                history = collapsed
-                prep = _ctx_engine.prepare(
-                    agent=agent_profile,
-                    session=db.get_session(req.session_id) or session,
-                    history=history,
-                    model=model,
-                    tools=tools,
-                    system_prompt=system_prompt,
-                )
-                on_event({"type": "chat_response",
-                          "data": {"type": "context_collapse",
-                                   "session_id": req.session_id,
-                                   "segments_collapsed": n_collapsed}})
-        except Exception:
-            pass
-
-    # Tier 4 Auto-compact: when budget STILL crosses the threshold after
-    # snip + collapse, run the full LLM summariser INLINE.
+    # Auto-compact: when budget STILL crosses the threshold after
+    # snip, run the full LLM summariser INLINE.
     if req.history_override is None and _ctx_engine.should_auto_compact(prep):
         try:
             loop = asyncio.new_event_loop()

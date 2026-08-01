@@ -266,19 +266,19 @@ The History panel has two highlight modes (`HighlightMode` in
 
 Compaction interaction:
 
-- `insert_summary_node` re-parents the kept tail as `k_<hex>` copies and the
-  DAG deliberately never draws `summary_`/`k_` nodes
-  (`graph_layout/filter.py`) — the graph keeps showing the ORIGINAL rows.
-  Each `k_` copy therefore stores an `original_id` back-pointer
-  (`context/persistence.py`), and `/context-range` translates through it
-  (`original_ids()`), so the id space returned always matches what the graph
-  draws. Legacy rows without the back-pointer pass through untranslated and
-  simply don't highlight — acceptable decay, no migration.
-- After compaction the summarised prefix falls out of the set → it dims;
-  the kept tail keeps highlighting. This IS the compaction visualization —
-  a separate summary-node glyph is rejected (per session-dag.md: no 4th
-  role). If a future need arises for an explicit "N turns compacted
-  here" marker, it must be a badge on the first kept node, not a node.
+- `insert_summary_node` clones nothing (session-dag.md §8): the summary is an
+  ordinary `role=llm` chain member carrying `metadata.covers`, and the kept
+  tail keeps its own ids and predecessors. The branch ids therefore ARE the
+  ids the graph draws, so `/context-range` returns them directly — no
+  translation layer, no second id space.
+- The summary node is drawn like any other conversation node; only genuinely
+  synthetic bridges are filtered (`graph_layout/filter.py`).
+- After compaction the covered prefix falls out of the set → it dims; the
+  summary and the kept tail keep highlighting. This IS the compaction
+  visualization — a separate summary-node glyph is rejected (per
+  session-dag.md: no 4th role). If a future need arises for an explicit
+  "N turns compacted here" marker, it must be a badge on the first kept
+  node, not a node.
 - `compaction_finished` must refresh the context range
   (`chat-handlers.ts`); the Context tab is event-driven like everything
   else — the frontend never computes context membership itself.

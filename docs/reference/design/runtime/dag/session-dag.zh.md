@@ -285,17 +285,33 @@ WebSocket 帧与刷新加载都是它的投影，必须产出同一张卡片。
 
 ## 附录：实现状态
 
-数据模型、边、不变量、spawn 原语、纯沿边分支行走（§2–§5）以及 §6 的路径原生渲染
-已实现；细节以 `openprogram/context/nodes.py` 与
-`openprogram/store/session/session_store.py` 的代码为准。以下设计小节尚未落地：
+本文档的每一节都已实现。数据模型、边、不变量、spawn 原语、纯沿边分支行走
+（§2–§5）、§6 的路径原生渲染、§7（唯一装配器、`context/system_prompt` 节点、
+memory prefetch 迁移）与 §8（基于 `covers` 的 summary 节点、只进不退的老化边界、
+render manifest、写路径 spill、单管线强制）在代码中均已成立；细节以
+`openprogram/context/nodes.py`、`openprogram/context/components.py`、
+`openprogram/context/system_prompt_node.py`、`openprogram/context/aging.py`、
+`openprogram/context/spill.py` 与
+`openprogram/store/session/session_store.py` 的代码为准。
 
-- §7 全部——唯一装配器、`context/system_prompt` 节点、memory prefetch 迁移。
-- §8 全部——基于 `covers` 的 summary 节点、只进不退的老化边界、render manifest、写路径
-  spill、单管线强制。现有压缩机制早于写入不变量，在本节落地前被显式豁免。
+因此压缩不再需要写入不变量的豁免：summary 节点带着它所覆盖区间的 predecessor，
+像任何其他节点一样入链。`context/summary` 是唯一对聊天视图保持可见的
+`context/*` 名字——它的输出是替代被覆盖区间的真实对话内容，而非管线机械。
+
+为消融准备了五个环境开关，全部在调用时读取，因此一次实验可以只动一个变量而无需
+重新导入：`OPENPROGRAM_TOOL_AGING`、`OPENPROGRAM_TOOL_AGING_TAIL_TURNS`、
+`OPENPROGRAM_TOOL_AGING_MAX_RESULT_CHARS`、`OPENPROGRAM_NODE_SPILL`，以及
+`OPENPROGRAM_EXPOSE_DEFAULT`（它只改变未指定的 `expose=` 的含义——显式指定始终优先）。
 
 ## 相关文件
 
-- `openprogram/context/nodes.py` — Call schema + render_context
+- `openprogram/context/nodes.py` — Call schema + render_context、`covers` 略去
+- `openprogram/context/components.py` — 唯一的 system prompt 装配器（§7）
+- `openprogram/context/system_prompt_node.py` — `context/system_prompt`
+  记录 + `context/*` 隐藏（§7）
+- `openprogram/context/aging.py` — 棘轮式老化边界 + render manifest（§8）
+- `openprogram/context/spill.py` — 写路径大节点 spill（§8）
+- `openprogram/context/persistence.py` — 基于 `covers` 的 summary 节点（§8）
 - `openprogram/context/render.py` — render_dag_messages
 - `openprogram/store/session/session_store.py` — append 不变量、get_branch、
   spawn_branch、list_branches

@@ -38,7 +38,7 @@ Lifecycle (every method optional in the ABC, default-impl supplies all):
 
 Subclassing: override the method whose behaviour you want different.
 The default impl is structured so each step calls one helper —
-``_age``, ``_assemble_messages``, ``_build_system_prompt`` — that
+``_build_messages_from_dag``, ``_build_system_prompt`` — that
 subclasses commonly want to override on its own.
 """
 from __future__ import annotations
@@ -47,7 +47,6 @@ import asyncio
 import threading
 from typing import Any, Callable, Optional
 
-from openprogram.context.microcompact import Microcompactor, default_microcompactor
 from openprogram.context.budget import BudgetAllocator, default_allocator
 from openprogram.context.persistence import Persister, default_persister
 from openprogram.context.references import ReferenceTracker, default_tracker as _ref_tracker
@@ -149,16 +148,13 @@ class DefaultContextEngine(ContextEngine):
     # Two-tier triggers (see README §4):
     #   RECOMMEND_PCT       surface compaction_recommended event
     #   AUTO_COMPACT_PCT    proactive compact — still have summary budget
-    #   EMERGENCY_PCT       last-resort compact before the next call dies
     RECOMMEND_PCT = 0.70
     AUTO_COMPACT_PCT = 0.80
-    EMERGENCY_PCT = 0.95
 
     def __init__(self,
                  *,
                  usage_tracker: UsageTracker | None = None,
                  budget_allocator: BudgetAllocator | None = None,
-                 microcompactor: Microcompactor | None = None,
                  summarizer: Summarizer | None = None,
                  persister: Persister | None = None,
                  references: ReferenceTracker | None = None,
@@ -167,7 +163,6 @@ class DefaultContextEngine(ContextEngine):
                  ):
         self.usage = usage_tracker or _usage_tracker
         self.budgets = budget_allocator or default_allocator
-        self.microcompactor = microcompactor or default_microcompactor
         self.summarizer = summarizer or default_summarizer
         self.persister = persister or default_persister
         self.references = references or _ref_tracker
@@ -213,52 +208,22 @@ class DefaultContextEngine(ContextEngine):
                 f"references:protected={len(ref_map.cited_tool_use_ids)}"
             )
 
-        # 2-3. Build LLM input from commit chain (replaces the old
-        #    microcompact + tool_aging.prepare_history + _assemble_messages
-        #    pipeline). All compression decisions are now lived in
-        #    immutable per-turn context commits — see
-        #    docs/design/context-context commit-chain.md.
-        #    On failure we fall back to the legacy assembly path so a
-        #    broken context commit doesn't take down the whole turn.
+        # 2-3. Build the LLM input from the DAG — render_context +
+        #    render_dag_messages, the same pipeline runtime.exec uses.
+        #    ONE pipeline: there is no fallback. A render failure is a
+        #    real failure and must surface as a failed turn rather than
+        #    silently degrading to a differently-shaped prompt, which is
+        #    invisible in production and impossible to debug after the
+        #    fact (session-dag.md §8).
         compacted_history = history
         n_redacted = 0
         tokens_freed = 0
-        agent_messages: list = []
-        commit_used = False
-        # Chat now uses the same render_context + render_dag_messages
-        # pipeline as runtime.exec (unified rendering). Config override
-        # context.render="legacy" falls back to old commit-chain path.
-        try:
-            from openprogram.setup import _read_config
-            _use_dag = (_read_config().get("context") or {}).get("render") != "legacy"
-        except Exception:
-            _use_dag = True
-        try:
-            if _use_dag:
-                agent_messages = self._build_messages_from_dag(
-                    session_id=session_id,
-                    history=history,
-                    model=model,
-                )
-                decision.append("input:dag render")
-            else:
-                agent_messages = self._build_messages_from_commit(
-                    session_id=session_id,
-                    history=history,
-                    model=model,
-                )
-                decision.append("input:context commit")
-            commit_used = True
-        except Exception as e:
-            # 这条路径出错就退回老 mutate path. 失败时记日志便于排查,
-            # 但不阻断 turn.
-            decision.append(f"input:commit_failed:{type(e).__name__}")
-            compacted_history, n_redacted, tokens_freed = self.microcompactor.microcompact(history)
-            if n_redacted:
-                decision.append(f"microcompact:n={n_redacted},freed≈{tokens_freed}tok")
-            from openprogram.context.tool_aging import prepare_history
-            prepare_history(compacted_history, session_id)
-            agent_messages = self._assemble_messages(compacted_history)
+        agent_messages = self._build_messages_from_dag(
+            session_id=session_id,
+            history=history,
+            model=model,
+        )
+        decision.append("input:dag render")
 
         # session-dag.md §7: the caller (dispatcher) assembled the wire
         # prompt already — budget THAT string, never a second assembly.
@@ -477,86 +442,6 @@ class DefaultContextEngine(ContextEngine):
 
     # ---- Internals -----------------------------------------------------
 
-    def _assemble_messages(self, history: list[dict]) -> list:
-        """Translate the chat-dict history into provider Message objects.
-
-        Per turn, an assistant with ``tool_calls`` becomes:
-            AssistantMessage(content=[TextContent, ToolCall, ToolCall, …])
-            ToolResultMessage(...)   # one per tool call, in emit order
-            ToolResultMessage(...)
-        The next user/assistant follows. Older turns have their tool
-        results aged into ``[aged] …`` stubs by
-        ``tool_aging.prepare_history`` before we get here; we just
-        emit them as-is. The model still sees the tool_call_id chain
-        and so can refer to "the read I did earlier".
-        """
-        import time
-        from openprogram.providers.types import (
-            AssistantMessage, TextContent, ToolCall,
-            ToolResultMessage, UserMessage,
-        )
-        out: list = []
-        for m in history:
-            role = m.get("role")
-            content = m.get("content") or ""
-            ts = int((m.get("timestamp") or time.time()) * 1000)
-            if role == "user":
-                out.append(UserMessage(
-                    content=[TextContent(text=content)],
-                    timestamp=ts,
-                ))
-                continue
-            if role != "assistant":
-                continue
-            tool_calls = m.get("tool_calls") or []
-            asst_content: list = []
-            if content:
-                asst_content.append(TextContent(text=content))
-            for tc in tool_calls:
-                tc_input = tc.get("input")
-                if isinstance(tc_input, str):
-                    try:
-                        import json as _json
-                        tc_input = _json.loads(tc_input)
-                    except (ValueError, TypeError):
-                        tc_input = {"_raw": tc_input}
-                if not isinstance(tc_input, dict):
-                    tc_input = {"_raw": str(tc_input)}
-                asst_content.append(ToolCall(
-                    id=tc.get("tool_call_id") or tc.get("id") or "",
-                    name=tc.get("tool") or "",
-                    arguments=tc_input,
-                ))
-            try:
-                out.append(AssistantMessage(
-                    content=asst_content or [TextContent(text="")],
-                    api="completion",
-                    provider="openai",
-                    model="gpt-5",
-                    timestamp=ts,
-                ))
-            except Exception:
-                continue
-            # ToolResultMessage AFTER the assistant emits the calls —
-            # mirrors the wire shape every provider expects.
-            for tc in tool_calls:
-                result_text = tc.get("result") or ""
-                if not isinstance(result_text, str):
-                    result_text = str(result_text)
-                try:
-                    out.append(ToolResultMessage(
-                        tool_call_id=(
-                            tc.get("tool_call_id") or tc.get("id") or ""
-                        ),
-                        tool_name=tc.get("tool") or "",
-                        content=[TextContent(text=result_text)],
-                        is_error=bool(tc.get("is_error")),
-                        timestamp=ts,
-                    ))
-                except Exception:
-                    continue
-        return out
-
     def _build_system_prompt(self, agent: Any, *, tools: Any = None) -> str:
         from openprogram.context.components import build_system_prompt
         return build_system_prompt(agent, tools=tools)
@@ -656,91 +541,6 @@ class DefaultContextEngine(ContextEngine):
             history_dir = None
 
         return render_dag_messages(graph, read_ids, history_dir)
-
-    def _build_messages_from_commit(
-        self,
-        *,
-        session_id: str,
-        history: list[dict],
-        model: Any,
-    ) -> list:
-        """Build provider Message[] via the commit chain pipeline.
-
-        每个 turn 走这条路径:
-          1. 从 DB 拉最新 history — caller 传进来的 history 是 LLM
-             调用前的 (dispatcher 步骤里还没包含 user_msg 和 placeholder),
-             context commit 需要看最新状态. 重新拉一遍.
-          2. ensure_latest_commit — 拿到 (或增量生成) 最新 context commit.
-          3. render_commit — 翻成 provider Message[].
-
-        失败抛异常, 上层 prepare() catch 后退回老 path.
-        """
-        if not session_id:
-            raise RuntimeError("context commit path requires session_id")
-        from openprogram.context.commit import (
-            ensure_latest_commit,
-            render_commit,
-        )
-        from openprogram.context.tokens import real_context_window
-        from openprogram.agent.session_db import default_db
-
-        db = default_db()
-        # 直接从 DB 拉最新 conv 链 — 不信任 caller 传进来的 history,
-        # 因为 dispatcher 在写 user/placeholder 之后才调 prepare, 但
-        # 它传的 history 是写之前的快照.
-        fresh_history_conv = db.get_branch(session_id) or history or []
-
-        # 把每个 assistant 的 tool sub-calls (caller=assistant_id 的
-        # ROLE_CODE 节点) 按顺序插到 assistant 后面 — context commit 反映的
-        # 应该是 LLM 真实看到的消息序列, 包含 tool_use + tool_result.
-        # 否则 Context tab 只有 user/assistant 纯文本, 看不到调了什么工具.
-        all_msgs = db.get_messages(session_id) or []
-        by_caller: dict[str, list[dict]] = {}
-        for _m in all_msgs:
-            _cb = _m.get("caller") or ""
-            if _cb:
-                by_caller.setdefault(_cb, []).append(_m)
-        for _lst in by_caller.values():
-            _lst.sort(key=lambda x: x.get("seq") or 0)
-        fresh_history: list[dict] = []
-        for _node in fresh_history_conv:
-            fresh_history.append(_node)
-            _nid = _node.get("id")
-            if not _nid:
-                continue
-            for _sub in by_caller.get(_nid, []):
-                fresh_history.append(_sub)
-
-        _msg_cache: dict[str, dict] | None = None
-
-        def fetch_node(node_id: str):
-            nonlocal _msg_cache
-            if node_id.startswith("sm_"):
-                return None   # synthetic summary id, 不在 DAG
-            if _msg_cache is None:
-                _msg_cache = {
-                    m.get("id"): m
-                    for m in db.get_messages(session_id) or []
-                    if m.get("id")
-                }
-            return _msg_cache.get(node_id)
-
-        head_id = (
-            fresh_history[-1].get("id") if fresh_history
-            else (db.get_session(session_id) or {}).get("head_id") or ""
-        )
-        budget_total = real_context_window(model) or 200_000
-        commit = ensure_latest_commit(
-            store=db,
-            session_id=session_id,
-            history=fresh_history,
-            head_node_id=head_id,
-            budget_total=budget_total,
-            budget_summarize_threshold=int(budget_total * 0.85),
-            fetch_node=fetch_node,
-            llm_summarize=None,  # 暂不接 LLM summarize, phase 5 再加
-        )
-        return render_commit(commit)
 
     def _estimate(self, history: list[dict]) -> int:
         from openprogram.context.tokens import estimate_history_tokens

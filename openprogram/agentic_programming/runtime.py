@@ -809,6 +809,16 @@ class Runtime:
             _sysp = getattr(self, "_pending_system_prompt", None)
             if _sysp:
                 meta["system_prompt"] = _sysp
+            # What the render policy actually did for this call — replaying
+            # with it reproduces the exact prompt bytes even after the
+            # global aging constants move (session-dag.md §8).
+            try:
+                from openprogram.context.aging import last_manifest
+                _mf = last_manifest()
+                if _mf:
+                    meta["render_manifest"] = _mf
+            except Exception:
+                pass
             if error is not None:
                 import traceback as _tb
                 meta["error"] = str(error)

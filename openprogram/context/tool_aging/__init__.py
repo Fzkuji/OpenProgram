@@ -50,8 +50,17 @@ def prepare_history(history: list[dict], session_id: str) -> list[dict]:
     The aging boundary is the LAST ``TAIL_TURNS`` assistants:
     everything from that index onward keeps full fidelity; older
     assistants get aged stubs.
+
+    ``policy.AGING_ENABLED`` off ⇒ enrich only, age nothing. Read at
+    call time so an ablation run (or a test) can flip it without a
+    module reimport. The DAG render path honours the same flag in
+    ``render._aged_code_ids``; both must agree or one keeps aging.
     """
+    from openprogram.context.tool_aging import policy
+
     enrich_with_tools(history, session_id)
+    if not policy.AGING_ENABLED:
+        return history
     # Index of every assistant in the history list.
     asst_indices = [
         i for i, m in enumerate(history)
@@ -59,8 +68,9 @@ def prepare_history(history: list[dict], session_id: str) -> list[dict]:
     ]
     if not asst_indices:
         return history
+    tail = policy.TAIL_TURNS
     tail_cutoff = (
-        asst_indices[-TAIL_TURNS] if len(asst_indices) > TAIL_TURNS
+        asst_indices[-tail] if len(asst_indices) > tail
         else asst_indices[0]
     )
     for i in asst_indices:

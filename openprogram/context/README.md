@@ -380,10 +380,7 @@ min_prompt_ratio      0.25          head 至少留 25% 窗口给 system+新轮
 ### 4.1 触发判定（两段式）
 
 ```python
-if prep.budget_pct >= EMERGENCY_PCT:        # 0.95
-    # 紧急 — 必须 compact，下一轮会爆
-    fire auto-compact
-elif prep.budget_pct >= AUTO_COMPACT_PCT:   # 0.80
+if prep.budget_pct >= AUTO_COMPACT_PCT:     # 0.80
     # 主动 compact — 仍有 budget 留给 summary call
     fire auto-compact
 elif prep.budget_pct >= RECOMMEND_PCT:      # 0.70
@@ -391,7 +388,7 @@ elif prep.budget_pct >= RECOMMEND_PCT:      # 0.70
     emit compaction_recommended
 ```
 
-两段触发的意义：80% 时主动 compact 享受充足的 summary 预算（call 本身要占 8-15K tokens），95% 兜底保证不会真爆窗。
+两段触发的意义：80% 时主动 compact 就享受充足的 summary 预算（call 本身要占 8-15K tokens），不必等到窗口逼近上限——那时连做摘要的余量都没有了。
 
 ### 4.2 找切点 `find_cut_index`
 

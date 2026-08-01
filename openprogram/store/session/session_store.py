@@ -123,6 +123,21 @@ class PredecessorMissingError(ValueError):
         self.node_id = node_id
 
 
+def _is_hidden_context_node(node) -> bool:
+    """``context/*`` machinery that stays out of chat/transcript views.
+
+    §7 reserves the ``context/*`` name for nodes that record what the
+    pipeline sent (``context/system_prompt``) rather than what was said.
+    ``context/summary`` is deliberately NOT hidden: §8 makes it an
+    ordinary chain member whose output is real conversation content
+    standing in for the range it covers.
+    """
+    name = str(getattr(node, "name", "") or "")
+    if not name.startswith("context/"):
+        return False
+    return name != "context/summary"
+
+
 def _is_spawn_root(meta: dict) -> bool:
     return bool(meta.get("spawn_branch_root")) or meta.get("source") == "agent_spawn"
 
@@ -177,11 +192,13 @@ def _check_append_invariant(session_id: str, idx, node: Call,
         return                       # the ROOT node itself
     if _is_spawn_root(meta):
         return
-    # Compaction machinery (summary roots / k_ clones) predates the
-    # invariant and is redesigned by session-dag.md §8 — out of
-    # Decision 1's scope, so it keeps its (illegal) shape for now.
-    nid = str(node.id or "")
-    if nid.startswith("summary_") or nid.startswith("k_"):
+    # §8: a summary node normally carries the predecessor of the first
+    # node it covers and needs no exemption at all. The one legal
+    # predecessor-less case is compacting from the very start of a
+    # session, where the covered range begins at the first node — the
+    # summary inherits its (empty) predecessor and becomes the new chain
+    # terminus. ``k_`` clones no longer exist, so no exemption for them.
+    if (node.metadata or {}).get("covers") is not None:
         return
     # Session first node: no prior ROOT-level conversational node.
     for n in idx.nodes_by_seq:
@@ -852,6 +869,40 @@ class SessionStore:
 
     # Message append / read
 
+    def spill_large_node(self, session_id: str, node) -> None:
+        """Write an over-cap node's full text to ``large_nodes/`` and stamp
+        ``metadata.spilled`` on it, before the node is written to history.
+
+        Recording is the one moment a node's text is genuinely new, so it
+        is the one place spilling belongs — rendering stays a pure read.
+        Must run AFTER seq assignment (the seq names the file) and BEFORE
+        ``write_history`` (so the stamp lands in the persisted node).
+        """
+        try:
+            from openprogram.context import spill as _spill
+            from openprogram.context.spill import spill_if_large, large_dir_for
+            text = node.output
+            # Cheap guard first: the overwhelming majority of nodes are
+            # small, and this runs on every single append. Without it
+            # every append would pay a filesystem round-trip.
+            if (not isinstance(text, str)
+                    or len(text) <= _spill.NODE_RENDER_CAP
+                    or not _spill.SPILL_ENABLED):
+                return
+            stamp = spill_if_large(
+                text,
+                node_key=f"{node.seq:04d}-{node.id}",
+                large_dir=large_dir_for(
+                    str(self._session_dir(session_id) / "history")),
+            )
+            if stamp:
+                meta = dict(node.metadata or {})
+                meta["spilled"] = stamp
+                node.metadata = meta
+        except Exception:
+            # Spilling is an optimisation; never block the write.
+            pass
+
     def append_message(self, session_id: str, msg: dict[str, Any]) -> None:
         pair = self._open(session_id, create_if_missing=True)
         if pair is None:
@@ -865,6 +916,7 @@ class SessionStore:
         caller = _node_caller(node)
         _check_append_invariant(session_id, idx, node, predecessor, caller)
         seq = idx.append(node, predecessor=predecessor, caller=caller)
+        self.spill_large_node(session_id, node)
         # Write the raw node file. Commit deferred to turn end.
         git.write_history(seq, node.role, node.id, node.to_dict())
         # Advance head for conversation nodes (no caller). Matches old
@@ -906,7 +958,11 @@ class SessionStore:
             # (session-dag.md §7). They are machinery, not conversation, and
             # stay out of every chat/transcript view. ``get_nodes`` is the
             # raw view for the code that does want them.
-            and not str(n.name or "").startswith("context/")
+            # ``context/summary`` is the exception: §8 makes it an ordinary
+            # chain member carrying real conversation content (the recap
+            # that stands in for the range it covers), so it is painted
+            # and read like any other turn.
+            and not _is_hidden_context_node(n)
         ]
         if limit is not None:
             msgs = msgs[-limit:]
@@ -1145,31 +1201,12 @@ class SessionStore:
                     "created_at": main_node.created_at,
                     "updated_at": main_node.created_at,
                 })
-        # Compaction chains (dag-rendering.md §9): a summary_ head is
-        # machinery, not a branch; a k_ tip IS the pre-compaction tail
-        # (persistence.py stamps original_id on the copies) — show it
-        # under the original id and drop the stale original-chain tip
-        # that would otherwise appear as a duplicate branch.
-        claimed_originals: set[str] = set()
-        kept: list[dict[str, Any]] = []
-        for t in tips:
-            nid = t["head_msg_id"]
-            if nid.startswith("summary_"):
-                continue
-            if nid.startswith("k_") and nid != idx.head_id:
-                # k_ ids are only ever minted by compaction copies; a k_
-                # chain that isn't the live head is residue from an
-                # earlier compaction (incl. legacy rows without the
-                # original_id back-pointer) — never a checkout target.
-                continue
-            node = idx.nodes_by_id.get(nid)
-            orig = ((getattr(node, "metadata", None) or {}).get("original_id")
-                    if node else None)
-            if orig:
-                t["display_msg_id"] = orig
-                claimed_originals.add(orig)
-            kept.append(t)
-        tips = [t for t in kept if t["head_msg_id"] not in claimed_originals]
+        # Compaction no longer clones the kept tail (§8): a summary node
+        # splices into the chain and the tail keeps its own ids, so the
+        # branch tips need no translation. A summary node that ends up a
+        # tip is still machinery, not a checkout target.
+        tips = [t for t in tips
+                if not str(t["head_msg_id"]).startswith("summary_")]
         tips.sort(key=lambda r: r.get("updated_at") or 0, reverse=True)
         return tips
 

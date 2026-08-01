@@ -67,15 +67,12 @@ class ContextComponent:
     condition  returns True when this component should appear this turn.
                Defaults to always-on.
     build      produces the component's text; "" / None ⇒ contributes nothing.
-    cacheable  whether it sits in the cacheable prefix (used by later cache
-               steps; not consumed yet).
     """
     name: str
     layer: Layer
     order: int
     build: Callable[[Any], Optional[str]]
     condition: Callable[[Any], bool] = field(default=lambda ctx: True)
-    cacheable: bool = True
 
 
 # Three registries — one per layer. Populated at import time below.

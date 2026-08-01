@@ -114,7 +114,15 @@ def _estimate_one_tool(t: Any) -> tuple[int, bool]:
             {"role": "system", "content": f"{name}: {desc}"}
         )
         return tokens, True
-    schema = getattr(t, "schema", None) or getattr(t, "spec", None)
+    # Tool objects spell the JSON schema differently depending on where
+    # they came from: ``schema`` / ``spec`` / ``parameters`` (the
+    # OpenAI-shaped one, which most of our registered tools actually
+    # use). Missing ``parameters`` from this chain priced the whole
+    # resident toolset off the 20-token "unknown tool" guess — ~690
+    # tokens reported against a real ~6.8k.
+    schema = (getattr(t, "schema", None)
+              or getattr(t, "spec", None)
+              or getattr(t, "parameters", None))
     if schema is None:
         return 20, False  # unknown tool — guess
     try:

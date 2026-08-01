@@ -568,6 +568,43 @@ def render_path(graph: Graph, head_id: str) -> list[str]:
     return [n.id for n in graph if n.id in members]
 
 
+def covers_range(node: "Call") -> Optional[tuple[int, int]]:
+    """``(first_seq, last_seq)`` a summary node replaces, or None.
+
+    Written by the compaction persister as ``metadata.covers``. Any node
+    can in principle carry it; in practice only summary nodes do.
+    """
+    raw = (node.metadata or {}).get("covers")
+    if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+        return None
+    try:
+        return int(raw[0]), int(raw[1])
+    except (TypeError, ValueError):
+        return None
+
+
+def _covered_seqs(chain: list) -> set:
+    """Seqs elided by summary nodes present in ``chain``.
+
+    A summary only elides nodes that are actually part of this chain —
+    a covers range naming seqs on a different branch is inert here. The
+    summary node itself is never elided, even by its own range (its seq
+    sorts just before the range it covers).
+    """
+    summaries = [(n, r) for n in chain
+                 if (r := covers_range(n)) is not None]
+    if not summaries:
+        return set()
+    out: set = set()
+    for node, (lo, hi) in summaries:
+        for other in chain:
+            if other.id == node.id:
+                continue
+            if lo <= other.seq <= hi:
+                out.add(other.seq)
+    return out
+
+
 def render_context(
     graph: Graph,
     *,
@@ -714,16 +751,31 @@ def render_context(
     #                   by the decorator, not here).
     io_owners: set[str] = set()
     llm_owners: set[str] = set()
+    try:
+        from openprogram.agentic_programming.function import default_expose
+        _fallback = default_expose()
+    except Exception:
+        _fallback = "io"
     for n in chain:
         if n.is_code():
-            ex = (n.metadata or {}).get("expose") or "io"
+            ex = (n.metadata or {}).get("expose") or _fallback
             if ex == "io":
                 io_owners.add(n.id)
             elif ex == "llm":
                 llm_owners.add(n.id)
 
+    # Compaction: a summary node carries metadata.covers = [first_seq,
+    # last_seq] naming the seq range it replaces. Once we walk past the
+    # summary, every node inside that range is elided — the summary text
+    # stands in for it. The covered nodes stay on the chain (and in
+    # storage) so the pre-compaction view is still reconstructible;
+    # they're simply not fed back to the model.
+    covered = _covered_seqs(chain)
+
     kept = []
     for n in chain:
+        if n.seq in covered:
+            continue
         # io function: hide its internal llm exchanges.
         if n.is_llm() and n.caller in io_owners:
             continue
@@ -771,6 +823,7 @@ __all__ = [
     "branch_terminals",
     "branch_internal",
     "fold_history",
+    "covers_range",
     "render_spine",
     "render_path",
     "render_context",

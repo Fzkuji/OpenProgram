@@ -55,6 +55,7 @@ class GraphStoreShim:
         from .session_store import _check_append_invariant
         _check_append_invariant(self.session_id, idx, node, predecessor, caller)
         seq = idx.append(node, predecessor=predecessor, caller=caller)
+        self.store.spill_large_node(self.session_id, node)
         git.write_history(seq, node.role, node.id, node.to_dict())
         if not caller:
             idx.set_head(node.id)
@@ -123,6 +124,10 @@ class GraphStoreShim:
                 node.metadata = {**(node.metadata or {}), **v}
             else:
                 setattr(node, k, v)
+        # An llm/code node's real output arrives here, not at append —
+        # spill on the way in so rendering never has to write.
+        if "output" in fields:
+            self.store.spill_large_node(self.session_id, node)
         # Rewrite the on-disk JSON for this node so a worker restart
         # picks up the new content.
         role_letter = (node.role or "x")[0]

@@ -1,20 +1,14 @@
 """Strip nodes that aren't part of the visible DAG.
 
-Microcompact (``openprogram/context/microcompact``) writes a synthetic
-``summary_<hex>`` LLM node plus a parallel ``k_<hex>`` user/assistant
-chain holding the compacted rewrite of the conversation. In the DAG
-those nodes form a second root that visually mirrors the trunk —
-correct as data, confusing as a graph because the user sees the same
-conversation twice. They get filtered out of the layout input.
+Compaction summary nodes are ordinary chain members (``role=llm``,
+``metadata.covers``) and ARE painted — they're a real event in the
+conversation. Only genuinely synthetic bridges (task-followup triggers,
+``display=runtime`` rows) get filtered here.
 
 Filtering at the layout boundary keeps the persistence layer
-authoritative (the rewrite IS in the DB, it's just not painted).
+authoritative.
 """
 from __future__ import annotations
-
-
-def _is_microcompact_synthetic(node_id: str) -> bool:
-    return node_id.startswith("summary_") or node_id.startswith("k_")
 
 
 def _is_task_followup_user(node: dict) -> bool:
@@ -86,7 +80,6 @@ def filter_visible(graph_entries: list[dict]) -> list[dict]:
     return [
         m for m in graph_entries
         if m.get("id")
-        and not _is_microcompact_synthetic(m["id"])
         and not _is_task_followup_user(m)
         and m.get("display") != "runtime"
     ]

@@ -350,26 +350,38 @@ and must produce the same card.
 
 ## Appendix: Implementation Status
 
-The data model, edges, invariants, spawn primitive, edge-pure branch walks
-(§2–§5), §6 path-native membership, and §7 (single assembler,
-`context/system_prompt` nodes, memory-prefetch relocation) are implemented;
-the code in `openprogram/context/nodes.py`,
+Every section of this document is implemented. The data model, edges,
+invariants, spawn primitive, edge-pure branch walks (§2–§5), §6 path-native
+membership, §7 (single assembler, `context/system_prompt` nodes,
+memory-prefetch relocation), and §8 (`covers`-based summary nodes, the
+advance-only aging boundary, render manifests, write-path spill,
+single-pipeline enforcement) all hold in code; `openprogram/context/nodes.py`,
 `openprogram/context/components.py`,
-`openprogram/context/system_prompt_node.py`, and
-`openprogram/store/session/session_store.py` is authoritative for details.
-The following designed section is not yet landed:
+`openprogram/context/system_prompt_node.py`,
+`openprogram/context/aging.py`, `openprogram/context/spill.py`, and
+`openprogram/store/session/session_store.py` are authoritative for details.
 
-- §8 entirely — `covers`-based summary nodes, the advance-only aging boundary, render manifests,
-  write-path spill, single-pipeline enforcement. The current compaction
-  machinery predates the write invariant and is explicitly exempted from it
-  until this section lands.
+Compaction therefore no longer needs its exemption from the write invariant:
+a summary node carries the predecessor of the range it covers and enters the
+chain like any other node. `context/summary` is the one `context/*` name that
+stays visible to the chat views, because its output is real conversation
+content standing in for the range it replaces rather than pipeline machinery.
+
+Five environment switches exist for ablation, all read at call time so a run
+can move one variable without a reimport: `OPENPROGRAM_TOOL_AGING`,
+`OPENPROGRAM_TOOL_AGING_TAIL_TURNS`, `OPENPROGRAM_TOOL_AGING_MAX_RESULT_CHARS`,
+`OPENPROGRAM_NODE_SPILL`, and `OPENPROGRAM_EXPOSE_DEFAULT` (which moves only
+what an unspecified `expose=` means — an explicit one always wins).
 
 ## Related Files
 
-- `openprogram/context/nodes.py` — Call schema + render_context
+- `openprogram/context/nodes.py` — Call schema + render_context, `covers` elision
 - `openprogram/context/components.py` — the one system-prompt assembler (§7)
 - `openprogram/context/system_prompt_node.py` — `context/system_prompt`
   recording + `context/*` hiding (§7)
+- `openprogram/context/aging.py` — ratcheted aging boundary + render manifests (§8)
+- `openprogram/context/spill.py` — write-path large-node spill (§8)
+- `openprogram/context/persistence.py` — `covers`-based summary nodes (§8)
 - `openprogram/context/render.py` — render_dag_messages
 - `openprogram/store/session/session_store.py` — append invariant, get_branch,
   spawn_branch, list_branches

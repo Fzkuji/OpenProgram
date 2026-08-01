@@ -188,6 +188,16 @@ def persist_assistant_message(
             {"tool_calls": tool_calls, "blocks": blocks},
             default=str,
         )
+    # What the render policy did when this call's prompt was built —
+    # replaying with it reproduces the exact bytes the model saw, even
+    # after the aging constants move (session-dag.md §8).
+    try:
+        from openprogram.context.aging import last_manifest
+        _mf = last_manifest()
+        if _mf:
+            assistant_msg["render_manifest"] = _mf
+    except Exception:
+        pass
     if _placeholder_inserted:
         # Update the placeholder row in place — same id, now with
         # final content + tool_calls/blocks. Writes Call fields

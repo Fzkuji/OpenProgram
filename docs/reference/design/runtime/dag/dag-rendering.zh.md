@@ -225,15 +225,15 @@ History 面板有两个高亮模式（`web/lib/runtime-bridge/dag/types.ts` 的
 
 与压缩的联动：
 
-- `insert_summary_node` 把保留尾部复制为 `k_<hex>` 行重新挂链，而 DAG 刻意
-  不画 `summary_`/`k_` 节点（`graph_layout/filter.py`）——图上一直显示的是
-  **原始行**。因此每个 `k_` 副本存 `original_id` 回指
-  （`context/persistence.py`），`/context-range` 经 `original_ids()` 翻译，
-  返回的 id 空间恒与图上画的一致。无回指的旧数据原样透传、不高亮——可接受
-  的衰减，不做迁移。
-- 压缩后被摘要的前缀落出集合 → 变暗；保留尾部维持高亮。**这就是压缩的可视
-  化**——独立的摘要节点图形不予采纳（依 session-dag.md：不加第 4 种
-  role）。将来若需要显式"此处压缩了 N 轮"标记，必须做成首个保留节点上的
+- `insert_summary_node` 不复制任何东西（session-dag.md §8）：summary 是带
+  `metadata.covers` 的普通 `role=llm` 链上成员，保留尾部保持自己的 id 与
+  predecessor。因此分支 id **就是**图上画的 id，`/context-range` 直接返回
+  它们——没有翻译层，也没有第二套 id 空间。
+- summary 节点和其他对话节点一样绘制；只有真正的合成桥会被过滤
+  （`graph_layout/filter.py`）。
+- 压缩后被覆盖的前缀落出集合 → 变暗；summary 与保留尾部维持高亮。**这就是
+  压缩的可视化**——独立的摘要节点图形不予采纳（依 session-dag.md：不加第 4
+  种 role）。将来若需要显式"此处压缩了 N 轮"标记，必须做成首个保留节点上的
   徽章，不得做成节点。
 - `compaction_finished` 必须触发 context range 刷新（`chat-handlers.ts`）；
   Context tab 和其他一切一样事件驱动——前端永不自行计算上下文成员关系。

@@ -113,6 +113,23 @@ def _run_pre_invocation_hooks() -> None:
     for hook in list(_pre_invocation_hooks):
         hook()
 
+
+_VALID_EXPOSE = ("io", "llm", "full", "hidden")
+
+
+def default_expose() -> str:
+    """What ``expose`` means when a decorator doesn't say.
+
+    ``OPENPROGRAM_EXPOSE_DEFAULT`` (io|llm|full|hidden) moves it, for
+    ablating how much of a function's internals the caller's context
+    should see. An unrecognised value falls back to ``"io"`` rather than
+    raising — a bad env var must not break every import in the process.
+    """
+    import os
+    val = (os.environ.get("OPENPROGRAM_EXPOSE_DEFAULT") or "").strip().lower()
+    return val if val in _VALID_EXPOSE else "io"
+
+
 # Global registry of all @agentic_function-decorated functions.
 # Maps function name → agentic_function instance.
 # Used by the visualizer to look up source code for any decorated function.
@@ -586,7 +603,11 @@ class agentic_function:
         fn: Optional[Callable] = None,
         *,
         # —— agentic-specific ——
-        expose: str = "io",
+        # None ⇒ take the project default (env-overridable, "io"
+        # normally). An explicit expose= on the decorator always wins;
+        # the env switch only moves what "unspecified" means, which is
+        # what an ablation over exposure levels needs.
+        expose: Optional[str] = None,
         render_range: Optional[dict] = None,
         input: Optional[dict] = None,
         system: Optional[str] = None,
@@ -625,6 +646,8 @@ class agentic_function:
         defer: bool = False,
         register_globally: bool = True,
     ):
+        if expose is None:
+            expose = default_expose()
         if expose not in ("io", "llm", "full", "hidden"):
             raise ValueError(
                 f"expose must be 'io', 'llm', 'full', or 'hidden', "

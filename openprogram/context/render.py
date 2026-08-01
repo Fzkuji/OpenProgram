@@ -26,63 +26,75 @@ renderer is a strict translation pass on whatever ids it gets.
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from openprogram.context.nodes import Call, Graph
 
 
-def _aged_code_ids(graph: Graph, read_ids: list[str]) -> set[str]:
-    """Which code nodes in ``read_ids`` should render as an aged stub.
+def _aged_code_ids(graph: Graph, read_ids: list[str],
+                   manifest: "dict | None" = None) -> "tuple[set[str], int]":
+    """``(ids to render as aged stubs, the boundary used)``.
 
-    Mirrors tool_aging's policy on the DAG: the last ``TAIL_TURNS`` llm
-    nodes keep full fidelity; code nodes that occur before that tail
-    window collapse to a one-line stub to save tokens (protected tools
-    like todo_read are never aged). This is a pre-pass over read_ids —
-    the renderer stays a strict translation; aging policy lives here, not
-    baked into the per-node emit. Keyed only on data DAG nodes already
-    carry (role/seq/name), so no storage change is needed.
+    The last ``TAIL_TURNS`` llm nodes keep full fidelity; code nodes
+    before that window collapse to a one-line stub (protected tools like
+    todo_read are never aged). This is a pre-pass over read_ids — the
+    renderer stays a strict translation, aging policy lives here.
+
+    The boundary comes from :mod:`openprogram.context.aging`, which
+    ratchets it per turn so two renders inside one turn agree. When a
+    ``manifest`` is supplied its recorded ``aged_before_seq`` wins over
+    live policy — that's what makes a historical render replayable byte
+    for byte after the policy constants change.
     """
     try:
-        from openprogram.context.tool_aging.policy import (
-            TAIL_TURNS, PRUNE_PROTECTED_TOOLS,
-        )
+        from openprogram.context.tool_aging import policy
+        from openprogram.context.aging import aged_before_seq, manifest_boundary
     except Exception:
-        return set()
+        return set(), -1
+    # Read the flag at call time (not import time) so tests and ablation
+    # runs can flip it via monkeypatch without reimporting the module.
+    if not policy.AGING_ENABLED:
+        return set(), -1
     nodes = [graph.nodes.get(nid) for nid in read_ids]
     nodes = [n for n in nodes if n is not None]
-    llm_seqs = sorted(n.seq for n in nodes if n.is_llm())
-    if len(llm_seqs) <= TAIL_TURNS:
-        return set()  # whole conversation fits in the tail window
-    # Boundary: code nodes with seq < the TAIL_TURNS-th-from-last llm seq
-    # are "old" and get aged.
-    tail_cutoff_seq = llm_seqs[-TAIL_TURNS]
+
+    boundary = manifest_boundary(manifest)
+    if boundary is None:
+        boundary = aged_before_seq(nodes)
+    if boundary < 0:
+        return set(), boundary  # whole conversation fits in the tail window
+
     aged: set[str] = set()
     for n in nodes:
         if not n.is_code():
             continue
-        if n.seq >= tail_cutoff_seq:
+        if n.seq >= boundary:
             continue
-        if (n.name or "") in PRUNE_PROTECTED_TOOLS:
+        if (n.name or "") in policy.PRUNE_PROTECTED_TOOLS:
             continue
         aged.add(n.id)
-    return aged
+    return aged, boundary
 
 
 def render_dag_messages(graph: Graph, read_ids: list[str],
-                        history_dir: "str | None" = None) -> list:
+                        history_dir: "str | None" = None,
+                        manifest: "dict | None" = None) -> list:
     """Translate ``read_ids`` into a pi-ai message list.
+
+    Pure read path: it never writes. An over-cap node was already spilled
+    to ``large_nodes/`` when it was recorded (see
+    :func:`openprogram.context.spill.spill_if_large`) and carries the
+    path in ``metadata.spilled``; the renderer only cites it.
 
     Args:
         graph:    the DAG to look up nodes in.
         read_ids: node ids to include, in chronological order (as
                   produced by :func:`render_context`).
-        history_dir: absolute path to the session's ``history/`` dir. When
-                  given, an over-cap node's full text is spilled to a sibling
-                  ``large_nodes/`` dir as a plain ``.txt`` file, and the
-                  truncation marker cites the exact line range + the
-                  ``read()`` call to fetch the elided middle. None → generic
-                  char-truncation marker.
+        history_dir: unused for spilling now; retained because callers
+                  pass it and it still identifies the session on disk.
+        manifest: a previously recorded ``render_manifest``. When given,
+                  its ``aged_before_seq`` overrides live aging policy so
+                  the historical render is reproduced exactly.
 
     Returns:
         list of provider ``Message`` objects (``UserMessage`` /
@@ -112,9 +124,18 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
             timestamp=ts,
         )
 
-    large_dir = _large_dir(history_dir)
-
-    aged_ids = _aged_code_ids(graph, read_ids)
+    aged_ids, _boundary = _aged_code_ids(graph, read_ids, manifest)
+    _spilled = [
+        (graph.nodes[nid].metadata or {})["spilled"].get("path", "")
+        for nid in read_ids
+        if nid in graph.nodes
+        and isinstance((graph.nodes[nid].metadata or {}).get("spilled"), dict)
+    ]
+    if manifest is None:
+        # Record what THIS render did, so the llm node about to be closed
+        # can stamp it and a later replay can reproduce these bytes.
+        from openprogram.context.aging import build_manifest, publish_manifest
+        publish_manifest(build_manifest(_boundary, _spilled))
 
     def _result_text_for(node: Call) -> str:
         """Rendered text of a code node's result, aged to a stub when the
@@ -125,8 +146,7 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
                 node.name or "", node.input,
                 node.output, bool((node.metadata or {}).get("is_error")),
             )
-        return _cap_node_text(_format_result(node.output),
-                              large_dir=large_dir, node_key=f"{node.seq:04d}-{node.id}")
+        return _elide(_format_result(node.output), node)
 
     messages: list = []
     # The most recent AssistantMessage emitted — a model-tool_use code
@@ -138,20 +158,19 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
         if node is None:
             continue
         ts_ms = int((node.created_at or 0) * 1000)
-        _nk = f"{node.seq:04d}-{node.id}"
 
         if node.is_user():
             last_assistant = None
             messages.append(UserMessage(
                 role="user",
                 content=[TextContent(type="text",
-                                      text=_cap_node_text(_text(node.output), large_dir=large_dir, node_key=_nk))],
+                                      text=_elide(_text(node.output), node))],
                 timestamp=ts_ms,
             ))
 
         elif node.is_llm():
             am = _assistant(
-                _cap_node_text(_text(node.output), large_dir=large_dir, node_key=_nk), ts_ms,
+                _elide(_text(node.output), node), ts_ms,
                 model=node.name or "",
             )
             last_assistant = am
@@ -204,82 +223,15 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
     return messages
 
 
-# Per-node render cap. render_range controls WHICH nodes are kept (node
-# count); this controls how big any ONE node's rendered text may be. Even
-# a few nodes can overflow the prompt if ONE carries a huge payload (a
-# web_search dump, a giant return value). Set high (32k chars) so normal
-# nodes (typically 7-32k) pass through untouched — this only fires on
-# abnormally large nodes, never on routine output. Env-overridable.
-_NODE_RENDER_CAP = int(os.environ.get("OPENPROGRAM_NODE_RENDER_CAP", "32000"))
+def _elide(text: str, node: Call) -> str:
+    """Shrink one over-cap node's text for the prompt. Read-only.
 
-
-_HEAD_LINES = 60   # lines kept from the top of an over-cap node
-_TAIL_LINES = 40   # lines kept from the bottom
-
-
-def _cap_node_text(text: str, cap: int = _NODE_RENDER_CAP,
-                   large_dir: "str | None" = None,
-                   node_key: "str | None" = None) -> str:
-    """Truncate one over-cap node, keeping head+tail LINES, and spill the
-    FULL text to a plain ``.txt`` file (one logical line per line) so the
-    agent can ``read`` the elided middle by line number.
-
-    Why a spilled .txt and not the node's history JSON: the JSON is a
-    single minified line, so ``read``'s offset/limit (line-based, cat -n
-    style) can't index into it. We write a real multi-line text file and
-    the marker tells the agent the exact line range + the read() call to
-    fetch it — standard "text + line numbers" retrieval.
-
-    Falls back to a plain char-truncation marker when no spill dir is
-    available (e.g. no session)."""
-    if cap <= 0 or len(text) <= cap:
-        return text
-
-    lines = text.splitlines()
-    # Only spill when we actually have a place to put it AND a key to name it.
-    if large_dir and node_key and len(lines) > (_HEAD_LINES + _TAIL_LINES):
-        try:
-            os.makedirs(large_dir, exist_ok=True)
-            path = os.path.join(large_dir, f"{node_key}.txt")
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(text)
-            total = len(lines)
-            head = "\n".join(lines[:_HEAD_LINES])
-            tail = "\n".join(lines[-_TAIL_LINES:])
-            mid_start = _HEAD_LINES + 1            # 1-based first elided line
-            mid_end = total - _TAIL_LINES          # 1-based last elided line
-            n_mid = mid_end - mid_start + 1
-            return (
-                f"{head}\n\n"
-                f"[... lines {mid_start}-{mid_end} ({n_mid:,} lines) of this "
-                f"node elided. Full text saved to {path} ({total:,} lines). "
-                f"To read the elided middle: "
-                f'read("{path}", offset={mid_start}, limit={n_mid}). ...]\n\n'
-                f"{tail}"
-            )
-        except Exception:
-            pass
-
-    # Fallback: char-level head/tail, generic pointer.
-    head_c = int(cap * 0.6)
-    tail_c = cap - head_c
-    elided = len(text) - head_c - tail_c
-    return (
-        text[:head_c]
-        + f"\n\n[... {elided:,} chars elided of {len(text):,} total in this "
-        f"node; full artifacts are saved as files in the working directory "
-        f"— read those for complete content. ...]\n\n"
-        + text[-tail_c:]
-    )
-
-
-def _large_dir(history_dir: "str | None") -> "str | None":
-    """Sibling ``large_nodes/`` dir next to the session's ``history/`` dir,
-    where over-cap node text is spilled as readable .txt. None when no
-    session dir is known (spill disabled → char-truncation fallback)."""
-    if not history_dir:
-        return None
-    return os.path.join(os.path.dirname(history_dir.rstrip("/")), "large_nodes")
+    The spill file was written when the node was recorded; here we only
+    read ``metadata.spilled`` to cite it. A node with no spill entry is
+    under the cap and passes through untouched.
+    """
+    from openprogram.context.spill import elide_spilled
+    return elide_spilled(text, (node.metadata or {}).get("spilled"))
 
 
 def _text(value: Any) -> str:
