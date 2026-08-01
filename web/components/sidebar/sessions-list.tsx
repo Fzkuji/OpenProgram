@@ -856,10 +856,11 @@ function ConvItem({
   // from pure white to the warm off-white (--text-primary) so it isn't
   // glaringly bright.
   const colorCls = active ? "bg-bg-hover text-text-primary" : "text-text-primary";
+  // 右缘渐隐常驻（短标题不受影响，长标题代替省略号），跑马灯滚动时
+  // 文字从渐隐区滑出来，观感和 claude.ai 一致。
   const maskOnHover =
-    "group-hover:[text-overflow:clip]" +
-    " group-hover:[-webkit-mask-image:linear-gradient(to_right,#000_70%,transparent_92%)]" +
-    " group-hover:[mask-image:linear-gradient(to_right,#000_70%,transparent_92%)]";
+    "[-webkit-mask-image:linear-gradient(to_right,#000_70%,transparent_96%)]" +
+    " [mask-image:linear-gradient(to_right,#000_70%,transparent_96%)]";
 
   // running → finishing edge animation (unchanged from before).
   const prevRunning = useRef(running);
@@ -874,6 +875,20 @@ function ConvItem({
     prevRunning.current = running;
   }, [running]);
   const stateCls = running ? "convRunning" : finishing ? "convFinishing" : "";
+
+  // 长标题悬停跑马灯（claude.ai 同款）：悬停 1s 后把溢出部分匀速滚出来，
+  // 移开立刻弹回。溢出量在 mouseenter 时实测，短标题 shift=0 不动。
+  const labelOuterRef = useRef<HTMLSpanElement | null>(null);
+  const labelInnerRef = useRef<HTMLSpanElement | null>(null);
+  const [marqueeShift, setMarqueeShift] = useState(0);
+  function measureMarquee() {
+    const outer = labelOuterRef.current;
+    const inner = labelInnerRef.current;
+    if (!outer || !inner) return;
+    const overflow = inner.scrollWidth - outer.clientWidth;
+    // 多滚 32% 容器宽，让结尾字符滚出右缘渐隐区、完整可读。
+    setMarqueeShift(overflow > 4 ? overflow + outer.clientWidth * 0.32 : 0);
+  }
 
   function startRename() {
     setDraft(conv.title || label);
@@ -899,6 +914,8 @@ function ConvItem({
       <div
         className={`${base} ${colorCls} ${stateCls}`}
         onClick={renaming ? undefined : onClick}
+        onMouseEnter={renaming ? undefined : measureMarquee}
+        onMouseLeave={() => setMarqueeShift(0)}
         onContextMenu={(e) => {
           e.preventDefault();
           setMenuOpen(true);
@@ -952,8 +969,25 @@ function ConvItem({
               text-text-bright outline-none"
           />
         ) : (
-          <span className={`flex-1 overflow-hidden truncate text-fs-base leading-[20px] ${maskOnHover}`}>
-            {label}
+          <span
+            ref={labelOuterRef}
+            className={`flex-1 overflow-hidden whitespace-nowrap text-fs-base leading-[20px] ${maskOnHover}`}
+          >
+            <span
+              ref={labelInnerRef}
+              className="inline-block whitespace-nowrap"
+              style={
+                marqueeShift > 0
+                  ? {
+                      transform: `translateX(-${marqueeShift}px)`,
+                      // 1s 悬停延迟后开滚，速度约 40px/s。
+                      transition: `transform ${Math.max(600, marqueeShift * 25)}ms linear 1000ms`,
+                    }
+                  : { transform: "translateX(0)", transition: "transform 200ms ease" }
+              }
+            >
+              {label}
+            </span>
           </span>
         )}
 

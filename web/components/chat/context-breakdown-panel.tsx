@@ -202,9 +202,8 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
     }));
   }, [data, text]);
 
-  const usedPct =
-    win > 0 ? (((data?.input_used || 0) + (win - (data?.free_space ?? win))) / win) : 0;
   const totalUsed = win - (data?.free_space ?? 0);
+  const usedPct = win > 0 ? totalUsed / win : 0;
 
   const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
 

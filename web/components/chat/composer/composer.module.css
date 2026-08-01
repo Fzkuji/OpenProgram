@@ -104,7 +104,8 @@
 .inputWrapper:focus-within {
   box-shadow: 0 0 0 1px var(--composer-ring-focus);
 }
-:global([data-theme="light"]) .inputWrapper {
+:global([data-theme="light"]) .inputWrapper,
+:global([data-theme="beige-light"]) .inputWrapper {
   background: color-mix(in srgb, var(--bg-input) 80%, transparent);
   /* 半透明底会把滚到输入框后面的消息气泡/头像透出来（发送瞬间
      尤其明显，看着像"头像和气泡错位"）——加毛玻璃把穿透内容糊掉。 */
@@ -112,7 +113,8 @@
   -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 0 0 1px var(--composer-ring), var(--shadow-sm);
 }
-:global([data-theme="light"]) .inputWrapper:focus-within {
+:global([data-theme="light"]) .inputWrapper:focus-within,
+:global([data-theme="beige-light"]) .inputWrapper:focus-within {
   box-shadow: 0 0 0 1px var(--composer-ring-focus), var(--shadow-sm);
 }
 /* fn-form / question / approval keep the OLD internal layout: the
