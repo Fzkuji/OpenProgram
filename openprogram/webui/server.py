@@ -1160,26 +1160,15 @@ async def _handle_ws_command(ws, cmd: dict):
 
 def create_app():
     """Create and return the FastAPI application."""
+    from contextlib import asynccontextmanager
+
     from fastapi import FastAPI
     from fastapi.responses import HTMLResponse, JSONResponse
 
-    app = FastAPI(title="Agentic Visualizer", docs_url=None, redoc_url=None)
-
-    # Auth v2 REST + SSE routes. Kept in a dedicated module so server.py
-    # doesn't accumulate more authentication state than it already has.
-    from ._auth_routes import router as _auth_router
-    app.include_router(_auth_router)
-
-    # Frontend: the Next.js static export (web/out/) is served by this
-    # same process — mount_frontend() is called LAST below so every API
-    # route registered here wins over the SPA catch-all.
-
-    @app.on_event("startup")
     async def _capture_loop():
         global _loop
         _loop = asyncio.get_running_loop()
 
-    @app.on_event("startup")
     async def _subscribe_event_bus():
         """webui 降级为总线订阅者（framework-evolution.md 步 4）。
 
@@ -1206,7 +1195,6 @@ def create_app():
         except Exception as e:  # noqa: BLE001
             _log(f"[startup] event-bus WS forwarder failed: {e}")
 
-    @app.on_event("startup")
     async def _reconcile_interrupted_runs():
         """Flip DAG nodes frozen at status='running' (a previous worker
         was killed mid-run) to 'error'. See webui/_exec_dag.py."""
@@ -1217,7 +1205,6 @@ def create_app():
         except Exception as e:  # noqa: BLE001
             _log(f"[startup] reconcile_interrupted_runs failed: {e}")
 
-    @app.on_event("startup")
     async def _rehydrate_message_store():
         """Pick up v2 messages.jsonl from disk on startup.
 
@@ -1234,7 +1221,6 @@ def create_app():
         except Exception as e:
             _log(f"[v2-restore] failed: {e}")
 
-    @app.on_event("startup")
     async def _start_mcp_servers():
         """Spawn every enabled MCP server from ``mcp_servers.json``.
 
@@ -1249,7 +1235,6 @@ def create_app():
         except Exception as e:  # noqa: BLE001
             _log(f"[mcp] startup failed: {type(e).__name__}: {e}")
 
-    @app.on_event("startup")
     async def _start_skills_watcher():
         """Watch the five skill source directories and push ``skills:changed``
         to all connected WS clients whenever a SKILL.md file is added, edited
@@ -1270,7 +1255,6 @@ def create_app():
         except Exception as e:  # noqa: BLE001
             _log(f"[skills-watcher] startup failed: {type(e).__name__}: {e}")
 
-    @app.on_event("startup")
     async def _start_plugin_autoupdate():
         """Periodically poll PyPI / npm for newer versions of installed
         plugins. Result is broadcast over WS as ``plugins:update_available``
@@ -1297,13 +1281,51 @@ def create_app():
         except Exception as e:  # noqa: BLE001
             _log(f"[plugin-autoupdate] startup failed: {type(e).__name__}: {e}")
 
-    @app.on_event("shutdown")
     async def _stop_mcp_servers():
         try:
             from openprogram.mcp import shutdown_mcp_servers
             await shutdown_mcp_servers()
         except Exception as e:  # noqa: BLE001
             _log(f"[mcp] shutdown failed: {type(e).__name__}: {e}")
+
+    # Startup runs in listed order, shutdown in reverse — same semantics
+    # the eight @app.on_event handlers had before the deprecated API was
+    # dropped. _capture_loop MUST stay first: everything downstream that
+    # broadcasts depends on the module-global _loop it captures.
+    _STARTUP = (
+        _capture_loop,
+        _subscribe_event_bus,
+        _reconcile_interrupted_runs,
+        _rehydrate_message_store,
+        _start_mcp_servers,
+        _start_skills_watcher,
+        _start_plugin_autoupdate,
+    )
+    _SHUTDOWN = (_stop_mcp_servers,)
+
+    @asynccontextmanager
+    async def _lifespan(_app):
+        for hook in _STARTUP:
+            await hook()
+        yield
+        for hook in reversed(_SHUTDOWN):
+            await hook()
+
+    app = FastAPI(
+        title="Agentic Visualizer",
+        docs_url=None,
+        redoc_url=None,
+        lifespan=_lifespan,
+    )
+
+    # Auth v2 REST + SSE routes. Kept in a dedicated module so server.py
+    # doesn't accumulate more authentication state than it already has.
+    from ._auth_routes import router as _auth_router
+    app.include_router(_auth_router)
+
+    # Frontend: the Next.js static export (web/out/) is served by this
+    # same process — mount_frontend() is called LAST below so every API
+    # route registered here wins over the SPA catch-all.
 
     # The previous boot-time refresh of `claude_models.json` relied on
     # the now-removed Claude Code CLI runtime to enumerate models. The

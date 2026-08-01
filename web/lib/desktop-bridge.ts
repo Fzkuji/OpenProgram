@@ -45,6 +45,7 @@ import {
   recoverTransferJournalEntry,
   writeTransferJournal,
 } from "@/lib/tab-transfer-journal";
+import "@/lib/net/ws-events";
 import { sessionDraftStorageKey } from "@/lib/session-draft-persistence";
 import type {
   ChatTransferState,
@@ -480,11 +481,11 @@ export function installDesktopMenuHandlers(): void {
   // web tab，并经同一条 WS 回执 webtab_result(req_id)。非桌面客户端不装
   // 本 handler（上面 bridge 为空即返回），该消息自然被忽略。
   window.addEventListener("op:ws-message", (e) => {
-    const detail = (e as CustomEvent).detail as
-      | { type?: string; data?: { op?: string; url?: string; req_id?: string } }
-      | undefined;
+    const detail = e.detail;
     if (detail?.type !== "webtab.command") return;
-    const d = detail.data;
+    const d = detail.data as
+      | { op?: string; url?: string; req_id?: string }
+      | undefined;
     if (!d?.req_id || (d.op !== "open" && d.op !== "active")) return;
     const ws = (window as unknown as { ws?: WebSocket }).ws;
     if (ws?.readyState !== WebSocket.OPEN) return;

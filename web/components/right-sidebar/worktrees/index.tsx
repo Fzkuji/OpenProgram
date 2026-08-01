@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
+import "@/lib/net/ws-events";
 import { useSessionStore } from "@/lib/session-store";
 
 import { WorktreeItem } from "./worktree-item";
@@ -32,22 +33,6 @@ import {
   wsSend,
   type Worktree,
 } from "./types";
-
-interface WorktreesMessageDetail {
-  type: string;
-  data: Record<string, unknown>;
-}
-
-interface WorktreeStatusDetail {
-  worktree_id?: string;
-  status?: string;
-  source_repo?: string | null;
-  branch_name?: string | null;
-  parent_session?: string | null;
-  merge_sha?: string | null;
-  error?: string | null;
-  worktree?: Record<string, unknown> | null;
-}
 
 export function WorktreesPanel() {
   const { t } = useTranslation();
@@ -113,9 +98,8 @@ export function WorktreesPanel() {
   // list. We route through the same `op:worktree-message` window
   // event family as branches uses — emitted by use-ws.ts dispatch.
   useEffect(() => {
-    const onMsg = (e: Event) => {
-      const ce = e as CustomEvent<WorktreesMessageDetail>;
-      const det = ce.detail;
+    const onMsg = (e: WindowEventMap["op:worktree-message"]) => {
+      const det = e.detail;
       if (!det) return;
       if (det.type !== "worktrees_list") return;
       const replySid = det.data?.session_id as string | null | undefined;
@@ -125,9 +109,9 @@ export function WorktreesPanel() {
       const rows = (det.data?.worktrees as Worktree[] | undefined) || [];
       setWorktrees(rows);
     };
-    window.addEventListener("op:worktree-message", onMsg as EventListener);
+    window.addEventListener("op:worktree-message", onMsg);
     return () => {
-      window.removeEventListener("op:worktree-message", onMsg as EventListener);
+      window.removeEventListener("op:worktree-message", onMsg);
     };
   }, []);
 
@@ -136,9 +120,8 @@ export function WorktreesPanel() {
   // full row (`worktree` field) so we can splice it in directly
   // without another round-trip.
   useEffect(() => {
-    const onStatus = (e: Event) => {
-      const ce = e as CustomEvent<WorktreeStatusDetail>;
-      const det = ce.detail;
+    const onStatus = (e: WindowEventMap["op:worktree-status"]) => {
+      const det = e.detail;
       if (!det || !det.worktree_id) return;
       const row = det.worktree as unknown as Worktree | undefined;
       setWorktrees((cur) => {
@@ -168,9 +151,9 @@ export function WorktreesPanel() {
         return next;
       });
     };
-    window.addEventListener("op:worktree-status", onStatus as EventListener);
+    window.addEventListener("op:worktree-status", onStatus);
     return () => {
-      window.removeEventListener("op:worktree-status", onStatus as EventListener);
+      window.removeEventListener("op:worktree-status", onStatus);
     };
   }, [sessionId]);
 

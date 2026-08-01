@@ -196,11 +196,8 @@ exclude = ["openprogram.functions.agentics.*"]
     # Bundled skills discovered by skills/loader.py:_bundled_dir().
     "skills_bundled/*/SKILL.md",
     "skills_bundled/*/*.md",
-    # Web UI: legacy static pages still mounted, plus the Functions and
-    # Programs page metadata read by webui/routes/tree.py.
-    "webui/static/*.html",
-    "webui/static/css/*.css",
-    "webui/static/js/*.js",
+    # Web UI: Functions and Programs page metadata read by
+    # webui/routes/tree.py.
     "webui/functions_meta.json",
     "webui/programs_meta.json",
 ]

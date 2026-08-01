@@ -180,8 +180,6 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`plans/proactive-implementation.md`](plans/proactive-implementation.md) | 主动性层实施计划 |
 | [`plans/cache-control-passthrough.md`](plans/cache-control-passthrough.md) | Anthropic `cache_control` 逐块透传（已落地） |
 | [`plans/2026-07-08-credential-connection-unification.md`](plans/2026-07-08-credential-connection-unification.md) | 凭证/连接统一迁移 |
-| [`plans/2026-07-08-enabled-models-migration.md`](plans/2026-07-08-enabled-models-migration.md) | Enabled-models 迁移 |
-| [`plans/2026-07-08-provider-self-contained-migration.md`](plans/2026-07-08-provider-self-contained-migration.md) | Provider 自包含迁移 |
 
 ## 已删除的文档
 

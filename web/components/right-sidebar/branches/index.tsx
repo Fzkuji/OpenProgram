@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
+import "@/lib/net/ws-events";
 import { useSessionStore } from "@/lib/session-store";
 
 import { BranchItem } from "./branch-item";
@@ -24,7 +25,6 @@ import {
   wsSend,
   type BranchRow,
   type BranchWindow,
-  type TaskStatusDetail,
 } from "./types";
 
 export function BranchesPanel() {
@@ -80,9 +80,8 @@ export function BranchesPanel() {
   // flip the branch to ``finishing`` for the wipe keyframe and then
   // drop it from the map.
   useEffect(() => {
-    const onTaskStatus = (e: Event) => {
-      const ce = e as CustomEvent<TaskStatusDetail>;
-      const d = ce.detail || {};
+    const onTaskStatus = (e: WindowEventMap["op:task-status"]) => {
+      const d = e.detail || {};
       const tid = d.task_id;
       if (!tid) return;
       const status = (d.status || "").toLowerCase();
@@ -127,9 +126,9 @@ export function BranchesPanel() {
         return next;
       });
     };
-    window.addEventListener("op:task-status", onTaskStatus as EventListener);
+    window.addEventListener("op:task-status", onTaskStatus);
     return () => {
-      window.removeEventListener("op:task-status", onTaskStatus as EventListener);
+      window.removeEventListener("op:task-status", onTaskStatus);
     };
   }, []);
 
@@ -143,9 +142,8 @@ export function BranchesPanel() {
       session_id: sessionId,
       status_filter: ["pending", "queued", "running"],
     });
-    const onMsg = (e: Event) => {
-      const ce = e as CustomEvent<{ type: string; data: Record<string, unknown> }>;
-      const det = ce.detail;
+    const onMsg = (e: WindowEventMap["op:task-message"]) => {
+      const det = e.detail;
       if (!det) return;
       if (det.type !== "tasks_list") return;
       const tasks = (det.data?.tasks as Array<Record<string, unknown>>) || [];
@@ -172,9 +170,9 @@ export function BranchesPanel() {
         return m;
       });
     };
-    window.addEventListener("op:task-message", onMsg as EventListener);
+    window.addEventListener("op:task-message", onMsg);
     return () => {
-      window.removeEventListener("op:task-message", onMsg as EventListener);
+      window.removeEventListener("op:task-message", onMsg);
     };
   }, [sessionId]);
 

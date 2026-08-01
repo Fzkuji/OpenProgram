@@ -157,8 +157,22 @@ export function initOverlayScrollbars(): void {
   if (started) return;
   started = true;
   scan(document);
-  // Re-scan periodically to pick up dynamically-added containers.
-  setInterval(() => scan(document), 2000);
+  // Pick up dynamically-added containers the moment they land in the DOM.
+  // `install` is idempotent (WeakSet guard), so rescanning the whole
+  // document on a batch of mutations costs one querySelectorAll — cheaper
+  // and more responsive than the 2s poll this replaces. rAF-coalesced so a
+  // burst of React commits triggers a single scan.
+  if (typeof MutationObserver !== "undefined") {
+    let scanPending = false;
+    new MutationObserver(() => {
+      if (scanPending) return;
+      scanPending = true;
+      requestAnimationFrame(() => {
+        scanPending = false;
+        scan(document);
+      });
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
   window.addEventListener("resize", () => {
     document.querySelectorAll(".scroll-overlay").forEach((el) => {
       el.dispatchEvent(new Event("scroll"));

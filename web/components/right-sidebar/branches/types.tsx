@@ -39,21 +39,13 @@ export const DEL_SVG = <XIcon size={16} />;
 
 
 // Per-session map of task_id → {target_head, status} mirrored from
-// the ``op:task-status`` window event. We keep tasks in non-terminal
-// state ('queued' / 'running') in the map so the panel renders a
-// branch as 'running'; when a terminal status arrives we flip the
-// branch to 'finishing' for ~1.2s (matches the convFinishingWipe
-// keyframe) before dropping it. Implementation lives inside the
-// component so the state survives across panel mounts.
-export interface TaskStatusDetail {
-  task_id?: string;
-  session_id?: string;
-  target_branch_head_id?: string | null;
-  head_id?: string | null;
-  status?: string;
-  label?: string | null;
-  subject?: string | null;
-}
+// the ``op:task-status`` window event (payload type: TaskStatusDetail
+// in @/lib/net/ws-events). We keep tasks in non-terminal state
+// ('queued' / 'running') in the map so the panel renders a branch as
+// 'running'; when a terminal status arrives we flip the branch to
+// 'finishing' for ~1.2s (matches the convFinishingWipe keyframe)
+// before dropping it. Implementation lives inside the component so
+// the state survives across panel mounts.
 
 // Synthetic prefix for "pending branch" rows the panel renders while
 // the task is in flight but no real assistant_msg_id exists yet.

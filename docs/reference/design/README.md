@@ -184,8 +184,6 @@ Extension gating design + reference comparison — see
 | [`plans/proactive-implementation.md`](plans/proactive-implementation.md) | Proactive layer implementation plan |
 | [`plans/cache-control-passthrough.md`](plans/cache-control-passthrough.md) | Per-block passthrough of Anthropic `cache_control` (landed) |
 | [`plans/2026-07-08-credential-connection-unification.md`](plans/2026-07-08-credential-connection-unification.md) | Credential/connection unification migration |
-| [`plans/2026-07-08-enabled-models-migration.md`](plans/2026-07-08-enabled-models-migration.md) | Enabled-models migration |
-| [`plans/2026-07-08-provider-self-contained-migration.md`](plans/2026-07-08-provider-self-contained-migration.md) | Provider self-contained migration |
 
 ## Removed docs
 

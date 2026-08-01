@@ -10,6 +10,11 @@
  */
 import { useEffect } from "react";
 
+import type {
+  PermissionRulesDetail,
+  TaskStatusDetail,
+  WorktreeStatusDetail,
+} from "@/lib/net/ws-events";
 import type { PendingDecision } from "@/lib/session-store";
 import {
   loadSessionData,
@@ -149,7 +154,9 @@ export function useWS(): void {
         case "permission_rules": {
           // 权限规则面板刷新：把 session 层规则派给 PermissionsSection。
           window.dispatchEvent(
-            new CustomEvent("op:permission-rules", { detail: d }),
+            new CustomEvent("op:permission-rules", {
+              detail: (d ?? {}) as PermissionRulesDetail,
+            }),
           );
           return true;
         }
@@ -193,7 +200,9 @@ export function useWS(): void {
           // changes; this event is purely for the in-flight badge.
           try {
             window.dispatchEvent(
-              new CustomEvent("op:task-status", { detail: d }),
+              new CustomEvent("op:task-status", {
+                detail: (d ?? {}) as TaskStatusDetail,
+              }),
             );
           } catch {
             /* defensive: dispatchEvent should not throw */
@@ -227,7 +236,9 @@ export function useWS(): void {
           // row list without an extra round-trip.
           try {
             window.dispatchEvent(
-              new CustomEvent("op:worktree-status", { detail: d }),
+              new CustomEvent("op:worktree-status", {
+                detail: (d ?? {}) as WorktreeStatusDetail,
+              }),
             );
           } catch {
             /* defensive */
