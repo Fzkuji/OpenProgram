@@ -856,14 +856,15 @@ function ConvItem({
   // from pure white to the warm off-white (--text-primary) so it isn't
   // glaringly bright.
   const colorCls = active ? "bg-bg-hover text-text-primary" : "text-text-primary";
-  // 静止：右缘渐隐（长标题代替省略号）。滚动中：文字从左边滚出去，
-  // 渐隐罩换到左缘，让结尾滚到右对齐时完全清晰。
-  const maskIdle =
-    "[-webkit-mask-image:linear-gradient(to_right,#000_70%,transparent_96%)]" +
-    " [mask-image:linear-gradient(to_right,#000_70%,transparent_96%)]";
+  // 渐隐只在悬停时出现：它的职责是给右缘的 ⋮ 按钮腾出可读的底，
+  // 静止未悬停时既没有按钮也不该有渐隐。滚动中右缘渐隐保持（按钮
+  // 还在），左缘再加一段渐隐承接滚出去的文字。
+  const maskHover =
+    "group-hover:[-webkit-mask-image:linear-gradient(to_right,#000_70%,transparent_92%)]" +
+    " group-hover:[mask-image:linear-gradient(to_right,#000_70%,transparent_92%)]";
   const maskScrolling =
-    "[-webkit-mask-image:linear-gradient(to_right,transparent_1%,#000_14%)]" +
-    " [mask-image:linear-gradient(to_right,transparent_1%,#000_14%)]";
+    "[-webkit-mask-image:linear-gradient(to_right,transparent_1%,#000_10%,#000_70%,transparent_92%)]" +
+    " [mask-image:linear-gradient(to_right,transparent_1%,#000_10%,#000_70%,transparent_92%)]";
 
   // running → finishing edge animation (unchanged from before).
   const prevRunning = useRef(running);
@@ -894,12 +895,12 @@ function ConvItem({
       if (!outer || !inner) return;
       const w = outer.clientWidth;
       const sw = inner.scrollWidth;
-      // 尾巴落进右缘渐隐区（约 72% 起淡）就触发，不必真溢出。
-      // 滚动量：真溢出 → 恰好右对齐（结尾清晰，不再多滚）；
-      // 只是被渐隐 → 轻推到尾巴离开渐隐区为止。
-      const fadeStart = w * 0.72;
-      if (sw <= fadeStart) return;
-      setMarqueeShift(sw > w ? sw - w : sw - fadeStart);
+      // 右缘要给 ⋮ 按钮 + 渐隐留 36px：尾巴会撞进这个保留区的标题
+      // 都滚，滚到尾巴正好停在保留区左侧（不与按钮重叠，也不钻进
+      // 渐隐），不再多滚。
+      const reserve = 36;
+      const shift = sw - (w - reserve);
+      if (shift > 4) setMarqueeShift(shift);
     }, 1000);
   }
   function stopMarquee() {
@@ -990,7 +991,7 @@ function ConvItem({
         ) : (
           <span
             ref={labelOuterRef}
-            className={`flex-1 overflow-hidden whitespace-nowrap text-fs-base leading-[20px] ${marqueeShift > 0 ? maskScrolling : maskIdle}`}
+            className={`flex-1 overflow-hidden whitespace-nowrap text-fs-base leading-[20px] ${marqueeShift > 0 ? maskScrolling : maskHover}`}
           >
             <span
               ref={labelInnerRef}
