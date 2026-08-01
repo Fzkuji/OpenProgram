@@ -12,6 +12,6 @@ Agent execution runtime — the run loop, worktrees, async tasks, streaming/resu
 - [`operations/multi-agent-revert-todo.md`](operations/multi-agent-revert-todo.md)
 - [`operations/file-management.md`](operations/file-management.md)
 - [`runtime.md`](runtime.md)
-- [`session/`](session/) — Session 子系统：数据模型、存储、命名、列举、生命周期、广播
+- [`session/`](session/) — the session subsystem: data model, storage, naming, listing, lifecycle, broadcast
 - [`operations/streaming-resume.md`](operations/streaming-resume.md)
 - [`operations/user-input-requests.md`](operations/user-input-requests.md) — pause a running function to ask the user (`runtime.ask`/`confirm`), question registry + WS/REST protocol + subprocess bridge

@@ -2,7 +2,7 @@
 
 一个会话除主工作目录（绑定项目路径）外，可挂任意多个"额外工作目录"。语义对齐 Claude Code 的 "Add another folder"（`additionalWorkingDirectories`）：**额外目录只扩权限围栏和模型认知，不改变主 cwd，不改变会话存储位置**。
 
-写作时间 2026-07。现状基线：`refactor/enabled-models` 分支，项目路径 → 会话 cwd 链路已修好（`project_workdir_for`，见 `docs/reference/design/runtime/permission-model.md` §3.5 围栏部分）。
+项目路径 → 会话 cwd 的链路由 `project_workdir_for` 承担，围栏部分见 `docs/reference/design/runtime/permission-model.md` §3.5。
 
 ---
 
@@ -23,12 +23,12 @@
 
 扩展点（未来要做时从哪下手）：条目从 `str` 升级为带属性对象时，只需改 `_as_str_list` 的解析与 `check_path_safety` 的消费端，存储 schemaless 无迁移；MCP roots / 多根 IDE 工作区如需接入，同一字段即是唯一权威。
 
-## 2. 现状：链路已通，缺入口
+## 2. 数据链路
 
-`additional_working_dirs` 全链路已存在，**唯独没有任何写入口**：
+`additional_working_dirs` 从会话配置一路流到路径围栏：
 
 ```
-（缺）UI / ws action
+UI / ws action
    ↓
 SessionRunConfig.additional_working_dirs        session_config.py:61（字段）:79（load）:127（save）
    ↓ load_session_run_config
@@ -38,15 +38,13 @@ TurnRequest.additional_working_dirs             dispatcher/types.py:112
 _path_is_safe → check_path_safety(path, dirs)   internals/_approval.py:72-82 → functions/tools/file_safety.py:63
 ```
 
-`save_session_run_config(..., additional_working_dirs=...)` 已支持该参数（None = 不动，聊天路径不会误清）。
+`save_session_run_config(..., additional_working_dirs=...)` 接受该参数，传 None 表示不改动，聊天路径因此不会误清已有目录。
 
-连带缺陷（本设计一并修）：`_approval.py:81` 的围栏基准是 `os.getcwd()`（服务器进程启动目录 = OpenProgram 仓库），而 dispatcher 每 turn 已把真实 cwd（worktree 或项目路径）绑进 `current_worktree_path` ContextVar（`dispatcher/__init__.py:387-403`）。两者不一致 → 选了项目后，模型改项目内文件被围栏判为"工作区外"，acceptEdits 不放行、多弹审批。
+## 3. 各环节设计
 
-## 3. 改动清单
+### 3.1 后端：围栏基准
 
-### 3.1 后端：围栏基准修正
-
-`openprogram/agent/internals/_approval.py:81`：
+围栏的工作目录集在 `openprogram/agent/internals/_approval.py:81` 组装：
 
 ```python
 from openprogram.worktree.context import current_worktree_path
@@ -54,7 +52,7 @@ work_dirs = [current_worktree_path() or os.getcwd(),
              *getattr(req, "additional_working_dirs", [])]
 ```
 
-与 system prompt 的 cwd（`_model_tools.py:322` 同一来源）同源——模型被告知的 cwd 和围栏认可的 cwd 永远是同一个目录。`worktree.context` 只依赖 stdlib，无循环 import。
+基准取 `current_worktree_path()`（dispatcher 每 turn 把真实 cwd——worktree 或项目路径——绑进这个 ContextVar，见 `dispatcher/__init__.py:387-403`），进程 `getcwd` 只作回落。这与 system prompt 的 cwd 同源（`_model_tools.py:322`）——模型被告知的 cwd 和围栏认可的 cwd 永远是同一个目录。若二者不一致，模型改项目内文件会被围栏判为"工作区外"，acceptEdits 不放行、反复弹审批。`worktree.context` 只依赖 stdlib，无循环 import。
 
 ### 3.2 后端：ws action `set_working_dirs`
 
@@ -72,18 +70,18 @@ async def handle_set_working_dirs(ws, cmd: dict):
 
 ### 3.3 后端：`session_loaded` 回带 + 首条消息携带
 
-- `ws_actions/session.py:676-681` 的 `data.settings` 追加 `additional_working_dirs`——刷新/换端后前端能恢复列表。
+- `ws_actions/session.py:676-681` 的 `data.settings` 带上 `additional_working_dirs`——刷新/换端后前端据此恢复列表。
 - `ws_actions/chat.py` 的 `handle_chat`：`cmd.get("additional_working_dirs")` 非 None 时传入 `save_session_run_config`。这是草稿会话（尚无 session_id）在首条消息落地目录的唯一通道，与 `permission_mode` 等既有字段同一模式。
 
 ### 3.4 后端：system prompt 告知模型
 
-`with_tool_runtime_prompt` 加可选参 `additional_working_dirs: list[str] | None = None`，dispatcher 调用处传 `req.additional_working_dirs`。在 "Current working directory" 行后追加（有则加，空则无此行）：
+`with_tool_runtime_prompt` 接受可选参 `additional_working_dirs: list[str] | None = None`，dispatcher 调用处传 `req.additional_working_dirs`。在 "Current working directory" 行后列出（有则出现，空则无此行）：
 
 ```
 - Additional working directories (equally writable): /a, /b
 ```
 
-两份副本（`internals/_model_tools.py` 与 `agent/_model_tools.py`）同步改，维持文件头 "kept in sync" 约定。
+`internals/_model_tools.py` 与 `agent/_model_tools.py` 两份副本保持一致，遵循文件头的 "kept in sync" 约定。
 
 ### 3.5 前端：ProjectBadge 菜单内的目录区
 
@@ -108,9 +106,9 @@ async def handle_set_working_dirs(ws, cmd: dict):
 跟随既有文件风格：
 - `tests/unit/test_session_config.py`：`additional_working_dirs` save/load 往返（含 None 不动、`_as_str_list` 清洗）。
 - `tests/unit/test_permission_rules.py`：`_path_is_safe` 三例——额外目录内放行、目录外拦、ContextVar 绑定的项目 cwd 内放行（monkeypatch `current_worktree_path`）。
-- ws action：新增 `tests/unit/test_ws_working_dirs.py`——合法写入+广播、非目录整帧拒绝、`session_loaded` 回带。
+- `tests/unit/test_ws_working_dirs.py`：ws action 的合法写入+广播、非目录整帧拒绝、`session_loaded` 回带。
 
-## 4. 数据流总览（改后）
+## 4. 数据流总览
 
 ```
 ProjectBadge 菜单 ＋添加文件夹
@@ -129,7 +127,19 @@ TurnRequest.additional_working_dirs
 
 ## 5. 关键性质（改动时守住）
 
+以下四条是设计的红线，任何改动都要保持：
+
 - 额外目录**只入围栏与提示词**——任何把它接到 cwd 切换、存储位置的改动都违反 §1 语义表。
 - 围栏基准与 system prompt 的 cwd 必须**同源**（`current_worktree_path()` 优先）——模型认知与权限判定不一致会造成"模型以为能写、围栏拦下"的循环审批。
 - `set_working_dirs` 是整表替换且校验失败整帧拒绝——不存在部分写入的中间态。
 - 存储 schemaless（session meta），旧会话读回缺字段 → 空列表，无迁移。
+
+---
+
+## 附：实现状态
+
+`SessionRunConfig.additional_working_dirs` 字段、`load_session_run_config` →
+`TurnRequest` → `_path_is_safe` 的读取链路、以及
+`save_session_run_config(..., additional_working_dirs=...)` 的写入参数均已存在。
+§3.2 的 `set_working_dirs` ws action 与 §3.5 的 ProjectBadge 菜单目录区是本设计新增的
+写入口。

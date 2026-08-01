@@ -1,6 +1,6 @@
 # 权限系统设计（Permission System Design）
 
-本文是 OpenProgram 权限系统的**实现级设计文档**，描述当前 `main` 的真实实现：一个不了解代码的人读完，就知道权限系统是什么、有哪些权限、后端怎么写、前端怎么写、代码写在哪些文件。每个数据结构给字段定义，每个关键函数给签名，每个 WS 帧给字段，每个前端组件给结构。所有引用带 `file:line`，指向当前 `main` 工作区。
+本文是 OpenProgram 权限系统的**实现级设计文档**：一个不了解代码的人读完，就知道权限系统是什么、有哪些权限、后端怎么写、前端怎么写、代码写在哪些文件。每个数据结构给字段定义，每个关键函数给签名，每个 WS 帧给字段，每个前端组件给结构。所有引用带 `file:line`。
 
 阅读顺序：**① 概览**（是什么、怎么运作）→ **② 有哪些权限**（模式与规则的定义）→ **③ 后端怎么实现**（判定、匹配、存储）→ **④ 前端怎么实现**（审批卡片、模式选择、规则管理）→ **⑤ 值守**（一个正交机制）→ **⑥ 关键约束与代码地图** → **⑦ 不做的边界**。
 
@@ -370,7 +370,7 @@ def check_path_safety(path: str, working_dirs=None) -> dict:
 
 **额外工作目录**：`SessionRunConfig.additional_working_dirs`（§3.6）扩展路径安全的工作目录集。`_path_is_safe` 组装 `work_dirs = [current_worktree_path() or os.getcwd(), *req.additional_working_dirs]`（`:85-86`）传给 `check_path_safety`——围栏基准与 system prompt 的 cwd 同源（dispatcher 每 turn 把真实 worktree/项目路径绑进 `current_worktree_path`，进程 `getcwd` 只是回落）。该字段从 session meta 经 `TurnRequest.additional_working_dirs`（`dispatcher/types.py:112`）流下，填充点在 `webui/_execute/chat.py:259`、`channels/_conversation.py:243`。用户可加"这个目录也算安全区"；缺它则只认 cwd。
 
-**尚未接线**：`is_dangerous_allow_rule(tool_name, pattern)`（`file_safety.py:94-100`，用 `DANGEROUS_BASH_PATTERNS` 判一条 allow 规则在 acceptEdits 下会不会放过危险命令）已实现但**无调用方**——"进 acceptEdits 时临时剥离危险 allow 规则"目前不启用。当前也**没有** bypass 免疫的 safetyCheck 强制审批（`tool_requires_approval` 仍是 `(bool, reason)` 二元组，不带 `classifier_approvable`）：路径安全只在 acceptEdits 分支起作用，bypass 下写危险文件不会被强制拦。若要补，见 §7 末尾。
+**未启用的能力**：`is_dangerous_allow_rule(tool_name, pattern)`（`file_safety.py:94-100`，用 `DANGEROUS_BASH_PATTERNS` 判一条 allow 规则在 acceptEdits 下会不会放过危险命令）有实现但无调用方——"进 acceptEdits 时临时剥离危险 allow 规则"不启用。系统也不提供 bypass 免疫的 safetyCheck 强制审批（`tool_requires_approval` 是 `(bool, reason)` 二元组，不带 `classifier_approvable`）：路径安全只在 acceptEdits 分支起作用，bypass 下写危险文件不会被强制拦。补充方案见 §7 末尾。
 
 ### 3.6 存储：session meta schemaless + SessionRunConfig
 
@@ -542,18 +542,16 @@ hook 返回 `{mode, options, set}`。
 | `auto` | Auto mode | 自动判定 |
 | `bypass` | Bypass permissions | 绕过权限 |
 
-**存储：按会话隔离，不再有全局值。** 早先的全局 `composerSettings.permission_mode` 在
-state-layer 阶段一被删除，现在读的是 `useBoundComposerSettings().permission_mode`
+**存储：按会话隔离，无全局值。** 读的是 `useBoundComposerSettings().permission_mode`
 （`use-permission-mode.ts:48`）——绑定当前会话，切会话即换值。
 
-**发送路径：帧里的 `permission_mode` 是一条死线。** 文档早先描述的
-"发送时把 mode 加进 chat 帧" **已经不成立**：真正构帧的
-`composer/legacy-send.ts:136-238`（`sendChatMessage`）里**根本没有 `permission_mode` 字段**——
+**聊天帧不承载 `permission_mode`。** 构帧的
+`composer/legacy-send.ts:136-238`（`sendChatMessage`）不含 `permission_mode` 字段——
 帧只带 text / thinking / tools / web_search / service_tier / attachments 等。
-后端 `webui/ws_actions/chat.py:312` 仍在 `cmd.get("permission_mode")`，但没有任何前端会填它，
-所以这一路恒为 `None`。**这是一条留着没拆的死线，不是生效机制。**
+后端 `webui/ws_actions/chat.py:312` 仍读 `cmd.get("permission_mode")`，但没有任何前端填它，
+这一路恒为 `None`，属未清理的无效代码，不是生效机制。
 
-**实际生效的写入方**只有两条，都不经聊天帧：
+**生效的写入方**只有两条，都不经聊天帧：
 
 - **会话设置**：改会话的 `SessionRunConfig.permission_mode`（`session_config.py`），落到 session meta。
 - **项目配置**：项目级默认档，由项目 settings 提供。
@@ -570,7 +568,7 @@ state-layer 阶段一被删除，现在读的是 `useBoundComposerSettings().per
 
 后端 WS handler（`webui/ws_actions/session.py:751-783`）都是**项目级**：`_resolve_project_id`（`:718-730`）支持请求直接带 `project_id`（Projects 页知道项目），或只带 `session_id` 时经 `project_for_session` 反查项目（composer 路径）；`_mutate_project_rule` 增删后 `save_project_settings` + 广播。
 
-> 已删除：settings 的 Permissions tab、chat composer 里的 "Manage rules…" modal。规则不再在会话/全局 settings 里管，统一落项目 + Projects 页。
+> 规则只在 Projects 页管理：settings 没有 Permissions tab，chat composer 也没有 "Manage rules…" 入口。规则统一落项目层。
 
 ---
 

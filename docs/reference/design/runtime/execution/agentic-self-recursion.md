@@ -1,7 +1,8 @@
 # Self-Recursion Guard for Agentic Functions
 
-> Current state: changed from "deny to hide the tool" to "situational guidance + recursion-depth ceiling as a backstop" (commit `1f6f5fce`).
-> This document maps to the real code line by line via file:line, so you can check along.
+> An agentic function guards against calling itself through situational guidance,
+> with a recursion-depth ceiling as a backstop. This document maps to the real code
+> line by line via file:line, so you can check along.
 > Related code:
 > - `openprogram/agentic_programming/function.py`
 > - `openprogram/agentic_programming/runtime.py`
@@ -22,20 +23,20 @@ Two triggers compound:
 
 2. **The model sees the docstring match the task and mistakenly thinks it should call it.** The model sees `wiki_agent`'s tool description ("Maintain a wiki vault — route to ingest…") match the current task exactly, decides it should route to `wiki_agent` → calls itself → enters another bare exec, sees itself again → infinite recursion.
 
-Real-world root-cause record (a 7-level nesting instance): `docs/reference/design/TODO-doc-code-gaps.md` §1. The session log's `context_tree` shows 7 levels of nesting (`4d76→0c07→0964→c6f9→f1c9→4379→8746→100c`).
+A worked root-cause example of 7-level nesting is in `docs/reference/design/TODO-doc-code-gaps.md` §1; the session log's `context_tree` there shows the chain `4d76→0c07→0964→c6f9→f1c9→4379→8746→100c`.
 
 ---
 
 ## 2. Design philosophy: why "guidance" instead of "deny"
 
-**Let the model understand its own situation and decide on its own not to call, rather than forcibly hiding the function from its own tool list.**
+**The model understands its own situation and decides on its own not to call, rather than having the function hidden from its tool list.**
 
-Problems with the old deny approach (the wrapper pushes the function's own name into `_current_tool_policy["deny"]` so the inner model can't see itself):
+The alternative is a deny approach, where the wrapper pushes the function's own name into `_current_tool_policy["deny"]` so the inner model cannot see itself. Two things argue against it:
 
-- The model never learns situational judgment — it doesn't know "I'm inside X"; it just sees "X isn't in the tool list." In a different context (deny didn't take effect, or a cross-function cycle) it will make the same mistake.
-- It violates the philosophy — the framework decides for the model instead of giving the model enough information to make the right decision itself. This is the direction the user explicitly asked for: the model should know where it is and decide on its own not to call.
+- The model never learns situational judgment. It does not know "I'm inside X"; it only sees that X is not in the tool list. In a context where deny does not apply, such as a cross-function cycle, it makes the same mistake.
+- The framework decides for the model instead of giving the model enough information to decide correctly itself.
 
-The new approach turns "don't call yourself" into a piece of situational information the model can understand (you are inside X, calling X = infinite recursion); the model then decides on its own not to call. At the same time it keeps a **depth ceiling** independent of the model's judgment as a loss-limiting backstop.
+Guidance turns "don't call yourself" into situational information the model can act on: you are inside X, and calling X re-enters where you are. The model then decides on its own not to call. A **depth ceiling** independent of the model's judgment stays in place as a loss-limiting backstop.
 
 ---
 
@@ -60,13 +61,13 @@ When `fn_doc` is non-empty, the docstring is **demoted to the end** (`text += f"
 - standalone fallback path (no store): `runtime.py:1518-1532`, takes the deepest function name from `_recursion_depth` (`max(_depths, key=_depths.get)`, `runtime.py:1525`), calls `_situational_prefix(_cur_fn, "")` (no doc), and likewise prepends before `content` (`runtime.py:1532`).
 - The system prefix is assembled separately (`runtime.py:1535-1539`: `self.system` + `_skills_block()`); **the situational prompt does not go into system**.
 
-**Why put it in the user turn, not in system:** Decision 6 (`session-dag.md`) requires the whole project to share a **unified and constant** system prompt (identity + project memory + unified tool list + skills) to maximize KV cache hits — change the prefix and a long context misses entirely afterward, blowing up cost. The situational prompt varies **per function, per call site** (each function name/docstring differs); putting it in system would break the constant prefix. Putting it at the start of the user turn lets the model see it without touching the system prefix.
+**Why put it in the user turn, not in system:** the whole project shares a **unified and constant** system prompt (identity + project memory + unified tool list + skills) to maximize KV cache hits (`session-dag.md`) — change the prefix and a long context misses entirely afterward, blowing up cost. The situational prompt varies **per function, per call site** (each function name/docstring differs); putting it in system would break the constant prefix. Putting it at the start of the user turn lets the model see it without touching the system prefix.
 
-### Removing deny — the tool list includes the function itself, relying on guidance rather than hiding
+### No self-deny — the tool list includes the function itself
 
-The wrapper no longer pushes the function's own name into `_current_tool_policy["deny"]`. The inner model's tool list **still shows itself**; the situational prompt makes the model decide on its own not to call.
+The wrapper does not push the function's own name into `_current_tool_policy["deny"]`. The inner model's tool list **still shows the function itself**, which is what gives the situational prompt a subject; the prompt makes the model decide on its own not to call.
 
-**The other uses of `_current_tool_policy` are kept untouched**: `source` / `allow` / `toolset` / unattended deny. See `runtime.py:1451-1458` — `policy.get("deny")` is still in use, merged with unattended's `denied_ask_tools` (`runtime.py:1457`); `source`/`allow`/`toolset` still take effect at `runtime.py:1469`/`1479-1482`. What was removed is only the one spot that "injects the function's own name into deny."
+**The other uses of `_current_tool_policy` are unaffected**: `source` / `allow` / `toolset` / unattended deny. See `runtime.py:1451-1458` — `policy.get("deny")` is in use, merged with unattended's `denied_ask_tools` (`runtime.py:1457`); `source`/`allow`/`toolset` take effect at `runtime.py:1469`/`1479-1482`. The only thing absent is injecting the function's own name into deny.
 
 ### (Backstop) Depth ceiling — a loss-limiting safety net
 
@@ -80,7 +81,7 @@ The wrapper no longer pushes the function's own name into `_current_tool_policy[
 
 **Normal calls never reach the ceiling**: the situational prompt stops it from "happening" first; the depth counter only fires after the model ignores the guidance and re-enters the same-named function 5 levels in a row.
 
-**Roles of the three:** situational prompt = prevent occurrence (let the model decide not to call); removing deny = the complement (the tool is visible, so the guidance has a subject); depth ceiling = loss-limiting safety net (don't burn infinite tokens when the model goes out of control).
+**Roles of the three:** situational prompt = prevent occurrence (let the model decide not to call); no self-deny = the complement (the tool is visible, so the guidance has a subject); depth ceiling = loss-limiting safety net (don't burn infinite tokens when the model goes out of control).
 
 ---
 
@@ -114,7 +115,7 @@ From `tests/agentic_programming/test_self_recursion_guard.py`:
 |---|---|---|
 | 1 | The situational prompt contains the function name, contains "do NOT call it", contains "recursion", and the docstring is demoted to the end (`recursion` appears before the docstring) | `test_situational_prefix_warns_against_self_call` |
 | 2 | With an empty docstring, "This function's job" is not appended, and the prompt still contains the function name | `test_situational_prefix_handles_empty_doc` |
-| 3 | The function's own name is **no longer** put into `_current_tool_policy["deny"]` (self-deny removed cleanly) | `test_self_name_NOT_denied_during_call` |
+| 3 | The function's own name is **not** put into `_current_tool_policy["deny"]` | `test_self_name_NOT_denied_during_call` |
 | 4 | During a normal one-level call, this function's name has depth = 1 (+1 on entry) | `test_depth_increments_during_call` |
 | 5 | Mindless self-calling over the limit raises `RecursionError`, with the message containing the function name + the limit number; the number of times the function body is entered is exactly `_MAX_AGENTIC_RECURSION_DEPTH` (stops at the limit, doesn't go deeper) | `test_depth_backstop_raises_past_limit` |
 | 6 | A→B with different names count independently: B's deep nesting doesn't count toward A's quota, and vice versa (per-name, no collateral damage) | `test_distinct_subcalls_not_collateral_damage` |
@@ -125,28 +126,28 @@ Supplement: the test uses a `_deny()` helper (`test:51-53`) that reads `_current
 
 ---
 
-## 6. Comparison with the old deny approach
+## 6. Comparison with the deny approach
 
-| Dimension | Old: deny to hide the tool | New: situational guidance + depth ceiling |
+| Dimension | Deny: hide the tool | This design: situational guidance + depth ceiling |
 |---|---|---|
 | How | the wrapper pushes the function's own name into `_current_tool_policy["deny"]`, so the inner model can't see itself | the tool list includes the function itself; a situational prompt is injected at the start of the user turn so the model decides on its own not to call; over 5 levels raises `RecursionError` as a backstop |
 | Model awareness | doesn't know "I'm inside X", just that X isn't in the list | explicitly knows the situation (you are inside X, calling X = recursion) |
-| Does it break the system-prefix cache | deny is at the policy layer, doesn't touch system; but hiding is "deciding for the model" | the prompt goes in the user turn, not into system, so the prefix stays constant (consistent with Decision 6) |
-| Loss-limiting on runaway | relies on hiding to block indirectly (bottomless if hiding fails) | an explicit 5-level depth ceiling as a hard stop |
-| Pros | direct, no model cooperation needed | the model learns situational judgment; consistent with the philosophy; strongly deterministic backstop |
-| Cons | the model never learns situational judgment; violates the philosophy; runs wild once hiding doesn't take effect | pure guidance isn't 100% reliable for weak models (hence the depth-ceiling backstop) |
+| Effect on the system-prefix cache | deny is at the policy layer and doesn't touch system, but hiding decides for the model | the prompt goes in the user turn, not into system, so the prefix stays constant |
+| Loss-limiting on runaway | relies on hiding to block indirectly, and is bottomless if hiding fails | an explicit 5-level depth ceiling as a hard stop |
+| Strengths | direct, no model cooperation needed | the model learns situational judgment; deterministic backstop |
+| Weaknesses | the model never learns situational judgment; runs wild once hiding doesn't take effect | pure guidance isn't fully reliable for weak models, hence the depth-ceiling backstop |
 
 ---
 
 ## 7. Known limitations
 
-1. **Pure guidance isn't 100% reliable for weak models / long contexts.** The situational prompt asks the model to judge on its own; a weak model, or a context so long it dilutes the prompt, may still call itself — so the depth ceiling is kept as a deterministic backstop.
-2. **Cross-function cycles (alternating A→B→A) are not covered in v1.** The depth ceiling counts **per same name** (`_recursion_depth[name]`) and only blocks direct self-recursion (A→A→A…). In an alternating cycle like A→B→A→B, A's depth only +1s to a certain level each time, and B likewise, so neither name's ceiling fires. Whole-call-chain detection (counting it as a cycle if A appears anywhere on the call chain) is an enhancement, not yet done.
-3. **The old deny implementation actually only blocked direct self-recursion too, not cross-function cycles.** The old deny pushes "the current function itself" into deny; when A runs, deny holds A, but B can still be called, and A called inside B isn't in B's deny either. So the new approach is **not a regression** on the "cross-function cycle" point — both versions only guard against direct self-recursion, and cross-chain detection is a shared TODO enhancement for both.
+1. **Pure guidance isn't fully reliable for weak models / long contexts.** The situational prompt asks the model to judge on its own; a weak model, or a context long enough to dilute the prompt, may still call itself — hence the depth ceiling as a deterministic backstop.
+2. **Cross-function cycles (alternating A→B→A) are not covered.** The depth ceiling counts **per same name** (`_recursion_depth[name]`) and blocks direct self-recursion (A→A→A…) only. In an alternating cycle like A→B→A→B, A's depth increments to a certain level and B's likewise, so neither name's ceiling fires. Whole-call-chain detection, counting it as a cycle if A appears anywhere on the call chain, is a possible enhancement.
+3. **A deny approach would not cover cross-function cycles either.** Deny pushes the current function itself into deny; when A runs, deny holds A, but B can still be called, and A called inside B is not in B's deny either. Both approaches guard against direct self-recursion only, so cross-chain detection is an enhancement to either one.
 
 ---
 
 ## Related documents
 
-- `docs/reference/design/runtime/session-dag.md` Decision 6 — the unified-system-prefix constraint; this mechanism puts the situational prompt in the user turn precisely to obey that constraint.
-- `docs/reference/design/TODO-doc-code-gaps.md` §1 — the 7-level nesting root-cause record.
+- `docs/reference/design/runtime/session-dag.md` — the unified-system-prefix constraint; this mechanism puts the situational prompt in the user turn to obey that constraint.
+- `docs/reference/design/TODO-doc-code-gaps.md` §1 — the 7-level nesting root-cause example.

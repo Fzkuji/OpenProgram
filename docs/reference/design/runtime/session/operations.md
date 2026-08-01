@@ -94,7 +94,7 @@ Caller calls update_session(session_id, title="New title", pinned=True, ...)
   → Atomically write the registry to disk
 ```
 
-The broadcast is initiated by the WebSocket handler layer via `_broadcast` after it calls `update_session` (already implemented; both rename and flags go through the broadcast):
+The broadcast is initiated by the WebSocket handler layer via `_broadcast` after it calls `update_session`; both rename and flags go through the broadcast:
 
 ```
 → Broadcast session_updated:
@@ -130,7 +130,7 @@ Naming has only **one authoritative implementation**: `openprogram/agent/dispatc
 | `_auto_titled` | bool | Auto-naming has produced at least one title (first-round truncation or any LLM write) → a "don't re-truncate" dedup bit | **Only** `_maybe_auto_title` sets it |
 | `_title_gen_count` | int | Internal counter for progressive renaming (which entry of `_RETITLE_AT_TURNS` was hit) | Internal to `_maybe_auto_title`, not an entry-point lock |
 
-A historical third name, `_titled`, has been abolished — it did both truncation and a permanent lock, which conflicts with the two-phase flow. The entry points **no longer** do their own truncation and set `_titled`; instead, `_maybe_auto_title` uniformly handles phase 1 (truncation) + phase 2 (LLM). The only lock an entry point may set is `_user_titled` (the rename operation).
+There is no single marker that means both "truncated" and "permanently locked": one marker doing both would conflict with the two-phase flow, where truncation is expected to be superseded by the LLM title. Entry points therefore do not truncate or set a lock of their own; `_maybe_auto_title` handles phase 1 (truncation) and phase 2 (LLM) uniformly. The only lock an entry point may set is `_user_titled`, set by the rename operation.
 
 ### Auto-naming (progressive, two phases)
 
@@ -210,7 +210,7 @@ Caller calls delete_session(session_id)
   → After the frontend receives it, remove it from the list
 ```
 
-The registry operation has been internalized into `delete_session`. The broadcast is initiated by the WebSocket handler layer via `_broadcast`.
+The registry operation is internal to `delete_session`. The broadcast is initiated by the WebSocket handler layer via `_broadcast`.
 
 ---
 

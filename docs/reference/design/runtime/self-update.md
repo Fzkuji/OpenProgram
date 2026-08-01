@@ -1,10 +1,5 @@
 # Self-update: staying usable while OpenProgram modifies itself
 
-*Design note, 2026-08-01. Status: phase 1 is current practice; phase 2 is
-implemented (`openprogram upgrade`, `openprogram/_cli_cmds/upgrade.py`,
-user docs at `docs/server/upgrading.md`); phase 3 unimplemented — a failed
-verify prints the manual rollback command instead of rolling back.*
-
 ## 1. Problem
 
 Once OpenProgram is the user's only agent tool, it is also the tool that
@@ -75,8 +70,8 @@ starts from the worktree on another port with `--profile dev` so its state
 is isolated. Only after verification does the change merge into the
 serving checkout.
 
-This rule alone (phase 1) already guarantees an always-working instance:
-the worst case is a broken *candidate*, never a broken *server*.
+This rule alone already guarantees an always-working instance: the worst
+case is a broken *candidate*, never a broken *server*.
 
 ### 4.2 Rule 2 — restart only through the gate
 
@@ -145,19 +140,23 @@ command:
 | Schema/config incompatibility | Step 5 doctor | No restart |
 | New code boots but serves wrong version (stale build, wrong checkout) | Step 7 verify | Auto rollback |
 | Rollback itself fails | Step 7 re-verify | Sentinel records it; worker supervisor keeps last process alive if possible; manual `git checkout` + `openprogram restart` is the documented escape hatch |
-| Crash-loop under `worker install` supervisor | Supervisor restart counter | Supervisor should back off and pin the previous sha (phase 3) |
+| Crash-loop under `worker install` supervisor | Supervisor restart counter | Supervisor backs off and pins the previous sha |
 | Upgrade requested while a turn is running | Step 1 preflight | Wait for idle or require `--force` |
 
-## 6. Phasing
+## Implementation Status
 
-- **Phase 1 (now, discipline only)**: worktree development + second
-  instance with `--profile` for live testing + merge-then-`restart`.
-  Already possible with existing flags; documented here as the required
-  practice.
-- **Phase 2**: `openprogram upgrade` with the step chain of §4.2 minus
-  rollback: preflight, checkout, deps, build, probe, restart, verify. Add
-  the `sha` field to `/healthz`. Internally structured around the §4.4
-  extension points (channel table, four-verb step chain) even though only
-  one channel and one distribution method exist.
-- **Phase 3**: automatic rollback on verify failure, sentinel reporting
-  into the first post-upgrade chat turn, supervisor back-off pinning.
+The design lands in three layers:
+
+- **Rule 1, discipline only** — worktree development, a second instance under
+  `--profile` for live testing, merge then `restart`. Possible with existing
+  flags, and current practice.
+- **`openprogram upgrade`** — the §4.2 step chain without automatic rollback:
+  preflight, checkout, deps, build, probe, restart, verify, plus the `sha`
+  field on `/healthz`. Implemented (`openprogram/_cli_cmds/upgrade.py`, user
+  docs at `docs/server/upgrading.md`), and structured around the §4.4
+  extension points even though one channel and one distribution method exist
+  today.
+- **Automatic recovery** — rollback on verify failure, sentinel reporting into
+  the first post-upgrade chat turn, and supervisor back-off pinning. Not yet
+  implemented; a failed verify currently prints the manual rollback command
+  instead of rolling back.

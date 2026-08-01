@@ -1,6 +1,8 @@
 # File Modification Management — Industry Analysis and OpenProgram Design
 
-> Status: **Implemented** (2026-06).
+> This document describes how OpenProgram tracks and rolls back file changes
+> made by the agent: the two industry approaches, the four layers OpenProgram
+> runs, and how they coordinate.
 > Related: [`agent-worktree.md`](../execution/agent-worktree.md), [`memory-v2.md`](../../memory/memory-v2.md)
 > (entity layer), [`git-as-entity-memory.md`](../../memory/git-as-entity-memory.md).
 > Code: `store/snapshot/checkpoint/`, `store/shadow_git/`,
@@ -80,7 +82,7 @@ The three can coexist — they solve different problems:
 
 ### 3.2 The Four-Layer Mechanism
 
-Each of the four layers handles one thing, with no overlap. Removing any one of them leaves a capability gap.
+Each of the four layers handles one concern, with no overlap. Removing any one of them leaves a capability gap.
 
 ```
                 ┌─── read-before-edit (concurrency guard, the gate in front of all writes) ───┐
@@ -112,7 +114,6 @@ Each of the four layers handles one thing, with no overlap. Removing any one of 
 | **Default** | **Always on** | **On by default** | On demand | **Off by default** |
 | **Code** | `store/snapshot/checkpoint/` | `store/shadow_git/` | `worktree/` | `sandbox/` |
 | **Rollback entry** | `/rewind` | `/rewind` integration | `worktree_discard` | N/A (preventive, no rollback needed) |
-| **Status** | ✅ Implemented | ✅ Implemented | ✅ Implemented | ✅ Implemented |
 
 ### 3.3 Division of Labor Between ① Checkpoint and ② Shadow git
 
@@ -130,13 +131,13 @@ Both run simultaneously; it is not an either/or choice:
 
 ---
 
-## 4. Unified Entry Trigger (the Key Change for Covering bash)
+## 4. Unified Entry Trigger — How bash Is Covered
 
 ### 4.1 Implementation
 
-The three edit tools — write / edit / apply_patch — each call `checkpoint_before_edit` **internally** to do a precise single-file backup — leave this unchanged.
+The three edit tools — write / edit / apply_patch — each call `checkpoint_before_edit` **internally** for a precise single-file backup.
 
-bash coverage is implemented in `_execute_tool_calls` (`agent_loop.py`, the single entry for all tools):
+bash coverage sits in `_execute_tool_calls` (`agent_loop.py`, the single entry for all tools):
 
 ```python
 #### agent_loop.py — inside _execute_tool_calls
@@ -157,9 +158,9 @@ from their staging copies.
 
 ## 5. Concurrency Guard: read-before-edit (the Front Gate)
 
-`store/snapshot/read_tracking.py`. The safety foundation of the whole mechanism: it guarantees the agent never blindly writes over a file that "the user just changed but the agent hasn't seen yet," so every entry that lands in ① checkpoint and ② shadow git is a **clean agent change**, and rollback won't accidentally harm the user.
+`store/snapshot/read_tracking.py`. This is the safety foundation of the whole mechanism: the agent never blindly overwrites a file that the user changed but the agent hasn't read since. Every entry that lands in ① checkpoint and ② shadow git is therefore a **clean agent change**, and rollback cannot damage the user's own edits.
 
-It copies Claude Code's Edit/Write contract:
+It follows Claude Code's Edit/Write contract:
 - **`read` records the baseline** — when reading a file, record its fingerprint `(mtime_ns, size, sha1)`.
 - **Verify before writing** — `edit` / `write overwriting an existing file` / `apply_patch Update` compares before writing:
   - Never read (`NEVER_READ`) → reject, prompt to read first.
@@ -334,16 +335,7 @@ Checkpoint, Shadow git, and the sandbox are all automatically running low-level 
 
 ---
 
-## 9. To Do
-
-| Item | Description |
-|---|---|
-| UI indication of the current session's "main rollback path" | Backend is ready, frontend pending |
-| Container sandbox (long term) | Unattended scenarios such as research_agent, requiring Docker integration |
-
----
-
-## 10. Sandbox Isolation — ③ Worktree + ④ System-level Sandbox
+## 9. Sandbox Isolation — ③ Worktree + ④ System-level Sandbox
 
 There are three ways to implement sandboxing, with isolation levels from low to high:
 
@@ -353,13 +345,13 @@ There are three ways to implement sandboxing, with isolation levels from low to 
 | **System-level sandbox** | Our ④, Claude Code `/sandbox`, Cursor | File system + network (process-level restriction) | Millisecond-level | Seatbelt / bubblewrap / Landlock | Local interaction, restricting bash scope |
 | **Container sandbox** | OpenHands / SWE-agent / Devin | Full isolation (file/network/process) | 30–60 seconds | Docker / Podman | Unattended, untrusted code |
 
-### 10.1 ③ Worktree — File Isolation (✅ Implemented)
+### 9.1 ③ Worktree — File Isolation
 
 The agent calls `worktree_create` to create an independent copy of the working directory; if it works out, `worktree_merge`; if it goes wrong, `worktree_discard`.
 
-**Limitation**: it isolates only files, not processes or the network — bash can still `rm -rf /`, read `~/.ssh/`, and access the network. Suitable for "afraid of breaking the code," not for guarding against "bash going rogue."
+**Limitation**: it isolates only files, not processes or the network — bash can still `rm -rf /`, read `~/.ssh/`, and access the network. It protects against breaking the code, not against bash acting outside its intended scope.
 
-### 10.2 ④ System-level Sandbox — Permission Restriction (✅ Implemented)
+### 9.2 ④ System-level Sandbox — Permission Restriction
 
 Uses OS kernel mechanisms to restrict what the bash process can do:
 - **File system**: can only read/write cwd and its subdirectories, `rm ~/.ssh/id_rsa` → `Operation not permitted`
@@ -368,13 +360,26 @@ Uses OS kernel mechanisms to restrict what the bash process can do:
 - **Code**: `openprogram/sandbox/__init__.py` (`sandbox_enabled` contextvar + `wrap_command`), `backend/local.py` (`_invocation` integration)
 - **Command**: `/sandbox` toggle (CLI `_cli_chat/handlers.py` + webui `ws_actions/chat.py`)
 
-### 10.3 The Relationship Between ③ and ④
+### 9.3 The Relationship Between ③ and ④
 
 The two solve different problems and can be combined:
-- **Using ③ alone**: change things in a copy, but bash can do anything
-- **Using ④ alone**: change things in the original directory, but bash is scope-restricted
-- **Combined**: change things in a copy, and bash is restricted too. The safest
+- **Using ③ alone**: changes happen in a copy, but bash is unrestricted
+- **Using ④ alone**: changes happen in the original directory, but bash is scope-restricted
+- **Combined**: changes happen in a copy and bash is restricted too — the highest level of safety
 
-### 10.4 Container Sandbox (Long-term Direction)
+### 9.4 Container Sandbox (Long-term Direction)
 
-Long-running scenarios for unattended agentic functions such as research_agent require full Docker isolation. Not done currently; will be considered once agentic functions mature.
+Long-running scenarios for unattended agentic functions such as research_agent require full Docker isolation. This is not part of the current design; it will be considered once agentic functions mature.
+
+---
+
+## Appendix: Implementation Status
+
+All four layers — ① Checkpoint, ② Shadow git, ③ Worktree, ④ System-level sandbox — are implemented, along with the read-before-edit guard and the `/rewind` and `/sandbox` commands across webui, CLI, and TUI.
+
+Not yet built:
+
+| Item | Description |
+|---|---|
+| UI indication of the current session's "main rollback path" | Backend is ready, frontend pending |
+| Container sandbox (long term) | Unattended scenarios such as research_agent, requiring Docker integration |

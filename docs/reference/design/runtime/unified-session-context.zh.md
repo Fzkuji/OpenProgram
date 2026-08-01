@@ -1,11 +1,6 @@
 # 统一 session 上下文创建
 
-> 状态：S1 + S2 已落地。`session_context` 位于
-> `openprogram/store/session/context.py`；research harness `main.py` 已用它包住
-> `research_agent`。S3（dispatcher）与 S4（process_runner / 测试）**尚未完成**——
-> 两处仍各自手抄 set/reset 逻辑。下面的问题陈述描述的是 S1 之前的状态。
-
-## 问题(为什么写这篇)
+## 问题
 
 OpenProgram 的几个核心能力——**函数 docstring 自动进 prompt**、**DAG 持久化**、
 **ask_user 追踪**、**嵌套调用的 called_by 归属**——都依赖一个 per-turn 的
@@ -158,25 +153,27 @@ session 列表 / 删除)处理,不在每次调用的职责里。
   content**。这是修复 research 后半段退化的正道。
 - **process_runner / tests**:用同一个 manager 取代各自手抄的 set/reset。
 
-### 落地顺序(每步独立可验证)
+### 指令写在 docstring 里
 
-| 步 | 做什么 | 验证 |
-|---|---|---|
-| S1 | 新增 `session_context` manager(抽 dispatcher 逻辑,行为等价) | 单测:进入后 `_store/_current_turn_id/_current_runtime` 非 None,退出后复位 |
-| S2 | research `main.py` 用它包住 research_agent | 命令行跑一个带详细 docstring 的函数,抓 prompt 确认 docstring 进了(实证过装 _store 后 doc=True) |
-| S3 | dispatcher 改用它(去重,行为不变) | 现有 dispatcher 测试全绿 |
-| S4 | process_runner / tests 收口到它 | 子进程 DAG 追踪、测试 fixture 仍工作 |
-
-S1+S2 就能修好 research 命令行(你当前的痛点);S3+S4 是去重收尾。
-
-## 撤销之前的"搬指令进 content"绕过
-
-为让 research 后半段能跑,之前把 `design_experiments` / `write_section` 的指令从
-docstring 搬进了 `content`(commit 09dc750 的一部分)。那是绕过 session 缺失的临时手段,
-违背"docstring 写指令、函数体干净"的设计意图。S2 落地后应**撤回**这部分,让 docstring
-重新承担指令。(`write_paper` 编排器是真的新增能力,保留。)
+某些 stage 函数的指令曾为绕开命令行缺失 session 而从 docstring 搬进 `content`；一旦该
+入口装上 session 上下文，指令就回到 docstring 承担。把指令搬进 `content` 违背"docstring
+写指令、函数体干净"的设计意图，而 session 上下文消除了这么做的理由。
 
 ## 一句话
 
-不是少装了什么组件——是 **"建 session" 没有统一入口,只有 dispatcher 做了,CLI 没做**。
-统一成一个 `session_context` manager,所有入口都走它,命令行就和网页一致了。
+不是少装了什么组件——是 **"建 session" 需要一个所有调用方都走的统一入口**，命令行才能
+和网页表现一致。
+
+## 实现状态
+
+设计分四步落地，每步独立可验证：
+
+| 步 | 做什么 | 验证 | 状态 |
+|---|---|---|---|
+| S1 | 新增 `session_context` manager(抽 dispatcher 逻辑,行为等价) | 单测:进入后 `_store/_current_turn_id/_current_runtime` 非 None,退出后复位 | 已完成——`openprogram/store/session/context.py` |
+| S2 | research `main.py` 用它包住 research_agent | 命令行跑一个带详细 docstring 的函数,抓 prompt 确认 docstring 进了 | 已完成 |
+| S3 | dispatcher 改用它(去重,行为不变) | 现有 dispatcher 测试全绿 | 未完成——仍内联 set/reset |
+| S4 | process_runner / tests 收口到它 | 子进程 DAG 追踪、测试 fixture 仍工作 | 未完成——两处仍各自手抄 set/reset |
+
+S1、S2 是让 research 命令行工作的部分；S3、S4 消除重复的 set/reset 逻辑。上文问题一节
+描述的是 S1 之前的状态。

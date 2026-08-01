@@ -47,6 +47,7 @@ Return ONLY the title text, no quotes, no prefix, no explanation.
 ## 展示层 fallback
 
 当 title 为空/"New conversation"/"Untitled" 时，前端用 preview（第一条消息前 80 字符）替代显示。
+
 ## 同类产品调研
 
 ### Claude Code

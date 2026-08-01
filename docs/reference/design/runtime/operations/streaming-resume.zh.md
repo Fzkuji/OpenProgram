@@ -1,14 +1,13 @@
 # 运行中状态的持久化 / 重连恢复
 
-## 问题陈述
+## 问题
 
-当前 UI 上任何"正在跑"的产物（LLM streaming reply / tool call / agentic
-function / task spawn / merge）在跑完之前**只活在内存 + WebSocket
-stream 里**。刷新页面就丢——因为 SessionDB 里这条 msg 还没存。要等
-最后一刻写盘后才能在新页面看到。
+UI 上"正在跑"的产物（LLM streaming reply、tool call、agentic function、task spawn、
+merge）在跑完之前**只活在内存和 WebSocket stream 里**。刷新页面就丢，因为 SessionDB
+里这条 msg 还没写入；要等最后写盘后，新页面才能看到它。
 
-并且如果 backend 在跑到一半挂了 / 网络断了，那条产物就永远丢了，没
-状态可查、没办法恢复、也没办法"看一眼当前进度"。
+如果 backend 跑到一半挂了或网络断了，那条产物就没了：没有状态可查、无法恢复，也看
+不到它的进度。
 
 ## 目标
 
@@ -113,7 +112,7 @@ worker 启动时：
 
 保证 backend 重启后没有"永远在跑"的孤儿 msg。
 
-## Schema 改动 (Phase 1)
+## Schema 改动
 
 `openprogram/store/session/_msg_adapter.py::_node_to_msg`：
 
@@ -124,24 +123,28 @@ worker 启动时：
 `openprogram/context/nodes.py::Call`：不动 dataclass，新字段全走
 `metadata`。
 
-## 实施分期
+## 不在范围内
 
-| Phase | 范围 | 估时 |
-|---|---|---|
-| 1 | placeholder schema + worker abort sweep | 30 min |
-| 2 | `_execute/run.py` agentic function 写 placeholder + 节流 tree save | 60 min |
-| 3 | dispatcher LLM reply 写 placeholder + streaming content save | 60 min |
-| 4 | inline tool call placeholder（bash 等长跑） | 30 min |
-| 5 | WS `subscribe_msg` channel + per-msg broadcast | 60 min |
-| 6 | 前端 load_session 检测 + auto subscribe + live patch | 60 min |
-| 7 | 测试 + edge cases (重启 / 断连 / msg_id 冲突) | 30 min |
+- 真正的中断后恢复——backend 跑到一半挂了，重启后继续跑剩下的 sub-call。这需要
+  checkpoint LLM context 并重放，工作量数倍于本设计。本设计下中断的 msg 会被标
+  aborted，用户用 Retry 按钮重跑。
+- 跨 session 全局活跃任务面板（现在有哪些 msg 在跑）。基于 `_msg_subscribers` 的
+  keyspace 后续容易扩展。
 
-总计 ~5h。每 phase 独立可用 + 可回滚。
+## 实现状态
 
-## 不在本次范围
+设计按可独立使用、独立回滚的几块落地：
 
-- 真正的"中断后恢复" — 比如 backend 跑到一半挂了，重启后继续跑剩下
-  的 sub-call。这要 checkpoint LLM context + 重放，工作量数倍于本设
-  计。当前方案下中断的 msg 会被标 aborted，用户用 Retry 按钮重跑。
-- 跨 session 全局活跃任务面板（"现在有哪些 msg 在跑"）。可以基于
-  `_msg_subscribers` 的 keyspace 容易扩展，但不在本期。
+| 块 | 范围 |
+|---|---|
+| 1 | placeholder schema + worker abort sweep |
+| 2 | `_execute/run.py` agentic function 写 placeholder + 节流 tree save |
+| 3 | dispatcher LLM reply 写 placeholder + streaming content save |
+| 4 | inline tool call placeholder（bash 等长跑） |
+| 5 | WS `subscribe_msg` channel + per-msg broadcast |
+| 6 | 前端 load_session 检测 + auto subscribe + live patch |
+| 7 | 测试 + edge cases（重启 / 断连 / msg_id 冲突） |
+
+其中 task spawn 的 placeholder 已经有了
+（[`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/task/runner.py)），
+`RuntimeBlock` 和 attach card 的 `status=running` 渲染也已具备。

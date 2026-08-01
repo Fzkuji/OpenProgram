@@ -1,42 +1,27 @@
-# Splitting `agent/dispatcher.py` into a responsibility-scoped package
+# `agent/dispatcher` — a responsibility-scoped package
 
-Status: **in progress** · dead-code removed (1fab7479) · step 0 package · step 1 types.py · step 2 titles.py + forced_tool.py · step 3a runtime_attach.py (`_wrap_agentic_runtime_block`) · step 4 finalize.py (phase 6) · step 5a persistence.py (phase 5 assistant persist) · `__init__.py` now 1234 lines (down from 1928; `turn.py` + `loop.py` still pending) · Owner: agent/runtime · Created: 2026-06-04
+> This document describes how the webui chat turn's execution path is organized:
+> why the dispatcher is a package rather than one module, what each file owns,
+> the test seam that constrains where code may live, and the compatibility
+> surface callers depend on. Implementation status is in the appendix.
 
-> **Test seam note (discovered during step 3).** The dispatcher unit tests
-> monkeypatch `D._resolve_model` / `D._load_agent_profile` / `D._run_loop_blocking`
-> on the **package** object, and capture `orig = D._run_loop_blocking` to run
-> the real loop with a fake `stream_fn`. A function's internal helper lookups
-> resolve in *its own* module globals, so moving `_run_loop_blocking` to
-> `loop.py` would make its `_resolve_model` call miss the `D.*` patch and break
-> ~40 tests. Therefore: functions that internally call the test-patched helpers
-> (`_run_loop_blocking`) stay put for now; in-function **phases** (persist /
-> finalize) extract cleanly by passing the already-resolved model/profile as
-> explicit args (the dispatcher resolves them once, under the patch, and hands
-> them down), so the extracted module never calls a patched helper. Standalone
-> functions that touch none of the patched helpers (`_wrap_agentic_runtime_block`)
-> move freely. The eventual `loop.py` move needs either a patch-stable helper
-> seam (access via `_model_tools.<fn>` at call time) or updated test patch
-> targets — tracked as its own step, not folded into a code-motion commit.
+`dispatcher` is the real execution path of a webui chat turn. It is a package
+rather than a single module, under the no-1000-line-files rule and the
+"hierarchical code structure — module dirs by responsibility" convention.
 
-Roadmap item under the no-1000-line-files rule and the "hierarchical code
-structure — module dirs by responsibility" convention. `dispatcher.py` is the
-webui chat turn's real execution path; this plans how to break it apart without
-changing behavior.
+## 1. Why it is split
 
-## 1. Problem
+As a single module, `openprogram/agent/dispatcher.py` was 1928 lines. One file
+held the whole turn lifecycle, two functions of roughly 300 and 830 lines, and
+all the turn-finalization bookkeeping. That shape is hard to read, hard to test
+in isolation, and every new concern — a bookkeeping step, a persistence detail —
+grows the same file.
 
-`openprogram/agent/dispatcher.py` is 1928 lines (was 2059; the dead
-`_legacy_dispatch_forced_tool_call_unused` was deleted in 1fab7479). One file
-holds the whole turn lifecycle, two ~300–830-line functions, and all the
-turn-finalization bookkeeping. It is hard to read, hard to test in isolation,
-and every new concern (a new bookkeeping step, a new persistence detail) grows
-the same file.
+The largest single function is `process_user_turn` at ~835 lines. It is
+self-documented as seven numbered phases, so the seams are clear; they simply
+live inside one function instead of being separable units.
 
-The single worst offender is `process_user_turn` at ~835 lines (599–1433). It is
-already self-documented as seven numbered phases, so the seams are clear; they
-just live inside one function instead of being separable units.
-
-## 2. Current structure (grounded, post-1fab7479)
+## 2. The single-module structure it comes from
 
 ```
 line   symbol                                  role
@@ -66,10 +51,10 @@ line   symbol                                  role
 1413   7. final TurnResult event
 ```
 
-## 3. Proposed package layout
+## 3. Package layout
 
-Convert the module into `openprogram/agent/dispatcher/` (a package), each file a
-single responsibility, none over ~500 lines:
+`openprogram/agent/dispatcher/` is a package, each file a single
+responsibility, none over ~500 lines:
 
 ```
 dispatcher/
@@ -84,53 +69,81 @@ dispatcher/
   loop.py            _run_loop_blocking — the agent loop + its error boundary
 ```
 
-`turn.py`'s `process_user_turn` becomes an orchestrator: load → persist user →
+`process_user_turn` in `turn.py` is an orchestrator: load → persist user →
 attach runtime → run loop → persist assistant → finalize → emit result, each a
-named call into the sibling modules. The error taxonomy classification (phase 4
-/ the loop's except) stays co-located with the loop in `loop.py`, matching
+named call into a sibling module. Error taxonomy classification (phase 4, the
+loop's `except`) stays co-located with the loop in `loop.py`, matching
 `docs/reference/design/providers/reliability/error-taxonomy-propagation.md`.
 
-## 4. Migration order (smallest blast radius first)
+## 4. The test seam that constrains code placement
 
-Each step is its own commit, compiles + imports + worker-restart-healthz green
-before the next. Pure code-motion — no logic edits in the same commit as a move.
+The dispatcher unit tests monkeypatch `D._resolve_model` /
+`D._load_agent_profile` / `D._run_loop_blocking` on the **package** object, and
+capture `orig = D._run_loop_blocking` to run the real loop with a fake
+`stream_fn`. A function's internal helper lookups resolve in *its own* module
+globals, so moving `_run_loop_blocking` to `loop.py` makes its `_resolve_model`
+call miss the `D.*` patch and breaks about 40 tests. Three consequences:
 
-1. **types.py** — move the three dataclasses + sentinel. Lowest risk: they have
-   no internal deps. `__init__` re-exports them.
-2. **titles.py + forced_tool.py** — leaf helpers, few callers.
-3. **persistence.py** — extract phases 2 & 5 as `persist_user_turn(...)` /
-   `persist_assistant_message(...)` taking explicit args (no hidden closure
-   over `process_user_turn` locals). This is where most care goes — the phases
-   read/write many locals, so the function signatures must be drawn deliberately.
-4. **finalize.py** — extract phase 6 as `finalize_turn(...)`; it is the most
-   self-contained block (bookkeeping only, already sub-numbered 6.1–6.95).
-5. **runtime_attach.py** — phase 3 + `_wrap_agentic_runtime_block`.
-6. **loop.py** — `_run_loop_blocking` + its error boundary.
-7. **turn.py** — what remains of `process_user_turn` is the orchestrator.
+- Functions that internally call the test-patched helpers (`_run_loop_blocking`)
+  stay in `__init__.py`.
+- In-function **phases** (persist, finalize) extract cleanly by taking the
+  already-resolved model and profile as explicit arguments — the dispatcher
+  resolves them once, under the patch, and hands them down, so the extracted
+  module never calls a patched helper.
+- Standalone functions that touch none of the patched helpers
+  (`_wrap_agentic_runtime_block`) move freely.
 
-If any phase resists clean extraction (too many interdependent locals), stop and
-record why in this doc rather than forcing a leaky split.
+Moving `_run_loop_blocking` into `loop.py` therefore requires either a
+patch-stable helper seam (access via `_model_tools.<fn>` at call time) or
+updated test patch targets. That is its own change, not something folded into a
+code-motion commit.
 
 ## 5. Back-compat
 
-Everything imports `from openprogram.agent.dispatcher import process_user_turn`
+Callers import `from openprogram.agent.dispatcher import process_user_turn`
 (and `dispatch_forced_tool_call`, `TurnRequest`, `TurnResult`,
-`trigger_compaction`). The package `__init__.py` re-exports the full current
-public surface so **no caller changes**. Verify with a repo-wide grep of
-`from openprogram.agent.dispatcher import` / `dispatcher\.` before and after — the
-import set must be identical.
+`trigger_compaction`). The package `__init__.py` re-exports the full public
+surface of the original module, so **no caller changes**. A repo-wide grep of
+`from openprogram.agent.dispatcher import` / `dispatcher\.` before and after any
+move must yield an identical import set.
 
 ## 6. Verification
 
-Per step: `py_compile` the package, `python -c "from openprogram.agent import
-dispatcher; dispatcher.process_user_turn; dispatcher.dispatch_forced_tool_call"`,
-`openprogram worker restart` + `/healthz` ok + `tools_registered` unchanged
-(55), then a real chat turn through the webui (send a message, get a streamed
-reply, confirm it persists across reload). The existing dispatcher-touching unit
-tests must stay green. No behavior assertion changes — this is structure only.
+Each move is verified by: `py_compile` on the package, `python -c "from
+openprogram.agent import dispatcher; dispatcher.process_user_turn;
+dispatcher.dispatch_forced_tool_call"`, `openprogram worker restart` with
+`/healthz` ok and `tools_registered` unchanged (55), then a real chat turn
+through the webui (send a message, get a streamed reply, confirm it persists
+across reload). The existing dispatcher-touching unit tests stay green, with no
+behavior assertion changes — this is structure only.
 
 ## 7. Non-goals
 
-Not changing the turn lifecycle, the error taxonomy, persistence schema, or any
-event payload. Not splitting `runtime.py` / `server.py` (separate items). Not
-introducing async where the path is currently blocking.
+The split does not change the turn lifecycle, the error taxonomy, the
+persistence schema, or any event payload. It does not split `runtime.py` /
+`server.py` (separate items), and it introduces no async where the path is
+currently blocking.
+
+## Appendix: Implementation Status
+
+Moves are made one per commit, pure code motion, with compile + import +
+worker-restart-healthz green before the next one. The order runs from smallest
+blast radius outward: `types.py` (three dataclasses + sentinel, no internal
+deps), then `titles.py` + `forced_tool.py` (leaf helpers, few callers), then
+`persistence.py` (phases 2 and 5 as `persist_user_turn(...)` /
+`persist_assistant_message(...)` with explicit args, no closure over
+`process_user_turn` locals — the phases read and write many locals, so the
+signatures need deliberate design), then `finalize.py` (phase 6 as
+`finalize_turn(...)`, the most self-contained block), then `runtime_attach.py`,
+then `loop.py`, leaving `turn.py` as the orchestrator. A phase that resists
+clean extraction because of interdependent locals is left in place and the
+reason recorded here, rather than forced into a leaky split.
+
+Landed: dead-code removal (`_legacy_dispatch_forced_tool_call_unused`), the
+package itself, `types.py`, `titles.py` + `forced_tool.py`,
+`runtime_attach.py` (`_wrap_agentic_runtime_block`), `finalize.py` (phase 6),
+and `persistence.py` (phase 5 assistant persist). `__init__.py` is 1234 lines,
+down from 1928. `turn.py` and `loop.py` are not yet extracted; `loop.py`
+depends on resolving the test seam in §4.
+
+Owner: agent/runtime.

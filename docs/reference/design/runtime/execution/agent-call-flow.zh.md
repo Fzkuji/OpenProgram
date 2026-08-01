@@ -1,8 +1,6 @@
 # Agent 调用流程（权威设计）
 
-Status: design · Created: 2026-06-18
-
-> 这是 agent 调用的**核心框架**——所有 turn / LLM 调用都按这个流程走。后续加功能在此基础上往对应节点插入,不改骨架。本文档曾名"LLM 调用路径统一",现升级为整个调用流程的权威设计。
+> 这是 agent 调用的**核心框架**——所有 turn / LLM 调用都按这个流程走。后续加功能在此基础上往对应节点插入,不改骨架。
 
 ## 总览图
 
@@ -30,7 +28,7 @@ Status: design · Created: 2026-06-18
 
 ### 为什么是两个入口,不是一个
 
-dispatcher 和 exec 服务两种不同场景,外围插件不重叠:dispatcher 要 session 管理 + 前端 WebSocket 广播 + 标题/压缩;exec 要 DAG llm 节点 + AgentSession retry-rollback。硬合并会让一方背上另一方不需要的逻辑(实测试着折叠时撞到模型分叉、节点重复——见下文步 4)。共享 agent_loop,因为"调模型→执行工具→循环"这个引擎对两者一样。
+dispatcher 和 exec 服务两种不同场景,外围插件不重叠:dispatcher 要 session 管理 + 前端 WebSocket 广播 + 标题/压缩;exec 要 DAG llm 节点 + AgentSession retry-rollback。硬合并会让一方背上另一方不需要的逻辑;实际折叠时会撞到模型分叉和节点重复(见下文"为什么 dispatcher 不折叠进 runtime.exec")。共享 agent_loop,因为"调模型→执行工具→循环"这个引擎对两者一样。
 
 ### 关键:exec 在 agent_loop **之下**,所以能嵌套
 
@@ -191,44 +189,46 @@ process_user_turn (改后)
 ← 返回文本
 ```
 
-## 落地顺序
+## 节点写入与 callable 路径
 
-### 步 1-2(✅ 已完成）
+### exec 配对写 llm 节点
 
-| 步 | 做什么 | 验证 |
+exec 在 sync 和 async 两条路径上配对开关 llm 节点(`_open_model_call_node` /
+`_close_model_call_node`),函数体内发起的 LLM 调用因此出现在 session DAG 里。
+`_call_via_providers` 中在 session.run 之前把 `_call_id` 切到 llm 节点,tool loop 的
+工具 code 节点 called_by 正确指向 llm 节点
+(`test_tool_loop_subcall_attributes_to_llm_node`)。
+
+### callable 路径走 provider model
+
+`Runtime(call=fn)` 被包装成一个 provider model,和其他模型一样走
+`_call_via_providers`,因此不存在单独的 legacy 调用分支:
+
+| 部件 | 是什么 | 文件 |
 |---|---|---|
-| 1 | exec 配对写 llm 节点(`_open_model_call_node` / `_close_model_call_node`),sync + async 两条路径 | ✅ wiki_agent session DAG 里出现 llm 节点 |
-| 2 | `_call_via_providers` 里 session.run 之前把 `_call_id` 切到 llm 节点,tool loop 的工具 code 节点 called_by 正确指向 llm 节点 | ✅ `test_tool_loop_subcall_attributes_to_llm_node` |
+| `CallableModel` adapter | sync+async,把 pi-ai messages 转回 content 调用户 fn,返回单条 AssistantMessage,无 tool loop;补回 `response_format`→prompt suffix | `openprogram/providers/callable_model.py` |
+| Runtime 接线 | `Runtime.__init__` 里 `call=` → `self.api_model = CallableModel(call)`,callable runtime 强制 `toolset="none"` | `runtime.py` __init__ |
 
-### 步 3:删 legacy `call=` 分支
+`_call_via_providers` 不忽略 content:`_render_history_messages(content)` 把 content
+作为当前 turn(`runtime.py:1451`),无 store 时 `_build_pi_context(content)`(`:1456`)。
+所以 adapter 不需要特殊处理 content,AgentSession 会把 history+current 给 model,
+adapter 转回 content 调用户 fn。
 
-把 `Runtime(call=fn)` 包装成一个 provider model,统一走 `_call_via_providers`,删掉 `_call_fn` / `_uses_legacy_call` 和两条 legacy 分支。
+### stream_fn 注入
 
-| 步 | 做什么 | 文件 | 验证 |
-|---|---|---|---|
-| 3a | 新增 `CallableModel` adapter(sync+async,把 pi-ai messages 转回 content 调用户 fn,返回单条 AssistantMessage,无 tool loop;补回 `response_format`→prompt suffix) | 新建 `openprogram/providers/callable_model.py` | `pytest tests/providers/test_functions.py` |
-| 3b | `Runtime.__init__` 里 `call=` → `self.api_model = CallableModel(call)`,callable runtime 强制 `toolset="none"` | `runtime.py` __init__ | `pytest tests/providers/test_functions.py` |
-| 3c | 删 `_call`/`_async_call` 的 `_call_fn` 分支 | `runtime.py` | `pytest tests/agentic_programming/` |
-| 3d | 删 `_uses_legacy_call` + exec/async_exec 两条 legacy 分支 | `runtime.py` | full `pytest tests/agentic_programming tests/providers` |
+`stream_fn` 参数穿过 exec → _call_via_providers → AgentSession.__init__ →
+AgentOptions,让 exec 可注入流(`test_exec_stream_fn_injection`)。
 
-**关键发现(已验证)**:`_call_via_providers` 不忽略 content——`_render_history_messages(content)` 把 content 作为当前 turn(`runtime.py:1451`),无 store 时 `_build_pi_context(content)`(`:1456`)。所以 adapter 不需要特殊处理 content,AgentSession 会把 history+current 给 model,adapter 转回 content 调用户 fn。
+### 为什么 dispatcher 不折叠进 runtime.exec
 
-### 步 4:stream_fn 注入(✅ 已完成);dispatcher 不折叠(已论证)
-
-| 步 | 做什么 | 状态 |
-|---|---|---|
-| 4a | 把 `stream_fn` 参数穿过 exec → _call_via_providers → AgentSession.__init__ → AgentOptions,让 exec 可注入流 | ✅ `test_exec_stream_fn_injection` |
-
-**dispatcher 不折叠进 runtime.exec(实测论证)**
-
-最初设想让 `_run_loop_blocking` 改调 runtime.exec。实测推翻了这个方向:
+让 `_run_loop_blocking` 改调 runtime.exec 行不通,有四个原因:
 
 1. **模型会分叉**:dispatcher 用 `_resolve_model(agent_profile, req.model_override)`(agent profile + 用户选的模型),而 attached runtime 是 `create_runtime()` 无参自动探测的,`api_model` 不一致。走 exec 会用错模型。
 2. **上下文会冲突**:dispatcher 用 context-engine 准备好了消息(`prep.agent_messages`),exec 自己从 DAG render 历史,两套会打架。
 3. **流式事件不兼容**:exec 的 `on_stream` 发 flat dict,dispatcher 的 `on_event` 要 webui envelope。
 4. **最关键——会写重复节点**:试着在 dispatcher 里用 `_open/_close_model_call_node` 加一个 llm 节点,结果 DAG 里出现 `[user, assistant, assistant]`——因为 **dispatcher 的 assistant 会话消息(`persist_assistant_message`)本身就是顶层 LLM 调用的 DAG 记录**。再加 llm 节点就重复了。`test_dispatcher_integration.py::test_real_loop_text_only` 直接抓到这个重复。
 
-**结论**:dispatcher 顶层 LLM 调用**已经**有 DAG 表示(role=assistant 的会话消息节点),工具调用挂在它下面。不需要也不应该再加 llm 节点。原始的"code→code 缺 llm 节点"问题只发生在 **`@agentic_function` 内部 exec 的 tool loop**,已被步 1-2 修复。dispatcher 保持现状。
+**结论**:dispatcher 顶层 LLM 调用**已经**有 DAG 表示(role=assistant 的会话消息节点),工具调用挂在它下面。不需要也不应该再加 llm 节点。"code→code 缺 llm 节点"问题只发生在 **`@agentic_function` 内部 exec 的 tool loop**,由上文的配对 llm 节点写入覆盖。dispatcher 保持现状。
 
 dispatcher 和 exec 的关系不是"dispatcher 走 exec",而是**两个并列的 LLM 调用入口**,各自把顶层调用记进 DAG(dispatcher → assistant 会话节点;exec → llm 节点),共享下层的 agent_loop 引擎和 DAG 节点写入 API。这跟其他框架一致(OpenClaw 也有独立 dispatcher 层)。
 
@@ -240,30 +240,24 @@ dispatcher 和 exec 的关系不是"dispatcher 走 exec",而是**两个并列的
 
 `tool.before` 只在 `_execute_tool_calls`(`agent_loop.py:518`)一处 fire,所有路径都经过它。CallableModel 无内部 tool loop(用户 fn 只返回 str),不会重复/丢失事件。
 
-### 风险
+### 敏感点
 
-1. **dispatcher 测试 seam(最高)**:4a 把 stream_fn 穿过 4 层后,`_run_loop_blocking` 仍是 patch 入口,测试的 stream_fn 经 exec 流到 model。`test_dispatcher_dag_attach.py` 整体替换 `_run_loop_blocking`,不受影响。
-2. **prompt-cache 前缀稳定**(4b):override 不能破坏 DAG-prefix 缓存。
-3. **response_format 回归**(3a):`claude_call`/`gemini_call` 的 JSON-mode 靠 adapter 补回 suffix。
+1. **dispatcher 测试 seam**:stream_fn 穿过 4 层后,`_run_loop_blocking` 仍是 patch 入口,测试的 stream_fn 经 exec 流到 model。`test_dispatcher_dag_attach.py` 整体替换 `_run_loop_blocking`,不受影响。
+2. **prompt-cache 前缀稳定**:override 不能破坏 DAG-prefix 缓存。
+3. **response_format**:`claude_call`/`gemini_call` 的 JSON-mode 靠 adapter 补回 suffix。
 
-### 待更新测试
+## 统一"记一次模型回复"的写入
 
-**Trivial(删 assert/override)**:`test_openai.py:61`、`test_anthropic.py:63`、`test_gemini.py:68`(删 `_uses_legacy_call() is False`);`test_decision.py:24`、`test_loop_options.py:153`、`test_dispatcher_dag_attach.py:89`(删 `_uses_legacy_call→True` override,留 `_call` override)。
-
-**Behavioral(需重验)**:`test_runtime_exec_dag.py:34`、`test_functions.py` 的 `_mock_call`(按 content shape 分支,adapter 必须原样传 content)、`conftest.py` 的 `echo_call`/`noop_call`。
-
-## 统一"记一次模型回复"的写入（保留新原语，删旧机制）
-
-### 现状:同一件事两套写法
+### 同一件事两套写法
 
 "记录模型回复"现在有两套**配对写节点**(开占位 running → 回填结果)的实现,按入口分:
 
 | 入口 | 开占位 | 回填 | 实现 |
 |---|---|---|---|
-| dispatcher(聊天) | `insert_placeholder`(_turn_lifecycle.py:65) | `persist_assistant_message`(persistence.py) | 旧机制 |
-| exec(代码) | `_open_model_call_node`(runtime.py:631) | `_close_model_call_node`(runtime.py:656) | 新原语 |
+| dispatcher(聊天) | `insert_placeholder`(_turn_lifecycle.py:65) | `persist_assistant_message`(persistence.py) | dispatcher 本地 |
+| exec(代码) | `_open_model_call_node`(runtime.py:631) | `_close_model_call_node`(runtime.py:656) | runtime 原语 |
 
-两套结构一模一样(open→close 配对),但旧的那套散在 dispatcher,新的在 runtime。这是"头尾都写两份"的根源。
+两套结构一模一样(open→close 配对),但一套散在 dispatcher、另一套在 runtime,同样的头尾写入存在两份。
 
 ### 关键事实(让统一变简单)
 
@@ -271,9 +265,9 @@ dispatcher 和 exec 的关系不是"dispatcher 走 exec",而是**两个并列的
 
 **两个原语在节点层早就用同一个 role。** 唯一差异是 dispatcher 多写了 4 样元数据,exec 的裸原语没写。序列化只有一个收口点 `_node_to_msg` → 前端读到的还是 "assistant"。
 
-### 方案:升级新原语 → dispatcher 改调它 → 删旧机制
+### 一个通用配对原语,两个入口共用
 
-把 exec 的配对原语升级成**通用配对原语**(能装下 dispatcher 需要的字段),两个入口都用它,删掉旧的 placeholder/persist 重复机制。
+exec 的配对原语升级为**通用配对原语**(能装下 dispatcher 需要的字段),两个入口都用它,重复的 placeholder/persist 机制随之取消。
 
 统一原语必须保留这 4 样(否则前端/分支/计量会断):
 
@@ -291,14 +285,25 @@ open_model_call_node(*, role="llm", parent_id=None, content_text="", model=None)
 close_model_call_node(node_id, *, reply, status="success", blocks=None, usage=None)
 ```
 
-落地顺序:
+前端无需改动:`_node_to_msg` 仍输出 "assistant",前端读的字段(blocks/token/parent_id)都还在,只是改由统一原语写。
+
+## 实现状态
+
+已具备:
+
+- exec 在 sync 与 async 两条路径上的配对 llm 节点写入,以及 `_call_id` 切换使工具 code 节点归属到 llm 节点
+- `CallableModel` adapter 及把 `call=` 路由到 `_call_via_providers` 的 Runtime 接线
+- `stream_fn` 穿过 exec → _call_via_providers → AgentSession → AgentOptions
+
+统一配对原语尚未被 dispatcher 采用,落地顺序为:
+
 1. 升级 `_open/_close_model_call_node`,加 `parent_id` / `blocks` / `usage` / `status` 可选参数(exec 调用不变,默认行为不变)
 2. dispatcher 的 `insert_placeholder` 改成调 `open_model_call_node(role="assistant", parent_id=user_msg_id)`
 3. dispatcher 的 `persist_assistant_message` 改成调 `close_model_call_node(blocks=..., usage=..., status="completed"/"cancelled")`——只保留字段组装,删掉自己的 append/update
 4. 删 `_turn_lifecycle.py` 的 placeholder/error-fold 里重复的写节点逻辑
 5. 验证:webui 端到端聊天(气泡、thinking/tool 卡片、token、停止、fork)全部正常 + 全量 pytest
 
-零前端改动——因为 `_node_to_msg` 仍输出 "assistant",前端读的字段(blocks/token/parent_id)都还在,只是改由统一原语写。
+涉及 legacy 调用 seam 的测试:`test_openai.py:61`、`test_anthropic.py:63`、`test_gemini.py:68` 去掉 `_uses_legacy_call() is False`;`test_decision.py:24`、`test_loop_options.py:153`、`test_dispatcher_dag_attach.py:89` 去掉 `_uses_legacy_call→True` override,保留 `_call` override。需重验的行为类:`test_runtime_exec_dag.py:34`、`test_functions.py` 的 `_mock_call`(按 content shape 分支,adapter 原样传 content)、`conftest.py` 的 `echo_call`/`noop_call`。
 
 ## 相关文件
 

@@ -1,23 +1,29 @@
 # Unifying parent_id and called_by — Design
 
-> Status: **Partially implemented**
 > Code: `store/session/_msg_adapter.py`, `webui/persistence.py`, `contextgit/dag.py`, `webui/ws_actions/session.py`
 
-## 1. Problem
+## 1. Two parent pointers, two meanings
 
-A DAG node has two "parent pointer" fields with different meanings. They are read and written in different places, which leads to inconsistent traversal results.
+A DAG node carries two "parent pointer" fields with different meanings, read and
+written in different places.
 
 | Field | Meaning | Who writes it | Who reads it |
 |---|---|---|---|
-| `called_by` | Call relationship (who called me) | DAG store (the `Call` object in `context/nodes.py`) | `render_context`, `get_branch`, `_rebuild_runtime_cards`, `aggregate_tool_messages` (after the change) |
+| `called_by` | Call relationship (who called me) | DAG store (the `Call` object in `context/nodes.py`) | `render_context`, `get_branch`, `_rebuild_runtime_cards`, `aggregate_tool_messages` |
 | `parent_id` | Conversation chain (which message precedes mine) | `_msg_adapter.py` (copied from `called_by`) | `linear_history`, `_annotate_spawn_origin`, dispatcher branch management |
 
-**Root cause**: `_msg_adapter.py` assigns `called_by` directly to `parent_id` (lines 132/169/188/206), but the two have different semantics:
+The two carry different semantics:
 
-- `called_by` is the **call hierarchy**: a user's called_by=ROOT; a function's called_by=ROOT (manual call) or assistant_id (LLM call); a tool's called_by=function id
-- `parent_id` should be the **conversation order**: the second message's parent_id should point to the first, the third to the second
+- `called_by` is the **call hierarchy**: a user's called_by=ROOT; a function's
+  called_by=ROOT (manual call) or assistant_id (LLM call); a tool's called_by=function id
+- `parent_id` is the **conversation order**: the second message's parent_id points
+  to the first, the third to the second
 
-The direct assignment causes the following: when a session has two ROOT-parented user nodes, both of their `parent_id` values are empty (ROOT is not a valid message id), so `linear_history` walking along parent_id breaks.
+Because `_msg_adapter.py` assigns `called_by` directly to `parent_id`, the two
+coincide today, and that assignment is the source of one traversal gap: when a
+session has two ROOT-parented user nodes, both of their `parent_id` values are empty
+(ROOT is not a valid message id), so `linear_history` walking along parent_id stops
+early.
 
 ## 2. Two data structures
 
@@ -33,39 +39,40 @@ The DAG and the chat UI need different data formats, and both are required:
 
 `aggregate_tool_messages` is what converts the DAG format into the UI format.
 
-## 3. Fixes already completed
+## 3. Incremental unification
 
-| Fix | commit | What it did |
-|---|---|---|
-| `_rebuild_runtime_cards` uses called_by | `476aa8f6` | Function-descendant relationships are determined by called_by, so user nodes are no longer dropped by mistake |
-| `aggregate_tool_messages` prefers called_by | This change | Tool→assistant aggregation uses `called_by` to find the parent node, with `parent_id` as a fallback |
-| `handle_load_session` fallback | `1adfbbc3` | When linear_history is incomplete, fall back to get_branch |
+`parent_id` is referenced in 188 places, reaching deep into core modules such as the
+dispatcher, branch management, and sub_agent. Replacing it everywhere at once would
+put all message loading at risk in a single move. The design therefore moves the
+critical paths onto `called_by` one layer at a time, keeping `parent_id` as a
+fallback so that a missing `called_by` behaves exactly as before:
 
-## 4. Current strategy
+1. **Aggregation layer** (persistence.py): prefer `called_by`, with `parent_id` as a fallback
+2. **Render layer** (session.py `_rebuild_runtime_cards`): use `called_by`, so function-descendant
+   relationships are determined by the call hierarchy and user nodes are not dropped
+3. **Load layer** (session.py `handle_load_session`): linear_history, falling back to get_branch
+   when linear_history is incomplete
+4. **`_msg_adapter.py`**: keeps copying called_by → parent_id, for backward compatibility
+5. **`linear_history`**: keeps using parent_id, covered by the load-layer fallback
 
-**Incremental unification**: rather than deprecating `parent_id` all at once, gradually make the critical paths prefer `called_by`.
+## 4. Target state
 
-`parent_id` is referenced in 188 places, reaching deep into core modules such as the dispatcher, branch management, and sub_agent. Replacing it all at once is too risky. The current strategy is:
-
-1. **Aggregation layer** (persistence.py): prefer `called_by`, with `parent_id` as a fallback ✅ done
-2. **Render layer** (session.py _rebuild_runtime_cards): use `called_by` ✅ done
-3. **Load layer** (session.py handle_load_session): linear_history + get_branch fallback ✅ done
-4. **_msg_adapter.py**: keep copying called_by → parent_id (backward compatibility)
-5. **linear_history**: keep using parent_id (covered by the fallback)
-
-## 5. Follow-up plan (low priority)
-
-Once the fixes above have been thoroughly validated, we can go further:
+The end state sets `parent_id` from conversation order rather than copying
+`called_by`, which makes the conversation chain correct by construction:
 
 | Step | What to do | Prerequisite |
 |---|---|---|
-| A | Have `_msg_adapter.py` set parent_id by conversation seq order (instead of copying called_by) | Confirm the current fixes are stable |
-| B | Change `linear_history` to traverse using the correct parent_id (which becomes correct naturally after step A) | Step A |
-| C | Remove the get_branch fallback in handle_load_session (no longer needed) | Step B |
-| D | Mark parent_id as deprecated and use only called_by in the long term | Steps A–C all stable |
+| A | Have `_msg_adapter.py` set parent_id by conversation seq order (instead of copying called_by) | Current layers stable |
+| B | Change `linear_history` to traverse using parent_id (correct by construction after step A) | Step A |
+| C | Remove the get_branch fallback in handle_load_session, no longer needed | Step B |
+| D | Mark parent_id as deprecated and use only called_by long term | Steps A–C all stable |
 
-## 6. Risks
+Steps A–D affect all message loading, so they need a feature flag and thorough
+testing before rollout.
 
-**Risk of the current approach**: low. It only changes the field priority in the aggregation layer, with parent_id retained as a fallback. Worst case = falling back to parent_id when called_by is missing (identical to the behavior before the change).
+## Implementation Status
 
-**Risk of the follow-up steps**: medium-to-high. Changing _msg_adapter.py affects all message loading, and needs a feature flag plus thorough testing.
+Partially implemented. Layers 1–3 of the incremental unification are in place: the
+aggregation layer prefers `called_by`, `_rebuild_runtime_cards` uses `called_by`,
+and `handle_load_session` has the get_branch fallback. Layers 4–5 remain as
+described, and the target state (steps A–D) is not yet started.

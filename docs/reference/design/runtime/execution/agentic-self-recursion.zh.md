@@ -1,6 +1,6 @@
 # Agentic 函数防自递归机制
 
-> 现状：从「deny 屏蔽工具」改成「处境引导 + 递归深度上限兜底」(commit `1f6f5fce`)。
+> agentic 函数通过处境引导防止调用自身，并以递归深度上限兜底。
 > 本文档基于真实代码逐条对应 file:line，可照着核对。
 > 相关代码：
 > - `openprogram/agentic_programming/function.py`
@@ -22,20 +22,20 @@
 
 2. **模型看到 docstring 匹配任务，误以为该调。** 模型看到 `wiki_agent` 的工具描述("Maintain a wiki vault — route to ingest…")正好匹配当前任务，认为应该路由给 `wiki_agent` → 调自己 → 进去又是裸 exec、又看到自己 → 无限递归。
 
-实战根因记录(7 层嵌套实例)：`docs/reference/design/TODO-doc-code-gaps.md` §1。会话记录里 `context_tree` 展示了 7 层嵌套(`4d76→0c07→0964→c6f9→f1c9→4379→8746→100c`)。
+一个 7 层嵌套的根因实例见 `docs/reference/design/TODO-doc-code-gaps.md` §1，其中会话记录的 `context_tree` 展示了调用链 `4d76→0c07→0964→c6f9→f1c9→4379→8746→100c`。
 
 ---
 
 ## 2. 设计理念：为什么用「引导」而非「deny」
 
-**让模型理解自己的处境、自主判断不调，而不是强行从工具列表里屏蔽掉它自己。**
+**让模型理解自己的处境、自主判断不调，而不是把它自己从工具列表里屏蔽掉。**
 
-旧的 deny 方案(wrapper 把函数自己的名字推进 `_current_tool_policy["deny"]`，使内层模型看不到自己)的问题：
+另一种做法是 deny 方案：wrapper 把函数自己的名字推进 `_current_tool_policy["deny"]`，使内层模型看不到自己。有两点不利：
 
-- 模型学不会处境判断——它不知道「我正在 X 内部」这件事，只是「X 不在工具列表里」。换个上下文(deny 没生效、或跨函数环)它照样会犯。
-- 违背理念——框架替模型做了决定，而不是给模型足够信息让它自己做对的决定。这是用户明确要求的方向：模型该知道自己在哪、自己判断不调。
+- 模型学不会处境判断。它不知道「我正在 X 内部」，只知道「X 不在工具列表里」。换到 deny 不适用的上下文(如跨函数环)，它照样会犯同样的错。
+- 框架替模型做了决定，而不是给模型足够信息让它自己做对的决定。
 
-新方案把「不调自己」变成模型能理解的一条处境信息(你正在 X 体内，调 X = 无限递归)，模型据此自主不调；同时保留一个与模型判断无关的**深度上限**作为止损兜底。
+引导把「不调自己」变成模型能据以行动的处境信息：你正在 X 体内，调 X 就是回到你现在的位置。模型据此自主不调。与模型判断无关的**深度上限**保留下来作为止损兜底。
 
 ---
 
@@ -60,13 +60,13 @@ re-enters where you are now and causes infinite recursion. Use lower-level tools
 - standalone 回退路径(无 store)：`runtime.py:1518-1532`，从 `_recursion_depth` 取最深的函数名(`max(_depths, key=_depths.get)`，`runtime.py:1525`)，`_situational_prefix(_cur_fn, "")`(无 doc)，同样拼在 `content` 之前(`runtime.py:1532`)。
 - system 前缀单独组装(`runtime.py:1535-1539`：`self.system` + `_skills_block()`)，**处境提示不进 system**。
 
-**为什么放 user turn、不放 system：** 决策6(`session-dag.md`)要求整个项目共用一个**统一且恒定**的 system prompt(身份 + 项目记忆 + 统一工具列表 + skills)以最大化 KV 缓存命中——前缀一变，长上下文后全不命中、成本爆。处境提示是**逐函数、逐调用点**变化的(每个函数名/docstring 不同)，放进 system 会破坏前缀恒定。放在 user turn 开头既能让模型看到，又不碰 system 前缀。
+**为什么放 user turn、不放 system：** 整个项目共用一个**统一且恒定**的 system prompt(身份 + 项目记忆 + 统一工具列表 + skills)以最大化 KV 缓存命中(`session-dag.md`)——前缀一变，长上下文后全不命中、成本爆。处境提示是**逐函数、逐调用点**变化的(每个函数名/docstring 不同)，放进 system 会破坏前缀恒定。放在 user turn 开头既能让模型看到，又不碰 system 前缀。
 
-### 删 deny —— 工具列表含函数自己，靠引导不靠屏蔽
+### 不做自我 deny —— 工具列表含函数自己
 
-wrapper 不再把函数自己的名字推进 `_current_tool_policy["deny"]`。内层模型的工具列表里**仍然能看到它自己**，靠处境提示让模型自主不调。
+wrapper 不把函数自己的名字推进 `_current_tool_policy["deny"]`。内层模型的工具列表里**仍然能看到它自己**——这正是处境提示有对象可指的前提，由提示让模型自主不调。
 
-`_current_tool_policy` 的**其它用途保留未动**：`source` / `allow` / `toolset` / unattended deny。具体见 `runtime.py:1451-1458`——`policy.get("deny")` 仍在用，与 unattended 的 `denied_ask_tools` 合并(`runtime.py:1457`)；`source`/`allow`/`toolset` 在 `runtime.py:1469`/`1479-1482` 仍生效。删的只是「把函数自己名字注入 deny」这一处。
+`_current_tool_policy` 的**其它用途不受影响**：`source` / `allow` / `toolset` / unattended deny。具体见 `runtime.py:1451-1458`——`policy.get("deny")` 在用，与 unattended 的 `denied_ask_tools` 合并(`runtime.py:1457`)；`source`/`allow`/`toolset` 在 `runtime.py:1469`/`1479-1482` 生效。唯一不存在的是「把函数自己名字注入 deny」。
 
 ### (兜底) 深度上限 —— 止损安全网
 
@@ -80,7 +80,7 @@ wrapper 不再把函数自己的名字推进 `_current_tool_policy["deny"]`。�
 
 **正常调用永不触及上限**：处境提示先拦住「发生」，深度计数只在模型无视引导、连续 re-enter 同名函数 5 层后才触发。
 
-**三者定位：** 处境提示 = 防发生(让模型自己不调)；删 deny = 配套(工具可见，引导才有对象)；深度上限 = 止损安全网(模型失控时不烧无限 token)。
+**三者定位：** 处境提示 = 防发生(让模型自己不调)；不做自我 deny = 配套(工具可见，引导才有对象)；深度上限 = 止损安全网(模型失控时不烧无限 token)。
 
 ---
 
@@ -114,7 +114,7 @@ wrapper 不再把函数自己的名字推进 `_current_tool_policy["deny"]`。�
 |---|---|---|
 | 1 | 处境提示含函数名、含 "do NOT call it"、含 "recursion"，docstring 降级到末尾(`recursion` 出现位置在 docstring 之前) | `test_situational_prefix_warns_against_self_call` |
 | 2 | 空 docstring 时不追加 "This function's job"，提示仍含函数名 | `test_situational_prefix_handles_empty_doc` |
-| 3 | 函数自己的名字**不再**进 `_current_tool_policy["deny"]`(self-deny 删干净) | `test_self_name_NOT_denied_during_call` |
+| 3 | 函数自己的名字**不**进 `_current_tool_policy["deny"]` | `test_self_name_NOT_denied_during_call` |
 | 4 | 正常调用一层时，本函数名深度 = 1(进入即 +1) | `test_depth_increments_during_call` |
 | 5 | 无脑自调超限抛 `RecursionError`，消息含函数名 + 上限数字；进入函数体次数恰为 `_MAX_AGENTIC_RECURSION_DEPTH`(到上限止住、不再深入) | `test_depth_backstop_raises_past_limit` |
 | 6 | A→B 不同名独立计数：B 深 nesting 不计入 A 的限额，反之亦然(per-name 不误伤) | `test_distinct_subcalls_not_collateral_damage` |
@@ -125,28 +125,28 @@ wrapper 不再把函数自己的名字推进 `_current_tool_policy["deny"]`。�
 
 ---
 
-## 6. 与旧 deny 方案的对比
+## 6. 与 deny 方案的对比
 
-| 维度 | 旧:deny 屏蔽工具 | 新:处境引导 + 深度上限 |
+| 维度 | deny:屏蔽工具 | 本设计:处境引导 + 深度上限 |
 |---|---|---|
 | 怎么做 | wrapper 把函数自己名字推进 `_current_tool_policy["deny"]`，内层模型看不到自己 | 工具列表含函数自己；user turn 开头注入处境提示让模型自主不调；超 5 层抛 `RecursionError` 兜底 |
 | 模型认知 | 不知道「我在 X 内部」，只是 X 不在列表 | 明确知道处境(你在 X 体内、调 X = 递归) |
-| 是否破坏 system 前缀缓存 | deny 在 policy 层、不动 system；但屏蔽是「替模型决定」 | 提示放 user turn、不进 system，前缀仍恒定(符合决策6) |
-| 失控止损 | 靠屏蔽间接挡(屏蔽失效就无底) | 显式深度上限 5 层硬止损 |
-| 优 | 直接、无需模型配合 | 模型学会处境判断；符合理念;兜底确定性强 |
-| 劣 | 模型学不会处境判断;违背理念;屏蔽一旦不生效就裸奔 | 纯引导对弱模型不 100% 可靠(故有深度上限兜底) |
+| 对 system 前缀缓存的影响 | deny 在 policy 层、不动 system，但屏蔽是替模型决定 | 提示放 user turn、不进 system，前缀仍恒定 |
+| 失控止损 | 靠屏蔽间接挡，屏蔽失效就无底 | 显式深度上限 5 层硬止损 |
+| 长处 | 直接、无需模型配合 | 模型学会处境判断;兜底确定性强 |
+| 短处 | 模型学不会处境判断;屏蔽一旦不生效就裸奔 | 纯引导对弱模型不完全可靠，故有深度上限兜底 |
 
 ---
 
 ## 7. 已知局限
 
-1. **纯引导对弱模型 / 长上下文不 100% 可靠。** 处境提示是让模型自主判断，弱模型或上下文过长稀释提示时可能仍会调自己——所以保留深度上限作为确定性兜底。
-2. **跨函数环(A→B→A 交替)第一版未覆盖。** 深度上限按**同名**计数(`_recursion_depth[name]`)，只挡直接自递归(A→A→A…)。A→B→A→B 这种交替环里 A 的深度每次只 +1 到一定层、B 同理，不会触发任一名的上限。整条调用链识别(把 A 在调用链上出现过就算环)是增强项，未做。
-3. **旧 deny 实现其实也只挡直接自递归、不挡跨函数环。** 旧 deny 把「当前函数自己」推进 deny，A 跑时 deny 的是 A，B 仍可被调、B 里再调 A 也不在 B 的 deny 里。所以新方案在「跨函数环」这点上**不是回退**——两版都只防直接自递归，跨链识别是两版共同的待办增强。
+1. **纯引导对弱模型 / 长上下文不完全可靠。** 处境提示是让模型自主判断，弱模型或上下文过长稀释提示时可能仍会调自己——所以保留深度上限作为确定性兜底。
+2. **跨函数环(A→B→A 交替)未覆盖。** 深度上限按**同名**计数(`_recursion_depth[name]`)，只挡直接自递归(A→A→A…)。A→B→A→B 这种交替环里 A 的深度只 +1 到一定层、B 同理，不会触发任一名的上限。整条调用链识别(把 A 在调用链上出现过就算环)是可选的增强项。
+3. **deny 方案同样挡不住跨函数环。** deny 把当前函数自己推进 deny，A 跑时 deny 的是 A，B 仍可被调、B 里再调 A 也不在 B 的 deny 里。两种做法都只防直接自递归，跨链识别对二者都是增强项。
 
 ---
 
 ## 关联文档
 
-- `docs/reference/design/runtime/session-dag.md` 决策6 —— 统一 system 前缀约束，本机制把处境提示放 user turn 正是为遵守该约束。
-- `docs/reference/design/TODO-doc-code-gaps.md` §1 —— 7 层嵌套根因记录。
+- `docs/reference/design/runtime/session-dag.md` —— 统一 system 前缀约束，本机制把处境提示放 user turn 正是为遵守该约束。
+- `docs/reference/design/TODO-doc-code-gaps.md` §1 —— 7 层嵌套根因实例。

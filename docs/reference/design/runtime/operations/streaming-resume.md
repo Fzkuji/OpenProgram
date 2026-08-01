@@ -1,14 +1,14 @@
 # Persisting In-Flight State / Reconnect Recovery
 
-## Problem Statement
+## Problem
 
-Currently, any "in-flight" artifact shown in the UI (LLM streaming reply / tool call / agentic
-function / task spawn / merge) lives **only in memory + the WebSocket
-stream** until it finishes. Refreshing the page loses it — because the msg hasn't been written to
-the SessionDB yet. You can only see it in a new page after the final flush to disk.
+An "in-flight" artifact shown in the UI (LLM streaming reply, tool call, agentic
+function, task spawn, merge) lives **only in memory and the WebSocket stream** until
+it finishes. Refreshing the page loses it, because the msg has not been written to the
+SessionDB yet; it becomes visible in a new page only after the final flush to disk.
 
-And if the backend dies midway / the network drops, that artifact is lost forever: there's no
-state to query, no way to recover, and no way to "take a peek at the current progress."
+If the backend dies midway or the network drops, that artifact is gone: there is no
+state to query, no way to recover it, and no way to inspect its progress.
 
 ## Goal
 
@@ -114,7 +114,7 @@ When the worker starts:
 
 This ensures no orphan msgs are left "running forever" after a backend restart.
 
-## Schema Changes (Phase 1)
+## Schema Changes
 
 `openprogram/store/session/_msg_adapter.py::_node_to_msg`:
 
@@ -125,25 +125,29 @@ This ensures no orphan msgs are left "running forever" after a backend restart.
 `openprogram/context/nodes.py::Call`: don't touch the dataclass; all new fields go through
 `metadata`.
 
-## Implementation Phases
+## Out of Scope
 
-| Phase | Scope | Estimate |
-|---|---|---|
-| 1 | placeholder schema + worker abort sweep | 30 min |
-| 2 | `_execute/run.py` agentic function writes placeholder + throttled tree save | 60 min |
-| 3 | dispatcher LLM reply writes placeholder + streaming content save | 60 min |
-| 4 | inline tool call placeholder (long-running bash, etc.) | 30 min |
-| 5 | WS `subscribe_msg` channel + per-msg broadcast | 60 min |
-| 6 | frontend load_session detection + auto subscribe + live patch | 60 min |
-| 7 | tests + edge cases (restart / disconnect / msg_id collision) | 30 min |
+- True resume after interruption — the backend dying midway and, after restart, continuing
+  to run the remaining sub-calls. That requires checkpointing the LLM context and replaying
+  it, several times the effort of this design. Here an interrupted msg is marked aborted, and
+  the user reruns it with the Retry button.
+- A cross-session global active-task panel showing which msgs are running right now. The
+  `_msg_subscribers` keyspace makes this straightforward to add later.
 
-Total ~5h. Each phase is independently usable + rollback-able.
+## Implementation Status
 
-## Out of Scope This Time
+The design lands in independently usable, independently revertible pieces:
 
-- True "resume after interruption" — e.g. the backend dies midway and, after restart, continues
-  running the remaining sub-calls. This requires checkpointing the LLM context + replay, several
-  times the effort of this design. Under the current approach, an interrupted msg is marked
-  aborted, and the user reruns it with the Retry button.
-- A cross-session global active-task panel ("which msgs are running right now"). This is easy to
-  extend on top of the `_msg_subscribers` keyspace, but not in this round.
+| Piece | Scope |
+|---|---|
+| 1 | placeholder schema + worker abort sweep |
+| 2 | `_execute/run.py` agentic function writes placeholder + throttled tree save |
+| 3 | dispatcher LLM reply writes placeholder + streaming content save |
+| 4 | inline tool call placeholder (long-running bash, etc.) |
+| 5 | WS `subscribe_msg` channel + per-msg broadcast |
+| 6 | frontend load_session detection + auto subscribe + live patch |
+| 7 | tests + edge cases (restart / disconnect / msg_id collision) |
+
+Of these, the task spawn placeholder is already in place
+([`runner.py`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/task/runner.py)),
+as is the `status=running` rendering in `RuntimeBlock` and the attach card.

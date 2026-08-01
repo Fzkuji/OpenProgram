@@ -1,39 +1,38 @@
 # User input requests: pausing a run to ask the user
 
-Status: **Phase 1 + Phase 2 已落地并验证**（2026-06-13）。Phase 1：
-runtime.ask/confirm/can_ask、QuestionRegistry、WS question_reply/reject、前端
-QuestionPrompt 卡片，端到端 + 前端双向验证通过。Phase 2：@agentic_function
-子进程桥——子进程里的 runtime.ask 经 mp.Queue 把问题送回父进程、答案回流
-resume，真 spawn 子进程 e2e 通过。重连恢复也落地（load_session 重放 pending +
-REST /api/questions）。Phase 3（TUI）、4（审批合流+channels+form）待做。
-Companion: [../cli/tui-upgrade.md](../../cli/tui-upgrade.md) (TUI surface).
+> This document describes how a running function pauses to ask the user a
+> question and resumes with the answer: the API surface, the pending-question
+> registry, the transport that carries a question out of a subprocess, and how
+> the answer travels back.
+> Companion: [../cli/tui-upgrade.md](../../cli/tui-upgrade.md) (TUI surface).
 
 ## Problem
 
 A function (especially an `@agentic_function`) sometimes needs the user
 mid-run: confirm a destructive step, pick between alternatives, supply a
-missing value. Today there is no working way to pause execution, surface
-the question in web/TUI/channels, and resume with the answer.
+missing value. That requires pausing execution, surfacing the question in
+web/TUI/channels, and resuming with the answer.
 
-## What already exists (audit conclusion)
+## Pre-existing mechanisms
 
-Three related mechanisms, none alive end-to-end on the main chat path:
+Three related mechanisms exist in the codebase, none of them alive end-to-end
+on the main chat path:
 
 | Mechanism | State |
 |---|---|
 | `ask_user` / `set_ask_user` / `FollowUp` (`openprogram/functions/agentics/ask_user/`) | Primitive complete, DAG awaiting-node bookkeeping complete; but no handler registered in the worker, and the agentic subprocess bridge is one-way — returns `None` in practice |
-| webui follow-up round-trip (`webui/server.py:234-270`, WS `follow_up_answer` action, web `handleFollowUpQuestion`) | All three segments exist; the initiator `_web_follow_up` lost its only caller in `b39347fb` — dead code. Web UI side is legacy DOM injection into `#runtime_pending` (only exists while a runtime block streams). TUI types the envelope but never handles it |
+| webui follow-up round-trip (`webui/server.py:234-270`, WS `follow_up_answer` action, web `handleFollowUpQuestion`) | All three segments exist; the initiator `_web_follow_up` has no caller left — dead code. The web UI side is legacy DOM injection into `#runtime_pending` (only exists while a runtime block streams). TUI types the envelope but never handles it |
 | Approval gate (`openprogram/agent/_approval.py`, wired in dispatcher) | Wait machinery complete and live, but `resolve()` is only called from tests; no web/TUI UI; default `bypass` masks it; sub-agents force bypass to avoid 300s hangs |
 
-So the skeleton (blocking queue, WS action, stop-sentinel unblocking, DAG
-awaiting nodes) is all there. What's missing is the registry shape
-(per-request, not a global handler slot), the subprocess answer channel,
-real frontend UI, and honest timeout semantics.
+The skeleton — blocking queue, WS action, stop-sentinel unblocking, DAG
+awaiting nodes — is therefore already available. What this design adds is the
+registry shape (per-request, not a global handler slot), the subprocess answer
+channel, real frontend UI, and explicit timeout semantics.
 
-Key constraint discovered: `@agentic_function` bodies run in a **spawned
-subprocess** (`agent/process_runner.py`) with an mp.Queue that is
-child→parent only. Any design must add a parent→child answer queue; no
-amount of worker-side wiring avoids this.
+The binding constraint is that `@agentic_function` bodies run in a **spawned
+subprocess** (`agent/process_runner.py`) whose mp.Queue is child→parent only.
+Any design must add a parent→child answer queue; no amount of worker-side
+wiring avoids this.
 
 ## Reference designs (what we take)
 
@@ -58,7 +57,7 @@ All four implement "execution point blocks on a primitive, UI resolves it"
 — no generator/coroutine acrobatics. Ours blocks a thread (functions
 already run in threads/subprocesses).
 
-## API (the part to agree on)
+## API
 
 On `runtime`, next to `runtime.exec` / `decision`:
 
@@ -80,42 +79,49 @@ ok = runtime.confirm("Archive all 87 emails?", detail=preview,
 runtime.can_ask()  # -> bool; False in headless runs so authors can branch
 ```
 
-- `ask_user(question)` stays as a thin alias of `runtime.ask(question)`.
-  ✅ 已落地（commit f0894546）：无全局 handler 时回退到 `runtime.ask`，
-  UserDeclined/AskTimeout 归一为 None 保持老语义；CLI 的 set_ask_user 路径不变。
-- The `clarify` built-in tool (LLM-callable) starts working again for free. ✅ 随上条复活。
-- Three explicit outcomes (answered / declined / timeout) — the current
-  "300 s silently returns None" behavior is removed.
+- `ask_user(question)` is a thin alias of `runtime.ask(question)`. With no
+  global handler installed it falls back to `runtime.ask`, and
+  UserDeclined/AskTimeout collapse to `None` to preserve the older semantics;
+  the CLI's `set_ask_user` path is unaffected.
+- The `clarify` built-in tool (LLM-callable) works through the same path.
+- Three explicit outcomes: answered / declined / timeout. There is no silent
+  `None` return after 300 s.
 - `runtime.form(...)` (MCP-elicitation-style flat schema) is deferred.
 
 ## Mechanism
 
 1. **Registry** (worker process): `PendingQuestion {id, session_id, kind,
    prompt, options, multi, allow_custom, created_at, expires_at}` + a
-   per-request `threading.Event`. Replaces the global `set_ask_user`
-   handler slot (fixes the concurrent-session overwrite bug). Resolve is
-   atomic claim-once; `handle_stop` puts the cancel sentinel exactly like
-   the existing follow-up queues.
-2. **Protocol** ✅（WS Phase 1；REST commit be6bb102）: WS broadcast
-   `question.asked / question.replied / question.rejected`; REST `GET
-   /api/questions?session_id=` + `POST /api/questions/{id}/reply` /
-   `.../reject` for reconnect recovery (`webui/routes/questions.py`).
-   `handle_load_session` 还在(重)连时重放 still-pending 的 `question.asked`。
-   Reuses the existing `_broadcast_chat_response` plumbing (its post-stop gag
-   is the behavior we want).
-3. **Subprocess bridge** ✅（Phase 2，commit 1c634b5f）: "提问往哪条通道送"
-   做成 `QuestionTransport`，对齐 Python logging 的 Handler（`publish` 即
-   `Handler.emit`）：`EventLayerTransport`（默认，事件层→前端卡片+总线，worker
-   用）/ `QueueTransport`（经 mp.Queue 送回父进程，子进程用）。通道由 runtime
-   显式持有（`runtime._question_transport`），不是模块级全局开关。
-   `run_agentic_in_subprocess` 加 parent→child `answer_queue`；`_child_entry`
-   给子进程 runtime 装 `QueueTransport`（问题经 event_queue 上行、带
-   `__op_question__` 标记）并起 answer-pump 线程（从 answer_queue 取答案
-   resolve 子进程本地 registry）。父进程 `_drain` 拦截该 envelope →
-   `_bridge_question_to_parent` 在父 registry 注册同一 qid + 发前端卡片 +
-   起 waiter，WS reply 经既有 `_resolve_question` resolve 父 registry → waiter
-   把答案推回 answer_queue。子进程退出/被 stop 时父侧把残留待答按 declined
-   收尾、撤回卡片（claim-once，重复 resolve 无害）。
+   per-request `threading.Event`. This replaces the global `set_ask_user`
+   handler slot, which two concurrent sessions could overwrite for each
+   other. Resolve is an atomic claim-once; `handle_stop` puts the cancel
+   sentinel exactly like the existing follow-up queues.
+2. **Protocol**: WS broadcast `question.asked / question.replied /
+   question.rejected`; REST `GET /api/questions?session_id=` + `POST
+   /api/questions/{id}/reply` / `.../reject` for reconnect recovery
+   (`webui/routes/questions.py`). `handle_load_session` replays
+   still-pending `question.asked` frames on (re)connect. This reuses the
+   existing `_broadcast_chat_response` plumbing, whose post-stop silence is
+   the behavior we want.
+3. **Subprocess bridge**: which channel a question travels on is a
+   `QuestionTransport`, shaped like a Python logging Handler (`publish`
+   corresponds to `Handler.emit`): `EventLayerTransport` (default — event
+   layer to frontend card and bus, used by the worker) and `QueueTransport`
+   (back to the parent process over mp.Queue, used by the subprocess). The
+   runtime holds its transport explicitly (`runtime._question_transport`)
+   rather than through a module-level global switch.
+   `run_agentic_in_subprocess` adds a parent→child `answer_queue`;
+   `_child_entry` installs `QueueTransport` on the subprocess runtime
+   (questions travel up over `event_queue` tagged `__op_question__`) and
+   starts an answer-pump thread that takes answers off `answer_queue` and
+   resolves the subprocess-local registry. In the parent, `_drain`
+   intercepts that envelope, and `_bridge_question_to_parent` registers the
+   same qid in the parent registry, emits the frontend card, and starts a
+   waiter; a WS reply resolves the parent registry through the existing
+   `_resolve_question`, and the waiter pushes the answer back onto
+   `answer_queue`. When the subprocess exits or is stopped, the parent
+   closes out any remaining pending question as declined and retracts the
+   card (claim-once, so a duplicate resolve is harmless).
 4. **Persistence**: persist the request snapshot, not the execution stack.
    The DAG already writes `status="awaiting"` user-role nodes; on worker
    restart, leftover pendings are marked expired and DAG nodes
@@ -126,45 +132,14 @@ runtime.can_ask()  # -> bool; False in headless runs so authors can branch
    answer box while a question is pending; TUI renders the question in the
    input slot (tui-upgrade.md P2). First answer wins across surfaces;
    `question.replied` retracts the UI elsewhere.
-6. **Approval merge (later phase)**: `_approval.py` migrates onto the same
-   registry as `kind="approval"`, giving the dead `ask` permission mode a
-   real UI, with opencode's reply shape (allow once / always / reject with
+6. **Approval merge**: `_approval.py` moves onto the same registry as
+   `kind="approval"`, giving the otherwise unreachable `ask` permission mode
+   a real UI, with opencode's reply shape (allow once / always / reject with
    feedback that becomes the tool error text).
-7. **Channels (later phase)**: buttons-as-text-commands (`/answer <id>
-   <choice>`); for channel-initiated runs prefer the non-blocking
-   `FollowUp` shape (reply ends the turn, user's next message resumes the
-   function) instead of holding a thread for 30 minutes.
-
-## Phases
-
-- **Phase 1 — minimal live path** ✅（2026-06-13 落地）: registry +
-  `runtime.ask`/`confirm`/`can_ask` + WS question_reply/reject 协议 + web
-  question card。三态显式（answered / UserDeclined / AskTimeout）替代旧的
-  300s 静默 None；stop 时 cancel_session 解除待答。as-built：
-  `agent/questions.py`（registry）、`agentic_programming/runtime.py`
-  （ask/confirm）、`webui/ws_actions/session.py`（reply/reject handler）、
-  `webui/ws_actions/runtime.py`（stop 解除）、`web/components/ui/question-prompt.tsx`
-  （卡片）。
-- **重连恢复** ✅（2026-06-13 落地，commit be6bb102）：问题卡片只靠活
-  `question.asked` 帧驱动，刷新/断线后那帧已成过去——`handle_load_session`
-  在(重)连某 session 时把该 session 所有 still-pending 的问题按同一个
-  `question.asked` 帧重放（前端零改动重绘）；REST `GET /api/questions` +
-  `POST /api/questions/{id}/reply|reject`（`webui/routes/questions.py`）给同一
-  registry 的 API 对等，reply/reject 走与 WS 同一收口 `_resolve_question`。
-- **Phase 2 — subprocess bridge** ✅（2026-06-13 落地，commit 1c634b5f）:
-  `@agentic_function` bodies can ask (the actual headline use case)。
-  `QuestionTransport`（EventLayerTransport / QueueTransport，对齐 logging
-  Handler）+ `process_runner` 的 parent↔child 桥（event_queue 上行问题、
-  answer_queue 回流答案）。as-built：`agent/questions.py`（transport 三类
-  + emit_question_asked）、`agentic_programming/runtime.py`
-  （set_question_transport / _ask_raw 走 self._question_transport）、
-  `agent/process_runner.py`（answer_queue + answer-pump +
-  _bridge_question_to_parent + _decline_bridged_question）。验证：
-  `tests/agent/test_questions_subprocess_bridge.py`（8 单测）+ 真 spawn
-  子进程 e2e（探针验证后删）。
-- **Phase 3 — TUI surface**: question/approval prompt in the input slot
-  (tracked in tui-upgrade.md).
-- **Phase 4 — approval merge + channels + `runtime.form`**.
+7. **Channels**: buttons-as-text-commands (`/answer <id> <choice>`); for
+   channel-initiated runs prefer the non-blocking `FollowUp` shape (reply
+   ends the turn, user's next message resumes the function) instead of
+   holding a thread for 30 minutes.
 
 ## Open questions
 
@@ -172,3 +147,36 @@ runtime.can_ask()  # -> bool; False in headless runs so authors can branch
 - Whether `decision.make` should eventually route through the same
   registry when the decision target is the human rather than the model
   (out of scope here, noted for the function-calling unification doc).
+
+## Appendix: Implementation Status
+
+Implemented: the registry, `runtime.ask` / `confirm` / `can_ask`, the three
+explicit outcomes (answered / UserDeclined / AskTimeout), the WS
+question_reply/reject protocol, the web question card, and stop releasing
+pending questions via cancel_session — in `agent/questions.py`,
+`agentic_programming/runtime.py`, `webui/ws_actions/session.py`,
+`webui/ws_actions/runtime.py`, and `web/components/ui/question-prompt.tsx`.
+
+Reconnect recovery is implemented. A question card is driven only by a live
+`question.asked` frame, so after a refresh or a dropped connection that frame
+is gone; `handle_load_session` replays every still-pending question of the
+session as the same `question.asked` frame, so the frontend redraws with no
+changes of its own. REST `GET /api/questions` + `POST
+/api/questions/{id}/reply|reject` (`webui/routes/questions.py`) give the same
+registry an API-side equivalent, with reply/reject funneling through the same
+`_resolve_question` as WS.
+
+The subprocess bridge is implemented, so `@agentic_function` bodies can ask:
+`QuestionTransport` (EventLayerTransport / QueueTransport) plus the
+parent↔child bridge in `process_runner` (questions up over `event_queue`,
+answers back over `answer_queue`) — in `agent/questions.py` (the three
+transport classes + `emit_question_asked`), `agentic_programming/runtime.py`
+(`set_question_transport`, `_ask_raw` going through
+`self._question_transport`), and `agent/process_runner.py` (`answer_queue`,
+answer-pump, `_bridge_question_to_parent`, `_decline_bridged_question`).
+Covered by `tests/agent/test_questions_subprocess_bridge.py` (8 unit tests)
+plus a real spawned-subprocess end-to-end check.
+
+Not yet landed: the TUI surface (question/approval prompt in the input slot,
+tracked in tui-upgrade.md), and the approval merge, channels, and
+`runtime.form` described above.

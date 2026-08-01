@@ -1,18 +1,18 @@
 # Agent Worktree Tool
 
-> When an agent runs high-risk changes inside the user's real code repository, it needs an isolated temporary working directory:
-> if the changes are good, merge them back into the mainline; if they go wrong, discard them with a single wipe, and the main repo stays untouched.
-> Under the hood this is just a wrapper around `git worktree add` / `git worktree remove`, but it must be kept strictly separate from
-> OpenProgram's own session-git.
+> When an agent runs high-risk changes inside the user's real code repository, it works in an isolated
+> temporary directory: good changes merge back into the mainline, bad ones are discarded in one wipe,
+> and the main repository is left untouched. Underneath this is a wrapper around `git worktree add` /
+> `git worktree remove`, kept strictly separate from OpenProgram's own session-git.
 
-Referencing Claude Code's `EnterWorktreeTool` / `ExitWorktreeTool`
-(`references/claude-code-leaked/src/tools/EnterWorktreeTool/`),
-this design copies its "switch cwd + state machine + keep/discard on exit" skeleton, but adapts it to
-OpenProgram's runtime / session model.
+The skeleton — switch cwd, run a state machine, keep or discard on exit — follows Claude Code's
+`EnterWorktreeTool` / `ExitWorktreeTool`
+(`references/claude-code-leaked/src/tools/EnterWorktreeTool/`), adapted to OpenProgram's
+runtime / session model.
 
 ---
 
-## Part 1. Dimensions the Design Must Consider
+## Part 1. Design Dimensions
 
 ### D1. What a Worktree Entity Stores
 
@@ -42,17 +42,17 @@ OpenProgram's tools fall into two categories:
    bash goes through `get_active_backend().run(...)`; currently `LocalBackend.run` accepts
    a `cwd` argument but callers don't pass it; edit / write / read require absolute paths.
 
-Design: add a ContextVar `_current_worktree_path: Optional[str]` in `openprogram/agent/_runtime.py`.
-Each time the dispatcher enters a turn, if the session currently has an active worktree (read from session meta),
-it `set`s this var. Tool implementations consume it as needed:
+A ContextVar `_current_worktree_path: Optional[str]` in `openprogram/agent/_runtime.py` carries the
+active path. Each time the dispatcher enters a turn, if the session currently has an active worktree
+(read from session meta), it `set`s this var. Tool implementations consume it as needed:
 
 - bash: `LocalBackend.run(cmd, cwd=_current_worktree_path.get())`
 - edit / write / read: resolve relative paths against `_current_worktree_path` as the root;
   absolute paths must be under the worktree (D6 security check).
-- runtime subprocess: keep the existing `apply_default_workdir(runtime, session_id)`,
-  but change it to prefer returning the worktree path (if any), otherwise session-git's `workdir/`.
+- runtime subprocess: `apply_default_workdir(runtime, session_id)` prefers the worktree path
+  (if any), otherwise session-git's `workdir/`.
 
-No "explicit cwd argument" is introduced. The worktree is session-level context; tools are unaware of it.
+There is no explicit cwd argument. The worktree is session-level context; tools are unaware of it.
 
 ### D3. State Machine
 
@@ -83,19 +83,18 @@ No "explicit cwd argument" is introduced. The worktree is session-level context;
 ### D4. Isolation from OpenProgram session-git
 
 OpenProgram has its own `~/.openprogram/sessions/<sid>/` (one git repo per session),
-storing the conversation memory's history / context / workdir. **The agent worktree must never
-be created inside this directory tree**:
+storing the conversation memory's history / context / workdir. **The agent worktree is never
+created inside this directory tree**:
 
 - worktree_path must not be under any `~/.openprogram/sessions/*` (D14 check).
 - source_repo must not equal a session-git repository path.
 - session-git commits and worktree commits are managed independently; in the UI the ContextCommit
   timeline only looks at session-git, while the worktree timeline is shown in a separate panel.
 
-Historically OpenProgram tried sub-agent worktrees (commit `5ba13149`),
-created under `<session-repo>/_worktrees/<branch>/`, which was later refactored into "sub-agent =
-peer session + attach" (commit `75e430c0`). This design does not reuse that path —
-that one was "open a branch inside session-git to run a sub-agent", whereas this design is "open a worktree
-in the user's real code repository for the agent to run changes". Completely different purposes.
+An earlier sub-agent worktree mechanism created worktrees under `<session-repo>/_worktrees/<branch>/`
+and was later replaced by "sub-agent = peer session + attach". This design does not reuse that path —
+that one opened a branch inside session-git to run a sub-agent, whereas this one opens a worktree
+in the user's real code repository for the agent to run changes. The purposes are unrelated.
 
 ### D5. Where source_repo Comes From
 
@@ -115,7 +114,7 @@ It will not automatically `git init` a repository for the user (too destructive)
 ### D6. Security / Permissions
 
 The core security constraint for agent tools inside a worktree: **the bash command's cwd is locked, but the cmd
-itself can `cd ..` to run outside the worktree**. This is not a true sandbox; it is a "default direction".
+itself can `cd ..` to run outside the worktree**. This is not a true sandbox; it sets the default location.
 Two mitigations:
 
 - **Absolute path check**: when edit / write / read receive a `file_path` that falls outside
@@ -125,15 +124,15 @@ Two mitigations:
   the starting point is worktree_path, the shell session is not persistent (each bash is a fresh subprocess),
   and the next bash returns to worktree_path.
 
-Not doing: chroot / namespace isolation for bash commands. OpenProgram already supports a docker
+Out of scope: chroot / namespace isolation for bash commands. OpenProgram already supports a docker
 backend; for a hard sandbox, go that route.
 
 ### D7. Commits Inside a Worktree
 
 The agent writes files in the worktree → the worktree directory is dirty. Two semantics:
 
-- **Auto commit**: after each agent tool call (bash running git add / edit / write),
-  the worktree tool does not auto-commit. It lets the agent run `git add -A && git commit` via bash itself.
+- **Auto commit**: after an agent tool call (bash running git add / edit / write),
+  the worktree tool does not auto-commit. The agent runs `git add -A && git commit` via bash itself.
   This way the commit message is decided by the agent, consistent with git conventions.
 - **Forced commit at merge time**: when worktree_merge runs, if the worktree has uncommitted
   changes, it first reports the error `worktree_dirty` and lets the agent handle it explicitly (commit it /
@@ -165,8 +164,8 @@ Handling conflicts: on merge failure it does **not** auto-reset; the worktree st
 - The record in worktrees/<id>.json has its status changed to `discarded` + a timestamp. The file is not deleted,
   for auditing convenience — but worktree_path no longer exists.
 
-No "auto-backup before discard" is provided. There was discussion of tar-ing the discarded content into
-`~/.openprogram/discarded/`, but keeping this escape rope is not costly; it is left to Part 6 (future).
+There is no automatic backup before discard. Archiving the discarded content as a tarball under
+`~/.openprogram/discarded/` is cheap enough to add later, and is listed in Part 6.
 
 ### D10. Relationship Between Worktree and Task
 
@@ -188,10 +187,9 @@ go into the ContextCommit items normally. **The file diff inside the worktree do
 content** — file diffs are git's business; ContextCommit only records event-level facts like
 "tool call X modified file Y".
 
-Add a lightweight metadata field: each tool item's metadata gets
-`worktree_id: Optional[str]`, indicating which worktree this tool call happened in
-(None means it ran directly in source_repo). When the UI renders, it adds a badge
-to tool calls inside a worktree.
+Each tool item's metadata carries a lightweight field `worktree_id: Optional[str]`, indicating which
+worktree this tool call happened in (None means it ran directly in source_repo). When the UI renders,
+it adds a badge to tool calls inside a worktree.
 
 The worktree merge / discard operations themselves are also written into ContextCommit as system nodes
 (similar to an attach pointer marker), with content like "Merged worktree wt_abc1234
@@ -220,9 +218,9 @@ Error codes (prefix of the returned error string):
 `worktree_create` / `worktree_merge` / `worktree_discard` default to
 `requires_approval=True`; only permission_mode=auto skips the approval prompt.
 
-No `worktree_switch` tool is exposed — a session has only one active worktree at a time
-(D2's ContextVar is single-valued), switching semantics are complex (do we write a switch marker?
-what happens to the old worktree after switching?), and the benefit does not outweigh the cost. Multiple
+There is no `worktree_switch` tool. A session has only one active worktree at a time
+(D2's ContextVar is single-valued), and switching raises questions the benefit does not justify
+(whether to write a switch marker, what becomes of the old worktree). Multiple
 worktrees are achieved through async tasks, one worktree per task.
 
 ### D13. UI Representation
@@ -230,11 +228,11 @@ worktrees are achieved through async tasks, one worktree per task.
 - **Composer toolbar**: when the current session has an active worktree, a chip
   `worktree: wt_abc1234 (3 files changed)` is shown above the PromptInput; hovering pops a panel
   showing worktree_path / branch / the list of changed files / Merge / Discard / Keep buttons.
-- **The fn-form "Working in a folder"**: kept as-is, only showing the source_repo path.
+- **The fn-form "Working in a folder"**: unchanged, showing only the source_repo path.
   The worktree is an internal detail and is not surfaced in the fn-form.
 - **DAG timeline**: worktree create / merge / discard marker nodes are rendered in a distinguishing color
   (same style as the attach marker).
-- **Not doing**: inline preview of worktree file diffs (the user can click "open in editor"
+- **Out of scope**: inline preview of worktree file diffs (the user can click "open in editor"
   / use their own git GUI to view).
 
 ### D14. Errors / Edge Cases
@@ -251,8 +249,8 @@ worktrees are achieved through async tasks, one worktree per task.
 
 ### D15. Integration with Async Task
 
-worktree_create / merge / discard are themselves synchronous tools (git subprocesses); do not wrap
-them into async tasks. But **long-running work inside a worktree** (the agent running tests, running a build)
+worktree_create / merge / discard are themselves synchronous tools (git subprocesses) and are not wrapped
+into async tasks. But **long-running work inside a worktree** (the agent running tests, running a build)
 is usually the work content of an async task:
 
 - when an async task starts it can specify `worktree_id` (the task's cwd is locked to this worktree).
@@ -356,49 +354,7 @@ The agent is halfway through (5 patches committed in the worktree), the user dec
 
 ---
 
-## Part 3. Current State vs Target
-
-| Capability | Current State | Target | Gap |
-|---|---|---|---|
-| Worktree isolation in the user's real repo | none | full create/merge/discard | large |
-| Agent cwd bound to worktree | none (runtime uses session-git workdir/) | ContextVar switching | medium |
-| Bash tool passing cwd | LocalBackend accepts it but the bash function doesn't pass it | go through ContextVar | small |
-| Edit/Write/Read checking worktree boundary | none (only checks absolute paths) | warning without blocking | small |
-| Worktree state machine persistence | none | worktrees/<id>.json in session-git | medium |
-| UI worktree chip | none | chip + panel at the top of the composer | medium |
-| Worktree × Task integration | none (the task system itself is in design) | task cancel auto-discard | medium (depends on async-task) |
-| Sub-agent worktree legacy code | already refactored away (commit `75e430c0`) | not reused | N/A |
-
----
-
-## Part 4. Change List
-
-In dependency order:
-
-| Step | File | Main change |
-|---|---|---|
-| 1 | new `openprogram/worktree/types.py` | `Worktree` dataclass + `WorktreeStatus` Enum + serialization |
-| 2 | new `openprogram/worktree/manager.py` | `WorktreeManager`: create / merge / discard / list / keep; underlying `subprocess.run(["git", "worktree", ...])`; persists to `<session-repo>/worktrees/<id>.json` |
-| 3 | new `openprogram/worktree/_paths.py` | worktree path policy: `~/.openprogram/worktrees/<id>-<slug>/`; isolation check (D4) |
-| 4 | edit `openprogram/agent/_workdir.py` | `apply_default_workdir` prefers returning the active worktree path |
-| 5 | edit `openprogram/agent/dispatcher.py` | at the start of a turn, read session.meta.active_worktree_id → set the `_current_worktree_path` ContextVar |
-| 6 | edit `openprogram/functions/tools/bash/bash.py` | call `backend.run(cmd, cwd=_current_worktree_path.get())` |
-| 7 | edit `openprogram/functions/tools/edit/edit.py` + write/read | warning when path outside worktree (D6) |
-| 8 | new `openprogram/functions/tools/worktree/` | 4 @function tools: worktree_create / worktree_merge / worktree_discard / worktree_list; go through WorktreeManager |
-| 9 | edit `openprogram/store/session_store.py` | add an `active_worktree_id` field to session.meta; helpers `set_active_worktree` / `get_active_worktree` |
-| 10 | new `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree` (user manual UI operations) |
-| 11 | new `web/components/chat/composer/worktree-chip.tsx` | chip component + hover panel + Merge/Discard/Keep buttons |
-| 12 | edit `web/components/chat/composer/composer.tsx` | bring in the chip |
-| 13 | edit ContextCommit item metadata rendering | tool call items show a worktree_id badge |
-| 14 | edit `openprogram/agent/dispatcher.py` to write markers | worktree_create / merge / discard write system nodes into ContextCommit |
-| 15 | (depends on async-task) hook into `openprogram/tasks/lifecycle.py` | task cancel → `WorktreeManager.on_task_cancel`; task create can optionally attach a worktree |
-| 16 | Tests | unit: WorktreeManager (create/merge/discard path checks, isolation check); integration: agent in worktree → merge full flow |
-
----
-
-## Part 5. Key Invariants
-
-Every one of these must be checked during implementation:
+## Part 3. Key Invariants
 
 1. **worktree_path is never inside the `~/.openprogram/sessions/` subtree**
    (isolating OpenProgram's own git; if violated, worktree_create rejects).
@@ -427,7 +383,7 @@ Every one of these must be checked during implementation:
 
 ---
 
-## Part 6. Out of Scope for This Design
+## Part 4. Out of Scope
 
 - **Remote push**: the worktree is local-only; to push the worktree branch to origin, the agent runs
   `git push -u origin <branch>` via bash itself. worktree_merge does not push either.
@@ -437,7 +393,45 @@ Every one of these must be checked during implementation:
 - **worktrees across source_repos**: one worktree necessarily corresponds to one source_repo; merging
   worktree changes into another repository is not supported (do it via a bash git patch flow if needed).
 - **auto-backup before discard**: the `~/.openprogram/discarded/` archiving mentioned in D9, left as a future enhancement.
-- **chroot / namespace true sandbox**: D6 is "default cwd lock", not a sandbox; for hard isolation, go through the
+- **chroot / namespace true sandbox**: D6 locks the default cwd rather than sandboxing; for hard isolation, go through the
   docker backend.
 - **auto-cleanup of the active worktree when the session closes**: the active worktree is kept across session
   restarts (after restart, list_worktrees probes, and ones still active are marked kept for the user to handle manually).
+
+---
+
+## Appendix: Implementation Status
+
+None of this design has landed. The pieces it needs, and where they stand:
+
+| Capability | Present behavior |
+|---|---|
+| Worktree isolation in the user's real repo | absent; create/merge/discard is entirely new |
+| Agent cwd bound to worktree | absent; the runtime uses session-git `workdir/` |
+| Bash tool passing cwd | `LocalBackend.run` accepts `cwd`, the bash function does not pass it |
+| Edit/Write/Read checking worktree boundary | absent; only absolute paths are checked |
+| Worktree state machine persistence | absent; `worktrees/<id>.json` in session-git is new |
+| UI worktree chip | absent |
+| Worktree × Task integration | absent; depends on the async task system, itself still in design |
+| Sub-agent worktree mechanism | removed when sub-agents became peer sessions; not reused here |
+
+The work, in dependency order:
+
+| Step | File | Main change |
+|---|---|---|
+| 1 | new `openprogram/worktree/types.py` | `Worktree` dataclass + `WorktreeStatus` Enum + serialization |
+| 2 | new `openprogram/worktree/manager.py` | `WorktreeManager`: create / merge / discard / list / keep; underlying `subprocess.run(["git", "worktree", ...])`; persists to `<session-repo>/worktrees/<id>.json` |
+| 3 | new `openprogram/worktree/_paths.py` | worktree path policy: `~/.openprogram/worktrees/<id>-<slug>/`; isolation check (D4) |
+| 4 | edit `openprogram/agent/_workdir.py` | `apply_default_workdir` prefers returning the active worktree path |
+| 5 | edit `openprogram/agent/dispatcher.py` | at the start of a turn, read session.meta.active_worktree_id → set the `_current_worktree_path` ContextVar |
+| 6 | edit `openprogram/functions/tools/bash/bash.py` | call `backend.run(cmd, cwd=_current_worktree_path.get())` |
+| 7 | edit `openprogram/functions/tools/edit/edit.py` + write/read | warning when path outside worktree (D6) |
+| 8 | new `openprogram/functions/tools/worktree/` | 4 @function tools: worktree_create / worktree_merge / worktree_discard / worktree_list; go through WorktreeManager |
+| 9 | edit `openprogram/store/session_store.py` | add an `active_worktree_id` field to session.meta; helpers `set_active_worktree` / `get_active_worktree` |
+| 10 | new `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree` (user manual UI operations) |
+| 11 | new `web/components/chat/composer/worktree-chip.tsx` | chip component + hover panel + Merge/Discard/Keep buttons |
+| 12 | edit `web/components/chat/composer/composer.tsx` | bring in the chip |
+| 13 | edit ContextCommit item metadata rendering | tool call items show a worktree_id badge |
+| 14 | edit `openprogram/agent/dispatcher.py` to write markers | worktree_create / merge / discard write system nodes into ContextCommit |
+| 15 | (depends on async-task) hook into `openprogram/tasks/lifecycle.py` | task cancel → `WorktreeManager.on_task_cancel`; task create can optionally attach a worktree |
+| 16 | Tests | unit: WorktreeManager (create/merge/discard path checks, isolation check); integration: agent in worktree → merge full flow |

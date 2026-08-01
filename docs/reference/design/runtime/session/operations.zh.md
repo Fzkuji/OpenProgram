@@ -94,7 +94,7 @@ def _truncate(text: str | None, max_len: int = 80) -> str | None:
   → 注册表原子写磁盘
 ```
 
-广播由 WebSocket handler 层在调用 `update_session` 之后通过 `_broadcast` 发起（已实现，rename + flags 均走广播）：
+广播由 WebSocket handler 层在调用 `update_session` 之后通过 `_broadcast` 发起，rename 与 flags 均走广播：
 
 ```
 → 广播 session_updated：
@@ -130,7 +130,7 @@ dispatcher 在 turn 生命周期中写 status：
 | `_auto_titled` | bool | 自动命名已产出过至少一个标题（首轮截断或任意 LLM 写入）→ "别重复截断"去重位 | **只有** `_maybe_auto_title` 设 |
 | `_title_gen_count` | int | 渐进式重命名内部计数（命中到 `_RETITLE_AT_TURNS` 第几个）| `_maybe_auto_title` 内部，非入口锁 |
 
-历史上存在的第三个叫法 `_titled` 已废除——它既做截断又做永久锁，与两阶段流程冲突。各入口**不再**自己做截断 + 设 `_titled`，统一让 `_maybe_auto_title` 完成阶段 1（截断）+ 阶段 2（LLM）。入口唯一可设的锁是 `_user_titled`（rename 操作）。
+不存在既表示"已截断"又表示"永久锁"的单一标记：一个标记兼做两件事会与两阶段流程冲突——阶段 1 的截断本就应当被 LLM 标题取代。因此各入口不自己做截断、也不设自己的锁，统一由 `_maybe_auto_title` 完成阶段 1（截断）和阶段 2（LLM）。入口唯一可设的锁是 `_user_titled`，由 rename 操作设置。
 
 ### 自动命名（渐进式，两阶段）
 
@@ -210,7 +210,7 @@ LLM 标题生成的细节（prompt、参数、后处理）见 [name.md](name.md)
   → 前端收到后从列表中移除
 ```
 
-注册表操作已内化到 `delete_session`。广播由 WebSocket handler 层通过 `_broadcast` 发起。
+注册表操作在 `delete_session` 内部完成。广播由 WebSocket handler 层通过 `_broadcast` 发起。
 
 ---
 

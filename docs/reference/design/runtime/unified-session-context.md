@@ -1,12 +1,6 @@
 # Unified session context creation
 
-> Status: S1 + S2 shipped. `session_context` lives at
-> `openprogram/store/session/context.py`; the research harness `main.py` wraps
-> `research_agent` with it. S3 (dispatcher) and S4 (process_runner / tests) are
-> **not done** — both still hand-copy the set/reset logic. The problem statement
-> below describes the pre-S1 state.
-
-## Problem (why this doc exists)
+## Problem
 
 Several of OpenProgram's core capabilities — **automatically injecting a function's docstring into the prompt**, **DAG persistence**,
 **ask_user tracking**, and **called_by attribution for nested calls** — all depend on a per-turn
@@ -158,25 +152,29 @@ session list / delete), not by the responsibility of each individual call.
   content**. This is the right way to fix the degradation in the second half of a research run.
 - **process_runner / tests**: use the same manager to replace their hand-copied set/reset.
 
-### Implementation order (each step independently verifiable)
+### Instructions belong in the docstring
 
-| Step | What to do | Verification |
-|---|---|---|
-| S1 | Add the `session_context` manager (extract dispatcher logic, behavior-equivalent) | unit test: after entering, `_store/_current_turn_id/_current_runtime` are non-None; after exiting they are reset |
-| S2 | research `main.py` wraps research_agent with it | run a function with a detailed docstring from the command line, capture the prompt, confirm the docstring went in (empirically confirmed doc=True after installing _store) |
-| S3 | dispatcher switches to it (deduplication, behavior unchanged) | all existing dispatcher tests pass |
-| S4 | converge process_runner / tests onto it | subprocess DAG tracking and test fixtures still work |
-
-S1+S2 alone fix the research command line (your current pain point); S3+S4 are the deduplication wrap-up.
-
-## Revert the previous "move instructions into content" workaround
-
-To let the second half of research run, the instructions for `design_experiments` / `write_section` were previously moved out of the
-docstring and into `content` (part of commit 09dc750). That was a temporary workaround for the missing session,
-and it violates the design intent of "instructions in the docstring, function body clean". Once S2 lands, this part should be **reverted** so the docstring
-carries the instructions again. (The `write_paper` orchestrator is a genuinely new capability; keep it.)
+Where a stage function's instructions were moved out of the docstring and into
+`content` to work around the missing session on the command line, the docstring
+carries them again once that entry point installs the session context. Moving
+instructions into `content` conflicts with the design intent of "instructions in the
+docstring, function body clean", and the session context removes the reason for it.
 
 ## In one sentence
 
-Nothing is missing as a component — **"building a session" simply has no unified entry point; only the dispatcher does it, the CLI does not**.
-Unify it into a single `session_context` manager that every entry point goes through, and the command line will match the web.
+No component is missing — **"building a session" needs one entry point that every
+caller goes through**, so the command line behaves like the web.
+
+## Implementation Status
+
+The design lands in four steps, each independently verifiable:
+
+| Step | What to do | Verification | State |
+|---|---|---|---|
+| S1 | Add the `session_context` manager (extract dispatcher logic, behavior-equivalent) | unit test: after entering, `_store/_current_turn_id/_current_runtime` are non-None; after exiting they are reset | Done — `openprogram/store/session/context.py` |
+| S2 | research `main.py` wraps research_agent with it | run a function with a detailed docstring from the command line, capture the prompt, confirm the docstring went in | Done |
+| S3 | dispatcher switches to it (deduplication, behavior unchanged) | all existing dispatcher tests pass | Not done — still inlines set/reset |
+| S4 | converge process_runner / tests onto it | subprocess DAG tracking and test fixtures still work | Not done — both still hand-copy set/reset |
+
+S1 and S2 are what make the research command line work; S3 and S4 remove the
+duplicated set/reset logic. The problem section above describes the state before S1.

@@ -1,6 +1,7 @@
 # 文件修改管理 — 行业分析与 OpenProgram 设计
 
-> 状态: **已实现** (2026-06)。
+> 本文描述 OpenProgram 如何追踪和回滚 agent 造成的文件改动：行业上的两条路线、
+> OpenProgram 采用的四层机制，以及它们之间如何协调。
 > 关联: [`agent-worktree.md`](../execution/agent-worktree.md)、[`memory-v2.md`](../../memory/memory-v2.md)
 > (实体层)、[`git-as-entity-memory.md`](../../memory/git-as-entity-memory.md)。
 > 代码: `store/snapshot/checkpoint/`、`store/shadow_git/`、
@@ -80,7 +81,7 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 
 ### 3.2 四层机制
 
-四个层各管一件事，没有重叠。去掉任何一个都会缺一块能力。
+四层各负责一件事，互不重叠。去掉任何一层都会缺失一项能力。
 
 ```
                 ┌─── read-before-edit (并发防护, 所有写操作的前置闸) ───┐
@@ -105,14 +106,13 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 | **解决什么** | 改坏了能回滚 | 永久历史 + diff 追溯 | 改坏了丢副本 | 限制 bash 能碰的范围 |
 | **机制** | 全量文件拷贝 | git tree/commit 对象，存在 `~/.openprogram/shadow-git/<project-hash>/` | `git worktree` 隔离分支 | OS 内核限制（Seatbelt / bubblewrap） |
 | **作用域** | 单个 turn | 整条会话累积 | 一段实验性工作 | 整个会话 |
-| **持久度** | 临时 (GC, 上限 100 turn) | 永久（独立 git 历史） | 直到 merge / discard | 会话期间生效 |
-| **碰用户的 git 吗** | **完全不碰** | **完全不碰** | 用独立 worktree, merge 才回主线 | **完全不碰** |
+| **持久度** | 临时（GC，上限 100 turn） | 永久（独立 git 历史） | 直到 merge / discard | 会话期间生效 |
+| **碰用户的 git 吗** | **完全不碰** | **完全不碰** | 用独立 worktree，merge 才回主线 | **完全不碰** |
 | **触发** | 统一入口（所有工具执行前） | turn 结束（自动 commit 本 turn 变更） | agent 显式调 `worktree_create` | 配置开关 |
 | **bash 覆盖** | **是**（统一入口触发） | **是**（turn 结束 commit 含 bash 改动） | N/A（隔离环境内） | **是**（内核级拦截） |
 | **默认** | **一直开** | **默认开** | 按需 | **默认关** |
 | **代码** | `store/snapshot/checkpoint/` | `store/shadow_git/` | `worktree/` | `sandbox/` |
 | **回退入口** | `/rewind` | `/rewind` 联动 | `worktree_discard` | N/A（预防性，不需要回退） |
-| **状态** | ✅ 已实现 | ✅ 已实现 | ✅ 已实现 | ✅ 已实现 |
 
 ### 3.3 ① Checkpoint 和 ② Shadow git 的分工
 
@@ -130,11 +130,11 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 
 ---
 
-## 4. 统一入口触发（覆盖 bash 的关键改动）
+## 4. 统一入口触发 —— bash 如何被覆盖
 
 ### 4.1 实现方式
 
-write / edit / apply_patch 三个编辑工具**各自内部**调用 `checkpoint_before_edit`做精确的单文件备份——保留不动。
+write / edit / apply_patch 三个编辑工具**各自内部**调用 `checkpoint_before_edit`，做精确的单文件备份。
 
 bash 工具的覆盖在 `_execute_tool_calls`（`agent_loop.py`，所有工具的单一入口）中实现：
 
@@ -153,19 +153,19 @@ _checkpoint_changed_files(tool_call.name, pre_snapshot)  # 对比，变更文件
 
 ---
 
-## 5. 并发防护: read-before-edit (前置闸)
+## 5. 并发防护：read-before-edit（前置闸）
 
-`store/snapshot/read_tracking.py`。整套机制的安全地基: 保证 agent 永远不会在"用户刚改过、agent 还没看到"的文件上盲写, 于是落进 ① checkpoint 和 ② shadow git 的每一笔都是**干净的 agent 改动**, 回退时不会误伤用户。
+`store/snapshot/read_tracking.py`。这是整套机制的安全地基：agent 不会在用户改过、而 agent 尚未重新读过的文件上盲写。因此落进 ① checkpoint 和 ② shadow git 的每一笔都是**干净的 agent 改动**，回退不会破坏用户自己的修改。
 
-照搬 Claude Code 的 Edit/Write 契约:
-- **`read` 记基线** —— 读文件时记下它的指纹 `(mtime_ns, size, sha1)`。
-- **写前校验** —— `edit` / `write 覆盖已有文件` / `apply_patch Update` 写之前比对:
-  - 没读过 (`NEVER_READ`) → 拒绝, 提示先读。
-  - 读过但磁盘变了 (`STALE`, 用户/linter/别的进程改了) → 拒绝, 提示重读。改动**不落盘**。
-- **新文件跳过** —— `write 新文件` / `apply_patch Add` 不要求先读, 写完记基线。
-- **写成功刷新基线** —— 同一文件能接着改, 不用重读。
+它沿用 Claude Code 的 Edit/Write 契约：
+- **`read` 记录基线**——读文件时记下它的指纹 `(mtime_ns, size, sha1)`。
+- **写前校验**——`edit` / `write 覆盖已有文件` / `apply_patch Update` 在写入前比对：
+  - 没读过（`NEVER_READ`）→ 拒绝，提示先读。
+  - 读过但磁盘已变（`STALE`，用户、linter 或别的进程改了）→ 拒绝，提示重读，改动**不落盘**。
+- **新文件跳过校验**——`write 新文件` / `apply_patch Add` 不要求先读，写完记录基线。
+- **写成功后刷新基线**——同一文件可以接着改，不用重读。
 
-用**内容 hash** 而非只看 mtime: 用户手速快时改动可能落在同一个 mtime tick 里, 光看时间戳会漏。session 经 `_store` ContextVar 解析, 不在 turn 里 (单测/独立调用) 时整个防护 no-op (`UNTRACKED` → 放行)。
+校验用**内容 hash** 而非只看 mtime：用户输入很快时，改动可能落在同一个 mtime tick 内，只看时间戳会漏掉。session 经 `_store` ContextVar 解析；不在 turn 内时（单元测试、独立调用）整个防护为 no-op（`UNTRACKED` → 放行）。
 
 ---
 
@@ -173,15 +173,15 @@ _checkpoint_changed_files(tool_call.name, pre_snapshot)  # 对比，变更文件
 
 ### 6.1 协调规则
 
-#### 规则 A: Worktree 活跃时, shadow git commit 让位
+#### 规则 A：Worktree 活跃时，shadow git commit 让位
 
-`shadow_git.commit_turn_changes` 先查 `find_active_for_session(sid)`:
-- 有活跃 worktree → 跳过（agent 改动在 worktree 副本里, 提交原始目录是错的/空的）。
-- 无 → 照常。
+`shadow_git.commit_turn_changes` 先查 `find_active_for_session(sid)`：
+- 有活跃 worktree → 跳过（agent 改动在 worktree 副本里，提交原始目录是错的或空的）。
+- 无 → 照常提交。
 
-#### 规则 B: /rewind = checkpoint 恢复 + shadow git 保持可查
+#### 规则 B：/rewind = checkpoint 恢复 + shadow git 保持可查
 
-`/rewind` 撤回时:
+`/rewind` 撤回时：
 1. 从 checkpoint 恢复文件（最快路径）。
 2. shadow git 历史**不回退**——保持可查，用户可以 diff 看 agent 改了什么。
 3. gitignored 文件 / 非 git 文件夹：checkpoint 是唯一兜底。
@@ -190,7 +190,7 @@ _checkpoint_changed_files(tool_call.name, pre_snapshot)  # 对比，变更文件
 
 ### 6.2 完整生命周期
 
-以一条**绑定了真实项目目录**的会话为例:
+以一条**绑定了真实项目目录**的会话为例：
 
 ```
 会话开始
@@ -222,18 +222,18 @@ _checkpoint_changed_files(tool_call.name, pre_snapshot)  # 对比，变更文件
 
 ### 6.3 Checkpoint 的释放
 
-checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
+checkpoint 存在 `<session>/checkpoints/<turn_id>/`，按以下方式释放：
 
 | 触发 | 实现 |
 |---|---|
-| **GC (软上限 100 turn)** | `gc_evict_old` 在每个 turn 结束由 dispatcher 调用, 按 mtime 删最老的超额 turn |
+| **GC（软上限 100 turn）** | `gc_evict_old` 在每个 turn 结束由 dispatcher 调用，按 mtime 删除最老的超额 turn |
 | **会话删除** | 会话仓整个删掉时连带删除 |
 
-> 注: checkpoint 是**全量文件拷贝** (`shutil.copy2`), 故意不用 hardlink (agent 的 `open(w)` 会 truncate inode, 共享 hardlink 会丢原内容)。磁盘成本线性于 files×turns, 由 GC 上限兜底。
+> 注：checkpoint 是**全量文件拷贝**（`shutil.copy2`），刻意不用 hardlink（agent 的 `open(w)` 会 truncate inode，共享 hardlink 会丢失原内容）。磁盘成本与 files×turns 成线性关系，由 GC 上限约束。
 
 ### 6.4 Shadow git 存储
 
-存储位置: `~/.openprogram/shadow-git/<project-hash>/`
+存储位置：`~/.openprogram/shadow-git/<project-hash>/`
 
 - 每个项目目录一个 shadow git store（按路径 hash 区分）
 - 不碰用户的 `.git`，完全独立
@@ -253,17 +253,17 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 | ④ 系统级沙箱 | | | | ✅ |
 
 协调点：
-- **Checkpoint ↔ Shadow git**: 同时运行, 由 `undo` 统一协调（规则 B）。Checkpoint 负责快速恢复, Shadow git 负责永久历史。
-- **Worktree ↔ Shadow git**: 规则 A，Worktree 活跃时 Shadow git 让位。
-- **系统级沙箱**: 和其他三层完全正交——它限制 bash 能碰什么，不影响快照和文件隔离的运作。
+- **Checkpoint ↔ Shadow git**：同时运行，由 `undo` 统一协调（规则 B）。Checkpoint 负责快速恢复，Shadow git 负责永久历史。
+- **Worktree ↔ Shadow git**：规则 A，Worktree 活跃时 Shadow git 让位。
+- **系统级沙箱**：和其他三层完全正交——它限制 bash 能碰什么，不影响快照和文件隔离的运作。
 
-### 6.6 Ad-hoc (默认项目) 会话
+### 6.6 Ad-hoc（默认项目）会话
 
-没绑真实目录的随手聊:
-- ① Checkpoint: 照常。
-- ② Shadow git: 照常（shadow store 不依赖用户仓库）。
-- ③ Worktree: 不适用（没有 source repo）。
-- ④ 系统级沙箱: 照常（限制 bash 范围与项目绑定无关）。
+对于没有绑定真实目录的临时会话：
+- ① Checkpoint：照常。
+- ② Shadow git：照常（shadow store 不依赖用户仓库）。
+- ③ Worktree：不适用（没有 source repo）。
+- ④ 系统级沙箱：照常（限制 bash 范围与项目绑定无关）。
 
 ---
 
@@ -271,10 +271,10 @@ checkpoint 存 `<session>/checkpoints/<turn_id>/`，释放:
 
 | 我想要 | 配置 | 得到 |
 |---|---|---|
-| 像 Claude Code, 撤销键就够 | 默认 | ① Checkpoint + ② Shadow git |
+| 像 Claude Code 那样，有撤销键就够 | 默认 | ① Checkpoint + ② Shadow git |
 | 看 agent 改了什么（diff） | 默认 | ② Shadow git 提供 `git diff` / `git log` |
 | 不想任何额外存储 | 关掉 shadow git | 只有 ① Checkpoint |
-| agent 做高风险大改, 别弄乱工作树 | (agent 自行) `worktree_create` | ③ 隔离, 改好 merge / 改砸 discard |
+| agent 做高风险大改，又不弄乱工作树 | （agent 自行调用）`worktree_create` | ③ 隔离，改好 merge / 改砸 discard |
 | 限制 bash 别碰 cwd 以外的文件 | 开启系统级沙箱 | ④ bash 只能读写当前项目目录 |
 | 最安全模式 | Worktree + 系统级沙箱 | ③ + ④ 文件隔离 + 权限限制 |
 
@@ -332,16 +332,7 @@ Checkpoint、Shadow git、沙箱都是自动运行的底层机制，不暴露为
 
 ---
 
-## 9. 待做
-
-| 项 | 说明 |
-|---|---|
-| UI 明示当前会话的"主回退路径" | 后端就绪, 待前端 |
-| 容器沙箱（远期） | research_agent 等无人值守场景，需 Docker 集成 |
-
----
-
-## 10. 沙箱隔离 — ③ Worktree + ④ 系统级沙箱
+## 9. 沙箱隔离 — ③ Worktree + ④ 系统级沙箱
 
 沙箱有三种实现方式，隔离级别从低到高：
 
@@ -351,13 +342,13 @@ Checkpoint、Shadow git、沙箱都是自动运行的底层机制，不暴露为
 | **系统级沙箱** | 我们 ④、Claude Code `/sandbox`、Cursor | 文件系统 + 网络（进程级限制） | 毫秒级 | Seatbelt / bubblewrap / Landlock | 本地交互，限制 bash 范围 |
 | **容器沙箱** | OpenHands / SWE-agent / Devin | 完整隔离（文件/网络/进程） | 30-60 秒 | Docker / Podman | 无人值守、不信任代码 |
 
-### 10.1 ③ Worktree — 文件隔离（✅ 已实现）
+### 9.1 ③ Worktree — 文件隔离
 
 agent 调 `worktree_create` 创建独立工作目录副本，改好了 `worktree_merge`，改砸了 `worktree_discard`。
 
-**局限**：只隔离文件，不隔离进程和网络——bash 仍能 `rm -rf /`、读 `~/.ssh/`、访问网络。适合"怕改坏代码"，不防"bash 乱来"。
+**局限**：只隔离文件，不隔离进程和网络——bash 仍能 `rm -rf /`、读 `~/.ssh/`、访问网络。它防的是改坏代码，不防 bash 越权操作。
 
-### 10.2 ④ 系统级沙箱 — 权限限制（✅ 已实现）
+### 9.2 ④ 系统级沙箱 — 权限限制
 
 用 OS 内核机制限制 bash 进程能做什么：
 - **文件系统**：只能读写 cwd 及子目录，`rm ~/.ssh/id_rsa` → `Operation not permitted`
@@ -366,13 +357,26 @@ agent 调 `worktree_create` 创建独立工作目录副本，改好了 `worktree
 - **代码**：`openprogram/sandbox/__init__.py`（`sandbox_enabled` contextvar + `wrap_command`）、`backend/local.py`（`_invocation` 集成）
 - **命令**：`/sandbox` 开关（CLI `_cli_chat/handlers.py` + webui `ws_actions/chat.py`）
 
-### 10.3 ③ 和 ④ 的关系
+### 9.3 ③ 和 ④ 的关系
 
 两者解决不同问题，可以组合：
-- **单独用 ③**：在副本里改，但 bash 什么都能做
-- **单独用 ④**：在原目录改，但 bash 被限制范围
-- **组合用**：在副本里改，bash 也被限制。最安全
+- **单独用 ③**：在副本里改动，但 bash 不受限制
+- **单独用 ④**：在原目录改动，但 bash 的范围受限
+- **组合使用**：在副本里改动，且 bash 受限，安全级别最高
 
-### 10.4 容器沙箱（远期方向）
+### 9.4 容器沙箱（远期方向）
 
-research_agent 等无人值守 agentic function 的长时间运行场景，需要 Docker 完整隔离。当前不做，等 agentic function 成熟后考虑。
+research_agent 等无人值守 agentic function 的长时间运行场景，需要 Docker 完整隔离。这不属于当前设计范围，等 agentic function 成熟后再考虑。
+
+---
+
+## 附录：实现状态
+
+四层机制——① Checkpoint、② Shadow git、③ Worktree、④ 系统级沙箱——均已实现，read-before-edit 防护以及 webui、CLI、TUI 三端的 `/rewind` 与 `/sandbox` 命令同样已实现。
+
+尚未实现：
+
+| 项 | 说明 |
+|---|---|
+| UI 明示当前会话的"主回退路径" | 后端就绪，待前端 |
+| 容器沙箱（远期） | research_agent 等无人值守场景，需 Docker 集成 |

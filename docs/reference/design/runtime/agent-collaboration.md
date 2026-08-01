@@ -5,7 +5,7 @@
 的操作，**底层是同一件事**：往某条分支投递内容 → 触发那条分支跑一轮 → 结果自动回送
 发起方。全部做成工具调用，全部建在已有的事件层上。
 
-> 范围：本文是设计，不含代码。落地顺序见末节。
+> 范围：本文是设计，不含代码。实现状态见末节。
 
 ---
 
@@ -131,9 +131,6 @@ handler 已有（`handle_list_sessions` / `handle_list_branches`），只缺包�
   了命名的分级、锁、触发点；本节只强调：**message_branch 派生的分支和用户手动
   fork 的分支，走同一套命名（都要 Stage 1 占位名 + Stage 2 自动改名），不能漏。**
 
-> 现状缺口：`message_branch` 调 `run_agent_turn` 时**没传 label**，Stage 2 的
-> finalize_turn 自动触发**也没接线**——所以派生分支现在没名字。这是要补的实现。
-
 ### 2.5 回送节点落在哪：续接发起方分支，不拼主线
 
 异步回送（`wait=false`）时，`_dispatch_followup` 把目标分支的回复作为一个
@@ -151,15 +148,14 @@ DAG 形状：`发起节点 ──caller──> 子分支(点划线 spawn edge)`�
 节点 `──predecessor──> 发起节点`，续在发起节点之后。发起方读到回送、再回应，继续这条
 链。子分支本身是并列的独立一支（从发起点 fork 出去），**不并回主线**。
 
-> 现状缺口：`_dispatch_followup` 构造 `TurnRequest` 时没指定 `branch_from`，
-> `process_user_turn` 默认拿 session `head_id` 当 predecessor → 回送拼到主线。
-> 修法：回送的 `TurnRequest` 显式带上发起点（caller_msg_id）作为 `branch_from`。
+实现上，回送的 `TurnRequest` 必须显式带上发起点（caller_msg_id）作为 `branch_from`；
+`process_user_turn` 在缺省时取 session `head_id` 当 predecessor，那会把回送接到主线尾巴。
 
 ---
 
 ## 3. 底座：事件层（整个设计，自包含）
 
-通信原语建在事件层上。这里把事件层完整写清——它是框架级的统一事件流，**已落地**
+通信原语建在事件层上。这里把事件层完整写清——它是框架级的统一事件流
 （`openprogram/agent/event_bus.py` + `tool_gate.py` + `event_bridges.py`），通信只是
 它的又一组源 + 消费者。
 
@@ -208,24 +204,24 @@ emit_ws_frame(frame)                         # 源用：把现成 WS 帧经总�
 |---|---|---|
 | 例子 | 用户消息、模型回复、工具前后、文件改、turn 结束、子任务起止 | 凭据限流、上下文溢出、外部消息进、技能变 |
 
-**已落地的事件类型**（第一版，✅=在发）：
+**框架现有的事件类型**：
 
 | 类 | type | 何时 | 来源 |
 |---|---|---|---|
-| A | `user.prompt_submitted` | 用户发消息 | dispatcher ✅ |
-| A | `model.response_started`/`.completed` | 模型开始/说完 | agent_loop ✅ |
-| A | `tool.before` | 工具即将执行（**可拦截**，见 §3.5） | agent_loop ✅ |
-| A | `tool.after` | 工具执行完 | agent_loop ✅ |
-| A | `file.changed` | 文件被改 | write/edit/apply_patch ✅ |
-| A | `turn.ended` | 一轮结束 | agent_loop ✅ |
-| A | `subagent.started`/`.ended` | 子任务起止 | TaskRunner ✅ |
-| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/耗尽/轮换 | event_bridges←AuthStore ✅ |
-| B | `context.compaction_recommended`/`.compacted` | 上下文到阈值/已压缩 | context/engine ✅ |
-| B | `channel.message_inbound` | 外部消息进 | channels ✅ |
-| B | `memory.ingest_started`/`.ended` | wiki ingest 起止 | memory watcher ✅ |
-| B | `skills.changed`/`plugins.update_available` | 技能改/插件新版 | webui watcher ✅ |
+| A | `user.prompt_submitted` | 用户发消息 | dispatcher |
+| A | `model.response_started`/`.completed` | 模型开始/说完 | agent_loop |
+| A | `tool.before` | 工具即将执行（**可拦截**，见 §3.5） | agent_loop |
+| A | `tool.after` | 工具执行完 | agent_loop |
+| A | `file.changed` | 文件被改 | write/edit/apply_patch |
+| A | `turn.ended` | 一轮结束 | agent_loop |
+| A | `subagent.started`/`.ended` | 子任务起止 | TaskRunner |
+| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/耗尽/轮换 | event_bridges←AuthStore |
+| B | `context.compaction_recommended`/`.compacted` | 上下文到阈值/已压缩 | context/engine |
+| B | `channel.message_inbound` | 外部消息进 | channels |
+| B | `memory.ingest_started`/`.ended` | wiki ingest 起止 | memory watcher |
+| B | `skills.changed`/`plugins.update_available` | 技能改/插件新版 | webui watcher |
 
-**本设计新增的通信事件**（A 类）：
+**通信引入的事件**（A 类）：
 
 | type | 何时 | origin | payload 关键字段 |
 |---|---|---|---|
@@ -258,9 +254,9 @@ emit_ws_frame(frame)                         # 源用：把现成 WS 帧经总�
 
 ### 3.7 一条原则
 
-**不是所有调用都是事件，只有"有消费者想响应"的时机才是。** 上表是精挑的。通信新增的
-几个事件都是真有人响应（前端渲染、proactive、审计）才加。演进只加不改：加事件类型、
-给 payload 加字段零风险（老订阅者只读自己关心的）。
+**不是所有调用都是事件，只有"有消费者想响应"的时机才是。** 上表按这条筛选，通信引入的
+几个事件都有确定的响应方（前端渲染、proactive、审计）。演进方向是只加不改：新增事件类型、
+给 payload 加字段都不影响既有订阅者（它们只读自己关心的字段）。
 
 ---
 
@@ -364,7 +360,7 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 - `list_sessions.py` / `list_branches.py` — 复用 db.list_*
 - 各工具 `emit_safe(...)`；跨 session 通知用 `emit_ws_frame`
 
-**后端（已有，直接复用，不重写）**
+**后端（复用既有组件）**
 - `TaskRunner`（线程池并发、await、cancel、_dispatch_followup 自动回送、attach 连线）
 - `SessionStore`（list/append/set_head/commit/get）
 - `dispatcher.process_user_turn`
@@ -379,26 +375,25 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 
 ---
 
-## 7. 落地顺序（每步独立可验证）
+## 7. 可验证的行为
 
-| 步 | 做什么 | 验证 |
-|---|---|---|
-| **C1** | `message_branch` 核心：target="new"（派生）→ 投递 + 触发 + 自动回送 | agent 调一次，新建分支跑一轮，结果自动 followup 回发起方；事件 message_sent/replied 在事件日志可见 |
-| **C2** | `list_sessions` / `list_branches` 工具 | agent 列出真实多 session / 多分支 |
-| **C3** | `message_branch` target=已存在分支（同 session） | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
-| **C4** | 跨 session：target=别的 session | A 发给别的 session，同一路径跑通；两边前端经 ws.frame 实时更新 |
-| **C5** | `sources` 多源综合（自我总结 → 汇集 → 综合） | 带 2 条 source 分支，每条先自我总结，目标模型综合出新回答 |
-| **C6** | 健壮性（§5）：深度上限 + 自发拒绝、并发排队、取消级联、发给忙碌分支排队、失败回送、结果截断 | A↔B 互发到 MAX_DEPTH 自动停；派 30 个排队不炸；取消父→子全停；给正跑的 B 发消息排队等它结束；子崩溃父收到 is_error；超大结果截断给文件路径 |
-| **C7** | 值守拦截 + target 校验 + 最小权限 + 分支可见性 | deny 下被 tool.before 拦；不存在 target 报错；子分支权限不高于父、不进 UI 选择列表 |
-| **C8** | 前端交互：列表选 target → 发消息 + 通信节点渲染 | webui 里选分支发消息，DAG 出现通信节点 + hover 软连接线 |
+设计成立时，下列行为各自独立可验证。验证手段是 webui（`cd web && npm run build` +
+`openprogram worker restart`）或事件日志（`OPENPROGRAM_EVENT_LOG=1`）。
 
-C1 核心原语（派生）；C3/C4 推广到已有分支/跨 session；C5 综合；**C6 健壮性（防爆，最该
-先有）**；C7 安全；C8 前端。每步在 webui（`cd web && npm run build` + `openprogram
-worker restart`）或事件日志（`OPENPROGRAM_EVENT_LOG=1`）验证。
+| 行为 | 表现 |
+|---|---|
+| 派生（`target="new"`） | agent 调一次，新建分支跑一轮，结果自动 followup 回发起方；事件 message_sent/replied 在事件日志可见 |
+| 列举 | `list_sessions` / `list_branches` 列出真实的多 session / 多分支 |
+| 发给同 session 已有分支 | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
+| 跨 session | A 发给别的 session 走同一路径；两边前端经 ws.frame 实时更新 |
+| 多源综合 | 带 2 条 source 分支，每条先自我总结，目标模型综合出新回答 |
+| 健壮性（§5） | A↔B 互发到 MAX_DEPTH 自动停；派 30 个排队不打爆；取消父→子全停；给正跑的 B 发消息排队等它结束；子失败父收到 is_error；超大结果截断给文件路径 |
+| 安全（§5.7-5.9） | deny 下被 tool.before 拦；不存在的 target 报错；子分支权限不高于父、不进 UI 选择列表 |
+| 前端 | webui 里选分支发消息，DAG 出现通信节点 + hover 软连接线 |
 
 ---
 
-## 8. 关键文件速查（落地时碰这些）
+## 8. 关键文件速查
 
 | 事 | 位置 |
 |---|---|
@@ -413,3 +408,19 @@ worker restart`）或事件日志（`OPENPROGRAM_EVENT_LOG=1`）验证。
 
 > 注："综合多条"由 `message_branch(sources=[...])` 提供，不另设独立工具。底层
 > `_merge.py` 的多父 ContextCommit 血缘记录被复用来记下"这次综合来自哪几条分支"。
+
+---
+
+## 附：实现状态
+
+事件层（§3）、`TaskRunner`、`SessionStore`、`process_user_turn`、`branch_summarization`
+以及 `_dispatch_followup` 的自动回送均已存在，`message_branch` 及两个列举工具建在其上。
+
+两处与本设计尚有出入，需要在实现时补齐：
+
+- **派生分支的命名（§2.4）**：`message_branch` 调 `run_agent_turn` 时需传 label 以获得
+  Stage 1 占位名，并接上 `finalize_turn` 的 Stage 2 自动改名触发；两者缺一时派生分支
+  在 web 端只显示 8 位 hex 短号。
+- **回送节点的落位（§2.5）**：`_dispatch_followup` 构造 `TurnRequest` 时需显式指定
+  `branch_from` 为发起点（caller_msg_id），否则 `process_user_turn` 取 session `head_id`
+  当 predecessor，回送会被接到主线尾巴而非发起分支。

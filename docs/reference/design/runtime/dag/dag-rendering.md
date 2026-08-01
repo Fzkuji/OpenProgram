@@ -1,7 +1,5 @@
 # DAG Rendering Spec (Layout · Edges · Legend · Default Visibility)
 
-Status: **decided (authoritative implementation standard, consolidated 2026-07-10)** · Supersedes `dag-layout-algorithm.md` + `dag-viewport.md`, absorbs the edge visual rules from `branch-collaboration.md`
-
 > How the right-panel Viewport minimap draws the DAG: where each node goes, what
 > each edge looks like, and what the user sees by default. **This document is the
 > authoritative implementation standard** — write the layout code to match it, and
@@ -48,8 +46,8 @@ Default (conversation layer):    Click ⚒9 to expand that turn:
 Rationale: execution-layer information already has a better presentation in the chat
 stream (each turn's execution-tree card, the Executions page). The Viewport's job is
 to let you see the session structure at a glance; 50 tool squares laid out flat would
-drown the 8 structural nodes — which is exactly what happened in the real 2026-07-10
-weather session (66 nodes, 50+ of them code).
+drown the 8 structural nodes — a real weather session with 66 nodes, 50+ of them code,
+looked exactly like that.
 
 > The other two views — chat stream and call tree — are unaffected: the chat stream
 > lays out top-level turns by seq with function nesting folded; the Executions /
@@ -83,10 +81,10 @@ previous branch's actually-occupied rightmost column +1, with no overlap.
 ### tier — how many columns to indent within a branch
 
 **The conversation layer is fixed by role; the execution layer increases by caller
-depth.** Two rules, each governing one layer, so they no longer conflict (the old docs
-never adjudicated which one a spawn root counts by — now adjudicated: a spawn root is a
-conversation-layer user, tier=1; its caller pointing at a deep node only determines
-where the spawn edge is drawn from, not its own indent):
+depth.** Two rules, each governing one layer, so they never conflict. A spawn root
+counts by the conversation-layer rule: it is a conversation-layer user, tier=1, and its
+caller pointing at a deep node only determines where the spawn edge is drawn from, not
+its own indent.
 
 | Node | Layer | tier |
 |---|---|---|
@@ -100,16 +98,16 @@ where the spawn edge is drawn from, not its own indent):
 
 Rows are allocated by a **preorder walk of the structural parent tree**: every visible
 node takes its own row, and a subtree pushes the siblings below it down by however many
-rows it occupies (NOT "hops to root" — that stacked all children of one parent on a
-single row and broke scenes 3/5/6/7/11/12; aligned to spec.html on 2026-07-31). Two
-exceptions keep their anchor's row because they grow sideways, not down: a fork sibling
-sits on the **same row** as the sibling it rewrites (scene 3), and a spawn branch root
-sits on the **same row as the spawn call node** (scene 10). Cross-session spawns land as
-the target session's own conversation chain (lane 0), not a side branch (scene 12).
+rows it occupies. Rows are not "hops to root" — that would stack all children of one
+parent on a single row. Two exceptions keep their anchor's row because they grow
+sideways, not down: a fork sibling sits on the **same row** as the sibling it rewrites
+(scene 3), and a spawn branch root sits on the **same row as the spawn call node**
+(scene 10). Cross-session spawns land as the target session's own conversation chain
+(lane 0), not a side branch (scene 12).
 
 ---
 
-## 2. Three global layout rules (unchanged, inherited from the old layout docs)
+## 2. Three global layout rules
 
 **① Square grid**: `COL_W == ROW_H`, child nodes strictly at the parent's lower-right
 corner (45°).
@@ -126,7 +124,7 @@ placeholder node.
 
 ---
 
-## 3. Edges: color = branch, line style = type (orthogonal, iron rule)
+## 3. Edges: color = branch, line style = type (orthogonal)
 
 Each lane has one color (`dag/types.ts` `LANE_COLORS`). Any edge uses the lane color of
 the branch it belongs to / points at; **never give a category of edge a fixed color.** Type
@@ -148,8 +146,8 @@ is conveyed only by line style:
 **Shape**: ◇ ROOT · ○ user · △ llm · ■ code · ◉ merge (solid circle with a hole, the graph's unique
 "convergence" shape).
 
-**status mapping** (retiring the dashed placeholder box — status is drawn on the node
-itself):
+**status mapping** — status is drawn on the node itself, never as a separate dashed
+placeholder box:
 
 | status | Drawing |
 |---|---|
@@ -164,17 +162,17 @@ itself):
 |---|---|
 | `⚒N` (right of an llm node) | a collapsed execution subtree, N sub-calls; click to expand |
 | `×N` (right of a code node) | N isomorphic siblings produced by a loop, folded (pure display) |
-| `↗` (top-right corner) | marked on **both sides** of a cross-session spawn: the branch root in the target session (caller lives in another session's graph, hangs on ROOT here, tooltip "spawned from <source session>"); and the initiating node in the source session (tooltip "dispatched to <target session>" — otherwise the dispatch leaves no trace in its own graph). Click jumps to the peer session (implementation may come later). **Cross-session only**: a same-session spawn has both ends in the graph and the dash-dot edge already expresses the relationship (scene 10) — no ↗ there; the mark is a stand-in for the edge that cannot be drawn, not a generic spawn decoration |
+| `↗` (top-right corner) | marked on **both sides** of a cross-session spawn: the branch root in the target session (caller lives in another session's graph, hangs on ROOT here, tooltip "spawned from <source session>"); and the initiating node in the source session (tooltip "dispatched to <target session>" — otherwise the dispatch leaves no trace in its own graph). Click jumps to the peer session (implementation may come later). **Cross-session only**: a same-session spawn has both ends in the graph and the dash-dot edge already expresses the relationship (scene 10) — no ↗ there; the mark stands in for the edge that cannot be drawn, and is not a generic spawn decoration |
 
 ---
 
 ## 5. Branch-name badge
 
-- **Anchoring** (amended 2026-07-31): **directly below the branch's deepest currently
-  visible node**, one row down. In the default (folded) view that is the last
-  conversation-layer node; when the execution subtree is expanded the badge follows the
-  bottom-most expanded node and moves back up on collapse. Branch membership = lane
-  (expanded execution nodes share their turn's lane).
+- **Anchoring**: **directly below the branch's deepest currently visible node**, one row
+  down. In the default (folded) view that is the last conversation-layer node; when the
+  execution subtree is expanded the badge follows the bottom-most expanded node and
+  moves back up on collapse. Branch membership = lane (expanded execution nodes share
+  their turn's lane).
 - **Edge avoidance**: only when an edge crosses the anchor cell (the descending line of
   an expanded execution subtree, or the conversation continuing) does the badge shift
   half a column left — a badge never sits on an edge. Expanding/collapsing the execution
@@ -198,12 +196,12 @@ itself):
 
 | # | Scene | Key points |
 |---|---|---|
-| 1–7 | Base layout (single turn / multi-turn / retry / tool indent / manual function / composite / collapse shift-left) | Rules unchanged; scenario 4's tool indent shows as a ⚒N badge in the default view (scene 11), the indented squares appear only after expansion |
+| 1–7 | Base layout (single turn / multi-turn / retry / tool indent / manual function / composite / collapse shift-left) | Scenario 4's tool indent shows as a ⚒N badge in the default view (scene 11); the indented squares appear only after expansion |
 | 8 | merge (multi-parent convergence) | ◉ solid circle with a hole, lands on the base branch lane, peer merge-in thick solid lines (peer lane color); attach pointer nodes are not drawn, only the lines |
 | 9 | cross-branch messaging (send_to_branch) | dotted `1 5`, target branch color, hidden by default / shown on hover; a from_branch user node lands at the target branch tail |
 | 10 | spawn dispatch → attach merge-back | spawn edge dash-dot `4 2 1 2` (child branch color); the child branch's first node sits on the **same row** as the spawn node, own lane, tier=1; merge-back long dash `4 4` from the child tip back to its embed position on the main branch (the chat stream renders it as the Spawned card, display order moved ahead — see `ui/invariants.md` rule 9) |
 | 11 | execution-subtree default aggregation | see §0: collapsed to a ⚒N badge by default, click to expand into layout, collapse reclaims rows/cols per rule ②; expansion state is per-branch independent |
-| 12 | status & badge legend | see §4: status drawn on the node's own stroke, placeholder boxes abolished; both sides of a cross-session spawn carry the ↗ corner mark |
+| 12 | status & badge legend | see §4: status drawn on the node's own stroke, no placeholder boxes; both sides of a cross-session spawn carry the ↗ corner mark |
 | 13 | badge anchoring · avoidance · collision · merged | see §5: anchor directly below the branch's last conversation-layer node, half-column left shift only when an edge crosses the anchor cell, collision shifts down one row, merging erases the badge (provenance moves into the merge node's tooltip) |
 
 **Send-back nodes and the switcher (semantic note, no dedicated layout scene)**: a
@@ -252,27 +250,10 @@ The backend `openprogram/webui/graph_builder.py` produces the node array (includ
 annotation — **tier specifically in `graph_layout/tier.py`**. Verification tool: `python tools/dag_dump.py <session_id>` prints
 lane/tier/depth + an ASCII grid.
 
-## 8. Known gaps vs. the implementation (2026-07-10 inventory; all landed same day)
-
-Item-by-item against this spec. All 8 gaps were implemented on
-2026-07-10; the table is kept as a record (each row notes where):
-
-| # | Gap | Spec item | Implementation |
-|---|---|---|---|
-| 1 | Execution subtree laid out flat by default (no aggregation pass, no ⚒N badge) | §0 | ✅ passes/apply-collapse.ts: any node with execution sub-calls starts folded; render/nodes.ts draws ⚒N (spawn-root subtrees exempt) |
-| 2 | Collapse leaves a placeholder dashed box that occupies a cell | rule ② corollary | ✅ shapes.ts: square_outline removed; task reverts to a plain square |
-| 3 | running state drawn as a standalone dashed placeholder node | §4 status | ✅ graph_builder emits status; nodes.ts draws it on the stroke (running dashed+breathing / error red+! / cancelled grayed) |
-| 4 | badge anchored to the "lane's deepest visible node" (incl. execution layer), no collision slide | §5 | ✅ render/badges.ts: anchor at last conversation-layer node, half-column left shift when a line crosses the anchor cell, measured-pixel-box collision slides down one row |
-| 5 | merge node has no dedicated shape, convergence line not colored by peer | scene 8 | ✅ shapes.ts merge_dot (◉); edges.ts merge-in line peer-colored 2.4px solid |
-| 6 | attach pointer still drawn as a square in the viewport | scenes 8/10 | ✅ backend filters it (display=runtime) + graph_builder stamps the ref onto the embed host (attach_returns); edges.ts draws the long-dash return line |
-| 7 | cross-session spawn has no ↗ mark on either side (target silently hangs on ROOT, source leaves no trace) | §4 badges | ✅ graph_builder stamps spawn_remote (target side); nodes.ts draws ↗ (source-side spawn_out rendering ready, awaiting a data source that stamps it) |
-| 8 | spawn root tier computation not per the "conversation-layer user=1" ruling | §1 tier | ✅ graph_layout: tier=1 / same-row depth / new lane; task_followup without an attach pointer re-parents onto the receiving turn (filter.py fallback) |
-
-## 9. Context tab semantics (decided 2026-07-31)
+## 8. Context tab semantics
 
 The History panel has two highlight modes (`HighlightMode` in
-`web/lib/runtime-bridge/dag/types.ts`); until this section the spec only
-covered the drawing itself, not the Context mode's meaning. Ruling:
+`web/lib/runtime-bridge/dag/types.ts`):
 
 - **Viewport** — the visible set is the conversation bubbles currently
   intersecting the chat scroll window (`render/visibility.ts`). Pure UI
@@ -283,7 +264,7 @@ covered the drawing itself, not the Context mode's meaning. Ruling:
   head, stopping at the most recent compaction summary. Nodes outside the
   set draw dimmed; nodes inside keep the white fill.
 
-Compaction interaction (the part that used to be broken):
+Compaction interaction:
 
 - `insert_summary_node` re-parents the kept tail as `k_<hex>` copies and the
   DAG deliberately never draws `summary_`/`k_` nodes
@@ -295,8 +276,8 @@ Compaction interaction (the part that used to be broken):
   simply don't highlight — acceptable decay, no migration.
 - After compaction the summarised prefix falls out of the set → it dims;
   the kept tail keeps highlighting. This IS the compaction visualization —
-  a separate summary-node glyph stays rejected (session-dag.md's ruling:
-  no 4th role). If a future need arises for an explicit "N turns compacted
+  a separate summary-node glyph is rejected (per session-dag.md: no 4th
+  role). If a future need arises for an explicit "N turns compacted
   here" marker, it must be a badge on the first kept node, not a node.
 - `compaction_finished` must refresh the context range
   (`chat-handlers.ts`); the Context tab is event-driven like everything
@@ -304,3 +285,18 @@ Compaction interaction (the part that used to be broken):
 - Context ids that have no drawn node (e.g. `display=runtime`
   task-followup rows) are silently ignored: they are context, but not
   graph.
+
+## Appendix: Implementation Status
+
+The whole spec is implemented. Where each part lives:
+
+| Spec item | Implementation |
+|---|---|
+| §0 execution-subtree aggregation | `passes/apply-collapse.ts`: any node with execution sub-calls starts folded; `render/nodes.ts` draws ⚒N (spawn-root subtrees exempt) |
+| Rule ② corollary (no placeholder box) | `shapes.ts`: no `square_outline`; task renders as a plain square |
+| §4 status on the stroke | `graph_builder` emits status; `nodes.ts` draws it on the stroke (running dashed+breathing / error red+! / cancelled grayed) |
+| §5 badge anchoring | `render/badges.ts`: anchor at last conversation-layer node, half-column left shift when a line crosses the anchor cell, measured-pixel-box collision slides down one row |
+| Scene 8 merge shape and lines | `shapes.ts` `merge_dot` (◉); `edges.ts` merge-in line peer-colored 2.4px solid |
+| Scenes 8/10 attach pointer | backend filters it (display=runtime) + `graph_builder` stamps the ref onto the embed host (`attach_returns`); `edges.ts` draws the long-dash return line |
+| §4 cross-session ↗ | `graph_builder` stamps `spawn_remote` (target side); `nodes.ts` draws ↗ (source-side `spawn_out` rendering is ready, awaiting a data source that stamps it) |
+| §1 spawn root tier | `graph_layout`: tier=1 / same-row depth / new lane; `task_followup` without an attach pointer re-parents onto the receiving turn (`filter.py` fallback) |

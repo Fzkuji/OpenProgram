@@ -4,9 +4,9 @@
 
 ---
 
-## 1. 现状与问题
+## 1. 工具集如何确定
 
-### 1.1 工具集怎么定（优先级链）
+### 1.1 优先级链
 
 一次 turn 给模型的工具，由 `_resolve_tools(agent_profile, req.tools_override, source)` 算出（`dispatcher/__init__.py:764` → `_model_tools.py:385`）。优先级：
 
@@ -18,14 +18,15 @@
 
 `override` 的取值分别处理：
 - `[]` → 关闭所有工具（`:392-393`）
-- **`dict`**（`enabled`/`disabled`/`allowed`/`toolset`）→ **意图式**，运行时实时展开（`:397-421`）。**这是我们想要的形态。**
-- **`list[str]`** → `agent_tools(names=[...])`，**按名字钉死**（`:423-428`）。**这是问题根源。**
+- **`dict`**（`enabled`/`disabled`/`allowed`/`toolset`）→ **意图式**，运行时实时展开（`:397-421`）。这是会话该存的形态。
+- **`list[str]`** → `agent_tools(names=[...])`，按名字固定（`:423-428`）。仅用于表示用户显式精选的少数工具。
 
 session 配置经 `tools_override_from_config(cfg)` 转成 override（`session_config.py:82-93`），消费点：webui `_execute/chat.py:105`、channels `_conversation.py:238`。
 
-### 1.2 病根：两条路径把"意图"提前物化成"列表快照"
+### 1.2 反面形态：把"意图"提前物化成"列表快照"
 
-webui 的 `handle_chat` 在拼 `tools_flag` 时，有**两处**把开关意图展开成 `list[str]`：
+会话若在写入时就把开关意图展开成 `list[str]` 存下，工具集便被冻结在写入那一刻。
+webui 的 `handle_chat` 在拼 `tools_flag` 时有**两处**会这样做，是本设计要消除的形态：
 
 **路径 A — 选了非 full 的工具 profile**（`ws_actions/chat.py:321-328`）：
 ```python
@@ -47,9 +48,9 @@ if web_search_flag:
 ```
 注意 `:348-353`：即便 `tools_flag is None`（"跟随 profile"），开了 web_search 也会 `base = list(DEFAULT_TOOLS)`，连"跟随 profile"的意图也被抹平。
 
-> 两条路径独立，A 甚至在 B 之前。**只修 B 治不干净——必须两条都改。**
+> 两条路径互相独立，A 在 B 之前执行。两条都必须走意图透传，只改其中一条不足以消除物化。
 
-### 1.3 快照如何钉死老会话
+### 1.3 快照对老会话的影响
 
 物化出的 list 一路存进 DB：
 1. `chat.py:482-488` → `save_session_run_config(tools=<list>)`
@@ -57,7 +58,7 @@ if web_search_flag:
 3. 之后每个 turn：`load_session_run_config` → `tools_override_from_config` 命中 `:85-86` `if cfg.tools_override: return list(cfg.tools_override)`，**原样吐回老快照**
 4. 该 list 进 `_model_tools.py:423-428` 走 `agent_tools(names=[...])`，**只认快照里那些名字**
 
-**后果**：往 DEFAULT_TOOLS（`functions/__init__.py:69`）加新工具（如 list_sessions / message_branch）后，**所有曾经开过 web_search 或选过非 full profile 的老会话**永远拿当初那张名字列表，看不到新工具。
+**后果**：往 DEFAULT_TOOLS（`functions/__init__.py:69`）加新工具（如 list_sessions / message_branch）后，**所有曾经开过 web_search 或选过非 full profile 的会话**永远拿当初那张名字列表，看不到新工具。
 
 对比：从没动过这两个开关的会话存的是 `tools_enabled=True`（bool），`:87-90` 每次实时返回 `list(DEFAULT_TOOLS)`，新工具自动可见。**差异 = "存 bool/意图" vs "存物化 list"。**
 
@@ -100,19 +101,19 @@ session 该存的最小意图：
 
 ---
 
-## 5. 改法
+## 5. 三个承载点
 
-**改 A — chat.py 两条物化路径都去掉**（`ws_actions/chat.py:321-328` **和** `:336-356`）：
-- profile 路径：不再 `[t.name for t in resolved]`，改成把 **preset 名**透传（走 dict-override 的 `toolset` 字段）。
-- web_search 路径：不再 `list(DEFAULT_TOOLS)`，改成把 web_search 作为**叠加意图**透传，不把 `tools_flag` 从 True/None 改写成 list。
+**A — chat.py 透传意图**（`ws_actions/chat.py:321-328` 与 `:336-356`）：
+- profile 路径：把 **preset 名**透传（走 dict-override 的 `toolset` 字段），不展开成 `[t.name for t in resolved]`。
+- web_search 路径：把 web_search 作为**叠加意图**透传，`tools_flag` 保持 True/None，不改写成 list。
 
-**改 B — session_config 存意图**：
-- `SessionRunConfig`（`session_config.py:12-18`）新增 `web_search: Optional[bool]`（preset 名若还没有也加）。
-- load/save（`:20-79`）读写新列（DB schema 加列，`session_db.py`）。
-- `tools_override_from_config`（`:82-93`）改输出 **dict 意图** 而非 list：`tools_enabled is False` → `[]`；否则 → `{"enabled": True if enabled else None, "toolset": <preset>, "disabled": [...], "web_search": <bool>}`。彻底不再写 list[str] 快照。
+**B — session_config 存意图**：
+- `SessionRunConfig`（`session_config.py:12-18`）带 `web_search: Optional[bool]` 与 preset 名字段。
+- load/save（`:20-79`）读写这两项。
+- `tools_override_from_config`（`:82-93`）输出 **dict 意图** 而非 list：`tools_enabled is False` → `[]`；否则 → `{"enabled": True if enabled else None, "toolset": <preset>, "disabled": [...], "web_search": <bool>}`。不写 list[str] 快照。
 
-**改 C — dict-override 支持 web_search 叠加（必需前置，不是可选）**：
-dict-override 分支（`_model_tools.py:397-421`）当前只认 `enabled/disabled/allowed/toolset`，**没有 web_search 键**。若 web_search 改成只存意图、而 web_search 不在 DEFAULT_TOOLS 里 → 展开结果**不含 web_search → web_search 失效**。所以 C 必须和 B 同批：让 dict 分支识别 `web_search`，展开后缺则 `agent_tools(names=[...]+["web_search"])` 补上（稳妥路径）。provider 内建 web_search（`openai_codex.py:376` 那种）作为后续二选一，先确认各 provider 支持度。
+**C — dict-override 支持 web_search 叠加**：
+dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed/toolset` 外还需识别 `web_search` 键。因为 web_search 不在 DEFAULT_TOOLS 里，若只存意图而 dict 分支不认这个键，展开结果就不含 web_search，开关失效。所以 C 是 B 的必需前置：展开后缺 web_search 则由 `agent_tools(names=[...]+["web_search"])` 补上。provider 内建 web_search（`openai_codex.py:376` 那种）是另一条可选路径，取决于各 provider 支持度（见 §7）。
 
 **`list[str]` 仅表示用户显式精选**（如 web-search-only 的 `["web_search"]`）：
 `tools_override_from_config` 原样透传，`_model_tools.py` 的 list 分支照名字展开。
@@ -120,16 +121,17 @@ dict-override 分支（`_model_tools.py:397-421`）当前只认 `enabled/disable
 
 ---
 
-## 6. 落地分步（每步可验证）
+## 6. 应当成立的性质
 
-1. **稳定化展开（前置硬约束）**：确认 `agent_tools` / dict 分支展开是确定性排序+去重。验证：同意图连续展开两次逐元素相等（防 §4.2 缓存抖动）。
-2. **session_config 加 web_search（+preset）意图列**：改 `SessionRunConfig` + load/save + DB schema。验证：存 `web_search=True` 读回 True；旧行无该列读回 None 不报错。
-3. **`tools_override_from_config` 改输出 dict 意图**。单测：`enabled=True` → dict 含 enabled；`+web_search` → 展开含 web_search；`enabled=False` → `[]`。
-4. **改 C 同批：dict 分支支持 web_search 叠加**（`_model_tools.py:397-421`）。验证：dict 意图带 web_search → 展开结果含 web_search。
-5. **chat.py 去物化（两条路径）**（`:321-328` + `:336-356`）：profile 透传 preset 名、web_search 透传意图。验证：新建会话开 web_search / 选 research，查 DB `tools_override` 为 NULL 或 dict，不是全量 list。
-6. **端到端验证新工具可见**：`{enabled: True}` 意图展开 → 含最新加进 DEFAULT_TOOLS 的工具（如 message_branch / list_sessions）。这是当前 bug 的反例。
-7. **缓存回归**：开 web_search 会话连发两 turn（意图不变），provider usage 确认第二 turn 命中缓存、工具集未抖动。
-8. **三端写入一致**：grep 全仓 `list(_DEFAULT_TOOLS)` / `[t.name for t in` 确认**没有第二处物化**；webui/channels/TUI（`session.py`、`cli/src/ws/client.ts`）若也能开 web_search/选 profile，各自核对写入端不物化。
+设计正确时，下列性质同时成立，它们也是回归验证的着眼点：
+
+- **展开确定性**：同一意图连续展开两次逐元素相等（排序稳定 + 去重），避免 §4.2 的缓存抖动。
+- **意图往返**：存 `web_search=True` 读回 True；旧会话无该字段读回 None 不报错。
+- **dict 输出**：`enabled=True` → dict 含 enabled；带 web_search → 展开含 web_search；`enabled=False` → `[]`。
+- **写入不物化**：新建会话开 web_search 或选 research 后，DB 里 `tools_override` 为 NULL 或 dict，不是全量 list。
+- **新工具自动可见**：`{enabled: True}` 意图展开后含最新加进 DEFAULT_TOOLS 的工具（如 message_branch / list_sessions）。
+- **缓存稳定**：意图不变的会话连发两 turn，provider usage 显示第二 turn 命中缓存、工具集未抖动。
+- **各写入端一致**：全仓不存在第二处 `list(_DEFAULT_TOOLS)` / `[t.name for t in` 式物化；webui/channels/TUI（`session.py`、`cli/src/ws/client.ts`）凡能开 web_search / 选 profile 的写入端都透传意图。
 
 ---
 
@@ -141,18 +143,15 @@ dict-override 分支（`_model_tools.py:397-421`）当前只认 `enabled/disable
 
 ---
 
-## 8. 实现留痕（改了什么、为什么）
+## 8. 实现状态
 
-> 记录**实际改了哪些代码、每处的理由、怎么验证**，方便以后重新修改 / 扩展时看懂
-> 当前怎么做的。
+### 8.1 承载文件
 
-### 8.1 改了哪些文件
-
-| 文件 | 改了什么 | 为什么 |
-|---|---|---|
-| `openprogram/agent/session_config.py` | `SessionRunConfig` 加 `web_search` / `toolset` 意图字段；`save/load` 读写它们（存 git session meta，无需改 DB schema——`update_session(**fields)` 任意 key 透传）；`tools_override_from_config` 输出 **dict 意图**（`{enabled, toolset, web_search}`）实时展开，绝不物化整张工具表；`list[str]` 仅用于用户显式精选，原样透传 | 核心：会话存意图、运行时实时展开 |
-| `openprogram/webui/ws_actions/chat.py` | 删两条物化路径：profile 不再 `[t.name for t in resolved]`、web_search 不再 `list(DEFAULT_TOOLS)`；改成把 `tools_profile`/`web_search_flag` 作为**意图**透传给 `save_session_run_config(toolset=, web_search=)`；保留 "tools=False + web_search=True → `["web_search"]`" 这一单元素 list（用户精选，不是全量快照） | 病根在这——写入时就把意图物化成列表存死了 |
-| `openprogram/agent/_model_tools.py` | dict-override 分支（`resolve_tools`，~397-421）新增 `web_search` 叠加：`_overlay_web_search` 在 toolset / names 两条路径展开后，若意图含 web_search 且结果缺它则补上 | 改 C，必需前置——否则 web_search 改成意图后会在展开时丢失 |
+| 文件 | 承担什么 |
+|---|---|
+| `openprogram/agent/session_config.py` | `SessionRunConfig` 的 `web_search` / `toolset` 意图字段；`save/load` 读写它们（存 git session meta，不需改 DB schema——`update_session(**fields)` 任意 key 透传）；`tools_override_from_config` 输出 **dict 意图**（`{enabled, toolset, web_search}`）供实时展开，不物化整张工具表；`list[str]` 仅用于用户显式精选，原样透传 |
+| `openprogram/webui/ws_actions/chat.py` | 把 `tools_profile` / `web_search_flag` 作为**意图**透传给 `save_session_run_config(toolset=, web_search=)`；"tools=False + web_search=True → `["web_search"]`" 这一单元素 list 属用户精选，不是全量快照 |
+| `openprogram/agent/_model_tools.py` | dict-override 分支（`resolve_tools`，~397-421）的 `web_search` 叠加：`_overlay_web_search` 在 toolset / names 两条路径展开后，若意图含 web_search 且结果缺它则补上 |
 
 ### 8.2 关键设计点（别破坏）
 
@@ -169,13 +168,13 @@ dict-override 分支（`_model_tools.py:397-421`）当前只认 `enabled/disable
 
 - `tests/unit/test_tool_expansion_deterministic.py` — 展开确定性（缓存前缀稳定）
 - `tests/unit/test_session_config_tools_intent.py` — 意图往返、用户精选 list 原样透传、
-  **端到端：意图展开含新工具（message_branch/list_sessions）+ web_search 叠加生效**（bug 的反例）
+  端到端：意图展开含新工具（message_branch/list_sessions）+ web_search 叠加生效
 - `tests/unit/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` —
   `tools=True` 产出 `{enabled:True}` 意图而非 list 快照
 
-### 8.4 后续（未做，留给将来）
+### 8.4 扩展点
 
-- **provider 内建 web_search**（§7）：现在 web_search 走"工具名叠加"稳妥路径；将来若确认
-  各 provider 支持内建 web_search，可在 `_overlay_web_search` 处二选一切换。
-- **扩展新意图维度**（如按 channel 限工具）：往 dict 意图加键 + 在 `resolve_tools` dict
-  分支处理，不要回到"存展开列表"的老路。
+- **provider 内建 web_search**（§7）：web_search 当前走"工具名叠加"路径；若确认各 provider
+  支持内建 web_search，可在 `_overlay_web_search` 处切换。
+- **新意图维度**（如按 channel 限工具）：往 dict 意图加键 + 在 `resolve_tools` dict
+  分支处理，不要回到"存展开列表"的形态。

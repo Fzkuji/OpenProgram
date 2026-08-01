@@ -1,8 +1,6 @@
 # Agent Call Flow (Authoritative Design)
 
-Status: design · Created: 2026-06-18
-
-> This is the **core framework** for agent calls — every turn / LLM call follows this flow. Future features are inserted at the corresponding nodes on top of this; the skeleton stays unchanged. This document was once called "Unifying the LLM call path"; it is now promoted to the authoritative design for the entire call flow.
+> This is the **core framework** for agent calls — every turn / LLM call follows this flow. Future features are inserted at the corresponding nodes on top of this; the skeleton stays unchanged.
 
 ## Overview Diagram
 
@@ -30,7 +28,7 @@ Entry B: inside @agentic_function body → runtime.exec ──via AgentSession�
 
 ### Why Two Entry Points, Not One
 
-dispatcher and exec serve two different scenarios, and their peripheral plugins do not overlap: dispatcher needs session management + front-end WebSocket broadcast + title/compaction; exec needs the DAG llm node + AgentSession retry-rollback. A hard merge would saddle one side with logic the other doesn't need (an attempt to fold them in practice hit model forking and node duplication — see step 4 below). agent_loop is shared, because the "call model → run tools → loop" engine is identical for both.
+dispatcher and exec serve two different scenarios, and their peripheral plugins do not overlap: dispatcher needs session management + front-end WebSocket broadcast + title/compaction; exec needs the DAG llm node + AgentSession retry-rollback. A hard merge would saddle one side with logic the other doesn't need; folding them in practice hits model forking and node duplication (see "Why the dispatcher is not folded into runtime.exec" below). agent_loop is shared, because the "call model → run tools → loop" engine is identical for both.
 
 ### Key: exec Sits **Below** agent_loop, So It Can Nest
 
@@ -191,44 +189,50 @@ inside an @agentic_function body, call runtime.exec(content=[...])
 ← return text
 ```
 
-## Landing Order
+## Node Writing and the Callable Path
 
-### Steps 1-2 (✅ done)
+### exec writes the llm node in pairs
 
-| Step | What to do | Verification |
+exec opens and closes the llm node in a pair (`_open_model_call_node` /
+`_close_model_call_node`) on both the sync and async paths, so an LLM call made from
+inside a function body appears in the session DAG. In `_call_via_providers`, `_call_id`
+switches to the llm node before session.run, so the tool loop's tool code nodes have
+their called_by pointing at the llm node
+(`test_tool_loop_subcall_attributes_to_llm_node`).
+
+### The callable path goes through a provider model
+
+`Runtime(call=fn)` is wrapped into a provider model and goes through
+`_call_via_providers` like any other model, so there is no separate legacy call
+branch:
+
+| Piece | What it is | File |
 |---|---|---|
-| 1 | exec writes the llm node in pairs (`_open_model_call_node` / `_close_model_call_node`), both the sync and async paths | ✅ the llm node appears in the wiki_agent session DAG |
-| 2 | In `_call_via_providers`, switch `_call_id` to the llm node before session.run, so the tool loop's tool code nodes called_by correctly point to the llm node | ✅ `test_tool_loop_subcall_attributes_to_llm_node` |
+| `CallableModel` adapter | sync+async, converts pi-ai messages back to content to call the user fn, returns a single AssistantMessage, no tool loop; reinstates `response_format`→prompt suffix | `openprogram/providers/callable_model.py` |
+| Runtime wiring | in `Runtime.__init__`, `call=` → `self.api_model = CallableModel(call)`; a callable runtime forces `toolset="none"` | `runtime.py` __init__ |
 
-### Step 3: Delete the legacy `call=` branch
+`_call_via_providers` does not ignore content: `_render_history_messages(content)`
+treats content as the current turn (`runtime.py:1451`), and with no store,
+`_build_pi_context(content)` (`:1456`). The adapter therefore needs no special
+handling of content; AgentSession hands history+current to the model, and the adapter
+converts back to content to call the user fn.
 
-Wrap `Runtime(call=fn)` into a provider model, uniformly go through `_call_via_providers`, and delete `_call_fn` / `_uses_legacy_call` and the two legacy branches.
+### stream_fn injection
 
-| Step | What to do | File | Verification |
-|---|---|---|---|
-| 3a | Add a `CallableModel` adapter (sync+async, converts pi-ai messages back to content to call the user fn, returns a single AssistantMessage, no tool loop; reinstate `response_format`→prompt suffix) | new file `openprogram/providers/callable_model.py` | `pytest tests/providers/test_functions.py` |
-| 3b | In `Runtime.__init__`, `call=` → `self.api_model = CallableModel(call)`; a callable runtime forces `toolset="none"` | `runtime.py` __init__ | `pytest tests/providers/test_functions.py` |
-| 3c | Delete the `_call_fn` branch in `_call`/`_async_call` | `runtime.py` | `pytest tests/agentic_programming/` |
-| 3d | Delete `_uses_legacy_call` + the two legacy branches in exec/async_exec | `runtime.py` | full `pytest tests/agentic_programming tests/providers` |
+The `stream_fn` parameter threads through exec → _call_via_providers →
+AgentSession.__init__ → AgentOptions, so exec can inject a stream
+(`test_exec_stream_fn_injection`).
 
-**Key finding (verified)**: `_call_via_providers` does not ignore content — `_render_history_messages(content)` treats content as the current turn (`runtime.py:1451`), and with no store, `_build_pi_context(content)` (`:1456`). So the adapter needs no special handling of content; AgentSession hands history+current to the model, and the adapter converts back to content to call the user fn.
+### Why the dispatcher is not folded into runtime.exec
 
-### Step 4: stream_fn injection (✅ done); dispatcher is not folded in (argued out)
-
-| Step | What to do | Status |
-|---|---|---|
-| 4a | Thread the `stream_fn` parameter through exec → _call_via_providers → AgentSession.__init__ → AgentOptions, so exec can inject a stream | ✅ `test_exec_stream_fn_injection` |
-
-**dispatcher is not folded into runtime.exec (argued out empirically)**
-
-The initial idea was to have `_run_loop_blocking` call runtime.exec instead. In practice this direction was overturned:
+Having `_run_loop_blocking` call runtime.exec instead does not work, for four reasons:
 
 1. **The model would fork**: the dispatcher uses `_resolve_model(agent_profile, req.model_override)` (agent profile + the model the user picked), whereas the attached runtime comes from `create_runtime()` with no args via auto-detection, so the `api_model` is inconsistent. Going through exec would use the wrong model.
 2. **The context would conflict**: the dispatcher uses the context-engine to prepare messages (`prep.agent_messages`), while exec renders history from the DAG itself; the two sets would clash.
 3. **The streaming events are incompatible**: exec's `on_stream` emits a flat dict, while the dispatcher's `on_event` expects a webui envelope.
 4. **Most critical — duplicate nodes would be written**: trying to add an llm node in the dispatcher with `_open/_close_model_call_node` produced `[user, assistant, assistant]` in the DAG — because **the dispatcher's assistant session message (`persist_assistant_message`) is itself the DAG record of the top-level LLM call**. Adding another llm node duplicates it. `test_dispatcher_integration.py::test_real_loop_text_only` caught this duplication directly.
 
-**Conclusion**: the dispatcher's top-level LLM call **already** has a DAG representation (the role=assistant session-message node), with tool calls hanging below it. There is no need — and it would be wrong — to add another llm node. The original "code→code missing an llm node" problem occurs only in the **tool loop of exec inside an `@agentic_function`**, which was already fixed by steps 1-2. The dispatcher stays as is.
+**Conclusion**: the dispatcher's top-level LLM call **already** has a DAG representation (the role=assistant session-message node), with tool calls hanging below it. There is no need — and it would be wrong — to add another llm node. The "code→code missing an llm node" problem occurs only in the **tool loop of exec inside an `@agentic_function`**, which the paired llm-node write above covers. The dispatcher stays as is.
 
 The relationship between dispatcher and exec is not "dispatcher goes through exec" but rather **two parallel LLM-call entry points**, each recording its top-level call into the DAG (dispatcher → assistant session node; exec → llm node), sharing the lower agent_loop engine and the DAG node-write API. This is consistent with other frameworks (OpenClaw also has a separate dispatcher layer).
 
@@ -240,30 +244,24 @@ The relationship between dispatcher and exec is not "dispatcher goes through exe
 
 `tool.before` fires in only one place, `_execute_tool_calls` (`agent_loop.py:518`), and all paths go through it. CallableModel has no internal tool loop (the user fn only returns a str), so it will not duplicate or lose events.
 
-### Risks
+### Sensitive Points
 
-1. **dispatcher test seam (highest)**: after 4a threads stream_fn through 4 layers, `_run_loop_blocking` is still the patch entry, and the test's stream_fn flows through exec to the model. `test_dispatcher_dag_attach.py` replaces `_run_loop_blocking` wholesale and is unaffected.
-2. **prompt-cache prefix stability** (4b): the override must not break the DAG-prefix cache.
-3. **response_format regression** (3a): the JSON-mode of `claude_call`/`gemini_call` relies on the adapter to reinstate the suffix.
+1. **dispatcher test seam**: with stream_fn threaded through four layers, `_run_loop_blocking` is still the patch entry, and a test's stream_fn flows through exec to the model. `test_dispatcher_dag_attach.py` replaces `_run_loop_blocking` wholesale and is unaffected.
+2. **prompt-cache prefix stability**: an override must not break the DAG-prefix cache.
+3. **response_format**: the JSON-mode of `claude_call`/`gemini_call` relies on the adapter to reinstate the suffix.
 
-### Tests to Update
+## Unifying the "record one model reply" write
 
-**Trivial (delete an assert/override)**: `test_openai.py:61`, `test_anthropic.py:63`, `test_gemini.py:68` (delete `_uses_legacy_call() is False`); `test_decision.py:24`, `test_loop_options.py:153`, `test_dispatcher_dag_attach.py:89` (delete the `_uses_legacy_call→True` override, keep the `_call` override).
+### Two Ways to Write the Same Thing
 
-**Behavioral (need re-verification)**: `test_runtime_exec_dag.py:34`, the `_mock_call` in `test_functions.py` (branches on content shape; the adapter must pass content through verbatim), the `echo_call`/`noop_call` in `conftest.py`.
-
-## Unifying the "record one model reply" write (keep the new primitive, delete the old mechanism)
-
-### Current State: Two Ways to Write the Same Thing
-
-"Recording a model reply" currently has two **paired node-write** implementations (open a running placeholder → backfill the result), split by entry point:
+"Recording a model reply" has two **paired node-write** implementations (open a running placeholder → backfill the result), split by entry point:
 
 | Entry | Open placeholder | Backfill | Implementation |
 |---|---|---|---|
-| dispatcher (chat) | `insert_placeholder` (_turn_lifecycle.py:65) | `persist_assistant_message` (persistence.py) | old mechanism |
-| exec (code) | `_open_model_call_node` (runtime.py:631) | `_close_model_call_node` (runtime.py:656) | new primitive |
+| dispatcher (chat) | `insert_placeholder` (_turn_lifecycle.py:65) | `persist_assistant_message` (persistence.py) | dispatcher-local |
+| exec (code) | `_open_model_call_node` (runtime.py:631) | `_close_model_call_node` (runtime.py:656) | runtime primitive |
 
-The two have identical structure (open→close pairing), but the old one is scattered across the dispatcher and the new one lives in runtime. This is the root of "writing both head and tail twice".
+The two have identical structure (open→close pairing), but one is scattered across the dispatcher and the other lives in runtime, so the same head-and-tail write exists twice.
 
 ### Key Facts (That Make Unification Easy)
 
@@ -271,9 +269,9 @@ The storage layer **has no `ROLE_ASSISTANT`** — only user/llm/code (`context/n
 
 **The two primitives already use the same role at the node layer.** The only difference is that the dispatcher writes 4 extra pieces of metadata that exec's bare primitive does not. Serialization has a single chokepoint `_node_to_msg` → what the front-end reads is still "assistant".
 
-### Plan: Upgrade the New Primitive → Have the dispatcher Call It → Delete the Old Mechanism
+### One general paired primitive, used by both entry points
 
-Upgrade exec's paired primitive into a **general paired primitive** (able to hold the fields the dispatcher needs), have both entry points use it, and delete the old duplicated placeholder/persist mechanism.
+exec's paired primitive becomes a **general paired primitive** able to hold the fields the dispatcher needs, both entry points use it, and the duplicated placeholder/persist mechanism goes away.
 
 The unified primitive must retain these 4 things (otherwise the front-end / branching / metering will break):
 
@@ -291,14 +289,25 @@ open_model_call_node(*, role="llm", parent_id=None, content_text="", model=None)
 close_model_call_node(node_id, *, reply, status="success", blocks=None, usage=None)
 ```
 
-Landing order:
+The front end needs no changes: `_node_to_msg` still outputs "assistant", and the fields it reads (blocks/token/parent_id) are all still present, written by the unified primitive.
+
+## Implementation Status
+
+In place:
+
+- exec's paired llm-node write on both the sync and async paths, with `_call_id` switching so tool code nodes attribute to the llm node
+- the `CallableModel` adapter and the Runtime wiring that routes `call=` through `_call_via_providers`
+- `stream_fn` threaded through exec → _call_via_providers → AgentSession → AgentOptions
+
+The unified paired primitive is not yet adopted by the dispatcher. It lands in this order:
+
 1. Upgrade `_open/_close_model_call_node`, adding optional `parent_id` / `blocks` / `usage` / `status` params (exec calls unchanged, default behavior unchanged)
 2. Change the dispatcher's `insert_placeholder` to call `open_model_call_node(role="assistant", parent_id=user_msg_id)`
 3. Change the dispatcher's `persist_assistant_message` to call `close_model_call_node(blocks=..., usage=..., status="completed"/"cancelled")` — keep only the field assembly, delete its own append/update
 4. Delete the duplicated node-write logic in the placeholder/error-fold of `_turn_lifecycle.py`
 5. Verify: webui end-to-end chat (bubbles, thinking/tool cards, tokens, stop, fork) all working + full pytest
 
-Zero front-end changes — because `_node_to_msg` still outputs "assistant", the fields the front-end reads (blocks/token/parent_id) are all still there, just written by the unified primitive instead.
+Tests that reference the removed legacy-call seam: `test_openai.py:61`, `test_anthropic.py:63`, `test_gemini.py:68` drop `_uses_legacy_call() is False`; `test_decision.py:24`, `test_loop_options.py:153`, `test_dispatcher_dag_attach.py:89` drop the `_uses_legacy_call→True` override and keep the `_call` override. Behavioral ones needing re-verification: `test_runtime_exec_dag.py:34`, the `_mock_call` in `test_functions.py` (branches on content shape; the adapter passes content through verbatim), and the `echo_call`/`noop_call` in `conftest.py`.
 
 ## Related Files
 
