@@ -61,6 +61,7 @@ def _msg_to_node(msg: dict) -> Call:
             created_at=created_at,
             role=ROLE_USER,
             output=msg.get("content") or "",
+            predecessor=predecessor or meta.get("predecessor") or None,
             metadata=meta,
         )
     if role == "tool":
@@ -116,6 +117,7 @@ def _msg_to_node(msg: dict) -> Call:
         name=msg.get("token_model") or "",
         output=msg.get("content") or "",
         caller=(msg.get("caller") or conv_pred) if is_attach else (msg.get("caller") or ""),
+        predecessor=conv_pred or None,
         metadata=meta,
     )
 
@@ -131,6 +133,11 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
     # persisted finished messages).
     meta.setdefault("status", "done")
 
+    # Conv-chain predecessor: field first (v2), metadata fallback
+    # (pre-v2 rows). Popped from meta so base.update(meta) can't
+    # override the migrated value with a stale copy.
+    conv_pred = node.predecessor or meta.pop("predecessor", None) or ""
+
     if node.is_user():
         base = {
             "id": node.id,
@@ -139,7 +146,7 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "content": node.output or "",
             # predecessor comes from metadata (set below via base.update);
             # caller is the sub-call edge (empty for plain user turns).
-            "predecessor": meta.get("predecessor") or "",
+            "predecessor": conv_pred,
             "caller": node.caller or "",
             "timestamp": node.created_at,
         }
@@ -175,7 +182,7 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "session_id": session_id,
             "role": "tool",
             "content": content,
-            "predecessor": meta.get("predecessor") or "",
+            "predecessor": conv_pred,
             "caller": node.caller or "",
             "timestamp": node.created_at,
             "function": node.name,
@@ -191,7 +198,7 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
             "session_id": session_id,
             "role": legacy_role,
             "content": node.output or "",
-            "predecessor": meta.get("predecessor") or "",
+            "predecessor": conv_pred,
             "caller": node.caller or "",
             "timestamp": node.created_at,
             "token_model": node.name,
@@ -208,7 +215,7 @@ def _node_to_msg(node: Call, session_id: str) -> dict:
         "session_id": session_id,
         "role": node.role or "unknown",
         "content": str(node.output or ""),
-        "predecessor": meta.get("predecessor") or "",
+        "predecessor": conv_pred,
         "caller": node.caller or "",
         "timestamp": node.created_at,
     }

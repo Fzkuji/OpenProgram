@@ -221,6 +221,7 @@ def create_pending_call_node(
         created_at=started_at or time.time(),
         role=ROLE_CODE,
         name=function_name,
+        predecessor=meta.get("predecessor") or None,
         input=_sanitize_function_args(arguments or {}),
         output=None,
         # ``caller`` is the logical caller — the @agentic_function whose

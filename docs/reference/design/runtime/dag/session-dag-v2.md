@@ -26,9 +26,9 @@ with a three-tier guessing chain (predecessor → caller → seq stitching).
 
 **Decision.**
 - `Call` gains a top-level `predecessor: str | None`. Serialization writes it
-  top-level; `from_dict` reads top-level first and falls back to
-  `metadata["predecessor"]` for pre-v2 sessions (migration on read, no rewrite
-  of stored history).
+  top-level only — no metadata mirror. There is NO backward compatibility:
+  pre-v2 session data is wiped wholesale at cutover (user decision,
+  2026-08-02) rather than migrated, so no fallback read path exists.
 - Write-side invariant, enforced in the store's append path: every ROOT-level
   conversational node MUST carry a predecessor, except (a) the session's first
   node and (b) spawn branch roots. A violating append raises; it does not
@@ -40,10 +40,9 @@ with a three-tier guessing chain (predecessor → caller → seq stitching).
   (`task.py`, `agent/task/runner.py`, `agent_collab/message_branch.py`) call it
   instead of hand-assembling nodes. New spawn call sites cannot get the edge
   wrong because they never touch edges.
-- `get_branch` walks edges only. The caller/seq heuristics survive solely
-  behind a `legacy=True` path used when the walk hits a pre-v2 node, and every
-  heuristic hop is recorded in the decision log — a silent guess today becomes
-  an auditable event.
+- `get_branch` walks edges only. The caller/seq guessing chain is deleted
+  outright (no legacy flag): a walk that cannot proceed raises with the
+  offending node id. `list_branches`' main-tip walk is likewise edge-pure.
 
 **Rejected:** keeping metadata storage with a validating linter. Validation
 after the fact cannot un-corrupt a mislinked branch; the field must be

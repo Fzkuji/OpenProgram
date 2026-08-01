@@ -184,13 +184,19 @@ class SessionMemoryIndex:
             # Drop fields not on the Call dataclass; tolerate extras.
             kwargs = {k: payload.get(k) for k in (
                 "id", "created_at", "seq", "role", "name",
-                "input", "output", "caller", "reads", "metadata",
+                "input", "output", "caller", "predecessor", "reads",
+                "metadata",
             )}
             kwargs = {k: v for k, v in kwargs.items() if v is not None}
             try:
                 node = Call(**kwargs)
             except TypeError:
                 continue
+            # Migration on read: pre-v2 rows carry the conv edge in
+            # metadata only — lift it onto the field in memory. Stored
+            # history is never rewritten.
+            if node.predecessor is None:
+                node.predecessor = get_predecessor(payload)
             self.append(
                 node,
                 predecessor=get_predecessor(payload),

@@ -27,6 +27,7 @@ import os
 import shutil
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Optional
@@ -93,11 +94,125 @@ def _projects_default_id_safe() -> str:
 
 
 def _node_conv_predecessor(payload_or_call) -> Optional[str]:
-    """Return the conv-chain predecessor of a node (or None)."""
+    """Return the conv-chain predecessor of a node (or None).
+
+    v2 (session-dag-v2 Decision 1): the edge is the top-level
+    ``predecessor`` field. Pre-v2 rows stored it in
+    ``metadata["predecessor"]`` — read-time fallback, no rewrite.
+    """
     if isinstance(payload_or_call, Call):
-        return (payload_or_call.metadata or {}).get("predecessor") or None
+        return (
+            payload_or_call.predecessor
+            or (payload_or_call.metadata or {}).get("predecessor")
+            or None
+        )
     meta = (payload_or_call.get("metadata") or {})
-    return meta.get("predecessor") or payload_or_call.get("predecessor") or None
+    return payload_or_call.get("predecessor") or meta.get("predecessor") or None
+
+
+class PredecessorMissingError(ValueError):
+    """A ROOT-level conversational node was appended without a
+    ``predecessor`` (session-dag-v2 Decision 1 write invariant).
+
+    Only the session's first node and spawn branch roots may open a
+    new root; anything else would silently fork the session at ROOT.
+    """
+
+    def __init__(self, session_id: str, node_id: str):
+        super().__init__(
+            f"append without predecessor: session={session_id!r} "
+            f"node={node_id!r} — ROOT-level conversational nodes must "
+            "carry a predecessor (exceptions: session first node, "
+            "spawn branch roots via SessionStore.spawn_branch)"
+        )
+        self.session_id = session_id
+        self.node_id = node_id
+
+
+def _is_spawn_root(meta: dict) -> bool:
+    return bool(meta.get("spawn_branch_root")) or meta.get("source") == "agent_spawn"
+
+
+def _is_first_conv_node(idx, node) -> bool:
+    """True iff ``node`` is the session's earliest ROOT-level
+    conversational node — the one place a missing predecessor is a
+    legal terminus rather than pre-v2 data."""
+    node_seq = node.seq if hasattr(node, "seq") else -1
+    for rn in idx.nodes_by_seq:
+        rn_seq = rn.seq if hasattr(rn, "seq") else -1
+        if rn_seq >= node_seq:
+            return True
+        if (_node_caller(rn) or "") not in ("", "ROOT"):
+            continue
+        if (rn.metadata or {}).get("display") == "root":
+            continue
+        if rn.role in (ROLE_USER, ROLE_LLM):
+            return False
+    return True
+
+
+def _legacy_conv_hop(idx, node) -> Optional[str]:
+    """Pre-v2 fallback for ``get_branch``: caller edge, then seq
+    stitching. Every hop is a heuristic guess, so it's logged as a
+    decision-log event. v2 data never reaches this function.
+    """
+    caller = _node_caller(node)
+    if caller and caller != "ROOT":
+        _log.warning("get_branch legacy hop: %s -> %s via caller",
+                     node.id, caller)
+        return caller
+    # ROOT-parented node with no conv predecessor: stitch to the
+    # previous ROOT-level node by seq — unless that node already has
+    # conv children (then it's the root of a different branch).
+    node_seq = node.seq if hasattr(node, "seq") else -1
+    prev = None
+    for rn in idx.nodes_by_seq:
+        if (_node_caller(rn) or "") not in ("", "ROOT"):
+            continue
+        if _node_conv_predecessor(rn):
+            continue
+        if (rn.metadata or {}).get("display") == "root":
+            continue
+        rn_seq = rn.seq if hasattr(rn, "seq") else -1
+        if rn_seq < node_seq:
+            prev = rn
+        else:
+            break
+    if prev is not None and not idx.children_by_predecessor.get(prev.id):
+        _log.warning("get_branch legacy hop: %s -> %s via seq",
+                     node.id, prev.id)
+        return prev.id
+    return None
+
+
+def _check_append_invariant(session_id: str, idx, node: Call,
+                            predecessor: Optional[str],
+                            caller: Optional[str]) -> None:
+    """Raise ``PredecessorMissingError`` on an illegal ROOT-level append."""
+    if node.role not in (ROLE_USER, ROLE_LLM):
+        return
+    if caller and caller != "ROOT":
+        return                       # sub-call / spawn root (caller=spawning node)
+    if predecessor:
+        return
+    meta = node.metadata or {}
+    if meta.get("display") == "root":
+        return                       # the ROOT node itself
+    if _is_spawn_root(meta):
+        return
+    # Compaction machinery (summary roots / k_ clones) predates the
+    # invariant and is redesigned by session-dag-v2 Decision 4 — out of
+    # Decision 1's scope, so it keeps its (illegal) shape for now.
+    nid = str(node.id or "")
+    if nid.startswith("summary_") or nid.startswith("k_"):
+        return
+    # Session first node: no prior ROOT-level conversational node.
+    for n in idx.nodes_by_seq:
+        nm = n.metadata or {}
+        if nm.get("display") == "root":
+            continue
+        if n.role in (ROLE_USER, ROLE_LLM) and (not n.caller or n.caller == "ROOT"):
+            raise PredecessorMissingError(session_id, node.id)
 
 
 def _node_caller(payload_or_call) -> Optional[str]:
@@ -771,6 +886,7 @@ class SessionStore:
             return
         predecessor = _node_conv_predecessor(node)
         caller = _node_caller(node)
+        _check_append_invariant(session_id, idx, node, predecessor, caller)
         seq = idx.append(node, predecessor=predecessor, caller=caller)
         # Write the raw node file. Commit deferred to turn end.
         git.write_history(seq, node.role, node.id, node.to_dict())
@@ -827,46 +943,20 @@ class SessionStore:
         if not head or head not in idx.nodes_by_id:
             return []
 
-        # Edge resolver: prefer conv parent, fall back to caller.
-        # When a ROOT-parented node is reached, find the previous
-        # ROOT-level node by seq — but only if that previous node
-        # doesn't already have conv children (which would mean it's
-        # the root of a different branch / fork).
-        _root_nodes_by_seq = [
-            n for n in idx.nodes_by_seq
-            if (_node_caller(n) or "") in ("", "ROOT")
-            and not _node_conv_predecessor(n)
-            and (n.metadata or {}).get("display") != "root"
-        ]
-
+        # v2 main path: pure predecessor-edge walk. A node without a
+        # predecessor is either a legal branch root (spawn root /
+        # session first node — stop) or a pre-v2 node, in which case
+        # we drop into the legacy caller/seq stitching heuristics,
+        # each hop logged (session-dag-v2 Decision 1).
         def _edge(node):
             pred = _node_conv_predecessor(node)
             if pred:
                 return pred
-            caller = _node_caller(node)
-            if caller and caller != "ROOT":
-                return caller
-            # ROOT-parented node with no conv predecessor.
-            # Find the previous ROOT-level node by seq.
-            node_seq = node.seq if hasattr(node, "seq") else -1
-            prev = None
-            for rn in _root_nodes_by_seq:
-                rn_seq = rn.seq if hasattr(rn, "seq") else -1
-                if rn_seq < node_seq:
-                    prev = rn
-                else:
-                    break
-            if prev is not None:
-                # Only connect if the previous ROOT node does NOT have
-                # conv children — if it does, it's the root of another
-                # branch (fork), and we should not cross into it.
-                has_conv_children = bool(
-                    idx.children_by_predecessor.get(prev.id)
-                )
-                if not has_conv_children:
-                    return prev.id
-            # Fork branch root or first node — stop walking.
-            return None
+            if _is_spawn_root(node.metadata or {}):
+                return None          # spawn branch root — legal stop
+            if _is_first_conv_node(idx, node):
+                return None          # session first node — legal stop
+            return _legacy_conv_hop(idx, node)
 
         chain = idx.get_branch(head, _edge)
         return [
@@ -874,6 +964,52 @@ class SessionStore:
             if (n.metadata or {}).get("display") != "root"
             and not (n.metadata or {}).get("rewound")
         ]
+
+    # Spawn primitive (session-dag-v2 Decision 1)
+
+    def spawn_branch(
+        self,
+        session_id: str,
+        caller_node_id: str,
+        *,
+        source: str,
+        name: Optional[str] = None,
+        node_id: Optional[str] = None,
+        prompt: str = "",
+        created_at: Optional[float] = None,
+        metadata: Optional[dict] = None,
+    ) -> str:
+        """Open a spawn branch: create the branch-root user node
+        (``predecessor=None``, ``caller=caller_node_id``,
+        ``metadata.source=source``), register it as head, and return
+        the branch-root id. The ONLY sanctioned way to open a spawn
+        branch — call sites never hand-assemble the edge.
+        """
+        from .graphstore_shim import GraphStoreShim
+
+        meta = dict(metadata or {})
+        meta["source"] = source
+        meta["spawn_branch_root"] = True
+        meta.pop("predecessor", None)
+        node = Call(
+            id=node_id or uuid.uuid4().hex[:12],
+            created_at=created_at or time.time(),
+            role=ROLE_USER,
+            output=prompt,
+            caller=caller_node_id or "ROOT",
+            predecessor=None,
+            metadata=meta,
+        )
+        GraphStoreShim(self, session_id).append(node)
+        # Register the branch head so mid-run loads resolve onto the
+        # new branch (shim skips set_head for caller-tagged nodes).
+        self.set_head(session_id, node.id)
+        if name:
+            try:
+                self.set_branch_name(session_id, node.id, name)
+            except Exception:  # noqa: BLE001
+                pass
+        return node.id
 
     # Head
 

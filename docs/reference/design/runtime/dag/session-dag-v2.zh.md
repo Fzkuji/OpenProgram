@@ -21,8 +21,9 @@ v1 的故事是"会话 DAG 是唯一真相源；每次 LLM 调用的上下文都
 传 `spawn_caller`；`get_branch` 用三级猜测链（predecessor → caller → seq 缝合）补偿。
 
 **裁决。**
-- `Call` 增加顶层字段 `predecessor: str | None`。序列化写顶层；`from_dict`
-  先读顶层，对 v2 之前的旧会话回落读 metadata（读时迁移，不重写历史）。
+- `Call` 增加顶层字段 `predecessor: str | None`。序列化只写顶层——不留
+  metadata 镜像。**没有向后兼容**：v2 切换时旧会话数据整体清理
+  （用户裁决，2026-08-02），不做迁移，因此不存在任何回落读取路径。
 - 写入端不变量，由 store 的 append 路径强制：所有 ROOT 级对话节点必须带
   predecessor，仅两个例外——(a) 会话首节点、(b) spawn 分支根。违规 append
   直接抛错，不再无声地产生 ROOT 分叉。
@@ -30,9 +31,9 @@ v1 的故事是"会话 DAG 是唯一真相源；每次 LLM 调用的上下文都
   spawn 分支的唯一入口：创建分支根（predecessor=None、caller=发起节点、
   metadata.source）、登记 head、返回分支句柄。现有三个入口改为调用它。
   新的 spawn 调用方不再接触边，也就不可能把边写错。
-- `get_branch` 只沿边行走。caller/seq 启发式仅保留在 `legacy=True` 路径
-  （行走遇到 v2 之前的节点时），且每次启发式跳跃都记入 decision log ——
-  今天的无声猜测变成可审计事件。
+- `get_branch` 只沿边行走。caller/seq 猜测链整段删除（不留 legacy 开关）：
+  走不下去就抛错并带上出问题的 node_id。`list_branches` 的主干尖端行走
+  同样纯边化。
 
 **否掉的方案：** 保留 metadata 存储、外挂校验 linter。事后校验救不回已经
 接错线的分支；只有做成一等字段，类型系统和写入路径才能强制。

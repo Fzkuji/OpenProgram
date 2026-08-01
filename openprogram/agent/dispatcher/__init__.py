@@ -291,22 +291,31 @@ def process_user_turn(
                     _user_meta.update(_decoded)
                 except (json.JSONDecodeError, TypeError):
                     _user_meta["extra"] = _raw_extra
-            # A spawned new-branch root points its caller at the spawning
-            # node (not ROOT), so get_branch stops there instead of
-            # seq-stitching this branch into a sibling. Only for root-level
-            # forks (branch_from is None); normal turns stay caller=ROOT.
-            _user_caller = _ROOT_ID
             if req.branch_from is None and req.spawn_caller:
-                _user_caller = req.spawn_caller
-            _user_node = Call(
-                id=user_msg_id,
-                created_at=user_msg.get("timestamp") or time.time(),
-                role=ROLE_USER,
-                output=req.user_text,
-                caller=_user_caller,
-                metadata=_user_meta,
-            )
-            _shim.append(_user_node)
+                # Spawn branch root — created by the store primitive
+                # (session-dag-v2 Decision 1): predecessor=None, caller
+                # = the spawning node, head registered. Never
+                # hand-assembled here.
+                db.spawn_branch(
+                    req.session_id,
+                    req.spawn_caller,
+                    source=req.source,
+                    node_id=user_msg_id,
+                    prompt=req.user_text,
+                    created_at=user_msg.get("timestamp"),
+                    metadata=_user_meta,
+                )
+            else:
+                _user_node = Call(
+                    id=user_msg_id,
+                    created_at=user_msg.get("timestamp") or time.time(),
+                    role=ROLE_USER,
+                    output=req.user_text,
+                    caller=_ROOT_ID,
+                    predecessor=user_caller_id or None,
+                    metadata=_user_meta,
+                )
+                _shim.append(_user_node)
         except Exception:
             db.append_message(req.session_id, user_msg)
             db.set_head(req.session_id, user_msg_id)
