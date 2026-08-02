@@ -60,7 +60,13 @@ interface Project {
 
 export function ProjectMenu({ onClose }: { onClose: () => void }) {
   const { text } = useTranslation();
-  const { sessionId, chatKey: activeChatKey } = useBoundChat();
+  const { sessionId: boundSessionId, chatKey: activeChatKey } = useBoundChat();
+  // useBoundChat only carries an id inside a BOUND chat instance — on
+  // the main shell it is null even with a live session open, which
+  // would leave the freeze gate permanently off. The store's
+  // currentSessionId is the main shell's truth (null while drafting).
+  const storeSessionId = useSessionStore((s) => s.currentSessionId);
+  const sessionId = boundSessionId ?? storeSessionId;
   const pendingProjectId = useSessionStore((s) =>
     activeChatKey ? s.pendingProjectsByChat[activeChatKey] ?? null : null,
   );
@@ -338,7 +344,13 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
  */
 export function ProjectBadge() {
   const { text } = useTranslation();
-  const { sessionId, chatKey: activeChatKey } = useBoundChat();
+  const { sessionId: boundSessionId, chatKey: activeChatKey } = useBoundChat();
+  // useBoundChat only carries an id inside a BOUND chat instance — on
+  // the main shell it is null even with a live session open, which
+  // would leave the freeze gate permanently off. The store's
+  // currentSessionId is the main shell's truth (null while drafting).
+  const storeSessionId = useSessionStore((s) => s.currentSessionId);
+  const sessionId = boundSessionId ?? storeSessionId;
   const pendingProjectId = useSessionStore((s) =>
     activeChatKey ? s.pendingProjectsByChat[activeChatKey] ?? null : null,
   );
