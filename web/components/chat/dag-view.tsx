@@ -35,6 +35,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { Shapes } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import { enterExclusiveCoverageMode } from "@/lib/runtime-bridge/dag";
@@ -78,11 +79,12 @@ export function DagLegend() {
     <div className="dag-legend">
       <button
         type="button"
-        className="dag-legend-toggle"
+        className="runtime-badge dag-legend-toggle"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        {open ? "▾ " : "▸ "}{text("Legend", "图例")}
+        <Shapes size={14} strokeWidth={2} />
+        <span className="badge-short">{text("Legend", "图例")}</span>
       </button>
       {open && (
         <div className="dag-legend-body">

@@ -479,6 +479,12 @@
    .inputArea, so it grows the composer upward over the transcript
    instead of pushing it. Narrow composer: the row scrolls
    horizontally inside its own box. */
+/* 图例面板（.dag-legend-body，absolute 向上弹）挂在本行内部——
+   overflow-x:auto 会把它整个裁掉。展开时临时放开裁剪；chips 很少
+   多到滚动，弹窗打开的一瞬放开无感。 */
+.envChips:has(:global(.dag-legend) [aria-expanded="true"]) {
+  overflow: visible;
+}
 .envChips {
   display: flex;
   align-items: center;
