@@ -60,13 +60,14 @@ export function _shapeFor(node: GNode): string {
   if (Array.isArray((node as Record<string, unknown>).covers_ids)) {
     return "capsule";
   }
-  // Sub-agent branch root → the same capsule, drawn with a second stroke
-  // (dag/rendering.md §12). Both shapes say "one node standing for many";
-  // the doubled outline says the many are a different agent's chain, not
-  // a span of this one.
+  // Sub-agent branch root → a double ring, small (dag/rendering.md §12).
+  // Not a shape from the role vocabulary at all: what hangs off it is
+  // another agent's whole conversation, and a glyph that reads as one of
+  // this chain's turns would say the opposite. The name rides beside it
+  // as a caption, so the mark itself stays a point on the grid.
   if ((node as Record<string, unknown>).source === "agent_spawn"
       && !node.predecessor) {
-    return "spawn_capsule";
+    return "agent_dot";
   }
   const role = node.role;
   const fn = node.function;
@@ -113,19 +114,24 @@ export function _applyShapeSize(shape: SVGElement): void {
 export const CAPSULE_HW = (NODE_R + 1.8) * 2.1;
 export const CAPSULE_HH = (NODE_R + 1.8) * 0.86;
 
-// ── Sub-agent capsule: the name lives INSIDE the pill (§12) ──────────
-// A count fits beside a capsule; a name does not. Two sub-agents spawned
-// from the same turn sit a lane apart, and two names hung off their right
-// edges land on top of each other — the label of the first runs straight
-// through the body of the second, and neither is readable. So the pill
-// grows to fit its own text and carries it, which also gives the layout
-// one honest number to reserve room for (``layout/geometry.ts``).
-export const SPAWN_CAPSULE_HH = CAPSULE_HH * 1.5;
-/** Left+right breathing room inside the pill, past the rounded ends. */
-const SPAWN_PAD_X = 11;
-/** Names longer than this are ellipsised. Past it a capsule stops being a
- *  glyph and becomes a paragraph the lane has to make room for. */
-const SPAWN_MAX_TEXT = 180;
+// ── Sub-agent mark: a double ring, with its name beside it (§12) ─────
+// The head of a spawned agent's chain. Small on purpose: the thing that
+// matters about it is WHOSE chain it heads, and that is what the caption
+// says. Sizing a glyph to its own label is what the pill this replaced
+// did, and it made the layout answer to text metrics — two names a lane
+// apart printed through each other, and the pass that stopped them had
+// to move whole lanes around to do it. A point on the grid has no width
+// to collide with.
+/** Outer ring radius. */
+export const AGENT_DOT_R = 7;
+/** Inner ring radius — the second circle is what says "another agent's
+ *  chain" rather than "a node of this one". */
+export const AGENT_DOT_INNER_R = 3.2;
+/** Where the caption starts, right of the dot's centre. */
+export const AGENT_CAPTION_DX = 14;
+/** Names longer than this are ellipsised: a caption is a label, not a
+ *  paragraph laid across the branch beside it. */
+const AGENT_NAME_MAX_TEXT = 190;
 
 // 量文字实际像素宽（复用一个 canvas）。按 label.length*6 估对中文
 // （字宽≈字号）严重低估，背景比文字短、文字溢出，实测才中英文都贴合。
@@ -143,49 +149,40 @@ export function _textWidth(s: string, font: string): number {
 // canvas 的 ctx.font 不认 CSS 变量——含 var() 的整串会被拒收，静默退回
 // 默认 "10px sans-serif"。这里写死与 --font-sans 相同的字体栈，量的才是
 // 真正渲染的 Inter。
-const SPAWN_FONT =
-  '700 9.5px "Inter Variable", "Inter", -apple-system, "PingFang SC", sans-serif';
+const AGENT_FONT =
+  '400 10px "Inter Variable", "Inter", -apple-system, "PingFang SC", sans-serif';
 
-/** The text a sub-agent capsule shows: fold arrow, name, hidden count.
- *  One function so the label, the pill width and the layout's column
- *  reservation can never disagree about how wide the thing is. */
-export function spawnCapsuleLabel(
+/** The caption beside a sub-agent's dot: its name, and the size of the
+ *  chain behind it when that chain is folded away.
+ *
+ *  Expanded there is no count — the turns are on screen and countable.
+ *  Folded there is, because the dot alone would not say how much it
+ *  stands for. */
+export function agentCaption(
   name: string,
   count: number,
   open: boolean,
 ): string {
   const nm = name || "sub-agent";
-  const arrow = open ? "▾" : "▸";
-  return count ? `${arrow} ${nm} (${count})` : `${arrow} ${nm}`;
+  return !open && count ? `${nm} (${count})` : nm;
 }
 
-/** Half-width of the pill drawn for ``label`` — measured text, clamped,
- *  plus padding, never narrower than a plain capsule. */
-export function spawnCapsuleHW(label: string): number {
-  const w = Math.min(_textWidth(label, SPAWN_FONT), SPAWN_MAX_TEXT);
-  return Math.max(CAPSULE_HW, Math.ceil(w) / 2 + SPAWN_PAD_X);
-}
-
-/** How far right of the node's anchor point the pill's centre sits.
- *
- *  A pill centred on its anchor grows in both directions, and the extra
- *  width to the LEFT lands on the node it was spawned from — a capsule
- *  covering its own host reads as the host being inside the sub-agent,
- *  which is backwards. Growing rightwards only keeps the left cap where
- *  every other shape's left edge is, so incoming edges still land on it
- *  and nothing upstream is covered. */
-export function spawnCapsuleDX(hw: number): number {
-  return hw - CAPSULE_HW;
-}
-
-/** ``label`` truncated with an ellipsis so it fits inside the pill. */
-export function spawnCapsuleText(label: string): string {
-  if (_textWidth(label, SPAWN_FONT) <= SPAWN_MAX_TEXT) return label;
-  let s = label;
-  while (s.length > 1 && _textWidth(s + "…", SPAWN_FONT) > SPAWN_MAX_TEXT) {
+/** ``caption`` truncated with an ellipsis so it stays a label. */
+export function agentCaptionText(caption: string): string {
+  if (_textWidth(caption, AGENT_FONT) <= AGENT_NAME_MAX_TEXT) return caption;
+  let s = caption;
+  while (s.length > 1
+    && _textWidth(s + "…", AGENT_FONT) > AGENT_NAME_MAX_TEXT) {
     s = s.slice(0, -1);
   }
   return s + "…";
+}
+
+/** How far the caption's ink reaches right of the dot's centre. The
+ *  canvas is sized from it; nothing in the layout is. */
+export function agentCaptionReach(caption: string): number {
+  return AGENT_CAPTION_DX
+    + Math.min(_textWidth(caption, AGENT_FONT), AGENT_NAME_MAX_TEXT);
 }
 
 // Shape sizing: all shapes share the same reference circle of radius R.
@@ -199,13 +196,22 @@ const STROKE_W = 3.0;
 const TRI_SCALE = 1.35;
 const SQR_SCALE = 1.0;
 
+/** ``solid`` fills the glyph with its branch colour instead of leaving
+ *  it hollow. That is what HEAD looks like (§4): the one node you are
+ *  standing on, marked by weight rather than by a ring around it — a
+ *  halo is a second shape orbiting the first, and at this glyph size it
+ *  read as its own node. */
 export function _buildShapeEl(
   shape: string,
   color: string,
   r: number,
-  hwOverride?: number,
+  solid?: boolean,
 ): SVGElement | null {
-  const common = { fill: "transparent", stroke: color, "stroke-width": String(STROKE_W) };
+  const common = {
+    fill: solid ? color : "transparent",
+    stroke: color,
+    "stroke-width": String(STROKE_W),
+  };
 
   if (shape === "circle") {
     return _svg("circle", { r, ...common });
@@ -230,33 +236,23 @@ export function _buildShapeEl(
       "data-shape": "capsule",
       ...common,
     });
-  } else if (shape === "spawn_capsule") {
-    // Sub-agent capsule (dag/rendering.md §12): the compaction pill with
-    // a second outline inset inside it. Same silhouette, so it still
-    // reads as "a fold"; two strokes, so it never reads as a compaction.
-    // Sized to the name it carries — ``hw`` comes from the caller, which
-    // measured the same label the text node will draw.
-    const hw = hwOverride ?? CAPSULE_HW;
-    const hh = hwOverride === undefined ? CAPSULE_HH : SPAWN_CAPSULE_HH;
-    // Grow rightwards from the anchor, not around it — see spawnCapsuleDX.
-    const dx = hwOverride === undefined ? 0 : spawnCapsuleDX(hw);
+  } else if (shape === "agent_dot") {
+    // Sub-agent head (dag/rendering.md §12): two concentric rings, and
+    // nothing else. The name is a caption the drawer hangs beside it,
+    // not part of the glyph, so this mark occupies exactly one grid
+    // point however long the agent's name is.
     const g = _svg("g");
-    const outer = _svg("rect", {
-      x: dx - hw, y: -hh,
-      width: hw * 2, height: hh * 2,
-      rx: hh, ry: hh,
-      "data-shape": "capsule",
-      ...common,
-    });
-    g.appendChild(outer);
-    const inset = 2.6;
-    g.appendChild(_svg("rect", {
-      x: dx - hw + inset, y: -hh + inset,
-      width: (hw - inset) * 2, height: (hh - inset) * 2,
-      rx: hh - inset, ry: hh - inset,
-      fill: "transparent", stroke: color,
-      "stroke-width": String(STROKE_W * 0.45),
-      "stroke-opacity": "0.75",
+    g.appendChild(_svg("circle", {
+      r: AGENT_DOT_R,
+      fill: solid ? color : "transparent",
+      stroke: color,
+      "stroke-width": "2",
+    }));
+    g.appendChild(_svg("circle", {
+      r: AGENT_DOT_INNER_R,
+      fill: "none", stroke: solid ? "var(--bg-secondary, #1a1a1a)" : color,
+      "stroke-width": "1.2",
+      "stroke-opacity": "0.8",
     }));
     return g;
   } else if (shape === "merge_dot") {

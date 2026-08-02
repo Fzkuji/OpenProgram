@@ -126,22 +126,30 @@ export function setSpawnExpanded(v: Record<string, boolean>): void {
   _spawnExpanded = v;
 }
 
+// ── infinite-canvas view (see ../canvas.ts) ───────────────────────
+// Where the user has panned and zoomed to. Module state rather than
+// per-render state because the graph repaints on every capture and the
+// camera must not move when it does. ``_viewSession`` is what tells a
+// repaint apart from an arrival at a different graph, which is the one
+// case that re-fits.
+export let _viewTx = 0;
+export let _viewTy = 0;
+export let _viewScale = 1;
+export function setView(tx: number, ty: number, scale: number): void {
+  _viewTx = tx;
+  _viewTy = ty;
+  _viewScale = scale;
+}
+
+export let _viewSession: string | null | undefined;
+export function setViewSession(v: string | null): void { _viewSession = v; }
+
 // ── last graph cache (for re-render after collapse toggle / resize) ──
 export let _lastGraph: GNode[] | null = null;
 export let _lastHeadId: string | null = null;
 export function setLastGraph(g: GNode[] | null, h: string | null): void {
   _lastGraph = g;
   _lastHeadId = h;
-}
-
-// ── user-scroll latch (suppress auto-scroll during manual wheel) ──
-export let _userScrolledGraph = false;
-export let _userScrollTimer = 0;
-export function setUserScrolledGraph(v: boolean): void {
-  _userScrolledGraph = v;
-}
-export function setUserScrollTimer(v: number): void {
-  _userScrollTimer = v;
 }
 
 // ── chat-sync wiring latches ──────────────────────────────────────
@@ -156,9 +164,4 @@ export function setChatMutationWired(v: boolean): void {
 export let _chatMutationObserver: MutationObserver | null = null;
 export function setChatMutationObserver(v: MutationObserver | null): void {
   _chatMutationObserver = v;
-}
-
-export let _panelResizeWired = false;
-export function setPanelResizeWired(v: boolean): void {
-  _panelResizeWired = v;
 }

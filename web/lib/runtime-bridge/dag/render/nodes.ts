@@ -10,17 +10,16 @@
 
 import { type GNode, NODE_R } from "../types";
 import {
+  AGENT_CAPTION_DX,
+  AGENT_DOT_R,
   CAPSULE_HH,
   CAPSULE_HW,
-  SPAWN_CAPSULE_HH,
   _branchColor,
   _buildShapeEl,
   _shapeFor,
   _svg,
-  spawnCapsuleDX,
-  spawnCapsuleHW,
-  spawnCapsuleLabel,
-  spawnCapsuleText,
+  agentCaption,
+  agentCaptionText,
 } from "../shapes";
 import { _spawnExpanded, _summaryExpanded } from "../store/globals";
 
@@ -84,27 +83,17 @@ export function drawNodes(
     const covered = coversOf[id];
     const isCapsule = !!covered;
     const capsuleOpen = isCapsule && !!_summaryExpanded[id];
-    // Sub-agent capsule (dag/rendering.md §12) — same fold vocabulary as
-    // the compaction one, keyed off the spawn pass rather than covers_ids.
+    // Sub-agent head (dag/rendering.md §12) — same fold vocabulary as the
+    // compaction capsule, keyed off the spawn pass rather than covers_ids,
+    // but drawn as a dot with a caption rather than as a wide pill.
     const spawnBranch = spawnFold.branchOf[id];
-    const isSpawnCapsule = !!spawnBranch;
-    const spawnOpen = isSpawnCapsule && !!_spawnExpanded[id];
+    const isAgentDot = !!spawnBranch;
+    const spawnOpen = isAgentDot && !!_spawnExpanded[id];
     const spawnName = spawnFold.nameOf[id] || "";
-    // The pill is as wide as the name it carries. ``pipeline.ts`` measured
-    // the same label to reserve the row and the canvas width; recomputing
-    // it from the same two functions keeps the glyph and the layout in
-    // step without a second field to keep in sync.
-    const spawnText = isSpawnCapsule
-      ? spawnCapsuleText(
-        spawnCapsuleLabel(spawnName, spawnBranch.length, spawnOpen))
+    const agentText = isAgentDot
+      ? agentCaptionText(
+        agentCaption(spawnName, spawnBranch.length, spawnOpen))
       : "";
-    const spawnHW = isSpawnCapsule ? spawnCapsuleHW(spawnText) : CAPSULE_HW;
-    // The pill grows rightwards from the anchor so it never covers the
-    // node it was spawned from; everything drawn with it shifts too.
-    const spawnDX = isSpawnCapsule ? spawnCapsuleDX(spawnHW) : 0;
-    const hitHW = isSpawnCapsule ? spawnHW : CAPSULE_HW;
-    const hitHH = isSpawnCapsule ? SPAWN_CAPSULE_HH : CAPSULE_HH;
-    const isAnyCapsule = isCapsule || isSpawnCapsule;
     const isGhost = !!coveredBy[id];
     const isFailed = _isArchivedFailure(node, onHead, isHead);
     const g = _svg("g", {
@@ -115,7 +104,7 @@ export function drawNodes(
         (isCollapsible ? " is-collapsible" : "") +
         (oocFlag ? " out-of-context" : "") +
         (isCapsule ? " is-summary" : "") +
-        (isSpawnCapsule ? " is-subagent" : "") +
+        (isAgentDot ? " is-subagent" : "") +
         (isGhost ? " is-ghost" : "") +
         (isFailed ? " is-archived-failure" : ""),
       transform: "translate(" + p.x + "," + p.y + ")",
@@ -131,36 +120,53 @@ export function drawNodes(
       "data-summary-open": capsuleOpen ? "1" : "0",
       // Same three for the sub-agent fold: count, open state, and the
       // name the inspector and tooltip title themselves from.
-      "data-spawn": isSpawnCapsule ? String(spawnBranch.length) : "",
+      "data-spawn": isAgentDot ? String(spawnBranch.length) : "",
       "data-spawn-open": spawnOpen ? "1" : "0",
       "data-spawn-name": spawnName,
       "data-ghost": isGhost ? "1" : "0",
       "data-failed": isFailed ? "1" : "0",
     });
-    // The capsule is wider than the r=7 hit circle, so give it a hit
-    // rect that actually covers the glyph — otherwise clicking the ends
-    // of the pill misses and the fold "does nothing".
-    const hit = isAnyCapsule
+    // The compaction capsule is wider than the r=7 hit circle, so give it
+    // a hit rect that actually covers the glyph — otherwise clicking the
+    // ends of the pill misses and the fold "does nothing".
+    const hit = isCapsule
       ? _svg("rect", {
-        x: String(spawnDX - hitHW), y: String(-hitHH),
-        width: String(hitHW * 2), height: String(hitHH * 2),
-        rx: String(hitHH),
+        x: String(-CAPSULE_HW), y: String(-CAPSULE_HH),
+        width: String(CAPSULE_HW * 2), height: String(CAPSULE_HH * 2),
+        rx: String(CAPSULE_HH),
         fill: "transparent",
         "pointer-events": "all",
       })
       : _svg("circle", {
-        r: "7",
+        // The sub-agent dot is the biggest plain glyph on the canvas and
+        // its whole job is to be clicked; everything else keeps the
+        // baseline 7px target.
+        r: isAgentDot ? String(AGENT_DOT_R + 2) : "7",
         fill: "transparent",
         "pointer-events": "all",
       });
     g.appendChild(hit);
     (g as SVGGraphicsElement).style.cursor = "pointer";
     const r = NODE_R + 1.8;
-    const el = _buildShapeEl(
-      _shapeFor(node), color, r, isSpawnCapsule ? spawnHW : undefined);
+    // HEAD is drawn solid (§4): where you are standing, said with weight
+    // rather than with a halo ring around the glyph.
+    const el = _buildShapeEl(_shapeFor(node), color, r, isHead);
     if (el) {
       el.setAttribute("pointer-events", "none");
+      if (isHead) el.setAttribute("data-solid", "1");
       g.appendChild(el);
+    }
+    // A solid HEAD has no hollow left for the coverage fill to land in,
+    // so coverage is punched OUT of it instead: a background-coloured
+    // dot where every other node shows a white one. Same fact, same
+    // place on the glyph, read the way an inverted node has to be.
+    if (isHead && contextSet && contextSet[id]) {
+      g.appendChild(_svg("circle", {
+        r: String(NODE_R * 0.55),
+        cy: node.role === "assistant" && !node.function ? "1.5" : "0",
+        fill: "var(--bg-secondary, #1a1a1a)",
+        "pointer-events": "none",
+      }));
     }
     // ── status 画在节点自己的描边上（rendering.md 第四节，废除占位框） ──
     const status = (node as Record<string, unknown>).status as string | undefined;
@@ -201,14 +207,11 @@ export function drawNodes(
     // whole reason the capsule can hide N turns without the graph
     // lying about it: the pill says "one node", the pleats say "and a
     // stack behind it". Expanded, they go away — the range is drawn.
-    if ((isCapsule && !capsuleOpen)
-        || (isSpawnCapsule && !spawnOpen && spawnBranch.length)) {
-      const pleats = Math.min(3, (covered || spawnBranch).length);
-      const edge = isSpawnCapsule ? spawnDX + spawnHW : CAPSULE_HW;
-      const baseHH = isSpawnCapsule ? SPAWN_CAPSULE_HH : CAPSULE_HH;
+    if (isCapsule && !capsuleOpen) {
+      const pleats = Math.min(3, covered.length);
       for (let i = 0; i < pleats; i++) {
-        const x = edge + 2 + i * 5;
-        const hh = baseHH * (1 - i * 0.22);
+        const x = CAPSULE_HW + 2 + i * 5;
+        const hh = CAPSULE_HH * (1 - i * 0.22);
         g.appendChild(_svg("rect", {
           x: String(x), y: String(-hh),
           width: "3.5", height: String(hh * 2),
@@ -222,40 +225,35 @@ export function drawNodes(
       }
     }
     // ── 覆盖标注：胶囊旁写清它替掉了多少轮 ───────────────────────
-    // Without the count the capsule is just an odd-looking turn; with
-    // it the fold is self-describing and needs no legend lookup.
+    // Without the note the capsule is just an odd-looking turn; with it
+    // the fold is self-describing and needs no legend lookup. It is a
+    // caption, in the same grey as every other annotation on the canvas
+    // — the pill is the glyph, this is what the pill means.
     if (isCapsule) {
       const cap = _svg("text", {
-        x: String(CAPSULE_HW + (capsuleOpen ? 6 : 22)),
+        x: String(CAPSULE_HW + 10),
         y: String(3.5),
         class: "history-summary-label",
         "pointer-events": "none",
       });
       cap.textContent = capsuleOpen
-        ? `▾ ${covered.length}`
-        : `▸ ${covered.length}`;
+        ? `展开中 · ${covered.length} 轮`
+        : `已压缩 · ${covered.length} 轮`;
       g.appendChild(cap);
     }
-    // The sub-agent capsule is labelled by NAME, not by count: "which
-    // agent is this" is the question the fold has to answer, and the
-    // count of its turns is not an answer. The count still rides along
-    // in parentheses so the fold stays self-describing.
-    //
-    // The name is drawn INSIDE the pill, centred. Hung off the right edge
-    // the way the compaction count is, two capsules a lane apart print
-    // their names on top of each other and on top of each other's bodies
-    // — a count is three characters wide, a name is not. Inside, the
-    // label can only ever be as wide as the shape the layout reserved
-    // room for.
-    if (isSpawnCapsule) {
+    // The sub-agent's name, beside its dot. Not inside a shape: a glyph
+    // sized to its own text is a glyph the layout has to negotiate with,
+    // and this one is a point on the grid like every other node. The
+    // caption hangs to the right, where nothing else on the row is, and
+    // brightens with the node on hover (right-dock.css).
+    if (isAgentDot) {
       const cap = _svg("text", {
-        x: String(spawnDX),
-        y: String(0.5),
-        "text-anchor": "middle",
-        class: "history-summary-label history-subagent-label",
+        x: String(AGENT_CAPTION_DX),
+        y: String(3.5),
+        class: "history-subagent-label",
         "pointer-events": "none",
       });
-      cap.textContent = spawnText;
+      cap.textContent = agentText;
       g.appendChild(cap);
     }
     // ── 覆盖态的两级衰减（rendering.md 第八节）──

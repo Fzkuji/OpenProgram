@@ -21,15 +21,9 @@ import {
   _chatScrollWired,
   _contextSet,
   _highlightMode,
-  _panelResizeWired,
-  _userScrolledGraph,
-  _userScrollTimer,
   _visibleIds,
   setChatMutationObserver,
   setChatScrollWired,
-  setPanelResizeWired,
-  setUserScrolledGraph,
-  setUserScrollTimer,
   setVisibleIds,
 } from "../store/globals";
 
@@ -47,6 +41,11 @@ export function _applyVisibility(nodeEl: Element, visible: boolean): void {
   }
   if (shape) {
     _applyShapeSize(shape);
+    // HEAD is drawn solid (dag/rendering.md §4), and the coverage fill
+    // is a fill too — flipping it here would hollow HEAD out the moment
+    // it left the context window, which is the one node that can't.
+    // Its coverage dot is drawn separately, on top, by ``nodes.ts``.
+    if (shape.getAttribute("data-solid") === "1") return;
     shape.setAttribute("fill", visible ? "#ffffff" : "transparent");
   }
 }
@@ -56,49 +55,16 @@ export function _setVisibleSet(newSet: Record<string, boolean>): void {
   if (!panel) return;
   const body = panel.querySelector(".history-body") as HTMLElement | null;
   if (!body) return;
-  const visibleEls: Element[] = [];
   body.querySelectorAll(".history-node").forEach((g) => {
     const id = g.getAttribute("data-msg-id") || "";
     const nowVisible = !!newSet[id];
     const wasVisible = !!_visibleIds[id];
     if (nowVisible !== wasVisible) _applyVisibility(g, nowVisible);
-    if (nowVisible) visibleEls.push(g);
   });
   setVisibleIds(newSet);
-
-  if (visibleEls.length && !_userScrolledGraph) {
-    const mid = visibleEls[Math.floor(visibleEls.length / 2)];
-    const nodeRect = mid.getBoundingClientRect();
-    const bodyRect = body.getBoundingClientRect();
-    const nodeY = nodeRect.top - bodyRect.top + body.scrollTop;
-    const desired = body.clientHeight * 0.45;
-    let targetScroll = nodeY - desired;
-    const maxScroll = Math.max(0, body.scrollHeight - body.clientHeight);
-    if (targetScroll < 0) targetScroll = 0;
-    if (targetScroll > maxScroll) targetScroll = maxScroll;
-    if (Math.abs(targetScroll - body.scrollTop) > 24) {
-      body.scrollTo({ top: targetScroll, behavior: "smooth" });
-    }
-  }
-}
-
-export function _wireGraphManualScroll(): void {
-  const body = document.querySelector("#historyPanel .history-body") as
-    | (HTMLElement & { _manualScrollWired?: boolean })
-    | null;
-  if (!body || body._manualScrollWired) return;
-  body._manualScrollWired = true;
-  body.addEventListener(
-    "wheel",
-    () => {
-      setUserScrolledGraph(true);
-      clearTimeout(_userScrollTimer);
-      setUserScrollTimer(window.setTimeout(() => {
-        setUserScrolledGraph(false);
-      }, 1500));
-    },
-    { passive: true },
-  );
+  // No auto-scroll: the canvas is a camera the user drives, not a scroll
+  // box (``../canvas.ts``). Yanking it to whatever the transcript last
+  // highlighted would fight every pan.
 }
 
 export function _recomputeVisibility(): void {
@@ -152,7 +118,6 @@ export function _wireChatScrollSync(): void {
       raf = requestAnimationFrame(() => {
         raf = 0;
         _recomputeVisibility();
-        _wireGraphManualScroll();
       });
     },
     { passive: true },
@@ -178,27 +143,4 @@ export function _wireChatMutationSync(): void {
   });
   mo.observe(container, { childList: true, subtree: true });
   setChatMutationObserver(mo);
-}
-
-export function _wirePanelResize(onResize: () => void): void {
-  if (_panelResizeWired) return;
-  if (typeof ResizeObserver === "undefined") return;
-  const panel = document.getElementById("historyPanel");
-  if (!panel) return;
-  const body = panel.querySelector(".history-body") as HTMLElement | null;
-  if (!body) return;
-  setPanelResizeWired(true);
-  let lastW = body.clientWidth;
-  let raf = 0;
-  const ro = new ResizeObserver(() => {
-    const w = body.clientWidth;
-    if (w === lastW) return;
-    lastW = w;
-    if (raf) return;
-    raf = requestAnimationFrame(() => {
-      raf = 0;
-      onResize();
-    });
-  });
-  ro.observe(body);
 }

@@ -28,22 +28,16 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import {
-  type GNode,
-  NODE_R,
-  PAD_X,
-  PAD_Y,
-  ROW_H,
-} from "./types";
+import { type GNode } from "./types";
 import { runtimeState } from "../state";
 import { computeGeometry } from "./layout/geometry";
 import {
   _branchColor,
   _svg,
-  spawnCapsuleHW,
-  spawnCapsuleLabel,
-  spawnCapsuleText,
+  agentCaption,
+  agentCaptionReach,
 } from "./shapes";
+import { attachCanvas, detachCanvas } from "./canvas";
 import {
   hideTooltip as _hideTooltip,
   resetTooltip as _resetTooltip,
@@ -62,7 +56,6 @@ import {
   _recomputeVisibility,
   _wireChatMutationSync,
   _wireChatScrollSync,
-  _wirePanelResize,
 } from "./render/visibility";
 import { drawNodes } from "./render/nodes";
 import { drawBadges } from "./render/badges";
@@ -101,6 +94,7 @@ export function showHistorySkeleton(): void {
   if (!body) return;
   setLastSignature(null);
   _lastRenderedSession = "__loading__";
+  detachCanvas();
   const el = document.createElement("div");
   el.className = "history-skeleton";
   for (const w of [70, 52, 61]) {
@@ -194,6 +188,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const empty = document.createElement("div");
     empty.className = "history-empty";
     empty.textContent = "No messages yet.";
+    detachCanvas();
     body.replaceChildren(empty);
     _resetTooltip();
     setLeafOfNode(Object.create(null));
@@ -202,7 +197,10 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   }
 
   const tree = _buildTree(graph);
-  const maxDepth = _assignDepth(graph, tree.byId);
+  // Stamps ``_depth`` on every node; the layout reads it to pick each
+  // branch's earliest node. The max it returns sized the old fixed
+  // canvas and has no reader now.
+  _assignDepth(graph, tree.byId);
   const lanes = _assignLanes(tree.byId, headId);
   setLeafOfNode(lanes.leafOfNode);
 
@@ -275,73 +273,42 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   });
   setParentOf(parentOf);
 
-  // clientWidth includes the scroll box's own padding; an SVG sized to
-  // it overflows by exactly that padding and summons a horizontal
-  // scrollbar on an otherwise-fitting graph.
-  let panelW = 240;
-  if (body) {
-    const bcs = getComputedStyle(body);
-    panelW = body.clientWidth
-      - (parseFloat(bcs.paddingLeft) || 0)
-      - (parseFloat(bcs.paddingRight) || 0);
-  }
-  // A sub-agent capsule is as wide as the name it carries (§12), and the
-  // layout has to know that before it places anything: the pill needs a
-  // row of its own and the canvas needs room for its right edge. Measure
-  // once here, stamp it on the node, and the geometry pass and the
-  // drawer read the same number.
+  const fullById: Record<string, GNode> = Object.create(null);
+  graphIn.forEach((m) => { fullById[m.id] = m; });
+
+  // A sub-agent head's caption runs right of its dot, and the layout has
+  // to know how far before it places anything: the head needs a row of
+  // its own and its lane needs columns for the ink. Measure the same
+  // caption the drawer renders and stamp its reach on the node, so the
+  // layout and the glyph read one number (dag/rendering.md §12).
   Object.keys(tree.byId).forEach((id) => {
     const branch = spfold.branchOf[id];
     if (!branch) return;
-    const label = spawnCapsuleLabel(
+    const cap = agentCaption(
       spfold.nameOf[id] || "", branch.length, !!_spawnExpanded[id]);
     (tree.byId[id] as Record<string, unknown>)._spawnHW =
-      spawnCapsuleHW(spawnCapsuleText(label));
+      Math.ceil(agentCaptionReach(cap));
   });
-  // Content-driven pixel packing: lane columns sized to the widest
-  // *visible* tier in each lane (collapse a branch → its neighbours pack
-  // back), and per-lane rows so call-tree siblings never overlap. See
-  // ``layout/geometry.ts``.
-  const geom = computeGeometry(tree.byId);
-  const minX = geom.minX;
-  const maxX = geom.maxX;
-  const maxYpx = geom.maxY;
-  // Pad both ends so node shapes (radius NODE_R) don't clip.
-  const xPad = NODE_R + 4;
-  const left = Math.min(0, minX - xPad);
-  const right = maxX + xPad + PAD_X;
-  // 节点保持原始像素大小（1:1，不缩放）：SVG 画布用内容实际尺寸，宽内容
-  // 靠容器 overflow-x 横向滚动查看，而不是把整图（连节点一起）缩进侧栏
-  // ——那样多分支时 scale 太小、节点糊成一团。内容比容器窄时至少铺满容器。
-  const contentWidth = Math.max(right - left, 40);
-  const canvasWidth = Math.max(contentWidth, panelW - 4, 40);
-  const height = Math.max(
-    PAD_Y * 2 + ROW_H * maxDepth + 24,
-    maxYpx + ROW_H + PAD_Y,
-  );
-  const vbHeight = Math.max(height, 40);
 
-  const svg = _svg("svg", {
-    class: "history-svg",
-    // viewBox starts at ``left`` (negative if d3 produced left-side
-    // children) so off-origin geometry stays inside the visible
-    // canvas without re-translating every node.
-    viewBox: `${left} 0 ${canvasWidth} ${vbHeight}`,
-    width: canvasWidth,
-    height: vbHeight,
-    preserveAspectRatio: "xMinYMin meet",
-  });
+  const geom = computeGeometry(tree.byId);
+
+  // The SVG fills the pane; everything is drawn inside ``world``, which
+  // carries the user's pan and zoom (``./canvas.ts``). Nothing here is
+  // sized to the content — an infinite canvas has no content size, and
+  // the graph is reached by moving the camera, not by scrolling a box.
+  const svg = _svg("svg", { class: "history-svg" });
+  const world = _svg("g", { class: "history-world" }) as SVGGElement;
+  svg.appendChild(world);
 
   const edgeG = _svg("g", { class: "history-edges" });
   const nodeG = _svg("g", { class: "history-nodes" });
-  svg.appendChild(edgeG);
-  svg.appendChild(nodeG);
+  world.appendChild(edgeG);
+  world.appendChild(nodeG);
 
-  // Positions come from ``computeGeometry`` (content-driven lane packing
-  // + per-lane row de-collision). ``pos`` is a thin lookup so the edge /
-  // node / badge drawers share one source of truth.
+  // ``pos`` is a thin lookup so the edge / node / badge drawers share
+  // one source of truth.
   function pos(n: GNode): { x: number; y: number } {
-    return geom.pos[n.id] || { x: PAD_X, y: PAD_Y };
+    return geom.pos[n.id] || { x: 0, y: 0 };
   }
 
   drawEdges(edgeG, tree, graphIn, pos, stableLeafOfNode);
@@ -350,9 +317,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     cinfo, _collapsed, internalSet, internalOwner, _contextSet, _coverageSet,
     sfold.coversOf, spfold);
 
-  const fullById: Record<string, GNode> = Object.create(null);
-  graphIn.forEach((m) => { fullById[m.id] = m; });
-  drawBadges(svg, tree, pos, stableLeafOfNode, runtimeState.currentSessionId,
+  drawBadges(world, tree, pos, stableLeafOfNode, runtimeState.currentSessionId,
     fullById);
 
   // 会话切换后的首次绘制淡入（配合 transcript 的 session-enter），
@@ -361,17 +326,12 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   if (_lastRenderedSession !== sess) svg.classList.add("dag-enter");
   _lastRenderedSession = sess;
 
-  body.replaceChildren(svg);
+  attachCanvas(body, svg, world, sess);
   _resetTooltip();
   setVisibleIds(Object.create(null));
 
   _wireChatScrollSync();
   _wireChatMutationSync();
-  _wirePanelResize(() => {
-    if (!_lastGraph) return;
-    setLastSignature(null);
-    render(_lastGraph, _lastHeadId);
-  });
   _recomputeVisibility();
   requestAnimationFrame(_recomputeVisibility);
   setTimeout(_recomputeVisibility, 250);

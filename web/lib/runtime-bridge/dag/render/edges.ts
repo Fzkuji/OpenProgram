@@ -12,35 +12,36 @@
 
 import { type GNode, NODE_R, COL_W } from "../types";
 import {
+  AGENT_DOT_R,
   CAPSULE_HW,
   _branchColor,
   _edgePath,
   _svg,
-  spawnCapsuleDX,
 } from "../shapes";
 import { _onEdgeDblclick } from "./interaction";
 import { coversIds } from "../passes/fold-summaries";
+import { isSpawnRoot } from "../passes/fold-spawn-branches";
 
 const GHOST_STROKE = "var(--dag-ghost, #c9c7bf)";
 
-/** Where a node's ink ends on the side an edge comes in from, measured
- *  from its anchor point. Every shape but the sub-agent capsule fits
- *  inside the reference circle; the capsule is a pill sized to the name
- *  it carries (§12) and grown rightwards from the anchor, so a line
- *  aimed at its centre crosses the whole label. Asymmetric on purpose:
- *  its left cap sits where any capsule's does, its right edge is a name
- *  away. */
-function _anchorReach(n: GNode | undefined, fromLeft: boolean): number {
-  const hw = n && (n as Record<string, unknown>)._spawnHW;
-  if (typeof hw !== "number") return NODE_R;
-  return fromLeft ? CAPSULE_HW : spawnCapsuleDX(hw) + hw;
+/** Where a node's ink ends, measured from its anchor point. Every glyph
+ *  is centred on its grid point and fits inside its own radius, so this
+ *  is symmetric — a line stops the same distance out whichever side it
+ *  comes in from. Only the compaction capsule is wider than the
+ *  reference circle, and only horizontally. */
+function _anchorReach(n: GNode | undefined): number {
+  if (!n) return NODE_R;
+  if (Array.isArray((n as Record<string, unknown>).covers_ids)) {
+    return CAPSULE_HW;
+  }
+  if (isSpawnRoot(n)) return AGENT_DOT_R;
+  return NODE_R;
 }
 
 /** ``from → to`` clipped to ``to``'s ink, approached horizontally. */
 function _clipToX(fromX: number, to: { x: number; y: number }, n?: GNode): number {
-  const fromLeft = fromX <= to.x;
-  const nr = _anchorReach(n, fromLeft) + 4;
-  return fromLeft ? to.x - nr : to.x + nr;
+  const nr = _anchorReach(n) + 4;
+  return fromX <= to.x ? to.x - nr : to.x + nr;
 }
 
 export function drawEdges(
@@ -204,7 +205,7 @@ export function drawEdges(
     const trunkX = forkPos.x - COL_W;
     const color = _branchColor(node, stableLeafOfNode);
     edgeG.appendChild(_svg("path", {
-      d: _edgePath(sp.x + _anchorReach(sibling, false) + 4, sp.y, trunkX, forkPos.y),
+      d: _edgePath(sp.x + _anchorReach(sibling) + 4, sp.y, trunkX, forkPos.y),
       stroke: color, "stroke-width": 1.4, fill: "none",
       "stroke-dasharray": "6 4", opacity: 0.7,
       "pointer-events": "none", class: "history-edge fork-edge",
@@ -289,13 +290,18 @@ export function drawEdges(
   });
 
   // ── Spawn edges ──
-  // spawn 根直接带 caller=发起节点，点划线（4 2 1 2）按子分支色（场景
-  // 10）。发起节点折叠在 ⚒N 里时，沿 caller 链上溯到第一个可见节点
-  // （通常是那轮的 llm）作为线的起点。
+  // A dashed curve from the calling turn down and across to the head of
+  // the agent it started (§12). It leaves the caller's BOTTOM edge, not
+  // its centre: the right of an llm node is where its ⚒N / ×N badge
+  // sits, and a line drawn from there crosses the count. It lands on the
+  // dot's left edge, which is where the caption is not.
+  //
+  // The spawn root carries ``caller`` = the initiating node. When that
+  // node is folded inside a ⚒N the walk climbs its caller chain to the
+  // first visible ancestor, usually that turn's llm reply.
   Object.keys(tree.byId).forEach((id) => {
     const subRoot = tree.byId[id];
-    if ((subRoot as Record<string, unknown>).source !== "agent_spawn") return;
-    if (subRoot.predecessor) return;
+    if (!isSpawnRoot(subRoot)) return;
     let srcId: string | undefined = subRoot.caller as string | undefined;
     let hops = 0;
     while (srcId && !tree.byId[srcId] && hops < 50) {
@@ -306,17 +312,16 @@ export function drawEdges(
     if (!srcId || !tree.byId[srcId]) return;
     const srcNode = tree.byId[srcId];
     if (srcNode.display === "root") return;
-    const srcPos = pos(srcNode);
+    const srcRaw = pos(srcNode);
     const dstRaw = pos(subRoot);
-    // Land on the capsule's edge: the pill is wide enough that a line to
-    // its centre would run through its name.
-    const dstPos = {
-      x: _clipToX(srcPos.x, dstRaw, subRoot),
-      y: dstRaw.y,
-    };
+    const from = { x: srcRaw.x + NODE_R + 2, y: srcRaw.y + NODE_R + 3 };
+    const to = { x: dstRaw.x - AGENT_DOT_R - 3, y: dstRaw.y };
+    const mx = (from.x + to.x) / 2;
+    const d = `M ${from.x} ${from.y} C ${mx} ${from.y}, ${mx} ${to.y}, `
+      + `${to.x} ${to.y}`;
     const color = _branchColor(subRoot, stableLeafOfNode);
     const hitPath = _svg("path", {
-      d: _edgePath(srcPos.x, srcPos.y, dstPos.x, dstPos.y),
+      d,
       stroke: "transparent", "stroke-width": 14, fill: "none",
       "pointer-events": "stroke", "data-target-id": id,
       class: "history-edge-hit spawn-edge-hit",
@@ -328,10 +333,10 @@ export function drawEdges(
     });
     edgeG.appendChild(hitPath);
     edgeG.appendChild(_svg("path", {
-      d: _edgePath(srcPos.x, srcPos.y, dstPos.x, dstPos.y),
-      stroke: color, "stroke-width": 1.4,
+      d,
+      stroke: color, "stroke-width": 1.5,
       fill: "none", "stroke-linecap": "round",
-      "stroke-dasharray": "4 2 1 2", opacity: 0.85,
+      "stroke-dasharray": "5 4", opacity: 0.85,
       "pointer-events": "none", class: "history-edge spawn-edge",
     }));
   });

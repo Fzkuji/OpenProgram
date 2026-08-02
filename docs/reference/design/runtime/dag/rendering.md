@@ -36,13 +36,57 @@ lanes, tiers and branch badges that a 288px rail truncates.
 
 Both surfaces stay mounted and swap by `display`: the renderer paints into the
 host on every capture regardless of which perspective is showing, so unmounting
-would blank the graph until the next one. The host's `ResizeObserver`
-(`_wirePanelResize`) is what re-flows the layout — a perspective switch, a
-split-view drag and a window resize all reach it the same way.
+would blank the graph until the next one. The host does not re-flow on resize —
+it is an infinite canvas, so a wider pane simply shows more of it (see below).
 
 Clicking a node in the graph fills the right sidebar's Details / Context views;
 those views stay in the sidebar because they read one selected node, not the
 whole session.
+
+### The canvas is infinite
+
+There is no scroll box and no content-sized SVG. The SVG fills the pane, every
+drawn thing lives inside one `<g>`, and that group carries a translate + scale
+the user drives directly.
+
+| Gesture | Effect |
+|---|---|
+| wheel / two-finger swipe | pan |
+| pinch, or ⌘/ctrl + wheel | zoom about the pointer, clamped to 25%–300% |
+| drag on empty canvas | pan |
+| drag starting on a node | the node's — click and double-click still work |
+
+A box sized to its content decides two things it has no business deciding: how
+big a graph may get before it needs scrollbars, and where the middle is. A wide
+session got a horizontal scrollbar, a deep one got a vertical one, and reading
+the whole shape meant scrolling two axes with no way to zoom out.
+
+**The dot lattice is the coordinate system.** The pane's background paints a dot
+per grid cell at the layout's own pitch (`COL_W`), transformed with the same pan
+and zoom and offset so a dot's centre sits under every node anchor (the layout
+pads its origin by `PAD_X` / `PAD_Y`; the lattice backs up half a tile from that
+pad). A node visibly sits on a dot — and drifting off one is a bug anyone can
+see without reading the layout code. The fit rounds its translation to whole
+pixels for exactly this reason.
+
+**View state survives re-renders.** The graph repaints on every capture; moving
+the camera each time would drag the view around while the user is reading. Pan
+and zoom live in `store/globals` keyed by session, and only arriving at a
+different session re-fits. Resizing the pane never re-fits — the user's angle on
+the graph is theirs to keep.
+
+**HUD.** Bottom-right, above the composer, chip-sized like the composer's own env
+chips: a fit button, the zoom percentage, and the legend popover. The zoom
+readout is written imperatively by `canvas.ts` on every view change, because
+routing a gesture's every wheel event through React state would repaint the tree
+sixty times a second.
+
+| Piece | Where |
+|---|---|
+| Pan / zoom / fit | `web/lib/runtime-bridge/dag/canvas.ts` |
+| View state | `_viewTx` / `_viewTy` / `_viewScale` / `_viewSession` in `dag/store/globals.ts` |
+| Surface + lattice | `.history-body` in `web/app/styles/right-dock.css` |
+| HUD | `DagHud` in `web/components/chat/dag-view.tsx`, `.dag-hud` in `right-dock.css` |
 
 ### The composer belongs to the pane, not to the transcript
 
@@ -64,27 +108,20 @@ the composer's `bottom: 0` still lands on the pane's bottom edge, and stacking
 order does the rest — the graph sits under the composer's `z-index: 5`. Shrinking
 `#chatView` instead would drag the input box up the pane.
 
-`.dag-view` reserves the composer's strip as `padding-bottom`, the way the
-transcript reserves it on `.chat-messages`, so the deepest nodes never sit
-behind the input box.
+The canvas runs edge to edge under the composer — panning past it is one
+gesture, and the fit centres the graph in the strip above it
+(`canvas.ts::fitCanvas`), so nothing needs a reserved padding band.
 
-### Branch strip
+### Branch switching lives in the graph
 
-A single wrapping row of pills above the canvas, one per active branch
-(`web/components/right-sidebar/branches`, `variant="chips"`). Each chip carries
-the branch's lane colour as a dot and its name; the HEAD chip is outlined and
-badged. Click a chip to check that branch out; hover reveals rename and delete.
-
-The chip and the sidebar's list row are **the same component** under two
-layouts, so checkout, rename and delete are one implementation and cannot drift
-between the two surfaces. Only the box differs — a pill sized to its content
-instead of a stretched row. Merge and attach stay with the list layout: picking
-two branches and starring a base needs vertical room the strip does not have,
-and the strip's question is the narrower "which branch am I on".
-
-The graph already draws the branch structure, so the strip does not repeat it.
-It is capped at three rows; past that it scrolls, leaving the canvas the bulk
-of the pane.
+There is no branch strip above the canvas. Each branch's name is a button drawn
+in the graph itself, anchored below the branch's last conversation-layer node
+(`render/badges.ts`, §5): the active branch's tag is outlined and tinted in its
+lane colour, and clicking any other tag checks that branch out. The graph
+already draws the branch structure; a strip above it would repeat that
+information and cut a line across the pane's floating view controls. Rename,
+delete, merge and attach stay in the right sidebar's branch list, which has the
+vertical room those flows need.
 
 ---
 
@@ -133,6 +170,10 @@ looked exactly like that.
 - **Column (horizontal) = lane start column + tier indent**
 - **Row (vertical) = depth**
 
+Both axes step in the same unit (`COL_W == ROW_H`, `dag/types.ts`), offset from
+the origin by `PAD_X` / `PAD_Y` — the square lattice the canvas paints its dots
+on.
+
 ### lane — which branch it belongs to
 
 **Count the branches and hand out column numbers 0, 1, 2… in order of appearance; no
@@ -148,8 +189,10 @@ branch:
 | the new mainline from a merge | the merge node itself | lands in the base branch lane (see scenario 8), no new lane opened |
 
 **Branches are packed by actual column occupancy**: the columns a branch occupies = from
-its start column to the deepest column of its subtree; the next branch starts at the
-previous branch's actually-occupied rightmost column +1, with no overlap.
+its start column to the deepest column of its subtree — including the ink of a
+sub-agent head's caption, which reserves the columns it runs across (§12) — and
+the next branch starts at the previous branch's actually-occupied rightmost
+column +1, with no overlap.
 
 ### tier — how many columns to indent within a branch
 
@@ -176,17 +219,19 @@ parent on a single row. Two exceptions keep their anchor's row because they grow
 sideways, not down: a fork sibling sits on the **same row** as the sibling it rewrites
 (scene 3), and a spawn branch root sits on the **same row as the spawn call node**
 (scene 10) — unless a second spawn root already claimed that row, in which case it takes
-the next free one and brings its lane with it, because a sub-agent capsule is a pill
-carrying a name and two of them side by side are unreadable (§12). Cross-session spawns
-land as the target session's own conversation chain (lane 0), not a side branch
-(scene 12).
+the next free one and brings its lane with it, because a sub-agent head carries its
+name as a caption beside it and two of them side by side print through each other
+(§12). Cross-session spawns land as the target session's own conversation chain
+(lane 0), not a side branch (scene 12).
 
 ---
 
 ## 2. Three global layout rules
 
 **① Square grid**: `COL_W == ROW_H`, child nodes strictly at the parent's lower-right
-corner (45°).
+corner (45°). The canvas's dot background paints the same lattice (see "The canvas
+is infinite" above), so this is a property the eye checks, not a promise the code
+makes.
 
 **② Strict alignment + compaction**: nodes land on grid intersections; **empty rows shift
 up to fill, empty columns shift left to fill, no empty rows or columns are kept.** This
@@ -196,7 +241,14 @@ immediately. **Corollary: any "placeholder box" violates this rule** — the run
 is expressed by the node's own stroke (see the legend), not by drawing a dashed
 placeholder node.
 
-**③ Branches don't overlap**: see the lane rule.
+**③ Glyphs are cells; text is a caption.** A node occupies its grid point; names
+and counts hang beside it in annotation grey, never inside a shape sized to its
+own text. A glyph that grows with its label is a glyph every neighbour has to be
+measured against — that negotiation is what §12's earlier pill got wrong. The one
+exception is the §9 compaction capsule, which is wider than the reference circle
+horizontally and is still centred on, and placed by, a single cell. Caption ink
+is not a shape, but the layout still reserves the columns it crosses and keeps
+two captioned heads off one row (§1), so no name ever prints across a node.
 
 ---
 
@@ -210,7 +262,7 @@ is conveyed only by line style:
 |---|---|---|---|
 | same-branch parent→child | solid | this branch's color | shown |
 | retry fork bridge | dashed `5 4` | this branch's color | shown |
-| spawn edge (initiating node → branch root) | dash-dot `4 2 1 2` | child branch's color | shown |
+| spawn edge (initiating node → sub-agent dot) | dashed curve `5 4`, off the caller's lower edge | child branch's color | shown |
 | merge convergence (peer tip → merge node) | thick solid 2.4px | peer branch's color | shown |
 | attach merge-back (source tip → embed position) | long dashes `4 4` | source branch's color | shown |
 | inter-branch communication (send_to_branch) | dotted `1 5` | target branch's color | **shown only on hover** (numerous; always-on would smear) |
@@ -220,7 +272,14 @@ is conveyed only by line style:
 ## 4. Node legend: shape = role, stroke = status
 
 **Shape**: ◇ ROOT · ○ user · △ llm · ■ code · ◉ merge (solid circle with a hole, the graph's unique
-"convergence" shape) · ▭ compaction summary (a capsule, the graph's only wide shape — §9).
+"convergence" shape) · ▭ compaction summary (a capsule, the graph's only wide shape — §9) ·
+◎ sub-agent head (two concentric rings, the head of another agent's chain — §12).
+
+**HEAD is drawn solid**: the glyph's own shape filled with the branch colour,
+not a ring or a glow around it. A halo at this size reads as a second, blurrier
+node beside the first, and it is the first thing a zoom-out loses. Coverage on a
+solid HEAD is *punched out* — a background-coloured dot where every other node
+shows a white one.
 
 **status mapping** — status is drawn on the node itself, never as a separate dashed
 placeholder box:
@@ -238,7 +297,7 @@ placeholder box:
 |---|---|
 | `⚒N` (right of an llm node) | a collapsed execution subtree, N sub-calls; click to expand |
 | `×N` (right of a code node) | N isomorphic siblings produced by a loop, folded (pure display) |
-| `↗` (top-right corner) | marked on **both sides** of a cross-session spawn: the branch root in the target session (caller lives in another session's graph, hangs on ROOT here, tooltip "spawned from <source session>"); and the initiating node in the source session (tooltip "dispatched to <target session>" — otherwise the dispatch leaves no trace in its own graph). Click jumps to the peer session (implementation may come later). **Cross-session only**: a same-session spawn has both ends in the graph and the dash-dot edge already expresses the relationship (scene 10) — no ↗ there; the mark stands in for the edge that cannot be drawn, and is not a generic spawn decoration |
+| `↗` (top-right corner) | marked on **both sides** of a cross-session spawn: the branch root in the target session (caller lives in another session's graph, hangs on ROOT here, tooltip "spawned from <source session>"); and the initiating node in the source session (tooltip "dispatched to <target session>" — otherwise the dispatch leaves no trace in its own graph). Click jumps to the peer session (implementation may come later). **Cross-session only**: a same-session spawn has both ends in the graph and the dashed spawn curve already expresses the relationship (scene 10) — no ↗ there; the mark stands in for the edge that cannot be drawn, and is not a generic spawn decoration |
 
 ---
 
@@ -275,7 +334,7 @@ placeholder box:
 | 1–7 | Base layout (single turn / multi-turn / retry / tool indent / manual function / composite / collapse shift-left) | Scenario 4's tool indent shows as a ⚒N badge in the default view (scene 11); the indented squares appear only after expansion |
 | 8 | merge (multi-parent convergence) | ◉ solid circle with a hole, lands on the base branch lane, peer merge-in thick solid lines (peer lane color); attach pointer nodes are not drawn, only the lines |
 | 9 | cross-branch messaging (send_to_branch) | dotted `1 5`, target branch color, hidden by default / shown on hover; a from_branch user node lands at the target branch tail |
-| 10 | spawn dispatch → attach merge-back | spawn edge dash-dot `4 2 1 2` (child branch color); the child branch's first node sits on the **same row** as the spawn node, own lane, tier=1; merge-back long dash `4 4` from the child tip back to its embed position on the main branch (the chat stream renders it as the Spawned card, display order moved ahead — see `ui/invariants.md` rule 9) |
+| 10 | spawn dispatch → attach merge-back | spawn edge dashed curve `5 4` (child branch color) off the caller's lower edge; the sub-agent's head sits on the **same row** as the spawn call node, own lane, tier=1 — unless a second head already claimed that row (§1); merge-back long dash `4 4` from the child tip back to its embed position on the main branch (the chat stream renders it as the Spawned card, display order moved ahead — see `ui/invariants.md` rule 9) |
 | 11 | execution-subtree default aggregation | see §0: collapsed to a ⚒N badge by default, click to expand into layout, collapse reclaims rows/cols per rule ②; expansion state is per-branch independent |
 | 12 | status & badge legend | see §4: status drawn on the node's own stroke, no placeholder boxes; both sides of a cross-session spawn carry the ↗ corner mark |
 | 13 | badge anchoring · avoidance · collision · merged | see §5: anchor directly below the branch's last conversation-layer node, half-column left shift only when an edge crosses the anchor cell, collision shifts down one row, merging erases the badge (provenance moves into the merge node's tooltip) |
@@ -292,14 +351,16 @@ rule 7).
 (`MAX_TASK_DEPTH=1` — only the main agent may task(); a spawned agent always
 does the work itself, see `ui/invariants.md` rule 6). The renderer still
 recurses per scene 10 as a fallback, so historical multi-generation delegation
-chains (the worker branch's dash-dot edge starting from the sub-agent's reply
+chains (the worker branch's dashed spawn curve starting from the sub-agent's reply
 node, hanging under its lane structure) remain drawable.
 
 ## 7. Render pipeline (code map)
 
 ```
 web/lib/runtime-bridge/dag/
-  pipeline.ts        orchestration: passes → layout → edges → nodes → badges → visibility
+  pipeline.ts        orchestration: passes → layout → edges → nodes → badges → canvas
+  canvas.ts          the infinite canvas: pan / zoom / fit, and the dot lattice
+                     that makes the grid visible
   passes/            data transforms, applied in order:
     merge-runs.ts               merge consecutive runs of the same node
     collapse-runtime-pairs.ts   fold a legacy display=runtime user/assistant
@@ -311,10 +372,14 @@ web/lib/runtime-bridge/dag/
                                 isn't mistaken for a fork (which would split the
                                 figure into two lanes)
     apply-collapse.ts           fold execution subtrees, emit the ⚒N badge
-  layout/            lane / depth (the implementation of section 1).
-                     **tier is NOT computed here** — the backend computes it in
-                     `openprogram/webui/graph_layout/tier.py` and ships it on the
-                     node; the front end only consumes the value.
+    fold-summaries.ts           fold a compaction capsule's covered range (§9)
+    fold-spawn-branches.ts      fold a sub-agent's chain behind its dot (§12)
+  layout/geometry.ts the implementation of section 1. Packs the backend's
+                     lane / tier / depth into lattice `(col, row)` positions,
+                     re-derived from what is currently visible.
+                     **tier and lane are NOT computed here** — the backend
+                     computes them in `openprogram/webui/graph_layout/` and ships
+                     them on the node; the front end only consumes the values.
   render/edges.ts    the line-style table of section 3
   render/nodes.ts    the shapes + status strokes + badges of section 4
   render/badges.ts   the branch-name badge of section 5
@@ -429,8 +494,10 @@ the shape is a shape, not a fourth role.
 each shorter and fainter than the last. They are what lets the capsule hide a
 range without the graph lying about it — the pill says "one node", the pleats
 say "and a stack behind it" — and they disappear when the capsule opens,
-because then the stack is drawn. Beside them the covered count (`▸ 14` folded,
-`▾ 14` open) makes the fold self-describing.
+because then the stack is drawn. Beside them a caption in the canvas's
+annotation grey — `已压缩 · 14 轮` — makes the fold self-describing. The pill is
+the glyph; the caption is what the pill means, and it lives outside the shape
+for the same reason a sub-agent's name does (rule ③).
 
 **The fold.** The covered range is elided by default. Clicking the capsule
 brings it back, clicking again folds it away. That state is view-only and never
@@ -522,12 +589,12 @@ The inspector and menu are built imperatively (`render/inspector.ts`) because
 the graph is: they float over an SVG the renderer owns, keyed to node geometry,
 outside React's tree.
 
-**Legend.** A collapsible corner card names the shapes and the two greys
-(`components/chat/dag-view.tsx`). It starts collapsed — the vocabulary is small
-and learnable, so the legend is for the first few sessions rather than a
-permanent fixture on the canvas.
+**Legend.** A collapsible card names the shapes and the two greys, opened from
+the canvas HUD beside the fit button (`components/chat/dag-view.tsx`). It starts
+collapsed — the vocabulary is small and learnable, so the legend is for the
+first few sessions rather than a permanent fixture on the canvas.
 
-## 12. A sub-agent reads as one named capsule, not as its whole transcript
+## 12. A sub-agent reads as one named dot, not as its whole transcript
 
 A spawned agent runs a conversation of its own, and that conversation is
 usually the larger half of the session. Drawn in full it buries the main lane
@@ -540,47 +607,49 @@ the sub-agent's *result*, through the attach pointer; its transcript is
 reachable, not resident. So the default view draws what the parent knows — one
 node — and keeps the rest a click away.
 
-**The capsule.** A spawn branch root is drawn as the §9 pill with a second
-outline inset inside it. The silhouette is shared on purpose: both shapes mean
-"one node standing for many", which is the thing the reader has to recognise
-first. The doubled stroke says the many are a different agent's chain rather
-than a span of this one.
+**The dot.** A spawn branch root is drawn as two concentric rings in the
+branch's colour: an outer ring at `AGENT_DOT_R`, an inner one at
+`AGENT_DOT_INNER_R`. It is deliberately not a shape from the role vocabulary —
+what hangs off it is another agent's whole conversation, and a glyph that reads
+as one of this chain's turns would say the opposite. The second ring is what
+says "another chain" rather than "another node".
 
-**The name.** Where a compaction capsule is labelled by count, a sub-agent
-capsule is labelled by name — `▸ 后端架构 (14)`. "Whose branch is this" is the
-question the fold has to answer, and a count is not an answer to it; the count
-rides along in parentheses so the fold still says how much it is hiding. The
-name comes from the label the runner stamps on the attach pointer that points
-back at the branch (dag/overview.md §4), with the branch name as a fallback.
-The inspector titles the same node `子 agent · <name>` instead of `user`, which
-is what its role field says and not what the node is.
+**The name is a caption, not a shape.** It sits `AGENT_CAPTION_DX` to the right
+of the dot in annotation grey, 10px, and brightens with the node on hover.
+Folded it carries the size of the chain behind it — `后端架构 (14)`; expanded it
+does not, because the turns are on screen and countable. Names past 190px are
+ellipsised.
 
-**The name is drawn inside the pill.** A compaction count is three characters
-and can hang off the capsule's right edge; a name cannot. Two sub-agents spawned
-by one turn sit a lane apart, and two names hung off their right edges print
-through each other and through each other's bodies. So the pill is sized to its
-own measured text and carries it centred inside, ellipsised past 180px — a
-capsule is a glyph, not a paragraph the lane has to make room for. That width is
-one number the layout also reads: it reserves the columns the pill occupies, it
-sizes the canvas to the pill's right edge rather than to the point it is
-anchored at, and every edge that can terminate on a capsule lands on that edge
-instead of its centre, so no line crosses a name.
+This is rule ③ doing its job. The earlier pill was a shape sized to its own
+text, and every edge that could land on it needed an asymmetric clip so no line
+crossed the name; the dot's edges clip at its own radius like any other glyph's.
+The caption's ink still exists, and the layout still accounts for it — but as
+one number, not a shape: `pipeline.ts` measures the caption the drawer will
+render and stamps its right reach on the head (`_spawnHW`), the lane packing
+reserves the columns that reach crosses, the bounding box extends to it so a
+fit never crops a name, and two captioned heads never share a row (§1).
 
-**Two capsules never share a row.** Because the pill is wide, the row exception
-above yields to it: the first capsule keeps its call node's row, and a second one
-that would land on the same row takes the next free row and brings its lane with
-it (an expanded branch has to stay attached to its head). Rule ② still holds —
-this is an ordering, not a reserved gap.
+**The spawn edge.** A dashed curve (`5 4`) in the child branch's colour, from
+the calling turn's **lower edge** to the dot's left edge. It leaves the bottom
+rather than the right because the right of an llm node is where its ⚒N / ×N
+execution count sits, and a line drawn from there crosses the count; it lands on
+the left because the right of the dot is where the caption is.
 
-**The fold.** The branch is elided by default; clicking the capsule draws the
-whole lane, clicking again folds it away. Nested sub-agents keep their own
-capsules rather than disappearing into their parent's fold — otherwise there
-would be no handle to open the inner one with. The state is view-only and never
-persisted, exactly as in §9.
+**The fold.** The branch is elided by default; clicking the dot draws the whole
+lane, clicking again folds it away. Nested sub-agents keep their own dots rather
+than disappearing into their parent's fold — otherwise there would be no handle
+to open the inner one with. The state is view-only and never persisted, exactly
+as in §9.
+
+**The name on the wire.** It comes from the label the runner stamps on the
+attach pointer that points back at the branch (dag/overview.md §4), with the
+recorded branch name as a fallback, and "sub-agent" when nothing named it. The
+inspector titles the same node `子 agent · <name>` instead of `user`, which is
+what its role field says and not what the node is.
 
 **HEAD is never folded away.** Checking out a sub-agent's lane keeps that lane
-drawn even while every other capsule stays shut. A graph that hides where you
-are standing is worse than a graph that draws too much.
+drawn even while every other dot stays shut. A graph that hides where you are
+standing is worse than a graph that draws too much.
 
 The pass runs after the compaction fold (`passes/fold-spawn-branches.ts`), so
 the two compose without either having to know the other ran: each owns one kind
@@ -592,6 +661,10 @@ The whole spec is implemented. Where each part lives:
 
 | Spec item | Implementation |
 |---|---|
+| Infinite canvas (pan / zoom / fit / dot lattice) | `dag/canvas.ts` + `.history-body` in `right-dock.css`; view state in `dag/store/globals.ts`; HUD in `components/chat/dag-view.tsx` |
+| §1 lane / tier / depth layout | `dag/layout/geometry.ts::computeGeometry` (content-packed lanes, preorder rows, caption-ink column reservation, head row claim); lattice, no-overlap, row-claim and reserved-ink all executed and asserted by `web/scripts/check-dag-subagent.mjs` |
+| §2 rule ③ glyphs are cells | no shape is sized from text — the caption's measured reach is a layout number (`_spawnHW`), not a glyph width |
+| §4 HEAD solid, no halo | `render/nodes.ts` passes `isHead` as `_buildShapeEl`'s `solid`; the coverage dot is punched out of the fill; `right-dock.css` has no `.is-head` glow |
 | §0 execution-subtree aggregation | `passes/apply-collapse.ts`: any node with execution sub-calls starts folded; `render/nodes.ts` draws ⚒N (spawn-root subtrees exempt) |
 | Rule ② corollary (no placeholder box) | `shapes.ts`: no `square_outline`; task renders as a plain square |
 | §4 status on the stroke | `graph_builder` emits status; `nodes.ts` draws it on the stroke (running dashed+breathing / error red+! / cancelled grayed) |
@@ -601,14 +674,14 @@ The whole spec is implemented. Where each part lives:
 | §4 cross-session ↗ | `graph_builder` stamps `spawn_remote` (target side); `nodes.ts` draws ↗ (source-side `spawn_out` rendering is ready, awaiting a data source that stamps it) |
 | §1 spawn root tier | `graph_layout`: tier=1 / same-row depth / new lane; `task_followup` without an attach pointer re-parents onto the receiving turn (`filter.py` fallback) |
 | Composer shared by both perspectives | `chat.css` hides `#chatArea`, not `#chatView`; asserted by `web/scripts/check-center-tabs.mjs` |
-| Branch strip | `BranchesPanel variant="chips"` + `BranchItem chip`; `.branches-strip` / `.branch-chip` in `chat.css` / `right-dock.css` |
+| In-graph branch tags (checkout buttons) | `render/badges.ts`; hover styles on `.history-branch-tag` in `right-dock.css` |
 | §8 coverage query | `routes/tree.py::_coverage_nodes` fills `/context-range`'s `nodes`; tested in `tests/unit/test_context_range_coverage.py` |
 | §8 aged / spilled drawing | `render/nodes.ts` (stroke-opacity + `▤`), fed by `_coverageSet` in `store/globals.ts` |
 | §9 `covers_ids` on the wire | `webui/graph_builder.py` resolves `metadata.covers` to ids; tested in `tests/unit/test_graph_builder_covers.py` |
 | §9 capsule shape | `shapes.ts` `capsule` (keyed on `covers_ids`, tagged `data-shape` so `_applyShapeSize` leaves its geometry alone) |
-| §9 fold + pleats + ghosts | `passes/fold-summaries.ts` (fold), `render/nodes.ts` (pleats, count, ghost stroke), `render/edges.ts` (dashed ghost edge), `_summaryExpanded` in `store/globals.ts`; executed by `web/scripts/check-dag-summary.mjs` |
+| §9 fold + pleats + ghosts | `passes/fold-summaries.ts` (fold), `render/nodes.ts` (pleats, `已压缩 · N 轮` caption, ghost stroke), `render/edges.ts` (dashed ghost edge), `_summaryExpanded` in `store/globals.ts`; executed by `web/scripts/check-dag-summary.mjs` |
 | §10 archived failure | `render/nodes.ts::_isArchivedFailure` — `status=error` AND off the HEAD chain; grey overrides §4's red |
 | §11 inspector / menu / fork & edit | `render/inspector.ts`, wired in `render/interaction.ts`; all three actions go through `POST /api/chat/checkout` |
-| §11 legend | `DagLegend` in `components/chat/dag-view.tsx`, `.dag-legend` in `right-dock.css` |
-| §12 sub-agent capsule | `shapes.ts` `spawn_capsule` (double stroke), `passes/fold-spawn-branches.ts` (fold + name resolution + HEAD exemption), `render/nodes.ts` (name label, `data-spawn*`), `_spawnExpanded` in `store/globals.ts`; executed by `web/scripts/check-dag-subagent.mjs` |
+| §11 legend | `DagLegend` in `components/chat/dag-view.tsx` (inside the canvas HUD), `.dag-legend` in `right-dock.css` |
+| §12 sub-agent dot | `shapes.ts` `agent_dot` (double ring) + `agentCaption`, `passes/fold-spawn-branches.ts` (fold + name resolution + HEAD exemption), `render/nodes.ts` (caption, `data-spawn*`), `render/edges.ts` (dashed spawn curve off the caller's lower edge), `_spawnExpanded` in `store/globals.ts`; executed by `web/scripts/check-dag-subagent.mjs` |
 | §12 the name on the wire | `task/runner.py::_update_attach_card` stamps `attach.label` from the task; `ws_actions/session.py::_annotate_spawn_origin` carries it to the spawn root as `spawned_from.label`; tested in `tests/unit/test_task_attach_integration.py` |

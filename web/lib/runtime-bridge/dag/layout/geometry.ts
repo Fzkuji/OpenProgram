@@ -29,7 +29,6 @@
  */
 
 import { type GNode, COL_W, ROW_H, PAD_X, PAD_Y, layoutParent } from "../types";
-import { spawnCapsuleDX } from "../shapes";
 
 export interface Geometry {
   pos: Record<string, { x: number; y: number }>;
@@ -38,11 +37,13 @@ export interface Geometry {
   maxY: number;
 }
 
-/** A folded sub-agent capsule (dag/rendering.md §12) — a pill that
- *  carries a name inside it, so it is many columns wide instead of one.
- *  ``_spawnHW`` is the half-width the renderer measured for that name;
- *  the pass below is keyed on it rather than on ``source`` so the layout
- *  and the glyph can never disagree about which nodes are capsules. */
+/** A sub-agent head (dag/rendering.md §12) — a dot whose name rides
+ *  beside it, so its ink runs well right of the one column its tier
+ *  buys. ``_spawnHW`` is the caption's full right reach in pixels, as
+ *  measured by the renderer (``pipeline.ts`` stamps it from the same
+ *  functions the drawer uses); the passes below key on it rather than
+ *  on ``source`` so the layout and the glyph can never disagree about
+ *  which nodes carry a caption. */
 function spawnHW(n: GNode): number | undefined {
   const hw = (n as Record<string, unknown>)._spawnHW;
   return typeof hw === "number" ? hw : undefined;
@@ -52,13 +53,13 @@ export function computeGeometry(byId: Record<string, GNode>): Geometry {
   const ids = Object.keys(byId);
 
   // ── Columns: pack lanes by their widest visible tier ──
-  // A sub-agent capsule counts for more than the one column its tier
-  // buys: the pill carrying its name runs several columns to the right
-  // of the anchor, and a lane sized to the tier alone lets it spill onto
+  // A sub-agent head counts for more than the one column its tier buys:
+  // the caption beside it runs several columns to the right of the
+  // anchor, and a lane sized to the tier alone lets it spill onto
   // whatever the next lane put there — in the case this was written from,
-  // a following turn's node landed inside the pill, on top of the name.
-  // So the capsule's tier is inflated to the columns its ink actually
-  // occupies, and lane packing keeps working unchanged from there.
+  // a following turn's node landed in the middle of the name. So the
+  // head's tier is inflated to the columns its ink actually occupies,
+  // and lane packing keeps working unchanged from there.
   const maxTierOfLane: Record<number, number> = Object.create(null);
   ids.forEach((id) => {
     const n = byId[id];
@@ -67,7 +68,7 @@ export function computeGeometry(byId: Record<string, GNode>): Geometry {
     const hw = spawnHW(n);
     const width = hw === undefined
       ? tier
-      : tier + Math.ceil((spawnCapsuleDX(hw) + hw) / COL_W);
+      : tier + Math.ceil(hw / COL_W);
     if (maxTierOfLane[lane] === undefined || width > maxTierOfLane[lane]) {
       maxTierOfLane[lane] = width;
     }
@@ -131,14 +132,14 @@ export function computeGeometry(byId: Record<string, GNode>): Geometry {
     });
   });
 
-  // ── Sub-agent capsules never share a row (dag/rendering.md §12) ──
+  // ── Sub-agent heads never share a row (dag/rendering.md §12) ──
   // Every other node is a glyph one column wide, so a row can hold as
-  // many of them as there are lanes. A capsule is not: it carries its
-  // name inside a pill that runs a hundred-odd pixels to the right, and
-  // two capsules spawned by the same turn land one lane apart — near
-  // enough that the first pill covers the second whole. Rule ② packs
-  // rows tight, so the fix is not a gap but an ordering: each capsule
-  // takes the next row no other capsule has claimed, and its lane comes
+  // many of them as there are lanes. A sub-agent head is not: its name
+  // rides beside it and runs a hundred-odd pixels to the right, and two
+  // heads spawned by the same turn land one lane apart — near enough
+  // that the first caption prints across the second dot. Rule ② packs
+  // rows tight, so the fix is not a gap but an ordering: each head
+  // takes the next row no other head has claimed, and its lane comes
   // with it. Sorting by call order keeps the two reading top-to-bottom
   // in the order they were spawned.
   const capsules = ids
@@ -177,11 +178,11 @@ export function computeGeometry(byId: Record<string, GNode>): Geometry {
     const y = PAD_Y + (rowOf[id] || 0) * ROW_H;
     pos[id] = { x, y };
     if (x < minX) minX = x;
-    // A capsule grows rightwards from its anchor (``spawnCapsuleDX``), so
-    // its ink runs well past the point the layout placed it. Size the
-    // canvas to the pill's right edge or the name gets clipped away.
+    // A caption runs rightwards from its dot, well past the point the
+    // layout placed it. Count that ink into the bounding box so a fit
+    // never crops a name off the right edge.
     const hw = spawnHW(n);
-    const right = hw === undefined ? x : x + spawnCapsuleDX(hw) + hw;
+    const right = hw === undefined ? x : x + hw;
     if (right > maxX) maxX = right;
     if (y > maxY) maxY = y;
   });

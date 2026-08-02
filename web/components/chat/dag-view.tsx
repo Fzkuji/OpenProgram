@@ -35,10 +35,11 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Shapes } from "lucide-react";
+import { Maximize2, Shapes } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import { enterExclusiveCoverageMode } from "@/lib/runtime-bridge/dag";
+import { fitCanvas } from "@/lib/runtime-bridge/dag/canvas";
 
 const STROKE = "var(--accent-primary, #4a7dfc)";
 const GHOST = "var(--dag-ghost, #c9c7bf)";
@@ -69,10 +70,10 @@ function LegendRow({ shape, label }: { shape: React.ReactNode; label: string }) 
   );
 }
 
-/** Key for shape and coverage. Lives in the composer's env-chip row
- *  (right end), sized like its neighbour chips; the body pops upward.
- *  Starts collapsed: the vocabulary is small and learnable. */
-export function DagLegend() {
+/** Key for shape and coverage. Sits in the canvas HUD beside the fit
+ *  button and the zoom readout; the body pops upward. Starts collapsed:
+ *  the vocabulary is small and learnable. */
+function DagLegend() {
   const { text } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -99,12 +100,12 @@ export function DagLegend() {
     <div className="dag-legend" ref={rootRef}>
       <button
         type="button"
-        className="runtime-badge workdir-badge dag-legend-toggle"
+        className="dag-hud-chip dag-legend-toggle"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        <Shapes size={14} strokeWidth={2} />
-        <span className="badge-short">{text("Legend", "图例")}</span>
+        <Shapes size={13} strokeWidth={2} />
+        <span>{text("Legend", "图例")}</span>
       </button>
       {open && (
         <div className="dag-legend-body">
@@ -133,6 +134,32 @@ export function DagLegend() {
   );
 }
 
+/** Canvas controls, bottom-right above the composer: fit the graph back
+ *  into view, read the current zoom, open the legend. Chip-sized, like
+ *  the composer's own env chips, because they belong to the surface
+ *  rather than to the graph. The zoom readout is written by
+ *  `dag/canvas.ts` on every view change — it is the camera's number, and
+ *  routing it through React state would repaint the tree on every wheel
+ *  event of a gesture. */
+function DagHud() {
+  const { text } = useTranslation();
+  return (
+    <div className="dag-hud">
+      <button
+        type="button"
+        className="dag-hud-chip"
+        onClick={() => fitCanvas()}
+        title={text("Fit graph to view", "缩放到全图")}
+      >
+        <Maximize2 size={13} strokeWidth={2} />
+        <span>{text("Fit", "全图")}</span>
+      </button>
+      <span className="dag-hud-chip dag-hud-zoom">100%</span>
+      <DagLegend />
+    </div>
+  );
+}
+
 export function DagView({ visible }: { visible: boolean }) {
   useEffect(() => {
     if (visible) enterExclusiveCoverageMode();
@@ -148,6 +175,7 @@ export function DagView({ visible }: { visible: boolean }) {
           （render/badges.ts），点非活动分支即 checkout。页面顶部不再
           放分支条——那条横线会横穿右上角的悬浮视角按钮。 */}
       <div className="history-body"></div>
+      <DagHud />
     </div>
   );
 }

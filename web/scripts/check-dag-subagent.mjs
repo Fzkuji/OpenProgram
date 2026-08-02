@@ -39,13 +39,14 @@ const { _foldSpawnBranches, isSpawnRoot } =
 // REPLACES, so a destructured copy goes stale on the first reset.
 const globals = await import("../lib/runtime-bridge/dag/store/globals.ts");
 const { setSpawnExpanded, toggleSpawnExpanded } = globals;
-// The capsule's own size arithmetic and the layout that reserves room for
-// it are both pure — no DOM — so both run for real here rather than being
-// asserted at as source text.
-const { spawnCapsuleLabel, spawnCapsuleHW, spawnCapsuleText, spawnCapsuleDX,
-  CAPSULE_HW } = await import("../lib/runtime-bridge/dag/shapes.ts");
+// The caption arithmetic and the layout are both pure — no DOM — so both
+// run for real here rather than being asserted at as source text.
+const { agentCaption, agentCaptionText, AGENT_DOT_R } =
+  await import("../lib/runtime-bridge/dag/shapes.ts");
 const { computeGeometry } =
   await import("../lib/runtime-bridge/dag/layout/geometry.ts");
+const { COL_W, ROW_H, PAD_X, PAD_Y } =
+  await import("../lib/runtime-bridge/dag/types.ts");
 
 const nodesSrc = readFileSync(
   new URL("../lib/runtime-bridge/dag/render/nodes.ts", import.meta.url), "utf8");
@@ -141,8 +142,8 @@ setSpawnExpanded(Object.create(null));
   ];
   assert.equal(_foldSpawnBranches(anon).nameOf.s1, "");
   assert.equal(
-    spawnCapsuleLabel("", 3, false), "▸ sub-agent (3)",
-    "an unnamed capsule still says what kind of thing it is",
+    agentCaption("", 3, false), "sub-agent (3)",
+    "an unnamed head still says what kind of thing it is",
   );
 }
 
@@ -218,18 +219,25 @@ assert.equal(
 
 assert.match(
   shapesSrc,
-  /agent_spawn[\s\S]{0,120}return "spawn_capsule"/,
-  "the sub-agent capsule shape is chosen by the same field the fold reads",
+  /agent_spawn[\s\S]{0,200}return "agent_dot"/,
+  "the sub-agent glyph is chosen by the same field the fold reads",
 );
 assert.match(
   shapesSrc,
-  /shape === "spawn_capsule"[\s\S]{0,1400}stroke-opacity/,
-  "the sub-agent capsule draws a second, inset outline — that is what "
-  + "distinguishes it from a compaction capsule at a glance",
+  /shape === "agent_dot"[\s\S]{0,900}AGENT_DOT_INNER_R/,
+  "the sub-agent dot draws a second, inner ring — that is what "
+  + "distinguishes it from an ordinary node at a glance",
+);
+assert.ok(
+  !/spawn_capsule|spawnCapsule|SPAWN_CAPSULE/.test(shapesSrc + nodesSrc
+    + edgesSrc + pipelineSrc),
+  "the sub-agent pill is gone from every module that drew or measured it: "
+  + "a glyph sized to its own name is a glyph the layout has to negotiate "
+  + "with, and that negotiation was the whole §12 failure",
 );
 assert.match(
   nodesSrc,
-  /"data-spawn": isSpawnCapsule \? String\(spawnBranch\.length\) : ""/,
+  /"data-spawn": isAgentDot \? String\(spawnBranch\.length\) : ""/,
   "the node publishes its branch size for the click handler and inspector",
 );
 assert.match(
@@ -239,8 +247,9 @@ assert.match(
 );
 assert.match(
   nodesSrc,
-  /isSpawnCapsule[\s\S]{0,400}history-subagent-label/,
-  "the capsule is labelled by NAME — the fold's job is to say whose branch this is",
+  /isAgentDot[\s\S]{0,400}history-subagent-label/,
+  "the dot is captioned by NAME — the fold's job is to say whose branch "
+  + "this is",
 );
 assert.match(
   pipelineSrc,
@@ -266,212 +275,192 @@ assert.match(
   "the inspector titles a spawn root as the sub-agent it heads, not as a user turn",
 );
 
-/* ---- 4. the capsule carries its name, and owns its row ---- */
+/* ---- 4. the caption, and the grid the layout puts the dot on ---- */
 
-// The pill is sized from the text it draws. Assert the arithmetic, not a
-// pixel count: without a canvas ``_textWidth`` falls back to 8px/char, so
-// the numbers below are the fallback's, and what matters is the relation.
+// The caption is a label, and only a label: nothing in the layout is
+// sized from it, which is the point of replacing the pill with a dot.
 {
   assert.equal(
-    spawnCapsuleLabel("后端架构", 14, false), "▸ 后端架构 (14)",
-    "folded: arrow, name, and the count it is hiding",
+    agentCaption("后端架构", 14, false), "后端架构 (14)",
+    "folded: the name, and the size of the chain behind it",
   );
   assert.equal(
-    spawnCapsuleLabel("后端架构", 14, true), "▾ 后端架构 (14)",
-    "expanded: the same label, the arrow turned down — the count is a "
-    + "branch size, not a hidden-node count, so it stays either way",
+    agentCaption("后端架构", 14, true), "后端架构",
+    "expanded: just the name — the turns are on screen and countable, so "
+    + "a count beside the head is noise",
   );
   assert.equal(
-    spawnCapsuleLabel("x", 0, false), "▸ x",
-    "a branch with nothing behind the root has no count to show",
-  );
-
-  const short = spawnCapsuleHW(spawnCapsuleLabel("ab", 1, false));
-  const long = spawnCapsuleHW(spawnCapsuleLabel("a".repeat(20), 1, false));
-  assert.ok(
-    long > short,
-    "a longer name makes a wider pill — the label lives inside it",
-  );
-  assert.ok(
-    short >= CAPSULE_HW,
-    "a capsule never shrinks below the plain compaction pill: it has to "
-    + "read as the same silhouette",
-  );
-
-  // The pill grows to the RIGHT of its anchor, never around it: centred,
-  // its extra width reaches back over the turn that spawned it, and a
-  // capsule covering its own host reads as the host being inside the
-  // sub-agent — backwards.
-  assert.equal(
-    spawnCapsuleDX(CAPSULE_HW), 0,
-    "a pill no wider than a plain capsule sits exactly where one does",
-  );
-  assert.equal(
-    spawnCapsuleDX(long) - (long - CAPSULE_HW), 0,
-    "every pixel a capsule gains goes to its right: left edge = -CAPSULE_HW "
-    + "for any name length, so it never reaches back over its host",
+    agentCaption("x", 0, false), "x",
+    "a branch with nothing behind the head has no count to show",
   );
 
   const huge = "名字".repeat(80);
-  const cut = spawnCapsuleText(spawnCapsuleLabel(huge, 3, false));
+  const cut = agentCaptionText(agentCaption(huge, 3, false));
   assert.ok(cut.endsWith("…"), "an over-long name is ellipsised");
   assert.ok(cut.length < huge.length, "…and is actually shorter");
-  assert.ok(
-    spawnCapsuleHW(cut) <= spawnCapsuleHW(spawnCapsuleText(
-      spawnCapsuleLabel("名字".repeat(200), 3, false))) + 1,
-    "past the cap the pill stops growing — a capsule is a glyph, not a "
-    + "paragraph the lane has to make room for",
-  );
 }
 
-// Two capsules spawned by the same turn: the backend gives both the same
-// ``_depth`` (a spawn root sits on its call node's row) and different
-// lanes. Drawn that way their pills, each a hundred-odd pixels wide and
-// one lane apart, print straight through each other. Layout has to break
-// the tie.
+/* ---- 5. layout: the lattice, the row claim, the reserved ink ---- */
+
+// Two sub-agents spawned by the same turn, as the backend hands them
+// over: same ``_depth`` (a spawn root sits on its call node's row),
+// different lanes. ``pipeline.ts`` stamps ``_spawnHW`` — the caption's
+// right reach in pixels — on each head before layout; 150 stands in for
+// a measured name here.
+const CAP_REACH = 150;
+const twoAgents = () => ({
+  ROOT: { id: "ROOT", display: "root", _lane: 0, _tier: 0, _depth: 0,
+    created_at: 0 },
+  u0: { id: "u0", role: "user", predecessor: "ROOT",
+    _lane: 0, _tier: 1, _depth: 1, created_at: 1 },
+  a0: { id: "a0", role: "assistant", predecessor: "u0",
+    _lane: 0, _tier: 2, _depth: 2, created_at: 2 },
+  s1: { id: "s1", role: "user", source: "agent_spawn", caller: "a0",
+    _lane: 4, _tier: 1, _depth: 2, created_at: 3, _spawnHW: CAP_REACH },
+  s1a: { id: "s1a", role: "assistant", predecessor: "s1",
+    _lane: 4, _tier: 2, _depth: 3, created_at: 4 },
+  s2: { id: "s2", role: "user", source: "agent_spawn", caller: "a0",
+    _lane: 8, _tier: 1, _depth: 2, created_at: 5, _spawnHW: CAP_REACH },
+  s2a: { id: "s2a", role: "assistant", predecessor: "s2",
+    _lane: 8, _tier: 2, _depth: 3, created_at: 6 },
+});
+
 {
-  const hw = spawnCapsuleHW(spawnCapsuleLabel("OpenProgram 后端调用链梳理", 1, false));
-  const byId = {
-    ROOT: { id: "ROOT", display: "root", _lane: 0, _tier: 0, _depth: 0 },
-    a0: { id: "a0", role: "assistant", predecessor: "ROOT",
-      _lane: 0, _tier: 2, _depth: 2 },
-    cap1: { id: "cap1", role: "user", source: "agent_spawn", caller: "a0",
-      _lane: 4, _tier: 1, _depth: 2, _spawnHW: hw, created_at: 1 },
-    cap2: { id: "cap2", role: "user", source: "agent_spawn", caller: "a0",
-      _lane: 8, _tier: 1, _depth: 2, _spawnHW: hw, created_at: 2 },
-  };
+  const byId = twoAgents();
   const { pos, maxX } = computeGeometry(byId);
 
-  assert.notEqual(
-    pos.cap1.y, pos.cap2.y,
-    "two sub-agent capsules never share a row — side by side their names "
-    + "overlap and neither is readable",
-  );
+  // ① Every node on the layout's own 32px lattice. The canvas paints
+  // its dot background at the same pitch and offset (dag/canvas.ts), so
+  // a violation here is a node visibly between dots on screen.
+  for (const id of Object.keys(pos)) {
+    assert.equal(
+      (pos[id].x - PAD_X) % COL_W, 0,
+      `${id} is off the grid horizontally — the background lattice is the `
+      + "coordinate system, and a node between dots reads as a mistake",
+    );
+    assert.equal(
+      (pos[id].y - PAD_Y) % ROW_H, 0,
+      `${id} is off the grid vertically`,
+    );
+  }
+
+  // ② The chain reads downwards in time.
+  assert.ok(pos.u0.y > pos.ROOT.y, "the first turn hangs below ROOT");
+  assert.ok(pos.a0.y > pos.u0.y, "the reply hangs below its user turn");
+
+  // ③ Two sub-agent heads never share a row, and read in call order —
+  // side by side, two captions print through each other; that failure is
+  // what the row claim exists to prevent.
+  assert.notEqual(pos.s1.y, pos.s2.y, "two sub-agent heads never share a row");
   assert.ok(
-    pos.cap1.y < pos.cap2.y,
-    "they stack in the order they were spawned",
+    pos.s2.y > pos.s1.y,
+    "the later spawn sits below the earlier one, so the two read "
+    + "top-to-bottom in the order they were spawned",
   );
-  // Pill span, from the anchor: [-CAPSULE_HW, dx + hw].
-  const dx = spawnCapsuleDX(hw);
-  const span = (p) => [p.x - CAPSULE_HW, p.x + dx + hw];
-  const [l1, r1] = span(pos.cap1);
-  const [l2, r2] = span(pos.cap2);
+
+  // ④ The lane packed after a captioned head starts past the caption's
+  // ink: the name beside the first dot must never run under the second.
   assert.ok(
-    !(l1 < r2 && r1 > l2) || pos.cap1.y !== pos.cap2.y,
-    "no two pills share both a row and an x range — the whole failure "
-    + "this section exists for",
+    pos.s2.x >= pos.s1.x + CAP_REACH,
+    "the second agent's lane clears the first agent's caption",
   );
-  // The layout also has to reserve the columns the pill covers, or an
-  // ordinary node in the next lane over lands inside the name.
+
+  // ⑤ The bounding box covers the last caption, so a fit never crops a
+  // name off the right edge of the view.
   assert.ok(
-    r1 <= l2 || pos.cap1.y !== pos.cap2.y,
-    "a capsule's lane is widened to the columns its ink occupies, so the "
-    + "lane packed next to it starts past the pill rather than inside it",
+    maxX >= pos.s2.x + CAP_REACH,
+    "maxX reaches the rightmost caption's ink",
   );
-  assert.ok(
-    maxX >= r2,
-    "the canvas is sized to the pill's right edge, not to the point it "
-    + "is anchored at — otherwise the name is cut off by the viewport",
-  );
-  // The capsules push each other, never the lane they were spawned from:
-  // dropping one to a spare row must not slide the whole conversation.
-  const { pos: solo } = computeGeometry({
-    ROOT: byId.ROOT, a0: byId.a0,
-    cap1: { ...byId.cap1, _spawnHW: undefined },
-  });
-  assert.equal(
-    pos.a0.y, solo.a0.y,
-    "the main lane is not pushed around by the capsules' row claims",
-  );
-  assert.equal(
-    pos.cap1.y, solo.a0.y,
-    "the first capsule keeps the row the backend gave it (scene 10: a "
-    + "spawn root sits on its call node's row) — only the second moves",
-  );
+
+  // ⑥ Nothing overlaps. The rule the whole pass is for.
+  const taken = new Map();
+  for (const id of Object.keys(pos)) {
+    const key = `${pos[id].x},${pos[id].y}`;
+    assert.ok(
+      !taken.has(key),
+      `${id} lands on ${taken.get(key)} at (${key}) — two nodes on one grid `
+      + "point means one of them can never be clicked",
+    );
+    taken.set(key, id);
+  }
 }
 
-// The pill runs several columns to the right of the point the layout
-// placed it. A lane sized to the capsule's tier alone lets it spill over
-// whatever the next lane put on that row — in the real session, the
-// following turn's reply landed inside the pill, on top of the name.
+// A lone sub-agent claims no extra row: with nothing to collide with,
+// its head keeps the row the call tree gave it.
 {
-  const hw = spawnCapsuleHW(spawnCapsuleLabel("OpenProgram WebUI 架构梳理", 1, false));
-  const byId = {
-    a0: { id: "a0", role: "assistant", _lane: 0, _tier: 2, _depth: 2 },
-    cap: { id: "cap", role: "user", source: "agent_spawn", caller: "a0",
-      _lane: 8, _tier: 1, _depth: 2, _spawnHW: hw, created_at: 1 },
-    // The next lane's own node, on the capsule's row.
-    next: { id: "next", role: "assistant", _lane: 13, _tier: 2, _depth: 2,
-      created_at: 2 },
-  };
-  const { pos } = computeGeometry(byId);
-  assert.ok(
-    pos.next.x > pos.cap.x + spawnCapsuleDX(hw) + hw,
-    "a node in the lane packed after a capsule starts past the pill's "
-    + "right edge — not inside the name it is carrying",
-  );
-}
-
-// One capsule has no one to collide with, so it keeps the row the backend
-// put it on (scene 10: a spawn root sits on its call node's row).
-{
-  const byId = {
-    a0: { id: "a0", role: "assistant", _lane: 0, _tier: 2, _depth: 2 },
-    cap: { id: "cap", role: "user", source: "agent_spawn", caller: "a0",
-      _lane: 4, _tier: 1, _depth: 2, _spawnHW: 90, created_at: 1 },
-  };
-  const { pos } = computeGeometry(byId);
-  assert.equal(pos.cap.y, pos.a0.y, "a lone capsule stays on its call row");
-}
-
-// Expanded, the branch hangs off the capsule — pushing the capsule down a
-// row has to take its lane with it, or the head detaches from its body.
-{
-  const byId = {
-    a0: { id: "a0", role: "assistant", _lane: 0, _tier: 2, _depth: 2 },
-    cap1: { id: "cap1", role: "user", source: "agent_spawn", caller: "a0",
-      _lane: 4, _tier: 1, _depth: 2, _spawnHW: 90, created_at: 1 },
-    cap2: { id: "cap2", role: "user", source: "agent_spawn", caller: "a0",
-      _lane: 8, _tier: 1, _depth: 2, _spawnHW: 90, created_at: 2 },
-    kid2: { id: "kid2", role: "assistant", predecessor: "cap2",
-      _lane: 8, _tier: 2, _depth: 3, created_at: 3 },
-  };
-  const { pos } = computeGeometry(byId);
+  const byId = twoAgents();
+  delete byId.s2;
+  delete byId.s2a;
+  const one = computeGeometry(byId);
+  const both = computeGeometry(twoAgents());
   assert.equal(
-    pos.kid2.y, pos.cap2.y + 32,
-    "an expanded branch moves with the capsule it hangs off",
+    one.pos.s1.y, both.pos.s1.y,
+    "the first head's row is the same with or without a second agent — "
+    + "the claim pass only ever pushes LATER heads down",
   );
 }
 
-/* ---- 5. the name is drawn inside the pill, and edges stop at its edge ---- */
+/* ---- 6. the dot's edges and its click target ---- */
 
-assert.match(
-  nodesSrc,
-  /isSpawnCapsule[\s\S]{0,900}"text-anchor": "middle"/,
-  "the sub-agent capsule's name is centred INSIDE the pill — hung off the "
-  + "right edge the way a compaction count is, two capsules' labels "
-  + "overlap each other and each other's bodies",
-);
-assert.match(
-  nodesSrc,
-  /_buildShapeEl\(\s*\n?\s*_shapeFor\(node\), color, r, isSpawnCapsule \? spawnHW/,
-  "the pill is built at the width its own label measured",
-);
 assert.match(
   edgesSrc,
-  /function _anchorReach[\s\S]{0,400}_spawnHW/,
-  "edges read the capsule's own width so they can land on its edge",
-);
-assert.match(
-  edgesSrc,
-  /fromLeft \? CAPSULE_HW : spawnCapsuleDX\(hw\) \+ hw/,
-  "the reach is asymmetric because the pill is: its left cap sits where "
-  + "any capsule's does, its right edge is a whole name away",
+  /function _anchorReach[\s\S]{0,400}isSpawnRoot\(n\) \) *return AGENT_DOT_R|isSpawnRoot\(n\)\) return AGENT_DOT_R/,
+  "an edge stops at the sub-agent dot's own radius — every glyph is now "
+  + "centred on its grid point and reaches the same distance in every "
+  + "direction, so the clip is symmetric",
 );
 assert.ok(
-  (edgesSrc.match(/_clipToX\(/g) || []).length >= 5,
-  "every edge that can terminate on a capsule clips to its edge — a line "
-  + "aimed at the centre of a wide pill runs through its whole name",
+  !/fromLeft/.test(edgesSrc),
+  "the asymmetric clip is gone with the pill it existed for",
+);
+assert.match(
+  edgesSrc,
+  /"stroke-dasharray": "5 4"[\s\S]{0,200}history-edge spawn-edge/,
+  "the spawn edge is a dashed curve (§12)",
+);
+assert.match(
+  edgesSrc,
+  /const from = \{ x: srcRaw\.x \+ NODE_R \+ 2, y: srcRaw\.y \+ NODE_R \+ 3 \}/,
+  "it leaves the caller's lower edge, clear of the ×N execution count "
+  + "that sits to the node's right",
+);
+assert.match(
+  nodesSrc,
+  /r: isAgentDot \? String\(AGENT_DOT_R \+ 2\)/,
+  "the dot's whole job is to be clicked, so its hit target covers it",
+);
+assert.ok(AGENT_DOT_R > 0, "the dot has a radius to be clipped and hit at");
+
+/* ---- 7. HEAD is solid, with no halo ---- */
+
+assert.match(
+  nodesSrc,
+  /_buildShapeEl\(_shapeFor\(node\), color, r, isHead\)/,
+  "HEAD is drawn solid — where you are standing, said with weight",
+);
+assert.match(
+  shapesSrc,
+  /fill: solid \? color : "transparent"/,
+  "the solid fill is the branch colour, not a separate accent",
+);
+assert.ok(
+  !/\.history-node\.is-head\s*\{[^}]*(drop-shadow|filter|stroke)/.test(
+    readFileSync(new URL("../app/styles/right-dock.css", import.meta.url),
+      "utf8")),
+  "no halo orbits the HEAD glyph: at this size a glow reads as a second, "
+  + "blurrier node beside the first, and the solid fill already says it",
+);
+assert.match(
+  readFileSync(new URL("../lib/runtime-bridge/dag/render/visibility.ts",
+    import.meta.url), "utf8"),
+  /data-solid"\) === "1"\) return;/,
+  "the coverage fill leaves a solid HEAD alone — flipping it would "
+  + "hollow out the one node that can never leave the context window",
+);
+assert.match(
+  nodesSrc,
+  /isHead && contextSet && contextSet\[id\]/,
+  "…and HEAD's own coverage is punched out of the solid fill instead",
 );
 
 console.log("dag-subagent checks passed");

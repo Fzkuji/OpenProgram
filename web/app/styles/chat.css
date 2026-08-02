@@ -2684,9 +2684,10 @@
   display: none;
 }
 /* The DAG host, center-width. `.history-body` (right-dock.css) is the
-   scroll box the renderer writes the SVG into and the one its
-   ResizeObserver watches — so a perspective switch, a split-view drag
-   and a window resize all re-flow the graph through the same path. */
+   infinite canvas the renderer writes the SVG into — it fills this box
+   and pans/zooms under the user's hand (lib/runtime-bridge/dag/canvas.ts),
+   so a perspective switch or a split-view drag changes what is on screen
+   without re-flowing the graph. */
 .dag-view {
   flex: 1;
   min-height: 0;
@@ -2701,14 +2702,14 @@
    composer's `z-index: 5`, so the input box stays exactly where the
    transcript perspective puts it.
 
-   `padding-bottom` reserves the composer's strip so the deepest nodes
-   don't hide behind it, the same contract the transcript honours with
-   `.chat-messages`' own bottom padding. */
+   The canvas fills the pane edge to edge. Reserving the composer's
+   strip with padding was the scroll box's contract; a camera has no
+   deepest node to keep clear of, and the fit already leaves margin —
+   panning past the composer is one gesture. */
 .center-pane-chat[data-center-view="dag"] .dag-view {
   position: absolute;
   inset: 0;
   z-index: 1;
-  padding-bottom: 25vh;
 }
 
 /* Branch strip — one wrapping row of pills above the canvas. Replaces

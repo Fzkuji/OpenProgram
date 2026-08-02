@@ -450,12 +450,29 @@
 
 /* ============ History DAG view ============ */
 
+/* The infinite canvas surface (lib/runtime-bridge/dag/canvas.ts). No
+   scrollbars and no content-driven size: the SVG fills this box and the
+   graph is reached by moving the camera.
+
+   The dot lattice IS the layout's coordinate grid — `canvas.ts` drives
+   `background-position` from the pan and `background-size` from the grid
+   pitch times the zoom, so every node visibly sits on a dot and drifting
+   off one is a bug the eye catches. */
 .history-body {
   flex: 1;
-  overflow: auto;
-  padding: 12px 8px 32px;
+  min-height: 0;
+  overflow: hidden;
   position: relative;
+  touch-action: none;
+  cursor: grab;
+  /* The app's palette is dark regardless of the OS scheme (base.css sets
+     it at :root), so the lattice colour is fixed too — keying it on
+     prefers-color-scheme painted black dots on the dark background for
+     light-OS users, i.e. no dots at all. */
+  background-image: radial-gradient(
+    rgba(255, 255, 255, 0.055) 1.2px, transparent 1.2px);
 }
+.history-body.is-panning { cursor: grabbing; }
 .history-empty,
 .detail-empty {
   text-align: center;
@@ -473,8 +490,10 @@
 
 .history-svg {
   display: block;
-  margin: 0 auto;
+  width: 100%;
+  height: 100%;
 }
+.history-svg text { user-select: none; -webkit-user-select: none; }
 /* 会话切换后的首次 DAG 绘制淡入（pipeline.ts 按 session 变化加类），
    等待 capture 期间 .history-body 里是脉冲骨架条（showHistorySkeleton）。 */
 .history-svg.dag-enter { animation: dag-fade-in 200ms ease-out; }
@@ -524,7 +543,10 @@
 .history-node:hover rect {
   filter: brightness(1.2);
 }
-.history-node.is-head { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--text-bright) 35%, transparent)); }
+/* HEAD carries no halo: it is drawn SOLID instead (render/nodes.ts,
+   dag/rendering.md §4). A glow around a 7px glyph reads as a second,
+   blurrier node beside the first; filling the glyph says the same thing
+   with the shape itself, and survives being zoomed out. */
 
 /* status=running：同形状虚线描边 + 呼吸（rendering.md 第四节）。 */
 .history-node.is-running circle,
@@ -701,35 +723,39 @@
 /* dag/rendering.md §9 / §10. One grey answers both: a covered turn and
    an abandoned failed turn are alike on the only axis the graph is
    about — still on disk, never in the next request. */
-:root { --dag-ghost: #c9c7bf; }
-@media (prefers-color-scheme: dark) {
-  :root { --dag-ghost: #57564f; }
-}
+/* The app's palette is dark regardless of the OS scheme (see the
+   lattice note above), so the ghost grey is the dark-tuned one, always —
+   keyed on prefers-color-scheme, light-OS users got a near-white ghost
+   that outshone live nodes. */
+:root { --dag-ghost: #57564f; }
 
-/* The count beside a capsule ("▸ 14" folded, "▾ 14" open). It is the
+/* The note beside a compaction capsule ("已压缩 · 14 轮"). It is the
    fold's own affordance — the pleats say a stack is there, this says
-   how deep. */
+   how deep. Annotation grey: the pill is the glyph, this is what the
+   pill means. */
 .history-summary-label {
-  font-size: 9.5px;
+  font-size: 10px;
   font-family: var(--font-sans, sans-serif);
-  font-weight: 600;
-  fill: var(--text-secondary);
+  fill: var(--text-muted, var(--text-secondary));
   dominant-baseline: middle;
 }
 .history-node.is-summary:hover .history-summary-label {
   fill: var(--text-primary);
 }
 
-/* The sub-agent capsule's label carries a name, not a count, so it gets
-   the emphasis a name deserves — the fold's whole job is to answer
-   "whose branch is this" at a glance (dag/rendering.md §12). */
+/* The sub-agent's name, beside its dot (dag/rendering.md §12). Same
+   annotation grey as every other caption on the canvas: the dot is the
+   node, the name is the label on it. It brightens with the node on
+   hover, which is how the two read as one thing. */
 .history-subagent-label {
-  font-weight: 700;
-  fill: var(--text-primary);
+  font-size: 10px;
+  font-family: var(--font-sans, sans-serif);
+  fill: var(--text-muted, var(--text-secondary));
   letter-spacing: 0.01em;
+  dominant-baseline: middle;
 }
 .history-node.is-subagent:hover .history-subagent-label {
-  fill: var(--accent, var(--text-primary));
+  fill: var(--text-primary);
 }
 
 /* Ghosts do not brighten on hover: the whole point of the state is
@@ -866,18 +892,51 @@
    floats over the canvas rather than taking a strip of it, and starts
    collapsed to a single button — the shapes are learnable, so the
    legend is for the first few sessions, not every one. */
-.dag-legend {
-  /* env chips 行右端的一个普通 chip；正文向上弹出（absolute 锚在
-     chip 上缘），不参与行布局。会话视角下整体隐藏（下方规则）。 */
-  position: relative;
-  margin-left: auto;
-  flex-shrink: 0;
+/* Canvas HUD — fit, zoom readout, legend. Bottom-right, clear of the
+   composer, chip-sized so it reads as part of the surface rather than
+   as a toolbar the graph has to make room for. */
+.dag-hud {
+  position: absolute;
+  right: 16px;
+  /* Clear of the floating composer (chat.css anchors it bottom: 0 with
+     its own env-chip row above the input box). */
+  bottom: 150px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
-/* 外观完全由 .runtime-badge.workdir-badge 提供（和 Local/项目 chips
-   同一套，含边框），这里只补按钮语义的复位。 */
-.dag-legend-toggle {
-  cursor: pointer;
+.dag-hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 7px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
   font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+button.dag-hud-chip { cursor: pointer; }
+button.dag-hud-chip:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong, var(--border));
+}
+.dag-hud-zoom {
+  min-width: 46px;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.dag-legend {
+  /* The body pops upward from the HUD chip; the wrapper is only its
+     positioning context and takes no space of its own. */
+  position: relative;
+  flex-shrink: 0;
 }
 .dag-legend-body {
   position: absolute;
@@ -896,7 +955,6 @@
   font-size: 11px;
   color: var(--text-secondary);
 }
-.center-pane-chat[data-center-view="session"] .dag-legend { display: none; }
 .dag-legend-row {
   display: flex;
   align-items: center;

@@ -150,6 +150,26 @@ assert.match(
   /"data-summary": isCapsule \? String\(covered\.length\) : ""/,
   "the node must publish its covered count for the click handler and inspector",
 );
+// The capsule is a wordless pill; the note beside it is what says how
+// much it stands for. Without it the shape is just an odd-looking turn.
+assert.match(
+  nodesSrc,
+  /isCapsule\) \{[\s\S]{0,400}已压缩 · \$\{covered\.length\} 轮/,
+  "a folded capsule is annotated with the number of turns it replaced",
+);
+assert.match(
+  nodesSrc,
+  /class: "history-summary-label"/,
+  "…as a caption in the canvas's annotation grey, not inside the pill",
+);
+// The compaction capsule keeps its own geometry: it is the ONE shape
+// wider than the reference circle, and the layout treats it as one cell
+// all the same (grid coordinates, ../layout/geometry.ts).
+assert.match(
+  shapesSrc,
+  /x: -CAPSULE_HW, y: -CAPSULE_HH/,
+  "the pill is centred on its grid point like every other glyph",
+);
 assert.match(
   pipelineSrc,
   /_applyCollapse\(graph\)[\s\S]{0,400}_foldSummaries\(graph\)/,
