@@ -52,6 +52,58 @@ For the dispatcher and the channel handler, creation and writing the first messa
 
 ---
 
+## Main project binding
+
+A session's **main working directory** is the path of the project it is bound to. The binding is chosen freely while the chat is still a draft, and **freezes when the first real message commits** — from that turn onwards the conversation's cwd, its permission fence baseline, and the location of its session repo (`<project>/.openprogram/sessions/<id>/`) all stay put. That is the whole point of freezing: those three follow the main directory, and only `create_session` can place the repo, so a later switch would leave the repo stranded in the old project while the model worked in the new one.
+
+Additional working directories are the opposite and are meant to be: they are added and removed at any point in the session's life. See [additional-working-directories.md](../additional-working-directories.md).
+
+### Where the choice is made
+
+```
+draft chat, project picked in the composer chip
+  → pendingProjectsByChat[chatKey]  (frontend store, nothing sent yet)
+  → first chat frame carries project_id
+  → handle_chat creates the session WITH that project → repo lands inside it
+  → chat_ack sends the idempotent set_session_project (label + reverse index)
+```
+
+`set_session_project` accepts a bind naming the project the session already has, at any age — that is what the post-ack idempotent bind above sends, and it arrives after the first turn is committed. A bind naming a **different** project on a session that already has turns is rejected with `project is frozen after the first turn` (`ws_actions/project.py:FROZEN_ERROR`). The composer chip matches: for a session with an id it renders the bound project read-only instead of the picker.
+
+### Repairing a missing directory
+
+A frozen main directory can still be **relocated**, and only for repair: the folder was moved or renamed on disk and the project now points at nothing. `project_workdir_for` returns `None` in that state — it never silently substitutes the default project's home directory — so the turn's tool cwd falls back to the session's own `workdir/`, and `project_path_missing` names the vanished path. `list_projects` ships that as `path_missing` per project, which is what turns the composer chip orange and puts "Locate folder…" in its menu.
+
+The repair is the `relocate_project` ws action:
+
+```
+relocate_project {session_id, project_id, path}
+  → project_store.relocate_project: validate the new directory, rewrite the
+    project's path, KEEP its id (sessions, settings and the frozen binding all
+    hang off the id)
+  → record_relocate: append the graph node below
+  → project_relocated {ok, old_path, path, node_id} + a fresh projects_list
+```
+
+It changes the **project's path**, never the session→project binding, which is why it stays legal after the freeze. Every session bound to that project follows the move. The default project refuses to relocate: its path is the home directory, restored on every `get_default_project` read.
+
+### The relocate record node
+
+The move changes where every later turn runs, so it is recorded in the session graph rather than mutating the registry silently (`openprogram/store/project/relocate_node.py`):
+
+| Field | Value |
+|---|---|
+| `role` | `code` |
+| `name` | `project/relocate` |
+| `caller` | `ROOT` |
+| `predecessor` | `None` |
+| `output` | `<old path> → <new path>` |
+| `metadata` | `{display: "runtime", project_id, old_path, new_path}` |
+
+The shape follows `context/system_prompt` (dag/overview.md §3, §7): the write invariant constrains only conversational nodes, and because `caller` is set the store leaves head where it is — recording a relocation never moves the branch tip. The name is deliberately **not** under `context/`: those are pipeline machinery hidden from the transcript, while a relocation is a user action worth seeing.
+
+---
+
 ## Writing a message
 
 ```

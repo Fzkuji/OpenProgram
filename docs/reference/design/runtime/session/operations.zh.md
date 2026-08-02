@@ -52,6 +52,57 @@ dispatcher 和 channel handler 的创建与写入第一条消息是原子的—�
 
 ---
 
+## 主项目绑定
+
+会话的**主工作目录**就是它所绑定项目的路径。草稿阶段可以自由选择，**第一条真实消息提交时定格**——从那一轮起，会话的 cwd、权限围栏基线、会话仓库位置（`<project>/.openprogram/sessions/<id>/`）都不再变动。定格的理由正在于此：这三样都跟着主目录走，而只有 `create_session` 能放置仓库，事后换项目会让仓库滞留在旧项目里，模型却在新目录里干活。
+
+追加工作目录是相反的设计，也应该如此：会话生命周期内随时增删。见 [additional-working-directories.zh.md](../additional-working-directories.zh.md)。
+
+### 选择发生在哪里
+
+```
+草稿会话，在 composer chip 里选了项目
+  → pendingProjectsByChat[chatKey]（前端 store，尚未发送）
+  → 第一条 chat 帧带上 project_id
+  → handle_chat 用该项目建会话 → 仓库落在项目内部
+  → chat_ack 再补一次幂等的 set_session_project（标签 + 反向索引）
+```
+
+`set_session_project` 在任何时候都接受"绑到会话已有的那个项目"——上面那条 ack 后的幂等 bind 走的就是这条路，它到达时第一轮已经提交。而在已有轮次的会话上绑**另一个**项目会被拒，理由为 `project is frozen after the first turn`（`ws_actions/project.py:FROZEN_ERROR`）。composer chip 与之对齐：已有 session id 的会话只读展示已绑项目，不再给选择器。
+
+### 修复缺失的目录
+
+定格后的主目录仍可**重定位**，且只为修复：目录在磁盘上被移动或改名，项目指向了不存在的位置。这种状态下 `project_workdir_for` 返回 `None`——绝不悄悄换成默认项目的家目录——于是该轮工具 cwd 回落到会话自己的 `workdir/`，而 `project_path_missing` 报出消失的那个路径。`list_projects` 把它作为每个项目的 `path_missing` 下发，chip 因此转为警示态，菜单里出现"定位文件夹…"。
+
+修复动作是 `relocate_project` ws action：
+
+```
+relocate_project {session_id, project_id, path}
+  → project_store.relocate_project：校验新目录、改写项目 path、**保留 id**
+    （会话反向索引、项目设置、定格的绑定全挂在 id 上）
+  → record_relocate：追加下面的记录节点
+  → project_relocated {ok, old_path, path, node_id} + 一份新的 projects_list
+```
+
+它改的是**项目的路径**，而非会话→项目的绑定，所以定格之后依然合法。绑定到该项目的每个会话都跟着移动。默认项目拒绝重定位：它的路径是家目录，每次 `get_default_project` 读取都会被恢复。
+
+### relocate 记录节点
+
+这次移动改变了此后每一轮的运行位置，所以记进会话图，而不是无声改注册表（`openprogram/store/project/relocate_node.py`）：
+
+| 字段 | 值 |
+|---|---|
+| `role` | `code` |
+| `name` | `project/relocate` |
+| `caller` | `ROOT` |
+| `predecessor` | `None` |
+| `output` | `<旧路径> → <新路径>` |
+| `metadata` | `{display: "runtime", project_id, old_path, new_path}` |
+
+形状照搬 `context/system_prompt`（dag/overview.md §3、§7）：写入不变式只约束对话节点；`caller` 已设，store 便不推进 head——记录重定位不动分支尖端。名字刻意**不放在** `context/` 下：那是隐藏于对话流的管线机器，而重定位是值得看见的用户动作。
+
+---
+
 ## 写消息
 
 ```

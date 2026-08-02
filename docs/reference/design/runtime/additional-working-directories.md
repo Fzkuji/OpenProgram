@@ -2,6 +2,8 @@
 
 Beyond its main working directory (the bound project path), a session can mount any number of "additional working directories". The semantics match Claude Code's "Add another folder" (`additionalWorkingDirectories`): **an additional directory only widens the permission fence and the model's awareness. It does not change the main cwd, and it does not change where the session is stored.**
 
+The two differ in how freely they change. The main directory freezes on the session's first turn and moves afterwards only to repair a folder that vanished from disk — see [session/operations.md](session/operations.md), "Main project binding". Additional directories are added and removed at any point in the session's life, and each change takes effect from the next turn.
+
 The project path → session cwd link is handled by `project_workdir_for`; the fence side is covered in `docs/reference/design/runtime/permission-model.md` §3.5.
 
 ---
@@ -15,6 +17,7 @@ The project path → session cwd link is handled by `project_workdir_for`; the f
 | acceptEdits fence allowlist (`working_dirs` of `check_path_safety`) | ✅ | ✅ added |
 | Announced to the model in the system prompt | ✅ "Current working directory" | ✅ one extra line listing them |
 | Storage | project-bound (project_store) | session-level `SessionRunConfig.additional_working_dirs` (session meta, schemaless) |
+| Changeable mid-session | ❌ frozen on the first turn (relocate repairs a missing folder) | ✅ added and removed freely |
 
 Out of scope (either Claude Code does not do it either, or this project has no carrier for it):
 
@@ -85,23 +88,22 @@ Validation rule: `Path(d).expanduser()` must satisfy `is_dir()`. What is stored 
 
 The two copies in `internals/_model_tools.py` and `agent/_model_tools.py` stay identical, per the "kept in sync" convention stated in the file headers.
 
-### 3.5 Frontend: the directory section in the ProjectBadge menu
+### 3.5 Frontend: one chip per directory, right of the project chip
 
-The entry point is the project chip menu (`web/components/chat/top-bar/project-menu.tsx`, a shadcn Popover). Directories belong with the project, no new chip is added, and composer width is untouched. A section is appended to the menu:
+The composer's `envChips` row reads left to right as the session's directory set: `<ProjectBadge />` for the frozen main directory, then `<WorkingDirChips />` — one chip per additional directory plus a trailing icon-only add button (`web/components/chat/top-bar/working-dir-chips.tsx`).
 
 ```
-──────────────
-Working directories
-  ~/Documents/foo        ✕
-  /Volumes/data/bar      ✕
-  ＋ Add folder
+[📁 my-project]  [📂 foo ✕]  [📂 bar ✕]  [＋]
 ```
 
-- "＋ Add folder" calls `POST /api/pick-folder` (the existing native picker, used on desktop too). Once a path comes back, the new list is sent with `wsSend({action:"set_working_dirs", session_id, dirs})` and local state is **updated optimistically** (the instant-feedback principle); when the `working_dirs` broadcast arrives, the backend value wins.
-- ✕ sends the same action with the list minus that entry.
+- The add button opens a picker menu: recent projects (one click mounts that project's path) plus "Choose folder…", which calls `POST /api/pick-folder` (the existing native picker, used on desktop too). The new list is sent with `set_working_dirs` and local state is **updated optimistically** (the instant-feedback principle); when the `working_dirs` broadcast arrives, the backend value wins.
+- ✕ on a chip sends the same action with the list minus that entry.
 - When the session has no id yet (a draft), only local state updates, and the list rides along on the first chat frame (§3.3).
+- Both operations stay available for the whole session — the main directory freezing does not restrict them.
 
 State lives in the session store as `additionalWorkingDirsBySession: Record<string, string[]>` (full words, no abbreviations), fed from three sources: `session_loaded.data.settings`, the `working_dirs` broadcast, and optimistic updates. It does not go into `ComposerSettings` or localStorage, because this is server-persisted session data, not a client-side preference.
+
+The project chip next to them carries the main directory's state, including its warning form. `list_projects` returns `path_missing` per project; when the session's own project has it, the chip switches to the orange warning palette with a lucide `AlertTriangle` in place of the folder icon, and its menu offers "Locate folder…" — the relocate repair described in [session/operations.md](session/operations.md).
 
 ### 3.6 Tests
 
@@ -110,11 +112,12 @@ Following the style of the existing files:
 - `tests/unit/test_session_config.py`: `additional_working_dirs` save/load round-trip, including "None leaves it unchanged" and `_as_str_list` sanitizing.
 - `tests/unit/test_permission_rules.py`: three `_path_is_safe` cases — allowed inside an additional directory, blocked outside it, and allowed inside the project cwd bound to the ContextVar (monkeypatching `current_worktree_path`).
 - `tests/unit/test_ws_working_dirs.py`: the ws action's valid write plus broadcast, whole-frame rejection for a non-directory, and the `session_loaded` round-trip.
+- `tests/unit/test_session_main_workdir.py`: the main directory's contrasting rules — the freeze, the missing-directory resolution, the relocate record node — plus the case that ties the two together, adding and removing an additional directory on a session whose main directory has already frozen.
 
 ## 4. End-to-end flow
 
 ```
-ProjectBadge menu ＋ Add folder
+WorkingDirChips ＋ button
    │ POST /api/pick-folder (native dialog)
    ▼
 wsSend set_working_dirs {session_id, dirs}     (draft session → rides on the first chat frame)
@@ -130,15 +133,11 @@ TurnRequest.additional_working_dirs
 
 ## 5. Key properties to preserve
 
-These four are the design's hard lines; any change has to keep them:
+These are the design's hard lines; any change has to keep them:
 
 - Additional directories affect **only the fence and the prompt**. Wiring them into cwd switching or storage location violates the semantics table in §1.
 - The fence baseline and the system prompt cwd must come from the **same source** (`current_worktree_path()` first). A mismatch produces the "the model thinks it can write, the fence blocks it" approval loop.
 - `set_working_dirs` is a whole-list replacement, and a failed validation rejects the entire frame. There is no partially written intermediate state.
 - Storage is schemaless (session meta). Old sessions missing the field read back an empty list, with no migration.
-
----
-
-## Appendix: implementation status
-
-The `SessionRunConfig.additional_working_dirs` field, the read path `load_session_run_config` → `TurnRequest` → `_path_is_safe`, and the `save_session_run_config(..., additional_working_dirs=...)` write parameter all exist. The `set_working_dirs` ws action in §3.2 and the ProjectBadge directory section in §3.5 are the write entry points this design adds.
+- Additional directories stay editable for the session's whole life. The freeze belongs to the main directory alone; extending it to this list would remove the only mid-session way to widen the fence.
+- A main project whose folder is missing resolves to `None`, never to another directory. Substituting the default project's home would hand the model a plausible-looking cwd in a place the user never chose.

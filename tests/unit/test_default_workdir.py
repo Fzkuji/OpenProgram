@@ -123,8 +123,16 @@ def test_project_workdir_for_unbound_uses_default_project(store, tmp_path, monke
     assert project_workdir_for("sess1") == home
 
 
-def test_project_workdir_for_missing_dir_falls_back(store, tmp_path, monkeypatch):
-    """A bound project whose path vanished must not become the cwd."""
+def test_project_workdir_for_missing_dir_is_none_not_default(store, tmp_path,
+                                                             monkeypatch):
+    """A bound project whose path vanished must not become the cwd — and
+    must NOT silently resolve to the default project's home directory
+    either. ``None`` sends the turn to the session's own workdir/."""
+    from openprogram.store import project_store
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(project_store, "get_default_project",
+                        lambda: _FakeProject(str(home), is_default=True))
     _bind_project(monkeypatch, _FakeProject(str(tmp_path / "gone")))
     assert project_workdir_for("sess1") is None
 

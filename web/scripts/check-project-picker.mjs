@@ -23,6 +23,19 @@ assert.match(projectMenu, /Open folder…/);
 assert.match(projectMenu, /\{list\.map\(/);
 assert.doesNotMatch(projectMenu, /filter\([^\n]*session_count/);
 
+// Main directory freezes on the first turn: an active session (one with a
+// session_id) must not render the switching list, and the only path that
+// changes its directory is the relocate repair.
+assert.match(projectMenu, /const frozen = sessionId !== null/);
+assert.match(projectMenu, /if \(frozen\) \{/);
+assert.match(projectMenu, /"relocate_project"/);
+assert.match(projectMenu, /Locate folder…/);
+// Missing-directory warning uses the lucide icon, never an emoji glyph.
+assert.match(projectMenu, /<AlertTriangle\b/);
+assert.doesNotMatch(projectMenu, /[⚠❗🚨📁]/u);
+assert.match(projectMenu, /path_missing/);
+assert.match(chatCss, /\.project-badge-missing\b/);
+
 assert.doesNotMatch(projectsPage, /\bremoveProject\b/);
 assert.doesNotMatch(projectsPage, /remove_project/);
 assert.doesNotMatch(projectsPage, /Remove from list|从列表移除/);
