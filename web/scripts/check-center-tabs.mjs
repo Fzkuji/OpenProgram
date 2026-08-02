@@ -1019,8 +1019,17 @@ assert.match(
 );
 assert.match(
   css,
-  /\.tab\[data-width-frozen\],\s*\.compoundTab\[data-width-frozen\] \{[^}]*transition:[^}]*width 160ms ease,[^}]*flex-basis 160ms ease,[^}]*max-width 160ms ease,/s,
-  "released widths must ease back via a transition scoped to frozen tabs",
+  /\.tab\[data-width-frozen="released"\],\s*\.compoundTab\[data-width-frozen="released"\] \{[^}]*transition:[^}]*width 160ms ease,[^}]*flex-basis 160ms ease,[^}]*max-width 160ms ease,/s,
+  "released widths must ease back via a transition scoped to RELEASED tabs only",
+);
+// The pin state ("true") must NOT carry the width transition: a transition
+// active at pin time animates flex-basis/max-width from the stylesheet
+// values (240px) to the pinned pixels, ballooning the whole row for a
+// frame — the first-close flicker (observed 141→240→141).
+assert.doesNotMatch(
+  css,
+  /\.tab\[data-width-frozen\](?!=)[^,{]*[,{]/,
+  "the width transition must not match the pinned state",
 );
 assert.match(
   css,
