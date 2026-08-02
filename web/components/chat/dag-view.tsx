@@ -32,10 +32,83 @@
  * coverage is simply what the fill means.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
+import { useTranslation } from "@/lib/i18n";
 import { enterExclusiveCoverageMode } from "@/lib/runtime-bridge/dag";
 import { BranchesPanel } from "../right-sidebar/branches";
+
+const STROKE = "var(--accent-primary, #4a7dfc)";
+const GHOST = "var(--dag-ghost, #c9c7bf)";
+
+/** Shape swatches, drawn with the same primitives `shapes.ts` uses so
+ *  the key and the canvas can never drift apart. */
+const SHAPES: Record<string, React.ReactNode> = {
+  root: <rect x="3" y="3" width="9" height="9" transform="rotate(45 7.5 7.5)"
+    fill="none" stroke={STROKE} strokeWidth="1.6" />,
+  user: <circle cx="7.5" cy="7.5" r="5" fill="none" stroke={STROKE} strokeWidth="1.6" />,
+  llm: <polygon points="7.5,2 12.5,12 2.5,12" fill="none" stroke={STROKE} strokeWidth="1.6" />,
+  tool: <rect x="2.5" y="2.5" width="10" height="10" fill="none" stroke={STROKE} strokeWidth="1.6" />,
+  ghost: <circle cx="7.5" cy="7.5" r="5" fill="none" stroke={GHOST} strokeWidth="1.4" />,
+  covered: (
+    <>
+      <circle cx="7.5" cy="7.5" r="5" fill="none" stroke={STROKE} strokeWidth="1.6" />
+      <circle cx="7.5" cy="7.5" r="2" fill="#fff" stroke="#9a9890" strokeWidth=".8" />
+    </>
+  ),
+};
+
+function LegendRow({ shape, label }: { shape: React.ReactNode; label: string }) {
+  return (
+    <div className="dag-legend-row">
+      <svg width="15" height="15" aria-hidden="true">{shape}</svg>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+/** Corner key for shape and coverage. Starts collapsed: the vocabulary
+ *  is small and learnable, so this is for the first sessions rather
+ *  than a permanent fixture on the canvas. */
+function DagLegend() {
+  const { text } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="dag-legend">
+      <button
+        type="button"
+        className="dag-legend-toggle"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {open ? "▾ " : "▸ "}{text("Legend", "图例")}
+      </button>
+      {open && (
+        <div className="dag-legend-body">
+          <LegendRow shape={SHAPES.root} label={text("root", "root")} />
+          <LegendRow shape={SHAPES.user} label={text("user turn", "用户轮")} />
+          <LegendRow shape={SHAPES.llm} label={text("model reply", "模型回复")} />
+          <LegendRow shape={SHAPES.tool} label={text("code / tool", "代码/工具")} />
+          <LegendRow
+            shape={
+              <rect x="1" y="4" width="13" height="7" rx="3.5"
+                fill="none" stroke={STROKE} strokeWidth="1.6" />
+            }
+            label={text("compaction summary", "压缩摘要")}
+          />
+          <LegendRow
+            shape={SHAPES.covered}
+            label={text("in the next request", "在下次请求里")}
+          />
+          <LegendRow
+            shape={SHAPES.ghost}
+            label={text("archived — folded or failed", "已留档 · 折叠或失败")}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function DagView({ visible }: { visible: boolean }) {
   useEffect(() => {
@@ -49,6 +122,7 @@ export function DagView({ visible }: { visible: boolean }) {
       aria-hidden={visible ? undefined : true}
     >
       <BranchesPanel variant="chips" />
+      <DagLegend />
       <div className="history-body"></div>
     </div>
   );

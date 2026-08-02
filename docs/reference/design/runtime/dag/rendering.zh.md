@@ -182,7 +182,7 @@ lane 色；**绝不给某类线固定颜色**。类型只靠线型：
 ## 四、节点图例：形状 = 角色，描边 = 状态
 
 **形状**：◇ ROOT · ○ user · △ llm · ■ code · ◉ merge（实心带孔圆，全图唯一的
-"汇聚"形状）。
+"汇聚"形状）· ▭ 压缩摘要（胶囊，全图唯一的宽形状，见第九节）。
 
 **status 映射**——状态画在节点自己身上，不画独立的虚线占位框：
 
@@ -321,9 +321,8 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier �
 占用（`!` 报错、`↗` 跨会话 spawn），右下角是折叠徽标；用 `<text>` 画，免得
 `_applyVisibility` 找"第一个形状子元素"时把它当成节点本体。
 
-压缩会用一个摘要覆盖一段节点；被覆盖的节点直接落出 `node_ids`，和其他出上
-下文的节点一样变暗。摘要节点是否需要专门图形是另一个问题——见第四节"状态与
-覆盖画在节点自己的描边上，绝不画占位框"。
+压缩会用一个摘要覆盖一段节点；被覆盖的节点直接落出 `node_ids`，所以白点只落
+在摘要上，覆盖区间里一个都没有。图接下来拿这段区间做什么，见第九节。
 
 刷新时机：`context_stats` 或 `compaction_finished` 到达即重拉覆盖
 （`chat-handlers.ts`），所以白点跟着真实上下文走，前端从不自行计算。注意
@@ -336,16 +335,108 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier �
   `metadata.covers` 的普通 `role=llm` 链上成员，保留尾部保持自己的 id 与
   predecessor。因此分支 id **就是**图上画的 id，`/context-range` 直接返回
   它们——没有翻译层，也没有第二套 id 空间。
-- summary 节点和其他对话节点一样绘制；只有真正的合成桥会被过滤
-  （`graph_layout/filter.py`）。
-- 压缩后被覆盖的前缀落出集合 → 变暗；summary 与保留尾部维持高亮。**这就是
-  压缩的可视化**——独立的摘要节点图形不予采纳（依 dag/overview.md：不加第 4
-  种 role）。将来若需要显式"此处压缩了 N 轮"标记，必须做成首个保留节点上的
-  徽章，不得做成节点。
+- summary 节点在数据关心的每一方面都和其他对话节点一样绘制；只有真正的合成
+  桥会被过滤（`graph_layout/filter.py`）。它的胶囊是形状，不是 role——见第
+  九节。
+- 压缩后被覆盖的前缀落出集合，白点落在 summary 与保留尾部上。
 - `compaction_finished` 必须触发 context range 刷新（`chat-handlers.ts`）；
   覆盖和其他一切一样事件驱动——前端永不自行计算上下文成员关系。
 - 集合中没有对应图节点的 id（如 `display=runtime` 的 task-followup 行）
   静默忽略：它们在上下文里，但不在图上。
+
+## 九、压缩读作一个胶囊，不是十四个变暗的轮次
+
+把覆盖区间画成变暗，对每个节点说的都对，对整个会话说的却是错的：十四个浅色
+圆圈照样占十四行，眼睛照样要走完它们才够得着活的对话。摘要是一个替所有这些
+说话的节点，图就该这么画它。
+
+**胶囊**。摘要节点在主线上画成圆角框——形状表里唯一的宽形状，因为它是唯一
+替不止一轮说话的节点。它仍然是普通的 `role=llm` 链上成员（dag/overview.md
+§8）：形状就是形状，不是第四种 role。
+
+**褶皱**。胶囊右缘最多三片递缩的灰色薄片，一片比一片短、一片比一片淡。正是
+它们让胶囊能藏起一段区间而不让图说谎——药丸说"一个节点"，褶皱说"后面还叠着
+一摞"——胶囊展开时它们消失，因为那时这摞被画出来了。旁边的覆盖计数
+（折叠时 `▸ 14`，展开时 `▾ 14`）让这个折叠自己把自己说清楚。
+
+**折叠**。覆盖区间默认省略。点胶囊把它放回来，再点收起。这个状态只属于视图、
+永不落盘：它记的是你怎么看这张图，不是这张图是什么，新开会话一律从折叠态起步。
+
+**幽灵态**。展开的区间画成灰色描边、入边虚线——可读、可点、明显不属于下一次
+请求。这正是展开的意义所在："摘要到底有没有抓住我说的话"这个问题能被回答，
+而答案永远不会被误当成活的上下文。
+
+两种状态下白点都不会落在被覆盖的节点上，因为 `/context-range` 根本不列它。
+一件事，一个来源（第八节）。
+
+### 区间从哪来
+
+存储写的是 `metadata.covers = [first_seq, last_seq]`。seq 给图定序，但它永远
+不离开存储——所有下发载荷说的都是 id——所以 `webui/graph_builder.py` 在出口处
+把区间解析一次，摘要行带上 `covers_ids`：它所替代的那些 id，按 seq 排序，并排
+除摘要自己（它自己的 seq 恰好排在它所指区间的里侧）。
+
+一个字段驱动全部：胶囊形状、折叠、褶皱数量、幽灵标记、检查器的覆盖行。前端不做
+任何 seq 运算，也不调第二个接口。
+
+## 十、失败轮以留档存在，不以警报存在
+
+以 `status = error` 收尾的轮是终态节点；重试从它的前驱分叉，对话在新线上继续
+（dag/overview.md）。失败线被保留——这正是选择分叉而不是回退的意义——但它永远
+不可能重新进入上下文。
+
+所以这样的节点一旦**离开 HEAD 链**，就画成和被覆盖轮同一种灰，检查器标注
+`失败轮 · 已留档`。两种状态长得像，是因为在图唯一关心的那根轴上它们**就是**
+一样的：在盘上、可读、永不进下一次请求。
+
+这层灰有意覆盖第四节给活跃错误的红色描边。红色的意思是"这件事现在需要你"，
+留档的线不是——重试已经发生过了。`!` 字形本身保留，所以这条线为什么终止仍然
+一眼可读。
+
+判定的两半缺一不可。只看 `status` 会把你正盯着的、还没重试的错误也刷灰；只看
+离开 HEAD 会把每一条兄弟分支都刷灰。节点必须**既是失败、又已被放弃**。
+
+`status` 是存储自己的终态标记，由轮次机制写入（取消的情形见
+`runtime/execution/turn-cancellation.md`，它保持 `cancelled`、沿用自己的 50%
+灰化）。图读它，从不自己判定它。
+
+## 十一、单击、右键、双击
+
+悬停卡片（第四节）回答扫图时的"这是什么"。下面三个回答你停下来问的问题。
+
+**单击 → 检查器**。节点旁弹出：角色、seq、id、token 估算、`expose` 层级、覆盖
+状态、约 200 字内容预览，以及三个动作（复制内容 · 原始 JSON · 从此 fork）。
+原始 JSON 复用同一张卡片壳而不是弹模态——模态会为了给你看图里的一个节点，把图
+整个拿走。token 数字在节点带实测值时用 `llm.output_tokens`，没有时用
+`chars/4`；卡片明说是哪一种（`tokens` / `tokens（估）`），而不是把估算打扮成
+实测。
+
+覆盖行读的是节点绘制时已经戳好的 DOM 标记（`data-ghost`、`data-failed`、
+`.out-of-context`），所以卡片和它旁边那张图不可能各说各话。
+
+**右键 → 菜单**。checkout 到此分支 · 从此节点 fork · fork 并编辑此消息（仅
+用户轮）· 复制节点 id · 查看原始 JSON。锚在光标处，因为右键是瞄准的，菜单跳到
+节点边缘会读作没点中。
+
+**双击用户轮 → fork 并编辑**。消息文本落进输入框，HEAD 已经退回它的分叉点。
+其他节点保持 checkout 行为——回复和工具结果没有什么可编辑的。
+
+### 每个动作都是既有操作
+
+这里没有给协议添任何新动词：
+
+| 动作 | 路由 | 为什么这就是全部实现 |
+|---|---|---|
+| checkout | `POST /api/chat/checkout` | 纯 HEAD 移动，和会话记录里的兄弟版本导航发的是同一个 |
+| 从节点 fork | `POST /api/chat/checkout` | fork **就是** checkout 加上意图——从一个已经有子节点的 HEAD 发出的轮，定义上就是它们的兄弟，会话记录里的"从此分支"按钮也是这么做的 |
+| fork 并编辑 | `POST /api/chat/checkout` 到该节点的**前驱**，再把文本填进输入框 | 用户改完发送；这个发送就是针对新 HEAD 的普通发送，于是分叉发生，协议不变，也不用维护"从节点 X 发"这个概念。选前驱做分叉点，正是因为编辑后的消息必须站在原消息**旁边**而不是后面——和 `POST /api/chat/edit` 产生的形状一致 |
+
+检查器与菜单用命令式方式构建（`render/inspector.ts`），因为图本身就是：它们浮
+在渲染器自己拥有的 SVG 之上、锚在节点几何上，在 React 树之外。
+
+**图例**。画布角落一张可收起的卡片，说明各形状与两种灰
+（`components/chat/dag-view.tsx`）。默认收起——这套词汇很小、可学会，所以图例
+是给最初几次会话用的，不是画布上的常驻件。
 
 ## 附录：实现状态
 
@@ -365,3 +456,9 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier �
 | 分支胶囊条 | `BranchesPanel variant="chips"` + `BranchItem chip`；`.branches-strip` / `.branch-chip` 在 `chat.css` / `right-dock.css` |
 | 第八节 覆盖查询 | `routes/tree.py::_coverage_nodes` 填 `/context-range` 的 `nodes`；测试见 `tests/unit/test_context_range_coverage.py` |
 | 第八节 aged / spilled 绘制 | `render/nodes.ts`（stroke-opacity + `▤`），数据来自 `store/globals.ts` 的 `_coverageSet` |
+| 第九节 `covers_ids` 下发 | `webui/graph_builder.py` 把 `metadata.covers` 解析成 id；测试见 `tests/unit/test_graph_builder_covers.py` |
+| 第九节 胶囊形状 | `shapes.ts` 的 `capsule`（按 `covers_ids` 判定，打 `data-shape` 标让 `_applyShapeSize` 别改它的几何） |
+| 第九节 折叠 / 褶皱 / 幽灵 | `passes/fold-summaries.ts`（折叠）、`render/nodes.ts`（褶皱、计数、幽灵描边）、`render/edges.ts`（幽灵虚线边）、`store/globals.ts` 的 `_summaryExpanded`；由 `web/scripts/check-dag-summary.mjs` 实跑 |
+| 第十节 失败留档 | `render/nodes.ts::_isArchivedFailure`——`status=error` **且**离开 HEAD 链；灰覆盖第四节的红 |
+| 第十一节 检查器 / 菜单 / fork 并编辑 | `render/inspector.ts`，在 `render/interaction.ts` 接线；三个动作都走 `POST /api/chat/checkout` |
+| 第十一节 图例 | `components/chat/dag-view.tsx` 的 `DagLegend`，`right-dock.css` 的 `.dag-legend` |

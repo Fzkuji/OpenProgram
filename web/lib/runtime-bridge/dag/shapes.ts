@@ -52,6 +52,14 @@ export function _branchColor(
 
 export function _shapeFor(node: GNode): string {
   if (node.display === "root") return "diamond";
+  // Compaction summary → capsule (dag/rendering.md §9). It is a real
+  // llm turn, but a turn that stands in for a whole span of turns, and
+  // the rounded box is what says "this one is wider than it looks".
+  // Keyed on ``covers_ids`` (the backend resolves it from
+  // ``metadata.covers``) so the shape and the fold read one fact.
+  if (Array.isArray((node as Record<string, unknown>).covers_ids)) {
+    return "capsule";
+  }
   const role = node.role;
   const fn = node.function;
   // merge 节点：实心带孔圆 ◉，落在 base 分支 lane 上（rendering.md
@@ -79,6 +87,11 @@ export function _applyShapeSize(shape: SVGElement): void {
   } else if (shape.tagName === "polygon") {
     shape.setAttribute("points", _regularPolygon(3, R * TRI_SCALE, -Math.PI / 2));
   } else if (shape.tagName === "rect") {
+    // The capsule is a rect too, but a wide one — re-squaring it here
+    // (this runs on every white-fill flip) would snap it back to a
+    // square the moment coverage changed. Its own geometry is set once,
+    // at build time, and marked so this pass leaves it alone.
+    if (shape.getAttribute("data-shape") === "capsule") return;
     const s = R * SQR_SCALE;
     shape.setAttribute("x", String(-s));
     shape.setAttribute("y", String(-s));
@@ -86,6 +99,11 @@ export function _applyShapeSize(shape: SVGElement): void {
     shape.setAttribute("height", String(s * 2));
   }
 }
+
+// Capsule half-extents. Wide enough to read as a different shape from
+// the square at a glance, short enough to sit on one grid row.
+export const CAPSULE_HW = (NODE_R + 1.8) * 2.1;
+export const CAPSULE_HH = (NODE_R + 1.8) * 0.86;
 
 // Shape sizing: all shapes share the same reference circle of radius R.
 //   circle:   radius = R (the baseline)
@@ -115,6 +133,18 @@ export function _buildShapeEl(
     return _svg("rect", {
       x: -s, y: -s, width: s * 2, height: s * 2,
       rx: 0, ry: 0, ...common,
+    });
+  } else if (shape === "capsule") {
+    // Compaction summary (dag/rendering.md §9): a rounded box on the
+    // trunk, wider than every other shape because it speaks for more
+    // than one turn. ``data-shape`` keeps ``_applyShapeSize`` from
+    // re-squaring it on the next coverage flip.
+    return _svg("rect", {
+      x: -CAPSULE_HW, y: -CAPSULE_HH,
+      width: CAPSULE_HW * 2, height: CAPSULE_HH * 2,
+      rx: CAPSULE_HH, ry: CAPSULE_HH,
+      "data-shape": "capsule",
+      ...common,
     });
   } else if (shape === "merge_dot") {
     // ◉ 实心带孔圆（rendering.md 第四节图例）：外圈实心 + 中心

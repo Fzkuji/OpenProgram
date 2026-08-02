@@ -217,7 +217,7 @@ is conveyed only by line style:
 ## 4. Node legend: shape = role, stroke = status
 
 **Shape**: ◇ ROOT · ○ user · △ llm · ■ code · ◉ merge (solid circle with a hole, the graph's unique
-"convergence" shape).
+"convergence" shape) · ▭ compaction summary (a capsule, the graph's only wide shape — §9).
 
 **status mapping** — status is drawn on the node itself, never as a separate dashed
 placeholder box:
@@ -381,9 +381,8 @@ holds the fold badge; it is drawn as `<text>` so `_applyVisibility`'s
 "first shape child" scan cannot mistake it for the node body.
 
 Compaction covers a range of nodes with a summary; those covered nodes simply
-fall out of `node_ids` and dim like anything else out of context. A dedicated
-glyph for the summary node is a separate question — see §4's rule that status
-and coverage live on the node's own stroke, never in a placeholder box.
+fall out of `node_ids`, so the white fill lands on the summary and nowhere in
+the range behind it. §9 is what the graph then does with that range.
 
 Refreshing: coverage is re-fetched whenever `context_stats` or
 `compaction_finished` arrives (`chat-handlers.ts`), so the fill tracks the real
@@ -399,20 +398,131 @@ Compaction interaction:
   tail keeps its own ids and predecessors. The branch ids therefore ARE the
   ids the graph draws, so `/context-range` returns them directly — no
   translation layer, no second id space.
-- The summary node is drawn like any other conversation node; only genuinely
-  synthetic bridges are filtered (`graph_layout/filter.py`).
-- After compaction the covered prefix falls out of the set → it dims; the
-  summary and the kept tail keep highlighting. This IS the compaction
-  visualization — a separate summary-node glyph is rejected (per
-  dag/overview.md: no 4th role). If a future need arises for an explicit
-  "N turns compacted here" marker, it must be a badge on the first kept
-  node, not a node.
+- The summary node is drawn like any other conversation node in every respect
+  the data cares about; only genuinely synthetic bridges are filtered
+  (`graph_layout/filter.py`). Its capsule is a shape, not a role — §9.
+- After compaction the covered prefix falls out of the set, so the fill lands
+  on the summary and the kept tail.
 - `compaction_finished` must refresh the context range
   (`chat-handlers.ts`); coverage is event-driven like everything else — the
   frontend never computes context membership itself.
 - Context ids that have no drawn node (e.g. `display=runtime`
   task-followup rows) are silently ignored: they are context, but not
   graph.
+
+## 9. Compaction reads as one capsule, not fourteen dimmed turns
+
+Dimming a covered range says the right thing about each node and the wrong
+thing about the session: fourteen faint circles still cost fourteen rows, and
+the eye still has to walk them to reach the live conversation. The summary is
+one node that stands for all of them, so the graph draws it that way.
+
+**The capsule.** A summary node is a rounded box on the trunk — the only wide
+shape in the vocabulary, because it is the only node that speaks for more than
+one turn. It is still an ordinary `role=llm` chain member (dag/overview.md §8):
+the shape is a shape, not a fourth role.
+
+**The pleats.** Up to three receding grey slivers off the capsule's right edge,
+each shorter and fainter than the last. They are what lets the capsule hide a
+range without the graph lying about it — the pill says "one node", the pleats
+say "and a stack behind it" — and they disappear when the capsule opens,
+because then the stack is drawn. Beside them the covered count (`▸ 14` folded,
+`▾ 14` open) makes the fold self-describing.
+
+**The fold.** The covered range is elided by default. Clicking the capsule
+brings it back, clicking again folds it away. That state is view-only and never
+persisted: it records how you are looking at the graph, not what the graph is,
+and a fresh session starts folded.
+
+**The ghosts.** An expanded range draws in grey outline with a dashed incoming
+edge — readable, clickable, visibly not part of the next request. This is the
+whole point of expanding: "did the summary actually capture what I said" is
+answerable without the answer ever being confused for live context.
+
+The white fill never lands on a covered node, in either state, because
+`/context-range` does not list it. One fact, one source (§8).
+
+### Where the interval comes from
+
+The store writes `metadata.covers = [first_seq, last_seq]`. Seq orders the
+graph but never leaves the store — every wire payload speaks ids — so
+`webui/graph_builder.py` resolves the interval once, on the way out, and the
+summary row carries `covers_ids`: the ids it stands in for, in seq order, with
+the summary itself excluded (its own seq sorts just inside the range it names).
+
+One field drives everything: the capsule shape, the fold, the pleat count, the
+ghost marking, and the inspector's coverage row. The frontend does no seq
+arithmetic and calls no second endpoint.
+
+## 10. A failed turn stays visible as an archive, never as an alarm
+
+A turn that ends in `status = error` is a terminal node; the retry forks off its
+predecessor and the conversation continues on the new line (dag/overview.md).
+The failed line is kept — that is the point of forking rather than rewinding —
+but it can never re-enter context.
+
+So once such a node is **off the HEAD chain**, it draws in the same grey as a
+covered turn, and the inspector labels it `失败轮 · 已留档`. The two states look
+alike because on the only axis the graph is about they *are* alike: on disk,
+readable, and never in the next request.
+
+The grey deliberately replaces the red `!` stroke §4 gives a live error. Red
+means "this needs you now", and an archived line does not — the retry already
+happened. The `!` glyph itself stays, so why the line ended is still legible.
+
+Both halves of the test matter. `status` alone would grey the error you are
+currently looking at, before you have retried it. Off-HEAD alone would grey
+every sibling branch. The node has to be a failure *and* abandoned.
+
+`status` is the store's own terminal marker, written by the turn machinery
+(`runtime/execution/turn-cancellation.md` for the cancel case, which stays
+`cancelled` and keeps its own 50% grey). The graph reads it; it never decides
+it.
+
+## 11. Click, right-click, double-click
+
+The hover tooltip (§4's card) answers "what is this" while you sweep the graph.
+These answer the questions you stop and ask.
+
+**Click → inspector.** A popover beside the node: role, seq, id, token estimate,
+`expose` level, coverage state, ~200 characters of content, and three actions
+(copy content · raw JSON · fork from here). Raw JSON opens in the same card
+shell rather than a modal — a modal would take the graph away to show you one
+node from it. The token figure is `llm.output_tokens` when the node carries a
+measurement and `chars/4` when it does not; the popover says which
+(`tokens` vs `tokens（估）`) instead of dressing an estimate as a count.
+
+The coverage row reads off the DOM flags the node drawer already stamped
+(`data-ghost`, `data-failed`, `.out-of-context`), so the popover and the picture
+beside it cannot disagree.
+
+**Right-click → menu.** checkout to this branch · fork from this node · fork and
+edit this message (user turns only) · copy node id · view raw JSON. Anchored at
+the cursor, because a right-click is aimed and a menu that jumps to the node's
+edge reads as a miss.
+
+**Double-click a user turn → fork and edit.** The message text lands in the
+composer with HEAD already back at its fork point. Other nodes keep the
+checkout behaviour — there is nothing to edit on a reply or a tool result.
+
+### Every action is an existing operation
+
+Nothing here adds a verb to the protocol:
+
+| Action | Route | Why that is the whole implementation |
+|---|---|---|
+| checkout | `POST /api/chat/checkout` | a pure HEAD move, exactly what the transcript's sibling navigator sends |
+| fork from node | `POST /api/chat/checkout` | fork *is* checkout plus intent — a turn sent from a HEAD that already has children is by definition a sibling of them, which is how the transcript's "branch from here" button works too |
+| fork and edit | `POST /api/chat/checkout` to the node's **predecessor**, then the text into the composer | the user edits and sends; that send is an ordinary send against the new HEAD, so it forks with no protocol change and no "send from node X" concept to keep alive. The predecessor is the fork point precisely because the edited message has to stand *beside* the original, not after it — the same shape `POST /api/chat/edit` produces |
+
+The inspector and menu are built imperatively (`render/inspector.ts`) because
+the graph is: they float over an SVG the renderer owns, keyed to node geometry,
+outside React's tree.
+
+**Legend.** A collapsible corner card names the shapes and the two greys
+(`components/chat/dag-view.tsx`). It starts collapsed — the vocabulary is small
+and learnable, so the legend is for the first few sessions rather than a
+permanent fixture on the canvas.
 
 ## Appendix: Implementation Status
 
@@ -432,3 +542,9 @@ The whole spec is implemented. Where each part lives:
 | Branch strip | `BranchesPanel variant="chips"` + `BranchItem chip`; `.branches-strip` / `.branch-chip` in `chat.css` / `right-dock.css` |
 | §8 coverage query | `routes/tree.py::_coverage_nodes` fills `/context-range`'s `nodes`; tested in `tests/unit/test_context_range_coverage.py` |
 | §8 aged / spilled drawing | `render/nodes.ts` (stroke-opacity + `▤`), fed by `_coverageSet` in `store/globals.ts` |
+| §9 `covers_ids` on the wire | `webui/graph_builder.py` resolves `metadata.covers` to ids; tested in `tests/unit/test_graph_builder_covers.py` |
+| §9 capsule shape | `shapes.ts` `capsule` (keyed on `covers_ids`, tagged `data-shape` so `_applyShapeSize` leaves its geometry alone) |
+| §9 fold + pleats + ghosts | `passes/fold-summaries.ts` (fold), `render/nodes.ts` (pleats, count, ghost stroke), `render/edges.ts` (dashed ghost edge), `_summaryExpanded` in `store/globals.ts`; executed by `web/scripts/check-dag-summary.mjs` |
+| §10 archived failure | `render/nodes.ts::_isArchivedFailure` — `status=error` AND off the HEAD chain; grey overrides §4's red |
+| §11 inspector / menu / fork & edit | `render/inspector.ts`, wired in `render/interaction.ts`; all three actions go through `POST /api/chat/checkout` |
+| §11 legend | `DagLegend` in `components/chat/dag-view.tsx`, `.dag-legend` in `right-dock.css` |

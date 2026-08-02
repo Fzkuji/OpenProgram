@@ -53,6 +53,26 @@ def build_session_graph(
     except Exception:
         pass
 
+    # Compaction summaries carry ``metadata.covers = [first_seq, last_seq]``
+    # (dag/overview.md §8). Seq orders nodes but the graph speaks ids, so
+    # resolve the interval to the ids it names — the renderer draws the
+    # capsule and its collapsed range off ``covers_ids`` alone and never
+    # has to learn what a seq is.
+    covers_ids: dict[str, list[str]] = {}
+    if nodes:
+        from openprogram.context.nodes import covers_range
+
+        by_seq = sorted(((n.seq, n.id) for n in nodes), key=lambda t: t[0])
+        for n in nodes:
+            rng = covers_range(n)
+            if rng is None:
+                continue
+            lo, hi = rng
+            covered = [nid for seq, nid in by_seq
+                       if lo <= seq <= hi and nid != n.id]
+            if covered:
+                covers_ids[n.id] = covered
+
     graph: list[dict[str, Any]] = []
 
     root_node = next(
@@ -77,7 +97,7 @@ def build_session_graph(
         aref, amanual, asrc_commit = _attach_info(m)
         aembed_n, aembed_tok = _attach_embed_stats(db, session_id, asrc_commit)
         mid = m.get("id") or ""
-        graph.append({
+        row = {
             "id": mid,
             "predecessor": m.get("predecessor"),
             "caller": caller_map.get(mid, "") or m.get("caller") or "",
@@ -98,7 +118,10 @@ def build_session_graph(
             "attach_source_commit_id": asrc_commit,
             "attach_embed_count": aembed_n,
             "attach_embed_tokens": aembed_tok,
-        })
+        }
+        if mid in covers_ids:
+            row["covers_ids"] = covers_ids[mid]
+        graph.append(row)
 
     # attach 指针不画节点（rendering.md 场景 8/10），但回流长虚线需要
     # 它携带的 ref：把 ref 戳到嵌入位置（attach 的 predecessor 节点）上，

@@ -101,6 +101,19 @@ export function setCollapseSession(v: string | null): void {
   _collapseSession = v;
 }
 
+// Which compaction capsules the user clicked open (dag/rendering.md §9).
+// View state, never persisted: it records how you are looking at the
+// graph, not what the graph is. Absent = folded, which is the default
+// every session starts at.
+export let _summaryExpanded: Record<string, boolean> = Object.create(null);
+export function toggleSummaryExpanded(id: string): void {
+  if (_summaryExpanded[id]) delete _summaryExpanded[id];
+  else _summaryExpanded[id] = true;
+}
+export function setSummaryExpanded(v: Record<string, boolean>): void {
+  _summaryExpanded = v;
+}
+
 // ── last graph cache (for re-render after collapse toggle / resize) ──
 export let _lastGraph: GNode[] | null = null;
 export let _lastHeadId: string | null = null;

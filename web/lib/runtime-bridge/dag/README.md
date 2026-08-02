@@ -30,28 +30,28 @@ dag/
 │   ├── collapse-runtime-pairs.ts        legacy user/asst runtime pair fold
 │   ├── merge-runs.ts                    fold tool wrapper into run-node
 │   ├── demote-decoration-cards.ts       suppress lane fork from LLM-triggered cards
-│   └── apply-collapse.ts                user/auto subtree collapse
+│   ├── apply-collapse.ts                user/auto subtree collapse
+│   └── fold-summaries.ts                elide the range a compaction capsule covers
 ├── layout/
 │   ├── build-tree.ts                    flat list → parent/children
 │   ├── depth.ts                         row index (prefers backend _depth)
 │   ├── assign-lanes.ts                  column index (prefers backend _lane)
 │   └── tier.ts                          placeholder for tier helpers (currently inline)
 ├── render/
-│   ├── nodes.ts                         (reserved — node draw still inline in pipeline)
-│   ├── edges.ts                         (reserved — edge draw still inline in pipeline)
+│   ├── nodes.ts                         node shapes, badges, coverage marks
+│   ├── edges.ts                         conv / fork / attach / spawn edges
+│   ├── badges.ts                        branch-name badges
 │   ├── visibility.ts                    white-fill + chat-scroll/mutation sync
-│   └── interaction.ts                   click / dblclick / checkout / scroll-to
+│   ├── interaction.ts                   click / dblclick / contextmenu wiring
+│   └── inspector.ts                     node inspector popover + context menu
 └── store/
     └── globals.ts                       module-level state (HEAD, collapsed set, ...)
 ```
 
-`render/nodes.ts` and `render/edges.ts` are currently empty stubs. The
-node-/edge-drawing logic is tightly coupled to the render-context
-closure (`pos()`, `stableLeafOfNode`, `cinfo`, `internalSet`, etc.)
-and lives inline in `pipeline.ts`. A future cleanup pass should
-extract it once that context is reified into an object — but the goal
-of this reorganisation was zero behaviour change, so the giant
-`render()` body stays in one place.
+`pipeline.ts` still owns the render-context closure (`pos()`,
+`stableLeafOfNode`, `cinfo`, `internalSet`, …) and passes it into the
+`render/` drawers as arguments. Reifying it into one object would
+shorten those signatures; nothing depends on it happening.
 
 ## Node kinds and shapes
 
@@ -65,6 +65,7 @@ reference:
 | `llm_reply`                    | `assistant`/`llm` | —              | triangle       |
 | `function_call` (code)         | `tool`          | `bash`, `gui_agent`, …| square    |
 | branch-referencing             | `tool`          | `attach`, `merge`/`task`| square_outline |
+| compaction summary             | `assistant`/`llm` | — (has `covers_ids`) | capsule      |
 
 ROOT is special-cased by `display=root` → diamond. Every other node's
 shape comes from its `role`. There are no anchor / placeholder /
@@ -91,6 +92,7 @@ flat GNode[]
   → demoteDecorationCards           passes/demote-decoration-cards.ts
   → snapshot stable leafOfNode      layout/build-tree + assign-lanes
   → applyCollapse                   passes/apply-collapse.ts
+  → foldSummaries                   passes/fold-summaries.ts
   → buildTree + assignDepth + assignLanes
   → emit SVG
        conv-edges → attach-refs → spawn-edges → nodes → branch-tags

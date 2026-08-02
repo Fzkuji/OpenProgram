@@ -1,11 +1,16 @@
 /**
- * Renderer: click / dblclick / chat-scroll glue.
+ * Renderer: click / dblclick / contextmenu / chat-scroll glue.
  *
- * * Single click on a node → toggle collapse if the node has a
- *   collapsible subtree. Internal nodes (caller-edged) without their
- *   own collapsible cluster scroll the chat to the owner runtime
- *   block instead.
- * * Double click on a node OR edge → switch HEAD via
+ * * Single click on a node → the inspector popover (``./inspector``),
+ *   plus the node's own click behaviour: a compaction capsule folds or
+ *   unfolds the range it covers, a node with an execution subtree
+ *   toggles that subtree, and an internal node without its own cluster
+ *   scrolls the chat to the owner runtime block.
+ * * Right click on a node → the node menu (checkout / fork / fork &
+ *   edit / copy id / raw JSON).
+ * * Double click on a USER node → fork & edit: HEAD moves to the fork
+ *   point and the message text lands in the composer.
+ * * Double click on any other node OR an edge → switch HEAD via
  *   ``POST /api/chat/checkout`` (or scroll-to-bubble when the
  *   target is already on the HEAD chain).
  *
@@ -26,7 +31,14 @@ import {
   _lastHeadId,
   _leafOfNode,
   setLastSignature,
+  toggleSummaryExpanded,
 } from "../store/globals";
+import {
+  closeNodeLayers,
+  forkAndEditNode,
+  showNodeInspector,
+  showNodeMenu,
+} from "./inspector";
 
 export function _chatBubbleFor(msgId: string): Element | null {
   if (!msgId) return null;
@@ -136,8 +148,16 @@ export function _installInteractionHandlers(rerender: () => void): void {
   if (typeof document === "undefined") return;
   document.addEventListener("click", (e) => {
     const tgt = e.target as HTMLElement;
+    // A click that lands anywhere but on a node dismisses the popover.
+    // The layer stops propagation on its own clicks, so its buttons
+    // never close it out from under themselves.
     const g = tgt.closest && tgt.closest(".history-node");
-    if (!g) return;
+    if (!g) {
+      if (!(tgt.closest && tgt.closest(".dag-inspector, .dag-menu"))) {
+        closeNodeLayers();
+      }
+      return;
+    }
     const id = g.getAttribute("data-msg-id");
     if (!id) return;
     // Selecting a node always populates the right rail's Details view.
@@ -146,6 +166,22 @@ export function _installInteractionHandlers(rerender: () => void): void {
     // behaviour where every node click drove `showDetail`.
     const gn = _graphNode(id);
     if (gn) useSessionStore.getState().showDetail(_detailFor(gn), true);
+    if (gn) showNodeInspector(gn, g);
+    // A capsule's click is its fold (dag/rendering.md §9). It takes
+    // precedence over the execution-subtree fold below: the capsule
+    // stands for a span of the CHAIN, which is the bigger thing the
+    // click is about, and a summary node has no sub-calls to hide
+    // anyway.
+    if (g.getAttribute("data-summary")) {
+      toggleSummaryExpanded(id);
+      if (_lastGraph) {
+        // The expanded set is not part of the render signature, so the
+        // repaint would dedup itself away without busting it.
+        setLastSignature(null);
+        rerender();
+      }
+      return;
+    }
     if (g.getAttribute("data-internal") === "1"
         && g.getAttribute("data-collapsible") !== "1") {
       const owner = g.getAttribute("data-owner");
@@ -160,6 +196,20 @@ export function _installInteractionHandlers(rerender: () => void): void {
         rerender();
       }
     }
+  });
+
+  document.addEventListener("contextmenu", (e) => {
+    const tgt = e.target as HTMLElement;
+    const g = tgt.closest && tgt.closest(".history-node");
+    if (!g) return;
+    const id = g.getAttribute("data-msg-id");
+    if (!id) return;
+    const gn = _graphNode(id);
+    if (!gn) return;
+    e.preventDefault();
+    // Anchor the menu at the cursor, not at the node: a right-click is
+    // aimed, and a menu that jumps to the node's edge reads as a miss.
+    showNodeMenu(gn, g, new DOMRect(e.clientX, e.clientY, 0, 0));
   });
 
   document.addEventListener("dblclick", (e) => {
@@ -181,6 +231,17 @@ export function _installInteractionHandlers(rerender: () => void): void {
     if (!id) return;
     if (isInternal) {
       if (owner) _scrollChatTo(owner);
+      return;
+    }
+    // A double click on a user turn is fork & edit (dag/rendering.md
+    // §11): the message you double-clicked lands in the composer with
+    // HEAD already back at its fork point, so editing and sending
+    // writes the sibling. Checkout keeps the other nodes — there is
+    // nothing to edit on a reply or a tool result.
+    const gn = node ? _graphNode(id) : null;
+    if (gn && gn.role === "user" && gn.display !== "root") {
+      closeNodeLayers();
+      void forkAndEditNode(gn);
       return;
     }
     if (_headAncestorSet[id]) {

@@ -697,6 +697,204 @@
 }
 
 
+/* ============ Compaction capsule, ghosts, archived failures ============ */
+/* dag/rendering.md §9 / §10. One grey answers both: a covered turn and
+   an abandoned failed turn are alike on the only axis the graph is
+   about — still on disk, never in the next request. */
+:root { --dag-ghost: #c9c7bf; }
+@media (prefers-color-scheme: dark) {
+  :root { --dag-ghost: #57564f; }
+}
+
+/* The count beside a capsule ("▸ 14" folded, "▾ 14" open). It is the
+   fold's own affordance — the pleats say a stack is there, this says
+   how deep. */
+.history-summary-label {
+  font-size: 9.5px;
+  font-family: var(--font-sans, sans-serif);
+  font-weight: 600;
+  fill: var(--text-secondary);
+  dominant-baseline: middle;
+}
+.history-node.is-summary:hover .history-summary-label {
+  fill: var(--text-primary);
+}
+
+/* Ghosts do not brighten on hover: the whole point of the state is
+   that these nodes read as receded. They stay clickable. */
+.history-node.is-ghost:hover circle,
+.history-node.is-ghost:hover polygon,
+.history-node.is-ghost:hover rect,
+.history-node.is-archived-failure:hover circle,
+.history-node.is-archived-failure:hover polygon,
+.history-node.is-archived-failure:hover rect {
+  filter: none;
+}
+
+
+/* ============ Node inspector + context menu ============ */
+/* Floating layers the DAG renderer mounts on document.body
+   (render/inspector.ts), positioned in viewport coordinates so they
+   can cross the pane edge instead of being clipped by it. */
+.dag-inspector,
+.dag-menu {
+  position: fixed;
+  z-index: 200;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-popover);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.dag-inspector {
+  width: 250px;
+  padding: 11px 13px;
+}
+.dag-inspector-title {
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 7px;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.dag-inspector-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  line-height: 1.85;
+  color: var(--text-muted);
+}
+.dag-inspector-row b {
+  font-weight: 500;
+  color: var(--text-primary);
+  text-align: right;
+  word-break: break-all;
+}
+.dag-inspector-row b.is-ok { color: var(--success, #3a9d5a); }
+.dag-inspector-row b.is-muted { color: var(--text-muted); }
+.dag-inspector-preview {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px dashed var(--border);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.5;
+  max-height: 84px;
+  overflow: hidden;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.dag-inspector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.dag-inspector-action {
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  border-radius: 7px;
+  padding: 3px 9px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.dag-inspector-action:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+/* Raw JSON reuses the inspector shell — same card, one scrolling
+   <pre> instead of the field rows. A modal would take the graph away
+   to show you one node from it. */
+.dag-inspector-raw { width: 420px; }
+.dag-inspector-raw-body {
+  margin: 0;
+  max-height: 340px;
+  overflow: auto;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
+               Monaco, Consolas, monospace);
+  font-size: 10.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.dag-menu {
+  min-width: 172px;
+  padding: 5px;
+}
+.dag-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.dag-menu-item.is-muted { color: var(--text-secondary); }
+.dag-menu-item:hover { background: var(--bg-secondary); }
+.dag-menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 6px;
+}
+
+
+/* ============ Canvas legend ============ */
+/* A collapsible corner card naming the shapes and the two greys. It
+   floats over the canvas rather than taking a strip of it, and starts
+   collapsed to a single button — the shapes are learnable, so the
+   legend is for the first few sessions, not every one. */
+.dag-legend {
+  position: absolute;
+  right: 14px;
+  top: 10px;
+  z-index: 3;
+  background: color-mix(in srgb, var(--bg-tertiary) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  backdrop-filter: blur(4px);
+  max-width: 232px;
+}
+.dag-legend-toggle {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.dag-legend-toggle:hover { color: var(--text-primary); }
+.dag-legend-body {
+  padding: 0 10px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.dag-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  line-height: 1.4;
+}
+.dag-legend-row svg { flex: 0 0 auto; }
+
+
 /* Multi-select + merge bar inside the Branches panel.
    Per-row check chip is always there but only visible on hover OR
    when something is already selected (avoid visual noise for the

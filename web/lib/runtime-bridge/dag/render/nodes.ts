@@ -9,7 +9,30 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { type GNode, NODE_R } from "../types";
-import { _branchColor, _buildShapeEl, _shapeFor, _svg } from "../shapes";
+import {
+  CAPSULE_HH,
+  CAPSULE_HW,
+  _branchColor,
+  _buildShapeEl,
+  _shapeFor,
+  _svg,
+} from "../shapes";
+import { _summaryExpanded } from "../store/globals";
+
+/** A turn that ended in ``error`` and is no longer on the HEAD chain:
+ *  the retry forked off its predecessor and moved on, so this line is
+ *  kept for the record and can never re-enter context (dag/rendering.md
+ *  §10). ``status`` is the store's own terminal marker — the graph
+ *  reads it, it never decides it. */
+function _isArchivedFailure(
+  node: GNode,
+  onHead: boolean,
+  isHead: boolean,
+): boolean {
+  const status = (node as Record<string, unknown>).status;
+  if (status !== "error" && !node.is_error) return false;
+  return !onHead && !isHead;
+}
 
 export function drawNodes(
   nodeG: SVGElement,
@@ -27,7 +50,15 @@ export function drawNodes(
   internalOwner: Record<string, string>,
   contextSet: Record<string, boolean> | null,
   coverageSet: Record<string, { aged: boolean; spilled: boolean }> | null,
+  coversOf: Record<string, string[]>,
 ): void {
+  // Every id any capsule covers — folded or expanded. Expanded, those
+  // nodes draw as ghosts so "readable" and "in context" stay visibly
+  // separate (dag/rendering.md §9).
+  const coveredBy: Record<string, string> = Object.create(null);
+  for (const sid in coversOf) {
+    for (const cid of coversOf[sid]) coveredBy[cid] = sid;
+  }
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
     const p = pos(node);
@@ -41,25 +72,51 @@ export function drawNodes(
       node.function === "attach" ||
       node.function === "merge";
     const oocFlag = contextSet && !contextSet[id] && !isBranchOp;
+    const covered = coversOf[id];
+    const isCapsule = !!covered;
+    const capsuleOpen = isCapsule && !!_summaryExpanded[id];
+    const isGhost = !!coveredBy[id];
+    const isFailed = _isArchivedFailure(node, onHead, isHead);
     const g = _svg("g", {
       class:
         "history-node" +
         (isHead ? " is-head" : "") +
         (onHead ? "" : " off-head") +
         (isCollapsible ? " is-collapsible" : "") +
-        (oocFlag ? " out-of-context" : ""),
+        (oocFlag ? " out-of-context" : "") +
+        (isCapsule ? " is-summary" : "") +
+        (isGhost ? " is-ghost" : "") +
+        (isFailed ? " is-archived-failure" : ""),
       transform: "translate(" + p.x + "," + p.y + ")",
       "data-msg-id": id,
       "data-collapsible": isCollapsible ? "1" : "0",
       "data-collapsed": folded ? "1" : "0",
       "data-internal": internalSet[id] ? "1" : "0",
       "data-owner": internalOwner[id] || "",
+      // The interaction layer routes a capsule click to the fold toggle
+      // instead of the collapse toggle, and labels the inspector's
+      // coverage row from these two.
+      "data-summary": isCapsule ? String(covered.length) : "",
+      "data-summary-open": capsuleOpen ? "1" : "0",
+      "data-ghost": isGhost ? "1" : "0",
+      "data-failed": isFailed ? "1" : "0",
     });
-    const hit = _svg("circle", {
-      r: "7",
-      fill: "transparent",
-      "pointer-events": "all",
-    });
+    // The capsule is wider than the r=7 hit circle, so give it a hit
+    // rect that actually covers the glyph — otherwise clicking the ends
+    // of the pill misses and the fold "does nothing".
+    const hit = isCapsule
+      ? _svg("rect", {
+        x: String(-CAPSULE_HW), y: String(-CAPSULE_HH),
+        width: String(CAPSULE_HW * 2), height: String(CAPSULE_HH * 2),
+        rx: String(CAPSULE_HH),
+        fill: "transparent",
+        "pointer-events": "all",
+      })
+      : _svg("circle", {
+        r: "7",
+        fill: "transparent",
+        "pointer-events": "all",
+      });
     g.appendChild(hit);
     (g as SVGGraphicsElement).style.cursor = "pointer";
     const r = NODE_R + 1.8;
@@ -87,6 +144,57 @@ export function drawNodes(
       g.appendChild(bang);
     } else if (status === "cancelled" || status === "stopped") {
       g.setAttribute("opacity", "0.45");
+    }
+    // ── ghost 描边（rendering.md §9/§10）─────────────────────────
+    // Two nodes read the same way and for the same reason: they are on
+    // disk and readable, and they can never enter the next request.
+    // A covered turn, because its capsule speaks for it; an archived
+    // failure, because the retry forked past it. Grey outline, no fill.
+    //
+    // The failure case deliberately overwrites the red ! stroke above:
+    // red says "this needs your attention now", and an archived line
+    // does not — the retry already happened. It keeps the ! glyph so
+    // *why* the line ended is still legible.
+    if (el && (isGhost || isFailed)) {
+      el.setAttribute("stroke", "var(--dag-ghost, #c9c7bf)");
+      el.setAttribute("stroke-width", "1.6");
+    }
+    // ── 褶皱：折叠的覆盖区间收成递缩叠影（rendering.md §9）────────
+    // Three receding pleats off the capsule's right edge. They are the
+    // whole reason the capsule can hide N turns without the graph
+    // lying about it: the pill says "one node", the pleats say "and a
+    // stack behind it". Expanded, they go away — the range is drawn.
+    if (isCapsule && !capsuleOpen) {
+      const pleats = Math.min(3, covered.length);
+      for (let i = 0; i < pleats; i++) {
+        const x = CAPSULE_HW + 2 + i * 5;
+        const hh = CAPSULE_HH * (1 - i * 0.22);
+        g.appendChild(_svg("rect", {
+          x: String(x), y: String(-hh),
+          width: "3.5", height: String(hh * 2),
+          rx: "1.7",
+          fill: "transparent",
+          stroke: "var(--dag-ghost, #c9c7bf)",
+          "stroke-width": String(1.2 - i * 0.1),
+          "stroke-opacity": String(1 - i * 0.28),
+          "pointer-events": "none",
+        }));
+      }
+    }
+    // ── 覆盖标注：胶囊旁写清它替掉了多少轮 ───────────────────────
+    // Without the count the capsule is just an odd-looking turn; with
+    // it the fold is self-describing and needs no legend lookup.
+    if (isCapsule) {
+      const cap = _svg("text", {
+        x: String(CAPSULE_HW + (capsuleOpen ? 6 : 22)),
+        y: String(3.5),
+        class: "history-summary-label",
+        "pointer-events": "none",
+      });
+      cap.textContent = capsuleOpen
+        ? `▾ ${covered.length}`
+        : `▸ ${covered.length}`;
+      g.appendChild(cap);
     }
     // ── 覆盖态的两级衰减（rendering.md 第八节）──
     // aged：结果被 aging 折成一行残根，节点还在上下文里但内容已残——

@@ -50,6 +50,7 @@ import { _collapseRuntimePairs } from "./passes/collapse-runtime-pairs";
 import { _mergeRuns } from "./passes/merge-runs";
 import { _demoteDecorationCards } from "./passes/demote-decoration-cards";
 import { _applyCollapse } from "./passes/apply-collapse";
+import { _foldSummaries } from "./passes/fold-summaries";
 import { _buildTree } from "./layout/build-tree";
 import { _assignDepth } from "./layout/depth";
 import { _assignLanes, _headAncestors } from "./layout/assign-lanes";
@@ -141,6 +142,13 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   const cinfo = _applyCollapse(graph);
   graph = cinfo.visible;
+
+  // Compaction capsules fold the range they cover (dag/rendering.md §9).
+  // After ``_applyCollapse`` so the two filters compose rather than
+  // fight: a covered turn that also carries an execution subtree is
+  // gone either way, and the counts stay each pass's own business.
+  const sfold = _foldSummaries(graph);
+  graph = sfold.visible;
 
   // attach 指针节点不画（rendering.md 场景 8/10）：它是"head 在哪"
   // 的数据锚点，留在对话链尾，viewport 里只画回流虚线，不占格。只过滤
@@ -306,7 +314,8 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   drawEdges(edgeG, tree, graphIn, pos, stableLeafOfNode);
 
   drawNodes(nodeG, tree, pos, headId, headAncestors, stableLeafOfNode,
-    cinfo, _collapsed, internalSet, internalOwner, _contextSet, _coverageSet);
+    cinfo, _collapsed, internalSet, internalOwner, _contextSet, _coverageSet,
+    sfold.coversOf);
 
   const fullById: Record<string, GNode> = Object.create(null);
   graphIn.forEach((m) => { fullById[m.id] = m; });

@@ -13,6 +13,9 @@
 import { type GNode, NODE_R, COL_W } from "../types";
 import { _branchColor, _edgePath, _svg } from "../shapes";
 import { _onEdgeDblclick } from "./interaction";
+import { coversIds } from "../passes/fold-summaries";
+
+const GHOST_STROKE = "var(--dag-ghost, #c9c7bf)";
 
 export function drawEdges(
   edgeG: SVGElement,
@@ -21,6 +24,17 @@ export function drawEdges(
   pos: (n: GNode) => { x: number; y: number },
   stableLeafOfNode: Record<string, string>,
 ): void {
+  // An expanded capsule's range draws as a dashed grey spur off the
+  // trunk (dag/rendering.md §9): the turns are back on screen, but the
+  // line has to keep saying they are not what the next request carries.
+  // Styling the ghost's own INCOMING edge does that without touching
+  // the lane machinery — the chain is unchanged, only its ink is.
+  const ghostIds: Record<string, boolean> = Object.create(null);
+  for (const n of graphIn) {
+    const ids = coversIds(n);
+    if (!ids) continue;
+    for (const cid of ids) ghostIds[cid] = true;
+  }
   const rootNode = Object.values(tree.byId).find((n) => n.display === "root");
   const rootPos = rootNode ? pos(rootNode) : null;
 
@@ -62,7 +76,11 @@ export function drawEdges(
       return;
     }
     const c = pos(node);
-    const color = _branchColor(node, stableLeafOfNode);
+    const isGhost = !!ghostIds[id];
+    const color = isGhost ? GHOST_STROKE : _branchColor(node, stableLeafOfNode);
+    const dash: Record<string, string> = isGhost
+      ? { "stroke-dasharray": "3 3" }
+      : {};
     const nr = NODE_R + 4;
 
     const p = pos(parent);
@@ -102,14 +120,14 @@ export function drawEdges(
       edgeG.appendChild(_svg("line", {
         x1: trunkX, y1: vTop, x2: trunkX, y2: c.y,
         stroke: color, "stroke-width": 1.6, "stroke-linecap": "round",
-        "pointer-events": "none", class: "history-edge",
+        "pointer-events": "none", class: "history-edge", ...dash,
       }));
     }
     if (c.x !== trunkX) {
       edgeG.appendChild(_svg("line", {
         x1: trunkX, y1: c.y, x2: c.x - nr, y2: c.y,
         stroke: color, "stroke-width": 1.6, "stroke-linecap": "round",
-        "pointer-events": "none", class: "history-edge",
+        "pointer-events": "none", class: "history-edge", ...dash,
       }));
     }
   });

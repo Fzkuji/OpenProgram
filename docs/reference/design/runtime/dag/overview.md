@@ -339,6 +339,11 @@ spine survives intact as a sibling branch for rollback. `covers` gives clone
 semantics with zero duplication — clones would create a second id space every
 consumer must translate.
 
+`covers` is expressed in seq, and seq never leaves the store. The WebUI graph
+payload carries the interval already resolved to ids, as `covers_ids` on the
+summary row (`webui/graph_builder.py`), so the renderer draws the capsule and
+its fold without doing seq arithmetic — see dag/rendering.md §9.
+
 ### The aging boundary only advances; rendering is exactly replayable
 
 The tail-turns aging boundary advances only at turn commit, never mid-turn (a
