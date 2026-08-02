@@ -1036,8 +1036,23 @@ assert.match(
 );
 assert.match(
   strip,
-  /if \(isMouseDrivenClose\(e\)\) freezeWidthsForMouseClose\(\);\s*else releaseFrozenWidths\(\);/,
+  /if \(isMouseDrivenClose\(e\)\) freezeWidthsForMouseClose\(e\.target\);\s*else releaseFrozenWidths\(\);/,
   "every non-mouse close path must reflow immediately",
+);
+// The × click's row entry is marked closing BEFORE the pin walks the row —
+// React stamps data-tab-closing a render too late, and a pinned closing tab
+// would fight its own exit shrink with the inline width.
+assert.match(
+  strip,
+  /entry\.dataset\.tabClosing = "true";[\s\S]*?freezeStripWidths\(flow\);/,
+  "the closing row entry must be marked before the pin",
+);
+// A container resize without a window resize (sidebar toggle, split drag)
+// must also release: the survivors are flex-shrink:0 and would overflow.
+assert.match(
+  strip,
+  /new ResizeObserver\([\s\S]*?releaseFrozenWidths\(\)/,
+  "a strip-box resize must release the freeze",
 );
 const onTabClose = strip.slice(
   strip.indexOf("function onTabClose"),

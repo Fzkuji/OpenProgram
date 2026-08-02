@@ -38,7 +38,7 @@ export interface TabLifecycleOptions {
   setFocusedTabId(tabId: string | null): void;
   /** Pin the surviving tabs to their current widths (Chrome's close-with-
    *  the-mouse freeze). Only the mouse close path calls this. */
-  freezeWidthsForMouseClose(): void;
+  freezeWidthsForMouseClose(closeTarget?: EventTarget | null): void;
   /** Drop any width freeze so the strip reflows normally again. */
   releaseFrozenWidths(): void;
 }
@@ -268,7 +268,12 @@ export function useTabLifecycle({
     // Pin the survivors' widths for a mouse close (Chrome), so the next
     // tab's × stays under the cursor; every other close path reflows now.
     // Runs AFTER the discard prompt: a cancelled close must not freeze.
-    if (isMouseDrivenClose(e)) freezeWidthsForMouseClose();
+    // The strip marks the closing row entry BEFORE pinning — React only
+    // stamps data-tab-closing on the next render, which is after
+    // freezeStripWidths has walked the row, so without the early mark the
+    // closing tab gets pinned too and its exit shrink fights the inline
+    // width.
+    if (isMouseDrivenClose(e)) freezeWidthsForMouseClose(e.target);
     else releaseFrozenWidths();
     // 先播退场动画（.tabExit 收缩到 0），animationend 再 finishClose 真正
     // 移除 —— 和新建 tab 的挤压动画成镜像。

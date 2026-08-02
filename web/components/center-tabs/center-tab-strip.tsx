@@ -102,22 +102,44 @@ export function CenterTabStrip() {
   }
   /** Called by the lifecycle hook for MOUSE closes only — keyboard and
    *  programmatic closes (session deleted, tab dragged out) reflow at once. */
-  function freezeWidthsForMouseClose() {
+  function freezeWidthsForMouseClose(closeTarget?: EventTarget | null) {
     if (unfreezeTimerRef.current !== null) {
       clearTimeout(unfreezeTimerRef.current);
       unfreezeTimerRef.current = null;
     }
+    // Mark the closing row entry before pinning: React stamps
+    // data-tab-closing on the NEXT render, after freezeStripWidths has
+    // already walked the row — so resolve the × click's row entry now and
+    // mark it so the pin skips it and its exit shrink runs unopposed.
+    const flow = tabsFlowRef.current;
+    if (flow && closeTarget instanceof HTMLElement) {
+      const entry = Array.from(flow.children).find((c) =>
+        c.contains(closeTarget),
+      ) as HTMLElement | undefined;
+      if (entry) entry.dataset.tabClosing = "true";
+    }
     // Re-measure on every close: the previous freeze may predate a tab
     // that has since gone, and re-pinning the CURRENT widths is a no-op
     // for already-frozen survivors.
-    freezeStripWidths(tabsFlowRef.current);
+    freezeStripWidths(flow);
     widthFrozenRef.current = true;
   }
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.addEventListener("resize", releaseFrozenWidths);
+    // The strip can narrow without a window resize — sidebar toggles, a
+    // split-view drag. The survivors are pinned with flex-shrink:0, so a
+    // narrower row would overflow instead of adapting; any container
+    // resize releases the freeze. The flow box is display:contents in
+    // browser mode (no box to observe), so observe its parent strip.
+    const stripBox = tabsFlowRef.current?.parentElement;
+    const ro = new ResizeObserver(() => {
+      if (widthFrozenRef.current) releaseFrozenWidths();
+    });
+    if (stripBox) ro.observe(stripBox);
     return () => {
       window.removeEventListener("resize", releaseFrozenWidths);
+      ro.disconnect();
       if (unfreezeTimerRef.current !== null) clearTimeout(unfreezeTimerRef.current);
     };
     // releaseFrozenWidths only touches refs — any render's instance works.
