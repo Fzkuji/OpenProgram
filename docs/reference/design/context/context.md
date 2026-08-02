@@ -217,6 +217,54 @@ protection (OpenCode).
   + `ws_actions/context_commits.py`. Lists the current commit's items with state badges + token counts
   (full/aged/cleared/summary, with their `attached_from` source).
 
+### Occupancy: one number, two readers
+
+Two widgets report how full the window is — the progress ring in the composer
+(`web/components/chat/context-badge.tsx`) and the `/context` breakdown panel it
+opens (`web/components/chat/context-breakdown-panel.tsx`). Both render the same
+server-computed record, so they agree at every moment:
+
+```python
+{"window": int, "total_used": int, "basis": "measured" | "estimated",
+ "estimated": int, "calibration": float}   # calibration only when measured
+```
+
+`openprogram/context/session_stats.py` builds it; `server.session_context_stats`
+serves it to `/context` and `server._broadcast_context_stats` pushes it over the
+`context_stats` WS frame. The ring reads `total_used / window` from the store; the
+panel reads the same fields for its headline and derives `Free space` from them,
+so its per-category rows never contradict the total.
+
+**The number always describes now.** Two bases produce it:
+
+| Basis | When | `total_used` |
+|---|---|---|
+| `measured` | a real request just completed | what the provider billed for that call's prompt (`input_tokens + cache_read`) |
+| `estimated` | the graph moved since that request | recomputed from the current branch with the local tokenizer |
+
+A measured reading also records `calibration` — measured ÷ estimated for the same
+graph — which says how far the local estimate drifts from what the provider charges.
+
+**Graph-change triggers.** Anything that changes what the next request will carry
+re-estimates and re-broadcasts through `server.refresh_context_stats`, so the ring
+follows the graph instead of lagging one request behind:
+
+| Change | Site |
+|---|---|
+| compaction lands mid-turn | `webui/_execute/chat.py` (`compaction_finished`) |
+| model switch | `webui/routes/runtime.py`, `webui/ws_actions/runtime.py` |
+| branch checkout / delete | `webui/ws_actions/branch.py` |
+| sibling checkout | `webui/_chat_routes.py` |
+
+A measurement belongs to the branch it was taken on: `session_context_stats`
+keeps the `measured` basis only while HEAD has not moved, and re-estimates for
+any other head.
+
+**Window resolution.** One path only — `get_model(provider, model)` +
+`real_context_window()`, splitting `"provider:model"` on the colon
+(`server._resolve_context_window`). The session's picker override wins over its
+persisted model, so a switch takes effect before the next save.
+
 ---
 
 ## 8. Relationship to the Three-Layer Composition

@@ -17,8 +17,7 @@
  * vanishing from the controls row. Tooltip carries the
  * "Context used / window (pct)" breakdown.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api } from "@/lib/net/api";
+import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSessionStore } from "@/lib/session-store";
 import { useSessionScope } from "@/lib/session-store/session-scope";
@@ -90,35 +89,17 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   const providerLabel = usage?.provider || fallbackProvider || "";
   const metaLine = [providerLabel, modelLabel].filter(Boolean).join(" · ");
 
-  // 窗口大小的取值顺序：
-  // 1. 当前选中模型在注册表里的窗口（一次性拉 /api/models/enabled 建映射）
-  //    —— 切换模型后立即生效，不用等下一条消息的 context_stats；
-  // 2. 后端最近一次 context_stats 带的窗口；
-  // 3. 200k 保守默认。
-  const [modelWindows, setModelWindows] = useState<Record<string, number>>({});
-  useEffect(() => {
-    let alive = true;
-    api.listEnabledModels().then((models) => {
-      if (!alive) return;
-      const map: Record<string, number> = {};
-      for (const m of models) if (m.context) map[`${m.provider}:${m.id}`] = m.context;
-      setModelWindows(map);
-    }).catch(() => { /* 离线/未登录时保持回退链 */ });
-    return () => { alive = false; };
-  }, []);
-  // modelLabel 可能是 "gpt-5.5" 也可能已带 "provider:" 前缀，统一成
-  // "provider:model" 后查映射。
-  const selectedKey = modelLabel.includes(":")
-    ? modelLabel
-    : `${providerLabel}:${modelLabel}`;
-  const win =
-    modelWindows[selectedKey] ||
-    (ctxWindow && ctxWindow > 0 ? ctxWindow : 200_000);
+  // 窗口和用量都取服务端算好的那一份（context_stats 的 window/total_used），
+  // 和 /context 面板同源 —— 两处永远显示同一个数。服务端在真实请求完成
+  // （measured）和图变化（compaction / 切模型 / 切分支，estimated）时各广播
+  // 一次，所以这个数始终描述"此刻"。窗口未知时退 200k 保守默认。
+  const win = ctxWindow && ctxWindow > 0 ? ctxWindow : 200_000;
 
-  // 用量：usage.context 是最后一次 API 调用的 prompt 体积（input+cache_read）
-  // ≈ 当前上下文占用；usage.input 是整个 turn 的累计计费值，多工具调用时
-  // 远超窗口（曾让圆环永远全满）。旧事件没有 context 字段时退回近似。
-  const used = usage?.context || (usage?.input || 0) + (usage?.cache_read || 0);
+  // 旧事件（重连回放的历史 context_stats）没有 total_used，退回最后一次
+  // API 调用的 prompt 体积（input+cache_read）作近似。
+  const used =
+    usage?.total_used ??
+    (usage?.context || (usage?.input || 0) + (usage?.cache_read || 0));
   const pct = Math.max(0, Math.min(1, used / win));
 
   // 占用越高颜色越警示：<50% 绿，50–80% 黄，≥80% 红。
@@ -128,8 +109,11 @@ export function ContextBadge({ sessionId }: ContextBadgeProps) {
   // tooltip 用 Claude Code 那种「Context 用了多少/共多少 (百分比)」格式
   const fmtNum = (n: number) =>
     n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + "M" : n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
+  // basis 说明这个数从哪来：measured = 上一次真实请求实测，estimated =
+  // 那之后图变了（压缩/切模型/切分支）按当前图重估。
+  const basisLabel = usage?.basis === "estimated" ? " · est." : "";
   const ringTooltip =
-    `Context ${fmtNum(used)} / ${fmtNum(win)} (${(pct * 100).toFixed(0)}%)` +
+    `Context ${fmtNum(used)} / ${fmtNum(win)} (${(pct * 100).toFixed(0)}%)${basisLabel}` +
     (metaLine ? ` · ${metaLine}` : "");
 
   // 环形进度（Claude Code 实测：12px svg、描边 2、轨道 var(--border)、

@@ -254,4 +254,8 @@ async def post_chat_checkout(body: dict = None):
                 pass
     _srv._invalidate_messages(session_id)
     _srv._save_session(session_id)
+    # HEAD moved to another chain, so the context the next request carries
+    # is a different set of nodes — re-estimate rather than keep showing the
+    # measurement taken on the branch we left.
+    _srv.refresh_context_stats(session_id)
     return JSONResponse(content={"session_id": session_id, "head_id": target_id})

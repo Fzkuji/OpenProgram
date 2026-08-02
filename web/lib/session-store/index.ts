@@ -110,6 +110,12 @@ interface ConvState {
     cache_create?: number;
     /** 最后一次 API 调用的 prompt 体积（input+cache_read）≈ 当前上下文占用。 */
     context?: number;
+    /** 服务端算好的"此刻占用" —— 圆环和 /context 面板同读这一个数，
+     *  两处永远一致。真实请求刚完成时 = 实测，图变了（压缩/切模型/
+     *  切分支）时 = 按当前图重估。 */
+    total_used?: number;
+    /** "measured" | "estimated"，标明 total_used 的来源。 */
+    basis?: string | null;
     model?: string | null;
     provider?: string | null;
   }>;
@@ -127,6 +133,8 @@ interface ConvState {
       cache_read?: number;
       cache_create?: number;
       context?: number;
+      total_used?: number;
+      basis?: string | null;
       model?: string | null;
       provider?: string | null;
     } | null,
@@ -458,6 +466,8 @@ export const useSessionStore = create<ConvState>((set) => ({
             cache_read: chat.cache_read,
             cache_create: chat.cache_create,
             context: chat.context,
+            total_used: chat.total_used,
+            basis: chat.basis,
             model: chat.model,
             provider: chat.provider,
           },

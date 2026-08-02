@@ -10,6 +10,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
+import { useSessionStore } from "@/lib/session-store";
 import { MENU_SEPARATOR } from "@/components/chat/top-bar/menu-styles";
 
 interface ToolItem {
@@ -44,6 +45,12 @@ interface Breakdown {
   mcp_tools_deferred?: number;
   input_used?: number;
   free_space?: number;
+  /** 服务端的统一占用记录 —— 和圆环读的是同一个字段，两处永远一致。
+   *  basis="measured" 表示来自刚完成的真实请求，"estimated" 表示图变了
+   *  之后按当前图重估。 */
+  total_used?: number;
+  window?: number;
+  basis?: string;
   tools?: ToolItem[];
   skills_detail?: SkillItem[];
   memory_detail?: MemItem[];
@@ -169,13 +176,32 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
     const qs = headId ? `?head_id=${encodeURIComponent(headId)}` : "";
     fetch(`/api/sessions/${encodeURIComponent(sessionId)}/context${qs}`)
       .then((r) => r.json())
-      .then((d) => setData(d))
+      .then((d: Breakdown) => {
+        setData(d);
+        // Same record, one writer: whatever the panel just read becomes
+        // what the ring shows too, so opening the panel can never reveal
+        // a second number.
+        if (typeof d.total_used === "number") {
+          const st = useSessionStore.getState();
+          st.setContextStats(
+            sessionId,
+            { ...st.tokens[sessionId], total_used: d.total_used, basis: d.basis ?? null },
+            d.window || d.context_window || null,
+          );
+        }
+      })
       .catch((e) => setData({ error: String(e) }))
       .finally(() => setLoading(false));
   }, [sessionId, headId]);
 
-  const win = data?.context_window || 0;
+  // 窗口和总占用都用服务端 stats 里的那一份（圆环读的同一个字段）。
+  // 分项仍是本次现场算出的 breakdown —— 明细可以是估算，但顶部的总数
+  // 必须和圆环同源。
+  const win = data?.window || data?.context_window || 0;
   const pct = (v: number) => (win > 0 ? (v / win) * 100 : 0);
+
+  const totalUsed = data?.total_used ?? win - (data?.free_space ?? 0);
+  const usedPct = win > 0 ? Math.min(1, totalUsed / win) : 0;
 
   const rows = useMemo(() => {
     // 无数据（新会话还没 id）时不出空态文案，照常渲染全 0 面板。
@@ -189,7 +215,9 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
       [text("Memory files", "记忆文件"), d.memory || 0],
       [text("Skills", "技能"), d.skills || 0],
       [text("Messages", "对话消息"), d.messages || 0],
-      [text("Free space", "空闲"), d.free_space || 0],  // free 行不画消耗条
+      // 空闲 = 窗口 − 顶部那个总占用，跟着 total_used 走而不是跟着分项
+      // 加总走 —— 否则实测总数和估算分项对不上时，头行和这一行互相打架。
+      [text("Free space", "空闲"), Math.max(0, win - totalUsed)],
     ];
     // 全部分类都显示（含 0），不过滤 —— 让用户看到每一档存在与否。
     const freeLabel = text("Free space", "空闲");
@@ -200,10 +228,7 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
       zero: v <= 0,
       free: label === freeLabel,
     }));
-  }, [data, text]);
-
-  const totalUsed = win - (data?.free_space ?? 0);
-  const usedPct = win > 0 ? totalUsed / win : 0;
+  }, [data, text, win, totalUsed]);
 
   const toggle = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
 
@@ -234,6 +259,10 @@ export function ContextBreakdownPanel({ sessionId, headId }: Props) {
             <div className="mb-[10px] flex items-baseline justify-between">
               <span className="text-[13px]" style={{ color: "var(--text-muted)" }}>
                 {text("Context window", "上下文窗口")}
+                {/* 和圆环 tooltip 同一个标记：估算值标 est.，实测不标。*/}
+                {data?.basis === "estimated" && (
+                  <span className="ml-1 text-[11px]">{text("(est.)", "（估算）")}</span>
+                )}
               </span>
               <span
                 className="text-[13px] font-medium"

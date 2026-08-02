@@ -194,6 +194,11 @@ def register(app):
                 await asyncio.to_thread(_s._save_session, session_id)
                 info = _s._get_provider_info(session_id)
                 emit_ws_frame({"type": "provider_changed", "data": info})
+                # New model, new window — the same token count is now a
+                # different percentage. Re-broadcast so the ring and the
+                # /context panel both land on the new denominator without
+                # waiting for the next reply.
+                _s.refresh_context_stats(session_id)
                 return JSONResponse(content={"switched": True, "provider": prov, "model": bare_model})
 
         if target_provider and target_provider != _s._runtime_management._default_provider:

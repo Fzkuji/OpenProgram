@@ -264,6 +264,10 @@ async def handle_checkout_branch(ws, cmd: dict):
                         c["head_id"] = head_msg_id
                         c["messages"] = db.get_branch(session_id) or []
                 _s._invalidate_messages(session_id)
+                # A different branch is a different context. The last
+                # measurement belonged to the branch we just left, so
+                # re-estimate against the new one.
+                _s.refresh_context_stats(session_id)
                 ok = True
         except Exception as e:
             err = f"{type(e).__name__}: {e}"
@@ -438,6 +442,9 @@ async def handle_delete_branch(ws, cmd: dict):
                         except Exception:
                             pass
             _s._invalidate_messages(session_id)
+            # Deleting the branch we were on moves HEAD elsewhere, so the
+            # context is a different set of nodes now.
+            _s.refresh_context_stats(session_id)
             ok = True
         except Exception as e:
             err = f"{type(e).__name__}: {e}"

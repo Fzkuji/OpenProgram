@@ -92,6 +92,9 @@ async def handle_switch_model(ws, cmd: dict):
                 _s._broadcast(json.dumps(
                     {"type": "provider_changed", "data": info},
                 ))
+                # New model, new window — re-estimate against it so the
+                # ring's percentage tracks the switch immediately.
+                _s.refresh_context_stats(session_id)
                 await ws.send_text(json.dumps({
                     "type": "model_switched",
                     "data": {"provider": prov, "model": bare_model},

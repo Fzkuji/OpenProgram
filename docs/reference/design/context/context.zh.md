@@ -216,6 +216,50 @@ tool 保护(OpenCode)。
   + `ws_actions/context_commits.py`。按状态徽章 + token 计数列出当前 commit 的 items
   (full/aged/cleared/summary、来源 `attached_from`)。
 
+### 占用统计：一个数，两个读者
+
+报告窗口占用的有两处——composer 里的进度圆环
+（`web/components/chat/context-badge.tsx`）和点开它弹出的 `/context` 分解面板
+（`web/components/chat/context-breakdown-panel.tsx`）。两者渲染的是服务端算好的
+同一份记录，因此任何时刻都一致：
+
+```python
+{"window": int, "total_used": int, "basis": "measured" | "estimated",
+ "estimated": int, "calibration": float}   # calibration 仅在 measured 时给出
+```
+
+由 `openprogram/context/session_stats.py` 构建，`server.session_context_stats`
+供给 `/context`，`server._broadcast_context_stats` 通过 `context_stats` WS 帧推送。
+圆环从 store 读 `total_used / window`；面板的头行读同样的字段，并据此推出
+`Free space`，所以分项行永远不和总数打架。
+
+**这个数永远描述"此刻"。** 两种来源：
+
+| basis | 何时 | `total_used` |
+|---|---|---|
+| `measured` | 一次真实请求刚完成 | provider 为该次调用 prompt 计费的量（`input_tokens + cache_read`） |
+| `estimated` | 那次请求之后图变了 | 按当前分支用本地分词器重算 |
+
+measured 读数同时记下 `calibration`——同一张图上实测 ÷ 估算——说明本地估算相对
+provider 实际计费偏离多少。
+
+**图变化的触发点。** 凡是改变下一次请求所携带内容的操作，都经
+`server.refresh_context_stats` 重估并重播，圆环因此跟着图走，而不是滞后一次请求：
+
+| 变化 | 落点 |
+|---|---|
+| turn 中压缩落地 | `webui/_execute/chat.py`（`compaction_finished`） |
+| 切换模型 | `webui/routes/runtime.py`、`webui/ws_actions/runtime.py` |
+| 分支 checkout / 删除 | `webui/ws_actions/branch.py` |
+| 兄弟版本 checkout | `webui/_chat_routes.py` |
+
+一次实测只属于它测量的那条分支：`session_context_stats` 仅在 HEAD 未移动时保留
+`measured` basis，换到别的 head 就重新估算。
+
+**窗口解析只有一条路**——`get_model(provider, model)` + `real_context_window()`，
+`"provider:model"` 按冒号拆分（`server._resolve_context_window`）。会话的 picker
+override 优先于持久化的 model，所以切换在下一次落盘前就生效。
+
 ---
 
 ## 八、与三层组成的关系

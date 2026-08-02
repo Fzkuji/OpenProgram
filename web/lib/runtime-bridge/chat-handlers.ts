@@ -563,6 +563,15 @@ interface ContextStatsData {
   cache_read?: number;
   cache_write_tokens?: number;
   context_window?: number;
+  /** Server-computed occupancy — the single number the ring AND the
+   *  /context panel both render. `basis` says where it came from:
+   *  "measured" (a request just reported its real prompt size) or
+   *  "estimated" (the graph moved since, so it was recomputed). */
+  window?: number;
+  total_used?: number;
+  basis?: string;
+  estimated?: number;
+  calibration?: number;
   current_tokens?: number;
   naive_sum?: number;
   cache_hit_rate?: number;
@@ -589,18 +598,29 @@ function handleContextStats(data: ContextStatsData, sid: string | null): void {
   if (cacheWrite > 0 && sid) recordCacheWrite(sid);
 
   if (sid) {
+    // A graph-change refresh (compaction / model switch / branch move)
+    // carries occupancy only — no `chat` block, since no request ran.
+    // Keep the previous per-call numbers in that case instead of zeroing
+    // them, and always take total_used/basis from the server.
+    const prev = useSessionStore.getState().tokens[sid];
+    const hasCall = !!data.chat || !!data.input_tokens || !!data.output_tokens;
     useSessionStore.getState().setContextStats(
       sid,
       {
-        input: chat.input_tokens || 0,
-        output: chat.output_tokens || 0,
-        cache_read: chat.cache_read || 0,
-        cache_create: cacheWrite,
-        context: chat.context_tokens || 0,
-        model: data.model || null,
-        provider: (data as unknown as { provider?: string }).provider || null,
+        input: hasCall ? chat.input_tokens || 0 : prev?.input,
+        output: hasCall ? chat.output_tokens || 0 : prev?.output,
+        cache_read: hasCall ? chat.cache_read || 0 : prev?.cache_read,
+        cache_create: hasCall ? cacheWrite : prev?.cache_create,
+        context: hasCall ? chat.context_tokens || 0 : prev?.context,
+        total_used: data.total_used,
+        basis: data.basis || null,
+        model: data.model || prev?.model || null,
+        provider:
+          (data as unknown as { provider?: string }).provider ||
+          prev?.provider ||
+          null,
       },
-      data.context_window || null,
+      data.window || data.context_window || null,
     );
   }
 

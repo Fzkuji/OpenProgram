@@ -219,6 +219,18 @@ def run_query(
             _s._broadcast_chat_response(
                 session_id, payload.get("msg_id") or msg_id, payload,
             )
+        elif payload.get("type") == "compaction_finished":
+            # Compaction rewrote the branch mid-turn: the kept tail now
+            # hangs off a summary node, so the context the next request
+            # carries is a different (much smaller) set. Forward the
+            # envelope — the Context tab repaints its node highlighting
+            # from it — and re-estimate occupancy so the ring drops to
+            # the post-compaction size right away rather than holding the
+            # pre-compaction measurement until the next reply.
+            _s._broadcast_chat_response(
+                session_id, payload.get("msg_id") or msg_id, payload,
+            )
+            _s.refresh_context_stats(session_id, msg_id)
         elif payload.get("type") == "tree_update":
             # Live Execution DAG ticks (from _exec_dag.live_progress);
             # forward so RuntimeBlock's tree fills in as the run

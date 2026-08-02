@@ -958,22 +958,16 @@ def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, ex
     # to render the input/output % bar. Falls back to None on unknown.
     chat_model = getattr(chat_runtime, "model", None) if chat_runtime else None
 
-    # runtime 没有 _context_window_tokens 这种属性（历史遗留读取，恒为
-    # None，前端只好用 200k 保守默认）。从模型注册表拿真实窗口，和
-    # /context 面板同源。
-    context_window = None
-    if chat_model:
-        try:
-            from openprogram.providers.models import get_model as _get_model
-            from openprogram.context.tokens import real_context_window
-            _prov, _mid = provider_name, str(chat_model)
-            if ":" in _mid:
-                _prov, _mid = _mid.split(":", 1)
-            _m = _get_model(_prov, _mid) if _prov and _mid else None
-            if _m is not None:
-                context_window = real_context_window(_m)
-        except Exception:
-            context_window = None
+    context_window = (_resolve_context_window(provider_name, chat_model)
+                      or _conv_context_window(conv))
+
+    # The request that just finished measured the real prompt size, so the
+    # occupancy record switches to the ``measured`` basis and stores the
+    # measured/estimated ratio as calibration.
+    measured = int((conv.get("_chat_usage") or {}).get("context_tokens") or 0)
+    occupancy = _build_context_occupancy(
+        session_id, conv, measured_total=measured, window=context_window,
+    )
 
     stats = {
         "type": "context_stats",
@@ -981,10 +975,127 @@ def _broadcast_context_stats(session_id: str, msg_id: str, chat_runtime=None, ex
         "exec": exec_stats,
         "provider": provider_name,
         "model": chat_model,
-        "context_window": context_window,
+        "context_window": occupancy["window"] or context_window,
+        **occupancy,
     }
     conv["_last_context_stats"] = stats
     _broadcast_chat_response(session_id, msg_id, stats)
+
+
+def _resolve_context_window(provider_name, model) -> int | None:
+    """Real context window for ``provider:model`` from the model registry.
+
+    The runtime object carries no window of its own, so the registry is the
+    single place both the ring and the ``/context`` panel look it up. A
+    ``provider:model`` string splits on the colon; a bare id uses the
+    session's provider.
+    """
+    if not model:
+        return None
+    try:
+        from openprogram.providers.models import get_model as _get_model
+        from openprogram.context.tokens import real_context_window
+        prov, mid = provider_name, str(model)
+        if ":" in mid:
+            prov, mid = mid.split(":", 1)
+        m = _get_model(prov, mid) if prov and mid else None
+        return real_context_window(m) if m is not None else None
+    except Exception:
+        return None
+
+
+def _build_context_occupancy(session_id, conv, *, measured_total=None,
+                             window=None) -> dict:
+    """``{window, total_used, basis, estimated[, calibration]}`` for a session.
+
+    Falls back to the last broadcast record when the estimate cannot be
+    computed (a brand-new session with no branch yet, a DB read failure),
+    so a transient error never blanks the ring.
+    """
+    from openprogram.context import session_stats as _cs
+
+    try:
+        return _cs.build_stats(
+            session_id,
+            head_id=(conv or {}).get("head_id"),
+            measured_total=measured_total,
+            window=window,
+        )
+    except Exception:
+        prev = (conv or {}).get("_last_context_stats") or {}
+        return {
+            "window": int(window or prev.get("window") or 0),
+            "total_used": int(measured_total or prev.get("total_used") or 0),
+            "basis": "measured" if measured_total else
+                     (prev.get("basis") or "estimated"),
+            "estimated": int(prev.get("estimated") or 0),
+        }
+
+
+def _conv_context_window(conv) -> int | None:
+    """Window for whatever model the session is pointed at right now.
+
+    Reads the picker override first — a model switch writes it
+    immediately, while the session's persisted model only catches up on
+    the next save — then the live runtime.
+    """
+    conv = conv or {}
+    provider = (conv.get("provider_override")
+                or conv.get("provider_name")
+                or _runtime_management._default_provider) or ""
+    model = conv.get("model_override") or getattr(
+        conv.get("runtime"), "model", None,
+    )
+    return _resolve_context_window(provider, model)
+
+
+def session_context_stats(session_id: str, head_id: str | None = None) -> dict:
+    """The occupancy record for a session, recomputed against the graph now.
+
+    ``/context`` calls this so the panel's headline total is byte-identical
+    to the ring's. A measured reading stays measured only while the graph
+    has not moved since; ``refresh_context_stats`` is what flips it back to
+    ``estimated`` when it has.
+    """
+    conv = _sessions.get(session_id) or {}
+    prev = conv.get("_last_context_stats") or {}
+    if prev.get("basis") == "measured" and (
+        head_id is None or head_id == conv.get("head_id")
+    ):
+        return {k: prev[k] for k in
+                ("window", "total_used", "basis", "estimated", "calibration")
+                if k in prev}
+    return _build_context_occupancy(
+        session_id,
+        {**conv, "head_id": head_id or conv.get("head_id")},
+        window=_conv_context_window(conv),
+    )
+
+
+def refresh_context_stats(session_id: str, msg_id: str = "") -> None:
+    """Re-estimate and broadcast after the graph moved under the session.
+
+    Compaction landing, a model switch, a branch checkout or delete all
+    change what the next request will carry while no request is in flight.
+    Each one calls this, and the ring follows the graph immediately instead
+    of waiting for the next reply.
+    """
+    conv = _sessions.get(session_id)
+    if conv is None:
+        return
+    occupancy = _build_context_occupancy(
+        session_id, conv, window=_conv_context_window(conv),
+    )
+    prev = conv.get("_last_context_stats") or {}
+    stats = {
+        **{k: v for k, v in prev.items() if k != "calibration"},
+        "type": "context_stats",
+        "session_id": session_id,
+        "context_window": occupancy["window"] or prev.get("context_window"),
+        **occupancy,
+    }
+    conv["_last_context_stats"] = stats
+    _broadcast_chat_response(session_id, msg_id or "", stats)
 
 
 def _broadcast_chat_response(session_id: str, msg_id: str, response: dict):
