@@ -91,10 +91,19 @@ export function computeLiveShifts(
  */
 export function freezeStripWidths(flow: HTMLElement | null) {
   if (!flow) return;
+  // Read EVERY width before writing ANY pin. Pinning a child with
+  // flex-shrink:0 changes the flex distribution, so an interleaved
+  // measure-pin walk records a descending staircase — each later tab
+  // measured after its predecessors left the flexible pool (observed:
+  // 216 → 211 → 191 → 167 → 94 on a 6-tab desktop row) and the whole
+  // strip visibly shrinks on the first ×.
+  const measured: Array<[HTMLElement, number]> = [];
   for (const child of Array.from(flow.children) as HTMLElement[]) {
     if (child.dataset.tabClosing === "true") continue;
     const width = child.getBoundingClientRect().width;
-    if (width <= 0) continue;
+    if (width > 0) measured.push([child, width]);
+  }
+  for (const [child, width] of measured) {
     const px = `${width}px`;
     child.style.width = px;
     child.style.flexBasis = px;
