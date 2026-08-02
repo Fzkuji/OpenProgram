@@ -34,7 +34,7 @@
  * coverage is simply what the fill means.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Shapes } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
@@ -75,8 +75,28 @@ function LegendRow({ shape, label }: { shape: React.ReactNode; label: string }) 
 export function DagLegend() {
   const { text } = useTranslation();
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  // 标准弹层收尾：点面板外任意处或按 Esc 关闭。pointerdown 在 click
+  // 之前，命中图例自身（含按钮）时跳过，按钮自己的 onClick 负责开关。
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
   return (
-    <div className="dag-legend">
+    <div className="dag-legend" ref={rootRef}>
       <button
         type="button"
         className="runtime-badge dag-legend-toggle"
