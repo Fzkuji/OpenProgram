@@ -126,6 +126,16 @@ function _copy(text: string, toast: string): void {
   }
 }
 
+/** A checkout/fork target is a CHAIN-level turn: it hangs directly off
+ *  ROOT (caller === "ROOT") or carries a predecessor edge. A node whose
+ *  caller is another call is function-internal machinery — the backend
+ *  rejects it with "function-internal node is not a checkout target",
+ *  so the actions are not offered there in the first place. */
+function _isChainTurn(node: GNode): boolean {
+  if (node.display === "root") return false;
+  return node.caller === "ROOT" || !!node.predecessor;
+}
+
 /** Move HEAD onto ``id``. This is checkout AND fork: the difference is
  *  only what you do next, because the next turn sent from a HEAD that
  *  has children is by definition a sibling of them. */
@@ -286,10 +296,12 @@ export function showNodeInspector(node: GNode, el: Element): void {
   acts.appendChild(_actionButton("原始 JSON", () => {
     _showRawJson(node, rect);
   }));
-  acts.appendChild(_actionButton("从此 fork", () => {
-    _closeLayer();
-    void _checkoutTo(String(node.id));
-  }));
+  if (_isChainTurn(node)) {
+    acts.appendChild(_actionButton("从此 fork", () => {
+      _closeLayer();
+      void _checkoutTo(String(node.id));
+    }));
+  }
   box.appendChild(acts);
 
   _openLayer(box, rect);
@@ -316,12 +328,19 @@ export function showNodeMenu(node: GNode, el: Element, at: DOMRect): void {
   menu.addEventListener("click", (e) => e.stopPropagation());
 
   const id = String(node.id);
-  menu.appendChild(_menuItem("checkout 到此分支", () => { void _checkoutTo(id); }));
-  menu.appendChild(_menuItem("从此节点 fork", () => { void _checkoutTo(id); }));
-  // Editing means writing a REPLACEMENT for a message, so it only has
-  // meaning where a message is the user's own words.
-  if (node.role === "user" && node.display !== "root") {
-    menu.appendChild(_menuItem("fork 并编辑此消息", () => { void forkAndEditNode(node); }));
+  // Only chain-level turns are checkout/fork targets — a
+  // function-internal node (caller nested under another call) is
+  // execution machinery, and the backend rejects it. Offering the
+  // action and then toasting the rejection was worse than not
+  // offering it.
+  if (_isChainTurn(node)) {
+    menu.appendChild(_menuItem("checkout 到此分支", () => { void _checkoutTo(id); }));
+    menu.appendChild(_menuItem("从此节点 fork", () => { void _checkoutTo(id); }));
+    // Editing means writing a REPLACEMENT for a message, so it only has
+    // meaning where a message is the user's own words.
+    if (node.role === "user" && node.display !== "root") {
+      menu.appendChild(_menuItem("fork 并编辑此消息", () => { void forkAndEditNode(node); }));
+    }
   }
   const sep = document.createElement("div");
   sep.className = "dag-menu-sep";
