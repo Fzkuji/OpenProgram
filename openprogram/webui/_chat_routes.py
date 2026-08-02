@@ -32,6 +32,15 @@ from openprogram.contextgit import advance_head
 router = APIRouter()
 
 
+def is_checkout_target(node) -> bool:
+    """A HEAD/checkout/fork target is a CHAIN-level turn. On disk those
+    carry ``caller`` of "ROOT" (user turns, ROOT-hung code records) or
+    "" (reply nodes); a node whose caller is another call lives inside
+    an @agentic_function's execution subtree and is not a conversation
+    branch. Mirrored by ``_isChainTurn`` in dag/render/inspector.ts."""
+    return getattr(node, "caller", None) in (None, "", "ROOT")
+
+
 def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | None) -> dict:
     """Shared engine for retry / edit.
 
@@ -220,14 +229,17 @@ async def post_chat_checkout(body: dict = None):
     db = default_db()
     if not db.message_exists(session_id, target_id):
         return JSONResponse(content={"error": "unknown msg"}, status_code=404)
-    # Reject checkout to function-internal nodes — a node with a
-    # ``predecessor`` set lives inside an @agentic_function's execution
-    # subtree (LLM exec rows, nested code calls). Those are not
-    # conversation branches and switching HEAD into one yields a
-    # nonsense linear transcript that mixes internal exec output with
-    # the user-visible reply. Conv branches are the nodes reachable
-    # purely via predecessor; ``predecessor`` is the DAG's separate "call"
-    # edge.
+    # Reject checkout to function-internal nodes — a node whose
+    # ``caller`` is another call lives inside an @agentic_function's
+    # execution subtree (LLM exec rows, nested code calls). Those are
+    # not conversation branches; switching HEAD into one yields a
+    # nonsense transcript mixing internal exec output with the
+    # user-visible reply. Chain-level turns carry ``caller`` of "ROOT"
+    # (user turns, ROOT-hung code records) or "" (reply nodes) — on
+    # disk: 0001-u caller='ROOT' pred='ROOT', 0002-l caller=''
+    # pred=<user>. The old gate keyed on ``predecessor`` — the CHAIN
+    # edge since the parent/called_by rename — and so rejected every
+    # turn except the first.
     _node = None
     try:
         for _n in db.get_nodes(session_id):
@@ -236,7 +248,7 @@ async def post_chat_checkout(body: dict = None):
                 break
     except Exception:
         _node = None
-    if _node is not None and getattr(_node, "predecessor", None):
+    if _node is not None and not is_checkout_target(_node):
         return JSONResponse(
             content={"error": "function-internal node is not a checkout target"},
             status_code=400,

@@ -126,14 +126,16 @@ function _copy(text: string, toast: string): void {
   }
 }
 
-/** A checkout/fork target is a CHAIN-level turn: it hangs directly off
- *  ROOT (caller === "ROOT") or carries a predecessor edge. A node whose
- *  caller is another call is function-internal machinery — the backend
- *  rejects it with "function-internal node is not a checkout target",
- *  so the actions are not offered there in the first place. */
+/** A checkout/fork target is a CHAIN-level turn. On disk those carry
+ *  ``caller`` of "ROOT" (user turns, ROOT-hung records) or "" (reply
+ *  nodes); a node whose caller is ANOTHER CALL is function-internal
+ *  machinery, which the backend rejects — so the actions are not
+ *  offered there in the first place. Must mirror the caller-based gate
+ *  in webui/_chat_routes.py. */
 function _isChainTurn(node: GNode): boolean {
   if (node.display === "root") return false;
-  return node.caller === "ROOT" || !!node.predecessor;
+  const c = node.caller;
+  return c == null || c === "" || c === "ROOT";
 }
 
 /** Move HEAD onto ``id``. This is checkout AND fork: the difference is
