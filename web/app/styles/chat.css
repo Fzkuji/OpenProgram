@@ -4,6 +4,10 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* .center-pane-chat is a COLUMN flex box, so .main's height comes
+     from flex:1 — without min-height:0 a long transcript makes .main
+     grow past the pane and pushes the composer below the fold. */
+  min-height: 0;
   position: relative;
 }
 #chatView {
