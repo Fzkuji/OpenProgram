@@ -283,7 +283,9 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
     <div className={`${MENU_PANEL} min-w-[230px] max-w-[340px]`}>
       <div className={GROUP_LABEL}>{text("Recent", "最近")}</div>
 
-      {list.map((p) => {
+      {/* 目录已不存在的项目不进选择列表——选中它只会立刻进入缺失警示，
+          没有意义。修复入口在活跃会话的冻结面板（定位文件夹…）。 */}
+      {list.filter((p) => !p.path_missing).map((p) => {
         const active = p.id === activeId;
         return (
           <div

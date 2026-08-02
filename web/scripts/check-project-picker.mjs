@@ -20,7 +20,11 @@ assert.doesNotMatch(projectMenu, /Remove from list|从列表移除/);
 assert.match(projectMenu, /<PopoverTrigger asChild>[\s\S]*id="projectBadge"/);
 assert.match(projectMenu, /<Check\b/);
 assert.match(projectMenu, /Open folder…/);
-assert.match(projectMenu, /\{list\.map\(/);
+assert.match(
+  projectMenu,
+  /\{list\.filter\(\(p\) => !p\.path_missing\)\.map\(/,
+  "missing-directory projects must not appear in the draft picker",
+);
 assert.doesNotMatch(projectMenu, /filter\([^\n]*session_count/);
 
 // Main directory freezes on the first turn: an active session (one with a
