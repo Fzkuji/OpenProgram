@@ -10,7 +10,7 @@ How the provider-agnostic unified format is translated into each vendor's wire f
 
 - [`request-build`](request-build.md) — **Overall design**: the unified-format Context, per-provider translation, and the caching modes.
 - [`cache-control-passthrough`](../plans/cache-control-passthrough.md) (in `docs/plans/`) — per-block passthrough of Anthropic `cache_control`.
-- For upstream (how content is layered and assembled, L0/L1/L2) see [`context/context-composition.md`](../context/context-composition.md).
+- For upstream (how content is layered and assembled, L0/L1/L2) see [`context/composition.md`](../context/composition.md).
 
 ## [auth/](auth/) — Credentials · Authentication · Accounts
 
@@ -36,6 +36,6 @@ Classification, retries, timeouts, and upward propagation of errors when a model
 
 The data layout and configuration structure of the model list, plus the declarative mapping of capabilities like thinking/effort. Every model is bound to the provider it belongs to, so it lives under providers.
 
-- [`models`](models/models.md) — Model catalog and provider configuration (data layout, fetch, merge)
+- [`models`](models/overview.md) — Model catalog and provider configuration (data layout, fetch, merge)
 - [`thinking-effort`](models/thinking-effort.md) — The thinking/effort subsystem (declarative per-provider mapping)
 - [`fast-tier`](models/fast-tier.md) — the Fast tier: two-tier detection (hand-written subscription entries / models.dev auto), storage, wires

@@ -1,6 +1,6 @@
 """Back-compat shim for the system-prompt assembler.
 
-The ONE assembler lives in ``context.components`` (session-dag.md §7) — it
+The ONE assembler lives in ``context.components`` (dag/overview.md §7) — it
 holds the component registry and every layer. This module only forwards, so
 existing ``from openprogram.context.system_prompt import build_system_prompt``
 imports keep working. New code should import from ``context.components``.

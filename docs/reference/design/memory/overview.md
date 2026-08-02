@@ -2,6 +2,16 @@
 
 How OpenProgram makes the agent "remember" things across conversations.
 
+> This document covers the memory subsystem end to end: the two-tier
+> architecture it targets, the linear summarization chain running today, and the
+> path between them. For the entity tier's git substrate in detail see
+> [`git-as-entity-memory.md`](git-as-entity-memory.md) and
+> [`entity-memory.md`](entity-memory.md); for the abstract tier's Timeline /
+> Graph / Core stores see [`virtual-memory.md`](virtual-memory.md).
+>
+> Path conventions: all state lives under `~/.openprogram/` (= `get_state_dir()`);
+> named profiles use `~/.openprogram-<profile>/`.
+
 ## Why this exists
 
 A vanilla LLM forgets everything when a conversation ends. Each new chat
@@ -20,7 +30,102 @@ Two product properties we care about:
    files on disk, human-readable, easy to edit or wipe by hand. No
    opaque vector store, no fine-tuned weights.
 
-## The three layers
+## Architecture: entity tier + virtual tier
+
+Memory is split into an **entity tier** (git-stored, immutable, the complete
+real history) and a **virtual tier** (a compact, pointer-bearing index distilled
+from the entity tier). When the LLM is called, **only the virtual tier is
+injected**; when raw detail is needed, the LLM follows the **provenance
+pointers** in the virtual tier and uses tools to navigate back to the entity
+tier itself.
+
+```
+        ┌──────────────────── Entity tier (raw, git, complete) ────────────────────┐
+        │   Session-Git                          Project-Git                          │
+        │   one repo per session                 binds user work dir (real code/docs) │
+        │   one commit per turn                  agent edits file → auto commit       │
+        │   · bound to project → <project>/.openprogram/sessions/<id>/                │
+        │   · casual chat      → <state>/sessions/<id>/  (default proj = label only)  │
+        └─────────────────────────────────┬──────────────────────────────────────────┘
+                                           │  continuous distillation, with provenance
+                          ┌────────────────┴────────────────┐
+                          ▼                                  ▼
+              ┌────────────────────┐          ┌────────────────────┐
+              │  Timeline (Journal) │          │  Knowledge Graph    │  ← Virtual tier (derived)
+              │  "when did what     │          │  (Wiki)             │     every entry carries
+              │   happen"           │          │  "how entities      │     a pointer back to
+              │  bi-temporal        │          │   relate"           │     the entity tier
+              │                     │          │  bi-temporal edges  │
+              └──────────┬──────────┘          └──────────┬──────────┘
+                         └──────────────┬─────────────────┘
+                                        ▼
+                              ┌──────────────────────────────────────────────┐
+                              │   Recall                                       │
+                              │   inject virtual tier only into LLM context;   │
+                              │   LLM sees pointers → navigates back to entity │
+                              └──────────────────────────────────────────────┘
+```
+
+### Why the abstraction tier reads the entity tier directly
+
+A linear summarization chain (`raw chat → extract 0-10 facts → journal → wiki →
+core`) drops information at every layer, and the abstraction layer is built from
+the lossy summary of the layer above it rather than from the source. The entity
+tier and the abstraction layer then become two disconnected things. This design
+makes the entity tier the single source the abstraction tier reads, and keeps a
+pointer from every derived record back to that source.
+
+### Comparison with mainstream frameworks
+
+| Framework | Entity tier | Abstraction tier | Recall method | Time dimension | Knowledge graph |
+|---|---|---|---|---|---|
+| Claude Code | CLAUDE.md + sessions | auto-memory MEMORY.md (index + topic) | inject index, read topics on demand | no | no |
+| OpenClaw | MEMORY.md + journal | same as above + wiki plugin | inject + semantic search | no | weak |
+| mem0 | — | vector DB | RAG chunked injection | write time only | no |
+| Letta/MemGPT | conversation history | tiered (core/recall/archival) | LLM tool shuttling | partial | no |
+| Zep/Graphiti | — | temporal knowledge graph | graph queries | bi-temporal | yes |
+| **This design** | **git (session+project)** | **timeline + knowledge graph** | **inject virtual, LLM navigates back to entity** | **bi-temporal** | **yes** |
+
+### What is distinctive about this design
+
+1. **Git as the substrate for episodic memory.** Entity memory is not a
+   home-grown store; it uses git directly: commits are immutable, so the record
+   cannot be tampered with; log is the timeline; checkout is the time machine;
+   branch holds explored branches; and the agent can read it with standard tools
+   (`git log` / `grep` / `diff`). Auditable, reproducible, traceable.
+
+2. **A provenance-pointer index, not a replacement.** The virtual tier does not
+   replace the entity tier; it builds it a **coordinate-bearing navigation
+   map**. Every virtual memory carries a pointer `(project, session, commit,
+   timestamp)` back to its origin in the entity tier. This addresses the
+   fundamental problem of lossy summaries dropping context: **at any time you
+   can follow the pointer back down to the source record**.
+
+3. **LLM-self-navigated recall (map → territory), not RAG chunk injection.**
+   Traditional RAG slices out relevant chunks and stuffs them into the context,
+   polluting the context and losing structure. This design injects only a
+   compact virtual map; the LLM reads "in 2026-05, fixed a Windows bug in
+   project X, full history in session local_13d5", and **when it needs the
+   detail it walks over and fetches it with tools itself**. Small context, full
+   fidelity, agent-driven retrieval.
+
+4. **Dual projection of timeline + knowledge graph, both bi-temporal.** The same
+   git substrate is projected into two orthogonal views: the timeline answers
+   "when", the knowledge graph answers "what relationship". Both record two
+   times — `event_time` (when the thing happened) and `ingestion_time` (when we
+   wrote it down) — supporting time-travel queries and contradiction detection.
+
+The entity tier's two git stores are detailed in
+[`entity-memory.md`](entity-memory.md) and
+[`git-as-entity-memory.md`](git-as-entity-memory.md); the virtual tier's
+Timeline / Graph / Core stores, the five-stage distillation pipeline, and the
+navigation tools are detailed in [`virtual-memory.md`](virtual-memory.md).
+
+## The three layers running today
+
+The abstraction tier currently in the code is the linear summarization chain
+below. Timeline supersedes `short-term/`, Graph supersedes `wiki/`, and `core.md`
+is re-projected from both once the pipeline above lands.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -300,3 +405,39 @@ three-layer model.
 - **Sleep as a daily cron with light/deep/REM phases**: a riff on actual
   sleep cycles, mostly to make the deep-LLM-pass cheap (one batch per
   day) instead of running it on every turn.
+
+## Research angle
+
+1. **Git-native episodic memory for LLM agents** — using a version control system
+   as the immutable substrate for an agent's long-term memory, supporting
+   backtracking / branching / standard-tool retrieval.
+2. **Provenance-linked virtual memory** — the summary layer does not replace the
+   source but indexes it with coordinates; resolves the fundamental tension of
+   lossy summarization (compression vs fidelity).
+3. **LLM-navigated recall** — the agent reads a compact map and navigates back to
+   the source on demand, in contrast to RAG's blind chunked injection; smaller
+   context, higher fidelity, agent-driven retrieval.
+4. **Dual bi-temporal projection** — the same substrate projected into a timeline
+   + knowledge graph, both bi-temporal, supporting time travel and contradiction
+   tracking.
+
+Evaluation directions: the trade-off of context footprint vs recall accuracy;
+long-range consistency across multiple sessions; contradiction-detection recall;
+comparison against RAG / Zep / mem0 baselines.
+
+## Appendix: Implementation status
+
+The entity tier is in place: the Project schema, session binding, project-git,
+and sessions landing inside the project are all implemented
+(`store/project_store.py`, `store/session_store.py`). The read layer for
+distillation is available in `store/session/provenance.py`.
+
+The virtual tier is not yet built. What runs today is the linear
+journal/wiki/core chain described above, and it still reads the conversation
+text rendered by `get_branch()` rather than the session-git `Call` DAG; the
+project-git commit history is not read at all. Wiring that hop is the first step
+of the distillation pipeline.
+
+Recall still injects the v1 core; the navigation tools are not yet registered.
+The UI carries a topbar project selector; the Projects panel, backtrack
+timeline, and `/memory` command are not built.

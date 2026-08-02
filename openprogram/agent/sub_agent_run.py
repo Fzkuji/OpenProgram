@@ -89,7 +89,7 @@ def run_agent_turn(
         permission_mode="bypass",
         # New-branch (branch_from=None) root points its caller at the
         # spawning node, so the branch is an explicit spawn (see
-        # session-dag.md §2.3). No-op for inherit forks.
+        # dag/overview.md §2.3). No-op for inherit forks.
         spawn_caller=spawn_caller,
     )
     try:

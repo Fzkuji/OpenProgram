@@ -6,7 +6,7 @@
 > see [`../../research/execution-trace-model-selection.md`](../../research/execution-trace-model-selection.md).
 > For the call-flow diagram, see [`../agent-call-flow.svg`](../agent-call-flow.svg).
 > The visual rendering spec (layout, edges, legend, default visibility) is
-> [`dag-rendering.md`](dag-rendering.md) — that file stays authoritative for
+> [`rendering.md`](rendering.md) — that file stays authoritative for
 > drawing; this file covers semantics only.
 
 ![Model visualization](session-dag.svg)
@@ -207,7 +207,7 @@ A spawn branch root does **not** hang on ROOT: its `caller` points at the node
 that initiated it, which keeps the single-connected-graph invariant via that
 node. (Exception: a cross-session spawn's branch root points into another
 session's graph; within this session it hangs on ROOT and the renderer marks
-it with a ↗ badge — see the legend in [`dag-rendering.md`](dag-rendering.md).)
+it with a ↗ badge — see the legend in [`rendering.md`](rendering.md).)
 
 Spawn branches have clean context: `get_branch` on a spawn branch stops at the
 spawn root and does not leak into the parent branch via the caller edge. The
@@ -416,5 +416,5 @@ what an unspecified `expose=` means — an explicit one always wins).
   spawn_branch, list_branches
 - `openprogram/agent/dispatcher/__init__.py` — chat entry, agent loop
 - `openprogram/agentic_programming/runtime.py` — function-body model calls
-- [`dag-rendering.md`](dag-rendering.md) — visual rendering spec (authoritative
+- [`rendering.md`](rendering.md) — visual rendering spec (authoritative
   for drawing)

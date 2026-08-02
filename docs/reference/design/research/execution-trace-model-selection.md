@@ -144,5 +144,5 @@ span = { id, parent_id, name/kind, start, end, status, attributes, events[] }
 
 This is the selection study — why span. The concrete data model, context
 retrieval, and the design that merges the two call paths live in
-[`../runtime/dag/session-dag.md`](../runtime/dag/session-dag.md), which is
+[`../runtime/dag/overview.md`](../runtime/dag/overview.md), which is
 authoritative; the call-flow skeleton is in `agent-call-flow.md`.

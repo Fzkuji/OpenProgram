@@ -127,7 +127,7 @@ unblocking pending questions, and marking still-running rows `cancelled`.
 
 A user cancel writes `status = cancelled` on the node, never `error` — see the
 status vocabulary in
-[`../dag/session-dag.md`](../dag/session-dag.md). A cancelled turn is
+[`../dag/overview.md`](../dag/overview.md). A cancelled turn is
 terminated like any other turn: it keeps whatever output was streamed before
 the stop, and it is committed.
 
@@ -156,5 +156,5 @@ resumes before stopping so a paused turn can be cancelled.
 ## Related Files
 
 - [`async-task-lifecycle.md`](async-task-lifecycle.md) — the async Task entity
-- [`../dag/session-dag.md`](../dag/session-dag.md) — status vocabulary, failure and retry
+- [`../dag/overview.md`](../dag/overview.md) — status vocabulary, failure and retry
 - [`../../error-handling.md`](../../error-handling.md) — exception discipline

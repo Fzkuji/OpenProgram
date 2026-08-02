@@ -48,7 +48,7 @@
 
 ```
 docs/                         ← 源文件（不动）
-  design/runtime/dag/dag-rendering.md
+  design/runtime/dag/rendering.md
   design/proactive/event-layer.html   ← 手写 html
   ...
 
@@ -65,7 +65,7 @@ tools/docs_site/              ← 新增：构建脚本（一个小模块）
 
 docs/_site/                   ← 构建产物
   index.html
-  design/runtime/dag/dag-rendering.html
+  design/runtime/dag/rendering.html
   search-index.json
   assets/...
 ```

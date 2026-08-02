@@ -320,7 +320,7 @@ _current_stream_fn: contextvars.ContextVar[Optional[Any]] = contextvars.ContextV
 
 def _exec_system_prompt(inline: str, tools: Optional[list]) -> str:
     """Assemble the function-body system prompt through the ONE assembler
-    (session-dag.md §7).
+    (dag/overview.md §7).
 
     The runtime has no AgentSpec, so it passes the active agent id (falling
     back to the default agent) plus its own ``self.system`` as the inline
@@ -355,7 +355,7 @@ def _situational_prefix(
     self-recursion guidance (the function's own tool stays visible; the model
     is steered away from re-entering it).
 
-    Design: docs/design/context/context-composition.md §四'·situation. Wrapped
+    Design: docs/design/context/composition.md §四'·situation. Wrapped
     in a <situation> tag (paired XML, like the other context sections).
     Optional fields render only when provided, so existing call sites that pass
     just (fn_name, fn_doc) stay backward-compatible.
@@ -768,7 +768,7 @@ class Runtime:
         """Fill in the reply + terminal status on the running llm node
         opened by :meth:`_open_model_call_node`.
 
-        Per session-dag.md decision 3, an llm node carries the SAME
+        Per dag/overview.md decision 3, an llm node carries the SAME
         fields regardless of entry point: besides ``output`` + ``status``,
         an exec-path llm node now also records ``usage`` (token columns —
         a function call costs tokens just like chat) and ``blocks`` (the
@@ -811,7 +811,7 @@ class Runtime:
                 meta["system_prompt"] = _sysp
             # What the render policy actually did for this call — replaying
             # with it reproduces the exact prompt bytes even after the
-            # global aging constants move (session-dag.md §8).
+            # global aging constants move (dag/overview.md §8).
             try:
                 from openprogram.context.aging import last_manifest
                 _mf = last_manifest()
@@ -1651,7 +1651,7 @@ class Runtime:
             ctx, _sp_unused = _build_pi_context(standalone_prefix + (content or []))
             history = []
             current = ctx.messages[0]
-        # One assembler (session-dag.md §7): a model call inside a function
+        # One assembler (dag/overview.md §7): a model call inside a function
         # body gets the same project background as the chat model, so the
         # provider prefix cache is shared. ``self.system`` — the per-runtime
         # override — feeds the assembler's inline_prompt layer; the skills

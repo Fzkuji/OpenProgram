@@ -1,4 +1,4 @@
-"""session-dag.md — ``predecessor`` as a top-level schema
+"""dag/overview.md — ``predecessor`` as a top-level schema
 field, write-side invariant, and the ``spawn_branch`` store primitive.
 
 Covers:

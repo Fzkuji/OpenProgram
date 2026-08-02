@@ -1,6 +1,6 @@
 """Registry-based context assembly (registry of ContextComponents).
 
-Design: docs/design/context/context-composition.md. Instead of hardcoding the
+Design: docs/design/context/composition.md. Instead of hardcoding the
 system-prompt blocks in one function, each piece of context is a registered
 ``ContextComponent`` declaring its layer (L0/L1/L2), in-layer order, an
 appearance condition, and a builder. The assembler collects the registered
@@ -151,7 +151,7 @@ def build_system_prompt(
 ) -> str:
     """Compose the system prompt from registered L0 + L1-project components.
 
-    The ONE assembler (session-dag.md §7): every model call — top-level chat,
+    The ONE assembler (dag/overview.md §7): every model call — top-level chat,
     function body, budget accounting — goes through here, so the counted
     string is the wire string.
 
@@ -570,7 +570,7 @@ register(ContextComponent("pi_shield", "L1", 5, _build_pi_shield))
 # assembler is generic over layers, but ``build_system_prompt`` assembles
 # L0+L1 only — a component registered here would never reach the wire.
 # Anything task-scoped belongs in the turn's user message instead, the way
-# the memory prefetch block does (session-dag.md §7).
+# the memory prefetch block does (dag/overview.md §7).
 
 
 __all__ = [

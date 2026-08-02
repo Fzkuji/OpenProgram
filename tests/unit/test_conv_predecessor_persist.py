@@ -62,7 +62,7 @@ def _pred_on_disk(db: SessionStore, sid: str, node_id: str) -> str:
 
 
 def test_first_turn_predecessor_empty(db):
-    """Turn 1 anchors at ROOT explicitly (session-dag.md:
+    """Turn 1 anchors at ROOT explicitly (dag/overview.md:
     a ROOT-level node without a predecessor is rejected)."""
     db.create_session("s1", agent_id="a")
     _write_user_turn(db, "s1", "u1", "hi")

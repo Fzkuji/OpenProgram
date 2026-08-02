@@ -61,7 +61,7 @@ When `fn_doc` is non-empty, the docstring is **demoted to the end** (`text += f"
 - standalone fallback path (no store): `runtime.py:1518-1532`, takes the deepest function name from `_recursion_depth` (`max(_depths, key=_depths.get)`, `runtime.py:1525`), calls `_situational_prefix(_cur_fn, "")` (no doc), and likewise prepends before `content` (`runtime.py:1532`).
 - The system prefix is assembled separately (`runtime.py:1535-1539`: `self.system` + `_skills_block()`); **the situational prompt does not go into system**.
 
-**Why put it in the user turn, not in system:** the whole project shares a **unified and constant** system prompt (identity + project memory + unified tool list + skills) to maximize KV cache hits (`session-dag.md`) — change the prefix and a long context misses entirely afterward, blowing up cost. The situational prompt varies **per function, per call site** (each function name/docstring differs); putting it in system would break the constant prefix. Putting it at the start of the user turn lets the model see it without touching the system prefix.
+**Why put it in the user turn, not in system:** the whole project shares a **unified and constant** system prompt (identity + project memory + unified tool list + skills) to maximize KV cache hits (`dag/overview.md`) — change the prefix and a long context misses entirely afterward, blowing up cost. The situational prompt varies **per function, per call site** (each function name/docstring differs); putting it in system would break the constant prefix. Putting it at the start of the user turn lets the model see it without touching the system prefix.
 
 ### No self-deny — the tool list includes the function itself
 
@@ -149,5 +149,5 @@ Supplement: the test uses a `_deny()` helper (`test:51-53`) that reads `_current
 
 ## Related documents
 
-- `docs/reference/design/runtime/session-dag.md` — the unified-system-prefix constraint; this mechanism puts the situational prompt in the user turn to obey that constraint.
+- `docs/reference/design/runtime/dag/overview.md` — the unified-system-prefix constraint; this mechanism puts the situational prompt in the user turn to obey that constraint.
 - `docs/reference/design/TODO-doc-code-gaps.md` §1 — the 7-level nesting root-cause example.

@@ -102,7 +102,7 @@ class TurnRequest:
     # it (instead of ROOT), so the branch is an explicit spawn — otherwise a
     # ROOT-parented branch root with no predecessor gets seq-stitched into a
     # sibling branch and the chat view flattens all branches into one.
-    # See docs/design/runtime/dag/session-dag.md §2.3.
+    # See docs/design/runtime/dag/overview.md §2.3.
     spawn_caller: Optional[str] = None
     # 用户配的权限规则（allow/deny/ask，各来源合并后），供 _gated_execute 的
     # _match_rule 判定。见 docs/design/runtime/permission-model.md §3.4。

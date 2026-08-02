@@ -3,7 +3,7 @@
 > This document describes how OpenProgram tracks and rolls back file changes
 > made by the agent: the two industry approaches, the four layers OpenProgram
 > runs, and how they coordinate.
-> Related: [`agent-worktree.md`](../execution/agent-worktree.md), [`memory-v2.md`](../../memory/memory-v2.md)
+> Related: [`agent-worktree.md`](../execution/agent-worktree.md), [`overview.md`](../../memory/overview.md)
 > (entity layer), [`git-as-entity-memory.md`](../../memory/git-as-entity-memory.md).
 > Code: `store/snapshot/checkpoint/`, `store/shadow_git/`,
 > `store/snapshot/read_tracking.py`, `agent/internals/_revert.py`, `worktree/`.

@@ -55,7 +55,7 @@ Every piece of information has exactly one source-of-truth. This table is the sp
 
 **Core principle**: anything expressible in the signature / annotation is not repeated in the decorator; anything expressible in `input=` is not repeated in the docstring.
 
-The decorator also accepts the shared tool-registration / gating kwargs (`name`, `description`, `toolset`, `unsafe_in`, `requires_approval`, `available_if`, `defer`, ...) documented in `docs/reference/design/function/function-calling-unification.md`; `cache` / `cache_ttl` (memoize results on name + args) and `timeout` (hard-kill the body after N seconds, returning an error result) behave as in `@function`.
+The decorator also accepts the shared tool-registration / gating kwargs (`name`, `description`, `toolset`, `unsafe_in`, `requires_approval`, `available_if`, `defer`, ...) documented in `docs/reference/design/function/calling-unification.md`; `cache` / `cache_ttl` (memoize results on name + args) and `timeout` (hard-kill the body after N seconds, returning an error result) behave as in `@function`.
 
 ### Effective defaults for a bare `@agentic_function`
 
@@ -278,5 +278,5 @@ When writing a new `@agentic_function`:
 - `openprogram/agentic_programming/function.py` — `@agentic_function` decorator implementation
 - `openprogram/agentic_programming/decision.py` — options-menu rendering, reply parsing, and the next-step decision primitive (`decision.make`, `render_options`, `parse_args`, `DecisionError`)
 - `docs/capabilities/agentic-programming/writing-functions/agentic-function.md` — decorator usage guide
-- `docs/reference/design/function/function-calling-unification.md` — function/tool calling framework
+- `docs/reference/design/function/calling-unification.md` — function/tool calling framework
 - `docs/capabilities/agentic-programming/choosing-the-next-step/tool-calling.md` — per-turn native tool-use loop mechanics

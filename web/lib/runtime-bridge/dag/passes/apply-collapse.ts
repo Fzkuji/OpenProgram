@@ -41,7 +41,7 @@ export function _applyCollapse(graph: GNode[]): {
   const callerKidsOf: Record<string, string[]> = Object.create(null);
   const internalFlag: Record<string, boolean> = Object.create(null);
   // spawn 分支根是对话层节点（新分支的开端），不属于发起轮的执行子树：
-  // 聚合/折叠都不吞它（dag-rendering.md 第〇节）。
+  // 聚合/折叠都不吞它（rendering.md 第〇节）。
   const isSpawnRoot = (m: GNode): boolean =>
     (m as Record<string, unknown>).source === "agent_spawn" && !m.predecessor;
   const spawnRootFlag: Record<string, boolean> = Object.create(null);
@@ -77,7 +77,7 @@ export function _applyCollapse(graph: GNode[]): {
     if (_seenCollapsible[m.id]) return;
     _seenCollapsible[m.id] = true;
     if (m.status === "running") return;
-    // 默认视图只画对话层（dag-rendering.md 第〇节）：凡是带执行子调用的
+    // 默认视图只画对话层（rendering.md 第〇节）：凡是带执行子调用的
     // 节点一律起始折叠，执行子树收进 ⚒N 徽标，点击才展开进布局。
     if ((callerKidsOf[m.id] || []).length > 0) {
       _collapsed[m.id] = true;

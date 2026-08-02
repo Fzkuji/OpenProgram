@@ -1,4 +1,4 @@
-"""§6 path-native membership — session-dag.md.
+"""§6 path-native membership — dag/overview.md.
 
     A node is rendered iff its nearest ROOT-level ancestor (walking
     ``caller`` upward) lies on ``head_id``'s predecessor chain, and the

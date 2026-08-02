@@ -256,7 +256,7 @@ def _task_impl(
                 label=label or None,
                 # clean mode = new branch → its root's caller = the spawning
                 # node, so the DAG attaches the branch to this turn instead of
-                # forking it from ROOT (session-dag.md §2.3). The async path
+                # forking it from ROOT (dag/overview.md §2.3). The async path
                 # (runner.py) already does this; without it here the sync
                 # path's sub-branch rendered as an unrelated root-level fork.
                 spawn_caller=aid if mode != "inherit" else None,

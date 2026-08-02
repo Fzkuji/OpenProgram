@@ -60,7 +60,7 @@ re-enters where you are now and causes infinite recursion. Use lower-level tools
 - standalone 回退路径(无 store)：`runtime.py:1518-1532`，从 `_recursion_depth` 取最深的函数名(`max(_depths, key=_depths.get)`，`runtime.py:1525`)，`_situational_prefix(_cur_fn, "")`(无 doc)，同样拼在 `content` 之前(`runtime.py:1532`)。
 - system 前缀单独组装(`runtime.py:1535-1539`：`self.system` + `_skills_block()`)，**处境提示不进 system**。
 
-**为什么放 user turn、不放 system：** 整个项目共用一个**统一且恒定**的 system prompt(身份 + 项目记忆 + 统一工具列表 + skills)以最大化 KV 缓存命中(`session-dag.md`)——前缀一变，长上下文后全不命中、成本爆。处境提示是**逐函数、逐调用点**变化的(每个函数名/docstring 不同)，放进 system 会破坏前缀恒定。放在 user turn 开头既能让模型看到，又不碰 system 前缀。
+**为什么放 user turn、不放 system：** 整个项目共用一个**统一且恒定**的 system prompt(身份 + 项目记忆 + 统一工具列表 + skills)以最大化 KV 缓存命中(`dag/overview.md`)——前缀一变，长上下文后全不命中、成本爆。处境提示是**逐函数、逐调用点**变化的(每个函数名/docstring 不同)，放进 system 会破坏前缀恒定。放在 user turn 开头既能让模型看到，又不碰 system 前缀。
 
 ### 不做自我 deny —— 工具列表含函数自己
 
@@ -148,5 +148,5 @@ wrapper 不把函数自己的名字推进 `_current_tool_policy["deny"]`。内�
 
 ## 关联文档
 
-- `docs/reference/design/runtime/session-dag.md` —— 统一 system 前缀约束，本机制把处境提示放 user turn 正是为遵守该约束。
+- `docs/reference/design/runtime/dag/overview.md` —— 统一 system 前缀约束，本机制把处境提示放 user turn 正是为遵守该约束。
 - `docs/reference/design/TODO-doc-code-gaps.md` §1 —— 7 层嵌套根因实例。

@@ -1,6 +1,6 @@
 # Context Composition Comparison — Reference Projects vs. Us (organized by the three layers)
 
-> This document compares the context components that reference projects feed to the LLM against our L0/L1/L2 design, laid out layer by layer. It is a comparison; the design itself lives in [`context-composition.md`](context-composition.md).
+> This document compares the context components that reference projects feed to the LLM against our L0/L1/L2 design, laid out layer by layer. It is a comparison; the design itself lives in [`composition.md`](composition.md).
 >
 > Hermes is also **three-layered, partitioned by stability** — the same organizing principle as our L0/L1/L2.
 > It calls the layers `stable / context / volatile`:
@@ -82,6 +82,6 @@ Intra-layer order: this turn's situation/environment (relatively stable) → thi
 
 ## Components we do not carry
 
-These components exist in a reference project but have no counterpart here, because we have no corresponding feature: computer-use guidance, Nous subscription guidance, Kanban multi-agent coordination, the Hermes profile mechanism, and the external memory provider. The registration model in [`context-composition.md`](context-composition.md) leaves a slot for each — building the feature means registering one `ContextComponent`, with no framework change.
+These components exist in a reference project but have no counterpart here, because we have no corresponding feature: computer-use guidance, Nous subscription guidance, Kanban multi-agent coordination, the Hermes profile mechanism, and the external memory provider. The registration model in [`composition.md`](composition.md) leaves a slot for each — building the feature means registering one `ContextComponent`, with no framework change.
 
 Also absent: the token budget hint, which no reference project carries either.

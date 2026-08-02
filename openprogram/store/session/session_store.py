@@ -97,7 +97,7 @@ def _projects_default_id_safe() -> str:
 def _node_conv_predecessor(payload_or_call) -> Optional[str]:
     """Return the conv-chain predecessor of a node (or None).
 
-    session-dag.md: the edge is the top-level
+    dag/overview.md: the edge is the top-level
     ``predecessor`` field — nowhere else.
     """
     if isinstance(payload_or_call, Call):
@@ -107,7 +107,7 @@ def _node_conv_predecessor(payload_or_call) -> Optional[str]:
 
 class PredecessorMissingError(ValueError):
     """A ROOT-level conversational node was appended without a
-    ``predecessor`` (session-dag.md write invariant).
+    ``predecessor`` (dag/overview.md write invariant).
 
     Only the session's first node and spawn branch roots may open a
     new root; anything else would silently fork the session at ROOT.
@@ -658,7 +658,7 @@ class SessionStore:
 
         # Resolve the project + decide the session's home on disk
         # Every session belongs to a project (entity layer, half 2 —
-        # docs/design/memory/memory-v2.md §2):
+        # docs/design/memory/overview.md §2):
         #   * caller passed ``project_path`` (a real dir) → that dir is
         #     the project; the session repo lives INSIDE it at
         #     ``<dir>/.openprogram/sessions/<id>/`` and we record the
@@ -955,7 +955,7 @@ class SessionStore:
             if (n.metadata or {}).get("display") != "root"
             and not (n.metadata or {}).get("rewound")
             # ``context/*`` nodes record what the context pipeline sent
-            # (session-dag.md §7). They are machinery, not conversation, and
+            # (dag/overview.md §7). They are machinery, not conversation, and
             # stay out of every chat/transcript view. ``get_nodes`` is the
             # raw view for the code that does want them.
             # ``context/summary`` is the exception: §8 makes it an ordinary
@@ -981,7 +981,7 @@ class SessionStore:
         if not head or head not in idx.nodes_by_id:
             return []
 
-        # Pure predecessor-edge walk (session-dag.md). A
+        # Pure predecessor-edge walk (dag/overview.md). A
         # node without a predecessor must be a legal branch terminus
         # (spawn root / ROOT / session first node) — anything else is
         # broken data and raises. No caller/seq heuristics.
@@ -1007,7 +1007,7 @@ class SessionStore:
             and not (n.metadata or {}).get("rewound")
         ]
 
-    # Spawn primitive (session-dag.md)
+    # Spawn primitive (dag/overview.md)
 
     def spawn_branch(
         self,
@@ -1094,7 +1094,7 @@ class SessionStore:
             and (n.metadata or {}).get("display") != "root"
             and not _is_spawn_root(n.metadata or {})
         ]
-        # Pure predecessor-edge walk (session-dag.md): from
+        # Pure predecessor-edge walk (dag/overview.md): from
         # the earliest root, follow the primary (first-registered) conv
         # child until the chain ends. Spawn branch roots never appear
         # in ``children_by_predecessor`` (their predecessor is None),
@@ -1156,7 +1156,7 @@ class SessionStore:
             if (node.metadata or {}).get("display") == "root":
                 continue
             # ``context/*`` nodes (system_prompt, summary) are context
-            # machinery, never a branch you can check out — session-dag.md
+            # machinery, never a branch you can check out — dag/overview.md
             # §7 reserves the name and hides them from the chat views.
             if str(node.name or "").startswith("context/"):
                 continue

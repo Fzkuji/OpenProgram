@@ -74,7 +74,7 @@ path (functions/tools/task/task.py), the async runner
 (agent/task/runner.py), and `message_branch`
 (functions/tools/agent_collab/). For clean mode all three must pass
 `spawn_caller=<spawning node>`, so the branch root's `caller` points
-at the turn that opened it (session-dag.md §4) instead of hanging
+at the turn that opened it (dag/overview.md §4) instead of hanging
 off ROOT. Change spawn semantics in all three together, test all
 three together.
 

@@ -8,9 +8,9 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 
 | Doc | Topic |
 |---|---|
-| [`context/context.md`](context/context.md) | Context 层：pipeline + DAG 存储 + ContextCommit + compaction/render + attach/merge + 跨轮工具 + 缺口 |
-| [`context/context-composition.md`](context/context-composition.md) | 目标状态：按调用分层（L0/L1/L2）+ 情境上下文 |
-| [`context/context-comparison.md`](context/context-comparison.md) | 与参考项目的 context 方案对比 |
+| [`context/overview.md`](context/overview.md) | Context 层：pipeline + DAG 存储 + ContextCommit + compaction/render + attach/merge + 跨轮工具 + 缺口 |
+| [`context/composition.md`](context/composition.md) | 目标状态：按调用分层（L0/L1/L2）+ 情境上下文 |
+| [`context/comparison.md`](context/comparison.md) | 与参考项目的 context 方案对比 |
 | [`context/context-compaction.html`](context/context-compaction.html) | Context 压缩（已渲染） |
 
 ## memory/ — 记忆系统（实体 + 抽象）
@@ -18,8 +18,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | Doc | Topic |
 |---|---|
 | [`memory/README.md`](memory/README.md) | 记忆系统总览：架构、设计原则、实施状态 |
-| [`memory/memory.md`](memory/memory.md) | 记忆子系统概览 |
-| [`memory/memory-v2.md`](memory/memory-v2.md) | 记忆 v2：实体/抽象两层 + 溯源导航式回忆 |
+| [`memory/overview.md`](memory/overview.md) | 记忆子系统：实体/抽象两层 + 溯源导航式回忆，以及当前在跑的总结链 |
 | [`memory/entity-memory.md`](memory/entity-memory.md) | 实体记忆：Session-Git + Project-Git，按生命周期组织 |
 | [`memory/git-as-entity-memory.md`](memory/git-as-entity-memory.md) | 用 Git 做实体记忆：Session-Git + Project-Git |
 | [`memory/virtual-memory.md`](memory/virtual-memory.md) | 抽象记忆：Timeline + Graph + Core，按类型 × 生命周期组织 |
@@ -53,7 +52,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 
 | Doc | Topic |
 |---|---|
-| [`runtime/runtime.md`](runtime/runtime.md) | Runtime API 行为（另见 [`../api/runtime.md`](../api/runtime.md)） |
+| [`runtime/overview.md`](runtime/overview.md) | Runtime API 行为（另见 [`../api/runtime.md`](../api/runtime.md)） |
 | [`runtime/operations/user-input-requests.md`](runtime/operations/user-input-requests.md) | runtime.ask/confirm 等用户输入 |
 | [`runtime/controllability-and-three-surface-sync.md`](runtime/controllability-and-three-surface-sync.md) | 值守/无人值守开关 + 中途干预 + 优雅停 + 三端同步 |
 | [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 三端同步实施细节 |
@@ -63,8 +62,8 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`runtime/operations/streaming-resume.md`](runtime/operations/streaming-resume.md) | 流式 + 恢复 |
 | [`runtime/operations/file-management.md`](runtime/operations/file-management.md) | 回退层（commit / worktree） |
 | [`runtime/operations/multi-agent-revert-todo.md`](runtime/operations/multi-agent-revert-todo.md) | 多 agent 回退 TODO |
-| [`runtime/dag/session-dag.md`](runtime/dag/session-dag.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / caller+predecessor 边 / spawn / 渲染 / 装配 / 压缩） |
-| [`runtime/dag/dag-rendering.md`](runtime/dag/dag-rendering.md) | **权威渲染规范**：布局/连线/图例/默认可见性，12 场景 |
+| [`runtime/dag/overview.md`](runtime/dag/overview.md) | **权威** Session DAG 数据模型（一张图 / 3 种节点 user·llm·code / caller+predecessor 边 / spawn / 渲染 / 装配 / 压缩） |
+| [`runtime/dag/rendering.md`](runtime/dag/rendering.md) | **权威渲染规范**：布局/连线/图例/默认可见性，12 场景 |
 | [`runtime/dag/branch-collaboration.md`](runtime/dag/branch-collaboration.md) | 分支协作（通信 / 派活 / 合并）设计与实现步骤 |
 | [`runtime/execution/dispatcher-split.md`](runtime/execution/dispatcher-split.md) | Dispatcher 拆分设计 |
 | [`runtime/execution/next-step-decision.md`](runtime/execution/next-step-decision.md) | 下一步决策（模型如何选择接下来执行什么） |
@@ -83,7 +82,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | Doc | Topic |
 |---|---|
 | [`providers/request-build.md`](providers/request-build.md) | 请求构建流程 |
-| [`providers/models/models.md`](providers/models/models.md) | 模型目录最终设计 |
+| [`providers/models/overview.md`](providers/models/overview.md) | 模型目录最终设计 |
 | [`providers/models/thinking-effort.md`](providers/models/thinking-effort.md) | Thinking / effort 子系统（级别定义、数据流、各 provider wire 格式、UI picker） |
 | [`providers/models/fast-tier.md`](providers/models/fast-tier.md) | Fast（高速）档：两层判定、存储与线路 |
 | [`providers/auth/claude-code-direct-oauth.md`](providers/auth/claude-code-direct-oauth.md) | claude-code 直连订阅（砍 Meridian） |
@@ -104,7 +103,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 
 | Doc | Topic |
 |---|---|
-| [`function/function-calling-unification.md`](function/function-calling-unification.md) | 工具/函数调用框架（当前） |
+| [`function/calling-unification.md`](function/calling-unification.md) | 工具/函数调用框架（当前） |
 
 > 面向 authoring 的文档（`@agentic_function` 用法、函数元数据、
 > 工具调用循环、下一步决策、纯 python 辅助）已移至
@@ -114,12 +113,12 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 
 | Doc | Topic |
 |---|---|
-| [`cli/cli-redesign.md`](cli/cli-redesign.md) | CLI / TUI 重设计（schema 驱动的设置、配置面板）—— 当前 |
+| [`cli/redesign.md`](cli/redesign.md) | CLI / TUI 重设计（schema 驱动的设置、配置面板）—— 当前 |
 | [`cli/ports.md`](cli/ports.md) | Web UI 端口（架构、配置、冲突处理） |
 | [`cli/slash-commands.md`](cli/slash-commands.md) | 斜杠命令 |
 | [`cli/slash-commands-references.md`](cli/slash-commands-references.md) | 斜杠命令参考快照 |
 | [`cli/drop-run-command.md`](cli/drop-run-command.md) | 从 Web UI 触发的函数执行路径 |
-| [`cli/cli-naming.md`](cli/cli-naming.md) | CLI 命名 |
+| [`cli/naming.md`](cli/naming.md) | CLI 命名 |
 | [`cli/single-port.md`](cli/single-port.md) | 单端口架构 |
 | [`cli/config-write-safety.md`](cli/config-write-safety.md) | 配置写入安全——原子 `update_config` |
 | [`cli/tui-upgrade.md`](cli/tui-upgrade.md) | TUI 升级 |
@@ -128,8 +127,8 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 
 | Doc | Topic |
 |---|---|
-| [`channels/channel-design.md`](channels/channel-design.md) | 通道设计（当前） |
-| [`channels/channel-audit.md`](channels/channel-audit.md) | 通道审计 / 参考快照 |
+| [`channels/design.md`](channels/design.md) | 通道设计（当前） |
+| [`channels/audit.md`](channels/audit.md) | 通道审计 / 参考快照 |
 
 ## ui/ — surface、指示点、附件、GUI agent
 

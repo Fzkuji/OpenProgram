@@ -190,7 +190,7 @@ Overwrite-style update. Each sleep::deep regenerates the entire file, and the ol
 
 ## 5. Relationship to the linear summarization chain
 
-The linear chain documented in [`memory.md`](memory.md) covers the same ground
+The linear chain documented in [`overview.md`](overview.md) covers the same ground
 with a coarser structure:
 
 ```
@@ -268,5 +268,5 @@ When the LLM needs detail from the concrete layer, it calls a navigation tool:
 The read layer for distillation (`store/session/provenance.py`) is in place. The
 Timeline and Graph stores described in §2 and §3, and the navigation tools in
 §7.2, are not yet built; what runs today is the linear summarization chain
-described in §5 and documented in [`memory.md`](memory.md), which still reads
+described in §5 and documented in [`overview.md`](overview.md), which still reads
 rendered conversation text rather than the DAG.

@@ -2,7 +2,7 @@
 
 > 会话图怎么画：每个节点放哪、每条线什么样、默认给用户看什么。**本文是权威
 > 实现标准**——布局代码照此写，出问题对照本文查。数据语义（节点、两条边）见
-> `session-dag.md`；本文只管画。
+> `dag/overview.md`；本文只管画。
 >
 > 每条规则配示例。**SVG 场景图以 `dag-layout-spec.html` 为权威**（共 13 个
 > 场景：1–7 基础布局，8 merge，9 分支间通信，10 spawn 派活回流，11 执行子树
@@ -253,14 +253,14 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier �
 
 与压缩的联动：
 
-- `insert_summary_node` 不复制任何东西（session-dag.md §8）：summary 是带
+- `insert_summary_node` 不复制任何东西（dag/overview.md §8）：summary 是带
   `metadata.covers` 的普通 `role=llm` 链上成员，保留尾部保持自己的 id 与
   predecessor。因此分支 id **就是**图上画的 id，`/context-range` 直接返回
   它们——没有翻译层，也没有第二套 id 空间。
 - summary 节点和其他对话节点一样绘制；只有真正的合成桥会被过滤
   （`graph_layout/filter.py`）。
 - 压缩后被覆盖的前缀落出集合 → 变暗；summary 与保留尾部维持高亮。**这就是
-  压缩的可视化**——独立的摘要节点图形不予采纳（依 session-dag.md：不加第 4
+  压缩的可视化**——独立的摘要节点图形不予采纳（依 dag/overview.md：不加第 4
   种 role）。将来若需要显式"此处压缩了 N 轮"标记，必须做成首个保留节点上的
   徽章，不得做成节点。
 - `compaction_finished` 必须触发 context range 刷新（`chat-handlers.ts`）；

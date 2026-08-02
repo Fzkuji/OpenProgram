@@ -187,7 +187,7 @@ export function drawEdges(
   }
 
   // ── Attach / merge reference edges ──
-  // attach 指针节点不画（后端随 display=runtime 过滤，dag-rendering.md
+  // attach 指针节点不画（后端随 display=runtime 过滤，rendering.md
   // 场景 8/10），它的 ref 由 graph_builder 戳在嵌入位置节点的
   // ``attach_returns`` 上——回流长虚线从子分支 tip 画回嵌入位置。merge
   // 节点在 tree 里（◉），汇入线按 peer 分支色加粗实线（场景 8）。

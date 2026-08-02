@@ -48,7 +48,7 @@ Dependency control: only three pure-Python packages are added — `markdown-it-p
 
 ```
 docs/                         ← source files (untouched)
-  design/runtime/dag/dag-rendering.md
+  design/runtime/dag/rendering.md
   design/proactive/event-layer.html   ← hand-written html
   ...
 
@@ -65,7 +65,7 @@ tools/docs_site/              ← new: build script (one small module)
 
 docs/_site/                   ← build output
   index.html
-  design/runtime/dag/dag-rendering.html
+  design/runtime/dag/rendering.html
   search-index.json
   assets/...
 ```

@@ -95,5 +95,5 @@ Implemented across backend and frontend. `Call.caller` and `metadata.predecessor
 are the only edge fields; `graph_builder` and the WS graph dict emit both explicit
 keys; `_common.py` exposes `predecessor_of` and `caller_of` as separate accessors,
 with tier reading the caller and lane/depth/topology reading the predecessor. The
-session data model in [`../dag/session-dag.md`](../dag/session-dag.md) documents
+session data model in [`../dag/overview.md`](../dag/overview.md) documents
 both edges as authoritative.

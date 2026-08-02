@@ -1,6 +1,6 @@
 # Thinking / Effort Subsystem Design
 
-> For the overall design of the model catalog and provider configuration, see [models.md](models.md). This document only covers the control logic for thinking effort.
+> For the overall design of the model catalog and provider configuration, see [overview.md](overview.md). This document only covers the control logic for thinking effort.
 
 ## 1. Problem
 

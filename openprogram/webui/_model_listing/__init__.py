@@ -22,7 +22,7 @@ Layout::
 A provider whose ``/v1/models`` isn't OpenAI-compatible ships its own
 ``providers/<name>/list_models.py`` exposing ``fetch(provider_id, timeout)``;
 the dispatcher loads it by directory name (same convention as
-``probe_thinking.probe()``). See ``docs/design/providers/models/models.md`` §4.1.
+``probe_thinking.probe()``). See ``docs/design/providers/models/overview.md`` §4.1.
 
 Adding a new provider: usually NOTHING. The credential kind, fetch
 fetcher, chat api-stamp, and base convention are all DERIVED from the

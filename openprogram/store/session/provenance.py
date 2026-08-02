@@ -19,7 +19,7 @@ provenance" here means any memory backend (builtin / mem0 / a graph DB)
 maps the *same* stable surface instead of each re-deriving the git
 layout. The entity layer owns "expose mappable coordinates"; memory owns
 "map them into whatever shape it wants". See
-docs/design/memory/entity-session-cache.md §5 and memory-v2.md §3.1
+docs/design/memory/entity-session-cache.md §5 and overview.md §3.1
 (bi-temporal provenance).
 
 Nothing here calls an LLM, so it is cheap and unit-testable in isolation
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 class Provenance:
     """A coordinate pointing a virtual memory back at its entity-layer source.
 
-    bi-temporal (memory-v2 §3.1):
+    bi-temporal (memory/overview.md §3.1):
       * ``event_time``      — when it happened (the node's ``created_at``);
       * ``ingestion_time``  — when memory recorded it (caller-stamped).
 

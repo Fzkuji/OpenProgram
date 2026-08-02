@@ -1,6 +1,6 @@
 # 上下文成分对比 —— 参考项目 vs 我们（按三层组织）
 
-> 本文把参考项目喂给 LLM 的上下文成分，跟我们的 L0/L1/L2 设计逐层对比。这是一份对比材料，设计本身见 [`context-composition.md`](context-composition.md)。
+> 本文把参考项目喂给 LLM 的上下文成分，跟我们的 L0/L1/L2 设计逐层对比。这是一份对比材料，设计本身见 [`composition.md`](composition.md)。
 >
 > Hermes 自己也是**三层、按稳定度划分**，与我们 L0/L1/L2 是同一套组织原则——
 > 它把三层叫作 `stable / context / volatile`：
@@ -82,6 +82,6 @@
 
 ## 我们不带的成分
 
-以下成分在某个参考项目里存在，我们这边没有对应物，因为我们没有对应功能：computer-use 指导、Nous 订阅指导、Kanban 多 agent 协调、Hermes profile 机制、外部记忆提供者。[`context-composition.md`](context-composition.md) 的注册模型给每一项都留了位置——真做了对应功能，注册一个 `ContextComponent` 即可，框架不改。
+以下成分在某个参考项目里存在，我们这边没有对应物，因为我们没有对应功能：computer-use 指导、Nous 订阅指导、Kanban 多 agent 协调、Hermes profile 机制、外部记忆提供者。[`composition.md`](composition.md) 的注册模型给每一项都留了位置——真做了对应功能，注册一个 `ContextComponent` 即可，框架不改。
 
 同样不带的还有 token 预算提示，参考项目也都没有。

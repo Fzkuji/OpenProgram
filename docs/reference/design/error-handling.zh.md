@@ -119,4 +119,4 @@ ruff 的作用域仅限这道门禁。格式化与 import 顺序刻意不管—�
 ## 相关文件
 
 - [`runtime/execution/turn-cancellation.zh.md`](runtime/execution/turn-cancellation.zh.md) — `CancelledError` 是 `BaseException`，工具体吞不掉一次停止
-- [`runtime/dag/session-dag.zh.md`](runtime/dag/session-dag.zh.md) — error 作为节点终态
+- [`runtime/dag/overview.zh.md`](runtime/dag/overview.zh.md) — error 作为节点终态

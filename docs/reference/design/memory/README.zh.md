@@ -36,13 +36,12 @@ LLM Context
 
 | 文档 | 内容 |
 |------|------|
-| [`memory-v2.md`](memory-v2.md) | 两级架构：实体/虚拟两层 + provenance 召回 |
+| [`overview.md`](overview.md) | 两级架构（实体/虚拟两层 + provenance 召回），以及 `openprogram/memory/` 里在跑的线性总结链 |
 | [`git-as-entity-memory.md`](git-as-entity-memory.md) | 实体层的 git 底座（Session-Git + Project-Git） |
 | [`entity-memory.md`](entity-memory.md) | 实体记忆：Session-Git + Project-Git，按生命周期组织 |
 | [`virtual-memory.md`](virtual-memory.md) | 抽象记忆：Timeline + Graph + Core，按类型 × 生命周期组织 |
-| [`memory.md`](memory.md) | `openprogram/memory/` 里在跑的线性总结链（journal/wiki/core） |
 
 ## 实现状态
 
-实体层已就位：Project schema、`session.project_id`、project-git 都已实现。抽象层目前仍是 [`memory.md`](memory.md) 描述的线性总结链——提炼管道还没读 session-git DAG，召回还没做到只注入抽象层，导航工具也尚未注册。UI 上有顶栏项目选择器；Projects 面板、timeline 和 `/memory` 命令尚未建成。
+实体层已就位：Project schema、`session.project_id`、project-git 都已实现。抽象层目前仍是 [`overview.md`](overview.md) 描述的线性总结链——提炼管道还没读 session-git DAG，召回还没做到只注入抽象层，导航工具也尚未注册。UI 上有顶栏项目选择器；Projects 面板、timeline 和 `/memory` 命令尚未建成。
 

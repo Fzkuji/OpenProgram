@@ -2,7 +2,7 @@
 
 Subscription providers (claude-code, openai-codex) have no list-models API,
 so they used to inject "seed" model rows into the runtime registry at import
-time — bypassing config entirely. Per docs/design/providers/models/models.md
+time — bypassing config entirely. Per docs/design/providers/models/overview.md
 §4.2 the correct behaviour is: on the user's behalf the program performs an
 *enable*, writing spec rows to the same ``providers.<p>.models`` config list
 the settings UI writes. This module is that enable.

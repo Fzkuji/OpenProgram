@@ -195,7 +195,7 @@ def persist_assistant_message(
         )
     # What the render policy did when this call's prompt was built —
     # replaying with it reproduces the exact bytes the model saw, even
-    # after the aging constants move (session-dag.md §8).
+    # after the aging constants move (dag/overview.md §8).
     try:
         from openprogram.context.aging import last_manifest
         _mf = last_manifest()
@@ -209,7 +209,7 @@ def persist_assistant_message(
         # Update the placeholder row in place — same id, now with
         # final content + tool_calls/blocks. Writes Call fields
         # directly, skipping the _msg_to_node round-trip
-        # (session-dag.md step 5).
+        # (dag/overview.md step 5).
         try:
             from openprogram.store import GraphStoreShim
             _shim = GraphStoreShim(db, req.session_id)

@@ -29,14 +29,13 @@
 
 ## 状态标记过期（MEDIUM）
 
-### memory/memory-v2.md
-- Phase 0-1: 已完成（文档标记正确）
-- Phase 2: 文档标 "❌ 未开始"，但 §0.5 又提到 "前置读层已落地"（Provenance dataclass）
-- 应明确：Phase 2 分拆为子步骤，标注哪些 substep 已 partial、哪些待做
+### ~~memory/memory-v2.md → 已并入 memory/overview.md~~
+- ~~阶段标记自相矛盾：Phase 2 标 "❌ 未开始"，但 §0.5 又说前置读层已落地。~~
+- 状态：✅ 已并入 `memory/overview.md`。阶段标记已移除，文档现在只留一个"实现状态"附录，说明当前在跑的线性 journal/wiki/core 链与实体/虚拟目标的差距。
 
 ### ~~context/contextgit.md → 已并入 context/storage-and-engine.md~~
 - ~~文档标记: "Status: proposal, not implemented"~~
-- 状态: ✅ 已与 context-commit-chain / context-engine-spec / context-attach-merge / cross-turn 一并合入 `context/context.md`（DAG 底座在 `contextgit/dag.py`，上层未建）
+- 状态: ✅ 已与 context-commit-chain / context-engine-spec / context-attach-merge / cross-turn 一并合入 `context/overview.md`（DAG 底座在 `contextgit/dag.py`，上层未建）
 
 ---
 
@@ -62,9 +61,9 @@
 
 - `runtime/controllability-and-three-surface-sync.md` — attended/unattended、graceful stop、三端同步均已实现
 - `runtime/operations/user-input-requests.md` — Phase 1+2 已落地（QuestionRegistry、三种 Transport 含新增的 TTYTransport）
-- `function/function-calling-unification.md` — 已使用 "profiles" 术语，与代码一致
+- `function/calling-unification.md` — 已使用 "profiles" 术语，与代码一致
 - `extension-gating/implementation.md` — 路径已正确
-- `context/context.md`（合并自 contextgit 等五份 + 总图）— 状态标记正确
+- `context/overview.md`（合并自 contextgit 等五份 + 总图）— 状态标记正确
 
 ---
 

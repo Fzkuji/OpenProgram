@@ -10,7 +10,7 @@ provider 无关的统一格式如何翻译成各家 wire 格式,以及 prompt �
 
 - [`request-build`](request-build.md) — **总设计**:统一格式 Context、每 provider 翻译、缓存三 mode。
 - [`cache-control-passthrough`](../plans/cache-control-passthrough.md)(在 `docs/plans/`)— Anthropic `cache_control` 逐块透传。
-- 上游(内容怎么分层组装,L0/L1/L2)见 [`context/context-composition.md`](../context/context-composition.md)。
+- 上游(内容怎么分层组装,L0/L1/L2)见 [`context/composition.md`](../context/composition.md)。
 
 ## [auth/](auth/) — 凭证 · 认证 · 账号
 
@@ -36,6 +36,6 @@ API key 与订阅 OAuth 的解析、校验、存储,以及多账号池与轮换�
 
 模型清单的数据布局、配置结构,以及 thinking/effort 等能力的声明式映射。每个模型都绑定在它所属的 provider 下,所以归在 providers 内。
 
-- [`models`](models/models.md) — 模型目录与 provider 配置(数据布局、fetch、合并)
+- [`models`](models/overview.md) — 模型目录与 provider 配置(数据布局、fetch、合并)
 - [`thinking-effort`](models/thinking-effort.md) — thinking/effort 子系统(声明式 per-provider 映射)
 - [`fast-tier`](models/fast-tier.md) — Fast(高速)档:两层判定(订阅入口手写 / models.dev 自动)、存储与线路

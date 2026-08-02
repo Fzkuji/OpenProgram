@@ -2,7 +2,7 @@
 
 This note records a structural problem in the model list mechanism, plus one naming
 inconsistency in the Bailian provider. For the target state and the resolution logic,
-see [`models/models.md`](models/models.md).
+see [`models/overview.md`](models/overview.md).
 
 ## 1. Concepts involved
 
@@ -49,7 +49,7 @@ maintenance needed", but the implementation never delivered that — Fetch write
 `models.fetched.json` while the registry reads `models.json`, two different files.
 
 The "models.dev as primary data source + layered overlay" described in
-[`models/models.md`](models/models.md) is implemented only in chain B; chain A was never
+[`models/overview.md`](models/overview.md) is implemented only in chain B; chain A was never
 wired up to it.
 
 ## 3. Naming of the Bailian provider
@@ -66,7 +66,7 @@ section 2 and can be handled separately.
 
 ## 4. Target state
 
-The direction set out in [`models/models.md`](models/models.md) is: every provider is
+The direction set out in [`models/overview.md`](models/overview.md) is: every provider is
 self-contained (all its configuration lives under `providers/<p>/`); models.dev serves as
 the primary data source for the model list, pricing and capabilities; `thinking`
 declarations supply the thinking tiers; and the required fields of the registry schema are

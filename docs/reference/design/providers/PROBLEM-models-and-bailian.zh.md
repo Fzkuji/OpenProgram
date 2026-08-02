@@ -1,7 +1,7 @@
 # 模型清单与百炼 provider
 
 本文描述模型清单机制中的一处结构性问题，以及百炼 provider 命名上的一处不一致。
-目标状态与解析逻辑见 [`models/models.md`](models/models.md)。
+目标状态与解析逻辑见 [`models/overview.md`](models/overview.md)。
 
 ## 一、涉及的概念
 
@@ -41,7 +41,7 @@ Fetch 与 models.dev 是活的、会更新，但它们的结果进不了注册�
 顶部注释写着原本的设计意图是"Fetch 直接改写这个文件，无需手维护"，但实现没有做到
 —— Fetch 写的是 `models.fetched.json`，而注册表读的是 `models.json`，是两个文件。
 
-[`models/models.md`](models/models.md) 描述的"models.dev 为主数据源 + 分层叠加"
+[`models/overview.md`](models/overview.md) 描述的"models.dev 为主数据源 + 分层叠加"
 只在链 B 实现了，链 A 没有接上。
 
 ## 三、百炼 provider 的命名
@@ -57,7 +57,7 @@ Fetch 与 models.dev 是活的、会更新，但它们的结果进不了注册�
 
 ## 四、目标状态
 
-[`models/models.md`](models/models.md) 定下的方向是：每个 provider 自包含
+[`models/overview.md`](models/overview.md) 定下的方向是：每个 provider 自包含
 （配置都在 `providers/<p>/` 下）；models.dev 作为主数据源提供模型列表、价格与
 能力；`thinking` 声明补充思考档位；注册表 schema 的必填字段只有
 `id/name/api/provider/base_url`，其中 `api` 与 `base_url` 来自 `provider.json`。

@@ -88,4 +88,4 @@
 `graph_builder` 和 WS graph dict 输出两个明确的 key；`_common.py` 提供
 `predecessor_of` 和 `caller_of` 两个独立访问函数，tier 读 caller，
 lane/depth/topology 读 predecessor。会话数据模型以
-[`../dag/session-dag.zh.md`](../dag/session-dag.zh.md) 为权威，其中记录了这两条边。
+[`../dag/overview.zh.md`](../dag/overview.zh.md) 为权威，其中记录了这两条边。

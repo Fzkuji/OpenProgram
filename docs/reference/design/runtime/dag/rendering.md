@@ -4,7 +4,7 @@
 > and what the user sees by default. **This document is the authoritative
 > implementation standard** — write the layout code to match it, and when
 > something breaks, check against it. For the data semantics (nodes, the two
-> edges) see `session-dag.md`; this document only covers the drawing.
+> edges) see `dag/overview.md`; this document only covers the drawing.
 >
 > Every rule comes with an example. **The SVG scenario figures in
 > `dag-layout-spec.html` are authoritative** (13 scenes: 1–7 base layout, 8 merge,
@@ -299,7 +299,7 @@ The graph perspective has two highlight modes (`HighlightMode` in
 
 Compaction interaction:
 
-- `insert_summary_node` clones nothing (session-dag.md §8): the summary is an
+- `insert_summary_node` clones nothing (dag/overview.md §8): the summary is an
   ordinary `role=llm` chain member carrying `metadata.covers`, and the kept
   tail keeps its own ids and predecessors. The branch ids therefore ARE the
   ids the graph draws, so `/context-range` returns them directly — no
@@ -309,7 +309,7 @@ Compaction interaction:
 - After compaction the covered prefix falls out of the set → it dims; the
   summary and the kept tail keep highlighting. This IS the compaction
   visualization — a separate summary-node glyph is rejected (per
-  session-dag.md: no 4th role). If a future need arises for an explicit
+  dag/overview.md: no 4th role). If a future need arises for an explicit
   "N turns compacted here" marker, it must be a badge on the first kept
   node, not a node.
 - `compaction_finished` must refresh the context range

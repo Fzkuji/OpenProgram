@@ -297,7 +297,7 @@ Format:
 
 ## 5. Defaults and Configurability (expose / render_range)
 
-§4 describes the **default** case. How much history is passed between parent and child is decided by two knobs (see `context.md`):
+§4 describes the **default** case. How much history is passed between parent and child is decided by two knobs (see `overview.md`):
 
 | Knob | What it controls | Default | Default effect |
 |---|---|---|---|
@@ -630,8 +630,8 @@ In `_call_via_providers` in `runtime.py`, when building the current turn's user 
 ---
 
 ## Related Documents
-- [`context.md`](context.md) — the context layer's mechanism (L1 history is produced by DAG + ContextCommit; expose/render_range live there)
-- [`context-comparison.md`](context-comparison.md) — component comparison with reference projects
+- [`overview.md`](overview.md) — the context layer's mechanism (L1 history is produced by DAG + ContextCommit; expose/render_range live there)
+- [`comparison.md`](comparison.md) — component comparison with reference projects
 - [`context-compaction.html`](context-compaction.html) — context-compaction design (text-level four-stage pipeline + DAG-level node visibility pruning)
 - [`../providers/request-build.md`](../providers/request-build.md) — downstream: Context translated into each vendor's wire + cache landing
 - [`../runtime/execution/agentic-self-recursion.md`](../runtime/execution/agentic-self-recursion.md) — `_situational_prefix`, the prototype of the L2 situation

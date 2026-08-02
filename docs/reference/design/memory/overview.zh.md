@@ -2,6 +2,15 @@
 
 OpenProgram 如何让 agent 跨会话"记住"事情。
 
+> 本文覆盖记忆子系统的全貌：目标的两级架构、当前在跑的线性总结链，以及
+> 两者之间的路径。实体层的 git 底座细节见
+> [`git-as-entity-memory.md`](git-as-entity-memory.md) 和
+> [`entity-memory.md`](entity-memory.md)；抽象层的 Timeline / Graph / Core
+> 存储见 [`virtual-memory.md`](virtual-memory.md)。
+>
+> 路径口径：所有状态都在 `~/.openprogram/`（= `get_state_dir()`）下；命名
+> profile 用 `~/.openprogram-<profile>/`。
+
 ## 为什么需要它
 
 原始的 LLM 在一段会话结束后会忘记一切。每次新对话都从零开始，于是用户
@@ -18,7 +27,85 @@ OpenProgram 如何让 agent 跨会话"记住"事情。
 2. **存储保持小巧且可审阅。** 记忆是磁盘上的纯 Markdown 文件，人类可读，
    便于手动编辑或清除。没有不透明的向量存储，没有微调后的权重。
 
-## 三个层级
+## 架构：实体层 + 虚拟层
+
+记忆分**实体层**（git 存的、不可变、完整的真实历史）和**虚拟层**（从实体提炼的、
+紧凑的、带指针的索引）。LLM 调用时**只注入虚拟层**；需要原始细节时，LLM 顺着
+虚拟层里的 **provenance 指针**，用工具自己导航回实体层去取。
+
+```
+        ┌──────────────────────── 实体层 (raw, git, 完整) ────────────────────────┐
+        │   Session-Git                          Project-Git                        │
+        │   每会话一个 repo                        绑用户工作目录 (真实代码/文档仓)      │
+        │   每 turn 一 commit                      agent 改文件 → 自动 commit          │
+        │   · 绑了项目 → <项目>/.openprogram/sessions/<id>/                          │
+        │   · 随手聊   → <state>/sessions/<id>/   (默认项目仅逻辑标签, 无独立 repo)     │
+        └────────────────────────────────┬─────────────────────────────────────────┘
+                                          │  持续提炼 (distillation), 带 provenance
+                          ┌───────────────┴───────────────┐
+                          ▼                               ▼
+              ┌────────────────────┐          ┌────────────────────┐
+              │  时间轴 (Journal)    │          │  知识图谱 (Wiki)     │   ← 虚拟层 (derived)
+              │  "何时发生了什么"     │          │  "实体之间什么关系"   │      每条都带指针
+              │  bi-temporal         │          │  bi-temporal edges   │      回指实体层
+              └──────────┬──────────┘          └──────────┬──────────┘
+                         └──────────────┬─────────────────┘
+                                        ▼
+                              ┌──────────────────┐
+                              │   召回 (recall)    │  只把虚拟层注入 LLM context
+                              │   只注入虚拟        │  LLM 看到指针 → 用工具导航回实体层
+                              └──────────────────┘
+```
+
+### 为什么抽象层要直接读实体层
+
+线性总结链（`raw chat → 抽 0-10 facts → journal → wiki → core`）每一层都丢信息，
+而且抽象层是从上一层的有损总结来的，不是从源头来的。这样实体层和抽象层就成了
+两套不相通的东西。本设计让实体层成为抽象层唯一读取的数据源，并让每条派生记录
+都保留一个指回源头的指针。
+
+### 跟主流框架对比
+
+| 框架 | 实体层 | 抽象层 | 召回方式 | 时间维度 | 知识图谱 |
+|---|---|---|---|---|---|
+| Claude Code | CLAUDE.md + 会话 | auto-memory MEMORY.md (索引+topic) | 注入索引，topic 按需读 | 无 | 无 |
+| OpenClaw | MEMORY.md + 日记 | 同上 + wiki 插件 | 注入 + 语义搜索 | 无 | 弱 |
+| mem0 | — | 向量 DB | RAG 切块灌入 | 仅写入时间 | 无 |
+| Letta/MemGPT | 对话历史 | tiered (core/recall/archival) | LLM 工具搬运 | 部分 | 无 |
+| Zep/Graphiti | — | temporal knowledge graph | 图查询 | bi-temporal | 有 |
+| **本设计** | **git (session+project)** | **时间轴 + 知识图谱** | **注入虚拟，LLM 导航回实体** | **bi-temporal** | **有** |
+
+### 本设计的特点
+
+1. **Git 作为 episodic memory 的底座**。实体记忆不是自研存储，直接用 git：commit
+   不可变，记录无法被篡改；log = 时间线；checkout = 时光机；branch = 探索过的
+   分支；而且 agent 能用标准工具（`git log` / `grep` / `diff`）自己读。可审计、
+   可复现、可回溯。
+
+2. **Provenance-pointer 索引，而非替代**。虚拟层不取代实体层，而是给它建一个
+   **带坐标的导航地图**。每条虚拟记忆都挂一个指针 `(project, session, commit,
+   timestamp)`，指回它在实体层的出处。这解决了"有损总结丢上下文"的根本
+   问题——**任何时候都能顺着指针钻回源头记录**。
+
+3. **LLM 自导航召回（map → territory），而非 RAG 灌块**。传统 RAG 把相关 chunk
+   切出来塞进 context，污染上下文且丢结构。本设计只注入紧凑的虚拟地图，LLM 读到
+   "2026-05 在项目 X 修了 Windows bug，完整历史在 session local_13d5"，**需要
+   细节时自己用工具走过去取**。context 小、保真度满、检索由 agent 主导。
+
+4. **时间轴 + 知识图谱双投影，都 bi-temporal**。同一个 git 底座投影出两个正交
+   视图：时间轴回答"何时"，知识图谱回答"什么关系"。两者都记两个时间——
+   `event_time`（事情发生的时间）和 `ingestion_time`（我们记下来的时间）——
+   支持时间旅行查询和矛盾检测。
+
+实体层的两个 git 存储详见 [`entity-memory.md`](entity-memory.md) 和
+[`git-as-entity-memory.md`](git-as-entity-memory.md)；虚拟层的 Timeline / Graph /
+Core 存储、五阶段提炼管道和导航工具详见
+[`virtual-memory.md`](virtual-memory.md)。
+
+## 当前在跑的三个层级
+
+代码里当前的抽象层是下面这条线性总结链。等上面的管道落地后，Timeline 取代
+`short-term/`，Graph 取代 `wiki/`，`core.md` 由两者重新投影。
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -287,3 +374,30 @@ on_pre_compress(messages) -> str        # before context compression drops messa
 - **把 sleep 设计成带 light/deep/REM 阶段的每日 cron**：对真实睡眠周期的
   一种致敬，主要是为了让 deep-LLM-pass 变得廉价（每天一批），而不是在
   每一轮对话上都运行它。
+
+## 研究角度
+
+1. **Git-native episodic memory for LLM agents** —— 用版本控制系统做 agent
+   长期记忆的不可变底座，支持回溯 / 分支 / 标准工具检索。
+2. **Provenance-linked virtual memory** —— 总结层不替代源头，而是用坐标给它
+   建索引；解决有损总结的根本张力（压缩 vs 保真）。
+3. **LLM-navigated recall** —— agent 读一张紧凑地图，按需导航回源头，区别于
+   RAG 的盲目切块灌入；context 更小、保真度更高、检索由 agent 主导。
+4. **Dual bi-temporal projection** —— 同一底座投影出时间轴 + 知识图谱，两者都
+   bi-temporal，支持时间旅行和矛盾追踪。
+
+评估方向：context 占用 vs 召回准确率的权衡；跨多会话的长程一致性；矛盾检测
+召回率；与 RAG / Zep / mem0 基线的对比。
+
+## 附录：实现状态
+
+实体层已就位：Project schema、会话绑定、project-git，以及会话落在项目内都已
+实现（`store/project_store.py`、`store/session_store.py`）。提炼所需的读取层在
+`store/session/provenance.py`。
+
+虚拟层尚未建成。当前在跑的是上面记录的线性 journal/wiki/core 链，它读的仍是
+`get_branch()` 渲染出的对话文本，而不是 session-git 的 `Call` DAG；project-git
+的 commit 历史完全没有被读取。接通这一跳是提炼管道的第一步。
+
+召回仍注入 v1 core；导航工具尚未注册。UI 上有顶栏项目选择器；Projects 面板、
+回溯时间轴和 `/memory` 命令尚未建成。

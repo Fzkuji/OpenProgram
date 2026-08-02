@@ -8,7 +8,7 @@ Contract = `Context` (system / messages / tools, where content blocks may carry 
 This layer decides **what to feed and how to layer it**; providers decide **how to send it to a given vendor**. The two layers are decoupled.
 
 > For how each call is layered by stability and how the model is told its situation, see
-> [`context-composition.md`](context-composition.md); this document covers the storage and
+> [`composition.md`](composition.md); this document covers the storage and
 > compaction mechanism underneath it.
 
 ---
@@ -269,7 +269,7 @@ persisted model, so a switch takes effect before the next save.
 
 ## 8. Relationship to the Three-Layer Composition
 
-[`context-composition.md`](context-composition.md) layers each LLM call into three tiers by how often
+[`composition.md`](composition.md) layers each LLM call into three tiers by how often
 the content changes, which serves the cache (stable content up front) and also tells the model its
 situation. This document's mechanism supplies the material for those tiers:
 

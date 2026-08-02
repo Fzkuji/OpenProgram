@@ -54,7 +54,7 @@ export function _shapeFor(node: GNode): string {
   if (node.display === "root") return "diamond";
   const role = node.role;
   const fn = node.function;
-  // merge 节点：实心带孔圆 ◉，落在 base 分支 lane 上（dag-rendering.md
+  // merge 节点：实心带孔圆 ◉，落在 base 分支 lane 上（rendering.md
   // 场景 8）。attach 指针不画节点（drawNodes 里跳过）；task 是普通执行层
   // 方块——占位虚框（square_outline）已废除（规则② 推论）。
   if (fn === "merge") return "merge_dot";
@@ -117,7 +117,7 @@ export function _buildShapeEl(
       rx: 0, ry: 0, ...common,
     });
   } else if (shape === "merge_dot") {
-    // ◉ 实心带孔圆（dag-rendering.md 第四节图例）：外圈实心 + 中心
+    // ◉ 实心带孔圆（rendering.md 第四节图例）：外圈实心 + 中心
     // 挖孔，读作"多条分支在此汇为一点"。
     const g = _svg("g");
     g.appendChild(_svg("circle", { r, fill: color }));

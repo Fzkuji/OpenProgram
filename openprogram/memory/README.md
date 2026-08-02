@@ -2,9 +2,9 @@
 
 Persistent, machine-wide memory for OpenProgram agents.
 
-**Design docs:** [`docs/design/memory/memory.md`](../../docs/design/memory/memory.md) (v1,
+**Design docs:** [`docs/design/memory/overview.md`](../../docs/design/memory/overview.md) (v1,
 what this directory implements today) and
-[`docs/design/memory/memory-v2.md`](../../docs/design/memory/memory-v2.md) (the target
+[`docs/design/memory/overview.md`](../../docs/design/memory/overview.md) (the target
 two-tier entity/virtual design — Phase 0+1 done, Phase 2+ pending).
 Read those first — this README is a navigation aid for working in the
 directory, not a substitute.
@@ -13,7 +13,7 @@ directory, not a substitute.
 > (`journal → wiki → core`). The git-backed *entity* layer (Session-Git
 > + Project-Git) is already built under `openprogram/store/`, but the v2
 > *virtual* layer (timeline + knowledge graph with provenance) is not —
-> v1 is still what runs. See memory-v2.md §0.5 for the status table.
+> v1 is still what runs. See overview.md §0.5 for the status table.
 
 ## TL;DR
 

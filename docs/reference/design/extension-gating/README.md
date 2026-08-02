@@ -151,5 +151,5 @@ Default workflow: **install skills globally, configure no gates, let the LLM pic
 - [reference-comparison.md](./reference-comparison.md) — how the three reference implementations compare
 - [implementation.md](./implementation.md) — code paths and helper module
 - [future-work.md](./future-work.md) — items intentionally not built
-- [../function-calling-unification.md](../function/function-calling-unification.md) — broader 6-layer gating doc for the function-calling subsystem (Layers 2/3/5 are what this folder formalises for *all* extensions, not just tools)
+- [../calling-unification.md](../function/calling-unification.md) — broader 6-layer gating doc for the function-calling subsystem (Layers 2/3/5 are what this folder formalises for *all* extensions, not just tools)
 - [../skills-and-plugins.md](../integrations/skills-and-plugins.md) — original skills + plugins design doc (covers catalogues, discovery, hot reload — not gating)

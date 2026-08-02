@@ -4,8 +4,8 @@
 > 息、一个分支为另一个分支干活、两个分支的成果合并成一条。本文定义三种协作模式，
 > 以及它们的节点与图的关系。
 >
-> 前置：边模型（caller + predecessor）见 `session-dag.md`；布局与连线的权威规范见
-> `dag-rendering.md`。
+> 前置：边模型（caller + predecessor）见 `dag/overview.md`；布局与连线的权威规范见
+> `rendering.md`。
 
 ## 一、什么是分支，协作指什么
 
@@ -25,7 +25,7 @@ assistant 节点，`commit_parents = [target prior, *peers]`（多父）。它�
 这个嵌入原语之上——一个分支的内容作为 attach pointer 进入另一个点，展开成
 `[Attached from "label"]` 块。
 
-连线视觉规则在 `dag-rendering.md` 第三节（颜色=分支、线型=类型；线型表；通信线默认
+连线视觉规则在 `rendering.md` 第三节（颜色=分支、线型=类型；线型表；通信线默认
 隐藏）。本文不维护副本。
 
 ## 二、三种协作模式
@@ -84,7 +84,7 @@ tip → attach 节点）表达这一过程。子分支 B 是独立 lane（按布
   pointer（`predecessor=target_head`，`attach.head_id=peer tip`）
 - `commit_parents = [target prior commit, *peer commit ids]`（多父，溯源用）
 
-**DAG 画法**：以 `dag-rendering.md` 场景 10 为权威。merge 节点形状是**双环 ◎**，
+**DAG 画法**：以 `rendering.md` 场景 10 为权威。merge 节点形状是**双环 ◎**，
 全图唯一的汇聚形状；它落在 base 分支 lane——合并后的主线延续 base。attach pointer
 节点本身在 viewport 不画，只画汇入线。
 
@@ -140,6 +140,6 @@ def send_to_branch(target_branch: str, message: str, wait_reply: bool = False) -
 | attach（嵌入） | 已实现 | `_merge.py` + `branch.py` `_attach_info` + generator |
 | attach 连线（attach_ref 虚线，源 tip → attach 节点） | 已实现 | `dag/render/edges.ts` |
 | worktree merge（另一套：git worktree ff-only 合并文件） | 已实现 | `worktree-item.tsx` |
-| 合并节点画法（形状、lane、汇入线） | 规范见 `dag-rendering.md` 场景 10 | `dag/shapes.ts`、`dag/render/edges.ts` |
+| 合并节点画法（形状、lane、汇入线） | 规范见 `rendering.md` 场景 10 | `dag/shapes.ts`、`dag/render/edges.ts` |
 | 分支间发消息（`send_to_branch`） | 尚未实现 | 待新增 |
 | 子分支服务链路（spawn_branch → attach 回流） | 部分：/task 子 agent 已有，回流仍需串通 | 复用 merge |

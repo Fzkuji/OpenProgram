@@ -2,8 +2,8 @@
 
 命令交互层 —— CLI/TUI 重新设计、slash 命令、设置以及 Web UI 端口。
 
-- [`cli-naming.md`](cli-naming.md)
-- [`cli-redesign.md`](cli-redesign.md)
+- [`naming.md`](naming.md)
+- [`redesign.md`](redesign.md)
 - [`config-write-safety.md`](config-write-safety.md)
 - [`drop-run-command.md`](drop-run-command.md)
 - [`ports.md`](ports.md)

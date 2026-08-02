@@ -119,7 +119,7 @@ class AgentContext(BaseModel):
     tools: list[AgentTool] | None = None
     # Memory recalled for THIS turn, rendered as a prefix block inside the
     # wire user message rather than appended to the system prompt — which is
-    # what keeps the system prompt byte-stable across turns (session-dag.md
+    # what keeps the system prompt byte-stable across turns (dag/overview.md
     # §7). Empty string = nothing recalled. The dispatcher supplies it (it
     # also stamps it on the user node); the loop falls back to recalling it
     # itself for entry points that don't.

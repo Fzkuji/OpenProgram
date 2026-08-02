@@ -112,7 +112,7 @@ Memory 页面。之所以拆分，是因为「永久记住这个」和
 （用户消息、LLM 调用、代码 Call、attach）以及它们之间的边。
 该视图随聊天一起滚动：点击某个节点会把对话滚动到对应的消息，
 面板会保持当前查看的范围处于高亮。渲染规则的规范在
-[`design/runtime/dag/dag-rendering.md`](../reference/design/runtime/dag/dag-rendering.md)，新增节点类型时请参阅它。
+[`design/runtime/dag/rendering.md`](../reference/design/runtime/dag/rendering.md)，新增节点类型时请参阅它。
 
 ## 多账户 + 密钥轮换
 

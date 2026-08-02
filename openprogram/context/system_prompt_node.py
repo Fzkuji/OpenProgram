@@ -1,4 +1,4 @@
-"""Record the assembled system prompt as a DAG node (session-dag.md §7).
+"""Record the assembled system prompt as a DAG node (dag/overview.md §7).
 
 The prompt that shipped is data, not an implication of today's code. Whenever
 the assembled text's hash changes — session start, toolset change, plan-mode

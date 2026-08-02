@@ -41,10 +41,10 @@ export function drawBadges(
     ((sessionId && runtimeState._branchesByConv[sessionId]) as GNode[]) || [];
   // Badges come ONLY from list_branches' active rows. Merging erases the
   // badge (git semantics) — a merged branch's name lives on in the merge
-  // node's tooltip, not as a lane pill (dag-rendering.md §5).
+  // node's tooltip, not as a lane pill (rendering.md §5).
   if (!rows.length) return;
   const tagG = _svg("g", { class: "history-branch-tags" });
-  // 已放置的 badge 像素盒——碰撞按实测盒判定（dag-rendering.md §5）。
+  // 已放置的 badge 像素盒——碰撞按实测盒判定（rendering.md §5）。
   const placed: Array<{ x1: number; x2: number; y1: number; y2: number }> = [];
   const ROW_STEP = 32; // = layout ROW_H：碰撞下移一行
   rows.forEach((b) => {
@@ -72,7 +72,7 @@ export function drawBadges(
     }
     if (!node) return;
     // 锚定＝该分支**当前可见的最深节点**正下方（2026-07-31 裁定，
-    // dag-rendering.md §5）：执行子树展开时徽章跟到最底下的节点，
+    // rendering.md §5）：执行子树展开时徽章跟到最底下的节点，
     // 收起时自动回到会话层节点。分支归属按 lane——展开的执行节点
     // 与所属轮次同 lane。
     const lane = (node as any)._lane ?? 0;

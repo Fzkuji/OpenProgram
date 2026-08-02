@@ -11,7 +11,7 @@ The dispatcher loads that by directory name — the same convention
 just drops a file in its own directory. Providers whose ``/v1/models`` is
 standard don't ship the file and use the generic ``_fetch_openai_compat``
 (kept here because it belongs to no single provider). See
-``docs/design/providers/models/models.md`` §4.1.
+``docs/design/providers/models/overview.md`` §4.1.
 
 Each ``fetch`` returns either a list of model dicts (success) or a dict with an
 ``"error"`` key (failure, human-readable). ``fetch_and_normalize`` then:

@@ -341,7 +341,7 @@ Today is {weekday}, {month} {day}, {year}.
 
 ## 五、默认与可配置（expose / render_range）
 
-§四描述的是**默认**情况。父子之间传多少历史，由两个旋钮决定（见 `context.md`）：
+§四描述的是**默认**情况。父子之间传多少历史，由两个旋钮决定（见 `overview.md`）：
 
 | 旋钮 | 管什么 | 默认 | 默认效果 |
 |---|---|---|---|
@@ -704,8 +704,8 @@ io 已释放** —— 它是历史的安全网,不是删光。整会话上下文
 ---
 
 ## 相关文档
-- [`context.md`](context.md) —— 上下文层的机制（L1 历史由 DAG + ContextCommit 产出；expose/render_range 在那）
-- [`context-comparison.md`](context-comparison.md) —— 与参考项目的成分对比
+- [`overview.md`](overview.md) —— 上下文层的机制（L1 历史由 DAG + ContextCommit 产出；expose/render_range 在那）
+- [`comparison.md`](comparison.md) —— 与参考项目的成分对比
 - [`context-compaction.html`](context-compaction.html) —— 上下文压缩设计（文本级四层管道 + DAG 级节点 visibility 精简）
 - [`../providers/request-build.md`](../providers/request-build.md) —— 下游：Context 翻译成各家 wire + 缓存落地
 - [`../runtime/execution/agentic-self-recursion.md`](../runtime/execution/agentic-self-recursion.md) —— `_situational_prefix`，L2 处境的雏形

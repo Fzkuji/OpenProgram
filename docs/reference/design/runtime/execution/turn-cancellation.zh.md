@@ -111,7 +111,7 @@ WS `stop` 动作的两阶段行为不变：先尝试优雅停止，宽限期后�
 ## 7. 记录下来的结果
 
 用户取消在节点上写 `status = cancelled`，绝不写 `error`——status 词表见
-[`../dag/session-dag.zh.md`](../dag/session-dag.zh.md)。被取消的一轮与其他任何一轮一
+[`../dag/overview.zh.md`](../dag/overview.zh.md)。被取消的一轮与其他任何一轮一
 样按终态收尾：保留停止之前已经流式输出的内容，并被提交。
 
 ## 8. 不变量
@@ -135,5 +135,5 @@ WS `stop` 动作的两阶段行为不变：先尝试优雅停止，宽限期后�
 ## 相关文件
 
 - [`async-task-lifecycle.zh.md`](async-task-lifecycle.zh.md) — 异步 Task 实体
-- [`../dag/session-dag.zh.md`](../dag/session-dag.zh.md) — status 词表、失败与重试
+- [`../dag/overview.zh.md`](../dag/overview.zh.md) — status 词表、失败与重试
 - [`../../error-handling.zh.md`](../../error-handling.zh.md) — 异常纪律

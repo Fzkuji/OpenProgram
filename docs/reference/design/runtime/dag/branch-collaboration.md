@@ -5,8 +5,8 @@
 > the results of two branches merge into one. This document defines the three
 > collaboration modes and how their nodes relate to the graph.
 >
-> Prerequisites: the edge model (caller + predecessor) is covered in `session-dag.md`;
-> the authoritative spec for layout and edges is in `dag-rendering.md`.
+> Prerequisites: the edge model (caller + predecessor) is covered in `dag/overview.md`;
+> the authoritative spec for layout and edges is in `rendering.md`.
 
 ## 1. What a branch is, and what collaborating means
 
@@ -28,7 +28,7 @@ pointers plus one merge assistant node, with `commit_parents = [target prior, *p
 enters another point as an attach pointer that expands into an
 `[Attached from "label"]` block.
 
-Edge visual rules live in `dag-rendering.md` section 3 (color = branch, line style =
+Edge visual rules live in `rendering.md` section 3 (color = branch, line style =
 type; the line-style table; communication lines hidden by default). This document keeps
 no copy of them.
 
@@ -85,7 +85,7 @@ its own vertical line).
 - each additional "branch being merged in" is expressed via an **attach pointer node**: one attach pointer per peer (`predecessor=target_head`, `attach.head_id=peer tip`)
 - `commit_parents = [target prior commit, *peer commit ids]` (multi-parent, for provenance)
 
-**DAG drawing**: `dag-rendering.md` scenario 10 is authoritative. The merge node shape
+**DAG drawing**: `rendering.md` scenario 10 is authoritative. The merge node shape
 is a **double ring ◎**, the graph's unique convergence shape, and it lands in the base
 branch lane — the post-merge mainline continues base. The attach pointer node itself is
 not drawn in the viewport; only the convergence line is.
@@ -140,6 +140,6 @@ Design points:
 | attach (embedding) | implemented | `_merge.py` + `branch.py` `_attach_info` + generator |
 | attach edges (attach_ref dashed line, source tip → attach node) | implemented | `dag/render/edges.ts` |
 | worktree merge (a separate mechanism: git worktree ff-only file merge) | implemented | `worktree-item.tsx` |
-| merge node drawing (shape, lane, convergence lines) | specified in `dag-rendering.md` scenario 10 | `dag/shapes.ts`, `dag/render/edges.ts` |
+| merge node drawing (shape, lane, convergence lines) | specified in `rendering.md` scenario 10 | `dag/shapes.ts`, `dag/render/edges.ts` |
 | inter-branch messaging (`send_to_branch`) | not yet built | to be added |
 | sub-branch service chain (spawn_branch → attach merge-back) | partial: /task sub-agents exist; the merge-back still needs wiring | reuses merge |

@@ -100,7 +100,7 @@ def build_session_graph(
             "attach_embed_tokens": aembed_tok,
         })
 
-    # attach 指针不画节点（dag-rendering.md 场景 8/10），但回流长虚线需要
+    # attach 指针不画节点（rendering.md 场景 8/10），但回流长虚线需要
     # 它携带的 ref：把 ref 戳到嵌入位置（attach 的 predecessor 节点）上，
     # 前端从子分支 tip 画回这里。attach 行本身随 display=runtime 被过滤。
     by_id_row = {n["id"]: n for n in graph}
@@ -133,7 +133,7 @@ def build_session_graph(
             #  normalize_followup 处理，避免干扰 task-followup 的边重写。）
             if not pred_in and not caller_in:
                 # 跨会话 spawn 根：caller 在另一个会话的图里。挂回 ROOT
-                # 之前打标，前端画 ↗ 角标（dag-rendering.md 第四节徽标）。
+                # 之前打标，前端画 ↗ 角标（rendering.md 第四节徽标）。
                 if n.get("source") == "agent_spawn" and caller:
                     n["spawn_remote"] = True
                 n["caller"] = rid

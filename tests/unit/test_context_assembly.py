@@ -1,4 +1,4 @@
-"""Context Assembly — session-dag.md §7.
+"""Context Assembly — dag/overview.md §7.
 
 Three properties, one per section of the design:
 

@@ -217,7 +217,7 @@ class DefaultContextEngine(ContextEngine):
         #    real failure and must surface as a failed turn rather than
         #    silently degrading to a differently-shaped prompt, which is
         #    invisible in production and impossible to debug after the
-        #    fact (session-dag.md §8).
+        #    fact (dag/overview.md §8).
         compacted_history = history
         n_redacted = 0
         tokens_freed = 0
@@ -228,7 +228,7 @@ class DefaultContextEngine(ContextEngine):
         )
         decision.append("input:dag render")
 
-        # session-dag.md §7: the caller (dispatcher) assembled the wire
+        # dag/overview.md §7: the caller (dispatcher) assembled the wire
         # prompt already — budget THAT string, never a second assembly.
         # Standalone callers that pass nothing get one built here.
         if system_prompt is None:
@@ -457,7 +457,7 @@ class DefaultContextEngine(ContextEngine):
         model: Any,
     ) -> list:
         """Build provider Message[] via render_context + render_dag_messages —
-        the SAME context pipeline runtime.exec uses (session-dag.md
+        the SAME context pipeline runtime.exec uses (dag/overview.md
         step 4). Chat thus reads context from the one DAG, frame=-1
         (top-level: all in-frame → full accumulation).
 

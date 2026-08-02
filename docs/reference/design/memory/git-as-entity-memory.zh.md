@@ -21,7 +21,7 @@ Core (自我认知)                       ← memory/core.md
 ```
 
 本文档讲**实体记忆** (前两块). 抽象记忆以及两层之间的映射见
-[`virtual-memory.md`](virtual-memory.md) 和 [`memory-v2.md`](memory-v2.md).
+[`virtual-memory.md`](virtual-memory.md) 和 [`overview.md`](overview.md).
 
 ## 1. 跟现有 DAG 的关系
 

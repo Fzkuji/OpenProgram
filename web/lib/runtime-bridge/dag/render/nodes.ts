@@ -67,7 +67,7 @@ export function drawNodes(
       el.setAttribute("pointer-events", "none");
       g.appendChild(el);
     }
-    // ── status 画在节点自己的描边上（dag-rendering.md 第四节，废除占位框） ──
+    // ── status 画在节点自己的描边上（rendering.md 第四节，废除占位框） ──
     const status = (node as Record<string, unknown>).status as string | undefined;
     if (el && status === "running") {
       el.setAttribute("stroke-dasharray", "4 3");
@@ -104,7 +104,7 @@ export function drawNodes(
     }
     if (isCollapsible) {
       const hc = cinfo.hiddenCount[id] || 0;
-      // 对话层节点折叠的是它的执行子树 → ⚒N（dag-rendering.md 第〇节）；
+      // 对话层节点折叠的是它的执行子树 → ⚒N（rendering.md 第〇节）；
       // 执行层内部的折叠沿用 +N。
       const isConvNode =
         (node.role === "user" || node.role === "assistant")

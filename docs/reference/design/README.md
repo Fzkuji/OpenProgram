@@ -11,9 +11,9 @@ supporting notes / investigations that should not override it.
 
 | Doc | Topic |
 |---|---|
-| [`context/context.md`](context/context.md) | Context layer: pipeline + DAG storage + ContextCommit + compaction/render + attach/merge + cross-turn tool + gaps |
-| [`context/context-composition.md`](context/context-composition.md) | Target state: per-call layering (L0/L1/L2) + situational context |
-| [`context/context-comparison.md`](context/context-comparison.md) | Context approaches compared against reference projects |
+| [`context/overview.md`](context/overview.md) | Context layer: pipeline + DAG storage + ContextCommit + compaction/render + attach/merge + cross-turn tool + gaps |
+| [`context/composition.md`](context/composition.md) | Target state: per-call layering (L0/L1/L2) + situational context |
+| [`context/comparison.md`](context/comparison.md) | Context approaches compared against reference projects |
 | [`context/context-compaction.html`](context/context-compaction.html) | Context compaction (rendered) |
 
 ## memory/ — memory system (entity + abstract)
@@ -21,8 +21,7 @@ supporting notes / investigations that should not override it.
 | Doc | Topic |
 |---|---|
 | [`memory/README.md`](memory/README.md) | Memory system overview: architecture, design principles, implementation status |
-| [`memory/memory.md`](memory/memory.md) | Memory subsystem overview |
-| [`memory/memory-v2.md`](memory/memory-v2.md) | Memory v2: entity/virtual two-tier + provenance-navigated recall |
+| [`memory/overview.md`](memory/overview.md) | Memory subsystem: entity/virtual two-tier + provenance-navigated recall, and the chain running today |
 | [`memory/entity-memory.md`](memory/entity-memory.md) | Entity memory: Session-Git + Project-Git, organized by lifecycle |
 | [`memory/git-as-entity-memory.md`](memory/git-as-entity-memory.md) | Entity memory on Git: Session-Git + Project-Git |
 | [`memory/virtual-memory.md`](memory/virtual-memory.md) | Abstract memory: Timeline + Graph + Core, organized by type × lifecycle |
@@ -57,7 +56,7 @@ Proactivity applications (built on the base):
 
 | Doc | Topic |
 |---|---|
-| [`runtime/runtime.md`](runtime/runtime.md) | Runtime API behaviour (see also [`../api/runtime.md`](../api/runtime.md)) |
+| [`runtime/overview.md`](runtime/overview.md) | Runtime API behaviour (see also [`../api/runtime.md`](../api/runtime.md)) |
 | [`runtime/operations/user-input-requests.md`](runtime/operations/user-input-requests.md) | User input via runtime.ask/confirm |
 | [`runtime/controllability-and-three-surface-sync.md`](runtime/controllability-and-three-surface-sync.md) | Attended/unattended toggle, mid-run intervention, graceful stop, three-surface sync |
 | [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 three-surface sync implementation detail |
@@ -67,8 +66,8 @@ Proactivity applications (built on the base):
 | [`runtime/operations/streaming-resume.md`](runtime/operations/streaming-resume.md) | Streaming + resume |
 | [`runtime/operations/file-management.md`](runtime/operations/file-management.md) | Revert layers (commit / worktree) |
 | [`runtime/operations/multi-agent-revert-todo.md`](runtime/operations/multi-agent-revert-todo.md) | Multi-agent revert TODO |
-| [`runtime/dag/session-dag.md`](runtime/dag/session-dag.md) | **authoritative** Session DAG data model (one graph / 3 node roles user·llm·code / caller+predecessor edges / spawn / rendering / assembly / compaction) |
-| [`runtime/dag/dag-rendering.md`](runtime/dag/dag-rendering.md) | **authoritative rendering spec**: layout / edges / legend / default visibility, 12 scenarios |
+| [`runtime/dag/overview.md`](runtime/dag/overview.md) | **authoritative** Session DAG data model (one graph / 3 node roles user·llm·code / caller+predecessor edges / spawn / rendering / assembly / compaction) |
+| [`runtime/dag/rendering.md`](runtime/dag/rendering.md) | **authoritative rendering spec**: layout / edges / legend / default visibility, 12 scenarios |
 | [`runtime/dag/branch-collaboration.md`](runtime/dag/branch-collaboration.md) | Branch collaboration (communication / dispatch / merge) design and implementation steps |
 | [`runtime/execution/dispatcher-split.md`](runtime/execution/dispatcher-split.md) | Dispatcher split design |
 | [`runtime/execution/next-step-decision.md`](runtime/execution/next-step-decision.md) | Next-step decision (how the model picks what runs next) |
@@ -87,7 +86,7 @@ Proactivity applications (built on the base):
 | Doc | Topic |
 |---|---|
 | [`providers/request-build.md`](providers/request-build.md) | Request build pipeline |
-| [`providers/models/models.md`](providers/models/models.md) | Model catalog, final design |
+| [`providers/models/overview.md`](providers/models/overview.md) | Model catalog, final design |
 | [`providers/models/thinking-effort.md`](providers/models/thinking-effort.md) | Thinking / effort subsystem (level definitions, data flow, per-provider wire formats, UI picker) |
 | [`providers/models/fast-tier.md`](providers/models/fast-tier.md) | The Fast tier: two-tier detection, storage, wires |
 | [`providers/auth/claude-code-direct-oauth.md`](providers/auth/claude-code-direct-oauth.md) | claude-code direct subscription auth (Meridian dropped) |
@@ -108,7 +107,7 @@ Proactivity applications (built on the base):
 
 | Doc | Topic |
 |---|---|
-| [`function/function-calling-unification.md`](function/function-calling-unification.md) | Tool/function calling framework (current) |
+| [`function/calling-unification.md`](function/calling-unification.md) | Tool/function calling framework (current) |
 
 > Authoring-facing docs (`@agentic_function` usage, function metadata,
 > tool-calling loop, next-step decision, pure-python helpers) moved to the
@@ -118,12 +117,12 @@ Proactivity applications (built on the base):
 
 | Doc | Topic |
 |---|---|
-| [`cli/cli-redesign.md`](cli/cli-redesign.md) | CLI / TUI redesign (schema-driven settings, config panel) — current |
+| [`cli/redesign.md`](cli/redesign.md) | CLI / TUI redesign (schema-driven settings, config panel) — current |
 | [`cli/ports.md`](cli/ports.md) | Web UI ports (architecture, config, conflict handling) |
 | [`cli/slash-commands.md`](cli/slash-commands.md) | Slash commands |
 | [`cli/slash-commands-references.md`](cli/slash-commands-references.md) | Slash-command reference snapshot |
 | [`cli/drop-run-command.md`](cli/drop-run-command.md) | Function execution path from the Web UI |
-| [`cli/cli-naming.md`](cli/cli-naming.md) | CLI naming |
+| [`cli/naming.md`](cli/naming.md) | CLI naming |
 | [`cli/single-port.md`](cli/single-port.md) | Single-port architecture |
 | [`cli/config-write-safety.md`](cli/config-write-safety.md) | Config write safety — atomic `update_config` |
 | [`cli/tui-upgrade.md`](cli/tui-upgrade.md) | TUI upgrade |
@@ -132,8 +131,8 @@ Proactivity applications (built on the base):
 
 | Doc | Topic |
 |---|---|
-| [`channels/channel-design.md`](channels/channel-design.md) | Channel design (current) |
-| [`channels/channel-audit.md`](channels/channel-audit.md) | Channel audit / reference snapshot |
+| [`channels/design.md`](channels/design.md) | Channel design (current) |
+| [`channels/audit.md`](channels/audit.md) | Channel audit / reference snapshot |
 
 ## ui/ — surfaces, indicators, attachments, GUI agent
 

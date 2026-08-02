@@ -5,7 +5,7 @@ workspace files to L1 (project-level) while identity/inline/skills/memory stay
 L0. The system prompt is assembled L0-then-L1, so order is now:
     identity → inline → skills → memory → workspace(L1)
 (workspace moved to the end by design — L0 stable prefix first, see
-docs/design/context/context-composition.md §三).
+docs/design/context/composition.md §三).
 
 We verify the assembler's layer+order logic directly with stub components, so
 the test doesn't depend on real workspace files / skills / memory on disk.

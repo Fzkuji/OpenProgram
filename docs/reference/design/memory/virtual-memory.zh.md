@@ -190,7 +190,7 @@ OpenProgram 记忆 — 项目: OpenProgram, 最后整理 2026-06-18
 
 ## 5. 跟线性总结链的关系
 
-[`memory.md`](memory.md) 记录的线性链用更粗的结构覆盖同一片范围：
+[`overview.md`](overview.md) 记录的线性链用更粗的结构覆盖同一片范围：
 
 ```
 short-term/YYYY-MM-DD.md  → (sleep::light) →  wiki/<kind>/<slug>.md  → (sleep::deep) →  core.md
@@ -260,4 +260,4 @@ LLM 需要实体层细节时，调导航工具：
 
 ## 附录：实现状态
 
-提炼所需的读取层（`store/session/provenance.py`）已就位。§2、§3 描述的 Timeline 和 Graph 存储，以及 §7.2 的导航工具尚未建成；当前在跑的是 §5 描述、[`memory.md`](memory.md) 记录的线性总结链，它读的仍是渲染出的对话文本而不是 DAG。
+提炼所需的读取层（`store/session/provenance.py`）已就位。§2、§3 描述的 Timeline 和 Graph 存储，以及 §7.2 的导航工具尚未建成；当前在跑的是 §5 描述、[`overview.md`](overview.md) 记录的线性总结链，它读的仍是渲染出的对话文本而不是 DAG。

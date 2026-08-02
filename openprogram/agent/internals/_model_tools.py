@@ -312,7 +312,7 @@ def with_tool_runtime_prompt(
 ) -> str:
     """Legacy convenience wrapper around :func:`tool_runtime_block`.
 
-    Production assembly goes through ``context.components`` (session-dag.md
+    Production assembly goes through ``context.components`` (dag/overview.md
     §7); this stays for direct callers/tests that want the concatenation.
     """
     block = tool_runtime_block(tools, additional_working_dirs)

@@ -6,7 +6,7 @@ and where the design boundaries sit. The comparison sections record what
 OpenClaw and hermes do at each of these points and why our answer differs.
 
 For the layer's structure and message flow, see
-[`channel-design.md`](channel-design.md).
+[`design.md`](design.md).
 
 ## 1. The abstraction
 

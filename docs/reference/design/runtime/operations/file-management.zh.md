@@ -2,7 +2,7 @@
 
 > 本文描述 OpenProgram 如何追踪和回滚 agent 造成的文件改动：行业上的两条路线、
 > OpenProgram 采用的四层机制，以及它们之间如何协调。
-> 关联: [`agent-worktree.md`](../execution/agent-worktree.md)、[`memory-v2.md`](../../memory/memory-v2.md)
+> 关联: [`agent-worktree.md`](../execution/agent-worktree.md)、[`overview.md`](../../memory/overview.md)
 > (实体层)、[`git-as-entity-memory.md`](../../memory/git-as-entity-memory.md)。
 > 代码: `store/snapshot/checkpoint/`、`store/shadow_git/`、
 > `store/snapshot/read_tracking.py`、`agent/internals/_revert.py`、`worktree/`。

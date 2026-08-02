@@ -3,7 +3,7 @@
 > This document is the authoritative design of how `config.json` is mutated
 > safely: the single atomic entry point, the two locks behind it, and which
 > writers must route through it. For what a setting *is*, see
-> [`cli-redesign.md`](cli-redesign.md).
+> [`redesign.md`](redesign.md).
 
 ## 1. The Hazard
 
@@ -70,7 +70,7 @@ replacement. Only read-modify-write routes through `update_config`.
 ## 3. Scope
 
 This design concerns write atomicity alone. Schema definition and value
-validation belong to `config_schema` ([`cli-redesign.md`](cli-redesign.md) §3),
+validation belong to `config_schema` ([`redesign.md`](redesign.md) §3),
 and the storage format stays JSON. The property being established is that every
 write is atomic and mutually exclusive with every other write.
 

@@ -122,7 +122,7 @@ between them. The view scrolls with the chat: clicking a node
 scrolls the conversation to the corresponding message, and the
 panel keeps the currently-viewed range highlighted. The
 rendering rules are specified in
-[`design/runtime/dag/dag-rendering.md`](../reference/design/runtime/dag/dag-rendering.md) — consult it when
+[`design/runtime/dag/rendering.md`](../reference/design/runtime/dag/rendering.md) — consult it when
 adding new node kinds.
 
 ## Multi-account + key rotation

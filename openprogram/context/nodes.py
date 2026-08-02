@@ -93,7 +93,7 @@ class Call:
     output: Any = None
 
     caller: str = ""
-    # Conversation-chain parent (session-dag.md). Top-level
+    # Conversation-chain parent (dag/overview.md). Top-level
     # schema field, the ONLY place the conv edge lives. ``None`` on the
     # session's first node and on spawn branch roots.
     predecessor: Optional[str] = None
@@ -509,7 +509,7 @@ def _is_root(graph: Graph, node_id: str) -> bool:
 
 def render_spine(graph: Graph, head_id: str) -> list[str]:
     """The predecessor chain from ``head_id`` back to its branch
-    terminus, oldest first (session-dag.md §3 read invariant).
+    terminus, oldest first (dag/overview.md §3 read invariant).
 
     Pure edge walk: no caller fallback, no seq stitching. A node whose
     ``predecessor`` is missing terminates the walk — spawn roots
@@ -619,7 +619,7 @@ def render_context(
     access, no disk writes, no mutation of ``graph`` — the caller
     decides what "current frame" means.
 
-    Membership is path-native (session-dag.md §6): a node enters the
+    Membership is path-native (dag/overview.md §6): a node enters the
     rendering iff its nearest ROOT-level ancestor along ``caller`` lies
     on ``head_id``'s predecessor chain, and the frame/expose rules
     admit it. Branch isolation is therefore a property of the walk;

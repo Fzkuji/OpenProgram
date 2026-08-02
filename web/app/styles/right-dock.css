@@ -496,7 +496,7 @@
 }
 .history-node.is-head { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--text-bright) 35%, transparent)); }
 
-/* status=running：同形状虚线描边 + 呼吸（dag-rendering.md 第四节）。 */
+/* status=running：同形状虚线描边 + 呼吸（rendering.md 第四节）。 */
 .history-node.is-running circle,
 .history-node.is-running polygon,
 .history-node.is-running rect {

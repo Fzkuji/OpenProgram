@@ -2,8 +2,8 @@
 
 The command surface — CLI/TUI redesign, slash commands, settings, and Web UI ports.
 
-- [`cli-naming.md`](cli-naming.md)
-- [`cli-redesign.md`](cli-redesign.md)
+- [`naming.md`](naming.md)
+- [`redesign.md`](redesign.md)
 - [`config-write-safety.md`](config-write-safety.md)
 - [`drop-run-command.md`](drop-run-command.md)
 - [`ports.md`](ports.md)

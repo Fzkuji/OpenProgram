@@ -67,7 +67,7 @@ store/
 > still resolve via top-level aliases, so existing call sites didn't break.
 
 Designs: [`git-as-entity-memory.md`](../../docs/design/memory/git-as-entity-memory.md)
-(why git), [`memory-v2.md`](../../docs/design/memory/memory-v2.md) (entity layer),
+(why git), [`overview.md`](../../docs/design/memory/overview.md) (entity layer),
 [`file-management.md`](../../docs/design/runtime/file-management.md) (snapshot / commit
 / worktree / read-before-edit — how they combine).
 

@@ -6,7 +6,7 @@ went wrong. The error node is now committed like any other terminal node,
 head stops on it, and a retry forks from its predecessor while the failed
 line stays in the graph without entering the retry's context.
 
-See docs/reference/design/runtime/dag/session-dag.md §"Failure and retry".
+See docs/reference/design/runtime/dag/overview.md §"Failure and retry".
 """
 from __future__ import annotations
 

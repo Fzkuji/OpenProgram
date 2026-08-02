@@ -327,7 +327,7 @@ function render(nodes){
   const edgeG=svgEl("g",{}), nodeG=svgEl("g",{});
   svg.appendChild(edgeG); svg.appendChild(nodeG);
 
-  // 连线 = caller 树(照 session-dag.md): 每个节点连它的【父(caller)】, 父在左上、
+  // 连线 = caller 树(照 dag/overview.md): 每个节点连它的【父(caller)】, 父在左上、
   // 子在右下,父正下方竖线 + 横到子(├─/└─ 树形)。
   //   - 同对话链: user 连 ROOT(竖线), llm 连它的 user, tool 连它的 llm —— 函数调用
   //     逐层缩进的树。竖线只是"父正下方那一小段",不是贯穿整条 lane。

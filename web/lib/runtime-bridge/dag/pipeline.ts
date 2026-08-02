@@ -141,7 +141,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   const cinfo = _applyCollapse(graph);
   graph = cinfo.visible;
 
-  // attach 指针节点不画（dag-rendering.md 场景 8/10）：它是"head 在哪"
+  // attach 指针节点不画（rendering.md 场景 8/10）：它是"head 在哪"
   // 的数据锚点，留在对话链尾，viewport 里只画回流虚线，不占格。只过滤
   // 链尾指针（无对话后继）；head 指着它时把 head 退回它的前驱。
   {

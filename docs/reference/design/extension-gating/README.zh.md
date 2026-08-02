@@ -151,5 +151,5 @@ mcp:
 - [reference-comparison.md](./reference-comparison.md) —— 三个参考实现之间如何对比
 - [implementation.md](./implementation.md) —— 代码路径与辅助模块
 - [future-work.md](./future-work.md) —— 有意未构建的条目
-- [../function-calling-unification.md](../function/function-calling-unification.md) —— 针对 function-calling 子系统的更广义 6 层门控文档（本目录所形式化的，正是其中针对*所有*扩展而非仅工具的第 2/3/5 层）
+- [../calling-unification.md](../function/calling-unification.md) —— 针对 function-calling 子系统的更广义 6 层门控文档（本目录所形式化的，正是其中针对*所有*扩展而非仅工具的第 2/3/5 层）
 - [../skills-and-plugins.md](../integrations/skills-and-plugins.md) —— 最初的 skills + plugins 设计文档（涵盖目录、发现、热重载 —— 不含门控）

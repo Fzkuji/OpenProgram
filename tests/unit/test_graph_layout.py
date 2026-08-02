@@ -239,7 +239,7 @@ def test_orphan_no_root():
     assert _no_overlap(by)
 
 
-# ── spawn 分支根：对话层裁决（dag-rendering.md 第一节 / 场景 10） ──
+# ── spawn 分支根：对话层裁决（rendering.md 第一节 / 场景 10） ──
 
 def _spawn_turn():
     """One turn whose llm spawned a sub-agent branch (clean mode)."""
@@ -277,7 +277,7 @@ def test_spawn_branch_gets_own_lane():
 
 def test_followup_reply_without_attach_reparents_to_receiver():
     """task_followup 回流没写 attach 指针时，reply 挂回收到回流的那轮，
-    不能变成 depth=0 的孤儿根（dag-rendering.md 场景 10 回流语义）。"""
+    不能变成 depth=0 的孤儿根（rendering.md 场景 10 回流语义）。"""
     by = _annotate([
         _root(),
         {"id": "u1", "role": "user", "caller": "ROOT", "predecessor": None, "created_at": 1},

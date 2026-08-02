@@ -3,7 +3,7 @@
 > 本文档是设置项如何被描述、读取和写入的权威设计，覆盖全部界面：
 > 命令文法、定义"什么是一个设置项"的 schema、TUI 设置面板，以及
 > 把它们连接起来的传输层。单个命令的命名文法见
-> [`cli-naming.zh.md`](cli-naming.zh.md)。
+> [`naming.zh.md`](naming.zh.md)。
 
 ## 1. 概览与动机
 
@@ -27,7 +27,7 @@ web 页面中，无需任何按界面单写的代码。
 ## 2. 命令模型
 
 命令是名词在前、动词在后（`openprogram <noun> <verb>`），文法见
-[`cli-naming.zh.md`](cli-naming.zh.md)。运行模式是动词而非标志：
+[`naming.zh.md`](naming.zh.md)。运行模式是动词而非标志：
 `openprogram web` 启动 web UI，裸 `openprogram` 启动 chat。不存在
 `--tui` / `--web` / `--cli` 模式标志。
 

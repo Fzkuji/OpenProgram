@@ -1,6 +1,6 @@
 """spawn_caller invariant across the three spawn entry points.
 
-session-dag.md §2.3: a clean-mode spawn (new branch, branch_from=None)
+dag/overview.md §2.3: a clean-mode spawn (new branch, branch_from=None)
 must pass ``spawn_caller=<spawning node>`` so its branch root's caller is
 the spawning turn and the DAG attaches the branch to that turn instead of
 forking it from ROOT. An inherit-mode spawn (branch_from set) passes

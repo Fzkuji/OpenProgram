@@ -29,14 +29,13 @@ This file records the divergences between the design docs and the actual code, o
 
 ## Stale status markers (MEDIUM)
 
-### memory/memory-v2.md
-- Phase 0-1: complete (doc marker is correct)
-- Phase 2: the doc marks it "❌ not started", but §0.5 also mentions "the pre-read layer has landed" (the Provenance dataclass)
-- Should clarify: split Phase 2 into substeps and mark which substeps are already partial and which are still to do.
+### ~~memory/memory-v2.md → merged into memory/overview.md~~
+- ~~Phase markers disagreed: Phase 2 marked "❌ not started" while §0.5 said the pre-read layer had landed.~~
+- Status: ✅ Merged into `memory/overview.md`. The phase markers are gone; the doc now carries a single "Implementation status" appendix describing what runs today (linear journal/wiki/core chain) versus the entity/virtual target.
 
 ### ~~context/contextgit.md → merged into context/storage-and-engine.md~~
 - ~~Doc marker: "Status: proposal, not implemented"~~
-- Status: ✅ Merged into `context/context.md` together with context-commit-chain / context-engine-spec / context-attach-merge / cross-turn (the DAG foundation lives in `contextgit/dag.py`; the upper layer is not yet built).
+- Status: ✅ Merged into `context/overview.md` together with context-commit-chain / context-engine-spec / context-attach-merge / cross-turn (the DAG foundation lives in `contextgit/dag.py`; the upper layer is not yet built).
 
 ---
 
@@ -62,9 +61,9 @@ The following docs were audited and are fully consistent with the code; no chang
 
 - `runtime/controllability-and-three-surface-sync.md` — attended/unattended, graceful stop, and three-surface sync are all implemented
 - `runtime/operations/user-input-requests.md` — Phase 1+2 have landed (QuestionRegistry, the three Transports including the newly added TTYTransport)
-- `function/function-calling-unification.md` — already uses the "profiles" terminology, consistent with the code
+- `function/calling-unification.md` — already uses the "profiles" terminology, consistent with the code
 - `extension-gating/implementation.md` — paths are now correct
-- `context/context.md` (merged from contextgit and four others + the overview diagram) — status markers are correct
+- `context/overview.md` (merged from contextgit and four others + the overview diagram) — status markers are correct
 
 ---
 

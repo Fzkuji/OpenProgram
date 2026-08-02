@@ -215,7 +215,7 @@ def process_user_turn(
     else:
         user_caller_id = req.branch_from
     # Memory prefetch belongs to THIS turn, not to the system prompt
-    # (session-dag.md §7). Recall it here, where the user node id is known,
+    # (dag/overview.md §7). Recall it here, where the user node id is known,
     # so it can be stamped on the node for replay; the agent loop renders it
     # as a prefix block inside the wire user message. Recomputing it per LLM
     # call would be pointless — it only ever varies with the user's input.
@@ -295,7 +295,7 @@ def process_user_turn(
 
     if not req.user_already_persisted:
         # Write the user node as a Call directly — same shape the DAG
-        # uses everywhere (session-dag.md step 5). GraphStoreShim
+        # uses everywhere (dag/overview.md step 5). GraphStoreShim
         # .append already calls set_head for non-caller nodes, so no
         # separate set_head needed.
         try:
@@ -319,7 +319,7 @@ def process_user_turn(
                     _user_meta["extra"] = _raw_extra
             if req.branch_from is None and req.spawn_caller:
                 # Spawn branch root — created by the store primitive
-                # (session-dag.md): predecessor=None, caller
+                # (dag/overview.md): predecessor=None, caller
                 # = the spawning node, head registered. Never
                 # hand-assembled here.
                 db.spawn_branch(
@@ -884,7 +884,7 @@ def _run_loop_blocking(
                 else:
                     _wrapped.append(_t)
             tools = _wrapped
-    # One assembler (session-dag.md §7). The tool-runtime block, the Layer 6
+    # One assembler (dag/overview.md §7). The tool-runtime block, the Layer 6
     # deferred-tool catalog and the plan-mode reminder are registered
     # components now — the dispatcher no longer hand-appends anything, so the
     # string the engine budgets is the string that ships.
@@ -911,7 +911,7 @@ def _run_loop_blocking(
     _ctx_engine = resolve_engine_for(agent_profile)
     _ctx_engine.on_session_start(req.session_id)
     db = default_db()
-    # The prompt is recorded, not implied (session-dag.md §7): append a
+    # The prompt is recorded, not implied (dag/overview.md §7): append a
     # context/system_prompt node whenever the assembled text's hash moves.
     # No-op when it didn't — a stable prompt records once per session.
     from openprogram.context.system_prompt_node import record_system_prompt
@@ -997,7 +997,7 @@ def _run_loop_blocking(
                                "error": f"{type(e).__name__}: {e}",
                                "user_initiated": False}})
 
-    # Memory recalled for this turn (session-dag.md §7). ``process_user_turn``
+    # Memory recalled for this turn (dag/overview.md §7). ``process_user_turn``
     # stamped it on the user node; read it back from the branch so the block
     # the loop renders is byte-identical to the one replay will reproduce.
     _memory_prefetch = ""

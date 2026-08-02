@@ -22,7 +22,7 @@ from openprogram.context.nodes import (
 def _spine_tip(g: Graph) -> str | None:
     """Id of the newest node with no caller — the top-level chain tip.
 
-    session-dag.md §6 makes membership path-native: a node enters the
+    dag/overview.md §6 makes membership path-native: a node enters the
     render only via ``head_id``'s predecessor chain. These fixtures are
     plain single-branch chains, so each new top-level node links to the
     previous one; sub-called nodes (caller set) stay off the chain and

@@ -4,7 +4,7 @@
 > read, and written across every surface: the command grammar, the schema that
 > defines what a setting is, the TUI settings panel, and the transport that
 > connects them. For the naming grammar of individual commands, see
-> [`cli-naming.md`](cli-naming.md).
+> [`naming.md`](naming.md).
 
 ## 1. Overview and Motivation
 
@@ -31,7 +31,7 @@ in the terminal.
 ## 2. Command Model
 
 Commands are noun-first, verb-last (`openprogram <noun> <verb>`), the grammar
-specified in [`cli-naming.md`](cli-naming.md). Modes are verbs, not flags:
+specified in [`naming.md`](naming.md). Modes are verbs, not flags:
 `openprogram web` launches the web UI, bare `openprogram` launches chat. There
 are no `--tui` / `--web` / `--cli` mode flags.
 

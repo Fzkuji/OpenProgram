@@ -205,7 +205,7 @@ def build_branches_payload(session_id: str | None) -> dict:
                     # confusing (the panel filled up with assistant
                     # reply text) and didn't match git mental model.
                     # Compaction k_ tips display under their original id
-                    # (dag-rendering.md §9 — internals never leak).
+                    # (rendering.md §9 — internals never leak).
                     name = (row.get("display_msg_id") or mid)[:8]
                 rows.append({
                     "head_msg_id": mid,

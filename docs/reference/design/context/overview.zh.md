@@ -8,7 +8,7 @@ messages / tools),providers 把它翻译成各家 wire 请求。
 本层决定**喂什么、怎么分层**;providers 决定**怎么发给某一家**。两层解耦。
 
 > 每次调用如何按稳定度分层、如何让模型知道自己的处境，见
-> [`context-composition.md`](context-composition.md)；本文讲它底下的存储与压缩机制。
+> [`composition.md`](composition.md)；本文讲它底下的存储与压缩机制。
 
 ---
 
@@ -264,7 +264,7 @@ override 优先于持久化的 model，所以切换在下一次落盘前就生�
 
 ## 八、与三层组成的关系
 
-[`context-composition.md`](context-composition.md) 把每次 LLM 调用按"多久变一次"分三层，
+[`composition.md`](composition.md) 把每次 LLM 调用按"多久变一次"分三层，
 既服务缓存（稳定的靠前），也让模型知道自己的处境。本文的机制为这三层提供材料：
 
 | 层 | 内容 | 变化频率 | 材料来自 |

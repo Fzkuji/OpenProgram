@@ -2,7 +2,7 @@
 
 > 本文是 `config.json` 如何被安全修改的权威设计：唯一的原子入口、它背后的
 > 两把锁，以及哪些写入方必须经由它。关于「一个设置项是什么」，见
-> [`cli-redesign.zh.md`](cli-redesign.zh.md)。
+> [`redesign.zh.md`](redesign.zh.md)。
 
 ## 1. 危险所在
 
@@ -63,7 +63,7 @@ mutator 这种形式正是让该 API 难以被误用的原因。调用方拿不�
 ## 3. 范围
 
 本设计只涉及写入的原子性。schema 定义与取值校验属于 `config_schema`
-（[`cli-redesign.zh.md`](cli-redesign.zh.md) 第 3 节），存储格式仍是 JSON。
+（[`redesign.zh.md`](redesign.zh.md) 第 3 节），存储格式仍是 JSON。
 这里要确立的性质是：每一次写入都是原子的，且与其他任何写入互斥。
 
 ## 附录：实现状态

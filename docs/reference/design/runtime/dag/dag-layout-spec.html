@@ -384,7 +384,7 @@ scene(11,"执行子树默认聚合（&#9874;N 徽标）",
   s+=node(null,OX+2,4,'code',C.blue,"open_meteo","×19 循环折叠");
   return s;
  },
- "展开后的工具全部是该轮 llm 的子调用：tier=3、同列、逐行排（场景4 的多工具版）；工具内部若再有子调用才继续 tier+1。同构循环调用折叠成 ×N（场景见 session-dag.md ——数据仍是 N 个节点）。徽标画在节点文字右侧，不与 label 重叠。");
+ "展开后的工具全部是该轮 llm 的子调用：tier=3、同列、逐行排（场景4 的多工具版）；工具内部若再有子调用才继续 tier+1。同构循环调用折叠成 ×N（场景见 dag/overview.md ——数据仍是 N 个节点）。徽标画在节点文字右侧，不与 label 重叠。");
 
 // ---- 多面板 scene：每个概念一张小图 + 各自说明 ----
 function sceneMulti(num, title, desc, panels, rule){

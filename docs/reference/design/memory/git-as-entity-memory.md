@@ -23,7 +23,7 @@ Core (self-knowledge)                 ← memory/core.md
 
 This document covers **entity memory** (the first two blocks). Abstract memory
 and the mapping between the tiers are covered in
-[`virtual-memory.md`](virtual-memory.md) and [`memory-v2.md`](memory-v2.md).
+[`virtual-memory.md`](virtual-memory.md) and [`overview.md`](overview.md).
 
 ## 1. Relationship to the Existing DAG
 

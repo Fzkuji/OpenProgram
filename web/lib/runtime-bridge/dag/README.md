@@ -4,7 +4,7 @@ Self-contained SVG renderer for the session context DAG (PyCharm-style
 conversation history view). It paints into `#historyPanel .history-body`,
 hosted by the chat pane's graph perspective
 (`web/components/chat/dag-view.tsx`) — see
-`docs/reference/design/runtime/dag/dag-rendering.md`. Imported for side
+`docs/reference/design/runtime/dag/rendering.md`. Imported for side
 effects by `web/components/app-shell.tsx` via `./index`; exposes
 `renderHistoryGraph` / `repaintBranchTags` / `setHistoryContextRange`
 / `refreshHistoryContextRange` / `recomputeHistoryVisibility` /
@@ -79,7 +79,7 @@ the renderer never has to fold or hide synthetic cards.
 |-------------|------------------|--------------------------------------------|
 | conv chain  | `parent_id`      | solid coloured S-curve (branch colour)     |
 | sub-call    | `caller`         | same S-curve, treated as conv parent for branch-op nodes |
-| spawn       | `function="task"` → attach pointer chain → sub-branch conv root | dot-dash in the **child branch's lane colour** (dag-rendering.md §3) |
+| spawn       | `function="task"` → attach pointer chain → sub-branch conv root | dot-dash in the **child branch's lane colour** (rendering.md §3) |
 | reference   | `attach_ref` on `function="attach"`/`"merge"` | dashed marching-ants (CSS animation) |
 
 ## Pass pipeline (top of `pipeline.ts`'s `render()`)

@@ -4,7 +4,7 @@
 两条发送路径的关系、session 如何取键，以及设计边界落在哪里。对比章节记录
 OpenClaw 和 hermes 在这些点上各自的做法，以及我们的答案为何不同。
 
-该层的结构与消息流转见 [`channel-design.md`](channel-design.md)。
+该层的结构与消息流转见 [`design.md`](design.md)。
 
 ## 1. 抽象层
 

@@ -5,7 +5,7 @@
 > [`../../research/execution-trace-model-selection.zh.md`](../../research/execution-trace-model-selection.zh.md)。
 > 调用流程图见 [`../agent-call-flow.svg`](../agent-call-flow.svg)。
 > 可视化渲染规范（布局、连线、图例、默认可见性）是
-> [`dag-rendering.zh.md`](dag-rendering.zh.md)——绘制以它为准，本文只讲语义。
+> [`rendering.zh.md`](rendering.zh.md)——绘制以它为准，本文只讲语义。
 
 ![模型可视化](session-dag.svg)
 
@@ -175,7 +175,7 @@ spawn 分支的**唯一**原语。它创建分支根 user 节点（`predecessor=
 
 spawn 分支根**不**挂在 ROOT 上：它的 `caller` 指向发起它的节点，经该节点维持单连通
 图不变量。（例外：跨会话 spawn 的分支根指向另一会话的图；在本会话内挂在 ROOT 上，
-渲染层打 ↗ 徽标——见 [`dag-rendering.zh.md`](dag-rendering.zh.md) 图例。）
+渲染层打 ↗ 徽标——见 [`rendering.zh.md`](rendering.zh.md) 图例。）
 
 spawn 分支的上下文是干净的：spawn 分支上的 `get_branch` 止步于 spawn 根，不会经
 caller 边漏进父分支。spawn 分支的聊天视图只显示本分支自己的历史。
@@ -340,4 +340,4 @@ render manifest、写路径 spill、单管线强制）在代码中均已成立�
   spawn_branch、list_branches
 - `openprogram/agent/dispatcher/__init__.py` — 聊天入口、agent loop
 - `openprogram/agentic_programming/runtime.py` — 函数体内模型调用
-- [`dag-rendering.zh.md`](dag-rendering.zh.md) — 可视化渲染规范（绘制的权威）
+- [`rendering.zh.md`](rendering.zh.md) — 可视化渲染规范（绘制的权威）

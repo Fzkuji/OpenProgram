@@ -83,7 +83,7 @@ def _latest_user_text(messages: list) -> str:
 def _inject_memory_prefetch(llm_messages: list, block: str) -> bool:
     """Prepend ``block`` to the last user message's text, in place.
 
-    session-dag.md §7 — prefetched memory belongs to the turn that recalled
+    dag/overview.md §7 — prefetched memory belongs to the turn that recalled
     it, not to the session-constant system prompt. Tool results carry role
     ``toolResult``, so the last ``role == "user"`` message is always the
     conversational turn. Returns True when a message was modified.
@@ -398,7 +398,7 @@ async def _stream_assistant_response(
     # Per-turn memory prefetch — extract the latest user message and ask the
     # memory subsystem for relevant snippets. The result is already fenced as
     # <memory-context>; it renders as a PREFIX BLOCK INSIDE the current user
-    # message (session-dag.md §7), never on the system prompt. Prefetch
+    # message (dag/overview.md §7), never on the system prompt. Prefetch
     # changes with every new user input, so appending it to the system prompt
     # invalidated the provider's cached prefix for the ENTIRE history on every
     # turn — the single largest source of avoidable input cost. In the user

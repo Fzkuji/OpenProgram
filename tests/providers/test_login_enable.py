@@ -1,6 +1,6 @@
 """Subscription-login writes DEFAULT models as config spec rows (no import seed).
 
-Design (docs/design/providers/models/models.md §4.2): dynamic registration for
+Design (docs/design/providers/models/overview.md §4.2): dynamic registration for
 subscription providers = the program performs an enable on the user's behalf,
 writing to the same config list. These tests pin:
 

@@ -2,7 +2,7 @@
 
 External chat platforms (Telegram / Discord / Slack / WeChat) communicate bidirectionally with OpenProgram through this subsystem: a user sends a message on a platform to trigger the agent, and the agent's reply is sent back through the same channel.
 
-This document describes the structure and message flow. For the requirements and invariants the layer holds to, and the comparison with OpenClaw and hermes, see [`channel-audit.md`](./channel-audit.md).
+This document describes the structure and message flow. For the requirements and invariants the layer holds to, and the comparison with OpenClaw and hermes, see [`audit.md`](./audit.md).
 
 ## 1. Overall Shape
 
@@ -324,5 +324,5 @@ its API in `openprogram/webui/routes/channels.py`.
 
 ## 9. References
 
-- [`channel-audit.md`](./channel-audit.md) — requirements, invariants, and the comparison with OpenClaw / Hermes
+- [`audit.md`](./audit.md) — requirements, invariants, and the comparison with OpenClaw / Hermes
 - the docstring at the top of each adapter — platform-specific protocol details
