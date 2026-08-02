@@ -358,11 +358,14 @@ const twoAgents = () => ({
     + "top-to-bottom in the order they were spawned",
   );
 
-  // ④ The lane packed after a captioned head starts past the caption's
-  // ink: the name beside the first dot must never run under the second.
+  // ④ Caption ink reserves no columns — lanes pack by tier, one gap
+  // column apart, and the name flies over the next lane's EMPTY cells
+  // (emptiness is what the row claims guarantee). Reserving columns for
+  // text spread four branches across a whole page.
   assert.ok(
-    pos.s2.x >= pos.s1.x + CAP_REACH,
-    "the second agent's lane clears the first agent's caption",
+    pos.s2.x - pos.s1.x <= 5 * COL_W,
+    "the second agent's lane packs tight against the first — no columns "
+    + "are reserved for the caption's text",
   );
 
   // ⑤ The bounding box covers the last caption, so a fit never crops a
@@ -397,6 +400,32 @@ const twoAgents = () => ({
     one.pos.s1.y, both.pos.s1.y,
     "the first head's row is the same with or without a second agent — "
     + "the claim pass only ever pushes LATER heads down",
+  );
+}
+
+// A fork root dodges caption rows: its dashed bridge is a horizontal
+// line at its row, and a caption on that row would be struck through.
+// With no caption in the way it keeps the row the tree gave it —
+// scene 3's "fork shares the rewritten turn's row" stays intact.
+{
+  const byId = twoAgents();
+  byId.f0 = { id: "f0", role: "user", predecessor: "a0",
+    _lane: 20, _tier: 1, _depth: 2, created_at: 9 };
+  const { pos } = computeGeometry(byId);
+  assert.ok(
+    pos.f0.y !== pos.s1.y && pos.f0.y !== pos.s2.y,
+    "a fork root never sits on a sub-agent caption's row — its bridge "
+    + "would strike the name through",
+  );
+
+  const clear = twoAgents();
+  delete clear.s1; delete clear.s1a; delete clear.s2; delete clear.s2a;
+  clear.f0 = { id: "f0", role: "user", predecessor: "a0",
+    _lane: 20, _tier: 1, _depth: 2, created_at: 9 };
+  const free = computeGeometry(clear);
+  assert.equal(
+    free.pos.f0.y, free.pos.a0.y,
+    "with no caption in the way, a fork keeps its anchor's row (scene 3)",
   );
 }
 

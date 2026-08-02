@@ -26,45 +26,37 @@ def _is_task_followup_user(node: dict) -> bool:
 
 
 def normalize_followup(graph_entries: list[dict]) -> list[dict]:
-    """Re-parent task_followup assistant replies onto their sibling
-    attach pointer so the auto-followup turn appears as
-    ``attach → reply`` in the sequence chain. Then the synthetic
-    user_msg can be filtered out without breaking conv linkage.
+    """Re-parent task_followup assistant replies onto the turn that
+    received the merge-back — the synthetic user msg's own predecessor
+    — so the synthetic user can be filtered out without breaking conv
+    linkage.
+
+    NEVER onto the attach pointer: attach pointers are ``display=
+    runtime`` rows that ``filter_visible`` strips from the graph, so a
+    reply chained to one has a predecessor that exists nowhere in the
+    payload. The frontend's edge walk dead-ends on it and the reply
+    draws as an orphan floating off every chain — two of those, from
+    one real session, are what this rule was rewritten from.
 
     Mutates the dicts in place (matches the rest of the layout
     pipeline's "annotate the graph_entries it was given" contract).
     """
     by_id = {m["id"]: m for m in graph_entries if m.get("id")}
-    # caller_msg_id → attach pointer id (one per caller in practice)
-    attach_by_caller: dict[str, str] = {}
-    for nid, node in by_id.items():
-        if node.get("function") != "attach":
-            continue
-        caller = node.get("predecessor") or node.get("caller")
-        if caller:
-            attach_by_caller[caller] = nid
-    # Find task_followup user msgs; redirect their replies' predecessor
     for nid, node in by_id.items():
         if not _is_task_followup_user(node):
             continue
         followup_user_parent = node.get("predecessor")
-        attach_id = attach_by_caller.get(followup_user_parent or "")
-        # 没有 attach 指针的 followup（异步回流路径可能不写 attach）：
-        # 把 reply 直接挂回收到回流的那轮，否则合成 user 被过滤后 reply
-        # 的 predecessor 悬空，成为 depth=0 的孤儿根、飘到 ROOT 行。
-        if not attach_id and followup_user_parent in by_id:
-            attach_id = followup_user_parent
-        if not attach_id:
+        if not followup_user_parent or followup_user_parent not in by_id:
             continue
         # Reply's schema predecessor == followup user msg id; rewrite
-        # to point at the attach pointer instead.
-        for other_id, other in by_id.items():
+        # to skip the about-to-be-filtered synthetic user.
+        for other in by_id.values():
             if (
                 other.get("source") == "task_followup"
                 and other.get("role") == "assistant"
                 and other.get("predecessor") == nid
             ):
-                other["predecessor"] = attach_id
+                other["predecessor"] = followup_user_parent
     return graph_entries
 
 

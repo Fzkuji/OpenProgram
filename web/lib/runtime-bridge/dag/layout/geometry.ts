@@ -53,24 +53,21 @@ export function computeGeometry(byId: Record<string, GNode>): Geometry {
   const ids = Object.keys(byId);
 
   // ── Columns: pack lanes by their widest visible tier ──
-  // A sub-agent head counts for more than the one column its tier buys:
-  // the caption beside it runs several columns to the right of the
-  // anchor, and a lane sized to the tier alone lets it spill onto
-  // whatever the next lane put there — in the case this was written from,
-  // a following turn's node landed in the middle of the name. So the
-  // head's tier is inflated to the columns its ink actually occupies,
-  // and lane packing keeps working unchanged from there.
+  // Caption ink reserves NO columns. A sub-agent's name runs several
+  // columns right of its dot, over the neighbouring lanes — and that is
+  // fine, because the cells it flies over are empty: the row passes
+  // below guarantee that no head, and no fork root (whose bridge is the
+  // other row-wide ink), shares a caption's row. Widening lanes to fit
+  // text was tried and it spread four branches across a whole page —
+  // the grid's rhythm is one to two columns, and text is not a shape
+  // (rendering.md rule ③).
   const maxTierOfLane: Record<number, number> = Object.create(null);
   ids.forEach((id) => {
     const n = byId[id];
     const lane = n._lane || 0;
     const tier = typeof n._tier === "number" ? n._tier : 0;
-    const hw = spawnHW(n);
-    const width = hw === undefined
-      ? tier
-      : tier + Math.ceil(hw / COL_W);
-    if (maxTierOfLane[lane] === undefined || width > maxTierOfLane[lane]) {
-      maxTierOfLane[lane] = width;
+    if (maxTierOfLane[lane] === undefined || tier > maxTierOfLane[lane]) {
+      maxTierOfLane[lane] = tier;
     }
   });
   const lanesSorted = Object.keys(maxTierOfLane)
@@ -165,6 +162,49 @@ export function computeGeometry(byId: Record<string, GNode>): Geometry {
       if (d) rowOf[id] = (rowOf[id] || 0) + d;
     });
   }
+
+  // ── Fork roots dodge caption rows ──
+  // A fork's dashed bridge is a long horizontal line drawn at its
+  // root's row, all the way from its sibling to its own lane. A
+  // sub-agent caption sitting on that row gets struck through by it —
+  // the bridge can span the whole graph, and the caption is the widest
+  // ink there is. So a fork root whose row is already a caption's row
+  // (or an earlier fork's) takes the next free row, and its lane comes
+  // with it. A fork with a free row keeps it: the scene-3 rule — a fork
+  // sibling shares the row of the turn it rewrites — is untouched,
+  // because chain turns claim nothing here.
+  const claimedRows = new Set<number>();
+  capsules.forEach((id) => claimedRows.add(rowOf[id] || 0));
+  const laneEarliest: Record<number, string> = Object.create(null);
+  ids.forEach((id) => {
+    const lane = byId[id]._lane || 0;
+    const cur = laneEarliest[lane];
+    if (cur === undefined || (rowOf[id] || 0) < (rowOf[cur] || 0)) {
+      laneEarliest[lane] = id;
+    }
+  });
+  const forkRoots = Object.values(laneEarliest)
+    .filter((id) => {
+      if (spawnHW(byId[id]) !== undefined) return false;
+      const p = layoutParent(byId[id]);
+      if (!p || !byId[p]) return false;
+      return (byId[p]._lane || 0) !== (byId[id]._lane || 0);
+    })
+    .sort(byCallOrder);
+  forkRoots.forEach((id) => {
+    const row = rowOf[id] || 0;
+    let d = 0;
+    while (claimedRows.has(row + d)) d++;
+    if (d) {
+      const lane = byId[id]._lane || 0;
+      ids.forEach((nid) => {
+        if ((byId[nid]._lane || 0) === lane) {
+          rowOf[nid] = (rowOf[nid] || 0) + d;
+        }
+      });
+    }
+    claimedRows.add(row + d);
+  });
 
   const pos: Record<string, { x: number; y: number }> = Object.create(null);
   let minX = 0;

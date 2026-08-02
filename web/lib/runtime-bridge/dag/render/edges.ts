@@ -198,7 +198,23 @@ export function drawEdges(
         }
       }
     });
-    if (!sibling) continue;
+    // No sibling at all — this branch forked off its parent's chain TIP
+    // (nothing on the parent lane shares its fork point), so there is no
+    // peer to chain the dashed bridge from. Bridge from the fork-point
+    // node itself: leaving the branch with no edge draws it as an orphan
+    // floating off every chain, which is a lie about recorded history.
+    if (!sibling) {
+      let fp = pid;
+      let fhops = 0;
+      while (fp && !tree.byId[fp] && fhops < 50) {
+        const fn = fullById[fp];
+        fp = fn ? (fn.predecessor || fn.caller || "") : "";
+        fhops++;
+      }
+      const fpNode = fp ? tree.byId[fp] : undefined;
+      if (!fpNode || fpNode.display === "root") continue;
+      sibling = fpNode;
+    }
     const sp = pos(sibling);
     const forkPos = pos(node);
     const nr = NODE_R + 4;

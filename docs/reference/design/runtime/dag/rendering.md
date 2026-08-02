@@ -189,10 +189,10 @@ branch:
 | the new mainline from a merge | the merge node itself | lands in the base branch lane (see scenario 8), no new lane opened |
 
 **Branches are packed by actual column occupancy**: the columns a branch occupies = from
-its start column to the deepest column of its subtree — including the ink of a
-sub-agent head's caption, which reserves the columns it runs across (§12) — and
-the next branch starts at the previous branch's actually-occupied rightmost
-column +1, with no overlap.
+its start column to the deepest column of its subtree; the next branch starts at the
+previous branch's actually-occupied rightmost column +1, with no overlap. Caption ink
+reserves no columns — a sub-agent's name flies over the neighbouring lanes' cells, and
+the row claims (§12) are what guarantee those cells are empty.
 
 ### tier — how many columns to indent within a branch
 
@@ -218,11 +218,16 @@ rows it occupies. Rows are not "hops to root" — that would stack all children 
 parent on a single row. Two exceptions keep their anchor's row because they grow
 sideways, not down: a fork sibling sits on the **same row** as the sibling it rewrites
 (scene 3), and a spawn branch root sits on the **same row as the spawn call node**
-(scene 10) — unless a second spawn root already claimed that row, in which case it takes
-the next free one and brings its lane with it, because a sub-agent head carries its
-name as a caption beside it and two of them side by side print through each other
-(§12). Cross-session spawns land as the target session's own conversation chain
-(lane 0), not a side branch (scene 12).
+(scene 10).
+
+Both exceptions yield to a **claimed row**. A sub-agent head's caption and a fork
+root's dashed bridge are row-wide ink — the one runs a name across the lanes to its
+right, the other runs a line across the lanes to its left — so each head and each
+fork root claims a row of its own, in call order, and one that would land on an
+already-claimed row takes the next free one and brings its lane with it (§12). A
+head or fork with a free row keeps its anchor's row, so the exceptions above hold
+whenever nothing collides. Cross-session spawns land as the target session's own
+conversation chain (lane 0), not a side branch (scene 12).
 
 ---
 
@@ -247,8 +252,9 @@ own text. A glyph that grows with its label is a glyph every neighbour has to be
 measured against — that negotiation is what §12's earlier pill got wrong. The one
 exception is the §9 compaction capsule, which is wider than the reference circle
 horizontally and is still centred on, and placed by, a single cell. Caption ink
-is not a shape, but the layout still reserves the columns it crosses and keeps
-two captioned heads off one row (§1), so no name ever prints across a node.
+reserves no columns — what keeps a name from printing across a node is ROW
+exclusivity: sub-agent heads and fork roots (the two kinds of row-wide ink)
+each claim a row of their own (§1), so the cells a caption flies over are empty.
 
 ---
 
@@ -625,9 +631,11 @@ text, and every edge that could land on it needed an asymmetric clip so no line
 crossed the name; the dot's edges clip at its own radius like any other glyph's.
 The caption's ink still exists, and the layout still accounts for it — but as
 one number, not a shape: `pipeline.ts` measures the caption the drawer will
-render and stamps its right reach on the head (`_spawnHW`), the lane packing
-reserves the columns that reach crosses, the bounding box extends to it so a
-fit never crops a name, and two captioned heads never share a row (§1).
+render and stamps its right reach on the head (`_spawnHW`), the bounding box
+extends to it so a fit never crops a name, and the two kinds of row-wide ink —
+a caption, a fork's bridge — each claim a row of their own (§1). Columns are
+never reserved for text: the name flies over cells the row claims keep empty,
+and the lanes stay one to two units apart like everything else on the grid.
 
 **The spawn edge.** A dashed curve (`5 4`) in the child branch's colour, from
 the calling turn's **lower edge** to the dot's left edge. It leaves the bottom
@@ -662,7 +670,7 @@ The whole spec is implemented. Where each part lives:
 | Spec item | Implementation |
 |---|---|
 | Infinite canvas (pan / zoom / fit / dot lattice) | `dag/canvas.ts` + `.history-body` in `right-dock.css`; view state in `dag/store/globals.ts`; HUD in `components/chat/dag-view.tsx` |
-| §1 lane / tier / depth layout | `dag/layout/geometry.ts::computeGeometry` (content-packed lanes, preorder rows, caption-ink column reservation, head row claim); lattice, no-overlap, row-claim and reserved-ink all executed and asserted by `web/scripts/check-dag-subagent.mjs` |
+| §1 lane / tier / depth layout | `dag/layout/geometry.ts::computeGeometry` (tier-packed lanes, preorder rows, head + fork-root row claims); lattice, no-overlap, row claims, tight packing and caption-covering maxX all executed and asserted by `web/scripts/check-dag-subagent.mjs` |
 | §2 rule ③ glyphs are cells | no shape is sized from text — the caption's measured reach is a layout number (`_spawnHW`), not a glyph width |
 | §4 HEAD solid, no halo | `render/nodes.ts` passes `isHead` as `_buildShapeEl`'s `solid`; the coverage dot is punched out of the fill; `right-dock.css` has no `.is-head` glow |
 | §0 execution-subtree aggregation | `passes/apply-collapse.ts`: any node with execution sub-calls starts folded; `render/nodes.ts` draws ⚒N (spawn-root subtrees exempt) |
