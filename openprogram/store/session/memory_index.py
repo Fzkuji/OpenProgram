@@ -102,10 +102,10 @@ class SessionMemoryIndex:
         """Walk back from ``head_id`` via the conv edge, return root→head.
 
         ``get_edge(call) -> Optional[str]`` resolves the parent for a
-        given Call. The DAG model carries the conv parent in
-        ``metadata["predecessor"]``, not on the Call directly, so the
-        store passes a closure that knows where to look. Keeps this
-        class ignorant of the metadata layout.
+        given Call. The store passes a closure that reads the right
+        edge (``_node_conv_predecessor``), so this class stays
+        ignorant of which field holds it and works on raw payload
+        dicts as well as ``Call`` objects.
         """
         chain: list[Call] = []
         cur: Optional[str] = head_id or self.head_id
@@ -171,7 +171,7 @@ class SessionMemoryIndex:
         ``get_predecessor(payload) -> Optional[str]`` and
         ``get_caller(payload) -> Optional[str]`` translate the raw
         JSON dict back to edge ids. They live outside this class
-        because the field layout (``metadata.predecessor`` vs
+        because the field layout (``predecessor`` vs
         ``caller``) belongs to the message-dict adapter, not the
         index.
         """

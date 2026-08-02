@@ -226,7 +226,7 @@ def write_attach_pointer_for_spawn(
         # Attach is a branch-referencing function_call that lives ON
         # the main sequence (per docs/design/runtime/dag-node-model.md), so it
         # must hang off the caller via ``predecessor`` (sequence edge),
-        # not ``predecessor`` (which would put it on a side branch and
+        # not ``caller`` (which would put it on a side branch and
         # leave the caller's reply orphaned as its own tip).
         attach_msg = {
             "id": attach_node_id,

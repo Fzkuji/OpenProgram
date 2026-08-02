@@ -181,7 +181,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
             "display": "runtime",
             "function": "attach",
             "content": (result.final_text or result.error or "(no output)").strip(),
-            # Only ``predecessor`` — NOT ``predecessor``. With both set,
+            # Only ``predecessor`` — NOT ``caller``. With both set,
             # the attach pointer would be both a conv child (picked
             # up by linear_history) AND a side-call (picked up by the
             # splicer), so the row showed up twice in the chat. With

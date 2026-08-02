@@ -82,7 +82,11 @@ def _peer_final_text(
             break
         if (node.role or "") in ("assistant", "llm") and (node.output or "").strip():
             return str(node.output), head
-        cur = node.predecessor or node.caller or None
+        # Conversation edge only: at a spawn branch root
+        # (predecessor=None, caller=<spawning node>) the caller
+        # fallback walked out into the PARENT branch and returned
+        # that branch's text as this peer's latest.
+        cur = node.predecessor or None
     return "", head
 
 
@@ -318,7 +322,7 @@ def process_merge_turn(
             store.append_message(target_session_id, attach_msg)
             attach_node_ids.append(attach_node_id)
             # Keep head pointed at the target head, not the attach
-            # pointer (attach uses predecessor, not predecessor, so the
+            # pointer (attach uses predecessor, not caller, so the
             # branch tip shouldn't move — but append_message has a
             # guard that updates head when the node has no caller. We
             # set predecessor above so this is a no-op; defensive

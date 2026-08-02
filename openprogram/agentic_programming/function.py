@@ -204,12 +204,12 @@ def create_pending_call_node(
     # no enclosing @agentic_function on the stack, so ``caller`` is empty.
     # Without a conv predecessor the code node has no place in the
     # conversation chain and the DAG viewport renders it as a detached
-    # root. Stamp the session's current head as ``metadata.predecessor``
+    # root. Stamp the session's current head as ``predecessor``
     # (the conv-chain edge) so it attaches under the active branch's tip.
     if not caller:
         # A retry forks off a SPECIFIC node (the original run's
         # predecessor); a fresh run chains off the current head. Both land
-        # as ``metadata.predecessor`` with an empty caller, so every
+        # as ``predecessor`` with an empty caller, so every
         # top-level run uses ONE edge type (predecessor) — internal
         # sub-calls remain the only nodes with a code-node caller.
         try:

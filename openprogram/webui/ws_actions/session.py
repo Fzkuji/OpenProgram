@@ -71,7 +71,7 @@ def _is_top_function_run(m: dict, by_id: dict[str, dict]) -> bool:
       has ``caller`` pointing at another code/tool node — it belongs
       inside that function's Execution DAG, never a standalone card.
     * a TOP-LEVEL run has an empty / ROOT caller. Its place on the chain
-      comes from ``metadata.predecessor`` (a new run chains off the head)
+      comes from ``predecessor`` (a new run chains off the head)
       or a shared fork point (a retry). A code node whose predecessor is
       ANOTHER code node is therefore still a top-level run — the NEXT run
       chained after the previous one — not a sub-call.
@@ -115,7 +115,7 @@ def _rebuild_runtime_cards(
         # Top-level = a run entry, keyed on the CALLER (sub-call) edge:
         # every top-level run (fresh, chained, or retry) has an empty /
         # ROOT caller and carries its chain position in
-        # metadata.predecessor. Internal sub-calls (gui_step, conclusion,
+        # the predecessor field. Internal sub-calls (gui_step, conclusion,
         # plan_next_action, self-recursion) have caller pointing at
         # another code/tool node — they live in the card's Execution DAG,
         # never a standalone card. See _is_top_function_run (same rule).
@@ -463,7 +463,7 @@ async def handle_load_session(ws, cmd: dict):
             if m.get("function") != "attach":
                 continue
             # Skip pointers already in the chain — older writes set
-            # both predecessor and predecessor, which made attach pointers
+            # both predecessor and caller, which made attach pointers
             # appear as conv children too. New writes only set
             # predecessor; this guard keeps old data from doubling up.
             if m.get("id") in chain_ids:
@@ -531,7 +531,7 @@ async def handle_load_session(ws, cmd: dict):
         def _norm_pred(mm):
             """The fork-point id of a run: its conversation predecessor,
             falling back to ``caller`` (a retry expresses the fork via
-            caller, a chained new run via metadata.predecessor — both name
+            caller, a chained new run via the predecessor field — both name
             the same fork parent). ROOT / absent → None (root-level)."""
             p = mm.get("predecessor") or mm.get("caller") or None
             return None if p == "ROOT" else p

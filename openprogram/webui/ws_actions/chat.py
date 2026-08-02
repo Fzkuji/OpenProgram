@@ -702,7 +702,7 @@ def _last_call_kwargs(session_id: str, func_name: str):
 def _call_predecessor(node) -> str:
     """The anchor a re-run passes so it lands as a SIBLING of ``node``
     (same fork point). Returned as ``pred:<id>`` — the forced-tool path
-    decodes that into the re-run's ``metadata.predecessor`` (with an empty
+    decodes that into the re-run's ``predecessor`` (with an empty
     caller), matching the edge a fresh chained run uses, so the two runs
     are true alternatives sharing one predecessor.
 
@@ -710,8 +710,13 @@ def _call_predecessor(node) -> str:
     chat-retry's ``predecessor = src.predecessor``), falling back to the
     node's caller, then "ROOT" — so a first/root-level run re-runs as a
     ROOT sibling and an LLM-issued call re-runs off the same reply it
-    originally hung from."""
-    pred = (getattr(node, "metadata", None) or {}).get("predecessor")
+    originally hung from.
+
+    ``predecessor`` is a top-level ``Call`` field (dag/overview.md §3);
+    it is popped out of metadata on every write path, so reading
+    ``metadata["predecessor"]`` here always yielded None and silently
+    collapsed every top-level re-run onto "ROOT"."""
+    pred = getattr(node, "predecessor", None)
     fork = pred or getattr(node, "caller", None) or "ROOT"
     return f"pred:{fork}"
 

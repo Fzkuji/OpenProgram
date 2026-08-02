@@ -52,14 +52,19 @@ role="code"   ─ 一次函数调用    input  = arguments dict
                                 called_by = 调起这个函数的 LLM 或父函数 id
 ```
 
-**DAG 上的"边"有两套**：
+**DAG 上的"边"有三套**（权威定义见
+[`docs/reference/design/runtime/dag/overview.md`](https://github.com/Fzkuji/OpenProgram/blob/main/docs/reference/design/runtime/dag/overview.md)
+§3，本文其余段落里出现的旧名 `called_by` 一律读作 `caller`）：
 
 ```
-called_by    调用关系图   "谁调起我"           形成 fan-out 的嵌套树
+caller       调用关系图   "谁调起我"           形成 fan-out 的嵌套树
+predecessor  对话链       "我在聊天里接在谁后面"  分支靠它区分（同一前驱多个孩子 = fork）
 reads        上下文引用    "我看了哪些节点"      fan-in 的 LLM prompt 组成
 ```
 
-**时间顺序由 `seq` 表达，不是图的边**。`seq` 是节点 append 到 DB 时单调递增的整数，按 seq 升序排就是发生顺序。没有 `predecessor` 字段——那是把"时间链"和"逻辑边"混在一起的过度建模。
+**时间顺序由 `seq` 表达，不是图的边**。`seq` 是节点 append 到 DB 时单调递增的整数，按 seq 升序排就是发生顺序。`predecessor` 表达的是对话顺序而非时间顺序：两者的区别正是分支能存在的原因——retry 出来的兄弟节点 seq 更大，但 `predecessor` 与被替换的节点相同。
+
+`caller` 与 `predecessor` 都是 `Call` 的顶层字段，metadata 里没有镜像。
 
 `Graph` 是一个轻量容器：`nodes: dict[id → Call]` + `_next_seq` 整数。`add(node)` 自动分配 seq；`update(node_id, **fields)` 用于"入口 append 占位、出口 update output"的 @agentic_function 生命周期（这是 DAG 中**唯一**违反 append-only 的操作，专门支持实时观察）。
 

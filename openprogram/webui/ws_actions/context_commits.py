@@ -34,7 +34,10 @@ def _find_fork_group(idx, head_id: str) -> str:
         node = idx.nodes_by_id.get(cur)
         if node is None:
             break
-        parent = (node.metadata or {}).get("predecessor")
+        # Top-level Call field (dag/overview.md §3) — never in metadata,
+        # which is why the metadata read broke this walk on iteration 1
+        # and made every commit a "single:" singleton.
+        parent = getattr(node, "predecessor", None)
         if not parent:
             break
         siblings = idx.children_by_predecessor.get(parent, [])

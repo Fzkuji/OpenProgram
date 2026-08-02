@@ -11,7 +11,7 @@
 | 关系 | 含义 | 字段 | 举例 |
 |---|---|---|---|
 | **caller** | 谁调用了我（子调用边） | 节点顶层 `Call.caller` | 工具被哪个 LLM 调起；ROOT 调起顶层节点 |
-| **conv 前驱** | 聊天顺序上我接在谁后面（对话链边） | `metadata.predecessor` | 第二轮 user 接在第一轮 reply 后 |
+| **conv 前驱** | 聊天顺序上我接在谁后面（对话链边） | 顶层 `Call.predecessor` | 第二轮 user 接在第一轮 reply 后 |
 
 ### 为什么需要两个
 
@@ -48,9 +48,9 @@
 | 文件 | 符号 | 作用 |
 |---|---|---|
 | `context/nodes.py` | `Call.caller` | dataclass 的边字段，语义 = caller |
-| `store/session/_msg_adapter.py` | `_msg_to_node` | msg 的 `caller` → `Call.caller`；msg 的 `predecessor` → `metadata.predecessor` |
+| `store/session/_msg_adapter.py` | `_msg_to_node` | msg 的 `caller` → `Call.caller`；msg 的 `predecessor` → `Call.predecessor`（从 metadata 里 pop 掉，不留镜像） |
 | `store/session/_msg_adapter.py` | `_node_to_msg` | 反向：输出 `caller` + `predecessor` 两个明确的 key |
-| `store/session/session_store.py` | `_node_conv_predecessor` | 读 `metadata.predecessor` |
+| `store/session/session_store.py` | `_node_conv_predecessor` | 读 `Call.predecessor` |
 | `store/session/session_store.py` | `_node_caller` | 读 `Call.caller` |
 | `store/session/memory_index.py` | `append(node, predecessor, caller)` | 两个索引：`children_by_predecessor`（conv）/ `children_by_caller`（caller） |
 | `webui/graph_builder.py` | `build_session_graph` | 构建 graph dict，用 `predecessor` + `caller` 两个明确 key |
@@ -84,7 +84,7 @@
 
 ## 实现状态
 
-前后端均已实现。`Call.caller` 与 `metadata.predecessor` 是仅有的两个边字段；
+前后端均已实现。`Call.caller` 与 `Call.predecessor` 是仅有的两个边字段；
 `graph_builder` 和 WS graph dict 输出两个明确的 key；`_common.py` 提供
 `predecessor_of` 和 `caller_of` 两个独立访问函数，tier 读 caller，
 lane/depth/topology 读 predecessor。会话数据模型以

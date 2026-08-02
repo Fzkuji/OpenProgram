@@ -177,11 +177,16 @@ async function _checkoutTo(id: string): Promise<boolean> {
  * because the edited message has to stand beside the original, not
  * after it.
  *
- * A first turn has no predecessor; ROOT is its fork point, which the
- * checkout route accepts like any other node.
+ * A first turn carries the "ROOT" sentinel as its predecessor, which
+ * the checkout route accepts like any other node.
+ *
+ * Strictly the conversation edge — no `caller` fallback. A spawn
+ * branch root has predecessor=None and caller=<spawning node in the
+ * PARENT branch>, and forking there must not check out into a
+ * different branch.
  */
 export async function forkAndEditNode(node: GNode): Promise<void> {
-  const pivot = node.predecessor || node.caller;
+  const pivot = node.predecessor;
   if (!pivot) {
     showToast("找不到分叉点", { tone: "error" });
     return;

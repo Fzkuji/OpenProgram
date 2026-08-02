@@ -88,8 +88,10 @@ def _projects_default_id_safe() -> str:
 
 # Edge resolvers
 # A node has two distinct parent edges:
-#   * caller       ─ Call.caller  (the LLM/ROOT that invoked a sub-call)
-#   * predecessor  ─ metadata.predecessor  (the conversation-chain parent)
+#   * caller       ─ Call.caller       (the LLM/ROOT that invoked a sub-call)
+#   * predecessor  ─ Call.predecessor  (the conversation-chain parent)
+# Both are top-level schema fields — dag/overview.md §3 forbids a
+# metadata mirror for either.
 # Keep these as standalone functions so the index doesn't know about
 # message-dict field layout.
 
@@ -1554,7 +1556,7 @@ class SessionStore:
         if pair is None:
             return None
         _git, idx = pair
-        # Old semantics: longest message-tree chain via metadata.predecessor.
+        # Old semantics: longest message-tree chain via the predecessor field.
         children = idx.children_by_predecessor
         roots = [msg_id] if msg_id else [
             n.id for n in idx.all_nodes()

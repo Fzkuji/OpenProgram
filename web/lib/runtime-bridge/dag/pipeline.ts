@@ -258,8 +258,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   const parentOf: Record<string, string> = Object.create(null);
   Object.keys(tree.byId).forEach((nid) => {
-    const pid = (tree.byId[nid] as { predecessor?: string }).predecessor
-      || (tree.byId[nid] as { predecessor?: string }).predecessor;
+    const pid = (tree.byId[nid] as { predecessor?: string }).predecessor;
     if (pid) parentOf[nid] = pid;
   });
   setParentOf(parentOf);

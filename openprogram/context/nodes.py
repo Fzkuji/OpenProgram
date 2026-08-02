@@ -10,15 +10,21 @@ something. The data structure is the same regardless of who acted:
     role="code"   ─ one function invocation   input  = arguments
                                               output = result
 
-Edges:
-  - ``predecessor``  time order. Single inbound per node. None on the
-                     very first node of a session.
+Edges (dag/overview.md §3 — two edges, never conflated):
+  - ``predecessor``  conversation chain: who I follow in chat order.
+                     Single inbound per node. The session's first node
+                     and explicit root forks carry the ``"ROOT"``
+                     sentinel; spawn branch roots carry None.
+  - ``caller``       sub-call nesting: who invoked me to execute.
+                     ``"ROOT"`` or ``""`` on chain-level turns; only a
+                     node inside an @agentic_function's execution
+                     subtree names another call.
   - ``reads``        context edges. For LLM calls: the prior nodes
                      whose content shaped this prompt. Stored as a
                      list of ids on the node itself; not derived.
 
-No tree, no parent/child, no containers. Nesting is just a temporal
-sequence with role transitions (user→llm→code→llm→…).
+Time order is ``seq`` alone — never an edge. No tree, no containers:
+nesting is expressed by ``caller``, chat order by ``predecessor``.
 """
 
 from __future__ import annotations

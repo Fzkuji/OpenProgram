@@ -204,9 +204,7 @@ def build_branches_payload(session_id: str | None) -> dict:
                     # on demand. Pulling chat content as the label was
                     # confusing (the panel filled up with assistant
                     # reply text) and didn't match git mental model.
-                    # Compaction k_ tips display under their original id
-                    # (rendering.md §9 — internals never leak).
-                    name = (row.get("display_msg_id") or mid)[:8]
+                    name = mid[:8]
                 rows.append({
                     "head_msg_id": mid,
                     "name": name,
@@ -601,7 +599,7 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
             "content": (target_preview or "(no preview)").strip(),
             # Same convention as the /task-produced attach pointer:
             # predecessor anchors to the conv turn this attach hangs off.
-            # No predecessor, so linear_history skips it and the splicer
+            # No caller, so linear_history skips it and the splicer
             # grafts it back in.
             "predecessor": anchor,
             "timestamp": time.time(),

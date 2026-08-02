@@ -40,12 +40,17 @@ export const PAD_Y = 16;
 // Categorical branch palette — 唯一定义在 lib/format-utils/lane-colors.ts。
 export { LANE_COLORS } from "@/lib/format-utils/lane-colors";
 
-/** Layout parent: predecessor (对话链父)优先；没有对话前驱时 fallback 到
- *  caller（子调用/挂根父）。每轮/每分支的第一个 user 节点约定 predecessor
- *  为空、只靠 caller="ROOT" 挂在根上（见 webui/server.py 的 first-turn 注释）；
- *  若只认 predecessor，这些分支首节点会各自成为孤儿根，DAG 渲染成互不连通
- *  的多棵树、且 ROOT 子树悬空。与 render/edges.ts 的 `predecessor || caller`
- *  画边语义对齐，让树结构也把 caller 边算上，四条分支归到同一棵树。 */
+/** Layout parent: predecessor（对话链父）优先；没有对话前驱时 fallback 到
+ *  caller（子调用/挂根父）。这是**布局父**，不是语义上的对话父——渲染器需要
+ *  单一父指针才能把整图拼成一棵连通树。
+ *
+ *  fallback 服务的是两类没有 predecessor 的节点：函数内部的 code/llm 执行行
+ *  （只有 caller）和 spawn 分支根（predecessor=None、caller=发起节点）。
+ *  若只认 predecessor，它们会各自成为孤儿根，DAG 渲染成互不连通的多棵树。
+ *
+ *  注意：对话链上的首轮 user **不**属于这一类——它带 predecessor="ROOT"
+ *  哨兵（见 webui/server.py 的 append 与 dag/overview.md §3），不靠 fallback。
+ *  与 render/edges.ts 的 `predecessor || caller` 画边语义对齐。 */
 export function layoutParent(n: GNode): string | null | undefined {
   return n.predecessor || n.caller;
 }

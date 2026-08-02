@@ -199,8 +199,15 @@ assert.match(
 );
 assert.match(
   inspectorSrc,
-  /node\.predecessor \|\| node\.caller/,
+  /const pivot = node\.predecessor;/,
   "fork & edit checks out the PREDECESSOR — the edit has to be a sibling",
+);
+assert.ok(
+  // A `|| node.caller` fallback would send a spawn branch root
+  // (predecessor=None, caller=<spawning node in the PARENT branch>)
+  // checking out into a different branch entirely.
+  !/const pivot = node\.predecessor \|\| node\.caller/.test(inspectorSrc),
+  "fork & edit must not fall back to the caller (sub-call) edge",
 );
 
 console.log("dag-summary checks passed");

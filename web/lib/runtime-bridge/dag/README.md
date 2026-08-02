@@ -70,7 +70,7 @@ reference:
 ROOT is special-cased by `display=root` → diamond. Every other node's
 shape comes from its `role`. There are no anchor / placeholder /
 scaffold nodes: a function call is a single `role=tool` node hanging
-off its caller via `called_by`. Backend `graph_layout/filter.py`
+off its caller via `caller`. Backend `graph_layout/filter.py`
 strips all `display=runtime` rows before the frontend sees them, so
 the renderer never has to fold or hide synthetic cards.
 
@@ -78,7 +78,7 @@ the renderer never has to fold or hide synthetic cards.
 
 | edge        | source attribute | drawn how                                  |
 |-------------|------------------|--------------------------------------------|
-| conv chain  | `parent_id`      | solid coloured S-curve (branch colour)     |
+| conv chain  | `predecessor`    | solid coloured S-curve (branch colour)     |
 | sub-call    | `caller`         | same S-curve, treated as conv parent for branch-op nodes |
 | spawn       | `function="task"` → attach pointer chain → sub-branch conv root | dot-dash in the **child branch's lane colour** (rendering.md §3) |
 | reference   | `attach_ref` on `function="attach"`/`"merge"` | dashed marching-ants (CSS animation) |
@@ -111,12 +111,12 @@ adding a new pass, check that you don't regress any of these:
 
 * **LLM-called `gui_agent` displays as a reply child square**
   (issue #137). The code (`role=tool`) call hangs off the reply via
-  `called_by`, so it renders one tier right of the triangle.
+  `caller`, so it renders one tier right of the triangle.
   `demoteDecorationCards` keeps the next user turn on the same lane
   so it doesn't visually fork.
 
 * **Manually-triggered function runs display as a main-lane square.**
-  The code call's `called_by` is ROOT, so it sits directly under the
+  The code call's `caller` is ROOT, so it sits directly under the
   ROOT diamond on the trunk (lane 0, one tier in), same colour as the
   trunk.
 

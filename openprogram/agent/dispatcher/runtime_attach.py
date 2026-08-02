@@ -74,7 +74,7 @@ def _wrap_agentic_runtime_block(
         # ``assistant_msg_id`` is the caller for an LLM-issued call (the
         # LLM reply id) or a fn-form's caller. A RETRY encodes its fork
         # point as ``pred:<id>``: the run must land as a SIBLING of the
-        # original (metadata.predecessor = that id, empty caller), NOT as
+        # original (the predecessor field = that id, empty caller), NOT as
         # a sub-call of it — so decode it into ``_forced_predecessor`` and
         # leave the caller empty. Every top-level run then uses the same
         # predecessor edge; only internal sub-calls carry a code caller.

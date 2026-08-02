@@ -148,7 +148,7 @@ def run_agentic_function_call(
 
     * ``None`` (default — a NEW run from fn-form / welcome) → passed as an
       EMPTY caller, which makes the @agentic_function decorator stamp the
-      run's ``metadata.predecessor`` with the session's CURRENT HEAD (see
+      run's ``predecessor`` with the session's CURRENT HEAD (see
       ``function.py`` — the "top-level manual call" branch). The run
       chains SEQUENTIALLY off the previous turn's terminal node, exactly
       like a new chat turn: distinct predecessor → its own 1/1 card, no
@@ -230,7 +230,7 @@ def run_agentic_function_call(
             "status_code": 409,
         }
     # A NEW run (anchor left unset) passes an EMPTY caller so the
-    # @agentic_function decorator stamps its metadata.predecessor with the
+    # @agentic_function decorator stamps its the predecessor field with the
     # session's current head (function.py's top-level-call branch) — the
     # run chains off the previous turn's terminal node like a new chat
     # turn. An explicit anchor (the Retry button) is honoured verbatim as
@@ -251,7 +251,7 @@ def run_agentic_function_call(
     # msg_id is only a WS-routing handle for the response stream;
     # it is never written to the DAG. The code node written by the
     # @agentic_function is the canonical record: a NEW run (empty anchor)
-    # gets metadata.predecessor = the session head (or ROOT for an empty
+    # gets the predecessor field = the session head (or ROOT for an empty
     # session); a Retry (explicit pred:<id> anchor) forks off that id.
     msg_id = uuid.uuid4().hex[:8]
 

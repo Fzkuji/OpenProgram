@@ -32,9 +32,10 @@ from typing import Optional
 
 def _exec_tnode(n, kids: dict[str, list]) -> dict:
     """Turn one DAG node into the TNode dict the Execution DAG renders,
-    recursing into its ``kids`` (children grouped by ``predecessor``).
+    recursing into its ``kids`` (children grouped by ``caller`` —
+    the sub-call edge, which is what nesting means here).
 
-    Shared by :func:`build_exec_dag` (locate by ``(name, predecessor)``)
+    Shared by :func:`build_exec_dag` (locate by ``(name, caller)``)
     and :func:`build_exec_dag_by_id` (locate by the node's own id) so
     both produce byte-identical tree shapes.
     """
@@ -144,8 +145,8 @@ def build_exec_dag(session_id: str, func_name: str,
         return _exec_tnode(root, kids)
 
     # Mid-run: the top func_name node isn't persisted yet. Its direct
-    # children already carry its allocated id in ``predecessor`` — so they
-    # look like orphans (predecessor → an id not in the graph). Collect
+    # children already carry its allocated id in ``caller`` — so they
+    # look like orphans (caller → an id not in the graph). Collect
     # them, but only ones created at/after this run's user turn, so
     # stale orphans from old deleted branches aren't swept in.
     turn = by_id.get(user_turn_id)
@@ -414,7 +415,7 @@ def build_session_dag(session_id: str) -> Optional[dict]:
       └─ llm   "you're welcome"
 
     Returns a ROOT TNode with user/llm/code nodes as children.
-    Tool calls (code nodes with predecessor pointing at an llm node)
+    Tool calls (code nodes whose ``caller`` points at an llm node)
     are nested under their parent llm node.
     """
     try:

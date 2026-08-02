@@ -13,7 +13,7 @@ A node expresses **two different parent-child relationships**:
 | Relationship | Meaning | Field | Example |
 |---|---|---|---|
 | **caller** | Who called me (sub-call edge) | top-level `Call.caller` | which LLM invoked a tool; ROOT invokes a top-level node |
-| **conv predecessor** | Who I follow in chat order (conversation-chain edge) | `metadata.predecessor` | the second-round user follows the first-round reply |
+| **conv predecessor** | Who I follow in chat order (conversation-chain edge) | top-level `Call.predecessor` | the second-round user follows the first-round reply |
 
 ### Why Two Are Needed
 
@@ -53,9 +53,9 @@ Rationale:
 | File | Symbol | Role |
 |---|---|---|
 | `context/nodes.py` | `Call.caller` | the dataclass edge field, semantics = caller |
-| `store/session/_msg_adapter.py` | `_msg_to_node` | msg's `caller` → `Call.caller`; msg's `predecessor` → `metadata.predecessor` |
+| `store/session/_msg_adapter.py` | `_msg_to_node` | msg's `caller` → `Call.caller`; msg's `predecessor` → `Call.predecessor` (popped out of metadata so no mirror survives) |
 | `store/session/_msg_adapter.py` | `_node_to_msg` | reverse: emits two explicit keys, `caller` + `predecessor` |
-| `store/session/session_store.py` | `_node_conv_predecessor` | reads `metadata.predecessor` |
+| `store/session/session_store.py` | `_node_conv_predecessor` | reads `Call.predecessor` |
 | `store/session/session_store.py` | `_node_caller` | reads `Call.caller` |
 | `store/session/memory_index.py` | `append(node, predecessor, caller)` | two indexes: `children_by_predecessor` (conv) / `children_by_caller` (caller) |
 | `webui/graph_builder.py` | `build_session_graph` | builds the graph dict with two explicit keys, `predecessor` + `caller` |
@@ -91,7 +91,7 @@ key name and no backfill:
 
 ## Implementation Status
 
-Implemented across backend and frontend. `Call.caller` and `metadata.predecessor`
+Implemented across backend and frontend. `Call.caller` and `Call.predecessor`
 are the only edge fields; `graph_builder` and the WS graph dict emit both explicit
 keys; `_common.py` exposes `predecessor_of` and `caller_of` as separate accessors,
 with tier reading the caller and lane/depth/topology reading the predecessor. The

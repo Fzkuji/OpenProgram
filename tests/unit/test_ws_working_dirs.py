@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from pathlib import Path
 
 import pytest
@@ -32,50 +33,64 @@ class FakeWS:
 
 @pytest.fixture
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """隔离 SessionDB + 静音 server 依赖，返回 (db, broadcast 帧列表)。"""
+    """隔离 SessionDB + 静音 server 依赖，返回 (db, broadcast 帧列表, sid)。
+
+    两处状态隔离，缺一个都会在随机序下偶发挂：
+
+    1. ``sid`` 每次唯一。run-config 读写走 ``default_db()``、
+       ``server._sessions`` 是进程级全局字典，硬编码 "s1" 会和别的
+       模块留在这两处的同名残留互相踩。
+    2. ``broadcasts`` 只收本用例关心的帧。``server._log()`` 内部也调
+       ``_broadcast``（发 ``server_log`` 帧），别的用例起的 probe /
+       restore 后台线程随时可能在本用例执行期间打日志，掺进这个 list
+       就把 ``broadcasts == []`` / ``== [...]`` 的断言打挂。
+    """
     db = SessionDB(tmp_path / "sessions.sqlite")
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
     monkeypatch.setattr("openprogram.webui.server._default_agent_id", lambda: "main")
     broadcasts: list[dict] = []
-    monkeypatch.setattr(
-        "openprogram.webui.server._broadcast",
-        lambda text: broadcasts.append(json.loads(text)),
-    )
-    return db, broadcasts
+
+    def _collect(text: str) -> None:
+        frame = json.loads(text)
+        if frame.get("type") == "working_dirs":
+            broadcasts.append(frame)
+
+    monkeypatch.setattr("openprogram.webui.server._broadcast", _collect)
+    return db, broadcasts, f"wd-{uuid.uuid4().hex[:12]}"
 
 
 def test_set_working_dirs_saves_and_broadcasts(env, tmp_path: Path):
-    db, broadcasts = env
-    db.create_session("s1", "main")
+    db, broadcasts, sid = env
+    db.create_session(sid, "main")
     extra = tmp_path / "extra"
     extra.mkdir()
 
     ws = FakeWS()
     asyncio.run(ws_session.handle_set_working_dirs(ws, {
-        "session_id": "s1", "dirs": [str(extra)],
+        "session_id": sid, "dirs": [str(extra)],
     }))
 
     # 落库：load 回读到 expanduser 后的绝对路径。
     from openprogram.agent.session_config import load_session_run_config
-    assert load_session_run_config("s1").additional_working_dirs == [str(extra)]
+    assert load_session_run_config(sid).additional_working_dirs == [str(extra)]
     # 无 error 帧 + 广播 working_dirs 帧内容正确。
     assert not any(f.get("type") == "error" for f in ws.sent)
     assert broadcasts == [{
         "type": "working_dirs",
-        "data": {"session_id": "s1", "dirs": [str(extra)]},
+        "data": {"session_id": sid, "dirs": [str(extra)]},
     }]
 
 
 def test_set_working_dirs_rejects_non_directory(env, tmp_path: Path):
-    db, broadcasts = env
-    db.create_session("s1", "main")
+    db, broadcasts, sid = env
+    db.create_session(sid, "main")
     good = tmp_path / "good"
     good.mkdir()
     bad = tmp_path / "missing"  # 不存在
 
     ws = FakeWS()
     asyncio.run(ws_session.handle_set_working_dirs(ws, {
-        "session_id": "s1", "dirs": [str(good), str(bad)],
+        "session_id": sid, "dirs": [str(good), str(bad)],
     }))
 
     # 整帧拒绝：error 帧带原因、不广播、不部分写入。
@@ -83,31 +98,31 @@ def test_set_working_dirs_rejects_non_directory(env, tmp_path: Path):
     assert str(bad) in ws.sent[0]["data"]["message"]
     assert broadcasts == []
     from openprogram.agent.session_config import load_session_run_config
-    assert load_session_run_config("s1").additional_working_dirs == []
+    assert load_session_run_config(sid).additional_working_dirs == []
 
 
 def test_session_loaded_returns_additional_working_dirs(
     env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
-    db, _ = env
-    db.create_session("s1", "main")
+    db, _, sid = env
+    db.create_session(sid, "main")
     extra = tmp_path / "extra"
     extra.mkdir()
-    db.update_session("s1", additional_working_dirs=[str(extra)])
+    db.update_session(sid, additional_working_dirs=[str(extra)])
 
     # handle_load_session 走 server 的会话缓存 + 运行态探针，最小化打桩。
     from openprogram.webui import server as _s
     with _s._sessions_lock:
-        _s._sessions["s1"] = {"id": "s1"}
+        _s._sessions[sid] = {"id": sid}
     monkeypatch.setattr(_s, "_get_provider_info", lambda sid=None: {})
     monkeypatch.setattr(_s, "_is_run_active", lambda sid: False)
 
     ws = FakeWS()
     try:
-        asyncio.run(ws_session.handle_load_session(ws, {"session_id": "s1"}))
+        asyncio.run(ws_session.handle_load_session(ws, {"session_id": sid}))
     finally:
         with _s._sessions_lock:
-            _s._sessions.pop("s1", None)
+            _s._sessions.pop(sid, None)
 
     loaded = [f for f in ws.sent if f.get("type") == "session_loaded"]
     assert loaded

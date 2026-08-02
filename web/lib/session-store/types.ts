@@ -132,9 +132,12 @@ export interface ChatMsg {
    *  can distinguish "real user typed" vs internal synthetic turns
    *  (task_followup, merge_turn, agent_spawn). */
   source?: string;
-  /** Pass-through of metadata.predecessor so we can correlate
-   *  internal-source msgs (e.g. task_followup) with the attach
-   *  pointer they belong to. */
+  /** Pass-through of the wire ``predecessor`` (conversation-chain
+   *  edge) so we can correlate internal-source msgs (e.g.
+   *  task_followup) and runtime/attach rows with the turn they hang
+   *  off. Runtime + attach rows are written with ``predecessor``
+   *  only and no ``caller`` (see webui/_execute), so this really is
+   *  the right edge here despite the historical field name. */
   calledBy?: string;
   /** When this user msg is the root of a spawned sub-branch, points
    *  back at the main-lane turn (LLM reply) that called task() to
