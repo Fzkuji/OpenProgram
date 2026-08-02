@@ -16,6 +16,11 @@ import {
  * Single row in the branches panel — checkbox, dot, name (rename in
  * place), HEAD/running badges, and rename + delete actions. Pure
  * presentational; the parent owns selection / multi-select state.
+ *
+ * ``chip`` renders the same row as a pill for the graph's top strip
+ * (dag/rendering.md): identical children, identical actions, only the
+ * box changes — one component, so checkout / rename / delete can
+ * never drift between the two surfaces.
  */
 export function BranchItem({
   branch,
@@ -26,6 +31,7 @@ export function BranchItem({
   isBase,
   running,
   finishing,
+  chip,
   onToggleSelect,
   onSetBase,
 }: {
@@ -37,6 +43,7 @@ export function BranchItem({
   isBase: boolean;
   running: boolean;
   finishing: boolean;
+  chip?: boolean;
   onToggleSelect: (headId: string, e: React.MouseEvent) => void;
   onSetBase: (headId: string, e: React.MouseEvent) => void;
 }) {
@@ -123,6 +130,7 @@ export function BranchItem({
   const effectiveActive = branch.active || pendingActive;
 
   const cls = "branch-item"
+    + (chip ? " branch-chip" : "")
     + (effectiveActive ? " active" : "")
     + (selected ? " selected" : "")
     + (isBase ? " base" : "")
@@ -134,27 +142,33 @@ export function BranchItem({
       className={cls}
       data-head={branch.head_msg_id}
       onClick={checkout}
+      title={chip ? (branch.name || branch.head_msg_id) : undefined}
     >
-      <span
-        className="branch-item-check"
-        title={
-          isPending
-            ? t("right.task_running_merge_wait")
-            : (selected
-                ? t("right.deselect_base_hint")
-                : t("right.select_merge_hint"))
-        }
-        onClick={(e) => {
-          if (isPending) {
-            e.stopPropagation();
-            return;
+      {/* Merge multi-select is a list affordance: picking two branches
+          and starring a base needs the room the strip doesn't have,
+          and the strip's job is "which branch am I on". */}
+      {chip ? null : (
+        <span
+          className="branch-item-check"
+          title={
+            isPending
+              ? t("right.task_running_merge_wait")
+              : (selected
+                  ? t("right.deselect_base_hint")
+                  : t("right.select_merge_hint"))
           }
-          if (e.metaKey || e.ctrlKey) onSetBase(branch.head_msg_id, e);
-          else onToggleSelect(branch.head_msg_id, e);
-        }}
-      >
-        {isBase ? "★" : selected ? "✓" : ""}
-      </span>
+          onClick={(e) => {
+            if (isPending) {
+              e.stopPropagation();
+              return;
+            }
+            if (e.metaKey || e.ctrlKey) onSetBase(branch.head_msg_id, e);
+            else onToggleSelect(branch.head_msg_id, e);
+          }}
+        >
+          {isBase ? "★" : selected ? "✓" : ""}
+        </span>
+      )}
       <span className="branch-item-dot" style={{ background: color }} />
       {editing ? (
         <input

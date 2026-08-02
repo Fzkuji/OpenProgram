@@ -11,6 +11,44 @@ import os
 from fastapi.responses import JSONResponse
 
 
+def _coverage_nodes(db, session_id: str, node_ids: list) -> list:
+    """Per-node context coverage for ``node_ids``, in the same order.
+
+    ``[{"node_id", "in_context", "aged", "spilled"}]``. The aging
+    boundary comes from ``render.py::_aged_code_ids`` — the very
+    function the real render pass uses — and ``spilled`` reads the
+    ``metadata.spilled`` blob ``spill_if_large`` wrote at record time.
+    Falls back to flags-off (still ``in_context``) when the graph can't
+    be loaded: coverage is a highlight, never a reason to 500.
+    """
+    if not node_ids:
+        return []
+    aged: set = set()
+    spilled: set = set()
+    try:
+        from openprogram.context.render import _aged_code_ids
+        from openprogram.store.session.graphstore_shim import GraphStoreShim
+
+        graph = GraphStoreShim(db, session_id).load()
+        aged, _boundary = _aged_code_ids(graph, list(node_ids))
+        spilled = {
+            nid for nid in node_ids
+            if nid in graph.nodes
+            and isinstance((graph.nodes[nid].metadata or {}).get("spilled"), dict)
+        }
+    except Exception:
+        pass
+    return [
+        {
+            "node_id": nid,
+            "in_context": True,
+            "aged": nid in aged,
+            "spilled": nid in spilled,
+        }
+        for nid in node_ids
+    ]
+
+
 def register(app):
     @app.get("/api/functions")
     async def get_functions():
@@ -302,10 +340,26 @@ def register(app):
         via ``get_branch`` and feeds to the context engine. The WebUI
         dims DAG nodes outside this set so the user can see, before
         sending, roughly how much history the next message will include.
+
+        ``nodes`` carries the per-node coverage detail the DAG's
+        coverage mode paints (dag/rendering.md §8): every id in
+        ``node_ids`` with the two degradations the context pipeline
+        applies to it.
+
+            ``in_context``  always true here — the list IS the covered set
+            ``aged``        a code node old enough that
+                            ``render.py::_aged_code_ids`` collapses its
+                            result to a one-line stub
+            ``spilled``     the node's result was written to
+                            ``large_nodes/`` and the render only cites it
+
+        Both flags come from the same functions the real render calls,
+        so the graph never guesses at semantics the backend owns.
         """
         from openprogram.agent.session_db import default_db
 
-        branch = default_db().get_branch(session_id, head_id) or []
+        db = default_db()
+        branch = db.get_branch(session_id, head_id) or []
         # Compaction no longer clones: a summary node is an ordinary
         # chain member and the kept tail keeps its own ids (§8), so the
         # branch ids ARE the ids the DAG paints. No translation layer.
@@ -314,6 +368,7 @@ def register(app):
             "session_id": session_id,
             "node_ids": node_ids,
             "count": len(node_ids),
+            "nodes": _coverage_nodes(db, session_id, node_ids),
         })
 
     @app.get("/api/sessions/{session_id}/context")

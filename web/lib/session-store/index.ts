@@ -293,10 +293,11 @@ export interface DetailNode {
 
 const RIGHT_LS_OPEN = "rightSidebarOpen";
 const RIGHT_LS_VIEW = "rightSidebarView";
-// "bookmarks" moved to a center tab and "history" (the session DAG)
-// moved to a center perspective, so neither is a sidebar view any more.
-// A stale persisted value falls back to the default view.
-const VALID_VIEWS = new Set(["worktrees", "context", "detail", "files"]);
+// "bookmarks" moved to a center tab, "history" (the session DAG) moved
+// to a center perspective, and "worktrees" was removed outright, so
+// none of them is a sidebar view any more. A stale persisted value
+// falls back to the default view.
+const VALID_VIEWS = new Set(["context", "detail", "files"]);
 
 function readRightDock(): { open: boolean; view: string } {
   if (typeof window === "undefined") return { open: false, view: "files" };

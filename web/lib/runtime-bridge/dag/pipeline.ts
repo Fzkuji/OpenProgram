@@ -65,6 +65,7 @@ import { drawEdges } from "./render/edges";
 import {
   _collapsed,
   _contextSet,
+  _coverageSet,
   _currentHead,
   _lastGraph,
   _lastHeadId,
@@ -305,7 +306,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   drawEdges(edgeG, tree, graphIn, pos, stableLeafOfNode);
 
   drawNodes(nodeG, tree, pos, headId, headAncestors, stableLeafOfNode,
-    cinfo, _collapsed, internalSet, internalOwner, _contextSet);
+    cinfo, _collapsed, internalSet, internalOwner, _contextSet, _coverageSet);
 
   const fullById: Record<string, GNode> = Object.create(null);
   graphIn.forEach((m) => { fullById[m.id] = m; });

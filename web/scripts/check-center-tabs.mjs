@@ -941,10 +941,28 @@ const chatCss = readFileSync(
   new URL("../app/styles/chat.css", import.meta.url),
   "utf8",
 );
+// The graph replaces the TRANSCRIPT, not the whole `#chatView`. The
+// composer is a singleton portalled into `#composer-mount` inside
+// `#chatView` and anchored `bottom:0` against it, so hiding that
+// ancestor would take the composer with it and the graph perspective
+// would lose the ability to send a message.
 assert.match(
   chatCss,
-  /\.center-pane-chat\[data-center-view="dag"\] #chatView \{\s*display: none;/,
-  "the DAG perspective must hide the transcript",
+  /\.center-pane-chat\[data-center-view="dag"\] #chatArea \{\s*display: none;/,
+  "the DAG perspective must hide the transcript scroll area",
+);
+assert.doesNotMatch(
+  chatCss,
+  /\[data-center-view="dag"\] #chatView \{\s*display: none;/,
+  "hiding #chatView would take the composer down with the transcript",
+);
+// The graph COVERS the pane rather than taking #chatView's slot in the
+// column, so the composer's `bottom: 0` still lands on the pane's bottom
+// edge and the input box does not move when the perspective flips.
+assert.match(
+  chatCss,
+  /\.center-pane-chat\[data-center-view="dag"\] \.dag-view \{[^}]*position: absolute;/,
+  "the graph must overlay the pane so the composer keeps its anchor",
 );
 const viewControls = readFileSync(
   new URL("../components/chat/view-controls.tsx", import.meta.url),

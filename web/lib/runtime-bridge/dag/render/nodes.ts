@@ -26,6 +26,7 @@ export function drawNodes(
   internalSet: Record<string, boolean>,
   internalOwner: Record<string, string>,
   contextSet: Record<string, boolean> | null,
+  coverageSet: Record<string, { aged: boolean; spilled: boolean }> | null,
 ): void {
   Object.keys(tree.byId).forEach((id) => {
     const node = tree.byId[id];
@@ -86,6 +87,30 @@ export function drawNodes(
       g.appendChild(bang);
     } else if (status === "cancelled" || status === "stopped") {
       g.setAttribute("opacity", "0.45");
+    }
+    // ── 覆盖态的两级衰减（rendering.md 第八节）──
+    // aged：结果被 aging 折成一行残根，节点还在上下文里但内容已残——
+    // 描边调暗读作"在，但只剩梗概"。用 stroke-opacity 而不是整体
+    // opacity：白点是 _applyVisibility 写的 fill，整体透明会把
+    // "在上下文中"这个信号一起淡掉，两件事就分不开了。
+    const cov = coverageSet ? coverageSet[id] : undefined;
+    if (el && cov && cov.aged) {
+      el.setAttribute("stroke-opacity", "0.4");
+      g.classList.add("is-aged");
+    }
+    // spilled：大结果已外溢成盘上文件，正文只留引用。▤ 画在左上角
+    // ——右上角归 ! 和 ↗，右下角归折叠徽标。用 text 而不是 rect，
+    // 免得 _applyVisibility 找主形状时把它当成节点本体。
+    if (cov && cov.spilled) {
+      const spill = _svg("text", {
+        x: String(-NODE_R - 9),
+        y: String(-NODE_R + 1),
+        fill: color,
+        "font-size": "9",
+        "pointer-events": "none",
+      });
+      spill.textContent = "▤";
+      g.appendChild(spill);
     }
     // ↗ 跨会话 spawn 角标：两侧都标（spawn_remote=目标侧分支根，
     // spawn_out=源侧发起节点）。同会话 spawn 有点划线边，不加 ↗。

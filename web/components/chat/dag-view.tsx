@@ -14,15 +14,33 @@
  * unmounted: the renderer writes into this DOM on every WebSocket
  * capture regardless of which perspective is showing, so tearing the
  * host down would drop the graph until the next capture.
+ *
+ * Layout, top to bottom: the branch strip, the canvas, and — supplied
+ * by the pane, not by this component — the composer. The composer is a
+ * singleton anchored inside `#chatView`, which the graph perspective
+ * deliberately leaves mounted (it hides `#chatArea` instead), so
+ * sending a message from the graph runs the same code path as sending
+ * it from the transcript and the new node appears on the next capture.
+ *
+ * The white fill means context coverage here, with no mode switch to
+ * offer (dag/rendering.md §8). Viewport highlighting answers "which
+ * bubbles are on screen", and whenever this component is visible it
+ * owns its pane with no transcript beside it: a lone session tab gets
+ * the chat shell and this graph, and two session tabs split into two
+ * `PeerSessionPane`s where the shell — and therefore this graph — is
+ * not rendered at all. So the question has no reading to give, and
+ * coverage is simply what the fill means.
  */
 
-import { useState } from "react";
+import { useEffect } from "react";
 
-import { useTranslation } from "@/lib/i18n";
-import { setHistoryHighlightMode } from "@/lib/runtime-bridge/dag";
+import { enterExclusiveCoverageMode } from "@/lib/runtime-bridge/dag";
 import { BranchesPanel } from "../right-sidebar/branches";
 
 export function DagView({ visible }: { visible: boolean }) {
+  useEffect(() => {
+    if (visible) enterExclusiveCoverageMode();
+  }, [visible]);
   return (
     <div
       id="historyPanel"
@@ -30,62 +48,8 @@ export function DagView({ visible }: { visible: boolean }) {
       style={{ display: visible ? "flex" : "none" }}
       aria-hidden={visible ? undefined : true}
     >
-      <div className="dag-view-rail">
-        <BranchesPanel />
-        <HighlightModeToggle />
-      </div>
+      <BranchesPanel variant="chips" />
       <div className="history-body"></div>
-    </div>
-  );
-}
-
-/** Toggle: white-fill on DAG nodes follows the chat scroll position
- *  (viewport) or the next-LLM-call context range (context). Drives
- *  ``setHistoryHighlightMode`` in the DAG module. */
-function HighlightModeToggle() {
-  const { t } = useTranslation();
-  const [mode, setMode] = useState<"viewport" | "context">("viewport");
-  function pick(next: "viewport" | "context") {
-    setMode(next);
-    setHistoryHighlightMode(next);
-  }
-  const style = (active: boolean): React.CSSProperties => ({
-    flex: 1,
-    padding: "4px 8px",
-    fontSize: 12,
-    fontFamily: "inherit",
-    border: "1px solid var(--border)",
-    background: active ? "var(--bg-hover)" : "transparent",
-    color: active ? "var(--text-bright)" : "var(--text-muted)",
-    cursor: "pointer",
-    borderRadius: 6,
-    transition: "background 0.15s, color 0.15s",
-  });
-  return (
-    <div
-      style={{
-        display: "flex",
-        gap: 4,
-        padding: "6px 8px",
-        borderBottom: "1px solid var(--border)",
-      }}
-    >
-      <button
-        type="button"
-        onClick={() => pick("viewport")}
-        style={style(mode === "viewport")}
-        title={t("right.viewport_tooltip")}
-      >
-        {t("right.viewport")}
-      </button>
-      <button
-        type="button"
-        onClick={() => pick("context")}
-        style={style(mode === "context")}
-        title={t("right.context_highlight_tooltip")}
-      >
-        {t("right.context")}
-      </button>
     </div>
   );
 }

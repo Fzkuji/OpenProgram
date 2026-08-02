@@ -35,6 +35,39 @@
 点击图上的节点填充右侧栏的详情 / 上下文视图；这两个视图留在侧栏，因为它们读
 的是选中的单个节点，不是整个会话。
 
+### 输入框属于面板，不属于会话记录
+
+**视角切换隐藏的是会话记录滚动区 `#chatArea`，绝不是 `#chatView`。** 输入框
+是单例，portal 进 `#chatView` 里的 `#composer-mount`，并以 `bottom: 0` 锚在
+它身上——隐藏这个祖先就会把输入框跟着会话记录一起带走，而挂第二个实例会把
+草稿、运行状态、模型行分叉成两份，用户读作一个输入框的东西就有了两套状态。
+因此两个视角共用同一个输入框实例，图只替换它上方的滚动区。
+
+在图视角能直接发消息，发出的节点在下一次 capture 出现在图上——发送走的就是
+会话记录那条路径，没有改动，图视角不需要知道自己正在显示。
+
+图是**盖住面板**来取代会话记录的，不是去占列里的那个位置：`#chatView` 保持
+`flex: 1` 和满高，输入框的 `bottom: 0` 因此仍然落在面板底边，剩下的交给层叠
+顺序——图压在输入框 `z-index: 5` 之下。反过来把 `#chatView` 压扁，只会把输入
+框拽到面板中间。
+
+`.dag-view` 用 `padding-bottom` 给输入框留出下缘，跟会话记录在
+`.chat-messages` 上留的是同一份契约，这样最深的节点不会藏在输入框后面。
+
+### 分支胶囊条
+
+画布上方一行会换行的胶囊，每个活跃分支一个（`web/components/right-sidebar/
+branches`，`variant="chips"`）。每个胶囊带分支的 lane 色圆点和名字，HEAD 那
+个描边高亮并带徽标。单击胶囊 checkout，hover 出现重命名和删除。
+
+胶囊和侧栏的列表行是**同一个组件**的两种布局，所以 checkout / 重命名 / 删除
+只有一份实现，两个界面不可能走偏。差别只在盒子——胶囊按内容宽度排，不拉满一
+行。合并与 attach 留在列表布局：选两条分支再星标基准需要横条给不出的纵向空
+间，而横条要回答的是更窄的"我在哪条分支上"。
+
+图本身已经画出分支结构，横条不重复它。横条封顶三行，超出滚动，把面板的大头
+留给画布。
+
 ---
 
 ## 〇、先回答"画什么"：两层粒度，默认只画对话层
@@ -238,18 +271,64 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier �
 `graph_layout/tier.py`**。验证工具：
 `python tools/dag_dump.py <session_id>` 打印 lane/tier/depth + ASCII 网格。
 
-## 八、Context 高亮模式语义
+## 八、白点 = 上下文覆盖
 
-图视角有两个高亮模式（`web/lib/runtime-bridge/dag/types.ts` 的
-`HighlightMode`），在图上方的横条里切换：
+节点的白色填充表示它**属于下一次 LLM 调用会携带的内容**。没有模式可选，也没
+有开关要找：只要图在显示，它就独占面板。单个会话 tab 得到聊天外壳加这张图；
+两个会话 tab 分屏时两侧都是 `PeerSessionPane`，外壳——以及这张图——根本不
+渲染。所以图旁边永远不会有会话记录，"哪些气泡在视口内"给不出任何读数，白点
+就只是覆盖这一个意思。
 
-- **Viewport** —— 可见集 = 当前聊天滚动窗口内相交的对话气泡
-  （`render/visibility.ts`）。纯 UI 便利，无后端语义。面板停在图视角时会话
-  记录是隐藏的、量出来 0×0，此时 `_recomputeVisibility` 保留上一次的集合，
-  不把所有气泡读成不可见。
-- **Context** —— 可见集 = **下一次 LLM 调用将携带的节点 id 集合**，由
-  `GET /api/sessions/{id}/context-range` 提供：从 head 回溯活跃分支，止于
-  最近一次压缩摘要。集合外的节点变暗，集合内保持白色填充。
+覆盖集由 `GET /api/sessions/{id}/context-range` 提供：从 head 回溯活跃分支，
+止于最近一次压缩摘要。集合外的节点变暗。宿主调
+`enterExclusiveCoverageMode`（`web/lib/runtime-bridge/dag/index.ts`）拉取并
+应用它。
+
+### 覆盖数据形状
+
+同一个响应逐节点带上上下文管线对"仍在携带的内容"施加的两级衰减：
+
+```json
+{
+  "session_id": "…",
+  "node_ids": ["…"],
+  "count": 12,
+  "nodes": [
+    { "node_id": "…", "in_context": true, "aged": false, "spilled": true }
+  ]
+}
+```
+
+| 字段 | 含义 | 后端来源 |
+|---|---|---|
+| `in_context` | 节点在覆盖集内——每行恒为 true，因为这个列表**就是**覆盖集 | `get_branch` |
+| `aged` | 老到结果被折成一行残根的 code 节点 | `openprogram/context/render.py::_aged_code_ids`，边界来自 `context/aging.py` |
+| `spilled` | 结果已写入 `large_nodes/`，正文只留引用 | `metadata.spilled`，由 `context/spill.py::spill_if_large` 写入 |
+
+两个标志都取自真实渲染路径调用的那几个函数，而不是平行的另一套实现——
+**图永远不自己推导上下文语义**，它问后端，然后把答案画出来。
+
+### 两级衰减怎么画
+
+| 状态 | 画法 |
+|---|---|
+| 在上下文中 | 白色填充（基线） |
+| `aged` | 描边压到 40% 不透明度——读作"还在，但只剩梗概" |
+| `spilled` | 节点**左**上角加 `▤` |
+
+`aged` 压的是 **`stroke-opacity`，绝不是 `opacity`**：白点是覆盖信号，整体
+变淡会把它一起淡掉，两件独立的事就塌成一件。`▤` 占左上角是因为右上角已被
+占用（`!` 报错、`↗` 跨会话 spawn），右下角是折叠徽标；用 `<text>` 画，免得
+`_applyVisibility` 找"第一个形状子元素"时把它当成节点本体。
+
+压缩会用一个摘要覆盖一段节点；被覆盖的节点直接落出 `node_ids`，和其他出上
+下文的节点一样变暗。摘要节点是否需要专门图形是另一个问题——见第四节"状态与
+覆盖画在节点自己的描边上，绝不画占位框"。
+
+刷新时机：`context_stats` 或 `compaction_finished` 到达即重拉覆盖
+（`chat-handlers.ts`），所以白点跟着真实上下文走，前端从不自行计算。注意
+`aged` 和 `spilled` **不进**渲染签名，所以应用新覆盖时要打掉签名
+（`setLastSignature(null)`），否则重绘会静默 no-op，图会一直画着上一份答案。
 
 与压缩的联动：
 
@@ -264,7 +343,7 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier �
   种 role）。将来若需要显式"此处压缩了 N 轮"标记，必须做成首个保留节点上的
   徽章，不得做成节点。
 - `compaction_finished` 必须触发 context range 刷新（`chat-handlers.ts`）；
-  Context 模式和其他一切一样事件驱动——前端永不自行计算上下文成员关系。
+  覆盖和其他一切一样事件驱动——前端永不自行计算上下文成员关系。
 - 集合中没有对应图节点的 id（如 `display=runtime` 的 task-followup 行）
   静默忽略：它们在上下文里，但不在图上。
 
@@ -282,3 +361,7 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier �
 | 场景 8/10 attach 指针 | 后端 display=runtime 过滤 + `graph_builder` 把 ref 戳到嵌入位置（`attach_returns`），`edges.ts` 画回流长虚线 |
 | 第四节 跨会话 ↗ | `graph_builder` 打 `spawn_remote` 标（目标侧）；`nodes.ts` 画 ↗（源侧 `spawn_out` 渲染就绪，等数据源打标） |
 | 第一节 spawn 根 tier | `graph_layout`：tier=1 / depth 同行 / lane 开新分支；`task_followup` 无 attach 时挂回接收轮（`filter.py` 兜底） |
+| 两个视角共用输入框 | `chat.css` 隐藏 `#chatArea` 而非 `#chatView`；由 `web/scripts/check-center-tabs.mjs` 断言 |
+| 分支胶囊条 | `BranchesPanel variant="chips"` + `BranchItem chip`；`.branches-strip` / `.branch-chip` 在 `chat.css` / `right-dock.css` |
+| 第八节 覆盖查询 | `routes/tree.py::_coverage_nodes` 填 `/context-range` 的 `nodes`；测试见 `tests/unit/test_context_range_coverage.py` |
+| 第八节 aged / spilled 绘制 | `render/nodes.ts`（stroke-opacity + `▤`），数据来自 `store/globals.ts` 的 `_coverageSet` |

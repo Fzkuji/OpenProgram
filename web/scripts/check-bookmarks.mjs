@@ -255,10 +255,12 @@ assert.doesNotMatch(rightDockCss, /right-sidebar-panel/, "floating card wrapper 
 assert.doesNotMatch(rightSidebar, /right-sidebar-panel|rounded-(?:lg|xl|2xl|3xl)/, "right sidebar shell must stay flat");
 
 // The bookmarks nav row is gone from the icon rail (it is a main-menu
-// entry now, asserted above). The rail keeps only the top-level
-// destinations that describe the CURRENT session/context.
-assert.match(rightSidebar, /data-view=\{VIEW_WORKTREES\}/, "worktrees rail entry missing");
+// entry now, asserted above), and so is Worktrees. The rail keeps only
+// the top-level destinations that describe the CURRENT session/context
+// — which is Files alone.
 assert.match(rightSidebar, /data-view=\{VIEW_FILES\}/, "files rail entry missing");
+assert.doesNotMatch(rightSidebar, /VIEW_WORKTREES|WorktreesPanel/,
+  "the worktrees view was removed; it must not come back");
 
 function parseTsx(text, name) {
   return ts.createSourceFile(name, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);

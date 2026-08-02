@@ -44,6 +44,48 @@ Clicking a node in the graph fills the right sidebar's Details / Context views;
 those views stay in the sidebar because they read one selected node, not the
 whole session.
 
+### The composer belongs to the pane, not to the transcript
+
+**The perspective swap hides `#chatArea`, the transcript scroll box — never
+`#chatView`.** The composer is a singleton portalled into `#composer-mount`
+inside `#chatView` and anchored `bottom: 0` against it, so hiding that ancestor
+would take the composer down with the transcript, and mounting a second one
+would fork the draft, the run state and the model row into two copies of what
+the user reads as one input box. Both perspectives therefore share the one
+composer instance, and the graph replaces only the scroll area above it.
+
+You can send a message from the graph, and the node it produces appears on the
+next capture — the send path is the transcript's send path, unchanged, so
+nothing about the graph perspective has to know it is showing.
+
+The graph takes the transcript's place by **covering the pane**, not by taking
+its slot in the column: `#chatView` keeps its `flex: 1` and its full height, so
+the composer's `bottom: 0` still lands on the pane's bottom edge, and stacking
+order does the rest — the graph sits under the composer's `z-index: 5`. Shrinking
+`#chatView` instead would drag the input box up the pane.
+
+`.dag-view` reserves the composer's strip as `padding-bottom`, the way the
+transcript reserves it on `.chat-messages`, so the deepest nodes never sit
+behind the input box.
+
+### Branch strip
+
+A single wrapping row of pills above the canvas, one per active branch
+(`web/components/right-sidebar/branches`, `variant="chips"`). Each chip carries
+the branch's lane colour as a dot and its name; the HEAD chip is outlined and
+badged. Click a chip to check that branch out; hover reveals rename and delete.
+
+The chip and the sidebar's list row are **the same component** under two
+layouts, so checkout, rename and delete are one implementation and cannot drift
+between the two surfaces. Only the box differs — a pill sized to its content
+instead of a stretched row. Merge and attach stay with the list layout: picking
+two branches and starring a base needs vertical room the strip does not have,
+and the strip's question is the narrower "which branch am I on".
+
+The graph already draws the branch structure, so the strip does not repeat it.
+It is capped at three rows; past that it scrolls, leaving the canvas the bulk
+of the pane.
+
 ---
 
 ## 0. First, "what to draw": two granularities, only the conversation layer by default
@@ -281,21 +323,74 @@ The backend `openprogram/webui/graph_builder.py` produces the node array (includ
 annotation — **tier specifically in `graph_layout/tier.py`**. Verification tool: `python tools/dag_dump.py <session_id>` prints
 lane/tier/depth + an ASCII grid.
 
-## 8. Context highlight-mode semantics
+## 8. The white fill means context coverage
 
-The graph perspective has two highlight modes (`HighlightMode` in
-`web/lib/runtime-bridge/dag/types.ts`), switched from the rail above the graph:
+A node's white fill marks it as **part of what the next LLM call will carry**.
+There is no mode to choose and no switch to find: whenever the graph is
+showing, it owns its pane. A lone session tab gets the chat shell plus this
+graph; two session tabs split into two `PeerSessionPane`s where the shell — and
+therefore the graph — is not rendered at all. So there is never a transcript
+beside the graph, "which bubbles are on screen" has no reading to give, and
+coverage is simply what the fill means.
 
-- **Viewport** — the visible set is the conversation bubbles currently
-  intersecting the chat scroll window (`render/visibility.ts`). Pure UI
-  affordance; no backend semantics. While the pane is ON the graph perspective
-  the transcript is hidden and measures 0×0, so `_recomputeVisibility` keeps the
-  last known set instead of reading every bubble as invisible.
-- **Context** — the visible set is **exactly the node ids the next LLM call
-  will carry as context**, served by
-  `GET /api/sessions/{id}/context-range`: the active branch walked back from
-  head, stopping at the most recent compaction summary. Nodes outside the
-  set draw dimmed; nodes inside keep the white fill.
+The covered set is served by `GET /api/sessions/{id}/context-range`: the active
+branch walked back from head, stopping at the most recent compaction summary.
+Nodes outside it draw dimmed. `enterExclusiveCoverageMode`
+(`web/lib/runtime-bridge/dag/index.ts`) is what the host calls to fetch and
+apply it.
+
+### Coverage data shape
+
+The same response carries, per node, the two degradations the context pipeline
+applies to content it is still carrying:
+
+```json
+{
+  "session_id": "…",
+  "node_ids": ["…"],
+  "count": 12,
+  "nodes": [
+    { "node_id": "…", "in_context": true, "aged": false, "spilled": true }
+  ]
+}
+```
+
+| Field | Meaning | Backend source |
+|---|---|---|
+| `in_context` | the node is in the covered set — always true for a row, since the list IS that set | `get_branch` |
+| `aged` | a code node old enough that its result renders as a one-line stub | `openprogram/context/render.py::_aged_code_ids`, boundary from `context/aging.py` |
+| `spilled` | the result was written to `large_nodes/` and the render only cites it | `metadata.spilled`, written by `context/spill.py::spill_if_large` |
+
+Both flags come from the functions the real render pass calls, not from a
+parallel reimplementation — **the graph never derives context semantics
+itself**; it asks the backend and draws the answer.
+
+### Drawing the two degradations
+
+| State | Drawing |
+|---|---|
+| in context | white fill (the baseline) |
+| `aged` | stroke dimmed to 40% opacity — reads as "still here, but only the gist" |
+| `spilled` | `▤` at the node's upper LEFT |
+
+`aged` dims **`stroke-opacity`, never `opacity`**: the white fill is the
+coverage signal, and fading the whole node would fade that too, collapsing two
+independent facts into one. The `▤` mark takes the upper left because the upper
+right is spoken for (`!` error, `↗` cross-session spawn) and the lower right
+holds the fold badge; it is drawn as `<text>` so `_applyVisibility`'s
+"first shape child" scan cannot mistake it for the node body.
+
+Compaction covers a range of nodes with a summary; those covered nodes simply
+fall out of `node_ids` and dim like anything else out of context. A dedicated
+glyph for the summary node is a separate question — see §4's rule that status
+and coverage live on the node's own stroke, never in a placeholder box.
+
+Refreshing: coverage is re-fetched whenever `context_stats` or
+`compaction_finished` arrives (`chat-handlers.ts`), so the fill tracks the real
+context without the frontend ever recomputing it. Note that `aged` and
+`spilled` are **not** part of the render signature, so applying new coverage
+busts it (`setLastSignature(null)`) — otherwise the repaint silently no-ops and
+the graph keeps painting the previous answer.
 
 Compaction interaction:
 
@@ -313,8 +408,8 @@ Compaction interaction:
   "N turns compacted here" marker, it must be a badge on the first kept
   node, not a node.
 - `compaction_finished` must refresh the context range
-  (`chat-handlers.ts`); the Context mode is event-driven like everything
-  else — the frontend never computes context membership itself.
+  (`chat-handlers.ts`); coverage is event-driven like everything else — the
+  frontend never computes context membership itself.
 - Context ids that have no drawn node (e.g. `display=runtime`
   task-followup rows) are silently ignored: they are context, but not
   graph.
@@ -333,3 +428,7 @@ The whole spec is implemented. Where each part lives:
 | Scenes 8/10 attach pointer | backend filters it (display=runtime) + `graph_builder` stamps the ref onto the embed host (`attach_returns`); `edges.ts` draws the long-dash return line |
 | §4 cross-session ↗ | `graph_builder` stamps `spawn_remote` (target side); `nodes.ts` draws ↗ (source-side `spawn_out` rendering is ready, awaiting a data source that stamps it) |
 | §1 spawn root tier | `graph_layout`: tier=1 / same-row depth / new lane; `task_followup` without an attach pointer re-parents onto the receiving turn (`filter.py` fallback) |
+| Composer shared by both perspectives | `chat.css` hides `#chatArea`, not `#chatView`; asserted by `web/scripts/check-center-tabs.mjs` |
+| Branch strip | `BranchesPanel variant="chips"` + `BranchItem chip`; `.branches-strip` / `.branch-chip` in `chat.css` / `right-dock.css` |
+| §8 coverage query | `routes/tree.py::_coverage_nodes` fills `/context-range`'s `nodes`; tested in `tests/unit/test_context_range_coverage.py` |
+| §8 aged / spilled drawing | `render/nodes.ts` (stroke-opacity + `▤`), fed by `_coverageSet` in `store/globals.ts` |

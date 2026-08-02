@@ -2647,10 +2647,16 @@
   min-height: 0;
   position: relative;
 }
-.center-pane-chat[data-center-view="dag"] #chatView {
+/* The graph perspective hides the TRANSCRIPT, not `#chatView`. The
+   composer is a singleton portalled into `#composer-mount` inside
+   `#chatView` and anchored `bottom:0` against it, so hiding that
+   ancestor would take the composer with it — and mounting a second
+   one would fork the draft, the run state and the settings row. Both
+   perspectives therefore keep the same composer instance, and the
+   graph replaces only the scroll area above it. */
+.center-pane-chat[data-center-view="dag"] #chatArea {
   display: none;
 }
-
 /* The DAG host, center-width. `.history-body` (right-dock.css) is the
    scroll box the renderer writes the SVG into and the one its
    ResizeObserver watches — so a perspective switch, a split-view drag
@@ -2661,11 +2667,37 @@
   flex-direction: column;
   overflow: hidden;
 }
-/* Branch list + highlight-mode switch: a fixed-width rail above the
-   graph, capped so a long branch list can't eat the canvas. */
-.dag-view-rail {
+/* The graph takes the transcript's place by covering the pane rather
+   than by taking its slot in the column. `#chatView` therefore keeps
+   its `flex: 1` and its full height: the composer is anchored
+   `bottom: 0` against it, so shrinking it would drag the input box up
+   the pane. Stacking order does the rest — the graph sits under the
+   composer's `z-index: 5`, so the input box stays exactly where the
+   transcript perspective puts it.
+
+   `padding-bottom` reserves the composer's strip so the deepest nodes
+   don't hide behind it, the same contract the transcript honours with
+   `.chat-messages`' own bottom padding. */
+.center-pane-chat[data-center-view="dag"] .dag-view {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding-bottom: 25vh;
+}
+
+/* Branch strip — one wrapping row of pills above the canvas. Replaces
+   the branch LIST the rail used to hold: the graph already draws the
+   branch structure, so the strip only has to answer "which one am I
+   on" and let you switch. Capped at three rows so a session with many
+   branches still leaves the canvas the bulk of the pane. */
+.branches-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   flex: 0 0 auto;
-  max-height: 40%;
+  padding: 8px 12px;
+  max-height: calc(28px * 3 + 12px + 16px);
   overflow-y: auto;
   border-bottom: 1px solid var(--border);
 }

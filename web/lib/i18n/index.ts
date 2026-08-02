@@ -230,20 +230,10 @@ const DICT = {
   // Right sidebar panels
   "right.resize_panel": { en: "Drag to resize panel", zh: "拖动调整面板宽度" },
   "right.toggle_panel": { en: "Toggle panel", zh: "切换面板" },
-  "right.context": { en: "Context", zh: "上下文" },
   "right.executions": { en: "Executions", zh: "执行" },
   "right.context_tooltip": {
     en: "Compacted context the next LLM turn will see",
     zh: "下一次大模型调用会读取的压缩上下文",
-  },
-  "right.viewport": { en: "Viewport", zh: "视口" },
-  "right.viewport_tooltip": {
-    en: "Highlight follows chat scroll position",
-    zh: "高亮跟随当前聊天滚动位置",
-  },
-  "right.context_highlight_tooltip": {
-    en: "Highlight the message set the next LLM turn will load",
-    zh: "高亮下一次大模型调用会读取的消息集合",
   },
   "right.no_execution": { en: "No execution selected.", zh: "未选择执行记录。" },
   "right.no_execution_hint": {
@@ -251,7 +241,6 @@ const DICT = {
     zh: "点击会话树中的节点查看它的上下文和输出。",
   },
   "right.branches": { en: "Branches", zh: "分支" },
-  "right.worktrees": { en: "Worktrees", zh: "Worktree" },
   "right.selected": { en: "selected", zh: "已选择" },
   "right.base": { en: "base", zh: "基准" },
   "right.attach_to": { en: "Attach to", zh: "附加到" },
@@ -304,21 +293,6 @@ const DICT = {
     zh: "可选：给合并 Agent 的指令（如何整合）",
   },
   "right.merge_shortcut_hint": { en: "Cmd/Ctrl + Enter to merge", zh: "Cmd/Ctrl + Enter 合并" },
-  "right.status": { en: "Status", zh: "状态" },
-  "right.created": { en: "Created", zh: "创建时间" },
-  "right.file": { en: "file", zh: "个文件" },
-  "right.files": { en: "files", zh: "个文件" },
-  "right.keep": { en: "Keep", zh: "保留" },
-  "right.discard": { en: "Discard", zh: "丢弃" },
-  "right.keep_worktree_title": {
-    en: "Keep the on-disk worktree, detach from OpenProgram",
-    zh: "保留磁盘上的 worktree，并从 OpenProgram 中解除关联",
-  },
-  "right.discard_worktree_title": {
-    en: "Remove worktree dir and delete branch",
-    zh: "删除 worktree 目录并删除分支",
-  },
-  "right.merging": { en: "merging...", zh: "正在合并..." },
 } as const;
 
 type Key = keyof typeof DICT;

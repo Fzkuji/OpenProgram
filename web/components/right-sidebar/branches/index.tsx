@@ -3,9 +3,16 @@
 /**
  * Branches panel — React port of `conversations.js::renderBranchesPanel`.
  *
- * The right-rail list of a conversation's DAG branches: collapsed shows
- * just the active (HEAD) branch, expanded shows all. Each row can be
- * checked out (click), renamed (inline) or deleted.
+ * A conversation's DAG branches: each row can be checked out (click),
+ * renamed (inline) or deleted.
+ *
+ * Two layouts, one component. ``variant="chips"`` is what the graph
+ * perspective mounts (dag/rendering.md): a single wrapping row of
+ * pills above the canvas, the branch answer to "where am I" without
+ * spending a block of the pane on a list. The default list layout
+ * keeps the merge / attach machinery, which needs the vertical room.
+ * Sharing the component is the point — the WS actions behind a chip
+ * and behind a row are the same code, so they cannot drift.
  *
  * Originally a single 783-line file (branches-panel.tsx); now split
  * into types.tsx (shared types + helpers + SVG glyphs),
@@ -28,8 +35,11 @@ import {
   type BranchRow,
 } from "./types";
 
-export function BranchesPanel() {
+export function BranchesPanel({ variant = "list" }: {
+  variant?: "list" | "chips";
+} = {}) {
   const { t, locale } = useTranslation();
+  const chips = variant === "chips";
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const conversations = useSessionStore((s) => s.conversations);
   const [collapsed, setCollapsed] = useState(false);
@@ -347,6 +357,32 @@ export function BranchesPanel() {
   const otherSessions = Object.values(conversations)
     .filter((c) => c.id && c.id !== sessionId)
     .sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id));
+
+  if (chips) {
+    return (
+      <div className="branches-strip">
+        {rows.map((b, i) => (
+          <BranchItem
+            key={b.head_msg_id}
+            branch={b}
+            chip
+            color={
+              graphColors[b.head_msg_id] ||
+              LANE_COLORS[i % LANE_COLORS.length]
+            }
+            sessionId={sessionId}
+            collapsed={false}
+            selected={false}
+            isBase={false}
+            running={runningHeads.has(b.head_msg_id)}
+            finishing={finishingHeads.has(b.head_msg_id)}
+            onToggleSelect={toggleSelect}
+            onSetBase={setBase}
+          />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className={"branches-section" + (collapsed ? " is-collapsed" : "")}>

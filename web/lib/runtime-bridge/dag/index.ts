@@ -11,7 +11,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { type GNode, type HighlightMode } from "./types";
+import { type GNode } from "./types";
 import { runtimeState } from "../state";
 import { render } from "./pipeline";
 import { _recomputeVisibility } from "./render/visibility";
@@ -22,6 +22,7 @@ import {
   _lastGraph,
   _lastHeadId,
   setContextSet,
+  setCoverageSet,
   setHighlightMode,
   setLastGraph,
   setLastSignature,
@@ -48,15 +49,42 @@ export function repaintBranchTags(): void {
   if (_lastGraph) render(_lastGraph, _lastHeadId);
 }
 
-export function setHistoryContextRange(ids: string[] | null): void {
+/** ``nodes`` rows from ``/context-range`` — the per-node degradations
+ *  the context pipeline applied. Shape mirrors the endpoint exactly. */
+export interface CoverageNode {
+  node_id: string;
+  in_context: boolean;
+  aged: boolean;
+  spilled: boolean;
+}
+
+export function setHistoryContextRange(
+  ids: string[] | null,
+  coverage?: CoverageNode[] | null,
+): void {
   if (!ids || !ids.length) {
     setContextSet(null);
+    setCoverageSet(null);
   } else {
     const m: Record<string, boolean> = Object.create(null);
     for (let i = 0; i < ids.length; i++) m[ids[i]] = true;
     setContextSet(m);
+    if (coverage && coverage.length) {
+      const c: Record<string, { aged: boolean; spilled: boolean }> =
+        Object.create(null);
+      for (const row of coverage) {
+        if (!row || !row.node_id) continue;
+        c[row.node_id] = { aged: !!row.aged, spilled: !!row.spilled };
+      }
+      setCoverageSet(c);
+    } else {
+      setCoverageSet(null);
+    }
   }
   if (_lastGraph) {
+    // Aged / spilled / membership are none of them part of the render
+    // signature, so without busting it the repaint silently no-ops and
+    // the graph keeps painting the previous coverage.
     setLastSignature(null);
     render(_lastGraph, _lastHeadId);
   }
@@ -71,7 +99,7 @@ export function refreshHistoryContextRange(sessionId: string | null): void {
   fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/context-range")
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
-      if (j) setHistoryContextRange(j.node_ids || []);
+      if (j) setHistoryContextRange(j.node_ids || [], j.nodes || null);
     })
     .catch(() => {
       /* leave undimmed on failure */
@@ -82,18 +110,20 @@ export function recomputeHistoryVisibility(): void {
   _recomputeVisibility();
 }
 
-export function getHistoryHighlightMode(): HighlightMode {
-  return _highlightMode;
-}
-
-export function setHistoryHighlightMode(mode: HighlightMode): void {
-  if (mode !== "viewport" && mode !== "context") return;
-  if (_highlightMode === mode) return;
-  setHighlightMode(mode);
-  if (mode === "context") {
-    const sid = runtimeState.currentSessionId;
-    if (sid) refreshHistoryContextRange(sid);
-  }
-  _recomputeVisibility();
+/**
+ * The graph is showing, and it owns its pane — a lone session tab gets
+ * the chat shell plus this graph, and two session tabs split into two
+ * `PeerSessionPane`s where the shell is not rendered at all. There is
+ * therefore never a transcript beside the graph, so "which bubbles are
+ * on screen" has no reading and the white fill means context coverage,
+ * full stop (dag/rendering.md §8). No mode to offer, so no switch.
+ *
+ * Idempotent: safe to call on every render of the host.
+ */
+export function enterExclusiveCoverageMode(): void {
+  if (_highlightMode !== "context") setHighlightMode("context");
+  const sid = runtimeState.currentSessionId;
+  if (sid) refreshHistoryContextRange(sid);
+  else _recomputeVisibility();
 }
 

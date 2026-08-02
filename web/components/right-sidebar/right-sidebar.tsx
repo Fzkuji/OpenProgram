@@ -29,7 +29,6 @@ import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { ContextCommitTimeline } from "./context-commit-timeline";
-import { WorktreesPanel } from "./worktrees";
 import {
   sidebarNavIconClass,
   sidebarNavItemActiveClass,
@@ -41,7 +40,6 @@ import {
 import {
   type AnimatedNavIconHandle,
   FolderOpenIcon,
-  GitGraphIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
 } from "../animated-icons";
@@ -53,7 +51,6 @@ import { setRightDockApi } from "@/lib/right-dock";
 
 // View IDs that round-trip through the `data-view` attribute — e.g.
 // "detail" picks `<div data-view="detail">`.
-const VIEW_WORKTREES = "worktrees";
 const VIEW_DETAIL = "detail";
 const VIEW_CONTEXT = "context";
 const VIEW_FILES = "files";
@@ -76,7 +73,6 @@ export function RightSidebar() {
   // Animated nav icons (pqoqubbw/icons), driven from each row's / the
   // toggle button's hover.
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
-  const worktreesIconRef = useRef<AnimatedNavIconHandle>(null);
   const filesIconRef = useRef<AnimatedNavIconHandle>(null);
   // Files 视图的树 scope：当前中央 tab 的项目（文件 tab 自带
   // projectId；会话/新标签页回落到会话绑定的项目）。
@@ -248,25 +244,6 @@ export function RightSidebar() {
       </div>
 
       <div className="flex flex-col gap-px shrink-0 px-[8px] pt-[8px]">
-        <div
-          className={
-            sidebarNavItemClass + " right-nav-item" +
-            (view === VIEW_WORKTREES ? " " + sidebarNavItemActiveClass : "")
-          }
-          data-view={VIEW_WORKTREES}
-          onClick={() => onNavClick(VIEW_WORKTREES)}
-          onMouseEnter={() => worktreesIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => worktreesIconRef.current?.stopAnimation?.()}
-          role="button"
-          title={text("Worktrees", "工作树")}
-        >
-          <span className={sidebarNavIconClass}>
-            <GitGraphIcon ref={worktreesIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>
-            {text("Worktrees", "工作树")}
-          </span>
-        </div>
         {/* Detail / Context 不进图标轨：图标轨是并列的顶层入口，而这两个
             是 DAG 节点的从属面板。选中 DAG 节点时它们自己弹出，彼此之间
             靠 <SessionViewSwitch /> 切换。 */}
@@ -299,12 +276,6 @@ export function RightSidebar() {
               {text("Bind a project to browse files", "绑定项目后可浏览文件")}
             </div>
           )}
-        </div>
-        {/* Worktrees view. The session DAG used to sit here as well;
-            it is now a CENTER perspective (see components/chat/dag-view.tsx)
-            so the graph gets the full column width. */}
-        <div className="right-view" data-view={VIEW_WORKTREES}>
-          <WorktreesPanel />
         </div>
         {/* Detail view: ui.js showDetail() writes innerHTML into
             #detailBody and textContent into #detailTitle. The template

@@ -24,6 +24,18 @@ export function setContextSet(v: Record<string, boolean> | null): void {
   _contextSet = v;
 }
 
+// Per-node degradations the context pipeline applied to the covered
+// set, straight off ``/context-range``'s ``nodes`` (dag/rendering.md
+// §8). ``aged`` dims the node's stroke, ``spilled`` adds the ▤ mark.
+// Never derived here — the backend owns both semantics.
+export let _coverageSet: Record<string, { aged: boolean; spilled: boolean }>
+  | null = null;
+export function setCoverageSet(
+  v: Record<string, { aged: boolean; spilled: boolean }> | null,
+): void {
+  _coverageSet = v;
+}
+
 export let _highlightMode: HighlightMode = "viewport";
 export function setHighlightMode(v: HighlightMode): void { _highlightMode = v; }
 
