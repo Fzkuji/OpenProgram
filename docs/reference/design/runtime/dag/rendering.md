@@ -175,8 +175,11 @@ rows it occupies. Rows are not "hops to root" — that would stack all children 
 parent on a single row. Two exceptions keep their anchor's row because they grow
 sideways, not down: a fork sibling sits on the **same row** as the sibling it rewrites
 (scene 3), and a spawn branch root sits on the **same row as the spawn call node**
-(scene 10). Cross-session spawns land as the target session's own conversation chain
-(lane 0), not a side branch (scene 12).
+(scene 10) — unless a second spawn root already claimed that row, in which case it takes
+the next free one and brings its lane with it, because a sub-agent capsule is a pill
+carrying a name and two of them side by side are unreadable (§12). Cross-session spawns
+land as the target session's own conversation chain (lane 0), not a side branch
+(scene 12).
 
 ---
 
@@ -551,6 +554,23 @@ name comes from the label the runner stamps on the attach pointer that points
 back at the branch (dag/overview.md §4), with the branch name as a fallback.
 The inspector titles the same node `子 agent · <name>` instead of `user`, which
 is what its role field says and not what the node is.
+
+**The name is drawn inside the pill.** A compaction count is three characters
+and can hang off the capsule's right edge; a name cannot. Two sub-agents spawned
+by one turn sit a lane apart, and two names hung off their right edges print
+through each other and through each other's bodies. So the pill is sized to its
+own measured text and carries it centred inside, ellipsised past 180px — a
+capsule is a glyph, not a paragraph the lane has to make room for. That width is
+one number the layout also reads: it reserves the columns the pill occupies, it
+sizes the canvas to the pill's right edge rather than to the point it is
+anchored at, and every edge that can terminate on a capsule lands on that edge
+instead of its centre, so no line crosses a name.
+
+**Two capsules never share a row.** Because the pill is wide, the row exception
+above yields to it: the first capsule keeps its call node's row, and a second one
+that would land on the same row takes the next free row and brings its lane with
+it (an expanded branch has to stay attached to its head). Rule ② still holds —
+this is an ordering, not a reserved gap.
 
 **The fold.** The branch is elided by default; clicking the capsule draws the
 whole lane, clicking again folds it away. Nested sub-agents keep their own

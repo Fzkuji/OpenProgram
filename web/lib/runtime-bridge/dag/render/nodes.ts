@@ -12,10 +12,15 @@ import { type GNode, NODE_R } from "../types";
 import {
   CAPSULE_HH,
   CAPSULE_HW,
+  SPAWN_CAPSULE_HH,
   _branchColor,
   _buildShapeEl,
   _shapeFor,
   _svg,
+  spawnCapsuleDX,
+  spawnCapsuleHW,
+  spawnCapsuleLabel,
+  spawnCapsuleText,
 } from "../shapes";
 import { _spawnExpanded, _summaryExpanded } from "../store/globals";
 
@@ -85,6 +90,20 @@ export function drawNodes(
     const isSpawnCapsule = !!spawnBranch;
     const spawnOpen = isSpawnCapsule && !!_spawnExpanded[id];
     const spawnName = spawnFold.nameOf[id] || "";
+    // The pill is as wide as the name it carries. ``pipeline.ts`` measured
+    // the same label to reserve the row and the canvas width; recomputing
+    // it from the same two functions keeps the glyph and the layout in
+    // step without a second field to keep in sync.
+    const spawnText = isSpawnCapsule
+      ? spawnCapsuleText(
+        spawnCapsuleLabel(spawnName, spawnBranch.length, spawnOpen))
+      : "";
+    const spawnHW = isSpawnCapsule ? spawnCapsuleHW(spawnText) : CAPSULE_HW;
+    // The pill grows rightwards from the anchor so it never covers the
+    // node it was spawned from; everything drawn with it shifts too.
+    const spawnDX = isSpawnCapsule ? spawnCapsuleDX(spawnHW) : 0;
+    const hitHW = isSpawnCapsule ? spawnHW : CAPSULE_HW;
+    const hitHH = isSpawnCapsule ? SPAWN_CAPSULE_HH : CAPSULE_HH;
     const isAnyCapsule = isCapsule || isSpawnCapsule;
     const isGhost = !!coveredBy[id];
     const isFailed = _isArchivedFailure(node, onHead, isHead);
@@ -123,9 +142,9 @@ export function drawNodes(
     // of the pill misses and the fold "does nothing".
     const hit = isAnyCapsule
       ? _svg("rect", {
-        x: String(-CAPSULE_HW), y: String(-CAPSULE_HH),
-        width: String(CAPSULE_HW * 2), height: String(CAPSULE_HH * 2),
-        rx: String(CAPSULE_HH),
+        x: String(spawnDX - hitHW), y: String(-hitHH),
+        width: String(hitHW * 2), height: String(hitHH * 2),
+        rx: String(hitHH),
         fill: "transparent",
         "pointer-events": "all",
       })
@@ -137,7 +156,8 @@ export function drawNodes(
     g.appendChild(hit);
     (g as SVGGraphicsElement).style.cursor = "pointer";
     const r = NODE_R + 1.8;
-    const el = _buildShapeEl(_shapeFor(node), color, r);
+    const el = _buildShapeEl(
+      _shapeFor(node), color, r, isSpawnCapsule ? spawnHW : undefined);
     if (el) {
       el.setAttribute("pointer-events", "none");
       g.appendChild(el);
@@ -184,9 +204,11 @@ export function drawNodes(
     if ((isCapsule && !capsuleOpen)
         || (isSpawnCapsule && !spawnOpen && spawnBranch.length)) {
       const pleats = Math.min(3, (covered || spawnBranch).length);
+      const edge = isSpawnCapsule ? spawnDX + spawnHW : CAPSULE_HW;
+      const baseHH = isSpawnCapsule ? SPAWN_CAPSULE_HH : CAPSULE_HH;
       for (let i = 0; i < pleats; i++) {
-        const x = CAPSULE_HW + 2 + i * 5;
-        const hh = CAPSULE_HH * (1 - i * 0.22);
+        const x = edge + 2 + i * 5;
+        const hh = baseHH * (1 - i * 0.22);
         g.appendChild(_svg("rect", {
           x: String(x), y: String(-hh),
           width: "3.5", height: String(hh * 2),
@@ -218,18 +240,22 @@ export function drawNodes(
     // agent is this" is the question the fold has to answer, and the
     // count of its turns is not an answer. The count still rides along
     // in parentheses so the fold stays self-describing.
+    //
+    // The name is drawn INSIDE the pill, centred. Hung off the right edge
+    // the way the compaction count is, two capsules a lane apart print
+    // their names on top of each other and on top of each other's bodies
+    // — a count is three characters wide, a name is not. Inside, the
+    // label can only ever be as wide as the shape the layout reserved
+    // room for.
     if (isSpawnCapsule) {
       const cap = _svg("text", {
-        x: String(CAPSULE_HW + (spawnOpen ? 6 : 22)),
-        y: String(3.5),
+        x: String(spawnDX),
+        y: String(0.5),
+        "text-anchor": "middle",
         class: "history-summary-label history-subagent-label",
         "pointer-events": "none",
       });
-      const arrow = spawnOpen ? "▾" : "▸";
-      const nm = spawnName || "sub-agent";
-      cap.textContent = spawnBranch.length
-        ? `${arrow} ${nm} (${spawnBranch.length})`
-        : `${arrow} ${nm}`;
+      cap.textContent = spawnText;
       g.appendChild(cap);
     }
     // ── 覆盖态的两级衰减（rendering.md 第八节）──

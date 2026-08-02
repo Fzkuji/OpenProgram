@@ -40,6 +40,9 @@ import { computeGeometry } from "./layout/geometry";
 import {
   _branchColor,
   _svg,
+  spawnCapsuleHW,
+  spawnCapsuleLabel,
+  spawnCapsuleText,
 } from "./shapes";
 import {
   hideTooltip as _hideTooltip,
@@ -72,6 +75,7 @@ import {
   _lastGraph,
   _lastHeadId,
   _lastSignature,
+  _spawnExpanded,
   setCurrentHead,
   setHeadAncestorSet,
   setInternalOwner,
@@ -281,6 +285,19 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       - (parseFloat(bcs.paddingLeft) || 0)
       - (parseFloat(bcs.paddingRight) || 0);
   }
+  // A sub-agent capsule is as wide as the name it carries (§12), and the
+  // layout has to know that before it places anything: the pill needs a
+  // row of its own and the canvas needs room for its right edge. Measure
+  // once here, stamp it on the node, and the geometry pass and the
+  // drawer read the same number.
+  Object.keys(tree.byId).forEach((id) => {
+    const branch = spfold.branchOf[id];
+    if (!branch) return;
+    const label = spawnCapsuleLabel(
+      spfold.nameOf[id] || "", branch.length, !!_spawnExpanded[id]);
+    (tree.byId[id] as Record<string, unknown>)._spawnHW =
+      spawnCapsuleHW(spawnCapsuleText(label));
+  });
   // Content-driven pixel packing: lane columns sized to the widest
   // *visible* tier in each lane (collapse a branch → its neighbours pack
   // back), and per-lane rows so call-tree siblings never overlap. See

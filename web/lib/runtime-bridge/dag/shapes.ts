@@ -113,6 +113,81 @@ export function _applyShapeSize(shape: SVGElement): void {
 export const CAPSULE_HW = (NODE_R + 1.8) * 2.1;
 export const CAPSULE_HH = (NODE_R + 1.8) * 0.86;
 
+// ── Sub-agent capsule: the name lives INSIDE the pill (§12) ──────────
+// A count fits beside a capsule; a name does not. Two sub-agents spawned
+// from the same turn sit a lane apart, and two names hung off their right
+// edges land on top of each other — the label of the first runs straight
+// through the body of the second, and neither is readable. So the pill
+// grows to fit its own text and carries it, which also gives the layout
+// one honest number to reserve room for (``layout/geometry.ts``).
+export const SPAWN_CAPSULE_HH = CAPSULE_HH * 1.5;
+/** Left+right breathing room inside the pill, past the rounded ends. */
+const SPAWN_PAD_X = 11;
+/** Names longer than this are ellipsised. Past it a capsule stops being a
+ *  glyph and becomes a paragraph the lane has to make room for. */
+const SPAWN_MAX_TEXT = 180;
+
+// 量文字实际像素宽（复用一个 canvas）。按 label.length*6 估对中文
+// （字宽≈字号）严重低估，背景比文字短、文字溢出，实测才中英文都贴合。
+let _measureCtx: CanvasRenderingContext2D | null = null;
+export function _textWidth(s: string, font: string): number {
+  if (typeof document === "undefined") return s.length * 8;
+  if (!_measureCtx) {
+    _measureCtx = document.createElement("canvas").getContext("2d");
+  }
+  if (!_measureCtx) return s.length * 8; // 拿不到 canvas 时保守按 8px/字
+  _measureCtx.font = font;
+  return _measureCtx.measureText(s).width;
+}
+
+// canvas 的 ctx.font 不认 CSS 变量——含 var() 的整串会被拒收，静默退回
+// 默认 "10px sans-serif"。这里写死与 --font-sans 相同的字体栈，量的才是
+// 真正渲染的 Inter。
+const SPAWN_FONT =
+  '700 9.5px "Inter Variable", "Inter", -apple-system, "PingFang SC", sans-serif';
+
+/** The text a sub-agent capsule shows: fold arrow, name, hidden count.
+ *  One function so the label, the pill width and the layout's column
+ *  reservation can never disagree about how wide the thing is. */
+export function spawnCapsuleLabel(
+  name: string,
+  count: number,
+  open: boolean,
+): string {
+  const nm = name || "sub-agent";
+  const arrow = open ? "▾" : "▸";
+  return count ? `${arrow} ${nm} (${count})` : `${arrow} ${nm}`;
+}
+
+/** Half-width of the pill drawn for ``label`` — measured text, clamped,
+ *  plus padding, never narrower than a plain capsule. */
+export function spawnCapsuleHW(label: string): number {
+  const w = Math.min(_textWidth(label, SPAWN_FONT), SPAWN_MAX_TEXT);
+  return Math.max(CAPSULE_HW, Math.ceil(w) / 2 + SPAWN_PAD_X);
+}
+
+/** How far right of the node's anchor point the pill's centre sits.
+ *
+ *  A pill centred on its anchor grows in both directions, and the extra
+ *  width to the LEFT lands on the node it was spawned from — a capsule
+ *  covering its own host reads as the host being inside the sub-agent,
+ *  which is backwards. Growing rightwards only keeps the left cap where
+ *  every other shape's left edge is, so incoming edges still land on it
+ *  and nothing upstream is covered. */
+export function spawnCapsuleDX(hw: number): number {
+  return hw - CAPSULE_HW;
+}
+
+/** ``label`` truncated with an ellipsis so it fits inside the pill. */
+export function spawnCapsuleText(label: string): string {
+  if (_textWidth(label, SPAWN_FONT) <= SPAWN_MAX_TEXT) return label;
+  let s = label;
+  while (s.length > 1 && _textWidth(s + "…", SPAWN_FONT) > SPAWN_MAX_TEXT) {
+    s = s.slice(0, -1);
+  }
+  return s + "…";
+}
+
 // Shape sizing: all shapes share the same reference circle of radius R.
 //   circle:   radius = R (the baseline)
 //   square:   half-side = R (edges touch the circle, corners poke out to R√2)
@@ -128,6 +203,7 @@ export function _buildShapeEl(
   shape: string,
   color: string,
   r: number,
+  hwOverride?: number,
 ): SVGElement | null {
   const common = { fill: "transparent", stroke: color, "stroke-width": String(STROKE_W) };
 
@@ -158,20 +234,26 @@ export function _buildShapeEl(
     // Sub-agent capsule (dag/rendering.md §12): the compaction pill with
     // a second outline inset inside it. Same silhouette, so it still
     // reads as "a fold"; two strokes, so it never reads as a compaction.
+    // Sized to the name it carries — ``hw`` comes from the caller, which
+    // measured the same label the text node will draw.
+    const hw = hwOverride ?? CAPSULE_HW;
+    const hh = hwOverride === undefined ? CAPSULE_HH : SPAWN_CAPSULE_HH;
+    // Grow rightwards from the anchor, not around it — see spawnCapsuleDX.
+    const dx = hwOverride === undefined ? 0 : spawnCapsuleDX(hw);
     const g = _svg("g");
     const outer = _svg("rect", {
-      x: -CAPSULE_HW, y: -CAPSULE_HH,
-      width: CAPSULE_HW * 2, height: CAPSULE_HH * 2,
-      rx: CAPSULE_HH, ry: CAPSULE_HH,
+      x: dx - hw, y: -hh,
+      width: hw * 2, height: hh * 2,
+      rx: hh, ry: hh,
       "data-shape": "capsule",
       ...common,
     });
     g.appendChild(outer);
     const inset = 2.6;
     g.appendChild(_svg("rect", {
-      x: -CAPSULE_HW + inset, y: -CAPSULE_HH + inset,
-      width: (CAPSULE_HW - inset) * 2, height: (CAPSULE_HH - inset) * 2,
-      rx: CAPSULE_HH - inset, ry: CAPSULE_HH - inset,
+      x: dx - hw + inset, y: -hh + inset,
+      width: (hw - inset) * 2, height: (hh - inset) * 2,
+      rx: hh - inset, ry: hh - inset,
       fill: "transparent", stroke: color,
       "stroke-width": String(STROKE_W * 0.45),
       "stroke-opacity": "0.75",

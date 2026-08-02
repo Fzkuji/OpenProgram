@@ -11,11 +11,37 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { type GNode, NODE_R, COL_W } from "../types";
-import { _branchColor, _edgePath, _svg } from "../shapes";
+import {
+  CAPSULE_HW,
+  _branchColor,
+  _edgePath,
+  _svg,
+  spawnCapsuleDX,
+} from "../shapes";
 import { _onEdgeDblclick } from "./interaction";
 import { coversIds } from "../passes/fold-summaries";
 
 const GHOST_STROKE = "var(--dag-ghost, #c9c7bf)";
+
+/** Where a node's ink ends on the side an edge comes in from, measured
+ *  from its anchor point. Every shape but the sub-agent capsule fits
+ *  inside the reference circle; the capsule is a pill sized to the name
+ *  it carries (§12) and grown rightwards from the anchor, so a line
+ *  aimed at its centre crosses the whole label. Asymmetric on purpose:
+ *  its left cap sits where any capsule's does, its right edge is a name
+ *  away. */
+function _anchorReach(n: GNode | undefined, fromLeft: boolean): number {
+  const hw = n && (n as Record<string, unknown>)._spawnHW;
+  if (typeof hw !== "number") return NODE_R;
+  return fromLeft ? CAPSULE_HW : spawnCapsuleDX(hw) + hw;
+}
+
+/** ``from → to`` clipped to ``to``'s ink, approached horizontally. */
+function _clipToX(fromX: number, to: { x: number; y: number }, n?: GNode): number {
+  const fromLeft = fromX <= to.x;
+  const nr = _anchorReach(n, fromLeft) + 4;
+  return fromLeft ? to.x - nr : to.x + nr;
+}
 
 export function drawEdges(
   edgeG: SVGElement,
@@ -125,7 +151,7 @@ export function drawEdges(
     }
     if (c.x !== trunkX) {
       edgeG.appendChild(_svg("line", {
-        x1: trunkX, y1: c.y, x2: c.x - nr, y2: c.y,
+        x1: trunkX, y1: c.y, x2: _clipToX(trunkX, c, node), y2: c.y,
         stroke: color, "stroke-width": 1.6, "stroke-linecap": "round",
         "pointer-events": "none", class: "history-edge", ...dash,
       }));
@@ -178,13 +204,14 @@ export function drawEdges(
     const trunkX = forkPos.x - COL_W;
     const color = _branchColor(node, stableLeafOfNode);
     edgeG.appendChild(_svg("path", {
-      d: _edgePath(sp.x + nr, sp.y, trunkX, forkPos.y),
+      d: _edgePath(sp.x + _anchorReach(sibling, false) + 4, sp.y, trunkX, forkPos.y),
       stroke: color, "stroke-width": 1.4, fill: "none",
       "stroke-dasharray": "6 4", opacity: 0.7,
       "pointer-events": "none", class: "history-edge fork-edge",
     }));
     edgeG.appendChild(_svg("line", {
-      x1: trunkX, y1: forkPos.y, x2: forkPos.x - nr, y2: forkPos.y,
+      x1: trunkX, y1: forkPos.y,
+      x2: _clipToX(trunkX, forkPos, node), y2: forkPos.y,
       stroke: color, "stroke-width": 1.6, "stroke-linecap": "round",
       "pointer-events": "none", class: "history-edge",
     }));
@@ -225,8 +252,17 @@ export function drawEdges(
     const src = tree.byId[ref];
     const anchorNode = tree.byId[anchorId];
     if (!src || !anchorNode) return;
-    const srcPos = pos(src);
-    const anchorPos = pos(anchorNode);
+    const srcRaw = pos(src);
+    const anchorRaw = pos(anchorNode);
+    // Both ends land on the node's edge. A capsule is wide, and a
+    // reference line aimed at its centre crosses its whole body — the
+    // one thing a fold that stands for a branch must never look like.
+    const srcPos = {
+      x: _clipToX(anchorRaw.x, srcRaw, src), y: srcRaw.y,
+    };
+    const anchorPos = {
+      x: _clipToX(srcRaw.x, anchorRaw, anchorNode), y: anchorRaw.y,
+    };
     const color = _branchColor(src, stableLeafOfNode);
     const ahit = _svg("path", {
       d: _edgePath(srcPos.x, srcPos.y, anchorPos.x, anchorPos.y),
@@ -271,7 +307,13 @@ export function drawEdges(
     const srcNode = tree.byId[srcId];
     if (srcNode.display === "root") return;
     const srcPos = pos(srcNode);
-    const dstPos = pos(subRoot);
+    const dstRaw = pos(subRoot);
+    // Land on the capsule's edge: the pill is wide enough that a line to
+    // its centre would run through its name.
+    const dstPos = {
+      x: _clipToX(srcPos.x, dstRaw, subRoot),
+      y: dstRaw.y,
+    };
     const color = _branchColor(subRoot, stableLeafOfNode);
     const hitPath = _svg("path", {
       d: _edgePath(srcPos.x, srcPos.y, dstPos.x, dstPos.y),

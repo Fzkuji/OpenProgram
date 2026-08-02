@@ -29,6 +29,7 @@
  */
 
 import { type GNode, COL_W, ROW_H, PAD_X, PAD_Y, layoutParent } from "../types";
+import { spawnCapsuleDX } from "../shapes";
 
 export interface Geometry {
   pos: Record<string, { x: number; y: number }>;
@@ -37,17 +38,38 @@ export interface Geometry {
   maxY: number;
 }
 
+/** A folded sub-agent capsule (dag/rendering.md §12) — a pill that
+ *  carries a name inside it, so it is many columns wide instead of one.
+ *  ``_spawnHW`` is the half-width the renderer measured for that name;
+ *  the pass below is keyed on it rather than on ``source`` so the layout
+ *  and the glyph can never disagree about which nodes are capsules. */
+function spawnHW(n: GNode): number | undefined {
+  const hw = (n as Record<string, unknown>)._spawnHW;
+  return typeof hw === "number" ? hw : undefined;
+}
+
 export function computeGeometry(byId: Record<string, GNode>): Geometry {
   const ids = Object.keys(byId);
 
   // ── Columns: pack lanes by their widest visible tier ──
+  // A sub-agent capsule counts for more than the one column its tier
+  // buys: the pill carrying its name runs several columns to the right
+  // of the anchor, and a lane sized to the tier alone lets it spill onto
+  // whatever the next lane put there — in the case this was written from,
+  // a following turn's node landed inside the pill, on top of the name.
+  // So the capsule's tier is inflated to the columns its ink actually
+  // occupies, and lane packing keeps working unchanged from there.
   const maxTierOfLane: Record<number, number> = Object.create(null);
   ids.forEach((id) => {
     const n = byId[id];
     const lane = n._lane || 0;
     const tier = typeof n._tier === "number" ? n._tier : 0;
-    if (maxTierOfLane[lane] === undefined || tier > maxTierOfLane[lane]) {
-      maxTierOfLane[lane] = tier;
+    const hw = spawnHW(n);
+    const width = hw === undefined
+      ? tier
+      : tier + Math.ceil((spawnCapsuleDX(hw) + hw) / COL_W);
+    if (maxTierOfLane[lane] === undefined || width > maxTierOfLane[lane]) {
+      maxTierOfLane[lane] = width;
     }
   });
   const lanesSorted = Object.keys(maxTierOfLane)
@@ -109,6 +131,40 @@ export function computeGeometry(byId: Record<string, GNode>): Geometry {
     });
   });
 
+  // ── Sub-agent capsules never share a row (dag/rendering.md §12) ──
+  // Every other node is a glyph one column wide, so a row can hold as
+  // many of them as there are lanes. A capsule is not: it carries its
+  // name inside a pill that runs a hundred-odd pixels to the right, and
+  // two capsules spawned by the same turn land one lane apart — near
+  // enough that the first pill covers the second whole. Rule ② packs
+  // rows tight, so the fix is not a gap but an ordering: each capsule
+  // takes the next row no other capsule has claimed, and its lane comes
+  // with it. Sorting by call order keeps the two reading top-to-bottom
+  // in the order they were spawned.
+  const capsules = ids
+    .filter((id) => spawnHW(byId[id]) !== undefined)
+    .sort(byCallOrder);
+  if (capsules.length > 1) {
+    // Accumulate per lane: two capsules can share one (a nested spawn
+    // the backend kept in its parent's lane), and the lane then owes the
+    // sum of both their pushes, not whichever was written last.
+    const laneShift: Record<number, number> = Object.create(null);
+    let claimed = -Infinity;
+    for (const id of capsules) {
+      const lane = byId[id]._lane || 0;
+      const row = (rowOf[id] || 0) + (laneShift[lane] || 0);
+      const want = Math.max(row, claimed + 1);
+      claimed = want;
+      if (want !== row) laneShift[lane] = (laneShift[lane] || 0) + (want - row);
+    }
+    // Shift the capsule's whole lane, not the capsule alone: expanded,
+    // the branch hangs off it and has to stay attached to its head.
+    ids.forEach((id) => {
+      const d = laneShift[byId[id]._lane || 0];
+      if (d) rowOf[id] = (rowOf[id] || 0) + d;
+    });
+  }
+
   const pos: Record<string, { x: number; y: number }> = Object.create(null);
   let minX = 0;
   let maxX = 0;
@@ -121,7 +177,12 @@ export function computeGeometry(byId: Record<string, GNode>): Geometry {
     const y = PAD_Y + (rowOf[id] || 0) * ROW_H;
     pos[id] = { x, y };
     if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
+    // A capsule grows rightwards from its anchor (``spawnCapsuleDX``), so
+    // its ink runs well past the point the layout placed it. Size the
+    // canvas to the pill's right edge or the name gets clipped away.
+    const hw = spawnHW(n);
+    const right = hw === undefined ? x : x + spawnCapsuleDX(hw) + hw;
+    if (right > maxX) maxX = right;
     if (y > maxY) maxY = y;
   });
 

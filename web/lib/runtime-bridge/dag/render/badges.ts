@@ -10,24 +10,11 @@
 
 import type { GNode } from "../types";
 import { getSocket, runtimeState } from "../../state";
-import { _branchColor, _svg } from "../shapes";
+import { _branchColor, _svg, _textWidth } from "../shapes";
 
-// 量文字实际像素宽（复用一个 canvas）。标签字号 9px。原来按
-// label.length*6 估，对中文（字宽≈字号）严重低估，导致背景比文字短、
-// 文字溢出。实测才能中英文都贴合。
-let _measureCtx: CanvasRenderingContext2D | null = null;
-function _textWidth(s: string): number {
-  if (!_measureCtx) {
-    const c = document.createElement("canvas");
-    _measureCtx = c.getContext("2d");
-    if (_measureCtx) {
-      _measureCtx.font =
-        "500 9px var(--font-sans, -apple-system, sans-serif)";
-    }
-  }
-  if (!_measureCtx) return s.length * 8; // 拿不到 canvas 时保守按 8px/字
-  return _measureCtx.measureText(s).width;
-}
+// canvas 量宽不认 var()（见 shapes.ts SPAWN_FONT 注释），写死同一字体栈。
+const BADGE_FONT =
+  '500 9px "Inter Variable", "Inter", -apple-system, "PingFang SC", sans-serif';
 
 export function drawBadges(
   svg: SVGElement,
@@ -106,7 +93,7 @@ export function drawBadges(
     // 碰撞：与已放置盒重叠 → 下移一行，直至无碰撞。
     // 顶部的分支条已删（分支切换只在这里），标签按按钮规格画：
     // 更大的字号/内边距 + 描边，hover 态在 right-dock.css。
-    const bwPre = Math.max(Math.ceil(_textWidth(label)) + 20, 52);
+    const bwPre = Math.max(Math.ceil(_textWidth(label, BADGE_FONT)) + 20, 52);
     const overlaps = (): boolean =>
       placed.some((r) =>
         bx - bwPre / 2 < r.x2 && bx + bwPre / 2 > r.x1
