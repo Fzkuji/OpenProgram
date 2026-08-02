@@ -79,6 +79,10 @@ interface PointerDragState {
 export interface TabPointerDragOptions {
   stripRef: React.RefObject<HTMLDivElement | null>;
   tabsFlowRef: React.RefObject<HTMLDivElement | null>;
+  /** Drop the close-run width freeze. The engine snapshots slot geometry
+   *  at drag start and treats it as static, so a press must reflow the
+   *  strip back to its natural widths before arming anything. */
+  releaseFrozenWidths(): void;
   /** Chrome activates on press: the strip's own click path runs on
    *  pointerdown so session/web/file tabs each activate the way they do
    *  on a click. */
@@ -100,6 +104,7 @@ export interface TabPointerDragOptions {
 export function useTabPointerDrag({
   stripRef,
   tabsFlowRef,
+  releaseFrozenWidths,
   onTabClick,
   activatedOnPressRef,
   tabMenuRef,
@@ -248,6 +253,12 @@ export function useTabPointerDrag({
     // let it through untouched so the outside-click listener sees it and
     // no drag is prepared. Dragging works normally once it is closed.
     if (tabMenuRef.current) return;
+    // This press may become a drag, and the drag engine snapshots slot
+    // geometry once at drag start. Release the close-run width freeze here,
+    // before anything is measured, so the snapshot describes the strip the
+    // user will actually see. (The × button stops propagation, so a close
+    // click never reaches this handler and keeps its freeze.)
+    releaseFrozenWidths();
     // Chrome activates on press, not on release: the pressed tab is live
     // for the whole drag and stays selected afterwards. Reuse the click
     // path so session/web/file tabs each activate the way they already do.

@@ -967,4 +967,117 @@ for (const verb of [
   );
 }
 
+// ---- Chrome's close-with-the-mouse width freeze ---------------------
+// Clicking × must pin the survivors to their current pixel widths so the
+// next tab's × lands under the cursor already there; the pin is released
+// when the pointer leaves the strip, and immediately by anything that has
+// to relayout anyway (new tab, drag, window resize).
+assert.match(geometry, /export function freezeStripWidths/);
+assert.match(geometry, /export function releaseStripWidths/);
+// The lock must beat BOTH the browser `flex: 0 1 200px` rule and the
+// desktop 240px override, so all three sizing properties are pinned.
+const freezeBody = geometry.slice(
+  geometry.indexOf("export function freezeStripWidths"),
+  geometry.indexOf("export function releaseStripWidths"),
+);
+for (const property of ["width", "flexBasis", "maxWidth"]) {
+  assert.match(
+    freezeBody,
+    new RegExp(`child\\.style\\.${property} = px;`),
+    `the freeze must pin ${property} — a partial lock loses to the stylesheet`,
+  );
+}
+// flex-shrink is the one that actually makes it hold: a crowded strip
+// shrinks every tab BELOW its basis, so closing one relieves the overflow
+// and the survivors shrink less — they still grow, pinned basis or not.
+// Verified against the DOM: without this the second tab went 161→172px.
+assert.match(
+  freezeBody,
+  /child\.style\.flexShrink = "0";/,
+  "the freeze must pin flex-shrink, or survivors of a crowded strip still grow",
+);
+assert.match(
+  geometry.slice(geometry.indexOf("export function releaseStripWidths")),
+  /child\.style\.flexShrink = "";/,
+  "the release must restore flex-shrink with the other three properties",
+);
+// A tab mid-exit animates its own width to zero; pinning it would freeze
+// the close animation, so the freeze skips it (and the strip marks it).
+assert.match(
+  geometry,
+  /if \(child\.dataset\.tabClosing === "true"\) continue;/,
+  "a closing tab must keep its shrinking width, not be pinned",
+);
+assert.match(strip, /data-tab-closing=\{closing \|\| undefined\}/);
+assert.match(strip, /data-tab-closing=\{closingCount \? true : undefined\}/);
+// Releasing must ease, not snap: the marker survives the width clear so
+// the transition rule still matches while the survivors grow back.
+assert.match(
+  geometry,
+  /child\.dataset\.widthFrozen = "released";/,
+  "the marker must outlive the width clear, or the release snaps",
+);
+assert.match(
+  css,
+  /\.tab\[data-width-frozen\],\s*\.compoundTab\[data-width-frozen\] \{[^}]*transition:[^}]*width 160ms ease,[^}]*flex-basis 160ms ease,[^}]*max-width 160ms ease,/s,
+  "released widths must ease back via a transition scoped to frozen tabs",
+);
+assert.match(
+  css,
+  /\.tab \{[^}]*transition: transform 160ms ease;/s,
+  "the base .tab transition must stay transform-only — the drag let-through depends on it",
+);
+// 1. Mouse close freezes; keyboard and programmatic closes do not.
+assert.match(strip, /function isMouseDrivenClose/);
+assert.match(
+  strip,
+  /native instanceof MouseEvent\s*&& native\.detail > 0/,
+  "only a physical click freezes — detail===0 is a keyboard activation of the ×",
+);
+assert.match(
+  strip,
+  /if \(isMouseDrivenClose\(e\)\) freezeWidthsForMouseClose\(\);\s*else releaseFrozenWidths\(\);/,
+  "every non-mouse close path must reflow immediately",
+);
+const onTabClose = strip.slice(
+  strip.indexOf("function onTabClose"),
+  strip.indexOf("function finishClose"),
+);
+assert.ok(
+  onTabClose.indexOf("window.confirm") < onTabClose.indexOf("isMouseDrivenClose"),
+  "a close cancelled at the discard prompt must not freeze the strip",
+);
+// 2. Leaving the strip releases, after a grace period; re-entry cancels it.
+assert.match(strip, /const UNFREEZE_GRACE_MS = \d+;/);
+assert.match(
+  strip,
+  /onMouseLeave=\{\(\) => \{[\s\S]*?setTimeout\(\s*releaseFrozenWidths,\s*UNFREEZE_GRACE_MS,\s*\)/,
+  "leaving the whole strip must release the frozen widths",
+);
+assert.match(
+  strip,
+  /onMouseEnter=\{\(\) => \{[\s\S]*?clearTimeout\(unfreezeTimerRef\.current\)/,
+  "re-entering before the grace period expires must keep the row pinned",
+);
+// 3+4. Drag, new tab and window resize each release immediately.
+assert.match(
+  strip,
+  /window\.addEventListener\("resize", releaseFrozenWidths\)/,
+  "a window resize must release the freeze — the row relayouts anyway",
+);
+assert.match(
+  strip,
+  /window\.removeEventListener\("resize", releaseFrozenWidths\)/,
+);
+assert.match(
+  strip,
+  /function onOpenNewTab\(\) \{[\s\S]*?releaseFrozenWidths\(\);[\s\S]*?openNewTabPage\(\)/,
+  "opening a new tab must release the freeze before the enter animation",
+);
+assert.ok(
+  strip.indexOf("releaseFrozenWidths();", strip.indexOf("function onTabPointerDown"))
+    < strip.indexOf("onPrepareDrag(subject)"),
+  "a press must release the freeze before the drag engine snapshots slot geometry",
+);
+
 console.log("center-tabs checks passed");

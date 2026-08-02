@@ -31,7 +31,11 @@ import { MainMenu } from "./main-menu";
 import { SplitViewPicker } from "./split-view-picker";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./center-tabs.module.css";
-import { computeLiveShifts } from "./tab-strip-geometry";
+import {
+  computeLiveShifts,
+  freezeStripWidths,
+  releaseStripWidths,
+} from "./tab-strip-geometry";
 import { cancelCoordinator, removeReleaseListener } from "./tab-drag-subject";
 import { CompoundTabItem, TabItem, labelOf } from "./tab-items";
 import { TabContextMenu } from "./tab-context-menu";
@@ -44,6 +48,11 @@ import { useTabPointerDrag } from "./use-tab-pointer-drag";
  *  move to fill the leaving tab's slot. A shared frozen instance avoids a new
  *  Map every render. */
 const EMPTY_SHIFTS: ReadonlyMap<string, number> = new Map();
+
+/** Grace period between the cursor leaving the strip and the frozen tab
+ *  widths being released — long enough to survive a graze along the
+ *  strip's edge, short enough that a real exit reflows promptly. */
+const UNFREEZE_GRACE_MS = 400;
 
 export function CenterTabStrip() {
   const { t, text } = useTranslation();
@@ -70,6 +79,51 @@ export function CenterTabStrip() {
 
   const { targetBeforeId, applyDrop, moveGroupByKeyboard } = useTabDropActions();
 
+  // ---- Chrome's close-with-the-mouse width freeze --------------------
+  // Closing a tab with the × pins every survivor to its current pixel
+  // width, so the next tab's × lands under the cursor that is already
+  // there and a row can be closed with repeated clicks in place. The
+  // widths are released when the pointer leaves the strip — with a short
+  // grace period, so brushing the strip's edge (or crossing the gap
+  // between two tabs, which fires mouseleave on some layouts) does not
+  // reflow the row mid-click-run. Any interaction that has to relayout
+  // anyway — a new tab, a drag, a window resize — releases immediately,
+  // exactly as Chrome does.
+  const widthFrozenRef = useRef(false);
+  const unfreezeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function releaseFrozenWidths() {
+    if (unfreezeTimerRef.current !== null) {
+      clearTimeout(unfreezeTimerRef.current);
+      unfreezeTimerRef.current = null;
+    }
+    if (!widthFrozenRef.current) return;
+    widthFrozenRef.current = false;
+    releaseStripWidths(tabsFlowRef.current);
+  }
+  /** Called by the lifecycle hook for MOUSE closes only — keyboard and
+   *  programmatic closes (session deleted, tab dragged out) reflow at once. */
+  function freezeWidthsForMouseClose() {
+    if (unfreezeTimerRef.current !== null) {
+      clearTimeout(unfreezeTimerRef.current);
+      unfreezeTimerRef.current = null;
+    }
+    // Re-measure on every close: the previous freeze may predate a tab
+    // that has since gone, and re-pinning the CURRENT widths is a no-op
+    // for already-frozen survivors.
+    freezeStripWidths(tabsFlowRef.current);
+    widthFrozenRef.current = true;
+  }
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.addEventListener("resize", releaseFrozenWidths);
+    return () => {
+      window.removeEventListener("resize", releaseFrozenWidths);
+      if (unfreezeTimerRef.current !== null) clearTimeout(unfreezeTimerRef.current);
+    };
+    // releaseFrozenWidths only touches refs — any render's instance works.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // The three hooks below form a cycle (lifecycle closes → drag cancels;
   // menu acts → drag clears; drag presses → lifecycle activates), so the
   // backward edges go through refs that always hold the current render's
@@ -95,6 +149,8 @@ export function CenterTabStrip() {
     cancelDrag: () => cancelDragRef.current(),
     activeId,
     setFocusedTabId,
+    freezeWidthsForMouseClose,
+    releaseFrozenWidths,
   });
   onTabCloseRef.current = onTabClose;
 
@@ -114,6 +170,10 @@ export function CenterTabStrip() {
   } = useTabPointerDrag({
     stripRef,
     tabsFlowRef,
+    // The drag engine snapshots slot geometry at drag start and assumes it
+    // stays valid, so a frozen row must be released (and reflowed) before
+    // the press arms anything.
+    releaseFrozenWidths,
     onTabClick,
     activatedOnPressRef,
     tabMenuRef,
@@ -224,6 +284,22 @@ export function CenterTabStrip() {
       ref={stripRef}
       className={styles.strip}
       data-transfer-hover={transferHover || undefined}
+      // Leaving the strip ends the click run → release the frozen widths
+      // and let the normal rules (plus the .tab transition) reflow. The
+      // delay absorbs a cursor grazing the strip's edge; re-entering
+      // before it fires keeps the row pinned.
+      onMouseLeave={() => {
+        if (!widthFrozenRef.current || unfreezeTimerRef.current !== null) return;
+        unfreezeTimerRef.current = setTimeout(
+          releaseFrozenWidths,
+          UNFREEZE_GRACE_MS,
+        );
+      }}
+      onMouseEnter={() => {
+        if (unfreezeTimerRef.current === null) return;
+        clearTimeout(unfreezeTimerRef.current);
+        unfreezeTimerRef.current = null;
+      }}
     >
       {/* tab 流容器：浏览器模式 display:contents 零影响；桌面模式限宽，
          让＋号既跟随 tab、又最深只顶到右栏图标轴线（见 module css）。 */}
@@ -289,6 +365,8 @@ export function CenterTabStrip() {
         title={text("New tab", "新标签页")}
         aria-label={text("New tab", "新标签页")}
         onClick={onOpenNewTab}
+        // ponytail: onOpenNewTab already releases (every new-tab path runs
+        // through it); this stays a plain click handler.
       >
         <Plus size={15} />
       </button>

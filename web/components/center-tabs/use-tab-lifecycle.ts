@@ -36,12 +36,19 @@ export interface TabLifecycleOptions {
    *  activation request so it can recover from another route. */
   activeId: string | null;
   setFocusedTabId(tabId: string | null): void;
+  /** Pin the surviving tabs to their current widths (Chrome's close-with-
+   *  the-mouse freeze). Only the mouse close path calls this. */
+  freezeWidthsForMouseClose(): void;
+  /** Drop any width freeze so the strip reflows normally again. */
+  releaseFrozenWidths(): void;
 }
 
 export function useTabLifecycle({
   cancelDrag,
   activeId,
   setFocusedTabId,
+  freezeWidthsForMouseClose,
+  releaseFrozenWidths,
 }: TabLifecycleOptions) {
   const router = useRouter();
   const pathname = usePathname();
@@ -223,8 +230,28 @@ export function useTabLifecycle({
   }
 
   function onOpenNewTab() {
+    // A new tab relayouts the whole row anyway, so any close-run freeze
+    // ends here rather than fighting the enter animation.
+    releaseFrozenWidths();
     openNewTabPage();
     if (!isChatRoute(pathname)) router.push("/chat");
+  }
+
+  /** Chrome freezes the surviving tab widths only when the close came from
+   *  the MOUSE — a run of × clicks must keep the next × under the cursor.
+   *
+   * A keyboard activation of the × button also arrives as a click, but with
+   * `detail === 0` (no physical click count), so it reflows immediately.
+   * Programmatic closes — the context menu (which passes a stub carrying
+   * only stopPropagation, hence no nativeEvent), a deleted session, a tab
+   * dragged out — never reach a MouseEvent here at all. */
+  function isMouseDrivenClose(e: React.SyntheticEvent) {
+    const native = e.nativeEvent as Event | undefined;
+    return (
+      typeof MouseEvent !== "undefined"
+      && native instanceof MouseEvent
+      && native.detail > 0
+    );
   }
 
   function onTabClose(e: React.SyntheticEvent, tab: CenterTab) {
@@ -238,6 +265,11 @@ export function useTabLifecycle({
       if (tab.kind === "file" && tab.projectId && tab.path)
         fileDrafts.delete(fileDraftKey(tab.projectId, tab.path));
     }
+    // Pin the survivors' widths for a mouse close (Chrome), so the next
+    // tab's × stays under the cursor; every other close path reflows now.
+    // Runs AFTER the discard prompt: a cancelled close must not freeze.
+    if (isMouseDrivenClose(e)) freezeWidthsForMouseClose();
+    else releaseFrozenWidths();
     // 先播退场动画（.tabExit 收缩到 0），animationend 再 finishClose 真正
     // 移除 —— 和新建 tab 的挤压动画成镜像。
     closingInstances.current.set(tab.id, tab);

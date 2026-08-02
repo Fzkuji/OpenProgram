@@ -67,6 +67,71 @@ export function computeLiveShifts(
   return shifts;
 }
 
+/** Chrome's close-with-the-mouse width freeze.
+ *
+ * Closing a tab by clicking its × normally reflows the survivors wider at
+ * once, so the next × lands somewhere else and the user cannot keep
+ * clicking in place. Chrome pins every remaining tab to the width it had
+ * at the moment of the close; the survivors only slide left to fill the
+ * gap. The lock is released when the cursor leaves the strip.
+ *
+ * The lock is written inline on each strip child, over the four
+ * properties that decide a flex item's width: `width`, `flex-basis`,
+ * `max-width` (the three the stylesheet sizes tabs with, so the lock
+ * beats both the browser `flex: 0 1 200px` rule and the desktop 240px
+ * override) and `flex-shrink`. Pinning the shrink factor is what makes
+ * the freeze hold: a full strip shrinks every tab below its basis, so
+ * closing one relieves the overflow and the survivors would shrink LESS
+ * and still grow — the exact case the freeze exists to prevent.
+ * Releasing clears the inline values and the CSS transition animates the
+ * survivors back out.
+ *
+ * Closing tabs keep their natural width — the exit animation shrinks
+ * them, and pinning that width would freeze the animation mid-collapse.
+ */
+export function freezeStripWidths(flow: HTMLElement | null) {
+  if (!flow) return;
+  for (const child of Array.from(flow.children) as HTMLElement[]) {
+    if (child.dataset.tabClosing === "true") continue;
+    const width = child.getBoundingClientRect().width;
+    if (width <= 0) continue;
+    const px = `${width}px`;
+    child.style.width = px;
+    child.style.flexBasis = px;
+    child.style.maxWidth = px;
+    child.style.flexShrink = "0";
+    child.dataset.widthFrozen = "true";
+  }
+}
+
+/** Clearing the inline widths and dropping the marker in one pass would
+ *  remove the width transition (which is keyed on the marker) in the same
+ *  frame the width changes, so the survivors would snap instead of easing
+ *  back. The marker is therefore downgraded to "released" — still matched
+ *  by the transition rule — and only removed once the ease has finished.
+ *  A later freeze simply overwrites it. */
+export function releaseStripWidths(flow: HTMLElement | null) {
+  if (!flow) return;
+  for (const child of Array.from(
+    flow.querySelectorAll<HTMLElement>('[data-width-frozen="true"]'),
+  )) {
+    child.style.width = "";
+    child.style.flexBasis = "";
+    child.style.maxWidth = "";
+    child.style.flexShrink = "";
+    child.dataset.widthFrozen = "released";
+    child.addEventListener(
+      "transitionend",
+      () => {
+        if (child.dataset.widthFrozen === "released") {
+          delete child.dataset.widthFrozen;
+        }
+      },
+      { once: true },
+    );
+  }
+}
+
 /** Static slot geometry captured at drag start — hit tests always run
  *  against these unshifted rects, so slid-aside bystanders can never
  *  oscillate under the dragged tab (Chrome's stability property). */

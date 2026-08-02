@@ -127,6 +127,10 @@ export function CompoundTabItem({
       className={`${styles.compoundTab} ${active ? styles.compoundTabActive : ""}`}
       data-member-count={group.memberIds.length}
       data-closing-count={closingCount || undefined}
+      // A compound mid-collapse animates its own outer width (see
+      // data-closing-count in the stylesheet) — freezeStripWidths must
+      // leave it alone, same as a single closing tab.
+      data-tab-closing={closingCount ? true : undefined}
       data-remaining-count={remainingCount}
       style={shiftStyle(shiftX)}
       role="presentation"
@@ -257,6 +261,9 @@ export function TabItem({
       ref={tabRef}
       className={`${styles.tab} ${segment ? styles.compoundSegment : ""} ${active ? styles.tabActive : ""} ${entering ? styles.tabEnter : ""} ${closing ? styles.tabExit : ""}`}
       style={shiftStyle(shiftX)}
+      // Read by freezeStripWidths: a tab mid-exit must keep its shrinking
+      // width, not be pinned to the width it had when the freeze ran.
+      data-tab-closing={closing || undefined}
       onAnimationEnd={(e) => {
         if (e.target !== e.currentTarget) return;
         if (closing) onExited(tab);
