@@ -167,6 +167,32 @@
   white-space: nowrap;
 }
 
+/* Missing main directory — the project's folder is gone from disk. The
+   chip goes orange (the codebase's warning accent) and its menu offers
+   the relocate repair. Overrides the neutral palette above. */
+.runtime-badge.project-badge.project-badge-missing {
+  background: color-mix(in srgb, var(--accent-orange) 10%, transparent);
+  color: var(--accent-orange);
+  border-color: color-mix(in srgb, var(--accent-orange) 35%, transparent);
+}
+.runtime-badge.project-badge.project-badge-missing:hover,
+.runtime-badge.project-badge.project-badge-missing[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
+  color: var(--accent-orange);
+}
+.project-badge-missing .project-icon { opacity: 1; }
+/* The warning line at the top of the project menu. */
+.project-menu-missing {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--accent-orange);
+}
+.project-menu-missing svg { flex-shrink: 0; margin-top: 2px; }
+
 /* Working-dir chips — claude.ai-style per-directory chips right of the
    project chip. Same neutral palette as .project-badge; ✕ is dim until
    hovered so the row stays quiet. */

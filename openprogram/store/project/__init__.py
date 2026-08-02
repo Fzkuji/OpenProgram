@@ -42,6 +42,7 @@ __all__ = [
     "get_default_project",
     "resolve_project",
     "bind_session",
+    "relocate_project",
     "project_for_session",
     "ensure_footprint_ignored",
     "project_commit",

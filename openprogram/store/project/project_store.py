@@ -672,6 +672,32 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None) 
     return _upsert(proj)
 
 
+def relocate_project(project_id: str, new_path: str | Path) -> Project:
+    """Point an existing project at a new directory, keeping its id.
+
+    The repair path for a project whose folder was moved or renamed on
+    disk. The **id is deliberately preserved** even though ids are
+    normally path-derived: every session's reverse index, settings file
+    and frozen main-directory binding hang off that id, and minting a
+    fresh one would orphan all of them. ``new_path`` must be an existing
+    directory.
+    """
+    p = Path(new_path).expanduser()
+    if not p.is_dir():
+        raise ProjectStoreError(f"not a directory: {new_path}")
+    proj = get_project(project_id)
+    if proj is None:
+        raise ProjectStoreError(f"unknown project: {project_id}")
+    if proj.is_default:
+        # The default project's path is the home directory, restored on
+        # every ``get_default_project`` read — a relocation would not
+        # survive the next one.
+        raise ProjectStoreError("the default project cannot be relocated")
+    ensure_footprint_ignored(p)
+    proj.path = str(p.resolve())
+    return _upsert(proj)
+
+
 def bind_session(session_id: str, project_id: str) -> None:
     """Record that ``session_id`` happened in ``project_id`` (reverse
     index on the project record). Idempotent.
@@ -746,6 +772,7 @@ __all__ = [
     "get_default_project",
     "resolve_project",
     "bind_session",
+    "relocate_project",
     "unbind_session",
     "prune_sessions",
     "project_for_session",

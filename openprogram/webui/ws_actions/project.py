@@ -6,11 +6,12 @@ mirror Claude's composer chips:
 
   * a **main project** chip — which project this conversation belongs to
     (decides where the session repo is stored: ``<project>/.openprogram
-    /sessions/<id>/``). One per session.
+    /sessions/<id>/``). One per session, and **frozen once the session
+    has a turn**.
   * **additional directory** chips — extra folders the agent may read /
-    write in this session, beyond the main project. Stored in the
-    session meta as ``workdirs`` (the main project path is index 0;
-    additional dirs follow).
+    write in this session, beyond the main project. Freely added and
+    removed at any point in the session's life; each change takes effect
+    from the next turn.
 
 Actions:
     list_projects          → all registered projects + current session's
@@ -18,7 +19,11 @@ Actions:
     create_project         → bind a filesystem path as a project (git-
                              init if needed); returns the project
     set_session_project    → set the session's MAIN project (label +
-                             reverse index)
+                             reverse index). Rejected once the session
+                             has turns and the bind names a different
+                             project — see ``FROZEN_ERROR``.
+    relocate_project       → repair a project whose directory moved on
+                             disk; records a ``project/relocate`` node
     list_session_workdirs  → the session's working-directory set
     add_session_workdir    → add an additional directory
     remove_session_workdir → drop an additional directory
@@ -43,6 +48,11 @@ def _project_dict(p, alive: set[str] | None = None) -> dict:
         "name": p.name,
         "path": p.path,
         "is_default": p.is_default,
+        # The composer chip warns on a project whose folder is gone and
+        # offers the relocate repair. Computed here (one stat per
+        # project) so the frontend never guesses from the path string.
+        "path_missing": bool(p.path) and not os.path.isdir(
+            os.path.expanduser(p.path)),
         "session_count": len(sids),
         "session_ids": sids,
         "status": p.status,
@@ -118,12 +128,54 @@ async def handle_create_project(ws, cmd: dict):
         await handle_list_projects(ws, {"session_id": cmd.get("session_id")})
 
 
+#: Rejection reason when a session that already has turns tries to rebind.
+FROZEN_ERROR = "project is frozen after the first turn"
+
+
+def session_has_turns(session_id: str) -> bool:
+    """True once the session has recorded at least one conversational
+    node — the moment its main project freezes."""
+    try:
+        from openprogram.agent.session_db import default_db
+        return bool(default_db().get_messages(session_id, limit=1))
+    except Exception:
+        return False
+
+
+def _binding_is_frozen(session_id: str, project_id: str) -> bool:
+    """True when this bind would CHANGE a frozen session's project.
+
+    Re-binding a session to the project it already has stays legal at
+    any age: the composer sends the picker's choice with the first chat
+    frame (which creates the repo inside the project) and follows it
+    with an idempotent ``set_session_project`` that lands after the turn
+    is already committed. Only a bind naming a DIFFERENT project than
+    the frozen one is a rebind, and that is what gets rejected."""
+    if not session_has_turns(session_id):
+        return False
+    try:
+        from openprogram.store import project_store as _projects
+        current = _projects.project_for_session(session_id)
+        if current is None:
+            current = _projects.get_default_project()
+        return current is None or current.id != project_id
+    except Exception:
+        return True
+
+
 async def handle_set_session_project(ws, cmd: dict):
+    """Bind the session's MAIN project. Legal only while the session has
+    no turns yet: the main working directory freezes when the first real
+    message commits, so this rejects a rebind on a non-empty session
+    (session/operations.md, "Main project binding"). Moving a project
+    that already has turns is `relocate_project`, not a rebind."""
     session_id = (cmd.get("session_id") or "").strip()
     project_id = (cmd.get("project_id") or "").strip()
     ok, error = False, None
     if not session_id or not project_id:
         error = "session_id and project_id are required"
+    elif _binding_is_frozen(session_id, project_id):
+        error = FROZEN_ERROR
     else:
         try:
             from openprogram.store import project_store as _projects
@@ -140,6 +192,52 @@ async def handle_set_session_project(ws, cmd: dict):
         "type": "session_project_set",
         "data": {"ok": ok, "session_id": session_id, "project_id": project_id, "error": error},
     }, default=str))
+
+
+async def handle_relocate_project(ws, cmd: dict):
+    """Repair a main project whose directory is gone: point the project
+    at ``path`` and record the move in the session graph.
+
+    The one sanctioned way to change a frozen session's main working
+    directory. It changes the PROJECT's path (every session bound to it
+    follows), not the session→project binding, so the freeze from
+    ``set_session_project`` stays intact. The move lands as a
+    ``project/relocate`` node on ``caller=ROOT``, which leaves head
+    where it was."""
+    session_id = (cmd.get("session_id") or "").strip()
+    project_id = (cmd.get("project_id") or "").strip()
+    path = (cmd.get("path") or "").strip()
+    ok, error, old_path, node_id = False, None, None, None
+    if not project_id or not path:
+        error = "project_id and path are required"
+    elif not os.path.isdir(os.path.expanduser(path)):
+        error = f"not a directory: {path}"
+    else:
+        try:
+            from openprogram.store import project_store as _projects
+            before = _projects.get_project(project_id)
+            old_path = before.path if before else None
+            _projects.relocate_project(project_id, path)
+            ok = True
+        except Exception as e:  # noqa: BLE001
+            error = f"{type(e).__name__}: {e}"
+    if ok and session_id:
+        try:
+            from openprogram.agent.session_db import default_db
+            from openprogram.store.project.relocate_node import record_relocate
+            node_id = record_relocate(
+                default_db(), session_id, project_id=project_id,
+                old_path=old_path or "", new_path=path)
+        except Exception:
+            node_id = None
+    await ws.send_text(json.dumps({
+        "type": "project_relocated",
+        "data": {"ok": ok, "session_id": session_id, "project_id": project_id,
+                 "old_path": old_path, "path": path, "node_id": node_id,
+                 "error": error},
+    }, default=str))
+    if ok:
+        await handle_list_projects(ws, {"session_id": session_id or None})
 
 
 # Additional working directories
@@ -304,6 +402,7 @@ ACTIONS = {
     "set_project_config": handle_set_project_config,
     "create_project": handle_create_project,
     "set_session_project": handle_set_session_project,
+    "relocate_project": handle_relocate_project,
     "list_session_workdirs": handle_list_session_workdirs,
     "add_session_workdir": handle_add_session_workdir,
     "remove_session_workdir": handle_remove_session_workdir,

@@ -34,37 +34,59 @@ def session_workdir_for(session_id: str) -> Optional[Path]:
 
 
 def project_workdir_for(session_id: str) -> Optional[Path]:
-    """The session's project path (bound project, else the default
-    project), or ``None``.
+    """The session's main working directory, or ``None``.
 
-    Resolved fresh on every call (no caching) so a mid-chat
-    ``set_session_project`` changes the default cwd from the next
-    turn on. The default project counts too — its path is the user's
-    home, and that's what the topbar chip shows for ad-hoc sessions.
-    Falling through to ``os.getcwd()`` would leak the SERVER's launch
-    directory (the OpenProgram repo) into every chat, which is exactly
-    the bug this exists to fix."""
+    The main directory is the bound project's path; an unbound session
+    uses the default project (whose path is the user's home, and what
+    the composer chip shows for ad-hoc chats). Returning ``None`` and
+    letting the caller fall back to ``os.getcwd()`` would leak the
+    SERVER's launch directory into the chat, so the resolution is
+    explicit at every step.
+
+    A bound project whose directory is gone resolves to ``None``: the
+    turn falls back to the session's own ``workdir/`` (see
+    ``apply_default_workdir``) and never silently borrows the default
+    project's home directory in its place. ``project_path_missing``
+    tells the two apart so the UI can show the repair affordance.
+
+    Resolved fresh on every call (no caching) so a project relocation
+    takes effect from the next turn on."""
+    proj = _main_project(session_id)
+    if proj is None or not proj.path:
+        return None
+    p = Path(proj.path).expanduser()
+    return p if p.is_dir() else None
+
+
+def _main_project(session_id: str):
+    """The session's main project record (bound, else the default)."""
     if not session_id:
         return None
     try:
         from openprogram.store import project_store as _projects
-        proj = _projects.project_for_session(session_id)
-        if proj is None:
-            proj = _projects.get_default_project()
-        if proj is not None and proj.path:
-            p = Path(proj.path).expanduser()
-            if p.is_dir():
-                return p
+        return (_projects.project_for_session(session_id)
+                or _projects.get_default_project())
     except Exception:
-        pass
-    return None
+        return None
+
+
+def project_path_missing(session_id: str) -> Optional[str]:
+    """The main project's path when that directory does not exist, else
+    ``None``. The single source of truth for the "project directory is
+    missing" warning state shipped to the UI."""
+    proj = _main_project(session_id)
+    if proj is None or not proj.path:
+        return None
+    p = Path(proj.path).expanduser()
+    return None if p.is_dir() else proj.path
 
 
 def apply_default_workdir(runtime, session_id: str) -> Optional[Path]:
     """Point ``runtime`` at this session's default cwd.
 
-    Resolution order: the session's bound (non-default) project path,
-    falling back to the session repo's ``workdir/``. A no-op when:
+    Resolution order: the session's main project path, falling back to
+    the session repo's ``workdir/`` — which is also what a project whose
+    directory has gone missing falls back to. A no-op when:
       * runtime is None,
       * the session has no resolvable workdir,
       * the runtime lacks ``set_workdir``.

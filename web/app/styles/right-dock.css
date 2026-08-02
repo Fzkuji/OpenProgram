@@ -855,42 +855,45 @@
    collapsed to a single button — the shapes are learnable, so the
    legend is for the first few sessions, not every one. */
 .dag-legend {
-  position: absolute;
-  /* 右下角、composer 带上方——右上角属于视角切换那组悬浮按钮
-     (.chat-view-controls)，图例放同角会叠字。面板向上展开
-     （column-reverse：正文长出来时按钮位置不动）。 */
-  right: 14px;
-  bottom: 170px;
-  z-index: 3;
-  display: flex;
-  flex-direction: column-reverse;
-  background: color-mix(in srgb, var(--bg-tertiary) 92%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  font-size: 11px;
-  color: var(--text-secondary);
-  backdrop-filter: blur(4px);
-  max-width: 232px;
+  /* env chips 行右端的一个普通 chip；正文向上弹出（absolute 锚在
+     chip 上缘），不参与行布局。会话视角下整体隐藏（下方规则）。 */
+  position: relative;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 .dag-legend-toggle {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   background: transparent;
-  padding: 6px 10px;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
+  white-space: nowrap;
 }
-.dag-legend-toggle:hover { color: var(--text-primary); }
+.dag-legend-toggle:hover { color: var(--text-primary); background: var(--bg-hover); }
 .dag-legend-body {
-  padding: 9px 10px 0;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  min-width: 190px;
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-md, 0 8px 28px rgba(0,0,0,.13));
   display: flex;
   flex-direction: column;
   gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
 }
+.center-pane-chat[data-center-view="session"] .dag-legend { display: none; }
 .dag-legend-row {
   display: flex;
   align-items: center;

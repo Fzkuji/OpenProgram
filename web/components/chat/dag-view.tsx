@@ -68,10 +68,10 @@ function LegendRow({ shape, label }: { shape: React.ReactNode; label: string }) 
   );
 }
 
-/** Corner key for shape and coverage. Starts collapsed: the vocabulary
- *  is small and learnable, so this is for the first sessions rather
- *  than a permanent fixture on the canvas. */
-function DagLegend() {
+/** Key for shape and coverage. Lives in the composer's env-chip row
+ *  (right end), sized like its neighbour chips; the body pops upward.
+ *  Starts collapsed: the vocabulary is small and learnable. */
+export function DagLegend() {
   const { text } = useTranslation();
   const [open, setOpen] = useState(false);
   return (
@@ -125,7 +125,6 @@ export function DagView({ visible }: { visible: boolean }) {
       {/* 分支切换直接在图内：每条 lane 尾部的分支名标签就是按钮
           （render/badges.ts），点非活动分支即 checkout。页面顶部不再
           放分支条——那条横线会横穿右上角的悬浮视角按钮。 */}
-      <DagLegend />
       <div className="history-body"></div>
     </div>
   );

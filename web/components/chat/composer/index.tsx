@@ -35,6 +35,7 @@ import { useTranslation } from "@/lib/i18n";
 // each carries its own popover menu (project-menu / agent-selector /
 // permission-menu submodules under ../top-bar).
 import { ProjectBadge, WorkingDirChips } from "../top-bar";
+import { DagLegend } from "../dag-view";
 import { visibleParams } from "./modes/fn-form/fn-form";
 import { type DecisionAction } from "./modes/question/question-mode";
 import { resolveComposerMode } from "./modes/resolve-mode";
@@ -645,6 +646,9 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         <StatusChip owningId={bound === null} />
         <ProjectBadge />
         <WorkingDirChips />
+        {/* DAG 视角专属：图例挂在 chips 行右端，与邻居同规格；
+            会话视角下由 CSS 隐藏（.center-pane-chat[data-center-view]）。 */}
+        <DagLegend />
       </div>
       {/* composerStack wraps {slashClip, inputWrapper} so the slash
           menu's vertical anchor is the wrapper's top edge — not a
