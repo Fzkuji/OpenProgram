@@ -31,6 +31,7 @@ import {
   _lastHeadId,
   _leafOfNode,
   setLastSignature,
+  toggleSpawnExpanded,
   toggleSummaryExpanded,
 } from "../store/globals";
 import {
@@ -177,6 +178,16 @@ export function _installInteractionHandlers(rerender: () => void): void {
       if (_lastGraph) {
         // The expanded set is not part of the render signature, so the
         // repaint would dedup itself away without busting it.
+        setLastSignature(null);
+        rerender();
+      }
+      return;
+    }
+    // A sub-agent capsule's click is its fold (dag/rendering.md §12) —
+    // same precedence and same repaint as the compaction capsule above.
+    if (g.getAttribute("data-spawn")) {
+      toggleSpawnExpanded(id);
+      if (_lastGraph) {
         setLastSignature(null);
         rerender();
       }

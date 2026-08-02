@@ -114,6 +114,18 @@ export function setSummaryExpanded(v: Record<string, boolean>): void {
   _summaryExpanded = v;
 }
 
+// Which sub-agent capsules the user clicked open (dag/rendering.md §12).
+// Same view-only contract as ``_summaryExpanded``: absent = folded, which
+// is what every session starts at.
+export let _spawnExpanded: Record<string, boolean> = Object.create(null);
+export function toggleSpawnExpanded(id: string): void {
+  if (_spawnExpanded[id]) delete _spawnExpanded[id];
+  else _spawnExpanded[id] = true;
+}
+export function setSpawnExpanded(v: Record<string, boolean>): void {
+  _spawnExpanded = v;
+}
+
 // ── last graph cache (for re-render after collapse toggle / resize) ──
 export let _lastGraph: GNode[] | null = null;
 export let _lastHeadId: string | null = null;

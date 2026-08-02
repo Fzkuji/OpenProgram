@@ -438,6 +438,36 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier �
 （`components/chat/dag-view.tsx`）。默认收起——这套词汇很小、可学会，所以图例
 是给最初几次会话用的，不是画布上的常驻件。
 
+## 十二、子 agent 读作一个带名字的胶囊，不是它的整份记录
+
+被 spawn 的 agent 跑的是它自己的一整段对话，而这段对话通常是会话里更大的那一半。
+整段画出来，它会把自己挂靠的主干埋掉：写下这一节所依据的那个病例里，两个子 agent
+贡献了会话 309 个节点中的 280 个，用户真正经历的那四轮，成了其中四个找不到的圆圈。
+
+这些节点也都不是发起轮携带的东西。父 agent 看到的是子 agent 的**结果**，经由 attach
+指针；它的对话记录可达，但不常驻。所以默认视图画父 agent 知道的东西——一个节点——其余
+的留在一次点击之外。
+
+**胶囊**。spawn 分支根画成第九节那颗药丸，内部再嵌一圈描边。轮廓故意共用：两种形状都
+表示"一个节点代表许多个"，这是读者首先需要认出来的东西。双描边则说明这许多个是另一个
+agent 的链，而不是本链的一段区间。
+
+**名字**。压缩胶囊用数量标注，子 agent 胶囊用名字——`▸ 后端架构 (14)`。"这是谁的分支"
+才是折叠必须回答的问题，数量回答不了它；数量放进括号跟着走，让折叠仍然自述藏了多少。
+名字来自 runner 戳在回指该分支的 attach 指针上的 label（见 dag/overview.zh.md 第四节），
+没有时回落到分支名。检查器把同一个节点标题写作 `子 agent · <名字>`，而不是它 role 字段
+所说的 `user`——那是字段的说法，不是这个节点的身份。
+
+**折叠**。分支默认省略；点击胶囊画出整条泳道，再点收起。嵌套的子 agent 保留自己的胶囊，
+不并进父胶囊的折叠——否则就没有把手能打开里层那个。该状态只属于视图、绝不持久化，与第
+九节完全一致。
+
+**HEAD 永不被折走**。checkout 到某个子 agent 的泳道后，即使其他胶囊全部闭合，这条泳道
+也保持画出。一张把"你正站在哪"藏起来的图，比一张画多了的图更糟。
+
+这一遍在压缩折叠之后运行（`passes/fold-spawn-branches.ts`），两者因而可以叠加而互不知情：
+各自负责一种省略，被两遍同时丢掉的节点只丢一次。
+
 ## 附录：实现状态
 
 本规范已全部实现。各部分的落点：
@@ -462,3 +492,5 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier �
 | 第十节 失败留档 | `render/nodes.ts::_isArchivedFailure`——`status=error` **且**离开 HEAD 链；灰覆盖第四节的红 |
 | 第十一节 检查器 / 菜单 / fork 并编辑 | `render/inspector.ts`，在 `render/interaction.ts` 接线；三个动作都走 `POST /api/chat/checkout` |
 | 第十一节 图例 | `components/chat/dag-view.tsx` 的 `DagLegend`，`right-dock.css` 的 `.dag-legend` |
+| 第十二节 子 agent 胶囊 | `shapes.ts` `spawn_capsule`（双描边）、`passes/fold-spawn-branches.ts`（折叠 + 取名 + HEAD 豁免）、`render/nodes.ts`（名字标注、`data-spawn*`）、`store/globals.ts` 的 `_spawnExpanded`；由 `web/scripts/check-dag-subagent.mjs` 实跑 |
+| 第十二节 名字上线 | `task/runner.py::_update_attach_card` 从 task 戳出 `attach.label`；`ws_actions/session.py::_annotate_spawn_origin` 把它带到 spawn 根的 `spawned_from.label`；测试见 `tests/unit/test_task_attach_integration.py` |

@@ -54,10 +54,19 @@ function _bodyText(node: GNode): string {
   return typeof v === "string" ? v : String(v);
 }
 
-function _roleLabel(node: GNode): string {
+function _roleLabel(node: GNode, el?: Element): string {
   if (node.display === "root") return "root";
   if (Array.isArray((node as Record<string, unknown>).covers_ids)) {
     return "context/summary";
+  }
+  // A spawn root is a user turn by role, but "user" is the wrong answer
+  // to "what am I looking at" — it is the head of another agent's chain
+  // (dag/rendering.md §12). The name comes off the DOM because the fold
+  // pass is what resolves it, and the picture must not disagree.
+  if ((node as Record<string, unknown>).source === "agent_spawn"
+      && !node.predecessor) {
+    const nm = (el?.getAttribute("data-spawn-name") || "").trim();
+    return nm ? `子 agent · ${nm}` : "子 agent";
   }
   if (node.role === "tool") {
     const name = (node.name as string | undefined) || node.function;
@@ -260,7 +269,7 @@ export function showNodeInspector(node: GNode, el: Element): void {
 
   const title = document.createElement("div");
   title.className = "dag-inspector-title";
-  title.textContent = _roleLabel(node);
+  title.textContent = _roleLabel(node, el);
   box.appendChild(title);
 
   const seq = (node as Record<string, unknown>).seq;
@@ -283,6 +292,9 @@ export function showNodeInspector(node: GNode, el: Element): void {
 
   const summaryN = el.getAttribute("data-summary");
   if (summaryN) box.appendChild(_row("覆盖", `${summaryN} 个节点`));
+
+  const spawnN = el.getAttribute("data-spawn");
+  if (spawnN) box.appendChild(_row("子分支", `${spawnN} 个节点`));
 
   const body = _bodyText(node).replace(/\s+/g, " ").trim();
   if (body) {

@@ -51,6 +51,7 @@ import { _mergeRuns } from "./passes/merge-runs";
 import { _demoteDecorationCards } from "./passes/demote-decoration-cards";
 import { _applyCollapse } from "./passes/apply-collapse";
 import { _foldSummaries } from "./passes/fold-summaries";
+import { _foldSpawnBranches } from "./passes/fold-spawn-branches";
 import { _buildTree } from "./layout/build-tree";
 import { _assignDepth } from "./layout/depth";
 import { _assignLanes, _headAncestors } from "./layout/assign-lanes";
@@ -149,6 +150,13 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   // gone either way, and the counts stay each pass's own business.
   const sfold = _foldSummaries(graph);
   graph = sfold.visible;
+
+  // A sub-agent's branch folds behind its spawn root the same way
+  // (dag/rendering.md §12). After the compaction fold so the two compose:
+  // each pass owns one kind of elision and neither has to know the other
+  // ran.
+  const spfold = _foldSpawnBranches(graph, headId);
+  graph = spfold.visible;
 
   // attach 指针节点不画（rendering.md 场景 8/10）：它是"head 在哪"
   // 的数据锚点，留在对话链尾，viewport 里只画回流虚线，不占格。只过滤
@@ -323,7 +331,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   drawNodes(nodeG, tree, pos, headId, headAncestors, stableLeafOfNode,
     cinfo, _collapsed, internalSet, internalOwner, _contextSet, _coverageSet,
-    sfold.coversOf);
+    sfold.coversOf, spfold);
 
   const fullById: Record<string, GNode> = Object.create(null);
   graphIn.forEach((m) => { fullById[m.id] = m; });

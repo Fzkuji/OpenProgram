@@ -524,6 +524,48 @@ outside React's tree.
 and learnable, so the legend is for the first few sessions rather than a
 permanent fixture on the canvas.
 
+## 12. A sub-agent reads as one named capsule, not as its whole transcript
+
+A spawned agent runs a conversation of its own, and that conversation is
+usually the larger half of the session. Drawn in full it buries the main lane
+it hangs off: in the case this section was written from, two sub-agents
+contributed 280 of a session's 309 nodes, and the four turns the user actually
+had were four circles lost among them.
+
+None of those nodes is what the parent turn carries, either. The parent sees
+the sub-agent's *result*, through the attach pointer; its transcript is
+reachable, not resident. So the default view draws what the parent knows — one
+node — and keeps the rest a click away.
+
+**The capsule.** A spawn branch root is drawn as the §9 pill with a second
+outline inset inside it. The silhouette is shared on purpose: both shapes mean
+"one node standing for many", which is the thing the reader has to recognise
+first. The doubled stroke says the many are a different agent's chain rather
+than a span of this one.
+
+**The name.** Where a compaction capsule is labelled by count, a sub-agent
+capsule is labelled by name — `▸ 后端架构 (14)`. "Whose branch is this" is the
+question the fold has to answer, and a count is not an answer to it; the count
+rides along in parentheses so the fold still says how much it is hiding. The
+name comes from the label the runner stamps on the attach pointer that points
+back at the branch (dag/overview.md §4), with the branch name as a fallback.
+The inspector titles the same node `子 agent · <name>` instead of `user`, which
+is what its role field says and not what the node is.
+
+**The fold.** The branch is elided by default; clicking the capsule draws the
+whole lane, clicking again folds it away. Nested sub-agents keep their own
+capsules rather than disappearing into their parent's fold — otherwise there
+would be no handle to open the inner one with. The state is view-only and never
+persisted, exactly as in §9.
+
+**HEAD is never folded away.** Checking out a sub-agent's lane keeps that lane
+drawn even while every other capsule stays shut. A graph that hides where you
+are standing is worse than a graph that draws too much.
+
+The pass runs after the compaction fold (`passes/fold-spawn-branches.ts`), so
+the two compose without either having to know the other ran: each owns one kind
+of elision, and a node dropped by both is dropped once.
+
 ## Appendix: Implementation Status
 
 The whole spec is implemented. Where each part lives:
@@ -548,3 +590,5 @@ The whole spec is implemented. Where each part lives:
 | §10 archived failure | `render/nodes.ts::_isArchivedFailure` — `status=error` AND off the HEAD chain; grey overrides §4's red |
 | §11 inspector / menu / fork & edit | `render/inspector.ts`, wired in `render/interaction.ts`; all three actions go through `POST /api/chat/checkout` |
 | §11 legend | `DagLegend` in `components/chat/dag-view.tsx`, `.dag-legend` in `right-dock.css` |
+| §12 sub-agent capsule | `shapes.ts` `spawn_capsule` (double stroke), `passes/fold-spawn-branches.ts` (fold + name resolution + HEAD exemption), `render/nodes.ts` (name label, `data-spawn*`), `_spawnExpanded` in `store/globals.ts`; executed by `web/scripts/check-dag-subagent.mjs` |
+| §12 the name on the wire | `task/runner.py::_update_attach_card` stamps `attach.label` from the task; `ws_actions/session.py::_annotate_spawn_origin` carries it to the spawn root as `spawned_from.label`; tested in `tests/unit/test_task_attach_integration.py` |

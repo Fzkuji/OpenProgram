@@ -90,6 +90,20 @@ def _broadcast_session_reload(session_id: str, *, reason: str = "task") -> None:
     })
 
 
+def _refresh_context_stats(session_id: str) -> None:
+    """Re-estimate the context ring after the runner moved the graph.
+
+    Same call every other out-of-turn graph mutation makes (compaction,
+    checkout, branch delete). Best-effort and lazily imported: the runner
+    also runs in CLI processes where no webui server exists.
+    """
+    try:
+        from openprogram.webui.server import refresh_context_stats
+        refresh_context_stats(session_id)
+    except Exception:
+        pass
+
+
 def _broadcast_task_status(task: Task) -> None:
     _broadcast({
         "type": "task_status",
@@ -166,6 +180,20 @@ class TaskRunner:
         self._tasks: dict[str, dict[str, Any]] = {}
         # task_id → threading.Event used to wake await_task() callers.
         self._done_events: dict[str, threading.Event] = {}
+        # delivery session id → lock serialising follow-up turns on that
+        # session. Two sub-agents finishing at once each want to append at
+        # HEAD; without this they read the same HEAD and write siblings.
+        # See ``_dispatch_followup``.
+        self._followup_locks: dict[str, threading.Lock] = {}
+
+    def _followup_lock(self, session_id: str) -> threading.Lock:
+        """The per-session follow-up lock, created on first use."""
+        with self._lock:
+            lk = self._followup_locks.get(session_id)
+            if lk is None:
+                lk = threading.Lock()
+                self._followup_locks[session_id] = lk
+            return lk
 
     # Public API
 
@@ -799,6 +827,12 @@ class TaskRunner:
             attach["status"] = task.status.value
             if task.head_id:
                 attach["head_id"] = task.head_id
+            # The human name of the sub-agent ("后端架构"). It lives on the
+            # Task, and the attach node is the only thing the graph wire and
+            # the transcript both read — without it here every reader falls
+            # back to a hex id and the branch has no identity anywhere.
+            if task.label or task.subject:
+                attach["label"] = task.label or task.subject
             # When the task completes, fill source_commit_id from the
             # ContextCommit that ended up on its branch. The existing
             # _run_spawn does this in synchronous mode — we mirror.
@@ -866,6 +900,15 @@ class TaskRunner:
                 )
             except Exception:
                 pass
+            # The attach node just changed what the session's graph holds,
+            # so both readers of that graph are told at the same point:
+            # the DAG re-pulls the session, and the context ring
+            # re-estimates. Firing here, at the write, is what keeps a
+            # sub-agent finishing from leaving a stale graph on screen.
+            _broadcast_session_reload(
+                task.parent_session_id, reason="task_attach",
+            )
+            _refresh_context_stats(task.parent_session_id)
         except Exception:
             pass
 
@@ -879,7 +922,18 @@ class TaskRunner:
         expand it as ``[Attached from branch "X"]:`` items and the
         LLM sees the sub-agent's output naturally.
 
-        Runs on a daemon thread so the runner worker doesn't block.
+        **Anchoring** (dag/overview.md §4): the notification lands at the
+        delivery session's HEAD *at injection time* and advances it, so
+        N sub-agents finishing produce one serial chain
+        ``… → notice₁ → answer₁ → notice₂ → answer₂``. Anchoring at the
+        spawning node instead — which is what this used to do — made
+        every notification a sibling of the same turn, and one user
+        message got answered N times on N parallel branches.
+
+        Runs on a daemon thread so the runner worker doesn't block, and
+        holds the delivery session's follow-up lock so two sub-agents
+        finishing together still append in sequence rather than both
+        reading the same HEAD.
         """
         if not task.parent_session_id:
             return
@@ -900,22 +954,6 @@ class TaskRunner:
                 from openprogram.agent.dispatcher import (
                     TurnRequest, process_user_turn,
                 )
-                # CRITICAL (same-session): reset session head back to the
-                # spawn user msg (on the caller / main lane) before the
-                # follow-up runs, so the follow-up commit sees the attach
-                # pointer on main. Cross-session: the attach pointer lives
-                # in the TARGET session, not here — there's nothing on the
-                # caller lane to reset to, and the reply text is carried in
-                # the prompt instead (see below).
-                head_to_reset = task.caller_msg_id or task.parent_msg_id
-                if head_to_reset and not cross:
-                    try:
-                        from openprogram.agent.session_db import default_db
-                        default_db().set_head(
-                            task.parent_session_id, head_to_reset,
-                        )
-                    except Exception:
-                        pass
                 # Followup prompt — push the parent agent to synthesize a
                 # reply, not echo the sub-agent's last line. Same-session:
                 # the sub-agent transcript is in context via the attach
@@ -957,12 +995,11 @@ class TaskRunner:
                     user_text=followup_text,
                     agent_id=task.agent_id or "main",
                     source="task_followup",
-                    # Land the reply as a continuation of the spawning node,
-                    # not the deliver-session's main-line tip. Without this,
-                    # a cross-session reply gets stapled to the end of the
-                    # caller's main line instead of the point that spawned it.
-                    # (Same expression the same-session head-reset uses above.)
-                    branch_from=task.caller_msg_id or task.parent_msg_id,
+                    # branch_from is left at INHERIT_PARENT: the dispatcher
+                    # resolves it to the delivery session's HEAD and advances
+                    # it, which is exactly the serial chain this method's
+                    # docstring describes. Pinning it to the spawning node
+                    # is what produced the parallel-branch double answer.
                 )
                 process_user_turn(req)
             except Exception:
@@ -970,7 +1007,13 @@ class TaskRunner:
                 # caller session is gone / dispatcher errors.
                 pass
 
-        threading.Thread(target=_go, daemon=True).start()
+        def _serial():
+            # One follow-up at a time per delivery session: the next one
+            # reads a HEAD that already includes the previous answer.
+            with self._followup_lock(deliver_session):
+                _go()
+
+        threading.Thread(target=_serial, daemon=True).start()
 
     def _schedule_force_cancel(self, session_id: str, task_id: str) -> None:
         """Watchdog: if the worker doesn't honour cancel within

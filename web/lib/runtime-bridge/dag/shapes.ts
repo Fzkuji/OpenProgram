@@ -60,6 +60,14 @@ export function _shapeFor(node: GNode): string {
   if (Array.isArray((node as Record<string, unknown>).covers_ids)) {
     return "capsule";
   }
+  // Sub-agent branch root → the same capsule, drawn with a second stroke
+  // (dag/rendering.md §12). Both shapes say "one node standing for many";
+  // the doubled outline says the many are a different agent's chain, not
+  // a span of this one.
+  if ((node as Record<string, unknown>).source === "agent_spawn"
+      && !node.predecessor) {
+    return "spawn_capsule";
+  }
   const role = node.role;
   const fn = node.function;
   // merge 节点：实心带孔圆 ◉，落在 base 分支 lane 上（rendering.md
@@ -146,6 +154,29 @@ export function _buildShapeEl(
       "data-shape": "capsule",
       ...common,
     });
+  } else if (shape === "spawn_capsule") {
+    // Sub-agent capsule (dag/rendering.md §12): the compaction pill with
+    // a second outline inset inside it. Same silhouette, so it still
+    // reads as "a fold"; two strokes, so it never reads as a compaction.
+    const g = _svg("g");
+    const outer = _svg("rect", {
+      x: -CAPSULE_HW, y: -CAPSULE_HH,
+      width: CAPSULE_HW * 2, height: CAPSULE_HH * 2,
+      rx: CAPSULE_HH, ry: CAPSULE_HH,
+      "data-shape": "capsule",
+      ...common,
+    });
+    g.appendChild(outer);
+    const inset = 2.6;
+    g.appendChild(_svg("rect", {
+      x: -CAPSULE_HW + inset, y: -CAPSULE_HH + inset,
+      width: (CAPSULE_HW - inset) * 2, height: (CAPSULE_HH - inset) * 2,
+      rx: CAPSULE_HH - inset, ry: CAPSULE_HH - inset,
+      fill: "transparent", stroke: color,
+      "stroke-width": String(STROKE_W * 0.45),
+      "stroke-opacity": "0.75",
+    }));
+    return g;
   } else if (shape === "merge_dot") {
     // ◉ 实心带孔圆（rendering.md 第四节图例）：外圈实心 + 中心
     // 挖孔，读作"多条分支在此汇为一点"。

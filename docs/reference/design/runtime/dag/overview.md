@@ -213,6 +213,35 @@ Spawn branches have clean context: `get_branch` on a spawn branch stops at the
 spawn root and does not leak into the parent branch via the caller edge. The
 chat view of a spawn branch shows only the branch's own history.
 
+### The completion notification anchors at HEAD
+
+An async sub-agent finishing writes two things back to the session that spawned
+it: the attach pointer, which lands on the caller turn because that is where
+the call was made, and a notification turn
+(`metadata.source = "task_followup"`), which lands at the session's **current
+HEAD** and advances it like any other turn.
+
+The two anchor differently because they say different things. The attach
+pointer is a record of a call and belongs beside the call. The notification is
+a new turn in the conversation and belongs at its end.
+
+This is what keeps N sub-agents from being answered N times over. Anchoring
+each notification at the node that spawned it makes them siblings of one
+turn — three sub-agents finishing produce three parallel branches, each with
+its own reply, and the user who sent one message watches it get answered three
+times. Anchored at HEAD they form one chain instead:
+
+```text
+… → spawn turn → notice₁ → answer₁ → notice₂ → answer₂
+```
+
+The runner leaves `TurnRequest.branch_from` at `INHERIT_PARENT` and never
+rewinds head before dispatching, so the dispatcher's ordinary append path does
+the anchoring. Concurrency is handled by one lock per delivery session
+(`TaskRunner._followup_lock`): two sub-agents finishing in the same millisecond
+still take their turns in sequence, and the second reads a HEAD that already
+includes the first answer.
+
 ## 5. Head Pointer and Branch Management
 
 - **head**: the session tracks a `head_id` — the tip of the currently active

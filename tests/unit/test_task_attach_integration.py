@@ -119,3 +119,106 @@ def test_runner_updates_attach_card_on_completion(isolated_store, monkeypatch):
     # this minimal fake setup); when present it must be a string.
     src = attach.get("source_commit_id")
     assert src is None or isinstance(src, str)
+
+
+def test_attach_card_carries_the_subagent_name(isolated_store, monkeypatch):
+    """The sub-agent's human name lands on the attach node.
+
+    It is the only row both the DAG wire and the transcript read, so
+    without it the branch has no identity in either view — the case that
+    motivated this showed "1daf47f4" where "后端架构" belonged. Falls back
+    to ``subject`` when the caller passed no explicit label.
+    """
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", lambda *a, **k: None,
+    )
+    import openprogram.agent.task.runner as runner_mod
+    runner_mod.shutdown_runner()
+
+    attach_node_id = "atc_named"
+    isolated_store.append_message("p1", {
+        "id": attach_node_id, "role": "assistant",
+        "display": "runtime", "function": "attach",
+        "content": "(running)", "predecessor": "a1",
+        "timestamp": time.time(),
+        "extra": json.dumps({"attach": {"status": "running"}}, default=str),
+    })
+    isolated_store.commit_turn("p1", "spawn async placeholder")
+
+    def fake_run(*, session_id, prompt, agent_id, branch_from=None,
+                 label=None, spawn_caller=None):
+        from openprogram.agent.sub_agent_run import AgentTurnResult
+        isolated_store.append_message(session_id, {
+            "id": "head_named", "role": "assistant", "content": "done",
+            "predecessor": branch_from, "timestamp": time.time(),
+        })
+        isolated_store.commit_turn(session_id, "fake turn")
+        return AgentTurnResult(head_id="head_named", final_text="done")
+
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run.run_agent_turn", fake_run,
+    )
+
+    from openprogram.agent.task import get_runner
+    runner = get_runner()
+    # No ``label`` — only a subject, which is where the case data's name
+    # actually lived.
+    tid = runner.spawn_task(
+        session_id="p1", prompt="read the backend", agent_id="main",
+        subject="后端架构", description="read the backend",
+        parent_msg_id="a1", attach_pointer_id=attach_node_id,
+    )
+    assert runner.await_task(tid, timeout=5.0) is not None
+
+    _, idx = isolated_store._open("p1")
+    md = (idx.nodes_by_id[attach_node_id].metadata or {})
+    assert (md.get("attach") or {}).get("label") == "后端架构"
+    extra = json.loads(md["extra"])
+    assert extra["attach"]["label"] == "后端架构"
+
+
+def test_attach_write_broadcasts_reload_and_context_stats(
+    isolated_store, monkeypatch,
+):
+    """Finishing a sub-agent tells both readers of the graph.
+
+    The DAG re-pulls the session and the context ring re-estimates —
+    without this the graph on screen still showed the pre-spawn shape
+    until the user clicked something.
+    """
+    frames: list[dict] = []
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._broadcast", frames.append,
+    )
+    stats: list[str] = []
+    monkeypatch.setattr(
+        "openprogram.agent.task.runner._refresh_context_stats", stats.append,
+    )
+    import openprogram.agent.task.runner as runner_mod
+    runner_mod.shutdown_runner()
+
+    attach_node_id = "atc_cast"
+    isolated_store.append_message("p1", {
+        "id": attach_node_id, "role": "assistant",
+        "display": "runtime", "function": "attach",
+        "content": "(running)", "predecessor": "a1",
+        "timestamp": time.time(),
+        "extra": json.dumps({"attach": {"status": "running"}}, default=str),
+    })
+    isolated_store.commit_turn("p1", "spawn async placeholder")
+
+    from openprogram.agent.task.types import Task, TaskStatus
+    runner_mod.get_runner()._update_attach_card(Task(
+        id="t_cast", parent_session_id="p1", prompt="x", agent_id="main",
+        status=TaskStatus.COMPLETED, head_id="head_alpha",
+        result_text="done", label="前端测试",
+        attach_pointer_id=attach_node_id,
+    ))
+
+    reloads = [
+        f for f in frames
+        if f.get("type") == "session_reload"
+        and (f.get("data") or {}).get("session_id") == "p1"
+    ]
+    assert reloads, "attach write must broadcast a session reload"
+    assert stats == ["p1"]

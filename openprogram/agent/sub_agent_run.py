@@ -272,6 +272,14 @@ def write_attach_pointer_for_spawn(
             "type": "session_reload",
             "data": {"session_id": session_id, "reason": "task_tool_spawn"},
         })
+        # The attach pointer changed what the next request carries, so the
+        # context ring re-estimates alongside the DAG reload — same pairing
+        # the async runner does on its own attach write.
+        try:
+            from openprogram.webui.server import refresh_context_stats
+            refresh_context_stats(session_id)
+        except Exception:
+            pass
         return attach_node_id
     except Exception:
         return None

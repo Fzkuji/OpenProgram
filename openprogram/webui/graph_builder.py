@@ -53,6 +53,24 @@ def build_session_graph(
     except Exception:
         pass
 
+    # ``list_branches`` only returns live tips, so a retired sub-agent
+    # branch — every completed one, since the runner marks it merged —
+    # would lose its name on the way out. Read the meta dict directly and
+    # stamp ``branch_name`` on the anchor node, which is what lets the DAG
+    # label a sub-agent capsule for a session that ran before the runner
+    # started writing labels onto attach pointers.
+    branch_names: dict[str, str] = {}
+    try:
+        pair = db._open(session_id)  # noqa: SLF001
+        if pair is not None:
+            _git, _idx = pair
+            for anchor, info in (_idx.meta.get("branches") or {}).items():
+                name = (info or {}).get("name") if isinstance(info, dict) else info
+                if isinstance(name, str) and name.strip():
+                    branch_names[anchor] = name.strip()
+    except Exception:
+        pass
+
     # Compaction summaries carry ``metadata.covers = [first_seq, last_seq]``
     # (dag/overview.md §8). Seq orders nodes but the graph speaks ids, so
     # resolve the interval to the ids it names — the renderer draws the
@@ -121,6 +139,8 @@ def build_session_graph(
         }
         if mid in covers_ids:
             row["covers_ids"] = covers_ids[mid]
+        if mid in branch_names:
+            row["branch_name"] = branch_names[mid]
         graph.append(row)
 
     # attach 指针不画节点（rendering.md 场景 8/10），但回流长虚线需要

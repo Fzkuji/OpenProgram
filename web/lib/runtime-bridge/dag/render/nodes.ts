@@ -17,7 +17,7 @@ import {
   _shapeFor,
   _svg,
 } from "../shapes";
-import { _summaryExpanded } from "../store/globals";
+import { _spawnExpanded, _summaryExpanded } from "../store/globals";
 
 /** A turn that ended in ``error`` and is no longer on the HEAD chain:
  *  the retry forked off its predecessor and moved on, so this line is
@@ -51,6 +51,10 @@ export function drawNodes(
   contextSet: Record<string, boolean> | null,
   coverageSet: Record<string, { aged: boolean; spilled: boolean }> | null,
   coversOf: Record<string, string[]>,
+  spawnFold: {
+    branchOf: Record<string, string[]>;
+    nameOf: Record<string, string>;
+  },
 ): void {
   // Every id any capsule covers — folded or expanded. Expanded, those
   // nodes draw as ghosts so "readable" and "in context" stay visibly
@@ -75,6 +79,13 @@ export function drawNodes(
     const covered = coversOf[id];
     const isCapsule = !!covered;
     const capsuleOpen = isCapsule && !!_summaryExpanded[id];
+    // Sub-agent capsule (dag/rendering.md §12) — same fold vocabulary as
+    // the compaction one, keyed off the spawn pass rather than covers_ids.
+    const spawnBranch = spawnFold.branchOf[id];
+    const isSpawnCapsule = !!spawnBranch;
+    const spawnOpen = isSpawnCapsule && !!_spawnExpanded[id];
+    const spawnName = spawnFold.nameOf[id] || "";
+    const isAnyCapsule = isCapsule || isSpawnCapsule;
     const isGhost = !!coveredBy[id];
     const isFailed = _isArchivedFailure(node, onHead, isHead);
     const g = _svg("g", {
@@ -85,6 +96,7 @@ export function drawNodes(
         (isCollapsible ? " is-collapsible" : "") +
         (oocFlag ? " out-of-context" : "") +
         (isCapsule ? " is-summary" : "") +
+        (isSpawnCapsule ? " is-subagent" : "") +
         (isGhost ? " is-ghost" : "") +
         (isFailed ? " is-archived-failure" : ""),
       transform: "translate(" + p.x + "," + p.y + ")",
@@ -98,13 +110,18 @@ export function drawNodes(
       // coverage row from these two.
       "data-summary": isCapsule ? String(covered.length) : "",
       "data-summary-open": capsuleOpen ? "1" : "0",
+      // Same three for the sub-agent fold: count, open state, and the
+      // name the inspector and tooltip title themselves from.
+      "data-spawn": isSpawnCapsule ? String(spawnBranch.length) : "",
+      "data-spawn-open": spawnOpen ? "1" : "0",
+      "data-spawn-name": spawnName,
       "data-ghost": isGhost ? "1" : "0",
       "data-failed": isFailed ? "1" : "0",
     });
     // The capsule is wider than the r=7 hit circle, so give it a hit
     // rect that actually covers the glyph — otherwise clicking the ends
     // of the pill misses and the fold "does nothing".
-    const hit = isCapsule
+    const hit = isAnyCapsule
       ? _svg("rect", {
         x: String(-CAPSULE_HW), y: String(-CAPSULE_HH),
         width: String(CAPSULE_HW * 2), height: String(CAPSULE_HH * 2),
@@ -164,8 +181,9 @@ export function drawNodes(
     // whole reason the capsule can hide N turns without the graph
     // lying about it: the pill says "one node", the pleats say "and a
     // stack behind it". Expanded, they go away — the range is drawn.
-    if (isCapsule && !capsuleOpen) {
-      const pleats = Math.min(3, covered.length);
+    if ((isCapsule && !capsuleOpen)
+        || (isSpawnCapsule && !spawnOpen && spawnBranch.length)) {
+      const pleats = Math.min(3, (covered || spawnBranch).length);
       for (let i = 0; i < pleats; i++) {
         const x = CAPSULE_HW + 2 + i * 5;
         const hh = CAPSULE_HH * (1 - i * 0.22);
@@ -194,6 +212,24 @@ export function drawNodes(
       cap.textContent = capsuleOpen
         ? `▾ ${covered.length}`
         : `▸ ${covered.length}`;
+      g.appendChild(cap);
+    }
+    // The sub-agent capsule is labelled by NAME, not by count: "which
+    // agent is this" is the question the fold has to answer, and the
+    // count of its turns is not an answer. The count still rides along
+    // in parentheses so the fold stays self-describing.
+    if (isSpawnCapsule) {
+      const cap = _svg("text", {
+        x: String(CAPSULE_HW + (spawnOpen ? 6 : 22)),
+        y: String(3.5),
+        class: "history-summary-label history-subagent-label",
+        "pointer-events": "none",
+      });
+      const arrow = spawnOpen ? "▾" : "▸";
+      const nm = spawnName || "sub-agent";
+      cap.textContent = spawnBranch.length
+        ? `${arrow} ${nm} (${spawnBranch.length})`
+        : `${arrow} ${nm}`;
       g.appendChild(cap);
     }
     // ── 覆盖态的两级衰减（rendering.md 第八节）──

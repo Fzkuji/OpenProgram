@@ -720,6 +720,18 @@
   fill: var(--text-primary);
 }
 
+/* The sub-agent capsule's label carries a name, not a count, so it gets
+   the emphasis a name deserves — the fold's whole job is to answer
+   "whose branch is this" at a glance (dag/rendering.md §12). */
+.history-subagent-label {
+  font-weight: 700;
+  fill: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+.history-node.is-subagent:hover .history-subagent-label {
+  fill: var(--accent, var(--text-primary));
+}
+
 /* Ghosts do not brighten on hover: the whole point of the state is
    that these nodes read as receded. They stay clickable. */
 .history-node.is-ghost:hover circle,
