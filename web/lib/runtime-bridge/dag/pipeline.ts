@@ -264,7 +264,16 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   });
   setParentOf(parentOf);
 
-  const panelW = (body && body.clientWidth) || 240;
+  // clientWidth includes the scroll box's own padding; an SVG sized to
+  // it overflows by exactly that padding and summons a horizontal
+  // scrollbar on an otherwise-fitting graph.
+  let panelW = 240;
+  if (body) {
+    const bcs = getComputedStyle(body);
+    panelW = body.clientWidth
+      - (parseFloat(bcs.paddingLeft) || 0)
+      - (parseFloat(bcs.paddingRight) || 0);
+  }
   // Content-driven pixel packing: lane columns sized to the widest
   // *visible* tier in each lane (collapse a branch → its neighbours pack
   // back), and per-lane rows so call-tree siblings never overlap. See

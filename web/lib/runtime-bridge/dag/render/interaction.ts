@@ -160,12 +160,12 @@ export function _installInteractionHandlers(rerender: () => void): void {
     }
     const id = g.getAttribute("data-msg-id");
     if (!id) return;
-    // Selecting a node always populates the right rail's Details view.
-    // This is orthogonal to collapse/scroll below: a collapsible node
-    // both folds and shows its details, matching the pre-DAG-rewrite
-    // behaviour where every node click drove `showDetail`.
+    // Selecting a node fills the right rail's Details view QUIETLY —
+    // the inspector popover is the click's visible response; popping
+    // the sidebar too was disorienting. Details are ready whenever the
+    // user opens the rail themselves.
     const gn = _graphNode(id);
-    if (gn) useSessionStore.getState().showDetail(_detailFor(gn), true);
+    if (gn) useSessionStore.getState().populateDetail(_detailFor(gn));
     if (gn) showNodeInspector(gn, g);
     // A capsule's click is its fold (dag/rendering.md §9). It takes
     // precedence over the execution-subtree fold below: the capsule

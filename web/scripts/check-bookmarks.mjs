@@ -188,8 +188,8 @@ const dagInteraction = readFileSync(
 );
 assert.match(
   dagInteraction,
-  /useSessionStore\.getState\(\)\.showDetail\(/,
-  "a DAG node click must hand the node to the store",
+  /useSessionStore\.getState\(\)\.populateDetail\(/,
+  "a DAG node click must hand the node to the store — quietly, without popping the dock",
 );
 assert.match(
   sessionStore,

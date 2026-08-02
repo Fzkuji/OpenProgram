@@ -267,6 +267,9 @@ interface ConvState {
    *  node in the History view loads the details without yanking the
    *  user off the graph they are navigating. */
   showDetail: (node: DetailNode, keepView?: boolean) => void;
+  /** Fill Details WITHOUT opening the dock — the DAG page's node click
+   *  uses this; its inspector popover is the visible response there. */
+  populateDetail: (node: DetailNode) => void;
   closeDetail: () => void;
   /** "A DAG node is selected" — true for BOTH selection paths: React
    *  callers via showDetail, and the legacy runtime-bridge showDetail
@@ -780,6 +783,11 @@ export const useSessionStore = create<ConvState>((set) => ({
     }),
 
   detailNode: null,
+  // Fill the Details view without touching the dock — the DAG page has
+  // its own inspector popover, so a node click must not pop the sidebar;
+  // whenever the user opens it, the selected node is already there.
+  populateDetail: (node) =>
+    set({ detailNode: node, nodeSelected: true }),
   showDetail: (node, keepView) =>
     set((s) => {
       const next = keepView
