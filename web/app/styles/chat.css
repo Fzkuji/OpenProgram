@@ -2691,7 +2691,8 @@
   height: 28px;
   padding: 0;
   border: none;
-  border-radius: 50%;
+  /* 圆角方形，不是圆形。 */
+  border-radius: 6px;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
