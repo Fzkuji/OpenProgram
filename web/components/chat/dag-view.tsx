@@ -15,8 +15,10 @@
  * capture regardless of which perspective is showing, so tearing the
  * host down would drop the graph until the next capture.
  *
- * Layout, top to bottom: the branch strip, the canvas, and — supplied
- * by the pane, not by this component — the composer. The composer is a
+ * Layout: the canvas, and — supplied by the pane, not by this
+ * component — the composer. Branch switching lives INSIDE the graph:
+ * each lane's tail name tag (render/badges.ts) is the checkout button,
+ * so no strip row sits above the canvas. The composer is a
  * singleton anchored inside `#chatView`, which the graph perspective
  * deliberately leaves mounted (it hides `#chatArea` instead), so
  * sending a message from the graph runs the same code path as sending
@@ -36,7 +38,6 @@ import { useEffect, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
 import { enterExclusiveCoverageMode } from "@/lib/runtime-bridge/dag";
-import { BranchesPanel } from "../right-sidebar/branches";
 
 const STROKE = "var(--accent-primary, #4a7dfc)";
 const GHOST = "var(--dag-ghost, #c9c7bf)";
@@ -121,7 +122,9 @@ export function DagView({ visible }: { visible: boolean }) {
       style={{ display: visible ? "flex" : "none" }}
       aria-hidden={visible ? undefined : true}
     >
-      <BranchesPanel variant="chips" />
+      {/* 分支切换直接在图内：每条 lane 尾部的分支名标签就是按钮
+          （render/badges.ts），点非活动分支即 checkout。页面顶部不再
+          放分支条——那条横线会横穿右上角的悬浮视角按钮。 */}
       <DagLegend />
       <div className="history-body"></div>
     </div>

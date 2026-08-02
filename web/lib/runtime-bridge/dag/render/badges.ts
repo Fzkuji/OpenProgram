@@ -104,7 +104,9 @@ export function drawBadges(
     const isActive = !!b.active;
     const color = _branchColor(node, stableLeafOfNode);
     // 碰撞：与已放置盒重叠 → 下移一行，直至无碰撞。
-    const bwPre = Math.max(Math.ceil(_textWidth(label)) + 12, 40);
+    // 顶部的分支条已删（分支切换只在这里），标签按按钮规格画：
+    // 更大的字号/内边距 + 描边，hover 态在 right-dock.css。
+    const bwPre = Math.max(Math.ceil(_textWidth(label)) + 20, 52);
     const overlaps = (): boolean =>
       placed.some((r) =>
         bx - bwPre / 2 < r.x2 && bx + bwPre / 2 > r.x1
@@ -120,29 +122,36 @@ export function drawBadges(
     (tg as SVGGraphicsElement).style.cursor = isActive ? "default" : "pointer";
     // 背景宽 = 实测文字宽 + 左右各 6px 内边距，下限 40（碰撞判定同款盒）。
     const bw = bwPre;
-    const bh = 18;
+    const bh = 22;
     const rect = _svg("rect", {
+      class: "history-branch-tag-bg",
       x: String(-bw / 2),
       y: String(-bh / 2),
       width: String(bw),
       height: String(bh),
-      rx: "6",
-      ry: "6",
-      fill: "var(--bg-hover, #2e2e2c)",
-      opacity: "0.85",
+      rx: "11",
+      ry: "11",
+      fill: isActive
+        ? "color-mix(in srgb, " + color + " 14%, var(--bg-primary, #fff))"
+        : "var(--bg-tertiary, #f2f0ea)",
+      stroke: isActive ? color : "var(--border, #e4e2da)",
+      "stroke-width": isActive ? "1.5" : "1",
     });
     tg.appendChild(rect);
+    const tip = _svg("title", {});
+    tip.textContent = isActive ? "当前分支" : "点击切换到此分支";
+    tg.appendChild(tip);
     const text = _svg("text", {
       x: "0",
       y: "0",
       "text-anchor": "middle",
       "dominant-baseline": "central",
-      "font-size": "9",
+      "font-size": "10.5",
       "font-family": "var(--font-sans, sans-serif)",
-      "font-weight": "500",
+      "font-weight": isActive ? "600" : "500",
       fill: isActive
-        ? "var(--text-bright, #f8f8f6)"
-        : "var(--text-muted, #6b6a63)",
+        ? "var(--text-bright, #1a1a17)"
+        : "var(--text-secondary, #6b6a63)",
       "pointer-events": "none",
     });
     text.textContent = label;

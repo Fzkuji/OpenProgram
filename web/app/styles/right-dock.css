@@ -1165,3 +1165,13 @@
   font-size: 11px;
   white-space: nowrap;
 }
+
+/* 图内分支标签 = 分支切换按钮（顶部分支条已删）。非活动标签 hover
+   提亮描边示意可点；活动标签描边用分支色、无 hover 变化。 */
+.history-branch-tag:not(.active):hover .history-branch-tag-bg {
+  stroke: var(--text-muted, #8a8880);
+  fill: var(--bg-hover, #ecebe4);
+}
+.history-branch-tag:not(.active):hover text {
+  fill: var(--text-bright, #1a1a17);
+}
