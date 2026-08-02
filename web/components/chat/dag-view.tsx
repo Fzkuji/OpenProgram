@@ -99,7 +99,7 @@ export function DagLegend() {
     <div className="dag-legend" ref={rootRef}>
       <button
         type="button"
-        className="runtime-badge dag-legend-toggle"
+        className="runtime-badge workdir-badge dag-legend-toggle"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >

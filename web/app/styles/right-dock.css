@@ -861,10 +861,9 @@
   margin-left: auto;
   flex-shrink: 0;
 }
-/* 外观完全由 .runtime-badge 提供（和 Local/项目 chips 同一套），
-   这里只补按钮语义的复位。 */
+/* 外观完全由 .runtime-badge.workdir-badge 提供（和 Local/项目 chips
+   同一套，含边框），这里只补按钮语义的复位。 */
 .dag-legend-toggle {
-  border: none;
   cursor: pointer;
   font: inherit;
 }
