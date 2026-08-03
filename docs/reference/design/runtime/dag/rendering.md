@@ -605,18 +605,19 @@ short hover delay, gone when the cursor leaves.
 Nothing else — no window competes with the expansion. The right rail's
 Details view still fills quietly for whenever the user opens it.
 
-**Right-click → the detail cut plus the verbs, one window.** The same rows as
-the hover card — one row builder (`tooltip.ts renderNodeInfo`), so the two
-cuts cannot disagree — at full depth: every field, longer previews, coverage
-state, context standing, id. The coverage rows read off the DOM flags the
-node drawer already stamped (`data-ghost`, `data-failed`, `.out-of-context`),
-so the window and the picture beside it cannot disagree. Below the rows, the
-menu: checkout to this branch · fork from this node · fork and edit this
-message (user turns only) · copy node id · view raw JSON. The verbs anchor at
-the cursor because a right-click is aimed and a menu that jumps to the node's
-edge reads as a miss. Raw JSON opens in the card shell rather than a modal —
-a modal would take the graph away to show you one node from it. The hover
-card yields while this window is open.
+**Right-click → the SAME card expands in place.** Not a second window: the
+one card element deepens where it stands (`tooltip.ts expandTooltip`) — every
+field, longer previews, coverage state, context standing, id — and the verbs
+join at its bottom: checkout to this branch · fork from this node · fork and
+edit this message (user turns only) · copy node id · view raw JSON. One row
+builder (`renderNodeInfo`) feeds both states, so they cannot disagree; the
+coverage rows read off the DOM flags the node drawer already stamped
+(`data-ghost`, `data-failed`, `.out-of-context`), so the card and the picture
+beside it cannot disagree either. Expanded, the card turns interactive and
+stays — mouse-off no longer dismisses it, hover cannot repaint it, and a
+click anywhere else (or running a verb) collapses it. Raw JSON opens in the
+inspector shell rather than a modal — a modal would take the graph away to
+show you one node from it.
 
 **Double-click a user turn → fork and edit.** The message text lands in the
 composer with HEAD already back at its fork point. Other nodes keep the
@@ -715,7 +716,7 @@ The whole spec is implemented. Where each part lives:
 | §9 capsule shape | `shapes.ts` `capsule` (keyed on `covers_ids`, tagged `data-shape` so `_applyShapeSize` leaves its geometry alone) |
 | §9 fold + pleats + ghosts | `passes/fold-summaries.ts` (fold), `render/nodes.ts` (pleats, `已压缩 · N 轮` caption, ghost stroke), `render/edges.ts` (dashed ghost edge), `_summaryExpanded` in `store/globals.ts`; executed by `web/scripts/check-dag-summary.mjs` |
 | §10 archived failure | `render/nodes.ts::_isArchivedFailure` — `status=error` AND off the HEAD chain; grey overrides §4's red |
-| §11 hover card / menu / fork & edit | brief + detail cuts share `dag/tooltip.ts renderNodeInfo` (coverage + thread facts off the DOM flags); the detail cut heads the right-click window in `render/inspector.ts`, wired in `render/interaction.ts`; the actions go through `POST /api/chat/checkout` |
+| §11 one card, two states / fork & edit | `dag/tooltip.ts`: `renderNodeInfo` feeds both states, `expandTooltip` deepens the card in place; `render/inspector.ts` builds only the verb list (+ raw JSON layer), wired in `render/interaction.ts`; the actions go through `POST /api/chat/checkout` |
 | §11 legend | `DagLegend` in `components/chat/dag-view.tsx` (inside the canvas HUD), `.dag-legend` in `right-dock.css` |
 | §12 call thread + agent head | `shapes.ts` `agent_head` (point-down triangle), `passes/thread.ts` (model), `layout/geometry.ts` (recursive placement), `render/edges.ts` (dotted thread line, centre-to-centre chain edges, scene-3 bridge), `render/nodes.ts` (`data-thread*`, shoulder count), `render/interaction.ts` (`toggleThreadOpen`); executed by `web/scripts/check-dag-subagent.mjs` |
 | §12 the name on the wire | `task/runner.py::_update_attach_card` stamps `attach.label` from the task; `ws_actions/session.py::_annotate_spawn_origin` carries it to the spawn root as `spawned_from.label`; tested in `tests/unit/test_task_attach_integration.py` |

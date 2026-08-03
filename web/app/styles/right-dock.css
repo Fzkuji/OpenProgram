@@ -594,10 +594,11 @@
   fill: var(--text-primary);
 }
 
-/* DAG node hover card — the brief cut of a node's info
-   (web/lib/runtime-bridge/dag/tooltip.ts). The detail cut of the SAME
-   rows lives in the right-click window (.dag-menu-info below). Click
-   is the node's own action. */
+/* DAG node card — ONE window, two states
+   (web/lib/runtime-bridge/dag/tooltip.ts). Hover shows the brief
+   state; right-click flips the same element to `.detail`: full rows,
+   verbs at the bottom, pointer-events on. Click is the node's own
+   action. */
 .history-tooltip {
   position: absolute;
   pointer-events: none;
@@ -621,6 +622,20 @@
   white-space: pre-wrap;
 }
 .history-tooltip.visible { opacity: 1; }
+/* Expanded (right-click) state: the same card grows, scrolls, and
+   becomes interactive so its verb buttons work. z above the HUD. */
+.history-tooltip.detail {
+  pointer-events: auto;
+  width: 300px;
+  max-width: 300px;
+  max-height: 480px;
+  overflow-y: auto;
+  z-index: 200;
+}
+.history-tooltip.detail .history-tooltip-body {
+  max-height: 208px;
+  -webkit-line-clamp: 13;
+}
 .history-tooltip-header {
   display: flex;
   flex-direction: column;
@@ -747,8 +762,7 @@
 /* Floating layers the DAG renderer mounts on document.body
    (render/inspector.ts), positioned in viewport coordinates so they
    can cross the pane edge instead of being clipped by it. */
-.dag-inspector,
-.dag-menu {
+.dag-inspector {
   position: fixed;
   z-index: 200;
   background: var(--bg-tertiary);
@@ -835,28 +849,10 @@
   word-break: break-all;
 }
 
-.dag-menu {
-  min-width: 172px;
-  max-width: 300px;
-  padding: 5px;
-}
-/* The detail cut of the hover card, at the top of the right-click
-   window (render/inspector.ts). Children reuse the history-tooltip-*
-   row classes — one row builder, one look — with room the fleeting
-   hover card doesn't get: longer previews, more lines. */
-.dag-menu-info {
-  padding: 6px 8px 4px;
-  font-size: 11.5px;
-  line-height: 1.4;
-  width: 280px;
-  max-height: 420px;
-  overflow-y: auto;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-.dag-menu-info .history-tooltip-body {
-  max-height: 208px;
-  -webkit-line-clamp: 13;
+/* The verb list render/inspector.ts appends inside the expanded card
+   (.history-tooltip.detail). Items and separators below are shared. */
+.dag-menu-verbs {
+  margin: 0 -3px -3px;
 }
 .dag-menu-item {
   display: block;

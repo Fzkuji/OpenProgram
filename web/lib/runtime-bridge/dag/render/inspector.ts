@@ -1,14 +1,14 @@
 /**
- * Renderer: the node context menu (and the raw-JSON layer it opens).
+ * Renderer: the node verbs (and the raw-JSON layer they open).
  *
- * The hover card (../tooltip.ts) is the brief cut of a node's info; a
- * click is the node's own action (fold/unfold its thread). Right-click
- * opens ONE window carrying both the detail cut and the verbs:
+ * The node has ONE window — the card in ../tooltip.ts. Hover shows its
+ * brief state; right-click calls ``expandTooltip`` to deepen that same
+ * card in place, and what THIS module contributes is the verb list
+ * appended below the detail rows:
  *
- *   * **Right-click a node** → the detail rows (same builder as the
- *     hover card, ``renderNodeInfo``, so the two can never disagree)
- *     above the menu: checkout, fork, fork-and-edit (user turns only),
- *     copy id, raw JSON (dag/rendering.md §11).
+ *   * **Right-click a node** → the card expands with checkout, fork,
+ *     fork-and-edit (user turns only), copy id, raw JSON at the bottom
+ *     (dag/rendering.md §11).
  *
  * Every action is an existing operation, reached by its existing
  * route. Nothing here invents a verb:
@@ -32,7 +32,7 @@ import type { GNode } from "../types";
 import { runtimeState } from "../../state";
 import { useSessionStore } from "../../../session-store";
 import { showToast } from "@/lib/format-utils/toast";
-import { _bodyText, hideTooltip, renderNodeInfo } from "../tooltip";
+import { _bodyText, closeTooltipDetail, expandTooltip } from "../tooltip";
 
 function _roleLabel(node: GNode, el?: Element): string {
   if (node.display === "root") return "root";
@@ -86,6 +86,7 @@ function _openLayer(el: HTMLElement, rect: DOMRect): void {
 
 export function closeNodeLayers(): void {
   _closeLayer();
+  closeTooltipDetail();
 }
 
 // ── actions ────────────────────────────────────────────────────────
@@ -220,29 +221,19 @@ function _menuItem(label: string, onClick: () => void, muted = false): HTMLEleme
   d.textContent = label;
   d.addEventListener("click", (e) => {
     e.stopPropagation();
-    _closeLayer();
+    closeTooltipDetail();
     onClick();
   });
   return d;
 }
 
-export function showNodeMenu(node: GNode, el: Element, at: DOMRect): void {
+/** Expand the node's card with the verb list at its bottom. The card
+ *  itself (rows, position, lifetime) is ../tooltip.ts's — this builds
+ *  only the verbs. */
+export function showNodeMenu(node: GNode, el: Element): void {
   const menu = document.createElement("div");
-  menu.className = "dag-menu";
+  menu.className = "dag-menu-verbs";
   menu.addEventListener("click", (e) => e.stopPropagation());
-
-  // The detail cut of the hover card, above the verbs — same row
-  // builder (../tooltip.ts), longer previews plus coverage/context/id.
-  // The hover card would double the same facts under this window, so
-  // it yields.
-  hideTooltip();
-  const info = document.createElement("div");
-  info.className = "dag-menu-info";
-  renderNodeInfo(info, node, el, true);
-  menu.appendChild(info);
-  const infoSep = document.createElement("div");
-  infoSep.className = "dag-menu-sep";
-  menu.appendChild(infoSep);
 
   const id = String(node.id);
   // Only chain-level turns are checkout/fork targets — a
@@ -269,5 +260,5 @@ export function showNodeMenu(node: GNode, el: Element, at: DOMRect): void {
     _showRawJson(node, el.getBoundingClientRect());
   }, true));
 
-  _openLayer(menu, at);
+  expandTooltip(node, el, menu);
 }

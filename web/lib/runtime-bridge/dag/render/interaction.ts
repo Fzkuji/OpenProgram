@@ -152,13 +152,19 @@ export function _installInteractionHandlers(rerender: () => void): void {
     // never close it out from under themselves.
     const g = tgt.closest && tgt.closest(".history-node");
     if (!g) {
-      if (!(tgt.closest && tgt.closest(".dag-inspector, .dag-menu"))) {
+      // The expanded card (.history-tooltip.detail) is a layer too: a
+      // click inside it must not close it out from under its own verbs.
+      if (!(tgt.closest
+          && tgt.closest(".dag-inspector, .history-tooltip"))) {
         closeNodeLayers();
       }
       return;
     }
     const id = g.getAttribute("data-msg-id");
     if (!id) return;
+    // A node click starts the node's own action — an expanded card
+    // left over from a right-click would sit on top of the change.
+    closeNodeLayers();
     // A click is the node's own ACTION, not an info request — info
     // lives on the hover card (tooltip.ts), the one surface per node.
     // The old click-opened inspector popover landed on top of the very
@@ -208,9 +214,10 @@ export function _installInteractionHandlers(rerender: () => void): void {
     const gn = _graphNode(id);
     if (!gn) return;
     e.preventDefault();
-    // Anchor the menu at the cursor, not at the node: a right-click is
-    // aimed, and a menu that jumps to the node's edge reads as a miss.
-    showNodeMenu(gn, g, new DOMRect(e.clientX, e.clientY, 0, 0));
+    // The verbs join the node's ONE card, expanded in place where the
+    // hover state stood (dag/rendering.md §11) — not a second window
+    // at the cursor.
+    showNodeMenu(gn, g);
   });
 
   document.addEventListener("dblclick", (e) => {

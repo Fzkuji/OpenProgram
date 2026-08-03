@@ -495,15 +495,15 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier �
 **单击 → 节点自己的动作**。折叠/展开它的调用线程（第十二节）。没有别的——
 没有窗口和展开抢画面。右栏 Details 仍然静默填充，用户想看随时打开。
 
-**右键 → 详细信息加动词，一个窗口**。和悬停卡同一批行——同一个行构建器
-（`tooltip.ts renderNodeInfo`），两个深度不可能各说各话——但给到全量：所有
-字段、更长的预览、覆盖状态、上下文站位、id。覆盖行读的是节点绘制时已经戳好
-的 DOM 标记（`data-ghost`、`data-failed`、`.out-of-context`），窗口和它旁边
-那张图不可能各说各话。信息行下面是菜单：checkout 到此分支 · 从此节点 fork ·
-fork 并编辑此消息（仅用户轮）· 复制节点 id · 查看原始 JSON。动词锚在光标处，
-因为右键是瞄准的，菜单跳到节点边缘会读作没点中。原始 JSON 复用卡片壳而不是
-弹模态——模态会为了给你看图里的一个节点，把图整个拿走。窗口打开时悬停卡
-让位。
+**右键 → 同一张卡原地展开**。不是第二个窗口：就是那一个卡片元素在原地加深
+（`tooltip.ts expandTooltip`）——所有字段、更长的预览、覆盖状态、上下文站
+位、id——动词接在卡底：checkout 到此分支 · 从此节点 fork · fork 并编辑此消
+息（仅用户轮）· 复制节点 id · 查看原始 JSON。两个状态共用一个行构建器
+（`renderNodeInfo`），不可能各说各话；覆盖行读的是节点绘制时已经戳好的 DOM
+标记（`data-ghost`、`data-failed`、`.out-of-context`），卡片和它旁边那张图
+也不可能各说各话。展开后卡片变成可交互并停驻——移开鼠标不再收卡、悬停不会
+把它刷回简版，点击别处（或执行动词）才收。原始 JSON 复用检查器壳而不是弹模
+态——模态会为了给你看图里的一个节点，把图整个拿走。
 
 **双击用户轮 → fork 并编辑**。消息文本落进输入框，HEAD 已经退回它的分叉点。
 其他节点保持 checkout 行为——回复和工具结果没有什么可编辑的。
@@ -587,7 +587,7 @@ spawn 的 agent 一个倒三角形——一行一个事件，从上到下按调�
 | 第九节 胶囊形状 | `shapes.ts` 的 `capsule`（按 `covers_ids` 判定，打 `data-shape` 标让 `_applyShapeSize` 别改它的几何） |
 | 第九节 折叠 / 褶皱 / 幽灵 | `passes/fold-summaries.ts`（折叠）、`render/nodes.ts`（褶皱、`已压缩 · N 轮` 注记、幽灵描边）、`render/edges.ts`（幽灵虚线边）、`store/globals.ts` 的 `_summaryExpanded`；由 `web/scripts/check-dag-summary.mjs` 实跑 |
 | 第十节 失败留档 | `render/nodes.ts::_isArchivedFailure`——`status=error` **且**离开 HEAD 链；灰覆盖第四节的红 |
-| 第十一节 悬停卡片 / 菜单 / fork 并编辑 | 简略/详细两个深度共用 `dag/tooltip.ts renderNodeInfo`（覆盖/调用数读 DOM 标记）；详细信息领在右键窗口顶部，`render/inspector.ts` 实现、`render/interaction.ts` 接线；动作走 `POST /api/chat/checkout` |
+| 第十一节 一张卡两个状态 / fork 并编辑 | `dag/tooltip.ts`：`renderNodeInfo` 喂两个状态，`expandTooltip` 原地加深；`render/inspector.ts` 只构建动词列表（+ 原始 JSON 层），`render/interaction.ts` 接线；动作走 `POST /api/chat/checkout` |
 | 第十一节 图例 | `components/chat/dag-view.tsx` 的 `DagLegend`（挂在画布 HUD 里），`right-dock.css` 的 `.dag-legend` |
 | 第十二节 调用线程 + agent 头 | `shapes.ts` `agent_head`（倒三角形）、`passes/thread.ts`（模型）、`layout/geometry.ts`（递归安放）、`render/edges.ts`（线程点线、中心连线、场景3横桥）、`render/nodes.ts`（`data-thread*`、肩上折叠数）、`render/interaction.ts`（`toggleThreadOpen`）；由 `web/scripts/check-dag-subagent.mjs` 实跑 |
 | 第十二节 名字上线 | `task/runner.py::_update_attach_card` 从 task 戳出 `attach.label`；`ws_actions/session.py::_annotate_spawn_origin` 把它带到 spawn 根的 `spawned_from.label`；测试见 `tests/unit/test_task_attach_integration.py` |
