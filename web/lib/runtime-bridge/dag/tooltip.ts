@@ -88,6 +88,14 @@ export function showTooltip(
   nodeRect: DOMRect,
   el?: Element | null,
 ): void {
+  // The right-click window IS the detail cut of this card — while it is
+  // open, the brief cut underneath it is the same facts twice. Gating
+  // here (not just at menu-open) is what holds: the cursor is still on
+  // the node, and every mousemove would re-summon the card otherwise.
+  if (document.querySelector(".dag-menu, .dag-inspector")) {
+    hideTooltip();
+    return;
+  }
   const tip = ensureTooltip(body);
   const id = String(node.id || "");
 
