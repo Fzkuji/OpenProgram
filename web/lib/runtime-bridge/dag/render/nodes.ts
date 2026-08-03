@@ -136,18 +136,10 @@ export function drawNodes(
       if (isHead) el.setAttribute("data-solid", "1");
       g.appendChild(el);
     }
-    // A solid HEAD has no hollow left for the coverage fill to land in,
-    // so coverage is punched OUT of it instead: a background-coloured
-    // dot where every other node shows a white one. Same fact, same
-    // place on the glyph, read the way an inverted node has to be.
-    if (isHead && contextSet && contextSet[id]) {
-      g.appendChild(_svg("circle", {
-        r: String(NODE_R * 0.55),
-        cy: node.role === "assistant" && !node.function ? "1.5" : "0",
-        fill: "var(--bg-primary, #262624)",
-        "pointer-events": "none",
-      }));
-    }
+    // No coverage dot on HEAD: it is drawn solid, and it is the one
+    // node that CANNOT leave the context window — HEAD is where the
+    // next request lands. Punching a hole to say "in coverage" stated
+    // a tautology, and read as a stray dot inside the glyph.
     // ── status 画在节点自己的描边上（rendering.md 第四节，废除占位框） ──
     const status = (node as Record<string, unknown>).status as string | undefined;
     if (el && status === "running") {

@@ -1,38 +1,51 @@
 /**
- * History DAG node hover card — the ONE info surface a node has.
+ * History DAG node hover card — the quick-glance info surface.
  *
- * There used to be three: a hover tooltip, a second-stage "dwell"
- * expansion of it, and a click-opened inspector popover. Three windows
- * for one node meant the click had two jobs (open a window AND toggle
- * the node's thread), and the popover landed on top of the expansion it
- * had just triggered. Now:
+ * One node, two depths of the SAME card (dag/rendering.md §11):
  *
- *   * **Hover** → this card, once, with everything on it. No second
- *     stage, no click popover.
+ *   * **Hover** → this card, the brief cut: what the node is, its
+ *     tokens, a short output preview, its folded call count. Appears
+ *     after a short delay so sweeping the cursor doesn't strobe;
+ *     ``pointer-events: none``; gone on mouse-off.
+ *   * **Right-click** → the detail cut of the same rows (full fields,
+ *     longer previews, coverage / context / id) PLUS the action menu,
+ *     rendered by render/inspector.ts via ``renderNodeInfo`` below —
+ *     one row builder, so the two cuts can never disagree.
  *   * **Click** → the node's own action only (fold/unfold its thread).
- *   * **Right-click** → the action menu (checkout / fork / copy).
- *
- * Lifecycle:
- *   * Visibility is driven only by hover-on-node: mouse over → card
- *     (after a short delay so sweeping the cursor doesn't strobe);
- *     mouse off → gone. The card is ``pointer-events: none``.
- *   * Position below the node, flipped above when it would clip.
  *
  * No row labels are reinvented — each line uses the actual schema key
  * (``name`` / ``input`` / ``output`` / ``model`` / ``label`` / ...),
- * plus the two facts the old inspector alone carried: the node's
- * context-coverage state and its folded call count, both read off the
- * DOM flags the node drawer stamped so card and picture cannot
- * disagree.
+ * plus the facts only the picture knows: the node's context-coverage
+ * state and its folded call count, both read off the DOM flags the
+ * node drawer stamped so card and picture cannot disagree.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { type GNode } from "./types";
-import { _estimateTokens } from "./render/inspector";
+
+/** Rough token count. The graph payload carries no measured count for
+ *  user turns, and asking the backend per node for a number that only
+ *  has to be indicative would be a request per click. ~4 chars/token is
+ *  the standard English approximation; ``llm.output_tokens`` is used
+ *  verbatim when the node actually has a measurement. */
+function _estimateTokens(node: GNode): { n: number; exact: boolean } {
+  const meta = (node.llm || {}) as Record<string, unknown>;
+  const out = meta.output_tokens;
+  if (typeof out === "number" && out > 0) return { n: out, exact: true };
+  return { n: Math.max(1, Math.ceil(_bodyText(node).length / 4)), exact: false };
+}
+
+/** The node's main text body — shared with fork-and-edit, which drops
+ *  it into the composer. */
+export function _bodyText(node: GNode): string {
+  const v = node.preview ?? node.content ?? node.output ?? "";
+  return typeof v === "string" ? v : String(v);
+}
 
 const SHOW_DELAY_MS = 450;   // hover-stay before the card appears
-const BODY_CHARS = 280;      // chars per body block
+const BRIEF_CHARS = 120;     // chars per body block, hover cut
+const DETAIL_CHARS = 600;    // chars per body block, right-click cut
 const GAP = 10;              // px gap between node and card
 
 let _tooltip: HTMLDivElement | null = null;
@@ -65,7 +78,7 @@ export function resetTooltip(): void {
   }
 }
 
-/** Show the card for ``node`` next to ``nodeRect`` (viewport
+/** Show the brief card for ``node`` next to ``nodeRect`` (viewport
  *  coordinates). ``el`` is the node's ``<g>`` — the drawer's data-*
  *  flags on it carry the coverage / thread facts. Idempotent on
  *  repeated calls with the same node. */
@@ -85,7 +98,8 @@ export function showTooltip(
     // 停留 SHOW_DELAY_MS 才出卡——扫过节点不弹窗。
     _showTimer = window.setTimeout(() => {
       if (_currentId !== id || !_tooltip) return;
-      _render(_tooltip, node, el || null);
+      _tooltip.innerHTML = "";
+      renderNodeInfo(_tooltip, node, el || null, false);
       _tooltip.classList.add("visible");
       _position(_tooltip, body, nodeRect);
       // 内容宽度在下一帧才量得准，再对一次位，防溢出右缘。
@@ -105,12 +119,24 @@ type Row =
   | { kind: "kv"; key: string; value: string }
   | { kind: "block"; key: string; value: string };
 
-function _render(tip: HTMLElement, node: GNode, el: Element | null): void {
-  tip.innerHTML = "";
-  _appendHeader(tip, node, el);
-  _rows(node, el).forEach((row) => {
-    if (row.kind === "block") _appendBlock(tip, row.key, row.value);
-    else _appendKv(tip, row.key, row.value);
+/** Render the node's info — header plus rows — into ``into``.
+ *  ``detail: false`` is the hover cut (short previews, core rows);
+ *  ``detail: true`` is the right-click cut (every field, long
+ *  previews, coverage / context / id). Shared with the context menu
+ *  so both surfaces read the same facts. */
+export function renderNodeInfo(
+  into: HTMLElement,
+  node: GNode,
+  el: Element | null,
+  detail: boolean,
+): void {
+  _appendHeader(into, node, el);
+  _rows(node, el, detail).forEach((row) => {
+    if (row.kind === "block") {
+      _appendBlock(into, row.key, row.value, detail ? DETAIL_CHARS : BRIEF_CHARS);
+    } else {
+      _appendKv(into, row.key, row.value);
+    }
   });
 }
 
@@ -176,27 +202,31 @@ function _coverageText(el: Element): string {
   return "✓ 在覆盖内";
 }
 
-/** Every field that has a value — one card, one stage. */
-function _rows(node: GNode, el: Element | null): Row[] {
+/** The rows for one node. The brief cut keeps what identifies the node
+ *  (name, tokens, output, fold count); the detail cut adds every field
+ *  plus the standing facts (coverage, context state, id). */
+function _rows(node: GNode, el: Element | null, detail: boolean): Row[] {
   const rows: Row[] = [];
   const fn = node.function;
   const role = node.role;
 
   if (role === "tool") {
     if (node.name) rows.push(_kv("name", String(node.name)));
-    if (typeof node.input === "string" && node.input) {
+    if (detail && typeof node.input === "string" && node.input) {
       rows.push(_block("input", node.input));
     }
-    const out = _outputText(node);
+    const out = _bodyText(node);
     if (out) rows.push(_block("output", out));
   } else if (fn === "attach" || fn === "merge") {
     if (node.attach_manual) rows.push(_kv("manual", "true"));
     if (node.attach_label) rows.push(_kv("label", String(node.attach_label)));
-    if (node.attach_ref) rows.push(_kv("head_id", String(node.attach_ref)));
-    if (node.attach_source_commit_id) {
-      rows.push(_kv("source_commit_id", String(node.attach_source_commit_id)));
+    if (detail) {
+      if (node.attach_ref) rows.push(_kv("head_id", String(node.attach_ref)));
+      if (node.attach_source_commit_id) {
+        rows.push(_kv("source_commit_id", String(node.attach_source_commit_id)));
+      }
     }
-    const out = _outputText(node);
+    const out = _bodyText(node);
     if (out) rows.push(_block("output", out));
   } else {
     let tokensShown = false;
@@ -217,29 +247,28 @@ function _rows(node: GNode, el: Element | null): Row[] {
       rows.push(_kv(tok.exact ? "tokens" : "tokens（估）",
         tok.n.toLocaleString()));
     }
-    const out = _outputText(node);
+    const out = _bodyText(node);
     if (out) rows.push(_block("output", out));
   }
 
-  // The facts the click-popover alone used to carry (§11/§12):
+  // The picture's own facts (§11/§12). The fold count identifies the
+  // node and stays on the brief cut; coverage / context / id are
+  // standing detail.
   if (el) {
     const threadN = el.getAttribute("data-thread");
     if (threadN) rows.push(_kv("调用", `${threadN} 次`));
-    const summaryN = el.getAttribute("data-summary");
-    if (summaryN) rows.push(_kv("覆盖", `${summaryN} 轮`));
-    if (node.display !== "root") {
-      rows.push(_kv("上下文", _coverageText(el)));
+    if (detail) {
+      const summaryN = el.getAttribute("data-summary");
+      if (summaryN) rows.push(_kv("覆盖", `${summaryN} 轮`));
+      if (node.display !== "root") {
+        rows.push(_kv("上下文", _coverageText(el)));
+      }
     }
   }
-  if (node.display !== "root") {
+  if (detail && node.display !== "root") {
     rows.push(_kv("id", String(node.id).slice(0, 12)));
   }
   return rows;
-}
-
-function _outputText(node: GNode): string {
-  const v = node.preview ?? node.content ?? node.output ?? "";
-  return typeof v === "string" ? v : String(v);
 }
 
 function _kv(key: string, value: string): Row {
@@ -264,7 +293,12 @@ function _appendKv(tip: HTMLElement, key: string, value: string): void {
   tip.appendChild(row);
 }
 
-function _appendBlock(tip: HTMLElement, key: string, value: string): void {
+function _appendBlock(
+  tip: HTMLElement,
+  key: string,
+  value: string,
+  chars: number,
+): void {
   const wrap = document.createElement("div");
   wrap.className = "history-tooltip-block";
   const lbl = document.createElement("div");
@@ -273,7 +307,7 @@ function _appendBlock(tip: HTMLElement, key: string, value: string): void {
   wrap.appendChild(lbl);
   const bod = document.createElement("div");
   bod.className = "history-tooltip-body";
-  bod.textContent = _clamp(value || "(empty)", BODY_CHARS);
+  bod.textContent = _clamp(value || "(empty)", chars);
   wrap.appendChild(bod);
   tip.appendChild(wrap);
 }

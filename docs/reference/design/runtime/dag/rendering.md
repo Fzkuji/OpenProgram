@@ -307,9 +307,10 @@ apart from the chain's upright turns — §12).
 
 **HEAD is drawn solid**: the glyph's own shape filled with the branch colour,
 not a ring or a glow around it. A halo at this size reads as a second, blurrier
-node beside the first, and it is the first thing a zoom-out loses. Coverage on a
-solid HEAD is *punched out* — a background-coloured dot where every other node
-shows a white one.
+node beside the first, and it is the first thing a zoom-out loses. HEAD carries
+no coverage mark at all: it is the one node that cannot leave the context
+window — the next request lands on it — so a dot saying "in coverage" states a
+tautology, and it read as a stray dot inside the solid glyph.
 
 **status mapping** — status is drawn on the node itself, never as a separate dashed
 placeholder box:
@@ -593,26 +594,29 @@ popover — which gave the click two jobs at once: open a window AND toggle the
 node's thread, with the popover landing on top of the very expansion it had
 just triggered.
 
-**Hover → the card.** The node's ONE info surface, once, with everything on
-it: role (a spawn head titles itself `子 agent · <name>` — this is where the
-name lives, §12), model/tokens, content preview, folded call count, coverage
-state, id. The token figure is `llm.output_tokens` when the node carries a
-measurement and `chars/4` when it does not; the card says which (`tokens` vs
-`tokens（估）`). The coverage row reads off the DOM flags the node drawer
-already stamped (`data-ghost`, `data-failed`, `.out-of-context`), so the card
-and the picture beside it cannot disagree. Appears after a short hover delay,
-gone when the cursor leaves; no second stage, no click popover.
+**Hover → the brief card.** The quick cut: role (a spawn head titles itself
+`子 agent · <name>` — this is where the name lives, §12), model/tokens, a
+short content preview, folded call count. The token figure is
+`llm.output_tokens` when the node carries a measurement and `chars/4` when it
+does not; the card says which (`tokens` vs `tokens（估）`). Appears after a
+short hover delay, gone when the cursor leaves.
 
 **Click → the node's own action.** Fold or unfold its call thread (§12).
 Nothing else — no window competes with the expansion. The right rail's
 Details view still fills quietly for whenever the user opens it.
 
-**Right-click → menu.** checkout to this branch · fork from this node · fork and
-edit this message (user turns only) · copy node id · view raw JSON. The verbs
-live here, anchored at the cursor, because a right-click is aimed and a menu
-that jumps to the node's edge reads as a miss. Raw JSON opens in the card
-shell rather than a modal — a modal would take the graph away to show you one
-node from it.
+**Right-click → the detail cut plus the verbs, one window.** The same rows as
+the hover card — one row builder (`tooltip.ts renderNodeInfo`), so the two
+cuts cannot disagree — at full depth: every field, longer previews, coverage
+state, context standing, id. The coverage rows read off the DOM flags the
+node drawer already stamped (`data-ghost`, `data-failed`, `.out-of-context`),
+so the window and the picture beside it cannot disagree. Below the rows, the
+menu: checkout to this branch · fork from this node · fork and edit this
+message (user turns only) · copy node id · view raw JSON. The verbs anchor at
+the cursor because a right-click is aimed and a menu that jumps to the node's
+edge reads as a miss. Raw JSON opens in the card shell rather than a modal —
+a modal would take the graph away to show you one node from it. The hover
+card yields while this window is open.
 
 **Double-click a user turn → fork and edit.** The message text lands in the
 composer with HEAD already back at its fork point. Other nodes keep the
@@ -694,7 +698,7 @@ The whole spec is implemented. Where each part lives:
 | Infinite canvas (pan / zoom / fit / dot lattice) | `dag/canvas.ts` + `.history-body` in `right-dock.css`; view state in `dag/store/globals.ts`; HUD in `components/chat/dag-view.tsx` |
 | §1 lane / tier / depth layout | `dag/layout/geometry.ts::computeGeometry` (tier-packed chain lanes with per-lane tier zeroing, preorder rows, scene-3 fork rows + gap column, recursive thread placement); lattice, no-overlap, thread columns/rows and fork geometry all executed and asserted by `web/scripts/check-dag-subagent.mjs` |
 | §2 rule ③ glyphs are cells | no shape is sized from text, and no text draws on the canvas beyond the shoulder count and the capsule note |
-| §4 HEAD solid, no halo | `render/nodes.ts` passes `isHead` as `_buildShapeEl`'s `solid`; the coverage dot is punched out of the fill; `right-dock.css` has no `.is-head` glow; HEAD pointing at a merged reply re-seats on its anchor (`pipeline.ts` via `threadModel.anchorOf`) |
+| §4 HEAD solid, no halo | `render/nodes.ts` passes `isHead` as `_buildShapeEl`'s `solid`; HEAD carries no coverage dot (it cannot leave context); `right-dock.css` has no `.is-head` glow; HEAD pointing at a merged reply re-seats on its anchor (`pipeline.ts` via `threadModel.anchorOf`) |
 | §0/§12 call-thread aggregation | `passes/thread.ts` (`buildThreadModel`: anchor merge, event attribution, recursive visibility); `render/nodes.ts` draws the shoulder count (`history-thread-count`); `_threadOpen` in `store/globals.ts` |
 | Rule ② corollary (no placeholder box) | `shapes.ts`: no `square_outline`; task renders as a plain square |
 | §4 status on the stroke | `graph_builder` emits status; `nodes.ts` draws it on the stroke (running dashed+breathing / error red+! / cancelled grayed) |
@@ -711,7 +715,7 @@ The whole spec is implemented. Where each part lives:
 | §9 capsule shape | `shapes.ts` `capsule` (keyed on `covers_ids`, tagged `data-shape` so `_applyShapeSize` leaves its geometry alone) |
 | §9 fold + pleats + ghosts | `passes/fold-summaries.ts` (fold), `render/nodes.ts` (pleats, `已压缩 · N 轮` caption, ghost stroke), `render/edges.ts` (dashed ghost edge), `_summaryExpanded` in `store/globals.ts`; executed by `web/scripts/check-dag-summary.mjs` |
 | §10 archived failure | `render/nodes.ts::_isArchivedFailure` — `status=error` AND off the HEAD chain; grey overrides §4's red |
-| §11 hover card / menu / fork & edit | the one hover card in `dag/tooltip.ts` (single stage, coverage + thread facts off the DOM flags); menu + raw JSON in `render/inspector.ts`, wired in `render/interaction.ts`; the actions go through `POST /api/chat/checkout` |
+| §11 hover card / menu / fork & edit | brief + detail cuts share `dag/tooltip.ts renderNodeInfo` (coverage + thread facts off the DOM flags); the detail cut heads the right-click window in `render/inspector.ts`, wired in `render/interaction.ts`; the actions go through `POST /api/chat/checkout` |
 | §11 legend | `DagLegend` in `components/chat/dag-view.tsx` (inside the canvas HUD), `.dag-legend` in `right-dock.css` |
 | §12 call thread + agent head | `shapes.ts` `agent_head` (point-down triangle), `passes/thread.ts` (model), `layout/geometry.ts` (recursive placement), `render/edges.ts` (dotted thread line, centre-to-centre chain edges, scene-3 bridge), `render/nodes.ts` (`data-thread*`, shoulder count), `render/interaction.ts` (`toggleThreadOpen`); executed by `web/scripts/check-dag-subagent.mjs` |
 | §12 the name on the wire | `task/runner.py::_update_attach_card` stamps `attach.label` from the task; `ws_actions/session.py::_annotate_spawn_origin` carries it to the spawn root as `spawned_from.label`; tested in `tests/unit/test_task_attach_integration.py` |

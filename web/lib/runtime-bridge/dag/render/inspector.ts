@@ -1,12 +1,14 @@
 /**
  * Renderer: the node context menu (and the raw-JSON layer it opens).
  *
- * The hover card (../tooltip.ts) is a node's ONE info surface; a click
- * is the node's own action (fold/unfold its thread). What remains here
- * is the surface for VERBS:
+ * The hover card (../tooltip.ts) is the brief cut of a node's info; a
+ * click is the node's own action (fold/unfold its thread). Right-click
+ * opens ONE window carrying both the detail cut and the verbs:
  *
- *   * **Right-click a node** → menu: checkout, fork, fork-and-edit
- *     (user turns only), copy id, raw JSON (dag/rendering.md §11).
+ *   * **Right-click a node** → the detail rows (same builder as the
+ *     hover card, ``renderNodeInfo``, so the two can never disagree)
+ *     above the menu: checkout, fork, fork-and-edit (user turns only),
+ *     copy id, raw JSON (dag/rendering.md §11).
  *
  * Every action is an existing operation, reached by its existing
  * route. Nothing here invents a verb:
@@ -30,24 +32,7 @@ import type { GNode } from "../types";
 import { runtimeState } from "../../state";
 import { useSessionStore } from "../../../session-store";
 import { showToast } from "@/lib/format-utils/toast";
-
-/** Rough token count. The graph payload carries no measured count for
- *  user turns, and asking the backend per node for a number that only
- *  has to be indicative would be a request per click. ~4 chars/token is
- *  the standard English approximation; ``llm.input_tokens`` is used
- *  verbatim when the node actually has a measurement. */
-export function _estimateTokens(node: GNode): { n: number; exact: boolean } {
-  const meta = (node.llm || {}) as Record<string, unknown>;
-  const out = meta.output_tokens;
-  if (typeof out === "number" && out > 0) return { n: out, exact: true };
-  const text = _bodyText(node);
-  return { n: Math.max(1, Math.ceil(text.length / 4)), exact: false };
-}
-
-function _bodyText(node: GNode): string {
-  const v = node.preview ?? node.content ?? node.output ?? "";
-  return typeof v === "string" ? v : String(v);
-}
+import { _bodyText, hideTooltip, renderNodeInfo } from "../tooltip";
 
 function _roleLabel(node: GNode, el?: Element): string {
   if (node.display === "root") return "root";
@@ -245,6 +230,19 @@ export function showNodeMenu(node: GNode, el: Element, at: DOMRect): void {
   const menu = document.createElement("div");
   menu.className = "dag-menu";
   menu.addEventListener("click", (e) => e.stopPropagation());
+
+  // The detail cut of the hover card, above the verbs — same row
+  // builder (../tooltip.ts), longer previews plus coverage/context/id.
+  // The hover card would double the same facts under this window, so
+  // it yields.
+  hideTooltip();
+  const info = document.createElement("div");
+  info.className = "dag-menu-info";
+  renderNodeInfo(info, node, el, true);
+  menu.appendChild(info);
+  const infoSep = document.createElement("div");
+  infoSep.className = "dag-menu-sep";
+  menu.appendChild(infoSep);
 
   const id = String(node.id);
   // Only chain-level turns are checkout/fork targets — a

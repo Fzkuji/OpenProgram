@@ -52,13 +52,15 @@ export function drawBadges(
       seen[cur] = true;
       hops++;
       const n: GNode | undefined = tree.byId[cur];
-      if (n && isConvLayer(n)) { node = n; break; }
-      // 不可见/非对话层（折叠的执行节点、被过滤的 attach 尾指针）→ 用
-      // 全量图继续沿链上溯。
       const raw: GNode | undefined = n || fullById[cur];
       // 分支属于一个 spawn 的 agent：它在画布上就是那个三角形，分支
       // 药丸会是同一事实的第二种画法——不立（rendering.md §12）。
+      // 先于对话层判定：spawn 根按 role 是 user，线程展开后它可见，
+      // 后判就会命中 isConvLayer、把 agent 的药丸立在三角形底下。
       if (raw && isSpawnRoot(raw)) return;
+      if (n && isConvLayer(n)) { node = n; break; }
+      // 不可见/非对话层（折叠的执行节点、被过滤的 attach 尾指针）→ 用
+      // 全量图继续沿链上溯。
       cur = raw ? ((raw.predecessor as string) || (raw.caller as string) || undefined) : undefined;
     }
     if (!node) return;

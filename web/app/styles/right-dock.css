@@ -594,9 +594,10 @@
   fill: var(--text-primary);
 }
 
-/* DAG node hover card — the ONE info surface per node
-   (web/lib/runtime-bridge/dag/tooltip.ts): header + every field, one
-   stage. Click is the node's own action; right-click is the menu. */
+/* DAG node hover card — the brief cut of a node's info
+   (web/lib/runtime-bridge/dag/tooltip.ts). The detail cut of the SAME
+   rows lives in the right-click window (.dag-menu-info below). Click
+   is the node's own action. */
 .history-tooltip {
   position: absolute;
   pointer-events: none;
@@ -836,7 +837,26 @@
 
 .dag-menu {
   min-width: 172px;
+  max-width: 300px;
   padding: 5px;
+}
+/* The detail cut of the hover card, at the top of the right-click
+   window (render/inspector.ts). Children reuse the history-tooltip-*
+   row classes — one row builder, one look — with room the fleeting
+   hover card doesn't get: longer previews, more lines. */
+.dag-menu-info {
+  padding: 6px 8px 4px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  width: 280px;
+  max-height: 420px;
+  overflow-y: auto;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.dag-menu-info .history-tooltip-body {
+  max-height: 208px;
+  -webkit-line-clamp: 13;
 }
 .dag-menu-item {
   display: block;

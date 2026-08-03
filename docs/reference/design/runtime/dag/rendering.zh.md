@@ -253,8 +253,9 @@ lane 色；**绝不给某类线固定颜色**。类型只靠线型：
 见第十二节）。
 
 **HEAD 画成实心**：字形自身填上分支色，不是套一圈光环或描边。这个尺寸下光环读
-起来像旁边多了一个更糊的节点，而且是缩小时第一个丢失的东西。实心 HEAD 上的覆盖
-标记是**挖出来的**——别的节点显白点的位置，它显一个背景色的点。
+起来像旁边多了一个更糊的节点，而且是缩小时第一个丢失的东西。HEAD 不带任何覆盖
+标记：它是唯一不可能离开上下文窗口的节点——下一次请求就落在它上面——"在覆盖
+内"的点在这里是同义反复，而且读起来像实心字形里多了一个杂点。
 
 **status 映射**——状态画在节点自己身上，不画独立的虚线占位框：
 
@@ -486,21 +487,23 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier �
 查器——单击因此同时干两件事：弹窗又切换线程，弹窗还正好盖在它刚触发的展开
 上面。
 
-**悬停 → 卡片**。节点唯一的信息面，一次给全：角色（spawn 头标题写
-`子 agent · <名字>`——名字就住在这里，第十二节）、model/tokens、内容预览、
-折叠调用数、覆盖状态、id。token 数字在节点带实测值时用 `llm.output_tokens`，
-没有时用 `chars/4`；卡片明说是哪一种（`tokens` / `tokens（估）`）。覆盖行读
-的是节点绘制时已经戳好的 DOM 标记（`data-ghost`、`data-failed`、
-`.out-of-context`），卡片和它旁边那张图不可能各说各话。悬停稍候出现、移开即
-走；没有二段展开，没有点击弹窗。
+**悬停 → 简略卡**。快速一瞥：角色（spawn 头标题写 `子 agent · <名字>`——
+名字就住在这里，第十二节）、model/tokens、一段短内容预览、折叠调用数。token
+数字在节点带实测值时用 `llm.output_tokens`，没有时用 `chars/4`；卡片明说是
+哪一种（`tokens` / `tokens（估）`）。悬停稍候出现、移开即走。
 
 **单击 → 节点自己的动作**。折叠/展开它的调用线程（第十二节）。没有别的——
 没有窗口和展开抢画面。右栏 Details 仍然静默填充，用户想看随时打开。
 
-**右键 → 菜单**。checkout 到此分支 · 从此节点 fork · fork 并编辑此消息（仅
-用户轮）· 复制节点 id · 查看原始 JSON。动词都住在这里，锚在光标处，因为右键
-是瞄准的，菜单跳到节点边缘会读作没点中。原始 JSON 复用卡片壳而不是弹模态——
-模态会为了给你看图里的一个节点，把图整个拿走。
+**右键 → 详细信息加动词，一个窗口**。和悬停卡同一批行——同一个行构建器
+（`tooltip.ts renderNodeInfo`），两个深度不可能各说各话——但给到全量：所有
+字段、更长的预览、覆盖状态、上下文站位、id。覆盖行读的是节点绘制时已经戳好
+的 DOM 标记（`data-ghost`、`data-failed`、`.out-of-context`），窗口和它旁边
+那张图不可能各说各话。信息行下面是菜单：checkout 到此分支 · 从此节点 fork ·
+fork 并编辑此消息（仅用户轮）· 复制节点 id · 查看原始 JSON。动词锚在光标处，
+因为右键是瞄准的，菜单跳到节点边缘会读作没点中。原始 JSON 复用卡片壳而不是
+弹模态——模态会为了给你看图里的一个节点，把图整个拿走。窗口打开时悬停卡
+让位。
 
 **双击用户轮 → fork 并编辑**。消息文本落进输入框，HEAD 已经退回它的分叉点。
 其他节点保持 checkout 行为——回复和工具结果没有什么可编辑的。
@@ -567,7 +570,7 @@ spawn 的 agent 一个倒三角形——一行一个事件，从上到下按调�
 | 无限画布（平移 / 缩放 / fit / 点阵） | `dag/canvas.ts` 与 `right-dock.css` 的 `.history-body`；视角状态在 `dag/store/globals.ts`；HUD 在 `components/chat/dag-view.tsx` |
 | 第一节 lane / tier / depth 布局 | `dag/layout/geometry.ts::computeGeometry`（链 lane 按 tier 打包并 lane 内归零、前序分行、场景3分叉行+间隔列、线程递归安放）；格点性、无重叠、线程列行、分叉几何均由 `web/scripts/check-dag-subagent.mjs` 真实执行并断言 |
 | 第二节 规则③ 字形占格 | 没有任何形状按文字定尺寸，画布上除肩上折叠数与胶囊注记外没有文字 |
-| 第四节 HEAD 实心、无光环 | `render/nodes.ts` 把 `isHead` 作为 `_buildShapeEl` 的 `solid` 传入；覆盖点从实心里挖出；`right-dock.css` 已无 `.is-head` 光晕；HEAD 指向已归并回复时落到锚上（`pipeline.ts` 经 `threadModel.anchorOf`） |
+| 第四节 HEAD 实心、无光环 | `render/nodes.ts` 把 `isHead` 作为 `_buildShapeEl` 的 `solid` 传入；HEAD 不画覆盖点（它不可能离开上下文）；`right-dock.css` 已无 `.is-head` 光晕；HEAD 指向已归并回复时落到锚上（`pipeline.ts` 经 `threadModel.anchorOf`） |
 | 第〇节/第十二节 调用线程聚合 | `passes/thread.ts`（`buildThreadModel`：锚归并、事件归属、递归可见性）；`render/nodes.ts` 画肩上折叠数（`history-thread-count`）；`store/globals.ts` 的 `_threadOpen` |
 | 规则②推论（不画占位框） | `shapes.ts`：无 `square_outline`；task 渲染为普通方块 |
 | 第四节 状态画在描边上 | `graph_builder` 下发 status；`nodes.ts` 画描边（running 虚线呼吸 / error 红+! / cancelled 灰化） |
@@ -584,7 +587,7 @@ spawn 的 agent 一个倒三角形——一行一个事件，从上到下按调�
 | 第九节 胶囊形状 | `shapes.ts` 的 `capsule`（按 `covers_ids` 判定，打 `data-shape` 标让 `_applyShapeSize` 别改它的几何） |
 | 第九节 折叠 / 褶皱 / 幽灵 | `passes/fold-summaries.ts`（折叠）、`render/nodes.ts`（褶皱、`已压缩 · N 轮` 注记、幽灵描边）、`render/edges.ts`（幽灵虚线边）、`store/globals.ts` 的 `_summaryExpanded`；由 `web/scripts/check-dag-summary.mjs` 实跑 |
 | 第十节 失败留档 | `render/nodes.ts::_isArchivedFailure`——`status=error` **且**离开 HEAD 链；灰覆盖第四节的红 |
-| 第十一节 悬停卡片 / 菜单 / fork 并编辑 | 唯一的悬停卡片在 `dag/tooltip.ts`（单段，覆盖/调用数读 DOM 标记）；菜单与原始 JSON 在 `render/inspector.ts`，`render/interaction.ts` 接线；动作走 `POST /api/chat/checkout` |
+| 第十一节 悬停卡片 / 菜单 / fork 并编辑 | 简略/详细两个深度共用 `dag/tooltip.ts renderNodeInfo`（覆盖/调用数读 DOM 标记）；详细信息领在右键窗口顶部，`render/inspector.ts` 实现、`render/interaction.ts` 接线；动作走 `POST /api/chat/checkout` |
 | 第十一节 图例 | `components/chat/dag-view.tsx` 的 `DagLegend`（挂在画布 HUD 里），`right-dock.css` 的 `.dag-legend` |
 | 第十二节 调用线程 + agent 头 | `shapes.ts` `agent_head`（倒三角形）、`passes/thread.ts`（模型）、`layout/geometry.ts`（递归安放）、`render/edges.ts`（线程点线、中心连线、场景3横桥）、`render/nodes.ts`（`data-thread*`、肩上折叠数）、`render/interaction.ts`（`toggleThreadOpen`）；由 `web/scripts/check-dag-subagent.mjs` 实跑 |
 | 第十二节 名字上线 | `task/runner.py::_update_attach_card` 从 task 戳出 `attach.label`；`ws_actions/session.py::_annotate_spawn_origin` 把它带到 spawn 根的 `spawned_from.label`；测试见 `tests/unit/test_task_attach_integration.py` |
