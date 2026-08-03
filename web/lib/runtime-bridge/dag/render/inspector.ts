@@ -249,10 +249,13 @@ export function showNodeMenu(node: GNode, el: Element): void {
     if (node.role === "user" && node.display !== "root") {
       menu.appendChild(_menuItem("fork 并编辑此消息", () => { void forkAndEditNode(node); }));
     }
+    // This separator divides the chain verbs from the generic ones —
+    // with no chain verbs above it, it would stack against the card's
+    // own info/verbs divider as a doubled line.
+    const sep = document.createElement("div");
+    sep.className = "dag-menu-sep";
+    menu.appendChild(sep);
   }
-  const sep = document.createElement("div");
-  sep.className = "dag-menu-sep";
-  menu.appendChild(sep);
   menu.appendChild(_menuItem("复制节点 id", () => {
     _copy(id, "已复制节点 id");
   }, true));
