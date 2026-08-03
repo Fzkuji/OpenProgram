@@ -379,8 +379,10 @@ assert.match(
 );
 assert.match(
   shapesSrc,
-  /fill: solid \? color : "transparent"/,
-  "the solid fill is the branch colour, not a separate accent",
+  /fill: solid \? color : "var\(--bg-primary/,
+  "solid = branch colour; hollow = the CANVAS colour, never transparent "
+  + "— edges are drawn centre to centre and the fill is what buries the "
+  + "line ends inside the outline",
 );
 assert.match(
   readFileSync(new URL("../lib/runtime-bridge/dag/render/visibility.ts",

@@ -127,7 +127,7 @@ export function drawNodes(
       });
     g.appendChild(hit);
     (g as SVGGraphicsElement).style.cursor = "pointer";
-    const r = NODE_R + 1.8;
+    const r = NODE_R + 3;
     // HEAD is drawn solid (§4): where you are standing, said with weight
     // rather than with a halo ring around the glyph.
     const el = _buildShapeEl(_shapeFor(node), color, r, isHead);
@@ -144,7 +144,7 @@ export function drawNodes(
       g.appendChild(_svg("circle", {
         r: String(NODE_R * 0.55),
         cy: node.role === "assistant" && !node.function ? "1.5" : "0",
-        fill: "var(--bg-secondary, #1a1a1a)",
+        fill: "var(--bg-primary, #262624)",
         "pointer-events": "none",
       }));
     }

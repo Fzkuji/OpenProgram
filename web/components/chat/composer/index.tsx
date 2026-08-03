@@ -645,6 +645,9 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         <StatusChip owningId={bound === null} />
         <ProjectBadge />
         <WorkingDirChips />
+        {/* DAG 视角的画布控件（Fit / 缩放 / 图例）从 dag-view.tsx
+            portal 进来，落在输入框右上角——env chip 行的右端。 */}
+        <div id="dagHudSlot" className={styles.dagHudSlot} />
       </div>
       {/* composerStack wraps {slashClip, inputWrapper} so the slash
           menu's vertical anchor is the wrapper's top edge — not a

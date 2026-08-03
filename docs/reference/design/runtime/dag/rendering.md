@@ -76,11 +76,14 @@ and zoom live in `store/globals` keyed by session, and only arriving at a
 different session re-fits. Resizing the pane never re-fits — the user's angle on
 the graph is theirs to keep.
 
-**HUD.** Bottom-right, above the composer, chip-sized like the composer's own env
-chips: a fit button, the zoom percentage, and the legend popover. The zoom
+**HUD.** At the composer's TOP-RIGHT — the right end of its env-chip row,
+chip-sized like the chips beside it: a fit button, the zoom percentage, and
+the legend popover. It is portaled into the composer's `#dagHudSlot`
+(`dag-view.tsx`), so it rides the composer wherever it sits and however tall
+it grows, and renders only while the DAG perspective is showing. The zoom
 readout is written imperatively by `canvas.ts` on every view change, because
-routing a gesture's every wheel event through React state would repaint the tree
-sixty times a second.
+routing a gesture's every wheel event through React state would repaint the
+tree sixty times a second.
 
 | Piece | Where |
 |---|---|

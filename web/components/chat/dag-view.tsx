@@ -35,6 +35,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Maximize2, Shapes } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
@@ -134,16 +135,39 @@ function DagLegend() {
   );
 }
 
-/** Canvas controls, bottom-right above the composer: fit the graph back
- *  into view, read the current zoom, open the legend. Chip-sized, like
- *  the composer's own env chips, because they belong to the surface
- *  rather than to the graph. The zoom readout is written by
- *  `dag/canvas.ts` on every view change — it is the camera's number, and
- *  routing it through React state would repaint the tree on every wheel
- *  event of a gesture. */
-function DagHud() {
+/** Canvas controls at the composer's TOP-RIGHT — the right end of its
+ *  env-chip row: fit the graph back into view, read the current zoom,
+ *  open the legend. Chip-sized like the env chips beside them, portaled
+ *  into the composer's `#dagHudSlot` so they ride the composer wherever
+ *  it sits and however tall it grows. Rendered only while the DAG
+ *  perspective is showing — the slot stays an empty div in chat. The
+ *  zoom readout is written by `dag/canvas.ts` on every view change — it
+ *  is the camera's number, and routing it through React state would
+ *  repaint the tree on every wheel event of a gesture. */
+function DagHud({ active }: { active: boolean }) {
   const { text } = useTranslation();
-  return (
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  // The slot lives in the composer, which may mount after this view (and
+  // may be replaced on a session switch) — poll a few frames until it is
+  // there, and re-find whenever the one we hold left the document.
+  useEffect(() => {
+    if (!active) return;
+    if (slot && slot.isConnected) return;
+    let raf = 0;
+    let tries = 0;
+    const find = (): void => {
+      const el = document.getElementById("dagHudSlot");
+      if (el) {
+        setSlot(el);
+      } else if (tries++ < 120) {
+        raf = requestAnimationFrame(find);
+      }
+    };
+    find();
+    return () => cancelAnimationFrame(raf);
+  }, [active, slot]);
+  if (!active || !slot || !slot.isConnected) return null;
+  return createPortal(
     <div className="dag-hud">
       <button
         type="button"
@@ -156,7 +180,8 @@ function DagHud() {
       </button>
       <span className="dag-hud-chip dag-hud-zoom">100%</span>
       <DagLegend />
-    </div>
+    </div>,
+    slot,
   );
 }
 
@@ -175,7 +200,7 @@ export function DagView({ visible }: { visible: boolean }) {
           （render/badges.ts），点非活动分支即 checkout。页面顶部不再
           放分支条——那条横线会横穿右上角的悬浮视角按钮。 */}
       <div className="history-body"></div>
-      <DagHud />
+      <DagHud active={visible} />
     </div>
   );
 }

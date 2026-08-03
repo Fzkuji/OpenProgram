@@ -88,11 +88,12 @@ export function applyView(): void {
   host.style.backgroundSize = `${pitch}px ${pitch}px`;
   // The dot radius rides the zoom too: fixed at 1.2px it vanishes into
   // a 100px tile when zoomed in. Clamped so zoomed-out views don't
-  // dissolve into noise.
+  // dissolve into noise. The colour is the theme's own hairline — a
+  // hardcoded white was invisible on light themes.
   const dotR = Math.min(3, Math.max(1, 1.2 * _viewScale)).toFixed(2);
   host.style.backgroundImage =
-    `radial-gradient(rgba(255, 255, 255, 0.055) ${dotR}px, `
-    + `transparent ${dotR}px)`;
+    `radial-gradient(var(--border-light, rgba(255, 255, 255, 0.10)) `
+    + `${dotR}px, transparent ${dotR}px)`;
   const pct = document.querySelector<HTMLElement>(".dag-hud-zoom");
   if (pct) pct.textContent = Math.round(_viewScale * 100) + "%";
 }

@@ -46,7 +46,12 @@ export function _applyVisibility(nodeEl: Element, visible: boolean): void {
     // it left the context window, which is the one node that can't.
     // Its coverage dot is drawn separately, on top, by ``nodes.ts``.
     if (shape.getAttribute("data-solid") === "1") return;
-    shape.setAttribute("fill", visible ? "#ffffff" : "transparent");
+    // Hollow = the canvas colour, never transparent: the fill is what
+    // buries the centre-to-centre edge ends inside the outline
+    // (shapes.ts) — transparent would show a phantom dot of line cap
+    // at the glyph's centre.
+    shape.setAttribute(
+      "fill", visible ? "#ffffff" : "var(--bg-primary, #262624)");
   }
 }
 

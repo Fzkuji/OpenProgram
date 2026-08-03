@@ -503,6 +503,15 @@
 .envChips::-webkit-scrollbar { display: none; }
 .envChips > * { flex-shrink: 0; }
 
+/* DAG 画布控件的落点：env chip 行右端（输入框右上角）。内容由
+   dag-view.tsx 在 DAG 视角时 portal 进来，聊天视角下是空 div、
+   不占宽。 */
+.dagHudSlot {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
 /* Tone-class variants (.connecting / .disconnected / .paused) are
    listed explicitly so this beats chat.css's tinted chip rules on
    specificity, independent of stylesheet order. The connection tone

@@ -90,7 +90,7 @@ export function _shapeFor(node: GNode): string {
 }
 
 export function _applyShapeSize(shape: SVGElement): void {
-  const R = NODE_R + 1.8;
+  const R = NODE_R + 3;
   if (shape.tagName === "circle") {
     shape.setAttribute("r", String(R));
   } else if (shape.tagName === "polygon") {
@@ -100,11 +100,12 @@ export function _applyShapeSize(shape: SVGElement): void {
     shape.setAttribute("points",
       _regularPolygon(3, R * TRI_SCALE, flip ? Math.PI / 2 : -Math.PI / 2));
   } else if (shape.tagName === "rect") {
-    // The capsule is a rect too, but a wide one — re-squaring it here
-    // (this runs on every white-fill flip) would snap it back to a
-    // square the moment coverage changed. Its own geometry is set once,
-    // at build time, and marked so this pass leaves it alone.
-    if (shape.getAttribute("data-shape") === "capsule") return;
+    // The capsule and the ROOT diamond are rects too, with their own
+    // geometry set once at build time — re-squaring them here (this
+    // runs on every white-fill flip) would deform them the moment
+    // coverage changed. Marked, so this pass leaves them alone.
+    const ds = shape.getAttribute("data-shape");
+    if (ds === "capsule" || ds === "diamond") return;
     const s = R * SQR_SCALE;
     shape.setAttribute("x", String(-s));
     shape.setAttribute("y", String(-s));
@@ -115,8 +116,8 @@ export function _applyShapeSize(shape: SVGElement): void {
 
 // Capsule half-extents. Wide enough to read as a different shape from
 // the square at a glance, short enough to sit on one grid row.
-export const CAPSULE_HW = (NODE_R + 1.8) * 2.1;
-export const CAPSULE_HH = (NODE_R + 1.8) * 0.86;
+export const CAPSULE_HW = (NODE_R + 3) * 2.1;
+export const CAPSULE_HH = (NODE_R + 3) * 0.86;
 
 // 量文字实际像素宽（复用一个 canvas）。按 label.length*6 估对中文
 // （字宽≈字号）严重低估，背景比文字短、文字溢出，实测才中英文都贴合。
@@ -140,9 +141,9 @@ export function _textWidth(s: string, font: string): number {
 //   diamond:  same as square, rotated 45°
 // This gives a balanced look: each shape's edges sit near the circle
 // boundary, with corners slightly outside.
-const STROKE_W = 3.0;
+const STROKE_W = 2.2;
 const TRI_SCALE = 1.35;
-const SQR_SCALE = 1.0;
+const SQR_SCALE = 0.75;
 
 /** ``solid`` fills the glyph with its branch colour instead of leaving
  *  it hollow. That is what HEAD looks like (§4): the one node you are
@@ -155,8 +156,12 @@ export function _buildShapeEl(
   r: number,
   solid?: boolean,
 ): SVGElement | null {
+  // Hollow glyphs fill with the CANVAS colour, not transparent: edges
+  // are drawn centre to centre (render/edges.ts), and it is this fill
+  // that buries the line ends inside the outline. A transparent glyph
+  // shows the line's round cap as a phantom dot at its own centre.
   const common = {
-    fill: solid ? color : "transparent",
+    fill: solid ? color : "var(--bg-primary, #262624)",
     stroke: color,
     "stroke-width": String(STROKE_W),
   };
@@ -170,7 +175,7 @@ export function _buildShapeEl(
     const s = r * SQR_SCALE;
     return _svg("rect", {
       x: -s, y: -s, width: s * 2, height: s * 2,
-      rx: 0, ry: 0, ...common,
+      rx: 2, ry: 2, ...common,
     });
   } else if (shape === "capsule") {
     // Compaction summary (dag/rendering.md §9): a rounded box on the
@@ -200,20 +205,21 @@ export function _buildShapeEl(
     g.appendChild(_svg("circle", { r, fill: color }));
     g.appendChild(_svg("circle", {
       r: r * 0.42,
-      fill: "var(--bg-secondary, #1a1a1a)",
+      fill: "var(--bg-primary, #262624)",
     }));
     return g;
   } else if (shape === "diamond") {
-    const s = r * SQR_SCALE;
-    // ROOT diamond is filled (white) — it's the session anchor, drawn
-    // solid so it reads as the root, not just another outline node.
+    // ROOT diamond: hollow like every other glyph — the anchor is said
+    // by the shape, and a hardcoded white fill was invisible on light
+    // themes anyway.
+    const s = r;
     return _svg("rect", {
       x: -s, y: -s, width: s * 2, height: s * 2,
-      rx: 0.6, ry: 0.6,
+      rx: 2.5, ry: 2.5,
       transform: "rotate(45)",
       "stroke-linejoin": "round",
+      "data-shape": "diamond",
       ...common,
-      fill: "#ffffff",
     });
   }
   return null;

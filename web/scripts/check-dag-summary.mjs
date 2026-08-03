@@ -137,8 +137,9 @@ assert.match(
 );
 assert.match(
   shapesSrc,
-  /if \(shape\.getAttribute\("data-shape"\) === "capsule"\) return;/,
-  "_applyShapeSize must skip the capsule or a coverage flip re-squares it",
+  /ds === "capsule" \|\| ds === "diamond"\) return;/,
+  "_applyShapeSize must skip the capsule (and the ROOT diamond) or a "
+  + "coverage flip re-squares them",
 );
 assert.match(
   nodesSrc,

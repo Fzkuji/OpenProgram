@@ -465,12 +465,13 @@
   position: relative;
   touch-action: none;
   cursor: grab;
-  /* The app's palette is dark regardless of the OS scheme (base.css sets
-     it at :root), so the lattice colour is fixed too — keying it on
-     prefers-color-scheme painted black dots on the dark background for
-     light-OS users, i.e. no dots at all. */
+  /* Lattice colour = the theme's own hairline. A hardcoded white was
+     invisible the moment a light theme was active. canvas.ts rewrites
+     this on every view change (dot radius rides the zoom); this static
+     value only covers the first paint. */
   background-image: radial-gradient(
-    rgba(255, 255, 255, 0.055) 1.2px, transparent 1.2px);
+    var(--border-light, rgba(255, 255, 255, 0.10)) 1.2px,
+    transparent 1.2px);
 }
 .history-body.is-panning { cursor: grabbing; }
 .history-empty,
@@ -878,16 +879,11 @@
    floats over the canvas rather than taking a strip of it, and starts
    collapsed to a single button — the shapes are learnable, so the
    legend is for the first few sessions, not every one. */
-/* Canvas HUD — fit, zoom readout, legend. Bottom-right, clear of the
-   composer, chip-sized so it reads as part of the surface rather than
-   as a toolbar the graph has to make room for. */
+/* Canvas HUD — fit, zoom readout, legend. Lives at the composer's
+   top-right: portaled into the env-chip row's right end
+   (composer .dagHudSlot), so it rides the composer and needs no
+   positioning of its own. */
 .dag-hud {
-  position: absolute;
-  right: 16px;
-  /* Clear of the floating composer (chat.css anchors it bottom: 0 with
-     its own env-chip row above the input box). */
-  bottom: 150px;
-  z-index: 4;
   display: flex;
   align-items: center;
   gap: 6px;
