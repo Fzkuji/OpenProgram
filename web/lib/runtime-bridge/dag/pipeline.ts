@@ -31,12 +31,7 @@
 import { type GNode } from "./types";
 import { runtimeState } from "../state";
 import { computeGeometry } from "./layout/geometry";
-import {
-  _branchColor,
-  _svg,
-  agentCaption,
-  agentCaptionReach,
-} from "./shapes";
+import { _branchColor, _svg } from "./shapes";
 import { attachCanvas, detachCanvas } from "./canvas";
 import {
   hideTooltip as _hideTooltip,
@@ -46,9 +41,8 @@ import {
 import { _collapseRuntimePairs } from "./passes/collapse-runtime-pairs";
 import { _mergeRuns } from "./passes/merge-runs";
 import { _demoteDecorationCards } from "./passes/demote-decoration-cards";
-import { _applyCollapse } from "./passes/apply-collapse";
 import { _foldSummaries } from "./passes/fold-summaries";
-import { _foldSpawnBranches } from "./passes/fold-spawn-branches";
+import { buildThreadModel } from "./passes/thread";
 import { _buildTree } from "./layout/build-tree";
 import { _assignDepth } from "./layout/depth";
 import { _assignLanes, _headAncestors } from "./layout/assign-lanes";
@@ -61,14 +55,11 @@ import { drawNodes } from "./render/nodes";
 import { drawBadges } from "./render/badges";
 import { drawEdges } from "./render/edges";
 import {
-  _collapsed,
   _contextSet,
   _coverageSet,
   _currentHead,
-  _lastGraph,
-  _lastHeadId,
   _lastSignature,
-  _spawnExpanded,
+  _threadSession,
   setCurrentHead,
   setHeadAncestorSet,
   setInternalOwner,
@@ -76,6 +67,8 @@ import {
   setLastSignature,
   setLeafOfNode,
   setParentOf,
+  setThreadOpen,
+  setThreadSession,
   setVisibleIds,
 } from "./store/globals";
 
@@ -139,22 +132,32 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   const preCollapseLanes = _assignLanes(preCollapseTree.byId, headId);
   const stableLeafOfNode = preCollapseLanes.leafOfNode;
 
-  const cinfo = _applyCollapse(graph);
-  graph = cinfo.visible;
-
   // Compaction capsules fold the range they cover (dag/rendering.md §9).
-  // After ``_applyCollapse`` so the two filters compose rather than
-  // fight: a covered turn that also carries an execution subtree is
-  // gone either way, and the counts stay each pass's own business.
   const sfold = _foldSummaries(graph);
   graph = sfold.visible;
 
-  // A sub-agent's branch folds behind its spawn root the same way
-  // (dag/rendering.md §12). After the compaction fold so the two compose:
-  // each pass owns one kind of elision and neither has to know the other
-  // ran.
-  const spfold = _foldSpawnBranches(graph, headId);
-  graph = spfold.visible;
+  // The call-thread model (dag/rendering.md §12): followup replies and
+  // agent-internal turns merge into their anchors, execution nodes and
+  // spawn heads become each anchor's time-ordered thread, and only the
+  // open threads' items stay in the visible graph. View state resets
+  // with the session, same as every other fold.
+  {
+    const sid = runtimeState.currentSessionId;
+    if (sid !== _threadSession) {
+      setThreadOpen(Object.create(null));
+      setThreadSession(sid);
+    }
+  }
+  const threadModel = buildThreadModel(graph);
+  graph = threadModel.visible;
+
+  // HEAD may point at a reply that merged into its anchor (a followup,
+  // or a turn inside an agent). The solid glyph then lands on the
+  // anchor — the node that stands for it on the canvas.
+  if (headId && !graph.some((m) => m.id === headId)) {
+    const a = threadModel.anchorOf(headId);
+    if (graph.some((m) => m.id === a)) headId = a;
+  }
 
   // attach 指针节点不画（rendering.md 场景 8/10）：它是"head 在哪"
   // 的数据锚点，留在对话链尾，viewport 里只画回流虚线，不占格。只过滤
@@ -276,21 +279,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   const fullById: Record<string, GNode> = Object.create(null);
   graphIn.forEach((m) => { fullById[m.id] = m; });
 
-  // A sub-agent head's caption runs right of its dot, and the layout has
-  // to know how far before it places anything: the head needs a row of
-  // its own and its lane needs columns for the ink. Measure the same
-  // caption the drawer renders and stamp its reach on the node, so the
-  // layout and the glyph read one number (dag/rendering.md §12).
-  Object.keys(tree.byId).forEach((id) => {
-    const branch = spfold.branchOf[id];
-    if (!branch) return;
-    const cap = agentCaption(
-      spfold.nameOf[id] || "", branch.length, !!_spawnExpanded[id]);
-    (tree.byId[id] as Record<string, unknown>)._spawnHW =
-      Math.ceil(agentCaptionReach(cap));
-  });
-
-  const geom = computeGeometry(tree.byId);
+  const geom = computeGeometry(tree.byId, threadModel);
 
   // The SVG fills the pane; everything is drawn inside ``world``, which
   // carries the user's pan and zoom (``./canvas.ts``). Nothing here is
@@ -311,11 +300,11 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     return geom.pos[n.id] || { x: 0, y: 0 };
   }
 
-  drawEdges(edgeG, tree, graphIn, pos, stableLeafOfNode);
+  drawEdges(edgeG, tree, graphIn, pos, stableLeafOfNode, geom);
 
   drawNodes(nodeG, tree, pos, headId, headAncestors, stableLeafOfNode,
-    cinfo, _collapsed, internalSet, internalOwner, _contextSet, _coverageSet,
-    sfold.coversOf, spfold);
+    internalSet, internalOwner, _contextSet, _coverageSet,
+    sfold.coversOf, threadModel);
 
   drawBadges(world, tree, pos, stableLeafOfNode, runtimeState.currentSessionId,
     fullById);

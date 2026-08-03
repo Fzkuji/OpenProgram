@@ -172,8 +172,9 @@ assert.match(
 );
 assert.match(
   pipelineSrc,
-  /_applyCollapse\(graph\)[\s\S]{0,400}_foldSummaries\(graph\)/,
-  "summaries fold AFTER the execution-subtree collapse so the two compose",
+  /_foldSummaries\(graph\)[\s\S]{0,900}buildThreadModel\(graph\)/,
+  "summaries fold BEFORE the thread pass so the two compose: a covered "
+  + "turn is gone before threads attribute events to anchors",
 );
 
 /* ---- 3. interactions ---- */

@@ -24,15 +24,14 @@ import type { GNode } from "../types";
 import { getSocket, runtimeState } from "../../state";
 import { useSessionStore, type DetailNode } from "../../../session-store";
 import {
-  _collapsed,
   _currentHead,
   _headAncestorSet,
   _lastGraph,
   _lastHeadId,
   _leafOfNode,
   setLastSignature,
-  toggleSpawnExpanded,
   toggleSummaryExpanded,
+  toggleThreadOpen,
 } from "../store/globals";
 import {
   closeNodeLayers,
@@ -183,29 +182,20 @@ export function _installInteractionHandlers(rerender: () => void): void {
       }
       return;
     }
-    // A sub-agent capsule's click is its fold (dag/rendering.md §12) —
-    // same precedence and same repaint as the compaction capsule above.
-    if (g.getAttribute("data-spawn")) {
-      toggleSpawnExpanded(id);
+    // A node with a call thread folds and unfolds it (dag/rendering.md
+    // §12) — chain turn or spawn head, one vocabulary, recursive.
+    if (g.getAttribute("data-thread")) {
+      toggleThreadOpen(id);
       if (_lastGraph) {
         setLastSignature(null);
         rerender();
       }
       return;
     }
-    if (g.getAttribute("data-internal") === "1"
-        && g.getAttribute("data-collapsible") !== "1") {
+    if (g.getAttribute("data-internal") === "1") {
       const owner = g.getAttribute("data-owner");
       if (owner) _scrollChatTo(owner);
       return;
-    }
-    if (g.getAttribute("data-collapsible") === "1") {
-      if (_collapsed[id]) delete _collapsed[id];
-      else _collapsed[id] = true;
-      if (_lastGraph) {
-        setLastSignature(null);
-        rerender();
-      }
     }
   });
 

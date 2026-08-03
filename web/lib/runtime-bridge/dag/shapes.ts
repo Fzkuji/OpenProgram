@@ -60,14 +60,14 @@ export function _shapeFor(node: GNode): string {
   if (Array.isArray((node as Record<string, unknown>).covers_ids)) {
     return "capsule";
   }
-  // Sub-agent branch root → a double ring, small (dag/rendering.md §12).
-  // Not a shape from the role vocabulary at all: what hangs off it is
-  // another agent's whole conversation, and a glyph that reads as one of
-  // this chain's turns would say the opposite. The name rides beside it
-  // as a caption, so the mark itself stays a point on the grid.
+  // Sub-agent head → an INVERTED triangle (dag/rendering.md §12): still
+  // the agent vocabulary — a triangle — flipped to say "an agent this
+  // one derived", one glance apart from the chain's own upright turns.
+  // No caption: the name lives in the tooltip and inspector, the canvas
+  // carries only the glyph and its fold count.
   if ((node as Record<string, unknown>).source === "agent_spawn"
       && !node.predecessor) {
-    return "agent_dot";
+    return "agent_head";
   }
   const role = node.role;
   const fn = node.function;
@@ -94,7 +94,11 @@ export function _applyShapeSize(shape: SVGElement): void {
   if (shape.tagName === "circle") {
     shape.setAttribute("r", String(R));
   } else if (shape.tagName === "polygon") {
-    shape.setAttribute("points", _regularPolygon(3, R * TRI_SCALE, -Math.PI / 2));
+    // The sub-agent head points DOWN; re-pointing it upright on a
+    // white-fill flip would silently turn it into a chain turn.
+    const flip = shape.getAttribute("data-shape") === "agent_head";
+    shape.setAttribute("points",
+      _regularPolygon(3, R * TRI_SCALE, flip ? Math.PI / 2 : -Math.PI / 2));
   } else if (shape.tagName === "rect") {
     // The capsule is a rect too, but a wide one — re-squaring it here
     // (this runs on every white-fill flip) would snap it back to a
@@ -114,27 +118,10 @@ export function _applyShapeSize(shape: SVGElement): void {
 export const CAPSULE_HW = (NODE_R + 1.8) * 2.1;
 export const CAPSULE_HH = (NODE_R + 1.8) * 0.86;
 
-// ── Sub-agent mark: a double ring, with its name beside it (§12) ─────
-// The head of a spawned agent's chain. Small on purpose: the thing that
-// matters about it is WHOSE chain it heads, and that is what the caption
-// says. Sizing a glyph to its own label is what the pill this replaced
-// did, and it made the layout answer to text metrics — two names a lane
-// apart printed through each other, and the pass that stopped them had
-// to move whole lanes around to do it. A point on the grid has no width
-// to collide with.
-/** Outer ring radius. */
-export const AGENT_DOT_R = 7;
-/** Inner ring radius — the second circle is what says "another agent's
- *  chain" rather than "a node of this one". */
-export const AGENT_DOT_INNER_R = 3.2;
-/** Where the caption starts, right of the dot's centre. */
-export const AGENT_CAPTION_DX = 14;
-/** Names longer than this are ellipsised: a caption is a label, not a
- *  paragraph laid across the branch beside it. */
-const AGENT_NAME_MAX_TEXT = 190;
-
 // 量文字实际像素宽（复用一个 canvas）。按 label.length*6 估对中文
 // （字宽≈字号）严重低估，背景比文字短、文字溢出，实测才中英文都贴合。
+// 注意 canvas 的 ctx.font 不认 CSS 变量——含 var() 的整串会被拒收，
+// 静默退回默认 "10px sans-serif"，所以调用方必须写死字体栈。
 let _measureCtx: CanvasRenderingContext2D | null = null;
 export function _textWidth(s: string, font: string): number {
   if (typeof document === "undefined") return s.length * 8;
@@ -144,45 +131,6 @@ export function _textWidth(s: string, font: string): number {
   if (!_measureCtx) return s.length * 8; // 拿不到 canvas 时保守按 8px/字
   _measureCtx.font = font;
   return _measureCtx.measureText(s).width;
-}
-
-// canvas 的 ctx.font 不认 CSS 变量——含 var() 的整串会被拒收，静默退回
-// 默认 "10px sans-serif"。这里写死与 --font-sans 相同的字体栈，量的才是
-// 真正渲染的 Inter。
-const AGENT_FONT =
-  '400 10px "Inter Variable", "Inter", -apple-system, "PingFang SC", sans-serif';
-
-/** The caption beside a sub-agent's dot: its name, and the size of the
- *  chain behind it when that chain is folded away.
- *
- *  Expanded there is no count — the turns are on screen and countable.
- *  Folded there is, because the dot alone would not say how much it
- *  stands for. */
-export function agentCaption(
-  name: string,
-  count: number,
-  open: boolean,
-): string {
-  const nm = name || "sub-agent";
-  return !open && count ? `${nm} (${count})` : nm;
-}
-
-/** ``caption`` truncated with an ellipsis so it stays a label. */
-export function agentCaptionText(caption: string): string {
-  if (_textWidth(caption, AGENT_FONT) <= AGENT_NAME_MAX_TEXT) return caption;
-  let s = caption;
-  while (s.length > 1
-    && _textWidth(s + "…", AGENT_FONT) > AGENT_NAME_MAX_TEXT) {
-    s = s.slice(0, -1);
-  }
-  return s + "…";
-}
-
-/** How far the caption's ink reaches right of the dot's centre. The
- *  canvas is sized from it; nothing in the layout is. */
-export function agentCaptionReach(caption: string): number {
-  return AGENT_CAPTION_DX
-    + Math.min(_textWidth(caption, AGENT_FONT), AGENT_NAME_MAX_TEXT);
 }
 
 // Shape sizing: all shapes share the same reference circle of radius R.
@@ -236,25 +184,15 @@ export function _buildShapeEl(
       "data-shape": "capsule",
       ...common,
     });
-  } else if (shape === "agent_dot") {
-    // Sub-agent head (dag/rendering.md §12): two concentric rings, and
-    // nothing else. The name is a caption the drawer hangs beside it,
-    // not part of the glyph, so this mark occupies exactly one grid
-    // point however long the agent's name is.
-    const g = _svg("g");
-    g.appendChild(_svg("circle", {
-      r: AGENT_DOT_R,
-      fill: solid ? color : "transparent",
-      stroke: color,
-      "stroke-width": "2",
-    }));
-    g.appendChild(_svg("circle", {
-      r: AGENT_DOT_INNER_R,
-      fill: "none", stroke: solid ? "var(--bg-secondary, #1a1a1a)" : color,
-      "stroke-width": "1.2",
-      "stroke-opacity": "0.8",
-    }));
-    return g;
+  } else if (shape === "agent_head") {
+    // Sub-agent head (dag/rendering.md §12): the triangle vocabulary,
+    // point-down — a derived agent. Occupies one grid point; no caption.
+    const pts = _regularPolygon(3, r * TRI_SCALE, Math.PI / 2);
+    return _svg("polygon", {
+      points: pts, "stroke-linejoin": "round",
+      "data-shape": "agent_head",
+      ...common,
+    });
   } else if (shape === "merge_dot") {
     // ◉ 实心带孔圆（rendering.md 第四节图例）：外圈实心 + 中心
     // 挖孔，读作"多条分支在此汇为一点"。

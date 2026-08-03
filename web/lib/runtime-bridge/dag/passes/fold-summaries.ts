@@ -12,8 +12,8 @@
  * persisted: it says how you are looking at the graph, not what the
  * graph is.
  *
- * Folding here rather than in ``apply-collapse`` keeps the two apart on
- * purpose. ``_collapsed`` hides an *execution subtree* under its
+ * Folding here rather than in the thread pass keeps the two apart on
+ * purpose. The call thread hides an *execution sequence* under its
  * conversation node — a caller-edge relationship. A covered range is a
  * span of the conversation chain itself, so hiding it must not disturb
  * the chain: the summary's own ``predecessor`` already points where the

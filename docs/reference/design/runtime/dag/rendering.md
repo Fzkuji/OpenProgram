@@ -67,7 +67,8 @@ and zoom and offset so a dot's centre sits under every node anchor (the layout
 pads its origin by `PAD_X` / `PAD_Y`; the lattice backs up half a tile from that
 pad). A node visibly sits on a dot — and drifting off one is a bug anyone can
 see without reading the layout code. The fit rounds its translation to whole
-pixels for exactly this reason.
+pixels for exactly this reason. The dot radius rides the zoom too (clamped
+1–3px): fixed at 1.2px it vanishes into a zoomed-in tile.
 
 **View state survives re-renders.** The graph repaints on every capture; moving
 the camera each time would drag the view around while the user is reading. Pan
@@ -134,23 +135,35 @@ A session graph has two kinds of node, an order of magnitude apart in count:
 | **Conversation layer** | ROOT, user, llm replies, spawn branch roots, merge, **manually-invoked top-level function nodes** (the user's explicit action — the code node behind a fn-form/run card) | What shape the session has: how many turns, how many branches, who spawned whom | single digits ~ dozens |
 | **Execution layer** | code (tool call) and its internal sub-calls | What one turn did internally | can reach dozens in a single turn |
 
-**Default visibility rule: the Viewport lays out only the conversation layer.** If an
-llm node has an execution subtree (code nodes hanging off it via `caller`), it is
-collapsed into a `⚒N` count badge next to the node (N = direct + transitive
-sub-calls). Click the badge and that turn's execution subtree expands and enters
-layout; click again to collapse. Expansion state is remembered per node and cleared
-when switching sessions.
+**Default visibility rule: the Viewport lays out only the conversation layer.**
+Everything a turn *did* — every function call, every agent it spawned — is that
+turn's **call thread** (§12): folded into a count on the node's shoulder by
+default, opened by clicking the node into a column of real nodes beside it.
+
+Two merges keep the chain at user-visible granularity — **one triangle = one
+reply and everything the model did until the next user message**:
+
+* a `task_followup` reply (the turn an agent's return triggers) is not a chain
+  node. A function's return gets no new node when the model keeps talking, and
+  an agent's return is the same event at a different scale — the reply merges
+  into its **anchor**, found by climbing `predecessor` past every followup.
+  A side effect worth naming: legacy data whose followup predecessors an old
+  rollback bug scarred resolves to the same anchor, so the scar stops
+  rendering as a phantom fork.
+* a spawned agent's internal turns are not chain nodes either. The spawn head
+  IS the agent (§12); everything in the agent's lane merges into it.
 
 ```
-Default (conversation layer):    Click ⚒9 to expand that turn:
+Default (conversation layer):    Click the reply to open its thread:
 ◇ROOT                          ◇ROOT
 ├ ○你好                        ├ ○你好
 │ └ △回复                      │ └ △回复
 ├ ○查天气                      ├ ○查天气
-│ └ △回复 ⚒9                   │ └ △回复
-                               │     ├ ■bash
-                               │     ├ ■web_fetch
-                               │     └ ■…(9 total)
+│ └ △回复 ⁹                    │ └ △回复┄┐
+                               │        ■ bash
+                               │        ■ web_fetch
+                               │        ▽ sub-agent ⁵
+                               │        ■ …(9 rows)
 ```
 
 Rationale: execution-layer information already has a better presentation in the chat
@@ -189,45 +202,47 @@ branch:
 | the new mainline from a merge | the merge node itself | lands in the base branch lane (see scenario 8), no new lane opened |
 
 **Branches are packed by actual column occupancy**: the columns a branch occupies = from
-its start column to the deepest column of its subtree; the next branch starts at the
-previous branch's actually-occupied rightmost column +1, with no overlap. Caption ink
-reserves no columns — a sub-agent's name flies over the neighbouring lanes' cells, and
-the row claims (§12) are what guarantee those cells are empty.
+its start column to the deepest column of its visible CHAIN nodes; the next branch
+starts at the previous branch's actually-occupied rightmost column +1, with no
+overlap. A lane that begins with a fork root keeps **one extra gap column** from
+the lane it forked off — the branch is a parallel version, and the two grid units
+of air are what say so. Tiers are zeroed per lane (the backend hands a fork root
+the tier of its old in-lane position; without zeroing a one-node branch arrives
+columns adrift). Thread items (§12) reserve no lane width: their column is chosen
+after the lanes are down, in the first free column right of their anchor.
 
 ### tier — how many columns to indent within a branch
 
-**The conversation layer is fixed by role; the execution layer increases by caller
-depth.** Two rules, each governing one layer, so they never conflict. A spawn root
-counts by the conversation-layer rule: it is a conversation-layer user, tier=1, and its
-caller pointing at a deep node only determines where the spawn edge is drawn from, not
-its own indent.
+**The conversation layer is fixed by role.** The execution layer does not indent
+by caller depth any more — an open thread is one flat, time-ordered column (§12),
+because "what did this turn do, in what order" is the question the graph answers;
+per-call nesting is the transcript's and the Executions page's job.
 
-| Node | Layer | tier |
+| Node | Layer | column |
 |---|---|---|
-| ROOT | — | 0 |
-| user (incl. spawn branch root, hand-back node) | conversation | 1 |
-| llm reply, merge | conversation | 2 |
-| code (tool / function call) | execution | 3 |
-| a deeper call inside the execution layer | execution | caller's tier +1 |
+| ROOT | conversation | tier 0 |
+| user | conversation | tier 1 |
+| llm reply, merge | conversation | tier 2 |
+| any thread item (call square, spawn head) | execution | its anchor's column +1; a nested open agent's thread +1 more |
 
 ### depth — which row
 
-Rows are allocated by a **preorder walk of the structural parent tree**: every visible
-node takes its own row, and a subtree pushes the siblings below it down by however many
-rows it occupies. Rows are not "hops to root" — that would stack all children of one
-parent on a single row. Two exceptions keep their anchor's row because they grow
-sideways, not down: a fork sibling sits on the **same row** as the sibling it rewrites
-(scene 3), and a spawn branch root sits on the **same row as the spawn call node**
-(scene 10).
+Chain rows are allocated by a **preorder walk of the structural parent tree**:
+every visible chain node takes its own row, and a subtree pushes the siblings
+below it down by however many rows it occupies. Rows are not "hops to root" —
+that would stack all children of one parent on a single row.
 
-Both exceptions yield to a **claimed row**. A sub-agent head's caption and a fork
-root's dashed bridge are row-wide ink — the one runs a name across the lanes to its
-right, the other runs a line across the lanes to its left — so each head and each
-fork root claims a row of its own, in call order, and one that would land on an
-already-claimed row takes the next free one and brings its lane with it (§12). A
-head or fork with a free row keeps its anchor's row, so the exceptions above hold
-whenever nothing collides. Cross-session spawns land as the target session's own
-conversation chain (lane 0), not a side branch (scene 12).
+One exception grows sideways instead of down: a fork root sits on the **same
+row** as the chain sibling it runs parallel to (scene 3), and several branches
+off one fork point stack on successive rows in spawn order. The dashed bridge
+between the two is then a straight horizontal two grid units long.
+
+Thread rows are allocated **recursively** (§12): an anchor's items run from its
+next row (past any fork rows hanging off it) down one row per event; an open
+spawn's own thread continues from its row, and its rows push the parent's later
+items down — expansion is insertion, never overlay. Cross-session spawns land
+as the target session's own conversation chain (lane 0), not a side branch
+(scene 12).
 
 ---
 
@@ -246,15 +261,15 @@ immediately. **Corollary: any "placeholder box" violates this rule** — the run
 is expressed by the node's own stroke (see the legend), not by drawing a dashed
 placeholder node.
 
-**③ Glyphs are cells; text is a caption.** A node occupies its grid point; names
-and counts hang beside it in annotation grey, never inside a shape sized to its
-own text. A glyph that grows with its label is a glyph every neighbour has to be
-measured against — that negotiation is what §12's earlier pill got wrong. The one
-exception is the §9 compaction capsule, which is wider than the reference circle
-horizontally and is still centred on, and placed by, a single cell. Caption ink
-reserves no columns — what keeps a name from printing across a node is ROW
-exclusivity: sub-agent heads and fork roots (the two kinds of row-wide ink)
-each claim a row of their own (§1), so the cells a caption flies over are empty.
+**③ Glyphs are cells; text is a caption.** A node occupies its grid point;
+counts hang beside it in annotation grey, never inside a shape sized to its own
+text. A glyph that grows with its label is a glyph every neighbour has to be
+measured against — that negotiation is what §12's earlier pill got wrong. The
+one exception is the §9 compaction capsule, which is wider than the reference
+circle horizontally and is still centred on, and placed by, a single cell.
+Names draw NOTHING on the canvas at all any more: a sub-agent's name lives in
+the tooltip and inspector, and the only per-node text is the fold count on the
+shoulder (§12) and the capsule's coverage note (§9).
 
 ---
 
@@ -267,11 +282,16 @@ is conveyed only by line style:
 | Edge type | Line style | Color | Default |
 |---|---|---|---|
 | same-branch parent→child | solid | this branch's color | shown |
-| retry fork bridge | dashed `5 4` | this branch's color | shown |
-| spawn edge (initiating node → sub-agent dot) | dashed curve `5 4`, off the caller's lower edge | child branch's color | shown |
+| retry fork bridge (sibling → fork root, shared row) | dashed `6 4` horizontal; an elbow only when rows diverged | branch's color | shown |
+| call thread (anchor → its items, §12) | dotted `2 3` vertical off the anchor | annotation grey | shown while open |
 | merge convergence (peer tip → merge node) | thick solid 2.4px | peer branch's color | shown |
-| attach merge-back (source tip → embed position) | long dashes `4 4` | source branch's color | shown |
+| attach merge-back (source tip → embed position) | long dashes `4 4` | source branch's color | shown when both ends are visible — an agent-internal tip merged into its triangle draws no line; the spawn head's position ON the thread is the return relationship |
 | inter-branch communication (send_to_branch) | dotted `1 5` | target branch's color | **shown only on hover** (numerous; always-on would smear) |
+
+**Every line is drawn centre to centre**, and the glyphs' background fill paints
+over the ends. Glyph edges sit at different distances per shape, so any fixed
+stand-off eventually gaps against a sloped triangle side; a line that dies under
+the glyph joins seamlessly for every shape.
 
 ---
 
@@ -279,7 +299,8 @@ is conveyed only by line style:
 
 **Shape**: ◇ ROOT · ○ user · △ llm · ■ code · ◉ merge (solid circle with a hole, the graph's unique
 "convergence" shape) · ▭ compaction summary (a capsule, the graph's only wide shape — §9) ·
-◎ sub-agent head (two concentric rings, the head of another agent's chain — §12).
+▽ sub-agent head (the triangle vocabulary point-DOWN: a derived agent, one glance
+apart from the chain's upright turns — §12).
 
 **HEAD is drawn solid**: the glyph's own shape filled with the branch colour,
 not a ring or a glow around it. A halo at this size reads as a second, blurrier
@@ -301,19 +322,21 @@ placeholder box:
 
 | Badge | Meaning |
 |---|---|
-| `⚒N` (right of an llm node) | a collapsed execution subtree, N sub-calls; click to expand |
-| `×N` (right of a code node) | N isomorphic siblings produced by a loop, folded (pure display) |
-| `↗` (top-right corner) | marked on **both sides** of a cross-session spawn: the branch root in the target session (caller lives in another session's graph, hangs on ROOT here, tooltip "spawned from <source session>"); and the initiating node in the source session (tooltip "dispatched to <target session>" — otherwise the dispatch leaves no trace in its own graph). Click jumps to the peer session (implementation may come later). **Cross-session only**: a same-session spawn has both ends in the graph and the dashed spawn curve already expresses the relationship (scene 10) — no ↗ there; the mark stands in for the edge that cannot be drawn, and is not a generic spawn decoration |
+| fold count (upper-right shoulder, annotation grey) | the size of the node's folded call thread — §12. Digits glued to the glyph, no enclosing shape: anything shaped would read as a node. Open, it disappears — the calls are on screen and countable |
+| `↗` (top-right corner) | marked on **both sides** of a cross-session spawn: the branch root in the target session (caller lives in another session's graph, hangs on ROOT here, tooltip "spawned from <source session>"); and the initiating node in the source session (tooltip "dispatched to <target session>" — otherwise the dispatch leaves no trace in its own graph). Click jumps to the peer session (implementation may come later). **Cross-session only**: a same-session spawn has both ends in the graph and the head's place on the thread already expresses the relationship — no ↗ there |
 
 ---
 
 ## 5. Branch-name badge
 
 - **Anchoring**: **directly below the branch's deepest currently visible node**, one row
-  down. In the default (folded) view that is the last conversation-layer node; when the
-  execution subtree is expanded the badge follows the bottom-most expanded node and
-  moves back up on collapse. Branch membership = lane (expanded execution nodes share
-  their turn's lane).
+  down. In the default (folded) view that is the last conversation-layer node; when a
+  call thread is open the badge follows the bottom-most thread item and moves back up
+  on fold. Branch membership = lane (thread items share their anchor's lane).
+- **No badge for a spawned agent's branch**: the agent is its triangle on the
+  thread (§12); a branch pill for the same fact would be a second drawing of it.
+  The climb from a branch row's head that passes a spawn root stops without
+  placing anything.
 - **Edge avoidance**: only when an edge crosses the anchor cell (the descending line of
   an expanded execution subtree, or the conversation continuing) does the badge shift
   half a column left — a badge never sits on an edge. Expanding/collapsing the execution
@@ -337,11 +360,11 @@ placeholder box:
 
 | # | Scene | Key points |
 |---|---|---|
-| 1–7 | Base layout (single turn / multi-turn / retry / tool indent / manual function / composite / collapse shift-left) | Scenario 4's tool indent shows as a ⚒N badge in the default view (scene 11); the indented squares appear only after expansion |
+| 1–7 | Base layout (single turn / multi-turn / retry / tool indent / manual function / composite / collapse shift-left) | Scenario 4's tool calls show as the shoulder count in the default view (scene 11); the thread squares appear only after opening |
 | 8 | merge (multi-parent convergence) | ◉ solid circle with a hole, lands on the base branch lane, peer merge-in thick solid lines (peer lane color); attach pointer nodes are not drawn, only the lines |
 | 9 | cross-branch messaging (send_to_branch) | dotted `1 5`, target branch color, hidden by default / shown on hover; a from_branch user node lands at the target branch tail |
-| 10 | spawn dispatch → attach merge-back | spawn edge dashed curve `5 4` (child branch color) off the caller's lower edge; the sub-agent's head sits on the **same row** as the spawn call node, own lane, tier=1 — unless a second head already claimed that row (§1); merge-back long dash `4 4` from the child tip back to its embed position on the main branch (the chat stream renders it as the Spawned card, display order moved ahead — see `ui/invariants.md` rule 9) |
-| 11 | execution-subtree default aggregation | see §0: collapsed to a ⚒N badge by default, click to expand into layout, collapse reclaims rows/cols per rule ②; expansion state is per-branch independent |
+| 10 | spawn dispatch → return | the sub-agent's head is an item ON its caller's thread (§12): it sits in the sequence position the spawn actually happened at, between the calls before and after it. Its return needs no extra line — the followup reply it triggers merges into the same anchor (§0), so dispatch, work and return are one column read top to bottom (the chat stream still renders the Spawned card, display order moved ahead — see `ui/invariants.md` rule 9) |
+| 11 | call-thread default aggregation | see §0/§12: folded to a shoulder count by default, click to open into layout, fold reclaims rows/cols per rule ②; open state is per-node independent and recursive |
 | 12 | status & badge legend | see §4: status drawn on the node's own stroke, no placeholder boxes; both sides of a cross-session spawn carry the ↗ corner mark |
 | 13 | badge anchoring · avoidance · collision · merged | see §5: anchor directly below the branch's last conversation-layer node, half-column left shift only when an edge crosses the anchor cell, collision shifts down one row, merging erases the badge (provenance moves into the merge node's tooltip) |
 
@@ -355,10 +378,9 @@ rule 7).
 
 **A sub-agent spawning again**: forbidden at the data layer
 (`MAX_TASK_DEPTH=1` — only the main agent may task(); a spawned agent always
-does the work itself, see `ui/invariants.md` rule 6). The renderer still
-recurses per scene 10 as a fallback, so historical multi-generation delegation
-chains (the worker branch's dashed spawn curve starting from the sub-agent's reply
-node, hanging under its lane structure) remain drawable.
+does the work itself, see `ui/invariants.md` rule 6). The renderer recurses
+anyway (§12 — a spawn on an agent's thread is a triangle like any other), so
+historical multi-generation delegation chains remain drawable.
 
 ## 7. Render pipeline (code map)
 
@@ -377,12 +399,17 @@ web/lib/runtime-bridge/dag/
                                 with both a card child and a follow-up user turn
                                 isn't mistaken for a fork (which would split the
                                 figure into two lanes)
-    apply-collapse.ts           fold execution subtrees, emit the ⚒N badge
     fold-summaries.ts           fold a compaction capsule's covered range (§9)
-    fold-spawn-branches.ts      fold a sub-agent's chain behind its dot (§12)
+    thread.ts                   the call-thread model (§0/§12): merge followup
+                                and agent-internal turns into their anchors,
+                                attribute every call and spawn to an anchor's
+                                time-ordered thread, decide visibility from the
+                                open set
   layout/geometry.ts the implementation of section 1. Packs the backend's
-                     lane / tier / depth into lattice `(col, row)` positions,
-                     re-derived from what is currently visible.
+                     lane / tier / depth into lattice `(col, row)` positions for
+                     CHAIN nodes (fork lanes one gap column out, fork roots on
+                     their sibling's row), then places every open thread
+                     recursively beside its anchor.
                      **tier and lane are NOT computed here** — the backend
                      computes them in `openprogram/webui/graph_layout/` and ships
                      them on the node; the front end only consumes the values.
@@ -600,68 +627,53 @@ the canvas HUD beside the fit button (`components/chat/dag-view.tsx`). It starts
 collapsed — the vocabulary is small and learnable, so the legend is for the
 first few sessions rather than a permanent fixture on the canvas.
 
-## 12. A sub-agent reads as one named dot, not as its whole transcript
+## 12. The call thread: what a turn did is one sequence, folded into one count
 
-A spawned agent runs a conversation of its own, and that conversation is
-usually the larger half of the session. Drawn in full it buries the main lane
-it hangs off: in the case this section was written from, two sub-agents
-contributed 280 of a session's 309 nodes, and the four turns the user actually
-had were four circles lost among them.
+Everything a turn did — every function call, every agent it spawned — is one
+time-ordered sequence of events, the turn's **thread**. Calls and spawns are
+the same kind of event at different scales, so they share one line, one
+ordering, and one fold. A session whose one reply made 41 calls and spawned two
+agents is, by default, three chain nodes and the digits `43`; open, it is 43
+real nodes in the order they happened.
 
-None of those nodes is what the parent turn carries, either. The parent sees
-the sub-agent's *result*, through the attach pointer; its transcript is
-reachable, not resident. So the default view draws what the parent knows — one
-node — and keeps the rest a click away.
+**Folded is folded.** The only mark is the count on the node's upper-right
+shoulder: digits in annotation grey, glued to the glyph. Not a badge shape, not
+a pill, not a square on a line — anything with an outline reads as a node, and
+a phantom node is exactly the misreading the fold must not invite. No thread
+line, no items, nothing else.
 
-**The dot.** A spawn branch root is drawn as two concentric rings in the
-branch's colour: an outer ring at `AGENT_DOT_R`, an inner one at
-`AGENT_DOT_INNER_R`. It is deliberately not a shape from the role vocabulary —
-what hangs off it is another agent's whole conversation, and a glyph that reads
-as one of this chain's turns would say the opposite. The second ring is what
-says "another chain" rather than "another node".
+**Open is open.** Clicking the node inserts the thread into the layout: a
+faint dotted line (`2 3`) drops from the anchor into the first free column
+right of it, and every event is a real node on that line — a square per call
+in the anchor's lane colour, a point-down triangle per spawned agent — one row
+per event, top to bottom in call order. Fold reclaims the rows (rule ②).
 
-**The name is a caption, not a shape.** It sits `AGENT_CAPTION_DX` to the right
-of the dot in annotation grey, 10px, and brightens with the node on hover.
-Folded it carries the size of the chain behind it — `后端架构 (14)`; expanded it
-does not, because the turns are on screen and countable. Names past 190px are
-ellipsised.
+**The head IS the agent.** A spawn root draws as the triangle vocabulary
+flipped point-down: a derived agent, one glance apart from the chain's upright
+turns. Its internal turns are not chain nodes — they merge into it (§0) — and
+its own calls are its own thread, one column further right, opened by clicking
+the triangle. The model is recursive and so is the picture: every level reads
+by the same two rules, count-on-shoulder folded, column-of-nodes open. A
+nested open thread pushes the parent's later items down; expansion is
+insertion, never overlay.
 
-This is rule ③ doing its job. The earlier pill was a shape sized to its own
-text, and every edge that could land on it needed an asymmetric clip so no line
-crossed the name; the dot's edges clip at its own radius like any other glyph's.
-The caption's ink still exists, and the layout still accounts for it — but as
-one number, not a shape: `pipeline.ts` measures the caption the drawer will
-render and stamps its right reach on the head (`_spawnHW`), the bounding box
-extends to it so a fit never crops a name, and the two kinds of row-wide ink —
-a caption, a fork's bridge — each claim a row of their own (§1). Columns are
-never reserved for text: the name flies over cells the row claims keep empty,
-and the lanes stay one to two units apart like everything else on the grid.
+**No captions.** The agent's name lives in the tooltip and the inspector
+(which titles the node `子 agent · <name>` rather than the `user` its role
+field claims); the canvas carries only the glyph and its count. The name on
+the wire comes from the label the runner stamps (`spawned_from.label`), with
+the recorded branch name as a fallback.
 
-**The spawn edge.** A dashed curve (`5 4`) in the child branch's colour, from
-the calling turn's **lower edge** to the dot's left edge. It leaves the bottom
-rather than the right because the right of an llm node is where its ⚒N / ×N
-execution count sits, and a line drawn from there crosses the count; it lands on
-the left because the right of the dot is where the caption is.
+**No return line.** The agent's return triggers a followup reply, and that
+reply merges into the same anchor whose thread carries the agent (§0) —
+dispatch, work and return are one column read top to bottom. The old dashed
+attach-return curve only draws when both of its ends are chain-visible, which
+an agent-internal tip never is any more.
 
-**The fold.** The branch is elided by default; clicking the dot draws the whole
-lane, clicking again folds it away. Nested sub-agents keep their own dots rather
-than disappearing into their parent's fold — otherwise there would be no handle
-to open the inner one with. The state is view-only and never persisted, exactly
-as in §9.
-
-**The name on the wire.** It comes from the label the runner stamps on the
-attach pointer that points back at the branch (dag/overview.md §4), with the
-recorded branch name as a fallback, and "sub-agent" when nothing named it. The
-inspector titles the same node `子 agent · <name>` instead of `user`, which is
-what its role field says and not what the node is.
-
-**HEAD is never folded away.** Checking out a sub-agent's lane keeps that lane
-drawn even while every other dot stays shut. A graph that hides where you are
-standing is worse than a graph that draws too much.
-
-The pass runs after the compaction fold (`passes/fold-spawn-branches.ts`), so
-the two compose without either having to know the other ran: each owns one kind
-of elision, and a node dropped by both is dropped once.
+**View state.** `_threadOpen` in `store/globals.ts`, keyed by anchor id (chain
+turn or spawn head — one vocabulary). Never persisted, reset on session
+switch, exactly as in §9. A spawn head is visible only while every thread
+above it is open; its items likewise — visibility is the whole ancestor
+chain's, not the node's own flag.
 
 ## Appendix: Implementation Status
 
@@ -670,10 +682,10 @@ The whole spec is implemented. Where each part lives:
 | Spec item | Implementation |
 |---|---|
 | Infinite canvas (pan / zoom / fit / dot lattice) | `dag/canvas.ts` + `.history-body` in `right-dock.css`; view state in `dag/store/globals.ts`; HUD in `components/chat/dag-view.tsx` |
-| §1 lane / tier / depth layout | `dag/layout/geometry.ts::computeGeometry` (tier-packed lanes, preorder rows, head + fork-root row claims); lattice, no-overlap, row claims, tight packing and caption-covering maxX all executed and asserted by `web/scripts/check-dag-subagent.mjs` |
-| §2 rule ③ glyphs are cells | no shape is sized from text — the caption's measured reach is a layout number (`_spawnHW`), not a glyph width |
-| §4 HEAD solid, no halo | `render/nodes.ts` passes `isHead` as `_buildShapeEl`'s `solid`; the coverage dot is punched out of the fill; `right-dock.css` has no `.is-head` glow |
-| §0 execution-subtree aggregation | `passes/apply-collapse.ts`: any node with execution sub-calls starts folded; `render/nodes.ts` draws ⚒N (spawn-root subtrees exempt) |
+| §1 lane / tier / depth layout | `dag/layout/geometry.ts::computeGeometry` (tier-packed chain lanes with per-lane tier zeroing, preorder rows, scene-3 fork rows + gap column, recursive thread placement); lattice, no-overlap, thread columns/rows and fork geometry all executed and asserted by `web/scripts/check-dag-subagent.mjs` |
+| §2 rule ③ glyphs are cells | no shape is sized from text, and no text draws on the canvas beyond the shoulder count and the capsule note |
+| §4 HEAD solid, no halo | `render/nodes.ts` passes `isHead` as `_buildShapeEl`'s `solid`; the coverage dot is punched out of the fill; `right-dock.css` has no `.is-head` glow; HEAD pointing at a merged reply re-seats on its anchor (`pipeline.ts` via `threadModel.anchorOf`) |
+| §0/§12 call-thread aggregation | `passes/thread.ts` (`buildThreadModel`: anchor merge, event attribution, recursive visibility); `render/nodes.ts` draws the shoulder count (`history-thread-count`); `_threadOpen` in `store/globals.ts` |
 | Rule ② corollary (no placeholder box) | `shapes.ts`: no `square_outline`; task renders as a plain square |
 | §4 status on the stroke | `graph_builder` emits status; `nodes.ts` draws it on the stroke (running dashed+breathing / error red+! / cancelled grayed) |
 | §5 badge anchoring | `render/badges.ts`: anchor at last conversation-layer node, half-column left shift when a line crosses the anchor cell, measured-pixel-box collision slides down one row |
@@ -691,5 +703,5 @@ The whole spec is implemented. Where each part lives:
 | §10 archived failure | `render/nodes.ts::_isArchivedFailure` — `status=error` AND off the HEAD chain; grey overrides §4's red |
 | §11 inspector / menu / fork & edit | `render/inspector.ts`, wired in `render/interaction.ts`; all three actions go through `POST /api/chat/checkout` |
 | §11 legend | `DagLegend` in `components/chat/dag-view.tsx` (inside the canvas HUD), `.dag-legend` in `right-dock.css` |
-| §12 sub-agent dot | `shapes.ts` `agent_dot` (double ring) + `agentCaption`, `passes/fold-spawn-branches.ts` (fold + name resolution + HEAD exemption), `render/nodes.ts` (caption, `data-spawn*`), `render/edges.ts` (dashed spawn curve off the caller's lower edge), `_spawnExpanded` in `store/globals.ts`; executed by `web/scripts/check-dag-subagent.mjs` |
+| §12 call thread + agent head | `shapes.ts` `agent_head` (point-down triangle), `passes/thread.ts` (model), `layout/geometry.ts` (recursive placement), `render/edges.ts` (dotted thread line, centre-to-centre chain edges, scene-3 bridge), `render/nodes.ts` (`data-thread*`, shoulder count), `render/interaction.ts` (`toggleThreadOpen`); executed by `web/scripts/check-dag-subagent.mjs` |
 | §12 the name on the wire | `task/runner.py::_update_attach_card` stamps `attach.label` from the task; `ws_actions/session.py::_annotate_spawn_origin` carries it to the spawn root as `spawned_from.label`; tested in `tests/unit/test_task_attach_integration.py` |

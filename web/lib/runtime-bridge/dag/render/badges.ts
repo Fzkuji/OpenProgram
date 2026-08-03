@@ -11,6 +11,7 @@
 import type { GNode } from "../types";
 import { getSocket, runtimeState } from "../../state";
 import { _branchColor, _svg, _textWidth } from "../shapes";
+import { isSpawnRoot } from "../passes/thread";
 
 // canvas 量宽不认 var()（见 shapes.ts SPAWN_FONT 注释），写死同一字体栈。
 const BADGE_FONT =
@@ -55,6 +56,9 @@ export function drawBadges(
       // 不可见/非对话层（折叠的执行节点、被过滤的 attach 尾指针）→ 用
       // 全量图继续沿链上溯。
       const raw: GNode | undefined = n || fullById[cur];
+      // 分支属于一个 spawn 的 agent：它在画布上就是那个三角形，分支
+      // 药丸会是同一事实的第二种画法——不立（rendering.md §12）。
+      if (raw && isSpawnRoot(raw)) return;
       cur = raw ? ((raw.predecessor as string) || (raw.caller as string) || undefined) : undefined;
     }
     if (!node) return;

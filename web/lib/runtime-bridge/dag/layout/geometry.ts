@@ -1,109 +1,116 @@
 /**
  * Content-driven pixel geometry for the visible DAG.
  *
- * The backend hands us integer ``_lane`` / ``_tier`` / ``_depth`` per
- * node. The old renderer projected those with a fixed
- * ``x = (lane + tier) * COL_W`` — so fork branches sat as far apart when
- * collapsed as when expanded (the backend reserves a fat lane gap for
- * each branch's worst-case tier width), and two call-tree siblings that
- * share a caller (same lane + tier + depth) landed on the exact same
- * pixel and overlapped — you could only ever click the one on top.
+ * Two node populations, two placement rules:
  *
- * This pass packs pixels from the *currently visible* nodes instead:
+ *   * CHAIN nodes (root / user / reply / merge) keep the proven
+ *     lane/tier/depth pack: each lane occupies its visible tier span,
+ *     lanes pack left→right, rows walk each lane's call tree in
+ *     pre-order. A fork lane sits TWO columns from the lane it forked
+ *     off (one gap column — the branch is a parallel version, and the
+ *     air says so), and a fork root shares its sibling's ROW: the
+ *     branch extends right, level with the turn it rewrites
+ *     (dag/rendering.md scene 3).
  *
- *   * Columns: each lane occupies ``maxVisibleTier(lane) + 1`` columns,
- *     lanes are packed left→right with a single gap column between them
- *     (the fork trunk lives in that gap, so ``forkX - COL_W`` still lands
- *     on it). Collapse a branch → its max tier shrinks → the lanes to its
- *     right slide back. Expand → they push out. Automatic, not fixed.
+ *   * THREAD items (execution squares, spawn heads) hang on their
+ *     anchor's call thread: one column right of the anchor, one row
+ *     per event in call order. An open spawn's own thread nests one
+ *     column further right, and its rows push the parent's later
+ *     items down — expansion is insertion, not overlay. Placement is
+ *     recursive because the model is.
  *
- *   * Rows: within a lane the visible call tree is walked in pre-order,
- *     one row per node — a parent's whole subtree stacks before its next
- *     sibling, so children of one parent form a vertical list in their
- *     shared column (the transcript's indent model) and every node is
- *     reachable and clickable. The lane's first node anchors at its
- *     backend ``_depth`` row so fork siblings across lanes align.
- *
- * Returns a per-id ``{x, y}`` map plus the bounding box the caller uses
- * to size the SVG canvas.
+ * Returns per-id ``{x, y}`` plus the thread columns/rows the edge
+ * drawer needs to ink the dotted lines, and the fork-sibling map the
+ * bridge drawer keys on.
  */
 
 import { type GNode, COL_W, ROW_H, PAD_X, PAD_Y, layoutParent } from "../types";
+import { isChainNode, type ThreadModel } from "../passes/thread";
 
 export interface Geometry {
   pos: Record<string, { x: number; y: number }>;
   minX: number;
   maxX: number;
   maxY: number;
+  /** ``anchorId → thread column`` (grid units) for every OPEN thread. */
+  threadColOf: Record<string, number>;
+  /** ``anchorId → row index per thread item``, aligned with the
+   *  anchor's event list. */
+  threadRowsOf: Record<string, number[]>;
+  /** ``forkRootId → the sibling it runs parallel to`` — present only
+   *  when the two share a row and the bridge can be a straight dash. */
+  forkSibOf: Record<string, string>;
 }
 
-/** A sub-agent head (dag/rendering.md §12) — a dot whose name rides
- *  beside it, so its ink runs well right of the one column its tier
- *  buys. ``_spawnHW`` is the caption's full right reach in pixels, as
- *  measured by the renderer (``pipeline.ts`` stamps it from the same
- *  functions the drawer uses); the passes below key on it rather than
- *  on ``source`` so the layout and the glyph can never disagree about
- *  which nodes carry a caption. */
-function spawnHW(n: GNode): number | undefined {
-  const hw = (n as Record<string, unknown>)._spawnHW;
-  return typeof hw === "number" ? hw : undefined;
-}
-
-export function computeGeometry(byId: Record<string, GNode>): Geometry {
+export function computeGeometry(
+  byId: Record<string, GNode>,
+  thread: ThreadModel,
+): Geometry {
   const ids = Object.keys(byId);
+  const chainIds = ids.filter((id) => isChainNode(byId[id]));
 
-  // ── Columns: pack lanes by their widest visible tier ──
-  // Caption ink reserves NO columns. A sub-agent's name runs several
-  // columns right of its dot, over the neighbouring lanes — and that is
-  // fine, because the cells it flies over are empty: the row passes
-  // below guarantee that no head, and no fork root (whose bridge is the
-  // other row-wide ink), shares a caption's row. Widening lanes to fit
-  // text was tried and it spread four branches across a whole page —
-  // the grid's rhythm is one to two columns, and text is not a shape
-  // (rendering.md rule ③).
-  const maxTierOfLane: Record<number, number> = Object.create(null);
-  ids.forEach((id) => {
+  // ── Columns: pack lanes by their widest visible CHAIN tier ──
+  // Thread items reserve no lane width — their column is chosen after
+  // the lanes are down, in the first free column right of the anchor.
+  const lanesOf: Record<number, string[]> = Object.create(null);
+  chainIds.forEach((id) => {
+    const lane = byId[id]._lane || 0;
+    (lanesOf[lane] = lanesOf[lane] || []).push(id);
+  });
+  const laneKeys = Object.keys(lanesOf).map(Number).sort((a, b) => a - b);
+
+  // A lane that starts with a fork root keeps one gap column from the
+  // lane to its left: the branch runs parallel, two grid units out.
+  const forkLanes = new Set<number>();
+  chainIds.forEach((id) => {
     const n = byId[id];
-    const lane = n._lane || 0;
-    const tier = typeof n._tier === "number" ? n._tier : 0;
-    if (maxTierOfLane[lane] === undefined || tier > maxTierOfLane[lane]) {
-      maxTierOfLane[lane] = tier;
+    const p = layoutParent(n);
+    if (p && byId[p] && (byId[p]._lane || 0) !== (n._lane || 0)) {
+      forkLanes.add(n._lane || 0);
     }
   });
-  const lanesSorted = Object.keys(maxTierOfLane)
-    .map(Number)
-    .sort((a, b) => a - b);
-  const laneStartCol: Record<number, number> = Object.create(null);
+
+  const startCol: Record<number, number> = Object.create(null);
+  const minTierOf: Record<number, number> = Object.create(null);
   let col = 0;
-  lanesSorted.forEach((lane, i) => {
-    laneStartCol[lane] = col;
-    // width of this lane + 1 gap column before the next lane (fork trunk)
-    col += maxTierOfLane[lane] + 1 + (i < lanesSorted.length - 1 ? 1 : 0);
+  laneKeys.forEach((lane) => {
+    const own = lanesOf[lane];
+    // Per-lane tier zeroing: the backend hands fork roots the tier of
+    // their old in-lane position; without zeroing a one-node branch
+    // arrives several columns adrift of its lane.
+    minTierOf[lane] = Math.min(...own.map((id) => byId[id]._tier || 0));
+    const maxTier = Math.max(...own.map((id) => byId[id]._tier || 0));
+    if (forkLanes.has(lane) && col > 0) col += 1;
+    startCol[lane] = col;
+    col += maxTier - minTierOf[lane] + 1;
+  });
+  const colOf = (id: string): number => {
+    const n = byId[id];
+    const lane = n._lane || 0;
+    return (startCol[lane] || 0) + (n._tier || 0) - (minTierOf[lane] || 0);
+  };
+  const usedCols = new Set<number>();
+  laneKeys.forEach((lane) => {
+    lanesOf[lane].forEach((id) => usedCols.add(colOf(id)));
   });
 
-  // ── Rows: base row from depth, de-collided within each lane ──
-  // Compact the depth axis first so folded subtrees don't leave gaps.
-  const depths = Array.from(
-    new Set(ids.map((id) => (typeof byId[id]._depth === "number" ? byId[id]._depth! : 0))),
-  ).sort((a, b) => a - b);
+  // ── Rows: depth-compressed, then per-lane pre-order ──
+  const depths = Array.from(new Set(
+    chainIds.map((id) =>
+      typeof byId[id]._depth === "number" ? byId[id]._depth! : 0),
+  )).sort((a, b) => a - b);
   const depthToRow: Record<number, number> = Object.create(null);
   depths.forEach((d, i) => { depthToRow[d] = i; });
 
-  // Walk each lane's call tree in PRE-ORDER, one row per visible node: a
-  // parent's whole subtree stacks before its next sibling, so direct
-  // children of one parent share the parent-tier+1 column and read as a
-  // vertical list (the transcript's indent model). Sorting by depth
-  // instead would interleave sibling subtrees into a diagonal staircase.
-  // The lane's first node anchors at its depth-row so fork siblings
-  // across lanes still align at the fork point.
   const rowOf: Record<string, number> = Object.create(null);
   const laneRoots: Record<number, string[]> = Object.create(null);
   const kidsOf: Record<string, string[]> = Object.create(null);
-  ids.forEach((id) => {
+  chainIds.forEach((id) => {
     const n = byId[id];
     const lane = n._lane || 0;
     const parent = layoutParent(n);
-    if (parent && byId[parent] && (byId[parent]._lane || 0) === lane) {
+    if (parent && byId[parent] && isChainNode(byId[parent])
+        && (byId[parent]._lane || 0) === lane) {
       (kidsOf[parent] = kidsOf[parent] || []).push(id);
     } else {
       (laneRoots[lane] = laneRoots[lane] || []).push(id);
@@ -115,10 +122,9 @@ export function computeGeometry(byId: Record<string, GNode>): Geometry {
     const roots = laneRoots[Number(laneKey)].slice().sort(byCallOrder);
     let next = -1;
     roots.forEach((rootId) => {
-      const d = typeof byId[rootId]._depth === "number" ? byId[rootId]._depth! : 0;
+      const d = typeof byId[rootId]._depth === "number"
+        ? byId[rootId]._depth! : 0;
       next = Math.max(next, depthToRow[d] ?? d);
-      // Iterative pre-order: pop, assign, push children reversed so the
-      // first child (by call order) is visited first.
       const stack = [rootId];
       while (stack.length) {
         const id = stack.pop()!;
@@ -129,103 +135,109 @@ export function computeGeometry(byId: Record<string, GNode>): Geometry {
     });
   });
 
-  // ── Sub-agent heads never share a row (dag/rendering.md §12) ──
-  // Every other node is a glyph one column wide, so a row can hold as
-  // many of them as there are lanes. A sub-agent head is not: its name
-  // rides beside it and runs a hundred-odd pixels to the right, and two
-  // heads spawned by the same turn land one lane apart — near enough
-  // that the first caption prints across the second dot. Rule ② packs
-  // rows tight, so the fix is not a gap but an ordering: each head
-  // takes the next row no other head has claimed, and its lane comes
-  // with it. Sorting by call order keeps the two reading top-to-bottom
-  // in the order they were spawned.
-  const capsules = ids
-    .filter((id) => spawnHW(byId[id]) !== undefined)
-    .sort(byCallOrder);
-  if (capsules.length > 1) {
-    // Accumulate per lane: two capsules can share one (a nested spawn
-    // the backend kept in its parent's lane), and the lane then owes the
-    // sum of both their pushes, not whichever was written last.
-    const laneShift: Record<number, number> = Object.create(null);
-    let claimed = -Infinity;
-    for (const id of capsules) {
-      const lane = byId[id]._lane || 0;
-      const row = (rowOf[id] || 0) + (laneShift[lane] || 0);
-      const want = Math.max(row, claimed + 1);
-      claimed = want;
-      if (want !== row) laneShift[lane] = (laneShift[lane] || 0) + (want - row);
-    }
-    // Shift the capsule's whole lane, not the capsule alone: expanded,
-    // the branch hangs off it and has to stay attached to its head.
-    ids.forEach((id) => {
-      const d = laneShift[byId[id]._lane || 0];
-      if (d) rowOf[id] = (rowOf[id] || 0) + d;
-    });
-  }
-
-  // ── Fork roots dodge caption rows ──
-  // A fork's dashed bridge is a long horizontal line drawn at its
-  // root's row, all the way from its sibling to its own lane. A
-  // sub-agent caption sitting on that row gets struck through by it —
-  // the bridge can span the whole graph, and the caption is the widest
-  // ink there is. So a fork root whose row is already a caption's row
-  // (or an earlier fork's) takes the next free row, and its lane comes
-  // with it. A fork with a free row keeps it: the scene-3 rule — a fork
-  // sibling shares the row of the turn it rewrites — is untouched,
-  // because chain turns claim nothing here.
-  const claimedRows = new Set<number>();
-  capsules.forEach((id) => claimedRows.add(rowOf[id] || 0));
-  const laneEarliest: Record<number, string> = Object.create(null);
-  ids.forEach((id) => {
-    const lane = byId[id]._lane || 0;
-    const cur = laneEarliest[lane];
-    if (cur === undefined || (rowOf[id] || 0) < (rowOf[cur] || 0)) {
-      laneEarliest[lane] = id;
-    }
-  });
-  const forkRoots = Object.values(laneEarliest)
+  // ── Fork roots share their sibling's row (scene 3) ──
+  // The branch is a parallel version of the turn beside it, so it sits
+  // level with that turn and extends right. Several branches off one
+  // fork point stack on successive rows in spawn order.
+  const forkSibOf: Record<string, string> = Object.create(null);
+  const forkKidsOf: Record<string, number> = Object.create(null);
+  const forkRoots = chainIds
     .filter((id) => {
-      if (spawnHW(byId[id]) !== undefined) return false;
       const p = layoutParent(byId[id]);
-      if (!p || !byId[p]) return false;
-      return (byId[p]._lane || 0) !== (byId[id]._lane || 0);
+      return p && byId[p] && isChainNode(byId[p])
+        && (byId[p]._lane || 0) !== (byId[id]._lane || 0);
     })
     .sort(byCallOrder);
   forkRoots.forEach((id) => {
-    const row = rowOf[id] || 0;
-    let d = 0;
-    while (claimedRows.has(row + d)) d++;
-    if (d) {
+    const pid = layoutParent(byId[id])!;
+    const sib = chainIds.find((cid) => cid !== id
+      && layoutParent(byId[cid]) === pid
+      && (byId[cid]._lane || 0) === (byId[pid]._lane || 0));
+    const k = (forkKidsOf[pid] = (forkKidsOf[pid] || 0) + 1);
+    if (sib) forkSibOf[id] = sib;
+    const want = (sib !== undefined ? rowOf[sib] : (rowOf[pid] || 0) + 1)
+      + (k - 1);
+    const delta = want - (rowOf[id] || 0);
+    if (delta) {
       const lane = byId[id]._lane || 0;
-      ids.forEach((nid) => {
-        if ((byId[nid]._lane || 0) === lane) {
-          rowOf[nid] = (rowOf[nid] || 0) + d;
+      chainIds.forEach((cid) => {
+        if ((byId[cid]._lane || 0) === lane) {
+          rowOf[cid] = (rowOf[cid] || 0) + delta;
         }
       });
     }
-    claimedRows.add(row + d);
   });
 
+  // ── Threads: recursive placement ──
+  // Items run from the anchor's next row (past any fork rows hanging
+  // off it) down one row per event; an open spawn recurses one column
+  // further right and its rows push everything after it down.
+  const threadColOf: Record<string, number> = Object.create(null);
+  const threadRowsOf: Record<string, number[]> = Object.create(null);
+  const place = (anchor: string, baseCol: number, startRow: number): number => {
+    let c = baseCol;
+    while (usedCols.has(c)) c++;
+    threadColOf[anchor] = c;
+    let cursor = startRow;
+    const rows: number[] = [];
+    (thread.events[anchor] || []).forEach((ev) => {
+      if (!byId[ev.id]) return; // event's node not in the visible graph
+      rows.push(cursor);
+      rowOf[ev.id] = cursor;
+      cursor += 1;
+      if (ev.kind === "spawn" && thread.isOpen(ev.id)
+          && (thread.events[ev.id] || []).length) {
+        cursor = place(ev.id, c + 1, cursor);
+      }
+    });
+    threadRowsOf[anchor] = rows;
+    return cursor;
+  };
+  chainIds.forEach((id) => {
+    if (!thread.isOpen(id) || !(thread.events[id] || []).length) return;
+    // Right of the anchor — and right of any branch bridging off it,
+    // so the dotted line never cuts the same-row bridge.
+    let base = colOf(id) + 1;
+    forkRoots.forEach((fid) => {
+      if (layoutParent(byId[fid]) === id) {
+        base = Math.max(base, colOf(fid) + 1);
+      }
+    });
+    place(id, base, (rowOf[id] || 0) + 1 + (forkKidsOf[id] || 0));
+  });
+
+  // ── Pixels ──
   const pos: Record<string, { x: number; y: number }> = Object.create(null);
   let minX = 0;
   let maxX = 0;
   let maxY = 0;
-  ids.forEach((id) => {
-    const n = byId[id];
-    const lane = n._lane || 0;
-    const tier = typeof n._tier === "number" ? n._tier : 0;
-    const x = PAD_X + (laneStartCol[lane] + tier) * COL_W;
-    const y = PAD_Y + (rowOf[id] || 0) * ROW_H;
+  const seat = (id: string, x: number, y: number): void => {
     pos[id] = { x, y };
     if (x < minX) minX = x;
-    // A caption runs rightwards from its dot, well past the point the
-    // layout placed it. Count that ink into the bounding box so a fit
-    // never crops a name off the right edge.
-    const hw = spawnHW(n);
-    const right = hw === undefined ? x : x + hw;
-    if (right > maxX) maxX = right;
+    if (x > maxX) maxX = x;
     if (y > maxY) maxY = y;
+  };
+  chainIds.forEach((id) => {
+    seat(id, PAD_X + colOf(id) * COL_W, PAD_Y + (rowOf[id] || 0) * ROW_H);
+  });
+  Object.keys(threadRowsOf).forEach((anchor) => {
+    const c = threadColOf[anchor];
+    const rows = threadRowsOf[anchor];
+    (thread.events[anchor] || []).forEach((ev, i) => {
+      if (i >= rows.length || !byId[ev.id]) return;
+      seat(ev.id, PAD_X + c * COL_W, PAD_Y + rows[i] * ROW_H);
+    });
+  });
+  // Anything left (defensive: nodes the thread model didn't claim)
+  // falls back to its lane/tier/depth seat so it is at least on screen.
+  ids.forEach((id) => {
+    if (pos[id]) return;
+    const n = byId[id];
+    const lane = n._lane || 0;
+    const x = PAD_X + ((startCol[lane] || 0) + (n._tier || 0)) * COL_W;
+    const d = typeof n._depth === "number" ? n._depth : 0;
+    seat(id, x, PAD_Y + (depthToRow[d] ?? d) * ROW_H);
   });
 
-  return { pos, minX, maxX, maxY };
+  return { pos, minX, maxX, maxY, threadColOf, threadRowsOf, forkSibOf };
 }

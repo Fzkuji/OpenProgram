@@ -2,26 +2,29 @@
  * Renderer: node SVG drawing.
  *
  * Each DAG node becomes a ``<g class="history-node">`` with a hit-area
- * circle, a coloured shape (diamond/circle/triangle/square), and an
- * optional fold badge ("+N" / "−").
+ * circle, a coloured shape (diamond/circle/triangle/square), and — when
+ * the node owns a folded call thread — a count on its shoulder.
+ *
+ * The count is the fold marker (dag/rendering.md §12): digits glued to
+ * the glyph, not a shape of their own. Anything shaped would be read as
+ * a node; a number riding the corner reads as what it is, "this many
+ * calls behind this turn". Open, the count disappears — the calls are
+ * on screen and countable.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { type GNode, NODE_R } from "../types";
 import {
-  AGENT_CAPTION_DX,
-  AGENT_DOT_R,
   CAPSULE_HH,
   CAPSULE_HW,
   _branchColor,
   _buildShapeEl,
   _shapeFor,
   _svg,
-  agentCaption,
-  agentCaptionText,
 } from "../shapes";
-import { _spawnExpanded, _summaryExpanded } from "../store/globals";
+import { _summaryExpanded } from "../store/globals";
+import type { ThreadModel } from "../passes/thread";
 
 /** A turn that ended in ``error`` and is no longer on the HEAD chain:
  *  the retry forked off its predecessor and moved on, so this line is
@@ -45,20 +48,12 @@ export function drawNodes(
   headId: string | null,
   headAncestors: Record<string, boolean>,
   stableLeafOfNode: Record<string, string>,
-  cinfo: {
-    isCollapsible: (m: GNode) => boolean;
-    hiddenCount: Record<string, number>;
-  },
-  collapsed: Record<string, boolean>,
   internalSet: Record<string, boolean>,
   internalOwner: Record<string, string>,
   contextSet: Record<string, boolean> | null,
   coverageSet: Record<string, { aged: boolean; spilled: boolean }> | null,
   coversOf: Record<string, string[]>,
-  spawnFold: {
-    branchOf: Record<string, string[]>;
-    nameOf: Record<string, string>;
-  },
+  thread: ThreadModel,
 ): void {
   // Every id any capsule covers — folded or expanded. Expanded, those
   // nodes draw as ghosts so "readable" and "in context" stay visibly
@@ -73,8 +68,6 @@ export function drawNodes(
     const isHead = id === headId;
     const onHead = !!headAncestors[id];
     const color = _branchColor(node, stableLeafOfNode);
-    const isCollapsible = cinfo.isCollapsible(node);
-    const folded = isCollapsible && !!collapsed[id];
     const isBranchOp =
       node.function === "task" ||
       node.function === "attach" ||
@@ -83,17 +76,10 @@ export function drawNodes(
     const covered = coversOf[id];
     const isCapsule = !!covered;
     const capsuleOpen = isCapsule && !!_summaryExpanded[id];
-    // Sub-agent head (dag/rendering.md §12) — same fold vocabulary as the
-    // compaction capsule, keyed off the spawn pass rather than covers_ids,
-    // but drawn as a dot with a caption rather than as a wide pill.
-    const spawnBranch = spawnFold.branchOf[id];
-    const isAgentDot = !!spawnBranch;
-    const spawnOpen = isAgentDot && !!_spawnExpanded[id];
-    const spawnName = spawnFold.nameOf[id] || "";
-    const agentText = isAgentDot
-      ? agentCaptionText(
-        agentCaption(spawnName, spawnBranch.length, spawnOpen))
-      : "";
+    // The node's call thread (dag/rendering.md §12): how many events
+    // fold behind it, and whether they are on screen.
+    const threadCount = (thread.events[id] || []).length;
+    const threadOpen = threadCount > 0 && thread.isOpen(id);
     const isGhost = !!coveredBy[id];
     const isFailed = _isArchivedFailure(node, onHead, isHead);
     const g = _svg("g", {
@@ -101,28 +87,25 @@ export function drawNodes(
         "history-node" +
         (isHead ? " is-head" : "") +
         (onHead ? "" : " off-head") +
-        (isCollapsible ? " is-collapsible" : "") +
         (oocFlag ? " out-of-context" : "") +
         (isCapsule ? " is-summary" : "") +
-        (isAgentDot ? " is-subagent" : "") +
+        (threadCount ? " has-thread" : "") +
         (isGhost ? " is-ghost" : "") +
         (isFailed ? " is-archived-failure" : ""),
       transform: "translate(" + p.x + "," + p.y + ")",
       "data-msg-id": id,
-      "data-collapsible": isCollapsible ? "1" : "0",
-      "data-collapsed": folded ? "1" : "0",
       "data-internal": internalSet[id] ? "1" : "0",
       "data-owner": internalOwner[id] || "",
       // The interaction layer routes a capsule click to the fold toggle
-      // instead of the collapse toggle, and labels the inspector's
-      // coverage row from these two.
+      // and labels the inspector's coverage row from these two.
       "data-summary": isCapsule ? String(covered.length) : "",
       "data-summary-open": capsuleOpen ? "1" : "0",
-      // Same three for the sub-agent fold: count, open state, and the
-      // name the inspector and tooltip title themselves from.
-      "data-spawn": isAgentDot ? String(spawnBranch.length) : "",
-      "data-spawn-open": spawnOpen ? "1" : "0",
-      "data-spawn-name": spawnName,
+      // Same pair for the call thread: count and open state. Chain
+      // turns and spawn heads use the identical vocabulary — a spawn
+      // head's thread is the agent's own calls, one level down.
+      "data-thread": threadCount ? String(threadCount) : "",
+      "data-thread-open": threadOpen ? "1" : "0",
+      "data-spawn-name": thread.nameOf[id] || "",
       "data-ghost": isGhost ? "1" : "0",
       "data-failed": isFailed ? "1" : "0",
     });
@@ -138,10 +121,7 @@ export function drawNodes(
         "pointer-events": "all",
       })
       : _svg("circle", {
-        // The sub-agent dot is the biggest plain glyph on the canvas and
-        // its whole job is to be clicked; everything else keeps the
-        // baseline 7px target.
-        r: isAgentDot ? String(AGENT_DOT_R + 2) : "7",
+        r: "7",
         fill: "transparent",
         "pointer-events": "all",
       });
@@ -191,22 +171,11 @@ export function drawNodes(
     // ── ghost 描边（rendering.md §9/§10）─────────────────────────
     // Two nodes read the same way and for the same reason: they are on
     // disk and readable, and they can never enter the next request.
-    // A covered turn, because its capsule speaks for it; an archived
-    // failure, because the retry forked past it. Grey outline, no fill.
-    //
-    // The failure case deliberately overwrites the red ! stroke above:
-    // red says "this needs your attention now", and an archived line
-    // does not — the retry already happened. It keeps the ! glyph so
-    // *why* the line ended is still legible.
     if (el && (isGhost || isFailed)) {
       el.setAttribute("stroke", "var(--dag-ghost, #c9c7bf)");
       el.setAttribute("stroke-width", "1.6");
     }
     // ── 褶皱：折叠的覆盖区间收成递缩叠影（rendering.md §9）────────
-    // Three receding pleats off the capsule's right edge. They are the
-    // whole reason the capsule can hide N turns without the graph
-    // lying about it: the pill says "one node", the pleats say "and a
-    // stack behind it". Expanded, they go away — the range is drawn.
     if (isCapsule && !capsuleOpen) {
       const pleats = Math.min(3, covered.length);
       for (let i = 0; i < pleats; i++) {
@@ -225,10 +194,6 @@ export function drawNodes(
       }
     }
     // ── 覆盖标注：胶囊旁写清它替掉了多少轮 ───────────────────────
-    // Without the note the capsule is just an odd-looking turn; with it
-    // the fold is self-describing and needs no legend lookup. It is a
-    // caption, in the same grey as every other annotation on the canvas
-    // — the pill is the glyph, this is what the pill means.
     if (isCapsule) {
       const cap = _svg("text", {
         x: String(CAPSULE_HW + 10),
@@ -241,34 +206,12 @@ export function drawNodes(
         : `已压缩 · ${covered.length} 轮`;
       g.appendChild(cap);
     }
-    // The sub-agent's name, beside its dot. Not inside a shape: a glyph
-    // sized to its own text is a glyph the layout has to negotiate with,
-    // and this one is a point on the grid like every other node. The
-    // caption hangs to the right, where nothing else on the row is, and
-    // brightens with the node on hover (right-dock.css).
-    if (isAgentDot) {
-      const cap = _svg("text", {
-        x: String(AGENT_CAPTION_DX),
-        y: String(3.5),
-        class: "history-subagent-label",
-        "pointer-events": "none",
-      });
-      cap.textContent = agentText;
-      g.appendChild(cap);
-    }
     // ── 覆盖态的两级衰减（rendering.md 第八节）──
-    // aged：结果被 aging 折成一行残根，节点还在上下文里但内容已残——
-    // 描边调暗读作"在，但只剩梗概"。用 stroke-opacity 而不是整体
-    // opacity：白点是 _applyVisibility 写的 fill，整体透明会把
-    // "在上下文中"这个信号一起淡掉，两件事就分不开了。
     const cov = coverageSet ? coverageSet[id] : undefined;
     if (el && cov && cov.aged) {
       el.setAttribute("stroke-opacity", "0.4");
       g.classList.add("is-aged");
     }
-    // spilled：大结果已外溢成盘上文件，正文只留引用。▤ 画在左上角
-    // ——右上角归 ! 和 ↗，右下角归折叠徽标。用 text 而不是 rect，
-    // 免得 _applyVisibility 找主形状时把它当成节点本体。
     if (cov && cov.spilled) {
       const spill = _svg("text", {
         x: String(-NODE_R - 9),
@@ -295,38 +238,19 @@ export function drawNodes(
       arrow.textContent = "↗";
       g.appendChild(arrow);
     }
-    if (isCollapsible) {
-      const hc = cinfo.hiddenCount[id] || 0;
-      // 对话层节点折叠的是它的执行子树 → ⚒N（rendering.md 第〇节）；
-      // 执行层内部的折叠沿用 +N。
-      const isConvNode =
-        (node.role === "user" || node.role === "assistant")
-        && node.display !== "runtime" && !node._runNode;
-      const label = folded
-        ? (isConvNode ? "⚒" + hc : "+" + hc)
-        : "−";
-      // Transparent hit rect covering the badge glyph — the "+N" sits
-      // ~13px off-centre, outside the r=7 node hit circle, so clicking
-      // the glyph itself used to miss and the fold "did nothing". Width
-      // grows with the digit count so "+12" stays fully clickable.
-      const badgeW = 10 + Math.max(0, label.length - 2) * 6;
-      const badgeHit = _svg("rect", {
-        x: String(NODE_R + 1),
-        y: String(NODE_R - 2),
-        width: String(badgeW),
-        height: "14",
-        fill: "transparent",
-        "pointer-events": "all",
-      });
-      g.appendChild(badgeHit);
-      const badge = _svg("text", {
-        x: String(NODE_R + 3),
-        y: String(NODE_R + 5),
-        class: "history-fold-badge",
+    // ── 折叠数角标（rendering.md §12）────────────────────────────
+    // 数字贴在字形右上角，是字形的标注，不依赖任何线是否存在——
+    // 全是函数调用、没有 spawn 的轮次照样成立。函数调用和 spawn 是
+    // 同一类事件，一并计入。展开后角标消失：调用变成线程上的真节点。
+    if (threadCount && !threadOpen) {
+      const cnt = _svg("text", {
+        x: String(NODE_R + 5),
+        y: String(-NODE_R - 1),
+        class: "history-thread-count",
         "pointer-events": "none",
       });
-      badge.textContent = label;
-      g.appendChild(badge);
+      cnt.textContent = String(threadCount);
+      g.appendChild(cnt);
     }
     (g as any)._nodeData = node;
     nodeG.appendChild(g);

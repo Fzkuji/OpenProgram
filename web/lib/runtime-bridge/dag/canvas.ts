@@ -86,6 +86,13 @@ export function applyView(): void {
     `${_viewTx + (PAD_X - COL_W / 2) * _viewScale}px `
     + `${_viewTy + (PAD_Y - COL_W / 2) * _viewScale}px`;
   host.style.backgroundSize = `${pitch}px ${pitch}px`;
+  // The dot radius rides the zoom too: fixed at 1.2px it vanishes into
+  // a 100px tile when zoomed in. Clamped so zoomed-out views don't
+  // dissolve into noise.
+  const dotR = Math.min(3, Math.max(1, 1.2 * _viewScale)).toFixed(2);
+  host.style.backgroundImage =
+    `radial-gradient(rgba(255, 255, 255, 0.055) ${dotR}px, `
+    + `transparent ${dotR}px)`;
   const pct = document.querySelector<HTMLElement>(".dag-hud-zoom");
   if (pct) pct.textContent = Math.round(_viewScale * 100) + "%";
 }

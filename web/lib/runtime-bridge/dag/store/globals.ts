@@ -85,20 +85,23 @@ export function setLeafOfNode(v: Record<string, string>): void {
   _leafOfNode = v;
 }
 
-export let _collapsed: Record<string, boolean> = Object.create(null);
-export function setCollapsed(v: Record<string, boolean>): void {
-  _collapsed = v;
+// Which call threads the user clicked open (dag/rendering.md §12).
+// Keyed by the anchor node — a chain turn or a spawn root. View state,
+// never persisted; absent = folded, which every session starts at.
+// Reset on session switch so one session's expansions don't leak into
+// the next graph.
+export let _threadOpen: Record<string, boolean> = Object.create(null);
+export function toggleThreadOpen(id: string): void {
+  if (_threadOpen[id]) delete _threadOpen[id];
+  else _threadOpen[id] = true;
+}
+export function setThreadOpen(v: Record<string, boolean>): void {
+  _threadOpen = v;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export let _seenCollapsible: Record<string, boolean> = Object.create(null);
-export function setSeenCollapsible(v: Record<string, boolean>): void {
-  _seenCollapsible = v;
-}
-
-export let _collapseSession: string | null = null;
-export function setCollapseSession(v: string | null): void {
-  _collapseSession = v;
+export let _threadSession: string | null = null;
+export function setThreadSession(v: string | null): void {
+  _threadSession = v;
 }
 
 // Which compaction capsules the user clicked open (dag/rendering.md §9).
@@ -114,17 +117,6 @@ export function setSummaryExpanded(v: Record<string, boolean>): void {
   _summaryExpanded = v;
 }
 
-// Which sub-agent capsules the user clicked open (dag/rendering.md §12).
-// Same view-only contract as ``_summaryExpanded``: absent = folded, which
-// is what every session starts at.
-export let _spawnExpanded: Record<string, boolean> = Object.create(null);
-export function toggleSpawnExpanded(id: string): void {
-  if (_spawnExpanded[id]) delete _spawnExpanded[id];
-  else _spawnExpanded[id] = true;
-}
-export function setSpawnExpanded(v: Record<string, boolean>): void {
-  _spawnExpanded = v;
-}
 
 // ── infinite-canvas view (see ../canvas.ts) ───────────────────────
 // Where the user has panned and zoomed to. Module state rather than

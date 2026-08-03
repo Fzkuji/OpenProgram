@@ -580,15 +580,16 @@
 .history-label.on-head { fill: var(--text-secondary); }
 .history-label.is-head { fill: var(--text-primary); font-weight: 600; }
 
-/* Collapsible code subtree: fold/unfold count badge + affordance. */
-.history-fold-badge {
+/* 折叠数角标（rendering.md §12）：数字贴在字形右上角，是字形的标注。
+   淡灰、小号——它说明节点，不与节点争眼。hover 提亮做可点暗示。 */
+.history-thread-count {
   font-size: 9px;
   font-family: var(--font-sans, sans-serif);
-  font-weight: 600;
-  fill: var(--text-secondary);
+  font-weight: 500;
+  fill: var(--text-muted, #8a887f);
   dominant-baseline: middle;
 }
-.history-node.is-collapsible:hover .history-fold-badge {
+.history-node.has-thread:hover .history-thread-count {
   fill: var(--text-primary);
 }
 
@@ -740,21 +741,6 @@
   dominant-baseline: middle;
 }
 .history-node.is-summary:hover .history-summary-label {
-  fill: var(--text-primary);
-}
-
-/* The sub-agent's name, beside its dot (dag/rendering.md §12). Same
-   annotation grey as every other caption on the canvas: the dot is the
-   node, the name is the label on it. It brightens with the node on
-   hover, which is how the two read as one thing. */
-.history-subagent-label {
-  font-size: 10px;
-  font-family: var(--font-sans, sans-serif);
-  fill: var(--text-muted, var(--text-secondary));
-  letter-spacing: 0.01em;
-  dominant-baseline: middle;
-}
-.history-node.is-subagent:hover .history-subagent-label {
   fill: var(--text-primary);
 }
 

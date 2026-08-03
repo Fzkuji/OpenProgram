@@ -293,8 +293,8 @@ export function showNodeInspector(node: GNode, el: Element): void {
   const summaryN = el.getAttribute("data-summary");
   if (summaryN) box.appendChild(_row("覆盖", `${summaryN} 个节点`));
 
-  const spawnN = el.getAttribute("data-spawn");
-  if (spawnN) box.appendChild(_row("子分支", `${spawnN} 个节点`));
+  const threadN = el.getAttribute("data-thread");
+  if (threadN) box.appendChild(_row("调用", `${threadN} 次`));
 
   const body = _bodyText(node).replace(/\s+/g, " ").trim();
   if (body) {
