@@ -585,27 +585,34 @@ every sibling branch. The node has to be a failure *and* abandoned.
 `cancelled` and keeps its own 50% grey). The graph reads it; it never decides
 it.
 
-## 11. Click, right-click, double-click
+## 11. Hover, click, right-click, double-click
 
-The hover tooltip (§4's card) answers "what is this" while you sweep the graph.
-These answer the questions you stop and ask.
+One surface per question. There used to be three info windows — a hover
+tooltip, a second-stage dwell expansion of it, and a click-opened inspector
+popover — which gave the click two jobs at once: open a window AND toggle the
+node's thread, with the popover landing on top of the very expansion it had
+just triggered.
 
-**Click → inspector.** A popover beside the node: role, seq, id, token estimate,
-`expose` level, coverage state, ~200 characters of content, and three actions
-(copy content · raw JSON · fork from here). Raw JSON opens in the same card
-shell rather than a modal — a modal would take the graph away to show you one
-node from it. The token figure is `llm.output_tokens` when the node carries a
-measurement and `chars/4` when it does not; the popover says which
-(`tokens` vs `tokens（估）`) instead of dressing an estimate as a count.
+**Hover → the card.** The node's ONE info surface, once, with everything on
+it: role (a spawn head titles itself `子 agent · <name>` — this is where the
+name lives, §12), model/tokens, content preview, folded call count, coverage
+state, id. The token figure is `llm.output_tokens` when the node carries a
+measurement and `chars/4` when it does not; the card says which (`tokens` vs
+`tokens（估）`). The coverage row reads off the DOM flags the node drawer
+already stamped (`data-ghost`, `data-failed`, `.out-of-context`), so the card
+and the picture beside it cannot disagree. Appears after a short hover delay,
+gone when the cursor leaves; no second stage, no click popover.
 
-The coverage row reads off the DOM flags the node drawer already stamped
-(`data-ghost`, `data-failed`, `.out-of-context`), so the popover and the picture
-beside it cannot disagree.
+**Click → the node's own action.** Fold or unfold its call thread (§12).
+Nothing else — no window competes with the expansion. The right rail's
+Details view still fills quietly for whenever the user opens it.
 
 **Right-click → menu.** checkout to this branch · fork from this node · fork and
-edit this message (user turns only) · copy node id · view raw JSON. Anchored at
-the cursor, because a right-click is aimed and a menu that jumps to the node's
-edge reads as a miss.
+edit this message (user turns only) · copy node id · view raw JSON. The verbs
+live here, anchored at the cursor, because a right-click is aimed and a menu
+that jumps to the node's edge reads as a miss. Raw JSON opens in the card
+shell rather than a modal — a modal would take the graph away to show you one
+node from it.
 
 **Double-click a user turn → fork and edit.** The message text lands in the
 composer with HEAD already back at its fork point. Other nodes keep the
@@ -704,7 +711,7 @@ The whole spec is implemented. Where each part lives:
 | §9 capsule shape | `shapes.ts` `capsule` (keyed on `covers_ids`, tagged `data-shape` so `_applyShapeSize` leaves its geometry alone) |
 | §9 fold + pleats + ghosts | `passes/fold-summaries.ts` (fold), `render/nodes.ts` (pleats, `已压缩 · N 轮` caption, ghost stroke), `render/edges.ts` (dashed ghost edge), `_summaryExpanded` in `store/globals.ts`; executed by `web/scripts/check-dag-summary.mjs` |
 | §10 archived failure | `render/nodes.ts::_isArchivedFailure` — `status=error` AND off the HEAD chain; grey overrides §4's red |
-| §11 inspector / menu / fork & edit | `render/inspector.ts`, wired in `render/interaction.ts`; all three actions go through `POST /api/chat/checkout` |
+| §11 hover card / menu / fork & edit | the one hover card in `dag/tooltip.ts` (single stage, coverage + thread facts off the DOM flags); menu + raw JSON in `render/inspector.ts`, wired in `render/interaction.ts`; the actions go through `POST /api/chat/checkout` |
 | §11 legend | `DagLegend` in `components/chat/dag-view.tsx` (inside the canvas HUD), `.dag-legend` in `right-dock.css` |
 | §12 call thread + agent head | `shapes.ts` `agent_head` (point-down triangle), `passes/thread.ts` (model), `layout/geometry.ts` (recursive placement), `render/edges.ts` (dotted thread line, centre-to-centre chain edges, scene-3 bridge), `render/nodes.ts` (`data-thread*`, shoulder count), `render/interaction.ts` (`toggleThreadOpen`); executed by `web/scripts/check-dag-subagent.mjs` |
 | §12 the name on the wire | `task/runner.py::_update_attach_card` stamps `attach.label` from the task; `ws_actions/session.py::_annotate_spawn_origin` carries it to the spawn root as `spawned_from.label`; tested in `tests/unit/test_task_attach_integration.py` |

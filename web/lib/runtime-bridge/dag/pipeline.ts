@@ -336,7 +336,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       if (!g || !g._nodeData) return;
       if (g === _activeNode) return;
       _activeNode = g;
-      _showTooltip(body, g._nodeData, g.getBoundingClientRect());
+      _showTooltip(body, g._nodeData, g.getBoundingClientRect(), g);
     });
     body.addEventListener("mouseout", (e: MouseEvent) => {
       const tgt = e.target as HTMLElement;

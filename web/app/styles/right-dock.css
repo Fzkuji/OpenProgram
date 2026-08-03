@@ -594,10 +594,9 @@
   fill: var(--text-primary);
 }
 
-/* DAG node tooltip — structured card with header / input / output
-   blocks. Implemented in web/lib/runtime-bridge/history/tooltip.ts.
-   Two visual states: default (collapsed, ~3 short lines, sits next
-   to the node) and ``.expanded`` (after a 5s dwell, full schema). */
+/* DAG node hover card — the ONE info surface per node
+   (web/lib/runtime-bridge/dag/tooltip.ts): header + every field, one
+   stage. Click is the node's own action; right-click is the menu. */
 .history-tooltip {
   position: absolute;
   pointer-events: none;
@@ -608,24 +607,17 @@
   border-radius: 7px;
   font-size: 11.5px;
   line-height: 1.4;
-  width: 240px;
-  max-width: 240px;
+  width: 280px;
+  max-width: 280px;
+  max-height: 380px;
+  overflow: hidden;
   box-shadow: var(--shadow-popover);
   opacity: 0;
-  transition: opacity 0.1s,
-              width 0.18s ease,
-              max-height 0.18s ease;
-  z-index: 5;
+  transition: opacity 0.1s;
+  z-index: 50;
   word-break: break-word;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-}
-.history-tooltip.expanded {
-  width: 360px;
-  max-width: 360px;
-  max-height: 420px;
-  overflow-y: auto;
-  z-index: 50;
 }
 .history-tooltip.visible { opacity: 1; }
 .history-tooltip-header {
@@ -683,19 +675,12 @@
   background: var(--bg-secondary);
   border-radius: 4px;
   padding: 4px 6px;
-  max-height: 32px;
+  max-height: 96px;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 6;
   -webkit-box-orient: vertical;
-}
-.history-tooltip.expanded .history-tooltip-body {
-  max-height: 240px;
-  overflow-y: auto;
-  display: block;
-  -webkit-line-clamp: unset;
-  font-size: 11.5px;
 }
 .history-tooltip-kv {
   display: flex;

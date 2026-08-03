@@ -1,15 +1,12 @@
 /**
- * Renderer: the node inspector popover and the node context menu.
+ * Renderer: the node context menu (and the raw-JSON layer it opens).
  *
- * A hover tooltip answers "what is this" while you sweep the graph.
- * These two answer the questions you stop and ask: what exactly does
- * this node hold, and what can I do from here (dag/rendering.md §11).
+ * The hover card (../tooltip.ts) is a node's ONE info surface; a click
+ * is the node's own action (fold/unfold its thread). What remains here
+ * is the surface for VERBS:
  *
- *   * **Click a node** → inspector: role, seq, token estimate, expose
- *     level, coverage state, ~200 chars of content, and the three
- *     actions you reach for from a graph (copy, raw JSON, fork).
  *   * **Right-click a node** → menu: checkout, fork, fork-and-edit
- *     (user turns only), copy id, raw JSON.
+ *     (user turns only), copy id, raw JSON (dag/rendering.md §11).
  *
  * Every action is an existing operation, reached by its existing
  * route. Nothing here invents a verb:
@@ -33,8 +30,6 @@ import type { GNode } from "../types";
 import { runtimeState } from "../../state";
 import { useSessionStore } from "../../../session-store";
 import { showToast } from "@/lib/format-utils/toast";
-
-const PREVIEW_CHARS = 200;
 
 /** Rough token count. The graph payload carries no measured count for
  *  user turns, and asking the backend per node for a number that only
@@ -73,22 +68,6 @@ function _roleLabel(node: GNode, el?: Element): string {
     return name ? `tool · ${name}` : "tool";
   }
   return String(node.role || "node");
-}
-
-/** How the node stands relative to the next request. Read off the DOM
- *  flags the node drawer already stamped, so the popover can never
- *  disagree with the picture beside it. */
-function _coverageLabel(el: Element): { text: string; tone: string } {
-  if (el.getAttribute("data-failed") === "1") {
-    return { text: "失败轮 · 已留档", tone: "muted" };
-  }
-  if (el.getAttribute("data-ghost") === "1") {
-    return { text: "已折叠进摘要", tone: "muted" };
-  }
-  if (el.classList.contains("out-of-context")) {
-    return { text: "不在覆盖内", tone: "muted" };
-  }
-  return { text: "✓ 在覆盖内", tone: "ok" };
 }
 
 // ── shared shell ───────────────────────────────────────────────────
@@ -235,21 +214,6 @@ function _dropRenderKeys(key: string, value: unknown): unknown {
   return value;
 }
 
-// ── inspector ──────────────────────────────────────────────────────
-
-function _row(label: string, value: string, tone?: string): HTMLElement {
-  const r = document.createElement("div");
-  r.className = "dag-inspector-row";
-  const k = document.createElement("span");
-  k.textContent = label;
-  const v = document.createElement("b");
-  if (tone) v.className = `is-${tone}`;
-  v.textContent = value;
-  r.appendChild(k);
-  r.appendChild(v);
-  return r;
-}
-
 function _actionButton(label: string, onClick: () => void): HTMLElement {
   const b = document.createElement("button");
   b.type = "button";
@@ -260,70 +224,6 @@ function _actionButton(label: string, onClick: () => void): HTMLElement {
     onClick();
   });
   return b;
-}
-
-export function showNodeInspector(node: GNode, el: Element): void {
-  const box = document.createElement("div");
-  box.className = "dag-inspector";
-  box.addEventListener("click", (e) => e.stopPropagation());
-
-  const title = document.createElement("div");
-  title.className = "dag-inspector-title";
-  title.textContent = _roleLabel(node, el);
-  box.appendChild(title);
-
-  const seq = (node as Record<string, unknown>).seq;
-  if (typeof seq === "number") box.appendChild(_row("seq", String(seq)));
-  box.appendChild(_row("id", String(node.id).slice(0, 12)));
-
-  const tok = _estimateTokens(node);
-  box.appendChild(_row(
-    tok.exact ? "tokens" : "tokens（估）",
-    tok.n.toLocaleString(),
-  ));
-
-  const expose = (node as Record<string, unknown>).expose;
-  if (typeof expose === "string" && expose) {
-    box.appendChild(_row("expose", expose));
-  }
-
-  const cov = _coverageLabel(el);
-  box.appendChild(_row("上下文", cov.text, cov.tone));
-
-  const summaryN = el.getAttribute("data-summary");
-  if (summaryN) box.appendChild(_row("覆盖", `${summaryN} 个节点`));
-
-  const threadN = el.getAttribute("data-thread");
-  if (threadN) box.appendChild(_row("调用", `${threadN} 次`));
-
-  const body = _bodyText(node).replace(/\s+/g, " ").trim();
-  if (body) {
-    const prev = document.createElement("div");
-    prev.className = "dag-inspector-preview";
-    prev.textContent = body.length > PREVIEW_CHARS
-      ? body.slice(0, PREVIEW_CHARS) + "…"
-      : body;
-    box.appendChild(prev);
-  }
-
-  const acts = document.createElement("div");
-  acts.className = "dag-inspector-actions";
-  const rect = el.getBoundingClientRect();
-  acts.appendChild(_actionButton("复制内容", () => {
-    _copy(_bodyText(node), "已复制内容");
-  }));
-  acts.appendChild(_actionButton("原始 JSON", () => {
-    _showRawJson(node, rect);
-  }));
-  if (_isChainTurn(node)) {
-    acts.appendChild(_actionButton("从此 fork", () => {
-      _closeLayer();
-      void _checkoutTo(String(node.id));
-    }));
-  }
-  box.appendChild(acts);
-
-  _openLayer(box, rect);
 }
 
 // ── context menu ───────────────────────────────────────────────────

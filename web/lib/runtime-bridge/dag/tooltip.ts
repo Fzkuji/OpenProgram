@@ -1,38 +1,41 @@
 /**
- * History DAG node tooltip.
+ * History DAG node hover card — the ONE info surface a node has.
  *
- * Lifecycle and design choices:
+ * There used to be three: a hover tooltip, a second-stage "dwell"
+ * expansion of it, and a click-opened inspector popover. Three windows
+ * for one node meant the click had two jobs (open a window AND toggle
+ * the node's thread), and the popover landed on top of the expansion it
+ * had just triggered. Now:
  *
- *   * **Visibility is driven only by hover-on-node.** Mouse over the
- *     node → card shows. Mouse leaves the node → card hides
- *     immediately. The card itself is ``pointer-events: none`` so
- *     moving the cursor across it doesn't "stick" the popup.
- *   * **Delayed, two-stage reveal.** Nothing shows while the cursor
- *     just sweeps across nodes; after ``SHOW_DELAY_MS`` of hover the
- *     compact card appears (1 input line + 1 output line), and after
- *     ``SHOW_DELAY_MS + DWELL_MS`` total it expands to every field.
- *   * **Position next to the node, not the mouse.** Default to the
- *     right of the node's bounding box; flip to the left if it
- *     would overflow the panel. Vertical anchor follows the node's
- *     top, clamped inside the panel.
+ *   * **Hover** → this card, once, with everything on it. No second
+ *     stage, no click popover.
+ *   * **Click** → the node's own action only (fold/unfold its thread).
+ *   * **Right-click** → the action menu (checkout / fork / copy).
  *
- * No row labels are reinvented — each line uses the actual schema
- * key (``name`` / ``input`` / ``output`` / ``label`` / ``head_id`` /
- * ``source_commit_id`` / ``embed_count`` / ``embed_tokens`` / ...).
+ * Lifecycle:
+ *   * Visibility is driven only by hover-on-node: mouse over → card
+ *     (after a short delay so sweeping the cursor doesn't strobe);
+ *     mouse off → gone. The card is ``pointer-events: none``.
+ *   * Position below the node, flipped above when it would clip.
+ *
+ * No row labels are reinvented — each line uses the actual schema key
+ * (``name`` / ``input`` / ``output`` / ``model`` / ``label`` / ...),
+ * plus the two facts the old inspector alone carried: the node's
+ * context-coverage state and its folded call count, both read off the
+ * DOM flags the node drawer stamped so card and picture cannot
+ * disagree.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { type GNode } from "./types";
+import { _estimateTokens } from "./render/inspector";
 
-const SHOW_DELAY_MS = 2000;  // hover-stay before the compact card appears
-const DWELL_MS = 3000;       // further hover-stay before expansion (5s total)
-const COLLAPSED_VAL = 80;    // chars per row in collapsed view
-const EXPANDED_VAL = 600;    // chars per block in expanded view
+const SHOW_DELAY_MS = 450;   // hover-stay before the card appears
+const BODY_CHARS = 280;      // chars per body block
 const GAP = 10;              // px gap between node and card
 
 let _tooltip: HTMLDivElement | null = null;
-let _dwellTimer = 0;
 let _showTimer = 0;
 let _currentId: string | null = null;
 
@@ -45,42 +48,32 @@ export function ensureTooltip(body: HTMLElement): HTMLDivElement {
 }
 
 export function hideTooltip(): void {
-  if (_dwellTimer) {
-    window.clearTimeout(_dwellTimer);
-    _dwellTimer = 0;
-  }
   if (_showTimer) {
     window.clearTimeout(_showTimer);
     _showTimer = 0;
   }
   _currentId = null;
-  if (_tooltip) {
-    _tooltip.classList.remove("visible");
-    _tooltip.classList.remove("expanded");
-  }
+  if (_tooltip) _tooltip.classList.remove("visible");
 }
 
 export function resetTooltip(): void {
   _tooltip = null;
   _currentId = null;
-  if (_dwellTimer) {
-    window.clearTimeout(_dwellTimer);
-    _dwellTimer = 0;
-  }
   if (_showTimer) {
     window.clearTimeout(_showTimer);
     _showTimer = 0;
   }
 }
 
-/** Show the tooltip for ``node`` next to ``nodeRect`` (in viewport
- *  coordinates). The function is idempotent on repeated calls with
- *  the same node — it only rebuilds the DOM when the node changes,
- *  so a fast-moving cursor over the same node doesn't strobe. */
+/** Show the card for ``node`` next to ``nodeRect`` (viewport
+ *  coordinates). ``el`` is the node's ``<g>`` — the drawer's data-*
+ *  flags on it carry the coverage / thread facts. Idempotent on
+ *  repeated calls with the same node. */
 export function showTooltip(
   body: HTMLElement,
   node: GNode,
   nodeRect: DOMRect,
+  el?: Element | null,
 ): void {
   const tip = ensureTooltip(body);
   const id = String(node.id || "");
@@ -88,34 +81,18 @@ export function showTooltip(
   if (id !== _currentId) {
     _currentId = id;
     tip.classList.remove("visible");
-    tip.classList.remove("expanded");
     if (_showTimer) window.clearTimeout(_showTimer);
-    if (_dwellTimer) window.clearTimeout(_dwellTimer);
-    // 停留 SHOW_DELAY_MS 才出小卡——扫过节点不弹窗。
+    // 停留 SHOW_DELAY_MS 才出卡——扫过节点不弹窗。
     _showTimer = window.setTimeout(() => {
       if (_currentId !== id || !_tooltip) return;
-      _render(_tooltip, node, /* expanded */ false);
+      _render(_tooltip, node, el || null);
       _tooltip.classList.add("visible");
       _position(_tooltip, body, nodeRect);
+      // 内容宽度在下一帧才量得准，再对一次位，防溢出右缘。
+      requestAnimationFrame(() => {
+        if (_currentId === id && _tooltip) _position(_tooltip, body, nodeRect);
+      });
     }, SHOW_DELAY_MS);
-    _dwellTimer = window.setTimeout(() => {
-      // Only expand if we're still hovering the same node.
-      if (_currentId === id && _tooltip) {
-        _render(_tooltip, node, true);
-        _tooltip.classList.add("expanded");
-        // Width change is a CSS transition; offsetWidth reads the
-        // pre-transition value until the next frame. Re-position
-        // across a few frames so the card never overflows the panel
-        // right edge while expanding.
-        _position(_tooltip, body, nodeRect);
-        requestAnimationFrame(() => {
-          if (_currentId === id && _tooltip) _position(_tooltip, body, nodeRect);
-        });
-        window.setTimeout(() => {
-          if (_currentId === id && _tooltip) _position(_tooltip, body, nodeRect);
-        }, 220);
-      }
-    }, SHOW_DELAY_MS + DWELL_MS);
   }
   // Repeated mousemoves over the same node only re-position an
   // already-visible card — they must not bypass the show delay.
@@ -128,20 +105,30 @@ type Row =
   | { kind: "kv"; key: string; value: string }
   | { kind: "block"; key: string; value: string };
 
-function _render(tip: HTMLElement, node: GNode, expanded: boolean): void {
+function _render(tip: HTMLElement, node: GNode, el: Element | null): void {
   tip.innerHTML = "";
-  _appendHeader(tip, node);
-  const rows = expanded ? _rowsExpanded(node) : _rowsCollapsed(node);
-  rows.forEach((row) => {
-    if (row.kind === "block") _appendBlock(tip, row.key, row.value, expanded);
+  _appendHeader(tip, node, el);
+  _rows(node, el).forEach((row) => {
+    if (row.kind === "block") _appendBlock(tip, row.key, row.value);
     else _appendKv(tip, row.key, row.value);
   });
 }
 
-function _kindLabel(node: GNode): string {
+function _kindLabel(node: GNode, el: Element | null): string {
+  if (node.display === "root") return "root";
+  if (Array.isArray((node as Record<string, unknown>).covers_ids)) {
+    return "context/summary";
+  }
+  // A spawn root is a user turn by role, but "user" is the wrong answer
+  // to "what am I looking at" — it is another agent (dag/rendering.md
+  // §12), and this card is where its name lives now that the canvas
+  // draws no captions.
+  if ((node as Record<string, unknown>).source === "agent_spawn"
+      && !node.predecessor) {
+    const nm = (el?.getAttribute("data-spawn-name") || "").trim();
+    return nm ? `子 agent · ${nm}` : "子 agent";
+  }
   const fn = node.function;
-  // function_call header carries the function name inline so the
-  // user can identify it without expanding the card.
   if (fn === "attach") return "function call · attach";
   if (fn === "merge") return "function call · merge";
   if (node.role === "tool") {
@@ -151,12 +138,16 @@ function _kindLabel(node: GNode): string {
   return (node.role || "?").toString();
 }
 
-function _appendHeader(tip: HTMLElement, node: GNode): void {
+function _appendHeader(
+  tip: HTMLElement,
+  node: GNode,
+  el: Element | null,
+): void {
   const header = document.createElement("div");
   header.className = "history-tooltip-header";
   const title = document.createElement("div");
   title.className = "history-tooltip-kind";
-  title.textContent = _kindLabel(node);
+  title.textContent = _kindLabel(node, el);
   header.appendChild(title);
   const chips: string[] = [];
   if (node.source && node.source !== "web") chips.push(node.source);
@@ -175,37 +166,18 @@ function _appendHeader(tip: HTMLElement, node: GNode): void {
   tip.appendChild(header);
 }
 
-/** Collapsed view: ≤ 2 lines of body content (input + output, or just
- *  output when no input). Each value clamped to ``COLLAPSED_VAL``. */
-function _rowsCollapsed(node: GNode): Row[] {
-  const rows: Row[] = [];
-  const fn = node.function;
-  const role = node.role;
-  const out = _outputText(node);
-
-  if (role === "tool") {
-    if (typeof node.input === "string" && node.input) {
-      rows.push(_block("input", _clamp(node.input, COLLAPSED_VAL)));
-    }
-    if (out) rows.push(_block("output", _clamp(out, COLLAPSED_VAL)));
-    return rows;
-  }
-  if (fn === "attach" || fn === "merge") {
-    if (node.attach_label) {
-      rows.push(_kv("label", String(node.attach_label)));
-    } else if (node.attach_ref) {
-      rows.push(_kv("head_id", String(node.attach_ref).slice(0, COLLAPSED_VAL)));
-    }
-    if (out) rows.push(_block("output", _clamp(out, COLLAPSED_VAL)));
-    return rows;
-  }
-  // user / llm — just output
-  if (out) rows.push(_block("output", _clamp(out, COLLAPSED_VAL * 2)));
-  return rows;
+/** How the node stands relative to the next request, read off the DOM
+ *  flags the node drawer stamped — the card can never disagree with
+ *  the picture beside it. */
+function _coverageText(el: Element): string {
+  if (el.getAttribute("data-failed") === "1") return "失败轮 · 已留档";
+  if (el.getAttribute("data-ghost") === "1") return "已折叠进摘要";
+  if (el.classList.contains("out-of-context")) return "不在覆盖内";
+  return "✓ 在覆盖内";
 }
 
-/** Expanded view: every schema field that has a value. */
-function _rowsExpanded(node: GNode): Row[] {
+/** Every field that has a value — one card, one stage. */
+function _rows(node: GNode, el: Element | null): Row[] {
   const rows: Row[] = [];
   const fn = node.function;
   const role = node.role;
@@ -215,48 +187,53 @@ function _rowsExpanded(node: GNode): Row[] {
     if (typeof node.input === "string" && node.input) {
       rows.push(_block("input", node.input));
     }
-    rows.push(_block("output", _outputText(node)));
-    return rows;
-  }
-
-  if (fn === "attach" || fn === "merge") {
-    rows.push(_kv("name", fn));
+    const out = _outputText(node);
+    if (out) rows.push(_block("output", out));
+  } else if (fn === "attach" || fn === "merge") {
     if (node.attach_manual) rows.push(_kv("manual", "true"));
     if (node.attach_label) rows.push(_kv("label", String(node.attach_label)));
-    if (node.attach_ref) {
-      rows.push(_kv("head_id", String(node.attach_ref)));
-    }
+    if (node.attach_ref) rows.push(_kv("head_id", String(node.attach_ref)));
     if (node.attach_source_commit_id) {
       rows.push(_kv("source_commit_id", String(node.attach_source_commit_id)));
     }
-    if (typeof node.attach_embed_count === "number") {
-      rows.push(_kv("embed_count", String(node.attach_embed_count)));
+    const out = _outputText(node);
+    if (out) rows.push(_block("output", out));
+  } else {
+    let tokensShown = false;
+    if (role === "assistant" || role === "llm") {
+      const meta = (node.llm || {}) as Record<string, unknown>;
+      if (typeof meta.model === "string" && meta.model) {
+        rows.push(_kv("model", meta.model));
+      }
+      if (typeof meta.input_tokens === "number"
+          || typeof meta.output_tokens === "number") {
+        rows.push(_kv("tokens",
+          `${meta.input_tokens ?? "?"} → ${meta.output_tokens ?? "?"}`));
+        tokensShown = true;
+      }
     }
-    if (typeof node.attach_embed_tokens === "number") {
-      rows.push(_kv("embed_tokens", String(node.attach_embed_tokens)));
+    if (!tokensShown && node.display !== "root") {
+      const tok = _estimateTokens(node);
+      rows.push(_kv(tok.exact ? "tokens" : "tokens（估）",
+        tok.n.toLocaleString()));
     }
     const out = _outputText(node);
     if (out) rows.push(_block("output", out));
-    return rows;
   }
 
-  if (role === "assistant" || role === "llm") {
-    const meta = (node.llm || {}) as Record<string, unknown>;
-    if (typeof meta.model === "string" && meta.model) {
-      rows.push(_kv("model", meta.model));
+  // The facts the click-popover alone used to carry (§11/§12):
+  if (el) {
+    const threadN = el.getAttribute("data-thread");
+    if (threadN) rows.push(_kv("调用", `${threadN} 次`));
+    const summaryN = el.getAttribute("data-summary");
+    if (summaryN) rows.push(_kv("覆盖", `${summaryN} 轮`));
+    if (node.display !== "root") {
+      rows.push(_kv("上下文", _coverageText(el)));
     }
-    if (typeof meta.input_tokens === "number") {
-      rows.push(_kv("input_tokens", String(meta.input_tokens)));
-    }
-    if (typeof meta.output_tokens === "number") {
-      rows.push(_kv("output_tokens", String(meta.output_tokens)));
-    }
-    rows.push(_block("output", _outputText(node)));
-    return rows;
   }
-
-  // user msg
-  rows.push(_block("output", _outputText(node)));
+  if (node.display !== "root") {
+    rows.push(_kv("id", String(node.id).slice(0, 12)));
+  }
   return rows;
 }
 
@@ -287,12 +264,7 @@ function _appendKv(tip: HTMLElement, key: string, value: string): void {
   tip.appendChild(row);
 }
 
-function _appendBlock(
-  tip: HTMLElement,
-  key: string,
-  value: string,
-  expanded: boolean,
-): void {
+function _appendBlock(tip: HTMLElement, key: string, value: string): void {
   const wrap = document.createElement("div");
   wrap.className = "history-tooltip-block";
   const lbl = document.createElement("div");
@@ -301,9 +273,7 @@ function _appendBlock(
   wrap.appendChild(lbl);
   const bod = document.createElement("div");
   bod.className = "history-tooltip-body";
-  bod.textContent = expanded
-    ? _clamp(value || "(empty)", EXPANDED_VAL)
-    : (value || "(empty)");
+  bod.textContent = _clamp(value || "(empty)", BODY_CHARS);
   wrap.appendChild(bod);
   tip.appendChild(wrap);
 }
@@ -319,15 +289,12 @@ function _clamp(s: string, n: number): string {
 /** Anchor the card BELOW the node, never overlapping it. The user
  *  is looking at the node when they hover — the card must not
  *  obscure that. Card is ``fixed`` so it can float across any
- *  region of the page, including the chat area and left sidebar.
+ *  region of the page.
  *
  *  Order of preference (each clamped to viewport):
  *    1. Below the node (default).
  *    2. Above the node (if below would clip the bottom of the viewport).
- *    3. Side fallback (if both above/below would clip).
- *
- *  Horizontally we center under the node, then nudge into the viewport
- *  if the card would spill off either edge. */
+ *    3. Side fallback (if both above/below would clip). */
 function _position(tip: HTMLElement, body: HTMLElement, nodeRect: DOMRect): void {
   void body;
   tip.style.position = "fixed";
@@ -339,12 +306,10 @@ function _position(tip: HTMLElement, body: HTMLElement, nodeRect: DOMRect): void
   // Vertical: below the node by default.
   let topPx = nodeRect.bottom + GAP;
   if (topPx + th > vh - 6) {
-    // Below would clip — try above.
     const aboveTop = nodeRect.top - GAP - th;
     if (aboveTop >= 6) {
       topPx = aboveTop;
     } else {
-      // Both clip — pin to the side and clamp inside viewport.
       topPx = Math.max(6, vh - 6 - th);
     }
   }

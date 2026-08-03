@@ -480,23 +480,27 @@ caller/predecessor），`graph_layout/` 做 lane/tier/depth 标注——**tier �
 `runtime/execution/turn-cancellation.md`，它保持 `cancelled`、沿用自己的 50%
 灰化）。图读它，从不自己判定它。
 
-## 十一、单击、右键、双击
+## 十一、悬停、单击、右键、双击
 
-悬停卡片（第四节）回答扫图时的"这是什么"。下面三个回答你停下来问的问题。
+一个问题一个面。信息窗曾经有三个——悬停卡片、停留后的二段展开、点击弹出的检
+查器——单击因此同时干两件事：弹窗又切换线程，弹窗还正好盖在它刚触发的展开
+上面。
 
-**单击 → 检查器**。节点旁弹出：角色、seq、id、token 估算、`expose` 层级、覆盖
-状态、约 200 字内容预览，以及三个动作（复制内容 · 原始 JSON · 从此 fork）。
-原始 JSON 复用同一张卡片壳而不是弹模态——模态会为了给你看图里的一个节点，把图
-整个拿走。token 数字在节点带实测值时用 `llm.output_tokens`，没有时用
-`chars/4`；卡片明说是哪一种（`tokens` / `tokens（估）`），而不是把估算打扮成
-实测。
+**悬停 → 卡片**。节点唯一的信息面，一次给全：角色（spawn 头标题写
+`子 agent · <名字>`——名字就住在这里，第十二节）、model/tokens、内容预览、
+折叠调用数、覆盖状态、id。token 数字在节点带实测值时用 `llm.output_tokens`，
+没有时用 `chars/4`；卡片明说是哪一种（`tokens` / `tokens（估）`）。覆盖行读
+的是节点绘制时已经戳好的 DOM 标记（`data-ghost`、`data-failed`、
+`.out-of-context`），卡片和它旁边那张图不可能各说各话。悬停稍候出现、移开即
+走；没有二段展开，没有点击弹窗。
 
-覆盖行读的是节点绘制时已经戳好的 DOM 标记（`data-ghost`、`data-failed`、
-`.out-of-context`），所以卡片和它旁边那张图不可能各说各话。
+**单击 → 节点自己的动作**。折叠/展开它的调用线程（第十二节）。没有别的——
+没有窗口和展开抢画面。右栏 Details 仍然静默填充，用户想看随时打开。
 
 **右键 → 菜单**。checkout 到此分支 · 从此节点 fork · fork 并编辑此消息（仅
-用户轮）· 复制节点 id · 查看原始 JSON。锚在光标处，因为右键是瞄准的，菜单跳到
-节点边缘会读作没点中。
+用户轮）· 复制节点 id · 查看原始 JSON。动词都住在这里，锚在光标处，因为右键
+是瞄准的，菜单跳到节点边缘会读作没点中。原始 JSON 复用卡片壳而不是弹模态——
+模态会为了给你看图里的一个节点，把图整个拿走。
 
 **双击用户轮 → fork 并编辑**。消息文本落进输入框，HEAD 已经退回它的分叉点。
 其他节点保持 checkout 行为——回复和工具结果没有什么可编辑的。
@@ -580,7 +584,7 @@ spawn 的 agent 一个倒三角形——一行一个事件，从上到下按调�
 | 第九节 胶囊形状 | `shapes.ts` 的 `capsule`（按 `covers_ids` 判定，打 `data-shape` 标让 `_applyShapeSize` 别改它的几何） |
 | 第九节 折叠 / 褶皱 / 幽灵 | `passes/fold-summaries.ts`（折叠）、`render/nodes.ts`（褶皱、`已压缩 · N 轮` 注记、幽灵描边）、`render/edges.ts`（幽灵虚线边）、`store/globals.ts` 的 `_summaryExpanded`；由 `web/scripts/check-dag-summary.mjs` 实跑 |
 | 第十节 失败留档 | `render/nodes.ts::_isArchivedFailure`——`status=error` **且**离开 HEAD 链；灰覆盖第四节的红 |
-| 第十一节 检查器 / 菜单 / fork 并编辑 | `render/inspector.ts`，在 `render/interaction.ts` 接线；三个动作都走 `POST /api/chat/checkout` |
+| 第十一节 悬停卡片 / 菜单 / fork 并编辑 | 唯一的悬停卡片在 `dag/tooltip.ts`（单段，覆盖/调用数读 DOM 标记）；菜单与原始 JSON 在 `render/inspector.ts`，`render/interaction.ts` 接线；动作走 `POST /api/chat/checkout` |
 | 第十一节 图例 | `components/chat/dag-view.tsx` 的 `DagLegend`（挂在画布 HUD 里），`right-dock.css` 的 `.dag-legend` |
 | 第十二节 调用线程 + agent 头 | `shapes.ts` `agent_head`（倒三角形）、`passes/thread.ts`（模型）、`layout/geometry.ts`（递归安放）、`render/edges.ts`（线程点线、中心连线、场景3横桥）、`render/nodes.ts`（`data-thread*`、肩上折叠数）、`render/interaction.ts`（`toggleThreadOpen`）；由 `web/scripts/check-dag-subagent.mjs` 实跑 |
 | 第十二节 名字上线 | `task/runner.py::_update_attach_card` 从 task 戳出 `attach.label`；`ws_actions/session.py::_annotate_spawn_origin` 把它带到 spawn 根的 `spawned_from.label`；测试见 `tests/unit/test_task_attach_integration.py` |

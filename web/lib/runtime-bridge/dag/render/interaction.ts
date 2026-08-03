@@ -36,7 +36,6 @@ import {
 import {
   closeNodeLayers,
   forkAndEditNode,
-  showNodeInspector,
   showNodeMenu,
 } from "./inspector";
 
@@ -160,13 +159,14 @@ export function _installInteractionHandlers(rerender: () => void): void {
     }
     const id = g.getAttribute("data-msg-id");
     if (!id) return;
-    // Selecting a node fills the right rail's Details view QUIETLY —
-    // the inspector popover is the click's visible response; popping
-    // the sidebar too was disorienting. Details are ready whenever the
-    // user opens the rail themselves.
+    // A click is the node's own ACTION, not an info request — info
+    // lives on the hover card (tooltip.ts), the one surface per node.
+    // The old click-opened inspector popover landed on top of the very
+    // expansion the same click had just triggered. The right rail's
+    // Details view still fills quietly, for whenever the user opens
+    // the rail themselves.
     const gn = _graphNode(id);
     if (gn) useSessionStore.getState().populateDetail(_detailFor(gn));
-    if (gn) showNodeInspector(gn, g);
     // A capsule's click is its fold (dag/rendering.md §9). It takes
     // precedence over the execution-subtree fold below: the capsule
     // stands for a span of the CHAIN, which is the bigger thing the
