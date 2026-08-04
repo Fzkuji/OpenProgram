@@ -172,7 +172,7 @@ def _persist_doc_attachments(session_id: str, documents: list, text: str) -> str
     import base64
     import hashlib
     import json
-    from openprogram.agent._workdir import session_workdir_for
+    from openprogram.agent.internals._workdir import session_workdir_for
 
     wd = session_workdir_for(session_id)
     if wd is None:
@@ -485,6 +485,44 @@ async def handle_chat(ws, cmd: dict):
                 )
         except Exception:
             pass
+
+    # Local builtin commands (kind="local" with a CALLABLE handler in the
+    # unified registry — /goal today): execute backend-side. A result
+    # with no ``send_text`` (status / clear) replies into the chat flow
+    # and skips the turn entirely; ``send_text`` (goal set) REPLACES the
+    # message text with the goal directive and falls through into the
+    # normal turn flow — the dispatcher's goal loop takes over after the
+    # turn. REPL marker-string builtins are never callable, and
+    # kind="prompt" commands keep their composer-side expansion path.
+    if text.startswith("/"):
+        _local_res = None
+        try:
+            from openprogram.commands.dispatch import invoke as _cmd_invoke
+            _r = _cmd_invoke(text, session_id=session_id)
+            if _r.ok and _r.kind == "local" and callable(_r.local_handler):
+                _local_res = _r
+        except Exception:
+            _local_res = None
+        if _local_res is not None:
+            try:
+                _out = _local_res.local_handler(
+                    {"session_id": session_id}, _local_res.raw_args) or {}
+            except Exception as _cmd_err:  # noqa: BLE001 — reply, don't drop the WS
+                _out = {"text": (f"/{_local_res.command_name} failed: "
+                                 f"{type(_cmd_err).__name__}: {_cmd_err}")}
+            _reply_text = str(_out.get("text") or "")
+            if _reply_text:
+                await ws.send_text(json.dumps({
+                    "type": "chat_response",
+                    "data": {"type": "local_command",
+                             "session_id": session_id,
+                             "command": _local_res.command_name,
+                             "content": _reply_text},
+                }))
+            _send_text = _out.get("send_text")
+            if not _send_text:
+                return
+            text = str(_send_text)
 
     from openprogram.agent.session_config import save_session_run_config
     run_cfg = save_session_run_config(

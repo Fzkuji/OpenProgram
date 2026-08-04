@@ -482,6 +482,22 @@ export function handleChatResponse(data: ChatResponseData): void {
     handleStatusResponse(data as StatusResponseData, sid, targetsActive);
     return;
   }
+  if (type === "local_command") {
+    // Backend-executed builtin (/goal status / clear …) — show its reply
+    // as a transient system row in the transcript. Not persisted
+    // server-side (same as a REPL console print), so it drops on reload.
+    const content = String((data as { content?: unknown }).content ?? "");
+    if (sid && content) {
+      useSessionStore.getState().appendMessage(sid, {
+        id: "local_cmd_" + Date.now().toString(36),
+        role: "system",
+        content,
+        status: "done",
+      });
+      if (targetsActive) scrollToBottom();
+    }
+    return;
+  }
   if (type === "follow_up_question") {
     if (targetsActive) handleFollowUpQuestion(data as { question?: string });
     return;

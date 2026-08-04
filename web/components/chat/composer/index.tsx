@@ -35,6 +35,7 @@ import { useTranslation } from "@/lib/i18n";
 // each carries its own popover menu (project-menu / agent-selector /
 // permission-menu submodules under ../top-bar).
 import { ProjectBadge, WorkingDirChips } from "../top-bar";
+import { GoalChip } from "../goal-chip";
 import { visibleParams } from "./modes/fn-form/fn-form";
 import { type DecisionAction } from "./modes/question/question-mode";
 import { resolveComposerMode } from "./modes/resolve-mode";
@@ -645,6 +646,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         <StatusChip owningId={bound === null} />
         <ProjectBadge />
         <WorkingDirChips />
+        <GoalChip />
         {/* DAG 视角的画布控件（Fit / 缩放 / 图例）从 dag-view.tsx
             portal 进来，落在输入框右上角——env chip 行的右端。 */}
         <div id="dagHudSlot" className={styles.dagHudSlot} />

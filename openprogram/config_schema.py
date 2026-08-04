@@ -142,6 +142,16 @@ SETTINGS: list[SettingSpec] = [
         help="`local` = on-disk memory tool; `none` = disabled.",
     ),
     SettingSpec(
+        key="goal.max_turns", path=("goal", "max_turns"), group="Goal",
+        label="Goal max auto-continue turns", widget="number",
+        apply=APPLY_LIVE, default=20,
+        validate=lambda v: (None if str(v).isdigit() and int(v) > 0
+                            else "must be a positive whole number"),
+        help="Upper bound on turns a /goal session goal may consume "
+             "before it stops with status=capped. Read when the goal is "
+             "set; each goal keeps the bound it started with.",
+    ),
+    SettingSpec(
         key="update.channel", path=("update", "channel"), group="Updates",
         label="Update channel", widget="enum", apply=APPLY_LIVE,
         default="stable", choices=_update_channels,

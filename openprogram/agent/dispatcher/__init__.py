@@ -103,6 +103,42 @@ def process_user_turn(
     on_event: Optional[EventCallback] = None,
     cancel_event: Optional[threading.Event] = None,
 ) -> TurnResult:
+    """One full agent turn, then the session-goal continuation loop.
+
+    Every caller (webui / channels / CLI / task runner) enters here, so
+    an active session goal (``/goal``) is honoured no matter who
+    triggered the turn: after the turn — finalize (phase 6/7) included —
+    :func:`openprogram.agent.goal.continue_goal_turns` judges the goal
+    and, while unmet and under budget, keeps running follow-up turns
+    (``source="goal_continue"``). Each continuation is a first-class
+    turn via :func:`_process_turn_once` (own persistence / commits /
+    compaction), never a nested ``process_user_turn`` — so the loop
+    cannot recurse into itself. Returns the LAST turn's result.
+
+    Sessions without an active goal pay one meta read and return the
+    single turn's result unchanged.
+    """
+    result = _process_turn_once(
+        req, on_event=on_event, cancel_event=cancel_event)
+    try:
+        from openprogram.agent.goal import continue_goal_turns
+        return continue_goal_turns(
+            req, result, run_turn=_process_turn_once,
+            on_event=on_event, cancel_event=cancel_event)
+    except Exception:
+        # The goal loop must never lose a finished turn's result. A
+        # crash below still returns what the user's own turn produced.
+        _log.warning("goal continuation failed for session %s",
+                     req.session_id, exc_info=True)
+        return result
+
+
+def _process_turn_once(
+    req: TurnRequest,
+    *,
+    on_event: Optional[EventCallback] = None,
+    cancel_event: Optional[threading.Event] = None,
+) -> TurnResult:
     """Synchronous wrapper that runs one full agent turn.
 
     Why sync: callable from channel worker threads without async

@@ -673,6 +673,9 @@ async def handle_load_session(ws, cmd: dict):
                 "peer": _db_sess.get("peer"),
                 "peer_display": _db_sess.get("peer_display"),
                 "source": _db_sess.get("source"),
+                # Session goal (/goal) — the composer's GoalChip hydrates
+                # from this on load; live changes ride goal_update frames.
+                "goal": (_db_sess.get("extra_meta") or {}).get("goal"),
                 "settings": {
                     "tools_enabled": run_cfg.tools_enabled,
                     "tools_override": run_cfg.tools_override,
