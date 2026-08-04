@@ -102,16 +102,21 @@ def register_builtin(
     handler: Any,
     description: str = "",
     argument_hint: str = "",
+    aliases: Optional[list[str]] = None,
 ) -> None:
     """Register a built-in (type: local) command from host code.
 
-    Built-ins skip frontmatter — they're invoked via ``handler`` which
-    the dispatcher calls with ``(session_ctx, raw_args)`` and which
-    returns a ``LocalCommandResult``-shaped dict (or None for no-op).
+    Built-ins skip frontmatter — they're invoked via ``handler``.
+    ``handler`` is either a callable the dispatcher's caller invokes
+    with ``(session_ctx, raw_args)`` (returning a
+    ``LocalCommandResult``-shaped dict, or None for no-op), or an
+    opaque marker (e.g. the action name string) that the host UI maps
+    to its own local implementation — the TUI does the latter.
     """
     from .frontmatter import ParsedCommand
     raw = ParsedCommand(
         name=name,
+        aliases=list(aliases or []),
         description=description,
         argument_hint=argument_hint,
         type="local",
@@ -187,7 +192,35 @@ def reload(*, cwd: Path | None = None) -> None:
         except Exception:
             pass
 
+    register_shared_builtins()
+
     _loaded = True
+
+
+def register_shared_builtins() -> None:
+    """Package-owned builtins with CALLABLE handlers, usable by every
+    host (web chat handler, invoke API). Idempotent. A host that
+    shadowed one of these names with its own non-callable marker
+    handler (the Rich REPL's ``register_repl_builtins``) keeps its
+    shadow — that host maps the marker to a richer local action, and
+    ``reload()`` running after it must not steal the name back."""
+    try:
+        from openprogram.agent.goal import goal_builtin_handler
+    except Exception:
+        # A broken goal module must not poison the rest of the registry.
+        return
+    with _lock:
+        existing = _buckets.get("builtin", {}).get("goal")
+    if existing is not None and not callable(existing.builtin_handler):
+        return
+    register_builtin(
+        "goal",
+        handler=goal_builtin_handler,
+        description=(
+            "set a persistent session goal — the agent auto-continues "
+            "turns until the goal is met (or /goal clear)"),
+        argument_hint="[condition | clear | --check \"cmd\" condition]",
+    )
 
 
 async def sync_mcp_prompts() -> None:

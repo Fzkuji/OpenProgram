@@ -60,4 +60,6 @@ macOS / Linux 上的 TUI 是 Node.js（Ink）实现，通过 WebSocket 连接本
 
 另有 `/search`、`/review`、`/diff`、`/init`、`/browser`、`/welcome`。完整清单以 `/help` 输出为准。
 
-Windows 的 Rich REPL 支持一个较小的集合：`/help`、`/web`、`/model`、`/agent`、`/new`、`/copy`、`/tools`、`/skills`、`/functions`、`/apps`、`/mcp`、`/session`、`/login`、`/attach`、`/detach`、`/connections`、`/profile`、`/compact`、`/context`、`/rewind`、`/sandbox`、`/clear`、`/quit`。退出也可用 `Ctrl-C` 或 `Ctrl-D`。
+除这些内置命令外，补全菜单还会列出统一命令注册表里的全部命令——skill、MCP prompt、插件命令，以及你放在 `~/.openprogram/commands/` 或 `<项目>/.openprogram/commands/` 下的自定义命令文件（markdown，可带 YAML frontmatter）。执行时命令正文展开后作为消息发送，与 Web composer 完全一致：TUI 和 Web UI 读同一张注册表，命令定义一次两边都有。
+
+Windows 的 Rich REPL 走同一张注册表。它的内置集合较小：`/help`、`/web`、`/model`、`/agent`、`/new`、`/copy`、`/tools`、`/skills`、`/functions`、`/apps`、`/mcp`、`/session`、`/login`、`/attach`、`/detach`、`/connections`、`/profile`、`/compact`、`/context`、`/rewind`、`/sandbox`、`/clear`、`/quit`——但 skill / user / project 命令同样可用，`/help` 列出全部。退出也可用 `Ctrl-C` 或 `Ctrl-D`。

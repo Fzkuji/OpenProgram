@@ -1,37 +1,75 @@
-"""Slash-command dispatch + per-verb handlers for the CLI chat REPL."""
+"""Slash-command dispatch + per-verb handlers for the CLI chat REPL.
+
+Command existence, help text, and completion all come from the unified
+six-layer registry in ``openprogram/commands`` — the same table the Web
+composer reads. The REPL registers its local actions into the registry's
+``builtin`` layer (handler = the action name as a marker string) and
+keeps ``_LOCAL_ACTIONS`` mapping each marker back to the local
+implementation. Commands from every other layer (plugin / mcp / skill /
+user / project) resolve through the same registry: their rendered body
+is sent to the agent as this turn's message, matching the Web
+composer's "expand into message" semantics.
+"""
 from __future__ import annotations
 
 
-SLASH_HELP = [
-    ("/help", "show this message"),
-    ("/web [port]", "launch the Web UI in your browser"),
-    ("/model", "show current chat model"),
-    ("/tools", "list available tools"),
-    ("/skills", "list discovered skills"),
-    ("/functions", "list agentic functions (functions/agentics/)"),
-    ("/apps", "list installed programs (gui/research/wiki agents)"),
-    ("/mcp [verb]", "manage MCP servers: list (default), show <name>, "
-                     "restart <name>, enable <name>, disable <name>, "
-                     "rm <name>"),
-    ("/session", "show the current session id + agent"),
-    ("/login <channel> [--id X]",
-                 "log in to a channel bot (wechat: QR, others: paste "
-                 "token). Also wires inbound messages to this agent."),
-    ("/attach <channel> <peer> [--account X] [--kind direct|group]",
-                 "route a specific channel peer's messages into this "
-                 "session (auto-starts the channels worker)"),
-    ("/detach <channel> <peer> [--account X] [--kind ...]",
-                 "remove the alias for a channel peer"),
-    ("/connections", "list every channel peer currently aliased to "
-                     "this session"),
-    ("/compact [hint]", "compress conversation history (optional hint guides what to keep)"),
-    ("/context", "show token distribution across context window"),
-    ("/rewind", "roll back code + conversation to a chosen point"),
-    ("/sandbox", "toggle system sandbox (restrict bash to cwd writes only)"),
-    ("/profile [name]", "show or switch active profile (restart required to switch)"),
-    ("/clear", "clear the screen"),
-    ("/quit", "exit"),
+# Builtin REPL actions: (name, aliases, argument_hint, description).
+# Registered into the commands registry at dispatch time; /help reads
+# back from the registry, never from this table.
+_BUILTIN_SPECS: list[tuple[str, tuple[str, ...], str, str]] = [
+    ("help", ("h", "?"), "", "list all slash commands"),
+    ("web", (), "[port]", "launch the Web UI in your browser"),
+    ("model", (), "[provider/id]", "show or switch the chat model"),
+    ("agent", (), "[id]", "list agents or set the default"),
+    ("new", (), "", "start a fresh session (TUI; the Rich REPL prints a hint)"),
+    ("copy", (), "", "copy the last assistant reply to the clipboard"),
+    ("tools", (), "", "list available tools"),
+    ("skills", (), "", "list discovered skills"),
+    ("functions", ("fns",), "", "list agentic functions (functions/agentics/)"),
+    ("apps", ("applications",), "",
+     "list installed programs (gui/research/wiki agents)"),
+    ("mcp", (), "[verb]",
+     "manage MCP servers: list (default), show <name>, restart <name>, "
+     "enable <name>, disable <name>, rm <name>"),
+    ("session", (), "", "show the current session id + agent"),
+    ("login", (), "<channel> [--id X]",
+     "log in to a channel bot (wechat: QR, others: paste token). "
+     "Also wires inbound messages to this agent."),
+    ("attach", (), "<channel> <peer> [--account X] [--kind direct|group]",
+     "route a specific channel peer's messages into this session "
+     "(auto-starts the channels worker)"),
+    ("detach", (), "<channel> <peer> [--account X] [--kind ...]",
+     "remove the alias for a channel peer"),
+    ("connections", ("conns",), "",
+     "list every channel peer currently aliased to this session"),
+    ("goal", (), "[condition | clear | --check \"cmd\" condition]",
+     "set a persistent session goal — auto-continues turns until met "
+     "(bare /goal shows status; clear/stop/off/cancel removes it)"),
+    ("compact", (), "[hint]",
+     "compress conversation history (optional hint guides what to keep)"),
+    ("context", (), "", "show token distribution across context window"),
+    ("rewind", (), "[n]", "roll back code + conversation to a chosen point"),
+    ("sandbox", (), "",
+     "toggle system sandbox (restrict bash to cwd writes only)"),
+    ("profile", (), "[name]",
+     "show or switch active profile (restart required to switch)"),
+    ("clear", (), "", "clear the screen"),
+    ("quit", ("q", "exit"), "", "exit"),
 ]
+
+
+def register_repl_builtins() -> None:
+    """(Re-)register every REPL action into the commands registry's
+    builtin layer. Idempotent and cheap (in-memory dict writes), so the
+    dispatcher calls it per slash — that also survives test helpers
+    wiping the registry. ``reload()`` never touches the builtin bucket.
+    """
+    from openprogram.commands.registry import register_builtin
+    for name, aliases, hint, desc in _BUILTIN_SPECS:
+        register_builtin(
+            name, handler=name, description=desc,
+            argument_hint=hint, aliases=list(aliases),
+        )
 
 
 _VALID_CHANNELS = ("wechat", "telegram", "discord", "slack")
@@ -65,148 +103,267 @@ def _parse_kv_args(args: list[str]) -> tuple[list[str], dict[str, str]]:
 
 def _handle_slash(cmd: str, console, rt,
                   agent=None, session_id: str = "") -> bool:
-    """Handle a /slash command. Return True if the session should exit."""
-    from openprogram._cli_chat.banner import (
-        _tool_inventory, _skill_inventory,
-        _function_inventory, _application_inventory,
-    )
-    raw = cmd[1:].strip()
-    parts = raw.split()
-    verb = (parts[0] if parts else "").lower()
-    args = parts[1:]
+    """Resolve a /slash command through the unified commands registry
+    and run it. Return True if the session should exit."""
+    register_repl_builtins()
+    from openprogram.commands.dispatch import invoke
 
-    if verb in ("q", "quit", "exit"):
-        console.print("[dim]Goodbye.[/]")
-        return True
+    raw = cmd[1:].strip() if cmd.startswith("/") else cmd.strip()
+    if not raw:
+        return _handle_help(console)
 
-    if verb in ("", "h", "help", "?"):
-        from rich.table import Table
-        tbl = Table(show_header=False, box=None, padding=(0, 2))
-        tbl.add_column(style="bold cyan")
-        tbl.add_column(style="dim")
-        for name, desc in SLASH_HELP:
-            tbl.add_row(name, desc)
-        console.print(tbl)
-        return False
+    res = invoke(cmd, session_id=session_id)
+    if res.kind == "error":
+        # Registry names are case-sensitive; the old REPL lowercased
+        # verbs, so retry lowercased before giving up (/HELP works).
+        head, _, rest = raw.partition(" ")
+        if head != head.lower():
+            res = invoke("/" + head.lower() + ((" " + rest) if rest else ""),
+                         session_id=session_id)
 
-    if verb == "web":
-        from openprogram.worker.lifecycle import resolve_worker_port
-        port = resolve_worker_port()
-        if args:
-            try:
-                port = int(args[0])
-            except ValueError:
-                console.print(f"[yellow]Invalid port: {args[0]!r}[/]")
-                return False
-        console.print(f"[dim]Starting Web UI at http://localhost:{port} ...[/]")
-        from openprogram.cli import _cmd_web  # lazy to avoid cycle
-        _cmd_web(port, True)
-        return True
-
-    if verb == "model":
-        return _handle_model(args, console, agent)
-
-    if verb == "agent":
-        return _handle_agent_switch(args, console, agent)
-
-    if verb == "new":
-        return _handle_new_session(console)
-
-    if verb == "copy":
-        return _handle_copy(console, agent, session_id)
-
-    if verb == "tools":
-        count, names = _tool_inventory()
-        console.print(f"[bold]{count} tools[/]")
-        for n in names:
-            console.print(f"  [cyan]{n}[/]")
-        return False
-
-    if verb == "skills":
-        count, items = _skill_inventory()
-        console.print(f"[bold]{count} skills[/]")
-        for name, desc in items:
-            short = (desc[:80] + "...") if len(desc) > 80 else desc
-            console.print(f"  [magenta]{name}[/]  [dim]{short}[/]")
-        return False
-
-    if verb in ("functions", "fns"):
-        count, names = _function_inventory()
-        console.print(f"[bold]{count} functions[/]")
-        for n in names:
-            console.print(f"  [green]{n}[/]")
-        return False
-
-    if verb in ("apps", "applications"):
-        count, names = _application_inventory()
-        console.print(f"[bold]{count} applications[/]")
-        for n in names:
-            console.print(f"  [yellow]{n}[/]")
-        return False
-
-    if verb == "mcp":
-        return _handle_mcp(args, console)
-
-    if verb == "clear":
-        console.clear()
-        return False
-
-    if verb == "session":
-        console.print(f"[bold]session:[/] {session_id or '(none)'}")
-        console.print(f"[bold]agent:[/]   {agent.id if agent else '(none)'}")
-        return False
-
-    if verb == "login":
-        return _handle_login(args, console, agent)
-
-    if verb == "attach":
-        return _handle_attach(args, console, agent, session_id)
-
-    if verb == "detach":
-        return _handle_detach(args, console)
-
-    if verb in ("connections", "conns"):
-        return _handle_connections(console, session_id)
-
-    if verb == "profile":
-        from openprogram.paths import get_active_profile, get_state_dir, set_active_profile
-        if not args:
-            profile = get_active_profile() or "default"
-            console.print(f"[bold]profile:[/] {profile}")
-            console.print(f"[dim]state dir: {get_state_dir()}[/]")
-            return False
-        target = args[0]
-        set_active_profile(None if target == "default" else target)
+    if res.kind == "local":
+        action = _LOCAL_ACTIONS.get(res.local_handler)
+        if action is not None:
+            return action(res.raw_args.split(), console, rt, agent, session_id)
+        if callable(res.local_handler):
+            # Builtin registered by other host code with a real handler
+            # (contract: handler(session_ctx, raw_args) -> result dict).
+            out = res.local_handler({"session_id": session_id}, res.raw_args)
+            return bool(isinstance(out, dict) and out.get("exit"))
         console.print(
-            f"[yellow]Profile set to {target!r}.[/]  "
-            "Switching mid-session leaves your chat runtime bound to the "
-            "old profile's credentials. Re-launch to pick up the new "
-            "profile fully:"
+            f"[yellow]/{res.command_name} has no local implementation "
+            "in this REPL.[/]"
         )
-        restart_hint = (
-            f"  openprogram --profile {target}"
-            if target != "default" else "  openprogram"
+        return False
+
+    if res.kind == "prompt":
+        # plugin / skill / user / project command: the rendered body
+        # becomes this turn's message — same expansion semantics as the
+        # Web composer (which drops the rendered text into the textarea
+        # and the user sends it).
+        if agent is None or not session_id:
+            console.print("[yellow]No active session to run this command in.[/]")
+            return False
+        from openprogram._cli_chat.turn import _run_turn_with_history
+        console.print(f"[dim]Expanding /{res.command_name} ({res.source})...[/]")
+        _run_turn_with_history(agent, session_id, res.rendered, console=console)
+        return False
+
+    if res.kind == "mcp_prompt":
+        # MCP prompt bodies live on the server; live clients run in the
+        # worker process, which this Rich REPL doesn't have.
+        console.print(
+            f"[yellow]/{res.command_name} is an MCP prompt — it needs a "
+            "running worker. Use the TUI (openprogram tui) or the Web UI.[/]"
         )
-        console.print(f"[cyan]{restart_hint}[/]")
-        console.print("[dim]Exiting so you can restart cleanly.[/]")
-        return True
+        return False
 
-    if verb == "compact":
-        return _handle_compact(args, console, session_id)
-
-    if verb == "context":
-        return _handle_context(console, agent, session_id)
-
-    if verb == "rewind":
-        return _handle_rewind(args, console, session_id)
-
-    if verb == "sandbox":
-        return _handle_sandbox(console)
-
-    console.print(f"[yellow]Unknown command: /{verb}[/]  (try /help)")
+    console.print(f"[yellow]Unknown command: /{raw.split()[0]}[/]  (try /help)")
     return False
 
 
+def _handle_help(console) -> bool:
+    """Render /help from the registry — every source, one table."""
+    from rich.table import Table
+    from openprogram.commands import list_all
+    tbl = Table(show_header=False, box=None, padding=(0, 2))
+    tbl.add_column(style="bold cyan")
+    tbl.add_column(style="dim")
+    for spec in list_all():
+        if not spec.user_invocable:
+            continue
+        hint = spec.raw.argument_hint if spec.raw else ""
+        name = f"/{spec.name}" + (f" {hint}" if hint else "")
+        desc = spec.description
+        if spec.source != "builtin":
+            # Skill/plugin descriptions run to paragraphs — keep help scannable.
+            if len(desc) > 100:
+                desc = desc[:100] + "..."
+            desc = f"{desc}  {spec.source_label}" if desc else spec.source_label
+        tbl.add_row(name, desc)
+    console.print(tbl)
+    return False
+
+
+def _handle_quit(console) -> bool:
+    console.print("[dim]Goodbye.[/]")
+    return True
+
+
+def _handle_web(args: list[str], console) -> bool:
+    from openprogram.worker.lifecycle import resolve_worker_port
+    port = resolve_worker_port()
+    if args:
+        try:
+            port = int(args[0])
+        except ValueError:
+            console.print(f"[yellow]Invalid port: {args[0]!r}[/]")
+            return False
+    console.print(f"[dim]Starting Web UI at http://localhost:{port} ...[/]")
+    from openprogram.cli import _cmd_web  # lazy to avoid cycle
+    _cmd_web(port, True)
+    return True
+
+
+def _handle_tools_list(console) -> bool:
+    from openprogram._cli_chat.banner import _tool_inventory
+    count, names = _tool_inventory()
+    console.print(f"[bold]{count} tools[/]")
+    for n in names:
+        console.print(f"  [cyan]{n}[/]")
+    return False
+
+
+def _handle_skills_list(console) -> bool:
+    from openprogram._cli_chat.banner import _skill_inventory
+    count, items = _skill_inventory()
+    console.print(f"[bold]{count} skills[/]")
+    for name, desc in items:
+        short = (desc[:80] + "...") if len(desc) > 80 else desc
+        console.print(f"  [magenta]{name}[/]  [dim]{short}[/]")
+    return False
+
+
+def _handle_functions_list(console) -> bool:
+    from openprogram._cli_chat.banner import _function_inventory
+    count, names = _function_inventory()
+    console.print(f"[bold]{count} functions[/]")
+    for n in names:
+        console.print(f"  [green]{n}[/]")
+    return False
+
+
+def _handle_apps_list(console) -> bool:
+    from openprogram._cli_chat.banner import _application_inventory
+    count, names = _application_inventory()
+    console.print(f"[bold]{count} applications[/]")
+    for n in names:
+        console.print(f"  [yellow]{n}[/]")
+    return False
+
+
+def _handle_session_info(console, agent, session_id: str) -> bool:
+    console.print(f"[bold]session:[/] {session_id or '(none)'}")
+    console.print(f"[bold]agent:[/]   {agent.id if agent else '(none)'}")
+    return False
+
+
+def _handle_clear(console) -> bool:
+    console.clear()
+    return False
+
+
+def _handle_profile(args: list[str], console) -> bool:
+    from openprogram.paths import get_active_profile, get_state_dir, set_active_profile
+    if not args:
+        profile = get_active_profile() or "default"
+        console.print(f"[bold]profile:[/] {profile}")
+        console.print(f"[dim]state dir: {get_state_dir()}[/]")
+        return False
+    target = args[0]
+    set_active_profile(None if target == "default" else target)
+    console.print(
+        f"[yellow]Profile set to {target!r}.[/]  "
+        "Switching mid-session leaves your chat runtime bound to the "
+        "old profile's credentials. Re-launch to pick up the new "
+        "profile fully:"
+    )
+    restart_hint = (
+        f"  openprogram --profile {target}"
+        if target != "default" else "  openprogram"
+    )
+    console.print(f"[cyan]{restart_hint}[/]")
+    console.print("[dim]Exiting so you can restart cleanly.[/]")
+    return True
+
+
+# Marker string (as registered via ``register_repl_builtins``) → local
+# implementation. Uniform adapter signature:
+# ``(args, console, rt, agent, session_id) -> should_exit``.
+_LOCAL_ACTIONS = {
+    "help": lambda args, console, rt, agent, sid: _handle_help(console),
+    "quit": lambda args, console, rt, agent, sid: _handle_quit(console),
+    "web": lambda args, console, rt, agent, sid: _handle_web(args, console),
+    "model": lambda args, console, rt, agent, sid: _handle_model(args, console, agent),
+    "agent": lambda args, console, rt, agent, sid: _handle_agent_switch(args, console, agent),
+    "new": lambda args, console, rt, agent, sid: _handle_new_session(console),
+    "copy": lambda args, console, rt, agent, sid: _handle_copy(console, agent, sid),
+    "tools": lambda args, console, rt, agent, sid: _handle_tools_list(console),
+    "skills": lambda args, console, rt, agent, sid: _handle_skills_list(console),
+    "functions": lambda args, console, rt, agent, sid: _handle_functions_list(console),
+    "apps": lambda args, console, rt, agent, sid: _handle_apps_list(console),
+    "mcp": lambda args, console, rt, agent, sid: _handle_mcp(args, console),
+    "clear": lambda args, console, rt, agent, sid: _handle_clear(console),
+    "session": lambda args, console, rt, agent, sid: _handle_session_info(console, agent, sid),
+    "login": lambda args, console, rt, agent, sid: _handle_login(args, console, agent),
+    "attach": lambda args, console, rt, agent, sid: _handle_attach(args, console, agent, sid),
+    "detach": lambda args, console, rt, agent, sid: _handle_detach(args, console),
+    "connections": lambda args, console, rt, agent, sid: _handle_connections(console, sid),
+    "profile": lambda args, console, rt, agent, sid: _handle_profile(args, console),
+    "goal": lambda args, console, rt, agent, sid: _handle_goal(args, console, agent, sid),
+    "compact": lambda args, console, rt, agent, sid: _handle_compact(args, console, sid),
+    "context": lambda args, console, rt, agent, sid: _handle_context(console, agent, sid),
+    "rewind": lambda args, console, rt, agent, sid: _handle_rewind(args, console, sid),
+    "sandbox": lambda args, console, rt, agent, sid: _handle_sandbox(console),
+}
+
+
+
+
+def _handle_goal(args: list[str], console, agent, session_id: str) -> bool:
+    """``/goal`` in the Rich REPL — set / status / clear a session goal.
+
+    The set form launches the first turn through the DISPATCHER (not the
+    REPL's bare ``rt.exec`` turn runner) because the goal continuation
+    loop lives inside ``process_user_turn``; the REPL's own runner would
+    finish the turn and never judge the goal.
+    """
+    if not session_id:
+        console.print("[yellow]No active session.[/]")
+        return False
+    from openprogram.agent.goal import handle_goal_command
+    out = handle_goal_command(session_id, " ".join(args))
+    if out.get("text"):
+        console.print(out["text"], markup=False)
+    send_text = out.get("send_text")
+    if not send_text:
+        return False
+    if agent is None:
+        console.print("[yellow]No active agent — goal saved, but the "
+                      "first turn was not started.[/]")
+        return False
+
+    from openprogram.agent.dispatcher import TurnRequest, process_user_turn
+
+    def _print_event(env: dict) -> None:
+        data = env.get("data") or {}
+        dtype = data.get("type")
+        if dtype == "stream_event":
+            ev = data.get("event") or {}
+            if ev.get("type") == "text":
+                console.print(ev.get("text") or "", end="",
+                              markup=False, highlight=False)
+            elif ev.get("type") == "tool_use":
+                console.print(f"\n[dim][tool] {ev.get('tool')}[/]")
+        elif dtype == "goal_update":
+            g = data.get("goal") or {}
+            console.print(
+                f"\n[cyan]goal {g.get('status')} · "
+                f"{g.get('turns_used')}/{g.get('max_turns')}[/] "
+                f"[dim]{g.get('last_reason') or ''}[/]")
+        elif dtype == "error":
+            console.print(f"\n[red]{data.get('content')}[/]")
+
+    try:
+        process_user_turn(
+            TurnRequest(session_id=session_id, user_text=send_text,
+                        agent_id=agent.id, source="cli"),
+            on_event=_print_event,
+        )
+        console.print()
+    except Exception as e:  # noqa: BLE001 — surface, don't kill the REPL
+        console.print(f"\n[red]Goal turn failed: {type(e).__name__}: {e}[/]")
+    return False
 
 
 def _handle_compact(args: list[str], console, session_id: str) -> bool:
@@ -428,7 +585,7 @@ def _handle_login(args: list[str], console, agent) -> bool:
         console.print(f"[dim]Created {channel}:{account_id}[/]")
 
     if channel == "wechat":
-        from openprogram.channels.wechat import login_account
+        from openprogram.channels.implementations.wechat import login_account
         console.print(
             f"[cyan]Opening WeChat QR for account `{account_id}`. "
             "Scan with your phone's WeChat and confirm on the device.[/]"

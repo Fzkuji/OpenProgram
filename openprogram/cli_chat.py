@@ -32,7 +32,7 @@ from openprogram._cli_chat.banner import (  # noqa: E402,F401
     _print_banner,
 )
 from openprogram._cli_chat.handlers import (  # noqa: E402,F401
-    SLASH_HELP,
+    register_repl_builtins,
     _parse_kv_args,
     _handle_slash,
     _handle_login,

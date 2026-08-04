@@ -12,6 +12,11 @@ import { Turn } from '../components/Turn.js';
 import { TranscriptViewport } from '../components/TranscriptViewport.js';
 import { PromptInput } from '../components/PromptInput/PromptInput.js';
 import { handleSlash } from '../commands/handler.js';
+import {
+  loadBackendCommands,
+  findBackendCommand,
+  invokeBackendCommand,
+} from '../commands/registry.js';
 import { loadHistory, appendHistory } from '../utils/history.js';
 import { copyToClipboard } from '../utils/clipboard.js';
 import { useTheme } from '../theme/ThemeProvider.js';
@@ -175,6 +180,12 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     return () => clearInterval(t);
   }, [activity]);
 
+  // Pull the worker's unified command registry (skill / user / project /
+  // plugin / mcp layers) so completion, ctrl+K, and /help include them.
+  useEffect(() => {
+    void loadBackendCommands();
+  }, []);
+
   const pushSystem = (text: string) =>
     setCommitted((m) => [
       ...m,
@@ -316,6 +327,23 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
 
   const onSubmit = (text: string) => {
     if (!text.trim()) return;
+    const sendChat = (chatText: string) => {
+      setCommitted((m) => [...m, { id: `u-${Date.now()}`, role: 'user', text: chatText }]);
+      if (!conversationTitle && committed.length === 0) {
+        // Mirror server-side behaviour: first user message becomes the title.
+        setConversationTitle(chatText.slice(0, 50) + (chatText.length > 50 ? '…' : ''));
+      }
+      startTurn('Thinking');
+      client.send({
+        action: 'chat',
+        session_id: conversationId,
+        agent_id: agent,
+        text: chatText,
+        tools: toolsOn,
+        thinking_effort: thinkingEffort,
+        permission_mode: permissionMode,
+      } as never);
+    };
     // Save EVERY submitted line — chat messages and slash commands —
     // to up-arrow history. Previously only non-slash-handled inputs
     // landed in history; slash commands like `/channel` would
@@ -441,22 +469,23 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         requestAliasesPrint: () => { sessionAliasesPrintRef.current = true; },
       });
       if (handled) return;
+      // Not a TUI-local action — try the worker's unified command
+      // registry (skill / user / project / plugin / mcp layers). The
+      // rendered body becomes this turn's message, mirroring the web
+      // composer's expansion semantics.
+      const head = text.trim().split(/\s+/)[0]!.slice(1);
+      if (findBackendCommand(head)) {
+        void invokeBackendCommand(text, conversationId).then((res) => {
+          if (res?.ok && res.kind === 'prompt' && res.rendered) {
+            sendChat(res.rendered);
+          } else {
+            pushSystem(res?.error || `/${head}: command failed to render.`);
+          }
+        });
+        return;
+      }
     }
-    setCommitted((m) => [...m, { id: `u-${Date.now()}`, role: 'user', text }]);
-    if (!conversationTitle && committed.length === 0) {
-      // Mirror server-side behaviour: first user message becomes the title.
-      setConversationTitle(text.slice(0, 50) + (text.length > 50 ? '…' : ''));
-    }
-    startTurn('Thinking');
-    client.send({
-      action: 'chat',
-      session_id: conversationId,
-      agent_id: agent,
-      text,
-      tools: toolsOn,
-      thinking_effort: thinkingEffort,
-      permission_mode: permissionMode,
-    } as never);
+    sendChat(text);
   };
 
   const onCancel = () => {

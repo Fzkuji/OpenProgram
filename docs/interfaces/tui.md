@@ -60,4 +60,6 @@ Type `/` to trigger completion. Common ones:
 
 Also available: `/search`, `/review`, `/diff`, `/init`, `/browser`, `/welcome`. The `/help` output is the authoritative full list.
 
-The Windows Rich REPL supports a smaller set: `/help`, `/web`, `/model`, `/agent`, `/new`, `/copy`, `/tools`, `/skills`, `/functions`, `/apps`, `/mcp`, `/session`, `/login`, `/attach`, `/detach`, `/connections`, `/profile`, `/compact`, `/context`, `/rewind`, `/sandbox`, `/clear`, `/quit`. It can also exit via `Ctrl-C` or `Ctrl-D`.
+Beyond these built-ins, the completion menu also lists every command from the unified command registry — skills, MCP prompts, plugin commands, and your own command files under `~/.openprogram/commands/` or `<project>/.openprogram/commands/` (markdown with optional YAML frontmatter). Running one expands its body and sends it as the message, exactly like the Web composer: the TUI and the Web UI read the same registry, so a command defined once appears in both.
+
+The Windows Rich REPL dispatches through the same registry. Its built-in set is smaller: `/help`, `/web`, `/model`, `/agent`, `/new`, `/copy`, `/tools`, `/skills`, `/functions`, `/apps`, `/mcp`, `/session`, `/login`, `/attach`, `/detach`, `/connections`, `/profile`, `/compact`, `/context`, `/rewind`, `/sandbox`, `/clear`, `/quit` — but skill / user / project commands work there too, and `/help` lists everything. It can also exit via `Ctrl-C` or `Ctrl-D`.

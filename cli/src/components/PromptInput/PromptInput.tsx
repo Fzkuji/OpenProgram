@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Box, Text, useDeclaredCursor, useInput } from '../../runtime/index';
 import { PromptInputHelpMenu } from './PromptInputHelpMenu.js';
 import { FileMenu } from './FileMenu.js';
-import { SLASH_COMMANDS, SlashCommand } from '../../commands/registry.js';
+import { allSlashCommands, SlashCommand } from '../../commands/registry.js';
 import { fileCompletions, findAtToken, FileMatch } from '../../utils/fileCompletions.js';
 import { usePanelWidth } from '../../utils/useTerminalWidth.js';
 import { useColors } from '../../theme/ThemeProvider.js';
@@ -30,8 +30,9 @@ export interface PromptInputProps {
 
 const filterCommands = (filter: string): SlashCommand[] => {
   const needle = filter.replace(/^\//, '').toLowerCase();
-  if (!needle) return SLASH_COMMANDS;
-  return SLASH_COMMANDS.filter((c) => c.name.toLowerCase().includes(needle));
+  const commands = allSlashCommands();
+  if (!needle) return commands;
+  return commands.filter((c) => c.name.toLowerCase().includes(needle));
 };
 
 const visibleInput = (text: string): string => text.replace(/\n/g, '↵ ');

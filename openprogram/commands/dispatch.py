@@ -31,6 +31,7 @@ class InvokeResult:
     error: str = ""
     source: str = ""
     command_name: str = ""
+    raw_args: str = ""                   # text after the command name, verbatim
 
 
 def invoke(
@@ -60,6 +61,7 @@ def invoke(
 
     base = InvokeResult(
         ok=True, command_name=spec.name, source=spec.source,
+        raw_args=rest,
         context=(spec.raw.context if spec.raw else "inline"),
         agent=(spec.raw.agent if spec.raw else "general-purpose"),
         model=(spec.raw.model if spec.raw else "inherit"),

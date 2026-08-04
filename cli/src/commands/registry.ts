@@ -1,8 +1,14 @@
 export interface SlashCommand {
   name: string;
   description: string;
+  /** Registry layer for backend-sourced commands ("skill" | "user" | ...);
+   *  unset for TUI-local commands. */
+  source?: string;
 }
 
+/** TUI-local actions — each has a handler in handler.ts / REPL.tsx.
+ *  Everything else (skill / user / project / plugin / mcp commands)
+ *  comes from the worker's unified registry via loadBackendCommands. */
 export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'help', description: 'Show available commands' },
   { name: 'agents', description: 'List or switch agents' },
@@ -44,3 +50,70 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'welcome', description: 'Re-show the welcome banner' },
   { name: 'quit', description: 'Exit OpenProgram' },
 ];
+
+export const backendHttpBase = (): string =>
+  process.env.OPENPROGRAM_BACKEND_URL
+  || process.env.OPENPROGRAM_WS?.replace('ws://', 'http://').replace('/ws', '')
+  || 'http://127.0.0.1:8765';
+
+let backendCommands: SlashCommand[] = [];
+
+/** Fetch the unified command registry (skill / user / project / plugin /
+ *  mcp layers) from the worker's /api/commands and cache it for
+ *  completion + help. TUI-local names win on collision. Safe to call
+ *  again to refresh; a fetch failure keeps the previous snapshot. */
+export async function loadBackendCommands(): Promise<void> {
+  try {
+    const r = await fetch(`${backendHttpBase()}/api/commands`);
+    if (!r.ok) return;
+    const d = (await r.json()) as { commands?: Array<Record<string, unknown>> };
+    const locals = new Set(SLASH_COMMANDS.map((c) => c.name));
+    backendCommands = (d.commands ?? [])
+      .filter((c) => c
+        && typeof c.name === 'string'
+        && c.user_invocable !== false
+        && !c.hidden
+        && !locals.has(c.name as string))
+      .map((c) => ({
+        name: c.name as string,
+        description: (c.description as string) || `${(c.source_label as string) || (c.source as string)} command`,
+        source: c.source as string,
+      }));
+  } catch {
+    /* worker unreachable — local commands still work */
+  }
+}
+
+/** TUI-local commands + backend registry commands, for completion,
+ *  the ctrl+K palette, and /help. */
+export const allSlashCommands = (): SlashCommand[] =>
+  [...SLASH_COMMANDS, ...backendCommands];
+
+export const findBackendCommand = (name: string): SlashCommand | undefined =>
+  backendCommands.find((c) => c.name === name);
+
+export interface InvokeResult {
+  ok: boolean;
+  kind: string;
+  rendered: string;
+  error?: string;
+}
+
+/** Resolve + render a registry command via POST /api/commands/invoke.
+ *  Returns null when the worker is unreachable. */
+export async function invokeBackendCommand(
+  text: string,
+  sessionId?: string,
+): Promise<InvokeResult | null> {
+  try {
+    const r = await fetch(`${backendHttpBase()}/api/commands/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, session_id: sessionId ?? '' }),
+    });
+    if (!r.ok) return null;
+    return (await r.json()) as InvokeResult;
+  } catch {
+    return null;
+  }
+}

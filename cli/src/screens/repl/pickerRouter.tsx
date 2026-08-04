@@ -23,7 +23,7 @@ import { LineInput } from '../../components/LineInput.js';
 import { Picker, PickerItem } from '../../components/Picker.js';
 import { ThemePicker } from '../../components/ThemePicker.js';
 import { SettingsPanel, SettingRow } from '../../components/SettingsPanel.js';
-import { SLASH_COMMANDS } from '../../commands/registry.js';
+import { allSlashCommands } from '../../commands/registry.js';
 import { Turn } from '../../components/Turn.js';
 import { BackendClient } from '../../ws/client.js';
 import { tsToDate } from './helpers.js';
@@ -171,9 +171,9 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
   }
 
   if (pickerKind === 'commands') {
-    const items: PickerItem<string>[] = SLASH_COMMANDS.map((c) => ({
+    const items: PickerItem<string>[] = allSlashCommands().map((c) => ({
       label: `/${c.name}`,
-      description: c.description,
+      description: c.source ? `${c.description} [${c.source}]` : c.description,
       value: c.name,
     }));
     return (

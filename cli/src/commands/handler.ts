@@ -1,5 +1,5 @@
 import { BackendClient } from '../ws/client.js';
-import { SLASH_COMMANDS } from './registry.js';
+import { allSlashCommands, backendHttpBase } from './registry.js';
 
 type ThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 type PermissionMode = 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass';
@@ -59,8 +59,9 @@ export interface SlashContext {
 
 const helpText = (): string => {
   const lines = ['Available commands:'];
-  for (const c of SLASH_COMMANDS) {
-    lines.push(`  /${c.name.padEnd(14)} ${c.description}`);
+  for (const c of allSlashCommands()) {
+    const tag = c.source ? ` [${c.source}]` : '';
+    lines.push(`  /${c.name.padEnd(14)} ${c.description}${tag}`);
   }
   return lines.join('\n');
 };
@@ -293,9 +294,7 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
         return true;
       }
       const provider = args[0]!;
-      const base = process.env.OPENPROGRAM_BACKEND_URL
-        || process.env.OPENPROGRAM_WS?.replace('ws://', 'http://').replace('/ws', '')
-        || 'http://127.0.0.1:8765';
+      const base = backendHttpBase();
       ctx.pushSystem(`Fetching models for ${provider}...`);
       void fetch(`${base}/api/providers/${encodeURIComponent(provider)}/fetch-models`, {
         method: 'POST',
