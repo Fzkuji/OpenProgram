@@ -6,9 +6,9 @@
 
 Python mirror of @mariozechner/pi-ai.
 
-This module also keeps the older ``openprogram.providers`` compatibility
-surface alive, so existing imports like ``detect_provider`` or
-``AnthropicRuntime`` continue to work during the provider refactor.
+Runtime construction goes through ``create_runtime`` (auto-detection
+via ``detect_provider``). Provider-specific Runtime classes live in
+their provider packages (e.g. ``openprogram.providers.openai_codex``).
 
 ## Files in this directory
 

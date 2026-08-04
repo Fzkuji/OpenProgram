@@ -2,16 +2,16 @@
 
 > Source: [`openprogram/providers/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/)
 
-`create_runtime` 加上各内置 `Runtime` 子类。所有 provider 都经 OpenProgram 的 provider 层直接说原生 HTTP API——**不需要安装任何厂商 SDK**。CLI / 订阅类 provider 复用对应 CLI 工具的 OAuth 凭据,所以那些 CLI 需要装好并登录一次:
+`create_runtime` 是所有 provider 的唯一构建入口。所有 provider 都经 OpenProgram 的 provider 层直接说原生 HTTP API——**不需要安装任何厂商 SDK**。CLI / 订阅类 provider 复用对应 CLI 工具的 OAuth 凭据,所以那些 CLI 需要装好并登录一次:
 
 ```bash
-# Codex CLI(对应 openai-codex / OpenAICodexRuntime)
+# Codex CLI(对应 openai-codex provider)
 npm install -g @openai/codex && codex login
 
-# Gemini CLI(对应 gemini-cli / GeminiCLIRuntime)
+# Gemini CLI(对应 gemini-cli provider)
 npm install -g @google/gemini-cli && gemini
 
-# Claude Code CLI(对应 claude-code / ClaudeCodeRuntime——收编其 OAuth token)
+# Claude Code CLI(对应 claude-code provider——收编其 OAuth token)
 npm install -g @anthropic-ai/claude-code && claude login
 ```
 
@@ -31,7 +31,7 @@ rt = create_runtime(provider="openai-codex", model="gpt-5.5")
 
 ### `create_runtime(provider=None, model=None, **kwargs)`
 
-返回可直接使用的 `Runtime`。`provider=None`(或 `"auto"`)会跑 `detect_provider()`。下面六个 provider 有专属 `Runtime` 子类;**其它任何 provider 名**(deepseek、groq、openrouter、minimax、kimi 以及全目录)经模型注册表走基类 `Runtime("provider:model", ...)`——与 chat dispatcher 同一条路。`**kwargs` 转发给 runtime 构造函数。
+返回可直接使用的 `Runtime`。`provider=None`(或 `"auto"`)会跑 `detect_provider()`。下面六个 provider 由专属 `Runtime` 子类支撑(`create_runtime` 的实现细节);**其它任何 provider 名**(deepseek、groq、openrouter、minimax、kimi 以及全目录)经模型注册表走基类 `Runtime("provider:model", ...)`——与 chat dispatcher 同一条路。`**kwargs` 转发给 runtime 构造函数。
 
 ### `detect_provider() -> (provider_name, default_model)`
 
@@ -60,21 +60,21 @@ rt = create_runtime(provider="openai-codex", model="gpt-5.5")
 | `openai` | `OpenAIRuntime` | `gpt-4.1`(表)/ `gpt-4o`(类构造函数) | OpenAI API key |
 | `gemini` | `GeminiRuntime` | `gemini-2.5-flash` | Google API key |
 
-六个类都可以从 `openprogram.providers`(懒加载)或 `openprogram.providers.registry` 导入。
+这些类住在各自的 provider 包里(`openprogram.providers.<package>.runtime`);构建一律走 `create_runtime(provider=...)`。
 
 ---
 
-## AnthropicRuntime
+## anthropic
 
-Anthropic Messages API,经 provider 层(流式、工具循环、DAG 记录全包)。
+Anthropic Messages API,经 provider 层(流式、工具循环、DAG 记录全包)。由 `AnthropicRuntime` 支撑。
 
 ```python
-from openprogram.providers import AnthropicRuntime
+from openprogram.providers.registry import create_runtime
 
-rt = AnthropicRuntime(api_key="sk-ant-...", model="claude-sonnet-4-6")
+rt = create_runtime(provider="anthropic", api_key="sk-ant-...", model="claude-sonnet-4-6")
 ```
 
-### 构造参数
+### 选项(转发给 runtime)
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
@@ -86,17 +86,15 @@ rt = AnthropicRuntime(api_key="sk-ant-...", model="claude-sonnet-4-6")
 
 ---
 
-## OpenAIRuntime
+## openai
 
-OpenAI Responses API,经 provider 层。
+OpenAI Responses API,经 provider 层。由 `OpenAIRuntime` 支撑。
 
 ```python
-from openprogram.providers import OpenAIRuntime
-
-rt = OpenAIRuntime(api_key="sk-...", model="gpt-4o")
+rt = create_runtime(provider="openai", api_key="sk-...", model="gpt-4o")
 ```
 
-### 构造参数
+### 选项(转发给 runtime)
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
@@ -108,17 +106,15 @@ Azure 或本地 OpenAI 兼容服务:在设置页添加自定义 provider(Setting
 
 ---
 
-## GeminiRuntime
+## gemini
 
-Google Gemini Generative Language API,经 provider 层。
+Google Gemini Generative Language API,经 provider 层。由 `GeminiRuntime` 支撑。
 
 ```python
-from openprogram.providers import GeminiRuntime
-
-rt = GeminiRuntime(api_key="...", model="gemini-2.5-flash")
+rt = create_runtime(provider="gemini", api_key="...", model="gemini-2.5-flash")
 ```
 
-### 构造参数
+### 选项(转发给 runtime)
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
@@ -128,19 +124,17 @@ rt = GeminiRuntime(api_key="...", model="gemini-2.5-flash")
 
 ---
 
-## ClaudeCodeRuntime
+## claude-code
 
-用 **Claude 订阅** 跑 Claude——带订阅的 OAuth token 直连 `api.anthropic.com`(Bearer 认证 + Claude Code 身份 headers)。不走 API key 计费;token 每次调用现取,CLI 侧轮换自动跟上。
+用 **Claude 订阅** 跑 Claude——带订阅的 OAuth token 直连 `api.anthropic.com`(Bearer 认证 + Claude Code 身份 headers)。不走 API key 计费;token 每次调用现取,CLI 侧轮换自动跟上。由 `ClaudeCodeRuntime` 支撑。
 
 ```python
-from openprogram.providers import ClaudeCodeRuntime
-
-rt = ClaudeCodeRuntime(model="claude-sonnet-4")
+rt = create_runtime(provider="claude-code", model="claude-sonnet-4")
 ```
 
 准备:用 Claude Code CLI 登录一次(`claude login`)让 OAuth token 可被收编,或用 `openprogram providers claude-code accounts add` 添加 Claude 账号。
 
-### 构造参数
+### 选项(转发给 runtime)
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
@@ -152,14 +146,12 @@ rt = ClaudeCodeRuntime(model="claude-sonnet-4")
 
 ---
 
-## OpenAICodexRuntime
+## openai-codex
 
-ChatGPT / Codex **订阅** runtime。读取从 Codex CLI 的 `~/.codex/auth.json` 收编的 OAuth 凭据,访问 ChatGPT Responses 后端。刷新后的 token 会镜像回去,让 Codex CLI 保持同步。
+ChatGPT / Codex **订阅** runtime。读取从 Codex CLI 的 `~/.codex/auth.json` 收编的 OAuth 凭据,访问 ChatGPT Responses 后端。刷新后的 token 会镜像回去,让 Codex CLI 保持同步。由 `OpenAICodexRuntime` 支撑。
 
 ```python
-from openprogram.providers import OpenAICodexRuntime
-
-rt = OpenAICodexRuntime(model="gpt-5.5")
+rt = create_runtime(provider="openai-codex", model="gpt-5.5")
 ```
 
 准备:
@@ -169,7 +161,7 @@ npm install -g @openai/codex
 codex login          # OAuth 登录——不要选 API-key 选项
 ```
 
-### 构造参数
+### 选项(转发给 runtime)
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|------|------|
@@ -177,18 +169,16 @@ codex login          # OAuth 登录——不要选 API-key 选项
 | `system` | `str \| None` | `None` | 可选 system prompt |
 | `profile` | `str \| None` | 当前 profile | 使用哪个 OpenProgram auth profile(仅关键字) |
 
-多余的关键字参数接受并忽略。必须是 OAuth 凭据——裸 OpenAI API key 抛 `AuthConfigError`(改用 `OpenAIRuntime`)。
+多余的关键字参数接受并忽略。必须是 OAuth 凭据——裸 OpenAI API key 抛 `AuthConfigError`(改用 `openai` provider)。
 
 ---
 
-## GeminiCLIRuntime
+## gemini-cli
 
-用 **Google 账号**(Gemini CLI OAuth)跑 Gemini。复用 `~/.gemini/oauth_creds.json`,以 HTTP 直连 Cloud Code Assist 后端——不起子进程。
+用 **Google 账号**(Gemini CLI OAuth)跑 Gemini。复用 `~/.gemini/oauth_creds.json`,以 HTTP 直连 Cloud Code Assist 后端——不起子进程。由 `GeminiCLIRuntime` 支撑。
 
 ```python
-from openprogram.providers import GeminiCLIRuntime
-
-rt = GeminiCLIRuntime(model="gemini-2.5-flash")
+rt = create_runtime(provider="gemini-cli", model="gemini-2.5-flash")
 ```
 
 准备:
@@ -198,7 +188,7 @@ npm install -g @google/gemini-cli
 gemini               # 首次运行完成 OAuth 登录
 ```
 
-### 构造参数
+### 选项(转发给 runtime)
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|------|------|
@@ -206,13 +196,13 @@ gemini               # 首次运行完成 OAuth 登录
 | `system` | `str \| None` | `None` | 可选 system prompt |
 | `profile` | `str \| None` | 当前 profile | 使用哪个 OpenProgram auth profile(仅关键字) |
 
-多余的关键字参数接受并忽略。只有 Google API key 的话,用 `GeminiRuntime`。
+多余的关键字参数接受并忽略。只有 Google API key 的话,用 `gemini` provider。
 
 ---
 
 ## 其它所有 provider
 
-没有专属类的 provider——deepseek、groq、openrouter、minimax、kimi 以及全目录——经模型注册表使用:
+其余 provider——deepseek、groq、openrouter、minimax、kimi 以及全目录——经模型注册表使用:
 
 ```python
 from openprogram.agentic_programming.runtime import Runtime

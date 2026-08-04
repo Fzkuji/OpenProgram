@@ -50,9 +50,9 @@ import os
 sys.path.insert(0, os.path.expanduser("~/.openclaw/workspace/OpenProgram"))
 
 from openprogram import agentic_function
-from openprogram.providers import ClaudeCodeRuntime
+from openprogram.providers.registry import create_runtime
 
-runtime = ClaudeCodeRuntime(model="haiku")
+runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function
@@ -118,9 +118,9 @@ OpenClaw 和 OpenProgram 使用同一套 AgentSkills 兼容的 `SKILL.md` 格式
 OpenClaw agent 调用的代码审查脚本。
 """
 from openprogram import agentic_function
-from openprogram.providers import ClaudeCodeRuntime
+from openprogram.providers.registry import create_runtime
 
-runtime = ClaudeCodeRuntime(model="haiku")
+runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function
@@ -160,9 +160,9 @@ import json
 import sys
 
 from openprogram import agentic_function
-from openprogram.providers import ClaudeCodeRuntime
+from openprogram.providers.registry import create_runtime
 
-runtime = ClaudeCodeRuntime(model="haiku")
+runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function
@@ -203,7 +203,7 @@ if __name__ == "__main__":
 
 ## 建议
 
-1. **用 `ClaudeCodeRuntime` 快速上手** — 不需要额外 API key，登录过 Claude Code 就行，直接用订阅额度。详见 [Claude Code 集成](claude-code.md)。
-2. **按计费方式选 runtime** — `ClaudeCodeRuntime` 走 Claude 订阅，`AnthropicRuntime` 走 Anthropic API key 计费。
+1. **用 `claude-code` provider 快速上手** — 不需要额外 API key，登录过 Claude Code 就行，直接用订阅额度。详见 [Claude Code 集成](claude-code.md)。
+2. **按计费方式选 provider** — `create_runtime(provider="claude-code")` 走 Claude 订阅，`create_runtime(provider="anthropic")` 走 Anthropic API key 计费。
 3. **回看执行 trace** — 每次函数调用都记录在 session DAG 里，用 Web UI 或 `openprogram sessions list` 找到会话后回看。
 4. **保持函数小而精** — 每个 `@agentic_function` 只做一件事，用 Python 组合它们。

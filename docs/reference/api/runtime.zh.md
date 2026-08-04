@@ -185,7 +185,7 @@ def observe(task):
 ### 方式二:子类化
 
 ```python
-class AnthropicRuntime(Runtime):
+class MyAnthropicRuntime(Runtime):
     def __init__(self, api_key, model="sonnet"):
         super().__init__(model=model)
         self.client = anthropic.Anthropic(api_key=api_key)
@@ -201,7 +201,7 @@ class AnthropicRuntime(Runtime):
         )
         return response.content[0].text
 
-runtime = AnthropicRuntime(api_key="sk-...", model="claude-sonnet-4-6")
+runtime = MyAnthropicRuntime(api_key="sk-...", model="claude-sonnet-4-6")
 ```
 
 ### 多个 Runtime 共存

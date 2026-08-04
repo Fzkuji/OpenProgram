@@ -52,20 +52,15 @@ runtime = create_runtime()                                        # picks the fi
 runtime = create_runtime(provider="anthropic", model="claude-sonnet-4-6")
 ```
 
-Six built-in runtime classes can be imported directly:
+Six providers have bespoke runtime behavior behind `create_runtime` (OAuth / CLI-credential adoption, per-provider conventions):
 
 ```python
-from openprogram.providers import (
-    AnthropicRuntime,     # Anthropic API
-    OpenAIRuntime,        # OpenAI Responses API
-    GeminiRuntime,        # Google Generative AI
-    ClaudeCodeRuntime,    # Claude subscription direct connection, no API key needed
-    OpenAICodexRuntime,   # ChatGPT subscription (Codex OAuth)
-    GeminiCLIRuntime,     # reuses the Gemini CLI login state
-)
-
-runtime = AnthropicRuntime(api_key="sk-...", model="claude-sonnet-4-6")
-runtime = OpenAICodexRuntime(model="gpt-5.5")
+runtime = create_runtime(provider="anthropic", model="claude-sonnet-4-6")  # Anthropic API key
+runtime = create_runtime(provider="openai", model="gpt-4.1")               # OpenAI Responses API
+runtime = create_runtime(provider="gemini", model="gemini-2.5-flash")      # Google Generative AI
+runtime = create_runtime(provider="claude-code")   # Claude subscription direct connection, no API key needed
+runtime = create_runtime(provider="openai-codex")  # ChatGPT subscription (Codex OAuth)
+runtime = create_runtime(provider="gemini-cli")    # reuses the Gemini CLI login state
 ```
 
-The remaining providers in the table above have no dedicated runtime class: `create_runtime(provider=..., model=...)` routes automatically by the model's protocol, using the same path as the chat UI.
+Every other provider in the table above routes automatically by the model's protocol: `create_runtime(provider=..., model=...)` uses the same path as the chat UI.

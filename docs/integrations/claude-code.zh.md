@@ -2,7 +2,7 @@
 
 ## 这是什么？
 
-`ClaudeCodeRuntime` 让你**无需任何 API key** 即可使用 Agentic Programming。它使用你的 Claude 订阅的 OAuth token，直连 `api.anthropic.com`——token 从 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) 的登录凭据（`~/.claude/.credentials.json`）解析而来，每次调用都重新读取，CLI 的 token 刷新自动生效。
+`claude-code` provider 让你**无需任何 API key** 即可使用 Agentic Programming。它使用你的 Claude 订阅的 OAuth token，直连 `api.anthropic.com`——token 从 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) 的登录凭据（`~/.claude/.credentials.json`）解析而来，每次调用都重新读取，CLI 的 token 刷新自动生效。
 
 只要你已安装并登录 `claude`，就可以直接上手。
 
@@ -29,10 +29,10 @@
 
 ```python
 from openprogram import agentic_function
-from openprogram.providers import ClaudeCodeRuntime
+from openprogram.providers.registry import create_runtime
 
 # 不需要 API key —— 使用 Claude Code 订阅
-runtime = ClaudeCodeRuntime(model="haiku")
+runtime = create_runtime(provider="claude-code", model="haiku")
 
 @agentic_function
 def explain(concept):
@@ -48,7 +48,8 @@ print(result)
 ## 配置选项
 
 ```python
-runtime = ClaudeCodeRuntime(
+runtime = create_runtime(
+    provider="claude-code",
     model="haiku",        # 模型名或家族别名（见下表）
     api_key=None,         # 一般不传；不传时每次调用从凭据池重新解析
     max_retries=2,        # API 层瞬态故障的重试次数
@@ -69,7 +70,7 @@ runtime = ClaudeCodeRuntime(
 
 ## 工作原理
 
-在底层，`ClaudeCodeRuntime` 的流程是：
+在底层，`claude-code` runtime 的流程是：
 
 1. 从凭据池解析 Claude 订阅的 OAuth token（`sk-ant-oat` 前缀），或普通 Anthropic API key
 2. 走标准的 Anthropic Messages 协议直连 `api.anthropic.com`，订阅 token 用 Bearer 认证 + Claude Code 身份 header
@@ -100,9 +101,9 @@ Claude Code 集成示例 —— 无需 API key。
 演示一个多步骤的 agentic 工作流。
 """
 from openprogram import agentic_function
-from openprogram.providers import ClaudeCodeRuntime
+from openprogram.providers.registry import create_runtime
 
-runtime = ClaudeCodeRuntime(model="haiku")
+runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function

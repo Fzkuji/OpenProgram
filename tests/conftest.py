@@ -86,8 +86,8 @@ def _has_default_provider() -> bool:
     instead of failing with "No LLM provider / model configured".
     """
     try:
-        from openprogram.providers.registry import resolve_default_provider
-        resolve_default_provider()
+        from openprogram.providers.registry import detect_provider
+        detect_provider()
         return True
     except Exception:
         return False

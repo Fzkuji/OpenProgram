@@ -3,24 +3,25 @@
 Agentic Programming — Quickstart Example
 
 This is a complete, runnable script that demonstrates the core concepts.
-No API key needed — uses Claude Code CLI (requires `claude` to be installed).
+`create_runtime()` auto-detects whatever LLM access you already have — a
+Claude subscription login, the Codex or Gemini CLI, or an API key saved in
+Settings — no per-provider wiring needed.
 
 Run:
-    cd Agentic-Programming
+    cd OpenProgram
     pip install -e .
     python examples/quickstart.py
 
-Prerequisites:
-    npm install -g @anthropic-ai/claude-code
-    claude login
+To pin a provider instead of auto-detecting:
+    runtime = create_runtime(provider="claude-code", model="haiku")
 """
 
 from openprogram import agentic_function
-from openprogram.providers.registry import ClaudeCodeRuntime
+from openprogram.providers.registry import create_runtime
 
-# ── Step 1: Create a runtime (no API key needed) ────────────────
+# ── Step 1: Create a runtime (auto-detects your provider) ───────
 
-runtime = ClaudeCodeRuntime(model="haiku")
+runtime = create_runtime()
 
 
 # ── Step 2: Define agentic functions ─────────────────────────────

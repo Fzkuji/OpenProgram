@@ -52,20 +52,15 @@ runtime = create_runtime()                                        # 自动选第
 runtime = create_runtime(provider="anthropic", model="claude-sonnet-4-6")
 ```
 
-六个内置 runtime 类可直接导入：
+六个 provider 在 `create_runtime` 背后有专属 runtime 行为（OAuth / CLI 凭据接管、按 provider 的约定）：
 
 ```python
-from openprogram.providers import (
-    AnthropicRuntime,     # Anthropic API
-    OpenAIRuntime,        # OpenAI Responses API
-    GeminiRuntime,        # Google Generative AI
-    ClaudeCodeRuntime,    # Claude 订阅直连，无需 API key
-    OpenAICodexRuntime,   # ChatGPT 订阅（Codex OAuth）
-    GeminiCLIRuntime,     # 复用 Gemini CLI 登录态
-)
-
-runtime = AnthropicRuntime(api_key="sk-...", model="claude-sonnet-4-6")
-runtime = OpenAICodexRuntime(model="gpt-5.5")
+runtime = create_runtime(provider="anthropic", model="claude-sonnet-4-6")  # Anthropic API key
+runtime = create_runtime(provider="openai", model="gpt-4.1")               # OpenAI Responses API
+runtime = create_runtime(provider="gemini", model="gemini-2.5-flash")      # Google Generative AI
+runtime = create_runtime(provider="claude-code")   # Claude 订阅直连，无需 API key
+runtime = create_runtime(provider="openai-codex")  # ChatGPT 订阅（Codex OAuth）
+runtime = create_runtime(provider="gemini-cli")    # 复用 Gemini CLI 登录态
 ```
 
-上表其余 provider 没有专属 runtime 类：`create_runtime(provider=..., model=...)` 会按该模型的协议自动路由，与聊天界面走同一条路径。
+上表其余 provider：`create_runtime(provider=..., model=...)` 会按该模型的协议自动路由，与聊天界面走同一条路径。

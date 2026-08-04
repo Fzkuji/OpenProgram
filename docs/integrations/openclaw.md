@@ -50,9 +50,9 @@ import os
 sys.path.insert(0, os.path.expanduser("~/.openclaw/workspace/OpenProgram"))
 
 from openprogram import agentic_function
-from openprogram.providers import ClaudeCodeRuntime
+from openprogram.providers.registry import create_runtime
 
-runtime = ClaudeCodeRuntime(model="haiku")
+runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function
@@ -118,9 +118,9 @@ If your OpenClaw agent runs Python scripts, you can import agentic functions dir
 Code review script called by an OpenClaw agent.
 """
 from openprogram import agentic_function
-from openprogram.providers import ClaudeCodeRuntime
+from openprogram.providers.registry import create_runtime
 
-runtime = ClaudeCodeRuntime(model="haiku")
+runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function
@@ -160,9 +160,9 @@ import json
 import sys
 
 from openprogram import agentic_function
-from openprogram.providers import ClaudeCodeRuntime
+from openprogram.providers.registry import create_runtime
 
-runtime = ClaudeCodeRuntime(model="haiku")
+runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function
@@ -203,7 +203,7 @@ if __name__ == "__main__":
 
 ## Tips
 
-1. **Start with `ClaudeCodeRuntime`** — no extra API key needed; a Claude Code login is enough, and it runs on your subscription. See [Claude Code integration](claude-code.md).
-2. **Pick the runtime by billing** — `ClaudeCodeRuntime` runs on your Claude subscription, `AnthropicRuntime` bills against an Anthropic API key.
+1. **Start with the `claude-code` provider** — no extra API key needed; a Claude Code login is enough, and it runs on your subscription. See [Claude Code integration](claude-code.md).
+2. **Pick the provider by billing** — `create_runtime(provider="claude-code")` runs on your Claude subscription, `create_runtime(provider="anthropic")` bills against an Anthropic API key.
 3. **Review execution traces** — every function call is recorded in the session DAG; find the session with the Web UI or `openprogram sessions list` and review it there.
 4. **Keep functions small and focused** — each `@agentic_function` should do one thing; let Python compose them.

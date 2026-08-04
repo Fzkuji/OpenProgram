@@ -2,7 +2,7 @@
 
 ## What Is This?
 
-`ClaudeCodeRuntime` lets you use Agentic Programming **without any API key**. It uses your Claude subscription's OAuth token to connect directly to `api.anthropic.com` — the token is resolved from the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)'s login credentials (`~/.claude/.credentials.json`) and re-read on every call, so the CLI's token refreshes take effect automatically.
+The `claude-code` provider lets you use Agentic Programming **without any API key**. It uses your Claude subscription's OAuth token to connect directly to `api.anthropic.com` — the token is resolved from the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)'s login credentials (`~/.claude/.credentials.json`) and re-read on every call, so the CLI's token refreshes take effect automatically.
 
 If you have `claude` installed and logged in, you're ready to go.
 
@@ -29,10 +29,10 @@ That's all the setup needed. No API keys, no environment variables.
 
 ```python
 from openprogram import agentic_function
-from openprogram.providers import ClaudeCodeRuntime
+from openprogram.providers.registry import create_runtime
 
 # No API key needed — uses your Claude Code subscription
-runtime = ClaudeCodeRuntime(model="haiku")
+runtime = create_runtime(provider="claude-code", model="haiku")
 
 @agentic_function
 def explain(concept):
@@ -48,7 +48,8 @@ print(result)
 ## Configuration Options
 
 ```python
-runtime = ClaudeCodeRuntime(
+runtime = create_runtime(
+    provider="claude-code",
     model="haiku",        # model name or family alias (see the table below)
     api_key=None,         # usually omitted; when omitted, resolved from the credential pool on every call
     max_retries=2,        # retries for transient API-layer failures
@@ -69,7 +70,7 @@ More specific ids (such as `claude-opus-4-5-20251101`) are passed through as is 
 
 ## How It Works
 
-Under the hood, `ClaudeCodeRuntime`:
+Under the hood, the `claude-code` runtime:
 
 1. Resolves your Claude subscription's OAuth token (`sk-ant-oat` prefix), or a plain Anthropic API key, from the credential pool
 2. Connects directly to `api.anthropic.com` over the standard Anthropic Messages protocol, using Bearer auth plus the Claude Code identity header for subscription tokens
@@ -100,9 +101,9 @@ Claude Code integration demo — no API key needed.
 Demonstrates a multi-step agentic workflow.
 """
 from openprogram import agentic_function
-from openprogram.providers import ClaudeCodeRuntime
+from openprogram.providers.registry import create_runtime
 
-runtime = ClaudeCodeRuntime(model="haiku")
+runtime = create_runtime(provider="claude-code", model="haiku")
 
 
 @agentic_function

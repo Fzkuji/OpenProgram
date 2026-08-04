@@ -2,16 +2,16 @@
 
 > Source: [`openprogram/providers/`](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/)
 
-`create_runtime` plus the built-in `Runtime` subclasses. All providers speak the raw HTTP APIs through OpenProgram's provider layer — **no vendor SDK needs to be installed**. The CLI/subscription providers reuse the OAuth credentials of the corresponding CLI tool, so those CLIs must be installed and logged in once.
+`create_runtime` is the one construction path for every provider. All providers speak the raw HTTP APIs through OpenProgram's provider layer — **no vendor SDK needs to be installed**. The CLI/subscription providers reuse the OAuth credentials of the corresponding CLI tool, so those CLIs must be installed and logged in once.
 
 ```bash
-# Codex CLI (for openai-codex / OpenAICodexRuntime)
+# Codex CLI (for the openai-codex provider)
 npm install -g @openai/codex && codex login
 
-# Gemini CLI (for gemini-cli / GeminiCLIRuntime)
+# Gemini CLI (for the gemini-cli provider)
 npm install -g @google/gemini-cli && gemini
 
-# Claude Code CLI (for claude-code / ClaudeCodeRuntime — its OAuth token is adopted)
+# Claude Code CLI (for the claude-code provider — its OAuth token is adopted)
 npm install -g @anthropic-ai/claude-code && claude login
 ```
 
@@ -31,7 +31,7 @@ rt = create_runtime(provider="openai-codex", model="gpt-5.5")
 
 ### `create_runtime(provider=None, model=None, **kwargs)`
 
-Returns a ready-to-use `Runtime`. `provider=None` (or `"auto"`) runs `detect_provider()`. The six providers below get their dedicated `Runtime` subclass; **any other provider name** (deepseek, groq, openrouter, minimax, kimi, and the rest of the catalogue) is routed through the base `Runtime("provider:model", ...)` via the model registry — the same path the chat dispatcher uses. `**kwargs` are forwarded to the runtime constructor.
+Returns a ready-to-use `Runtime`. `provider=None` (or `"auto"`) runs `detect_provider()`. The six providers below are backed by a dedicated `Runtime` subclass (an implementation detail of `create_runtime`); **any other provider name** (deepseek, groq, openrouter, minimax, kimi, and the rest of the catalogue) is routed through the base `Runtime("provider:model", ...)` via the model registry — the same path the chat dispatcher uses. `**kwargs` are forwarded to the runtime constructor.
 
 ### `detect_provider() -> (provider_name, default_model)`
 
@@ -60,21 +60,21 @@ Availability report for the six dedicated providers: `{name: {"available": bool,
 | `openai` | `OpenAIRuntime` | `gpt-4.1` (table) / `gpt-4o` (class constructor) | OpenAI API key |
 | `gemini` | `GeminiRuntime` | `gemini-2.5-flash` | Google API key |
 
-All six classes are importable from `openprogram.providers` (lazy) or `openprogram.providers.registry`.
+The classes live in their provider packages (`openprogram.providers.<package>.runtime`); construct them through `create_runtime(provider=...)`.
 
 ---
 
-## AnthropicRuntime
+## anthropic
 
-Anthropic Messages API, via the provider layer (streaming, tool loop, DAG recording all included).
+Anthropic Messages API, via the provider layer (streaming, tool loop, DAG recording all included). Backed by `AnthropicRuntime`.
 
 ```python
-from openprogram.providers import AnthropicRuntime
+from openprogram.providers.registry import create_runtime
 
-rt = AnthropicRuntime(api_key="sk-ant-...", model="claude-sonnet-4-6")
+rt = create_runtime(provider="anthropic", api_key="sk-ant-...", model="claude-sonnet-4-6")
 ```
 
-### Constructor parameters
+### Options (forwarded to the runtime)
 
 | Parameter | Type | Default | Description |
 |------|------|--------|------|
@@ -86,17 +86,15 @@ Raises `ValueError` when no credential can be resolved. `list_models()` returns 
 
 ---
 
-## OpenAIRuntime
+## openai
 
-OpenAI Responses API, via the provider layer.
+OpenAI Responses API, via the provider layer. Backed by `OpenAIRuntime`.
 
 ```python
-from openprogram.providers import OpenAIRuntime
-
-rt = OpenAIRuntime(api_key="sk-...", model="gpt-4o")
+rt = create_runtime(provider="openai", api_key="sk-...", model="gpt-4o")
 ```
 
-### Constructor parameters
+### Options (forwarded to the runtime)
 
 | Parameter | Type | Default | Description |
 |------|------|--------|------|
@@ -108,17 +106,15 @@ For Azure or a local OpenAI-compatible server, add a custom provider (Settings �
 
 ---
 
-## GeminiRuntime
+## gemini
 
-Google Gemini Generative Language API, via the provider layer.
+Google Gemini Generative Language API, via the provider layer. Backed by `GeminiRuntime`.
 
 ```python
-from openprogram.providers import GeminiRuntime
-
-rt = GeminiRuntime(api_key="...", model="gemini-2.5-flash")
+rt = create_runtime(provider="gemini", api_key="...", model="gemini-2.5-flash")
 ```
 
-### Constructor parameters
+### Options (forwarded to the runtime)
 
 | Parameter | Type | Default | Description |
 |------|------|--------|------|
@@ -128,19 +124,17 @@ rt = GeminiRuntime(api_key="...", model="gemini-2.5-flash")
 
 ---
 
-## ClaudeCodeRuntime
+## claude-code
 
-Claude via a **Claude subscription** — connects directly to `api.anthropic.com` with the subscription's OAuth token (Bearer auth + Claude Code identity headers). No API key billing; the token is resolved fresh on every call so CLI-side rotations propagate.
+Claude via a **Claude subscription** — connects directly to `api.anthropic.com` with the subscription's OAuth token (Bearer auth + Claude Code identity headers). No API key billing; the token is resolved fresh on every call so CLI-side rotations propagate. Backed by `ClaudeCodeRuntime`.
 
 ```python
-from openprogram.providers import ClaudeCodeRuntime
-
-rt = ClaudeCodeRuntime(model="claude-sonnet-4")
+rt = create_runtime(provider="claude-code", model="claude-sonnet-4")
 ```
 
 Setup: log in once with the Claude Code CLI (`claude login`) so the OAuth token can be adopted, or add a Claude account with `openprogram providers claude-code accounts add`.
 
-### Constructor parameters
+### Options (forwarded to the runtime)
 
 | Parameter | Type | Default | Description |
 |------|------|--------|------|
@@ -152,14 +146,12 @@ Extra keyword arguments are accepted and ignored for backward compatibility. Rai
 
 ---
 
-## OpenAICodexRuntime
+## openai-codex
 
-ChatGPT / Codex **subscription** runtime. Reads OAuth credentials adopted from the Codex CLI's `~/.codex/auth.json` and talks to the ChatGPT Responses backend. Refreshed tokens are mirrored back so the Codex CLI stays in sync.
+ChatGPT / Codex **subscription** runtime. Reads OAuth credentials adopted from the Codex CLI's `~/.codex/auth.json` and talks to the ChatGPT Responses backend. Refreshed tokens are mirrored back so the Codex CLI stays in sync. Backed by `OpenAICodexRuntime`.
 
 ```python
-from openprogram.providers import OpenAICodexRuntime
-
-rt = OpenAICodexRuntime(model="gpt-5.5")
+rt = create_runtime(provider="openai-codex", model="gpt-5.5")
 ```
 
 Setup:
@@ -169,7 +161,7 @@ npm install -g @openai/codex
 codex login          # OAuth login — do not pick the API-key option
 ```
 
-### Constructor parameters
+### Options (forwarded to the runtime)
 
 | Parameter | Type | Default | Description |
 |------|------|------|------|
@@ -177,18 +169,16 @@ codex login          # OAuth login — do not pick the API-key option
 | `system` | `str \| None` | `None` | Optional system prompt |
 | `profile` | `str \| None` | active profile | OpenProgram auth profile to use (keyword-only) |
 
-Extra keyword arguments are accepted and ignored. Requires an OAuth credential — a bare OpenAI API key raises `AuthConfigError` (use `OpenAIRuntime` instead).
+Extra keyword arguments are accepted and ignored. Requires an OAuth credential — a bare OpenAI API key raises `AuthConfigError` (use the `openai` provider instead).
 
 ---
 
-## GeminiCLIRuntime
+## gemini-cli
 
-Gemini via a **Google account** (Gemini CLI OAuth). Reuses `~/.gemini/oauth_creds.json` and talks to the Cloud Code Assist backend over HTTP — no subprocess.
+Gemini via a **Google account** (Gemini CLI OAuth). Reuses `~/.gemini/oauth_creds.json` and talks to the Cloud Code Assist backend over HTTP — no subprocess. Backed by `GeminiCLIRuntime`.
 
 ```python
-from openprogram.providers import GeminiCLIRuntime
-
-rt = GeminiCLIRuntime(model="gemini-2.5-flash")
+rt = create_runtime(provider="gemini-cli", model="gemini-2.5-flash")
 ```
 
 Setup:
@@ -198,7 +188,7 @@ npm install -g @google/gemini-cli
 gemini               # first run performs the OAuth login
 ```
 
-### Constructor parameters
+### Options (forwarded to the runtime)
 
 | Parameter | Type | Default | Description |
 |------|------|------|------|
@@ -206,7 +196,7 @@ gemini               # first run performs the OAuth login
 | `system` | `str \| None` | `None` | Optional system prompt |
 | `profile` | `str \| None` | active profile | OpenProgram auth profile to use (keyword-only) |
 
-Extra keyword arguments are accepted and ignored. If you only have a Google API key, use `GeminiRuntime`.
+Extra keyword arguments are accepted and ignored. If you only have a Google API key, use the `gemini` provider instead.
 
 ---
 

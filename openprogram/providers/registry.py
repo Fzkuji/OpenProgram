@@ -1,39 +1,23 @@
 """
-openprogram.providers.registry — Built-in Runtime implementations for popular LLM providers.
+openprogram.providers.registry — provider detection + the Runtime factory.
 
-Each provider is an optional dependency. Import will give a clear error
-if the required SDK is not installed.
+The canonical way to build a runtime:
 
-Available providers:
-    AnthropicRuntime       — Anthropic Claude API (text + image, prompt caching)
-    OpenAIRuntime          — OpenAI GPT API (text + image, response_format)
-    GeminiRuntime          — Google Gemini API (text + image)
-    ClaudeCodeRuntime       — Claude subscription, direct to api.anthropic.com
-                             (Bearer OAuth + Claude Code beta headers), for
-                             users who log in with a Claude plan instead of a
-                             paid API key. No Meridian proxy.
-    OpenAICodexRuntime — OpenAI Codex HTTP API (ChatGPT subscription OAuth, reads ~/.codex/auth.json)
-    GeminiCLIRuntime  — Google Gemini HTTP API (Google account OAuth, reads ~/.gemini/oauth_creds.json)
-
-Usage:
-    from openprogram.providers.registry import AnthropicRuntime
-    rt = AnthropicRuntime(api_key="sk-...", model="claude-sonnet-4-6")
-
-    from openprogram.providers.registry import OpenAIRuntime
-    rt = OpenAIRuntime(api_key="sk-...", model="gpt-4o")
-
-    from openprogram.providers.registry import GeminiRuntime
-    rt = GeminiRuntime(api_key="...", model="gemini-2.5-flash")
-
-    from openprogram.providers.registry import OpenAICodexRuntime
-    rt = OpenAICodexRuntime(model="gpt-5.5-mini")
-
-Auto-detection:
     from openprogram.providers.registry import detect_provider, create_runtime
 
     provider, model = detect_provider()     # auto-detect best available
-    rt = create_runtime()                   # create runtime with auto-detection
+    rt = create_runtime()                   # runtime for the detected provider
     rt = create_runtime(provider="anthropic", model="claude-sonnet-4-6")
+    rt = create_runtime(provider="claude-code")   # Claude subscription OAuth
+    rt = create_runtime(provider="deepseek", model="deepseek-chat")  # api-routed
+
+``PROVIDERS`` maps ONLY the backends that need a bespoke Runtime class
+(OAuth / CLI-credential adoption or per-provider conventions); those
+classes live in their provider packages
+(``openprogram.providers.openai_codex.runtime.OpenAICodexRuntime`` etc.).
+Every other provider is served by the base
+``Runtime(model="<provider>:<model>")`` through the api_registry — the
+same path the chat dispatcher uses.
 """
 
 import os
@@ -301,43 +285,9 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
     return cls(model=use_model, **kwargs)
 
 
-# -- Lazy imports for direct class access ------------------------------------
-
-def __getattr__(name):
-    """Lazy imports — only load a provider when accessed."""
-    if name == "AnthropicRuntime":
-        from openprogram.providers.anthropic.runtime import AnthropicRuntime
-        return AnthropicRuntime
-    if name == "OpenAIRuntime":
-        from openprogram.providers.openai_responses.runtime import OpenAIRuntime
-        return OpenAIRuntime
-    if name == "GeminiRuntime":
-        from openprogram.providers.google.runtime import GeminiRuntime
-        return GeminiRuntime
-    if name == "ClaudeCodeRuntime":
-        from openprogram.providers.anthropic._claude_code_direct_runtime import (
-            ClaudeCodeRuntime,
-        )
-        return ClaudeCodeRuntime
-    if name in ("OpenAICodexRuntime", "OpenAICodexRuntime"):
-        from openprogram.providers.openai_codex.runtime import OpenAICodexRuntime
-        return OpenAICodexRuntime
-    if name in ("GeminiCLIRuntime", "GeminiCLIRuntime"):
-        from openprogram.providers.google_gemini_cli.runtime import (
-            GeminiCLIRuntime,
-        )
-        return GeminiCLIRuntime
-    raise AttributeError(f"module 'openprogram.providers.registry' has no attribute {name!r}")
-
-
 __all__ = [
     "PROVIDERS",
     "detect_provider",
     "create_runtime",
-    "AnthropicRuntime",
-    "OpenAIRuntime",
-    "GeminiRuntime",
-    "ClaudeCodeRuntime",
-    "OpenAICodexRuntime",
-    "GeminiCLIRuntime",
+    "check_providers",
 ]

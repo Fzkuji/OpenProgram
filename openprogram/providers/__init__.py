@@ -2,9 +2,9 @@
 pi_ai — Unified LLM API
 Python mirror of @mariozechner/pi-ai.
 
-This module also keeps the older ``openprogram.providers`` compatibility
-surface alive, so existing imports like ``detect_provider`` or
-``AnthropicRuntime`` continue to work during the provider refactor.
+Runtime construction goes through :func:`create_runtime` (auto-detection
+via :func:`detect_provider`). Provider-specific Runtime classes live in
+their provider packages (e.g. ``openprogram.providers.openai_codex``).
 """
 
 # Core types
@@ -73,7 +73,7 @@ from .utils.overflow import is_context_overflow, get_overflow_patterns
 from .utils.validation import validate_tool_arguments, validate_tool_call
 from .utils.sanitize_unicode import sanitize_surrogates
 
-# Backward-compatible provider detection/runtime helpers.
+# Provider detection / runtime factory (the canonical construction path).
 from openprogram.providers.registry import PROVIDERS, check_providers, create_runtime, detect_provider
 
 __all__ = [
@@ -95,10 +95,8 @@ __all__ = [
     "get_model", "get_providers", "get_models", "calculate_cost", "supports_xhigh", "models_are_equal",
     # Registry
     "register_api_provider", "get_api_provider",
-    # Legacy runtime compatibility
+    # Runtime factory / detection
     "PROVIDERS", "detect_provider", "create_runtime", "check_providers",
-    "AnthropicRuntime", "OpenAIRuntime", "GeminiRuntime", "ClaudeCodeRuntime",
-    "OpenAICodexRuntime", "GeminiCLIRuntime",
     # Keys
     "resolve_provider_key",
     # Streaming
@@ -110,24 +108,6 @@ __all__ = [
     "is_context_overflow", "get_overflow_patterns",
     "sanitize_surrogates",
 ]
-
-
-_DEFERRABLE_LEGACY_EXPORTS = {
-    "AnthropicRuntime",
-    "OpenAIRuntime",
-    "GeminiRuntime",
-    "ClaudeCodeRuntime",
-    "OpenAICodexRuntime",
-    "GeminiCLIRuntime",
-}
-
-
-def __getattr__(name: str):
-    """Lazy-load legacy runtime classes while preserving modern exports."""
-    if name in _DEFERRABLE_LEGACY_EXPORTS:
-        from openprogram.providers import registry
-        return getattr(registry, name)
-    raise AttributeError(f"module 'openprogram.providers' has no attribute {name!r}")
 
 
 # Register builtin API providers AFTER the full package init completes.

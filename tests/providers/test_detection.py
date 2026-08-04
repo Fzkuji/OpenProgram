@@ -105,8 +105,8 @@ class TestProviderDetection:
         assert statuses["gemini"]["model"] == "gemini-2.5-flash"
 
 
-class TestProviderLazyImport:
-    """Test that providers/__init__.py lazy-loads correctly."""
+class TestProviderSurface:
+    """The package exports the factory surface, not per-provider classes."""
 
     def test_unknown_attribute_raises(self):
         """Accessing unknown attribute raises AttributeError."""
@@ -114,12 +114,28 @@ class TestProviderLazyImport:
         with pytest.raises(AttributeError, match="no attribute"):
             _ = providers.NonExistentRuntime
 
-    def test_all_exports(self):
-        """__all__ lists all providers."""
+    def test_all_exports_factory_surface(self):
+        """__all__ carries the factory/detection entry points; the legacy
+        per-provider class aliases are gone — classes import from their
+        provider packages (openprogram.providers.<provider>.runtime)."""
         from openprogram import providers
-        assert "AnthropicRuntime" in providers.__all__
-        assert "OpenAIRuntime" in providers.__all__
-        assert "GeminiRuntime" in providers.__all__
-        assert "ClaudeCodeRuntime" in providers.__all__
-        assert "OpenAICodexRuntime" in providers.__all__
-        assert "GeminiCLIRuntime" in providers.__all__
+        for name in ("PROVIDERS", "detect_provider", "create_runtime", "check_providers"):
+            assert name in providers.__all__
+        for legacy in (
+            "AnthropicRuntime", "OpenAIRuntime", "GeminiRuntime",
+            "ClaudeCodeRuntime", "OpenAICodexRuntime", "GeminiCLIRuntime",
+        ):
+            assert legacy not in providers.__all__
+
+    def test_runtime_classes_import_from_provider_packages(self):
+        """Canonical class homes stay importable (create_runtime's targets)."""
+        from openprogram.providers.anthropic.runtime import AnthropicRuntime  # noqa: F401
+        from openprogram.providers.anthropic._claude_code_direct_runtime import (  # noqa: F401
+            ClaudeCodeRuntime,
+        )
+        from openprogram.providers.openai_responses.runtime import OpenAIRuntime  # noqa: F401
+        from openprogram.providers.google.runtime import GeminiRuntime  # noqa: F401
+        from openprogram.providers.openai_codex.runtime import OpenAICodexRuntime  # noqa: F401
+        from openprogram.providers.google_gemini_cli.runtime import (  # noqa: F401
+            GeminiCLIRuntime,
+        )
