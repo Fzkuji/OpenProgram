@@ -12,8 +12,10 @@
  * one ``<g>``, and that group carries a translate + scale the user drives
  * directly:
  *
- *   * wheel / two-finger swipe → pan
- *   * pinch, or ⌘/ctrl + wheel → zoom about the pointer, 25%–300%
+ *   * wheel → zoom about the cursor, 25%–300% (Obsidian-graph feel:
+ *     what is under the cursor stays under it)
+ *   * pinch, or ⌘/ctrl + wheel → the same zoom, at pinch rate
+ *   * two-finger swipe with sideways motion → pan
  *   * drag on empty space → pan (a drag that starts on a node is the
  *     node's, so clicking still works)
  *
@@ -50,6 +52,15 @@ function dismissOverlays(): void {
 
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 3;
+
+/** Zoom rates. A pinch (ctrlKey wheel) delivers small continuous
+ *  deltas while a plain wheel delivers ±100-ish notches — one shared
+ *  rate would make one of the two violent. ``ZOOM_STEP`` is exactly
+ *  one standard wheel notch (deltaY = 100), so the HUD's −/+ buttons
+ *  and the wheel are the same control at the same pace. */
+const PINCH_ZOOM_RATE = 0.01;
+const WHEEL_ZOOM_RATE = 0.002;
+const ZOOM_STEP = Math.exp(100 * WHEEL_ZOOM_RATE);
 
 /** Padding around the graph when fitting, in screen pixels. */
 const FIT_PAD = 72;
@@ -135,6 +146,40 @@ export function fitCanvas(): void {
   applyView();
 }
 
+/** Zoom by ``factor`` about the screen-space anchor ``(px, py)``: the
+ *  world point under the anchor stays under it before and after. */
+function zoomAt(px: number, py: number, factor: number): void {
+  const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, _viewScale * factor));
+  setView(
+    px - (px - _viewTx) * (next / _viewScale),
+    py - (py - _viewTy) * (next / _viewScale),
+    next,
+  );
+  applyView();
+}
+
+/** One HUD −/+ press: one wheel notch of zoom. The buttons have no
+ *  cursor position to anchor on, so they anchor on the pane's centre. */
+export function zoomStep(dir: 1 | -1): void {
+  if (!_handle) return;
+  dismissOverlays();
+  const { host } = _handle;
+  zoomAt(
+    host.clientWidth / 2,
+    host.clientHeight / 2,
+    dir > 0 ? ZOOM_STEP : 1 / ZOOM_STEP,
+  );
+}
+
+/** The HUD's zoom readout doubles as the reset: back to 100%, pane
+ *  centre anchored, pan otherwise kept. */
+export function resetZoom(): void {
+  if (!_handle) return;
+  dismissOverlays();
+  const { host } = _handle;
+  zoomAt(host.clientWidth / 2, host.clientHeight / 2, 1 / _viewScale);
+}
+
 /** Wire the pan / zoom gestures onto ``host`` once. */
 function wireGestures(host: HTMLElement): void {
   const h = host as HTMLElement & { _dagCanvasWired?: boolean };
@@ -147,23 +192,34 @@ function wireGestures(host: HTMLElement): void {
       e.preventDefault();
       dismissOverlays();
       const rect = host.getBoundingClientRect();
+      // Gesture triage — the convention wheel-zoom infinite canvases
+      // share (Obsidian's graph view, Figma, Excalidraw):
+      //   * ctrl/⌘ + wheel: browsers deliver a trackpad PINCH as a
+      //     wheel event with ctrlKey set (and ⌘+wheel is the explicit
+      //     zoom chord), so this always zooms, at a rate tuned for a
+      //     pinch's small continuous deltas;
+      //   * sideways-dominant wheel: a mouse wheel emits deltaX = 0,
+      //     so real deltaX only comes from a trackpad two-finger
+      //     swipe (or shift+wheel, which browsers remap into deltaX)
+      //     — that is a pan, both axes;
+      //   * plain vertical wheel: zoom about the cursor, so the node
+      //     under the pointer stays under the pointer.
       if (e.ctrlKey || e.metaKey) {
-        // A trackpad pinch and ⌘+wheel arrive identically, as a wheel
-        // event with ctrlKey set. Zoom about the pointer so the thing
-        // under the cursor stays under it.
-        const k = Math.exp(-e.deltaY * 0.01);
-        const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, _viewScale * k));
-        const px = e.clientX - rect.left;
-        const py = e.clientY - rect.top;
-        setView(
-          px - (px - _viewTx) * (next / _viewScale),
-          py - (py - _viewTy) * (next / _viewScale),
-          next,
+        zoomAt(
+          e.clientX - rect.left,
+          e.clientY - rect.top,
+          Math.exp(-e.deltaY * PINCH_ZOOM_RATE),
         );
-      } else {
+      } else if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
         setView(_viewTx - e.deltaX, _viewTy - e.deltaY, _viewScale);
+        applyView();
+      } else {
+        zoomAt(
+          e.clientX - rect.left,
+          e.clientY - rect.top,
+          Math.exp(-e.deltaY * WHEEL_ZOOM_RATE),
+        );
       }
-      applyView();
     },
     { passive: false },
   );

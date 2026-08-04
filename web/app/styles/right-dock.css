@@ -894,39 +894,61 @@
    floats over the canvas rather than taking a strip of it, and starts
    collapsed to a single button — the shapes are learnable, so the
    legend is for the first few sessions, not every one. */
-/* Canvas HUD — fit, zoom readout, legend. Lives at the composer's
-   top-right: portaled into the env-chip row's right end
-   (composer .dagHudSlot), so it rides the composer and needs no
+/* Canvas HUD — fit, the zoom cluster (− · readout · +), legend. Lives
+   at the composer's top-right: portaled into the env-chip row's right
+   end (composer .dagHudSlot), so it rides the composer and needs no
    positioning of its own. */
 .dag-hud {
   display: flex;
   align-items: center;
   gap: 6px;
 }
+/* The pill look (24px filled pill, inset ring, --shadow-sm, --ink-80,
+   hover lift) is NOT here: the HUD lives inside the composer's env-chip
+   row, and composer.module.css lists .dag-hud-chip in the env-pill rule
+   itself — one definition, the chips beside it can never drift. Here:
+   only what is HUD-internal. */
 .dag-hud-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 9px;
-  border-radius: 7px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
   font: inherit;
-  font-size: 11px;
-  line-height: 1;
   white-space: nowrap;
 }
 button.dag-hud-chip { cursor: pointer; }
-button.dag-hud-chip:hover {
-  color: var(--text-primary);
-  border-color: var(--border-strong, var(--border));
+/* The zoom cluster: one pill holding [−] [readout] [+]. Tight side
+   padding so the square segments read as one control; the shared pill
+   rule's 0 8px suits the text chips, not this one. */
+.dag-hud .dag-hud-chip.dag-hud-zoomctl {
+  padding: 0 3px;
+  gap: 0;
 }
+.dag-hud-zoombtn,
 .dag-hud-zoom {
-  min-width: 46px;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.dag-hud-zoombtn { width: 20px; }
+.dag-hud-zoom {
+  min-width: 42px;
+  padding: 0 3px;
   font-variant-numeric: tabular-nums;
+}
+/* Segment hover speaks the same language as the pill hover in
+   composer.module.css — the same --text-bright brightening, scoped to
+   the segment instead of the whole pill. */
+.dag-hud-zoombtn:hover,
+.dag-hud-zoom:hover {
+  color: var(--text-bright);
+  background: color-mix(in srgb, var(--text-bright) 8%, transparent);
 }
 
 .dag-legend {
@@ -935,27 +957,28 @@ button.dag-hud-chip:hover {
   position: relative;
   flex-shrink: 0;
 }
+/* The panel FRAME (10px radius, --border-popover edge,
+   --surface-popover fill, --shadow-popover, 6px inset) comes from
+   MENU_PANEL (chat/top-bar/menu-styles) put on the element by
+   dag-view.tsx — the one visual definition every popover panel shares.
+   This block is only the legend's anchoring and its rows. */
 .dag-legend-body {
   position: absolute;
   bottom: calc(100% + 8px);
   right: 0;
   z-index: 30;
   min-width: 190px;
-  padding: 10px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-md, 0 8px 28px rgba(0,0,0,.13));
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 11px;
+  gap: 2px;
+  font-size: 12px;
   color: var(--text-secondary);
 }
 .dag-legend-row {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
+  /* MENU_PANEL's 6px panel inset + 10px row padding = the menu rows'
+     16px text inset, so legend rows sit like menu rows. */
+  padding: 3px 10px;
   line-height: 1.4;
 }
 .dag-legend-row svg { flex: 0 0 auto; }

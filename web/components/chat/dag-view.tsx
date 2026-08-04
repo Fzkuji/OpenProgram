@@ -36,11 +36,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Maximize2, Shapes } from "lucide-react";
+import { Maximize2, Minus, Plus, Shapes } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import { enterExclusiveCoverageMode } from "@/lib/runtime-bridge/dag";
-import { fitCanvas } from "@/lib/runtime-bridge/dag/canvas";
+import { fitCanvas, resetZoom, zoomStep } from "@/lib/runtime-bridge/dag/canvas";
+import { MENU_PANEL } from "@/components/chat/top-bar/menu-styles";
 
 const STROKE = "var(--accent-primary, #4a7dfc)";
 const GHOST = "var(--dag-ghost, #c9c7bf)";
@@ -105,11 +106,14 @@ function DagLegend() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        <Shapes size={13} strokeWidth={2} />
+        <Shapes size={14} strokeWidth={2} />
         <span>{text("Legend", "图例")}</span>
       </button>
       {open && (
-        <div className="dag-legend-body">
+        // 面板框架（圆角/描边/底色/阴影/内衬）来自 MENU_PANEL——全应用
+        // 弹层菜单共用的那一份视觉定义；.dag-legend-body 只负责锚位
+        // （向上弹）和行的排版。
+        <div className={`dag-legend-body ${MENU_PANEL}`}>
           <LegendRow shape={SHAPES.root} label={text("root", "root")} />
           <LegendRow shape={SHAPES.user} label={text("user turn", "用户轮")} />
           <LegendRow shape={SHAPES.llm} label={text("model reply", "模型回复")} />
@@ -136,8 +140,10 @@ function DagLegend() {
 }
 
 /** Canvas controls at the composer's TOP-RIGHT — the right end of its
- *  env-chip row: fit the graph back into view, read the current zoom,
- *  open the legend. Chip-sized like the env chips beside them, portaled
+ *  env-chip row: fit the graph back into view, step / reset the zoom
+ *  (− · readout · +), open the legend. Chip-sized like the env chips
+ *  beside them — and dressed by the SAME env-pill rule
+ *  (composer.module.css), not a private lookalike. Portaled
  *  into the composer's `#dagHudSlot` so they ride the composer wherever
  *  it sits and however tall it grows. Rendered only while the DAG
  *  perspective is showing — the slot stays an empty div in chat. The
@@ -175,10 +181,40 @@ function DagHud({ active }: { active: boolean }) {
         onClick={() => fitCanvas()}
         title={text("Fit graph to view", "缩放到全图")}
       >
-        <Maximize2 size={13} strokeWidth={2} />
+        <Maximize2 size={14} strokeWidth={2} />
         <span>{text("Fit", "全图")}</span>
       </button>
-      <span className="dag-hud-chip dag-hud-zoom">100%</span>
+      {/* 缩放簇：一颗胶囊里 [−] [倍率] [+]。−/+ 步进一个滚轮格，
+          倍率数字本身点击重置 100%——都以画布中心为锚
+          （canvas.ts::zoomStep / resetZoom）。 */}
+      <div className="dag-hud-chip dag-hud-zoomctl">
+        <button
+          type="button"
+          className="dag-hud-zoombtn"
+          onClick={() => zoomStep(-1)}
+          title={text("Zoom out", "缩小")}
+          aria-label={text("Zoom out", "缩小")}
+        >
+          <Minus size={14} strokeWidth={2} />
+        </button>
+        <button
+          type="button"
+          className="dag-hud-zoom"
+          onClick={() => resetZoom()}
+          title={text("Reset zoom to 100%", "重置为 100%")}
+        >
+          100%
+        </button>
+        <button
+          type="button"
+          className="dag-hud-zoombtn"
+          onClick={() => zoomStep(1)}
+          title={text("Zoom in", "放大")}
+          aria-label={text("Zoom in", "放大")}
+        >
+          <Plus size={14} strokeWidth={2} />
+        </button>
+      </div>
       <DagLegend />
     </div>,
     slot,

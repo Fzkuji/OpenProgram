@@ -15,7 +15,7 @@ import type { Config } from "tailwindcss";
  * keep using `var(--xxx)` and remain interchangeable.
  */
 const config: Config = {
-  darkMode: ["class"],
+  darkMode: "class",
   content: [
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",

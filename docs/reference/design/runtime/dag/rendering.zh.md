@@ -42,10 +42,18 @@
 
 | 手势 | 效果 |
 |---|---|
-| 滚轮 / 双指滑动 | 平移 |
-| 捏合，或 ⌘/ctrl + 滚轮 | 以指针为锚缩放，限 25%–300% |
+| 滚轮 | 以光标为锚缩放，限 25%–300%——指针下的节点缩放前后都在指针下 |
+| 捏合，或 ⌘/ctrl + 滚轮 | 同样的缩放，用捏合速率 |
+| 带横向分量的双指滑动 | 平移，两轴都动 |
 | 在空白处拖拽 | 平移 |
 | 从节点上起手拖拽 | 归节点——单击、双击照常生效 |
+
+**滚轮分流**（`canvas.ts`），滚轮缩放类画布的通行约定（Obsidian 图谱视图、
+Figma、Excalidraw）：ctrl/⌘ + 滚轮一律缩放——浏览器把触控板捏合投递成带
+`ctrlKey` 的 wheel 事件，⌘+滚轮则是显式缩放和弦——速率按捏合细密连续的
+delta 调校。横向占优的滚轮（`|deltaX| > |deltaY|`）只可能来自触控板双指
+滑动或 shift+滚轮，因为鼠标滚轮的 `deltaX = 0`；它做平移。其余就是纯竖直
+滚轮，以光标为锚缩放，速率放缓、按 ±100 的格档取值。
 
 按内容定尺寸的容器替用户决定了两件不该它决定的事：图能画多大才需要滚动条，
 以及"中间"在哪。宽会话给一条横滚动条，深会话给一条竖滚动条，看全貌要在两个轴
@@ -61,18 +69,25 @@
 视野拖走。平移与缩放按会话存在 `store/globals` 里，只有进入另一个会话才重新
 fit。改面板尺寸永不重新 fit——用户看图的角度是他自己的。
 
-**HUD。** 输入框右上角——env chip 行的右端，规格同旁边的 chip：一个 fit 按钮、
-缩放百分比、图例弹层。它由 `dag-view.tsx` portal 进输入框的 `#dagHudSlot`，
-跟着输入框走、随它长高，只在 DAG 视角显示。缩放读数由 `canvas.ts` 在每次视角
-变化时命令式写入——把一次手势的每个 wheel 事件走 React state 会让整棵树每秒
-重绘六十次。
+**HUD。** 输入框右上角——env chip 行的右端：一个 fit 按钮、一组缩放控件、
+图例弹层，由 `dag-view.tsx` portal 进输入框的 `#dagHudSlot`，跟着输入框走、
+随它长高，只在 DAG 视角显示。缩放控件是一颗胶囊里的 − · 读数 · +：−/+ 每次
+步进恰好一个滚轮格（`ZOOM_STEP`），点读数本身重置 100%——按钮没有光标可锚，
+两者都以面板中心为锚。读数由 `canvas.ts` 在每次视角变化时命令式写入——把
+一次手势的每个 wheel 事件走 React state 会让整棵树每秒重绘六十次。
+
+HUD 不自带任何外观。胶囊列在输入框 env-pill 规则里
+（`composer.module.css`），和旁边的 env chip 是同一条 24px 实底胶囊规则——
+同底、同内描边、同阴影、同 hover——永远不会跑偏。图例面板穿 `MENU_PANEL`
+（`components/chat/top-bar/menu-styles`），全应用弹层菜单共用的那一份框架；
+`right-dock.css` 只留 HUD 内部排版（缩放簇的分段、图例的向上锚位和行）。
 
 | 部件 | 位置 |
 |---|---|
-| 平移 / 缩放 / fit | `web/lib/runtime-bridge/dag/canvas.ts` |
+| 平移 / 缩放 / fit | `web/lib/runtime-bridge/dag/canvas.ts`（HUD 按钮走 `zoomStep` / `resetZoom`） |
 | 视角状态 | `dag/store/globals.ts` 的 `_viewTx` / `_viewTy` / `_viewScale` / `_viewSession` |
 | 画布与点阵 | `web/app/styles/right-dock.css` 的 `.history-body` |
-| HUD | `web/components/chat/dag-view.tsx` 的 `DagHud`，`right-dock.css` 的 `.dag-hud` |
+| HUD | `web/components/chat/dag-view.tsx` 的 `DagHud`；胶囊外观来自 `composer.module.css` 的 env-pill 规则，图例框架来自 `MENU_PANEL`，内部排版在 `right-dock.css` |
 
 ### 输入框属于面板，不属于会话记录
 

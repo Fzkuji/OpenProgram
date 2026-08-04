@@ -51,10 +51,20 @@ the user drives directly.
 
 | Gesture | Effect |
 |---|---|
-| wheel / two-finger swipe | pan |
-| pinch, or ⌘/ctrl + wheel | zoom about the pointer, clamped to 25%–300% |
+| wheel | zoom about the cursor, clamped to 25%–300% — the node under the pointer stays under the pointer |
+| pinch, or ⌘/ctrl + wheel | the same zoom, at pinch rate |
+| two-finger swipe with sideways motion | pan, both axes |
 | drag on empty canvas | pan |
 | drag starting on a node | the node's — click and double-click still work |
+
+**Wheel triage** (`canvas.ts`), the convention wheel-zoom canvases share
+(Obsidian's graph view, Figma, Excalidraw): ctrl/⌘ + wheel always zooms —
+browsers deliver a trackpad pinch as a wheel event with `ctrlKey` set, and
+⌘+wheel is the explicit zoom chord — at a rate tuned for a pinch's small
+continuous deltas. A sideways-dominant wheel (`|deltaX| > |deltaY|`) can only
+be a trackpad two-finger swipe or shift+wheel, because a mouse wheel emits
+`deltaX = 0`; it pans. Everything else is a plain vertical wheel and zooms
+about the cursor, at a gentler rate sized for ±100 notches.
 
 A box sized to its content decides two things it has no business deciding: how
 big a graph may get before it needs scrollbars, and where the middle is. A wide
@@ -76,21 +86,31 @@ and zoom live in `store/globals` keyed by session, and only arriving at a
 different session re-fits. Resizing the pane never re-fits — the user's angle on
 the graph is theirs to keep.
 
-**HUD.** At the composer's TOP-RIGHT — the right end of its env-chip row,
-chip-sized like the chips beside it: a fit button, the zoom percentage, and
-the legend popover. It is portaled into the composer's `#dagHudSlot`
-(`dag-view.tsx`), so it rides the composer wherever it sits and however tall
-it grows, and renders only while the DAG perspective is showing. The zoom
-readout is written imperatively by `canvas.ts` on every view change, because
-routing a gesture's every wheel event through React state would repaint the
-tree sixty times a second.
+**HUD.** At the composer's TOP-RIGHT — the right end of its env-chip row: a
+fit button, a zoom cluster, and the legend popover, portaled into the
+composer's `#dagHudSlot` (`dag-view.tsx`) so they ride the composer wherever
+it sits and however tall it grows, rendered only while the DAG perspective is
+showing. The zoom cluster is one pill holding − · readout · +: the buttons
+step by exactly one wheel notch (`ZOOM_STEP`), and clicking the readout
+resets to 100% — both anchored on the pane's centre, since a button has no
+cursor to anchor on. The readout is written imperatively by `canvas.ts` on
+every view change, because routing a gesture's every wheel event through
+React state would repaint the tree sixty times a second.
+
+The HUD draws no chrome of its own. The chips are listed in the composer's
+env-pill rule (`composer.module.css`), so they are the same 24px filled pill
+as the env chips beside them — same fill, inset ring, shadow, and hover — and
+can never drift from them. The legend panel wears `MENU_PANEL`
+(`components/chat/top-bar/menu-styles`), the one frame every popover menu in
+the app shares; `right-dock.css` keeps only HUD-internal layout (the zoom
+cluster's segments, the legend's upward anchoring and rows).
 
 | Piece | Where |
 |---|---|
-| Pan / zoom / fit | `web/lib/runtime-bridge/dag/canvas.ts` |
+| Pan / zoom / fit | `web/lib/runtime-bridge/dag/canvas.ts` (`zoomStep` / `resetZoom` for the HUD buttons) |
 | View state | `_viewTx` / `_viewTy` / `_viewScale` / `_viewSession` in `dag/store/globals.ts` |
 | Surface + lattice | `.history-body` in `web/app/styles/right-dock.css` |
-| HUD | `DagHud` in `web/components/chat/dag-view.tsx`, `.dag-hud` in `right-dock.css` |
+| HUD | `DagHud` in `web/components/chat/dag-view.tsx`; pill look from the env-pill rule in `composer.module.css`, legend frame from `MENU_PANEL`, internals in `right-dock.css` |
 
 ### The composer belongs to the pane, not to the transcript
 

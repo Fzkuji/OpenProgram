@@ -361,13 +361,65 @@ assert.ok(
   + "thread, and the thread line is its connection",
 );
 
-/* ---- 6. canvas: the lattice breathes with the zoom ---- */
+/* ---- 6. canvas: the lattice breathes, the wheel zooms ---- */
 
 assert.match(
   canvasSrc,
   /1\.2 \* _viewScale/,
   "the lattice dot radius rides the zoom — fixed at 1.2px it vanishes "
   + "into a zoomed-in tile",
+);
+
+// The wheel triage (Obsidian-graph handling): pinch and ⌘/ctrl+wheel
+// zoom at pinch rate; sideways-dominant deltas are a trackpad swipe and
+// pan; a plain vertical wheel zooms about the cursor.
+assert.match(
+  canvasSrc,
+  /e\.ctrlKey \|\| e\.metaKey[\s\S]{0,200}PINCH_ZOOM_RATE/,
+  "a pinch (ctrlKey wheel) or ⌘+wheel zooms at the pinch rate",
+);
+assert.match(
+  canvasSrc,
+  /Math\.abs\(e\.deltaX\) > Math\.abs\(e\.deltaY\)[\s\S]{0,120}setView\(_viewTx - e\.deltaX/,
+  "sideways-dominant wheel = trackpad two-finger swipe: pan, both axes",
+);
+assert.match(
+  canvasSrc,
+  /zoomAt\(\s*e\.clientX - rect\.left,\s*e\.clientY - rect\.top,\s*Math\.exp\(-e\.deltaY \* WHEEL_ZOOM_RATE\)/,
+  "a plain vertical wheel zooms about the cursor — the node under the "
+  + "pointer stays under the pointer",
+);
+assert.match(
+  canvasSrc,
+  /ZOOM_STEP = Math\.exp\(100 \* WHEEL_ZOOM_RATE\)/,
+  "a HUD −/+ press is exactly one wheel notch of zoom, so button and "
+  + "wheel stay one control",
+);
+
+/* ---- 6b. HUD: shared chrome, not a private lookalike ---- */
+
+const dagViewSrc = readFileSync(
+  new URL("../components/chat/dag-view.tsx", import.meta.url), "utf8");
+const composerCss = readFileSync(
+  new URL("../components/chat/composer/composer.module.css",
+    import.meta.url), "utf8");
+assert.match(
+  dagViewSrc,
+  /zoomStep\(-1\)[\s\S]*dag-hud-zoom[\s\S]*resetZoom\(\)[\s\S]*zoomStep\(1\)/,
+  "the HUD zoom cluster is − · readout · + — steps zoom, and the "
+  + "readout itself resets to 100%",
+);
+assert.match(
+  dagViewSrc,
+  /dag-legend-body \$\{MENU_PANEL\}/,
+  "the legend popover wears MENU_PANEL — the one panel frame every "
+  + "menu in the app shares",
+);
+assert.match(
+  composerCss,
+  /\.envChips :global\(\.dag-hud-chip\)/,
+  "HUD chips are the env-pill rule itself (composer.module.css), "
+  + "not a hand-rolled lookalike in right-dock.css",
 );
 
 /* ---- 7. HEAD is a breathing glow on its own hollow glyph ---- */

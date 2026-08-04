@@ -516,13 +516,17 @@
    listed explicitly so this beats chat.css's tinted chip rules on
    specificity, independent of stylesheet order. The connection tone
    still shows through the indicator dot; the pill itself stays the
-   quiet filled form. */
+   quiet filled form.
+   .dag-hud-chip（DAG 视角 portal 进本行的 Fit / 缩放簇 / 图例）也在
+   列——HUD 胶囊就是这条 env-pill 规则本身，不另写一份形似的样式；
+   right-dock.css 里只留它的内部排版。 */
 .envChips :global(.status-badge),
 .envChips :global(.status-badge.connecting),
 .envChips :global(.status-badge.disconnected),
 .envChips :global(.status-badge.paused),
 .envChips :global(.runtime-badge.project-badge),
-.envChips :global(.runtime-badge.workdir-badge) {
+.envChips :global(.runtime-badge.workdir-badge),
+.envChips :global(.dag-hud-chip) {
   height: 24px;
   min-height: 24px;
   max-height: 24px;
@@ -563,7 +567,9 @@
 .envChips :global(.status-badge.connecting[aria-expanded="true"]),
 .envChips :global(.runtime-badge.project-badge:hover),
 .envChips :global(.runtime-badge.project-badge[aria-expanded="true"]),
-.envChips :global(.runtime-badge.workdir-badge:hover) {
+.envChips :global(.runtime-badge.workdir-badge:hover),
+.envChips :global(button.dag-hud-chip:hover),
+.envChips :global(.dag-hud-chip[aria-expanded="true"]) {
   background: color-mix(in srgb, var(--text-bright) 6%, var(--env-pill-bg));
   color: var(--text-bright);
 }
