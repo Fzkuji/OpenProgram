@@ -370,25 +370,32 @@ assert.match(
   + "into a zoomed-in tile",
 );
 
-/* ---- 7. HEAD is solid, with no halo ---- */
+/* ---- 7. HEAD is a breathing glow on its own hollow glyph ---- */
 
 assert.match(
   nodesSrc,
-  /_buildShapeEl\(_shapeFor\(node\), color, r, isHead\)/,
-  "HEAD is drawn solid — where you are standing, said with weight",
+  /el\.setAttribute\("data-head", "1"\)/,
+  "HEAD is said by the glow stamp on the glyph, not by a fill of its own",
 );
 assert.match(
   shapesSrc,
-  /fill: solid \? color : "var\(--bg-primary/,
-  "solid = branch colour; hollow = the CANVAS colour, never transparent "
+  /fill: "var\(--bg-primary/,
+  "every glyph is hollow with the CANVAS colour, never transparent "
   + "— edges are drawn centre to centre and the fill is what buries the "
   + "line ends inside the outline",
 );
+const _cssSrc = readFileSync(new URL("../app/styles/right-dock.css",
+  import.meta.url), "utf8");
 assert.match(
-  readFileSync(new URL("../lib/runtime-bridge/dag/render/visibility.ts",
-    import.meta.url), "utf8"),
-  /data-solid"\) === "1"\) return;/,
-  "the coverage fill leaves a solid HEAD alone",
+  _cssSrc,
+  /\[data-head="1"\][\s\S]*?dag-head-glow/,
+  "the HEAD glyph carries the breathing glow animation",
+);
+assert.match(
+  _cssSrc,
+  /dag-head-glow[\s\S]*?drop-shadow\(0 0 [\d.]+px currentColor\)/,
+  "the glow is a drop-shadow riding the glyph outline in the branch "
+  + "colour — not a drawn halo ring, which reads as a second node",
 );
 
 console.log("dag-subagent checks passed");

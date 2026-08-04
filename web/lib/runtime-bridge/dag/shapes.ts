@@ -145,23 +145,20 @@ const STROKE_W = 2.2;
 const TRI_SCALE = 1.35;
 const SQR_SCALE = 0.75;
 
-/** ``solid`` fills the glyph with its branch colour instead of leaving
- *  it hollow. That is what HEAD looks like (§4): the one node you are
- *  standing on, marked by weight rather than by a ring around it — a
- *  halo is a second shape orbiting the first, and at this glyph size it
- *  read as its own node. */
+/** Every glyph is hollow — HEAD included: HEAD is said by the breathing
+ *  glow the node drawer stamps on it (§4), not by a fill of its own, so
+ *  the shape vocabulary stays one-to-one with the node kind. */
 export function _buildShapeEl(
   shape: string,
   color: string,
   r: number,
-  solid?: boolean,
 ): SVGElement | null {
   // Hollow glyphs fill with the CANVAS colour, not transparent: edges
   // are drawn centre to centre (render/edges.ts), and it is this fill
   // that buries the line ends inside the outline. A transparent glyph
   // shows the line's round cap as a phantom dot at its own centre.
   const common = {
-    fill: solid ? color : "var(--bg-primary, #262624)",
+    fill: "var(--bg-primary, #262624)",
     stroke: color,
     "stroke-width": String(STROKE_W),
   };

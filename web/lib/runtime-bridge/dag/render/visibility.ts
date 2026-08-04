@@ -41,11 +41,6 @@ export function _applyVisibility(nodeEl: Element, visible: boolean): void {
   }
   if (shape) {
     _applyShapeSize(shape);
-    // HEAD is drawn solid (dag/rendering.md §4), and the coverage fill
-    // is a fill too — flipping it here would hollow HEAD out the moment
-    // it left the context window, which is the one node that can't.
-    // Its coverage dot is drawn separately, on top, by ``nodes.ts``.
-    if (shape.getAttribute("data-solid") === "1") return;
     // Hollow = the canvas colour, never transparent: the fill is what
     // buries the centre-to-centre edge ends inside the outline
     // (shapes.ts) — transparent would show a phantom dot of line cap

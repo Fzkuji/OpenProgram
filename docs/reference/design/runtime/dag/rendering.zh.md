@@ -252,10 +252,12 @@ lane 色；**绝不给某类线固定颜色**。类型只靠线型：
 ▽ 子 agent 头（三角形词汇倒过来：派生出来的 agent，与链上正三角形一眼可分，
 见第十二节）。
 
-**HEAD 画成实心**：字形自身填上分支色，不是套一圈光环或描边。这个尺寸下光环读
-起来像旁边多了一个更糊的节点，而且是缩小时第一个丢失的东西。HEAD 不带任何覆盖
-标记：它是唯一不可能离开上下文窗口的节点——下一次请求就落在它上面——"在覆盖
-内"的点在这里是同义反复，而且读起来像实心字形里多了一个杂点。
+**HEAD 是字形自己身上的呼吸光晕**：一圈分支色的 `drop-shadow`，以 2.4 秒的
+慢周期胀起又落下，直接盖在形状上（`data-head`）。光贴着字形轮廓走，任何缩放
+都跟随——不像画出来的光环圈，那读起来像旁边多了一个更糊的节点；也不像实心
+填充，填充改掉了形状词汇本身，而光晕下 HEAD 仍然一眼是三角/圆，只是亮着。
+`prefers-reduced-motion` 下脉动凝固成恒定光晕。HEAD 不带自己的覆盖标记：它是
+唯一不可能离开上下文窗口的节点——下一次请求就落在它上面。
 
 **status 映射**——状态画在节点自己身上，不画独立的虚线占位框：
 
@@ -570,7 +572,7 @@ spawn 的 agent 一个倒三角形——一行一个事件，从上到下按调�
 | 无限画布（平移 / 缩放 / fit / 点阵） | `dag/canvas.ts` 与 `right-dock.css` 的 `.history-body`；视角状态在 `dag/store/globals.ts`；HUD 在 `components/chat/dag-view.tsx` |
 | 第一节 lane / tier / depth 布局 | `dag/layout/geometry.ts::computeGeometry`（链 lane 按 tier 打包并 lane 内归零、前序分行、场景3分叉行+间隔列、线程递归安放）；格点性、无重叠、线程列行、分叉几何均由 `web/scripts/check-dag-subagent.mjs` 真实执行并断言 |
 | 第二节 规则③ 字形占格 | 没有任何形状按文字定尺寸，画布上除肩上折叠数与胶囊注记外没有文字 |
-| 第四节 HEAD 实心、无光环 | `render/nodes.ts` 把 `isHead` 作为 `_buildShapeEl` 的 `solid` 传入；HEAD 不画覆盖点（它不可能离开上下文）；`right-dock.css` 已无 `.is-head` 光晕；HEAD 指向已归并回复时落到锚上（`pipeline.ts` 经 `threadModel.anchorOf`） |
+| 第四节 HEAD 呼吸光晕 | `render/nodes.ts` 戳 `data-head` 并把分支色写进 `color`；`dag-head-glow` 关键帧在 `right-dock.css`（reduced-motion → 恒定光）；所有字形保持空心（`shapes.ts`）；HEAD 指向已归并回复时落到锚上（`pipeline.ts` 经 `threadModel.anchorOf`） |
 | 第〇节/第十二节 调用线程聚合 | `passes/thread.ts`（`buildThreadModel`：锚归并、事件归属、递归可见性）；`render/nodes.ts` 画肩上折叠数（`history-thread-count`）；`store/globals.ts` 的 `_threadOpen` |
 | 规则②推论（不画占位框） | `shapes.ts`：无 `square_outline`；task 渲染为普通方块 |
 | 第四节 状态画在描边上 | `graph_builder` 下发 status；`nodes.ts` 画描边（running 虚线呼吸 / error 红+! / cancelled 灰化） |

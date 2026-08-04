@@ -544,10 +544,24 @@
 .history-node:hover rect {
   filter: brightness(1.2);
 }
-/* HEAD carries no halo: it is drawn SOLID instead (render/nodes.ts,
-   dag/rendering.md §4). A glow around a 7px glyph reads as a second,
-   blurrier node beside the first; filling the glyph says the same thing
-   with the shape itself, and survives being zoomed out. */
+/* HEAD — a breathing glow on the glyph itself (render/nodes.ts stamps
+   data-head + the branch colour as `color`, dag/rendering.md §4).
+   drop-shadow hugs the shape's outline at every zoom — unlike a drawn
+   halo ring, which reads as a second blurrier node — and the slow
+   pulse says "you are here" without repainting anything. */
+.history-node [data-head="1"] {
+  animation: dag-head-glow 2.4s ease-in-out infinite;
+}
+@keyframes dag-head-glow {
+  0%, 100% { filter: drop-shadow(0 0 2px currentColor); }
+  50% { filter: drop-shadow(0 0 7px currentColor); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .history-node [data-head="1"] {
+    animation: none;
+    filter: drop-shadow(0 0 4px currentColor);
+  }
+}
 
 /* status=running：同形状虚线描边 + 呼吸（rendering.md 第四节）。 */
 .history-node.is-running circle,

@@ -305,12 +305,15 @@ the glyph joins seamlessly for every shape.
 ▽ sub-agent head (the triangle vocabulary point-DOWN: a derived agent, one glance
 apart from the chain's upright turns — §12).
 
-**HEAD is drawn solid**: the glyph's own shape filled with the branch colour,
-not a ring or a glow around it. A halo at this size reads as a second, blurrier
-node beside the first, and it is the first thing a zoom-out loses. HEAD carries
-no coverage mark at all: it is the one node that cannot leave the context
-window — the next request lands on it — so a dot saying "in coverage" states a
-tautology, and it read as a stray dot inside the solid glyph.
+**HEAD is a breathing glow on its own glyph**: a `drop-shadow` in the branch
+colour that swells and settles on a slow cycle (2.4s), stamped on the shape
+itself (`data-head`). The light hugs the glyph's outline at every zoom —
+unlike a drawn halo ring, which reads as a second, blurrier node beside the
+first — and unlike a solid fill, it leaves the shape vocabulary intact: HEAD
+stays visibly a triangle/circle like its neighbours, just lit. Under
+`prefers-reduced-motion` the pulse freezes to a steady glow. HEAD carries no
+coverage mark of its own: it is the one node that cannot leave the context
+window — the next request lands on it.
 
 **status mapping** — status is drawn on the node itself, never as a separate dashed
 placeholder box:
@@ -699,7 +702,7 @@ The whole spec is implemented. Where each part lives:
 | Infinite canvas (pan / zoom / fit / dot lattice) | `dag/canvas.ts` + `.history-body` in `right-dock.css`; view state in `dag/store/globals.ts`; HUD in `components/chat/dag-view.tsx` |
 | §1 lane / tier / depth layout | `dag/layout/geometry.ts::computeGeometry` (tier-packed chain lanes with per-lane tier zeroing, preorder rows, scene-3 fork rows + gap column, recursive thread placement); lattice, no-overlap, thread columns/rows and fork geometry all executed and asserted by `web/scripts/check-dag-subagent.mjs` |
 | §2 rule ③ glyphs are cells | no shape is sized from text, and no text draws on the canvas beyond the shoulder count and the capsule note |
-| §4 HEAD solid, no halo | `render/nodes.ts` passes `isHead` as `_buildShapeEl`'s `solid`; HEAD carries no coverage dot (it cannot leave context); `right-dock.css` has no `.is-head` glow; HEAD pointing at a merged reply re-seats on its anchor (`pipeline.ts` via `threadModel.anchorOf`) |
+| §4 HEAD breathing glow | `render/nodes.ts` stamps `data-head` + the branch colour as `color`; `dag-head-glow` keyframes in `right-dock.css` (reduced-motion → steady glow); every glyph stays hollow (`shapes.ts`); HEAD pointing at a merged reply re-seats on its anchor (`pipeline.ts` via `threadModel.anchorOf`) |
 | §0/§12 call-thread aggregation | `passes/thread.ts` (`buildThreadModel`: anchor merge, event attribution, recursive visibility); `render/nodes.ts` draws the shoulder count (`history-thread-count`); `_threadOpen` in `store/globals.ts` |
 | Rule ② corollary (no placeholder box) | `shapes.ts`: no `square_outline`; task renders as a plain square |
 | §4 status on the stroke | `graph_builder` emits status; `nodes.ts` draws it on the stroke (running dashed+breathing / error red+! / cancelled grayed) |

@@ -128,18 +128,19 @@ export function drawNodes(
     g.appendChild(hit);
     (g as SVGGraphicsElement).style.cursor = "pointer";
     const r = NODE_R + 3;
-    // HEAD is drawn solid (§4): where you are standing, said with weight
-    // rather than with a halo ring around the glyph.
-    const el = _buildShapeEl(_shapeFor(node), color, r, isHead);
+    const el = _buildShapeEl(_shapeFor(node), color, r);
     if (el) {
       el.setAttribute("pointer-events", "none");
-      if (isHead) el.setAttribute("data-solid", "1");
+      // HEAD is said by a breathing glow around its own glyph (§4):
+      // light rides the shape at every zoom, where a fill changed what
+      // the glyph looks like and a halo ring read as a second node.
+      // ``color`` on the <g> feeds the CSS glow's ``currentColor``.
+      if (isHead) {
+        el.setAttribute("data-head", "1");
+        (g as SVGGraphicsElement).style.color = color;
+      }
       g.appendChild(el);
     }
-    // No coverage dot on HEAD: it is drawn solid, and it is the one
-    // node that CANNOT leave the context window — HEAD is where the
-    // next request lands. Punching a hole to say "in coverage" stated
-    // a tautology, and read as a stray dot inside the glyph.
     // ── status 画在节点自己的描边上（rendering.md 第四节，废除占位框） ──
     const status = (node as Record<string, unknown>).status as string | undefined;
     if (el && status === "running") {
