@@ -33,22 +33,16 @@ dependencies = [
     # so this is officially optional — installing openprogram without
     # extras still works, just with a flatter prompt.
     "questionary>=2.0.0",
-    # TUI for `openprogram` — Textual drives the full-screen chat
-    # interface (sidebar + scrollback + command palette). Falls
-    # through to the Rich-based REPL when TUI is unavailable.
-    "textual>=0.80",
     # Web UI is a first-class entry point alongside the TUI (the
     # whole platform pitch is "TUI or browser, same backend"), so the
     # FastAPI/uvicorn/websockets stack ships with the core package
     # instead of being a `[web]` extra. Keeps `pip install openprogram`
-    # a single line on the landing page.
+    # a single line on the landing page. The TUI itself needs no Python
+    # dep: it is the Ink renderer (cli/, TypeScript) with a Rich-based
+    # REPL fallback.
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.29.0",
     "websockets>=12.0",
-    # Semantic + lexical code search (tree-sitter chunks +
-    # Model2Vec static embeddings + BM25). Powers the `semble_search`
-    # and `semble_find_related` tools. CPU-only, no API keys.
-    "semble>=0.2.0",
     # PKCE OAuth login (used by `openprogram providers login` against
     # ChatGPT/Codex, Anthropic, etc.) starts a localhost callback
     # server to receive the redirect. Implementation lives in
@@ -111,11 +105,13 @@ dev = [
 ]
 # The LLM SDKs (anthropic / openai / google-genai) and the web stack are
 # in the base `dependencies` above — installed by default, no separate
-# provider extra. ``web`` / ``visualize`` stay as no-op markers because
-# old install lines referenced them; there is intentionally no
-# ``[anthropic]`` / ``[openai]`` / ``[gemini]`` extra.
-web = []
-visualize = []
+# provider extra; there is intentionally no ``[anthropic]`` /
+# ``[openai]`` / ``[gemini]`` extra.
+# Semantic + lexical code search (tree-sitter chunks + Model2Vec static
+# embeddings + BM25) behind the `semble_search` / `semble_find_related`
+# tools. Heavy transitive deps for one leaf tool, so it is opt-in; the
+# tools answer with the install hint when the package is absent.
+search = ["semble>=0.2.0"]
 # Runtime deps for the GUI program (gui_agent / gui_harness). The
 # NOTE: the agentic *programs* (gui / research / wiki harnesses) no
 # longer have extras here. Each harness is self-describing — its own

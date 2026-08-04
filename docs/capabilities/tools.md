@@ -13,7 +13,7 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 | `list` | List directory contents | Nothing |
 | `glob` | Find files by filename pattern | Nothing |
 | `grep` | Content search; prefers ripgrep, falls back to Python re without rg | Nothing (`rg` makes it faster) |
-| `semble_search` / `semble_find_related` | Semantic + lexical code search returning ranked code blocks | `semble` Python library |
+| `semble_search` / `semble_find_related` | Semantic + lexical code search returning ranked code blocks | `pip install 'openprogram[search]'` (opt-in extra; the tools answer with this hint when it is missing) |
 
 ## Execution
 

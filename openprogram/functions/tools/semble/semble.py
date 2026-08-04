@@ -68,7 +68,16 @@ def _resolve_path(path: Optional[str]) -> str:
 
 
 def _get_or_build_index(path: str) -> Any:
-    from semble import SembleIndex
+    # semble ships as the `[search]` extra, not a base dep — a leaf tool
+    # does not get to put tree-sitter + an embedding model in every
+    # install. Absent package → answer with the install line.
+    try:
+        from semble import SembleIndex
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "semble is not installed. Install the search extra: "
+            "pip install 'openprogram[search]'"
+        ) from exc
 
     cached = _index_cache.get(path)
     if cached is not None:
