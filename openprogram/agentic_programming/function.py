@@ -114,6 +114,62 @@ def _run_pre_invocation_hooks() -> None:
         hook()
 
 
+# Host integration points — the seam between the core and whatever is driving
+# it. The webui registers real implementations at import (see
+# webui/_pause_stop.py); embedded use leaves the defaults, which is what keeps
+# the core importable without the webui (an optional extra) installed.
+#
+# These are set rather than appended: exactly one host owns cancellation and
+# session routing at a time, and a second registration replacing the first is
+# the intended behaviour.
+
+def _no_cancellation() -> None:
+    """Default cancel checkpoint: nothing can cancel an embedded run."""
+
+
+def _no_session_id() -> str:
+    """Default session-id provider: no frontend attached, so no route."""
+    return ""
+
+
+_cancellation_check: Callable[[], None] = _no_cancellation
+_session_id_provider: Callable[[], str] = _no_session_id
+
+
+def set_cancellation_check(hook: Callable[[], None] | None) -> None:
+    """Install the checkpoint the exec loop calls before each LLM attempt.
+
+    The hook raises (typically CancelledError) to abort. Passing None restores
+    the never-cancelled default.
+    """
+    global _cancellation_check
+    _cancellation_check = hook or _no_cancellation
+
+
+def set_session_id_provider(hook: "Callable[[], str] | None") -> None:
+    """Install the provider for the host's current session id.
+
+    Used to route questions back to a frontend; returning "" means nobody is
+    there to answer, which is what ``Runtime.can_ask()`` reports. Passing None
+    restores the no-frontend default.
+    """
+    global _session_id_provider
+    _session_id_provider = hook or _no_session_id
+
+
+def check_cancelled() -> None:
+    """Run the installed cancellation check (no-op when none is installed)."""
+    _cancellation_check()
+
+
+def current_session_id() -> str:
+    """The host's current session id, or "" when running headless."""
+    try:
+        return _session_id_provider() or ""
+    except Exception:
+        return ""
+
+
 _VALID_EXPOSE = ("io", "llm", "full", "hidden")
 
 

@@ -15,6 +15,7 @@
 | 2 | [`writing-functions/agentic-function.md`](writing-functions/agentic-function.md) | `@agentic_function`：封装一个 Python 函数，其函数体通过 `runtime.exec()` 发起 LLM 调用；组合模式 |
 | 3 | [`writing-functions/function-metadata.md`](writing-functions/function-metadata.md) | 参数描述、占位符、隐藏参数、`render_range`——函数元数据的唯一可信来源 |
 | 4 | [`writing-functions/pure-python.md`](writing-functions/pure-python.md) | 何时**不要**用该装饰器：纯确定性的辅助函数 |
+| 5 | [`embedding-in-your-own-stack.zh.md`](embedding-in-your-own-stack.zh.md) | 把这套模型当普通库嵌进你自己的应用或框架——自带 LLM 调用，状态放你自己的目录 |
 
 ## 选择下一步
 

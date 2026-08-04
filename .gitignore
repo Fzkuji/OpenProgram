@@ -97,3 +97,6 @@ docs/reference/provider-registry.md
 # Electron desktop shell
 desktop/node_modules/
 desktop/dist/
+
+# Scratch state written by examples/embed_in_your_stack.py
+examples/embed_demo_state/

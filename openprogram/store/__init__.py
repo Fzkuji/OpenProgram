@@ -93,12 +93,31 @@ _current_turn_id: ContextVar[Optional[str]] = ContextVar(
 # cost low for code paths that only need the lower-level classes.
 
 
+from contextlib import contextmanager
+
+
+@contextmanager
+def session_scope(store, session_id: str):
+    """Route DAG writes to ``store``/``session_id`` for the duration.
+
+    The public face of ``_store`` for embedders: inside the block,
+    ``Runtime.exec`` and ``@agentic_function`` persist their nodes to
+    the given session; on exit the previous binding is restored.
+    """
+    token = _store.set(GraphStoreShim(store, session_id))
+    try:
+        yield
+    finally:
+        _store.reset(token)
+
+
 __all__ = [
     "GitSession",
     "SessionMemoryIndex",
     "GraphStoreShim",
     "SessionStore",
     "default_store",
+    "session_scope",
     "_store",
     "_current_turn_id",
     "Provenance",

@@ -5,22 +5,47 @@ OpenProgram — Agentic Programming 理念的产品化实现。
 函数体里的 docstring 就成了给模型的指令；`runtime.exec(...)` 负责把对话带上
 调用历史一起发给模型。上下文树（Context）是副产物，自动积累。
 
-双模式：
+三种用法：
   - 初学者：跑我们打包好的应用（CLI / Web UI），零代码。
   - 深度用户：`from openprogram import agentic_function` 自己写。
+  - 嵌入别的框架：只 import 下面这四个符号，自带 LLM 调用（`Runtime(call=...)`）、
+    自选会话目录（`SessionStore(root_path=...)`），不启动 webui/TUI/CLI。
 
-顶层 re-export 只有 ``agentic_function`` 一个 —— 这是 Agentic Programming
-的入口符号，任何用户代码都要 ``from openprogram import agentic_function``。
-其它符号（``Runtime`` / ``ask_user`` / 各 provider helper 等）走全路径就行：
+顶层 re-export 是嵌入用的最小入口：``agentic_function`` / ``Runtime`` /
+``decision`` / ``Session``。其它符号（``ask_user`` / 各 provider helper 等）
+走全路径：
 
-    from openprogram.agentic_programming.runtime import Runtime
     from openprogram.functions.agentics.ask_user import ask_user
     from openprogram.providers.registry import create_runtime
+
+四个名字都经模块级 ``__getattr__`` 懒加载：``import openprogram`` 本身不拉起
+runtime / store / providers，嵌入方按需付导入成本。
 
 新建 / 编辑 / 改进 @agentic_function 走 skill ``agentic-programming``，
 agent 直接用 Read / Write / Edit 工具操作 .py 文件，不再有专门的 meta 函数。
 """
 
-from openprogram.agentic_programming import agentic_function
+__all__ = ["agentic_function", "Runtime", "decision", "Session"]
 
-__all__ = ["agentic_function"]
+_LAZY = {
+    "agentic_function": ("openprogram.agentic_programming.function", "agentic_function"),
+    "Runtime": ("openprogram.agentic_programming.runtime", "Runtime"),
+    "Session": ("openprogram.agentic_programming.session", "Session"),
+    "decision": ("openprogram.agentic_programming.decision", None),
+}
+
+
+def __getattr__(name):
+    target = _LAZY.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+    module_path, attr = target
+    module = importlib.import_module(module_path)
+    value = module if attr is None else getattr(module, attr)
+    globals()[name] = value  # cache: later lookups skip __getattr__
+    return value
+
+
+def __dir__():
+    return sorted(list(globals()) + __all__)

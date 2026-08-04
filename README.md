@@ -146,7 +146,7 @@ openprogram --print --resume <id>    # continue a previous chat headlessly
 
 ## How to use
 
-Two ways to interact day-to-day — same backend, same sessions, switch freely.
+Two chat surfaces for day-to-day work — same backend, same sessions, switch freely — plus a library mode for embedding the engine in your own code.
 
 ### Web UI — `openprogram web`
 
@@ -165,6 +165,29 @@ The same backend without the browser — same commands, same chat history. Picks
 </p>
 
 > Sessions live in `~/.openprogram/` and are shared by both — start in the terminal, pick it up in the browser tab, and vice versa.
+
+### Python library — `import openprogram`
+
+No UI at all: bring your own LLM client, keep state in a directory you choose, and use `@agentic_function` + the execution DAG as a component inside your own app or framework.
+
+```python
+from openprogram import agentic_function, Runtime
+from openprogram.store import SessionStore, session_scope
+
+runtime = Runtime(call=your_llm_call, model="gpt-4o-mini")  # any client, one function
+
+@agentic_function
+def summarize(text, runtime=None):
+    """Summarize the text in one sentence."""
+    return runtime.exec(text)
+
+store = SessionStore(root_path="/var/lib/myapp/sessions")   # yours — not ~/.openprogram
+store.create_session("reviews", agent_id="main")
+with session_scope(store, "reviews"):
+    summarize("The battery lasts all week.", runtime=runtime)
+```
+
+The full guide — including handing your `@agentic_function`s to your own tool loop via `to_openai_tools` — is [docs/capabilities/agentic-programming/embedding-in-your-own-stack.md](docs/capabilities/agentic-programming/embedding-in-your-own-stack.md); the runnable version is [`examples/embed_in_your_stack.py`](examples/embed_in_your_stack.py).
 
 ---
 
@@ -196,6 +219,7 @@ Same backend and sessions as the UIs (`~/.openprogram/`) — a `--print` run or 
 | **Layered memory** | A layered store under `~/.openprogram/memory/` — `journal/` (daily notes), `wiki/` (long-lived pages), `core.md` (always-loaded profile), `index.sqlite` (recall index). The agent picks the layer. |
 | **Mini-DAG execution view** | The right rail draws every node + edge of the active session and scrolls with the chat. |
 | **Multi-agent + multi-channel** | Every row tagged with its producer agent; channel layer wires external transports (Telegram, Discord, Slack, WeChat). |
+| **Session distill** | `/distill` turns a finished session into a reusable skill or `@agentic_function` — the next run starts from the procedure instead of the blank page ([guide](docs/capabilities/distill.md)). |
 
 The detailed tour of each one — code samples, design rationale, where to look in the codebase — lives in [**docs/start/features.md**](docs/start/features.md).
 
@@ -206,6 +230,7 @@ The detailed tour of each one — code samples, design rationale, where to look 
 | [Getting Started](docs/start/GETTING_STARTED.md) | 3-minute setup and runnable examples |
 | [Claude Code](docs/integrations/claude-code.md) | Use without API key via Claude Code CLI |
 | [OpenClaw](docs/integrations/openclaw.md) | Use as OpenClaw skill |
+| [Embedding in your own stack](docs/capabilities/agentic-programming/embedding-in-your-own-stack.md) | DAG-context function calling as a plain library inside your own framework |
 | [API Reference](docs/reference/API.md) | Full API documentation |
 
 <details>

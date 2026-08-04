@@ -79,5 +79,6 @@ if __name__ == "__main__":
     print("\n── Result ──")
     print(result)
 
-    print("\n── Context Tree ──")
-    print(login_flow.context.tree())
+    # The execution trace is a DAG, written to whatever store is installed.
+    # Nothing is installed here, so this run persists nothing — see
+    # examples/embed_in_your_stack.py for reading the trace back.

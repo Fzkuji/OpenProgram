@@ -15,6 +15,8 @@ from typing import Any
 from openprogram.agentic_programming.function import (
     CancelledError,
     add_pre_invocation_hook,
+    set_cancellation_check,
+    set_session_id_provider,
 )
 
 
@@ -257,6 +259,12 @@ def check_cancelled() -> None:
 
 # Register the cancel hook once at import time.
 add_pre_invocation_hook(_cancel_hook)
+
+# Claim the core's host-integration seams for the webui. Importing this module
+# is what makes the exec loop cancellable and gives Runtime.ask a session to
+# route to; without it the core keeps its headless defaults.
+set_cancellation_check(_cancel_hook)
+set_session_id_provider(get_current_session_id)
 
 
 # ---------------------------------------------------------------------------

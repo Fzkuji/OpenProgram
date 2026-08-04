@@ -96,6 +96,43 @@ is still set, so that LLM calls inside the function body have a frame to referen
 
 Writing twice (entry + exit backfill) suits real-time observability better than writing once (on completion).
 
+## Embedding seams
+
+The core runs embedded in a host that is not OpenProgram — somebody else's
+service or agent framework using `@agentic_function` + the execution DAG as a
+component (see
+[Embedding in your own stack](../../../capabilities/agentic-programming/embedding-in-your-own-stack.md)).
+The contract, executed by `tests/embed/test_standalone_embed.py` rather than
+stated in prose only:
+
+- **The library face never imports a UI surface.** `import openprogram` and a
+  full `Runtime(call=...).exec()` round trip must not pull in `webui`, FastAPI,
+  Uvicorn or Textual.
+- **No implicit state paths.** With `SessionStore(root_path=...)` +
+  `session_scope(store, session_id)` the run never consults
+  `openprogram.paths` (`~/.openprogram`); with no store bound it runs and
+  persists nothing.
+
+Where the platform needs to reach into the core, the direction is inverted
+into registration hooks, mirroring `add_pre_invocation_hook`:
+
+| Seam | Core default | Platform registration |
+|---|---|---|
+| `set_cancellation_check` | no-op — nothing cancels | `webui/_pause_stop.py` registers its pause/cancel check at import |
+| `set_session_id_provider` | `None` — `runtime.can_ask()` is `False` | same module provides the active session id |
+| `session_scope(store, id)` | unset — no persistence | the dispatcher binds the per-turn store itself |
+
+**Why hooks instead of the previous lazy `import webui._pause_stop`?** That
+import made the core depend on the web UI and formed a cycle
+(`webui/_pause_stop` imports from `function.py`), survivable only because both
+sides happened to import lazily. The hook keeps the dependency one-way:
+platform → core.
+
+**`ImportError` during `exec()` is permanent, not transient.** The retry loop
+classifies it as non-retryable: a missing subsystem does not appear by
+retrying, and burning the full backoff schedule turned a 0-second failure into
+a ~52-second one.
+
 ## Related implementation files
 
 - `openprogram/agentic_programming/runtime.py` — Runtime base class, `exec` / `_call` protocol, retry loop

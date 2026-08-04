@@ -96,6 +96,35 @@ id,以便函数体内 LLM 调用有 frame 可参照)。
 
 写两次(entry + exit 回填)比写一次(完成时)更适合实时可观察。
 
+## 嵌入接缝
+
+核心可以嵌在不是 OpenProgram 的宿主里运行——别人的服务或 agent 框架把
+`@agentic_function` + 执行 DAG 当作一个组件来用（见
+[嵌入到你自己的技术栈](../../../capabilities/agentic-programming/embedding-in-your-own-stack.zh.md)）。
+这份契约由 `tests/embed/test_standalone_embed.py` 执行，不只是纸面声明：
+
+- **库面永不 import UI 表面。** `import openprogram` 以及一次完整的
+  `Runtime(call=...).exec()` 往返，不得拉起 `webui`、FastAPI、Uvicorn 或 Textual。
+- **没有隐式状态路径。** 用 `SessionStore(root_path=...)` +
+  `session_scope(store, session_id)` 时，整个运行不查
+  `openprogram.paths`（`~/.openprogram`）；不绑 store 时照常执行、只是不持久化。
+
+平台需要伸进核心的地方，方向一律倒转成注册钩子，与 `add_pre_invocation_hook`
+同款：
+
+| 接缝 | 核心默认值 | 平台注册方 |
+|---|---|---|
+| `set_cancellation_check` | 空实现——没有任何东西会取消 | `webui/_pause_stop.py` 在 import 时注册暂停/取消检查 |
+| `set_session_id_provider` | `None`——`runtime.can_ask()` 为 `False` | 同一模块提供当前会话 id |
+| `session_scope(store, id)` | 未绑定——不持久化 | dispatcher 自己绑定每 turn 的 store |
+
+**为什么用钩子而不是原来的懒 `import webui._pause_stop`？** 那个 import 让核心
+依赖 Web UI，且构成循环（`webui/_pause_stop` 反过来 import `function.py`），仅靠
+双方恰好都懒加载才没炸。钩子让依赖保持单向：平台 → 核心。
+
+**`exec()` 里的 `ImportError` 按永久错误处理，不算瞬态。** retry 循环把它归为不可
+重试：缺失的子系统不会因为重试而出现，烧完整个退避表只是把 0 秒的失败拖成约 52 秒。
+
 ## 相关实现文件
 
 - `openprogram/agentic_programming/runtime.py` — Runtime 基类、`exec` / `_call` 协议、retry 循环

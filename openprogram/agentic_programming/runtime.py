@@ -835,11 +835,8 @@ class Runtime:
     def _ui_session_id(self) -> str:
         """前端路由用的 webui session（dispatcher 在执行上下文里设的
         ContextVar），不是 Runtime 自己的 op-xxx id。无 webui 时为空串。"""
-        try:
-            from openprogram.webui._pause_stop import get_current_session_id
-            return get_current_session_id() or ""
-        except Exception:
-            return ""
+        from openprogram.agentic_programming.function import current_session_id
+        return current_session_id()
 
     def can_ask(self) -> bool:
         """当前是否有人能回答（有前端会话连着）。headless 跑时为 False，
@@ -1241,8 +1238,9 @@ class Runtime:
                         override_reason=_ER.TIMEOUT,
                     ) from cause
 
-                from openprogram.webui._pause_stop import check_cancelled
-                from openprogram.agentic_programming.function import CancelledError as _CE
+                from openprogram.agentic_programming.function import (
+                    CancelledError as _CE, check_cancelled,
+                )
                 try:
                     check_cancelled()
                 except _CE:
@@ -1257,6 +1255,12 @@ class Runtime:
                     raise  # caller hard-stop — bypass the retry layer
                 except (TypeError, NotImplementedError):
                     raise  # Programming errors — don't retry
+                except ImportError:
+                    # A subsystem this path needs isn't installed (e.g. an
+                    # embedded install without the agent/tool extra). Retrying
+                    # can't make a module appear, and the default budget would
+                    # otherwise spend ~50s of backoff before reporting it.
+                    raise
                 except Exception as e:
                     errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
                     permanent = _is_permanent_error(e)
