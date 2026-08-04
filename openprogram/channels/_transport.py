@@ -36,12 +36,16 @@ import requests
 from openprogram.channels import accounts as _accounts
 
 
-# Platform-specific message size caps (字符数, 留 headroom).
+# Platform-specific message size caps (字符数, 硬上限留 headroom).
+# 单点定义 — adapter 不再各自持有 MAX_MSG_CHARS 副本. chunking 只在
+# post_message 做, 所有出站路径 (outbound.send / Channel.send_text /
+# base 降级回发) 共用.
 MAX_CHARS: dict[str, int] = {
-    "telegram": 4000,
-    "slack":    39000,
-    "discord":  1800,
-    "wechat":   1800,
+    "telegram": 4000,    # Bot API 硬上限 4096
+    "slack":    39000,   # chat.postMessage 超 40000 字符截断 (文档同时
+                         # 建议 4000 内显示最佳 — 我们取硬上限防丢内容)
+    "discord":  1800,    # 硬上限 2000
+    "wechat":   1800,    # iLink 无公开数字, 沿用保守值
 }
 
 

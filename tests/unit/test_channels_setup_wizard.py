@@ -96,6 +96,7 @@ def _stub_prompts(monkeypatch: pytest.MonkeyPatch, *,
 
     monkeypatch.setattr(ch_setup, "_choose_one", _choose_stub)
     monkeypatch.setattr(ch_setup, "_text", _text_stub)
+    monkeypatch.setattr(ch_setup, "_password", lambda prompt: "")
     monkeypatch.setattr(ch_setup, "_confirm", _confirm_stub)
 
 
@@ -169,19 +170,11 @@ def test_setup_telegram_token_path(state_dir, stub_agents,
                                      monkeypatch: pytest.MonkeyPatch) -> None:
     """Telegram setup: paste a BotFather token instead of QR.
     No existing telegram account → wizard asks for an account name
-    first (we accept the default), then for the bot token."""
+    (_text, we accept the default), then for the bot token (_password)."""
     _stub_prompts(monkeypatch, channel="telegram", account="default",
                    agent="main", start_worker=False)
-    # Two _text calls: account name (defaults to 'default'), then
-    # the bot token.
-    text_answers = iter(["default", "1234:abcde-token"])
-
-    def _text_stub(prompt, default=""):
-        try:
-            return next(text_answers)
-        except StopIteration:
-            return default
-    monkeypatch.setattr(ch_setup, "_text", _text_stub)
+    monkeypatch.setattr(ch_setup, "_password",
+                        lambda prompt: "1234:abcde-token")
 
     rc = ch_setup.run()
     assert rc == 0
@@ -189,6 +182,44 @@ def test_setup_telegram_token_path(state_dir, stub_agents,
     from openprogram.channels import accounts
     creds = accounts.load_credentials("telegram", "default")
     assert creds["bot_token"] == "1234:abcde-token"
+
+
+def test_setup_slack_stores_both_tokens(state_dir, stub_agents,
+                                          monkeypatch: pytest.MonkeyPatch) -> None:
+    """Slack setup must persist bot_token AND app_token — Socket Mode
+    needs both, and accounts.is_configured refuses a bot-token-only
+    account (the wizard used to store only bot_token, leaving the
+    channel permanently unstartable)."""
+    _stub_prompts(monkeypatch, channel="slack", account="default",
+                   agent="main", start_worker=False)
+    answers = iter(["xoxb-bot-token", "xapp-app-token"])
+    monkeypatch.setattr(ch_setup, "_password", lambda prompt: next(answers))
+
+    rc = ch_setup.run()
+    assert rc == 0
+
+    from openprogram.channels import accounts
+    creds = accounts.load_credentials("slack", "default")
+    assert creds["bot_token"] == "xoxb-bot-token"
+    assert creds["app_token"] == "xapp-app-token"
+    assert accounts.is_configured("slack", "default")
+
+
+def test_setup_slack_aborts_without_app_token(
+    state_dir, stub_agents, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Refusing the app-level token aborts the login instead of writing
+    a half-configured account."""
+    _stub_prompts(monkeypatch, channel="slack", account="default",
+                   agent="main", start_worker=False)
+    answers = iter(["xoxb-bot-token", ""])
+    monkeypatch.setattr(ch_setup, "_password", lambda prompt: next(answers))
+
+    rc = ch_setup.run()
+    assert rc == 1
+
+    from openprogram.channels import accounts
+    assert not accounts.is_configured("slack", "default")
 
 
 def test_setup_aborts_when_no_agents(state_dir,

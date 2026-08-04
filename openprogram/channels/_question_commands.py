@@ -11,10 +11,11 @@ answers with a text command:
 
 Scope is the session, not an extra "owner" field: a question belongs to a
 session_key, and `list_pending(session_key)` is what a /answer is allowed
-to resolve. Discord already scopes each (channel, user) to its own
-session, so users can't answer each other's questions; a DM is one user;
-a Telegram/Slack group deliberately shares one session (group-wide bot),
-so any member answering is the group semantics, not a leak.
+to resolve. Discord and Slack scope each (channel, user) to its own
+session (peer_id = "{chat_id}_{user_id}"), so users can't answer each
+other's questions; a DM is one user; a Telegram group deliberately shares
+one session (peer_id = chat_id, group-wide bot), so any member answering
+is the group semantics, not a leak.
 
 Resolve funnels through `resolve_question_and_broadcast` — the same
 claim-once collapse point the web UI uses — so the first answer across

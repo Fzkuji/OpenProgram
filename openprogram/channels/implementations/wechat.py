@@ -46,11 +46,13 @@ from openprogram.channels.base import Channel
 DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com"
 LONG_POLL_TIMEOUT = 40
 SEND_TIMEOUT = 15
-MAX_MSG_CHARS = 1800
 
 
 class WechatChannel(Channel):
     platform_id = "wechat"
+    # iLink 不支持 edit — progress streaming 的占位消息没法收尾, 会留下
+    # 孤儿"⏳". 关掉, dispatch 直接返回完整 reply 走 send_text.
+    progress_stream = False
 
     def __init__(self, account_id: str = "default") -> None:
         try:
@@ -69,7 +71,7 @@ class WechatChannel(Channel):
         if not creds.get("bot_token") or not creds.get("ilink_bot_id"):
             print(f"[wechat:{self.account_id}] no saved credentials — "
                   f"run `openprogram channels accounts login wechat "
-                  f"--account {self.account_id}` to scan a QR.")
+                  f"--id {self.account_id}` to scan a QR.")
             return
         base = creds.get("baseurl") or DEFAULT_BASE_URL
         print(f"[wechat:{self.account_id}] online as "
@@ -127,13 +129,9 @@ class WechatChannel(Channel):
                 _save_cursor_for_account(self.account_id, cursor)
 
             for msg in data.get("msgs", []) or []:
-                # Per-message thread (mirrors discord/telegram): a function
-                # pausing on runtime.ask inside _handle_message must not
-                # block this poll loop, or the user's /answer reply never
-                # gets fetched and the wait self-deadlocks.
-                threading.Thread(
-                    target=self._handle_message, args=(msg,), daemon=True,
-                ).start()
+                # parse 在 loop 里 (纯 dict 访问); dispatch 的
+                # per-message 线程派发在 base.handle_inbound.
+                self._handle_message(msg)
 
     # -------------------------------------------------------------------
 
@@ -164,20 +162,7 @@ class WechatChannel(Channel):
             ts=float(msg.get("ts") or 0),
         )
 
-        snippet = ch_msg.text[:60] + ("..." if len(ch_msg.text) > 60 else "")
-        print(f"[wechat:{self.account_id}] <{ch_msg.user_id}> {snippet}")
-
-        from openprogram.channels._conversation import dispatch_inbound
-        from openprogram.channels.outbound import send as _send
-        reply_text = dispatch_inbound(
-            channel="wechat",
-            account_id=self.account_id,
-            peer_kind=ch_msg.chat_type,
-            peer_id=ch_msg.chat_id,
-            user_text=ch_msg.text,
-            user_display=ch_msg.user_display,
-        )
-        _send("wechat", self.account_id, ch_msg.chat_id, reply_text)
+        self.handle_inbound(ch_msg)
 
     def _auth_headers(self, bot_token: str) -> dict[str, str]:
         return {
@@ -458,12 +443,6 @@ def _print_qr_terminal(payload: str) -> bool:
 
 
 # --- Misc helpers -----------------------------------------------------------
-
-def _chunk(text: str, limit: int) -> list[str]:
-    if not text:
-        return [""]
-    return [text[i:i + limit] for i in range(0, len(text), limit)]
-
 
 def _make_wechat_uin() -> str:
     """Stable-per-process X-WECHAT-UIN the iLink server expects."""

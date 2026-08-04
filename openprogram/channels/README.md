@@ -41,12 +41,14 @@ platforms via:
 - **`accounts.py`** — Multi-account channel credential store
 - **`base.py`** — Channel 抽象
 - **`bindings.py`** — Channel → Agent routing
-- **`discord.py`** — Discord bot channel via ``discord.py`` (Gateway WebSocket)
 - **`outbound.py`** — Outbound
 - **`setup.py`** — Channels setup wizard
-- **`slack.py`** — Slack bot channel via Socket Mode (``slack_sdk``)
-- **`telegram.py`** — Telegram bot channel via the public Bot API (long-polling)
-- **`wechat.py`** — WeChat bot channel via Tencent's iLink bot API
 - **`worker.py`** — Backward-compatible channel worker imports
+
+## Sub-packages
+
+- **`implementations/`** — Channel implementations — one module per external
+  chat platform (`discord.py` / `slack.py` / `telegram.py` / `wechat.py`),
+  each subclassing `base.Channel`
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

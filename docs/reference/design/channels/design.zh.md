@@ -13,14 +13,15 @@
 └──────────┬──────────┘       └──────────┬───────────┘
            │ 用户发消息进来                │ 想给某人发消息
            ▼                              ▼
-  ┌──────────────────┐            ┌────────────────────┐
-  │ telegram.py 等   │            │   outbound.py      │  ← 入口 A
-  │ 4 个 adapter     │            │   send(...)        │     一次性发, 不需要长跑进程
-  │ - 长轮询/事件循环│            └─────────┬──────────┘
-  │ - parse 出统一   │                      │
-  │   ChannelMessage │                      │
-  └────────┬─────────┘                      │
-           │                                │
+  ┌──────────────────────┐        ┌────────────────────┐
+  │ implementations/*.py │        │   outbound.py      │  ← 入口 A
+  │ 4 个 adapter         │        │   send(...)        │     一次性发, 不需要长跑进程
+  │ - 长轮询/事件循环    │        └─────────┬──────────┘
+  │ - parse 出统一       │                  │
+  │   ChannelMessage     │                  │
+  └────────┬─────────────┘                  │
+           │ base.Channel.handle_inbound    │
+           │ (每消息一线程 + 降级回发)      │
            ▼                                │
   ┌───────────────────────────┐             │
   │   dispatch_inbound        │             │
@@ -57,7 +58,8 @@
 
 ```
 1. Telegram 服务器把消息推给 bot
-   → openprogram/channels/telegram.py 在长轮询, 收到 update dict
+   → openprogram/channels/implementations/telegram.py 在长轮询,
+     收到 update dict
 
 2. _handle_update(update) 内部:
    a. 抽 text = "帮我看下当前目录有什么 Python 文件"
@@ -66,14 +68,21 @@
         user_display="zhangsan", chat_type="direct",
         ts=1716000000, reply_to_id="", thread_id="",
       }
-   c. 调 dispatch_inbound(channel="telegram", account_id="default",
-                          peer_kind="direct", peer_id="123",
-                          user_text=text, user_display="zhangsan",
-                          progress_stream=True)
+   c. 交给 base.Channel.handle_inbound(ch_msg) — base 起一个 per-message
+      daemon 线程 (turn 停在 runtime.ask 时不能堵 poll loop), 线程里调
+      dispatch_inbound(channel="telegram", account_id="default",
+                       peer_kind="direct", peer_id="123",
+                       user_text=text, user_display="zhangsan",
+                       progress_stream=True)
+      (peer_id 来自 Channel.peer_id_for: telegram/wechat 用 chat_id,
+       discord/slack 用 "{chat_id}_{user_id}")
 
 3. dispatch_inbound 内部 (在 _conversation.py):
    a. 查 bindings → 决定用 "main" agent
    b. 算 session_key = "default_direct_123" (在 _session_routing.py)
+   b2. 拿 per-session 锁 — 同一 session 的并发 turn 排队 (dispatcher
+       本身无锁, 交错跑会写坏历史); 不同 session 并行. /answer ·
+       /decline 命令在锁之前处理, 答问题不会跟等答案的 turn 互相死锁.
    c. 加载 / 创建 session (在 _session_store.py 调 SessionDB)
    d. 发占位消息: _transport.post_message("telegram", "default", "123",
                                           "⏳ working...")
@@ -101,8 +110,12 @@
    c. 持久化到 SessionDB, broadcast 给 webui
    d. dispatch_inbound 返回 None
 
-7. telegram.py 拿到 None → 不发任何 reply (因为已经 edit 进去了)
-   用户在 Telegram 看到那条占位 "⏳..." 已经长成完整回复
+7. handle_inbound 拿到 None → 不发任何 reply (因为已经 edit 进去了).
+   用户在 Telegram 看到那条占位 "⏳..." 已经长成完整回复.
+   任何降级路径 (占位发不出 / 平台不能 edit / WeChat) 下
+   dispatch_inbound 返回 reply 字符串, handle_inbound 经
+   Channel.send_text → _transport 发回 (按 per-platform MAX_CHARS
+   上限 chunk). adapter 不再持有任何 SDK 直发路径.
 ```
 
 ## 3. 用例 B：cron / @agentic_function 主动发消息
@@ -150,6 +163,8 @@ def dispatch_inbound(*, channel, account_id, peer_kind, peer_id,
     # 委托给独立模块
     agent_id = bindings.route(...) or session_aliases.lookup(...)
     session_key = _session_routing.session_key_for_agent(...) + apply_reset_policy(...)
+
+    # 以下都在 per-session 锁内跑: 同 session turn 串行, 不同 session 并行
     meta, _ = _session_store.load_or_init_session(...)
 
     # 可选: 发占位 + 订阅 stream → progress edit
@@ -169,9 +184,9 @@ def dispatch_inbound(*, channel, account_id, peer_kind, peer_id,
 
 ### 4.3 平台差异封到底层
 
-`_transport.py` 是**唯一**调 HTTP 往外发的地方。Telegram 的 `editMessageText`、Discord 的 `PATCH /messages/{id}`、Slack 的 `chat.update`、WeChat 的 iLink 协议——全都在这里。
+`_transport.py` 是**唯一**调 HTTP 往外发的地方。Telegram 的 `editMessageText`、Discord 的 `PATCH /messages/{id}`、Slack 的 `chat.update`、WeChat 的 iLink 协议——全都在这里。per-platform 消息长度上限（`MAX_CHARS`）与 chunking 也单点定义在这里。
 
-adapter 类 (`telegram.py` 等) 只负责：(a) 连服务器的事件循环、(b) 把 platform-native 对象 parse 成 `ChannelMessage`。**不负责发消息**——发消息是 dispatch_inbound 通过 `_transport` 干的。
+adapter 类 (`implementations/telegram.py` 等) 只负责：(a) 连服务器的事件循环、(b) 把 platform-native 对象 parse 成 `ChannelMessage`。parse 之后的一切——per-message 线程派发、调 `dispatch_inbound`、降级（非 streaming）路径的回发——统一在 `base.Channel.handle_inbound` 里只写一遍。**adapter 不发消息**——出站一律经 `send_text` 走 `_transport`。
 
 ### 4.4 错误信号结构化
 
@@ -223,19 +238,29 @@ register_channel("whatsapp", WhatsAppChannel)
 
 ```
 openprogram/channels/
-├── base.py              Channel ABC + MessageHandle + send_text/edit_text(_full)
-├── _transport.py        SendResult + 4 个平台 HTTP post/patch (统一底层)
+├── base.py              Channel ABC + MessageHandle + handle_inbound
+│                        (per-message 线程 + 降级回发) + send_text/edit_text(_full)
+├── _transport.py        SendResult + MAX_CHARS 表 + chunking + 4 个平台
+│                        HTTP post/patch (统一底层)
 ├── _message.py          ChannelMessage 入站中性结构 dataclass
 ├── outbound.py          入口 A: send / send_full (薄包装)
-├── _conversation.py     dispatch_inbound 主流程 + progress streaming
+├── _conversation.py     dispatch_inbound 主流程 + per-session 锁
+│                        + progress streaming
 ├── _session_store.py    session 路径 / 创建 / 加载 / 保存
 ├── _session_routing.py  session_key + reset policy
-├── _broadcast.py        webui WS push (channel_turn / session_updated)
+├── _broadcast.py        WS 帧走事件总线 (emit_ws_frame → ws.frame;
+│                        webui 订阅后原样广播 — channels 不 import webui)
+├── _question_bridge.py  把待答的 runtime.ask 问题推进聊天
+├── _question_commands.py /answer · /decline 文本命令处理
+├── _heartbeats.py       adapter 心跳注册表
 ├── __init__.py          CHANNEL_CLASSES proxy + register_channel + entry_points
-├── telegram.py          Telegram bot 长轮询入站
-├── discord.py           Discord bot Gateway 入站
-├── slack.py             Slack Socket Mode 入站
-├── wechat.py            WeChat iLink 长轮询入站 (含 QR 登录)
+├── implementations/
+│   ├── telegram.py      Telegram bot 长轮询入站
+│   ├── discord.py       Discord bot Gateway 入站
+│   ├── slack.py         Slack Socket Mode 入站
+│   └── wechat.py        WeChat iLink 长轮询入站 (含 QR 登录)
+├── setup.py             `openprogram channels setup` 向导
+├── worker.py            向后兼容的 worker import shim
 ├── accounts.py          凭据存储
 └── bindings.py          (channel, account, peer) → agent 路由表
 ```
@@ -244,15 +269,15 @@ openprogram/channels/
 
 | 模块 | 职责 | 典型 caller |
 |---|---|---|
-| `_transport.py` | 唯一往外发字节, 4 个平台 HTTP | outbound + base.send_text |
+| `_transport.py` | 唯一往外发字节, MAX_CHARS + chunking, 4 个平台 HTTP | outbound + base.send_text |
 | `_message.py` | ChannelMessage parse 中性结构 | adapter 入口 |
-| `base.py` | Channel ABC + MessageHandle | adapter 子类、dispatch_inbound |
+| `base.py` | Channel ABC + MessageHandle + handle_inbound | adapter 子类、dispatch_inbound |
 | `outbound.py` | 入口 A (一次性发) | cron 脚本、jupyter、@agentic_function |
-| `_conversation.py` | dispatch_inbound 主流程 | 4 个 adapter 的 on_message |
+| `_conversation.py` | dispatch_inbound 主流程 + per-session 锁 | base.handle_inbound |
 | `_session_store.py` | session 加载/保存 | dispatch_inbound |
 | `_session_routing.py` | session_key 计算 | dispatch_inbound |
-| `_broadcast.py` | webui WS push | dispatch_inbound |
-| `telegram.py` 等 | 入站事件循环 + parse | worker 启动时实例化 |
+| `_broadcast.py` | WS 帧上事件总线 (`ws.frame`) | dispatch_inbound |
+| `implementations/*.py` | 入站事件循环 + parse | worker 启动时实例化 |
 | `__init__.py` | CHANNEL_CLASSES + plugin 注册 | webui list_status / worker |
 | `accounts.py` | 凭据存储 | 所有 _transport 函数 |
 | `bindings.py` | inbound 路由 | dispatch_inbound |

@@ -64,7 +64,7 @@ async def handle_start_channel_login(ws, cmd: dict):
 
     def _runner():
         try:
-            from openprogram.channels.wechat import (
+            from openprogram.channels.implementations.wechat import (
                 login_account_event_driven,
             )
             login_account_event_driven(acct_id, _push)

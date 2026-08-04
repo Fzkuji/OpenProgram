@@ -60,18 +60,70 @@ class Channel(abc.ABC):
     def __init__(self, account_id: str = "default") -> None:
         self.account_id = account_id
 
+    #: dispatch_inbound 的 progress_stream 参数. WeChat 关掉 (iLink 不能
+    #: edit, 占位消息会变成孤儿"⏳"残留), 其他 platform 默认开.
+    progress_stream: bool = True
+
     @abc.abstractmethod
     def run(self, stop: threading.Event) -> None:
         """跑入站事件循环直到 ``stop`` 被 set.
 
         实现细节按 platform 不同 (discord.py Gateway / Slack Socket Mode
         / Telegram long-poll / WeChat iLink long-poll), 在各 adapter 文件
-        自己写. 一般会:
-          * 长连接 / 长轮询拿入站消息
-          * 调 ``dispatch_inbound`` 喂给 agent
-          * 把 agent reply 发回去 (现在仍用各自 platform SDK, 后续可改成
-            self.send_text)
+        自己写. 一般只做两件事:
+          * 长连接 / 长轮询拿入站消息, parse 成 ChannelMessage
+          * 调 :meth:`handle_inbound` — 线程派发 / dispatch / 降级回发
+            都在 base 统一处理
         """
+
+    # ------------------------------------------------------------------
+    # 入站统一处理 — adapter parse 完调这个, 不再各抄一遍线程+降级逻辑
+    # ------------------------------------------------------------------
+
+    def peer_id_for(self, ch_msg) -> str:
+        """从 :class:`ChannelMessage` 算 dispatch 用的 peer_id — 同时也是
+        降级回发的 outbound target. 默认 chat_id (telegram 群共享 /
+        wechat 单聊). Discord / Slack override 成 ``{chat_id}_{user_id}``
+        让同一 channel 里的不同用户各占一个 session."""
+        return ch_msg.chat_id
+
+    def handle_inbound(self, ch_msg) -> None:
+        """统一入站处理: 每消息起一个 daemon 线程跑 dispatch.
+
+        Per-message 线程是必须的 — 函数在 turn 里停在 runtime.ask 时不能
+        堵住 adapter 的 poll loop / 事件回调, 否则用户自己的 /answer 回复
+        永远进不来, 等待自死锁.
+
+        dispatch_inbound 返回字符串 (progress streaming 降级 / 关闭) 时
+        经 :meth:`send_text` 回发 — 统一走 _transport, chunking 与错误
+        分类都在那一层, adapter 不再持有 platform SDK 的直发副本.
+        """
+        threading.Thread(
+            target=self._dispatch_and_reply, args=(ch_msg,), daemon=True,
+        ).start()
+
+    def _dispatch_and_reply(self, ch_msg) -> None:
+        peer_id = self.peer_id_for(ch_msg)
+        snippet = ch_msg.text[:60] + ("..." if len(ch_msg.text) > 60 else "")
+        who = ch_msg.user_display or ch_msg.user_id or peer_id
+        print(f"[{self.platform_id}:{self.account_id}] <{who}> {snippet}")
+
+        from openprogram.channels._conversation import dispatch_inbound
+        reply_text = dispatch_inbound(
+            channel=self.platform_id,
+            account_id=self.account_id,
+            peer_kind=ch_msg.chat_type,
+            peer_id=peer_id,
+            user_text=ch_msg.text,
+            user_display=ch_msg.user_display or peer_id,
+            progress_stream=self.progress_stream,
+        )
+        # progress streaming 走通时 reply 已 edit 进占位消息, 返回 None.
+        if reply_text is not None:
+            result = self.send_text_full(peer_id, reply_text)
+            if not result.ok:
+                print(f"[{self.platform_id}:{self.account_id}] send failed: "
+                      f"{result.error_kind}: {result.error_detail}")
 
     # ------------------------------------------------------------------
     # 出站接口 — 默认走 _transport, 子类可 override 用 platform-native SDK

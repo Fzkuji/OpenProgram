@@ -13,11 +13,14 @@ import threading
 from openprogram.channels.base import Channel
 
 
-MAX_MSG_CHARS = 1800  # Discord caps at 2000; leave headroom
-
-
 class DiscordChannel(Channel):
     platform_id = "discord"
+
+    def peer_id_for(self, ch_msg) -> str:
+        # Scoped peer id: channel_id + user_id so a shared channel and a
+        # DM keep distinct sessions. _transport splits on "_" to recover
+        # the channel_id for outbound sends.
+        return f"{ch_msg.chat_id}_{ch_msg.user_id}"
 
     def __init__(self, account_id: str = "default") -> None:
         from openprogram.channels import accounts as _accounts
@@ -26,8 +29,8 @@ class DiscordChannel(Channel):
         if not token:
             raise RuntimeError(
                 f"Discord account {account_id!r} has no bot_token. "
-                f"Run `openprogram channels accounts set-token discord "
-                f"--account {account_id}`."
+                f"Run `openprogram channels accounts login discord "
+                f"--id {account_id}`."
             )
         try:
             import discord  # type: ignore  # noqa: F401
@@ -83,32 +86,9 @@ class DiscordChannel(Channel):
                 ),
             )
 
-            snippet = ch_msg.text[:60] + ("..." if len(ch_msg.text) > 60 else "")
-            print(f"[{tag}] <{ch_msg.user_display}> {snippet}")
-            from openprogram.channels._conversation import dispatch_inbound
-            # Scoped peer id: channel_id + user_id so a shared channel
-            # and a DM keep distinct sessions.
-            scoped_id = f"{ch_msg.chat_id}_{ch_msg.user_id}"
-            reply_text = await asyncio.to_thread(
-                dispatch_inbound,
-                channel="discord",
-                account_id=self.account_id,
-                peer_kind=ch_msg.chat_type,
-                peer_id=scoped_id,
-                user_text=ch_msg.text,
-                user_display=ch_msg.user_display,
-                progress_stream=True,
-            )
-            # progress_stream=True 走通时 dispatch_inbound 内部已经把
-            # reply edit 进占位消息, 返回 None. 占位发失败 / 任何降级
-            # 路径会回退到返回字符串, 走旧 SDK send 路径.
-            if reply_text is not None:
-                for chunk in _chunk(reply_text, MAX_MSG_CHARS):
-                    try:
-                        await msg.channel.send(chunk)
-                    except Exception as e:  # noqa: BLE001
-                        print(f"[{tag}] send failed: {e}")
-                        return
+            # handle_inbound spawns its own daemon thread and returns
+            # immediately — safe to call from the gateway event loop.
+            self.handle_inbound(ch_msg)
 
         async def _watch_stop() -> None:
             while not stop.is_set():
@@ -127,9 +107,3 @@ class DiscordChannel(Channel):
                 await watcher
             except asyncio.CancelledError:
                 pass
-
-
-def _chunk(text: str, limit: int) -> list[str]:
-    if not text:
-        return [""]
-    return [text[i:i + limit] for i in range(0, len(text), limit)]

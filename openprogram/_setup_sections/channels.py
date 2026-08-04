@@ -50,7 +50,7 @@ def _add_slack_account(account_id: str) -> None:
 
 def _add_wechat_account(account_id: str) -> None:
     from openprogram.channels import accounts as _accts
-    from openprogram.channels.wechat import login_account
+    from openprogram.channels.implementations.wechat import login_account
     if _accts.get("wechat", account_id) is None:
         _accts.create("wechat", account_id)
     print(f"[wechat] logging in account `{account_id}` — scan the QR "

@@ -13,14 +13,16 @@ This document describes the structure and message flow. For the requirements and
 └──────────┬──────────┘       └──────────┬───────────┘
            │ user message comes in         │ want to send someone a message
            ▼                              ▼
-  ┌──────────────────┐            ┌────────────────────┐
-  │ telegram.py etc. │            │   outbound.py      │  ← entry A
-  │ 4 adapters       │            │   send(...)        │     one-shot send, no long-running process needed
+  ┌──────────────────────┐        ┌────────────────────┐
+  │ implementations/*.py │        │   outbound.py      │  ← entry A
+  │ 4 adapters           │        │   send(...)        │     one-shot send, no long-running process needed
   │ - long poll/event loop│       └─────────┬──────────┘
   │ - parse into unified  │                 │
-  │   ChannelMessage │                      │
-  └────────┬─────────┘                      │
-           │                                │
+  │   ChannelMessage      │                 │
+  └────────┬─────────────┘                  │
+           │ base.Channel.handle_inbound    │
+           │ (per-message thread +          │
+           │  degraded-path resend)         │
            ▼                                │
   ┌───────────────────────────┐             │
   │   dispatch_inbound        │             │
@@ -57,7 +59,8 @@ This document describes the structure and message flow. For the requirements and
 
 ```
 1. The Telegram server pushes the message to the bot
-   → openprogram/channels/telegram.py is long-polling, receives the update dict
+   → openprogram/channels/implementations/telegram.py is long-polling,
+     receives the update dict
 
 2. Inside _handle_update(update):
    a. extract text = "help me check what Python files are in the current directory"
@@ -66,14 +69,25 @@ This document describes the structure and message flow. For the requirements and
         user_display="zhangsan", chat_type="direct",
         ts=1716000000, reply_to_id="", thread_id="",
       }
-   c. call dispatch_inbound(channel="telegram", account_id="default",
-                          peer_kind="direct", peer_id="123",
-                          user_text=text, user_display="zhangsan",
-                          progress_stream=True)
+   c. hand it to base.Channel.handle_inbound(ch_msg) — the base class
+      spawns a per-message daemon thread (a turn paused on runtime.ask
+      must not block the poll loop) and in it calls
+      dispatch_inbound(channel="telegram", account_id="default",
+                       peer_kind="direct", peer_id="123",
+                       user_text=text, user_display="zhangsan",
+                       progress_stream=True)
+      (peer_id comes from Channel.peer_id_for: chat_id on telegram/wechat,
+       "{chat_id}_{user_id}" on discord/slack)
 
 3. Inside dispatch_inbound (in _conversation.py):
    a. look up bindings → decide to use the "main" agent
    b. compute session_key = "default_direct_123" (in _session_routing.py)
+   b2. acquire the per-session lock — concurrent turns for the SAME
+       session queue up (the dispatcher has no lock of its own and
+       interleaved turns would corrupt the history); different sessions
+       run in parallel. /answer · /decline commands are handled before
+       the lock, so answering a question never deadlocks against the
+       turn that is waiting on it.
    c. load / create session (in _session_store.py, calling SessionDB)
    d. send placeholder message: _transport.post_message("telegram", "default", "123",
                                           "⏳ working...")
@@ -101,8 +115,14 @@ This document describes the structure and message flow. For the requirements and
    c. persist to SessionDB, broadcast to webui
    d. dispatch_inbound returns None
 
-7. telegram.py gets None → does not send any reply (because it was already edited in)
-   In Telegram the user sees that "⏳..." placeholder has grown into the full reply
+7. handle_inbound gets None → does not send any reply (because it was
+   already edited in). In Telegram the user sees that "⏳..." placeholder
+   has grown into the full reply.
+   On any degraded path (placeholder failed to send / platform cannot
+   edit / WeChat) dispatch_inbound returns the reply string instead, and
+   handle_inbound sends it via Channel.send_text → _transport (chunked
+   at the per-platform MAX_CHARS cap). Adapters hold no SDK send path
+   of their own.
 ```
 
 ## 3. Use Case B: cron / @agentic_function Proactively Sends a Message
@@ -150,6 +170,9 @@ def dispatch_inbound(*, channel, account_id, peer_kind, peer_id,
     # delegate to independent modules
     agent_id = bindings.route(...) or session_aliases.lookup(...)
     session_key = _session_routing.session_key_for_agent(...) + apply_reset_policy(...)
+
+    # everything below runs under the per-session lock: same-session
+    # turns serialize, different sessions run in parallel
     meta, _ = _session_store.load_or_init_session(...)
 
     # optional: send placeholder + subscribe to stream → progress edit
@@ -169,9 +192,9 @@ def dispatch_inbound(*, channel, account_id, peer_kind, peer_id,
 
 ### 4.3 Platform Differences Sealed in the Low Level
 
-`_transport.py` is the **only** place that calls HTTP to send outward. Telegram's `editMessageText`, Discord's `PATCH /messages/{id}`, Slack's `chat.update`, WeChat's iLink protocol — they all live here.
+`_transport.py` is the **only** place that calls HTTP to send outward. Telegram's `editMessageText`, Discord's `PATCH /messages/{id}`, Slack's `chat.update`, WeChat's iLink protocol — they all live here. The per-platform message-size caps (`MAX_CHARS`) and chunking are also single-sourced here.
 
-The adapter classes (`telegram.py` etc.) are responsible only for: (a) the event loop that connects to the server, and (b) parsing platform-native objects into `ChannelMessage`. **They are not responsible for sending messages** — sending is done by dispatch_inbound through `_transport`.
+The adapter classes (`implementations/telegram.py` etc.) are responsible only for: (a) the event loop that connects to the server, and (b) parsing platform-native objects into `ChannelMessage`. Everything after the parse — per-message thread dispatch, calling `dispatch_inbound`, and re-sending the reply on the degraded (non-streaming) path — lives once in `base.Channel.handle_inbound`. **Adapters do not send messages** — outbound traffic goes through `_transport` via `send_text`.
 
 ### 4.4 Structured Error Signals
 
@@ -223,19 +246,31 @@ The 4 built-in platforms take priority; a same-named plugin is silently ignored.
 
 ```
 openprogram/channels/
-├── base.py              Channel ABC + MessageHandle + send_text/edit_text(_full)
-├── _transport.py        SendResult + 4 platforms' HTTP post/patch (unified low level)
+├── base.py              Channel ABC + MessageHandle + handle_inbound
+│                        (per-message thread + degraded-path resend)
+│                        + send_text/edit_text(_full)
+├── _transport.py        SendResult + MAX_CHARS table + chunking + 4
+│                        platforms' HTTP post/patch (unified low level)
 ├── _message.py          ChannelMessage inbound neutral-structure dataclass
 ├── outbound.py          entry A: send / send_full (thin wrapper)
-├── _conversation.py     dispatch_inbound main flow + progress streaming
+├── _conversation.py     dispatch_inbound main flow + per-session lock
+│                        + progress streaming
 ├── _session_store.py    session path / create / load / save
 ├── _session_routing.py  session_key + reset policy
-├── _broadcast.py        webui WS push (channel_turn / session_updated)
+├── _broadcast.py        WS push via event bus (emit_ws_frame → ws.frame;
+│                        webui subscribes and fans out — channels never
+│                        import webui)
+├── _question_bridge.py  push a pending runtime.ask question into the chat
+├── _question_commands.py /answer · /decline text-command handling
+├── _heartbeats.py       adapter heartbeat registry
 ├── __init__.py          CHANNEL_CLASSES proxy + register_channel + entry_points
-├── telegram.py          Telegram bot long-poll inbound
-├── discord.py           Discord bot Gateway inbound
-├── slack.py             Slack Socket Mode inbound
-├── wechat.py            WeChat iLink long-poll inbound (incl. QR login)
+├── implementations/
+│   ├── telegram.py      Telegram bot long-poll inbound
+│   ├── discord.py       Discord bot Gateway inbound
+│   ├── slack.py         Slack Socket Mode inbound
+│   └── wechat.py        WeChat iLink long-poll inbound (incl. QR login)
+├── setup.py             `openprogram channels setup` wizard
+├── worker.py            backward-compatible worker import shim
 ├── accounts.py          credential storage
 └── bindings.py          (channel, account, peer) → agent routing table
 ```
@@ -244,15 +279,15 @@ How to read it: each module deals only with the callers it declares; there are n
 
 | Module | Responsibility | Typical caller |
 |---|---|---|
-| `_transport.py` | the only place that sends bytes outward, 4 platforms' HTTP | outbound + base.send_text |
+| `_transport.py` | the only place that sends bytes outward, MAX_CHARS + chunking, 4 platforms' HTTP | outbound + base.send_text |
 | `_message.py` | ChannelMessage parse neutral structure | adapter entry |
-| `base.py` | Channel ABC + MessageHandle | adapter subclasses, dispatch_inbound |
+| `base.py` | Channel ABC + MessageHandle + handle_inbound | adapter subclasses, dispatch_inbound |
 | `outbound.py` | entry A (one-shot send) | cron script, jupyter, @agentic_function |
-| `_conversation.py` | dispatch_inbound main flow | the 4 adapters' on_message |
+| `_conversation.py` | dispatch_inbound main flow + per-session lock | base.handle_inbound |
 | `_session_store.py` | session load/save | dispatch_inbound |
 | `_session_routing.py` | session_key computation | dispatch_inbound |
-| `_broadcast.py` | webui WS push | dispatch_inbound |
-| `telegram.py` etc. | inbound event loop + parse | instantiated at worker startup |
+| `_broadcast.py` | WS frames onto the event bus (`ws.frame`) | dispatch_inbound |
+| `implementations/*.py` | inbound event loop + parse | instantiated at worker startup |
 | `__init__.py` | CHANNEL_CLASSES + plugin registration | webui list_status / worker |
 | `accounts.py` | credential storage | all _transport functions |
 | `bindings.py` | inbound routing | dispatch_inbound |

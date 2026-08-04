@@ -21,11 +21,11 @@ dispatch 流程紧绑, 不适合拆出去因为需要在 closure 里共享 state
 """
 from __future__ import annotations
 
-import json
-import sys
+import threading
 import time
 from typing import Optional
 
+from openprogram.agent.event_bus import emit_ws_frame as _emit_ws_frame
 from openprogram.agent.management import manager as _agents
 from openprogram.channels import bindings as _bindings
 from openprogram.channels._broadcast import (
@@ -39,6 +39,27 @@ from openprogram.channels._session_routing import (
 from openprogram.channels._session_store import (
     load_or_init_session as _load_or_init_session,
 )
+
+
+# ---------------------------------------------------------------------------
+# Per-session 串行化
+# ---------------------------------------------------------------------------
+
+# 同 session 串行队列: session_key → Lock. dispatcher 对同一 session 的并发
+# turn 没有锁, 两条消息同时到会交错写库. 锁在 turn 全程持有, 同 session 的
+# 下一条消息排队, 不同 session 并行.
+# ponytail: 锁表随 session_key 单调增长不回收; 每 key 一个 Lock 很小, 真成
+# 问题再换带回收的表.
+_SESSION_LOCKS: dict[str, threading.Lock] = {}
+_SESSION_LOCKS_GUARD = threading.Lock()
+
+
+def _session_lock_for(session_key: str) -> threading.Lock:
+    with _SESSION_LOCKS_GUARD:
+        lock = _SESSION_LOCKS.get(session_key)
+        if lock is None:
+            lock = _SESSION_LOCKS[session_key] = threading.Lock()
+        return lock
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +145,32 @@ def dispatch_inbound(
     if _receipt is not None:
         return _receipt
 
+    # ---- 同 session 串行 ------------------------------------------------
+    # /answer·/decline 必须在锁外处理 (上面已 return): turn 停在
+    # runtime.ask 时持锁等待, /answer 若也抢锁就自死锁.
+    with _session_lock_for(session_key):
+        return _run_session_turn(
+            channel=channel, account_id=account_id, peer=peer,
+            peer_id=peer_id, user_text=user_text,
+            user_display=user_display, progress_stream=progress_stream,
+            agent_id=agent_id, session_key=session_key,
+        )
+
+
+def _run_session_turn(
+    *,
+    channel: str,
+    account_id: str,
+    peer: dict,
+    peer_id: str,
+    user_text: str,
+    user_display: str,
+    progress_stream: bool,
+    agent_id: str,
+    session_key: str,
+) -> Optional[str]:
+    """路由已完成、session 锁已持有 — 跑一个完整 turn: load session →
+    agent turn → 持久化 → broadcast. 返回值语义同 dispatch_inbound."""
     # ---- session 创建 / 加载 -------------------------------------------
     meta, _ = _load_or_init_session(
         agent_id=agent_id,
@@ -197,13 +244,10 @@ def dispatch_inbound(
     captured_assistant_id: list[str] = []
 
     def _on_event(env: dict) -> None:
-        # 转发给 webui WS (existing behavior: 让 TUI 看见 streaming)
-        try:
-            srv = sys.modules.get("openprogram.webui.server")
-            if srv is not None:
-                srv._broadcast(json.dumps(env, default=str))
-        except Exception:
-            pass
+        # 转发给 webui WS — 走事件总线 (ws.frame 事件), webui 订阅后原样
+        # 广播. turn 级 channel_turn / agent_session_updated 已走同一机制
+        # (_broadcast.py); 这里把流式帧也从"摸 webui 私有 _broadcast"改过来.
+        _emit_ws_frame(env)
         if env.get("type") == "chat_ack":
             data = env.get("data") or {}
             if data.get("msg_id"):

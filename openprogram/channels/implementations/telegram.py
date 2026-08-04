@@ -20,7 +20,6 @@ from openprogram.channels.base import Channel
 
 
 TELEGRAM_API = "https://api.telegram.org"
-MAX_MSG_CHARS = 4000   # Telegram caps at 4096; leave headroom
 
 
 class TelegramChannel(Channel):
@@ -33,8 +32,8 @@ class TelegramChannel(Channel):
         if not token:
             raise RuntimeError(
                 f"Telegram account {account_id!r} has no bot_token. "
-                f"Run `openprogram channels accounts set-token telegram "
-                f"--account {account_id}`."
+                f"Run `openprogram channels accounts login telegram "
+                f"--id {account_id}`."
             )
         self.account_id = account_id
         self.token = token
@@ -65,14 +64,9 @@ class TelegramChannel(Channel):
                     continue
                 for upd in data.get("result", []):
                     self.offset = upd["update_id"] + 1
-                    # Per-message thread (mirrors discord's to_thread): a
-                    # function pausing on runtime.ask inside _handle_update
-                    # must NOT block this poll loop — else the user's own
-                    # /answer reply (fetched by this same loop) never
-                    # arrives and the wait self-deadlocks.
-                    threading.Thread(
-                        target=self._handle_update, args=(upd,), daemon=True,
-                    ).start()
+                    # parse 在 loop 里 (纯 dict 访问); dispatch 的
+                    # per-message 线程派发在 base.handle_inbound.
+                    self._handle_update(upd)
             except KeyboardInterrupt:
                 raise
             except Exception as e:  # noqa: BLE001
@@ -120,22 +114,4 @@ class TelegramChannel(Channel):
             reply_to_id=str(reply_to.get("message_id") or ""),
         )
 
-        snippet = ch_msg.text[:60] + ("..." if len(ch_msg.text) > 60 else "")
-        print(f"[telegram:{self.account_id}] <{ch_msg.user_display}> {snippet}")
-
-        from openprogram.channels._conversation import dispatch_inbound
-        from openprogram.channels.outbound import send as _send
-        reply_text = dispatch_inbound(
-            channel="telegram",
-            account_id=self.account_id,
-            peer_kind=ch_msg.chat_type,
-            peer_id=ch_msg.chat_id,
-            user_text=ch_msg.text,
-            user_display=ch_msg.user_display,
-            progress_stream=True,
-        )
-        # progress_stream=True 时 dispatch_inbound 内部已经把 reply edit
-        # 进占位消息, 返回 None 表示无需再发. 占位发送失败 / 任何降级路径
-        # 会返回 reply_text 字符串, 走旧 _send 路径.
-        if reply_text is not None:
-            _send("telegram", self.account_id, ch_msg.chat_id, reply_text)
+        self.handle_inbound(ch_msg)

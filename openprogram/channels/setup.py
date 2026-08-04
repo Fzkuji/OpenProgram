@@ -25,7 +25,7 @@ from typing import Optional
 from openprogram.channels import accounts as _accounts
 from openprogram.channels import bindings as _bindings
 from openprogram import worker as _worker
-from openprogram.setup import _choose_one, _confirm, _text
+from openprogram.setup import _choose_one, _confirm, _password, _text
 
 
 SUPPORTED = ("wechat", "telegram", "discord", "slack")
@@ -76,8 +76,9 @@ def run() -> int:
                 print(f"\n[setup] worker started, PID {pid}")
                 print("[setup] log: ~/.openprogram/channels/worker.log")
             else:
-                print("\n[setup] worker not started — run "
-                      "`openprogram channels start` when ready.")
+                print("\n[setup] worker not started — channels run inside "
+                      "the background service; start it by running "
+                      "`openprogram`.")
 
         print("\n✅ Setup complete. Send a message from the channel — "
               "watch the conversation appear in /resume.")
@@ -165,7 +166,7 @@ def _run_login(channel: str, account_id: str) -> bool:
 def _telegram_login(account_id: str) -> bool:
     print("\n[telegram] Open https://t.me/BotFather, run /newbot, then paste"
           " the token below. (Existing tokens fine — just paste the same.)")
-    token = _text("Bot token", default="")
+    token = _password("Bot token:")
     if not token or not token.strip():
         return False
     _accounts.save_credentials("telegram", account_id,
@@ -178,7 +179,7 @@ def _discord_login(account_id: str) -> bool:
     print("\n[discord] Create a Discord application + bot at "
           "https://discord.com/developers/applications. Paste the bot token "
           "below.")
-    token = _text("Bot token", default="")
+    token = _password("Bot token:")
     if not token or not token.strip():
         return False
     _accounts.save_credentials("discord", account_id,
@@ -188,15 +189,26 @@ def _discord_login(account_id: str) -> bool:
 
 
 def _slack_login(account_id: str) -> bool:
+    """Slack Socket Mode 需要双 token — bot_token (xoxb-) 发消息,
+    app_token (xapp-, scope connections:write) 挂 Socket Mode 长连接.
+    accounts.is_configured 与 SlackChannel.__init__ 都要求两个齐全,
+    只存 bot_token 的账号永远起不来."""
     print("\n[slack] Create a Slack app at https://api.slack.com/apps, "
           "install it to your workspace, then paste the Bot User OAuth Token "
           "(starts with xoxb-).")
-    token = _text("Bot token", default="")
-    if not token or not token.strip():
+    bot = _password("Bot token (xoxb-...):")
+    if not bot or not bot.strip():
+        return False
+    print("[slack] Now the app-level token: app settings → Basic Information "
+          "→ App-Level Tokens → Generate (scope: connections:write). "
+          "Starts with xapp-. Also enable Socket Mode for the app.")
+    app = _password("App-level token (xapp-...):")
+    if not app or not app.strip():
         return False
     _accounts.save_credentials("slack", account_id,
-                                {"bot_token": token.strip()})
-    print(f"[slack] saved token for slack:{account_id}")
+                                {"bot_token": bot.strip(),
+                                 "app_token": app.strip()})
+    print(f"[slack] saved bot + app tokens for slack:{account_id}")
     return True
 
 

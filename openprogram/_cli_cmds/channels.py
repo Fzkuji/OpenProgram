@@ -52,7 +52,7 @@ def _login_account(channel: str, account_id: str) -> None:
     if _acc.get(channel, account_id) is None:
         _acc.create(channel, account_id)
     if channel == "wechat":
-        from openprogram.channels.wechat import login_account
+        from openprogram.channels.implementations.wechat import login_account
         login_account(account_id)
         return
     import getpass

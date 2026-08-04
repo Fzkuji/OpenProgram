@@ -162,13 +162,9 @@ def test_dispatch_inbound_broadcasts_channel_turn(
     """The webui keeps a stale ``channel_turn`` envelope hook so an
     attached TUI updates without a /resume. Verify dispatch_inbound
     still emits it after the dispatcher refactor."""
-    import sys, types
-    # chat_response 仍走 channel 进程内回调直连 webui._broadcast（未在步4解耦范围）。
-    broadcasts: list[str] = []
-    fake_srv = types.SimpleNamespace(_broadcast=lambda payload: broadcasts.append(payload))
-    monkeypatch.setitem(sys.modules, "openprogram.webui.server", fake_srv)
-
-    # channel_turn 步4 改走总线（emit_ws_frame → ws.frame 事件）。订阅总线抓它。
+    # channel_turn 与流式 chat_response 帧都走总线（emit_ws_frame →
+    # ws.frame 事件），webui 订阅后原样广播 — channels 不再摸
+    # webui.server._broadcast 私有函数。订阅总线抓全部帧。
     from openprogram.agent.event_bus import get_event_bus, WS_FRAME_EVENT
     frames: list[dict] = []
     unsub = get_event_bus().subscribe(
@@ -193,11 +189,11 @@ def test_dispatch_inbound_broadcasts_channel_turn(
     finally:
         unsub()
 
-    # channel_turn 经总线、chat_response 经 webui 直连，二者都要在。
+    # channel_turn 与 chat_response 都要在总线上。
     has_channel_turn = any(f.get("type") == "channel_turn" for f in frames)
-    has_chat_response = any('"chat_response"' in p for p in broadcasts)
+    has_chat_response = any(f.get("type") == "chat_response" for f in frames)
     assert has_channel_turn, "channel_turn envelope missing — TUI live update will break"
-    assert has_chat_response, "chat_response stream events missing"
+    assert has_chat_response, "chat_response stream events missing from the bus"
 
 
 def test_dispatch_inbound_replay_continues_session(
@@ -231,6 +227,81 @@ def test_dispatch_inbound_replay_continues_session(
     ]
     assert msgs[0]["content"] == "one"
     assert msgs[2]["content"] == "two"
+
+
+def test_same_session_concurrent_turns_serialize(
+    tmp_db: SessionDB, stub_routing, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two concurrent inbound messages for the SAME session must run
+    one after the other — the dispatcher has no lock of its own, so
+    interleaved turns corrupt the session history."""
+    import threading
+    from types import SimpleNamespace
+
+    intervals: list[tuple[float, float]] = []
+
+    def fake_turn(req, on_event=None):
+        t0 = time.monotonic()
+        time.sleep(0.25)
+        intervals.append((t0, time.monotonic()))
+        return SimpleNamespace(final_text="ok", user_msg_id="u",
+                               assistant_msg_id="a")
+
+    monkeypatch.setattr(D, "process_user_turn", fake_turn)
+
+    def _one(i: int) -> None:
+        C.dispatch_inbound(
+            channel="wechat", account_id="a", peer_kind="direct",
+            peer_id="carol", user_text=f"msg {i}", user_display="Carol",
+        )
+
+    threads = [threading.Thread(target=_one, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+    assert not any(t.is_alive() for t in threads)
+
+    assert len(intervals) == 2
+    (a0, a1), (b0, b1) = sorted(intervals)
+    assert a1 <= b0, (
+        f"turns overlapped: first ran {a0:.3f}-{a1:.3f}, "
+        f"second started at {b0:.3f}"
+    )
+
+
+def test_different_sessions_run_in_parallel(
+    tmp_db: SessionDB, stub_routing, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The per-session lock must not serialize UNRELATED sessions: two
+    peers' turns overlap (both reach the barrier while in-flight)."""
+    import threading
+    from types import SimpleNamespace
+
+    barrier = threading.Barrier(2)
+    met: list[bool] = []
+
+    def fake_turn(req, on_event=None):
+        barrier.wait(timeout=5)   # breaks if the other turn is locked out
+        met.append(True)
+        return SimpleNamespace(final_text="ok", user_msg_id="u",
+                               assistant_msg_id="a")
+
+    monkeypatch.setattr(D, "process_user_turn", fake_turn)
+
+    def _one(peer: str) -> None:
+        C.dispatch_inbound(
+            channel="wechat", account_id="a", peer_kind="direct",
+            peer_id=peer, user_text="hi", user_display=peer,
+        )
+
+    threads = [threading.Thread(target=_one, args=(p,))
+               for p in ("dave", "erin")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+    assert met == [True, True], "different sessions were serialized"
 
 
 def test_dispatch_inbound_uses_bound_session_run_config(

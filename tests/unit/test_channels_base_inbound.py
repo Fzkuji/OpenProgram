@@ -1,0 +1,176 @@
+"""``Channel.handle_inbound`` — the unified inbound path in base.py.
+
+Adapters used to copy the same block four times: spawn a per-message
+thread → dispatch_inbound → on the degraded path re-send via their own
+platform SDK. That now lives once in ``base.Channel.handle_inbound``;
+adapters only parse and call it. These tests pin:
+
+* thread dispatch (the caller returns before the turn finishes),
+* the degraded-path reply going through ``send_text_full`` (i.e.
+  _transport — no SDK direct-send copies left),
+* per-platform peer-id scoping and the progress_stream flag,
+* the MAX_CHARS chunk table being single-sourced in _transport.
+"""
+from __future__ import annotations
+
+import threading
+
+import pytest
+
+from openprogram.channels._message import ChannelMessage
+from openprogram.channels._transport import SendResult
+from openprogram.channels.base import Channel
+
+
+class _FakeChannel(Channel):
+    platform_id = "faketg"
+
+    def __init__(self) -> None:
+        super().__init__(account_id="acct1")
+        self.sent: list[tuple[str, str]] = []
+        self.send_done = threading.Event()
+
+    def run(self, stop: threading.Event) -> None:  # pragma: no cover
+        pass
+
+    def send_text_full(self, target: str, text: str) -> SendResult:
+        self.sent.append((target, text))
+        self.send_done.set()
+        return SendResult.success("mid-1")
+
+
+def _msg(**kw) -> ChannelMessage:
+    base = dict(text="hello", chat_id="42", user_id="7",
+                user_display="Bob", chat_type="direct")
+    base.update(kw)
+    return ChannelMessage(**base)
+
+
+def test_dispatch_and_reply_fallback_goes_through_send_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """dispatch returns a string (streaming degraded / off) → the reply
+    is sent via send_text_full, with the peer_id as target."""
+    seen: dict = {}
+
+    def fake_dispatch(**kw):
+        seen.update(kw)
+        return "the reply"
+
+    monkeypatch.setattr(
+        "openprogram.channels._conversation.dispatch_inbound", fake_dispatch)
+    ch = _FakeChannel()
+    ch._dispatch_and_reply(_msg())
+
+    assert seen["channel"] == "faketg"
+    assert seen["account_id"] == "acct1"
+    assert seen["peer_id"] == "42"
+    assert seen["peer_kind"] == "direct"
+    assert seen["user_text"] == "hello"
+    assert seen["progress_stream"] is True   # base default
+    assert ch.sent == [("42", "the reply")]
+
+
+def test_dispatch_and_reply_streaming_path_sends_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """dispatch returns None (reply already edited into the progress
+    placeholder) → no extra send."""
+    monkeypatch.setattr(
+        "openprogram.channels._conversation.dispatch_inbound",
+        lambda **kw: None)
+    ch = _FakeChannel()
+    ch._dispatch_and_reply(_msg())
+    assert ch.sent == []
+
+
+def test_handle_inbound_does_not_block_caller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """handle_inbound spawns a daemon thread: it must return while the
+    turn is still running — a turn paused on runtime.ask must not block
+    the adapter's poll loop."""
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_dispatch(**kw):
+        started.set()
+        assert release.wait(5), "test released too late"
+        return "late reply"
+
+    monkeypatch.setattr(
+        "openprogram.channels._conversation.dispatch_inbound", slow_dispatch)
+    ch = _FakeChannel()
+    ch.handle_inbound(_msg())          # must return immediately
+    assert started.wait(5), "dispatch never ran in the background thread"
+    assert ch.sent == []               # turn still in flight
+    release.set()
+    assert ch.send_done.wait(5)
+    assert ch.sent == [("42", "late reply")]
+
+
+def test_per_platform_peer_scoping_and_progress_flags() -> None:
+    """Discord/Slack scope peers to (channel, user); Telegram/WeChat use
+    the chat id. WeChat can't edit messages → progress streaming off."""
+    from openprogram.channels.implementations.discord import DiscordChannel
+    from openprogram.channels.implementations.slack import SlackChannel
+    from openprogram.channels.implementations.telegram import TelegramChannel
+    from openprogram.channels.implementations.wechat import WechatChannel
+
+    m = _msg(chat_id="C9", user_id="U3")
+    # peer_id_for reads only the message — call it unbound.
+    assert DiscordChannel.peer_id_for(None, m) == "C9_U3"
+    assert SlackChannel.peer_id_for(None, m) == "C9_U3"
+    assert TelegramChannel.peer_id_for(None, m) == "C9"
+    assert WechatChannel.peer_id_for(None, m) == "C9"
+
+    assert WechatChannel.progress_stream is False
+    for cls in (DiscordChannel, SlackChannel, TelegramChannel):
+        assert cls.progress_stream is True
+
+
+# ---------------------------------------------------------------------------
+# Chunk table — single-sourced in _transport
+# ---------------------------------------------------------------------------
+
+def test_max_chars_table_values() -> None:
+    from openprogram.channels._transport import MAX_CHARS
+    assert MAX_CHARS == {
+        "telegram": 4000,    # hard cap 4096
+        "slack":    39000,   # chat.postMessage truncates past 40000
+        "discord":  1800,    # hard cap 2000
+        "wechat":   1800,
+    }
+
+
+def test_adapters_have_no_chunk_copies() -> None:
+    """The per-adapter MAX_MSG_CHARS constants and _chunk copies are
+    gone — _transport is the only owner."""
+    import openprogram.channels.implementations.discord as d
+    import openprogram.channels.implementations.slack as s
+    import openprogram.channels.implementations.telegram as t
+    import openprogram.channels.implementations.wechat as w
+    for mod in (d, s, t, w):
+        assert not hasattr(mod, "MAX_MSG_CHARS"), mod.__name__
+        assert not hasattr(mod, "_chunk"), mod.__name__
+
+
+def test_post_message_chunks_at_platform_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.channels import _transport
+
+    sent: list[str] = []
+
+    def fake_poster(account_id, target, text):
+        sent.append(text)
+        return SendResult.success(f"m{len(sent)}")
+
+    monkeypatch.setitem(_transport._POSTERS, "telegram", fake_poster)
+    text = "x" * 4000 + "y" * 500
+    result = _transport.post_message("telegram", "a", "42", text)
+
+    assert result.ok
+    assert len(sent) == 2
+    assert all(len(c) <= 4000 for c in sent)
+    assert "".join(sent) == text

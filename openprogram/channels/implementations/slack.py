@@ -16,11 +16,14 @@ import threading
 from openprogram.channels.base import Channel
 
 
-MAX_MSG_CHARS = 3900
-
-
 class SlackChannel(Channel):
     platform_id = "slack"
+
+    def peer_id_for(self, ch_msg) -> str:
+        # Scoped peer id: channel_id + user_id so a shared channel and a
+        # DM keep distinct sessions. _transport splits on "_" to recover
+        # the channel_id for outbound sends.
+        return f"{ch_msg.chat_id}_{ch_msg.user_id}"
 
     def __init__(self, account_id: str = "default") -> None:
         from openprogram.channels import accounts as _accounts
@@ -31,8 +34,8 @@ class SlackChannel(Channel):
             raise RuntimeError(
                 f"Slack account {account_id!r} needs both bot_token "
                 f"(xoxb-...) and app_token (xapp-...). Run "
-                f"`openprogram channels accounts set-token slack "
-                f"--account {account_id}`."
+                f"`openprogram channels accounts login slack "
+                f"--id {account_id}`."
             )
         try:
             import slack_sdk  # type: ignore  # noqa: F401
@@ -95,37 +98,9 @@ class SlackChannel(Channel):
                 thread_id=str(event.get("thread_ts") or ""),
             )
 
-            snippet = ch_msg.text[:60] + ("..." if len(ch_msg.text) > 60 else "")
-            print(f"[{tag}] <{ch_msg.user_display}> {snippet}")
-
-            from openprogram.channels._conversation import dispatch_inbound
-            scoped_id = f"{ch_msg.chat_id}_{ch_msg.user_id}"
-
-            def _run_turn() -> None:
-                reply_text = dispatch_inbound(
-                    channel="slack",
-                    account_id=self.account_id,
-                    peer_kind=ch_msg.chat_type,
-                    peer_id=scoped_id,
-                    user_text=ch_msg.text,
-                    user_display=ch_msg.user_display or scoped_id,
-                    progress_stream=True,
-                )
-                # progress_stream=True 走通时 dispatch_inbound 内部已经把
-                # reply edit 进占位消息, 返回 None. 降级路径返回字符串, 走
-                # 旧 SDK chat_postMessage 路径.
-                if reply_text is not None:
-                    for chunk in _chunk(reply_text, MAX_MSG_CHARS):
-                        try:
-                            web.chat_postMessage(channel=channel_id, text=chunk)
-                        except Exception as e:  # noqa: BLE001
-                            print(f"[{tag}] send failed: {e}")
-                            return
-
-            # Per-message thread (mirrors discord/telegram/wechat): a
-            # function pausing on runtime.ask must not block the socket-mode
-            # listener, or the user's /answer reply never gets handled.
-            threading.Thread(target=_run_turn, daemon=True).start()
+            # handle_inbound spawns its own daemon thread — the socket-mode
+            # listener callback returns immediately.
+            self.handle_inbound(ch_msg)
 
         client.socket_mode_request_listeners.append(_handle)
         client.connect()
@@ -138,9 +113,3 @@ class SlackChannel(Channel):
                 client.disconnect()
             except Exception:
                 pass
-
-
-def _chunk(text: str, limit: int) -> list[str]:
-    if not text:
-        return [""]
-    return [text[i:i + limit] for i in range(0, len(text), limit)]
