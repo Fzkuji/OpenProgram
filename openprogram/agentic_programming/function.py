@@ -116,7 +116,7 @@ def _run_pre_invocation_hooks() -> None:
 
 # Host integration points — the seam between the core and whatever is driving
 # it. The webui registers real implementations at import (see
-# webui/_pause_stop.py); embedded use leaves the defaults, which is what keeps
+# agent/run_control.py); embedded use leaves the defaults, which is what keeps
 # the core importable without the webui (an optional extra) installed.
 #
 # These are set rather than appended: exactly one host owns cancellation and

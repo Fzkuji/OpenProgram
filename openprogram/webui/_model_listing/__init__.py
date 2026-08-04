@@ -9,7 +9,6 @@ Layout::
 
     _model_listing/
       __init__.py        # this file — public API re-exports
-      providers.py       # static metadata + _is_configured
       setup_hints.py     # SETUP_HINTS dict + _setup_hint
       storage.py         # config IO + custom_models CRUD + URL/key resolution
       listing.py         # list_providers / list_models_for_provider / list_enabled_models
@@ -26,18 +25,18 @@ the dispatcher loads it by directory name (same convention as
 
 Adding a new provider: usually NOTHING. The credential kind, fetch
 fetcher, chat api-stamp, and base convention are all DERIVED from the
-provider's wire ``api`` (``providers._default_api_for`` reads it from the
+provider's wire ``api`` (``openprogram.providers.metadata.default_api_for`` reads it from the
 static ``enabled_models`` rows, or detects an Anthropic ``…/anthropic``
 endpoint for community providers). A provider that's in ``enabled_models``
 or whose models.dev base reveals its wire needs no per-provider code.
 
 The optional touch-points, only when something can't be derived:
 
-  1. Append to ``providers._PROVIDER_LABELS`` to pin a display name, and
-     to ``providers._FETCH_MODELS_PROVIDERS`` only for an OpenAI-compatible
-     /v1/models lister not already covered.
-  2. Map its env var in ``providers._ENV_API_KEYS``.
-  3. Add to ``providers._PROVIDER_DEFAULT_API`` ONLY to correct a
+  1. Append to ``openprogram.providers.metadata.PROVIDER_LABELS`` to pin a
+     display name, and to ``metadata.FETCH_MODELS_PROVIDERS`` only for an
+     OpenAI-compatible /v1/models lister not already covered.
+  2. Map its env var in ``metadata.ENV_API_KEYS``.
+  3. Add to ``metadata.PROVIDER_DEFAULT_API`` ONLY to correct a
      ``enabled_models`` mislabel or pin a multi-api provider's route —
      it is normally empty.
   4. (Optional) Add a ``setup_hints._SETUP_HINTS`` entry for
@@ -86,23 +85,11 @@ from .credentials import (
 
 # Private symbols still imported by name from other modules --------
 # (``_runtime_management``, ``_model_tools``, ``setup_sections``).
-from .providers import _is_configured
+# Provider metadata (labels / env vars / api routing) lives in
+# ``openprogram.providers.metadata`` — import it there, not here.
 from .storage import _read_providers_cfg, _write_providers_cfg
-
-# Tables and helpers that legacy code reads off the module ---------
-# Keep these accessible for now; flag as `_`-prefixed private.
-from .providers import (
-    _CLI_PROVIDERS,
-    _ENV_API_KEYS,
-    _FETCH_MODELS_PROVIDERS,
-    _PROVIDER_DEFAULT_API,
-    _PROVIDER_LABELS,
-    _default_api_for,
-    _label,
-    _prettify,
-)
 from .setup_hints import _SETUP_HINTS, _setup_hint
-from .storage import _resolve_api_key, _resolve_base_url
+from .storage import _resolve_base_url
 
 
 __all__ = [
@@ -129,12 +116,8 @@ __all__ = [
     "provider_auth_status_async",
     "provider_id_for_env_var",
     # Re-exported privates (used by other modules)
-    "_is_configured",
     "_read_providers_cfg",
     "_write_providers_cfg",
-    "_resolve_api_key",
     "_resolve_base_url",
-    "_label",
-    "_prettify",
     "_setup_hint",
 ]

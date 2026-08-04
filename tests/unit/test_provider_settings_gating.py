@@ -178,7 +178,7 @@ def test_custom_provider_api_key_env_synthesized(monkeypatch):
         lambda p: True,
     )
     monkeypatch.setattr(
-        "openprogram.webui._model_listing.providers._synth_env_var",
+        "openprogram.providers.metadata.synthesized_env_var",
         lambda p: "OPENPROGRAM_CUSTOM_MINE_KEY",
     )
     env = _acc._api_key_env("mine")

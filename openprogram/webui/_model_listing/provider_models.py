@@ -22,7 +22,7 @@ _SUBSCRIPTION_BORROW = {
 def _models_dev_for(provider_id: str) -> dict[str, dict[str, Any]]:
     """models.dev models for a provider (id -> normalised row). Borrows the
     standard sibling for subscription providers. Empty on failure/offline."""
-    from .sources import models_dev
+    from openprogram.providers.sources import models_dev
     src = _SUBSCRIPTION_BORROW.get(provider_id, provider_id)
     try:
         return models_dev.list_models(src) or {}

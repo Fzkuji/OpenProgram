@@ -24,7 +24,6 @@ Or from CLI:
 - **`_chat_routes.py`** — REST routes for ContextGit chat operations
 - **`_exec_dag.py`** — Execution-DAG: reconstruction, live streaming, run-state repair
 - **`_functions.py`** — Function discovery, metadata extraction, loading, and result formatting
-- **`_pause_stop.py`** — Pause / resume / cancel / kill-runtime primitives used by the web UI
 - **`_runtime_management.py`** — Runtime / provider management for the web UI
 - **`_stream_bridge.py`** — Bridge between runtime's ``on_stream(event: dict)`` callback and the v2
 - **`_thinking.py`** — Thinking / reasoning-effort picker config + runtime apply helpers

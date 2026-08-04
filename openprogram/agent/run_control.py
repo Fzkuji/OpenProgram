@@ -1,8 +1,14 @@
 """
-Pause / resume / cancel / kill-runtime primitives used by the web UI.
+Run control for turn execution: pause / cancel / session binding /
+active-runtime registry.
 
-These were originally inline in server.py but live here so server.py stays
-focused on FastAPI routes and the execution dispatcher.
+This is turn-execution state, not a UI concern — the web UI, the task
+runner, channels, process runners and long-running tools all steer the
+same machine. Importing this module claims the core's host-integration
+seams (``set_cancellation_check`` / ``set_session_id_provider``), which
+is what makes the exec loop cancellable; ``agentic_programming`` itself
+never imports this layer and keeps its headless defaults when nobody
+does.
 """
 
 from __future__ import annotations

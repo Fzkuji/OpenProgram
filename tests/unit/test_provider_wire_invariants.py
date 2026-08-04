@@ -4,7 +4,7 @@ The MiniMax saga was one instance of a class: a provider whose wire api
 (anthropic-messages) was mishandled somewhere in the credential / fetch /
 api-stamp / key pipeline because that behaviour was hand-written per
 provider and drifted from the truth. The fix made everything DERIVE from
-the provider's wire api (``providers._default_api_for``). These tests are
+the provider's wire api (``providers.default_api_for``). These tests are
 the guard that keeps it that way — they iterate the whole registry, so a
 row that re-introduces drift fails here instead of silently breaking one
 provider's chat.
@@ -24,7 +24,7 @@ import pytest
 import openprogram.providers._config_read as cr
 import openprogram.providers.models as pm
 import openprogram.providers.enabled_models as mg
-from openprogram.webui._model_listing import providers as cat
+from openprogram.providers import metadata as cat
 from openprogram.webui._model_listing.credentials import _kind_for, _provider_api
 
 
@@ -83,7 +83,7 @@ def _static_apis(reg):
 
 def test_single_api_provider_never_drifts(_wire_matrix_registry):
     """For every provider whose registry models declare ONE wire api,
-    ``_default_api_for`` must return exactly that — so a fetched/custom
+    ``default_api_for`` must return exactly that — so a fetched/custom
     row routes the same as the enabled row and can't drift."""
     bad = []
     for pid, apis in _static_apis(_wire_matrix_registry).items():
@@ -93,7 +93,7 @@ def test_single_api_provider_never_drifts(_wire_matrix_registry):
         # exactly as the full-catalogue version skipped multi-api providers.
         if len(apis) == 1 and len(cat._static_apis_for(pid)) == 1:
             real = next(iter(apis))
-            got = cat._default_api_for(pid)
+            got = cat.default_api_for(pid)
             if got != real:
                 bad.append((pid, real, got))
     assert not bad, f"api drift: {bad}"
@@ -105,7 +105,7 @@ def test_anthropic_wire_providers_get_anthropic_kind():
     an /anthropic host and falsely rejects the key)."""
     bad = []
     for pid in pm.get_providers():
-        if cat._default_api_for(pid) == "anthropic-messages":
+        if cat.default_api_for(pid) == "anthropic-messages":
             if _kind_for(pid) not in ("anthropic_compat", "anthropic_native"):
                 bad.append((pid, _kind_for(pid)))
     assert not bad, f"anthropic providers with wrong kind: {bad}"
@@ -113,13 +113,13 @@ def test_anthropic_wire_providers_get_anthropic_kind():
 
 def test_credential_and_chat_agree_on_wire():
     """The credential layer (``_provider_api``) and the chat layer
-    (``_default_api_for``) must classify every provider identically — a
+    (``default_api_for``) must classify every provider identically — a
     disagreement is exactly the bug where auth probes one endpoint while
     chat streams to another."""
     bad = []
     for pid in pm.get_providers():
-        if _provider_api(pid) != cat._default_api_for(pid):
-            bad.append((pid, _provider_api(pid), cat._default_api_for(pid)))
+        if _provider_api(pid) != cat.default_api_for(pid):
+            bad.append((pid, _provider_api(pid), cat.default_api_for(pid)))
     assert not bad, f"credential/chat wire mismatch: {bad}"
 
 
@@ -128,7 +128,7 @@ def test_override_table_stays_empty():
     no one re-introduces a per-provider entry that can drift. Add one
     only to correct a provider.json mislabel — and update this test
     with the justification if you ever do."""
-    assert cat._PROVIDER_DEFAULT_API == {}, (
+    assert cat.PROVIDER_DEFAULT_API == {}, (
         "per-provider api overrides re-introduced: "
-        f"{cat._PROVIDER_DEFAULT_API}"
+        f"{cat.PROVIDER_DEFAULT_API}"
     )

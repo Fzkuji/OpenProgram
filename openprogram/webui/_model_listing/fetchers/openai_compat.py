@@ -1,7 +1,7 @@
 """Generic OpenAI-compatible ``/v1/models`` fetcher.
 
 The shared fallback: used for every provider listed in
-``providers._FETCH_MODELS_PROVIDERS`` (and custom providers) that ships no
+``providers.FETCH_MODELS_PROVIDERS`` (and custom providers) that ships no
 ``providers/<name>/list_models.py`` of its own. Bearer auth + standard
 ``{data: [{id, ...}]}`` envelope. Belongs to no single provider, so it lives
 here in the dispatcher package rather than in a provider directory.
@@ -15,11 +15,12 @@ def _fetch_openai_compat(provider_id: str, timeout: float) -> Any:
     """OpenAI-compatible /v1/models: GET base + '/models', Bearer auth."""
     import httpx
 
-    from ..providers import _env_var_for
-    from ..storage import _resolve_api_key, _resolve_base_url
+    from openprogram.providers.metadata import env_var_for
+    from openprogram.providers.env_api_keys import resolve_api_key_with_auth_store
+    from ..storage import _resolve_base_url
 
-    api_key = _resolve_api_key(provider_id)
-    env = _env_var_for(provider_id)
+    api_key = resolve_api_key_with_auth_store(provider_id)
+    env = env_var_for(provider_id)
     if api_key is None and env:
         return {"error": f"No API key for {provider_id} (set {env})"}
     base = _resolve_base_url(provider_id)

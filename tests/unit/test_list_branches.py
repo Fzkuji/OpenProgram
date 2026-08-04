@@ -39,10 +39,10 @@ def two_sessions(tmp_path, monkeypatch):
                             "predecessor": "u2"})
     s.commit_turn("p2", "t2")
 
-    from openprogram.webui import _pause_stop
-    tok = _pause_stop._current_session_id.set("p1")
+    from openprogram.agent import run_control
+    tok = run_control._current_session_id.set("p1")
     yield s
-    _pause_stop._current_session_id.reset(tok)
+    run_control._current_session_id.reset(tok)
 
 
 def test_clip():
@@ -102,10 +102,10 @@ def test_list_branches_emits_event(two_sessions):
 
 
 def test_list_branches_no_session_errors(monkeypatch):
-    from openprogram.webui import _pause_stop
-    tok = _pause_stop._current_session_id.set(None)
+    from openprogram.agent import run_control
+    tok = run_control._current_session_id.set(None)
     try:
         out = list_branches()
     finally:
-        _pause_stop._current_session_id.reset(tok)
+        run_control._current_session_id.reset(tok)
     assert "no session_id" in out

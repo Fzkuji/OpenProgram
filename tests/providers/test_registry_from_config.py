@@ -186,11 +186,11 @@ def test_coding_plan_provider_fills_from_region_sibling_offline(monkeypatch):
     # from its region sibling's REAL provider.json (minimax-cn) — OFFLINE,
     # with NO models.dev call (the catalogue is empty at cold import, so a
     # network-only path yields a hostless base_url in a fresh process).
-    import openprogram.providers._provider_meta as pm
+    import openprogram.providers.metadata as pm
     # models.dev must NOT be consulted for this to resolve.
     def boom(pid):
         raise AssertionError("models.dev consulted; offline sibling should win")
-    monkeypatch.setattr(pm, "_models_dev_base_url", boom)
+    monkeypatch.setattr(pm, "default_base_url_for", boom)
     cfg = {"minimax-cn-coding-plan": {"models": [
         {"id": "MiniMax-M3", "name": "MiniMax M3"},
     ]}}
@@ -205,10 +205,10 @@ def test_community_provider_base_url_filled_from_models_dev(monkeypatch):
     # F1 fallback: a community provider with an empty dir AND no region
     # sibling still fills from models.dev, deriving anthropic-messages from
     # an /anthropic base.
-    import openprogram.providers._provider_meta as pm
+    import openprogram.providers.metadata as pm
     monkeypatch.setattr(pm, "_endpoints", lambda pid: {})   # no sibling either
     monkeypatch.setattr(
-        pm, "_models_dev_base_url",
+        pm, "default_base_url_for",
         lambda pid: "https://api.minimaxi.com/anthropic/v1"
         if pid == "some-community-provider" else None,
     )
@@ -227,7 +227,7 @@ def test_alias_provider_endpoints_resolve_from_canonical(monkeypatch):
     # must fill both from openai-codex's provider.json (api=openai-codex,
     # base_url=chatgpt.com backend) so the row routes to the codex transport,
     # not to a hostless openai-completions request.
-    import openprogram.providers._provider_meta as pm
+    import openprogram.providers.metadata as pm
     real = pm._endpoints
 
     def fake(pid):

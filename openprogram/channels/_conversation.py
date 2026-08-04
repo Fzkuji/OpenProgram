@@ -249,7 +249,7 @@ def dispatch_inbound(
     # （不在 agentic 子进程里那条路径）会因没设会话而走 headless 分支。
     # agentic function 走子进程时 _child_entry 另设同一个 session id。
     try:
-        from openprogram.webui._pause_stop import (
+        from openprogram.agent.run_control import (
             set_current_session_id as _set_cid,
             reset_current_session_id as _reset_cid,
         )

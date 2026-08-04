@@ -27,7 +27,7 @@ import pytest
 
 from openprogram.webui._model_listing import listing
 from openprogram.webui._model_listing import provider_models as pm
-from openprogram.webui._model_listing import providers as cat
+from openprogram.providers import metadata as cat
 from openprogram.webui._model_listing import storage as st
 from openprogram.webui._model_listing import toggle as tg
 
@@ -55,7 +55,7 @@ def mem_cfg(monkeypatch):
 @pytest.fixture
 def _offline(monkeypatch):
     """Keep every models.dev lookup off the network."""
-    from openprogram.webui._model_listing import sources as S
+    from openprogram.providers import sources as S
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
     monkeypatch.setattr(cat, "_models_dev_info", lambda pid: {})
     monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {})
@@ -100,7 +100,7 @@ def test_fresh_install_lists_shipped_providers(mem_cfg, _offline, monkeypatch):
     import openprogram.providers as P
     monkeypatch.setattr(P, "get_providers", lambda: [])   # empty registry
     monkeypatch.setattr(P, "get_models", lambda pid: [])
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: False)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: False)
     ids = {p["id"] for p in listing.list_providers()}
     # Subscription providers models.dev doesn't list MUST still be present.
     assert {"openai-codex", "claude-code", "gemini-subscription"} <= ids
@@ -126,11 +126,11 @@ def _model(pid, mid="m1", base="https://x.test/v1"):
 
 def test_promoted_community_provider_keeps_supports_fetch(mem_cfg, monkeypatch):
     import openprogram.providers as P
-    from openprogram.webui._model_listing import sources as S
+    from openprogram.providers import sources as S
     monkeypatch.setattr(P, "get_providers", lambda: ["fireworks"])
     monkeypatch.setattr(P, "get_models", lambda pid: [_model(pid)])
     monkeypatch.setattr(cat, "_shipped_provider_ids", lambda: set())
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: True)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: True)
     monkeypatch.setattr(cat, "_models_dev_info", lambda pid: {})
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [{
         "id": "fireworks", "label": "Fireworks",
@@ -155,7 +155,7 @@ def test_promoted_custom_provider_keeps_label_badge_and_fetch(mem_cfg, _offline,
     monkeypatch.setattr(P, "get_providers", lambda: ["my-vllm"])
     monkeypatch.setattr(P, "get_models", lambda pid: [_model(pid, "qwen3")])
     monkeypatch.setattr(cat, "_shipped_provider_ids", lambda: set())
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: False)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: False)
     mem_cfg["my-vllm"] = {
         "enabled": True, "source": "custom", "label": "My vLLM",
         "base_url": "http://localhost:8000/v1",
@@ -175,11 +175,11 @@ def test_tier2_rows_carry_setup_hint_and_login_methods(mem_cfg, monkeypatch):
     # shipped tier stubbed away) must still surface its native login methods
     # and setup hint — a fresh install's first screen.
     import openprogram.providers as P
-    from openprogram.webui._model_listing import sources as S
+    from openprogram.providers import sources as S
     monkeypatch.setattr(P, "get_providers", lambda: [])
     monkeypatch.setattr(P, "get_models", lambda pid: [])
     monkeypatch.setattr(cat, "_shipped_provider_ids", lambda: set())
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: False)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: False)
     monkeypatch.setattr(cat, "_models_dev_info", lambda pid: {})
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [{
         "id": "anthropic", "label": "Anthropic", "env_var": "ANTHROPIC_API_KEY",
@@ -197,7 +197,7 @@ def test_tier2_rows_carry_setup_hint_and_login_methods(mem_cfg, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_manual_row_disable_keeps_row_and_reenables(mem_cfg, _offline, monkeypatch):
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: False)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: False)
     mem_cfg["acme"] = {
         "enabled": True, "source": "custom", "label": "Acme",
         "base_url": "https://acme.test/v1", "models": [],

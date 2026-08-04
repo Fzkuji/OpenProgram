@@ -98,13 +98,13 @@ def _provider_api(provider_id: str) -> str | None:
     """The wire API a provider speaks (``anthropic-messages`` /
     ``openai-completions`` / …), used to pick the right auth probe.
 
-    Delegates to the one derivation (``providers._default_api_for``):
+    Delegates to the one derivation (``providers.default_api_for``):
     the provider's own static-model wire, else an override, else the
     ``…/anthropic`` community heuristic — so credential, fetch, and chat
     all classify a provider identically and can't disagree."""
     try:
-        from .providers import _default_api_for
-        return _default_api_for(provider_id)
+        from openprogram.providers.metadata import default_api_for
+        return default_api_for(provider_id)
     except Exception:
         return None
 
@@ -353,11 +353,11 @@ def validate_credential(
 
     # Resolve the key if the caller didn't hand one in (save-verify passes it).
     if api_key is None:
-        from .storage import _resolve_api_key
-        api_key = _resolve_api_key(provider_id)
+        from openprogram.providers.env_api_keys import resolve_api_key_with_auth_store
+        api_key = resolve_api_key_with_auth_store(provider_id)
     if not api_key:
-        from .providers import _env_var_for
-        env = _env_var_for(provider_id)
+        from openprogram.providers.metadata import env_var_for
+        env = env_var_for(provider_id)
         return _result(provider_id, MISSING, kind=kind,
                        detail=f"No API key set ({env})." if env else "No credential configured.")
 

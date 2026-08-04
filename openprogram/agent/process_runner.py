@@ -204,7 +204,7 @@ def _child_entry(
             _wrap_agentic_runtime_block,
             TurnRequest,
         )
-        from openprogram.webui._pause_stop import (
+        from openprogram.agent.run_control import (
             set_current_session_id as _set_cid,
         )
 

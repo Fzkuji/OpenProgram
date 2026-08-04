@@ -25,8 +25,8 @@ from openprogram.functions.agentics.ask_user import set_ask_user, ask_user
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
 
-# Pause / stop / cancel primitives live in agentic_web._pause_stop
-from openprogram.webui._pause_stop import (
+# Pause / stop / cancel primitives live in openprogram.agent.run_control
+from openprogram.agent.run_control import (
     pause_execution,
     resume_execution,
     wait_if_paused,

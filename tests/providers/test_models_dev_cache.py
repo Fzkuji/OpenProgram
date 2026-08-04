@@ -14,7 +14,7 @@ import copy
 
 import pytest
 
-from openprogram.webui._model_listing.sources import models_dev as md
+from openprogram.providers.sources import models_dev as md
 from openprogram.webui._model_listing import listing
 from openprogram.webui._model_listing import storage as st
 

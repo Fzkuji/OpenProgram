@@ -67,9 +67,11 @@ def _load() -> dict[str, Any]:
 
 
 def _disk_cache_path():
-    from openprogram.worker.paths import state_dir
+    from openprogram.paths import get_state_dir
 
-    return state_dir() / "cache" / "models_dev.json"
+    d = get_state_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "cache" / "models_dev.json"
 
 
 def _write_disk_cache(data: dict[str, Any]) -> None:

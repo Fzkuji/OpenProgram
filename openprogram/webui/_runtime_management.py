@@ -263,15 +263,13 @@ def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
     model wasn't found (genuine unknown id → caller re-raises).
     """
     try:
-        from openprogram.webui._model_listing import (
-            _read_providers_cfg,
-            _default_api_for,
-        )
+        from openprogram.providers.metadata import default_api_for
+        from openprogram.webui._model_listing import _read_providers_cfg
         from openprogram.providers.enabled_models import (
             ENABLED_MODELS,
             _build_model_from_row,
         )
-        from openprogram.providers._provider_meta import provider_endpoints
+        from openprogram.providers.metadata import provider_endpoints
         from openprogram.providers.types import Model, ModelCost
     except Exception:
         return False
@@ -301,7 +299,7 @@ def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
     if not raw:
         return False
 
-    api = raw.get("api") or _default_api_for(provider) or "openai-completions"
+    api = raw.get("api") or default_api_for(provider) or "openai-completions"
     inputs: list[str] = list(raw.get("input_modalities") or ["text"])
     # Cost is optional — only stamp the fields the row actually has,
     # default 0.0 for missing keys so ModelCost validates.
@@ -393,7 +391,7 @@ def _probe_one_provider(p_name: str):
     answering on its port).
     """
     try:
-        from openprogram.webui._model_listing import _is_configured
+        from openprogram.providers.metadata import is_configured as _is_configured
         if not _is_configured(p_name):
             raise RuntimeError(f"{p_name} not configured")
         if p_name in _CLI_PROVIDERS:

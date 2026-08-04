@@ -2,7 +2,7 @@
 worktree management and the in-process tools.
 
 Mirrors the model used by
-``openprogram.webui._pause_stop._current_session_id``: workers /
+``openprogram.agent.run_control._current_session_id``: workers /
 tool dispatchers bind the var at the top of an execution and reset
 it on exit. Tools read it in their bodies (bash backend.run cwd,
 edit/write/read relative-path resolution) without an explicit

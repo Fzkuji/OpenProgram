@@ -19,9 +19,9 @@ from typing import Any
 def fetch(provider_id: str, timeout: float) -> Any:
     import httpx
 
-    from openprogram.webui._model_listing.storage import _resolve_api_key
+    from openprogram.providers.env_api_keys import resolve_api_key_with_auth_store
 
-    api_key = _resolve_api_key(provider_id)
+    api_key = resolve_api_key_with_auth_store(provider_id)
     if not api_key:
         return {"error": "No GOOGLE_GENERATIVE_AI_API_KEY set"}
     try:

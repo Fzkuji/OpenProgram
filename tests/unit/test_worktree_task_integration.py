@@ -139,7 +139,7 @@ def test_task_cancel_discards_worktree(
 
     def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None):
         from openprogram.agent.sub_agent_run import AgentTurnResult
-        from openprogram.webui._pause_stop import is_cancelled
+        from openprogram.agent.run_control import is_cancelled
         started.set()
         # Poll for cancel up to ~3s
         for _ in range(150):

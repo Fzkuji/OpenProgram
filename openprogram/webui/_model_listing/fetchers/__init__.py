@@ -97,8 +97,8 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
     """
     from openprogram.providers.thinking_spec import derive_thinking_fields
 
-    from ..providers import _FETCH_MODELS_PROVIDERS, _default_api_for, _label
-    from ..sources import enrich as _enrich_from_community
+    from openprogram.providers.metadata import FETCH_MODELS_PROVIDERS, default_api_for, label_for
+    from openprogram.providers.sources import enrich as _enrich_from_community
 
     fetcher = _load_fetcher(provider_id)
     # Providers that speak the Anthropic Messages wire format (minimax,
@@ -106,9 +106,9 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
     # the OpenAI-compatible GET /models 404s on their /anthropic host.
     # Route them to the (now base_url-aware) Anthropic fetcher before the
     # OpenAI-compat fallback. anthropic's list_models.fetch is base_url-aware.
-    if fetcher is None and _default_api_for(provider_id) == "anthropic-messages":
+    if fetcher is None and default_api_for(provider_id) == "anthropic-messages":
         fetcher = _load_fetcher("anthropic")
-    if fetcher is None and provider_id in _FETCH_MODELS_PROVIDERS:
+    if fetcher is None and provider_id in FETCH_MODELS_PROVIDERS:
         fetcher = _fetch_openai_compat
     # Anything else with a resolvable base URL — custom (user-added)
     # providers AND models.dev community providers with no dir of their own —
@@ -125,7 +125,7 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
             fetcher = _fetch_openai_compat
     if fetcher is None:
         return {"error": (
-            f"{_label(provider_id)} has no list-models API available. "
+            f"{label_for(provider_id)} has no list-models API available. "
             "Models are curated manually for this provider."
         )}
 

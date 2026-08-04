@@ -121,6 +121,16 @@ def register(app) -> None:
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
+    # Bare /docs never reaches the mount: Mount's path regex needs the
+    # trailing slash, and the SPA catch-all (registered last) fully matches
+    # "/docs" — so the router's usual add-a-slash redirect never fires and
+    # the chat shell came back instead of the docs site. Redirect explicitly.
+    from fastapi.responses import RedirectResponse
+
+    @app.get("/docs", include_in_schema=False)
+    async def _docs_slash_redirect():  # noqa: ANN202
+        return RedirectResponse(url="/docs/", status_code=307)
+
     # html=True → /docs/ resolves to index.html; extensionless paths fall back
     # to <name>.html.
     app.mount("/docs", AutoRebuildStatic(directory=str(site), html=True), name="docs")

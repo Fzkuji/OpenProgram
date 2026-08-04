@@ -81,7 +81,7 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
     anchor for the new branch, which is what callers actually need. This
     is what fixes the "no active parent turn" the model sometimes hit."""
     try:
-        from openprogram.webui._pause_stop import _current_session_id
+        from openprogram.agent.run_control import _current_session_id
         sid = _current_session_id.get(None)
     except Exception:
         sid = None

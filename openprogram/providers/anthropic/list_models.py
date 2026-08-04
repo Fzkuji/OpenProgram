@@ -21,8 +21,8 @@ from typing import Any
 def fetch(provider_id: str, timeout: float) -> Any:
     import httpx
 
+    from openprogram.providers.env_api_keys import resolve_api_key_with_auth_store
     from openprogram.webui._model_listing.storage import (
-        _resolve_api_key,
         _resolve_base_url,
     )
 
@@ -34,7 +34,7 @@ def fetch(provider_id: str, timeout: float) -> Any:
         api_key = resolve_api_key_sync("anthropic")
         url = "https://api.anthropic.com/v1/models"
     else:
-        api_key = _resolve_api_key(provider_id)
+        api_key = resolve_api_key_with_auth_store(provider_id)
         # Native Anthropic has a fixed host; third-party Anthropic-wire
         # providers carry their own base_url (…/anthropic).
         if provider_id == "anthropic":
@@ -45,8 +45,8 @@ def fetch(provider_id: str, timeout: float) -> Any:
                 return {"error": f"No base URL resolvable for {provider_id}."}
             url = base.rstrip("/") + "/v1/models"
     if not api_key:
-        from openprogram.webui._model_listing.providers import _env_var_for
-        env = _env_var_for(provider_id)
+        from openprogram.providers.metadata import env_var_for
+        env = env_var_for(provider_id)
         return {"error": f"No API key set ({env})." if env else "No credential — sign in first."}
     # An sk-ant-oat OAuth token authenticates as Bearer + Claude Code identity
     # headers (x-api-key 401s for OAuth). A plain api-key uses x-api-key.

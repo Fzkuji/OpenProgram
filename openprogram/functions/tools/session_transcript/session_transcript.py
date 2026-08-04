@@ -68,7 +68,7 @@ def session_transcript(
 
 def _current_session() -> str | None:
     try:
-        from openprogram.webui._pause_stop import _current_session_id
+        from openprogram.agent.run_control import _current_session_id
         return _current_session_id.get(None)
     except Exception:
         return None

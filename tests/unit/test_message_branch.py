@@ -49,14 +49,14 @@ def test_resolve_parent_falls_back_to_head(tmp_path, monkeypatch):
                             "timestamp": 0, "predecessor": "ux"})
     s.commit_turn("px", "init")
 
-    from openprogram.webui import _pause_stop
+    from openprogram.agent import run_control
     from openprogram import store as store_mod
-    sid_tok = _pause_stop._current_session_id.set("px")
+    sid_tok = run_control._current_session_id.set("px")
     turn_tok = store_mod._current_turn_id.set(None)  # turn id NOT bound
     try:
         sid, aid, agent = _resolve_parent()
     finally:
-        _pause_stop._current_session_id.reset(sid_tok)
+        run_control._current_session_id.reset(sid_tok)
         store_mod._current_turn_id.reset(turn_tok)
     assert sid == "px"
     assert aid is not None  # fell back to the session head, not None
@@ -88,9 +88,9 @@ def parent_turn(tmp_path, monkeypatch):
     s.commit_turn("p1", "init")
 
     # Bind parent session + turn on the ContextVars message_branch reads.
-    from openprogram.webui import _pause_stop
+    from openprogram.agent import run_control
     from openprogram import store as store_mod
-    sid_tok = _pause_stop._current_session_id.set("p1")
+    sid_tok = run_control._current_session_id.set("p1")
     turn_tok = store_mod._current_turn_id.set("a1")
 
     # Fake run_agent_turn — deterministic reply, no LLM.
@@ -116,7 +116,7 @@ def parent_turn(tmp_path, monkeypatch):
         lambda **kw: None)
 
     yield s
-    _pause_stop._current_session_id.reset(sid_tok)
+    run_control._current_session_id.reset(sid_tok)
     store_mod._current_turn_id.reset(turn_tok)
 
 
@@ -133,14 +133,14 @@ def _collect_events():
 
 def test_no_active_turn_errors():
     """Outside a parent turn → clear error, not a crash."""
-    from openprogram.webui import _pause_stop
+    from openprogram.agent import run_control
     from openprogram import store as store_mod
-    sid_tok = _pause_stop._current_session_id.set(None)
+    sid_tok = run_control._current_session_id.set(None)
     turn_tok = store_mod._current_turn_id.set(None)
     try:
         out = _message_branch_impl("hello", target="new", wait=True)
     finally:
-        _pause_stop._current_session_id.reset(sid_tok)
+        run_control._current_session_id.reset(sid_tok)
         store_mod._current_turn_id.reset(turn_tok)
     assert "no active parent turn" in out
 

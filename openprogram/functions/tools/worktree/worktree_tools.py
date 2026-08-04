@@ -35,7 +35,7 @@ def _current_session_id() -> Optional[str]:
     """Pull the session id from the dispatcher's ContextVar — same
     source the task tool uses."""
     try:
-        from openprogram.webui._pause_stop import _current_session_id as _sid
+        from openprogram.agent.run_control import _current_session_id as _sid
         return _sid.get(None)
     except Exception:
         return None

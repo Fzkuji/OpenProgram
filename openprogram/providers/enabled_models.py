@@ -72,7 +72,7 @@ def _build_model_from_row(row: dict, provider_id: str, endpoints: dict) -> Model
 
 def _load() -> dict[str, Model]:
     from ._config_read import read_providers_config
-    from ._provider_meta import provider_endpoints
+    from .metadata import provider_endpoints
     from openprogram.auth.aliases import resolve
 
     merged: dict[str, Model] = {}

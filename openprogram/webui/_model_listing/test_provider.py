@@ -53,9 +53,10 @@ def _codex_ping(
     SSE."""
     import httpx
 
-    from .storage import _resolve_api_key, _resolve_base_url
+    from openprogram.providers.env_api_keys import resolve_api_key_with_auth_store
+    from .storage import _resolve_base_url
 
-    api_key = _resolve_api_key(provider_id)
+    api_key = resolve_api_key_with_auth_store(provider_id)
     base = _resolve_base_url(provider_id)
     if not base:
         return {"ok": False, "error": "No base URL resolvable"}

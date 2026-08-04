@@ -18,7 +18,7 @@ import openprogram.providers.enabled_models as mg
 from openprogram.providers.types import Model
 from openprogram.webui._model_listing import listing
 from openprogram.webui._model_listing import storage as st
-from openprogram.webui._model_listing import providers as cat
+from openprogram.providers import metadata as cat
 
 
 def _model(mid, provider, api="anthropic-messages", ctx=200000):
@@ -30,7 +30,7 @@ def _model(mid, provider, api="anthropic-messages", ctx=200000):
 
 @pytest.fixture
 def stub_labels(monkeypatch):
-    monkeypatch.setattr(cat, "_label", lambda pid: pid)
+    monkeypatch.setattr(cat, "label_for", lambda pid: pid)
 
 
 def test_community_only_enabled_model_is_surfaced(monkeypatch, stub_labels):

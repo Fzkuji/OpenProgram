@@ -21,7 +21,7 @@ The parent context — which session is active and which turn id is
 running — is supplied via two ContextVars set by the dispatcher /
 webui:
 
-  * ``openprogram.webui._pause_stop._current_session_id`` —
+  * ``openprogram.agent.run_control._current_session_id`` —
     bound at ``execute_in_context`` entry.
   * ``openprogram.store._current_turn_id`` — set by
     ``dispatcher.process_user_turn`` to the assistant message id of
@@ -83,7 +83,7 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
     (None, ...) if either ContextVar is unset — the tool can't run
     without a parent turn to hang off."""
     try:
-        from openprogram.webui._pause_stop import _current_session_id
+        from openprogram.agent.run_control import _current_session_id
         sid = _current_session_id.get(None)
     except Exception:
         sid = None

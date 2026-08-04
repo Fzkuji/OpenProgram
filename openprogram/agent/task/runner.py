@@ -13,7 +13,7 @@ BashTool / file IO that dominates wall-clock time of a sub-agent.
 
 Cancel signalling reuses the dispatcher contract:
 
-  * ``_pause_stop.register_cancel_event(session_id, ev)`` exposes the
+  * ``run_control.register_cancel_event(session_id, ev)`` exposes the
     cancel event so the existing pre-invocation hook fires.
   * ``process_user_turn(cancel_event=ev)`` bridges the event into
     asyncio for the LLM-stream side.
@@ -255,7 +255,7 @@ class TaskRunner:
         done_ev = threading.Event()
         cancel_ev = threading.Event()
         # Copy the current ContextVars so things like
-        # ``_pause_stop._current_session_id`` set by the spawning
+        # ``run_control._current_session_id`` set by the spawning
         # thread don't leak into the worker. Each task gets its own
         # context — the worker function rebinds session_id explicitly.
         ctx = contextvars.copy_context()
@@ -304,7 +304,7 @@ class TaskRunner:
           * sets the task's cancel event (worker drops out on next
             cooperative checkpoint)
           * sets the session-level cancel event via
-            ``_pause_stop.mark_cancelled`` so the existing dispatcher
+            ``run_control.mark_cancelled`` so the existing dispatcher
             cancel path fires
           * kills any active BashTool subprocess via
             ``kill_active_runtime``
@@ -328,7 +328,7 @@ class TaskRunner:
         # stream + bash subprocess + agent_loop pre-invocation hook
         # all see the signal.
         try:
-            from openprogram.webui._pause_stop import (
+            from openprogram.agent.run_control import (
                 kill_active_runtime,
                 mark_cancelled,
             )
@@ -452,7 +452,7 @@ class TaskRunner:
         ``running`` forever — exceptions flip to ``errored``.
 
         Important: the dispatcher's cancel hook reads
-        ``_pause_stop._current_session_id`` from the worker thread
+        ``run_control._current_session_id`` from the worker thread
         ContextVar. We bind it at entry so the hook can find the
         right session.
         """
@@ -467,7 +467,7 @@ class TaskRunner:
 
         # Bind the session id ContextVar for the cancel hook. Same
         # contract _execute_in_context honours in the webui worker.
-        from openprogram.webui._pause_stop import (
+        from openprogram.agent.run_control import (
             register_cancel_event,
             unregister_cancel_event,
             set_current_session_id,

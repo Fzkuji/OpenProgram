@@ -17,7 +17,7 @@ Or from CLI:
 # ponytail: PEP 562 lazy export instead of an eager
 # ``from openprogram.webui.server import ...``. The eager form made merely
 # *touching* any submodule of this package (e.g. the models.dev base-url
-# lookup in providers/_provider_meta.py) drag in webui.server, which imports
+# lookup in providers/metadata.py) drag in webui.server, which imports
 # functions.agentics.ask_user, which fires the whole agentic registry load
 # while openprogram.functions._runtime is still mid-init — breaking every
 # harness whose @agentic_function runs at module scope.

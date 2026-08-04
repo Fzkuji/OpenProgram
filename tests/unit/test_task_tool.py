@@ -77,7 +77,7 @@ def _call_task(*, prompt: str, description: str = "", agent_id: str = "",
     """Invoke the task tool's underlying Python (skipping the @function
     wrapper which is for LLM-facing dispatch). ContextVars must be set
     so _resolve_parent finds them."""
-    from openprogram.webui._pause_stop import _current_session_id
+    from openprogram.agent.run_control import _current_session_id
     from openprogram.store import _current_turn_id
     from openprogram.functions.tools.task.task import _task_impl
 

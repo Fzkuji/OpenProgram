@@ -229,11 +229,11 @@ def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
         "openprogram.agent.process_runner.run_agentic_in_subprocess",
         lambda **kw: {"error": "kwargs pickle failed"})
     monkeypatch.setattr(
-        "openprogram.webui._pause_stop.set_current_session_id", lambda sid: None)
+        "openprogram.agent.run_control.set_current_session_id", lambda sid: None)
     monkeypatch.setattr(
-        "openprogram.webui._pause_stop.reset_current_session_id", lambda t: None)
+        "openprogram.agent.run_control.reset_current_session_id", lambda t: None)
     monkeypatch.setattr(
-        "openprogram.webui._pause_stop.clear_cancel", lambda sid: None)
+        "openprogram.agent.run_control.clear_cancel", lambda sid: None)
 
     out = forced_tool.dispatch_forced_tool_call(
         session_id="s1", anchor_msg_id="|node:stuck1", tool_name="wc",

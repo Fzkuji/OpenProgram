@@ -17,20 +17,22 @@ Two-layer source of truth:
        * declare a provider that isn't on models.dev,
        * route a fetched row through a non-standard API id.
 
-The public lookup functions (``_label``, ``_env_var_for``,
-``_default_api_for``) check overrides first and fall through to
+The public lookup functions (``label_for``, ``env_var_for``,
+``default_api_for``) check overrides first and fall through to
 ``sources.models_dev``. That's why the override dicts are short.
 """
 from __future__ import annotations
 
+import json
 import shutil
+from pathlib import Path
 from typing import Any
 
 
 # Display labels for provider ids. Anything not listed falls back to
 # models.dev's ``name`` field, then a prettified id ("amazon-bedrock"
 # -> "Amazon Bedrock") as a last resort.
-_PROVIDER_LABELS: dict[str, str] = {
+PROVIDER_LABELS: dict[str, str] = {
     "openai": "OpenAI",
     "openai-codex": "OpenAI Codex",
     "anthropic": "Anthropic",
@@ -47,7 +49,7 @@ _PROVIDER_LABELS: dict[str, str] = {
     # coding-plan subscription). Label by region word, not the bare domain
     # — "International" / "CN" reads at a glance where ".io" vs ".com"
     # doesn't. (The two -coding-plan ids come from models.dev; their
-    # labels apply via _label() now that the community tier routes through
+    # labels apply via label_for() now that the community tier routes through
     # the override map too.)
     "minimax": "MiniMax (International)",
     "minimax-cn": "MiniMax (CN)",
@@ -73,14 +75,14 @@ _PROVIDER_LABELS: dict[str, str] = {
 # Runtime + auth flow with 'gemini-subscription' (the Cloud Code Assist
 # endpoint), so listing it separately just duplicated the row. New
 # CLI-only backends with no HTTP counterpart can be added back here.
-_CLI_PROVIDERS: list[dict[str, Any]] = []
+CLI_PROVIDERS: list[dict[str, Any]] = []
 
 
 # Providers whose base URL speaks the OpenAI-compatible /v1/models
 # listing (Bearer auth, standard {data:[{id:...}]} response). Everything
 # else either has no public listing or uses a custom auth / response
 # shape and so ships its own ``providers/<name>/list_models.py`` instead.
-_FETCH_MODELS_PROVIDERS = frozenset({
+FETCH_MODELS_PROVIDERS = frozenset({
     "openai",
     "openrouter",
     "groq",
@@ -103,7 +105,7 @@ _FETCH_MODELS_PROVIDERS = frozenset({
 })
 
 
-_ENV_API_KEYS: dict[str, str | None] = {
+ENV_API_KEYS: dict[str, str | None] = {
     "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "google": "GOOGLE_GENERATIVE_AI_API_KEY",
@@ -133,7 +135,7 @@ _ENV_API_KEYS: dict[str, str | None] = {
 
 # Manual override for the ``api`` (wire / stream-function id) a
 # provider's fetched/custom models route through. **Normally empty.**
-# ``_default_api_for`` derives the api from the provider's own static
+# ``default_api_for`` derives the api from the provider's own static
 # models (``enabled_models``), which always WINS for a single-api
 # provider — so a fetched row matches the static catalogue and a stale
 # entry here can't re-introduce drift. This table is therefore consulted
@@ -146,7 +148,7 @@ _ENV_API_KEYS: dict[str, str | None] = {
 # (regenerate) — an entry here would be ignored. Values must match a
 # string registered in ``providers/register.py::register_builtins`` (a
 # "custom" stamp has no stream function and drops the model from chat).
-_PROVIDER_DEFAULT_API: dict[str, str] = {}
+PROVIDER_DEFAULT_API: dict[str, str] = {}
 
 
 def _shipped_provider_ids() -> set[str]:
@@ -159,11 +161,10 @@ def _shipped_provider_ids() -> set[str]:
     no dir of its own (it rides the anthropic runtime / credential pool) but
     must still get a sidebar row on a fresh install.
     """
-    from openprogram.providers._provider_meta import shipped_provider_ids
     return set(shipped_provider_ids()) | {"claude-code"}
 
 
-def _prettify(provider_id: str) -> str:
+def prettify_provider_id(provider_id: str) -> str:
     return " ".join(w.capitalize() for w in provider_id.replace("_", "-").split("-"))
 
 
@@ -176,7 +177,7 @@ def _models_dev_info(provider_id: str) -> dict[str, Any]:
     simplify call sites; ``{}`` on cache miss / network failure.
     """
     try:
-        from .sources import models_dev
+        from openprogram.providers.sources import models_dev
     except Exception:
         return {}
     try:
@@ -185,37 +186,37 @@ def _models_dev_info(provider_id: str) -> dict[str, Any]:
         return {}
 
 
-def _label(provider_id: str) -> str:
+def label_for(provider_id: str) -> str:
     """Manual override → models.dev → prettified id. Manual override is
     only useful when we want a different display name from upstream
     (rare — most fall through to models.dev's clean ``name`` field)."""
-    if provider_id in _PROVIDER_LABELS:
-        return _PROVIDER_LABELS[provider_id]
+    if provider_id in PROVIDER_LABELS:
+        return PROVIDER_LABELS[provider_id]
     md = _models_dev_info(provider_id)
     if md.get("label"):
         return md["label"]
-    return _prettify(provider_id)
+    return prettify_provider_id(provider_id)
 
 
-def _env_var_for(provider_id: str) -> str | None:
+def env_var_for(provider_id: str) -> str | None:
     """Env var name holding the API key for ``provider_id``. Same
-    override-first semantics as ``_label`` — manual ``_ENV_API_KEYS``
+    override-first semantics as ``label_for`` — manual ``ENV_API_KEYS``
     entry wins (so we can pin "claude-code → None" even if a future
     models.dev edit gives it an env), otherwise models.dev's first
     ``env[]`` entry, otherwise ``None``."""
-    if provider_id in _ENV_API_KEYS:
-        return _ENV_API_KEYS[provider_id]
+    if provider_id in ENV_API_KEYS:
+        return ENV_API_KEYS[provider_id]
     md = _models_dev_info(provider_id)
     return md.get("env_var")
 
 
-def _synth_env_var(provider_id: str) -> str:
+def synthesized_env_var(provider_id: str) -> str:
     """Synthesised ``<ID>_API_KEY`` env-var LABEL for a custom provider with no
     real env-var mapping (e.g. ``frontier-intelligence`` →
     ``FRONTIER_INTELLIGENCE_API_KEY``). DISPLAY ONLY: runtime credentials
     resolve from the AuthStore keyed by provider id, never from this env var.
-    Kept out of ``_env_var_for`` so it can't leak into ``env_vars_for`` and
-    flip ``_is_configured`` for community providers."""
+    Kept out of ``env_var_for`` so it can't leak into ``env_vars_for`` and
+    flip ``is_configured`` for community providers."""
     slug = "".join(c if (c.isalnum() or c == "-") else "-" for c in provider_id)
     slug = slug.strip("-").upper().replace("-", "_")
     return f"{slug}_API_KEY" if slug else "API_KEY"
@@ -231,7 +232,6 @@ def _static_apis_for(provider_id: str) -> set[str]:
     sources coexist during the migration.
     """
     try:
-        from openprogram.providers._provider_meta import provider_apis
         apis = provider_apis(provider_id)
         if apis:
             return apis
@@ -244,7 +244,7 @@ def _static_apis_for(provider_id: str) -> set[str]:
         return set()
 
 
-def _default_api_for(provider_id: str) -> str | None:
+def default_api_for(provider_id: str) -> str | None:
     """Registered ``api`` id a provider's fetched/custom models dispatch
     through. **Derived**, not hand-maintained per provider, so a fetched
     row always routes the same way as that provider's static rows and
@@ -254,7 +254,7 @@ def _default_api_for(provider_id: str) -> str | None:
          the source of truth (``enabled_models``). This means a fetched
          model is stamped the SAME ``api`` as the static catalogue, so it
          can't route worse than the rows that already work.
-      2. A manual override (``_PROVIDER_DEFAULT_API``) — kept only for
+      2. A manual override (``PROVIDER_DEFAULT_API``) — kept only for
          the irreducible cases: multi-api providers that need a routing
          choice, or community providers with no static row.
       3. Community heuristic: an Anthropic-compatible endpoint
@@ -268,15 +268,15 @@ def _default_api_for(provider_id: str) -> str | None:
     apis = _static_apis_for(provider_id)
     if len(apis) == 1:
         return next(iter(apis))
-    if provider_id in _PROVIDER_DEFAULT_API:
-        return _PROVIDER_DEFAULT_API[provider_id]
-    base = (_default_base_url_for(provider_id) or "").rstrip("/")
+    if provider_id in PROVIDER_DEFAULT_API:
+        return PROVIDER_DEFAULT_API[provider_id]
+    base = (default_base_url_for(provider_id) or "").rstrip("/")
     if base.endswith("/anthropic") or base.endswith("/anthropic/v1"):
         return "anthropic-messages"
     return None
 
 
-def _default_base_url_for(provider_id: str) -> str | None:
+def default_base_url_for(provider_id: str) -> str | None:
     """Default API base URL for ``provider_id``. Pulled straight from
     models.dev's ``api`` field; static-registry ``Model.base_url`` is
     still preferred when the runtime has one baked in."""
@@ -284,14 +284,14 @@ def _default_base_url_for(provider_id: str) -> str | None:
     return md.get("base_url")
 
 
-def _doc_url_for(provider_id: str) -> str | None:
+def doc_url_for(provider_id: str) -> str | None:
     """Provider docs URL (for the "Get an API key →" link in the
     setup hint). models.dev only — there's no manual table for this."""
     md = _models_dev_info(provider_id)
     return md.get("doc_url")
 
 
-def _auth_store_has_credential(provider_id: str) -> bool:
+def auth_store_has_credential(provider_id: str) -> bool:
     """True when OpenProgram's own auth store holds a credential for
     ``provider_id`` (alias-aware).
 
@@ -315,14 +315,14 @@ def _auth_store_has_credential(provider_id: str) -> bool:
         return False
 
 
-def _is_configured(provider_id: str) -> bool:
+def is_configured(provider_id: str) -> bool:
     """Is this provider usable (credential in our store, key present, CLI
     binary found, or local daemon responding).
 
     Detection tiers, in order:
 
     * **Auth store** — a credential saved by any native login (the
-      authoritative signal; see :func:`_auth_store_has_credential`).
+      authoritative signal; see :func:`auth_store_has_credential`).
     * CLI-backed providers — presence of their binary on PATH.
     * Two special-case providers — ``openai-codex`` (also accepts the
       shared ``~/.codex/auth.json``) and ``claude-code`` (HEAD against the
@@ -335,10 +335,10 @@ def _is_configured(provider_id: str) -> bool:
     # github-copilot, imported anthropic) read. Without this, a web/CLI
     # login that never also set an env var / external dotfile was reported
     # unconfigured and the chat model picker silently dropped its models.
-    if _auth_store_has_credential(provider_id):
+    if auth_store_has_credential(provider_id):
         return True
     # CLI-backed: binary presence decides.
-    for cli in _CLI_PROVIDERS:
+    for cli in CLI_PROVIDERS:
         if cli["id"] == provider_id:
             return shutil.which(cli["cli_binary"]) is not None
     # openai-codex also counts when the Codex CLI's shared auth file exists
@@ -350,24 +350,134 @@ def _is_configured(provider_id: str) -> bool:
     # claude-code runs direct on the anthropic subscription — configured
     # when the anthropic credential pool holds a token (no daemon probe).
     if provider_id == "claude-code":
-        return _auth_store_has_credential("anthropic")
+        return auth_store_has_credential("anthropic")
     # Key-based providers (incl. the Bedrock/Vertex cloud-credential chains):
     # the canonical is_configured — env-var key, or a satisfied cloud
     # chain. See docs/design/providers/auth/api-key-resolution-unification.md.
-    from openprogram.providers.env_api_keys import env_vars_for, is_configured
+    from openprogram.providers.env_api_keys import (
+        env_vars_for, is_configured as key_is_configured)
     if env_vars_for(provider_id) or provider_id in ("amazon-bedrock", "google-vertex"):
-        return is_configured(provider_id)
+        return key_is_configured(provider_id)
     # Custom (user-added) provider: no env-var mapping and no key concept in the
     # catalogue, so the community fall-through below would report it configured
     # unconditionally. It's configured only with a real credential — a pool
     # entry (the AuthStore check above) or its synthesised env var being set.
-    from .storage import _is_custom_provider
+    from openprogram.webui._model_listing.storage import _is_custom_provider
     if _is_custom_provider(provider_id):
         import os
-        return bool(os.environ.get(_synth_env_var(provider_id)))
+        return bool(os.environ.get(synthesized_env_var(provider_id)))
     # Community / models.dev provider: a saved key would have hit the
     # AuthStore check at the top. Providers with no key concept at all
     # (no env-var name in the catalogue) are conservatively "configured"
     # so the UI doesn't show a red dot the user can't act on.
-    env = _env_var_for(provider_id)
+    env = env_var_for(provider_id)
     return env is None
+
+
+# ── provider.json endpoint metadata ──────────────────────────────
+_ROOT = Path(__file__).parent
+
+
+def _provider_dir(provider_id: str) -> Path | None:
+    # Same hyphen->underscore resolution as provider_models._provider_dir, but
+    # WITHOUT importing webui (that would re-create the cycle this module breaks).
+    # Read-only: never creates a dir.
+    for name in (provider_id, provider_id.replace("-", "_")):
+        d = _ROOT / name
+        if (d / "provider.json").is_file():
+            return d
+    return None
+
+
+def _endpoints(provider_id: str) -> dict:
+    d = _provider_dir(provider_id)
+    if d is None:
+        return {}
+    try:
+        return (json.loads((d / "provider.json").read_text(encoding="utf-8")).get("endpoints") or {})
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def resolved_endpoints(provider_id: str) -> dict:
+    """Endpoint map for a provider, resolving the empty-dir gap.
+
+    Community / token-plan providers (``minimax-cn-coding-plan``) and
+    alias-only providers (``chatgpt-subscription`` → ``openai-codex``) ship
+    an EMPTY provider dir — no ``provider.json`` — so their own endpoints are
+    ``{}`` and rows built off them get a hostless base_url. Fill order:
+
+      1. The provider's own ``provider.json`` endpoints (unchanged path).
+      2. Its alias target's endpoints (``chatgpt-subscription`` inherits
+         ``openai-codex``'s api + base_url, so the row routes to the codex
+         transport that resolves credentials under the canonical id).
+      3. A synthetic ``{"default": {api, base_url}}`` from models.dev's
+         base_url — with ``anthropic-messages`` when that base is an
+         ``/anthropic`` endpoint, else ``openai-completions``.
+    """
+    eps = _endpoints(provider_id)
+    if eps:
+        return eps
+    try:
+        from openprogram.auth.aliases import resolve as _canon
+        canon = _canon(provider_id)
+    except Exception:
+        canon = provider_id
+    if canon != provider_id:
+        eps = _endpoints(canon)
+        if eps:
+            return eps
+    # A ``-coding-plan`` token-plan provider shares its region sibling's
+    # wire (same account, same endpoint) — e.g. ``minimax-cn-coding-plan``
+    # → ``minimax-cn``. Derive OFFLINE from the sibling's provider.json
+    # before touching models.dev: the models.dev catalogue is an in-memory,
+    # network-fetched, TTL cache that is EMPTY at cold import (and the
+    # registry snapshots at import), so a network-only path silently yields
+    # a hostless base_url in a fresh process.
+    if provider_id.endswith("-coding-plan"):
+        eps = _endpoints(provider_id[: -len("-coding-plan")])
+        if eps:
+            return eps
+    base = (default_base_url_for(provider_id) or "").rstrip("/")
+    if not base:
+        return {}
+    api = "anthropic-messages" if (
+        base.endswith("/anthropic") or base.endswith("/anthropic/v1")
+    ) else "openai-completions"
+    return {"default": {"api": api, "base_url": base}}
+
+
+def shipped_provider_ids() -> list[str]:
+    """Ids of every provider shipped as ``providers/<dir>/provider.json``
+    with a non-empty ``endpoints`` map. Dirs whose provider.json carries
+    only wire-format metadata (thinking specs — ``openai_completions``,
+    ``openai_responses``, ``google_gemini_cli``) are not providers a user
+    can enable and are excluded by the endpoints check."""
+    out: list[str] = []
+    for d in sorted(_ROOT.iterdir()):
+        f = d / "provider.json"
+        if not f.is_file():
+            continue
+        try:
+            j = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if j.get("endpoints"):
+            out.append(j.get("id") or d.name.replace("_", "-"))
+    return out
+
+
+def provider_endpoints(provider_id: str) -> dict:
+    """Full endpoint map {name: {api, base_url}}, resolving empty provider
+    dirs via alias / models.dev (see :func:`resolved_endpoints`)."""
+    return resolved_endpoints(provider_id)
+
+
+def provider_apis(provider_id: str) -> set[str]:
+    return {e.get("api") for e in _endpoints(provider_id).values() if e.get("api")}
+
+
+def provider_base_url(provider_id: str) -> str | None:
+    eps = _endpoints(provider_id)
+    ep = eps.get("default") or (next(iter(eps.values())) if eps else None)
+    return ep.get("base_url") if ep else None

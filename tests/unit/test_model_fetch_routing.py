@@ -8,7 +8,7 @@ or the provider half-works in confusing ways:
     fetcher (the OpenAI-compatible ``GET /models`` 404s on its host);
   * that fetcher must hit the provider's OWN base_url, not
     api.anthropic.com;
-  * ``_PROVIDER_DEFAULT_API`` must stamp fetched/custom rows
+  * ``PROVIDER_DEFAULT_API`` must stamp fetched/custom rows
     ``anthropic-messages`` (matching enabled_models) so chat routes to
     the right stream function instead of POST /chat/completions.
 
@@ -19,7 +19,8 @@ from __future__ import annotations
 import pytest
 
 from openprogram.webui._model_listing import fetchers as F
-from openprogram.webui._model_listing import providers as P
+import openprogram.providers.env_api_keys as ek
+from openprogram.providers import metadata as P
 from openprogram.webui._model_listing import storage as st
 from openprogram.providers.anthropic import list_models as A
 
@@ -44,7 +45,7 @@ def test_default_api_matches_enabled_models(pid, monkeypatch):
     assert apis == {"anthropic-messages"}, f"{pid} models: {apis}"
     # The catalog's stamp map must agree with the enabled row, or fetched
     # rows route to the wrong stream function.
-    assert P._default_api_for(pid) == "anthropic-messages"
+    assert P.default_api_for(pid) == "anthropic-messages"
 
 
 @pytest.mark.parametrize("md_base,canonical", [
@@ -58,16 +59,16 @@ def test_community_anthropic_wire_derived_and_base_normalized(monkeypatch, md_ba
     # any trailing /v1 stripped — no per-provider table entry. This is the
     # general mechanism that replaced the MiniMax-specific override.
     pid = "some-community-plan"
-    from openprogram.webui._model_listing import providers as cat
+    from openprogram.providers import metadata as cat
     from openprogram.webui._model_listing import storage as st
     from openprogram.webui._model_listing.credentials import _kind_for
     import openprogram.providers as PR
 
-    monkeypatch.setattr(cat, "_default_base_url_for", lambda p: md_base)
+    monkeypatch.setattr(cat, "default_base_url_for", lambda p: md_base)
     monkeypatch.setattr(st, "_read_providers_cfg", lambda: {})
     monkeypatch.setattr(PR, "get_models", lambda p=None: [])
 
-    assert cat._default_api_for(pid) == "anthropic-messages"  # via /anthropic heuristic
+    assert cat.default_api_for(pid) == "anthropic-messages"  # via /anthropic heuristic
     assert _kind_for(pid) == "anthropic_compat"
     assert st._resolve_base_url(pid) == canonical             # trailing /v1 stripped
 
@@ -76,7 +77,7 @@ def test_provider_default_api_table_is_empty_by_default():
     # Everything derives — the manual override table must stay empty so no
     # one re-introduces per-provider drift. (Add entries only to override a
     # enabled_models mislabel; if you do, document why here.)
-    assert P._PROVIDER_DEFAULT_API == {}
+    assert P.PROVIDER_DEFAULT_API == {}
 
 
 # dispatcher routing
@@ -94,7 +95,7 @@ def test_fetch_dispatch_routes_anthropic_wire_to_anthropic_fetcher(monkeypatch):
 
     monkeypatch.setattr(A, "fetch", fake_anthropic)
     monkeypatch.setattr(F, "_fetch_openai_compat", fake_openai)
-    from openprogram.webui._model_listing import sources as S
+    from openprogram.providers import sources as S
     monkeypatch.setattr(S, "enrich", lambda pid, mid: {})
 
     # Routing + normalize now live in fetch_and_normalize (no persistence).
@@ -118,7 +119,7 @@ def test_anthropic_fetcher_uses_provider_base_url(monkeypatch):
         seen["headers"] = headers or {}
         return _Resp()
 
-    monkeypatch.setattr(st, "_resolve_api_key", lambda pid: "k")
+    monkeypatch.setattr(ek, "resolve_api_key_with_auth_store", lambda pid: "k")
     monkeypatch.setattr(st, "_resolve_base_url", lambda pid: "https://api.minimaxi.com/anthropic")
     import httpx
     monkeypatch.setattr(httpx, "get", fake_get)
@@ -137,14 +138,14 @@ def test_claude_code_browse_borrows_anthropic_with_empty_registry(monkeypatch):
     # fetcher yielded nothing. Browse must instead borrow anthropic's data.
     import openprogram.providers.enabled_models as mg
     from openprogram.webui._model_listing import listing, provider_models as pm
-    from openprogram.webui._model_listing import providers as cat
+    from openprogram.providers import metadata as cat
 
     monkeypatch.setattr(mg, "ENABLED_MODELS", {})  # empty registry
     listing._reset_browse_cache()
     monkeypatch.setattr(st, "_read_providers_cfg", lambda: {})  # no ambient config
     # No credential → browse borrows anthropic's models.dev rows (the
     # _SUBSCRIPTION_BORROW map), NOT the registry.
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: False)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: False)
     borrowed = {"claude-opus-4-8": {"name": "Claude Opus 4.8"},
                 "claude-haiku-4-5": {"name": "Claude Haiku 4.5"}}
     # _models_dev_for already borrows anthropic for claude-code; assert it does.
@@ -168,7 +169,7 @@ def test_claude_code_fetch_routes_to_anthropic(monkeypatch):
     fake = (lambda pid, timeout: used.__setitem__("which", pid) or
             [{"id": "claude-opus-4-8", "name": "Claude Opus 4.8"}])
     monkeypatch.setattr(A, "fetch", fake)
-    from openprogram.webui._model_listing import sources as S
+    from openprogram.providers import sources as S
     monkeypatch.setattr(S, "enrich", lambda pid, mid: {})
     res = F.fetch_and_normalize("claude-code", timeout=5.0)
     assert used["which"] == "claude-code"
@@ -257,7 +258,7 @@ def test_anthropic_fetcher_native_still_uses_anthropic_host(monkeypatch):
         def raise_for_status(self): return None
         def json(self): return {"data": []}
 
-    monkeypatch.setattr(st, "_resolve_api_key", lambda pid: "k")
+    monkeypatch.setattr(ek, "resolve_api_key_with_auth_store", lambda pid: "k")
     import httpx
     monkeypatch.setattr(httpx, "get", lambda url, **kw: seen.update(url=url) or _Resp())
 

@@ -164,7 +164,7 @@ def fake_worker(monkeypatch):
 
     def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None):
         from openprogram.agent.sub_agent_run import AgentTurnResult
-        from openprogram.webui._pause_stop import is_cancelled
+        from openprogram.agent.run_control import is_cancelled
         calls.append({
             "session_id": session_id, "prompt": prompt,
             "agent_id": agent_id, "branch_from": branch_from, "label": label,

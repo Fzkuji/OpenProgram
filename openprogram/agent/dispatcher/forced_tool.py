@@ -83,7 +83,7 @@ def dispatch_forced_tool_call(
     # _wrap_agentic_runtime_block; events are bridged back via an
     # mp.Queue so WS clients see the same envelopes as before.
     from openprogram.agent.process_runner import run_agentic_in_subprocess
-    from openprogram.webui._pause_stop import (
+    from openprogram.agent.run_control import (
         set_current_session_id as _set_cid,
         reset_current_session_id as _reset_cid,
         clear_cancel as _clear_cancel,

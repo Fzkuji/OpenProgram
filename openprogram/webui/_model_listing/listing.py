@@ -88,7 +88,7 @@ def _browse_models_with_error(
                 return [dict(r) for r in hit[1]], None
 
     from .provider_models import _models_dev_for
-    from .providers import _is_configured
+    from openprogram.providers.metadata import is_configured
     from .fetchers import fetch_and_normalize
 
     md = _models_dev_for(provider_id)  # {id: normalised row} — {} on failure
@@ -96,7 +96,7 @@ def _browse_models_with_error(
     official: list[dict[str, Any]] = []
     fetch_failed = False
     error: str | None = None
-    if _is_configured(provider_id):
+    if is_configured(provider_id):
         try:
             res = fetch_and_normalize(provider_id)
         except Exception as exc:
@@ -164,7 +164,7 @@ def supports_fast(provider_id: str | None, model_id: str | None) -> bool:
     if provider_id == "claude-code":
         from openprogram.providers.enabled_models import default_fast
         return default_fast(model_id)
-    from .sources import models_dev
+    from openprogram.providers.sources import models_dev
     try:
         row = models_dev.lookup(provider_id, model_id) or {}
     except Exception:
@@ -231,20 +231,20 @@ def list_providers() -> list[dict[str, Any]]:
     from openprogram.auth.aliases import resolve as _resolve_alias
     from openprogram.auth.login_methods import login_methods as _login_methods
 
-    from openprogram.providers._provider_meta import provider_base_url
+    from openprogram.providers.metadata import provider_base_url
 
-    from .providers import (
-        _CLI_PROVIDERS,
-        _FETCH_MODELS_PROVIDERS,
-        _env_var_for,
-        _is_configured,
-        _label,
-        _prettify,
+    from openprogram.providers.metadata import (
+        CLI_PROVIDERS,
+        FETCH_MODELS_PROVIDERS,
+        env_var_for,
+        is_configured,
+        label_for,
+        prettify_provider_id,
         _shipped_provider_ids,
-        _synth_env_var,
+        synthesized_env_var,
     )
     from .setup_hints import _setup_hint
-    from .sources import models_dev
+    from openprogram.providers.sources import models_dev
     from .storage import _read_providers_cfg
     from .fetchers import _load_fetcher
 
@@ -268,14 +268,14 @@ def list_providers() -> list[dict[str, Any]]:
             "id": pid,
             # Custom providers carry the user's chosen label in config; every
             # other id routes through the override map → models.dev → prettify.
-            "label": (pcfg.get("label") or _prettify(pid)) if custom else _label(pid),
+            "label": (pcfg.get("label") or prettify_provider_id(pid)) if custom else label_for(pid),
             "kind": "api",
             "enabled": bool(pcfg.get("enabled", False)),
-            "configured": _is_configured(pid),
+            "configured": is_configured(pid),
             # Synthesised key label for custom providers (Detail shows
             # AccountManager when api_key_env is truthy). Display only — keys
             # resolve from the AuthStore by pid.
-            "api_key_env": _env_var_for(pid) or (_synth_env_var(pid) if custom else None),
+            "api_key_env": env_var_for(pid) or (synthesized_env_var(pid) if custom else None),
             "default_base_url": default_base_url,
             "base_url": pcfg.get("base_url") or "",
             "use_responses_api": bool(pcfg.get("use_responses_api", False)),
@@ -284,7 +284,7 @@ def list_providers() -> list[dict[str, Any]]:
             # base_url), or a models.dev-known community endpoint.
             "supports_fetch": bool(
                 custom
-                or pid in _FETCH_MODELS_PROVIDERS
+                or pid in FETCH_MODELS_PROVIDERS
                 or _load_fetcher(pid) is not None
                 or pid in md_provs
             ),
@@ -369,16 +369,16 @@ def list_providers() -> list[dict[str, Any]]:
         result.append(entry)
 
     # CLI-backed providers (currently empty, kept for forward-compat)
-    for cli in _CLI_PROVIDERS:
+    for cli in CLI_PROVIDERS:
         if cli["id"] in seen:
             continue
         result.append({
             "id": cli["id"],
-            "label": _label(cli["id"]),
+            "label": label_for(cli["id"]),
             "kind": "cli",
             "cli_binary": cli.get("cli_binary"),
             "enabled": bool(cfg.get(cli["id"], {}).get("enabled", False)),
-            "configured": _is_configured(cli["id"]),
+            "configured": is_configured(cli["id"]),
             "api_key_env": None,
             "model_count": 0,
             "enabled_model_count": 0,
@@ -430,7 +430,7 @@ def list_models_for_provider(
     """
     from openprogram.providers.thinking_spec import derive_thinking_fields
 
-    from .providers import _default_api_for
+    from openprogram.providers.metadata import default_api_for
     from .storage import _read_providers_cfg
 
     cfg = _read_providers_cfg()
@@ -438,7 +438,7 @@ def list_models_for_provider(
     # Enabled = ids with a stored spec row (new source of truth); fall back to
     # the legacy id whitelist so a not-yet-migrated config still reads right.
     enabled_ids = _enabled_ids(pcfg)
-    default_api = _default_api_for(provider_id) or "openai-completions"
+    default_api = default_api_for(provider_id) or "openai-completions"
     # Custom / dir-less providers have no static Model.base_url and no
     # models.dev endpoint, so the browse rows carry no base_url. Stamp the
     # provider config base_url onto every row (row value still wins) so a
@@ -515,7 +515,7 @@ def list_enabled_models() -> list[dict[str, Any]]:
     """
     from openprogram.providers.enabled_models import ENABLED_MODELS
 
-    from .providers import _label
+    from openprogram.providers.metadata import label_for
     from .storage import _read_providers_cfg
 
     cfg = _read_providers_cfg()
@@ -529,6 +529,6 @@ def list_enabled_models() -> list[dict[str, Any]]:
             continue
         row = _model_to_dict(model, enabled=True)
         row["provider"] = provider
-        row["provider_label"] = _label(provider)
+        row["provider_label"] = label_for(provider)
         out.append(row)
     return out

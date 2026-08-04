@@ -341,7 +341,7 @@ def _minimal_spec_row(pid: str, mid: str, pcfg: dict[str, Any]) -> dict[str, Any
     resolvable offline after the enabled-only-registry migration instead of
     silently dropping to ``get_model → None``.
     """
-    from openprogram.providers._provider_meta import provider_endpoints
+    from openprogram.providers.metadata import provider_endpoints
     from openprogram.providers.thinking_spec import derive_thinking_fields
 
     ep = provider_endpoints(pid).get("default") or {}
@@ -479,7 +479,7 @@ def _known_provider_ids() -> set[str]:
     from openprogram.providers import get_providers
     known = set(get_providers())
     try:
-        from .sources import models_dev
+        from openprogram.providers.sources import models_dev
         known |= {p.get("id") for p in models_dev.list_providers() if p.get("id")}
     except Exception:
         pass
@@ -518,7 +518,7 @@ def create_custom_provider(
     ``providers.<id> = {enabled, source:"custom", label, base_url, models:[]}``
     through ``_write_providers_cfg`` (which reloads the runtime registry).
     """
-    from .providers import _prettify
+    from openprogram.providers.metadata import prettify_provider_id
 
     explicit_id = (provider_id or "").strip().lower()
     label = _normalize_label(label or "")
@@ -551,7 +551,7 @@ def create_custom_provider(
         cfg[pid] = {
             "enabled": True,
             "source": "custom",
-            "label": label or _prettify(pid),
+            "label": label or prettify_provider_id(pid),
             "base_url": base_url,
             "models": [],
         }
@@ -605,7 +605,7 @@ def add_manual_model(provider_id: str, model_id: str, name: str | None = None) -
 
     Idempotent by id (upsert). Returns ``{ok, ...}``.
     """
-    from .providers import _default_api_for
+    from openprogram.providers.metadata import default_api_for
     mid = (model_id or "").strip()
     if not mid:
         return {"ok": False, "error": "model id is required"}
@@ -620,7 +620,7 @@ def add_manual_model(provider_id: str, model_id: str, name: str | None = None) -
         ):
             return {"ok": False, "error": f"unknown provider {provider_id!r}"}
         pcfg = cfg.setdefault(provider_id, {})
-        api = pcfg.get("api") or _default_api_for(provider_id) or "openai-completions"
+        api = pcfg.get("api") or default_api_for(provider_id) or "openai-completions"
         base_url = pcfg.get("base_url") or _resolve_base_url(provider_id) or ""
         spec = {
             "id": mid,
@@ -791,7 +791,7 @@ def _resolve_base_url(provider_id: str) -> str | None:
     """
     cfg = _read_providers_cfg()
     pcfg = cfg.get(provider_id, {})
-    from .providers import _default_api_for, _default_base_url_for
+    from openprogram.providers.metadata import default_api_for, default_base_url_for
     base = None
     if pcfg.get("base_url"):
         base = pcfg["base_url"]
@@ -800,7 +800,7 @@ def _resolve_base_url(provider_id: str) -> str | None:
         # providers/<p>/provider.json metadata (no ENABLED_MODELS read, breaks the
         # providers<->webui circular dep); fall back to the legacy
         # enabled_models-backed get_models() while both sources coexist.
-        from openprogram.providers._provider_meta import provider_base_url
+        from openprogram.providers.metadata import provider_base_url
         meta_base = provider_base_url(provider_id)
         if meta_base:
             base = meta_base
@@ -811,7 +811,7 @@ def _resolve_base_url(provider_id: str) -> str | None:
                 base = ms[0].base_url
             else:
                 # Community catalogue.
-                base = _default_base_url_for(provider_id)
+                base = default_base_url_for(provider_id)
     if not base:
         return None
     base = base.rstrip("/")
@@ -821,42 +821,8 @@ def _resolve_base_url(provider_id: str) -> str | None:
     # ``…/anthropic/v1`` — strip the trailing /v1 so the path doesn't
     # double (a general rule replacing the old per-provider base override;
     # scoped to anthropic-messages so it never touches an OpenAI ``…/v1``).
-    if base.endswith("/v1") and _default_api_for(provider_id) == "anthropic-messages":
+    if base.endswith("/v1") and default_api_for(provider_id) == "anthropic-messages":
         base = base[: -len("/v1")].rstrip("/")
     return base
 
 
-def _resolve_api_key(provider_id: str) -> str | None:
-    """Resolved API key for a provider (AuthStore > env var).
-
-    Looks up the provider's standard env var via
-    ``providers._env_var_for`` (manual override → models.dev community
-    catalogue). Returns ``None`` for providers that
-    have no standard env var (OAuth / daemon providers like
-    ``openai-codex``, ``claude-code``, ``github-copilot``) — those
-    need their own resolution path (e.g. AuthManager.acquire_sync,
-    daemon HEAD probe).
-    """
-    # AuthStore FIRST: the account manager ("Add key" in the web form) saves
-    # credentials into the AuthStore (keyed by provider/profile). Without
-    # this, the connectivity check and Fetch-models resolved only env vars
-    # and reported "not set" for a key the per-account validate had already
-    # proved VALID.
-    try:
-        from openprogram.auth.resolver import resolve_api_key_sync
-        tok = resolve_api_key_sync(provider_id)
-        if tok:
-            return tok
-    except Exception:
-        pass
-    # Known providers delegate to the canonical resolver (env vars; all
-    # special cases + the historical-name reconciliation live there now —
-    # see docs/design/providers/auth/api-key-resolution-unification.md).
-    from openprogram.providers.env_api_keys import env_vars_for, resolve_api_key
-    if env_vars_for(provider_id):
-        key = resolve_api_key(provider_id)
-        if key:
-            return key
-    # Community / models.dev providers: their saved key lives in the
-    # AuthStore too (checked above) — nothing else to consult.
-    return None

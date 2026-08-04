@@ -137,8 +137,8 @@ def env_vars_for(provider_id: str) -> list[str]:
     if names:
         return names
     try:
-        from openprogram.webui._model_listing.providers import _env_var_for
-        ev = _env_var_for(provider_id)
+        from openprogram.providers.metadata import env_var_for
+        ev = env_var_for(provider_id)
         if ev:
             return [ev]
     except Exception:
@@ -187,3 +187,36 @@ def provider_id_for_env_var(env_var: str) -> str | None:
             return pid
     return None
 
+def resolve_api_key_with_auth_store(provider_id: str) -> str | None:
+    """Resolved API key for a provider (AuthStore > env var).
+
+    Looks up the provider's standard env var via
+    ``providers.env_var_for`` (manual override → models.dev community
+    catalogue). Returns ``None`` for providers that
+    have no standard env var (OAuth / daemon providers like
+    ``openai-codex``, ``claude-code``, ``github-copilot``) — those
+    need their own resolution path (e.g. AuthManager.acquire_sync,
+    daemon HEAD probe).
+    """
+    # AuthStore FIRST: the account manager ("Add key" in the web form) saves
+    # credentials into the AuthStore (keyed by provider/profile). Without
+    # this, the connectivity check and Fetch-models resolved only env vars
+    # and reported "not set" for a key the per-account validate had already
+    # proved VALID.
+    try:
+        from openprogram.auth.resolver import resolve_api_key_sync
+        tok = resolve_api_key_sync(provider_id)
+        if tok:
+            return tok
+    except Exception:
+        pass
+    # Known providers delegate to the canonical resolver (env vars; all
+    # special cases + the historical-name reconciliation live there now —
+    # see docs/design/providers/auth/api-key-resolution-unification.md).
+    if env_vars_for(provider_id):
+        key = resolve_api_key(provider_id)
+        if key:
+            return key
+    # Community / models.dev providers: their saved key lives in the
+    # AuthStore too (checked above) — nothing else to consult.
+    return None

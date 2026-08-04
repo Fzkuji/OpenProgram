@@ -12,7 +12,7 @@ import threading
 
 import pytest
 
-from openprogram.webui import _pause_stop as ps
+from openprogram.agent import run_control as ps
 from openprogram.agentic_programming.function import CancelledError
 
 

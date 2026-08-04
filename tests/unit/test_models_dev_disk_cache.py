@@ -2,7 +2,7 @@
 
 import json
 
-from openprogram.webui._model_listing.sources import models_dev
+from openprogram.providers.sources import models_dev
 
 
 def _reset_mem_cache():

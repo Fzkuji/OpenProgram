@@ -201,9 +201,9 @@ def _api_key_env(provider: str) -> str:
     # the provider listing uses; keys resolve from the AuthStore by pid.
     try:
         from openprogram.webui._model_listing.storage import _is_custom_provider
-        from openprogram.webui._model_listing.providers import _synth_env_var
+        from openprogram.providers.metadata import synthesized_env_var
         if _is_custom_provider(provider):
-            return _synth_env_var(provider)
+            return synthesized_env_var(provider)
     except Exception:
         pass
     return ""

@@ -24,7 +24,7 @@ from openprogram.webui._model_listing import listing
 from openprogram.webui._model_listing import fetchers as F
 from openprogram.webui._model_listing import storage as st
 from openprogram.webui._model_listing import provider_models as pm
-from openprogram.webui._model_listing import providers as cat
+from openprogram.providers import metadata as cat
 
 
 @pytest.fixture(autouse=True)
@@ -50,7 +50,7 @@ def mem_cfg(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_no_key_browse_returns_models_dev(monkeypatch, mem_cfg):
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: False)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: False)
     monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {
         "md-1": {"name": "MD One", "context_window": 128000},
         "md-2": {"name": "MD Two"},
@@ -67,7 +67,7 @@ def test_no_key_browse_returns_models_dev(monkeypatch, mem_cfg):
 
 
 def test_enabled_flag_from_config_spec_rows(monkeypatch, mem_cfg):
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: False)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: False)
     monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {
         "md-1": {"name": "MD One"}, "md-2": {"name": "MD Two"},
     })
@@ -78,7 +78,7 @@ def test_enabled_flag_from_config_spec_rows(monkeypatch, mem_cfg):
 
 
 def test_official_api_wins_and_models_dev_enriches(monkeypatch, mem_cfg):
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: True)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: True)
     monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {
         "live-1": {"context_window": 200000, "input_cost": 3.0},
     })
@@ -96,7 +96,7 @@ def test_official_api_wins_and_models_dev_enriches(monkeypatch, mem_cfg):
 # ---------------------------------------------------------------------------
 
 def test_official_error_falls_back_to_models_dev(monkeypatch, mem_cfg):
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: True)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: True)
     monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {"md-x": {"name": "X"}})
     monkeypatch.setattr(F, "fetch_and_normalize", lambda pid, timeout=15.0: {
         "error": "401 unauthorized",
@@ -106,7 +106,7 @@ def test_official_error_falls_back_to_models_dev(monkeypatch, mem_cfg):
 
 
 def test_fully_offline_returns_manual_rows_no_raise(monkeypatch, mem_cfg):
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: True)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: True)
     monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {})  # models.dev down
     monkeypatch.setattr(F, "fetch_and_normalize",
                         lambda pid, timeout=15.0: {"error": "network down"})
@@ -123,7 +123,7 @@ def test_fully_offline_returns_manual_rows_no_raise(monkeypatch, mem_cfg):
 # ---------------------------------------------------------------------------
 
 def test_browse_cache_ttl_and_force_refresh(monkeypatch, mem_cfg):
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: True)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: True)
     monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {})
     calls = {"n": 0}
 
@@ -147,7 +147,7 @@ def test_browse_cache_ttl_and_force_refresh(monkeypatch, mem_cfg):
 def test_enabled_models_reads_registry(monkeypatch):
     import openprogram.providers.enabled_models as mg
     from openprogram.providers.types import Model
-    monkeypatch.setattr(cat, "_label", lambda pid: pid.upper())
+    monkeypatch.setattr(cat, "label_for", lambda pid: pid.upper())
     monkeypatch.setattr(mg, "ENABLED_MODELS", {
         "openai/gpt-x": Model.model_validate({
             "id": "gpt-x", "name": "GPT-X", "provider": "openai",
@@ -172,7 +172,7 @@ def test_list_providers_hides_alias_provider_row(monkeypatch):
     # it away; the canonical openai-codex row stays.
     import openprogram.providers as P
     from openprogram.providers.types import Model
-    from openprogram.webui._model_listing import sources as S
+    from openprogram.providers import sources as S
 
     def _mk(pid):
         return Model.model_validate({
@@ -182,8 +182,8 @@ def test_list_providers_hides_alias_provider_row(monkeypatch):
     monkeypatch.setattr(P, "get_providers",
                         lambda: ["openai-codex", "chatgpt-subscription"])
     monkeypatch.setattr(P, "get_models", lambda pid: [_mk(pid)])
-    monkeypatch.setattr(cat, "_label", lambda pid: pid)
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: True)
+    monkeypatch.setattr(cat, "label_for", lambda pid: pid)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: True)
     monkeypatch.setattr(cat, "_shipped_provider_ids", lambda: set())
     monkeypatch.setattr(S.models_dev, "list_providers", lambda: [])
     monkeypatch.setattr(st, "_read_providers_cfg", lambda: {
@@ -200,7 +200,7 @@ def test_list_providers_hides_alias_provider_row(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_refresh_overwrites_enabled_specs(monkeypatch, mem_cfg):
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: True)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: True)
     monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {})
     # Enabled model has a STALE stored spec (old context window).
     mem_cfg["acme"] = {
@@ -251,7 +251,7 @@ def test_offline_legacy_migration_yields_resolvable_registry(monkeypatch, mem_cf
                             "enabled_models": ["claude-opus-4-8"]}
     mem_cfg["openai"] = {"enabled": True, "enabled_models": ["gpt-4o"]}
     # Offline: live browse resolves nothing (no key, models.dev down).
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: False)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: False)
     monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {})
     monkeypatch.setattr(F, "fetch_and_normalize",
                         lambda pid, timeout=15.0: {"error": "offline"})
@@ -288,7 +288,7 @@ def test_offline_legacy_migration_yields_resolvable_registry(monkeypatch, mem_cf
 
 
 def test_refresh_keeps_enabled_model_absent_upstream(monkeypatch, mem_cfg):
-    monkeypatch.setattr(cat, "_is_configured", lambda pid: True)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: True)
     monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {})
     mem_cfg["acme"] = {
         "enabled": True,

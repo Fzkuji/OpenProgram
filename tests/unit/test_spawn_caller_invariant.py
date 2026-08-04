@@ -70,7 +70,7 @@ def captured_run(monkeypatch):
 
 def _run_with_ctx(fn, *, session_id, turn_id):
     """Run ``fn`` with the session/turn ContextVars the spawn impls read."""
-    from openprogram.webui._pause_stop import _current_session_id
+    from openprogram.agent.run_control import _current_session_id
     from openprogram.store import _current_turn_id
 
     def _go():

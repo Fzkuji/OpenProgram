@@ -16,6 +16,7 @@ import pytest
 
 from openprogram.webui._model_listing import credentials as cr
 from openprogram.webui._model_listing import storage as st
+import openprogram.providers.env_api_keys as ek
 
 
 # pure classifiers
@@ -179,7 +180,7 @@ def test_validate_openrouter_uses_key_endpoint_and_balance(monkeypatch, stub_bas
 
 
 def test_validate_missing_key(monkeypatch):
-    monkeypatch.setattr(st, "_resolve_api_key", lambda pid: None)
+    monkeypatch.setattr(ek, "resolve_api_key_with_auth_store", lambda pid: None)
     r = cr.validate_credential("deepseek", use_cache=False)
     assert r.status == cr.MISSING and not r.ok
 
