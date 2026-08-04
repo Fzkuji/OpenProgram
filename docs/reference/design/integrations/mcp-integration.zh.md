@@ -54,7 +54,7 @@ MCP 是协议,定义"工具的提供方"(server)和"工具的消费方"(client)�
 
 | 字段 | 说明 |
 |------|------|
-| `type` | 目前只支持 `"local"`(stdio)。`"remote"` (HTTP/SSE + OAuth) 保留,opencode 有,我们暂未做 |
+| `type` | `"local"`(stdio 子进程)、`"http"`(Streamable HTTP)或 `"sse"`(旧式 SSE)。远程类型使用 `url` / `headers` / `auth`(`none` / `bearer` / `oauth`) |
 | `command` | 子进程命令 + 参数列表 |
 | `env` | 注入子进程的环境变量(基础环境从父进程继承,这里 override / 追加) |
 | `enabled` | false 临时禁用某个 server,无需删配置 |
@@ -177,7 +177,7 @@ opencode 是 lazy:服务实例化时不连,首次 `tools()` 调用才 spawn。�
 
 上述设计已在 stdio 传输上实现。已建成部分的边界：
 
-1. **stdio 是唯一的传输方式。** HTTP/SSE/OAuth 尚未实现，`MCPServerConfig.type` 字段为它们留了位置。接通它们需要远程传输加一个 OAuth provider，可参考 opencode 的 `mcp/auth.ts` 与 `mcp/oauth-provider.ts`。
+1. **三种传输都已实现**（stdio、Streamable HTTP、SSE）。远程认证支持静态 bearer token 与 OAuth 2.1 PKCE。OAuth 委托给 MCP SDK 的 `OAuthClientProvider`，经 `token_storage.PersistentOAuthProvider` 把静默重连所需的状态跨 worker 重启持久化：token 及绝对时间戳 `expires_at`、动态客户端注册信息（复用其中 loopback redirect 端口，重授权时呈现的 redirect_uri 与注册时一致）、发现到的授权服务器元数据（冷启动 refresh 直达真实 token endpoint，而不是 `<server>/token` 兜底）。access token 过期用 refresh token 后台续期；只有首次授权或 refresh 被拒时才走浏览器授权，supervisor 将后者标记为 `error_kind="needs_reauth"`。
 2. **只消费 `tools/*` 这一个协议面。** MCP 还定义了 `prompts/*`、`resources/*`、`sampling/*`，框架内都没有对应概念。`sampling/createMessage` 允许 server 反向借用 client 的 LLM 做推理，目前 client 会拒绝这类请求。
 3. **配置改动在 worker 重启后生效。** server 列表不做热重载，`MCPClient` 在 `start()` 与 `stop()` 之间没有 `restart`。提供 `restart_server(name)` API 可以免去重启整个 worker。
 4. **对同一 server 的并发调用在 ClientSession 锁上串行。** `MCPClient._call_lock` 让它们排队。这不是性能问题——MCP server 本来就是单飞行的——但一个慢工具会阻塞同 server 上的其他工具调用。

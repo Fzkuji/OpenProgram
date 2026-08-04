@@ -527,7 +527,7 @@ class MCPClient:
 
     async def _run_http(self) -> None:
         from mcp.client.streamable_http import streamablehttp_client
-        headers, auth = self._build_remote_auth()
+        headers, auth = await self._build_remote_auth()
         async with streamablehttp_client(
             self.config.url,
             headers=headers,
@@ -538,7 +538,7 @@ class MCPClient:
 
     async def _run_sse(self) -> None:
         from mcp.client.sse import sse_client
-        headers, auth = self._build_remote_auth()
+        headers, auth = await self._build_remote_auth()
         async with sse_client(
             self.config.url,
             headers=headers,
@@ -597,15 +597,16 @@ class MCPClient:
             # to decide whether to retry or stop.
 
     # -- remote auth --------------------------------------------------
-    def _build_remote_auth(self) -> tuple[dict[str, str],
-                                          Optional[httpx.Auth]]:
+    async def _build_remote_auth(self) -> tuple[dict[str, str],
+                                                Optional[httpx.Auth]]:
         """Construct headers + ``httpx.Auth`` for the remote transport.
 
         Bearer tokens get folded into the request headers directly
         (cheaper than wrapping httpx.Auth for a static token). OAuth
-        is delegated to the MCP SDK's ``OAuthClientProvider`` — we
-        only provide the file-backed token storage + the browser
-        redirect / localhost callback glue.
+        is delegated to :class:`~.token_storage.PersistentOAuthProvider`
+        (the MCP SDK's ``OAuthClientProvider`` plus restart-surviving
+        token/expiry/discovery state) — we provide the file-backed
+        storage + the browser redirect / localhost callback glue.
         """
         headers = dict(self.config.headers)
         if self.config.auth_kind == AUTH_BEARER:
@@ -622,11 +623,13 @@ class MCPClient:
             return headers, None
 
         if self.config.auth_kind == AUTH_OAUTH:
-            from mcp.client.auth import OAuthClientProvider
             from mcp.shared.auth import OAuthClientMetadata
 
             from .oauth_flow import LocalhostCallback, _make_redirect_handler
-            from .token_storage import FileTokenStorage
+            from .token_storage import (
+                FileTokenStorage,
+                PersistentOAuthProvider,
+            )
 
             oauth_cfg = self.config.oauth
             # OAuthSettings defaults already applied by parse_entry,
@@ -639,13 +642,25 @@ class MCPClient:
             scope = oauth_cfg.scope if oauth_cfg else None
             client_id = oauth_cfg.client_id if oauth_cfg else None
 
+            storage = FileTokenStorage(self.config.name)
+
             # Resolve the callback port ONCE per supervisor lifetime.
             # The SDK reads redirect_uris[0] from client_metadata when
             # building the auth URL and again when exchanging the code,
-            # so it must not drift across attempts.
+            # so it must not drift across attempts. Preference order:
+            #   1. explicitly configured redirect_port
+            #   2. the port the stored client registration was made
+            #      with — re-auth must present a redirect_uri the
+            #      server actually has on file for our client_id
+            #   3. a fresh free port (first-ever auth)
+            # ponytail: if the registered port is occupied at re-auth
+            # time the callback bind fails and the user must clear
+            # auth; fall back to re-registration if that ever bites.
             if requested_port:
                 port = int(requested_port)
             else:
+                port = storage.stored_redirect_port() or 0
+            if not port:
                 from .oauth_flow import _pick_free_port
                 port = _pick_free_port("127.0.0.1")
             redirect_uri = f"http://127.0.0.1:{port}/callback"
@@ -663,31 +678,23 @@ class MCPClient:
                 scope=scope,
             )
 
-            storage = FileTokenStorage(self.config.name)
-
             # If the user pre-registered a client, seed storage with
             # client_info so the SDK skips dynamic registration.
-            if client_id:
+            # Awaited (not fire-and-forget) — the provider reads
+            # storage on its first request, which can race a pending
+            # task and dynamically register a client we already have.
+            if client_id and await storage.get_client_info() is None:
                 from mcp.shared.auth import OAuthClientInformationFull
-
-                async def _seed_client_info() -> None:
-                    info = await storage.get_client_info()
-                    if info is not None:
-                        return
-                    await storage.set_client_info(
-                        OAuthClientInformationFull(
-                            client_id=client_id,
-                            client_secret=(
-                                oauth_cfg.client_secret if oauth_cfg
-                                else None
-                            ),
-                            redirect_uris=[redirect_uri],
-                        )
+                await storage.set_client_info(
+                    OAuthClientInformationFull(
+                        client_id=client_id,
+                        client_secret=(
+                            oauth_cfg.client_secret if oauth_cfg
+                            else None
+                        ),
+                        redirect_uris=[redirect_uri],
                     )
-
-                # Fire-and-forget at supervisor build time — the
-                # OAuthClientProvider reads storage lazily.
-                asyncio.create_task(_seed_client_info())
+                )
 
             async def _callback_handler() -> tuple[str, Optional[str]]:
                 cb = LocalhostCallback(
@@ -700,7 +707,7 @@ class MCPClient:
                 finally:
                     await cb.close()
 
-            provider = OAuthClientProvider(
+            provider = PersistentOAuthProvider(
                 server_url=self.config.url,
                 client_metadata=client_metadata,
                 storage=storage,

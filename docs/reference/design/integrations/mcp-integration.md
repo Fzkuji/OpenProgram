@@ -55,7 +55,7 @@ For a full side-by-side, see `references/opencode/packages/opencode/src/mcp/`. O
 
 | Field | Description |
 |------|------|
-| `type` | `"local"` (stdio) is the supported transport. `"remote"` (HTTP/SSE + OAuth) is a reserved value, held for the transport opencode implements |
+| `type` | `"local"` (stdio subprocess), `"http"` (Streamable HTTP), or `"sse"` (legacy SSE). Remote types take `url` / `headers` / `auth` (`none`, `bearer`, or `oauth`) |
 | `command` | Subprocess command + argument list |
 | `env` | Environment variables injected into the subprocess (the base environment is inherited from the parent process; this overrides / appends to it) |
 | `enabled` | Set false to temporarily disable a server without deleting its config |
@@ -179,7 +179,7 @@ Fix: `from openprogram import paths as _paths`, and look up the attribute live o
 The design above is implemented over the stdio transport. The boundaries of
 what is built:
 
-1. **stdio is the only transport.** HTTP/SSE/OAuth are unimplemented; the `MCPServerConfig.type` field holds the slot for them. Wiring them up means a remote transport plus an OAuth provider, for which opencode's `mcp/auth.ts` and `mcp/oauth-provider.ts` are the reference.
+1. **All three transports are implemented** (stdio, Streamable HTTP, SSE). Remote auth supports static bearer tokens and OAuth 2.1 PKCE. OAuth is delegated to the MCP SDK's `OAuthClientProvider` via `token_storage.PersistentOAuthProvider`, which persists what a silent reconnect needs across worker restarts: tokens plus an absolute `expires_at`, the dynamic client registration (whose loopback redirect port is reused so re-auth presents a registered redirect_uri), and the discovered authorization-server metadata (so a cold-start refresh POSTs to the real token endpoint, not the `<server>/token` fallback). An expired access token is renewed with the refresh token in the background; the browser consent flow only runs on first auth or when refresh is rejected, which the supervisor surfaces as `error_kind="needs_reauth"`.
 2. **`tools/*` is the only protocol surface consumed.** MCP also defines `prompts/*`, `resources/*`, and `sampling/*`, none of which has a corresponding concept in the framework. `sampling/createMessage` would let a server borrow the client's LLM for inference; the client rejects such requests today.
 3. **A config change takes effect on worker restart.** The server list is not hot-reloaded, and `MCPClient` has no `restart` between `start()` and `stop()`. A `restart_server(name)` API would remove the need to restart the whole worker.
 4. **Concurrent calls to one server serialize on the ClientSession lock.** `MCPClient._call_lock` queues them. This is not a performance problem — an MCP server is single-flight to begin with — but one slow tool blocks other tool calls on the same server.

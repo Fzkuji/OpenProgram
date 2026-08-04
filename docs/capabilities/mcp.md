@@ -58,4 +58,8 @@ The management commands talk to the resident OpenProgram background worker; if i
 
 `auth.kind` supports `none` / `bearer` (a `token` field) / `oauth` (OAuth 2.1 PKCE; servers with dynamic client registration work with zero config — only servers requiring a pre-registered client need `client_id` / `client_secret`).
 
+### OAuth sign-in happens once
+
+The first time an OAuth server connects, OpenProgram opens the consent page in your browser and captures the redirect on a localhost callback. Everything the flow produced — access and refresh tokens, the dynamic client registration, and the discovered authorization endpoints — is persisted to `~/.openprogram/mcp_tokens/<server>.json` (mode `0600`). Every later connection, including after a worker restart, reuses the stored token; when it has expired, the refresh token renews it silently in the background. The browser only reappears when the refresh token itself is rejected (revoked or expired server-side) — the management UI then shows the server as needing re-authentication. To switch accounts or start over, `POST /api/mcp/servers/{name}/auth/clear` wipes the stored state and restarts the server.
+
 Beyond tools, MCP's other two primitives — resources and prompts — are also exposed to the model through built-in meta tools (see `mcp_meta` in [Built-in tools](tools.md)).

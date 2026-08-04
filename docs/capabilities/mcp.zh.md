@@ -58,4 +58,8 @@ openprogram mcp list | show | add | rm | restart | enable | disable | edit | tes
 
 `auth.kind` 支持 `none` / `bearer`（`token` 字段）/ `oauth`（OAuth 2.1 PKCE；支持动态客户端注册的 server 零配置即可，预注册客户端的 server 才需要填 `client_id` / `client_secret`）。
 
+### OAuth 只需授权一次
+
+OAuth server 首次连接时，OpenProgram 会在浏览器打开授权页，并用 localhost 回调接住跳转。整个流程产出的状态——access / refresh token、动态客户端注册信息、发现到的授权端点——都会持久化到 `~/.openprogram/mcp_tokens/<server>.json`（权限 `0600`）。之后的每次连接（包括 worker 重启后）都复用存储的 token；token 过期时用 refresh token 在后台静默续期。只有 refresh token 本身被拒绝（服务端吊销或过期）时才会重新弹出浏览器，管理界面会把该 server 标记为需要重新认证。要换账号或重头来过，`POST /api/mcp/servers/{name}/auth/clear` 会清空存储状态并重启该 server。
+
 除了工具，MCP 的另外两类原语——resources 和 prompts——也通过一组内置 meta 工具暴露给模型（见[内置工具](tools.md)的 `mcp_meta`）。

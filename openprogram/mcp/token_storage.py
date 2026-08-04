@@ -1,26 +1,46 @@
-"""File-backed ``TokenStorage`` for the MCP SDK's ``OAuthClientProvider``.
+"""File-backed ``TokenStorage`` for the MCP SDK's ``OAuthClientProvider``,
+plus the provider subclass that makes the stored state survive restarts.
 
-The SDK calls into this object for two pieces of state:
+The SDK calls into the storage object for two pieces of state:
 
   * Tokens (``OAuthToken``) — the access/refresh tokens themselves.
   * Client info (``OAuthClientInformationFull``) — only populated when
     the server supports dynamic client registration (RFC 7591). For
     pre-registered clients this stays ``None``.
 
-Both live in ``<state>/mcp_tokens/<server_name>.json`` so user-visible
-state (config file in the same state dir) and ephemeral runtime data
-stay near each other. Permissions are tightened to ``0600`` since the
-file holds a bearer token.
+On top of the protocol we persist what the SDK forgets across
+processes but needs for a *silent* reconnect:
+
+  * ``expires_at`` — absolute expiry timestamp. ``OAuthToken`` only
+    carries the relative ``expires_in``, so a freshly-started process
+    can't tell an expired access token from a live one.
+  * ``discovery`` — authorization-server metadata (token endpoint,
+    protected-resource metadata). The SDK only discovers these inside
+    its 401 handler; a cold-start refresh without them POSTs to the
+    wrong ``/token`` fallback URL and fails.
+
+Everything lives in ``<state>/mcp_tokens/<server_name>.json`` so
+user-visible state (config file in the same state dir) and runtime
+data stay near each other. Permissions are tightened to ``0600``
+since the file holds a bearer token.
 """
 from __future__ import annotations
 
 import json
 import os
+import time
+import urllib.parse
 from pathlib import Path
 from typing import Optional
 
-from mcp.client.auth import TokenStorage
-from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+import httpx
+from mcp.client.auth import OAuthClientProvider, TokenStorage
+from mcp.shared.auth import (
+    OAuthClientInformationFull,
+    OAuthMetadata,
+    OAuthToken,
+    ProtectedResourceMetadata,
+)
 
 from .config import get_tokens_dir
 
@@ -49,6 +69,13 @@ class FileTokenStorage(TokenStorage):
     async def set_tokens(self, tokens: OAuthToken) -> None:
         data = self._read() or {}
         data["tokens"] = tokens.model_dump(mode="json", exclude_none=True)
+        # Record the *absolute* expiry. ``expires_in`` is relative to
+        # issuance, so on its own it can't tell a later process whether
+        # the access token is still live.
+        if tokens.expires_in is not None:
+            data["expires_at"] = time.time() + int(tokens.expires_in)
+        else:
+            data.pop("expires_at", None)
         self._write(data)
 
     async def get_client_info(self) -> Optional[OAuthClientInformationFull]:
@@ -68,6 +95,40 @@ class FileTokenStorage(TokenStorage):
             mode="json", exclude_none=True,
         )
         self._write(data)
+
+    # -- restart-survival extras (not part of the SDK protocol) ------
+    def expires_at(self) -> Optional[float]:
+        """Absolute expiry timestamp of the stored access token."""
+        data = self._read()
+        v = data.get("expires_at") if data else None
+        return float(v) if isinstance(v, (int, float)) else None
+
+    def stored_redirect_port(self) -> Optional[int]:
+        """Loopback port of the redirect_uri this client was registered
+        with. Reusing it across restarts keeps our authorization
+        requests consistent with the dynamic client registration —
+        strict servers reject a redirect_uri the client never
+        registered.
+        """
+        data = self._read()
+        info = data.get("client_info") if data else None
+        uris = info.get("redirect_uris") if isinstance(info, dict) else None
+        for u in uris or []:
+            parsed = urllib.parse.urlparse(str(u))
+            if parsed.hostname in ("127.0.0.1", "localhost") and parsed.port:
+                return parsed.port
+        return None
+
+    def set_discovery(self, discovery: dict) -> None:
+        """Persist OAuth discovery state (token endpoint et al.)."""
+        data = self._read() or {}
+        data["discovery"] = discovery
+        self._write(data)
+
+    def get_discovery(self) -> Optional[dict]:
+        data = self._read()
+        disc = data.get("discovery") if data else None
+        return disc if isinstance(disc, dict) else None
 
     # -- helpers used by webui management ----------------------------
     def path(self) -> Path:
@@ -137,3 +198,93 @@ class FileTokenStorage(TokenStorage):
 
 def _sanitize(name: str) -> str:
     return "".join(c if c.isalnum() or c in "_-." else "_" for c in name)
+
+
+class PersistentOAuthProvider(OAuthClientProvider):
+    """``OAuthClientProvider`` whose auth state survives process restarts.
+
+    The stock provider (mcp<=1.27) has three gaps that together force a
+    fresh browser consent on every reconnect once the access token has
+    aged out:
+
+    1. ``_initialize`` loads tokens from storage but never sets
+       ``context.token_expiry_time`` — a stale access token therefore
+       passes ``is_token_valid()``, gets sent, earns a 401, and the 401
+       branch runs the FULL authorization flow (browser redirect). The
+       refresh token is never tried on that path.
+    2. Even with expiry known, a cold-start refresh POSTs to the
+       ``<server>/token`` fallback because authorization-server
+       metadata is only discovered inside the 401 branch — wrong URL
+       for any server whose auth server is a separate host.
+    3. A refresh response that omits ``refresh_token`` (allowed by
+       RFC 6749 §6 — the old one stays valid) wipes the stored refresh
+       token, so the *next* expiry forces a browser flow.
+
+    Requires the storage to be :class:`FileTokenStorage` (it always is
+    — this provider is constructed in one place).
+    """
+
+    def __init__(self, *args, storage: FileTokenStorage, **kwargs) -> None:
+        super().__init__(*args, storage=storage, **kwargs)
+        self._file_storage = storage
+
+    async def _initialize(self) -> None:
+        await super()._initialize()
+        # Gap 1: restore the absolute expiry so an expired token routes
+        # into the SDK's pre-request refresh path instead of 401→browser.
+        expires_at = self._file_storage.expires_at()
+        if expires_at is not None:
+            self.context.token_expiry_time = expires_at
+        # Gap 2: restore discovery so that refresh POSTs to the real
+        # token endpoint. Best-effort — a corrupt blob just degrades to
+        # the SDK's fallback behaviour.
+        disc = self._file_storage.get_discovery() or {}
+        if self.context.oauth_metadata is None and disc.get("oauth_metadata"):
+            try:
+                self.context.oauth_metadata = OAuthMetadata.model_validate(
+                    disc["oauth_metadata"])
+            except Exception:  # noqa: BLE001
+                pass
+        if (self.context.protected_resource_metadata is None
+                and disc.get("protected_resource_metadata")):
+            try:
+                self.context.protected_resource_metadata = (
+                    ProtectedResourceMetadata.model_validate(
+                        disc["protected_resource_metadata"]))
+            except Exception:  # noqa: BLE001
+                pass
+        if self.context.auth_server_url is None:
+            url = disc.get("auth_server_url")
+            if isinstance(url, str) and url:
+                self.context.auth_server_url = url
+
+    async def _handle_token_response(self, response: httpx.Response) -> None:
+        await super()._handle_token_response(response)
+        self._persist_discovery()
+
+    async def _handle_refresh_response(self, response: httpx.Response) -> bool:
+        # Gap 3: hold on to the previous refresh token when the server
+        # doesn't rotate it in the response.
+        prior = self.context.current_tokens
+        ok = await super()._handle_refresh_response(response)
+        current = self.context.current_tokens
+        if (ok and prior is not None and prior.refresh_token
+                and current is not None and not current.refresh_token):
+            current.refresh_token = prior.refresh_token
+            await self.context.storage.set_tokens(current)
+        return ok
+
+    def _persist_discovery(self) -> None:
+        ctx = self.context
+        self._file_storage.set_discovery({
+            "oauth_metadata": (
+                ctx.oauth_metadata.model_dump(mode="json", exclude_none=True)
+                if ctx.oauth_metadata else None
+            ),
+            "protected_resource_metadata": (
+                ctx.protected_resource_metadata.model_dump(
+                    mode="json", exclude_none=True)
+                if ctx.protected_resource_metadata else None
+            ),
+            "auth_server_url": ctx.auth_server_url,
+        })
