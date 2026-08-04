@@ -472,14 +472,18 @@ def _inject_runtime(sig, args, kwargs):
             from openprogram.providers.registry import create_runtime
             try:
                 rt = create_runtime()
-            except RuntimeError:
-                # No LLM provider configured. In production we re-raise the
-                # helpful "set up a provider" guidance. Under pytest with no
-                # credentials (CI), fall back to a placeholder runtime whose
-                # .exec raises only IF the body actually calls the model —
-                # so the many tests whose bodies never touch the LLM (cache /
-                # timeout wrappers, dispatcher plumbing) stop crashing on a
-                # provider lookup they don't need. See tests/conftest.py.
+            except Exception:
+                # No usable LLM provider. Not just RuntimeError: a provider
+                # can resolve (CLI binary on PATH) yet fail construction with
+                # AuthConfigError etc. when its credentials are absent — the
+                # narrow catch made tests' pass/fail depend on the HOST's
+                # login state. In production we re-raise the helpful "set up
+                # a provider" guidance. Under pytest with no credentials
+                # (CI), fall back to a placeholder runtime whose .exec raises
+                # only IF the body actually calls the model — so the many
+                # tests whose bodies never touch the LLM (cache / timeout
+                # wrappers, dispatcher plumbing) stop crashing on a provider
+                # lookup they don't need. See tests/conftest.py.
                 import os as _os
                 if not _os.environ.get("PYTEST_CURRENT_TEST"):
                     raise

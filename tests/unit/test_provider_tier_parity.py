@@ -48,8 +48,25 @@ def mem_cfg(monkeypatch):
     monkeypatch.setattr(st, "_write_providers_cfg", _write)
     monkeypatch.setattr(tg, "_read_providers_cfg", _read)
     monkeypatch.setattr(tg, "_write_providers_cfg", _write)
+    # The spec-migration marker lives in the TOP-LEVEL config
+    # (webui.server._load_config / _save_config), not in the providers
+    # section stubbed above. Without these two stubs the migration pass
+    # that create_custom_provider / add_manual_model trigger READS the
+    # host's real ~/.openprogram marker (making the outcome depend on
+    # the machine and on whatever earlier tests did to that file), and
+    # a triggered repair WRITES the user's real config from a unit
+    # test. Individual tests re-stub _spec_migration_version to
+    # exercise the pre-migration path explicitly.
+    monkeypatch.setattr(
+        st, "_spec_migration_version", lambda: st._SPEC_MIGRATION_VERSION)
+    monkeypatch.setattr(st, "_bump_spec_migration_version", lambda: None)
     st._reset_spec_migration()
-    return store
+    yield store
+    # Leave the process flags in the settled state so no later test's
+    # first _read_providers_cfg re-runs the migration against the real
+    # config mid-suite.
+    st._spec_migration_done = True
+    st._spec_migration_running = False
 
 
 @pytest.fixture
