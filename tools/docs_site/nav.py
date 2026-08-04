@@ -230,6 +230,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "capabilities/workflows/gui-agent.md",
             "capabilities/workflows/research-agent.md",
             "capabilities/workflows/wiki-agent.md"]),
+        ("Session goals", "会话目标", ["capabilities/goal.md"]),
         ("Extending", "扩展", [
             "capabilities/installing-harnesses.md", "capabilities/skills.md",
             "capabilities/distill.md",
@@ -249,7 +250,8 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
     ],
     "integrations": [
         ("Integrations", "集成", [
-            "integrations/claude-code.md", "integrations/openclaw.md"]),
+            "integrations/claude-code.md", "integrations/openclaw.md",
+            "integrations/channels.md"]),
     ],
     "server": [
         ("Overview", "概览", ["server/README.md"]),
@@ -292,6 +294,7 @@ PAGE_ORDER: dict[str, int] = {
     "capabilities/plugins.md": 6,
     "capabilities/mcp.md": 7,
     "capabilities/tools.md": 8,
+    "capabilities/goal.md": 9,
     "capabilities/agentic-programming/philosophy.md": 1,
     "capabilities/agentic-programming/embedding-in-your-own-stack.md": 2,
     "capabilities/agentic-programming/writing-functions": 3,
@@ -311,6 +314,7 @@ PAGE_ORDER: dict[str, int] = {
     "models/token-tracking.md": 5,
     "integrations/claude-code.md": 0,
     "integrations/openclaw.md": 1,
+    "integrations/channels.md": 2,
     "server/README.md": 0,
     "server/configuration.md": 1,
     "server/upgrading.md": 2,

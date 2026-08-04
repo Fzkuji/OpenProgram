@@ -60,6 +60,14 @@ A distilled skill is written to `~/.openprogram/skills/<name>/` or `<cwd>/skills
 
 That is the reason the feature needs no subsystem of its own: the storage, the discovery, the reload, and the invocation path all exist. Distillation only had to produce a file in the right place.
 
+## Revision closes the loop
+
+Distillation covers refinement, not only first creation. The skill body directs the agent, before writing, to look for an existing skill on the same topic — same goal and preconditions, not merely a similar name — and to revise a match in place: keep what held, replace what the new session disproved, merge new decision points and traps into the flow. A distilled `@agentic_function` follows the same rule and is edited rather than duplicated, keeping its name stable for callers.
+
+This is the refine step of the record → replay → refine loop. A skill that fails in use is corrected through the same path — the failing run is itself a session to distill — and the complaint form ("that skill didn't work, update it with what we learned") is among the triggers in the skill's description, so it routes here without a separate mechanism.
+
+Revision adds no machinery. Finding the existing skill uses the loader's lookup locations and `openprogram skills list`; editing uses the agent's own tools; history lives in git, and the skill body forbids changelogs in the prose. Like distillation itself, revision is judgment carried by the skill, not code.
+
 ## Naming
 
 The product word is **distill**, not "workflow". In this repository "workflow" already denotes an agentic program — a complete pre-built agent harness, documented under `docs/capabilities/workflows/`. A distilled procedure is a smaller thing: knowledge extracted from one session, not a shipped program. Reusing the word would have merged two concepts that appear side by side in the same documentation tab.

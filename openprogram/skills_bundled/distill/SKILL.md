@@ -1,6 +1,6 @@
 ---
 name: distill
-description: "Turn the experience in a conversation into something reusable — read a session (this one or a past one) and write it out as a new SKILL.md or an @agentic_function, so the same work can be repeated later without rediscovering it. Triggers: 'distill this session', 'turn this into a skill', 'save this as a reusable procedure', 'remember how we did this', 'make this repeatable', 'extract the workflow from that conversation', 'write this up as a skill'."
+description: "Turn the experience in a conversation into something reusable — read a session (this one or a past one) and write it out as a SKILL.md or an @agentic_function, or revise an existing one with what the session taught, so the same work can be repeated later without rediscovering it. Triggers: 'distill this session', 'turn this into a skill', 'save this as a reusable procedure', 'remember how we did this', 'make this repeatable', 'extract the workflow from that conversation', 'write this up as a skill', 'that skill didn't work — update it with what we learned', 'improve the skill from this session', 'fold this experience into the existing skill'."
 ---
 
 # Distill — turn a session into something reusable
@@ -81,7 +81,44 @@ Mixed cases are common: a mechanical core with a judgment-heavy wrapper.
 Write the function for the core and a short skill that says when to reach
 for it.
 
-## 4. Write the SKILL.md
+## 4. Revise, don't duplicate
+
+Distilling a topic that has been distilled before produces a revision,
+not a sibling. Before writing, check whether a skill on the same topic
+already exists: list what is currently discovered (`openprogram skills
+list`) and look in `~/.openprogram/skills/` and `<cwd>/skills/`. "Same
+topic" means the goal and the preconditions overlap — the existing
+skill accomplishes the same thing under the same circumstances. A
+coincidentally similar name is not a match, and a real match may sit
+under a different name; judge by what the skill does, not what it is
+called.
+
+When a match exists, `Read` its `SKILL.md` and revise it in place:
+
+- **Keep** the steps the new session confirmed. Do not rewrite what
+  still holds.
+- **Replace** what practice disproved. A step the session showed to be
+  wrong is overwritten by what worked — the old advice goes away, not
+  kept alongside as an alternative.
+- **Merge** new decision points and traps into the flow where they
+  belong, not appended at the end.
+
+The revised body reads as if written in one sitting. No changelog, no
+"updated" markers, no version history in the prose — git is the
+history.
+
+The same rule covers the function form: when the procedure was
+distilled as an `@agentic_function`, edit that function's docstring and
+body rather than writing a second function beside it, and keep its name
+stable so existing callers still resolve.
+
+A user complaint is the common entry point here. "That skill didn't
+work — update it with what we learned this time" is a distillation of
+the current session into the existing skill: the failing run is the
+material, what the skill got wrong is the finding, and the correction
+lands in the file that misled you.
+
+## 5. Write the SKILL.md
 
 Location decides who sees it:
 
@@ -136,7 +173,7 @@ Quality rules, in order of how often they are violated:
 
 Write the skill in English.
 
-## 5. Tell the user it is live
+## 6. Tell the user it is live
 
 Skills are hot-reloaded: the new directory is picked up without a
 restart, and it is projected into the slash-command registry, so it is
@@ -147,7 +184,8 @@ immediately available both ways —
 
 Report the path you wrote, the name, and one sentence on when it will
 fire. If the description is what decides when it fires, show the
-description too — that is the line the user will want to tune.
+description too — that is the line the user will want to tune. For a
+revision, report what changed and which old advice was dropped.
 
 ## Verifying
 

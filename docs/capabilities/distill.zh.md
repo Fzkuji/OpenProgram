@@ -1,6 +1,6 @@
 # Distill（经验蒸馏）
 
-蒸馏是把一次做成了的对话变成下次能直接跑的东西。你指一个会话——当前这个，或者过去某个——agent 把里面的经验写成一份 [skill](skills.zh.md) 或一个 [agentic function](agentic-programming/writing-functions/agentic-function.zh.md)，下次遇到同类任务，流程已经在那里了。
+蒸馏是把一次做成了的对话变成下次能直接跑的东西。你指一个会话——当前这个，或者过去某个——agent 把里面的经验写成一份 [skill](skills.zh.md) 或一个 [agentic function](agentic-programming/writing-functions/agentic-function.zh.md)，或者合并进先前蒸馏出的那份，下次遇到同类任务，流程已经在那里了。
 
 不会引入新机制。蒸馏出的 skill 落在原有的 skill 目录里，由原有的加载器发现；蒸馏出的函数就是一个普通的 `@agentic_function`。
 
@@ -39,6 +39,14 @@ agent 提取的是：目标、前置条件、步骤、决策点（当时凭什�
 - **你直接调用**：输入 `/<name>`，因为每个被发现的 skill 都会投射进 slash command 注册表。
 
 `openprogram skills list` 里能看到它，和其他 skill 并列。之后要改它就是改文件——格式和查找路径见 [Skills](skills.zh.md)。
+
+## 修订既有技能
+
+蒸馏也是蒸馏出的 skill 变好的方式。哪份 skill 用起来不对，直接说——"这个 skill 不好用，按这次的经验改一下"——agent 会修订既有文件，而不是在旁边再写一份。
+
+匹配按主题，不按名字：既有 skill 的目标和适用条件与这次做的事重合，才算同一个。agent 读旧正文，保留经受住检验的步骤，替换这次被证伪的，把新的决策点和坑合并进流程里。正文保持干净——不留版本说明、不留变更记录；文件的历史在 git 里。函数同样处理：先前蒸馏出的 `@agentic_function` 原地修改，不复制新函数。
+
+修订后的 skill 文件一写完就生效，和新写的一样。这就是循环里的 refine 一环：记录一次会话，用蒸馏出的 skill 重放，重放教会了什么，教训就回到文件里。
 
 ## 自己读一个会话
 
