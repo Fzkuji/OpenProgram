@@ -134,7 +134,7 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
     # System 类真实 token，而非缺省 0。
     if not latest_system:
         try:
-            from openprogram.agent._model_tools import (
+            from openprogram.agent.internals._model_tools import (
                 load_agent_profile,
             )
             from openprogram.context.components import (

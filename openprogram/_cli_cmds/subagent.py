@@ -127,7 +127,7 @@ def _cmd_subagent_merge(
     continuation of that branch, with the others as supplemental
     context. Equivalent to attach-style merging."""
     from openprogram.agent.session_db import default_db
-    from openprogram.agent._merge import process_merge_turn
+    from openprogram.agent.internals._merge import process_merge_turn
 
     db = default_db()
     if db.get_session(target) is None:

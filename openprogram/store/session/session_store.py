@@ -1000,6 +1000,12 @@ class SessionStore:
                 return None          # code node opening a run branch
             if _is_first_conv_node(idx, node):
                 return None          # session first node — legal stop
+            if meta.get("covers") is not None:
+                # Compaction summary covering from the very start of the
+                # session: it inherits the first node's empty predecessor
+                # and becomes the new chain terminus — the same exemption
+                # the write invariant grants (§8 above).
+                return None
             raise BrokenPredecessorChainError(session_id, node.id)
 
         chain = idx.get_branch(head, _edge)

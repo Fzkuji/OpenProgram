@@ -461,7 +461,7 @@ def _run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
         peers.append(peer)
 
     try:
-        from openprogram.agent._merge import process_merge_turn
+        from openprogram.agent.internals._merge import process_merge_turn
         result = process_merge_turn(
             target_session_id=session_id,
             peers=peers,
@@ -565,7 +565,7 @@ def execute_in_context(
         # run.py::run_function's set_workdir call, so the user-supplied
         # override still wins.
         try:
-            from openprogram.agent._workdir import apply_default_workdir
+            from openprogram.agent.internals._workdir import apply_default_workdir
             _applied_wd = apply_default_workdir(runtime, session_id)
             if _applied_wd is not None:
                 _s._log(f"[exec] chat workdir: {_applied_wd}")

@@ -35,7 +35,7 @@ def _run(
     agent_id: str,
     base_peer: int | None,
 ) -> dict:
-    from openprogram.agent._merge import process_merge_turn
+    from openprogram.agent.internals._merge import process_merge_turn
     out = process_merge_turn(
         target_session_id=target_session_id,
         sub_sessions=sub_sessions,

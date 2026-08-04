@@ -75,7 +75,7 @@ def test_intent_expands_to_live_tools_including_new_ones():
     """A session storing {enabled: True} expands to the CURRENT DEFAULT_TOOLS
     — so any tool added to DEFAULT_TOOLS later is automatically visible.
     This is exactly what the frozen snapshot could not do."""
-    from openprogram.agent._model_tools import resolve_tools
+    from openprogram.agent.internals._model_tools import resolve_tools
     intent = tools_override_from_config(SessionRunConfig(tools_enabled=True))
     resolved = resolve_tools({}, intent, source="web")
     names = {t.name for t in (resolved or [])}
@@ -87,7 +87,7 @@ def test_intent_expands_to_live_tools_including_new_ones():
 def test_web_search_overlay_adds_the_tool():
     """web_search intent → web_search actually appears in the expanded set
     (the 改C requirement: overlay or it'd be silently missing)."""
-    from openprogram.agent._model_tools import resolve_tools
+    from openprogram.agent.internals._model_tools import resolve_tools
     intent = tools_override_from_config(
         SessionRunConfig(tools_enabled=True, web_search=True))
     resolved = resolve_tools({}, intent, source="web")
