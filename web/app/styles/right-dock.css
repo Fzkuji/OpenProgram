@@ -702,9 +702,15 @@
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
                Monaco, Consolas, monospace);
   font-size: 11px;
-  background: var(--bg-secondary);
-  border-radius: 4px;
-  padding: 4px 6px;
+  /* No filled panel here: every other value in this card is bare text on
+     the card's own background, so a block of --bg-secondary read as a
+     patch stuck onto the layout rather than a field of it. A quote rule
+     marks "this is the node's own content" using the type, not a box.
+     Label and quote both start at the card's left edge — the node's own
+     text is the one field that wants the full width, so it reads as a
+     labelled passage rather than a value squeezed into the kv column. */
+  border-left: 2px solid var(--border);
+  padding: 1px 0 1px 8px;
   max-height: 96px;
   overflow: hidden;
   text-overflow: ellipsis;
