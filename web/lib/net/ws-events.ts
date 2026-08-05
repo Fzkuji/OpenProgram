@@ -37,22 +37,9 @@ export interface TaskStatusDetail {
   completed_at?: number | string | null;
 }
 
-/** `openprogram/worktree/manager.py:_broadcast_worktree_status` */
-export interface WorktreeStatusDetail {
-  worktree_id?: string;
-  status?: string;
-  parent_session?: string | null;
-  parent_task?: string | null;
-  branch_name?: string | null;
-  source_repo?: string | null;
-  merge_sha?: string | null;
-  error?: string | null;
-  worktree?: Record<string, unknown> | null;
-}
-
 /**
- * Reply-envelope shape shared by `op:task-message`, `op:worktree-message`
- * and the `op:ws-message` catch-all: the original frame's `type` plus its
+ * Reply-envelope shape shared by `op:task-message` and the
+ * `op:ws-message` catch-all: the original frame's `type` plus its
  * `data` dict, re-emitted so the panel that issued the request can
  * correlate the response.
  */
@@ -66,8 +53,6 @@ declare global {
     "op:permission-rules": CustomEvent<PermissionRulesDetail>;
     "op:task-status": CustomEvent<TaskStatusDetail>;
     "op:task-message": CustomEvent<WsEnvelopeDetail>;
-    "op:worktree-status": CustomEvent<WorktreeStatusDetail>;
-    "op:worktree-message": CustomEvent<WsEnvelopeDetail>;
     "op:ws-message": CustomEvent<WsEnvelopeDetail>;
   }
 }

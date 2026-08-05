@@ -219,19 +219,33 @@ export function MessageActions({
         // to it here would reload + prefill the wrong chat.
         if (d.session_id && d.session_id !== sessionId) return;
         finish();
-        const errors = d.errors ?? [];
-        const err = d.error ?? (errors.length ? errors.join("; ") : null);
-        if (err) {
-          showToast(tr(`Rewind failed: ${err}`, `回退失败：${err}`));
-        } else {
+        const errors: string[] = d.errors ?? [];
+        // `new_head_id` decides success: the backend moves HEAD whenever
+        // it is set, and a non-empty `errors` then only means some files
+        // failed to restore. Treating that as overall failure would leave
+        // the transcript on a head the server no longer has.
+        if (d.new_head_id) {
           const n = d.turns_reverted ?? 0;
-          showToast(tr(`Rewound ${n} turn${n === 1 ? "" : "s"}`, `已回退 ${n} 轮对话`));
+          if (errors.length) {
+            showToast(
+              tr(
+                `Rewound ${n} turn${n === 1 ? "" : "s"}, but ${errors.length} file${errors.length === 1 ? "" : "s"} failed to restore: ${errors[0]}`,
+                `已回退 ${n} 轮，但 ${errors.length} 个文件恢复失败：${errors[0]}`,
+              ),
+              { tone: "warn" },
+            );
+          } else {
+            showToast(tr(`Rewound ${n} turn${n === 1 ? "" : "s"}`, `已回退 ${n} 轮对话`));
+          }
           // Prefill composer with the rewound user message
           if (d.user_text) {
             useSessionStore.getState().setComposerInput(d.user_text);
           }
           // Reload session so rewound messages disappear
           wsSend({ action: "load_session", session_id: sessionId });
+        } else {
+          const err = d.error ?? (errors.length ? errors.join("; ") : "unknown error");
+          showToast(tr(`Rewind failed: ${err}`, `回退失败：${err}`));
         }
       } catch {
         /* ignore */

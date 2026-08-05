@@ -115,6 +115,15 @@ interface WsEnvelope {
 
 const sessionByMsgId = new Map<string, string>();
 
+/** Drop every pending msg_id → session mapping. Entries normally die on
+ *  their turn's terminal frame (result / error / cancelled); when that
+ *  frame is lost (dropped socket, backend crash) they linger forever.
+ *  `use-ws.ts` calls this on `session_loaded` — a fresh transcript is
+ *  the natural drain point, same rationale as clearHydratedTreePaths. */
+export function clearSessionByMsgId(): void {
+  sessionByMsgId.clear();
+}
+
 /** Store key for an assistant turn's reply bubble. The user turn is
  *  keyed by its bare `msg_id`; the reply gets a `_reply` suffix so the
  *  two never collide in `messagesById`. */
@@ -529,6 +538,16 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
   const store = useSessionStore.getState();
   const cur = ensureReply(sid, rid);
 
+  // An event arriving on an error-marked reply means the run survived
+  // whatever that error frame reported (a failed provider attempt the
+  // backend failed over from). The live attempt is the truth. text /
+  // thinking below stamp "streaming" themselves, but tool events carry
+  // no status — without this the bubble stays red for the whole tool
+  // run after a mid-turn failover.
+  if (cur.status === "error") {
+    store.updateMessage(sid, rid, { status: "streaming" });
+  }
+
   switch (evt.type) {
     case "text":
       store.updateMessage(sid, rid, {
@@ -648,6 +667,20 @@ function applyStreamEvent(sid: string, rid: string, evt: StreamEvent): void {
 function finalize(sid: string, rid: string, d: ChatResponseData): void {
   const store = useSessionStore.getState();
   const cur = ensureReply(sid, rid);
+
+  // A late `error` frame must not repaint a reply that already reached
+  // a terminal state: auxiliary work sharing the turn's msg_id (context
+  // spill compaction, background attempts) can fail AFTER the result
+  // landed, and the reply the user was delivered is not retroactively
+  // wrong. The store keeps the terminal state; the failure goes to the
+  // console for diagnosis.
+  if (
+    d.type === "error" &&
+    (cur.status === "done" || cur.status === "cancelled")
+  ) {
+    console.error("[chat-stream] late error frame for a settled reply:", d);
+    return;
+  }
 
   const status: ChatMsg["status"] =
     d.type === "error"

@@ -75,6 +75,16 @@ function isHttpBody(lines, i) {
     .some((l) => /\bbody:/.test(l));
 }
 
+/** `wsRequest("action", …)` / `filesWsRequest<T>("action", …)` pass the
+ *  action as a positional first argument, usually on its own line — the
+ *  per-line `action:` regex above never sees those. The generic parameter
+ *  (`<TreeResult>`, `<{ … }>`) never contains a paren, so `[^(]*?` skips
+ *  it safely; the opener and the string may sit on different lines, so
+ *  this runs over the whole file text. Template-literal actions
+ *  (`` `project_file_${op}` ``) stay invisible — list them in DYNAMIC. */
+const WS_REQUEST_RE =
+  /\b(?:files)?[wW]sRequest(?:<[^(]*?>)?\(\s*["']([\w.:-]+)["']/g;
+
 const hits = [];
 for (const path of sources(webRoot)) {
   // This file lists action names on purpose.
@@ -90,6 +100,12 @@ for (const path of sources(webRoot)) {
       hits.push(`${path.slice(webRoot.length)}:${i + 1}: action "${act}"`);
     }
   });
+  for (const m of text.matchAll(WS_REQUEST_RE)) {
+    const act = m[1];
+    if (registered.has(act) || DYNAMIC.has(act)) continue;
+    const lineNo = text.slice(0, m.index).split("\n").length;
+    hits.push(`${path.slice(webRoot.length)}:${lineNo}: action "${act}"`);
+  }
 }
 
 assert.deepEqual(

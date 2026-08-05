@@ -14,7 +14,6 @@ import { useEffect } from "react";
 import type {
   PermissionRulesDetail,
   TaskStatusDetail,
-  WorktreeStatusDetail,
 } from "@/lib/net/ws-events";
 import type { PendingDecision } from "@/lib/session-store";
 import {
@@ -36,7 +35,8 @@ import {
 } from "@/lib/runtime-bridge/chat-handlers";
 import { mirrorUpsertConv } from "@/lib/runtime-bridge/conv-store-mirror";
 import { runtimeState, setSocket } from "@/lib/runtime-bridge/state";
-import { applyChatWsMessage } from "@/lib/net/chat-stream";
+import { applyChatWsMessage, clearSessionByMsgId } from "@/lib/net/chat-stream";
+import { translateText } from "@/lib/i18n";
 import { externalLibsReady } from "@/lib/external-libs";
 import { getQueryClient } from "@/lib/query-client";
 import {
@@ -106,7 +106,13 @@ export function useWS(): void {
             }
           });
           void import("@/lib/format-utils/toast").then(({ showToast }) => {
-            showToast("任务已结束，这条消息没有送达", { tone: "error" });
+            showToast(
+              translateText(
+                "The run has ended — this message was not delivered",
+                "任务已结束，这条消息没有送达",
+              ),
+              { tone: "error" },
+            );
           });
           return true;
         }
@@ -189,9 +195,13 @@ export function useWS(): void {
           const act = d?.action as string | undefined;
           console.error("[useWS] backend rejected action:", act, d?.error);
           void import("@/lib/format-utils/toast").then(({ showToast }) => {
-            showToast(`未知操作 ${act ?? "?"} — 后端没有对应处理器`, {
-              tone: "error",
-            });
+            showToast(
+              translateText(
+                `Unknown action ${act ?? "?"} — no backend handler`,
+                `未知操作 ${act ?? "?"} — 后端没有对应处理器`,
+              ),
+              { tone: "error" },
+            );
           });
           return true;
         }
@@ -210,7 +220,10 @@ export function useWS(): void {
           const err = (d?.error as string | undefined) || "unknown error";
           console.error("[useWS] attach_branch failed:", d);
           void import("@/lib/format-utils/toast").then(({ showToast }) => {
-            showToast(`分支挂接失败：${err}`, { tone: "error" });
+            showToast(
+              translateText(`Branch attach failed: ${err}`, `分支挂接失败：${err}`),
+              { tone: "error" },
+            );
           });
           return true;
         }
@@ -226,7 +239,10 @@ export function useWS(): void {
           const err = (d?.error as string | undefined) || "unknown error";
           console.error("[useWS] merge_branches failed:", d);
           void import("@/lib/format-utils/toast").then(({ showToast }) => {
-            showToast(`分支合并失败：${err}`, { tone: "error" });
+            showToast(
+              translateText(`Branch merge failed: ${err}`, `分支合并失败：${err}`),
+              { tone: "error" },
+            );
           });
           return true;
         }
@@ -260,6 +276,10 @@ export function useWS(): void {
           return true;
         }
         case "plugins:changed":
+        case "plugins:update_available":
+          // Both mean "the plugins list is stale" — update_available is
+          // broadcast by the server's update poll (server.py) and rides
+          // the same refresh so the upgrade hint can surface.
           import("@/lib/state/plugins-store").then(({ usePluginsStore }) => {
             usePluginsStore.getState().refresh();
           });
@@ -311,41 +331,6 @@ export function useWS(): void {
           try {
             window.dispatchEvent(
               new CustomEvent("op:task-message", {
-                detail: { type: msg.type, data: d },
-              }),
-            );
-          } catch {
-            /* defensive */
-          }
-          return true;
-        }
-        case "worktree_status": {
-          // Worktree state-machine broadcast — emitted by
-          // WorktreeManager._transition. The right-rail
-          // WorktreesPanel listens for it and patches its local
-          // row list without an extra round-trip.
-          try {
-            window.dispatchEvent(
-              new CustomEvent("op:worktree-status", {
-                detail: (d ?? {}) as WorktreeStatusDetail,
-              }),
-            );
-          } catch {
-            /* defensive */
-          }
-          return true;
-        }
-        case "worktrees_list":
-        case "worktree":
-        case "merge_worktree_result":
-        case "discard_worktree_result":
-        case "keep_worktree_result": {
-          // Replies to the five worktree WS actions. Same pattern
-          // as the task replies — surface as a window event so the
-          // requesting panel can pick it up.
-          try {
-            window.dispatchEvent(
-              new CustomEvent("op:worktree-message", {
                 detail: { type: msg.type, data: d },
               }),
             );
@@ -472,6 +457,10 @@ export function useWS(): void {
           // A fresh transcript invalidates the per-run hydrate dedup —
           // see clearHydratedTreePaths for why this is the drain point.
           clearHydratedTreePaths();
+          // Same drain point for the msg_id → session map: entries whose
+          // terminal frame (result/error/cancelled) got lost would
+          // otherwise sit in the module-level Map forever.
+          clearSessionByMsgId();
           loadSessionData(d as never);
           // Restore the session's additional working directories from the
           // persisted settings (refresh / device switch recovery).
@@ -551,6 +540,20 @@ export function useWS(): void {
         case "session_updated":
           handleSessionUpdated((d ?? null) as never);
           return true;
+        case "session_deleted": {
+          // Broadcast by ws_actions/session.py::handle_delete_session so
+          // every OTHER tab drops the row too (the deleting tab already
+          // removed it optimistically in sessions-list.tsx). session_id
+          // sits at the frame top level, not inside `data`.
+          const sid = (msg as { session_id?: string }).session_id;
+          if (sid) {
+            delete runtimeState.conversations[sid];
+            void import("@/lib/session-store").then(({ useSessionStore }) => {
+              useSessionStore.getState().removeConversation(sid);
+            });
+          }
+          return true;
+        }
         case "session_channel_updated": {
           const sid = d?.session_id as string | undefined;
           const conv = sid ? runtimeState.conversations[sid] : undefined;
