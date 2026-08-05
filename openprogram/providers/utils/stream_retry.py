@@ -45,7 +45,12 @@ import random
 import re
 from typing import Any, Awaitable, Callable, Optional
 
-from openprogram.providers.utils.errors import ExecInterrupt
+from openprogram.providers.utils.errors import (
+    ExecInterrupt,
+    # One shared list, so the retry layer and the reason classifier can
+    # never disagree about what a spent quota looks like.
+    _PERMANENT_MARKERS_QUOTA as _QUOTA_MARKERS,
+)
 from openprogram.providers.utils.deadline import expired as _dl_expired, remaining as _dl_remaining
 
 
@@ -115,6 +120,16 @@ _RETRYABLE_BODY_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# A 429 means two very different things. Per-minute throttling clears in
+# seconds and is worth retrying; a spent subscription quota does not —
+# codex returns ``usage_limit_reached`` with ``resets_in_seconds`` in the
+# hundreds of thousands, so the backoff ladder just turns an instant
+# failure into a 40-second one and reports the wrong cause. These bodies
+# are terminal: fail immediately and let the caller say why.
+def _is_quota_exhausted(error_text: str) -> bool:
+    lowered = error_text.lower()
+    return any(m in lowered for m in _QUOTA_MARKERS)
+
 
 class ProviderStreamError(Exception):
     """Stream-layer failure carrying metadata for upstream classification.
@@ -162,10 +177,16 @@ def is_retryable_status(status: int, error_text: str = "") -> bool:
     upstream-connect / connection-reset language that providers
     sometimes return with a 4xx but mean transient.
 
+    A spent quota is the exception: it arrives as 429 but resets hours or
+    days out, so it is terminal no matter what the status says. Checked
+    first — the body wins over the status code.
+
     Used by every HTTP provider when they receive a non-2xx response
     inside an attempt — pass the status and decoded body, get a
     boolean to feed ``ProviderStreamError(retryable=...)``.
     """
+    if error_text and _is_quota_exhausted(error_text):
+        return False
     if status in (429, 500, 502, 503, 504):
         return True
     if error_text and _RETRYABLE_BODY_PATTERN.search(error_text):

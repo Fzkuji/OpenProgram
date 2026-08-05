@@ -166,6 +166,19 @@ _PERMANENT_MARKERS_POLICY = (
     "content_policy",
     "safety system",
 )
+# A spent quota arrives as 429 like ordinary throttling, but resets hours
+# or days out rather than seconds. Retrying it can only fail, so it is
+# classified as a plan/authorization problem instead of a rate limit.
+_PERMANENT_MARKERS_QUOTA = (
+    "usage_limit_reached",
+    "usage limit reached",
+    "quota_exceeded",
+    "quota exceeded",
+    "insufficient_quota",
+    "billing_hard_limit_reached",
+    "credit balance is too low",
+    "exceeded your current quota",
+)
 # Transport / transient keywords for the fallback path when we don't
 # have a status code and the exception type is something opaque
 # (CLI subprocess error string, third-party SDK wrapper, etc).
@@ -237,6 +250,13 @@ def classify_error(
 
     if http_status is not None:
         if http_status == 429:
+            # A spent subscription quota also arrives as 429, but it
+            # resets hours or days out — calling it RATE_LIMIT sends the
+            # caller into a retry it can never win, and tells the user
+            # "too many requests" when the real answer is "your plan is
+            # out until <date>".
+            if any(m in msg for m in _PERMANENT_MARKERS_QUOTA):
+                return ErrorReason.AUTHORIZATION, False
             return ErrorReason.RATE_LIMIT, True
         if http_status in (500, 502, 503, 504):
             return ErrorReason.PROVIDER_INTERNAL, True
