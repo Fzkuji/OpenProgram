@@ -338,10 +338,16 @@ assert.match(
   /if \(cached && loadedAttachmentKeysRef\.current\.has\(sid\)\) return;/,
 );
 assert.match(composerSource, /const pasteOwnerKey = activeChatKey;/);
+// The decoded images must be filed under the key captured AT PASTE TIME,
+// never the currently-active one — that is the invariant, independent of
+// the callback's shape. (It destructures `{ images, errors }` now, so that
+// rejected files can be reported instead of silently dropped.)
 assert.match(
   composerSource,
-  /\.then\(\(imgs\) => addImagesForOwner\(pasteOwnerKey, imgs\)\)/,
+  /addImagesForOwner\(pasteOwnerKey, images\)/,
 );
+// A file that failed to read must surface an error rather than vanish.
+assert.match(composerSource, /if \(errors\.length/);
 assert.match(
   composerSource,
   /useSessionStore\.getState\(\)\.activeChatKey === pasteOwnerKey/,

@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef } from "react";
 
 import type { AgenticFunction, FnParam } from "@/lib/session-store";
+import { runtimeState } from "@/lib/runtime-bridge/state";
 import {
   type AnimatedNavIconHandle,
   FolderOpenIcon,
@@ -24,6 +25,12 @@ const RUNTIME_PARAM_NAMES = new Set([
   "exec_runtime",
   "review_runtime",
 ]);
+
+/** Home directory reported by `/api/workdir/defaults`, cached across form
+ *  mounts so the OS folder picker has a sensible start dir even before the
+ *  current fetch lands. Module-local, not `window` — a global nobody
+ *  assigns is a silent dead read. */
+let workdirHome = "";
 
 export function visibleParams(fn: AgenticFunction): FnParam[] {
   return (fn.params_detail || []).filter(
@@ -83,19 +90,19 @@ export function FunctionForm({
   // the OS picker's start dir).
   useEffect(() => {
     let cancelled = false;
-    const w = window as unknown as {
-      currentSessionId?: string | null;
-      _workdirHome?: string;
-    };
     const query = new URLSearchParams();
     query.set("function_name", fn.name);
-    if (w.currentSessionId) query.set("session_id", w.currentSessionId);
+    // The session id lives in `runtimeState` (same singleton `getSocket()`
+    // reads). Without it the backend's `last_workdirs` lookup is skipped
+    // and "last used folder" silently falls back to the repo root.
+    const sessionId = runtimeState.currentSessionId;
+    if (sessionId) query.set("session_id", sessionId);
     fetch(`/api/workdir/defaults?${query.toString()}`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
         if (data && typeof data.home === "string") {
-          w._workdirHome = data.home;
+          workdirHome = data.home;
         }
         if (workdirMode !== "hidden" && data) {
           const last = typeof data.last === "string" ? data.last.trim() : "";
@@ -112,8 +119,7 @@ export function FunctionForm({
   }, [fn.name, workdirMode]);
 
   const pickWorkdir = useCallback(async () => {
-    const w = window as unknown as { _workdirHome?: string };
-    const start = workdir.trim() || w._workdirHome || "";
+    const start = workdir.trim() || workdirHome;
     try {
       const r = await fetch("/api/pick-folder", {
         method: "POST",

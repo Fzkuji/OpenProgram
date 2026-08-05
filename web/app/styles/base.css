@@ -748,3 +748,32 @@ html[data-sidebar-closed] #sidebar .sidebar-nav-action {
 .history-node.is-running polygon {
   animation: historyNodePulse 1.2s ease-in-out infinite;
 }
+
+/* ===== Reduced motion =====
+   Blanket opt-out for users who asked the OS to stop animating things.
+   Roughly twenty infinite animations (.spinner, .thinking-spinner::after,
+   .typing-indicator .dot, .indicator-dot.pulse-*, skeleton shimmers,
+   .convRunning::before, .history-node.is-running, the marching-ants edges
+   above, …) each used to keep running because only a handful of rules had
+   their own opt-out.
+
+   Durations collapse to 0.01ms rather than `animation: none` so
+   animationend / transitionend listeners still fire — killing the
+   animation outright strands any state machine waiting on that event.
+   `iteration-count: 1` stops infinite loops from re-firing those events
+   forever. Targeted overrides elsewhere (chat.css, right-dock.css,
+   center-tabs) stay: they express intent per component, this is the net
+   underneath them.
+
+   Scroll behaviour is included because programmatic smooth-scrolling is
+   motion too. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

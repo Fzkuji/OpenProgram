@@ -222,7 +222,10 @@
   right: 2px;
   transform: translateY(-50%);
   line-height: 22px;
-  color: var(--text-muted);
+  /* --text-muted (≈3.2:1) is reserved for secondary metadata; the composer
+     placeholder is the primary "what do I do here" cue and has to clear
+     WCAG AA 4.5:1, which --text-secondary does (4.87:1 dark / 6.6:1 light). */
+  color: var(--text-secondary);
   font-family: var(--font-sans);
   font-size: 15px;
   overflow: hidden;
@@ -231,7 +234,7 @@
   white-space: nowrap;
 }
 .chatInput::placeholder {
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 /* Pasted-content chip row — sits ABOVE the textarea (not inside the

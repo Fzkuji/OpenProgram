@@ -183,11 +183,20 @@ export async function readDroppedTextFile(
   }
 }
 
+/** Outcome of a multi-file image read: the ones that made it, plus a
+ *  human-readable reason per file that didn't. Callers surface
+ *  ``errors`` in the composer's error strip — a rejected file must
+ *  never disappear without a word. */
+export interface ImageReadResult {
+  images: PendingImage[];
+  errors: string[];
+}
+
 /** Walk a DataTransferItemList from a paste / drop event and read
  *  every image item it contains. */
 export async function collectImagesFromTransfer(
   items: DataTransferItemList | DataTransfer,
-): Promise<PendingImage[]> {
+): Promise<ImageReadResult> {
   // Both DataTransfer and DataTransferItemList expose ``items``; the
   // type union here lets callers pass either.
   const raw = ("items" in items ? items.items : items) as DataTransferItemList;
@@ -206,7 +215,7 @@ export async function collectImagesFromTransfer(
 /** Walk a FileList (file picker output) and read every image. */
 export async function collectImagesFromFiles(
   files: FileList | File[],
-): Promise<PendingImage[]> {
+): Promise<ImageReadResult> {
   const arr: File[] = Array.from(files).filter(
     (f) => ACCEPTED_IMAGE_MIME.has(f.type),
   );
@@ -216,17 +225,28 @@ export async function collectImagesFromFiles(
 /** Read N image files concurrently. Serial ``await`` in a for-loop
  *  multiplied per-file decode+thumbnail latency by N — for a drop of
  *  ~6 mid-size screenshots that was the difference between ~2s and
- *  ~12s wall time. */
-async function readImagesParallel(files: File[]): Promise<PendingImage[]> {
-  if (files.length === 0) return [];
+ *  ~12s wall time.
+ *
+ *  Rejections are RETURNED, not dropped. ``readImageFile`` rejects on
+ *  oversize (>5 MiB) and unsupported MIME; discarding those made a
+ *  pasted 12 MB screenshot vanish with no chip and no error, and the
+ *  caller's ``.catch`` could never fire because this always resolved. */
+async function readImagesParallel(files: File[]): Promise<ImageReadResult> {
+  if (files.length === 0) return { images: [], errors: [] };
   const results = await Promise.allSettled(
     files.map((f) => readImageFile(f, f.name || undefined)),
   );
-  const out: PendingImage[] = [];
-  for (const r of results) {
-    if (r.status === "fulfilled") out.push(r.value);
-  }
-  return out;
+  const images: PendingImage[] = [];
+  const errors: string[] = [];
+  results.forEach((r, i) => {
+    if (r.status === "fulfilled") images.push(r.value);
+    else {
+      const name = files[i].name || "image";
+      const why = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      errors.push(`${name}: ${why}`);
+    }
+  });
+  return { images, errors };
 }
 
 /** Collect non-image text files from a transfer. Returns the

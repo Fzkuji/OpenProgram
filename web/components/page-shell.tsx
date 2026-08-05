@@ -167,11 +167,9 @@ export function PageShell({ page }: { page: Page }) {
         hostRef.current.innerHTML = main;
         if (page === "chat") stripLegacyChatChrome(hostRef.current);
 
-        // Wait for AppShell's shared JS to finish loading before running
-        // page-specific scripts (which depend on globals like renderSessions,
-        // loadProviders, escHtml, etc.).
-        const w = window as unknown as { __sharedScriptsReady?: Promise<void> };
-        if (w.__sharedScriptsReady) await w.__sharedScriptsReady;
+        // AppShell used to publish `window.__sharedScriptsReady` from the
+        // legacy public/js bundle and this awaited it. That bundle is gone
+        // and nothing assigns the promise, so the await was a no-op.
         if (cancelled) return;
 
         const fetchedScripts = await scriptFetchesP;

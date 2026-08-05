@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useLayoutEffect, useState } from "react";
+import { Paperclip } from "lucide-react";
 
 /** Drop-overlay positioned over the central chat column rather than
  *  the whole window. Anchored to ``#chatArea`` by bounding rect so
@@ -62,7 +63,7 @@ export function ScopedDropOverlay() {
           fontFamily: "ui-sans-serif, system-ui, sans-serif",
         }}
       >
-        <span style={{ fontSize: 36 }} aria-hidden>📎</span>
+        <Paperclip size={36} strokeWidth={1.5} aria-hidden />
         <span style={{ fontSize: 16, fontWeight: 600 }}>
           Drop to attach
         </span>

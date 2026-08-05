@@ -21,12 +21,18 @@
 import { useEffect, useState } from "react";
 
 import type { PendingDecision, AskOne, FormFieldSchema } from "@/lib/session-store";
+import { useTranslation } from "@/lib/i18n";
 
 import styles from "./question-mode.module.css";
 import { getSocket } from "@/lib/runtime-bridge/state";
 import multi from "./multi-ask-mode.module.css";
 import approvalStyles from "../approval/approval-mode.module.css";
 import formStyles from "./form-mode.module.css";
+
+/** Wire value meaning "approved" in the approval protocol. Matches the
+ *  locale-independent token accepted by ``_approval.await_user_approval``.
+ *  Not user-visible — the button labels are translated separately. */
+const APPROVE_ANSWER = "approve";
 
 function wsSend(payload: unknown): void {
   const sock = getSocket();
@@ -128,6 +134,7 @@ function stepAnswered(step: Step, a: Answer): boolean {
 }
 
 export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeProps) {
+  const { text } = useTranslation();
   const steps = toSteps(q);
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState<Answer[]>(() => steps.map(seedAnswer));
@@ -162,8 +169,12 @@ export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeP
     }
     if (q.kind === "approval") {
       const pick = (answers[0] as { pick: "once" | "always" | "deny" | null }).pick;
-      if (pick === "once") wsSend({ action: "question_reply", id: q.id, answer: "允许", scope: "once" });
-      else if (pick === "always") wsSend({ action: "question_reply", id: q.id, answer: "允许", scope: "always" });
+      // ``APPROVE_ANSWER`` is a PROTOCOL value, not UI text — it must never
+      // follow the user's locale. ``_approval.await_user_approval`` accepts
+      // it verbatim; a localized string would fail the comparison in every
+      // language it doesn't happen to list.
+      if (pick === "once") wsSend({ action: "question_reply", id: q.id, answer: APPROVE_ANSWER, scope: "once" });
+      else if (pick === "always") wsSend({ action: "question_reply", id: q.id, answer: APPROVE_ANSWER, scope: "always" });
       else if (pick === "deny") wsSend({ action: "question_reject", id: q.id });
       else return;
       onResolve(q.id);
@@ -192,23 +203,55 @@ export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeP
 
   // 底部统一按钮组：单步 → [发送]；多步 → [‹上一题, 下一题›/发送]。
   useEffect(() => {
-    const prev = { label: "‹ 上一题", onClick: () => setIdx((i) => Math.max(0, i - 1)), disabled: atFirst };
+    const prev = {
+      label: text("‹ Previous", "‹ 上一题"),
+      onClick: () => setIdx((i) => Math.max(0, i - 1)),
+      disabled: atFirst,
+    };
     const nextOrSend = atLast
-      ? { label: "发送", onClick: submit, disabled: !allAnswered, primary: true }
-      : { label: "下一题 ›", onClick: () => setIdx((i) => Math.min(steps.length - 1, i + 1)), primary: true };
+      ? { label: text("Send", "发送"), onClick: submit, disabled: !allAnswered, primary: true }
+      : {
+          label: text("Next ›", "下一题 ›"),
+          onClick: () => setIdx((i) => Math.min(steps.length - 1, i + 1)),
+          primary: true,
+        };
     onAction({ navButtons: steps.length > 1 ? [prev, nextOrSend] : [nextOrSend] });
     return () => onAction(null);
     // ``answers`` matters: submit() closes over it, so without this dep
     // an edit made after allAnswered flipped would send a stale snapshot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, atFirst, atLast, allAnswered, q.id, answers]);
+  }, [idx, atFirst, atLast, allAnswered, q.id, answers, text]);
+
+  // Enter submits (last step) or advances (earlier steps), so the
+  // autofocused free-text input has a keyboard path at all — previously
+  // Enter did nothing and the mouse was the only way to send.
+  // Ctrl/Cmd+Enter submits outright, matching fn-form.
+  function onKey(e: React.KeyboardEvent) {
+    if (e.key !== "Enter") return;
+    // Enter commits an IME candidate (CN/JP/KR) — never treat that as send.
+    const native = e.nativeEvent as KeyboardEvent;
+    if (native.isComposing || native.keyCode === 229) return;
+    if (e.shiftKey) return;
+    const t = e.target as HTMLElement;
+    if (t.tagName === "TEXTAREA") return;
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      if (allAnswered) submit();
+      return;
+    }
+    if (atLast) {
+      if (allAnswered) submit();
+    } else {
+      setIdx((i) => Math.min(steps.length - 1, i + 1));
+    }
+  }
 
   if (!cur) return null;
 
   return (
     <>
-      <div className={styles.header} data-fn-form-header>
-        <div className={styles.badge}>需要你的输入</div>
+      <div className={styles.header} data-fn-form-header onKeyDown={onKey}>
+        <div className={styles.badge}>{text("Your input is needed", "需要你的输入")}</div>
         {/* 进度点 + 几分之几 —— 哪怕只有 1 步也显示（统一）。 */}
         <div className={multi.progress}>
           {steps.map((_, i) => (
@@ -220,7 +263,7 @@ export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeP
                 (stepAnswered(steps[i], answers[i]) ? " " + multi.dotDone : "")
               }
               onClick={() => setIdx(i)}
-              title={`第 ${i + 1} 题`}
+              title={text(`Question ${i + 1}`, `第 ${i + 1} 题`)}
             />
           ))}
           <span className={multi.count}>
@@ -228,7 +271,7 @@ export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeP
           </span>
         </div>
       </div>
-      <div className={styles.body} data-fn-form-body>
+      <div className={styles.body} data-fn-form-body onKeyDown={onKey}>
         <StepBody step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
       </div>
     </>
@@ -245,6 +288,7 @@ function StepBody({
   answer: Answer;
   onChange: (a: Answer) => void;
 }) {
+  const { text } = useTranslation();
   if (step.kind === "form") {
     const fields = (answer as { fields: Record<string, string | number | boolean> }).fields;
     const setField = (name: string, v: string | number | boolean) =>
@@ -312,7 +356,11 @@ function StepBody({
   if (step.kind === "approval") {
     const pick = (answer as { pick: "once" | "always" | "deny" | null }).pick;
     const risk = step.risk ?? "low";
-    const label = { once: "允许一次", always: "总是允许", deny: "拒绝" } as const;
+    const label = {
+      once: text("Allow once", "允许一次"),
+      always: text("Always allow", "总是允许"),
+      deny: text("Deny", "拒绝"),
+    } as const;
     return (
       <>
         <div className={styles.prompt}>{withColon(step.prompt)}</div>
@@ -370,7 +418,9 @@ function StepBody({
         <input
           className={styles.input}
           value={aa.custom}
-          placeholder={step.options.length ? "或自己输入…" : "输入你的回答…"}
+          placeholder={step.options.length
+            ? text("Or type your own…", "或自己输入…")
+            : text("Type your answer…", "输入你的回答…")}
           onChange={(e) => {
             const custom = e.target.value;
             // 打字进自由文本时清掉单选已选项（避免两个答案打架）。

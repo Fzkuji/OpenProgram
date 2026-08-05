@@ -16,7 +16,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
-import { collectImagesFromTransfer } from "../attach/image-attach";
+import {
+  collectImagesFromTransfer,
+  type PendingImage,
+} from "../attach/image-attach";
 import {
   LONG_PASTE_THRESHOLD,
   missingPasteIds,
@@ -31,10 +34,7 @@ export interface PasteTokensOptions {
   /** Chat key the paste belongs to — a late image decode must land in the
    *  bucket that was focused when the paste happened, never the current one. */
   activeChatKey: string | null;
-  addImagesForOwner(
-    ownerKey: string | null,
-    images: Awaited<ReturnType<typeof collectImagesFromTransfer>>,
-  ): void;
+  addImagesForOwner(ownerKey: string | null, images: PendingImage[]): void;
   setImageError(message: string | null): void;
 }
 
@@ -109,7 +109,16 @@ export function usePasteTokens({
           const pasteOwnerKey = activeChatKey;
           e.preventDefault();
           void collectImagesFromTransfer(e.clipboardData!)
-            .then((imgs) => addImagesForOwner(pasteOwnerKey, imgs))
+            .then(({ images, errors }) => {
+              if (images.length) addImagesForOwner(pasteOwnerKey, images);
+              // A file that failed to read (oversize / unsupported) must
+              // say so — matching the drop path. Before this, a pasted
+              // 12 MB screenshot produced no chip and no message at all.
+              if (errors.length
+                  && useSessionStore.getState().activeChatKey === pasteOwnerKey) {
+                setImageError(errors.join("; "));
+              }
+            })
             .catch((err) => {
               if (useSessionStore.getState().activeChatKey === pasteOwnerKey) {
                 setImageError(String(err));

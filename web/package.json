@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "check": "npm run check:center-tabs && npm run check:bookmarks && npm run check:compound-tabs && npm run check:web-split && npm run check:multi-draft && npm run check:provisional-send && npm run check:chat-ui && npm run check:project-picker && npm run check:spawn-cards && npm run check:recents-buckets && npm run check:dag-summary && npm run check:dag-subagent && npm run check:socket-access && npm run check:markdown-sanitize",
+    "check": "npm run check:center-tabs && npm run check:bookmarks && npm run check:compound-tabs && npm run check:web-split && npm run check:multi-draft && npm run check:provisional-send && npm run check:chat-ui && npm run check:project-picker && npm run check:spawn-cards && npm run check:recents-buckets && npm run check:dag-summary && npm run check:dag-subagent && npm run check:socket-access && npm run check:markdown-sanitize && npm run check:ws-actions",
     "check:bookmarks": "node --no-warnings scripts/check-bookmarks.mjs",
     "check:center-tabs": "node scripts/check-center-tabs.mjs",
     "check:chat-ui": "node --no-warnings --experimental-strip-types scripts/check-chat-ui.mjs",
@@ -18,6 +18,7 @@
     "check:socket-access": "node --no-warnings scripts/check-socket-access.mjs",
     "check:markdown-sanitize": "node --no-warnings scripts/check-markdown-sanitize.mjs",
     "check:spawn-cards": "node --no-warnings --experimental-strip-types scripts/check-spawn-cards.mjs",
+    "check:ws-actions": "node --no-warnings scripts/check-ws-actions.mjs",
     "dev": "next dev --turbo",
     "build": "next build",
     "start": "next start",

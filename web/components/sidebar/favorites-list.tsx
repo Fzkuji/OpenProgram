@@ -107,10 +107,11 @@ export function FavoritesList(): React.ReactElement | null {
     if (!onChat) {
       const w = window as unknown as {
         __pendingRunFunction?: { name: string; cat: string };
-        __lastChatPath?: string;
       };
       w.__pendingRunFunction = { name, cat: category || "" };
-      router.push(w.__lastChatPath || "/chat");
+      // `__lastChatPath` was a legacy public/js global that nothing assigns
+      // anymore, so this always fell through to "/chat" regardless.
+      router.push("/chat");
       return;
     }
     openFnForm(fn);
