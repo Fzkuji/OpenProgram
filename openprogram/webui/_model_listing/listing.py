@@ -14,8 +14,11 @@ Three public listing functions:
   the runtime registry (``ENABLED_MODELS`` = the enabled config spec rows)
   directly — no browse, no network.
 
-Plus the small ``_model_to_dict`` helper that produces the per-model
-JSON shape both the per-provider table and the flat picker emit.
+Plus ``spec_row_for`` (the enable-time copy of one listing row into the
+persisted spec-row shape — the bridge from this live view into
+``openprogram.providers.storage``) and the small ``_model_to_dict``
+helper that produces the per-model JSON shape both the per-provider
+table and the flat picker emit.
 """
 from __future__ import annotations
 
@@ -245,7 +248,7 @@ def list_providers() -> list[dict[str, Any]]:
     )
     from .setup_hints import _setup_hint
     from openprogram.providers.sources import models_dev
-    from .storage import _read_providers_cfg
+    from openprogram.providers.storage import _read_providers_cfg
     from .fetchers import _load_fetcher
 
     cfg = _read_providers_cfg()
@@ -431,7 +434,7 @@ def list_models_for_provider(
     from openprogram.providers.thinking_spec import derive_thinking_fields
 
     from openprogram.providers.metadata import default_api_for
-    from .storage import _read_providers_cfg
+    from openprogram.providers.storage import _read_providers_cfg
 
     cfg = _read_providers_cfg()
     pcfg = cfg.get(provider_id, {})
@@ -516,7 +519,7 @@ def list_enabled_models() -> list[dict[str, Any]]:
     from openprogram.providers.enabled_models import ENABLED_MODELS
 
     from openprogram.providers.metadata import label_for
-    from .storage import _read_providers_cfg
+    from openprogram.providers.storage import _read_providers_cfg
 
     cfg = _read_providers_cfg()
     out: list[dict[str, Any]] = []
@@ -532,3 +535,21 @@ def list_enabled_models() -> list[dict[str, Any]]:
         row["provider_label"] = label_for(provider)
         out.append(row)
     return out
+
+
+def spec_row_for(provider_id: str, model_id: str) -> dict[str, Any] | None:
+    """Full spec row for one model, as ``providers.<p>.models`` stores it.
+
+    Copied from ``list_models_for_provider`` (the canonical row shape) with the
+    UI-only ``enabled`` flag stripped, then normalized so the row carries the
+    Model-schema keys (``input``, nested ``cost``) the runtime reads — not just
+    the models.dev flat display keys. This is the enable-time bridge from the
+    live listing into the persisted config (``openprogram.providers.storage``).
+    Returns ``None`` if the provider/listing can't resolve the id.
+    """
+    from openprogram.providers.storage import _normalize_spec_row
+    for row in list_models_for_provider(provider_id):
+        if row.get("id") == model_id:
+            spec = {k: v for k, v in row.items() if k != "enabled"}
+            return _normalize_spec_row(spec)
+    return None

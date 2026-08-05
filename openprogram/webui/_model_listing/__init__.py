@@ -10,13 +10,16 @@ Layout::
     _model_listing/
       __init__.py        # this file — public API re-exports
       setup_hints.py     # SETUP_HINTS dict + _setup_hint
-      storage.py         # config IO + custom_models CRUD + URL/key resolution
-      listing.py         # list_providers / list_models_for_provider / list_enabled_models
+      listing.py         # list_providers / list_models_for_provider / list_enabled_models / spec_row_for
       toggle.py          # toggle_provider + toggle_model
       test_provider.py   # connectivity probe (Codex-aware)
       fetchers/
         __init__.py       # dispatcher: _load_fetcher + fetch_and_normalize + fetch_models_remote
         openai_compat.py  # generic OpenAI-compatible /v1/models (shared fallback)
+
+Config persistence (spec rows, custom providers/models CRUD, base-URL
+resolution) lives in ``openprogram.providers.storage`` — this package is
+the presentation layer on top of it and imports downward only.
 
 A provider whose ``/v1/models`` isn't OpenAI-compatible ships its own
 ``providers/<name>/list_models.py`` exposing ``fetch(provider_id, timeout)``;
@@ -55,19 +58,10 @@ from .listing import (
     list_enabled_models,
     list_models_for_provider,
     list_providers,
+    spec_row_for,
 )
 
 # Public mutators ---------------------------------------------------
-from .storage import (
-    add_custom_models,
-    add_manual_model,
-    create_custom_provider,
-    delete_custom_provider,
-    get_provider_config,
-    remove_custom_model,
-    replace_fetched_models,
-    set_provider_config,
-)
 from .toggle import (
     toggle_model,
     toggle_provider,
@@ -84,12 +78,10 @@ from .credentials import (
 )
 
 # Private symbols still imported by name from other modules --------
-# (``_runtime_management``, ``_model_tools``, ``setup_sections``).
-# Provider metadata (labels / env vars / api routing) lives in
-# ``openprogram.providers.metadata`` — import it there, not here.
-from .storage import _read_providers_cfg, _write_providers_cfg
+# (``setup_sections``). Provider metadata (labels / env vars / api routing)
+# lives in ``openprogram.providers.metadata``; config persistence in
+# ``openprogram.providers.storage`` — import those there, not here.
 from .setup_hints import _SETUP_HINTS, _setup_hint
-from .storage import _resolve_base_url
 
 
 __all__ = [
@@ -97,15 +89,8 @@ __all__ = [
     "list_providers",
     "list_models_for_provider",
     "list_enabled_models",
+    "spec_row_for",
     # Public mutators
-    "add_custom_models",
-    "add_manual_model",
-    "create_custom_provider",
-    "delete_custom_provider",
-    "replace_fetched_models",
-    "remove_custom_model",
-    "get_provider_config",
-    "set_provider_config",
     "toggle_provider",
     "toggle_model",
     # Public RPC
@@ -116,8 +101,5 @@ __all__ = [
     "provider_auth_status_async",
     "provider_id_for_env_var",
     # Re-exported privates (used by other modules)
-    "_read_providers_cfg",
-    "_write_providers_cfg",
-    "_resolve_base_url",
     "_setup_hint",
 ]

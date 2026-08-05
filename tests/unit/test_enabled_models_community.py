@@ -17,7 +17,7 @@ import pytest
 import openprogram.providers.enabled_models as mg
 from openprogram.providers.types import Model
 from openprogram.webui._model_listing import listing
-from openprogram.webui._model_listing import storage as st
+from openprogram.providers import storage as st
 from openprogram.providers import metadata as cat
 
 

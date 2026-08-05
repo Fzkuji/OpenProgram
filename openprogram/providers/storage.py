@@ -1,21 +1,28 @@
-"""Persistence layer for the model catalog.
+"""Persistence layer for provider / model configuration.
 
 All reads and writes against ``~/.openprogram/config.json``'s ``providers``
 sub-tree, plus the small helpers that resolve per-provider API keys and
-base URLs from the same store.
+base URLs from the same store. Config IO delegates to the canonical
+reader/writer in ``openprogram.setup`` (one read policy, one 0o600 write
+path); the raw migration-free section read lives in ``_config_read`` —
+the registry loader uses that one so a reload never re-enters the spec
+migration below.
 
 The interesting domain logic lives here:
 
-* ``add_custom_models`` — union / merge semantics. Kept for the few
-  call sites that legitimately want to *add* a row without rotating
-  others (manual additions from the UI).
+* the full-spec model rows under ``providers.<p>.models`` — the single
+  source of truth the runtime registry loads — with
+  ``_normalize_spec_row`` as the one choke point that stamps the
+  Model-schema keys onto every persisted row;
 
-* ``replace_fetched_models`` — rotate-and-replace semantics. Used by
-  the Fetch Models flow. Rows tagged ``_source: "fetched"`` are owned
-  by this function and rotate on each fetch; rows the user added by
-  hand are left alone. Also prunes enabled spec rows of dead ids on
-  rotation so the picker doesn't try to instantiate a model the
-  runtime can no longer find.
+* the one-time migration of legacy ``enabled_models``/``custom_models``
+  configs into spec rows;
+
+* custom (user-added) provider CRUD and per-provider config
+  (base-URL override, manual model rows);
+
+* ``_resolve_base_url`` — the layered base-URL resolution the fetchers
+  and connectivity probes share.
 
 The module-level ``_cache_lock`` serialises all read-modify-write
 sequences. Same lock the legacy monolith used; sharing one process-
@@ -36,16 +43,16 @@ _cache_lock = threading.Lock()
 # ---------------------------------------------------------------------------
 
 def _read_providers_cfg() -> dict[str, dict[str, Any]]:
-    from openprogram.webui.server import _load_config
-    providers = _load_config().get("providers", {})
+    from openprogram import setup as _setup
+    providers = _setup._read_config().get("providers", {})
     # Migrate legacy configs from ANY reader, not just the settings UI:
     #   * why any-reader — a headless agent user with a legacy config never
     #     opens the settings page, so it must migrate on whatever reads config
     #     first (registry build, chat picker, connectivity check);
     #   * why safe to run this eagerly — the migration is idempotent (guarded
     #     to run once per process), reentrancy-guarded (its own reads don't
-    #     recurse), and offline-capable (C2: builds minimal spec rows from
-    #     local provider.json when live browse is unreachable), so it needs no
+    #     recurse), and offline-capable (builds spec rows from the disk-cached
+    #     models.dev catalogue and local provider.json), so it needs no
     #     network and can't loop or corrupt.
     _run_spec_migration_once(providers)
     return providers
@@ -60,11 +67,11 @@ def save_default_model(provider: str | None, model: str | None) -> None:
     ``model`` is stored bare (no ``provider:`` prefix). Falsy args clear.
     Shares ``_cache_lock`` with the providers read-modify-write sequences.
     """
-    from openprogram.webui.server import _load_config, _save_config
+    from openprogram import setup as _setup
     if isinstance(model, str) and provider and model.startswith(f"{provider}:"):
         model = model[len(provider) + 1:]
     with _cache_lock:
-        cfg = _load_config()
+        cfg = _setup._read_config()
         if provider:
             cfg["default_provider"] = provider
         else:
@@ -73,20 +80,21 @@ def save_default_model(provider: str | None, model: str | None) -> None:
             cfg["default_model"] = model
         else:
             cfg.pop("default_model", None)
-        _save_config(cfg)
+        _setup._write_config(cfg)
 
 
 def _write_providers_cfg(providers_cfg: dict[str, dict[str, Any]]) -> None:
-    from openprogram.webui.server import _load_config, _save_config
-    cfg = _load_config()
+    from openprogram import setup as _setup
+    cfg = _setup._read_config()
     cfg["providers"] = providers_cfg
-    _save_config(cfg)
+    _setup._write_config(cfg)
     # Every mutation of ``providers.<p>.models`` (toggle enable/disable, custom-
     # model add/remove, fetch replace, migration backfill) routes through here.
     # Rebuild the in-memory registry in place so the chat picker
     # (``list_enabled_models`` → ``ENABLED_MODELS``) reflects the change without
-    # a process restart. ``reload()`` reads config from disk directly (not via
-    # ``_read_providers_cfg``), so it never re-enters the migration guard.
+    # a process restart. ``reload()`` reads config through the raw
+    # ``_config_read`` path (not ``_read_providers_cfg``), so it never
+    # re-enters the migration guard.
     from openprogram.providers import enabled_models as _mg
     _mg.reload()
 
@@ -95,10 +103,11 @@ def _write_providers_cfg(providers_cfg: dict[str, dict[str, Any]]) -> None:
 # Full-spec model rows (config.providers.<p>.models) — write path + migration
 #
 # The target design persists the FULL spec of each user-enabled model under
-# ``providers.<p>.models`` (list[dict]). ``spec_row_for`` is the single source
-# of truth for that shape: whatever ``list_models_for_provider`` produces,
-# minus the UI-only ``enabled`` flag. Nested ``cost`` (and headers/compat/
-# key_prefix) ride along untouched — do NOT flatten cost.
+# ``providers.<p>.models`` (list[dict]). The row shape is whatever the webui
+# listing produces (``listing.spec_row_for`` copies it at enable time), minus
+# the UI-only ``enabled`` flag; ``_normalize_spec_row`` below is the single
+# choke point that stamps the Model-schema keys onto it. Nested ``cost`` (and
+# headers/compat/key_prefix) ride along untouched — do NOT flatten cost.
 #
 # Spec rows are the single source of truth: ``toggle_model`` no longer writes
 # the legacy ``enabled_models`` id list. The one-time migration below still
@@ -141,24 +150,6 @@ def _normalize_spec_row(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def spec_row_for(provider_id: str, model_id: str) -> dict[str, Any] | None:
-    """Full spec row for one model, as ``providers.<p>.models`` stores it.
-
-    Copied from ``list_models_for_provider`` (the canonical row shape) with the
-    UI-only ``enabled`` flag stripped, then normalized so the row carries the
-    Model-schema keys (``input``, nested ``cost``) the runtime reads — not just
-    the models.dev flat display keys. Returns ``None`` if the provider/listing
-    can't resolve the id.
-    """
-    # Lazy import: listing imports storage, so a module-level import cycles.
-    from .listing import list_models_for_provider
-    for row in list_models_for_provider(provider_id):
-        if row.get("id") == model_id:
-            spec = {k: v for k, v in row.items() if k != "enabled"}
-            return _normalize_spec_row(spec)
-    return None
-
-
 def _upsert_spec_row(pcfg: dict[str, Any], spec: dict[str, Any]) -> None:
     # Every persisted spec row routes through here (toggle enable, login-enable
     # defaults, manual add, migration backfill). Normalize once at the choke
@@ -181,7 +172,7 @@ def _remove_spec_row(pcfg: dict[str, Any], model_id: str) -> None:
 
 # One-time storage migration ------------------------------------------------
 # Runs on the first ``_read_providers_cfg`` of the process. Reentrancy guard:
-# the migration calls ``list_models_for_provider`` (→ ``_read_providers_cfg``),
+# the migration itself reads config (models.dev / endpoint resolution paths),
 # so without the guard it would recurse infinitely. ``_reset_spec_migration``
 # is a test hook.
 _spec_migration_done = False
@@ -223,18 +214,18 @@ def _run_spec_migration_once(providers: dict[str, dict[str, Any]]) -> None:
 
 
 def _spec_migration_version() -> int:
-    from openprogram.webui.server import _load_config
+    from openprogram import setup as _setup
     try:
-        return int(_load_config().get("spec_migration_version", 0) or 0)
+        return int(_setup._read_config().get("spec_migration_version", 0) or 0)
     except Exception:
         return 0
 
 
 def _bump_spec_migration_version() -> None:
-    from openprogram.webui.server import _load_config, _save_config
-    cfg = _load_config()
+    from openprogram import setup as _setup
+    cfg = _setup._read_config()
     cfg["spec_migration_version"] = _SPEC_MIGRATION_VERSION
-    _save_config(cfg)
+    _setup._write_config(cfg)
 
 
 def _repair_over_merged_specs(providers: dict[str, dict[str, Any]]) -> bool:
@@ -242,15 +233,15 @@ def _repair_over_merged_specs(providers: dict[str, dict[str, Any]]) -> bool:
 
     The v1 ``_migrate_specs`` merged EVERY ``custom_models`` row into
     ``providers.<p>.models`` tagged ``source: "manual"``. But for community
-    providers ``custom_models`` was the whole upstream catalogue (an
-    availability cache), not the user's enabled set — so the enabled-only
-    registry/picker ballooned (openrouter: 399 rows for 3 enabled).
+    providers ``custom_models`` was the whole upstream availability cache,
+    not the user's enabled set — so the enabled-only registry/picker
+    ballooned (openrouter: 399 rows for 3 enabled).
 
     Precise reversal: for each provider, DROP every row with
     ``source == "manual"`` whose id is NOT in that provider's legacy
     ``enabled_models``. This is exact because the only writer of a manual-
     tagged row is the v1 merge (``toggle_model`` enable writes a spec row with
-    NO ``source`` key — see ``spec_row_for``, which strips only ``enabled``).
+    NO ``source`` key — the enable-time copy strips only ``enabled``).
     So a manual row not in ``enabled_models`` can only be a bulk-merge artefact,
     never a genuine user action. Rows without ``source`` (toggled since
     migration) and rows with id in ``enabled_models`` stay untouched. Rows
@@ -328,8 +319,7 @@ def _repair_modality_cost_specs(providers: dict[str, dict[str, Any]]) -> bool:
 
 
 def _minimal_spec_row(pid: str, mid: str, pcfg: dict[str, Any]) -> dict[str, Any]:
-    """Offline-buildable spec row for a legacy enabled id ``spec_row_for``
-    couldn't resolve (no live browse — offline / no key).
+    """Offline-buildable spec row for a legacy enabled id.
 
     Built from what IS local: the provider's ``provider.json`` default
     endpoint (api/base_url), falling back to the user's saved ``base_url``
@@ -364,18 +354,43 @@ def _minimal_spec_row(pid: str, mid: str, pcfg: dict[str, Any]) -> dict[str, Any
     return row
 
 
+def _models_dev_spec_row(pid: str, mid: str, pcfg: dict[str, Any]) -> dict[str, Any]:
+    """Spec row for a legacy enabled id, built from providers-layer sources
+    only: the models.dev row (name/context/cost/modalities — served from its
+    disk cache when offline) layered under the ``_minimal_spec_row`` identity,
+    endpoint, and thinking fields.
+
+    With a models.dev hit the row is a full spec (the ``migration-minimal``
+    heal marker comes off). Without one it stays the minimal row, which the
+    next online Refresh overwrites.
+    """
+    row = _minimal_spec_row(pid, mid, pcfg)
+    try:
+        from openprogram.providers.sources import models_dev
+        found = models_dev.lookup(pid, mid)
+    except Exception:
+        found = None
+    if found:
+        row.pop("source", None)
+        merged = {**found, **row}
+        if found.get("name"):
+            merged["name"] = found["name"]
+        row = merged
+    return _normalize_spec_row(row)
+
+
 def _migrate_specs(providers: dict[str, dict[str, Any]]) -> bool:
     """Backfill ``providers.<p>.models`` from existing config, once.
 
     For each provider:
       * every ``enabled_models`` id missing a spec row gets one — from the
-        live listing (``spec_row_for``) when reachable, else a minimal
-        offline row (``_minimal_spec_row``) so the id still resolves without
-        network; only ids for which even a minimal row can't be built stay in
+        models.dev row when the id resolves there (``_models_dev_spec_row``),
+        else a minimal offline row so the id still resolves without network;
+        only ids for which even a minimal row can't be built stay in
         ``enabled_models`` (never dropped) with a warning;
       * a ``custom_models`` row is merged in tagged ``source: "manual"`` ONLY
         if its id is in this provider's legacy ``enabled_models``. The old
-        Fetch flow cached a community provider's ENTIRE upstream catalogue in
+        Fetch flow cached a community provider's ENTIRE upstream model list in
         ``custom_models`` (openrouter: 399 rows for 3 enabled) — that key was
         an availability cache, never a "user enabled these" list, so merging
         all of it floods the enabled-only registry. Non-enabled custom rows
@@ -396,15 +411,10 @@ def _migrate_specs(providers: dict[str, dict[str, Any]]) -> bool:
         for mid in enabled:
             if mid in have:
                 continue
-            spec = spec_row_for(pid, mid)
-            if spec is None:
-                # Offline / no key: live browse returned nothing. Build a
-                # minimal row from local provider.json so the id still
-                # resolves (heals on the next online Refresh).
-                try:
-                    spec = _minimal_spec_row(pid, mid, pcfg)
-                except Exception:
-                    spec = None
+            try:
+                spec = _models_dev_spec_row(pid, mid, pcfg)
+            except Exception:
+                spec = None
             if spec is None:
                 logging.getLogger(__name__).warning(
                     "spec migration: provider %s enabled model %r has no "
@@ -475,7 +485,7 @@ def _normalize_label(text: str) -> str:
 
 
 def _known_provider_ids() -> set[str]:
-    """Tier-1 (static registry) + tier-2 (models.dev catalogue) provider ids."""
+    """Tier-1 (static registry) + tier-2 (models.dev) provider ids."""
     from openprogram.providers import get_providers
     known = set(get_providers())
     try:
@@ -576,12 +586,12 @@ def delete_custom_provider(provider_id: str) -> dict[str, Any]:
         del cfg[pid]
         _write_providers_cfg(cfg)
         try:
-            from openprogram.webui.server import _load_config, _save_config
-            root = _load_config()
+            from openprogram import setup as _setup
+            root = _setup._read_config()
             if root.get("default_provider") == pid:
                 root.pop("default_provider", None)
                 root.pop("default_model", None)
-                _save_config(root)
+                _setup._write_config(root)
         except Exception:
             pass  # best-effort cleanup; the startup probe degrades gracefully
     return {"ok": True, "id": pid, "removed": True}
@@ -613,8 +623,8 @@ def add_manual_model(provider_id: str, model_id: str, name: str | None = None) -
         cfg = _read_providers_cfg()
         # Reject an unknown provider id: creating a row for one would write an
         # ENABLED_MODELS entry with an empty base_url that can't dispatch. Known
-        # = a tier-1/tier-2 provider (static registry or models.dev catalogue),
-        # or an existing custom config key.
+        # = a tier-1/tier-2 provider (static registry or models.dev), or an
+        # existing custom config key.
         if not _is_known_provider(provider_id) and (
             cfg.get(provider_id, {}).get("source") != "custom"
         ):
@@ -668,97 +678,6 @@ def set_provider_config(provider_id: str, patch: dict[str, Any]) -> dict[str, An
 # Custom models CRUD
 # ---------------------------------------------------------------------------
 
-def add_custom_models(provider_id: str, models: list[dict[str, Any]]) -> dict[str, Any]:
-    """Merge a list of model descriptors into custom_models (dedup by id).
-
-    Union semantics — preserves every existing row, only adds new ones.
-    Use ``replace_fetched_models`` for the Fetch Models flow instead;
-    this entry point is for manual ad-hoc additions where merge is the
-    right behavior.
-    """
-    if not models:
-        return {"provider": provider_id, "added": 0, "total": 0}
-    with _cache_lock:
-        cfg = _read_providers_cfg()
-        pcfg = cfg.setdefault(provider_id, {})
-        existing = {m.get("id"): m for m in pcfg.get("custom_models", []) if m.get("id")}
-        added = 0
-        for raw in models:
-            mid = (raw.get("id") or "").strip()
-            if not mid:
-                continue
-            if mid not in existing:
-                existing[mid] = raw
-                added += 1
-            else:
-                # Shallow merge new hints into the existing entry.
-                existing[mid].update({k: v for k, v in raw.items() if v is not None})
-        pcfg["custom_models"] = list(existing.values())
-        _write_providers_cfg(cfg)
-    return {"provider": provider_id, "added": added, "total": len(existing)}
-
-
-def replace_fetched_models(provider_id: str, models: list[dict[str, Any]]) -> dict[str, Any]:
-    """Replace the fetched-from-upstream model set for a provider,
-    leaving any manually-added rows alone.
-
-    "Fetch models" is the user saying "tell me what the upstream
-    provider actually serves right now". When upstream's answer drifts
-    (rename, new family, dropped variant) the previous answer is wrong
-    — we shouldn't leave stale rows hanging around. ``add_custom_models``
-    is union / merge semantics; this is rotate-and-replace.
-
-    Rows marked ``_source: "fetched"`` are owned by this function and
-    rotate on each fetch. Anything without that marker is a manual
-    addition and we leave it untouched. Also flips
-    ``pcfg["models_fetched"] = True`` so the list endpoint knows to hide
-    builtin-registry rows that upstream's fresh answer doesn't endorse
-    — otherwise the legacy ``claude-opus-4`` row keeps showing up even
-    after a successful fetch, since it comes from
-    ``providers/enabled_models.py`` not config.
-
-    Side-effect on the enabled spec rows: ids that no longer correspond to
-    a visible row are pruned. After a rename like
-    ``claude-opus-4`` → ``claude-opus-4-7`` the old id is dead — leaving its
-    spec row means the picker tries to instantiate a model the runtime can't
-    resolve.
-    """
-    with _cache_lock:
-        cfg = _read_providers_cfg()
-        pcfg = cfg.setdefault(provider_id, {})
-        prior = pcfg.get("custom_models", []) or []
-        # Keep manual entries; rotate out anything we previously fetched.
-        kept_manual = [m for m in prior if m.get("_source") != "fetched"]
-        kept_ids = {m.get("id") for m in kept_manual if m.get("id")}
-        new_rows: list[dict[str, Any]] = []
-        for m in models:
-            mid = (m.get("id") or "").strip()
-            if not mid or mid in kept_ids:
-                # Manual override of an upstream id wins — don't overwrite
-                # what the user typed in by hand.
-                continue
-            row = dict(m)
-            row["_source"] = "fetched"
-            new_rows.append(row)
-        pcfg["custom_models"] = kept_manual + new_rows
-        visible_ids = {r["id"] for r in (new_rows + kept_manual) if r.get("id")}
-        # Drop any enabled spec row whose id is now dead (gone from the fresh
-        # fetch and not a kept manual row).
-        enabled_spec_ids = [r.get("id") for r in (pcfg.get("models") or []) if r.get("id")]
-        dropped_enabled = [mid for mid in enabled_spec_ids if mid not in visible_ids]
-        for mid in dropped_enabled:
-            _remove_spec_row(pcfg, mid)
-        pcfg["models_fetched"] = True
-        _write_providers_cfg(cfg)
-        return {
-            "provider": provider_id,
-            "added": len(new_rows),
-            "removed": len(prior) - len(kept_manual),  # rotated-out fetched rows
-            "total": len(pcfg["custom_models"]),
-            "dropped_enabled": dropped_enabled,
-        }
-
-
 def remove_custom_model(provider_id: str, model_id: str) -> dict[str, Any]:
     with _cache_lock:
         cfg = _read_providers_cfg()
@@ -797,8 +716,7 @@ def _resolve_base_url(provider_id: str) -> str | None:
         base = pcfg["base_url"]
     else:
         # Static registry baked-in base URL. Prefer the self-contained
-        # providers/<p>/provider.json metadata (no ENABLED_MODELS read, breaks the
-        # providers<->webui circular dep); fall back to the legacy
+        # providers/<p>/provider.json metadata; fall back to the legacy
         # enabled_models-backed get_models() while both sources coexist.
         from openprogram.providers.metadata import provider_base_url
         meta_base = provider_base_url(provider_id)
@@ -810,7 +728,7 @@ def _resolve_base_url(provider_id: str) -> str | None:
             if ms and ms[0].base_url:
                 base = ms[0].base_url
             else:
-                # Community catalogue.
+                # models.dev community entry.
                 base = default_base_url_for(provider_id)
     if not base:
         return None
@@ -824,5 +742,3 @@ def _resolve_base_url(provider_id: str) -> str | None:
     if base.endswith("/v1") and default_api_for(provider_id) == "anthropic-messages":
         base = base[: -len("/v1")].rstrip("/")
     return base
-
-

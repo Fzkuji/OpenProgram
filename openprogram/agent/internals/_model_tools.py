@@ -86,7 +86,7 @@ def _seed_default_agent(_A, agent_id: str) -> dict | None:
         from openprogram.agent.management.manager import (
             AgentSpec, AgentModelRef, _write_agent,
         )
-        from openprogram.webui._model_listing import _read_providers_cfg
+        from openprogram.providers.storage import _read_providers_cfg
         from openprogram.paths import get_config_path
         import json as _json
     except Exception:
@@ -160,23 +160,16 @@ def is_anthropic_family(model_id: Optional[str], provider_id: Optional[str]) -> 
 
 def _resolve_custom_model(provider: str, model_id: str, get_model):
     """Resolve a community / fetched custom model from the provider's
-    config ``custom_models`` and return its registered ``Model`` row, or
-    None if it isn't a known custom model.
+    config rows and return its registered ``Model`` row, or None if it
+    isn't a known custom model.
 
     Reuses the exact registry insert the picker-switch path uses
-    (``_register_custom_model_in_registry`` — derived api + normalised
-    base), so the chat resolver and the switch agree and a community model
-    routes correctly without depending on a prior switch in this process.
-    Lazy + guarded import: the webui layer isn't always present (pure
-    agent/test contexts), in which case there's simply no custom model."""
+    (``register_model_from_config`` — derived api + normalised base), so
+    the chat resolver and the switch agree and a community model routes
+    correctly without depending on a prior switch in this process."""
     try:
-        from openprogram.webui._runtime_management import (
-            _register_custom_model_in_registry,
-        )
-    except Exception:
-        return None
-    try:
-        if _register_custom_model_in_registry(provider, model_id):
+        from openprogram.providers.enabled_models import register_model_from_config
+        if register_model_from_config(provider, model_id):
             return get_model(provider, model_id)
     except Exception:
         return None

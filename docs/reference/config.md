@@ -34,9 +34,9 @@ The top-level keys actually written to `~/.openprogram/config.json` (do not edit
 | `default_provider` | Default LLM provider (written by the setup wizard) | `openprogram/setup.py` |
 | `default_model` | Default model (written by the setup wizard) | `openprogram/setup.py` |
 | `default_workdir` | Default working directory for agents | `openprogram/paths.py` |
-| `providers` | Per-provider settings subtree (enabled models, custom models, etc.), managed by the Web UI model listing | `openprogram/providers/_config_read.py`, `openprogram/webui/_model_listing/storage.py` |
+| `providers` | Per-provider settings subtree (enabled models, custom models, etc.), managed by the Web UI model listing | `openprogram/providers/_config_read.py`, `openprogram/providers/storage.py` |
 | `api_keys` | Environment variable name → API key mapping, written by the setup wizard and exported into the environment at worker startup. Used for web-search / TTS keys; LLM provider keys live in the credential store (`openprogram providers login`), not here | `openprogram/_setup_sections/sections.py`, `openprogram/webui/server.py` |
-| `spec_migration_version` | One-time marker for the model-spec migration; see the code for its meaning | `openprogram/webui/_model_listing/storage.py` |
+| `spec_migration_version` | One-time marker for the model-spec migration; see the code for its meaning | `openprogram/providers/storage.py` |
 
 ## Environment variables
 

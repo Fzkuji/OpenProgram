@@ -31,7 +31,7 @@ rt = create_runtime(provider="openai-codex", model="gpt-5.5")
 
 ### `create_runtime(provider=None, model=None, **kwargs)`
 
-返回可直接使用的 `Runtime`。`provider=None`(或 `"auto"`)会跑 `detect_provider()`。下面六个 provider 由专属 `Runtime` 子类支撑(`create_runtime` 的实现细节);**其它任何 provider 名**(deepseek、groq、openrouter、minimax、kimi 以及全目录)经模型注册表走基类 `Runtime("provider:model", ...)`——与 chat dispatcher 同一条路。`**kwargs` 转发给 runtime 构造函数。
+返回可直接使用的 `Runtime`。`provider=None`(或 `"auto"`)会跑 `detect_provider()`。下面六个 provider 里,三个订阅/CLI 凭据型由专属 `Runtime` 子类支撑(`create_runtime` 的实现细节);三个 API-key 型就是基类 `Runtime` 本身——`create_runtime` 从凭据库解析 key 后构建 `Runtime("<命名空间>:<model>", api_key=...)`。**其它任何 provider 名**(deepseek、groq、openrouter、minimax、kimi 以及整个社区列表)经模型注册表走基类 `Runtime("provider:model", ...)`——与 chat dispatcher 同一条路。每个 runtime 都带权威的 `provider_id` 属性(由模型命名空间推导,订阅类自行设置)。`**kwargs` 转发给 runtime 构造函数。
 
 ### `detect_provider() -> (provider_name, default_model)`
 
@@ -51,22 +51,22 @@ rt = create_runtime(provider="openai-codex", model="gpt-5.5")
 
 ### `PROVIDERS` 表
 
-| Provider 名 | Runtime 类 | 默认模型 | 凭据 |
+| Provider 名 | 构建方式 | 默认模型 | 凭据 |
 |------|------|------|------|
 | `claude-code` | `ClaudeCodeRuntime` | `claude-sonnet-4`(别名,展开为当前 Sonnet) | Claude 订阅 OAuth(从 Claude Code CLI 收编) |
 | `openai-codex` | `OpenAICodexRuntime` | `gpt-5.5` | ChatGPT 订阅 OAuth(`~/.codex/auth.json`) |
 | `gemini-cli` | `GeminiCLIRuntime` | `gemini-2.5-flash` | Google 账号 OAuth(`~/.gemini/oauth_creds.json`) |
-| `anthropic` | `AnthropicRuntime` | `claude-sonnet-4-6` | Anthropic API key |
-| `openai` | `OpenAIRuntime` | `gpt-4.1`(表)/ `gpt-4o`(类构造函数) | OpenAI API key |
-| `gemini` | `GeminiRuntime` | `gemini-2.5-flash` | Google API key |
+| `anthropic` | 基类 `Runtime("anthropic:<id>")` | `claude-sonnet-4-6` | Anthropic API key 或收编的订阅 OAuth token |
+| `openai` | 基类 `Runtime("openai:<id>")` | `gpt-4.1` | OpenAI API key |
+| `gemini` | 基类 `Runtime("google:<id>")` | `gemini-2.5-flash` | Google API key |
 
-这些类住在各自的 provider 包里(`openprogram.providers.<package>.runtime`);构建一律走 `create_runtime(provider=...)`。
+三个订阅类住在各自的 provider 包里;API-key 型 provider 没有类。构建一律走 `create_runtime(provider=...)`。
 
 ---
 
 ## anthropic
 
-Anthropic Messages API,经 provider 层(流式、工具循环、DAG 记录全包)。由 `AnthropicRuntime` 支撑。
+Anthropic Messages API,经 provider 层(流式、工具循环、DAG 记录全包)。`create_runtime` 解析凭据后直接返回基类 `Runtime("anthropic:<model>")`,`provider_id="anthropic"`——没有专属类。
 
 ```python
 from openprogram.providers.registry import create_runtime
@@ -74,13 +74,13 @@ from openprogram.providers.registry import create_runtime
 rt = create_runtime(provider="anthropic", api_key="sk-ant-...", model="claude-sonnet-4-6")
 ```
 
-### 选项(转发给 runtime)
+### 选项
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `api_key` | `str \| None` | `None` | API key。`None` = 从凭据库解析——存好的 API key 或收编的 Claude 订阅 OAuth token(`sk-ant-oat...`,线路自动切换到 Bearer 认证) |
 | `model` | `str` | `"claude-sonnet-4-6"` | `anthropic` provider 命名空间下的模型 id |
-| `max_retries` | `int` | `2` | 转发给基类 `Runtime` 的重试预算 |
+| `max_retries` | `int` | 环境变量 `OPENPROGRAM_MAX_RETRIES`,否则 6 | 转发给基类 `Runtime` 的重试预算 |
 
 解析不到凭据时抛 `ValueError`。`list_models()` 返回已启用的 Anthropic 模型 id。
 
@@ -88,19 +88,19 @@ rt = create_runtime(provider="anthropic", api_key="sk-ant-...", model="claude-so
 
 ## openai
 
-OpenAI Responses API,经 provider 层。由 `OpenAIRuntime` 支撑。
+OpenAI Responses API,经 provider 层。`create_runtime` 解析 API key 后直接返回基类 `Runtime("openai:<model>")`,`provider_id="openai"`——没有专属类。
 
 ```python
-rt = create_runtime(provider="openai", api_key="sk-...", model="gpt-4o")
+rt = create_runtime(provider="openai", api_key="sk-...", model="gpt-4.1")
 ```
 
-### 选项(转发给 runtime)
+### 选项
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `api_key` | `str \| None` | `None` | API key。`None` = 从凭据库解析(`openprogram providers login openai --api-key`) |
-| `model` | `str` | `"gpt-4o"` | `openai` provider 命名空间下的模型 id |
-| `max_retries` | `int` | `2` | 转发给基类 `Runtime` 的重试预算 |
+| `model` | `str` | `"gpt-4.1"` | `openai` provider 命名空间下的模型 id |
+| `max_retries` | `int` | 环境变量 `OPENPROGRAM_MAX_RETRIES`,否则 6 | 转发给基类 `Runtime` 的重试预算 |
 
 Azure 或本地 OpenAI 兼容服务:在设置页添加自定义 provider(Settings → Providers → Add custom provider,名称 + Base URL),再用 `Runtime(model="<provider>:<model>")` 或 `create_runtime(provider="<provider>")`。
 
@@ -108,19 +108,19 @@ Azure 或本地 OpenAI 兼容服务:在设置页添加自定义 provider(Setting
 
 ## gemini
 
-Google Gemini Generative Language API,经 provider 层。由 `GeminiRuntime` 支撑。
+Google Gemini Generative Language API,经 provider 层。`create_runtime` 解析 API key 后直接返回基类 `Runtime("google:<model>")`,`provider_id="google"`——没有专属类;`gemini` provider 的模型走 `google` 注册表命名空间。
 
 ```python
 rt = create_runtime(provider="gemini", api_key="...", model="gemini-2.5-flash")
 ```
 
-### 选项(转发给 runtime)
+### 选项
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `api_key` | `str \| None` | `None` | API key。`None` = 从凭据库解析(添加时接受的环境变量名:`GEMINI_API_KEY` / `GOOGLE_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY`) |
 | `model` | `str` | `"gemini-2.5-flash"` | `google` provider 命名空间下的模型 id |
-| `max_retries` | `int` | `2` | 转发给基类 `Runtime` 的重试预算 |
+| `max_retries` | `int` | 环境变量 `OPENPROGRAM_MAX_RETRIES`,否则 6 | 转发给基类 `Runtime` 的重试预算 |
 
 ---
 

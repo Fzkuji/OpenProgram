@@ -150,7 +150,7 @@ def _preferred_default_model(provider: str) -> str | None:
       3. ``None`` — caller uses its hardcoded fallback.
     """
     try:
-        from openprogram.webui._model_listing import _read_providers_cfg
+        from openprogram.providers.storage import _read_providers_cfg
         from openprogram.paths import get_config_path
         import json
         try:
@@ -176,10 +176,10 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     """Create a runtime appropriate for the web UI.
 
     Two shapes:
-      - Provider listed in ``legacy_providers.PROVIDERS`` (CLI runtimes + the
-        classic HTTP subclasses like AnthropicRuntime/OpenAIRuntime/...):
-        route through ``legacy_providers.create_runtime`` so their per-provider
-        conventions (Codex search=True, Claude Code has_session, ...) apply.
+      - Provider listed in ``registry.PROVIDERS`` (the six first-class
+        backends): route through ``registry.create_runtime`` so their
+        per-provider conventions (Codex search=True, key resolution with
+        guidance, ...) apply.
       - Any other provider id present in the HTTP model registry (openrouter,
         groq, cerebras, minimax, mistral, ...): build a plain ``Runtime`` with
         ``model="<provider>:<id>"``. These go through AgentSession end-to-end.
@@ -221,7 +221,7 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
         # rule that drives the Settings model table. Legacy ``custom_models``
         # is a fallback for a not-yet-migrated config.
         if not models:
-            from openprogram.webui._model_listing import _read_providers_cfg
+            from openprogram.providers.storage import _read_providers_cfg
             pcfg = _read_providers_cfg().get(provider, {})
             customs = (pcfg.get("models") or []) or (pcfg.get("custom_models") or [])
             if not customs:
@@ -240,102 +240,10 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     # and the picker switch 500s — even though Settings → Models
     # happily toggles those rows enabled.
     if _get_model(provider, model) is None:
-        if not _register_custom_model_in_registry(provider, model):
+        from openprogram.providers.enabled_models import register_model_from_config
+        if not register_model_from_config(provider, model):
             raise RuntimeError(f"Unknown model {provider}:{model}")
     return Runtime(model=f"{provider}:{model}")
-
-
-def _register_custom_model_in_registry(provider: str, model_id: str) -> bool:
-    """Look ``model_id`` up in the user's enabled spec rows
-    (``providers.<p>.models``) for ``provider`` and, if present, insert a
-    ``Model`` row into the global ``ENABLED_MODELS`` dict so
-    ``providers.get_model`` finds it. Falls back to the legacy
-    ``custom_models`` key for a not-yet-migrated config.
-
-    Side-effect on the module-level registry — deliberate. The
-    alternative is plumbing custom-model metadata through every
-    callsite that goes "look up Model row → read context_window /
-    cost / modalities". Registering once at runtime-construction
-    time is the smallest change that makes the registry the single
-    source of truth.
-
-    Returns ``True`` when a registration happened, ``False`` when the
-    model wasn't found (genuine unknown id → caller re-raises).
-    """
-    try:
-        from openprogram.providers.metadata import default_api_for
-        from openprogram.webui._model_listing import _read_providers_cfg
-        from openprogram.providers.enabled_models import (
-            ENABLED_MODELS,
-            _build_model_from_row,
-        )
-        from openprogram.providers.metadata import provider_endpoints
-        from openprogram.providers.types import Model, ModelCost
-    except Exception:
-        return False
-
-    cfg_pcfg = _read_providers_cfg().get(provider, {})
-
-    # Enabled spec rows are full Model specs (same shape ``_load`` consumes) —
-    # validate one directly if present.
-    spec = next(
-        (r for r in (cfg_pcfg.get("models") or []) if r.get("id") == model_id),
-        None,
-    )
-    if spec is not None:
-        try:
-            m = _build_model_from_row(spec, provider, provider_endpoints(provider))
-        except Exception:
-            return False
-        prefix = spec.get("key_prefix") or provider
-        ENABLED_MODELS[f"{prefix}/{m.id}"] = m
-        return True
-
-    # Legacy custom_models (flat shape) — fallback for a not-yet-migrated config.
-    raw = next(
-        (c for c in (cfg_pcfg.get("custom_models") or []) if c.get("id") == model_id),
-        None,
-    )
-    if not raw:
-        return False
-
-    api = raw.get("api") or default_api_for(provider) or "openai-completions"
-    inputs: list[str] = list(raw.get("input_modalities") or ["text"])
-    # Cost is optional — only stamp the fields the row actually has,
-    # default 0.0 for missing keys so ModelCost validates.
-    cost = ModelCost(
-        input=float(raw.get("input_cost", 0) or 0),
-        output=float(raw.get("output_cost", 0) or 0),
-        cache_read=float(raw.get("cache_read_cost", 0) or 0),
-        cache_write=float(raw.get("cache_write_cost", 0) or 0),
-    )
-    # Resolve through the catalog's _resolve_base_url (user config →
-    # static registry → models.dev) so the row gets the SAME normalised
-    # base the rest of the pipeline uses — crucially the Anthropic-wire
-    # /v1 strip. Reading models.dev raw here gave Anthropic providers a
-    # ``…/anthropic/v1`` base, which the anthropic-messages layer then
-    # doubled into ``…/v1/v1/messages`` → 404, so the model registered but
-    # was unusable.
-    from ._model_listing import _resolve_base_url
-    base_url = _resolve_base_url(provider) or ""
-
-    try:
-        m = Model(
-            id=model_id,
-            name=str(raw.get("name") or model_id),
-            api=api,
-            provider=provider,
-            base_url=base_url,
-            reasoning=bool(raw.get("reasoning", False)),
-            input=inputs,
-            cost=cost,
-            context_window=int(raw.get("context_window", 0) or 0),
-            max_tokens=int(raw.get("max_tokens", 0) or 0),
-        )
-    except Exception:
-        return False
-    ENABLED_MODELS[f"{provider}/{model_id}"] = m
-    return True
 
 
 _PROVIDER_PRIORITY = ("openai-codex", "gemini-cli", "anthropic", "gemini", "openai", "claude-code")
@@ -794,7 +702,7 @@ def _get_provider_info(session_id: str = None) -> dict:
                     "provider": provider_name,
                     "type": provider_type,
                     "model": runtime.model,
-                    "runtime": type(runtime).__name__,
+                    "runtime": getattr(runtime, "provider_id", None),
                     "session_id": getattr(runtime, "_session_id", None),
                 }
             provider_name, model = _resolve_session_provider_model(conv)
@@ -820,7 +728,7 @@ def _get_provider_info(session_id: str = None) -> dict:
         "provider": provider_name,
         "type": provider_type,
         "model": runtime.model,
-        "runtime": type(runtime).__name__,
+        "runtime": getattr(runtime, "provider_id", None),
         "session_id": session_id,
     }
 

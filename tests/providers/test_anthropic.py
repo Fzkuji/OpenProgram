@@ -1,12 +1,14 @@
-"""Wiring tests for AnthropicRuntime.
+"""Wiring tests for the ``anthropic`` provider.
 
-The runtime no longer formats Anthropic-shaped requests itself; that
-job moved to pi-ai. These tests verify the thin wiring layer:
+The dedicated Runtime shell is retired: ``create_runtime(provider=
+"anthropic")`` resolves the credential (api-key OR subscription OAuth)
+and returns the base ``Runtime("anthropic:<id>")``. These verify that
+thin wiring layer:
 
-  - missing API key raises
-  - constructor resolves the model id through the pi-ai registry
-  - the resulting Runtime uses the new ``Runtime("anthropic:<id>")``
-    code path (no subclass ``_call`` override)
+  - missing credential raises with guidance
+  - the model id resolves through the registry, provider-prefixed
+  - the instance carries the authoritative ``provider_id``
+  - ``list_models`` filters the registry by provider
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.providers.anthropic.runtime import AnthropicRuntime
+from openprogram.providers.registry import create_runtime
 
 from ._registry_fixture import install_registry
 
@@ -29,9 +31,9 @@ def _enable_anthropic(monkeypatch):
     ]}})
 
 
-class TestAnthropicRuntime:
-    def test_no_api_key_raises(self, monkeypatch):
-        # Keys now resolve only through the AuthStore (env reading retired,
+class TestAnthropicProviderWiring:
+    def test_no_credential_raises(self, monkeypatch):
+        # Keys resolve only through the AuthStore (env reading retired,
         # project_authstore_only_keys). Force the resolver to find nothing so
         # this tests the genuine "no credential anywhere" path, regardless of
         # what's stored on the dev machine running the suite.
@@ -41,44 +43,43 @@ class TestAnthropicRuntime:
             lambda *a, **k: None,
         )
         with pytest.raises(ValueError, match="(?i)credential"):
-            AnthropicRuntime(api_key=None)
+            create_runtime(provider="anthropic")
 
-    @pytest.mark.xfail(
-        reason="env-var key reading is retired — keys resolve only from the "
-        "AuthStore now (project_authstore_only_keys). Rewrite to seed the "
-        "AuthStore instead of ANTHROPIC_API_KEY.",
-        strict=False,
-    )
-    def test_api_key_from_env(self, monkeypatch):
+    def test_api_key_arg_wins(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "env-key")
-        rt = AnthropicRuntime()
-        assert rt.api_key == "env-key"
-
-    def test_api_key_arg_overrides_env(self, monkeypatch):
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "env-key")
-        rt = AnthropicRuntime(api_key="explicit-key")
+        rt = create_runtime(provider="anthropic", api_key="explicit-key")
         assert rt.api_key == "explicit-key"
 
-    def test_model_prefixed_with_provider(self):
-        rt = AnthropicRuntime(api_key="k", model="claude-sonnet-4-6")
+    def test_model_prefixed_with_namespace(self):
+        rt = create_runtime(
+            provider="anthropic", model="claude-sonnet-4-6", api_key="k"
+        )
+        assert rt.model == "anthropic:claude-sonnet-4-6"
+
+    def test_default_model_from_table(self):
+        rt = create_runtime(provider="anthropic", api_key="k")
         assert rt.model == "anthropic:claude-sonnet-4-6"
 
     def test_api_model_resolved_from_registry(self):
-        rt = AnthropicRuntime(api_key="k", model="claude-sonnet-4-6")
+        rt = create_runtime(
+            provider="anthropic", model="claude-sonnet-4-6", api_key="k"
+        )
         assert rt.api_model is not None
         assert rt.api_model.provider == "anthropic"
         assert rt.api_model.id == "claude-sonnet-4-6"
 
-    def test_uses_default_path_not_legacy(self):
-        """No ``_call`` override — runs through ``_call_via_providers``."""
-        rt = AnthropicRuntime(api_key="k", model="claude-sonnet-4-6")
-        # Single path now: not overriding _call means it reaches
-        # _call_via_providers. (_uses_legacy_call was removed in the
-        # LLM-call-path unification.)
-        assert type(rt)._call is Runtime._call
+    def test_base_runtime_with_provider_id(self):
+        """No subclass — the base Runtime carries the provider identity."""
+        rt = create_runtime(
+            provider="anthropic", model="claude-sonnet-4-6", api_key="k"
+        )
+        assert type(rt) is Runtime
+        assert rt.provider_id == "anthropic"
 
     def test_list_models_filters_by_provider(self):
-        rt = AnthropicRuntime(api_key="k", model="claude-sonnet-4-6")
+        rt = create_runtime(
+            provider="anthropic", model="claude-sonnet-4-6", api_key="k"
+        )
         ids = rt.list_models()
         assert ids, "registry should expose at least one Anthropic model"
         assert all(isinstance(i, str) for i in ids)

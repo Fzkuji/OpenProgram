@@ -31,7 +31,7 @@ rt = create_runtime(provider="openai-codex", model="gpt-5.5")
 
 ### `create_runtime(provider=None, model=None, **kwargs)`
 
-Returns a ready-to-use `Runtime`. `provider=None` (or `"auto"`) runs `detect_provider()`. The six providers below are backed by a dedicated `Runtime` subclass (an implementation detail of `create_runtime`); **any other provider name** (deepseek, groq, openrouter, minimax, kimi, and the rest of the catalogue) is routed through the base `Runtime("provider:model", ...)` via the model registry — the same path the chat dispatcher uses. `**kwargs` are forwarded to the runtime constructor.
+Returns a ready-to-use `Runtime`. `provider=None` (or `"auto"`) runs `detect_provider()`. Of the six providers below, the three subscription/CLI-credential ones are backed by a dedicated `Runtime` subclass (an implementation detail of `create_runtime`); the three API-key ones are the base `Runtime` itself — `create_runtime` resolves the key from the credential store and builds `Runtime("<namespace>:<model>", api_key=...)`. **Any other provider name** (deepseek, groq, openrouter, minimax, kimi, and the rest of the community list) is routed through the base `Runtime("provider:model", ...)` via the model registry — the same path the chat dispatcher uses. Every runtime carries an authoritative `provider_id` attribute (derived from its model namespace, or set by the subscription classes). `**kwargs` are forwarded to the runtime constructor.
 
 ### `detect_provider() -> (provider_name, default_model)`
 
@@ -51,22 +51,22 @@ Availability report for the six dedicated providers: `{name: {"available": bool,
 
 ### The `PROVIDERS` table
 
-| Provider name | Runtime class | Default model | Credential |
+| Provider name | Construction | Default model | Credential |
 |------|------|------|------|
 | `claude-code` | `ClaudeCodeRuntime` | `claude-sonnet-4` (alias, expanded to the current Sonnet) | Claude subscription OAuth (adopted from Claude Code CLI) |
 | `openai-codex` | `OpenAICodexRuntime` | `gpt-5.5` | ChatGPT subscription OAuth (`~/.codex/auth.json`) |
 | `gemini-cli` | `GeminiCLIRuntime` | `gemini-2.5-flash` | Google account OAuth (`~/.gemini/oauth_creds.json`) |
-| `anthropic` | `AnthropicRuntime` | `claude-sonnet-4-6` | Anthropic API key |
-| `openai` | `OpenAIRuntime` | `gpt-4.1` (table) / `gpt-4o` (class constructor) | OpenAI API key |
-| `gemini` | `GeminiRuntime` | `gemini-2.5-flash` | Google API key |
+| `anthropic` | base `Runtime("anthropic:<id>")` | `claude-sonnet-4-6` | Anthropic API key or adopted subscription OAuth token |
+| `openai` | base `Runtime("openai:<id>")` | `gpt-4.1` | OpenAI API key |
+| `gemini` | base `Runtime("google:<id>")` | `gemini-2.5-flash` | Google API key |
 
-The classes live in their provider packages (`openprogram.providers.<package>.runtime`); construct them through `create_runtime(provider=...)`.
+The three subscription classes live in their provider packages; the API-key providers have no class at all. Construct every provider through `create_runtime(provider=...)`.
 
 ---
 
 ## anthropic
 
-Anthropic Messages API, via the provider layer (streaming, tool loop, DAG recording all included). Backed by `AnthropicRuntime`.
+Anthropic Messages API, via the provider layer (streaming, tool loop, DAG recording all included). `create_runtime` resolves the credential and returns the base `Runtime("anthropic:<model>")` with `provider_id="anthropic"` — there is no dedicated class.
 
 ```python
 from openprogram.providers.registry import create_runtime
@@ -74,13 +74,13 @@ from openprogram.providers.registry import create_runtime
 rt = create_runtime(provider="anthropic", api_key="sk-ant-...", model="claude-sonnet-4-6")
 ```
 
-### Options (forwarded to the runtime)
+### Options
 
 | Parameter | Type | Default | Description |
 |------|------|--------|------|
 | `api_key` | `str \| None` | `None` | API key. `None` = resolved from the credential store — a stored API key or an adopted Claude-subscription OAuth token (`sk-ant-oat...`, for which the wire switches to Bearer auth automatically) |
 | `model` | `str` | `"claude-sonnet-4-6"` | Model id under the `anthropic` provider namespace |
-| `max_retries` | `int` | `2` | Retry budget forwarded to the base `Runtime` |
+| `max_retries` | `int` | `OPENPROGRAM_MAX_RETRIES` env, else 6 | Retry budget forwarded to the base `Runtime` |
 
 Raises `ValueError` when no credential can be resolved. `list_models()` returns the enabled Anthropic model ids.
 
@@ -88,19 +88,19 @@ Raises `ValueError` when no credential can be resolved. `list_models()` returns 
 
 ## openai
 
-OpenAI Responses API, via the provider layer. Backed by `OpenAIRuntime`.
+OpenAI Responses API, via the provider layer. `create_runtime` resolves the API key and returns the base `Runtime("openai:<model>")` with `provider_id="openai"` — there is no dedicated class.
 
 ```python
-rt = create_runtime(provider="openai", api_key="sk-...", model="gpt-4o")
+rt = create_runtime(provider="openai", api_key="sk-...", model="gpt-4.1")
 ```
 
-### Options (forwarded to the runtime)
+### Options
 
 | Parameter | Type | Default | Description |
 |------|------|--------|------|
 | `api_key` | `str \| None` | `None` | API key. `None` = resolved from the credential store (`openprogram providers login openai --api-key`) |
-| `model` | `str` | `"gpt-4o"` | Model id under the `openai` provider namespace |
-| `max_retries` | `int` | `2` | Retry budget forwarded to the base `Runtime` |
+| `model` | `str` | `"gpt-4.1"` | Model id under the `openai` provider namespace |
+| `max_retries` | `int` | `OPENPROGRAM_MAX_RETRIES` env, else 6 | Retry budget forwarded to the base `Runtime` |
 
 For Azure or a local OpenAI-compatible server, add a custom provider (Settings → Providers → Add custom provider, name + base URL) and use `Runtime(model="<provider>:<model>")` or `create_runtime(provider="<provider>")`.
 
@@ -108,19 +108,19 @@ For Azure or a local OpenAI-compatible server, add a custom provider (Settings �
 
 ## gemini
 
-Google Gemini Generative Language API, via the provider layer. Backed by `GeminiRuntime`.
+Google Gemini Generative Language API, via the provider layer. `create_runtime` resolves the API key and returns the base `Runtime("google:<model>")` with `provider_id="google"` — there is no dedicated class; the `gemini` provider streams models under the `google` registry namespace.
 
 ```python
 rt = create_runtime(provider="gemini", api_key="...", model="gemini-2.5-flash")
 ```
 
-### Options (forwarded to the runtime)
+### Options
 
 | Parameter | Type | Default | Description |
 |------|------|--------|------|
 | `api_key` | `str \| None` | `None` | API key. `None` = resolved from the credential store (accepted env-var names when adding one: `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY`) |
 | `model` | `str` | `"gemini-2.5-flash"` | Model id under the `google` provider namespace |
-| `max_retries` | `int` | `2` | Retry budget forwarded to the base `Runtime` |
+| `max_retries` | `int` | `OPENPROGRAM_MAX_RETRIES` env, else 6 | Retry budget forwarded to the base `Runtime` |
 
 ---
 

@@ -2,8 +2,7 @@
 
 Pulls the public JSON catalogue at https://models.dev/api.json (the
 same data OpenCode and several other AI-tooling projects use) and
-normalises it into the schema described in
-``_model_listing.sources.__init__``.
+normalises it into the schema described in ``sources.__init__``.
 
 Single-process in-memory cache with a 1-hour TTL — the catalogue
 itself only updates daily, and we don't want every Fetch click to add

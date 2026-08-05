@@ -28,7 +28,7 @@ import pytest
 from openprogram.webui._model_listing import listing
 from openprogram.webui._model_listing import provider_models as pm
 from openprogram.providers import metadata as cat
-from openprogram.webui._model_listing import storage as st
+from openprogram.providers import storage as st
 from openprogram.webui._model_listing import toggle as tg
 
 
@@ -49,7 +49,7 @@ def mem_cfg(monkeypatch):
     monkeypatch.setattr(tg, "_read_providers_cfg", _read)
     monkeypatch.setattr(tg, "_write_providers_cfg", _write)
     # The spec-migration marker lives in the TOP-LEVEL config
-    # (webui.server._load_config / _save_config), not in the providers
+    # (setup._read_config / _write_config), not in the providers
     # section stubbed above. Without these two stubs the migration pass
     # that create_custom_provider / add_manual_model trigger READS the
     # host's real ~/.openprogram marker (making the outcome depend on

@@ -6,7 +6,7 @@ the git-tracked ``providers/<p>/models.json`` catalogue. These tests pin:
 
   * ``_load`` reads the config source and populates the registry from it;
   * the registry is one MUTABLE dict object — dynamic writers
-    (``_register_custom_model_in_registry``, the codex runtime-registration
+    (``register_model_from_config``, the codex runtime-registration
     helper) do ``ENABLED_MODELS[k] = m`` in place and must land in the same
     dict.
 """
@@ -32,7 +32,7 @@ def test_registry_populated_from_config(monkeypatch):
 
 
 def test_registry_is_mutable_same_object(monkeypatch):
-    # _register_custom_model_in_registry writes ENABLED_MODELS[k]=m in place.
+    # register_model_from_config writes ENABLED_MODELS[k]=m in place.
     reg = install_registry(monkeypatch, {
         "openai": {"models": [{"id": "gpt-4o", "name": "GPT-4o", "api": "openai-responses"}]},
     })

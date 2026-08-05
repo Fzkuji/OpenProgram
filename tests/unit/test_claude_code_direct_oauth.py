@@ -18,7 +18,7 @@ import pytest
 
 def test_registry_routes_claude_code_to_direct_runtime():
     import openprogram.providers.registry as r
-    cls, mod, _default = r.PROVIDERS["claude-code"]
+    mod, cls = r.PROVIDERS["claude-code"]["runtime_class"]
     assert cls == "ClaudeCodeRuntime"
     assert mod == "openprogram.providers.anthropic._claude_code_direct_runtime"
     assert "_max_proxy_runtime" not in mod  # Meridian path retired from default

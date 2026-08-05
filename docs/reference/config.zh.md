@@ -34,9 +34,9 @@ openprogram config set ui.port 8101
 | `default_provider` | 默认 LLM provider（setup 向导写入） | `openprogram/setup.py` |
 | `default_model` | 默认模型（setup 向导写入） | `openprogram/setup.py` |
 | `default_workdir` | agent 的默认工作目录 | `openprogram/paths.py` |
-| `providers` | 每个 provider 的设置子树（启用的模型、自定义模型等），由 Web UI 模型列表管理 | `openprogram/providers/_config_read.py`、`openprogram/webui/_model_listing/storage.py` |
+| `providers` | 每个 provider 的设置子树（启用的模型、自定义模型等），由 Web UI 模型列表管理 | `openprogram/providers/_config_read.py`、`openprogram/providers/storage.py` |
 | `api_keys` | 环境变量名 → API key 的映射，setup 向导写入，worker 启动时导出到环境。用于 web 搜索 / TTS 的 key；LLM provider 的 key 存在凭据库（`openprogram providers login`），不在这里 | `openprogram/_setup_sections/sections.py`、`openprogram/webui/server.py` |
-| `spec_migration_version` | 模型 spec 迁移的一次性标记，含义见代码 | `openprogram/webui/_model_listing/storage.py` |
+| `spec_migration_version` | 模型 spec 迁移的一次性标记，含义见代码 | `openprogram/providers/storage.py` |
 
 ## 环境变量
 

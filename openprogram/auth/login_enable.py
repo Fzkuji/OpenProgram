@@ -79,8 +79,8 @@ def enable_default_models_on_login(provider_id: str) -> list[str]:
     defaults = _DEFAULTS.get(provider_id)
     if not defaults:
         return []
-    # Lazy: auth must not hard-depend on the webui storage layer at import.
-    from openprogram.webui._model_listing.storage import (
+    # Lazy: keeps auth importable without touching config at import time.
+    from openprogram.providers.storage import (
         _cache_lock,
         _read_providers_cfg,
         _upsert_spec_row,

@@ -15,7 +15,7 @@ from __future__ import annotations
 import openprogram.auth.login_enable as le
 import openprogram.providers._config_read as cr
 import openprogram.providers.enabled_models as mg
-import openprogram.webui._model_listing.storage as st
+import openprogram.providers.storage as st
 
 
 def _mem_config(monkeypatch, initial: dict) -> dict:

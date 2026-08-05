@@ -10,9 +10,9 @@ built from `_get_thinking_config_for_model(provider, model_id)`.
 
 Runtime-side, after the UI sends an effort back via the WS chat
 payload, we call `apply_thinking_effort(runtime, effort)` which
-normalises the value (falls back to provider default if empty) and
-threads it into either the subprocess flag path (Claude Code,
-Codex CLI) or the unified API-level `runtime.thinking_level` knob.
+normalises the value (falls back to the provider default resolved
+from `runtime.provider_id` if empty) and sets the unified
+`runtime.thinking_level` knob.
 """
 from __future__ import annotations
 
@@ -41,19 +41,6 @@ _LEVEL_DESC = {
     "high": "Deep reasoning",
     "xhigh": "Extended effort",
     "max": "Maximum effort",
-}
-
-
-# Runtime class name → provider id. Used to resolve a provider default
-# without needing the live runtime's own provider attribute (which some
-# runtime classes don't expose cleanly).
-_RUNTIME_PROVIDER = {
-    "ClaudeCodeRuntime": "claude-code",
-    "OpenAICodexRuntime": "openai-codex",
-    "AnthropicRuntime": "anthropic",
-    "OpenAIRuntime": "openai",
-    "GeminiRuntime": "gemini",
-    "GeminiCLIRuntime": "gemini-subscription",
 }
 
 
@@ -89,7 +76,7 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
         # spec row — no live browse / network. Only fall through to the live
         # browse path for a model that isn't an enabled spec row (browse
         # context, where derivation stays as-is).
-        from openprogram.webui._model_listing.storage import _read_providers_cfg
+        from openprogram.providers.storage import _read_providers_cfg
         pcfg = _read_providers_cfg().get(provider, {})
         for row in (pcfg.get("models") or []):
             if row.get("id") == model_id:
@@ -124,17 +111,15 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
 
 
 def default_effort_for(runtime) -> str:
-    """Provider default thinking effort for a runtime class.
+    """Provider default thinking effort for a live runtime.
 
-    Reads from thinking.json via thinking_spec. Falls back to the static
-    THINKING_CONFIGS for providers not yet migrated to thinking.json.
+    The runtime's ``provider_id`` (derived from its model namespace, or
+    set by the subscription runtime classes) picks the thinking.json
+    spec via thinking_spec; providers without a spec get the generic
+    OpenAI-compatible fallback.
     """
-    provider = _RUNTIME_PROVIDER.get(type(runtime).__name__, "openai-codex")
     from openprogram.providers.thinking_spec import get_default_effort
-    result = get_default_effort(provider)
-    if result:
-        return result
-    return THINKING_CONFIGS.get(provider, {}).get("default")
+    return get_default_effort(getattr(runtime, "provider_id", None))
 
 
 def resolve_effort(effort, runtime) -> str:
@@ -145,24 +130,10 @@ def resolve_effort(effort, runtime) -> str:
 def apply_thinking_effort(runtime, effort: str) -> None:
     """Push a normalized effort onto a live runtime.
 
-    API-backed runtimes share the unified ``runtime.thinking_level``
-    attribute (pi-ai ThinkingLevel: off/minimal/low/medium/high/xhigh), which
-    flows into the provider's SimpleStreamOptions.reasoning — same
-    abstraction opencode / pi-ai use. CLI subprocess runtimes still
-    need provider-specific plumbing because their knobs are
-    command-line flags, not request fields.
+    Every runtime shares the unified ``runtime.thinking_level`` attribute
+    (pi-ai ThinkingLevel: off/minimal/low/medium/high/xhigh), which flows
+    into the provider's SimpleStreamOptions.reasoning — same abstraction
+    opencode / pi-ai use.
     """
-    rt_type = type(runtime).__name__
     effort = resolve_effort(effort, runtime)
-
-    # OpenAI Codex CLI subprocess runtime also reads _reasoning_effort
-    # directly from the subclass attribute to build its
-    # --reasoning-effort flag. Keep that plumbing for the subprocess
-    # path.
-    if rt_type in ("OpenAICodexRuntime", "OpenAICodexRuntime"):
-        runtime._reasoning_effort = effort
-
-    # Every Runtime (API + CLI subclasses) exposes the unified knob.
-    # Setting it makes AgentSession-based API paths send
-    # `reasoning=<level>` straight through to the provider.
     runtime.thinking_level = effort or "off"

@@ -11,7 +11,7 @@ import json
 import pytest
 
 from openprogram.webui import _runtime_management as rm
-from openprogram.webui._model_listing import storage
+from openprogram.providers import storage
 
 
 @pytest.fixture
@@ -30,8 +30,8 @@ def cfg_path(tmp_path, monkeypatch):
     def _write(cfg):
         p.write_text(json.dumps(cfg), encoding="utf-8")
 
-    monkeypatch.setattr("openprogram.webui.server._load_config", _read)
-    monkeypatch.setattr("openprogram.webui.server._save_config", _write)
+    monkeypatch.setattr("openprogram.setup._read_config", _read)
+    monkeypatch.setattr("openprogram.setup._write_config", _write)
     return p
 
 

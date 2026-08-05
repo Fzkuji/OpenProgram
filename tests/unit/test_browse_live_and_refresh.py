@@ -22,7 +22,7 @@ import pytest
 
 from openprogram.webui._model_listing import listing
 from openprogram.webui._model_listing import fetchers as F
-from openprogram.webui._model_listing import storage as st
+from openprogram.providers import storage as st
 from openprogram.webui._model_listing import provider_models as pm
 from openprogram.providers import metadata as cat
 
@@ -250,16 +250,14 @@ def test_offline_legacy_migration_yields_resolvable_registry(monkeypatch, mem_cf
     mem_cfg["anthropic"] = {"enabled": True,
                             "enabled_models": ["claude-opus-4-8"]}
     mem_cfg["openai"] = {"enabled": True, "enabled_models": ["gpt-4o"]}
-    # Offline: live browse resolves nothing (no key, models.dev down).
-    monkeypatch.setattr(cat, "is_configured", lambda pid: False)
-    monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {})
-    monkeypatch.setattr(F, "fetch_and_normalize",
-                        lambda pid, timeout=15.0: {"error": "offline"})
+    # Offline: models.dev unreachable — no row resolves, not even from cache.
+    from openprogram.providers.sources import models_dev
+    monkeypatch.setattr(models_dev, "lookup", lambda pid, mid: None)
     st._reset_spec_migration()
 
     # Run the migration in place on the config (the mem_cfg fixture replaces
     # st._read_providers_cfg wholesale, so drive _migrate_specs directly — it's
-    # the unit under test, and spec_row_for it calls uses the offline stubs).
+    # the unit under test; with no models.dev row it builds minimal rows).
     changed = st._migrate_specs(mem_cfg)
     assert changed
 

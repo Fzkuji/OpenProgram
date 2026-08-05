@@ -362,7 +362,7 @@ def is_configured(provider_id: str) -> bool:
     # catalogue, so the community fall-through below would report it configured
     # unconditionally. It's configured only with a real credential — a pool
     # entry (the AuthStore check above) or its synthesised env var being set.
-    from openprogram.webui._model_listing.storage import _is_custom_provider
+    from openprogram.providers.storage import _is_custom_provider
     if _is_custom_provider(provider_id):
         import os
         return bool(os.environ.get(synthesized_env_var(provider_id)))

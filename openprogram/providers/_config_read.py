@@ -1,12 +1,14 @@
-"""Read-only access to the ``providers`` section of ~/.openprogram/config.json,
-importable from ``openprogram.providers`` without pulling in webui.
+"""Raw, migration-free read of the ``providers`` section of
+~/.openprogram/config.json.
 
 The runtime registry (``enabled_models._load``) loads user-enabled model
-spec rows from config, so it needs the config's providers dict — but
-``openprogram.providers`` must NOT import ``openprogram.webui`` (circular).
-This is the same three-line read the webui/CLI use (via ``setup._read_config``),
-scoped to the one section the providers layer needs. Profile-aware through
-``openprogram.paths.get_config_path``.
+spec rows from config. It must NOT go through
+``openprogram.providers.storage._read_providers_cfg`` — that read runs the
+one-time spec migration, and the migration's own persist step reloads the
+registry, so routing the registry through it would recurse. This module is
+the reentrancy firewall: the same three-line read as ``setup._read_config``,
+scoped to the one section the registry needs, never migrating. Profile-aware
+through ``openprogram.paths.get_config_path``.
 """
 from __future__ import annotations
 

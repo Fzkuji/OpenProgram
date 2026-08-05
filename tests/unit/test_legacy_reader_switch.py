@@ -28,8 +28,8 @@ def test_enabled_ids_prefers_spec_rows():
 def test_preferred_default_model_from_spec_rows(monkeypatch, tmp_path):
     """_preferred_default_model falls back to the first spec row id."""
     cfg = {"acme": {"enabled": True, "models": [{"id": "spec-first"}]}}
-    import openprogram.webui._model_listing as mc
-    monkeypatch.setattr(mc, "_read_providers_cfg", lambda: cfg)
+    import openprogram.providers.storage as provider_storage
+    monkeypatch.setattr(provider_storage, "_read_providers_cfg", lambda: cfg)
     # No top-level default_provider/default_model file → point at empty tmp.
     monkeypatch.setattr("openprogram.paths.get_config_path",
                         lambda: str(tmp_path / "nope.json"))
@@ -39,8 +39,8 @@ def test_preferred_default_model_from_spec_rows(monkeypatch, tmp_path):
 def test_preferred_default_model_legacy_fallback(monkeypatch, tmp_path):
     """No spec rows → the legacy enabled_models list still resolves."""
     cfg = {"acme": {"enabled": True, "enabled_models": ["old-1"]}}
-    import openprogram.webui._model_listing as mc
-    monkeypatch.setattr(mc, "_read_providers_cfg", lambda: cfg)
+    import openprogram.providers.storage as provider_storage
+    monkeypatch.setattr(provider_storage, "_read_providers_cfg", lambda: cfg)
     monkeypatch.setattr("openprogram.paths.get_config_path",
                         lambda: str(tmp_path / "nope.json"))
     assert rm._preferred_default_model("acme") == "old-1"

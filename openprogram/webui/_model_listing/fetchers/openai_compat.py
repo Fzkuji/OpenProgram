@@ -17,7 +17,7 @@ def _fetch_openai_compat(provider_id: str, timeout: float) -> Any:
 
     from openprogram.providers.metadata import env_var_for
     from openprogram.providers.env_api_keys import resolve_api_key_with_auth_store
-    from ..storage import _resolve_base_url
+    from openprogram.providers.storage import _resolve_base_url
 
     api_key = resolve_api_key_with_auth_store(provider_id)
     env = env_var_for(provider_id)

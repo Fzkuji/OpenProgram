@@ -3,9 +3,10 @@
 The recurring agent confusion: someone greps for "where are providers
 registered", lands on registry.PROVIDERS (6 entries), sees no minimax /
 deepseek / etc., and concludes they're unsupported. PROVIDERS is only the
-backends that need a bespoke Runtime CLASS (OAuth/CLI). Everything else is
+six first-class backends (three subscription/CLI Runtime classes + three
+API-key providers with table-level key resolution). Everything else is
 supported via its model's wire `api` + the api_registry — the same path
-chat uses. create_runtime now falls through to that, so it matches chat
+chat uses. create_runtime falls through to that, so it matches chat
 coverage instead of raising "Unknown provider".
 """
 from __future__ import annotations
@@ -34,7 +35,7 @@ def _enable_routed_models(monkeypatch):
     monkeypatch.setattr(pm, "ENABLED_MODELS", reg)
 
 
-def test_providers_table_is_only_the_bespoke_runtime_classes():
+def test_providers_table_is_only_the_first_class_backends():
     # If this set grows, that's fine — but it is NOT the list of supported
     # providers, which is enabled_models + the api_registry.
     assert set(PROVIDERS) == {

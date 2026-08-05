@@ -130,3 +130,90 @@ def reload() -> dict[str, Model]:
     ENABLED_MODELS.clear()
     ENABLED_MODELS.update(fresh)
     return ENABLED_MODELS
+
+
+def register_model_from_config(provider: str, model_id: str) -> bool:
+    """Look ``model_id`` up in the user's config rows for ``provider`` and,
+    if present, insert a ``Model`` row into ``ENABLED_MODELS`` so
+    ``providers.get_model`` finds it. Reads the enabled spec rows
+    (``providers.<p>.models``) first, falling back to the legacy
+    ``custom_models`` key for a not-yet-migrated config.
+
+    Side-effect on the module-level registry — deliberate. The
+    alternative is plumbing custom-model metadata through every
+    callsite that goes "look up Model row → read context_window /
+    cost / modalities". Registering once at runtime-construction
+    time is the smallest change that makes the registry the single
+    source of truth.
+
+    Returns ``True`` when a registration happened, ``False`` when the
+    model wasn't found (genuine unknown id → caller re-raises).
+    """
+    try:
+        from .metadata import default_api_for, provider_endpoints
+        from .storage import _read_providers_cfg, _resolve_base_url
+        from .types import ModelCost
+    except Exception:
+        return False
+
+    cfg_pcfg = _read_providers_cfg().get(provider, {})
+
+    # Enabled spec rows are full Model specs (same shape ``_load`` consumes) —
+    # validate one directly if present.
+    spec = next(
+        (r for r in (cfg_pcfg.get("models") or []) if r.get("id") == model_id),
+        None,
+    )
+    if spec is not None:
+        try:
+            m = _build_model_from_row(spec, provider, provider_endpoints(provider))
+        except Exception:
+            return False
+        prefix = spec.get("key_prefix") or provider
+        ENABLED_MODELS[f"{prefix}/{m.id}"] = m
+        return True
+
+    # Legacy custom_models (flat shape) — fallback for a not-yet-migrated config.
+    raw = next(
+        (c for c in (cfg_pcfg.get("custom_models") or []) if c.get("id") == model_id),
+        None,
+    )
+    if not raw:
+        return False
+
+    api = raw.get("api") or default_api_for(provider) or "openai-completions"
+    inputs: list[str] = list(raw.get("input_modalities") or ["text"])
+    # Cost is optional — only stamp the fields the row actually has,
+    # default 0.0 for missing keys so ModelCost validates.
+    cost = ModelCost(
+        input=float(raw.get("input_cost", 0) or 0),
+        output=float(raw.get("output_cost", 0) or 0),
+        cache_read=float(raw.get("cache_read_cost", 0) or 0),
+        cache_write=float(raw.get("cache_write_cost", 0) or 0),
+    )
+    # Resolve through ``storage._resolve_base_url`` (user config → static
+    # registry → models.dev) so the row gets the SAME normalised base the
+    # rest of the pipeline uses — crucially the Anthropic-wire /v1 strip.
+    # Reading models.dev raw here gave Anthropic providers a
+    # ``…/anthropic/v1`` base, which the anthropic-messages layer then
+    # doubled into ``…/v1/v1/messages`` → 404, so the model registered but
+    # was unusable.
+    base_url = _resolve_base_url(provider) or ""
+
+    try:
+        m = Model(
+            id=model_id,
+            name=str(raw.get("name") or model_id),
+            api=api,
+            provider=provider,
+            base_url=base_url,
+            reasoning=bool(raw.get("reasoning", False)),
+            input=inputs,
+            cost=cost,
+            context_window=int(raw.get("context_window", 0) or 0),
+            max_tokens=int(raw.get("max_tokens", 0) or 0),
+        )
+    except Exception:
+        return False
+    ENABLED_MODELS[f"{provider}/{model_id}"] = m
+    return True

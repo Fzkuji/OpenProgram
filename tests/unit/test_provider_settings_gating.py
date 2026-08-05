@@ -72,7 +72,8 @@ def providers_client(monkeypatch):
     # toggle_model / toggle_provider / delete_custom_provider return ok.
     monkeypatch.setattr(_mc, "toggle_model", lambda *a, **k: {"ok": True})
     monkeypatch.setattr(_mc, "toggle_provider", lambda *a, **k: {"ok": True})
-    monkeypatch.setattr(_mc, "delete_custom_provider",
+    from openprogram.providers import storage as provider_storage
+    monkeypatch.setattr(provider_storage, "delete_custom_provider",
                         lambda *a, **k: {"ok": True})
 
     frames = []
@@ -153,8 +154,8 @@ def test_toggle_routes_broadcast_settings_changed(providers_client, monkeypatch,
 
 def test_delete_custom_provider_no_broadcast_on_failure(providers_client, monkeypatch):
     c, _rm, frames, updates = providers_client
-    from openprogram.webui import _model_listing as _mc
-    monkeypatch.setattr(_mc, "delete_custom_provider",
+    from openprogram.providers import storage as provider_storage
+    monkeypatch.setattr(provider_storage, "delete_custom_provider",
                         lambda *a, **k: {"ok": False, "error": "not custom"})
     monkeypatch.setattr(_rm, "_default_is_enabled", lambda p, m: True)
     r = c.delete("/api/providers/custom/builtin")
@@ -174,7 +175,7 @@ def test_custom_provider_api_key_env_synthesized(monkeypatch):
     monkeypatch.setattr("openprogram.providers.env_api_keys.env_vars_for",
                         lambda p: [])
     monkeypatch.setattr(
-        "openprogram.webui._model_listing.storage._is_custom_provider",
+        "openprogram.providers.storage._is_custom_provider",
         lambda p: True,
     )
     monkeypatch.setattr(
@@ -191,7 +192,7 @@ def test_non_custom_provider_no_synthesized_env(monkeypatch):
     monkeypatch.setattr("openprogram.providers.env_api_keys.env_vars_for",
                         lambda p: [])
     monkeypatch.setattr(
-        "openprogram.webui._model_listing.storage._is_custom_provider",
+        "openprogram.providers.storage._is_custom_provider",
         lambda p: False,
     )
     assert _acc._api_key_env("some-builtin") == ""

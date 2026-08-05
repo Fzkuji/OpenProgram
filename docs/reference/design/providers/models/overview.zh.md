@@ -35,7 +35,7 @@ openprogram/providers/                 ← 全部进 git，运行期只读
 └── config.json                        ← 唯一的用户侧持久化
 ```
 
-**命名规则：这里没有任何东西叫「catalog」。** 一词五用正是命名混乱的根源，因此每个模块都按它装的东西命名：注册表是 `enabled_models.py`，thinking 声明是 `thinking_spec.py`，webui 的展示层是 `_model_listing/`。`ENABLED_MODELS` 这个名字准确，是因为这个 dict 装的确实只有启用的模型。
+**命名规则：这里没有任何东西叫「catalog」。** 一词五用正是命名混乱的根源，因此每个模块都按它装的东西命名：注册表是 `enabled_models.py`，配置持久化是 `storage.py`，thinking 声明是 `thinking_spec.py`，webui 的展示层是 `_model_listing/`。`ENABLED_MODELS` 这个名字准确，是因为这个 dict 装的确实只有启用的模型。
 
 **没有目录的 provider**（fireworks、together 等）：models.dev 实时数据里有它们，用户填 key、浏览、启用即可，包里不需要任何文件。
 

@@ -370,7 +370,7 @@ def validate_credential(
 
     base = None
     if kind in ("openai_bearer", "openrouter_key", "anthropic_compat"):
-        from .storage import _resolve_base_url
+        from openprogram.providers.storage import _resolve_base_url
         base = _resolve_base_url(provider_id)
         if not base:
             return _result(provider_id, UNKNOWN, kind=kind, detail="No base URL resolvable.")

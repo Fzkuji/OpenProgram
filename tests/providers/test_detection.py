@@ -115,26 +115,25 @@ class TestProviderSurface:
             _ = providers.NonExistentRuntime
 
     def test_all_exports_factory_surface(self):
-        """__all__ carries the factory/detection entry points; the legacy
-        per-provider class aliases are gone — classes import from their
-        provider packages (openprogram.providers.<provider>.runtime)."""
+        """__all__ carries the factory/detection entry points; per-provider
+        Runtime classes are never re-exported — the three surviving
+        subscription classes import from their provider packages, and the
+        API-key providers have no class at all (base Runtime via
+        create_runtime)."""
         from openprogram import providers
         for name in ("PROVIDERS", "detect_provider", "create_runtime", "check_providers"):
             assert name in providers.__all__
-        for legacy in (
-            "AnthropicRuntime", "OpenAIRuntime", "GeminiRuntime",
+        for class_name in (
             "ClaudeCodeRuntime", "OpenAICodexRuntime", "GeminiCLIRuntime",
         ):
-            assert legacy not in providers.__all__
+            assert class_name not in providers.__all__
 
     def test_runtime_classes_import_from_provider_packages(self):
-        """Canonical class homes stay importable (create_runtime's targets)."""
-        from openprogram.providers.anthropic.runtime import AnthropicRuntime  # noqa: F401
+        """Canonical class homes stay importable (create_runtime's targets).
+        Only the subscription/CLI-credential backends carry a class."""
         from openprogram.providers.anthropic._claude_code_direct_runtime import (  # noqa: F401
             ClaudeCodeRuntime,
         )
-        from openprogram.providers.openai_responses.runtime import OpenAIRuntime  # noqa: F401
-        from openprogram.providers.google.runtime import GeminiRuntime  # noqa: F401
         from openprogram.providers.openai_codex.runtime import OpenAICodexRuntime  # noqa: F401
         from openprogram.providers.google_gemini_cli.runtime import (  # noqa: F401
             GeminiCLIRuntime,

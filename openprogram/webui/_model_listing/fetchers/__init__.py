@@ -120,7 +120,7 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
     # _browse_models degrades to the models.dev rows (never caches a failure
     # as success).
     if fetcher is None:
-        from ..storage import _resolve_base_url
+        from openprogram.providers.storage import _resolve_base_url
         if _resolve_base_url(provider_id):
             fetcher = _fetch_openai_compat
     if fetcher is None:
@@ -251,7 +251,7 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
     show the failure instead of a false "Fetched N".
     """
     from ..listing import _browse_models_with_error
-    from ..storage import (
+    from openprogram.providers.storage import (
         _cache_lock,
         _read_providers_cfg,
         _upsert_spec_row,

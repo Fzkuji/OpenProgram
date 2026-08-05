@@ -200,7 +200,7 @@ def _api_key_env(provider: str) -> str:
     # hide the key-paste box entirely. Same synthesised display-only label
     # the provider listing uses; keys resolve from the AuthStore by pid.
     try:
-        from openprogram.webui._model_listing.storage import _is_custom_provider
+        from openprogram.providers.storage import _is_custom_provider
         from openprogram.providers.metadata import synthesized_env_var
         if _is_custom_provider(provider):
             return synthesized_env_var(provider)

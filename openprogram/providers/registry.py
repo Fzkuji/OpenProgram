@@ -11,13 +11,14 @@ The canonical way to build a runtime:
     rt = create_runtime(provider="claude-code")   # Claude subscription OAuth
     rt = create_runtime(provider="deepseek", model="deepseek-chat")  # api-routed
 
-``PROVIDERS`` maps ONLY the backends that need a bespoke Runtime class
-(OAuth / CLI-credential adoption or per-provider conventions); those
-classes live in their provider packages
-(``openprogram.providers.openai_codex.runtime.OpenAICodexRuntime`` etc.).
-Every other provider is served by the base
-``Runtime(model="<provider>:<model>")`` through the api_registry — the
-same path the chat dispatcher uses.
+``PROVIDERS`` maps ONLY the six first-class backends. Three (the
+subscription/CLI-credential ones) carry a dedicated Runtime class in their
+provider package; the other three (plain API-key HTTP providers) are served
+by the base ``Runtime(model="<namespace>:<model>")`` with the key resolved
+here — the factory stamps nothing extra because the base Runtime derives
+its ``provider_id`` from the model namespace. Every other provider is
+served the same base-Runtime way through the api_registry — the same path
+the chat dispatcher uses.
 """
 
 import os
@@ -26,21 +27,77 @@ import shutil
 
 # -- Provider registry -------------------------------------------------------
 
-# Maps provider name -> (class_name, module_path, default_model)
+# The six first-class provider ids. Two entry shapes:
+#
+#   "runtime_class": (module_path, class_name) — subscription/CLI-credential
+#       backends whose auth adoption + per-provider headers need a dedicated
+#       Runtime subclass.
+#   "model_namespace" + "credential" — plain API-key HTTP providers built as
+#       base ``Runtime(model="<namespace>:<model>", api_key=...)``. The
+#       namespace is the registry prefix the models live under (the ``gemini``
+#       provider streams ``google:<id>`` models); ``credential`` names the
+#       AuthStore pool the key resolves from; ``credential_error`` is the
+#       message raised when no key is anywhere.
+#
+# "default_model" is the fallback when neither caller nor config picks one.
 PROVIDERS = {
     # Claude via a Claude subscription, connected DIRECT to
     # api.anthropic.com (Bearer OAuth + Claude Code beta headers) — same
-    # shape as openai-codex direct-connecting to chatgpt.com. No Meridian
-    # daemon: the wire is the standard anthropic Messages API, which
-    # natively handles image blocks (gui_agent multimodal preserved). The
-    # subscription token resolves from the anthropic AuthStore pool.
-    # (The old Meridian-proxy runtime has been removed entirely.)
-    "claude-code":        ("ClaudeCodeRuntime",             "openprogram.providers.anthropic._claude_code_direct_runtime",  "claude-sonnet-4"),
-    "openai-codex": ("OpenAICodexRuntime", "openprogram.providers.openai_codex.runtime",           "gpt-5.5"),
-    "gemini-cli":        ("GeminiCLIRuntime",    "openprogram.providers.google_gemini_cli.runtime",     "gemini-2.5-flash"),
-    "anthropic":        ("AnthropicRuntime",       "openprogram.providers.anthropic.runtime",             "claude-sonnet-4-6"),
-    "openai":           ("OpenAIRuntime",          "openprogram.providers.openai_responses.runtime",      "gpt-4.1"),
-    "gemini":           ("GeminiRuntime",          "openprogram.providers.google.runtime",                "gemini-2.5-flash"),
+    # shape as openai-codex direct-connecting to chatgpt.com. The wire is
+    # the standard anthropic Messages API, which natively handles image
+    # blocks (gui_agent multimodal preserved). The subscription token
+    # resolves from the anthropic AuthStore pool.
+    "claude-code": {
+        "runtime_class": (
+            "openprogram.providers.anthropic._claude_code_direct_runtime",
+            "ClaudeCodeRuntime",
+        ),
+        "default_model": "claude-sonnet-4",
+    },
+    "openai-codex": {
+        "runtime_class": (
+            "openprogram.providers.openai_codex.runtime",
+            "OpenAICodexRuntime",
+        ),
+        "default_model": "gpt-5.5",
+    },
+    "gemini-cli": {
+        "runtime_class": (
+            "openprogram.providers.google_gemini_cli.runtime",
+            "GeminiCLIRuntime",
+        ),
+        "default_model": "gemini-2.5-flash",
+    },
+    "anthropic": {
+        "model_namespace": "anthropic",
+        "credential": "anthropic",
+        "credential_error": (
+            "No Anthropic credential. Add an API key in Settings → "
+            "Providers, pass api_key=, or log in with a Claude "
+            "subscription (claude login) so the OAuth token is adopted."
+        ),
+        "default_model": "claude-sonnet-4-6",
+    },
+    "openai": {
+        "model_namespace": "openai",
+        "credential": "openai",
+        "credential_error": (
+            "OpenAI API key is required. Add one in Settings → "
+            "Providers (or `openprogram providers login openai "
+            "--api-key`), or pass api_key=."
+        ),
+        "default_model": "gpt-4.1",
+    },
+    "gemini": {
+        "model_namespace": "google",
+        "credential": "google",
+        "credential_error": (
+            "Google API key is required. Add one in Settings → "
+            "Providers (or `openprogram providers login google "
+            "--api-key`), or pass api_key=."
+        ),
+        "default_model": "gemini-2.5-flash",
+    },
 }
 
 
@@ -67,7 +124,7 @@ def _load_provider_config() -> tuple[str, str] | None:
     provider = os.environ.get("AGENTIC_PROVIDER")
     model = os.environ.get("AGENTIC_MODEL")
     if provider:
-        default_model = PROVIDERS.get(provider, (None, None, None))[2]
+        default_model = PROVIDERS.get(provider, {}).get("default_model")
         return provider, model or default_model
 
     # Config file
@@ -80,7 +137,7 @@ def _load_provider_config() -> tuple[str, str] | None:
         provider = config.get("default_provider")
         model = config.get("default_model")
         if provider:
-            default_model = PROVIDERS.get(provider, (None, None, None))[2]
+            default_model = PROVIDERS.get(provider, {}).get("default_model")
             return provider, model or default_model
     except (FileNotFoundError, json.JSONDecodeError, KeyError):
         pass
@@ -171,11 +228,10 @@ def check_providers() -> dict:
     }
 
     for name, binary in cli_checks.items():
-        _, _, default_model = PROVIDERS[name]
         results[name] = {
             "available": shutil.which(binary) is not None,
             "method": "CLI",
-            "model": default_model,
+            "model": PROVIDERS[name]["default_model"],
         }
 
     # Availability via the canonical resolver (AuthStore / cloud chain).
@@ -184,11 +240,10 @@ def check_providers() -> dict:
     from openprogram.providers.env_api_keys import is_configured
     _canon = {"gemini": "google"}
     for name in api_checks:
-        _, _, default_model = PROVIDERS[name]
         results[name] = {
             "available": is_configured(_canon.get(name, name)),
             "method": "API",
-            "model": default_model,
+            "model": PROVIDERS[name]["default_model"],
         }
 
     # Mark which one would be auto-selected
@@ -228,13 +283,28 @@ def _api_routed_runtime(provider: str, model: str = None, **kwargs):
     # (mirrors the chat path's resolve_model).
     if get_model(provider, model) is None:
         try:
-            from openprogram.webui._runtime_management import (
-                _register_custom_model_in_registry,
-            )
-            _register_custom_model_in_registry(provider, model)
+            from openprogram.providers.enabled_models import register_model_from_config
+            register_model_from_config(provider, model)
         except Exception:
             pass
     return Runtime(model=f"{provider}:{model}", **kwargs)
+
+
+def _http_api_key_for(entry: dict) -> str | None:
+    """Resolve the API key for a ``model_namespace`` PROVIDERS entry.
+
+    Anthropic goes through the unified resolver — a plain api-key OR a
+    subscription OAuth token (``sk-ant-oat``, from a Claude Code login
+    adopted into the AuthStore); the wire switches to Bearer + Claude
+    Code beta headers for OAuth tokens. The other pools take api-key-
+    shaped credentials only (an OAuth token in a Bearer header 401s).
+    """
+    pool = entry["credential"]
+    if pool == "anthropic":
+        from openprogram.auth.resolver import resolve_api_key_sync
+        return resolve_api_key_sync(pool)
+    from openprogram.providers.env_api_keys import resolve_provider_key
+    return resolve_provider_key(pool)
 
 
 def create_runtime(provider: str = None, model: str = None, **kwargs):
@@ -246,43 +316,54 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
                    auto-detect the best available provider via
                    detect_provider().
         model:     Model name override.
-        **kwargs:  Forwarded to the provider Runtime constructor.
+        **kwargs:  Forwarded to the Runtime constructor.
 
     Returns:
-        A Runtime instance ready to use.
+        A Runtime instance ready to use. Every runtime carries an
+        authoritative ``provider_id`` attribute (derived from its model
+        namespace, or set by the subscription runtime classes).
     """
     import importlib
 
     if provider and provider != "auto":
         if provider not in PROVIDERS:
             # ``PROVIDERS`` is NOT the list of supported providers — it
-            # only holds the 6 backends that need a bespoke Runtime class
-            # (OAuth / CLI delegation: claude-code, openai-codex,
-            # gemini-cli, anthropic, openai, gemini). Every other provider
-            # — deepseek, groq, openrouter, minimax, kimi, the whole
-            # models.dev catalogue — is supported through its model's
-            # ``api`` + the api_registry, exactly how the chat dispatcher
-            # streams them. Route those through the base Runtime instead
-            # of failing, so create_runtime() matches chat coverage.
+            # only holds the 6 first-class backends (claude-code,
+            # openai-codex, gemini-cli, anthropic, openai, gemini). Every
+            # other provider — deepseek, groq, openrouter, minimax, kimi,
+            # everything models.dev knows — is supported through its
+            # model's ``api`` + the api_registry, exactly how the chat
+            # dispatcher streams them. Route those through the base
+            # Runtime instead of failing, so create_runtime() matches
+            # chat coverage.
             return _api_routed_runtime(provider, model, **kwargs)
-        class_name, module_path, default_model = PROVIDERS[provider]
+        entry = PROVIDERS[provider]
     else:
-        detected, detected_model = detect_provider()
-        class_name, module_path, table_default = PROVIDERS[detected]
+        provider, detected_model = detect_provider()
+        entry = PROVIDERS[provider]
         # detect_provider returns None for CLI providers ("we found
-        # the binary but don't have an opinion on which model"). The
-        # PROVIDERS table always carries a non-empty default for every
-        # backend; prefer the detected value when present, otherwise
-        # fall back to the table so we never hand the runtime a
-        # ``model=None`` and crash at construction.
-        default_model = detected_model or table_default
-        provider = detected
+        # the binary but don't have an opinion on which model") — the
+        # table default below covers that.
+        model = model or detected_model
 
-    use_model = model or default_model
+    use_model = model or entry["default_model"]
 
-    mod = importlib.import_module(module_path)
-    cls = getattr(mod, class_name)
-    return cls(model=use_model, **kwargs)
+    runtime_class = entry.get("runtime_class")
+    if runtime_class:
+        module_path, class_name = runtime_class
+        cls = getattr(importlib.import_module(module_path), class_name)
+        return cls(model=use_model, **kwargs)
+
+    # Plain API-key HTTP provider: the base Runtime + the api_registry wire
+    # IS the runtime. Resolve the key up front so a missing credential fails
+    # here with guidance instead of at first exec.
+    from openprogram.agentic_programming.runtime import Runtime
+    api_key = kwargs.pop("api_key", None) or _http_api_key_for(entry)
+    if not api_key:
+        raise ValueError(entry["credential_error"])
+    return Runtime(
+        model=f"{entry['model_namespace']}:{use_model}", api_key=api_key, **kwargs
+    )
 
 
 __all__ = [

@@ -22,9 +22,7 @@ def fetch(provider_id: str, timeout: float) -> Any:
     import httpx
 
     from openprogram.providers.env_api_keys import resolve_api_key_with_auth_store
-    from openprogram.webui._model_listing.storage import (
-        _resolve_base_url,
-    )
+    from openprogram.providers.storage import _resolve_base_url
 
     # claude-code runs on a Claude SUBSCRIPTION (OAuth, no api-key). Its
     # credentials live in the `anthropic` pool and the token is an

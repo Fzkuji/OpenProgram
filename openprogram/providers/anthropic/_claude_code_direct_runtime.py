@@ -175,7 +175,7 @@ class ClaudeCodeRuntime(Runtime):
                     "key in Settings → Providers."
                 )
         resolved = _normalize_model(model)
-        # Register the id if the local catalog doesn't have it yet (new
+        # Register the id if the local registry doesn't have it yet (new
         # releases the direct subscription serves but enabled_models lags).
         ensure_anthropic_model_registered(resolved)
         super().__init__(
@@ -183,6 +183,10 @@ class ClaudeCodeRuntime(Runtime):
             api_key=api_key,  # None unless caller passed one — wire re-resolves
             max_retries=max_retries,
         )
+        # The model namespace is ``anthropic`` (shared wire), but the
+        # provider identity — credentials, thinking defaults, provider
+        # info — is claude-code. Overwrite the namespace-derived value.
+        self.provider_id = "claude-code"
 
 
 __all__ = ["ClaudeCodeRuntime"]

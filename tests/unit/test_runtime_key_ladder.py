@@ -1,15 +1,16 @@
-"""Legacy Runtime subclasses must resolve keys from the AuthStore.
+"""The HTTP API-key providers must resolve keys from the AuthStore.
 
-AnthropicRuntime / OpenAIRuntime / GeminiRuntime historically did a bare
+The retired per-provider Runtime shells historically did a bare
 ``os.environ.get(...)`` in ``__init__``. Keys live in the AuthStore only
-now (settings UI / `openprogram providers login`), so a "pure Settings" user
-must construct these runtimes fine, and env vars must stay inert.
+now (settings UI / `openprogram providers login`), so a "pure Settings"
+user must get a working runtime from ``create_runtime``, and env vars
+must stay inert.
 """
 from __future__ import annotations
 
-import importlib
-
 import pytest
+
+from openprogram.providers.registry import create_runtime
 
 
 _ENV_VARS = [
@@ -17,10 +18,11 @@ _ENV_VARS = [
     "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY",
 ]
 
-_RUNTIMES = [
-    ("openprogram.providers.anthropic.runtime", "AnthropicRuntime"),
-    ("openprogram.providers.openai_responses.runtime", "OpenAIRuntime"),
-    ("openprogram.providers.google.runtime", "GeminiRuntime"),
+# (provider id, model namespace the built runtime streams under)
+_HTTP_PROVIDERS = [
+    ("anthropic", "anthropic"),
+    ("openai", "openai"),
+    ("gemini", "google"),
 ]
 
 
@@ -32,9 +34,9 @@ def _no_env(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _enable_default_models(monkeypatch):
-    # Each legacy Runtime subclass resolves its DEFAULT model from the (now
+    # create_runtime resolves each provider's DEFAULT model from the (now
     # enabled-only) registry at construction. Enable each provider's default
-    # so these AuthStore-key tests construct all three runtimes regardless of
+    # so these AuthStore-key tests build all three runtimes regardless of
     # the machine's real config.
     import openprogram.providers._config_read as cr
     import openprogram.providers.models as pm
@@ -44,7 +46,7 @@ def _enable_default_models(monkeypatch):
             {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"},
         ]},
         "openai": {"models": [
-            {"id": "gpt-4o", "name": "GPT-4o", "api": "openai-responses"},
+            {"id": "gpt-4.1", "name": "GPT-4.1", "api": "openai-responses"},
         ]},
         "anthropic": {"models": [
             {"id": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6"},
@@ -57,10 +59,10 @@ def _enable_default_models(monkeypatch):
 
 def _store_returns(monkeypatch, value):
     # Two resolution entry points: ``resolve_store_api_key_sync`` (api-key
-    # only — OpenAI/Gemini runtimes) and ``resolve_api_key_sync`` (unified,
-    # includes subscription OAuth — AnthropicRuntime, so a Claude plan login
-    # constructs the runtime too). Stub both so every parametrized runtime
-    # sees the same "store has / hasn't a credential" outcome.
+    # only — the openai/google pools) and ``resolve_api_key_sync`` (unified,
+    # includes subscription OAuth — the anthropic pool, so a Claude plan
+    # login builds the runtime too). Stub both so every parametrized
+    # provider sees the same "store has / hasn't a credential" outcome.
     import openprogram.auth.resolver as _resolver
     monkeypatch.setattr(
         _resolver, "resolve_store_api_key_sync", lambda *a, **k: value
@@ -70,30 +72,29 @@ def _store_returns(monkeypatch, value):
     )
 
 
-@pytest.mark.parametrize("mod,cls", _RUNTIMES)
-def test_settings_only_key_constructs_the_runtime(monkeypatch, mod, cls):
-    """Key in the AuthStore, zero env vars → constructor succeeds."""
+@pytest.mark.parametrize("provider,namespace", _HTTP_PROVIDERS)
+def test_settings_only_key_constructs_the_runtime(monkeypatch, provider, namespace):
+    """Key in the AuthStore, zero env vars → construction succeeds."""
     _store_returns(monkeypatch, "sk-store-key")
-    runtime_cls = getattr(importlib.import_module(mod), cls)
-    rt = runtime_cls()
+    rt = create_runtime(provider=provider)
     assert rt is not None
+    assert rt.api_key == "sk-store-key"
+    assert rt.provider_id == namespace
 
 
-@pytest.mark.parametrize("mod,cls", _RUNTIMES)
-def test_no_store_key_raises_with_guidance(monkeypatch, mod, cls):
+@pytest.mark.parametrize("provider,namespace", _HTTP_PROVIDERS)
+def test_no_store_key_raises_with_guidance(monkeypatch, provider, namespace):
     """No key anywhere → a clear error pointing at Settings / the CLI."""
     _store_returns(monkeypatch, None)
-    runtime_cls = getattr(importlib.import_module(mod), cls)
     with pytest.raises(ValueError, match="Settings"):
-        runtime_cls()
+        create_runtime(provider=provider)
 
 
-@pytest.mark.parametrize("mod,cls", _RUNTIMES)
-def test_env_var_alone_does_not_construct(monkeypatch, mod, cls):
+@pytest.mark.parametrize("provider,namespace", _HTTP_PROVIDERS)
+def test_env_var_alone_does_not_construct(monkeypatch, provider, namespace):
     """Env keys are inert — store empty + env set must still raise."""
     _store_returns(monkeypatch, None)
     for var in _ENV_VARS:
         monkeypatch.setenv(var, "sk-env-key")
-    runtime_cls = getattr(importlib.import_module(mod), cls)
     with pytest.raises(ValueError):
-        runtime_cls()
+        create_runtime(provider=provider)

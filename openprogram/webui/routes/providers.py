@@ -154,9 +154,9 @@ def register(app):
         omitted it's derived by slugifying ``label`` with collisions auto-
         resolved (``-2``/``-3``…). An explicit ``id`` keeps strict validation
         (kebab-case slug, no collision with an existing provider id or alias)."""
-        from openprogram.webui import _model_listing as _mc
+        from openprogram.providers import storage as provider_storage
         b = body or {}
-        res = _mc.create_custom_provider(
+        res = provider_storage.create_custom_provider(
             b.get("id", ""), b.get("label", ""), b.get("base_url", "")
         )
         return JSONResponse(content=res, status_code=200 if res.get("ok") else 400)
@@ -165,8 +165,8 @@ def register(app):
     async def api_delete_custom_provider(name: str):
         """Delete a custom provider (refuses non-custom). Leaves any stored
         AuthStore credential on disk."""
-        from openprogram.webui import _model_listing as _mc
-        res = _mc.delete_custom_provider(name)
+        from openprogram.providers import storage as provider_storage
+        res = provider_storage.delete_custom_provider(name)
         if res.get("ok"):
             _clear_stale_defaults()
             _broadcast_settings_changed()
@@ -176,9 +176,9 @@ def register(app):
     async def api_add_manual_model(name: str, body: dict = None):
         """Add a manually-typed model id (enabled) for a provider whose /models
         list is unavailable. Writes a minimal spec row (source=manual)."""
-        from openprogram.webui import _model_listing as _mc
+        from openprogram.providers import storage as provider_storage
         b = body or {}
-        res = _mc.add_manual_model(name, b.get("id", ""), b.get("name"))
+        res = provider_storage.add_manual_model(name, b.get("id", ""), b.get("name"))
         return JSONResponse(content=res, status_code=200 if res.get("ok") else 400)
 
     @app.get("/api/providers/{name}/models")
@@ -275,13 +275,13 @@ def register(app):
 
     @app.get("/api/providers/{name}/config")
     async def api_provider_config(name: str):
-        from openprogram.webui import _model_listing as _mc
-        return JSONResponse(content=_mc.get_provider_config(name))
+        from openprogram.providers import storage as provider_storage
+        return JSONResponse(content=provider_storage.get_provider_config(name))
 
     @app.post("/api/providers/{name}/config")
     async def api_set_provider_config(name: str, body: dict = None):
-        from openprogram.webui import _model_listing as _mc
-        return JSONResponse(content=_mc.set_provider_config(name, body or {}))
+        from openprogram.providers import storage as provider_storage
+        return JSONResponse(content=provider_storage.set_provider_config(name, body or {}))
 
     @app.post("/api/providers/{name}/fetch-models")
     async def api_fetch_models(name: str):
@@ -328,8 +328,8 @@ def register(app):
 
     @app.delete("/api/providers/{name}/models/{model_id:path}")
     async def api_delete_custom_model(name: str, model_id: str):
-        from openprogram.webui import _model_listing as _mc
-        return JSONResponse(content=_mc.remove_custom_model(name, model_id))
+        from openprogram.providers import storage as provider_storage
+        return JSONResponse(content=provider_storage.remove_custom_model(name, model_id))
 
     @app.get("/api/providers/{name}/configure")
     async def get_provider_configure(name: str):

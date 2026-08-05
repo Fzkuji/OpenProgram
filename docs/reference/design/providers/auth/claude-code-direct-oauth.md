@@ -49,9 +49,10 @@ This is general to the credential kind, so codex's `cli_delegated` uses the same
 path.
 
 **Unified resolution in the anthropic provider.** `stream_simple` in
-`providers/anthropic/anthropic.py` and `AnthropicRuntime.__init__` both resolve
-the token through `resolve_api_key_sync(provider)`, which covers OAuth,
-`cli_delegated`, and manager-driven refresh.
+`providers/anthropic/anthropic.py` and `registry.py`'s `anthropic`
+`create_runtime` path both resolve the token through
+`resolve_api_key_sync(provider)`, which covers OAuth, `cli_delegated`, and
+manager-driven refresh.
 
 **Registry.** `providers/registry.py` maps `"claude-code"` to the direct
 Runtime. That Runtime is lightweight: its models go through the
@@ -121,7 +122,8 @@ described above are all in place:
 - `auth/resolver.py:_extract_token` plus `_read_delegated_token` re-read
   `store_path` for `cli_delegated`.
 - `providers/anthropic/anthropic.py:stream_simple` and
-  `runtime.py:AnthropicRuntime` resolve through `resolve_api_key_sync`.
+  `registry.py:_http_api_key_for` (the `anthropic` create_runtime path)
+  resolve through `resolve_api_key_sync`.
 - `providers/anthropic/_claude_code_direct_runtime.py` holds the direct
   ClaudeCodeRuntime.
 - `providers/registry.py` points `claude-code` at it.

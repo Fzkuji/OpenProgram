@@ -20,7 +20,7 @@ import pytest
 
 from openprogram.webui._model_listing import listing
 from openprogram.webui._model_listing import fetchers as F
-from openprogram.webui._model_listing import storage as st
+from openprogram.providers import storage as st
 from openprogram.webui._model_listing import provider_models as pm
 from openprogram.providers import metadata as cat
 

@@ -7,14 +7,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from .storage import (
+from openprogram.providers.storage import (
     _cache_lock,
     _read_providers_cfg,
     _remove_spec_row,
     _upsert_spec_row,
     _write_providers_cfg,
-    spec_row_for,
 )
+
+from .listing import spec_row_for
 
 
 def toggle_provider(provider_id: str, enabled: bool) -> dict[str, Any]:

@@ -21,7 +21,7 @@ import pytest
 from openprogram.webui._model_listing import fetchers as F
 import openprogram.providers.env_api_keys as ek
 from openprogram.providers import metadata as P
-from openprogram.webui._model_listing import storage as st
+from openprogram.providers import storage as st
 from openprogram.providers.anthropic import list_models as A
 
 
@@ -60,7 +60,7 @@ def test_community_anthropic_wire_derived_and_base_normalized(monkeypatch, md_ba
     # general mechanism that replaced the MiniMax-specific override.
     pid = "some-community-plan"
     from openprogram.providers import metadata as cat
-    from openprogram.webui._model_listing import storage as st
+    from openprogram.providers import storage as st
     from openprogram.webui._model_listing.credentials import _kind_for
     import openprogram.providers as PR
 

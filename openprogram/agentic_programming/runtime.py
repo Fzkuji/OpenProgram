@@ -522,6 +522,13 @@ class Runtime:
         # prompt_cache_key (Codex) so repeat prefixes hit the cache.
         self.session_id = f"op-{_uuid.uuid4().hex[:16]}"
 
+        # Authoritative provider identity of this runtime. Derived from the
+        # ``provider:model_id`` form below; subscription runtime classes whose
+        # provider differs from their model namespace (claude-code streams
+        # ``anthropic:<id>`` models) overwrite it after construction. Readers
+        # (thinking defaults, provider info) use this — never the class name.
+        self.provider_id: Optional[str] = None
+
         # Resolve "provider:model_id" form against the pi-ai model registry.
         self.api_model = None
         if call is not None:
@@ -543,6 +550,7 @@ class Runtime:
                     f"Pass `call=`, subclass Runtime, or use a valid pi-ai model id."
                 )
             self.api_model = resolved
+            self.provider_id = provider
 
     # --- Skills ---
 
@@ -1861,7 +1869,21 @@ class Runtime:
         return _assistant_text(final)
 
     def list_models(self) -> list[str]:
-        """Return available models for this runtime. Override in subclasses."""
+        """Return available models for this runtime.
+
+        A registry-backed runtime (``model="provider:id"``) lists every
+        enabled model under its provider namespace; anything else falls
+        back to its own model id. Subclasses with a richer source (the
+        Codex account endpoint, the Gemini CLI set) override.
+        """
+        if self.api_model is not None and getattr(self.api_model, "provider", None):
+            from openprogram.providers.enabled_models import ENABLED_MODELS
+            ids = sorted(
+                m.id for m in ENABLED_MODELS.values()
+                if m.provider == self.api_model.provider
+            )
+            if ids:
+                return ids
         return [self.model] if self.model and self.model != "default" else []
 
     async def _async_call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:

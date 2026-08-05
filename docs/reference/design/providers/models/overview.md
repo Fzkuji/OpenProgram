@@ -35,7 +35,7 @@ openprogram/providers/                 ← all git-tracked, read-only at runtime
 └── config.json                        ← the only user-side persistence
 ```
 
-**Naming rule: nothing here is called a "catalog".** One word for five different things is what made the naming confusing, so each module is named for what it holds: `enabled_models.py` for the registry, `thinking_spec.py` for the thinking declarations, and webui's `_model_listing/` for the presentation layer. The name `ENABLED_MODELS` is accurate only because the dict holds enabled models and nothing else.
+**Naming rule: nothing here is called a "catalog".** One word for five different things is what made the naming confusing, so each module is named for what it holds: `enabled_models.py` for the registry, `storage.py` for config persistence, `thinking_spec.py` for the thinking declarations, and webui's `_model_listing/` for the presentation layer. The name `ENABLED_MODELS` is accurate only because the dict holds enabled models and nothing else.
 
 **Providers without a directory** (fireworks, together, …): models.dev lists them live; the user enters a key, browses, enables — no file in the package is ever needed.
 

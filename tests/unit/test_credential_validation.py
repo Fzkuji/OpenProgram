@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 from openprogram.webui._model_listing import credentials as cr
-from openprogram.webui._model_listing import storage as st
+from openprogram.providers import storage as st
 import openprogram.providers.env_api_keys as ek
 
 

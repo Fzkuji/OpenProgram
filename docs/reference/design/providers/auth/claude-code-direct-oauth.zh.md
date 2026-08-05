@@ -43,7 +43,7 @@ OpenProgram 每次使用时重读 `claudeAiOauth.accessToken`。刷新由外部 
 的通用实现，codex 的 `cli_delegated` 走同一条路径。
 
 **anthropic provider 使用统一解析。** `providers/anthropic/anthropic.py` 中的
-`stream_simple` 与 `AnthropicRuntime.__init__` 都通过
+`stream_simple` 与 `registry.py` 的 `anthropic` create_runtime 路径都通过
 `resolve_api_key_sync(provider)` 解析 token，它涵盖 OAuth、`cli_delegated`
 以及 manager 驱动的刷新。
 
@@ -104,7 +104,8 @@ claude-code 的账号走通用账号路由，而非 provider 专属路由。
 - `auth/resolver.py:_extract_token` 加 `_read_delegated_token` 对
   `cli_delegated` 重读 `store_path`。
 - `providers/anthropic/anthropic.py:stream_simple` 与
-  `runtime.py:AnthropicRuntime` 通过 `resolve_api_key_sync` 解析。
+  `registry.py:_http_api_key_for`（`anthropic` 的 create_runtime 路径）
+  通过 `resolve_api_key_sync` 解析。
 - `providers/anthropic/_claude_code_direct_runtime.py` 中是直连的
   ClaudeCodeRuntime。
 - `providers/registry.py` 把 `claude-code` 指向它。
