@@ -141,6 +141,14 @@ export function computeGeometry(
   // fork point stack on successive rows in spawn order.
   const forkSibOf: Record<string, string> = Object.create(null);
   const forkKidsOf: Record<string, number> = Object.create(null);
+  // The last branch placed off each fork point. Branch N bridges to
+  // branch N-1 — the sibling on the row directly above it — not to the
+  // trunk turn every time: with three retries off one point, the third
+  // is two rows below the trunk, its bridge fails the same-row test,
+  // and the elbow fallback drags a line up from the fork point across
+  // the whole graph. Bridging to the row above keeps every extra
+  // branch a one-step ladder.
+  const lastForkOf: Record<string, string> = Object.create(null);
   const forkRoots = chainIds
     .filter((id) => {
       const p = layoutParent(byId[id]);
@@ -150,12 +158,14 @@ export function computeGeometry(
     .sort(byCallOrder);
   forkRoots.forEach((id) => {
     const pid = layoutParent(byId[id])!;
-    const sib = chainIds.find((cid) => cid !== id
+    const trunkSib = chainIds.find((cid) => cid !== id
       && layoutParent(byId[cid]) === pid
       && (byId[cid]._lane || 0) === (byId[pid]._lane || 0));
     const k = (forkKidsOf[pid] = (forkKidsOf[pid] || 0) + 1);
+    const sib = lastForkOf[pid] ?? trunkSib;
     if (sib) forkSibOf[id] = sib;
-    const want = (sib !== undefined ? rowOf[sib] : (rowOf[pid] || 0) + 1)
+    lastForkOf[pid] = id;
+    const want = (trunkSib !== undefined ? rowOf[trunkSib] : (rowOf[pid] || 0) + 1)
       + (k - 1);
     const delta = want - (rowOf[id] || 0);
     if (delta) {
