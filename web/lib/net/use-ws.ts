@@ -90,6 +90,25 @@ export function useWS(): void {
         case "status":
           wsHandleStatus(msg as never);
           return true;
+        case "steer_ack": {
+          // queued=false means there was no live run to receive it — the
+          // message is gone server-side. The composer already cleared on
+          // send, so put the text back and say so; silently swallowing it
+          // is how a typed course-correction vanishes with no trace.
+          const sid = d?.session_id as string | undefined;
+          if (!sid || d?.queued) return true;
+          const text = (d?.message as string | undefined) ?? "";
+          void import("@/lib/session-store").then(({ useSessionStore }) => {
+            const store = useSessionStore.getState();
+            if (text && !store.composerDrafts?.[sid]) {
+              store.setComposerInputFor(sid, text);
+            }
+          });
+          void import("@/lib/format-utils/toast").then(({ showToast }) => {
+            showToast("任务已结束，这条消息没有送达", { tone: "error" });
+          });
+          return true;
+        }
         case "session_reload": {
           const sid = d?.session_id as string | undefined;
           if (sid && sid === runtimeState.currentSessionId) {

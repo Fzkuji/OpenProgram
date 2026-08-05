@@ -168,7 +168,10 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // 右下角圆按钮是否该显示红色停止 ■：仅当任务真在跑、且当前没有 decision
   // 占据输入区。decision 在场时函数虽“运行”着，但它在等用户答题——此刻这个
   // 按钮要当“提交”用，不能变停止键（否则点了是中断函数，不是交答案）。
-  const showStop = isRunning && activeDecision === null;
+  // 跑着的时候输入框里有字 = 用户在写 steer（占位符就是这么提示的），
+  // 此刻圆钮必须是发送：显示成停止键的话，点下去杀的是任务本身，写好的
+  // 那句话一个字都没送出去。空输入才是停止键。
+  const showStop = isRunning && activeDecision === null && !input.trim();
 
   // 输入框当前处于哪个 mode —— 一个显式的派生值（含优先级），渲染时按它
   // switch，不再散在 JSX 里嵌套三元。idle / fn-form / question / approval。
