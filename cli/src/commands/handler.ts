@@ -1,4 +1,5 @@
 import { BackendClient } from '../ws/client.js';
+import type { PickerKind } from '../screens/repl/types.js';
 import { allSlashCommands, backendHttpBase } from './registry.js';
 
 type ThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
@@ -11,9 +12,10 @@ export interface SlashContext {
   clearCommitted: () => void;
   newSession: () => void;
   exit: () => void;
-  /** Open an interactive picker (model / resume / agent / channel / theme / effort / settings). */
-  openPicker: (kind: 'model' | 'resume' | 'agent' | 'channel' | 'theme' | 'effort' | 'settings'
-    | 'permission' | 'permission_bypass_confirm') => void;
+  /** Open an interactive picker. The kind union lives in
+   *  screens/repl/types.ts — a second inline copy here drifted behind
+   *  it once already (missing 'branch'). */
+  openPicker: (kind: Exclude<PickerKind, null>) => void;
   /** Open the in-TUI Claude-account panel (claude-code provider): add /
    *  activate / deactivate / rename / remove, all without leaving the TUI. */
   openClaudeAccounts: () => void;

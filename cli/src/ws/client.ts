@@ -59,7 +59,15 @@ export type WsRequest =
   | { action: 'question_reject'; id: string; reason?: string }
   | { action: 'sandbox'; session_id?: string }
   | { action: 'context'; session_id?: string }
-  | { action: 'rewind'; session_id: string };
+  | { action: 'rewind'; session_id: string }
+  // Branch surface — mirrors webui/ws_actions/branch.py. handler.ts and
+  // pickerRouter drive these from /branch and the branch picker;
+  // head_msg_id omitted = the branch the session is checked out to.
+  | { action: 'list_branches'; session_id: string }
+  | { action: 'checkout_branch'; session_id: string; head_msg_id: string }
+  | { action: 'rename_branch'; session_id: string; name: string; head_msg_id?: string }
+  | { action: 'auto_name_branch'; session_id: string; head_msg_id?: string }
+  | { action: 'delete_branch'; session_id: string; head_msg_id?: string };
 
 export interface ChatAck {
   type: 'chat_ack';
@@ -347,6 +355,13 @@ export type WsEnvelope =
   | { type: 'steer_ack'; data: { session_id: string; queued: boolean; message?: string } }
   | { type: 'running_task'; data: { session_id: string; msg_id?: string; func_name?: string } }
   | { type: 'running_task_clear'; data: { session_id: string } }
+  // Branch frames (webui/ws_actions/branch.py) — the list reply plus
+  // the structural-change broadcasts useWsEvents re-fetches on.
+  | { type: 'branches_list'; data: { session_id: string; branches?: unknown[]; active?: string } }
+  | { type: 'branch_renamed'; data: { session_id: string; head_msg_id?: string; name?: string } }
+  | { type: 'branch_name_deleted'; data: { session_id: string; head_msg_id?: string } }
+  | { type: 'branch_deleted'; data: { session_id: string; head_msg_id?: string } }
+  | { type: 'branch_checked_out'; data: { session_id: string; head_msg_id?: string } }
   | { type: 'pong' };
 
 export type WsListener = (ev: WsEnvelope) => void;
