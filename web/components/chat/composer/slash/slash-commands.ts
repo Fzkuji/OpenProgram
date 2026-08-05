@@ -69,11 +69,21 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: "/branch",
     args: "[name]",
-    description: "Branch the current conversation from this point",
+    description:
+      "Name the current branch (this conversation's head). No name = "
+      + "let the model summarise one",
     run(rest, { sessionId, send }) {
       if (!sessionId) return true;
-      const name = rest.trim() || undefined;
-      send({ action: "create_branch", session_id: sessionId, name });
+      // A branch in this DAG IS a named leaf — there is no separate
+      // "create" step, a fork happens when a turn is written off a
+      // non-tip node. So naming the active head is what "/branch" means;
+      // both handlers resolve head_msg_id from the session's head.
+      const name = rest.trim();
+      send(
+        name
+          ? { action: "rename_branch", session_id: sessionId, name }
+          : { action: "auto_name_branch", session_id: sessionId },
+      );
       return true;
     },
   },
@@ -148,15 +158,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: "Toggle system sandbox — restrict bash to cwd writes only",
     run(_rest, { send }) {
       send({ action: "sandbox" });
-      return true;
-    },
-  },
-  {
-    name: "/context",
-    description: "Show token distribution across context window",
-    run(_rest, { sessionId, send }) {
-      if (!sessionId) return true;
-      send({ action: "context", session_id: sessionId });
       return true;
     },
   },

@@ -199,33 +199,51 @@ export function MessageActions({
       setBusy(false);
       return;
     }
-    const onMsg = (ev: MessageEvent) => {
+    // Every exit path — reply, wrong session, timeout — runs through
+    // `finish` so the listener is always detached and `busy` always
+    // clears. A rewind that errors server-side without ever emitting a
+    // frame used to leave this row's buttons disabled until a reload.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = () => {
+      ws.removeEventListener("message", onMsg);
+      if (timer) clearTimeout(timer);
+      setBusy(false);
+    };
+    function onMsg(ev: MessageEvent) {
       try {
         const data = JSON.parse(ev.data);
-        if (data?.type === "rewind_result") {
-          ws.removeEventListener("message", onMsg);
-          const d = data?.data ?? {};
-          const errors = d.errors ?? [];
-          const err = d.error ?? (errors.length ? errors.join("; ") : null);
-          if (err) {
-            showToast(tr(`Rewind failed: ${err}`, `回退失败：${err}`));
-          } else {
-            const n = d.turns_reverted ?? 0;
-            showToast(tr(`Rewound ${n} turn${n === 1 ? "" : "s"}`, `已回退 ${n} 轮对话`));
-            // Prefill composer with the rewound user message
-            if (d.user_text) {
-              useSessionStore.getState().setComposerInput(d.user_text);
-            }
-            // Reload session so rewound messages disappear
-            wsSend({ action: "load_session", session_id: sessionId });
+        if (data?.type !== "rewind_result") return;
+        const d = data?.data ?? {};
+        // Match on the session the frame belongs to: a rewind running in
+        // another conversation emits the same frame type, and answering
+        // to it here would reload + prefill the wrong chat.
+        if (d.session_id && d.session_id !== sessionId) return;
+        finish();
+        const errors = d.errors ?? [];
+        const err = d.error ?? (errors.length ? errors.join("; ") : null);
+        if (err) {
+          showToast(tr(`Rewind failed: ${err}`, `回退失败：${err}`));
+        } else {
+          const n = d.turns_reverted ?? 0;
+          showToast(tr(`Rewound ${n} turn${n === 1 ? "" : "s"}`, `已回退 ${n} 轮对话`));
+          // Prefill composer with the rewound user message
+          if (d.user_text) {
+            useSessionStore.getState().setComposerInput(d.user_text);
           }
-          setBusy(false);
+          // Reload session so rewound messages disappear
+          wsSend({ action: "load_session", session_id: sessionId });
         }
       } catch {
         /* ignore */
       }
-    };
+    }
     ws.addEventListener("message", onMsg);
+    // ponytail: fixed 30s ceiling. A rewind touching thousands of backed-up
+    // files could in principle outrun it; make it adaptive if that shows up.
+    timer = setTimeout(() => {
+      finish();
+      showToast(tr("Rewind timed out", "回退超时，未收到结果"), { tone: "error" });
+    }, 30_000);
   }
 
   function checkout(targetId: string | undefined, dir: -1 | 1) {

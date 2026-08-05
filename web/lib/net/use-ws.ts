@@ -143,6 +143,57 @@ export function useWS(): void {
           }
           return true;
         }
+        case "rewind_points": {
+          // `/rewind` with no argument asks for the list; the user then
+          // types `/rewind N`. Render it as a numbered system line in the
+          // transcript — same append path as `branch_message` — so the
+          // indices stay on screen while they type the follow-up.
+          const sid = d?.session_id as string | undefined;
+          if (sid && sid !== runtimeState.currentSessionId) return true;
+          const target = sid ?? runtimeState.currentSessionId;
+          if (!target) return true;
+          const err = d?.error as string | undefined;
+          const points = (d?.points as Array<Record<string, unknown>>) ?? [];
+          const body = err
+            ? `无法列出回退点：${err}`
+            : points.length === 0
+              ? "没有可回退的对话轮次。"
+              : "回退点（用 /rewind N 选择）：\n"
+                + points
+                    .map((p, i) => {
+                      const files = (p.files_affected as string[]) ?? [];
+                      const tail = files.length
+                        ? `  [${files.length} 个文件]`
+                        : "";
+                      return `${i + 1}. ${(p.summary as string) || "(空)"}${tail}`;
+                    })
+                    .join("\n");
+          void import("@/lib/session-store").then(({ useSessionStore }) => {
+            useSessionStore.getState().appendMessage(target, {
+              id: "rewindpts_" + Math.random().toString(36).slice(2, 10),
+              role: "system",
+              content: body,
+              source: "rewind_points",
+            } as unknown as Parameters<
+              ReturnType<typeof useSessionStore.getState>["appendMessage"]
+            >[1]);
+          }).catch(() => { /* best-effort UI line */ });
+          return true;
+        }
+        case "action_error": {
+          // The backend had no handler for an action we sent. Always a
+          // frontend/backend contract break, never a user error — say so
+          // loudly instead of leaving the caller waiting on a frame that
+          // will never arrive.
+          const act = d?.action as string | undefined;
+          console.error("[useWS] backend rejected action:", act, d?.error);
+          void import("@/lib/format-utils/toast").then(({ showToast }) => {
+            showToast(`未知操作 ${act ?? "?"} — 后端没有对应处理器`, {
+              tone: "error",
+            });
+          });
+          return true;
+        }
         case "branch_renamed":
         case "branch_name_deleted":
         case "branch_deleted": {

@@ -3,10 +3,14 @@
 /**
  * Slash-menu state machine for the composer.
  *
- * Triggered when the textarea value starts with `/` and contains no
- * space (e.g. user is typing `/he` to filter for `/help`). Filters
- * `SLASH_COMMANDS` by prefix. `runCommand` dispatches the matching
- * command's `run(rest, ctx)` if the input is a full slash command.
+ * The MENU is shown while the user is still typing the command NAME —
+ * the value starts with `/` and holds no space yet (`/he` filtering for
+ * `/help`). Typing the space that starts the arguments closes it.
+ *
+ * DISPATCH is independent of that: `runCommand` resolves the first word
+ * against the registry, so `/compact 5000` still runs as a command with
+ * the menu closed, while `/usr/local is missing` — a leading slash that
+ * names nothing — falls through to a normal turn.
  *
  * The matching close animation is debounced by `ANIM_MS` so the
  * filter list can fade out before unmount; `openMenu` cancels any
@@ -75,6 +79,11 @@ export interface SlashMenuHook {
    *  is only shown while focused, and re-appears on re-focus if the
    *  input still holds a `/…` query. */
   setFocused: (focused: boolean) => void;
+  /** Dispatch `text` as a slash command, or return false when its
+   *  leading word isn't a registered command name. This — not the menu's
+   *  open/closed state — is what decides whether a submit is a command,
+   *  so `/compact 5000` still runs after the space closed the menu while
+   *  prose that merely starts with `/` is sent as a normal turn. */
   runCommand: (text: string) => boolean;
 }
 
@@ -307,18 +316,31 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
     [currentSessionId, send, setCurrentConv, setComposerInput, textareaRef, openContextPanel],
   );
 
-  const runCommand = useCallback(
-    (text: string): boolean => {
-      if (!text.startsWith("/")) return false;
+  // Resolve `"/compact 5000"` → the `/compact` entry + `"5000"`. The
+  // FIRST WORD is the command name; everything after the first space is
+  // the argument string. A leading `/` that doesn't name a registered
+  // command resolves to null, which is what keeps `/usr/bin/foo is
+  // broken` a normal chat turn.
+  const resolve = useCallback(
+    (text: string): { cmd: SlashCommand; rest: string } | null => {
+      if (!text.startsWith("/")) return null;
       const space = text.indexOf(" ");
       const cmdName = space === -1 ? text : text.slice(0, space);
-      const rest = space === -1 ? "" : text.slice(space + 1);
+      const rest = space === -1 ? "" : text.slice(space + 1).trim();
       const cmd = allCommands.find((c) => c.name === cmdName);
-      if (!cmd) return false;
-      cmd.run(rest, slashContext);
+      return cmd ? { cmd, rest } : null;
+    },
+    [allCommands],
+  );
+
+  const runCommand = useCallback(
+    (text: string): boolean => {
+      const hit = resolve(text);
+      if (!hit) return false;
+      hit.cmd.run(hit.rest, slashContext);
       return true;
     },
-    [slashContext, allCommands],
+    [slashContext, resolve],
   );
 
   return {

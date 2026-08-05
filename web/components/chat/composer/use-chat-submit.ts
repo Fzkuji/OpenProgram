@@ -106,7 +106,12 @@ export function useChatSubmit({
         || pendingDocs.some((d) => d.loading)) {
       return;
     }
-    if (slash.query !== null && slash.runCommand(trimmed)) {
+    // Slash dispatch is decided by the REGISTRY (runCommand returns false
+    // when the first word names nothing), not by whether the menu happens
+    // to be open: the menu closes on the space that begins the arguments,
+    // so gating on it sent every `/cmd <args>` to the model as prose. A
+    // message that merely starts with `/` still goes out as a normal turn.
+    if (slash.runCommand(trimmed)) {
       setComposerInputFor(submitOwnerKey, "");
       slash.close();
       return;
