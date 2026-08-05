@@ -449,6 +449,16 @@ def trigger_compaction(session_id: str, agent_id: str = "main",
         raise ValueError(f"Unknown conversation {session_id!r}")
     history = db.get_branch(session_id) or []
     if len(history) < 4:
+        # Tell the user instead of silently doing nothing — a manual
+        # /compact with no visible response reads as a broken command.
+        on_event({"type": "chat_response", "data": {
+            "type": "local_command",
+            "session_id": session_id,
+            "content": (
+                f"Nothing to compact yet — this conversation has only "
+                f"{len(history)} message(s); compaction needs at least 4."
+            ),
+        }})
         return {"summary": "", "kept_count": len(history), "summary_id": ""}
 
     profile = _load_agent_profile(agent_id)

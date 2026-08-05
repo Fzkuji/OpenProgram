@@ -257,18 +257,25 @@ export function useSlashMenu({ input, textareaRef, send, openContextPanel, bound
 
   const matches = useMemo<SlashCommand[]>(() => {
     if (query === null) return [];
-    // Substring match on either name or description so that a query
-    // like "/pdf" finds anthropic-skills/pdf even when the user can't
-    // remember the full namespace.
-    return allCommands.filter((c) => {
-      const n = c.name.toLowerCase();
-      if (n.startsWith(query)) return true;
-      // Skip pure "/" → return everything (no extra filtering needed).
-      if (query === "/") return true;
-      const term = query.slice(1); // drop leading "/"
-      if (!term) return true;
-      return n.includes(term) || (c.description || "").toLowerCase().includes(term);
-    });
+    if (query === "/") return allCommands;
+    // Tiered matching: name-prefix hits win outright; only when no
+    // name starts with the query do we widen to name-substring
+    // ("/pdf" → anthropic-skills/pdf), and only when that's empty
+    // too do we fall back to description search. Without the tiers a
+    // fully-typed "/compact" kept dragging in every command whose
+    // description merely mentions "compaction".
+    const term = query.slice(1); // drop leading "/"
+    const byPrefix = allCommands.filter((c) =>
+      c.name.toLowerCase().startsWith(query),
+    );
+    if (byPrefix.length > 0) return byPrefix;
+    const byName = allCommands.filter((c) =>
+      c.name.toLowerCase().includes(term),
+    );
+    if (byName.length > 0) return byName;
+    return allCommands.filter((c) =>
+      (c.description || "").toLowerCase().includes(term),
+    );
   }, [query, allCommands]);
 
   // Keyboard highlight — starts at -1 ("no highlight yet"). The first
