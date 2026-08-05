@@ -204,6 +204,38 @@ def test_rollback_the_pre_compaction_view_is_still_reachable(store: SessionStore
     assert survivors == original
 
 
+def test_persister_keeps_head_on_the_tail_tip(store: SessionStore):
+    """append_message auto-advances head onto any caller-less node, and
+    the summary is a mid-chain splice — without an explicit restore the
+    head lands on the summary and the active branch collapses to
+    [summary] alone (the kept tail vanishes from every view)."""
+    msgs = _seed(store, "s6", 4)
+    tip = msgs[-1]["id"]
+    assert store.get_session("s6")["head_id"] == tip
+
+    Persister().insert_summary_node(
+        "s6", summary_text="recap", cut_idx=4, history=msgs,
+    )
+
+    assert store.get_session("s6")["head_id"] == tip
+    branch = store.get_branch("s6")
+    assert [m["id"] for m in branch] == [m["id"] for m in msgs]
+
+
+def test_persister_moves_head_only_when_it_was_covered(store: SessionStore):
+    """A head that sat inside the covered range has no tail to return
+    to — the summary becomes the branch tip."""
+    msgs = _seed(store, "s7", 4)
+    covered_tip = msgs[3]["id"]      # last row of the covered range
+    store.set_head("s7", covered_tip)
+
+    sid = Persister().insert_summary_node(
+        "s7", summary_text="recap", cut_idx=4, history=msgs,
+    )
+
+    assert store.get_session("s7")["head_id"] == sid
+
+
 def test_persister_refuses_degenerate_cuts(store: SessionStore):
     msgs = _seed(store, "s5", 3)
     p = Persister()

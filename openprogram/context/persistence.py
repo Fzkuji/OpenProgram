@@ -120,24 +120,31 @@ class Persister:
             },
         }
 
+        # Snapshot head BEFORE the insert: append_message auto-advances
+        # head onto any caller-less node it appends, and the summary is
+        # a mid-chain splice, not a new tip. Reading head after the
+        # append sees the summary itself and the restore below would
+        # never fire — that exact sequence detached the whole kept tail
+        # (active branch = [summary] alone).
+        prev_head = (db.get_session(session_id) or {}).get("head_id")
+
         try:
             db.append_message(session_id, summary_row)
         except Exception:
             return None
 
-        # Head only needs moving when it sat inside the covered range;
-        # otherwise the existing tail already continues past the summary.
+        # Head only belongs on the summary when it sat inside the
+        # covered range; otherwise restore it — the existing tail
+        # already continues past the summary.
         try:
-            sess = db.get_session(session_id) or {}
-            head_id = sess.get("head_id")
             covered_ids = {m.get("id") for m in covered}
-            if head_id in covered_ids:
-                db.set_head(session_id, summary_id)
+            if prev_head and prev_head not in covered_ids:
+                db.set_head(session_id, prev_head)
         except Exception:
-            # A head left inside the covered range renders the summarized
-            # span again; loud enough to diagnose, not fatal to the turn.
+            # A head left on the summary hides the kept tail from the
+            # active branch; loud enough to diagnose, not fatal.
             _log.warning(
-                "failed to move head onto summary %s for session %s",
+                "failed to restore head after summary %s for session %s",
                 summary_id, session_id, exc_info=True,
             )
 
