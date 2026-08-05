@@ -53,6 +53,31 @@
 | `needs_input` | agent 等待用户输入 | 琥珀点 |
 | `done` | 后台任务完成 | 配合 `unread` 显示蓝点 |
 | `failed` | turn 执行失败 | 红点 |
+| `interrupted` | worker 在 turn 中途死掉 | 无指示（不算 run-active） |
+
+`running` 由 dispatcher 在 turn 开始时写入、结束时清除。worker 中途被杀
+（SIGKILL、崩溃）就跑不到清除那一步，会话行会永远停在 `running`，把聊天容器
+钉在 `data-run-active="true"` 上，除非手改磁盘状态否则出不来。因此
+`reconcile_interrupted_runs()` 在 worker 启动时把仍是 `running` 的行重置为
+`interrupted`——新起的 worker 按定义没有任何东西在跑。这一步与同一函数里的 DAG
+节点扫描相互独立：worker 若在写 status 和插入 placeholder 之间被杀，就会留下一
+个 running 的**行**却没有 running 的**节点**。
+
+## 移动 HEAD：`_set_active_head`
+
+`webui/server.py` 按会话持有一份内存镜像 `_sessions[sid]`，含 `head_id` 与
+`messages`，而 `_save_session` 会把两者原样写回 SessionStore。所以只改 store
+的 HEAD、不同步镜像的路径不只是"数据过期"——**下一次保存会主动把这次移动撤销。**
+
+`_set_active_head(session_id, head_id)` 是移动 HEAD 的唯一正确入口。它依次完成：
+写 SessionStore、把新分支读回镜像的 `head_id` 与 `messages`、清消息缓存。所有会
+改动的路径都走它：retry、edit、兄弟节点 checkout、deepest-leaf 跳转、分支
+checkout、删分支、attach、rewind。
+
+有 turn 在运行时（`_is_run_active`），所有移动 HEAD 的操作一律拒绝，返回
+`RUN_ACTIVE_ERROR` 并带 `code: "run_active"`。没有这道保护，在飞的回复落地时
+predecessor 会指向用户已经离开的分支；删分支更糟——要删的那条尾巴可能正是当前
+turn 正在写入的。
 
 ## 非持久对象（`_sessions` dict）
 

@@ -172,6 +172,12 @@ def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
         "turns_reverted": len(to_revert),
         "nodes_rewound": len(to_mark),
         "total_restored_paths": list(set(all_restored)),
+        # The head this rewind landed on (None = rewound to empty).
+        # Callers that keep their own head mirror — the webui's
+        # ``_sessions[sid]["head_id"]`` — MUST write this back, or their
+        # stale head gets flushed over ours by the next _save_session
+        # and silently undoes the rewind.
+        "new_head_id": new_head,
         "errors": errors,
     }
 
@@ -184,5 +190,6 @@ def _err(session_id: str, target: str, msg: str) -> dict[str, Any]:
         "turns_reverted": 0,
         "nodes_rewound": 0,
         "total_restored_paths": [],
+        "new_head_id": None,
         "errors": [msg],
     }

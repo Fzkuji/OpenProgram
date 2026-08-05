@@ -38,22 +38,48 @@
 3. 找到该节点及之后的所有 assistant/llm 节点（按 seq 排序）
 4. 对每个 assistant 节点调用 `revert_turn` 恢复文件
 5. 对所有被 rewind 的节点标记 `metadata.rewound = True`
-6. 返回 `{ user_text, turns_reverted, restored_paths, errors }`
+6. 把 store 的 head 移到目标之前的最后一个节点（rewind 到最开头时为
+   `None`——head 绝不能停在已被 rewind 的节点上）
+7. 返回 `{ user_text, turns_reverted, restored_paths, new_head_id, errors }`
 
 关键：**直接接受 user 节点 ID**，不需要转换成 assistant ID。
+
+`new_head_id` 是本次 rewind 落到的 head。自己持有 head 镜像的调用方必须把它写
+回去——见 3.2。
 
 ### 3.2 后端 WS handler
 
 `handle_rewind(ws, cmd)`:
 - 接收 `{ session_id, target_msg_id }`
+- 有运行中的 turn 时返回 `{ code: "run_active" }` 拒绝，避免 rewind 把 HEAD
+  从正在流式输出的回复底下挪走
 - 调用 `rewind_to`
-- 返回 `{ type: "rewind_result", data: { user_text, ... } }`
+- 成功后把 `new_head_id` 交给 `server._set_active_head`，并重估 context stats
+- 返回 `{ type: "rewind_result", data: { session_id, user_text, ... } }`
+
+**这一步 `_set_active_head` 不是可有可无的。** `rewind_to` 只写 store；webui
+另有一份按会话的内存镜像 `_sessions[sid]`（`head_id` + `messages`），
+`_save_session` 会把它原样写回 store。rewind 若跳过镜像，镜像仍停在 rewind 前
+的 head，下一次保存就把 rewind 悄悄撤销了。所有移动 HEAD 的路径都走
+`_set_active_head` 正是为此——它一次完成写 store、把新分支读回镜像、清消息缓存。
+
+`handle_rewind_list(ws, cmd)`:
+- 接收 `{ session_id }` —— 不带参数的 `/rewind` 发的就是它
+- 返回 `{ type: "rewind_points", data: { session_id, points } }`，最新的在前
+
+**这两类帧每一个都带 `session_id`，错误帧也带。** 监听方按它匹配：两个会话
+同时 rewind 会发出同类型的帧，只按 type 匹配的监听方会认领先到的那个。
 
 ### 3.3 前端
 
 `rewindToHere()`:
 1. 发 WS action `{ action: "rewind", session_id, target_msg_id: msg.id }`
-2. 收到 `rewind_result` 后：
+2. 收到 `session_id` 对得上的 `rewind_result` 后：
    - 调用 `useSessionStore.getState().setComposerInput(data.user_text)` 回填输入框
    - 调用 `wsSend({ action: "load_session", session_id })` 刷新消息列表（rewound 的消息不再显示在当前分支）
    - 显示 toast
+3. 监听器同时挂 30 秒超时兜底。否则一次没发出帧就失败的 rewind 会让这行的
+   操作按钮一直禁用到刷新页面。
+
+不带参数的 `/rewind` 发 `rewind_list`；`use-ws.ts` 把返回的回退点渲染成
+transcript 里一条带编号的 system 行，用户打 `/rewind N` 时编号还在屏幕上。

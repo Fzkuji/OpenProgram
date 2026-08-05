@@ -399,6 +399,21 @@ def reconcile_interrupted_runs() -> int:
                 fixed += 1
             except Exception:
                 continue
+        # The SESSION ROW carries its own status, stamped "running" by
+        # the dispatcher (dispatcher/__init__.py step 3b) and cleared at
+        # turn end. A killed worker never runs that clear, so the row
+        # stays "running" forever and session_loaded.data.status pins
+        # the chat container at data-run-active="true" — the composer
+        # stays locked with no way back short of editing state on disk.
+        # Reset it independently of the node loop: a worker killed
+        # between the status write and the placeholder insert leaves a
+        # running ROW with no running NODE.
+        if (sess.get("status") or "") == "running":
+            try:
+                store.update_session(sid, status="interrupted")
+                fixed += 1
+            except Exception:
+                pass
     return fixed
 
 

@@ -219,25 +219,27 @@ def run_query(
             _s._broadcast_chat_response(
                 session_id, payload.get("msg_id") or msg_id, payload,
             )
-        elif payload.get("type") == "compaction_finished":
-            # Compaction rewrote the branch mid-turn: the kept tail now
-            # hangs off a summary node, so the context the next request
-            # carries is a different (much smaller) set. Forward the
-            # envelope — the Context tab repaints its node highlighting
-            # from it — and re-estimate occupancy so the ring drops to
-            # the post-compaction size right away rather than holding the
-            # pre-compaction measurement until the next reply.
+        else:
+            # Everything else the dispatcher emits gets forwarded
+            # verbatim. This is a catch-all on purpose: an explicit
+            # per-type whitelist silently dropped every envelope nobody
+            # remembered to add (compaction_started, compaction_failed,
+            # reactive_compact_started/done/failed, reactive_snip), so
+            # the user saw the context ring jump with no explanation.
+            # Adding a dispatcher event must never again require an edit
+            # here — unknown types the frontend ignores are harmless,
+            # dropped ones are not.
             _s._broadcast_chat_response(
                 session_id, payload.get("msg_id") or msg_id, payload,
             )
-            _s.refresh_context_stats(session_id, msg_id)
-        elif payload.get("type") == "tree_update":
-            # Live Execution DAG ticks (from _exec_dag.live_progress);
-            # forward so RuntimeBlock's tree fills in as the run
-            # progresses.
-            _s._broadcast_chat_response(
-                session_id, payload.get("msg_id") or msg_id, payload,
-            )
+            if payload.get("type") == "compaction_finished":
+                # Compaction rewrote the branch mid-turn: the kept tail
+                # now hangs off a summary node, so the context the next
+                # request carries is a different (much smaller) set.
+                # Re-estimate occupancy so the ring drops to the
+                # post-compaction size right away rather than holding
+                # the pre-compaction measurement until the next reply.
+                _s.refresh_context_stats(session_id, msg_id)
 
     # Carry the conversation's picker choice (if any) into
     # the dispatcher so it doesn't fall back to the agent

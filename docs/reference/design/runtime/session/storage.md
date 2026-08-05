@@ -53,6 +53,39 @@ The following fields exist only in the registry, not in meta.json:
 | `needs_input` | the agent is waiting for user input | amber dot |
 | `done` | background task finished | blue dot shown together with `unread` |
 | `failed` | turn execution failed | red dot |
+| `interrupted` | the worker died mid-turn | no indicator (not run-active) |
+
+`running` is stamped by the dispatcher when a turn starts and cleared
+when it ends. A worker killed mid-turn (SIGKILL, crash) never runs that
+clear, so the row would stay `running` forever and pin the chat container
+at `data-run-active="true"` with no way out short of editing state on
+disk. `reconcile_interrupted_runs()` therefore resets any row still at
+`running` to `interrupted` on worker startup — a fresh worker has nothing
+running by definition. It resets the row independently of the DAG-node
+sweep in the same function, because a worker killed between the status
+write and the placeholder insert leaves a running *row* with no running
+*node*.
+
+## Moving HEAD: `_set_active_head`
+
+`webui/server.py` keeps a per-session mirror in `_sessions[sid]` holding
+`head_id` and `messages`, and `_save_session` flushes both straight back
+into SessionStore. A path that moves HEAD in the store but leaves the
+mirror behind is therefore not merely stale — **the next save actively
+reverts the move.**
+
+`_set_active_head(session_id, head_id)` is the single correct way to move
+HEAD. It writes SessionStore, re-reads the new branch into the mirror's
+`head_id` and `messages`, and drops the message cache, in that order.
+Every mutating path routes through it: retry, edit, sibling checkout,
+deepest-leaf jump, branch checkout, branch delete, attach, and rewind.
+
+Mutations that move HEAD are refused while a run is in flight
+(`_is_run_active`), returning `RUN_ACTIVE_ERROR` with `code:
+"run_active"`. Without that guard, an in-flight reply lands with its
+predecessor pointing at a branch the user already left; branch delete is
+worse still, since the tail being deleted may be the one the turn is
+writing into.
 
 ## Non-Persistent Objects (`_sessions` dict)
 

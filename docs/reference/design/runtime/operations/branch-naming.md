@@ -50,15 +50,21 @@ Key constants (titles.py):
 
 | Source | Trigger | Uses LLM | Location |
 |---|---|---|---|
-| User manual rename | `rename_branch` WS action | No | branch.py:259 |
+| User manual rename | `rename_branch` WS action — Branches panel, or `/branch <name>` in the composer | No | branch.py:259 |
 | spawn auto-name | /task spawn uses task.label | No | sub_agent_run.py:104, task/runner.py:797 |
 | 8-hex fallback | When there is no name | No | branch.py:207, badges.ts:31 |
-| **on-demand LLM naming** | **CLI `/branch rename` with an empty name** | **Yes** | **branch.py:290 `handle_auto_name_branch`** |
+| **on-demand LLM naming** | **CLI `/branch rename` with an empty name, or `/branch` with no argument in the composer** | **Yes** | **branch.py:290 `handle_auto_name_branch`** |
 
 The LLM branch namer `handle_auto_name_branch` is implemented and wired up: it pulls
 the branch's last 6 messages, has the LLM summarize them into 2-6 words, and calls
-`set_branch_name`. It is triggered manually from the CLI only; web does not call it
-automatically, so an ordinary fork shows the 8-hex id until renamed by hand.
+`set_branch_name`. Nothing triggers it automatically — an ordinary fork shows the
+8-hex id until someone names it.
+
+A branch in this DAG **is** a named leaf; there is no separate create step (a fork
+happens when a turn is written off a non-tip node). So the composer's `/branch`
+names the active head rather than creating anything: with an argument it sends
+`rename_branch`, without one `auto_name_branch`. Both handlers fall back to the
+session's current `head_id` when the command omits `head_msg_id`.
 
 **Storage**: meta.json `branches: {head_msg_id: {name, created_at, updated_at}}`,
 written by `set_branch_name` (session_store.py:967). Session instead uses the

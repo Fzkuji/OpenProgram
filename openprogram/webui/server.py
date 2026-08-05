@@ -146,21 +146,39 @@ def _hydrate_messages_from_db(session_id: str) -> list[dict]:
 def _set_active_head(session_id: str, head_id: Optional[str]) -> None:
     """Switch the conversation's active branch leaf.
 
-    Used by retry / edit / sibling-checkout / deepest-leaf jump UIs.
-    Updates SessionDB.sessions.head_id (so cross-process readers and
-    the dispatcher's next get_branch see the new head) and the
-    in-memory ``conv["head_id"]`` mirror, then invalidates the
-    messages cache so the next reader walks the new branch.
+    Used by retry / edit / sibling-checkout / deepest-leaf jump /
+    branch-checkout / branch-delete / attach / rewind UIs — every path
+    that moves HEAD must come through here.
+
+    Writes SessionDB.sessions.head_id (so cross-process readers and the
+    dispatcher's next get_branch see the new head), re-reads the new
+    branch into the in-memory ``conv["head_id"]`` / ``conv["messages"]``
+    mirror, and invalidates the messages cache.
+
+    The ``conv["messages"]`` refresh is not optional: ``_save_session``
+    flushes that list and ``conv["head_id"]`` straight back into
+    SessionDB, so a mirror left on the old branch silently reverts the
+    head move on the next save.
     """
     try:
         from openprogram.agent.session_db import default_db
-        default_db().set_head(session_id, head_id)
+        db = default_db()
+        db.set_head(session_id, head_id)
     except Exception as e:
         _log(f"_set_active_head: SessionDB write failed for {session_id}: {e}")
+        db = None
+    branch = None
+    if db is not None:
+        try:
+            branch = db.get_branch(session_id) or []
+        except Exception as e:
+            _log(f"_set_active_head: get_branch failed for {session_id}: {e}")
     with _sessions_lock:
         conv = _sessions.get(session_id)
         if conv is not None:
             conv["head_id"] = head_id
+            if branch is not None:
+                conv["messages"] = branch
     _invalidate_messages(session_id)
 
 
@@ -755,6 +773,15 @@ def _is_run_active(session_id: str) -> bool:
     return True
 
 
+# One wording for every "you can't move HEAD right now" rejection, so
+# retry / edit / fn-dispatch / checkout / delete / attach / merge /
+# rewind all read identically in the UI.
+RUN_ACTIVE_ERROR = (
+    "a run is currently active in this session — wait for it to finish "
+    "or stop it first"
+)
+
+
 # DAG helpers live in openprogram.contextgit. We keep ``advance_head``
 # as the in-memory mutation primitive but wrap it in ``_append_msg``
 # below so every webui write also flows into SessionDB. That makes the
@@ -1256,14 +1283,25 @@ async def _handle_ws_command(ws, cmd: dict):
     action = cmd.get("action")
     print(f"[ws] command received: action={action}")
 
-    # Fast path: action handled by an extracted module.
     h = WS_ACTIONS.get(action)
     if h is not None:
         await h(ws, cmd)
         return
 
-
-
+    # Unknown action. Silently dropping these is how a frontend command
+    # that names a handler nobody wrote (or renamed) looks exactly like a
+    # backend that is merely slow — no error, no log, no clue. Say so on
+    # both channels. ``web/scripts/check-ws-actions.mjs`` is the guard
+    # that keeps this branch unreachable in practice.
+    _log(f"[ws] unknown action {action!r} — no handler registered")
+    await ws.send_text(json.dumps({
+        "type": "action_error",
+        "data": {
+            "action": action,
+            "session_id": cmd.get("session_id"),
+            "error": f"unknown action {action!r}",
+        },
+    }, default=str))
 
 # ---------------------------------------------------------------------------
 # FastAPI app

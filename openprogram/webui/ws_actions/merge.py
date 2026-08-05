@@ -108,6 +108,16 @@ async def handle_merge_branches(ws, cmd: dict) -> None:
     else:
         base_peer = None
 
+    from openprogram.webui import server as _s
+
+    # A merge turn writes a new assistant node onto the target session
+    # and consumes the peer branches, so a run in flight on the target
+    # or any peer would race the HEAD move. Same guard as retry / edit.
+    _touched = {target_session_id} | {
+        p["session_id"] for p in peers if p.get("session_id")
+    } | set(sub_sessions)
+    _busy = next((s for s in _touched if s and _s._is_run_active(s)), None)
+
     if not target_session_id or not (peers or sub_sessions):
         payload = {
             "session_id": target_session_id,
@@ -117,6 +127,17 @@ async def handle_merge_branches(ws, cmd: dict) -> None:
             "final_text": "",
             "failed": True,
             "error": "session_id and at least one peer required",
+        }
+    elif _busy:
+        payload = {
+            "session_id": target_session_id,
+            "target_assistant_id": None,
+            "commit_id": None,
+            "commit_parents": [],
+            "final_text": "",
+            "failed": True,
+            "code": "run_active",
+            "error": _s.RUN_ACTIVE_ERROR,
         }
     else:
         loop = asyncio.get_event_loop()
@@ -135,7 +156,6 @@ async def handle_merge_branches(ws, cmd: dict) -> None:
     }, default=str))
 
     if not payload.get("failed") and payload.get("target_assistant_id"):
-        from openprogram.webui import server as _s
         try:
             _s._broadcast(json.dumps({
                 "type": "session_reload",
@@ -146,6 +166,15 @@ async def handle_merge_branches(ws, cmd: dict) -> None:
             }, default=str))
         except Exception:
             pass
+    elif payload.get("failed"):
+        # Defect 6: the result frame was the only failure signal and had
+        # no consumer, so a failed merge was silent. Log server-side so
+        # the failure is diagnosable from the worker log too.
+        _s._log(
+            f"[merge_branches] FAILED session={target_session_id} "
+            f"peers={peers} sub_sessions={sub_sessions}: "
+            f"{payload.get('error')}"
+        )
 
 
 ACTIONS = {

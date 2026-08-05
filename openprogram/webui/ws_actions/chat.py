@@ -987,95 +987,6 @@ async def handle_compact(ws, cmd: dict):
         })
 
 
-async def handle_context(ws, cmd: dict):
-    """Show token distribution across the context window."""
-    import asyncio
-    session_id = (cmd.get("session_id") or "").strip()
-
-    def _compute():
-        from openprogram.context.tokens import real_context_window, estimate_message_tokens
-        from openprogram.context.budget import default_allocator
-        from openprogram.context.components import build_system_prompt
-        from openprogram.store import _store as _store_var
-
-        store = _store_var.get(None)
-        history = []
-        if store and hasattr(store, "get_messages"):
-            try:
-                history = store.get_messages(session_id) or []
-            except Exception:
-                pass
-
-        hist_tokens = 0
-        for msg in history:
-            try:
-                hist_tokens += estimate_message_tokens(msg)
-            except Exception:
-                hist_tokens += 50
-
-        tools = []
-        try:
-            from openprogram.functions import agent_tools
-            tools = agent_tools()
-        except Exception:
-            pass
-        tools_tokens = default_allocator._estimate_tools(tools)
-
-        sys_tokens = 0
-        # 窗口从模型注册表拿：session 记的 "provider:model" 拆开再查。
-        # 老代码读不存在的 server._conversations，AttributeError 被吞，
-        # 恒回落 200k 且 system prompt 恒 0。
-        ctx_window = 0
-        try:
-            from openprogram.agent.session_db import default_db
-            from openprogram.providers.models import get_model
-            sess = default_db().get_session(session_id) or {}
-            model_id = sess.get("model") or ""
-            provider_id = sess.get("provider_name") or ""
-            if ":" in model_id:
-                provider_id, model_id = model_id.split(":", 1)
-            model_obj = (get_model(provider_id, model_id)
-                         if provider_id and model_id else None)
-            ctx_window = real_context_window(model_obj)
-        except Exception:
-            pass
-        if not ctx_window:
-            ctx_window = 200_000  # 注册表查不到时的最后兜底
-        try:
-            from openprogram.agent.management import manager as _mgr
-            spec = _mgr.get_default()
-            sys_prompt = build_system_prompt(spec) if spec else ""
-            sys_tokens = estimate_message_tokens({"role": "system", "content": sys_prompt}) if sys_prompt else 0
-        except Exception:
-            sys_tokens = 0
-
-        output_reserve = 16_384
-        total_used = sys_tokens + hist_tokens + tools_tokens
-        free = max(0, ctx_window - total_used - output_reserve)
-        pct = (total_used + output_reserve) / ctx_window * 100 if ctx_window > 0 else 0
-
-        return {
-            "context_window": ctx_window,
-            "system_prompt": sys_tokens,
-            "tools_schema": tools_tokens,
-            "history": hist_tokens,
-            "output_reserve": output_reserve,
-            "total_used": total_used + output_reserve,
-            "free": free,
-            "pct": round(pct, 1),
-        }
-
-    try:
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, _compute)
-        await ws.send_text(json.dumps({"type": "context_info", "data": result}))
-    except Exception as e:
-        await ws.send_text(json.dumps({
-            "type": "context_info",
-            "data": {"error": f"{type(e).__name__}: {e}"},
-        }))
-
-
 async def handle_sandbox(ws, cmd: dict):
     """Toggle system sandbox on/off for the current session."""
     from openprogram.sandbox import sandbox_enabled, is_available
@@ -1106,7 +1017,8 @@ async def handle_rewind_list(ws, cmd: dict):
     if not session_id:
         await ws.send_text(json.dumps({
             "type": "rewind_points",
-            "data": {"points": [], "error": "No session_id provided"},
+            "data": {"session_id": session_id or None, "points": [],
+                     "error": "No session_id provided"},
         }))
         return
     try:
@@ -1118,12 +1030,13 @@ async def handle_rewind_list(ws, cmd: dict):
         )
         await ws.send_text(json.dumps({
             "type": "rewind_points",
-            "data": {"points": points},
+            "data": {"session_id": session_id, "points": points},
         }, default=str))
     except Exception as e:
         await ws.send_text(json.dumps({
             "type": "rewind_points",
-            "data": {"points": [], "error": f"{type(e).__name__}: {e}"},
+            "data": {"session_id": session_id, "points": [],
+                     "error": f"{type(e).__name__}: {e}"},
         }))
 
 
@@ -1134,7 +1047,16 @@ async def handle_rewind(ws, cmd: dict):
     if not session_id or not target_msg_id:
         await ws.send_text(json.dumps({
             "type": "rewind_result",
-            "data": {"error": "session_id and target_msg_id are required"},
+            "data": {"session_id": session_id or None,
+                     "error": "session_id and target_msg_id are required"},
+        }))
+        return
+    from openprogram.webui import server as _s
+    if _s._is_run_active(session_id):
+        await ws.send_text(json.dumps({
+            "type": "rewind_result",
+            "data": {"session_id": session_id, "error": _s.RUN_ACTIVE_ERROR,
+                     "code": "run_active"},
         }))
         return
     try:
@@ -1149,21 +1071,30 @@ async def handle_rewind(ws, cmd: dict):
             if idx < 1 or idx > len(points):
                 await ws.send_text(json.dumps({
                     "type": "rewind_result",
-                    "data": {"error": f"Invalid index {idx}. Available: 1-{len(points)}"},
+                    "data": {"session_id": session_id,
+                             "error": f"Invalid index {idx}. Available: 1-{len(points)}"},
                 }))
                 return
             target_msg_id = points[idx - 1]["msg_id"]
         result = await loop.run_in_executor(
             None, lambda: rewind_to(session_id, target_msg_id),
         )
+        # rewind_to moved the store's head. Route the same move through
+        # _set_active_head so the in-memory conv mirror + message cache
+        # follow — otherwise the next _save_session flushes the stale
+        # pre-rewind head back over it and silently undoes the rewind.
+        if not result.get("errors"):
+            _s._set_active_head(session_id, result.get("new_head_id"))
+            _s.refresh_context_stats(session_id)
         await ws.send_text(json.dumps({
             "type": "rewind_result",
-            "data": result,
+            "data": {**result, "session_id": session_id},
         }, default=str))
     except Exception as e:
         await ws.send_text(json.dumps({
             "type": "rewind_result",
-            "data": {"error": f"{type(e).__name__}: {e}"},
+            "data": {"session_id": session_id,
+                     "error": f"{type(e).__name__}: {e}"},
         }))
 
 
@@ -1172,7 +1103,6 @@ ACTIONS = {
     "retry_function": handle_retry_function,
     "set_conversation_channel": handle_set_conversation_channel,
     "compact": handle_compact,
-    "context": handle_context,
     "sandbox": handle_sandbox,
     "rewind_list": handle_rewind_list,
     "rewind": handle_rewind,

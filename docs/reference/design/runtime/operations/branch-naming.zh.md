@@ -47,14 +47,19 @@ fork（用户 retry / edit 产生的分支）**和 `message_branch` 派生的分
 
 | 来源 | 触发 | 用 LLM | 位置 |
 |---|---|---|---|
-| 用户手动改名 | `rename_branch` WS action | 否 | branch.py:259 |
+| 用户手动改名 | `rename_branch` WS action —— Branches 面板，或输入框里 `/branch <name>` | 否 | branch.py:259 |
 | spawn 自动命名 | /task spawn 用 task.label | 否 | sub_agent_run.py:104, task/runner.py:797 |
 | 8 位 hex 兜底 | 无名字时 | 否 | branch.py:207, badges.ts:31 |
-| **on-demand LLM 命名** | **CLI `/branch rename` 空名** | **是** | **branch.py:290 `handle_auto_name_branch`** |
+| **on-demand LLM 命名** | **CLI `/branch rename` 空名，或输入框里不带参数的 `/branch`** | **是** | **branch.py:290 `handle_auto_name_branch`** |
 
 LLM 分支命名器 `handle_auto_name_branch` 已实现且接线完成：拉分支最后 6 条消息 → LLM
-总结成 2-6 词 → `set_branch_name`。它只在 CLI 手动触发，web 不自动调用，所以普通 fork
-在手动改名前一直显示 8 位 hex。
+总结成 2-6 词 → `set_branch_name`。没有任何地方自动触发它，普通 fork 在有人命名前
+一直显示 8 位 hex。
+
+这个 DAG 里分支**就是**一个有名字的叶子，没有单独的创建步骤（在非 tip 节点上写一轮
+就产生 fork）。所以输入框的 `/branch` 是给当前 head 命名而不是创建：带参数发
+`rename_branch`，不带发 `auto_name_branch`。命令省略 `head_msg_id` 时两个 handler
+都回落到会话当前的 `head_id`。
 
 **存储**：meta.json `branches: {head_msg_id: {name, created_at, updated_at}}`，由
 `set_branch_name`（session_store.py:967）写入。session 用的是 meta.json 顶层 `title` +

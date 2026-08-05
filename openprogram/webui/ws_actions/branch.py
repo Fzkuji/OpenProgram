@@ -248,6 +248,11 @@ async def handle_checkout_branch(ws, cmd: dict):
     err = None
     if not session_id or not head_msg_id:
         err = "session_id and head_msg_id required"
+    elif _s._is_run_active(session_id):
+        # Moving HEAD mid-run would leave the in-flight reply anchored
+        # to a branch we've already left. Same 409 semantics as
+        # retry / edit.
+        err = _s.RUN_ACTIVE_ERROR
     else:
         try:
             from openprogram.agent.session_db import default_db
@@ -255,13 +260,7 @@ async def handle_checkout_branch(ws, cmd: dict):
             if not db.message_exists(session_id, head_msg_id):
                 err = f"unknown message {head_msg_id!r}"
             else:
-                db.set_head(session_id, head_msg_id)
-                with _s._sessions_lock:
-                    c = _s._sessions.get(session_id)
-                    if c is not None:
-                        c["head_id"] = head_msg_id
-                        c["messages"] = db.get_branch(session_id) or []
-                _s._invalidate_messages(session_id)
+                _s._set_active_head(session_id, head_msg_id)
                 # A different branch is a different context. The last
                 # measurement belonged to the branch we just left, so
                 # re-estimate against the new one.
@@ -411,6 +410,10 @@ async def handle_delete_branch(ws, cmd: dict):
     new_head = None
     if not session_id or not head_msg_id:
         err = "session_id and head_msg_id required"
+    elif _s._is_run_active(session_id):
+        # Worst case of the unguarded branch actions: the in-flight turn
+        # may be writing INTO the tail we're about to delete.
+        err = _s.RUN_ACTIVE_ERROR
     else:
         try:
             from openprogram.agent.session_db import default_db
@@ -427,19 +430,15 @@ async def handle_delete_branch(ws, cmd: dict):
                     if lf["head_msg_id"] != head_msg_id:
                         new_head = lf["head_msg_id"]
                         break
-                if new_head:
-                    db.set_head(session_id, new_head)
             deleted = db.delete_branch_tail(session_id, head_msg_id)
-            with _s._sessions_lock:
-                conv = _s._sessions.get(session_id)
-                if conv is not None:
-                    if new_head:
-                        conv["head_id"] = new_head
-                        try:
-                            conv["messages"] = db.get_branch(session_id) or []
-                        except Exception:
-                            pass
-            _s._invalidate_messages(session_id)
+            # After the tail is gone, so get_branch reads the surviving
+            # chain. _set_active_head also refreshes conv["messages"] —
+            # required even when HEAD didn't move, since the deleted rows
+            # may still sit in the cached list.
+            if head_in_branch:
+                _s._set_active_head(session_id, new_head)
+            else:
+                _s._invalidate_messages(session_id)
             # Deleting the branch we were on moves HEAD elsewhere, so the
             # context is a different set of nodes now.
             _s.refresh_context_stats(session_id)
@@ -489,8 +488,29 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
         await ws.send_text(json.dumps({
             "type": "attach_branch_result",
             "data": {
+                "session_id": session_id or None,
                 "ok": False,
                 "error": "session_id and target_head_msg_id are required",
+            },
+        }))
+        return
+
+    # Attach appends a row to the ANCHOR session and mark_merged mutates
+    # the SOURCE session, so a run in flight on either side can race us.
+    _busy = next(
+        (s for s in {anchor_session_id, session_id} if _s._is_run_active(s)),
+        None,
+    )
+    if _busy:
+        await ws.send_text(json.dumps({
+            "type": "attach_branch_result",
+            "data": {
+                "session_id": session_id,
+                "anchor_session_id": anchor_session_id,
+                "target_head_msg_id": target_head,
+                "ok": False,
+                "code": "run_active",
+                "error": _s.RUN_ACTIVE_ERROR,
             },
         }))
         return
@@ -648,6 +668,18 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
                 db.mark_merged(session_id, [target_head])
             except Exception:
                 pass
+        # The attach row landed in the anchor session's DAG, so both the
+        # cached branch list and conv["messages"] are now missing it.
+        # Re-pin the pre-attach head through _set_active_head to re-read
+        # the branch into the mirror and drop the stale cache — without
+        # this, _save_session later writes the pre-attach message list
+        # back and the card vanishes until a refresh. When there was no
+        # pre-attach head, append_message already placed HEAD, so only
+        # the cache/mirror needs re-reading.
+        if head_before:
+            _s._set_active_head(anchor_session_id, head_before)
+        else:
+            _s._invalidate_messages(anchor_session_id)
         ok = True
     except Exception as e:  # noqa: BLE001
         error = f"{type(e).__name__}: {e}"
@@ -665,6 +697,16 @@ async def handle_attach_branch(ws, cmd: dict) -> None:
             }, default=str))
         except Exception:
             pass
+    else:
+        # Defect 6: this frame used to be the ONLY signal and nothing
+        # consumed it, so a failed attach was completely silent. Log
+        # server-side too so failures are diagnosable from the worker
+        # log regardless of what the frontend does with the frame.
+        _s._log(
+            f"[attach_branch] FAILED session={session_id} "
+            f"anchor={anchor_session_id} target={target_head} "
+            f"anchor_head={anchor}: {error}"
+        )
 
     await ws.send_text(json.dumps({
         "type": "attach_branch_result",
