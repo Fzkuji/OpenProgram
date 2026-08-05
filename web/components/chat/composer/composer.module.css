@@ -1304,24 +1304,24 @@
      No magic-number offset; no breakage when the wrapper grows
      (multi-line input, fn-form open, etc.). */
   bottom: 100%;
-  /* Tall enough for the menu's max-height. The clip's overflow:hidden
-     is what makes the open / close translateY animation work — the
-     menu starts at translateY(100%) inside the clip, visually below
-     the clip's bottom, and slides up to translateY(0) anchored to the
-     clip's own bottom (= wrapper top). */
-  height: 500px;
+  /* Tall enough for the menu's hover-expanded max-height. The clip's
+     overflow:hidden is what makes the open / close translateY
+     animation work — the menu starts at translateY(100%) inside the
+     clip, visually below the clip's bottom, and slides up to
+     translateY(0) anchored to the clip's own bottom (= wrapper top). */
+  height: 80vh;
   overflow: hidden;
   pointer-events: none;
 }
 .slashMenu {
   position: absolute;
   bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
+  /* Full composer width — the menu docks onto the input box below,
+     so it spans exactly the box it merges with. */
+  left: 0;
+  right: 0;
   transform-origin: 50% 100%;
   pointer-events: auto;
-  max-width: 720px;
-  width: min(90%, 720px);
   /* Symmetric *visual* gap on all four sides. Top / left / right
      each get 8px padding + 1px border = 9px. The bottom border is
      removed so the menu merges with the textarea below, so we
@@ -1335,9 +1335,18 @@
   border-radius: 14px 14px 0 0;
   border-bottom: none;
   box-shadow: none;
+  /* Compact by default so the popup never buries the conversation;
+     growing UPWARD on hover (bottom-anchored, so max-height is the
+     only moving part). Scrolling the list requires the pointer to be
+     over it, so :hover also covers the wheel case; moving the mouse
+     back into the transcript collapses it again. */
   max-height: 250px;
+  transition: max-height 220ms cubic-bezier(0.22, 1, 0.36, 1);
   overflow-y: auto;
   scrollbar-width: none;
+}
+.slashMenu:hover {
+  max-height: 70vh;
 }
 .slashMenu::-webkit-scrollbar {
   display: none;
@@ -1359,12 +1368,12 @@
 
    ``base.css`` keeps duplicates for any non-module consumers; harmless. */
 @keyframes slashOpen {
-  from { transform: translateX(-50%) translateY(100%); }
-  to   { transform: translateX(-50%) translateY(0); }
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
 }
 @keyframes slashClose {
-  from { transform: translateX(-50%) translateY(0); }
-  to   { transform: translateX(-50%) translateY(100%); }
+  from { transform: translateY(0); }
+  to   { transform: translateY(100%); }
 }
 
 .slashMenuItem {
