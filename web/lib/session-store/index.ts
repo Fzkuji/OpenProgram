@@ -51,6 +51,25 @@ import type {
   TreeNode,
 } from "./types";
 
+/** A row the stream is still writing into — its content lives only in
+ *  the store until the turn finalizes. */
+function isLiveRow(m: ChatMsg): boolean {
+  return (
+    m.status === "streaming" || m.status === "running" || m.status === "pending"
+  );
+}
+
+/** A row that carries nothing the user can see: the server's mid-turn
+ *  placeholder (output="", no blocks/tools/thinking yet). */
+function isEmptyRow(m: ChatMsg): boolean {
+  return (
+    !m.content &&
+    !m.thinking &&
+    !(m.blocks && m.blocks.length) &&
+    !(m.tools && m.tools.length)
+  );
+}
+
 interface ConvState {
   /** WS status for UI. */
   wsStatus: "connecting" | "open" | "closed";
@@ -632,7 +651,19 @@ export const useSessionStore = create<ConvState>((set) => ({
       // Drop any old ids for this conv so stale entries don't leak.
       const byId = { ...s.messagesById };
       for (const oldId of s.messageOrder[sessionId] ?? []) delete byId[oldId];
-      for (const m of msgs) byId[m.id] = m;
+      for (const m of msgs) {
+        // A load_session reply can land mid-turn (WS reconnect,
+        // session_reload, Switch-back from a sub-agent, or the
+        // tree_update hydrate that runs *by design* during a run).
+        // The backend's placeholder row for the in-flight turn is
+        // empty (output="", status="running"), so a naive overwrite
+        // would replace everything streamed so far with a blank
+        // bubble. Keep the live row when the reload has nothing to
+        // add — deltas keep flowing into it and the finalize frame
+        // writes the authoritative content.
+        const cur = s.messagesById[m.id];
+        byId[m.id] = cur && isLiveRow(cur) && isEmptyRow(m) ? cur : m;
+      }
       return {
         messagesById: byId,
         messageOrder: { ...s.messageOrder, [sessionId]: msgs.map((m) => m.id) },

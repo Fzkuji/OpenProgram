@@ -298,8 +298,9 @@ export function TurnFilesChips({
   }
 
   function revealInTree(rel: string) {
-    const w = window as Window & { rightDock?: { show?: (v: string) => void } };
-    w.rightDock?.show?.("files");
+    // `window.rightDock` came from the legacy public/js bundle (now gone),
+    // so the show() call never fired. The event below is what the React
+    // right dock actually listens to.
     window.dispatchEvent(
       new CustomEvent("project-file-reveal-in-tree", {
         detail: { projectId: project!.id, path: rel },

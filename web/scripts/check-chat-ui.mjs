@@ -15,6 +15,9 @@ const tabs = readCenterTabStripSource(import.meta.url);
 const tabsCss = source("components/center-tabs/center-tabs.module.css");
 const conversations = source("lib/runtime-bridge/conversations.ts");
 const chatHandlers = source("lib/runtime-bridge/chat-handlers.ts");
+const sessionStore = source("lib/session-store/index.ts");
+const assistantBubble = source("components/chat/messages/assistant-bubble.tsx");
+const chatCss = source("app/styles/chat.css");
 
 assert.match(welcome, /src=["{]?["']\/icon\.svg["']/);
 assert.doesNotMatch(welcome, /styles\.(?:l1|l2|m|caret)\b/);
@@ -77,6 +80,112 @@ assert.doesNotMatch(conversations, /agentic_scroll/);
 assert.doesNotMatch(chatHandlers, /agentic_scroll/);
 assert.match(conversations, /readChatScroll\(sessionStorage, id\)/);
 assert.match(chatHandlers, /writeChatScroll\(sessionStorage, chatKey, area\.scrollTop\)/);
+
+// ── A mid-turn load_session must not wipe the streaming reply ────────
+// `load_session` lands DURING a run on several paths that need no user
+// action: WS reconnect (use-ws onopen), a `session_reload` frame,
+// switching back from a sub-agent, and `hydrateTranscriptForTreeUpdate`
+// — which fires mid-turn by design. The server's row for the in-flight
+// turn is an empty placeholder (output="", status="running"), so a
+// naive rebuild replaces everything streamed so far with a blank
+// bubble. `setMessages` must keep the live row when the reload has
+// nothing to add.
+const setMessagesBody = sessionStore.slice(
+  sessionStore.indexOf("setMessages: (sessionId, msgs)"),
+  sessionStore.indexOf("appendMessage: (sessionId, msg)"),
+);
+assert.ok(setMessagesBody, "setMessages not found in the session store");
+assert.match(
+  setMessagesBody,
+  /isLiveRow\(cur\)\s*&&\s*isEmptyRow\(m\)\s*\?\s*cur\s*:\s*m/,
+  "setMessages must preserve an in-flight streaming row when the "
+    + "incoming load_session payload row is an empty placeholder",
+);
+// The two predicates are what make that guard correct — a live row is
+// any not-yet-finalized status, and emptiness must consider every
+// channel the stream writes into, not just `content`.
+const isLive = sessionStore.slice(
+  sessionStore.indexOf("function isLiveRow"),
+  sessionStore.indexOf("function isEmptyRow"),
+);
+for (const s of ["streaming", "running", "pending"]) {
+  assert.match(isLive, new RegExp(`"${s}"`), `isLiveRow must treat "${s}" as live`);
+}
+const isEmpty = sessionStore.slice(
+  sessionStore.indexOf("function isEmptyRow"),
+  sessionStore.indexOf("interface ConvState"),
+);
+for (const field of ["content", "thinking", "blocks", "tools"]) {
+  assert.match(
+    isEmpty,
+    new RegExp(`m\\.${field}`),
+    `isEmptyRow must check m.${field} — the stream writes into it, so a `
+      + "row holding only that would be treated as empty and overwritten",
+  );
+}
+
+// ── Agentic runtime cards are matched by ORDER, never by a `_rt_` id ──
+// `_wrap_agentic_runtime_block` persists no placeholder row, so no id
+// of the form `<msg_id>_rt_<tool_call_id>` is ever minted. Matching on
+// one was dead code that silently degraded to FIFO.
+assert.doesNotMatch(
+  assistantBubble,
+  /_rt_/,
+  "runtime children carry no tool_call_id back-reference — a `_rt_` id "
+    + "match is dead code; keep the ordered claim explicit instead",
+);
+assert.doesNotMatch(
+  assistantBubble,
+  /runtimeByToolId/,
+  "runtimeByToolId was always empty; the ordered fifo is the real path",
+);
+
+// ── MessageList must not re-render on every streaming delta ──────────
+// `updateMessage` returns a fresh `messagesById` each token, so
+// subscribing to the whole map re-renders the list — and re-maps every
+// id — per delta. Only the last row's role is actually needed.
+assert.doesNotMatch(
+  messageList,
+  /useSessionStore\(\(s\) => s\.messagesById\)/,
+  "MessageList must select the one field it needs, not the whole "
+    + "messagesById map (re-renders on every streaming token)",
+);
+assert.match(messageList, /s\.messagesById\[lastId\]\?\.role/);
+assert.match(messageList, /showPending = runningTask !== null && lastRole === "user"/);
+
+// ── Markdown must not widen the chat column ─────────────────────────
+// A wide table or one long unbroken token used to push #chatArea into
+// horizontal scroll. marked emits a bare <table> with no wrapper, so
+// the table itself has to be the scroll box — which needs
+// `display:block`, since a display:table box ignores overflow-x.
+const mdTable = chatCss.slice(
+  chatCss.indexOf(".message-content table {"),
+  chatCss.indexOf(".message-content th,"),
+);
+assert.ok(mdTable, ".message-content table rule not found");
+for (const decl of ["display: block", "overflow-x: auto", "max-width: 100%"]) {
+  assert.match(
+    mdTable,
+    new RegExp(decl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    `.message-content table needs \`${decl}\` or a wide table overflows `
+      + "the bubble and scrolls the whole chat area sideways",
+  );
+}
+const mdContent = chatCss.slice(
+  chatCss.indexOf(".message-content {"),
+  chatCss.indexOf(".message-content pre {"),
+);
+assert.match(
+  mdContent,
+  /overflow-wrap: anywhere/,
+  "`word-wrap: break-word` never breaks a single unbroken token (long "
+    + "URL / hash / base64) — `.message-content` needs overflow-wrap: anywhere",
+);
+const mdCode = chatCss.slice(
+  chatCss.indexOf(".message-content code {"),
+  chatCss.indexOf(".message-content pre code"),
+);
+assert.match(mdCode, /overflow-wrap: anywhere/, "inline code must wrap too");
 
 assert.match(tabs, /role="tablist"/);
 assert.match(tabs, /role="tab"/);

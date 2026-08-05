@@ -747,7 +747,11 @@
   font-size: 15px;
   line-height: 1.7;
   color: var(--text-primary);
-  word-wrap: break-word;
+  /* `break-word` only breaks at the *end* of an overflowing line, which
+     a single unbroken token (long URL, base64 blob, hash) never reaches
+     — `anywhere` breaks mid-token so the bubble can't be pushed wider
+     than the chat column. */
+  overflow-wrap: anywhere;
 }
 
 .message-content pre {
@@ -772,8 +776,12 @@
   background: var(--bg-tertiary);
   padding: 2px 6px;
   border-radius: 6px;
+  /* Inline code is one unbroken token by nature (paths, identifiers) —
+     let it wrap rather than widen the column. `pre code` opts back out
+     via the rule below, since the <pre> scrolls instead. */
+  overflow-wrap: anywhere;
 }
-.message-content pre code { background: none; padding: 0; font-size: inherit; }
+.message-content pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: inherit; }
 .message-content p { margin: 0 0 12px; }
 .message-content p:last-child { margin-bottom: 0; }
 .message-content ul, .message-content ol { margin: 8px 0; padding-left: 20px; }
@@ -783,8 +791,25 @@
 .message-content a { color: var(--accent-blue); text-decoration: none; }
 .message-content a:hover { text-decoration: underline; }
 .message-content blockquote { border-left: 3px solid var(--border); margin: 8px 0; padding: 4px 12px; color: var(--text-secondary); }
-.message-content table { border-collapse: collapse; margin: 8px 0; font-size: 14px; }
-.message-content th, .message-content td { border: 1px solid var(--border); padding: 4px 8px; }
+/* marked emits a bare <table> with no wrapper, so the table itself has
+   to be the scroll container: `display:block` makes overflow-x apply
+   (a `display:table` box ignores it and just widens the column, which
+   is what pushed the whole #chatArea into horizontal scroll). */
+.message-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 14px;
+}
+.message-content th, .message-content td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  /* The table scrolls, so cells keep their natural width instead of
+     inheriting the bubble's mid-token breaking. */
+  overflow-wrap: normal;
+}
 .message-content th { background: var(--bg-tertiary); }
 
 .spinner {

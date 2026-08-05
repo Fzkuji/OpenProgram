@@ -233,8 +233,9 @@ export interface ChatMsg {
    *  block-by-block so tool cards / RuntimeBlocks land at the exact
    *  position in the LLM output where the tool was called, instead
    *  of all stacked at the bottom. Tool blocks with an agentic name
-   *  (gui_agent / research_agent / wiki_agent) link to an entry in
-   *  ``runtimeChildren`` via ``tool_call_id``. */
+   *  (gui_agent / research_agent / wiki_agent) claim entries from
+   *  ``runtimeChildren`` in order — the runtime rows carry no
+   *  ``tool_call_id`` back-reference. */
   blocks?: AssistantBlock[];
 }
 

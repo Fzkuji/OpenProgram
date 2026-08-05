@@ -130,21 +130,20 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
   const lastBlockIdx = effBlocks ? effBlocks.length - 1 : -1;
 
   const AGENTIC_TOOL_NAMES = new Set(["gui_agent", "research_agent", "wiki_agent"]);
+  // Agentic runtime cards are matched to their call site by ORDER, not
+  // by id: `_wrap_agentic_runtime_block` persists no placeholder row —
+  // the canonical record is the @agentic_function's own DAG code node,
+  // whose id is a graph node id carrying no back-reference to the LLM's
+  // `tool_call_id`. Both sides are single-turn sequences built in
+  // execution order (blocks by `chat-stream`/`conv-mapper` in emit
+  // order, runtimeChildren by predecessor append order), so the k-th
+  // agentic tool block owns the k-th runtime child.
+  //
+  // Where this is wrong: agentic calls dispatched CONCURRENTLY within
+  // one turn can finish out of order, so the cards swap. Fixing that
+  // needs the backend to stamp the LLM tool_call_id onto the code node
+  // (then match on it here and keep FIFO only as the fallback).
   const runtimeChildren = msg.runtimeChildren ?? [];
-  const runtimeByToolId = new Map<string, ChatMsg>();
-  for (const rc of runtimeChildren) {
-    // RuntimeBlock children carry tool_call_id on the placeholder
-    // row's id-suffix or function field — best effort match by
-    // searching the children that haven't been consumed yet via
-    // function name. Falls back to FIFO when ids don't match (older
-    // wrappers didn't stamp tool_call_id).
-    // Runtime placeholder ids are stamped as
-    // `<assistant_msg_id>_rt_<tool_call_id>` by
-    // _wrap_agentic_runtime_block — extract the tool_call_id suffix.
-    const m = rc.id ? rc.id.match(/_rt_(.+)$/) : null;
-    const tid = m ? m[1] : undefined;
-    if (tid) runtimeByToolId.set(tid, rc);
-  }
   // Spawned/attach 卡按调用顺序排队：每遇到一个 tool==="task" 的块就取
   // 一张，画在该工具块的紧后面——思考 → 工具调用 → Spawned 卡 → 回复
   //（在哪调用就画在哪）。剩下没配到块的卡（老数据没记 blocks）兜底画
@@ -171,8 +170,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
     // tool block
     const tname = b.tool || "";
     if (AGENTIC_TOOL_NAMES.has(tname)) {
-      const rc =
-        (b.tool_call_id && runtimeByToolId.get(b.tool_call_id)) || fifo.shift();
+      const rc = fifo.shift();
       if (rc) {
         return (
           <div key={`rt_${idx}`} className="assistant-runtime-children">
@@ -263,20 +261,10 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
         <div className="chat-stream-body">
           {effBlocks ? (
             (() => {
-              // FIFO pool of unmatched agentic runtime children, used
-              // when a tool block lacks a tool_call_id we can map to.
-              const usedIds = new Set<string>();
-              for (const b of effBlocks) {
-                if (b.type === "tool" && b.tool_call_id
-                    && runtimeByToolId.has(b.tool_call_id)) {
-                  usedIds.add(b.tool_call_id);
-                }
-              }
-              const fifo = runtimeChildren.filter((rc) => {
-                const m = rc.id ? rc.id.match(/_rt_(.+)$/) : null;
-                const tid = m ? m[1] : undefined;
-                return !tid || !usedIds.has(tid);
-              });
+              // Ordered pool of agentic runtime children — each agentic
+              // tool block claims the next one (see the note above the
+              // `runtimeChildren` binding for why order is the key).
+              const fifo = [...runtimeChildren];
               // Legacy backfill: pre-block-schema sessions only
               // persisted tool blocks (no text/thinking), but
               // ``msg.content`` carries the LLM's final narration.
@@ -357,9 +345,7 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
                   }
                   let tree: TNode | null = null;
                   if (AGENTIC_TOOL_NAMES.has(tname)) {
-                    const rc =
-                      (b.tool_call_id && runtimeByToolId.get(b.tool_call_id))
-                      || fifo.shift();
+                    const rc = fifo.shift();
                     tree = (rc?.contextTree as TNode | undefined) || null;
                   }
                   if (!tree && callRootsFifo.length) {

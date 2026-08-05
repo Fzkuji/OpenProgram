@@ -37,9 +37,6 @@ export function useMarkdownReady(): boolean {
   useEffect(() => {
     if (ready) return;
     let cancelled = false;
-    const w = window as unknown as {
-      __sharedScriptsReady?: Promise<void>;
-    };
     if (has()) {
       setReady(true);
       return;
@@ -47,9 +44,9 @@ export function useMarkdownReady(): boolean {
     const done = () => {
       if (!cancelled && has()) setReady(true);
     };
-    w.__sharedScriptsReady?.then(done);
-    // Poll as a backstop — the promise resolves before `marked` is
-    // actually assigned in some load orderings.
+    // Polling is the only signal: `window.__sharedScriptsReady` came from
+    // the legacy public/js bundle (now gone), so that promise never
+    // existed and this was already the path that fired.
     const t = setInterval(() => {
       if (has()) {
         done();
@@ -65,7 +62,11 @@ export function useMarkdownReady(): boolean {
   return ready;
 }
 
-export function escapeHtml(s: string): string {
+/** SSR/no-`marked` fallback escape. Deliberately NOT
+ *  `runtime-bridge/helpers.escHtml` — that one escapes via
+ *  `document.createElement`, and the only callers here are the two
+ *  branches where the DOM is unavailable or `renderMd` just threw. */
+function escapeHtml(s: string): string {
   return s.replace(
     /[&<>"']/g,
     (c) =>

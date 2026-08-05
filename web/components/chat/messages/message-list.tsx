@@ -117,8 +117,9 @@ function useChatAreaStick(chatKey: string | null, newTurnSeed: number) {
     // upward. Suppress the pin briefly after any pointer interaction so
     // user-initiated growth expands downward in place.
     const pin = () => {
-      const w = window as unknown as { renderMathInChat?: () => void };
-      try { w.renderMathInChat?.(); } catch { /* ignore */ }
+      // `window.renderMathInChat` was defined by the legacy public/js
+      // bundle, which no longer exists — the read was permanently
+      // undefined. Math rendering now lives in the markdown pipeline.
       if (stuckRef.current && performance.now() - lastPointerRef.current > 600) {
         area.scrollTop = area.scrollHeight;
         scrollTopRef.current = area.scrollTop;
@@ -247,7 +248,14 @@ export function MessageList() {
   const runningTask = useSessionStore((s) =>
     sessionId ? s.runningTasks[sessionId] ?? null : null,
   );
-  const messagesById = useSessionStore((s) => s.messagesById);
+  // Only the LAST row's role matters here (see ``showPending`` below).
+  // Subscribing to the whole ``messagesById`` map would re-render this
+  // component — and re-map every id — on every single streaming delta,
+  // because ``updateMessage`` returns a fresh map object each time.
+  const lastId = ids.length ? ids[ids.length - 1] : null;
+  const lastRole = useSessionStore((s) =>
+    lastId ? (s.messagesById[lastId]?.role ?? null) : null,
+  );
   const loadingId = useSessionStore((s) => s.transcriptLoadingId);
   useChatAreaStick(chatKey, ids.length);
 
@@ -277,19 +285,13 @@ export function MessageList() {
   //     but no text/thinking/tool deltas yet)
   // Once the bubble has ANY content, that bubble's own
   // TypingIndicator / streaming text takes over and we hide.
-  const lastId = ids.length ? ids[ids.length - 1] : null;
-  const lastMsg = lastId ? messagesById[lastId] : null;
   // Only show the STANDALONE indicator when there's no assistant
   // placeholder yet — i.e. between user send and ``chat_ack``. Once
   // the assistant bubble exists (even empty), its own
   // ``TypingIndicator`` handles the empty-streaming state. Without
   // this guard the user sees two stacked "Agentic" rows: the real
   // placeholder bubble + the standalone, double-rendering.
-  const showPending =
-    runningTask !== null
-    && lastMsg !== null
-    && lastMsg !== undefined
-    && lastMsg.role === "user";
+  const showPending = runningTask !== null && lastRole === "user";
 
   // Session switch with nothing cached yet: skeleton placeholder
   // instead of an empty area / welcome flash. Minimap etc. wait too.
