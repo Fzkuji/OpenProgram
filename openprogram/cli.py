@@ -961,6 +961,14 @@ def build_parser() -> argparse.ArgumentParser:
              "omit for the full first-run wizard.",
     )
 
+    # main() 的 dispatch 需要这些子 parser(缺 verb 时打印对应 help),
+    # 但它们是本函数局部变量 — 经 set_defaults 盖进 args,嵌套子命令
+    # 由更深一层覆盖,args._cmd_parser 恒为选中路径上最深的一个。
+    for _p in (p_logs, p_programs, p_skills, p_plugins, p_sessions,
+               p_subagent, p_memory, p_worker, p_channels, p_chacct,
+               p_chaccess, p_chb, p_mcp, p_browser, p_agents):
+        _p.set_defaults(_cmd_parser=_p)
+
     return parser
 
 
@@ -1010,7 +1018,7 @@ def main():
             sys.exit(_cmd_logs_path(args.name))
         if verb == "tail":
             sys.exit(_cmd_logs_tail(args.name, args.lines, args.follow))
-        _need_subcommand(p_logs)
+        _need_subcommand(args._cmd_parser)
 
     if args.command == "completion":
         from openprogram._cli_cmds.completion import _cmd_completion
@@ -1066,7 +1074,7 @@ def main():
         elif verb == "uninstall":
             _cmd_uninstall(args.name)
         else:
-            _need_subcommand(p_programs)
+            _need_subcommand(args._cmd_parser)
         return
 
     if args.command == "skills":
@@ -1087,7 +1095,7 @@ def main():
         elif verb == "remove":
             sys.exit(_cmd_skills_remove(args.name))
         else:
-            _need_subcommand(p_skills)
+            _need_subcommand(args._cmd_parser)
         return
 
     if args.command == "doctor":
@@ -1116,7 +1124,7 @@ def main():
         elif verb == "disable":
             sys.exit(_cmd_plugins_disable(args.name))
         else:
-            _need_subcommand(p_plugins)
+            _need_subcommand(args._cmd_parser)
         return
 
     if args.command == "sessions":
@@ -1178,7 +1186,7 @@ def main():
                       f"{peer_str[:27]:28} {r['agent_id']:12} "
                       f"{r['session_id']}")
         else:
-            _need_subcommand(p_sessions)
+            _need_subcommand(args._cmd_parser)
         return
 
     if args.command == "web":
@@ -1325,7 +1333,7 @@ def main():
                 t.add(str(_mstore.root()), arcname="memory")
             print(f"exported to {out}")
             sys.exit(0)
-        _need_subcommand(p_memory)
+        _need_subcommand(args._cmd_parser)
 
     if args.command == "update":
         from openprogram.updater import (
@@ -1398,7 +1406,7 @@ def main():
         if verb == "uninstall":
             from openprogram.worker import services as _services
             sys.exit(_services.uninstall())
-        _need_subcommand(p_worker)
+        _need_subcommand(args._cmd_parser)
 
     if args.command == "channels":
         verb = getattr(args, "channels_verb", None)
@@ -1420,15 +1428,15 @@ def main():
             from openprogram.channels import setup as _ch_setup
             sys.exit(_ch_setup.run())
         if verb == "accounts":
-            _dispatch_accounts_verb(args, p_chacct)
+            _dispatch_accounts_verb(args, args._cmd_parser)
             return
         if verb == "access":
-            _dispatch_access_verb(args, p_chaccess)
+            _dispatch_access_verb(args, args._cmd_parser)
             return
         if verb == "bindings":
-            _dispatch_bindings_verb(args, p_chb)
+            _dispatch_bindings_verb(args, args._cmd_parser)
             return
-        _need_subcommand(p_channels)
+        _need_subcommand(args._cmd_parser)
         return
 
     if args.command == "mcp":
@@ -1455,7 +1463,7 @@ def main():
         if verb == "test":
             sys.exit(_cmd_mcp_test(args.name, args.command,
                                     env=args.env, timeout=args.timeout))
-        _need_subcommand(p_mcp)
+        _need_subcommand(args._cmd_parser)
 
     if args.command == "browser":
         verb = getattr(args, "browser_verb", None)
@@ -1471,10 +1479,10 @@ def main():
             sys.exit(_cmd_browser_list())
         if verb == "rm":
             sys.exit(_cmd_browser_rm(args.name))
-        _need_subcommand(p_browser)
+        _need_subcommand(args._cmd_parser)
 
     if args.command == "agents":
-        _dispatch_agents_verb(args, p_agents)
+        _dispatch_agents_verb(args, args._cmd_parser)
         return
 
     if args.command == "subagent":
@@ -1502,7 +1510,7 @@ def main():
                 base_peer=getattr(args, "base", None),
                 as_json=as_json,
             ))
-        _need_subcommand(p_subagent)
+        _need_subcommand(args._cmd_parser)
 
     if args.command == "cron-worker":
         _cmd_cron_worker(args.once, args.list)
