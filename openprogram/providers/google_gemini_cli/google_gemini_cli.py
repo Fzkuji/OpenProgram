@@ -176,7 +176,14 @@ def stream_google_gemini_cli(
                         def block_idx() -> int:
                             return len(blocks) - 1
 
+                        _sig = opts.get("signal")
                         async for line in response.aiter_lines():
+                            # Caller cancel (Stop button): raising unwinds
+                            # through ``async with client.stream(...)``, which
+                            # closes the connection.
+                            if _sig is not None and callable(getattr(_sig, "is_set", None)) and _sig.is_set():
+                                from openprogram.providers.utils.errors import StreamAborted
+                                raise StreamAborted("stream cancelled by caller signal")
                             if not line.startswith("data: "):
                                 continue
                             data_str = line[6:].strip()
@@ -295,10 +302,22 @@ def stream_google_gemini_cli(
             for b in output["content"]:
                 if isinstance(b, dict):
                     b.pop("index", None)
+            # User cancel — finalize as "aborted" (anthropic's cancel
+            # semantics), preserving whatever content already streamed.
+            _sig = opts.get("signal")
+            if _sig is not None and callable(getattr(_sig, "is_set", None)) and _sig.is_set():
+                output["stop_reason"] = "aborted"
+                output["error_message"] = str(exc)
+                ev_stream.push({"type": "error", "reason": "aborted", "error": output})
+                ev_stream.end(output)
+                return
             output["stop_reason"] = "error"
             output["error_message"] = str(exc)
-            ev_stream.push({"type": "error", "reason": "error", "error": output})
-            ev_stream.end(output)
+            # ev_stream.fail() — see openai-codex / openai_responses for the
+            # rationale: push-error + end looks like a clean stream end, so
+            # the consumer treats the failed stream as successful and
+            # auto-retries it.
+            ev_stream.fail(exc)
 
     asyncio.ensure_future(_run())
     return ev_stream

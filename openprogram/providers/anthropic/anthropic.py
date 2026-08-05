@@ -730,6 +730,12 @@ async def stream_simple(
     block_index_map: dict[int, int] = {}  # anthropic index → content_blocks index
     tool_arg_buffers: dict[int, str] = {}
 
+    _signal = getattr(opts, "signal", None)
+
+    def _cancelled() -> bool:
+        f = getattr(_signal, "is_set", None)
+        return bool(_signal is not None and callable(f) and f())
+
     # Cache-aware Microcompact: add cache_edits to clear old tool_result
     # blocks server-side without breaking prompt cache prefix.
     # Only fires after 50 tool calls, then every 25. Requires the
@@ -753,6 +759,12 @@ async def stream_simple(
     try:
         async with client.messages.stream(**params) as ant_stream:
             async for event in ant_stream:
+                # Caller cancel (Stop button): break mid-stream instead of
+                # draining the response. Exiting the ``async with`` closes
+                # the connection; the post-loop signal check finalizes the
+                # turn as "aborted".
+                if _cancelled():
+                    break
                 # Dispatch on the SSE protocol field, NOT the Python class
                 # name. SDK 0.91 renamed the high-level stop events
                 # (ContentBlockStopEvent → ParsedContentBlockStopEvent), so a
@@ -919,27 +931,31 @@ async def stream_simple(
                             )
                         })
 
-            # Get final message from stream
-            try:
-                final_msg = await ant_stream.get_final_message()
-                u = final_msg.usage
-                usage = Usage(
-                    input=u.input_tokens,
-                    output=u.output_tokens,
-                    cache_read=getattr(u, "cache_read_input_tokens", 0) or 0,
-                    cache_write=getattr(u, "cache_creation_input_tokens", 0) or 0,
-                )
-                usage.total_tokens = usage.input + usage.output + usage.cache_read + usage.cache_write
-
-                stop_reason = _STOP_REASON_MAP.get(final_msg.stop_reason or "end_turn", "stop")
-            except Exception:
+            # Get final message from stream. Skipped when cancelled —
+            # get_final_message() would drain the rest of the stream,
+            # defeating the mid-stream break above.
+            if _cancelled():
                 usage = partial.usage
                 stop_reason = partial.stop_reason
+            else:
+                try:
+                    final_msg = await ant_stream.get_final_message()
+                    u = final_msg.usage
+                    usage = Usage(
+                        input=u.input_tokens,
+                        output=u.output_tokens,
+                        cache_read=getattr(u, "cache_read_input_tokens", 0) or 0,
+                        cache_write=getattr(u, "cache_creation_input_tokens", 0) or 0,
+                    )
+                    usage.total_tokens = usage.input + usage.output + usage.cache_read + usage.cache_write
+
+                    stop_reason = _STOP_REASON_MAP.get(final_msg.stop_reason or "end_turn", "stop")
+                except Exception:
+                    usage = partial.usage
+                    stop_reason = partial.stop_reason
 
             # Check cancellation
-            signal = getattr(opts, "signal", None)
-            _is_set = getattr(signal, "is_set", None)
-            if signal and callable(_is_set) and _is_set():
+            if _cancelled():
                 stop_reason = "aborted"
 
             final = AssistantMessage(
@@ -961,11 +977,15 @@ async def stream_simple(
                 yield EventDone(type="done", reason=stop_reason, message=final)
 
     except Exception as e:
-        signal = getattr(opts, "signal", None)
-        _is_set_fn = getattr(signal, "is_set", None)
-        is_aborted = bool(signal and callable(_is_set_fn) and _is_set_fn())
-        stop = "aborted" if is_aborted else "error"
-
+        if not _cancelled():
+            # Re-raise so the classification layer (_build_llm_error /
+            # should_failover / retry) sees the real exception. Yielding
+            # EventError here made agent_loop treat the failure as a normal
+            # terminal message — the error was never classified, so
+            # retry/failover could never trigger.
+            raise
+        # User cancel that surfaced as an exception (e.g. the connection
+        # torn down mid-read) — finalize as "aborted", not an error.
         error_msg = AssistantMessage(
             role="assistant",
             content=content_blocks or [TextContent(type="text", text="")],
@@ -973,8 +993,8 @@ async def stream_simple(
             provider=model.provider,
             model=model.id,
             usage=Usage(),
-            stop_reason=stop,
+            stop_reason="aborted",
             error_message=str(e),
             timestamp=int(time.time() * 1000),
         )
-        yield EventError(type="error", reason=stop, error=error_msg)
+        yield EventError(type="error", reason="aborted", error=error_msg)

@@ -42,7 +42,7 @@ def stream_azure_openai_responses(
 
     async def _run() -> None:
         try:
-            from openai import AzureOpenAI
+            from openai import AsyncAzureOpenAI  # noqa: F401 — import check
         except ImportError:
             raise ImportError("openai is required: pip install openai")
 
@@ -73,9 +73,16 @@ def stream_azure_openai_responses(
 
             ev_stream.push({"type": "start", "partial": output})
 
-            openai_stream = client.responses.create(**params, stream=True)
+            # ``params`` already carries ``"stream": True`` — same call shape
+            # as openai_responses.py. The async client is mandatory here: a
+            # sync ``AzureOpenAI`` blocks the event loop on .create() and its
+            # sync Stream then TypeErrors under ``async for``.
+            openai_stream = await client.responses.create(**params)
 
-            await process_responses_stream(openai_stream, output, ev_stream, model)
+            await process_responses_stream(
+                openai_stream, output, ev_stream, model,
+                signal=opts.get("signal"),
+            )
 
             if output.stop_reason in ("aborted", "error"):
                 raise RuntimeError("stream ended with error stop_reason")
@@ -87,6 +94,15 @@ def stream_azure_openai_responses(
             for b in output.content:
                 if isinstance(b, dict):
                     b.pop("index", None)
+            # User cancel — finalize as "aborted" (anthropic's cancel
+            # semantics), preserving whatever content already streamed.
+            _sig = opts.get("signal")
+            if _sig is not None and callable(getattr(_sig, "is_set", None)) and _sig.is_set():
+                output.stop_reason = "aborted"
+                output.error_message = str(exc)
+                ev_stream.push({"type": "error", "reason": "aborted", "error": output})
+                ev_stream.end(output)
+                return
             output.stop_reason = "error"
             output.error_message = str(exc)
             # ev_stream.fail() so agent_loop raises instead of seeing
@@ -164,13 +180,13 @@ def _resolve_azure_config(model: "Model", opts: dict[str, Any]) -> tuple[str, st
 
 
 def _create_client(model: "Model", api_key: str, opts: dict[str, Any]) -> Any:
-    from openai import AzureOpenAI
+    from openai import AsyncAzureOpenAI
     base_url, api_version = _resolve_azure_config(model, opts)
     headers = {**(getattr(model, "headers", None) or {}), **(opts.get("headers") or {})}
     # Share retry budget knob with the regular openai provider —
     # both use the same OpenAI Python SDK, same retry semantics.
     sdk_max_retries = int(os.environ.get("OPENPROGRAM_OPENAI_MAX_RETRIES", "3"))
-    return AzureOpenAI(
+    return AsyncAzureOpenAI(
         api_key=api_key,
         api_version=api_version,
         base_url=base_url,

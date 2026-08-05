@@ -397,11 +397,23 @@ async def stream_simple(
     tool_arg_buffers: dict[str, str] = {}
     usage = Usage()
 
+    _signal = getattr(opts, "signal", None)
+
+    def _cancelled() -> bool:
+        f = getattr(_signal, "is_set", None)
+        return bool(_signal is not None and callable(f) and f())
+
     yield EventStart(type="start", partial=partial)
 
     try:
         async with await client.chat.completions.create(**params) as stream:
             async for chunk in stream:
+                # Caller cancel (Stop button): break mid-stream instead of
+                # draining the response. Exiting the ``async with`` closes
+                # the stream; the post-loop signal check finalizes the turn
+                # as "aborted".
+                if _cancelled():
+                    break
                 # Process usage from chunks
                 if chunk.usage:
                     usage = _usage_from_chunk(chunk.usage)
@@ -535,8 +547,7 @@ async def stream_simple(
         if tool_indices and stop_reason == "stop":
             stop_reason = "toolUse"
 
-        signal = getattr(opts, "signal", None)
-        if signal and callable(getattr(signal, "is_set", None)) and signal.is_set():
+        if _cancelled():
             stop_reason = "aborted"
 
         final = AssistantMessage(
@@ -568,23 +579,20 @@ async def stream_simple(
                 model.provider, _cred_profile, _cred_id,
                 getattr(e, "status_code", None), str(e),
             )
-        error_msg = AssistantMessage(
-            role="assistant",
-            content=[TextContent(type="text", text="")],
-            api=model.api,
-            provider=model.provider,
-            model=model.id,
-            usage=Usage(),
-            stop_reason="error",
-            error_message=str(e),
-            timestamp=int(time.time() * 1000),
-        )
-        yield EventError(type="error", reason="error", error=error_msg)
+        # Re-raise so the classification layer (_build_llm_error /
+        # should_failover / retry) sees the real exception — yielding
+        # EventError here made agent_loop treat the failure as a normal
+        # terminal message and the error was never classified.
+        raise
     except Exception as e:
         # Non-API error (connection/timeout/etc.) — cool down briefly so a flaky
         # key/endpoint rotates rather than being hammered.
         if _cred_id:
             _auth_usage.report_failure(model.provider, _cred_profile, _cred_id, None, str(e))
+        if not _cancelled():
+            raise  # same rationale as the APIError branch above
+        # User cancel that surfaced as an exception — finalize as
+        # "aborted", not an error, preserving streamed content.
         error_msg = AssistantMessage(
             role="assistant",
             content=content_blocks or [TextContent(type="text", text="")],
@@ -592,8 +600,8 @@ async def stream_simple(
             provider=model.provider,
             model=model.id,
             usage=usage,
-            stop_reason="error",
+            stop_reason="aborted",
             error_message=str(e),
             timestamp=int(time.time() * 1000),
         )
-        yield EventError(type="error", reason="error", error=error_msg)
+        yield EventError(type="error", reason="aborted", error=error_msg)

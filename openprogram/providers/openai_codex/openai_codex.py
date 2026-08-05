@@ -231,7 +231,16 @@ def stream_openai_codex_responses(
             # into ``ev_stream`` and the consumer is reading them —
             # we can't rewind that, so ``is_committed_fn`` flips to
             # True and ``retry_stream`` stops retrying.
+            _sig = opts.get("signal")
+            # Committed prefix at retry-loop entry. Attempts share this one
+            # ``output`` object, so each try must first drop whatever blocks
+            # a failed previous try half-streamed — otherwise a retried
+            # stream APPENDS to the leftovers and the final message carries
+            # duplicated content.
+            n0 = len(output.content)
+
             async def _attempt() -> None:
+                del output.content[n0:]
                 # Decoupled timeouts: bound connect/write/pool, but let the
                 # SSE idle/total parser govern the streaming body read (the
                 # read value here is only a backstop above SSE_IDLE_TIMEOUT_S).
@@ -278,8 +287,8 @@ def stream_openai_codex_responses(
                             file=sys.stderr, flush=True,
                         )
 
-                    sse_events = _parse_sse_stream(response)
-                    await process_responses_stream(sse_events, output, ev_stream, model)
+                    sse_events = _parse_sse_stream(response, signal=_sig)
+                    await process_responses_stream(sse_events, output, ev_stream, model, signal=_sig)
 
                 if output.stop_reason in ("aborted", "error"):
                     raise ProviderStreamError(
@@ -304,6 +313,16 @@ def stream_openai_codex_responses(
             for b in output.content:
                 if isinstance(b, dict):
                     b.pop("index", None)
+            # User cancel — finalize as "aborted" (anthropic's cancel
+            # semantics: a terminal aborted event, not an error/retry),
+            # preserving whatever content already streamed.
+            _sig_ = opts.get("signal")
+            if _sig_ is not None and callable(getattr(_sig_, "is_set", None)) and _sig_.is_set():
+                output.stop_reason = "aborted"
+                output.error_message = str(exc)
+                ev_stream.push({"type": "error", "reason": "aborted", "error": output})
+                ev_stream.end(output)
+                return
             # Partial-response recovery (hermes pattern). A transient
             # mid-stream break AFTER real content already streamed (common
             # over a flaky proxy/VPN) shouldn't discard the work: finalize
@@ -466,7 +485,7 @@ class StreamTotalTimeout(Exception):
     """Single SSE stream exceeded SSE_TOTAL_TIMEOUT_S."""
 
 
-async def _parse_sse_stream(response: Any):
+async def _parse_sse_stream(response: Any, signal: Any = None):
     """Parse SSE events from an httpx streaming response.
 
     OpenAI's Codex Responses API emits keepalive frames (event: ping
@@ -489,6 +508,11 @@ async def _parse_sse_stream(response: Any):
     last_data_at = _start      # real data events only — our progress guard
     line_iter = response.aiter_lines().__aiter__()
     while True:
+        # Caller cancel (Stop button): raising here unwinds through
+        # ``async with client.stream(...)``, which closes the connection.
+        if signal is not None and callable(getattr(signal, "is_set", None)) and signal.is_set():
+            from openprogram.providers.utils.errors import StreamAborted
+            raise StreamAborted("stream cancelled by caller signal")
         now = _time.monotonic()
         if now >= deadline:
             raise StreamTotalTimeout(
@@ -516,6 +540,10 @@ async def _parse_sse_stream(response: Any):
                 raise StreamTotalTimeout(
                     "caller deadline (exec timeout_s) exceeded mid-stream")
             wait = min(wait, _rem)
+        if signal is not None:
+            # Poll the cancel signal at >=4 Hz — a Stop must not wait out
+            # the full idle/stall budget before taking effect.
+            wait = min(wait, 0.25)
         try:
             line = await asyncio.wait_for(line_iter.__anext__(), timeout=wait)
         except asyncio.TimeoutError:

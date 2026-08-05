@@ -94,6 +94,7 @@ def stream_openai_responses(
                 model,
                 service_tier=opts.get("service_tier"),
                 apply_service_tier_pricing=_apply_service_tier_pricing,
+                signal=opts.get("signal"),
             )
 
             if output.stop_reason in ("aborted", "error"):
@@ -106,6 +107,15 @@ def stream_openai_responses(
             for b in output.content:
                 if isinstance(b, dict):
                     b.pop("index", None)
+            # User cancel — finalize as "aborted" (anthropic's cancel
+            # semantics), preserving whatever content already streamed.
+            _sig = opts.get("signal")
+            if _sig is not None and callable(getattr(_sig, "is_set", None)) and _sig.is_set():
+                output.stop_reason = "aborted"
+                output.error_message = str(exc)
+                ev_stream.push({"type": "error", "reason": "aborted", "error": output})
+                ev_stream.end(output)
+                return
             output.stop_reason = "error"
             output.error_message = str(exc)
             # Use ev_stream.fail() so the consumer's `async for`

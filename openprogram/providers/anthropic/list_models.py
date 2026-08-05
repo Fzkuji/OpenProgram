@@ -58,6 +58,11 @@ def fetch(provider_id: str, timeout: float) -> Any:
         }
     else:
         headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+    import time as _time
+    # Total budget for the whole fetch: the list call plus every per-model
+    # detail call draw from this one deadline, instead of each detail
+    # request getting the full ``timeout`` (N+1 requests × timeout).
+    deadline = _time.monotonic() + timeout
     try:
         r = httpx.get(url, headers=headers, timeout=timeout)
         r.raise_for_status()
@@ -83,11 +88,14 @@ def fetch(provider_id: str, timeout: float) -> Any:
         # Only native Anthropic / claude-code expose this detail shape;
         # third-party anthropic-wire hosts (minimax, …) don't, so skip them.
         # Use the SAME base as the list call (``url`` ends in /v1/models).
-        if provider_id in ("anthropic", "claude-code"):
+        # Budget spent → skip further detail probes; remaining models keep
+        # their list-level fields instead of being dropped.
+        _remaining = deadline - _time.monotonic()
+        if provider_id in ("anthropic", "claude-code") and _remaining > 0:
             try:
                 det = httpx.get(
                     url.rstrip("/") + "/" + mid,
-                    headers=headers, timeout=timeout,
+                    headers=headers, timeout=max(0.5, _remaining),
                 )
                 if det.status_code == 200:
                     dj = det.json()

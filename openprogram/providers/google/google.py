@@ -220,6 +220,12 @@ async def stream_simple(
     current_block: TextContent | ThinkingContent | None = None
     usage_final = Usage()
 
+    _signal = getattr(opts, "signal", None)
+
+    def _cancelled() -> bool:
+        f = getattr(_signal, "is_set", None)
+        return bool(_signal is not None and callable(f) and f())
+
     def _block_index() -> int:
         return len(content_blocks) - 1
 
@@ -244,6 +250,11 @@ async def stream_simple(
         )
 
         async for chunk in stream:
+            # Caller cancel (Stop button): raising abandons the SDK stream;
+            # the except below finalizes the turn as "aborted".
+            if _cancelled():
+                from openprogram.providers.utils.errors import StreamAborted
+                raise StreamAborted("stream cancelled by caller signal")
             if chunk.usage_metadata and chunk.usage_metadata.total_token_count:
                 um = chunk.usage_metadata
                 usage_final = Usage(
@@ -366,15 +377,18 @@ async def stream_simple(
         )
 
     except Exception as e:
+        # User cancel is not an error: finalize as "aborted" (anthropic's
+        # cancel semantics), preserving whatever content already streamed.
+        stop = "aborted" if _cancelled() else "error"
         error_msg = AssistantMessage(
             role="assistant",
-            content=[TextContent(type="text", text="")],
+            content=content_blocks or [TextContent(type="text", text="")],
             api=model.api,
             provider=model.provider,
             model=model.id,
-            usage=Usage(),
-            stop_reason="error",
+            usage=usage_final,
+            stop_reason=stop,
             error_message=str(e),
             timestamp=int(time.time() * 1000),
         )
-        yield EventError(type="error", reason="error", error=error_msg)
+        yield EventError(type="error", reason=stop, error=error_msg)

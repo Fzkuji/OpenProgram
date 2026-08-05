@@ -177,7 +177,13 @@ def stream_bedrock(
 
             response = client.converse_stream(**request)
 
+            _sig = opts.get("signal")
             for item in response["stream"]:
+                # Caller cancel (Stop button) — polled per event; raising
+                # abandons the boto3 event stream.
+                if _sig is not None and callable(getattr(_sig, "is_set", None)) and _sig.is_set():
+                    from openprogram.providers.utils.errors import StreamAborted
+                    raise StreamAborted("stream cancelled by caller signal")
                 if "messageStart" in item:
                     ev_stream.push({"type": "start", "partial": output})
                 elif "contentBlockStart" in item:
@@ -212,6 +218,15 @@ def stream_bedrock(
             for block in blocks:
                 block.pop("index", None)
                 block.pop("partial_json", None)
+            # User cancel — finalize as "aborted" (anthropic's cancel
+            # semantics), preserving whatever content already streamed.
+            _sig_ = opts.get("signal")
+            if _sig_ is not None and callable(getattr(_sig_, "is_set", None)) and _sig_.is_set():
+                output["stop_reason"] = "aborted"
+                output["error_message"] = str(exc)
+                ev_stream.push({"type": "error", "reason": "aborted", "error": output})
+                ev_stream.end(output)
+                return
             output["stop_reason"] = "error"
             output["error_message"] = str(exc)
             # ev_stream.fail() — see openai-codex / openai_responses for

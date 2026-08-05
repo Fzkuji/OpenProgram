@@ -320,7 +320,7 @@ async def retry_stream(
         if rem is not None and rem <= sleep_s:
             raise _mark_exhausted(last_exc)
         print(
-            f"[{label} stream retry] attempt {attempt + 1}/{max_attempts - 1} "
+            f"[{label} stream retry] attempt {attempt + 1}/{max_attempts} "
             f"after {sleep_s:.1f}s — {last_exc}",
             flush=True,
         )

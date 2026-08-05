@@ -54,6 +54,19 @@ class ExecInterrupt(BaseException):
     """
 
 
+class StreamAborted(Exception):
+    """User-initiated cancel observed mid-stream.
+
+    Raised by a provider's stream-reading loop when the caller's cancel
+    signal (``SimpleStreamOptions.signal``) is set. Providers catch it in
+    their error path (by re-checking the signal) and finalize the turn
+    with ``stop_reason="aborted"`` — the anthropic provider's cancel
+    semantics — instead of retrying or reporting an error. Unwinding the
+    raise out of the ``async with client.stream(...)`` block is what
+    actually closes the connection.
+    """
+
+
 class ErrorReason(str, enum.Enum):
     """Categorical reason for an LLM call failure.
 
@@ -437,6 +450,7 @@ __all__ = [
     "ExecInterrupt",
     "LLMError",
     "RetryInfo",
+    "StreamAborted",
     "classify_error",
     "parse_retry_after",
     "had_image",
