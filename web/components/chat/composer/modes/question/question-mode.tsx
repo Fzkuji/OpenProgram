@@ -23,14 +23,15 @@ import { useEffect, useState } from "react";
 import type { PendingDecision, AskOne, FormFieldSchema } from "@/lib/session-store";
 
 import styles from "./question-mode.module.css";
+import { getSocket } from "@/lib/runtime-bridge/state";
 import multi from "./multi-ask-mode.module.css";
 import approvalStyles from "../approval/approval-mode.module.css";
 import formStyles from "./form-mode.module.css";
 
 function wsSend(payload: unknown): void {
-  const w = window as unknown as { ws?: WebSocket };
-  if (w.ws && w.ws.readyState === WebSocket.OPEN) {
-    w.ws.send(JSON.stringify(payload));
+  const sock = getSocket();
+  if (sock && sock.readyState === WebSocket.OPEN) {
+    sock.send(JSON.stringify(payload));
   }
 }
 

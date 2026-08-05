@@ -18,6 +18,7 @@ import type { AssistantBlock, ChatMsg, DetailNode } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
 import type { TNode } from "./tree-types";
 import { useTranslation } from "@/lib/i18n";
+import { getSocket } from "@/lib/runtime-bridge/state";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 import {
   BotIcon,
@@ -30,9 +31,9 @@ import {
 export const SPAWNING_TOOL_NAMES = new Set(["task", "message_branch"]);
 
 function wsSend(payload: unknown): void {
-  const w = window as unknown as { ws?: WebSocket };
-  if (w.ws && w.ws.readyState === WebSocket.OPEN) {
-    w.ws.send(JSON.stringify(payload));
+  const sock = getSocket();
+  if (sock && sock.readyState === WebSocket.OPEN) {
+    sock.send(JSON.stringify(payload));
   }
 }
 

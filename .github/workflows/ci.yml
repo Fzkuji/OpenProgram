@@ -58,8 +58,8 @@ jobs:
         working-directory: web
         env:
           NEXT_TELEMETRY_DISABLED: "1"
-      - name: DAG call-thread contract
-        run: npm run check:dag-subagent
+      - name: Frontend contracts
+        run: npm run check
         working-directory: web
       - name: Check desktop web tab navigation
         run: node desktop/scripts/check-webtab-navigation.js

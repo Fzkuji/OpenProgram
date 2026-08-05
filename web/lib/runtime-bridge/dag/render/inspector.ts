@@ -29,7 +29,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import type { GNode } from "../types";
-import { runtimeState } from "../../state";
+import { getSocket, runtimeState } from "../../state";
 import { useSessionStore } from "../../../session-store";
 import { showToast } from "@/lib/format-utils/toast";
 import { _bodyText, closeTooltipDetail, expandTooltip } from "../tooltip";
@@ -134,9 +134,9 @@ async function _checkoutTo(id: string): Promise<boolean> {
     return false;
   }
   runtimeState._postCheckoutScrollTo = id;
-  const w = window as Window & { ws?: WebSocket };
-  if (w.ws && w.ws.readyState === WebSocket.OPEN) {
-    w.ws.send(JSON.stringify({ action: "load_session", session_id: sid }));
+  const sock = getSocket();
+  if (sock && sock.readyState === WebSocket.OPEN) {
+    sock.send(JSON.stringify({ action: "load_session", session_id: sid }));
   }
   return true;
 }

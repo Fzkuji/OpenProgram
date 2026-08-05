@@ -6,12 +6,11 @@
  * call `applyChatWsMessage(msg)` with a parsed `{ type, data }`
  * envelope and it updates `messagesById` / `messageOrder`.
  *
- * NOT attached to a socket here. Phase 3 (cutover) wires it onto the
- * shared `window.ws` and removes the legacy `chat-ws.js` renderer.
- * Until then this module is dormant — building it is additive and
- * leaves the live (legacy) chat untouched.
+ * NOT attached to a socket here — `use-ws.ts` owns the connection and
+ * feeds envelopes in. The socket itself lives in `runtimeState.ws`,
+ * reachable via `getSocket()`; nothing reads it off `window`.
  *
- * Protocol (mirrors `public/js/chat/chat-ws.js`):
+ * Protocol:
  *   chat_ack       { session_id, msg_id }
  *       → the user turn registered; create the assistant reply
  *         placeholder so streaming deltas have somewhere to land.

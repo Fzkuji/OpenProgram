@@ -26,7 +26,7 @@ import { useSessionStore, type ChatMsg } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { showToast } from "@/lib/format-utils/toast";
 import { setRunActive } from "@/lib/runtime-bridge/chat-handlers";
-import { runtimeState } from "@/lib/runtime-bridge/state";
+import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import {
   type AnimatedNavIconHandle,
   CheckIcon,
@@ -38,9 +38,9 @@ import {
 } from "@/components/animated-icons";
 
 function wsSend(payload: unknown): boolean {
-  const w = window as Window & { ws?: WebSocket };
-  if (!w.ws || w.ws.readyState !== WebSocket.OPEN) return false;
-  w.ws.send(JSON.stringify(payload));
+  const sock = getSocket();
+  if (!sock || sock.readyState !== WebSocket.OPEN) return false;
+  sock.send(JSON.stringify(payload));
   return true;
 }
 
@@ -194,8 +194,7 @@ export function MessageActions({
       setBusy(false);
       return;
     }
-    const w = window as Window & { ws?: WebSocket };
-    const ws = w.ws;
+    const ws = getSocket();
     if (!ws) {
       setBusy(false);
       return;

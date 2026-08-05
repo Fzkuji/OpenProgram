@@ -1,6 +1,7 @@
 /** Small pure helpers shared by the timeline subcomponents. */
 
 import type { CommitMeta } from "./types";
+import { getSocket } from "@/lib/runtime-bridge/state";
 
 export function fmtRelTime(ts: number): string {
   const now = Date.now() / 1000;
@@ -14,8 +15,7 @@ export function fmtRelTime(ts: number): string {
 /** Fire-and-forget WS send. No-op if the socket isn't connected;
  *  the caller re-fires on reconnect via the auto-refresh path. */
 export function wsSend(obj: unknown): void {
-  const w = window as unknown as { ws?: WebSocket | null };
-  const sock = w.ws;
+  const sock = getSocket();
   if (sock && sock.readyState === WebSocket.OPEN) {
     sock.send(JSON.stringify(obj));
   }

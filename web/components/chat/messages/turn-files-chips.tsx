@@ -32,6 +32,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import type { AssistantBlock } from "@/lib/session-store/types";
 import { useTranslation } from "@/lib/i18n";
+import { getSocket } from "@/lib/runtime-bridge/state";
 import { showToast } from "@/lib/format-utils/toast";
 import { fileTabId, sessionTabId, useCenterTabs } from "@/lib/state/center-tabs-store";
 import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
@@ -66,9 +67,9 @@ interface DiffState {
 }
 
 function wsSend(payload: unknown): boolean {
-  const w = window as Window & { ws?: WebSocket };
-  if (!w.ws || w.ws.readyState !== WebSocket.OPEN) return false;
-  w.ws.send(JSON.stringify(payload));
+  const sock = getSocket();
+  if (!sock || sock.readyState !== WebSocket.OPEN) return false;
+  sock.send(JSON.stringify(payload));
   return true;
 }
 
@@ -135,8 +136,7 @@ export function TurnFilesChips({
 
   useEffect(() => {
     if (!sessionId || !assistantMsgId) return;
-    const w = window as Window & { ws?: WebSocket };
-    const ws = w.ws;
+    const ws = getSocket();
     if (!ws) return;
     const onMsg = (ev: MessageEvent) => {
       try {
@@ -172,8 +172,7 @@ export function TurnFilesChips({
       session_id: sessionId,
       msg_id: assistantMsgId,
     });
-    const w = window as Window & { ws?: WebSocket };
-    const ws = w.ws;
+    const ws = getSocket();
     if (!ok || !ws) {
       setReverting(false);
       showToast(text("Undo failed: not connected", "撤回失败：连接已断开"));
@@ -223,8 +222,7 @@ export function TurnFilesChips({
       assistant_msg_id: assistantMsgId,
       path: f.path,
     });
-    const w = window as Window & { ws?: WebSocket };
-    const ws = w.ws;
+    const ws = getSocket();
     if (!ok || !ws) {
       setDiffs((s) => ({
         ...s,
