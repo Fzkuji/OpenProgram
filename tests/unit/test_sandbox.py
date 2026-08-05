@@ -77,7 +77,11 @@ class TestSeatbeltEndToEnd:
     def test_write_outside_cwd_denied(self):
         import subprocess
         with tempfile.TemporaryDirectory() as td:
-            target = os.path.expanduser("~/test_sandbox_should_fail.txt")
+            # NOT the home directory: the policy allows writes under
+            # /private/var/folders (and /tmp), which is exactly where a
+            # temp HOME lands — the assertion would then pass a write it
+            # was meant to block. Pick a path the policy never grants.
+            target = "/Users/Shared/openprogram_sandbox_should_fail.txt"
             args, _ = wrap_command(f"echo bad > {target}", td)
             result = subprocess.run(args, capture_output=True, text=True, timeout=5)
             assert result.returncode != 0

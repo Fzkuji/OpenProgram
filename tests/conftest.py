@@ -47,6 +47,33 @@ if os.environ.get("OPENPROGRAM_TEST_LIVE") != "1":
 
 
 # ---------------------------------------------------------------------------
+# State isolation: the suite must never touch the developer's real
+# ``~/.openprogram``.
+#
+# ``get_state_dir()`` resolves off ``Path.home()``, so a test that builds a
+# SessionStore, writes config, or starts a worker lands in the live data
+# directory. That is not merely untidy: ``SessionStore._startup_cleanup``
+# runs on every index load and ``shutil.rmtree``s any session it judges an
+# empty shell, so an unisolated run can DELETE real conversations.
+#
+# Redirecting HOME here — at import time, before any test module resolves a
+# path — puts every default-profile lookup under a per-run temp dir.
+# Individual tests that want their own scratch state still pass ``tmp_path``;
+# this is the floor, not a replacement.
+#
+# Opt out with OPENPROGRAM_TEST_REAL_HOME=1 when a test genuinely needs the
+# developer's own state (nothing in-tree does today).
+# ---------------------------------------------------------------------------
+if os.environ.get("OPENPROGRAM_TEST_REAL_HOME") != "1":
+    import tempfile  # noqa: E402
+
+    _TEST_HOME = tempfile.mkdtemp(prefix="openprogram-test-home-")
+    os.environ["HOME"] = _TEST_HOME
+    os.environ["USERPROFILE"] = _TEST_HOME  # Windows equivalent
+    Path(_TEST_HOME).mkdir(parents=True, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
 # Shared mock call functions (used across multiple test files)
 # ---------------------------------------------------------------------------
 
@@ -79,16 +106,22 @@ def noop_call(content, model="test", response_format=None):
 # ---------------------------------------------------------------------------
 
 def _has_default_provider() -> bool:
-    """True if a usable default LLM provider resolves (CLI or AuthStore key).
+    """True if a real model call can actually be made here.
 
-    False in a bare CI checkout (no codex/gemini CLI, no API key). Tests that
-    genuinely need a configured model use ``no_provider`` to skip there
-    instead of failing with "No LLM provider / model configured".
+    Resolves a model the way the agent does, rather than asking
+    ``detect_provider()`` whether a CLI binary exists. The two disagree:
+    with the codex CLI on PATH but no enabled models in the (isolated)
+    state dir, detection says yes while the agent raises "No model is
+    configured" — so the skip marker let provider-dependent tests run
+    straight into that error.
+
+    False in a bare CI checkout, and under the temp HOME this suite runs
+    in unless the developer's config was copied there.
     """
     try:
-        from openprogram.providers.registry import detect_provider
-        detect_provider()
-        return True
+        from openprogram.agent.dispatcher import _load_agent_profile
+        from openprogram.agent.internals._model_tools import resolve_model
+        return resolve_model(_load_agent_profile("main") or {}) is not None
     except Exception:
         return False
 
