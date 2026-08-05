@@ -78,6 +78,14 @@ interface CanvasHandle {
 
 let _handle: CanvasHandle | null = null;
 
+/** A session's opening fit stays owed until one actually lands. The
+ *  first attach often happens before the pane has a size or the SVG a
+ *  layout — ``fitCanvas`` bails on both — and a one-shot flag burned
+ *  there would leave the graph parked at the origin (top-left) for the
+ *  rest of the session. Re-renders and resizes retry while this is
+ *  set; the first successful fit clears it. */
+let _fitPending = false;
+
 /** Push the current view onto the world group, the backdrop lattice and
  *  the zoom readout. One function so the three can never disagree. */
 export function applyView(): void {
@@ -144,6 +152,7 @@ export function fitCanvas(): void {
     scale,
   );
   applyView();
+  _fitPending = false;
 }
 
 /** Zoom by ``factor`` about the screen-space anchor ``(px, py)``: the
@@ -279,15 +288,29 @@ export function attachCanvas(
   host.replaceChildren(svg);
   _handle = { world, host };
   wireGestures(host);
+  wireFitRetryOnResize(host);
   const fresh = _viewSession !== sessionId;
   setViewSession(sessionId);
-  if (fresh) {
-    // getBBox needs the element laid out; a frame later it is.
-    applyView();
+  if (fresh) _fitPending = true;
+  applyView();
+  if (_fitPending) {
+    // getBBox needs the element laid out; a frame later it is. If the
+    // pane still has no size (hidden tab, mid-layout), the fit stays
+    // pending and the next render or resize retries it.
     requestAnimationFrame(fitCanvas);
-  } else {
-    applyView();
   }
+}
+
+/** The pane can gain its size long after the first attach (panel
+ *  animated open, tab made visible) with no re-render in between —
+ *  retry the owed fit the moment it has room. */
+function wireFitRetryOnResize(host: HTMLElement): void {
+  const h = host as HTMLElement & { _dagFitResizeWired?: boolean };
+  if (h._dagFitResizeWired || typeof ResizeObserver === "undefined") return;
+  h._dagFitResizeWired = true;
+  new ResizeObserver(() => {
+    if (_fitPending && _handle?.host === host) fitCanvas();
+  }).observe(host);
 }
 
 /** The canvas is gone (empty session, skeleton): forget the handle so a
