@@ -10,6 +10,7 @@
 
 import type { GNode } from "../types";
 import { getSocket, runtimeState } from "../../state";
+import { translateText } from "@/lib/i18n";
 import { _branchColor, _svg, _textWidth } from "../shapes";
 import { isSpawnRoot } from "../passes/thread";
 
@@ -35,6 +36,27 @@ export function drawBadges(
   // 已放置的 badge 像素盒——碰撞按实测盒判定（rendering.md §5）。
   const placed: Array<{ x1: number; x2: number; y1: number; y2: number }> = [];
   const ROW_STEP = 32; // = layout ROW_H：碰撞下移一行
+  // 一趟预扫代替每行分支各自两遍全图扫描（流式期间每帧重画徽章）：
+  // 每条 lane 的最深可见节点（锚点），和每一列的最大 y（判"锚位正下方
+  // 有竖线穿过"）。比较序与原逐行扫描一致：先比 y，再比 x。
+  const deepestByLane: Record<number, GNode> = Object.create(null);
+  const maxYByX: Record<number, number> = Object.create(null);
+  Object.keys(tree.byId).forEach((id) => {
+    const n = tree.byId[id];
+    const np = pos(n);
+    if (maxYByX[np.x] === undefined || np.y > maxYByX[np.x]) {
+      maxYByX[np.x] = np.y;
+    }
+    if (n.display === "root" || n.display === "runtime") return;
+    const lane = (n as any)._lane ?? 0;
+    const d = deepestByLane[lane];
+    if (!d) {
+      deepestByLane[lane] = n;
+      return;
+    }
+    const dp = pos(d);
+    if (np.y > dp.y || (np.y === dp.y && np.x > dp.x)) deepestByLane[lane] = n;
+  });
   rows.forEach((b) => {
     const hid = b.head_msg_id as string | undefined;
     if (!hid) return;
@@ -67,31 +89,15 @@ export function drawBadges(
     // 锚定＝该分支**当前可见的最深节点**正下方（2026-07-31 裁定，
     // rendering.md §5）：执行子树展开时徽章跟到最底下的节点，
     // 收起时自动回到会话层节点。分支归属按 lane——展开的执行节点
-    // 与所属轮次同 lane。
+    // 与所属轮次同 lane。查预扫表，不再逐行全图扫。
     const lane = (node as any)._lane ?? 0;
-    let deepest: GNode = node;
-    let deepestP = pos(node);
-    Object.keys(tree.byId).forEach((id) => {
-      const n = tree.byId[id];
-      if (((n as any)._lane ?? 0) !== lane) return;
-      if (n.display === "root" || n.display === "runtime") return;
-      const np = pos(n);
-      if (np.y > deepestP.y || (np.y === deepestP.y && np.x > deepestP.x)) {
-        deepest = n;
-        deepestP = np;
-      }
-    });
-    node = deepest;
-    const p = deepestP;
+    node = deepestByLane[lane] ?? node;
+    const p = pos(node);
     let bx = p.x;
     let by = p.y + 28;
     // 避让：锚位正下方有竖线穿过（对话延续 / 展开的执行子树在同一列往
     // 下走）时左偏半格——徽标永不压边。
-    const hasLineBelow = Object.keys(tree.byId).some((id) => {
-      const n = tree.byId[id];
-      const np = pos(n);
-      return np.x === p.x && np.y > p.y;
-    });
+    const hasLineBelow = maxYByX[p.x] !== undefined && maxYByX[p.x] > p.y;
     if (hasLineBelow) bx -= 16;
     const label = (b.name as string) || hid.slice(0, 8);
     const isActive = !!b.active;
@@ -132,7 +138,9 @@ export function drawBadges(
     });
     tg.appendChild(rect);
     const tip = _svg("title", {});
-    tip.textContent = isActive ? "当前分支" : "点击切换到此分支";
+    tip.textContent = isActive
+      ? translateText("Current branch", "当前分支")
+      : translateText("Click to switch to this branch", "点击切换到此分支");
     tg.appendChild(tip);
     const text = _svg("text", {
       x: "0",

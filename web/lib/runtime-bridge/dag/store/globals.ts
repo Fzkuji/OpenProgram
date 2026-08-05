@@ -106,8 +106,9 @@ export function setThreadSession(v: string | null): void {
 
 // Which compaction capsules the user clicked open (dag/rendering.md §9).
 // View state, never persisted: it records how you are looking at the
-// graph, not what the graph is. Absent = folded, which is the default
-// every session starts at.
+// graph, not what the graph is. Absent = folded. Reset on session
+// switch (pipeline.ts) so one session's expansions don't leak into
+// the next graph.
 export let _summaryExpanded: Record<string, boolean> = Object.create(null);
 export function toggleSummaryExpanded(id: string): void {
   if (_summaryExpanded[id]) delete _summaryExpanded[id];

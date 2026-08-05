@@ -256,9 +256,10 @@ below it down by however many rows it occupies. Rows are not "hops to root" —
 that would stack all children of one parent on a single row.
 
 One exception grows sideways instead of down: a fork root sits on the **same
-row** as the chain sibling it runs parallel to (scene 3), and several branches
-off one fork point stack on successive rows in spawn order. The dashed bridge
-between the two is then a straight horizontal two grid units long.
+row** as the chain sibling it runs parallel to (scene 3), and every branch off
+one fork point shares that one row — the alternatives they are. Each branch
+bridges to the branch immediately to its left, not back across everything to
+the trunk, so the dashed bridge is a straight horizontal two grid units long.
 
 Thread rows are allocated **recursively** (§12): an anchor's items run from its
 next row (past any fork rows hanging off it) down one row per event; an open

@@ -26,6 +26,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { type GNode } from "./types";
+import { translateText } from "@/lib/i18n";
 
 /** Rough token count. The graph payload carries no measured count for
  *  user turns, and asking the backend per node for a number that only
@@ -214,7 +215,9 @@ function _kindLabel(node: GNode, el: Element | null): string {
   if ((node as Record<string, unknown>).source === "agent_spawn"
       && !node.predecessor) {
     const nm = (el?.getAttribute("data-spawn-name") || "").trim();
-    return nm ? `子 agent · ${nm}` : "子 agent";
+    return nm
+      ? translateText(`sub-agent · ${nm}`, `子 agent · ${nm}`)
+      : translateText("sub-agent", "子 agent");
   }
   const fn = node.function;
   if (fn === "attach") return "function call · attach";
@@ -258,10 +261,16 @@ function _appendHeader(
  *  flags the node drawer stamped — the card can never disagree with
  *  the picture beside it. */
 function _coverageText(el: Element): string {
-  if (el.getAttribute("data-failed") === "1") return "失败轮 · 已留档";
-  if (el.getAttribute("data-ghost") === "1") return "已折叠进摘要";
-  if (el.classList.contains("out-of-context")) return "不在覆盖内";
-  return "✓ 在覆盖内";
+  if (el.getAttribute("data-failed") === "1") {
+    return translateText("failed turn · archived", "失败轮 · 已留档");
+  }
+  if (el.getAttribute("data-ghost") === "1") {
+    return translateText("folded into a summary", "已折叠进摘要");
+  }
+  if (el.classList.contains("out-of-context")) {
+    return translateText("not in coverage", "不在覆盖内");
+  }
+  return translateText("✓ in coverage", "✓ 在覆盖内");
 }
 
 /** The rows for one node. The brief cut keeps what identifies the node
@@ -306,7 +315,8 @@ function _rows(node: GNode, el: Element | null, detail: boolean): Row[] {
     }
     if (!tokensShown && node.display !== "root") {
       const tok = _estimateTokens(node);
-      rows.push(_kv(tok.exact ? "tokens" : "tokens（估）",
+      rows.push(_kv(
+        tok.exact ? "tokens" : translateText("tokens (est.)", "tokens（估）"),
         tok.n.toLocaleString()));
     }
     const out = _bodyText(node);
@@ -318,12 +328,18 @@ function _rows(node: GNode, el: Element | null, detail: boolean): Row[] {
   // standing detail.
   if (el) {
     const threadN = el.getAttribute("data-thread");
-    if (threadN) rows.push(_kv("调用", `${threadN} 次`));
+    if (threadN) {
+      rows.push(_kv(translateText("calls", "调用"),
+        translateText(String(threadN), `${threadN} 次`)));
+    }
     if (detail) {
       const summaryN = el.getAttribute("data-summary");
-      if (summaryN) rows.push(_kv("覆盖", `${summaryN} 轮`));
+      if (summaryN) {
+        rows.push(_kv(translateText("covers", "覆盖"),
+          translateText(`${summaryN} turns`, `${summaryN} 轮`)));
+      }
       if (node.display !== "root") {
-        rows.push(_kv("上下文", _coverageText(el)));
+        rows.push(_kv(translateText("context", "上下文"), _coverageText(el)));
       }
     }
   }

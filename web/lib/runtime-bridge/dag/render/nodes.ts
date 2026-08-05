@@ -15,6 +15,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { type GNode, NODE_R } from "../types";
+import { translateText } from "@/lib/i18n";
 import {
   CAPSULE_HH,
   CAPSULE_HW,
@@ -195,8 +196,10 @@ export function drawNodes(
         "pointer-events": "none",
       });
       cap.textContent = capsuleOpen
-        ? `展开中 · ${covered.length} 轮`
-        : `已压缩 · ${covered.length} 轮`;
+        ? translateText(`Expanded · ${covered.length} turns`,
+          `展开中 · ${covered.length} 轮`)
+        : translateText(`Compacted · ${covered.length} turns`,
+          `已压缩 · ${covered.length} 轮`);
       g.appendChild(cap);
     }
     // ── 覆盖态的两级衰减（rendering.md 第八节）──

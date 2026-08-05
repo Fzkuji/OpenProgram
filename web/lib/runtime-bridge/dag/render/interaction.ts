@@ -173,6 +173,10 @@ export function _installInteractionHandlers(rerender: () => void): void {
     // the rail themselves.
     const gn = _graphNode(id);
     if (gn) useSessionStore.getState().populateDetail(_detailFor(gn));
+    // The second click of a double-click stops here: without the guard
+    // it toggled the fold open and shut again (two full repaints)
+    // before the dblclick handler ran its checkout / fork.
+    if (e.detail > 1) return;
     // A capsule's click is its fold (dag/rendering.md §9). It takes
     // precedence over the execution-subtree fold below: the capsule
     // stands for a span of the CHAIN, which is the bigger thing the

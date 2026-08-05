@@ -67,6 +67,7 @@ import {
   setLastSignature,
   setLeafOfNode,
   setParentOf,
+  setSummaryExpanded,
   setThreadOpen,
   setThreadSession,
   setVisibleIds,
@@ -145,6 +146,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     const sid = runtimeState.currentSessionId;
     if (sid !== _threadSession) {
       setThreadOpen(Object.create(null));
+      setSummaryExpanded(Object.create(null));
       setThreadSession(sid);
     }
   }

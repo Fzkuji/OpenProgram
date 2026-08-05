@@ -35,6 +35,22 @@ _installInteractionHandlers(() => {
   if (_lastGraph) render(_lastGraph, _lastHeadId);
 });
 
+// A locale switch only re-renders React subscribers; this imperative
+// layer bakes its strings into the SVG at draw time. ``lib/i18n``'s
+// ``setLocale`` stamps ``<html lang>``, so that attribute is the change
+// notification — repaint past the signature dedup when it flips.
+if (typeof document !== "undefined"
+    && typeof MutationObserver !== "undefined") {
+  new MutationObserver(() => {
+    if (!_lastGraph) return;
+    setLastSignature(null);
+    render(_lastGraph, _lastHeadId);
+  }).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["lang"],
+  });
+}
+
 export function renderHistoryGraph(graph: GNode[], headId: string | null): void {
   setLastGraph(graph, headId);
   render(graph, headId);

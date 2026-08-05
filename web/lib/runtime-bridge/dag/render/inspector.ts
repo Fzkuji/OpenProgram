@@ -32,6 +32,7 @@ import type { GNode } from "../types";
 import { getSocket, runtimeState } from "../../state";
 import { useSessionStore } from "../../../session-store";
 import { showToast } from "@/lib/format-utils/toast";
+import { translateText } from "@/lib/i18n";
 import { _bodyText, closeTooltipDetail, expandTooltip } from "../tooltip";
 
 function _roleLabel(node: GNode, el?: Element): string {
@@ -46,7 +47,9 @@ function _roleLabel(node: GNode, el?: Element): string {
   if ((node as Record<string, unknown>).source === "agent_spawn"
       && !node.predecessor) {
     const nm = (el?.getAttribute("data-spawn-name") || "").trim();
-    return nm ? `子 agent · ${nm}` : "子 agent";
+    return nm
+      ? translateText(`sub-agent · ${nm}`, `子 agent · ${nm}`)
+      : translateText("sub-agent", "子 agent");
   }
   if (node.role === "tool") {
     const name = (node.name as string | undefined) || node.function;
@@ -126,11 +129,13 @@ async function _checkoutTo(id: string): Promise<boolean> {
     });
     if (!r.ok) {
       const j = await r.json().catch(() => null);
-      showToast(j?.error || "checkout 失败", { tone: "error" });
+      showToast(j?.error || translateText("Checkout failed", "checkout 失败"),
+        { tone: "error" });
       return false;
     }
   } catch {
-    showToast("checkout 失败", { tone: "error" });
+    showToast(translateText("Checkout failed", "checkout 失败"),
+      { tone: "error" });
     return false;
   }
   runtimeState._postCheckoutScrollTo = id;
@@ -162,14 +167,17 @@ async function _checkoutTo(id: string): Promise<boolean> {
 export async function forkAndEditNode(node: GNode): Promise<void> {
   const pivot = node.predecessor;
   if (!pivot) {
-    showToast("找不到分叉点", { tone: "error" });
+    showToast(translateText("Fork point not found", "找不到分叉点"),
+      { tone: "error" });
     return;
   }
   if (!(await _checkoutTo(String(pivot)))) return;
   const store = useSessionStore.getState();
   store.setComposerInput(_bodyText(node));
   store.focusComposer();
-  showToast("已回到分叉点，改完发送即开新分支");
+  showToast(translateText(
+    "Back at the fork point — edit and send to start the new branch",
+    "已回到分叉点，改完发送即开新分支"));
 }
 
 function _showRawJson(node: GNode, rect: DOMRect): void {
@@ -185,8 +193,9 @@ function _showRawJson(node: GNode, rect: DOMRect): void {
   box.appendChild(pre);
   const acts = document.createElement("div");
   acts.className = "dag-inspector-actions";
-  acts.appendChild(_actionButton("复制", () => {
-    _copy(JSON.stringify(node, _dropRenderKeys, 2), "已复制 JSON");
+  acts.appendChild(_actionButton(translateText("Copy", "复制"), () => {
+    _copy(JSON.stringify(node, _dropRenderKeys, 2),
+      translateText("JSON copied", "已复制 JSON"));
   }));
   box.appendChild(acts);
   _openLayer(box, rect);
@@ -242,12 +251,18 @@ export function showNodeMenu(node: GNode, el: Element): void {
   // action and then toasting the rejection was worse than not
   // offering it.
   if (_isChainTurn(node)) {
-    menu.appendChild(_menuItem("checkout 到此分支", () => { void _checkoutTo(id); }));
-    menu.appendChild(_menuItem("从此节点 fork", () => { void _checkoutTo(id); }));
+    menu.appendChild(_menuItem(
+      translateText("Checkout this branch", "checkout 到此分支"),
+      () => { void _checkoutTo(id); }));
+    menu.appendChild(_menuItem(
+      translateText("Fork from this node", "从此节点 fork"),
+      () => { void _checkoutTo(id); }));
     // Editing means writing a REPLACEMENT for a message, so it only has
     // meaning where a message is the user's own words.
     if (node.role === "user" && node.display !== "root") {
-      menu.appendChild(_menuItem("fork 并编辑此消息", () => { void forkAndEditNode(node); }));
+      menu.appendChild(_menuItem(
+        translateText("Fork & edit this message", "fork 并编辑此消息"),
+        () => { void forkAndEditNode(node); }));
     }
     // This separator divides the chain verbs from the generic ones —
     // with no chain verbs above it, it would stack against the card's
@@ -256,10 +271,10 @@ export function showNodeMenu(node: GNode, el: Element): void {
     sep.className = "dag-menu-sep";
     menu.appendChild(sep);
   }
-  menu.appendChild(_menuItem("复制节点 id", () => {
-    _copy(id, "已复制节点 id");
+  menu.appendChild(_menuItem(translateText("Copy node id", "复制节点 id"), () => {
+    _copy(id, translateText("Node id copied", "已复制节点 id"));
   }, true));
-  menu.appendChild(_menuItem("查看原始 JSON", () => {
+  menu.appendChild(_menuItem(translateText("View raw JSON", "查看原始 JSON"), () => {
     _showRawJson(node, el.getBoundingClientRect());
   }, true));
 

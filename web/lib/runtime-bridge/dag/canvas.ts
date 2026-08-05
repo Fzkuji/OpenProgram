@@ -308,8 +308,12 @@ function wireFitRetryOnResize(host: HTMLElement): void {
   const h = host as HTMLElement & { _dagFitResizeWired?: boolean };
   if (h._dagFitResizeWired || typeof ResizeObserver === "undefined") return;
   h._dagFitResizeWired = true;
+  // No host check: ``fitCanvas`` already bails without a handle, and
+  // when one exists the owed fit belongs to it — a resize on any wired
+  // pane is room enough to retry, so the stricter ``_handle.host ===
+  // host`` half-guard only ever dropped retries.
   new ResizeObserver(() => {
-    if (_fitPending && _handle?.host === host) fitCanvas();
+    if (_fitPending) fitCanvas();
   }).observe(host);
 }
 

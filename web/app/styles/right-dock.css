@@ -746,11 +746,15 @@
 /* dag/rendering.md §9 / §10. One grey answers both: a covered turn and
    an abandoned failed turn are alike on the only axis the graph is
    about — still on disk, never in the next request. */
-/* The app's palette is dark regardless of the OS scheme (see the
-   lattice note above), so the ghost grey is the dark-tuned one, always —
-   keyed on prefers-color-scheme, light-OS users got a near-white ghost
-   that outshone live nodes. */
+/* The ghost grey follows the theme, keyed on data-theme (what
+   lib/prefs/theme-pref.ts stamps on <html>) — NOT prefers-color-scheme:
+   the palette is the user's theme choice, not the OS scheme. Receded
+   means receded relative to the canvas: darker than the text tiers on
+   dark canvases, paler than them on light ones — the dark-only value
+   used to be the heaviest ink on a light canvas. */
 :root { --dag-ghost: #57564f; }
+[data-theme="light"] { --dag-ghost: #b8b8c0; }
+[data-theme="beige-light"] { --dag-ghost: #b9b7ae; }
 
 /* The note beside a compaction capsule ("已压缩 · 14 轮"). It is the
    fold's own affordance — the pleats say a stack is there, this says

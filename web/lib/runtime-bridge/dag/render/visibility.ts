@@ -45,8 +45,12 @@ export function _applyVisibility(nodeEl: Element, visible: boolean): void {
     // buries the centre-to-centre edge ends inside the outline
     // (shapes.ts) — transparent would show a phantom dot of line cap
     // at the glyph's centre.
+    // Filled = the theme's brightest ink (--text-bright): near-white on
+    // dark canvases, near-black on light ones. A hardcoded #ffffff was
+    // exactly light themes' --bg-primary, so both states painted alike.
     shape.setAttribute(
-      "fill", visible ? "#ffffff" : "var(--bg-primary, #262624)");
+      "fill",
+      visible ? "var(--text-bright, #ffffff)" : "var(--bg-primary, #262624)");
   }
 }
 
