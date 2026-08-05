@@ -419,6 +419,18 @@ export function handleRunningTask(rt: unknown): void {
  */
 const hydratedTreePaths = new Set<string>();
 
+/** Forget which runs were already hydrated. Called on every
+ *  `session_loaded` (use-ws.ts): a fresh transcript is the natural drain
+ *  point — every tree-structure change (session switch, branch checkout,
+ *  rewind, attach/merge `session_reload`) funnels into a `load_session`
+ *  whose reply is that frame. A card the reload delivered is still
+ *  deduped by the `messagesById` guard below; a path genuinely missing
+ *  again after the tree changed must be allowed to re-hydrate. Also
+ *  keeps the set from growing without bound across sessions. */
+export function clearHydratedTreePaths(): void {
+  hydratedTreePaths.clear();
+}
+
 function hydrateTranscriptForTreeUpdate(data: ChatResponseData): void {
   const sid = (data as { session_id?: string }).session_id;
   const path = ((data as { tree?: { path?: string } }).tree || {}).path;

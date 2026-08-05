@@ -24,6 +24,7 @@ import {
   onChannelAccountsMessage,
 } from "@/lib/runtime-bridge/conversations";
 import {
+  clearHydratedTreePaths,
   handleRunningTask,
   handleRunningTaskClear,
   handleSessionsList,
@@ -191,6 +192,41 @@ export function useWS(): void {
             showToast(`未知操作 ${act ?? "?"} — 后端没有对应处理器`, {
               tone: "error",
             });
+          });
+          return true;
+        }
+        case "attach_branch_result": {
+          // Failure surface for the Branches panel's "Attach to" action.
+          // On success (including duplicate re-attach) the backend
+          // broadcasts `session_reload` for the anchor session and the
+          // load_session → session_loaded chain redraws the attach card
+          // and branch list (ws_actions/branch.py::handle_attach_branch),
+          // so only the failure branch needs handling here.
+          if (d?.ok !== false) return true;
+          // Same ownership rule as the rewind_result consumer: a frame
+          // owned by another conversation must not toast into this one.
+          const sid = d?.session_id as string | undefined;
+          if (sid && sid !== runtimeState.currentSessionId) return true;
+          const err = (d?.error as string | undefined) || "unknown error";
+          console.error("[useWS] attach_branch failed:", d);
+          void import("@/lib/format-utils/toast").then(({ showToast }) => {
+            showToast(`分支挂接失败：${err}`, { tone: "error" });
+          });
+          return true;
+        }
+        case "merge_branches_result": {
+          // Failure surface for the Branches panel's merge action. A
+          // successful merge broadcasts `session_reload` (reason "merge")
+          // which re-fetches the conversation
+          // (ws_actions/merge.py::handle_merge_branches), so only the
+          // failure branch needs handling here.
+          if (!d?.failed) return true;
+          const sid = d?.session_id as string | undefined;
+          if (sid && sid !== runtimeState.currentSessionId) return true;
+          const err = (d?.error as string | undefined) || "unknown error";
+          console.error("[useWS] merge_branches failed:", d);
+          void import("@/lib/format-utils/toast").then(({ showToast }) => {
+            showToast(`分支合并失败：${err}`, { tone: "error" });
           });
           return true;
         }
@@ -433,6 +469,9 @@ export function useWS(): void {
           });
           return true;
         case "session_loaded":
+          // A fresh transcript invalidates the per-run hydrate dedup —
+          // see clearHydratedTreePaths for why this is the drain point.
+          clearHydratedTreePaths();
           loadSessionData(d as never);
           // Restore the session's additional working directories from the
           // persisted settings (refresh / device switch recovery).
