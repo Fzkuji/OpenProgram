@@ -133,3 +133,23 @@ def test_all_global_entry_points_persist(monkeypatch):
     rest_src = inspect.getsource(rest)
     assert rest_src.count("save_default_model") >= 4  # 2 imports + 2 calls
     assert "save_default_model" in inspect.getsource(ws.handle_switch_model)
+
+
+# --- per-session switch pins the picker choice, both entry points --------
+
+def test_session_switch_sets_picker_overrides():
+    """The dispatcher reads the session's model pin from
+    ``provider_override`` / ``model_override``, and restart restore only
+    trusts those keys. Both switch entry points (REST and ws) must set
+    them and persist — a path that only writes ``provider_name`` leaves
+    the session re-resolving through the enabled list on every turn
+    (answers on a different model than the chip shows, and the pin is
+    lost across worker restarts)."""
+    import inspect
+    from openprogram.webui.routes import runtime as rest
+    from openprogram.webui.ws_actions import runtime as ws
+
+    for src in (inspect.getsource(rest), inspect.getsource(ws.handle_switch_model)):
+        assert 'conv["provider_override"]' in src
+        assert 'conv["model_override"]' in src
+        assert "_save_session" in src

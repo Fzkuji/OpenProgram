@@ -88,6 +88,17 @@ async def handle_switch_model(ws, cmd: dict):
                     conv["provider_name"] = prov
                 else:
                     old_rt.model = bare_model
+                # The dispatcher reads the picker choice from
+                # provider_override / model_override, and restart
+                # restore only trusts those keys — provider_name alone
+                # is treated as possibly-stale state. Without them the
+                # turn re-resolves through the enabled list and the
+                # session answers on a different model than the chip
+                # shows (the routes/runtime.py sibling sets them; this
+                # WS path never did).
+                conv["provider_override"] = prov
+                conv["model_override"] = bare_model
+                await asyncio.to_thread(_s._save_session, session_id)
                 info = _s._get_provider_info(session_id)
                 _s._broadcast(json.dumps(
                     {"type": "provider_changed", "data": info},
