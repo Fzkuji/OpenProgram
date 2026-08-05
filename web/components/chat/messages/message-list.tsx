@@ -13,7 +13,15 @@
  * `app-shell.tsx`. Each `MessageRow` subscribes to its own message
  * entry so a streaming delta re-renders only the affected bubble.
  */
-import { memo, useEffect, useLayoutEffect, useRef } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { ArrowDown } from "lucide-react";
 
 import {
   useMessageById,
@@ -96,17 +104,27 @@ export const MessageRow = memo(function MessageRow({ id }: { id: string }) {
  *  page refresh, ...) triggered the legacy hook. Fire it on every
  *  container resize so React-side updates show math live.
  *
- *  ``newTurnSeed`` (changes when message count grows) force-resets
- *  the stuck flag — sending or receiving a new turn pulls focus back
- *  to the bottom even if the user had scrolled up earlier.
+ *  ``newTurnSeed`` (changes when message count grows) marks a new turn.
+ *  Following it is conditional: a reader parked at the bottom is carried
+ *  along, a reader who scrolled up to re-read something keeps their
+ *  place. Their own send always follows — that is an explicit gesture,
+ *  not something arriving at them.
  */
-function useChatAreaStick(chatKey: string | null, newTurnSeed: number) {
+function useChatAreaStick(
+  chatKey: string | null,
+  newTurnSeed: number,
+  ownTurn: boolean,
+) {
   const activeKeyRef = useRef<string | null>(chatKey);
   const previousKeyRef = useRef<string | null>(null);
   const previousSeedRef = useRef(newTurnSeed);
   const stuckRef = useRef(true);
   const lastPointerRef = useRef(0);
   const scrollTopRef = useRef(0);
+  // The ref drives the scroll math on every event; this mirrors it into
+  // render state so the "jump to latest" affordance can appear. Set only
+  // on transitions, so ordinary scrolling doesn't re-render per frame.
+  const [detached, setDetached] = useState(false);
 
   useEffect(() => {
     const area = document.getElementById("chatArea");
@@ -128,7 +146,10 @@ function useChatAreaStick(chatKey: string | null, newTurnSeed: number) {
       }
     };
     const onScroll = () => {
-      stuckRef.current = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+      const atBottom =
+        area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+      stuckRef.current = atBottom;
+      setDetached((was) => (was === !atBottom ? was : !atBottom));
       scrollTopRef.current = area.scrollTop;
       const key = activeKeyRef.current;
       if (key) writeChatScroll(window.sessionStorage, key, area.scrollTop);
@@ -147,8 +168,8 @@ function useChatAreaStick(chatKey: string | null, newTurnSeed: number) {
 
   // Save the outgoing position and restore the incoming one before paint.
   // `chatKey` is part of the dependency so equal-length conversations still
-  // switch correctly. A new turn in the same chat intentionally returns to
-  // the bottom; later manual scrolling updates that chat's saved position.
+  // switch correctly. Whether a new turn in the same chat returns to the
+  // bottom depends on where the reader was — see `resolveChatScrollTop`.
   useLayoutEffect(() => {
     const area = document.getElementById("chatArea");
     if (!area) return;
@@ -174,11 +195,30 @@ function useChatAreaStick(chatKey: string | null, newTurnSeed: number) {
       saved,
       scrollHeight: area.scrollHeight,
       currentTop: area.scrollTop,
+      atBottom: stuckRef.current,
+      ownTurn,
     });
     scrollTopRef.current = area.scrollTop;
+    // Recompute rather than assume: after a follow we are at the bottom,
+    // and after a deliberate stay-put we are not — and it is this flag
+    // that decides whether the streaming deltas keep pinning.
     stuckRef.current =
       area.scrollHeight - area.scrollTop - area.clientHeight < 80;
-  }, [chatKey, newTurnSeed]);
+    setDetached(!stuckRef.current);
+  }, [chatKey, newTurnSeed, ownTurn]);
+
+  const jumpToLatest = useCallback(() => {
+    const area = document.getElementById("chatArea");
+    if (!area) return;
+    area.scrollTo({ top: area.scrollHeight, behavior: "smooth" });
+    // Re-attach immediately rather than waiting for the smooth scroll to
+    // finish: a delta landing mid-animation should already be followed,
+    // and the button should not linger over a view that is on its way down.
+    stuckRef.current = true;
+    setDetached(false);
+  }, []);
+
+  return { detached, jumpToLatest };
 }
 
 /** Breathing "<Agent> is thinking…" indicator shown between a user
@@ -242,6 +282,7 @@ function TranscriptSkeleton() {
 }
 
 export function MessageList() {
+  const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
   const chatKey = useSessionStore((s) => s.activeChatKey);
   const ids = useMessageIds(sessionId);
@@ -257,7 +298,14 @@ export function MessageList() {
     lastId ? (s.messagesById[lastId]?.role ?? null) : null,
   );
   const loadingId = useSessionStore((s) => s.transcriptLoadingId);
-  useChatAreaStick(chatKey, ids.length);
+  // `lastRole === "user"` means the row that just arrived is the reader's
+  // own send — that follows to the bottom unconditionally, unlike an
+  // agent row, which only follows if they were already down there.
+  const { detached, jumpToLatest } = useChatAreaStick(
+    chatKey,
+    ids.length,
+    lastRole === "user",
+  );
 
   // Fade the transcript in once per session switch. The ref remembers
   // which session already faded, so streaming updates (ids.length
@@ -306,6 +354,19 @@ export function MessageList() {
         <MessageRow key={id} id={id} />
       ))}
       {showPending ? <PendingReplyIndicator /> : null}
+      {detached && ids.length > 0 ? (
+        <div className="jump-latest-anchor">
+          <button
+            type="button"
+            className="jump-latest"
+            onClick={jumpToLatest}
+            title={text("Jump to latest", "跳到最新")}
+          >
+            <ArrowDown aria-hidden />
+            {text("Jump to latest", "跳到最新")}
+          </button>
+        </div>
+      ) : null}
     </>
   );
 }

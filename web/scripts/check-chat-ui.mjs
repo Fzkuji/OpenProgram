@@ -48,6 +48,46 @@ assert.equal(
   120.5,
   "equal-length chat switches must restore the incoming chat position",
 );
+// Following a new turn is CONDITIONAL on where the reader is. Being
+// yanked to the bottom mid-read is the thing this contract prevents;
+// the three cases below are the whole rule.
+assert.equal(
+  scroll.resolveChatScrollTop({
+    keyChanged: false,
+    seedChanged: true,
+    saved: 120.5,
+    scrollHeight: 900,
+    currentTop: 880,
+    atBottom: true,
+  }),
+  900,
+  "a new turn must follow to the bottom for a reader already at the bottom",
+);
+assert.equal(
+  scroll.resolveChatScrollTop({
+    keyChanged: false,
+    seedChanged: true,
+    saved: 120.5,
+    scrollHeight: 900,
+    currentTop: 120.5,
+    atBottom: false,
+  }),
+  120.5,
+  "a turn arriving while the reader is scrolled up must not move the view",
+);
+assert.equal(
+  scroll.resolveChatScrollTop({
+    keyChanged: false,
+    seedChanged: true,
+    saved: 120.5,
+    scrollHeight: 900,
+    currentTop: 120.5,
+    atBottom: false,
+    ownTurn: true,
+  }),
+  900,
+  "the reader's OWN send must follow even from far up the history",
+);
 assert.equal(
   scroll.resolveChatScrollTop({
     keyChanged: false,
@@ -57,7 +97,8 @@ assert.equal(
     currentTop: 120.5,
   }),
   900,
-  "a new turn in the same chat must move to the bottom",
+  "atBottom defaults to true — an untracked caller keeps following, "
+    + "rather than silently freezing the view",
 );
 const area = { scrollTop: 33 };
 assert.equal(
@@ -74,7 +115,15 @@ assert.equal(area.scrollTop, 480);
 storage.setItem(scroll.CHAT_SCROLL_STORAGE_KEY, "not-json");
 assert.equal(scroll.readChatScroll(storage, "chat-a"), null);
 assert.match(messageList, /const chatKey = useSessionStore\(\(s\) => s\.activeChatKey\);/);
-assert.match(messageList, /useChatAreaStick\(chatKey, ids\.length\);/);
+// The hook needs the own-send signal to tell "I sent this" from "this
+// arrived at me", and must hand back the jump-to-latest affordance —
+// without it a reader who scrolls up has no way back to the tail.
+assert.match(
+  messageList,
+  /useChatAreaStick\(\s*chatKey,\s*ids\.length,\s*lastRole === "user",?\s*\)/,
+);
+assert.match(messageList, /const \{ detached, jumpToLatest \} = useChatAreaStick/);
+assert.match(messageList, /className="jump-latest"/);
 assert.match(messageList, /previousKeyRef\.current !== chatKey/);
 assert.doesNotMatch(conversations, /agentic_scroll/);
 assert.doesNotMatch(chatHandlers, /agentic_scroll/);

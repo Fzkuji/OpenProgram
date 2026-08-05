@@ -15,6 +15,14 @@ interface ResolveChatScrollOptions {
   saved: number | null;
   scrollHeight: number;
   currentTop: number;
+  /** Was the view already parked at the bottom before this turn landed?
+   *  A reader who has scrolled up keeps their place; only someone already
+   *  following the tail gets carried along. */
+  atBottom?: boolean;
+  /** True when the new row is the user's own message. Sending is an
+   *  explicit "take me to the conversation" gesture, so it follows even
+   *  from far up the history — unlike an agent row arriving on its own. */
+  ownTurn?: boolean;
 }
 
 function readMap(storage: StorageLike): Record<string, number> {
@@ -55,15 +63,25 @@ export function writeChatScroll(
   }
 }
 
+/** Where the transcript should sit after this render.
+ *
+ *  Switching chats restores that chat's saved place (bottom if new).
+ *  A new turn follows the tail only when the reader was already there,
+ *  or when the turn is their own — being yanked to the bottom while
+ *  reading back through history is the thing this avoids. `atBottom`
+ *  defaults to true so a caller that doesn't track it keeps the old
+ *  always-follow behaviour rather than silently freezing the view. */
 export function resolveChatScrollTop({
   keyChanged,
   seedChanged,
   saved,
   scrollHeight,
   currentTop,
+  atBottom = true,
+  ownTurn = false,
 }: ResolveChatScrollOptions): number {
   if (keyChanged) return saved ?? scrollHeight;
-  if (seedChanged) return scrollHeight;
+  if (seedChanged && (atBottom || ownTurn)) return scrollHeight;
   return currentTop;
 }
 
