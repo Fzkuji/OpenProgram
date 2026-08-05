@@ -156,6 +156,15 @@ async def handle_merge_branches(ws, cmd: dict) -> None:
     }, default=str))
 
     if not payload.get("failed") and payload.get("target_assistant_id"):
+        # process_merge_turn advanced the store HEAD on the target
+        # session; mirror it into conv["head_id"] / conv["messages"]
+        # BEFORE clients reload, or the next _save_session flushes the
+        # stale pre-merge head back over it and orphans the merge reply.
+        try:
+            _s._set_active_head(
+                target_session_id, payload["target_assistant_id"])
+        except Exception:
+            pass
         try:
             _s._broadcast(json.dumps({
                 "type": "session_reload",

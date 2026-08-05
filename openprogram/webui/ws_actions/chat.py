@@ -524,6 +524,34 @@ async def handle_chat(ws, cmd: dict):
                 return
             text = str(_send_text)
 
+    # Run-active guard — the last unguarded HEAD-moving entry point
+    # (fn-form dispatch, retry/edit, checkout, merge, rewind all check
+    # _is_run_active already). Without it, two clients racing on one
+    # session dispatch two turns that _append_msg + advance the same
+    # HEAD concurrently and interleave the conversation chain. The
+    # frontend already routes to the "steer" action when IT knows a run
+    # is active; this covers the race window it can't see. We REJECT
+    # rather than fold the message into the running turn as a steer:
+    # the steering inbox (research_harness.steering) is only drained by
+    # the research_agent program loop — plain chat turns dispatched via
+    # process_user_turn never read it, so a silent steer-merge here
+    # would swallow the message for every ordinary chat session.
+    if _s._is_run_active(session_id):
+        await ws.send_text(json.dumps({
+            "type": "chat_response",
+            "data": {
+                "type": "error",
+                "session_id": session_id,
+                "msg_id": str(uuid.uuid4())[:8],
+                "code": "run_active",
+                "content": _s.RUN_ACTIVE_ERROR,
+                "display": "chat",
+                "retry_query": text,
+                "timestamp": time.time(),
+            },
+        }, default=str))
+        return
+
     from openprogram.agent.session_config import save_session_run_config
     run_cfg = save_session_run_config(
         session_id,
@@ -1083,7 +1111,15 @@ async def handle_rewind(ws, cmd: dict):
         # _set_active_head so the in-memory conv mirror + message cache
         # follow — otherwise the next _save_session flushes the stale
         # pre-rewind head back over it and silently undoes the rewind.
-        if not result.get("errors"):
+        # Keyed on new_head_id, NOT on errors: rewind_to moves the head
+        # unconditionally, and a file-restore failure (errors non-empty)
+        # is a partial failure of the rewind, not a rewind that didn't
+        # happen. Gating on errors left the mirror on the old branch
+        # while the store head had already moved. A full failure (the
+        # _err path) carries new_head_id=None and is skipped. The
+        # response frame still carries errors as the partial-failure
+        # warning for the client.
+        if result.get("new_head_id") is not None:
             _s._set_active_head(session_id, result.get("new_head_id"))
             _s.refresh_context_stats(session_id)
         await ws.send_text(json.dumps({

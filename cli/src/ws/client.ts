@@ -12,7 +12,6 @@ export type ChatRequest = {
 
 export type WsRequest =
   | ChatRequest
-  | { action: 'sync' }
   | { action: 'stats' }
   | { action: 'stop'; session_id: string; mode?: 'graceful' | 'force' }
   | { action: 'steer'; session_id: string; message: string }

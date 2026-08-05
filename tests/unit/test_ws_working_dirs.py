@@ -40,10 +40,9 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     1. ``sid`` 每次唯一。run-config 读写走 ``default_db()``、
        ``server._sessions`` 是进程级全局字典，硬编码 "s1" 会和别的
        模块留在这两处的同名残留互相踩。
-    2. ``broadcasts`` 只收本用例关心的帧。``server._log()`` 内部也调
-       ``_broadcast``（发 ``server_log`` 帧），别的用例起的 probe /
-       restore 后台线程随时可能在本用例执行期间打日志，掺进这个 list
-       就把 ``broadcasts == []`` / ``== [...]`` 的断言打挂。
+    2. ``broadcasts`` 只收本用例关心的帧。别的用例起的后台线程随时
+       可能在本用例执行期间广播其它类型的帧，掺进这个 list 就把
+       ``broadcasts == []`` / ``== [...]`` 的断言打挂。
     """
     db = SessionDB(tmp_path / "sessions.sqlite")
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)

@@ -389,11 +389,6 @@ def test_history_override_skips_session_db_walk(
     assert any("from override" in c for c in contents)
 
 
-@pytest.mark.skip(
-    reason="context-engine commit path duplicates the user turn when "
-           "user_already_persisted=True — pre-existing production behavior "
-           "from the commit-chain refactor, not a test-migration issue"
-)
 def test_user_already_persisted_skips_duplicate_user_msg(
     tmp_db: SessionDB, captured, collector,
 ) -> None:

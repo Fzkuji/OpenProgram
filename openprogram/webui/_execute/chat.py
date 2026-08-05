@@ -291,7 +291,9 @@ def run_query(
             _s._running_tasks.pop(session_id, None)
         _s._emit_running_task_event(session_id)
         _s._unregister_active_runtime(session_id)
-        _s._unregister_cancel_event(session_id)
+        # Pass our Event so a newer turn's registration (if any) is
+        # left intact — see unregister_cancel_event.
+        _s._unregister_cancel_event(session_id, _chat_cancel_event)
         # Status dot: a turn just finished. If no connected client is
         # currently viewing this session, light its blue "unread" dot so the
         # background result gets noticed; cleared when the user opens it

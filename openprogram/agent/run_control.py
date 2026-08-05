@@ -180,8 +180,31 @@ def register_cancel_event(session_id: str, ev: threading.Event) -> None:
         stale.retire()
 
 
-def unregister_cancel_event(session_id: str) -> None:
-    end_turn(session_id)
+def unregister_cancel_event(
+    session_id: str, ev: threading.Event | None = None,
+) -> None:
+    """Retire the registration made with ``ev`` (see register_cancel_event).
+
+    Callers that registered an Event MUST pass it back here: without it
+    this pops whatever token is CURRENT, including a newer turn's — the
+    concrete failure was ``/task --async`` finishing after the user had
+    already started a chat turn, popping the chat turn's token and
+    leaving its Stop button dead. With ``ev`` only the matching
+    registration is removed; a mismatch means a newer turn already
+    replaced (and retired) ours via register_cancel_event, so there is
+    nothing left to do. ``ev=None`` keeps the unconditional force-clear
+    for callers that explicitly want to tear down whatever is current
+    (the /api/stop handler).
+    """
+    if ev is None:
+        end_turn(session_id)
+        return
+    with _cancel_flags_lock:
+        current = _current_tokens.get(session_id)
+        if current is None or current._event is not ev:
+            return
+        _current_tokens.pop(session_id, None)
+    current.retire()
 
 
 def mark_cancelled(session_id: str) -> None:

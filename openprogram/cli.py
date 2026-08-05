@@ -966,7 +966,8 @@ def build_parser() -> argparse.ArgumentParser:
     # 由更深一层覆盖,args._cmd_parser 恒为选中路径上最深的一个。
     for _p in (p_logs, p_programs, p_skills, p_plugins, p_sessions,
                p_subagent, p_memory, p_worker, p_channels, p_chacct,
-               p_chaccess, p_chb, p_mcp, p_browser, p_agents):
+               p_chaccess, p_chb, p_mcp, p_browser, p_agents,
+               p_config, p_upgrade, p_providers):
         _p.set_defaults(_cmd_parser=_p)
 
     return parser

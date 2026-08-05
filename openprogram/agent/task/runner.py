@@ -634,7 +634,10 @@ class TaskRunner:
             _broadcast_session_reload(session_id, reason=f"task_{new_status.value}")
         finally:
             try:
-                unregister_cancel_event(session_id)
+                # Pass our Event: if a newer turn (e.g. a chat turn the
+                # user started while this task ran) has re-registered,
+                # its token must survive our teardown or its Stop dies.
+                unregister_cancel_event(session_id, cancel_ev)
             except Exception:
                 pass
             try:

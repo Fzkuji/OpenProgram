@@ -43,8 +43,6 @@ from openprogram.agent.run_control import (
     reset_current_session_id as _reset_current_session_id,
 )
 from openprogram.agentic_programming.function import CancelledError as _CancelledError
-from openprogram.webui.messages import get_store as _get_message_store
-from openprogram.webui._stream_bridge import StreamBridge
 from openprogram.webui._exec_dag import (
     build_exec_dag, live_progress, reconcile_interrupted_runs,
 )
@@ -616,9 +614,6 @@ def _log(text: str):
     via ``_log``) would pollute the chat transcript with "[probe] xxx
     unavailable", "[restore] ...", etc.
 
-    Broadcast to ws clients always runs — when no clients are
-    connected ``_broadcast`` is a no-op anyway.
-
     ``OPENPROGRAM_DEBUG_RUNTIME=1`` mirrors lines to stderr regardless
     of mode for devs tracing CLI startup.
     """
@@ -629,17 +624,13 @@ def _log(text: str):
         if _os.environ.get("OPENPROGRAM_DEBUG_RUNTIME", "").strip() in ("1", "true", "yes"):
             import sys as _sys
             print(text, file=_sys.stderr, flush=True)
-    try:
-        msg = json.dumps({"type": "server_log", "text": text}, default=str)
-        _broadcast(msg)
-    except Exception:
-        pass
 
 
 def _cleanup_session_resources(session_id: str, conv: dict):
     """Clean up all resources associated with a deleted conversation."""
     # Clean up follow-up queues and running tasks
-    _follow_up_queues.pop(session_id, None)
+    with _follow_up_lock:
+        _follow_up_queues.pop(session_id, None)
     with _running_tasks_lock:
         _running_tasks.pop(session_id, None)
 
@@ -1157,15 +1148,7 @@ def _broadcast_chat_response(session_id: str, msg_id: str, response: dict):
     _broadcast(msg)
 
 
-# ---------------------------------------------------------------------------
-# MessageStore → WebSocket bridge (v2 streaming protocol)
-# ---------------------------------------------------------------------------
-# Every frame the store emits is wrapped in the same `chat_response` envelope
-# the rest of the chat traffic uses, so the frontend has one dispatcher to
-# route everything. Frames carry their own session_id so clients filter.
-
 from openprogram.webui._chat_helpers import (
-    wire_message_store_broadcast as _wire_message_store_broadcast,
     parse_chat_input as _parse_chat_input,
 )
 
@@ -1179,11 +1162,6 @@ async def _websocket_handler(ws):
     from starlette.websockets import WebSocketDisconnect
 
     await ws.accept()
-
-    # Install the global store→WS broadcaster on first connection. We can't
-    # wire it at module import because the asyncio loop isn't running yet;
-    # the broadcaster needs a live loop to schedule ws.send_text coroutines.
-    _wire_message_store_broadcast()
 
     with _ws_lock:
         _ws_connections.append(ws)
@@ -1354,22 +1332,6 @@ def create_app():
         except Exception as e:  # noqa: BLE001
             _log(f"[startup] reconcile_interrupted_runs failed: {e}")
 
-    async def _rehydrate_message_store():
-        """Pick up v2 messages.jsonl from disk on startup.
-
-        ``_restore_sessions`` already handles the v1 ``messages.json``
-        layout via persistence.py. This callback does the v2 side —
-        MessageStore scans its persist dir for per-conv ``messages.jsonl``
-        files and loads them back into memory so reconnecting clients
-        get the right state even if the server just restarted.
-        """
-        try:
-            loaded = _get_message_store().load_all()
-            if loaded:
-                _log(f"[v2-restore] rehydrated {len(loaded)} conversation(s) from JSONL")
-        except Exception as e:
-            _log(f"[v2-restore] failed: {e}")
-
     async def _start_mcp_servers():
         """Spawn every enabled MCP server from ``mcp_servers.json``.
 
@@ -1445,7 +1407,6 @@ def create_app():
         _capture_loop,
         _subscribe_event_bus,
         _reconcile_interrupted_runs,
-        _rehydrate_message_store,
         _start_mcp_servers,
         _start_skills_watcher,
         _start_plugin_autoupdate,

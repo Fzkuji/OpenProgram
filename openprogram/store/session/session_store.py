@@ -427,6 +427,7 @@ class SessionStore:
         for sid in to_delete:
             self._index.pop(sid, None)
             shutil.rmtree(self._session_dir(sid), ignore_errors=True)
+            self._forget_stale_bindings(sid)
         # Capacity: trim oldest archived sessions beyond the limit.
         dirty = bool(to_delete)
         if len(self._index) > self._CAPACITY_LIMIT:
@@ -436,9 +437,23 @@ class SessionStore:
             for sid, _ in archived[:excess]:
                 self._index.pop(sid, None)
                 shutil.rmtree(self._session_dir(sid), ignore_errors=True)
+                self._forget_stale_bindings(sid)
                 dirty = True
         if dirty:
             self._save_index()
+
+    def _forget_stale_bindings(self, session_id: str) -> None:
+        """Same location + project cleanup delete_session does — startup
+        cleanup removed the directory but left the locations map and the
+        project reverse index pointing at it, so both grew stale entries
+        forever."""
+        self._forget_location(session_id)
+        try:
+            from openprogram.store import project_store as _projects
+            _projects.unbind_session(session_id)
+        except Exception as e:  # noqa: BLE001 — reverse index is best-effort
+            _log.warning("session %s NOT unbound from its project: %s",
+                         session_id, e)
 
     def _meta_to_entry(self, meta: dict) -> dict:
         entry = {}

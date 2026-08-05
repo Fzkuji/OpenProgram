@@ -54,7 +54,10 @@
 - 有运行中的 turn 时返回 `{ code: "run_active" }` 拒绝，避免 rewind 把 HEAD
   从正在流式输出的回复底下挪走
 - 调用 `rewind_to`
-- 成功后把 `new_head_id` 交给 `server._set_active_head`，并重估 context stats
+- 只要 `new_head_id` 非 None 就交给 `server._set_active_head`，并重估
+  context stats。判据是 head 是否移动，不是 `errors` 是否为空：文件恢复
+  失败只是 rewind 的部分失败，store head 已经移动，镜像必须跟上；
+  `errors` 继续随结果帧返回，作为部分失败的警告
 - 返回 `{ type: "rewind_result", data: { session_id, user_text, ... } }`
 
 **这一步 `_set_active_head` 不是可有可无的。** `rewind_to` 只写 store；webui

@@ -444,37 +444,6 @@ async def handle_stats(ws, cmd: dict):
     }, default=str))
 
 
-async def handle_sync(ws, cmd: dict):
-    """Reconnect handshake: catch up via MessageStore.sync."""
-    from openprogram.webui import server as _s
-    session_id = cmd.get("session_id") or cmd.get("conv_id")
-    known_seqs = cmd.get("known_seqs") or {}
-    if not session_id:
-        return
-    store = _s._get_message_store()
-    for frame in store.sync(session_id, known_seqs):
-        envelope = {"type": "chat_response", "data": dict(frame)}
-        envelope["data"]["session_id"] = session_id
-        try:
-            await ws.send_text(json.dumps(envelope, default=str))
-        except Exception:
-            break
-    # G1: a client joining mid-run needs the CURRENT running-task indicator
-    # (sync replays messages, not the live "is this session busy" state). Only
-    # emit when there's actually a running task — for an idle/unknown session
-    # sync stays a no-op (a client defaults to idle anyway).
-    try:
-        with _s._running_tasks_lock:
-            task = dict(_s._running_tasks.get(session_id) or {})
-        if task:
-            await ws.send_text(json.dumps(
-                {"type": "running_task",
-                 "data": {"session_id": session_id, **task}},
-                default=str))
-    except Exception:
-        pass
-
-
 async def handle_steer(ws, cmd: dict):
     """Mid-run steering from TUI/web: drop a course-correction into a live run.
 
@@ -531,7 +500,6 @@ ACTIONS = {
     "browser": handle_browser,
     "stop": handle_stop,
     "stats": handle_stats,
-    "sync": handle_sync,
     "steer": handle_steer,
     "set_attended": handle_set_attended,
 }

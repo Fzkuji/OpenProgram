@@ -26,8 +26,6 @@ import uuid
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from openprogram.contextgit import advance_head
-
 
 router = APIRouter()
 
@@ -131,7 +129,15 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
             if new_content is not None:
                 new_user["edit_of"] = src_user.get("id")
 
-            advance_head(conv, new_user)   # append + move HEAD
+            # Node first, head second. _append_msg writes the sibling
+            # user node into SessionDB and only then moves HEAD (plus
+            # refreshes the in-memory mirror and invalidates the
+            # message cache). The old pure-in-memory advance_head left
+            # persistence to _save_session, which writes meta (head)
+            # before messages (node) — a concurrent reader in that
+            # window resolved a head pointing at a node that didn't
+            # exist yet and rendered an empty transcript.
+            _srv._append_msg(conv, new_user)
 
     _srv._save_session(session_id)
 

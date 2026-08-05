@@ -12,9 +12,8 @@ See ``docs/design/context/contextgit.md`` for the full design. TL;DR:
 
 The v1 implementation is *not* a separate persistent object store yet —
 it's DAG metadata layered on top of the existing conversation messages
-dict (see :mod:`openprogram.webui.server`) and the existing
-:class:`~openprogram.webui.messages.MessageStore`. Each message dict
-gets a ``predecessor`` field (optional; legacy messages default to their
+dict (see :mod:`openprogram.webui.server`). Each message dict gets a
+``predecessor`` field (optional; legacy messages default to their
 list-order predecessor on load) and each conversation carries
 ``head_id``.
 

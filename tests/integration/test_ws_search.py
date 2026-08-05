@@ -14,7 +14,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from openprogram.agent.session_db import SessionDB
-from openprogram.webui.messages import MessageStore, set_store_for_testing
 from openprogram.webui.server import create_app
 
 
@@ -23,12 +22,9 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     db = SessionDB(tmp_path / "sessions.sqlite")
     monkeypatch.setattr("openprogram.agent.session_db.default_db",
                         lambda: db)
-    store = MessageStore(persist_dir=tmp_path / "store")
-    set_store_for_testing(store)
     app = create_app()
     with TestClient(app) as client:
         yield client, db
-    set_store_for_testing(None)
 
 
 def _drain_bootstrap(ws) -> None:

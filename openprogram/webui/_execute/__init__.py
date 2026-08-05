@@ -485,6 +485,16 @@ def _run_merge(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
         })
         return
 
+    # process_merge_turn advanced the store HEAD to the merge reply, but
+    # the webui mirror (conv["head_id"] / conv["messages"]) is still on
+    # the pre-merge head — and execute_in_context calls _save_session
+    # right after this returns, which flushes the mirror back into
+    # SessionDB and would silently orphan the merge reply. Route the
+    # move through _set_active_head, the single head-write primitive
+    # that refreshes DB + mirror + message cache together.
+    if result.target_assistant_id:
+        _s._set_active_head(session_id, result.target_assistant_id)
+
     extra_lines = []
     if result.commit_id:
         extra_lines.append(f"[merge commit={result.commit_id}]")
@@ -711,6 +721,18 @@ def execute_in_context(
             "retry_query": query if not func_name else None,
         })
     finally:
+        # Single teardown point for the _running_tasks entry seeded by
+        # handle_chat for ALL three actions (query / spawn / merge).
+        # The query path pops in _execute/chat.py's own finally (needed
+        # there so the pop precedes the result broadcast) and the error
+        # path above pops too — in both cases the guarded pop here sees
+        # nothing and stays silent, so no duplicate clear frame goes
+        # out. spawn / merge success previously never popped at all,
+        # leaving the session stuck "running" until server restart.
+        with _s._running_tasks_lock:
+            _had_task = _s._running_tasks.pop(session_id, None) is not None
+        if _had_task:
+            _s._emit_running_task_event(session_id)
         _s._reset_current_session_id(_conv_token)
 
 

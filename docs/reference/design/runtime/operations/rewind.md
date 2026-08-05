@@ -54,8 +54,12 @@ own head mirror must write it back — see 3.2.
 - Refuses with `{ code: "run_active" }` while a run is in flight, so a
   rewind cannot move HEAD out from under a streaming reply
 - Calls `rewind_to`
-- On success, feeds `new_head_id` through `server._set_active_head` and
-  re-estimates context stats
+- Whenever `new_head_id` is non-None, feeds it through
+  `server._set_active_head` and re-estimates context stats. This is
+  keyed on the head move, not on `errors`: a file-restore failure is a
+  partial failure of the rewind, but the store head has already moved,
+  so the mirror must follow. `errors` still rides the result frame as
+  the partial-failure warning
 - Returns `{ type: "rewind_result", data: { session_id, user_text, ... } }`
 
 **The `_set_active_head` step is not cosmetic.** `rewind_to` writes only

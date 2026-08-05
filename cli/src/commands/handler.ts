@@ -537,7 +537,6 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
 
     case 'cost': {
       // Token + cost stats live in the BottomBar; surface the latest here.
-      ctx.client.send({ action: 'sync', session_id: ctx.currentConversation } as never);
       ctx.pushSystem(
         'Current token usage is shown on the bottom bar. ↓ input, ↑ output.',
       );

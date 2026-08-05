@@ -1,34 +1,9 @@
-"""Chat-input parsing and MessageStore → WebSocket bridge.
+"""Chat-input parsing.
 
 Extracted from server.py to keep the main module focused on app
-construction and state. Both helpers are referenced via lazy
-``from openprogram.webui import server as _s`` so they can reach the
-broadcast / discovery / store helpers without import cycles.
+construction and state.
 """
 from __future__ import annotations
-
-import json
-
-
-def wire_message_store_broadcast() -> None:
-    """Install a one-shot global listener on the process-wide store.
-
-    Idempotent: the first call registers, subsequent ones are no-ops. The
-    listener lives for the process lifetime; there's no matching unsubscribe
-    because the store itself is the single source of truth.
-    """
-    from openprogram.webui import server as _s
-    if getattr(wire_message_store_broadcast, "_installed", False):
-        return
-    store = _s._get_message_store()
-
-    def _on_frame(session_id: str, frame: dict) -> None:
-        envelope = {"type": "chat_response", "data": dict(frame)}
-        envelope["data"]["session_id"] = session_id
-        _s._broadcast(json.dumps(envelope, default=str))
-
-    store.subscribe_all(_on_frame)
-    wire_message_store_broadcast._installed = True  # type: ignore[attr-defined]
 
 
 def parse_chat_input(text: str) -> dict:

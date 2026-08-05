@@ -133,6 +133,50 @@ def test_clear_cancel_retires_rather_than_resets():
     assert ps.is_cancelled("s1") is False
 
 
+def test_unregister_with_event_leaves_newer_turn_alone():
+    """An older turn finishing late must not pop the newer turn's token.
+
+    Trigger chain: /task --async registers ev_task, the user starts a
+    chat turn which registers ev_chat (replacing + retiring ev_task's
+    token), then the task ends and unregisters. With the Event passed,
+    the mismatch is detected and the chat turn's token survives — Stop
+    still works.
+    """
+    ev_task = threading.Event()
+    ev_chat = threading.Event()
+    ps.register_cancel_event("s1", ev_task)
+    ps.register_cancel_event("s1", ev_chat)
+
+    ps.unregister_cancel_event("s1", ev_task)  # task ends late
+
+    token = ps.current_token("s1")
+    assert token is not None, "chat turn's registration was popped"
+    ps.mark_cancelled("s1")
+    assert ev_chat.is_set() is True, "Stop no longer reaches the chat turn"
+    assert ev_task.is_set() is False
+
+
+def test_unregister_with_matching_event_pops_own_registration():
+    ev = threading.Event()
+    ps.register_cancel_event("s1", ev)
+
+    ps.unregister_cancel_event("s1", ev)
+
+    assert ps.current_token("s1") is None
+    ps.mark_cancelled("s1")  # no-op between turns
+    assert ev.is_set() is False
+
+
+def test_unregister_without_event_keeps_force_clear_semantics():
+    """ev=None is the explicit force-clear used by /api/stop."""
+    ev = threading.Event()
+    ps.register_cancel_event("s1", ev)
+
+    ps.unregister_cancel_event("s1")
+
+    assert ps.current_token("s1") is None
+
+
 # --- enforcement: every frame in the turn checks the one token -------------
 
 def test_cancel_hook_raises_inside_a_cancelled_turn():
