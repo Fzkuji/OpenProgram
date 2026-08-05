@@ -136,18 +136,15 @@ export function computeGeometry(
   });
 
   // ── Fork roots share their sibling's row (scene 3) ──
-  // The branch is a parallel version of the turn beside it, so it sits
-  // level with that turn and extends right. Several branches off one
-  // fork point stack on successive rows in spawn order.
+  // A branch is a parallel VERSION of the turn beside it, so it sits
+  // level with that turn and extends right. Every branch off one fork
+  // point is a version of the same turn, so they all share that one row
+  // and read as the alternatives they are — retry #3 on a row of its own
+  // below #2 reads as something that happened after it.
   const forkSibOf: Record<string, string> = Object.create(null);
-  const forkKidsOf: Record<string, number> = Object.create(null);
   // The last branch placed off each fork point. Branch N bridges to
-  // branch N-1 — the sibling on the row directly above it — not to the
-  // trunk turn every time: with three retries off one point, the third
-  // is two rows below the trunk, its bridge fails the same-row test,
-  // and the elbow fallback drags a line up from the fork point across
-  // the whole graph. Bridging to the row above keeps every extra
-  // branch a one-step ladder.
+  // branch N-1, the one immediately to its left, rather than reaching
+  // back to the trunk across everything already between them.
   const lastForkOf: Record<string, string> = Object.create(null);
   const forkRoots = chainIds
     .filter((id) => {
@@ -161,12 +158,12 @@ export function computeGeometry(
     const trunkSib = chainIds.find((cid) => cid !== id
       && layoutParent(byId[cid]) === pid
       && (byId[cid]._lane || 0) === (byId[pid]._lane || 0));
-    const k = (forkKidsOf[pid] = (forkKidsOf[pid] || 0) + 1);
     const sib = lastForkOf[pid] ?? trunkSib;
     if (sib) forkSibOf[id] = sib;
     lastForkOf[pid] = id;
-    const want = (trunkSib !== undefined ? rowOf[trunkSib] : (rowOf[pid] || 0) + 1)
-      + (k - 1);
+    const want = trunkSib !== undefined
+      ? rowOf[trunkSib]
+      : (rowOf[pid] || 0) + 1;
     const delta = want - (rowOf[id] || 0);
     if (delta) {
       const lane = byId[id]._lane || 0;
@@ -208,12 +205,16 @@ export function computeGeometry(
     // Right of the anchor — and right of any branch bridging off it,
     // so the dotted line never cuts the same-row bridge.
     let base = colOf(id) + 1;
+    let hasFork = false;
     forkRoots.forEach((fid) => {
       if (layoutParent(byId[fid]) === id) {
         base = Math.max(base, colOf(fid) + 1);
+        hasFork = true;
       }
     });
-    place(id, base, (rowOf[id] || 0) + 1 + (forkKidsOf[id] || 0));
+    // One row of clearance when anything forks off this anchor — they all
+    // share a single row now, however many there are.
+    place(id, base, (rowOf[id] || 0) + 1 + (hasFork ? 1 : 0));
   });
 
   // ── Pixels ──

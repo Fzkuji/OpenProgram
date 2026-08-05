@@ -163,24 +163,9 @@ export function drawEdges(
       }));
       continue;
     }
-    // Sibling one or more rows up (third and later branches off one
-    // fork point stack downward): step down out of the sibling, then
-    // across. Reaching back to the fork point instead would draw a
-    // line over every branch already between them.
-    if (sib && pos(sib).y < d.y) {
-      const sp = pos(sib);
-      const r = 10;
-      edgeG.appendChild(_svg("path", {
-        d: `M ${sp.x} ${sp.y} L ${sp.x} ${d.y - r} `
-          + `Q ${sp.x} ${d.y} ${sp.x + r} ${d.y} L ${d.x} ${d.y}`,
-        stroke: color, "stroke-width": 1.5, fill: "none",
-        "stroke-linecap": "round",
-        "stroke-dasharray": "6 4", opacity: 0.7,
-        "pointer-events": "none", class: "history-edge fork-edge",
-      }));
-      continue;
-    }
-    // Elbow fallback — from the fork point itself.
+    // Elbow fallback — from the fork point itself. Reached when a later
+    // pass has moved one of the two off the shared row (a thread pushing
+    // rows down, say); siblings that stayed level take the bridge above.
     let fp = node.predecessor || node.caller || "";
     let fhops = 0;
     while (fp && !tree.byId[fp] && fhops < 50) {
