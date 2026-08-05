@@ -1300,6 +1300,11 @@
   position: absolute;
   left: 0;
   right: 0;
+  /* Same width rule as .inputWrapper below — the menu docks onto the
+     input box, so it must never be wider than the box it merges with.
+     absolute + left/right 0 + margin auto = centered at that width. */
+  max-width: min(var(--chat-column-max), calc(100% - 64px));
+  margin: 0 auto;
   /* Bottom edge of the clip = inputWrapper's top edge.
      No magic-number offset; no breakage when the wrapper grows
      (multi-line input, fn-form open, etc.). */
@@ -1335,18 +1340,15 @@
   border-radius: 14px 14px 0 0;
   border-bottom: none;
   box-shadow: none;
-  /* Compact by default so the popup never buries the conversation;
-     growing UPWARD on hover (bottom-anchored, so max-height is the
-     only moving part). Scrolling the list requires the pointer to be
-     over it, so :hover also covers the wheel case; moving the mouse
-     back into the transcript collapses it again. */
+  /* Compact by default so the popup never buries the conversation.
+     Expansion is scroll-driven (slash-menu.tsx sets an inline
+     max-height as the wheel turns, bottom-anchored so it grows
+     upward); mouseleave clears the inline value and this base value
+     plus the transition pulls it back down. */
   max-height: 250px;
   transition: max-height 220ms cubic-bezier(0.22, 1, 0.36, 1);
   overflow-y: auto;
   scrollbar-width: none;
-}
-.slashMenu:hover {
-  max-height: 70vh;
 }
 .slashMenu::-webkit-scrollbar {
   display: none;

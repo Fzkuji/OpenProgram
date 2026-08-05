@@ -8,9 +8,14 @@
  * so the main file isn't carrying the matches list + scroll-into-view
  * + open/close animation classes inline.
  */
+import { useEffect, useRef } from "react";
 import type { SlashCommand } from "./slash-commands";
 import styles from "../composer.module.css";
 import { useTranslation } from "@/lib/i18n";
+
+/* Compact height the menu opens at — keep in sync with the
+   .slashMenu max-height in composer.module.css. */
+const BASE_MAX_HEIGHT = 250;
 
 interface SlashMenuProps {
   visible: boolean;
@@ -28,9 +33,49 @@ export function SlashMenu({
   onPick,
 }: SlashMenuProps) {
   const { text } = useTranslation();
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const extraRef = useRef(0);
+
+  /* Scroll-driven expansion: the wheel first GROWS the menu upward
+     (consuming the delta, list content stays put), and only once
+     fully grown does it scroll the list. Wheeling back up while the
+     list is at its top shrinks it the same way. Native listener with
+     passive:false because preventDefault is what redirects the wheel
+     from scrolling into growing. Mouseleave clears the inline
+     max-height and the CSS transition collapses it back to base. */
+  useEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      const cap = Math.round(window.innerHeight * 0.7) - BASE_MAX_HEIGHT;
+      const extra = extraRef.current;
+      if (e.deltaY > 0 && extra < cap) {
+        e.preventDefault();
+        extraRef.current = Math.min(cap, extra + e.deltaY);
+      } else if (e.deltaY < 0 && extra > 0 && el.scrollTop === 0) {
+        e.preventDefault();
+        extraRef.current = Math.max(0, extra + e.deltaY);
+      } else {
+        return;
+      }
+      el.style.maxHeight = `${BASE_MAX_HEIGHT + extraRef.current}px`;
+    };
+    const onLeave = () => {
+      extraRef.current = 0;
+      el.style.maxHeight = "";
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("mouseleave", onLeave);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("mouseleave", onLeave);
+    };
+  }, [visible]);
+
   if (!visible) return null;
   return (
     <div
+      ref={menuRef}
       className={`${styles.slashMenu} ${closing ? styles.closing : styles.opening}`}
     >
       {matches.map((c, i) => (
