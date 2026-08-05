@@ -245,6 +245,64 @@ def is_configured(channel: str, account_id: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# 账号行为设置 — 存在 account.json 的 "settings" 键下
+# ---------------------------------------------------------------------------
+
+#: 每个 channel 允许的 setting key → 合法取值. 只有平台确实存在的行为
+#: 差异才登记 — telegram 群聊的会话归属和 @提及 门槛是显式配置而非
+#: 隐式行为 (adapter 在 __init__ 读取, 改动后重启 worker 生效).
+ACCOUNT_SETTINGS: dict[str, dict[str, tuple[str, ...]]] = {
+    "telegram": {
+        # 群聊会话归属: 全群共享一个会话 / 群内每人一个会话
+        "group_sessions": ("shared", "per-user"),
+        # 群聊里是否只在 @bot (或回复 bot 消息) 时响应
+        "require_mention": ("off", "on"),
+    },
+}
+
+
+def get_settings(channel: str, account_id: str) -> dict[str, str]:
+    """账号 settings dict (只含显式设置过的 key, 缺省语义由读方给)."""
+    raw_path = account_meta_path(channel, account_id)
+    try:
+        raw = json.loads(raw_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raw = {}
+    settings = raw.get("settings")
+    if not isinstance(settings, dict):
+        return {}
+    return {str(k): str(v) for k, v in settings.items()}
+
+
+def set_setting(channel: str, account_id: str, key: str, value: str) -> None:
+    """设置一个账号行为开关. key/value 必须在 :data:`ACCOUNT_SETTINGS`
+    里登记, 否则 ValueError (拒绝静默拼错)."""
+    allowed = ACCOUNT_SETTINGS.get(channel, {})
+    if key not in allowed:
+        raise ValueError(
+            f"unknown setting {key!r} for {channel} — "
+            f"available: {sorted(allowed) or '(none)'}"
+        )
+    if value not in allowed[key]:
+        raise ValueError(
+            f"invalid value {value!r} for {channel}.{key} — "
+            f"expected one of {allowed[key]}"
+        )
+    with _lock:
+        raw_path = account_meta_path(channel, account_id)
+        try:
+            raw = json.loads(raw_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raw = {}
+        raw.setdefault("settings", {})[key] = value
+        raw["updated_at"] = time.time()
+        raw_path.write_text(
+            json.dumps(raw, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+
 def is_enabled(channel: str, account_id: str) -> bool:
     """Account meta may have ``enabled: false`` to silence an account
     without deleting it. Missing/empty meta defaults to enabled."""

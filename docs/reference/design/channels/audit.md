@@ -93,14 +93,14 @@ The `bool`-returning forms (`outbound.send`, `Channel.send_text`,
 
 `_message.py:ChannelMessage` is the platform-neutral inbound structure. It is a
 frozen dataclass with `text` / `chat_id` / `user_id` / `user_display` /
-`chat_type` / `ts` / `reply_to_id` / `thread_id` / `attachments`. Each of the
+`chat_type` / `ts` / `reply_to_id` / `quoted_text` / `thread_id` /
+`attachments` (a tuple of `Attachment` download descriptors). Each of the
 four adapters parses its platform-native object into a `ChannelMessage` at the
 entry point.
 
-`dispatch_inbound` does not yet consume `reply_to_id` / `thread_id` /
-`attachments`, but the adapters already extract them. The parse step being in
-place is the point: supporting reply quoting or attachment reading later is a
-change to the consumer, not a change to all four adapters.
+The base pipeline consumes `quoted_text` (prepended as a `>` quoted block) and
+`attachments` (downloaded via `_attachments`, small images forwarded as vision
+input). `thread_id` is parsed but not yet folded into the session key.
 
 ### 1.5 Inbound dispatch
 
@@ -388,7 +388,7 @@ registry.
 | Health check | none | `health-check-adapter.ts` startup probe | unknown |
 | Receipt tracking | none | yes (delivery confirmation) | unknown |
 | Structured replies | text only | embed/button/menu | partial |
-| Attachment caching | fields parsed, not consumed | yes | UUID-prefix + 24h cleanup |
+| Attachment handling | download to state dir + vision input (`_attachments`) | cached | UUID-prefix + 24h cleanup |
 | Outbound API | `outbound.send` shares `_transport` | goes through adapter instances | `DeliveryRouter(adapters: dict)` |
 | Process model assumption | multiple deployment forms (lib + worker + script) | single daemon process | single gateway process |
 | Chunking implementation | `_transport._chunk`, plus adapter-local copies | unified within the platform plugin | unified (`truncate_message`) |
@@ -599,8 +599,7 @@ Not yet done:
 - **`account_id` is passed twice**, once to the adapter constructor and once to
   `dispatch_inbound`. This blocks one adapter serving multiple accounts in a
   process.
-- **Rich message fields are parsed but unconsumed.** `reply_to_id`,
-  `thread_id`, and `attachments` reach `ChannelMessage`; `dispatch_inbound` does
-  not read them, and there is no attachment caching.
+- **`thread_id` is parsed but not consumed.** Quoted text and attachments flow
+  into the turn; thread-scoped session isolation is still open.
 - **No health check or receipt tracking.** Adapter availability is not probed at
   startup, and delivery is not confirmed after send.

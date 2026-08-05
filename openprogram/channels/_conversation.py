@@ -75,8 +75,12 @@ def dispatch_inbound(
     user_text: str,
     user_display: str = "",
     progress_stream: bool = False,
+    attachments: Optional[list[dict]] = None,
 ) -> Optional[str]:
     """End-to-end inbound handling.
+
+    ``attachments`` — TurnRequest.attachments 形状的 image block 列表
+    (base 已下载落盘并转好 base64), 直接透传给 dispatcher; None = 无.
 
     ``progress_stream=False`` (default): 旧行为, 返回完整 assistant reply
     字符串供 adapter 自己发. 调用方拿到字符串后用 platform SDK / outbound
@@ -154,6 +158,7 @@ def dispatch_inbound(
             peer_id=peer_id, user_text=user_text,
             user_display=user_display, progress_stream=progress_stream,
             agent_id=agent_id, session_key=session_key,
+            attachments=attachments,
         )
 
 
@@ -168,6 +173,7 @@ def _run_session_turn(
     progress_stream: bool,
     agent_id: str,
     session_key: str,
+    attachments: Optional[list[dict]] = None,
 ) -> Optional[str]:
     """路由已完成、session 锁已持有 — 跑一个完整 turn: load session →
     agent turn → 持久化 → broadcast. 返回值语义同 dispatch_inbound."""
@@ -287,6 +293,7 @@ def _run_session_turn(
         additional_working_dirs=run_cfg.additional_working_dirs,
         tools_override=tools_override_from_config(run_cfg),
         thinking_effort=run_cfg.thinking_effort or _pdef.get("thinking_effort"),
+        attachments=attachments or None,
     )
     # 让本 turn 期间的 runtime.ask 知道"有前端能答"（can_ask=True）且
     # question.asked 带上正确的 channel session_id —— 否则裸 runtime.ask

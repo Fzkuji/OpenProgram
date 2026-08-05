@@ -20,8 +20,23 @@ from __future__ import annotations
 
 import abc
 import threading
+import time
 from dataclasses import dataclass
 from typing import Optional
+
+
+#: quoted 文本进 agent 上下文的截断上限 — 被引用消息只是背景, 不值得
+#: 占大量 token.
+QUOTED_MAX_CHARS = 500
+
+
+def _quoted_block(quoted: str) -> str:
+    """被引用消息 → agent 可见的统一 quoted 块 (markdown 引用格式)."""
+    q = quoted.strip()
+    if len(q) > QUOTED_MAX_CHARS:
+        q = q[:QUOTED_MAX_CHARS] + "…"
+    lines = "\n".join("> " + ln for ln in q.splitlines())
+    return f"[quoted message]\n{lines}"
 
 
 @dataclass(frozen=True)
@@ -74,7 +89,50 @@ class Channel(abc.ABC):
           * 长连接 / 长轮询拿入站消息, parse 成 ChannelMessage
           * 调 :meth:`handle_inbound` — 线程派发 / dispatch / 降级回发
             都在 base 统一处理
+
+        返回语义 (``run_forever`` 依赖):
+          * 抛异常          — 瞬态故障 (断网 / gateway 掉线), 会被退避重连
+          * 正常 return     — 永久停止 (凭据失效需人工重登), 不再重启
         """
+
+    #: run_forever 的重连退避参数 — 初始等待秒数, 指数翻倍到上限.
+    RESTART_BACKOFF = 5.0
+    RESTART_BACKOFF_MAX = 300.0
+
+    def run_forever(self, stop: threading.Event) -> None:
+        """带自动重连的入站循环 — worker 用这个入口跑 adapter.
+
+        :meth:`run` 异常退出 (网络断 / gateway 掉线 / SDK 崩溃) 时指数
+        退避重连: 5s 起步翻倍, 封顶 300s; 一次运行存活超过 60s 视为
+        连接曾经健康, 退避重置回 5s. 每次崩溃和重连都落日志.
+
+        :meth:`run` **正常 return** 视为永久停止 (adapter 自己判断没救
+        了, e.g. wechat token 失效要求重新扫码), 不再重启 — 避免对着
+        失效凭据无限空转.
+        """
+        tag = f"{self.platform_id}:{self.account_id}"
+        backoff = self.RESTART_BACKOFF
+        while not stop.is_set():
+            started = time.time()
+            try:
+                self.run(stop)
+            except Exception as e:  # noqa: BLE001
+                import traceback
+                print(f"[{tag}] adapter crashed: {type(e).__name__}: {e}")
+                traceback.print_exc()
+            else:
+                if not stop.is_set():
+                    print(f"[{tag}] adapter exited on its own — "
+                          f"not restarting (operator action needed)")
+                return
+            if stop.is_set():
+                return
+            if time.time() - started >= 60.0:
+                backoff = self.RESTART_BACKOFF
+            print(f"[{tag}] reconnecting in {backoff:.0f}s")
+            if stop.wait(backoff):
+                return
+            backoff = min(backoff * 2, self.RESTART_BACKOFF_MAX)
 
     # ------------------------------------------------------------------
     # 入站统一处理 — adapter parse 完调这个, 不再各抄一遍线程+降级逻辑
@@ -88,15 +146,17 @@ class Channel(abc.ABC):
         return ch_msg.chat_id
 
     def handle_inbound(self, ch_msg) -> None:
-        """统一入站处理: 每消息起一个 daemon 线程跑 dispatch.
+        """统一入站处理: 每消息起一个 daemon 线程跑 access 门禁 →
+        附件下载 → quoted 块组装 → dispatch.
 
         Per-message 线程是必须的 — 函数在 turn 里停在 runtime.ask 时不能
         堵住 adapter 的 poll loop / 事件回调, 否则用户自己的 /answer 回复
-        永远进不来, 等待自死锁.
+        永远进不来, 等待自死锁. 附件下载同理 (可能几十 MB).
 
         dispatch_inbound 返回字符串 (progress streaming 降级 / 关闭) 时
-        经 :meth:`send_text` 回发 — 统一走 _transport, chunking 与错误
-        分类都在那一层, adapter 不再持有 platform SDK 的直发副本.
+        经 :meth:`send_text` 回发 — 统一走 _transport, chunking / 格式
+        渲染 / 限流重试都在那一层, adapter 不再持有 platform SDK 的直发
+        副本.
         """
         threading.Thread(
             target=self._dispatch_and_reply, args=(ch_msg,), daemon=True,
@@ -108,15 +168,48 @@ class Channel(abc.ABC):
         who = ch_msg.user_display or ch_msg.user_id or peer_id
         print(f"[{self.platform_id}:{self.account_id}] <{who}> {snippet}")
 
+        # ---- access 门禁: 未知发信人不进 agent --------------------------
+        # 配对确认只能走本机 CLI/webui (_access 模块 docstring), 这里
+        # 只可能发配对码回执, 绝不放行.
+        from openprogram.channels import _access
+        allowed, gate_reply = _access.check_inbound(
+            self.platform_id, self.account_id,
+            ch_msg.user_id or ch_msg.chat_id,
+            display=ch_msg.user_display,
+        )
+        if not allowed:
+            print(f"[{self.platform_id}:{self.account_id}] <{who}> "
+                  f"blocked by access policy")
+            if gate_reply:
+                self.send_text_full(peer_id, gate_reply)
+            return
+
+        # ---- 附件下载 + quoted 块 → agent 可见的 user_text ---------------
+        user_text = ch_msg.text
+        turn_attachments: list[dict] = []
+        if ch_msg.attachments:
+            from openprogram.channels import _attachments
+            saved = _attachments.download_inbound(
+                self.platform_id, self.account_id, ch_msg.attachments,
+            )
+            turn_attachments = _attachments.to_turn_attachments(saved)
+            notes = _attachments.attachment_notes(saved)
+            if notes:
+                joined = "\n".join(notes)
+                user_text = f"{user_text}\n\n{joined}" if user_text else joined
+        if ch_msg.quoted_text:
+            user_text = _quoted_block(ch_msg.quoted_text) + "\n\n" + user_text
+
         from openprogram.channels._conversation import dispatch_inbound
         reply_text = dispatch_inbound(
             channel=self.platform_id,
             account_id=self.account_id,
             peer_kind=ch_msg.chat_type,
             peer_id=peer_id,
-            user_text=ch_msg.text,
+            user_text=user_text,
             user_display=ch_msg.user_display or peer_id,
             progress_stream=self.progress_stream,
+            attachments=turn_attachments or None,
         )
         # progress streaming 走通时 reply 已 edit 进占位消息, 返回 None.
         if reply_text is not None:
@@ -155,6 +248,17 @@ class Channel(abc.ABC):
         from openprogram.channels import _transport
         return _transport.post_message(
             self.platform_id, self.account_id, target, text,
+        )
+
+    def send_file(self, target: str, path: str, caption: str = ""):
+        """把本地文件发给 ``target``. 返回 :class:`SendResult`.
+
+        走 :func:`._transport.post_file`. WeChat (iLink 无文件上传接口)
+        返回 ``not_supported`` — 调用方自行降级 (e.g. 改发带路径的文本).
+        """
+        from openprogram.channels import _transport
+        return _transport.post_file(
+            self.platform_id, self.account_id, target, path, caption,
         )
 
     def edit_text(self, handle: MessageHandle, new_text: str) -> bool:

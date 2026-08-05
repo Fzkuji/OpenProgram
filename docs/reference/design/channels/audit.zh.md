@@ -84,12 +84,13 @@ UI 上正确显示原因。返回 `bool` 的形式（`outbound.send`、`Channel.
 
 `_message.py:ChannelMessage` 是平台中性的入站结构，一个 frozen dataclass，含
 `text` / `chat_id` / `user_id` / `user_display` / `chat_type` / `ts` /
-`reply_to_id` / `thread_id` / `attachments`。4 个 adapter 都在入口处把
-platform-native 对象 parse 成 `ChannelMessage`。
+`reply_to_id` / `quoted_text` / `thread_id` / `attachments`（`Attachment`
+下载描述符元组）。4 个 adapter 都在入口处把 platform-native 对象 parse 成
+`ChannelMessage`。
 
-`dispatch_inbound` 目前不消费 `reply_to_id` / `thread_id` / `attachments`，但
-adapter 已经把它们抽了出来。parse 这一步已经就位正是要点所在：将来支持 reply
-引用或附件读取，改的是消费方，而不是 4 个 adapter。
+base 流水线消费 `quoted_text`（组装成 `>` 引用块前置）和 `attachments`
+（经 `_attachments` 下载，小图片作为图像输入直达模型）。`thread_id` 已
+parse，但尚未折进 session key。
 
 ### 1.5 入站分发
 
@@ -361,7 +362,7 @@ adapter = platform_registry.create_adapter("slack", config)
 | Health check | 无 | `health-check-adapter.ts` 启动 probe | 不详 |
 | Receipt tracking | 无 | 有 (delivery confirmation) | 不详 |
 | Structured replies | text only | embed/button/menu | 部分 |
-| Attachment 缓存 | 字段已 parse，未消费 | 有 | UUID-前缀 + 24h 清理 |
+| Attachment 处理 | 下载落盘 + 图像输入（`_attachments`） | 有缓存 | UUID-前缀 + 24h 清理 |
 | 出站 API | `outbound.send` 共用 `_transport` | 走 adapter 实例 | `DeliveryRouter(adapters: dict)` |
 | 进程模型假设 | 多部署形态 (lib + worker + script) | 单 daemon 进程 | 单 gateway 进程 |
 | Chunking 实现 | `_transport._chunk`，另有 adapter 本地副本 | 平台 plugin 内统一 | 统一 (`truncate_message`) |
@@ -537,7 +538,7 @@ pytest 测试                                  没有
   `ChannelMessage.thread_id` 已为此预先 parse。
 - **`account_id` 传两次**，一次给 adapter 构造函数，一次给 `dispatch_inbound`。
   这挡住了一个进程内一个 adapter 服务多个账号的做法。
-- **富消息字段已 parse 但未消费。** `reply_to_id`、`thread_id`、`attachments` 已进入
-  `ChannelMessage`；`dispatch_inbound` 不读取它们，也没有 attachment 缓存。
+- **`thread_id` 已 parse 但未消费。** 引用文本与附件已进入 turn；thread 级
+  会话隔离仍是开放项。
 - **没有 health check 和 receipt tracking。** 启动时不 probe adapter 可用性，
   发送后也不确认送达。

@@ -8,6 +8,7 @@ adapters only parse and call it. These tests pin:
 * thread dispatch (the caller returns before the turn finishes),
 * the degraded-path reply going through ``send_text_full`` (i.e.
   _transport — no SDK direct-send copies left),
+* the quoted block composed into the agent-visible user_text,
 * per-platform peer-id scoping and the progress_stream flag,
 * the MAX_CHARS chunk table being single-sourced in _transport.
 """
@@ -20,6 +21,22 @@ import pytest
 from openprogram.channels._message import ChannelMessage
 from openprogram.channels._transport import SendResult
 from openprogram.channels.base import Channel
+
+
+@pytest.fixture(autouse=True)
+def _tmp_state(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """Isolate the per-account state tree (access.json etc.)."""
+    monkeypatch.setattr("openprogram.paths.get_state_dir",
+                        lambda: tmp_path / "state")
+
+
+@pytest.fixture(autouse=True)
+def _open_access(_tmp_state):
+    """These tests exercise the dispatch path, not the access gate —
+    let the fake sender through. Depends on _tmp_state so the policy
+    file lands in the isolated tree, never the real one."""
+    from openprogram.channels import _access
+    _access.set_policy("faketg", "acct1", "open")
 
 
 class _FakeChannel(Channel):
@@ -110,23 +127,71 @@ def test_handle_inbound_does_not_block_caller(
 
 
 def test_per_platform_peer_scoping_and_progress_flags() -> None:
-    """Discord/Slack scope peers to (channel, user); Telegram/WeChat use
-    the chat id. WeChat can't edit messages → progress streaming off."""
+    """Discord/Slack scope peers to (channel, user); Telegram scopes per
+    chat by default (explicit ``group_sessions`` setting flips group
+    chats to per-user); WeChat uses the chat id. WeChat can't edit
+    messages → progress streaming off."""
+    from types import SimpleNamespace
     from openprogram.channels.implementations.discord import DiscordChannel
     from openprogram.channels.implementations.slack import SlackChannel
     from openprogram.channels.implementations.telegram import TelegramChannel
     from openprogram.channels.implementations.wechat import WechatChannel
 
     m = _msg(chat_id="C9", user_id="U3")
-    # peer_id_for reads only the message — call it unbound.
+    # Discord/Slack/WeChat peer_id_for read only the message — call unbound.
     assert DiscordChannel.peer_id_for(None, m) == "C9_U3"
     assert SlackChannel.peer_id_for(None, m) == "C9_U3"
-    assert TelegramChannel.peer_id_for(None, m) == "C9"
     assert WechatChannel.peer_id_for(None, m) == "C9"
+
+    # Telegram reads the per-account group_sessions setting.
+    shared = SimpleNamespace(group_sessions="shared")
+    per_user = SimpleNamespace(group_sessions="per-user")
+    assert TelegramChannel.peer_id_for(shared, m) == "C9"
+    g = _msg(chat_id="C9", user_id="U3", chat_type="group")
+    assert TelegramChannel.peer_id_for(shared, g) == "C9"
+    assert TelegramChannel.peer_id_for(per_user, g) == "C9_U3"
+    # DMs stay per-chat even in per-user mode.
+    assert TelegramChannel.peer_id_for(per_user, m) == "C9"
 
     assert WechatChannel.progress_stream is False
     for cls in (DiscordChannel, SlackChannel, TelegramChannel):
         assert cls.progress_stream is True
+
+
+def test_quoted_text_becomes_quoted_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reply/thread message carries the referenced text into the agent
+    context as a unified quoted block ahead of the user text."""
+    seen: dict = {}
+
+    def fake_dispatch(**kw):
+        seen.update(kw)
+        return None
+
+    monkeypatch.setattr(
+        "openprogram.channels._conversation.dispatch_inbound", fake_dispatch)
+    ch = _FakeChannel()
+    ch._dispatch_and_reply(_msg(text="what about this?",
+                                quoted_text="line one\nline two"))
+
+    assert seen["user_text"] == (
+        "[quoted message]\n> line one\n> line two\n\nwhat about this?"
+    )
+
+
+def test_quoted_text_truncated_at_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.channels.base import QUOTED_MAX_CHARS
+    seen: dict = {}
+    monkeypatch.setattr(
+        "openprogram.channels._conversation.dispatch_inbound",
+        lambda **kw: seen.update(kw))
+    ch = _FakeChannel()
+    ch._dispatch_and_reply(_msg(quoted_text="q" * (QUOTED_MAX_CHARS + 100)))
+    quoted_line = seen["user_text"].splitlines()[1]
+    assert quoted_line == "> " + "q" * QUOTED_MAX_CHARS + "…"
 
 
 # ---------------------------------------------------------------------------

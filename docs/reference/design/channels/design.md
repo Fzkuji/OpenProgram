@@ -16,13 +16,20 @@ This document describes the structure and message flow. For the requirements and
   ┌──────────────────────┐        ┌────────────────────┐
   │ implementations/*.py │        │   outbound.py      │  ← entry A
   │ 4 adapters           │        │   send(...)        │     one-shot send, no long-running process needed
-  │ - long poll/event loop│       └─────────┬──────────┘
-  │ - parse into unified  │                 │
+  │ - long poll/event loop│       │   send_file(...)   │
+  │ - parse into unified  │       └─────────┬──────────┘
   │   ChannelMessage      │                 │
+  │ (worker runs them via │                 │
+  │  base.run_forever —   │                 │
+  │  crash → backoff      │                 │
+  │  reconnect)           │                 │
   └────────┬─────────────┘                  │
            │ base.Channel.handle_inbound    │
-           │ (per-message thread +          │
-           │  degraded-path resend)         │
+           │ (per-message thread →          │
+           │  _access gate → attachment     │
+           │  download → quoted block →     │
+           │  dispatch; degraded-path       │
+           │  resend)                       │
            ▼                                │
   ┌───────────────────────────┐             │
   │   dispatch_inbound        │             │
@@ -43,9 +50,16 @@ This document describes the structure and message flow. For the requirements and
   │                                                 │
   │   post_message(platform, account, recipient, text) │
   │   patch_message(platform, account, recipient, msg_id, text) │
+  │   post_file(platform, account, recipient, path, caption) │
+  │                                                 │
+  │   pipeline per chunk: MAX_CHARS chunk →         │
+  │   _format.render (platform wire format) →       │
+  │   HARD_CAPS re-split → rate-limit retry         │
+  │   (Retry-After first, 3 attempts)               │
   │                                                 │
   │   returns SendResult {                          │
-  │     ok, message_id, error_kind, retryable       │
+  │     ok, message_id, error_kind, retryable,      │
+  │     retry_after                                 │
   │   }                                             │
   └────────┬────────────────────────────────────────┘
            │ HTTPS POST/PATCH
@@ -64,20 +78,36 @@ This document describes the structure and message flow. For the requirements and
 
 2. Inside _handle_update(update):
    a. extract text = "help me check what Python files are in the current directory"
+      (plus attachments → Attachment entries, reply_to_message text →
+      quoted_text; in groups, the require_mention setting can gate and
+      strip an @bot mention here)
    b. construct ChannelMessage {
         text=..., chat_id="123", user_id="456",
         user_display="zhangsan", chat_type="direct",
-        ts=1716000000, reply_to_id="", thread_id="",
+        ts=1716000000, reply_to_id="", quoted_text="", thread_id="",
+        attachments=(),
       }
    c. hand it to base.Channel.handle_inbound(ch_msg) — the base class
       spawns a per-message daemon thread (a turn paused on runtime.ask
-      must not block the poll loop) and in it calls
-      dispatch_inbound(channel="telegram", account_id="default",
-                       peer_kind="direct", peer_id="123",
-                       user_text=text, user_display="zhangsan",
-                       progress_stream=True)
-      (peer_id comes from Channel.peer_id_for: chat_id on telegram/wechat,
-       "{chat_id}_{user_id}" on discord/slack)
+      must not block the poll loop) and in it:
+        c1. _access.check_inbound(platform, account, user_id) — the
+            allowlist/pairing gate. Unknown sender → the message is
+            dropped and a pairing code goes back; approval happens only
+            via the local CLI (`channels access approve`), never from
+            channel text (injection boundary).
+        c2. _attachments.download_inbound(...) — files land under the
+            account state dir; small images become TurnRequest image
+            blocks, every file appends an [attachment: path] note to
+            user_text.
+        c3. quoted_text (if any) is prepended as a "> quoted" block.
+        c4. dispatch_inbound(channel="telegram", account_id="default",
+                             peer_kind="direct", peer_id="123",
+                             user_text=text, user_display="zhangsan",
+                             progress_stream=True, attachments=[...])
+      (peer_id comes from Channel.peer_id_for: chat_id on telegram —
+       "{chat_id}_{user_id}" in groups when the account setting
+       group_sessions=per-user — and wechat; "{chat_id}_{user_id}" on
+       discord/slack)
 
 3. Inside dispatch_inbound (in _conversation.py):
    a. look up bindings → decide to use the "main" agent
@@ -147,7 +177,7 @@ What happens:
 
 This is why outbound.send is a separate entry point instead of going through an adapter — a cron script simply has no adapter instance running.
 
-## 4. Five Core Design Principles
+## 4. Six Core Design Principles
 
 ### 4.1 Two Entry Points, One Implementation
 
@@ -192,9 +222,13 @@ def dispatch_inbound(*, channel, account_id, peer_kind, peer_id,
 
 ### 4.3 Platform Differences Sealed in the Low Level
 
-`_transport.py` is the **only** place that calls HTTP to send outward. Telegram's `editMessageText`, Discord's `PATCH /messages/{id}`, Slack's `chat.update`, WeChat's iLink protocol — they all live here. The per-platform message-size caps (`MAX_CHARS`) and chunking are also single-sourced here.
+`_transport.py` is the **only** place that calls HTTP to send outward. Telegram's `editMessageText`, Discord's `PATCH /messages/{id}`, Slack's `chat.update`, WeChat's iLink protocol, and the per-platform file uploads (`post_file`: Telegram sendPhoto/sendDocument, Discord multipart, Slack external-upload; WeChat absent → `not_supported`) — they all live here. The per-platform message-size caps (`MAX_CHARS`), chunking, markdown rendering (via `_format`), rendered hard-cap re-split (`HARD_CAPS`), and rate-limit retry are single-sourced in the same pipeline.
 
-The adapter classes (`implementations/telegram.py` etc.) are responsible only for: (a) the event loop that connects to the server, and (b) parsing platform-native objects into `ChannelMessage`. Everything after the parse — per-message thread dispatch, calling `dispatch_inbound`, and re-sending the reply on the degraded (non-streaming) path — lives once in `base.Channel.handle_inbound`. **Adapters do not send messages** — outbound traffic goes through `_transport` via `send_text`.
+`_format.py` is the outbound formatting single point: agent markdown → Telegram HTML (everything escaped, so any input is valid; the Telegram poster falls back to tag-stripped plain text if the API still rejects the entities), Slack mrkdwn, Discord passthrough, WeChat plain text. Code fences and inline code are placeholder-protected so inline transforms never touch code bodies.
+
+The adapter classes (`implementations/telegram.py` etc.) are responsible only for: (a) the event loop that connects to the server, and (b) parsing platform-native objects into `ChannelMessage` (text, attachments metadata, quoted text). Everything after the parse — per-message thread dispatch, the `_access` gate, attachment download, the quoted block, calling `dispatch_inbound`, and re-sending the reply on the degraded (non-streaming) path — lives once in `base.Channel.handle_inbound`. **Adapters do not send messages** — outbound traffic goes through `_transport` via `send_text` / `send_file`.
+
+The worker runs each adapter through `base.Channel.run_forever(stop)`: a `run()` that raises is reconnected with exponential backoff (5 s doubling, capped at 300 s, reset after a run that survived 60 s); a `run()` that returns cleanly means "permanently stopped, operator action needed" (e.g. WeChat token invalid) and is not restarted.
 
 ### 4.4 Structured Error Signals
 
@@ -205,18 +239,23 @@ The adapter classes (`implementations/telegram.py` etc.) are responsible only fo
 class SendResult:
     ok: bool
     message_id: str = ""
-    error_kind: str = ""          # auth / rate_limit / bad_target / network / not_supported / unknown
+    error_kind: str = ""          # auth / rate_limit / bad_target / network / not_supported / format / unknown
     error_detail: str = ""        # human-readable one line
     retryable: bool = False       # transient retryable vs permanent failure
+    retry_after: float = 0.0      # platform-stated wait (Retry-After header / body), 0 = unstated
 
     def __bool__(self): return self.ok
 ```
 
-The caller can distinguish between "token expired, please log in again" vs "wrong chat_id" vs "retry later".
+The caller can distinguish between "token expired, please log in again" vs "wrong chat_id" vs "retry later". `rate_limit` failures are retried inside `_transport` itself (`Retry-After` first, fallback 1 s / 3 s, sleep capped at 30 s, 3 attempts total); what escapes to the caller is already the post-retry verdict, logged with its error kind.
 
-`outbound.send` keeps its bool signature (for compatibility with old callers), and `outbound.send_full()` exposes the full SendResult. `Channel.send_text` / `edit_text` work the same way, each with a `_full` variant.
+`outbound.send` keeps its bool signature (for compatibility with old callers), and `outbound.send_full()` exposes the full SendResult. `Channel.send_text` / `edit_text` work the same way, each with a `_full` variant; `Channel.send_file` / `outbound.send_file` return the SendResult directly.
 
-### 4.5 Plugin Extension Point
+### 4.5 Inbound Access Control
+
+`_access.py` holds one `access.json` per (channel, account): `policy` (`pairing` default / `open`), an `allowlist` keyed by platform user id, and `pending` pairing codes (1 h TTL). `base._dispatch_and_reply` calls `check_inbound` before routing; a sender not on the allowlist never reaches `dispatch_inbound` — they receive a 6-character pairing code (re-notified at most once per minute). The mutating operations (`approve` / `approve_user` / `revoke` / `set_policy`) are exposed only through the local CLI (`openprogram channels access …`); the inbound path can only read the allowlist and mint pending codes, so no channel message can approve anyone.
+
+### 4.6 Plugin Extension Point
 
 Adding a new platform (say WhatsApp) requires no source changes:
 
@@ -247,12 +286,21 @@ The 4 built-in platforms take priority; a same-named plugin is silently ignored.
 ```
 openprogram/channels/
 ├── base.py              Channel ABC + MessageHandle + handle_inbound
-│                        (per-message thread + degraded-path resend)
-│                        + send_text/edit_text(_full)
-├── _transport.py        SendResult + MAX_CHARS table + chunking + 4
-│                        platforms' HTTP post/patch (unified low level)
-├── _message.py          ChannelMessage inbound neutral-structure dataclass
-├── outbound.py          entry A: send / send_full (thin wrapper)
+│                        (per-message thread → access gate → attachments
+│                        → quoted block → dispatch; degraded-path resend)
+│                        + run_forever (crash backoff-reconnect)
+│                        + send_text/edit_text(_full) + send_file
+├── _transport.py        SendResult + MAX_CHARS/HARD_CAPS + chunk →
+│                        render → retry pipeline + 4 platforms' HTTP
+│                        post/patch/file-upload (unified low level)
+├── _format.py           outbound markdown → telegram HTML / slack
+│                        mrkdwn / discord passthrough / wechat plain
+├── _access.py           inbound allowlist + pairing gate (access.json;
+│                        approval is local-CLI-only)
+├── _attachments.py      inbound attachment download + turn-input
+│                        conversion (image blocks + path notes)
+├── _message.py          ChannelMessage + Attachment neutral dataclasses
+├── outbound.py          entry A: send / send_full / send_file (thin wrapper)
 ├── _conversation.py     dispatch_inbound main flow + per-session lock
 │                        + progress streaming
 ├── _session_store.py    session path / create / load / save
@@ -265,13 +313,14 @@ openprogram/channels/
 ├── _heartbeats.py       adapter heartbeat registry
 ├── __init__.py          CHANNEL_CLASSES proxy + register_channel + entry_points
 ├── implementations/
-│   ├── telegram.py      Telegram bot long-poll inbound
+│   ├── telegram.py      Telegram bot long-poll inbound (group_sessions /
+│   │                    require_mention account settings)
 │   ├── discord.py       Discord bot Gateway inbound
 │   ├── slack.py         Slack Socket Mode inbound
 │   └── wechat.py        WeChat iLink long-poll inbound (incl. QR login)
 ├── setup.py             `openprogram channels setup` wizard
 ├── worker.py            backward-compatible worker import shim
-├── accounts.py          credential storage
+├── accounts.py          credential storage + account behavior settings
 └── bindings.py          (channel, account, peer) → agent routing table
 ```
 
@@ -279,27 +328,30 @@ How to read it: each module deals only with the callers it declares; there are n
 
 | Module | Responsibility | Typical caller |
 |---|---|---|
-| `_transport.py` | the only place that sends bytes outward, MAX_CHARS + chunking, 4 platforms' HTTP | outbound + base.send_text |
-| `_message.py` | ChannelMessage parse neutral structure | adapter entry |
-| `base.py` | Channel ABC + MessageHandle + handle_inbound | adapter subclasses, dispatch_inbound |
-| `outbound.py` | entry A (one-shot send) | cron script, jupyter, @agentic_function |
+| `_transport.py` | the only place that sends bytes outward: chunk → render → hard-cap split → rate-limit retry, 4 platforms' HTTP (text/edit/file) | outbound + base.send_text/send_file |
+| `_format.py` | markdown → per-platform wire format | _transport |
+| `_access.py` | allowlist + pairing gate (`access.json`) | base.handle_inbound (check), CLI `channels access` (mutation) |
+| `_attachments.py` | inbound attachment download + turn-input conversion | base.handle_inbound |
+| `_message.py` | ChannelMessage + Attachment neutral structures | adapter entry |
+| `base.py` | Channel ABC + MessageHandle + handle_inbound + run_forever | adapter subclasses, worker, dispatch_inbound |
+| `outbound.py` | entry A (one-shot send / send_file) | cron script, jupyter, @agentic_function |
 | `_conversation.py` | dispatch_inbound main flow + per-session lock | base.handle_inbound |
 | `_session_store.py` | session load/save | dispatch_inbound |
 | `_session_routing.py` | session_key computation | dispatch_inbound |
 | `_broadcast.py` | WS frames onto the event bus (`ws.frame`) | dispatch_inbound |
-| `implementations/*.py` | inbound event loop + parse | instantiated at worker startup |
+| `implementations/*.py` | inbound event loop + parse (incl. attachments/quotes, telegram group settings) | instantiated at worker startup via run_forever |
 | `__init__.py` | CHANNEL_CLASSES + plugin registration | webui list_status / worker |
-| `accounts.py` | credential storage | all _transport functions |
+| `accounts.py` | credential storage + behavior settings (ACCOUNT_SETTINGS) | all _transport functions, adapters |
 | `bindings.py` | inbound routing | dispatch_inbound |
 
 ## 6. Supported Platforms
 
-| Platform | Inbound mechanism | Outbound mechanism | progress streaming | Notes |
-|---|---|---|---|---|
-| **Telegram** | long-poll `getUpdates` (no webhook dependency) | bot API `sendMessage` / `editMessageText` | ✓ | bot token, public Bot API |
-| **Discord** | discord.py Gateway WS | REST `POST /messages` / `PATCH /messages/{id}` | ✓ | bot token, intents.message_content |
-| **Slack** | Socket Mode (slack_sdk) | `chat.postMessage` / `chat.update` | ✓ | bot_token (xoxb-) + app_token (xapp-) |
-| **WeChat** | iLink `getupdates` long-poll | iLink `sendmessage` | ✗ (iLink does not support edit) | personal WeChat QR login, no enterprise-verification barrier |
+| Platform | Inbound mechanism | Outbound mechanism | progress streaming | attachments in | files out | Notes |
+|---|---|---|---|---|---|---|
+| **Telegram** | long-poll `getUpdates` (no webhook dependency) | bot API `sendMessage` (HTML) / `editMessageText` / `sendPhoto`+`sendDocument` | ✓ | photo + document (file_id → getFile) | ✓ | bot token, public Bot API; group_sessions / require_mention settings |
+| **Discord** | discord.py Gateway WS | REST `POST /messages` / `PATCH /messages/{id}` / multipart upload | ✓ | ✓ (CDN URLs) | ✓ | bot token, intents.message_content |
+| **Slack** | Socket Mode (slack_sdk) | `chat.postMessage` (mrkdwn) / `chat.update` / external-upload | ✓ | ✓ (`url_private` + bearer) | ✓ | bot_token (xoxb-) + app_token (xapp-) |
+| **WeChat** | iLink `getupdates` long-poll | iLink `sendmessage` (plain text) | ✗ (iLink does not support edit) | ✗ (text-only protocol) | ✗ (`not_supported`) | personal WeChat QR login, no enterprise-verification barrier |
 
 Platform differences are governed by this table and the docstring at the top of each adapter.
 
@@ -319,7 +371,16 @@ openprogram channels accounts
   ├── login <channel> --id <name>                  interactively enter credentials
   │     - telegram/discord/slack: getpass paste token
   │     - wechat: start iLink QR login flow
+  ├── set <channel> <key> <value> --id <name>      behavior settings
+  │     (telegram: group_sessions=shared|per-user, require_mention=on|off)
   └── rm <channel> <account_id>                    delete account + associated bindings
+
+openprogram channels access
+  ├── list [<channel>]                             policy + allowlist + pending codes
+  ├── approve <channel> <code> --id <name>         approve by pairing code
+  ├── allow <channel> <user_id> --id <name>        allowlist a user id directly
+  ├── revoke <channel> <user_id> --id <name>       remove a sender
+  └── policy <channel> pairing|open --id <name>    set the inbound policy
 
 openprogram channels bindings
   ├── list                                         list all routing rules
@@ -352,10 +413,11 @@ its API in `openprogram/webui/routes/channels.py`.
 
 | Extension | How it is done |
 |---|---|
-| A new platform (WhatsApp / Signal / Matrix / LINE) | write a `Channel` subclass + entry_point registration |
-| Reply quote / thread isolation / attachment reading | `ChannelMessage` already carries `reply_to_id` / `thread_id` / `attachments`; the work is making `dispatch_inbound` consume them |
+| A new platform (WhatsApp / Signal / Matrix / LINE) | write a `Channel` subclass + entry_point registration; parse into `ChannelMessage` and the base pipeline (access gate, attachments, quotes, retry, formatting) applies unchanged |
+| Thread-scoped session isolation | `ChannelMessage.thread_id` is parsed; the work is folding it into the session key |
 | Reaction approval (✓/✗ confirming a dangerous tool) | an adapter-side reaction listener plus a bridge to the approval path |
 | Token-level text streaming | edits currently happen at tool boundaries; editing on reply-text deltas has to weigh the platform rate limit |
+| webui access management | `_access` describe/approve/revoke are plain functions; a webui route can call them the same way the CLI does |
 
 ## 9. References
 

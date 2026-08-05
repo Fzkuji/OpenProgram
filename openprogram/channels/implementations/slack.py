@@ -59,7 +59,16 @@ class SlackChannel(Channel):
         client = SocketModeClient(app_token=self.app_token, web_client=web)
         tag = f"slack:{self.account_id}"
 
-        me = web.auth_test()
+        try:
+            me = web.auth_test()
+        except Exception as e:  # noqa: BLE001
+            # invalid_auth 是永久失败 — 正常 return, run_forever 不重启;
+            # 网络类异常继续往上抛, 走退避重连.
+            if "invalid_auth" in str(e) or "not_authed" in str(e):
+                print(f"[{tag}] auth failed — check bot/app tokens; "
+                      f"re-run `openprogram channels accounts login slack`")
+                return
+            raise
         my_id = me.get("user_id")
         print(f"[{tag}] connected as {me.get('user')} — ctrl+c to stop")
 
@@ -73,18 +82,47 @@ class SlackChannel(Channel):
             etype = event.get("type")
             if etype not in ("message", "app_mention"):
                 return
-            if event.get("subtype") is not None:
+            # subtype None = 普通消息, "file_share" = 带附件的消息;
+            # 其余 subtype (joined / edited / bot_message ...) 忽略.
+            if event.get("subtype") not in (None, "file_share"):
                 return
             if event.get("user") == my_id:
                 return
             text = (event.get("text") or "").strip()
-            if not text:
-                return
             channel_id = event.get("channel")
             user = event.get("user")
 
-            # Parse slack event dict → ChannelMessage (audit 缺陷 4).
-            from openprogram.channels._message import ChannelMessage
+            # Parse slack event dict → ChannelMessage.
+            from openprogram.channels._message import Attachment, ChannelMessage
+            attachments = tuple(
+                Attachment(
+                    name=str(f.get("name") or "file"),
+                    mime=str(f.get("mimetype") or ""),
+                    url=str(f.get("url_private_download")
+                            or f.get("url_private") or ""),
+                    headers=(("Authorization", f"Bearer {self.bot_token}"),),
+                    size=int(f.get("size") or 0),
+                )
+                for f in (event.get("files") or [])
+            )
+            if not text and not attachments:
+                return
+
+            # Thread 回复: 拉一次父消息文本作为 quoted 块 (thread_ts ==
+            # ts 的是父消息本身, 不算回复).
+            quoted_text = ""
+            thread_ts = str(event.get("thread_ts") or "")
+            if thread_ts and thread_ts != str(event.get("ts") or ""):
+                try:
+                    parent = web.conversations_replies(
+                        channel=channel_id, ts=thread_ts, limit=1,
+                    )
+                    msgs = parent.get("messages") or []
+                    if msgs:
+                        quoted_text = str(msgs[0].get("text") or "")
+                except Exception:  # noqa: BLE001
+                    pass
+
             ch_msg = ChannelMessage(
                 text=text,
                 chat_id=str(channel_id or ""),
@@ -95,7 +133,9 @@ class SlackChannel(Channel):
                     else "channel"
                 ),
                 ts=float(event.get("ts") or 0),
-                thread_id=str(event.get("thread_ts") or ""),
+                quoted_text=quoted_text,
+                thread_id=thread_ts,
+                attachments=attachments,
             )
 
             # handle_inbound spawns its own daemon thread — the socket-mode

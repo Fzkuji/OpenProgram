@@ -40,6 +40,63 @@ def _dispatch_accounts_verb(args, parser) -> None:
     if verb == "login":
         _login_account(args.channel, args.id)
         return
+    if verb == "set":
+        try:
+            _acc.set_setting(args.channel, args.id, args.key, args.value)
+        except ValueError as e:
+            print(f"[error] {e}")
+            sys.exit(1)
+        print(f"{args.channel}:{args.id} {args.key} = {args.value} "
+              f"(restart the worker to apply)")
+        return
+    parser.print_help()
+
+
+def _dispatch_access_verb(args, parser) -> None:
+    from openprogram.channels import _access
+    verb = getattr(args, "access_verb", None)
+    if verb == "list":
+        from openprogram.channels import accounts as _acc
+        channels = [args.channel] if getattr(args, "channel", None) else None
+        rows = []
+        for acct in _acc.list_all_accounts():
+            if channels and acct.channel not in channels:
+                continue
+            rows.append((acct.channel, acct.account_id,
+                         _access.describe(acct.channel, acct.account_id)))
+        if not rows:
+            print("No channel accounts.")
+            return
+        for channel, account_id, data in rows:
+            print(f"{channel}:{account_id}  policy={data['policy']}")
+            for uid, row in sorted(data["allowlist"].items()):
+                print(f"  allowed  {uid:24} {row.get('display','')}")
+            for uid, row in sorted(data["pending"].items()):
+                print(f"  pending  {uid:24} {row.get('display','')}  "
+                      f"code={row.get('code','')}")
+        return
+    if verb == "approve":
+        uid = _access.approve(args.channel, args.id, args.code)
+        if uid is None:
+            print(f"[error] no pending pairing with code {args.code!r} "
+                  f"on {args.channel}:{args.id} (codes expire after 1h)")
+            sys.exit(1)
+        print(f"Approved {uid} on {args.channel}:{args.id}")
+        return
+    if verb == "allow":
+        _access.approve_user(args.channel, args.id, args.user_id)
+        print(f"Allowlisted {args.user_id} on {args.channel}:{args.id}")
+        return
+    if verb == "revoke":
+        if _access.revoke(args.channel, args.id, args.user_id):
+            print(f"Revoked {args.user_id} on {args.channel}:{args.id}")
+        else:
+            print(f"{args.user_id} was not on {args.channel}:{args.id}")
+        return
+    if verb == "policy":
+        _access.set_policy(args.channel, args.id, args.policy)
+        print(f"{args.channel}:{args.id} access policy = {args.policy}")
+        return
     parser.print_help()
 
 

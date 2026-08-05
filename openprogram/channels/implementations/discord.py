@@ -64,12 +64,25 @@ class DiscordChannel(Channel):
             if msg.author.bot or msg.author == client.user:
                 return
             text = (msg.content or "").strip()
-            if not text:
-                return
 
-            # Parse discord.Message → ChannelMessage (audit 缺陷 4).
-            from openprogram.channels._message import ChannelMessage
+            # Parse discord.Message → ChannelMessage.
+            from openprogram.channels._message import Attachment, ChannelMessage
+            attachments = tuple(
+                Attachment(
+                    name=str(a.filename or "file"),
+                    mime=str(a.content_type or ""),
+                    url=str(a.url or ""),
+                    size=int(a.size or 0),
+                )
+                for a in (msg.attachments or [])
+            )
+            if not text and not attachments:
+                return
+            # 被回复消息: gateway 会把 referenced message 放进
+            # reference.resolved (可能为 None — 太旧 / 已删).
             ref = getattr(msg, "reference", None)
+            resolved = getattr(ref, "resolved", None) if ref else None
+            quoted_text = str(getattr(resolved, "content", "") or "")
             ch_msg = ChannelMessage(
                 text=text,
                 chat_id=str(msg.channel.id),
@@ -80,10 +93,12 @@ class DiscordChannel(Channel):
                 reply_to_id=(
                     str(ref.message_id) if ref and ref.message_id else ""
                 ),
+                quoted_text=quoted_text,
                 thread_id=(
                     str(msg.channel.id) if getattr(msg.channel, "type", None)
                     and "thread" in str(msg.channel.type).lower() else ""
                 ),
+                attachments=attachments,
             )
 
             # handle_inbound spawns its own daemon thread and returns

@@ -16,12 +16,17 @@
   ┌──────────────────────┐        ┌────────────────────┐
   │ implementations/*.py │        │   outbound.py      │  ← 入口 A
   │ 4 个 adapter         │        │   send(...)        │     一次性发, 不需要长跑进程
-  │ - 长轮询/事件循环    │        └─────────┬──────────┘
-  │ - parse 出统一       │                  │
+  │ - 长轮询/事件循环    │        │   send_file(...)   │
+  │ - parse 出统一       │        └─────────┬──────────┘
   │   ChannelMessage     │                  │
+  │ (worker 经 base.     │                  │
+  │  run_forever 跑 —    │                  │
+  │  崩溃退避自动重连)   │                  │
   └────────┬─────────────┘                  │
            │ base.Channel.handle_inbound    │
-           │ (每消息一线程 + 降级回发)      │
+           │ (每消息一线程 → _access 门禁   │
+           │  → 附件下载 → quoted 块 →      │
+           │  dispatch; 降级回发)           │
            ▼                                │
   ┌───────────────────────────┐             │
   │   dispatch_inbound        │             │
@@ -42,9 +47,16 @@
   │                                                 │
   │   post_message(平台, 账号, 收信人, 文本)        │
   │   patch_message(平台, 账号, 收信人, msg_id, 文本)│
+  │   post_file(平台, 账号, 收信人, 路径, caption)  │
+  │                                                 │
+  │   每 chunk 流水线: MAX_CHARS 切分 →             │
+  │   _format.render (平台线上格式) →               │
+  │   HARD_CAPS 二次切分 → 限流退避重试             │
+  │   (优先 Retry-After, 共 3 次尝试)               │
   │                                                 │
   │   返回 SendResult {                             │
-  │     ok, message_id, error_kind, retryable       │
+  │     ok, message_id, error_kind, retryable,      │
+  │     retry_after                                 │
   │   }                                             │
   └────────┬────────────────────────────────────────┘
            │ HTTPS POST/PATCH
@@ -63,19 +75,31 @@
 
 2. _handle_update(update) 内部:
    a. 抽 text = "帮我看下当前目录有什么 Python 文件"
+      (另抽附件 → Attachment 条目、reply_to_message 文本 → quoted_text;
+      群聊里 require_mention 设置可以在这里做 @提及 门槛并剥掉提及)
    b. 构造 ChannelMessage {
         text=..., chat_id="123", user_id="456",
         user_display="zhangsan", chat_type="direct",
-        ts=1716000000, reply_to_id="", thread_id="",
+        ts=1716000000, reply_to_id="", quoted_text="", thread_id="",
+        attachments=(),
       }
    c. 交给 base.Channel.handle_inbound(ch_msg) — base 起一个 per-message
-      daemon 线程 (turn 停在 runtime.ask 时不能堵 poll loop), 线程里调
-      dispatch_inbound(channel="telegram", account_id="default",
-                       peer_kind="direct", peer_id="123",
-                       user_text=text, user_display="zhangsan",
-                       progress_stream=True)
-      (peer_id 来自 Channel.peer_id_for: telegram/wechat 用 chat_id,
-       discord/slack 用 "{chat_id}_{user_id}")
+      daemon 线程 (turn 停在 runtime.ask 时不能堵 poll loop), 线程里:
+        c1. _access.check_inbound(平台, 账号, user_id) — allowlist/配对
+            门禁. 未知发信人 → 消息丢弃、回一个配对码; 批准只能走本机
+            CLI (`channels access approve`), 永远不由 channel 文本触发
+            (注入边界).
+        c2. _attachments.download_inbound(...) — 文件落到账号状态目录;
+            小图片转成 TurnRequest image block, 每个文件在 user_text
+            里追加一行 [attachment: 路径].
+        c3. quoted_text (若有) 组装成 "> 引用" 块放在最前.
+        c4. dispatch_inbound(channel="telegram", account_id="default",
+                             peer_kind="direct", peer_id="123",
+                             user_text=text, user_display="zhangsan",
+                             progress_stream=True, attachments=[...])
+      (peer_id 来自 Channel.peer_id_for: telegram 用 chat_id — 账号设置
+       group_sessions=per-user 时群聊变 "{chat_id}_{user_id}" — wechat
+       用 chat_id, discord/slack 用 "{chat_id}_{user_id}")
 
 3. dispatch_inbound 内部 (在 _conversation.py):
    a. 查 bindings → 决定用 "main" agent
@@ -140,7 +164,7 @@ send("telegram", "default", "1234", "早上好")
 
 这就是为什么 outbound.send 是单独入口而不是走 adapter——cron 脚本根本没有 adapter 实例在跑。
 
-## 4. 五条核心设计原则
+## 4. 六条核心设计原则
 
 ### 4.1 两个入口、一份实现
 
@@ -184,9 +208,13 @@ def dispatch_inbound(*, channel, account_id, peer_kind, peer_id,
 
 ### 4.3 平台差异封到底层
 
-`_transport.py` 是**唯一**调 HTTP 往外发的地方。Telegram 的 `editMessageText`、Discord 的 `PATCH /messages/{id}`、Slack 的 `chat.update`、WeChat 的 iLink 协议——全都在这里。per-platform 消息长度上限（`MAX_CHARS`）与 chunking 也单点定义在这里。
+`_transport.py` 是**唯一**调 HTTP 往外发的地方。Telegram 的 `editMessageText`、Discord 的 `PATCH /messages/{id}`、Slack 的 `chat.update`、WeChat 的 iLink 协议、各平台文件上传（`post_file`：Telegram sendPhoto/sendDocument、Discord multipart、Slack external-upload；WeChat 缺席 → `not_supported`）——全都在这里。per-platform 消息长度上限（`MAX_CHARS`）、chunking、markdown 渲染（经 `_format`）、渲染后硬上限二次切分（`HARD_CAPS`）、限流重试都单点收敛在同一条流水线里。
 
-adapter 类 (`implementations/telegram.py` 等) 只负责：(a) 连服务器的事件循环、(b) 把 platform-native 对象 parse 成 `ChannelMessage`。parse 之后的一切——per-message 线程派发、调 `dispatch_inbound`、降级（非 streaming）路径的回发——统一在 `base.Channel.handle_inbound` 里只写一遍。**adapter 不发消息**——出站一律经 `send_text` 走 `_transport`。
+`_format.py` 是出站格式化单点：agent markdown → Telegram HTML（全量转义，任意输入都合法；API 仍拒绝时 Telegram poster 剥标签降级纯文本重发）、Slack mrkdwn、Discord 透传、WeChat 纯文本。代码围栏与 inline code 用占位符保护，行内转换永远不碰代码体。
+
+adapter 类 (`implementations/telegram.py` 等) 只负责：(a) 连服务器的事件循环、(b) 把 platform-native 对象 parse 成 `ChannelMessage`（文本、附件元数据、被引用文本）。parse 之后的一切——per-message 线程派发、`_access` 门禁、附件下载、quoted 块、调 `dispatch_inbound`、降级（非 streaming）路径的回发——统一在 `base.Channel.handle_inbound` 里只写一遍。**adapter 不发消息**——出站一律经 `send_text` / `send_file` 走 `_transport`。
+
+worker 经 `base.Channel.run_forever(stop)` 跑每个 adapter：`run()` 抛异常 → 指数退避重连（5 秒翻倍、封顶 300 秒、存活满 60 秒后重置）；`run()` 正常 return 表示"永久停止, 需人工处理"（如 WeChat token 失效），不再重启。
 
 ### 4.4 错误信号结构化
 
@@ -197,18 +225,23 @@ adapter 类 (`implementations/telegram.py` 等) 只负责：(a) 连服务器的�
 class SendResult:
     ok: bool
     message_id: str = ""
-    error_kind: str = ""          # auth / rate_limit / bad_target / network / not_supported / unknown
+    error_kind: str = ""          # auth / rate_limit / bad_target / network / not_supported / format / unknown
     error_detail: str = ""        # human-readable 一行
     retryable: bool = False       # 瞬态可重试 vs 永久失败
+    retry_after: float = 0.0      # 平台明示的等待秒数 (Retry-After / body), 0 = 没说
 
     def __bool__(self): return self.ok
 ```
 
-调用方可以做"token 失效请重新登录" vs "chat_id 错误" vs "稍后重试"的区分。
+调用方可以做"token 失效请重新登录" vs "chat_id 错误" vs "稍后重试"的区分。`rate_limit` 失败在 `_transport` 内部就地重试（优先 Retry-After，兜底 1s / 3s，睡眠封顶 30s，共 3 次尝试）；逃逸到调用方的已经是重试后的最终结论，并带 error kind 落日志。
 
-`outbound.send` 保留 bool 签名（兼容旧 caller），`outbound.send_full()` 暴露完整 SendResult。`Channel.send_text` / `edit_text` 同理，有 `_full` 变体。
+`outbound.send` 保留 bool 签名（兼容旧 caller），`outbound.send_full()` 暴露完整 SendResult。`Channel.send_text` / `edit_text` 同理，有 `_full` 变体；`Channel.send_file` / `outbound.send_file` 直接返回 SendResult。
 
-### 4.5 plugin 扩展点
+### 4.5 入站 access 门禁
+
+`_access.py` 给每个 (channel, account) 维护一份 `access.json`：`policy`（默认 `pairing` / 可选 `open`）、按平台 user id 索引的 `allowlist`、带 1 小时 TTL 的 `pending` 配对码。`base._dispatch_and_reply` 在路由之前调 `check_inbound`；不在 allowlist 里的发信人永远到不了 `dispatch_inbound`——他们收到一个 6 位配对码（每分钟至多回执一次）。写操作（`approve` / `approve_user` / `revoke` / `set_policy`）只暴露给本机 CLI（`openprogram channels access …`）；入站路径只能读 allowlist、刷 pending 码，任何 channel 消息都无法批准任何人。
+
+### 4.6 plugin 扩展点
 
 要加新平台（比如 WhatsApp）不用改源码：
 
@@ -239,11 +272,20 @@ register_channel("whatsapp", WhatsAppChannel)
 ```
 openprogram/channels/
 ├── base.py              Channel ABC + MessageHandle + handle_inbound
-│                        (per-message 线程 + 降级回发) + send_text/edit_text(_full)
-├── _transport.py        SendResult + MAX_CHARS 表 + chunking + 4 个平台
-│                        HTTP post/patch (统一底层)
-├── _message.py          ChannelMessage 入站中性结构 dataclass
-├── outbound.py          入口 A: send / send_full (薄包装)
+│                        (per-message 线程 → 门禁 → 附件 → quoted 块 →
+│                        dispatch; 降级回发) + run_forever (崩溃退避重连)
+│                        + send_text/edit_text(_full) + send_file
+├── _transport.py        SendResult + MAX_CHARS/HARD_CAPS + chunk →
+│                        render → retry 流水线 + 4 个平台 HTTP
+│                        post/patch/文件上传 (统一底层)
+├── _format.py           出站 markdown → telegram HTML / slack mrkdwn /
+│                        discord 透传 / wechat 纯文本
+├── _access.py           入站 allowlist + 配对门禁 (access.json;
+│                        批准只走本机 CLI)
+├── _attachments.py      入站附件下载 + turn 输入转换
+│                        (image block + 路径注记)
+├── _message.py          ChannelMessage + Attachment 中性结构 dataclass
+├── outbound.py          入口 A: send / send_full / send_file (薄包装)
 ├── _conversation.py     dispatch_inbound 主流程 + per-session 锁
 │                        + progress streaming
 ├── _session_store.py    session 路径 / 创建 / 加载 / 保存
@@ -255,13 +297,14 @@ openprogram/channels/
 ├── _heartbeats.py       adapter 心跳注册表
 ├── __init__.py          CHANNEL_CLASSES proxy + register_channel + entry_points
 ├── implementations/
-│   ├── telegram.py      Telegram bot 长轮询入站
+│   ├── telegram.py      Telegram bot 长轮询入站 (group_sessions /
+│   │                    require_mention 账号设置)
 │   ├── discord.py       Discord bot Gateway 入站
 │   ├── slack.py         Slack Socket Mode 入站
 │   └── wechat.py        WeChat iLink 长轮询入站 (含 QR 登录)
 ├── setup.py             `openprogram channels setup` 向导
 ├── worker.py            向后兼容的 worker import shim
-├── accounts.py          凭据存储
+├── accounts.py          凭据存储 + 账号行为设置
 └── bindings.py          (channel, account, peer) → agent 路由表
 ```
 
@@ -269,27 +312,30 @@ openprogram/channels/
 
 | 模块 | 职责 | 典型 caller |
 |---|---|---|
-| `_transport.py` | 唯一往外发字节, MAX_CHARS + chunking, 4 个平台 HTTP | outbound + base.send_text |
-| `_message.py` | ChannelMessage parse 中性结构 | adapter 入口 |
-| `base.py` | Channel ABC + MessageHandle + handle_inbound | adapter 子类、dispatch_inbound |
-| `outbound.py` | 入口 A (一次性发) | cron 脚本、jupyter、@agentic_function |
+| `_transport.py` | 唯一往外发字节: chunk → render → 硬上限二次切分 → 限流重试, 4 个平台 HTTP (文本/编辑/文件) | outbound + base.send_text/send_file |
+| `_format.py` | markdown → 各平台线上格式 | _transport |
+| `_access.py` | allowlist + 配对门禁 (`access.json`) | base.handle_inbound (判定), CLI `channels access` (写操作) |
+| `_attachments.py` | 入站附件下载 + turn 输入转换 | base.handle_inbound |
+| `_message.py` | ChannelMessage + Attachment 中性结构 | adapter 入口 |
+| `base.py` | Channel ABC + MessageHandle + handle_inbound + run_forever | adapter 子类、worker、dispatch_inbound |
+| `outbound.py` | 入口 A (一次性发 / send_file) | cron 脚本、jupyter、@agentic_function |
 | `_conversation.py` | dispatch_inbound 主流程 + per-session 锁 | base.handle_inbound |
 | `_session_store.py` | session 加载/保存 | dispatch_inbound |
 | `_session_routing.py` | session_key 计算 | dispatch_inbound |
 | `_broadcast.py` | WS 帧上事件总线 (`ws.frame`) | dispatch_inbound |
-| `implementations/*.py` | 入站事件循环 + parse | worker 启动时实例化 |
+| `implementations/*.py` | 入站事件循环 + parse (含附件/引用、telegram 群设置) | worker 启动时经 run_forever 实例化 |
 | `__init__.py` | CHANNEL_CLASSES + plugin 注册 | webui list_status / worker |
-| `accounts.py` | 凭据存储 | 所有 _transport 函数 |
+| `accounts.py` | 凭据存储 + 行为设置 (ACCOUNT_SETTINGS) | 所有 _transport 函数、adapter |
 | `bindings.py` | inbound 路由 | dispatch_inbound |
 
 ## 6. 支持的平台
 
-| 平台 | 入站机制 | 出站机制 | progress streaming | 备注 |
-|---|---|---|---|---|
-| **Telegram** | 长轮询 `getUpdates` (无 webhook 依赖) | bot API `sendMessage` / `editMessageText` | ✓ | bot token, public Bot API |
-| **Discord** | discord.py Gateway WS | REST `POST /messages` / `PATCH /messages/{id}` | ✓ | bot token, intents.message_content |
-| **Slack** | Socket Mode (slack_sdk) | `chat.postMessage` / `chat.update` | ✓ | bot_token (xoxb-) + app_token (xapp-) |
-| **WeChat** | iLink `getupdates` 长轮询 | iLink `sendmessage` | ✗ (iLink 不支持 edit) | 个微扫码登录, 无企业认证门槛 |
+| 平台 | 入站机制 | 出站机制 | progress streaming | 附件接收 | 文件发送 | 备注 |
+|---|---|---|---|---|---|---|
+| **Telegram** | 长轮询 `getUpdates` (无 webhook 依赖) | bot API `sendMessage` (HTML) / `editMessageText` / `sendPhoto`+`sendDocument` | ✓ | photo + document (file_id → getFile) | ✓ | bot token, public Bot API; group_sessions / require_mention 设置 |
+| **Discord** | discord.py Gateway WS | REST `POST /messages` / `PATCH /messages/{id}` / multipart 上传 | ✓ | ✓ (CDN URL) | ✓ | bot token, intents.message_content |
+| **Slack** | Socket Mode (slack_sdk) | `chat.postMessage` (mrkdwn) / `chat.update` / external-upload | ✓ | ✓ (`url_private` + bearer) | ✓ | bot_token (xoxb-) + app_token (xapp-) |
+| **WeChat** | iLink `getupdates` 长轮询 | iLink `sendmessage` (纯文本) | ✗ (iLink 不支持 edit) | ✗ (协议只有文本) | ✗ (`not_supported`) | 个微扫码登录, 无企业认证门槛 |
 
 平台差异以本表和各 adapter 顶部 docstring 为准。
 
@@ -309,7 +355,16 @@ openprogram channels accounts
   ├── login <channel> --id <name>                  交互式录入凭据
   │     - telegram/discord/slack: getpass 粘贴 token
   │     - wechat: 启动 iLink QR 扫码流程
+  ├── set <channel> <key> <value> --id <name>      行为设置
+  │     (telegram: group_sessions=shared|per-user, require_mention=on|off)
   └── rm <channel> <account_id>                    删账号 + 关联 bindings
+
+openprogram channels access
+  ├── list [<channel>]                             策略 + allowlist + 待批配对码
+  ├── approve <channel> <code> --id <name>         按配对码批准
+  ├── allow <channel> <user_id> --id <name>        直接按 user id 加 allowlist
+  ├── revoke <channel> <user_id> --id <name>       移除发信人
+  └── policy <channel> pairing|open --id <name>    设入站策略
 
 openprogram channels bindings
   ├── list                                         列所有路由规则
@@ -342,10 +397,11 @@ openprogram channels bindings
 
 | 扩展 | 怎么做 |
 |---|---|
-| 新平台（WhatsApp / Signal / Matrix / LINE） | 写 `Channel` 子类 + entry_point 注册 |
-| reply 引用 / thread 隔离 / 附件读取 | `ChannelMessage` 已带 `reply_to_id` / `thread_id` / `attachments`，要做的是让 `dispatch_inbound` 消费它们 |
+| 新平台（WhatsApp / Signal / Matrix / LINE） | 写 `Channel` 子类 + entry_point 注册；parse 成 `ChannelMessage` 后，base 流水线（门禁、附件、引用、重试、格式化）原样生效 |
+| thread 级会话隔离 | `ChannelMessage.thread_id` 已 parse，要做的是把它折进 session key |
 | Reaction approval（✓/✗ 确认 dangerous tool） | adapter 侧的 reaction listener 加上接到 approval 路径的桥 |
 | Token-level text streaming | 目前只在 tool 边界 edit；按 reply text delta 编辑要权衡平台 rate limit |
+| webui access 管理 | `_access` 的 describe/approve/revoke 是普通函数，webui route 跟 CLI 一样直接调 |
 
 ## 9. 参考
 

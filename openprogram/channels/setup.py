@@ -82,6 +82,13 @@ def run() -> int:
 
         print("\n✅ Setup complete. Send a message from the channel — "
               "watch the conversation appear in /resume.")
+        print("\n[setup] access control: unknown senders get a pairing "
+              "code instead of an agent reply (default policy). Your "
+              "first message returns a code — approve yourself with:")
+        print(f"  openprogram channels access approve {channel} <code>"
+              + (f" --id {account_id}" if account_id != "default" else ""))
+        print("  (or open the door entirely: "
+              f"openprogram channels access policy {channel} open)")
         return 0
     except (KeyboardInterrupt, EOFError):
         print("\n[setup] aborted.")

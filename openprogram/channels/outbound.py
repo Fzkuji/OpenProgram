@@ -53,3 +53,16 @@ def send_full(
     if not text:
         return SendResult.fail("bad_target", "empty text")
     return _transport.post_message(channel, account_id, user_id, text)
+
+
+def send_file(
+    channel: str, account_id: str, user_id: str, path: str,
+    caption: str = "",
+) -> SendResult:
+    """把本地文件发给 (channel, account_id, user_id).
+
+    telegram 图片走 sendPhoto、其余 sendDocument; discord multipart
+    上传; slack external-upload 三步. WeChat 返回 ``not_supported``
+    (iLink 无文件上传接口) — 调用方自行降级.
+    """
+    return _transport.post_file(channel, account_id, user_id, path, caption)

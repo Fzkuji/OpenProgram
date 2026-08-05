@@ -740,6 +740,57 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["wechat", "telegram", "discord", "slack"])
     p_chacct_login.add_argument("--id", default="default",
         help="Account id (default: 'default')")
+    p_chacct_set = p_chacct_sub.add_parser("set",
+        help="Set an account behavior setting (e.g. telegram group "
+             "semantics: group_sessions=shared|per-user, "
+             "require_mention=on|off). Restart the worker to apply.")
+    p_chacct_set.add_argument("channel", help="Channel id",
+        choices=["wechat", "telegram", "discord", "slack"])
+    p_chacct_set.add_argument("key", help="Setting key (see channel docs)")
+    p_chacct_set.add_argument("value", help="Setting value")
+    p_chacct_set.add_argument("--id", default="default",
+        help="Account id (default: 'default')")
+
+    # ---- channels access ------------------------------------------------
+    p_chaccess = channels_sub.add_parser("access",
+        help="Inbound sender access control: allowlist + pairing codes. "
+             "Unknown senders get a pairing code instead of driving the "
+             "agent; approve them here (never from the chat itself).")
+    p_chaccess_sub = p_chaccess.add_subparsers(dest="access_verb",
+                                               metavar="verb")
+    p_cha_list = p_chaccess_sub.add_parser("list",
+        help="Show policy, allowlist and pending pairing codes")
+    p_cha_list.add_argument("channel", nargs="?", default=None,
+        help="Limit to one channel (optional)")
+    p_cha_approve = p_chaccess_sub.add_parser("approve",
+        help="Approve a pending sender by pairing code")
+    p_cha_approve.add_argument("channel",
+        choices=["wechat", "telegram", "discord", "slack"])
+    p_cha_approve.add_argument("code", help="Pairing code the sender received")
+    p_cha_approve.add_argument("--id", default="default",
+        help="Account id (default: 'default')")
+    p_cha_allow = p_chaccess_sub.add_parser("allow",
+        help="Allowlist a platform user id directly (no pairing code needed)")
+    p_cha_allow.add_argument("channel",
+        choices=["wechat", "telegram", "discord", "slack"])
+    p_cha_allow.add_argument("user_id", help="Platform-native sender id")
+    p_cha_allow.add_argument("--id", default="default",
+        help="Account id (default: 'default')")
+    p_cha_revoke = p_chaccess_sub.add_parser("revoke",
+        help="Remove a sender from the allowlist (and pending list)")
+    p_cha_revoke.add_argument("channel",
+        choices=["wechat", "telegram", "discord", "slack"])
+    p_cha_revoke.add_argument("user_id", help="Platform-native sender id")
+    p_cha_revoke.add_argument("--id", default="default",
+        help="Account id (default: 'default')")
+    p_cha_policy = p_chaccess_sub.add_parser("policy",
+        help="Set the inbound policy: pairing (default, unknown senders "
+             "get a code) or open (everyone gets through)")
+    p_cha_policy.add_argument("channel",
+        choices=["wechat", "telegram", "discord", "slack"])
+    p_cha_policy.add_argument("policy", choices=["pairing", "open"])
+    p_cha_policy.add_argument("--id", default="default",
+        help="Account id (default: 'default')")
 
     # ---- channels bindings --------------------------------------------
     p_chb = channels_sub.add_parser("bindings",
@@ -1371,6 +1422,9 @@ def main():
         if verb == "accounts":
             _dispatch_accounts_verb(args, p_chacct)
             return
+        if verb == "access":
+            _dispatch_access_verb(args, p_chaccess)
+            return
         if verb == "bindings":
             _dispatch_bindings_verb(args, p_chb)
             return
@@ -1544,6 +1598,7 @@ from openprogram._cli_cmds.agents import (  # noqa: E402,F401
     _dispatch_agents_verb,
 )
 from openprogram._cli_cmds.channels import (  # noqa: E402,F401
+    _dispatch_access_verb,
     _dispatch_accounts_verb,
     _dispatch_bindings_verb,
     _login_account,

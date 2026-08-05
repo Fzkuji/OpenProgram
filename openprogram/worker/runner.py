@@ -147,7 +147,9 @@ def _start_heartbeat_watcher(
 
 def _safe_run_channel(label: str, channel, stop: threading.Event) -> None:
     try:
-        channel.run(stop)
+        # run_forever = 崩溃自动退避重连 (base.Channel); 正常 return 表示
+        # adapter 永久停止 (凭据失效等), 不再重启.
+        channel.run_forever(stop)
     except Exception as e:  # noqa: BLE001
         import traceback
         print(f"[{label}] crashed: {type(e).__name__}: {e}")
