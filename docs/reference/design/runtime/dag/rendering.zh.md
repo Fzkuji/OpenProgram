@@ -151,7 +151,7 @@ HUD 不自带任何外观。胶囊列在输入框 env-pill 规则里
 │ └ △回复 ⁹                    │ └ △回复┄┐
                                │        ■ bash
                                │        ■ web_fetch
-                               │        ▽ 子 agent ⁵
+                               │        ■ 子 agent ⁵
                                │        ■ …(共9行)
 ```
 
@@ -269,8 +269,8 @@ lane 色；**绝不给某类线固定颜色**。类型只靠线型：
 
 **形状**：◇ ROOT · ○ user · △ llm · ■ code · ◉ merge（实心带孔圆，全图唯一的
 "汇聚"形状）· ◎ 压缩摘要（双圈圆：基准圆内套细内圈，见第九节）·
-▽ 子 agent 头（三角形词汇倒过来：派生出来的 agent，与链上正三角形一眼可分，
-见第十二节）。
+■ 子 agent spawn（和其他调用一样的方块——派发 agent 就是一次函数调用；
+展开进入 agent 自己的活动，见第十二节）。
 
 **HEAD 是字形自己身上的呼吸光晕**：一圈分支色的 `drop-shadow`，以 2.4 秒的
 慢周期胀起又落下，直接盖在形状上（`data-head`）。光贴着字形轮廓走，任何缩放
@@ -584,13 +584,18 @@ tooltip 和检查器里。
 节点正是折叠最不能引发的误读。没有线程线、没有条目、没有别的。
 
 **展开就是纯展开**。点节点把线程插进布局：一条淡点线（`2 3`）从锚点垂进它右侧
-第一个空列，每个事件都是线上的真节点——每次调用一个方块（锚轮 lane 色），每个
-spawn 的 agent 一个倒三角形——一行一个事件，从上到下按调用顺序。收起按规则②
+第一个空列，每个事件都是线上的真节点——每次调用一个方块（锚轮 lane 色），spawn
+的 agent 也是方块——一行一个事件，从上到下按调用顺序。收起按规则②
 回收行。
 
-**头就是 agent**。spawn 根画成倒过来的三角形词汇：派生出来的 agent，与链上正
-三角形一眼可分。它的内部轮不上链——归并进它（第〇节）——它自己的调用是它自己
-的线程，再右移一列，点三角形展开。模型是递归的，画面也是：每一层都按同样的两
+**头就是 agent，spawn 就是调用**。spawn 根画成方块——派发 agent 就是一次
+函数调用，方块就是调用词汇。派发调用节点（`task` / `message_branch`）归并进
+它：一次 spawn 一颗字形（没开出 spawn 的派发调用保留自己的方块——那次失败值得
+一颗节点）。agent 的内部轮不上链——归并进它（第〇节），展开后回复画三角形、
+调用画方块——它自己的线程再右移一列，点方块展开。线程展开期间，它的最后一个
+条目下方挂一枚徽章药丸（与分支徽章同款，render/badges.ts），写 agent 的名字；
+点击把 agent 链的末端 checkout 成活动分支——接管这个 agent 的对话。收起的
+agent 不出徽章，画布保持干净。模型是递归的，画面也是：每一层都按同样的两
 条规则读，折叠数在肩上、展开成一列。嵌套展开的线程把父线程后面的条目往下推；
 展开是插入，不是覆盖。
 
@@ -636,5 +641,5 @@ spawn 的 agent 一个倒三角形——一行一个事件，从上到下按调�
 | 第十节 失败留档 | `render/nodes.ts::_isArchivedFailure`——`status=error` **且**离开 HEAD 链；灰覆盖第四节的红 |
 | 第十一节 一张卡两个状态 / fork 并编辑 | `dag/tooltip.ts`：`renderNodeInfo` 喂两个状态，`expandTooltip` 原地加深；`render/inspector.ts` 只构建动词列表（+ 原始 JSON 层），`render/interaction.ts` 接线；动作走 `POST /api/chat/checkout` |
 | 第十一节 图例 | `components/chat/dag-view.tsx` 的 `DagLegend`（挂在画布 HUD 里），`right-dock.css` 的 `.dag-legend` |
-| 第十二节 调用线程 + agent 头 | `shapes.ts` `agent_head`（倒三角形）、`passes/thread.ts`（模型）、`layout/geometry.ts`（递归安放）、`render/edges.ts`（线程点线、中心连线、场景3横桥）、`render/nodes.ts`（`data-thread*`、肩上折叠数）、`render/interaction.ts`（`toggleThreadOpen`）；由 `web/scripts/check-dag-subagent.mjs` 实跑 |
+| 第十二节 调用线程 + agent spawn | `shapes.ts`（spawn → 方块）、`passes/thread.ts`（模型）、`layout/geometry.ts`（递归安放）、`render/edges.ts`（线程点线、中心连线、场景3横桥）、`render/nodes.ts`（`data-thread*`、肩上折叠数）、`render/interaction.ts`（`toggleThreadOpen`）；由 `web/scripts/check-dag-subagent.mjs` 实跑 |
 | 第十二节 名字上线 | `task/runner.py::_update_attach_card` 从 task 戳出 `attach.label`；`ws_actions/session.py::_annotate_spawn_origin` 把它带到 spawn 根的 `spawned_from.label`；测试见 `tests/unit/test_task_attach_integration.py` |

@@ -270,25 +270,22 @@ const layoutOf = (graph) => {
     + "the turn it rewrites, never dangling below",
   );
   assert.equal(
-    pos.b0.x, pos.a0.x + 2 * COL_W,
-    "one gap column from the lane it forked off: the branch root lands "
-    + "two grid units out (per-lane tier zeroing eats the backend's "
-    + "stale tier offset)",
+    pos.b0.x, pos.a0.x + 3 * COL_W,
+    "gap column + the fork lane's empty spine column: the branch root "
+    + "lands three grid units out, stubbed one column right of the "
+    + "spine the bridge lands on (per-lane tier zeroing eats the "
+    + "backend's stale tier offset)",
   );
 }
 
-/* ---- 3. glyphs: the inverted triangle, the count, no captions ---- */
+/* ---- 3. glyphs: the spawn square, the count, no captions ---- */
 
 assert.match(
   shapesSrc,
-  /agent_spawn[\s\S]{0,400}return "agent_head"/,
-  "the sub-agent glyph is chosen by the same field the thread pass reads",
-);
-assert.match(
-  shapesSrc,
-  /shape === "agent_head"[\s\S]{0,400}Math\.PI \/ 2/,
-  "the sub-agent head is the triangle vocabulary POINT-DOWN — a derived "
-  + "agent, one glance apart from the chain's upright turns",
+  /agent_spawn[\s\S]{0,400}return "square"/,
+  "the sub-agent glyph is chosen by the same field the thread pass "
+  + "reads — and it is a SQUARE: dispatching an agent is a function "
+  + "call, the call vocabulary",
 );
 assert.ok(
   !/agentCaption|AGENT_CAPTION|subagent-label/.test(shapesSrc + nodesSrc),
@@ -327,7 +324,7 @@ assert.match(
 );
 assert.match(
   pipelineSrc,
-  /_foldSummaries\(graph\)[\s\S]{0,900}buildThreadModel\(graph\)/,
+  /_foldSummaries\(graph, headId\)[\s\S]{0,900}buildThreadModel\(graph\)/,
   "threads fold after summaries so the two passes compose",
 );
 assert.match(
@@ -352,7 +349,7 @@ assert.match(
 );
 assert.match(
   edgesSrc,
-  /forkSibOf\[id\][\s\S]{0,400}fork-edge/,
+  /forkSibOf\[id\][\s\S]{0,3000}fork-edge/,
   "a fork with a level sibling gets the straight dashed bridge",
 );
 assert.ok(
@@ -370,9 +367,10 @@ assert.match(
   + "into a zoomed-in tile",
 );
 
-// The wheel triage (Obsidian-graph handling): pinch and ⌘/ctrl+wheel
-// zoom at pinch rate; sideways-dominant deltas are a trackpad swipe and
-// pan; a plain vertical wheel zooms about the cursor.
+// The wheel triage (rendering.md gesture table): pinch and ⌘/ctrl+wheel
+// zoom at pinch rate; a MOUSE wheel (legacy wheelDeltaY in notch
+// multiples, or a non-pixel deltaMode) zooms about the cursor; every
+// other wheel is a trackpad two-finger swipe and pans, both axes.
 assert.match(
   canvasSrc,
   /e\.ctrlKey \|\| e\.metaKey[\s\S]{0,200}PINCH_ZOOM_RATE/,
@@ -380,14 +378,14 @@ assert.match(
 );
 assert.match(
   canvasSrc,
-  /Math\.abs\(e\.deltaX\) > Math\.abs\(e\.deltaY\)[\s\S]{0,120}setView\(_viewTx - e\.deltaX/,
-  "sideways-dominant wheel = trackpad two-finger swipe: pan, both axes",
+  /wheelDeltaY[\s\S]{0,200}% 120 === 0/,
+  "mouse wheels are told from trackpads by the legacy wheelDeltaY notch "
+  + "multiple — macOS scroll acceleration defeats every deltaY heuristic",
 );
 assert.match(
   canvasSrc,
-  /zoomAt\(\s*e\.clientX - rect\.left,\s*e\.clientY - rect\.top,\s*Math\.exp\(-e\.deltaY \* WHEEL_ZOOM_RATE\)/,
-  "a plain vertical wheel zooms about the cursor — the node under the "
-  + "pointer stays under the pointer",
+  /setView\(_viewTx - e\.deltaX, _viewTy - e\.deltaY, _viewScale\)/,
+  "trackpad two-finger swipe: pan, both axes",
 );
 assert.match(
   canvasSrc,

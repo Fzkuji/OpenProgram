@@ -66,14 +66,14 @@ export function _shapeFor(node: GNode): string {
   if ((node as Record<string, unknown>).superseded_summary) {
     return "capsule";
   }
-  // Sub-agent head → an INVERTED triangle (dag/rendering.md §12): still
-  // the agent vocabulary — a triangle — flipped to say "an agent this
-  // one derived", one glance apart from the chain's own upright turns.
-  // No caption: the name lives in the tooltip and inspector, the canvas
-  // carries only the glyph and its fold count.
+  // Sub-agent spawn → a SQUARE (dag/rendering.md §12): dispatching an
+  // agent IS a function call, and the square is the call vocabulary.
+  // The dispatch call node folds into this one (passes/thread.ts), so
+  // one spawn is one square; expanding it shows the agent's own
+  // activity — replies as triangles, calls as squares, recursively.
   if ((node as Record<string, unknown>).source === "agent_spawn"
       && !node.predecessor) {
-    return "agent_head";
+    return "square";
   }
   const role = node.role;
   const fn = node.function;
@@ -100,11 +100,8 @@ export function _applyShapeSize(shape: SVGElement): void {
   if (shape.tagName === "circle") {
     shape.setAttribute("r", String(R));
   } else if (shape.tagName === "polygon") {
-    // The sub-agent head points DOWN; re-pointing it upright on a
-    // white-fill flip would silently turn it into a chain turn.
-    const flip = shape.getAttribute("data-shape") === "agent_head";
     shape.setAttribute("points",
-      _regularPolygon(3, R * TRI_SCALE, flip ? Math.PI / 2 : -Math.PI / 2));
+      _regularPolygon(3, R * TRI_SCALE, -Math.PI / 2));
   } else if (shape.tagName === "rect") {
     // The ROOT diamond is a rect with its own geometry set once at
     // build time — re-squaring it here (this runs on every white-fill
@@ -185,15 +182,6 @@ export function _buildShapeEl(
     // stands for turns". The inner ring is drawn by the node drawer so
     // its grey/inert states track the outer stroke.
     return _svg("circle", { r, "data-shape": "capsule", ...common });
-  } else if (shape === "agent_head") {
-    // Sub-agent head (dag/rendering.md §12): the triangle vocabulary,
-    // point-down — a derived agent. Occupies one grid point; no caption.
-    const pts = _regularPolygon(3, r * TRI_SCALE, Math.PI / 2);
-    return _svg("polygon", {
-      points: pts, "stroke-linejoin": "round",
-      "data-shape": "agent_head",
-      ...common,
-    });
   } else if (shape === "merge_dot") {
     // ◉ 实心带孔圆（rendering.md 第四节图例）：外圈实心 + 中心
     // 挖孔，读作"多条分支在此汇为一点"。

@@ -186,7 +186,7 @@ Default (conversation layer):    Click the reply to open its thread:
 │ └ △回复 ⁹                    │ └ △回复┄┐
                                │        ■ bash
                                │        ■ web_fetch
-                               │        ▽ sub-agent ⁵
+                               │        ■ sub-agent ⁵
                                │        ■ …(9 rows)
 ```
 
@@ -331,8 +331,8 @@ the glyph joins seamlessly for every shape.
 
 **Shape**: ◇ ROOT · ○ user · △ llm · ■ code · ◉ merge (solid circle with a hole, the graph's unique
 "convergence" shape) · ◎ compaction summary (a double circle: the reference circle with a thin inner ring — §9) ·
-▽ sub-agent head (the triangle vocabulary point-DOWN: a derived agent, one glance
-apart from the chain's upright turns — §12).
+■ sub-agent spawn (a square like every call — dispatching an agent IS a
+function call; it expands into the agent's own activity — §12).
 
 **HEAD is a breathing glow on its own glyph**: a `drop-shadow` in the branch
 colour that swells and settles on a slow cycle (2.4s), stamped on the shape
@@ -727,14 +727,21 @@ line, no items, nothing else.
 **Open is open.** Clicking the node inserts the thread into the layout: a
 faint dotted line (`2 3`) drops from the anchor into the first free column
 right of it, and every event is a real node on that line — a square per call
-in the anchor's lane colour, a point-down triangle per spawned agent — one row
+in the anchor's lane colour — spawned agents included — one row
 per event, top to bottom in call order. Fold reclaims the rows (rule ②).
 
-**The head IS the agent.** A spawn root draws as the triangle vocabulary
-flipped point-down: a derived agent, one glance apart from the chain's upright
-turns. Its internal turns are not chain nodes — they merge into it (§0) — and
-its own calls are its own thread, one column further right, opened by clicking
-the triangle. The model is recursive and so is the picture: every level reads
+**The head IS the agent, and the spawn IS a call.** A spawn root draws as a
+SQUARE — dispatching an agent is a function call, and the square is the call
+vocabulary. The dispatch call node (`task` / `message_branch`) folds into it:
+one spawn, one glyph (a dispatch that opened no spawn keeps its own square —
+that failure is worth seeing). The agent's internal turns are not chain
+nodes — they merge into it (§0), replies drawing as triangles and calls as
+squares once opened — and its own thread sits one column further right,
+opened by clicking the square. While an agent's thread is open, a badge pill
+(the same pill as branch badges, render/badges.ts) hangs below its last
+item, named after the agent; clicking it checks the agent chain's tip out as
+the active branch — taking over the agent's conversation. Folded agents show
+no badge, so the canvas stays clean. The model is recursive and so is the picture: every level reads
 by the same two rules, count-on-shoulder folded, column-of-nodes open. A
 nested open thread pushes the parent's later items down; expansion is
 insertion, never overlay.
@@ -785,5 +792,5 @@ The whole spec is implemented. Where each part lives:
 | §10 archived failure | `render/nodes.ts::_isArchivedFailure` — `status=error` AND off the HEAD chain; grey overrides §4's red |
 | §11 one card, two states / fork & edit | `dag/tooltip.ts`: `renderNodeInfo` feeds both states, `expandTooltip` deepens the card in place; `render/inspector.ts` builds only the verb list (+ raw JSON layer), wired in `render/interaction.ts`; the actions go through `POST /api/chat/checkout` |
 | §11 legend | `DagLegend` in `components/chat/dag-view.tsx` (inside the canvas HUD), `.dag-legend` in `right-dock.css` |
-| §12 call thread + agent head | `shapes.ts` `agent_head` (point-down triangle), `passes/thread.ts` (model), `layout/geometry.ts` (recursive placement), `render/edges.ts` (dotted thread line, centre-to-centre chain edges, scene-3 bridge), `render/nodes.ts` (`data-thread*`, shoulder count), `render/interaction.ts` (`toggleThreadOpen`); executed by `web/scripts/check-dag-subagent.mjs` |
+| §12 call thread + agent spawn | `shapes.ts` (spawn → square), `passes/thread.ts` (model), `layout/geometry.ts` (recursive placement), `render/edges.ts` (dotted thread line, centre-to-centre chain edges, scene-3 bridge), `render/nodes.ts` (`data-thread*`, shoulder count), `render/interaction.ts` (`toggleThreadOpen`); executed by `web/scripts/check-dag-subagent.mjs` |
 | §12 the name on the wire | `task/runner.py::_update_attach_card` stamps `attach.label` from the task; `ws_actions/session.py::_annotate_spawn_origin` carries it to the spawn root as `spawned_from.label`; tested in `tests/unit/test_task_attach_integration.py` |

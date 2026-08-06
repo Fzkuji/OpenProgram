@@ -12,13 +12,103 @@ import type { GNode } from "../types";
 import { getSocket, runtimeState } from "../../state";
 import { translateText } from "@/lib/i18n";
 import { _branchColor, _svg, _textWidth } from "../shapes";
-import { isSpawnRoot } from "../passes/thread";
+import { isSpawnRoot, type ThreadModel } from "../passes/thread";
+import { _currentHead } from "../store/globals";
 
 // canvas 量宽不认 var()（见 shapes.ts SPAWN_FONT 注释），写死同一字体栈。
 // 字号/字重必须跟下面 <text> 实际画的一致（取 active 的 600 偏保守），
 // 否则量出来的宽度偏窄，文字贴边。
 const BADGE_FONT =
   '600 10.5px "Inter Variable", "Inter", -apple-system, "PingFang SC", sans-serif';
+
+interface PlacedBox { x1: number; x2: number; y1: number; y2: number }
+
+/** One badge pill: measured bg, tooltip, label, optional click. Shared
+ *  by branch badges and open-agent badges so the two can never drift
+ *  apart visually. Collision resolution against ``placed`` mutates it. */
+function _drawPill(
+  tagG: SVGElement,
+  placed: PlacedBox[],
+  bx: number,
+  by: number,
+  label: string,
+  color: string,
+  isActive: boolean,
+  tipText: string,
+  onClick: (() => void) | null,
+  headAttr: string,
+): void {
+  const ROW_STEP = 32;
+  const bw = Math.max(Math.ceil(_textWidth(label, BADGE_FONT)) + 28, 56);
+  const overlaps = (): boolean =>
+    placed.some((r) =>
+      bx - bw / 2 < r.x2 && bx + bw / 2 > r.x1
+      && by - 10 < r.y2 && by + 10 > r.y1);
+  let guard = 0;
+  while (overlaps() && guard < 50) { by += ROW_STEP; guard++; }
+  placed.push({ x1: bx - bw / 2, x2: bx + bw / 2, y1: by - 10, y2: by + 10 });
+  const tg = _svg("g", {
+    class: "history-branch-tag" + (isActive ? " active" : ""),
+    transform: "translate(" + bx + "," + by + ")",
+    "data-head": headAttr,
+  });
+  (tg as SVGGraphicsElement).style.cursor = onClick ? "pointer" : "default";
+  const bh = 22;
+  tg.appendChild(_svg("rect", {
+    class: "history-branch-tag-bg",
+    x: String(-bw / 2),
+    y: String(-bh / 2),
+    width: String(bw),
+    height: String(bh),
+    rx: "11",
+    ry: "11",
+    fill: isActive
+      ? "color-mix(in srgb, " + color + " 14%, var(--bg-primary, #fff))"
+      : "var(--bg-tertiary, #f2f0ea)",
+    stroke: isActive ? color : "var(--border, #e4e2da)",
+    "stroke-width": isActive ? "1.5" : "1",
+  }));
+  const tip = _svg("title", {});
+  tip.textContent = tipText;
+  tg.appendChild(tip);
+  const text = _svg("text", {
+    x: "0",
+    y: "0",
+    "text-anchor": "middle",
+    "dominant-baseline": "central",
+    "font-size": "10.5",
+    "font-family": "var(--font-sans, sans-serif)",
+    "font-weight": isActive ? "600" : "500",
+    fill: isActive
+      ? "var(--text-bright, #1a1a17)"
+      : "var(--text-secondary, #6b6a63)",
+    "pointer-events": "none",
+  });
+  text.textContent = label;
+  tg.appendChild(text);
+  if (onClick) {
+    tg.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      onClick();
+    });
+  }
+  tagG.appendChild(tg);
+}
+
+function _sendCheckout(sessionId: string | null, headMsgId: string): void {
+  const sock = getSocket();
+  if (sock && sock.readyState === WebSocket.OPEN) {
+    sock.send(JSON.stringify({
+      action: "checkout_branch",
+      session_id: sessionId,
+      head_msg_id: headMsgId,
+    }));
+    sock.send(JSON.stringify({
+      action: "load_session",
+      session_id: sessionId,
+    }));
+  }
+}
 
 export function drawBadges(
   svg: SVGElement,
@@ -27,17 +117,17 @@ export function drawBadges(
   stableLeafOfNode: Record<string, string>,
   sessionId: string | null,
   fullById: Record<string, GNode> = Object.create(null),
+  thread: ThreadModel | null = null,
 ): void {
   const rows: GNode[] =
     ((sessionId && runtimeState._branchesByConv[sessionId]) as GNode[]) || [];
-  // Badges come ONLY from list_branches' active rows. Merging erases the
-  // badge (git semantics) — a merged branch's name lives on in the merge
-  // node's tooltip, not as a lane pill (rendering.md §5).
-  if (!rows.length) return;
+  // Branch badges come ONLY from list_branches' active rows. Merging
+  // erases the badge (git semantics) — a merged branch's name lives on
+  // in the merge node's tooltip, not as a lane pill (rendering.md §5).
+  // Open sub-agent badges below need no rows, so no early return here.
   const tagG = _svg("g", { class: "history-branch-tags" });
   // 已放置的 badge 像素盒——碰撞按实测盒判定（rendering.md §5）。
-  const placed: Array<{ x1: number; x2: number; y1: number; y2: number }> = [];
-  const ROW_STEP = 32; // = layout ROW_H：碰撞下移一行
+  const placed: PlacedBox[] = [];
   // 一趟预扫代替每行分支各自两遍全图扫描（流式期间每帧重画徽章）：
   // 每条 lane 的最深可见节点（锚点），和每一列的最大 y（判"锚位正下方
   // 有竖线穿过"）。比较序与原逐行扫描一致：先比 y，再比 x。
@@ -104,83 +194,63 @@ export function drawBadges(
     const label = (b.name as string) || hid.slice(0, 8);
     const isActive = !!b.active;
     const color = _branchColor(node, stableLeafOfNode);
-    // 碰撞：与已放置盒重叠 → 下移一行，直至无碰撞。
-    // 顶部的分支条已删（分支切换只在这里），标签按按钮规格画：
-    // 更大的字号/内边距 + 描边，hover 态在 right-dock.css。
-    const bwPre = Math.max(Math.ceil(_textWidth(label, BADGE_FONT)) + 28, 56);
-    const overlaps = (): boolean =>
-      placed.some((r) =>
-        bx - bwPre / 2 < r.x2 && bx + bwPre / 2 > r.x1
-        && by - 10 < r.y2 && by + 10 > r.y1);
-    let guard = 0;
-    while (overlaps() && guard < 50) { by += ROW_STEP; guard++; }
-    placed.push({ x1: bx - bwPre / 2, x2: bx + bwPre / 2, y1: by - 10, y2: by + 10 });
-    const tg = _svg("g", {
-      class: "history-branch-tag" + (isActive ? " active" : ""),
-      transform: "translate(" + bx + "," + by + ")",
-      "data-head": hid,
-    });
-    (tg as SVGGraphicsElement).style.cursor = isActive ? "default" : "pointer";
-    // 背景宽 = 实测文字宽 + 左右各 14px 内边距，下限 56（碰撞判定同款盒）。
-    const bw = bwPre;
-    const bh = 22;
-    const rect = _svg("rect", {
-      class: "history-branch-tag-bg",
-      x: String(-bw / 2),
-      y: String(-bh / 2),
-      width: String(bw),
-      height: String(bh),
-      rx: "11",
-      ry: "11",
-      fill: isActive
-        ? "color-mix(in srgb, " + color + " 14%, var(--bg-primary, #fff))"
-        : "var(--bg-tertiary, #f2f0ea)",
-      stroke: isActive ? color : "var(--border, #e4e2da)",
-      "stroke-width": isActive ? "1.5" : "1",
-    });
-    tg.appendChild(rect);
-    const tip = _svg("title", {});
-    tip.textContent = isActive
-      ? translateText("Current branch", "当前分支")
-      : translateText("Click to switch to this branch", "点击切换到此分支");
-    tg.appendChild(tip);
-    const text = _svg("text", {
-      x: "0",
-      y: "0",
-      "text-anchor": "middle",
-      "dominant-baseline": "central",
-      "font-size": "10.5",
-      "font-family": "var(--font-sans, sans-serif)",
-      "font-weight": isActive ? "600" : "500",
-      fill: isActive
-        ? "var(--text-bright, #1a1a17)"
-        : "var(--text-secondary, #6b6a63)",
-      "pointer-events": "none",
-    });
-    text.textContent = label;
-    tg.appendChild(text);
-    if (!isActive) {
-      tg.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const sock = getSocket();
-        if (sock && sock.readyState === WebSocket.OPEN) {
-          sock.send(
-            JSON.stringify({
-              action: "checkout_branch",
-              session_id: sessionId,
-              head_msg_id: hid,
-            }),
-          );
-          sock.send(
-            JSON.stringify({
-              action: "load_session",
-              session_id: sessionId,
-            }),
-          );
-        }
-      });
-    }
-    tagG.appendChild(tg);
+    _drawPill(
+      tagG, placed, bx, by, label, color, isActive,
+      isActive
+        ? translateText("Current branch", "当前分支")
+        : translateText("Click to switch to this branch", "点击切换到此分支"),
+      isActive ? null : () => _sendCheckout(sessionId, hid),
+      hid,
+    );
   });
+
+  // ── Sub-agent badges (dag/rendering.md §12) ──
+  // Only while the agent's thread is OPEN: folded agents keep the
+  // canvas clean, and opening one is exactly the moment "switch to
+  // this agent's branch" becomes a question. Same pill, same verb —
+  // clicking checks the agent chain's tip out as the active branch.
+  if (thread) {
+    Object.keys(tree.byId).forEach((sid) => {
+      const root = tree.byId[sid];
+      if (!isSpawnRoot(root) || !thread.isOpen(sid)) return;
+      // The agent chain's tip: walk conversation successors in the
+      // FULL graph (its turns are merged into the spawn glyph here).
+      let tipId = sid;
+      const seen: Record<string, boolean> = Object.create(null);
+      for (;;) {
+        seen[tipId] = true;
+        let next: string | null = null;
+        for (const id of Object.keys(fullById)) {
+          const n = fullById[id];
+          if (n.predecessor === tipId && (!n.caller || n.caller === "ROOT")
+              && !seen[id]) { next = id; break; }
+        }
+        if (!next) break;
+        tipId = next;
+      }
+      const isActive = !!_currentHead && (tipId === _currentHead
+        || _currentHead === sid);
+      const evs = thread.events[sid] || [];
+      let anchor: GNode = root;
+      for (let i = evs.length - 1; i >= 0; i--) {
+        const e = tree.byId[evs[i].id];
+        if (e) { anchor = e; break; }
+      }
+      const p = pos(anchor);
+      const label = thread.nameOf[sid] || sid.slice(0, 8);
+      const finalTip = tipId;
+      _drawPill(
+        tagG, placed, p.x, p.y + 28, label,
+        _branchColor(root, stableLeafOfNode), isActive,
+        isActive
+          ? translateText("Current branch", "当前分支")
+          : translateText(
+            "Click to take over this agent's branch",
+            "点击接管这个 agent 的分支"),
+        isActive ? null : () => _sendCheckout(sessionId, finalTip),
+        finalTip,
+      );
+    });
+  }
   svg.appendChild(tagG);
 }

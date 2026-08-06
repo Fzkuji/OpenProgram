@@ -257,30 +257,12 @@ export function _installInteractionHandlers(rerender: () => void): void {
     // writes the sibling. Checkout keeps the other nodes — there is
     // nothing to edit on a reply or a tool result.
     const gn = node ? _graphNode(id) : null;
-    // A sub-agent head rides the user role (its node IS the task
-    // prompt) but is not an editable turn: double-click TAKES OVER the
-    // agent's branch — HEAD moves to the agent chain's tip and the
-    // transcript becomes the agent's own conversation. Single click
-    // still folds/unfolds its thread.
+    // A sub-agent spawn rides the user role (its node IS the task
+    // prompt) but is not an editable turn — never fork&edit it. Taking
+    // over the agent's branch is the open-thread BADGE's job
+    // (render/badges.ts); double-click does nothing here.
     if (gn && (gn as Record<string, unknown>).source === "agent_spawn"
         && !gn.predecessor) {
-      closeNodeLayers();
-      let tipId = id;
-      if (_lastGraph) {
-        const byPred: Record<string, string> = Object.create(null);
-        for (const n of _lastGraph) {
-          const p = (n as Record<string, unknown>).predecessor;
-          if (p && (!n.caller || n.caller === "ROOT")) {
-            byPred[String(p)] = String(n.id);
-          }
-        }
-        const seen = new Set<string>();
-        while (byPred[tipId] && !seen.has(tipId)) {
-          seen.add(tipId);
-          tipId = byPred[tipId];
-        }
-      }
-      void _checkout(tipId, { exact: true });
       return;
     }
     if (gn && gn.role === "user" && gn.display !== "root") {

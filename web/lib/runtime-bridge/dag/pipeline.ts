@@ -310,7 +310,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
     sfold.coversOf, threadModel);
 
   drawBadges(world, tree, pos, stableLeafOfNode, runtimeState.currentSessionId,
-    fullById);
+    fullById, threadModel);
 
   // 会话切换后的首次绘制淡入（配合 transcript 的 session-enter），
   // 同会话的增量重绘原地替换，不闪。

@@ -182,6 +182,30 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
   });
   Object.values(events).forEach((evs) => evs.sort((a, b) => a.t - b.t));
 
+  // ── one spawn, one glyph ──
+  // A dispatch call (``task`` / ``message_branch``) and the spawn root
+  // it opened are the same act; drawing both puts two squares on the
+  // thread for one event. The spawn root — the node that expands into
+  // the agent's own activity — is the one that stays; the dispatch
+  // call folds into it (its arguments live on in the spawn's tooltip
+  // material). A dispatch that opened NO spawn (the call failed)
+  // keeps its own square: that failure is worth a glyph.
+  const isDispatchCall = (n: GNode): boolean =>
+    n.name === "task" || n.name === "message_branch"
+    || n.function === "task" || n.function === "message_branch";
+  const dispatchHidden = new Set<string>();
+  Object.keys(events).forEach((anchor) => {
+    const evs = events[anchor];
+    if (!evs.some((e) => e.kind === "spawn")) return;
+    events[anchor] = evs.filter((e) => {
+      if (e.kind !== "exec") return true;
+      const n = byId[e.id];
+      if (!n || !isDispatchCall(n)) return true;
+      dispatchHidden.add(e.id);
+      return false;
+    });
+  });
+
   // ── visibility ──
   // A spawn root shows only while every thread above it is open; its
   // items likewise. Chain nodes show unless they merged into an anchor.
@@ -211,6 +235,7 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
       return anchorOf(n.id) === n.id;
     }
     // execution node: on screen only while its anchor's thread is open
+    if (dispatchHidden.has(n.id)) return false;
     const o = ownerOf(n);
     return !!o && chainOpen(o) && (spawnOwnerOf[o] ? spawnVisible(o) : true);
   });
