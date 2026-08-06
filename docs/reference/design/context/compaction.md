@@ -158,7 +158,26 @@ contract from this side:
 - The graph builder does no seq arithmetic and no head-dependent filtering;
   everything it says about coverage restates `covers_ids`.
 
-## 7. Invariants and their tests
+## 7. Extension points
+
+The rolling-single-summary policy matches the reference tools (Claude Code,
+Codex CLI, Gemini CLI) and keeps the prompt-cache prefix stable. It is a
+policy, not a property of the storage: every alternative compaction scheme
+differs only in *which summaries count as active* (a policy field) and *how
+the renderer substitutes them* (the §3 rule). The append-only stand-in node
+is common to all of them, so switching schemes never migrates data:
+
+- **Segmented summaries** (several compaction nodes kept live): N summary
+  nodes covering disjoint chain segments; §3 applies per summary and the
+  trunk carries N capsules. Replace `_last_summary_id` with an active set.
+- **Nested summaries** (a summary of summaries): relax the "`covers_ids`
+  names real turns only" rule to admit summary ids, and make substitution
+  recursive.
+- **External-memory schemes** (summary retrieved on demand instead of
+  inlined): the node is stored identically; only the renderer stops inlining
+  it.
+
+## 8. Invariants and their tests
 
 | Invariant | Where enforced / tested |
 |---|---|
