@@ -219,7 +219,7 @@ def register_shared_builtins() -> None:
         description=(
             "set a persistent session goal — the agent auto-continues "
             "turns until the goal is met (or /goal clear)"),
-        argument_hint="[condition | clear | --check \"cmd\" condition]",
+        argument_hint="[condition | clear]",
     )
 
 

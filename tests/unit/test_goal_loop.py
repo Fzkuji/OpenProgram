@@ -8,8 +8,8 @@ Two layers, mirroring the dispatcher's own test split:
   idle-spin rules.
 * One end-to-end test runs the REAL ``process_user_turn`` with a fake
   ``stream_fn`` (the dispatcher's established fake-LLM seam) and a
-  ``--check`` predicate that flips from failing to passing, asserting
-  the loop self-continues exactly once and lands on ``achieved``.
+  judge verdict that flips from unmet to met, asserting the loop
+  self-continues exactly once and lands on ``achieved``.
 """
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def stub_agent_profile(monkeypatch: pytest.MonkeyPatch):
 
 def _set_goal(db: SessionDB, session_id: str, **overrides) -> dict:
     goal = {
-        "text": "the goal", "check": "", "status": "active",
+        "text": "the goal", "status": "active",
         "created_at": time.time(), "turns_used": 0, "max_turns": 20,
         "last_reason": "", "judge_parse_failures": 0,
     }
@@ -113,11 +113,10 @@ def _result(tools: bool = True) -> TurnResult:
 def test_goal_set_status_clear(tmp_db: SessionDB) -> None:
     tmp_db.create_session("s1", "main")
 
-    out = G.handle_goal_command("s1", 'tests pass --check "true"')
+    out = G.handle_goal_command("s1", "tests pass")
     assert out["send_text"] == "tests pass"
     goal = G.load_goal("s1")
     assert goal["status"] == "active"
-    assert goal["check"] == "true"
     assert goal["text"] == "tests pass"
     assert goal["max_turns"] == 20
 
@@ -135,40 +134,36 @@ def test_goal_set_status_clear(tmp_db: SessionDB) -> None:
     assert "No active goal" in G.handle_goal_command("s1", "clear")["text"]
 
 
-def test_goal_set_check_only(tmp_db: SessionDB) -> None:
-    tmp_db.create_session("s1", "main")
-    out = G.handle_goal_command("s1", '--check "true"')
-    goal = G.load_goal("s1")
-    assert goal["check"] == "true"
-    assert goal["text"].startswith("check passes:")
-    assert out["send_text"] == goal["text"]
-
-
-def test_goal_empty_set_is_usage(tmp_db: SessionDB) -> None:
-    tmp_db.create_session("s1", "main")
-    # No goal written yet + "--check" without value → usage text.
-    out = G.handle_goal_command("s1", "--check")
-    assert out["send_text"] is None
-    assert "Usage" in out["text"]
-    assert G.load_goal("s1") is None
-
-
 # ---------------------------------------------------------------------------
 # Loop unit tests (fake run_turn)
 # ---------------------------------------------------------------------------
 
-def test_check_predicate_flips_to_achieved(tmp_db: SessionDB, tmp_path: Path,
-                                           captured_goal_events) -> None:
-    """Turn 1 fails the predicate → one continuation runs → predicate
-    passes → achieved."""
-    flag = tmp_path / "done.flag"
-    _set_goal(tmp_db, "s1", check=f"test -f {flag}")
+def _judge_replies(monkeypatch, replies: list[str]) -> None:
+    it = iter(replies)
+    monkeypatch.setattr(G, "_judge_llm", lambda *a, **k: next(it))
+
+
+def _confirm_verifier(monkeypatch) -> None:
+    monkeypatch.setattr(
+        G, "_run_verifier_turn",
+        lambda *a, **k: '{"confirmed": true, "evidence": "verified"}')
+
+
+def test_judge_flips_to_achieved(tmp_db: SessionDB, monkeypatch,
+                                 captured_goal_events) -> None:
+    """Turn 1 judged unmet → one continuation runs → judged met →
+    achieved."""
+    _set_goal(tmp_db, "s1")
+    _judge_replies(monkeypatch, [
+        '{"met": false, "reason": "not yet"}',
+        '{"met": true, "reason": "done"}',
+    ])
+    _confirm_verifier(monkeypatch)
 
     continuations: list[TurnRequest] = []
 
     def run_turn(req, *, on_event=None, cancel_event=None):
         continuations.append(req)
-        flag.write_text("done")          # the continuation "does the work"
         return _result(tools=True)
 
     final = G.continue_goal_turns(_req(), _result(), run_turn=run_turn)
@@ -185,8 +180,10 @@ def test_check_predicate_flips_to_achieved(tmp_db: SessionDB, tmp_path: Path,
     assert captured_goal_events[-1]["goal"]["status"] == "achieved"
 
 
-def test_max_turns_caps_the_loop(tmp_db: SessionDB) -> None:
-    _set_goal(tmp_db, "s1", check="false", max_turns=2)
+def test_max_turns_caps_the_loop(tmp_db: SessionDB, monkeypatch) -> None:
+    _set_goal(tmp_db, "s1", max_turns=2)
+    monkeypatch.setattr(
+        G, "_judge_llm", lambda *a, **k: '{"met": false, "reason": "no"}')
     calls = []
 
     def run_turn(req, *, on_event=None, cancel_event=None):
@@ -200,8 +197,11 @@ def test_max_turns_caps_the_loop(tmp_db: SessionDB) -> None:
     assert len(calls) == 1  # turn 2 ran, turn 3 was never launched
 
 
-def test_clear_mid_loop_stops_continuation(tmp_db: SessionDB) -> None:
-    _set_goal(tmp_db, "s1", check="false")
+def test_clear_mid_loop_stops_continuation(tmp_db: SessionDB,
+                                           monkeypatch) -> None:
+    _set_goal(tmp_db, "s1")
+    monkeypatch.setattr(
+        G, "_judge_llm", lambda *a, **k: '{"met": false, "reason": "no"}')
     calls = []
 
     def run_turn(req, *, on_event=None, cancel_event=None):
@@ -217,7 +217,7 @@ def test_clear_mid_loop_stops_continuation(tmp_db: SessionDB) -> None:
 
 def test_judge_failures_three_strikes_error(tmp_db: SessionDB,
                                             monkeypatch) -> None:
-    _set_goal(tmp_db, "s1", check="")   # no predicate → LLM judge
+    _set_goal(tmp_db, "s1")
     monkeypatch.setattr(
         G, "_judge_llm",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("llm down")))
@@ -235,8 +235,11 @@ def test_judge_failures_three_strikes_error(tmp_db: SessionDB,
     assert len(calls) == 2  # failures 1 and 2 still continued
 
 
-def test_zero_tool_continuation_is_idle_error(tmp_db: SessionDB) -> None:
-    _set_goal(tmp_db, "s1", check="false")
+def test_zero_tool_continuation_is_idle_error(tmp_db: SessionDB,
+                                              monkeypatch) -> None:
+    _set_goal(tmp_db, "s1")
+    monkeypatch.setattr(
+        G, "_judge_llm", lambda *a, **k: '{"met": false, "reason": "no"}')
     calls = []
 
     def run_turn(req, *, on_event=None, cancel_event=None):
@@ -261,7 +264,7 @@ def test_no_goal_is_a_passthrough(tmp_db: SessionDB) -> None:
 
 
 def test_failed_turn_stops_loop(tmp_db: SessionDB) -> None:
-    _set_goal(tmp_db, "s1", check="false")
+    _set_goal(tmp_db, "s1")
     failed = TurnResult(final_text="", user_msg_id="u", assistant_msg_id="a",
                        failed=True, error="boom")
 
@@ -397,12 +400,11 @@ def test_web_goal_set_rewrites_text_and_starts_turn(tmp_db: SessionDB,
 
     ws = _FakeWS()
     asyncio.run(handle_chat(
-        ws, {"text": '/goal --check "true" tests pass',
-             "session_id": "web2"}))
+        ws, {"text": "/goal tests pass", "session_id": "web2"}))
     assert started.wait(5), "turn thread never launched"
 
     goal = G.load_goal("web2")
-    assert goal["status"] == "active" and goal["check"] == "true"
+    assert goal["status"] == "active"
     # The persisted user message is the goal DIRECTIVE, not "/goal …".
     msgs = tmp_db.get_messages("web2")
     user_rows = [m for m in msgs if m["role"] == "user"]
@@ -418,19 +420,21 @@ def test_web_goal_set_rewrites_text_and_starts_turn(tmp_db: SessionDB,
 def test_dispatcher_end_to_end_goal_achieved(tmp_db: SessionDB,
                                              tmp_path: Path,
                                              monkeypatch) -> None:
-    """Real process_user_turn: turn 1 leaves the predicate failing, the
-    goal loop launches ONE continuation turn (a first-class turn — its
-    own user+assistant rows), the second turn flips the predicate, and
-    the goal ends achieved."""
-    flag = tmp_path / "made-by-turn-2.flag"
-    _set_goal(tmp_db, "e2e", check=f"test -f {flag}")
+    """Real process_user_turn: turn 1 is judged unmet, the goal loop
+    launches ONE continuation turn (a first-class turn — its own
+    user+assistant rows), the second judgement is met, and the goal
+    ends achieved."""
+    _set_goal(tmp_db, "e2e")
+    _judge_replies(monkeypatch, [
+        '{"met": false, "reason": "not yet"}',
+        '{"met": true, "reason": "done"}',
+    ])
+    _confirm_verifier(monkeypatch)
 
     turn_count = {"n": 0}
 
     def _on_stream_call():
         turn_count["n"] += 1
-        if turn_count["n"] >= 2:
-            flag.write_text("done")
 
     fake_stream = _make_text_stream_fn(["work ", "done"],
                                        on_call=_on_stream_call)
@@ -473,7 +477,7 @@ def test_needs_user_pauses_loop(tmp_db: SessionDB, monkeypatch) -> None:
     """A need_user verdict from the judge pauses the loop (no
     continuation launches), records the question, and a later real user
     turn resumes it."""
-    _set_goal(tmp_db, "s1", check="")   # no predicate → LLM judge
+    _set_goal(tmp_db, "s1")
     monkeypatch.setattr(
         G, "_judge_llm",
         lambda *a, **k: ('{"met": false, "reason": "direction unclear", '
@@ -514,7 +518,7 @@ def test_needs_user_without_question_continues(tmp_db: SessionDB,
                                                monkeypatch) -> None:
     """need_user=true with an empty question is not actionable — the
     loop treats it as unmet and keeps going."""
-    _set_goal(tmp_db, "s1", check="", max_turns=1)
+    _set_goal(tmp_db, "s1", max_turns=1)
     monkeypatch.setattr(
         G, "_judge_llm",
         lambda *a, **k: ('{"met": false, "reason": "r", "need_user": true, '
@@ -545,7 +549,7 @@ def test_met_verdict_is_actively_verified(tmp_db: SessionDB,
     """A met verdict from the tail judge only stops the loop after the
     verifier confirms it from the working directory; a refuted claim
     continues with the verifier's gap as the reason."""
-    _set_goal(tmp_db, "s1", check="")
+    _set_goal(tmp_db, "s1")
     monkeypatch.setattr(
         G, "_judge_llm",
         lambda *a, **k: '{"met": true, "reason": "looks done"}')
@@ -580,7 +584,7 @@ def test_needs_user_refuted_keeps_running(tmp_db: SessionDB,
                                           monkeypatch) -> None:
     """A needs_user claim the verifier refutes does not pause — the loop
     continues with the gap."""
-    _set_goal(tmp_db, "s1", check="", max_turns=1)
+    _set_goal(tmp_db, "s1", max_turns=1)
     monkeypatch.setattr(
         G, "_judge_llm",
         lambda *a, **k: ('{"met": false, "reason": "r", "need_user": true, '
@@ -597,7 +601,7 @@ def test_needs_user_refuted_keeps_running(tmp_db: SessionDB,
 
 def test_verifier_failure_trusts_cheap_verdict(tmp_db: SessionDB,
                                                monkeypatch) -> None:
-    _set_goal(tmp_db, "s1", check="")
+    _set_goal(tmp_db, "s1")
     monkeypatch.setattr(
         G, "_judge_llm",
         lambda *a, **k: '{"met": true, "reason": "done"}')
@@ -606,15 +610,3 @@ def test_verifier_failure_trusts_cheap_verdict(tmp_db: SessionDB,
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn down")))
     G.continue_goal_turns(_req(), _result(), run_turn=lambda req, **k: _result())
     assert G.load_goal("s1")["status"] == "achieved"
-
-
-def test_check_goals_skip_active_verification(tmp_db: SessionDB,
-                                              monkeypatch) -> None:
-    _set_goal(tmp_db, "s1", check="true")
-    called = []
-    monkeypatch.setattr(
-        G, "_run_verifier_turn",
-        lambda *a, **k: called.append(1) or '{"confirmed": true}')
-    G.continue_goal_turns(_req(), _result(), run_turn=lambda req, **k: _result())
-    assert G.load_goal("s1")["status"] == "achieved"
-    assert called == []                          # the command IS the evidence

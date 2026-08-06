@@ -8,17 +8,9 @@ A goal is a condition the session keeps working toward. You set it once with `/g
 
 This stores the goal on the session and immediately starts a first turn with the condition text as the instruction. From then on, whenever a turn ends and the goal is still unmet, the runtime sends a follow-up turn (`[goal] 未达成：<reason>。继续。`) carrying the judge's reason for why it is not done yet.
 
-## The two ways a goal is checked
+## How a goal is judged
 
-**With a check command** (recommended when you can write one):
-
-```
-/goal --check "cd /path/to/repo && python -m pytest -q" all tests pass
-```
-
-The quoted command runs after every turn in the session's working directory (120 s timeout). Exit 0 means the goal is met; a non-zero exit keeps the loop going, and the command's output tail becomes the reason fed into the next continuation turn. No LLM is involved in the verdict — it is deterministic and free.
-
-**Without a check command**, an LLM judge decides. After each turn, one no-tools call on the session's model reads the goal text plus the tail of the conversation (last assistant output and recent tool results) and returns a strict yes/no with a reason. The judge is deliberately not the working agent asking itself "am I done?" — self-reports run optimistic; the verdict comes from a separate call that only sees evidence.
+An LLM judge decides. After each turn, one no-tools call on the session's model reads the goal text plus the tail of the conversation (last assistant output and recent tool results) and returns a strict yes/no with a reason. The judge is deliberately not the working agent asking itself "am I done?" — self-reports run optimistic; the verdict comes from a separate call that only sees evidence. Before the loop stops on a met verdict, a spawned verifier agent re-checks the claim against the working directory with inspection-only tools.
 
 ## Writing a condition that works
 
@@ -27,8 +19,6 @@ Write the condition as something the transcript can prove, not a feeling:
 - Good: "`tests/unit` passes and the new page is registered in `nav.py`" — the judge can see test output and file edits.
 - Good: "the script prints `OK` for all 12 inputs" — provable by output.
 - Weak: "the code is clean" / "the feature works well" — nothing in the transcript settles it, so the judge guesses and the loop wanders.
-
-If the condition can be a shell command, make it one with `--check` — a failing test suite is a better judge than any model.
 
 ## Status, clearing, stopping
 
@@ -45,12 +35,12 @@ In the web UI an active goal shows as `◎ goal · N/20` in the chip row above t
 
 | Outcome | Meaning |
 |---|---|
-| `achieved` | The check passed or the judge answered met. |
+| `achieved` | The judge answered met and the verifier confirmed it. |
 | `capped` | The goal used its turn budget (default 20; setting `goal.max_turns`). Raise the budget or split the goal. |
 | `error` | A continuation turn did no tool work while the goal stayed unmet (spinning), or the judge failed three times in a row. The goal state and last reason stay visible in `/goal`. |
 | `cleared` | You removed it. |
 
-A failed turn (provider error, cancellation) pauses the loop without consuming the goal — the goal stays `active` and the check resumes after the next completed turn.
+A failed turn (provider error, cancellation) pauses the loop without consuming the goal — the goal stays `active` and judging resumes after the next completed turn.
 
 ## Where it works
 

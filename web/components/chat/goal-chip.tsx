@@ -20,7 +20,6 @@ import { useSessionStore } from "@/lib/session-store";
 
 interface GoalState {
   text?: string;
-  check?: string;
   status?: string;
   turns_used?: number;
   max_turns?: number;

@@ -7,12 +7,8 @@ launches a follow-up turn (``source="goal_continue"``). Every
 continuation turn is persisted, committed and compacted like any
 user-sent turn.
 
-Two evaluation modes:
-
-* deterministic — ``goal.check`` holds a shell command; exit 0 = met.
-  Zero LLM cost.
-* LLM judge — one no-tools LLM call over the goal text plus the branch
-  tail, returning strict JSON ``{"met": bool, "reason": str}``.
+Evaluation is one no-tools LLM judge call over the goal text plus the
+branch tail, returning strict JSON ``{"met": bool, "reason": str}``.
 
 The judge is separate from the working model on purpose: agents that
 self-report completion (Codex / Cline style) systematically declare
@@ -21,7 +17,7 @@ context. Design doc: docs/reference/design/runtime/goal.md.
 
 Goal meta shape (``session extra_meta["goal"]``)::
 
-    {"text": str, "check": str, "status": "active" | "achieved" |
+    {"text": str, "status": "active" | "achieved" |
      "cleared" | "capped" | "error", "created_at": float,
      "turns_used": int, "max_turns": int, "last_reason": str,
      "judge_parse_failures": int}
@@ -30,16 +26,12 @@ from __future__ import annotations
 
 import json
 import logging
-import shlex
-import subprocess
 import time
 from dataclasses import replace
 from typing import Any, Callable, Optional
 
 _log = logging.getLogger(__name__)
 
-CHECK_TIMEOUT_SECONDS = 120
-CHECK_REASON_MAX_CHARS = 2000
 JUDGE_TAIL_MESSAGES = 8
 JUDGE_TAIL_MAX_CHARS = 24_000  # ~8k tokens
 JUDGE_PARSE_FAILURE_LIMIT = 3
@@ -115,7 +107,7 @@ def _emit_goal_update(on_event: Optional[Callable], session_id: str,
         "type": "goal_update",
         "session_id": session_id,
         "goal": {k: goal.get(k) for k in (
-            "text", "check", "status", "turns_used", "max_turns",
+            "text", "status", "turns_used", "max_turns",
             "last_reason", "last_question")},
     }
     if on_event is not None:
@@ -137,39 +129,8 @@ def _emit_goal_update(on_event: Optional[Callable], session_id: str,
 
 
 # ---------------------------------------------------------------------------
-# Evaluation — deterministic check command or LLM judge
+# Evaluation — LLM judge
 # ---------------------------------------------------------------------------
-
-def _goal_working_dir(session_id: str) -> Optional[str]:
-    """Same cwd resolution as the agent's own turn (project path, else
-    the session repo's workdir/)."""
-    try:
-        from openprogram.agent.internals._workdir import (
-            project_workdir_for, session_workdir_for,
-        )
-        wd = project_workdir_for(session_id) or session_workdir_for(session_id)
-        return str(wd) if wd else None
-    except Exception:
-        return None
-
-
-def _evaluate_check_command(session_id: str, check: str) -> tuple[str, str]:
-    """Run the deterministic predicate. ``("met"|"unmet", reason)``."""
-    try:
-        proc = subprocess.run(
-            check, shell=True, cwd=_goal_working_dir(session_id),
-            capture_output=True, text=True, timeout=CHECK_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired:
-        return "unmet", f"check command timed out after {CHECK_TIMEOUT_SECONDS}s: {check}"
-    except Exception as e:  # noqa: BLE001 — a broken predicate is an unmet goal, not a crash
-        return "unmet", f"check command failed to run: {type(e).__name__}: {e}"
-    if proc.returncode == 0:
-        return "met", ""
-    tail = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
-    tail = tail[-CHECK_REASON_MAX_CHARS:]
-    return "unmet", tail or f"check exited {proc.returncode}"
-
 
 def _message_blocks(msg: dict) -> list[dict]:
     """Parsed ``extra.blocks`` of a persisted assistant row (may be a
@@ -318,12 +279,7 @@ def _evaluate_with_llm_judge(
 def evaluate_goal(session_id: str, goal: dict, *, agent_id: str,
                   model_override: Optional[str]) -> tuple[str, str, str]:
     """``("met"|"unmet"|"needs_user"|"judge_failure", reason, question)``
-    for the goal — the deterministic predicate when one is set (it never
-    asks for the user), else the LLM judge."""
-    check = (goal.get("check") or "").strip()
-    if check:
-        verdict, reason = _evaluate_check_command(session_id, check)
-        return verdict, reason, ""
+    for the goal, from the LLM judge."""
     return _evaluate_with_llm_judge(
         session_id, goal, agent_id=agent_id, model_override=model_override)
 
@@ -478,12 +434,10 @@ def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
         )
 
         # Stop verdicts from the tail judge get actively verified —
-        # evidence from the working directory, not the transcript. The
-        # deterministic check path skips this: the command already IS
-        # the evidence. An unconfirmed stop becomes an unmet with the
-        # verifier's gap as the reason for the next continuation.
-        if verdict in ("met", "needs_user") and not (
-                goal.get("check") or "").strip():
+        # evidence from the working directory, not the transcript. An
+        # unconfirmed stop becomes an unmet with the verifier's gap as
+        # the reason for the next continuation.
+        if verdict in ("met", "needs_user"):
             confirmed, detail = _actively_verify(
                 prev_req.session_id, goal, verdict, reason, question,
                 agent_id=prev_req.agent_id,
@@ -637,15 +591,8 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
         _emit_goal_update(None, session_id, goal)
         return {"text": "Goal cleared.", "send_text": None}
 
-    check, text = _parse_set_args(args)
-    if not text and not check:
-        return {"text": ("Usage: /goal <condition> | /goal --check "
-                         "\"<shell command>\" <condition> | /goal | "
-                         "/goal clear"),
-                "send_text": None}
     goal = {
-        "text": text or f"check passes: {check}",
-        "check": check,
+        "text": args,
         "status": "active",
         "created_at": time.time(),
         "turns_used": 0,
@@ -655,53 +602,21 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
     }
     save_goal(session_id, goal)
     _emit_goal_update(None, session_id, goal)
-    mode = f"check: {check}" if check else "LLM judge"
     return {
-        "text": (f"Goal set ({mode}, up to {goal['max_turns']} turns): "
+        "text": (f"Goal set (LLM judge, up to {goal['max_turns']} turns): "
                  f"{goal['text']}"),
         "send_text": goal["text"],
     }
 
 
-def _parse_set_args(args: str) -> tuple[str, str]:
-    """``(check_command, condition_text)`` from the set form. ``--check``
-    takes one (quoted) value; everything else is the condition text."""
-    try:
-        tokens = shlex.split(args)
-    except ValueError:
-        tokens = args.split()
-    check = ""
-    rest: list[str] = []
-    i = 0
-    while i < len(tokens):
-        t = tokens[i]
-        if t == "--check":
-            if i + 1 < len(tokens):
-                check = tokens[i + 1]
-                i += 2
-            else:
-                i += 1  # trailing --check with no value → ignored
-            continue
-        if t.startswith("--check="):
-            check = t[len("--check="):]
-            i += 1
-            continue
-        rest.append(t)
-        i += 1
-    return check.strip(), " ".join(rest).strip()
-
-
 def _status_text(goal: Optional[dict]) -> str:
     if not goal:
-        return ("No goal set. /goal <condition> to set one "
-                "(optionally --check \"<shell command>\").")
+        return "No goal set. /goal <condition> to set one."
     lines = [
         f"Goal [{goal.get('status')}]: {goal.get('text') or ''}",
         f"  turns: {int(goal.get('turns_used') or 0)}/"
         f"{int(goal.get('max_turns') or DEFAULT_MAX_TURNS)}",
     ]
-    if goal.get("check"):
-        lines.append(f"  check: {goal['check']}")
     if goal.get("last_reason"):
         lines.append(f"  last reason: {goal['last_reason']}")
     if goal.get("status") == "waiting_user" and goal.get("last_question"):
