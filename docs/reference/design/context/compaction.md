@@ -139,11 +139,17 @@ The design allows exactly one mover:
 - **Spawned turns never move HEAD.** A same-session sub-agent turn
   (task / message_branch) runs with `TurnRequest.advance_head=False`: the
   spawn branch opens without registering itself as head, and every write the
-  inner dispatcher makes (branch root, placeholder, reply) is head-neutral.
-  The transcript follows HEAD, so a stolen head switched the user's window
-  to the agent's conversation mid-run and mixed the two dialogues.
-  Cross-session sends still advance the target session's own head — there
-  the turn IS that conversation growing.
+  inner dispatcher makes (branch root, placeholder, reply, finalize, error)
+  is head-neutral. The transcript follows HEAD, so a stolen head switched
+  the user's window to the agent's conversation mid-run and mixed the two
+  dialogues. Cross-session sends still advance the target session's own
+  head — there the turn IS that conversation growing.
+- **The turn's head policy is one object.** `dispatcher/turn_writer.py`'s
+  `TurnWriter` performs every chain write a turn makes and alone applies
+  `advance_head`. The invariant is structural: inside the dispatcher
+  package, `set_head` / `update_session(head_id=…)` appear only in that
+  file (plus the manual function-run path in `forced_tool.py`, a
+  user-initiated move by definition).
 - **Mirrors are read-only.** The webui keeps an in-memory `conv` mirror
   (messages + head) for display. It is hydrated FROM the store and never
   written back: `save_meta` carries no `head_id`, and display-side rows that

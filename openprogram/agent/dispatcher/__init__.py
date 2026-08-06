@@ -209,6 +209,8 @@ def _process_turn_once(
     # we don't want to load until first use.
     from openprogram.agent.session_db import default_db
     db = default_db()
+    from openprogram.agent.dispatcher.turn_writer import TurnWriter
+    _writer = TurnWriter(db, req)
 
     # 1. Ensure session exists. Load history along the *active branch*
     #    (parent-walked from head_id) instead of the full append log,
@@ -332,64 +334,9 @@ def _process_turn_once(
         )
 
     if not req.user_already_persisted:
-        # Write the user node as a Call directly — same shape the DAG
-        # uses everywhere (dag/overview.md step 5). GraphStoreShim
-        # .append already calls set_head for non-caller nodes, so no
-        # separate set_head needed.
-        try:
-            from openprogram.context.nodes import Call, ROLE_USER
-            from openprogram.store import GraphStoreShim as _GShim
-
-            _shim = _GShim(db, req.session_id,
-                           advance_head=req.advance_head)
-            _user_meta = {
-                k: v for k, v in user_msg.items()
-                if k not in {"id", "role", "content", "timestamp", "extra",
-                             "predecessor"}
-                and v is not None
-            }
-            _raw_extra = user_msg.get("extra")
-            if _raw_extra:
-                try:
-                    _decoded = json.loads(_raw_extra) if isinstance(
-                        _raw_extra, str) else _raw_extra
-                    _user_meta.update(_decoded)
-                except (json.JSONDecodeError, TypeError):
-                    _user_meta["extra"] = _raw_extra
-            if req.branch_from is None and req.spawn_caller:
-                # Spawn branch root — created by the store primitive
-                # (dag/overview.md): predecessor=None, caller
-                # = the spawning node, head registered. Never
-                # hand-assembled here.
-                db.spawn_branch(
-                    req.session_id,
-                    req.spawn_caller,
-                    source=req.source,
-                    node_id=user_msg_id,
-                    prompt=req.user_text,
-                    created_at=user_msg.get("timestamp"),
-                    metadata=_user_meta,
-                    register_head=req.advance_head,
-                )
-            else:
-                _user_node = Call(
-                    id=user_msg_id,
-                    created_at=user_msg.get("timestamp") or time.time(),
-                    role=ROLE_USER,
-                    output=req.user_text,
-                    caller=_ROOT_ID,
-                    # Explicit root-level fork (branch_from=None) and
-                    # the session's first turn both anchor at ROOT
-                    # explicitly — same convention as @agentic_function
-                    # root-level runs.
-                    predecessor=user_caller_id or _ROOT_ID,
-                    metadata=_user_meta,
-                )
-                _shim.append(_user_node)
-        except Exception:
-            db.append_message(req.session_id, user_msg)
-            if req.advance_head:
-                db.set_head(req.session_id, user_msg_id)
+        # Write the user node through the TurnWriter — the one object
+        # allowed to move this turn's head (turn_writer.py).
+        _writer.persist_user(user_msg_id, user_msg, user_caller_id)
         on_event({
             "type": "chat_ack",
             "data": {"session_id": req.session_id, "msg_id": user_msg_id},
@@ -534,12 +481,9 @@ def _process_turn_once(
     #     aggregation in webui/persistence._aggregate_tool_messages.
     #     We update this row's content + tool_calls/blocks at turn
     #     end (step 5) once the LLM's final text is known.
-    _placeholder_inserted = _insert_placeholder(
-        db, req.session_id, assistant_msg_id, user_msg_id, req.source,
-        advance_head=req.advance_head,
+    _placeholder_inserted = _writer.open_placeholder(
+        assistant_msg_id, user_msg_id,
     )
-    if _placeholder_inserted and req.advance_head:
-        db.set_head(req.session_id, assistant_msg_id)
 
     # Mark session as running before agent loop starts.
     try:
@@ -705,14 +649,9 @@ def _process_turn_once(
             err_text = f"[error] {type(e).__name__}: {e}"
             head_for_next = err_id
         # Move head to the failed turn so the next user message
-        # chains off it, not off the user message that triggered it.
-        try:
-            db.update_session(req.session_id, head_id=head_for_next, status="failed")
-        except Exception:
-            _log.warning(
-                "failed to record error status for session %s",
-                req.session_id, exc_info=True,
-            )
+        # chains off it, not off the user message that triggered it —
+        # on an advancing turn only (turn_writer.py).
+        _writer.record_failure(head_for_next)
         # An error is a terminal state, not a missing one: finalize the turn
         # so the error node gets the same bookkeeping (context commit, git
         # commit, snapshot eviction) a successful turn gets. Without this the
@@ -827,6 +766,7 @@ def _process_turn_once(
         agent_profile=_fin_profile,
         ctx_win=_fin_ctx_win,
         on_event=on_event,
+        head_id=_writer.head_for_finalize(assistant_msg_id),
     )
 
     # Mark session idle/done now that the turn completed successfully.

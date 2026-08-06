@@ -187,6 +187,7 @@ def finalize_turn(
     agent_profile: Optional[dict],
     ctx_win: Optional[int],
     on_event,
+    head_id: Optional[str] = None,
 ) -> None:
     """Run the phase-6 turn-finalization bookkeeping. All side effects;
     returns nothing. Every sub-step is best-effort — the conversation
@@ -198,15 +199,13 @@ def finalize_turn(
     failed resolve fell through the try/except.
     """
     # 6. Update session bookkeeping (head_id, token tracking, model).
-    # A same-session SPAWNED turn (advance_head=False) is machinery and
-    # must not move the session head here either — this was the last
-    # unguarded mover: it flipped the active branch onto the agent's
-    # chain at inner-turn end and the transcript followed it
-    # (context/compaction.md §5).
+    # ``head_id`` is decided by the TurnWriter (turn_writer.py) — None
+    # on a spawned turn, which update_session treats as "don't touch".
+    # This step used to move the head unconditionally and was the last
+    # unguarded mover (context/compaction.md §5).
     db.update_session(
         req.session_id,
-        head_id=assistant_msg_id if getattr(req, "advance_head", True)
-        else None,
+        head_id=head_id,
         last_prompt_tokens=int(usage.get("input_tokens") or 0),
         model=req.model_override or session.get("model"),
     )
