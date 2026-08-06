@@ -153,7 +153,12 @@ export function drawEdges(
     const color = _branchColor(node, stableLeafOfNode);
     const sibId = geom.forkSibOf[id];
     const sib = sibId ? tree.byId[sibId] : undefined;
-    if (sib && pos(sib).y === d.y) {
+    // A superseded summary's only meaningful attachment is its splice
+    // point (ROOT for a from-the-start compaction). The sibling
+    // straight-dash reads as "forked off that message" — wrong story
+    // for a relic — so it always takes the elbow from its fork point.
+    const isRelic = !!(node as Record<string, unknown>).superseded_summary;
+    if (!isRelic && sib && pos(sib).y === d.y) {
       const sp = pos(sib);
       edgeG.appendChild(_svg("line", {
         x1: sp.x, y1: d.y, x2: d.x, y2: d.y,
