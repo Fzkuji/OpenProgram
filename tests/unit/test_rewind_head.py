@@ -37,23 +37,24 @@ def _build_two_turns(store: SessionStore, sid: str) -> None:
     """ROOT → u1 → u1_reply → u2 → u2_reply, head at u2_reply."""
     git, idx = store._open(sid, create_if_missing=True)
 
-    def add(nid, role, *, caller="", pred="", display=None, head=None):
+    def add(nid, role, *, pred="", display=None, head=None):
         meta = {}
-        if pred:
-            meta["predecessor"] = pred
         if display:
             meta["display"] = display
-        node = Call(id=nid, role=role, caller=caller, output=nid, metadata=meta)
-        seq = idx.append(node, predecessor=pred, caller=caller or meta.get("caller") or "")
+        # The conv edge is the TOP-LEVEL ``predecessor`` field
+        # (dag/overview.md) — exactly what append_message writes.
+        node = Call(id=nid, role=role, output=nid,
+                    predecessor=pred or None, metadata=meta)
+        seq = idx.append(node, predecessor=pred, caller="")
         git.write_history(seq, node.role, node.id, node.to_dict())
         idx.set_meta(updated_at=time.time())
         if head is not None:
             idx.set_head(head)
 
     add("ROOT", ROLE_USER, display="root")
-    add("u1", ROLE_USER, caller="ROOT", head="u1")
+    add("u1", ROLE_USER, pred="ROOT", head="u1")
     add("u1_reply", ROLE_LLM, pred="u1", head="u1_reply")
-    add("u2", ROLE_USER, caller="ROOT", pred="u1_reply", head="u2")
+    add("u2", ROLE_USER, pred="u1_reply", head="u2")
     add("u2_reply", ROLE_LLM, pred="u2", head="u2_reply")
     store._persist_meta(git, idx)
 

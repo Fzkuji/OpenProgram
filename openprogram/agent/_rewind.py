@@ -104,7 +104,6 @@ def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
         return _err(session_id, target_msg_id, f"unknown session {session_id!r}")
 
     git, idx = pair
-    all_nodes = idx.all_nodes()
 
     target_node = idx.nodes_by_id.get(target_msg_id)
     if target_node is None:
@@ -114,20 +113,53 @@ def rewind_to(session_id: str, target_msg_id: str) -> dict[str, Any]:
     if isinstance(user_text, dict):
         user_text = str(user_text)
 
-    target_seq = target_node.seq
+    from openprogram.store.session.session_store import _node_conv_predecessor
+
+    # Walk the ACTIVE chain from head back to the target. The old code
+    # marked every node with seq >= target's — but seq is global, so a
+    # sibling branch appended after the target (a fork, a /task spawn)
+    # got rewound along with the branch the user was actually on.
+    chain: list = []
+    cur = idx.nodes_by_id.get(idx.head_id) if idx.head_id else None
+    while cur is not None:
+        chain.append(cur)
+        if cur.id == target_msg_id:
+            break
+        pred = _node_conv_predecessor(cur)
+        cur = idx.nodes_by_id.get(pred) if pred else None
+    if not chain or chain[-1].id != target_msg_id:
+        return _err(session_id, target_msg_id,
+                    f"node {target_msg_id!r} is not on the active branch")
+
+    new_head: str | None = _node_conv_predecessor(target_node) or None
+
+    # Mark the chain segment plus the sub-call trees the rewound turns
+    # spawned (caller-edge children and everything below them). Forks
+    # hanging off a rewound node via a predecessor edge are OTHER
+    # branches — they stay untouched.
+    to_mark: list[str] = []
+    seen: set[str] = set()
+    for node in chain:                       # newest → oldest
+        if node.id in seen:
+            continue
+        seen.add(node.id)
+        to_mark.append(node.id)
+        stack = list(idx.children_by_caller.get(node.id, []))
+        while stack:
+            nid = stack.pop()
+            if nid in seen:
+                continue
+            seen.add(nid)
+            to_mark.append(nid)
+            stack += idx.children_by_caller.get(nid, [])
+            stack += idx.children_by_predecessor.get(nid, [])
 
     to_revert: list[str] = []
-    to_mark: list[str] = []
-    new_head: str | None = None
-    for node in reversed(all_nodes):
-        if node.seq < target_seq:
-            new_head = node.id
-            break
-        to_mark.append(node.id)
-        if node.role == "llm":
-            meta = node.metadata or {}
-            if not meta.get("reverted"):
-                to_revert.append(node.id)
+    for nid in to_mark:
+        node = idx.nodes_by_id.get(nid)
+        if node is not None and node.role == "llm" \
+                and not (node.metadata or {}).get("reverted"):
+            to_revert.append(nid)
 
     all_restored: list[str] = []
     errors: list[str] = []

@@ -1313,6 +1313,9 @@ class SessionStore:
         git, idx = pair
         if head_msg_id not in idx.nodes_by_id:
             return 0
+        # Fork point the doomed subtree hangs off — the head fallback
+        # if the session head turns out to live inside the subtree.
+        root_pred = _node_conv_predecessor(idx.nodes_by_id[head_msg_id])
         # Collect head + descendants (both conv-children and sub-calls).
         to_delete: list[str] = [head_msg_id]
         seen: set[str] = {head_msg_id}
@@ -1364,6 +1367,13 @@ class SessionStore:
         for nid in to_delete:
             branches.pop(nid, None)
         idx.set_meta(branches=branches)
+        # A head inside the deleted subtree must not survive the
+        # deletion — a dangling head renders the session empty. Fall
+        # back to the fork point the subtree hung off (None = the tail
+        # was the whole session). Callers that pick a smarter new head
+        # (the ws handler moves to another named leaf) overwrite this.
+        if idx.head_id in seen:
+            idx.set_head(root_pred)
         self._persist_meta(git, idx)
         return len(to_delete)
 
