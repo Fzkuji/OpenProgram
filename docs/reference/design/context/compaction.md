@@ -177,6 +177,28 @@ is common to all of them, so switching schemes never migrates data:
   inlined): the node is stored identically; only the renderer stops inlining
   it.
 
+Beneath all of these sits the contract that survives even a fully arbitrary
+context — one assembled by retrieval, cross-branch selection, or any future
+policy rather than a spine walk:
+
+1. **The DAG is the ledger, not the context.** Nodes record what happened,
+   append-only; context is a deterministic *view function* over them.
+   Changing how context is built changes the view function, never the data.
+   The renderer already deviates from the pure chain today (`render_range`,
+   `expose`, attach/merge, memory prefetch) — each deviation is data, not
+   hidden state.
+2. **Provenance is mandatory.** Whatever the view function produces, the ids
+   whose content actually entered a call's prompt are stamped on that call
+   (`reads`). Replay, audit and the graph's per-node context marking depend
+   on this record — not on the view function staying simple.
+
+A summary node is the first instance of a *view node* — a node that stands in
+for other content in renders. Retrieved memory snippets, injected documents
+and cross-session references generalise it; the capsule's visual grammar
+(stand-in in place, expand to see the original) is the generic treatment for
+the class. No generic view-composition framework is built ahead of a concrete
+second scheme.
+
 ## 8. Invariants and their tests
 
 | Invariant | Where enforced / tested |
