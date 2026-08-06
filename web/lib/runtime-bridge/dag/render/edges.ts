@@ -171,6 +171,19 @@ export function drawEdges(
     }
     const fpNode = fp ? tree.byId[fp] : undefined;
     const fpIsCapsule = !!(fpNode && coversIds(fpNode));
+    // Capsule-parented fork on the capsule's own row: a straight dash
+    // from the capsule — it forked from inside the folded range, and
+    // level-with-origin is what says so (dag/rendering.md §9).
+    if (fpIsCapsule && fpNode && pos(fpNode).y === d.y) {
+      const sp = pos(fpNode);
+      edgeG.appendChild(_svg("line", {
+        x1: sp.x, y1: d.y, x2: d.x, y2: d.y,
+        stroke: color, "stroke-width": 1.5, "stroke-linecap": "round",
+        "stroke-dasharray": "6 4", opacity: 0.7,
+        "pointer-events": "none", class: "history-edge fork-edge",
+      }));
+      continue;
+    }
     if (!isRelic && !fpIsCapsule && sib && pos(sib).y === d.y) {
       const sp = pos(sib);
       edgeG.appendChild(_svg("line", {

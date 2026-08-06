@@ -161,9 +161,17 @@ export function computeGeometry(
     const sib = lastForkOf[pid] ?? trunkSib;
     if (sib) forkSibOf[id] = sib;
     lastForkOf[pid] = id;
-    const want = trunkSib !== undefined
-      ? rowOf[trunkSib]
-      : (rowOf[pid] || 0) + 1;
+    // A fork whose parent is the compaction capsule forked from a turn
+    // INSIDE the folded range — the capsule is its origin, not a
+    // sibling, so the branch runs level with the capsule itself and
+    // the bridge is a straight dash on that row (dag/rendering.md §9).
+    const parentIsCapsule = Array.isArray(
+      (byId[pid] as Record<string, unknown>).covers_ids);
+    const want = parentIsCapsule
+      ? (rowOf[pid] || 0)
+      : trunkSib !== undefined
+        ? rowOf[trunkSib]
+        : (rowOf[pid] || 0) + 1;
     const delta = want - (rowOf[id] || 0);
     if (delta) {
       const lane = byId[id]._lane || 0;
