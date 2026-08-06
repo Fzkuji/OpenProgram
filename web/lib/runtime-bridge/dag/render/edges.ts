@@ -158,7 +158,20 @@ export function drawEdges(
     // straight-dash reads as "forked off that message" — wrong story
     // for a relic — so it always takes the elbow from its fork point.
     const isRelic = !!(node as Record<string, unknown>).superseded_summary;
-    if (!isRelic && sib && pos(sib).y === d.y) {
+    // Resolve the fork parent up front: a branch whose parent is (or
+    // folded into) the CAPSULE must ink its line to the capsule, not to
+    // the kept-tail sibling — it forked from inside the covered range,
+    // and the capsule is what stands for that range now.
+    let fp = node.predecessor || node.caller || "";
+    let fhops = 0;
+    while (fp && !tree.byId[fp] && fhops < 50) {
+      const fn = fullById[fp];
+      fp = fn ? (fn.predecessor || fn.caller || "") : "";
+      fhops++;
+    }
+    const fpNode = fp ? tree.byId[fp] : undefined;
+    const fpIsCapsule = !!(fpNode && coversIds(fpNode));
+    if (!isRelic && !fpIsCapsule && sib && pos(sib).y === d.y) {
       const sp = pos(sib);
       edgeG.appendChild(_svg("line", {
         x1: sp.x, y1: d.y, x2: d.x, y2: d.y,
@@ -168,17 +181,9 @@ export function drawEdges(
       }));
       continue;
     }
-    // Elbow fallback — from the fork point itself. Reached when a later
-    // pass has moved one of the two off the shared row (a thread pushing
-    // rows down, say); siblings that stayed level take the bridge above.
-    let fp = node.predecessor || node.caller || "";
-    let fhops = 0;
-    while (fp && !tree.byId[fp] && fhops < 50) {
-      const fn = fullById[fp];
-      fp = fn ? (fn.predecessor || fn.caller || "") : "";
-      fhops++;
-    }
-    const fpNode = fp ? tree.byId[fp] : undefined;
+    // Elbow — from the fork point itself. Taken by capsule-parented
+    // forks always, and otherwise when a later pass has moved one of
+    // the two off the shared row (a thread pushing rows down, say).
     if (!fpNode) continue;
     // Root-parented forks normally need no bridge (the user-node trunk
     // logic anchors lane 0 to the root glyph) — but a folded capsule
