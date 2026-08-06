@@ -168,14 +168,9 @@ assert.match(
 );
 assert.match(
   shapesSrc,
-  /data-shape[\s\S]{0,80}capsule[\s\S]{0,200}return/,
-  "the capsule rect must be tagged so _applyShapeSize leaves its geometry alone",
-);
-assert.match(
-  shapesSrc,
-  /ds === "capsule" \|\| ds === "diamond"\) return;/,
-  "_applyShapeSize must skip the capsule (and the ROOT diamond) or a "
-  + "coverage flip re-squares them",
+  /_svg\("circle", \{ r, "data-shape": "capsule"/,
+  "the capsule is a circle on the reference radius — one grid slot, "
+  + "same footprint as every other glyph",
 );
 assert.match(
   nodesSrc,
@@ -187,22 +182,20 @@ assert.match(
   /"data-summary": isCapsule && !isInert \? String\(covered\.length\) : ""/,
   "the node must publish its covered count for the click handler and inspector",
 );
-// The capsule is a wordless pill; the note beside it is what says how
-// much it stands for. Without it the shape is just an odd-looking turn.
-// The capsule carries no text caption: the glyph (pill + summary
-// lines) says what it is, the shoulder count says how much, and the
+// The capsule carries no text caption: the glyph (double circle) says
+// what it is, the shoulder count says how much, and the
 // inspector/tooltip carry the details.
 assert.ok(
   !/history-summary-label/.test(nodesSrc),
   "the capsule draws no caption text on the canvas",
 );
-// The compaction capsule keeps its own geometry: it is the ONE shape
-// wider than the reference circle, and the layout treats it as one cell
-// all the same (grid coordinates, ../layout/geometry.ts).
+// The inner ring is the "condensed turns" cue; it follows the outer
+// stroke into grey on inert / superseded capsules.
 assert.match(
-  shapesSrc,
-  /x: -CAPSULE_HW, y: -CAPSULE_HH/,
-  "the pill is centred on its grid point like every other glyph",
+  nodesSrc,
+  /CAPSULE_RING[\s\S]{0,200}isSuperseded \|\| isInert/,
+  "the capsule's inner ring is drawn by the node drawer and tracks the "
+  + "outer stroke's grey states",
 );
 assert.match(
   pipelineSrc,

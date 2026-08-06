@@ -54,7 +54,7 @@ export function _shapeFor(node: GNode): string {
   if (node.display === "root") return "diamond";
   // Compaction summary → capsule (dag/rendering.md §9). It is a real
   // llm turn, but a turn that stands in for a whole span of turns, and
-  // the rounded box is what says "this one is wider than it looks".
+  // the double circle is what says "this one holds more than it shows".
   // Keyed on ``covers_ids`` (the backend resolves it from
   // ``metadata.covers``) so the shape and the fold read one fact.
   if (Array.isArray((node as Record<string, unknown>).covers_ids)) {
@@ -106,10 +106,9 @@ export function _applyShapeSize(shape: SVGElement): void {
     shape.setAttribute("points",
       _regularPolygon(3, R * TRI_SCALE, flip ? Math.PI / 2 : -Math.PI / 2));
   } else if (shape.tagName === "rect") {
-    // The capsule and the ROOT diamond are rects too, with their own
-    // geometry set once at build time — re-squaring them here (this
-    // runs on every white-fill flip) would deform them the moment
-    // coverage changed. Marked, so this pass leaves them alone.
+    // The ROOT diamond is a rect with its own geometry set once at
+    // build time — re-squaring it here (this runs on every white-fill
+    // flip) would deform it. Marked, so this pass leaves it alone.
     const ds = shape.getAttribute("data-shape");
     if (ds === "capsule" || ds === "diamond") return;
     const s = R * SQR_SCALE;
@@ -120,10 +119,9 @@ export function _applyShapeSize(shape: SVGElement): void {
   }
 }
 
-// Capsule half-extents. Wide enough to read as a different shape from
-// the square at a glance, short enough to sit on one grid row.
-export const CAPSULE_HW = (NODE_R + 3) * 1.8;
-export const CAPSULE_HH = (NODE_R + 3) * 0.9;
+// Capsule inner-ring radius factor: thin ring inside the reference
+// circle — the "condensed turns" cue, replacing the old wide pill.
+export const CAPSULE_RING = 0.55;
 
 // 量文字实际像素宽（复用一个 canvas）。按 label.length*6 估对中文
 // （字宽≈字号）严重低估，背景比文字短、文字溢出，实测才中英文都贴合。
@@ -181,17 +179,12 @@ export function _buildShapeEl(
       rx: 2, ry: 2, ...common,
     });
   } else if (shape === "capsule") {
-    // Compaction summary (dag/rendering.md §9): a rounded box on the
-    // trunk, wider than every other shape because it speaks for more
-    // than one turn. ``data-shape`` keeps ``_applyShapeSize`` from
-    // re-squaring it on the next coverage flip.
-    return _svg("rect", {
-      x: -CAPSULE_HW, y: -CAPSULE_HH,
-      width: CAPSULE_HW * 2, height: CAPSULE_HH * 2,
-      rx: CAPSULE_HH, ry: CAPSULE_HH,
-      "data-shape": "capsule",
-      ...common,
-    });
+    // Compaction summary (dag/rendering.md §9): a double circle — the
+    // reference circle with a thin inner ring. Same footprint as every
+    // other glyph (one grid slot), the ring is what says "a turn that
+    // stands for turns". The inner ring is drawn by the node drawer so
+    // its grey/inert states track the outer stroke.
+    return _svg("circle", { r, "data-shape": "capsule", ...common });
   } else if (shape === "agent_head") {
     // Sub-agent head (dag/rendering.md §12): the triangle vocabulary,
     // point-down — a derived agent. Occupies one grid point; no caption.

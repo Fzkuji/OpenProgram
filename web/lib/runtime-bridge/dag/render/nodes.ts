@@ -16,8 +16,7 @@
 
 import { type GNode, NODE_R } from "../types";
 import {
-  CAPSULE_HH,
-  CAPSULE_HW,
+  CAPSULE_RING,
   _branchColor,
   _buildShapeEl,
   _shapeFor,
@@ -115,22 +114,11 @@ export function drawNodes(
       "data-ghost": isGhost ? "1" : "0",
       "data-failed": isFailed ? "1" : "0",
     });
-    // The compaction capsule is wider than the r=7 hit circle, so give it
-    // a hit rect that actually covers the glyph — otherwise clicking the
-    // ends of the pill misses and the fold "does nothing".
-    const hit = isCapsule
-      ? _svg("rect", {
-        x: String(-CAPSULE_HW), y: String(-CAPSULE_HH),
-        width: String(CAPSULE_HW * 2), height: String(CAPSULE_HH * 2),
-        rx: String(CAPSULE_HH),
-        fill: "transparent",
-        "pointer-events": "all",
-      })
-      : _svg("circle", {
-        r: "7",
-        fill: "transparent",
-        "pointer-events": "all",
-      });
+    const hit = _svg("circle", {
+      r: "7",
+      fill: "transparent",
+      "pointer-events": "all",
+    });
     g.appendChild(hit);
     (g as SVGGraphicsElement).style.cursor = "pointer";
     const r = NODE_R + 3;
@@ -174,41 +162,34 @@ export function drawNodes(
       el.setAttribute("stroke", "var(--dag-ghost, #c9c7bf)");
       el.setAttribute("stroke-width", "1.6");
     }
-    // ── 摘要文本线：胶囊内两道递减的横线（rendering.md §9）────────
-    // 空药丸在放大后读作一块空面板；两道左对齐、一长一短的线让它在
-    // 任何缩放下都读作"浓缩起来的文字"。注文灰、不吃指针，白填充
-    // （在上下文中）与镂空两种状态下都可见。
+    // ── 内圈：双圈圆的里圈（rendering.md §9）────────────────────
+    // 细一号的同心圆，跟着外圈的颜色态走（灰=inert/superseded），
+    // 在白填充（在上下文中）与镂空两种状态下都可见。
     if (isCapsule) {
-      const lx = -CAPSULE_HW + 5;
-      const widths = [CAPSULE_HW * 1.15, CAPSULE_HW * 0.7];
-      const lys = [-2.4, 2.4];
-      for (let i = 0; i < widths.length; i++) {
-        g.appendChild(_svg("line", {
-          x1: String(lx), y1: String(lys[i]),
-          x2: String(lx + widths[i]), y2: String(lys[i]),
-          stroke: "var(--dag-ghost, #c9c7bf)",
-          "stroke-width": "1.5",
-          "stroke-linecap": "round",
-          "stroke-opacity": String(0.85 - i * 0.3),
-          "pointer-events": "none",
-        }));
-      }
+      g.appendChild(_svg("circle", {
+        r: String((NODE_R + 3) * CAPSULE_RING),
+        fill: "none",
+        stroke: isSuperseded || isInert
+          ? "var(--dag-ghost, #c9c7bf)" : color,
+        "stroke-width": "1.2",
+        "pointer-events": "none",
+      }));
     }
     // ── 折叠数：肩上的数字，与调用线程的折叠数同一套语言（§12）──
-    // 数字贴在胶囊右上角说"后面收着这么多节点"；展开后消失，因为那
-    // 时它们都在屏上。
+    // 数字贴在右上角说"后面收着这么多节点"；展开后消失，因为那时
+    // 它们都在屏上。
     if (isCapsule && !capsuleOpen && !isInert) {
       const cnt = _svg("text", {
-        x: String(CAPSULE_HW + 3),
-        y: String(-CAPSULE_HH - 1),
+        x: String(NODE_R + 5),
+        y: String(-NODE_R - 1),
         class: "history-thread-count",
         "pointer-events": "none",
       });
       cnt.textContent = String(covered.length);
       g.appendChild(cnt);
     }
-    // 胶囊不带文字注记：形状（药丸+摘要线）说明它是什么，肩上数字
-    // 说明收了多少，展开时幽灵就在屏上。详情在 tooltip 和检查器里。
+    // 胶囊不带文字注记：形状（双圈）说明它是什么，肩上数字说明收了
+    // 多少，展开时幽灵就在屏上。详情在 tooltip 和检查器里。
     // ── 覆盖态的两级衰减（rendering.md 第八节）──
     const cov = coverageSet ? coverageSet[id] : undefined;
     if (el && cov && cov.aged) {

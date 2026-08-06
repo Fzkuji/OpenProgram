@@ -232,8 +232,13 @@ overlap. A lane that begins with a fork root keeps **one extra gap column** from
 the lane it forked off — the branch is a parallel version, and the two grid units
 of air are what say so. Tiers are zeroed per lane (the backend hands a fork root
 the tier of its old in-lane position; without zeroing a one-node branch arrives
-columns adrift). Thread items (§12) reserve no lane width: their column is chosen
-after the lanes are down, in the first free column right of their anchor.
+columns adrift). **A fork lane mirrors the trunk internally**: the fork root
+anchors the lane's spine column, and every later turn steps one column right —
+exactly as turns step right of ROOT. Without the step the later turns share the
+fork root's column, the spine runs straight through the circles, and
+consecutive user messages read as chained directly to each other. Thread items
+(§12) reserve no lane width: their column is chosen after the lanes are down,
+in the first free column right of their anchor.
 
 ### tier — how many columns to indent within a branch
 
@@ -289,12 +294,12 @@ placeholder node.
 **③ Glyphs are cells; text is a caption.** A node occupies its grid point;
 counts hang beside it in annotation grey, never inside a shape sized to its own
 text. A glyph that grows with its label is a glyph every neighbour has to be
-measured against — that negotiation is what §12's earlier pill got wrong. The
-one exception is the §9 compaction capsule, which is wider than the reference
-circle horizontally and is still centred on, and placed by, a single cell.
+measured against — that negotiation is what §12's earlier pill got wrong.
+Every glyph, the §9 compaction capsule included, is drawn on the reference
+circle and occupies exactly one cell.
 Names draw NOTHING on the canvas at all any more: a sub-agent's name lives in
 the tooltip and inspector, and the only per-node text is the fold count on the
-shoulder (§12) and the capsule's coverage note (§9).
+shoulder (§12) and the capsule's coverage count (§9).
 
 ---
 
@@ -323,7 +328,7 @@ the glyph joins seamlessly for every shape.
 ## 4. Node legend: shape = role, stroke = status
 
 **Shape**: ◇ ROOT · ○ user · △ llm · ■ code · ◉ merge (solid circle with a hole, the graph's unique
-"convergence" shape) · ▭ compaction summary (a capsule, the graph's only wide shape — §9) ·
+"convergence" shape) · ◎ compaction summary (a double circle: the reference circle with a thin inner ring — §9) ·
 ▽ sub-agent head (the triangle vocabulary point-DOWN: a derived agent, one glance
 apart from the chain's upright turns — §12).
 
@@ -547,19 +552,18 @@ thing about the session: fourteen faint circles still cost fourteen rows, and
 the eye still has to walk them to reach the live conversation. The summary is
 one node that stands for all of them, so the graph draws it that way.
 
-**The capsule.** A summary node is a rounded box on the trunk — the only wide
-shape in the vocabulary, because it is the only node that speaks for more than
-one turn. Two left-aligned text lines, one long one short in annotation grey,
-sit inside the pill: an empty pill reads as a blank panel once zoomed, the
-lines make it read as condensed text at every zoom. It is still an ordinary
-`role=llm` chain member (dag/overview.md §8): the shape is a shape, not a
-fourth role.
+**The capsule.** A summary node is a double circle on the trunk: the
+reference circle with a thin concentric inner ring. Same footprint as every
+other glyph, one grid slot — the ring is what says "a turn that holds more
+than it shows". The ring follows the outer stroke's colour states (grey when
+inert or superseded). It is still an ordinary `role=llm` chain member
+(dag/overview.md §8): the shape is a shape, not a fourth role.
 
 **The count.** A folded capsule wears the covered-node count as digits on its
 right shoulder — the same fold vocabulary as a turn's call-thread count (§12),
 and it disappears when the capsule opens, because then the stack is drawn.
-No text caption: the glyph (pill + summary lines) says what it is, the count
-says how much, the ghosts say it is open, and the tooltip/inspector carry the
+No text caption: the glyph (double circle) says what it is, the count says
+how much, the ghosts say it is open, and the tooltip/inspector carry the
 details.
 
 **The fold is per-branch.** A summary belongs to the branch whose context

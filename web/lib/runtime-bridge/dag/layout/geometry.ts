@@ -70,6 +70,43 @@ export function computeGeometry(
     }
   });
 
+  // A fork lane mirrors the trunk: its fork root anchors the lane's
+  // spine column and every LATER turn steps one column right, exactly
+  // as turns step right of ROOT. Without the step the later turns share
+  // the fork root's column, the spine runs straight through the circles
+  // and consecutive user messages read as chained to each other.
+  const laneRootOf: Record<number, string> = Object.create(null);
+  chainIds.forEach((id) => {
+    const n = byId[id];
+    const p = layoutParent(n);
+    const foreign = !p || !byId[p] || !isChainNode(byId[p])
+      || (byId[p]._lane || 0) !== (n._lane || 0);
+    if (!foreign) return;
+    const lane = n._lane || 0;
+    const cur = laneRootOf[lane];
+    if (!cur || (byId[id].created_at || 0) < (byId[cur].created_at || 0)) {
+      laneRootOf[lane] = id;
+    }
+  });
+  const isTurn = (id: string): boolean => {
+    const n = byId[id] as Record<string, unknown>;
+    return byId[id].role === "user" || Array.isArray(n.covers_ids)
+      || !!n.superseded_summary;
+  };
+  const colShift: Record<string, number> = Object.create(null);
+  chainIds.forEach((id) => {
+    const lane = byId[id]._lane || 0;
+    if (!forkLanes.has(lane)) return;
+    if (isTurn(id) && id !== laneRootOf[lane]) colShift[id] = 1;
+  });
+  chainIds.forEach((id) => {
+    // Replies / merges ride their own turn's column offset.
+    const lane = byId[id]._lane || 0;
+    if (!forkLanes.has(lane) || colShift[id]) return;
+    const p = layoutParent(byId[id]);
+    if (p && colShift[p]) colShift[id] = 1;
+  });
+
   const startCol: Record<number, number> = Object.create(null);
   const minTierOf: Record<number, number> = Object.create(null);
   let col = 0;
@@ -79,7 +116,8 @@ export function computeGeometry(
     // their old in-lane position; without zeroing a one-node branch
     // arrives several columns adrift of its lane.
     minTierOf[lane] = Math.min(...own.map((id) => byId[id]._tier || 0));
-    const maxTier = Math.max(...own.map((id) => byId[id]._tier || 0));
+    const maxTier = Math.max(...own.map(
+      (id) => (byId[id]._tier || 0) + (colShift[id] || 0)));
     if (forkLanes.has(lane) && col > 0) col += 1;
     startCol[lane] = col;
     col += maxTier - minTierOf[lane] + 1;
@@ -87,7 +125,8 @@ export function computeGeometry(
   const colOf = (id: string): number => {
     const n = byId[id];
     const lane = n._lane || 0;
-    return (startCol[lane] || 0) + (n._tier || 0) - (minTierOf[lane] || 0);
+    return (startCol[lane] || 0) + (n._tier || 0) - (minTierOf[lane] || 0)
+      + (colShift[id] || 0);
   };
   const usedCols = new Set<number>();
   laneKeys.forEach((lane) => {
