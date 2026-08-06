@@ -549,6 +549,20 @@ export function handleChatResponse(data: ChatResponseData): void {
       title?: string;
     };
     if (!conv.messages) conv.messages = [];
+    // Self-heal after a fork: retry/edit moved the branch, and this
+    // result may have raced the load_session that repaints the view.
+    // Pushing the reply into a stale mirror paints the OLD branch's
+    // turns with the NEW branch's reply stacked on top (two dialogues
+    // mixed, the resent user bubble missing). Reload wholesale instead
+    // — the store rebuilds on the fresh branch.
+    if (runtimeState._pendingBranchReload[sid]) {
+      delete runtimeState._pendingBranchReload[sid];
+      const sock = getSocket();
+      if (sock && sock.readyState === WebSocket.OPEN) {
+        sock.send(JSON.stringify({ action: "load_session", session_id: sid }));
+      }
+      return;
+    }
     const storedMsg: Record<string, unknown> = {
       role: "assistant",
       content: data.content || "",

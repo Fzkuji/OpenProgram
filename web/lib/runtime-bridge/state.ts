@@ -76,6 +76,10 @@ export interface RuntimeState {
   } | null;
   /** Branch rows per conversation, filled by `fetchBranches`. */
   _branchesByConv: Record<string, unknown[]>;
+  /** Sessions whose branch was just moved by retry/edit: the next turn
+   *  result triggers a wholesale load_session instead of a mirror push
+   *  (chat-handlers self-heal — the reload and the stream race). */
+  _pendingBranchReload: Record<string, boolean>;
   /** DAG node id → lane colour, published by the DAG render pass so the
    *  branches panel can match its rows to the graph's lanes. */
   _branchLaneColorMap: Record<string, string>;
@@ -135,6 +139,7 @@ export const runtimeState: RuntimeState = {
   _webSearchProviderTier: "",
   _pendingChannelChoice: null,
   _branchesByConv: {},
+  _pendingBranchReload: {},
   _branchLaneColorMap: {},
   _postCheckoutScrollTo: null,
   __reloadOnTaskClear: null,

@@ -20,7 +20,7 @@ import { MessageActions } from "./message-actions";
 import { useAvatarAlign } from "./use-avatar-align";
 import { UserAttachments, parseUserAttachments } from "./user-attachments";
 import { setRunActive } from "@/lib/runtime-bridge/chat-handlers";
-import { getSocket } from "@/lib/runtime-bridge/state";
+import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 
 function EditBox({
   msg,
@@ -58,6 +58,9 @@ function EditBox({
       })
       .then(() => {
         setRunActive(true);
+        // Same self-heal contract as retry: the result reloads the view
+        // instead of pushing onto the pre-fork mirror (chat-handlers).
+        runtimeState._pendingBranchReload[sessionId] = true;
         const sock = getSocket();
         if (sock && sock.readyState === WebSocket.OPEN) {
           sock.send(

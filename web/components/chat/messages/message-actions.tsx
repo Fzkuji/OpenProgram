@@ -155,6 +155,10 @@ export function MessageActions({
     postJson("/api/chat/retry", { session_id: sessionId, msg_id: msg.id })
       .then(() => {
         setRunActive(true);
+        // The turn result must NOT be pushed onto the pre-fork mirror:
+        // flag the session so the result handler reloads wholesale
+        // (chat-handlers self-heal) — this load and the stream race.
+        runtimeState._pendingBranchReload[sessionId] = true;
         wsSend({ action: "load_session", session_id: sessionId });
       })
       .catch((err) => {
