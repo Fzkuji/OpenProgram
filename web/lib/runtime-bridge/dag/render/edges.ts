@@ -233,21 +233,22 @@ export function drawEdges(
     const lastY = PAD_Y + rows[rows.length - 1] * ROW_H;
     // The trunk pattern, one level down: a solid vertical drops the
     // anchor's own column, and every item gets a horizontal stub into
-    // its row — down first, then right, exactly like chain edges.
-    // Solid, because annotation grey already says "execution layer";
-    // dashes are reserved for out-of-context and fork bridges.
+    // its row — down first, then right, exactly like chain edges, in
+    // the anchor's own branch colour. The execution layer is already
+    // said by the shapes and the column; the line needs no third voice.
+    const tColor = _branchColor(anchorNode, stableLeafOfNode);
     edgeG.appendChild(_svg("line", {
       x1: ap.x, y1: ap.y, x2: ap.x, y2: lastY,
-      stroke: GHOST_STROKE, "stroke-width": 1.3,
-      "stroke-linecap": "round", opacity: 0.8,
+      stroke: tColor, "stroke-width": 1.4,
+      "stroke-linecap": "round",
       "pointer-events": "none", class: "history-edge thread-edge",
     }));
     rows.forEach((r) => {
       const ry = PAD_Y + r * ROW_H;
       edgeG.appendChild(_svg("line", {
         x1: ap.x, y1: ry, x2: tx, y2: ry,
-        stroke: GHOST_STROKE, "stroke-width": 1.3,
-        "stroke-linecap": "round", opacity: 0.8,
+        stroke: tColor, "stroke-width": 1.4,
+        "stroke-linecap": "round",
         "pointer-events": "none", class: "history-edge thread-edge",
       }));
     });
