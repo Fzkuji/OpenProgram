@@ -11,3 +11,4 @@ Web UI surfaces — the surface system, indicator dots, attachment handling, cha
 - [`gui-agent-context.md`](gui-agent-context.md) — GUI agent context flow
 - [`indicator-dots.md`](indicator-dots.md) — indicator dots
 - [`surface-system.md`](surface-system.md) — surface system
+- [`web-styles.md`](web-styles.md) — web style organization (one component, one file; directories mirror the component tree)

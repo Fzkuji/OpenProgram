@@ -150,13 +150,15 @@ The design allows exactly one mover:
   package, `set_head` / `update_session(head_id=…)` appear only in that
   file (plus the manual function-run path in `forced_tool.py`, a
   user-initiated move by definition).
-- **Mirrors are read-only.** The webui keeps an in-memory `conv` mirror
-  (messages + head) for display. It is hydrated FROM the store and never
-  written back: `save_meta` carries no `head_id`, and display-side rows that
-  the mirror accumulates (e.g. the summary marker appended when a
-  `compaction_finished` event is rendered into the transcript) can never
-  become the store's head or new store rows. The store is upstream of the
-  mirror, always, in both directions of a restart.
+- **Mirrors are read-only, and the transcript has one source.** The webui
+  keeps an in-memory `conv` mirror for sidebar metadata plus a one-shot
+  `messages` snapshot taken at `load_session`; nothing writes to that
+  snapshot incrementally. The live transcript is the React session store
+  alone — stream deltas, turn results (upserted onto the
+  `<user_msg_id>_reply` row) and tree hydrations all write there. The
+  mirror never syncs back to the store or the disk: `save_meta` carries no
+  `head_id`, and no mirror row can ever become a stored head or a stored
+  node. Storage stays upstream of every mirror, across restarts.
 
 ## 6. What the graph shows
 

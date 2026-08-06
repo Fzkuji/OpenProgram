@@ -11,3 +11,4 @@ Web UI 界面 — 界面系统、指示点、附件处理、聊天轮次视觉�
 - [`gui-agent-context.md`](gui-agent-context.md) — GUI agent 上下文流转
 - [`indicator-dots.md`](indicator-dots.md) — 指示点
 - [`surface-system.md`](surface-system.md) — Surface 系统
+- [`web-styles.md`](web-styles.md) — Web 样式组织（一个组件一个文件，目录对齐组件树）

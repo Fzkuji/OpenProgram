@@ -95,7 +95,7 @@ Call sites (8 JSX, 2 CSS files):
 - `web/components/chat/messages/assistant-bubble.tsx` (nested pending)
 - `web/components/chat/messages/attach-card.tsx` (status dot)
 - `web/components/chat/top-bar/index.tsx` (provider status)
-- `web/app/styles/chat.css`, `web/app/styles/detail.css`
+- `web/app/styles/chat/indicator-dot.css` (and sibling per-component files under `web/app/styles/chat/`)
 
 ## Appendix: Implementation Status
 

@@ -32,7 +32,7 @@ lanes, tiers and branch badges that a 288px rail truncates.
 | Perspective state | `CenterTab.dagView` (`web/lib/state/center-tabs-store.ts`) — not persisted; a reload opens on the transcript |
 | Controls | `web/components/chat/view-controls.tsx` |
 | Graph host | `web/components/chat/dag-view.tsx` — renders `#historyPanel` + `.history-body`, the elements `pipeline.ts` and `render/visibility.ts` select |
-| Perspective swap | `.center-pane-chat[data-center-view]` in `web/app/styles/chat.css` |
+| Perspective swap | `.center-pane-chat[data-center-view]` in `web/app/styles/dag/view-host.css` |
 
 Both surfaces stay mounted and swap by `display`: the renderer paints into the
 host on every capture regardless of which perspective is showing, so unmounting
@@ -103,15 +103,15 @@ env-pill rule (`composer.module.css`), so they are the same 24px filled pill
 as the env chips beside them — same fill, inset ring, shadow, and hover — and
 can never drift from them. The legend panel wears `MENU_PANEL`
 (`components/chat/top-bar/menu-styles`), the one frame every popover menu in
-the app shares; `right-dock.css` keeps only HUD-internal layout (the zoom
+the app shares; `styles/dag/hud.css` keeps only HUD-internal layout (the zoom
 cluster's segments, the legend's upward anchoring and rows).
 
 | Piece | Where |
 |---|---|
 | Pan / zoom / fit | `web/lib/runtime-bridge/dag/canvas.ts` (`zoomStep` / `resetZoom` for the HUD buttons) |
 | View state | `_viewTx` / `_viewTy` / `_viewScale` / `_viewSession` in `dag/store/globals.ts` |
-| Surface + lattice | `.history-body` in `web/app/styles/right-dock.css` |
-| HUD | `DagHud` in `web/components/chat/dag-view.tsx`; pill look from the env-pill rule in `composer.module.css`, legend frame from `MENU_PANEL`, internals in `right-dock.css` |
+| Surface + lattice | `.history-body` in `web/app/styles/dag/canvas.css` |
+| HUD | `DagHud` in `web/components/chat/dag-view.tsx`; pill look from the env-pill rule in `composer.module.css`, legend frame from `MENU_PANEL`, internals in `styles/dag/hud.css` |
 
 ### The composer belongs to the pane, not to the transcript
 
@@ -773,10 +773,10 @@ The whole spec is implemented. Where each part lives:
 
 | Spec item | Implementation |
 |---|---|
-| Infinite canvas (pan / zoom / fit / dot lattice) | `dag/canvas.ts` + `.history-body` in `right-dock.css`; view state in `dag/store/globals.ts`; HUD in `components/chat/dag-view.tsx` |
+| Infinite canvas (pan / zoom / fit / dot lattice) | `dag/canvas.ts` + `.history-body` in `styles/dag/canvas.css`; view state in `dag/store/globals.ts`; HUD in `components/chat/dag-view.tsx` |
 | §1 lane / tier / depth layout | `dag/layout/geometry.ts::computeGeometry` (tier-packed chain lanes with per-lane tier zeroing, preorder rows, scene-3 fork rows + gap column, recursive thread placement); lattice, no-overlap, thread columns/rows and fork geometry all executed and asserted by `web/scripts/check-dag-subagent.mjs` |
 | §2 rule ③ glyphs are cells | no shape is sized from text, and no text draws on the canvas beyond the shoulder count and the capsule note |
-| §4 HEAD breathing glow | `render/nodes.ts` stamps `data-head` + the branch colour as `color`; `dag-head-glow` keyframes in `right-dock.css` (reduced-motion → steady glow); every glyph stays hollow (`shapes.ts`); HEAD pointing at a merged reply re-seats on its anchor (`pipeline.ts` via `threadModel.anchorOf`) |
+| §4 HEAD breathing glow | `render/nodes.ts` stamps `data-head` + the branch colour as `color`; `dag-head-glow` keyframes in `styles/dag/nodes.css` (reduced-motion → steady glow); every glyph stays hollow (`shapes.ts`); HEAD pointing at a merged reply re-seats on its anchor (`pipeline.ts` via `threadModel.anchorOf`) |
 | §0/§12 call-thread aggregation | `passes/thread.ts` (`buildThreadModel`: anchor merge, event attribution, recursive visibility); `render/nodes.ts` draws the shoulder count (`history-thread-count`); `_threadOpen` in `store/globals.ts` |
 | Rule ② corollary (no placeholder box) | `shapes.ts`: no `square_outline`; task renders as a plain square |
 | §4 status on the stroke | `graph_builder` emits status; `nodes.ts` draws it on the stroke (running dashed+breathing / error red+! / cancelled grayed) |
@@ -785,8 +785,8 @@ The whole spec is implemented. Where each part lives:
 | Scenes 8/10 attach pointer | backend filters it (display=runtime) + `graph_builder` stamps the ref onto the embed host (`attach_returns`); `edges.ts` draws the long-dash return line |
 | §4 cross-session ↗ | `graph_builder` stamps `spawn_remote` (target side); `nodes.ts` draws ↗ (source-side `spawn_out` rendering is ready, awaiting a data source that stamps it) |
 | §1 spawn root tier | `graph_layout`: tier=1 / same-row depth / new lane; `task_followup` without an attach pointer re-parents onto the receiving turn (`filter.py` fallback) |
-| Composer shared by both perspectives | `chat.css` hides `#chatArea`, not `#chatView`; asserted by `web/scripts/check-center-tabs.mjs` |
-| In-graph branch tags (checkout buttons) | `render/badges.ts`; hover styles on `.history-branch-tag` in `right-dock.css` |
+| Composer shared by both perspectives | `styles/chat/center-pane.css` hides `#chatArea`, not `#chatView`; asserted by `web/scripts/check-center-tabs.mjs` |
+| In-graph branch tags (checkout buttons) | `render/badges.ts`; hover styles on `.history-branch-tag` in `styles/dag/badges.css` |
 | §8 coverage query | `routes/tree.py::_coverage_nodes` fills `/context-range`'s `nodes`; tested in `tests/unit/test_context_range_coverage.py` |
 | §8 aged / spilled drawing | `render/nodes.ts` (stroke-opacity + `▤`), fed by `_coverageSet` in `store/globals.ts` |
 | §9 `covers_ids` on the wire | `webui/graph_builder.py` resolves `metadata.covers` to ids; tested in `tests/unit/test_graph_builder_covers.py` |
@@ -794,6 +794,6 @@ The whole spec is implemented. Where each part lives:
 | §9 fold + pleats + ghosts | `passes/fold-summaries.ts` (fold), `render/nodes.ts` (pleats, `已压缩 · N 轮` caption, ghost stroke), `render/edges.ts` (dashed ghost edge), `_summaryExpanded` in `store/globals.ts`; executed by `web/scripts/check-dag-summary.mjs` |
 | §10 archived failure | `render/nodes.ts::_isArchivedFailure` — `status=error` AND off the HEAD chain; grey overrides §4's red |
 | §11 one card, two states / fork & edit | `dag/tooltip.ts`: `renderNodeInfo` feeds both states, `expandTooltip` deepens the card in place; `render/inspector.ts` builds only the verb list (+ raw JSON layer), wired in `render/interaction.ts`; the actions go through `POST /api/chat/checkout` |
-| §11 legend | `DagLegend` in `components/chat/dag-view.tsx` (inside the canvas HUD), `.dag-legend` in `right-dock.css` |
+| §11 legend | `DagLegend` in `components/chat/dag-view.tsx` (inside the canvas HUD), `.dag-legend` in `styles/dag/hud.css` |
 | §12 call thread + agent spawn | `shapes.ts` (spawn → square), `passes/thread.ts` (model), `layout/geometry.ts` (recursive placement), `render/edges.ts` (dotted thread line, centre-to-centre chain edges, scene-3 bridge), `render/nodes.ts` (`data-thread*`, shoulder count), `render/interaction.ts` (`toggleThreadOpen`); executed by `web/scripts/check-dag-subagent.mjs` |
 | §12 the name on the wire | `task/runner.py::_update_attach_card` stamps `attach.label` from the task; `ws_actions/session.py::_annotate_spawn_origin` carries it to the spawn root as `spawned_from.label`; tested in `tests/unit/test_task_attach_integration.py` |

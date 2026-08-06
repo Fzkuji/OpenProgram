@@ -117,10 +117,12 @@ summarizer 接收上一份摘要文本作为输入、吸收它、产出替代品
   是结构性的：dispatcher 包内 `set_head` / `update_session(head_id=…)` 只出现
   在该文件（外加 `forced_tool.py` 的手动函数运行路径——定义上就是用户主动的
   移动）。
-- **镜像只读。** webui 为显示维护内存 `conv` 镜像（消息 + head）。它从存储
-  水合、永不回写：`save_meta` 不携带 `head_id`，镜像积累的显示行（如
-  `compaction_finished` 事件渲染进聊天流时追加的摘要标记行）永远不可能变成
-  存储的 head 或新的存储行。存储永远在镜像上游，重启前后皆然。
+- **镜像只读，转录单源。** webui 的内存 `conv` 镜像只承载侧栏元数据和
+  `load_session` 时的一次性 `messages` 快照；此后没有任何增量写。活的转录
+  只有 React session store 一处——流式增量、轮次结果（upsert 到
+  `<user_msg_id>_reply` 行）、执行树水合全部写它。镜像永不回写存储：
+  `save_meta` 不携带 `head_id`，镜像的任何行都不可能变成存储的 head 或
+  新的存储行。存储永远在镜像上游，重启前后皆然。
 
 ## 六、图上显示什么
 

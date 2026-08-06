@@ -91,7 +91,7 @@ CSS — drop  .pulse, .pending-pulse, .status-dot[.ok/.warn/.err],
 - `web/components/chat/messages/assistant-bubble.tsx`（嵌套的 pending）
 - `web/components/chat/messages/attach-card.tsx`（状态点）
 - `web/components/chat/top-bar/index.tsx`（provider 状态）
-- `web/app/styles/chat.css`、`web/app/styles/detail.css`
+- `web/app/styles/chat/indicator-dot.css`（及 `web/app/styles/chat/` 下各组件文件）
 
 ## 附录：实现状态
 

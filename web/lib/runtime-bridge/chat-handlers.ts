@@ -16,7 +16,6 @@ import {
   refreshBranchBadge,
   refreshChannelBadge,
   refreshBranchTokens,
-  renderSessionMessages,
 } from "./conversations";
 import {
   mirrorSetConvs,
@@ -51,6 +50,7 @@ import { refreshHistoryContextRange } from "./dag";
 import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
 import { writeChatScroll } from "@/lib/state/chat-scroll";
 import { useSessionStore } from "@/lib/session-store";
+import { convToChatMsgs } from "@/lib/conv-mapper";
 import {
   clearPendingFirstAck,
   clearPendingUserText,
@@ -542,19 +542,17 @@ export function handleChatResponse(data: ChatResponseData): void {
     data.display === "runtime" ||
     (!!data.function && data.function !== "chat");
 
-  // Store assistant message.
+  // Store the assistant reply — in the SESSION STORE, the transcript's
+  // single source. The legacy ``conv.messages`` mirror takes no
+  // incremental writes any more: it is a one-shot load_session
+  // snapshot, nothing else (the dual-bookkeeping era ended with the
+  // retry-race bug it caused).
   if (sid && runtimeState.conversations[sid]) {
-    const conv = runtimeState.conversations[sid] as {
-      messages?: Record<string, unknown>[];
-      title?: string;
-    };
-    if (!conv.messages) conv.messages = [];
+    const conv = runtimeState.conversations[sid] as { title?: string };
     // Self-heal after a fork: retry/edit moved the branch, and this
     // result may have raced the load_session that repaints the view.
-    // Pushing the reply into a stale mirror paints the OLD branch's
-    // turns with the NEW branch's reply stacked on top (two dialogues
-    // mixed, the resent user bubble missing). Reload wholesale instead
-    // — the store rebuilds on the fresh branch.
+    // Writing the reply into the old branch's view would stack the
+    // two dialogues — reload wholesale instead.
     if (runtimeState._pendingBranchReload[sid]) {
       delete runtimeState._pendingBranchReload[sid];
       const sock = getSocket();
@@ -563,33 +561,46 @@ export function handleChatResponse(data: ChatResponseData): void {
       }
       return;
     }
-    const storedMsg: Record<string, unknown> = {
-      role: "assistant",
-      content: data.content || "",
-      type,
-      function: data.function || null,
-      display: isRuntimeResult ? "runtime" : undefined,
-      blocks:
+    // Runtime (function-call) results stay store-owned via the
+    // chat-stream reducer / tree hydration — writing a second row here
+    // would double the Function-call card. Plain replies upsert: the
+    // focused session already streamed the row (patch it final), a
+    // background session gets it appended so its transcript is whole
+    // without a reload.
+    if (!isRuntimeResult) {
+      const st = useSessionStore.getState();
+      // The result envelope's msg_id is the USER turn's id; the reply
+      // row is minted as ``<user_msg_id>_reply`` everywhere (dispatcher,
+      // stream reducer, DAG). Resolve to the reply row — patching the
+      // raw msg_id would overwrite the user's own bubble.
+      const ridRaw = String((data as { msg_id?: unknown }).msg_id || "");
+      const rid = !ridRaw
+        ? ""
+        : ridRaw.endsWith("_reply") ? ridRaw : ridRaw + "_reply";
+      const content = data.content || "";
+      const blocks =
         Array.isArray(data.blocks) && (data.blocks as unknown[]).length
           ? data.blocks
-          : undefined,
-    };
-    // Runtime (function-call) results are owned by the React message
-    // store: the chat-stream reducer writes the single runtime row that
-    // <MessageList /> renders as one Function-call card, and reload
-    // rebuilds it from the persisted execution tree. Pushing a second
-    // assistant row here would re-enter `convToChatMsgs` (on the next
-    // `__feedStoreFromConv`) as a duplicate `display:"runtime"` row,
-    // producing a second card. Only plain chat replies belong in the
-    // legacy `conv.messages` mirror.
-    if (!isRuntimeResult) conv.messages.push(storedMsg);
+          : undefined;
+      if (rid && st.messagesById[rid]) {
+        st.updateMessage(sid, rid, { content, blocks } as never);
+      } else if (rid) {
+        st.appendMessage(sid, {
+          id: rid, role: "assistant", content, blocks, status: "done",
+        } as never);
+      }
+    }
     if (targetsActive) updateContextStats();
 
-    // Conversation title.
+    // Conversation title — sidebar metadata, not transcript state.
     if (!conv.title || conv.title === "New conversation") {
-      const msgs = conv.messages;
-      if (msgs.length > 0) {
-        conv.title = String((msgs[0].content as string) || "").slice(0, 50);
+      const st = useSessionStore.getState();
+      const firstId = (st.messageOrder[sid] ?? [])[0];
+      const seed = firstId
+        ? String(st.messagesById[firstId]?.content || "")
+        : String(data.content || "");
+      if (seed) {
+        conv.title = seed.slice(0, 50);
         if (targetsActive) refreshStatusSource();
       }
     }
@@ -709,9 +720,13 @@ function handleStatusResponse(
     if (idx >= 0) trees[idx] = ct;
     else trees.push(ct);
     if (sid && runtimeState.conversations[sid]) {
-      const conv = runtimeState.conversations[sid] as { messages?: unknown[] };
-      conv.messages = extractMessagesFromTree(ct as never);
-      renderSessionMessages(runtimeState.conversations[sid] as never);
+      // Store-only write: the tree-derived transcript replaces the
+      // session's rows in the store; the conv mirror stays untouched
+      // (one-shot load snapshot, never incrementally written).
+      useSessionStore.getState().setMessages(
+        sid,
+        convToChatMsgs(extractMessagesFromTree(ct as never) as never[]),
+      );
     }
   }
   scrollToBottom();
