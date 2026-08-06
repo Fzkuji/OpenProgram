@@ -1,0 +1,184 @@
+/* 助手流式块：.chat-stream-body、Thinking 卡、工具卡合集与折叠开关
+   （.chat-fold-*）。
+   对应组件：components/chat/messages/assistant-bubble.tsx、tool-card.tsx */
+
+/* ===== Streaming chat blocks (thinking, tool calls, text) ===== */
+.chat-stream-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-left: 36px;
+  margin-right: 36px;
+}
+/* .message-content adds its own 36px padding-left for the avatar column —
+   cancel it here since .chat-stream-body is already offset the same amount. */
+.chat-stream-body .chat-text { margin-left: 0; padding-left: 0; padding-right: 0; }
+.chat-thinking {
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: transparent;
+  overflow: hidden;
+  font-size: 12px;
+}
+/* Thinking header — quiet sans row, same family as the tool cards
+ * (Claude keeps these hairline chips understated, no mono shouting). */
+.chat-thinking > .chat-fold-btn {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+/* Tool calls render as a single bordered "card" containing dense
+   rows separated by hairlines, instead of each call being its own
+   rounded box with an 8px gap. Cuts vertical space ~60% for the
+   long tool-storm assistant turns. */
+.chat-tools {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: transparent;
+  overflow: hidden;
+  font-size: 12px;
+}
+.chat-tool {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+  font-size: 12px;
+}
+.chat-tool + .chat-tool {
+  border-top: 1px solid var(--border-light);
+}
+.chat-tool.is-error { background: color-mix(in srgb, var(--accent-red) 6%, transparent); }
+/* The outer .chat-tools card is now itself collapsible. Its
+   .chat-fold-content carries the row list; kill the generic content
+   padding so rows still sit flush, and add a divider between the
+   header button and the rows. */
+.chat-tools > .chat-fold-content {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+/* Reuse the entire `.inline-tree` / `.inline-tree-header` look from
+   execution trees so chat-tools and execution trees read as one
+   family. The chat-tools card markup adds `.inline-tree` directly
+   so most of the visual style comes from those classes — these
+   overrides only handle the count badge + hide/show the body. */
+.chat-tools .chat-tools-count {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border-radius: 10px;
+  padding: 0 7px;
+  margin-left: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  display: inline-block;
+  vertical-align: middle;
+}
+.chat-tools[data-collapsed="1"] > .chat-tools-body { display: none; }
+.chat-tools[data-collapsed="0"] > .chat-tools-body { display: block; }
+.chat-tools[data-collapsed="0"] > .inline-tree-header { border-bottom: 1px solid var(--border-light); }
+/* The .inline-tree-body rules (padding) are for execution-tree
+   content; for our flat tool-row list keep zero outer padding so
+   rows sit flush to the card edges (their own row padding handles
+   breathing). */
+.chat-tools > .inline-tree-body { padding: 0; }
+.chat-fold-btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  /* Match .inline-tree-header (6px 10px) so the Thinking header,
+   * chat-tools card header, and Execution-DAG inline-tree headers
+   * all hit the same ~28px row height. Was 3px 10px which made the
+   * Thinking row look ~4px shorter than its neighbours. */
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  transition: background-color var(--transition), color var(--transition);
+}
+.chat-fold-btn:hover { background: var(--bg-hover); color: var(--text-bright); }
+.chat-fold-caret {
+  display: inline-block;
+  font-size: 12px;
+  width: 10px;
+  color: var(--text-muted);
+  transition: transform 150ms ease;
+}
+[data-collapsed="0"] > .chat-fold-btn .chat-fold-caret { transform: rotate(90deg); }
+.chat-fold-label {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-fold-elapsed {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.chat-tool-name {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.chat-tool-args {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.chat-tool.is-error .chat-tool-status { color: var(--accent-red, #c94b4b); }
+.chat-fold-content {
+  display: none;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--border-light);
+  color: var(--text-primary);
+  background: transparent;
+}
+[data-collapsed="0"] > .chat-fold-content { display: block; }
+.chat-thinking .chat-fold-content {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.chat-thinking .chat-fold-content p {
+  margin-bottom: 0.3em;
+  margin-top: 0;
+}
+.chat-thinking .chat-fold-content p:last-child {
+  margin-bottom: 0;
+}
+.chat-tool-section + .chat-tool-section { margin-top: 8px; }
+.chat-tool-section-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.chat-tool-pre {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+}

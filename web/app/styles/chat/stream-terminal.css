@@ -1,0 +1,48 @@
+/* 流式终端卡（.stream-terminal，遗留 runtime 渲染路径）。
+   对应来源：lib/runtime-bridge/ */
+
+/* Stream terminal */
+.stream-terminal-wrap {
+  margin: 4px 0 4px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: transparent;
+  overflow: hidden;
+}
+.stream-terminal-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  user-select: none;
+}
+.stream-terminal-header:hover { color: var(--text-primary); }
+.stream-terminal-toggle {
+  font-size: 12px;
+  transition: transform var(--transition);
+  display: inline-block;
+  transform: rotate(90deg);
+}
+.stream-terminal-wrap.collapsed .stream-terminal-toggle { transform: rotate(0deg); }
+.stream-terminal-wrap.collapsed .stream-terminal { display: none; }
+.stream-terminal {
+  padding: 8px 10px;
+  /* Paper inset (was a hardcoded near-black panel) — follows theme. */
+  background: var(--bg-tertiary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow-y: auto;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.stream-terminal .stream-text { color: var(--text-primary); }
+.stream-terminal .stream-tool { color: var(--stream-tool); font-weight: 600; }
+.stream-terminal .stream-status { color: var(--stream-info); font-style: italic; }
+.stream-terminal .stream-time { color: var(--text-muted); font-size: 12px; }

@@ -423,7 +423,7 @@ assert.match(
   composerCss,
   /\.envChips :global\(\.dag-hud-chip\)/,
   "HUD chips are the env-pill rule itself (composer.module.css), "
-  + "not a hand-rolled lookalike in right-dock.css",
+  + "not a hand-rolled lookalike in the dag styles",
 );
 
 /* ---- 7. HEAD is a breathing glow on its own hollow glyph ---- */
@@ -440,7 +440,7 @@ assert.match(
   + "— edges are drawn centre to centre and the fill is what buries the "
   + "line ends inside the outline",
 );
-const _cssSrc = readFileSync(new URL("../app/styles/right-dock.css",
+const _cssSrc = readFileSync(new URL("../app/styles/dag/nodes.css",
   import.meta.url), "utf8");
 assert.match(
   _cssSrc,

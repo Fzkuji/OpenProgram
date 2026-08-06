@@ -1,0 +1,67 @@
+/* DAG 无限画布：.history-body 点阵/拖拽、SVG 面、加载骨架。
+   对应来源：lib/runtime-bridge/dag/canvas.ts、pipeline.ts */
+
+/* ============ History DAG view ============ */
+
+/* The infinite canvas surface (lib/runtime-bridge/dag/canvas.ts). No
+   scrollbars and no content-driven size: the SVG fills this box and the
+   graph is reached by moving the camera.
+
+   The dot lattice IS the layout's coordinate grid — `canvas.ts` drives
+   `background-position` from the pan and `background-size` from the grid
+   pitch times the zoom, so every node visibly sits on a dot and drifting
+   off one is a bug the eye catches. */
+.history-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  touch-action: none;
+  cursor: grab;
+  /* Lattice colour = the theme's own hairline. A hardcoded white was
+     invisible the moment a light theme was active. canvas.ts rewrites
+     this on every view change (dot radius rides the zoom); this static
+     value only covers the first paint. */
+  background-image: radial-gradient(
+    var(--border-light, rgba(255, 255, 255, 0.10)) 1.2px,
+    transparent 1.2px);
+}
+.history-body.is-panning { cursor: grabbing; }
+.history-empty,
+.detail-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 40px 18px;
+  line-height: 1.55;
+}
+.detail-empty span {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.history-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.history-svg text { user-select: none; -webkit-user-select: none; }
+/* 会话切换后的首次 DAG 绘制淡入（pipeline.ts 按 session 变化加类），
+   等待 capture 期间 .history-body 里是脉冲骨架条（showHistorySkeleton）。 */
+.history-svg.dag-enter { animation: dag-fade-in 200ms ease-out; }
+@keyframes dag-fade-in { from { opacity: 0; } }
+.history-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 14px;
+}
+.history-skeleton-bar {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  animation: skeleton-pulse-dag 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-pulse-dag { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }

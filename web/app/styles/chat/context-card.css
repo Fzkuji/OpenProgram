@@ -1,0 +1,50 @@
+/* 行内上下文树卡（.context-card / #liveExecTree，遗留 runtime 渲染路径）。
+   对应来源：lib/runtime-bridge/ */
+
+/* Context tree card (inline in chat) */
+.context-card {
+  margin: 12px 0;
+  margin-left: 36px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: transparent;
+  overflow: hidden;
+}
+#liveExecTree { margin: 12px 24px 16px; }
+
+.context-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+}
+
+.context-card-header:hover { background: var(--bg-hover); }
+
+.context-card-title {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-bright);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.context-card-toggle {
+  color: var(--text-secondary);
+  font-size: 12px;
+  transition: transform var(--transition);
+}
+
+.context-card-toggle.expanded { transform: rotate(90deg); }
+
+.context-card-body {
+  padding: 8px;
+  display: none;
+}
+
+.context-card-body.expanded { display: block; }

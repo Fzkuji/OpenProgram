@@ -1,0 +1,137 @@
+/* 书签行语法（书签/网页历史中央 tab 页复用的行样式）。
+   对应组件：components/center-tabs/builtin-tab-pane.tsx */
+
+/* ============ Bookmark rows ============
+   Shared list grammar. The right sidebar no longer hosts a bookmarks
+   view — bookmarks and web history are center tabs now
+   (components/center-tabs/builtin-tab-pane.tsx) — but these row styles
+   are the vocabulary those pages are built from, so they stay global. */
+.bookmarks-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+.bookmark-row {
+  padding: 8px;
+  border-radius: var(--ui-list-radius);
+}
+.bookmark-row:hover { background: var(--bg-hover); }
+.bookmark-row-main {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.bookmark-title,
+.bookmark-title-input {
+  min-width: 0;
+  flex: 1;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+}
+.bookmark-title {
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.bookmark-title:hover { color: var(--text-bright); }
+.bookmark-title-input {
+  height: 26px;
+  padding: 3px 6px;
+  border: 1px solid var(--accent-blue);
+  border-radius: 5px;
+  outline: 0;
+  background: var(--bg-primary);
+}
+.bookmark-title-input:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+.bookmark-url {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bookmark-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+.bookmark-actions button {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.bookmark-actions button:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover-contrast);
+}
+.bookmark-actions button:last-child:hover {
+  color: var(--accent-red);
+  background: color-mix(in srgb, var(--accent-red) 15%, transparent);
+}
+.bookmarks-empty {
+  padding: 40px 18px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+  text-align: center;
+}
+
+/* Folder tree: the twisty and the folder glyph sit before the title, and
+   a row highlights while a dragged node hovers over it. */
+.bookmark-twisty {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.bookmark-twisty:hover { color: var(--text-bright); }
+.bookmark-node-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.bookmark-row[data-drop-target="true"] {
+  background: color-mix(in srgb, var(--accent-blue) 15%, transparent);
+  outline: 1px solid var(--accent-blue);
+}
+/* Between-row insertion point for sibling reordering. Collapsed to a
+   thin strip until a drag hovers it, so it never shifts the list. */
+.bookmark-drop-zone {
+  height: 4px;
+  margin: -2px 0;
+  border-radius: 2px;
+  position: relative;
+  z-index: 1;
+}
+.bookmark-drop-zone[data-drop-target="true"] {
+  background: var(--accent-blue);
+}

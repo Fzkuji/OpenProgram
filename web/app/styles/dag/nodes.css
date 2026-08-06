@@ -1,0 +1,103 @@
+/* DAG 节点：hover/HEAD 辉光/running 呼吸/ghost 灰、行内标签、
+   压缩胶囊注记。
+   对应来源：lib/runtime-bridge/dag/render/nodes.ts */
+
+.history-node { cursor: pointer; }
+.history-node circle,
+.history-node polygon,
+.history-node rect {
+  transition: filter 0.1s ease-out;
+}
+.history-node:hover circle,
+.history-node:hover polygon,
+.history-node:hover rect {
+  filter: brightness(1.2);
+}
+/* HEAD — a breathing glow on the glyph itself (render/nodes.ts stamps
+   data-head + the branch colour as `color`, dag/rendering.md §4).
+   drop-shadow hugs the shape's outline at every zoom — unlike a drawn
+   halo ring, which reads as a second blurrier node — and the slow
+   pulse says "you are here" without repainting anything. */
+.history-node [data-head="1"] {
+  animation: dag-head-glow 2.4s ease-in-out infinite;
+}
+@keyframes dag-head-glow {
+  0%, 100% { filter: drop-shadow(0 0 2px currentColor); }
+  50% { filter: drop-shadow(0 0 7px currentColor); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .history-node [data-head="1"] {
+    animation: none;
+    filter: drop-shadow(0 0 4px currentColor);
+  }
+}
+
+/* status=running：同形状虚线描边 + 呼吸（rendering.md 第四节）。 */
+.history-node.is-running circle,
+.history-node.is-running polygon,
+.history-node.is-running rect {
+  animation: dag-breathe 1.6s ease-in-out infinite;
+}
+@keyframes dag-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* Next-message context range: nodes/edges outside the active branch
+   the next chat message will carry are faded. Transition so the range
+   updating after a turn reads as a soft change, not a flash. */
+/* Nodes keep a solid fill regardless of context / head membership —
+   sub-call nodes from nested @agentic_function calls should look the
+   same as top-level nodes. Edges still dim to convey context range. */
+.history-node.out-of-context { opacity: 1; }
+
+/* Inline row labels — message preview / function name beside each node. */
+.history-label {
+  font-size: 11px;
+  font-family: var(--font-sans, sans-serif);
+  fill: var(--text-muted);
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+}
+.history-label.on-head { fill: var(--text-secondary); }
+.history-label.is-head { fill: var(--text-primary); font-weight: 600; }
+
+/* ============ Compaction capsule, ghosts, archived failures ============ */
+/* dag/rendering.md §9 / §10. One grey answers both: a covered turn and
+   an abandoned failed turn are alike on the only axis the graph is
+   about — still on disk, never in the next request. */
+/* The ghost grey follows the theme, keyed on data-theme (what
+   lib/prefs/theme-pref.ts stamps on <html>) — NOT prefers-color-scheme:
+   the palette is the user's theme choice, not the OS scheme. Receded
+   means receded relative to the canvas: darker than the text tiers on
+   dark canvases, paler than them on light ones — the dark-only value
+   used to be the heaviest ink on a light canvas. */
+:root { --dag-ghost: #57564f; }
+[data-theme="light"] { --dag-ghost: #b8b8c0; }
+[data-theme="beige-light"] { --dag-ghost: #b9b7ae; }
+
+/* The note beside a compaction capsule ("已压缩 · 14 轮"). It is the
+   fold's own affordance — the pleats say a stack is there, this says
+   how deep. Annotation grey: the pill is the glyph, this is what the
+   pill means. */
+.history-summary-label {
+  font-size: 10px;
+  font-family: var(--font-sans, sans-serif);
+  fill: var(--text-muted, var(--text-secondary));
+  dominant-baseline: middle;
+}
+.history-node.is-summary:hover .history-summary-label {
+  fill: var(--text-primary);
+}
+
+/* Ghosts do not brighten on hover: the whole point of the state is
+   that these nodes read as receded. They stay clickable. */
+.history-node.is-ghost:hover circle,
+.history-node.is-ghost:hover polygon,
+.history-node.is-ghost:hover rect,
+.history-node.is-archived-failure:hover circle,
+.history-node.is-archived-failure:hover polygon,
+.history-node.is-archived-failure:hover rect {
+  filter: none;
+}

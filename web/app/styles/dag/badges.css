@@ -1,0 +1,25 @@
+/* DAG 角标与分支标签：.history-thread-count 折叠数、.history-branch-tag。
+   对应来源：lib/runtime-bridge/dag/render/badges.ts、nodes.ts */
+
+/* 折叠数角标（rendering.md §12）：数字贴在字形右上角，是字形的标注。
+   淡灰、小号——它说明节点，不与节点争眼。hover 提亮做可点暗示。 */
+.history-thread-count {
+  font-size: 9px;
+  font-family: var(--font-sans, sans-serif);
+  font-weight: 500;
+  fill: var(--text-muted, #8a887f);
+  dominant-baseline: middle;
+}
+.history-node.has-thread:hover .history-thread-count {
+  fill: var(--text-primary);
+}
+
+/* 图内分支标签 = 分支切换按钮（顶部分支条已删）。非活动标签 hover
+   提亮描边示意可点；活动标签描边用分支色、无 hover 变化。 */
+.history-branch-tag:not(.active):hover .history-branch-tag-bg {
+  stroke: var(--text-muted, #8a8880);
+  fill: var(--bg-hover, #ecebe4);
+}
+.history-branch-tag:not(.active):hover text {
+  fill: var(--text-bright, #1a1a17);
+}

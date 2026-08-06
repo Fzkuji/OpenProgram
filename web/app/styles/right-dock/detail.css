@@ -1,3 +1,7 @@
+/* 右栏详情视图正文（detail body、执行树节点行、状态徽章）。
+   对应组件：components/right-sidebar/right-sidebar.tsx（正文由遗留
+   渲染器 emit，见文件内注释） */
+
 /* ===== Right Panel (Detail) =====
    The detail panel's shell (`.detail-panel / -panel.collapsed`,
    `.detail-header`, `.detail-title`, `.detail-close`,
@@ -155,100 +159,3 @@
 /* The legacy ``.pulse`` class + ``pulse`` keyframes used to drive
    the inline-tree-header ``●`` glyph; that surface now uses
    .indicator-dot pulse-opacity, defined in chat.css. */
-
-
-/* ===== Per-turn file diff =====
-   Rendered by components/chat/messages/unified-diff.tsx from the
-   `turn_file_diff` WS action, inline under a turn's file-edit card.
-   Hand-rolled unified-diff colouring: the parser tags each row
-   add/del/hunk/meta/ctx and these rules paint it. Two gutter columns
-   carry the old/new line numbers. */
-
-.file-diff-note {
-  margin-bottom: 8px;
-  padding: 6px 8px;
-  border-radius: var(--radius);
-  background: var(--bg-tertiary);
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--text-muted);
-}
-
-.file-diff-empty {
-  padding: 12px 0;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.file-diff-empty.is-error { color: var(--accent-red); }
-
-.file-diff-body {
-  margin: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-primary);
-  overflow-x: auto;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.55;
-}
-
-/* min-width: max-content makes each row as wide as its own content, so when
-   .file-diff-body scrolls horizontally the tint follows the CONTENT width
-   instead of stopping at the visible edge. */
-.file-diff-line {
-  display: flex;
-  min-width: max-content;
-  white-space: pre;
-}
-/* Change indicator strip at the far left of the gutter: solid for adds,
-   diagonal dashes for deletes. Transparent (not absent) on ctx/meta/hunk so
-   every line kind keeps the same horizontal alignment. */
-.file-diff-line::before {
-  content: "";
-  flex: 0 0 auto;
-  width: 3px;
-  align-self: stretch;
-  background: transparent;
-}
-.file-diff-line.is-add::before { background: var(--accent-green); }
-.file-diff-line.is-del::before {
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--accent-red) 0 2px,
-    transparent 2px 4px
-  );
-}
-/* Tinted with color-mix so the same rule reads correctly on light and
-   dark themes — a fixed rgba() would wash out on one of them. */
-.file-diff-line.is-add {
-  background: color-mix(in srgb, var(--accent-green) 14%, transparent);
-}
-.file-diff-line.is-del {
-  background: color-mix(in srgb, var(--accent-red) 14%, transparent);
-}
-.file-diff-line.is-hunk {
-  background: var(--bg-tertiary);
-  color: var(--text-muted);
-}
-.file-diff-line.is-meta { color: var(--text-muted); }
-
-.file-diff-no {
-  flex: 0 0 auto;
-  width: 34px;
-  padding: 0 6px;
-  text-align: right;
-  color: var(--text-dim, var(--text-muted));
-  opacity: 0.7;
-  user-select: none;
-  font-variant-numeric: tabular-nums;
-}
-/* flex-grow so short lines still stretch the tint to the right edge, but
-   flex-shrink: 0 so a long line pushes the row wider instead of being
-   squeezed back to the container width. */
-.file-diff-text {
-  flex: 1 0 auto;
-  padding: 0 8px 0 4px;
-  color: var(--text-primary);
-}
-.file-diff-line.is-add .file-diff-text { color: var(--accent-green); }
-.file-diff-line.is-del .file-diff-text { color: var(--accent-red); }

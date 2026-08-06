@@ -1,0 +1,72 @@
+/* 中央窗格宿主：.center-pane-chat、分支条、转录⇄DAG 视角切换按钮。
+   对应组件：components/app-shell.tsx、components/chat/view-controls.tsx */
+
+/* ═══ Center perspectives: transcript ⇄ session context DAG ═══════════
+   The chat pane hosts BOTH surfaces at once and swaps them with
+   `display`. Keeping the graph mounted matters: the DAG renderer paints
+   into `#historyPanel .history-body` on every WebSocket capture whether
+   or not it is on screen, so unmounting would blank it until the next
+   one. The pane is a real flex box (not the `display: contents` of
+   `.center-single-pane`) so the floating view controls have something to
+   position against. */
+.center-pane-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+/* Branch strip — one wrapping row of pills above the canvas. Replaces
+   the branch LIST the rail used to hold: the graph already draws the
+   branch structure, so the strip only has to answer "which one am I
+   on" and let you switch. Capped at three rows so a session with many
+   branches still leaves the canvas the bulk of the pane. */
+.branches-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  max-height: calc(28px * 3 + 12px + 16px);
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Obsidian-style pane controls: perspective toggle + `…` overflow,
+   floating at the pane's top-right over whichever surface is showing. */
+.chat-view-controls {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 20;
+  display: flex;
+  /* 竖排：视图切换在上，… 菜单在下。 */
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.chat-view-control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  /* 圆角方形，不是圆形。 */
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.chat-view-control-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+.chat-view-control-btn[aria-pressed="true"] {
+  color: var(--text-bright);
+}

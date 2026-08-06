@@ -1,0 +1,215 @@
+/* attach/spawn 指针卡（子 agent 任务卡）。
+   对应组件：components/chat/messages/attach-card.tsx、spawned-from-card.tsx */
+
+/* 一行态的 attach 卡（顶层 /task 斜杠路径仍用）：头部即全部。 */
+.attach-card[data-expanded="0"] .attach-card-header { border-bottom: none; }
+
+/* AttachCard — a pointer row written when this turn referenced a
+   peer agent (via spawn / attach operations). Rendered standalone
+   (no avatar, no "Agentic" header) because it's not a turn — it's
+   a marker. `.attach-row` mirrors `.runtime-block`'s 60px horizontal
+   margin so the card lines up with the chat text column instead of
+   the avatar column. */
+.attach-row {
+  /* Vertical gap matches the user / assistant bubble spacing (16px)
+     so the card flows with the chat rhythm instead of feeling
+     tighter than the surrounding turns. */
+  margin: 16px 60px;
+}
+.attach-card {
+  margin-top: 0;
+  padding: 10px 12px;
+  background: transparent;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.attach-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.attach-card-icon {
+  width: 18px; height: 18px;
+  color: var(--text-secondary);
+  flex: 0 0 18px;
+}
+.attach-card-icon svg { width: 100%; height: 100%; }
+.attach-card-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.attach-card-label {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text-bright);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* Live status pill — shows running / errored / cancelled etc.
+   Hidden when status is "completed" or absent. */
+.attach-card-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+}
+.attach-card-status-pending,
+.attach-card-status-queued {
+  background: color-mix(in srgb, var(--text-muted) 20%, transparent);
+  color: var(--text-secondary);
+}
+.attach-card-status-running {
+  background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+  color: var(--accent-blue);
+}
+.attach-card-status-errored {
+  background: color-mix(in srgb, var(--accent-red) 18%, transparent);
+  color: var(--accent-red);
+}
+.attach-card-status-cancelled {
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  color: var(--text-muted);
+}
+/* Cancel button — only shown while the attach's task is still
+   running (or pending / queued). Subtle outlined pill that doesn't
+   compete with the running-status pill in the header. */
+.attach-card-cancel {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.attach-card-cancel:hover {
+  border-color: var(--accent-red, #e5534b);
+  color: var(--accent-red, #e5534b);
+}
+.attach-card-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attach-card-head {
+  margin-left: 6px;
+  color: var(--text-secondary);
+}
+.attach-card-open {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-bright);
+  font-size: 12px;
+  cursor: pointer;
+}
+.attach-card-open:hover { background: var(--bg-hover); }
+.attach-card-open svg { width: 12px; height: 12px; }
+/* Drop-in replacement when the chat is already on the branch this
+   card points at — same slot as the Switch button, neutral colour
+   so it reads as a passive tag, not an action. */
+.attach-card-here {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  user-select: none;
+}
+.attach-card-source {
+  color: var(--text-bright);
+  font-weight: 600;
+}
+.attach-card-preview-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-bottom: 4px;
+}
+.attach-card-preview {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  max-height: 140px;
+  overflow: auto;
+}
+/* Footer surfacing the staged-attach status — only present on
+   user-initiated attaches (manual=true). Spawn-attached cards stay
+   plain because the spawn turn already happened, nothing is staged. */
+.attach-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px dashed var(--border);
+}
+.attach-card-status {
+  flex: 1 1 auto;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  min-width: 0;
+}
+/* Auto-followup notice — synthetic ``[系统消息]…`` user msg the
+   runner writes after the sub-task finishes (display=runtime, hidden
+   from the chat panel). Surfacing it inline on the attach card so
+   the card represents the full sub-task lifecycle. */
+.attach-card-followup {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.attach-card-followup-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.attach-card-followup-body {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: pre-wrap;
+  line-height: 1.45;
+  max-height: 96px;
+  overflow: auto;
+}

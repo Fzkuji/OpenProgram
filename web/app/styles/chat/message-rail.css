@@ -1,0 +1,177 @@
+/* 右缘消息导航：刻度条、预览卡与 rail-flash 定位强调。
+   对应组件：components/chat/messages/message-rail.tsx */
+
+/* ═══ 左缘消息导航（Codex 风格刻度 + Dock 放大 + 单条预览卡） ═══ */
+.msg-rail-anchor {
+  position: sticky;
+  top: 45%;
+  height: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+.msg-rail {
+  position: absolute;
+  /* 锚点在 800px 消息列里；用容器宽(100cqw = chat-area)把自己推到
+     聊天区左缘（滚动条留给右边）。 */
+  left: calc((100% - 100cqw) / 2 + 8px);
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  /* 横向留出更大的命中区，鼠标不必精准压在细线上；纵向留白让首尾条
+     上下也有可悬停余量。 */
+  padding: 10px 12px;
+  pointer-events: auto;
+  /* 车道 = 列左侧的留白（(聊天区宽 − 列宽)/2），条带只准住在这条
+     车道里，超出的部分裁掉——绝不横向侵入输入框/消息列的 x 范围。 */
+  max-width: calc((100cqw - 100%) / 2 - 14px);
+  overflow-x: hidden;
+  /* 间距固定不压缩；刻度太多时封顶并内部纵向滚动，不再挤成一坨。
+     translateY(-50%) 基于实际渲染高度，封顶后仍整体居中。 */
+  max-height: 80vh;
+  overflow-y: auto;
+  /* 预览卡是条带的兄弟节点，不受这里的 overflow 裁剪。 */
+  /* 自己能滚，但不画滚动条——刻度即位置指示，再叠一根滚动条是噪声。 */
+  scrollbar-width: none;
+  /* 上下缘渐隐：溢出的刻度淡出而不是被硬切一刀。 */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 28px,
+    black calc(100% - 28px),
+    transparent
+  );
+}
+.msg-rail::-webkit-scrollbar {
+  display: none;
+}
+.msg-rail-dash {
+  height: 2.5px;
+  /* flex 列会把子项压扁塞进 max-height：不禁 shrink 的话 60+ 条刻度
+     被压成头发丝、容器也永不溢出（滚动随之失效）。 */
+  flex-shrink: 0;
+  border: none;
+  padding: 0;
+  border-radius: 999px;   /* 圆头（GPT 风格）*/
+  background: var(--text-muted);
+  opacity: 0.45;
+  cursor: default;
+  /* 坡度即时跟手：极短 width 过渡抹掉跳变，不拖沓。 */
+  transition: width 45ms linear, opacity 80ms ease-out, background 80ms ease-out;
+}
+/* .hovered 由 JS 按光标最近刻度加（含缝隙），不依赖压中 2px 的 button。 */
+.msg-rail-dash.hovered,
+.msg-rail-dash:focus-visible {
+  opacity: 1;
+  background: var(--text-bright, #f8f8f6);
+}
+.msg-rail-dash:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.msg-rail-dash.active {
+  background: var(--text-bright, #f8f8f6);
+  opacity: 0.95;
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg-rail-dash { transition: none; }
+}
+/* 单条预览卡：跟随悬停刻度垂直定位，弹在刻度右侧。 */
+.msg-rail-card {
+  position: absolute;
+  /* top / left 由 JS 按命中条实时 rect 相对 anchor 定位（rail 可内部滚动，
+     故不能用固定 left:100%）。translateY(-50%) 让卡片纵向对齐命中条中点。 */
+  transform: translateY(-50%);
+  width: 300px;
+  /* 复刻 codex 预览卡：深灰面板 + 微亮细边，无投影。 */
+  background: var(--surface-popover);
+  border: 1px solid color-mix(in srgb, var(--text-bright) 9%, transparent);
+  border-radius: 14px;
+  padding: 12px 14px;
+  pointer-events: none;
+}
+/* codex 风格：顶行 = 用户输入，亮色、单行截断（像标题）。 */
+.msg-rail-card-text {
+  color: var(--text-bright);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.msg-rail-card-text * {
+  display: inline;
+  white-space: nowrap;
+}
+.msg-rail-card .user-attachments { margin-top: 8px; }
+/* 下面 = 模型输出开头，灰色多行，无分隔线。
+   卡内一切块间距统一 6px（含摘要内部的 markdown 段间距），否则
+   标题→摘要(块间距) 和 摘要段落之间(p 间距) 一疏一密。 */
+.msg-rail-card-reply {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  /* 行钳截断（整行 + 省略号）。max-height 截不准——markdown 段落
+     的 margin 会让第三行被拦腰切半。内部块级全部压成 inline，段落
+     间补一个空格，摘要就是参照那种连续一段灰字。 */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+.msg-rail-card-reply * {
+  display: inline;
+  margin: 0;
+}
+.msg-rail-card-reply p::after,
+.msg-rail-card-reply li::after {
+  content: " ";
+}
+/* 卡片内 markdown 标题不放大（两段均已压成 inline，无边距问题）。 */
+.msg-rail-card-text h1,
+.msg-rail-card-text h2,
+.msg-rail-card-text h3,
+.msg-rail-card-text h4,
+.msg-rail-card-reply h1,
+.msg-rail-card-reply h2,
+.msg-rail-card-reply h3,
+.msg-rail-card-reply h4 {
+  font-size: inherit;
+  font-weight: 600;
+}
+/* 预览卡里的编辑卡去掉外框，跟上文左对齐（卡片边框在这个尺度上
+   太重）；行内的 +N/-N 与 hover 操作仍沿用上面的通用规则。 */
+.msg-rail-card .turn-files-card {
+  margin-top: 6px;
+  border: none;
+  background: none;
+  border-radius: 0;
+}
+.msg-rail-card .turn-files-row { padding: 1px 0; }
+.msg-rail-card .turn-files-file + .turn-files-file { border-top: none; }
+.msg-rail-card .turn-files-diff { padding: 4px 0 6px; border-top: none; }
+.msg-rail-card .turn-files-summary {
+  padding: 0 0 3px;
+  border-bottom: none;
+}
+.msg-rail-card .turn-files-more {
+  padding: 3px 0;
+  border-top: none;
+}
+.msg-rail-card .turn-files-name {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* 消息导航点击 → 强调那条气泡：橙色背景闪烁一下（滚到位后触发）。 */
+@keyframes railFlash {
+  0%   { background-color: var(--bg-tertiary); }
+  18%  { background-color: color-mix(in srgb, var(--accent-blue) 50%, var(--bg-tertiary)); }
+  100% { background-color: var(--bg-tertiary); }
+}
+.rail-flash {
+  animation: railFlash 1.6s ease-out 1;
+}

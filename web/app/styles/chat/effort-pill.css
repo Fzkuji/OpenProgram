@@ -1,0 +1,127 @@
+/* composer 底行容器查询与 effort pill（含 Ultracode 态；窄行时也
+   负责隐藏 .context-stats-label，容器由 .composer-bottom-row 声明）。
+   对应组件：components/chat/composer/controls/thinking-effort-pill.tsx、
+   controls-cluster.tsx */
+
+/* Composer bottom-row container. Declared globally (not in the CSS
+   module) because CSS Modules in this project scope `container-name`
+   into a hashed identifier, which makes the `@container` rule below
+   never match. The class is applied alongside `styles.inputBottomRow`
+   in composer/index.tsx. Container queries (not viewport `@media`)
+   are required here — the composer also renders inside narrow side
+   panels where viewport width says nothing useful. */
+.composer-bottom-row {
+  container-type: inline-size;
+  container-name: composer-row;
+}
+
+/* Effort pill — collapsed it's a 32px round chip like the neighbouring
+   tool chips: icon pinned left, hovering widens the pill to 48px and
+   slides the caret out the right edge (the chips do the same with
+   their ×). Click opens the floating effort CARD above the trigger.
+   7 + 18 + 7 = 32 collapsed; 7 + 18 + 4 + 12 + 7 = 48 hovered. */
+.effort-pill-host {
+  flex: 0 0 auto;
+  width: var(--composer-button-size);
+}
+
+.effort-pill-shell {
+  width: var(--composer-button-size);
+}
+
+/* Expanded: the shell leaves the row and becomes a floating layer
+   anchored above the host, right-aligned. The shell itself is a
+   transparent carrier — its 8px padding-bottom is the hover bridge
+   between trigger and card (mouseleave-to-close must not fire while
+   the pointer crosses the visual gap); the .effort-card inside paints
+   the popover surface. */
+.effort-pill-shell[data-expanded="true"] {
+  width: 220px; /* Claude 实测卡宽 */
+  height: auto;
+  top: auto;
+  bottom: 100%;
+  left: auto;
+  right: 0;
+  /* 9 = 10px band gap − 1px 输入框外扩 ring，兼 hover 桥：卡片底缘
+     与输入框可见边缘完全贴合（底部一排弹层统一规则）。 */
+  padding-bottom: 9px;
+  z-index: 30;
+}
+
+.effort-pill-shell:not([data-expanded="true"]):hover {
+  width: 48px;
+}
+
+.effort-pill-shell:not([data-expanded="true"]):hover .effort-pill-caret {
+  width: 12px;
+  margin-left: 4px;
+  opacity: 1;
+}
+
+.effort-pill-compact-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.effort-pill-caret {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: 0;
+  margin-left: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: width 180ms cubic-bezier(0.16, 1, 0.3, 1),
+              margin-left 180ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 180ms ease;
+}
+
+/* The animated ChevronRightIcon draws at 24-viewBox / stroke 2; scaled
+   to 12px the line thins to 1px — 3 brings it back to ~1.5px rendered.
+   flex-shrink on the svg + its wrapper div: without it the flex caret
+   span squeezes the icon to 0 width during the slide-out. */
+.effort-pill-caret svg {
+  stroke-width: 3;
+  flex-shrink: 0;
+}
+
+.effort-pill-caret > div {
+  flex-shrink: 0;
+}
+
+/* Narrow composer row → drop the token-usage pill entirely instead of
+   letting it clip past the right edge (the previous behavior showed
+   half a "5.1k in" pill cut off mid-character). */
+@container composer-row (max-width: 380px) {
+  .context-stats-label {
+    display: none;
+  }
+}
+
+@container composer-row (max-width: 520px) {
+  .composer-bottom-row:has([data-effort-expanded="true"]) .context-stats-label {
+    display: none;
+  }
+}
+
+/* Narrow composer row → the floating effort card can't afford its full
+   280px; clamp it to the composer row width (it extends leftward from
+   the right-aligned trigger). */
+@container composer-row (max-width: 520px) {
+  .effort-pill-shell[data-expanded="true"] {
+    width: min(220px, calc(100cqw - 16px));
+  }
+}
+
+/* ─── Effort 最高档（Ultracode）：紫色像素矩阵 ─────────────────────
+   底色为左灰右紫的水平渐变；像素矩阵动画由 <UltraRain> canvas 绘制
+   （固定格子矩阵、逐格随机亮灭、入场从右往左辐射）。刻度点隐藏。 */
+/* ─── Effort 最高档（Ultracode）：紫底 + 白方块矩阵动画 ────────────
+   底色与像素矩阵动画全部由 <UltraRain> canvas 逐帧绘制（紫渐变底 +
+   满铺白方块的从右往左流动 + 入场辐射）。这里只隐藏档位刻度点。 */
+.effort-ultra ~ .slider-tick,
+.effort-ultra .slider-tick {
+  display: none;
+}

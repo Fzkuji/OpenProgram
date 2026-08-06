@@ -1,0 +1,63 @@
+/* 统一状态圆点系统（.indicator-dot，docs/design/indicator-dots.md）。
+   对应组件：components/chat/messages/tool-card.tsx、attach-card.tsx、
+   components/chat/composer/status-chip.tsx 等 */
+
+/* ===== indicator-dot — unified status dot system =====
+ * One CSS class for every "small coloured circle" indicator in
+ * the chat UI (Function call header dot, Running… pulse,
+ * provider connection status, attach-card status). The outer
+ * box is always 12.8x12.8 (matches the ``●`` glyph advance
+ * width at 14px font) so dots line up by layout — no per-call-
+ * site margin tweaks. ::before paints the visible disc and
+ * carries any breathing animation, keeping the layout slot
+ * stable. Modifier classes pick size, colour, animation.
+ *
+ * See docs/design/indicator-dots.md for the full plan.            */
+.indicator-dot {
+  display: inline-block;
+  position: relative;
+  width: 12.8px;
+  height: 12.8px;
+  vertical-align: middle;
+  color: var(--accent-blue, #6cb4ff);
+  flex-shrink: 0;
+}
+.indicator-dot::before {
+  content: "";
+  position: absolute;
+  inset: 1.4px;             /* default md = 10x10 disc inside 12.8x12.8 box */
+  border-radius: 50%;
+  /* Disc colour resolution order:
+       1. --dot-color set by a modifier (.--ok / .--warn / ...)
+       2. currentColor — lets the caller drive the dot by setting
+          ``color`` on a parent (matches how the old
+          .attach-card-status-dot inherited its parent pill's hue).
+     Outer ``.indicator-dot`` sets a sane ``color`` default so an
+     unscoped <span class="indicator-dot" /> still shows up. */
+  background: var(--dot-color, currentColor);
+}
+.indicator-dot.sm {
+  width: 10px;
+  height: 10px;
+}
+.indicator-dot.sm::before {
+  inset: 2px;                /* sm = 6x6 disc inside 10x10 box */
+}
+.indicator-dot.--ok      { --dot-color: var(--accent-green); }
+.indicator-dot.--warn    { --dot-color: var(--accent-yellow); }
+.indicator-dot.--err     { --dot-color: var(--accent-red); }
+.indicator-dot.--neutral { --dot-color: var(--accent-blue, #6cb4ff); }
+.indicator-dot.pulse-opacity::before {
+  animation: indicatorPulseOpacity 1.5s ease-in-out infinite;
+}
+.indicator-dot.pulse-scale::before {
+  animation: indicatorPulseScale 1.4s ease-in-out infinite;
+}
+@keyframes indicatorPulseOpacity {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+@keyframes indicatorPulseScale {
+  0%, 100% { transform: scale(0.85); opacity: 0.9; }
+  50%      { transform: scale(1.15); }
+}

@@ -1,0 +1,55 @@
+/* "思考中" 轨道环 spinner（.thinking-spinner）。
+   对应组件：components/chat/messages/assistant-bubble.tsx、message-list.tsx */
+
+/* ===== thinking-spinner — "a bubble orbiting inside a fixed ring" =====
+ * Replaces the old orange pulsing dot on the "thinking…" line. The
+ * outer ring is a FIXED blue→purple gradient — it does NOT breathe or
+ * change size (calm and tidy). A small solid bubble orbits along the
+ * inside of the ring to signal work in progress. Echoes the logo. */
+.thinking-spinner {
+  display: inline-block;
+  position: relative;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+/* fixed gradient ring */
+.thinking-spinner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 180deg, var(--accent-blue), var(--accent-purple), var(--accent-blue));
+  /* 外环环宽 ~2px，和内圈 border(2px) 一样粗：内壁半径 6.8px，
+     环从 ~7.2 到 9(box边) ≈ 2px。 */
+  -webkit-mask: radial-gradient(circle, transparent 6.8px, #000 7.2px);
+  mask: radial-gradient(circle, transparent 6.8px, #000 7.2px);
+}
+/* the orbiting bubble: a small solid disc pinned to the top of the
+   spinner, rotated about the spinner's center so it travels around the
+   inside of the ring. transform-origin is the geometric center of the
+   18x18 box relative to the 5x5 bubble that sits at the top. */
+.thinking-spinner::after {
+  content: "";
+  position: absolute;
+  /* 小圈放大到 8px（半径 4）；外环内壁 ~7.4px，轨道半径设 2px →
+     小圈外缘到圆心 6px < 7.4px，留约 1.4px 空隙、不重叠。
+     轨道半径 2 → 小圈中心 y=9-2=7 → top = 7-4 = 3px。 */
+  top: 3px;
+  left: 50%;
+  width: 8px;               /* 放大：6 -> 8 */
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: transparent;  /* hollow */
+  border: 2px solid var(--accent-purple);
+  box-sizing: border-box;
+  /* 绕 box 中心(9,9) 转：相对小圈自身左上角(5,3) → (9-5, 9-3) = (4, 6) */
+  transform-origin: 4px 6px;
+  animation: thinkingOrbit 1.15s linear infinite;
+}
+@keyframes thinkingOrbit {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}

@@ -1,6 +1,51 @@
 /* App-global stylesheet — split by area under ./styles/. Order matters
-   for the cascade: base (tokens / reset / layout) loads first. */
+   for the cascade: base (tokens / reset / layout) loads first, then the
+   chat column, then the right dock, then the DAG surfaces. Each file
+   is one UI component's styles; the header comment inside names the
+   owning tsx/ts source. */
 @import "./styles/base.css";
-@import "./styles/chat.css";
-@import "./styles/detail.css";
-@import "./styles/right-dock.css";
+
+/* ── 聊天列（components/chat/） ─────────────────────────────── */
+@import "./styles/chat/layout.css";
+@import "./styles/chat/top-bar-chips.css";
+@import "./styles/chat/transcript.css";
+@import "./styles/chat/peer-session-pane.css";
+@import "./styles/chat/bubbles.css";
+@import "./styles/chat/message-actions.css";
+@import "./styles/chat/exec-log.css";
+@import "./styles/chat/typing-indicator.css";
+@import "./styles/chat/indicator-dot.css";
+@import "./styles/chat/thinking-spinner.css";
+@import "./styles/chat/context-card.css";
+@import "./styles/chat/inline-tree.css";
+@import "./styles/chat/execution-strip.css";
+@import "./styles/chat/jump-latest.css";
+@import "./styles/chat/message-rail.css";
+@import "./styles/chat/attach-card.css";
+@import "./styles/chat/stream-terminal.css";
+@import "./styles/chat/stream-blocks.css";
+@import "./styles/chat/context-badge.css";
+@import "./styles/chat/effort-pill.css";
+@import "./styles/chat/turn-files-card.css";
+@import "./styles/chat/file-diff.css";
+@import "./styles/chat/user-attachments.css";
+@import "./styles/chat/center-pane.css";
+@import "./styles/chat/agent-branch-banner.css";
+
+/* ── 右侧栏（components/right-sidebar/） ────────────────────── */
+@import "./styles/right-dock/detail.css";
+@import "./styles/right-dock/view-host.css";
+@import "./styles/right-dock/bookmarks.css";
+@import "./styles/right-dock/branches-panel.css";
+@import "./styles/right-dock/web-history.css";
+
+/* ── DAG 画布（lib/runtime-bridge/dag/） ────────────────────── */
+@import "./styles/dag/view-host.css";
+@import "./styles/dag/dag-flash.css";
+@import "./styles/dag/canvas.css";
+@import "./styles/dag/edges.css";
+@import "./styles/dag/nodes.css";
+@import "./styles/dag/badges.css";
+@import "./styles/dag/tooltip.css";
+@import "./styles/dag/inspector.css";
+@import "./styles/dag/hud.css";

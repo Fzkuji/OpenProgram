@@ -1,0 +1,74 @@
+/* 分屏伴读窗格（chat+chat split 的只读半屏）。
+   对应组件：components/chat/peer-session-pane.tsx */
+
+/* Peer pane (the read-along half of a chat+chat split view). It reuses
+   .chat-area / .chat-messages for bubble styling, but sits in a much
+   narrower flex column and renders no message rail. The base
+   `calc(100% - 112px)` gutter reserves rail space that doesn't exist
+   here, and at pane widths it collapses the content column toward zero —
+   which is what squeezed bubbles to one character wide and stacked CJK
+   text vertically. Drop the gutter to a plain padding and let the column
+   use the full pane width. */
+.peer-session-pane .chat-messages {
+  max-width: 100%;
+  /* The base rule's `flex: 1` pins the column to the scroller's height
+     (the pane's .chat-area is display:flex), so content overflows the box
+     and bottom padding can't extend the scroll range. Let it grow. */
+  flex: none;
+  /* Bottom padding clears the composer, which is `position:absolute;
+     bottom:0` and floats OVER the scroll area (same as the main shell,
+     where `.chat-messages` reserves 25vh for it). The pane measures its
+     composer and publishes the real height as --peer-composer-h; the
+     fallback covers the first frame before that lands. */
+  /* Side gutters: the composer's visible box starts 56px in (24px
+     inputArea padding + 32px stack inset), and the design keeps the
+     input WIDER than the transcript — so the text column insets past
+     it, 64px per side. */
+  padding: 12px 64px var(--peer-composer-h, 180px) 64px;
+  margin: 0 auto;
+}
+/* The composer floats OVER the transcript rather than taking a flex row —
+   same as the main shell, where `.inputArea` is absolutely anchored inside
+   `#chatView`. Taking it out of flow is what lets the scroll area own the
+   full pane height; the reserved `--peer-composer-h` padding above is what
+   keeps the last bubble clear of it. Anchoring here (not on the pane) means
+   `.inputArea`'s `bottom:0` lands on the pane's bottom edge. */
+.peer-session-composer-host {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+}
+.peer-session-pane .message {
+  padding: 12px 0;
+}
+/* Split panes hide the avatar column to save width, so EVERY 36px
+   avatar-gutter inset must go together: content padding, stream-body
+   margins, typing indicator, assistant footer. Missing any one of them
+   leaves that element misaligned by 36px against the rest. */
+.peer-session-pane .message-header {
+  display: none;
+}
+.peer-session-pane .message-content {
+  min-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  overflow-wrap: anywhere;
+}
+.peer-session-pane .chat-stream-body {
+  margin-left: 0;
+  margin-right: 0;
+}
+.peer-session-pane .message.assistant > .typing-indicator,
+.peer-session-pane .message.assistant .message-actions-footer {
+  padding-left: 0;
+}
+/* User bubble + its footer keep the same (small) right edge together. */
+.peer-session-pane .message.user .message-content {
+  max-width: 88%;
+  margin-right: 8px;
+}
+.peer-session-pane .message.user .message-actions-footer {
+  margin-right: 8px;
+}

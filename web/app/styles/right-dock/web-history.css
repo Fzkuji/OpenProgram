@@ -1,0 +1,20 @@
+/* 网页浏览历史行（favicon 与时间列）。
+   对应组件：components/center-tabs/builtin-tab-pane.tsx */
+
+/* ============ Web browsing history ============ */
+/* The history page is a center tab now (builtin-tab-pane.tsx); it reuses
+   the bookmark row styles above, plus this timestamp cell. */
+.browsing-history-favicon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.browsing-history-time {
+  flex-shrink: 0;
+  padding-right: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}

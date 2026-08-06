@@ -1,0 +1,58 @@
+/* composer 右下 context 用量徽章与圆环。
+   对应组件：components/chat/context-badge.tsx、context-breakdown-panel.tsx */
+
+/* Per-conversation token-usage pill in the composer's bottom-right slot.
+   Rendered by <ContextBadge> (web/components/chat/context-badge.tsx) as a
+   global class. The rule lived in the old 05-chat.css and was dropped in
+   58e7709 along with the rest of the legacy composer CSS; restore it here
+   so the badge stops rendering as unstyled text. */
+.context-stats-label {
+  font-size: 12px;
+  color: var(--text-bright);
+  font-family: var(--font-mono);
+  height: 30px;
+  line-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+  white-space: nowrap;
+  cursor: default;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* context 用量圆环（对齐 Claude Code 右下角那个小环）——点击弹 /context 面板。
+   hover 时露出圆角方块背景，尺寸/圆角与底部那排 pill（Opus/High 等）一致，
+   视觉统一。 */
+.context-ring-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 50%;       /* 圆形 hover 背景，与圆环同心 */
+  transition: background 0.15s;
+}
+.context-ring-badge:hover {
+  background: var(--bg-hover);
+}
+.context-ring-badge:focus-visible {
+  outline: 2px solid var(--accent-blue, #3b9eff);
+  outline-offset: 1px;
+}
+
+/* Context breakdown card — usage meters are BLUE (Claude uses blue for
+   usage bars; coral stays the action colour, and --accent-blue is
+   aliased to coral so it can't be reused here). Track: --bg-tertiary
+   on the light white card; in dark, --bg-tertiary EQUALS
+   --surface-popover, so a translucent white step keeps it visible. */
+.context-breakdown-panel {
+  --usage-bar: var(--meter-fill);
+  --usage-track: var(--meter-track);
+}

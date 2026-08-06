@@ -1,0 +1,24 @@
+/* DAG 边：可点击命中区、hover 加粗、出上下文淡化。
+   对应来源：lib/runtime-bridge/dag/render/edges.ts */
+
+/* Edge colour / stroke-width are set inline per-lane in history-graph.js
+   so every branch reads as its own continuous ribbon. No CSS overrides
+   here beyond fill:none (belt-and-braces in case the inline drops). */
+.history-edge { fill: none; }
+/* Edges are double-clickable. The hit-area is a wide invisible
+   sibling path under the visible stroke (see ``history-edge-hit``).
+   Hovering the hit path fattens the visible stroke for feedback. */
+.history-edge-hit {
+  cursor: pointer;
+}
+.history-edge-group:hover .history-edge {
+  stroke-width: 3.5;
+  opacity: 1;
+}
+.history-edge-hit.attach-edge-hit:hover ~ .attach-edge,
+.history-edge-hit.spawn-edge-hit:hover ~ .spawn-edge {
+  stroke-width: 2.4;
+  opacity: 1;
+}
+
+.history-edge.out-of-context { opacity: 0.4; transition: opacity 0.2s ease; }

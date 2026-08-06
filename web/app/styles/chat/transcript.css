@@ -1,0 +1,95 @@
+/* 聊天转录滚动区：.chat-area / .chat-messages 列宽与会话切换骨架。
+   对应组件：components/chat/messages/message-list.tsx */
+
+/* Chat messages */
+.chat-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  /* Native scroll anchoring keeps content BELOW an expansion stationary,
+     so clicking an execution strip appears to grow upward. Pinning is
+     handled by useChatAreaStick; disable the browser's own anchoring. */
+  overflow-anchor: none;
+  /* 让 minimap 能用 cqw 算出聊天区实际宽度，贴到右缘分割线。 */
+  container-type: inline-size;
+}
+/* Lock scrolling while the welcome panel is up. Driven by the React
+   portal host: `<WelcomeScreen />` renders a child into `#welcome-mount`
+   when visible, so `:has(#welcome-mount > *)` is true exactly then — one
+   source of truth, no imperative `.welcome-visible` class. We key off
+   the mount's stable id, NOT `.welcome`: that class is CSS-Module-hashed
+   (`welcome-screen_welcome__…`), so a literal `.welcome` in this global
+   sheet never matches it. */
+.chat-area:has(#welcome-mount > *) { overflow: hidden; }
+
+
+
+.chat-messages {
+  flex: 1;
+  /* Content column matches the composer width and centers, so the
+     conversation and the input box share one column / center axis
+     (ChatGPT/Claude). 宽度随聊天区自适应，封顶 --chat-column-max；
+     左右留 48px 呼吸，别顶到聊天区边。 */
+  width: 100%;
+  /* 每侧最少 56px 留白：左侧要装下消息刻度条（8px 起步 + 12px 衬
+     + 刻度），否则条带和输入框在 x 上必然打架。宽窗口时列照样扩到
+     --chat-column-max，这个下限只在紧凑时起作用。 */
+  max-width: min(var(--chat-column-max), calc(100% - 112px));
+  margin: 0 auto;
+  /* Bottom padding gives the latest message room to scroll up to the
+     top of the viewport so the assistant reply lands underneath it
+     (ChatGPT / Claude behaviour). Capped at 25vh — a full
+     `100vh - 220px` was so tall the chat-area could open with the
+     entire viewport empty below the last message even on a fresh
+     short conversation. */
+  padding: 24px 0 25vh 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+/* Bottom padding clears the absolutely-anchored composer so the welcome
+   examples row sits just above it. Keyed off the React portal host
+   `#welcome-mount` HAVING A CHILD (i.e. welcome visible) — NOT
+   `.welcome`, which is CSS-Module-hashed and so untargetable from this
+   global sheet. (That dead `:has(.welcome)` is why the row used to fall
+   through to the 25vh base rule and float ~50px too high once the legacy
+   inline 150px stopped being stamped.) 180px matches the composer's
+   occupied height — 150px box + the ~30px env-chip row now floating
+   above it (composer .envChips: 22px chip + 8px gap) — so the welcome
+   examples land right above the whole composer. */
+.chat-messages:has(#welcome-mount > *) {
+  padding-bottom: 180px;
+}
+
+/* 会话切换：数据未到时的骨架占位（claude.ai 式）——右上一个用户气泡
+   占位块 + 若干渐短灰条脉冲；capture 到达后 #chatMessages 整体淡入
+   （.session-enter 由 MessageList 加、220ms 后移除）。 */
+.transcript-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px 0;
+}
+.transcript-skeleton .skeleton-bubble {
+  align-self: flex-end;
+  width: 42%;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--bg-tertiary);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+  margin-bottom: 10px;
+}
+.transcript-skeleton .skeleton-bar {
+  height: 14px;
+  border-radius: 7px;
+  background: var(--bg-tertiary);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+#chatMessages.session-enter { animation: session-fade-in 180ms ease-out; }
+@keyframes session-fade-in { from { opacity: 0; } }

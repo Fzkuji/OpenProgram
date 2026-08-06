@@ -1,0 +1,33 @@
+/* "正在查看子 agent 分支" 顶部横幅。
+   对应组件：components/chat/messages/agent-branch-banner.tsx */
+
+/* ── "正在查看子 agent 分支" 横幅（agent-branch-banner.tsx）────────
+   贴在转录顶部：接管 agent 分支后，attach 卡片留在主分支的转录里，
+   这条横幅是唯一的返回入口。 */
+.agent-branch-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 4px;
+  padding: 8px 14px;
+  border: 1px solid var(--border, #e4e2da);
+  border-radius: 10px;
+  background: var(--bg-tertiary, #f2f0ea);
+  font-size: 12.5px;
+  color: var(--text-secondary, #6b6a63);
+}
+.agent-branch-banner-back {
+  flex: none;
+  padding: 4px 12px;
+  border: 1px solid var(--border, #e4e2da);
+  border-radius: 999px;
+  background: var(--bg-primary, #fff);
+  color: var(--text-bright, #1a1a17);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.agent-branch-banner-back:hover {
+  border-color: var(--text-secondary, #6b6a63);
+}

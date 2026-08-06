@@ -1,0 +1,201 @@
+/* 统一函数调用/工具卡外壳：.inline-tree 头部、动作、Thinking 变体、
+   runtime 卡宿主与用量脚注。
+   对应组件：components/chat/messages/tool-card.tsx、runtime-block.tsx、
+   message-list.tsx（.runtime-card-host） */
+
+/* Inline execution tree (inside function result messages) */
+.inline-tree {
+  margin: 8px 0 4px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: transparent;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* 统一步骤图标（流式视图的 inline-tree 头部也用）。 */
+.inline-tree-icon {
+  display: inline-flex;
+  vertical-align: -3px;
+  color: var(--text-secondary);
+  margin-right: 6px;
+}
+.inline-tree-icon > div {
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+
+.inline-tree-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  /* Quiet hairline card: no fill at rest, tint only on hover. */
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-secondary);
+  /* Match normal chat-text size (14px) — Function call / Thinking
+     read as first-class blocks, not footnotes. The Copy / toggle
+     action elements inside .inline-tree-actions keep their own
+     smaller sizes. */
+  font-size: 14px;
+}
+.inline-tree-header:hover { background: var(--bg-hover); }
+.inline-tree-toggle {
+  color: var(--text-secondary);
+  font-size: 12px;
+  transition: transform var(--transition);
+  display: inline-block;
+}
+.inline-tree-toggle { transform: rotate(90deg); }
+.inline-tree-toggle.collapsed { transform: rotate(0deg); }
+.inline-tree-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.inline-tree-copy {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.3;
+  transition: all var(--transition);
+}
+.inline-tree-copy:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+.inline-tree-copy.copied {
+  color: var(--accent-green, #98c379);
+  border-color: var(--accent-green, #98c379);
+}
+.inline-tree-body {
+  /* padding-left matches .inline-tree-header (10px) so dots and
+     labels in the body line up with the header's left column —
+     mismatched paddings (was 8px) used to leave .pending-pulse
+     2px further left than the header ``●``. */
+  padding: 6px 10px;
+  display: block;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.inline-tree-body.collapsed { display: none; }
+
+/* ===== Unified function-call card ===== */
+/* Both agentic ``RuntimeBlock`` and regular tool calls render as a
+ * single ``.inline-tree`` (header + body). When stacked inside an
+ * assistant bubble give each its own breathing room without the
+ * legacy ``.runtime-block`` margins. */
+.assistant-runtime-children > .inline-tree,
+.assistant-runtime-children > div > .inline-tree,
+.chat-stream-body > .inline-tree {
+  margin: 10px 0 0;
+}
+/* Top-level RuntimeBlock — a message whose display === "runtime"
+ * (e.g. a fn-form spawn). Without a host bubble providing 36px chat
+ * column indent, the inline-tree would span full chat-area width.
+ * Wrap it in this margin-aware host so it aligns with chat text
+ * (avatar 28px + gap 8px + parent .message 24px padding = 60px). */
+.runtime-card-host {
+  margin: 20px 60px;
+}
+.runtime-card-host > div > .inline-tree {
+  margin: 0;
+}
+/* Truncate the inline-tree-header label so long ``fnName(params)``
+ * signatures don't shove the Retry / Copy JSON / collapse buttons
+ * off-row or out of view. The label span shrinks; the actions span
+ * is flex-shrink:0. */
+.inline-tree-header > span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  display: inline-block;
+}
+.inline-tree-actions {
+  flex-shrink: 0;
+}
+/* Copy button inside .inline-tree-actions — quiet mono chip. */
+.inline-tree-actions .inline-tree-copy {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  padding: 2px 8px;
+  height: auto;
+  line-height: 1.3;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.inline-tree-actions .inline-tree-copy:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+/* Usage stat strip rendered below the inline-tree for agentic
+ * function calls — small muted footer, no border / background. */
+.runtime-usage-footer {
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  text-align: right;
+}
+.inline-tree.is-error {
+  border-left: 3px solid var(--accent-red);
+}
+
+/* Inline-tree header icon — prefix on Function call
+ * / Thinking cards. Slightly larger than the 14px label + cyan so
+ * it reads as a decorative type-set prefix, distinct from regular
+ * label text. */
+.inline-tree-script {
+  color: var(--accent-cyan);
+  font-size: 18px;
+  line-height: 1;
+  display: inline-block;
+}
+
+/* Thinking body — paragraph of text the model produced while
+ * reasoning. Slightly muted vs the chat-text content. */
+/* The .inline-tree shell sets font-family: var(--font-mono) because it
+   was built for the execution/tool/DAG cards, whose headers are tool
+   and function NAMES and whose bodies are JSON / file paths — mono is
+   right there. The Thinking card reuses the same shell but is natural
+   language (both the "Thinking" header and the reasoning prose), so it
+   should read as sans. `.is-thinking` is added only to the Thinking
+   card (thinking-block.tsx), never to tool/runtime/DAG cards, so this
+   override is scoped to Thinking and leaves the mono shell intact
+   everywhere else. */
+.inline-tree.is-thinking,
+.inline-tree.is-thinking .inline-tree-header,
+.inline-tree.is-thinking .inline-tree-script {
+  font-family: var(--font-sans);
+}
+
+.inline-tree-body .thinking-text {
+  word-wrap: break-word;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  /* No own max-height/overflow: the shared .inline-tree-body already scrolls
+     (max-height 300px, overflow-y auto). A second scroll container here gave
+     the Thinking block two nested scrollbars. Let the body be the single
+     scroll surface, like the runtime / tools cards. */
+  padding: 2px 4px;
+}

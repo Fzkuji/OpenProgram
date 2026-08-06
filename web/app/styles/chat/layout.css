@@ -1,0 +1,27 @@
+/* 主聊天区骨架：.main / #chatView 中央聊天列布局。
+   对应组件：components/app-shell.tsx */
+
+/* ===== Main Chat Area ===== */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* .center-pane-chat is a COLUMN flex box, so .main's height comes
+     from flex:1 — without min-height:0 a long transcript makes .main
+     grow past the pane and pushes the composer below the fold. */
+  min-height: 0;
+  position: relative;
+}
+#chatView {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* Positioning context for the absolutely-anchored composer
+     (`.inputArea`). The composer floats over the bottom of the chat
+     area instead of pushing it shorter — so the welcome screen / chat
+     content keep a fixed layout and the fn-form just overlaps them
+     when it expands. */
+  position: relative;
+}

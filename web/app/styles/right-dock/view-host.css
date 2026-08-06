@@ -1,0 +1,70 @@
+/* 右栏视图宿主：.right-view-host 单视图切换、Detail/Context 开关、
+   折叠态。
+   对应组件：components/right-sidebar/right-sidebar.tsx */
+
+/* Right sidebar — mirror of the left sidebar. The shell layout
+   (`flex flex-col`, bg, width, transitions, border-LEFT) is now
+   Tailwind utilities on the root `<aside>` in `right-sidebar.tsx`.
+   The nav rows, icons, labels and toggle use the same class constants
+   from `components/sidebar/nav-classes.ts` so heights / colors /
+   strokes stay aligned. Diffs vs. left sidebar:
+     * border on the LEFT, not the right (Tailwind `border-l`)
+     * `.right-view-host` replaces the favorites/conversations blocks
+     * active nav item uses --bg-hover tint (rule below)
+     * collapsed state hides view-host (instead of favorites/conversations)
+*/
+
+/* Active nav-item state (currently-showing view) is applied via
+   `sidebarNavItemActiveClass` from `nav-classes.ts` in
+   `right-sidebar.tsx`. The legacy `.right-sidebar .sidebar-nav-item.active`
+   rule no longer matches since nav rows are class strings of Tailwind
+   utilities now (no `.sidebar-nav-item` class). */
+
+/* View host — one child visible at a time, matching data-view. */
+.right-view-host {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+.right-view {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+}
+.right-sidebar[data-view="detail"] .right-view[data-view="detail"],
+.right-sidebar[data-view="context"] .right-view[data-view="context"],
+.right-sidebar[data-view="files"] .right-view[data-view="files"] {
+  display: flex;
+}
+
+/* Detail / Context 的入口开关（在中央 DAG 视角里选中节点后出现在这两个
+   视图顶部）。它们不是图标轨的并列入口，是节点的从属视图，所以开关跟着
+   节点走。几何同 DAG 视角里的高亮模式开关。 */
+.session-view-switch {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.session-view-switch-btn {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.session-view-switch-btn.is-active {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+
+/* Collapsed: hide view content + nav labels (the latter is inherited
+   from .sidebar.collapsed rules in 02-sidebar.css). */
+.right-sidebar.collapsed .right-view-host { display: none; }

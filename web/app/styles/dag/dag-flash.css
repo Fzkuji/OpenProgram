@@ -1,0 +1,16 @@
+/* DAG→聊天行联动闪烁（dblclick 定位后的黄色强调）。
+   对应来源：lib/runtime-bridge/dag/render/interaction.ts、
+   components/chat/messages/message-list.tsx */
+
+/* Brief flash applied by history-graph._scrollChatTo when a DAG
+ * dblclick maps to an existing chat row (function-internal node →
+ * its owner's runtime block). Pure visual cue, no layout effect. */
+@keyframes dagFlash {
+  0%   { background-color: transparent; }
+  20%  { background-color: color-mix(in srgb, var(--accent-yellow) 28%, transparent); }
+  100% { background-color: transparent; }
+}
+.dag-flash {
+  animation: dagFlash 1.3s ease-out 1;
+  border-radius: 6px;
+}

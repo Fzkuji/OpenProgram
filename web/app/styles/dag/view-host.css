@@ -1,0 +1,41 @@
+/* 中央 DAG 视角宿主：.dag-view 与 data-center-view 切换规则。
+   对应组件：components/chat/dag-view.tsx、components/app-shell.tsx */
+
+/* The graph perspective hides the TRANSCRIPT, not `#chatView`. The
+   composer is a singleton portalled into `#composer-mount` inside
+   `#chatView` and anchored `bottom:0` against it, so hiding that
+   ancestor would take the composer with it — and mounting a second
+   one would fork the draft, the run state and the settings row. Both
+   perspectives therefore keep the same composer instance, and the
+   graph replaces only the scroll area above it. */
+.center-pane-chat[data-center-view="dag"] #chatArea {
+  display: none;
+}
+/* The DAG host, center-width. `.history-body` (right-dock.css) is the
+   infinite canvas the renderer writes the SVG into — it fills this box
+   and pans/zooms under the user's hand (lib/runtime-bridge/dag/canvas.ts),
+   so a perspective switch or a split-view drag changes what is on screen
+   without re-flowing the graph. */
+.dag-view {
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* The graph takes the transcript's place by covering the pane rather
+   than by taking its slot in the column. `#chatView` therefore keeps
+   its `flex: 1` and its full height: the composer is anchored
+   `bottom: 0` against it, so shrinking it would drag the input box up
+   the pane. Stacking order does the rest — the graph sits under the
+   composer's `z-index: 5`, so the input box stays exactly where the
+   transcript perspective puts it.
+
+   The canvas fills the pane edge to edge. Reserving the composer's
+   strip with padding was the scroll box's contract; a camera has no
+   deepest node to keep clear of, and the fit already leaves margin —
+   panning past the composer is one gesture. */
+.center-pane-chat[data-center-view="dag"] .dag-view {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}

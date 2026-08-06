@@ -1,0 +1,323 @@
+/* 顶栏 chips：状态/项目/工作目录/agent/权限等徽章与 hover tooltip。
+   对应组件：components/chat/top-bar/（index.tsx, project-menu.tsx,
+   working-dir-chips.tsx, permission-menu.tsx 等）、components/ui/tooltip.tsx */
+
+/* Each badge (status / branch / chat / exec) is a two-part chip: an
+   always-visible short label + an optional details span. Making the
+   badge itself an inline-flex container lets the details span
+   ellipsis-truncate independently of the short label. */
+.status-badge,
+.runtime-badge {
+  display: inline-flex;
+  align-items: center;
+  /* Chips do NOT shrink: a chip is shown at its full content width.
+     Letting it shrink (flex-shrink:1) squeezed labels down to a
+     0-width / 1-char stub, which is exactly what we're avoiding. */
+  flex-shrink: 0;
+  box-sizing: border-box;
+  /* Uniform fixed height for EVERY topbar chip. Without this, icon-only
+     chips (status / project / exec) render ~4px shorter than text chips
+     (branch / chat) because the text line-box is taller than the 14px
+     icon. Fixed height + border-box makes per-type padding/border height-
+     neutral, so all chips are exactly the same height. */
+  height: 24px;
+  /* Uniform label weight across every chip — without this the branch name
+     and agent model rendered at 400 while status / project sat at 500,
+     which read as a font mismatch. */
+  font-weight: 500;
+}
+/* 菜单开着的那个触发 chip：composer 的 :has 规则把 inputArea 提到
+   portal 之上，chip 画在菜单阴影上层——但透明底的 chip 会把画在
+   下层的阴影透出来，看着仍被压暗。开态补一层不透明底（= 页面
+   底色，视觉零变化），阴影就透不上来。 */
+.runtime-badge[aria-expanded="true"],
+.status-badge[aria-expanded="true"] {
+  background: var(--bg-primary);
+}
+.badge-short {
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.badge-details {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  /* Generous fixed cap: a normal model name shows in full; only a
+     pathologically long id ellipsizes. We never shrink it down to a
+     meaningless stub. */
+  max-width: 32ch;
+}
+
+.branch-name {
+  display: inline-block;
+  vertical-align: bottom;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  max-width: 24ch;
+}
+
+.status-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent-green) 10%, transparent);
+  color: var(--accent-green);
+  border: 1px solid color-mix(in srgb, var(--accent-green) 22%, transparent);
+  cursor: pointer;
+}
+/* `[aria-expanded="true"]` keeps the trigger lit while its popover is open,
+   so the chip reads as "active" the whole time the menu is showing — not
+   just on hover. 不用 data-state：HoverTip 的 TooltipTrigger 和
+   PopoverTrigger 都往同一个 span 写 data-state，落上去的是 tooltip 的
+   （永远不是 "open"）；aria-expanded 只有 popover 写。 */
+.status-badge:hover,
+.status-badge[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--accent-green) 18%, transparent);
+}
+/* Initial / probing state — yellow until the worker has actually
+   answered (set in HTML as the bootstrap class, removed by
+   updateStatus once the WS receives its first envelope). */
+.status-badge.connecting {
+  background: color-mix(in srgb, var(--accent-yellow) 10%, transparent);
+  color: var(--accent-yellow);
+  border-color: color-mix(in srgb, var(--accent-yellow) 22%, transparent);
+}
+.status-badge.connecting:hover,
+.status-badge.connecting[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--accent-yellow) 18%, transparent);
+}
+/* Status badge carries a source name (potentially long, e.g.
+   "WeChat (xxx) · run analyze_sentiment") inside its short label.
+   Allow it to ellipsis-shrink — the other badges' .badge-short
+   (Chat / Exec / branch name) stays whole because they're short
+   already, so the default flex-shrink:0 rule above is fine for
+   them. */
+.status-badge .badge-short {
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Connection-state dot inside .status-badge is now an
+   .indicator-dot — see the indicator-dot section below. */
+/* Project chip — the "where am I" anchor, mirrors Claude's composer
+   project pill. Deliberately NEUTRAL (not a loud accent colour) so it
+   reads as the calm context label that the louder green status / orange
+   agent chips hang off. Double-class qualifier beats the green
+   `.runtime-badge` default at L886. */
+.runtime-badge.project-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.runtime-badge.project-badge:hover,
+.runtime-badge.project-badge[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  color: var(--text-bright);
+}
+.project-badge .project-icon {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+.project-badge .project-icon svg { display: block; }
+/* Let long project names ellipsize rather than push the other chips
+   off-screen (.badge-short is flex-shrink:0 by default). */
+.project-badge .badge-short {
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Missing main directory — the project's folder is gone from disk. The
+   chip goes orange (the codebase's warning accent) and its menu offers
+   the relocate repair. Overrides the neutral palette above. */
+.runtime-badge.project-badge.project-badge-missing {
+  background: color-mix(in srgb, var(--accent-orange) 10%, transparent);
+  color: var(--accent-orange);
+  border-color: color-mix(in srgb, var(--accent-orange) 35%, transparent);
+}
+.runtime-badge.project-badge.project-badge-missing:hover,
+.runtime-badge.project-badge.project-badge-missing[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
+  color: var(--accent-orange);
+}
+.project-badge-missing .project-icon { opacity: 1; }
+/* The warning line at the top of the project menu. */
+.project-menu-missing {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--accent-orange);
+}
+.project-menu-missing svg { flex-shrink: 0; margin-top: 2px; }
+
+/* Working-dir chips — claude.ai-style per-directory chips right of the
+   project chip. Same neutral palette as .project-badge; ✕ is dim until
+   hovered so the row stays quiet. */
+.runtime-badge.workdir-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.workdir-badge .workdir-icon {
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+.workdir-badge .badge-short {
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workdir-badge .workdir-remove {
+  flex-shrink: 0;
+  cursor: pointer;
+  opacity: 0.5;
+}
+.workdir-badge .workdir-remove:hover {
+  opacity: 1;
+  color: var(--text-bright);
+}
+/* Icon-only add button — square-ish padding, interactive like the
+   project chip. <button> reset: inherit font, no default chrome. */
+.runtime-badge.workdir-add-badge {
+  padding: 2px 5px;
+  cursor: pointer;
+  font: inherit;
+}
+.runtime-badge.workdir-add-badge:hover {
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  color: var(--text-bright);
+}
+
+/* Hover tooltips (topbar chips + message actions) — Claude-style:
+   NO border, a solid badge a touch lighter than the surface ("泛白"),
+   crisp text. Geometry / shadow / animation live on the Tailwind
+   classes in components/ui/tooltip.tsx. */
+.hover-tip {
+  /* Claude 实物是深墨底白字（浅色主题反色）：#141413 底、白字、13px。
+     深色主题给一块更亮的灰底保持反差。 */
+  background: var(--surface-tooltip);
+  color: var(--text-on-tooltip);
+  border: none;
+}
+
+/* The topbar branch dropdown is the React <BranchMenu /> (shadcn
+   <Popover> + Tailwind) now — its `.branch-selector` / `.model-dd-*`
+   rules were removed. */
+
+.status-badge.disconnected {
+  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+  color: var(--accent-red);
+  border-color: color-mix(in srgb, var(--accent-red) 25%, transparent);
+}
+
+.status-badge.paused {
+  background: color-mix(in srgb, var(--accent-yellow) 12%, transparent);
+  color: var(--accent-yellow);
+  border-color: color-mix(in srgb, var(--accent-yellow) 25%, transparent);
+}
+
+/* Runtime info badge */
+.runtime-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
+  color: var(--accent-green);
+  border: 1px solid color-mix(in srgb, var(--accent-green) 25%, transparent);
+  white-space: nowrap;
+}
+.runtime-badge.session {
+  background: color-mix(in srgb, var(--accent-cyan) 12%, transparent);
+  /* Cyan tint carries the hue; cyan TEXT washes out on the light
+     theme (~1.7:1), so the label reads in text-primary instead —
+     5.82:1 dark / 9.53:1 light on the tinted chip. */
+  color: var(--text-primary);
+  font-family: monospace;
+  font-size: 12px;
+}
+.runtime-badge.model {
+  background: color-mix(in srgb, var(--accent-purple) 12%, transparent);
+  color: var(--accent-purple);
+  border-color: color-mix(in srgb, var(--accent-purple) 25%, transparent);
+  cursor: pointer;
+}
+.runtime-badge.model:hover {
+  background: color-mix(in srgb, var(--accent-purple) 20%, transparent);
+}
+.runtime-badge.agent-badge {
+  cursor: pointer;
+  font-size: 12px;
+  /* Blue chip for the model selectors (chat + exec). Distinct from
+     the status badge's green ("Local / connected") and the branch
+     badge's orange, so the topbar reads as three different roles
+     at a glance even when all chips collapse to a single letter.
+     The `.runtime-badge` qualifier keeps this from being tied with
+     the plain `.runtime-badge` default that lives later in the
+     file — without it that green default wins on cascade order. */
+  background: color-mix(in srgb, var(--accent-orange) 10%, transparent);
+  color: var(--accent-orange);
+  border-color: color-mix(in srgb, var(--accent-orange) 25%, transparent);
+}
+.runtime-badge.agent-badge:hover,
+.runtime-badge.agent-badge[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--accent-orange) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent-orange) 35%, transparent);
+}
+.agent-badge.locked {
+  cursor: default;
+}
+.agent-badge.locked:hover {
+  background: inherit;
+  border-color: inherit;
+}
+/* Permission chip (top-bar `.right`). The tier colour (text / icon /
+   border) is set inline from PERM_COLOR in permission-menu.tsx so the
+   chip reflects the current tier at a glance; this rule only owns the
+   neutral chip background + the hover/open deepening (which must NOT
+   set colour/border, or it would fight the inline tier colour).
+   The `.runtime-badge` qualifier keeps this from tying with the plain
+   `.runtime-badge` green default later in the file. */
+.runtime-badge.permission-badge {
+  cursor: pointer;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+.runtime-badge.permission-badge:hover,
+.runtime-badge.permission-badge[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--text-muted) 22%, transparent);
+}
+/* The topbar agent / channel / branch dropdowns are React popovers
+   (shadcn <Popover> + Tailwind) now — the `.agent-selector` and
+   `.model-dropdown` chrome rules were removed. */

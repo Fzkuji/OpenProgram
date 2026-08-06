@@ -1,0 +1,118 @@
+/* DAG 节点检查器、Raw JSON 卡与右键动词菜单。
+   对应来源：lib/runtime-bridge/dag/render/inspector.ts */
+
+/* ============ Node inspector + context menu ============ */
+/* Floating layers the DAG renderer mounts on document.body
+   (render/inspector.ts), positioned in viewport coordinates so they
+   can cross the pane edge instead of being clipped by it. */
+.dag-inspector {
+  position: fixed;
+  z-index: 200;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-popover);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.dag-inspector {
+  width: 250px;
+  padding: 11px 13px;
+}
+.dag-inspector-title {
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 7px;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.dag-inspector-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  line-height: 1.85;
+  color: var(--text-muted);
+}
+.dag-inspector-row b {
+  font-weight: 500;
+  color: var(--text-primary);
+  text-align: right;
+  word-break: break-all;
+}
+.dag-inspector-row b.is-ok { color: var(--success, #3a9d5a); }
+.dag-inspector-row b.is-muted { color: var(--text-muted); }
+.dag-inspector-preview {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px dashed var(--border);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.5;
+  max-height: 84px;
+  overflow: hidden;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.dag-inspector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.dag-inspector-action {
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  border-radius: 7px;
+  padding: 3px 9px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.dag-inspector-action:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+/* Raw JSON reuses the inspector shell — same card, one scrolling
+   <pre> instead of the field rows. A modal would take the graph away
+   to show you one node from it. */
+.dag-inspector-raw { width: 420px; }
+.dag-inspector-raw-body {
+  margin: 0;
+  max-height: 340px;
+  overflow: auto;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo,
+               Monaco, Consolas, monospace);
+  font-size: 10.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* The verb list render/inspector.ts appends inside the expanded card
+   (.history-tooltip.detail). Items and separators below are shared. */
+.dag-menu-verbs {
+  margin: 0 -3px -3px;
+}
+.dag-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.dag-menu-item.is-muted { color: var(--text-secondary); }
+.dag-menu-item:hover { background: var(--bg-secondary); }
+.dag-menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 6px;
+}

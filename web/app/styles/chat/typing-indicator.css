@@ -1,0 +1,53 @@
+/* 输入中指示：三点弹跳与等待回复占位（.typing-indicator / .pending-*）。
+   对应组件：components/chat/messages/message-list.tsx */
+
+/* Typing indicator (three bouncing dots) */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+}
+/* Align with the text column in assistant bubbles (avatar takes 36px). */
+.message.assistant > .typing-indicator {
+  padding-left: 36px;
+}
+/* Standalone "AI is thinking" indicator — full assistant-bubble
+   shape (avatar + Agentic header + body with breathing pulse)
+   while we're waiting on the real reply. Inherits the base
+   ``.message`` and ``.message.assistant`` styles for padding /
+   background so it sits inline with neighbouring bubbles. */
+.pending-body {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  /* Match where chat text starts inside a normal assistant bubble:
+     avatar (28px) + flex gap (8px) = 36px past the bubble's left
+     padding. No further indent here — the parent ``.chat-stream-body``
+     already sits inside the bubble's natural padding. */
+  padding-left: 0;
+}
+/* .pending-pulse retired — runtime / chat surfaces now use the
+   generic .indicator-dot system. See section below. */
+.pending-label {
+  color: var(--text-muted);
+  font-size: 13px;
+  letter-spacing: 0.1px;
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.typing-indicator .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-blue, #6cb4ff);
+  opacity: 0.85;
+  animation: bounce 1.4s ease-in-out infinite;
+}
+.typing-indicator .dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator .dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce {
+  0%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-6px); }
+}

@@ -1,0 +1,246 @@
+/* 消息气泡：用户/助手/系统角色、头像、markdown 正文、错误卡与中断徽条。
+   对应组件：components/chat/messages/user-bubble.tsx、assistant-bubble.tsx */
+
+.message {
+  padding: 16px 24px;
+  max-width: 100%;
+  animation: msgAppear 0.3s ease forwards;
+  position: relative;
+}
+
+@keyframes msgAppear {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Three message roles render with three distinct surfaces so the
+   eye can sort them at a glance:
+   - user      → ``--bg-tertiary`` bubble (raised warm grey, right)
+   - assistant → transparent (flows flat on the page, left)
+   - system    → transparent (chat background bleed-through;
+                  these are typically attach pointers / runtime
+                  blocks / tool-call cards rendered as standalone
+                  cards with their own border, NOT as message
+                  bubbles, so they read as overlays). */
+/* GPT/Claude-style layout: user = right-aligned bubble with a clear
+   background; assistant = left, no bubble. The avatar/name header is
+   hidden in the stream (it only takes vertical space and pushes content
+   apart — the identity lives in the sidebar). The "one side has a bubble,
+   the other doesn't" + left/right makes the turn boundary obvious. */
+
+/* Avatar sits in the side margin, top-aligned with the message content,
+   taking NO vertical height of its own. The name text is dropped — only
+   the avatar glyph distinguishes the side. */
+.message.user .message-header,
+.message.assistant .message-header {
+  position: absolute;
+  top: 16px;                /* line up with the content's top (matches .message padding-top) */
+  margin: 0;
+  gap: 0;
+}
+.message.assistant .message-header { left: 8px; }   /* push the avatar outward so it sits further from the text */
+/* User avatar aligns to the FIRST LINE OF TEXT inside the bubble, not the
+   bubble's top border: .message padding-top(16) + bubble padding-top(10) = 26. */
+.message.user .message-header { right: 8px; top: 26px; }   /* push the avatar outward, further from the bubble */
+.message-sender { display: none; }                    /* no name line */
+
+.message.user {
+  background: transparent;          /* the bubble carries the colour, not the row */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;            /* bubble sits on the right */
+}
+.message.user .message-content {
+  /* Bubble: rounded like the composer, clear background, hugs its content
+     (a one-liner becomes a pill; long text wraps). The right edge lines up
+     with where the assistant text ends (same 36px content inset), so the
+     bubble shares the assistant's content column — just right-aligned, not
+     jammed against the viewport edge. */
+  /* Claude look: soft warm tint, no border, 16px corners with a 4px
+     "tail" at the bottom-right (the side the bubble hangs from). */
+  background: var(--bg-tertiary);
+  border-radius: 16px 16px 4px 16px;
+  padding: 10px 16px;
+  width: fit-content;
+  max-width: 75%;
+  margin-right: 36px;               /* align right edge to assistant text's right edge */
+  text-align: left;
+  color: var(--text-bright);
+}
+
+.message.assistant {
+  background: transparent;          /* no bubble — assistant text flows on the left */
+}
+
+.message.system {
+  background: transparent;
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.message-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.message-avatar.user-avatar {
+  background: var(--accent-fill);
+  color: var(--primary-foreground);
+}
+
+.message-avatar.bot-avatar {
+  background: var(--accent-green);
+  color: var(--primary-foreground);
+}
+
+.message-sender {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.message-content {
+  padding-left: 36px;
+  padding-right: 36px;
+  /* Claude body copy: 15px / 1.7, generous and airy. */
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  /* `break-word` only breaks at the *end* of an overflowing line, which
+     a single unbroken token (long URL, base64 blob, hash) never reaches
+     — `anywhere` breaks mid-token so the bubble can't be pushed wider
+     than the chat column. */
+  overflow-wrap: anywhere;
+}
+
+.message-content pre {
+  /* Paper inset: soft tint, hairline border, quiet. */
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 10px 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message-content code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 6px;
+  /* Inline code is one unbroken token by nature (paths, identifiers) —
+     let it wrap rather than widen the column. `pre code` opts back out
+     via the rule below, since the <pre> scrolls instead. */
+  overflow-wrap: anywhere;
+}
+.message-content pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: inherit; }
+.message-content p { margin: 0 0 12px; }
+.message-content p:last-child { margin-bottom: 0; }
+.message-content ul, .message-content ol { margin: 8px 0; padding-left: 20px; }
+.message-content li { margin: 2px 0; }
+.message-content h1, .message-content h2, .message-content h3 { margin: 12px 0 6px; color: var(--text-bright); }
+.message-content h1 { font-size: 18px; } .message-content h2 { font-size: 16px; } .message-content h3 { font-size: 14px; }
+.message-content a { color: var(--accent-blue); text-decoration: none; }
+.message-content a:hover { text-decoration: underline; }
+.message-content blockquote { border-left: 3px solid var(--border); margin: 8px 0; padding: 4px 12px; color: var(--text-secondary); }
+/* marked emits a bare <table> with no wrapper, so the table itself has
+   to be the scroll container: `display:block` makes overflow-x apply
+   (a `display:table` box ignores it and just widens the column, which
+   is what pushed the whole #chatArea into horizontal scroll). */
+.message-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 14px;
+}
+.message-content th, .message-content td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  /* The table scrolls, so cells keep their natural width instead of
+     inheriting the bubble's mid-token breaking. */
+  overflow-wrap: normal;
+}
+.message-content th { background: var(--bg-tertiary); }
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.system-message {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 6px 0;
+  opacity: 0.7;
+}
+
+/* Error card */
+.error-content {
+  background: color-mix(in srgb, var(--accent-red) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-red) 20%, transparent);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin: 8px 0;
+  margin-left: 36px;
+  /* Right edge lines up with the user bubble's right edge (same 36px inset),
+     not jammed against the message's own padding. */
+  margin-right: 36px;
+  color: var(--accent-red);
+  font-size: 14px;
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Soft terminal-state badges below the chat body — interrupted and
+   cancelled are not full-on errors but still mark the turn as not
+   reaching a clean "done", so they hint at it with a small inline
+   strip rather than recolouring the whole bubble. */
+.bubble-badge {
+  margin: 8px 0 0 36px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  display: inline-block;
+}
+.bubble-badge-interrupted {
+  background: color-mix(in srgb, var(--accent-yellow) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-yellow) 25%, transparent);
+  color: var(--accent-yellow);
+}
+.bubble-badge-cancelled {
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 25%, transparent);
+  color: var(--text-muted);
+}
