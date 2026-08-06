@@ -122,8 +122,8 @@ export function _applyShapeSize(shape: SVGElement): void {
 
 // Capsule half-extents. Wide enough to read as a different shape from
 // the square at a glance, short enough to sit on one grid row.
-export const CAPSULE_HW = (NODE_R + 3) * 2.1;
-export const CAPSULE_HH = (NODE_R + 3) * 0.86;
+export const CAPSULE_HW = (NODE_R + 3) * 1.8;
+export const CAPSULE_HH = (NODE_R + 3) * 0.9;
 
 // 量文字实际像素宽（复用一个 canvas）。按 label.length*6 估对中文
 // （字宽≈字号）严重低估，背景比文字短、文字溢出，实测才中英文都贴合。

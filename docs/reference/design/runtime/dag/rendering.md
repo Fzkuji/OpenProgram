@@ -548,8 +548,11 @@ one node that stands for all of them, so the graph draws it that way.
 
 **The capsule.** A summary node is a rounded box on the trunk — the only wide
 shape in the vocabulary, because it is the only node that speaks for more than
-one turn. It is still an ordinary `role=llm` chain member (dag/overview.md §8):
-the shape is a shape, not a fourth role.
+one turn. Two left-aligned text lines, one long one short in annotation grey,
+sit inside the pill: an empty pill reads as a blank panel once zoomed, the
+lines make it read as condensed text at every zoom. It is still an ordinary
+`role=llm` chain member (dag/overview.md §8): the shape is a shape, not a
+fourth role.
 
 **The pleats.** Up to three receding grey slivers off the capsule's right edge,
 each shorter and fainter than the last. They are what lets the capsule hide a

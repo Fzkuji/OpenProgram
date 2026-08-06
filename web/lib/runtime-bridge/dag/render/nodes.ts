@@ -172,6 +172,26 @@ export function drawNodes(
       el.setAttribute("stroke", "var(--dag-ghost, #c9c7bf)");
       el.setAttribute("stroke-width", "1.6");
     }
+    // ── 摘要文本线：胶囊内两道递减的横线（rendering.md §9）────────
+    // 空药丸在放大后读作一块空面板；两道左对齐、一长一短的线让它在
+    // 任何缩放下都读作"浓缩起来的文字"。注文灰、不吃指针，白填充
+    // （在上下文中）与镂空两种状态下都可见。
+    if (isCapsule) {
+      const lx = -CAPSULE_HW + 5;
+      const widths = [CAPSULE_HW * 1.15, CAPSULE_HW * 0.7];
+      const lys = [-2.4, 2.4];
+      for (let i = 0; i < widths.length; i++) {
+        g.appendChild(_svg("line", {
+          x1: String(lx), y1: String(lys[i]),
+          x2: String(lx + widths[i]), y2: String(lys[i]),
+          stroke: "var(--dag-ghost, #c9c7bf)",
+          "stroke-width": "1.5",
+          "stroke-linecap": "round",
+          "stroke-opacity": String(0.85 - i * 0.3),
+          "pointer-events": "none",
+        }));
+      }
+    }
     // ── 褶皱：折叠的覆盖区间收成递缩叠影（rendering.md §9）────────
     if (isCapsule && !capsuleOpen && !isInert) {
       const pleats = Math.min(3, covered.length);
