@@ -88,6 +88,12 @@ export function _foldSummaries(
       // A summary this branch's context does not carry: the turns it
       // covers are live here, so it folds nothing and draws grey.
       inert[sid] = true;
+      // Seen is seen: the covered turns are on screen raw right now,
+      // so when the viewer returns to the carrying branch the range
+      // starts open (ghosts) instead of snapping shut again. A fresh
+      // session still starts folded — this only flips after a visit.
+      // The capsule's own click still folds it back at any time.
+      _summaryExpanded[sid] = true;
       continue;
     }
     if (_summaryExpanded[sid]) {

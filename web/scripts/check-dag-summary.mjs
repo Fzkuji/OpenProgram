@@ -145,6 +145,15 @@ assert.deepEqual(coversIds({ id: "x", covers_ids: ["a"] }), ["a"]);
   assert.ok(byId.u0 && byId.a0, "other branch: covered turns stay visible");
   assert.ok(!byId.u0._ghost && !byId.a0._ghost, "other branch: no ghost marking");
   assert.equal(byId.sum1._summaryInert, true, "other branch: the capsule is the inert one");
+
+  // Sticky expansion: those turns were just on screen raw, so switching
+  // back to the carrying branch finds the range OPEN (ghosts), not
+  // snapped shut again. The capsule's click still folds it manually.
+  const back = _foldSummaries(forked, "a0");
+  const backById = Object.fromEntries(back.visible.map((n) => [n.id, n]));
+  assert.equal(backById.u0 && backById.u0._ghost, true,
+    "returning to the carrier keeps the seen range open");
+  setSummaryExpanded(Object.create(null));
 }
 
 {

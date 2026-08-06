@@ -571,7 +571,10 @@ carries it — the branch whose active chain contains the whole covered segment
 (context/compaction.md §3). Only on that branch does the capsule fold: the
 covered range is elided by default, clicking the capsule brings it back as
 ghosts, clicking again folds it away (view-only state, never persisted; a
-fresh session starts folded). On any other branch — a fork from inside the
+fresh session starts folded). Expansion is sticky across branch switches:
+viewing a branch where the covered turns render raw marks the summary
+expanded, so returning to the carrying branch finds the range open instead
+of snapped shut — seen is seen. On any other branch — a fork from inside the
 covered range, a sibling of the same era — those turns ARE the live context:
 they render raw, in full branch colour, and the capsule stays on screen but
 draws ghost grey, folding nothing — the node set is identical on every
