@@ -174,7 +174,12 @@ export function drawEdges(
       fhops++;
     }
     const fpNode = fp ? tree.byId[fp] : undefined;
-    if (!fpNode || fpNode.display === "root") continue;
+    if (!fpNode) continue;
+    // Root-parented forks normally need no bridge (the user-node trunk
+    // logic anchors lane 0 to the root glyph) — but a folded capsule
+    // hanging off root is the trunk's visible start, and skipping it
+    // leaves the root floating with no ink to its own session.
+    if (fpNode.display === "root" && !coversIds(node)) continue;
     const s = pos(fpNode);
     const vx = s.x + 14;
     const r = 10;

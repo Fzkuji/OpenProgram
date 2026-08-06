@@ -99,7 +99,10 @@ export function _foldSummaries(graph: GNode[]): SummaryFold {
     const successor = visible.find((v) => v.predecessor === m.id);
     const donor = successor ?? fullById[coversOf[m.id][0]];
     if (donor && typeof donor._lane === "number") {
-      visible[i] = { ...m, _lane: donor._lane };
+      // _tier too: the backend stamps the capsule with the reply tier
+      // (it IS a reply), but as the stand-in for whole turns it sits
+      // on the turn column the trunk runs through — the donor's.
+      visible[i] = { ...m, _lane: donor._lane, _tier: donor._tier };
     }
   }
   return { visible, coversOf };
