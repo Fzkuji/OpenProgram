@@ -46,6 +46,28 @@ def test_list_branches_finds_every_tip(db):
     assert tips == {"n2", "n3"}
 
 
+def test_list_branches_tip_survives_execution_children(db):
+    """A branch tip stays a tip when only execution-layer rows hang off
+    it — an attach pointer (spawn return) or a runtime node registers
+    under ``children_by_predecessor`` but does not continue the
+    conversation. Counting them dropped the branch from the panel the
+    moment its head spawned a task."""
+    db.create_session("s1", agent_id="a")
+    _append(db, "s1", "n1", role="user")
+    _append(db, "s1", "n2", role="assistant", parent="n1")
+    # fork branch: u3 → a3 is a second tip
+    _append(db, "s1", "u3", role="user", parent="n1")
+    _append(db, "s1", "a3", role="assistant", parent="u3")
+    # spawn-return attach pointer hangs off a3 (execution layer)
+    db.append_message("s1", {
+        "id": "att1", "role": "assistant", "content": "",
+        "predecessor": "a3", "caller": "a3", "timestamp": time.time(),
+        "display": "runtime", "function": "attach",
+    })
+    tips = {b["head_msg_id"] for b in db.list_branches("s1")}
+    assert tips == {"n2", "a3"}
+
+
 def test_list_branches_includes_named_label(db):
     db.create_session("s1", agent_id="a")
     _append(db, "s1", "n1")

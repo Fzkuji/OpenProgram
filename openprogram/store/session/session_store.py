@@ -1173,6 +1173,32 @@ class SessionStore:
                             merged.add(_peer.head_node_id)
         except Exception as e:  # noqa: BLE001 — commit subsystem is optional here
             _log.debug("merge-head scan skipped for %s: %s", session_id, e)
+        def _conv_child(kid_id: str) -> bool:
+            """A child that CONTINUES the conversation. Execution-layer
+            rows (attach pointers, runtime nodes, sub-call replies) and
+            context machinery register under ``children_by_predecessor``
+            too, but hanging one off a turn does not stop that turn
+            being the branch tip — counting them dropped a branch from
+            the panel the moment its head spawned a task."""
+            ch = idx.nodes_by_id.get(kid_id)
+            if ch is None:
+                return False
+            if ch.role not in (ROLE_USER, ROLE_LLM):
+                return False
+            md = ch.metadata or {}
+            if md.get("display") in ("root", "runtime"):
+                return False
+            if md.get("function") == "attach":
+                return False
+            if str(ch.name or "").startswith("context/"):
+                return False
+            c = _node_caller(ch)
+            if c and c != "ROOT":
+                cn = idx.nodes_by_id.get(c)
+                if cn is not None and cn.role not in (ROLE_USER, ROLE_LLM):
+                    return False
+            return True
+
         for node in idx.all_nodes():
             # Skip sub-call nodes — anything living INSIDE a function
             # run. Two shapes: a tool/code node with a real caller
@@ -1204,7 +1230,7 @@ class SessionStore:
             if (node.metadata or {}).get("function") == "attach":
                 continue
             kids = idx.children_by_predecessor.get(node.id, [])
-            if kids:
+            if any(_conv_child(k) for k in kids):
                 continue
             # Heads that a merge consumed don't surface as standalone
             # branches anymore — their content lives on the merge tip.
