@@ -62,10 +62,16 @@ export function _scrollChatTo(msgId: string): void {
   }, 1400);
 }
 
-export async function _checkout(msgId: string): Promise<void> {
+export async function _checkout(
+  msgId: string,
+  opts?: { exact?: boolean },
+): Promise<void> {
   const sessionId = runtimeState.currentSessionId;
   if (!sessionId || !msgId) return;
-  const target = _leafOfNode[msgId] || msgId;
+  // ``exact`` skips the lane-leaf substitution: an agent-internal tip
+  // shares its caller's lane, so the leaf map would bounce the target
+  // back to the conversation head and the checkout would no-op.
+  const target = opts?.exact ? msgId : _leafOfNode[msgId] || msgId;
   if (target === _currentHead) return;
   const sock = getSocket();
   if (sock && sock.readyState === WebSocket.OPEN) {
@@ -274,7 +280,7 @@ export function _installInteractionHandlers(rerender: () => void): void {
           tipId = byPred[tipId];
         }
       }
-      void _checkout(tipId);
+      void _checkout(tipId, { exact: true });
       return;
     }
     if (gn && gn.role === "user" && gn.display !== "root") {
