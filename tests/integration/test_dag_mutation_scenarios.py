@@ -174,6 +174,23 @@ def test_double_compaction_extends_coverage_and_keeps_one_active(store):
     assert not set(covers) & set(ids)
 
 
+def test_head_refuses_to_land_on_a_summary(store):
+    """A summary is a stand-in, never a tip: any set_head onto it (a
+    stray checkout, a buggy caller) must be refused, not stored."""
+    import pytest as _pytest
+    from openprogram.context.persistence import Persister
+
+    tip = _seed(store, "s", 3)
+    sid = Persister().insert_summary_node(
+        "s", summary_text="recap", cut_idx=4,
+        history=store.get_messages("s"))
+    assert sid
+    with _pytest.raises(ValueError):
+        store.set_head("s", sid)
+    assert (store.get_session("s") or {}).get("head_id") == tip
+    _check(store, "s")
+
+
 def test_head_survives_meta_save(store):
     """save_meta must never smuggle a stale head over the store's —
     the phantom head-move path (context/compaction.md §5)."""

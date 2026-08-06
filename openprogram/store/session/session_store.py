@@ -1088,6 +1088,16 @@ class SessionStore:
         if pair is None:
             return
         git, idx = pair
+        # A summary node is a stand-in, never a conversational tip: a
+        # head on it makes the active branch [summary] alone and hides
+        # the whole session (context/compaction.md §5). No caller has a
+        # legitimate reason; refuse loudly instead of storing it.
+        node = idx.nodes_by_id.get(head_id) if head_id else None
+        if node is not None and (node.metadata or {}).get("covers_ids"):
+            raise ValueError(
+                f"set_head: {head_id!r} is a compaction summary — "
+                "a stand-in cannot be the active branch tip"
+            )
         idx.set_head(head_id)
         idx.set_meta(updated_at=time.time())
         self._persist_meta(git, idx)

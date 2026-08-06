@@ -256,6 +256,18 @@ export function _installInteractionHandlers(rerender: () => void): void {
       void forkAndEditNode(gn);
       return;
     }
+    // A summary capsule is a stand-in, not a conversational tip:
+    // checking it out would make the active branch [summary] alone and
+    // grey the whole session (context/compaction.md §5). Double-click
+    // routes to the fold toggle instead, same as a single click.
+    if (node && (node.getAttribute("data-summary") || "") !== "") {
+      toggleSummaryExpanded(id);
+      if (_lastGraph) {
+        setLastSignature(null);
+        rerender();
+      }
+      return;
+    }
     if (_headAncestorSet[id]) {
       _scrollChatTo(id);
     } else {
