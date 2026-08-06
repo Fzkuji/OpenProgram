@@ -49,10 +49,6 @@ This file records the divergences between the design docs and the actual code, o
 - `agent/process_runner.py` is an important subprocess-execution module (spawn, stop, user-input bridge)
 - There is no corresponding design doc.
 
-### runtime/ is missing a dispatcher design doc
-- `agent/dispatcher/__init__.py` is a 1234-line core module — it **breaches the 1000-line rule** that `runtime/execution/dispatcher-split.md` set for itself (the split brought it down from 1928, but `turn.py` + `loop.py` are still pending)
-- There is no standalone design doc (dispatcher-split.md only discusses the split, it is not a full design).
-
 ---
 
 ## Docs confirmed correct in this audit

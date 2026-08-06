@@ -49,10 +49,6 @@
 - `agent/process_runner.py` 是重要的子进程执行模块（spawn、stop、user-input bridge）
 - 没有对应的设计文档
 
-### runtime/ 缺 dispatcher 设计文档
-- `agent/dispatcher/__init__.py` 是 1234 行的核心模块——**已突破** `runtime/execution/dispatcher-split.md` 给自己定的 1000 行上限（拆分把它从 1928 行降下来了，但 `turn.py` + `loop.py` 仍未做）
-- 没有独立的设计文档（dispatcher-split.md 只讨论拆分，不是完整设计）
-
 ---
 
 ## 本次审计确认已正确的文档

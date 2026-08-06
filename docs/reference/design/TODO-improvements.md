@@ -63,8 +63,7 @@
    推导、容器、复合 tab 渲染混在一起）；
    `web/components/chat/composer/index.tsx`（2007 行单函数）；
    `openprogram/agentic_programming/runtime.py`（2040）；
-   `openprogram/agent/dispatcher/__init__.py`（1234，已破
-   dispatcher-split.md 定的 1000 行线）；`openprogram/cli.py`（1540）；
+   `openprogram/cli.py`（1540）；
    `openprogram/webui/server.py`（1538）。
 
 ## 清理
