@@ -17,17 +17,17 @@
  * view-only and never persisted: it says how you are looking at the
  * graph, not what the graph is.
  *
- * The capsule's drawn edge is its stored edge — ``predecessor`` = the
- * covered range's own start (ROOT for a from-the-start compaction), so
- * compaction reads as a fork at the session's start: the capsule is an
- * alternative version of the opening turns, in the same scene-3
- * vocabulary as a retry branch. The only view-side adjustment is the
- * folded capsule inheriting the survivor's lane/tier, because the
- * backend lane pass runs on the FULL graph and cannot see the fold.
+ * Placement on the carrying branch (dag/rendering.md §9): folded, the
+ * capsule stands in the covered range's slot at the trunk's start;
+ * expanded, it splices in at the branch's corresponding position —
+ * after the last ghost, ahead of the kept tail. Both are view-only
+ * clone rewrites; the stored row keeps ``predecessor`` = the range's
+ * start (ROOT for a from-the-start compaction).
  */
 
 import type { GNode } from "../types";
 import { _summaryExpanded } from "../store/globals";
+import { isChainNode } from "./thread";
 
 export interface SummaryFold {
   /** Visible graph — covered nodes removed for every folded capsule. */
@@ -125,16 +125,46 @@ export function _foldSummaries(
   // expanded view, floating for the folded one.
   for (let i = 0; i < visible.length; i++) {
     const m = visible[i];
-    if (!coversOf[m.id]) continue;
-    if (inert[m.id] || _summaryExpanded[m.id]) continue;
-    const successor = visible.find((v) => v.predecessor === m.id);
-    const donor = successor ?? fullById[coversOf[m.id][0]];
-    if (donor && typeof donor._lane === "number") {
-      // _tier too: the backend stamps the capsule with the reply tier
-      // (it IS a reply), but as the stand-in for whole turns it sits
-      // on the turn column the trunk runs through — the donor's.
-      visible[i] = { ...m, _lane: donor._lane, _tier: donor._tier };
+    const ids = coversOf[m.id];
+    if (!ids || inert[m.id]) continue;
+    if (!_summaryExpanded[m.id]) {
+      const successor = visible.find((v) => v.predecessor === m.id);
+      const donor = successor ?? fullById[ids[0]];
+      if (donor && typeof donor._lane === "number") {
+        // _tier too: the backend stamps the capsule with the reply tier
+        // (it IS a reply), but as the stand-in for whole turns it sits
+        // on the turn column the trunk runs through — the donor's.
+        visible[i] = { ...m, _lane: donor._lane, _tier: donor._tier };
+      }
+      continue;
     }
+    // Expanded on the carrying branch: the ghosts are on screen, and
+    // the capsule reads as what they collapsed INTO — it splices in at
+    // the branch's corresponding position, after the last covered turn
+    // and ahead of the kept tail: ghosts → capsule → tail. The splice
+    // point is the covered segment's TIP (last chain node in seq
+    // order); matching "any node whose predecessor is covered" would
+    // catch dead forks off interior covered turns. View-only clones —
+    // the stored predecessor (the range's start) is untouched.
+    const covered = new Set(ids);
+    let lastCovered: string | undefined;
+    for (let k = ids.length - 1; k >= 0; k--) {
+      const c = fullById[ids[k]];
+      if (c && isChainNode(c)) { lastCovered = c.id; break; }
+    }
+    if (!lastCovered) continue;
+    const j = visible.findIndex((v) => v.id !== m.id && !covered.has(v.id)
+      && v.predecessor === lastCovered);
+    const keptFirst = j >= 0 ? visible[j] : undefined;
+    const donor = keptFirst ?? fullById[lastCovered];
+    visible[i] = {
+      ...m,
+      predecessor: lastCovered,
+      ...(donor && typeof donor._lane === "number"
+        ? { _lane: donor._lane, _tier: donor._tier }
+        : {}),
+    };
+    if (keptFirst) visible[j] = { ...keptFirst, predecessor: m.id };
   }
   return { visible, coversOf };
 }
