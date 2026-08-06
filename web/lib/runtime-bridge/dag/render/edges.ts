@@ -74,7 +74,12 @@ export function drawEdges(
     const sameLane = (node._lane || 0) === (parent._lane || 0);
     if (!sameLane) {
       forkNodes.push(id);
-      return;
+      // A fork-lane USER root still draws its own spine stub below —
+      // the bridge only reaches the lane's spine, and the stub is what
+      // hangs the turn off it, same as every later turn. Capsules and
+      // relics keep the bridge as their only ink.
+      const spine = geom.laneSpineOf[node._lane || 0];
+      if (!spine || node.role !== "user") return;
     }
     const c = pos(node);
     const isGhost = !!(node as Record<string, unknown>)._ghost;
@@ -92,24 +97,19 @@ export function drawEdges(
     let fromY = p.y;
     if (isUserNode) {
       const myLane = node._lane || 0;
-      if (rootPos && myLane === (rootNode?._lane || 0)) {
+      const spine = geom.laneSpineOf[myLane];
+      if (spine) {
+        // Fork lane: turns stub off the lane's empty spine column,
+        // whose line starts where the bridge lands (the fork root's
+        // row) — the trunk pattern, with the spine top standing where
+        // ROOT's glyph stands on lane 0.
+        trunkX = spine.x;
+        fromY = spine.topY;
+      } else if (rootPos && myLane === (rootNode?._lane || 0)) {
         trunkX = rootPos.x;
         fromY = rootPos.y;
       } else {
-        let forkRootNode: GNode | null = null;
-        Object.values(tree.byId).forEach((n) => {
-          if ((n._lane || 0) !== myLane) return;
-          if (!forkRootNode || (n._depth || 0) < (forkRootNode._depth || 0)) {
-            forkRootNode = n;
-          }
-        });
-        if (forkRootNode) {
-          const fp = pos(forkRootNode);
-          trunkX = fp.x;
-          fromY = fp.y;
-        } else {
-          trunkX = c.x;
-        }
+        trunkX = c.x;
       }
     }
 
@@ -171,31 +171,30 @@ export function drawEdges(
     }
     const fpNode = fp ? tree.byId[fp] : undefined;
     const fpIsCapsule = !!(fpNode && coversIds(fpNode));
-    // Capsule-parented fork on the capsule's own row: a straight dash
-    // from the capsule — it forked from inside the folded range, and
-    // level-with-origin is what says so (dag/rendering.md §9).
-    if (fpIsCapsule && fpNode && pos(fpNode).y === d.y) {
-      const sp = pos(fpNode);
+    // The bridge lands on the lane's SPINE (the empty column the turns
+    // stub off), not on a node — the branch starts as a line, same as
+    // the trunk starts at ROOT's line (dag/rendering.md scene 3). Only
+    // capsules and relics — lanes with no user turns of their own —
+    // keep the node itself as the bridge target.
+    const spine = geom.laneSpineOf[myLane];
+    const nodeTarget = isRelic || !!coversIds(node) || !spine;
+    const ex = nodeTarget ? d.x : spine!.x;
+    const ey = nodeTarget ? d.y : spine!.topY;
+    // Straight dash when the origin sits on the spine-top row: from the
+    // capsule it forked inside of (level-with-origin says so), or from
+    // the sibling turn it parallels.
+    const origin = fpIsCapsule ? fpNode : (!isRelic && sib) ? sib : undefined;
+    if (origin && pos(origin).y === ey) {
+      const sp = pos(origin);
       edgeG.appendChild(_svg("line", {
-        x1: sp.x, y1: d.y, x2: d.x, y2: d.y,
+        x1: sp.x, y1: ey, x2: ex, y2: ey,
         stroke: color, "stroke-width": 1.5, "stroke-linecap": "round",
         "stroke-dasharray": "6 4", opacity: 0.7,
         "pointer-events": "none", class: "history-edge fork-edge",
       }));
       continue;
     }
-    if (!isRelic && !fpIsCapsule && sib && pos(sib).y === d.y) {
-      const sp = pos(sib);
-      edgeG.appendChild(_svg("line", {
-        x1: sp.x, y1: d.y, x2: d.x, y2: d.y,
-        stroke: color, "stroke-width": 1.5, "stroke-linecap": "round",
-        "stroke-dasharray": "6 4", opacity: 0.7,
-        "pointer-events": "none", class: "history-edge fork-edge",
-      }));
-      continue;
-    }
-    // Elbow — from the fork point itself. Taken by capsule-parented
-    // forks always, and otherwise when a later pass has moved one of
+    // Elbow — from the fork point itself, when a later pass has moved
     // the two off the shared row (a thread pushing rows down, say).
     if (!fpNode) continue;
     // Root-parented forks normally need no bridge (the user-node trunk
@@ -209,8 +208,8 @@ export function drawEdges(
     const r = 10;
     edgeG.appendChild(_svg("path", {
       d: `M ${s.x} ${s.y} Q ${vx} ${s.y + 12} ${vx} ${s.y + 24} `
-        + `L ${vx} ${d.y - r} Q ${vx} ${d.y} ${vx + r} ${d.y} `
-        + `L ${d.x} ${d.y}`,
+        + `L ${vx} ${ey - r} Q ${vx} ${ey} ${vx + r} ${ey} `
+        + `L ${ex} ${ey}`,
       stroke: color, "stroke-width": 1.5, fill: "none",
       "stroke-linecap": "round",
       "stroke-dasharray": "6 4", opacity: 0.7,

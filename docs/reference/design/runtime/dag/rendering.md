@@ -232,11 +232,13 @@ overlap. A lane that begins with a fork root keeps **one extra gap column** from
 the lane it forked off — the branch is a parallel version, and the two grid units
 of air are what say so. Tiers are zeroed per lane (the backend hands a fork root
 the tier of its old in-lane position; without zeroing a one-node branch arrives
-columns adrift). **A fork lane mirrors the trunk internally**: the fork root
-anchors the lane's spine column, and every later turn steps one column right —
-exactly as turns step right of ROOT. Without the step the later turns share the
-fork root's column, the spine runs straight through the circles, and
-consecutive user messages read as chained directly to each other. Thread items
+columns adrift). **A fork lane mirrors the trunk internally**: the lane's
+first column is an empty SPINE — the dashed bridge lands on it, its line
+starts at the fork root's row and runs down, and every turn (the fork root
+included) steps one column right and stubs off it, exactly as trunk turns
+stub off ROOT's line. The branch starts as a line, not as a node. Only
+capsules and superseded relics — lanes with no user turns of their own —
+take the bridge straight to the glyph. Thread items
 (§12) reserve no lane width: their column is chosen after the lanes are down,
 in the first free column right of their anchor.
 
@@ -312,7 +314,7 @@ is conveyed only by line style:
 | Edge type | Line style | Color | Default |
 |---|---|---|---|
 | same-branch parent→child | solid | this branch's color | shown |
-| retry fork bridge (sibling → fork root, shared row) | dashed `6 4` horizontal; an elbow only when rows diverged | branch's color | shown |
+| retry fork bridge (origin → the branch lane's spine top, shared row) | dashed `6 4` horizontal; an elbow only when rows diverged | branch's color | shown |
 | call thread (anchor → its items, §12) | dotted `2 3` vertical off the anchor | annotation grey | shown while open |
 | merge convergence (peer tip → merge node) | thick solid 2.4px | peer branch's color | shown |
 | attach merge-back (source tip → embed position) | long dashes `4 4` | source branch's color | shown when both ends are visible — an agent-internal tip merged into its triangle draws no line; the spawn head's position ON the thread is the return relationship |

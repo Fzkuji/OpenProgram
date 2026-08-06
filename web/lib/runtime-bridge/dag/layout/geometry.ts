@@ -40,6 +40,10 @@ export interface Geometry {
   /** ``forkRootId → the sibling it runs parallel to`` — present only
    *  when the two share a row and the bridge can be a straight dash. */
   forkSibOf: Record<string, string>;
+  /** ``lane → its spine`` for every fork lane: the empty column the
+   *  bridge lands on and the turns stub off (x), starting at the fork
+   *  root's row (topY). The trunk's equivalent is ROOT's own glyph. */
+  laneSpineOf: Record<number, { x: number; topY: number }>;
 }
 
 export function computeGeometry(
@@ -70,43 +74,12 @@ export function computeGeometry(
     }
   });
 
-  // A fork lane mirrors the trunk: its fork root anchors the lane's
-  // spine column and every LATER turn steps one column right, exactly
-  // as turns step right of ROOT. Without the step the later turns share
-  // the fork root's column, the spine runs straight through the circles
-  // and consecutive user messages read as chained to each other.
-  const laneRootOf: Record<number, string> = Object.create(null);
-  chainIds.forEach((id) => {
-    const n = byId[id];
-    const p = layoutParent(n);
-    const foreign = !p || !byId[p] || !isChainNode(byId[p])
-      || (byId[p]._lane || 0) !== (n._lane || 0);
-    if (!foreign) return;
-    const lane = n._lane || 0;
-    const cur = laneRootOf[lane];
-    if (!cur || (byId[id].created_at || 0) < (byId[cur].created_at || 0)) {
-      laneRootOf[lane] = id;
-    }
-  });
-  const isTurn = (id: string): boolean => {
-    const n = byId[id] as Record<string, unknown>;
-    return byId[id].role === "user" || Array.isArray(n.covers_ids)
-      || !!n.superseded_summary;
-  };
-  const colShift: Record<string, number> = Object.create(null);
-  chainIds.forEach((id) => {
-    const lane = byId[id]._lane || 0;
-    if (!forkLanes.has(lane)) return;
-    if (isTurn(id) && id !== laneRootOf[lane]) colShift[id] = 1;
-  });
-  chainIds.forEach((id) => {
-    // Replies / merges ride their own turn's column offset.
-    const lane = byId[id]._lane || 0;
-    if (!forkLanes.has(lane) || colShift[id]) return;
-    const p = layoutParent(byId[id]);
-    if (p && colShift[p]) colShift[id] = 1;
-  });
-
+  // A fork lane mirrors the trunk (dag/rendering.md scene 3): the
+  // lane's SPINE column carries no glyph — every chain node steps one
+  // column right of it, the dashed bridge lands on the spine, and the
+  // turns stub off the spine exactly as trunk turns stub off ROOT's
+  // line. Without the empty spine column the branch started WITH a
+  // node and later turns read as chained user messages.
   const startCol: Record<number, number> = Object.create(null);
   const minTierOf: Record<number, number> = Object.create(null);
   let col = 0;
@@ -116,17 +89,17 @@ export function computeGeometry(
     // their old in-lane position; without zeroing a one-node branch
     // arrives several columns adrift of its lane.
     minTierOf[lane] = Math.min(...own.map((id) => byId[id]._tier || 0));
-    const maxTier = Math.max(...own.map(
-      (id) => (byId[id]._tier || 0) + (colShift[id] || 0)));
+    const maxTier = Math.max(...own.map((id) => byId[id]._tier || 0));
     if (forkLanes.has(lane) && col > 0) col += 1;
     startCol[lane] = col;
-    col += maxTier - minTierOf[lane] + 1;
+    // +1: the fork lane's empty spine column.
+    col += maxTier - minTierOf[lane] + 1 + (forkLanes.has(lane) ? 1 : 0);
   });
   const colOf = (id: string): number => {
     const n = byId[id];
     const lane = n._lane || 0;
     return (startCol[lane] || 0) + (n._tier || 0) - (minTierOf[lane] || 0)
-      + (colShift[id] || 0);
+      + (forkLanes.has(lane) ? 1 : 0);
   };
   const usedCols = new Set<number>();
   laneKeys.forEach((lane) => {
@@ -221,6 +194,15 @@ export function computeGeometry(
       });
     }
   });
+  // Each fork lane's spine starts at its (topmost) fork root's row.
+  const laneTopRow: Record<number, number> = Object.create(null);
+  forkRoots.forEach((id) => {
+    const lane = byId[id]._lane || 0;
+    const r = rowOf[id] || 0;
+    if (laneTopRow[lane] === undefined || r < laneTopRow[lane]) {
+      laneTopRow[lane] = r;
+    }
+  });
 
   // ── Threads: recursive placement ──
   // Items run from the anchor's next row (past any fork rows hanging
@@ -297,5 +279,17 @@ export function computeGeometry(
     seat(id, x, PAD_Y + (depthToRow[d] ?? d) * ROW_H);
   });
 
-  return { pos, minX, maxX, maxY, threadColOf, threadRowsOf, forkSibOf };
+  const laneSpineOf: Record<number, { x: number; topY: number }> =
+    Object.create(null);
+  Object.keys(laneTopRow).forEach((laneKey) => {
+    const lane = Number(laneKey);
+    laneSpineOf[lane] = {
+      x: PAD_X + (startCol[lane] || 0) * COL_W,
+      topY: PAD_Y + laneTopRow[lane] * ROW_H,
+    };
+  });
+
+  return {
+    pos, minX, maxX, maxY, threadColOf, threadRowsOf, forkSibOf, laneSpineOf,
+  };
 }
