@@ -79,14 +79,21 @@ export function GoalChip() {
   if (!goal || !goal.status || goal.status === "cleared") return null;
 
   const active = goal.status === "active";
+  const waiting = goal.status === "waiting_user";
   const label = active
     ? `◎ goal · ${goal.turns_used ?? 0}/${goal.max_turns ?? 20}`
-    : `◎ goal ${goal.status}`;
-  const tip = [goal.text, goal.last_reason].filter(Boolean).join(" — ");
+    : waiting
+      ? "◎ goal · 等你回答"
+      : `◎ goal ${goal.status}`;
+  const tip = [
+    goal.text,
+    waiting ? (goal as { last_question?: string }).last_question : null,
+    goal.last_reason,
+  ].filter(Boolean).join(" — ");
   return (
     <span
       className="runtime-badge agent-badge"
-      style={active ? undefined : { opacity: 0.55 }}
+      style={active || waiting ? undefined : { opacity: 0.55 }}
       title={tip || undefined}
     >
       <span className="badge-details">{label}</span>

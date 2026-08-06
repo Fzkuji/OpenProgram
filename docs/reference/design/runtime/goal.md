@@ -15,11 +15,14 @@ Placement consequences:
 
 ## Verdict: two modes, judge separated from worker
 
-`evaluate_goal` returns `("met" | "unmet" | "judge_failure", reason)`.
+`evaluate_goal` returns `("met" | "unmet" | "needs_user" | "judge_failure",
+reason, question)`.
 
 **Deterministic predicate** — when `goal.check` is set, it runs as a shell command (`subprocess.run(shell=True)`) in the session's working directory (`project_workdir_for` falling back to `session_workdir_for` — the same resolution the agent's own turn gets), with a 120 s timeout. Exit 0 is met; otherwise the output tail (last 2000 chars) becomes the reason. Zero LLM cost, immune to model optimism.
 
-**LLM judge** — without a predicate, one no-tools call on the session's configured model (profile + per-session override, resolved through `internals/_model_tools`; the provider registry's `fast` flag is a speed tier of the same model, not a cheaper judge model, so there is no separate judge model to pick). Input is the goal text plus a tail render of the active branch: the last 8 messages' content plus each assistant row's persisted tool blocks, clipped per-field and capped at ~24 k chars. The tail is rendered in `goal.py` rather than by `render_session_transcript` because the stock transcript keeps the head and drops later turns — the wrong end for judging recent progress. The judge must answer strict JSON `{"met": bool, "reason": str}`; a malformed reply is retried once within the same evaluation.
+**LLM judge** — without a predicate, one no-tools call on the session's configured model (profile + per-session override, resolved through `internals/_model_tools`; the provider registry's `fast` flag is a speed tier of the same model, not a cheaper judge model, so there is no separate judge model to pick). Input is the goal text plus a tail render of the active branch: the last 8 messages' content plus each assistant row's persisted tool blocks, clipped per-field and capped at ~24 k chars. The tail is rendered in `goal.py` rather than by `render_session_transcript` because the stock transcript keeps the head and drops later turns — the wrong end for judging recent progress. The judge must answer strict JSON `{"met": bool, "reason": str, "need_user": bool, "question": str}`; a malformed reply is retried once within the same evaluation. The deterministic predicate never asks for the user — its verdict carries an empty question.
+
+**The pause decision lives in the verification step.** `need_user=true` is allowed only for four situations the system prompt spells out: an irreversible/destructive action pending approval; a missing credential/resource the work cannot proceed without; a direction-deciding ambiguity in the goal where guessing wrong wastes many turns; a repeated failure the agent cannot recover from. Everything else continues. This puts "should we interrupt the user" in the same fresh-context call that already judges completion each turn — no extra call, and no reliance on the working model's own restraint (the model doing the work is also the wrong entity to decide whether to bother the user). `need_user=true` with an empty question is not actionable and is treated as plain unmet.
 
 The judge is a separate call on purpose. Codex's and Cline's original self-report designs — the working agent declaring its own completion — both had to be patched after agents systematically declared victory early: the model that wants to stop is the wrong entity to ask whether it may. Keeping the verdict in a fresh context that sees only the goal and the evidence (and is told to treat the transcript as data, not instructions) removes that incentive, and makes the deterministic mode a drop-in replacement for it.
 
@@ -29,9 +32,10 @@ Goal state lives in session meta (`update_session` is schemaless), key `goal`:
 
 ```
 {"text": str, "check": str,
- "status": "active" | "achieved" | "cleared" | "capped" | "error",
+ "status": "active" | "waiting_user" | "achieved" | "cleared" | "capped"
+           | "error",
  "created_at": float, "turns_used": int, "max_turns": int,
- "last_reason": str, "judge_parse_failures": int}
+ "last_reason": str, "last_question": str, "judge_parse_failures": int}
 ```
 
 The loop re-reads the meta at the top of every iteration, so a `/goal clear` issued from any surface takes effect at the next check. `turns_used` counts every judged turn while the goal is active — the initiating turn, continuations, and any manual turns the user interleaves. `max_turns` is stamped at set time from the `goal.max_turns` setting (`config_schema`, default 20), so changing the setting affects the next goal, not a running one.
@@ -41,6 +45,7 @@ The loop re-reads the meta at the top of every iteration, so a `/goal clear` iss
 | Rule | Terminal status |
 |---|---|
 | Check passes / judge answers met | `achieved` |
+| Judge answers `need_user` with a question | `waiting_user` — the loop pauses, no continuation launches, the question surfaces as a system row and on the goal chip. A `goal_continue` turn can never resume it; the next real user turn flips the goal back to `active` (that message IS the answer) and judging proceeds as usual. Waiting consumes no budget beyond the turn that just ran. `/goal clear` clears a waiting goal too. |
 | `turns_used` reaches `max_turns` | `capped` |
 | Judge fails 3 consecutive evaluations (unparseable twice in one evaluation = one failure; a successful parse resets the count) | `error` |
 | A `goal_continue` turn made zero tool calls and the goal is still unmet — idle spin | `error` |

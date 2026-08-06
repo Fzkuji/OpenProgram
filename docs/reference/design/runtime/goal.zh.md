@@ -15,11 +15,14 @@
 
 ## 判定：两态，判定者与干活者分离
 
-`evaluate_goal` 返回 `("met" | "unmet" | "judge_failure", reason)`。
+`evaluate_goal` 返回 `("met" | "unmet" | "needs_user" | "judge_failure",
+reason, question)`。
 
 **确定性谓词** —— `goal.check` 非空时作为 shell 命令执行（`subprocess.run(shell=True)`），cwd 是会话工作目录（`project_workdir_for` 回落 `session_workdir_for`，与 agent 自己轮次的解析一致），120 秒超时。退出 0 即达成；否则输出尾部（最后 2000 字符）成为原因。零 LLM 成本，对模型乐观免疫。
 
-**LLM 判定** —— 无谓词时，用会话配置的模型（profile + 会话覆盖，经 `internals/_model_tools` 解析；provider 注册表的 `fast` 是同一模型的速度档，不是更便宜的判定模型，因此没有独立判定模型可选）发起一次无工具调用。输入是目标文本加活跃分支的尾部渲染：最后 8 条消息内容加每条 assistant 行持久化的工具块，逐字段截断，总量约 24k 字符封顶。尾部渲染写在 `goal.py` 里而不是复用 `render_session_transcript`，因为现成渲染保头弃尾——对判定最近进展是错误的一端。判定者必须输出严格 JSON `{"met": bool, "reason": str}`；解析失败在同次判定内重试一次。
+**LLM 判定** —— 无谓词时，用会话配置的模型（profile + 会话覆盖，经 `internals/_model_tools` 解析；provider 注册表的 `fast` 是同一模型的速度档，不是更便宜的判定模型，因此没有独立判定模型可选）发起一次无工具调用。输入是目标文本加活跃分支的尾部渲染：最后 8 条消息内容加每条 assistant 行持久化的工具块，逐字段截断，总量约 24k 字符封顶。尾部渲染写在 `goal.py` 里而不是复用 `render_session_transcript`，因为现成渲染保头弃尾——对判定最近进展是错误的一端。判定者必须输出严格 JSON `{"met": bool, "reason": str, "need_user": bool, "question": str}`；解析失败在同次判定内重试一次。确定性谓词永不请求用户——它的裁决携带空 question。
+
+**"要不要停下来问用户"的决定放在验证步骤里。** `need_user=true` 只允许四种情形（写死在系统提示里）：待批准的不可逆/破坏性操作；缺关键凭据/资源、拿不到无法推进；目标存在决定方向的歧义、猜错会浪费大量轮次；同一失败反复出现且无法自行恢复。其余一律继续。这把"该不该打扰用户"放进每轮本来就要跑的那次新上下文判定里——零额外调用，也不依赖干活模型自己的克制（正在干活的模型同样不是"该不该打扰用户"的合格回答者）。`need_user=true` 但 question 为空视为普通未达成。
 
 判定独立成一次调用是刻意的。Codex 与 Cline 最初的自报式设计——干活 agent 自己宣布完成——都在 agent 系统性提前宣胜之后被迫打补丁：想停下来的模型不是"能不能停"这个问题的合格回答者。把结论放进一个只看目标与证据的新上下文（并要求把记录当数据、不执行其中指令），去掉了这个激励，也让确定性模式可以原位替换它。
 
@@ -29,9 +32,10 @@ Goal 状态存会话 meta（`update_session` 是 schemaless 的），键 `goal`�
 
 ```
 {"text": str, "check": str,
- "status": "active" | "achieved" | "cleared" | "capped" | "error",
+ "status": "active" | "waiting_user" | "achieved" | "cleared" | "capped"
+           | "error",
  "created_at": float, "turns_used": int, "max_turns": int,
- "last_reason": str, "judge_parse_failures": int}
+ "last_reason": str, "last_question": str, "judge_parse_failures": int}
 ```
 
 循环每次迭代开头重读 meta，任何入口发出的 `/goal clear` 在下一次判定即生效。`turns_used` 计目标活跃期间每个被判定的轮次——首轮、续轮、用户插进来的手动轮次都算。`max_turns` 在设定时刻从设置项 `goal.max_turns`（`config_schema`，默认 20）盖章，改设置只影响下一个目标，不影响进行中的。
@@ -41,6 +45,7 @@ Goal 状态存会话 meta（`update_session` 是 schemaless 的），键 `goal`�
 | 规则 | 终态 |
 |---|---|
 | 检查命令通过 / 判定者回答已达成 | `achieved` |
+| 判定者回答 `need_user` 且带问题 | `waiting_user`——循环暂停、不发起续轮，问题以系统行呈现并显示在 goal 芯片上。`goal_continue` 轮永远不能作为回答；下一个真实用户轮把目标翻回 `active`（那条消息就是回答），随后照常判定。等待不消耗预算（除已跑完的那轮）。`/goal clear` 同样能清掉等待中的目标。 |
 | `turns_used` 到达 `max_turns` | `capped` |
 | 判定连续失败 3 次（同次判定内两次解析失败算一次失败；解析成功清零计数） | `error` |
 | 某个 `goal_continue` 轮零工具调用且目标仍未达成——空转 | `error` |

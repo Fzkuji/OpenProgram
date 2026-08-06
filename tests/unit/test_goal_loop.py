@@ -280,7 +280,7 @@ def test_judge_retries_once_then_parses(tmp_db: SessionDB, monkeypatch) -> None:
     _set_goal(tmp_db, "s1")
     replies = iter(["not json at all", '{"met": true, "reason": "done"}'])
     monkeypatch.setattr(G, "_judge_llm", lambda *a, **k: next(replies))
-    verdict, reason = G._evaluate_with_llm_judge(
+    verdict, reason, _question = G._evaluate_with_llm_judge(
         "s1", {"text": "the goal"}, agent_id="main", model_override=None)
     assert verdict == "met"
     assert reason == "done"
@@ -288,7 +288,7 @@ def test_judge_retries_once_then_parses(tmp_db: SessionDB, monkeypatch) -> None:
 
 def test_judge_json_extraction() -> None:
     ok = G._parse_judge_json('```json\n{"met": false, "reason": "missing"}\n```')
-    assert ok == (False, "missing")
+    assert ok == (False, "missing", False, "")
     assert G._parse_judge_json("no braces here") is None
     assert G._parse_judge_json('{"met": "yes"}') is None  # met must be bool
 
@@ -463,3 +463,74 @@ def test_dispatcher_end_to_end_goal_achieved(tmp_db: SessionDB,
     assert roles == ["user", "assistant", "user", "assistant"]
     assert msgs[2]["content"].startswith("[goal] 未达成：")
     assert msgs[2]["source"] == "goal_continue"
+
+
+# ---------------------------------------------------------------------------
+# needs_user: the verification step pauses the loop for the user
+# ---------------------------------------------------------------------------
+
+def test_needs_user_pauses_loop(tmp_db: SessionDB, monkeypatch) -> None:
+    """A need_user verdict from the judge pauses the loop (no
+    continuation launches), records the question, and a later real user
+    turn resumes it."""
+    _set_goal(tmp_db, "s1", check="")   # no predicate → LLM judge
+    monkeypatch.setattr(
+        G, "_judge_llm",
+        lambda *a, **k: ('{"met": false, "reason": "direction unclear", '
+                         '"need_user": true, "question": "用方案A还是方案B？"}'))
+    calls = []
+
+    def run_turn(req, *, on_event=None, cancel_event=None):
+        calls.append(req)
+        return _result(tools=True)
+
+    G.continue_goal_turns(_req(), _result(), run_turn=run_turn)
+    goal = G.load_goal("s1")
+    assert goal["status"] == "waiting_user"
+    assert goal["last_question"] == "用方案A还是方案B？"
+    assert calls == []          # nothing launched while waiting
+
+    # A goal_continue turn is never the answer — still waiting.
+    G.continue_goal_turns(_req(source="goal_continue"), _result(),
+                          run_turn=run_turn)
+    assert G.load_goal("s1")["status"] == "waiting_user"
+    assert calls == []
+
+    # A real user turn resumes: judge now says unmet → one continuation.
+    answers = iter([
+        '{"met": false, "reason": "keep going", "need_user": false, '
+        '"question": ""}',
+        '{"met": true, "reason": "done", "need_user": false, "question": ""}',
+    ])
+    monkeypatch.setattr(G, "_judge_llm", lambda *a, **k: next(answers))
+    G.continue_goal_turns(_req(source="web"), _result(), run_turn=run_turn)
+    goal = G.load_goal("s1")
+    assert goal["status"] == "achieved"
+    assert "last_question" not in goal
+    assert len(calls) == 1      # exactly the one resumed continuation
+
+
+def test_needs_user_without_question_continues(tmp_db: SessionDB,
+                                               monkeypatch) -> None:
+    """need_user=true with an empty question is not actionable — the
+    loop treats it as unmet and keeps going."""
+    _set_goal(tmp_db, "s1", check="", max_turns=1)
+    monkeypatch.setattr(
+        G, "_judge_llm",
+        lambda *a, **k: ('{"met": false, "reason": "r", "need_user": true, '
+                         '"question": ""}'))
+    calls = []
+
+    def run_turn(req, *, on_event=None, cancel_event=None):
+        calls.append(req)
+        return _result(tools=True)
+
+    G.continue_goal_turns(_req(), _result(), run_turn=run_turn)
+    assert G.load_goal("s1")["status"] == "capped"
+
+
+def test_clear_covers_waiting_user(tmp_db: SessionDB) -> None:
+    _set_goal(tmp_db, "s1", status="waiting_user")
+    out = G.handle_goal_command("s1", "clear")
+    assert "cleared" in G.load_goal("s1")["status"]
+    assert out["send_text"] is None
