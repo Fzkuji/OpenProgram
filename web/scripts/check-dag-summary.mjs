@@ -184,20 +184,17 @@ assert.match(
 );
 assert.match(
   nodesSrc,
-  /"data-summary": isCapsule \? String\(covered\.length\) : ""/,
+  /"data-summary": isCapsule && !isInert \? String\(covered\.length\) : ""/,
   "the node must publish its covered count for the click handler and inspector",
 );
 // The capsule is a wordless pill; the note beside it is what says how
 // much it stands for. Without it the shape is just an odd-looking turn.
-assert.match(
-  nodesSrc,
-  /isCapsule\) \{[\s\S]{0,500}"已压缩"/,
-  "a folded capsule is annotated with its state beside the pill",
-);
-assert.match(
-  nodesSrc,
-  /class: "history-summary-label"/,
-  "…as a caption in the canvas's annotation grey, not inside the pill",
+// The capsule carries no text caption: the glyph (pill + summary
+// lines) says what it is, the shoulder count says how much, and the
+// inspector/tooltip carry the details.
+assert.ok(
+  !/history-summary-label/.test(nodesSrc),
+  "the capsule draws no caption text on the canvas",
 );
 // The compaction capsule keeps its own geometry: it is the ONE shape
 // wider than the reference circle, and the layout treats it as one cell

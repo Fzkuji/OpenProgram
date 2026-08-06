@@ -259,12 +259,17 @@ export function _installInteractionHandlers(rerender: () => void): void {
     // A summary capsule is a stand-in, not a conversational tip:
     // checking it out would make the active branch [summary] alone and
     // grey the whole session (context/compaction.md §5). Double-click
-    // routes to the fold toggle instead, same as a single click.
-    if (node && (node.getAttribute("data-summary") || "") !== "") {
-      toggleSummaryExpanded(id);
-      if (_lastGraph) {
-        setLastSignature(null);
-        rerender();
+    // routes to the fold toggle when there is one (the carrying
+    // branch); on a branch the summary does not apply to there is
+    // nothing to fold and nothing to check out — no-op.
+    if (gn && ((gn as Record<string, unknown>).covers_ids
+        || (gn as Record<string, unknown>).superseded_summary)) {
+      if (node && (node.getAttribute("data-summary") || "") !== "") {
+        toggleSummaryExpanded(id);
+        if (_lastGraph) {
+          setLastSignature(null);
+          rerender();
+        }
       }
       return;
     }

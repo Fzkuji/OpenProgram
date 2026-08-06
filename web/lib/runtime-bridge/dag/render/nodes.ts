@@ -15,7 +15,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { type GNode, NODE_R } from "../types";
-import { translateText } from "@/lib/i18n";
 import {
   CAPSULE_HH,
   CAPSULE_HW,
@@ -100,10 +99,13 @@ export function drawNodes(
       "data-msg-id": id,
       "data-internal": internalSet[id] ? "1" : "0",
       "data-owner": internalOwner[id] || "",
-      // The interaction layer routes a capsule click to the fold toggle
-      // and labels the inspector's coverage row from these two.
-      "data-summary": isCapsule ? String(covered.length) : "",
-      "data-summary-open": capsuleOpen ? "1" : "0",
+      // The interaction layer routes a capsule click to the fold
+      // toggle and labels the inspector's coverage row from these two.
+      // An INERT capsule (this branch does not carry the summary) has
+      // nothing to fold — no data-summary, so a click is an ordinary
+      // select and no fold affordance is advertised.
+      "data-summary": isCapsule && !isInert ? String(covered.length) : "",
+      "data-summary-open": capsuleOpen && !isInert ? "1" : "0",
       // Same pair for the call thread: count and open state. Chain
       // turns and spawn heads use the identical vocabulary — a spawn
       // head's thread is the agent's own calls, one level down.
@@ -205,29 +207,8 @@ export function drawNodes(
       cnt.textContent = String(covered.length);
       g.appendChild(cnt);
     }
-    if (isSuperseded) {
-      const cap = _svg("text", {
-        x: String(CAPSULE_HW + 10),
-        y: String(3.5),
-        class: "history-summary-label",
-        "pointer-events": "none",
-      });
-      cap.textContent = translateText("Superseded summary", "已被新摘要取代");
-      g.appendChild(cap);
-    }
-    // ── 覆盖标注：胶囊旁一个词说明状态；数量在肩上的数字里 ────────
-    if (isCapsule) {
-      const cap = _svg("text", {
-        x: String(CAPSULE_HW + 10),
-        y: String(3.5),
-        class: "history-summary-label",
-        "pointer-events": "none",
-      });
-      cap.textContent = capsuleOpen
-        ? translateText("Expanded", "展开中")
-        : translateText("Compacted", "已压缩");
-      g.appendChild(cap);
-    }
+    // 胶囊不带文字注记：形状（药丸+摘要线）说明它是什么，肩上数字
+    // 说明收了多少，展开时幽灵就在屏上。详情在 tooltip 和检查器里。
     // ── 覆盖态的两级衰减（rendering.md 第八节）──
     const cov = coverageSet ? coverageSet[id] : undefined;
     if (el && cov && cov.aged) {

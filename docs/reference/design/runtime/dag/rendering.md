@@ -558,9 +558,9 @@ fourth role.
 **The count.** A folded capsule wears the covered-node count as digits on its
 right shoulder — the same fold vocabulary as a turn's call-thread count (§12),
 and it disappears when the capsule opens, because then the stack is drawn.
-Beside the pill a one-word caption in the canvas's annotation grey — `已压缩`
-folded, `展开中` open — names the state; it lives outside the shape for the
-same reason a sub-agent's name does (rule ③).
+No text caption: the glyph (pill + summary lines) says what it is, the count
+says how much, the ghosts say it is open, and the tooltip/inspector carry the
+details.
 
 **The fold is per-branch.** A summary belongs to the branch whose context
 carries it — the branch whose active chain contains the whole covered segment
@@ -585,7 +585,7 @@ moves to the replacement — the next request carries exactly one summary,
 never a stack. The graph says the same thing: only the active summary gets
 `covers_ids` (capsule + fold); a superseded summary keeps its row and its
 capsule silhouette but arrives flagged `superseded_summary`, draws in ghost
-grey with the caption `已被新摘要取代`, and folds nothing.
+grey, and folds nothing.
 
 **Where the capsule sits.** One slot, identical in every state and on every
 branch: the covered segment's end. Expanded, it follows its ghosts
