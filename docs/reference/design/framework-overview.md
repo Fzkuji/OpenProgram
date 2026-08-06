@@ -258,7 +258,7 @@ append-only, with no mutable current-state mirror.
 ### ② Event layer — bus + tool.before interception
 
 **Responsibility**: process-wide fan-out that decouples every subsystem.
-**Key files**: `agent/event_bus.py`, `agent/tool_gate.py`, `agent/questions.py`.
+**Key files**: `openprogram/events/` (bus.py / tool_gate.py), `agent/questions.py`.
 **Mechanisms**:
 - `EventBus` (`:129`): typed `subscribe(handler, types=...)` (`:159`) + legacy
   channel `on` (`:208`); process singleton `get_event_bus()` (`:241`,

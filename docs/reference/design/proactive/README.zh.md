@@ -58,5 +58,6 @@
 
 事件底座已就位：总线已启用，两类源都在往里发，`tool.before` 带同步拦截点，webui 作为
 普通订阅者消费总线。尚未构建的是 `execution-model.md` 和 `policies-mvp.md` 描述的
-proactive 规则层。想看事件流：`OPENPROGRAM_EVENT_LOG=1 openprogram worker restart`，
-发条消息，读 `/tmp/openprogram-events.jsonl`。
+proactive 规则层。事件日志常开：发条消息，读
+`~/.openprogram/sessions/<sid>/events.jsonl`（会话外的事件在
+`~/.openprogram/logs/events.jsonl`）。

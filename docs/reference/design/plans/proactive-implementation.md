@@ -8,7 +8,7 @@
 
 ## 1. Where the code lives
 
-The event layer is an in-place upgrade of `openprogram/agent/event_bus.py`:
+The event layer is an in-place upgrade of `openprogram/events/bus.py`:
 `Event`, subscription by event type, and a process-level singleton. Taps live in
 the individual source files that already know when something happened, not in a
 central collector. The `openprogram/proactive/` package holds the rule layer and
@@ -27,7 +27,7 @@ codebase:
 
 | Role in the design | Existing mechanism | Location |
 |---|---|---|
-| In-process event fan-out | `EventBus` — implemented but idle; dispatcher and agent_loop bypassed it with direct callbacks | `openprogram/agent/event_bus.py` |
+| In-process event fan-out | `EventBus` — implemented but idle; dispatcher and agent_loop bypassed it with direct callbacks | `openprogram/events/bus.py` |
 | The gate's `ask` path | `ApprovalRegistry` + `_wrap_with_approval`: request, block and wait, approve or deny; a denial returns an is_error tool result | `openprogram/agent/_approval.py` |
 | The observer's `Prepare` background task | `TaskRunner.spawn_task` — ThreadPoolExecutor, state machine, task_status broadcast | `openprogram/agent/task/runner.py` |
 | Landing slot for `Inject` | memory prefetch into the system prompt plus steering messages | `openprogram/agent/agent_loop.py` |
@@ -91,8 +91,8 @@ Every wiring change is checked the same way: `py_compile`, the relevant unit
 tests, `openprogram worker restart`, a healthy `/healthz`, and a real message
 sent through the web UI (frontend changes need `cd web && npm run build` first).
 
-Event ordering is checked by restarting the worker with
-`OPENPROGRAM_EVENT_LOG=1` and running a turn that calls a tool. The log must
+Event ordering is checked by running a turn that calls a tool and reading
+the session's `events.jsonl` (the event log is always on). The log must
 show `user.prompt_submitted → model.response_started → tool.before →
 tool.after → model.response_completed → turn.ended` in that order, each entry
 carrying session and turn in its metadata.
@@ -114,15 +114,15 @@ As built, the pieces sit here:
 
 | Part | Location |
 |---|---|
-| `Event` / `make_event` / `emit_safe` / `subscribe(types=)` / `get_event_bus` / the event-log subscriber | `openprogram/agent/event_bus.py` |
-| Synchronous query point: `register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | `openprogram/agent/tool_gate.py` |
+| `Event` / `make_event` / `emit_safe` / `subscribe(types=)` / `get_event_bus` / the event-log subscriber | `openprogram/events/bus.py` |
+| Synchronous query point: `register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | `openprogram/events/tool_gate.py` |
 | `tool.before` observe and query, `tool.after`, `model.*`, `turn.ended` taps | `openprogram/agent/agent_loop.py` |
 | `user.prompt_submitted` | `openprogram/agent/dispatcher/__init__.py` |
 | `subagent.started` / `ended` | `openprogram/agent/task/runner.py` `_broadcast_task_status` |
 | `file.changed`, emitted after a successful write via lazy import | five sites across the write / edit / apply_patch tools |
-| External-source bridge, installed idempotently at worker startup | `openprogram/agent/event_bridges.py` + `worker/runner.py` |
+| External-source bridge, installed idempotently at worker startup | `openprogram/events/bridges.py` + `worker/runner.py` |
 | External source taps | `context/engine.py` (compaction, ×2), `channels/_conversation.py`, `memory/session_watcher.py` (×2), `webui/server.py` (skills / plugins) |
-| `emit_ws_frame` passthrough envelope + `_subscribe_event_bus` forwarding | `agent/event_bus.py`, `webui/server.py` |
+| `emit_ws_frame` passthrough envelope + `_subscribe_event_bus` forwarding | `openprogram/events/bus.py`, `webui/server.py` |
 | External sources decoupled from the web UI import | `task/runner.py`, `sub_agent_run.py`, `worktree/manager.py`, `functions/watcher.py`, `channels/_broadcast.py` |
 | Unit tests (30) | `tests/agent/test_event_bus.py`, `test_tool_gate.py`, `test_event_bridges.py` |
 

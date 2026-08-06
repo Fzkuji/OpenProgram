@@ -92,7 +92,6 @@ Set these in the shell that launches `openprogram` (or the worker). Every one ha
 | `OPENPROGRAM_DEBUG_REGISTRY` | `1` = show function-registry import failures | `openprogram/functions/_registry.py` |
 | `OPENPROGRAM_DEBUG_DISPATCHER` | `1` = dispatcher debug logs | `openprogram/agent/dispatcher/runtime_attach.py` |
 | `OPENPROGRAM_DEBUG_PROVIDER` | `1` = provider-layer debug logs | `openprogram/providers/openai_codex/openai_codex.py` |
-| `OPENPROGRAM_EVENT_LOG` | `1` or a file path = append every typed event as a JSON line | `openprogram/agent/event_bus.py` |
 
 ### Others
 

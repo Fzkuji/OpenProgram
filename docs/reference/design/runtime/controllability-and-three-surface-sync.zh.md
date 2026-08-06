@@ -12,7 +12,7 @@
 |---|---|---|
 | steering 注入点 | agent_loop 已有 3 个检查点(turn 头、每个工具后、follow-up 前)可插消息 | `agent/agent_loop.py:218-310,620-629` |
 | 提问框架 | QuestionRegistry(进程级、线程安全、claim-once)+ 两种 Transport(EventLayer / Queue)+ 子进程桥 | `agent/questions.py:34-198`、`agent/process_runner.py` 的 answer_queue/QueueTransport |
-| 事件广播 | EventBus + emit_ws_frame:一处 emit,所有 WS 客户端收到 | `agent/event_bus.py:115-125`、`webui/server.py` `_broadcast` |
+| 事件广播 | EventBus + emit_ws_frame:一处 emit,所有 WS 客户端收到 | `openprogram/events/bus.py`、`webui/server.py` `_broadcast` |
 | 共享存储 | git-backed SessionDB,三端共享同一真值;worker 单例(WorkerLock) | `agent/session_db.py`、`worker/lock.py` |
 | 工具目录策略 | apply_tool_policy 有 deny/allow;toolset 分级(default 不含 ask_user_question,full 含) | `functions/__init__.py` apply_tool_policy |
 | 取消/优雅停 | cancel_event 全链路 + 子进程 graceful stop IPC(本轮新加) | `agent/process_runner.py` request_graceful_stop |

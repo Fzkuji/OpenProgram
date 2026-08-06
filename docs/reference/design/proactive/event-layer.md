@@ -5,8 +5,26 @@ A single unified event stream for the whole framework. proactive is just its fir
 **Why**: without this layer, the "something happened" signal in the framework is scattered across six unconnected mechanisms (the agent loop's
 AgentEvent stream, auth's `_emit`, context's on_event, the channels WS broadcast, memory's periodic poll, and the
 store's plain logging). To "do something at a certain moment", you first have to figure out which mechanism owns that moment and how to hook into it. This layer unifies them into
-**a single bus: sources emit into it, consumers subscribe from it**. (The `subscribe/_emit` at `auth/store.py:204`
-already gets events right; this layer generalizes that to the whole framework.)
+**a single bus: sources emit into it, consumers subscribe from it**.
+
+The layer has ten parts. Where each one lives:
+
+| # | Part | Where |
+|---|---|---|
+| 1 | Central registry (`EVENTS`) | `openprogram/events/registry.py` |
+| 2 | Event object | `openprogram/events/bus.py` (`Event`, `make_event`) |
+| 3 | Typed dispatch: notify + gate | `EventBus.emit` / `EventBus.emit_gate` |
+| 4 | Subscription management | `EventBus.subscribe` / `EventBus.subscribe_gate` |
+| 5 | Error semantics | isolation for notify, fail-open for gates (§4) |
+| 6 | Veto protocol | Python return value / shell exit codes (§5) |
+| 7 | Event log | `openprogram/events/event_log.py` — per-session `events.jsonl` with rotation (§6) |
+| 8 | Threading model | gates run synchronously in the emitter's thread (§4) |
+| 9 | Observability | gate verdicts recorded on the event's log line (§6) |
+| 10 | Admission boundary | the registry itself; `registry.py` module docstring |
+
+Everything event-related lives in the `openprogram/events/` package. The old module paths
+(`openprogram/agent/event_bus.py`, `tool_gate.py`, `event_bridges.py`) are `sys.modules` aliases of the
+package's modules, so existing imports and monkeypatch targets resolve to the same objects.
 
 ## 1. The Event Model
 
@@ -17,119 +35,148 @@ The three core fields (what happened + content + time) are fixed; correlation in
 class Event:
     id: str          # unique id
     ts: float        # when it happened
-    type: str        # what kind of event, see §3
+    type: str        # what kind of event, see §2
     origin: str      # who triggered it: user / agent / tool / system / proactive
     payload: dict    # the event's content (command, file path, which account got rate-limited, ...)
     metadata: dict   # open pocket: {"session":..., "turn":..., "lane":...}, fill in only when needed
 ```
 
-Why session/turn/lane go into the pocket rather than being fixed fields: they are not intrinsic properties of an event, they are
-externally attached correlations, and for half the events (auth, channel) they have no meaning at all — making them fixed fields would force you to patch around them with "nullable". An open dict also lets you add
-new correlation dimensions later without changing the model. (Mature event systems all have this shape: a fixed core, with correlation going into labels / headers.)
+Why session/turn go into the pocket rather than being fixed fields: they are not intrinsic properties of an event, they are
+externally attached correlations, and for half the events (auth, channel) they have no meaning at all. An open dict also lets new
+correlation dimensions in later without changing the model.
 
-> turn is not something this layer models — there is no Turn object in the framework; it is simply the id of the assistant message, carried via a
-> ContextVar (`_current_turn_id`). When an agent event is emitted and this var has a value, it gets stuffed into metadata;
-> when an auth/channel event is emitted the var is empty, so the pocket naturally has no turn.
+`make_event` auto-fills id/ts and the session/turn correlation from the store ContextVars when inside a
+dispatcher-driven turn; explicit `metadata` keys win over the auto ones.
 
-## 2. Two Classes of Event Source
+## 2. The Registry — the Admission Boundary
 
-| | Type A: agent activity | Type B: system state |
-|---|---|---|
-| When | While the agent is working | A global state change, possibly with no agent running |
-| Examples | User message, model response, before/after a tool, file changed, end of a turn | Credential rate-limited, context about to overflow, external message arrives, skills changed |
-| For proactive | The baseline | Often more valuable ("credential rate-limited" and "context about to overflow" are clear, actionable moments) |
+`openprogram/events/registry.py` holds `EVENTS = {name: EventSpec(kind, payload_doc)}`. **An event type
+enters the registry only when a real consumer subscribes to it** — a moment becomes an event because someone
+wants to respond to it, never because the code happens to pass through it. This is the same principle
+`event_bridges.py` applies to type-B sources, and it is what keeps the stream from rotting into a dumping ground.
 
-It is easy to focus only on type A, but type B (auth/context/channels outside the agent loop) is often more important for proactivity. Both
-go into the same bus, and the metadata pocket naturally accommodates both — type A carries turn, type B does not, with no special case for either.
+The registered events:
 
-## 3. Event Types
-
-| Class | type | When | Source (wiring) |
+| type | kind | payload | emitted from |
 |---|---|---|---|
-| A | `user.prompt_submitted` | User sends a message | dispatcher (outside the persistence branch; emitted on both the webui and channel paths) |
-| A | `model.response_started`/`.completed` | Model starts / finishes its reply | agent_loop streaming start/done |
-| A | `tool.before` | Tool about to execute | agent_loop `_execute_tool_calls` (interceptable, see §5) |
-| A | `tool.after` | Tool finished executing | agent_loop |
-| A | `file.changed` | File modified (payload carries path/op) | after a successful write in write/edit/apply_patch |
-| A | `turn.ended` | End of a turn | agent_loop (both the normal path and the error/abort paths) |
-| A | `subagent.started`/`.ended` | Subtask start/end | TaskRunner state funnel |
-| B | `credential.cooldown`/`.exhausted`/`.rotated` | Credential rate-limited / pool exhausted / rotated | `event_bridges.py` subscribes to `AuthStore` and translates |
-| B | `context.compaction_recommended`/`.compacted` | Context hits the threshold / has been compacted | `context/engine.py` source tap |
-| B | `channel.message_inbound` | External message arrives | `channels/_conversation.py` source tap |
-| B | `memory.ingest_started`/`.ended` | Idle-session wiki ingest start/end | `memory/session_watcher.py` source tap |
-| B | `skills.changed`/`plugins.update_available` | Skill changed / new plugin version available | webui watcher source tap |
+| `tool.before` | gate | `{tool, args}` | `agent_loop._execute_tool_calls`, before every `tool.execute()` |
+| `turn.stop` | gate | `{session_id, user_msg_id, assistant_msg_id, last_text (≤4000 chars), stop_hook_active}` | `dispatcher.process_user_turn`, after the goal loop releases the turn |
+| `turn.start` | notify | `{session_id, user_msg_id, assistant_msg_id}` | dispatcher, after the user message is persisted |
+| `turn.end` | notify | `{session_id, user_msg_id, assistant_msg_id, usage}` | dispatcher, after finalize |
+| `session.start` | notify | `{session_id, agent_id, channel}` | `plugins/hooks.dispatch_hook` bridges the plugin `SESSION_START` hook onto the bus |
+| `goal.update` | notify | `{session_id, goal: {text, check, status, turns_used, max_turns, last_reason, last_question}}` | `goal._emit_goal_update` |
 
-The set is open: §7 covers why adding a type is a zero-risk change.
+Emitting an unregistered type is tolerated during migration: the bus logs one warning per type (never raises),
+so legacy emit sites (`tool.after`, `user.prompt_submitted`, `credential.*`, `context.*`, `memory.ingest_*`,
+`ws.frame`, ...) keep working and migrate into the registry as their consumers formalize.
 
-## 4. Placement: a process-level singleton bus
+## 3. Two Dispatch Modes
+
+**Notify (default, asynchronous)**: `emit(event)` fans out to `subscribe(handler, types={...})` subscribers,
+fire-and-forget. The emitter never waits; a slow or broken subscriber cannot slow the framework down.
+
+**Gate (synchronous veto)**: `emit_gate(event, timeout_s=None) -> GateOutcome{allowed, reasons}` calls every
+`subscribe_gate(type, fn)` subscriber for that type, in registration order, in the emitter's thread. Any
+returned reason makes `allowed=False`; reasons aggregate. `subscribe_gate` returns an unregister function,
+like `subscribe`.
+
+Gate rules:
+
+- **Fast only.** A gate sits in the middle of the action's path — no LLM calls, no slow IO.
+- **Re-entrancy guard**: a nested `emit_gate` for the same type in the same thread allows immediately with a
+  warning, so a gate can never gate itself into a loop.
+- `timeout_s` is a soft overall budget: once exceeded, the remaining gates are skipped fail-open with a warning.
+- Both classes apply to subagents: `tool.before` sits outside the permission_mode approval wrapper, so
+  `permission_mode="bypass"` cannot turn it off.
+
+## 4. Error Semantics and Threading
+
+- A raising **notify** subscriber is isolated: logged, other subscribers still run, the emitter never sees it.
+- A raising **gate** subscriber is **fail-open**: logged to stderr, treated as allow — one gate's bug must not
+  brick every tool call.
+- **Shell** subscribers always run under a timeout (default 60 s, configurable per hook); a timeout is fail-open
+  with a warning.
+- Gates run synchronously in the calling thread; notify handlers run in the emitter's thread too (async
+  handlers are scheduled on the running loop when one exists).
+
+## 5. The Veto Protocol
+
+**Python gate functions** (the ToolGate signature): return `None` to allow, a reason string to deny. The merged
+deny reason reaches the actor — for `tool.before` it becomes the model's error tool result via
+`ToolGateDenied`; for `turn.stop` it becomes the `[hook] <reason>。继续。` continuation prompt.
+
+**Shell subscribers** follow the Claude Code hooks exit-code protocol. The Event arrives as JSON on stdin.
+
+| exit code | meaning |
+|---|---|
+| 0 | allow |
+| 2 | deny; stderr is the reason |
+| anything else | fail-open, logged as a warning |
+
+Shell subscribers come from the top-level `hooks` key in config.json
+(registered as the `hooks` setting in `config_schema.py`):
+
+```json
+{
+  "hooks": {
+    "turn.stop": [{"command": "python check_done.py", "timeout": 30}],
+    "turn.end":  [{"command": "notify-send 'turn finished'"}]
+  }
+}
+```
+
+At worker start, `openprogram.events.install_config_hooks()` (`shell_hooks.py`) registers each command: gate-kind events get a synchronous
+shell gate, notify-kind events get a background runner (daemon thread, exit code ignored, failures logged).
+Config edits apply on the next worker restart.
+
+### The `turn.stop` continuation loop
+
+`dispatcher/stop_hook.continue_stop_hook_turns` asks the `turn.stop` gate after every completed turn (goal
+loop included). A denial launches one more turn, built exactly like a goal continuation
+(`dataclasses.replace`, `source="hook_continue"`, `INHERIT_PARENT`), then the goal judgment and the gate run
+again on the new result. Runaway protection: at most 10 hook continuations per `process_user_turn` call, and
+`payload["stop_hook_active"]` is True on every ask after the first. Failed or cancelled turns return without
+asking the gate. Head movement stays with the normal TurnWriter path inside each turn.
+
+## 6. The Event Log
+
+The process-wide bus appends every typed event as one JSON line, always on:
+
+- `~/.openprogram/sessions/<sid>/events.jsonl` when the event carries a session whose directory exists;
+- `~/.openprogram/logs/events.jsonl` otherwise.
+
+A file past 5 MB rotates to `.1` (replacing the previous `.1`). Gate verdicts are recorded on the same line as
+a `gate` field — `{allowed, reasons, duration_ms, subscribers}` — not emitted as a second event. This is the
+layer's observability: read the log after a real turn to see the full stream and every gate decision.
+
+## 7. Placement: a Process-Level Singleton Bus
 
 All the relevant components (webui, agent loop, channels, memory, auth, task runner) run in **the same worker
-process** (each as a daemon thread). So the bus is a **process-level singleton**, living in `agent/event_bus.py`,
-with a `get_event_bus()` accessor that follows the same double-checked-locking pattern as `get_store()`/`get_runner()`. Every thread in the same process gets
-the same instance and emits/subscribes directly, with no cross-process bridging needed.
+process** (each as a daemon thread). So the bus is a **process-level singleton** in `openprogram/events/bus.py`, with
+a `get_event_bus()` accessor following the same double-checked-locking pattern as `get_store()`/`get_runner()`.
+Only the singleton writes the event log; isolated buses from `create_event_bus()` (tests, embedded use) stay
+silent.
 
-```python
-class EventBus:
-    def emit(self, event: Event) -> None: ...
-        # broadcast to subscribers, fire-and-forget, does not block the caller
+Dependency direction: the event system imports nothing from webui. webui subscribes to the bus (the
+`ws.frame` pass-through envelope); the bus does not know webui exists.
 
-    def subscribe(self, handler, *, types=None) -> unsubscribe_fn: ...
-        # subscribe by event type, receive only the few types you care about
-```
-
-Subscription is by event type and the payload is a unified Event, rather than subscription by channel carrying arbitrary data: a consumer names the few types it cares about and the bus does the filtering, so a consumer never receives — and never has to recognize — traffic it has no interest in.
-
-## 5. Two Interaction Modes: Observe vs. Intercept
-
-**Observe (default, async)**: emit it out, subscribers receive it asynchronously, and the event source does not wait. The vast majority of events take this path, and no matter how slow a subscriber
-is it does not slow the framework down.
-
-**Intercept (only `tool.before`, synchronous)**: just before a tool executes, this point must let downstream say "don't execute". A synchronous interception point is added before the
-`tool.execute()` call in the tool's single entry point `_execute_tool_calls`. Key constraints: it must be fast (no calling the LLM);
-when multiple parties weigh in, the strictest verdict wins; and it applies to subagents too (it sits outside the approval wrapper, so `permission_mode=bypass` cannot turn it off).
-
-The API (`openprogram/agent/tool_gate.py`):
-
-```python
-from openprogram.agent.tool_gate import register_tool_gate
-
-# gate function: takes a tool.before event, returns None (allow) or a deny reason string
-unregister = register_tool_gate(
-    lambda ev: "dangerous deletion" if "rm -rf" in str(ev.payload.get("args")) else None
-)
-```
-
-The deny reason is returned to the model as an error tool result via the existing error path; deny reasons from multiple gates are merged; and a gate that
-throws an exception is treated as allowing (fail-open). The "ask (pop a confirmation)" tier is a generalization of `_approval.py` rather than a second mechanism.
-
-## 6. Architecture Diagram
+## 8. Architecture Diagram
 
 ![Event layer architecture diagram](diagrams/event-layer-architecture.svg)
 
 > Interactive version (full visualization page with animated event flow): [`event-layer.html`](event-layer.html)
 
-- The bus is the sole hub: sources and consumers don't know each other, they only know the bus — this is what "unified" means.
-- webui and proactive are both just **consumers**, at the same level. proactive is not inside the event layer; it is an application on top of it —
-  the event layer and proactive are fully decoupled, so you can build the event layer alone.
-- Interception is a single separate synchronous line on the right, only for `tool.before`; everything else is asynchronous observation.
+- The bus is the sole hub: sources and consumers don't know each other, they only know the bus.
+- webui and proactive are both just **consumers**, at the same level. proactive is an application on top of
+  the layer, not part of it.
+- Gate dispatch is the single synchronous line; everything else is asynchronous observation.
 
-## 7. Two Principles to Remember
+## 9. Wiring Summary
 
-**Not every call is an event — only moments that "some consumer wants to respond to" are.** The table in §3 is hand-picked, not a dump of
-every action in the framework. Nobody wants to respond to the agent concatenating a list internally, so no event is emitted for it. An event stream becoming a dumping ground where everything gets thrown in
-is the most common way these systems rot.
-
-**Adding monitoring later is cheap, precisely because sources and consumers don't know each other — adding an event touches only the one emit site, with nothing else changed.**
-For the framework's own functions, one line of `emit` is enough; a whole class of actions (like all tools) can be covered at once by adding it at a common entry point; only
-code from third parties that you can't touch needs a wrapper. **Evolution is add-only, never change**: adding an event type or adding a field to a payload is zero-risk (old subscribers
-only read what they care about), while it is changing an old structure that affects old subscribers — which is also why payload/metadata use open dicts.
-
-## Implementation status
-
-`Event` / `make_event` / `emit_safe` / `subscribe(types=)` / `get_event_bus()` live in
-`openprogram/agent/event_bus.py`, the synchronous interception point in
-`openprogram/agent/tool_gate.py`, and the type-B bridges in `openprogram/agent/event_bridges.py`
-(auth) plus the per-source taps listed in §3. Both classes of event are emitted. To observe the
-stream, set `OPENPROGRAM_EVENT_LOG=1`, restart the worker, and read `/tmp/openprogram-events.jsonl`.
-The lane distinction for concurrent execution flows (`events-and-state.md` §5) is the remaining
-piece of the model described here.
+| consumer-facing surface | backed by |
+|---|---|
+| `tool_gate.register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | thin shell over `subscribe_gate("tool.before", ...)` / `emit_gate` — public signatures unchanged for agent_loop and the proactive engine |
+| plugin `SESSION_START` hook | `dispatch_hook` also emits `session.start` on the bus |
+| `/goal` state changes | `goal._emit_goal_update` also emits `goal.update` |
+| config.json `hooks` | `openprogram.events.install_config_hooks()` at worker start |
+| type-B sources (auth, context, channels, memory) | `openprogram/events/bridges.py` bridge + per-source `emit_safe` taps |

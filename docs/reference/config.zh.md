@@ -92,7 +92,6 @@ openprogram config set ui.port 8101
 | `OPENPROGRAM_DEBUG_REGISTRY` | `1` = 显示函数注册表的导入失败 | `openprogram/functions/_registry.py` |
 | `OPENPROGRAM_DEBUG_DISPATCHER` | `1` = dispatcher 调试日志 | `openprogram/agent/dispatcher/runtime_attach.py` |
 | `OPENPROGRAM_DEBUG_PROVIDER` | `1` = provider 层调试日志 | `openprogram/providers/openai_codex/openai_codex.py` |
-| `OPENPROGRAM_EVENT_LOG` | `1` 或文件路径 = 把每个类型化事件追加为 JSON 行 | `openprogram/agent/event_bus.py` |
 
 ### 其他
 

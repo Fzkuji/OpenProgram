@@ -6,7 +6,7 @@
 
 ## 1. 代码落点
 
-事件层是 `openprogram/agent/event_bus.py` 的就地升级：`Event`、按事件类型订阅、
+事件层是 `openprogram/events/bus.py` 的就地升级：`Event`、按事件类型订阅、
 进程级单例。taps 加在各个本来就知道「刚才发生了什么」的源文件里，而不是集中到一个
 收集器。`openprogram/proactive/` 包装规则层，等第一个规则消费者出现时才建；在那之前
 事件层本身已经有用。
@@ -20,7 +20,7 @@
 
 | 设计中的角色 | 现有机制 | 位置 |
 |---|---|---|
-| 进程内事件扇出 | `EventBus`——已实现但闲置，dispatcher 和 agent_loop 用直接回调绕过了它 | `openprogram/agent/event_bus.py` |
+| 进程内事件扇出 | `EventBus`——已实现但闲置，dispatcher 和 agent_loop 用直接回调绕过了它 | `openprogram/events/bus.py` |
 | gate 的 `ask` 路径 | `ApprovalRegistry` + `_wrap_with_approval`：发起请求、阻塞等待、批准或拒绝，拒绝时回一个 is_error 的 tool result | `openprogram/agent/_approval.py` |
 | observer 的 `Prepare` 后台 task | `TaskRunner.spawn_task`——ThreadPoolExecutor、状态机、task_status 广播 | `openprogram/agent/task/runner.py` |
 | `Inject` 的落地槽位 | 注入 system prompt 的 memory prefetch，以及 steering messages | `openprogram/agent/agent_loop.py` |
@@ -75,8 +75,8 @@ tool allowlist。它跑在一个独立小池里，并发 1–2，可被用户任
 每一处接线改动都按同一套查：`py_compile`、相关单测、`openprogram worker restart`、
 `/healthz` 正常，以及经 web UI 发一条真实消息（前端改动要先 `cd web && npm run build`）。
 
-事件顺序的验证方式是用 `OPENPROGRAM_EVENT_LOG=1` 重启 worker，跑一个带工具调用的
-turn。日志必须依序出现 `user.prompt_submitted → model.response_started →
+事件顺序的验证方式是跑一个带工具调用的 turn，读该会话的 `events.jsonl`
+（事件日志常开）。日志必须依序出现 `user.prompt_submitted → model.response_started →
 tool.before → tool.after → model.response_completed → turn.ended`，且每条的
 metadata 里带 session 和 turn。
 
@@ -93,15 +93,15 @@ channels、memory、web UI 的源头 tap）；再然后把 web UI 从发送方�
 
 | 件 | 位置 |
 |---|---|
-| `Event` / `make_event` / `emit_safe` / `subscribe(types=)` / `get_event_bus` / 事件日志订阅者 | `openprogram/agent/event_bus.py` |
-| 同步问询点：`register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | `openprogram/agent/tool_gate.py` |
+| `Event` / `make_event` / `emit_safe` / `subscribe(types=)` / `get_event_bus` / 事件日志订阅者 | `openprogram/events/bus.py` |
+| 同步问询点：`register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | `openprogram/events/tool_gate.py` |
 | `tool.before` 观察与问询、`tool.after`、`model.*`、`turn.ended` taps | `openprogram/agent/agent_loop.py` |
 | `user.prompt_submitted` | `openprogram/agent/dispatcher/__init__.py` |
 | `subagent.started` / `ended` | `openprogram/agent/task/runner.py` `_broadcast_task_status` |
 | `file.changed`，写成功后经懒 import 发出 | write / edit / apply_patch 三个工具中的五处 |
-| 外部源桥，worker 启动时幂等安装 | `openprogram/agent/event_bridges.py` + `worker/runner.py` |
+| 外部源桥，worker 启动时幂等安装 | `openprogram/events/bridges.py` + `worker/runner.py` |
 | 外部源头 taps | `context/engine.py`（compaction ×2）、`channels/_conversation.py`、`memory/session_watcher.py`（×2）、`webui/server.py`（skills / plugins） |
-| `emit_ws_frame` 透传信封 + `_subscribe_event_bus` 订阅转发 | `agent/event_bus.py`、`webui/server.py` |
+| `emit_ws_frame` 透传信封 + `_subscribe_event_bus` 订阅转发 | `openprogram/events/bus.py`、`webui/server.py` |
 | 外部源不再 import web UI | `task/runner.py`、`sub_agent_run.py`、`worktree/manager.py`、`functions/watcher.py`、`channels/_broadcast.py` |
 | 单测（30 个） | `tests/agent/test_event_bus.py`、`test_tool_gate.py`、`test_event_bridges.py` |
 

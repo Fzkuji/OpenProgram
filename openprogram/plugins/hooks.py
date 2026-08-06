@@ -25,11 +25,9 @@ class HookEvent:
     SKILL_INVOKED = "skill.invoked"
     SKILL_INSTALLED = "skill.installed"
     SESSION_START = "session.start"
-    SESSION_STOP = "session.stop"
     TOOL_BEFORE_USE = "tool.before_use"
     TOOL_AFTER_USE = "tool.after_use"
     CHAT_BEFORE_SEND = "chat.before_send"
-    CHAT_AFTER_RESPONSE = "chat.after_response"
 
 
 _lock = RLock()
@@ -71,8 +69,23 @@ def list_handlers(event: str) -> list[tuple[str, Callable[..., Any]]]:
 def dispatch_hook(event: str, payload: dict[str, Any] | None = None) -> list[Any]:
     """Call every registered handler for ``event`` with ``payload``.
     Returns the list of return values. Exceptions are caught per
-    handler so one misbehaving plugin can't poison the chain."""
+    handler so one misbehaving plugin can't poison the chain.
+
+    Bus bridge: ``SESSION_START`` is also emitted as a ``session.start``
+    notify on the event bus, so bus subscribers see session creation
+    without registering a plugin. ``TOOL_BEFORE_USE`` is NOT bridged —
+    the bus's ``tool.before`` is the gate-carrying event agent_loop
+    already emits, and a notify shadow under the same name would blur
+    the two."""
     payload = payload or {}
+    if event == HookEvent.SESSION_START:
+        try:
+            from openprogram.events import emit_safe
+            meta = ({"session": payload["session_id"]}
+                    if payload.get("session_id") else None)
+            emit_safe("session.start", "system", dict(payload), meta)
+        except Exception:
+            pass
     out: list[Any] = []
     for plugin_name, handler in list_handlers(event):
         try:

@@ -337,8 +337,8 @@ ok = runtime.<span class="fn">confirm</span>(<span class="s">"要归档全部 87
 <section id="debug">
   <div class="kicker a">DEBUG</div>
   <h3 class="sec">调试：事件日志</h3>
-  <p class="lead">设置环境变量 <code>OPENPROGRAM_EVENT_LOG=1</code>（或指定路径），每条事件将以一行 JSON 追加落盘。<span class="fileref">event_bus.py:256-285</span></p>
-  <div class="code">OPENPROGRAM_EVENT_LOG=1 openprogram worker restart
+  <p class="lead">事件日志常开：每条事件以一行 JSON 追加落盘——带会话的进 <code>~/.openprogram/sessions/&lt;sid&gt;/events.jsonl</code>，其余进 <code>~/.openprogram/logs/events.jsonl</code>；单文件超 5MB 轮转为 <code>.1</code>。<span class="fileref">openprogram/events/event_log.py</span></p>
+  <div class="code">tail -f ~/.openprogram/logs/events.jsonl
 cat /tmp/openprogram-events.jsonl</div>
   <div class="note">普通 chat turn 会依序打出 <code>user.prompt_submitted → model.response_started → tool.before → tool.after → model.response_completed → turn.ended</code>，带 metadata 里的 session/turn。确认事件层在跑的最快方式。</div>
 </section>

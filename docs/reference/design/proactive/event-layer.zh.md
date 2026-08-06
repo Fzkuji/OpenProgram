@@ -1,134 +1,171 @@
 # 事件层
 
-一条统一的事件流，给整个框架用。proactive 只是它第一个消费者。
+全框架唯一的统一事件流。proactive 只是它的第一个消费者。
 
-**为什么要**：没有这一层时，框架里"某件事发生了"的信号散在六套互不相通的机制里（agent loop 的
-AgentEvent 流、auth 的 `_emit`、context 的 on_event、channels 的 WS 广播、memory 的定时 poll、
-store 的纯日志）。想"在某时机做某事"，得先搞清那个时机归哪套、怎么接。这层把它们统一成
-**一条总线：源往里 emit，消费者从里 subscribe**。（`auth/store.py:204` 的 `subscribe/_emit`
-已经把事件做对了，这层是把它推广到全框架。）
+**为什么**：没有这一层时，框架里"发生了什么"的信号散在六套互不相通的机制里（agent loop 的
+AgentEvent 流、auth 的 `_emit`、context 的 on_event、channels 的 WS 广播、memory 的周期轮询、
+store 的普通日志）。想"在某个时机做点什么"，得先弄清那个时机归哪套机制管、怎么挂进去。这一层把
+它们统一成**一条总线：源往里 emit，消费者从里 subscribe**。
+
+事件层共十个部件，各自的落位：
+
+| # | 部件 | 位置 |
+|---|---|---|
+| 1 | 集中注册表（`EVENTS`） | `openprogram/events/registry.py` |
+| 2 | Event 对象 | `openprogram/events/bus.py`（`Event`、`make_event`） |
+| 3 | 类型化派发：notify + gate | `EventBus.emit` / `EventBus.emit_gate` |
+| 4 | 订阅管理 | `EventBus.subscribe` / `EventBus.subscribe_gate` |
+| 5 | 错误语义 | notify 隔离、gate fail-open（§4） |
+| 6 | 否决协议 | Python 返回值 / shell 退出码（§5） |
+| 7 | 事件日志 | `openprogram/events/event_log.py`——每会话 `events.jsonl`，自动轮转（§6） |
+| 8 | 线程模型 | 闸门在发射方线程同步执行（§4） |
+| 9 | 可观测性 | gate 结论记在事件日志行上（§6） |
+| 10 | 准入边界 | 注册表本身；`registry.py` 模块 docstring |
+
+事件相关的一切都收在 `openprogram/events/` 包里。旧模块路径
+（`openprogram/agent/event_bus.py`、`tool_gate.py`、`event_bridges.py`）是包内模块的
+`sys.modules` 别名，既有 import 与 monkeypatch 目标解析到同一批对象。
 
 ## 1. Event 模型
 
-核心三样（是什么事 + 内容 + 时间）固定；关联信息放进一个开放的 metadata 口袋，不写死字段。
+三个核心字段（发生了什么 + 内容 + 时间）固定；关联信息进开放的 metadata 口袋，不做硬编码字段。
 
 ```python
 @dataclass(frozen=True)
 class Event:
-    id: str          # 唯一编号
+    id: str          # 唯一 id
     ts: float        # 发生时间
-    type: str        # 是什么事，见 §3
-    origin: str      # 谁引起的：user / agent / tool / system / proactive
-    payload: dict    # 这件事的内容（命令、文件路径、哪个账号被限流……）
-    metadata: dict   # 开放口袋：{"session":..., "turn":..., "lane":...}，需要才塞
+    type: str        # 哪类事件，见 §2
+    origin: str      # 谁触发的：user / agent / tool / system / proactive
+    payload: dict    # 事件内容（命令、文件路径、哪个账号被限流……）
+    metadata: dict   # 开放口袋：{"session":..., "turn":...}，需要才填
 ```
 
-为什么 session/turn/lane 进口袋而不做固定字段：它们不是事件的内在属性，是外加的关联，且对
-一半事件（auth、channel）根本没意义——做成固定字段就得靠"可空"打补丁。开放 dict 还让以后加
-新关联维度不用改模型。（成熟事件系统都这形状：核心固定，关联进 labels / headers。）
+session/turn 进口袋而非固定字段：它们不是事件的固有属性，是外挂的关联，且对一半事件（auth、
+channel）根本没有意义。开放 dict 也让以后新增关联维度不用改模型。
 
-> turn 不是这层要建模的东西——框架里没有 Turn 对象，它就是 assistant 消息的 id，靠一个
-> ContextVar（`_current_turn_id`）传着。agent 事件 emit 时这个 var 有值就塞进 metadata；
-> auth/channel 事件 emit 时它是空的，口袋里自然没 turn。
+`make_event` 自动补 id/ts，并在 dispatcher 驱动的轮内从 store ContextVar 取 session/turn 关联；
+显式传入的 `metadata` 键覆盖自动值。
 
-## 2. 两类事件源
+## 2. 注册表——准入边界
 
-| | A 类：agent 活动 | B 类：系统状态 |
-|---|---|---|
-| 何时 | agent 干活过程中 | 全局状态变化，可能没 agent 在跑 |
-| 例子 | 用户消息、模型回复、工具前后、文件改、一轮结束 | 凭据限流、上下文要溢出、外部消息进、技能变 |
-| 对 proactive | 基础 | 往往更有价值（"凭据限流了""上下文要溢出"是明确的可响应时机） |
+`openprogram/events/registry.py` 里 `EVENTS = {name: EventSpec(kind, payload_doc)}`。**一个事件
+类型进注册表，唯一的理由是有真实消费者要响应它**——不是因为代码恰好路过那里。这与 `bridges.py`
+对 B 类源的原则同源，也是事件流不腐化成垃圾场的关键。
 
-容易只盯 A 类，但 B 类（agent loop 之外的 auth/context/channels）对主动性常常更重要。两类都
-进同一条总线，metadata 口袋天然装得下——A 类带 turn，B 类不带，不为谁开特例。
+已登记的事件：
 
-## 3. 事件类型
-
-| 类 | type | 何时 | 来源（接线） |
+| type | kind | payload | 发射点 |
 |---|---|---|---|
-| A | `user.prompt_submitted` | 用户发消息 | dispatcher（持久化分支外，webui/channel 两路都发） |
-| A | `model.response_started`/`.completed` | 模型开始/说完回复 | agent_loop 流式 start/done |
-| A | `tool.before` | 工具即将执行 | agent_loop `_execute_tool_calls`（可拦截，见 §5） |
-| A | `tool.after` | 工具执行完 | agent_loop |
-| A | `file.changed` | 文件被改（payload 带 path/op） | write/edit/apply_patch 写成功后 |
-| A | `turn.ended` | 一轮结束 | agent_loop（正常 + error/abort 两处） |
-| A | `subagent.started`/`.ended` | 子任务起止 | TaskRunner 状态漏斗 |
-| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/池耗尽/轮换 | `event_bridges.py` 订阅 `AuthStore` 翻译 |
-| B | `context.compaction_recommended`/`.compacted` | 上下文到阈值/已压缩 | `context/engine.py` 源头 tap |
-| B | `channel.message_inbound` | 外部消息进来 | `channels/_conversation.py` 源头 tap |
-| B | `memory.ingest_started`/`.ended` | 空闲会话 wiki ingest 起止 | `memory/session_watcher.py` 源头 tap |
-| B | `skills.changed`/`plugins.update_available` | 技能改/插件有新版 | webui watcher 源头 tap |
+| `tool.before` | gate | `{tool, args}` | `agent_loop._execute_tool_calls`，每次 `tool.execute()` 之前 |
+| `turn.stop` | gate | `{session_id, user_msg_id, assistant_msg_id, last_text（≤4000 字）, stop_hook_active}` | `dispatcher.process_user_turn`，goal 循环放行之后 |
+| `turn.start` | notify | `{session_id, user_msg_id, assistant_msg_id}` | dispatcher，用户消息落盘之后 |
+| `turn.end` | notify | `{session_id, user_msg_id, assistant_msg_id, usage}` | dispatcher，finalize 之后 |
+| `session.start` | notify | `{session_id, agent_id, channel}` | `plugins/hooks.dispatch_hook` 把插件 `SESSION_START` hook 桥到总线 |
+| `goal.update` | notify | `{session_id, goal: {text, check, status, turns_used, max_turns, last_reason, last_question}}` | `goal._emit_goal_update` |
 
-这张表是开放集合：§7 讲为什么加一个类型是零风险的改动。
+emit 未注册的 type 属渐进迁移期的容忍行为：总线每个 type 只 log.warning 一次（不抛），既有发射点
+（`tool.after`、`user.prompt_submitted`、`credential.*`、`context.*`、`memory.ingest_*`、
+`ws.frame`……）照常工作，等各自的消费者定型后再入册。
 
-## 4. 定位：一个进程级单例总线
+## 3. 两种派发
 
-所有相关组件（webui、agent loop、channels、memory、auth、task runner）都跑在**同一个 worker
-进程**里（各是 daemon 线程）。所以总线是个**进程级单例**，位于 `agent/event_bus.py`，
-访问入口 `get_event_bus()` 沿用框架已有的 `get_store()`/`get_runner()` 双检锁写法。同进程所有线程拿到
-同一实例，直接 emit/subscribe，不需要跨进程桥接。
+**notify（默认，异步）**：`emit(event)` 扇出给 `subscribe(handler, types={...})` 的订阅者，发完
+即走。发射方永不等待；订阅者再慢再坏也拖不慢框架。
 
-```python
-class EventBus:
-    def emit(self, event: Event) -> None: ...
-        # 广播给订阅者，fire-and-forget，不阻塞调用方
+**gate（同步否决）**：`emit_gate(event, timeout_s=None) -> GateOutcome{allowed, reasons}` 在发射
+方线程里按注册序逐个调用该 type 的 `subscribe_gate(type, fn)` 订阅者。任一返回理由即
+`allowed=False`，理由聚合。`subscribe_gate` 与 `subscribe` 一样返回注销函数。
 
-    def subscribe(self, handler, *, types=None) -> unsubscribe_fn: ...
-        # 按事件类型订阅，只收关心的那几类
+闸门规则：
+
+- **必须快。** 闸门挡在动作的路中间——不许调 LLM、不许慢 IO。
+- **防重入**：同线程内嵌套 `emit_gate` 同一 type 直接放行并 warning，闸门不可能把自己闸成死循环。
+- `timeout_s` 是软性总预算：超出后剩余闸门跳过（fail-open）并 warning。
+- 对 subagent 同样生效：`tool.before` 位于 permission_mode 审批包装之外，
+  `permission_mode="bypass"` 关不掉它。
+
+## 4. 错误语义与线程模型
+
+- **notify** 订阅者抛异常：隔离——记日志、其余订阅者照跑、发射方无感。
+- **gate** 订阅者抛异常：**fail-open**——写 stderr、按放行处理。一个闸门的 bug 不能砖掉所有工具调用。
+- **shell** 订阅者必有超时（默认 60 秒，逐条可配）；超时按 fail-open 记 warning。
+- 闸门在调用方线程同步执行；notify 处理器也在发射方线程调用（async 处理器有运行中的 loop 时调度上去）。
+
+## 5. 否决协议
+
+**Python 闸门函数**（ToolGate 签名）：返回 `None` 放行、理由字符串否决。合并后的理由回到动作方——
+`tool.before` 经 `ToolGateDenied` 变成模型收到的 error tool result；`turn.stop` 变成
+`[hook] <理由>。继续。` 的续轮提示词。
+
+**shell 订阅者**沿用 Claude Code hooks 的退出码协议。Event 以 JSON 形式从 stdin 进来。
+
+| 退出码 | 含义 |
+|---|---|
+| 0 | 放行 |
+| 2 | 否决；stderr 即理由 |
+| 其他 | fail-open，记 warning |
+
+shell 订阅者来自 config.json 顶层 `hooks` 键（`config_schema.py` 登记为 `hooks` 设置项）：
+
+```json
+{
+  "hooks": {
+    "turn.stop": [{"command": "python check_done.py", "timeout": 30}],
+    "turn.end":  [{"command": "notify-send 'turn finished'"}]
+  }
+}
 ```
 
-订阅按事件类型进行、传的是统一的 Event，而不是按 channel 订阅、传任意 data：消费者报出自己关心的
-那几个类型，由总线做过滤，消费者就不会收到、也不必去辨认自己不关心的流量。
+worker 启动时 `openprogram.events.install_config_hooks()`（`shell_hooks.py`）逐条注册：gate 型
+事件挂同步 shell 闸门，notify 型事件挂后台执行器（daemon 线程、忽略退出码、失败只记日志）。改
+配置重启 worker 生效。
 
-## 5. 两种交互：观察 vs 拦截
+### `turn.stop` 续轮循环
 
-**观察型（默认，异步）**：emit 出去，订阅者异步收到，事件源不等。绝大多数事件走这条，订阅者
-再慢也不拖慢框架。
+`dispatcher/stop_hook.continue_stop_hook_turns` 在每个完成的轮之后（goal 循环放行后）问
+`turn.stop` 闸门。被否决则再跑一轮——构造方式与 goal 续轮同款（`dataclasses.replace`、
+`source="hook_continue"`、`INHERIT_PARENT`），跑完对新结果重新过 goal 判定与闸门。防失控：单次
+`process_user_turn` 内 hook 续轮上限 10；首问之后每次 `payload["stop_hook_active"]` 为 True。轮
+失败/被取消不再问闸门直接返回。head 移动始终走每轮内部正常的 TurnWriter 路径。
 
-**拦截型（仅 `tool.before`，同步）**：工具执行前这个点要能让下游说"别执行"。在工具的单一入口
-`_execute_tool_calls` 的 `tool.execute()` 之前加一个同步问询点。要点：必须快（不许调 LLM）；
-多方表态取最严；对 subagent 也生效（位于 approval 包装之外，`permission_mode=bypass` 关不掉它）。
+## 6. 事件日志
 
-API（`openprogram/agent/tool_gate.py`）：
+进程级总线把每个类型化事件追加为一行 JSON，常开：
 
-```python
-from openprogram.agent.tool_gate import register_tool_gate
+- 事件带 session 且该会话目录存在时：`~/.openprogram/sessions/<sid>/events.jsonl`；
+- 否则：`~/.openprogram/logs/events.jsonl`。
 
-# gate 函数：拿到 tool.before 事件，返回 None（放行）或 deny 理由字符串
-unregister = register_tool_gate(
-    lambda ev: "危险删除" if "rm -rf" in str(ev.payload.get("args")) else None
-)
-```
+单文件超 5 MB 轮转为 `.1`（覆盖旧 `.1`）。gate 结论作为同一日志行的 `gate` 字段记录——
+`{allowed, reasons, duration_ms, subscribers}`——不二次 emit。这就是这一层的可观测性：跑一个真实
+轮后读日志，事件流与每次闸门裁决尽在其中。
 
-deny 理由经现有错误路径作为 error tool result 回给模型；多 gate 的 deny 理由合并；gate 自身
-抛异常按放行处理（fail-open）。"ask（弹确认）"这一档是 `_approval.py` 的泛化，不是另起一套机制。
+## 7. 落位：进程级单例总线
 
-## 6. 框架图
+相关组件（webui、agent loop、channels、memory、auth、task runner）都跑在**同一个 worker 进程**里
+（各自 daemon 线程）。所以总线是 `openprogram/events/bus.py` 里的**进程级单例**，
+`get_event_bus()` 取用，双检锁模式与 `get_store()`/`get_runner()` 一致。只有单例落盘事件日志；
+`create_event_bus()` 的隔离实例（测试、内嵌用）不写。
+
+依赖方向：事件系统不 import webui。webui 作为订阅者消费总线（`ws.frame` 透传信封）；总线不知道
+webui 的存在。
+
+## 8. 架构图
 
 ![事件层架构图](diagrams/event-layer-architecture.svg)
 
-> 交互版（带事件流动画的完整可视化页面）：[`event-layer.html`](event-layer.html)
+> 交互版本（带事件流动画的完整可视化页）：[`event-layer.html`](event-layer.html)
 
-- 总线是唯一枢纽：源和消费者互不认识，只认总线——这就是"统一"。
-- webui 和 proactive 都只是**消费者**，平级。proactive 不在事件层里面，是它之上的应用——
-  事件层和 proactive 彻底解耦，可以只做事件层。
-- 拦截是右侧单独一条同步线，只为 `tool.before`；其余全是异步观察。
+- 总线是唯一中枢：源和消费者互不认识，只认总线。
+- webui 和 proactive 都只是**消费者**，同级。proactive 是这层之上的应用，不在这层之内。
+- gate 派发是唯一的同步线；其余全是异步观察。
 
-## 7. 两条要记住的原则
+## 9. 接线一览
 
-**不是所有调用都是事件，只有"有消费者想响应"的时机才是。** §3 那张表是精挑的，不是把框架
-所有动作列进来。agent 内部一次列表拼接没人想响应，就不发事件。事件流变成什么都往里倒的垃圾场，
-是这类系统最常见的腐烂方式。
-
-**以后想加监测很便宜，因为源和消费者互不认识——加事件只动 emit 那一处，别处不用改。**
-框架自己的函数加一行 `emit` 即可；一整类动作（如所有工具）在公共入口加一次就覆盖一批；只有
-第三方碰不到的代码才要包一层。**演进只加不改**：加事件类型、给 payload 加字段都零风险（老订阅者
-只读自己关心的），改老结构才会影响老订阅者——这也是 payload/metadata 用开放 dict 的理由。
-
-## 实现状态
-
-`Event` / `make_event` / `emit_safe` / `subscribe(types=)` / `get_event_bus()` 在
-`openprogram/agent/event_bus.py`，同步问询点在 `openprogram/agent/tool_gate.py`，B 类桥在
-`openprogram/agent/event_bridges.py`（auth）加 §3 列出的各源头 tap。两类事件都在发。
-观察事件流：`OPENPROGRAM_EVENT_LOG=1` 重启 worker 后读 `/tmp/openprogram-events.jsonl`。
-并发执行流的 lane 区分（`events-and-state.md` §5）是这套模型里尚未落地的部分。
+| 消费者侧表面 | 背后 |
+|---|---|
+| `tool_gate.register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | `subscribe_gate("tool.before", ...)` / `emit_gate` 的薄壳（`openprogram/events/tool_gate.py`）——公开签名不变，agent_loop 与 proactive engine 照用 |
+| 插件 `SESSION_START` hook | `dispatch_hook` 同时向总线 emit `session.start` |
+| `/goal` 状态变化 | `goal._emit_goal_update` 顺带 emit `goal.update` |
+| config.json `hooks` | worker 启动时 `openprogram.events.install_config_hooks()` |
+| B 类源（auth、context、channels、memory） | `openprogram/events/bridges.py` 桥 + 各源头 `emit_safe` tap |

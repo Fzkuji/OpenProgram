@@ -130,15 +130,31 @@ def process_user_turn(
     """
     result = _process_turn_once(
         req, on_event=on_event, cancel_event=cancel_event)
+    continue_goal_turns = None
     try:
         from openprogram.agent.goal import continue_goal_turns
-        return continue_goal_turns(
+        result = continue_goal_turns(
             req, result, run_turn=_process_turn_once,
             on_event=on_event, cancel_event=cancel_event)
     except Exception:
         # The goal loop must never lose a finished turn's result. A
         # crash below still returns what the user's own turn produced.
         _log.warning("goal continuation failed for session %s",
+                     req.session_id, exc_info=True)
+        return result
+    # turn.stop gate: hooks may deny the stop and force continuation
+    # turns (stop_hook.py). Runs only after the goal loop released the
+    # turn; a crash below still returns the finished result.
+    try:
+        from openprogram.agent.dispatcher.stop_hook import (
+            continue_stop_hook_turns,
+        )
+        return continue_stop_hook_turns(
+            req, result, run_turn=_process_turn_once,
+            goal_continue=continue_goal_turns,
+            on_event=on_event, cancel_event=cancel_event)
+    except Exception:
+        _log.warning("turn.stop hook continuation failed for session %s",
                      req.session_id, exc_info=True)
         return result
 
@@ -228,6 +244,13 @@ def _process_turn_once(
         db=db, req=req, writer=_writer,
         user_msg_id=user_msg_id, on_event=on_event,
     )
+
+    # 事件层：用户轮已落盘，agent loop 即将启动。
+    from openprogram.events import emit_safe as _emit_safe
+    _emit_safe("turn.start", "system",
+               {"session_id": req.session_id, "user_msg_id": user_msg_id,
+                "assistant_msg_id": assistant_msg_id},
+               {"session": req.session_id})
 
     # 3. Per-turn ContextVar bindings (turn_context.py): GraphStore +
     #    DAG runtime + turn id + worktree cwd + deferred-tool set,
@@ -406,6 +429,14 @@ def _process_turn_once(
         on_event=on_event,
         head_id=_writer.head_for_finalize(assistant_msg_id),
     )
+
+    # 事件层：finalize 完成，本轮记账收尾。usage 摘要只带 token 计数键。
+    _emit_safe("turn.end", "system",
+               {"session_id": req.session_id, "user_msg_id": user_msg_id,
+                "assistant_msg_id": assistant_msg_id,
+                "usage": {k: v for k, v in (usage or {}).items()
+                          if isinstance(v, (int, float))}},
+               {"session": req.session_id})
 
     # Mark session idle/done now that the turn completed successfully.
     try:

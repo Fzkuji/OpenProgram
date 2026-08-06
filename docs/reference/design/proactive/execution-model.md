@@ -49,6 +49,8 @@ A blocking rule can only return three actions: `Gate.allow()` (let it through), 
 
 **Two, it applies to subtasks as well.** OpenProgram currently sets "no approval" for subagents (`permission_mode=bypass`), meaning tools inside subtasks don't go through the approval flow. But **blocking rules must bypass this setting and block anyway** — otherwise a dangerous command could slip through simply by being stuffed into a subtask. This is why the interception point sits outside the approval wrapper rather than inside it.
 
+Mechanically, `tool_gate` is one gate slot on the event bus: `register_tool_gate` is `subscribe_gate("tool.before", ...)` and the consultation runs through `EventBus.emit_gate` (`docs/reference/design/proactive/event-layer.md` §3). The same gate dispatch also carries `turn.stop`.
+
 ## 3. The Watching Ones (observer)
 
 **Watch after something happens, think it over slowly, don't hold up the agent.** They watch all kinds of events — a tool finished, the model finished replying, a file changed.

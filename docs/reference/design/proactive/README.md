@@ -47,6 +47,6 @@ The two parts are decoupled. You can build just the foundation and hold off on t
 The event foundation is in place: the bus is enabled, both classes of source emit into it,
 `tool.before` carries the synchronous interception point, and webui consumes the bus as an
 ordinary subscriber. The proactive rule layer described in `execution-model.md` and
-`policies-mvp.md` is the part not yet built. To watch the event stream:
-`OPENPROGRAM_EVENT_LOG=1 openprogram worker restart`, send a message, then read
-`/tmp/openprogram-events.jsonl`.
+`policies-mvp.md` is the part not yet built. The event log is always on: send a message, then read
+`~/.openprogram/sessions/<sid>/events.jsonl` (or `~/.openprogram/logs/events.jsonl`
+for events outside a session).

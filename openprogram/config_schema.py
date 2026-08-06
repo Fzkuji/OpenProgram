@@ -88,7 +88,27 @@ def _coerce(widget: str, value: Any) -> Any:
         if isinstance(value, str):
             return value.strip().lower() in ("1", "true", "yes", "on")
         return bool(value)
+    if widget == "json":
+        import json
+        return json.loads(value) if isinstance(value, str) else value
     return str(value)
+
+
+def _validate_hooks(v: Any) -> Optional[str]:
+    if not isinstance(v, dict):
+        return 'must be a JSON object: {"<event>": [{"command": "...", "timeout": 60}]}'
+    for event, entries in v.items():
+        if not isinstance(entries, list):
+            return f"{event}: must map to a list of entries"
+        for e in entries:
+            if not isinstance(e, dict) or not isinstance(e.get("command"), str) \
+                    or not e["command"].strip():
+                return f'{event}: each entry needs a non-empty "command" string'
+            t = e.get("timeout")
+            if t is not None and (not isinstance(t, int) or isinstance(t, bool)
+                                  or t <= 0):
+                return f"{event}: timeout must be a positive whole number of seconds"
+    return None
 
 
 # the registry
@@ -150,6 +170,22 @@ SETTINGS: list[SettingSpec] = [
         help="Upper bound on turns a /goal session goal may consume "
              "before it stops with status=capped. Read when the goal is "
              "set; each goal keeps the bound it started with.",
+    ),
+    SettingSpec(
+        key="hooks", path=("hooks",), group="Hooks",
+        label="Event hook commands", widget="json",
+        apply=APPLY_NEXT_START, default={},
+        validate=_validate_hooks,
+        help='Shell commands subscribed to bus events, as {"<event>": '
+             '[{"command": "...", "timeout": 60}]}. The event arrives as '
+             "JSON on the command's stdin. Gate events (tool.before, "
+             "turn.stop) follow the Claude Code hooks exit-code protocol: "
+             "exit 0 allows, exit 2 denies with stderr as the reason, any "
+             "other exit code is ignored (fail-open). Notify events "
+             "(turn.start, turn.end, session.start, goal.update) run the "
+             "command in the background and ignore the exit code. Timeout "
+             "defaults to 60 seconds per command. Read once at worker "
+             "start — restart to apply.",
     ),
     SettingSpec(
         key="update.channel", path=("update", "channel"), group="Updates",
@@ -216,6 +252,10 @@ def get_settings() -> list[dict]:
         }
         if s.secret:
             row["set"] = bool(raw)
+        elif s.widget == "json":
+            # Serialized so the plain-text input renders/edits it as JSON.
+            import json
+            row["value"] = json.dumps(raw, ensure_ascii=False)
         else:
             row["value"] = raw
         if s.choices is not None:

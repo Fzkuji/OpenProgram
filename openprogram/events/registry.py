@@ -1,0 +1,62 @@
+"""Central event registry — the admission boundary of the event layer.
+
+``EVENTS`` lists every event type the bus recognizes. An event type enters
+this registry only when a real consumer subscribes to it (the same
+principle ``bridges.py`` applies to type-B sources — a moment becomes an
+event because someone wants to respond to it, never because the code
+happens to pass through it). Emitting an unregistered type is tolerated
+during migration — the bus logs one warning per type instead of raising.
+
+Two kinds of dispatch:
+
+* ``notify`` — asynchronous observation via ``EventBus.emit``; subscribers
+  can never block or influence the emitter.
+* ``gate`` — synchronous veto via ``EventBus.emit_gate``; subscribers run
+  in the emitter's thread and any deny reason stops the action.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class EventSpec:
+    kind: str         # "notify" | "gate"
+    payload_doc: str  # what the payload dict carries
+
+
+EVENTS: dict[str, EventSpec] = {
+    "tool.before": EventSpec(
+        kind="gate",
+        payload_doc="{tool: str, args: dict} — the tool call about to run; "
+                    "a deny reason becomes the model's error tool result",
+    ),
+    "turn.stop": EventSpec(
+        kind="gate",
+        payload_doc="{session_id, user_msg_id, assistant_msg_id, "
+                    "last_text: str (≤4000 chars), stop_hook_active: bool} — "
+                    "asked after a completed turn (goal loop included); a "
+                    "deny reason launches one more continuation turn",
+    ),
+    "turn.start": EventSpec(
+        kind="notify",
+        payload_doc="{session_id, user_msg_id, assistant_msg_id} — the user "
+                    "message is persisted and the agent loop is about to run",
+    ),
+    "turn.end": EventSpec(
+        kind="notify",
+        payload_doc="{session_id, user_msg_id, assistant_msg_id, usage: "
+                    "dict} — finalize (persistence + bookkeeping) completed",
+    ),
+    "session.start": EventSpec(
+        kind="notify",
+        payload_doc="{session_id, agent_id, channel} — a session object was "
+                    "created (bridged from the plugin SESSION_START hook)",
+    ),
+    "goal.update": EventSpec(
+        kind="notify",
+        payload_doc="{session_id, goal: {text, check, status, turns_used, "
+                    "max_turns, last_reason, last_question}} — the session "
+                    "goal state changed",
+    ),
+}

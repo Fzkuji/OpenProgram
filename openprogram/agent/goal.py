@@ -123,6 +123,11 @@ def _emit_goal_update(on_event: Optional[Callable], session_id: str,
             on_event({"type": "chat_response", "data": dict(payload)})
         except Exception:
             _log.debug("goal on_event emit failed", exc_info=True)
+    # 事件层 tap：goal 状态变化进总线（emit_safe 自己吞异常）。
+    from openprogram.events import emit_safe
+    emit_safe("goal.update", "system",
+              {"session_id": session_id, "goal": dict(payload["goal"])},
+              {"session": session_id})
     try:
         from openprogram.webui import server as _s
         _s._broadcast(json.dumps({"type": "goal_update", "data": payload},

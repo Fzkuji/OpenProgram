@@ -18,7 +18,7 @@ Permission decisions run through four parts chained into a decision path, from h
 
 | Part | Governs | Can `bypass` disable it | Location |
 |---|---|---|---|
-| **gate (hard block)** | Absolute prohibitions from the policy layer (proactive policy deny/ask) | No, always in effect | `openprogram/agent/tool_gate.py` |
+| **gate (hard block)** | Absolute prohibitions from the policy layer (proactive policy deny/ask) | No, always in effect | `openprogram/events/tool_gate.py` |
 | **Rule layer** | User-configured allow / deny / ask rules (per-tool + per-pattern, **project level** primarily, layered across sources) | No for deny/ask; yes for allow | `openprogram/agent/internals/_approval.py:50-68` (`_match_rule`) + `openprogram/functions/permission_rule.py` |
 | **Permission mode (session level)** | Session tier: ask / acceptEdits / auto / bypass / plan (aligned with Claude Code's official names, 5 tiers) | The tier itself is that switch | `_gated_execute` (`internals/_approval.py:150-197`) |
 | **Approval flow** | Frontend/backend interaction when a nod is needed (show card, block waiting for an answer, write back project rules) | No (showing the card blocks) | `await_user_approval` (`internals/_approval.py:245-`) + frontend approval mode |
@@ -193,7 +193,7 @@ A tool call passes through two checkpoints: the gate (in the agent main loop) an
 In `agent_loop.py`, before each tool execution: `agent_loop.py:695` builds the `tool.before` event → `agent_loop.py:701` calls `decide_tool_gate(before_ev)` to poll every registered gate → on a deny, `agent_loop.py:708` raises `ToolGateDenied`, and the deny reason goes back to the model as an error tool result.
 
 ```python
-# openprogram/agent/tool_gate.py:26-27, 53-69
+# openprogram/events/tool_gate.py
 ToolGate = Callable[[Event], "str | None"]   # returns None to allow / a string deny reason
 
 def decide_tool_gate(event: Event) -> str | None:
@@ -612,7 +612,7 @@ Attended mode lives in `openprogram/agent/attended.py`. The core (`attended.py:1
 | Decision chain `_gated_execute` / `_match_rule` / `await_user_approval` / `_persist_always_allow_rule` / `_risk_level` | `openprogram/agent/internals/_approval.py` |
 | Rule string parsing, matching, multi-layer merging | `openprogram/functions/permission_rule.py` (`parse_rule` / `parse_command` / `pattern_matches` / `load_merged_rules`) |
 | Path safety / dangerous files and directories / Windows bypass | `openprogram/functions/tools/file_safety.py` |
-| gate hard block | `openprogram/agent/tool_gate.py` |
+| gate hard block | `openprogram/events/tool_gate.py` |
 | Permission mode legal values + normalization + SessionRunConfig fields | `openprogram/agent/session_config.py` |
 | `PermissionMode` type + TurnRequest fields and defaults | `openprogram/agent/dispatcher/types.py` |
 | Schemaless session meta storage | `openprogram/store/session/session_store.py` |

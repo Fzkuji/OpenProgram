@@ -260,6 +260,16 @@ def run_foreground() -> int:
     except Exception as exc:  # noqa: BLE001
         print(f"[worker] event bridges failed to install: {exc}")
 
+    # 用户 shell 订阅者 — config.json 顶层 "hooks" 注册到总线（gate 型
+    # 事件挂同步闸门，notify 型挂后台命令）。改配置重启生效。
+    try:
+        from openprogram.events import install_config_hooks
+        _n_hooks = install_config_hooks()
+        if _n_hooks:
+            print(f"[worker] {_n_hooks} config hook subscriber(s) registered")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] config hooks failed to install: {exc}")
+
     # Channel question bridge — push runtime.ask/form questions from a
     # channel session into that chat so the user can /answer them.
     try:

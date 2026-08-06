@@ -60,6 +60,8 @@ class DangerousCommandGuard:
 也就是子任务里的工具不走批准流程。但**挡路规则要绕过这个设置、照样拦**——否则危险命令只要塞进
 一个子任务就能溜过去。这正是拦截点位于批准包装之外、而不是之内的原因。
 
+机制上，`tool_gate` 是事件总线上的一个闸门位：`register_tool_gate` 即 `subscribe_gate("tool.before", ...)`，问询走 `EventBus.emit_gate`（`docs/reference/design/proactive/event-layer.md` §3）。同一套闸门派发也承载 `turn.stop`。
+
 ## 3. 旁观的（observer）
 
 **在事情发生之后看着，慢慢想，不耽误 agent。** 盯各种事件——工具完成了、模型回复完了、

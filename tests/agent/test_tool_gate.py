@@ -32,12 +32,15 @@ from openprogram.providers.types import (
 @pytest.fixture(autouse=True)
 def _clean_gates():
     """每个测试自己注册的 gate 自己拆，互不污染。"""
-    from openprogram.agent import tool_gate
+    from openprogram.events import get_event_bus
 
-    before = list(tool_gate._gates)
+    bus = get_event_bus()
+    with bus._lock:
+        before = {t: list(fns) for t, fns in bus._gates.items()}
     yield
-    with tool_gate._lock:
-        tool_gate._gates[:] = before
+    with bus._lock:
+        bus._gates.clear()
+        bus._gates.update(before)
 
 
 def _ev(tool: str = "bash"):

@@ -12,7 +12,7 @@ User requirements (paraphrased from the original):
 |---|---|---|
 | steering injection points | agent_loop already has 3 checkpoints (turn head, after each tool, before follow-up) where messages can be inserted | `agent/agent_loop.py:218-310,620-629` |
 | question framework | QuestionRegistry (process-level, thread-safe, claim-once) + two Transports (EventLayer / Queue) + subprocess bridge | `agent/questions.py:34-198`, the answer_queue/QueueTransport in `agent/process_runner.py` |
-| event broadcast | EventBus + emit_ws_frame: emit in one place, all WS clients receive it | `agent/event_bus.py:115-125`, `_broadcast` in `webui/server.py` |
+| event broadcast | EventBus + emit_ws_frame: emit in one place, all WS clients receive it | `openprogram/events/bus.py`, `_broadcast` in `webui/server.py` |
 | shared storage | git-backed SessionDB, one source of truth shared by all three surfaces; worker singleton (WorkerLock) | `agent/session_db.py`, `worker/lock.py` |
 | tool catalog policy | apply_tool_policy supports deny/allow; toolset tiering (default excludes ask_user_question, full includes it) | `functions/__init__.py` apply_tool_policy |
 | cancel / graceful stop | cancel_event end-to-end + subprocess graceful stop IPC (added this round) | `agent/process_runner.py` request_graceful_stop |

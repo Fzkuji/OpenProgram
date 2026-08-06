@@ -18,7 +18,7 @@
 
 | 部分 | 管什么 | 能否被 bypass 关掉 | 位置 |
 |---|---|---|---|
-| **gate（硬拦截）** | 策略层的绝对禁止（proactive policy 的 deny/ask） | 否，永远生效 | `openprogram/agent/tool_gate.py` |
+| **gate（硬拦截）** | 策略层的绝对禁止（proactive policy 的 deny/ask） | 否，永远生效 | `openprogram/events/tool_gate.py` |
 | **规则层** | 用户配的 allow / deny / ask 规则（per-tool + per-pattern，**项目级**为主，多来源分层） | deny/ask 否；allow 是 | `openprogram/agent/internals/_approval.py:50-68`（`_match_rule`）+ `openprogram/functions/permission_rule.py` |
 | **权限模式（会话级）** | 会话档位：ask / acceptEdits / auto / bypass / plan（对齐 Claude Code 官方名，5 档） | 档位本身就是这个开关 | `_gated_execute`（`internals/_approval.py:150-197`） |
 | **审批流** | 需要点头时的前后端交互（弹卡片、阻塞等答、写回项目规则） | 否（弹出即阻塞） | `await_user_approval`（`internals/_approval.py:245-`）+ 前端 approval mode |
@@ -188,7 +188,7 @@ class PendingQuestion:
 在 `agent_loop.py` 里每次执行工具之前：`agent_loop.py:695` 构造 `tool.before` 事件 → `agent_loop.py:701` 调 `decide_tool_gate(before_ev)` 问一圈已注册的 gate → 有 deny 则 `agent_loop.py:708` 抛 `ToolGateDenied`，deny 理由作为 error tool result 回给模型。
 
 ```python
-# openprogram/agent/tool_gate.py:26-27, 53-69
+# openprogram/events/tool_gate.py
 ToolGate = Callable[[Event], "str | None"]   # 返回 None 放行 / 字符串 deny 理由
 
 def decide_tool_gate(event: Event) -> str | None:
@@ -604,7 +604,7 @@ hook 返回 `{mode, options, set}`。
 | 判定链 `_gated_execute` / `_match_rule` / `await_user_approval` / `_persist_always_allow_rule` / `_risk_level` | `openprogram/agent/internals/_approval.py` |
 | 规则字符串解析、匹配、多层合并 | `openprogram/functions/permission_rule.py`（`parse_rule` / `parse_command` / `pattern_matches` / `load_merged_rules`） |
 | 路径安全 / 危险文件目录 / Windows 绕过 | `openprogram/functions/tools/file_safety.py` |
-| gate 硬拦截 | `openprogram/agent/tool_gate.py` |
+| gate 硬拦截 | `openprogram/events/tool_gate.py` |
 | 权限模式合法值 + 规范化 + SessionRunConfig 字段 | `openprogram/agent/session_config.py` |
 | `PermissionMode` 类型 + TurnRequest 字段/默认 | `openprogram/agent/dispatcher/types.py` |
 | 会话 meta schemaless 存储 | `openprogram/store/session/session_store.py` |

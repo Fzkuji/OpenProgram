@@ -156,7 +156,7 @@ DAG 形状：`发起节点 ──caller──> 子分支(点划线 spawn edge)`�
 ## 3. 底座：事件层（整个设计，自包含）
 
 通信原语建在事件层上。这里把事件层完整写清——它是框架级的统一事件流
-（`openprogram/agent/event_bus.py` + `tool_gate.py` + `event_bridges.py`），通信只是
+（`openprogram/events/` 包：`bus.py` + `tool_gate.py` + `bridges.py`），通信只是
 它的又一组源 + 消费者。
 
 ### 3.1 为什么有事件层
@@ -238,7 +238,7 @@ emit_ws_frame(frame)                         # 源用：把现成 WS 帧经总�
 
 - **观察型（默认，异步）**：emit 出去，订阅者异步收到，源不等。绝大多数事件走这条。
 - **拦截型（仅 `tool.before`，同步）**：工具执行前能让下游说"别执行"。单一入口
-  `_execute_tool_calls` 在 `tool.execute()` 前有同步问询点（`tool_gate.py`
+  `_execute_tool_calls` 在 `tool.execute()` 前有同步问询点（`openprogram/events/tool_gate.py`
   `register_tool_gate`）。必须快（不许调 LLM）；多方表态取最严；对 subagent 也生效
   （在 approval 包装外，`permission_mode=bypass` 关不掉它）。**通信工具
   `message_branch` 走它做值守拦截**（见 §5）。
@@ -378,7 +378,7 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 ## 7. 可验证的行为
 
 设计成立时，下列行为各自独立可验证。验证手段是 webui（`cd web && npm run build` +
-`openprogram worker restart`）或事件日志（`OPENPROGRAM_EVENT_LOG=1`）。
+`openprogram worker restart`）或事件日志（`~/.openprogram/sessions/<sid>/events.jsonl`，常开）。
 
 | 行为 | 表现 |
 |---|---|
@@ -404,7 +404,7 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 | 多源自我总结 | `openprogram/agent/compaction/branch_summarization.py` |
 | 列表 WS handler | `webui/ws_actions/session.py:825`、`branch.py:221` |
 | attach 连线（仅画图） | `openprogram/agent/sub_agent_run.py`（write_attach_pointer_for_spawn） |
-| 事件总线 | `openprogram/agent/event_bus.py`（emit_safe / emit_ws_frame） |
+| 事件总线 | `openprogram/events/bus.py`（emit_safe / emit_ws_frame） |
 
 > 注："综合多条"由 `message_branch(sources=[...])` 提供，不另设独立工具。底层
 > `_merge.py` 的多父 ContextCommit 血缘记录被复用来记下"这次综合来自哪几条分支"。

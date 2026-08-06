@@ -171,7 +171,7 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 ### ② 事件层　总线 + tool.before 拦截
 
 **职责**：进程级 fan-out，解耦所有子系统。
-**关键文件**：`agent/event_bus.py`、`agent/tool_gate.py`、`agent/questions.py`。
+**关键文件**：`openprogram/events/`（bus.py / tool_gate.py）、`agent/questions.py`。
 **关键机制**：
 - `EventBus`（`:129`）：typed `subscribe(handler, types=...)`（`:159`）+ legacy channel `on`（`:208`）；进程单例 `get_event_bus()`（`:241`，双检锁）。
 - **tool.before 同步拦截**：`register_tool_gate`（`tool_gate.py:38`）/ `decide_tool_gate`（`:53`），取最严、fail-open。gate 必须快，不许调 LLM / 慢 IO。

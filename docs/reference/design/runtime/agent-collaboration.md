@@ -204,7 +204,7 @@ the reply onto the tail of the mainline.
 
 The communication primitive is built on the event layer. This section spells the
 event layer out in full — it is the framework-wide unified event stream
-(`openprogram/agent/event_bus.py` + `tool_gate.py` + `event_bridges.py`), and
+(the `openprogram/events/` package: `bus.py` + `tool_gate.py` + `bridges.py`), and
 communication is just one more set of sources and consumers on it.
 
 ### 3.1 Why an event layer exists
@@ -299,7 +299,7 @@ them as usual for the spawn use).
   this way.
 - **Interception (only `tool.before`, synchronous)**: downstream can say "do not
   execute" before a tool runs. The single entry point `_execute_tool_calls` has a
-  synchronous consultation point before `tool.execute()` (`tool_gate.py`,
+  synchronous consultation point before `tool.execute()` (`openprogram/events/tool_gate.py`,
   `register_tool_gate`). It must be fast (no LLM calls); when multiple parties
   weigh in, the strictest answer wins; it also applies to subagents (it sits
   outside the approval wrapper, and `permission_mode=bypass` cannot turn it off).
@@ -491,7 +491,7 @@ list_branches so agents can address it).
 
 If the design holds, each behavior below is independently verifiable. Verify
 through the webui (`cd web && npm run build` + `openprogram worker restart`) or
-the event log (`OPENPROGRAM_EVENT_LOG=1`).
+the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 
 | Behavior | What you see |
 |---|---|
@@ -517,7 +517,7 @@ the event log (`OPENPROGRAM_EVENT_LOG=1`).
 | Multi-source self-summarization | `openprogram/agent/compaction/branch_summarization.py` |
 | List WS handlers | `webui/ws_actions/session.py:825`, `branch.py:221` |
 | attach edge (drawing only) | `openprogram/agent/sub_agent_run.py` (write_attach_pointer_for_spawn) |
-| Event bus | `openprogram/agent/event_bus.py` (emit_safe / emit_ws_frame) |
+| Event bus | `openprogram/events/bus.py` (emit_safe / emit_ws_frame) |
 
 > Note: "synthesize several branches" is provided by
 > `message_branch(sources=[...])`; there is no separate tool. The multi-parent
