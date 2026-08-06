@@ -42,6 +42,7 @@ import { Avatar } from "@/components/avatar";
 import { AssistantBubble } from "./assistant-bubble";
 import { AttachCard } from "./attach-card";
 import { MessageRail } from "./message-rail";
+import { AgentBranchBanner } from "./agent-branch-banner";
 import { RuntimeBlock } from "./runtime-block";
 import { SpawnedFromCard } from "./spawned-from-card";
 import { UserBubble } from "./user-bubble";
@@ -349,6 +350,7 @@ export function MessageList() {
 
   return (
     <>
+      <AgentBranchBanner />
       <MessageRail />
       {ids.map((id) => (
         <MessageRow key={id} id={id} />
