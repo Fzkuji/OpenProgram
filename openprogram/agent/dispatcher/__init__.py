@@ -119,10 +119,11 @@ def process_user_turn(
     triggered the turn: after the turn — finalize (phase 6/7) included —
     :func:`openprogram.agent.goal.continue_goal_turns` judges the goal
     and, while unmet and under budget, keeps running follow-up turns
-    (``source="goal_continue"``). Each continuation runs the full
-    turn via :func:`_process_turn_once` (own persistence / commits /
-    compaction), never a nested ``process_user_turn`` — so the loop
-    cannot recurse into itself. Returns the LAST turn's result.
+    (``source="goal_continue"``). Each continuation runs through
+    :func:`_process_turn_once` like any other turn — its own
+    persistence, commits and compaction — never a nested
+    ``process_user_turn``, so the loop cannot recurse into itself.
+    Returns the LAST turn's result.
 
     Sessions without an active goal pay one meta read and return the
     single turn's result unchanged.

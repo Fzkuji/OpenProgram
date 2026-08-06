@@ -207,7 +207,7 @@ web/components/plugins/
 5. **跨生态 marketplace 互通**：claude-code marketplace schema 适配层，能直接添加其官方 / 第三方 marketplace
 6. **双轨包管理**：pip + npm 双轨，opencode 的 Node plugin 和 hermes 的 Python plugin 都能装
 7. **显式 triggers**：`triggers.{keywords, file_patterns, slash}`，对话/文件/命令任一命中即激活提示
-8. **Provider 作为一等贡献类型**：从 opencode 引入，让 LLM provider 也能用 plugin 形式分发
+8. **Provider 也是插件可分发的贡献类型**：从 opencode 引入，LLM provider 同样能以 plugin 形式分发
 9. **沙箱分层**：trust 等级映射到加载策略，不是一刀切
 10. **Validate dry-run**：安装前 `POST /validate` 检查 manifest / 入口 / 依赖 / 兼容性，对标 `ValidatePlugin.tsx`
 

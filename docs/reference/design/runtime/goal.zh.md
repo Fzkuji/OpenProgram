@@ -9,7 +9,7 @@
 位置带来的结果：
 
 - 所有调用方自动继承——webui 的 `_execute/chat.py`、channels、走 dispatcher 的 CLI 路径、task runner 的 follow-up 投递都调用 `process_user_turn`，谁都不需要感知 goal。
-- 每个续轮是一等轮次：`continue_goal_turns` 调 `_process_turn_once`（绝不调 `process_user_turn`，循环因此不可能嵌套），请求由 `dataclasses.replace` 构造——`source="goal_continue"`、`user_text="[goal] 未达成：<原因>。继续。"`、新的 `user_msg_id`、`branch_from=INHERIT_PARENT`；模型/权限/工具设置从触发请求继承。续轮有自己的持久化、git 提交与压缩，构造方式对照 task runner 的 follow-up（`agent/task/runner.py`）。
+- 每个续轮就是一个普通轮次：`continue_goal_turns` 调 `_process_turn_once`（绝不调 `process_user_turn`，循环因此不可能嵌套），请求由 `dataclasses.replace` 构造——`source="goal_continue"`、`user_text="[goal] 未达成：<原因>。继续。"`、新的 `user_msg_id`、`branch_from=INHERIT_PARENT`；模型/权限/工具设置从触发请求继承。续轮有自己的持久化、git 提交与压缩，构造方式对照 task runner 的 follow-up（`agent/task/runner.py`）。
 - 不用 `agent_loop` 的轮内 follow-up 机制：goal 续轮是会话级事件，必须像用户消息一样经得起 worker 重启、压缩和分支操作。
 - goal 机制中任何位置的崩溃都在包装层被接住并返回已完成轮次的结果——goal 循环可以失败，用户轮次的结果不能因此丢失。
 

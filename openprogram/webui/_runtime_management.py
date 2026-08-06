@@ -176,8 +176,8 @@ def _create_runtime_for_visualizer(provider: str, model: str | None = None):
     """Create a runtime appropriate for the web UI.
 
     Two shapes:
-      - Provider listed in ``registry.PROVIDERS`` (the six built-in
-        backends): route through ``registry.create_runtime`` so their
+      - Provider listed in ``registry.PROVIDERS``: route through
+        ``registry.create_runtime`` so their
         per-provider conventions (Codex search=True, key resolution with
         guidance, ...) apply.
       - Any other provider id present in the HTTP model registry (openrouter,
