@@ -114,18 +114,20 @@ export function _foldSummaries(graph: GNode[]): SummaryFold {
     // covered turn, ahead of the kept tail: ghosts → capsule → tail.
     // Its stored predecessor (where the range began) stays untouched on
     // the backend row; this is the same view-only clone trick as above.
+    // The splice point is the covered segment's TIP — the last chain
+    // node in seq order. Matching "any node whose predecessor is
+    // covered" instead would catch dead forks off an interior covered
+    // turn and graft them onto the capsule.
     const covered = new Set(ids);
-    const j = visible.findIndex((v) => v.id !== m.id && !covered.has(v.id)
-      && !!v.predecessor && covered.has(v.predecessor!));
-    const keptFirst = j >= 0 ? visible[j] : undefined;
-    let lastCovered = keptFirst?.predecessor;
-    if (!lastCovered) {
-      for (let k = ids.length - 1; k >= 0; k--) {
-        const c = fullById[ids[k]];
-        if (c && isChainNode(c)) { lastCovered = c.id; break; }
-      }
+    let lastCovered: string | undefined;
+    for (let k = ids.length - 1; k >= 0; k--) {
+      const c = fullById[ids[k]];
+      if (c && isChainNode(c)) { lastCovered = c.id; break; }
     }
     if (!lastCovered) continue;
+    const j = visible.findIndex((v) => v.id !== m.id && !covered.has(v.id)
+      && v.predecessor === lastCovered);
+    const keptFirst = j >= 0 ? visible[j] : undefined;
     const donor = keptFirst ?? fullById[lastCovered];
     visible[i] = {
       ...m,
