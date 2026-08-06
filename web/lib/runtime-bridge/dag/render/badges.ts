@@ -20,6 +20,9 @@ import { _currentHead } from "../store/globals";
 // 否则量出来的宽度偏窄，文字贴边。
 const BADGE_FONT =
   '600 10.5px "Inter Variable", "Inter", -apple-system, "PingFang SC", sans-serif';
+// agent 名牌用小一号：它是字形旁的标注，不是分支级按钮。
+const BADGE_FONT_SMALL =
+  '600 9px "Inter Variable", "Inter", -apple-system, "PingFang SC", sans-serif';
 
 interface PlacedBox { x1: number; x2: number; y1: number; y2: number }
 
@@ -37,9 +40,12 @@ function _drawPill(
   tipText: string,
   onClick: (() => void) | null,
   headAttr: string,
+  small = false,
 ): void {
   const ROW_STEP = 32;
-  const bw = Math.max(Math.ceil(_textWidth(label, BADGE_FONT)) + 28, 56);
+  const font = small ? BADGE_FONT_SMALL : BADGE_FONT;
+  const bw = Math.max(
+    Math.ceil(_textWidth(label, font)) + (small ? 18 : 28), small ? 40 : 56);
   const overlaps = (): boolean =>
     placed.some((r) =>
       bx - bw / 2 < r.x2 && bx + bw / 2 > r.x1
@@ -53,15 +59,15 @@ function _drawPill(
     "data-head": headAttr,
   });
   (tg as SVGGraphicsElement).style.cursor = onClick ? "pointer" : "default";
-  const bh = 22;
+  const bh = small ? 17 : 22;
   tg.appendChild(_svg("rect", {
     class: "history-branch-tag-bg",
     x: String(-bw / 2),
     y: String(-bh / 2),
     width: String(bw),
     height: String(bh),
-    rx: "11",
-    ry: "11",
+    rx: String(bh / 2),
+    ry: String(bh / 2),
     fill: isActive
       ? "color-mix(in srgb, " + color + " 14%, var(--bg-primary, #fff))"
       : "var(--bg-tertiary, #f2f0ea)",
@@ -76,7 +82,7 @@ function _drawPill(
     y: "0",
     "text-anchor": "middle",
     "dominant-baseline": "central",
-    "font-size": "10.5",
+    "font-size": small ? "9" : "10.5",
     "font-family": "var(--font-sans, sans-serif)",
     "font-weight": isActive ? "600" : "500",
     fill: isActive
@@ -243,10 +249,13 @@ export function drawBadges(
       // crowd the items and the lane badges.
       const p = pos(root);
       const label = thread.nameOf[sid] || sid.slice(0, 8);
-      const bw = Math.max(Math.ceil(_textWidth(label, BADGE_FONT)) + 28, 56);
+      // Small pill, and clear of the nested thread column (+1 COL): it
+      // is an annotation beside the glyph, not a branch-level button.
+      const bw = Math.max(
+        Math.ceil(_textWidth(label, BADGE_FONT_SMALL)) + 18, 40);
       const finalTip = tipId;
       _drawPill(
-        tagG, placed, p.x + 22 + bw / 2, p.y, label,
+        tagG, placed, p.x + 40 + bw / 2, p.y, label,
         _branchColor(root, stableLeafOfNode), isActive,
         isActive
           ? translateText("Current branch", "当前分支")
@@ -255,6 +264,7 @@ export function drawBadges(
             "点击接管这个 agent 的分支"),
         isActive ? null : () => _sendCheckout(sessionId, finalTip),
         finalTip,
+        true,
       );
     });
   }

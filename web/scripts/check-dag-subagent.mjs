@@ -348,8 +348,10 @@ assert.match(
 );
 assert.match(
   edgesSrc,
-  /"stroke-dasharray": "2 3"[\s\S]{0,120}thread-edge/,
-  "the thread line is the faint dotted vertical (§12)",
+  /x1: ap\.x, y1: ap\.y, x2: ap\.x, y2: lastY[\s\S]{0,220}thread-edge/,
+  "the thread line is the trunk pattern one level down: a solid grey "
+  + "vertical in the anchor's column plus a stub per item — down "
+  + "first, then right, like every chain edge (§12)",
 );
 assert.match(
   edgesSrc,

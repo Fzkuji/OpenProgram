@@ -315,7 +315,7 @@ is conveyed only by line style:
 |---|---|---|---|
 | same-branch parent→child | solid | this branch's color | shown |
 | retry fork bridge (origin → the branch lane's spine top, shared row) | dashed `6 4` horizontal; an elbow only when rows diverged | branch's color | shown |
-| call thread (anchor → its items, §12) | dotted `2 3` elbow — a horizontal step off the anchor, then straight down the thread column (orthogonal like every other line) | annotation grey | shown while open |
+| call thread (anchor → its items, §12) | solid — the trunk pattern one level down: a vertical in the anchor's column, a horizontal stub per item (down first, then right, like every chain edge) | annotation grey | shown while open |
 | merge convergence (peer tip → merge node) | thick solid 2.4px | peer branch's color | shown |
 | attach merge-back (source tip → embed position) | long dashes `4 4` | source branch's color | shown when both ends are visible — an agent-internal tip merged into its triangle draws no line; the spawn head's position ON the thread is the return relationship |
 | inter-branch communication (send_to_branch) | dotted `1 5` | target branch's color | **shown only on hover** (numerous; always-on would smear) |
@@ -725,8 +725,9 @@ a phantom node is exactly the misreading the fold must not invite. No thread
 line, no items, nothing else.
 
 **Open is open.** Clicking the node inserts the thread into the layout: a
-faint dotted line (`2 3`) drops from the anchor into the first free column
-right of it, and every event is a real node on that line — a square per call
+solid annotation-grey line drops the anchor's own column and every event
+hangs off it on a horizontal stub — down first, then right, the trunk
+pattern one level down. Every event is a real node on that line — a square per call
 in the anchor's lane colour — spawned agents included — one row
 per event, top to bottom in call order. Fold reclaims the rows (rule ②).
 

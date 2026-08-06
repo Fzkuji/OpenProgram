@@ -231,16 +231,26 @@ export function drawEdges(
     const ap = pos(anchorNode);
     const tx = PAD_X + geom.threadColOf[anchor] * COL_W;
     const lastY = PAD_Y + rows[rows.length - 1] * ROW_H;
-    // Orthogonal like every other line on the canvas: a horizontal step
-    // off the anchor, then straight down the thread column. The old
-    // curve was the one non-orthogonal stroke in the picture.
-    edgeG.appendChild(_svg("path", {
-      d: `M ${ap.x} ${ap.y} L ${tx} ${ap.y} L ${tx} ${lastY}`,
-      stroke: GHOST_STROKE, "stroke-width": 1.3, fill: "none",
-      "stroke-dasharray": "2 3", "stroke-linecap": "round",
-      opacity: 0.8,
+    // The trunk pattern, one level down: a solid vertical drops the
+    // anchor's own column, and every item gets a horizontal stub into
+    // its row — down first, then right, exactly like chain edges.
+    // Solid, because annotation grey already says "execution layer";
+    // dashes are reserved for out-of-context and fork bridges.
+    edgeG.appendChild(_svg("line", {
+      x1: ap.x, y1: ap.y, x2: ap.x, y2: lastY,
+      stroke: GHOST_STROKE, "stroke-width": 1.3,
+      "stroke-linecap": "round", opacity: 0.8,
       "pointer-events": "none", class: "history-edge thread-edge",
     }));
+    rows.forEach((r) => {
+      const ry = PAD_Y + r * ROW_H;
+      edgeG.appendChild(_svg("line", {
+        x1: ap.x, y1: ry, x2: tx, y2: ry,
+        stroke: GHOST_STROKE, "stroke-width": 1.3,
+        "stroke-linecap": "round", opacity: 0.8,
+        "pointer-events": "none", class: "history-edge thread-edge",
+      }));
+    });
   });
 
   // ── Attach / merge reference edges ──
