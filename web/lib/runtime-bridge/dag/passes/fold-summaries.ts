@@ -73,9 +73,25 @@ export function _foldSummaries(graph: GNode[]): SummaryFold {
     delete standIn[sid];
   }
 
+  const fullById: Record<string, GNode> = Object.create(null);
+  for (const n of graph) fullById[n.id] = n;
+
   const visible = graph
     .filter((m) => !hidden[m.id])
     .map((m) => {
+      // A folded capsule stands where its range stood, so it inherits
+      // the range's lane. The backend lane pass runs on the FULL graph
+      // (folding is view state it cannot see) and hands the capsule a
+      // fresh sibling lane — correct for the expanded view, floating
+      // for the folded one. The frontend lane pass strongly prefers
+      // backend lanes, so the override has to happen here.
+      if (coversOf[m.id] && !_summaryExpanded[m.id]) {
+        const first = fullById[coversOf[m.id][0]];
+        if (first && typeof first._lane === "number") {
+          return { ...m, _lane: first._lane };
+        }
+        return m;
+      }
       const sub = m.predecessor ? standIn[m.predecessor] : undefined;
       // View-only rewrite on a clone — the graph rows themselves stay
       // exactly what the backend sent.
