@@ -585,16 +585,15 @@ never a stack. The graph says the same thing: only the active summary gets
 capsule silhouette but arrives flagged `superseded_summary`, draws in ghost
 grey with the caption `已被新摘要取代`, and folds nothing.
 
-**Where the capsule sits.** Its stored `predecessor` is the covered range's
-own start — ROOT, since compaction always eats the session's opening prefix.
-Folded (on the branch that carries it), the capsule stands in the covered
-range's slot: first on the trunk, inheriting the survivor's lane, because the
-summary is the first thing the next request carries. Expanded, the range is
-back on screen and the capsule reads as what those turns collapsed *into*:
-it splices in at the branch's corresponding position — after the last ghost,
-ahead of the kept tail: ghosts → capsule → tail. Both placements are
-view-only clone rewrites in `fold-summaries.ts`; the stored row keeps its
-real `predecessor` in both states.
+**Where the capsule sits.** One slot, identical in every state and on every
+branch: the covered segment's end. Expanded, it follows its ghosts
+(ghosts → capsule → tail); on a non-carrying branch it follows the same
+turns in the raw (coloured turns → grey capsule → the rest); folded is the
+same slot with the segment collapsed, which puts the capsule first on the
+trunk. Position never changes when the user switches branches or toggles the
+fold — only colour and folding do. All placements are view-only clone
+rewrites in `fold-summaries.ts`; the stored row keeps its real `predecessor`
+(the range's start — ROOT) in every state.
 
 The white fill never lands on a covered node, in either state, because
 `/context-range` does not list it. One fact, one source (§8).

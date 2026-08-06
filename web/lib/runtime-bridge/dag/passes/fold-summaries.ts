@@ -18,12 +18,13 @@
  * view-only and never persisted: it says how you are looking at the
  * graph, not what the graph is.
  *
- * Placement on the carrying branch (dag/rendering.md §9): folded, the
- * capsule stands in the covered range's slot at the trunk's start;
- * expanded, it splices in at the branch's corresponding position —
- * after the last ghost, ahead of the kept tail. Both are view-only
- * clone rewrites; the stored row keeps ``predecessor`` = the range's
- * start (ROOT for a from-the-start compaction).
+ * Placement (dag/rendering.md §9): the capsule's slot is the covered
+ * segment's END, identical in every state and on every branch —
+ * expanded it follows its ghosts, on a non-carrying branch it follows
+ * the same turns in the raw, and folded is the same slot with the
+ * segment collapsed (trunk start). All view-only clone rewrites; the
+ * stored row keeps ``predecessor`` = the range's start (ROOT for a
+ * from-the-start compaction).
  */
 
 import type { GNode } from "../types";
@@ -129,8 +130,9 @@ export function _foldSummaries(
   for (let i = 0; i < visible.length; i++) {
     const m = visible[i];
     const ids = coversOf[m.id];
-    if (!ids || inert[m.id]) continue;
-    if (!_summaryExpanded[m.id]) {
+    if (!ids) continue;
+    const folded = !inert[m.id] && !_summaryExpanded[m.id];
+    if (folded) {
       const successor = visible.find((v) => v.predecessor === m.id);
       const donor = successor ?? fullById[ids[0]];
       if (donor && typeof donor._lane === "number") {
@@ -141,14 +143,15 @@ export function _foldSummaries(
       }
       continue;
     }
-    // Expanded on the carrying branch: the ghosts are on screen, and
-    // the capsule reads as what they collapsed INTO — it splices in at
-    // the branch's corresponding position, after the last covered turn
-    // and ahead of the kept tail: ghosts → capsule → tail. The splice
-    // point is the covered segment's TIP (last chain node in seq
-    // order); matching "any node whose predecessor is covered" would
-    // catch dead forks off interior covered turns. View-only clones —
-    // the stored predecessor (the range's start) is untouched.
+    // The capsule's slot is the covered segment's END, in every state
+    // and on every branch: expanded it follows its ghosts, on a
+    // non-carrying branch it follows the same turns in the raw (grey
+    // capsule, coloured turns). One position everywhere — folded is
+    // just the same slot with the segment collapsed. The splice point
+    // is the segment's TIP (last chain node in seq order); matching
+    // "any node whose predecessor is covered" would catch dead forks
+    // off interior covered turns. View-only clones — the stored
+    // predecessor (the range's start) is untouched.
     const covered = new Set(ids);
     let lastCovered: string | undefined;
     for (let k = ids.length - 1; k >= 0; k--) {
