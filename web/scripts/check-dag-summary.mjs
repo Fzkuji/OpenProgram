@@ -101,8 +101,11 @@ assert.equal(globals._summaryExpanded.sum1, undefined, "toggling again folds it 
   // A capsule must never be folded away by another capsule's range: it
   // is the only handle back to the turns it covers.
   setSummaryExpanded(Object.create(null));
+  // covers_ids only ever names real turns (context/compaction.md §2),
+  // but two capsules naming the same turn must still never fold each
+  // other away.
   const nested = [
-    { id: "s1", role: "assistant", covers_ids: ["s2", "u0"] },
+    { id: "s1", role: "assistant", covers_ids: ["u0"] },
     { id: "s2", role: "assistant", covers_ids: ["u0"] },
     { id: "u0", role: "user" },
   ];
@@ -141,7 +144,7 @@ assert.deepEqual(coversIds({ id: "x", covers_ids: ["a"] }), ["a"]);
   const byId = Object.fromEntries(visible.map((n) => [n.id, n]));
   assert.ok(byId.u0 && byId.a0, "other branch: covered turns stay visible");
   assert.ok(!byId.u0._ghost && !byId.a0._ghost, "other branch: no ghost marking");
-  assert.equal(byId.sum1._summaryInert, true, "other branch: the capsule is the inert one");
+  assert.ok(!byId.sum1, "other branch: the capsule is not drawn at all");
 }
 
 {

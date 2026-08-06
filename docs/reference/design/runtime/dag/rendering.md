@@ -567,9 +567,10 @@ covered range is elided by default, clicking the capsule brings it back as
 ghosts, clicking again folds it away (view-only state, never persisted; a
 fresh session starts folded). On any other branch — a fork from inside the
 covered range, a sibling of the same era — those turns ARE the live context:
-they render raw, in full branch colour, and the capsule itself dims to ghost
-grey as the thing that is inert *here*. Switching branches flips both
-readings; nothing about the stored graph changes.
+they render raw, in full branch colour, and the capsule is not drawn at all
+(a summary this branch's context does not carry is noise here; it reappears
+on the carrying branch). Switching branches flips both readings; nothing
+about the stored graph changes.
 
 **The ghosts.** An expanded range draws in grey outline with a dashed incoming
 edge — readable, clickable, visibly not part of the next request. This is the

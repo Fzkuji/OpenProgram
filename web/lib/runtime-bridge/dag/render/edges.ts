@@ -84,7 +84,10 @@ export function drawEdges(
       : {};
 
     const p = pos(parent);
-    const isUserNode = node.role === "user";
+    // A capsule rides the trunk like a turn does (it stands in for
+    // whole turns and sits on the turn column) — its edge comes off
+    // the trunk vertical, not down from the reply glyph above it.
+    const isUserNode = node.role === "user" || !!coversIds(node);
     let trunkX = p.x;
     let fromY = p.y;
     if (isUserNode) {
