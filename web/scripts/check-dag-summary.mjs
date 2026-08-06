@@ -50,19 +50,21 @@ const pipelineSrc = readFileSync(pipelinePath, "utf8");
 
 /* ---- 1. the fold pass ---- */
 
-// u0 a0 u1 a1 with a summary standing in for the first turn.
+// u0 a0 u1 a1 with a summary standing in for the first turn. The
+// kept tail keeps its own edges (u1 <- a0); the summary hangs at the
+// segment's start with nothing pointing at it (context/compaction.md).
 const graph = () => [
-  { id: "sum1", role: "assistant", covers_ids: ["u0", "a0"] },
+  { id: "sum1", role: "assistant", predecessor: null, covers_ids: ["u0", "a0"] },
   { id: "u0", role: "user", predecessor: null },
   { id: "a0", role: "assistant", predecessor: "u0" },
-  { id: "u1", role: "user", predecessor: "sum1" },
+  { id: "u1", role: "user", predecessor: "a0" },
   { id: "a1", role: "assistant", predecessor: "u1" },
 ];
 
 setSummaryExpanded(Object.create(null));
 
 {
-  const { visible, coversOf } = _foldSummaries(graph());
+  const { visible, coversOf } = _foldSummaries(graph(), "a1");
   const ids = visible.map((n) => n.id);
   assert.deepEqual(
     ids, ["sum1", "u1", "a1"],
@@ -81,7 +83,7 @@ toggleSummaryExpanded("sum1");
 assert.equal(globals._summaryExpanded.sum1, true, "toggle opens the capsule");
 
 {
-  const { visible, coversOf } = _foldSummaries(graph());
+  const { visible, coversOf } = _foldSummaries(graph(), "a1");
   assert.deepEqual(
     visible.map((n) => n.id), ["sum1", "u0", "a0", "u1", "a1"],
     "expanded: every covered node comes back",
@@ -104,7 +106,7 @@ assert.equal(globals._summaryExpanded.sum1, undefined, "toggling again folds it 
     { id: "s2", role: "assistant", covers_ids: ["u0"] },
     { id: "u0", role: "user" },
   ];
-  const { visible } = _foldSummaries(nested);
+  const { visible } = _foldSummaries(nested, "u0");
   const ids = visible.map((n) => n.id);
   assert.ok(ids.includes("s1") && ids.includes("s2"), "capsules survive each other");
   assert.ok(!ids.includes("u0"), "the covered turn is still folded");
@@ -114,7 +116,7 @@ assert.equal(globals._summaryExpanded.sum1, undefined, "toggling again folds it 
   // No summaries → the graph must come through untouched, by identity:
   // every render of every uncompacted session runs this path.
   const plain = [{ id: "u0", role: "user" }];
-  const out = _foldSummaries(plain);
+  const out = _foldSummaries(plain, "u0");
   assert.equal(out.visible, plain, "no summary: the same array, no copy");
   assert.deepEqual(Object.keys(out.coversOf), [], "no summary: nothing covered");
 }
@@ -122,6 +124,37 @@ assert.equal(globals._summaryExpanded.sum1, undefined, "toggling again folds it 
 assert.equal(coversIds({ id: "x" }), null, "a plain node covers nothing");
 assert.equal(coversIds({ id: "x", covers_ids: [] }), null, "an empty range is no range");
 assert.deepEqual(coversIds({ id: "x", covers_ids: ["a"] }), ["a"]);
+
+{
+  // Per-branch application (dag/rendering.md §9): viewed from a branch
+  // that does NOT contain the whole covered segment, nothing folds,
+  // the turns keep their colour, and the capsule arrives inert.
+  setSummaryExpanded(Object.create(null));
+  const forked = [
+    { id: "sum1", role: "assistant", predecessor: null, covers_ids: ["u0", "a0"] },
+    { id: "u0", role: "user", predecessor: null },
+    { id: "a0", role: "assistant", predecessor: "u0" },
+    { id: "f0", role: "user", predecessor: "u0" },        // fork from inside
+    { id: "f0r", role: "assistant", predecessor: "f0" },
+  ];
+  const { visible } = _foldSummaries(forked, "f0r");
+  const byId = Object.fromEntries(visible.map((n) => [n.id, n]));
+  assert.ok(byId.u0 && byId.a0, "other branch: covered turns stay visible");
+  assert.ok(!byId.u0._ghost && !byId.a0._ghost, "other branch: no ghost marking");
+  assert.equal(byId.sum1._summaryInert, true, "other branch: the capsule is the inert one");
+}
+
+{
+  // Expanded on the carrying branch: covered turns come back as ghosts.
+  setSummaryExpanded({ sum1: true });
+  const { visible } = _foldSummaries(graph(), "a1");
+  const byId = Object.fromEntries(visible.map((n) => [n.id, n]));
+  assert.equal(byId.u0._ghost, true, "expanded: covered turns are ghosts");
+  assert.ok(!byId.u1._ghost, "the kept tail is never a ghost");
+  assert.ok(!byId.sum1._ghost && !byId.sum1._summaryInert,
+    "the applying capsule is neither ghost nor inert");
+  setSummaryExpanded(Object.create(null));
+}
 
 /* ---- 2. shape / drawing / click all key on the same field ---- */
 
@@ -155,7 +188,7 @@ assert.match(
 // much it stands for. Without it the shape is just an odd-looking turn.
 assert.match(
   nodesSrc,
-  /isCapsule\) \{[\s\S]{0,400}已压缩 · \$\{covered\.length\} 轮/,
+  /isCapsule\) \{[\s\S]{0,700}已压缩 · \$\{covered\.length\} 轮/,
   "a folded capsule is annotated with the number of turns it replaced",
 );
 assert.match(
@@ -173,7 +206,7 @@ assert.match(
 );
 assert.match(
   pipelineSrc,
-  /_foldSummaries\(graph\)[\s\S]{0,900}buildThreadModel\(graph\)/,
+  /_foldSummaries\(graph, headId\)[\s\S]{0,900}buildThreadModel\(graph\)/,
   "summaries fold BEFORE the thread pass so the two compose: a covered "
   + "turn is gone before threads attribute events to anchors",
 );

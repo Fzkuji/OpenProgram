@@ -133,8 +133,9 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   const preCollapseLanes = _assignLanes(preCollapseTree.byId, headId);
   const stableLeafOfNode = preCollapseLanes.leafOfNode;
 
-  // Compaction capsules fold the range they cover (dag/rendering.md §9).
-  const sfold = _foldSummaries(graph);
+  // Compaction capsules fold the range they cover — on the branch that
+  // carries them (dag/rendering.md §9).
+  const sfold = _foldSummaries(graph, headId);
   graph = sfold.visible;
 
   // The call-thread model (dag/rendering.md §12): followup replies and

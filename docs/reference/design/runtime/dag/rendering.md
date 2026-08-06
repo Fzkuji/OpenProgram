@@ -560,10 +560,16 @@ annotation grey — `已压缩 · 14 轮` — makes the fold self-describing. Th
 the glyph; the caption is what the pill means, and it lives outside the shape
 for the same reason a sub-agent's name does (rule ③).
 
-**The fold.** The covered range is elided by default. Clicking the capsule
-brings it back, clicking again folds it away. That state is view-only and never
-persisted: it records how you are looking at the graph, not what the graph is,
-and a fresh session starts folded.
+**The fold is per-branch.** A summary belongs to the branch whose context
+carries it — the branch whose active chain contains the whole covered segment
+(context/compaction.md §3). Only on that branch does the capsule fold: the
+covered range is elided by default, clicking the capsule brings it back as
+ghosts, clicking again folds it away (view-only state, never persisted; a
+fresh session starts folded). On any other branch — a fork from inside the
+covered range, a sibling of the same era — those turns ARE the live context:
+they render raw, in full branch colour, and the capsule itself dims to ghost
+grey as the thing that is inert *here*. Switching branches flips both
+readings; nothing about the stored graph changes.
 
 **The ghosts.** An expanded range draws in grey outline with a dashed incoming
 edge — readable, clickable, visibly not part of the next request. This is the
@@ -578,13 +584,17 @@ never a stack. The graph says the same thing: only the active summary gets
 capsule silhouette but arrives flagged `superseded_summary`, draws in ghost
 grey with the caption `已被新摘要取代`, and folds nothing.
 
-**Where the capsule sits.** Folded, it stands in the covered range's slot —
-first on the trunk, because the summary is the first thing the next request
-carries. Expanded, the range itself is back on screen, so the capsule reads as
-what those turns collapsed *into*: it splices in after the last ghost and ahead
-of the kept tail — ghosts → capsule → tail. Both placements are view-only
-rewires in `fold-summaries.ts`; the stored row keeps its real `predecessor`
-(where the range began) in both states.
+**Where the capsule sits.** Its stored `predecessor` is the covered range's
+own start — ROOT, since compaction always eats the session's opening prefix —
+and the graph draws exactly that. Compaction is thereby a *fork at the
+session's start*: the capsule is an alternative version of the opening turns,
+in the same scene-3 vocabulary as every retry branch. Folded (on the branch
+that carries it), the raw prefix is hidden and the capsule takes the trunk's
+first slot, inheriting the survivor's lane. Expanded, both versions stand
+side by side — the ghost prefix on the trunk, the capsule level with the
+first covered turn as its sibling, bridge and all. No view-only predecessor
+rewiring beyond the folded lane inheritance; the drawn edge is the stored
+edge.
 
 The white fill never lands on a covered node, in either state, because
 `/context-range` does not list it. One fact, one source (§8).

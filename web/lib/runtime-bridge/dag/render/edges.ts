@@ -38,12 +38,9 @@ export function drawEdges(
   // An expanded capsule's range draws as a dashed grey spur off the
   // trunk (dag/rendering.md §9): the turns are back on screen, but the
   // line has to keep saying they are not what the next request carries.
-  const ghostIds: Record<string, boolean> = Object.create(null);
-  for (const n of graphIn) {
-    const ids = coversIds(n);
-    if (!ids) continue;
-    for (const cid of ids) ghostIds[cid] = true;
-  }
+  // Per-branch: the fold pass stamps ``_ghost`` only when the summary
+  // applies to the branch being viewed — on other branches these same
+  // turns are live context and keep their colour.
   const rootNode = Object.values(tree.byId).find((n) => n.display === "root");
   const rootPos = rootNode ? pos(rootNode) : null;
 
@@ -80,7 +77,7 @@ export function drawEdges(
       return;
     }
     const c = pos(node);
-    const isGhost = !!ghostIds[id];
+    const isGhost = !!(node as Record<string, unknown>)._ghost;
     const color = isGhost ? GHOST_STROKE : _branchColor(node, stableLeafOfNode);
     const dash: Record<string, string> = isGhost
       ? { "stroke-dasharray": "3 3" }
