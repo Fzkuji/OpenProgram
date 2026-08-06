@@ -65,7 +65,7 @@ manifest 字段：
     "providers":  "...",          // opencode 风格：LLM provider 注入
     "web":        "./web/dist"    // hermes 风格 dashboard，可注册前端
   },
-  "sidebar": [                     // 我们的扩展：plugin 注册一等公民侧栏项
+  "sidebar": [                     // 我们的扩展：plugin 注册侧栏项，与内置导航同等对待
     { "label": "My Tool", "icon": "...", "route": "/plugin/my-plugin/tool" }
   ],
   "options": { /* JSON Schema, 对照 PluginOptionsDialog.tsx */ }
@@ -200,7 +200,7 @@ web/components/plugins/
 
 ## 4. 超出三家参考实现的能力
 
-1. **Plugin 一等公民侧栏项**：manifest `sidebar: [...]` → 自动注入侧栏，等同内置导航
+1. **Plugin 侧栏项**：manifest `sidebar: [...]` → 自动注入侧栏，等同内置导航
 2. **Skill 调用 trace**：每次 SkillTool 调用记录 `{ skill, injected_md_hash, accessed_refs, ts }`，右栏 / `/skills/[name]/trace` 可视化
 3. **Skill 热重载**：watchdog 监听五来源任一变动 → 重新解析 → WS 广播，无需 `/reload`
 4. **三 manifest 统一**：`plugin.json` / `pyproject.toml` / `package.json` 任一形式都能识别，迁移零成本

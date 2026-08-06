@@ -2,7 +2,7 @@
 
 > The markdown files and hand-written html files under `docs/` are served as a single static documentation site with one consistent style:
 > left-side directory tree · top search bar · right-side per-page anchors · light/dark dual themes. Changing the skin in one place keeps the whole site consistent.
-> Embedded dynamic animations are a first-class concern, not an afterthought.
+> Embedded dynamic animations render verbatim — they are part of the page content, not an afterthought.
 
 ## 1. Goals and Non-Goals
 
@@ -14,7 +14,7 @@
 4. **Automatic navigation**: the left-side directory tree is generated automatically from the `docs/` directory structure; group titles come from the top-level heading of each level's `README.md`.
 5. **Per-page anchors**: the right-side "On this page" is generated automatically from each doc's `##/###` headings, highlighting the current section while scrolling.
 6. **Full-text search**: a lightweight search index (titles + body) is generated at build time, with pure-JS search on the front end and no backend.
-7. **Dynamic animations as a first-class concern**: `<script>/<canvas>/<svg>/<style>` embedded in md is passed through verbatim; charts from the 11 hand-written html files can be embedded into the new shell as whole blocks without loss.
+7. **Dynamic animations render verbatim**: `<script>/<canvas>/<svg>/<style>` embedded in md is passed through verbatim; charts from the 11 hand-written html files can be embedded into the new shell as whole blocks without loss.
 
 ### Non-Goals
 
@@ -37,7 +37,7 @@ The requirement is a unified docs site **and** the freedom to add dynamic animat
 ## 3. Technology Choices
 
 - **Build language: Python**. The repo's primary language is Python, the worker is already Python, and there's no need to add a Node toolchain.
-- **Markdown rendering: `markdown-it-py`** + plugins (`mdit-py-plugins`: anchors, footnote, deflist, tasklists). Reason: it preserves raw html passthrough (`html=True`), which is the prerequisite for animations as a first-class concern; GitHub-flavored tables/code fences are fully supported.
+- **Markdown rendering: `markdown-it-py`** + plugins (`mdit-py-plugins`: anchors, footnote, deflist, tasklists). Reason: it preserves raw html passthrough (`html=True`), which is what lets embedded animations render at all; GitHub-flavored tables/code fences are fully supported.
 - **Code highlighting: Pygments** (rendered at build time into class-tagged spans, with zero runtime cost; one Pygments stylesheet for each of the light/dark themes).
 - **Search: generate `search-index.json` at build time**, with a minimal inverted-index/substring match on the front end. A corpus of a few hundred docs does not need a heavy library like lunr or flexsearch.
 - **Math formulas**: a KaTeX integration point exists, disabled by default.

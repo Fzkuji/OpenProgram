@@ -71,7 +71,7 @@ def _ensure_credential(manager: AuthManager, profile_id: str) -> Credential:
 def _access_token_for(cred: Credential) -> str:
     """Pull the current access token out of whatever payload shape was returned.
 
-    The credential can be either a first-class ``oauth`` kind (after
+    The credential can be either its own ``oauth`` kind (after
     AuthManager refreshed it) or a ``cli_delegated`` kind that still
     points at the on-disk JSON. Both carry an access token; the store
     path just differs.

@@ -3,8 +3,9 @@
 ``/goal <condition>`` stores a goal in the session meta. After every
 completed turn the dispatcher asks :func:`continue_goal_turns` whether
 the goal is met; while it is not (and no stop rule fires) the loop
-launches a follow-up turn (``source="goal_continue"``), each one a
-first-class turn with its own persistence, commits and compaction.
+launches a follow-up turn (``source="goal_continue"``). Every
+continuation turn is persisted, committed and compacted like any
+user-sent turn.
 
 Two evaluation modes:
 

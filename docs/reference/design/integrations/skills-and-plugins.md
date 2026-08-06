@@ -65,7 +65,7 @@ Manifest fields:
     "providers":  "...",          // opencode style: LLM provider injection
     "web":        "./web/dist"    // hermes-style dashboard; can register a frontend
   },
-  "sidebar": [                     // our extension: plugin registers first-class sidebar items
+  "sidebar": [                     // our extension: plugin registers sidebar items, same as built-in navigation
     { "label": "My Tool", "icon": "...", "route": "/plugin/my-plugin/tool" }
   ],
   "options": { /* JSON Schema, see PluginOptionsDialog.tsx */ }
@@ -207,7 +207,7 @@ web/components/plugins/
 5. **Cross-ecosystem marketplace interop**: a claude-code marketplace schema adapter layer, able to directly add its official / third-party marketplaces
 6. **Dual-track package management**: pip + npm dual track; both opencode's Node plugins and hermes's Python plugins can be installed
 7. **Explicit triggers**: `triggers.{keywords, file_patterns, slash}`; a hit on any of conversation/file/command surfaces an activation prompt
-8. **Provider as a first-class contribution type**: introduced from opencode, letting LLM providers also be distributed in plugin form
+8. **Provider as a contribution type**: introduced from opencode, letting LLM providers also be distributed in plugin form
 9. **Layered sandbox**: the trust level maps to a loading policy, not one-size-fits-all
 10. **Validate dry-run**: before install, `POST /validate` checks manifest / entrypoints / dependencies / compatibility, matching `ValidatePlugin.tsx`
 

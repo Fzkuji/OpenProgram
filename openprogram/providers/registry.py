@@ -11,7 +11,7 @@ The canonical way to build a runtime:
     rt = create_runtime(provider="claude-code")   # Claude subscription OAuth
     rt = create_runtime(provider="deepseek", model="deepseek-chat")  # api-routed
 
-``PROVIDERS`` maps ONLY the six first-class backends. Three (the
+``PROVIDERS`` maps ONLY the six built-in backends. Three (the
 subscription/CLI-credential ones) carry a dedicated Runtime class in their
 provider package; the other three (plain API-key HTTP providers) are served
 by the base ``Runtime(model="<namespace>:<model>")`` with the key resolved
@@ -27,7 +27,7 @@ import shutil
 
 # -- Provider registry -------------------------------------------------------
 
-# The six first-class provider ids. Two entry shapes:
+# The six built-in provider ids. Two entry shapes:
 #
 #   "runtime_class": (module_path, class_name) — subscription/CLI-credential
 #       backends whose auth adoption + per-provider headers need a dedicated
@@ -328,7 +328,7 @@ def create_runtime(provider: str = None, model: str = None, **kwargs):
     if provider and provider != "auto":
         if provider not in PROVIDERS:
             # ``PROVIDERS`` is NOT the list of supported providers — it
-            # only holds the 6 first-class backends (claude-code,
+            # only holds the 6 built-in backends (claude-code,
             # openai-codex, gemini-cli, anthropic, openai, gemini). Every
             # other provider — deepseek, groq, openrouter, minimax, kimi,
             # everything models.dev knows — is supported through its

@@ -52,7 +52,7 @@ Every `add_argument` / `add_parser` in the tree carries `help=`, and the
 top-level `--help` carries a common-commands epilog, so the tree is
 self-documenting under tab completion.
 
-### `openprogram config` is a first-class concept
+### `openprogram config` is its own command group
 
 `config` is the settings entry point, not an alias for `setup`:
 

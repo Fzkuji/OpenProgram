@@ -2,7 +2,7 @@
 
 > `docs/` 下的 markdown 与手写 html 以同一套风格的静态文档站提供：
 > 左侧目录树 · 顶部搜索 · 右侧本页锚点 · 深浅双主题。一处改皮肤，全站保持统一。
-> 内嵌动态动画是一等公民，不是事后补丁。
+> 内嵌动态动画原样渲染——它是页面内容的一部分，不是事后补丁。
 
 ## 一、目标与非目标
 
@@ -14,7 +14,7 @@
 4. **自动导航**：左侧目录树从 `docs/` 目录结构自动生成，分组标题取自各级 `README.md` 的一级标题。
 5. **本页锚点**：右侧 "On this page" 从每篇的 `##/###` 标题自动生成，滚动高亮当前节。
 6. **全文搜索**：构建期生成轻量搜索索引（标题 + 正文），前端纯 JS 检索，无后端。
-7. **动态动画一等公民**：md 中内嵌的 `<script>/<canvas>/<svg>/<style>` 原样透传；11 篇手写 html 的图表能整块嵌入新壳不丢失。
+7. **动态动画原样渲染**：md 中内嵌的 `<script>/<canvas>/<svg>/<style>` 原样透传；11 篇手写 html 的图表能整块嵌入新壳不丢失。
 
 ### 非目标
 
@@ -37,7 +37,7 @@
 ## 三、技术选型
 
 - **构建语言：Python**。仓库主语言是 Python，worker 已是 Python，无需新增 Node 工具链。
-- **Markdown 渲染：`markdown-it-py`** + 插件（`mdit-py-plugins`：anchors、footnote、deflist、tasklists）。理由：保留原始 html 透传（`html=True`），这是动画一等公民的前提；GitHub 风格表格/代码围栏齐全。
+- **Markdown 渲染：`markdown-it-py`** + 插件（`mdit-py-plugins`：anchors、footnote、deflist、tasklists）。理由：保留原始 html 透传（`html=True`），内嵌动画能渲染全靠这一点；GitHub 风格表格/代码围栏齐全。
 - **代码高亮：Pygments**（构建期渲染成带 class 的 span，运行时零开销；深浅主题各一套 Pygments 样式表）。
 - **搜索：构建期生成 `search-index.json`**，前端用极简倒排/子串匹配。数百篇规模无需 lunr/flexsearch 这类重库。
 - **数学公式**：留有 KaTeX 接入点，默认不启用。
@@ -111,7 +111,7 @@ docs/_site/                   ← 构建产物
 
 风格基调：浅色为主、对齐 Stripe/Vercel/Linear 那类技术文档的克制专业感；深色不是纯黑，避免刺眼。
 
-## 七、动态动画一等公民（关键设计）
+## 七、动态动画原样渲染（关键设计）
 
 这是与普通文档站的最大差异点，单独说明落地机制：
 

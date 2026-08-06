@@ -143,7 +143,7 @@ def run_agentic_function_call(
     DAG, dispatched exactly like an LLM-issued tool call.
 
     ``anchor_msg_id`` controls where the run lands on the conversation
-    chain, so function calls become first-class members of the same chain
+    chain, so function calls sit on the same chain
     chat turns use:
 
     * ``None`` (default — a NEW run from fn-form / welcome) → passed as an
