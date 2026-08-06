@@ -136,6 +136,13 @@ export function drawBadges(
   Object.keys(tree.byId).forEach((id) => {
     const n = tree.byId[id];
     const np = pos(n);
+    // Every visible glyph is an obstacle: a badge that lands on a node
+    // (an opened thread inserts items right where "below the anchor"
+    // used to be empty) hides it, so the collision loop pushes the
+    // badge down past it instead.
+    placed.push({
+      x1: np.x - 12, x2: np.x + 12, y1: np.y - 12, y2: np.y + 12,
+    });
     if (maxYByX[np.x] === undefined || np.y > maxYByX[np.x]) {
       maxYByX[np.x] = np.y;
     }
@@ -205,14 +212,15 @@ export function drawBadges(
   });
 
   // ── Sub-agent badges (dag/rendering.md §12) ──
-  // Only while the agent's thread is OPEN: folded agents keep the
-  // canvas clean, and opening one is exactly the moment "switch to
-  // this agent's branch" becomes a question. Same pill, same verb —
+  // Shown whenever the spawn square itself is on screen — which
+  // already means its owner's thread is open, the opt-in that keeps
+  // the default canvas clean. The badge is the agent's name (the
+  // canvas draws no captions) AND the switch: same pill, same verb —
   // clicking checks the agent chain's tip out as the active branch.
   if (thread) {
     Object.keys(tree.byId).forEach((sid) => {
       const root = tree.byId[sid];
-      if (!isSpawnRoot(root) || !thread.isOpen(sid)) return;
+      if (!isSpawnRoot(root)) return;
       // The agent chain's tip: walk conversation successors in the
       // FULL graph (its turns are merged into the spawn glyph here).
       let tipId = sid;

@@ -737,11 +737,13 @@ one spawn, one glyph (a dispatch that opened no spawn keeps its own square —
 that failure is worth seeing). The agent's internal turns are not chain
 nodes — they merge into it (§0), replies drawing as triangles and calls as
 squares once opened — and its own thread sits one column further right,
-opened by clicking the square. While an agent's thread is open, a badge pill
-(the same pill as branch badges, render/badges.ts) hangs below its last
-item, named after the agent; clicking it checks the agent chain's tip out as
-the active branch — taking over the agent's conversation. Folded agents show
-no badge, so the canvas stays clean. The model is recursive and so is the picture: every level reads
+opened by clicking the square. While the spawn square is on
+screen (its owner's thread is open — the opt-in that keeps the default
+canvas clean), a badge pill (the same pill as branch badges,
+render/badges.ts) hangs below it, named after the agent; clicking it checks
+the agent chain's tip out as the active branch — taking over the agent's
+conversation. Badges never cover a node: every visible glyph seeds the
+badge collision boxes, so a badge that would land on one steps down a row. The model is recursive and so is the picture: every level reads
 by the same two rules, count-on-shoulder folded, column-of-nodes open. A
 nested open thread pushes the parent's later items down; expansion is
 insertion, never overlay.
