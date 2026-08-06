@@ -155,22 +155,23 @@ export function drawNodes(
     } else if (status === "cancelled" || status === "stopped") {
       g.setAttribute("opacity", "0.45");
     }
-    // ── ghost 描边（rendering.md §9/§10）─────────────────────────
-    // Two nodes read the same way and for the same reason: they are on
-    // disk and readable, and they can never enter the next request.
-    if (el && (isGhost || isFailed || isSuperseded || isInert)) {
+    // ── 出上下文的读法（rendering.md §9/§10）────────────────────
+    // 不在下一次请求里的节点保持分支本色，"出上下文"由白底的缺席
+    // 说（白填充只落在上下文集合里的节点上）+ 虚线来边说。灰描边只
+    // 留给死历史：失败废弃线和被取代的旧摘要——它们在任何分支上都
+    // 永远回不了上下文，这不是"当前视角"的状态。
+    if (el && (isFailed || isSuperseded)) {
       el.setAttribute("stroke", "var(--dag-ghost, #c9c7bf)");
       el.setAttribute("stroke-width", "1.6");
     }
     // ── 内圈：双圈圆的里圈（rendering.md §9）────────────────────
-    // 细一号的同心圆，跟着外圈的颜色态走（灰=inert/superseded），
-    // 在白填充（在上下文中）与镂空两种状态下都可见。
+    // 细一号的同心圆，跟外圈同色，在白填充（在上下文中）与镂空两种
+    // 状态下都可见。
     if (isCapsule) {
       g.appendChild(_svg("circle", {
         r: String((NODE_R + 3) * CAPSULE_RING),
         fill: "none",
-        stroke: isSuperseded || isInert
-          ? "var(--dag-ghost, #c9c7bf)" : color,
+        stroke: color,
         "stroke-width": "1.2",
         "pointer-events": "none",
       }));

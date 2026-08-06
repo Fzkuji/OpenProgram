@@ -198,13 +198,13 @@ assert.ok(
   !/history-summary-label/.test(nodesSrc),
   "the capsule draws no caption text on the canvas",
 );
-// The inner ring is the "condensed turns" cue; it follows the outer
-// stroke into grey on inert / superseded capsules.
+// The inner ring is the "condensed turns" cue, drawn in the branch
+// colour like the outer stroke — out-of-context is said by the missing
+// white fill and the dashes, never by draining the colour.
 assert.match(
   nodesSrc,
-  /CAPSULE_RING[\s\S]{0,200}isSuperseded \|\| isInert/,
-  "the capsule's inner ring is drawn by the node drawer and tracks the "
-  + "outer stroke's grey states",
+  /CAPSULE_RING[\s\S]{0,120}stroke: color/,
+  "the capsule's inner ring is drawn by the node drawer in branch colour",
 );
 assert.match(
   pipelineSrc,

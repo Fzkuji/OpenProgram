@@ -579,14 +579,18 @@ expanded, so returning to the carrying branch finds the range open instead
 of snapped shut — seen is seen. On any other branch — a fork from inside the
 covered range, a sibling of the same era — those turns ARE the live context:
 they render raw, in full branch colour, and the capsule stays on screen but
-draws ghost grey, folding nothing — the node set is identical on every
-branch, only its reading changes. Switching branches flips both readings;
-nothing about the stored graph changes.
+inert: its own colour, no fold affordance, no count, no white fill — the
+node set is identical on every branch, only its reading changes. Switching
+branches flips both readings; nothing about the stored graph changes.
 
-**The ghosts.** An expanded range draws in grey outline with a dashed incoming
-edge — readable, clickable, visibly not part of the next request. This is the
-whole point of expanding: "did the summary actually capture what I said" is
-answerable without the answer ever being confused for live context.
+**The ghosts.** An expanded range keeps its branch colour; "not part of the
+next request" is said by the dashed incoming edge and by the missing white
+fill (the white fill lands only on nodes in the context set), never by
+draining the colour to grey — grey is reserved for dead history (archived
+failure lines, superseded summaries), which no branch can ever carry again.
+Readable, clickable, visibly not live: "did the summary actually capture
+what I said" is answerable without the answer ever being confused for
+context.
 
 **Rolling summaries.** Compaction chains: a second compact feeds the first
 summary's text back into the summariser and `extra_meta._last_summary_id`
@@ -599,7 +603,7 @@ grey, and folds nothing.
 **Where the capsule sits.** One slot, identical in every state and on every
 branch: the covered segment's end. Expanded, it follows its ghosts
 (ghosts → capsule → tail); on a non-carrying branch it follows the same
-turns in the raw (coloured turns → grey capsule → the rest); folded is the
+turns in the raw (filled turns → hollow capsule → the rest); folded is the
 same slot with the segment collapsed, which puts the capsule first on the
 trunk. Position never changes when the user switches branches or toggles the
 fold — only colour and folding do. All placements are view-only clone

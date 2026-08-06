@@ -82,8 +82,11 @@ export function drawEdges(
       if (!spine || node.role !== "user") return;
     }
     const c = pos(node);
+    // Ghost turns keep their branch colour — "out of context" is said
+    // by the dashes (and by the missing white fill on the glyph), not
+    // by draining the colour.
     const isGhost = !!(node as Record<string, unknown>)._ghost;
-    const color = isGhost ? GHOST_STROKE : _branchColor(node, stableLeafOfNode);
+    const color = _branchColor(node, stableLeafOfNode);
     const dash: Record<string, string> = isGhost
       ? { "stroke-dasharray": "3 3" }
       : {};
