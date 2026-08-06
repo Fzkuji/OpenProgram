@@ -15,8 +15,10 @@ import { _branchColor, _svg, _textWidth } from "../shapes";
 import { isSpawnRoot } from "../passes/thread";
 
 // canvas 量宽不认 var()（见 shapes.ts SPAWN_FONT 注释），写死同一字体栈。
+// 字号/字重必须跟下面 <text> 实际画的一致（取 active 的 600 偏保守），
+// 否则量出来的宽度偏窄，文字贴边。
 const BADGE_FONT =
-  '500 9px "Inter Variable", "Inter", -apple-system, "PingFang SC", sans-serif';
+  '600 10.5px "Inter Variable", "Inter", -apple-system, "PingFang SC", sans-serif';
 
 export function drawBadges(
   svg: SVGElement,
@@ -105,7 +107,7 @@ export function drawBadges(
     // 碰撞：与已放置盒重叠 → 下移一行，直至无碰撞。
     // 顶部的分支条已删（分支切换只在这里），标签按按钮规格画：
     // 更大的字号/内边距 + 描边，hover 态在 right-dock.css。
-    const bwPre = Math.max(Math.ceil(_textWidth(label, BADGE_FONT)) + 20, 52);
+    const bwPre = Math.max(Math.ceil(_textWidth(label, BADGE_FONT)) + 28, 56);
     const overlaps = (): boolean =>
       placed.some((r) =>
         bx - bwPre / 2 < r.x2 && bx + bwPre / 2 > r.x1
@@ -119,7 +121,7 @@ export function drawBadges(
       "data-head": hid,
     });
     (tg as SVGGraphicsElement).style.cursor = isActive ? "default" : "pointer";
-    // 背景宽 = 实测文字宽 + 左右各 6px 内边距，下限 40（碰撞判定同款盒）。
+    // 背景宽 = 实测文字宽 + 左右各 14px 内边距，下限 56（碰撞判定同款盒）。
     const bw = bwPre;
     const bh = 22;
     const rect = _svg("rect", {
