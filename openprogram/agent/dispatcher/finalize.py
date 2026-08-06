@@ -198,9 +198,15 @@ def finalize_turn(
     failed resolve fell through the try/except.
     """
     # 6. Update session bookkeeping (head_id, token tracking, model).
+    # A same-session SPAWNED turn (advance_head=False) is machinery and
+    # must not move the session head here either — this was the last
+    # unguarded mover: it flipped the active branch onto the agent's
+    # chain at inner-turn end and the transcript followed it
+    # (context/compaction.md §5).
     db.update_session(
         req.session_id,
-        head_id=assistant_msg_id,
+        head_id=assistant_msg_id if getattr(req, "advance_head", True)
+        else None,
         last_prompt_tokens=int(usage.get("input_tokens") or 0),
         model=req.model_override or session.get("model"),
     )
