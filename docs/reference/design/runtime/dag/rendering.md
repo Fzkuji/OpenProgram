@@ -60,9 +60,11 @@ the user drives directly.
 **Wheel triage** (`canvas.ts`): ctrl/⌘ + wheel zooms — browsers deliver a
 trackpad pinch as a wheel event with `ctrlKey` set, and ⌘+wheel is the
 explicit zoom chord — at a rate tuned for a pinch's small continuous deltas.
-A mouse wheel — recognised by its discrete notches (line-mode deltas, or an
-integer `deltaY` of a notch's size with `deltaX = 0`) — zooms at wheel rate:
-a mouse has no pinch. Everything else is a trackpad two-finger scroll and
+A mouse wheel zooms at wheel rate — a mouse has no pinch. macOS scroll
+acceleration makes its `deltaY` fractional and variable, so the tell is the
+legacy `wheelDeltaY`: Chromium/WebKit report a physical notch as a multiple
+of 120 (trackpads carry arbitrary small values), with line-mode deltas as
+the non-mac fallback. Everything else is a trackpad two-finger scroll and
 pans, both axes — scrolling stays scrolling.
 
 A box sized to its content decides two things it has no business deciding: how

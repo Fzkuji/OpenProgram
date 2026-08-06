@@ -210,9 +210,15 @@ function wireGestures(host: HTMLElement): void {
       //     the only zoom gesture a mouse has besides the HUD;
       //   * everything else is a trackpad two-finger scroll — a PAN,
       //     both axes. Scrolling stays scrolling.
+      // macOS scroll acceleration makes a mouse wheel's deltaY
+      // fractional and variable, so delta values can't tell the two
+      // devices apart. The legacy ``wheelDeltaY`` can: Chromium and
+      // WebKit report a physical wheel notch as a multiple of 120,
+      // while trackpad scrolls carry arbitrary small values.
+      const wd = (e as unknown as { wheelDeltaY?: number }).wheelDeltaY;
       const isMouseWheel = e.deltaMode !== 0
-        || (e.deltaX === 0 && Number.isInteger(e.deltaY)
-            && Math.abs(e.deltaY) >= 40);
+        || (e.deltaX === 0 && typeof wd === "number" && wd !== 0
+            && wd % 120 === 0);
       if (e.ctrlKey || e.metaKey) {
         zoomAt(
           e.clientX - rect.left,
