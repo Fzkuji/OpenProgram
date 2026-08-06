@@ -80,14 +80,51 @@ def build_session_graph(
     if nodes:
         from openprogram.context.nodes import covers_range
 
+        # A summary only elides nodes on the chain it was written for
+        # (context/nodes._covered_seqs): a dead fork whose seqs happen to
+        # fall inside the interval was never summarised, so a bare seq
+        # sweep would fold sibling branches behind the capsule. Restrict
+        # to the head's predecessor chain, plus the caller subtrees that
+        # hang off those turns — a covered turn folds with its calls.
+        by_id_node = {n.id: n for n in nodes}
+        tip = head_id
+        if not tip:
+            try:
+                tip = (db.get_session(session_id) or {}).get("head_id") or ""
+            except Exception:
+                tip = ""
+        chain: set[str] = set()
+        cur = by_id_node.get(tip or "")
+        while cur is not None and cur.id not in chain:
+            chain.add(cur.id)
+            cur = by_id_node.get(cur.predecessor or "")
+        children_of: dict[str, list[str]] = {}
+        for m in nodes:
+            if m.caller:
+                children_of.setdefault(m.caller, []).append(m.id)
+
         by_seq = sorted(((n.seq, n.id) for n in nodes), key=lambda t: t[0])
         for n in nodes:
             rng = covers_range(n)
             if rng is None:
                 continue
             lo, hi = rng
-            covered = [nid for seq, nid in by_seq
-                       if lo <= seq <= hi and nid != n.id]
+            spine = [nid for seq, nid in by_seq
+                     if lo <= seq <= hi and nid != n.id and nid in chain]
+            if not spine:
+                # Head sits on the summary itself (nothing was kept):
+                # the chain walk misses the covered prefix, so the
+                # whole interval folds.
+                spine = [nid for seq, nid in by_seq
+                         if lo <= seq <= hi and nid != n.id]
+            keep = set(spine)
+            stack = list(spine)
+            while stack:
+                for cid in children_of.get(stack.pop(), ()):  # noqa: B909
+                    if cid not in keep:
+                        keep.add(cid)
+                        stack.append(cid)
+            covered = [nid for _seq, nid in by_seq if nid in keep]
             if covered:
                 covers_ids[n.id] = covered
 

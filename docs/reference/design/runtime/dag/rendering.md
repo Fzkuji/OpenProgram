@@ -570,6 +570,14 @@ edge — readable, clickable, visibly not part of the next request. This is the
 whole point of expanding: "did the summary actually capture what I said" is
 answerable without the answer ever being confused for live context.
 
+**Where the capsule sits.** Folded, it stands in the covered range's slot —
+first on the trunk, because the summary is the first thing the next request
+carries. Expanded, the range itself is back on screen, so the capsule reads as
+what those turns collapsed *into*: it splices in after the last ghost and ahead
+of the kept tail — ghosts → capsule → tail. Both placements are view-only
+rewires in `fold-summaries.ts`; the stored row keeps its real `predecessor`
+(where the range began) in both states.
+
 The white fill never lands on a covered node, in either state, because
 `/context-range` does not list it. One fact, one source (§8).
 
@@ -580,6 +588,9 @@ graph but never leaves the store — every wire payload speaks ids — so
 `webui/graph_builder.py` resolves the interval once, on the way out, and the
 summary row carries `covers_ids`: the ids it stands in for, in seq order, with
 the summary itself excluded (its own seq sorts just inside the range it names).
+The sweep is restricted to the HEAD chain plus the caller subtrees of covered
+turns: compaction summarised one branch's context, so a dead fork whose seqs
+happen to fall inside the interval never folds behind the capsule.
 
 One field drives everything: the capsule shape, the fold, the pleat count, the
 ghost marking, and the inspector's coverage row. The frontend does no seq

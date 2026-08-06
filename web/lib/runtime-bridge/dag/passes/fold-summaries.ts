@@ -23,6 +23,7 @@
 
 import type { GNode } from "../types";
 import { _summaryExpanded } from "../store/globals";
+import { isChainNode } from "./thread";
 
 export interface SummaryFold {
   /** Visible graph — covered nodes removed for every folded capsule. */
@@ -95,15 +96,45 @@ export function _foldSummaries(graph: GNode[]): SummaryFold {
   // the clone.
   for (let i = 0; i < visible.length; i++) {
     const m = visible[i];
-    if (!coversOf[m.id] || _summaryExpanded[m.id]) continue;
-    const successor = visible.find((v) => v.predecessor === m.id);
-    const donor = successor ?? fullById[coversOf[m.id][0]];
-    if (donor && typeof donor._lane === "number") {
-      // _tier too: the backend stamps the capsule with the reply tier
-      // (it IS a reply), but as the stand-in for whole turns it sits
-      // on the turn column the trunk runs through — the donor's.
-      visible[i] = { ...m, _lane: donor._lane, _tier: donor._tier };
+    const ids = coversOf[m.id];
+    if (!ids) continue;
+    if (!_summaryExpanded[m.id]) {
+      const successor = visible.find((v) => v.predecessor === m.id);
+      const donor = successor ?? fullById[ids[0]];
+      if (donor && typeof donor._lane === "number") {
+        // _tier too: the backend stamps the capsule with the reply tier
+        // (it IS a reply), but as the stand-in for whole turns it sits
+        // on the turn column the trunk runs through — the donor's.
+        visible[i] = { ...m, _lane: donor._lane, _tier: donor._tier };
+      }
+      continue;
     }
+    // Expanded: the ghosts are back on screen, and the capsule reads as
+    // what they collapsed INTO — so it splices in right after the last
+    // covered turn, ahead of the kept tail: ghosts → capsule → tail.
+    // Its stored predecessor (where the range began) stays untouched on
+    // the backend row; this is the same view-only clone trick as above.
+    const covered = new Set(ids);
+    const j = visible.findIndex((v) => v.id !== m.id && !covered.has(v.id)
+      && !!v.predecessor && covered.has(v.predecessor!));
+    const keptFirst = j >= 0 ? visible[j] : undefined;
+    let lastCovered = keptFirst?.predecessor;
+    if (!lastCovered) {
+      for (let k = ids.length - 1; k >= 0; k--) {
+        const c = fullById[ids[k]];
+        if (c && isChainNode(c)) { lastCovered = c.id; break; }
+      }
+    }
+    if (!lastCovered) continue;
+    const donor = keptFirst ?? fullById[lastCovered];
+    visible[i] = {
+      ...m,
+      predecessor: lastCovered,
+      ...(donor && typeof donor._lane === "number"
+        ? { _lane: donor._lane, _tier: donor._tier }
+        : {}),
+    };
+    if (keptFirst) visible[j] = { ...keptFirst, predecessor: m.id };
   }
   return { visible, coversOf };
 }

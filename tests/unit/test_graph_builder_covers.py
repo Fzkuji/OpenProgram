@@ -92,6 +92,31 @@ def test_a_summary_never_covers_itself(store):
     assert set(covers) >= set(ids)
 
 
+def test_covers_skips_dead_fork_siblings_in_the_interval(store):
+    """Compaction summarises one chain. A retried/abandoned branch whose
+    seqs fall inside the interval was never part of that context, so the
+    capsule must not fold it — the seq sweep is restricted to the head's
+    predecessor chain (plus caller subtrees of covered turns)."""
+    ids = _seed(store, "s1", 3)
+    # Dead fork off the first reply — same era, other branch.
+    store.append_message("s1", {"id": "fu", "role": "user",
+                                "content": "alt", "predecessor": ids[1]})
+    store.append_message("s1", {"id": "fa", "role": "assistant",
+                                "content": "alt-r", "predecessor": "fu"})
+    lo = _seq_of(store, "s1", ids[0])
+    hi = _seq_of(store, "s1", "fa")     # interval spans the fork too
+    store.append_message("s1", {
+        "id": "sum1", "role": "llm", "token_model": SUMMARY_NODE_NAME,
+        "content": "[recap]", "predecessor": None,
+        "extra": {"covers": [lo, hi]},
+    })
+
+    covers = _row(build_session_graph("s1", ids[-1]), "sum1")["covers_ids"]
+
+    assert "fu" not in covers and "fa" not in covers
+    assert set(covers) == set(ids)
+
+
 def test_uncompacted_sessions_carry_no_covers_field(store):
     ids = _seed(store, "s1", 2)
     graph = build_session_graph("s1", ids[-1])
