@@ -112,9 +112,10 @@ setThreadOpen(Object.create(null));
     + "in call order",
   );
   assert.deepEqual(
-    (m.events.s1 || []).map((e) => e.id), ["s1e1", "s1e2"],
-    "the agent's internal calls are the spawn head's own thread — its "
-    + "internal turns merged into it",
+    (m.events.s1 || []).map((e) => e.id), ["s1_reply", "s1e1", "s1e2"],
+    "the spawn's own thread carries the agent's TURNS and calls, one "
+    + "sequence in time order — its replies come back as triangles "
+    + "when the square opens, not deleted",
   );
   assert.equal(
     m.anchorOf("f1"), "a0",
@@ -225,9 +226,12 @@ const layoutOf = (graph) => {
   assert.equal(pos.s1.y, pos.e1.y + ROW_H, "…in its sequence position");
 
   // ③ The open agent recurses one column further, and its rows push
-  // the parent's later items down.
-  assert.equal(pos.s1e1.x, pos.s1.x + COL_W, "nested thread = +1 more");
-  assert.equal(pos.s1e1.y, pos.s1.y + ROW_H);
+  // the parent's later items down. Its own REPLY leads the nested
+  // thread — a triangle in the agent's colour, back on screen.
+  assert.equal(pos.s1_reply.x, pos.s1.x + COL_W, "nested thread = +1 more");
+  assert.equal(pos.s1_reply.y, pos.s1.y + ROW_H);
+  assert.equal(pos.s1e1.x, pos.s1_reply.x);
+  assert.equal(pos.s1e1.y, pos.s1_reply.y + ROW_H);
   assert.equal(pos.s1e2.y, pos.s1e1.y + ROW_H);
   assert.equal(
     pos.e2.y, pos.s1e2.y + ROW_H,

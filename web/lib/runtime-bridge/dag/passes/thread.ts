@@ -67,6 +67,10 @@ export function isSpawnRoot(n: GNode): boolean {
 export function isChainNode(n: GNode): boolean {
   if (n.display === "root") return true;
   if (isSpawnRoot(n)) return false;
+  // An agent-internal turn surfaced as a THREAD item (stamped by the
+  // thread pass on its visible clone): it keeps its own shape and
+  // colour but lays out on the agent's thread, not as a lane.
+  if ((n as Record<string, unknown>)._agentTurn) return false;
   if (n.function === "merge") return true;
   return (
     (n.role === "user" || n.role === "assistant")
@@ -173,7 +177,20 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
       nameOf[n.id] = _spawnName(n, byId);
       return;
     }
-    if (isChainNode(n)) return;
+    if (isChainNode(n)) {
+      // An agent-internal turn (its lane merged into a spawn root) is
+      // the agent's own activity: an event on the AGENT's thread. Once
+      // the square opens, its replies come back as triangles in the
+      // agent's colour — the conversation is in the graph, one level
+      // down, not deleted. Followup replies on the main chain keep
+      // merging invisibly (their anchor is a chain turn, not a spawn).
+      const a = anchorOf(n.id);
+      if (a !== n.id && byId[a] && isSpawnRoot(byId[a])) {
+        (events[a] = events[a] || []).push(
+          { t: n.created_at || 0, kind: "exec", id: n.id });
+      }
+      return;
+    }
     const o = ownerOf(n);
     if (o) {
       (events[o] = events[o] || []).push(
@@ -232,12 +249,26 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
     if (n.display === "root") return true;
     if (isSpawnRoot(n)) return spawnVisible(n.id);
     if (isChainNode(n)) {
-      return anchorOf(n.id) === n.id;
+      const a = anchorOf(n.id);
+      if (a === n.id) return true;
+      // Agent-internal turn: a thread item while the agent is open.
+      return !!byId[a] && isSpawnRoot(byId[a])
+        && chainOpen(a) && spawnVisible(a);
     }
     // execution node: on screen only while its anchor's thread is open
     if (dispatchHidden.has(n.id)) return false;
     const o = ownerOf(n);
     return !!o && chainOpen(o) && (spawnOwnerOf[o] ? spawnVisible(o) : true);
+  }).map((n) => {
+    // Stamp the surfaced agent turns so downstream passes lay them out
+    // as thread items (isChainNode above keys on the stamp). View-only
+    // clones — the graph rows themselves stay untouched.
+    if (!isChainNode(n) || n.display === "root") return n;
+    const a = anchorOf(n.id);
+    if (a !== n.id && byId[a] && isSpawnRoot(byId[a])) {
+      return { ...n, _agentTurn: true } as GNode;
+    }
+    return n;
   });
 
   return { visible, events, spawnOwnerOf, nameOf, isOpen, anchorOf };
