@@ -10,7 +10,7 @@ This stores the goal on the session and immediately starts a first turn with the
 
 ## How a goal is judged
 
-An LLM judge decides. After each turn, one no-tools call on the session's model reads the goal text plus the tail of the conversation (last assistant output and recent tool results) and returns a strict yes/no with a reason. The judge is deliberately not the working agent asking itself "am I done?" — self-reports run optimistic; the verdict comes from a separate call that only sees evidence. Before the loop stops on a met verdict, a spawned verifier agent re-checks the claim against the working directory with inspection-only tools.
+An LLM judge decides. After each turn, one no-tools call on the session's model reads the goal text plus the tail of the conversation (last assistant output and recent tool results) and returns a strict yes/no with a reason. The judge is deliberately not the working agent asking itself "am I done?" — self-reports run optimistic; the verdict comes from a separate call that only sees evidence. Before the loop stops on a met verdict, a spawned verifier agent re-checks the claim against the working directory with inspection-only tools. Both judgment points are agentic functions — `goal_judge` and `goal_verify` in the Functions panel — so you can run either one by hand against any goal text and see exactly how a verdict is reached.
 
 ## Writing a condition that works
 
