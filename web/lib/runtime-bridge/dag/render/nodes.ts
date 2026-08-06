@@ -82,6 +82,9 @@ export function drawNodes(
     // capsule, nothing to fold (backend strips its covers_ids).
     const isSuperseded =
       !!(node as Record<string, unknown>).superseded_summary;
+    // The active summary viewed from a branch it does not apply to:
+    // the turns around it are live, the capsule is the inert thing.
+    const isInert = !!(node as Record<string, unknown>)._summaryInert;
     const isFailed = _isArchivedFailure(node, onHead, isHead);
     const g = _svg("g", {
       class:
@@ -165,12 +168,12 @@ export function drawNodes(
     // ── ghost 描边（rendering.md §9/§10）─────────────────────────
     // Two nodes read the same way and for the same reason: they are on
     // disk and readable, and they can never enter the next request.
-    if (el && (isGhost || isFailed || isSuperseded)) {
+    if (el && (isGhost || isFailed || isSuperseded || isInert)) {
       el.setAttribute("stroke", "var(--dag-ghost, #c9c7bf)");
       el.setAttribute("stroke-width", "1.6");
     }
     // ── 褶皱：折叠的覆盖区间收成递缩叠影（rendering.md §9）────────
-    if (isCapsule && !capsuleOpen) {
+    if (isCapsule && !capsuleOpen && !isInert) {
       const pleats = Math.min(3, covered.length);
       for (let i = 0; i < pleats; i++) {
         const x = CAPSULE_HW + 2 + i * 5;

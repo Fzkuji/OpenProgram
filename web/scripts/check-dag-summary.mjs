@@ -144,7 +144,7 @@ assert.deepEqual(coversIds({ id: "x", covers_ids: ["a"] }), ["a"]);
   const byId = Object.fromEntries(visible.map((n) => [n.id, n]));
   assert.ok(byId.u0 && byId.a0, "other branch: covered turns stay visible");
   assert.ok(!byId.u0._ghost && !byId.a0._ghost, "other branch: no ghost marking");
-  assert.ok(!byId.sum1, "other branch: the capsule is not drawn at all");
+  assert.equal(byId.sum1._summaryInert, true, "other branch: the capsule is the inert one");
 }
 
 {

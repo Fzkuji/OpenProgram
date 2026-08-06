@@ -9,8 +9,9 @@
  * the branch whose active chain contains its whole covered segment.
  * Only there does the capsule fold the range (or, expanded, mark it as
  * ghosts). On any other branch those turns ARE the live context — they
- * render raw in full colour, and the capsule itself is not drawn at
- * all; it reappears when the carrying branch is checked out.
+ * render raw in full colour, and the capsule stays on screen but is
+ * flagged inert (``_summaryInert``): ghost grey, folding nothing. The
+ * node set is identical on every branch; only its reading changes.
  *
  * Clicking the capsule flips ``_summaryExpanded`` for that id and the
  * range comes back as ghosts (``_ghost`` on the clones). That state is
@@ -83,9 +84,8 @@ export function _foldSummaries(
 
   for (const sid of summaryIds) {
     if (!applies(sid)) {
-      // A summary that this branch's context does not carry is noise
-      // here: the turns it covers are live, so the capsule itself is
-      // not drawn at all. It reappears on the carrying branch.
+      // A summary this branch's context does not carry: the turns it
+      // covers are live here, so it folds nothing and draws grey.
       inert[sid] = true;
       continue;
     }
@@ -108,14 +108,15 @@ export function _foldSummaries(
   }
 
   const visible = graph
-    .filter((m) => !hidden[m.id] && !inert[m.id])
+    .filter((m) => !hidden[m.id])
     .map((m) => {
       // View-only rewrites on clones — the graph rows themselves stay
       // exactly what the backend sent.
       const sub = m.predecessor ? standIn[m.predecessor] : undefined;
       let out = m;
       if (sub && sub !== m.id) out = { ...out, predecessor: sub };
-      if (ghost[m.id]) out = out === m ? { ...m, _ghost: true } : { ...out, _ghost: true };
+      if (ghost[m.id]) out = { ...out, _ghost: true };
+      if (inert[m.id]) out = { ...out, _summaryInert: true };
       return out;
     });
 
