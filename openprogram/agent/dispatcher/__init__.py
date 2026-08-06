@@ -128,6 +128,15 @@ def process_user_turn(
     Sessions without an active goal pay one meta read and return the
     single turn's result unchanged.
     """
+    # Same-session spawned turns (goal decisions, task agents,
+    # message_branch) are components inside someone else's turn, not the
+    # session's main line: they enter neither the goal loop nor the
+    # turn.stop gate. Without this, the goal decision turn itself got
+    # judged, which spawned another decision turn — recursion until the
+    # agentic-function nesting cap broke the chain.
+    if req.source == "agent_spawn":
+        return _process_turn_once(
+            req, on_event=on_event, cancel_event=cancel_event)
     # Goal sessions never enter the turn.stop gate: the goal loop is the
     # session's sole stop decider (the only external intervention is
     # /goal clear), and the gate is the extension point for sessions

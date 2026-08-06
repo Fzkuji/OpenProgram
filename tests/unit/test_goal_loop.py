@@ -637,3 +637,31 @@ def test_goal_session_skips_stop_gate(tmp_db: SessionDB,
     tmp_db.create_session("plain1", "main")
     _run_e2e_turn(monkeypatch, "plain1")
     assert gate_calls == ["plain1"]
+
+
+def test_spawned_turns_skip_goal_loop(monkeypatch):
+    """A source="agent_spawn" turn (goal decision, task agent) never
+    enters the goal loop or the stop gate — otherwise the decision turn
+    judges itself and recurses."""
+    from openprogram.agent import dispatcher as disp
+
+    called = {"goal": False, "once": 0}
+
+    def fake_once(req, *, on_event=None, cancel_event=None):
+        called["once"] += 1
+        class _R:
+            failed = False
+        return _R()
+
+    def fake_goal(*a, **k):
+        called["goal"] = True
+
+    monkeypatch.setattr(disp, "_process_turn_once", fake_once)
+    import openprogram.agent.goal as goal_mod
+    monkeypatch.setattr(goal_mod, "continue_goal_turns", fake_goal)
+
+    req = disp.TurnRequest(session_id="s1", user_text="x",
+                           agent_id="main", source="agent_spawn")
+    disp.process_user_turn(req)
+    assert called["once"] == 1
+    assert called["goal"] is False
