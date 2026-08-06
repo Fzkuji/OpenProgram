@@ -244,18 +244,23 @@ export function drawBadges(
       }
       const isActive = !!_currentHead && (tipId === _currentHead
         || _currentHead === sid);
-      // The badge is the square's NAME TAG: beside the glyph, on its
-      // own row — never in the thread column below, where it would
-      // crowd the items and the lane badges.
-      const p = pos(root);
+      // The badge is the agent's NAME TAG: at the RIGHT of the agent
+      // thread's LAST visible node, level with it (the square itself
+      // when the thread is folded or empty). Branch badges keep their
+      // own rule — directly below the branch tail — untouched.
+      const evs = thread.events[sid] || [];
+      let anchor: GNode = root;
+      for (let i = evs.length - 1; i >= 0; i--) {
+        const e = tree.byId[evs[i].id];
+        if (e) { anchor = e; break; }
+      }
+      const p = pos(anchor);
       const label = thread.nameOf[sid] || sid.slice(0, 8);
-      // Small pill, and clear of the nested thread column (+1 COL): it
-      // is an annotation beside the glyph, not a branch-level button.
       const bw = Math.max(
         Math.ceil(_textWidth(label, BADGE_FONT_SMALL)) + 18, 40);
       const finalTip = tipId;
       _drawPill(
-        tagG, placed, p.x + 40 + bw / 2, p.y, label,
+        tagG, placed, p.x + 26 + bw / 2, p.y, label,
         _branchColor(root, stableLeafOfNode), isActive,
         isActive
           ? translateText("Current branch", "当前分支")
