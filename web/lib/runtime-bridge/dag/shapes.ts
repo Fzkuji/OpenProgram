@@ -144,7 +144,7 @@ export function _textWidth(s: string, font: string): number {
 // boundary, with corners slightly outside.
 const STROKE_W = 2.2;
 const TRI_SCALE = 1.35;
-const SQR_SCALE = 0.75;
+const SQR_SCALE = 1.0;
 
 /** Every glyph is hollow — HEAD included: HEAD is said by the breathing
  *  glow the node drawer stamps on it (§4), not by a fill of its own, so

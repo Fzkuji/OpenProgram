@@ -315,7 +315,7 @@ is conveyed only by line style:
 |---|---|---|---|
 | same-branch parent→child | solid | this branch's color | shown |
 | retry fork bridge (origin → the branch lane's spine top, shared row) | dashed `6 4` horizontal; an elbow only when rows diverged | branch's color | shown |
-| call thread (anchor → its items, §12) | dotted `2 3` vertical off the anchor | annotation grey | shown while open |
+| call thread (anchor → its items, §12) | dotted `2 3` elbow — a horizontal step off the anchor, then straight down the thread column (orthogonal like every other line) | annotation grey | shown while open |
 | merge convergence (peer tip → merge node) | thick solid 2.4px | peer branch's color | shown |
 | attach merge-back (source tip → embed position) | long dashes `4 4` | source branch's color | shown when both ends are visible — an agent-internal tip merged into its triangle draws no line; the spawn head's position ON the thread is the return relationship |
 | inter-branch communication (send_to_branch) | dotted `1 5` | target branch's color | **shown only on hover** (numerous; always-on would smear) |
@@ -740,9 +740,9 @@ squares once opened — and its own thread sits one column further right,
 opened by clicking the square. While the spawn square is on
 screen (its owner's thread is open — the opt-in that keeps the default
 canvas clean), a badge pill (the same pill as branch badges,
-render/badges.ts) hangs below it, named after the agent; clicking it checks
-the agent chain's tip out as the active branch — taking over the agent's
-conversation. Badges never cover a node: every visible glyph seeds the
+render/badges.ts) sits at its RIGHT as the square's name tag; clicking it
+checks the agent chain's tip out as the active branch — taking over the
+agent's conversation. Badges never cover a node: every visible glyph seeds the
 badge collision boxes, so a badge that would land on one steps down a row. The model is recursive and so is the picture: every level reads
 by the same two rules, count-on-shoulder folded, column-of-nodes open. A
 nested open thread pushes the parent's later items down; expansion is

@@ -231,9 +231,11 @@ export function drawEdges(
     const ap = pos(anchorNode);
     const tx = PAD_X + geom.threadColOf[anchor] * COL_W;
     const lastY = PAD_Y + rows[rows.length - 1] * ROW_H;
+    // Orthogonal like every other line on the canvas: a horizontal step
+    // off the anchor, then straight down the thread column. The old
+    // curve was the one non-orthogonal stroke in the picture.
     edgeG.appendChild(_svg("path", {
-      d: `M ${ap.x} ${ap.y} Q ${tx} ${ap.y} ${tx} ${ap.y + 22} `
-        + `L ${tx} ${lastY}`,
+      d: `M ${ap.x} ${ap.y} L ${tx} ${ap.y} L ${tx} ${lastY}`,
       stroke: GHOST_STROKE, "stroke-width": 1.3, fill: "none",
       "stroke-dasharray": "2 3", "stroke-linecap": "round",
       opacity: 0.8,
@@ -262,6 +264,11 @@ export function drawEdges(
     const src = tree.byId[ref];
     const anchorNode = tree.byId[anchorId];
     if (!src || !anchorNode) return;
+    // An agent's tip surfaced as a THREAD item: its return relationship
+    // is structural — the spawn square's position on the anchor's
+    // thread (§12) — so the merge-back dashes stay suppressed exactly
+    // as they were while the tip was folded away.
+    if ((src as Record<string, unknown>)._agentTurn) return;
     const srcPos = pos(src);
     const anchorPos = pos(anchorNode);
     const color = _branchColor(src, stableLeafOfNode);
