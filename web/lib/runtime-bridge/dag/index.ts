@@ -112,7 +112,13 @@ export function refreshHistoryContextRange(sessionId: string | null): void {
     setHistoryContextRange(null);
     return;
   }
-  fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/context-range")
+  // Pin the range to the head the GRAPH is rendered at: the fold pass
+  // (ghosts, inert capsule) and the white fill must read one head, or
+  // a race between checkout and repaint paints "out of the next
+  // request" dashes under an in-context white fill.
+  const head = _lastHeadId;
+  fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/context-range"
+    + (head ? "?head_id=" + encodeURIComponent(head) : ""))
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
       if (j) setHistoryContextRange(j.node_ids || [], j.nodes || null);

@@ -357,12 +357,14 @@ def register(app):
         so the graph never guesses at semantics the backend owns.
         """
         from openprogram.agent.session_db import default_db
+        from openprogram.context.persistence import rendered_history
 
         db = default_db()
-        branch = db.get_branch(session_id, head_id) or []
-        # Compaction no longer clones: a summary node is an ordinary
-        # chain member and the kept tail keeps its own ids (§8), so the
-        # branch ids ARE the ids the DAG paints. No translation layer.
+        # The COMPACTED view, exactly what the dispatcher feeds the
+        # engine: active summary standing in for its covered segment,
+        # then the kept turns. The raw get_branch walk would paint the
+        # covered turns white as if the next request still carried them.
+        branch = rendered_history(db, session_id, head_id)
         node_ids = [m["id"] for m in branch if m.get("id")]
         return JSONResponse(content={
             "session_id": session_id,

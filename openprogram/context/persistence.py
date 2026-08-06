@@ -72,16 +72,18 @@ def covered_chain_ids(covered: list[dict]) -> list[str]:
     return out
 
 
-def rendered_history(db, session_id: str) -> list[dict]:
+def rendered_history(db, session_id: str,
+                     head_id: str | None = None) -> list[dict]:
     """The message-dict view of what the model reads on the active
-    branch: active summary first (when its segment applies), then the
-    kept turns (context/compaction.md §4 step 1).
+    branch (or the branch ending at ``head_id``): active summary first
+    (when its segment applies), then the kept turns
+    (context/compaction.md §4 step 1).
 
     This is what compaction must consume as its input. Feeding the raw
     ``get_branch`` walk re-summarises turns the previous summary
     already ate and produces a second summary with duplicate coverage.
     """
-    branch = db.get_branch(session_id) or []
+    branch = db.get_branch(session_id, head_id) or []
     try:
         msgs = db.get_messages(session_id) or []
     except Exception:
