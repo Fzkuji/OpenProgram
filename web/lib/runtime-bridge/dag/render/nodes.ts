@@ -189,8 +189,9 @@ export function drawNodes(
     }
     // ── 覆盖标注：胶囊旁写清它替掉了多少轮 ───────────────────────
     if (isCapsule) {
+      // Clear of the pleats (they end at CAPSULE_HW + 2 + 2*5 + 3.5).
       const cap = _svg("text", {
-        x: String(CAPSULE_HW + 10),
+        x: String(CAPSULE_HW + 22),
         y: String(3.5),
         class: "history-summary-label",
         "pointer-events": "none",

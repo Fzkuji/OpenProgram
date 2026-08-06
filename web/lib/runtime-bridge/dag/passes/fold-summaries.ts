@@ -51,14 +51,35 @@ export function _foldSummaries(graph: GNode[]): SummaryFold {
   if (!summaryIds.length) return { visible: graph, coversOf };
 
   const hidden: Record<string, boolean> = Object.create(null);
+  // ``hidden id → the capsule standing in for it``. The node after a
+  // folded range re-anchors onto the capsule, not past it: the capsule
+  // must sit ON the trunk (rendering.md §9), and leaving the survivor's
+  // predecessor pointing into the hidden range makes the generic
+  // hop-walk skip THROUGH the capsule to the fork point — the capsule
+  // then lays out as a floating sibling branch with no edge.
+  const standIn: Record<string, string> = Object.create(null);
   for (const sid of summaryIds) {
     if (_summaryExpanded[sid]) continue;
-    for (const id of coversOf[sid]) hidden[id] = true;
+    for (const id of coversOf[sid]) {
+      hidden[id] = true;
+      standIn[id] = sid;
+    }
   }
   // A capsule is never hidden by another capsule's range: it is the
   // stand-in for its own span, so folding it away would lose the only
   // handle back to those turns.
-  for (const sid of summaryIds) delete hidden[sid];
+  for (const sid of summaryIds) {
+    delete hidden[sid];
+    delete standIn[sid];
+  }
 
-  return { visible: graph.filter((m) => !hidden[m.id]), coversOf };
+  const visible = graph
+    .filter((m) => !hidden[m.id])
+    .map((m) => {
+      const sub = m.predecessor ? standIn[m.predecessor] : undefined;
+      // View-only rewrite on a clone — the graph rows themselves stay
+      // exactly what the backend sent.
+      return sub && sub !== m.id ? { ...m, predecessor: sub } : m;
+    });
+  return { visible, coversOf };
 }
