@@ -156,6 +156,10 @@ def test_persister_splices_summary_into_the_chain(store: SessionStore):
     inside = {n.id for n in graph.nodes.values()
               if lo <= n.seq <= hi and n.id != sid}
     assert inside == {m["id"] for m in covered}
+    # The explicit id list is the graph's record — seq intervals span
+    # sibling branches, ids don't.
+    stored = graph.nodes[sid].metadata.get("covers_ids")
+    assert stored == [m["id"] for m in covered]
 
 
 def test_persister_clones_nothing(store: SessionStore):

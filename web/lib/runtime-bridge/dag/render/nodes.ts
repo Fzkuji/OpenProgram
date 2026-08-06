@@ -82,6 +82,10 @@ export function drawNodes(
     const threadCount = (thread.events[id] || []).length;
     const threadOpen = threadCount > 0 && thread.isOpen(id);
     const isGhost = !!coveredBy[id];
+    // Rolling compaction: a newer summary absorbed this one. Grey
+    // capsule, nothing to fold (backend strips its covers_ids).
+    const isSuperseded =
+      !!(node as Record<string, unknown>).superseded_summary;
     const isFailed = _isArchivedFailure(node, onHead, isHead);
     const g = _svg("g", {
       class:
@@ -165,7 +169,7 @@ export function drawNodes(
     // ── ghost 描边（rendering.md §9/§10）─────────────────────────
     // Two nodes read the same way and for the same reason: they are on
     // disk and readable, and they can never enter the next request.
-    if (el && (isGhost || isFailed)) {
+    if (el && (isGhost || isFailed || isSuperseded)) {
       el.setAttribute("stroke", "var(--dag-ghost, #c9c7bf)");
       el.setAttribute("stroke-width", "1.6");
     }
@@ -186,6 +190,16 @@ export function drawNodes(
           "pointer-events": "none",
         }));
       }
+    }
+    if (isSuperseded) {
+      const cap = _svg("text", {
+        x: String(CAPSULE_HW + 10),
+        y: String(3.5),
+        class: "history-summary-label",
+        "pointer-events": "none",
+      });
+      cap.textContent = translateText("Superseded summary", "已被新摘要取代");
+      g.appendChild(cap);
     }
     // ── 覆盖标注：胶囊旁写清它替掉了多少轮 ───────────────────────
     if (isCapsule) {

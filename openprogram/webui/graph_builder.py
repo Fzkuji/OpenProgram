@@ -71,52 +71,32 @@ def build_session_graph(
     except Exception:
         pass
 
-    # Compaction summaries carry ``metadata.covers = [first_seq, last_seq]``
-    # (dag/overview.md §8). Seq orders nodes but the graph speaks ids, so
-    # resolve the interval to the ids it names — the renderer draws the
-    # capsule and its collapsed range off ``covers_ids`` alone and never
-    # has to learn what a seq is.
+    # Compaction summaries carry ``metadata.covers_ids`` — the exact
+    # chain nodes the summary replaces, written by the persister
+    # (context/persistence.py). Seq intervals span sibling branches in
+    # a DAG, so ids are the only faithful record; the graph adds the
+    # caller subtrees hanging off those turns (a covered turn folds
+    # with its calls) and does no seq arithmetic at all.
+    # Compaction is a ROLLING summary: each new summary absorbs the
+    # previous one's text (context/engine.py chains previous_summary)
+    # and ``extra_meta._last_summary_id`` points at the only one the
+    # next request carries. Superseded summaries are inert relics —
+    # they keep their rows but must not fold anything, or two capsules
+    # fight over the same range.
     covers_ids: dict[str, list[str]] = {}
+    superseded: set[str] = set()
     if nodes:
-        from openprogram.context.nodes import covers_range
-
-        # A summary only elides nodes on the chain it was written for
-        # (context/nodes._covered_seqs): a dead fork whose seqs happen to
-        # fall inside the interval was never summarised, so a bare seq
-        # sweep would fold sibling branches behind the capsule. Restrict
-        # to the head's predecessor chain, plus the caller subtrees that
-        # hang off those turns — a covered turn folds with its calls.
-        by_id_node = {n.id: n for n in nodes}
-        tip = head_id
-        if not tip:
-            try:
-                tip = (db.get_session(session_id) or {}).get("head_id") or ""
-            except Exception:
-                tip = ""
-        chain: set[str] = set()
-        cur = by_id_node.get(tip or "")
-        while cur is not None and cur.id not in chain:
-            chain.add(cur.id)
-            cur = by_id_node.get(cur.predecessor or "")
+        seq_of = {n.id: n.seq for n in nodes}
         children_of: dict[str, list[str]] = {}
         for m in nodes:
             if m.caller:
                 children_of.setdefault(m.caller, []).append(m.id)
-
-        by_seq = sorted(((n.seq, n.id) for n in nodes), key=lambda t: t[0])
         for n in nodes:
-            rng = covers_range(n)
-            if rng is None:
+            raw = (n.metadata or {}).get("covers_ids")
+            if not isinstance(raw, (list, tuple)) or not raw:
                 continue
-            lo, hi = rng
-            spine = [nid for seq, nid in by_seq
-                     if lo <= seq <= hi and nid != n.id and nid in chain]
-            if not spine:
-                # Head sits on the summary itself (nothing was kept):
-                # the chain walk misses the covered prefix, so the
-                # whole interval folds.
-                spine = [nid for seq, nid in by_seq
-                         if lo <= seq <= hi and nid != n.id]
+            spine = [str(x) for x in raw
+                     if str(x) in seq_of and str(x) != n.id]
             keep = set(spine)
             stack = list(spine)
             while stack:
@@ -124,9 +104,24 @@ def build_session_graph(
                     if cid not in keep:
                         keep.add(cid)
                         stack.append(cid)
-            covered = [nid for _seq, nid in by_seq if nid in keep]
+            covered = sorted(keep, key=lambda i: seq_of[i])
             if covered:
                 covers_ids[n.id] = covered
+        if len(covers_ids) > 1:
+            active = ""
+            try:
+                extra = (db.get_session(session_id) or {}).get(
+                    "extra_meta") or {}
+                active = extra.get("_last_summary_id") or ""
+            except Exception:
+                pass
+            if active not in covers_ids:
+                # No stamp (older data): the newest summary is the one
+                # the rolling chain ends on.
+                active = max(covers_ids, key=lambda i: seq_of[i])
+            superseded = set(covers_ids) - {active}
+            for sid_old in superseded:
+                covers_ids.pop(sid_old, None)
 
     graph: list[dict[str, Any]] = []
 
@@ -176,6 +171,8 @@ def build_session_graph(
         }
         if mid in covers_ids:
             row["covers_ids"] = covers_ids[mid]
+        if mid in superseded:
+            row["superseded_summary"] = True
         if mid in branch_names:
             row["branch_name"] = branch_names[mid]
         graph.append(row)

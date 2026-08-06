@@ -570,6 +570,14 @@ edge — readable, clickable, visibly not part of the next request. This is the
 whole point of expanding: "did the summary actually capture what I said" is
 answerable without the answer ever being confused for live context.
 
+**Rolling summaries.** Compaction chains: a second compact feeds the first
+summary's text back into the summariser and `extra_meta._last_summary_id`
+moves to the replacement — the next request carries exactly one summary,
+never a stack. The graph says the same thing: only the active summary gets
+`covers_ids` (capsule + fold); a superseded summary keeps its row and its
+capsule silhouette but arrives flagged `superseded_summary`, draws in ghost
+grey with the caption `已被新摘要取代`, and folds nothing.
+
 **Where the capsule sits.** Folded, it stands in the covered range's slot —
 first on the trunk, because the summary is the first thing the next request
 carries. Expanded, the range itself is back on screen, so the capsule reads as
@@ -581,16 +589,16 @@ rewires in `fold-summaries.ts`; the stored row keeps its real `predecessor`
 The white fill never lands on a covered node, in either state, because
 `/context-range` does not list it. One fact, one source (§8).
 
-### Where the interval comes from
+### Where the coverage comes from
 
-The store writes `metadata.covers = [first_seq, last_seq]`. Seq orders the
-graph but never leaves the store — every wire payload speaks ids — so
-`webui/graph_builder.py` resolves the interval once, on the way out, and the
-summary row carries `covers_ids`: the ids it stands in for, in seq order, with
-the summary itself excluded (its own seq sorts just inside the range it names).
-The sweep is restricted to the HEAD chain plus the caller subtrees of covered
-turns: compaction summarised one branch's context, so a dead fork whose seqs
-happen to fall inside the interval never folds behind the capsule.
+The persister writes `metadata.covers_ids` — the exact chain nodes the summary
+replaces (context/persistence.py). Ids, not a seq interval: seq intervals span
+sibling branches in a DAG, so a dead fork whose seqs fall inside
+`[first_seq, last_seq]` would fold behind a capsule that never summarised it,
+and the answer would change whenever HEAD moved. `webui/graph_builder.py`
+passes the list through, adds the caller subtrees hanging off covered turns (a
+covered turn folds with its calls), drops ids that no longer exist, and puts
+the result on the summary row as `covers_ids`.
 
 One field drives everything: the capsule shape, the fold, the pleat count, the
 ghost marking, and the inspector's coverage row. The frontend does no seq

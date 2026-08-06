@@ -201,7 +201,7 @@ def _check_append_invariant(session_id: str, idx, node: Call,
     # session, where the covered range begins at the first node — the
     # summary inherits its (empty) predecessor and becomes the new chain
     # terminus. ``k_`` clones no longer exist, so no exemption for them.
-    if (node.metadata or {}).get("covers") is not None:
+    if meta.get("covers") is not None or meta.get("covers_ids") is not None:
         return
     # Session first node: no prior ROOT-level conversational node.
     for n in idx.nodes_by_seq:

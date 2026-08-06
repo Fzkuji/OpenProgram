@@ -60,6 +60,12 @@ export function _shapeFor(node: GNode): string {
   if (Array.isArray((node as Record<string, unknown>).covers_ids)) {
     return "capsule";
   }
+  // A superseded summary (rolling compaction replaced it) keeps the
+  // capsule silhouette — it IS a summary — but folds nothing, so the
+  // backend strips its covers_ids and flags it instead.
+  if ((node as Record<string, unknown>).superseded_summary) {
+    return "capsule";
+  }
   // Sub-agent head → an INVERTED triangle (dag/rendering.md §12): still
   // the agent vocabulary — a triangle — flipped to say "an agent this
   // one derived", one glance apart from the chain's own upright turns.

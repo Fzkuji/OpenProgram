@@ -298,9 +298,11 @@ replay 看到的就是模型当时看到的。该块不参与老化；与本轮�
 隆、零孤儿，旧主链作为兄弟分支原样保留供回滚。`covers` 用零复制实现克隆语义——克隆
 会造出第二套 id 空间，逼所有消费方做翻译。
 
-`covers` 用 seq 表达，而 seq 永不离开存储。WebUI 的图载荷把区间解析成 id 后再下发，
-落在 summary 行的 `covers_ids` 上（`webui/graph_builder.py`），渲染器画胶囊和它的
-折叠时因此不必做 seq 运算——见 dag/rendering.md 第九节。
+`covers` 用 seq 表达，驱动它所属那条链上的上下文省略。面向图，持久化器还会记
+`metadata.covers_ids`——摘要所替代节点的确切 id 列表——因为 DAG 里 seq 区间会横跨
+姐妹分支（死分叉的 seq 可能落进范围内）。WebUI 载荷把这份列表加上被覆盖轮次的
+caller 子树后下发，落在 summary 行的 `covers_ids` 上（`webui/graph_builder.py`），
+渲染器画胶囊和它的折叠时因此不必做 seq 运算——见 dag/rendering.md 第九节。
 
 ### 老化边界只进不退，渲染可精确重放
 

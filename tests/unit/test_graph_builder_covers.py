@@ -1,16 +1,17 @@
-"""``build_session_graph`` exposes the compaction interval as node ids.
+"""``build_session_graph`` exposes the compaction coverage as node ids.
 
-A summary node stores its interval as ``metadata.covers = [first_seq,
-last_seq]`` (dag/overview.md §8). Seq orders the graph but never leaves
-the store — every wire payload speaks ids. So the graph builder resolves
-the interval once, on the way out, and the summary row carries
-``covers_ids``: the ids the summary stands in for, in seq order, with
-the summary itself excluded.
+A summary node stores the exact chain nodes it replaces as
+``metadata.covers_ids``, written by the persister
+(``context/persistence.py``). Seq intervals span sibling branches in a
+DAG — a dead fork's seqs can fall inside ``[first_seq, last_seq]`` — so
+ids are the only faithful record. The graph builder passes the list
+through, adds the caller subtrees hanging off covered turns, and drops
+ids that no longer exist.
 
 That single field is what the renderer draws the capsule from
 (dag/rendering.md §9) — it folds exactly those nodes behind the pleats
-and expands exactly those nodes as ghosts. No seq arithmetic in the
-frontend, and no second endpoint to ask.
+and expands exactly those nodes as ghosts. No seq arithmetic anywhere
+past the store.
 """
 
 from __future__ import annotations
@@ -47,8 +48,12 @@ def _seed(store: SessionStore, sid: str, n: int) -> list[str]:
     return ids
 
 
-def _seq_of(store: SessionStore, sid: str, node_id: str) -> int:
-    return next(n.seq for n in store.get_nodes(sid) if n.id == node_id)
+def _summarize(store: SessionStore, sid: str, covered: list[str]) -> None:
+    store.append_message(sid, {
+        "id": "sum1", "role": "llm", "token_model": SUMMARY_NODE_NAME,
+        "content": "[recap]", "predecessor": None,
+        "extra": {"covers_ids": covered},
+    })
 
 
 def _row(graph: list[dict], node_id: str) -> dict:
@@ -58,63 +63,82 @@ def _row(graph: list[dict], node_id: str) -> dict:
 def test_summary_row_carries_the_ids_it_covers(store):
     ids = _seed(store, "s1", 3)
     covered = ids[:4]                       # first two turns
-    store.append_message("s1", {
-        "id": "sum1", "role": "llm", "token_model": SUMMARY_NODE_NAME,
-        "content": "[recap]", "predecessor": None,
-        "extra": {"covers": [_seq_of(store, "s1", covered[0]),
-                             _seq_of(store, "s1", covered[-1])]},
-    })
+    _summarize(store, "s1", covered)
 
     graph = build_session_graph("s1", ids[-1])
 
     assert _row(graph, "sum1")["covers_ids"] == covered
-    # The interval belongs to the summary alone — a covered node does not
+    # The coverage belongs to the summary alone — a covered node does not
     # inherit it, or the renderer would fold the fold.
     assert "covers_ids" not in _row(graph, covered[0])
     assert "covers_ids" not in _row(graph, ids[-1])
 
 
-def test_a_summary_never_covers_itself(store):
-    """Its own seq sorts just inside the range it names (the persister
-    orders it immediately before the first covered node), so an id-space
-    resolution that forgot to exclude it would fold the capsule away."""
-    ids = _seed(store, "s1", 2)
-    store.append_message("s1", {
-        "id": "sum1", "role": "llm", "token_model": SUMMARY_NODE_NAME,
-        "content": "[recap]", "predecessor": None,
-        # A range wide enough to swallow every node written so far.
-        "extra": {"covers": [0, 9999]},
-    })
-
-    covers = _row(build_session_graph("s1", ids[-1]), "sum1")["covers_ids"]
-
-    assert "sum1" not in covers
-    assert set(covers) >= set(ids)
-
-
-def test_covers_skips_dead_fork_siblings_in_the_interval(store):
-    """Compaction summarises one chain. A retried/abandoned branch whose
-    seqs fall inside the interval was never part of that context, so the
-    capsule must not fold it — the seq sweep is restricted to the head's
-    predecessor chain (plus caller subtrees of covered turns)."""
+def test_covers_never_names_dead_fork_siblings(store):
+    """The persister records the chain it summarised; a retried branch
+    of the same era stays out of the capsule whatever HEAD points at."""
     ids = _seed(store, "s1", 3)
     # Dead fork off the first reply — same era, other branch.
     store.append_message("s1", {"id": "fu", "role": "user",
                                 "content": "alt", "predecessor": ids[1]})
     store.append_message("s1", {"id": "fa", "role": "assistant",
                                 "content": "alt-r", "predecessor": "fu"})
-    lo = _seq_of(store, "s1", ids[0])
-    hi = _seq_of(store, "s1", "fa")     # interval spans the fork too
-    store.append_message("s1", {
-        "id": "sum1", "role": "llm", "token_model": SUMMARY_NODE_NAME,
-        "content": "[recap]", "predecessor": None,
-        "extra": {"covers": [lo, hi]},
-    })
+    _summarize(store, "s1", ids[:4])
+
+    # Head on the dead fork must not change what the capsule folds.
+    covers = _row(build_session_graph("s1", "fa"), "sum1")["covers_ids"]
+
+    assert "fu" not in covers and "fa" not in covers
+    assert set(covers) == set(ids[:4])
+
+
+def test_covers_pulls_in_caller_subtrees_of_covered_turns(store):
+    """A covered turn folds together with the tool calls it made."""
+    ids = _seed(store, "s1", 2)
+    store.append_message("s1", {"id": "tool1", "role": "code",
+                                "content": "ran", "caller": ids[1]})
+    _summarize(store, "s1", ids[:2])
 
     covers = _row(build_session_graph("s1", ids[-1]), "sum1")["covers_ids"]
 
-    assert "fu" not in covers and "fa" not in covers
+    assert set(covers) == {ids[0], ids[1], "tool1"}
+
+
+def test_a_summary_never_covers_itself(store):
+    ids = _seed(store, "s1", 2)
+    _summarize(store, "s1", ids + ["sum1", "no-such-node"])
+
+    covers = _row(build_session_graph("s1", ids[-1]), "sum1")["covers_ids"]
+
+    assert "sum1" not in covers
+    assert "no-such-node" not in covers
     assert set(covers) == set(ids)
+
+
+def test_only_the_active_rolling_summary_folds(store):
+    """Compaction is a rolling summary: a second compact absorbs the
+    first summary's text and ``extra_meta._last_summary_id`` points at
+    the replacement. The old summary keeps its row but must not fold —
+    two capsules over the same range fight for the survivors."""
+    ids = _seed(store, "s1", 4)
+    store.append_message("s1", {
+        "id": "sum_old", "role": "llm", "token_model": SUMMARY_NODE_NAME,
+        "content": "[recap 1]", "predecessor": None,
+        "extra": {"covers_ids": ids[:4]},
+    })
+    store.append_message("s1", {
+        "id": "sum_new", "role": "llm", "token_model": SUMMARY_NODE_NAME,
+        "content": "[recap 2]", "predecessor": None,
+        "extra": {"covers_ids": ids[:6]},
+    })
+    store.update_session("s1", extra_meta={"_last_summary_id": "sum_new"})
+
+    graph = build_session_graph("s1", ids[-1])
+
+    assert _row(graph, "sum_new")["covers_ids"] == ids[:6]
+    old = _row(graph, "sum_old")
+    assert "covers_ids" not in old
+    assert old["superseded_summary"] is True
 
 
 def test_uncompacted_sessions_carry_no_covers_field(store):

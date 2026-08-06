@@ -368,10 +368,14 @@ spine survives intact as a sibling branch for rollback. `covers` gives clone
 semantics with zero duplication — clones would create a second id space every
 consumer must translate.
 
-`covers` is expressed in seq, and seq never leaves the store. The WebUI graph
-payload carries the interval already resolved to ids, as `covers_ids` on the
-summary row (`webui/graph_builder.py`), so the renderer draws the capsule and
-its fold without doing seq arithmetic — see dag/rendering.md §9.
+`covers` is expressed in seq and drives context elision on the chain it
+belongs to. For the graph, the persister also records
+`metadata.covers_ids` — the exact node ids the summary replaces — because seq
+intervals span sibling branches in a DAG (a dead fork's seqs can fall inside
+the range). The WebUI payload carries that list, extended with the caller
+subtrees of covered turns, as `covers_ids` on the summary row
+(`webui/graph_builder.py`), so the renderer draws the capsule and its fold
+without doing seq arithmetic — see dag/rendering.md §9.
 
 ### The aging boundary only advances; rendering is exactly replayable
 

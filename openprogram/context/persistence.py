@@ -116,6 +116,12 @@ class Persister:
             "extra": {
                 "compaction": True,
                 "covers": [int(first_seq), int(last_seq)],
+                # The exact chain nodes this summary replaces. Seq
+                # intervals span sibling branches in a DAG (a dead fork's
+                # seqs can fall inside the range), so the graph reads
+                # this id list and never does seq arithmetic.
+                "covers_ids": [str(m.get("id")) for m in covered
+                               if m.get("id")],
                 "predecessor": first.get("predecessor") or None,
             },
         }

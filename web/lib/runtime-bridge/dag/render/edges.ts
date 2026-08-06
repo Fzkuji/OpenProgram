@@ -179,7 +179,8 @@ export function drawEdges(
     // logic anchors lane 0 to the root glyph) — but a folded capsule
     // hanging off root is the trunk's visible start, and skipping it
     // leaves the root floating with no ink to its own session.
-    if (fpNode.display === "root" && !coversIds(node)) continue;
+    if (fpNode.display === "root" && !coversIds(node)
+        && !(node as Record<string, unknown>).superseded_summary) continue;
     const s = pos(fpNode);
     const vx = s.x + 14;
     const r = 10;
