@@ -142,7 +142,7 @@ entering `agent_loop`:
    `model.response_started` (`:442`) and `model.response_completed` (`:466`).
 3. extract `ToolCall`s (`:273`). If there are tools, `_execute_tool_calls`
    (`:278`) runs and the results are appended back into the context (`:288–290`).
-4. push `AgentEventTurnEnd` + emit `turn.ended` (`:292–293`).
+4. push `AgentEventTurnEnd`.
 5. break when there are no more tools and no steering / follow-up.
 
 `MAX_INNER_ITERATIONS = 50` (`:226`) is the hard cap against an endless "just one
@@ -210,7 +210,6 @@ to the front end.
 | `user.prompt_submitted` | dispatcher `:346` | proactive observer (`proactive/state.py:61`) | user message committed |
 | `tool.before` | agent_loop `:695` | **tool_gate (synchronous)** + observers | the only interception point |
 | `tool.after` | agent_loop `:772` | observers | carries `is_error` |
-| `turn.ended` | agent_loop `:267/:293` | observers | each inner-loop turn ends |
 | `model.response_started` | agent_loop `:442` | observers | model stream begins |
 | `model.response_completed` | agent_loop `:466` | proactive wrap-up policies | wrap-up timing check |
 | `subagent.started` / `.ended` | task/runner `:115` (origin=`system`, session passed explicitly because a worker thread's ContextVar is unreliable) | observers | subagent state funnel |
@@ -326,7 +325,7 @@ decisions.
   `source="agent_spawn"` and `permission_mode="bypass"` (`:89`). It returns an
   `AgentTurnResult` (`:32`, `head_id` = the new branch tip); `label` becomes a
   named branch via `set_branch_name` (`:109`).
-**Events**: `model.response_started/completed`, `turn.ended`,
+**Events**: `model.response_started/completed`,
 `subagent.started/ended` (the last pair emitted by task/runner).
 
 ### ⑤ Collaboration — message_branch + cross-session + guards

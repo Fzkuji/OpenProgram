@@ -94,7 +94,7 @@ sent through the web UI (frontend changes need `cd web && npm run build` first).
 Event ordering is checked by running a turn that calls a tool and reading
 the session's `events.jsonl` (the event log is always on). The log must
 show `user.prompt_submitted → model.response_started → tool.before →
-tool.after → model.response_completed → turn.ended` in that order, each entry
+tool.after → model.response_completed` in that order, each entry
 carrying session and turn in its metadata.
 
 ## Appendix: Implementation Status
@@ -116,7 +116,7 @@ As built, the pieces sit here:
 |---|---|
 | `Event` / `make_event` / `emit_safe` / `subscribe(types=)` / `get_event_bus` / the event-log subscriber | `openprogram/events/bus.py` |
 | Synchronous query point: `register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | `openprogram/events/tool_gate.py` |
-| `tool.before` observe and query, `tool.after`, `model.*`, `turn.ended` taps | `openprogram/agent/agent_loop.py` |
+| `tool.before` observe and query, `tool.after`, `model.*` taps | `openprogram/agent/agent_loop.py` |
 | `user.prompt_submitted` | `openprogram/agent/dispatcher/__init__.py` |
 | `subagent.started` / `ended` | `openprogram/agent/task/runner.py` `_broadcast_task_status` |
 | `file.changed`, emitted after a successful write via lazy import | five sites across the write / edit / apply_patch tools |

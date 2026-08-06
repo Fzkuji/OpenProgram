@@ -65,11 +65,21 @@ channel）根本没有意义。开放 dict 也让以后新增关联维度不用�
 | `chat.before_send` | notify | `{session_id, msg_id, text, agent_id, attachments}` | `ws_actions/chat.py`，用户消息落盘之后、进入 runtime 之前 |
 | `plugin.enable` | notify | `{plugin}` | `plugins/loader.py`，插件加载完成、hook 订阅注册之后 |
 | `plugin.disable` | notify | `{plugin}` | `plugins/loader.py`，插件的注册项被摘除之前 |
-| `goal.update` | notify | `{session_id, goal: {text, check, status, turns_used, max_turns, last_reason, last_question}}` | `goal._emit_goal_update` |
+| `goal.update` | notify | `{session_id, goal: {text, status, turns_used, max_turns, last_reason, last_question}}` | `goal._emit_goal_update` |
+| `user.prompt_submitted` | notify | `{msg_id, chars}` | `dispatcher/prep.py`，用户行落盘后 |
+| `model.response_started` / `model.response_completed` | notify | `{}` / `{is_error}` | `agent_loop`，循环内每次模型响应 |
+| `file.changed` | notify | `{path, op}` | write / edit / apply_patch 工具 |
+| `question.asked` | notify | `{session_id, question, ...}` | `agent/questions.py` |
+| `context.compacted` / `context.compaction_recommended` | notify | `{ok, tokens_before, tokens_after, ...}` / `{budget_pct}` | `context/engine.py` |
+| `memory.ingest_started` / `memory.ingest_ended` | notify | `{messages}` / `{ok}` | `memory/session_watcher.py` |
+| `channel.message_inbound` | notify | `{channel, peer_kind, chars}` | `channels/_conversation.py` |
+| `branches.listed` / `sessions.listed` | notify | `{session, count}` / `{count}` | agent-collab 的列表工具 |
+| `skills.changed` | notify | `{}` | skills watcher（`server.py`） |
+| `plugins.update_available` | notify | `{plugin, current, latest}` | 插件更新检查（`server.py`） |
 
-emit 未注册的 type 属渐进迁移期的容忍行为：总线每个 type 只 log.warning 一次（不抛），既有发射点
-（`user.prompt_submitted`、`credential.*`、`context.*`、`memory.ingest_*`、
-`ws.frame`……）照常工作，等各自的消费者定型后再入册。
+代码里每个 `emit_safe` 的 type 字符串都已入册——有测试强制这个子集关系
+（`test_every_emitted_type_is_registered`）。emit 未注册的 type 每个只 log.warning
+一次（不抛），用来暴露绕过注册表的新发射点。
 
 ## 3. 两种派发
 

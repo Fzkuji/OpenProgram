@@ -97,7 +97,7 @@
 1. push `AgentEventTurnStart`（多轮每轮都 push，`:246`）。
 2. `_stream_assistant_response` 调模型（`:260`）。emit `model.response_started`（`:442`）/ `model.response_completed`（`:466`）。
 3. 抽 `ToolCall`（`:273`）。有工具 → `_execute_tool_calls`（`:278`），结果 append 回 context（**回灌**，`:288–290`）。
-4. push `AgentEventTurnEnd` + emit `turn.ended`（`:292–293`）。
+4. push `AgentEventTurnEnd`。
 5. 无更多工具且无 steering/follow-up → break。
 
 硬上限 `MAX_INNER_ITERATIONS = 50`（`:226`），防无限「再调一个工具」。
@@ -135,7 +135,6 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 | `user.prompt_submitted` | dispatcher `:346` | proactive observer（`proactive/state.py:61`） | 用户消息已提交 |
 | `tool.before` | agent_loop `:695` | **tool_gate（同步）** + 旁观 | 唯一拦截位 |
 | `tool.after` | agent_loop `:772` | 旁观 | 携带 `is_error` |
-| `turn.ended` | agent_loop `:267/:293` | 旁观 | 每个内循环 turn 结束 |
 | `model.response_started` | agent_loop `:442` | 旁观 | 模型流开始 |
 | `model.response_completed` | agent_loop `:466` | proactive 收尾策略 | 收尾时机检查 |
 | `subagent.started` / `.ended` | task/runner `:115`（origin=`system`，session 显式传参，因 worker 线程 ContextVar 不可靠） | 旁观 | 子 agent 状态漏斗 |
@@ -202,7 +201,7 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 - `Agent` 支持 `steer`（中途插队）/ `follow_up`（收尾追加）/ `prompt`。
 - **工具/技能/MCP 静态准入**：`gate(name, disabled, allowed, categories)`（`management/gating.py:38`，fnmatch，解析序 disabled→allowed→categories）。注意：这是**静态准入**（agent.json 声明谁能用），与 ② 的 `tool_gate` 运行时拦截是两回事。
 - **子 agent**：`run_agent_turn(sid, prompt, agent_id, branch_from, label)`（`sub_agent_run.py:41`）内部就是再调一次 `process_user_turn`（`:96`），用 `source="agent_spawn"`、`permission_mode="bypass"`（`:89`）。返回 `AgentTurnResult`（`:32`，`head_id`=新分支 tip）；`label` 经 `set_branch_name` 成命名分支（`:109`）。
-**对外事件**：`model.response_started/completed`、`turn.ended`、`subagent.started/ended`（后者由 task/runner 发）。
+**对外事件**：`model.response_started/completed`、`subagent.started/ended`（后者由 task/runner 发）。
 
 ### ⑤ 协作　message_branch + 跨 session + 防护
 

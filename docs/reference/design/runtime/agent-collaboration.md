@@ -268,7 +268,6 @@ emit_ws_frame(frame)                         # for sources: send a ready-made WS
 | A | `tool.before` | Tool is about to execute (**interceptable**, see §3.5) | agent_loop |
 | A | `tool.after` | Tool finished executing | agent_loop |
 | A | `file.changed` | A file was modified | write/edit/apply_patch |
-| A | `turn.ended` | A turn finished | agent_loop |
 | A | `subagent.started`/`.ended` | Subtask start/stop | TaskRunner |
 | B | `credential.cooldown`/`.exhausted`/`.rotated` | Credential throttled / exhausted / rotated | events/bridges.py←AuthStore |
 | B | `context.compaction_recommended`/`.compacted` | Context hit threshold / was compacted | context/engine |

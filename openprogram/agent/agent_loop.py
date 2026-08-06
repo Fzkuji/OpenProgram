@@ -316,7 +316,6 @@ async def _run_loop(
 
             if message.stop_reason in ("error", "aborted"):
                 ev_stream.push(AgentEventTurnEnd(message=message, tool_results=[]))
-                emit_safe("turn.ended", "agent", {"reason": message.stop_reason})
                 ev_stream.push(AgentEventAgentEnd(messages=new_messages))
                 ev_stream.end(new_messages)
                 return
@@ -342,7 +341,6 @@ async def _run_loop(
                     new_messages.append(result)
 
             ev_stream.push(AgentEventTurnEnd(message=message, tool_results=tool_results))
-            emit_safe("turn.ended", "agent", {"tool_results": len(tool_results)})
 
             if steering_after_tools:
                 pending_messages = steering_after_tools

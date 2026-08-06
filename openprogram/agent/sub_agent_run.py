@@ -70,6 +70,28 @@ def run_agent_turn(
             error=f"session {session_id!r} not found",
         )
 
+    # A same-session spawn runs on the session's picked model, exactly
+    # like a chat turn: the web model picker stores
+    # provider_override/model_override in the session meta
+    # (webui/_execute/chat.py composes the same string). Without this,
+    # spawned turns fell back to the agent profile's default provider —
+    # a goal decision could fail on a dead default while every chat
+    # turn of the session ran fine on the picked model.
+    model_override = None
+    try:
+        meta = (store.get_session(session_id) or {}).get("extra_meta") or {}
+        if isinstance(meta, str):
+            import json as _json
+            meta = _json.loads(meta)
+        _prov = meta.get("provider_override")
+        _model = meta.get("model_override")
+        if _prov and _model:
+            model_override = f"{_prov}/{_model}"
+        elif _model:
+            model_override = _model
+    except Exception:
+        pass
+
     # Clean start: pass ``history_override=[]`` so the dispatcher's
     # context assembly doesn't pull in any conversation history.
     # Inherit: history is whatever leads to ``predecessor``, which the
@@ -100,6 +122,7 @@ def run_agent_turn(
         # conversation until the outer reply moved it back.
         advance_head=advance_head,
         tools_override=tools_override,
+        model_override=model_override,
     )
     try:
         turn = process_user_turn(req)

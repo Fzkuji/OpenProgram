@@ -80,8 +80,77 @@ EVENTS: dict[str, EventSpec] = {
     ),
     "goal.update": EventSpec(
         kind="notify",
-        payload_doc="{session_id, goal: {text, check, status, turns_used, "
+        payload_doc="{session_id, goal: {text, status, turns_used, "
                     "max_turns, last_reason, last_question}} — the session "
                     "goal state changed",
+    ),
+    "user.prompt_submitted": EventSpec(
+        kind="notify",
+        payload_doc="{msg_id, chars} — the user's message row is persisted; "
+                    "resets the proactive engine's per-turn signals",
+    ),
+    "model.response_started": EventSpec(
+        kind="notify",
+        payload_doc="{} — the provider stream opened for one model response "
+                    "within the agent loop",
+    ),
+    "model.response_completed": EventSpec(
+        kind="notify",
+        payload_doc="{is_error: bool} — one model response finished; fires "
+                    "per loop iteration, not per dispatcher turn",
+    ),
+    "file.changed": EventSpec(
+        kind="notify",
+        payload_doc="{path, op: 'write'|'edit'|'patch'} — a file tool "
+                    "modified the working tree",
+    ),
+    "question.asked": EventSpec(
+        kind="notify",
+        payload_doc="{session_id, question, ...} — the agent asked the user "
+                    "a question through the question channel",
+    ),
+    "context.compacted": EventSpec(
+        kind="notify",
+        payload_doc="{ok, tokens_before, tokens_after, ...} — a compaction "
+                    "run finished",
+    ),
+    "context.compaction_recommended": EventSpec(
+        kind="notify",
+        payload_doc="{budget_pct} — the context budget crossed the "
+                    "auto-compact threshold before a turn",
+    ),
+    "memory.ingest_started": EventSpec(
+        kind="notify",
+        payload_doc="{messages: int} — the session memory watcher began "
+                    "ingesting a batch",
+    ),
+    "memory.ingest_ended": EventSpec(
+        kind="notify",
+        payload_doc="{ok: bool} — the session memory ingest finished",
+    ),
+    "channel.message_inbound": EventSpec(
+        kind="notify",
+        payload_doc="{channel, peer_kind, chars} — a message arrived from an "
+                    "external channel (Discord etc.)",
+    ),
+    "branches.listed": EventSpec(
+        kind="notify",
+        payload_doc="{session, count} — an agent enumerated a session's "
+                    "branches via the collab tools",
+    ),
+    "sessions.listed": EventSpec(
+        kind="notify",
+        payload_doc="{count} — an agent enumerated sessions via the collab "
+                    "tools",
+    ),
+    "skills.changed": EventSpec(
+        kind="notify",
+        payload_doc="{} — the skills watcher detected an install/update on "
+                    "disk",
+    ),
+    "plugins.update_available": EventSpec(
+        kind="notify",
+        payload_doc="{plugin, current, latest} — the plugin update checker "
+                    "found a newer version",
     ),
 }

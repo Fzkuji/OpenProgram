@@ -67,11 +67,21 @@ The registered events:
 | `chat.before_send` | notify | `{session_id, msg_id, text, agent_id, attachments}` | `ws_actions/chat.py`, after the user message is persisted, before it enters the runtime |
 | `plugin.enable` | notify | `{plugin}` | `plugins/loader.py`, after the plugin loaded and its hook subscriptions registered |
 | `plugin.disable` | notify | `{plugin}` | `plugins/loader.py`, before the plugin's registrations are dropped |
-| `goal.update` | notify | `{session_id, goal: {text, check, status, turns_used, max_turns, last_reason, last_question}}` | `goal._emit_goal_update` |
+| `goal.update` | notify | `{session_id, goal: {text, status, turns_used, max_turns, last_reason, last_question}}` | `goal._emit_goal_update` |
+| `user.prompt_submitted` | notify | `{msg_id, chars}` | `dispatcher/prep.py`, after the user row persists |
+| `model.response_started` / `model.response_completed` | notify | `{}` / `{is_error}` | `agent_loop`, per model response within the loop |
+| `file.changed` | notify | `{path, op}` | the write / edit / apply_patch tools |
+| `question.asked` | notify | `{session_id, question, ...}` | `agent/questions.py` |
+| `context.compacted` / `context.compaction_recommended` | notify | `{ok, tokens_before, tokens_after, ...}` / `{budget_pct}` | `context/engine.py` |
+| `memory.ingest_started` / `memory.ingest_ended` | notify | `{messages}` / `{ok}` | `memory/session_watcher.py` |
+| `channel.message_inbound` | notify | `{channel, peer_kind, chars}` | `channels/_conversation.py` |
+| `branches.listed` / `sessions.listed` | notify | `{session, count}` / `{count}` | the agent-collab list tools |
+| `skills.changed` | notify | `{}` | the skills watcher (`server.py`) |
+| `plugins.update_available` | notify | `{plugin, current, latest}` | the plugin update checker (`server.py`) |
 
-Emitting an unregistered type is tolerated during migration: the bus logs one warning per type (never raises),
-so legacy emit sites (`user.prompt_submitted`, `credential.*`, `context.*`, `memory.ingest_*`,
-`ws.frame`, ...) keep working and migrate into the registry as their consumers formalize.
+Every `emit_safe` type string in the codebase is registered — a test enforces the subset
+(`test_every_emitted_type_is_registered`). Emitting an unregistered type logs one warning per type
+(never raises), which catches new emit sites that skip the registry.
 
 ## 3. Two Dispatch Modes
 

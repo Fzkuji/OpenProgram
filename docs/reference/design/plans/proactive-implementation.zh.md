@@ -77,7 +77,7 @@ tool allowlist。它跑在一个独立小池里，并发 1–2，可被用户任
 
 事件顺序的验证方式是跑一个带工具调用的 turn，读该会话的 `events.jsonl`
 （事件日志常开）。日志必须依序出现 `user.prompt_submitted → model.response_started →
-tool.before → tool.after → model.response_completed → turn.ended`，且每条的
+tool.before → tool.after → model.response_completed`，且每条的
 metadata 里带 session 和 turn。
 
 ## 附录：实现状态
@@ -95,7 +95,7 @@ channels、memory、web UI 的源头 tap）；再然后把 web UI 从发送方�
 |---|---|
 | `Event` / `make_event` / `emit_safe` / `subscribe(types=)` / `get_event_bus` / 事件日志订阅者 | `openprogram/events/bus.py` |
 | 同步问询点：`register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | `openprogram/events/tool_gate.py` |
-| `tool.before` 观察与问询、`tool.after`、`model.*`、`turn.ended` taps | `openprogram/agent/agent_loop.py` |
+| `tool.before` 观察与问询、`tool.after`、`model.*` taps | `openprogram/agent/agent_loop.py` |
 | `user.prompt_submitted` | `openprogram/agent/dispatcher/__init__.py` |
 | `subagent.started` / `ended` | `openprogram/agent/task/runner.py` `_broadcast_task_status` |
 | `file.changed`，写成功后经懒 import 发出 | write / edit / apply_patch 三个工具中的五处 |

@@ -36,20 +36,27 @@ def _ev(type: str = "tool.before", **payload):
 
 def test_registry_lists_the_wired_events_with_kinds():
     kinds = {name: spec.kind for name, spec in EVENTS.items()}
-    assert kinds == {
-        "tool.before": "gate",
-        "tool.after": "notify",
-        "turn.stop": "gate",
-        "turn.start": "notify",
-        "turn.end": "notify",
-        "session.start": "notify",
-        "chat.before_send": "notify",
-        "plugin.enable": "notify",
-        "plugin.disable": "notify",
-        "goal.update": "notify",
-    }
+    assert kinds["tool.before"] == "gate"
+    assert kinds["turn.stop"] == "gate"
+    notify_only = set(kinds) - {"tool.before", "turn.stop"}
+    assert all(kinds[n] == "notify" for n in notify_only)
     for spec in EVENTS.values():
         assert isinstance(spec, EventSpec) and spec.payload_doc
+
+
+def test_every_emitted_type_is_registered():
+    """Every emit_safe type string in the codebase must be in EVENTS —
+    the admission boundary holds with zero migration warnings."""
+    import re
+    import subprocess
+    root = Path(__file__).resolve().parents[2] / "openprogram"
+    out = subprocess.run(
+        ["grep", "-rhoE", r'emit_safe\(\s*"[a-z_.]+"', str(root),
+         "--include=*.py"],
+        capture_output=True, text=True,
+    ).stdout
+    emitted = set(re.findall(r'"([a-z_.]+)"', out))
+    assert emitted <= set(EVENTS), f"unregistered: {emitted - set(EVENTS)}"
 
 
 def test_emit_of_unregistered_type_warns_once(caplog):

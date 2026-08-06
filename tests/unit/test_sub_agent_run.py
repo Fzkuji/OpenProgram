@@ -68,6 +68,7 @@ def fake_dispatcher(monkeypatch):
             "agent_id": req.agent_id,
             "source": req.source,
             "predecessor": req.branch_from,
+            "model_override": req.model_override,
         })
         from openprogram.agent.session_db import default_db
         store = default_db()
@@ -329,3 +330,29 @@ def test_write_attach_pointer_mints_id_when_not_supplied(
         label=None, prompt="go", chosen_agent="worker",
     )
     assert node_id and len(node_id) == 12
+
+
+def test_spawn_follows_session_model_pick(parent_store, fake_dispatcher):
+    """A same-session spawn runs on the session's picked model: the
+    picker's provider_override/model_override in session meta become
+    the TurnRequest's model_override, same composition as a chat turn."""
+    from openprogram.agent.sub_agent_run import run_agent_turn
+
+    parent_store.update_session(
+        "p1",
+        provider_override="minimax-cn-coding-plan",
+        model_override="MiniMax-M3",
+    )
+    run_agent_turn(session_id="p1", prompt="go", agent_id="main",
+                   branch_from="a1")
+    assert fake_dispatcher["calls"][-1]["model_override"] == \
+        "minimax-cn-coding-plan/MiniMax-M3"
+
+
+def test_spawn_without_pick_leaves_model_to_profile(parent_store,
+                                                    fake_dispatcher):
+    from openprogram.agent.sub_agent_run import run_agent_turn
+
+    run_agent_turn(session_id="p1", prompt="go", agent_id="main",
+                   branch_from="a1")
+    assert fake_dispatcher["calls"][-1]["model_override"] is None
