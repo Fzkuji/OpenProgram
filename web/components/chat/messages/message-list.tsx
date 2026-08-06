@@ -31,6 +31,7 @@ import {
 } from "@/lib/session-store";
 
 import { useTranslation } from "@/lib/i18n";
+import { runtimeState } from "@/lib/runtime-bridge/state";
 import { useAgentProfile } from "@/lib/format-utils/agent-style";
 import {
   readChatScroll,
@@ -307,6 +308,48 @@ export function MessageList() {
     ids.length,
     lastRole === "user",
   );
+
+  // "Back to main conversation" (agent-branch-banner): once the reload
+  // has rows on screen, reveal the spawn card — scroll to the
+  // dispatching reply, open its execution strip (collapsed strips
+  // unmount their children), then centre + expand + flash the card.
+  // The flag is consumed only when the reveal actually runs, so a
+  // mid-hydration re-render just reschedules it.
+  useEffect(() => {
+    if (!runtimeState._pendingExpandAttach || ids.length === 0) return;
+    const esc = (v: string) =>
+      window.CSS && CSS.escape ? CSS.escape(v) : v;
+    const t = window.setTimeout(() => {
+      const pend = runtimeState._pendingExpandAttach;
+      if (!pend) return;
+      runtimeState._pendingExpandAttach = null;
+      const anchorEl = document.querySelector(
+        '[data-msg-id="' + esc(pend.anchor) + '"], [data-msg-ids~="'
+        + esc(pend.anchor) + '"]',
+      ) as HTMLElement | null;
+      anchorEl?.scrollIntoView({ block: "center" });
+      if (anchorEl
+          && !document.querySelector(
+            '[data-head-id="' + esc(pend.head) + '"]')) {
+        (anchorEl.querySelector(
+          '.tl[data-open="0"] .tl-toggle') as HTMLElement | null)?.click();
+      }
+      window.setTimeout(() => {
+        const card = document.querySelector(
+          '[data-head-id="' + esc(pend.head) + '"]') as HTMLElement | null;
+        const target = card || anchorEl;
+        if (!target) return;
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (card && card.getAttribute("data-expanded") === "0") {
+          (card.querySelector(".attach-card-header") as
+            HTMLElement | null)?.click();
+        }
+        target.classList.add("dag-flash");
+        window.setTimeout(() => target.classList.remove("dag-flash"), 1400);
+      }, 280);
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [ids]);
 
   // Fade the transcript in once per session switch. The ref remembers
   // which session already faded, so streaming updates (ids.length

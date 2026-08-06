@@ -42,6 +42,12 @@ interface GraphRow {
 interface BannerInfo {
   name: string;
   backTarget: string;
+  /** The agent's first reply — the id the spawn card's
+   *  ``attach.head_id`` carries, used to flash it after going back. */
+  firstReply: string;
+  /** The reply that dispatched the spawn — the bubble the reload
+   *  scrolls to before opening its execution strip. */
+  spawnCaller: string;
 }
 
 /** A row that continues a conversation chain (not execution machinery). */
@@ -95,7 +101,9 @@ function computeBanner(sessionId: string | null): BannerInfo | null {
     || (cur.spawned_from?.label || "").trim()
     || cur.branch_name?.trim()
     || cur.id.slice(0, 8);
-  return { name, backTarget: back.id };
+  const firstReply =
+    graph.find((n) => n.predecessor === cur.id)?.id || "";
+  return { name, backTarget: back.id, firstReply, spawnCaller: cur.caller };
 }
 
 export function AgentBranchBanner() {
@@ -110,6 +118,19 @@ export function AgentBranchBanner() {
   }, [sessionId]);
   if (!info || !sessionId) return null;
   const goBack = () => {
+    // Land ON the spawn card: the card's ``attach.head_id`` is the
+    // agent's FIRST reply, so flag it for AttachCard to self-claim
+    // after the reload — it expands, scrolls into view and flashes.
+    if (info.firstReply) {
+      // Land ON the spawning turn: MessageList consumes this after the
+      // reload renders — scrolls to the dispatching reply, opens its
+      // execution strip, expands the spawn card and flashes it.
+      runtimeState._pendingExpandAttach = {
+        head: info.firstReply,
+        anchor: info.spawnCaller,
+      };
+      runtimeState._skipScrollToBottom = true;
+    }
     wsSend({
       action: "checkout_branch",
       session_id: sessionId,

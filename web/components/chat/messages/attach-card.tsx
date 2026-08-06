@@ -162,6 +162,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   const alreadyHere =
     sameSession && !!targetHead && activeHead === targetHead;
 
+
   function open() {
     if (sameSession && targetHead) {
       // Same-session: checkout the spawned branch in place.
