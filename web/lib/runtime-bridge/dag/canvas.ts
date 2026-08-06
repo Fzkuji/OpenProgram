@@ -100,10 +100,22 @@ export function applyView(): void {
   // ``PAD + k * COL_W`` in world space, while a background tile paints
   // its dot in the tile's middle — so the tile origin backs up half a
   // tile from the pad.
-  const pitch = COL_W * _viewScale;
+  //
+  // Zoomed far out the on-screen pitch collapses and the pane dissolves
+  // into solid dot noise — so the lattice COARSENS in powers of two,
+  // keeping the pitch at 24px or more. Doubling the step keeps every
+  // remaining dot on a node anchor (a 2^n multiple of COL_W still hits
+  // the grid), so the lattice never drifts off the coordinate system it
+  // is.
+  const rawPitch = COL_W * _viewScale;
+  const factor = rawPitch >= 24
+    ? 1
+    : Math.pow(2, Math.ceil(Math.log2(24 / rawPitch)));
+  const step = COL_W * factor;
+  const pitch = step * _viewScale;
   host.style.backgroundPosition =
-    `${_viewTx + (PAD_X - COL_W / 2) * _viewScale}px `
-    + `${_viewTy + (PAD_Y - COL_W / 2) * _viewScale}px`;
+    `${_viewTx + (PAD_X - step / 2) * _viewScale}px `
+    + `${_viewTy + (PAD_Y - step / 2) * _viewScale}px`;
   host.style.backgroundSize = `${pitch}px ${pitch}px`;
   // The dot radius rides the zoom too: fixed at 1.2px it vanishes into
   // a 100px tile when zoomed in. Clamped so zoomed-out views don't
