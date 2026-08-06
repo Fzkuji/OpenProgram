@@ -324,6 +324,98 @@ def evaluate_goal(session_id: str, goal: dict, *, agent_id: str,
 
 
 # ---------------------------------------------------------------------------
+# Active verification — evidence gathered from the world, not the tail
+# ---------------------------------------------------------------------------
+
+# The verifier runs tests and reads files; bash covers both, read/grep/
+# glob/list keep it cheap for pure inspection. No edit/apply_patch/task —
+# verification must not modify anything or spawn further agents.
+VERIFY_TOOLS = ("bash", "read", "grep", "glob", "list")
+
+_VERIFY_PROMPT = """\
+你是目标完成核实者。不要相信下面的任何声称——用工具在工作目录里实际核查：
+跑测试、读文件、看真实产物。只核查，不修改任何东西。
+
+<goal>
+{goal_text}
+</goal>
+
+<claim>
+{claim}
+</claim>
+
+<claimed_reason>
+{reason}
+</claimed_reason>
+
+核查后只输出严格 JSON（不带 markdown 围栏、不带其他文字）：
+{{"confirmed": true|false, "evidence": "<你实际查到了什么>",
+ "gap": "<声称不成立时，实际差在哪；成立则留空>"}}"""
+
+
+def _run_verifier_turn(session_id: str, prompt: str, *, agent_id: str,
+                       spawn_caller: Optional[str]) -> str:
+    """One clean spawned agent turn with inspection-only tools. Returns
+    the final text. Separated for tests to stub."""
+    from openprogram.agent.sub_agent_run import run_agent_turn
+    res = run_agent_turn(
+        session_id=session_id,
+        prompt=prompt,
+        agent_id=agent_id,
+        branch_from=None,
+        label="goal 核实",
+        spawn_caller=spawn_caller,
+        advance_head=False,
+        tools_override=list(VERIFY_TOOLS),
+    )
+    if res.failed:
+        raise RuntimeError(res.error or "verifier turn failed")
+    return res.final_text or ""
+
+
+def _actively_verify(session_id: str, goal: dict, verdict: str,
+                     reason: str, question: str, *, agent_id: str,
+                     spawn_caller: Optional[str]) -> tuple[bool, str]:
+    """``(confirmed, evidence_or_gap)`` for a stop verdict.
+
+    A wrong "keep going" costs one more turn; a wrong STOP — a false
+    completion, or an interruption that wasn't needed — is the
+    expensive error. So stop verdicts from the cheap tail judge get a
+    second opinion that trusts nothing: a spawned agent with
+    inspection-only tools, given the goal and the CLAIM but no
+    transcript, gathers its own evidence from the working directory.
+    It cannot inherit the working model's framing because it never
+    sees it. Verifier failure falls back to trusting the cheap verdict
+    (the loop must not brick on a verification hiccup).
+    """
+    claim = ("目标已达成" if verdict == "met"
+             else f"需要暂停并询问用户：{question}")
+    prompt = _VERIFY_PROMPT.format(
+        goal_text=goal.get("text") or "", claim=claim, reason=reason or "")
+    try:
+        raw = _run_verifier_turn(session_id, prompt, agent_id=agent_id,
+                                 spawn_caller=spawn_caller)
+    except Exception as e:  # noqa: BLE001 — fall back to the cheap verdict
+        _log.warning("goal active verification failed for %s: %s",
+                     session_id, e)
+        return True, reason
+    s2 = (raw or "").strip()
+    start, end = s2.find("{"), s2.rfind("}")
+    if start < 0 or end <= start:
+        return True, reason
+    try:
+        data = json.loads(s2[start:end + 1])
+    except (ValueError, TypeError):
+        return True, reason
+    if not isinstance(data, dict) or not isinstance(
+            data.get("confirmed"), bool):
+        return True, reason
+    if data["confirmed"]:
+        return True, str(data.get("evidence") or reason)
+    return False, str(data.get("gap") or data.get("evidence") or reason)
+
+
+# ---------------------------------------------------------------------------
 # The continuation loop — called by dispatcher.process_user_turn after
 # every completed turn
 # ---------------------------------------------------------------------------
@@ -379,6 +471,23 @@ def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
             agent_id=prev_req.agent_id,
             model_override=prev_req.model_override,
         )
+
+        # Stop verdicts from the tail judge get actively verified —
+        # evidence from the working directory, not the transcript. The
+        # deterministic check path skips this: the command already IS
+        # the evidence. An unconfirmed stop becomes an unmet with the
+        # verifier's gap as the reason for the next continuation.
+        if verdict in ("met", "needs_user") and not (
+                goal.get("check") or "").strip():
+            confirmed, detail = _actively_verify(
+                prev_req.session_id, goal, verdict, reason, question,
+                agent_id=prev_req.agent_id,
+                spawn_caller=getattr(result, "assistant_msg_id", None),
+            )
+            if confirmed:
+                reason = detail
+            else:
+                verdict, reason, question = "unmet", f"核实未通过：{detail}", ""
 
         goal["turns_used"] = int(goal.get("turns_used") or 0) + 1
         goal["last_reason"] = reason

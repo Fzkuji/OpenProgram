@@ -47,6 +47,7 @@ def run_agent_turn(
     label: Optional[str] = None,
     spawn_caller: Optional[str] = None,
     advance_head: bool = True,
+    tools_override: Optional[list[str]] = None,
 ) -> AgentTurnResult:
     """Run one agent turn inside ``session_id``.
 
@@ -98,6 +99,7 @@ def run_agent_turn(
         # and a stolen head switched the user's window to the agent's
         # conversation until the outer reply moved it back.
         advance_head=advance_head,
+        tools_override=tools_override,
     )
     try:
         turn = process_user_turn(req)

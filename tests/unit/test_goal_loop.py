@@ -534,3 +534,87 @@ def test_clear_covers_waiting_user(tmp_db: SessionDB) -> None:
     out = G.handle_goal_command("s1", "clear")
     assert "cleared" in G.load_goal("s1")["status"]
     assert out["send_text"] is None
+
+
+# ---------------------------------------------------------------------------
+# Active verification of stop verdicts
+# ---------------------------------------------------------------------------
+
+def test_met_verdict_is_actively_verified(tmp_db: SessionDB,
+                                          monkeypatch) -> None:
+    """A met verdict from the tail judge only stops the loop after the
+    verifier confirms it from the working directory; a refuted claim
+    continues with the verifier's gap as the reason."""
+    _set_goal(tmp_db, "s1", check="")
+    monkeypatch.setattr(
+        G, "_judge_llm",
+        lambda *a, **k: '{"met": true, "reason": "looks done"}')
+    verify_replies = iter([
+        '{"confirmed": false, "evidence": "3 tests fail", "gap": "测试没过"}',
+        '{"confirmed": true, "evidence": "全部测试通过", "gap": ""}',
+    ])
+    prompts = []
+
+    def fake_verifier(session_id, prompt, *, agent_id, spawn_caller):
+        prompts.append(prompt)
+        return next(verify_replies)
+
+    monkeypatch.setattr(G, "_run_verifier_turn", fake_verifier)
+    calls = []
+
+    def run_turn(req, *, on_event=None, cancel_event=None):
+        calls.append(req)
+        return _result(tools=True)
+
+    G.continue_goal_turns(_req(), _result(), run_turn=run_turn)
+    goal = G.load_goal("s1")
+    assert goal["status"] == "achieved"
+    assert goal["last_reason"] == "全部测试通过"
+    assert len(calls) == 1                       # one refuted → one more turn
+    assert "核实未通过：测试没过" in calls[0].user_text
+    assert len(prompts) == 2
+    assert "不要相信" in prompts[0]
+
+
+def test_needs_user_refuted_keeps_running(tmp_db: SessionDB,
+                                          monkeypatch) -> None:
+    """A needs_user claim the verifier refutes does not pause — the loop
+    continues with the gap."""
+    _set_goal(tmp_db, "s1", check="", max_turns=1)
+    monkeypatch.setattr(
+        G, "_judge_llm",
+        lambda *a, **k: ('{"met": false, "reason": "r", "need_user": true, '
+                         '"question": "缺凭据吗？"}'))
+    monkeypatch.setattr(
+        G, "_run_verifier_turn",
+        lambda *a, **k: '{"confirmed": false, "evidence": "", '
+                        '"gap": "凭据其实在环境变量里"}')
+    G.continue_goal_turns(_req(), _result(), run_turn=lambda req, **k: _result())
+    goal = G.load_goal("s1")
+    assert goal["status"] == "capped"            # continued, hit max_turns=1
+    assert "last_question" not in goal
+
+
+def test_verifier_failure_trusts_cheap_verdict(tmp_db: SessionDB,
+                                               monkeypatch) -> None:
+    _set_goal(tmp_db, "s1", check="")
+    monkeypatch.setattr(
+        G, "_judge_llm",
+        lambda *a, **k: '{"met": true, "reason": "done"}')
+    monkeypatch.setattr(
+        G, "_run_verifier_turn",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn down")))
+    G.continue_goal_turns(_req(), _result(), run_turn=lambda req, **k: _result())
+    assert G.load_goal("s1")["status"] == "achieved"
+
+
+def test_check_goals_skip_active_verification(tmp_db: SessionDB,
+                                              monkeypatch) -> None:
+    _set_goal(tmp_db, "s1", check="true")
+    called = []
+    monkeypatch.setattr(
+        G, "_run_verifier_turn",
+        lambda *a, **k: called.append(1) or '{"confirmed": true}')
+    G.continue_goal_turns(_req(), _result(), run_turn=lambda req, **k: _result())
+    assert G.load_goal("s1")["status"] == "achieved"
+    assert called == []                          # the command IS the evidence
