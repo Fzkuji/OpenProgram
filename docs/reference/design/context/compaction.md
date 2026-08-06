@@ -136,6 +136,14 @@ The design allows exactly one mover:
   splice, a side-branch write, a relic) leaves HEAD alone. This replaces the
   old unconditional auto-advance plus per-caller snapshot/restore
   compensation.
+- **Spawned turns never move HEAD.** A same-session sub-agent turn
+  (task / message_branch) runs with `TurnRequest.advance_head=False`: the
+  spawn branch opens without registering itself as head, and every write the
+  inner dispatcher makes (branch root, placeholder, reply) is head-neutral.
+  The transcript follows HEAD, so a stolen head switched the user's window
+  to the agent's conversation mid-run and mixed the two dialogues.
+  Cross-session sends still advance the target session's own head — there
+  the turn IS that conversation growing.
 - **Mirrors are read-only.** The webui keeps an in-memory `conv` mirror
   (messages + head) for display. It is hydrated FROM the store and never
   written back: `save_meta` carries no `head_id`, and display-side rows that

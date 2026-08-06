@@ -52,7 +52,7 @@ def captured_run(monkeypatch):
     cap = {}
 
     def fake_run(*, session_id, prompt, agent_id, branch_from=None,
-                 label=None, spawn_caller=None):
+                 label=None, spawn_caller=None, advance_head=True):
         cap["session_id"] = session_id
         cap["branch_from"] = branch_from
         cap["spawn_caller"] = spawn_caller
@@ -146,7 +146,7 @@ def test_runner_clean_passes_spawn_caller(store, monkeypatch):
     cap = {}
 
     def fake_run(*, session_id, prompt, agent_id, branch_from=None,
-                 label=None, spawn_caller=None):
+                 label=None, spawn_caller=None, advance_head=True):
         cap["branch_from"] = branch_from
         cap["spawn_caller"] = spawn_caller
         return AgentTurnResult(head_id="head_ok", final_text="hello")
@@ -178,7 +178,7 @@ def test_runner_inherit_passes_no_spawn_caller(store, monkeypatch):
     cap = {}
 
     def fake_run(*, session_id, prompt, agent_id, branch_from=None,
-                 label=None, spawn_caller=None):
+                 label=None, spawn_caller=None, advance_head=True):
         cap["branch_from"] = branch_from
         cap["spawn_caller"] = spawn_caller
         return AgentTurnResult(head_id="head_ok", final_text="hello")

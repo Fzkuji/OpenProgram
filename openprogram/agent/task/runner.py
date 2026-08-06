@@ -565,6 +565,8 @@ class TaskRunner:
                         # spawning node, so it's an explicit spawn (not
                         # seq-stitched into a sibling). dag/overview.md §2.3.
                         spawn_caller=task.caller_msg_id if branch_from is None else None,
+                        # Same-session spawn: never steal the head.
+                        advance_head=False,
                     )
                 finally:
                     if _depth_tok is not None:

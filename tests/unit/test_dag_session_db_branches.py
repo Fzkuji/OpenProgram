@@ -68,6 +68,23 @@ def test_list_branches_tip_survives_execution_children(db):
     assert tips == {"n2", "a3"}
 
 
+def test_spawn_branch_register_head_false_keeps_head(db):
+    """A same-session sub-agent spawn must not steal the session head
+    (context/compaction.md §5) — the transcript follows the head, and a
+    stolen head switched the user's window to the agent's conversation
+    mid-run."""
+    db.create_session("s1", agent_id="a")
+    _append(db, "s1", "n1", role="user")
+    _append(db, "s1", "n2", role="assistant", parent="n1")
+    db.spawn_branch("s1", "n2", source="agent_spawn",
+                    register_head=False, prompt="hi")
+    assert (db.get_session("s1") or {})["head_id"] == "n2"
+    # The default still registers the new branch head (cross-session
+    # sends and legacy callers).
+    root2 = db.spawn_branch("s1", "n2", source="agent_spawn", prompt="hi2")
+    assert (db.get_session("s1") or {})["head_id"] == root2
+
+
 def test_list_branches_includes_named_label(db):
     db.create_session("s1", agent_id="a")
     _append(db, "s1", "n1")

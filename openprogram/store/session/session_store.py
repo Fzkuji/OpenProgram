@@ -1047,12 +1047,18 @@ class SessionStore:
         prompt: str = "",
         created_at: Optional[float] = None,
         metadata: Optional[dict] = None,
+        register_head: bool = True,
     ) -> str:
         """Open a spawn branch: create the branch-root user node
         (``predecessor=None``, ``caller=caller_node_id``,
-        ``metadata.source=source``), register it as head, and return
-        the branch-root id. The ONLY sanctioned way to open a spawn
-        branch — call sites never hand-assemble the edge.
+        ``metadata.source=source``) and return the branch-root id. The
+        ONLY sanctioned way to open a spawn branch — call sites never
+        hand-assemble the edge.
+
+        ``register_head=False`` (same-session sub-agent spawns): the
+        branch opens WITHOUT stealing the session head — the user's
+        conversation stays the active branch while the agent runs
+        (context/compaction.md §5, HEAD single-writer).
         """
         from .graphstore_shim import GraphStoreShim
 
@@ -1070,9 +1076,11 @@ class SessionStore:
             metadata=meta,
         )
         GraphStoreShim(self, session_id).append(node)
-        # Register the branch head so mid-run loads resolve onto the
-        # new branch (shim skips set_head for caller-tagged nodes).
-        self.set_head(session_id, node.id)
+        if register_head:
+            # Register the branch head so mid-run loads resolve onto
+            # the new branch (shim skips set_head for caller-tagged
+            # nodes).
+            self.set_head(session_id, node.id)
         if name:
             try:
                 self.set_branch_name(session_id, node.id, name)

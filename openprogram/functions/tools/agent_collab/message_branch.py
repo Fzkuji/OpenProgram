@@ -322,6 +322,10 @@ def _message_branch_impl(
             # New branch (branch_from=None) → root's caller = spawning node,
             # so it's an explicit spawn, not seq-stitched into a sibling.
             spawn_caller=aid if branch_from is None else None,
+            # A spawn/fork in the SENDER's own session must not steal
+            # its head; a cross-session send continues the target's
+            # conversation and advances theirs as usual.
+            advance_head=(run_session != sid),
         )
     except Exception as e:  # noqa: BLE001
         return f"[message_branch error] {type(e).__name__}: {e}"

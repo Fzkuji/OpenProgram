@@ -260,6 +260,7 @@ def _task_impl(
                 # (runner.py) already does this; without it here the sync
                 # path's sub-branch rendered as an unrelated root-level fork.
                 spawn_caller=aid if mode != "inherit" else None,
+                advance_head=False,  # same-session spawn never steals head
             )
         finally:
             _spawn_depth.reset(_depth_token)

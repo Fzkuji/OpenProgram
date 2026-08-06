@@ -106,6 +106,12 @@ summarizer 接收上一份摘要文本作为输入、吸收它、产出替代品
   `predecessor` 等于当前 HEAD 时才把 HEAD 移上去——自然的"对话长了"情形。
   其余插入（摘要拼接、旁支写入、遗迹）不动 HEAD。这取代旧的无条件自动推进
   加各调用方快照/恢复的补偿。
+- **spawn 出的轮次永不移动 HEAD。** 同会话的子 agent 轮（task /
+  message_branch）以 `TurnRequest.advance_head=False` 运行：spawn 分支打开
+  时不把自己注册为 head，内层 dispatcher 的每次写入（分支根、占位行、回复）
+  都不碰 head。转录窗口跟着 HEAD 走——head 被偷走时用户的窗口会在运行中切到
+  agent 的对话、两边消息混在一起。跨会话投递仍推进目标会话自己的 head——
+  在那边这一轮就是对话本身在生长。
 - **镜像只读。** webui 为显示维护内存 `conv` 镜像（消息 + head）。它从存储
   水合、永不回写：`save_meta` 不携带 `head_id`，镜像积累的显示行（如
   `compaction_finished` 事件渲染进聊天流时追加的摘要标记行）永远不可能变成

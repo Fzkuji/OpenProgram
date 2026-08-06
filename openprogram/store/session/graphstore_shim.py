@@ -30,9 +30,14 @@ if TYPE_CHECKING:
 class GraphStoreShim:
     """``GraphStore``-shaped facade backed by ``SessionStore``."""
 
-    def __init__(self, store: "SessionStore", session_id: str):
+    def __init__(self, store: "SessionStore", session_id: str,
+                 *, advance_head: bool = True):
         self.store = store
         self.session_id = session_id
+        # HEAD single-writer (context/compaction.md §5): a spawned
+        # sub-agent turn writes through a shim with advance_head=False
+        # so its conversation nodes never steal the session head.
+        self.advance_head = advance_head
 
     def append(self, node: Call) -> None:
         """Persist a Call directly into the per-session index + history.
@@ -57,14 +62,14 @@ class GraphStoreShim:
         seq = idx.append(node, predecessor=predecessor, caller=caller)
         self.store.spill_large_node(self.session_id, node)
         git.write_history(seq, node.role, node.id, node.to_dict())
-        if not caller:
+        if not caller and self.advance_head:
             idx.set_head(node.id)
         idx.set_meta(updated_at=_time.time())
         # Persist meta NOW: this append usually runs inside the
         # @agentic_function fork()'d subprocess — the parent server can
         # only see the head move through meta.json (see the matching
         # persist in SessionStore.append_message).
-        if not caller:
+        if not caller and self.advance_head:
             self.store._persist_meta(git, idx)
         # Registry too — same as SessionStore.append_message: updated_at
         # is the sidebar's recency-sort key. The webui dispatcher appends

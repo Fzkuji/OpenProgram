@@ -46,6 +46,7 @@ def run_agent_turn(
     branch_from: Optional[str] = None,
     label: Optional[str] = None,
     spawn_caller: Optional[str] = None,
+    advance_head: bool = True,
 ) -> AgentTurnResult:
     """Run one agent turn inside ``session_id``.
 
@@ -91,6 +92,12 @@ def run_agent_turn(
         # spawning node, so the branch is an explicit spawn (see
         # dag/overview.md §2.3). No-op for inherit forks.
         spawn_caller=spawn_caller,
+        # Same-session sub-agent turns pass False: the spawned branch
+        # must not steal the session head mid-run (HEAD single-writer,
+        # context/compaction.md §5) — the transcript follows the head,
+        # and a stolen head switched the user's window to the agent's
+        # conversation until the outer reply moved it back.
+        advance_head=advance_head,
     )
     try:
         turn = process_user_turn(req)

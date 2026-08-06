@@ -340,7 +340,8 @@ def _process_turn_once(
             from openprogram.context.nodes import Call, ROLE_USER
             from openprogram.store import GraphStoreShim as _GShim
 
-            _shim = _GShim(db, req.session_id)
+            _shim = _GShim(db, req.session_id,
+                           advance_head=req.advance_head)
             _user_meta = {
                 k: v for k, v in user_msg.items()
                 if k not in {"id", "role", "content", "timestamp", "extra",
@@ -368,6 +369,7 @@ def _process_turn_once(
                     prompt=req.user_text,
                     created_at=user_msg.get("timestamp"),
                     metadata=_user_meta,
+                    register_head=req.advance_head,
                 )
             else:
                 _user_node = Call(
@@ -386,7 +388,8 @@ def _process_turn_once(
                 _shim.append(_user_node)
         except Exception:
             db.append_message(req.session_id, user_msg)
-            db.set_head(req.session_id, user_msg_id)
+            if req.advance_head:
+                db.set_head(req.session_id, user_msg_id)
         on_event({
             "type": "chat_ack",
             "data": {"session_id": req.session_id, "msg_id": user_msg_id},
@@ -533,8 +536,9 @@ def _process_turn_once(
     #     end (step 5) once the LLM's final text is known.
     _placeholder_inserted = _insert_placeholder(
         db, req.session_id, assistant_msg_id, user_msg_id, req.source,
+        advance_head=req.advance_head,
     )
-    if _placeholder_inserted:
+    if _placeholder_inserted and req.advance_head:
         db.set_head(req.session_id, assistant_msg_id)
 
     # Mark session as running before agent loop starts.

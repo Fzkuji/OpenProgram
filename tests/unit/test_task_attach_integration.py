@@ -70,7 +70,7 @@ def test_runner_updates_attach_card_on_completion(isolated_store, monkeypatch):
     isolated_store.commit_turn("p1", "spawn async placeholder")
 
     # 2. Fake run_agent_turn so the worker finishes in milliseconds.
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None):
+    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None, advance_head=True):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         # Write the assistant_msg the dispatcher would have written.
         isolated_store.append_message(session_id, {
@@ -146,7 +146,7 @@ def test_attach_card_carries_the_subagent_name(isolated_store, monkeypatch):
     isolated_store.commit_turn("p1", "spawn async placeholder")
 
     def fake_run(*, session_id, prompt, agent_id, branch_from=None,
-                 label=None, spawn_caller=None):
+                 label=None, spawn_caller=None, advance_head=True):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         isolated_store.append_message(session_id, {
             "id": "head_named", "role": "assistant", "content": "done",

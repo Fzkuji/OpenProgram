@@ -55,6 +55,7 @@ def insert_placeholder(
     assistant_msg_id: str,
     user_msg_id: str,
     source: str,
+    advance_head: bool = True,
 ) -> bool:
     """Write the empty assistant placeholder at turn start.
 
@@ -82,7 +83,7 @@ def insert_placeholder(
                 "started_at": now,
             },
         )
-        shim = GraphStoreShim(db, session_id)
+        shim = GraphStoreShim(db, session_id, advance_head=advance_head)
         shim.append(node)
         return True
     except Exception:
