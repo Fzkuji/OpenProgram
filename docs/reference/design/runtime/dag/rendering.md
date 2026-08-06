@@ -51,20 +51,17 @@ the user drives directly.
 
 | Gesture | Effect |
 |---|---|
-| wheel | zoom about the cursor, clamped to 25%–300% — the node under the pointer stays under the pointer |
-| pinch, or ⌘/ctrl + wheel | the same zoom, at pinch rate |
-| two-finger swipe with sideways motion | pan, both axes |
+| pinch, or ⌘/ctrl + wheel | zoom about the cursor, clamped to 25%–300% — the node under the pointer stays under the pointer |
+| any other wheel/scroll (trackpad two-finger, mouse wheel) | pan, both axes — scrolling stays scrolling |
 | drag on empty canvas | pan |
 | drag starting on a node | the node's — click and double-click still work |
 
-**Wheel triage** (`canvas.ts`), the convention wheel-zoom canvases share
-(Obsidian's graph view, Figma, Excalidraw): ctrl/⌘ + wheel always zooms —
+**Wheel triage** (`canvas.ts`), Figma's convention: ctrl/⌘ + wheel zooms —
 browsers deliver a trackpad pinch as a wheel event with `ctrlKey` set, and
 ⌘+wheel is the explicit zoom chord — at a rate tuned for a pinch's small
-continuous deltas. A sideways-dominant wheel (`|deltaX| > |deltaY|`) can only
-be a trackpad two-finger swipe or shift+wheel, because a mouse wheel emits
-`deltaX = 0`; it pans. Everything else is a plain vertical wheel and zooms
-about the cursor, at a gentler rate sized for ±100 notches.
+continuous deltas. Every other wheel event, whatever its direction, pans:
+a two-finger scroll is a scroll, and zoom belongs to the pinch (plus the
+HUD's −/+ buttons for mouse users).
 
 A box sized to its content decides two things it has no business deciding: how
 big a graph may get before it needs scrollbars, and where the middle is. A wide

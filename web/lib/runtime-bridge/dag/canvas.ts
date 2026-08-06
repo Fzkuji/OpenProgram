@@ -12,10 +12,10 @@
  * one ``<g>``, and that group carries a translate + scale the user drives
  * directly:
  *
- *   * wheel → zoom about the cursor, 25%–300% (Obsidian-graph feel:
- *     what is under the cursor stays under it)
- *   * pinch, or ⌘/ctrl + wheel → the same zoom, at pinch rate
- *   * two-finger swipe with sideways motion → pan
+ *   * pinch, or ⌘/ctrl + wheel → zoom about the cursor, 25%–300%
+ *     (what is under the cursor stays under it)
+ *   * any other wheel/scroll (trackpad two-finger, mouse wheel) → pan,
+ *     both axes — scrolling stays scrolling
  *   * drag on empty space → pan (a drag that starts on a node is the
  *     node's, so clicking still works)
  *
@@ -201,33 +201,23 @@ function wireGestures(host: HTMLElement): void {
       e.preventDefault();
       dismissOverlays();
       const rect = host.getBoundingClientRect();
-      // Gesture triage — the convention wheel-zoom infinite canvases
-      // share (Obsidian's graph view, Figma, Excalidraw):
+      // Gesture triage — Figma's convention:
       //   * ctrl/⌘ + wheel: browsers deliver a trackpad PINCH as a
       //     wheel event with ctrlKey set (and ⌘+wheel is the explicit
-      //     zoom chord), so this always zooms, at a rate tuned for a
-      //     pinch's small continuous deltas;
-      //   * sideways-dominant wheel: a mouse wheel emits deltaX = 0,
-      //     so real deltaX only comes from a trackpad two-finger
-      //     swipe (or shift+wheel, which browsers remap into deltaX)
-      //     — that is a pan, both axes;
-      //   * plain vertical wheel: zoom about the cursor, so the node
-      //     under the pointer stays under the pointer.
+      //     zoom chord), so this zooms about the cursor — zoom is the
+      //     pinch's job, not the scroll's;
+      //   * every other wheel — trackpad two-finger scroll in any
+      //     direction, mouse wheel — is a PAN, both axes. Scrolling
+      //     must stay scrolling.
       if (e.ctrlKey || e.metaKey) {
         zoomAt(
           e.clientX - rect.left,
           e.clientY - rect.top,
           Math.exp(-e.deltaY * PINCH_ZOOM_RATE),
         );
-      } else if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      } else {
         setView(_viewTx - e.deltaX, _viewTy - e.deltaY, _viewScale);
         applyView();
-      } else {
-        zoomAt(
-          e.clientX - rect.left,
-          e.clientY - rect.top,
-          Math.exp(-e.deltaY * WHEEL_ZOOM_RATE),
-        );
       }
     },
     { passive: false },
