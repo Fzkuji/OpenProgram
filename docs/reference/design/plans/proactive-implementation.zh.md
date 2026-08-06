@@ -37,8 +37,8 @@
 | `user.prompt_submitted` | `dispatcher/__init__.py`，持久化用户消息处 | 加在已有的 chat_ack / chat_response 广播旁；放在持久化分支之外，两条路径都会发 |
 | `model.response_started` | `agent_loop.py` 的 AgentEventMessageStart | 转换现有事件 |
 | `model.response_completed` | `agent_loop.py` 的 AgentEventMessageEnd | 转换现有事件 |
-| `tool.before` | `agent_loop.py` 中原本 no-op 的 `dispatch_hook(TOOL_BEFORE_USE)` | 这个只观察的 hook 升级为 gate 的问询点 |
-| `tool.after` | `agent_loop.py` 的 `dispatch_hook(TOOL_AFTER_USE)` | 转换现有 hook |
+| `tool.before` | `agent_loop.py`，每次 `tool.execute()` 之前 | 一份事件同时喂 notify emit 与 gate 问询 |
+| `tool.after` | `agent_loop.py`，每次工具调用结束之后 | notify emit，附结果文本通道 |
 | `subagent.started` / `completed` | `task/runner.py` 的 task_status 广播 | 转换，经 `_broadcast_task_status` 汇总 |
 | `permission.requested` | `_approval.py` 的 approval_request 信封 | 新增 tap |
 | `artifact.file.changed` | `file_backup.backup_before_edit` 与 `project_commit` | 写成功后新增发送 |

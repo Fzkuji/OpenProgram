@@ -122,7 +122,7 @@ def parent_turn(tmp_path, monkeypatch):
 
 def _collect_events():
     """Subscribe to the bus, return (events_list, unsubscribe)."""
-    from openprogram.agent.event_bus import get_event_bus
+    from openprogram.events import get_event_bus
     got = []
     unsub = get_event_bus().subscribe(
         lambda ev: got.append(ev),

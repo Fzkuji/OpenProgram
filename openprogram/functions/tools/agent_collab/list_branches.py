@@ -58,7 +58,7 @@ _LIST_SESSIONS_DESC = (
 
 
 def _list_sessions_impl(limit: int = 50, agent_id: str = "", source: str = "") -> str:
-    from openprogram.agent.event_bus import emit_safe
+    from openprogram.events import emit_safe
     db = _db()
     try:
         rows = db.list_sessions(
@@ -104,7 +104,7 @@ _LIST_BRANCHES_DESC = (
 
 
 def _list_branches_impl(session_id: str = "") -> str:
-    from openprogram.agent.event_bus import emit_safe
+    from openprogram.events import emit_safe
     sid = (session_id or "").strip() or _current_session()
     if not sid:
         return (

@@ -16,8 +16,8 @@ from __future__ import annotations
 import sys
 import threading
 
-from openprogram.agent.event_bus import Event, emit_ws_frame, get_event_bus
-from openprogram.agent.tool_gate import register_tool_gate
+from openprogram.events import Event, emit_ws_frame, get_event_bus
+from openprogram.events import register_tool_gate
 
 from .actions import Gate, Inject, Notify, Prepare
 from .policy import registered_policies

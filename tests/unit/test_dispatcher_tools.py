@@ -406,7 +406,7 @@ def test_approval_required_blocks_until_approved(
 
     # 审批合流后走 question.asked（kind="approval"），经事件层 emit_ws_frame →
     # ws.frame 总线事件（不再用 on_event 的 approval_request 信封）。订阅总线抓它。
-    from openprogram.agent.event_bus import get_event_bus, WS_FRAME_EVENT
+    from openprogram.events import get_event_bus, WS_FRAME_EVENT
     request_id_holder: list[str] = []
 
     def _grab(ev) -> None:
@@ -464,7 +464,7 @@ def test_approval_denied_aborts_run(
                         _stub_profile_with_tools(["risky"]))
     stream = make_two_phase_stream("c-r", "risky", {})
 
-    from openprogram.agent.event_bus import get_event_bus, WS_FRAME_EVENT
+    from openprogram.events import get_event_bus, WS_FRAME_EVENT
     request_id_holder: list[str] = []
 
     def _grab(ev) -> None:

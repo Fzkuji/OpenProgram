@@ -100,7 +100,7 @@ def edit(file_path: str,
 
     # 事件层 tap：写成功才发。
     try:
-        from openprogram.agent.event_bus import emit_safe
+        from openprogram.events import emit_safe
         emit_safe("file.changed", "tool", {"path": file_path, "op": "edit"})
     except Exception:
         pass

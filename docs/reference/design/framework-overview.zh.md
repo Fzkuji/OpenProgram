@@ -4,7 +4,7 @@
 > 在一次对话的时间轴上如何咬合。所有 `file:line` 指向当前代码。
 > 已设计但尚未落地的部分集中在末尾「已知边界」。
 
-**贯穿全文的一句话：整个框架靠一个进程级事件总线把各子系统解耦相连。** dispatcher、agent loop、工具执行、存储、协作彼此不直接调用对方的 UI/广播逻辑，而是 `emit` 一个事件，谁关心谁订阅（`event_bus.py:141` `emit` / `:159` `subscribe`）。事件层有两条 lane：**异步旁观**（`EventBus`，谁也拦不住正在发生的事）和**同步问询**（`tool_gate`，全框架唯一能拦住工具执行的点）。
+**贯穿全文的一句话：整个框架靠一个进程级事件总线把各子系统解耦相连。** dispatcher、agent loop、工具执行、存储、协作彼此不直接调用对方的 UI/广播逻辑，而是 `emit` 一个事件，谁关心谁订阅（`events/bus.py:141` `emit` / `:159` `subscribe`）。事件层有两条 lane：**异步旁观**（`EventBus`，谁也拦不住正在发生的事）和**同步问询**（`tool_gate`，全框架唯一能拦住工具执行的点）。
 
 ---
 
@@ -108,7 +108,7 @@
 
 1. push `AgentEventToolStart`（`:675`）+ 插件 hook `TOOL_BEFORE_USE`（`:686`，best-effort）。
 2. **事件层 tool.before**：`make_event("tool.before",...)` + `emit`（`:695`）——一份事件，异步旁观和同步问询共用。
-3. **同步 gate**：`decide_tool_gate(before_ev)`（`:701`）。**全框架唯一能拦住工具执行的点**（`tool_gate.py:53`）：任一 gate 返回 deny 即拦（理由合并），gate 抛错按 allow（fail-open）。被拦 `raise ToolGateDenied`（`:708`），deny 理由作为 error tool result 回模型。**对 subagent 也生效**——gate 在 `permission_mode` approval 包装之外，`bypass` 关不掉它（`tool_gate.py:14–15`）。
+3. **同步 gate**：`decide_tool_gate(before_ev)`（`:701`）。**全框架唯一能拦住工具执行的点**（`events/tool_gate.py:53`）：任一 gate 返回 deny 即拦（理由合并），gate 抛错按 allow（fail-open）。被拦 `raise ToolGateDenied`（`:708`），deny 理由作为 error tool result 回模型。**对 subagent 也生效**——gate 在 `permission_mode` approval 包装之外，`bypass` 关不掉它（`events/tool_gate.py:14–15`）。
 4. `tool.execute(...)`（`:731`），前后做 cwd 快照 + 文件 checkpoint。
 5. push `AgentEventToolEnd`（`:758/:766`）+ emit `tool.after`（`:772`）。
 6. 组 `ToolResultMessage` 回灌（`:792`）。每次工具后检查 steering（`:806`），命中则跳过剩余工具、回灌 steering。
@@ -150,11 +150,11 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 | `channel.message_inbound` | channels | 旁观 | 入站消息 |
 | `memory.ingest_started` / `.ended` | memory | 旁观 | 记忆摄入 |
 | `skills.changed` / `plugins.update_available` / `sessions.listed` / `branches.listed` | 各子系统 | UI / 旁观 | 列表与可用更新 |
-| `ws.frame`（`event_bus.py:115`） | 外部源 `emit_ws_frame`（`:118`） | `webui/server.py:1192`（原样广播） | 透传信封：外部源不直连 webui `_broadcast` |
+| `ws.frame`（`events/bus.py:115`） | 外部源 `emit_ws_frame`（`:118`） | `webui/server.py:1192`（原样广播） | 透传信封：外部源不直连 webui `_broadcast` |
 
 **订阅侧实际位点**：proactive 引擎订阅**全部**事件再按 `on` 过滤（`proactive/engine.py:145`）；webui 只订 `ws.frame`（`server.py:1192`）；channels question bridge 只订 `question.asked`（`_question_bridge.py:43`）。
 
-**事件契约**：`emit` 是 fire-and-forget，handler 抛错绝不反噬发射方（`event_bus.py:141–157` + `_call:182–198` 打 stderr）；async handler 无 loop 时跳过；`emit_safe`（`:96`）整体 try/swallow——「事件层绝不破坏调用方代码路径」。
+**事件契约**：`emit` 是 fire-and-forget，handler 抛错绝不反噬发射方（`events/bus.py:141–157` + `_call:182–198` 打 stderr）；async handler 无 loop 时跳过；`emit_safe`（`:96`）整体 try/swallow——「事件层绝不破坏调用方代码路径」。
 
 ---
 
@@ -174,7 +174,7 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 **关键文件**：`openprogram/events/`（bus.py / tool_gate.py）、`agent/questions.py`。
 **关键机制**：
 - `EventBus`（`:129`）：typed `subscribe(handler, types=...)`（`:159`）+ legacy channel `on`（`:208`）；进程单例 `get_event_bus()`（`:241`，双检锁）。
-- **tool.before 同步拦截**：`register_tool_gate`（`tool_gate.py:38`）/ `decide_tool_gate`（`:53`），取最严、fail-open。gate 必须快，不许调 LLM / 慢 IO。
+- **tool.before 同步拦截**：`register_tool_gate`（`events/tool_gate.py:38`）/ `decide_tool_gate`（`:53`），取最严、fail-open。gate 必须快，不许调 LLM / 慢 IO。
 - 问询子系统：`QuestionRegistry`（`questions.py:61`，进程级待答表、claim-once、线程安全）。
 **对外事件**：见上表。
 
@@ -222,7 +222,7 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 ## 已知边界
 
 - **tool.before 仅「观察 + deny」，尚不能 mutate/veto-by-plugin**：插件 hook `TOOL_BEFORE_USE` 注释明确写 future-work（`agent_loop.py:682–684`）。
-- **gate 的 "ask" 三态尚未完全接 ApprovalRegistry**：`Gate.ask` 注释「接 ApprovalRegistry，后续单元接」（`proactive/actions.py:29`）；"critical fail-closed" 分级也待规则层进场（`tool_gate.py:13`）。
+- **gate 的 "ask" 三态尚未完全接 ApprovalRegistry**：`Gate.ask` 注释「接 ApprovalRegistry，后续单元接」（`proactive/actions.py:29`）；"critical fail-closed" 分级也待规则层进场（`events/tool_gate.py:13`）。
 - **引用扫描结果未被 ContextCommit 规则消费**：目前仅用于日志（`engine.py:204–212`）。
 - **DAG 渲染回退路径与正常路径并存**：坏 commit 时 fall back 到 legacy（`engine.py:218–220`）。
 - **核心入口无覆盖测试**：`process_user_turn` / `agent_loop` 若干路径标注「⚠️ no covering tests found」。
@@ -233,4 +233,4 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 
 ## 主线锚点速查
 
-dispatcher 入口 `dispatcher/__init__.py:97`；turn_id 绑定 `:379`；历史/分支解析 `:186–198`；user 节点写入 `:298`；**调模型前 prepare/auto-compact** `_run_loop_blocking :885/:896/:1074`；finalize `:711`/`dispatcher/finalize.py:175`（ContextCommit 回填 `:283`、after_turn `:308`→`engine.py:437`）。事件总线 `event_bus.py:141/159/241`；tool.before 拦截 `agent_loop.py:695/:701` + `tool_gate.py:53`。上下文 `engine.py:194` + 两条压缩路径（auto-compact `_run_loop_blocking:896` / microcompact `microcompact.py:76`）。agent loop `agent_loop.py:114/205/654`；子 agent `sub_agent_run.py:41`。协作 `message_branch.py:186/393`，深度上限 `:35`。
+dispatcher 入口 `dispatcher/__init__.py:97`；turn_id 绑定 `:379`；历史/分支解析 `:186–198`；user 节点写入 `:298`；**调模型前 prepare/auto-compact** `_run_loop_blocking :885/:896/:1074`；finalize `:711`/`dispatcher/finalize.py:175`（ContextCommit 回填 `:283`、after_turn `:308`→`engine.py:437`）。事件总线 `events/bus.py:141/159/241`；tool.before 拦截 `agent_loop.py:695/:701` + `events/tool_gate.py:53`。上下文 `engine.py:194` + 两条压缩路径（auto-compact `_run_loop_blocking:896` / microcompact `microcompact.py:76`）。agent loop `agent_loop.py:114/205/654`；子 agent `sub_agent_run.py:41`。协作 `message_branch.py:186/393`，深度上限 `:35`。

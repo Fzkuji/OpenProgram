@@ -218,7 +218,7 @@ def test_loop_exception_persisted_as_system_message(tmp_db, captured, collector)
 def _grab_approval_frames() -> tuple[list[dict], "callable"]:
     """订阅事件总线抓审批的 question.asked 帧（审批合流后经事件层 emit）。
     返回 (frames, unsubscribe)。"""
-    from openprogram.agent.event_bus import get_event_bus, WS_FRAME_EVENT
+    from openprogram.events import get_event_bus, WS_FRAME_EVENT
     frames: list[dict] = []
 
     def _grab(ev) -> None:

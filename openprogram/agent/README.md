@@ -14,7 +14,6 @@ Organized by concern:
 * ``session``      — Lightweight ``AgentSession`` with auto-retry
 * ``retry``        — Standalone retry-classification and backoff helpers
 * ``messages``     — Custom message types (branch/compaction summaries, etc.)
-* ``event_bus``    — Async pub/sub for agent events
 * ``exec``         — Subprocess execution utility with timeout/cancellation
 * ``compaction/``  — Token estimation, cut-point detection, LLM summarization
 
@@ -32,7 +31,6 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 - **`agent.py`** — Agent class
 - **`agent_loop.py`** — Agent loop
 - **`dispatcher.py`** — Single entry point for every conversation turn
-- **`event_bus.py`** — Async event bus with channel-based pub/sub
 - **`exec.py`** — Shared subprocess execution utilities
 - **`messages.py`** — Custom message types and LLM converters for the agent layer
 - **`plan_mode.py`** — Plan-mode session flag

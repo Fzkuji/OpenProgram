@@ -9,7 +9,7 @@
 """
 from __future__ import annotations
 
-from openprogram.agent.event_bus import Event
+from openprogram.events import Event
 
 from ..actions import Action, Notify
 from ..policy import Policy

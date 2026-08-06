@@ -9,7 +9,7 @@ After investigation, a correction: the foundation for three-surface sync is far 
 | Single worker + shared git SessionDB | All three surfaces connect to the same worker and read the same source of truth | worker/lock.py, agent/session_db.py |
 | running status flag | `_running_tasks` registry + `running_task`/`running_task_clear` broadcasts (drive the sidebar pulse indicator + composer status) | webui/server.py:187-224 |
 | Backfill history on reconnect | `handle_sync(session_id, known_seqs)` re-sends the missing message frames | ws_actions/runtime.py:436-450 |
-| Event broadcast | EventBus + _broadcast; a single emit reaches all WS clients | event_bus.py, server.py `_broadcast` |
+| Event broadcast | EventBus + _broadcast; a single emit reaches all WS clients | events/bus.py, server.py `_broadcast` |
 
 → A turn started on one surface is **already** received as the same stream events on the others; reconnect **already** backfills history + the running indicator. So "one surface did something the others can't see" essentially does not hold on the webui/TUI paths (both go through the worker WS).
 

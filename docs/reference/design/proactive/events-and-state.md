@@ -39,7 +39,7 @@ that bottom line is covered in `invariants.md`.
 Events aren't written out of thin air; they translate the things that **already happen** while the agent works into a unified format. Your framework already
 "knows" things are happening at these points; it just doesn't yet record them uniformly as events:
 
-- Before and after a tool runs, `agent_loop` already fires `tool.before_use` / `tool.after_use` (the existing hooks).
+- Before and after a tool runs, `agent_loop` already emits `tool.before` / `tool.after` on the bus.
 - When the model streams a reply, there are already "start/end" signals.
 - When a user message comes in, the dispatcher is already handling it.
 

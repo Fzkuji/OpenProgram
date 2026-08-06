@@ -59,7 +59,7 @@ def _emit_changed(added: list[str]) -> None:
 
     步 4：走总线（ws.frame 事件），不再 import webui；帧内容不变。
     """
-    from openprogram.agent.event_bus import emit_ws_frame
+    from openprogram.events import emit_ws_frame
     emit_ws_frame({"type": "programs:changed", "added": added})
 
 

@@ -215,7 +215,7 @@ emit_ws_frame(frame)                         # 源用：把现成 WS 帧经总�
 | A | `file.changed` | 文件被改 | write/edit/apply_patch |
 | A | `turn.ended` | 一轮结束 | agent_loop |
 | A | `subagent.started`/`.ended` | 子任务起止 | TaskRunner |
-| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/耗尽/轮换 | event_bridges←AuthStore |
+| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/耗尽/轮换 | events/bridges.py←AuthStore |
 | B | `context.compaction_recommended`/`.compacted` | 上下文到阈值/已压缩 | context/engine |
 | B | `channel.message_inbound` | 外部消息进 | channels |
 | B | `memory.ingest_started`/`.ended` | wiki ingest 起止 | memory watcher |
@@ -365,7 +365,7 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 - `SessionStore`（list/append/set_head/commit/get）
 - `dispatcher.process_user_turn`
 - `branch_summarization`（多源自我总结）
-- `event_bus`（emit_safe / emit_ws_frame）
+- `openprogram.events`（emit_safe / emit_ws_frame）
 
 **前端（`web/`）**
 - session / branch 列表面板（已有 WS handler）+ "选 target → 发消息"交互入口

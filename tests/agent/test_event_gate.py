@@ -37,10 +37,14 @@ def test_registry_lists_the_wired_events_with_kinds():
     kinds = {name: spec.kind for name, spec in EVENTS.items()}
     assert kinds == {
         "tool.before": "gate",
+        "tool.after": "notify",
         "turn.stop": "gate",
         "turn.start": "notify",
         "turn.end": "notify",
         "session.start": "notify",
+        "chat.before_send": "notify",
+        "plugin.enable": "notify",
+        "plugin.disable": "notify",
         "goal.update": "notify",
     }
     for spec in EVENTS.values():
@@ -255,7 +259,7 @@ def _stop_req():
 
 @pytest.fixture()
 def _singleton_gates_clean():
-    from openprogram.agent.event_bus import get_event_bus
+    from openprogram.events import get_event_bus
     bus = get_event_bus()
     with bus._lock:
         before = {t: list(fns) for t, fns in bus._gates.items()}

@@ -10,8 +10,8 @@ See docs/design/runtime/agent-collaboration.md (C7).
 """
 from __future__ import annotations
 
-from openprogram.agent.event_bus import make_event
-from openprogram.agent.tool_gate import register_tool_gate, decide_tool_gate
+from openprogram.events import make_event
+from openprogram.events import register_tool_gate, decide_tool_gate
 
 
 def _before(tool_name: str, args=None):

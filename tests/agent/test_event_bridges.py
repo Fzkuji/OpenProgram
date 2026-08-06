@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.agent import event_bridges
-from openprogram.agent.event_bus import create_event_bus
-from openprogram.agent.event_bridges import (
+from openprogram.events import bridges as event_bridges
+from openprogram.events import create_event_bus
+from openprogram.events.bridges import (
     install_event_bridges,
     translate_auth_event,
 )

@@ -22,9 +22,8 @@ store 的普通日志）。想"在某个时机做点什么"，得先弄清那个
 | 9 | 可观测性 | gate 结论记在事件日志行上（§6） |
 | 10 | 准入边界 | 注册表本身；`registry.py` 模块 docstring |
 
-事件相关的一切都收在 `openprogram/events/` 包里。旧模块路径
-（`openprogram/agent/event_bus.py`、`tool_gate.py`、`event_bridges.py`）是包内模块的
-`sys.modules` 别名，既有 import 与 monkeypatch 目标解析到同一批对象。
+事件相关的一切都收在 `openprogram/events/` 包里，所有 import 一律走
+`from openprogram.events import ...`。
 
 ## 1. Event 模型
 
@@ -57,15 +56,19 @@ channel）根本没有意义。开放 dict 也让以后新增关联维度不用�
 
 | type | kind | payload | 发射点 |
 |---|---|---|---|
-| `tool.before` | gate | `{tool, args}` | `agent_loop._execute_tool_calls`，每次 `tool.execute()` 之前 |
+| `tool.before` | gate | `{tool, tool_call_id, args}` | `agent_loop._execute_tool_calls`，每次 `tool.execute()` 之前 |
+| `tool.after` | notify | `{tool, tool_call_id, is_error, result_text}` | `agent_loop._execute_tool_calls`，每次工具调用结束之后 |
 | `turn.stop` | gate | `{session_id, user_msg_id, assistant_msg_id, last_text（≤4000 字）, stop_hook_active}` | `dispatcher.process_user_turn`，goal 循环放行之后 |
 | `turn.start` | notify | `{session_id, user_msg_id, assistant_msg_id}` | dispatcher，用户消息落盘之后 |
 | `turn.end` | notify | `{session_id, user_msg_id, assistant_msg_id, usage}` | dispatcher，finalize 之后 |
-| `session.start` | notify | `{session_id, agent_id, channel}` | `plugins/hooks.dispatch_hook` 把插件 `SESSION_START` hook 桥到总线 |
+| `session.start` | notify | `{session_id, agent_id, channel}` | webui 会话创建（`server.py`） |
+| `chat.before_send` | notify | `{session_id, msg_id, text, agent_id, attachments}` | `ws_actions/chat.py`，用户消息落盘之后、进入 runtime 之前 |
+| `plugin.enable` | notify | `{plugin}` | `plugins/loader.py`，插件加载完成、hook 订阅注册之后 |
+| `plugin.disable` | notify | `{plugin}` | `plugins/loader.py`，插件的注册项被摘除之前 |
 | `goal.update` | notify | `{session_id, goal: {text, check, status, turns_used, max_turns, last_reason, last_question}}` | `goal._emit_goal_update` |
 
 emit 未注册的 type 属渐进迁移期的容忍行为：总线每个 type 只 log.warning 一次（不抛），既有发射点
-（`tool.after`、`user.prompt_submitted`、`credential.*`、`context.*`、`memory.ingest_*`、
+（`user.prompt_submitted`、`credential.*`、`context.*`、`memory.ingest_*`、
 `ws.frame`……）照常工作，等各自的消费者定型后再入册。
 
 ## 3. 两种派发
@@ -165,7 +168,7 @@ webui 的存在。
 | 消费者侧表面 | 背后 |
 |---|---|
 | `tool_gate.register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | `subscribe_gate("tool.before", ...)` / `emit_gate` 的薄壳（`openprogram/events/tool_gate.py`）——公开签名不变，agent_loop 与 proactive engine 照用 |
-| 插件 `SESSION_START` hook | `dispatch_hook` 同时向总线 emit `session.start` |
+| 插件 `hooks` entrypoint | `plugins/hooks.register_plugin_hooks` 把每个 handler 按总线事件名订阅到总线——notify 事件走 `subscribe`，gate 事件（`tool.before`）走 `subscribe_gate` 并参与否决（返回 falsy 放行，返回理由字符串或抛 `ToolGateDenied` 否决，其他异常记 warning 后 fail-open） |
 | `/goal` 状态变化 | `goal._emit_goal_update` 顺带 emit `goal.update` |
 | config.json `hooks` | worker 启动时 `openprogram.events.install_config_hooks()` |
 | B 类源（auth、context、channels、memory） | `openprogram/events/bridges.py` 桥 + 各源头 `emit_safe` tap |

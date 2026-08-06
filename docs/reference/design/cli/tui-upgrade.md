@@ -119,7 +119,7 @@ Two pieces of the design need data the server does not currently send:
   history.
 
 Both touch `_event_parsing.py` and dispatcher event emission, which is shared
-with the event_bus work.
+with the event-bus work.
 
 ## 6. Constraints
 

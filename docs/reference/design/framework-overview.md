@@ -10,7 +10,7 @@
 connected by a single process-wide event bus.** The dispatcher, the agent loop,
 tool execution, storage, and collaboration never call each other's UI or
 broadcast logic. They `emit` an event, and whoever cares subscribes
-(`event_bus.py:141` `emit` / `:159` `subscribe`). The event layer has two lanes:
+(`events/bus.py:141` `emit` / `:159` `subscribe`). The event layer has two lanes:
 **asynchronous observation** (`EventBus` — nobody can stop what is already
 happening) and **synchronous consultation** (`tool_gate` — the one place in the
 framework that can stop a tool from executing).
@@ -158,12 +158,12 @@ more tool".
    — one event serving both the asynchronous observers and the synchronous
    consultation.
 3. **synchronous gate**: `decide_tool_gate(before_ev)` (`:701`), **the one place
-   in the framework that can stop a tool** (`tool_gate.py:53`). Any gate
+   in the framework that can stop a tool** (`events/tool_gate.py:53`). Any gate
    returning deny blocks the call (reasons merged); a gate that raises counts as
    allow (fail-open). A blocked call raises `ToolGateDenied` (`:708`) and the deny
    reason goes back to the model as an error tool result. **It applies to
    subagents too** — the gate sits outside the `permission_mode` approval
-   wrapper, so `bypass` cannot switch it off (`tool_gate.py:14–15`).
+   wrapper, so `bypass` cannot switch it off (`events/tool_gate.py:14–15`).
 4. `tool.execute(...)` (`:731`), with a cwd snapshot + file checkpoint taken
    around it.
 5. push `AgentEventToolEnd` (`:758/:766`) + emit `tool.after` (`:772`).
@@ -225,7 +225,7 @@ to the front end.
 | `channel.message_inbound` | channels | observers | inbound message |
 | `memory.ingest_started` / `.ended` | memory | observers | memory ingestion |
 | `skills.changed` / `plugins.update_available` / `sessions.listed` / `branches.listed` | various subsystems | UI / observers | lists and available updates |
-| `ws.frame` (`event_bus.py:115`) | external sources via `emit_ws_frame` (`:118`) | `webui/server.py:1192` (broadcast verbatim) | passthrough envelope: external sources never touch webui `_broadcast` directly |
+| `ws.frame` (`events/bus.py:115`) | external sources via `emit_ws_frame` (`:118`) | `webui/server.py:1192` (broadcast verbatim) | passthrough envelope: external sources never touch webui `_broadcast` directly |
 
 **Subscriber sites**: the proactive engine subscribes to **all** events and
 filters by `on` (`proactive/engine.py:145`); the webui subscribes only to
@@ -233,7 +233,7 @@ filters by `on` (`proactive/engine.py:145`); the webui subscribes only to
 `question.asked` (`_question_bridge.py:43`).
 
 **Event contract**: `emit` is fire-and-forget, and a handler that raises never
-propagates back to the emitter (`event_bus.py:141–157` + `_call:182–198` prints to
+propagates back to the emitter (`events/bus.py:141–157` + `_call:182–198` prints to
 stderr); an async handler with no running loop is skipped; `emit_safe` (`:96`)
 wraps the whole thing in try/swallow. The event layer never breaks the caller's
 code path.
@@ -264,7 +264,7 @@ append-only, with no mutable current-state mirror.
   channel `on` (`:208`); process singleton `get_event_bus()` (`:241`,
   double-checked locking).
 - **synchronous tool.before interception**: `register_tool_gate`
-  (`tool_gate.py:38`) / `decide_tool_gate` (`:53`), taking the strictest verdict
+  (`events/tool_gate.py:38`) / `decide_tool_gate` (`:53`), taking the strictest verdict
   and failing open. A gate must be fast — no LLM calls, no slow IO.
 - Question subsystem: `QuestionRegistry` (`questions.py:61`) — a process-wide
   pending table, claim-once, thread-safe.
@@ -369,7 +369,7 @@ a "sent / replied" line in the initiator's chat stream.
   (`agent_loop.py:682–684`).
 - **The gate's three-state "ask" is not wired to ApprovalRegistry yet**:
   `Gate.ask` is noted as pending that connection (`proactive/actions.py:29`), and
-  the "critical fail-closed" tier awaits the rules layer (`tool_gate.py:13`).
+  the "critical fail-closed" tier awaits the rules layer (`events/tool_gate.py:13`).
 - **Reference-scan results are not consumed by ContextCommit rules**: they feed
   logging only (`engine.py:204–212`).
 - **The DAG render keeps a fallback path alongside the normal one**: a bad commit
@@ -392,8 +392,8 @@ Dispatcher entry `dispatcher/__init__.py:97`; turn_id binding `:379`;
 history/branch resolution `:186–198`; user node write `:298`; **prepare /
 auto-compact before the model call** `_run_loop_blocking :885/:896/:1074`;
 finalize `:711` / `dispatcher/finalize.py:175` (ContextCommit backfill `:283`,
-after_turn `:308` → `engine.py:437`). Event bus `event_bus.py:141/159/241`;
-tool.before interception `agent_loop.py:695/:701` + `tool_gate.py:53`. Context
+after_turn `:308` → `engine.py:437`). Event bus `events/bus.py:141/159/241`;
+tool.before interception `agent_loop.py:695/:701` + `events/tool_gate.py:53`. Context
 `engine.py:194` plus the two compaction paths (auto-compact
 `_run_loop_blocking:896` / microcompact `microcompact.py:76`). Agent loop
 `agent_loop.py:114/205/654`; subagents `sub_agent_run.py:41`. Collaboration

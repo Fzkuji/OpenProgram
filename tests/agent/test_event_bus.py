@@ -7,7 +7,7 @@ import threading
 
 import pytest
 
-from openprogram.agent.event_bus import (
+from openprogram.events import (
     Event,
     EventBus,
     WS_FRAME_EVENT,
@@ -141,7 +141,7 @@ def test_emit_ws_frame_reaches_subscriber_verbatim(monkeypatch):
     _forward 就是这个角色）拿到原始帧、一字不变。这是事件层贯穿到前端的关键
     一环——webui 删了订阅就会断，这个测试守住它。"""
     bus = create_event_bus()
-    monkeypatch.setattr("openprogram.agent.event_bus._event_bus", bus)
+    monkeypatch.setattr("openprogram.events.bus._event_bus", bus)
 
     got = []
     bus.subscribe(lambda ev: got.append(ev.payload.get("frame")),
@@ -156,7 +156,7 @@ def test_emit_ws_frame_reaches_subscriber_verbatim(monkeypatch):
 def test_ws_frame_subscriber_only_gets_ws_frames(monkeypatch):
     """订阅 WS_FRAME_EVENT 的 handler 不会被别的事件类型打扰。"""
     bus = create_event_bus()
-    monkeypatch.setattr("openprogram.agent.event_bus._event_bus", bus)
+    monkeypatch.setattr("openprogram.events.bus._event_bus", bus)
     got = []
     bus.subscribe(lambda ev: got.append(ev), types={WS_FRAME_EVENT})
     bus.emit(make_event("tool.before", "agent", {"tool": "bash"}))

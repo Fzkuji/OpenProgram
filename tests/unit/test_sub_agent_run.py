@@ -214,10 +214,10 @@ def test_dispatcher_failure_surfaces(parent_store, monkeypatch):
 
 @pytest.fixture
 def captured_frames(monkeypatch):
-    from openprogram.agent import event_bus
+    import openprogram.events as events
 
     frames: list[dict] = []
-    monkeypatch.setattr(event_bus, "emit_ws_frame", frames.append)
+    monkeypatch.setattr(events, "emit_ws_frame", frames.append)
     return frames
 
 

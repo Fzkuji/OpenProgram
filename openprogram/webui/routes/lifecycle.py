@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastapi.responses import JSONResponse
 
-from openprogram.agent.event_bus import emit_ws_frame
+from openprogram.events import emit_ws_frame
 
 
 def register(app):

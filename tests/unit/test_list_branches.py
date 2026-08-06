@@ -66,7 +66,7 @@ def test_list_sessions_marks_current(two_sessions):
 
 
 def test_list_sessions_emits_event(two_sessions):
-    from openprogram.agent.event_bus import get_event_bus
+    from openprogram.events import get_event_bus
     got = []
     unsub = get_event_bus().subscribe(lambda e: got.append(e),
                                       types={"sessions.listed"})
@@ -89,7 +89,7 @@ def test_list_branches_defaults_to_current(two_sessions):
 
 
 def test_list_branches_emits_event(two_sessions):
-    from openprogram.agent.event_bus import get_event_bus
+    from openprogram.events import get_event_bus
     got = []
     unsub = get_event_bus().subscribe(lambda e: got.append(e),
                                       types={"branches.listed"})

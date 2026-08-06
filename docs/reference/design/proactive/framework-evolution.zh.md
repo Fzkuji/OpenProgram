@@ -71,7 +71,7 @@ auth 的桥接值得单说，它是"子系统自己已经把事件建模对了"�
 ## 实现状态
 
 总线已启用并接入 A 类源，`file.changed` 与 `tool.before` 同步问询点已就位，B 类源已桥接
-（auth 经 `event_bridges.py`，context / channels / memory / webui watcher 在源头 tap），
+（auth 经 `events/bridges.py`，context / channels / memory / webui watcher 在源头 tap），
 webui 已是总线订阅者——五个外部源（task runner、sub_agent、worktree、functions watcher、
 channels）改为 emit `ws.frame` 事件，不再 import webui。剩余工作是 proactive 规则层，
 它消费总线，不新增源。

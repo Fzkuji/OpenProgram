@@ -28,8 +28,15 @@ class EventSpec:
 EVENTS: dict[str, EventSpec] = {
     "tool.before": EventSpec(
         kind="gate",
-        payload_doc="{tool: str, args: dict} — the tool call about to run; "
-                    "a deny reason becomes the model's error tool result",
+        payload_doc="{tool: str, tool_call_id: str, args: dict} — the tool "
+                    "call about to run; a deny reason becomes the model's "
+                    "error tool result",
+    ),
+    "tool.after": EventSpec(
+        kind="notify",
+        payload_doc="{tool: str, tool_call_id: str, is_error: bool, "
+                    "result_text: str} — a tool call finished; result_text "
+                    "carries only the text channel of the result",
     ),
     "turn.stop": EventSpec(
         kind="gate",
@@ -51,7 +58,23 @@ EVENTS: dict[str, EventSpec] = {
     "session.start": EventSpec(
         kind="notify",
         payload_doc="{session_id, agent_id, channel} — a session object was "
-                    "created (bridged from the plugin SESSION_START hook)",
+                    "created (emitted by webui session creation)",
+    ),
+    "chat.before_send": EventSpec(
+        kind="notify",
+        payload_doc="{session_id, msg_id, text, agent_id, attachments: bool} "
+                    "— a user chat message was persisted and is about to "
+                    "enter the runtime",
+    ),
+    "plugin.enable": EventSpec(
+        kind="notify",
+        payload_doc="{plugin: str} — the plugin loaded, registered its "
+                    "contributions and its hook subscriptions",
+    ),
+    "plugin.disable": EventSpec(
+        kind="notify",
+        payload_doc="{plugin: str} — the plugin is about to be unloaded; "
+                    "its subscriptions are still live when this fires",
     ),
     "goal.update": EventSpec(
         kind="notify",

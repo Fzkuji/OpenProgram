@@ -32,7 +32,7 @@ from openprogram.providers.types import (
 )
 
 from .agent import Agent, AgentOptions
-from .event_bus import EventBus
+from openprogram.events import EventBus
 from .messages import wrap_convert_to_llm
 from .retry import (
     DEFAULT_RETRY_SETTINGS,

@@ -58,7 +58,7 @@ from openprogram.agent.task.store import (
     save_task as _store_save,
     update_task_status as _store_update_status,
 )
-from openprogram.agent.event_bus import emit_safe
+from openprogram.events import emit_safe
 from openprogram.agent.task.types import (
     Task,
     TaskStatus,
@@ -79,7 +79,7 @@ def _broadcast(payload: dict) -> None:
     步 4：不再 import webui。把现成的帧 emit 到总线（``ws.frame`` 事件），
     webui 作为订阅者原样广播。帧内容（type / data 字段）一字不变，前端无感。
     """
-    from openprogram.agent.event_bus import emit_ws_frame
+    from openprogram.events import emit_ws_frame
     emit_ws_frame(payload)
 
 

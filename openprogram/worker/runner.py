@@ -254,7 +254,7 @@ def run_foreground() -> int:
     # 事件层 B 类桥 — auth 的 subscribe/_emit 信号翻译进统一总线
     # (docs/design/proactive/event-layer.md §3)。
     try:
-        from openprogram.agent.event_bridges import install_event_bridges
+        from openprogram.events.bridges import install_event_bridges
         if install_event_bridges():
             print("[worker] event bridges installed (auth → bus)")
     except Exception as exc:  # noqa: BLE001

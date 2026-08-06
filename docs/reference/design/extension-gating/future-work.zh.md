@@ -58,10 +58,10 @@
 
 **设想**：claude-code 的按 agent 的 `hooks` 字段 —— 注册作用域限定在某一个 agent profile（而非全局）的 PreToolUse / PostToolUse 处理器。
 
-**为什么会被提出**：hooks（`openprogram/plugins/hooks.py`）会派发给所有已加载的插件，没法说“这个 agent 跑这个 hook，那个 agent 不跑”。
+**为什么会被提出**：插件 hooks（`openprogram/plugins/hooks.py`）把所有已加载插件的 handler 订阅到进程级事件总线上，没法说“这个 agent 跑这个 hook，那个 agent 不跑”。
 
 **为什么不做**：
-- hook 派发已存在但用得很少 —— 只接了 `chat.before_send` 和 `tool.before_use`。在全局机制尚未被充分使用之前就加按 agent 的作用域，为时过早。
+- 插件 hook 订阅已存在但用得很少 —— 几乎没有插件注册。在全局机制尚未被充分使用之前就加按 agent 的作用域，为时过早。
 - claude-code 的按 agent hooks 确实存在，但它的文档暗示大多数用户是通过插件（host 级）注册 hook 的，而非按 agent。
 - 统一门控模型已经覆盖了**哪些 tools/skills/MCP** 这个问题。Hooks 是一个**调用如何通过**的问题 —— 是正交的。加上按 agent 的 hooks 并不改变门控模型，只是多一个开关。
 

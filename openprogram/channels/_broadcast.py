@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from openprogram.agent.event_bus import emit_ws_frame
+from openprogram.events import emit_ws_frame
 
 
 def broadcast_channel_turn(

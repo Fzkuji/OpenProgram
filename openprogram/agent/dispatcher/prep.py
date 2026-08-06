@@ -16,7 +16,7 @@ import logging
 import time
 from typing import Any, Optional, TYPE_CHECKING
 
-from openprogram.agent.event_bus import emit_safe
+from openprogram.events import emit_safe
 from openprogram.agent.dispatcher.types import _InheritParent
 from openprogram.agent.dispatcher.titles import _default_title
 

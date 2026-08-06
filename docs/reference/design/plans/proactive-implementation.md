@@ -45,8 +45,8 @@ rather than adding new detection:
 | `user.prompt_submitted` | `dispatcher/__init__.py`, at user-message persistence | added alongside the existing chat_ack / chat_response broadcast, outside the persistence branch so both paths emit |
 | `model.response_started` | `agent_loop.py`, AgentEventMessageStart | conversion of an existing event |
 | `model.response_completed` | `agent_loop.py`, AgentEventMessageEnd | conversion of an existing event |
-| `tool.before` | `agent_loop.py`, the previously no-op `dispatch_hook(TOOL_BEFORE_USE)` | the observe-only hook becomes the gate's query point |
-| `tool.after` | `agent_loop.py`, `dispatch_hook(TOOL_AFTER_USE)` | conversion of an existing hook |
+| `tool.before` | `agent_loop.py`, before every `tool.execute()` | one event feeds both the notify emit and the gate query |
+| `tool.after` | `agent_loop.py`, after every tool call finishes | notify emit with the result text channel |
 | `subagent.started` / `completed` | `task/runner.py`, the task_status broadcast | conversion, funnelled through `_broadcast_task_status` |
 | `permission.requested` | `_approval.py`, the approval_request envelope | added tap |
 | `artifact.file.changed` | `file_backup.backup_before_edit` and `project_commit` | new emission after a successful write |

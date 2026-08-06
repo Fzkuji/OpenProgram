@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.agent.event_bus import Event, make_event
+from openprogram.events import Event, make_event
 from openprogram.proactive import (
     Gate, Notify, Policy, clear_policies, register_policy,
 )

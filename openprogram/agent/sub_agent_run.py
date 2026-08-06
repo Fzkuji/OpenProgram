@@ -151,7 +151,7 @@ def emit_spawn_event(
     letting the client patch the card in place instead of appending a
     second one.
     """
-    from openprogram.agent.event_bus import emit_ws_frame
+    from openprogram.events import emit_ws_frame
 
     emit_ws_frame({
         "type": "chat_response",
@@ -276,7 +276,7 @@ def write_attach_pointer_for_spawn(
         # Broadcast session_reload so the UI re-renders the DAG with
         # the new attach pointer + reference edge.
         # 步 4：走总线（ws.frame 事件），不再 import webui；帧内容不变。
-        from openprogram.agent.event_bus import emit_ws_frame
+        from openprogram.events import emit_ws_frame
         emit_ws_frame({
             "type": "session_reload",
             "data": {"session_id": session_id, "reason": "task_tool_spawn"},

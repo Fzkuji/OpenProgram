@@ -161,7 +161,7 @@ Borrow claude-code's `paths` and openclaw's `requires`: when conditions are not 
 
 ## 6. Hook Binding
 
-A command can declare its own temporary hook (effective only during that command's execution). Event names reuse `openprogram/plugins/hooks.py:HookEvent`.
+A command can declare its own temporary hook (effective only during that command's execution). Event names reuse the bus event types in `openprogram/events/registry.py` (`tool.before`, `tool.after`, `chat.before_send`, ...).
 
 ```yaml
 hooks:

@@ -739,17 +739,14 @@ def _get_or_create_session(session_id: str = None,
                 "thinking_effort": ((_sess or {}).get("thinking_effort") if isinstance(_sess, dict) else None),
                 "permission_mode": ((_sess or {}).get("permission_mode") if isinstance(_sess, dict) else None),
             }
-            # Fire session.start so plugins can hook session lifecycle.
-            # Defensive: never let a hook break session creation.
-            try:
-                from openprogram.plugins.hooks import dispatch_hook, HookEvent
-                dispatch_hook(HookEvent.SESSION_START, {
-                    "session_id": session_id,
-                    "agent_id": resolved_agent,
-                    "channel": channel,
-                })
-            except Exception:
-                pass
+            # session.start on the bus — plugin subscribers included.
+            # emit_safe swallows failures: never break session creation.
+            from openprogram.events import emit_safe
+            emit_safe("session.start", "system", {
+                "session_id": session_id,
+                "agent_id": resolved_agent,
+                "channel": channel,
+            }, {"session": session_id})
         return _sessions[session_id]
 
 
@@ -1316,7 +1313,7 @@ def create_app():
         run_coroutine_threadsafe 跨线程投递，安全。
         """
         try:
-            from openprogram.agent.event_bus import get_event_bus, WS_FRAME_EVENT
+            from openprogram.events import get_event_bus, WS_FRAME_EVENT
 
             def _forward(event):
                 try:
@@ -1365,7 +1362,7 @@ def create_app():
                 # 事件层 tap（B 类：技能文件变了）。放 _broadcast 之前——
                 # watcher 线程里 _broadcast 可能抛错被上层吞掉，emit 先行。
                 try:
-                    from openprogram.agent.event_bus import emit_safe
+                    from openprogram.events import emit_safe
                     emit_safe("skills.changed", "system")
                 except Exception:
                     pass
@@ -1390,7 +1387,7 @@ def create_app():
                     pass
                 # 事件层 tap（B 类：插件有新版）
                 try:
-                    from openprogram.agent.event_bus import emit_safe
+                    from openprogram.events import emit_safe
                     emit_safe("plugins.update_available", "system",
                               {"count": len(payload or {})})
                 except Exception:

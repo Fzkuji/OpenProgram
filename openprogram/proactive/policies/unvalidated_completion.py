@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from openprogram.agent.event_bus import Event
+from openprogram.events import Event
 
 from ..actions import Action, Inject
 from ..policy import Policy

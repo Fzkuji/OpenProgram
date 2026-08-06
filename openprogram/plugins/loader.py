@@ -399,14 +399,9 @@ def load_plugin(name: str) -> Plugin:
             s = _load_enabled()
             s.add(name)
             _save_enabled(s)
-            # 通知所有 plugin: 这个 plugin 上线了
-            try:
-                from . import hooks as _hooks
-                _hooks.dispatch_hook(
-                    _hooks.HookEvent.PLUGIN_ENABLE, {"plugin": name},
-                )
-            except Exception:
-                pass
+            # 通知总线: 这个 plugin 上线了
+            from openprogram.events import emit_safe
+            emit_safe("plugin.enable", "system", {"plugin": name})
         except Exception as e:
             p.loaded = False
             p.enabled = False
@@ -424,11 +419,10 @@ def unload_plugin(name: str) -> Plugin:
             raise KeyError(f"unknown plugin: {name}")
         # Fire plugin.disable BEFORE we drop registrations so handlers
         # can still see neighbour state.
+        from openprogram.events import emit_safe
+        emit_safe("plugin.disable", "system", {"plugin": name})
         try:
             from . import hooks as _hooks
-            _hooks.dispatch_hook(
-                _hooks.HookEvent.PLUGIN_DISABLE, {"plugin": name},
-            )
             _hooks.unregister_plugin_hooks(name)
         except Exception:
             pass

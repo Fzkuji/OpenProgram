@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from openprogram.agent.event_bus import WS_FRAME_EVENT, create_event_bus, get_event_bus
+from openprogram.events import WS_FRAME_EVENT, create_event_bus, get_event_bus
 from openprogram.agent.questions import QuestionRegistry, get_question_registry
 from openprogram.agentic_programming.runtime import Runtime
 
@@ -19,7 +19,7 @@ def fresh(monkeypatch):
     monkeypatch.setattr(Q, "_registry", QuestionRegistry())
     # 隔离总线，抓 ws.frame
     bus = create_event_bus()
-    import openprogram.agent.event_bus as EB
+    import openprogram.events.bus as EB
     monkeypatch.setattr(EB, "_event_bus", bus)
     # 假装在 webui 执行上下文里（有 current_session_id）
     monkeypatch.setattr(Runtime, "_ui_session_id", lambda self: "sess-e2e")

@@ -201,7 +201,7 @@ def decide_tool_gate(event: Event) -> str | None:
     A gate that raises → fail-open (printed to stderr), continue to the next one."""
 ```
 
-Key property: **the gate sits outside the permission approval wrapper, and `bypass` cannot disable it** (`tool_gate.py:15`); it applies to subagents just the same. The gate is the hard block point for the policy layer (proactive policy Gate allow/deny/ask), so it must be fast (synchronous hot path, no LLM, no slow IO).
+Key property: **the gate sits outside the permission approval wrapper, and `bypass` cannot disable it** (`events/tool_gate.py:15`); it applies to subagents just the same. The gate is the hard block point for the policy layer (proactive policy Gate allow/deny/ask), so it must be fast (synchronous hot path, no LLM, no slow IO).
 
 ### 3.2 Approval wrapper (checkpoint B) and decision pseudocode
 

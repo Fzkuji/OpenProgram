@@ -39,7 +39,7 @@ class Event:
 事件不是凭空写的，是把 agent 干活过程中**本来就发生的事**翻译成统一格式。你的框架现在
 已经在这些位置"知道"事情发生了，只是没统一记成事件：
 
-- 工具执行前后，`agent_loop` 本来就会触发 `tool.before_use` / `tool.after_use`（现有 hooks）。
+- 工具执行前后，`agent_loop` 本来就会向总线 emit `tool.before` / `tool.after`。
 - 模型流式回复时，本来就有"开始/结束"的信号。
 - 用户发消息进来，dispatcher 本来就在处理。
 

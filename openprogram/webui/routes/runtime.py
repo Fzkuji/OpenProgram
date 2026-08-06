@@ -21,7 +21,7 @@ import json
 
 from fastapi.responses import JSONResponse
 
-from openprogram.agent.event_bus import emit_ws_frame
+from openprogram.events import emit_ws_frame
 
 
 def _runtime_build_error_response(exc: Exception, provider: str | None = None):

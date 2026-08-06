@@ -10,7 +10,6 @@ Organized by concern:
 * ``session``      — Lightweight ``AgentSession`` with auto-retry
 * ``retry``        — Standalone retry-classification and backoff helpers
 * ``messages``     — Custom message types (branch/compaction summaries, etc.)
-* ``event_bus``    — Async pub/sub for agent events
 * ``exec``         — Subprocess execution utility with timeout/cancellation
 * ``compaction/``  — Token estimation, cut-point detection, LLM summarization
 
@@ -19,7 +18,6 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 
 from .agent import Agent, AgentOptions
 from .agent_loop import agent_loop, agent_loop_continue
-from .event_bus import Event, EventBus, create_event_bus, get_event_bus, make_event
 from .exec import ExecOptions, ExecResult, exec_command
 from .messages import (
     BRANCH_SUMMARY_PREFIX,
@@ -83,11 +81,6 @@ __all__ = [
     "compute_backoff_ms",
     "is_retryable_error",
     # Event bus
-    "Event",
-    "EventBus",
-    "create_event_bus",
-    "get_event_bus",
-    "make_event",
     # Exec
     "ExecOptions",
     "ExecResult",

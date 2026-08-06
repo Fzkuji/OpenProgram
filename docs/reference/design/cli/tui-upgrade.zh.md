@@ -93,7 +93,7 @@ REPL 的 picker 从 `pickerKind` 枚举迁移到 ModalProvider/Form 套件；该
   归属正确。
 - `conversation_loaded` 携带工具块，`/resume` 得以恢复工具历史。
 
-两者都会触及 `_event_parsing.py` 与 dispatcher 的事件发射，与 event_bus 的
+两者都会触及 `_event_parsing.py` 与 dispatcher 的事件发射，与事件总线的
 工作共享同一片代码。
 
 ## 6. 约束

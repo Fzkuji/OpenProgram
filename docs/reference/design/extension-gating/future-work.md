@@ -58,10 +58,10 @@ If a user later hits one of these as a real problem, this doc gets the symptom a
 
 **Idea**: claude-code's `hooks` per-agent field — register PreToolUse / PostToolUse handlers scoped to one agent profile, not globally.
 
-**Why it comes up**: hooks (`openprogram/plugins/hooks.py`) dispatch to all loaded plugins. There is no way to say "this agent runs this hook, that agent doesn't."
+**Why it comes up**: plugin hooks (`openprogram/plugins/hooks.py`) subscribe every loaded plugin's handlers on the process-wide event bus. There is no way to say "this agent runs this hook, that agent doesn't."
 
 **Why it stays unbuilt**:
-- Hook dispatch exists but is barely used — only `chat.before_send` and `tool.before_use` are wired. Adding per-agent scoping before the global mechanism is exercised would be premature.
+- Plugin hook subscriptions exist but are barely used — few plugins register any. Adding per-agent scoping before the global mechanism is exercised would be premature.
 - claude-code's per-agent hooks exist but their documentation suggests most users register hooks via plugins (host-level), not per-agent.
 - The unified gating model already covers the **what tools/skills/MCP** question. Hooks are a **how does the call go through** question — orthogonal. Adding per-agent hooks does not change the gating model, it only adds another knob.
 

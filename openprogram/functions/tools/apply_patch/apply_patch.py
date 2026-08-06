@@ -108,7 +108,7 @@ def _parse_sections(patch: str) -> list[tuple[str, str, list[str]]]:
 def _emit_file_changed(path: str, op: str) -> None:
     # 事件层 tap：改动成功才调。懒 import 防循环依赖。
     try:
-        from openprogram.agent.event_bus import emit_safe
+        from openprogram.events import emit_safe
         emit_safe("file.changed", "tool", {"path": path, "op": op})
     except Exception:
         pass

@@ -108,7 +108,7 @@ def _emit_branch_ui(session_id: str, kind: str, peer: str, text: str) -> None:
     """Push a UI frame so the given session's chat stream shows a branch
     communication line. kind ∈ {"sent","replied"}. Best-effort."""
     try:
-        from openprogram.agent.event_bus import emit_ws_frame
+        from openprogram.events import emit_ws_frame
         summary = (text or "").replace("\n", " ").strip()
         if len(summary) > 120:
             summary = summary[:119] + "…"
@@ -192,7 +192,7 @@ def _message_branch_impl(
 ) -> str:
     """Implementation body, pulled out of the @function binding so tests
     can drive it with their own ContextVars."""
-    from openprogram.agent.event_bus import emit_safe
+    from openprogram.events import emit_safe
 
     sid, aid, parent_agent = _resolve_parent()
     if not sid or not aid:

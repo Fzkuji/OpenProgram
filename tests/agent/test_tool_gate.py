@@ -12,8 +12,8 @@ import time
 import pytest
 
 from openprogram.agent import AgentSession
-from openprogram.agent.event_bus import make_event
-from openprogram.agent.tool_gate import (
+from openprogram.events import make_event
+from openprogram.events import (
     decide_tool_gate,
     register_tool_gate,
 )

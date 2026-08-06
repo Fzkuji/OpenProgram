@@ -14,7 +14,7 @@
 ## Files in this directory
 
 - **`autoupdate.py`** — Plugin auto-update
-- **`hooks.py`** — Plugin lifecycle hooks
+- **`hooks.py`** — Plugin hooks as event-bus subscribers
 - **`installer.py`** — 四来源安装器。
 - **`loader.py`** — 四来源 plugin 扫描与加载。
 - **`manifest.py`** — 统一 manifest 解析。

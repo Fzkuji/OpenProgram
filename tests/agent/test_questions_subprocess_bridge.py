@@ -55,7 +55,7 @@ def test_default_transport_is_event_layer(monkeypatch):
     """不给 transport（父进程现状）→ 默认 EventLayerTransport → emit_ws_frame
     + emit_safe，不抛。"""
     frames, events = [], []
-    import openprogram.agent.event_bus as EB
+    import openprogram.events as EB
     monkeypatch.setattr(EB, "emit_ws_frame", lambda f: frames.append(f))
     monkeypatch.setattr(EB, "emit_safe", lambda *a, **k: events.append((a, k)))
     emit_question_asked({"id": "q9", "prompt": "x", "session_id": "s"})

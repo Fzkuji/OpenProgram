@@ -161,7 +161,7 @@ context: fork
 
 ## 6. 钩子绑定
 
-命令可以声明自己的临时 hook（仅在这条命令的执行期间生效）。事件名复用 `openprogram/plugins/hooks.py:HookEvent`。
+命令可以声明自己的临时 hook（仅在这条命令的执行期间生效）。事件名复用 `openprogram/events/registry.py` 里的总线事件类型（`tool.before`、`tool.after`、`chat.before_send`……）。
 
 ```yaml
 hooks:

@@ -229,7 +229,7 @@ def register(app):
 
         Goes through the event bus (``ws.frame``) like every other frame
         source; server.py's single subscriber forwards it to the sockets."""
-        from openprogram.agent.event_bus import emit_ws_frame
+        from openprogram.events import emit_ws_frame
         emit_ws_frame({"type": "agent_settings_changed", "data": {}})
 
     @app.post("/api/providers/{name}/toggle")

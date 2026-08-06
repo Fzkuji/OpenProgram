@@ -165,7 +165,7 @@ def test_dispatch_inbound_broadcasts_channel_turn(
     # channel_turn 与流式 chat_response 帧都走总线（emit_ws_frame →
     # ws.frame 事件），webui 订阅后原样广播 — channels 不再摸
     # webui.server._broadcast 私有函数。订阅总线抓全部帧。
-    from openprogram.agent.event_bus import get_event_bus, WS_FRAME_EVENT
+    from openprogram.events import get_event_bus, WS_FRAME_EVENT
     frames: list[dict] = []
     unsub = get_event_bus().subscribe(
         lambda ev: frames.append(ev.payload.get("frame", {})),

@@ -22,8 +22,8 @@ from openprogram.providers.types import (
 from openprogram.providers.utils.event_stream import EventStream
 from openprogram.providers.utils.validation import validate_tool_arguments
 
-from .event_bus import emit_safe, get_event_bus, make_event
-from .tool_gate import ToolGateDenied, decide_tool_gate
+from openprogram.events import emit_safe, get_event_bus, make_event
+from openprogram.events import ToolGateDenied, decide_tool_gate
 from .types import (
     AgentContext,
     AgentEvent,
@@ -733,22 +733,12 @@ async def _execute_tool_calls(
             args=tool_call.arguments,
         ))
 
-        # Plugin hook: fire tool.before_use so plugins can observe
-        # (and, future-work, veto / mutate) tool calls. Failures
-        # absorbed by dispatch_hook.
-        try:
-            from openprogram.plugins.hooks import dispatch_hook, HookEvent
-            dispatch_hook(HookEvent.TOOL_BEFORE_USE, {
-                "tool_call_id": tool_call.id,
-                "tool_name": tool_call.name,
-                "args": tool_call.arguments,
-            })
-        except Exception:
-            pass
-
         # 事件层：tool.before 一份事件，观察（异步总线）+ 问询（同步 gate）共用。
+        # plugin 的 tool.before handler 就是 gate 订阅者（plugins/hooks.py）。
         before_ev = make_event("tool.before", "agent",
-                               {"tool": tool_call.name, "args": tool_call.arguments})
+                               {"tool": tool_call.name,
+                                "tool_call_id": tool_call.id,
+                                "args": tool_call.arguments})
         try:
             get_event_bus().emit(before_ev)
         except Exception:
@@ -824,25 +814,17 @@ async def _execute_tool_calls(
             result=result,
             is_error=is_error,
         ))
-        emit_safe("tool.after", "tool",
-                  {"tool": tool_call.name, "is_error": is_error})
-
-        try:
-            from openprogram.plugins.hooks import dispatch_hook, HookEvent
-            dispatch_hook(HookEvent.TOOL_AFTER_USE, {
-                "tool_call_id": tool_call.id,
-                "tool_name": tool_call.name,
-                "is_error": is_error,
-                # We expose only the text channel of the result —
-                # binary attachments can be huge and rarely useful
-                # for hooks.
-                "result_text": "".join(
-                    c.text for c in (result.content or [])
-                    if hasattr(c, "text") and isinstance(c.text, str)
-                ),
-            })
-        except Exception:
-            pass
+        emit_safe("tool.after", "tool", {
+            "tool": tool_call.name,
+            "tool_call_id": tool_call.id,
+            "is_error": is_error,
+            # Only the text channel of the result — binary attachments
+            # can be huge and rarely useful for subscribers.
+            "result_text": "".join(
+                c.text for c in (result.content or [])
+                if hasattr(c, "text") and isinstance(c.text, str)
+            ),
+        })
 
         tool_result_msg = ToolResultMessage(
             role="toolResult",

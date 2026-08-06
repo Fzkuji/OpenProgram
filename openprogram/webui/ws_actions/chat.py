@@ -638,20 +638,17 @@ async def handle_chat(ws, cmd: dict):
         user_msg["extra"] = json.dumps({"attachments": manifest}, default=str)
     _s._append_msg(conv, user_msg)
 
-    # Fire chat.before_send hook so plugins can observe the message
-    # about to enter the runtime. Failures are absorbed by
-    # dispatch_hook so a bad plugin can't poison the chat path.
-    try:
-        from openprogram.plugins.hooks import dispatch_hook, HookEvent
-        dispatch_hook(HookEvent.CHAT_BEFORE_SEND, {
-            "session_id": session_id,
-            "msg_id": msg_id,
-            "text": text,
-            "agent_id": _db_agent_id(session_id),
-            "attachments": bool(attachments),
-        })
-    except Exception:
-        pass
+    # chat.before_send on the bus — plugin subscribers observe the
+    # message about to enter the runtime. emit_safe swallows failures
+    # so a bad subscriber can't poison the chat path.
+    from openprogram.events import emit_safe
+    emit_safe("chat.before_send", "user", {
+        "session_id": session_id,
+        "msg_id": msg_id,
+        "text": text,
+        "agent_id": _db_agent_id(session_id),
+        "attachments": bool(attachments),
+    }, {"session": session_id})
 
     await ws.send_text(json.dumps({
         "type": "chat_ack",

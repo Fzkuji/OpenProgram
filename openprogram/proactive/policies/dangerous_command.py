@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-from openprogram.agent.event_bus import Event
+from openprogram.events import Event
 
 from ..actions import Action, Gate
 from ..policy import Policy

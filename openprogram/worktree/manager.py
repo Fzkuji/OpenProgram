@@ -49,7 +49,7 @@ def _broadcast_worktree_status(wt: Worktree) -> None:
 
     步 4：走总线（ws.frame 事件），不再 import webui；帧 type/data 字段不变。
     """
-    from openprogram.agent.event_bus import emit_ws_frame
+    from openprogram.events import emit_ws_frame
     emit_ws_frame({
         "type": "worktree_status",
         "data": {

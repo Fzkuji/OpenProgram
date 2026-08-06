@@ -82,7 +82,7 @@ What stays fixed matters as much as what changes. The bus design does not reach 
 
 The bus is enabled with class-A sources connected, `file.changed` and the `tool.before`
 synchronous interrogation point are in place, class-B sources are bridged (auth through
-`event_bridges.py`, with context / channels / memory / webui watcher tapping at the
+`events/bridges.py`, with context / channels / memory / webui watcher tapping at the
 source), and webui is a bus subscriber — five external sources (task runner, sub_agent,
 worktree, functions watcher, channels) emit `ws.frame` events instead of importing webui.
 The remaining work is the proactive rule layer, which consumes the bus and adds no new

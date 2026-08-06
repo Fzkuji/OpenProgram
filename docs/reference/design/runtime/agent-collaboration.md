@@ -270,7 +270,7 @@ emit_ws_frame(frame)                         # for sources: send a ready-made WS
 | A | `file.changed` | A file was modified | write/edit/apply_patch |
 | A | `turn.ended` | A turn finished | agent_loop |
 | A | `subagent.started`/`.ended` | Subtask start/stop | TaskRunner |
-| B | `credential.cooldown`/`.exhausted`/`.rotated` | Credential throttled / exhausted / rotated | event_bridges←AuthStore |
+| B | `credential.cooldown`/`.exhausted`/`.rotated` | Credential throttled / exhausted / rotated | events/bridges.py←AuthStore |
 | B | `context.compaction_recommended`/`.compacted` | Context hit threshold / was compacted | context/engine |
 | B | `channel.message_inbound` | External message arrives | channels |
 | B | `memory.ingest_started`/`.ended` | Wiki ingest start/stop | memory watcher |
@@ -475,7 +475,7 @@ list_branches so agents can address it).
 - `SessionStore` (list/append/set_head/commit/get)
 - `dispatcher.process_user_turn`
 - `branch_summarization` (multi-source self-summarization)
-- `event_bus` (emit_safe / emit_ws_frame)
+- `openprogram.events` (emit_safe / emit_ws_frame)
 
 **Frontend (`web/`)**
 - Session / branch list panel (WS handlers already exist) + a "pick target →

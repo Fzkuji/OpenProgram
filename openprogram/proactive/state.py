@@ -12,7 +12,7 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field
 
-from openprogram.agent.event_bus import Event
+from openprogram.events import Event
 
 
 @dataclass

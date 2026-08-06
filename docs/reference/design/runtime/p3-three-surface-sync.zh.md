@@ -9,7 +9,7 @@
 | 单 worker + 共享 git SessionDB | 三端连同一 worker、读同一真值 | worker/lock.py, agent/session_db.py |
 | running 状态位 | `_running_tasks` 注册表 + `running_task`/`running_task_clear` 广播(驱动 sidebar 呼吸灯 + composer 状态) | webui/server.py:187-224 |
 | 重连补历史 | `handle_sync(session_id, known_seqs)` 把缺的消息帧补发 | ws_actions/runtime.py:436-450 |
-| 事件广播 | EventBus + _broadcast,一处 emit 所有 WS 客户端收到 | event_bus.py, server.py `_broadcast` |
+| 事件广播 | EventBus + _broadcast,一处 emit 所有 WS 客户端收到 | events/bus.py, server.py `_broadcast` |
 
 → 一端发起的 turn,其它端**本来就**收到同样的 stream 事件;重连**本来就**补历史 + running 灯。所以"一端做了另一端看不到"在 webui/TUI(都走 worker WS)路径上基本不成立。
 

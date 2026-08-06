@@ -405,7 +405,7 @@ class DefaultContextEngine(ContextEngine):
             }})
 
         # 事件层 tap（懒 import 防循环）。emit_safe 自己吞异常，无需再包一层。
-        from openprogram.agent.event_bus import emit_safe
+        from openprogram.events import emit_safe
         emit_safe("context.compacted", "system",
                   {"ok": result.ok,
                    "tokens_before": result.tokens_before,
@@ -444,7 +444,7 @@ class DefaultContextEngine(ContextEngine):
                 "source": commit.source,
             }})
             # 事件层 tap（懒 import 防循环）。emit_safe 自己吞异常。
-            from openprogram.agent.event_bus import emit_safe
+            from openprogram.events import emit_safe
             emit_safe("context.compaction_recommended", "system",
                       {"budget_pct": round(pct, 3)},
                       {"session": session_id})

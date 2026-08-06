@@ -1,7 +1,7 @@
 """MVP 三条 policy 的触发与误报防护。"""
 from __future__ import annotations
 
-from openprogram.agent.event_bus import make_event
+from openprogram.events import make_event
 from openprogram.proactive.actions import Gate, Inject, Notify
 from openprogram.proactive.policies.dangerous_command import DangerousCommandGuard
 from openprogram.proactive.policies.unvalidated_completion import UnvalidatedCompletionNudge

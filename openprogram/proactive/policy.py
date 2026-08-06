@@ -9,7 +9,7 @@ from __future__ import annotations
 import threading
 from typing import Literal
 
-from openprogram.agent.event_bus import Event
+from openprogram.events import Event
 
 from .actions import Action
 

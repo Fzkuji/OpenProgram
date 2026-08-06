@@ -37,7 +37,7 @@ def install_question_bridge() -> None:
     if _installed:
         return
     try:
-        from openprogram.agent.event_bus import get_event_bus
+        from openprogram.events import get_event_bus
     except Exception:
         return
     get_event_bus().subscribe(_on_question_asked, types={"question.asked"})

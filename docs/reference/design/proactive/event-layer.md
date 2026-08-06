@@ -22,9 +22,8 @@ The layer has ten parts. Where each one lives:
 | 9 | Observability | gate verdicts recorded on the event's log line (§6) |
 | 10 | Admission boundary | the registry itself; `registry.py` module docstring |
 
-Everything event-related lives in the `openprogram/events/` package. The old module paths
-(`openprogram/agent/event_bus.py`, `tool_gate.py`, `event_bridges.py`) are `sys.modules` aliases of the
-package's modules, so existing imports and monkeypatch targets resolve to the same objects.
+Everything event-related lives in the `openprogram/events/` package, and every import goes through it
+(`from openprogram.events import ...`).
 
 ## 1. The Event Model
 
@@ -53,21 +52,25 @@ dispatcher-driven turn; explicit `metadata` keys win over the auto ones.
 `openprogram/events/registry.py` holds `EVENTS = {name: EventSpec(kind, payload_doc)}`. **An event type
 enters the registry only when a real consumer subscribes to it** — a moment becomes an event because someone
 wants to respond to it, never because the code happens to pass through it. This is the same principle
-`event_bridges.py` applies to type-B sources, and it is what keeps the stream from rotting into a dumping ground.
+`events/bridges.py` applies to type-B sources, and it is what keeps the stream from rotting into a dumping ground.
 
 The registered events:
 
 | type | kind | payload | emitted from |
 |---|---|---|---|
-| `tool.before` | gate | `{tool, args}` | `agent_loop._execute_tool_calls`, before every `tool.execute()` |
+| `tool.before` | gate | `{tool, tool_call_id, args}` | `agent_loop._execute_tool_calls`, before every `tool.execute()` |
+| `tool.after` | notify | `{tool, tool_call_id, is_error, result_text}` | `agent_loop._execute_tool_calls`, after every tool call finishes |
 | `turn.stop` | gate | `{session_id, user_msg_id, assistant_msg_id, last_text (≤4000 chars), stop_hook_active}` | `dispatcher.process_user_turn`, after the goal loop releases the turn |
 | `turn.start` | notify | `{session_id, user_msg_id, assistant_msg_id}` | dispatcher, after the user message is persisted |
 | `turn.end` | notify | `{session_id, user_msg_id, assistant_msg_id, usage}` | dispatcher, after finalize |
-| `session.start` | notify | `{session_id, agent_id, channel}` | `plugins/hooks.dispatch_hook` bridges the plugin `SESSION_START` hook onto the bus |
+| `session.start` | notify | `{session_id, agent_id, channel}` | webui session creation (`server.py`) |
+| `chat.before_send` | notify | `{session_id, msg_id, text, agent_id, attachments}` | `ws_actions/chat.py`, after the user message is persisted, before it enters the runtime |
+| `plugin.enable` | notify | `{plugin}` | `plugins/loader.py`, after the plugin loaded and its hook subscriptions registered |
+| `plugin.disable` | notify | `{plugin}` | `plugins/loader.py`, before the plugin's registrations are dropped |
 | `goal.update` | notify | `{session_id, goal: {text, check, status, turns_used, max_turns, last_reason, last_question}}` | `goal._emit_goal_update` |
 
 Emitting an unregistered type is tolerated during migration: the bus logs one warning per type (never raises),
-so legacy emit sites (`tool.after`, `user.prompt_submitted`, `credential.*`, `context.*`, `memory.ingest_*`,
+so legacy emit sites (`user.prompt_submitted`, `credential.*`, `context.*`, `memory.ingest_*`,
 `ws.frame`, ...) keep working and migrate into the registry as their consumers formalize.
 
 ## 3. Two Dispatch Modes
@@ -176,7 +179,7 @@ Dependency direction: the event system imports nothing from webui. webui subscri
 | consumer-facing surface | backed by |
 |---|---|
 | `tool_gate.register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | thin shell over `subscribe_gate("tool.before", ...)` / `emit_gate` — public signatures unchanged for agent_loop and the proactive engine |
-| plugin `SESSION_START` hook | `dispatch_hook` also emits `session.start` on the bus |
+| plugin `hooks` entrypoint | `plugins/hooks.register_plugin_hooks` subscribes each handler on the bus, keyed by bus event name — notify events via `subscribe`, gate events (`tool.before`) via `subscribe_gate` with the veto protocol (falsy return allows, a reason string or `ToolGateDenied` denies, any other exception is logged and fail-open) |
 | `/goal` state changes | `goal._emit_goal_update` also emits `goal.update` |
 | config.json `hooks` | `openprogram.events.install_config_hooks()` at worker start |
 | type-B sources (auth, context, channels, memory) | `openprogram/events/bridges.py` bridge + per-source `emit_safe` taps |

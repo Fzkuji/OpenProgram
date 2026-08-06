@@ -156,7 +156,7 @@ class EventLayerTransport(QuestionTransport):
 
     def publish(self, data: dict) -> None:
         try:
-            from openprogram.agent.event_bus import emit_ws_frame, emit_safe
+            from openprogram.events import emit_ws_frame, emit_safe
             # 1) 给前端：ws.frame 透传成可见卡片（webui 订阅转发）。
             emit_ws_frame({"type": "question.asked", "data": data})
             # 2) 进事件层：发一份纯 question.asked 事件，让"发生了一次提问"像
@@ -169,7 +169,7 @@ class EventLayerTransport(QuestionTransport):
     def retract(self, qid: str) -> None:
         # 超时：广播 question.rejected，前端按"收回"处理（dequeue 卡片）。
         try:
-            from openprogram.agent.event_bus import emit_ws_frame
+            from openprogram.events import emit_ws_frame
             emit_ws_frame({"type": "question.rejected", "data": {"id": qid}})
         except Exception:
             pass
@@ -270,7 +270,7 @@ def resolve_question_and_broadcast(qid: str, outcome: str, value=None) -> bool:
     ok = get_question_registry().resolve(qid, outcome, value)
     if ok:
         try:
-            from openprogram.agent.event_bus import emit_ws_frame
+            from openprogram.events import emit_ws_frame
             emit_ws_frame({
                 "type": "question.replied" if outcome == "answered"
                         else "question.rejected",

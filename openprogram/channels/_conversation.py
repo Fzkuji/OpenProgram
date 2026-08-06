@@ -25,7 +25,7 @@ import threading
 import time
 from typing import Optional
 
-from openprogram.agent.event_bus import emit_ws_frame as _emit_ws_frame
+from openprogram.events import emit_ws_frame as _emit_ws_frame
 from openprogram.agent.management import manager as _agents
 from openprogram.channels import bindings as _bindings
 from openprogram.channels._broadcast import (
@@ -104,7 +104,7 @@ def dispatch_inbound(
 
     # 事件层 tap：外部消息进来了（B 类，不属于任何 turn）。懒 import 防循环。
     try:
-        from openprogram.agent.event_bus import emit_safe
+        from openprogram.events import emit_safe
         emit_safe("channel.message_inbound", "user",
                   {"channel": channel, "peer_kind": peer["kind"],
                    "chars": len(user_text or "")})

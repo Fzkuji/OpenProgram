@@ -1,115 +1,96 @@
-"""Plugin lifecycle hooks — opencode PluginV2.HookSpec equivalent.
+"""Plugin hooks — direct subscribers on the event bus.
 
-Each plugin can expose a ``hooks`` entrypoint resolving to a dict that
-maps hook event names to callables. When the host hits a known
-lifecycle point it calls :func:`dispatch_hook` which iterates every
-registered plugin's handler for that event.
+A plugin's ``hooks`` entrypoint resolves to a dict mapping **bus event
+names** (``tool.before``, ``tool.after``, ``session.start``,
+``chat.before_send``, ``plugin.enable``, ``plugin.disable``, ...) to
+callables. :func:`register_plugin_hooks` subscribes each handler on the
+process-wide bus; :func:`unregister_plugin_hooks` disposes the
+subscriptions. Handlers receive the :class:`openprogram.events.Event`.
 
-This is intentionally a thin façade — handlers run in the host
-process inline. The plugin sandbox / trust gate (see ``sandbox.py``)
-decides whether a plugin's handlers get registered at all; once
-registered, dispatch trusts them.
+Dispatch kind follows the registry (``openprogram/events/registry.py``):
+
+* **notify** events — ``bus.subscribe``; the handler observes, its return
+  value is ignored, and any exception is logged as a warning (a bad plugin
+  never breaks the emitting code path).
+* **gate** events (``tool.before``) — ``bus.subscribe_gate``; the handler
+  participates in the veto: return ``None``/falsy to allow, a reason
+  string to deny; raising :class:`ToolGateDenied` denies with its message;
+  any other exception is logged as a warning and allows (fail-open).
+
+The plugin sandbox / trust gate (``sandbox.py``) decides whether a
+plugin's handlers get registered at all; once registered, dispatch
+trusts them.
 """
 from __future__ import annotations
 
+import logging
 from threading import RLock
 from typing import Any, Callable
 
+from openprogram.events import Event, ToolGateDenied, get_event_bus
+from openprogram.events.registry import EVENTS
 
-# Known event names. Plugins can also register against arbitrary
-# strings — these are just the ones the host actively fires.
-class HookEvent:
-    PLUGIN_ENABLE = "plugin.enable"
-    PLUGIN_DISABLE = "plugin.disable"
-    PLUGIN_RELOAD = "plugin.reload"
-    SKILL_INVOKED = "skill.invoked"
-    SKILL_INSTALLED = "skill.installed"
-    SESSION_START = "session.start"
-    TOOL_BEFORE_USE = "tool.before_use"
-    TOOL_AFTER_USE = "tool.after_use"
-    CHAT_BEFORE_SEND = "chat.before_send"
-
+_log = logging.getLogger(__name__)
 
 _lock = RLock()
-# {plugin_name: {event_name: callable}}
-_handlers: dict[str, dict[str, Callable[..., Any]]] = {}
+# {plugin_name: [unsubscribe, ...]}
+_subscriptions: dict[str, list[Callable[[], None]]] = {}
 
 
-def register_plugin_hooks(plugin_name: str, mapping: dict[str, Callable[..., Any]]) -> None:
-    """Register a plugin's hook handlers. ``mapping`` is the dict the
-    plugin's ``entrypoints.hooks`` resolved to (after manifest load).
-    A second call for the same plugin replaces the previous mapping."""
-    clean: dict[str, Callable[..., Any]] = {}
-    for event, handler in (mapping or {}).items():
-        if not isinstance(event, str) or not callable(handler):
+def _wrap_notify(plugin_name: str, event_name: str,
+                 handler: Callable[..., Any]) -> Callable[[Event], None]:
+    def _notify(event: Event) -> None:
+        try:
+            handler(event)
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("plugin hook %s@%s raised %s: %s",
+                         plugin_name, event_name, type(exc).__name__, exc)
+    return _notify
+
+
+def _wrap_gate(plugin_name: str, event_name: str,
+               handler: Callable[..., Any]) -> Callable[[Event], "str | None"]:
+    def _gate(event: Event) -> "str | None":
+        try:
+            verdict = handler(event)
+        except ToolGateDenied as exc:
+            return str(exc) or f"denied by plugin {plugin_name}"
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("plugin gate %s@%s raised %s: %s (fail-open)",
+                         plugin_name, event_name, type(exc).__name__, exc)
+            return None
+        return str(verdict) if verdict else None
+    return _gate
+
+
+def register_plugin_hooks(plugin_name: str,
+                          mapping: dict[str, Callable[..., Any]]) -> None:
+    """Subscribe a plugin's hook handlers on the process bus. ``mapping``
+    is the dict the plugin's ``entrypoints.hooks`` resolved to (after
+    manifest load). A second call for the same plugin replaces the
+    previous subscriptions."""
+    unregister_plugin_hooks(plugin_name)
+    bus = get_event_bus()
+    disposables: list[Callable[[], None]] = []
+    for event_name, handler in (mapping or {}).items():
+        if not isinstance(event_name, str) or not callable(handler):
             continue
-        clean[event] = handler
-    with _lock:
-        if clean:
-            _handlers[plugin_name] = clean
+        spec = EVENTS.get(event_name)
+        if spec is not None and spec.kind == "gate":
+            disposables.append(bus.subscribe_gate(
+                event_name, _wrap_gate(plugin_name, event_name, handler)))
         else:
-            _handlers.pop(plugin_name, None)
+            disposables.append(bus.subscribe(
+                _wrap_notify(plugin_name, event_name, handler),
+                types={event_name}))
+    with _lock:
+        if disposables:
+            _subscriptions[plugin_name] = disposables
 
 
 def unregister_plugin_hooks(plugin_name: str) -> None:
+    """Dispose every subscription the plugin holds on the bus."""
     with _lock:
-        _handlers.pop(plugin_name, None)
-
-
-def list_handlers(event: str) -> list[tuple[str, Callable[..., Any]]]:
-    """Return ``(plugin_name, handler)`` pairs that subscribe to ``event``."""
-    with _lock:
-        return [
-            (pn, handlers[event])
-            for pn, handlers in _handlers.items()
-            if event in handlers
-        ]
-
-
-def dispatch_hook(event: str, payload: dict[str, Any] | None = None) -> list[Any]:
-    """Call every registered handler for ``event`` with ``payload``.
-    Returns the list of return values. Exceptions are caught per
-    handler so one misbehaving plugin can't poison the chain.
-
-    Bus bridge: ``SESSION_START`` is also emitted as a ``session.start``
-    notify on the event bus, so bus subscribers see session creation
-    without registering a plugin. ``TOOL_BEFORE_USE`` is NOT bridged —
-    the bus's ``tool.before`` is the gate-carrying event agent_loop
-    already emits, and a notify shadow under the same name would blur
-    the two."""
-    payload = payload or {}
-    if event == HookEvent.SESSION_START:
-        try:
-            from openprogram.events import emit_safe
-            meta = ({"session": payload["session_id"]}
-                    if payload.get("session_id") else None)
-            emit_safe("session.start", "system", dict(payload), meta)
-        except Exception:
-            pass
-    out: list[Any] = []
-    for plugin_name, handler in list_handlers(event):
-        try:
-            out.append(handler(**payload))
-        except TypeError:
-            # Allow handlers that take a single dict positional arg.
-            try:
-                out.append(handler(payload))
-            except Exception as e:  # noqa: BLE001
-                _log_handler_error(plugin_name, event, e)
-        except Exception as e:  # noqa: BLE001
-            _log_handler_error(plugin_name, event, e)
-    return out
-
-
-def _log_handler_error(plugin_name: str, event: str, exc: Exception) -> None:
-    try:
-        from openprogram.webui import server as _srv
-        _srv._log(f"[hooks] {plugin_name}@{event} raised {type(exc).__name__}: {exc}")
-    except Exception:
-        pass
-
-
-def clear_all() -> None:
-    """Test helper — wipe every registered handler."""
-    with _lock:
-        _handlers.clear()
+        disposables = _subscriptions.pop(plugin_name, [])
+    for dispose in disposables:
+        dispose()

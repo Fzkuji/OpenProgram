@@ -196,7 +196,7 @@ def decide_tool_gate(event: Event) -> str | None:
     gate 抛异常 → fail-open（stderr 打印），继续问下一个。"""
 ```
 
-关键性质：**gate 在权限审批包装之外，`bypass` 关不掉它**（`tool_gate.py:15`），对 subagent 同样生效。gate 是策略层（proactive policy 的 Gate allow/deny/ask）的硬拦截点，必须快（同步热路径，不许 LLM / 慢 IO）。
+关键性质：**gate 在权限审批包装之外，`bypass` 关不掉它**（`events/tool_gate.py:15`），对 subagent 同样生效。gate 是策略层（proactive policy 的 Gate allow/deny/ask）的硬拦截点，必须快（同步热路径，不许 LLM / 慢 IO）。
 
 ### 3.2 审批包装（关卡 B）与决策伪代码
 

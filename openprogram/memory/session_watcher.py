@@ -105,7 +105,7 @@ def _scan(idle_minutes: int) -> int:
         ok = _process_session(sid, messages)
         # 事件层 tap：空闲会话的 wiki ingest 起止（B 类）。懒 import 防循环。
         try:
-            from openprogram.agent.event_bus import emit_safe
+            from openprogram.events import emit_safe
             emit_safe("memory.ingest_ended", "system",
                       {"ok": ok}, {"session": sid})
         except Exception:
@@ -134,7 +134,7 @@ def _process_session(session_id: str, messages: list[dict[str, Any]]) -> bool:
     """
     # 事件层 tap：ingest 开始（B 类）。
     try:
-        from openprogram.agent.event_bus import emit_safe
+        from openprogram.events import emit_safe
         emit_safe("memory.ingest_started", "system",
                   {"messages": len(messages)}, {"session": session_id})
     except Exception:

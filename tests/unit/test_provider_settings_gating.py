@@ -78,7 +78,7 @@ def providers_client(monkeypatch):
 
     frames = []
     monkeypatch.setattr(
-        "openprogram.agent.event_bus.emit_ws_frame",
+        "openprogram.events.emit_ws_frame",
         lambda frame: frames.append(frame),
     )
 
