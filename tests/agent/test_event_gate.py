@@ -3,7 +3,8 @@
 Covers: EVENTS registry shape, emit_gate merge/order/fail-open/re-entrancy,
 shell subscriber exit-code protocol (0/2/other) and timeout, event-log
 routing and rotation, and the dispatcher's hook-continuation helper
-(``continue_stop_hook_turns``) including its runaway cap.
+(``continue_stop_hook_turns``) including its stop_hook_active flag
+protocol (no numeric cap).
 """
 from __future__ import annotations
 
@@ -309,19 +310,29 @@ def test_stop_hook_denial_runs_continuation_then_allows(_singleton_gates_clean):
     assert seen_payloads[1]["last_text"] == "第二轮"
 
 
-def test_stop_hook_continuation_cap_is_ten(_singleton_gates_clean):
+def test_stop_hook_no_numeric_cap(_singleton_gates_clean):
+    """No runaway number — the stop_hook_active flag protocol replaces
+    the old cap: the hook keeps seeing stop_hook_active=True and is the
+    one expected to allow the stop. 15 denials → 15 continuations."""
     from openprogram.agent.dispatcher.stop_hook import (
-        MAX_HOOK_CONTINUATIONS,
         continue_stop_hook_turns,
     )
 
     bus = _singleton_gates_clean
-    bus.subscribe_gate("turn.stop", lambda ev: "永远不满意")
+    denials = {"n": 0}
+
+    def gate(ev):
+        if denials["n"] >= 15:
+            return None
+        denials["n"] += 1
+        return "还不行"
+
+    bus.subscribe_gate("turn.stop", gate)
     ran = []
     out = continue_stop_hook_turns(
         _stop_req(), _Result(),
         run_turn=lambda req, **kw: ran.append(req) or _Result())
-    assert len(ran) == MAX_HOOK_CONTINUATIONS == 10
+    assert len(ran) == 15                     # past the old cap of 10
     assert out is not None
 
 

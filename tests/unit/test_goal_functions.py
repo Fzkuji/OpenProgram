@@ -1,7 +1,7 @@
-"""Unit tests for the goal agentic functions
-(``openprogram/functions/agentics/goal/``): goal_judge's JSON parse
-path and goal_verify's fail-open behaviour. The loop semantics around
-them live in test_goal_loop.py."""
+"""Unit tests for the goal agentic function
+(``openprogram/functions/agentics/goal/``): the single decision entry
+``goal`` — prompt assembly, JSON parse path, failure path. The loop
+semantics around it live in test_goal_loop.py."""
 from __future__ import annotations
 
 import pytest
@@ -9,111 +9,124 @@ import pytest
 import openprogram.functions.agentics.goal as GF
 
 
+@pytest.fixture
+def stub_view(monkeypatch):
+    monkeypatch.setattr(GF, "render_session_view", lambda sid, **k: "VIEW")
+
+
 # ---------------------------------------------------------------------------
-# goal_judge — parse path
+# Reply parsing
 # ---------------------------------------------------------------------------
 
-def test_goal_judge_parses_reply(monkeypatch) -> None:
-    monkeypatch.setattr(
-        GF, "_judge_reply",
-        lambda *a, **k: ('prose before {"met": true, "reason": "ok", '
-                         '"need_user": false, "question": ""} after'))
-    out = GF.goal_judge(goal="tests pass", transcript_tail="[tool bash] ok")
-    assert out == {"met": True, "reason": "ok",
+def test_parse_decision_fenced_json() -> None:
+    ok = GF._parse_decision(
+        '```json\n{"met": false, "reason": "missing"}\n```')
+    assert ok == {"met": False, "reason": "missing",
+                  "need_user": False, "question": ""}
+
+
+def test_parse_decision_invalid_raises() -> None:
+    with pytest.raises(ValueError):
+        GF._parse_decision("no braces here")
+    with pytest.raises(ValueError):
+        GF._parse_decision('{"met": "yes"}')  # met must be bool
+
+
+# ---------------------------------------------------------------------------
+# The decision entry
+# ---------------------------------------------------------------------------
+
+def test_goal_decision_parses_and_forwards(monkeypatch, stub_view) -> None:
+    calls = []
+
+    def _fake_turn(session_id, prompt, *, agent_id, spawn_caller):
+        calls.append((session_id, prompt, agent_id, spawn_caller))
+        return ('prose before {"met": true, "reason": "done", '
+                '"need_user": false, "question": ""} after')
+
+    monkeypatch.setattr(GF, "_run_decision_turn", _fake_turn)
+    out = GF.goal(goal="MY-GOAL", session_id="s1",
+                  spawn_caller="a1", agent_id="main")
+    assert out == {"met": True, "reason": "done",
+                   "need_user": False, "question": ""}
+    sid, prompt, agent_id, spawn_caller = calls[0]
+    assert (sid, agent_id, spawn_caller) == ("s1", "main", "a1")
+    assert "completion judge" in prompt              # docstring is the prompt
+    assert "<goal>\nMY-GOAL\n</goal>" in prompt
+    assert "<session_context>\nVIEW\n</session_context>" in prompt
+
+
+def test_goal_decision_optional_fields_default(monkeypatch, stub_view) -> None:
+    # Replies without need_user/question stay valid.
+    monkeypatch.setattr(GF, "_run_decision_turn",
+                        lambda *a, **k: '{"met": false, "reason": "not yet"}')
+    out = GF.goal(goal="g", session_id="s1")
+    assert out == {"met": False, "reason": "not yet",
                    "need_user": False, "question": ""}
 
 
-def test_goal_judge_defaults_optional_fields(monkeypatch) -> None:
-    # Older judge outputs without need_user/question stay valid.
+def test_goal_decision_invalid_reply_raises(monkeypatch, stub_view) -> None:
+    monkeypatch.setattr(GF, "_run_decision_turn",
+                        lambda *a, **k: "no json here")
+    with pytest.raises(ValueError):
+        GF.goal(goal="g", session_id="s1")
+
+
+def test_goal_decision_turn_failure_propagates(monkeypatch, stub_view) -> None:
     monkeypatch.setattr(
-        GF, "_judge_reply",
-        lambda *a, **k: '{"met": false, "reason": "missing"}')
-    out = GF.goal_judge(goal="g", transcript_tail="t")
-    assert out == {"met": False, "reason": "missing",
-                   "need_user": False, "question": ""}
-
-
-def test_goal_judge_invalid_reply_raises(monkeypatch) -> None:
-    monkeypatch.setattr(GF, "_judge_reply", lambda *a, **k: "no json here")
-    with pytest.raises(ValueError):
-        GF.goal_judge(goal="g", transcript_tail="t")
-
-
-def test_goal_judge_non_bool_met_raises(monkeypatch) -> None:
-    monkeypatch.setattr(GF, "_judge_reply", lambda *a, **k: '{"met": "yes"}')
-    with pytest.raises(ValueError):
-        GF.goal_judge(goal="g", transcript_tail="t")
-
-
-def test_goal_judge_prompt_carries_docstring_and_payload(monkeypatch) -> None:
-    seen = {}
-
-    def _fake_exec(content, toolset=None, response_format=None, **kwargs):
-        seen["text"] = content[0]["text"]
-        seen["toolset"] = toolset
-        seen["response_format"] = response_format
-        return '{"met": true, "reason": "done", "need_user": false, "question": ""}'
-
-    class _FakeRuntime:
-        exec = staticmethod(_fake_exec)
-
-    out = GF.goal_judge(goal="MY-GOAL", transcript_tail="MY-TAIL",
-                        runtime=_FakeRuntime())
-    assert out["met"] is True
-    assert "strict completion judge" in seen["text"]      # docstring prompt
-    assert "<goal>\nMY-GOAL\n</goal>" in seen["text"]
-    assert "<transcript_tail>\nMY-TAIL\n</transcript_tail>" in seen["text"]
-    assert seen["toolset"] == "none"                      # no-tools judge
-    assert seen["response_format"] == GF._JUDGE_RESPONSE_SCHEMA
+        GF, "_run_decision_turn",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn down")))
+    with pytest.raises(RuntimeError):
+        GF.goal(goal="g", session_id="s1")
 
 
 # ---------------------------------------------------------------------------
-# goal_verify — fail-open + parse
+# Session view rendering — summary + tail shape
 # ---------------------------------------------------------------------------
 
-def test_goal_verify_confirmed(monkeypatch) -> None:
+def test_render_session_view_keeps_summary_and_tail(monkeypatch) -> None:
+    rows = ([{"id": "sum", "role": "summary", "content": "SUMMARY",
+              "covers_ids": ["a", "b"]}]
+            + [{"id": f"m{i}", "role": "user", "content": f"turn {i}"}
+               for i in range(20)])
+    monkeypatch.setattr("openprogram.agent.session_db.default_db",
+                        lambda: None)
+    monkeypatch.setattr(
+        "openprogram.context.persistence.rendered_history",
+        lambda db, sid, head_id=None: rows)
+    view = GF.render_session_view("s1", max_messages=3)
+    assert view.startswith("[summary] SUMMARY")   # summary survives the cap
+    assert "turn 19" in view                      # tail keeps the newest
+    assert "turn 5" not in view                   # older kept turns capped
+
+
+def test_render_session_view_plain_branch(monkeypatch) -> None:
+    rows = [{"id": "m1", "role": "user", "content": "hello"},
+            {"id": "m2", "role": "assistant", "content": "hi"}]
+    monkeypatch.setattr("openprogram.agent.session_db.default_db",
+                        lambda: None)
+    monkeypatch.setattr(
+        "openprogram.context.persistence.rendered_history",
+        lambda db, sid, head_id=None: rows)
+    view = GF.render_session_view("s1")
+    assert view == "[user] hello\n[assistant] hi"
+
+
+# ---------------------------------------------------------------------------
+# Attended / unattended mode reaches the prompt
+# ---------------------------------------------------------------------------
+
+def test_goal_decision_mode_in_prompt(monkeypatch, stub_view) -> None:
     prompts = []
 
     def _fake_turn(session_id, prompt, *, agent_id, spawn_caller):
-        prompts.append((session_id, prompt, agent_id, spawn_caller))
-        return '{"confirmed": true, "evidence": "全部测试通过", "gap": ""}'
+        prompts.append(prompt)
+        return '{"met": false, "reason": "r"}'
 
-    monkeypatch.setattr(GF, "_run_verifier_turn", _fake_turn)
-    out = GF.goal_verify(goal="tests pass", claim="目标已达成",
-                         session_id="s1", spawn_caller="a1", agent_id="main")
-    assert out == {"confirmed": True, "evidence": "全部测试通过", "gap": ""}
-    sid, prompt, agent_id, spawn_caller = prompts[0]
-    assert (sid, agent_id, spawn_caller) == ("s1", "main", "a1")
-    assert "不要相信" in prompt                            # docstring prompt
-    assert "<claim>\n目标已达成\n</claim>" in prompt
-
-
-def test_goal_verify_refuted(monkeypatch) -> None:
-    monkeypatch.setattr(
-        GF, "_run_verifier_turn",
-        lambda *a, **k: '{"confirmed": false, "evidence": "3 fail", '
-                        '"gap": "测试没过"}')
-    out = GF.goal_verify(goal="g", claim="c", session_id="s1")
-    assert out == {"confirmed": False, "evidence": "3 fail", "gap": "测试没过"}
-
-
-def test_goal_verify_turn_failure_fails_open(monkeypatch) -> None:
-    monkeypatch.setattr(
-        GF, "_run_verifier_turn",
-        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn down")))
-    out = GF.goal_verify(goal="g", claim="c", session_id="s1")
-    assert out == {"confirmed": True, "evidence": "", "gap": ""}
-
-
-def test_goal_verify_unparseable_reply_fails_open(monkeypatch) -> None:
-    monkeypatch.setattr(GF, "_run_verifier_turn",
-                        lambda *a, **k: "I looked around, seems fine")
-    out = GF.goal_verify(goal="g", claim="c", session_id="s1")
-    assert out == {"confirmed": True, "evidence": "", "gap": ""}
-
-
-def test_goal_verify_non_bool_confirmed_fails_open(monkeypatch) -> None:
-    monkeypatch.setattr(GF, "_run_verifier_turn",
-                        lambda *a, **k: '{"confirmed": "yes"}')
-    out = GF.goal_verify(goal="g", claim="c", session_id="s1")
-    assert out == {"confirmed": True, "evidence": "", "gap": ""}
+    monkeypatch.setattr(GF, "_run_decision_turn", _fake_turn)
+    GF.goal(goal="g", session_id="s1")                    # default attended
+    GF.goal(goal="g", session_id="s1", attended=False)
+    assert "<mode>\nattended\n</mode>" in prompts[0]
+    assert "<mode>\nunattended\n</mode>" in prompts[1]
+    # Both policies are spelled out in the docstring prompt.
+    assert "unattended — nobody is watching" in prompts[0]

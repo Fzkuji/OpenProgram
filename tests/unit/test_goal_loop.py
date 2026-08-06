@@ -86,7 +86,7 @@ def stub_agent_profile(monkeypatch: pytest.MonkeyPatch):
 def _set_goal(db: SessionDB, session_id: str, **overrides) -> dict:
     goal = {
         "text": "the goal", "status": "active",
-        "created_at": time.time(), "turns_used": 0, "max_turns": 20,
+        "created_at": time.time(), "turns_used": 0, "max_turns": None,
         "last_reason": "", "judge_parse_failures": 0,
     }
     goal.update(overrides)
@@ -119,7 +119,7 @@ def test_goal_set_status_clear(tmp_db: SessionDB) -> None:
     goal = G.load_goal("s1")
     assert goal["status"] == "active"
     assert goal["text"] == "tests pass"
-    assert goal["max_turns"] == 20
+    assert goal["max_turns"] is None    # unlimited by default
 
     status = G.handle_goal_command("s1", "")
     assert status["send_text"] is None
@@ -140,22 +140,13 @@ def test_goal_set_status_clear(tmp_db: SessionDB) -> None:
 # ---------------------------------------------------------------------------
 
 def _judge_raw(monkeypatch, fn) -> None:
-    """Stub the judge's raw-reply seam (``GF._judge_reply``) and skip the
-    session-model runtime construction (``G._judge_runtime`` — the
-    agentic function auto-injects a placeholder runtime under pytest)."""
-    monkeypatch.setattr(G, "_judge_runtime", lambda *a, **k: None)
-    monkeypatch.setattr(GF, "_judge_reply", fn)
+    """Stub the decision turn's raw-reply seam (``GF._run_decision_turn``)."""
+    monkeypatch.setattr(GF, "_run_decision_turn", fn)
 
 
 def _judge_replies(monkeypatch, replies: list[str]) -> None:
     it = iter(replies)
     _judge_raw(monkeypatch, lambda *a, **k: next(it))
-
-
-def _confirm_verifier(monkeypatch) -> None:
-    monkeypatch.setattr(
-        GF, "_run_verifier_turn",
-        lambda *a, **k: '{"confirmed": true, "evidence": "verified"}')
 
 
 def test_judge_flips_to_achieved(tmp_db: SessionDB, monkeypatch,
@@ -167,7 +158,6 @@ def test_judge_flips_to_achieved(tmp_db: SessionDB, monkeypatch,
         '{"met": false, "reason": "not yet"}',
         '{"met": true, "reason": "done"}',
     ])
-    _confirm_verifier(monkeypatch)
 
     continuations: list[TurnRequest] = []
 
@@ -203,6 +193,26 @@ def test_max_turns_caps_the_loop(tmp_db: SessionDB, monkeypatch) -> None:
     assert goal["status"] == "capped"
     assert goal["turns_used"] == 2
     assert len(calls) == 1  # turn 2 ran, turn 3 was never launched
+
+
+def test_no_cap_by_default(tmp_db: SessionDB, monkeypatch) -> None:
+    """max_turns=None (the default) never caps — the loop runs past the
+    old 20-turn number and stops only on met."""
+    _set_goal(tmp_db, "s1")            # max_turns None
+    replies = ['{"met": false, "reason": "no"}'] * 25 + [
+        '{"met": true, "reason": "done"}']
+    _judge_replies(monkeypatch, replies)
+    calls = []
+
+    def run_turn(req, *, on_event=None, cancel_event=None):
+        calls.append(req)
+        return _result(tools=True)
+
+    G.continue_goal_turns(_req(), _result(), run_turn=run_turn)
+    goal = G.load_goal("s1")
+    assert goal["status"] == "achieved"
+    assert goal["turns_used"] == 26
+    assert len(calls) == 25
 
 
 def test_clear_mid_loop_stops_continuation(tmp_db: SessionDB,
@@ -288,20 +298,20 @@ def test_judge_retries_once_then_parses(tmp_db: SessionDB, monkeypatch) -> None:
     _set_goal(tmp_db, "s1")
     _judge_replies(monkeypatch, [
         "not json at all", '{"met": true, "reason": "done"}'])
-    verdict, reason, _question = G._evaluate_with_llm_judge(
-        "s1", {"text": "the goal"}, agent_id="main", model_override=None)
+    verdict, reason, _question = G.evaluate_goal(
+        "s1", {"text": "the goal"}, agent_id="main")
     assert verdict == "met"
     assert reason == "done"
 
 
 def test_judge_json_extraction() -> None:
-    ok = GF._parse_judge('```json\n{"met": false, "reason": "missing"}\n```')
+    ok = GF._parse_decision('```json\n{"met": false, "reason": "missing"}\n```')
     assert ok == {"met": False, "reason": "missing",
                   "need_user": False, "question": ""}
     with pytest.raises(ValueError):
-        GF._parse_judge("no braces here")
+        GF._parse_decision("no braces here")
     with pytest.raises(ValueError):
-        GF._parse_judge('{"met": "yes"}')  # met must be bool
+        GF._parse_decision('{"met": "yes"}')  # met must be bool
 
 
 # ---------------------------------------------------------------------------
@@ -437,7 +447,6 @@ def test_dispatcher_end_to_end_goal_achieved(tmp_db: SessionDB,
         '{"met": false, "reason": "not yet"}',
         '{"met": true, "reason": "done"}',
     ])
-    _confirm_verifier(monkeypatch)
 
     turn_count = {"n": 0}
 
@@ -499,6 +508,7 @@ def test_needs_user_pauses_loop(tmp_db: SessionDB, monkeypatch) -> None:
     goal = G.load_goal("s1")
     assert goal["status"] == "waiting_user"
     assert goal["last_question"] == "用方案A还是方案B？"
+    assert goal["last_question_at"] > 0     # rate-limit clock started
     assert calls == []          # nothing launched while waiting
 
     # A goal_continue turn is never the answer — still waiting.
@@ -513,12 +523,55 @@ def test_needs_user_pauses_loop(tmp_db: SessionDB, monkeypatch) -> None:
         '"question": ""}',
         '{"met": true, "reason": "done", "need_user": false, "question": ""}',
     ])
-    monkeypatch.setattr(GF, "_judge_reply", lambda *a, **k: next(answers))
+    _judge_raw(monkeypatch, lambda *a, **k: next(answers))
     G.continue_goal_turns(_req(source="web"), _result(), run_turn=run_turn)
     goal = G.load_goal("s1")
     assert goal["status"] == "achieved"
     assert "last_question" not in goal
+    assert goal["last_question_at"] > 0     # clock persists across resume
     assert len(calls) == 1      # exactly the one resumed continuation
+
+
+def test_needs_user_rate_limited_degrades_to_continuation(
+        tmp_db: SessionDB, monkeypatch) -> None:
+    """A needs_user verdict within an hour of the last question does not
+    pause — it degrades into a continuation telling the agent to decide
+    by itself."""
+    _set_goal(tmp_db, "s1", last_question_at=time.time())
+    replies = iter([
+        ('{"met": false, "reason": "direction unclear", '
+         '"need_user": true, "question": "A还是B？"}'),
+        '{"met": true, "reason": "done"}',
+    ])
+    _judge_raw(monkeypatch, lambda *a, **k: next(replies))
+    calls = []
+
+    def run_turn(req, *, on_event=None, cancel_event=None):
+        calls.append(req)
+        return _result(tools=True)
+
+    G.continue_goal_turns(_req(), _result(), run_turn=run_turn)
+    goal = G.load_goal("s1")
+    assert goal["status"] == "achieved"     # never paused
+    assert len(calls) == 1
+    assert "提问额度已用" in calls[0].user_text
+    assert "A还是B？" in calls[0].user_text
+    assert "last_question" not in goal
+
+
+def test_needs_user_after_interval_pauses_again(tmp_db: SessionDB,
+                                                monkeypatch) -> None:
+    """An old last_question_at (beyond the 1-hour window) does not block
+    a new pause."""
+    _set_goal(tmp_db, "s1", last_question_at=time.time() - 7200)
+    _judge_raw(monkeypatch,
+               lambda *a, **k: ('{"met": false, "reason": "r", '
+                                '"need_user": true, "question": "问一下？"}'))
+    G.continue_goal_turns(_req(), _result(),
+                          run_turn=lambda req, **k: _result())
+    goal = G.load_goal("s1")
+    assert goal["status"] == "waiting_user"
+    assert goal["last_question"] == "问一下？"
 
 
 def test_needs_user_without_question_continues(tmp_db: SessionDB,
@@ -547,69 +600,40 @@ def test_clear_covers_waiting_user(tmp_db: SessionDB) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Active verification of stop verdicts
+# Goal sessions never enter the turn.stop gate
 # ---------------------------------------------------------------------------
 
-def test_met_verdict_is_actively_verified(tmp_db: SessionDB,
-                                          monkeypatch) -> None:
-    """A met verdict from the tail judge only stops the loop after the
-    verifier confirms it from the working directory; a refuted claim
-    continues with the verifier's gap as the reason."""
-    _set_goal(tmp_db, "s1")
-    _judge_raw(monkeypatch,
-               lambda *a, **k: '{"met": true, "reason": "looks done"}')
-    verify_replies = iter([
-        '{"confirmed": false, "evidence": "3 tests fail", "gap": "测试没过"}',
-        '{"confirmed": true, "evidence": "全部测试通过", "gap": ""}',
-    ])
-    prompts = []
+def _run_e2e_turn(monkeypatch, session_id: str) -> None:
+    fake_stream = _make_text_stream_fn(["done"])
+    orig = D._run_loop_blocking
 
-    def fake_verifier(session_id, prompt, *, agent_id, spawn_caller):
-        prompts.append(prompt)
-        return next(verify_replies)
+    def _wrapped(*, req, history, on_event, cancel_event, stream_fn=None,
+                 **extra):
+        return orig(req=req, history=history, on_event=on_event,
+                    cancel_event=cancel_event, stream_fn=fake_stream, **extra)
 
-    monkeypatch.setattr(GF, "_run_verifier_turn", fake_verifier)
-    calls = []
-
-    def run_turn(req, *, on_event=None, cancel_event=None):
-        calls.append(req)
-        return _result(tools=True)
-
-    G.continue_goal_turns(_req(), _result(), run_turn=run_turn)
-    goal = G.load_goal("s1")
-    assert goal["status"] == "achieved"
-    assert goal["last_reason"] == "全部测试通过"
-    assert len(calls) == 1                       # one refuted → one more turn
-    assert "核实未通过：测试没过" in calls[0].user_text
-    assert len(prompts) == 2
-    assert "不要相信" in prompts[0]
+    with patch.object(D, "_run_loop_blocking", _wrapped):
+        D.process_user_turn(TurnRequest(
+            session_id=session_id, user_text="start",
+            agent_id="main", source="tui"))
 
 
-def test_needs_user_refuted_keeps_running(tmp_db: SessionDB,
-                                          monkeypatch) -> None:
-    """A needs_user claim the verifier refutes does not pause — the loop
-    continues with the gap."""
-    _set_goal(tmp_db, "s1", max_turns=1)
-    _judge_raw(monkeypatch,
-               lambda *a, **k: ('{"met": false, "reason": "r", "need_user": true, '
-                                '"question": "缺凭据吗？"}'))
+def test_goal_session_skips_stop_gate(tmp_db: SessionDB,
+                                      monkeypatch) -> None:
+    from openprogram.agent.dispatcher import stop_hook as SH
+    gate_calls = []
     monkeypatch.setattr(
-        GF, "_run_verifier_turn",
-        lambda *a, **k: '{"confirmed": false, "evidence": "", '
-                        '"gap": "凭据其实在环境变量里"}')
-    G.continue_goal_turns(_req(), _result(), run_turn=lambda req, **k: _result())
-    goal = G.load_goal("s1")
-    assert goal["status"] == "capped"            # continued, hit max_turns=1
-    assert "last_question" not in goal
+        SH, "continue_stop_hook_turns",
+        lambda req, result, **k: gate_calls.append(req.session_id) or result)
 
+    # Goal session: the goal loop is the sole stop decider.
+    _set_goal(tmp_db, "g1")
+    _judge_raw(monkeypatch, lambda *a, **k: '{"met": true, "reason": "done"}')
+    _run_e2e_turn(monkeypatch, "g1")
+    assert gate_calls == []
+    assert G.load_goal("g1")["status"] == "achieved"
 
-def test_verifier_failure_trusts_cheap_verdict(tmp_db: SessionDB,
-                                               monkeypatch) -> None:
-    _set_goal(tmp_db, "s1")
-    _judge_raw(monkeypatch,
-               lambda *a, **k: '{"met": true, "reason": "done"}')
-    monkeypatch.setattr(
-        GF, "_run_verifier_turn",
-        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn down")))
-    G.continue_goal_turns(_req(), _result(), run_turn=lambda req, **k: _result())
-    assert G.load_goal("s1")["status"] == "achieved"
+    # Session without a goal: the gate runs.
+    tmp_db.create_session("plain1", "main")
+    _run_e2e_turn(monkeypatch, "plain1")
+    assert gate_calls == ["plain1"]

@@ -8,10 +8,14 @@ continuation: ``dataclasses.replace`` with ``source="hook_continue"`` and
 new result. Head movement stays with the normal TurnWriter path inside
 ``run_turn`` — this module never touches session heads.
 
-Runaway protection: at most :data:`MAX_HOOK_CONTINUATIONS` hook-driven
-turns per ``process_user_turn`` call; ``payload["stop_hook_active"]`` is
-True on every ask after the first so a hook can tell it already forced a
-continuation. Failed or cancelled turns return without asking the gate.
+Runaway protection is the ``stop_hook_active`` flag protocol (same as
+Claude Code / Codex stop hooks — no numeric cap): the payload carries
+``stop_hook_active=True`` on every ask after the first, so a hook knows
+it already forced a continuation and is expected to allow the stop
+instead of looping forever. Failed or cancelled turns return without
+asking the gate, and the user's interrupt reaches every continuation.
+Sessions with a session goal never enter this gate — the goal loop is
+their sole stop decider (see ``process_user_turn``).
 """
 from __future__ import annotations
 
@@ -23,7 +27,6 @@ from openprogram.agent.dispatcher.types import INHERIT_PARENT
 
 _log = logging.getLogger(__name__)
 
-MAX_HOOK_CONTINUATIONS = 10
 LAST_TEXT_MAX_CHARS = 4000
 
 
@@ -47,14 +50,16 @@ def continue_stop_hook_turns(
     on_event: Optional[Callable] = None,
     cancel_event: Any = None,
 ) -> Any:
-    """Ask the ``turn.stop`` gate; while denied (and under budget), run one
-    more turn via ``run_turn`` (the dispatcher's single-turn primitive),
-    re-judge the goal via ``goal_continue``, and ask again. Returns the
-    LAST turn's result."""
+    """Ask the ``turn.stop`` gate; while denied, run one more turn via
+    ``run_turn`` (the dispatcher's single-turn primitive), re-judge the
+    goal via ``goal_continue``, and ask again. No numeric cap — the
+    ``stop_hook_active`` flag tells the hook it already forced a
+    continuation. Returns the LAST turn's result."""
     from openprogram.events import get_event_bus, make_event
 
     prev_req = req
-    for used in range(MAX_HOOK_CONTINUATIONS + 1):
+    used = 0
+    while True:
         if getattr(result, "failed", False):
             return result
         if _is_cancelled(prev_req.session_id, cancel_event):
@@ -73,12 +78,6 @@ def continue_stop_hook_turns(
         ))
         if outcome.allowed:
             return result
-        if used >= MAX_HOOK_CONTINUATIONS:
-            _log.warning(
-                "turn.stop gate still denying after %d hook continuations "
-                "for session %s; stopping anyway",
-                MAX_HOOK_CONTINUATIONS, prev_req.session_id)
-            return result
 
         reason = "; ".join(outcome.reasons) or "hook denied the stop"
         next_req = replace(
@@ -94,6 +93,7 @@ def continue_stop_hook_turns(
         )
         result = run_turn(next_req, on_event=on_event,
                           cancel_event=cancel_event)
+        used += 1
         prev_req = next_req
         if goal_continue is not None and not getattr(result, "failed", False):
             try:
@@ -103,4 +103,3 @@ def continue_stop_hook_turns(
             except Exception:
                 _log.warning("goal continuation after hook turn failed for "
                              "session %s", next_req.session_id, exc_info=True)
-    return result

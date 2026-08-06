@@ -164,12 +164,17 @@ SETTINGS: list[SettingSpec] = [
     SettingSpec(
         key="goal.max_turns", path=("goal", "max_turns"), group="Goal",
         label="Goal max auto-continue turns", widget="number",
-        apply=APPLY_LIVE, default=20,
-        validate=lambda v: (None if str(v).isdigit() and int(v) > 0
-                            else "must be a positive whole number"),
-        help="Upper bound on turns a /goal session goal may consume "
-             "before it stops with status=capped. Read when the goal is "
-             "set; each goal keeps the bound it started with.",
+        apply=APPLY_LIVE, default=None,
+        validate=lambda v: (None if v in (None, "")
+                            or (str(v).isdigit() and int(v) > 0)
+                            else "must be empty (unlimited) or a "
+                                 "positive whole number"),
+        help="Optional upper bound on turns a /goal session goal may "
+             "consume before it stops with status=capped. Empty "
+             "(default) = no cap — runaway protection is the goal "
+             "loop's own stop rules (judge failures, idle spin) and "
+             "/goal clear. Read when the goal is set; each goal keeps "
+             "the bound it started with.",
     ),
     SettingSpec(
         key="hooks", path=("hooks",), group="Hooks",

@@ -58,7 +58,7 @@ channel）根本没有意义。开放 dict 也让以后新增关联维度不用�
 |---|---|---|---|
 | `tool.before` | gate | `{tool, tool_call_id, args}` | `agent_loop._execute_tool_calls`，每次 `tool.execute()` 之前 |
 | `tool.after` | notify | `{tool, tool_call_id, is_error, result_text}` | `agent_loop._execute_tool_calls`，每次工具调用结束之后 |
-| `turn.stop` | gate | `{session_id, user_msg_id, assistant_msg_id, last_text（≤4000 字）, stop_hook_active}` | `dispatcher.process_user_turn`，goal 循环放行之后 |
+| `turn.stop` | gate | `{session_id, user_msg_id, assistant_msg_id, last_text（≤4000 字）, stop_hook_active}` | `dispatcher.process_user_turn`，仅无会话目标的会话 |
 | `turn.start` | notify | `{session_id, user_msg_id, assistant_msg_id}` | dispatcher，用户消息落盘之后 |
 | `turn.end` | notify | `{session_id, user_msg_id, assistant_msg_id, usage}` | dispatcher，finalize 之后 |
 | `session.start` | notify | `{session_id, agent_id, channel}` | webui 会话创建（`server.py`） |
@@ -126,10 +126,12 @@ worker 启动时 `openprogram.events.install_config_hooks()`（`shell_hooks.py`�
 
 ### `turn.stop` 续轮循环
 
-`dispatcher/stop_hook.continue_stop_hook_turns` 在每个完成的轮之后（goal 循环放行后）问
-`turn.stop` 闸门。被否决则再跑一轮——构造方式与 goal 续轮同款（`dataclasses.replace`、
-`source="hook_continue"`、`INHERIT_PARENT`），跑完对新结果重新过 goal 判定与闸门。防失控：单次
-`process_user_turn` 内 hook 续轮上限 10；首问之后每次 `payload["stop_hook_active"]` 为 True。轮
+`dispatcher/stop_hook.continue_stop_hook_turns` 只在**没有会话目标**的会话上、每个完成的轮之后问
+`turn.stop` 闸门。分工：有 goal 的会话只有一个停止决策者——它自己的 goal 循环，外部干预只有
+`/goal clear`；`turn.stop` 闸门是无 goal 会话的扩展点。被否决则再跑一轮——构造方式与 goal 续轮
+同款（`dataclasses.replace`、`source="hook_continue"`、`INHERIT_PARENT`），跑完对新结果再问闸门。
+防失控是 `stop_hook_active` 标志协议（同 Claude Code / Codex 的 stop hook——没有数字上限）：首问
+之后每次 `payload["stop_hook_active"]` 为 True，hook 由此知道自己已经强制续过轮，应当放行。轮
 失败/被取消不再问闸门直接返回。head 移动始终走每轮内部正常的 TurnWriter 路径。
 
 ## 6. 事件日志

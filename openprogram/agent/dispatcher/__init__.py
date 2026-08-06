@@ -128,6 +128,20 @@ def process_user_turn(
     Sessions without an active goal pay one meta read and return the
     single turn's result unchanged.
     """
+    # Goal sessions never enter the turn.stop gate: the goal loop is the
+    # session's sole stop decider (the only external intervention is
+    # /goal clear), and the gate is the extension point for sessions
+    # WITHOUT a goal. Snapshot participation before the turn — a goal
+    # that ends (achieved/capped/error) during this round still counts
+    # as a goal session.
+    goal_session = False
+    try:
+        from openprogram.agent.goal import load_goal
+        _g = load_goal(req.session_id)
+        goal_session = bool(_g and _g.get("status") in ("active",
+                                                        "waiting_user"))
+    except Exception:
+        pass
     result = _process_turn_once(
         req, on_event=on_event, cancel_event=cancel_event)
     continue_goal_turns = None
@@ -142,9 +156,11 @@ def process_user_turn(
         _log.warning("goal continuation failed for session %s",
                      req.session_id, exc_info=True)
         return result
+    if goal_session:
+        return result
     # turn.stop gate: hooks may deny the stop and force continuation
-    # turns (stop_hook.py). Runs only after the goal loop released the
-    # turn; a crash below still returns the finished result.
+    # turns (stop_hook.py) — sessions without a goal only. Runs after
+    # the turn finished; a crash below still returns the result.
     try:
         from openprogram.agent.dispatcher.stop_hook import (
             continue_stop_hook_turns,

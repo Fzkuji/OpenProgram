@@ -10,7 +10,7 @@ This stores the goal on the session and immediately starts a first turn with the
 
 ## How a goal is judged
 
-An LLM judge decides. After each turn, one no-tools call on the session's model reads the goal text plus the tail of the conversation (last assistant output and recent tool results) and returns a strict yes/no with a reason. The judge is deliberately not the working agent asking itself "am I done?" — self-reports run optimistic; the verdict comes from a separate call that only sees evidence. Before the loop stops on a met verdict, a spawned verifier agent re-checks the claim against the working directory with inspection-only tools. Both judgment points are agentic functions — `goal_judge` and `goal_verify` in the Functions panel — so you can run either one by hand against any goal text and see exactly how a verdict is reached.
+One decision agent decides. After each turn, a spawned judge turn reads the goal text plus a compacted view of the conversation (the active summary when one exists, plus the latest turns and tool results) and answers a strict yes/no with a reason. It has inspection tools (bash, read, grep, glob, list) and checks the working directory when it deems that necessary — the judgment is entirely its own, and only its "met" counts as completion. The judge is deliberately not the working agent asking itself "am I done?" — self-reports run optimistic; the verdict comes from a separate context. The whole judgment is one agentic function — `goal` in the Functions panel — so you can run it by hand against any goal text and see exactly how a verdict is reached. The judge may also decide the run must pause and ask you something; how freely it asks depends on whether the session is attended, and it can ask at most once per hour — further questions inside that window make it pick the most reasonable option itself and continue with the decision written down. A goal session stops only through this judge or `/goal clear`; the `turn.stop` hook gate applies to sessions without a goal.
 
 ## Writing a condition that works
 
@@ -29,14 +29,14 @@ Write the condition as something the transcript can prove, not a feeling:
 
 The Stop button (and any cancel) works during continuation turns exactly as during your own turns — a continuation is an ordinary turn. Stopping does not clear the goal; it stays `active` and resumes judging after your next message. Use `/goal clear` to actually remove it.
 
-In the web UI an active goal shows as `◎ goal · N/20` in the chip row above the composer (N = turns used so far). It flips to `goal achieved` / `goal capped` / `goal error` when the loop ends.
+In the web UI an active goal shows as `◎ goal · N` in the chip row above the composer (N = turns used so far; `N/M` when you set a turn cap). It flips to `goal achieved` / `goal capped` / `goal error` when the loop ends.
 
 ## When the loop stops by itself
 
 | Outcome | Meaning |
 |---|---|
-| `achieved` | The judge answered met and the verifier confirmed it. |
-| `capped` | The goal used its turn budget (default 20; setting `goal.max_turns`). Raise the budget or split the goal. |
+| `achieved` | The decision agent answered met. |
+| `capped` | The goal used its turn budget — only possible when you set one (setting `goal.max_turns`; empty by default = no cap). Raise the budget or split the goal. |
 | `error` | A continuation turn did no tool work while the goal stayed unmet (spinning), or the judge failed three times in a row. The goal state and last reason stay visible in `/goal`. |
 | `cleared` | You removed it. |
 

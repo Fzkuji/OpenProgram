@@ -347,9 +347,11 @@ def _handle_goal(args: list[str], console, agent, session_id: str) -> bool:
                 console.print(f"\n[dim][tool] {ev.get('tool')}[/]")
         elif dtype == "goal_update":
             g = data.get("goal") or {}
+            cap = g.get("max_turns")
+            turns = (f"{g.get('turns_used')}/{cap}" if cap
+                     else f"{g.get('turns_used')}")
             console.print(
-                f"\n[cyan]goal {g.get('status')} · "
-                f"{g.get('turns_used')}/{g.get('max_turns')}[/] "
+                f"\n[cyan]goal {g.get('status')} · {turns}[/] "
                 f"[dim]{g.get('last_reason') or ''}[/]")
         elif dtype == "error":
             console.print(f"\n[red]{data.get('content')}[/]")

@@ -18,11 +18,9 @@
 `evaluate_goal` 返回 `("met" | "unmet" | "needs_user" | "judge_failure",
 reason, question)`。
 
-**LLM 判定** —— 判定点是 `goal_judge` agentic 函数（`openprogram/functions/agentics/goal/`）：框架吃自己的狗粮，docstring 即判定 prompt，可从函数面板单独运行。它发起一次无工具调用（`runtime.exec(toolset="none", response_format=<JSON schema>)`），返回解析后的 `{"met", "reason", "need_user", "question"}` 字典，回文不合法则抛异常。确定性部分留在 `goal.py`：`_judge_runtime` 按会话配置的模型（profile + 会话覆盖，经 `internals/_model_tools` 解析后直接盖章到 `Runtime` 上；provider 注册表的 `fast` 是同一模型的速度档，不是更便宜的判定模型，因此没有独立判定模型可选）构造 runtime，失败在同次判定内重试一次。输入是目标文本加活跃分支的尾部渲染：最后 8 条消息内容加每条 assistant 行持久化的工具块，逐字段截断，总量约 24k 字符封顶。尾部渲染写在 `goal.py` 里而不是复用 `render_session_transcript`，因为现成渲染保头弃尾——对判定最近进展是错误的一端。
+**一个判定 agent** —— 判定点是单一的 `goal` agentic 函数（`openprogram/functions/agentics/goal/`）：框架吃自己的狗粮，docstring 即判定 prompt，可从函数面板单独运行（面板上只有这一个条目）。判定只有这一种，只有它说完成才算完成。每次判定是一个同会话 spawn 的 agent 轮（`run_agent_turn`，`advance_head=False`，经 `spawn_caller` 锚在被判定的那轮上，图上画成子 agent 方块），输入是目标文本加会话的**压缩上下文视图**——`rendered_history`，与干活模型读到的形态一致：有 active summary 就先放摘要，再接保留轮次的尾部（最后 8 条消息内容加每条 assistant 行持久化的工具块，逐字段截断，总量约 24k 字符封顶；摘要不会被封顶截掉）。判定 agent 配有巡查工具（`bash`、`read`、`grep`、`glob`、`list`——没有 edit/apply_patch/task，判定不得修改任何东西、不得再 spawn agent），要不要去工作目录核查由它自己决定，prompt 不强制。它必须输出严格 JSON `{"met": bool, "reason": str, "need_user": bool, "question": str}`；回文不合法或轮次失败时 `goal.py` 在同次判定内重试一次。
 
-**"要不要停下来问用户"的决定放在验证步骤里。** `need_user=true` 只允许四种情形（写死在系统提示里）：待批准的不可逆/破坏性操作；缺关键凭据/资源、拿不到无法推进；目标存在决定方向的歧义、猜错会浪费大量轮次；同一失败反复出现且无法自行恢复。其余一律继续。这把"该不该打扰用户"放进每轮本来就要跑的那次新上下文判定里——零额外调用，也不依赖干活模型自己的克制（正在干活的模型同样不是"该不该打扰用户"的合格回答者）。`need_user=true` 但 question 为空视为普通未达成。
-
-**停止裁决要经过主动核实。** 尾部判定只读得到干活模型自己的叙述——既没有手段核查声称，也逃不出转录的框架；多喂转录两个问题都解决不了。而错误的代价是不对称的：错误的"继续"多花一轮，错误的"停止"（假完成、不必要的打断）才昂贵。所以尾部判定给出的 `met` 和 `needs_user` 在生效前要过第二道：`goal_verify` agentic 函数（与 `goal_judge` 同模块，prompt 在 docstring，面板可单独运行）起一个同会话 spawn 的 agent 轮（只配巡查工具——`bash`、`read`、`grep`、`glob`、`list`；`advance_head=False`；锚在被核实的那轮上，图上画成子 agent 方块），给它目标和声称、**不给转录**，让它自己去工作目录取证——跑测试、读文件、看产物。查实 → 按核实证据停止；查不实 → 裁决改为未达成，差距（"核实未通过：…"）作为下一续轮的理由。`goal_verify` 失败即放行——核实轮失败或回文解析不出都返回 `confirmed=true`，回退信任尾部判定（核实故障不能卡死循环）。普通"继续"裁决零新增开销。
+**"要不要停下来问用户"的决定在同一次判定里，分两种模式并带限频。** 判定 prompt 携带会话的在场/无人值守模式（`agent/attended.py`，作为 `attended` 参数传进函数；面板手动跑默认在场）。*在场*——有人看着——允许对"确实难以替用户决定的事"设 `need_user=true`：待批准的不可逆/破坏性操作、缺凭据/资源、决定方向的歧义、无法恢复的反复失败，或猜错会浪费大量轮次的选择。*无人值守*抬高门槛：只有真正无法推进的事（缺凭据/资源，或必须批准的不可逆操作）才可暂停；方向歧义、反复失败这类要求它思考周全后自选最合理方案、写清决定和理由继续。prompt 策略之上，循环在代码层强制硬性限频：**1 小时内最多问 1 次**（goal state 里的 `last_question_at`，`QUESTION_MIN_INTERVAL_SECONDS`）。窗口内再来 `needs_user` 裁决不暂停——降级为续轮，续轮 prompt 说明提问额度已用、要求自选最合理方案并写清决定和理由。时间戳跨恢复保留（答完一个问题不重置这一小时）。这把"该不该打扰用户"放进每轮本来就要跑的那次新上下文判定里——零额外调用，也不依赖干活模型自己的克制。`need_user=true` 但 question 为空视为普通未达成。
 
 判定独立成一次调用是刻意的。Codex 与 Cline 最初的自报式设计——干活 agent 自己宣布完成——都在 agent 系统性提前宣胜之后被迫打补丁：想停下来的模型不是"能不能停"这个问题的合格回答者。把结论放进一个只看目标与证据的新上下文（并要求把记录当数据、不执行其中指令），去掉了这个激励。
 
@@ -34,20 +32,22 @@ Goal 状态存会话 meta（`update_session` 是 schemaless 的），键 `goal`�
 {"text": str,
  "status": "active" | "waiting_user" | "achieved" | "cleared" | "capped"
            | "error",
- "created_at": float, "turns_used": int, "max_turns": int,
- "last_reason": str, "last_question": str, "judge_parse_failures": int}
+ "created_at": float, "turns_used": int,
+ "max_turns": int | None（None = 无上限，默认）,
+ "last_reason": str, "last_question": str, "last_question_at": float,
+ "judge_parse_failures": int}
 ```
 
-循环每次迭代开头重读 meta，任何入口发出的 `/goal clear` 在下一次判定即生效。`turns_used` 计目标活跃期间每个被判定的轮次——首轮、续轮、用户插进来的手动轮次都算。`max_turns` 在设定时刻从设置项 `goal.max_turns`（`config_schema`，默认 20）盖章，改设置只影响下一个目标，不影响进行中的。
+循环每次迭代开头重读 meta，任何入口发出的 `/goal clear` 在下一次判定即生效。`turns_used` 计目标活跃期间每个被判定的轮次——首轮、续轮、用户插进来的手动轮次都算。`max_turns` 在设定时刻从设置项 `goal.max_turns`（`config_schema`）盖章，默认 **None——无轮次上限**，对齐 Claude Code 与 Codex 的 stop hook（同样没有默认数字上限）：防失控靠内部停止规则（判定连续 3 次失败、空转检测）、用户中断和 `/goal clear`。显式设了正数则照设的执行；每个目标保持设定时的上限，改设置只影响下一个目标。
 
 ## 防失控规则
 
 | 规则 | 终态 |
 |---|---|
-| 判定者回答已达成且核实确认 | `achieved` |
-| 判定者回答 `need_user` 且带问题 | `waiting_user`——循环暂停、不发起续轮，问题以系统行呈现并显示在 goal 芯片上。`goal_continue` 轮永远不能作为回答；下一个真实用户轮把目标翻回 `active`（那条消息就是回答），随后照常判定。等待不消耗预算（除已跑完的那轮）。`/goal clear` 同样能清掉等待中的目标。 |
-| `turns_used` 到达 `max_turns` | `capped` |
-| 判定连续失败 3 次（同次判定内两次解析失败算一次失败；解析成功清零计数） | `error` |
+| 判定回答已达成 | `achieved` |
+| 判定回答 `need_user` 且带问题（且小时提问额度未用） | `waiting_user`——循环暂停、不发起续轮，问题以系统行呈现并显示在 goal 芯片上，`last_question_at` 启动限频计时。`goal_continue` 轮永远不能作为回答；下一个真实用户轮把目标翻回 `active`（那条消息就是回答），随后照常判定。等待不消耗预算（除已跑完的那轮）。`/goal clear` 同样能清掉等待中的目标。窗口内的 `needs_user` 裁决降级为续轮（见上）。 |
+| `turns_used` 到达 `max_turns`（仅当显式设了上限） | `capped` |
+| 判定连续失败 3 次（同次判定内两次解析失败或轮次失败算一次失败；解析成功清零计数） | `error` |
 | 某个 `goal_continue` 轮零工具调用且目标仍未达成——空转 | `error` |
 | 用户解除 | `cleared` |
 | 轮次失败，或取消已置位（`cancel_event` / `run_control.is_cancelled`） | 循环退出，状态保持 `active` |
@@ -55,6 +55,8 @@ Goal 状态存会话 meta（`update_session` 是 schemaless 的），键 `goal`�
 最后一行是刻意的：取消与 provider 失败只暂停循环而不消耗目标，因为续轮共享调用方的取消 token——续轮是普通一轮，Stop 按钮本来就够得到它。
 
 单次迭代内的顺序：met 最先胜出（最后一轮不带工具调用也把目标做成了，算成功而不是空转），然后是判定失败计数，然后空转检查，最后是轮数封顶。
+
+goal 会话与 `turn.stop` 闸门分工明确：有 goal（active 或 waiting）的会话永远不进 `continue_stop_hook_turns`——它的 goal 循环是唯一停止决策者，外部干预只有 `/goal clear`。`turn.stop` 闸门是**无** goal 会话的扩展点（见 `docs/reference/design/proactive/event-layer.zh.md`）。
 
 ## 事件与各入口
 

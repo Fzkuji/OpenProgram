@@ -80,7 +80,7 @@ export function GoalChip() {
   const active = goal.status === "active";
   const waiting = goal.status === "waiting_user";
   const label = active
-    ? `◎ goal · ${goal.turns_used ?? 0}/${goal.max_turns ?? 20}`
+    ? `◎ goal · ${goal.turns_used ?? 0}${goal.max_turns ? `/${goal.max_turns}` : ""}`
     : waiting
       ? "◎ goal · 等你回答"
       : `◎ goal ${goal.status}`;
