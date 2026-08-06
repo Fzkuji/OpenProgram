@@ -447,7 +447,8 @@ def trigger_compaction(session_id: str, agent_id: str = "main",
     sess = db.get_session(session_id)
     if sess is None:
         raise ValueError(f"Unknown conversation {session_id!r}")
-    history = db.get_branch(session_id) or []
+    from openprogram.context.persistence import rendered_history
+    history = rendered_history(db, session_id)
     if len(history) < 4:
         # Tell the user instead of silently doing nothing — a manual
         # /compact with no visible response reads as a broken command.

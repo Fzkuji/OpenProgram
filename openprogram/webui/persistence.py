@@ -36,6 +36,10 @@ def save_meta(agent_id: str, session_id: str, meta: dict) -> None:
     meta_fields = dict(meta)
     meta_fields.pop("id", None)
     meta_fields.pop("agent_id", None)
+    # HEAD has exactly one writer — SessionStore.set_head
+    # (context/compaction.md §5). Meta saves must never smuggle a
+    # possibly-stale head value over it, whatever the caller passed.
+    meta_fields.pop("head_id", None)
     # `session_id` in meta is the LLM runtime's session identifier, not
     # the SessionStore primary key. Rename it before forwarding so the
     # **kwargs expansion doesn't collide with update_session's first
@@ -48,25 +52,6 @@ def save_meta(agent_id: str, session_id: str, meta: dict) -> None:
         db.update_session(session_id, agent_id=agent_id, **meta_fields)
 
 
-def save_messages(agent_id: str, session_id: str, messages: list) -> None:
-    """Sync the message log to SessionStore. Skips messages whose ids are
-    already persisted, so callers can keep passing the full in-memory
-    list without rewriting the whole transcript every turn."""
-    from openprogram.agent.session_db import default_db
-    db = default_db()
-    if db.get_session(session_id) is None:
-        db.create_session(session_id, agent_id)
-    existing_ids = {m["id"] for m in db.get_messages(session_id)}
-    new_msgs = [m for m in messages if m.get("id") and m["id"] not in existing_ids]
-    if new_msgs:
-        db.append_messages(session_id, new_msgs)
-
-
-def save_conversation(agent_id: str, session_id: str,
-                      meta: dict, messages: list) -> None:
-    """Save both meta and messages in one call."""
-    save_meta(agent_id, session_id, meta)
-    save_messages(agent_id, session_id, messages)
 
 
 # ---------------------------------------------------------------------------

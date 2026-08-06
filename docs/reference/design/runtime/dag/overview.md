@@ -357,25 +357,22 @@ reference.
 
 ### Summary nodes join the chain
 
-Compaction is an append-only graph rewrite. A summary node is `role=llm`,
+Compaction is an append-only insert. A summary node is `role=llm`,
 `name="context/summary"`, `predecessor` = the predecessor of the first node it
-covers, `metadata.covers = [first_seq, last_seq]`. The head moves to a node
-whose predecessor is the summary node. The kept tail is **not** cloned:
-rendering walks the spine through the summary node, skips nodes whose seq falls
-inside `covers`, and keeps everything after. Compaction appends two nodes
-(summary + new head link), creates zero clones and zero orphans, and the old
-spine survives intact as a sibling branch for rollback. `covers` gives clone
-semantics with zero duplication — clones would create a second id space every
-consumer must translate.
+covers, `metadata.covers_ids` = the exact chain nodes it replaces (ids, not a
+seq interval — sibling branches interleave seqs). Nothing else changes: the
+kept tail keeps its ids and predecessors, no edges are rewritten, and HEAD
+stays put (the append rule only advances on chain extension). Rendering
+applies segment substitution (context/compaction.md §3): a chain that
+contains the whole covered segment renders `[summary, kept tail…]`; any other
+chain renders raw. Compaction is a rolling summary — each new one absorbs the
+previous, `extra_meta._last_summary_id` marks the only active one, and
+superseded summaries are inert relics.
 
-`covers` is expressed in seq and drives context elision on the chain it
-belongs to. For the graph, the persister also records
-`metadata.covers_ids` — the exact node ids the summary replaces — because seq
-intervals span sibling branches in a DAG (a dead fork's seqs can fall inside
-the range). The WebUI payload carries that list, extended with the caller
-subtrees of covered turns, as `covers_ids` on the summary row
-(`webui/graph_builder.py`), so the renderer draws the capsule and its fold
-without doing seq arithmetic — see dag/rendering.md §9.
+The WebUI payload carries `covers_ids` on the summary row, extended with the
+caller subtrees of covered turns (`webui/graph_builder.py`), so the renderer
+draws the capsule and its fold without doing seq arithmetic — see
+dag/rendering.md §9. Full specification: context/compaction.md.
 
 ### The aging boundary only advances; rendering is exactly replayable
 
@@ -420,7 +417,7 @@ and must produce the same card.
 Every section of this document is implemented. The data model, edges,
 invariants, spawn primitive, edge-pure branch walks (§2–§5), §6 path-native
 membership, §7 (single assembler, `context/system_prompt` nodes,
-memory-prefetch relocation), and §8 (`covers`-based summary nodes, the
+memory-prefetch relocation), and §8 (`covers_ids`-based summary nodes, the
 advance-only aging boundary, render manifests, write-path spill,
 single-pipeline enforcement) all hold in code; `openprogram/context/nodes.py`,
 `openprogram/context/components.py`,
@@ -442,13 +439,13 @@ what an unspecified `expose=` means — an explicit one always wins).
 
 ## Related Files
 
-- `openprogram/context/nodes.py` — Call schema + render_context, `covers` elision
+- `openprogram/context/nodes.py` — Call schema + render_context, segment substitution
 - `openprogram/context/components.py` — the one system-prompt assembler (§7)
 - `openprogram/context/system_prompt_node.py` — `context/system_prompt`
   recording + `context/*` hiding (§7)
 - `openprogram/context/aging.py` — ratcheted aging boundary + render manifests (§8)
 - `openprogram/context/spill.py` — write-path large-node spill (§8)
-- `openprogram/context/persistence.py` — `covers`-based summary nodes (§8)
+- `openprogram/context/persistence.py` — `covers_ids`-based summary nodes (§8)
 - `openprogram/context/render.py` — render_dag_messages
 - `openprogram/store/session/session_store.py` — append invariant, get_branch,
   spawn_branch, list_branches

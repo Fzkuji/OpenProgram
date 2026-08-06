@@ -219,37 +219,18 @@ side-effect bug involved here does not show up in unit tests of the parts.
 
 ## Implementation status
 
-Implemented today:
+Every section above is implemented:
 
-- Summary node shape of §2 including `covers_ids` (persister writes it; the
-  legacy `covers` seq interval is still written alongside and still read by
-  the dead elision path — both to be removed).
-- Rolling `_last_summary_id` / `_last_summary_text` chaining (§1), including
-  the summariser's `previous_summary` input.
-- Graph contract of §6: active-only `covers_ids`, `superseded_summary` flag,
-  capsule fold/expand placement per rendering.md §9.
-- Compaction head snapshot/restore inside the persister (interim form of §5's
-  append rule).
-
-Not yet implemented — the refactor batch:
-
-- **§3 segment substitution in `render_context`.** Today the spine walk never
-  reaches the summary node and the covers-based elision never fires: a
-  compacted branch still renders every covered turn raw and omits the summary
-  entirely. This is the core gap; compaction currently has no effect on what
-  the model reads.
-- **§4 step 1.** `trigger_compaction` and auto/reactive compact feed the raw
-  `get_branch` walk to the cut finder; re-compaction therefore re-summarises
-  raw turns instead of the previous summary + tail, and produces duplicate
-  coverage.
-- **§4 step 4 coverage extension** (`covers_ids` = old segment + newly eaten
-  turns) — falls out of fixing step 1.
-- **§5 append rule.** `append_message` still auto-advances HEAD
-  unconditionally; the persister compensates with snapshot/restore.
-- **§5 mirror read-only.** `_save_session → save_meta` still forwards the
-  mirror's `head_id` into `SessionStore.update_session`, and the mirror's
-  transcript rows (including compaction markers) flow back through
-  `save_messages`. This is the phantom head-move path.
-- **`covers` seq-interval removal** (write in persister, read in
-  `context/nodes.py`, exemption in the store append invariant) once §3 lands
-  on `covers_ids`.
+- §2 node shape and §4 pipeline — `context/persistence.py`
+  (`insert_summary_node`, `covered_chain_ids`, `rendered_history`); the
+  `covers` seq interval no longer exists anywhere.
+- §3 segment substitution — `render_context` in `context/nodes.py`
+  (`active_summary`, `summary_covers_ids`).
+- §5 HEAD integrity — the chain-extension append rule in
+  `store/session/session_store.py`; `webui/persistence.py` `save_meta` strips
+  `head_id` unconditionally and `save_messages` is gone; the CLI turn path
+  writes rows through `db.append_message`.
+- §6 graph contract — `webui/graph_builder.py`.
+- §8 invariants — `tests/unit/test_compaction_covers.py`,
+  `tests/unit/test_graph_builder_covers.py`,
+  `tests/integration/test_dag_mutation_scenarios.py`.

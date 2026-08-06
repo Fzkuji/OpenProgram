@@ -1,17 +1,15 @@
-"""Compaction summary nodes use ``covers``, not cloned tails.
+"""Compaction summary nodes: stand-in + segment substitution.
 
-The old scheme parented the summary at None (an orphan root) and
-re-wrote the kept tail as ``k_``-prefixed clones hanging off it. That
-duplicated the conversation in storage, broke node identity across a
-compaction (a tool_call_id in the clone pointed at a node that was no
-longer the one the model had called), and needed a filter at every
-render/layout boundary to hide the second copy.
+The summary is an ordinary ``role=llm`` node whose ``predecessor`` is
+the predecessor of the first node it replaces, carrying
+``metadata.covers_ids`` — the exact chain nodes it stands in for
+(context/compaction.md §2). Nothing is cloned, no edges are rewritten,
+and HEAD does not move (the append rule ignores mid-chain splices).
 
-The replacement: the summary is an ordinary ``role=llm`` chain member
-whose ``predecessor`` is the predecessor of the first node it replaces,
-carrying ``metadata.covers = [first_seq, last_seq]``. Nothing is
-cloned; the covered nodes stay exactly where they were and are simply
-skipped when a render walks past the summary.
+``render_context`` applies the §3 rule: if the active summary's covered
+segment lies fully on the rendered chain, the segment (plus its caller
+subtrees) is dropped and the summary is admitted at the segment's
+position. A chain that does not contain the whole segment renders raw.
 """
 
 from __future__ import annotations
@@ -26,22 +24,24 @@ from openprogram.context.nodes import (
     ROLE_USER,
     ROLE_LLM,
     ROLE_CODE,
-    covers_range,
+    active_summary,
     render_context,
+    summary_covers_ids,
 )
-from openprogram.context.persistence import Persister, SUMMARY_NODE_NAME
+from openprogram.context.persistence import (
+    Persister,
+    SUMMARY_NODE_NAME,
+    covered_chain_ids,
+)
 from openprogram.store.session.session_store import SessionStore
 
 
-# --- render_context honours covers ---------------------------------
+# --- render_context segment substitution ----------------------------
 
 
 def _chain(g: Graph, n: int) -> list[Call]:
-    """n user/llm pairs, each llm following its user.
-
-    ``predecessor`` is the top-level Call field (§3) — the spine walk
-    reads only that, so the chain must be linked there.
-    """
+    """n user/llm pairs, each llm following its user, linked via the
+    top-level ``predecessor`` field (§3)."""
     out: list[Call] = []
     prev = None
     for i in range(n):
@@ -52,60 +52,89 @@ def _chain(g: Graph, n: int) -> list[Call]:
     return out
 
 
-def _summary(g: Graph, after: list[Call], covers, **meta) -> Call:
-    """A summary node spliced onto the tip of ``after`` (§8: it is an
-    ordinary chain member, so the rest of the branch hangs off it)."""
+def _summary(g: Graph, covered: list[Call]) -> Call:
+    """A summary standing in for ``covered`` — spliced at the covered
+    range's own start (its predecessor), like the persister writes it."""
     return g.add(Call(
         role=ROLE_LLM, name=SUMMARY_NODE_NAME, output="[recap]",
-        predecessor=after[-1].id if after else None,
-        metadata={"covers": covers, **meta},
+        predecessor=covered[0].predecessor,
+        metadata={"covers_ids": [n.id for n in covered]},
     ))
 
 
-def test_covered_nodes_are_skipped_but_summary_is_kept():
+def test_segment_substitution_replaces_covered_with_summary():
     g = Graph()
     nodes = _chain(g, 4)
-    covered = nodes[:4]          # first two turns
-    kept = nodes[4:]
-    summary = _summary(g, nodes, [covered[0].seq, covered[-1].seq])
+    covered, kept = nodes[:4], nodes[4:]
+    summary = _summary(g, covered)
 
-    ids = render_context(g, head_id=summary.id, frame_entry_seq=-1)
+    ids = render_context(g, head_id=nodes[-1].id, frame_entry_seq=-1)
 
-    assert summary.id in ids
     for n in covered:
         assert n.id not in ids, f"{n.output} should be covered"
     for n in kept:
         assert n.id in ids, f"{n.output} should survive"
+    # The summary sits where the segment began — before the kept tail.
+    assert ids.index(summary.id) < ids.index(kept[0].id)
 
 
-def test_summary_does_not_elide_itself():
-    """A summary whose own seq falls inside its covers range (possible
-    when it is written after the fact) must still render — otherwise the
-    compaction silently drops all of the history AND the recap."""
+def test_a_chain_without_the_full_segment_renders_raw():
+    """A fork from inside the covered range was never compacted — it
+    must see its own raw history and no summary."""
     g = Graph()
-    a = g.add(Call(role=ROLE_USER, output="a"))
-    b = g.add(Call(role=ROLE_LLM, output="b", predecessor=a.id))
-    summary = _summary(g, [a, b], [a.seq, 999])
-    ids = render_context(g, head_id=summary.id, frame_entry_seq=-1)
-    assert ids == [summary.id]
+    nodes = _chain(g, 3)
+    summary = _summary(g, nodes[:4])
+    # Fork off the first reply: a sibling of nodes[2].
+    fu = g.add(Call(role=ROLE_USER, output="alt", predecessor=nodes[1].id))
+    fa = g.add(Call(role=ROLE_LLM, output="alt-r", predecessor=fu.id))
+
+    ids = render_context(g, head_id=fa.id, frame_entry_seq=-1)
+
+    assert summary.id not in ids
+    assert nodes[0].id in ids and nodes[1].id in ids
+    assert fu.id in ids and fa.id in ids
 
 
-def test_covers_range_ignores_malformed_metadata():
+def test_covered_turns_fold_with_their_caller_subtrees():
     g = Graph()
-    for bad in (None, "nope", [1], [1, 2, 3], ["a", "b"]):
-        n = Call(role=ROLE_LLM, output="x", metadata={"covers": bad})
-        assert covers_range(n) is None, bad
-    good = Call(role=ROLE_LLM, output="x", metadata={"covers": [2, 5]})
-    assert covers_range(good) == (2, 5)
+    u = g.add(Call(role=ROLE_USER, output="u0"))
+    a = g.add(Call(role=ROLE_LLM, output="a0", predecessor=u.id))
+    tool = g.add(Call(role=ROLE_CODE, name="f", output="ran", caller=a.id))
+    u1 = g.add(Call(role=ROLE_USER, output="u1", predecessor=a.id))
+    a1 = g.add(Call(role=ROLE_LLM, output="a1", predecessor=u1.id))
+    summary = _summary(g, [u, a])
+
+    ids = render_context(g, head_id=a1.id, frame_entry_seq=-1)
+
+    assert tool.id not in ids, "a covered turn's calls fold with it"
+    assert summary.id in ids
+    assert u1.id in ids and a1.id in ids
 
 
-def test_a_malformed_covers_elides_nothing():
+def test_only_the_newest_summary_substitutes():
+    """Rolling policy: older summaries are relics and elide nothing."""
     g = Graph()
-    nodes = _chain(g, 2)
-    summary = _summary(g, nodes, "garbage")
-    ids = render_context(g, head_id=summary.id, frame_entry_seq=-1)
-    for n in nodes:
+    nodes = _chain(g, 4)
+    old = _summary(g, nodes[:2])
+    new = _summary(g, nodes[:4])
+
+    assert active_summary(g).id == new.id
+    ids = render_context(g, head_id=nodes[-1].id, frame_entry_seq=-1)
+
+    assert new.id in ids
+    assert old.id not in ids
+    for n in nodes[:4]:
+        assert n.id not in ids
+    for n in nodes[4:]:
         assert n.id in ids
+
+
+def test_summary_covers_ids_ignores_malformed_metadata():
+    for bad in (None, "nope", [], 7):
+        n = Call(role=ROLE_LLM, output="x", metadata={"covers_ids": bad})
+        assert summary_covers_ids(n) is None, bad
+    good = Call(role=ROLE_LLM, output="x", metadata={"covers_ids": ["a", "b"]})
+    assert summary_covers_ids(good) == ["a", "b"]
 
 
 # --- the persister writes a real chain member ----------------------
@@ -131,7 +160,7 @@ def _seed(store: SessionStore, sid: str, n: int) -> list[dict]:
     return store.get_messages(sid)
 
 
-def test_persister_splices_summary_into_the_chain(store: SessionStore):
+def test_persister_splices_summary_at_the_segment_start(store: SessionStore):
     msgs = _seed(store, "s1", 4)
     covered = msgs[:4]
 
@@ -140,26 +169,16 @@ def test_persister_splices_summary_into_the_chain(store: SessionStore):
     )
     assert sid
 
-    from openprogram.store.session.graphstore_shim import GraphStoreShim
-    graph = GraphStoreShim(store, "s1").load()
-    seq_of = {n.id: n.seq for n in graph.nodes.values()}
-
     node = {m["id"]: m for m in store.get_messages("s1")}[sid]
     # It is a normal llm chain member, not an orphan root and not a system row.
     assert node["role"] == "assistant"
     assert node["predecessor"] == (covered[0].get("predecessor") or "")
-    assert node["covers"] == [seq_of[covered[0]["id"]],
-                              seq_of[covered[-1]["id"]]]
     assert "the recap" in node["content"]
-    # And the range really does name the covered nodes, nobody else.
-    lo, hi = node["covers"]
-    inside = {n.id for n in graph.nodes.values()
-              if lo <= n.seq <= hi and n.id != sid}
-    assert inside == {m["id"] for m in covered}
-    # The explicit id list is the graph's record — seq intervals span
-    # sibling branches, ids don't.
-    stored = graph.nodes[sid].metadata.get("covers_ids")
-    assert stored == [m["id"] for m in covered]
+
+    from openprogram.store.session.graphstore_shim import GraphStoreShim
+    graph = GraphStoreShim(store, "s1").load()
+    assert graph.nodes[sid].metadata.get("covers_ids") == \
+        [m["id"] for m in covered]
 
 
 def test_persister_clones_nothing(store: SessionStore):
@@ -194,8 +213,9 @@ def test_original_tail_keeps_its_ids_and_predecessors(store: SessionStore):
 
 
 def test_rollback_the_pre_compaction_view_is_still_reachable(store: SessionStore):
-    """Ignoring covers reconstructs exactly the original conversation —
-    that is what makes 'did the summary capture what I said' answerable."""
+    """Ignoring the summary reconstructs exactly the original
+    conversation — what makes 'did the summary capture what I said'
+    answerable."""
     msgs = _seed(store, "s4", 4)
     original = [m["id"] for m in msgs]
 
@@ -208,11 +228,10 @@ def test_rollback_the_pre_compaction_view_is_still_reachable(store: SessionStore
     assert survivors == original
 
 
-def test_persister_keeps_head_on_the_tail_tip(store: SessionStore):
-    """append_message auto-advances head onto any caller-less node, and
-    the summary is a mid-chain splice — without an explicit restore the
-    head lands on the summary and the active branch collapses to
-    [summary] alone (the kept tail vanishes from every view)."""
+def test_compaction_never_moves_head(store: SessionStore):
+    """The summary is a mid-chain splice; the append rule only advances
+    head on chain extension, so head stays wherever it was — on the
+    branch tip, or on a covered node the user checked out."""
     msgs = _seed(store, "s6", 4)
     tip = msgs[-1]["id"]
     assert store.get_session("s6")["head_id"] == tip
@@ -220,24 +239,50 @@ def test_persister_keeps_head_on_the_tail_tip(store: SessionStore):
     Persister().insert_summary_node(
         "s6", summary_text="recap", cut_idx=4, history=msgs,
     )
-
     assert store.get_session("s6")["head_id"] == tip
-    branch = store.get_branch("s6")
-    assert [m["id"] for m in branch] == [m["id"] for m in msgs]
+    assert [m["id"] for m in store.get_branch("s6")] == \
+        [m["id"] for m in msgs]
 
-
-def test_persister_moves_head_only_when_it_was_covered(store: SessionStore):
-    """A head that sat inside the covered range has no tail to return
-    to — the summary becomes the branch tip."""
-    msgs = _seed(store, "s7", 4)
-    covered_tip = msgs[3]["id"]      # last row of the covered range
-    store.set_head("s7", covered_tip)
-
-    sid = Persister().insert_summary_node(
-        "s7", summary_text="recap", cut_idx=4, history=msgs,
+    covered_tip = msgs[3]["id"]
+    store.set_head("s6", covered_tip)
+    Persister().insert_summary_node(
+        "s6", summary_text="recap 2", cut_idx=2, history=msgs,
     )
+    assert store.get_session("s6")["head_id"] == covered_tip
 
-    assert store.get_session("s7")["head_id"] == sid
+
+def test_recompaction_extends_the_covered_segment(store: SessionStore):
+    """§4: when the covered slice starts with the previous summary, the
+    new covers_ids is the old segment extended by the newly eaten turns
+    — coverage always names real turns, never another summary."""
+    msgs = _seed(store, "s8", 4)
+    first = Persister().insert_summary_node(
+        "s8", summary_text="recap 1", cut_idx=4, history=msgs,
+    )
+    assert first
+    # The rendered view after compaction #1: [summary, kept tail].
+    by_id = {m["id"]: m for m in store.get_messages("s8")}
+    rendered = [by_id[first]] + msgs[4:]
+
+    second = Persister().insert_summary_node(
+        "s8", summary_text="recap 2", cut_idx=3, history=rendered,
+    )
+    assert second
+
+    from openprogram.store.session.graphstore_shim import GraphStoreShim
+    graph = GraphStoreShim(store, "s8").load()
+    covers = graph.nodes[second].metadata.get("covers_ids")
+    assert covers == [m["id"] for m in msgs[:6]]
+    assert first not in covers
+
+
+def test_covered_chain_ids_expands_summaries():
+    covered = [
+        {"id": "sum_old", "extra": {"covers_ids": ["u0", "a0"]}},
+        {"id": "u1"},
+        {"id": "a1"},
+    ]
+    assert covered_chain_ids(covered) == ["u0", "a0", "u1", "a1"]
 
 
 def test_persister_refuses_degenerate_cuts(store: SessionStore):

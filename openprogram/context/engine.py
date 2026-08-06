@@ -300,9 +300,15 @@ class DefaultContextEngine(ContextEngine):
         from openprogram.agent.session_db import default_db
 
         started = time.time()
+        from openprogram.context.persistence import rendered_history
+
         db = default_db()
         sess = db.get_session(session_id) or {}
-        history = db.get_branch(session_id) or []
+        # §4 step 1: compaction consumes the RENDERED view — active
+        # summary first, then the kept turns — so a re-compaction eats
+        # "previous summary + more turns" instead of re-summarising raw
+        # turns the previous summary already covers.
+        history = rendered_history(db, session_id)
         tokens_before = self._estimate(history)
 
         if len(history) < 4:

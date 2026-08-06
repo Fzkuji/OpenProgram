@@ -170,30 +170,17 @@ append-only 替身节点对所有方案通用，换方案永不迁移数据：
 
 ## 实现状态
 
-今日已实现：
+以上各节均已实现：
 
-- 第二节的摘要节点形状含 `covers_ids`（persister 写入；遗留的 `covers` seq
-  区间仍在并行写入、仍被死掉的剔除路径读取——两者都待删除）。
-- 第一节的滚动 `_last_summary_id` / `_last_summary_text` 接力，含 summarizer
-  的 `previous_summary` 输入。
-- 第六节的图契约：仅现役 `covers_ids`、`superseded_summary` 标记、按
-  rendering.md 第九节的胶囊折叠/展开摆位。
-- persister 内部的压缩 head 快照/恢复（第五节 append 规则的过渡形态）。
-
-尚未实现——重构批次：
-
-- **第三节的链段替换进 `render_context`。** 今天主链走链永远到不了摘要节点，
-  基于 covers 的剔除永不触发：压缩过的分支仍把每个被覆盖轮按原文渲染，摘要
-  完全缺席。这是核心缺口；压缩目前对模型读到的内容毫无影响。
-- **第四节第 1 步。** `trigger_compaction` 与自动/被动压缩把原始 `get_branch`
-  走链喂给切点计算；再压缩因此重新总结原文轮而非"上一份摘要 + 尾巴"，产出
-  重复覆盖。
-- **第四节第 4 步的覆盖延长**（`covers_ids` = 旧链段 + 新吃掉的轮次）——随
-  第 1 步修复自然落地。
-- **第五节的 append 规则。** `append_message` 仍无条件自动推进 HEAD；persister
-  以快照/恢复补偿。
-- **第五节的镜像只读。** `_save_session → save_meta` 仍把镜像的 `head_id` 转发
-  进 `SessionStore.update_session`，镜像的聊天流行（含压缩标记）也经
-  `save_messages` 回流。这就是幽灵挪头路径。
-- **删除 `covers` seq 区间**（persister 的写入、`context/nodes.py` 的读取、
-  store append 不变量的豁免）——待第三节落在 `covers_ids` 上之后。
+- 第二节节点形状与第四节流水线——`context/persistence.py`
+  （`insert_summary_node`、`covered_chain_ids`、`rendered_history`）；
+  `covers` seq 区间已不存在于任何地方。
+- 第三节链段替换——`context/nodes.py` 的 `render_context`
+  （`active_summary`、`summary_covers_ids`）。
+- 第五节 HEAD 完整性——`store/session/session_store.py` 的链延长 append 规则；
+  `webui/persistence.py` 的 `save_meta` 无条件剥离 `head_id`，`save_messages`
+  已删除；CLI 轮次路径经 `db.append_message` 写行。
+- 第六节图契约——`webui/graph_builder.py`。
+- 第八节不变量——`tests/unit/test_compaction_covers.py`、
+  `tests/unit/test_graph_builder_covers.py`、
+  `tests/integration/test_dag_mutation_scenarios.py`。

@@ -67,8 +67,9 @@ def _run_turn(sid: str, uid: str, text: str, reply: str) -> list[dict]:
 
 
 def _retry_fork(db: SessionStore, sid: str, src_id: str, new_id: str) -> None:
-    """Mirror of _fork_user_turn_and_run's fork path DB writes
-    (advance_head is in-memory; save_messages does the append)."""
+    """Mirror of _fork_user_turn_and_run's fork path DB writes:
+    _append_msg appends the sibling user node, then explicitly moves
+    HEAD (append itself only advances on chain extension)."""
     src = next(m for m in db.get_messages(sid) if m["id"] == src_id)
     db.append_message(sid, {
         "role": "user", "id": new_id, "content": src.get("content", ""),
@@ -76,6 +77,7 @@ def _retry_fork(db: SessionStore, sid: str, src_id: str, new_id: str) -> None:
         "predecessor": src.get("predecessor") or "ROOT",
         "forked_from": src_id,
     })
+    db.set_head(sid, new_id)
 
 
 def test_retry_first_turn_isolates_branch(db: SessionStore):

@@ -290,19 +290,18 @@ replay 看到的就是模型当时看到的。该块不参与老化；与本轮�
 
 ### summary 节点入链
 
-压缩是 append-only 的图改写。summary 节点为 `role=llm`、`name="context/summary"`、
-`predecessor` = 它覆盖的第一个节点的 predecessor、
-`metadata.covers = [first_seq, last_seq]`。head 移到一个 predecessor 为该 summary
-节点的新节点上。保留尾段**不**克隆：渲染沿主链穿过 summary 节点，跳过 seq 落在
-`covers` 内的节点，其余照收。一次压缩只追加两个节点（summary + 新 head 链接），零克
-隆、零孤儿，旧主链作为兄弟分支原样保留供回滚。`covers` 用零复制实现克隆语义——克隆
-会造出第二套 id 空间，逼所有消费方做翻译。
+压缩是 append-only 的插入。summary 节点为 `role=llm`、`name="context/summary"`、
+`predecessor` = 它覆盖的第一个节点的 predecessor、`metadata.covers_ids` =
+它所替代的链节点的确切 id 列表（用 id 而非 seq 区间——姐妹分支的 seq 交错）。
+其余一切不变：保留尾段保持自己的 id 和 predecessor，不改任何边，HEAD 原地不动
+（append 规则只在链延长时推进）。渲染应用链段替换（context/compaction.md
+第三节）：完整包含覆盖链段的链渲染为 `[summary, 保留尾段…]`；其他链按原文渲染。
+压缩是滚动摘要——每份新摘要吸收上一份，`extra_meta._last_summary_id` 标记唯一
+现役者，被取代的摘要是惰性遗迹。
 
-`covers` 用 seq 表达，驱动它所属那条链上的上下文省略。面向图，持久化器还会记
-`metadata.covers_ids`——摘要所替代节点的确切 id 列表——因为 DAG 里 seq 区间会横跨
-姐妹分支（死分叉的 seq 可能落进范围内）。WebUI 载荷把这份列表加上被覆盖轮次的
-caller 子树后下发，落在 summary 行的 `covers_ids` 上（`webui/graph_builder.py`），
-渲染器画胶囊和它的折叠时因此不必做 seq 运算——见 dag/rendering.md 第九节。
+WebUI 载荷把 `covers_ids` 加上被覆盖轮次的 caller 子树后下发到 summary 行
+（`webui/graph_builder.py`），渲染器画胶囊和它的折叠时因此不必做 seq 运算——见
+dag/rendering.md 第九节。完整规范：context/compaction.md。
 
 ### 老化边界只进不退，渲染可精确重放
 

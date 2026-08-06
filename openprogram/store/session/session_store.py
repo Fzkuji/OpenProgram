@@ -201,7 +201,7 @@ def _check_append_invariant(session_id: str, idx, node: Call,
     # session, where the covered range begins at the first node — the
     # summary inherits its (empty) predecessor and becomes the new chain
     # terminus. ``k_`` clones no longer exist, so no exemption for them.
-    if meta.get("covers") is not None or meta.get("covers_ids") is not None:
+    if meta.get("covers_ids") is not None:
         return
     # Session first node: no prior ROOT-level conversational node.
     for n in idx.nodes_by_seq:
@@ -936,10 +936,14 @@ class SessionStore:
         self.spill_large_node(session_id, node)
         # Write the raw node file. Commit deferred to turn end.
         git.write_history(seq, node.role, node.id, node.to_dict())
-        # Advance head for conversation nodes (no caller). Matches old
-        # GraphStore.append behavior where caller-tagged nodes don't
-        # bump last_node_id.
-        if not caller:
+        # Advance head only when the conversation actually grew: a
+        # caller-less node chained onto the current tip (or the session's
+        # first node). Any other insert — a compaction summary splicing
+        # mid-chain, a side-branch write — leaves head alone; explicit
+        # moves go through set_head (context/compaction.md §5).
+        advanced = (not caller
+                    and (idx.head_id is None or predecessor == idx.head_id))
+        if advanced:
             idx.set_head(node.id)
         idx.set_meta(updated_at=time.time())
         # Persist meta NOW (one tiny json write), not at turn end: a
@@ -947,7 +951,7 @@ class SessionStore:
         # the parent server resolves the active branch from the on-disk
         # head — a memory-only head keeps every mid-run load on the OLD
         # branch until turn end.
-        if not caller:
+        if advanced:
             self._persist_meta(git, idx)
         # Registry: every appended message bumps updated_at（最新一次聊天
         # 时间，侧栏排序键）；user 消息顺带刷新 preview（debounced to disk）。
@@ -1015,7 +1019,7 @@ class SessionStore:
                 return None          # code node opening a run branch
             if _is_first_conv_node(idx, node):
                 return None          # session first node — legal stop
-            if meta.get("covers") is not None:
+            if meta.get("covers_ids") is not None:
                 # Compaction summary covering from the very start of the
                 # session: it inherits the first node's empty predecessor
                 # and becomes the new chain terminus — the same exemption

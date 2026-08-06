@@ -228,7 +228,9 @@ def _process_turn_once(
         history = list(req.history_override)
     elif isinstance(req.branch_from, _InheritParent):
         # Normal append — walk the active branch.
-        history = db.get_branch(req.session_id) or db.get_messages(req.session_id)
+        from openprogram.context.persistence import rendered_history
+        history = rendered_history(db, req.session_id) \
+            or db.get_messages(req.session_id)
     elif req.branch_from is None:
         # Root-level fork — LLM starts with empty history.
         history = []
@@ -413,7 +415,8 @@ def _process_turn_once(
         # path). Make sure history reflects that — load from DB if
         # the caller didn't pass a history_override.
         if req.history_override is None:
-            history = db.get_branch(req.session_id) or history
+            from openprogram.context.persistence import rendered_history
+            history = rendered_history(db, req.session_id) or history
 
     # 事件层 tap：无论哪条持久化路径（webui 先存 / dispatcher 自己存），
     # "用户消息提交了"都成立，所以放在分支外。
@@ -1014,9 +1017,10 @@ def _run_loop_blocking(
             finally:
                 loop.close()
             if compact_res.summary_id:
-                # Re-load the post-compact branch so the LLM call sees
-                # the shorter chain.
-                history = db.get_branch(req.session_id) or history
+                # Re-load the post-compact view (summary + kept
+                # tail) so the LLM call sees the shorter context.
+                from openprogram.context.persistence import rendered_history
+                history = rendered_history(db, req.session_id) or history
                 prep = _ctx_engine.prepare(
                     agent=agent_profile,
                     session=db.get_session(req.session_id) or session,

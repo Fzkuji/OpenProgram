@@ -574,41 +574,31 @@ def render_path(graph: Graph, head_id: str) -> list[str]:
     return [n.id for n in graph if n.id in members]
 
 
-def covers_range(node: "Call") -> Optional[tuple[int, int]]:
-    """``(first_seq, last_seq)`` a summary node replaces, or None.
+def summary_covers_ids(node: "Call") -> Optional[list[str]]:
+    """The chain-node ids a summary replaces, or None for non-summaries.
 
-    Written by the compaction persister as ``metadata.covers``. Any node
-    can in principle carry it; in practice only summary nodes do.
+    Written by the compaction persister as ``metadata.covers_ids`` —
+    ids, not a seq interval, because seqs of sibling branches interleave
+    (context/compaction.md §2).
     """
-    raw = (node.metadata or {}).get("covers")
-    if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+    raw = (node.metadata or {}).get("covers_ids")
+    if not isinstance(raw, (list, tuple)) or not raw:
         return None
-    try:
-        return int(raw[0]), int(raw[1])
-    except (TypeError, ValueError):
-        return None
+    return [str(x) for x in raw]
 
 
-def _covered_seqs(chain: list) -> set:
-    """Seqs elided by summary nodes present in ``chain``.
+def active_summary(graph: Graph) -> Optional["Call"]:
+    """The one summary rendering consults — the newest, by seq.
 
-    A summary only elides nodes that are actually part of this chain —
-    a covers range naming seqs on a different branch is inert here. The
-    summary node itself is never elided, even by its own range (its seq
-    sorts just before the range it covers).
+    Compaction is a rolling summary (context/compaction.md §1): each new
+    summary absorbs the previous one, so older summary nodes are inert
+    relics and never elide anything.
     """
-    summaries = [(n, r) for n in chain
-                 if (r := covers_range(n)) is not None]
-    if not summaries:
-        return set()
-    out: set = set()
-    for node, (lo, hi) in summaries:
-        for other in chain:
-            if other.id == node.id:
-                continue
-            if lo <= other.seq <= hi:
-                out.add(other.seq)
-    return out
+    cands = [n for n in graph.nodes.values()
+             if summary_covers_ids(n) is not None]
+    if not cands:
+        return None
+    return max(cands, key=lambda n: n.seq)
 
 
 def render_context(
@@ -770,17 +760,39 @@ def render_context(
             elif ex == "llm":
                 llm_owners.add(n.id)
 
-    # Compaction: a summary node carries metadata.covers = [first_seq,
-    # last_seq] naming the seq range it replaces. Once we walk past the
-    # summary, every node inside that range is elided — the summary text
-    # stands in for it. The covered nodes stay on the chain (and in
-    # storage) so the pre-compaction view is still reconstructible;
-    # they're simply not fed back to the model.
-    covered = _covered_seqs(chain)
+    # Compaction — segment substitution (context/compaction.md §3): if
+    # the active summary's covered segment lies fully on this chain,
+    # drop the segment (plus the caller subtrees hanging off it) and
+    # admit the summary node at the segment's position. A chain that
+    # does not contain the whole segment — a fork from inside the
+    # covered range, a dead sibling of the same era — renders raw: its
+    # context was never compacted.
+    summary = active_summary(graph)
+    elided: set[str] = set()
+    splice_before: Optional[str] = None
+    if summary is not None:
+        seg = summary_covers_ids(summary) or []
+        chain_ids = {n.id for n in chain}
+        if seg and summary.id not in chain_ids \
+                and all(sid in chain_ids for sid in seg):
+            elided = set(seg)
+            kids: dict[str, list[str]] = {}
+            for n in chain:
+                if n.caller:
+                    kids.setdefault(n.caller, []).append(n.id)
+            stack = list(seg)
+            while stack:
+                for cid in kids.get(stack.pop(), ()):
+                    if cid not in elided:
+                        elided.add(cid)
+                        stack.append(cid)
+            splice_before = seg[0]
 
     kept = []
     for n in chain:
-        if n.seq in covered:
+        if splice_before is not None and n.id == splice_before:
+            kept.append(summary)
+        if n.id in elided:
             continue
         # io function: hide its internal llm exchanges.
         if n.is_llm() and n.caller in io_owners:
@@ -829,7 +841,8 @@ __all__ = [
     "branch_terminals",
     "branch_internal",
     "fold_history",
-    "covers_range",
+    "summary_covers_ids",
+    "active_summary",
     "render_spine",
     "render_path",
     "render_context",

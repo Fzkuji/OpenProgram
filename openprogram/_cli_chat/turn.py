@@ -94,11 +94,16 @@ def _run_turn_with_history(
         "content": reply_text, "timestamp": _time.time(), "source": "cli",
     }
     messages.append(reply_msg)
-    meta["head_id"] = reply_msg["id"]
     meta["_last_touched"] = _time.time()
 
+    # Rows go straight into the store; head advances by the append rule
+    # (both nodes extend the chain — context/compaction.md §5). Meta
+    # carries no head_id: SessionStore.set_head is HEAD's only writer.
+    from openprogram.agent.session_db import default_db as _db
+    db = _db()
+    db.append_message(session_id, user_msg)
+    db.append_message(session_id, reply_msg)
     _persist.save_meta(agent.id, session_id, meta)
-    _persist.save_messages(agent.id, session_id, messages)
 
     # Unified two-phase session naming. The CLI runs each turn as a
     # bare ``rt.exec`` and never passes through the dispatcher's

@@ -358,7 +358,12 @@ def _save_session(session_id: str):
             "_last_context_stats": conv.get("_last_context_stats"),
             "_last_exec_session": conv.get("_last_exec_session"),
             "_last_exec_cumulative_usage": conv.get("_last_exec_cumulative_usage"),
-            "head_id": conv.get("head_id"),
+            # No head_id here — the conv dict is a display mirror and
+            # HEAD has exactly one writer, SessionStore.set_head
+            # (context/compaction.md §5). Writing the mirror's head back
+            # was the phantom head-move path: a stale mirror (restored
+            # from an old save, or advanced by a transcript-only row
+            # like a compaction marker) silently overwrote real moves.
             "tools_enabled": conv.get("tools_enabled"),
             "tools_override": conv.get("tools_override"),
             "thinking_effort": conv.get("thinking_effort"),
@@ -367,7 +372,10 @@ def _save_session(session_id: str):
         messages = list(conv.get("messages", []))
     try:
         _persist.save_meta(agent_id, session_id, meta)
-        _persist.save_messages(agent_id, session_id, messages)
+        # No save_messages: every real row reaches the store through
+        # db.append_message at write time (_append_msg / dispatcher);
+        # the mirror's extra rows are transcript-only (status lines,
+        # compaction markers) and must never become store nodes.
     except Exception as e:
         _log(f"[save_conversation] {session_id} error: {e}")
 
@@ -802,8 +810,8 @@ def _append_msg(conv: dict, msg: dict) -> None:
       4. Cache invalidation is last so step 3 is visible.
 
     Failures in steps 2-4 are logged but non-fatal; the in-memory
-    mirror is still consistent and the next ``_save_session``
-    will sync the row through ``save_messages`` (idempotent).
+    mirror stays consistent for display. The store is the source of
+    truth — mirror rows never sync back (context/compaction.md §5).
     """
     # Streaming-resume: if a placeholder with this id already lives
     # in ``conv["messages"]`` (e.g. ``run.py`` wrote a status=running

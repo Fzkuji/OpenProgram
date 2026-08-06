@@ -2,24 +2,23 @@
 
 OpenProgram's distinguishing feature vs the reference platforms: a
 compaction is a real *commit* in the message DAG. The summary is an
-ordinary ``role=llm`` node that splices into the conversation chain at
-the position of the range it replaces::
+ordinary ``role=llm`` node that stands in for the range it replaces::
 
-    parent ── summary_node ── kept_tail[0] ── kept_tail[1] ── ... ── HEAD
-                 │
-                 └ metadata.covers = [first_seq, last_seq]
+    parent ─┬─ covered[0] ── ... ── covered[-1] ── kept_tail ── HEAD
+            └─ summary_node   (metadata.covers_ids = covered ids)
 
-``covers`` is the whole trick. The summary node's ``predecessor`` is the
-predecessor of the FIRST node it covers, so it sits exactly where the
-covered range began. Head then moves onto the chain that continues past
-the covered range. Renderers walking the chain skip any node whose seq
-falls inside an encountered ``covers`` interval — the covered nodes are
-still on the chain, still readable, just elided from the prompt.
+The summary node's ``predecessor`` is the predecessor of the FIRST node
+it covers, so it sits exactly where the covered segment began.
+``metadata.covers_ids`` records the exact chain nodes it replaces — ids,
+not a seq interval, because seqs of sibling branches interleave
+(context/compaction.md §2). ``render_context`` substitutes the segment
+with the summary on any chain that contains it (§3); the graph folds the
+same ids behind the capsule (dag/rendering.md §9).
 
-Nothing is cloned and nothing is deleted. The pre-compaction view is
-still reachable by ignoring ``covers`` (or by checking out the branch
-that runs through the covered nodes), which is what makes "did the
-summary really capture what I said" answerable.
+Nothing is cloned, nothing is deleted, and HEAD does not move: the
+append rule only advances head on chain extension, and a summary is a
+mid-chain splice. The pre-compaction view stays reachable by ignoring
+the summary.
 
 This module owns just the DB-write side of that contract. Decisions
 about *when* to compact and *what* the summary text contains live in
@@ -40,19 +39,64 @@ _log = logging.getLogger(__name__)
 SUMMARY_NODE_NAME = "context/summary"
 
 
-def _seq_index(db, session_id: str) -> dict:
-    """``node id → seq`` for one session, off the stored graph.
+def covered_chain_ids(covered: list[dict]) -> list[str]:
+    """The chain-node ids a new summary replaces, expressed in real turns.
 
-    The message-dict boundary drops ``seq``, but ``covers`` is expressed
-    in seq (it must be — ids don't order), so read it back from the
-    store's own node index.
+    ``covered`` is the head slice of the RENDERED history
+    (context/compaction.md §4): when the session was compacted before,
+    its first element is the previous summary. Coverage is always stated
+    over the underlying conversation, so a covered summary contributes
+    its own ``covers_ids`` — the new segment extends the old one — and
+    is itself never named (it retires via ``_last_summary_id``).
     """
+    out: list[str] = []
+    for m in covered:
+        if not isinstance(m, dict):
+            continue
+        mid = m.get("id")
+        if not mid:
+            continue
+        # The msg adapter flattens ``extra`` into the top-level dict on
+        # the way out; accept both shapes. ``extra`` can survive as a
+        # raw JSON string on some rows — only dicts are readable.
+        nested = m.get("extra")
+        if not isinstance(nested, dict):
+            nested = m.get("metadata")
+        if not isinstance(nested, dict):
+            nested = {}
+        prev = m.get("covers_ids") or nested.get("covers_ids")
+        if isinstance(prev, (list, tuple)) and prev:
+            out.extend(str(x) for x in prev if str(x) not in out)
+        elif str(mid) not in out:
+            out.append(str(mid))
+    return out
+
+
+def rendered_history(db, session_id: str) -> list[dict]:
+    """The message-dict view of what the model reads on the active
+    branch: active summary first (when its segment applies), then the
+    kept turns (context/compaction.md §4 step 1).
+
+    This is what compaction must consume as its input. Feeding the raw
+    ``get_branch`` walk re-summarises turns the previous summary
+    already ate and produces a second summary with duplicate coverage.
+    """
+    branch = db.get_branch(session_id) or []
     try:
-        from openprogram.store.session.graphstore_shim import GraphStoreShim
-        graph = GraphStoreShim(db, session_id).load()
-        return {n.id: n.seq for n in graph.nodes.values()}
+        msgs = db.get_messages(session_id) or []
     except Exception:
-        return {}
+        return branch
+    summaries = [m for m in msgs if isinstance(m, dict)
+                 and m.get("covers_ids")]
+    if not summaries:
+        return branch
+    active = summaries[-1]          # append order — the newest wins
+    seg = [str(x) for x in active["covers_ids"]]
+    branch_ids = {m.get("id") for m in branch}
+    if not seg or not all(s in branch_ids for s in seg):
+        return branch
+    segset = set(seg)
+    return [active] + [m for m in branch if m.get("id") not in segset]
 
 
 class Persister:
@@ -65,20 +109,19 @@ class Persister:
                             cut_idx: int,
                             history: list[dict],
                             ) -> Optional[str]:
-        """Insert the summary node covering ``history[:cut_idx]`` and
-        advance head. Returns the new summary id (or None on failure).
+        """Insert the summary node covering ``history[:cut_idx]``.
+        Returns the new summary id (or None on failure).
 
         The summary takes the predecessor of ``history[0]`` (the first
-        covered node) and records ``metadata.covers = [first_seq,
-        last_seq]``. The kept tail is left completely untouched — its
-        rows keep their ids, their predecessors and their timestamps.
-        Head stays where it is unless it pointed inside the covered
-        range, because the tail already continues past the summary.
+        covered node) and records ``metadata.covers_ids``. The kept tail
+        is left completely untouched — its rows keep their ids, their
+        predecessors and their timestamps — and HEAD stays where it is:
+        the append rule ignores mid-chain splices.
 
         Crash safety: the summary insert is its own transaction. If we
-        crash before head moves, ``get_branch`` follows the same chain
-        as before and the render layer simply hasn't got a summary to
-        honour yet — the user sees full history, nothing breaks.
+        crash before ``_last_summary_id`` moves, rendering simply hasn't
+        got a new summary to honour yet — the user sees the previous
+        view, nothing breaks.
         """
         if not summary_text or cut_idx <= 0 or cut_idx >= len(history):
             return None
@@ -88,13 +131,9 @@ class Persister:
         db = default_db()
 
         covered = history[:cut_idx]
-        first, last = covered[0], covered[-1]
-        # History dicts don't carry seq (the message-dict boundary drops
-        # it), so resolve the covered range off the stored graph by id.
-        seq_by_id = _seq_index(db, session_id)
-        first_seq = seq_by_id.get(first.get("id"))
-        last_seq = seq_by_id.get(last.get("id"))
-        if first_seq is None or last_seq is None:
+        first = covered[0]
+        covers_ids = covered_chain_ids(covered)
+        if not covers_ids:
             return None
 
         summary_id = "summary_" + uuid.uuid4().hex[:10]
@@ -115,45 +154,15 @@ class Persister:
             "source": "compaction",
             "extra": {
                 "compaction": True,
-                "covers": [int(first_seq), int(last_seq)],
-                # The exact chain nodes this summary replaces. Seq
-                # intervals span sibling branches in a DAG (a dead fork's
-                # seqs can fall inside the range), so the graph reads
-                # this id list and never does seq arithmetic.
-                "covers_ids": [str(m.get("id")) for m in covered
-                               if m.get("id")],
+                "covers_ids": covers_ids,
                 "predecessor": first.get("predecessor") or None,
             },
         }
-
-        # Snapshot head BEFORE the insert: append_message auto-advances
-        # head onto any caller-less node it appends, and the summary is
-        # a mid-chain splice, not a new tip. Reading head after the
-        # append sees the summary itself and the restore below would
-        # never fire — that exact sequence detached the whole kept tail
-        # (active branch = [summary] alone).
-        prev_head = (db.get_session(session_id) or {}).get("head_id")
 
         try:
             db.append_message(session_id, summary_row)
         except Exception:
             return None
-
-        # Head only belongs on the summary when it sat inside the
-        # covered range; otherwise restore it — the existing tail
-        # already continues past the summary.
-        try:
-            covered_ids = {m.get("id") for m in covered}
-            if prev_head and prev_head not in covered_ids:
-                db.set_head(session_id, prev_head)
-        except Exception:
-            # A head left on the summary hides the kept tail from the
-            # active branch; loud enough to diagnose, not fatal.
-            _log.warning(
-                "failed to restore head after summary %s for session %s",
-                summary_id, session_id, exc_info=True,
-            )
-
         return summary_id
 
 

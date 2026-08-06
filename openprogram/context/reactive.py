@@ -92,8 +92,11 @@ def reactive_compact(
                                "session_id": session_id,
                                "summary_id": compact_res.summary_id}})
             from openprogram.agent.session_db import default_db
+            from openprogram.context.persistence import rendered_history
             db = default_db()
-            new_history = db.get_branch(session_id)
+            # The retry must see the post-compaction view (summary +
+            # kept tail), not the raw walk that just overflowed.
+            new_history = rendered_history(db, session_id)
             if new_history:
                 return new_history
     except Exception as e:
