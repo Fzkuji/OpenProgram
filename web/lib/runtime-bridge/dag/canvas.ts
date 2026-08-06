@@ -245,7 +245,11 @@ function wireGestures(host: HTMLElement): void {
     // click reaches it, and panning from there would swallow every
     // click on the graph.
     const t = e.target as Element | null;
-    if (t && t.closest && t.closest(".history-node, .history-branch-tag")) {
+    // A drag from an overlay card (expanded tooltip, node menu, raw
+    // JSON) is the user SELECTING TEXT, not panning — and the pan's
+    // dismissOverlays() would eat the card mid-selection.
+    if (t && t.closest && t.closest(
+      ".history-node, .history-branch-tag, .history-tooltip, .dag-inspector, .dag-menu-verbs")) {
       return;
     }
     drag = { x: e.clientX, y: e.clientY, id: e.pointerId };

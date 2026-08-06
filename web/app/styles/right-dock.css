@@ -645,6 +645,11 @@
   max-height: 480px;
   overflow-y: auto;
   z-index: 200;
+  /* The card's content is data the user reads — id, model, output,
+     coverage — so it must be selectable and copyable. */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: auto;
 }
 .history-tooltip.detail .history-tooltip-body {
   max-height: 208px;
