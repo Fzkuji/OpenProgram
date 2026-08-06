@@ -179,8 +179,8 @@ assert.match(
 );
 assert.match(
   nodesSrc,
-  /isCapsule && !capsuleOpen[\s\S]{0,700}stroke-opacity/,
-  "the pleats are drawn only while the capsule is folded",
+  /isCapsule && !capsuleOpen[\s\S]{0,500}history-thread-count/,
+  "the folded capsule wears the shoulder count, same language as §12",
 );
 assert.match(
   nodesSrc,
@@ -191,8 +191,8 @@ assert.match(
 // much it stands for. Without it the shape is just an odd-looking turn.
 assert.match(
   nodesSrc,
-  /isCapsule\) \{[\s\S]{0,700}已压缩 · \$\{covered\.length\} 轮/,
-  "a folded capsule is annotated with the number of turns it replaced",
+  /isCapsule\) \{[\s\S]{0,500}"已压缩"/,
+  "a folded capsule is annotated with its state beside the pill",
 );
 assert.match(
   nodesSrc,

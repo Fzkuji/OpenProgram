@@ -201,19 +201,29 @@ function wireGestures(host: HTMLElement): void {
       e.preventDefault();
       dismissOverlays();
       const rect = host.getBoundingClientRect();
-      // Gesture triage — Figma's convention:
+      // Gesture triage:
       //   * ctrl/⌘ + wheel: browsers deliver a trackpad PINCH as a
       //     wheel event with ctrlKey set (and ⌘+wheel is the explicit
-      //     zoom chord), so this zooms about the cursor — zoom is the
-      //     pinch's job, not the scroll's;
-      //   * every other wheel — trackpad two-finger scroll in any
-      //     direction, mouse wheel — is a PAN, both axes. Scrolling
-      //     must stay scrolling.
+      //     zoom chord) — zoom about the cursor at pinch rate;
+      //   * a MOUSE wheel — discrete notches: line-mode deltas, or
+      //     integer deltaY of a notch's size with no deltaX — zooms,
+      //     the only zoom gesture a mouse has besides the HUD;
+      //   * everything else is a trackpad two-finger scroll — a PAN,
+      //     both axes. Scrolling stays scrolling.
+      const isMouseWheel = e.deltaMode !== 0
+        || (e.deltaX === 0 && Number.isInteger(e.deltaY)
+            && Math.abs(e.deltaY) >= 40);
       if (e.ctrlKey || e.metaKey) {
         zoomAt(
           e.clientX - rect.left,
           e.clientY - rect.top,
           Math.exp(-e.deltaY * PINCH_ZOOM_RATE),
+        );
+      } else if (isMouseWheel) {
+        zoomAt(
+          e.clientX - rect.left,
+          e.clientY - rect.top,
+          Math.exp(-e.deltaY * WHEEL_ZOOM_RATE),
         );
       } else {
         setView(_viewTx - e.deltaX, _viewTy - e.deltaY, _viewScale);

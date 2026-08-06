@@ -52,16 +52,18 @@ the user drives directly.
 | Gesture | Effect |
 |---|---|
 | pinch, or ⌘/ctrl + wheel | zoom about the cursor, clamped to 25%–300% — the node under the pointer stays under the pointer |
-| any other wheel/scroll (trackpad two-finger, mouse wheel) | pan, both axes — scrolling stays scrolling |
+| mouse wheel (discrete notches) | the same zoom, at wheel rate — a mouse has no pinch |
+| trackpad two-finger scroll | pan, both axes — scrolling stays scrolling |
 | drag on empty canvas | pan |
 | drag starting on a node | the node's — click and double-click still work |
 
-**Wheel triage** (`canvas.ts`), Figma's convention: ctrl/⌘ + wheel zooms —
-browsers deliver a trackpad pinch as a wheel event with `ctrlKey` set, and
-⌘+wheel is the explicit zoom chord — at a rate tuned for a pinch's small
-continuous deltas. Every other wheel event, whatever its direction, pans:
-a two-finger scroll is a scroll, and zoom belongs to the pinch (plus the
-HUD's −/+ buttons for mouse users).
+**Wheel triage** (`canvas.ts`): ctrl/⌘ + wheel zooms — browsers deliver a
+trackpad pinch as a wheel event with `ctrlKey` set, and ⌘+wheel is the
+explicit zoom chord — at a rate tuned for a pinch's small continuous deltas.
+A mouse wheel — recognised by its discrete notches (line-mode deltas, or an
+integer `deltaY` of a notch's size with `deltaX = 0`) — zooms at wheel rate:
+a mouse has no pinch. Everything else is a trackpad two-finger scroll and
+pans, both axes — scrolling stays scrolling.
 
 A box sized to its content decides two things it has no business deciding: how
 big a graph may get before it needs scrollbars, and where the middle is. A wide
@@ -551,14 +553,12 @@ lines make it read as condensed text at every zoom. It is still an ordinary
 `role=llm` chain member (dag/overview.md §8): the shape is a shape, not a
 fourth role.
 
-**The pleats.** Up to three receding grey slivers off the capsule's right edge,
-each shorter and fainter than the last. They are what lets the capsule hide a
-range without the graph lying about it — the pill says "one node", the pleats
-say "and a stack behind it" — and they disappear when the capsule opens,
-because then the stack is drawn. Beside them a caption in the canvas's
-annotation grey — `已压缩 · 14 轮` — makes the fold self-describing. The pill is
-the glyph; the caption is what the pill means, and it lives outside the shape
-for the same reason a sub-agent's name does (rule ③).
+**The count.** A folded capsule wears the covered-node count as digits on its
+right shoulder — the same fold vocabulary as a turn's call-thread count (§12),
+and it disappears when the capsule opens, because then the stack is drawn.
+Beside the pill a one-word caption in the canvas's annotation grey — `已压缩`
+folded, `展开中` open — names the state; it lives outside the shape for the
+same reason a sub-agent's name does (rule ③).
 
 **The fold is per-branch.** A summary belongs to the branch whose context
 carries it — the branch whose active chain contains the whole covered segment

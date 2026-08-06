@@ -192,23 +192,18 @@ export function drawNodes(
         }));
       }
     }
-    // ── 褶皱：折叠的覆盖区间收成递缩叠影（rendering.md §9）────────
+    // ── 折叠数：肩上的数字，与调用线程的折叠数同一套语言（§12）──
+    // 数字贴在胶囊右上角说"后面收着这么多节点"；展开后消失，因为那
+    // 时它们都在屏上。
     if (isCapsule && !capsuleOpen && !isInert) {
-      const pleats = Math.min(3, covered.length);
-      for (let i = 0; i < pleats; i++) {
-        const x = CAPSULE_HW + 2 + i * 5;
-        const hh = CAPSULE_HH * (1 - i * 0.22);
-        g.appendChild(_svg("rect", {
-          x: String(x), y: String(-hh),
-          width: "3.5", height: String(hh * 2),
-          rx: "1.7",
-          fill: "transparent",
-          stroke: "var(--dag-ghost, #c9c7bf)",
-          "stroke-width": String(1.2 - i * 0.1),
-          "stroke-opacity": String(1 - i * 0.28),
-          "pointer-events": "none",
-        }));
-      }
+      const cnt = _svg("text", {
+        x: String(CAPSULE_HW + 3),
+        y: String(-CAPSULE_HH - 1),
+        class: "history-thread-count",
+        "pointer-events": "none",
+      });
+      cnt.textContent = String(covered.length);
+      g.appendChild(cnt);
     }
     if (isSuperseded) {
       const cap = _svg("text", {
@@ -220,20 +215,17 @@ export function drawNodes(
       cap.textContent = translateText("Superseded summary", "已被新摘要取代");
       g.appendChild(cap);
     }
-    // ── 覆盖标注：胶囊旁写清它替掉了多少轮 ───────────────────────
+    // ── 覆盖标注：胶囊旁一个词说明状态；数量在肩上的数字里 ────────
     if (isCapsule) {
-      // Clear of the pleats (they end at CAPSULE_HW + 2 + 2*5 + 3.5).
       const cap = _svg("text", {
-        x: String(CAPSULE_HW + 22),
+        x: String(CAPSULE_HW + 10),
         y: String(3.5),
         class: "history-summary-label",
         "pointer-events": "none",
       });
       cap.textContent = capsuleOpen
-        ? translateText(`Expanded · ${covered.length} turns`,
-          `展开中 · ${covered.length} 轮`)
-        : translateText(`Compacted · ${covered.length} turns`,
-          `已压缩 · ${covered.length} 轮`);
+        ? translateText("Expanded", "展开中")
+        : translateText("Compacted", "已压缩");
       g.appendChild(cap);
     }
     // ── 覆盖态的两级衰减（rendering.md 第八节）──
