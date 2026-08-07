@@ -1,8 +1,9 @@
 # 候选标题
 
-1. 一个装饰器把 Python 函数变成 Agent：@agentic_function 是怎么工作的
-2. 别再手写 prompt 模板和 tool JSON 了：Agent 就该是一个 Python 函数
-3. Agentic Programming 的核心原语：docstring 是 prompt，类型注解是 schema
+1. OpenProgram 技术解析（一）：像调用函数一样调用大模型
+2. 一个装饰器把 Python 函数变成 Agent：@agentic_function 是怎么工作的
+3. 别再手写 prompt 模板和 tool JSON 了：Agent 就该是一个 Python 函数
+4. Agentic Programming 的核心原语：docstring 是 prompt，类型注解是 schema
 
 ---
 
