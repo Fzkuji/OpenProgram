@@ -435,7 +435,9 @@ def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
                          "提问额度已用（1 小时内最多问一次），自行选择最"
                          "合理的方案继续，把决定和理由写清楚。")
         else:
-            next_text = f"[goal] 未达成：{reason or '目标条件尚未满足'}。继续。"
+            next_text = (f"[goal] 未达成：{reason or '目标条件尚未满足'}。"
+                         "继续——本轮必须实际动手：用工具修改交付物，"
+                         "不调用任何工具的回复会被判定为放弃并终止目标。")
         undone = [(i, it) for i, it in enumerate(goal.get("checklist") or [], 1)
                   if isinstance(it, dict) and not it.get("done")]
         if undone:
