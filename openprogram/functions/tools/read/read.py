@@ -69,6 +69,12 @@ def _read_pdf(file_path: str, offset: int, limit: int) -> str:
     for i in range(start, end):
         try:
             text = (reader.pages[i].extract_text() or "").strip()
+            # pypdf leaves unpaired surrogates behind on math-font
+            # glyphs (U+1D4xx split in a broken CMap). A lone
+            # surrogate poisons every later utf-8 encode — history
+            # persistence and the provider payload both crash on it.
+            # errors="replace" turns the bad code points into "?".
+            text = text.encode("utf-8", "replace").decode("utf-8")
         except Exception:
             text = ""
         if text:

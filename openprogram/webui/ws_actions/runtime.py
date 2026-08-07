@@ -69,6 +69,15 @@ async def handle_switch_model(ws, cmd: dict):
         if session_id:
             with _s._sessions_lock:
                 conv = _s._sessions.get(session_id)
+            if conv is None:
+                # A switch addressed to a session is a session-level
+                # setting even when the session hasn't materialized yet
+                # (the picker fires before the first message). Create it
+                # now — silently falling through to the default-runtime
+                # swap changed the model for EVERY session and left this
+                # one on the old default.
+                conv = await asyncio.to_thread(
+                    _s._get_or_create_session, session_id)
             if conv:
                 old_rt = conv.get("runtime")
                 cur_prov = conv.get(
