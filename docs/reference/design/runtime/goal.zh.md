@@ -15,7 +15,18 @@
 
 ## 设定目标：规格完善
 
-`/goal <text>` 把用户那句话原样存进 `text`，并立即在后台启动**规格完善**步骤（`_start_spec_refinement` → `refine_goal_spec`，daemon 线程——设定永不等它）。完善是一个同会话 spawn 的 agent 轮，走 goal 模块里的内部函数 `refine`（`openprogram/functions/agentics/goal/`——与判定同模块，刻意**不加** `@agentic_function`，函数面板保持只有一个 `goal` 条目；prompt 即 `refine` 的 docstring）。该 agent 配只读巡查工具（`read`、`glob`、`grep`、`list`、`bash`），可以看一眼工作目录理解任务语境。它把一句话扩写成完整规格——可逐条核验的达成标准清单（形式指标加过程要求，如"必须先读来源 X、Y 再写 Z 部分""引用逐条核实"）、明确的边界（不做什么）、判定时逐条核对的 checklist——输出严格 JSON `{"spec": str}`。
+`/goal <text>` 把用户那句话原样存进 `text`，并立即在后台启动**规格完善**步骤（`_start_spec_refinement` → `refine_goal_spec`，daemon 线程——设定永不等它）。完善是一个同会话 spawn 的 agent 轮，走 goal 模块里的内部函数 `refine`（`openprogram/functions/agentics/goal/`——与判定同模块，刻意**不加** `@agentic_function`，函数面板保持只有一个 `goal` 条目；prompt 即 `refine` 的 docstring）。该 agent 配巡查工具加搜索（`read`、`glob`、`grep`、`list`、`bash`、`web_search`），可以看一眼工作目录理解任务语境。它把一句话扩写成完整规格——可逐条核验的达成标准清单（形式指标加过程要求，如"必须先读来源 X、Y 再写 Z 部分""引用逐条核实"）、明确的边界（不做什么）、判定时逐条核对的 checklist——输出严格 JSON `{"spec": str}`。
+
+**参考锚定——参考是下限，不是风格建议。** 任何 goal（不限于论文）都可以带参考锚：目标点名或暗示了一个可比的现有作品——或能搜到同类的成熟作品——完善步骤就去读它，翻译成可数的验收指标；判定则逐项核对交付物在每个指标上**达到或超过**参考。完善工具集为此加入了 `web_search`。
+
+| goal 类型 | 参考锚 | 提取的指标（示例） |
+|---|---|---|
+| 文献综述 | 该领域一篇已发表综述（用户给的或搜到的） | 节数与每节篇幅、引用总数、逐篇标注比例、有无分类框架图/对比表 |
+| 代码功能 | 现有实现 / 竞品库 | 覆盖的功能清单、处理的边界情况、测试覆盖形态 |
+| 文档 / 页面 | 上一版或竞品页面 | 覆盖的章节、每主题深度、每概念的示例数 |
+| 没给参考也搜不到 | — | 跳过——完善不许凭空发明参考 |
+
+判定侧强制：带锚的 goal，裁判**必须**用工具打开交付物（参考可访问时连参考一起打开），逐项核对参考推导出的指标；干活 agent 在会话里的"我已完成……"叙事永远不足以支撑 `met=true`。这堵住了提前收工的主要漏洞——只写在首条任务消息里的质量要求几轮压缩后就从会话视图里消失了，而锚写在裁判每轮都重读的 spec 里。
 
 成功时规格落进 `goal["spec"]`（原文 `text` 永不改动），`goal.update` 事件带上它，并以 `local_command` 系统行插进对话——用户能看到系统把目标理解成了什么，理解偏了就 `/goal clear` 后重新 `/goal`。此后判定按 `spec` 评（没有 spec——完善还在跑或已失败——回退用 `text`）。失败一律 **fail-open**：回文解析不出或 spawn 挂掉只记日志、目标保持无 spec，不阻塞设定，也不影响与完善并行启动的首轮。`refine_goal_spec` 在完善轮返回后重读 goal，竞态的 `/goal clear` 或替换目标不会被过期规格覆盖。完善轮与所有同会话 spawn 一样 `source="agent_spawn"`、`advance_head=False`——既不触发 goal 循环也不抢会话 head。
 
