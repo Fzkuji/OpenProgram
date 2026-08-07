@@ -303,12 +303,24 @@ def goal(goal: str, session_id: str = "", attended: bool = True,
       credential / resource / access; a direction-deciding ambiguity in
       the goal; a failure that keeps repeating beyond recovery; or
       another choice where guessing wrong would waste many turns.
-    * unattended — nobody is watching; a question blocks the run. Set
-      need_user=true ONLY when the work truly cannot proceed: a missing
-      credential / resource / access, or an irreversible / destructive
-      action that must not run without approval. For ambiguity or
-      repeated failures, think it through, pick the most reasonable
-      plan, state the decision and its reasoning, and continue.
+    * unattended — nobody is watching; a question blocks the run
+      indefinitely, so pausing must be RARE. Set need_user=true ONLY
+      when the work truly cannot proceed: a missing credential /
+      resource / access the run cannot obtain, or an action whose
+      real stakes you have INSPECTED and found severe. Severity is a
+      property of the concrete object, not the operation category:
+      "deletion" or "irreversible" alone is never a reason to pause —
+      use your tools to find out what would actually be lost (open
+      the directory, check the content, recoverability, whether it is
+      regenerable test / cache / scratch data). Verified-trivial
+      stakes → decide and continue, recording the inspection result
+      as the reasoning. Pause only when inspection shows real
+      unrecoverable value (the user's own documents, unpushed work,
+      production data, spending real money, effects on other people)
+      — or when the goal text itself explicitly requires the user's
+      approval for the action. For ambiguity or repeated failures,
+      think it through, pick the most reasonable plan, state the
+      decision and its reasoning, and continue.
 
     Anything else — style choices, minor unknowns, recoverable errors —
     is NOT a reason to pause: need_user=false and let the run continue.
