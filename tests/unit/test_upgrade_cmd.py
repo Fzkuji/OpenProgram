@@ -150,11 +150,13 @@ def test_chain_order_and_abort_on_probe_failure(repo, monkeypatch, capsys):
     subprocess.run(["git", "commit", "-aqm", "next"], cwd=str(repo), check=True,
                    capture_output=True)
     target = _sha(repo)
-    # Keep `target` referenced before resetting away from it: an orphaned
-    # commit is prunable, and a gc between here and `update-ref` (CI runners
-    # are aggressive about it) makes the ref write fail on a missing object.
-    subprocess.run(["git", "update-ref", "FETCH_HEAD", target], cwd=str(repo),
-                   check=True)
+    # Write FETCH_HEAD as a plain file rather than via `git update-ref`:
+    # git >= 2.45 refuses to update pseudorefs through that plumbing
+    # ("refusing to update pseudoref"), and only real `git fetch` may write
+    # it. Doing it before the reset also keeps `target` referenced, so a gc
+    # can't prune the object out from under the test.
+    (repo / ".git" / "FETCH_HEAD").write_text(
+        f"{target}\t\tbranch 'main' of origin\n")
     subprocess.run(["git", "reset", "-q", "--hard", head], cwd=str(repo), check=True)
 
     monkeypatch.setattr(up, "_git", _fake_git(repo, fetch_head=target))
@@ -185,11 +187,13 @@ def test_no_restart_stops_after_probe(repo, monkeypatch, capsys):
     subprocess.run(["git", "commit", "-aqm", "next"], cwd=str(repo), check=True,
                    capture_output=True)
     target = _sha(repo)
-    # Keep `target` referenced before resetting away from it: an orphaned
-    # commit is prunable, and a gc between here and `update-ref` (CI runners
-    # are aggressive about it) makes the ref write fail on a missing object.
-    subprocess.run(["git", "update-ref", "FETCH_HEAD", target], cwd=str(repo),
-                   check=True)
+    # Write FETCH_HEAD as a plain file rather than via `git update-ref`:
+    # git >= 2.45 refuses to update pseudorefs through that plumbing
+    # ("refusing to update pseudoref"), and only real `git fetch` may write
+    # it. Doing it before the reset also keeps `target` referenced, so a gc
+    # can't prune the object out from under the test.
+    (repo / ".git" / "FETCH_HEAD").write_text(
+        f"{target}\t\tbranch 'main' of origin\n")
     subprocess.run(["git", "reset", "-q", "--hard", head], cwd=str(repo), check=True)
 
     monkeypatch.setattr(up, "_git", _fake_git(repo, fetch_head=target))
