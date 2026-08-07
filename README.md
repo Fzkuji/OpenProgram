@@ -41,19 +41,12 @@
 
 ## News
 
-- **2026-07-21** — **v0.6.0** — cross-session `message_branch`, agent collaboration via `spawn`, worktree-isolated branches.
-- **2026-07-04** — **v0.5.0** — installable third-party harnesses: `openprogram programs install <owner>/<repo>`.
-- **2026-06-30** — **Multi-agent collaboration** — spawn N sub-agents, list them, message across sessions, all as node selections on the same DAG.
+- **2026-07-21** — **v0.6.0** — multi-agent collaboration: `spawn` N sub-agents, message them across sessions, run file-touching branches in isolated git worktrees.
 - **2026-06-22** — **Paper accepted** at the KDD 2026 Workshop on Agentic Software Engineering ([arXiv:2606.15874](https://arxiv.org/abs/2606.15874)).
-- **2026-06-13** — **Event infrastructure** — typed `Event` + process-wide bus, and the proactive policy engine built on it.
-- **2026-05-28** — **v0.4.0** — `rescue` / `doctor` diagnostics, skills & plugins management from the CLI.
-- **2026-05-24** — **Git worktree isolation** — file-touching branches run in their own worktree, per-session file backup.
-- **2026-05-21** — **Unified function calling** — one decorator family, one registry, a 7-layer resolution cascade.
-- **2026-04-23** — **`spawn_program`** — invoke any registered `@agentic_function` as a sub-agent; extensible tool registry with availability gating.
-- **2026-04-18** — Project **renamed to OpenProgram** (formerly *Agentic-Programming*) and restructured.
-- **2026-04-04** — **Built-in providers** (Anthropic / OpenAI / Gemini) and **SKILL.md** support.
-- **2026-04-01** — **Memory** — persistent execution log.
-- **2026-03-31** — **First public commit** — the `@agentic_function` + execution-DAG paradigm goes open source.
+- **2026-06-07** — **v0.5.0** — installable harnesses (`openprogram programs install <owner>/<repo>`), one-command install on every platform, multi-account providers with automatic key rotation, and the `rescue` / `doctor` diagnostics.
+- **2026-05-28** — **v0.4.0** — the design-system foundation behind the web UI and TUI.
+- **2026-04-04** — **v0.3.0** — built-in Anthropic / OpenAI / Gemini providers.
+- **2026-04-03** — **v0.1.0** — first release: the `@agentic_function` decorator and the execution DAG.
 
 ## What makes it different
 
