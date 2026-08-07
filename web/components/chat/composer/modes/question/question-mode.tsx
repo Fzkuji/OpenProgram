@@ -66,6 +66,16 @@ interface QuestionModeProps {
   decision: PendingDecision;
   onResolve: (id: string) => void;
   onAction: (a: DecisionAction | null) => void;
+  /** 覆盖 header 左上角的标签内容（默认「需要你的输入」）。goal 挂起提问
+   *  用它换成「◎ goal · 等你回答」。 */
+  badge?: React.ReactNode;
+  /** 选项 label → 次级小字说明（goal 的 last_question_options.description）。 */
+  optionDescriptions?: Record<string, string>;
+  /** 答案不走 question_reply（没有 pending ask 可 resolve），改交给这里 ——
+   *  goal 挂起提问把它接到普通聊天发送路。返回 true = 已发出（触发
+   *  onResolve 收卡）。设了它，点选项 = 立即提交该 label（点击即时反馈），
+   *  自由输入仍走「发送」按钮。 */
+  submitOverride?: (answer: string) => boolean;
 }
 
 /** 一步（一道题）的统一形状。kind 决定 body 怎么渲染、答案怎么收集。 */
@@ -133,7 +143,14 @@ function stepAnswered(step: Step, a: Answer): boolean {
   return true; // form 字段都有默认/可空，恒算已答
 }
 
-export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeProps) {
+export function QuestionMode({
+  decision: q,
+  onResolve,
+  onAction,
+  badge,
+  optionDescriptions,
+  submitOverride,
+}: QuestionModeProps) {
   const { text } = useTranslation();
   const steps = toSteps(q);
   const [idx, setIdx] = useState(0);
@@ -197,9 +214,24 @@ export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeP
     const arr = Array.from(aa.picked);
     if (aa.custom.trim()) arr.push(aa.custom.trim());
     const answer: string | string[] = q.multi ? arr : (arr[0] ?? "");
+    // goal 挂起提问：答案不是 resolve 某个 pending ask，而是发一条普通聊天
+    // 消息（submitOverride 接到 composer 的发送路）。发出才收卡。
+    if (submitOverride) {
+      const flat = typeof answer === "string" ? answer : answer.join("\n");
+      if (submitOverride(flat)) onResolve(q.id);
+      return;
+    }
     wsSend({ action: "question_reply", id: q.id, answer });
     onResolve(q.id);
   }
+
+  // submitOverride 在场时，点选项 = 立即把该 label 发出去并收卡（点击即时
+  // 反馈，不经「选中 → 发送」两步）。
+  const immediatePick = submitOverride
+    ? (label: string) => {
+        if (submitOverride(label)) onResolve(q.id);
+      }
+    : undefined;
 
   // 底部统一按钮组：单步 → [发送]；多步 → [‹上一题, 下一题›/发送]。
   useEffect(() => {
@@ -251,7 +283,7 @@ export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeP
   return (
     <>
       <div className={styles.header} data-fn-form-header onKeyDown={onKey}>
-        <div className={styles.badge}>{text("Your input is needed", "需要你的输入")}</div>
+        <div className={styles.badge}>{badge ?? text("Your input is needed", "需要你的输入")}</div>
         {/* 进度点 + 几分之几 —— 哪怕只有 1 步也显示（统一）。 */}
         <div className={multi.progress}>
           {steps.map((_, i) => (
@@ -272,7 +304,13 @@ export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeP
         </div>
       </div>
       <div className={styles.body} data-fn-form-body onKeyDown={onKey}>
-        <StepBody step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
+        <StepBody
+          step={cur}
+          answer={curAns}
+          onChange={(a) => patch(idx, a)}
+          optionDescriptions={optionDescriptions}
+          onImmediatePick={immediatePick}
+        />
       </div>
     </>
   );
@@ -283,10 +321,15 @@ function StepBody({
   step,
   answer,
   onChange,
+  optionDescriptions,
+  onImmediatePick,
 }: {
   step: Step;
   answer: Answer;
   onChange: (a: Answer) => void;
+  optionDescriptions?: Record<string, string>;
+  /** 设了它（goal 挂起提问），点选项 = 立即提交该 label，不是先选中。 */
+  onImmediatePick?: (label: string) => void;
 }) {
   const { text } = useTranslation();
   if (step.kind === "form") {
@@ -407,9 +450,13 @@ function StepBody({
               key={opt}
               type="button"
               className={styles.opt + (aa.picked.has(opt) ? " " + styles.optPicked : "")}
-              onClick={() => toggle(opt)}
+              onClick={() => (onImmediatePick ? onImmediatePick(opt) : toggle(opt))}
+              title={optionDescriptions?.[opt] || undefined}
             >
               {aa.picked.has(opt) ? "✓ " : ""}{opt}
+              {optionDescriptions?.[opt] ? (
+                <span className={formStyles.hint}> · {optionDescriptions[opt]}</span>
+              ) : null}
             </button>
           ))}
         </div>

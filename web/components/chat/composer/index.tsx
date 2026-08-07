@@ -24,7 +24,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 
-import { useSessionStore } from "@/lib/session-store";
+import { useSessionStore, type PendingDecision } from "@/lib/session-store";
 import { useSessionScope } from "@/lib/session-store/session-scope";
 import { getSocket } from "@/lib/runtime-bridge/state";
 import { api } from "@/lib/net/api";
@@ -35,7 +35,8 @@ import { useTranslation } from "@/lib/i18n";
 // each carries its own popover menu (project-menu / agent-selector /
 // permission-menu submodules under ../top-bar).
 import { ProjectBadge, WorkingDirChips } from "../top-bar";
-import { GoalChip } from "../goal-chip";
+import { GoalChip, useSessionGoal } from "../goal-chip";
+import { Target } from "lucide-react";
 import { visibleParams } from "./modes/fn-form/fn-form";
 import { type DecisionAction } from "./modes/question/question-mode";
 import { resolveComposerMode } from "./modes/resolve-mode";
@@ -61,7 +62,6 @@ import { useComposerKeyDown } from "./use-composer-keydown";
 import { StatusChip } from "./status-chip";
 import { ScopedDropOverlay } from "./scoped-drop-overlay";
 import { ComposerBody } from "./composer-body";
-import { GoalQuestionCard } from "./goal-question-card";
 import { sendChatMessage } from "./legacy-send";
 import styles from "./composer.module.css";
 
@@ -161,8 +161,37 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // （也就不会误把答案发到别的会话上）。
   const pendingDecisions = useSessionStore((s) => s.pendingDecisions);
   const dequeueDecision = useSessionStore((s) => s.dequeueDecision);
-  const activeDecision =
+  const pendingDecision =
     pendingDecisions.find((d) => d.sessionId === currentSessionId) ?? null;
+
+  // Goal 挂起提问：goal.status === waiting_user 时把 last_question 合成一个
+  // kind:"ask" 的 decision，让输入框走同一套 question 模式（真 pending ask
+  // 优先——两者同时在场时先答 ask）。答案不 resolve 任何 pending ask，而是
+  // 经 goalExtras.submitOverride 走普通聊天发送路（见下面 sendGoalAnswer）。
+  // answeredKey = 乐观隐藏：点选项/发送后立即退出 question 模式，不等
+  // goal_update 把 status 翻走；按「会话:轮数:问题」记 key，下一次挂起
+  //（新问题或新轮数）自然重新进入。刷新后水合数据仍是 waiting_user →
+  // goalDecision 重新合成，question 模式重现。
+  const goal = useSessionGoal(currentSessionId);
+  const [goalAnsweredKey, setGoalAnsweredKey] = useState<string | null>(null);
+  const goalKey =
+    goal?.status === "waiting_user" && goal.last_question && currentSessionId
+      ? `${currentSessionId}:${goal.turns_used ?? 0}:${goal.last_question}`
+      : null;
+  const goalDecision: PendingDecision | null =
+    !pendingDecision && goalKey && goalAnsweredKey !== goalKey
+      ? {
+          id: `goal:${goalKey}`,
+          sessionId: currentSessionId!,
+          kind: "ask",
+          prompt: goal!.last_question!,
+          options: (goal!.last_question_options ?? []).map((o) => o.label),
+          multi: false,
+          allow_custom: true,
+        }
+      : null;
+  const activeDecision = pendingDecision ?? goalDecision;
+  const isGoalDecision = activeDecision !== null && activeDecision === goalDecision;
   const send = wsSend;
 
   const isRunning = runningTask !== null;
@@ -568,17 +597,59 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     ],
   );
 
-  // 拒绝/取消当前的系统决定 —— 走左上角 ✕。发 question_reject 并即时出队
-  // （后端 _resolve_question 收口 + 广播）。
+  // 拒绝/取消当前的系统决定 —— 走左上角「Chat about this」。真 pending ask
+  // 发 question_reject 并即时出队（后端 _resolve_question 收口 + 广播）；
+  // goal 合成的 decision 没有后端问句可 reject，本地按下不表（乐观隐藏，
+  // 回到普通输入 —— 直接打字回答本来就是合法路径）。
   const rejectDecision = useCallback(() => {
     const d = activeDecision;
     if (!d) return;
+    if (isGoalDecision) {
+      setGoalAnsweredKey(goalKey);
+      return;
+    }
     const sock = getSocket();
     if (sock && sock.readyState === WebSocket.OPEN) {
       sock.send(JSON.stringify({ action: "question_reject", id: d.id }));
     }
     dequeueDecision(d.id);
-  }, [activeDecision, dequeueDecision]);
+  }, [activeDecision, dequeueDecision, isGoalDecision, goalKey]);
+
+  // QuestionMode 的 onResolve：goal 合成 decision → 记乐观隐藏 key；
+  // 真 pending ask → 出队（原路）。
+  const resolveDecision = useCallback(
+    (id: string) => {
+      if (id.startsWith("goal:")) {
+        setGoalAnsweredKey(id.slice("goal:".length));
+        return;
+      }
+      dequeueDecision(id);
+    },
+    [dequeueDecision],
+  );
+
+  // goal decision 在场时 QuestionMode 的附加件：◎ goal 标签、选项说明小字、
+  // 答案改走聊天发送路（点选项 = 立即发 label 并退出 question 模式）。
+  const goalExtras = isGoalDecision
+    ? {
+        badge: (
+          <>
+            <Target
+              size={13}
+              strokeWidth={2}
+              style={{ verticalAlign: "-2px", marginRight: 6 }}
+            />
+            {text("goal — your answer is needed", "goal · 等你回答")}
+          </>
+        ),
+        optionDescriptions: Object.fromEntries(
+          (goal?.last_question_options ?? [])
+            .filter((o) => o.description)
+            .map((o) => [o.label, o.description]),
+        ),
+        submitOverride: (answer: string) => sendGoalAnswer(answer),
+      }
+    : null;
   // In chat mode: disabled when textarea is empty OR when a paste
   //   token references content that was lost (chip is red). Submitting
   //   in the "lost" state would silently strip the token — see the
@@ -688,10 +759,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           still lands on the wrapper top edge; .inputArea is bottom-
           anchored absolute, so this row grows the composer upward
           without shifting the transcript. */}
-      {/* Goal 挂起提问卡 —— goal.status === waiting_user 时浮在 env-chip
-          行上方。inputArea 是 bottom-anchored absolute，加行只会向上长，
-          不推挤消息流。自由输入就是下面的 composer 本身。 */}
-      <GoalQuestionCard sessionId={currentSessionId} onPick={sendGoalAnswer} />
       <div className={styles.envChips}>
         <StatusChip owningId={bound === null} />
         <ProjectBadge />
@@ -741,8 +808,9 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           bound={bound}
           composerMode={composerMode}
           activeDecision={activeDecision}
-          dequeueDecision={dequeueDecision}
+          dequeueDecision={resolveDecision}
           setDecisionAction={setDecisionAction}
+          goalExtras={goalExtras}
           fnFormFunction={fnFormFunction}
           fnForm={fnForm}
           handleFnFormClose={handleFnFormClose}

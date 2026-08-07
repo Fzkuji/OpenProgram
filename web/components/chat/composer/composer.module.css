@@ -1422,25 +1422,3 @@
 /* "Select a model first" hint — shown in the bottom-left controls slot
    (where the effort pill normally lives) when no chat model is picked.
    Muted/warning tone so it reads as guidance, not an error. */
-
-/* ===== Goal waiting_user question card =============================
-   Floats above the env-chip row; the box itself reuses .inputWrapper
-   (same background / ring / radius as the composer), these rules only
-   add the gap below and let option pills wrap when a description makes
-   them taller than one line (question-mode's .opt is single-line). */
-.goalCard {
-  margin: 0 auto 8px;
-}
-.goalCard .goalCardIcon {
-  vertical-align: -2px;
-  margin-right: 6px;
-}
-.goalCard button {
-  height: auto;
-  min-height: 30px;
-  line-height: 1.4;
-  padding-top: 5px;
-  padding-bottom: 5px;
-  white-space: normal;
-  text-align: left;
-}

@@ -94,7 +94,7 @@ goal 会话与 `turn.stop` 闸门分工明确：有 goal（active 或 waiting）
 
 每次状态变化和每次续轮前的进度都经 `_emit_goal_update` 发出：dispatcher `on_event` 流上的 `chat_response` 信封 `{"type": "goal_update", "session_id", "goal": {…}}`，加上经 webui server 的顶层 `goal_update` WS 广播（尽力而为——没有 server 时如纯 CLI 或测试即为 no-op）。
 
-- **Web**：`session_loaded` 携带 goal（`ws_actions/session.py`）用于冷加载；输入框上方的 `GoalChip`（`web/components/chat/goal-chip.tsx`）据此加实时 `goal_update` 帧（经 `use-ws` 的兜底 `op:ws-message` 事件送达）渲染 `◎ goal · N/M`（共用 `useSessionGoal` hook）。`status === "waiting_user"` 期间输入框上方浮出**问题卡片**（`composer/goal-question-card.tsx`，question-mode 卡片一族）：挂起的问题加裁判给的一键选项；点选项把 label 走正常聊天发送路径发出（和手打一条消息完全等价——恢复规则无需任何特殊处理），也可以直接在输入框自由输入；卡片由 goal 状态驱动，挂起期间刷新页面会重新出现。输入框里敲的 `/goal …` 由 `ws_actions/chat.py` 的本地 builtin 分支在后端执行：查状态/解除的回文以 `local_command` 信封返回、渲染为临时 system 行；设定则把本轮文本替换为目标指令并落入正常轮次流程。
+- **Web**：`session_loaded` 携带 goal（`ws_actions/session.py`）用于冷加载；输入框上方的 `GoalChip`（`web/components/chat/goal-chip.tsx`）据此加实时 `goal_update` 帧（经 `use-ws` 的兜底 `op:ws-message` 事件送达）渲染 `◎ goal · N/M`（共用 `useSessionGoal` hook）。`status === "waiting_user"` 期间 composer 自身展开成**question 模式**——和 `ask_user_question` 同一个界面：挂起的 goal 合成一个 `PendingDecision`（真实 pending ask 优先），头部徽标显示"goal · 等你回答"加 Target 图标，选项渲染为带说明的 pill，自由输入保留。回答提交绕开 `question_reply`：所选 label（或输入文本）走正常聊天发送路径——和手打一条消息完全等价，恢复规则无需任何特殊处理。模式由 goal 状态驱动，挂起期间刷新页面会重新进入。输入框里敲的 `/goal …` 由 `ws_actions/chat.py` 的本地 builtin 分支在后端执行：查状态/解除的回文以 `local_command` 信封返回、渲染为临时 system 行；设定则把本轮文本替换为目标指令并落入正常轮次流程。
 - **命令注册表**：`/goal` 是 `builtin` 层带可调用 handler 的命令（`registry.register_shared_builtins`），因此出现在 `/api/commands` 且任何宿主都能解析。Rich REPL 在自己进程里用 marker 动作遮蔽它（`_cli_chat/handlers.py:_handle_goal`）：本地打印，并把设定形式的首轮送进 `process_user_turn`——REPL 裸 `rt.exec` 的轮次跑法绕过 dispatcher，永远到不了循环。
 
 ## 实现状态

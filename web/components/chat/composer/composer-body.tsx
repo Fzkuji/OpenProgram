@@ -32,6 +32,14 @@ export interface ComposerBodyProps {
   activeDecision: Decision | null;
   dequeueDecision(id: string): void;
   setDecisionAction(action: DecisionAction | null): void;
+  /** goal waiting_user 合成的 decision 在场时的 QuestionMode 附加件：
+   *  badge（◎ goal 标签）、选项说明、答案改走聊天发送路。真 pending ask
+   *  时为 null。 */
+  goalExtras: {
+    badge: React.ReactNode;
+    optionDescriptions: Record<string, string>;
+    submitOverride: (answer: string) => boolean;
+  } | null;
   fnFormFunction: FnFormFn | null;
   fnForm: ReturnType<typeof useFnFormState>;
   handleFnFormClose(): void;
@@ -57,6 +65,7 @@ export function ComposerBody({
   activeDecision,
   dequeueDecision,
   setDecisionAction,
+  goalExtras,
   fnFormFunction,
   fnForm,
   handleFnFormClose,
@@ -85,6 +94,9 @@ export function ComposerBody({
             decision={activeDecision}
             onResolve={dequeueDecision}
             onAction={setDecisionAction}
+            badge={goalExtras?.badge}
+            optionDescriptions={goalExtras?.optionDescriptions}
+            submitOverride={goalExtras?.submitOverride}
           />
         ) : composerMode === "fn-form" && fnFormFunction ? (
           <FunctionForm
