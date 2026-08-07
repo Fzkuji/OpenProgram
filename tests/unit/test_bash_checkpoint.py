@@ -299,3 +299,39 @@ def test_staging_dir_cleaned_up(tmp_path, monkeypatch):
         _checkpoint_changed_files("bash", snap)
 
     assert not os.path.isdir(stage)
+
+
+def test_checkpoint_records_deleted_file(tmp_path, monkeypatch):
+    """A file present pre-command and gone post-command is checkpointed
+    from its staged pre-image — that entry is what lets the shadow
+    commit stage the deletion (so a bash mv pairs into a rename) and
+    what makes Undo able to restore it."""
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "doomed.txt"
+    f.write_text("save me")
+
+    with patch("openprogram.worktree.context.current_worktree_path", return_value=None):
+        snap = _snapshot_cwd("bash")
+
+    f.unlink()
+
+    backed_up = []
+
+    def _capture(p, src=None):
+        # Read the staged pre-image NOW — the stage dir is cleaned up
+        # before _checkpoint_changed_files returns.
+        content = None
+        if src and os.path.isfile(src):
+            with open(src, encoding="utf-8") as fh:
+                content = fh.read()
+        backed_up.append((p, content))
+
+    with patch("openprogram.worktree.context.current_worktree_path", return_value=None), \
+         patch("openprogram.store.snapshot.checkpoint.helpers.checkpoint_before_edit",
+               side_effect=_capture):
+        _checkpoint_changed_files("bash", snap)
+
+    hits = [(p, c) for p, c in backed_up if "doomed.txt" in p]
+    assert hits, "deleted file was not checkpointed"
+    # The backup source is the staged pre-image with the pre-command bytes.
+    assert hits[0][1] == "save me"
