@@ -1,7 +1,8 @@
 """Cache-aware Microcompact — Anthropic Context Editing API integration.
 
-Uses the Anthropic ``cache_edits`` API parameter to clear old tool_result
-blocks server-side without breaking prompt cache prefix. This is the
+Uses the Anthropic ``context_management`` API parameter (edit type
+``clear_tool_uses_20250919``) to clear old tool_result blocks
+server-side without breaking the prompt cache prefix. This is the
 cache-aware path of Microcompact (the time-based path lives in
 ``microcompact.py``).
 
@@ -53,10 +54,16 @@ def build_cache_edits() -> dict[str, Any] | None:
     if not should_trigger():
         return None
     _last_trigger_at.set(_tool_call_count.get(0))
+    # The real API shape (context-management-2025-06-27 beta):
+    # context_management.edits with the clear_tool_uses_20250919 edit.
+    # The SDK's stream() signature doesn't know this parameter, so the
+    # caller must send it via extra_body, never as a top-level kwarg.
     return {
-        "cache_edits": {
-            "strategy": "clear_tool_uses",
-            "keep_recent": KEEP_RECENT,
+        "context_management": {
+            "edits": [{
+                "type": "clear_tool_uses_20250919",
+                "keep": {"type": "tool_uses", "value": KEEP_RECENT},
+            }],
         },
     }
 

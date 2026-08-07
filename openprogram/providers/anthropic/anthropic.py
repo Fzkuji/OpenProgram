@@ -736,14 +736,20 @@ async def stream_simple(
         f = getattr(_signal, "is_set", None)
         return bool(_signal is not None and callable(f) and f())
 
-    # Cache-aware Microcompact: add cache_edits to clear old tool_result
-    # blocks server-side without breaking prompt cache prefix.
-    # Only fires after 50 tool calls, then every 25. Requires the
-    # context-management beta header (already set for 1M models).
-    from openprogram.context.cache_aware_microcompact import build_cache_edits
-    _ce = build_cache_edits()
-    if _ce is not None:
-        params.update(_ce)
+    # Cache-aware Microcompact: server-side clearing of old tool_result
+    # blocks without breaking the prompt cache prefix. Fires after 50
+    # tool calls, then every 25. The context_management parameter is
+    # accepted only under the context-management beta header, which the
+    # client sets for [1m]-suffixed models — plain models must skip the
+    # injection or every request 400s.
+    if _wants_1m(model.id):
+        from openprogram.context.cache_aware_microcompact import build_cache_edits
+        _ce = build_cache_edits()
+        if _ce is not None:
+            # context_management is not in the SDK's stream() signature —
+            # a top-level kwarg raises TypeError. extra_body goes straight
+            # into the request body past signature validation.
+            params["extra_body"] = {**params.get("extra_body", {}), **_ce}
 
     # Apply on_payload callback (mirrors TS: const nextParams = await options?.onPayload?.(params, model))
     if opts.get("on_payload"):

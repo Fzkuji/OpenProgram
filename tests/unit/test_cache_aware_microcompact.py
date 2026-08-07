@@ -32,9 +32,10 @@ def test_build_cache_edits_returns_params():
         increment_tool_calls()
     result = build_cache_edits()
     assert result is not None
-    assert "cache_edits" in result
-    assert result["cache_edits"]["strategy"] == "clear_tool_uses"
-    assert result["cache_edits"]["keep_recent"] == KEEP_RECENT
+    assert "context_management" in result
+    edit = result["context_management"]["edits"][0]
+    assert edit["type"] == "clear_tool_uses_20250919"
+    assert edit["keep"] == {"type": "tool_uses", "value": KEEP_RECENT}
 
 
 def test_trigger_marks_last_and_waits_interval():
