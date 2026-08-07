@@ -115,30 +115,76 @@ def _list_files(session_id: str, assistant_msg_id: str) -> dict:
 
     meta = _shadow_meta(idx, assistant_msg_id)
     stats: dict[str, tuple[int, int]] = {}
+    shadow_rows: list[dict] = []
     root = meta.get("repo") if meta else None
     if meta:
         try:
             from openprogram.store.shadow_git import ShadowGitStore
+            store = ShadowGitStore(meta["repo"])
             before = meta.get("before") or _EMPTY_TREE
-            stats = ShadowGitStore(meta["repo"]).numstat(before, meta["after"])
+            stats = store.numstat(before, meta["after"])
+            shadow_rows = store.name_status(before, meta["after"])
         except Exception:  # noqa: BLE001
-            stats = {}
+            stats, shadow_rows = {}, []
 
     files = []
-    for row in rows:
-        rel = _relative_to(row["path"], root) if root else os.path.basename(row["path"])
-        added, removed = stats.get(rel, (0, 0))
-        if not stats:
-            # No shadow record — count from the checkpoint copy instead so
-            # the chips still show real numbers on legacy sessions.
-            added, removed = _difflib_counts(session_dir, assistant_msg_id, row)
-        files.append({
-            "path": row["path"],
-            "rel": rel,
-            "op": _op_for(row),
-            "added": added,
-            "removed": removed,
-        })
+    if shadow_rows:
+        # Shadow git is the authority on WHAT changed: it sees bash-made
+        # deletions the checkpoint manifest deliberately skips, and -M
+        # pairs a delete+add back into the rename it actually was. The
+        # manifest below only contributes files shadow git didn't see
+        # (e.g. edits outside the project root).
+        op_names = {"A": "add", "D": "delete", "M": "modify", "R": "rename"}
+        # First-ever shadow commit has no "before" → the empty-tree diff
+        # calls everything "A". The manifest knows which files actually
+        # pre-existed; those are modifies.
+        pre_existing = {
+            (_relative_to(r["path"], root) if root else os.path.basename(r["path"]))
+            for r in rows if r["pre_existing"]
+        }
+        seen_rels: set[str] = set()
+        for srow in shadow_rows:
+            rel = srow["rel"]
+            seen_rels.add(rel)
+            added, removed = stats.get(rel, (0, 0))
+            display = (f"{srow['old_rel']} → {rel}"
+                       if srow["status"] == "R" else rel)
+            op = op_names.get(srow["status"], "modify")
+            if op == "add" and rel in pre_existing:
+                op = "modify"
+            files.append({
+                "path": str(Path(root) / rel) if root else rel,
+                "rel": display,
+                "op": op,
+                "added": added,
+                "removed": removed,
+            })
+        for row in rows:
+            rel = _relative_to(row["path"], root) if root else os.path.basename(row["path"])
+            if rel in seen_rels:
+                continue
+            files.append({
+                "path": row["path"],
+                "rel": rel,
+                "op": _op_for(row),
+                "added": 0,
+                "removed": 0,
+            })
+    else:
+        for row in rows:
+            rel = _relative_to(row["path"], root) if root else os.path.basename(row["path"])
+            added, removed = stats.get(rel, (0, 0))
+            if not stats:
+                # No shadow record — count from the checkpoint copy instead so
+                # the chips still show real numbers on legacy sessions.
+                added, removed = _difflib_counts(session_dir, assistant_msg_id, row)
+            files.append({
+                "path": row["path"],
+                "rel": rel,
+                "op": _op_for(row),
+                "added": added,
+                "removed": removed,
+            })
 
     # `revert_turn` stamps metadata['reverted'] on the assistant node.
     # Replaying it here is what makes an undone turn still read as
@@ -193,9 +239,14 @@ def _file_diff(session_id: str, assistant_msg_id: str, path: str) -> dict:
     if meta:
         try:
             from openprogram.store.shadow_git import ShadowGitStore
+            store = ShadowGitStore(meta["repo"])
             rel = _relative_to(path, meta["repo"])
             before = meta.get("before") or _EMPTY_TREE
-            text = ShadowGitStore(meta["repo"]).diff(before, meta["after"], rel)
+            # A renamed file needs BOTH sides in the pathspec for -M to
+            # show one rename diff instead of a bare "new file".
+            extra = [s["old_rel"] for s in store.name_status(before, meta["after"])
+                     if s["status"] == "R" and s["rel"] == rel]
+            text = store.diff(before, meta["after"], rel, extra_paths=extra)
             if text.strip():
                 return {"diff": text, "approximate": False}
         except Exception:  # noqa: BLE001

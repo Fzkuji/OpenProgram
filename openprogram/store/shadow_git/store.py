@@ -139,20 +139,48 @@ class ShadowGitStore:
         except Exception:
             return None
 
-    def diff(self, sha1: str, sha2: str = "HEAD", path: str = "") -> str:
+    def diff(self, sha1: str, sha2: str = "HEAD", path: str = "",
+             extra_paths: "list[str] | None" = None) -> str:
         """Diff between two commits, optionally limited to one path.
 
-        ``path`` is relative to the project root.
+        ``path`` is relative to the project root. ``extra_paths`` adds
+        more pathspecs — a rename needs BOTH sides in the filter for
+        ``-M`` to pair them into one rename diff.
         """
         if not self._ensure_init():
             return ""
-        args = ["diff", sha1, sha2]
-        if path:
-            args += ["--", path]
+        args = ["diff", "-M", sha1, sha2]
+        paths = [p for p in ([path] + list(extra_paths or [])) if p]
+        if paths:
+            args += ["--", *paths]
         try:
             return self._git(*args)
         except Exception:
             return ""
+
+    def name_status(self, sha1: str, sha2: str = "HEAD") -> list[dict]:
+        """``[{"status", "rel", "old_rel"}]`` between two commits, with
+        rename detection: status is one of ``A``/``D``/``M``/``R``
+        (copies map to A); ``old_rel`` is set only for renames."""
+        if not self._ensure_init():
+            return []
+        try:
+            out = self._git("diff", "--name-status", "-M", sha1, sha2)
+        except Exception:
+            return []
+        rows: list[dict] = []
+        for line in out.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            code = parts[0][:1]
+            if code == "R" and len(parts) >= 3:
+                rows.append({"status": "R", "rel": parts[2], "old_rel": parts[1]})
+            elif code == "C" and len(parts) >= 3:
+                rows.append({"status": "A", "rel": parts[2], "old_rel": ""})
+            elif code in ("A", "D", "M"):
+                rows.append({"status": code, "rel": parts[1], "old_rel": ""})
+        return rows
 
     def numstat(self, sha1: str, sha2: str = "HEAD") -> dict[str, tuple[int, int]]:
         """``{rel_path: (added, removed)}`` between two commits.
@@ -162,7 +190,7 @@ class ShadowGitStore:
         if not self._ensure_init():
             return {}
         try:
-            out = self._git("diff", "--numstat", sha1, sha2)
+            out = self._git("diff", "--numstat", "-M", sha1, sha2)
         except Exception:
             return {}
         result: dict[str, tuple[int, int]] = {}
@@ -171,6 +199,15 @@ class ShadowGitStore:
             if len(parts) != 3:
                 continue
             add, rem, rel = parts
+            # -M prints renames as "old => new" or "dir/{old => new}";
+            # key the stats by the NEW path.
+            if " => " in rel:
+                if "{" in rel and "}" in rel:
+                    head, _, rest = rel.partition("{")
+                    inner, _, tail = rest.partition("}")
+                    rel = head + inner.split(" => ")[-1] + tail
+                else:
+                    rel = rel.split(" => ")[-1]
             try:
                 result[rel] = (int(add), int(rem))
             except ValueError:
