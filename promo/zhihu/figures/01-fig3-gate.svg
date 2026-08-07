@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 872" role="img" aria-label="choices 门控两轮时序:第一轮模糊回答被打回,第二轮合法值进入 Python 分支">
+  <defs>
+    <marker id="arrGray" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#6b7280"/>
+    </marker>
+    <marker id="arrRed" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#dc2626"/>
+    </marker>
+    <marker id="arrGreen" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#059669"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="872" fill="#ffffff"/>
+  <text x="40" y="56" font-family="-apple-system, PingFang SC, sans-serif" font-size="28" font-weight="700" fill="#1f2937">choices 门控：验证失败就打回，直到合法</text>
+
+  <!-- lifeline headers -->
+  <rect x="152" y="96" width="256" height="76" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="280" y="128" text-anchor="middle" font-family="-apple-system, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#2563eb">LLM</text>
+  <text x="280" y="156" text-anchor="middle" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" fill="#1f2937">生成回答</text>
+
+  <rect x="690" y="96" width="380" height="76" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+  <text x="880" y="128" text-anchor="middle" font-family="-apple-system, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#059669">Gate（校验代码）</text>
+  <text x="880" y="156" text-anchor="middle" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" fill="#1f2937">choices=[&quot;bug&quot;,&quot;feature&quot;,&quot;question&quot;]</text>
+
+  <!-- lifelines -->
+  <line x1="280" y1="172" x2="280" y2="768" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="6 6"/>
+  <line x1="880" y1="172" x2="880" y2="656" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="6 6"/>
+
+  <!-- round 1 -->
+  <text x="40" y="238" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" font-weight="700" fill="#6b7280">第 1 轮</text>
+  <text x="580" y="240" text-anchor="middle" font-family="Menlo, monospace" font-size="17" fill="#1f2937">"probably a feature request"</text>
+  <line x1="280" y1="256" x2="872" y2="256" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrGray)"/>
+
+  <rect x="620" y="284" width="520" height="64" rx="12" fill="#ffffff" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="880" y="312" text-anchor="middle" font-family="-apple-system, PingFang SC, sans-serif" font-size="19" font-weight="700" fill="#dc2626">✗ 解析失败</text>
+  <text x="880" y="337" text-anchor="middle" font-family="Menlo, monospace" font-size="16" fill="#dc2626">no parseable pick from [bug, feature, question]</text>
+
+  <text x="580" y="386" text-anchor="middle" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" fill="#dc2626">失败原因发回，重新决策</text>
+  <line x1="880" y1="402" x2="288" y2="402" stroke="#dc2626" stroke-width="1.5" marker-end="url(#arrRed)"/>
+
+  <!-- round 2 -->
+  <text x="40" y="478" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" font-weight="700" fill="#6b7280">第 2 轮</text>
+  <text x="580" y="480" text-anchor="middle" font-family="Menlo, monospace" font-size="17" fill="#1f2937">{"call": "feature"}</text>
+  <line x1="280" y1="496" x2="872" y2="496" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrGray)"/>
+
+  <rect x="796" y="524" width="168" height="52" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+  <text x="880" y="558" text-anchor="middle" font-family="-apple-system, PingFang SC, sans-serif" font-size="19" font-weight="700" fill="#059669">✓ 合法值</text>
+
+  <!-- exit to python -->
+  <line x1="880" y1="576" x2="880" y2="648" stroke="#059669" stroke-width="1.5" marker-end="url(#arrGreen)"/>
+  <rect x="600" y="656" width="560" height="104" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+  <text x="880" y="698" text-anchor="middle" font-family="Menlo, monospace" font-size="17" fill="#1f2937">if kind == "bug": …</text>
+  <text x="880" y="732" text-anchor="middle" font-family="-apple-system, PingFang SC, sans-serif" font-size="19" font-weight="700" fill="#059669">普通 Python 分支，100% 执行</text>
+
+  <!-- note -->
+  <text x="40" y="828" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" fill="#6b7280">门控是校验代码，不是 prompt 里的恳求——模型答不出合法值，流程就不往下走。</text>
+</svg>

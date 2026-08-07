@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 740" role="img" aria-label="同一个分诊 agent 的两种写法对比:典型框架的四个胶水工件分别被 OpenProgram 函数中的类型注解、docstring 与 choices 门控吸收">
+  <defs>
+    <marker id="arrBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrGray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b7280"/>
+    </marker>
+  </defs>
+
+  <!-- 图题 -->
+  <text x="32" y="72" font-family="-apple-system, PingFang SC, sans-serif" font-size="28" font-weight="700" fill="#1f2937">同一个分诊 agent:胶水层去哪了</text>
+
+  <!-- ============ 左:典型框架 ============ -->
+  <rect x="32" y="130" width="432" height="530" rx="12" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text x="56" y="164" font-family="-apple-system, PingFang SC, sans-serif" font-size="20" font-weight="700" fill="#6b7280">典型框架:四个手工工件</text>
+
+  <!-- 工件 1: TOOLS JSON -->
+  <rect x="48" y="180" width="400" height="80" rx="12" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="68" y="212" font-family="-apple-system, PingFang SC, sans-serif" font-size="19" font-weight="600" fill="#1f2937">手写工具 schema</text>
+  <text x="68" y="242" font-family="Menlo, monospace" font-size="15" fill="#6b7280">TOOLS = [{"type": "function", …}]</text>
+
+  <!-- 工件 2: PROMPT -->
+  <rect x="48" y="280" width="400" height="80" rx="12" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="68" y="312" font-family="-apple-system, PingFang SC, sans-serif" font-size="19" font-weight="600" fill="#1f2937">prompt 模板字符串</text>
+  <text x="68" y="342" font-family="Menlo, monospace" font-size="15" fill="#6b7280">TRIAGE_PROMPT = """You are…"""</text>
+
+  <!-- 工件 3: 手动解析 -->
+  <rect x="48" y="380" width="400" height="80" rx="12" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="68" y="412" font-family="-apple-system, PingFang SC, sans-serif" font-size="19" font-weight="600" fill="#1f2937">手动解析返回值 <tspan fill="#dc2626" font-size="17">(祈祷能 parse)</tspan></text>
+  <text x="68" y="442" font-family="Menlo, monospace" font-size="15" fill="#6b7280">kind = json.loads(resp)["kind"]</text>
+
+  <!-- 工件 4: 手写重试 -->
+  <rect x="48" y="480" width="400" height="80" rx="12" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="68" y="512" font-family="-apple-system, PingFang SC, sans-serif" font-size="19" font-weight="600" fill="#1f2937">手写重问逻辑</text>
+  <text x="68" y="542" font-family="Menlo, monospace" font-size="15" fill="#6b7280">if kind not in (…): 再问一次</text>
+
+  <!-- 汇入 client.chat -->
+  <line x1="248" y1="560" x2="248" y2="588" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arrGray)"/>
+  <text x="262" y="580" font-family="-apple-system, PingFang SC, sans-serif" font-size="16" fill="#6b7280">手工拼装</text>
+  <rect x="48" y="592" width="400" height="52" rx="12" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="248" y="625" text-anchor="middle" font-family="Menlo, monospace" font-size="17" fill="#1f2937">resp = client.chat(PROMPT, tools=TOOLS)</text>
+
+  <!-- ============ 右:OpenProgram ============ -->
+  <text x="760" y="164" font-family="-apple-system, PingFang SC, sans-serif" font-size="20" font-weight="700" fill="#6b7280">OpenProgram:一个函数</text>
+  <rect x="760" y="180" width="600" height="360" rx="12" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1.5"/>
+
+  <!-- row: decorator -->
+  <text x="784" y="216" font-family="Menlo, monospace" font-size="17" font-weight="700" fill="#059669">@agentic_function</text>
+
+  <!-- row: def 行(类型注解 = schema) -->
+  <rect x="776" y="230" width="568" height="40" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="792" y="256" font-family="Menlo, monospace" font-size="17" fill="#1f2937">def triage(<tspan font-weight="700" fill="#2563eb">ticket: str</tspan>, runtime=None) -&gt; str:</text>
+
+  <!-- rows: docstring -->
+  <rect x="776" y="278" width="568" height="72" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="792" y="304" font-family="Menlo, monospace" font-size="17" fill="#2563eb">"""Classify the ticket as bug / feature /</text>
+  <text x="792" y="334" font-family="Menlo, monospace" font-size="17" fill="#2563eb">question, then draft a reply."""</text>
+
+  <!-- rows: exec + choices -->
+  <rect x="776" y="358" width="568" height="72" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="792" y="384" font-family="Menlo, monospace" font-size="17" fill="#1f2937">kind = runtime.exec(ticket,</text>
+  <text x="792" y="414" font-family="Menlo, monospace" font-size="17" fill="#1f2937">  <tspan font-weight="700" fill="#2563eb">choices=["bug","feature","question"]</tspan>)</text>
+
+  <!-- row: if 分支 -->
+  <rect x="776" y="438" width="568" height="40" rx="8" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  <text x="792" y="464" font-family="Menlo, monospace" font-size="17" fill="#059669">if kind == "bug": …   # 普通 Python</text>
+
+  <!-- row: return -->
+  <rect x="776" y="486" width="568" height="40" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="792" y="512" font-family="Menlo, monospace" font-size="17" fill="#1f2937">return runtime.exec("Draft a short reply.")</text>
+
+  <!-- ============ 吸收箭头 ============ -->
+  <line x1="452" y1="220" x2="770" y2="250" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrBlue)"/>
+  <text x="604" y="212" text-anchor="middle" font-family="-apple-system, PingFang SC, sans-serif" font-size="16" fill="#2563eb">被类型注解吸收</text>
+
+  <line x1="452" y1="320" x2="770" y2="314" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrBlue)"/>
+  <text x="604" y="300" text-anchor="middle" font-family="-apple-system, PingFang SC, sans-serif" font-size="16" fill="#2563eb">被 docstring 吸收</text>
+
+  <line x1="452" y1="420" x2="770" y2="388" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrBlue)"/>
+  <text x="604" y="388" text-anchor="middle" font-family="-apple-system, PingFang SC, sans-serif" font-size="16" fill="#2563eb">被 choices 门控吸收</text>
+
+  <line x1="452" y1="520" x2="770" y2="416" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrBlue)"/>
+  <text x="604" y="478" text-anchor="middle" font-family="-apple-system, PingFang SC, sans-serif" font-size="16" fill="#2563eb">重试自动化:不合法就打回</text>
+
+  <!-- 底注 -->
+  <text x="700" y="706" text-anchor="middle" font-family="-apple-system, PingFang SC, sans-serif" font-size="20" fill="#6b7280">同一行为:左边的 prompt 模板、工具 JSON、解析与重试代码,整体消失在一个函数里</text>
+</svg>

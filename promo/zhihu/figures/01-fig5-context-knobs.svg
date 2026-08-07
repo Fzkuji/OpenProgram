@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 720" role="img" aria-label="expose 与 render_range：子任务中间过程被隔离回收，父上下文只留输入和结论">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b7280"/>
+    </marker>
+    <marker id="arrg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#059669"/>
+    </marker>
+  </defs>
+
+  <rect width="1400" height="720" fill="#ffffff"/>
+  <text x="60" y="76" font-family="-apple-system, PingFang SC, sans-serif" font-size="28" font-weight="700" fill="#1f2937">上下文写在函数签名上：expose 与 render_range</text>
+
+  <!-- ===== 左：调用树 ===== -->
+  <text x="120" y="160" font-family="-apple-system, PingFang SC, sans-serif" font-size="20" font-weight="600" fill="#6b7280">父会话主干</text>
+
+  <!-- trunk line -->
+  <line x1="170" y1="196" x2="170" y2="264" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="170" y1="296" x2="170" y2="364" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="170" y1="396" x2="170" y2="614" stroke="#9ca3af" stroke-width="2"/>
+
+  <!-- trunk nodes -->
+  <circle cx="170" cy="180" r="16" fill="#6b7280"/>
+  <text x="200" y="187" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" fill="#1f2937">用户消息</text>
+
+  <circle cx="170" cy="280" r="16" fill="#eff6ff" stroke="#2563eb" stroke-width="2.5"/>
+  <text x="200" y="287" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" fill="#1f2937">LLM 调用</text>
+
+  <circle cx="170" cy="380" r="16" fill="#ecfdf5" stroke="#059669" stroke-width="2.5"/>
+  <text x="200" y="373" font-family="Menlo, monospace" font-size="17" fill="#1f2937">audit(repo)</text>
+  <text x="200" y="396" font-family="-apple-system, PingFang SC, sans-serif" font-size="16" fill="#6b7280">函数调用节点</text>
+
+  <circle cx="170" cy="630" r="16" fill="#eff6ff" stroke="#2563eb" stroke-width="2.5"/>
+  <text x="200" y="637" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" fill="#1f2937">后续轮次（看不到左边框里的任何东西）</text>
+
+  <!-- call arrow into box -->
+  <line x1="196" y1="352" x2="392" y2="300" stroke="#6b7280" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="272" y="312" font-family="-apple-system, PingFang SC, sans-serif" font-size="17" fill="#6b7280">调用</text>
+
+  <!-- ===== 隔离草稿框 ===== -->
+  <rect x="400" y="220" width="460" height="290" rx="12" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="8 6"/>
+  <text x="424" y="258" font-family="Menlo, monospace" font-size="17" fill="#1f2937">render_range={"callers": 0}</text>
+  <text x="424" y="284" font-family="-apple-system, PingFang SC, sans-serif" font-size="17" fill="#6b7280">隔离草稿上下文：子树从这里长</text>
+
+  <!-- scratch nodes chain -->
+  <g stroke="#9ca3af" stroke-width="1.5">
+    <line x1="452" y1="356" x2="500" y2="356"/>
+    <line x1="524" y1="356" x2="572" y2="356"/>
+    <line x1="596" y1="356" x2="644" y2="356"/>
+    <line x1="668" y1="356" x2="716" y2="356"/>
+    <line x1="740" y1="356" x2="788" y2="356"/>
+  </g>
+  <g fill="#d1d5db">
+    <circle cx="440" cy="356" r="11"/>
+    <circle cx="512" cy="356" r="11"/>
+    <circle cx="584" cy="356" r="11"/>
+    <circle cx="656" cy="356" r="11"/>
+    <circle cx="728" cy="356" r="11"/>
+    <circle cx="800" cy="356" r="11"/>
+  </g>
+  <text x="440" y="404" font-family="-apple-system, PingFang SC, sans-serif" font-size="17" fill="#6b7280">读一万个文件的中间过程：数千个节点</text>
+  <text x="440" y="430" font-family="-apple-system, PingFang SC, sans-serif" font-size="17" fill="#6b7280">全部留在框内，不进父级 prompt</text>
+
+  <text x="424" y="486" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" font-weight="600" fill="#9ca3af">返回后整框回收 ↓</text>
+
+  <!-- return arrow -->
+  <path d="M 400 470 C 300 510, 240 570, 196 618" fill="none" stroke="#059669" stroke-width="2" marker-end="url(#arrg)"/>
+  <text x="416" y="548" font-family="Menlo, monospace" font-size="17" fill="#059669">expose="io"</text>
+  <text x="416" y="573" font-family="-apple-system, PingFang SC, sans-serif" font-size="16" fill="#059669">只有 输入 + 结论 回到父级</text>
+
+  <!-- ===== 右：旋钮表 ===== -->
+  <rect x="920" y="140" width="420" height="500" rx="12" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="948" y="188" font-family="-apple-system, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#1f2937">四个旋钮</text>
+  <line x1="948" y1="208" x2="1312" y2="208" stroke="#e5e7eb" stroke-width="1.5"/>
+
+  <circle cx="958" cy="248" r="6" fill="#2563eb"/>
+  <text x="978" y="255" font-family="Menlo, monospace" font-size="17" fill="#1f2937">render_range={"callers": 0}</text>
+  <text x="978" y="281" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" fill="#6b7280">子任务不污染父级 prompt</text>
+
+  <circle cx="958" cy="352" r="6" fill="#93c5fd"/>
+  <text x="978" y="359" font-family="Menlo, monospace" font-size="17" fill="#1f2937">render_range={"callers": 1}</text>
+  <text x="978" y="385" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" fill="#6b7280">子任务看一层调用方历史</text>
+
+  <circle cx="958" cy="456" r="6" fill="#059669"/>
+  <text x="978" y="463" font-family="Menlo, monospace" font-size="17" fill="#1f2937">expose="llm"</text>
+  <text x="978" y="489" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" fill="#6b7280">父级看到推理过程，不只是结论</text>
+
+  <circle cx="958" cy="560" r="6" fill="#6b7280"/>
+  <text x="978" y="567" font-family="Menlo, monospace" font-size="17" fill="#1f2937">expose="hidden"</text>
+  <text x="978" y="593" font-family="-apple-system, PingFang SC, sans-serif" font-size="18" fill="#6b7280">内部 helper，父级完全不可见</text>
+</svg>
