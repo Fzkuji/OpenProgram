@@ -98,7 +98,7 @@ def _emit_goal_update(on_event: Optional[Callable], session_id: str,
         "session_id": session_id,
         "goal": {k: goal.get(k) for k in (
             "text", "spec", "status", "turns_used", "max_turns",
-            "last_reason", "last_question")},
+            "last_reason", "last_question", "last_question_options")},
     }
     if on_event is not None:
         try:
@@ -122,9 +122,14 @@ def _emit_goal_update(on_event: Optional[Callable], session_id: str,
 # Evaluation — one call to the `goal` agentic function
 # ---------------------------------------------------------------------------
 
-def evaluate_goal(session_id: str, goal: dict, *, agent_id: str,
-                  spawn_caller: Optional[str] = None) -> tuple[str, str, str]:
-    """``("met"|"unmet"|"needs_user"|"judge_failure", reason, question)``.
+def evaluate_goal(
+    session_id: str, goal: dict, *, agent_id: str,
+    spawn_caller: Optional[str] = None,
+) -> tuple[str, str, str, list[dict]]:
+    """``("met"|"unmet"|"needs_user"|"judge_failure", reason, question,
+    options)`` — ``options`` is the judge's optional list of
+    ``{"label", "description"}`` one-click answers for the question
+    (empty for every non-``needs_user`` verdict).
 
     One call to the ``goal`` agentic function
     (``openprogram/functions/agentics/goal/``) — the only judgment
@@ -158,12 +163,12 @@ def evaluate_goal(session_id: str, goal: dict, *, agent_id: str,
             last_error = f"goal decision failed: {type(e).__name__}: {e}"
             continue
         if data["met"]:
-            return "met", data["reason"], ""
+            return "met", data["reason"], "", []
         question = data["question"].strip()
         if data["need_user"] and question:
-            return "needs_user", data["reason"], question
-        return "unmet", data["reason"], ""
-    return "judge_failure", last_error, ""
+            return "needs_user", data["reason"], question, data.get("options") or []
+        return "unmet", data["reason"], "", []
+    return "judge_failure", last_error, "", []
 
 
 # ---------------------------------------------------------------------------
@@ -305,10 +310,11 @@ def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
                 return result
             goal["status"] = "active"
             goal.pop("last_question", None)
+            goal.pop("last_question_options", None)
         if goal.get("status") != "active":
             return result
 
-        verdict, reason, question = evaluate_goal(
+        verdict, reason, question, options = evaluate_goal(
             prev_req.session_id, goal,
             agent_id=prev_req.agent_id,
             spawn_caller=getattr(result, "assistant_msg_id", None),
@@ -344,6 +350,7 @@ def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
                 goal["status"] = "waiting_user"
                 goal["judge_parse_failures"] = 0
                 goal["last_question"] = question
+                goal["last_question_options"] = options
                 goal["last_question_at"] = time.time()
                 _finish(prev_req.session_id, goal, on_event)
                 _emit_goal_question(on_event, prev_req.session_id, question)

@@ -213,7 +213,7 @@ def test_judge_prefers_spec_over_text(tmp_db: SessionDB, monkeypatch) -> None:
                 "question": ""}
 
     monkeypatch.setattr(GF, "goal", _fake_decision)
-    verdict, _, _ = G.evaluate_goal("s1", goal, agent_id="main")
+    verdict, _, _, _ = G.evaluate_goal("s1", goal, agent_id="main")
     assert verdict == "met"
     assert seen == ["THE-SPEC"]
 
@@ -418,7 +418,7 @@ def test_judge_retries_once_then_parses(tmp_db: SessionDB, monkeypatch) -> None:
     _set_goal(tmp_db, "s1")
     _judge_replies(monkeypatch, [
         "not json at all", '{"met": true, "reason": "done"}'])
-    verdict, reason, _question = G.evaluate_goal(
+    verdict, reason, _question, _opts = G.evaluate_goal(
         "s1", {"text": "the goal"}, agent_id="main")
     assert verdict == "met"
     assert reason == "done"
@@ -427,7 +427,7 @@ def test_judge_retries_once_then_parses(tmp_db: SessionDB, monkeypatch) -> None:
 def test_judge_json_extraction() -> None:
     ok = GF._parse_decision('```json\n{"met": false, "reason": "missing"}\n```')
     assert ok == {"met": False, "reason": "missing",
-                  "need_user": False, "question": ""}
+                  "need_user": False, "question": "", "options": []}
     with pytest.raises(ValueError):
         GF._parse_decision("no braces here")
     with pytest.raises(ValueError):

@@ -22,7 +22,7 @@ def test_parse_decision_fenced_json() -> None:
     ok = GF._parse_decision(
         '```json\n{"met": false, "reason": "missing"}\n```')
     assert ok == {"met": False, "reason": "missing",
-                  "need_user": False, "question": ""}
+                  "need_user": False, "question": "", "options": []}
 
 
 def test_parse_decision_invalid_raises() -> None:
@@ -48,7 +48,7 @@ def test_goal_decision_parses_and_forwards(monkeypatch, stub_view) -> None:
     out = GF.goal(goal="MY-GOAL", session_id="s1",
                   spawn_caller="a1", agent_id="main")
     assert out == {"met": True, "reason": "done",
-                   "need_user": False, "question": ""}
+                   "need_user": False, "question": "", "options": []}
     sid, prompt, agent_id, spawn_caller = calls[0]
     assert (sid, agent_id, spawn_caller) == ("s1", "main", "a1")
     assert "completion judge" in prompt              # docstring is the prompt
@@ -62,7 +62,7 @@ def test_goal_decision_optional_fields_default(monkeypatch, stub_view) -> None:
                         lambda *a, **k: '{"met": false, "reason": "not yet"}')
     out = GF.goal(goal="g", session_id="s1")
     assert out == {"met": False, "reason": "not yet",
-                   "need_user": False, "question": ""}
+                   "need_user": False, "question": "", "options": []}
 
 
 def test_goal_decision_invalid_reply_raises(monkeypatch, stub_view) -> None:

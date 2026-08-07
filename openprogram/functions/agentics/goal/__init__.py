@@ -135,18 +135,30 @@ def _run_decision_turn(session_id: str, prompt: str, *, agent_id: str,
 
 
 def _parse_decision(raw: str) -> dict:
-    """``{"met", "reason", "need_user", "question"}`` from a decision
-    reply. Raises ``ValueError`` when the reply has no valid JSON
-    object or ``met`` is not a bool — the loop's retry counts that as
-    a failed attempt."""
+    """``{"met", "reason", "need_user", "question", "options"}`` from a
+    decision reply. Raises ``ValueError`` when the reply has no valid
+    JSON object or ``met`` is not a bool — the loop's retry counts that
+    as a failed attempt. ``options`` is a cleaned list of
+    ``{"label", "description"}`` dicts (both str, label non-empty),
+    capped at 4; anything malformed is dropped item-wise."""
     data = parse_json(raw or "")
     if not isinstance(data, dict) or not isinstance(data.get("met"), bool):
         raise ValueError("goal decision reply was not valid JSON")
+    options: list[dict] = []
+    for opt in (data.get("options") or [])[:4]:
+        if isinstance(opt, str) and opt.strip():
+            options.append({"label": opt.strip(), "description": ""})
+        elif isinstance(opt, dict) and str(opt.get("label") or "").strip():
+            options.append({
+                "label": str(opt["label"]).strip(),
+                "description": str(opt.get("description") or ""),
+            })
     return {
         "met": bool(data["met"]),
         "reason": str(data.get("reason") or ""),
         "need_user": bool(data.get("need_user")),
         "question": str(data.get("question") or ""),
+        "options": options,
     }
 
 
@@ -325,11 +337,17 @@ def goal(goal: str, session_id: str = "", attended: bool = True,
     Anything else — style choices, minor unknowns, recoverable errors —
     is NOT a reason to pause: need_user=false and let the run continue.
 
+    When need_user=true, also offer 2-4 answer options when the
+    choices are enumerable — each a {"label", "description"} pair the
+    user can pick with one click (the UI always allows free text too,
+    so never force-fit options onto an open question; omit them then).
+
     End your reply with STRICT JSON only, no markdown fence, no prose
     after it:
     {"met": true|false, "reason": "<short factual reason>",
      "need_user": true|false,
-     "question": "<the one question for the user, empty when need_user is false>"}
+     "question": "<the one question for the user, empty when need_user is false>",
+     "options": [{"label": "<short choice>", "description": "<what it means>"}, …]}
     """
     sid = session_id or current_session_id()
     prompt = _decision_prompt(goal, render_session_view(sid), attended)
