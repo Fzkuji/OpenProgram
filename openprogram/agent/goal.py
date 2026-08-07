@@ -351,6 +351,12 @@ def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
             spawn_caller=getattr(result, "assistant_msg_id", None),
         )
 
+        # The background refinement may have landed spec/checklist AFTER
+        # this iteration loaded its snapshot (the judge turn takes
+        # minutes). Writing the snapshot back verbatim would erase them
+        # — adopt the freshly stored fields before any save below.
+        _adopt_refinement(prev_req.session_id, goal)
+
         goal["turns_used"] = int(goal.get("turns_used") or 0) + 1
         goal["last_reason"] = reason
         max_turns = goal.get("max_turns")  # None = unlimited (the default)
@@ -451,6 +457,20 @@ def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
         result = run_turn(next_req, on_event=on_event,
                           cancel_event=cancel_event)
         prev_req = next_req
+
+
+def _adopt_refinement(session_id: str, goal: dict) -> None:
+    """Copy spec/checklist that the background refinement stored while
+    this loop iteration held a pre-refinement snapshot. Only fills the
+    fields when the snapshot lacks them — a checklist the judge just
+    ticked is never overwritten by the stored (unticked) one."""
+    if goal.get("spec") and goal.get("checklist"):
+        return
+    fresh = load_goal(session_id) or {}
+    if not goal.get("spec") and fresh.get("spec"):
+        goal["spec"] = fresh["spec"]
+    if not goal.get("checklist") and fresh.get("checklist"):
+        goal["checklist"] = fresh["checklist"]
 
 
 def _inherit_parent():

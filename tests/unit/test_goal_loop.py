@@ -252,6 +252,36 @@ def test_judge_prefers_spec_over_text(tmp_db: SessionDB, monkeypatch) -> None:
 # call-out
 # ---------------------------------------------------------------------------
 
+def test_loop_write_preserves_refinement_landed_mid_evaluation(
+        tmp_db: SessionDB, monkeypatch) -> None:
+    """The background refinement lands spec/checklist WHILE the judge
+    turn is running; the loop's progress write must not erase them with
+    its pre-refinement snapshot (lost-update regression)."""
+    _set_goal(tmp_db, "s1")  # no spec / checklist yet
+
+    calls = {"n": 0}
+
+    def _eval(session_id, goal, *, agent_id, spawn_caller=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            fresh = G.load_goal(session_id)
+            fresh["spec"] = "refined spec"
+            fresh["checklist"] = [{"text": "item", "done": False}]
+            G.save_goal(session_id, fresh)
+            return "unmet", "keep going", "", []
+        return "met", "done", "", []
+
+    monkeypatch.setattr(G, "evaluate_goal", _eval)
+    G.continue_goal_turns(
+        _req(), _result(),
+        run_turn=lambda req, on_event=None, cancel_event=None: _result())
+
+    stored = G.load_goal("s1")
+    assert stored["spec"] == "refined spec"
+    assert stored["checklist"] == [{"text": "item", "done": False}]
+    assert stored["status"] == "achieved"
+
+
 def test_checklist_flags_overwrite_done(tmp_db: SessionDB,
                                         monkeypatch) -> None:
     """The judge's equal-length bool list overwrites "done" in order —
