@@ -71,9 +71,24 @@ def triage(ticket: str, runtime=None) -> str:
 
 输入侧还有一层：条件判断可以决定"这次要不要调模型"。规则能处理的分支直接 Python 处理掉，只有真正需要理解和生成的地方才发起调用——省 token，也省延迟。
 
-## 好处二：输出直接可编程——case study：门控
+## 好处二：上下文自动管理——输入灵活的另一半
 
-第二个好处是模型的回答落回变量，立刻参与 `if`、`for`、`return`。这件事有一个前提：回答必须真的落进约定里，`if kind == "bug"` 才有意义。拿 `choices` 这个功能当 case study，看约定是怎么保证的。
+好处一说的是单次调用的输入怎么拼；跨越多次调用的输入——也就是上下文——同样不用手动管。每次函数调用和模型调用都记在一张执行 DAG 上，框架顺着这张图自动组装每次调用看到的历史。函数还可以在装饰器上声明自己的上下文边界：
+
+```python
+@agentic_function(expose="io", render_range={"callers": 0})
+def audit(repo: str, runtime=None) -> str:
+    """Read every file and report risky patterns."""
+    ...
+```
+
+`render_range={"callers": 0}` 让 `audit` 在隔离的草稿上下文里跑——读一万个文件的中间过程全部留在里面，返回后整体回收；`expose="io"` 让父级只看到它的输入和结论。子任务再重，主对话也不膨胀。
+
+这套 DAG 上下文是整个设计里内容最多的部分，值得单独一篇，下一篇《DAG Context》详细讲。
+
+## 好处三：输出直接可编程——case study：门控
+
+第三个好处是模型的回答落回变量，立刻参与 `if`、`for`、`return`。这件事有一个前提：回答必须真的落进约定里，`if kind == "bug"` 才有意义。拿 `choices` 这个功能当 case study，看约定是怎么保证的。
 
 ```python
 kind = runtime.exec(ticket, choices=["bug", "feature", "question"])
@@ -94,7 +109,7 @@ gate ✓ → branch taken in Python
 
 ![](figures/01-fig3-gate.png)
 
-## 好处三：agent 变成了普通函数——工程工具全部直接可用
+## 好处四：agent 变成了普通函数——还能层级嵌套
 
 一个 agent 写成函数之后，软件工程几十年攒下的工具链全部直接可用：单元测试给它写断言，类型检查器检查它的签名，import 把它组合进别的模块，git 管它的版本。别的代码调它的时候，甚至不需要知道里面有大模型。
 
@@ -114,22 +129,7 @@ result = triage("app crashes on login")
 
 在聊天界面里它是 agent 可以按名字挑选的工具；在终端里它是一条 CLI 命令，能进脚本、进定时任务、进 CI；在别人的工程里它是一个可以 import 的库函数。三种场景共用同一份实现，改一处三处同时生效。
 
-组合也是函数级的：一个 `@agentic_function` 可以在函数体里直接调用另一个 `@agentic_function`，就像普通函数互相调用一样。复杂 agent 不是靠配置文件编排出来的，是靠函数组合写出来的。
-
-## 好处四：上下文自动管理
-
-每次函数调用和模型调用都记在一张执行 DAG 上，框架顺着这张图自动组装每次调用看到的上下文，不需要手动拼接历史。函数还可以在装饰器上声明自己的上下文边界：
-
-```python
-@agentic_function(expose="io", render_range={"callers": 0})
-def audit(repo: str, runtime=None) -> str:
-    """Read every file and report risky patterns."""
-    ...
-```
-
-`render_range={"callers": 0}` 让 `audit` 在隔离的草稿上下文里跑——读一万个文件的中间过程全部留在里面，返回后整体回收；`expose="io"` 让父级只看到它的输入和结论。子任务再重，主对话也不膨胀。
-
-这套 DAG 上下文是整个设计里内容最多的部分，值得单独一篇，下一篇《DAG Context》详细讲。
+**再往下说一层：函数可以嵌套，这才是它真正的力量。** 我们的函数可以调用 agent，agent 干活时又可以调用别的函数，那个函数里还可以再调 agent——层级随便嵌。这带来一个很实用的分工方式：复杂、模糊、不好用代码写清楚的流程，整段丢给大模型去做，我们不用再写一大堆复杂代码；而需要严格控制流程和节奏的地方，用实际代码来写，逻辑是不是正确、每步有没有执行，都能严格保证。想松就松，想紧就紧，松紧还能逐层交替——可扩展性就是从这个嵌套结构里来的。
 
 ## 为什么是"函数"
 
