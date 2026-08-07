@@ -146,6 +146,11 @@ def _list_files(session_id: str, assistant_msg_id: str) -> dict:
         for srow in shadow_rows:
             rel = srow["rel"]
             seen_rels.add(rel)
+            if srow["old_rel"]:
+                # Rename: the manifest also carries the OLD path (its
+                # deletion checkpoint) — that's this same change, not a
+                # second file.
+                seen_rels.add(srow["old_rel"])
             added, removed = stats.get(rel, (0, 0))
             display = (f"{srow['old_rel']} → {rel}"
                        if srow["status"] == "R" else rel)
