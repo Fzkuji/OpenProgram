@@ -1422,3 +1422,46 @@
 /* "Select a model first" hint — shown in the bottom-left controls slot
    (where the effort pill normally lives) when no chat model is picked.
    Muted/warning tone so it reads as guidance, not an error. */
+
+/* ===== Question panel（goal 挂起提问 / ask_user_question）============
+   输入框顶部向上生长的附加区：badge 一行 + 问题 + 选项 pill。下方的
+   textarea / 底栏保持原样，只是 wrapper 因为多了这块自然长高（inputArea
+   bottom-anchored，向上顶消息流）。左右 24px 与聊天消息左缘对齐，选项
+   pill 样式复用 question-mode 的 .opt。 */
+.questionPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+}
+.questionPanelBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--accent-orange);
+}
+.questionPanelBadge svg {
+  flex-shrink: 0;
+}
+.questionPanelBadge span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 带 description 的选项可能超一行 —— 放开 .opt 的 30px 单行限高，允许
+   折行（两个 class 的组合选择器压过单 class 的 .opt）。 */
+.questionPanel .questionPanelOpt {
+  height: auto;
+  min-height: 30px;
+  line-height: 1.5;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  white-space: normal;
+  text-align: left;
+}

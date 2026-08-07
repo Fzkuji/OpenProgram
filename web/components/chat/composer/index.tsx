@@ -24,7 +24,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 
-import { useSessionStore, type PendingDecision } from "@/lib/session-store";
+import { useSessionStore } from "@/lib/session-store";
 import { useSessionScope } from "@/lib/session-store/session-scope";
 import { getSocket } from "@/lib/runtime-bridge/state";
 import { api } from "@/lib/net/api";
@@ -36,7 +36,7 @@ import { useTranslation } from "@/lib/i18n";
 // permission-menu submodules under ../top-bar).
 import { ProjectBadge, WorkingDirChips } from "../top-bar";
 import { GoalChip, useSessionGoal } from "../goal-chip";
-import { Target } from "lucide-react";
+import { CircleHelp, Target } from "lucide-react";
 import { visibleParams } from "./modes/fn-form/fn-form";
 import { type DecisionAction } from "./modes/question/question-mode";
 import { resolveComposerMode } from "./modes/resolve-mode";
@@ -62,6 +62,7 @@ import { useComposerKeyDown } from "./use-composer-keydown";
 import { StatusChip } from "./status-chip";
 import { ScopedDropOverlay } from "./scoped-drop-overlay";
 import { ComposerBody } from "./composer-body";
+import { QuestionPanel } from "./question-panel";
 import { sendChatMessage } from "./legacy-send";
 import styles from "./composer.module.css";
 
@@ -164,34 +165,26 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const pendingDecision =
     pendingDecisions.find((d) => d.sessionId === currentSessionId) ?? null;
 
-  // Goal 挂起提问：goal.status === waiting_user 时把 last_question 合成一个
-  // kind:"ask" 的 decision，让输入框走同一套 question 模式（真 pending ask
-  // 优先——两者同时在场时先答 ask）。答案不 resolve 任何 pending ask，而是
-  // 经 goalExtras.submitOverride 走普通聊天发送路（见下面 sendGoalAnswer）。
-  // answeredKey = 乐观隐藏：点选项/发送后立即退出 question 模式，不等
-  // goal_update 把 status 翻走；按「会话:轮数:问题」记 key，下一次挂起
-  //（新问题或新轮数）自然重新进入。刷新后水合数据仍是 waiting_user →
-  // goalDecision 重新合成，question 模式重现。
+  // 提问路由：ask/confirm（含 ask_user_question）和 goal waiting_user 都走
+  // 输入框顶部的 QuestionPanel —— composer 的 textarea/底栏/env-chip 行原样
+  // 不动，wrapper 只因多了这块面板向上长高。approval/form/ask_many 仍走旧的
+  // morphed QuestionMode（activeDecision 路径）。真 ask 优先于 goal。
+  const askDecision =
+    pendingDecision &&
+    (pendingDecision.kind === "ask" || pendingDecision.kind === "confirm")
+      ? pendingDecision
+      : null;
+  const activeDecision = askDecision ? null : pendingDecision;
+  // goal 挂起：answeredKey = 乐观收起（点 pill / 发消息后立即收，不等
+  // goal_update 把 status 翻走）；按「会话:轮数:问题」记 key，下一次挂起
+  // 自然重新出现。刷新后水合数据仍是 waiting_user → 面板重现。
   const goal = useSessionGoal(currentSessionId);
   const [goalAnsweredKey, setGoalAnsweredKey] = useState<string | null>(null);
   const goalKey =
     goal?.status === "waiting_user" && goal.last_question && currentSessionId
       ? `${currentSessionId}:${goal.turns_used ?? 0}:${goal.last_question}`
       : null;
-  const goalDecision: PendingDecision | null =
-    !pendingDecision && goalKey && goalAnsweredKey !== goalKey
-      ? {
-          id: `goal:${goalKey}`,
-          sessionId: currentSessionId!,
-          kind: "ask",
-          prompt: goal!.last_question!,
-          options: (goal!.last_question_options ?? []).map((o) => o.label),
-          multi: false,
-          allow_custom: true,
-        }
-      : null;
-  const activeDecision = pendingDecision ?? goalDecision;
-  const isGoalDecision = activeDecision !== null && activeDecision === goalDecision;
+  const goalWaiting = goalKey !== null && goalAnsweredKey !== goalKey;
   const send = wsSend;
 
   const isRunning = runningTask !== null;
@@ -202,7 +195,10 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // 跑着的时候输入框里有字 = 用户在写 steer（占位符就是这么提示的），
   // 此刻圆钮必须是发送：显示成停止键的话，点下去杀的是任务本身，写好的
   // 那句话一个字都没送出去。空输入才是停止键。
-  const showStop = isRunning && activeDecision === null && !input.trim();
+  // askDecision（顶部面板在等答案）时同理：圆钮要当「提交答案」用，不能变
+  // 停止键。
+  const showStop =
+    isRunning && activeDecision === null && askDecision === null && !input.trim();
 
   // 输入框当前处于哪个 mode —— 一个显式的派生值（含优先级），渲染时按它
   // switch，不再散在 JSX 里嵌套三元。idle / fn-form / question / approval。
@@ -217,10 +213,10 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // 系统决定占住输入区。用户主动开的东西丢弃无所谓；系统决定之间则由
   // pendingDecisions 的 FIFO 队列天然排队（队首占据，答完出下一个）。
   useEffect(() => {
-    if (activeDecision && fnFormFunction) {
+    if ((activeDecision || askDecision) && fnFormFunction) {
       closeFnFormStore();
     }
-  }, [activeDecision, fnFormFunction, closeFnFormStore]);
+  }, [activeDecision, askDecision, fnFormFunction, closeFnFormStore]);
 
   // @file mention — state + debounced /api/file-search + popover
   // positioning + picker all live in ./use-file-mention now. The hook
@@ -403,6 +399,41 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     if (!morphed && sendBtnRef.current) sendBtnRef.current.style.top = "";
   }, [morphed]);
 
+  // Publish the composer's REAL height as a root CSS var so the
+  // transcript's bottom padding can reserve it. The main shell's
+  // `.chat-messages` historically reserved a flat 25vh — enough for the
+  // normal composer, but the question panel (goal 挂起 / ask) can grow the
+  // stack past that and cover the last message's tail. Same mechanism the
+  // split pane already uses (`--peer-composer-h` in peer-session-pane).
+  // transcript.css takes max(25vh, this + 24px), so normal chats are
+  // pixel-identical and only an overgrown composer widens the reserve.
+  // The stick-to-bottom ResizeObserver on #chatMessages then re-pins, so
+  // a reader parked at the bottom gets the last message pushed fully out.
+  const inputAreaRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    // Split-pane composers measure into their own pane var — only the
+    // focused shell's composer owns the root-level var.
+    if (bound !== null) return;
+    const el = inputAreaRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const apply = () => {
+      const h = el.offsetHeight;
+      if (h > 0) {
+        document.documentElement.style.setProperty(
+          "--main-composer-height",
+          `${Math.round(h)}px`,
+        );
+      }
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.removeProperty("--main-composer-height");
+    };
+  }, [bound]);
+
   // Auto-resize the textarea as content changes.
   useEffect(() => {
     const t = textareaRef.current;
@@ -495,6 +526,37 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     fastSupported,
   });
 
+  // 顶部提问面板在场时的提交改道（唯一允许改输入框提交行为的地方，样式
+  // 不动）：真 ask → 输入文本作为答案走 question_reply；goal → 普通聊天
+  // 发送本身就是回答（goal 循环收任意用户消息），只需乐观收起面板。
+  const submitWithPanel = useCallback(async () => {
+    const trimmed = input.trim();
+    if (askDecision && trimmed && askDecision.allow_custom) {
+      send({
+        action: "question_reply",
+        id: askDecision.id,
+        answer: askDecision.multi ? [trimmed] : trimmed,
+      });
+      dequeueDecision(askDecision.id);
+      setComposerInputFor(activeChatKey ?? currentSessionId, "");
+      return;
+    }
+    if (!askDecision && goalWaiting && !morphed) setGoalAnsweredKey(goalKey);
+    await submit();
+  }, [
+    input,
+    askDecision,
+    send,
+    dequeueDecision,
+    setComposerInputFor,
+    activeChatKey,
+    currentSessionId,
+    goalWaiting,
+    morphed,
+    goalKey,
+    submit,
+  ]);
+
   // Pick a slash command — argless commands run immediately, commands
   // that take arguments just fill the input so the user can type them.
   function selectSlashCommand(cmd: SlashCommand) {
@@ -516,7 +578,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     historyRecall,
     slash,
     selectSlashCommand,
-    submit,
+    submit: submitWithPanel,
   });
 
   function onMenuItemClick(cmd: SlashCommand) {
@@ -554,7 +616,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
 
   // decision 在场时右下角是 mode 自己的 navButtons 按钮组（见 JSX），不走
   // 这个圆形按钮，所以这里只管 fn-form / 普通聊天两种。
-  const onSendButtonClick = fnFormActive ? submitFnForm : submit;
+  const onSendButtonClick = fnFormActive ? submitFnForm : submitWithPanel;
 
   // Goal 挂起提问卡点选项 = 把选项 label 当一条普通聊天消息发出去，与
   // 手打回车同一条路：跑着 → steer；空闲 → sendChatMessage（乐观气泡 /
@@ -597,57 +659,55 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     ],
   );
 
-  // 拒绝/取消当前的系统决定 —— 走左上角「Chat about this」。真 pending ask
-  // 发 question_reject 并即时出队（后端 _resolve_question 收口 + 广播）；
-  // goal 合成的 decision 没有后端问句可 reject，本地按下不表（乐观隐藏，
-  // 回到普通输入 —— 直接打字回答本来就是合法路径）。
+  // 拒绝/取消当前的系统决定 —— 走左上角 ✕。发 question_reject 并即时出队
+  // （后端 _resolve_question 收口 + 广播）。
   const rejectDecision = useCallback(() => {
     const d = activeDecision;
     if (!d) return;
-    if (isGoalDecision) {
-      setGoalAnsweredKey(goalKey);
-      return;
-    }
     const sock = getSocket();
     if (sock && sock.readyState === WebSocket.OPEN) {
       sock.send(JSON.stringify({ action: "question_reject", id: d.id }));
     }
     dequeueDecision(d.id);
-  }, [activeDecision, dequeueDecision, isGoalDecision, goalKey]);
+  }, [activeDecision, dequeueDecision]);
 
-  // QuestionMode 的 onResolve：goal 合成 decision → 记乐观隐藏 key；
-  // 真 pending ask → 出队（原路）。
-  const resolveDecision = useCallback(
-    (id: string) => {
-      if (id.startsWith("goal:")) {
-        setGoalAnsweredKey(id.slice("goal:".length));
-        return;
-      }
-      dequeueDecision(id);
-    },
-    [dequeueDecision],
-  );
-
-  // goal decision 在场时 QuestionMode 的附加件：◎ goal 标签、选项说明小字、
-  // 答案改走聊天发送路（点选项 = 立即发 label 并退出 question 模式）。
-  const goalExtras = isGoalDecision
+  // 顶部提问面板的内容（真 ask 优先；morphed 时不叠面板 —— approval/form
+  // 占着输入区，答完再出）。点 pill = 立即提交（点击即时反馈）。
+  const panel = askDecision
     ? {
         badge: (
           <>
-            <Target
-              size={13}
-              strokeWidth={2}
-              style={{ verticalAlign: "-2px", marginRight: 6 }}
-            />
-            {text("goal — your answer is needed", "goal · 等你回答")}
+            <CircleHelp size={13} strokeWidth={2} />
+            <span>{text("Your input is needed", "需要你的输入")}</span>
           </>
         ),
-        optionDescriptions: Object.fromEntries(
-          (goal?.last_question_options ?? [])
-            .filter((o) => o.description)
-            .map((o) => [o.label, o.description]),
+        prompt: askDecision.prompt,
+        options: askDecision.options.map((label) => ({ label })),
+        onPick: (label: string) => {
+          send({
+            action: "question_reply",
+            id: askDecision.id,
+            answer: askDecision.multi ? [label] : label,
+          });
+          dequeueDecision(askDecision.id);
+        },
+      }
+    : goalWaiting && !morphed
+    ? {
+        badge: (
+          <>
+            <Target size={13} strokeWidth={2} />
+            <span>{text("goal — waiting for your answer", "goal · 等你回答")}</span>
+          </>
         ),
-        submitOverride: (answer: string) => sendGoalAnswer(answer),
+        prompt: goal!.last_question!,
+        options: (goal!.last_question_options ?? []).map((o) => ({
+          label: o.label,
+          description: o.description || undefined,
+        })),
+        onPick: (label: string) => {
+          if (sendGoalAnswer(label)) setGoalAnsweredKey(goalKey);
+        },
       }
     : null;
   // In chat mode: disabled when textarea is empty OR when a paste
@@ -737,7 +797,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   );
 
   return (
-    <div className={styles.inputArea}>
+    <div ref={inputAreaRef} className={styles.inputArea}>
       {/* Drop overlay scoped to the chat main column (#chatArea) —
           covers the conversation surface but lets the sidebars stay
           interactive. ``dragActive`` is set by the window-level
@@ -794,6 +854,16 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         }}
         className={`${styles.inputWrapper} ${morphed ? styles.fnFormMode : ""}`}
       >
+        {/* 提问面板 —— wrapper 顶部向上生长的附加区（goal 挂起 / 真 ask）。
+            下面的 textarea / 底栏 / 圆形发送按钮全部原样。 */}
+        {panel && (
+          <QuestionPanel
+            badge={panel.badge}
+            prompt={panel.prompt}
+            options={panel.options}
+            onPick={panel.onPick}
+          />
+        )}
         <ImageAttachStrip
           pendingImages={pendingImages}
           imageError={imageError}
@@ -808,9 +878,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           bound={bound}
           composerMode={composerMode}
           activeDecision={activeDecision}
-          dequeueDecision={resolveDecision}
+          dequeueDecision={dequeueDecision}
           setDecisionAction={setDecisionAction}
-          goalExtras={goalExtras}
           fnFormFunction={fnFormFunction}
           fnForm={fnForm}
           handleFnFormClose={handleFnFormClose}

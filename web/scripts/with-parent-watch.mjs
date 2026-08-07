@@ -1,0 +1,63 @@
+#!/usr/bin/env node
+// Spawn `next start` and watch a parent PID supplied via OPENPROGRAM_PARENT_PID.
+// If the parent disappears (e.g. the Python worker was SIGKILLed), terminate
+// the Next.js child and exit. Keeps the frontend bound to the worker's
+// lifetime so users never see "frontend up, backend gone".
+
+import { spawn } from "node:child_process";
+import { resolve } from "node:path";
+
+const parentPid = parseInt(process.env.OPENPROGRAM_PARENT_PID || "0", 10);
+// Transitional: this is the standalone Next.js dev/start port. The
+// backend lives on the fixed 5-digit port 18109 (uncommon, rarely
+// squatted); the single-port migration folds this frontend into that
+// same port and removes this watcher. The Python worker overrides via
+// PORT; the 18100 fallback only covers a direct ``npm`` invocation.
+const port = process.env.PORT || "18100";
+
+// npm bin shims on Windows are .cmd batch files, not directly executable
+// by Node's child_process.spawn without ``shell: true``. The ``next``
+// (no extension) shim ships as a shell script that Windows can't run
+// directly — spawning it raises ENOENT and the Next.js frontend never
+// starts. ``next.cmd`` is the Windows-native shim; use it explicitly,
+// and pass ``shell: true`` so Windows resolves the rest correctly
+// (PATHEXT, quoting, etc.). POSIX keeps the original behaviour.
+const isWin = process.platform === "win32";
+const nextBinName = isWin ? "next.cmd" : "next";
+const nextBin = resolve(process.cwd(), "node_modules/.bin", nextBinName);
+const child = spawn(nextBin, ["start", "-p", String(port)], {
+  cwd: process.cwd(),
+  env: process.env,
+  stdio: "inherit",
+  shell: isWin,
+});
+
+let stopping = false;
+function stopChild(signal = "SIGTERM") {
+  if (stopping) return;
+  stopping = true;
+  try { child.kill(signal); } catch (_) {}
+  setTimeout(() => {
+    try { child.kill("SIGKILL"); } catch (_) {}
+    process.exit(0);
+  }, 5000).unref();
+}
+
+child.on("exit", (code, sig) => {
+  process.exit(code ?? (sig ? 1 : 0));
+});
+
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(sig, () => stopChild(sig));
+}
+
+if (parentPid > 0) {
+  setInterval(() => {
+    try {
+      process.kill(parentPid, 0);
+    } catch (_) {
+      console.error(`[web-watch] parent PID ${parentPid} gone; shutting down next`);
+      stopChild("SIGTERM");
+    }
+  }, 1000).unref();
+}

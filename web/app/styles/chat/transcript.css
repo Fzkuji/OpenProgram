@@ -43,8 +43,14 @@
      (ChatGPT / Claude behaviour). Capped at 25vh — a full
      `100vh - 220px` was so tall the chat-area could open with the
      entire viewport empty below the last message even on a fresh
-     short conversation. */
-  padding: 24px 0 25vh 0;
+     short conversation.
+     The composer floats OVER the transcript (absolute, bottom-anchored)
+     and can outgrow 25vh — question panel (goal 挂起 / ask)、attachment
+     chips、multi-line textarea. `--main-composer-height` is its measured
+     real height (published by a ResizeObserver in composer/index.tsx),
+     so the reserve follows whatever the composer stack currently is;
+     normal chats still get the plain 25vh. */
+  padding: 24px 0 max(25vh, calc(var(--main-composer-height, 0px) + 24px)) 0;
   display: flex;
   flex-direction: column;
   gap: 0;
