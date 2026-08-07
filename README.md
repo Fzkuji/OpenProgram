@@ -13,7 +13,7 @@
 
 <p align="center">
   <a href="https://arxiv.org/abs/2606.15874"><img alt="arXiv" src="https://img.shields.io/badge/arXiv-2606.15874-b31b1b?style=flat-square"></a>
-  <a href="https://github.com/Fzkuji/OpenProgram/releases/tag/v0.5.0"><img alt="Release" src="https://img.shields.io/github/v/release/Fzkuji/OpenProgram?style=flat-square&color=blue"></a>
+  <a href="https://github.com/Fzkuji/OpenProgram/releases/tag/v0.6.0"><img alt="Release" src="https://img.shields.io/github/v/release/Fzkuji/OpenProgram?style=flat-square&color=blue"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
   <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square">
@@ -39,11 +39,68 @@
 
 > 🎉 **Paper:** [_LLM-as-Code: Agentic Programming for Agent Harness_](https://arxiv.org/abs/2606.15874) — accepted at the **KDD 2026 Workshop on Agentic Software Engineering (AgenticSE)**.
 
+## News
+
+- **2026-07-21** — **v0.6.0** — cross-session `message_branch`, agent collaboration via `spawn`, worktree-isolated branches.
+- **2026-07-04** — **v0.5.0** — installable third-party harnesses: `openprogram programs install <owner>/<repo>`.
+- **2026-06-30** — **Multi-agent collaboration** — spawn N sub-agents, list them, message across sessions, all as node selections on the same DAG.
+- **2026-06-22** — **Paper accepted** at the KDD 2026 Workshop on Agentic Software Engineering ([arXiv:2606.15874](https://arxiv.org/abs/2606.15874)).
+- **2026-06-13** — **Event infrastructure** — typed `Event` + process-wide bus, and the proactive policy engine built on it.
+- **2026-05-28** — **v0.4.0** — `rescue` / `doctor` diagnostics, skills & plugins management from the CLI.
+- **2026-05-24** — **Git worktree isolation** — file-touching branches run in their own worktree, per-session file backup.
+- **2026-05-21** — **Unified function calling** — one decorator family, one registry, a 7-layer resolution cascade.
+- **2026-04-23** — **`spawn_program`** — invoke any registered `@agentic_function` as a sub-agent; extensible tool registry with availability gating.
+- **2026-04-18** — Project **renamed to OpenProgram** (formerly *Agentic-Programming*) and restructured.
+- **2026-04-04** — **Built-in providers** (Anthropic / OpenAI / Gemini) and **SKILL.md** support.
+- **2026-04-01** — **Memory** — persistent execution log.
+- **2026-03-31** — **First public commit** — the `@agentic_function` + execution-DAG paradigm goes open source.
+
 ## What makes it different
 
-Multi-platform, multi-provider, multi-channel — table stakes; OpenProgram has them (macOS / Linux / Windows, any LLM, terminal / browser / chat). What sets it apart are **three mechanisms in the harness itself — each one the foundation for a class of agent you can build on top.**
+Multi-platform, multi-provider, multi-channel — table stakes; OpenProgram has them (macOS / Linux / Windows, any LLM, terminal / browser / chat). What sets it apart are **four mechanisms in the harness itself — one primitive and the three things it unlocks, each the foundation for a class of agent you can build on top.**
 
-### ① DAG Context — for native multi-agent systems
+### ① Agentic Function — the primitive everything else is built on
+
+<p align="center">
+  <img src="docs/images/highlights/00-agentic-function.png" alt="Agentic Function — one decorator turns a Python function into an agent: the docstring becomes the system prompt, type annotations become the tool schema, runtime.exec() calls become retryable DAG nodes, and plain if/for/return stays deterministic" width="900">
+</p>
+
+**An agent is a Python function.** One decorator binds the three things every harness otherwise makes you hand-write: the **docstring becomes the system prompt**, the **type annotations become the tool schema**, and the **function body is the flow you want guaranteed**. No prompt templates, no tool-schema JSON, no graph DSL.
+
+```python
+from openprogram import agentic_function
+
+@agentic_function
+def triage(ticket: str, runtime=None) -> str:
+    """Classify the ticket as bug / feature / question, then draft a reply."""
+    kind = runtime.exec(ticket, choices=["bug", "feature", "question"])  # ← code gate: parsed & validated
+    if kind == "bug":                                                    # ← ordinary Python, always runs
+        logs = search_logs(ticket)
+        return runtime.exec(f"Draft a bug reply using these logs:\n{logs}")
+    return runtime.exec("Draft a short, friendly reply.")
+```
+
+| You write | The harness gives you |
+|---|---|
+| The **docstring** | The system prompt for this call — one place, versioned with the code. |
+| **Type annotations** | The tool schema. Any `@agentic_function` is callable by another agent, or exported to your own loop via `to_openai_tools`. |
+| `runtime.exec(...)` | One LLM call as a **retryable DAG node** — traced, resumable, forkable. |
+| `choices=[...]` | A **code gate**: the answer is parsed and validated by Python; a failed check makes the model *re-decide* instead of drifting past it. |
+| Plain `if` / `for` / `return` | Deterministic flow the model **cannot skip** — the guarantees live in code, not in the model's goodwill. |
+| **Calling another `@agentic_function`** | A child node on the same DAG. Nesting, spawning, and multi-agent are the same mechanism. |
+
+Two decorator arguments control context, which is where most harnesses leak tokens:
+
+```python
+@agentic_function(expose="io", render_range={"callers": 0})
+def scratch_analysis(data, runtime=None):
+    """Heavy exploration whose intermediate steps the parent never needs to see."""
+    ...
+```
+
+`render_range={"callers": 0}` gives the call a **self-isolated scratch context**, reclaimed on return — so a long sub-task can't blow up the parent's prompt. `expose="io"` shows the caller only this call's inputs and outputs, not its internal reasoning (`io` | `llm` | `full` | `hidden`). That's programmable context in one line.
+
+### ② DAG Context — for native multi-agent systems
 
 <p align="center">
   <img src="docs/images/highlights/01-dag-context.png" alt="DAG Context — every user, LLM, and function call is one node on a single flat DAG; each @agentic_function declares in one line what context it reads and exposes, so fork, spawn, cross-session messaging, and worktree isolation all follow" width="900">
@@ -53,7 +110,7 @@ Every user turn, LLM call, and function call is **one node on a single flat DAG*
 
 Because context is an **addressable node rather than a per-agent buffer**, multi-agent stops being a bolt-on: fork a branch, `spawn` a clean sub-agent, `message_branch` across sessions, or run a file-touching branch in an isolated `git worktree` — each is just "select a different node set as context" on the same DAG.
 
-### ② Agentic Workflow — for trustworthy & self-evolving agents
+### ③ Agentic Workflow — for trustworthy & self-evolving agents
 
 <p align="center">
   <img src="docs/images/highlights/02-agentic-workflow.png" alt="Agentic Workflow — Python drives the flow and code gates enforce the critical steps; a failed validation makes the model re-decide so it cannot skip checks; the agent writes and hot-loads its own @agentic_functions" width="900">
@@ -63,7 +120,7 @@ Because context is an **addressable node rather than a per-agent buffer**, multi
 
 *Self-evolving* is a mechanism, not a black box: the agent writes and fixes its own `@agentic_function`s with **ordinary file-edit tools**, a file watcher hot-loads them, and the new tool is live on the next turn — no dedicated `create()` / `fix()` machinery.
 
-### ③ Event Infrastructure — for proactive agents
+### ④ Event Infrastructure — for proactive agents
 
 <p align="center">
   <img src="docs/images/highlights/03-event-infrastructure.png" alt="Event Infrastructure — a unified process-wide event bus that the agent loop, auth, context, channels, and memory all emit onto; anything can subscribe by event type, and a proactive policy layer builds on top" width="900">
@@ -111,6 +168,79 @@ full guide (install, manage, author, test, publish) is
 **[docs/capabilities/installing-harnesses.md](docs/capabilities/installing-harnesses.md)**.
 
 > Need a workflow of your own? Just ask the agent in chat — the bundled [`agentic-programming` skill](skills/agentic-programming/SKILL.md) handles the rest.
+
+## Customizing
+
+Four levels, from a one-line edit to a distributable package. Start at the top and stop when it does what you need.
+
+### Level 1 — Write your own agentic function
+
+Drop a directory under `openprogram/functions/agentics/<your_function>/` with the code in `__init__.py`. A file watcher hot-loads it, so it's a live tool on the next turn — no registration file, no restart.
+
+```python
+# openprogram/functions/agentics/changelog/__init__.py
+import subprocess
+from openprogram import agentic_function
+
+@agentic_function
+def changelog(tag: str, runtime=None) -> str:
+    """Summarize the commits since `tag` as user-facing release notes."""
+    log = subprocess.run(                                   # plain Python — no LLM involved
+        ["git", "log", f"{tag}..HEAD", "--oneline"],
+        capture_output=True, text=True,
+    ).stdout
+    return runtime.exec(f"Write release notes from these commits:\n{log}")
+```
+
+Call it three ways — the agent picks it in chat by name, you run it headlessly, or you import it:
+
+```bash
+openprogram programs run changelog --arg tag=v0.5.0
+```
+
+> Prefer not to write it yourself? Ask the agent in chat: *"add an agentic function that summarizes commits since a tag."* It writes the file, the watcher loads it, and it's callable immediately — the bundled [`agentic-programming` skill](skills/agentic-programming/SKILL.md) teaches it the conventions.
+
+### Level 2 — Control the context each call sees
+
+The two decorator arguments from **[Agentic Function](#①-agentic-function--the-primitive-everything-else-is-built-on)** above are the main tuning knobs, and the reason long runs stay affordable:
+
+```python
+@agentic_function(expose="io", render_range={"callers": 0})
+def audit(repo: str, runtime=None) -> str:
+    """Read every file and report risky patterns."""
+    ...
+```
+
+| Goal | Setting |
+|---|---|
+| Sub-task shouldn't pollute the parent prompt | `render_range={"callers": 0}` — isolated scratch context, reclaimed on return |
+| Parent needs the reasoning, not just the answer | `expose="llm"` (or `"full"`) |
+| Internal helper the parent shouldn't see at all | `expose="hidden"` |
+| Sub-task needs one level of caller history | `render_range={"callers": 1}` |
+
+### Level 3 — Pick models, providers, and tools
+
+Providers and per-agent models live in **Settings → Providers** in the web UI; any OpenAI-compatible endpoint works via **Add custom provider** (name + base URL). From code, override per call:
+
+```python
+runtime.exec("Summarize this.", model="claude-sonnet-5")     # this call only
+runtime.exec("Search the web.", toolset="research")           # swap the tool set
+runtime.exec("Read-only pass.", tools_deny=["bash", "edit"])  # restrict what it can touch
+```
+
+### Level 4 — Package it as an installable harness
+
+A harness is a git repo laid out so `openprogram programs install <owner>/<repo>` can clone it, install its deps, and check its contract — the same path the GUI / Research / Wiki harnesses use. Nothing is registered centrally, so anyone can publish one:
+
+```bash
+openprogram programs available            # what's installable + what you've installed
+openprogram programs install you/my-harness
+openprogram programs uninstall my-harness
+```
+
+The layout contract and publishing steps are in **[docs/capabilities/installing-harnesses.md](docs/capabilities/installing-harnesses.md)**.
+
+> **Embedding instead?** If you want the paradigm without the app — your own LLM client, your own storage — see [Python library](#python-library--import-openprogram) below.
 
 ## Troubleshooting
 
@@ -271,6 +401,20 @@ tests/                               # pytest suite
 This is a **paradigm proposal** with a reference implementation. We welcome discussions, alternative implementations in other languages, use cases that validate or challenge the approach, and bug reports.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+## Related projects
+
+Writing agents as ordinary typed Python — where the **docstring is the prompt** and the **signature is the contract** — is an idea several groups have arrived at independently. We think that convergence is the strongest evidence the direction is right, and the differences between these designs are where the interesting questions live.
+
+| Project | The shared intuition | Where it goes its own way |
+|---|---|---|
+| [**NVIDIA NOOA**](https://github.com/NVIDIA-NeMo/labs-OO-Agents) (Apache-2.0) | Agents are Python objects; methods with `...` bodies are LLM-implemented, docstrings are prompts, type annotations are contracts. | Object-oriented: state lives on `self`, and the model **acts by writing Python into a Jupyter-style REPL** (CodeAct). OpenProgram keeps functions module-level and has the model **choose among registered functions** instead of emitting code — a narrower action space that's easier to sandbox and replay. |
+| [**DSPy**](https://github.com/stanfordnlp/dspy) (MIT) | A typed **Signature** replaces the hand-written prompt; the framework compiles it. | Optimizes the prompt itself against a metric. We leave prompts fixed and readable, and put the effort into execution structure — the DAG, retries, and context scoping. The two are complementary. |
+| [**Marvin**](https://github.com/PrefectHQ/marvin) (Apache-2.0) · [**Mirascope**](https://github.com/Mirascope/mirascope) (MIT) | Decorate a Python function, let the docstring and return annotation drive a structured LLM call. | Focused on the single well-typed call. OpenProgram adds what happens **across** calls: a shared execution DAG, `spawn`, forking, and per-call context budgets. |
+| [**LangGraph**](https://github.com/langchain-ai/langgraph) (MIT) | Agent runs should be an inspectable graph with checkpoints, not an opaque loop. | The graph is declared up front as nodes and edges. Ours is **recorded from the call stack** — you write plain Python, and the DAG is the trace of what actually ran. |
+| [**smolagents**](https://github.com/huggingface/smolagents) (Apache-2.0) | Let the model act through code rather than rigid tool JSON. | Code-writing agents in a sandbox, like NOOA. We take the same "code is the action language" premise but bind it at **authoring** time via `@agentic_function`, so the deterministic parts are reviewable before anything runs. |
+
+If you're building in this space and we've mischaracterized your project — or missed it — please open a PR or an issue. We're happy to be corrected.
 
 ## Acknowledgements
 

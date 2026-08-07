@@ -19,7 +19,7 @@
   <ellipse cx="1120" cy="200" rx="430" ry="300" fill="url(#glow)"/>
   <ellipse cx="1200" cy="500" rx="380" ry="260" fill="url(#glow2)"/>
 
-  <text x="80" y="96" font-family="Geist Mono" font-size="21" fill="#5B5B66" letter-spacing="4">02 / 03</text>
+  <text x="80" y="96" font-family="Geist Mono" font-size="21" fill="#5B5B66" letter-spacing="4">03 / 04</text>
 
   <text x="78" y="196" font-family="Instrument Sans" font-weight="700" font-size="72" fill="#F5F5F7">Agentic Workflow</text>
 

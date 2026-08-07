@@ -1,0 +1,113 @@
+<svg width="1600" height="640" viewBox="0 0 1600 640" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bp" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B9EFF"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3B9EFF" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#3B9EFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#E0A93B" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#E0A93B" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1600" height="640" rx="28" fill="#141416"/>
+  <rect x="1" y="1" width="1598" height="638" rx="27" fill="none" stroke="#2A2A30" stroke-width="1.5"/>
+  <ellipse cx="1120" cy="210" rx="430" ry="310" fill="url(#glow)"/>
+  <ellipse cx="1280" cy="500" rx="360" ry="250" fill="url(#glow2)"/>
+
+  <text x="80" y="96" font-family="Geist Mono" font-size="21" fill="#5B5B66" letter-spacing="4">01 / 04</text>
+
+  <text x="78" y="196" font-family="Instrument Sans" font-weight="700" font-size="72" fill="#F5F5F7">Agentic Function</text>
+
+  <text x="80" y="258" font-family="Geist Mono" font-size="23" fill="#8A8A96">one decorator turns a Python function into</text>
+  <text x="80" y="312" font-family="Instrument Sans" font-weight="700" font-size="40" fill="url(#bp)">An Agent You Can Program</text>
+
+  <text x="80" y="392" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">The <tspan font-weight="700" fill="#D2D2DA">docstring is the prompt</tspan>, the <tspan font-weight="700" fill="#D2D2DA">annotations are the</tspan></text>
+  <text x="80" y="428" font-family="Instrument Sans" font-size="25" fill="#B4B4C0"><tspan font-weight="700" fill="#D2D2DA">tool schema</tspan>, and the function body is the flow you want</text>
+  <text x="80" y="464" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">guaranteed. No prompt templates, no JSON schemas.</text>
+
+  <text x="80" y="528" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">Every <tspan font-family="Geist Mono" font-size="21" fill="#7FC4FF">runtime.exec()</tspan> is a retryable node on the DAG, and</text>
+  <text x="80" y="564" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">plain <tspan font-family="Geist Mono" font-size="22" fill="#E0A93B">if</tspan> / <tspan font-family="Geist Mono" font-size="22" fill="#E0A93B">for</tspan> / <tspan font-family="Geist Mono" font-size="22" fill="#E0A93B">return</tspan> stays deterministic — the model</text>
+  <text x="80" y="600" font-family="Instrument Sans" font-size="25" fill="#B4B4C0">fills in judgement, never control flow.</text>
+
+  <!-- ===== RIGHT: source panel, with each line mapped to what it becomes ===== -->
+  <g transform="translate(880,112)">
+
+    <text x="0" y="0" font-family="Geist Mono" font-size="14" fill="#3B9EFF" letter-spacing="1.5">YOU WRITE  &#183;  THE HARNESS BINDS</text>
+
+    <!-- source card -->
+    <rect x="0" y="20" width="470" height="286" rx="12" fill="#101318" stroke="#2A3340" stroke-width="1.4"/>
+
+    <!-- decorator -->
+    <text x="22" y="56" font-family="Geist Mono" font-size="16" fill="#C9A6FF">@agentic_function</text>
+    <text x="22" y="86" font-family="Geist Mono" font-size="16" fill="#D2D8E0"><tspan fill="#7FC4FF">def</tspan> triage(ticket: <tspan fill="#7FE3B8">str</tspan>) -&gt; <tspan fill="#7FE3B8">str</tspan>:</text>
+
+    <!-- docstring -->
+    <text x="42" y="116" font-family="Geist Mono" font-size="15" fill="#E0A93B">"""Classify, then draft a reply."""</text>
+
+    <!-- gate -->
+    <text x="42" y="152" font-family="Geist Mono" font-size="15" fill="#D2D8E0">kind = runtime.exec(</text>
+    <text x="62" y="176" font-family="Geist Mono" font-size="15" fill="#D2D8E0">ticket, choices=[<tspan fill="#7FE3B8">"bug"</tspan>, <tspan fill="#7FE3B8">"feature"</tspan>])</text>
+
+    <!-- deterministic branch -->
+    <text x="42" y="212" font-family="Geist Mono" font-size="15" fill="#D2D8E0"><tspan fill="#7FC4FF">if</tspan> kind == <tspan fill="#7FE3B8">"bug"</tspan>:</text>
+    <text x="62" y="236" font-family="Geist Mono" font-size="15" fill="#D2D8E0">logs = search_logs(ticket)</text>
+    <text x="62" y="260" font-family="Geist Mono" font-size="15" fill="#D2D8E0"><tspan fill="#7FC4FF">return</tspan> runtime.exec(<tspan fill="#7FE3B8">f"...{logs}"</tspan>)</text>
+    <text x="42" y="286" font-family="Geist Mono" font-size="15" fill="#D2D8E0"><tspan fill="#7FC4FF">return</tspan> runtime.exec(<tspan fill="#7FE3B8">"Short reply."</tspan>)</text>
+
+    <!-- ===== binding callouts on the right ===== -->
+    <!-- signature -> tool schema -->
+    <path d="M474 82 C 512 82, 516 72, 536 72" fill="none" stroke="#5AAD4E" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <rect x="536" y="54" width="176" height="34" rx="8" fill="#17241C" stroke="#2E7D5B" stroke-width="1.3"/>
+    <text x="552" y="76" font-family="Geist Mono" font-size="14" fill="#7FE3B8">tool schema</text>
+
+    <!-- docstring -> system prompt -->
+    <path d="M474 112 C 508 112, 512 118, 536 118" fill="none" stroke="#E0A93B" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <rect x="536" y="100" width="176" height="34" rx="8" fill="#231D12" stroke="#6B5424" stroke-width="1.3"/>
+    <text x="552" y="122" font-family="Geist Mono" font-size="14" fill="#E5BE63">system prompt</text>
+
+    <!-- choices -> code gate -->
+    <path d="M474 168 C 508 168, 512 168, 536 168" fill="none" stroke="#4F8EF7" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <rect x="536" y="150" width="176" height="34" rx="8" fill="#182430" stroke="#2E4258" stroke-width="1.3"/>
+    <text x="552" y="172" font-family="Geist Mono" font-size="14" fill="#9CC7FF">code gate</text>
+
+    <!-- if/return -> deterministic -->
+    <path d="M474 236 C 508 236, 512 240, 536 240" fill="none" stroke="#8A8A96" stroke-width="1.6" stroke-dasharray="5 4"/>
+    <rect x="536" y="222" width="176" height="34" rx="8" fill="#1B1B20" stroke="#3A3A44" stroke-width="1.3"/>
+    <text x="552" y="244" font-family="Geist Mono" font-size="14" fill="#B4B4C0">always runs</text>
+
+    <!-- ===== BOTTOM: the same call as DAG nodes ===== -->
+    <text x="0" y="352" font-family="Geist Mono" font-size="14" fill="#A855F7" letter-spacing="1.5">&#8230; AND THE CALL BECOMES DAG NODES</text>
+
+    <g transform="translate(14,392)">
+      <!-- trunk -->
+      <line x1="8" y1="0" x2="8" y2="96" stroke="#4F8EF7" stroke-width="2.2"/>
+
+      <!-- function call node (square = code) -->
+      <g transform="translate(8,0)">
+        <rect x="-7" y="-7" width="14" height="14" fill="#4F8EF7"/>
+        <text x="20" y="5" font-family="Geist Mono" font-size="15" fill="#C7D4E4">triage()</text>
+      </g>
+
+      <!-- llm pick -->
+      <line x1="8" y1="48" x2="32" y2="48" stroke="#4F8EF7" stroke-width="2.2"/>
+      <g transform="translate(44,48)">
+        <polygon points="0,-8 7,6 -7,6" fill="#4F8EF7"/>
+        <text x="18" y="5" font-family="Geist Mono" font-size="15" fill="#C7D4E4">llm &#183; picks "bug"</text>
+      </g>
+      <text x="238" y="53" font-family="Geist Mono" font-size="13" fill="#E0A93B">&#8592; retryable</text>
+
+      <!-- llm draft -->
+      <line x1="8" y1="96" x2="32" y2="96" stroke="#4F8EF7" stroke-width="2.2"/>
+      <g transform="translate(44,96)">
+        <polygon points="0,-8 7,6 -7,6" fill="#4F8EF7"/>
+        <text x="18" y="5" font-family="Geist Mono" font-size="15" fill="#C7D4E4">llm &#183; drafts reply</text>
+      </g>
+      <text x="238" y="101" font-family="Geist Mono" font-size="13" fill="#6FC463">&#8592; traced &amp; forkable</text>
+    </g>
+  </g>
+</svg>

@@ -22,7 +22,7 @@
   <ellipse cx="1120" cy="250" rx="430" ry="330" fill="url(#glow)"/>
   <ellipse cx="1320" cy="470" rx="360" ry="300" fill="url(#glow2)"/>
 
-  <text x="80" y="96" font-family="Geist Mono" font-size="21" fill="#5B5B66" letter-spacing="4">03 / 03</text>
+  <text x="80" y="96" font-family="Geist Mono" font-size="21" fill="#5B5B66" letter-spacing="4">04 / 04</text>
 
   <text x="78" y="196" font-family="Instrument Sans" font-weight="700" font-size="66" fill="#F5F5F7">Event Infrastructure</text>
 
