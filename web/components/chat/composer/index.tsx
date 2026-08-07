@@ -61,6 +61,8 @@ import { useComposerKeyDown } from "./use-composer-keydown";
 import { StatusChip } from "./status-chip";
 import { ScopedDropOverlay } from "./scoped-drop-overlay";
 import { ComposerBody } from "./composer-body";
+import { GoalQuestionCard } from "./goal-question-card";
+import { sendChatMessage } from "./legacy-send";
 import styles from "./composer.module.css";
 
 /* Single shared WebSocket, owned by `lib/net/use-ws.ts` and reached
@@ -525,6 +527,47 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // 这个圆形按钮，所以这里只管 fn-form / 普通聊天两种。
   const onSendButtonClick = fnFormActive ? submitFnForm : submit;
 
+  // Goal 挂起提问卡点选项 = 把选项 label 当一条普通聊天消息发出去，与
+  // 手打回车同一条路：跑着 → steer；空闲 → sendChatMessage（乐观气泡 /
+  // welcome 隐藏 / running 翻转都由它做）。true = 已发出，卡片乐观隐藏。
+  const sendGoalAnswer = useCallback(
+    (label: string): boolean => {
+      const owner = activeChatKey ?? currentSessionId;
+      const trimmed = label.trim();
+      if (!owner || !trimmed) return false;
+      if (isRunning) {
+        return send({ action: "steer", session_id: owner, message: trimmed });
+      }
+      if (noEnabledModels) {
+        promptNeedModel();
+        return false;
+      }
+      return sendChatMessage({
+        text: trimmed,
+        sessionId: owner,
+        background: bound !== null,
+        thinking,
+        toolsEnabled,
+        webSearchEnabled,
+        serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
+      });
+    },
+    [
+      activeChatKey,
+      currentSessionId,
+      isRunning,
+      noEnabledModels,
+      promptNeedModel,
+      send,
+      bound,
+      thinking,
+      toolsEnabled,
+      webSearchEnabled,
+      fastEnabled,
+      fastSupported,
+    ],
+  );
+
   // 拒绝/取消当前的系统决定 —— 走左上角 ✕。发 question_reject 并即时出队
   // （后端 _resolve_question 收口 + 广播）。
   const rejectDecision = useCallback(() => {
@@ -645,6 +688,10 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           still lands on the wrapper top edge; .inputArea is bottom-
           anchored absolute, so this row grows the composer upward
           without shifting the transcript. */}
+      {/* Goal 挂起提问卡 —— goal.status === waiting_user 时浮在 env-chip
+          行上方。inputArea 是 bottom-anchored absolute，加行只会向上长，
+          不推挤消息流。自由输入就是下面的 composer 本身。 */}
+      <GoalQuestionCard sessionId={currentSessionId} onPick={sendGoalAnswer} />
       <div className={styles.envChips}>
         <StatusChip owningId={bound === null} />
         <ProjectBadge />

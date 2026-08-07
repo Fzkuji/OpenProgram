@@ -19,12 +19,14 @@ import { Target } from "lucide-react";
 import { runtimeState } from "@/lib/runtime-bridge/state";
 import { useSessionStore } from "@/lib/session-store";
 
-interface GoalState {
+export interface GoalState {
   text?: string;
   status?: string;
   turns_used?: number;
   max_turns?: number;
   last_reason?: string;
+  last_question?: string;
+  last_question_options?: { label: string; description: string }[];
 }
 
 function readGoalFromRuntime(sid: string | null): GoalState | null {
@@ -35,8 +37,11 @@ function readGoalFromRuntime(sid: string | null): GoalState | null {
   return conv?.goal ?? null;
 }
 
-export function GoalChip() {
-  const sessionId = useSessionStore((s) => s.currentSessionId);
+/** Live goal state for ONE session — hydration read + the two event
+ *  subscriptions (op:goal-state re-announce, goal_update WS frames).
+ *  Shared by the env-chip (GoalChip) and the waiting_user question card
+ *  (composer/goal-question-card.tsx). */
+export function useSessionGoal(sessionId: string | null): GoalState | null {
   const [goal, setGoal] = useState<GoalState | null>(() =>
     readGoalFromRuntime(sessionId),
   );
@@ -53,7 +58,7 @@ export function GoalChip() {
         | { session_id?: string; goal?: GoalState | null }
         | undefined;
       if (!d?.session_id) return;
-      if (d.session_id === useSessionStore.getState().currentSessionId) {
+      if (d.session_id === sessionId) {
         setGoal(d.goal ?? null);
       }
     };
@@ -64,7 +69,7 @@ export function GoalChip() {
       if (detail?.type !== "goal_update") return;
       const d = detail.data;
       if (!d?.session_id) return;
-      if (d.session_id === useSessionStore.getState().currentSessionId) {
+      if (d.session_id === sessionId) {
         setGoal(d.goal ?? null);
       }
     };
@@ -74,7 +79,14 @@ export function GoalChip() {
       window.removeEventListener("op:goal-state", onGoalState);
       window.removeEventListener("op:ws-message", onWsMessage);
     };
-  }, []);
+  }, [sessionId]);
+
+  return goal;
+}
+
+export function GoalChip() {
+  const sessionId = useSessionStore((s) => s.currentSessionId);
+  const goal = useSessionGoal(sessionId);
 
   // 只在 goal 进行中显示；没设目标或已终结（achieved/cleared/capped/
   // error）就不占底栏。
@@ -87,7 +99,7 @@ export function GoalChip() {
     : "goal · 等你回答";
   const tip = [
     goal.text,
-    waiting ? (goal as { last_question?: string }).last_question : null,
+    waiting ? goal.last_question : null,
     goal.last_reason,
   ].filter(Boolean).join(" — ");
   return (
