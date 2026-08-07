@@ -407,8 +407,18 @@ export function TurnFilesChips({
                 {isOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
               </span>
               <span className="turn-files-name">{label}</span>
-              <span className="turn-files-stat is-add">+{f.added ?? 0}</span>
-              <span className="turn-files-stat is-del">-{f.removed ?? 0}</span>
+              {/* 纯重命名/删除行数是 0/0——挂 +0 -0 像什么都没发生，
+                  改挂操作标签；带内容修改的 rename 仍显示真实行数。 */}
+              {f.op === "rename" && !(f.added || f.removed) ? (
+                <span className="turn-files-op">{text("renamed", "重命名")}</span>
+              ) : f.op === "delete" && !(f.added || f.removed) ? (
+                <span className="turn-files-op">{text("deleted", "已删除")}</span>
+              ) : (
+                <>
+                  <span className="turn-files-stat is-add">+{f.added ?? 0}</span>
+                  <span className="turn-files-stat is-del">-{f.removed ?? 0}</span>
+                </>
+              )}
               <span className="turn-files-actions">
                 {rel !== null ? (
                   <>

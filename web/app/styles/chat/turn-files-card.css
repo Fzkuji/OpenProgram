@@ -132,6 +132,15 @@
 .turn-files-stat.is-add { color: var(--accent-green); }
 .turn-files-stat.is-del { color: var(--accent-red); }
 
+/* Op tag for rows where line counts carry no information (pure rename /
+   delete): same slot and metrics as the stats, muted color. */
+.turn-files-op {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary, #8b8b90);
+}
+
 /* Actions stay hidden until the row is hovered — the counts are the
    information, the buttons are the affordance. Keyboard focus reveals
    them too, otherwise they'd be unreachable without a mouse. */
