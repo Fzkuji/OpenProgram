@@ -65,7 +65,10 @@ Goal state lives in session meta (`update_session` is schemaless), key `goal`:
            | "error",
  "created_at": float, "turns_used": int,
  "max_turns": int | None (None = unlimited, the default),
- "last_reason": str, "last_question": str, "last_question_at": float,
+ "last_reason": str, "last_question": str,
+ "last_question_options": [{"label": str, "description": str}] (≤4,
+         judge-supplied one-click answers; empty when the question is
+         open-ended), "last_question_at": float,
  "judge_parse_failures": int}
 ```
 
@@ -93,7 +96,7 @@ Goal sessions and the `turn.stop` gate divide the stop decision cleanly: a sessi
 
 Every status change and every pre-continuation progress tick goes through `_emit_goal_update`: a `chat_response` envelope `{"type": "goal_update", "session_id", "goal": {…}}` on the dispatcher's `on_event` stream, plus a top-level `goal_update` WS broadcast via the webui server (best-effort — absent server, e.g. bare CLI or tests, is a no-op).
 
-- **Web**: `session_loaded` carries the goal (`ws_actions/session.py`) for hydration; the composer's `GoalChip` (`web/components/chat/goal-chip.tsx`) renders `◎ goal · N/M` from that plus live `goal_update` frames (delivered through `use-ws`'s catch-all `op:ws-message` event). Composer-typed `/goal …` is executed backend-side by the local-builtin branch in `ws_actions/chat.py`: a status/clear reply returns as a `local_command` envelope rendered as a transient system row; a set replaces the turn text with the goal directive and falls through into the normal turn flow.
+- **Web**: `session_loaded` carries the goal (`ws_actions/session.py`) for hydration; the composer's `GoalChip` (`web/components/chat/goal-chip.tsx`, shared `useSessionGoal` hook) renders `◎ goal · N/M` from that plus live `goal_update` frames (delivered through `use-ws`'s catch-all `op:ws-message` event). While `status === "waiting_user"` a **question card** (`composer/goal-question-card.tsx`, question-mode card family) floats above the composer: the parked question plus the judge's one-click options; clicking an option sends its label through the normal chat send path (exactly a typed message — the loop's resume rule needs nothing special), free text in the composer works too, and because the card is driven by goal state, a reload while parked re-shows it. Composer-typed `/goal …` is executed backend-side by the local-builtin branch in `ws_actions/chat.py`: a status/clear reply returns as a `local_command` envelope rendered as a transient system row; a set replaces the turn text with the goal directive and falls through into the normal turn flow.
 - **Commands registry**: `/goal` is a `builtin`-layer command with a callable handler (`registry.register_shared_builtins`), so it lists in `/api/commands` and resolves for any host. The Rich REPL shadows it in its own process with a marker action (`_cli_chat/handlers.py:_handle_goal`) that prints locally and launches the set-form's first turn through `process_user_turn` — the REPL's bare `rt.exec` turn runner bypasses the dispatcher and would never reach the loop.
 
 ## Implementation status
