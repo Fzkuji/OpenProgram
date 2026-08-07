@@ -130,6 +130,43 @@ class ShadowGitStore:
             self._git("reset", "--mixed", "HEAD", check=False)
             return None
 
+    def seed_baseline(self, items: "list[tuple[str, str]]") -> bool:
+        """Commit pre-turn images of files the shadow has never seen.
+
+        ``items`` is ``[(abs_path_in_project, backup_src)]`` — the
+        checkpoint's pre-command copies. Files already present in the
+        shadow tree are skipped. Seeding BEFORE the turn commit is what
+        lets a first-ever turn's edit diff as a modify (and a bash mv
+        pair into a rename) instead of a bare empty-tree add.
+
+        Returns True when a baseline commit was made.
+        """
+        if not self._ensure_init():
+            return False
+        try:
+            staged = 0
+            for abs_path, backup_src in items:
+                rel = _safe_rel(Path(abs_path), self.project_path)
+                if rel is None:
+                    continue
+                shadow_path = self.repo_path / rel
+                if shadow_path.exists() or not Path(backup_src).is_file():
+                    continue
+                shadow_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(backup_src, str(shadow_path))
+                self._git("add", str(rel))
+                staged += 1
+            if staged == 0:
+                return False
+            if not self._git("diff", "--cached", "--name-only").strip():
+                return False
+            self._git("commit", "-m", "[baseline] pre-turn images", "--quiet")
+            return True
+        except Exception:
+            logger.debug("shadow-git baseline seed failed", exc_info=True)
+            self._git("reset", "--mixed", "HEAD", check=False)
+            return False
+
     def head_sha(self) -> Optional[str]:
         """Current HEAD sha, or None if the repo has no commits / failed."""
         if not self._ensure_init():

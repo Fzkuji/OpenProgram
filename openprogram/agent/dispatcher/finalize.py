@@ -127,6 +127,25 @@ def commit_turn_to_shadow_git(
             return None
 
         shadow = ShadowGitStore(root)
+        # Seed pre-turn images of files the shadow has never seen (from
+        # the checkpoint's backups) so the turn diff reads as the change
+        # it was: a first-turn edit diffs as modify, a bash mv pairs
+        # into a rename, instead of bare empty-tree adds.
+        try:
+            from openprogram.store.snapshot.checkpoint import manifest as _mf
+            from openprogram.store.snapshot.checkpoint.paths import (
+                turn_backup_dir, turn_manifest_path)
+            session_dir = store._session_dir(session_id)
+            bdir = turn_backup_dir(session_dir, assistant_msg_id)
+            items = [
+                (entry["path"], str(bdir / backup_name))
+                for backup_name, entry in _mf.entries(
+                    turn_manifest_path(session_dir, assistant_msg_id))
+                if entry.get("path") and entry.get("pre_existing")
+            ]
+            shadow.seed_baseline(items)
+        except Exception:
+            pass
         before = shadow.head_sha()
         first_line = (user_text or "").strip().splitlines()
         after = shadow.commit_turn(
