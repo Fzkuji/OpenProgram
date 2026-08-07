@@ -252,6 +252,26 @@ def test_judge_prefers_spec_over_text(tmp_db: SessionDB, monkeypatch) -> None:
 # call-out
 # ---------------------------------------------------------------------------
 
+def test_checklist_stall_stops_loop(tmp_db: SessionDB, monkeypatch) -> None:
+    """Read-only spin: continuation turns that call tools but never
+    advance the checklist stop after STALL_ROUND_LIMIT flat rounds."""
+    _set_goal(tmp_db, "s1", checklist=[
+        {"text": "a", "done": True}, {"text": "b", "done": False}])
+    monkeypatch.setattr(
+        G, "evaluate_goal",
+        lambda sid, goal, *, agent_id, spawn_caller=None:
+            ("unmet", "still 1/2", "", []))
+
+    G.continue_goal_turns(
+        _req(source="goal_continue"), _result(),
+        run_turn=lambda req, on_event=None, cancel_event=None: _result())
+
+    stored = G.load_goal("s1")
+    assert stored["status"] == "error"
+    assert "stuck at 1/2" in stored["last_reason"]
+    assert stored["stall_rounds"] == G.STALL_ROUND_LIMIT
+
+
 def test_loop_write_preserves_refinement_landed_mid_evaluation(
         tmp_db: SessionDB, monkeypatch) -> None:
     """The background refinement lands spec/checklist WHILE the judge

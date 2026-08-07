@@ -107,7 +107,9 @@ Goal state lives in session meta (`update_session` is schemaless), key `goal`:
  "last_question_options": [{"label": str, "description": str}] (≤4,
          judge-supplied one-click answers; empty when the question is
          open-ended), "last_question_at": float,
- "judge_parse_failures": int}
+ "judge_parse_failures": int,
+ "last_done_count": int, "stall_rounds": int  (read-only-spin guard:
+         consecutive judged rounds without a new checklist tick)}
 ```
 
 The loop re-reads the meta at the top of every iteration, so a `/goal clear` issued from any surface takes effect at the next check. `turns_used` counts every judged turn while the goal is active — the initiating turn, continuations, and any manual turns the user interleaves. `max_turns` is stamped at set time from the `goal.max_turns` setting (`config_schema`); its default is **None — no turn cap**, matching Claude Code's and Codex's stop hooks, which also carry no default numeric limit: runaway protection is the internal stop rules (3 consecutive judge failures, idle-spin detection), the user's interrupt, and `/goal clear`. An explicitly set positive value is honoured, and each goal keeps the bound it started with.
@@ -121,12 +123,13 @@ The loop re-reads the meta at the top of every iteration, so a `/goal clear` iss
 | `turns_used` reaches `max_turns` (only when a cap was explicitly set) | `capped` |
 | Decision fails 3 consecutive evaluations (unparseable or failed twice in one evaluation = one failure; a successful parse resets the count) | `error` |
 | A `goal_continue` turn made zero tool calls and the goal is still unmet — idle spin | `error` |
+| The checklist tick count did not increase for 3 consecutive `goal_continue` rounds — read-only spin (tools called, deliverable never advanced) | `error` |
 | User clears | `cleared` |
 | Turn failed, or cancel is set (`cancel_event` / `run_control.is_cancelled`) | loop exits, status stays `active` |
 
 The last row is deliberate: cancellation and provider failures pause the loop rather than consuming the goal, because the continuation turns share the caller's cancel token — a continuation is an ordinary turn and the Stop button already reaches it.
 
-Ordering inside one iteration: met wins first (a final turn that achieves the goal without tool calls is a success, not idle spin), then judge-failure accounting, then the idle-spin check, then the cap.
+Ordering inside one iteration: met wins first (a final turn that achieves the goal without tool calls is a success, not idle spin), then judge-failure accounting, then the idle-spin check, then the checklist-stall check, then the cap.
 
 Goal sessions and the `turn.stop` gate divide the stop decision cleanly: a session with a goal (active or waiting) never enters `continue_stop_hook_turns` — its goal loop is the sole stop decider, and the only external intervention is `/goal clear`. The `turn.stop` gate is the extension point for sessions **without** a goal (see `docs/reference/design/proactive/event-layer.md`).
 

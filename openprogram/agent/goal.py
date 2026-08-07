@@ -44,6 +44,8 @@ from typing import Any, Callable, Optional
 _log = logging.getLogger(__name__)
 
 JUDGE_PARSE_FAILURE_LIMIT = 3
+# 连续 N 个续轮判定打勾数不涨 → 无进展停机(只读磨洋工守卫)。
+STALL_ROUND_LIMIT = 3
 # 提问限频：1 小时内最多问用户 1 次；超出的 needs_user 裁决降级为续轮。
 QUESTION_MIN_INTERVAL_SECONDS = 3600.0
 
@@ -416,6 +418,33 @@ def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
                 f"stayed unmet: {reason}")
             _finish(prev_req.session_id, goal, on_event)
             return result
+
+        # Progress stall: zero-tool spin has a read-only twin — the
+        # model calls inspection tools every turn but never advances the
+        # deliverable (observed live: 15 consecutive rounds, byte-equal
+        # MD5 each time). The checklist tick count is the loop's own
+        # progress meter: STALL_ROUND_LIMIT consecutive unmet rounds
+        # without a new tick → stop.
+        items = [it for it in (goal.get("checklist") or [])
+                 if isinstance(it, dict)]
+        if verdict == "unmet" and items and prev_req.source == "goal_continue":
+            done_count = sum(1 for it in items if it.get("done"))
+            prev_done = goal.get("last_done_count")
+            stalled = prev_done is not None and done_count <= int(prev_done)
+            goal["stall_rounds"] = (int(goal.get("stall_rounds") or 0) + 1
+                                    if stalled else 0)
+            goal["last_done_count"] = done_count
+            if goal["stall_rounds"] >= STALL_ROUND_LIMIT:
+                goal["status"] = "error"
+                goal["last_reason"] = (
+                    f"checklist stuck at {done_count}/{len(items)} for "
+                    f"{goal['stall_rounds']} consecutive rounds: {reason}")
+                _finish(prev_req.session_id, goal, on_event)
+                return result
+        elif items:
+            goal["last_done_count"] = sum(
+                1 for it in items if it.get("done"))
+            goal["stall_rounds"] = 0
 
         if max_turns and goal["turns_used"] >= int(max_turns):
             goal["status"] = "capped"

@@ -103,7 +103,9 @@ Goal 状态存会话 meta（`update_session` 是 schemaless 的），键 `goal`�
  "last_reason": str, "last_question": str,
  "last_question_options": [{"label": str, "description": str}]（≤4，
          裁判给出的一键回答；开放式问题时为空）, "last_question_at": float,
- "judge_parse_failures": int}
+ "judge_parse_failures": int,
+ "last_done_count": int, "stall_rounds": int（只读磨洋工守卫：
+         连续多少个判定轮打勾数没涨）}
 ```
 
 循环每次迭代开头重读 meta，任何入口发出的 `/goal clear` 在下一次判定即生效。`turns_used` 计目标活跃期间每个被判定的轮次——首轮、续轮、用户插进来的手动轮次都算。`max_turns` 在设定时刻从设置项 `goal.max_turns`（`config_schema`）盖章，默认 **None——无轮次上限**，对齐 Claude Code 与 Codex 的 stop hook（同样没有默认数字上限）：防失控靠内部停止规则（判定连续 3 次失败、空转检测）、用户中断和 `/goal clear`。显式设了正数则照设的执行；每个目标保持设定时的上限，改设置只影响下一个目标。
@@ -117,12 +119,13 @@ Goal 状态存会话 meta（`update_session` 是 schemaless 的），键 `goal`�
 | `turns_used` 到达 `max_turns`（仅当显式设了上限） | `capped` |
 | 判定连续失败 3 次（同次判定内两次解析失败或轮次失败算一次失败；解析成功清零计数） | `error` |
 | 某个 `goal_continue` 轮零工具调用且目标仍未达成——空转 | `error` |
+| 清单打勾数连续 3 个续轮不涨——只读磨洋工（每轮调工具但交付物不动） | `error` |
 | 用户解除 | `cleared` |
 | 轮次失败，或取消已置位（`cancel_event` / `run_control.is_cancelled`） | 循环退出，状态保持 `active` |
 
 最后一行是刻意的：取消与 provider 失败只暂停循环而不消耗目标，因为续轮共享调用方的取消 token——续轮是普通一轮，Stop 按钮本来就够得到它。
 
-单次迭代内的顺序：met 最先胜出（最后一轮不带工具调用也把目标做成了，算成功而不是空转），然后是判定失败计数，然后空转检查，最后是轮数封顶。
+单次迭代内的顺序：met 最先胜出（最后一轮不带工具调用也把目标做成了，算成功而不是空转），然后是判定失败计数，然后空转检查，再是清单无进展检查，最后是轮数封顶。
 
 goal 会话与 `turn.stop` 闸门分工明确：有 goal（active 或 waiting）的会话永远不进 `continue_stop_hook_turns`——它的 goal 循环是唯一停止决策者，外部干预只有 `/goal clear`。`turn.stop` 闸门是**无** goal 会话的扩展点（见 `docs/reference/design/proactive/event-layer.zh.md`）。
 
