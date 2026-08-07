@@ -22,7 +22,9 @@ context. Design doc: docs/reference/design/runtime/goal.md.
 
 Goal meta shape (``session extra_meta["goal"]``)::
 
-    {"text": str, "status": "active" | "waiting_user" | "achieved" |
+    {"text": str, "spec": str (refined specification; absent until the
+     refinement step lands, judging falls back to text),
+     "status": "active" | "waiting_user" | "achieved" |
      "cleared" | "capped" | "error", "created_at": float,
      "turns_used": int, "max_turns": int | None (None = unlimited),
      "last_reason": str, "last_question": str,
@@ -95,7 +97,7 @@ def _emit_goal_update(on_event: Optional[Callable], session_id: str,
         "type": "goal_update",
         "session_id": session_id,
         "goal": {k: goal.get(k) for k in (
-            "text", "status", "turns_used", "max_turns",
+            "text", "spec", "status", "turns_used", "max_turns",
             "last_reason", "last_question")},
     }
     if on_event is not None:
@@ -144,7 +146,9 @@ def evaluate_goal(session_id: str, goal: dict, *, agent_id: str,
     for _attempt in range(2):
         try:
             data = goal_decision(
-                goal=goal.get("text") or "",
+                # Judge against the refined spec when the refinement
+                # step has landed one; the raw one-liner otherwise.
+                goal=goal.get("spec") or goal.get("text") or "",
                 session_id=session_id,
                 attended=is_attended(session_id),
                 spawn_caller=spawn_caller,
@@ -163,9 +167,88 @@ def evaluate_goal(session_id: str, goal: dict, *, agent_id: str,
 
 
 # ---------------------------------------------------------------------------
+# Spec refinement — runs right after /goal set, in the background
+# ---------------------------------------------------------------------------
+
+def refine_goal_spec(session_id: str) -> None:
+    """Expand the goal's one-line text into a full specification and
+    store it as ``goal["spec"]``. Blocking; ``_start_spec_refinement``
+    runs it on a background thread so setting a goal never waits.
+
+    Fail-open: any failure (spawn error, unparseable reply) leaves the
+    goal without a spec — judging falls back to the raw text. The goal
+    is re-read after the refinement turn so a racing ``/goal clear``
+    or a replacement goal is never overwritten."""
+    goal = load_goal(session_id)
+    if not goal or goal.get("status") != "active" or goal.get("spec"):
+        return
+    text = goal.get("text") or ""
+    try:
+        from openprogram.functions.agentics.goal import refine as _refine
+        spec = _refine(text, session_id=session_id)
+    except Exception:
+        _log.warning("goal spec refinement failed (fail-open) for session %s",
+                     session_id, exc_info=True)
+        return
+    goal = load_goal(session_id)
+    if (not goal or goal.get("status") not in ("active", "waiting_user")
+            or (goal.get("text") or "") != text):
+        return
+    goal["spec"] = spec
+    save_goal(session_id, goal)
+    _emit_goal_update(None, session_id, goal)
+    _emit_goal_spec_notice(session_id, spec)
+
+
+def _start_spec_refinement(session_id: str) -> None:
+    """Kick off :func:`refine_goal_spec` on a daemon thread. Tests stub
+    this to keep the set flow synchronous."""
+    import threading
+    threading.Thread(
+        target=refine_goal_spec, args=(session_id,),
+        name=f"goal-refine-{session_id[:8]}", daemon=True,
+    ).start()
+
+
+def _emit_goal_spec_notice(session_id: str, spec: str) -> None:
+    """Show the refined spec as a system row in the transcript (same
+    ``local_command`` surface the /goal command replies use), so the
+    user sees what the system understood the goal to be — ``/goal
+    clear`` and a fresh ``/goal`` re-set if it misread the intent."""
+    payload = {
+        "type": "local_command",
+        "session_id": session_id,
+        "content": (f"[goal] 目标已完善为规格（判定按此逐条核对；"
+                    f"不满意可 /goal clear 重设）：\n{spec}"),
+    }
+    try:
+        from openprogram.webui import server as _s
+        _s._broadcast(json.dumps(
+            {"type": "chat_response", "data": payload}, default=str))
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # The continuation loop — called by dispatcher.process_user_turn after
 # every completed turn
 # ---------------------------------------------------------------------------
+
+def _tools_with_forced_web_search(override: Any) -> Any:
+    """The tools override for a ``goal_continue`` turn: the inherited
+    per-turn config with ``web_search`` forced ON. Continuations are
+    unattended autonomous work, so they get the search tool the user
+    could have toggled on — per turn only, the session's persisted
+    settings are untouched. Mirrors ``session_config._with_web_search``
+    but also lifts ``None`` (fall back to agent profile) into a full
+    dict intent and turns ``[]`` (all tools off) into web-search-only."""
+    if override is None:
+        return {"enabled": True, "web_search": True}
+    if isinstance(override, dict):
+        return {**override, "web_search": True}
+    if isinstance(override, list):
+        return override if "web_search" in override else [*override, "web_search"]
+    return override
 
 def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
                         on_event: Optional[Callable] = None,
@@ -307,6 +390,8 @@ def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
             history_override=None,
             attachments=None,
             spawn_caller=None,
+            tools_override=_tools_with_forced_web_search(
+                prev_req.tools_override),
         )
         result = run_turn(next_req, on_event=on_event,
                           cancel_event=cancel_event)
@@ -390,6 +475,9 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
     }
     save_goal(session_id, goal)
     _emit_goal_update(None, session_id, goal)
+    # Refine the one-liner into a full spec in the background — never
+    # blocks the set, fail-open (no spec = judge uses the raw text).
+    _start_spec_refinement(session_id)
     cap = goal["max_turns"]
     cap_note = f"up to {cap} turns" if cap else "no turn cap"
     return {
@@ -407,6 +495,10 @@ def _status_text(goal: Optional[dict]) -> str:
         f"  turns: {int(goal.get('turns_used') or 0)}"
         + (f"/{int(cap)}" if cap else ""),
     ]
+    if goal.get("spec"):
+        spec = str(goal["spec"])
+        lines.append("  spec: " + (spec[:300] + "…" if len(spec) > 300
+                                   else spec))
     if goal.get("last_reason"):
         lines.append(f"  last reason: {goal['last_reason']}")
     if goal.get("status") == "waiting_user" and goal.get("last_question"):

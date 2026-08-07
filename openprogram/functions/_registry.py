@@ -41,9 +41,9 @@ AGENTIC_MODULES: list[tuple[str, Optional[str]]] = [
     # channel every agentic function can call — infrastructure, not a
     # user-facing app (the UI lists it under regular tools).
     ("ask_user", None),
-    # Goal loop judgment points (goal_judge / goal_verify) — called by
+    # The goal decision agent — the single judgment entry called by
     # openprogram/agent/goal.py's deterministic loop, runnable from the
-    # Functions panel.
+    # Functions panel; the module also holds the goal-spec refiner.
     ("goal", None),
     # Domain functions
     ("extract_pdf_figures", None),

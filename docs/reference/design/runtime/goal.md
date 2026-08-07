@@ -9,9 +9,15 @@ The loop is inside `process_user_turn` (`openprogram/agent/dispatcher/__init__.p
 Placement consequences:
 
 - Every caller inherits the behavior — webui `_execute/chat.py`, channels, the CLI paths that route through the dispatcher, and the task runner's follow-up delivery all call `process_user_turn`, so none of them needs goal awareness.
-- Each continuation runs the full turn pipeline: `continue_goal_turns` calls `_process_turn_once` (never `process_user_turn`, so the loop cannot nest) with a `TurnRequest` built by `dataclasses.replace` — `source="goal_continue"`, `user_text="[goal] 未达成：<reason>。继续。"`, fresh `user_msg_id`, `branch_from=INHERIT_PARENT`; model / permission / tool settings carry over from the triggering request. Each continuation turn is persisted, git-committed and compacted like any user-sent turn, mirroring the task runner's follow-up construction (`agent/task/runner.py`).
+- Each continuation runs the full turn pipeline: `continue_goal_turns` calls `_process_turn_once` (never `process_user_turn`, so the loop cannot nest) with a `TurnRequest` built by `dataclasses.replace` — `source="goal_continue"`, `user_text="[goal] 未达成：<reason>。继续。"`, fresh `user_msg_id`, `branch_from=INHERIT_PARENT`; model / permission settings carry over from the triggering request. Tools also carry over, with one forced addition: a continuation is unattended autonomous work, so `_tools_with_forced_web_search` overlays `web_search` onto the inherited per-turn tools override (a `None` override becomes the dict intent `{"enabled": true, "web_search": true}`, a dict intent gets `web_search: true`, an explicit name list gets the name appended). This is per-turn only — the session's persisted `web_search` setting is untouched — and the judge's `DECISION_TOOLS` stay inspection-only. Each continuation turn is persisted, git-committed and compacted like any user-sent turn, mirroring the task runner's follow-up construction (`agent/task/runner.py`).
 - The loop never uses `agent_loop`'s in-turn follow-up mechanism: a goal continuation is a conversation-level event, and it must survive worker restarts, compaction, and branch operations the same way a user message would.
 - A crash anywhere in the goal machinery is caught in the wrapper and returns the already-finished turn's result — the goal loop can fail, a user's turn result cannot be lost to it.
+
+## Setting a goal: spec refinement
+
+`/goal <text>` stores the user's sentence verbatim as `text` and immediately starts a background **spec refinement** step (`_start_spec_refinement` → `refine_goal_spec`, a daemon thread — setting the goal never waits on it). The refinement is one spawned same-session agent turn via the internal `refine` function in the goal module (`openprogram/functions/agentics/goal/` — same module as the judge, deliberately NOT an `@agentic_function`, so the Functions panel keeps its single `goal` entry; the prompt IS `refine`'s docstring). The agent has inspection-only tools (`read`, `glob`, `grep`, `list`, `bash`) and may look at the working directory to understand the task context. It expands the one-liner into a full specification — a checklist of verifiable completion criteria (formal outcomes plus process requirements such as "read sources X and Y before writing section Z", "verify every citation individually"), explicit out-of-scope boundaries, and the checklist the judge walks item by item — and answers strict JSON `{"spec": str}`.
+
+On success the spec lands in `goal["spec"]` (the original `text` is never touched), a `goal.update` event carries it, and the spec is shown to the user as a `local_command` system row in the transcript — the user sees what the system understood the goal to be, and `/goal clear` plus a fresh `/goal` re-set fixes a misread. From then on the judge evaluates against `spec`; without one (refinement still running, or failed) it falls back to `text`. Failure is **fail-open**: an unparseable reply or a failed spawn logs and leaves the goal spec-less — it never blocks the goal or the first turn, which launches in parallel with the refinement. `refine_goal_spec` re-reads the goal after the refinement turn returns, so a racing `/goal clear` or replacement goal is never overwritten with a stale spec. The refinement turn runs with `source="agent_spawn"` and `advance_head=False` like every same-session spawn, so it neither triggers the goal loop nor steals the session head.
 
 ## Verdict: judge separated from worker
 
@@ -30,6 +36,8 @@ Goal state lives in session meta (`update_session` is schemaless), key `goal`:
 
 ```
 {"text": str,
+ "spec": str (refined specification — absent until the background
+         refinement lands; judging falls back to text),
  "status": "active" | "waiting_user" | "achieved" | "cleared" | "capped"
            | "error",
  "created_at": float, "turns_used": int,

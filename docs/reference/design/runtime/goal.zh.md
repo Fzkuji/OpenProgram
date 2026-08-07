@@ -9,9 +9,15 @@
 位置带来的结果：
 
 - 所有调用方自动继承——webui 的 `_execute/chat.py`、channels、走 dispatcher 的 CLI 路径、task runner 的 follow-up 投递都调用 `process_user_turn`，谁都不需要感知 goal。
-- 每个续轮就是一个普通轮次：`continue_goal_turns` 调 `_process_turn_once`（绝不调 `process_user_turn`，循环因此不可能嵌套），请求由 `dataclasses.replace` 构造——`source="goal_continue"`、`user_text="[goal] 未达成：<原因>。继续。"`、新的 `user_msg_id`、`branch_from=INHERIT_PARENT`；模型/权限/工具设置从触发请求继承。续轮有自己的持久化、git 提交与压缩，构造方式对照 task runner 的 follow-up（`agent/task/runner.py`）。
+- 每个续轮就是一个普通轮次：`continue_goal_turns` 调 `_process_turn_once`（绝不调 `process_user_turn`，循环因此不可能嵌套），请求由 `dataclasses.replace` 构造——`source="goal_continue"`、`user_text="[goal] 未达成：<原因>。继续。"`、新的 `user_msg_id`、`branch_from=INHERIT_PARENT`；模型/权限设置从触发请求继承。工具同样继承，但强制加一项：续轮是无人值守的自主工作，`_tools_with_forced_web_search` 在继承的本轮工具 override 上叠加 `web_search`（`None` 变成 dict 意图 `{"enabled": true, "web_search": true}`，dict 意图加 `web_search: true`，显式名单追加名字）。只对本轮生效——会话持久化的 `web_search` 设置不动——判定轮的 `DECISION_TOOLS` 保持只读巡查集不变。续轮有自己的持久化、git 提交与压缩，构造方式对照 task runner 的 follow-up（`agent/task/runner.py`）。
 - 不用 `agent_loop` 的轮内 follow-up 机制：goal 续轮是会话级事件，必须像用户消息一样经得起 worker 重启、压缩和分支操作。
 - goal 机制中任何位置的崩溃都在包装层被接住并返回已完成轮次的结果——goal 循环可以失败，用户轮次的结果不能因此丢失。
+
+## 设定目标：规格完善
+
+`/goal <text>` 把用户那句话原样存进 `text`，并立即在后台启动**规格完善**步骤（`_start_spec_refinement` → `refine_goal_spec`，daemon 线程——设定永不等它）。完善是一个同会话 spawn 的 agent 轮，走 goal 模块里的内部函数 `refine`（`openprogram/functions/agentics/goal/`——与判定同模块，刻意**不加** `@agentic_function`，函数面板保持只有一个 `goal` 条目；prompt 即 `refine` 的 docstring）。该 agent 配只读巡查工具（`read`、`glob`、`grep`、`list`、`bash`），可以看一眼工作目录理解任务语境。它把一句话扩写成完整规格——可逐条核验的达成标准清单（形式指标加过程要求，如"必须先读来源 X、Y 再写 Z 部分""引用逐条核实"）、明确的边界（不做什么）、判定时逐条核对的 checklist——输出严格 JSON `{"spec": str}`。
+
+成功时规格落进 `goal["spec"]`（原文 `text` 永不改动），`goal.update` 事件带上它，并以 `local_command` 系统行插进对话——用户能看到系统把目标理解成了什么，理解偏了就 `/goal clear` 后重新 `/goal`。此后判定按 `spec` 评（没有 spec——完善还在跑或已失败——回退用 `text`）。失败一律 **fail-open**：回文解析不出或 spawn 挂掉只记日志、目标保持无 spec，不阻塞设定，也不影响与完善并行启动的首轮。`refine_goal_spec` 在完善轮返回后重读 goal，竞态的 `/goal clear` 或替换目标不会被过期规格覆盖。完善轮与所有同会话 spawn 一样 `source="agent_spawn"`、`advance_head=False`——既不触发 goal 循环也不抢会话 head。
 
 ## 判定：判定者与干活者分离
 
@@ -30,6 +36,7 @@ Goal 状态存会话 meta（`update_session` 是 schemaless 的），键 `goal`�
 
 ```
 {"text": str,
+ "spec": str（完善后的规格——后台完善落地前不存在；判定回退用 text）,
  "status": "active" | "waiting_user" | "achieved" | "cleared" | "capped"
            | "error",
  "created_at": float, "turns_used": int,

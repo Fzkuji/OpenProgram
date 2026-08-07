@@ -6,7 +6,11 @@ A goal is a condition the session keeps working toward. You set it once with `/g
 /goal all unit tests pass and the README documents the new flag
 ```
 
-This stores the goal on the session and immediately starts a first turn with the condition text as the instruction. From then on, whenever a turn ends and the goal is still unmet, the runtime sends a follow-up turn (`[goal] 未达成：<reason>。继续。`) carrying the judge's reason for why it is not done yet.
+This stores the goal on the session and immediately starts a first turn with the condition text as the instruction. From then on, whenever a turn ends and the goal is still unmet, the runtime sends a follow-up turn (`[goal] 未达成：<reason>。继续。`) carrying the judge's reason for why it is not done yet. Continuation turns always have web search available on top of the session's tool settings — they run unattended, so they get the search tool you could have toggled on; your session settings themselves are not changed.
+
+## Your one-liner is refined automatically
+
+A single sentence cannot cover everything a judge needs, so right after you set a goal a background step expands it into a full specification: a checklist of verifiable completion criteria (including process requirements such as "read these sources before writing that section"), explicit boundaries for what is out of scope, and the checklist the judge walks item by item. It may glance at the working directory to understand the task context. The result appears as a system row in the transcript, so you see exactly what the system understood the goal to be — if it misread your intent, `/goal clear` and set the goal again with more detail. Your original text is kept unchanged; judging uses the refined specification, and falls back to your text if the refinement has not finished or failed. The refinement never delays the goal: the first working turn starts in parallel.
 
 ## How a goal is judged
 

@@ -81,6 +81,45 @@ def test_goal_decision_turn_failure_propagates(monkeypatch, stub_view) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Spec refinement — the internal `refine` entry
+# ---------------------------------------------------------------------------
+
+def test_parse_spec_valid_and_fenced() -> None:
+    assert GF._parse_spec('{"spec": "do X then Y"}') == "do X then Y"
+    assert GF._parse_spec('```json\n{"spec": " S "}\n```') == "S"
+
+
+def test_parse_spec_invalid_raises() -> None:
+    for raw in ("no json", '{"spec": ""}', '{"spec": 3}', '{"other": "x"}'):
+        with pytest.raises(ValueError):
+            GF._parse_spec(raw)
+
+
+def test_refine_parses_and_forwards(monkeypatch) -> None:
+    calls = []
+
+    def _fake_turn(session_id, prompt, *, agent_id, spawn_caller):
+        calls.append((session_id, prompt, agent_id, spawn_caller))
+        return 'thinking… {"spec": "criteria: tests pass"} '
+
+    monkeypatch.setattr(GF, "_run_refine_turn", _fake_turn)
+    out = GF.refine("tests pass", session_id="s1", agent_id="main")
+    assert out == "criteria: tests pass"
+    sid, prompt, agent_id, spawn_caller = calls[0]
+    assert (sid, agent_id, spawn_caller) == ("s1", "main", None)
+    assert "SPECIFICATION" in prompt          # docstring is the prompt
+    assert "<goal>\ntests pass\n</goal>" in prompt
+
+
+def test_refine_turn_failure_propagates(monkeypatch) -> None:
+    monkeypatch.setattr(
+        GF, "_run_refine_turn",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn down")))
+    with pytest.raises(RuntimeError):
+        GF.refine("g", session_id="s1")
+
+
+# ---------------------------------------------------------------------------
 # Session view rendering — summary + tail shape
 # ---------------------------------------------------------------------------
 

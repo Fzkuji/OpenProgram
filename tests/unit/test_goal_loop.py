@@ -68,6 +68,15 @@ def captured_goal_events(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
 
 
 @pytest.fixture(autouse=True)
+def captured_spec_refinements(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Replace the background spec-refinement kickoff (which would
+    spawn a real agent turn on a thread) with a recorder."""
+    started: list[str] = []
+    monkeypatch.setattr(G, "_start_spec_refinement", started.append)
+    return started
+
+
+@pytest.fixture(autouse=True)
 def stub_model_resolution(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         D, "_resolve_model",
@@ -135,6 +144,85 @@ def test_goal_set_status_clear(tmp_db: SessionDB) -> None:
     assert "No active goal" in G.handle_goal_command("s1", "clear")["text"]
 
 
+def test_goal_set_starts_spec_refinement(tmp_db: SessionDB,
+                                         captured_spec_refinements) -> None:
+    tmp_db.create_session("s1", "main")
+    G.handle_goal_command("s1", "tests pass")
+    assert captured_spec_refinements == ["s1"]
+    # The raw text is stored untouched; no spec until refinement lands.
+    goal = G.load_goal("s1")
+    assert goal["text"] == "tests pass" and "spec" not in goal
+
+
+# ---------------------------------------------------------------------------
+# Spec refinement — refine_goal_spec (run synchronously in tests)
+# ---------------------------------------------------------------------------
+
+def test_refine_goal_spec_stores_spec(tmp_db: SessionDB, monkeypatch,
+                                      captured_goal_events) -> None:
+    _set_goal(tmp_db, "s1", text="tests pass")
+    notices: list = []
+    monkeypatch.setattr(GF, "refine",
+                        lambda text, session_id="", **k: f"SPEC({text})")
+    monkeypatch.setattr(G, "_emit_goal_spec_notice",
+                        lambda sid, spec: notices.append((sid, spec)))
+
+    G.refine_goal_spec("s1")
+    goal = G.load_goal("s1")
+    assert goal["spec"] == "SPEC(tests pass)"
+    assert goal["text"] == "tests pass"          # original text untouched
+    assert goal["status"] == "active"
+    assert captured_goal_events[-1]["goal"]["spec"] == "SPEC(tests pass)"
+    assert notices == [("s1", "SPEC(tests pass)")]
+
+
+def test_refine_goal_spec_failure_fails_open(tmp_db: SessionDB,
+                                             monkeypatch) -> None:
+    _set_goal(tmp_db, "s1")
+    monkeypatch.setattr(
+        GF, "refine",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn down")))
+    G.refine_goal_spec("s1")                     # must not raise
+    goal = G.load_goal("s1")
+    assert "spec" not in goal and goal["status"] == "active"
+
+
+def test_refine_goal_spec_respects_clear_race(tmp_db: SessionDB,
+                                              monkeypatch) -> None:
+    """A /goal clear landing while the refinement turn runs must not be
+    overwritten with a spec for a dead goal."""
+    _set_goal(tmp_db, "s1")
+
+    def _refine_then_cleared(text, session_id="", **k):
+        G.handle_goal_command("s1", "clear")
+        return "SPEC"
+
+    monkeypatch.setattr(GF, "refine", _refine_then_cleared)
+    G.refine_goal_spec("s1")
+    goal = G.load_goal("s1")
+    assert goal["status"] == "cleared" and "spec" not in goal
+
+
+def test_judge_prefers_spec_over_text(tmp_db: SessionDB, monkeypatch) -> None:
+    goal = _set_goal(tmp_db, "s1", spec="THE-SPEC")
+    seen: list = []
+
+    def _fake_decision(**kwargs):
+        seen.append(kwargs["goal"])
+        return {"met": True, "reason": "done", "need_user": False,
+                "question": ""}
+
+    monkeypatch.setattr(GF, "goal", _fake_decision)
+    verdict, _, _ = G.evaluate_goal("s1", goal, agent_id="main")
+    assert verdict == "met"
+    assert seen == ["THE-SPEC"]
+
+    # No spec → falls back to the raw text.
+    goal2 = _set_goal(tmp_db, "s2", text="raw text")
+    G.evaluate_goal("s2", goal2, agent_id="main")
+    assert seen[-1] == "raw text"
+
+
 # ---------------------------------------------------------------------------
 # Loop unit tests (fake run_turn)
 # ---------------------------------------------------------------------------
@@ -177,6 +265,38 @@ def test_judge_flips_to_achieved(tmp_db: SessionDB, monkeypatch,
     assert goal["status"] == "achieved"
     assert goal["turns_used"] == 2
     assert captured_goal_events[-1]["goal"]["status"] == "achieved"
+
+
+def test_continuation_forces_web_search(tmp_db: SessionDB,
+                                        monkeypatch) -> None:
+    """goal_continue turns are unattended autonomous work — web_search
+    is forced on top of the inherited tool config (per turn only)."""
+    _set_goal(tmp_db, "s1")
+    _judge_replies(monkeypatch, [
+        '{"met": false, "reason": "not yet"}',
+        '{"met": true, "reason": "done"}',
+    ])
+    continuations: list[TurnRequest] = []
+
+    def run_turn(req, *, on_event=None, cancel_event=None):
+        continuations.append(req)
+        return _result(tools=True)
+
+    G.continue_goal_turns(_req(), _result(), run_turn=run_turn)
+    # The triggering request had tools_override=None (agent profile) —
+    # the continuation lifts that into a full intent + web_search.
+    assert continuations[0].tools_override == {
+        "enabled": True, "web_search": True}
+
+
+def test_tools_with_forced_web_search_variants() -> None:
+    f = G._tools_with_forced_web_search
+    assert f(None) == {"enabled": True, "web_search": True}
+    assert f({"enabled": True, "toolset": "research"}) == {
+        "enabled": True, "toolset": "research", "web_search": True}
+    assert f(["read"]) == ["read", "web_search"]
+    assert f(["web_search"]) == ["web_search"]     # already there — no dupe
+    assert f([]) == ["web_search"]                 # tools-off still searches
 
 
 def test_max_turns_caps_the_loop(tmp_db: SessionDB, monkeypatch) -> None:
