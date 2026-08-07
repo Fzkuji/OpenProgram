@@ -342,6 +342,9 @@ def goal(goal: str, session_id: str = "", attended: bool = True,
     user can pick with one click (the UI always allows free text too,
     so never force-fit options onto an open question; omit them then).
 
+    Write "reason", "question" and every option in the SAME LANGUAGE
+    as the goal text — the user reads these verbatim in the chat.
+
     End your reply with STRICT JSON only, no markdown fence, no prose
     after it:
     {"met": true|false, "reason": "<short factual reason>",
