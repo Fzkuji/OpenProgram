@@ -69,6 +69,33 @@
   padding-bottom: 180px;
 }
 
+/* goal 判定/完善内部 spawn 轮：回复结尾的机器 JSON 折进一条 <details>
+   （summary = 裁决摘要，展开 = 原始 JSON，调试用）。见 message-list 的
+   AssistantMessage 包装层。 */
+.goal-verdict {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.goal-verdict summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  user-select: none;
+}
+.goal-verdict summary:hover {
+  color: var(--text-secondary);
+}
+.goal-verdict pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* 会话切换：数据未到时的骨架占位（claude.ai 式）——右上一个用户气泡
    占位块 + 若干渐短灰条脉冲；capture 到达后 #chatMessages 整体淡入
    （.session-enter 由 MessageList 加、220ms 后移除）。 */

@@ -48,6 +48,106 @@ import { RuntimeBlock } from "./runtime-block";
 import { SpawnedFromCard } from "./spawned-from-card";
 import { UserBubble } from "./user-bubble";
 
+/** goal 循环的内部 spawn 轮 label（openprogram/functions/agentics/goal/
+ *  __init__.py 的 run_agent_turn(label=...)，经 spawnedFrom.label 到达）。
+ *  只有这些轮才做 JSON 尾巴折叠——绝不按"内容长得像 JSON"匹配普通消息。 */
+const GOAL_SPAWN_LABELS = new Set(["goal 判定", "goal 完善"]);
+
+/** 从回复文本里剥出结尾的严格 JSON 对象。找最左的 "{" 使其到结尾能
+ *  JSON.parse 成对象 —— 即整个 JSON 尾巴；前面的部分是 prose。 */
+function splitJsonTail(content: string): {
+  prose: string;
+  json: string;
+  data: Record<string, unknown>;
+} | null {
+  const t = content.trimEnd();
+  if (!t.endsWith("}")) return null;
+  for (let i = t.indexOf("{"); i !== -1; i = t.indexOf("{", i + 1)) {
+    const tail = t.slice(i);
+    try {
+      const data = JSON.parse(tail) as unknown;
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        return { prose: t.slice(0, i).trim(), json: tail, data: data as Record<string, unknown> };
+      }
+    } catch {
+      /* not a JSON start — keep scanning */
+    }
+    // ponytail: O(n·parse) scan; content is one LLM reply, never large.
+  }
+  return null;
+}
+
+/** goal 判定回复的完整五键契约（goal/__init__.py _parse_decision）。
+ *  主 lane 的模型有时会把上下文里见过的判定 JSON 依样画在回复结尾——
+ *  按这个精确 schema 识别（met/need_user 布尔 + reason/question 字符串
+ *  + options 数组，五键齐全），不是"内容长得像 JSON"的泛匹配：普通
+ *  消息几乎不可能撞出这个形状。 */
+function isVerdictShape(d: Record<string, unknown>): boolean {
+  return (
+    typeof d.met === "boolean" &&
+    typeof d.need_user === "boolean" &&
+    typeof d.reason === "string" &&
+    typeof d.question === "string" &&
+    Array.isArray(d.options)
+  );
+}
+
+/** Assistant 行的包装层：把回复结尾的 goal 机器 JSON 收进 <details>，
+ *  正文只显示 prose。两条识别路径（都不碰持久化数据，纯渲染层）：
+ *  1) 内部 spawn 轮 —— spawn 根用户行的 spawnedFrom.label ∈
+ *     GOAL_SPAWN_LABELS，经本行 calledBy/predecessor 关联；
+ *  2) 主 lane 回复尾部被模型依样画出的判定 JSON —— 精确五键
+ *     verdict schema（见 isVerdictShape）。
+ *  展开后仍是原始 JSON（调试）。其余消息原样走 AssistantBubble。 */
+function AssistantMessage({ msg }: { msg: ChatMsg }) {
+  const { text } = useTranslation();
+  const spawnLabel = useSessionStore((s) =>
+    msg.calledBy ? s.messagesById[msg.calledBy]?.spawnedFrom?.label : undefined,
+  );
+  const isGoalSpawn = !!spawnLabel && GOAL_SPAWN_LABELS.has(spawnLabel);
+  // streaming 期间不折（JSON 尾巴没到齐会闪）；落定后一次成型。
+  const settled = msg.status !== "streaming" && msg.status !== "running"
+    && msg.status !== "pending";
+  const split = settled ? splitJsonTail(msg.content || "") : null;
+  if (!split || (!isGoalSpawn && !isVerdictShape(split.data))) {
+    return <AssistantBubble msg={msg} />;
+  }
+  // blocks 路径渲染的是 text 块不是 content —— 同步剥掉最后一个 text
+  // 块的 JSON 尾巴，两条渲染路径一致。
+  let blocks = msg.blocks;
+  if (blocks) {
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const b = blocks[i];
+      if (b.type !== "text") continue;
+      const bt = (b.text || "").trimEnd();
+      if (bt.endsWith(split.json)) {
+        const stripped = bt.slice(0, bt.length - split.json.length).trim();
+        blocks = [
+          ...blocks.slice(0, i),
+          ...(stripped ? [{ ...b, text: stripped }] : []),
+          ...blocks.slice(i + 1),
+        ];
+      }
+      break;
+    }
+  }
+  const met = split.data.met;
+  const reason = typeof split.data.reason === "string" ? split.data.reason : "";
+  const summary =
+    typeof met === "boolean"
+      ? (met
+          ? text("Verdict: met", "裁决：已达成")
+          : text("Verdict: not met", "裁决：未达成"))
+        + (reason ? ` · ${reason.length > 80 ? reason.slice(0, 80) + "…" : reason}` : "")
+      : text("Structured output", "结构化输出");
+  return (
+    <AssistantBubble
+      msg={{ ...msg, content: split.prose, blocks }}
+      verdict={{ summary, json: JSON.stringify(split.data, null, 2) }}
+    />
+  );
+}
+
 function dispatch(msg: ChatMsg) {
   if (msg.role === "system") {
     return <div className="message system">{msg.content}</div>;
@@ -82,7 +182,7 @@ function dispatch(msg: ChatMsg) {
   if (msg.role === "user") {
     return <UserBubble msg={msg} />;
   }
-  return <AssistantBubble msg={msg} />;
+  return <AssistantMessage msg={msg} />;
 }
 
 export const MessageRow = memo(function MessageRow({ id }: { id: string }) {

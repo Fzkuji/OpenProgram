@@ -691,10 +691,17 @@ def _checkpoint_changed_files(
             # for a creation and the only safe answer for an unstaged one.
             src = pre.staged.get(path) or os.path.join(pre.stage_dir, "__absent__")
             checkpoint_before_edit(path, src)
-        # ponytail: bash-only deletions stay unrecoverable. Restoring them
-        # would mean checkpointing every staged file, not just the changed
-        # ones — a full pre-turn copy of the tree in the manifest. Add when
-        # deletion-undo is actually asked for.
+        # Deletions: in pre but gone from post. Recording them is what
+        # lets the shadow commit stage the removal — without it a bash
+        # `mv` renders as a bare new-file add (no delete, no rename) and
+        # Undo can't bring the file back. Only staged files can be backed
+        # up; an unstaged (oversized) deletion records pre_existing=False,
+        # which shows as a delete but stays unrecoverable.
+        for path in pre.stats:
+            if path in post:
+                continue
+            src = pre.staged.get(path) or os.path.join(pre.stage_dir, "__absent__")
+            checkpoint_before_edit(path, src)
     except Exception:
         pass
     finally:

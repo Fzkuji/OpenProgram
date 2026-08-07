@@ -1432,7 +1432,12 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px 24px;
+  /* Horizontal padding mirrors the input row's text inset — 14px row
+     padding + the textarea's 2px inline padding = 16px, the same
+     `--composer-bottom-row-pad` the paste-chip / attachment strips
+     already mirror — so badge / question / pills left-align exactly
+     with the textarea placeholder below. */
+  padding: 12px var(--composer-bottom-row-pad);
   border-bottom: 1px solid var(--border);
   box-sizing: border-box;
 }

@@ -96,7 +96,14 @@ function TypingIndicator() {
   );
 }
 
-export function AssistantBubble({ msg }: { msg: ChatMsg }) {
+export function AssistantBubble({ msg, verdict }: {
+  msg: ChatMsg;
+  /** goal 判定/完善内部轮：正文里剥出来的 JSON 尾巴 —— 折成一条
+   *  <details>（summary = 裁决摘要，展开 = 原始 JSON，调试用）。
+   *  由 message-list 的 AssistantMessage 包装层识别并传入；持久化
+   *  数据不动，纯渲染层。 */
+  verdict?: { summary: string; json: string };
+}) {
   // Subscribed so the bubble re-renders once `renderMd` lands and the
   // markdown can be rendered for real instead of escaped.
   useMarkdownReady();
@@ -476,6 +483,12 @@ export function AssistantBubble({ msg }: { msg: ChatMsg }) {
               {streaming && !hasContent ? <TypingIndicator /> : null}
             </>
           )}
+          {verdict ? (
+            <details className="goal-verdict">
+              <summary>{verdict.summary}</summary>
+              <pre>{verdict.json}</pre>
+            </details>
+          ) : null}
           {!streaming && msg.id ? (
             <TurnFilesChips assistantMsgId={msg.id} blocks={msg.blocks} />
           ) : null}
