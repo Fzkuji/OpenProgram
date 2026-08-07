@@ -22,6 +22,11 @@ import pytest
 
 import openprogram.agent.goal as G
 import openprogram.functions.agentics.goal as GF
+
+# The autouse fixture replaces G._emit_goal_update with a collector;
+# keep a module-import-time reference so the payload-shape test can
+# still exercise the real function.
+_REAL_EMIT_GOAL_UPDATE = G._emit_goal_update
 from openprogram.agent import dispatcher as D
 from openprogram.agent.dispatcher.types import TurnRequest, TurnResult
 from openprogram.agent.session_db import SessionDB
@@ -162,18 +167,37 @@ def test_refine_goal_spec_stores_spec(tmp_db: SessionDB, monkeypatch,
                                       captured_goal_events) -> None:
     _set_goal(tmp_db, "s1", text="tests pass")
     notices: list = []
-    monkeypatch.setattr(GF, "refine",
-                        lambda text, session_id="", **k: f"SPEC({text})")
-    monkeypatch.setattr(G, "_emit_goal_spec_notice",
-                        lambda sid, spec: notices.append((sid, spec)))
+    monkeypatch.setattr(
+        GF, "refine",
+        lambda text, session_id="", **k: (f"SPEC({text})", ["a", "b"]))
+    monkeypatch.setattr(
+        G, "_emit_goal_spec_notice",
+        lambda sid, spec, checklist=None: notices.append(
+            (sid, spec, checklist)))
 
     G.refine_goal_spec("s1")
     goal = G.load_goal("s1")
     assert goal["spec"] == "SPEC(tests pass)"
     assert goal["text"] == "tests pass"          # original text untouched
     assert goal["status"] == "active"
+    # The refinement checklist lands as {"text", "done"} items.
+    assert goal["checklist"] == [{"text": "a", "done": False},
+                                 {"text": "b", "done": False}]
     assert captured_goal_events[-1]["goal"]["spec"] == "SPEC(tests pass)"
-    assert notices == [("s1", "SPEC(tests pass)")]
+    assert notices == [("s1", "SPEC(tests pass)", ["a", "b"])]
+
+
+def test_refine_goal_spec_empty_checklist_stores_none(tmp_db: SessionDB,
+                                                      monkeypatch) -> None:
+    """A prose-fallback refinement (checklist []) leaves the goal
+    without a checklist key — the judge sees no <checklist> block."""
+    _set_goal(tmp_db, "s1", text="tests pass")
+    monkeypatch.setattr(GF, "refine",
+                        lambda text, session_id="", **k: ("SPEC", []))
+    monkeypatch.setattr(G, "_emit_goal_spec_notice", lambda *a, **k: None)
+    G.refine_goal_spec("s1")
+    goal = G.load_goal("s1")
+    assert goal["spec"] == "SPEC" and "checklist" not in goal
 
 
 def test_refine_goal_spec_failure_fails_open(tmp_db: SessionDB,
@@ -195,7 +219,7 @@ def test_refine_goal_spec_respects_clear_race(tmp_db: SessionDB,
 
     def _refine_then_cleared(text, session_id="", **k):
         G.handle_goal_command("s1", "clear")
-        return "SPEC"
+        return "SPEC", []
 
     monkeypatch.setattr(GF, "refine", _refine_then_cleared)
     G.refine_goal_spec("s1")
@@ -221,6 +245,99 @@ def test_judge_prefers_spec_over_text(tmp_db: SessionDB, monkeypatch) -> None:
     goal2 = _set_goal(tmp_db, "s2", text="raw text")
     G.evaluate_goal("s2", goal2, agent_id="main")
     assert seen[-1] == "raw text"
+
+
+# ---------------------------------------------------------------------------
+# Checklist — per-item ticks, code-level met enforcement, continuation
+# call-out
+# ---------------------------------------------------------------------------
+
+def test_checklist_flags_overwrite_done(tmp_db: SessionDB,
+                                        monkeypatch) -> None:
+    """The judge's equal-length bool list overwrites "done" in order —
+    true→false included, evidence wins over an earlier tick."""
+    goal = _set_goal(tmp_db, "s1", checklist=[
+        {"text": "a", "done": True}, {"text": "b", "done": False}])
+    monkeypatch.setattr(
+        GF, "_run_decision_turn",
+        lambda *a, **k: '{"met": false, "reason": "r", '
+                        '"checklist": [false, true]}')
+    verdict, _reason, _q, _o = G.evaluate_goal("s1", goal, agent_id="main")
+    assert verdict == "unmet"
+    assert goal["checklist"] == [{"text": "a", "done": False},
+                                 {"text": "b", "done": True}]
+
+
+def test_met_with_undone_checklist_downgrades(tmp_db: SessionDB,
+                                              monkeypatch) -> None:
+    """met from the judge while checklist items stay undone is forced
+    down to unmet, and the reason names the undone items."""
+    goal = _set_goal(tmp_db, "s1", checklist=[
+        {"text": "tests green", "done": False},
+        {"text": "docs updated", "done": False}])
+    monkeypatch.setattr(
+        GF, "_run_decision_turn",
+        lambda *a, **k: '{"met": true, "reason": "all done", '
+                        '"checklist": [true, false]}')
+    verdict, reason, _q, _o = G.evaluate_goal("s1", goal, agent_id="main")
+    assert verdict == "unmet"
+    assert "清单未全部完成" in reason
+    assert "2) docs updated" in reason and "tests green" not in reason
+
+    # met with NO per-item flags still cannot pass an undone list.
+    goal2 = _set_goal(tmp_db, "s2", checklist=[{"text": "x", "done": False}])
+    monkeypatch.setattr(GF, "_run_decision_turn",
+                        lambda *a, **k: '{"met": true, "reason": "done"}')
+    verdict2, reason2, _q2, _o2 = G.evaluate_goal("s2", goal2,
+                                                  agent_id="main")
+    assert verdict2 == "unmet" and "1) x" in reason2
+
+    # All items ticked → met stands.
+    goal3 = _set_goal(tmp_db, "s3", checklist=[{"text": "x", "done": False}])
+    monkeypatch.setattr(
+        GF, "_run_decision_turn",
+        lambda *a, **k: '{"met": true, "reason": "done", '
+                        '"checklist": [true]}')
+    verdict3, _r3, _q3, _o3 = G.evaluate_goal("s3", goal3, agent_id="main")
+    assert verdict3 == "met"
+    assert goal3["checklist"][0]["done"] is True
+
+
+def test_continuation_prompt_names_undone_items(tmp_db: SessionDB,
+                                                monkeypatch) -> None:
+    _set_goal(tmp_db, "s1", checklist=[
+        {"text": "a", "done": False}, {"text": "b", "done": False}])
+    replies = iter([
+        '{"met": false, "reason": "no", "checklist": [true, false]}',
+        '{"met": true, "reason": "done", "checklist": [true, true]}',
+    ])
+    monkeypatch.setattr(GF, "_run_decision_turn",
+                        lambda *a, **k: next(replies))
+    calls = []
+
+    def run_turn(req, *, on_event=None, cancel_event=None):
+        calls.append(req)
+        return _result(tools=True)
+
+    G.continue_goal_turns(_req(), _result(), run_turn=run_turn)
+    assert len(calls) == 1
+    text = calls[0].user_text
+    assert "未完成项：" in text
+    assert "2. b" in text and "1. a" not in text   # only undone items listed
+    goal = G.load_goal("s1")
+    assert goal["status"] == "achieved"
+    assert [it["done"] for it in goal["checklist"]] == [True, True]
+
+
+def test_emit_goal_update_payload_includes_checklist(tmp_db: SessionDB) -> None:
+    events: list[dict] = []
+    goal = {"text": "t", "status": "active", "turns_used": 1,
+            "max_turns": None, "last_reason": "",
+            "checklist": [{"text": "a", "done": True}]}
+    _REAL_EMIT_GOAL_UPDATE(lambda ev: events.append(ev), "s1", goal)
+    payload = events[0]["data"]
+    assert payload["type"] == "goal_update"
+    assert payload["goal"]["checklist"] == [{"text": "a", "done": True}]
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +544,8 @@ def test_judge_retries_once_then_parses(tmp_db: SessionDB, monkeypatch) -> None:
 def test_judge_json_extraction() -> None:
     ok = GF._parse_decision('```json\n{"met": false, "reason": "missing"}\n```')
     assert ok == {"met": False, "reason": "missing",
-                  "need_user": False, "question": "", "options": []}
+                  "need_user": False, "question": "", "options": [],
+                  "checklist": None}
     with pytest.raises(ValueError):
         GF._parse_decision("no braces here")
     with pytest.raises(ValueError):

@@ -15,7 +15,7 @@ Placement consequences:
 
 ## Setting a goal: spec refinement
 
-`/goal <text>` stores the user's sentence verbatim as `text` and immediately starts a background **spec refinement** step (`_start_spec_refinement` → `refine_goal_spec`, a daemon thread — setting the goal never waits on it). The refinement is one spawned same-session agent turn via the internal `refine` function in the goal module (`openprogram/functions/agentics/goal/` — same module as the judge, deliberately NOT an `@agentic_function`, so the Functions panel keeps its single `goal` entry; the prompt IS `refine`'s docstring). The agent has inspection tools plus search (`read`, `glob`, `grep`, `list`, `bash`, `web_search`) and may look at the working directory to understand the task context. It expands the one-liner into a full specification — a checklist of verifiable completion criteria (formal outcomes plus process requirements such as "read sources X and Y before writing section Z", "verify every citation individually"), explicit out-of-scope boundaries, and the checklist the judge walks item by item — and answers strict JSON `{"spec": str}`.
+`/goal <text>` stores the user's sentence verbatim as `text` and immediately starts a background **spec refinement** step (`_start_spec_refinement` → `refine_goal_spec`, a daemon thread — setting the goal never waits on it). The refinement is one spawned same-session agent turn via the internal `refine` function in the goal module (`openprogram/functions/agentics/goal/` — same module as the judge, deliberately NOT an `@agentic_function`, so the Functions panel keeps its single `goal` entry; the prompt IS `refine`'s docstring). The agent has inspection tools plus search (`read`, `glob`, `grep`, `list`, `bash`, `web_search`) and may look at the working directory to understand the task context. It expands the one-liner into a full specification — verifiable completion criteria (formal outcomes plus process requirements such as "read sources X and Y before writing section Z", "verify every citation individually"), explicit out-of-scope boundaries, and the acceptance checklist the judge walks item by item — and answers strict JSON `{"spec": str, "checklist": [str, …]}` (3–12 short, independently verifiable items in the goal's language; the parser cleans to non-empty strings and truncates at 20; a plain-prose reply still counts as a spec, with an empty checklist).
 
 **Reference anchoring — a reference is a floor, not a style suggestion.** Any goal, not just papers, can carry a reference anchor: when the goal names or implies a comparable existing work — or an established one is findable — refinement reads it and turns it into countable acceptance criteria, and the judge verifies the deliverable meets or exceeds the reference on each one. The refinement toolset includes `web_search` for this.
 
@@ -35,7 +35,7 @@ On success the spec lands in `goal["spec"]` (the original `text` is never touche
 `evaluate_goal` returns `("met" | "unmet" | "needs_user" | "judge_failure",
 reason, question)`.
 
-**One decision agent** — the `goal` agentic function (`openprogram/functions/agentics/goal/`): the framework eats its own dog food, so the judgment point is a single `@agentic_function` whose docstring IS the decision prompt, runnable standalone from the Functions panel (the panel shows exactly this one entry). There is only this one judgment, and only its "met" counts as completion. Each evaluation is one spawned same-session agent turn (`run_agent_turn` with `advance_head=False`, anchored on the judged turn via `spawn_caller` so it renders as a sub-agent square) whose input is the goal text plus the session's **compacted context view** — `rendered_history`, the same shape the working model reads: the active summary (when compaction has produced one) followed by the tail of the kept turns (last 8 messages' content plus each assistant row's persisted tool blocks, clipped per-field and capped at ~24 k chars; the summary is never cut by the cap). The decision agent has inspection tools available (`bash`, `read`, `grep`, `glob`, `list` — no edit/apply_patch/task, deciding must not modify anything or spawn further agents) and decides for itself whether checking the working directory helps; the prompt does not force it to. It must answer strict JSON `{"met": bool, "reason": str, "need_user": bool, "question": str}`; `goal.py` retries a malformed reply or failed turn once within the same evaluation.
+**One decision agent** — the `goal` agentic function (`openprogram/functions/agentics/goal/`): the framework eats its own dog food, so the judgment point is a single `@agentic_function` whose docstring IS the decision prompt, runnable standalone from the Functions panel (the panel shows exactly this one entry). There is only this one judgment, and only its "met" counts as completion. Each evaluation is one spawned same-session agent turn (`run_agent_turn` with `advance_head=False`, anchored on the judged turn via `spawn_caller` so it renders as a sub-agent square) whose input is the goal text plus the session's **compacted context view** — `rendered_history`, the same shape the working model reads: the active summary (when compaction has produced one) followed by the tail of the kept turns (last 8 messages' content plus each assistant row's persisted tool blocks, clipped per-field and capped at ~24 k chars; the summary is never cut by the cap). The decision agent has inspection tools available (`bash`, `read`, `grep`, `glob`, `list` — no edit/apply_patch/task, deciding must not modify anything or spawn further agents) and decides for itself whether checking the working directory helps; the prompt does not force it to. It must answer strict JSON `{"met": bool, "reason": str, "need_user": bool, "question": str}` — plus a per-item `"checklist"` bool list when the goal carries an acceptance checklist (see below); `goal.py` retries a malformed reply or failed turn once within the same evaluation.
 
 **The pause decision lives in the same judgment, with two modes and a rate limit.** The decision prompt carries the session's attended/unattended mode (`agent/attended.py`, passed as `attended` into the function; the panel's manual run defaults to attended). *Attended* — a human is watching — allows `need_user=true` for decisions genuinely hard to make on the user's behalf: an irreversible/destructive action pending approval, a missing credential/resource, a direction-deciding ambiguity, a failure repeating beyond recovery, or another choice where guessing wrong wastes many turns. *Unattended* raises the bar: pausing must be rare, and severity is a property of the concrete object, not the operation category — "deletion" or "irreversible" alone never pauses. The judge is told to inspect the actual stakes with its tools (open the directory, check content and recoverability); verified-trivial stakes are decided and recorded, and only inspected-severe stakes (the user's own documents, unpushed work, production data, real money, effects on other people), an unobtainable credential/resource, or an approval the goal text itself demands may pause; for ambiguity or repeated failures the agent thinks it through, picks the most reasonable plan, states the decision and reasoning, and continues. On top of the prompt policy, the loop enforces a hard rate limit in code: at most **one question per hour** (`last_question_at` in the goal state, `QUESTION_MIN_INTERVAL_SECONDS`). A `needs_user` verdict inside the window does not pause — it degrades into a continuation whose prompt says the ask budget is spent and instructs the agent to choose the most reasonable option and record the decision and its reasoning. The timestamp persists across a resume (answering one question does not refill the hour). This puts "should we interrupt the user" in the same fresh-context call that already judges completion each turn — no extra call, and no reliance on the working model's own restraint. `need_user=true` with an empty question is not actionable and is treated as plain unmet.
 
@@ -51,6 +51,33 @@ reason, question)`.
 
 Invariant: an unattended run never guesses its way through an irreversible action, and never loops idle on an unanswerable question — it either decides-and-records or parks-and-waits. Known ceiling: a parked question is only visible in the session itself; there is no push notification channel yet, so the user discovers the pause on their next visit.
 
+## Checklist
+
+The refinement's checklist is the goal's fixed acceptance list: refinement writes it once, the judge only reports per-item status, and the loop enforces it in code. This closes the remaining early-exit gap — a judge cannot summarize its way past a list it is only allowed to tick.
+
+| Stage | Who | What happens |
+|---|---|---|
+| Create | `refine` (once, at refinement) | `{"checklist": [str, …]}` lands in goal state as `[{"text", "done": false}, …]`. The list is fixed from here on — nobody adds, removes or rewrites items. |
+| Tick | judge (every evaluation) | The decision prompt renders a numbered `<checklist>` block; the judge must verify each item with its tools and answer `"checklist": [true\|false, …]` — same order, same length, status only. A valid list overwrites every item's `done` in order (true→false included — evidence wins over an earlier tick); a missing, wrong-length or non-bool list means this evaluation carries no per-item information and the stored ticks stand. |
+| Enforce | loop code (`evaluate_goal`) | `met` with any undone item is forced down to `unmet`, and the reason names the undone items ("清单未全部完成：3) …"). The judge's prompt already demands all-true before met; the code makes it non-negotiable. |
+| Call out | continuation prompt | While undone items exist, the `goal_continue` turn text appends "未完成项：" plus the numbered undone items — the working agent is pointed at exactly what is left. |
+| Show | goal chip / `/goal` status | The chip reads `goal · done/total` while a checklist exists (turn count otherwise); `/goal` status prints `checklist: done/total` plus one `[ ]` line per undone item. |
+
+State example mid-run:
+
+```json
+{"text": "写完综述",
+ "spec": "…full specification…",
+ "checklist": [
+   {"text": "正文包含 6 个章节", "done": true},
+   {"text": "引用不少于 80 篇且逐条核实", "done": false},
+   {"text": "包含分类框架图", "done": true}],
+ "status": "active", "turns_used": 5, "max_turns": null,
+ "last_reason": "引用核实未完成", "judge_parse_failures": 0}
+```
+
+The chip shows `goal · 2/3`; the continuation prompt names item 2; `met` stays unreachable until the judge ticks it.
+
 The judge is a separate call on purpose. Codex's and Cline's original self-report designs — the working agent declaring its own completion — both had to be patched after agents systematically declared victory early: the model that wants to stop is the wrong entity to ask whether it may. Keeping the verdict in a fresh context that sees only the goal and the evidence (and is told to treat the transcript as data, not instructions) removes that incentive.
 
 ## State
@@ -61,6 +88,10 @@ Goal state lives in session meta (`update_session` is schemaless), key `goal`:
 {"text": str,
  "spec": str (refined specification — absent until the background
          refinement lands; judging falls back to text),
+ "checklist": [{"text": str, "done": bool}] (refinement-fixed
+         acceptance items — absent when refinement produced none;
+         the judge only flips "done", the loop enforces all-done
+         before met),
  "status": "active" | "waiting_user" | "achieved" | "cleared" | "capped"
            | "error",
  "created_at": float, "turns_used": int,

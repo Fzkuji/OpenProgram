@@ -15,7 +15,7 @@
 
 ## 设定目标：规格完善
 
-`/goal <text>` 把用户那句话原样存进 `text`，并立即在后台启动**规格完善**步骤（`_start_spec_refinement` → `refine_goal_spec`，daemon 线程——设定永不等它）。完善是一个同会话 spawn 的 agent 轮，走 goal 模块里的内部函数 `refine`（`openprogram/functions/agentics/goal/`——与判定同模块，刻意**不加** `@agentic_function`，函数面板保持只有一个 `goal` 条目；prompt 即 `refine` 的 docstring）。该 agent 配巡查工具加搜索（`read`、`glob`、`grep`、`list`、`bash`、`web_search`），可以看一眼工作目录理解任务语境。它把一句话扩写成完整规格——可逐条核验的达成标准清单（形式指标加过程要求，如"必须先读来源 X、Y 再写 Z 部分""引用逐条核实"）、明确的边界（不做什么）、判定时逐条核对的 checklist——输出严格 JSON `{"spec": str}`。
+`/goal <text>` 把用户那句话原样存进 `text`，并立即在后台启动**规格完善**步骤（`_start_spec_refinement` → `refine_goal_spec`，daemon 线程——设定永不等它）。完善是一个同会话 spawn 的 agent 轮，走 goal 模块里的内部函数 `refine`（`openprogram/functions/agentics/goal/`——与判定同模块，刻意**不加** `@agentic_function`，函数面板保持只有一个 `goal` 条目；prompt 即 `refine` 的 docstring）。该 agent 配巡查工具加搜索（`read`、`glob`、`grep`、`list`、`bash`、`web_search`），可以看一眼工作目录理解任务语境。它把一句话扩写成完整规格——可逐条核验的达成标准（形式指标加过程要求，如"必须先读来源 X、Y 再写 Z 部分""引用逐条核实"）、明确的边界（不做什么）、判定时逐条核对的验收清单——输出严格 JSON `{"spec": str, "checklist": [str, …]}`（3–12 条短句、每条独立可核验、与目标文本同语言；解析清洗为非空字符串并在 20 条截断；纯 prose 回文仍算有效规格，只是清单为空）。
 
 **参考锚定——参考是下限，不是风格建议。** 任何 goal（不限于论文）都可以带参考锚：目标点名或暗示了一个可比的现有作品——或能搜到同类的成熟作品——完善步骤就去读它，翻译成可数的验收指标；判定则逐项核对交付物在每个指标上**达到或超过**参考。完善工具集为此加入了 `web_search`。
 
@@ -35,7 +35,7 @@
 `evaluate_goal` 返回 `("met" | "unmet" | "needs_user" | "judge_failure",
 reason, question)`。
 
-**一个判定 agent** —— 判定点是单一的 `goal` agentic 函数（`openprogram/functions/agentics/goal/`）：框架吃自己的狗粮，docstring 即判定 prompt，可从函数面板单独运行（面板上只有这一个条目）。判定只有这一种，只有它说完成才算完成。每次判定是一个同会话 spawn 的 agent 轮（`run_agent_turn`，`advance_head=False`，经 `spawn_caller` 锚在被判定的那轮上，图上画成子 agent 方块），输入是目标文本加会话的**压缩上下文视图**——`rendered_history`，与干活模型读到的形态一致：有 active summary 就先放摘要，再接保留轮次的尾部（最后 8 条消息内容加每条 assistant 行持久化的工具块，逐字段截断，总量约 24k 字符封顶；摘要不会被封顶截掉）。判定 agent 配有巡查工具（`bash`、`read`、`grep`、`glob`、`list`——没有 edit/apply_patch/task，判定不得修改任何东西、不得再 spawn agent），要不要去工作目录核查由它自己决定，prompt 不强制。它必须输出严格 JSON `{"met": bool, "reason": str, "need_user": bool, "question": str}`；回文不合法或轮次失败时 `goal.py` 在同次判定内重试一次。
+**一个判定 agent** —— 判定点是单一的 `goal` agentic 函数（`openprogram/functions/agentics/goal/`）：框架吃自己的狗粮，docstring 即判定 prompt，可从函数面板单独运行（面板上只有这一个条目）。判定只有这一种，只有它说完成才算完成。每次判定是一个同会话 spawn 的 agent 轮（`run_agent_turn`，`advance_head=False`，经 `spawn_caller` 锚在被判定的那轮上，图上画成子 agent 方块），输入是目标文本加会话的**压缩上下文视图**——`rendered_history`，与干活模型读到的形态一致：有 active summary 就先放摘要，再接保留轮次的尾部（最后 8 条消息内容加每条 assistant 行持久化的工具块，逐字段截断，总量约 24k 字符封顶；摘要不会被封顶截掉）。判定 agent 配有巡查工具（`bash`、`read`、`grep`、`glob`、`list`——没有 edit/apply_patch/task，判定不得修改任何东西、不得再 spawn agent），要不要去工作目录核查由它自己决定，prompt 不强制。它必须输出严格 JSON `{"met": bool, "reason": str, "need_user": bool, "question": str}`——目标带验收清单时还要加逐项布尔列表 `"checklist"`（见下节）；回文不合法或轮次失败时 `goal.py` 在同次判定内重试一次。
 
 **"要不要停下来问用户"的决定在同一次判定里，分两种模式并带限频。** 判定 prompt 携带会话的在场/无人值守模式（`agent/attended.py`，作为 `attended` 参数传进函数；面板手动跑默认在场）。*在场*——有人看着——允许对"确实难以替用户决定的事"设 `need_user=true`：待批准的不可逆/破坏性操作、缺凭据/资源、决定方向的歧义、无法恢复的反复失败，或猜错会浪费大量轮次的选择。*无人值守*抬高门槛：暂停必须是罕见的，且严重性是**对象**的属性、不是操作类别的属性——"是删除""不可逆"本身永远不是暂停理由。裁判被要求用工具查实际风险（打开目录、看内容、判断可否再生）：查明是测试/缓存/可再生数据就自己决定并记录；只有查实的严重后果（用户自己的文档、未推送的工作、生产数据、真金白银、影响他人）、拿不到的凭据/资源、或 goal 文本自己点名要批准的操作才可暂停。方向歧义、反复失败这类要求它思考周全后自选最合理方案、写清决定和理由继续。prompt 策略之上，循环在代码层强制硬性限频：**1 小时内最多问 1 次**（goal state 里的 `last_question_at`，`QUESTION_MIN_INTERVAL_SECONDS`）。窗口内再来 `needs_user` 裁决不暂停——降级为续轮，续轮 prompt 说明提问额度已用、要求自选最合理方案并写清决定和理由。时间戳跨恢复保留（答完一个问题不重置这一小时）。这把"该不该打扰用户"放进每轮本来就要跑的那次新上下文判定里——零额外调用，也不依赖干活模型自己的克制。`need_user=true` 但 question 为空视为普通未达成。
 
@@ -51,6 +51,33 @@ reason, question)`。
 
 不变量：无人值守的运行绝不靠猜闯过不可逆操作，也绝不在无人回答的问题上空转——要么决定并记录，要么挂起等人。已知上限：挂起的问题只在会话内可见，还没有主动推送渠道，用户下次打开界面才会发现暂停。
 
+## 验收清单
+
+完善步骤生成的清单是目标的固定验收表：完善一次写死、裁判只报告逐项状态、循环在代码层强制。这堵住了剩下的提前收工缝隙——裁判无法用总结绕过一张它只能打勾的清单。
+
+| 阶段 | 谁 | 发生什么 |
+|---|---|---|
+| 生成 | `refine`（完善时一次） | `{"checklist": [str, …]}` 落进 goal 状态，形如 `[{"text", "done": false}, …]`。此后清单固定——任何人不得增删改写条目。 |
+| 打勾 | 裁判（每次判定） | 判定 prompt 渲染编号的 `<checklist>` 块；裁判必须用工具逐项取证并回答 `"checklist": [true\|false, …]`——同序号、同长度、只报状态。合法列表按序覆盖每项 `done`（true→false 也覆盖——取证胜过早先的勾）；缺失、长度不符或含非布尔的列表视为本轮无逐项信息，已存的勾保持不变。 |
+| 强制 | 循环代码（`evaluate_goal`） | 存在未完成项时 `met` 一律降级为 `unmet`，reason 点名未完成条目（"清单未全部完成：3) …"）。prompt 已要求全 true 才可 met；代码把它变成不可协商。 |
+| 点名 | 续轮 prompt | 只要有未完成项，`goal_continue` 轮次文本就追加"未完成项："加编号列表——把干活 agent 直接指向剩下的事。 |
+| 呈现 | goal 徽标 / `/goal` 状态 | 有清单时徽标显示 `goal · done/total`（否则显示轮数）；`/goal` 状态打印 `checklist: done/total`，未完成项每行一条 `[ ]`。 |
+
+运行中的状态示例：
+
+```json
+{"text": "写完综述",
+ "spec": "…完整规格…",
+ "checklist": [
+   {"text": "正文包含 6 个章节", "done": true},
+   {"text": "引用不少于 80 篇且逐条核实", "done": false},
+   {"text": "包含分类框架图", "done": true}],
+ "status": "active", "turns_used": 5, "max_turns": null,
+ "last_reason": "引用核实未完成", "judge_parse_failures": 0}
+```
+
+徽标显示 `goal · 2/3`；续轮 prompt 点名第 2 条；裁判勾掉它之前 `met` 不可达。
+
 判定独立成一次调用是刻意的。Codex 与 Cline 最初的自报式设计——干活 agent 自己宣布完成——都在 agent 系统性提前宣胜之后被迫打补丁：想停下来的模型不是"能不能停"这个问题的合格回答者。把结论放进一个只看目标与证据的新上下文（并要求把记录当数据、不执行其中指令），去掉了这个激励。
 
 ## 状态
@@ -60,6 +87,8 @@ Goal 状态存会话 meta（`update_session` 是 schemaless 的），键 `goal`�
 ```
 {"text": str,
  "spec": str（完善后的规格——后台完善落地前不存在；判定回退用 text）,
+ "checklist": [{"text": str, "done": bool}]（完善时写死的验收条目——
+         完善没产出清单时不存在；裁判只翻 "done"，循环强制全勾才 met）,
  "status": "active" | "waiting_user" | "achieved" | "cleared" | "capped"
            | "error",
  "created_at": float, "turns_used": int,

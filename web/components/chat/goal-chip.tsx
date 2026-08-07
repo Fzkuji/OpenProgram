@@ -24,6 +24,7 @@ export interface GoalState {
   status?: string;
   turns_used?: number;
   max_turns?: number;
+  checklist?: { text: string; done: boolean }[] | null;
   last_reason?: string;
   last_question?: string;
   last_question_options?: { label: string; description: string }[];
@@ -94,8 +95,13 @@ export function GoalChip() {
   const waiting = goal?.status === "waiting_user";
   if (!goal || (!active && !waiting)) return null;
 
+  // Checklist progress beats turn count when the refinement produced
+  // acceptance items — "goal · done/total" reads as real progress.
+  const checklist = goal.checklist ?? [];
   const label = active
-    ? `goal · ${goal.turns_used ?? 0}${goal.max_turns ? `/${goal.max_turns}` : ""}`
+    ? checklist.length
+      ? `goal · ${checklist.filter((it) => it.done).length}/${checklist.length}`
+      : `goal · ${goal.turns_used ?? 0}${goal.max_turns ? `/${goal.max_turns}` : ""}`
     : "goal · 等你回答";
   const tip = [
     goal.text,

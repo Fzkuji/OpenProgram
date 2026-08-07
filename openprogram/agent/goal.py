@@ -24,6 +24,9 @@ Goal meta shape (``session extra_meta["goal"]``)::
 
     {"text": str, "spec": str (refined specification; absent until the
      refinement step lands, judging falls back to text),
+     "checklist": [{"text": str, "done": bool}, …] (refinement-fixed
+     acceptance items; absent when refinement produced none — the
+     judge only flips "done", never edits the list),
      "status": "active" | "waiting_user" | "achieved" |
      "cleared" | "capped" | "error", "created_at": float,
      "turns_used": int, "max_turns": int | None (None = unlimited),
@@ -97,8 +100,9 @@ def _emit_goal_update(on_event: Optional[Callable], session_id: str,
         "type": "goal_update",
         "session_id": session_id,
         "goal": {k: goal.get(k) for k in (
-            "text", "spec", "status", "turns_used", "max_turns",
-            "last_reason", "last_question", "last_question_options")},
+            "text", "spec", "checklist", "status", "turns_used",
+            "max_turns", "last_reason", "last_question",
+            "last_question_options")},
     }
     if on_event is not None:
         try:
@@ -147,6 +151,8 @@ def evaluate_goal(
     from openprogram.agent.attended import is_attended
     from openprogram.functions.agentics.goal import goal as goal_decision
 
+    items = [it for it in (goal.get("checklist") or [])
+             if isinstance(it, dict)]
     last_error = "goal decision reply was not valid JSON"
     for _attempt in range(2):
         try:
@@ -156,13 +162,29 @@ def evaluate_goal(
                 goal=goal.get("spec") or goal.get("text") or "",
                 session_id=session_id,
                 attended=is_attended(session_id),
+                checklist=[str(it.get("text") or "") for it in items] or None,
                 spawn_caller=spawn_caller,
                 agent_id=agent_id,
             )
         except Exception as e:  # noqa: BLE001 — turn failure / bad JSON = one attempt
             last_error = f"goal decision failed: {type(e).__name__}: {e}"
             continue
+        # Per-item verdicts overwrite "done" in order — true→false too,
+        # evidence wins over any earlier tick. None = this evaluation
+        # carried no per-item information, the stored ticks stand.
+        flags = data.get("checklist")
+        if flags is not None:
+            for item, flag in zip(items, flags):
+                item["done"] = bool(flag)
         if data["met"]:
+            undone = [(i, it) for i, it in enumerate(items, 1)
+                      if not it.get("done")]
+            if undone:
+                # Code-level enforcement: met requires every checklist
+                # item ticked — the judge cannot talk past the list.
+                reason = "清单未全部完成：" + "；".join(
+                    f"{i}) {it.get('text')}" for i, it in undone)
+                return "unmet", reason, "", []
             return "met", data["reason"], "", []
         question = data["question"].strip()
         if data["need_user"] and question:
@@ -192,7 +214,7 @@ def refine_goal_spec(session_id: str) -> None:
     text = goal.get("text") or ""
     try:
         from openprogram.functions.agentics.goal import refine as _refine
-        spec = _refine(text, session_id=session_id)
+        spec, checklist = _refine(text, session_id=session_id)
     except Exception:
         _log.warning("goal spec refinement failed (fail-open) for session %s",
                      session_id, exc_info=True)
@@ -205,9 +227,11 @@ def refine_goal_spec(session_id: str) -> None:
             or (goal.get("text") or "") != text):
         return
     goal["spec"] = spec
+    if checklist:
+        goal["checklist"] = [{"text": t, "done": False} for t in checklist]
     save_goal(session_id, goal)
     _emit_goal_update(None, session_id, goal)
-    _emit_goal_spec_notice(session_id, spec)
+    _emit_goal_spec_notice(session_id, spec, checklist)
 
 
 def _start_spec_refinement(session_id: str) -> None:
@@ -220,14 +244,21 @@ def _start_spec_refinement(session_id: str) -> None:
     ).start()
 
 
-def _emit_goal_spec_notice(session_id: str, spec: str) -> None:
+def _emit_goal_spec_notice(session_id: str, spec: str,
+                           checklist: Optional[list[str]] = None) -> None:
     """Show the refined spec as a system row in the transcript (same
     ``local_command`` surface the /goal command replies use), so the
     user sees what the system understood the goal to be — ``/goal
-    clear`` and a fresh ``/goal`` re-set if it misread the intent."""
+    clear`` and a fresh ``/goal`` re-set if it misread the intent.
+    The acceptance checklist renders after the spec as a numbered
+    list."""
+    body = spec
+    if checklist:
+        numbered = "\n".join(f"{i}. {t}" for i, t in enumerate(checklist, 1))
+        body = f"{spec}\n\n验收清单：\n{numbered}"
     _emit_goal_notice(session_id, (
         f"[goal] 目标已完善为规格（判定按此逐条核对；"
-        f"不满意可 /goal clear 重设）：\n{spec}"))
+        f"不满意可 /goal clear 重设）：\n{body}"))
 
 
 def _emit_goal_notice(session_id: str, content: str) -> None:
@@ -399,6 +430,11 @@ def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
                          "合理的方案继续，把决定和理由写清楚。")
         else:
             next_text = f"[goal] 未达成：{reason or '目标条件尚未满足'}。继续。"
+        undone = [(i, it) for i, it in enumerate(goal.get("checklist") or [], 1)
+                  if isinstance(it, dict) and not it.get("done")]
+        if undone:
+            next_text += "\n未完成项：\n" + "\n".join(
+                f"{i}. {it.get('text')}" for i, it in undone)
         next_req = replace(
             prev_req,
             user_text=next_text,
@@ -518,6 +554,13 @@ def _status_text(goal: Optional[dict]) -> str:
         spec = str(goal["spec"])
         lines.append("  spec: " + (spec[:300] + "…" if len(spec) > 300
                                    else spec))
+    items = [it for it in (goal.get("checklist") or [])
+             if isinstance(it, dict)]
+    if items:
+        done = sum(1 for it in items if it.get("done"))
+        lines.append(f"  checklist: {done}/{len(items)}")
+        lines.extend(f"  [ ] {it.get('text')}" for it in items
+                     if not it.get("done"))
     if goal.get("last_reason"):
         lines.append(f"  last reason: {goal['last_reason']}")
     if goal.get("status") == "waiting_user" and goal.get("last_question"):

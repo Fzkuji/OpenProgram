@@ -134,13 +134,17 @@ def _run_decision_turn(session_id: str, prompt: str, *, agent_id: str,
     return res.final_text or ""
 
 
-def _parse_decision(raw: str) -> dict:
-    """``{"met", "reason", "need_user", "question", "options"}`` from a
-    decision reply. Raises ``ValueError`` when the reply has no valid
-    JSON object or ``met`` is not a bool — the loop's retry counts that
-    as a failed attempt. ``options`` is a cleaned list of
-    ``{"label", "description"}`` dicts (both str, label non-empty),
-    capped at 4; anything malformed is dropped item-wise."""
+def _parse_decision(raw: str, checklist_len: int = 0) -> dict:
+    """``{"met", "reason", "need_user", "question", "options",
+    "checklist"}`` from a decision reply. Raises ``ValueError`` when the
+    reply has no valid JSON object or ``met`` is not a bool — the
+    loop's retry counts that as a failed attempt. ``options`` is a
+    cleaned list of ``{"label", "description"}`` dicts (both str, label
+    non-empty), capped at 4; anything malformed is dropped item-wise.
+    ``checklist`` is the judge's per-item verdicts: kept only when it
+    is a pure-bool list of exactly ``checklist_len`` entries; missing,
+    wrong length or non-bool content → ``None`` (this evaluation
+    carries no per-item information)."""
     data = parse_json(raw or "")
     if not isinstance(data, dict) or not isinstance(data.get("met"), bool):
         raise ValueError("goal decision reply was not valid JSON")
@@ -153,22 +157,34 @@ def _parse_decision(raw: str) -> dict:
                 "label": str(opt["label"]).strip(),
                 "description": str(opt.get("description") or ""),
             })
+    flags = data.get("checklist")
+    checklist: Optional[list[bool]] = None
+    if (checklist_len and isinstance(flags, list)
+            and len(flags) == checklist_len
+            and all(isinstance(f, bool) for f in flags)):
+        checklist = list(flags)
     return {
         "met": bool(data["met"]),
         "reason": str(data.get("reason") or ""),
         "need_user": bool(data.get("need_user")),
         "question": str(data.get("question") or ""),
         "options": options,
+        "checklist": checklist,
     }
 
 
-def _decision_prompt(goal_text: str, session_view: str,
-                     attended: bool) -> str:
+def _decision_prompt(goal_text: str, session_view: str, attended: bool,
+                     checklist: Optional[list[str]] = None) -> str:
     """The decision prompt: the entry's docstring plus the payload."""
+    checklist_block = ""
+    if checklist:
+        numbered = "\n".join(f"{i}. {t}" for i, t in enumerate(checklist, 1))
+        checklist_block = f"<checklist>\n{numbered}\n</checklist>\n\n"
     return (
         f"{inspect.getdoc(goal)}\n\n"
         f"<mode>\n{'attended' if attended else 'unattended'}\n</mode>\n\n"
         f"<goal>\n{goal_text}\n</goal>\n\n"
+        f"{checklist_block}"
         f"<session_context>\n{session_view}\n</session_context>"
     )
 
@@ -198,29 +214,33 @@ def _run_refine_turn(session_id: str, prompt: str, *, agent_id: str,
     return res.final_text or ""
 
 
-def _parse_spec(raw: str) -> str:
-    """``spec`` string from a refinement reply. Prefers the strict
-    JSON envelope; a model that answers with the specification as
-    plain prose still counts — the spec is text for the judge to
-    read, so substantial prose IS a valid spec. Raises ``ValueError``
-    only when the reply is empty or trivially short — the caller
-    fails open (judging falls back to the raw goal text)."""
+def _parse_refinement(raw: str) -> tuple[str, list[str]]:
+    """``(spec, checklist)`` from a refinement reply. Prefers the
+    strict JSON envelope; a model that answers with the specification
+    as plain prose still counts — the spec is text for the judge to
+    read, so substantial prose IS a valid spec, just one without a
+    structured checklist (fail-open: checklist ``[]``). The checklist
+    is cleaned to non-empty strings and truncated at 20 items. Raises
+    ``ValueError`` only when the reply is empty or trivially short —
+    the caller fails open (judging falls back to the raw goal text)."""
     try:
         data = parse_json(raw or "")
         if isinstance(data, dict) and isinstance(data.get("spec"), str) \
                 and data["spec"].strip():
-            return data["spec"].strip()
+            items = [it.strip() for it in (data.get("checklist") or [])
+                     if isinstance(it, str) and it.strip()]
+            return data["spec"].strip(), items[:20]
     except ValueError:
         pass
     text = (raw or "").strip()
     if len(text) >= 200:
-        return text
+        return text, []
     raise ValueError("goal refinement reply had no valid spec")
 
 
 def refine(goal_text: str, session_id: str = "", *,
            agent_id: str = "main",
-           spawn_caller: Optional[str] = None) -> str:
+           spawn_caller: Optional[str] = None) -> tuple[str, list[str]]:
     """You expand a user's one-line session goal into a complete goal
     SPECIFICATION. The user typed a single sentence; it cannot cover
     everything, so you fill in what a completion judge will need. You
@@ -248,7 +268,10 @@ def refine(goal_text: str, session_id: str = "", *,
     * Boundaries — what is explicitly OUT of scope, so the run does
       not wander.
     * Judge checklist — the items the completion judge checks one by
-      one before declaring the goal met.
+      one before declaring the goal met. Emit them as the "checklist"
+      JSON field: 3 to 12 short sentences, each independently
+      verifiable on its own, written in the SAME LANGUAGE as the goal
+      text.
 
     Stay faithful to the user's intent: refine and sharpen it, never
     replace it. Keep the specification concise enough to be checked
@@ -256,7 +279,8 @@ def refine(goal_text: str, session_id: str = "", *,
 
     End your reply with STRICT JSON only, no markdown fence, no prose
     after it:
-    {"spec": "<the full specification as one string>"}
+    {"spec": "<the full specification as one string>",
+     "checklist": ["<verifiable item>", "<verifiable item>", …]}
     """
     sid = session_id or current_session_id()
     prompt = (
@@ -265,7 +289,7 @@ def refine(goal_text: str, session_id: str = "", *,
     )
     raw = _run_refine_turn(sid, prompt, agent_id=agent_id,
                            spawn_caller=spawn_caller)
-    return _parse_spec(raw)
+    return _parse_refinement(raw)
 
 
 # ---------------------------------------------------------------------------
@@ -279,10 +303,12 @@ def refine(goal_text: str, session_id: str = "", *,
                                   "(empty = current session)"},
     "attended": {"description": "Whether a human is watching and can "
                                 "answer questions"},
+    "checklist": {"hidden": True},
     "spawn_caller": {"hidden": True},
     "agent_id": {"hidden": True},
 })
 def goal(goal: str, session_id: str = "", attended: bool = True,
+         checklist: Optional[list[str]] = None,
          spawn_caller: Optional[str] = None,
          agent_id: str = "main") -> dict:
     """You are the completion judge for an agent session goal. Read the
@@ -305,6 +331,14 @@ def goal(goal: str, session_id: str = "", attended: bool = True,
     context is never sufficient evidence for any verifiable item —
     narrative may only decide criteria that cannot be checked with
     tools.
+
+    When a <checklist> block is present below, it is the goal's fixed
+    acceptance checklist. You MUST verify every item with your tools
+    and output a "checklist" field in the JSON: a list of true|false,
+    one per item, in the SAME ORDER as the numbering and with the SAME
+    LENGTH. You only report each item's status — never add, remove,
+    reorder or rewrite items. met=true is allowed only when every
+    checklist item is true.
 
     Also decide whether the run must PAUSE for the user. Whether you may
     ask depends on the <mode> below:
@@ -350,13 +384,15 @@ def goal(goal: str, session_id: str = "", attended: bool = True,
     {"met": true|false, "reason": "<short factual reason>",
      "need_user": true|false,
      "question": "<the one question for the user, empty when need_user is false>",
-     "options": [{"label": "<short choice>", "description": "<what it means>"}, …]}
+     "options": [{"label": "<short choice>", "description": "<what it means>"}, …],
+     "checklist": [true|false, …]}
     """
     sid = session_id or current_session_id()
-    prompt = _decision_prompt(goal, render_session_view(sid), attended)
+    prompt = _decision_prompt(goal, render_session_view(sid), attended,
+                              checklist=checklist)
     raw = _run_decision_turn(sid, prompt, agent_id=agent_id,
                              spawn_caller=spawn_caller)
-    return _parse_decision(raw)
+    return _parse_decision(raw, checklist_len=len(checklist or []))
 
 
 __all__ = ["goal", "refine", "render_session_view", "DECISION_TOOLS",
