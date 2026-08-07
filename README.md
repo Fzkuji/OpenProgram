@@ -65,40 +65,52 @@ Multi-platform, multi-provider, multi-channel — table stakes; OpenProgram has 
   <img src="docs/images/highlights/00-agentic-function.png" alt="Agentic Function — one decorator turns a Python function into an agent: the docstring becomes the system prompt, type annotations become the tool schema, runtime.exec() calls become retryable DAG nodes, and plain if/for/return stays deterministic" width="900">
 </p>
 
-**An agent is a Python function.** One decorator binds the three things every harness otherwise makes you hand-write: the **docstring becomes the system prompt**, the **type annotations become the tool schema**, and the **function body is the flow you want guaranteed**. No prompt templates, no tool-schema JSON, no graph DSL.
+**An agent is a Python function** — the same triage agent, written both ways:
+
+<table>
+<tr><th>Typical harness</th><th>OpenProgram</th></tr>
+<tr><td>
 
 ```python
-from openprogram import agentic_function
+TRIAGE_PROMPT = """You are a triage
+agent. Classify the ticket as bug,
+feature, or question. Reply as JSON."""
 
+TOOLS = [{"type": "function", "function": {
+  "name": "triage",
+  "parameters": {"type": "object",
+    "properties": {"ticket": {"type": "string"}},
+    "required": ["ticket"]}}}]
+
+resp = client.chat(TRIAGE_PROMPT, tools=TOOLS)
+kind = json.loads(resp)["kind"]     # hope it parses
+if kind not in ("bug", "feature"):
+    ...                             # and re-prompt by hand
+```
+
+</td><td>
+
+```python
 @agentic_function
 def triage(ticket: str, runtime=None) -> str:
-    """Classify the ticket as bug / feature / question, then draft a reply."""
-    kind = runtime.exec(ticket, choices=["bug", "feature", "question"])  # ← code gate: parsed & validated
-    if kind == "bug":                                                    # ← ordinary Python, always runs
-        logs = search_logs(ticket)
-        return runtime.exec(f"Draft a bug reply using these logs:\n{logs}")
-    return runtime.exec("Draft a short, friendly reply.")
+    """Classify the ticket as bug / feature /
+    question, then draft a reply."""
+    kind = runtime.exec(                    # 🤖 LLM decides
+        ticket, choices=["bug", "feature", "question"])
+    if kind == "bug":                       # 🐍 you decide
+        logs = search_logs(ticket)          # 🐍 plain Python
+        return runtime.exec(                # 🤖 LLM writes
+            f"Reply using:\n{logs}")
+    return runtime.exec("Draft a short reply.")
 ```
 
-| You write | The harness gives you |
-|---|---|
-| The **docstring** | The system prompt for this call — one place, versioned with the code. |
-| **Type annotations** | The tool schema. Any `@agentic_function` is callable by another agent, or exported to your own loop via `to_openai_tools`. |
-| `runtime.exec(...)` | One LLM call as a **retryable DAG node** — traced, resumable, forkable. |
-| `choices=[...]` | A **code gate**: the answer is parsed and validated by Python; a failed check makes the model *re-decide* instead of drifting past it. |
-| Plain `if` / `for` / `return` | Deterministic flow the model **cannot skip** — the guarantees live in code, not in the model's goodwill. |
-| **Calling another `@agentic_function`** | A child node on the same DAG. Nesting, spawning, and multi-agent are the same mechanism. |
+🤖 `runtime.exec()` = **the LLM call** — one retryable DAG node
+🐍 everything else = **plain Python**, runs every time
 
-Two decorator arguments control context, which is where most harnesses leak tokens:
+</td></tr>
+</table>
 
-```python
-@agentic_function(expose="io", render_range={"callers": 0})
-def scratch_analysis(data, runtime=None):
-    """Heavy exploration whose intermediate steps the parent never needs to see."""
-    ...
-```
-
-`render_range={"callers": 0}` gives the call a **self-isolated scratch context**, reclaimed on return — so a long sub-task can't blow up the parent's prompt. `expose="io"` shows the caller only this call's inputs and outputs, not its internal reasoning (`io` | `llm` | `full` | `hidden`). That's programmable context in one line.
+**docstring** = the prompt · **type annotations** = the tool schema · `choices=[...]` = a code gate that re-asks until the answer is valid. Same behavior as the left column, with no prompt template and no tool JSON.
 
 ### ② DAG Context — for native multi-agent systems
 
@@ -106,9 +118,14 @@ def scratch_analysis(data, runtime=None):
   <img src="docs/images/highlights/01-dag-context.png" alt="DAG Context — every user, LLM, and function call is one node on a single flat DAG; each @agentic_function declares in one line what context it reads and exposes, so fork, spawn, cross-session messaging, and worktree isolation all follow" width="900">
 </p>
 
-Every user turn, LLM call, and function call is **one node on a single flat DAG**. Two edges give it meaning: `caller` (who invoked whom) and `reads` (whose output fed this prompt) — so context is assembled from the graph, not hand-stitched. Each `@agentic_function` is **programmable context in one line**: `expose` controls what a call reveals to its parent, and `render_range` controls how much history a call pulls in (`{"callers": 0}` gives a throwaway, self-isolated scratch context that's reclaimed when it returns — no unbounded prompt growth).
+Context is an **addressable node, not a per-agent buffer** — so every multi-agent move is just "point at a different node set":
 
-Because context is an **addressable node rather than a per-agent buffer**, multi-agent stops being a bolt-on: fork a branch, `spawn` a clean sub-agent, `message_branch` across sessions, or run a file-touching branch in an isolated `git worktree` — each is just "select a different node set as context" on the same DAG.
+| Want to… | It's one call |
+|---|---|
+| Run a sub-agent on a clean context | `spawn_branch(...)` |
+| Send a message to another branch, get the reply | `message_branch(message, target=...)` |
+| Try an alternative without losing the original | fork the node |
+| Let a branch touch files safely | it runs in its own `git worktree` |
 
 ### ③ Agentic Workflow — for trustworthy & self-evolving agents
 
@@ -116,9 +133,16 @@ Because context is an **addressable node rather than a per-agent buffer**, multi
   <img src="docs/images/highlights/02-agentic-workflow.png" alt="Agentic Workflow — Python drives the flow and code gates enforce the critical steps; a failed validation makes the model re-decide so it cannot skip checks; the agent writes and hot-loads its own @agentic_functions" width="900">
 </p>
 
-**Python drives the flow; the LLM reasons only when asked.** Critical steps become **code gates** — the model's choice is parsed and validated by code, and a failed check makes it *re-decide* instead of quietly moving on, so validation can't be skipped. Every call is a retryable, observable DAG node. That's what makes execution *trustworthy*: the guarantees live in code, not in the model's goodwill.
+**A code gate can't be talked past.** When the model's answer fails validation, it is sent back to re-decide — this is the real transcript:
 
-*Self-evolving* is a mechanism, not a black box: the agent writes and fixes its own `@agentic_function`s with **ordinary file-edit tools**, a file watcher hot-loads them, and the new tool is live on the next turn — no dedicated `create()` / `fix()` machinery.
+```
+llm  → "probably a feature request"
+gate ✗ no parseable pick from ["bug", "feature", "question"]
+llm  → {"call": "feature"}
+gate ✓ → branch taken in Python
+```
+
+**And it grows itself:** the agent edits its own `@agentic_function` files with ordinary file tools → a watcher hot-loads them → the new tool is live on the next turn. No `create()` / `fix()` machinery.
 
 ### ④ Event Infrastructure — for proactive agents
 
@@ -126,7 +150,18 @@ Because context is an **addressable node rather than a per-agent buffer**, multi
   <img src="docs/images/highlights/03-event-infrastructure.png" alt="Event Infrastructure — a unified process-wide event bus that the agent loop, auth, context, channels, and memory all emit onto; anything can subscribe by event type, and a proactive policy layer builds on top" width="900">
 </p>
 
-One **process-wide event bus** is the substrate under everything: the agent loop, auth, context, channels, and memory all emit onto it, and any component can subscribe by event type (every event is a uniform `Event(type, payload, ts)` envelope with `id` / `origin` / `metadata`). This is deliberately a **foundation** — a proactive policy layer that watches the stream and acts is the bus's first intended consumer. The plumbing is in place; the proactivity is yours to build on it.
+**One bus, every subsystem.** The agent loop, auth, context, channels, and memory all emit the same `Event(type, payload, ts)` envelope, so anything can watch anything:
+
+```python
+from openprogram.events import get_event_bus
+
+get_event_bus().subscribe(                       # returns an unsubscribe fn
+    lambda e: alert(e.payload),
+    types={"context.compaction_recommended", "file.changed"},
+)
+```
+
+A **foundation, honestly labelled**: the plumbing is in place and the proactive policy layer is its first intended consumer — that part is yours to build.
 
 ## Quick Start
 
