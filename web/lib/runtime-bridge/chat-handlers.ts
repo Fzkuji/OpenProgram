@@ -257,6 +257,9 @@ interface SessionRow {
   project?: string | null;
 }
 
+/** 上一条 sessions_list 消息里的会话 id 集合（首条到达前为 null）。 */
+let prevServerListedIds: Set<string> | null = null;
+
 export function handleSessionsList(data: SessionRow[]): void {
   const convs = runtimeState.conversations;
   const serverIds = new Set((data || []).map((c) => c.id));
@@ -321,9 +324,14 @@ export function handleSessionsList(data: SessionRow[]): void {
   // reads store.conversations, so this is what makes the list authoritative.
   mirrorSetConvs(Object.values(convs));
   const sid = runtimeState.currentSessionId;
-  if (sid && !convs[sid]) {
+  // 当前会话不在列表 → 只有"上一次服务器列表里有、这次没了"才是真删除。
+  // 冷加载 /s/<id> 深链时 list_sessions 先于 load_session 到达，而列表只
+  // 反映内存注册表——磁盘上存在但尚未补水的会话天然缺席，此时弹回 /chat
+  // 会把合法深链吞掉（load_session 随后就会把它补进注册表）。
+  if (sid && !convs[sid] && prevServerListedIds?.has(sid)) {
     newSession();
   }
+  prevServerListedIds = serverIds;
   if (sid && convs[sid]) {
     runtimeState._hasActiveSession = true;
     const provBadge = document.getElementById("providerBadge");
