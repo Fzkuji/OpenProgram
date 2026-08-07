@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b7280"/>
+    </marker>
+    <marker id="arrRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="675" fill="#ffffff"/>
+
+  <!-- publisher cards -->
+  <g stroke="#93c5fd" fill="#eff6ff">
+    <rect x="30"  y="40" width="200" height="90" rx="10"/>
+    <rect x="265" y="40" width="200" height="90" rx="10"/>
+    <rect x="500" y="40" width="200" height="90" rx="10"/>
+    <rect x="735" y="40" width="200" height="90" rx="10"/>
+    <rect x="970" y="40" width="200" height="90" rx="10"/>
+  </g>
+  <g fill="#1e40af" font-size="22" font-weight="bold" text-anchor="middle">
+    <text x="130"  y="80">agent loop</text>
+    <text x="365"  y="80">auth</text>
+    <text x="600"  y="80">context</text>
+    <text x="835"  y="80">channels</text>
+    <text x="1070" y="80">memory</text>
+  </g>
+  <g fill="#3b82f6" font-size="18" text-anchor="middle">
+    <text x="130"  y="110">工具调用 / 轮次</text>
+    <text x="365"  y="110">账号与限流</text>
+    <text x="600"  y="110">上下文引擎</text>
+    <text x="835"  y="110">Telegram·Discord·Slack·微信</text>
+    <text x="1070" y="110">记忆系统</text>
+  </g>
+
+  <!-- publish arrows -->
+  <g stroke="#6b7280" stroke-width="2.5" marker-end="url(#arr)">
+    <line x1="130"  y1="130" x2="130"  y2="312"/>
+    <line x1="365"  y1="130" x2="365"  y2="312"/>
+    <line x1="600"  y1="130" x2="600"  y2="312"/>
+    <line x1="835"  y1="130" x2="835"  y2="312"/>
+    <line x1="1070" y1="130" x2="1070" y2="312"/>
+  </g>
+  <!-- event type labels, staggered two rows to avoid overlap -->
+  <g font-family="ui-monospace, Menlo, monospace" font-size="18" fill="#374151" text-anchor="middle">
+    <text x="145"  y="185">tool.after</text>
+    <text x="380"  y="245">auth.rate_limited</text>
+    <text x="600"  y="185">context.compaction_recommended</text>
+    <text x="835"  y="245">channel.message_inbound</text>
+    <text x="1060" y="185">memory.ingest_ended</text>
+  </g>
+
+  <!-- gate veto arrow -->
+  <line x1="58" y1="320" x2="58" y2="138" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#arrRed)"/>
+  <g fill="#dc2626" font-size="18" text-anchor="start">
+    <text x="36" y="285">gate 否决</text>
+  </g>
+
+  <!-- bus -->
+  <rect x="30" y="320" width="1140" height="72" rx="10" fill="#374151"/>
+  <text x="600" y="351" fill="#ffffff" font-size="26" font-weight="bold" text-anchor="middle">Event Bus</text>
+  <text x="600" y="380" fill="#d1d5db" font-family="ui-monospace, Menlo, monospace" font-size="19" text-anchor="middle">Event(type, payload, ts, origin)</text>
+
+  <!-- subscribe arrows -->
+  <g stroke="#6b7280" stroke-width="2.5" marker-end="url(#arr)">
+    <line x1="340" y1="392" x2="340" y2="452"/>
+    <line x1="860" y1="392" x2="860" y2="452"/>
+  </g>
+  <text x="600" y="432" fill="#374151" font-size="18" text-anchor="middle">按 type 订阅，不关心来源模块</text>
+
+  <!-- subscriber: code card -->
+  <rect x="80" y="458" width="520" height="150" rx="10" fill="#f0fdf4" stroke="#16a34a"/>
+  <g font-family="ui-monospace, Menlo, monospace" font-size="19" fill="#166534" text-anchor="start">
+    <text x="104" y="494">get_event_bus().subscribe(</text>
+    <text x="104" y="522">    handler,</text>
+    <text x="104" y="550">    types={"context.compaction_recommended",</text>
+    <text x="104" y="578">           "file.changed"})</text>
+  </g>
+
+  <!-- subscriber: policy layer (not built-in) -->
+  <rect x="660" y="458" width="460" height="150" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-dasharray="8 6"/>
+  <text x="890" y="522" fill="#166534" font-size="24" font-weight="bold" text-anchor="middle">主动策略层（留给你建）</text>
+  <text x="890" y="556" fill="#16a34a" font-size="18" text-anchor="middle">提前压缩 · 文件变更自检 · 消息接管</text>
+
+  <!-- legend -->
+  <text x="600" y="650" fill="#6b7280" font-size="18" text-anchor="middle">gate 类事件（tool.before / turn.stop）：订阅者可返回理由否决本次动作，同步执行、fail-open</text>
+</svg>

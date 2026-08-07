@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <rect width="1200" height="675" fill="#ffffff"/>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#6b7280"/>
+    </marker>
+    <marker id="arrowB" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+
+  <!-- divider -->
+  <line x1="600" y1="60" x2="600" y2="615" stroke="#d1d5db" stroke-width="2" stroke-dasharray="6 6"/>
+
+  <!-- ===== left: message arrays ===== -->
+  <text x="300" y="90" font-size="24" font-weight="bold" fill="#111827" text-anchor="middle">常见框架：每个 agent 一份消息数组</text>
+
+  <!-- Agent A panel -->
+  <rect x="70" y="130" width="200" height="340" rx="12" fill="#f9fafb" stroke="#d1d5db" stroke-width="2"/>
+  <text x="170" y="162" font-size="20" font-weight="bold" fill="#374151" text-anchor="middle">Agent A（父）</text>
+  <rect x="95" y="180" width="150" height="30" rx="6" fill="#e5e7eb" stroke="#d1d5db"/>
+  <rect x="95" y="218" width="150" height="30" rx="6" fill="#dbeafe" stroke="#d1d5db"/>
+  <rect x="95" y="256" width="150" height="30" rx="6" fill="#e5e7eb" stroke="#d1d5db"/>
+  <rect x="95" y="294" width="150" height="30" rx="6" fill="#dbeafe" stroke="#d1d5db"/>
+  <rect x="95" y="332" width="150" height="30" rx="6" fill="#dcfce7" stroke="#d1d5db"/>
+  <rect x="95" y="370" width="150" height="30" rx="6" fill="#dbeafe" stroke="#d1d5db"/>
+  <rect x="95" y="408" width="150" height="30" rx="6" fill="#e5e7eb" stroke="#d1d5db"/>
+  <text x="170" y="430" font-size="18" fill="#6b7280" text-anchor="middle"> </text>
+
+  <!-- Agent B panel -->
+  <rect x="340" y="170" width="200" height="240" rx="12" fill="#f9fafb" stroke="#d1d5db" stroke-width="2"/>
+  <text x="440" y="202" font-size="20" font-weight="bold" fill="#374151" text-anchor="middle">Agent B（子）</text>
+  <rect x="365" y="220" width="150" height="30" rx="6" fill="#e5e7eb" stroke="#d1d5db"/>
+  <rect x="365" y="258" width="150" height="30" rx="6" fill="#dbeafe" stroke="#d1d5db"/>
+  <rect x="365" y="296" width="150" height="30" rx="6" fill="#dbeafe" stroke="#d1d5db"/>
+  <rect x="365" y="334" width="150" height="30" rx="6" fill="#dcfce7" stroke="#d1d5db"/>
+
+  <!-- copy / return arrows -->
+  <line x1="272" y1="240" x2="336" y2="240" stroke="#6b7280" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="304" y="228" font-size="18" fill="#6b7280" text-anchor="middle">拷贝</text>
+  <line x1="338" y1="360" x2="274" y2="360" stroke="#6b7280" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="304" y="390" font-size="18" fill="#6b7280" text-anchor="middle">回传</text>
+
+  <text x="300" y="520" font-size="20" fill="#dc2626" text-anchor="middle">状态复制后分叉：两份数组各自演化</text>
+  <text x="300" y="550" font-size="18" fill="#6b7280" text-anchor="middle">回溯、对比、审计都要手写胶水</text>
+
+  <!-- ===== right: flat DAG ===== -->
+  <text x="900" y="90" font-size="24" font-weight="bold" fill="#111827" text-anchor="middle">OpenProgram：一张扁平 DAG</text>
+
+  <!-- trunk edges -->
+  <line x1="740" y1="172" x2="740" y2="212" stroke="#9ca3af" stroke-width="2.5"/>
+  <line x1="740" y1="252" x2="740" y2="292" stroke="#9ca3af" stroke-width="2.5"/>
+  <line x1="740" y1="332" x2="740" y2="372" stroke="#9ca3af" stroke-width="2.5"/>
+  <line x1="740" y1="412" x2="740" y2="452" stroke="#9ca3af" stroke-width="2.5"/>
+  <!-- fork edge -->
+  <line x1="756" y1="245" x2="864" y2="296" stroke="#9ca3af" stroke-width="2.5"/>
+  <line x1="880" y1="332" x2="880" y2="372" stroke="#9ca3af" stroke-width="2.5"/>
+  <!-- spawn chain edges -->
+  <line x1="1060" y1="252" x2="1060" y2="292" stroke="#9ca3af" stroke-width="2.5"/>
+  <line x1="1060" y1="332" x2="1060" y2="372" stroke="#9ca3af" stroke-width="2.5"/>
+
+  <!-- trunk nodes -->
+  <circle cx="740" cy="150" r="22" fill="#6b7280"/>
+  <circle cx="740" cy="232" r="22" fill="#2563eb"/>
+  <circle cx="740" cy="312" r="22" fill="#16a34a"/>
+  <circle cx="740" cy="392" r="22" fill="#2563eb"/>
+  <circle cx="740" cy="472" r="22" fill="#2563eb"/>
+  <text x="700" y="157" font-size="18" fill="#374151" text-anchor="end">主干</text>
+
+  <!-- fork branch nodes -->
+  <circle cx="880" cy="312" r="22" fill="#2563eb"/>
+  <circle cx="880" cy="392" r="22" fill="#16a34a"/>
+  <text x="822" y="262" font-size="18" fill="#374151">fork</text>
+  <!-- worktree tag -->
+  <rect x="912" y="376" width="132" height="32" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="978" y="398" font-size="18" fill="#16a34a" text-anchor="middle">git worktree</text>
+
+  <!-- spawn branch -->
+  <circle cx="1060" cy="232" r="22" fill="#2563eb"/>
+  <circle cx="1060" cy="312" r="22" fill="#16a34a"/>
+  <circle cx="1060" cy="392" r="22" fill="#2563eb"/>
+  <text x="1060" y="180" font-size="18" fill="#374151" text-anchor="middle">spawn_branch</text>
+  <text x="1060" y="202" font-size="18" fill="#6b7280" text-anchor="middle">（干净上下文）</text>
+
+  <!-- message_branch dashed arrow -->
+  <line x1="766" y1="405" x2="1032" y2="400" stroke="#2563eb" stroke-width="2.5" stroke-dasharray="7 6" marker-end="url(#arrowB)"/>
+  <text x="900" y="432" font-size="18" fill="#2563eb" text-anchor="middle">message_branch（跨分支消息）</text>
+
+  <!-- legend -->
+  <circle cx="700" cy="560" r="11" fill="#6b7280"/>
+  <text x="720" y="567" font-size="18" fill="#374151">用户消息</text>
+  <circle cx="850" cy="560" r="11" fill="#2563eb"/>
+  <text x="870" y="567" font-size="18" fill="#374151">LLM 调用</text>
+  <circle cx="1000" cy="560" r="11" fill="#16a34a"/>
+  <text x="1020" y="567" font-size="18" fill="#374151">函数调用</text>
+  <text x="900" y="602" font-size="18" fill="#6b7280" text-anchor="middle">节点可寻址：一个 agent 的上下文 = 从 head 往回可达的节点</text>
+</svg>

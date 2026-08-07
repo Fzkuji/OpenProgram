@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" font-family="-apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b7280"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="675" fill="#ffffff"/>
+
+  <!-- title -->
+  <text x="600" y="52" text-anchor="middle" font-size="30" font-weight="700" fill="#111827">@agentic_function 解剖：一个装饰器，四件事</text>
+
+  <!-- ============ center code card ============ -->
+  <rect x="330" y="96" width="540" height="440" rx="10" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+
+  <!-- line highlight backgrounds -->
+  <rect x="342" y="152" width="516" height="66" rx="5" fill="#dbeafe"/> <!-- docstring -->
+  <rect x="342" y="220" width="516" height="66" rx="5" fill="#dbeafe"/> <!-- exec+choices -->
+  <rect x="342" y="288" width="516" height="66" rx="5" fill="#dcfce7"/> <!-- if / search_logs -->
+  <rect x="342" y="356" width="516" height="32" rx="5" fill="#dbeafe"/> <!-- return exec -->
+  <rect x="342" y="392" width="516" height="32" rx="5" fill="#dbeafe"/> <!-- exec draft -->
+
+  <g font-family="'SF Mono', Menlo, Consolas, monospace" font-size="18" fill="#111827">
+    <text x="356" y="130" fill="#7c3aed">@agentic_function</text>
+    <text x="356" y="144" font-size="1"> </text>
+    <text x="356" y="146" display="none"> </text>
+    <text x="356" y="176" fill="#1e40af">"""Classify the ticket as bug /</text>
+    <text x="356" y="204" fill="#1e40af">feature / question, draft a reply."""</text>
+    <text x="356" y="244" fill="#1e40af">kind = runtime.exec(ticket,</text>
+    <text x="380" y="272" fill="#1e40af">choices=["bug","feature","question"])</text>
+    <text x="356" y="312" fill="#15803d">if kind == "bug":</text>
+    <text x="380" y="340" fill="#15803d">logs = search_logs(ticket)</text>
+    <text x="380" y="380" fill="#1e40af">return runtime.exec(f"用 {logs} 回复")</text>
+    <text x="356" y="416" fill="#1e40af">return runtime.exec("Draft a reply.")</text>
+  </g>
+  <!-- def line (no highlight) -->
+  <text x="356" y="150" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="18" fill="#111827">def triage(<tspan fill="#b45309">ticket: str</tspan>, runtime=None) -&gt; str:</text>
+
+  <!-- signature underline for annotation callout -->
+  <rect x="460" y="154" width="0" height="0" fill="none"/>
+
+  <!-- ============ left top: docstring = prompt ============ -->
+  <rect x="30" y="120" width="256" height="110" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="158" y="156" text-anchor="middle" font-size="21" font-weight="700" fill="#1e40af">docstring = 系统 prompt</text>
+  <text x="158" y="188" text-anchor="middle" font-size="18" fill="#374151">函数说明直接作为 prompt，</text>
+  <text x="158" y="214" text-anchor="middle" font-size="18" fill="#374151">不再维护模板字符串</text>
+  <line x1="286" y1="180" x2="330" y2="185" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ============ left bottom: annotation = schema ============ -->
+  <rect x="30" y="290" width="256" height="110" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="158" y="326" text-anchor="middle" font-size="21" font-weight="700" fill="#1e40af">类型注解 = tool schema</text>
+  <text x="158" y="358" text-anchor="middle" font-size="18" fill="#374151">ticket: str 自动生成</text>
+  <text x="158" y="384" text-anchor="middle" font-size="18" fill="#374151">参数 JSON，无需手写</text>
+  <path d="M286,330 C316,300 316,180 340,150" fill="none" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ============ right top: exec = DAG node + gate ============ -->
+  <rect x="914" y="110" width="256" height="230" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="1042" y="146" text-anchor="middle" font-size="21" font-weight="700" fill="#1e40af">runtime.exec() = LLM 调用</text>
+  <text x="1042" y="176" text-anchor="middle" font-size="18" fill="#374151">执行 DAG 上一个可重试节点</text>
+
+  <!-- gate loop -->
+  <rect x="946" y="196" width="192" height="52" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="1042" y="228" text-anchor="middle" font-size="18" font-weight="600" fill="#1e40af">代码门控 choices=[…]</text>
+  <path d="M1120,248 C1150,272 1150,300 1100,306 C1010,318 950,310 942,280 C938,266 942,254 952,248" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrowBlue)"/>
+  <text x="1042" y="296" text-anchor="middle" font-size="17" fill="#1e40af">答案不合法 → 打回重答</text>
+  <text x="1042" y="326" text-anchor="middle" font-size="17" fill="#374151">拿到手的值一定合法</text>
+  <line x1="914" y1="240" x2="870" y2="250" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ============ right bottom: deterministic python ============ -->
+  <rect x="914" y="392" width="256" height="118" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="1042" y="428" text-anchor="middle" font-size="21" font-weight="700" fill="#15803d">普通 Python，确定执行</text>
+  <text x="1042" y="460" text-anchor="middle" font-size="18" fill="#374151">if / for / return 每次必跑，</text>
+  <text x="1042" y="486" text-anchor="middle" font-size="18" fill="#374151">模型没有跳过的选项</text>
+  <line x1="914" y1="440" x2="870" y2="320" stroke="#6b7280" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ============ legend ============ -->
+  <g font-size="19" fill="#374151">
+    <rect x="440" y="590" width="22" height="22" rx="5" fill="#dbeafe" stroke="#2563eb"/>
+    <text x="472" y="607">LLM 相关（可重试节点）</text>
+    <rect x="720" y="590" width="22" height="22" rx="5" fill="#dcfce7" stroke="#16a34a"/>
+    <text x="752" y="607">确定性代码（每次执行）</text>
+  </g>
+</svg>

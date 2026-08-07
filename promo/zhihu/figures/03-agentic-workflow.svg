@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b7280"/>
+    </marker>
+    <marker id="arrowR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/>
+    </marker>
+    <marker id="arrowG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#16a34a"/>
+    </marker>
+  </defs>
+  <rect width="1200" height="675" fill="#ffffff"/>
+
+  <!-- ================= 上半:代码门控 ================= -->
+  <text x="60" y="52" font-size="24" font-weight="bold" fill="#111827">① 代码门控:验证失败就打回</text>
+
+  <!-- LLM box -->
+  <rect x="90" y="150" width="200" height="90" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="190" y="188" font-size="22" font-weight="bold" fill="#2563eb" text-anchor="middle">LLM</text>
+  <text x="190" y="218" font-size="18" fill="#374151" text-anchor="middle">生成回答</text>
+
+  <!-- arrow LLM -> gate -->
+  <line x1="290" y1="195" x2="450" y2="195" stroke="#6b7280" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="370" y="182" font-size="18" fill="#6b7280" text-anchor="middle">输出</text>
+
+  <!-- gate diamond -->
+  <polygon points="560,120 680,195 560,270 440,195" fill="#f0fdf4" stroke="#16a34a" stroke-width="2.5"/>
+  <text x="560" y="188" font-size="20" font-weight="bold" fill="#16a34a" text-anchor="middle">choices 校验</text>
+  <text x="560" y="216" font-size="18" fill="#374151" text-anchor="middle">(代码,非 prompt)</text>
+
+  <!-- fail loop: diamond top -> up -> back to LLM top -->
+  <path d="M 560,120 L 560,88 L 190,88 L 190,150" fill="none" stroke="#dc2626" stroke-width="2.5" marker-end="url(#arrowR)"/>
+  <text x="375" y="78" font-size="18" fill="#dc2626" text-anchor="middle">✗ 打回重新决策</text>
+  <text x="640" y="112" font-size="17" font-family="ui-monospace,Menlo,monospace" fill="#dc2626">"probably a feature request" → gate ✗</text>
+
+  <!-- pass arrow -->
+  <line x1="680" y1="195" x2="860" y2="195" stroke="#16a34a" stroke-width="2.5" marker-end="url(#arrowG)"/>
+  <text x="770" y="182" font-size="18" fill="#16a34a" text-anchor="middle">✓ 合法值</text>
+  <text x="762" y="228" font-size="16" font-family="ui-monospace,Menlo,monospace" fill="#16a34a" text-anchor="middle">{"call":"feature"}</text>
+
+  <!-- Python branch box -->
+  <rect x="860" y="150" width="270" height="90" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="995" y="188" font-size="21" font-weight="bold" fill="#16a34a" text-anchor="middle">Python 分支</text>
+  <text x="995" y="218" font-size="18" font-family="ui-monospace,Menlo,monospace" fill="#374151" text-anchor="middle">if kind == "bug": …</text>
+  <text x="995" y="272" font-size="18" fill="#6b7280" text-anchor="middle">必经步骤,模型无法跳过</text>
+
+  <!-- divider -->
+  <line x1="60" y1="325" x2="1140" y2="325" stroke="#e5e7eb" stroke-width="2"/>
+
+  <!-- ================= 下半:自进化 ================= -->
+  <text x="60" y="372" font-size="24" font-weight="bold" fill="#111827">② 自进化:agent 改自己的工具</text>
+
+  <!-- agent box (left) -->
+  <rect x="90" y="470" width="190" height="90" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="185" y="508" font-size="22" font-weight="bold" fill="#2563eb" text-anchor="middle">Agent</text>
+  <text x="185" y="538" font-size="18" fill="#374151" text-anchor="middle">对话中</text>
+
+  <!-- edit file box (top middle) -->
+  <rect x="410" y="400" width="420" height="90" rx="10" fill="#ffffff" stroke="#d1d5db" stroke-width="2"/>
+  <text x="620" y="436" font-size="20" font-weight="bold" fill="#111827" text-anchor="middle">用文件工具写 / 改函数</text>
+  <text x="620" y="466" font-size="16" font-family="ui-monospace,Menlo,monospace" fill="#374151" text-anchor="middle">functions/agentics/&lt;name&gt;/__init__.py</text>
+
+  <!-- watcher box (right) -->
+  <rect x="930" y="470" width="200" height="90" rx="10" fill="#ffffff" stroke="#d1d5db" stroke-width="2"/>
+  <text x="1030" y="508" font-size="20" font-weight="bold" fill="#111827" text-anchor="middle">file watcher</text>
+  <text x="1030" y="538" font-size="18" fill="#374151" text-anchor="middle">热加载</text>
+
+  <!-- tool list box (bottom middle) -->
+  <rect x="410" y="565" width="420" height="80" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="620" y="600" font-size="20" font-weight="bold" fill="#16a34a" text-anchor="middle">新工具进入下一轮工具列表</text>
+  <text x="620" y="628" font-size="17" fill="#374151" text-anchor="middle">和人手写的 @agentic_function 机制完全相同</text>
+
+  <!-- cycle arrows (clockwise) -->
+  <path d="M 280,490 L 410,458" fill="none" stroke="#6b7280" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M 830,458 L 960,470" fill="none" stroke="#6b7280" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M 1000,560 L 832,592" fill="none" stroke="#6b7280" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M 410,605 L 245,560" fill="none" stroke="#6b7280" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- annotation -->
+  <text x="90" y="662" font-size="18" fill="#6b7280">没有专门的 create() / fix(),就是普通文件编辑</text>
+</svg>
