@@ -76,26 +76,22 @@ export function GoalChip() {
     };
   }, []);
 
-  if (!goal || !goal.status || goal.status === "cleared") return null;
+  // 只在 goal 进行中显示；没设目标或已终结（achieved/cleared/capped/
+  // error）就不占底栏。
+  const active = goal?.status === "active";
+  const waiting = goal?.status === "waiting_user";
+  if (!goal || (!active && !waiting)) return null;
 
-  const active = goal.status === "active";
-  const waiting = goal.status === "waiting_user";
   const label = active
     ? `goal · ${goal.turns_used ?? 0}${goal.max_turns ? `/${goal.max_turns}` : ""}`
-    : waiting
-      ? "goal · 等你回答"
-      : `goal ${goal.status}`;
+    : "goal · 等你回答";
   const tip = [
     goal.text,
     waiting ? (goal as { last_question?: string }).last_question : null,
     goal.last_reason,
   ].filter(Boolean).join(" — ");
   return (
-    <span
-      className="runtime-badge workdir-badge"
-      style={active || waiting ? undefined : { opacity: 0.55 }}
-      title={tip || undefined}
-    >
+    <span className="runtime-badge workdir-badge" title={tip || undefined}>
       <Target size={14} strokeWidth={2} className="workdir-icon" />
       <span className="badge-short">{label}</span>
     </span>
