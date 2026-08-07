@@ -50,7 +50,7 @@ def triage(ticket: str, runtime=None) -> str:
     return runtime.exec("Draft a short reply.")
 ```
 
-![](figures/01-fig1-comparison.svg)
+![](figures/01-fig1-comparison.png)
 
 行为完全一样，但左边那三样东西都没了：
 
@@ -60,7 +60,7 @@ def triage(ticket: str, runtime=None) -> str:
 
 这里的关键不是"省了几行代码"，而是职责划分变清楚了：`runtime.exec()` 是模型调用，是一个可重试的 DAG 节点；除此之外的每一行——`if`、`for`、`return`、`search_logs(ticket)`——都是普通 Python，每次执行都确定地跑。**流程你写死，判断交给模型。** 模型没有机会跳过你的检查，也没有机会决定"这次不走这个分支了"。
 
-![](figures/01-fig2-anatomy.svg)
+![](figures/01-fig2-anatomy.png)
 
 ## 门控为什么可靠
 
@@ -75,7 +75,7 @@ gate ✓ → branch taken in Python
 
 模型第一次回答含糊，校验失败，被退回重答；第二次给出合法值，Python 分支才继续。这是"代码约束模型"和"prompt 恳求模型"的区别：前者不可能被绕过。
 
-![](figures/01-fig3-gate.svg)
+![](figures/01-fig3-gate.png)
 
 ## 写完之后，三种用法
 
@@ -95,7 +95,7 @@ result = triage("app crashes on login")
 
 同一份代码，是 agent 的工具，是 CLI 命令，也是库函数。不用为三种场景写三份胶水。
 
-![](figures/01-fig4-three-ways.svg)
+![](figures/01-fig4-three-ways.png)
 
 ## 上下文也是函数声明的一部分
 
@@ -117,7 +117,7 @@ def audit(repo: str, runtime=None) -> str:
 
 `audit` 读一万个文件产生的中间内容，返回时只有输入和结论留在父级上下文里。上下文管理从 prompt 拼接的体力活，变成写在函数签名上的属性。
 
-![](figures/01-fig5-context-knobs.svg)
+![](figures/01-fig5-context-knobs.png)
 
 ## 为什么是"函数"
 
