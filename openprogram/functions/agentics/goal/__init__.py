@@ -265,6 +265,19 @@ def refine(goal_text: str, session_id: str = "", *,
       reference on every extracted criterion — a reference is a floor,
       not a style suggestion. No reference given or findable: skip
       this part, do not invent one.
+    * Form anchor — countable structure is not enough: also extract
+      HOW the reference presents its content, and turn that into
+      checkable items. For prose deliverables that means e.g. "body
+      sections argue in connected paragraphs; list lines are under
+      10% of body lines", "every major section carries at least N
+      words of connected prose", "figure count meets the reference's".
+      A deliverable that matches the reference's chapter and citation
+      counts but reads as bullet-point notes has NOT met the
+      reference.
+    * Verification depth — for any "sources are real / verified"
+      criterion, spell out that acceptance requires SAMPLED
+      re-checking (open or search a random handful of the claimed
+      sources), not trusting the writer's own "verified" notes.
     * Boundaries — what is explicitly OUT of scope, so the run does
       not wander.
     * Judge checklist — the items the completion judge checks one by
@@ -330,7 +343,11 @@ def goal(goal: str, session_id: str = "", attended: bool = True,
     working agent's own "I have completed…" narrative in the session
     context is never sufficient evidence for any verifiable item —
     narrative may only decide criteria that cannot be checked with
-    tools.
+    tools. For criteria claiming sources or citations are real and
+    verified, SAMPLE them yourself: pick a random handful, open or
+    search each one, and check the cited fact — a criterion whose
+    sampled items fail (nonexistent work, mismatched numbering, a
+    fabricated name) is false no matter what the transcript claims.
 
     When a <checklist> block is present below, it is the goal's fixed
     acceptance checklist. You MUST verify every item with your tools
