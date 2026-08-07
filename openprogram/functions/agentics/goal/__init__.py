@@ -186,15 +186,23 @@ def _run_refine_turn(session_id: str, prompt: str, *, agent_id: str,
 
 
 def _parse_spec(raw: str) -> str:
-    """``spec`` string from a refinement reply. Raises ``ValueError``
-    when the reply has no JSON object with a non-empty ``spec``
-    string — the caller fails open (judging falls back to the raw
-    goal text)."""
-    data = parse_json(raw or "")
-    if not isinstance(data, dict) or not isinstance(data.get("spec"), str) \
-            or not data["spec"].strip():
-        raise ValueError("goal refinement reply had no valid spec")
-    return data["spec"].strip()
+    """``spec`` string from a refinement reply. Prefers the strict
+    JSON envelope; a model that answers with the specification as
+    plain prose still counts — the spec is text for the judge to
+    read, so substantial prose IS a valid spec. Raises ``ValueError``
+    only when the reply is empty or trivially short — the caller
+    fails open (judging falls back to the raw goal text)."""
+    try:
+        data = parse_json(raw or "")
+        if isinstance(data, dict) and isinstance(data.get("spec"), str) \
+                and data["spec"].strip():
+            return data["spec"].strip()
+    except ValueError:
+        pass
+    text = (raw or "").strip()
+    if len(text) >= 200:
+        return text
+    raise ValueError("goal refinement reply had no valid spec")
 
 
 def refine(goal_text: str, session_id: str = "", *,
