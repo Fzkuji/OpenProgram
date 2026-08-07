@@ -107,7 +107,20 @@ async def handle_switch_model(ws, cmd: dict):
                 # WS path never did).
                 conv["provider_override"] = prov
                 conv["model_override"] = bare_model
-                await asyncio.to_thread(_s._save_session, session_id)
+                # Persist straight to the session row. _save_session
+                # skips message-less sessions (ghost guard), but spawned
+                # turns (goal refine/decision, task agents) read the
+                # override from the DB — a switch before the first
+                # message must already be visible to them.
+                def _persist_override():
+                    from openprogram.agent.session_db import default_db
+                    default_db().update_session(
+                        session_id,
+                        provider_override=prov,
+                        model_override=bare_model,
+                    )
+                    _s._save_session(session_id)
+                await asyncio.to_thread(_persist_override)
                 info = _s._get_provider_info(session_id)
                 _s._broadcast(json.dumps(
                     {"type": "provider_changed", "data": info},
