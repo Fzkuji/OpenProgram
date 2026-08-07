@@ -637,6 +637,17 @@ def _snapshot_cwd(tool_name: str) -> _BashPreState | None:
         from openprogram.worktree.context import current_worktree_path
 
         cwd = current_worktree_path() or os.getcwd()
+        # Attribution boundary: the home directory is shared by every
+        # session and by processes outside OpenProgram entirely, so a
+        # before/after diff there attributes OTHER actors' concurrent
+        # writes to this command (they end up in the turn's file card
+        # and shadow commit). No scan → bash changes in home-rooted
+        # sessions are recorded only via the write tools' exact
+        # checkpoints.
+        # ponytail: home-only guard; two sessions sharing one bound
+        # project dir can still cross-attribute — rare, accepted.
+        if os.path.realpath(cwd) == os.path.realpath(os.path.expanduser("~")):
+            return None
         stats = dict(_walk_scan(cwd))
         stage_dir = tempfile.mkdtemp(prefix="op-bash-ckpt-")
         staged: dict[str, str] = {}
