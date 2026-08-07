@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { Target } from "lucide-react";
 
 import { runtimeState } from "@/lib/runtime-bridge/state";
 import { useSessionStore } from "@/lib/session-store";
@@ -80,10 +81,10 @@ export function GoalChip() {
   const active = goal.status === "active";
   const waiting = goal.status === "waiting_user";
   const label = active
-    ? `◎ goal · ${goal.turns_used ?? 0}${goal.max_turns ? `/${goal.max_turns}` : ""}`
+    ? `goal · ${goal.turns_used ?? 0}${goal.max_turns ? `/${goal.max_turns}` : ""}`
     : waiting
-      ? "◎ goal · 等你回答"
-      : `◎ goal ${goal.status}`;
+      ? "goal · 等你回答"
+      : `goal ${goal.status}`;
   const tip = [
     goal.text,
     waiting ? (goal as { last_question?: string }).last_question : null,
@@ -91,11 +92,12 @@ export function GoalChip() {
   ].filter(Boolean).join(" — ");
   return (
     <span
-      className="runtime-badge agent-badge"
+      className="runtime-badge workdir-badge"
       style={active || waiting ? undefined : { opacity: 0.55 }}
       title={tip || undefined}
     >
-      <span className="badge-details">{label}</span>
+      <Target size={14} strokeWidth={2} className="workdir-icon" />
+      <span className="badge-short">{label}</span>
     </span>
   );
 }
