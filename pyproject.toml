@@ -58,7 +58,12 @@ dependencies = [
     # ``ModuleNotFoundError: No module named 'mcp'`` and the LLM
     # Providers settings panel renders empty. MCP is also a headline
     # feature of OpenProgram, not an optional extra.
-    "mcp>=1.0.0",
+    # Capped below 2.0: mcp 2.0 reworked the client auth API —
+    # ``OAuthClientProvider`` lost its ``timeout`` kwarg and no longer
+    # satisfies httpx's ``auth=`` protocol, which breaks
+    # ``PersistentOAuthProvider`` (see openprogram/mcp/token_storage.py).
+    # Lift the cap once that module is ported to the 2.x auth API.
+    "mcp>=1.0.0,<2.0.0",
     # ── LLM provider SDKs ─────────────────────────────────────────
     # The transport for every provider routes through just these three
     # wire SDKs: Anthropic Messages (anthropic — used by anthropic AND

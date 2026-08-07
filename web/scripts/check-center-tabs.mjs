@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
 import { readCenterTabStripSource } from "./center-tab-strip-source.mjs";
+import { readChatCss } from "./_chat-css.mjs";
 
 const css = readFileSync(
   new URL("../components/center-tabs/center-tabs.module.css", import.meta.url),
@@ -937,10 +938,7 @@ assert.match(
   /data-center-view=\{activeTabDagView \? "dag" : "session"\}/,
   "the perspective must be a display swap driven off the active tab",
 );
-const chatCss = readFileSync(
-  new URL("../app/styles/chat.css", import.meta.url),
-  "utf8",
-);
+const chatCss = readChatCss(new URL("../", import.meta.url));
 // The graph replaces the TRANSCRIPT, not the whole `#chatView`. The
 // composer is a singleton portalled into `#composer-mount` inside
 // `#chatView` and anchored `bottom:0` against it, so hiding that

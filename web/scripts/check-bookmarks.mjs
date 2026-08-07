@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
 
 import { readCenterTabStripSource } from "./center-tab-strip-source.mjs";
+import { readRightDockCss } from "./_chat-css.mjs";
 
 const sourcePath = new URL("../lib/bookmarks.ts", import.meta.url);
 const sessionStorePath = new URL("../lib/session-store/index.ts", import.meta.url);
@@ -23,7 +24,6 @@ const tabsStorePath = new URL("../lib/state/center-tabs-store.ts", import.meta.u
 // their own module; the store's openBuiltinTab action still CALLS them.
 const tabIdsPath = new URL("../lib/state/center-tab-ids.ts", import.meta.url);
 const rightSidebarPath = new URL("../components/right-sidebar/right-sidebar.tsx", import.meta.url);
-const rightDockCssPath = new URL("../app/styles/right-dock.css", import.meta.url);
 const packagePath = new URL("../package.json", import.meta.url);
 assert.ok(existsSync(sourcePath), "bookmarks storage module missing");
 assert.ok(existsSync(managerPath), "bookmarks/history builtin tab pane missing");
@@ -58,7 +58,7 @@ const appShell = readFileSync(appShellPath, "utf8");
 const tabsStore = readFileSync(tabsStorePath, "utf8");
 const tabIds = readFileSync(tabIdsPath, "utf8");
 const rightSidebar = readFileSync(rightSidebarPath, "utf8");
-const rightDockCss = readFileSync(rightDockCssPath, "utf8");
+const rightDockCss = readRightDockCss(new URL("../", import.meta.url));
 assert.match(webTab, /function BookmarkButton/);
 assert.match(webTab, /toggleBookmark\(\{ url, title \}\)/);
 assert.match(webTab, /<BookmarkButton url=\{effectiveUrl\} title=\{title \|\| effectiveUrl\} \/>/);

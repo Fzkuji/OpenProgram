@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { readCenterTabStripSource } from "./center-tab-strip-source.mjs";
+import { readChatCss } from "./_chat-css.mjs";
 
 const root = new URL("../", import.meta.url);
 const source = (path) => readFileSync(new URL(path, root), "utf8");
@@ -17,7 +18,7 @@ const conversations = source("lib/runtime-bridge/conversations.ts");
 const chatHandlers = source("lib/runtime-bridge/chat-handlers.ts");
 const sessionStore = source("lib/session-store/index.ts");
 const assistantBubble = source("components/chat/messages/assistant-bubble.tsx");
-const chatCss = source("app/styles/chat.css");
+const chatCss = readChatCss(root);
 
 assert.match(welcome, /src=["{]?["']\/icon\.svg["']/);
 assert.doesNotMatch(welcome, /styles\.(?:l1|l2|m|caret)\b/);

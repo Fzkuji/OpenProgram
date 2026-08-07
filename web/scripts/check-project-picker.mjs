@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+
+import { readChatCss } from "./_chat-css.mjs";
 import { readFileSync } from "node:fs";
 
 const root = new URL("../", import.meta.url);
@@ -8,7 +10,7 @@ const projectMenu = source("components/chat/top-bar/project-menu.tsx");
 const projectsPage = source("components/projects/projects-page.tsx");
 const projectsCss = source("components/projects/projects-page.module.css");
 const sessionsList = source("components/sidebar/sessions-list.tsx");
-const chatCss = source("app/styles/chat.css");
+const chatCss = readChatCss(root);
 
 assert.doesNotMatch(projectMenu, /project-caret/);
 assert.doesNotMatch(chatCss, /project-caret/);
