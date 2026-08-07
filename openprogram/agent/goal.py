@@ -175,10 +175,12 @@ def refine_goal_spec(session_id: str) -> None:
     store it as ``goal["spec"]``. Blocking; ``_start_spec_refinement``
     runs it on a background thread so setting a goal never waits.
 
-    Fail-open: any failure (spawn error, unparseable reply) leaves the
-    goal without a spec — judging falls back to the raw text. The goal
-    is re-read after the refinement turn so a racing ``/goal clear``
-    or a replacement goal is never overwritten."""
+    Fail-open but never silent: any failure (spawn error, unparseable
+    reply) leaves the goal without a spec — judging falls back to the
+    raw text — and a system row tells the user the judge is working
+    from the one-liner only. The goal is re-read after the refinement
+    turn so a racing ``/goal clear`` or a replacement goal is never
+    overwritten."""
     goal = load_goal(session_id)
     if not goal or goal.get("status") != "active" or goal.get("spec"):
         return
@@ -189,6 +191,9 @@ def refine_goal_spec(session_id: str) -> None:
     except Exception:
         _log.warning("goal spec refinement failed (fail-open) for session %s",
                      session_id, exc_info=True)
+        _emit_goal_notice(session_id, (
+            "[goal] 目标完善失败——判定将只按你的原始一句话核对，"
+            "没有展开的验收清单。想要更严的判定可 /goal clear 后重设。"))
         return
     goal = load_goal(session_id)
     if (not goal or goal.get("status") not in ("active", "waiting_user")
@@ -215,11 +220,18 @@ def _emit_goal_spec_notice(session_id: str, spec: str) -> None:
     ``local_command`` surface the /goal command replies use), so the
     user sees what the system understood the goal to be — ``/goal
     clear`` and a fresh ``/goal`` re-set if it misread the intent."""
+    _emit_goal_notice(session_id, (
+        f"[goal] 目标已完善为规格（判定按此逐条核对；"
+        f"不满意可 /goal clear 重设）：\n{spec}"))
+
+
+def _emit_goal_notice(session_id: str, content: str) -> None:
+    """One system row in the transcript (``local_command`` envelope,
+    webui broadcast; best-effort — absent server is a no-op)."""
     payload = {
         "type": "local_command",
         "session_id": session_id,
-        "content": (f"[goal] 目标已完善为规格（判定按此逐条核对；"
-                    f"不满意可 /goal clear 重设）：\n{spec}"),
+        "content": content,
     }
     try:
         from openprogram.webui import server as _s
