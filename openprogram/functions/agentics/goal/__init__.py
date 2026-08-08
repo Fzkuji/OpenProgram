@@ -312,8 +312,10 @@ def refine(goal_text: str, session_id: str = "", *,
 @agentic_function(input={
     "goal": {"description": "Goal condition to decide on",
              "multiline": True},
-    "session_id": {"description": "Session whose context is judged "
-                                  "(empty = current session)"},
+    # Hidden like the other plumbing args: the loop passes the session it
+    # is judging, and a manual panel run reads the session it runs in —
+    # there is nothing here for a human to type.
+    "session_id": {"hidden": True},
     "attended": {"description": "Whether a human is watching and can "
                                 "answer questions"},
     "checklist": {"hidden": True},
