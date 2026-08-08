@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>fn-form compact — 设计示例</title>
+<style>
+  /* 取自 web/app/styles/base.css 的暗色主题 token（写死成值，mock 自包含）。 */
+  :root {
+    --bg-primary: #262624;
+    --bg-tertiary: #30302e;
+    --bg-hover: rgba(255, 255, 255, 0.06);
+    --border: rgba(255, 255, 255, 0.06);
+    --text-primary: #b8b5ad;
+    --text-secondary: #94928b;
+    --text-bright: #f0efea;
+    --text-muted: #757370;
+    --accent-orange: #d97757;
+    --fs-base: 14px;
+    --font-mono: 'JetBrains Mono', Menlo, Monaco, Consolas, ui-monospace, monospace;
+    --font-sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+  }
+  html, body { margin: 0; background: var(--bg-primary); color: var(--text-primary); font-family: var(--font-sans); }
+  .page { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+  h1 { font-size: 18px; color: var(--text-bright); font-weight: 600; }
+  h2 { font-size: 14px; color: var(--text-secondary); font-weight: 600; margin: 40px 0 12px; }
+  p.note { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin: 6px 0 18px; }
+
+  /* ---- composer 三段：env chips / wrapper / controls row ---- */
+  .env { display: flex; gap: 6px; margin-bottom: 10px; }
+  .env .chip {
+    display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px;
+    border: 1px solid var(--border); border-radius: 8px; font-size: 13px; color: var(--text-primary);
+    background: transparent;
+  }
+  .wrap {
+    background: var(--bg-tertiary); border-radius: 10px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.07);
+    overflow: hidden; position: relative;
+  }
+  .controls {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 10px; min-height: 20px; font-size: 12px; color: rgba(240,239,234,0.8);
+  }
+  .controls .left, .controls .right { display: inline-flex; align-items: center; gap: 12px; }
+  .controls .ring { width: 12px; height: 12px; border: 1.5px solid rgba(255,255,255,0.18); border-radius: 50%; }
+
+  /* ---- 表单头部 ---- */
+  .hdr {
+    display: flex; align-items: center; box-sizing: border-box;
+    border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden;
+  }
+  .hdr .kw { font-family: var(--font-mono); color: var(--text-secondary); font-size: var(--fs-base); }
+  .hdr .fn { font-family: var(--font-mono); color: var(--accent-orange); font-weight: 600; font-size: var(--fs-base); }
+  .hdr .desc { color: var(--text-muted); font-size: var(--fs-base); overflow: hidden;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent 100%);
+            mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent 100%); }
+
+  /* 现状：64px 头 + 32px 圆形关闭 */
+  .old .hdr { min-height: 64px; padding: 16px 56px 15px 24px; }
+  .old .close {
+    position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; border-radius: 50%;
+    background: rgba(148,146,139,0.14); color: var(--text-secondary);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  /* 提案：48px 头 + 头部右侧 [↑][×] 两颗 24px 方 */
+  .new .hdr { min-height: 48px; padding: 12px 92px 11px 12px; }
+  .new .hdrBtns { position: absolute; top: 12px; right: 12px; display: inline-flex; gap: 8px; }
+  .btn24 {
+    width: 24px; height: 24px; border-radius: 6px; border: none;
+    display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
+  }
+  .btnRun { background: var(--accent-orange); color: #fff; }
+  .btnQuiet { background: rgba(148,146,139,0.14); color: var(--text-secondary); }
+
+  /* ---- 表单主体 ---- */
+  .bodyRows { display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; }
+  .old .bodyRows { padding: 14px 24px 48px; }
+  .new .bodyRows { padding: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .pillBtn {
+    display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px;
+    background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px;
+    font-size: var(--fs-base); color: var(--text-primary); white-space: nowrap;
+  }
+  .input {
+    flex: 1; height: 32px; padding: 0 12px; box-sizing: border-box;
+    background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px;
+    font-family: var(--font-mono); font-size: var(--fs-base); color: var(--text-bright);
+    display: flex; align-items: center; overflow: hidden; white-space: nowrap;
+  }
+  .label { font-size: var(--fs-base); color: var(--text-secondary); white-space: nowrap; overflow: hidden;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent 100%);
+            mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent 100%); }
+  .label b { font-family: var(--font-mono); color: var(--text-primary); font-weight: 600; }
+  .label i { color: var(--text-secondary); }
+  .area {
+    min-height: 48px; padding: 8px 12px; background: var(--bg-primary);
+    border: 1px solid var(--border); border-radius: 8px;
+    font-size: var(--fs-base); color: var(--text-muted); line-height: 1.5;
+  }
+  .old .runFloat { position: absolute; right: 12px; bottom: 12px; }
+
+  /* ---- question 模式（提案）---- */
+  .badge { font-family: var(--font-mono); color: var(--accent-orange); font-weight: 600; font-size: var(--fs-base); }
+  .dots { color: var(--text-muted); font-size: 12px; margin-left: 10px; }
+  .chatAbout {
+    position: absolute; top: 10px; right: 12px; height: 28px; padding: 0 12px; border-radius: 6px;
+    background: rgba(148,146,139,0.12); color: var(--text-secondary); font-size: var(--fs-base);
+    display: inline-flex; align-items: center;
+  }
+  .opts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .opt { height: 28px; padding: 0 12px; border-radius: 6px; display: inline-flex; align-items: center;
+    background: rgba(148,146,139,0.10); color: var(--text-secondary); font-size: var(--fs-base); }
+  .opt.on { background: rgba(90,140,255,0.18); color: #7da2f5; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .navPill { height: 28px; padding: 0 12px; border-radius: 6px; display: inline-flex; align-items: center;
+    background: rgba(148,146,139,0.12); color: var(--text-secondary); font-size: var(--fs-base); }
+  .navPill.primary { background: rgba(217,119,87,0.16); color: var(--accent-orange); font-weight: 600; }
+
+  .caption { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+  .delta { color: var(--accent-orange); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>fn-form 紧凑化 — 设计示例</h1>
+  <p class="note">
+    旧内部底栏删除后，头部 64px（原为镜像底栏高度）和底部 48px 空带（原为托住下滑按钮）都失去了存在理由。
+    提案：运行按钮搬进头部贴在 × 左边（聊天态发送键本来就在输入行右侧，展开后头部就是那一行的延续，按钮几乎不动）；
+    头部 48px；主体在最后一个字段后 14px 收尾。
+  </p>
+
+  <h2>现状 — 底行只有一个悬空按钮</h2>
+  <div class="env"><span class="chip">🖥 Local</span><span class="chip">📁 fzkuji</span></div>
+  <div class="wrap old">
+    <div class="hdr"><span class="kw">function&nbsp;</span><span class="fn">wiki_agent</span><span class="desc">&nbsp;– Maintain a wiki vault — route to ingest, enrich, browse, lint, or search depending on the task</span></div>
+    <span class="close">✕</span>
+    <div class="bodyRows">
+      <div class="row"><span class="pillBtn">📂 Working in a folder</span><span class="input">/Users/fzkuji/Documents/LLM Agent Harness/OpenProgram</span></div>
+      <div class="label"><b>task</b> <i>(str)</i> – Natural-language description of what to do with the wiki. Examples: 'ingest these notes about transformers'</div>
+      <div class="area">e.g. Ingest the conversation above into the wiki.</div>
+    </div>
+    <span class="btn24 btnRun runFloat">↑</span>
+  </div>
+  <div class="controls">
+    <div class="left"><span>Ask permissions</span><span>🎚</span><span style="color:var(--accent-orange)">🔧</span></div>
+    <div class="right"><span>💬 GPT-5.6-Luna</span><span>&gt;_ GPT-5.6-Luna</span><span>Medium</span><span class="ring"></span></div>
+  </div>
+  <p class="caption">头部 64px；最后一个字段下面 48px 空带，只有一颗 24px 按钮悬在右下角。</p>
+
+  <h2>提案 — 运行键进头部，主体收紧 <span class="delta">（整体矮约 50px）</span></h2>
+  <div class="env"><span class="chip">🖥 Local</span><span class="chip">📁 fzkuji</span></div>
+  <div class="wrap new">
+    <div class="hdr"><span class="kw">function&nbsp;</span><span class="fn">wiki_agent</span><span class="desc">&nbsp;– Maintain a wiki vault — route to ingest, enrich, browse, lint, or search depending on the task</span></div>
+    <span class="hdrBtns"><span class="btn24 btnRun">↑</span><span class="btn24 btnQuiet">✕</span></span>
+    <div class="bodyRows">
+      <div class="row"><span class="pillBtn">📂 Working in a folder</span><span class="input">/Users/fzkuji/Documents/LLM Agent Harness/OpenProgram</span></div>
+      <div class="label"><b>task</b> <i>(str)</i> – Natural-language description of what to do with the wiki. Examples: 'ingest these notes about transformers'</div>
+      <div class="area">e.g. Ingest the conversation above into the wiki.</div>
+    </div>
+  </div>
+  <div class="controls">
+    <div class="left"><span>Ask permissions</span><span>🎚</span><span style="color:var(--accent-orange)">🔧</span></div>
+    <div class="right"><span>💬 GPT-5.6-Luna</span><span>&gt;_ GPT-5.6-Luna</span><span>Medium</span><span class="ring"></span></div>
+  </div>
+  <p class="caption">头部 48px，右侧 [↑][×] 同为 24px 方（× 从 32px 圆缩小归入同一家族）；主体在最后字段后 14px 收尾，无空带。</p>
+
+  <h2>提案 — question 模式：导航按钮改为 body 内正常排版</h2>
+  <div class="env"><span class="chip">🖥 Local</span><span class="chip">📁 fzkuji</span></div>
+  <div class="wrap new">
+    <div class="hdr"><span class="badge">需要你的输入</span><span class="dots">● ○ ○&nbsp;&nbsp;1/3</span></div>
+    <span class="chatAbout">Chat about this</span>
+    <div class="bodyRows">
+      <div class="label" style="color:var(--text-primary)">选哪个方案继续？</div>
+      <div class="opts"><span class="opt on">方案 A</span><span class="opt">方案 B</span><span class="opt">自定义…</span></div>
+      <div class="actions"><span class="navPill">‹ 上一题</span><span class="navPill primary">下一题 ›</span></div>
+    </div>
+  </div>
+  <div class="controls">
+    <div class="left"><span>Ask permissions</span><span>🎚</span><span style="color:var(--accent-orange)">🔧</span></div>
+    <div class="right"><span>💬 GPT-5.6-Luna</span><span>&gt;_ GPT-5.6-Luna</span><span>Medium</span><span class="ring"></span></div>
+  </div>
+  <p class="caption">「上一题 / 下一题」是 body 的最后一行、右对齐（question-mode 现成的 .actions 排法），不再绝对定位，也没有 56px 预留带。「Chat about this」留在头部右侧。</p>
+</div>
+</body>
+</html>

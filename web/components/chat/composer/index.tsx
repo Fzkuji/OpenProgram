@@ -38,7 +38,6 @@ import { ProjectBadge, WorkingDirChips } from "../top-bar";
 import { GoalChip, useSessionGoal } from "../goal-chip";
 import { CircleHelp, Target } from "lucide-react";
 import { visibleParams } from "./modes/fn-form/fn-form";
-import { type DecisionAction } from "./modes/question/question-mode";
 import { resolveComposerMode } from "./modes/resolve-mode";
 import { SendIcon, StopIcon } from "./icons";
 import { type AnimatedNavIconHandle } from "@/components/animated-icons";
@@ -343,12 +342,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const setFnFormClosingLocal = fnForm.setClosing;
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const sendBtnRef = useRef<HTMLButtonElement>(null);
-  // question / approval / form / ask_many 各 mode 把右下角该渲染的按钮组
-  // （统一文字 pill：单题 [发送]，ask_many [上一题, 下一题/发送]）报给这个
-  // state，由 composer 在发送按钮位呈现，取代圆形箭头。state（非 ref）才能
-  // 让按钮的 disabled / 文案随选择 + 翻页实时更新。
-  const [decisionAction, setDecisionAction] = useState<DecisionAction | null>(null);
   // Drives the animated send arrow from the whole button's hover.
   const sendIconRef = useRef<AnimatedNavIconHandle>(null);
   // `thinkingTriggerRef`: the effort pill expands inline (no portal).
@@ -383,21 +376,11 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       setFnFormClosingLocal(false);
     }, [closeFnFormStore, setFnFormClosingLocal]),
     wrapperRef,
-    sendBtnRef,
     // A system decision uses the same morphed container — drive the same
     // wrapper-grow + button-glide-to-bottom for it. Its id keys the
     // open-transition so each new decision re-pins the button.
     decisionKey: activeDecision?.id ?? null,
   });
-
-  // Chat-mode resting spot for the action button is CSS top:10px (the
-  // 24px button centers in the 44px single-line box). use-fn-form-wrapper resets
-  // the inline top to the legacy 16px whenever a morphed state ends —
-  // clear it here (this effect runs after the hook's, they share the
-  // morphed trigger) so the stylesheet value wins again in chat mode.
-  useEffect(() => {
-    if (!morphed && sendBtnRef.current) sendBtnRef.current.style.top = "";
-  }, [morphed]);
 
   // Publish the composer's REAL height as a root CSS var so the
   // transcript's bottom padding can reserve it. The main shell's
@@ -852,7 +835,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           wrapperRef.current = el;
           composerRootRef.current = el;
         }}
-        className={styles.inputWrapper}
+        className={`${styles.inputWrapper} ${morphed ? styles.morphed : ""}`}
       >
         {/* 提问面板 —— wrapper 顶部向上生长的附加区（goal 挂起 / 真 ask）。
             下面的 textarea / 底栏 / 圆形发送按钮全部原样。 */}
@@ -879,7 +862,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           composerMode={composerMode}
           activeDecision={activeDecision}
           dequeueDecision={dequeueDecision}
-          setDecisionAction={setDecisionAction}
           fnFormFunction={fnFormFunction}
           fnForm={fnForm}
           handleFnFormClose={handleFnFormClose}
@@ -902,36 +884,16 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           removePaste={removePaste}
         />
 
-        {/* Single send/stop button anchored at the wrapper level.
-            `top` is mutated via inline style by the wrapper-height
-            useLayoutEffect so the button glides between its chat-mode
-            position and the morphed-mode bottom-right corner over the
-            same 0.3s curve as the wrapper itself — one continuous
-            motion instead of a row-to-row teleport.
-            统一：任何 decision（单选/多选/确认/批准/表单/ask_many）在场时，
-            这个位置都换成该 mode 报来的 navButtons 文字按钮组——单题是一颗
-            「发送」，ask_many 是「上一题 / 下一题（末题→发送）」。绝不出现
-            圆形箭头或红色停止 ■。圆形按钮只在普通聊天 / fn-form 时出现。 */}
-        {activeDecision ? (
-          <div ref={sendBtnRef as unknown as React.RefObject<HTMLDivElement>} className={styles.decisionNav}>
-            {(decisionAction?.navButtons ?? []).map((b, i) => (
-              <button
-                key={i}
-                type="button"
-                className={`${styles.decisionNavBtn} ${b.primary ? styles.decisionNavBtnPrimary : ""}`}
-                onClick={b.onClick}
-                disabled={b.disabled}
-              >
-                {b.label}
-              </button>
-            ))}
-          </div>
-        ) : (
-          /* decision 在场时（即便函数正“运行”——它其实在等用户答题），这个
-             按钮必须是“提交”语义，绝不能显示成红色停止 ■：用户此刻要的是
-             交答案，不是中断函数。所以 showStop 把 decision 排除在外。 */
+        {/* Single send/stop button anchored at the wrapper level — the
+            same 24px square in every mode. Chat mode: right edge of the
+            single-line input row. fn-form: the header right, beside the
+            close ✕ (`.morphed .actionBtn`). Decisions render nothing
+            here — QuestionMode lays its own nav buttons out as the last
+            row of its body.
+            decision 在场时（即便函数正“运行”——它其实在等用户答题）绝不能
+            显示成红色停止 ■：用户此刻要的是交答案，不是中断函数。 */}
+        {!activeDecision && (
           <button
-            ref={sendBtnRef}
             className={`${styles.actionBtn} ${showStop ? styles.stopBtn : styles.sendBtn}`}
             onClick={showStop ? stop : onSendButtonClick}
             disabled={!showStop && sendDisabled}

@@ -16,30 +16,22 @@
    one continuous reveal. Close fades both out together over 0.12s
    before the wrapper begins its height transition.
 
-   Header height stays at `--composer-bottom-row-h` (64px):
+   Header height is 48px:
        1 (border-bottom)
-       + 15 (padding-bottom = pad − 1)
-       + 32 (button-size)
-       + 16 (padding-top = pad)
-   which vertically centres the 32px close button pinned at top:16. */
+       + 11 (padding-bottom)
+       + 24 (button size)
+       + 12 (padding-top)
+   which vertically centres the 24px run/close buttons pinned at
+   top:12 (see .actionBtn / .closeBtn in composer.module.css). */
 .header {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* Right padding reserves space for the wrapper-level close button
-     (16 offset + 32 size + 8 breathing room = 56), mirroring how
-     `.inputTopRow` reserves space for the action button. */
-  padding: var(--composer-bottom-row-pad)
-    calc(var(--composer-bottom-row-pad) + var(--composer-button-size) + 8px)
-    calc(var(--composer-bottom-row-pad) - 1px)
-    24px;
-  /* Lock the header height to `--composer-bottom-row-h` (= 64), so it
-     matches the bottom row and centres the absolute-positioned close
-     button (top: 16, size: 32 → centre 32 = header centre when h=64).
-     Otherwise, with the close button hoisted out, the header would
-     shrink to whatever the title text needs. */
-  min-height: var(--composer-bottom-row-h);
+  /* Right padding reserves space for the wrapper-level [↑][×] pair
+     (12 inset + 24 + 8 gap + 24 + 8 breathing = 76). */
+  padding: 12px 76px 11px 12px;
+  min-height: 48px;
   border-bottom: 1px solid var(--border);
   box-sizing: border-box;
   flex-shrink: 0;
@@ -114,10 +106,7 @@
    switches. */
 
 .body {
-  /* Bottom padding reserves the corner where the wrapper-level run
-     button glides to (12px inset + 24px button + 12px breathing
-     room) — the last field never sits under it. */
-  padding: 14px 24px 48px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -253,14 +242,14 @@
   align-items: center;
   gap: 8px;
 }
-/* Solid pill — no border. Idle state uses a low-opacity tint, hover
-   bumps it a notch, active flips to the accent-blue tint that the
-   send button uses. Same visual family as `.toolChip`. */
+/* Solid rounded-rect — no border, no pill (round buttons are out of
+   the design language). Idle state uses a low-opacity tint, hover
+   bumps it a notch, active flips to the accent-blue tint. */
 .toggleBtn {
-  padding: 0 14px;
-  height: 30px;
-  line-height: 30px;
-  border-radius: 999px;
+  padding: 0 12px;
+  height: 28px;
+  line-height: 28px;
+  border-radius: 6px;
   border: none;
   background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
   color: var(--text-secondary);
@@ -290,10 +279,10 @@
   gap: 6px;
 }
 .chip {
-  padding: 0 14px;
-  height: 30px;
-  line-height: 30px;
-  border-radius: 999px;
+  padding: 0 12px;
+  height: 28px;
+  line-height: 28px;
+  border-radius: 6px;
   border: none;
   background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
   color: var(--text-secondary);
@@ -322,9 +311,9 @@
    `bg-primary` background + a 1px `text-secondary` border. */
 .chipCustom {
   padding: 0 12px;
-  height: 30px;
-  line-height: 30px;
-  border-radius: 999px;
+  height: 28px;
+  line-height: 28px;
+  border-radius: 6px;
   border: 1px solid transparent;
   background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
   color: var(--text-primary);

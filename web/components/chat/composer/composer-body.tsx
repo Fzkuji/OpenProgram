@@ -13,7 +13,7 @@
 import React from "react";
 
 import { FunctionForm } from "./modes/fn-form/fn-form";
-import { QuestionMode, type DecisionAction } from "./modes/question/question-mode";
+import { QuestionMode } from "./modes/question/question-mode";
 import { ChatInputRow } from "./chat-input-row";
 import type { useFnFormState } from "./modes/fn-form/use-fn-form-state";
 import type { useFileMention } from "./attach/use-file-mention";
@@ -31,7 +31,6 @@ export interface ComposerBodyProps {
   composerMode: string;
   activeDecision: Decision | null;
   dequeueDecision(id: string): void;
-  setDecisionAction(action: DecisionAction | null): void;
   fnFormFunction: FnFormFn | null;
   fnForm: ReturnType<typeof useFnFormState>;
   handleFnFormClose(): void;
@@ -56,7 +55,6 @@ export function ComposerBody({
   composerMode,
   activeDecision,
   dequeueDecision,
-  setDecisionAction,
   fnFormFunction,
   fnForm,
   handleFnFormClose,
@@ -84,7 +82,6 @@ export function ComposerBody({
             key={activeDecision.id}
             decision={activeDecision}
             onResolve={dequeueDecision}
-            onAction={setDecisionAction}
           />
         ) : composerMode === "fn-form" && fnFormFunction ? (
           <FunctionForm

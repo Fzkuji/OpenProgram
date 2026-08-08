@@ -16,11 +16,11 @@
  *     gets captured into `outgoingFn` so it renders as an absolutely
  *     positioned overlay above the new form while both fade together.
  *
- * The hook owns the wrapper inline `height` + the send button's
- * inline `top` (driven so the button glides between chat-mode top
- * and fn-form bottom). It returns the public bits the composer
- * needs to render — `outgoingFn`, the wrapper / send button refs are
- * still owned by the composer (it passes them in).
+ * The hook owns the wrapper inline `height`. (The send/run button no
+ * longer glides — it lives in the form header at a fixed spot, so the
+ * only animated property is the wrapper height itself.) It returns
+ * the public bits the composer needs to render — `outgoingFn`; the
+ * wrapper ref is still owned by the composer (it passes it in).
  */
 
 import {
@@ -33,12 +33,6 @@ import {
 
 import type { AgenticFunction } from "@/lib/session-store";
 
-// Pixels: bottom inset of the action button / decision-nav group in
-// morphed mode. The steady state pins the element's BOTTOM edge this
-// far above the wrapper's bottom edge (top = height − inset − own
-// height, measured at glide time so the 24px send square and the 32px
-// nav pills both land on the same inset).
-const ACTION_BTN_BOTTOM_INSET = 12;
 // Crossfade slack: keep the outgoing layer mounted slightly longer
 // than the composer's fade animation so the unmount happens after
 // the visual transition has fully completed.
@@ -49,12 +43,11 @@ interface UseFnFormWrapperArgs {
   fnFormClosing: boolean;
   onCloseComplete: () => void;
   wrapperRef: RefObject<HTMLDivElement>;
-  sendBtnRef: RefObject<HTMLElement>;
   /** A system decision (question/approval/form) occupies the input. It
    *  uses the same header/body two-段 structure as fn-form, so the
-   *  wrapper-grow + button-glide-to-bottom must run for it too. Identity
-   *  changes (one decision → next) re-run the open transition so the
-   *  button re-pins to the new content height. */
+   *  wrapper-grow transition must run for it too. Identity changes
+   *  (one decision → next) re-run the open transition so the wrapper
+   *  re-measures the new content height. */
   decisionKey: string | null;
 }
 
@@ -67,11 +60,10 @@ export function useFnFormWrapper({
   fnFormClosing,
   onCloseComplete,
   wrapperRef,
-  sendBtnRef,
   decisionKey,
 }: UseFnFormWrapperArgs): FnFormWrapperHook {
-  // Any morphed state (fn-form OR a system decision) needs the grow +
-  // button-glide. fn-form keeps its closing/outgoing machinery; the
+  // Any morphed state (fn-form OR a system decision) needs the grow
+  // transition. fn-form keeps its closing/outgoing machinery; the
   // decision path only needs open-transition + height cleanup.
   const morphed = fnFormFunction !== null || decisionKey !== null;
   const [outgoingFn, setOutgoingFn] = useState<AgenticFunction | null>(null);
@@ -126,18 +118,18 @@ export function useFnFormWrapper({
     const el = wrapperRef.current;
     if (!el) return;
     if (fnFormClosing) {
-      return runCloseTransition(el, sendBtnRef.current, chatHeightRef.current, () => {
+      return runCloseTransition(el, chatHeightRef.current, () => {
         setTransitioning(false);
         onCloseComplete();
       }, setTransitioning);
     }
-    // fn-form OR a system decision: grow the wrapper to content height and
-    // glide the action button to the bottom-right. decisionKey in deps so
-    // switching one decision → the next re-pins the button to new height.
+    // fn-form OR a system decision: grow the wrapper to content height.
+    // decisionKey in deps so switching one decision → the next re-runs
+    // the open transition against the new content height.
     if (fnFormFunction || decisionKey) {
-      return runOpenTransition(el, sendBtnRef.current, chatHeightRef.current, setTransitioning);
+      return runOpenTransition(el, chatHeightRef.current, setTransitioning);
     }
-  }, [fnFormFunction, decisionKey, fnFormClosing, onCloseComplete, sendBtnRef, wrapperRef]);
+  }, [fnFormFunction, decisionKey, fnFormClosing, onCloseComplete, wrapperRef]);
 
   // After the form unmounts, drop the inline `height` we left behind
   // during the close transition so the wrapper can size itself
@@ -147,11 +139,7 @@ export function useFnFormWrapper({
     const el = wrapperRef.current;
     if (!el || !el.style.height) return;
     el.style.height = "";
-    // Decision dismissed with no fn-form close transition to reset it —
-    // clear the inline glide top so the stylesheet's chat-mode value
-    // takes over again.
-    if (sendBtnRef.current) sendBtnRef.current.style.top = "";
-  }, [morphed, wrapperRef, sendBtnRef]);
+  }, [morphed, wrapperRef]);
 
   return { outgoingFn };
 }
@@ -160,10 +148,9 @@ export function useFnFormWrapper({
 
 /**
  * Close — animate wrapper shrink WITH the form still mounted, so the
- * body / header retreat downward into the bottom row (mirror image of
- * the open animation where they emerge upward out of it). The
- * `.closing` class on header/body fades opacity 1→0 in parallel; the
- * action button glides back to the chat-mode top in lockstep.
+ * body / header retreat downward (mirror image of the open animation
+ * where they emerge upward). The `.closing` class on header/body
+ * fades opacity 1→0 in parallel.
  *
  * On transitionend we unmount the form (via `onComplete`, which the
  * hook wires to `closeFnFormStore() + setClosing(false)`) — only
@@ -173,7 +160,6 @@ export function useFnFormWrapper({
  */
 function runCloseTransition(
   el: HTMLDivElement,
-  btn: HTMLElement | null,
   chatHeight: number,
   onComplete: () => void,
   setTransitioning: (v: boolean) => void,
@@ -183,10 +169,6 @@ function runCloseTransition(
   el.style.height = `${current}px`;
   void el.offsetHeight;
   el.style.height = `${chatHeight}px`;
-  // Chat-mode resting top (see .actionBtn in composer.module.css) —
-  // an explicit pixel value so the glide back animates; the inline
-  // style is cleared once the morphed state fully ends.
-  if (btn) btn.style.top = "11px";
   const onEnd = (ev: TransitionEvent) => {
     if (ev.target !== el || ev.propertyName !== "height") return;
     el.removeEventListener("transitionend", onEnd);
@@ -208,7 +190,6 @@ function runCloseTransition(
  */
 function runOpenTransition(
   el: HTMLDivElement,
-  btn: HTMLElement | null,
   chatHeight: number,
   setTransitioning: (v: boolean) => void,
 ): () => void {
@@ -219,11 +200,6 @@ function runOpenTransition(
   }
   const natural = measureFnFormHeight(el);
   el.style.height = `${natural}px`;
-  // Glide the action button from its current top to the wrapper's new
-  // bottom-right corner. Same CSS curve as the wrapper height.
-  if (btn) {
-    btn.style.top = `${natural - ACTION_BTN_BOTTOM_INSET - btn.offsetHeight}px`;
-  }
   const onEnd = (ev: TransitionEvent) => {
     if (ev.target !== el || ev.propertyName !== "height") return;
     el.removeEventListener("transitionend", onEnd);

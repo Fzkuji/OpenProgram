@@ -18,7 +18,7 @@
  * 设计：docs/design/ui/composer-interaction-modes.md。
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import type { PendingDecision, AskOne, FormFieldSchema } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
@@ -49,23 +49,9 @@ function withColon(s: string): string {
   return /[?？:：。.!！]$/.test(t) ? t : t + "：";
 }
 
-/** 一颗右下角的操作按钮（发送 / 上一题 / 下一题）。 */
-export interface DecisionButton {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  primary?: boolean;
-}
-
-/** 每个 decision 报给 composer 的右下角按钮组（统一文字 pill）。 */
-export interface DecisionAction {
-  navButtons: DecisionButton[];
-}
-
 interface QuestionModeProps {
   decision: PendingDecision;
   onResolve: (id: string) => void;
-  onAction: (a: DecisionAction | null) => void;
 }
 
 /** 一步（一道题）的统一形状。kind 决定 body 怎么渲染、答案怎么收集。 */
@@ -133,7 +119,7 @@ function stepAnswered(step: Step, a: Answer): boolean {
   return true; // form 字段都有默认/可空，恒算已答
 }
 
-export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeProps) {
+export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
   const { text } = useTranslation();
   const steps = toSteps(q);
   const [idx, setIdx] = useState(0);
@@ -201,26 +187,25 @@ export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeP
     onResolve(q.id);
   }
 
-  // 底部统一按钮组：单步 → [发送]；多步 → [‹上一题, 下一题›/发送]。
-  useEffect(() => {
+  // 底部按钮组：单步 → [发送]；多步 → [‹上一题, 下一题›/发送]。就是 body
+  // 的最后一行、右对齐——普通表单排法，不再上报 composer 做绝对定位。
+  const navButtons = (() => {
     const prev = {
       label: text("‹ Previous", "‹ 上一题"),
       onClick: () => setIdx((i) => Math.max(0, i - 1)),
       disabled: atFirst,
+      primary: false,
     };
     const nextOrSend = atLast
       ? { label: text("Send", "发送"), onClick: submit, disabled: !allAnswered, primary: true }
       : {
           label: text("Next ›", "下一题 ›"),
           onClick: () => setIdx((i) => Math.min(steps.length - 1, i + 1)),
+          disabled: false,
           primary: true,
         };
-    onAction({ navButtons: steps.length > 1 ? [prev, nextOrSend] : [nextOrSend] });
-    return () => onAction(null);
-    // ``answers`` matters: submit() closes over it, so without this dep
-    // an edit made after allAnswered flipped would send a stale snapshot.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, atFirst, atLast, allAnswered, q.id, answers, text]);
+    return steps.length > 1 ? [prev, nextOrSend] : [nextOrSend];
+  })();
 
   // Enter submits (last step) or advances (earlier steps), so the
   // autofocused free-text input has a keyboard path at all — previously
@@ -273,6 +258,19 @@ export function QuestionMode({ decision: q, onResolve, onAction }: QuestionModeP
       </div>
       <div className={styles.body} data-fn-form-body onKeyDown={onKey}>
         <StepBody step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
+        <div className={styles.actions}>
+          {navButtons.map((b, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`${styles.navBtn} ${b.primary ? styles.navBtnPrimary : ""}`}
+              onClick={b.onClick}
+              disabled={b.disabled}
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
       </div>
     </>
   );

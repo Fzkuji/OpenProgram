@@ -31,7 +31,7 @@ so more modes can follow them:
   `openFnForm(fn)` / `closeFnForm()`. Non-empty = currently in fn-form shape.
 * **Field state in a hook**: `use-fn-form-state.ts` (values / workdir / error / closing),
   reseeds defaults when fn changes.
-* **Visuals in module.css**: `inputWrapper` gets `fnFormMode` to change shape; `outgoingLayer`
+* **Visuals in module.css**: `inputWrapper` gets `morphed` to change shape; `outgoingLayer`
   does the cross-fade animation when switching fn→fn.
 * **Send button behavior switches with it**: `onSendButtonClick = fnFormActive ? submitFnForm : submit`,
   with disabled / title also changing with the current shape.
@@ -55,6 +55,26 @@ At any moment the composer is in **one** mode:
 
 Only one mode occupies the input area at a time (mutually exclusive). Mode switching goes through the container's state machine; entering/exiting
 both have in-place transformation animations (reusing `outgoingLayer` cross-fade).
+
+### Layout in a morphed mode
+
+The composer keeps the three-band arrangement in every mode: env chips above,
+the wrapper box, and one detached controls row (permission / models / effort /
+context ring) below. Morphing only grows the wrapper upward — the controls row
+never moves or restyles. Inside the wrapper a morphed mode is a 48px header plus
+a body with 12px padding on every side:
+
+* **fn-form**: the run button (the same 24px square as the chat send button) and
+  the 24px close button sit side by side at the header's right edge; the body
+  ends right after the last field.
+* **question / approval**: the header holds the badge + progress dots with the
+  "Chat about this" button at its right edge; the nav buttons (‹ Previous /
+  Next › / Send) are the body's **last row**, right-aligned in normal flow — no
+  absolute positioning, no reserved bottom band.
+
+Buttons are rounded rectangles (6px radius) throughout — no pill or circle
+shapes. A static size-accurate mock of this layout lives in
+[fn-form-compact-mock.html](fn-form-compact-mock.html).
 
 ### The unified interface of a mode
 

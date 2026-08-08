@@ -40,7 +40,7 @@ mode 容器，由它选一种变换来呈现。一个后端 registry（QuestionR
   `openFnForm(fn)` / `closeFnForm()`。非空 = 当前处于 fn-form 形态。
 * **字段态在 hook**：`use-fn-form-state.ts`（values / workdir / error / closing），
   fn 变了就重新播种默认值。
-* **视觉在 module.css**：`inputWrapper` 加 `fnFormMode` 切形；`outgoingLayer`
+* **视觉在 module.css**：`inputWrapper` 加 `morphed` 切形；`outgoingLayer`
   做 fn→fn 切换时的交叉淡出动画。
 * **Send 按钮行为跟着切**：`onSendButtonClick = fnFormActive ? submitFnForm : submit`，
   disabled / title 也随当前形态变。
@@ -65,6 +65,22 @@ composer 任一时刻处于**一种** mode：
 
 同一时刻只有一种 mode 占据输入区（互斥）。mode 切换走容器的状态机，进入/退出
 都有就地变形动画（沿用 `outgoingLayer` 交叉淡出）。
+
+### 变形态的布局
+
+composer 在任何模式下都保持三段式：上方 env chips、中间 wrapper 盒子、下方一条
+外挂控件行（权限 / 模型 / effort / context ring）。变形只是让 wrapper 向上长高，
+控件行永远不动也不换样式。wrapper 内部的变形态 = 48px 头部 + 四周 12px 内边距的
+body：
+
+* **fn-form**：运行按钮（与聊天发送键同一颗 24px 方）和 24px 关闭键并排钉在头部
+  右缘；body 在最后一个字段后直接收尾。
+* **question / approval**：头部放标签 + 进度点，「Chat about this」在头部右缘；
+  「‹ 上一题 / 下一题 › / 发送」是 body 的**最后一行**、右对齐正常排版——不做
+  绝对定位，也不预留底部空带。
+
+按钮一律 6px 圆角矩形，不用胶囊或圆形。等比例静态示例见
+[fn-form-compact-mock.html](fn-form-compact-mock.html)。
 
 ### 一种 mode 的统一接口
 
