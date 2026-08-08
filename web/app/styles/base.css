@@ -262,6 +262,41 @@ button, input, select, textarea, optgroup {
 .ui-list-item:hover { background: var(--bg-hover); }
 .ui-list-item.active { background: var(--bg-hover); }
 
+/* 侧边栏会话标题的右缘渐隐。渐变本身在两组值之间不可插值——直接
+   transition mask-image 会瞬变——所以把两个停靠点抽成注册过的百分比
+   属性，只对它们做过渡，渐变每帧按当前值重算。
+   静止：最后 8px 淡出（截断处不硬切），用 calc 把 8px 折成百分比，
+   与悬停态同一套单位才能插值。悬停：70% → 92%，给右缘的 ⋮ 按钮腾出
+   可读的底。 */
+@property --fade-a {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+@property --fade-b {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+.title-fade {
+  /* 静止：96.5% 起淡，到 100% 全透——在 227px 宽的行上约合最后 8px。
+     用百分比而非 8px，是为了和悬停态同一套单位，两端才能插值。 */
+  --fade-a: 96.5%;
+  --fade-b: 100%;
+  transition: --fade-a 200ms ease-out, --fade-b 200ms ease-out;
+  -webkit-mask-image: linear-gradient(to right, #000 var(--fade-a), transparent var(--fade-b));
+  mask-image: linear-gradient(to right, #000 var(--fade-a), transparent var(--fade-b));
+}
+.group:hover .title-fade { --fade-a: 70%; --fade-b: 92%; }
+/* 滚动中：右缘保持悬停时的停靠点（按钮还在），左缘再加一段承接滚出去
+   的文字。 */
+.title-fade-scrolling {
+  --fade-a: 70%;
+  --fade-b: 92%;
+  -webkit-mask-image: linear-gradient(to right, transparent 1%, #000 10%, #000 var(--fade-a), transparent var(--fade-b));
+  mask-image: linear-gradient(to right, transparent 1%, #000 10%, #000 var(--fade-a), transparent var(--fade-b));
+}
+
 /* ===== Shared Claude-style primitives ===== */
 /* Warm coral-tinted text selection, readable in both themes. */
 ::selection { background: var(--selection-bg); }
