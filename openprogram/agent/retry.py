@@ -39,6 +39,13 @@ def is_retryable_error(msg: Any, context_window: int = 0) -> bool:
     compaction instead. Transient errors (rate limits, 5xx, connection
     issues) match the retry pattern.
 
+    The provider layer's structured verdict (``error_retryable``, set from
+    the error taxonomy in providers/utils/errors.py) takes precedence over
+    text matching: a definitive auth/billing failure (401 → False) must not
+    burn backoff retries, and a classified 429/5xx retries even when its
+    text evades the regex. The regex is the fallback for errors that reached
+    us without a taxonomy verdict.
+
     A ``stop_reason="error"`` with an *empty* ``error_message`` is also
     treated as retryable: a content-free error almost always means the
     provider stream dropped (connection reset, SSL EOF, gateway hiccup)
@@ -50,6 +57,9 @@ def is_retryable_error(msg: Any, context_window: int = 0) -> bool:
         return False
     if context_window and is_context_overflow(msg, context_window):
         return False
+    verdict = getattr(msg, "error_retryable", None)
+    if verdict is not None:
+        return bool(verdict)
     err = getattr(msg, "error_message", "") or ""
     if not err.strip():
         return True
