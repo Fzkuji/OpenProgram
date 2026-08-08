@@ -757,9 +757,9 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
 
   // Controls cluster — permission / plus menu / tool chips on the
   // left; model texts + effort pill + context ring on the right.
-  // Rendered in exactly ONE of two containers per mode: the detached
-  // .controlsRow below the wrapper (chat mode) or the legacy internal
-  // .inputBottomRow (fn-form / question / approval).
+  // Always rendered in the detached .controlsRow below the wrapper, in
+  // every mode — opening a fn-form / question only grows the wrapper
+  // above it, the controls row itself never moves or restyles.
   const controlsCluster = (
     <ControlsCluster
       bound={bound}
@@ -852,7 +852,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           wrapperRef.current = el;
           composerRootRef.current = el;
         }}
-        className={`${styles.inputWrapper} ${morphed ? styles.fnFormMode : ""}`}
+        className={styles.inputWrapper}
       >
         {/* 提问面板 —— wrapper 顶部向上生长的附加区（goal 挂起 / 真 ask）。
             下面的 textarea / 底栏 / 圆形发送按钮全部原样。 */}
@@ -902,25 +902,12 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           removePaste={removePaste}
         />
 
-        {/* Controls cluster placement: morphed modes keep the legacy
-            internal bottom row — the wrapper height animation and the
-            action-button glide measure against its 64px band. Chat
-            mode renders the same cluster in the detached row below
-            the wrapper instead (after .composerStack), matching the
-            Claude Code three-band layout. */}
-        {morphed && (
-          <div key="bottom-row" className={`${styles.inputBottomRow} composer-bottom-row`}>
-            {controlsCluster}
-          </div>
-        )}
-
         {/* Single send/stop button anchored at the wrapper level.
             `top` is mutated via inline style by the wrapper-height
             useLayoutEffect so the button glides between its chat-mode
-            position (top: 16) and the fn-form position
-            (top: wrapper.height − 48) over the same 0.3s curve as the
-            wrapper itself — one continuous motion instead of a row-to
-            -row teleport.
+            position and the morphed-mode bottom-right corner over the
+            same 0.3s curve as the wrapper itself — one continuous
+            motion instead of a row-to-row teleport.
             统一：任何 decision（单选/多选/确认/批准/表单/ask_many）在场时，
             这个位置都换成该 mode 报来的 navButtons 文字按钮组——单题是一颗
             「发送」，ask_many 是「上一题 / 下一题（末题→发送）」。绝不出现
@@ -999,11 +986,9 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         )}
       </div>
       </div>{/* /.composerStack */}
-      {!morphed && (
-        <div className={`${styles.controlsRow} composer-bottom-row`}>
-          {controlsCluster}
-        </div>
-      )}
+      <div className={`${styles.controlsRow} composer-bottom-row`}>
+        {controlsCluster}
+      </div>
     </div>
   );
 }

@@ -6,7 +6,7 @@
 /* Composer bottom-row container. Declared globally (not in the CSS
    module) because CSS Modules in this project scope `container-name`
    into a hashed identifier, which makes the `@container` rule below
-   never match. The class is applied alongside `styles.inputBottomRow`
+   never match. The class is applied alongside `styles.controlsRow`
    in composer/index.tsx. Container queries (not viewport `@media`)
    are required here — the composer also renders inside narrow side
    panels where viewport width says nothing useful. */

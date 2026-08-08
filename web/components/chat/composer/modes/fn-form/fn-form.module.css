@@ -3,37 +3,25 @@
    bottom-row separator, send-button position); everything that lives
    inside the form itself is here. */
 
-/* Panel is anchored to the top edge of the input-bottom-row (54px
-   tall) so its bottom edge always sits flush against the divider.
-   The wrapper has `overflow: hidden` and an inline `height` driven by
+/* The wrapper has `overflow: hidden` and an inline `height` driven by
    React. As the wrapper's height grows from chat-mode to fn-form-mode,
-   the panel's top edge slides UP into view from behind the bottom row,
-   matching the "growing out from behind the divider" feel the user
-   asked for. */
-/* Header, body, and inputBottomRow are three flat siblings of the
-   wrapper. No `.panel` div wraps the body — body is the middle row.
-*/
+   the form slides UP into view — the wrapper is bottom-anchored inside
+   the inputArea, so it grows upward over the transcript while the
+   detached controls row below stays put. */
+/* Header and body are two flat siblings of the wrapper. No `.panel`
+   div wraps the body — body is the bottom row of the wrapper. */
 
 /* Header / body fade in with the staggered timings shared by the
    composer (header first, body slightly later) so the form reads as
    one continuous reveal. Close fades both out together over 0.12s
    before the wrapper begins its height transition.
 
-   Header height mirrors `--composer-bottom-row-h` so the form's top
-   strip and the input options strip read as a matched pair (same
-   thickness, same vertical breathing room). */
-/* Header — mirror of `.inputBottomRow` in fn-form-mode, flipped top↔
-   bottom. The bottom row has a 1px `border-top` divider and shaves
-   1px off its top padding to keep the plus-button equidistant from
-   the divider above and the wrapper edge below. The header does the
-   same flipped: 1px `border-bottom` divider, 1px shaved off its
-   bottom padding.
+   Header height stays at `--composer-bottom-row-h` (64px):
        1 (border-bottom)
        + 15 (padding-bottom = pad − 1)
        + 32 (button-size)
        + 16 (padding-top = pad)
-       = 64 = --composer-bottom-row-h
-*/
+   which vertically centres the 32px close button pinned at top:16. */
 .header {
   position: relative;
   display: flex;
@@ -126,15 +114,13 @@
    switches. */
 
 .body {
-  padding: 14px 24px;
+  /* Bottom padding reserves the corner where the wrapper-level run
+     button glides to (12px inset + 24px button + 12px breathing
+     room) — the last field never sits under it. */
+  padding: 14px 24px 48px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  /* Divider between the form fields and the bottom row. Living here
-     (rather than on the bottom row as a `border-top`) keeps the
-     bottom row's geometry identical between chat mode and fn-form
-     mode — only the body adds the line. */
-  border-bottom: 1px solid var(--border);
   /* See .header above — opacity defaults to 1 to survive
      background-tab animation-timeline pauses. */
   opacity: 1;

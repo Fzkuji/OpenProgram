@@ -5,10 +5,9 @@
  * the left; chat+exec model chips, thinking-effort pill and context ring on
  * the right.
  *
- * Rendered in exactly ONE of two containers per mode: the detached
- * `.controlsRow` below the wrapper (chat mode) or the legacy internal
- * `.inputBottomRow` (fn-form / question / approval). The composer decides
- * which; this component only knows the cluster's contents.
+ * Always rendered in the detached `.controlsRow` below the wrapper —
+ * every composer mode shares the same row, this component only knows
+ * the cluster's contents.
  */
 import React, { useRef } from "react";
 import { Menu } from "@base-ui-components/react/menu";

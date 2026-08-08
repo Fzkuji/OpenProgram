@@ -854,9 +854,9 @@ function ConvItem({
   // from pure white to the warm off-white (--text-primary) so it isn't
   // glaringly bright.
   const colorCls = active ? "bg-bg-hover text-text-primary" : "text-text-primary";
-  // 右缘渐隐的三个状态（静止 8px / 悬停 44px / 滚动中）都在 base.css 的
-  // .title-fade 里，宽度过渡也在那儿——渐变值本身不可插值，靠一个注册过
-  // 的 --fade-w 长度属性做动画。
+  // 右缘渐隐的三个状态（静止约 8px / 悬停 70%→92% / 滚动中）都在
+  // base.css 的 .title-fade 里，过渡也在那儿——渐变值本身不可插值，
+  // 靠注册过的 --fade-a / --fade-b 百分比属性做动画。
   const maskHover = "title-fade";
   const maskScrolling = "title-fade title-fade-scrolling";
 

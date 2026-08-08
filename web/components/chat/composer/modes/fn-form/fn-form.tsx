@@ -160,10 +160,8 @@ export function FunctionForm({
     }
   }
 
-  // Header / body / inputBottomRow are three flat siblings inside the
-  // input wrapper. No `panel` div wraps body — body is itself a
-  // direct wrapper child, mirroring how inputBottomRow is a direct
-  // wrapper child at the other end. Nothing is nested inside another.
+  // Header / body are two flat siblings inside the input wrapper. No
+  // `panel` div wraps body — body is itself a direct wrapper child.
   return (
     <>
       <div

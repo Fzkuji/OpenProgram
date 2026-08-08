@@ -33,12 +33,12 @@ import {
 
 import type { AgenticFunction } from "@/lib/session-store";
 
-// Pixels: action-button offset (16) + size (32). The fn-form steady
-// state pins the button to `wrapper.height - ACTION_BTN_BOTTOM_OFFSET`
-// so its bottom edge sits `--composer-button-offset` above the
-// wrapper's bottom. Kept here as a constant to avoid reading the
-// CSS variable in JS — the tokens it maps to live in 01-base.css.
-const ACTION_BTN_BOTTOM_OFFSET = 48;
+// Pixels: bottom inset of the action button / decision-nav group in
+// morphed mode. The steady state pins the element's BOTTOM edge this
+// far above the wrapper's bottom edge (top = height − inset − own
+// height, measured at glide time so the 24px send square and the 32px
+// nav pills both land on the same inset).
+const ACTION_BTN_BOTTOM_INSET = 12;
 // Crossfade slack: keep the outgoing layer mounted slightly longer
 // than the composer's fade animation so the unmount happens after
 // the visual transition has fully completed.
@@ -148,8 +148,9 @@ export function useFnFormWrapper({
     if (!el || !el.style.height) return;
     el.style.height = "";
     // Decision dismissed with no fn-form close transition to reset it —
-    // glide the action button back to chat-mode top.
-    if (sendBtnRef.current) sendBtnRef.current.style.top = "16px";
+    // clear the inline glide top so the stylesheet's chat-mode value
+    // takes over again.
+    if (sendBtnRef.current) sendBtnRef.current.style.top = "";
   }, [morphed, wrapperRef, sendBtnRef]);
 
   return { outgoingFn };
@@ -182,7 +183,10 @@ function runCloseTransition(
   el.style.height = `${current}px`;
   void el.offsetHeight;
   el.style.height = `${chatHeight}px`;
-  if (btn) btn.style.top = "16px";
+  // Chat-mode resting top (see .actionBtn in composer.module.css) —
+  // an explicit pixel value so the glide back animates; the inline
+  // style is cleared once the morphed state fully ends.
+  if (btn) btn.style.top = "11px";
   const onEnd = (ev: TransitionEvent) => {
     if (ev.target !== el || ev.propertyName !== "height") return;
     el.removeEventListener("transitionend", onEnd);
@@ -215,9 +219,11 @@ function runOpenTransition(
   }
   const natural = measureFnFormHeight(el);
   el.style.height = `${natural}px`;
-  // Glide the action button from its current top to the new fn-form
-  // bottom (natural − offset). Same CSS curve as the wrapper height.
-  if (btn) btn.style.top = `${natural - ACTION_BTN_BOTTOM_OFFSET}px`;
+  // Glide the action button from its current top to the wrapper's new
+  // bottom-right corner. Same CSS curve as the wrapper height.
+  if (btn) {
+    btn.style.top = `${natural - ACTION_BTN_BOTTOM_INSET - btn.offsetHeight}px`;
+  }
   const onEnd = (ev: TransitionEvent) => {
     if (ev.target !== el || ev.propertyName !== "height") return;
     el.removeEventListener("transitionend", onEnd);

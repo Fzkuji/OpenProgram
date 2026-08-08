@@ -67,15 +67,11 @@
    wrapper / send / stop / close / plus buttons concentric. */
 /* Wrapper layout strategy:
    - top row (textarea OR fn-form header): in normal flow at the top.
-   - body (fn-form only): in normal flow below the top row.
-   - bottom row (MORPHED modes only): `position: absolute; bottom: 0`
-     anchored to the wrapper's bottom edge regardless of how the
-     wrapper's height changes; `.fnFormMode`'s padding-bottom reserves
-     its space. Chat mode has no internal bottom row — the controls
-     render in the detached `.controlsRow` below the wrapper.
-   Effect: when the wrapper height transitions (fn-form open/close),
-   the bottom row stays put at the wrapper's bottom edge while the
-   top portion expands or collapses. */
+   - body (fn-form / question only): in normal flow below the top row.
+   The controls render in the detached `.controlsRow` below the wrapper
+   in EVERY mode — the wrapper itself only ever holds the input/form
+   content, so opening a fn-form grows the box upward (the inputArea is
+   bottom-anchored) while the controls row stays put underneath. */
 .inputWrapper {
   position: relative;
   display: flex;
@@ -121,32 +117,20 @@
 :global([data-theme="beige-light"]) .inputWrapper:focus-within {
   box-shadow: 0 0 0 1px var(--composer-ring-focus), var(--shadow-sm);
 }
-/* fn-form / question / approval keep the OLD internal layout: the
-   controls row renders inside the wrapper (absolute, bottom-anchored)
-   and this padding reserves its 64px band — the wrapper height
-   animation in use-fn-form-wrapper.ts measures computed paddingBottom,
-   so the whole open/close mechanic is untouched in morphed mode. */
-.fnFormMode {
-  padding-bottom: var(--composer-bottom-row-h);
-}
-
 /* Crossfade overlay shown briefly during fn-form A → fn-form B
-   switches. Sits on top of the new form (z-index 1, same as
-   `.inputBottomRow`) and fades opacity 1→0 over one composer fade
-   duration. `inset: 0` + `bottom: --composer-bottom-row-h` lets it
-   cover the header + body region only, leaving the bottom row
-   visible underneath. */
+   switches. Sits on top of the new form (z-index 1) and fades opacity
+   1→0 over one composer fade duration. Covers the whole wrapper —
+   header + body are all the wrapper holds now. */
 .outgoingLayer {
   position: absolute;
   inset: 0;
-  bottom: var(--composer-bottom-row-h);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   pointer-events: none;
   z-index: 1;
   background: var(--surface-solid);
-  border-radius: 10px 10px 0 0;
+  border-radius: 10px;
   animation: outgoingLayerFade var(--composer-fade-duration) ease forwards;
 }
 /* Suppress the cloned header/body's own fadeIn animation — we want
@@ -397,41 +381,7 @@
   line-height: 1;
 }
 
-/* Bottom row — the OLD internal controls row, now rendered ONLY in
-   morphed (fn-form / question / approval) mode. Anchored to the
-   wrapper's bottom edge via absolute positioning; stays in place when
-   the wrapper height transitions. Chat mode renders the same controls
-   in the detached `.controlsRow` below the wrapper instead. */
-.inputBottomRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  min-height: 30px;
-  padding: var(--composer-bottom-row-pad);
-  /* The wrapper-level action button glides into the bottom-right
-     corner of this row. Reserve right-side padding equal to
-     `--composer-bottom-row-pad + button-size + 8 (gap)` so the
-     ContextBadge can never sit under it. */
-  padding-right: calc(var(--composer-bottom-row-pad)
-    + var(--composer-button-size) + 8px);
-  flex-shrink: 0;
-  /* Solid wrapper background so the form body sliding behind the row
-     during a height transition stays hidden — without it the body's
-     content shows through the row. Bottom corners match the wrapper's
-     radius so they don't poke past it. */
-  background: var(--surface-solid);
-  border-radius: 0 0 10px 10px;
-  z-index: 1;
-  /* The container declaration lives in chat.css under the global
-     `.composer-bottom-row` class (also applied in composer/index.tsx).
-     CSS Modules scope `container-name`, which broke `@container` rules
-     that lived in non-module stylesheets — moving the declaration to a
-     global class avoids that mismatch. */
-}
+/* Left cluster of the controls row (permission / plus / tool chips). */
 .inputOptions {
   display: flex;
   align-items: center;
@@ -608,35 +558,22 @@
 }
 /* 角色图标（chat=气泡 / 执行=终端）常驻——用户要求模型名旁保留 logo。 */
 
-/* MORPHED internal band only: the effort pill's absolute shell must
-   expand LEFTWARD into the row's empty middle (right edge pinned to
-   the 32px host) — expanding rightward would clip on the wrapper's
-   overflow:hidden edge next to the context ring. In the detached chat
-   row this rule is inert: the collapsed shell is display:none and the
-   expanded shell is repositioned into a floating layer (see the
-   .controlsRow effort rules). */
-.inputBottomRight :global(.effort-pill-shell) {
-  left: auto;
-  right: 0;
-}
-
-/* Send / stop button — a single absolute-positioned circle anchored
+/* Send / stop button — a single absolute-positioned square anchored
    to the wrapper. Its `top` is driven by inline style (set in
-   composer/index.tsx) so it interpolates linearly between the chat
-   position (top: button-offset) and the fn-form position
-   (top: wrapper.height - button-offset - button-size), in sync with
-   the wrapper's own height transition. The result is one continuous
-   motion instead of the previous two-row teleport. */
+   use-fn-form-wrapper.ts) so it interpolates linearly between the chat
+   position (top: 11) and the morphed position
+   (top: wrapper.height − 12 − own height), in sync with the wrapper's
+   own height transition. The result is one continuous motion instead
+   of a row-to-row teleport. */
 .actionBtn {
   position: absolute;
-  /* Chat mode (claude.ai/code measured): 24×24 square with 6px radius,
-     10px inset from the box's right edge, vertically centered in the
-     single-line row. The row is 46px (12px padding ×2 + 22px line) —
-     (46−24)/2 = 11px top. fn-form / morphed modes restore the legacy
-     32px circle at 16px offsets below (the glide hook in
-     use-fn-form-wrapper.ts depends on that geometry and drives `top`
-     inline in that mode anyway; index.tsx clears the inline value when
-     returning to chat mode so this 11px wins again). */
+  /* Claude Code measured: 24×24 square with 6px radius, 10px inset
+     from the box's right edge, vertically centered in the 46px
+     single-line row → (46−24)/2 = 11px top. ONE geometry for every
+     mode — the button keeps this identity inside fn-forms too; only
+     `top` glides (inline, from use-fn-form-wrapper.ts), and index.tsx
+     clears the inline value when returning to chat mode so this 11px
+     wins again. */
   right: 10px;
   top: 11px;
   width: 24px;
@@ -651,30 +588,14 @@
   box-sizing: border-box;
   flex-shrink: 0;
   /* `top` and the wrapper's `height` share the same transition curve
-     so they advance in lockstep — the button glides between rows
-     instead of snapping. `right` animates the 6px↔16px offset swap on
-     the same curve when the wrapper morphs. */
+     so they advance in lockstep — the button glides between positions
+     instead of snapping. */
   transition: top var(--composer-height-transition),
-    right var(--composer-height-transition),
-    width var(--composer-height-transition),
-    height var(--composer-height-transition),
-    border-radius var(--composer-height-transition),
     background 0.15s,
     opacity 180ms ease;
-  /* Bottom-row sits at z-index 1 to hide the form body retracting
-     behind it; we need a higher value so the action button stays
-     visible while it's mid-glide through that band. */
+  /* Above the form body so the button stays visible mid-glide while
+     content slides underneath it. */
   z-index: 2;
-}
-/* Morphed mode keeps the legacy 32px circle at 16px corner offsets
-   (concentric with the internal bottom row's geometry — the glide
-   hook's ACTION_BTN_BOTTOM_OFFSET constant assumes 16 + 32). */
-.fnFormMode .actionBtn {
-  right: var(--composer-button-offset);
-  top: var(--composer-button-offset);
-  width: var(--composer-button-size);
-  height: var(--composer-button-size);
-  border-radius: 50%;
 }
 .actionBtn svg {
   width: 14px;
@@ -998,11 +919,10 @@
 
 /* ===== Detached controls row (chat mode) ===========================
    Claude Code's three-band composer: env pills / small input box /
-   quiet controls on the page background. In chat mode the controls
-   render HERE — a static sibling row 10px below the wrapper — instead
-   of inside it. Morphed modes (fn-form / question / approval) keep
-   the internal `.inputBottomRow` so the wrapper height animation and
-   the button-glide mechanics stay untouched. */
+   quiet controls on the page background. The controls render HERE — a
+   static sibling row 10px below the wrapper — in EVERY mode, so
+   opening a fn-form / question grows the wrapper above without moving
+   or restyling this row. */
 .controlsRow {
   display: flex;
   align-items: center;
