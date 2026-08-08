@@ -107,7 +107,7 @@ summarizer 接收上一份摘要文本作为输入、吸收它、产出替代品
   其余插入（摘要拼接、旁支写入、遗迹）不动 HEAD。这取代旧的无条件自动推进
   加各调用方快照/恢复的补偿。
 - **spawn 出的轮次永不移动 HEAD。** 同会话的子 agent 轮（task /
-  message_branch）以 `TurnRequest.advance_head=False` 运行：spawn 分支打开
+  send_message）以 `TurnRequest.advance_head=False` 运行：spawn 分支打开
   时不把自己注册为 head，内层 dispatcher 的每次写入（分支根、占位行、回复、
   finalize、错误路径）都不碰 head。转录窗口跟着 HEAD 走——head 被偷走时用户
   的窗口会在运行中切到 agent 的对话、两边消息混在一起。跨会话投递仍推进目标

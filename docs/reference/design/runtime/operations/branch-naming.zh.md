@@ -7,11 +7,11 @@
 ## 一、目标
 
 分支在两种情况下有明确名字：用户手动重命名，以及 /task spawn 用 task.label。普通交互式
-fork（用户 retry / edit 产生的分支）**和 `message_branch` 派生的分支**显示 head_msg_id
+fork（用户 retry / edit 产生的分支）**和 `send_message` 派生的分支**显示 head_msg_id
 前 8 位 hex。短号本身就是合适的占位（符合 git 心智），欠缺的是：不经用户手动触发自动
 命名，它就没有升级成描述性标签的路径。
 
-> `message_branch`（agent 间通信派生分支，见 [agent-collaboration](../agent-collaboration.md) §2.4）
+> `send_message`（agent 间通信派生分支，见 [agent-collaboration](../agent-collaboration.md) §2.4）
 > 应和 task 一样在创建时带一个 Stage 1 占位 label（从投递 message 摘一句），之后走本文
 > 的 Stage 2 自动改名——现状是它连 label 都没传，属实现缺口。
 

@@ -71,8 +71,8 @@ helpers with session routing logic, not raw frames — exempt.)
 
 A sub-agent branch spawns via three entry points: the sync `task()`
 path (functions/tools/task/task.py), the async runner
-(agent/task/runner.py), and `message_branch`
-(functions/tools/agent_collab/). For clean mode all three must pass
+(agent/task/runner.py), and `send_message`
+(functions/tools/send_message/). For clean mode all three must pass
 `spawn_caller=<spawning node>`, so the branch root's `caller` points
 at the turn that opened it (dag/overview.md §4) instead of hanging
 off ROOT. Change spawn semantics in all three together, test all
@@ -84,7 +84,7 @@ the dispatcher's `req.source` filter a spawned agent's tool list simply
 does not contain them (a tool sitting in the list invites the model to
 use it; offering it and then refusing wastes a turn — bad design). The
 `MAX_TASK_DEPTH=1` depth guard is only a backstop (catches bypass paths
-like tools_override); message_branch keeps the looser
+like tools_override); send_message keeps the looser
 `MAX_SPAWN_DEPTH=8` (budgeted for multi-round branch-to-branch
 dialogue, not delegation), both sharing one per-chain depth counter.
 Even a single "coordinator" hop degenerates into buck-passing, so no

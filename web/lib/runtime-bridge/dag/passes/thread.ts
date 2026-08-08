@@ -200,7 +200,7 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
   Object.values(events).forEach((evs) => evs.sort((a, b) => a.t - b.t));
 
   // ── one spawn, one glyph ──
-  // A dispatch call (``task`` / ``message_branch``) and the spawn root
+  // A dispatch call (``task`` / ``send_message``) and the spawn root
   // it opened are the same act; drawing both puts two squares on the
   // thread for one event. The spawn root — the node that expands into
   // the agent's own activity — is the one that stays; the dispatch
@@ -208,8 +208,8 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
   // material). A dispatch that opened NO spawn (the call failed)
   // keeps its own square: that failure is worth a glyph.
   const isDispatchCall = (n: GNode): boolean =>
-    n.name === "task" || n.name === "message_branch"
-    || n.function === "task" || n.function === "message_branch";
+    n.name === "task" || n.name === "send_message"
+    || n.function === "task" || n.function === "send_message";
   const dispatchHidden = new Set<string>();
   Object.keys(events).forEach((anchor) => {
     const evs = events[anchor];

@@ -44,7 +44,7 @@ Truncation is layered. Per-field caps stop one runaway tool result (a large file
 
 ## Discovery reuses existing tools
 
-`list_sessions` and `list_branches` (`functions/tools/agent_collab/`) already enumerate session ids and `SID:HEAD` branch tips. Those are exactly the arguments `session_transcript` takes, so no listing tool is added. The tool accepts a whole `SID:HEAD` string in `session_id` and splits it, since that is the form `list_branches` prints.
+`list_sessions` and `list_branches` (`functions/tools/send_message/`) already enumerate session ids and `SID:HEAD` branch tips. Those are exactly the arguments `session_transcript` takes, so no listing tool is added. The tool accepts a whole `SID:HEAD` string in `session_id` and splits it, since that is the form `list_branches` prints.
 
 ## The skill carries the judgment
 

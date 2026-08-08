@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.functions.tools.agent_collab.list_branches import (
+from openprogram.functions.tools.send_message.list_branches import (
     _list_sessions_impl as list_sessions,
     _list_branches_impl as list_branches,
     _clip,
@@ -77,15 +77,15 @@ def test_list_sessions_emits_event(two_sessions):
     assert any(e.type == "sessions.listed" for e in got)
 
 
-def test_list_branches_gives_target(two_sessions):
+def test_list_branches_gives_to(two_sessions):
     out = list_branches("p1")
-    # the line must carry a ready-to-use target=p1:HEAD
-    assert "target=p1:" in out
+    # the line must carry a ready-to-use to=p1:HEAD
+    assert "to=p1:" in out
 
 
 def test_list_branches_defaults_to_current(two_sessions):
     out = list_branches()  # no arg → current session p1
-    assert "target=p1:" in out
+    assert "to=p1:" in out
 
 
 def test_list_branches_emits_event(two_sessions):

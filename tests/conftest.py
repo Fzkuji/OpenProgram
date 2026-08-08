@@ -156,7 +156,7 @@ requires_live_service = pytest.mark.skipif(
 # tool, or leaves a channel blacklist behind), every *later* test sees a
 # registry that's missing shipped tools. Because pytest's file collection order
 # is alphabetical and platform-stable, such a leak can bite on CI (Linux) while
-# staying dormant locally (macOS) — e.g. the message_branch tool going missing
+# staying dormant locally (macOS) — e.g. the send_message tool going missing
 # from test_session_config_tools_intent only under the CI ordering.
 #
 # This autouse fixture snapshots the fully-loaded shipped registry ONCE at

@@ -82,7 +82,7 @@ loop and runs `agent_loop` to completion. It returns a `TurnResult`
 `_current_turn_id.set(assistant_msg_id)` (`:379`) is what makes depth-independent
 attribution work. A ContextVar propagates along asyncio tasks, so **any**
 coroutine within the turn — tool execution, `@agentic_function`,
-`message_branch` — reads the same turn id, which routes file backups and
+`send_message` — reads the same turn id, which routes file backups and
 sub-branch parent anchors to the correct assistant message. `_store` is bound the
 same way (`:435`) so deep runtime code writes into the same SQLite DAG without
 threading a handle through every signature. The `finally` block resets both on
@@ -106,7 +106,7 @@ moment ago (hanging under ROOT), multi-turn holds a full parent chain.
 > The read side is the three `get_branch` cases above. The write side of a fork
 > is either pointing a user node's caller at something other than the active tail
 > (`set_head` in the storage layer moves the UI pointer), or starting a new root
-> through `message_branch` (see §⑤). Read = three `get_branch` variants; write =
+> through `send_message` (see §⑤). Read = three `get_branch` variants; write =
 > move the head pointer or create a new root.
 
 ### ★ Before the model call: the context engine runs (the per-turn auto-compaction path) ★
@@ -213,8 +213,8 @@ to the front end.
 | `model.response_started` | agent_loop `:442` | observers | model stream begins |
 | `model.response_completed` | agent_loop `:466` | proactive wrap-up policies | wrap-up timing check |
 | `subagent.started` / `.ended` | task/runner `:115` (origin=`system`, session passed explicitly because a worker thread's ContextVar is unreliable) | observers | subagent state funnel |
-| `branch.message_sent` | message_branch `:266` | observers + `ws.frame` | from/to/is_new/sources |
-| `branch.message_replied` | message_branch `:344` | observers + `ws.frame` | carries is_error |
+| `branch.message_sent` | send_message `:266` | observers + `ws.frame` | from/to/is_new/sources |
+| `branch.message_replied` | send_message `:344` | observers + `ws.frame` | carries is_error |
 | `question.asked` | questions `:164` (also `emit_ws_frame` `:161` for the front-end card) | channels question bridge (`_question_bridge.py:43`) | both on the bus and as a ws frame |
 | `question.replied` | questions `:275` (`resolve_question_and_broadcast:262`) | front end | **ws frame only** |
 | `question.rejected` | questions `:173/:276` | front end (handled as "withdrawn") | **ws frame only** |
@@ -328,16 +328,16 @@ decisions.
 **Events**: `model.response_started/completed`,
 `subagent.started/ended` (the last pair emitted by task/runner).
 
-### ⑤ Collaboration — message_branch + cross-session + guards
+### ⑤ Collaboration — send_message + cross-session + guards
 
 **Responsibility**: deliver messages between branches and sessions, run the
 target branch, and bring the reply back.
-**Key files**: `functions/tools/agent_collab/message_branch.py`,
-`functions/tools/agent_collab/list_branches.py`.
+**Key files**: `functions/tools/send_message/send_message.py`,
+`functions/tools/send_message/list_branches.py`.
 **Mechanisms**:
-- `message_branch(message, target, sources, agent_id, wait)` (`:393` →
-  `_message_branch_impl:186`).
-- Target semantics (`_parse_target:167`): `new` (a new root in the current
+- `send_message(message, to, sources, agent_id, wait)` (`:393` →
+  `_send_message_impl:186`).
+- `to` semantics (`_parse_to:167`): `new` (a new root in the current
   session) / `new:SID:MSG_ID` (fork a node and inherit its chain) / `SID:HEAD`
   (deliver to an existing branch = run one more turn from its head).
 - The parent anchor `_resolve_parent` (`:74`) reads the dispatcher's session/turn
@@ -377,7 +377,7 @@ a "sent / replied" line in the initiator's chat stream.
   `process_user_turn` / `agent_loop` are marked "no covering tests found".
 - **A worker thread's ContextVar is unreliable**: `subagent.started/ended`
   therefore pass the session explicitly (`agent/task/runner.py:111–115`), and
-  `message_branch._resolve_parent` carries a head fallback for the same reason.
+  `send_message._resolve_parent` carries a head fallback for the same reason.
 - **`ContextEngine.after_turn` exists at two levels**: the abstract base stub
   (`engine.py:124`) is `pass`; the concrete engine implementation
   (`engine.py:437`) is the one doing the work (usage feedback + emitting
@@ -396,4 +396,4 @@ tool.before interception `agent_loop.py:695/:701` + `events/tool_gate.py:53`. Co
 `engine.py:194` plus the two compaction paths (auto-compact
 `_run_loop_blocking:896` / microcompact `microcompact.py:76`). Agent loop
 `agent_loop.py:114/205/654`; subagents `sub_agent_run.py:41`. Collaboration
-`message_branch.py:186/393`, depth cap `:35`.
+`send_message.py:186/393`, depth cap `:35`.

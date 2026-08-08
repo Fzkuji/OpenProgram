@@ -1,11 +1,11 @@
-"""message_branch — C1 core path (target="new" spawn usage).
+"""send_message — C1 core path (to="new" spawn usage).
 
 Covers, with a fake run_agent_turn (no real LLM):
   * target parsing (new / fork / existing)
   * sync delivery → run → reply text returned to caller
   * branch.message_sent / branch.message_replied events emitted
   * no active parent turn → clear error
-  * target=existing → not-yet-implemented error (C3 placeholder)
+  * to=existing → not-yet-implemented error (C3 placeholder)
 
 See docs/design/runtime/agent-collaboration.md.
 """
@@ -13,22 +13,22 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.functions.tools.agent_collab.message_branch import (
-    _message_branch_impl,
-    _parse_target,
+from openprogram.functions.tools.send_message.send_message import (
+    _send_message_impl,
+    _parse_to,
 )
 
 
-def test_parse_target_new():
-    assert _parse_target("new") == ("new", None, None)
+def test_parse_to_new():
+    assert _parse_to("new") == ("new", None, None)
 
 
-def test_parse_target_fork():
-    assert _parse_target("new:sess1:msg9") == ("fork", "sess1", "msg9")
+def test_parse_to_fork():
+    assert _parse_to("new:sess1:msg9") == ("fork", "sess1", "msg9")
 
 
-def test_parse_target_existing():
-    assert _parse_target("sess1:head7") == ("existing", "sess1", "head7")
+def test_parse_to_existing():
+    assert _parse_to("sess1:head7") == ("existing", "sess1", "head7")
 
 
 def test_resolve_parent_falls_back_to_head(tmp_path, monkeypatch):
@@ -36,7 +36,7 @@ def test_resolve_parent_falls_back_to_head(tmp_path, monkeypatch):
     anchor falls back to the session head (fixes 'no active parent turn')."""
     from openprogram.store.session.session_store import SessionStore
     from openprogram.agent import session_db as sdb_mod
-    from openprogram.functions.tools.agent_collab.message_branch import _resolve_parent
+    from openprogram.functions.tools.send_message.send_message import _resolve_parent
 
     s = SessionStore(tmp_path / "g")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
@@ -87,7 +87,7 @@ def parent_turn(tmp_path, monkeypatch):
                             "timestamp": 0, "predecessor": "u0"})
     s.commit_turn("p1", "init")
 
-    # Bind parent session + turn on the ContextVars message_branch reads.
+    # Bind parent session + turn on the ContextVars send_message reads.
     from openprogram.agent import run_control
     from openprogram import store as store_mod
     sid_tok = run_control._current_session_id.set("p1")
@@ -138,7 +138,7 @@ def test_no_active_turn_errors():
     sid_tok = run_control._current_session_id.set(None)
     turn_tok = store_mod._current_turn_id.set(None)
     try:
-        out = _message_branch_impl("hello", target="new", wait=True)
+        out = _send_message_impl("hello", to="new", wait=True)
     finally:
         run_control._current_session_id.reset(sid_tok)
         store_mod._current_turn_id.reset(turn_tok)
@@ -148,7 +148,7 @@ def test_no_active_turn_errors():
 def test_spawn_new_sync_returns_reply(parent_turn):
     got, unsub = _collect_events()
     try:
-        out = _message_branch_impl("do the thing", target="new", wait=True)
+        out = _send_message_impl("do the thing", to="new", wait=True)
     finally:
         unsub()
     assert "reply to: do the thing" in out
@@ -161,8 +161,8 @@ def test_spawn_new_sync_returns_reply(parent_turn):
 # --- C3: target = existing branch (same session) ---
 
 def test_existing_branch_continues_from_head(parent_turn):
-    """target=SID:HEAD runs one turn forked off that head (branch_from=HEAD)."""
-    out = _message_branch_impl("more", target="p1:a0", wait=True)
+    """to=SID:HEAD runs one turn forked off that head (branch_from=HEAD)."""
+    out = _send_message_impl("more", to="p1:a0", wait=True)
     assert "reply to: more" in out
     assert "(from=a0)" in out  # fake_run saw branch_from = the branch head
 
@@ -170,7 +170,7 @@ def test_existing_branch_continues_from_head(parent_turn):
 def test_existing_branch_is_not_new_event(parent_turn):
     got, unsub = _collect_events()
     try:
-        _message_branch_impl("more", target="p1:a0", wait=True)
+        _send_message_impl("more", to="p1:a0", wait=True)
     finally:
         unsub()
     sent = next(e for e in got if e.type == "branch.message_sent")
@@ -179,12 +179,12 @@ def test_existing_branch_is_not_new_event(parent_turn):
 
 
 def test_existing_missing_session_errors(parent_turn):
-    out = _message_branch_impl("hi", target="nope:a1", wait=True)
+    out = _send_message_impl("hi", to="nope:a1", wait=True)
     assert "not found" in out
 
 
 def test_existing_missing_head_errors(parent_turn):
-    out = _message_branch_impl("hi", target="p1", wait=True)
+    out = _send_message_impl("hi", to="p1", wait=True)
     assert "needs the branch head" in out
 
 
@@ -193,8 +193,8 @@ def test_existing_missing_head_errors(parent_turn):
 def test_sources_prepended_to_delivery(parent_turn):
     """sources branch content is wrapped in a block and prepended to the
     message delivered to the target model."""
-    out = _message_branch_impl(
-        "synthesize these", target="new", sources=["p1:a1"], wait=True)
+    out = _send_message_impl(
+        "synthesize these", to="new", sources=["p1:a1"], wait=True)
     # fake_run echoes the prompt it received, so the source block shows up
     assert "<branch source=\"p1:a1\">" in out
     assert "synthesize these" in out
@@ -203,7 +203,7 @@ def test_sources_prepended_to_delivery(parent_turn):
 def test_sources_event_records_them(parent_turn):
     got, unsub = _collect_events()
     try:
-        _message_branch_impl("go", target="new", sources=["p1:a1"], wait=True)
+        _send_message_impl("go", to="new", sources=["p1:a1"], wait=True)
     finally:
         unsub()
     sent = next(e for e in got if e.type == "branch.message_sent")
@@ -211,19 +211,19 @@ def test_sources_event_records_them(parent_turn):
 
 
 def test_no_sources_no_block(parent_turn):
-    out = _message_branch_impl("plain", target="new", wait=True)
+    out = _send_message_impl("plain", to="new", wait=True)
     assert "<branch source" not in out
 
 
 # --- C6: robustness ---
 
 def test_depth_guard_refuses(parent_turn):
-    from openprogram.functions.tools.agent_collab.message_branch import (
+    from openprogram.functions.tools.send_message.send_message import (
         set_spawn_depth, _spawn_depth, MAX_SPAWN_DEPTH,
     )
     tok = set_spawn_depth(MAX_SPAWN_DEPTH)
     try:
-        out = _message_branch_impl("go deeper", target="new", wait=True)
+        out = _send_message_impl("go deeper", to="new", wait=True)
     finally:
         _spawn_depth.reset(tok)
     assert "spawn depth" in out and "max" in out
@@ -231,7 +231,7 @@ def test_depth_guard_refuses(parent_turn):
 
 def test_self_target_refused(parent_turn):
     # parent turn is p1:a1 — messaging it is a direct loop
-    out = _message_branch_impl("loop me", target="p1:a1", wait=True)
+    out = _send_message_impl("loop me", to="p1:a1", wait=True)
     # note: a1 is the parent turn id (aid) in the fixture
     # (the fixture binds _current_turn_id = "a1")
     assert "your own current turn" in out
@@ -246,7 +246,7 @@ def test_result_truncated_when_huge(parent_turn, monkeypatch):
                                failed=False, error=None)
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run.run_agent_turn", fake_big)
-    out = _message_branch_impl("big", target="new", wait=True)
+    out = _send_message_impl("big", to="new", wait=True)
     assert "truncated" in out
     assert "full reply saved to" in out
     assert len(out) < 40_000
@@ -255,7 +255,7 @@ def test_result_truncated_when_huge(parent_turn, monkeypatch):
 def test_spawn_sent_event_payload(parent_turn):
     got, unsub = _collect_events()
     try:
-        _message_branch_impl("x", target="new", wait=True)
+        _send_message_impl("x", to="new", wait=True)
     finally:
         unsub()
     sent = next(e for e in got if e.type == "branch.message_sent")

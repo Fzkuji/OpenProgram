@@ -58,7 +58,7 @@ if web_search_flag:
 3. 之后每个 turn：`load_session_run_config` → `tools_override_from_config` 命中 `:85-86` `if cfg.tools_override: return list(cfg.tools_override)`，**原样吐回老快照**
 4. 该 list 进 `_model_tools.py:423-428` 走 `agent_tools(names=[...])`，**只认快照里那些名字**
 
-**后果**：往 DEFAULT_TOOLS（`functions/__init__.py:69`）加新工具（如 list_sessions / message_branch）后，**所有曾经开过 web_search 或选过非 full profile 的会话**永远拿当初那张名字列表，看不到新工具。
+**后果**：往 DEFAULT_TOOLS（`functions/__init__.py:69`）加新工具（如 list_sessions / send_message）后，**所有曾经开过 web_search 或选过非 full profile 的会话**永远拿当初那张名字列表，看不到新工具。
 
 对比：从没动过这两个开关的会话存的是 `tools_enabled=True`（bool），`:87-90` 每次实时返回 `list(DEFAULT_TOOLS)`，新工具自动可见。**差异 = "存 bool/意图" vs "存物化 list"。**
 
@@ -129,7 +129,7 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 - **意图往返**：存 `web_search=True` 读回 True；旧会话无该字段读回 None 不报错。
 - **dict 输出**：`enabled=True` → dict 含 enabled；带 web_search → 展开含 web_search；`enabled=False` → `[]`。
 - **写入不物化**：新建会话开 web_search 或选 research 后，DB 里 `tools_override` 为 NULL 或 dict，不是全量 list。
-- **新工具自动可见**：`{enabled: True}` 意图展开后含最新加进 DEFAULT_TOOLS 的工具（如 message_branch / list_sessions）。
+- **新工具自动可见**：`{enabled: True}` 意图展开后含最新加进 DEFAULT_TOOLS 的工具（如 send_message / list_sessions）。
 - **缓存稳定**：意图不变的会话连发两 turn，provider usage 显示第二 turn 命中缓存、工具集未抖动。
 - **各写入端一致**：全仓不存在第二处 `list(_DEFAULT_TOOLS)` / `[t.name for t in` 式物化；webui/channels/TUI（`session.py`、`cli/src/ws/client.ts`）凡能开 web_search / 选 profile 的写入端都透传意图。
 
@@ -183,7 +183,7 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
    | `playwright_browser` | ~1170 tok | 单个 schema 最大。浏览器自动化是明确且小众的意图，编码会话完全不碰。 |
    | `enter_plan_mode` | ~1050 tok | plan mode 通常由用户经档位 chip / TUI 进入（`plan_mode.sync_tier`），不走这个工具。模型自行判断进 plan 是罕见路径。 |
    | `exit_plan_mode` | ~640 tok | 只在 plan mode 激活时有意义，且 plan-mode 提示块已明确点名它，模型据此知道要加载。 |
-   | `message_branch` | ~380 tok | 跨 session / branch 通信，只在多分支协作时用到。 |
+   | `send_message` | ~380 tok | 跨 session / branch 通信，只在多分支协作时用到。 |
 
 `tool_search` 自身永不 defer——它是加载其它一切的唯一入口，defer 它会死锁。这一点有
 双重保险：`RESIDENT_TOOLS` 的并集，以及 `apply_default_deferral` 里的显式 guard。
@@ -292,7 +292,7 @@ token 全部按原价重读。
 
 - `tests/unit/test_tool_expansion_deterministic.py` — 展开确定性（缓存前缀稳定）
 - `tests/unit/test_session_config_tools_intent.py` — 意图往返、用户精选 list 原样透传、
-  端到端：意图展开含新工具（message_branch/list_sessions）+ web_search 叠加生效
+  端到端：意图展开含新工具（send_message/list_sessions）+ web_search 叠加生效
 - `tests/unit/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` —
   `tools=True` 产出 `{enabled:True}` 意图而非 list 快照
 - `tests/context/test_tool_defer.py` — §7.6 的各项 defer 性质，含轮边界冻结

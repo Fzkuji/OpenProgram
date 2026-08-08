@@ -97,7 +97,7 @@ class TurnRequest:
     # surfaces that as an error envelope, not a crash.
     attachments: Optional[list[dict]] = None
     # Spawn caller: when this turn STARTS a new branch that was spawned by
-    # another node (message_branch target="new"), this is the id of the
+    # another node (send_message to="new"), this is the id of the
     # spawning node. The dispatcher sets the new branch-root's ``caller`` to
     # it (instead of ROOT), so the branch is an explicit spawn — otherwise a
     # ROOT-parented branch root with no predecessor gets seq-stitched into a
@@ -109,7 +109,7 @@ class TurnRequest:
     # 类型是 session_config.PermissionRules，这里用 Any 避免循环 import。
     permission_rules: Any = None
     # HEAD single-writer (context/compaction.md §5): a same-session
-    # SPAWNED turn (task / message_branch sub-agent) is machinery, not
+    # SPAWNED turn (task / send_message sub-agent) is machinery, not
     # the conversation the user is on — it must never move the session
     # head. With head stolen mid-run, every head-following surface (the
     # transcript mirror, branches_list broadcasts) switched to the

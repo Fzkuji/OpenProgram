@@ -7,7 +7,7 @@ reason about work that happened outside its own context — what the
 skill or agentic function.
 
 Discovery is already covered: ``list_sessions`` and ``list_branches``
-(``agent_collab``) name the session ids and ``SID:HEAD`` branch tips
+(``send_message``) name the session ids and ``SID:HEAD`` branch tips
 this tool takes as arguments.
 """
 from .session_transcript import session_transcript

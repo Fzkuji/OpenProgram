@@ -72,7 +72,7 @@ _DESCRIPTION = (
 # single "coordinator" hop turned out to be an agent avoiding its job
 # in practice (observed live: a weather query bounced through a whole
 # delegation chain, every hop re-wording the same prompt). Deliberately
-# much tighter than message_branch's MAX_SPAWN_DEPTH=8, which budgets
+# much tighter than send_message's MAX_SPAWN_DEPTH=8, which budgets
 # multi-round branch-to-branch conversation, not delegation.
 MAX_TASK_DEPTH = 1
 
@@ -131,14 +131,14 @@ def _task_impl(
             for c in label
         )[:24]
 
-    # Depth guard — shares message_branch's counter so task() and
-    # message_branch spawns count toward the same chain, but with a much
+    # Depth guard — shares send_message's counter so task() and
+    # send_message spawns count toward the same chain, but with a much
     # tighter cap: only the main agent may task(); a spawned agent works
     # with its own tools, it never re-delegates (observed live: a
     # 5-generation weather-query delegation chain, every hop just
-    # re-wording the same prompt). message_branch keeps its own looser
+    # re-wording the same prompt). send_message keeps its own looser
     # MAX_SPAWN_DEPTH for branch-to-branch dialogue.
-    from openprogram.functions.tools.agent_collab.message_branch import (
+    from openprogram.functions.tools.send_message.send_message import (
         current_spawn_depth,
         set_spawn_depth,
         _spawn_depth,

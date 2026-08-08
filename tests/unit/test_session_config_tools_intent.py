@@ -80,7 +80,7 @@ def test_intent_expands_to_live_tools_including_new_ones():
     resolved = resolve_tools({}, intent, source="web")
     names = {t.name for t in (resolved or [])}
     # the collaboration tools added to DEFAULT_TOOLS must be present
-    assert "message_branch" in names
+    assert "send_message" in names
     assert "list_sessions" in names
 
 

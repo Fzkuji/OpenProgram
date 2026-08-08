@@ -1,4 +1,4 @@
-"""C4 — cross-session message_branch reply routing.
+"""C4 — cross-session send_message reply routing.
 
 When agent A (session A) messages a branch in session B, B's reply must be
 delivered back to A's session, not B's. This is carried by the Task's

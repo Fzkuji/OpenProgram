@@ -80,7 +80,7 @@ DEFAULT_TOOLS: list[str] = [
     "task",
     # Branch-to-branch communication — agent can see other sessions/
     # branches and message them (docs/design/runtime/agent-collaboration.md).
-    "message_branch",
+    "send_message",
     "list_sessions",
     "list_branches",
     "todo_read",
@@ -130,7 +130,7 @@ DEFERRED_DEFAULT_TOOLS: set = {
     # "打开网页/截图" 时模型再加载，日常编码会话完全用不到。
     "playwright_browser",
     # 378 tok。跨 session/branch 通信，多分支协作场景才用得上。
-    "message_branch",
+    "send_message",
 }
 
 # 常驻工具：schema 一直带在请求里（不 defer）。= DEFAULT_TOOLS 减去上面的冷门大块，
@@ -171,7 +171,7 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             "bash", "read", "write", "edit",
             "glob", "grep", "list",
             "apply_patch", "process", "execute_code",
-            "task", "message_branch", "list_sessions", "list_branches",
+            "task", "send_message", "list_sessions", "list_branches",
             "todo_read", "todo_write",
             "ask_user_question", "cron", "canvas",
             "spawn_program", "mixture_of_agents",

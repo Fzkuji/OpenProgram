@@ -63,7 +63,7 @@
 
 ### turn_id 绑 ContextVar——框架解耦的另一根脊柱
 
-`_current_turn_id.set(assistant_msg_id)`（`:379`）是关键：ContextVar 沿 asyncio task 传播，turn 内**任何**协程（工具执行、`@agentic_function`、`message_branch`）都读得到同一 turn id，从而把文件备份、子分支父锚点都归到正确的 assistant 消息上。同时绑 `_store`（`:435`）让深层 runtime 写同一 SQLite DAG，无需层层透传。`finally` 块成功/异常/提前 return 都会 `reset`。
+`_current_turn_id.set(assistant_msg_id)`（`:379`）是关键：ContextVar 沿 asyncio task 传播，turn 内**任何**协程（工具执行、`@agentic_function`、`send_message`）都读得到同一 turn id，从而把文件备份、子分支父锚点都归到正确的 assistant 消息上。同时绑 `_store`（`:435`）让深层 runtime 写同一 SQLite DAG，无需层层透传。`finally` 块成功/异常/提前 return 都会 `reset`。
 
 ### 上下文组装：单轮 / 多轮 / 分支
 
@@ -77,7 +77,7 @@
 
 **单轮 vs 多轮唯一差别就是 `get_branch` 回走出来的链长度**：单轮链上只有刚写的 user 节点（挂在 ROOT 下），多轮则是一条完整父链。
 
-> **分支怎么"写"出来**（上面讲的是怎么"读"）：fork 的写入侧 = 给 user 节点指一个非 active-tail 的 caller（存储层 `set_head` 改 UI 指针），或 `message_branch` 起新根（见 §⑤）。读=三种 get_branch，写=换 head 指针 / 新建根。
+> **分支怎么"写"出来**（上面讲的是怎么"读"）：fork 的写入侧 = 给 user 节点指一个非 active-tail 的 caller（存储层 `set_head` 改 UI 指针），或 `send_message` 起新根（见 §⑤）。读=三种 get_branch，写=换 head 指针 / 新建根。
 
 ### ★ 调模型前：上下文引擎先跑一遍（每轮自动压缩主路径）★
 
@@ -138,8 +138,8 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 | `model.response_started` | agent_loop `:442` | 旁观 | 模型流开始 |
 | `model.response_completed` | agent_loop `:466` | proactive 收尾策略 | 收尾时机检查 |
 | `subagent.started` / `.ended` | task/runner `:115`（origin=`system`，session 显式传参，因 worker 线程 ContextVar 不可靠） | 旁观 | 子 agent 状态漏斗 |
-| `branch.message_sent` | message_branch `:266` | 旁观 + `ws.frame` | from/to/is_new/sources |
-| `branch.message_replied` | message_branch `:344` | 旁观 + `ws.frame` | 含 is_error |
+| `branch.message_sent` | send_message `:266` | 旁观 + `ws.frame` | from/to/is_new/sources |
+| `branch.message_replied` | send_message `:344` | 旁观 + `ws.frame` | 含 is_error |
 | `question.asked` | questions `:164`（同时 `emit_ws_frame` `:161` 成前端卡片） | channels question bridge（`_question_bridge.py:43`） | 既进总线又发 ws 帧 |
 | `question.replied` | questions `:275`（`resolve_question_and_broadcast:262`） | 前端 | **只走 ws 帧** |
 | `question.rejected` | questions `:173/:276` | 前端按"收回"处理 | **只走 ws 帧** |
@@ -203,13 +203,13 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 - **子 agent**：`run_agent_turn(sid, prompt, agent_id, branch_from, label)`（`sub_agent_run.py:41`）内部就是再调一次 `process_user_turn`（`:96`），用 `source="agent_spawn"`、`permission_mode="bypass"`（`:89`）。返回 `AgentTurnResult`（`:32`，`head_id`=新分支 tip）；`label` 经 `set_branch_name` 成命名分支（`:109`）。
 **对外事件**：`model.response_started/completed`、`subagent.started/ended`（后者由 task/runner 发）。
 
-### ⑤ 协作　message_branch + 跨 session + 防护
+### ⑤ 协作　send_message + 跨 session + 防护
 
 **职责**：分支/会话之间投递消息、跑分支、把回复带回来。
-**关键文件**：`functions/tools/agent_collab/message_branch.py`、`functions/tools/agent_collab/list_branches.py`。
+**关键文件**：`functions/tools/send_message/send_message.py`、`functions/tools/send_message/list_branches.py`。
 **关键机制**：
-- `message_branch(message, target, sources, agent_id, wait)`（`:393` → `_message_branch_impl:186`）。
-- target 语义（`_parse_target:167`）：`new`（当前 session 新根）/ `new:SID:MSG_ID`（fork 某节点继承其链）/ `SID:HEAD`（投到已存在分支 = 从其 head 再跑一轮）。
+- `send_message(message, to, sources, agent_id, wait)`（`:393` → `_send_message_impl:186`）。
+- to 语义（`_parse_to:167`）：`new`（当前 session 新根）/ `new:SID:MSG_ID`（fork 某节点继承其链）/ `SID:HEAD`（投到已存在分支 = 从其 head 再跑一轮）。
 - 父锚点 `_resolve_parent`（`:74`）读 dispatcher 的 session/turn ContextVar，**turn id 缺失时回退到 session head**（修了"no active parent turn"）。
 - **sources 综合**：`_gather_sources`（`:128`）把每个源分支 tip 文本包成 `<branch source=...>` 块前置给目标模型综合。
 - 异步（默认）交给 task runner（`run_agent_turn_async`），跑完写 attach pointer 并 dispatch followup 回**发起方** session（回复自动回流）。
@@ -225,11 +225,11 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 - **引用扫描结果未被 ContextCommit 规则消费**：目前仅用于日志（`engine.py:204–212`）。
 - **DAG 渲染回退路径与正常路径并存**：坏 commit 时 fall back 到 legacy（`engine.py:218–220`）。
 - **核心入口无覆盖测试**：`process_user_turn` / `agent_loop` 若干路径标注「⚠️ no covering tests found」。
-- **worker 线程 ContextVar 不可靠**：`subagent.started/ended` 因此由 session 显式传参（`agent/task/runner.py:111–115`）；`message_branch._resolve_parent` 为此加了 head 回退。
+- **worker 线程 ContextVar 不可靠**：`subagent.started/ended` 因此由 session 显式传参（`agent/task/runner.py:111–115`）；`send_message._resolve_parent` 为此加了 head 回退。
 - **`ContextEngine.after_turn` 有两层**：抽象基类桩 `engine.py:124` 为 `pass`；**具体引擎实现 `engine.py:437` 才是真正在干活的**（usage 回灌 + 发 compaction_recommended），由 `dispatcher/finalize.py:308` 调用。
 
 ---
 
 ## 主线锚点速查
 
-dispatcher 入口 `dispatcher/__init__.py:97`；turn_id 绑定 `:379`；历史/分支解析 `:186–198`；user 节点写入 `:298`；**调模型前 prepare/auto-compact** `_run_loop_blocking :885/:896/:1074`；finalize `:711`/`dispatcher/finalize.py:175`（ContextCommit 回填 `:283`、after_turn `:308`→`engine.py:437`）。事件总线 `events/bus.py:141/159/241`；tool.before 拦截 `agent_loop.py:695/:701` + `events/tool_gate.py:53`。上下文 `engine.py:194` + 两条压缩路径（auto-compact `_run_loop_blocking:896` / microcompact `microcompact.py:76`）。agent loop `agent_loop.py:114/205/654`；子 agent `sub_agent_run.py:41`。协作 `message_branch.py:186/393`，深度上限 `:35`。
+dispatcher 入口 `dispatcher/__init__.py:97`；turn_id 绑定 `:379`；历史/分支解析 `:186–198`；user 节点写入 `:298`；**调模型前 prepare/auto-compact** `_run_loop_blocking :885/:896/:1074`；finalize `:711`/`dispatcher/finalize.py:175`（ContextCommit 回填 `:283`、after_turn `:308`→`engine.py:437`）。事件总线 `events/bus.py:141/159/241`；tool.before 拦截 `agent_loop.py:695/:701` + `events/tool_gate.py:53`。上下文 `engine.py:194` + 两条压缩路径（auto-compact `_run_loop_blocking:896` / microcompact `microcompact.py:76`）。agent loop `agent_loop.py:114/205/654`；子 agent `sub_agent_run.py:41`。协作 `send_message.py:186/393`，深度上限 `:35`。

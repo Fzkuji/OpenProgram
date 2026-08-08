@@ -66,7 +66,7 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 |---|---|---|
 | `task` (+ `await_task` / `cancel_task`) | Spawn another agent within the same session and collect its reply | Nothing |
 | `spawn_program` | Invoke any registered `@agentic_function` | Nothing |
-| `message_branch` (+ `list_branches` / `list_sessions`) | Cross-branch communication | Nothing |
+| `send_message` (+ `list_branches` / `list_sessions`) | Cross-branch communication | Nothing |
 | `mixture_of_agents` | Ask N models in parallel, then synthesize | Multiple configured provider keys |
 | `ask_user_question` | Ask the user 1-N questions with options | Nothing |
 | `todo_read` / `todo_write` | In-session task list | Nothing |

@@ -105,12 +105,12 @@ class Task:
     caller_msg_id: Optional[str] = None
     # The session that INITIATED this task. Usually == parent_session_id
     # (the task runs in the caller's own session). For cross-session
-    # messaging (message_branch to another session) the task runs in the
+    # messaging (send_message to another session) the task runs in the
     # TARGET session (parent_session_id) but its reply must be delivered
     # back to the INITIATOR's session — that's caller_session_id. None
     # means "same as parent_session_id" (the common case).
     caller_session_id: Optional[str] = None
-    # Spawn-chain depth for the loop guard (message_branch §5.1). The
+    # Spawn-chain depth for the loop guard (send_message §5.1). The
     # child turn this task runs is at this depth; further spawns from it
     # increment again. 0 = a top-level (user-initiated) turn.
     spawn_depth: int = 0

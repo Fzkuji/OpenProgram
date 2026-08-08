@@ -1,7 +1,7 @@
-"""message_branch — the single branch-to-branch communication primitive.
+"""send_message — the single branch-to-branch communication primitive.
 
 Deliver a message to a branch → trigger that branch to run one turn →
-its reply auto-returns to the sender. Three usages via ``target``:
+its reply auto-returns to the sender. Three usages via ``to``:
 
   * ``"new"``            — create a fresh branch (new session) from ROOT,
                            deliver the message, run it. (spawn / new chat)
@@ -14,7 +14,7 @@ automatically (the task runner's followup). ``wait=True`` blocks for the
 reply.
 
 Design: docs/design/runtime/agent-collaboration.md. This file is C1 —
-the core path for ``target="new"`` (spawn usage). Existing-branch /
+the core path for ``to="new"`` (spawn usage). Existing-branch /
 cross-session / synthesis / robustness land in later steps.
 """
 from __future__ import annotations
@@ -24,13 +24,13 @@ import contextvars
 from openprogram.functions._runtime import function
 
 
-# Depth of the current spawn chain (A→B→C…). Each message_branch that
+# Depth of the current spawn chain (A→B→C…). Each send_message that
 # spawns increments it for the child turn; when it reaches MAX_SPAWN_DEPTH
 # further spawns are refused — the guard against A↔B / runaway recursion
 # (design §5.1). Set by the runner on the child turn (cross-thread) and by
 # the sync path inline.
 _spawn_depth: contextvars.ContextVar[int] = contextvars.ContextVar(
-    "message_branch_spawn_depth", default=0,
+    "send_message_spawn_depth", default=0,
 )
 MAX_SPAWN_DEPTH = 8
 
@@ -49,16 +49,16 @@ _DESCRIPTION = (
     "Branch-to-branch communication: deliver a message to a branch, run "
     "one turn there, and (by default, async) have its reply come back to "
     "you automatically. ONE tool for spawning sub-agents, messaging other "
-    "branches, and synthesizing across branches — chosen by `target`:\n"
+    "branches, and synthesizing across branches — chosen by `to`:\n"
     "\n"
-    "  target=\"new\" (DEFAULT): create a fresh branch and run `message` "
+    "  to=\"new\" (DEFAULT): create a fresh branch and run `message` "
     "in it — i.e. spawn a sub-agent / open a new line of work. The new "
     "branch sees ONLY `message` (a clean worker); pack what it needs into "
     "the message. Want several? call this several times — they run in "
     "parallel, each returning to you when done.\n"
-    "  target=\"new:SID:MSG_ID\": fork a new branch off an existing node "
+    "  to=\"new:SID:MSG_ID\": fork a new branch off an existing node "
     "(it inherits the chain up to that node), then run `message`.\n"
-    "  target=\"SID:HEAD\": deliver `message` to an existing branch and "
+    "  to=\"SID:HEAD\": deliver `message` to an existing branch and "
     "trigger it to respond.\n"
     "\n"
     "wait=False (DEFAULT): returns a delivery id immediately; you are NOT "
@@ -164,15 +164,15 @@ def _gather_sources(sources: list[str] | None) -> str:
     )
 
 
-def _parse_target(target: str) -> tuple[str, str | None, str | None]:
-    """Parse the ``target`` arg into (kind, session_id, fork_msg_id).
+def _parse_to(to: str) -> tuple[str, str | None, str | None]:
+    """Parse the ``to`` arg into (kind, session_id, fork_msg_id).
 
     kind ∈ {"new", "fork", "existing"}:
       * "new"            → ("new", None, None)
       * "new:SID:MSG_ID" → ("fork", SID, MSG_ID)
       * "SID:HEAD"       → ("existing", SID, HEAD)
     """
-    t = (target or "new").strip()
+    t = (to or "new").strip()
     if t == "new":
         return "new", None, None
     if t.startswith("new:"):
@@ -183,9 +183,9 @@ def _parse_target(target: str) -> tuple[str, str | None, str | None]:
     return "existing", sid or None, (head or None)
 
 
-def _message_branch_impl(
+def _send_message_impl(
     message: str,
-    target: str = "new",
+    to: str = "new",
     sources: list[str] | None = None,
     agent_id: str = "",
     wait: bool = False,
@@ -197,7 +197,7 @@ def _message_branch_impl(
     sid, aid, parent_agent = _resolve_parent()
     if not sid or not aid:
         return (
-            "[message_branch error] no active parent turn — must be called "
+            "[send_message error] no active parent turn — must be called "
             "from inside an assistant turn (the dispatcher sets the session "
             "+ turn ContextVars on entry)."
         )
@@ -208,19 +208,19 @@ def _message_branch_impl(
     depth = current_spawn_depth()
     if depth >= MAX_SPAWN_DEPTH:
         return (
-            f"[message_branch refused] spawn depth {depth} reached the max "
+            f"[send_message refused] spawn depth {depth} reached the max "
             f"({MAX_SPAWN_DEPTH}). This chain is too deep — finish the work "
             "here instead of delegating further."
         )
 
     chosen_agent = (agent_id or "").strip() or parent_agent or "main"
-    kind, tgt_sid, fork_msg = _parse_target(target)
+    kind, tgt_sid, fork_msg = _parse_to(to)
 
     # Self-target guard: messaging your own current turn is a direct loop.
     if kind == "existing" and (tgt_sid or sid) == sid and fork_msg == aid:
         return (
-            "[message_branch refused] target is your own current turn — "
-            "that's a direct loop. Pick a different branch or use target=new."
+            "[send_message refused] target is your own current turn — "
+            "that's a direct loop. Pick a different branch or use to=new."
         )
 
     # Resolve target into (run_session, branch_from, is_new):
@@ -234,14 +234,14 @@ def _message_branch_impl(
         is_new = False
         if not branch_from:
             return (
-                "[message_branch error] target=\"SID:HEAD\" needs the branch "
+                "[send_message error] to=\"SID:HEAD\" needs the branch "
                 "head after the colon (see list_branches for ready targets)."
             )
         # Target session must exist — don't silently create.
         from openprogram.agent.session_db import default_db
         if default_db().get_session(run_session) is None:
             return (
-                f"[message_branch error] target session {run_session!r} not "
+                f"[send_message error] target session {run_session!r} not "
                 "found (see list_sessions)."
             )
     elif kind == "fork":
@@ -250,7 +250,7 @@ def _message_branch_impl(
         is_new = True
         if not branch_from:
             return (
-                "[message_branch error] target=\"new:SID:MSG_ID\" needs a "
+                "[send_message error] to=\"new:SID:MSG_ID\" needs a "
                 "fork node id after the second colon."
             )
     else:  # "new" — fresh branch in the current session repo (new root)
@@ -298,7 +298,7 @@ def _message_branch_impl(
                 spawn_depth=depth + 1,  # child inherits depth+1 (loop guard)
             )
         except Exception as e:  # noqa: BLE001
-            return f"[message_branch error] {type(e).__name__}: {e}"
+            return f"[send_message error] {type(e).__name__}: {e}"
         return (
             f"[delivered, running async] delivery_id={task_id}\n"
             "The target branch is running; its reply will come back to you "
@@ -328,7 +328,7 @@ def _message_branch_impl(
             advance_head=(run_session != sid),
         )
     except Exception as e:  # noqa: BLE001
-        return f"[message_branch error] {type(e).__name__}: {e}"
+        return f"[send_message error] {type(e).__name__}: {e}"
     finally:
         _spawn_depth.reset(_tok)
 
@@ -356,10 +356,10 @@ def _message_branch_impl(
     _emit_branch_ui(sid, "replied", run_session, result.final_text or "")
 
     if result.error and not result.final_text:
-        return f"[message_branch error: head={result.head_id}] {result.error}"
+        return f"[send_message error: head={result.head_id}] {result.error}"
     out = _clip_result(result.final_text or "(target branch returned no text)")
     if result.error:
-        out = f"{out}\n\n[message_branch warning] {result.error}"
+        out = f"{out}\n\n[send_message warning] {result.error}"
     return f"{out}\n\n[branch {run_session}:{result.head_id or '?'}]"
 
 
@@ -390,21 +390,21 @@ def _clip_result(text: str) -> str:
 
 
 @function(
-    name="message_branch",
+    name="send_message",
     description=_DESCRIPTION,
     toolset=["core"],
 )
-def message_branch(
+def send_message(
     message: str,
-    target: str = "new",
+    to: str = "new",
     sources: list[str] | None = None,
     agent_id: str = "",
     wait: bool = False,
 ) -> str:
     """Deliver a message to a branch, run it, get the reply back."""
-    return _message_branch_impl(
+    return _send_message_impl(
         message=message,
-        target=target,
+        to=to,
         sources=sources,
         agent_id=agent_id,
         wait=wait,

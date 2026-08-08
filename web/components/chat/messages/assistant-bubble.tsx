@@ -282,7 +282,7 @@ export function AssistantBubble({ msg, verdict }: {
               // ── 分段：text 块常驻；连续的 thinking/tool 块聚成一段
               // 执行痕迹。已落定的轮次把每段折成一条摘要条（点击展开
               // 逐块序列）；流式进行中的轮次平铺，让用户实时看到它在
-              // 干嘛。段内出现 task/message_branch 调用时，把对应的
+              // 干嘛。段内出现 task/send_message 调用时，把对应的
               // Spawned 卡（一行态）挂在该段摘要条下面——在哪调用就
               // 画在哪。
               type ExecSeg = {

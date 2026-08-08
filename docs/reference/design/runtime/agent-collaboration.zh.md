@@ -52,37 +52,37 @@ DAG 画法已在 `dag/dag-live.html` 定稿（分支间通信场景：异步、s
 
 把原语包成 agent 能调的工具。**一个核心工具 + 两个列举工具**。
 
-### 2.1 `message_branch` — 分支间通信（核心，唯一的协作原语）
+### 2.1 `send_message` — 分支间通信（核心，唯一的协作原语）
 
 ```
-message_branch(
+send_message(
     message: str,                       # 投给目标的内容/指令
-    target: str = "new",                # 见下方 target 取值
+    to: str = "new",                # 见下方 to 取值
     sources: list[str] = [],            # 额外带上这些分支的内容一起投（综合多条时用）
     agent_id: str = "main",             # 目标用哪个 agent
     wait: bool = false,                 # false=异步(默认,瞬间返回)；true=同步等回复
 ) -> str
 ```
 
-**`target` 取值——创建分支和发消息是同一参数的不同取值：**
+**`to` 取值——创建分支和发消息是同一参数的不同取值：**
 
-| target | 含义 |
+| to | 含义 |
 |---|---|
 | `"new"` | 从 ROOT 全新创建一条分支（新 session），投 message 让它跑 |
 | `"new:sid:msg_id"` | 从某节点 fork 出一条新分支，投 message 让它跑 |
 | `"sid:head"` | 往一条已存在分支投 message |
 
-**创建分支不是独立操作，就是 `target` 取 `new` / `new:…`**。三种用法：
+**创建分支不是独立操作，就是 `to` 取 `new` / `new:…`**。三种用法：
 
-- **创建并跑（派生 / 开新会话 / fork）**：`target="new"` 或 `"new:sid:msg_id"` →
+- **创建并跑（派生 / 开新会话 / fork）**：`to="new"` 或 `"new:sid:msg_id"` →
   新建分支 + 投 message，它跑完自动回流。（想建几条，就调几次，各自异步并行。）
-- **发消息给已有分支/session**：`target="sid:head"` → 往那条分支投 message，触发它
-  跑一轮，答完自动回送。跨 session 同一路径（target 是任意 session）。
+- **发消息给已有分支/session**：`to="sid:head"` → 往那条分支投 message，触发它
+  跑一轮，答完自动回送。跨 session 同一路径（to 是任意 session）。
 - **综合多条分支**：`sources=["s1:h1","s2:h2",...]` → 投递时把这几条分支的内容一起
-  带上，目标模型读完综合。数量任意。可与任意 target 组合。
+  带上，目标模型读完综合。数量任意。可与任意 to 组合。
 
 **统一执行流程**（无论哪种用法）：
-1. 解析 `target`：`new` → 新建 session + 空 `branch_from`；`new:sid:msg_id` →
+1. 解析 `to`：`new` → 新建 session + 空 `branch_from`；`new:sid:msg_id` →
    在 sid 里 `branch_from=msg_id` fork；`sid:head` → `set_head` 切到该分支。
 2. 组装投递内容：`message` +（若有 `sources`）把每条来源分支的内容附上。
 3. 投递 + 触发：`process_user_turn(TurnRequest(session_id=目标, user_text=投递内容,
@@ -113,13 +113,13 @@ list_sessions(limit=50, agent_id?, source?) -> str      # db.list_sessions
 list_branches(session_id?) -> str                        # db.list_branches
 ```
 
-通信前要能指定 target/sources，所以得先列出有哪些 session、每个有哪些分支
+通信前要能指定 to/sources，所以得先列出有哪些 session、每个有哪些分支
 （`(session_id, head_id)` + name）。这是"两个 agent 互相看见"的入口。数据层 + WS
 handler 已有（`handle_list_sessions` / `handle_list_branches`），只缺包成工具。
 
 ### 2.4 新建分支要有名字
 
-`message_branch` 每次 `target="new"` / `"new:…"` 创建分支，**都必须给分支一个名字**
+`send_message` 每次 `to="new"` / `"new:…"` 创建分支，**都必须给分支一个名字**
 ——否则 web 端只能显示 8 位 hex 短号，一堆分支分不清谁是谁。
 
 - **立刻有名（Stage 1）**：创建时把一个简短 label 传给 `run_agent_turn(... label=…)`
@@ -128,14 +128,14 @@ handler 已有（`handle_list_sessions` / `handle_list_branches`），只缺包�
 - **后台自动改好名（Stage 2）**：分支正常聊起来后，由 `finalize_turn` 在 `turns`
   命中阈值 `{1,6,16,40}` 时，后台线程用 LLM 依据分支内容生成更贴切的标题，覆盖
   Stage 1 的临时名。规则见 [branch-naming](operations/branch-naming.zh.md)——那里定义
-  了命名的分级、锁、触发点；本节只强调：**message_branch 派生的分支和用户手动
+  了命名的分级、锁、触发点；本节只强调：**send_message 派生的分支和用户手动
   fork 的分支，走同一套命名（都要 Stage 1 占位名 + Stage 2 自动改名），不能漏。**
 
 ### 2.5 回送节点落在哪：续接发起方分支，不拼主线
 
 异步回送（`wait=false`）时，`_dispatch_followup` 把目标分支的回复作为一个
 **synthetic user-role turn** 喂回发起方 session。**关键规则：这个回送节点的
-`predecessor` 必须指向"发起 message_branch 的那个节点"（caller），不是发起方
+`predecessor` 必须指向"发起 send_message 的那个节点"（caller），不是发起方
 session 当前的 `head_id`。**
 
 为什么：
@@ -224,7 +224,7 @@ emit_ws_frame(frame)                         # 源用：把现成 WS 帧经总�
 
 | type | 何时 | origin | payload 关键字段 |
 |---|---|---|---|
-| `branch.message_sent` | message_branch 投递 | agent | from, to, sources, delivery_id, is_new, chain |
+| `branch.message_sent` | send_message 投递 | agent | from, to, sources, delivery_id, is_new, chain |
 | `branch.message_replied` | 目标答完自动回送 | agent | from, to, delivery_id, is_error |
 | `branch.created` / `.started` / `.failed` / `.cancelled` | 分支状态转换 | agent | branch, parent, agent_id, status |
 | `sessions.listed` / `branches.listed` | 列举 | agent | count |
@@ -240,7 +240,7 @@ emit_ws_frame(frame)                         # 源用：把现成 WS 帧经总�
   `_execute_tool_calls` 在 `tool.execute()` 前有同步问询点（`openprogram/events/tool_gate.py`
   `register_tool_gate`）。必须快（不许调 LLM）；多方表态取最严；对 subagent 也生效
   （在 approval 包装外，`permission_mode=bypass` 关不掉它）。**通信工具
-  `message_branch` 走它做值守拦截**（见 §5）。
+  `send_message` 走它做值守拦截**（见 §5）。
 
 ### 3.6 通信怎么用事件层
 
@@ -265,15 +265,15 @@ A、B 同时在跑（同 session 不同分支，或不同 session）：
 
 1. **看见**：A 调 `list_sessions` → 看到 B；`list_branches` → 看到 B 的活跃分支
    `(B_session, B_head)`。
-2. **发**：A 调 `message_branch("...", target="B_session:B_head")` → 瞬间返回，
+2. **发**：A 调 `send_message("...", to="B_session:B_head")` → 瞬间返回，
    A 继续。
 3. **B 收到**：消息进 B 分支（B 那边一个 △"收到 A 的消息"），B 跑一轮答它（△）。
    两边前端经 ws.frame 实时看到。
 4. **回送 A**：B 答完，`_dispatch_followup` 自动把回复追加到 A 末尾（△）+ 触发 A
    跑一轮，A 醒来读到、可继续。
-5. **可循环**：A 再 `message_branch` 给 B……两条分支各自不阻塞、不串行。
+5. **可循环**：A 再 `send_message` 给 B……两条分支各自不阻塞、不串行。
 
-派生（target="new"）和综合（带 sources）是同一流程的另两种参数，不另列。
+派生（to="new"）和综合（带 sources）是同一流程的另两种参数，不另列。
 
 ---
 
@@ -283,13 +283,13 @@ A、B 同时在跑（同 session 不同分支，或不同 session）：
 
 ### 5.1 递归派生 + 死循环防护
 
-**允许递归派生**（子分支能再 `message_branch` 派子分支，做多层任务分解），靠以下防爆：
+**允许递归派生**（子分支能再 `send_message` 派子分支，做多层任务分解），靠以下防爆：
 
 - **深度上限**：每次投递在 Event metadata 里带一条**派生链**（`chain: [发起分支, …,
-  当前]`）。`message_branch` 执行时若链长 ≥ `MAX_DEPTH`（默认 8），拒绝并把理由回给
+  当前]`）。`send_message` 执行时若链长 ≥ `MAX_DEPTH`（默认 8），拒绝并把理由回给
   模型。回送（自动 followup）继承同一条链，不重置——所以 A↔B 互发的来回也算进深度，
   到顶自动停。
-- **自发拒绝**：target 指向**发起分支自己**（直接环）立即拒绝。
+- **自发拒绝**：to 指向**发起分支自己**（直接环）立即拒绝。
 - 链信息只在 metadata 流转，不进模型可见内容。
 
 ### 5.2 并发上限 + 排队
@@ -331,14 +331,14 @@ A 给 B 发消息时 B 可能正跑一轮。**不打断、不丢弃——排队*
 
 ### 5.8 值守拦截 + 校验
 
-- `message_branch` 走事件层 `tool.before` 同步问询点：无人值守 + deny 策略时拦下要求
+- `send_message` 走事件层 `tool.before` 同步问询点：无人值守 + deny 策略时拦下要求
   确认（对子分支也生效，在 approval 包装外）。
-- 投递前校验 `target`（非 "new"）真实存在（`db.get_session` 非 None），不存在报错、
+- 投递前校验 `to`（非 "new"）真实存在（`db.get_session` 非 None），不存在报错、
   不静默新建。沿用三层门控（check_fn / can_use / requires_approval）。
 
 ### 5.9 分支可见性
 
-分支标记 **内部（子派生）vs 用户可见**：内部分支只能被 `message_branch` 触发，不进
+分支标记 **内部（子派生）vs 用户可见**：内部分支只能被 `send_message` 触发，不进
 UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent 寻址）。
 
 ### 5.10 明确不做（及理由）
@@ -354,8 +354,8 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 
 ## 6. 前后端清单
 
-**后端（工具，`openprogram/functions/tools/agent_collab/`）**
-- `message_branch.py` — 唯一核心：投递 + 触发 + 自动回送 + 多源自我总结
+**后端（工具，`openprogram/functions/tools/send_message/`）**
+- `send_message.py` — 唯一核心：投递 + 触发 + 自动回送 + 多源自我总结
 - `list_sessions.py` / `list_branches.py` — 复用 db.list_*
 - 各工具 `emit_safe(...)`；跨 session 通知用 `emit_ws_frame`
 
@@ -367,7 +367,7 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 - `openprogram.events`（emit_safe / emit_ws_frame）
 
 **前端（`web/`）**
-- session / branch 列表面板（已有 WS handler）+ "选 target → 发消息"交互入口
+- session / branch 列表面板（已有 WS handler）+ "选 to → 发消息"交互入口
 - 收到 `branch.message_sent` / `branch.message_replied`（经 ws.frame）→ 在对应
   session 的 DAG / 消息流渲染通信节点 + 回流软连接线（hover 显示，dag-live 已定稿）
 - 派生进度复用现有 `task_status` 帧 + tasks 面板
@@ -381,13 +381,13 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 
 | 行为 | 表现 |
 |---|---|
-| 派生（`target="new"`） | agent 调一次，新建分支跑一轮，结果自动 followup 回发起方；事件 message_sent/replied 在事件日志可见 |
+| 派生（`to="new"`） | agent 调一次，新建分支跑一轮，结果自动 followup 回发起方；事件 message_sent/replied 在事件日志可见 |
 | 列举 | `list_sessions` / `list_branches` 列出真实的多 session / 多分支 |
 | 发给同 session 已有分支 | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
 | 跨 session | A 发给别的 session 走同一路径；两边前端经 ws.frame 实时更新 |
 | 多源综合 | 带 2 条 source 分支，每条先自我总结，目标模型综合出新回答 |
 | 健壮性（§5） | A↔B 互发到 MAX_DEPTH 自动停；派 30 个排队不打爆；取消父→子全停；给正跑的 B 发消息排队等它结束；子失败父收到 is_error；超大结果截断给文件路径 |
-| 安全（§5.7-5.9） | deny 下被 tool.before 拦；不存在的 target 报错；子分支权限不高于父、不进 UI 选择列表 |
+| 安全（§5.7-5.9） | deny 下被 tool.before 拦；不存在的 to 报错；子分支权限不高于父、不进 UI 选择列表 |
 | 前端 | webui 里选分支发消息，DAG 出现通信节点 + hover 软连接线 |
 
 ---
@@ -405,7 +405,7 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 | attach 连线（仅画图） | `openprogram/agent/sub_agent_run.py`（write_attach_pointer_for_spawn） |
 | 事件总线 | `openprogram/events/bus.py`（emit_safe / emit_ws_frame） |
 
-> 注："综合多条"由 `message_branch(sources=[...])` 提供，不另设独立工具。底层
+> 注："综合多条"由 `send_message(sources=[...])` 提供，不另设独立工具。底层
 > `_merge.py` 的多父 ContextCommit 血缘记录被复用来记下"这次综合来自哪几条分支"。
 
 ---
@@ -413,11 +413,11 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 ## 附：实现状态
 
 事件层（§3）、`TaskRunner`、`SessionStore`、`process_user_turn`、`branch_summarization`
-以及 `_dispatch_followup` 的自动回送均已存在，`message_branch` 及两个列举工具建在其上。
+以及 `_dispatch_followup` 的自动回送均已存在，`send_message` 及两个列举工具建在其上。
 
 两处与本设计尚有出入，需要在实现时补齐：
 
-- **派生分支的命名（§2.4）**：`message_branch` 调 `run_agent_turn` 时需传 label 以获得
+- **派生分支的命名（§2.4）**：`send_message` 调 `run_agent_turn` 时需传 label 以获得
   Stage 1 占位名，并接上 `finalize_turn` 的 Stage 2 自动改名触发；两者缺一时派生分支
   在 web 端只显示 8 位 hex 短号。
 - **回送节点的落位（§2.5）**：`_dispatch_followup` 构造 `TurnRequest` 时需显式指定

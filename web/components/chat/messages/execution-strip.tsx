@@ -28,7 +28,7 @@ import {
 } from "@/components/animated-icons";
 
 /** spawn 类工具：在摘要里算"子代理"，不算普通函数调用。 */
-export const SPAWNING_TOOL_NAMES = new Set(["task", "message_branch"]);
+export const SPAWNING_TOOL_NAMES = new Set(["task", "send_message"]);
 
 function wsSend(payload: unknown): void {
   const sock = getSocket();

@@ -1,9 +1,9 @@
 """list_sessions / list_branches — see what's out there to talk to.
 
 The discovery side of branch-to-branch communication: before you can
-``message_branch(target="SID:HEAD")`` you need to know which sessions and
+``send_message(to="SID:HEAD")`` you need to know which sessions and
 branches exist and how to address them. Both tools return human-readable
-listings whose lines double as ready-to-use ``target`` values.
+listings whose lines double as ready-to-use ``to`` values.
 
 Design: docs/design/runtime/agent-collaboration.md (C2).
 """
@@ -53,7 +53,7 @@ _LIST_SESSIONS_DESC = (
     "address them. Each line shows the session id, title, agent, last "
     "activity, and a one-line preview of its latest message. The current "
     "session is marked. Use a session id (or the id:head from "
-    "list_branches) as the `target` of message_branch to talk to it."
+    "list_branches) as the `to` of send_message to talk to it."
 )
 
 
@@ -96,10 +96,10 @@ def list_sessions(limit: int = 50, agent_id: str = "", source: str = "") -> str:
 
 _LIST_BRANCHES_DESC = (
     "List the branches of a session (defaults to the current session). "
-    "Each line gives a `SID:HEAD` you can pass directly as message_branch's "
-    "`target` to message that branch, plus its name (if any) and a preview "
+    "Each line gives a `SID:HEAD` you can pass directly as send_message's "
+    "`to` to message that branch, plus its name (if any) and a preview "
     "of its tip. Use this to find the exact branch to talk to before "
-    "calling message_branch."
+    "calling send_message."
 )
 
 
@@ -121,14 +121,14 @@ def _list_branches_impl(session_id: str = "") -> str:
     if not branches:
         return f"(session {sid} has no branches)"
 
-    lines = [f"{len(branches)} branch(es) in {sid} — pass a `target` below to message_branch:"]
+    lines = [f"{len(branches)} branch(es) in {sid} — pass a `to` below to send_message:"]
     for b in branches:
         head = b.get("head_msg_id", "?")
         name = b.get("name")
         preview = _last_text(sid, head_id=head)
         label = f" «{name}»" if name else ""
         lines.append(
-            f"- target={sid}:{head}{label}"
+            f"- to={sid}:{head}{label}"
             + (f"\n    “{preview}”" if preview else "")
         )
     return "\n".join(lines)

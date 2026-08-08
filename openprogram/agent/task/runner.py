@@ -543,12 +543,12 @@ class TaskRunner:
                     branch_from = None
                 else:
                     branch_from = task.parent_msg_id
-                # Bind the spawn-chain depth so message_branch calls made
+                # Bind the spawn-chain depth so send_message calls made
                 # INSIDE this child turn see the right depth and the loop
-                # guard can trip (message_branch §5.1).
+                # guard can trip (send_message §5.1).
                 _depth_tok = None
                 try:
-                    from openprogram.functions.tools.agent_collab.message_branch import (
+                    from openprogram.functions.tools.send_message.send_message import (
                         set_spawn_depth, _spawn_depth,
                     )
                     _depth_tok = set_spawn_depth(int(task.spawn_depth or 0))
@@ -946,7 +946,7 @@ class TaskRunner:
         sub_prompt = (task.prompt or task.description or "").strip()
         # Deliver the reply back to the INITIATOR's session. Same-session
         # spawn: caller_session_id is None → deliver to parent_session_id.
-        # Cross-session message_branch: deliver to caller_session_id (the
+        # Cross-session send_message: deliver to caller_session_id (the
         # sender), NOT the target session the task ran in.
         deliver_session = task.caller_session_id or task.parent_session_id
         cross = bool(
@@ -981,7 +981,7 @@ class TaskRunner:
                         f"[系统消息] 你之前发消息给的另一个分支 \"{label}\" "
                         f"回复了。\n{sub_request_line}{cross_reply}"
                         f"请基于这条回复继续——做总结、解读，或决定下一步"
-                        f"（继续追问可再调 message_branch）。"
+                        f"（继续追问可再调 send_message）。"
                     )
                 else:
                     followup_text = (

@@ -129,7 +129,7 @@ def process_user_turn(
     single turn's result unchanged.
     """
     # Same-session spawned turns (goal decisions, task agents,
-    # message_branch) are components inside someone else's turn, not the
+    # send_message) are components inside someone else's turn, not the
     # session's main line: they enter neither the goal loop nor the
     # turn.stop gate. Without this, the goal decision turn itself got
     # judged, which spawned another decision turn — recursion until the

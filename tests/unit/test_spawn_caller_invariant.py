@@ -7,7 +7,7 @@ forking it from ROOT. An inherit-mode spawn (branch_from set) passes
 ``spawn_caller=None`` — the fork point is already the predecessor.
 
 The sync task() path (commit 1d1fe016) had dropped this; the async runner
-and message_branch already had it. These tests pin all three so a refactor
+and send_message already had it. These tests pin all three so a refactor
 can't silently re-orphan a sub-branch at the root.
 
 Each entry imports ``run_agent_turn`` from
@@ -107,14 +107,14 @@ def test_task_sync_inherit_passes_no_spawn_caller(store, captured_run):
     assert captured_run["spawn_caller"] is None
 
 
-# ---- entry 2: message_branch (message_branch.py _message_branch_impl) ---
+# ---- entry 2: send_message (send_message.py _send_message_impl) ---
 
-def test_message_branch_new_root_passes_spawn_caller(store, captured_run):
-    from openprogram.functions.tools.agent_collab.message_branch import (
-        _message_branch_impl,
+def test_send_message_new_root_passes_spawn_caller(store, captured_run):
+    from openprogram.functions.tools.send_message.send_message import (
+        _send_message_impl,
     )
     _run_with_ctx(
-        lambda: _message_branch_impl(message="do it", target="new", wait=True),
+        lambda: _send_message_impl(message="do it", to="new", wait=True),
         session_id="p1", turn_id="a1",
     )
     # target=new → branch_from=None → explicit spawn attached to caller.
@@ -122,13 +122,13 @@ def test_message_branch_new_root_passes_spawn_caller(store, captured_run):
     assert captured_run["spawn_caller"] == "a1"
 
 
-def test_message_branch_fork_passes_no_spawn_caller(store, captured_run):
-    from openprogram.functions.tools.agent_collab.message_branch import (
-        _message_branch_impl,
+def test_send_message_fork_passes_no_spawn_caller(store, captured_run):
+    from openprogram.functions.tools.send_message.send_message import (
+        _send_message_impl,
     )
     _run_with_ctx(
-        lambda: _message_branch_impl(
-            message="do it", target="new:p1:u1", wait=True,
+        lambda: _send_message_impl(
+            message="do it", to="new:p1:u1", wait=True,
         ),
         session_id="p1", turn_id="a1",
     )
@@ -235,9 +235,9 @@ def test_task_async_passes_caller_and_depth(store, monkeypatch):
 
 def test_task_refuses_at_max_task_depth(store, captured_run):
     """task()'s own cap (MAX_TASK_DEPTH=1) is deliberately tighter than
-    message_branch's MAX_SPAWN_DEPTH: only the main agent may task();
+    send_message's MAX_SPAWN_DEPTH: only the main agent may task();
     a spawned agent delegating again gets refused."""
-    from openprogram.functions.tools.agent_collab.message_branch import (
+    from openprogram.functions.tools.send_message.send_message import (
         set_spawn_depth, _spawn_depth,
     )
     from openprogram.functions.tools.task.task import MAX_TASK_DEPTH, _task_impl
@@ -257,7 +257,7 @@ def test_task_refuses_at_max_task_depth(store, captured_run):
 def test_task_spawned_agent_cannot_redelegate(store, captured_run):
     """Depth 1 (a spawned agent) must NOT task() again — it does the
     work itself with its own tools."""
-    from openprogram.functions.tools.agent_collab.message_branch import (
+    from openprogram.functions.tools.send_message.send_message import (
         set_spawn_depth, _spawn_depth,
     )
     from openprogram.functions.tools.task.task import _task_impl
@@ -278,7 +278,7 @@ def test_task_sync_child_sees_incremented_depth(store, monkeypatch):
     """The sync path binds depth+1 around the child turn, so a chain of
     task()-inside-task() eventually trips the guard instead of recursing
     forever (each generation used to start back at depth 0)."""
-    from openprogram.functions.tools.agent_collab.message_branch import (
+    from openprogram.functions.tools.send_message.send_message import (
         current_spawn_depth,
     )
     from openprogram.agent.sub_agent_run import AgentTurnResult as _R

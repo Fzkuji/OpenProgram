@@ -222,7 +222,7 @@ branch:
 | Event | New branch's root | Attachment |
 |---|---|---|
 | retry / rewrite a turn | the forked-off user / llm node | shares predecessor with the replaced node |
-| spawn (task / message_branch dispatch) | the `source=agent_spawn` user node | caller = the initiating node, predecessor empty |
+| spawn (task / send_message dispatch) | the `source=agent_spawn` user node | caller = the initiating node, predecessor empty |
 | the new mainline from a merge | the merge node itself | lands in the base branch lane (see scenario 8), no new lane opened |
 
 **Branches are packed by actual column occupancy**: the columns a branch occupies = from
@@ -318,7 +318,7 @@ is conveyed only by line style:
 | call thread (anchor → its items, §12) | solid — the trunk pattern one level down: a vertical in the anchor's column, a horizontal stub per item (down first, then right, like every chain edge) | annotation grey | shown while open |
 | merge convergence (peer tip → merge node) | thick solid 2.4px | peer branch's color | shown |
 | attach merge-back (source tip → embed position) | long dashes `4 4` | source branch's color | shown when both ends are visible — an agent-internal tip merged into its triangle draws no line; the spawn head's position ON the thread is the return relationship |
-| inter-branch communication (send_to_branch) | dotted `1 5` | target branch's color | **shown only on hover** (numerous; always-on would smear) |
+| inter-branch communication (send_message) | dotted `1 5` | target branch's color | **shown only on hover** (numerous; always-on would smear) |
 
 **Every line is drawn centre to centre**, and the glyphs' background fill paints
 over the ends. Glyph edges sit at different distances per shape, so any fixed
@@ -398,14 +398,14 @@ placeholder box:
 |---|---|---|
 | 1–7 | Base layout (single turn / multi-turn / retry / tool indent / manual function / composite / collapse shift-left) | Scenario 4's tool calls show as the shoulder count in the default view (scene 11); the thread squares appear only after opening |
 | 8 | merge (multi-parent convergence) | ◉ solid circle with a hole, lands on the base branch lane, peer merge-in thick solid lines (peer lane color); attach pointer nodes are not drawn, only the lines |
-| 9 | cross-branch messaging (send_to_branch) | dotted `1 5`, target branch color, hidden by default / shown on hover; a from_branch user node lands at the target branch tail |
+| 9 | cross-branch messaging (send_message) | dotted `1 5`, target branch color, hidden by default / shown on hover; a from_branch user node lands at the target branch tail |
 | 10 | spawn dispatch → return | the sub-agent's head is an item ON its caller's thread (§12): it sits in the sequence position the spawn actually happened at, between the calls before and after it. Its return needs no extra line — the followup reply it triggers merges into the same anchor (§0), so dispatch, work and return are one column read top to bottom (the chat stream still renders the Spawned card, display order moved ahead — see `ui/invariants.md` rule 9) |
 | 11 | call-thread default aggregation | see §0/§12: folded to a shoulder count by default, click to open into layout, fold reclaims rows/cols per rule ②; open state is per-node independent and recursive |
 | 12 | status & badge legend | see §4: status drawn on the node's own stroke, no placeholder boxes; both sides of a cross-session spawn carry the ↗ corner mark |
 | 13 | badge anchoring · avoidance · collision · merged | see §5: anchor directly below the branch's last conversation-layer node, half-column left shift only when an edge crosses the anchor cell, collision shifts down one row, merging erases the badge (provenance moves into the merge node's tooltip) |
 
 **Send-back nodes and the switcher (semantic note, no dedicated layout scene)**: a
-message_branch send-back (the child branch's answer returning to the initiator's lane
+send_message send-back (the child branch's answer returning to the initiator's lane
 as a user node with `predecessor = the initiating node`) forms a fork whenever the user
 also sent a message while waiting — **send-back nodes participate in the `< N/M >`
 switcher** (they are genuine alternative continuations of the initiator's dialogue;
@@ -733,7 +733,7 @@ per event, top to bottom in call order. Fold reclaims the rows (rule ②).
 
 **The head IS the agent, and the spawn IS a call.** A spawn root draws as a
 SQUARE — dispatching an agent is a function call, and the square is the call
-vocabulary. The dispatch call node (`task` / `message_branch`) folds into it:
+vocabulary. The dispatch call node (`task` / `send_message`) folds into it:
 one spawn, one glyph (a dispatch that opened no spawn keeps its own square —
 that failure is worth seeing). The agent's internal turns are not chain
 nodes — they merge into it (§0), replies drawing as triangles and calls as

@@ -137,7 +137,7 @@ The design allows exactly one mover:
   old unconditional auto-advance plus per-caller snapshot/restore
   compensation.
 - **Spawned turns never move HEAD.** A same-session sub-agent turn
-  (task / message_branch) runs with `TurnRequest.advance_head=False`: the
+  (task / send_message) runs with `TurnRequest.advance_head=False`: the
   spawn branch opens without registering itself as head, and every write the
   inner dispatcher makes (branch root, placeholder, reply, finalize, error)
   is head-neutral. The transcript follows HEAD, so a stolen head switched
