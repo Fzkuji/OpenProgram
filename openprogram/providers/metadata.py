@@ -60,6 +60,8 @@ PROVIDER_LABELS: dict[str, str] = {
     "kimi-coding": "Kimi Coding",
     "vercel-ai-gateway": "Vercel AI Gateway",
     "opencode": "OpenCode",
+    # Zen 的姊妹线路：Go 订阅走 /zen/go/v1，模型集与计费都和 Zen 分开。
+    "opencode-go": "OpenCode Go",
     "deepseek": "DeepSeek",
     # Claude via local HTTP proxy daemon (replaces the old Claude Code
     # CLI provider). Tools come from OpenProgram's own registry instead
@@ -128,6 +130,7 @@ ENV_API_KEYS: dict[str, str | None] = {
     "kimi-coding": "MOONSHOT_API_KEY",
     "vercel-ai-gateway": "AI_GATEWAY_API_KEY",
     "opencode": None,
+    "opencode-go": "OPENCODE_API_KEY",
     "openai-codex": None,  # OAuth via ~/.codex/auth.json
     "deepseek": "DEEPSEEK_API_KEY",
 }

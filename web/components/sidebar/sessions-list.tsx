@@ -938,7 +938,8 @@ function ConvItem({
           e.preventDefault();
           setMenuOpen(true);
         }}
-        title={running ? `${label} (${t("sidebar.running")})` : label}
+        /* 不给 title：悬停时标题自己滚动（measureMarquee 起的 marquee），
+           原生 tooltip 会浮在相邻行上盖住列表，两者只留滚动这一种。 */
       >
         {/* Leading status marker (Claude-Code-style). Priority: pinned →
             live running task → backend status (needs_input / unread) →
