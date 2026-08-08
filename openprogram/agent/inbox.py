@@ -136,14 +136,19 @@ def enqueue(
             dropped = entries.pop(0)  # drop the oldest
         _write(path, entries)
     if dropped is not None:
-        _notify_dropped(target_session_id, dropped)
+        preview = str(dropped.get("message") or "").replace("\n", " ")[:200]
+        _notify_sender(dropped, (
+            f"[send_message] your queued message to session "
+            f"{target_session_id} was dropped: the target's inbox is "
+            f"full ({MAX_PENDING} pending). Dropped message: {preview}"
+        ))
     return "queued"
 
 
-def _notify_dropped(target_session_id: str, entry: dict[str, Any]) -> None:
-    """Leave a system notice in the dropped message's sender session.
-    Best-effort; the notice is a runtime-display node and must not move
-    the sender's head."""
+def _notify_sender(entry: dict[str, Any], content: str) -> None:
+    """Leave a system notice in the entry's sender session. Best-effort;
+    the notice is a runtime-display node and must not move the sender's
+    head."""
     try:
         from openprogram.agent.session_db import default_db
         store = default_db()
@@ -151,17 +156,12 @@ def _notify_dropped(target_session_id: str, entry: dict[str, Any]) -> None:
         if not sender or store.get_session(sender) is None:
             return
         head_before = (store.get_session(sender) or {}).get("head_id")
-        preview = str(entry.get("message") or "").replace("\n", " ")[:200]
         store.append_message(sender, {
             "id": uuid.uuid4().hex[:12],
             "role": "assistant",
             "display": "runtime",
             "function": "send_message",
-            "content": (
-                f"[send_message] your queued message to session "
-                f"{target_session_id} was dropped: the target's inbox is "
-                f"full ({MAX_PENDING} pending). Dropped message: {preview}"
-            ),
+            "content": content,
             "predecessor": head_before,
             "timestamp": time.time(),
         })
@@ -170,9 +170,34 @@ def _notify_dropped(target_session_id: str, entry: dict[str, Any]) -> None:
                 store.set_head(sender, head_before)
             except Exception:
                 pass
-        store.commit_turn(sender, "send_message: inbox-full drop notice")
+        store.commit_turn(sender, "send_message: inbox notice")
     except Exception:
         pass
+
+
+def clear(session_id: str, *, reason: str = "the target session was stopped") -> int:
+    """Session-level cancel: drop every queued entry for ``session_id``
+    and leave a system notice in each sender session.
+
+    A user stopping a session wants all of its work to stop — the turn
+    in flight AND the queued messages that would each have started a new
+    turn at drain time. Returns the number of entries cleared.
+    """
+    path = _inbox_path(session_id)
+    if path is None or not path.exists():
+        return 0
+    with _session_lock(session_id):
+        entries = _load(path)
+        if entries:
+            _write(path, [])
+    for entry in entries:
+        preview = str(entry.get("message") or "").replace("\n", " ")[:200]
+        _notify_sender(entry, (
+            f"[send_message] your queued message to session {session_id} "
+            f"was discarded: {reason}. It was not delivered. "
+            f"Message: {preview}"
+        ))
+    return len(entries)
 
 
 def drain(session_id: str) -> int:
@@ -244,5 +269,6 @@ __all__ = [
     "DEDUP_WINDOW_SECS",
     "enqueue",
     "drain",
+    "clear",
     "pending_count",
 ]

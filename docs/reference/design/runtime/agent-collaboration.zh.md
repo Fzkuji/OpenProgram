@@ -137,25 +137,22 @@ handler 已有（`handle_list_sessions` / `handle_list_branches`），只缺包�
   了命名的分级、锁、触发点；本节只强调：**send_message 派生的分支和用户手动
   fork 的分支，走同一套命名（都要 Stage 1 占位名 + Stage 2 自动改名），不能漏。**
 
-### 2.5 回送节点落在哪：续接发起方分支，不拼主线
+### 2.5 回送节点落在哪：发起方当前尾部，串行成链
 
 异步回送（`wait=false`）时，`_dispatch_followup` 把目标分支的回复作为一个
-**synthetic user-role turn** 喂回发起方 session。**关键规则：这个回送节点的
-`predecessor` 必须指向"发起 send_message 的那个节点"（caller），不是发起方
-session 当前的 `head_id`。**
+**synthetic user-role turn** 喂回投递 session。**关键规则：回送的 `TurnRequest`
+不设 `branch_from`（INHERIT_PARENT），dispatcher 解析为投递 session 当前的
+HEAD 并推进它。**每个投递 session 有一把回送串行锁
+（`TaskRunner._followup_lock`），并发完成被串行化：N 个子任务跑完形成一条串行链
+`… → notice₁ → answer₁ → notice₂ → answer₂`，每条回送读到的 HEAD 已包含上一条的回答。
 
-为什么：
-- 用 `head_id` 当 predecessor → 回送被**拼到主线尾巴**。如果发起方在等待期间又聊了
-  别的，回送会莫名其妙接在那后面，DAG 上看不出这是"某次派生的回流"。
-- 用 caller 当 predecessor → 回送**从当初发起的那个点续接**，在 DAG 上是发起方分支
-  的自然延续（和 attach 指针的落位一致：attach 也挂 `predecessor = caller_msg_id`）。
+为什么不把回送钉在发起节点（`caller_msg_id`）上：同一轮 fork 出 N 个并行子任务时，
+每条回送都会作为同一节点的 sibling 落下，触发派生的那一条用户消息会在 N 条并行分支
+上被回答 N 次。锚在 HEAD 让 N 次完成始终走同一条会话主线。
 
-DAG 形状：`发起节点 ──caller──> 子分支(点划线 spawn edge)`，子分支跑完，回送 user
-节点 `──predecessor──> 发起节点`，续在发起节点之后。发起方读到回送、再回应，继续这条
-链。子分支本身是并列的独立一支（从发起点 fork 出去），**不并回主线**。
-
-实现上，回送的 `TurnRequest` 必须显式带上发起点（caller_msg_id）作为 `branch_from`；
-`process_user_turn` 在缺省时取 session `head_id` 当 predecessor，那会把回送接到主线尾巴。
+这样锚定不丢回流出处：派生时写下的 **attach 指针**仍然挂
+`predecessor = caller_msg_id`，DAG 上照样能看出每条子分支从哪一轮 fork 出去、
+每个结果从哪条分支回流。子分支本身是并列的独立一支，**不并回主线**。
 
 ---
 
@@ -307,9 +304,17 @@ A、B 同时在跑（同 session 不同分支，或不同 session）：
 
 ### 5.3 取消传播（级联）
 
-- 取消一个分支时，**它派出的所有子分支也被中断**：维护"活跃子分支"列表（线程锁保护），
-  取消时遍历 `child.interrupt`，复用 `TaskRunner` 现有 cancel + `kill_active_runtime`。
-- 子分支优雅关闭（cleanup），不留僵尸线程/子进程。
+- 取消一个 task 时，**它派出的所有子 task 也被取消**。任何在运行中 task 内部
+  发起的派生都会在 Task 实体上记下链条（`parent_task_id`，由 runner 的
+  当前 task ContextVar 默认填入）。`TaskRunner.cancel_task` 沿这条链对持久化
+  实体做广度优先遍历（visited 集合防环，即使出现畸形环也能终止）：
+  pending/queued 的后代直接翻成 cancelled、不再被拾取；running 的后代走与根
+  相同的单 task 取消路径——session cancel event + `kill_active_runtime` +
+  30 秒强制取消看门狗。不留僵尸线程/子进程。
+- session 级取消（用户对某 session 按 Stop）额外清空该 session 的
+  send_message 收件箱（`inbox.clear`）：排队消息是还没开始的新工作，用户停掉
+  一个 session 就是要它的全部工作都停。每条被丢的消息在其发送方 session 落一条
+  系统提示，让发送方知道消息未被投递。
 
 ### 5.4 发给"正在跑"的分支（竞态）
 
@@ -412,7 +417,7 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 | 发给同 session 已有分支 | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
 | 跨 session | A 发给别的 session 走同一路径；两边前端经 ws.frame 实时更新 |
 | 多源综合 | 带 2 条 source 分支，每条先自我总结，目标模型综合出新回答 |
-| 健壮性（§5） | A↔B 互发到 MAX_DEPTH 自动停；派 30 个排队不打爆；取消父→子全停；给正跑的 B 发消息落它的收件箱、等它这轮结束投递（`tests/unit/test_send_message_inbox.py`）；子失败父收到 is_error；超大结果截断给文件路径 |
+| 健壮性（§5） | A↔B 互发到 MAX_DEPTH 自动停；派 30 个排队不打爆；取消父→子全停（`tests/unit/test_cascade_cancel.py`）；给正跑的 B 发消息落它的收件箱、等它这轮结束投递（`tests/unit/test_send_message_inbox.py`）；子失败父收到 is_error；超大结果截断给文件路径 |
 | 安全（§5.7-5.9） | deny 下被 tool.before 拦；不存在的 to 报错；子分支权限不高于父、不进 UI 选择列表 |
 | 前端 | webui 里选分支发消息，DAG 出现通信节点 + hover 软连接线 |
 
@@ -439,14 +444,11 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 
 ## 附：实现状态
 
-事件层（§3）、`TaskRunner`、`SessionStore`、`process_user_turn`、`branch_summarization`
-以及 `_dispatch_followup` 的自动回送均已存在，`send_message` 及两个列举工具建在其上。
-
-两处与本设计尚有出入，需要在实现时补齐：
-
-- **派生分支的命名（§2.4）**：`send_message` 调 `run_agent_turn` 时需传 label 以获得
-  Stage 1 占位名，并接上 `finalize_turn` 的 Stage 2 自动改名触发；两者缺一时派生分支
-  在 web 端只显示 8 位 hex 短号。
-- **回送节点的落位（§2.5）**：`_dispatch_followup` 构造 `TurnRequest` 时需显式指定
-  `branch_from` 为发起点（caller_msg_id），否则 `process_user_turn` 取 session `head_id`
-  当 predecessor，回送会被接到主线尾巴而非发起分支。
+本文内容均已实现：事件层（§3）、`TaskRunner`、`SessionStore`、
+`process_user_turn`、`branch_summarization`、`send_message` 及两个列举工具、
+派生分支命名（§2.4——派生时的 Stage 1 label + `finalize_turn` 的 Stage 2
+自动改名）、串行化的回送锚定（§2.5——`_dispatch_followup` +
+`_followup_lock`）、级联取消（§5.3——`TaskRunner.cancel_task` 沿
+`parent_task_id` 遍历，session 级停止时附带 `inbox.clear`；
+`tests/unit/test_cascade_cancel.py`），以及忙时收件箱（§5.4——
+`tests/unit/test_send_message_inbox.py`）。

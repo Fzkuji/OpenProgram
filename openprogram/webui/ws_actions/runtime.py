@@ -269,6 +269,14 @@ async def handle_stop(ws, cmd: dict):
     # ---- Stage 2: hard ----
     _graceful_pending.discard(session_id)
     _s._mark_cancelled(session_id)
+    # Session-level stop means "all of this session's work stops":
+    # queued send_message entries would each start a fresh turn at the
+    # next drain, so clear them and notify each sender.
+    try:
+        from openprogram.agent import inbox as _inbox
+        _inbox.clear(session_id, reason="the target session was stopped by the user")
+    except Exception:
+        pass
     _s.resume_execution()
     # SIGKILL the @agentic_function subprocess (if any) for this session
     # *before* signaling cooperative cancel paths. This is what makes

@@ -72,6 +72,17 @@ _DEFAULT_MAX_WORKERS = 4
 # forcibly flipping the entity to cancelled.
 _CANCEL_TIMEOUT_SECS = 30.0
 
+# Task id of the task currently executing on this context. Bound by
+# ``_run_one`` for the duration of the child turn; read by ``spawn_task``
+# to default ``parent_task_id`` so tasks spawned from inside a running
+# task record their spawn chain. ``cancel_task`` walks that chain for
+# cascading cancel. Propagates into tool threads because both
+# ``contextvars.copy_context`` (this runner) and ``asyncio.to_thread``
+# carry ContextVars across.
+_current_task_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "openprogram_current_task_id", default=None,
+)
+
 
 def _broadcast(payload: dict) -> None:
     """Send a WS frame to the frontend — best-effort.
@@ -144,7 +155,8 @@ class TaskRunner:
     Public surface:
 
       * :meth:`spawn_task` — submit, return task_id
-      * :meth:`cancel_task` — set cancel event, schedule timeout
+      * :meth:`cancel_task` — set cancel event, schedule timeout,
+        cascade to descendant tasks (parent_task_id chain)
       * :meth:`get_task` / :meth:`list_tasks` — read
       * :meth:`await_task` — block until terminal, return final Task
 
@@ -227,6 +239,10 @@ class TaskRunner:
         reply should be delivered back to. Defaults to ``session_id``
         (the task runs and replies in the caller's own session).
         """
+        if parent_task_id is None:
+            # Spawned from inside a running task's turn — record the
+            # chain so cascading cancel can find this child.
+            parent_task_id = _current_task_id.get()
         task = Task(
             id=mint_task_id(),
             parent_session_id=session_id,
@@ -296,7 +312,53 @@ class TaskRunner:
         return task.id
 
     def cancel_task(self, task_id: str, *, reason: Optional[str] = None) -> Optional[Task]:
-        """Trigger cancel for ``task_id``. Returns the (post-update)
+        """Cancel ``task_id`` and every descendant task on its
+        ``parent_task_id`` chain (cascading cancel). Returns the
+        (post-update) Task entity for ``task_id``, or None if not found.
+
+        Descendants are collected breadth-first over the persisted task
+        entities with a visited-set guard (a cycle in parent_task_id
+        would otherwise loop forever). Pending/queued descendants flip
+        straight to cancelled; running ones go through the same
+        per-task cancel path as the root.
+        """
+        result = self._cancel_single(task_id, reason=reason)
+        if result is None:
+            return None
+        cascade_reason = reason or f"parent task {task_id} cancelled"
+        for child in self._descendant_tasks(task_id):
+            if is_terminal(child.status):
+                continue
+            try:
+                self._cancel_single(child.id, reason=cascade_reason)
+            except Exception:
+                pass
+        return result
+
+    def _descendant_tasks(self, root_task_id: str) -> list[Task]:
+        """All tasks reachable from ``root_task_id`` via parent_task_id,
+        breadth-first, cycle-safe. Terminal ancestors are still
+        traversed — a completed child may have spawned a grandchild
+        that is still running."""
+        children: dict[str, list[Task]] = {}
+        for t in self.list_tasks():
+            if t.parent_task_id:
+                children.setdefault(t.parent_task_id, []).append(t)
+        out: list[Task] = []
+        seen = {root_task_id}
+        queue = [root_task_id]
+        while queue:
+            cur = queue.pop(0)
+            for child in children.get(cur, []):
+                if child.id in seen:
+                    continue
+                seen.add(child.id)
+                out.append(child)
+                queue.append(child.id)
+        return out
+
+    def _cancel_single(self, task_id: str, *, reason: Optional[str] = None) -> Optional[Task]:
+        """Cancel one task, no cascade. Returns the (post-update)
         Task entity, or None if not found.
 
         Effect:
@@ -474,6 +536,9 @@ class TaskRunner:
             reset_current_session_id,
         )
         sid_token = set_current_session_id(session_id)
+        # Bind the running task id so spawns made inside this child turn
+        # record parent_task_id (cascading cancel walks that chain).
+        _task_id_token = _current_task_id.set(task_id)
         # Opens this turn's token; the previous turn's is retired by the
         # same call, so a stop fired against it cannot reach us.
         register_cancel_event(session_id, cancel_ev)
@@ -644,6 +709,10 @@ class TaskRunner:
                 pass
             try:
                 reset_current_session_id(sid_token)
+            except Exception:
+                pass
+            try:
+                _current_task_id.reset(_task_id_token)
             except Exception:
                 pass
             if _wt_token is not None:

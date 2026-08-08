@@ -43,6 +43,17 @@ def register(app):
                 status_code=400,
             )
         _s._mark_cancelled(session_id)
+        # Session-level stop also discards queued send_message entries —
+        # each would start a fresh turn at the next drain. Senders get a
+        # system notice.
+        try:
+            from openprogram.agent import inbox as _inbox
+            _inbox.clear(
+                session_id,
+                reason="the target session was stopped by the user",
+            )
+        except Exception:
+            pass
         _s.resume_execution()
         try:
             from openprogram.agent.process_runner import kill_active_subprocess

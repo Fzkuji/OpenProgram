@@ -176,35 +176,30 @@ Every time `send_message` creates a branch with `to="new"` / `"new:…"`,
   forks by hand use the same naming path (both get a Stage 1 placeholder name
   plus Stage 2 automatic renaming); neither may be skipped.**
 
-### 2.5 Where the reply-back node lands: continue the caller's branch, not the mainline
+### 2.5 Where the reply-back node lands: the initiator's current tail, serialized
 
 For asynchronous reply-back (`wait=false`), `_dispatch_followup` feeds the
-target branch's reply into the caller session as a **synthetic user-role turn**.
-**Key rule: the `predecessor` of that reply-back node must point at "the node
-that issued send_message" (the caller), not at the caller session's current
-`head_id`.**
+target branch's reply into the delivery session as a **synthetic user-role
+turn**. **Key rule: the reply-back `TurnRequest` leaves `branch_from` unset
+(INHERIT_PARENT) — the dispatcher resolves it to the delivery session's
+current HEAD and advances it.** A per-delivery-session follow-up lock
+(`TaskRunner._followup_lock`) serialises concurrent completions, so N
+sub-tasks finishing produce one serial chain
+`… → notice₁ → answer₁ → notice₂ → answer₂` — each follow-up reads a HEAD
+that already contains the previous answer.
 
-Why:
-- Using `head_id` as predecessor → the reply is **stitched onto the tail of the
-  mainline**. If the caller chatted about something else while waiting, the
-  reply lands inexplicably after that, and the DAG gives no hint that this is
-  "the return flow of a particular spawn".
-- Using the caller as predecessor → the reply **continues from the point where
-  it was issued**, a natural extension of the caller's branch in the DAG
-  (matching where the attach pointer lands: attach also hangs off
-  `predecessor = caller_msg_id`).
+Why the reply is not pinned to the spawn node (`caller_msg_id`): with N
+parallel sub-tasks forked from one turn, every reply-back would land as a
+sibling hanging off that same node, and the single user message that
+triggered the spawns would be answered N times on N parallel branches.
+Anchoring at HEAD keeps one conversation lane through all N completions.
 
-DAG shape: `caller node ──caller──> sub-branch (dash-dot spawn edge)`; once the
-sub-branch finishes, the reply-back user node goes
-`──predecessor──> caller node`, continuing after the caller node. The caller
-reads the reply, responds, and the chain continues. The sub-branch itself is a
-parallel independent branch (forked off the caller node) and **does not merge
-back into the mainline**.
-
-In implementation, the reply-back `TurnRequest` must carry the caller point
-(caller_msg_id) explicitly as `branch_from`; when it is omitted,
-`process_user_turn` takes the session `head_id` as predecessor, which stitches
-the reply onto the tail of the mainline.
+The return-flow provenance is not lost by this anchoring: the **attach
+pointer** written at spawn time does hang off
+`predecessor = caller_msg_id`, so the DAG still shows which turn each
+sub-branch forked from and which branch each result flowed back from.
+The sub-branch itself stays a parallel independent branch and **does not
+merge back into the mainline**.
 
 ---
 
@@ -394,12 +389,20 @@ sub-branches for multi-level task decomposition), kept in check by:
 
 ### 5.3 Cancellation propagation (cascading)
 
-- Cancelling a branch **also interrupts every sub-branch it spawned**: maintain
-  an "active sub-branches" list (protected by a thread lock) and on cancellation
-  walk it calling `child.interrupt`, reusing TaskRunner's existing cancel plus
-  `kill_active_runtime`.
-- Sub-branches shut down gracefully (cleanup), leaving no zombie threads or
-  subprocesses.
+- Cancelling a task **also cancels every task it spawned**. Each spawn made
+  from inside a running task records the chain on the Task entity
+  (`parent_task_id`, defaulted from the runner's current-task ContextVar).
+  `TaskRunner.cancel_task` walks the persisted entities breadth-first over
+  that chain (visited-set guard, so even a malformed cycle terminates):
+  pending/queued descendants flip straight to cancelled without ever running;
+  running ones go through the same per-task cancel path as the root —
+  session cancel event + `kill_active_runtime` + the 30s force-cancel
+  watchdog. No zombie threads or subprocesses remain.
+- Session-level cancel (the user's Stop on a session) additionally clears the
+  session's send_message inbox (`inbox.clear`): the queued messages are new
+  work that has not started yet, and a user stopping a session wants all of
+  its work to stop. Each dropped entry leaves a system notice in its sender's
+  session so the sender knows the message was never delivered.
 
 ### 5.4 Sending to a branch that is "already running" (race)
 
@@ -534,7 +537,7 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 | Send to an existing branch in the same session | A sends to branch B of the same session, A does not block, B runs a turn, the reply returns to A automatically |
 | Cross-session | A sending to another session takes the same path; both frontends update live via ws.frame |
 | Multi-source synthesis | With 2 source branches, each summarizes itself first and the target model synthesizes a new answer |
-| Robustness (§5) | A↔B back-and-forth stops automatically at MAX_DEPTH; spawning 30 queues without blowing up; cancelling the parent stops every child; messaging a running B queues to its inbox and is delivered when its turn ends (`tests/unit/test_send_message_inbox.py`); the parent receives is_error when a child fails; oversized results are truncated with a file path |
+| Robustness (§5) | A↔B back-and-forth stops automatically at MAX_DEPTH; spawning 30 queues without blowing up; cancelling the parent stops every child (`tests/unit/test_cascade_cancel.py`); messaging a running B queues to its inbox and is delivered when its turn ends (`tests/unit/test_send_message_inbox.py`); the parent receives is_error when a child fails; oversized results are truncated with a file path |
 | Safety (§5.7-5.9) | Under deny it is held by tool.before; a nonexistent `to` raises an error; sub-branches have no more privilege than the parent and stay out of the UI picker |
 | Frontend | Pick a branch in the webui and send a message; the DAG shows communication nodes + the soft link edge on hover |
 
@@ -563,21 +566,12 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 
 ## Appendix: implementation status
 
-The event layer (§3), `TaskRunner`, `SessionStore`, `process_user_turn`,
-`branch_summarization`, and the automatic reply-back in `_dispatch_followup` all
-already exist; `send_message` and the two listing tools are built on top of
-them.
-
-Two points still diverge from this design and need to be closed during
-implementation:
-
-- **Naming spawned branches (§2.4)**: when `send_message` calls
-  `run_agent_turn`, it must pass a label to get a Stage 1 placeholder name, and
-  it must hook into the Stage 2 automatic rename triggered by `finalize_turn`.
-  Miss either one and the spawned branch shows only an 8-digit hex short id in
-  the web UI.
-- **Where the reply-back node lands (§2.5)**: when `_dispatch_followup` builds
-  the `TurnRequest`, it must set `branch_from` explicitly to the caller point
-  (caller_msg_id); otherwise `process_user_turn` takes the session `head_id` as
-  predecessor and the reply is stitched onto the tail of the mainline instead of
-  the caller's branch.
+Everything in this document is implemented: the event layer (§3),
+`TaskRunner`, `SessionStore`, `process_user_turn`, `branch_summarization`,
+`send_message` and the two listing tools, spawned-branch naming (§2.4 — the
+Stage 1 label at spawn plus the Stage 2 `finalize_turn` rename), the
+serialized reply-back anchoring (§2.5 — `_dispatch_followup` +
+`_followup_lock`), cascading cancel (§5.3 — `TaskRunner.cancel_task` over
+`parent_task_id`, plus `inbox.clear` on session-level stop;
+`tests/unit/test_cascade_cancel.py`), and the busy-target inbox (§5.4 —
+`tests/unit/test_send_message_inbox.py`).
