@@ -4,7 +4,7 @@
 
 ## 循环位置
 
-循环在 `process_user_turn` 内部（`openprogram/agent/dispatcher/__init__.py`）。原 `process_user_turn` 的函数体改名为 `_process_turn_once`；公开入口先完整跑一轮——持久化、agent loop、finalize（phase 6/7）、idle 标记、result 事件——然后把请求和它的 `TurnResult` 交给 `continue_goal_turns`（`openprogram/agent/goal.py`）。
+循环在 `process_user_turn` 内部（`openprogram/agent/dispatcher/__init__.py`）。原 `process_user_turn` 的函数体改名为 `_process_turn_once`；公开入口先完整跑一轮——持久化、agent loop、finalize（phase 6/7）、idle 标记、result 事件——然后把请求和它的 `TurnResult` 交给 `continue_goal_turns`（`openprogram/agent/goal/`）。
 
 位置带来的结果：
 

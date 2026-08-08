@@ -1,7 +1,7 @@
 """goal — the goal loop's decision, as one agentic function.
 
 The Functions panel shows a single entry, :func:`goal`, and the
-deterministic continuation loop (``openprogram/agent/goal.py``) calls
+deterministic continuation loop (``openprogram/agent/goal/``) calls
 the same entry each turn. There is only this one judgment, and only
 its "met" counts as completion: the function renders the session's
 compacted context view (active summary + kept tail when compaction has

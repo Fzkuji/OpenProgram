@@ -42,7 +42,7 @@ AGENTIC_MODULES: list[tuple[str, Optional[str]]] = [
     # user-facing app (the UI lists it under regular tools).
     ("ask_user", None),
     # The goal decision agent — the single judgment entry called by
-    # openprogram/agent/goal.py's deterministic loop, runnable from the
+    # openprogram/agent/goal/ (the deterministic loop), runnable from the
     # Functions panel; the module also holds the goal-spec refiner.
     ("goal", None),
     # Domain functions
