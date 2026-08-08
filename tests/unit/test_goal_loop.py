@@ -252,6 +252,51 @@ def test_judge_prefers_spec_over_text(tmp_db: SessionDB, monkeypatch) -> None:
 # call-out
 # ---------------------------------------------------------------------------
 
+def test_terminal_status_says_why_in_the_transcript(
+        tmp_db: SessionDB, monkeypatch) -> None:
+    """A guard-stopped run must not just go quiet: the reason already
+    written to goal state is also emitted as a transcript row."""
+    _set_goal(tmp_db, "s1", checklist=[
+        {"text": "a", "done": True}, {"text": "b", "done": False}])
+    monkeypatch.setattr(
+        G, "evaluate_goal",
+        lambda sid, goal, *, agent_id, spawn_caller=None:
+            ("unmet", "still 1/2", "", []))
+    rows: list = []
+    monkeypatch.setattr(
+        G, "_emit_goal_notice",
+        lambda sid, content, on_event=None: rows.append(content))
+
+    G.continue_goal_turns(
+        _req(source="goal_continue"), _result(),
+        run_turn=lambda req, on_event=None, cancel_event=None: _result())
+
+    assert G.load_goal("s1")["status"] == "error"
+    assert any("已终止" in r and "stuck at 1/2" in r for r in rows), rows
+
+
+def test_waiting_user_emits_only_its_question(
+        tmp_db: SessionDB, monkeypatch) -> None:
+    """A pause is not a terminal status — it gets the question row, not
+    a "goal stopped" row on top of it."""
+    _set_goal(tmp_db, "s1")
+    monkeypatch.setattr(
+        G, "evaluate_goal",
+        lambda sid, goal, *, agent_id, spawn_caller=None:
+            ("needs_user", "need a decision", "which one?", []))
+    rows: list = []
+    monkeypatch.setattr(
+        G, "_emit_goal_notice",
+        lambda sid, content, on_event=None: rows.append(content))
+
+    G.continue_goal_turns(
+        _req(source="goal_continue"), _result(),
+        run_turn=lambda req, on_event=None, cancel_event=None: _result())
+
+    assert G.load_goal("s1")["status"] == "waiting_user"
+    assert rows == ["[goal] 需要你的确认才能继续：which one?"]
+
+
 def test_checklist_stall_stops_loop(tmp_db: SessionDB, monkeypatch) -> None:
     """Read-only spin: continuation turns that call tools but never
     advance the checklist stop after STALL_ROUND_LIMIT flat rounds."""
