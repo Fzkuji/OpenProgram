@@ -163,8 +163,23 @@ def test_spawn_new_sync_returns_reply(parent_turn):
 def test_existing_branch_continues_from_head(parent_turn):
     """to=SID:HEAD runs one turn forked off that head (branch_from=HEAD)."""
     out = _send_message_impl("more", to="p1:a0", wait=True)
-    assert "reply to: more" in out
+    assert "reply to: " in out and "more" in out
     assert "(from=a0)" in out  # fake_run saw branch_from = the branch head
+
+
+def test_existing_delivery_carries_receipt_header(parent_turn):
+    """Deliveries to an existing branch are prefixed with the sender
+    receipt header ([message from SID:HEAD] + reply-is-optional note)."""
+    out = _send_message_impl("ping", to="p1:a0", wait=True)
+    # fake_run echoes the prompt it received
+    assert "[message from p1:a1]" in out
+    assert 'send_message(to="p1:a1")' in out
+    assert "Replying is optional" in out
+
+
+def test_new_branch_delivery_has_no_receipt_header(parent_turn):
+    out = _send_message_impl("work", to="new", wait=True)
+    assert "[message from" not in out
 
 
 def test_existing_branch_is_not_new_event(parent_turn):
@@ -250,6 +265,40 @@ def test_result_truncated_when_huge(parent_turn, monkeypatch):
     assert "truncated" in out
     assert "full reply saved to" in out
     assert len(out) < 40_000
+
+
+# --- Name addressing (to="<branch name>") ---
+
+def test_name_addressing_resolves_unique_branch(parent_turn):
+    parent_turn.set_branch_name("p1", "a0", "research")
+    out = _send_message_impl("hi there", to="research", wait=True)
+    assert "(from=a0)" in out  # resolved to the named branch's head
+
+
+def test_name_addressing_unique_prefix(parent_turn):
+    parent_turn.set_branch_name("p1", "a0", "research-fox")
+    out = _send_message_impl("hi", to="research", wait=True)
+    assert "(from=a0)" in out
+
+
+def test_name_addressing_ambiguous_lists_candidates(parent_turn):
+    parent_turn.set_branch_name("p1", "a0", "research")
+    parent_turn.create_session("p2", "main", title="other")
+    parent_turn.append_message("p2", {"id": "u9", "role": "user", "content": "x",
+                                      "timestamp": 0, "predecessor": None})
+    parent_turn.append_message("p2", {"id": "a9", "role": "assistant", "content": "y",
+                                      "timestamp": 0, "predecessor": "u9"})
+    parent_turn.commit_turn("p2", "init")
+    parent_turn.set_branch_name("p2", "a9", "research")
+    out = _send_message_impl("hi", to="research", wait=True)
+    assert "matches several branches" in out
+    assert "p1:a0" in out and "p2:a9" in out
+
+
+def test_name_addressing_zero_hits_errors(parent_turn):
+    out = _send_message_impl("hi", to="nosuchname", wait=True)
+    assert "not found" in out
+    assert "list_branches" in out
 
 
 def test_spawn_sent_event_payload(parent_turn):

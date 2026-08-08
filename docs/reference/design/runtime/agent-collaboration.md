@@ -83,6 +83,14 @@ send_message(
 | `"new"` | Create a brand-new branch from ROOT (new session), deliver message, let it run |
 | `"new:sid:msg_id"` | Fork a new branch from a node, deliver message, let it run |
 | `"sid:head"` | Deliver message to an existing branch |
+| `"<branch name>"` | Deliver to a named branch. Tried when the value matches none of the syntaxes above: exact name match wins, a unique prefix is accepted next; several matches return an error listing the candidates (name + `sid:head`), zero matches point to `list_branches`. `list_branches` marks each branch's name so the model can address by name directly. |
+
+Every delivery to an **existing** branch (direct or queued, see §5.4) is
+prefixed with a sender-receipt header —
+`[message from SID:HEAD] To reply, use send_message(to="SID:HEAD"). Replying is
+optional …` — so the receiver knows who sent it, how to answer, and that not
+answering is legitimate. New-branch deliveries (spawn/fork) carry the bare
+message: they are workers, not correspondents.
 
 **Creating a branch is not a separate operation; it is just `to` set to
 `new` / `new:…`.** Three uses:
@@ -395,9 +403,36 @@ sub-branches for multi-level task decomposition), kept in check by:
 
 ### 5.4 Sending to a branch that is "already running" (race)
 
-When A messages B, B may be mid-turn. **Do not interrupt, do not drop — queue**:
-append the message to B's branch and trigger processing once B's current turn
-ends (the pendingWake idea from OpenCode). If B is idle, trigger immediately.
+When A messages B, B may be mid-turn. **Do not interrupt, do not drop — queue.**
+The busy check is `run_control.is_turn_running(target)` — every concurrent turn
+entry point (webui chat, task runner workers) registers its cancel token in
+`run_control._current_tokens` and unregisters it in a finally block, so
+presence there is the authoritative in-process "a turn is running" signal.
+Only cross-session sends check it: a same-session send runs inside the
+sender's own turn, whose token is the one the check would see.
+
+- **Queueing**: a busy target's message is persisted to the target session's
+  inbox (`<session-repo>/inbox.json`, `openprogram/agent/inbox.py` — same
+  placement pattern as `tasks.json`), recording the delivery body, sender
+  `SID:HEAD`, sender agent, spawn depth at send time, and enqueue time. The
+  sender immediately gets back "target busy, message queued, processed when
+  its current turn ends".
+- **Draining**: the dispatcher drains the inbox at turn end
+  (`_process_turn_once` → `_drain_send_message_inbox`, on both the success and
+  the error return), delivering each entry as one async turn through the
+  normal path (`run_agent_turn_async` → auto-followup back to the sender),
+  continued from the target's current head. Delivery-then-delete: an entry is
+  removed only after its delivery turn was submitted — a crash between the two
+  may re-deliver (acceptable); the reverse order could lose a message (not
+  acceptable). The queued turn inherits the spawn depth recorded at enqueue
+  (+1), so a queued hop still counts toward the §5.1 depth guard.
+- **Limits** (mirroring Claude Code cross-session messaging): at most 50
+  pending entries per target — a full inbox drops the oldest and leaves a
+  system notice in the dropped message's sender session; an identical message
+  from the same sender within 60s of a still-queued copy is rejected as a
+  duplicate, and the sender is told so.
+
+If B is idle, delivery is immediate (the pre-queue behavior).
 
 ### 5.5 Failure reply-back
 
@@ -499,7 +534,7 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 | Send to an existing branch in the same session | A sends to branch B of the same session, A does not block, B runs a turn, the reply returns to A automatically |
 | Cross-session | A sending to another session takes the same path; both frontends update live via ws.frame |
 | Multi-source synthesis | With 2 source branches, each summarizes itself first and the target model synthesizes a new answer |
-| Robustness (§5) | A↔B back-and-forth stops automatically at MAX_DEPTH; spawning 30 queues without blowing up; cancelling the parent stops every child; messaging a running B queues until its turn ends; the parent receives is_error when a child fails; oversized results are truncated with a file path |
+| Robustness (§5) | A↔B back-and-forth stops automatically at MAX_DEPTH; spawning 30 queues without blowing up; cancelling the parent stops every child; messaging a running B queues to its inbox and is delivered when its turn ends (`tests/unit/test_send_message_inbox.py`); the parent receives is_error when a child fails; oversized results are truncated with a file path |
 | Safety (§5.7-5.9) | Under deny it is held by tool.before; a nonexistent `to` raises an error; sub-branches have no more privilege than the parent and stay out of the UI picker |
 | Frontend | Pick a branch in the webui and send a message; the DAG shows communication nodes + the soft link edge on hover |
 
@@ -517,6 +552,7 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 | List WS handlers | `webui/ws_actions/session.py:825`, `branch.py:221` |
 | attach edge (drawing only) | `openprogram/agent/sub_agent_run.py` (write_attach_pointer_for_spawn) |
 | Event bus | `openprogram/events/bus.py` (emit_safe / emit_ws_frame) |
+| Busy-target inbox (§5.4) | `openprogram/agent/inbox.py` (enqueue / drain), busy check `run_control.is_turn_running`, drain hook `dispatcher._drain_send_message_inbox` |
 
 > Note: "synthesize several branches" is provided by
 > `send_message(sources=[...])`; there is no separate tool. The multi-parent

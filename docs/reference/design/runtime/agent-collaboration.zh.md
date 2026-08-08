@@ -71,6 +71,12 @@ send_message(
 | `"new"` | 从 ROOT 全新创建一条分支（新 session），投 message 让它跑 |
 | `"new:sid:msg_id"` | 从某节点 fork 出一条新分支，投 message 让它跑 |
 | `"sid:head"` | 往一条已存在分支投 message |
+| `"<分支名>"` | 按名投递。以上语法都不匹配时按名字解析：精确匹配优先，唯一前缀次之；多个命中返回错误并列出候选（名字 + `sid:head`），零命中提示用 `list_branches`。`list_branches` 输出里标出每条分支的名字，模型可以直接按名寻址。 |
+
+对**已存在分支**的每次投递（直投或 §5.4 的排队消费）都会加一个发件人回执头：
+`[message from SID:HEAD] To reply, use send_message(to="SID:HEAD"). Replying is
+optional …` —— 收件方由此知道谁发的、怎么回、以及不回也是正当的。新建分支
+（spawn/fork）投的是裸 message：它们是干活的 worker，不是通信对象。
 
 **创建分支不是独立操作，就是 `to` 取 `new` / `new:…`**。三种用法：
 
@@ -307,8 +313,28 @@ A、B 同时在跑（同 session 不同分支，或不同 session）：
 
 ### 5.4 发给"正在跑"的分支（竞态）
 
-A 给 B 发消息时 B 可能正跑一轮。**不打断、不丢弃——排队**：消息追加到 B 分支后，等 B
-当前这轮结束再触发处理它（OpenCode 的 pendingWake 思路）。B 空闲则立即触发。
+A 给 B 发消息时 B 可能正跑一轮。**不打断、不丢弃——排队。**忙判定是
+`run_control.is_turn_running(target)`：每个并发 turn 入口（webui chat、task
+runner worker）都在 finally 里成对注册/注销 cancel token，token 在场就是进程内
+"正有一轮在跑"的权威信号。只有跨 session 投递才做这个检查——同 session 投递本来
+就跑在发送方自己的 turn 里，检查看到的就是自己的 token。
+
+- **入队**：目标忙时消息持久化到目标 session 的收件箱
+  （`<session-repo>/inbox.json`，`openprogram/agent/inbox.py`，与 `tasks.json`
+  同一放置模式），记录投递全文、发送方 `SID:HEAD`、发送方 agent、发送时的
+  spawn 深度、入队时间。发送方立刻得到"目标正忙，消息已排队，对方本轮结束后
+  处理"。
+- **消费**：dispatcher 在 turn 收尾时清空收件箱（`_process_turn_once` →
+  `_drain_send_message_inbox`，成功和 error 两个 return 点都挂），每条经正常
+  路径投出一轮异步 turn（`run_agent_turn_async` → auto-followup 回流发送方），
+  从目标当前 head 继续。先投递后删除：两步之间崩溃可能重复投递（可接受），
+  反过来会丢消息（不可接受）。排队触发的 turn 继承入队时记录的 spawn 深度
+  （+1），排队跳数照样计入 §5.1 的深度闸。
+- **上限**（对齐 Claude Code 跨会话消息的限制）：每个目标最多积压 50 条，满了
+  丢最旧并在被丢消息的发送方 session 落一条系统提示；同一发送方 60 秒内与仍在
+  队列中的副本内容完全相同的消息按重复拒收，并告知发送方。
+
+B 空闲则立即投递（原有行为）。
 
 ### 5.5 失败回送
 
@@ -386,7 +412,7 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 | 发给同 session 已有分支 | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
 | 跨 session | A 发给别的 session 走同一路径；两边前端经 ws.frame 实时更新 |
 | 多源综合 | 带 2 条 source 分支，每条先自我总结，目标模型综合出新回答 |
-| 健壮性（§5） | A↔B 互发到 MAX_DEPTH 自动停；派 30 个排队不打爆；取消父→子全停；给正跑的 B 发消息排队等它结束；子失败父收到 is_error；超大结果截断给文件路径 |
+| 健壮性（§5） | A↔B 互发到 MAX_DEPTH 自动停；派 30 个排队不打爆；取消父→子全停；给正跑的 B 发消息落它的收件箱、等它这轮结束投递（`tests/unit/test_send_message_inbox.py`）；子失败父收到 is_error；超大结果截断给文件路径 |
 | 安全（§5.7-5.9） | deny 下被 tool.before 拦；不存在的 to 报错；子分支权限不高于父、不进 UI 选择列表 |
 | 前端 | webui 里选分支发消息，DAG 出现通信节点 + hover 软连接线 |
 
@@ -404,6 +430,7 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 | 列表 WS handler | `webui/ws_actions/session.py:825`、`branch.py:221` |
 | attach 连线（仅画图） | `openprogram/agent/sub_agent_run.py`（write_attach_pointer_for_spawn） |
 | 事件总线 | `openprogram/events/bus.py`（emit_safe / emit_ws_frame） |
+| 忙时收件箱（§5.4） | `openprogram/agent/inbox.py`（enqueue / drain），忙判定 `run_control.is_turn_running`，消费挂点 `dispatcher._drain_send_message_inbox` |
 
 > 注："综合多条"由 `send_message(sources=[...])` 提供，不另设独立工具。底层
 > `_merge.py` 的多父 ContextCommit 血缘记录被复用来记下"这次综合来自哪几条分支"。

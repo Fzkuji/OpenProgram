@@ -59,7 +59,15 @@ _DESCRIPTION = (
     "  to=\"new:SID:MSG_ID\": fork a new branch off an existing node "
     "(it inherits the chain up to that node), then run `message`.\n"
     "  to=\"SID:HEAD\": deliver `message` to an existing branch and "
-    "trigger it to respond.\n"
+    "trigger it to respond. If the target is busy running a turn, the "
+    "message is queued and processed when that turn ends.\n"
+    "  to=\"<branch name>\": address a named branch directly (exact "
+    "name, or a unique prefix — see list_branches for names).\n"
+    "\n"
+    "When you RECEIVE a message from another branch (it starts with "
+    "\"[message from SID:HEAD]\"), replying is optional — the message is "
+    "already delivered; reply only when you have something substantive "
+    "to add, and when unsure, don't reply.\n"
     "\n"
     "wait=False (DEFAULT): returns a delivery id immediately; you are NOT "
     "blocked — keep working. The target's reply is delivered back to you "
@@ -164,6 +172,72 @@ def _gather_sources(sources: list[str] | None) -> str:
     )
 
 
+def sender_header(sender_session_id: str, sender_msg_id: str) -> str:
+    """The receipt header prepended to every message delivered to an
+    existing branch (direct and queued-consume paths), so the receiver
+    knows who sent it and how to answer."""
+    src = f"{sender_session_id}:{sender_msg_id}"
+    return (
+        f"[message from {src}] To reply, use send_message(to=\"{src}\"). "
+        "Replying is optional — this message is already delivered; if you "
+        "have nothing substantive to add, do not reply.\n\n"
+    )
+
+
+def _resolve_branch_by_name(name: str) -> tuple[str, object]:
+    """Resolve a branch NAME into a (session_id, head_id) target.
+
+    Exact match wins; a unique prefix is accepted next. The current
+    session's branches are searched first, then every other session.
+    Returns one of:
+      ("ok", (session_id, head_id))
+      ("ambiguous", [(name, session_id, head_id), ...])
+      ("none", None)
+    """
+    from openprogram.agent.session_db import default_db
+    db = default_db()
+    needle = (name or "").strip()
+    if not needle:
+        return "none", None
+    try:
+        from openprogram.agent.run_control import _current_session_id
+        cur = _current_session_id.get(None)
+    except Exception:
+        cur = None
+    sids: list[str] = []
+    if cur:
+        sids.append(cur)
+    try:
+        for row in db.list_sessions(limit=200) or []:
+            sid = row.get("id")
+            if sid and sid not in sids:
+                sids.append(sid)
+    except Exception:
+        pass
+    candidates: list[tuple[str, str, str]] = []
+    for sid in sids:
+        try:
+            branches = db.list_branches(sid) or []
+        except Exception:
+            continue
+        for b in branches:
+            bname = (b.get("name") or "").strip()
+            head = b.get("head_msg_id")
+            if bname and head:
+                candidates.append((bname, sid, head))
+    exact = [c for c in candidates if c[0] == needle]
+    if len(exact) == 1:
+        return "ok", (exact[0][1], exact[0][2])
+    if len(exact) > 1:
+        return "ambiguous", exact
+    prefix = [c for c in candidates if c[0].startswith(needle)]
+    if len(prefix) == 1:
+        return "ok", (prefix[0][1], prefix[0][2])
+    if len(prefix) > 1:
+        return "ambiguous", prefix
+    return "none", None
+
+
 def _parse_to(to: str) -> tuple[str, str | None, str | None]:
     """Parse the ``to`` arg into (kind, session_id, fork_msg_id).
 
@@ -216,13 +290,6 @@ def _send_message_impl(
     chosen_agent = (agent_id or "").strip() or parent_agent or "main"
     kind, tgt_sid, fork_msg = _parse_to(to)
 
-    # Self-target guard: messaging your own current turn is a direct loop.
-    if kind == "existing" and (tgt_sid or sid) == sid and fork_msg == aid:
-        return (
-            "[send_message refused] target is your own current turn — "
-            "that's a direct loop. Pick a different branch or use to=new."
-        )
-
     # Resolve target into (run_session, branch_from, is_new):
     #   new      → fresh root in current session
     #   fork     → fork off a node (inherit that chain)
@@ -232,17 +299,40 @@ def _send_message_impl(
         run_session = tgt_sid or sid
         branch_from = fork_msg  # the branch head to continue from
         is_new = False
-        if not branch_from:
-            return (
-                "[send_message error] to=\"SID:HEAD\" needs the branch "
-                "head after the colon (see list_branches for ready targets)."
-            )
-        # Target session must exist — don't silently create.
         from openprogram.agent.session_db import default_db
-        if default_db().get_session(run_session) is None:
+        db = default_db()
+        # Not valid SID:HEAD syntax (missing head, or the SID part is not
+        # a session)? Treat the whole `to` as a branch NAME: exact match
+        # first, unique prefix next (see _resolve_branch_by_name).
+        if not branch_from or db.get_session(run_session) is None:
+            status, resolved = _resolve_branch_by_name(to)
+            if status == "ok":
+                run_session, branch_from = resolved  # type: ignore[misc]
+            elif status == "ambiguous":
+                lines = "\n".join(
+                    f"  «{n}» → {s}:{h}" for n, s, h in resolved  # type: ignore[union-attr]
+                )
+                return (
+                    f"[send_message error] branch name {to!r} matches "
+                    f"several branches — use the exact SID:HEAD target:\n"
+                    f"{lines}"
+                )
+            elif not branch_from and db.get_session(run_session) is not None:
+                return (
+                    "[send_message error] to=\"SID:HEAD\" needs the branch "
+                    "head after the colon (see list_branches for ready targets)."
+                )
+            else:
+                return (
+                    f"[send_message error] target {to!r} not found — it is "
+                    "neither a session:head target nor a branch name (see "
+                    "list_branches / list_sessions)."
+                )
+        # Self-target guard: messaging your own current turn is a direct loop.
+        if run_session == sid and branch_from == aid:
             return (
-                f"[send_message error] target session {run_session!r} not "
-                "found (see list_sessions)."
+                "[send_message refused] target is your own current turn — "
+                "that's a direct loop. Pick a different branch or use to=new."
             )
     elif kind == "fork":
         run_session = tgt_sid or sid
@@ -260,7 +350,57 @@ def _send_message_impl(
 
     # Synthesis: prepend each source branch's content as a labelled block,
     # so the target model reads them and synthesizes (C5).
-    delivery_message = _gather_sources(sources) + message
+    delivery_body = _gather_sources(sources) + message
+    # Deliveries to an EXISTING branch carry a sender-receipt header so
+    # the receiver knows who sent it and that replying is optional. New
+    # branches (spawn/fork) get the bare message — they are workers, not
+    # correspondents.
+    if kind == "existing":
+        delivery_message = sender_header(sid, aid) + delivery_body
+    else:
+        delivery_message = delivery_body
+
+    # Busy target → inbox (design §5.4: don't interrupt, don't drop —
+    # queue). Only cross-session sends can race another turn: a
+    # same-session send runs inside the sender's own turn, which is the
+    # very token is_turn_running would see.
+    if kind == "existing" and run_session != sid:
+        from openprogram.agent.run_control import is_turn_running
+        if is_turn_running(run_session):
+            from openprogram.agent import inbox
+            try:
+                status = inbox.enqueue(
+                    run_session,
+                    message=delivery_body,
+                    sender_session_id=sid,
+                    sender_msg_id=aid,
+                    sender_agent_id=parent_agent,
+                    agent_id=chosen_agent,
+                    spawn_depth=depth,
+                    target_head_id=branch_from,
+                )
+            except Exception as e:  # noqa: BLE001
+                return f"[send_message error] {type(e).__name__}: {e}"
+            if status == "duplicate":
+                return (
+                    "[send_message] duplicate message ignored — an "
+                    "identical message from you is already queued for "
+                    "this target (sent within the last 60s)."
+                )
+            # Race window: the target may have finished between the busy
+            # check and the enqueue — drain now so the message doesn't
+            # sit a whole extra turn.
+            if not is_turn_running(run_session):
+                try:
+                    inbox.drain(run_session)
+                except Exception:
+                    pass
+            return (
+                f"[queued] target branch {run_session}:{branch_from} is "
+                "busy running a turn. Your message is queued; it will be "
+                "processed when the target's current turn ends and its "
+                "reply will come back to you automatically."
+            )
 
     emit_safe(
         "branch.message_sent",

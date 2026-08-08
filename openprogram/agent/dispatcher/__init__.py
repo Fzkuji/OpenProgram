@@ -102,6 +102,23 @@ from openprogram.agent.internals._approval import (
 )
 
 
+def _drain_send_message_inbox(session_id: str) -> None:
+    """Deliver messages other branches queued for this session while it
+    was busy (send_message busy-queueing, agent-collaboration §5.4).
+    Runs at turn end — the one point where the session is known to be
+    free again. Each queued message becomes one async turn through the
+    normal delivery path (run_agent_turn_async → auto-followup back to
+    the sender). Best-effort."""
+    try:
+        from openprogram.agent.inbox import drain
+        drain(session_id)
+    except Exception:
+        _log.debug(
+            "send_message inbox drain failed for session %s",
+            session_id, exc_info=True,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -385,7 +402,9 @@ def _process_turn_once(
     except Exception as e:
         # Error fold / standalone error node / taxonomy / error
         # TurnResult — error_path.py. Head movement stays with the
-        # TurnWriter (record_failure).
+        # TurnWriter (record_failure). An errored turn still ends the
+        # turn, so queued cross-branch messages are drained here too.
+        _drain_send_message_inbox(req.session_id)
         return handle_turn_error(
             db=db, req=req, session=session, exc=e,
             writer=_writer,
@@ -474,6 +493,11 @@ def _process_turn_once(
         _log.warning(
             "failed to mark session %s finished", req.session_id, exc_info=True,
         )
+
+    # 6.99. Deliver cross-branch messages queued while this turn ran
+    #       (send_message busy-queueing) — the turn is over, the session
+    #       is free, each queued message now runs its own turn.
+    _drain_send_message_inbox(req.session_id)
 
     # 7. Final result event for clients that wait for the synchronous
     #    "the turn is done" signal.

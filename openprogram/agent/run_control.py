@@ -207,6 +207,22 @@ def unregister_cancel_event(
     current.retire()
 
 
+def is_turn_running(session_id: str) -> bool:
+    """True while a turn is in flight on this session.
+
+    The authoritative in-process busy check: every turn entry point that
+    can run concurrently (webui chat, task runner workers) registers its
+    cancel token in ``_current_tokens`` and unregisters it in a finally
+    block, so presence here means a turn is executing right now.
+    send_message uses this to decide direct delivery vs. inbox queueing.
+    """
+    # ponytail: channel-worker turns don't register a token, so they are
+    # invisible here; register one there if channel sessions ever need
+    # busy-queueing.
+    with _cancel_flags_lock:
+        return session_id in _current_tokens
+
+
 def mark_cancelled(session_id: str) -> None:
     """Stop the turn running on this session. No-op between turns."""
     with _cancel_flags_lock:

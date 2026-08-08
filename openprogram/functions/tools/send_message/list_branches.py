@@ -98,8 +98,9 @@ _LIST_BRANCHES_DESC = (
     "List the branches of a session (defaults to the current session). "
     "Each line gives a `SID:HEAD` you can pass directly as send_message's "
     "`to` to message that branch, plus its name (if any) and a preview "
-    "of its tip. Use this to find the exact branch to talk to before "
-    "calling send_message."
+    "of its tip. A named branch can also be addressed by name alone: "
+    "send_message(to=\"<name>\"). Use this to find the exact branch to "
+    "talk to before calling send_message."
 )
 
 
@@ -121,7 +122,10 @@ def _list_branches_impl(session_id: str = "") -> str:
     if not branches:
         return f"(session {sid} has no branches)"
 
-    lines = [f"{len(branches)} branch(es) in {sid} — pass a `to` below to send_message:"]
+    lines = [
+        f"{len(branches)} branch(es) in {sid} — pass a `to` below to "
+        "send_message (a «name» works directly as `to` too):"
+    ]
     for b in branches:
         head = b.get("head_msg_id", "?")
         name = b.get("name")
