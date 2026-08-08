@@ -56,8 +56,9 @@ def triage(ticket: str, runtime=None) -> str:
         ticket, choices=["bug", "feature", "question"])
     if kind == "bug":                       # 🐍 你决定
         logs = search_logs(ticket)          # 🐍 普通 Python
-        return runtime.exec(                # 🤖 LLM 写回复
-            f"Reply using:\n{logs}")
+        return runtime.exec(                # 🤖 agent 分析根因并起草回复
+            f"Find the root cause in these logs, "
+            f"then draft a reply with a workaround:\n{logs}")
     return runtime.exec("Draft a short reply.")
 ```
 
@@ -66,7 +67,7 @@ def triage(ticket: str, runtime=None) -> str:
 行为完全一样。对照着看，这个函数的每个部件都对应大模型调用的一个要素：
 
 - **docstring ≈ system prompt。**函数注释写的是这个agent的角色和任务的固定说明，框架把它作为系统提示。它本来就该写在函数上，Python语法早就给了位置。
-- **参数就是输入。** `ticket`是每次调用时补充进来的任务相关信息：调用`triage("app crashes on login")`，这条工单就成了这次模型调用的输入。函数体里还可以继续追加：`f"Reply using:\n{logs}"`就是把代码算出来的中间结果拼成下一次的输入。
+- **参数就是输入。** `ticket`是每次调用时补充进来的任务相关信息：调用`triage("app crashes on login")`，这条工单就成了这次模型调用的输入。函数体里还可以继续追加：bug分支里把查到的`logs`拼进下一次调用，就是把代码算出来的中间结果作为agent的输入。
 - **返回值是定义好的输出。**模型的回答不是一段散着的文本，而是按约定落回变量：`kind`一定是三个类别之一，最终`return`的是起草好的回复。输出从"取出来再处理"变成"本来就在变量里"。
 
 方法本身就这么多。下面按输入、上下文、输出、结构四个方向，讲用了它之后得到的好处。
