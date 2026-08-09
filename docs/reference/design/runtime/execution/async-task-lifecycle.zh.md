@@ -149,7 +149,7 @@ spinner。
 agent 用三件套：
 
 - `agent(prompt, description, agent_id?, context?, run_in_background=False)` → 前台默认返回最终 result，`run_in_background=True` 返回 `task_id`。包装 `runner.submit(...)`。
-- `task_output(task_id, timeout=None)` → 阻塞调用线程直到完成 / cancelled / timeout，返回 `{status, result_text, head_id, error}`。LLM 在并发场景调它来收尾。
+- `task_output(task_id, block=True, timeout=30000)` → 等待(timeout 毫秒,上限 600000,对齐 Claude Code 的 TaskOutput 参数形状)直到完成 / cancelled / 超时,返回回复文本+终态;`block=false` 立即窥探当前状态。`task_list()` 列出本会话的后台任务(id、状态、主题),LLM 用它掌握并行工作的全景。
 - `task_stop(task_id, reason?)` → `{ok, status}`。
 
 变体 `await_tasks([id1, id2, ...], mode="all"|"any", timeout)` 用于 plan mode

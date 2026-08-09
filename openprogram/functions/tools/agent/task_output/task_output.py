@@ -1,37 +1,64 @@
-"""task_output — block until an async agent() spawn reaches a terminal
-state and return its final reply."""
+"""task_output — get the output of a background agent() spawn.
+
+Parameter shape mirrors Claude Code's TaskOutput: ``block`` (default
+true) and ``timeout`` in milliseconds (default 30s, capped at 10min).
+"""
 from __future__ import annotations
 
 from openprogram.functions._runtime import function
+
+# Claude Code's TaskOutput cap: 600000 ms.
+_MAX_TIMEOUT_MS = 600_000
+_DEFAULT_TIMEOUT_MS = 30_000
 
 
 @function(
     name="task_output",
     description=(
-        "Block until a background task spawned with "
-        "agent(run_in_background=true) reaches a terminal state "
-        "(completed/cancelled/errored). Returns the task's final reply "
-        "text plus its terminal status. Pair with "
-        "agent(run_in_background=true) for parallel agent execution.\n"
+        "Get the output of a background task spawned with "
+        "agent(run_in_background=true). By default blocks until the task "
+        "reaches a terminal state (completed/cancelled/errored) or the "
+        "timeout expires; on timeout it returns with the task still "
+        "running — call again to keep waiting. Returns the task's final "
+        "reply text plus its terminal status.\n"
         "\n"
         "Args:\n"
         "  task_id: id returned by agent(run_in_background=true).\n"
-        "  timeout: max seconds to block. None = wait forever. "
-        "On timeout the call returns with the task still running."
+        "  block: whether to wait for completion (default true). "
+        "false = return the task's current status immediately.\n"
+        "  timeout: max wait time in ms (default 30000, max 600000)."
     ),
     toolset=["core"],
     # Same as agent: a spawned agent neither delegates nor waits on
     # delegated work.
     unsafe_in=["agent_spawn"],
 )
-def task_output(task_id: str, timeout: float = 0) -> str:
-    """Wait for an async task and return its final reply."""
+def task_output(
+    task_id: str,
+    block: bool = True,
+    timeout: float = _DEFAULT_TIMEOUT_MS,
+) -> str:
+    """Wait for (or peek at) an async task and return its reply."""
+    return _task_output_impl(task_id, block=block, timeout=timeout)
+
+
+def _task_output_impl(
+    task_id: str,
+    block: bool = True,
+    timeout: float = _DEFAULT_TIMEOUT_MS,
+) -> str:
     if not task_id or not isinstance(task_id, str):
         return "[task_output error] task_id required"
     from openprogram.agent.task import get_runner
     runner = get_runner()
-    eff_timeout = None if (timeout is None or timeout <= 0) else float(timeout)
-    t = runner.await_task(task_id.strip(), timeout=eff_timeout)
+    # Never pass 0 to the runner: its restart-recovery path treats a
+    # falsy timeout as "poll for 60s", the opposite of a peek.
+    if not block:
+        wait_s = 0.001
+    else:
+        ms = _DEFAULT_TIMEOUT_MS if timeout is None else float(timeout)
+        wait_s = max(0.001, min(ms, _MAX_TIMEOUT_MS) / 1000.0)
+    t = runner.await_task(task_id.strip(), timeout=wait_s)
     if t is None:
         return f"[task_output error] unknown task_id={task_id!r}"
     status = t.status.value
@@ -43,7 +70,9 @@ def task_output(task_id: str, timeout: float = 0) -> str:
     if status == "errored":
         return f"[task {task_id} errored] {t.error or 'unknown error'}"
     # still running / queued
+    if not block:
+        return f"[task {task_id} still {status}]"
     return (
         f"[task {task_id} still {status}] "
-        f"timed out after {timeout}s; call task_output again to keep waiting."
+        "timed out; call task_output again to keep waiting."
     )

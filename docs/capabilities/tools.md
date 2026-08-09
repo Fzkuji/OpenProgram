@@ -64,7 +64,7 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 
 | Tool | What it does | Requires |
 |---|---|---|
-| `agent` (+ `task_output` / `task_stop`) | Spawn another agent within the same session and collect its reply | Nothing |
+| `agent` (+ `task_list` / `task_output` / `task_stop`) | Spawn another agent within the same session and collect its reply; list, fetch or stop its background tasks | Nothing |
 | `spawn_program` | Invoke any registered `@agentic_function` | Nothing |
 | `send_message` (+ `list_agents`) | Cross-branch communication with existing agents | Nothing |
 | `mixture_of_agents` | Ask N models in parallel, then synthesize | Multiple configured provider keys |
