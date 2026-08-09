@@ -10,11 +10,11 @@
 
 ## 第一部分：我们现在怎么做
 
-实现全部在`openprogram/sandbox/__init__.py`，65行，对外三个名字：`sandbox_enabled`（`ContextVar[bool]`，默认`False`）、`is_available()`、`wrap_command(command, cwd) -> (args, shell)`。唯一的消费者是`openprogram/backend/local.py::_invocation`，它在开关为真**且**平台工具存在时才包装命令。
+实现全部在`openprogram/sandbox/__init__.py`。对外的名字是`SandboxPolicy`（冻结dataclass）、`resolve_policy()`、`is_available()` / `unavailable_reason()`、`child_env(policy)`、`wrap_command(command, cwd, policy) -> (args, shell)`。有两个消费者：`openprogram/backend/local.py::_invocation`，bash和process工具走它；`memory/scriptorium/management/workspace.py::shell`，memory写入器的MCP `shell`工具走它。
 
 ### 1. 边界
 
-四个方向，不对称：读不限、写受限、执行只在macOS受限、网络两个平台都断。
+四个方向，不对称：读除凭证glob之外不限，写限制在工作目录，执行不限制，网络两个平台都断。这一节全部是在已发布代码上实测的。
 
 #### 1.1 macOS：Seatbelt
 
@@ -23,99 +23,110 @@
 | 资源 | 策略 |
 |---|---|
 | 兜底 | `(deny default)` |
-| 文件读 | `(allow file-read* (subpath "/"))`，**整盘** |
-| 文件写 | cwd、`/private/var/folders`、`/private/tmp`、`/tmp` |
-| 进程执行 | `/bin`、`/usr/bin`、`/usr/local/bin`、`/opt/homebrew` |
+| 文件读 | `(allow file-read* (subpath "/"))`，之后每条deny-read glob各发一条`deny file-read*`正则 |
+| 文件写 | cwd、额外的`writable_roots`、`/private/var/folders`、`/private/tmp`、`/tmp`，之后每条deny-write glob各发一条`deny file-write*`正则 |
+| 删除被禁路径 | 每条deny-read glob同时发`deny file-write-unlink`，被禁读的路径不能用删除操作反推存在性 |
+| 进程执行 | `(allow process-exec)`，不限制，子进程继承profile |
 | fork | 允许 |
+| 信号、进程信息 | 只限`(target same-sandbox)` |
+| POSIX信号量与共享内存 | 允许，给Python multiprocessing用 |
+| 字符设备 | `/dev/null`、`/dev/zero`、`/dev/random`、`/dev/urandom`、`/dev/tty`的读写和ioctl，每条都用`require-all`加`vnode-type CHARACTER-DEVICE` |
 | sysctl | `(allow sysctl-read)`，无名字过滤 |
 | Mach IPC | `(allow mach-lookup)`，无名字过滤 |
-| 网络 | 没写规则，被`(deny default)`兜住，出入站都断 |
-| `/dev`写 | 没写规则，被`(deny default)`兜住，含`/dev/null` |
-| 信号、POSIX IPC、共享内存 | 没写规则，拦下 |
+| 网络 | 除非`sandbox.network`打开，否则不发任何规则，由`(deny default)`兜住出入两个方向 |
+
+工作目录拼进profile之前先转义，deny glob编译成锚定正则。Seatbelt正则方言有两条细节是关键的：`(?:…)`永远匹配不上，非捕获分组会让一条deny规则变成无声空转；引擎匹配的是解析软链后的真实路径，所以每条glob在静态前缀指向别处时要发两遍。
 
 #### 1.2 Linux：bubblewrap
 
 ```
-bwrap --ro-bind / / --bind <cwd> <cwd> --tmpfs /tmp --proc /proc --dev /dev
-      --unshare-net -- bash -c <command>
+bwrap --new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts
+      --cap-drop ALL --ro-bind / / --proc /proc --dev /dev [--unshare-net]
+      --tmpfs /tmp --bind <cwd> <cwd> [屏蔽挂载] -- /bin/bash -c <command>
 ```
 
 | 资源 | 策略 |
 |---|---|
-| 文件读 | `--ro-bind / /`，**整盘** |
-| 文件写 | 只有cwd，外加一个用完即弃的`/tmp` tmpfs |
-| 进程执行 | **完全不限制**，任何位置的任何二进制 |
-| 网络 | `--unshare-net`，只剩回环 |
-| PID命名空间 | **没有隔离** |
-| 其余命名空间 | ipc/uts/user/cgroup全共享 |
-| 终端 | 没有`--new-session`（bubblewrap自己把它列为TIOCSTI注入防护） |
-| 生命周期 | 没有`--die-with-parent`，父进程死了子进程留着 |
+| 文件读 | `--ro-bind / /`，减去下面的deny-read挂载 |
+| 文件写 | cwd和额外`writable_roots`用`--bind`放开，加上`/tmp`的一次性tmpfs |
+| deny-read目录 | `--perms 0000 --tmpfs <dir>`；`--cap-drop ALL`拿掉了`DAC_OVERRIDE`，所以容器里子进程是root时权限位依然生效 |
+| deny-read文件 | `--ro-bind /dev/null <file>` |
+| 进程执行 | 不限制，任何位置的任何二进制 |
+| 网络 | 除非`sandbox.network`打开，否则`--unshare-net` |
+| PID命名空间 | 已隔离 |
+| IPC、UTS命名空间 | 已隔离 |
+| capability | 全部丢弃 |
+| 终端 | `--new-session`，bubblewrap文档把它列为TIOCSTI注入防护 |
+| 生命周期 | `--die-with-parent` |
 | 系统调用 | 无seccomp过滤 |
-| 环境变量 | 没有`--clearenv`，全量继承 |
+| 环境变量 | 由调用方过滤，见§1.4 |
 
-#### 1.3 可读的那一侧有什么
+挂载顺序是功能性的，不是格式问题。`--tmpfs /tmp`必须发在cwd bind**之前**；反过来的话，工作目录落在`/tmp`下时会被tmpfs盖掉，沙箱内工作区消失而宿主侧文件完好。所有`tempfile`建的暂存目录都落在那里，包括memory写入器的暂存目录。屏蔽挂载会跳过宿主上不存在的路径：根是只读绑定的，bubblewrap没法在里面创建挂载点，硬来会让整条调用失败并报`Can't create file at <path>: Read-only file system`。
 
-两个平台的读都不受限，所以沙箱内的命令能读到本机全部凭证：SSH私钥、`~/.openprogram/auth/`下的OAuth载荷和API key、`~/.claude.json`、`~/.config/gh/hosts.yml`，macOS上还有keychain数据库原始字节。环境变量全量继承，`OPENAI_API_KEY`这类值对每个子进程可见。Linux上PID命名空间是共享的，沙箱外任意进程的`/proc/<pid>/environ`可读，同uid进程可被信号打断，包括`kill -9`。
+`--unshare-user`是故意不加的。非setuid的构建本来就自己建用户命名空间，加了没有增量；setuid的构建根本不支持这个参数。
 
-出站网络两个平台都断，所以读到的凭证不能直接送出去。但它可以写进`/tmp`或`/private/var/folders`，等下一条不带沙箱的命令来取；memory写入器一旦跑起shell命令，它还可以写进记忆库，而记忆库内容会在之后的会话里回到上下文。§8说明第二条路径为什么改变了结论。
+#### 1.3 屏蔽清单里有什么
 
-#### 1.4 macOS把正常工作也挡住了
+清单出厂就装弹，不是空的：`~/.ssh/**`、`~/.aws/**`、`~/.gnupg/**`、`~/.openprogram/auth/**`、`~/.claude.json`、`~/.claude/.credentials.json`、`~/.config/gh/**`、`~/.netrc`、`~/Library/Keychains/**`、`**/.env`。实测开着沙箱时，这里每一条读都在macOS上报`Operation not permitted`、在Linux上报`Permission denied`，`rm -f ~/.ssh/id_ed25519`同样被拒，不会泄露文件在不在。
 
-exec白名单加上缺失的`/dev`写规则，正好干掉编码agent真正要跑的命令：
+清单之外仍然全盘可读。这是有意选的姿态而不是疏漏：全盘读是命令了解自己所在系统的方式，收口收在携带凭证的路径上，不是收在读这个动作上。
 
-| 命令 | 结果 | 原因 |
-|---|---|---|
-| `echo hi > /dev/null` | `Operation not permitted` | `/dev`不在写白名单 |
-| `ls /nonexistent 2>/dev/null` | 报错 | 同上，`2>/dev/null`在真实命令里遍地都是 |
-| `git` | `can't exec '/Library/Developer/CommandLineTools/usr/bin/git'` | `/usr/bin/git`是跳板，真身在白名单外 |
-| `python3`、`make`、`clang` | 同上 | 同一条跳板路径 |
-| conda python、nvm node | `Operation not permitted` | 不在白名单 |
-| `ps`、`top` | `Operation not permitted` | setuid二进制，Seatbelt默认不给exec |
-| `/sbin/*`、`/usr/sbin/*` | 拒绝 | 不在白名单 |
-| `/opt/homebrew/bin/*` | 正常 | 白名单里唯一真正带工具的一条 |
+#### 1.4 子进程的环境变量
 
-这份白名单并没有在任何有意义的层面限制执行：`/bin/bash -c`本身就在白名单里，脚本可以从任何地方读进来。它限制的是解释器路径，挡住的是工具链而不是攻击者。
+沙箱内的子进程拿到的是一份白名单：`PATH`、`HOME`、`SHELL`、`USER`、`LOGNAME`、`TERM`、`TMPDIR`、`TMP`、`TEMP`、`TZ`、`PWD`、`OLDPWD`、`LANG`、`LANGUAGE`、`COLUMNS`、`LINES`和`LC_*`，再加上`sandbox.pass_env`里名字本身不像凭证的条目。实测：父进程里164字符的`OPENAI_API_KEY`到子进程是空串，`env | grep -iE '(key|token|secret|password)='`没有输出。
 
-#### 1.5 Linux会把工作目录盖掉
+选白名单而不是从provider注册表推导的黑名单，理由只有一条：明天新增的provider会被自动丢掉，没人需要更新任何东西，而推导出来的名单要跟着注册表一起长。凭证名字pattern留作`sandbox.pass_env`的底线，避免这个逃生口顺手把key发给每一条命令。
 
-`bwrap`按参数顺序应用挂载。`--bind <cwd> <cwd>`在前、`--tmpfs /tmp`在后，所以工作目录落在`/tmp`下时tmpfs会把它盖住，沙箱内工作区直接消失：`ls`、`cat`和写全部报"No such file or directory"，宿主侧文件却还在。任何用`tempfile`创建的暂存目录都会撞上这条，包括memory写入器的stage目录。
+Linux上光洗环境变量不够。没有`--unshare-pid`时，`/proc/<agent_pid>/environ`会把刚从子进程里去掉的key还回来。加上之后，沙箱内的进程只看得到4个PID，`cat /proc/<宿主pid>/environ`报"No such file or directory"，`kill -9 <宿主pid>`报"No such process"，宿主进程照常活着。
 
-#### 1.6 工作目录未转义拼进profile
+#### 1.5 还敞着的部分
 
-`_seatbelt_profile()`用f-string拼出`(allow file-write* (subpath "{cwd}"))`。一条先闭合字符串再开一条新规则的路径，括号是配平的、能正常解析，写范围就被放宽到任意目录。括号不配平的payload会让`sandbox-exec`解析失败、命令不执行，所以失败方向是关闭的。目前没有模型可控的路径能走到这里：worktree路径经`openprogram/worktree/manager.py`的`_slugify()`过滤成`[A-Za-z0-9_-]`，其余工作目录来自用户项目或`OPENPROGRAM_WORKDIR`。这是潜伏问题而非当前可达漏洞，修起来是一行。
-
-profile还作为`argv[2]`传给`sandbox-exec`，同机任何进程都能从进程表里读到当前放宽了哪些写路径。
+- macOS上`ps`和`top`跑不了。它们是setuid二进制，Seatbelt无论exec策略怎么写都拒绝把setuid二进制exec进沙箱，这是平台限制不是配置选择。所有用Seatbelt的参考实现都一样。
+- `sysctl-read`和`mach-lookup`还是全放行，剪贴板可读、Apple Events通道开着。
+- `/private/var/folders`是整棵树可写，没有收窄到本进程的`TMPDIR`，所以在屏蔽清单生效之前读到的凭证仍然可以落在系统per-user缓存目录里，等一条不带沙箱的命令来取。
+- git hook和git config在工作目录里可写。它们和agentics目录是同一形状的逃逸，作为`sandbox.deny_write`条目支持手动加上，但不是默认：实测禁掉`.git/hooks/**`会让`git init`和`git clone`直接失败，因为两者都要写这个目录。要关掉它得先有第5步的升级路径。
+- 没有违规审计。被拒的操作只体现为命令自己的错误文本，没有任何地方记录沙箱拦了什么。
 
 ### 2. 开关
 
-`sandbox_enabled`是挂在`ContextVar`上的进程级布尔值。两个入口，都是手动toggle：CLI REPL的`/sandbox`（`openprogram/_cli_chat/handlers.py::_handle_sandbox`）和Web UI的`/sandbox`（`openprogram/webui/ws_actions/chat.py::handle_sandbox`）。没有配置项，`openprogram/config_schema.py`的`SETTINGS`里没有`sandbox`条目，没有环境变量，没有profile字段。
+策略在包装命令的那一刻从`~/.openprogram/config.json`的`sandbox.*`读出来。`sandbox.mode`为`off`（默认值）时`resolve_policy()`返回`None`，否则返回一个`SandboxPolicy`。七个键注册在`openprogram/config_schema.py::SETTINGS`里，所以`openprogram config`、setup向导、TUI设置页和Web设置页都会渲染它们：
 
-**Web的toggle到不了命令。**`handle_sandbox`在websocket的asyncio任务里`sandbox_enabled.set(True)`，而agent轮次跑在同一个模块起的裸`threading.Thread`里，新线程拿到的是空`Context`，`_invocation`读回默认值`False`。`openprogram/webui/`下没有任何`copy_context()`。界面显示"Sandbox: ON"，命令照常裸跑。这是漏改不是设计：`openprogram/functions/_runtime.py`和`openprogram/agent/task/runner.py`把活交给别的线程时都正确拷了上下文。
+| 键 | 含义 | 默认 |
+|---|---|---|
+| `sandbox.mode` | `off`或`workspace-write` | `off` |
+| `sandbox.writable_roots` | 工作目录之外还可写的目录 | `[]` |
+| `sandbox.deny_read` | 沙箱内不可读的glob | §1.3那份凭证清单 |
+| `sandbox.deny_write` | 沙箱内不可写的glob | `[]`，外加常开的agentics目录 |
+| `sandbox.network` | 沙箱内是否有网络 | `false` |
+| `sandbox.pass_env` | 额外透传的环境变量名 | `[]` |
+| `sandbox.on_unavailable` | 平台工具缺失时`refuse`还是`warn` | `refuse` |
 
-**CLI的toggle只在同线程有效。**REPL里toggle之后发出的bash命令确实被包住。
+CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以这个开关是持久的，不是单次会话的。
 
-**子进程一律丢失。**`openprogram/agent/process_runner.py`用`mp.get_context("spawn")`，spawn不携带上下文变量；该模块只显式恢复了usage上下文。所以每个`@agentic_function`里的bash都是裸跑。
+**载体是文件，这正是关键。**开关原来挂在`ContextVar`上，而每一个新起上下文的边界都会把它弄丢。其中三个边界在真实调用路径上：Web UI在websocket的asyncio任务里设置，agent轮次跑在裸`threading.Thread`里；`openprogram/agent/process_runner.py`用`mp.get_context("spawn")`，spawn不携带上下文变量；嵌套CLI干脆是另一个进程。在每个交接点补`copy_context()`并不等价：spawn出来的子agent确实能靠它把开关带进worker线程，但在followup线程上照样掉回默认值，这是实测的。一个要跨进程存活的用户级设置，本来就不该挂在上下文变量上。同样挂在上下文变量上的那几个按链计数的执行态是另一回事，它们留在原处，在每个线程入口重新绑定。改完之后实测，Web那条形状里裸线程确实跑在沙箱内且看到空的`OPENAI_API_KEY`，spawn那条形状里的子进程同样如此。
 
-**降级是静默的。**`_invocation`的判断是`if sandbox_enabled.get(False) and _sandbox_available():`，否则直接落到普通执行分支。两个toggle在平台工具缺失时会拒绝打开，但已经是ON的状态下工具消失，就是无声降级。
+**任何审批决定都掀不动它。**策略在backend里读，位置在权限层之下。`permission_mode="bypass"`把`_gated_execute`短路到工具自己的execute，而那次调用照样经过`_invocation`。实测：直接调bash工具的`execute`（bypass分支执行的就是这一句），写工作目录之外和读SSH私钥都失败。这不能替代权限层需要的那条硬底线（第5步），它的意思是bypass绕过的东西里不包括沙箱。
 
-没有粒度：不分agent、不分工具、不分命令，一个进程级布尔。
+**平台工具缺失时默认拒绝执行。**`sandbox.mode`开着、平台工具缺失、`sandbox.on_unavailable`是`refuse`时，`_invocation`抛`SandboxUnavailable`，`LocalBackend.run`把它变成失败的`RunResult`，文案给出两条出路：装工具，或者把`sandbox.mode`设成`off`。`warn`恢复原来那种不受保护地跑掉的行为，附一行日志。
+
+粒度仍然是整个安装一个设置：不分agent、不分工具、不分命令。`wrap_command`接收显式策略，手上有策略的调用方可以传进去，但目前没有任何地方按调用点给出不同的策略。
 
 ### 3. 覆盖面
 
-全仓库约25处会把内容变成运行中的进程，走沙箱的只有1处。
+全仓库约25处会把内容变成运行中的进程，走沙箱的有2处。
 
 | 执行点 | 跑的是什么 | 命令来源 | 沙箱 |
 |---|---|---|---|
-| `functions/tools/bash/bash.py` → `backend/local.py::_invocation` | 任意shell串 | 模型 | **是**，需开关为真且用local backend |
+| `functions/tools/bash/bash.py` → `backend/local.py::_invocation` | 任意shell串 | 模型 | **是**，需`sandbox.mode`打开且用local backend |
 | `backend/docker.py`、`backend/ssh.py` | `docker run` / `ssh <target> "…"` | 模型 | 无 |
-| `functions/tools/process/process.py` | 长驻`backend.spawn()` | 模型 | 跟随bash，默认关 |
+| `functions/tools/process/process.py` | 长驻`backend.spawn()` | 模型 | 跟随bash，同一个`_invocation` |
 | `functions/tools/execute_code/execute_code.py` | `subprocess.run([python, script])`，脚本由模型写、解释器路径也是模型参数 | 模型 | 无，文件头明写隔离不是本工具的职责 |
 | `functions/tools/cron/worker.py` | `Popen(command, shell=True, start_new_session=True)`和`python -m openprogram.cli deep-work` | 模型 | 无，脱离会话存活，触发时没有审批 |
-| `memory/scriptorium/management/workspace.py` | `subprocess.run(command, shell=True, cwd=stage_dir)` | 模型，经MCP`shell`工具 | 无 |
+| `memory/scriptorium/management/workspace.py` | `subprocess.run(command, shell=True, cwd=stage_dir)` | 模型，经MCP`shell`工具 | **是**，同一份策略，cwd是暂存目录 |
 | `memory/scriptorium/agent_runtime/claude_code.py` | 嵌套Claude Code SDK agent，`permission_mode="dontAsk"` | 模型驱动 | 无 |
-| `functions/_registry.py`的`exec_module`，由`functions/watcher.py`驱动 | 导入`functions/agentics/`下的`.py`，模块级代码在agent进程内执行 | 模型可写该目录 | **无，且不需要任何用户动作** |
+| `functions/_registry.py`的`exec_module`，由`functions/watcher.py`驱动 | 导入`functions/agentics/`下的`.py`，模块级代码在agent进程内执行 | 模型可写该目录 | 无；**沙箱内**的命令已经写不进去，沙箱外的还可以 |
 | `webui/_functions.py` | 每次UI运行重新exec该模块 | 模型可写 | 无 |
-| `agent/process_runner.py` | spawn子进程跑一个`@agentic_function` | 模型 | 无 |
+| `agent/process_runner.py` | spawn子进程跑一个`@agentic_function` | 模型 | 里面的bash和别处一样解析策略 |
 | `plugins/loader.py` | 进程内`importlib.import_module()` | 插件清单 | 无，`plugins/sandbox.py::load_subprocess`抛`NotImplementedError` |
 | `mcp/client.py` | stdio MCP server，`env={**os.environ, …}` | 配置文件，bash可改写 | 无 |
 | `webui/routes/mcp.py` | 直接从HTTP请求体拿命令起进程 | HTTP调用方 | 无，尽管docstring自称one-shot sandbox |
@@ -126,9 +137,9 @@ profile还作为`argv[2]`传给`sandbox-exec`，同机任何进程都能从进�
 
 其中三条要单独说。
 
-**从模型输出到宿主代码的最短路径不经过bash。**`functions/watcher.py`每两秒轮询`functions/agentics/`并调`rescan()`，最终走到`spec.loader.exec_module(module)`。模型用`write`往那儿放一个`.py`，几秒内模块级代码就在agent进程里跑起来，不经工具审批，也没有任何东西可以让`wrap_command`去包。
+**从模型输出到宿主代码的最短路径不经过bash。**`functions/watcher.py`每两秒轮询`functions/agentics/`并调`rescan()`，最终走到`spec.loader.exec_module(module)`。往那儿放一个`.py`，几秒内模块级代码就在agent进程里跑起来，不经工具审批。沙箱内的命令已经写不进这个目录，它是一条任何配置都删不掉的deny-write条目；但`write`工具不走沙箱，所以这条路径是被收窄而不是被关掉。
 
-**spawn出来的子agent关掉了审批。**`openprogram/agent/sub_agent_run.py`给新建的轮次设`permission_mode="bypass"`，`_gated_execute`在第③步就因bypass短路，位置在会拦住bash/execute_code/process的`_RISKY_TOOLS`检查之前。规则层的deny和ask仍然生效，它们排在更前面。
+**spawn出来的子agent关掉了审批。**`openprogram/agent/sub_agent_run.py`给新建的轮次设`permission_mode="bypass"`，`_gated_execute`在第③步就因bypass短路，位置在会拦住bash/execute_code/process的`_RISKY_TOOLS`检查之前。规则层的deny和ask仍然生效，它们排在更前面。沙箱不受这条影响：它在这一层之下解析，被bypass的bash调用和被批准的一样会被包住（§2）。
 
 **一个看起来在防护的参数并不防护。**`webui/_runtime_management.py`往`create_runtime()`传`full_auto=False, sandbox="read-only"`，而`providers/openai_codex/runtime.py`把这些kwarg明确记为接受即忽略。
 
@@ -152,7 +163,7 @@ profile还作为`argv[2]`传给`sandbox-exec`，同机任何进程都能从进�
 | `opencode` | **没有，且文档明确列为非目标** | 无 | 宿主 | 无 |
 | `weclaw` | **没有，而且它把被包的agent的沙箱也关掉了** | 无 | 宿主，经spawn出来的`claude`/`codex` | 无 |
 | `pi-ai` | 不适用 | 完全没有执行面 | 无 | 无 |
-| **OpenProgram** | 有，很薄 | Seatbelt和bubblewrap，仓库内，65行 | 宿主，被包住 | 否 |
+| **OpenProgram** | 有 | Seatbelt和bubblewrap，仓库内 | 宿主，被包住 | 否（`sandbox.mode`为`off`） |
 
 **`claude-code`**：证据取自本机安装的2.1.226二进制，因为`references/claude-code-leaked/src/utils/sandbox/sandbox-adapter.ts:17`只是从外部包import `SandboxManager`。策略是`(allow file-read*)`加空deny列表、写默认拒绝加显式allowlist加一份硬编码的dotfile与`.git` deny列表、`process-exec`完全不限制而靠子进程继承沙箱、网络走父进程里一个逐域名弹窗的代理。
 
@@ -174,15 +185,15 @@ profile还作为`argv[2]`传给`sandbox-exec`，同机任何进程都能从进�
 
 | | `claude-code` | `codex-cli` | `openclaw` | `pi-mono`核心 | `pi-mono`加扩展 | `hermes-agent` | `opencode` | `weclaw` | **OpenProgram** |
 |---|---|---|---|---|---|---|---|---|---|
-| **读** | 整盘，deny列表出厂为空 | 整盘，deny-read引擎出厂为空 | 容器内只看得到两个挂载；**宿主**侧read工具不受限 | 不受限 | `denyRead`出厂装弹：`~/.ssh`、`~/.aws`、`~/.gnupg` | 不受限；文件工具有一份read-deny列表，代码自己注明"不是安全边界" | `*.env`走ask | 不受限 | **整盘，连引擎都没有** |
-| **写** | 默认拒绝加allowlist，另有硬编码的dotfile和`.git` deny | 默认拒绝，`.git`/`.codex`/`.agents`受保护 | 容器内工作区挂载默认`:ro`，除非`workspaceAccess: "rw"` | 不受限 | `allowWrite: [".", "/tmp"]`，`denyWrite`含`.env`、`*.pem`、`*.key` | 对`/etc`、`/boot`、docker socket等敏感路径拒写 | 只有规则 | 不受限 | cwd加临时目录 |
-| **执行** | 不限制，子进程继承沙箱 | 不限制 | 容器内不限制；**argv解包器**在审批allowlist之前拦掉被混淆的调用 | 不限制 | 不限制 | 47条正则加一份掀不动的hardline列表 | 只有规则 | 不限制 | macOS白名单，误伤git和python |
+| **读** | 整盘，deny列表出厂为空 | 整盘，deny-read引擎出厂为空 | 容器内只看得到两个挂载；**宿主**侧read工具不受限 | 不受限 | `denyRead`出厂装弹：`~/.ssh`、`~/.aws`、`~/.gnupg` | 不受限；文件工具有一份read-deny列表，代码自己注明"不是安全边界" | `*.env`走ask | 不受限 | 整盘减去一份**出厂装弹**的屏蔽清单；只管bash，文件工具不受限 |
+| **写** | 默认拒绝加allowlist，另有硬编码的dotfile和`.git` deny | 默认拒绝，`.git`/`.codex`/`.agents`受保护 | 容器内工作区挂载默认`:ro`，除非`workspaceAccess: "rw"` | 不受限 | `allowWrite: [".", "/tmp"]`，`denyWrite`含`.env`、`*.pem`、`*.key` | 对`/etc`、`/boot`、docker socket等敏感路径拒写 | 只有规则 | 不受限 | cwd加临时目录，减去agentics目录 |
+| **执行** | 不限制，子进程继承沙箱 | 不限制 | 容器内不限制；**argv解包器**在审批allowlist之前拦掉被混淆的调用 | 不限制 | 不限制 | 47条正则加一份掀不动的hardline列表 | 只有规则 | 不限制 | 不限制，子进程继承沙箱 |
 | **网络** | 提示式代理，空白名单意味着每个域名都问 | 默认断，可配代理加域名白名单 | 默认`--network none`；`host`和`container:<id>`被拦 | 无 | 域名allow/deny列表，默认10个registry域名 | `--network=none`存在但**从来没被传进去**，出厂路径上不可达 | 不限制 | 不限制 | 两个平台都断 |
-| **子进程环境变量** | 由runtime处理 | 可配置，默认不过滤 | **名字正则加取值启发式**，出厂装弹 | 全量继承 | 全量继承（扩展根本没传`env`） | **剥离，且名单从provider注册表推导** | 不过滤 | 全量继承 | **不过滤** |
+| **子进程环境变量** | 由runtime处理 | 可配置，默认不过滤 | **名字正则加取值启发式**，出厂装弹 | 全量继承 | 全量继承（扩展根本没传`env`） | **剥离，且名单从provider注册表推导** | 不过滤 | 全量继承 | 白名单，没见过的名字自动被丢掉，不需要更新清单 |
 
 有两行要强调，因为它们推翻了只看两家时得出的结论。
 
-**八家里有三家出厂就装了凭证屏蔽。**`openclaw`拒绝把`.aws`、`.cargo`、`.config`、`.docker`、`.gnupg`、`.netrc`、`.npm`、`.ssh`以及`/etc`、`/proc`、`/sys`、`/dev`、`/root`、`/boot`和docker socket的各种别名作为bind挂载源（`src/agents/sandbox/validate-sandbox-security.ts:23-49`），并用兜底正则`/_?(API_KEY|TOKEN|PASSWORD|PRIVATE_KEY|SECRET)$/i`拦掉凭证形状的环境变量（`src/agents/sandbox/sanitize-env-vars.ts:1-19`）。`hermes-agent`的子进程环境黑名单是从provider注册表推导的而不是硬编码的（`tools/environments/local.py:78-99`），所以加新provider时不会漂移。`pi-mono`的沙箱扩展出厂就带着填好的`denyRead`和`denyWrite`，且`enabled: true`（`examples/extensions/sandbox/index.ts:55-77`）。出厂为空的那两家，正好就是最先调研的那两家。
+**八家里有三家出厂就装了凭证屏蔽。**`openclaw`拒绝把`.aws`、`.cargo`、`.config`、`.docker`、`.gnupg`、`.netrc`、`.npm`、`.ssh`以及`/etc`、`/proc`、`/sys`、`/dev`、`/root`、`/boot`和docker socket的各种别名作为bind挂载源（`src/agents/sandbox/validate-sandbox-security.ts:23-49`），并用兜底正则`/_?(API_KEY|TOKEN|PASSWORD|PRIVATE_KEY|SECRET)$/i`拦掉凭证形状的环境变量（`src/agents/sandbox/sanitize-env-vars.ts:1-19`）。`hermes-agent`的子进程环境黑名单是从provider注册表推导的而不是硬编码的（`tools/environments/local.py:78-99`），所以加新provider时不会漂移。`pi-mono`的沙箱扩展出厂就带着填好的`denyRead`和`denyWrite`，且`enabled: true`（`examples/extensions/sandbox/index.ts:55-77`）。出厂为空的那两家，正好就是最先调研的那两家。我们现在也出厂装弹，环境变量那一层用的是白名单而不是推导出来的黑名单：明天新增的provider会被自动丢掉，没人需要更新任何东西，`openclaw`那条兜底名字pattern留在下面，作为唯一能往回加名字的那个键的底线。
 
 **三家各自都是部分覆盖，而且都把没覆盖的部分写清楚了。**`openclaw`的deny列表管的是挂载源，不管宿主的`read`工具，后者的`tools.fs.workspaceOnly`默认`false`。`pi-mono`的`denyRead`只对bash生效，不管它自己的`read`/`grep`/`find`。`hermes-agent`把这条写进了源码：`agent/file_safety.py:167-171`明说terminal工具以同一个用户身份运行、照样能`cat`出来，所以read-deny是纵深防御而不是边界。这里的结论不是部分覆盖可以接受，而是deny列表该放在每条路径都要过的那一层，并且没覆盖到的路径必须点名。
 
@@ -197,9 +208,9 @@ profile还作为`argv[2]`传给`sandbox-exec`，同机任何进程都能从进�
 | `hermes-agent` | per-pattern审批，按上下文分策略（cron、subagent、gateway、CLI、oneshot） | `cli-config.yaml`、`approvals.mode`、`command_allowlist`、`TERMINAL_ENV` | 守卫**就是**审批系统；容器后端整体跳过 | 非交互、oneshot、batch三条路径fail-open；subagent和hardline列表fail-closed |
 | `opencode` | per-tool×per-resource | opencode.json加agent frontmatter | 只有审批，没有沙箱 | 无 |
 | `weclaw` | 无 | `~/.weclaw/config.json`，没有任何安全相关的键 | 审批被自动答成allow | 无 |
-| **OpenProgram** | **一个进程级布尔** | **无** | **不联动** | **静默放行** |
+| **OpenProgram** | 整个安装一个设置 | `config_schema.SETTINGS`里七个`sandbox.*`键 | **不联动** | **硬拒绝**并给出两条出路，另有`warn`可选 |
 
-最后一列的分布是最有用的部分。`openclaw`在Docker缺失时直接拒绝运行，并给出两条出路（`src/agents/sandbox/docker.ts:324-333`），镜像缺失时也拒绝拿一个通用镜像顶替。`claude-code`是照跑，但它自己的源码写清了为什么必须出声：修过的那个bug是`isSandboxingEnabled()`在依赖缺失时静默返回false，注释写的是"This is a security footgun — users configure allowedDomains expecting enforcement, get none."我们现在的行为正是那个bug描述的状态。
+最后一列的分布是最有用的部分。`openclaw`在Docker缺失时直接拒绝运行，并给出两条出路（`src/agents/sandbox/docker.ts:324-333`），镜像缺失时也拒绝拿一个通用镜像顶替。`claude-code`是照跑，但它自己的源码写清了为什么必须出声：修过的那个bug是`isSandboxingEnabled()`在依赖缺失时静默返回false，注释写的是"This is a security footgun — users configure allowedDomains expecting enforcement, get none."我们原来的行为正是那个bug描述的状态，现在`sandbox.on_unavailable`默认是`refuse`。
 
 ### 7. 前两轮没见过的招数
 
@@ -275,11 +286,11 @@ profile还作为`argv[2]`传给`sandbox-exec`，同机任何进程都能从进�
 
 五步，按依赖排。每一步都是下一步能产生价值的前提。
 
-**1. 可用性。**macOS profile补上`/dev/null`、`/dev/zero`、`/dev/urandom`的读写；exec白名单换成不限制`process-exec`、靠子进程继承沙箱兜底，和两个系统调用级参考实现一致；Linux按路径判断挂载顺序，工作目录落在`/tmp`下时先挂tmpfs再bind。**不做的后果**：一开沙箱，macOS上`git`、`python3`、`node`和`2>/dev/null`全部失败，Linux上`/tmp`里的工作区静默消失，用户第一件事就是把它关掉，也就是现在这个状态。
+**1. 可用性，已完成。**`process-exec`不再限制，子进程继承profile，所以`git`、`python3`、`make`、`clang`、conda python以及`/sbin`和`/usr/sbin`下的东西都能跑。`/dev/null`、`/dev/zero`、`/dev/random`、`/dev/urandom`、`/dev/tty`通过`require-all`加`vnode-type CHARACTER-DEVICE`可读可写，`2>/dev/null`正常。Linux上`--tmpfs /tmp`发在cwd bind之前，工作目录落在`/tmp`下也不会消失。macOS上仍然挡着的是`ps`和`top`，因为Seatbelt根本不允许把setuid二进制exec进沙箱。
 
-**2. 凭证屏蔽。**两个平台加deny-read glob列表，并且出厂就装弹：`~/.ssh/**`、`~/.aws/**`、`~/.openprogram/auth/**`、`~/.claude.json`、`**/.env`、`~/Library/Keychains/**`。macOS上`deny file-read*`要和`deny file-write-unlink`成对发，否则被禁读的路径可以用删除操作反推存在性。子进程环境变量按白名单传，而且**被屏蔽的名字要从provider注册表推导**，照`hermes-agent` `tools/environments/local.py:78-99`的做法：我们`~/.openprogram/auth/`下有17个provider凭证目录，硬编码一份名单在加第一个新provider时就会漂移。下面再垫一层`openclaw`的兜底名字pattern `/_?(API_KEY|TOKEN|PASSWORD|PRIVATE_KEY|SECRET)$/i`，覆盖注册表不认识的名字。Linux同时加`--unshare-pid`，否则刚洗干净的key又能从`/proc/<agent_pid>/environ`读回来。把`functions/agentics/`、`.git`和项目配置文件加进deny-write，理由和`claude-code`写的"prevent sandbox escape"一致。**不做的后果**：沙箱防不住这里唯一值得防的东西，而接上memory写入器就补齐了一条不需要网络的凭证外传链路。
+**2. 凭证屏蔽，已完成。**deny-read清单出厂装弹（§1.3）。macOS上每条glob同时发`deny file-read*`和`deny file-write-unlink`，被禁读的路径不能用删除操作反推存在性；Linux上目录用`--perms 0000 --tmpfs`、文件用`--ro-bind /dev/null`屏蔽，宿主上不存在的路径跳过，因为只读的根让bubblewrap没地方创建挂载点。子进程环境变量用白名单而不是从provider注册表推导的黑名单：推导出来的名单要跟着注册表一起重建，白名单会自己丢掉没见过的名字，`openclaw`那条兜底名字pattern留作`sandbox.pass_env`的底线。Linux加上`--unshare-pid`，否则刚从子进程里去掉的key又能从`/proc/<agent_pid>/environ`读回来。deny-write覆盖agentics目录且任何配置都删不掉；git hook和git config是同一形状的逃逸，但保持opt-in，因为禁掉`.git/hooks/**`会让`git init`和`git clone`失败，而在第5步之前没有升级路径。
 
-**3. 开关语义。**砍掉`ContextVar`，改成显式参数：`Backend.run(command, timeout, cwd, *, sandbox: SandboxPolicy | None)`。工具定义带默认值，会话设置提供默认来源，调用点可覆盖。`config_schema.py`的`SETTINGS`加一组`sandbox.*`键（模式、可写根、deny-read glob、网络、不可用时的行为），生成的配置参考页自动收录。不可用时默认拒绝执行，文案照`openclaw`的形状：说清缺什么，并给出两条出路，装工具或者把`sandbox.mode`设成`off`。**不做的后果**：开关在三个边界上丢失（asyncio任务到线程、spawn、嵌套CLI），其中两处已实测，Web路径和每个agentic function里沙箱都是关的，界面显示什么都不影响。
+**3. 开关语义，已完成。**`ContextVar`已经删掉。策略在包装命令的那一刻从配置里的`sandbox.*`解析，asyncio任务到线程、spawn子进程、嵌套CLI三个边界都扛得住，因为文件不属于任何上下文。它同时坐在权限层之下，所以`permission_mode="bypass"`短路掉的是审批卡而不是沙箱。`wrap_command`接收显式策略供手上有策略的调用方使用；目前还没有按工具或按调用点给出不同策略的地方，那正是"调用点可覆盖"原本要买到的东西。平台工具不可用时默认拒绝执行，并给出两条出路。
 
 **4. 默认开**，`workspace-write`语义，和`codex-cli`的立场一致。**不做的后果**：一个默认关又没有配置项的机制在真实使用中不会运行，前三步全都无从检验。
 
@@ -295,44 +306,43 @@ profile还作为`argv[2]`传给`sandbox-exec`，同机任何进程都能从进�
 
 **不做的后果**：沙箱纯粹是额外负担，审批一次不少、能跑的命令变少，没人会打开它；而且几条bypass路径会继续绕过沙箱做的任何事。
 
-配套还有profile自身的修补清单：`sysctl-read`和`mach-lookup`从全放行收成具名白名单（现在的全开让剪贴板可读、Apple Events通道开着），`/private/var/folders`收窄到本进程的`TMPDIR`，工作目录拼进profile前先转义，放开exec之前补上`(allow signal (target same-sandbox))`和`(allow process-info* (target same-sandbox))`，Linux加`--new-session --die-with-parent --unshare-user --cap-drop ALL`，两条路径统一用`/bin/bash`，切换沙箱不应该顺带换掉shell。
+配套的profile修补清单已经缩到剩下的部分。已完成：工作目录拼进profile前先转义，放开exec之前补上了`(allow signal (target same-sandbox))`和`(allow process-info* (target same-sandbox))`，Linux传`--new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts --cap-drop ALL`，两条沙箱路径统一用`/bin/bash`。仍然敞着：`sysctl-read`和`mach-lookup`收成具名白名单，现在的全放行让剪贴板可读、Apple Events通道开着；`/private/var/folders`收窄到本进程的`TMPDIR`而不是整棵树。`--unshare-user`不在清单里：非setuid的bubblewrap构建自己就会建用户命名空间，setuid的构建则不接受这个参数。
 
-有两条后补项现在有了可以点名的先例。资源限额：`hermes-agent`硬编码`--pids-limit 256`和限定大小的`nosuid` tmpfs，并把前台命令截在600秒，这比上cgroups便宜得多。配置静态检查：`openclaw`对自己的沙箱设置跑具名检查项，其中一条覆盖的正是我们已经有的那类缺陷，设置里写着sandbox而有效模式是off。
+有两条后补项现在有了可以点名的先例。资源限额：`hermes-agent`硬编码`--pids-limit 256`和限定大小的`nosuid` tmpfs，并把前台命令截在600秒，这比上cgroups便宜得多。配置静态检查：`openclaw`对自己的沙箱设置跑具名检查项，其中一条覆盖的正是我们还留着的那类缺陷，`webui/_runtime_management.py`传的`sandbox="read-only"`进了一个把该参数标注为忽略的runtime。
 
 ### 接memory写入器
 
 memory写入器有两个执行面，`wrap_command`只够得着其中一个。
 
-MCP`shell`工具（`memory/scriptorium/management/tools.py` → `workspace.shell()`）在OpenProgram进程内跑`subprocess.run(command, shell=True, cwd=stage_dir)`，形状和`_invocation`完全一致，包起来是几行的事。
+MCP`shell`工具（`memory/scriptorium/management/tools.py` → `workspace.shell()`）在OpenProgram进程内跑`subprocess.run(command, shell=True, cwd=stage_dir)`。它现在解析同一份策略，用暂存目录作为工作目录包住命令，所以bash工具在沙箱内时它也在。
 
 Claude Code CLI子进程（`memory/scriptorium/agent_runtime/claude_code.py`）是另一回事。它的`Read`/`Write`/`Edit`/`Grep`/`Glob`在CLI进程内部执行，`wrap_command`碰不到，而`permission_mode="dontAsk"`把它自己的审批也关了。这个CLI进程也不该被包进沙箱：它要调Anthropic API，而沙箱没有网络。
 
 上一轮的结论是：约束这些内置工具只能靠`allowed_tools`。`openclaw`给出了同一个问题的第二种解法。它驱动嵌套的Codex app-server时也不把那个进程包进沙箱，而是坐在两者之间的协议上，把每个方法分类，拦掉会动用嵌套agent自身执行与文件能力的那些（`command/`、`fs/`、`windowsSandbox/`），再注入替代工具把同样的操作绕回自己的沙箱（`extensions/codex/src/app-server/sandbox-guard.ts`、`run-attempt.ts:4125,4147`）。Claude Agent SDK有对等的缝：`allowed_tools`已经拿掉了`Bash`，再加一个`can_use_tool`回调和几个由MCP提供的`Read`/`Write`/`Edit`替代工具，就能把文件操作放回我们自己的策略下面。这比现在只用`allowed_tools`要多做不少工作，也不是第一步该做的事，但准确的说法是：这些内置工具**按现在的接法在沙箱之外**，而不是原理上够不着。
 
-第1、2步是硬前置：没有第1步，Linux上沙箱会抹掉暂存目录、macOS上`git`和`2>/dev/null`会坏；没有第2步，把shell包起来并没有解决要它解决的那个问题。第3步同样必要，因为写入器跑在后台线程和子进程里，`ContextVar`到不了。
+第1到3步是前置条件，都已完成，所以接上之后的边界就是准确的那句：**MCP `shell`工具在沙箱内，SDK自带的文件工具不在。**
+
+它挡住的威胁是具体的，不是假想的。只要挂了消息渠道，进入写入器prompt的文本就是攻击方可影响的：入站消息正文里带着发信人自己在平台上设的显示名。从那里被执行的命令本可以读`~/.openprogram/auth/*/default.json`并写进某个topic文件，而记忆库内容会回到之后会话的上下文里，这是一条不碰网络的外传路径，也正是"网络已经断了"没能覆盖的部分。
 
 ---
 
 ## 实现状态
 
-已落地：§1（两个平台的profile，和文中描述一致）、§2（`ContextVar`、两个toggle、静默降级）、§3（覆盖面表就是当前代码的状态）。
+已落地：§1和§2描述的就是当前代码，两个平台都实测过。修复顺序的第1、2、3步已完成，memory写入器的MCP `shell`面已接上。
 
 未实现：
 
-- deny-read glob、子进程环境变量过滤、配置文件与`.git`写保护，两个平台都没有引擎。
-- `sandbox.*`配置键，现在只有toggle。
-- per-command策略，现在是一个进程级布尔。
-- 沙箱和权限系统的任何方向的联动。
+- 第4步（默认开）和第5步（三个方向的审批联动）。
+- 按工具、按调用点的策略。`wrap_command`接收显式策略，但每个调用方解析的都是同一份配置。
+- 嵌套Claude Code CLI自带的`Read`/`Write`/`Edit`/`Grep`/`Glob`，按现在的接法在沙箱之外。
 - 现有`SAFE_AUTO_ALLOWLIST`前缀匹配之前的命令归一化和argv解包。
 - `permission_mode="bypass"`之下的hardline底线，以及cron和子agent的按上下文审批默认值。
 - 违规审计、资源限额、配置静态检查、Windows支持。
-- §10列的macOS profile修补和Linux `bwrap`参数。
+- `sysctl-read`和`mach-lookup`的具名白名单，以及把`/private/var/folders`收窄到`TMPDIR`。
+- git hook和git config的写保护，现在是opt-in而不是默认。
 
-已实测的缺陷：
+已知限制，全部实测：
 
-- Web UI的toggle在asyncio任务里设标志，agent轮次跑在裸线程里，对实际执行的命令没有影响。
-- `spawn`子进程不携带该标志，所以每个`@agentic_function`里的bash都是裸跑。
-- Linux上工作目录落在`/tmp`下时被`--tmpfs /tmp`盖掉，沙箱内看不到内容。
-- Linux上PID命名空间共享，沙箱内可读沙箱外进程的`/proc/<pid>/environ`并对其发信号。
-- macOS上`/dev/null`不可写，exec白名单挡住`git`、`python3`、`node`、`ps`以及`/sbin`和`/usr/sbin`下的一切。
-- 工作目录未转义就拼进SBPL profile，构造的路径可放宽写范围。目前从模型可控输入到不了这里。
+- `ps`和`top`在Seatbelt沙箱里跑不了。它们是setuid，平台无论exec策略怎么写都拒绝把setuid二进制exec进沙箱。
+- Linux上，中间带通配符的deny-read glob（比如`**/.env`）没有对应实现：bubblewrap是把路径盖掉而不是做匹配，所以这类pattern在Linux被丢弃，只在macOS生效。
+- §3里其余23个执行点仍然不在沙箱内，包括`execute_code`、cron worker和函数watcher的自动导入。

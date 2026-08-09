@@ -19,6 +19,13 @@ The settings registry is defined in `openprogram/config_schema.py` (the single s
 | `ui.open_browser` | Ports | whether `openprogram web` opens the browser automatically | true | next start |
 | `search.default_provider` | Search | default web search provider; `auto` picks the highest-priority configured one | auto | live |
 | `memory.backend` | Memory | `local` (on-disk memory tools) or `none` (disabled) | local | next start |
+| `sandbox.mode` | Sandbox | `off`, or `workspace-write` to wrap every bash command so it can only write inside the working directory, cannot read the blocked paths, and has no network | off | live |
+| `sandbox.writable_roots` | Sandbox | extra directories a sandboxed command may write, as a JSON list | [] | live |
+| `sandbox.deny_read` | Sandbox | globs a sandboxed command cannot read; ships loaded with the credential paths | see `openprogram config get sandbox.deny_read` | live |
+| `sandbox.deny_write` | Sandbox | globs a sandboxed command cannot write, on top of the always-blocked function-watcher directory | [] | live |
+| `sandbox.network` | Sandbox | whether a sandboxed command has network access | false | live |
+| `sandbox.pass_env` | Sandbox | environment variable names to pass through besides the built-in allowlist | [] | live |
+| `sandbox.on_unavailable` | Sandbox | `refuse` fails the command when the platform tool is missing; `warn` runs it unsandboxed | refuse | live |
 | `tools.disabled.<name>` | Tools | per-tool switch; written as members of the `tools.disabled` list | all enabled | live |
 | `providers.<name>` | Providers | read-only status row (configured or not); configure with `openprogram providers login` or the Web UI | — | — |
 
@@ -31,6 +38,7 @@ The top-level keys actually written to `~/.openprogram/config.json` (do not edit
 | `ui` | `{port, web_port, open_browser}`, see the table above | `openprogram/config_schema.py` |
 | `search` | `{default_provider}` | `openprogram/setup.py` |
 | `tools` | `{disabled: [tool name, ...]}` | `openprogram/setup.py`, `openprogram/config_schema.py` |
+| `sandbox` | `{mode, writable_roots, deny_read, deny_write, network, pass_env, on_unavailable}`, see the table above | `openprogram/sandbox/__init__.py`, `openprogram/config_schema.py` |
 | `default_provider` | Default LLM provider (written by the setup wizard) | `openprogram/setup.py` |
 | `default_model` | Default model (written by the setup wizard) | `openprogram/setup.py` |
 | `default_workdir` | Default working directory for agents | `openprogram/paths.py` |

@@ -10,11 +10,11 @@ A rendered walkthrough of the same material lives at [`sandbox-architecture.html
 
 ## Part I — What we do today
 
-The whole implementation is `openprogram/sandbox/__init__.py`, 65 lines, three public names: `sandbox_enabled` (a `ContextVar[bool]`, default `False`), `is_available()`, and `wrap_command(command, cwd) -> (args, shell)`. Its only consumer is `openprogram/backend/local.py::_invocation`, which wraps the command when `sandbox_enabled` is true **and** the platform tool is present.
+The whole implementation is `openprogram/sandbox/__init__.py`. Its public names are `SandboxPolicy` (a frozen dataclass), `resolve_policy()`, `is_available()` / `unavailable_reason()`, `child_env(policy)`, and `wrap_command(command, cwd, policy) -> (args, shell)`. Two callers wrap commands with it: `openprogram/backend/local.py::_invocation`, behind the bash and process tools, and `memory/scriptorium/management/workspace.py::shell`, behind the memory writer's MCP `shell` tool.
 
 ### 1. The boundary
 
-Four directions, and they are not symmetric. Reads are unrestricted, writes are confined, execution is restricted on macOS only, and the network is off on both platforms.
+Four directions, and they are not symmetric. Reads are open except the credential globs, writes are confined to the working directory, execution is unrestricted, and the network is off on both platforms. Everything in this section is measured on the shipped code.
 
 #### 1.1 macOS — Seatbelt
 
@@ -23,99 +23,110 @@ Four directions, and they are not symmetric. Reads are unrestricted, writes are 
 | Resource | Policy |
 |---|---|
 | Fallback | `(deny default)` |
-| File read | `(allow file-read* (subpath "/"))` — **the whole disk** |
-| File write | cwd, `/private/var/folders`, `/private/tmp`, `/tmp` |
-| Process exec | `/bin`, `/usr/bin`, `/usr/local/bin`, `/opt/homebrew` |
+| File read | `(allow file-read* (subpath "/"))`, then a `deny file-read*` regex per deny-read glob |
+| File write | cwd, extra `writable_roots`, `/private/var/folders`, `/private/tmp`, `/tmp`, then a `deny file-write*` regex per deny-write glob |
+| Deletion of a denied path | `deny file-write-unlink` on every deny-read glob, so a blocked path cannot be probed by trying to remove it |
+| Process exec | `(allow process-exec)`, unrestricted; children inherit the profile |
 | fork | allowed |
+| Signals, process info | `(target same-sandbox)` only |
+| POSIX semaphores and shared memory | allowed, for Python multiprocessing |
+| Character devices | read, write and ioctl on `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/tty`, each with `require-all` plus `vnode-type CHARACTER-DEVICE` |
 | sysctl | `(allow sysctl-read)`, no name filter |
 | Mach IPC | `(allow mach-lookup)`, no name filter |
-| Network | no rule, so `(deny default)` blocks both directions |
-| `/dev` write | no rule, so `(deny default)` blocks it, `/dev/null` included |
-| Signals, POSIX IPC, shared memory | no rule, blocked |
+| Network | no rule unless `sandbox.network` is on, so `(deny default)` blocks both directions |
+
+The working directory is escaped before it is interpolated into the profile, and the deny globs are compiled to anchored regexes. Two details of Seatbelt's regex dialect are load-bearing: `(?:…)` never matches, so a non-capturing group turns a deny rule into a silent no-op, and the engine matches the symlink-resolved path, so each glob is emitted twice when its static prefix resolves elsewhere.
 
 #### 1.2 Linux — bubblewrap
 
 ```
-bwrap --ro-bind / / --bind <cwd> <cwd> --tmpfs /tmp --proc /proc --dev /dev
-      --unshare-net -- bash -c <command>
+bwrap --new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts
+      --cap-drop ALL --ro-bind / / --proc /proc --dev /dev [--unshare-net]
+      --tmpfs /tmp --bind <cwd> <cwd> [deny mounts] -- /bin/bash -c <command>
 ```
 
 | Resource | Policy |
 |---|---|
-| File read | `--ro-bind / /` — **the whole disk** |
-| File write | cwd only, plus a throwaway tmpfs at `/tmp` |
-| Process exec | **unrestricted**, any binary anywhere |
-| Network | `--unshare-net`, loopback only |
-| PID namespace | **not unshared** |
-| Other namespaces | ipc / uts / user / cgroup all shared |
-| Terminal | no `--new-session` (bubblewrap documents it as the TIOCSTI injection guard) |
-| Lifetime | no `--die-with-parent`, children outlive the parent |
+| File read | `--ro-bind / /`, minus the deny-read mounts below |
+| File write | cwd and extra `writable_roots` via `--bind`, plus a throwaway tmpfs at `/tmp` |
+| Deny-read directory | `--perms 0000 --tmpfs <dir>`; `--cap-drop ALL` removes `DAC_OVERRIDE`, so the mode holds even when the child is root in a container |
+| Deny-read file | `--ro-bind /dev/null <file>` |
+| Process exec | unrestricted, any binary anywhere |
+| Network | `--unshare-net` unless `sandbox.network` is on |
+| PID namespace | unshared |
+| IPC, UTS namespaces | unshared |
+| Capabilities | all dropped |
+| Terminal | `--new-session`, which bubblewrap documents as the TIOCSTI injection guard |
+| Lifetime | `--die-with-parent` |
 | Syscalls | no seccomp filter |
-| Environment | no `--clearenv`, full inheritance |
+| Environment | filtered by the caller, see §1.4 |
 
-#### 1.3 What sits on the readable side
+Mount order matters and is not cosmetic. `--tmpfs /tmp` is emitted **before** the cwd bind; the other order lets the tmpfs cover a working directory under `/tmp`, and the workspace disappears inside the sandbox while the host copy is untouched. Every `tempfile`-created staging directory lands there, the memory writer's included. Deny mounts are skipped for paths that do not exist, because the root is bound read-only and bubblewrap cannot create a mount point in it — the attempt fails the whole invocation with `Can't create file at <path>: Read-only file system`.
 
-Because reads are unrestricted on both platforms, a sandboxed command reads every credential on the machine: SSH private keys, the OAuth and API-key payloads under `~/.openprogram/auth/`, `~/.claude.json`, `~/.config/gh/hosts.yml`, and the raw keychain database on macOS. The environment is inherited whole, so `OPENAI_API_KEY` and its siblings are visible to every child process. On Linux the PID namespace is shared, so `/proc/<pid>/environ` of any process outside the sandbox is readable and any same-uid process can be signalled, including `kill -9`.
+`--unshare-user` is deliberately absent. The non-setuid build already creates a user namespace on its own, so the flag adds nothing, and the setuid build does not support it at all.
 
-Network egress is closed on both platforms, so a credential read inside the sandbox cannot be sent anywhere directly. It can be written to `/tmp` or `/private/var/folders` and picked up by the next unsandboxed command, and — once the memory writer runs shell commands — it can be written into the memory store, which returns to the context in a later session. §8 develops why that second path changes the conclusion.
+#### 1.3 What the deny list holds
 
-#### 1.4 macOS blocks ordinary work
+The list ships loaded rather than empty: `~/.ssh/**`, `~/.aws/**`, `~/.gnupg/**`, `~/.openprogram/auth/**`, `~/.claude.json`, `~/.claude/.credentials.json`, `~/.config/gh/**`, `~/.netrc`, `~/Library/Keychains/**`, `**/.env`. Measured with the sandbox on, every one of those reads fails with `Operation not permitted` on macOS and `Permission denied` on Linux, and `rm -f ~/.ssh/id_ed25519` fails the same way instead of revealing whether the file is there.
 
-The exec allowlist and the missing `/dev` write rule take out the commands a coding agent actually runs:
+Everything outside the list stays readable. That is the deliberate posture, not an oversight: the whole-disk read is what lets a command inspect the system it is working on, and the loop is closed on the paths that carry credentials rather than on reading in general.
 
-| Command | Result | Cause |
-|---|---|---|
-| `echo hi > /dev/null` | `Operation not permitted` | `/dev` is not in the write allowlist |
-| `ls /nonexistent 2>/dev/null` | fails | same; `2>/dev/null` appears in most real commands |
-| `git` | `can't exec '/Library/Developer/CommandLineTools/usr/bin/git'` | `/usr/bin/git` is a shim, the real binary lives outside the allowlist |
-| `python3`, `make`, `clang` | same | same shim path |
-| conda python, nvm node | `Operation not permitted` | not in the allowlist |
-| `ps`, `top` | `Operation not permitted` | setuid binaries, Seatbelt denies exec |
-| `/sbin/*`, `/usr/sbin/*` | denied | not in the allowlist |
-| `/opt/homebrew/bin/*` | works | the one allowlist entry that carries real tools |
+#### 1.4 The child environment
 
-The allowlist does not restrict execution in any meaningful sense — `/bin/bash -c` is itself allowlisted and can read a script from anywhere. It restricts interpreter *paths*, which hits the toolchain and not an attacker.
+A sandboxed child gets an allowlist — `PATH`, `HOME`, `SHELL`, `USER`, `LOGNAME`, `TERM`, `TMPDIR`, `TMP`, `TEMP`, `TZ`, `PWD`, `OLDPWD`, `LANG`, `LANGUAGE`, `COLUMNS`, `LINES` and `LC_*` — plus any name in `sandbox.pass_env` whose name does not itself read as a credential. Measured: a 164-character `OPENAI_API_KEY` in the parent arrives as an empty string in the child, and `env | grep -iE '(key|token|secret|password)='` returns nothing.
 
-#### 1.5 Linux shadows the working directory
+An allowlist is chosen over a denylist derived from the provider registry for one reason: a provider added tomorrow is dropped without anyone updating anything, whereas a derived list has to be rebuilt whenever the registry grows. The credential-name pattern is kept as a floor under `sandbox.pass_env`, so the escape hatch cannot hand a key to every command by accident.
 
-`bwrap` applies mounts in argument order. `--bind <cwd> <cwd>` comes before `--tmpfs /tmp`, so when the working directory is under `/tmp` the tmpfs covers it and the workspace disappears inside the sandbox: `ls`, `cat` and writes all fail with "No such file or directory" while the host copy is untouched. Any `tempfile`-created staging directory hits this, which includes the memory writer's stage directory.
+On Linux the environment filter alone would not be enough. Without `--unshare-pid`, `/proc/<agent_pid>/environ` hands back the key that was just removed from the child. With it, the sandboxed process sees four PIDs, `cat /proc/<host pid>/environ` reports "No such file or directory", and `kill -9 <host pid>` reports "No such process" while the host process stays alive.
 
-#### 1.6 The working directory is interpolated into the profile unescaped
+#### 1.5 What is still open
 
-`_seatbelt_profile()` builds `(allow file-write* (subpath "{cwd}"))` with an f-string. A path that closes the string and opens another rule stays balanced and parses, widening the write scope to an arbitrary directory. Unbalanced payloads make `sandbox-exec` fail to parse and the command does not run, so the failure mode is closed. No model-controlled path reaches this today: worktree paths go through `_slugify()` in `openprogram/worktree/manager.py` and are reduced to `[A-Za-z0-9_-]`, and every other working directory comes from the user's project or `OPENPROGRAM_WORKDIR`. It is latent rather than reachable, and the fix is one line.
-
-The profile is also passed as `argv[2]`, so any process on the machine can read the current write scope out of the process table.
+- `ps` and `top` do not run on macOS. They are setuid binaries and Seatbelt refuses to exec those into a sandbox regardless of the exec policy, so this is a platform limit rather than a configuration choice. Every reference implementation that uses Seatbelt has it too.
+- `sysctl-read` and `mach-lookup` are still blanket grants, so the clipboard is readable and the Apple Events channel is open.
+- `/private/var/folders` is writable as a whole tree rather than narrowed to the process `TMPDIR`, so a credential read before the deny list applies could still be staged in a system per-user cache directory for a later unsandboxed command to pick up.
+- Git hooks and git config are writable inside the working directory. They are the same shape of escape as the agentics directory and are supported as opt-in `sandbox.deny_write` entries, but they are not default: measured, denying `.git/hooks/**` makes `git init` and `git clone` fail outright, since both write that directory. Closing it needs the escalation path in step 5.
+- There is no violation audit. A denied operation surfaces as the command's own error text and nothing records what the sandbox blocked.
 
 ### 2. The switch
 
-`sandbox_enabled` is a process-level boolean carried on a `ContextVar`. Two toggles set it, both manual: `/sandbox` in the CLI REPL (`openprogram/_cli_chat/handlers.py::_handle_sandbox`) and `/sandbox` in the web UI (`openprogram/webui/ws_actions/chat.py::handle_sandbox`). There is no config key — `SETTINGS` in `openprogram/config_schema.py` has no `sandbox` entry — no environment variable, and no profile field.
+The policy is read from `sandbox.*` in `~/.openprogram/config.json` at the moment a command is wrapped. `resolve_policy()` returns `None` when `sandbox.mode` is `off`, which is the default, and a `SandboxPolicy` otherwise. Seven keys are registered in `openprogram/config_schema.py::SETTINGS`, so `openprogram config`, the setup wizard, the TUI settings screen and the web settings page all render them:
 
-**The web toggle does not reach the command.** `handle_sandbox` runs inside the websocket's asyncio task and calls `sandbox_enabled.set(True)` there. The agent turn runs in a bare `threading.Thread` started by the same module, and a new thread begins with an empty `Context`, so the read inside `_invocation` returns the default `False`. There is no `copy_context()` anywhere under `openprogram/webui/`. The UI shows "Sandbox: ON" and the commands run unwrapped. This is a missed edit rather than a design choice: `openprogram/functions/_runtime.py` and `openprogram/agent/task/runner.py` both copy the context correctly when they hand work to another thread.
+| Key | Meaning | Default |
+|---|---|---|
+| `sandbox.mode` | `off` or `workspace-write` | `off` |
+| `sandbox.writable_roots` | directories writable besides the working directory | `[]` |
+| `sandbox.deny_read` | globs no sandboxed command may read | the credential list in §1.3 |
+| `sandbox.deny_write` | globs no sandboxed command may write | `[]`, plus the always-on agentics directory |
+| `sandbox.network` | network inside the sandbox | `false` |
+| `sandbox.pass_env` | extra environment names to pass through | `[]` |
+| `sandbox.on_unavailable` | `refuse` or `warn` when the platform tool is missing | `refuse` |
 
-**The CLI toggle works on the same thread only.** A bash command issued in the REPL after the toggle is wrapped.
+`/sandbox` in the CLI REPL and in the web UI both write `sandbox.mode` through `set_setting`, so the toggle is persistent rather than per-session.
 
-**Subprocesses always lose it.** `openprogram/agent/process_runner.py` uses `mp.get_context("spawn")`, and spawn does not carry context variables; the module restores the usage context explicitly and nothing else. Every bash call inside an `@agentic_function` therefore runs unwrapped.
+**A file is the carrier, and that is the point.** The switch used to be a `ContextVar`, which is lost at every boundary that starts a fresh context. Three of those boundaries are on real call paths: the web UI sets the flag in the websocket's asyncio task while the agent turn runs in a bare `threading.Thread`, `openprogram/agent/process_runner.py` uses `mp.get_context("spawn")` which does not carry context variables, and nested CLIs are separate processes entirely. Adding `copy_context()` at each hand-off is not equivalent: a spawned sub-agent does carry the flag into its worker thread that way, and still drops back to the default on the follow-up thread, measured. A user-level setting that has to outlive a process was the wrong thing to put on a context variable in the first place. The per-chain accounting state that also travels on context variables is a different case and stays there, rebound at each thread entry. Measured after the change, in the web shape the bare thread now runs sandboxed and sees an empty `OPENAI_API_KEY`, and in the spawn shape the subprocess does too.
 
-**Degrading is silent.** `_invocation` reads `if sandbox_enabled.get(False) and _sandbox_available():` and falls through to plain execution otherwise. Both toggles refuse to turn on when the platform tool is missing, but a state that is already ON degrades without a word if the tool disappears.
+**No approval decision can lift it.** The policy is read inside the backend, below the permission layer. `permission_mode="bypass"` short-circuits `_gated_execute` straight to the tool's own execute, and that call still goes through `_invocation`. Measured: invoking the bash tool's `execute` directly — which is exactly what the bypass branch does — a write outside the working directory and a read of the SSH key both fail. This is not a substitute for the hardline floor the permission layer needs (step 5); it means the sandbox is not the thing the bypass removes.
 
-There is no granularity: not per agent, not per tool, not per command. One process-level boolean.
+**An unavailable backend refuses by default.** `_invocation` raises `SandboxUnavailable` when `sandbox.mode` is on, the platform tool is missing and `sandbox.on_unavailable` is `refuse`; `LocalBackend.run` turns that into a failed `RunResult` whose message names the two ways out — install the tool, or set `sandbox.mode` to `off`. `warn` restores the old behaviour of running unprotected, with a log line.
+
+Granularity is still one setting for the whole installation: not per agent, not per tool, not per command. `wrap_command` takes an explicit policy, so a caller that has one can pass it, but nothing supplies a different policy per call site yet.
 
 ### 3. Coverage
 
-About 25 places in the repository turn content into a running process. One of them goes through the sandbox.
+About 25 places in the repository turn content into a running process. Two of them go through the sandbox.
 
 | Execution point | What runs | Command source | Sandboxed |
 |---|---|---|---|
-| `functions/tools/bash/bash.py` → `backend/local.py::_invocation` | arbitrary shell string | model | **yes**, when the switch is on and the local backend is active |
+| `functions/tools/bash/bash.py` → `backend/local.py::_invocation` | arbitrary shell string | model | **yes**, when `sandbox.mode` is on and the local backend is active |
 | `backend/docker.py`, `backend/ssh.py` | `docker run` / `ssh <target> "…"` | model | no |
-| `functions/tools/process/process.py` | long-lived `backend.spawn()` | model | follows bash, off by default |
+| `functions/tools/process/process.py` | long-lived `backend.spawn()` | model | follows bash, same `_invocation` |
 | `functions/tools/execute_code/execute_code.py` | `subprocess.run([python, script])`, model-written script, model-chosen interpreter | model | no, and the module header states isolation is out of scope |
 | `functions/tools/cron/worker.py` | `Popen(command, shell=True, start_new_session=True)` and `python -m openprogram.cli deep-work` | model | no, survives the session, no approval at fire time |
-| `memory/scriptorium/management/workspace.py` | `subprocess.run(command, shell=True, cwd=stage_dir)` | model, via the MCP `shell` tool | no |
+| `memory/scriptorium/management/workspace.py` | `subprocess.run(command, shell=True, cwd=stage_dir)` | model, via the MCP `shell` tool | **yes**, same policy, cwd is the staging directory |
 | `memory/scriptorium/agent_runtime/claude_code.py` | nested Claude Code SDK agent, `permission_mode="dontAsk"` | model-driven | no |
-| `functions/_registry.py` `exec_module`, driven by `functions/watcher.py` | imports `.py` files under `functions/agentics/`, module-level code runs in the agent process | model can write that directory | **no, and no user action is involved** |
+| `functions/_registry.py` `exec_module`, driven by `functions/watcher.py` | imports `.py` files under `functions/agentics/`, module-level code runs in the agent process | model can write that directory | no; a **sandboxed** command can no longer write there, an unsandboxed one still can |
 | `webui/_functions.py` | re-execs the module on every UI run | model can write it | no |
-| `agent/process_runner.py` | spawned subprocess running an `@agentic_function` | model | no |
+| `agent/process_runner.py` | spawned subprocess running an `@agentic_function` | model | bash inside it now resolves the policy like anywhere else |
 | `plugins/loader.py` | in-process `importlib.import_module()` | plugin manifest | no; `plugins/sandbox.py::load_subprocess` raises `NotImplementedError` |
 | `mcp/client.py` | stdio MCP servers with `env={**os.environ, …}` | config file, which bash can rewrite | no |
 | `webui/routes/mcp.py` | spawns a command straight from an HTTP body | HTTP caller | no, despite the docstring calling it a one-shot sandbox |
@@ -126,9 +137,9 @@ About 25 places in the repository turn content into a running process. One of th
 
 Three of these deserve separate attention.
 
-**The shortest path from model output to host code does not involve bash.** `functions/watcher.py` polls `functions/agentics/` every two seconds and calls `rescan()`, which reaches `spec.loader.exec_module(module)`. A `.py` file written there by the `write` tool executes at module level inside the agent process within seconds, with no tool approval and nothing for `wrap_command` to wrap.
+**The shortest path from model output to host code does not involve bash.** `functions/watcher.py` polls `functions/agentics/` every two seconds and calls `rescan()`, which reaches `spec.loader.exec_module(module)`. A `.py` file written there executes at module level inside the agent process within seconds, with no tool approval. A sandboxed command can no longer write that directory — it is a deny-write entry no configuration can remove — but the `write` tool does not go through the sandbox, so the path is narrowed rather than closed.
 
-**A spawned sub-agent runs with approval turned off.** `openprogram/agent/sub_agent_run.py` sets `permission_mode="bypass"` on the turn it creates, and `_gated_execute` short-circuits on bypass at step ③, before the `_RISKY_TOOLS` check that would otherwise catch bash, execute_code and process. Rule-layer deny and ask still apply, since they are evaluated first.
+**A spawned sub-agent runs with approval turned off.** `openprogram/agent/sub_agent_run.py` sets `permission_mode="bypass"` on the turn it creates, and `_gated_execute` short-circuits on bypass at step ③, before the `_RISKY_TOOLS` check that would otherwise catch bash, execute_code and process. Rule-layer deny and ask still apply, since they are evaluated first. The sandbox is unaffected either way: it is resolved below this layer, and a bypassed bash call is wrapped exactly like an approved one (§2).
 
 **One argument looks protective and is not.** `webui/_runtime_management.py` passes `full_auto=False, sandbox="read-only"` into `create_runtime()`, and `providers/openai_codex/runtime.py` documents those kwargs as accepted and ignored.
 
@@ -152,7 +163,7 @@ Two notes on counting. `pi-ai` is not an independent harness: it is a read-only 
 | `opencode` | **no, documented as a non-goal** | — | host | — |
 | `weclaw` | **no, and it disables the sandbox of the agent it wraps** | — | host, through a spawned `claude` / `codex` | — |
 | `pi-ai` | n/a | no execution surface at all | — | — |
-| **OpenProgram** | yes, thin | Seatbelt and bubblewrap, in-tree, 65 lines | host, wrapped | no |
+| **OpenProgram** | yes | Seatbelt and bubblewrap, in-tree | host, wrapped | no (`sandbox.mode` `off`) |
 
 **`claude-code`** — verified against the installed 2.1.226 binary, since `references/claude-code-leaked/src/utils/sandbox/sandbox-adapter.ts:17` only imports `SandboxManager` from the external package. `(allow file-read*)` with an empty deny list, deny-by-default writes with a hardcoded deny list for dotfiles and `.git`, unrestricted `process-exec` relying on sandbox inheritance, and a prompting HTTP/SOCKS proxy in the parent process for network.
 
@@ -174,15 +185,15 @@ Two notes on counting. `pi-ai` is not an independent harness: it is a read-only 
 
 | | `claude-code` | `codex-cli` | `openclaw` | `pi-mono` core | `pi-mono` + ext | `hermes-agent` | `opencode` | `weclaw` | **OpenProgram** |
 |---|---|---|---|---|---|---|---|---|---|
-| **Read** | whole disk, deny list ships empty | whole disk, deny-read engine ships empty | container sees two mounts only; **host** read tool unconfined | unconfined | `denyRead` ships loaded: `~/.ssh`, `~/.aws`, `~/.gnupg` | unconfined; file tool has a read-deny list the code calls "NOT a security boundary" | `*.env` → ask | unconfined | **whole disk, no engine** |
-| **Write** | deny by default, allowlist plus hardcoded dotfile and `.git` denies | deny by default, `.git` / `.codex` / `.agents` protected | container: workspace mount is `:ro` unless `workspaceAccess: "rw"` | unconfined | `allowWrite: [".", "/tmp"]`, `denyWrite: .env`, `*.pem`, `*.key` | sensitive-path refusals for `/etc`, `/boot`, docker socket | rules only | unconfined | cwd plus temp dirs |
-| **Execute** | unrestricted, children inherit the sandbox | unrestricted | unrestricted inside the container; **argv un-wrapper** blocks obfuscated invocations before the approval allowlist | unrestricted | unrestricted | 47-pattern regex plus an unbypassable hardline list | rules only | unrestricted | macOS allowlist that breaks git and python |
+| **Read** | whole disk, deny list ships empty | whole disk, deny-read engine ships empty | container sees two mounts only; **host** read tool unconfined | unconfined | `denyRead` ships loaded: `~/.ssh`, `~/.aws`, `~/.gnupg` | unconfined; file tool has a read-deny list the code calls "NOT a security boundary" | `*.env` → ask | unconfined | whole disk minus a deny list that **ships loaded**; bash only, the file tools are unconfined |
+| **Write** | deny by default, allowlist plus hardcoded dotfile and `.git` denies | deny by default, `.git` / `.codex` / `.agents` protected | container: workspace mount is `:ro` unless `workspaceAccess: "rw"` | unconfined | `allowWrite: [".", "/tmp"]`, `denyWrite: .env`, `*.pem`, `*.key` | sensitive-path refusals for `/etc`, `/boot`, docker socket | rules only | unconfined | cwd plus temp dirs, minus the agentics directory |
+| **Execute** | unrestricted, children inherit the sandbox | unrestricted | unrestricted inside the container; **argv un-wrapper** blocks obfuscated invocations before the approval allowlist | unrestricted | unrestricted | 47-pattern regex plus an unbypassable hardline list | rules only | unrestricted | unrestricted, children inherit the sandbox |
 | **Network** | prompting proxy, empty allowlist means every domain asks | off by default, optional proxy plus domain allowlist | `--network none` by default; `host` and `container:<id>` blocked | none | domain allow/deny list, 10 registry domains by default | `--network=none` exists but is **never passed**; unreachable on the shipped path | unrestricted | unrestricted | off on both platforms |
-| **Child environment** | handled by the runtime | configurable, unfiltered by default | **name regex plus value heuristics**, ships loaded | full inheritance | full inheritance (the extension passes no `env`) | **stripped, derived from the provider registry** | unfiltered | full inheritance | **unfiltered** |
+| **Child environment** | handled by the runtime | configurable, unfiltered by default | **name regex plus value heuristics**, ships loaded | full inheritance | full inheritance (the extension passes no `env`) | **stripped, derived from the provider registry** | unfiltered | full inheritance | allowlist, so an unknown name is dropped without a list update |
 
 Two rows deserve emphasis because they invert what the first pass concluded from two harnesses.
 
-**Credential blocking ships loaded in three of the eight.** `openclaw` refuses `.aws`, `.cargo`, `.config`, `.docker`, `.gnupg`, `.netrc`, `.npm` and `.ssh` as bind-mount sources plus `/etc`, `/proc`, `/sys`, `/dev`, `/root`, `/boot` and every docker-socket alias (`src/agents/sandbox/validate-sandbox-security.ts:23-49`), and blocks credential-shaped environment variables with a catch-all `/_?(API_KEY|TOKEN|PASSWORD|PRIVATE_KEY|SECRET)$/i` (`src/agents/sandbox/sanitize-env-vars.ts:1-19`). `hermes-agent` derives its child-environment blocklist from the provider registry rather than hardcoding it (`tools/environments/local.py:78-99`), so it cannot drift as providers are added. `pi-mono`'s sandbox extension ships `denyRead` and `denyWrite` populated and `enabled: true` (`examples/extensions/sandbox/index.ts:55-77`). The two that ship an empty engine are exactly the two studied first.
+**Credential blocking ships loaded in three of the eight.** `openclaw` refuses `.aws`, `.cargo`, `.config`, `.docker`, `.gnupg`, `.netrc`, `.npm` and `.ssh` as bind-mount sources plus `/etc`, `/proc`, `/sys`, `/dev`, `/root`, `/boot` and every docker-socket alias (`src/agents/sandbox/validate-sandbox-security.ts:23-49`), and blocks credential-shaped environment variables with a catch-all `/_?(API_KEY|TOKEN|PASSWORD|PRIVATE_KEY|SECRET)$/i` (`src/agents/sandbox/sanitize-env-vars.ts:1-19`). `hermes-agent` derives its child-environment blocklist from the provider registry rather than hardcoding it (`tools/environments/local.py:78-99`), so it cannot drift as providers are added. `pi-mono`'s sandbox extension ships `denyRead` and `denyWrite` populated and `enabled: true` (`examples/extensions/sandbox/index.ts:55-77`). The two that ship an empty engine are exactly the two studied first. Ours now ships loaded as well, with an allowlist rather than a derived blocklist for the environment: a provider added tomorrow is dropped without anyone updating anything, and `openclaw`'s catch-all name pattern is kept underneath as the floor on the one key that can add names back.
 
 **Each of the three is partial, and each is partial in a way it documents.** `openclaw`'s denylist governs mount sources, not the host `read` tool, whose `tools.fs.workspaceOnly` defaults to `false`. `pi-mono`'s `denyRead` governs bash only, not its own `read` / `grep` / `find` tools. `hermes-agent` writes the caveat into the source: `agent/file_safety.py:167-171` states that the terminal tool runs as the same user and can `cat` the file anyway, so the read-deny is defence in depth and not a boundary. The lesson is not that partial coverage is acceptable; it is that the deny list belongs at the layer every path crosses, and that the uncovered paths have to be named.
 
@@ -197,9 +208,9 @@ Two rows deserve emphasis because they invert what the first pass concluded from
 | `hermes-agent` | per-pattern approvals, per-context policy (cron, subagent, gateway, CLI, oneshot) | `cli-config.yaml`, `approvals.mode`, `command_allowlist`, `TERMINAL_ENV` | the guard **is** the approval system; container backends skip it wholesale | fail-open in non-interactive, oneshot and batch paths; fail-closed for subagents and the hardline list |
 | `opencode` | per-tool × per-resource | opencode.json plus agent frontmatter | approval only, no sandbox | — |
 | `weclaw` | none | `~/.weclaw/config.json`, no security key exists | approvals auto-answered "allow" | — |
-| **OpenProgram** | **one process-level boolean** | **none** | **unconnected** | **silent pass-through** |
+| **OpenProgram** | one setting for the installation | seven `sandbox.*` keys in `config_schema.SETTINGS` | **unconnected** | **hard refusal** naming the two ways out, `warn` available |
 
-The spread on the last column is the useful part. `openclaw` refuses to run when Docker is missing and prints the two ways out (`src/agents/sandbox/docker.ts:324-333`), and refuses to substitute a stock image for a missing one. `claude-code` runs anyway but its own source records why it must be noisy: a fixed bug where `isSandboxingEnabled()` silently returned false on missing dependencies is annotated "This is a security footgun — users configure allowedDomains expecting enforcement, get none." Our current behaviour is the state that bug describes.
+The spread on the last column is the useful part. `openclaw` refuses to run when Docker is missing and prints the two ways out (`src/agents/sandbox/docker.ts:324-333`), and refuses to substitute a stock image for a missing one. `claude-code` runs anyway but its own source records why it must be noisy: a fixed bug where `isSandboxingEnabled()` silently returned false on missing dependencies is annotated "This is a security footgun — users configure allowedDomains expecting enforcement, get none." That is the behaviour we had, and `sandbox.on_unavailable` now defaults to `refuse` instead.
 
 ### 7. Moves the first pass did not see
 
@@ -251,15 +262,15 @@ Every gap measured in Part I, the reference implementation in Part II that alrea
 
 | Gap (Part I) | Who solved it, and how (Part II) | Step |
 |---|---|---|
-| `/dev/null` unwritable on macOS | `codex-cli` `seatbelt_base_policy.sbpl:18-21`; `claude-code` uses `require-all` with `vnode-type CHARACTER-DEVICE` | 1 |
-| exec allowlist breaks git, python, node | both open `process-exec` and rely on sandbox inheritance; `openclaw` restricts *obfuscation* instead of paths | 1 |
-| Linux tmpfs shadows a `/tmp` working directory | nobody has this bug; it is mount ordering | 1 |
-| whole-disk read, no deny-read engine | `openclaw` mount-source denylist, `hermes-agent` registry-derived env stripping, `pi-mono` extension `denyRead` — **three of eight ship loaded** | 2 |
-| full environment inheritance | `hermes-agent` `local.py:78-99` derives the blocklist from the provider registry; `openclaw` `sanitize-env-vars.ts:1-19` matches name patterns plus value heuristics | 2 |
-| Linux shared PID namespace, host processes readable and killable | `codex-cli` and `claude-code` both pass `--unshare-pid`; `claude-code` also limits `signal` and `process-info*` to `(target same-sandbox)` | 2 |
-| switch lost across thread, spawn and CLI boundaries | `codex-cli` rebuilds argv per exec; `openclaw` resolves policy per call site | 3 |
-| no config surface | every harness with a sandbox has one; `openclaw` generates a JSON schema from zod | 3 |
-| silent pass-through when unavailable | `openclaw` hard-refuses with an actionable message plus a `doctor` pre-flight; `claude-code`'s source calls the silent version a security footgun | 3 |
+| `/dev/null` unwritable on macOS | `codex-cli` `seatbelt_base_policy.sbpl:18-21`; `claude-code` uses `require-all` with `vnode-type CHARACTER-DEVICE` | 1, **done** |
+| exec allowlist breaks git, python, node | both open `process-exec` and rely on sandbox inheritance; `openclaw` restricts *obfuscation* instead of paths | 1, **done** |
+| Linux tmpfs shadows a `/tmp` working directory | nobody has this bug; it is mount ordering | 1, **done** |
+| whole-disk read, no deny-read engine | `openclaw` mount-source denylist, `hermes-agent` registry-derived env stripping, `pi-mono` extension `denyRead` — **three of eight ship loaded** | 2, **done** |
+| full environment inheritance | `hermes-agent` `local.py:78-99` derives the blocklist from the provider registry; `openclaw` `sanitize-env-vars.ts:1-19` matches name patterns plus value heuristics | 2, **done** (allowlist instead of a derived blocklist) |
+| Linux shared PID namespace, host processes readable and killable | `codex-cli` and `claude-code` both pass `--unshare-pid`; `claude-code` also limits `signal` and `process-info*` to `(target same-sandbox)` | 2, **done** |
+| switch lost across thread, spawn and CLI boundaries | `codex-cli` rebuilds argv per exec; `openclaw` resolves policy per call site | 3, **done** |
+| no config surface | every harness with a sandbox has one; `openclaw` generates a JSON schema from zod | 3, **done** |
+| silent pass-through when unavailable | `openclaw` hard-refuses with an actionable message plus a `doctor` pre-flight; `claude-code`'s source calls the silent version a security footgun | 3, **done** |
 | off by default and unusable when on | `codex-cli` ships `read-only` on by default | 4 |
 | sandbox and approval unconnected | `claude-code` skips approval inside the sandbox; `codex-cli` escalates out of it; `openclaw` treats the container as sufficient and skips the allowlist | 5 |
 | `permission_mode="bypass"` short-circuits before the risky-tool check | `hermes-agent` puts a hardline list **below** every bypass | 5 |
@@ -268,18 +279,18 @@ Every gap measured in Part I, the reference implementation in Part II that alrea
 | nested Claude Code CLI's file tools are unreachable | `openclaw` blocks the nested agent's `command/` and `fs/` methods and injects replacements that route back through its own sandbox | memory writer |
 | no violation audit | `claude-code` attributes kernel deny lines to the command and feeds them back to the model; `openclaw` logs policy decisions on a dedicated `agents/tool-policy` logger | alongside 2 |
 | no resource limits | `hermes-agent` `--pids-limit 256`, sized tmpfs, 600 s foreground cap; `openclaw` exposes `pidsLimit` / `memory` / `cpus` / `ulimits` | later |
-| no config-file write protection | `claude-code` denies every settings.json explicitly to prevent escape; `codex-cli` protects `.codex` / `.git` / `.agents` | alongside 2 |
+| no config-file write protection | `claude-code` denies every settings.json explicitly to prevent escape; `codex-cli` protects `.codex` / `.git` / `.agents` | alongside 2, **partly done**: the agentics directory is deny-write and unremovable, git hooks and config are opt-in |
 | no lint on our own sandbox settings | `openclaw` `src/security/audit-extra.sync.ts` named checks | later |
 
 ### 10. Repair order
 
 Five steps, in dependency order. Each one is a precondition for the value of the next.
 
-**1. Usability.** Add `/dev/null`, `/dev/zero` and `/dev/urandom` read and write to the macOS profile. Replace the exec allowlist with unrestricted `process-exec` and rely on sandbox inheritance, matching both syscall-level reference implementations. Fix the Linux mount ordering so a working directory under `/tmp` gets its tmpfs mounted before the bind rather than after. *Skipped:* turning the sandbox on makes `git`, `python3`, `node` and `2>/dev/null` fail on macOS and silently deletes a `/tmp` workspace on Linux, so the first thing any user does is turn it off again — which is the state the code is in now.
+**1. Usability — done.** `process-exec` is unrestricted and children inherit the profile, so `git`, `python3`, `make`, `clang`, conda python and everything under `/sbin` and `/usr/sbin` run. `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom` and `/dev/tty` are readable and writable through `require-all` plus `vnode-type CHARACTER-DEVICE`, so `2>/dev/null` works. On Linux `--tmpfs /tmp` is emitted before the cwd bind, so a working directory under `/tmp` survives. What remains blocked on macOS is `ps` and `top`, because Seatbelt refuses to exec setuid binaries at all.
 
-**2. Credential blocking.** Add a deny-read glob list to both platforms, loaded with entries out of the box: `~/.ssh/**`, `~/.aws/**`, `~/.openprogram/auth/**`, `~/.claude.json`, `**/.env`, `~/Library/Keychains/**`. Emit `deny file-read*` and `deny file-write-unlink` together on macOS, so a denied path cannot be probed by deletion. Pass a child environment allowlist instead of inheriting everything, and **derive the blocked names from the provider registry** rather than hardcoding them, the way `hermes-agent` does at `tools/environments/local.py:78-99` — we have 17 provider credential directories under `~/.openprogram/auth/` and a hardcoded list would drift on the first new provider. Layer `openclaw`'s catch-all name pattern `/_?(API_KEY|TOKEN|PASSWORD|PRIVATE_KEY|SECRET)$/i` underneath it for names the registry does not know. Add `--unshare-pid` on Linux, without which `/proc/<agent_pid>/environ` leaks the key that scrubbing the child environment just removed. Add `functions/agentics/`, `.git` and the project configuration files to deny-write, following `claude-code`'s explicit "prevent sandbox escape" rationale. *Skipped:* the sandbox does not defend against the one thing worth defending against here, and connecting the memory writer completes a network-free exfiltration path.
+**2. Credential blocking — done.** The deny-read list ships loaded (§1.3). macOS emits `deny file-read*` and `deny file-write-unlink` per glob so a denied path cannot be probed by deletion; Linux masks directories with `--perms 0000 --tmpfs` and files with `--ro-bind /dev/null`, skipping paths that do not exist because the read-only root gives bubblewrap nowhere to create a mount point. The child environment is an allowlist rather than a blocklist derived from the provider registry: the derived list has to be rebuilt as providers are added, an allowlist drops an unknown name on its own, and `openclaw`'s catch-all name pattern is kept as the floor under `sandbox.pass_env`. Linux gains `--unshare-pid`, without which `/proc/<agent_pid>/environ` returns the key the environment filter just removed. Deny-write covers the agentics directory and no configuration can remove it; git hooks and git config are the same shape of escape but stay opt-in, because denying `.git/hooks/**` makes `git init` and `git clone` fail and there is no escalation path until step 5.
 
-**3. Switch semantics.** Remove the `ContextVar` and make the policy an explicit parameter: `Backend.run(command, timeout, cwd, *, sandbox: SandboxPolicy | None)`. Tool definitions carry the default, session settings supply it, the call site can override. Add `sandbox.*` keys to `config_schema.py::SETTINGS` — mode, writable roots, deny-read globs, network, behaviour when unavailable — so the generated config reference picks them up. Make the unavailable case refuse by default, with `openclaw`'s message shape: state what is missing and name the two ways out, installing the tool or setting `sandbox.mode` to `off`. *Skipped:* the switch is lost at three boundaries (asyncio task to thread, spawn, nested CLI), two of them measured, so on the web path and inside every agentic function the sandbox is off no matter what the UI shows.
+**3. Switch semantics — done.** The `ContextVar` is gone. The policy is resolved from `sandbox.*` in the config at the moment a command is wrapped, which survives the asyncio-task-to-thread hop, the `spawn` subprocess and a nested CLI, because a file does not belong to a context. It also sits below the permission layer, so `permission_mode="bypass"` short-circuits the approval card and not the sandbox. `wrap_command` takes an explicit policy for callers that hold one; nothing yet supplies a different policy per tool or per call site, which is what "the call site can override" was meant to buy. An unavailable backend refuses by default and names the two ways out.
 
 **4. On by default,** with `workspace-write` semantics, matching `codex-cli`'s posture. *Skipped:* a mechanism that is off by default and has no config key never runs in practice, which makes the previous three steps unobservable.
 
@@ -295,44 +306,43 @@ Permission rules and sandbox policy should also share a source: a user's `deny: 
 
 *Skipped:* the sandbox stays a pure tax — same approval prompts, fewer working commands — and nobody turns it on; and the bypass paths keep routing around whatever the sandbox does.
 
-Alongside these, the profiles need their own patch list: narrow `sysctl-read` and `mach-lookup` to named allowlists (the current blanket grants make the clipboard readable and leave the Apple Events channel open), narrow `/private/var/folders` to the process `TMPDIR`, escape the working directory before interpolating it into the profile, add `(allow signal (target same-sandbox))` and `(allow process-info* (target same-sandbox))` before exec is opened up, add `--new-session --die-with-parent --unshare-user --cap-drop ALL` on Linux, and use `/bin/bash` on both paths so toggling the sandbox does not also change the shell.
+Alongside these, the profile patch list has shrunk to what is left. Done: the working directory is escaped before it is interpolated, `(allow signal (target same-sandbox))` and `(allow process-info* (target same-sandbox))` are in place ahead of the opened-up exec, `--new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts --cap-drop ALL` are passed on Linux, and both sandboxed paths use `/bin/bash`. Still open: narrow `sysctl-read` and `mach-lookup` to named allowlists, since the blanket grants leave the clipboard readable and the Apple Events channel open, and narrow `/private/var/folders` to the process `TMPDIR` rather than the whole tree. `--unshare-user` is not on the list: the non-setuid bubblewrap build creates a user namespace by itself, and the setuid build rejects the flag.
 
-Two later items now have precedent worth naming. Resource limits: `hermes-agent` hardcodes `--pids-limit 256` and sized `nosuid` tmpfs mounts and caps foreground commands at 600 s, which is a cheaper starting point than cgroups. And a config lint: `openclaw` ships named audit checks over its own sandbox settings, including one for the exact defect class we already have, where a setting says `sandbox` while the effective mode is off.
+Two later items now have precedent worth naming. Resource limits: `hermes-agent` hardcodes `--pids-limit 256` and sized `nosuid` tmpfs mounts and caps foreground commands at 600 s, which is a cheaper starting point than cgroups. And a config lint: `openclaw` ships named audit checks over its own sandbox settings, including one for the exact defect class we still have, where `webui/_runtime_management.py` passes `sandbox="read-only"` into a runtime that documents the argument as ignored.
 
 ### Connecting the memory writer
 
 The memory writer has two execution surfaces and only one of them is reachable by `wrap_command`.
 
-The MCP `shell` tool (`memory/scriptorium/management/tools.py` → `workspace.shell()`) runs `subprocess.run(command, shell=True, cwd=stage_dir)` inside the OpenProgram process. Its shape is identical to `_invocation`, so wrapping it is a few lines.
+The MCP `shell` tool (`memory/scriptorium/management/tools.py` → `workspace.shell()`) runs `subprocess.run(command, shell=True, cwd=stage_dir)` inside the OpenProgram process. It now resolves the same policy and wraps the command with the staging directory as the working directory, so it is sandboxed exactly when the bash tool is.
 
 The Claude Code CLI subprocess (`memory/scriptorium/agent_runtime/claude_code.py`) is a different matter. Its `Read`, `Write`, `Edit`, `Grep` and `Glob` execute inside the CLI process, where `wrap_command` cannot reach them, and `permission_mode="dontAsk"` disables its own approvals. The CLI process must not be sandboxed either, because it calls the Anthropic API and the sandbox has no network.
 
 The first pass concluded that constraining those built-in tools is therefore a job for `allowed_tools` alone. `openclaw` shows a second option for the same problem. When it drives a nested Codex app-server it does not sandbox that process either; it sits on the protocol between them, classifies every method, blocks the ones that would use the nested agent's own execution and filesystem (`command/`, `fs/`, `windowsSandbox/`), and injects replacement tools that route the same operations back through openclaw's sandbox (`extensions/codex/src/app-server/sandbox-guard.ts`, `run-attempt.ts:4125,4147`). The Claude Agent SDK exposes the equivalent seam: `allowed_tools` already removes `Bash`, and a `can_use_tool` callback plus MCP-provided replacements for `Read` / `Write` / `Edit` would put the file operations back under our policy instead of leaving them outside it. That is more work than the current `allowed_tools` restriction and it is not a step-1 item, but the accurate statement is that the built-in tools are **outside the sandbox as currently wired**, not that they are unreachable in principle.
 
-Steps 1 and 2 are prerequisites — without step 1 the sandbox erases the staging directory on Linux and breaks `git` and `2>/dev/null` on macOS, and without step 2 sandboxing the shell does not address the exfiltration path that motivates sandboxing it. Step 3 matters because the writer runs on background threads and in subprocesses where the `ContextVar` does not arrive.
+Steps 1 to 3 were the prerequisites and they are done, so the boundary after connecting is the accurate one: **the MCP `shell` tool is sandboxed, the SDK's built-in file tools are not.**
+
+The threat this closes is concrete rather than hypothetical. Any text that reaches the writer's prompt is attacker-influenced whenever a message channel is attached, since the inbound message body carries a display name the sender sets themselves. A command that gets executed from there could read `~/.openprogram/auth/*/default.json` and write it into a topic file, and the memory store returns to the context of a later session — an exfiltration path that never touches the network, which is why the network being off did not cover it.
 
 ---
 
 ## Implementation status
 
-Landed: §1 (both platform profiles, exactly as described), §2 (the `ContextVar`, both toggles, the silent degradation), §3 (the coverage table reflects the code as it stands).
+Landed: §1 and §2 describe the code as it stands, measured on both platforms. Repair-order steps 1, 2 and 3 are done, and the memory writer's MCP `shell` surface is connected.
 
 Not implemented:
 
-- Deny-read globs, child-environment filtering, config-file and `.git` write protection — no engine exists on either platform.
-- `sandbox.*` config keys; the switch is toggle-only.
-- Per-command policy; the switch is one process-level boolean.
-- Any link between the sandbox and the permission system, in either direction.
+- Steps 4 (on by default) and 5 (approval integration, in all three directions).
+- Per-tool and per-call-site policy. `wrap_command` takes an explicit policy, but every caller resolves the same one from the config.
+- The nested Claude Code CLI's built-in `Read` / `Write` / `Edit` / `Grep` / `Glob`, which are outside the sandbox as currently wired.
 - Command normalization and argv un-wrapping ahead of the existing `SAFE_AUTO_ALLOWLIST` prefix match.
 - A hardline floor below `permission_mode="bypass"`, and per-context approval defaults for cron and sub-agents.
 - Violation auditing, resource limits, config linting, and Windows support.
-- The macOS profile patches in §10 and the Linux `bwrap` flags in §10.
+- Named `sysctl-read` and `mach-lookup` allowlists, and narrowing `/private/var/folders` to `TMPDIR`.
+- Git hooks and git config write protection, which is opt-in rather than default.
 
-Known defects, measured:
+Known limits, measured:
 
-- The web UI toggle sets the flag in an asyncio task while the agent turn runs in a bare thread, so it has no effect on the executed command.
-- `spawn` subprocesses do not carry the flag, so bash inside every `@agentic_function` is unwrapped.
-- On Linux, a working directory under `/tmp` is shadowed by `--tmpfs /tmp` and its contents vanish inside the sandbox.
-- On Linux, the shared PID namespace lets a sandboxed process read `/proc/<pid>/environ` of processes outside the sandbox and signal them.
-- On macOS, `/dev/null` is unwritable and the exec allowlist blocks `git`, `python3`, `node`, `ps` and everything under `/sbin` and `/usr/sbin`.
-- The working directory is interpolated into the SBPL profile without escaping; a crafted path widens the write scope. Not reachable from model-controlled input today.
+- `ps` and `top` do not run inside a Seatbelt sandbox. They are setuid and the platform refuses to exec setuid binaries into one, whatever the exec policy says.
+- On Linux, a deny-read glob with a wildcard in the middle, such as `**/.env`, has no equivalent: bubblewrap masks paths and does not match them, so those patterns are dropped there and enforced on macOS only.
+- The remaining 23 execution points in §3 are still unsandboxed, including `execute_code`, the cron worker, and the function watcher's auto-import.

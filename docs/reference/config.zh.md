@@ -19,6 +19,13 @@ openprogram config set ui.port 8101
 | `ui.open_browser` | Ports | `openprogram web` 是否自动开浏览器 | true | next start |
 | `search.default_provider` | Search | 默认 web 搜索 provider，`auto` 选优先级最高的已配置项 | auto | live |
 | `memory.backend` | Memory | `local`（磁盘记忆工具）或 `none`（禁用） | local | next start |
+| `sandbox.mode` | Sandbox | `off`，或`workspace-write`：把每条bash命令包起来，只能写工作目录、读不到被屏蔽的路径、没有网络 | off | live |
+| `sandbox.writable_roots` | Sandbox | 沙箱内额外可写的目录，JSON列表 | [] | live |
+| `sandbox.deny_read` | Sandbox | 沙箱内不可读的glob，出厂就装着凭证路径 | 见`openprogram config get sandbox.deny_read` | live |
+| `sandbox.deny_write` | Sandbox | 沙箱内不可写的glob，函数watcher自动导入的目录始终禁写、不在此列 | [] | live |
+| `sandbox.network` | Sandbox | 沙箱内是否有网络 | false | live |
+| `sandbox.pass_env` | Sandbox | 内置白名单之外还要透传的环境变量名 | [] | live |
+| `sandbox.on_unavailable` | Sandbox | 平台工具缺失时，`refuse`让命令失败，`warn`不带沙箱跑掉 | refuse | live |
 | `tools.disabled.<name>` | Tools | 逐工具开关；写入的是 `tools.disabled` 列表的成员 | 全部启用 | live |
 | `providers.<name>` | Providers | 只读状态行（是否已配置）；用 `openprogram providers login` 或 Web UI 配置 | — | — |
 
@@ -31,6 +38,7 @@ openprogram config set ui.port 8101
 | `ui` | `{port, web_port, open_browser}`，见上表 | `openprogram/config_schema.py` |
 | `search` | `{default_provider}` | `openprogram/setup.py` |
 | `tools` | `{disabled: [工具名, ...]}` | `openprogram/setup.py`、`openprogram/config_schema.py` |
+| `sandbox` | `{mode, writable_roots, deny_read, deny_write, network, pass_env, on_unavailable}`，见上表 | `openprogram/sandbox/__init__.py`、`openprogram/config_schema.py` |
 | `default_provider` | 默认 LLM provider（setup 向导写入） | `openprogram/setup.py` |
 | `default_model` | 默认模型（setup 向导写入） | `openprogram/setup.py` |
 | `default_workdir` | agent 的默认工作目录 | `openprogram/paths.py` |
