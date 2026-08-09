@@ -214,7 +214,6 @@ to the front end.
 | `model.response_completed` | agent_loop `:466` | proactive wrap-up policies | wrap-up timing check |
 | `subagent.started` / `.ended` | task/runner `:115` (origin=`system`, session passed explicitly because a worker thread's ContextVar is unreliable) | observers | subagent state funnel |
 | `branch.message_sent` | send_message `:266` | observers + `ws.frame` | from/to |
-| `branch.message_replied` | send_message `:344` | observers + `ws.frame` | carries is_error |
 | `question.asked` | questions `:164` (also `emit_ws_frame` `:161` for the front-end card) | channels question bridge (`_question_bridge.py:43`) | both on the bus and as a ws frame |
 | `question.replied` | questions `:275` (`resolve_question_and_broadcast:262`) | front end | **ws frame only** |
 | `question.rejected` | questions `:173/:276` | front end (handled as "withdrawn") | **ws frame only** |
@@ -335,7 +334,7 @@ target branch, and bring the reply back.
 **Key files**: `functions/tools/send_message/send_message/send_message.py`,
 `functions/tools/send_message/list_agents/list_agents.py`.
 **Mechanisms**:
-- `send_message(message, to, agent_id, wait)` →
+- `send_message(message, to, agent_id)` →
   `_send_message_impl`.
 - `to` semantics (`_parse_to`): `SID:HEAD` (deliver to an existing branch
   = run one more turn from its head) or a branch name. Creating branches is
@@ -343,19 +342,18 @@ target branch, and bring the reply back.
   rejected with a redirect to it.
 - The parent anchor `_resolve_parent` (`:74`) reads the dispatcher's session/turn
   ContextVars and **falls back to the session head when the turn id is missing**.
-- Asynchronous delivery (the default) is handed to the task runner
+- Delivery is always asynchronous: it is handed to the task runner
   (`run_agent_turn_async`); when the run completes it writes an attach pointer and
   dispatches a follow-up back to the **initiating** session, so replies flow back
   automatically.
 - **Guards**: the depth guard `MAX_SPAWN_DEPTH=8` (`:35`, checked at `:209`;
   children inherit depth+1, and an A↔B round trip counts too); a self-reference
   guard (messaging your own current turn is rejected outright); the target session
-  must already exist and is never silently created; oversized replies go through
-  `_clip_result` (`:365`, >30000 chars are written to a file and the path is
-  returned); and tool.before interception applies (an attended gate can block it).
-**Events**: `branch.message_sent` (`:266`), `branch.message_replied` (`:344`);
-plus `emit_ws_frame("branch_message",...)` (`_emit_branch_ui:107`), which renders
-a "sent / replied" line in the initiator's chat stream.
+  must already exist and is never silently created; and tool.before interception
+  applies (an attended gate can block it).
+**Events**: `branch.message_sent`;
+plus `emit_ws_frame("branch_message",...)` (`_emit_branch_ui`), which renders
+a "sent" line in the initiator's chat stream.
 
 ---
 

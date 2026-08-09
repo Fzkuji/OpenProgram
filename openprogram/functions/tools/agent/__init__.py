@@ -1,7 +1,7 @@
 """agent tool family — same-session agent spawning.
 
 ``agent`` spawns another agent in the same session; ``task_output`` /
-``task_stop`` manage its async (wait=False) form. One tool per
+``task_stop`` manage its background (run_in_background=true) form. One tool per
 subdirectory; self-register via @function on import.
 """
 from .agent import agent

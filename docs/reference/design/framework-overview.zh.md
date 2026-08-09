@@ -139,7 +139,6 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 | `model.response_completed` | agent_loop `:466` | proactive 收尾策略 | 收尾时机检查 |
 | `subagent.started` / `.ended` | task/runner `:115`（origin=`system`，session 显式传参，因 worker 线程 ContextVar 不可靠） | 旁观 | 子 agent 状态漏斗 |
 | `branch.message_sent` | send_message `:266` | 旁观 + `ws.frame` | from/to/is_new |
-| `branch.message_replied` | send_message `:344` | 旁观 + `ws.frame` | 含 is_error |
 | `question.asked` | questions `:164`（同时 `emit_ws_frame` `:161` 成前端卡片） | channels question bridge（`_question_bridge.py:43`） | 既进总线又发 ws 帧 |
 | `question.replied` | questions `:275`（`resolve_question_and_broadcast:262`） | 前端 | **只走 ws 帧** |
 | `question.rejected` | questions `:173/:276` | 前端按"收回"处理 | **只走 ws 帧** |
@@ -208,12 +207,12 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 **职责**：分支/会话之间投递消息、跑分支、把回复带回来。
 **关键文件**：`functions/tools/send_message/send_message/send_message.py`、`functions/tools/send_message/list_agents/list_agents.py`。
 **关键机制**：
-- `send_message(message, to, agent_id, wait)`（`:393` → `_send_message_impl:186`）。
+- `send_message(message, to, agent_id)`（→ `_send_message_impl`）。
 - to 语义（`_parse_to`）：`SID:HEAD`（投到已存在分支 = 从其 head 再跑一轮）或分支名。建分支归 `agent` 工具（spawn / 从节点 fork）；`to="new"` 语法直接报错并指向它。
 - 父锚点 `_resolve_parent`（`:74`）读 dispatcher 的 session/turn ContextVar，**turn id 缺失时回退到 session head**（修了"no active parent turn"）。
-- 异步（默认）交给 task runner（`run_agent_turn_async`），跑完写 attach pointer 并 dispatch followup 回**发起方** session（回复自动回流）。
-- **防护**：深度守卫 `MAX_SPAWN_DEPTH=8`（`:35`，判定在 `:209`，子继承 depth+1，A↔B 来回也计入）；自指守卫（投给自己当前 turn 直接拒）；目标 session 必须存在不静默创建；超大回复 `_clip_result`（`:365`，>30000 字存文件返回路径）；tool.before 拦截（值守可拦）。
-**对外事件**：`branch.message_sent`（`:266`）、`branch.message_replied`（`:344`）；并 `emit_ws_frame("branch_message",...)`（`_emit_branch_ui:107`）在发起方聊天流显示「已发送/已回复」行。
+- 投递一律异步：交给 task runner（`run_agent_turn_async`），跑完写 attach pointer 并 dispatch followup 回**发起方** session（回复自动回流）。
+- **防护**：深度守卫 `MAX_SPAWN_DEPTH=8`（`:35`，判定在 `:209`，子继承 depth+1，A↔B 来回也计入）；自指守卫（投给自己当前 turn 直接拒）；目标 session 必须存在不静默创建；tool.before 拦截（值守可拦）。
+**对外事件**：`branch.message_sent`；并 `emit_ws_frame("branch_message",...)`（`_emit_branch_ui`）在发起方聊天流显示「已发送」行。
 
 ---
 

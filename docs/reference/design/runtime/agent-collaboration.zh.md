@@ -62,13 +62,13 @@ agent(
     description: str = "",              # 简短 label，成为分支名
     agent_id: str = "",                 # agent 档案；默认用本会话的
     context: str = "clean",             # "clean" / "inherit" / "SID:MSG_ID"
-    wait: bool = true,                  # true=阻塞等回复；false=返回 task_id
+    run_in_background: bool = false,    # false=阻塞等回复；true=返回 task_id
 ) -> str
 ```
 
 `context` 决定新分支从哪起：`"clean"`（默认）新根、只见 prompt；
 `"inherit"` 从当前轮 fork、带全链；`"SID:MSG_ID"` 从那个节点（任意
-session）fork、继承到该节点为止的链。`wait=False` 返回 `task_id`，配套
+session）fork、继承到该节点为止的链。`run_in_background=true` 返回 `task_id`，配套
 `task_output(task_id)`（阻塞取结果）和 `task_stop(task_id)`（取消）管理
 异步形态。
 
@@ -79,7 +79,6 @@ send_message(
     message: str,                       # 投给目标的内容/指令
     to: str,                            # 见下方 to 取值
     agent_id: str = "main",             # 目标用哪个 agent
-    wait: bool = false,                 # false=异步(默认,瞬间返回)；true=同步等回复
 ) -> str
 ```
 
@@ -112,12 +111,10 @@ optional …` —— 收件方由此知道谁发的、怎么回、以及不回�
 2. 组装投递内容：发件人回执头 + `message`。
 3. 投递 + 触发：`process_user_turn(TurnRequest(session_id=目标, user_text=投递内容,
    branch_from=fork 起点))` → 目标分支跑一轮，**模型读到投来的全部内容**。
-4. **回送**：
-   - `wait=false`（默认）：瞬间返回"已投递 + delivery_id"，发起方不阻塞继续；目标
-     答完，`_dispatch_followup` **自动**把回复作为新消息喂回发起方 session + 触发它
-     跑一轮，发起方醒来读到。
-   - `wait=true`：阻塞等目标答完，直接返回回复文本。
-- 事件：投递 emit `branch.message_sent`；回送 emit `branch.message_replied`（见 §3）。
+4. **回送**（永远异步）：瞬间返回"已投递 + delivery_id"，发起方不阻塞继续；目标
+   答完，`_dispatch_followup` **自动**把回复作为新消息喂回发起方 session + 触发它
+   跑一轮，发起方醒来读到。
+- 事件：投递 emit `branch.message_sent`（见 §3）；回送就是 followup 轮本身。
 
 ### 2.2 引用别的分支
 
@@ -154,7 +151,7 @@ id、标题、agent、busy/idle 状态（`run_control.is_turn_running`，探测�
 
 ### 2.5 回送节点落在哪：发起方当前尾部，串行成链
 
-异步回送（`wait=false`）时，`_dispatch_followup` 把目标分支的回复作为一个
+异步回送时，`_dispatch_followup` 把目标分支的回复作为一个
 **synthetic user-role turn** 喂回投递 session。**关键规则：回送的 `TurnRequest`
 不设 `branch_from`（INHERIT_PARENT），dispatcher 解析为投递 session 当前的
 HEAD 并推进它。**每个投递 session 有一把回送串行锁
@@ -243,7 +240,6 @@ emit_ws_frame(frame)                         # 源用：把现成 WS 帧经总�
 | type | 何时 | origin | payload 关键字段 |
 |---|---|---|---|
 | `branch.message_sent` | send_message 投递 | agent | from, to, delivery_id, is_new, chain |
-| `branch.message_replied` | 目标答完自动回送 | agent | from, to, delivery_id, is_error |
 | `branch.created` / `.started` / `.failed` / `.cancelled` | 分支状态转换 | agent | branch, parent, agent_id, status |
 | `sessions.listed` / `branches.listed` | 列举 | agent | count |
 
@@ -416,7 +412,7 @@ UI 的会话选择列表（但 DAG 照画、能被 list_agents 列出供 agent �
 
 **前端（`web/`）**
 - session / branch 列表面板（已有 WS handler）+ "选 to → 发消息"交互入口
-- 收到 `branch.message_sent` / `branch.message_replied`（经 ws.frame）→ 在对应
+- 收到 `branch.message_sent`（经 ws.frame）→ 在对应
   session 的 DAG / 消息流渲染通信节点 + 回流软连接线（hover 显示，dag-live 已定稿）
 - 派生进度复用现有 `task_status` 帧 + tasks 面板
 

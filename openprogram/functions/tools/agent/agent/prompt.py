@@ -3,8 +3,9 @@ from __future__ import annotations
 
 DESCRIPTION = (
     "Spawn another agent in the same session and run one turn against "
-    "it. Returns the spawned agent's final reply (wait=True, default) "
-    "or a task_id to await later (wait=False). This is the ONE tool "
+    "it. Returns the spawned agent's final reply "
+    "(run_in_background=false, default) or a task_id to await later "
+    "(run_in_background=true). This is the ONE tool "
     "that creates new agents; to talk to an agent that already exists, "
     "use send_message instead.\n"
     "\n"
@@ -33,7 +34,8 @@ DESCRIPTION = (
     "  description: short label (1-3 words), used as the branch name.\n"
     "  agent_id: agent profile to run as. Defaults to this session's.\n"
     "  context: 'clean' (default), 'inherit', or 'SID:MSG_ID'.\n"
-    "  wait: True (default) blocks and returns the final text. False "
-    "returns a task_id immediately — use it to run agents in parallel, "
-    "then call task_output(task_id)."
+    "  run_in_background: Set to true to run this agent in the "
+    "background. You will be notified when it completes. Retrieve the "
+    "result with task_output(task_id), or stop the agent early with "
+    "task_stop(task_id)."
 )

@@ -215,7 +215,7 @@ def write_attach_pointer_for_spawn(
     node_id: Optional[str] = None,
 ) -> Optional[str]:
     """Write an `attach`-function pointer node for a synchronous
-    agent() spawn (LLM tool call, wait=True). Mirrors the body of
+    agent() spawn (LLM tool call, foreground). Mirrors the body of
     ``_run_spawn`` in webui/_execute/__init__.py — kept in sync so the
     DAG sees the same node shape whether the user typed ``/spawn`` or
     the LLM called the ``task`` tool.
@@ -328,7 +328,7 @@ def write_attach_placeholder_for_spawn(
     """Write a ``status=running`` placeholder attach card for an async
     spawn, anchored at the CALLING node（在哪调用就锚在哪）. The runner
     patches it on terminal via ``_update_attach_card``. Without this the
-    agent(wait=False) path had no card at all — the result later arrived
+    agent(run_in_background=true) path had no card at all — the result later arrived
     as a task_followup with nothing anchoring it in the transcript.
     """
     import json as _json

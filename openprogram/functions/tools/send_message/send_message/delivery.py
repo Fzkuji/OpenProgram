@@ -1,6 +1,5 @@
 """Message assembly and delivery paths for send_message: the
-sender-receipt header, the busy-target inbox path, and oversized-reply
-clipping."""
+sender-receipt header and the busy-target inbox path."""
 from __future__ import annotations
 
 
@@ -71,30 +70,4 @@ def enqueue_for_busy_target(
         "busy running a turn. Your message is queued; it will be "
         "processed when the target's current turn ends and its "
         "reply will come back to you automatically."
-    )
-
-
-_MAX_RESULT_CHARS = 30_000
-
-
-def _clip_result(text: str) -> str:
-    """Truncate an oversized reply head+tail and save the full text to a
-    file, returning a path the caller can read (§5.6) — so a huge branch
-    reply doesn't blow up the sender's context."""
-    s = text or ""
-    if len(s) <= _MAX_RESULT_CHARS:
-        return s
-    import tempfile
-    import os
-    head = s[: _MAX_RESULT_CHARS // 2]
-    tail = s[-_MAX_RESULT_CHARS // 2:]
-    try:
-        fd, path = tempfile.mkstemp(prefix="branch_reply_", suffix=".txt")
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(s)
-    except Exception:
-        path = "(could not write file)"
-    return (
-        f"{head}\n\n... [truncated {len(s)} chars; full reply saved to "
-        f"{path}] ...\n\n{tail}"
     )

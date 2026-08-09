@@ -15,16 +15,15 @@ Creating agents is the ``agent`` tool's job (spawn = ``agent(...)``,
 fork off a node = ``agent(context="SID:MSG_ID")``); send_message only
 talks to branches that already exist.
 
-Async by default (``wait=False``): returns immediately with a delivery id;
-the target runs in the background and its reply comes back to the sender
-automatically (the task runner's followup). ``wait=True`` blocks for the
-reply.
+Delivery is always asynchronous: the call returns immediately with a
+delivery id; the target runs in the background and its reply comes back
+to the sender automatically (the task runner's followup).
 
 Design: docs/reference/design/runtime/agent-collaboration.md. This
 module is the entry point: the @function binding plus the main delivery
 flow. Concern-specific pieces live alongside: ``prompt.py`` (LLM-facing
 description), ``addressing.py`` (`to` parsing + branch-name lookup),
-``delivery.py`` (receipt header, busy-target inbox, reply clipping),
+``delivery.py`` (receipt header, busy-target inbox),
 ``depth.py`` (spawn-chain depth guard).
 """
 from __future__ import annotations
@@ -38,15 +37,12 @@ from .addressing import (
     _resolve_branch_by_name,
 )
 from .delivery import (
-    _clip_result,
     enqueue_for_busy_target,
     sender_header,
 )
 from .depth import (
     MAX_SPAWN_DEPTH,
-    _spawn_depth,
     current_spawn_depth,
-    set_spawn_depth,
 )
 from .prompt import DESCRIPTION
 
@@ -88,7 +84,6 @@ def _send_message_impl(
     message: str,
     to: str = "",
     agent_id: str = "",
-    wait: bool = False,
 ) -> str:
     """Implementation body, pulled out of the @function binding so tests
     can drive it with their own ContextVars."""
@@ -227,87 +222,32 @@ def _send_message_impl(
     # line in its chat stream (front-end useWS handles `branch_message`).
     _emit_branch_ui(sid, "sent", f"{run_session}:{branch_from}", message)
 
-    # Async (default): submit to the task runner. It runs the target
-    # branch on a worker thread, writes the attach pointer, and dispatches
-    # a followup back to THIS session when done — that followup IS the
-    # auto-return of the reply to the sender.
-    if not wait:
-        try:
-            from openprogram.agent.sub_agent_run import run_agent_turn_async
-            task_id = run_agent_turn_async(
-                session_id=run_session,
-                prompt=delivery_message,
-                agent_id=chosen_agent,
-                branch_from=branch_from,
-                context_mode="inherit",
-                label=message[:60],  # Stage-1 placeholder name (Stage-2 LLM refines later)
-                subject=message[:60],
-                description=delivery_message,
-                caller_msg_id=aid,
-                caller_session_id=sid,  # reply returns to the sender
-                spawn_depth=depth + 1,  # child inherits depth+1 (loop guard)
-            )
-        except Exception as e:  # noqa: BLE001
-            return f"[send_message error] {type(e).__name__}: {e}"
-        return (
-            f"[delivered, running async] delivery_id={task_id}\n"
-            "The target branch is running; its reply will come back to you "
-            "automatically when it finishes. You are not blocked — continue."
-        )
-
-    # Sync: run inline, write the attach pointer, return the reply text.
-    # Bind depth+1 for the inline child turn (same execution context).
-    _tok = set_spawn_depth(depth + 1)
+    # Submit to the task runner. It runs the target branch on a worker
+    # thread, writes the attach pointer, and dispatches a followup back
+    # to THIS session when done — that followup IS the auto-return of
+    # the reply to the sender.
     try:
-        from openprogram.agent.sub_agent_run import (
-            run_agent_turn,
-            write_attach_pointer_for_spawn,
-        )
-        result = run_agent_turn(
+        from openprogram.agent.sub_agent_run import run_agent_turn_async
+        task_id = run_agent_turn_async(
             session_id=run_session,
             prompt=delivery_message,
             agent_id=chosen_agent,
             branch_from=branch_from,
-            label=message[:60],  # Stage-1 placeholder name
-            # A delivery in the SENDER's own session must not steal its
-            # head; a cross-session send continues the target's
-            # conversation and advances theirs as usual.
-            advance_head=(run_session != sid),
+            context_mode="inherit",
+            label=message[:60],  # Stage-1 placeholder name (Stage-2 LLM refines later)
+            subject=message[:60],
+            description=delivery_message,
+            caller_msg_id=aid,
+            caller_session_id=sid,  # reply returns to the sender
+            spawn_depth=depth + 1,  # child inherits depth+1 (loop guard)
         )
     except Exception as e:  # noqa: BLE001
         return f"[send_message error] {type(e).__name__}: {e}"
-    finally:
-        _spawn_depth.reset(_tok)
-
-    try:
-        write_attach_pointer_for_spawn(
-            session_id=run_session,
-            caller_msg_id=aid,
-            result=result,
-            label=message[:60],  # match the branch's Stage-1 placeholder name
-            prompt=message,
-            chosen_agent=chosen_agent,
-        )
-    except Exception:
-        pass
-
-    emit_safe(
-        "branch.message_replied",
-        "agent",
-        {
-            "from": run_session,
-            "to": f"{sid}:{aid}",
-            "is_error": bool(result.failed or result.error),
-        },
+    return (
+        f"[delivered, running async] delivery_id={task_id}\n"
+        "The target branch is running; its reply will come back to you "
+        "automatically when it finishes. You are not blocked — continue."
     )
-    _emit_branch_ui(sid, "replied", run_session, result.final_text or "")
-
-    if result.error and not result.final_text:
-        return f"[send_message error: head={result.head_id}] {result.error}"
-    out = _clip_result(result.final_text or "(target branch returned no text)")
-    if result.error:
-        out = f"{out}\n\n[send_message warning] {result.error}"
-    return f"{out}\n\n[branch {run_session}:{result.head_id or '?'}]"
 
 
 @function(
@@ -319,12 +259,11 @@ def send_message(
     message: str,
     to: str,
     agent_id: str = "",
-    wait: bool = False,
 ) -> str:
-    """Deliver a message to an existing branch, run it, get the reply back."""
+    """Deliver a message to an existing branch; its reply comes back
+    to the sender automatically when the target finishes."""
     return _send_message_impl(
         message=message,
         to=to,
         agent_id=agent_id,
-        wait=wait,
     )

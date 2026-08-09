@@ -74,16 +74,16 @@ agent(
     description: str = "",              # short label, becomes the branch name
     agent_id: str = "",                 # agent profile; defaults to the session's
     context: str = "clean",             # "clean" / "inherit" / "SID:MSG_ID"
-    wait: bool = true,                  # true=block for the reply; false=task_id
+    run_in_background: bool = false,    # false=block for the reply; true=task_id
 ) -> str
 ```
 
 `context` picks where the new branch starts: `"clean"` (default) is a new
 root seeing only the prompt; `"inherit"` forks off the calling turn with the
 full chain; `"SID:MSG_ID"` forks off that exact node (any session),
-inheriting the chain up to it. `wait=False` returns a `task_id`; its
+inheriting the chain up to it. `run_in_background=true` returns a `task_id`; its
 companions `task_output(task_id)` (block for the result) and
-`task_stop(task_id)` (cancel) manage the async form.
+`task_stop(task_id)` (cancel) manage the background form.
 
 **`send_message` — talk to an EXISTING agent:**
 
@@ -92,7 +92,6 @@ send_message(
     message: str,                       # content/instruction delivered to the target
     to: str,                            # see to values below
     agent_id: str = "main",             # which agent the target runs as
-    wait: bool = false,                 # false=async (default, returns instantly); true=block for the reply
 ) -> str
 ```
 
@@ -130,16 +129,13 @@ target.
 3. Deliver and trigger: `process_user_turn(TurnRequest(session_id=to,
    user_text=delivered content, branch_from=fork point))` → the target branch
    runs one turn and **the model reads everything delivered**.
-4. **Reply back**:
-   - `wait=false` (default): returns "delivered + delivery_id" instantly, the
-     caller keeps going unblocked; when the target finishes,
-     `_dispatch_followup` **automatically** feeds the reply into the caller
-     session as a new message + triggers it to run a turn, so the caller wakes
-     up and reads it.
-   - `wait=true`: blocks until the target finishes and returns the reply text
-     directly.
-- Events: delivery emits `branch.message_sent`; reply-back emits
-  `branch.message_replied` (see §3).
+4. **Reply back** (always asynchronous): the send returns "delivered +
+   delivery_id" instantly, the caller keeps going unblocked; when the target
+   finishes, `_dispatch_followup` **automatically** feeds the reply into the
+   caller session as a new message + triggers it to run a turn, so the caller
+   wakes up and reads it.
+- Events: delivery emits `branch.message_sent` (see §3); the reply-back is the
+  followup turn itself.
 
 ### 2.2 Referencing other branches
 
@@ -189,7 +185,7 @@ Every time the `agent` tool creates a branch,
 
 ### 2.5 Where the reply-back node lands: the initiator's current tail, serialized
 
-For asynchronous reply-back (`wait=false`), `_dispatch_followup` feeds the
+For the asynchronous reply-back, `_dispatch_followup` feeds the
 target branch's reply into the delivery session as a **synthetic user-role
 turn**. **Key rule: the reply-back `TurnRequest` leaves `branch_from` unset
 (INHERIT_PARENT) — the dispatcher resolves it to the delivery session's
@@ -294,7 +290,6 @@ emit_ws_frame(frame)                         # for sources: send a ready-made WS
 | type | When | origin | Key payload fields |
 |---|---|---|---|
 | `branch.message_sent` | send_message delivers | agent | from, to, delivery_id, is_new, chain |
-| `branch.message_replied` | Target finishes and replies back automatically | agent | from, to, delivery_id, is_error |
 | `branch.created` / `.started` / `.failed` / `.cancelled` | Branch state transitions | agent | branch, parent, agent_id, status |
 | `sessions.listed` / `branches.listed` | Listing | agent | count |
 
@@ -529,7 +524,7 @@ list_agents so agents can address it).
 **Frontend (`web/`)**
 - Session / branch list panel (WS handlers already exist) + a "pick `to` →
   send message" interaction entry point
-- On `branch.message_sent` / `branch.message_replied` (via ws.frame) → render
+- On `branch.message_sent` (via ws.frame) → render
   communication nodes plus the return-flow soft link edge in that session's DAG /
   message stream (shown on hover; dag-live is already settled)
 - Spawn progress reuses the existing `task_status` frame + the tasks panel

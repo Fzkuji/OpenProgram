@@ -122,7 +122,7 @@ All spawns go through the task entity, so `/task` does not block
 synchronously. The semantics:
 
 - The agent-facing tool `agent(prompt, ...)` is **async** — it returns `task_id` immediately without blocking the main conversation. Once the LLM has the id, it can choose to do other things, or immediately call `task_output(task_id)` for synchronous semantics (D15).
-- Compatibility flag: `/task --sync` (or a `wait=True` parameter) wraps a `spawn → await` at the tool layer, returning the result synchronously, transparently to the LLM.
+- Compatibility flag: `/task --sync` (or the tool's foreground default, `run_in_background=False`) wraps a `spawn → await` at the tool layer, returning the result synchronously, transparently to the LLM.
 - `_task_impl` keeps its `run_agent_turn` call, but routes through the runner entry point.
 
 `/spawn` (the user typing `/spawn label: prompt` in chat) goes through the same
@@ -159,7 +159,7 @@ Broadcast events:
 
 The agent uses a trio:
 
-- `spawn_task(prompt, description, agent_id?, context?, wait=False)` → returns `task_id` (wait=False) or the final result (wait=True). Wraps `runner.submit(...)`.
+- `agent(prompt, description, agent_id?, context?, run_in_background=False)` → returns the final result (foreground default) or `task_id` (`run_in_background=True`). Wraps `runner.submit(...)`.
 - `task_output(task_id, timeout=None)` → blocks the calling thread until completed / cancelled / timeout, returning `{status, result_text, head_id, error}`. The LLM calls this to wrap up in concurrent scenarios.
 - `task_stop(task_id, reason?)` → `{ok, status}`.
 
@@ -215,8 +215,8 @@ entity underneath.
 
 The LLM-facing `agent(prompt, ...)` tool provides two semantics:
 
-- `wait=True` (default, backward compatible): internally spawn + await + return result_text as the return value to the LLM. From the LLM's perspective, identical to the synchronous tool.
-- `wait=False`: returns `task_id`, and the LLM decides when to await on its own. Used by new code / plan mode.
+- `run_in_background=False` (default): internally spawn + await + return result_text as the return value to the LLM. From the LLM's perspective, identical to the synchronous tool.
+- `run_in_background=True`: returns `task_id`, and the LLM decides when to await on its own. Used by new code / plan mode.
 
 The toggle lives in the tool signature, so prompts written against the
 synchronous tool run unchanged. The tool-capability description broadcast to
@@ -234,7 +234,7 @@ through the task entity underneath.
 
 | Dimension | Design |
 |---|---|
-| **D1 entity** | Create the entity on spawn (with prompt / agent_id / context_mode = inherit), `parent_task_id=None`, `wait=True` |
+| **D1 entity** | Create the entity on spawn (with prompt / agent_id / context_mode = inherit), `parent_task_id=None`, foreground |
 | **D2 state machine** | Still goes through the full pending → queued → running → completed |
 | **D3 worker pool** | Submit to the pool; if the pool is full, wait queued (under sync semantics the LLM perceives a little latency but the result is unchanged) |
 | **D4 persistence** | Full flow: write tasks.json + git commit on every state transition |
@@ -243,7 +243,7 @@ through the task entity underneath.
 | **D7 sub-agent** | The tool wrapper spawns + awaits internally: zero change to the LLM call site |
 | **D8 ContextCommit** | The placeholder attach card exists briefly (milliseconds to seconds, since it waits synchronously for the result) and is updated immediately on completion; the UI barely sees the running state |
 | **D9 WS API** | The tool call goes through the in-process API (no need to go via WS); the UI can still see it via list_tasks |
-| **D10 agent tool** | `agent(...)` defaults to wait=True, covering 99% of existing code paths |
+| **D10 agent tool** | `agent(...)` defaults to foreground (`run_in_background=False`), covering 99% of existing code paths |
 | **D11 UI** | The Tasks panel flashes once; the attach card appears directly in the completed state |
 | **D12 error** | Worker throws → status=`errored` → the tool gets a `[task error] ...` string (preserving the existing error format) |
 | **D13 test** | unit: mock the runner, verify spawn + await are called twice in order; integration: actually run a trivial agent |
@@ -259,7 +259,7 @@ cancels later.
 
 | Dimension | Design |
 |---|---|
-| **D1 entity** | Create on spawn, wait=False; the entity is written to disk immediately |
+| **D1 entity** | Create on spawn in the background; the entity is written to disk immediately |
 | **D2 state machine** | When spawn returns, it's usually already `queued` or `running`, transparent to the LLM |
 | **D3 worker pool** | Submit does not block the caller thread; the caller LLM continues to the next tool call |
 | **D4 persistence** | Same as A |
@@ -323,7 +323,7 @@ Stop in the UI or the agent decides to abort.
 | **D12 error** | cancel timeout: after 30s, force-transition the status but keep the worker thread; log a warn; the UI hints "task may still be running in background" |
 | **D13 test** | The key test: a fake sync_fn deliberately ignores cancel_event for 30 seconds, assert the runner force-transitions to cancelled state after 30s |
 | **D14 plan mode** | The plan agent may proactively cancel the remaining queued tasks on partial completion (to save budget) |
-| **D15 compatibility** | When sync /task defaults to wait=True, the user stopping the session cancels both the sub-agent and the parent turn (existing behavior, unchanged) |
+| **D15 compatibility** | Under the foreground default, the user stopping the session cancels both the sub-agent and the parent turn (existing behavior, unchanged) |
 
 ---
 
@@ -377,7 +377,7 @@ The landing order, in dependency order:
 | 6 | `openprogram/webui/ws_actions/task.py` (new) | 4 handlers corresponding to D9; register in `ws_actions/__init__.py` |
 | 7 | `openprogram/webui/_execute/__init__.py::_run_spawn` | Switch to `submit_agent_task`; write the placeholder attach card with task_id + status=running |
 | 8 | `openprogram/context/commit/generator.py` | When handling attach nodes, check `extra.attach.status`: running / cancelled / errored do not expand, only placeholder (D8) |
-| 9 | `openprogram/functions/tools/agent/agent/agent.py` | `_agent_impl` internally switches to `submit_agent_task` + defaults to wait=True; returns task_id when wait=False |
+| 9 | `openprogram/functions/tools/agent/agent/agent.py` | `_agent_impl` internally switches to `submit_agent_task` + defaults to foreground; returns task_id when `run_in_background=True` |
 | 10 | `web/components/right-sidebar/tasks-panel.tsx` (new) | UI representation (D11); subscribes to the `task_status` ws event |
 | 11 | `web/components/chat/messages/attach-card.tsx` | Render the status badge (running / done / cancelled / error) |
 | 12 | `openprogram/agent/dispatcher.py::process_user_turn` | On startup, check `OPENPROGRAM_TASK_WORKERS` and initialize the runner singleton (idempotent) |

@@ -81,7 +81,7 @@ def _agent_impl(
     description: str = "",
     agent_id: str = "",
     context: str = "clean",
-    wait: bool = True,
+    run_in_background: bool = False,
 ) -> str:
     """Implementation body. Pulled out of the @function-wrapped binding
     so unit tests can drive it directly with their own ContextVars
@@ -159,8 +159,8 @@ def _agent_impl(
             "that exact node)."
         )
 
-    if not wait:
-        # Async path: submit and return the task_id. Caller can
+    if run_in_background:
+        # Background path: submit and return the task_id. Caller can
         # invoke task_output / task_stop / get_task. The runner is
         # responsible for state transitions + attach card update.
         try:
@@ -171,7 +171,7 @@ def _agent_impl(
             # Drop a "running" placeholder attach card first, anchored on
             # the calling turn — the card shows up where it was invoked;
             # the runner fills in the result in place at terminal state.
-            # Without this card, a wait=False result could only drift
+            # Without this card, a background result could only drift
             # back via task_followup with nowhere to anchor.
             attach_id = write_attach_placeholder_for_spawn(
                 session_id=sid,
@@ -343,14 +343,15 @@ def agent(
     description: str = "",
     agent_id: str = "",
     context: str = "clean",
-    wait: bool = True,
+    run_in_background: bool = False,
 ) -> str:
     """Spawn another agent in the same session.
 
-    With ``wait=True`` (default) blocks until the spawned agent
-    finishes and returns its final reply. With ``wait=False`` returns
-    immediately with a task_id; call :func:`task_output` to retrieve
-    the result, or :func:`task_stop` to stop it.
+    With ``run_in_background=False`` (default) blocks until the
+    spawned agent finishes and returns its final reply. With
+    ``run_in_background=True`` returns immediately with a task_id;
+    call :func:`task_output` to retrieve the result, or
+    :func:`task_stop` to stop it.
 
     Args:
         prompt: instruction for the spawned agent. In
@@ -363,10 +364,12 @@ def agent(
             a new root with only the prompt visible. ``"inherit"`` ⇒
             forks off this turn and sees the full chain that led here.
             ``"SID:MSG_ID"`` ⇒ forks off that exact node.
-        wait: True (default) blocks for the final reply. False
-            returns ``task_id`` immediately for parallel execution.
+        run_in_background: False (default) blocks for the final
+            reply. True returns ``task_id`` immediately for parallel
+            execution; completion notifies the caller automatically.
     """
     return _agent_impl(
         prompt=prompt, description=description,
-        agent_id=agent_id, context=context, wait=wait,
+        agent_id=agent_id, context=context,
+        run_in_background=run_in_background,
     )

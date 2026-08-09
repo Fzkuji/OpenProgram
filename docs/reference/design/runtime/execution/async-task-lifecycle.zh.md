@@ -113,7 +113,7 @@ entity 又存了 task 产出，自洽。
 所有 spawn 都走 task entity，因此 `/task` 不同步阻塞。语义如下：
 
 - agent-facing tool `agent(prompt, ...)` 是 **async** 的——立刻返回 `task_id`，不阻塞主对话。LLM 拿到 id 后选择继续干别的，或者立刻调 `task_output(task_id)` 取得同步语义（D15）。
-- 兼容旗子：`/task --sync`（或 `wait=True` 参数）在 tool 层包一层 `spawn → await`，对 LLM 透明地同步返回结果。
+- 兼容旗子：`/task --sync`（或工具的前台默认 `run_in_background=False`）在 tool 层包一层 `spawn → await`，对 LLM 透明地同步返回结果。
 - `_task_impl` 仍保留 `run_agent_turn` 调用，但走 runner 入口。
 
 `/spawn`（用户在 chat 输入 `/spawn label: prompt`）走同一条 spawn API，区别只是
@@ -148,7 +148,7 @@ spinner。
 
 agent 用三件套：
 
-- `spawn_task(prompt, description, agent_id?, context?, wait=False)` → 返回 `task_id`（wait=False）或最终 result（wait=True）。包装 `runner.submit(...)`。
+- `agent(prompt, description, agent_id?, context?, run_in_background=False)` → 前台默认返回最终 result，`run_in_background=True` 返回 `task_id`。包装 `runner.submit(...)`。
 - `task_output(task_id, timeout=None)` → 阻塞调用线程直到完成 / cancelled / timeout，返回 `{status, result_text, head_id, error}`。LLM 在并发场景调它来收尾。
 - `task_stop(task_id, reason?)` → `{ok, status}`。
 
@@ -201,8 +201,8 @@ plan agent 产出一个 plan（一组 sub-task spec），exit_plan_mode 完成�
 
 LLM-facing `agent(prompt, ...)` tool 提供两个语义：
 
-- `wait=True`（默认，向后兼容）：内部 spawn + await + 把 result_text 当 return value 给 LLM。LLM 视角与同步工具等同。
-- `wait=False`：返回 `task_id`，LLM 自己决定何时 await。新代码 / plan mode 用。
+- `run_in_background=False`（默认）：内部 spawn + await + 把 result_text 当 return value 给 LLM。LLM 视角与同步工具等同。
+- `run_in_background=True`：返回 `task_id`，LLM 自己决定何时 await。新代码 / plan mode 用。
 
 切换开关位于 tool 签名里，按同步工具写的老 prompt 不改也能跑。工具能力广播给
 LLM 的描述里说明两种模式 + 推荐用法。
@@ -218,7 +218,7 @@ LLM 的描述里说明两种模式 + 推荐用法。
 
 | 维度 | 设计 |
 |---|---|
-| **D1 entity** | spawn 时创建 entity（含 prompt / agent_id / context_mode = inherit），`parent_task_id=None`，`wait=True` |
+| **D1 entity** | spawn 时创建 entity（含 prompt / agent_id / context_mode = inherit），`parent_task_id=None`，前台 |
 | **D2 状态机** | 仍走完整 pending → queued → running → completed |
 | **D3 worker pool** | submit 到 pool；pool 满则等 queued（同步语义下 LLM 会感知一点延迟但不变结果） |
 | **D4 持久化** | 完整流程：每次状态转移写 tasks.json + git commit |
@@ -227,7 +227,7 @@ LLM 的描述里说明两种模式 + 推荐用法。
 | **D7 sub-agent** | tool wrapper 内部 spawn + await：对 LLM 调用现场零变化 |
 | **D8 ContextCommit** | placeholder attach card 短暂存在（毫秒到秒级，因为同步等结果），完成后立即更新；UI 几乎看不到 running 状态 |
 | **D9 WS API** | tool 调用走 in-process API（不必经 WS）；UI 仍能通过 list_tasks 看到 |
-| **D10 agent tool** | `agent(...)` 默认就是 wait=True，覆盖 99% 既存代码路径 |
+| **D10 agent tool** | `agent(...)` 默认前台（`run_in_background=False`），覆盖 99% 既存代码路径 |
 | **D11 UI** | Tasks panel 闪一下；attach card 直接出现完成态 |
 | **D12 错误** | worker 抛错 → status=`errored` → tool 拿到 `[task error] ...` 字符串（保留现有错误格式） |
 | **D13 测试** | unit：mock runner，验证 spawn + await 两次顺序 call；integration：真跑一个 trivial agent |
@@ -242,7 +242,7 @@ LLM 决定干个长活，先 spawn 拿 id，回头再 await 或 cancel。
 
 | 维度 | 设计 |
 |---|---|
-| **D1 entity** | spawn 时创建，wait=False；entity 立刻写盘 |
+| **D1 entity** | spawn 时后台创建；entity 立刻写盘 |
 | **D2 状态机** | spawn 返回时通常已经 `queued` 或 `running`，对 LLM 透明 |
 | **D3 worker pool** | submit 不阻塞 caller thread；caller LLM 继续下一个 tool call |
 | **D4 持久化** | 同 A |
@@ -306,7 +306,7 @@ agent 自己想撤。
 | **D12 错误** | cancel timeout: 30s 后强转 status 但保留 worker thread；记 warn 日志；UI 提示 "task may still be running in background" |
 | **D13 测试** | 关键测试：fake sync_fn 故意忽略 cancel_event 30 秒，断言 runner 在 30s 后强转 cancelled 状态 |
 | **D14 plan mode** | plan agent 可能在 partial 完成时主动 cancel 剩下的 queued task（节省 budget）|
-| **D15 兼容** | sync /task 默认 wait=True 时，用户 stop session 会同时 cancel sub-agent + 父 turn（已有行为，不变） |
+| **D15 兼容** | 前台默认下，用户 stop session 会同时 cancel sub-agent + 父 turn（已有行为，不变） |
 
 ---
 
@@ -357,7 +357,7 @@ agent 自己想撤。
 | 6 | `openprogram/webui/ws_actions/task.py` (新建) | 4 个 handler 对应 D9；注册到 `ws_actions/__init__.py` |
 | 7 | `openprogram/webui/_execute/__init__.py::_run_spawn` | 改用 `submit_agent_task`；写 placeholder attach card 时带 task_id + status=running |
 | 8 | `openprogram/context/commit/generator.py` | 处理 attach 节点时检查 `extra.attach.status`：running / cancelled / errored 不展开，只占位 (D8) |
-| 9 | `openprogram/functions/tools/agent/agent/agent.py` | `_agent_impl` 内部改走 `submit_agent_task` + 默认 wait=True；wait=False 时返回 task_id |
+| 9 | `openprogram/functions/tools/agent/agent/agent.py` | `_agent_impl` 内部改走 `submit_agent_task` + 默认前台；`run_in_background=True` 时返回 task_id |
 | 10 | `web/components/right-sidebar/tasks-panel.tsx` (新建) | UI 表达 (D11)；订阅 `task_status` ws 事件 |
 | 11 | `web/components/chat/messages/attach-card.tsx` | 渲染 status badge (running / done / cancelled / error) |
 | 12 | `openprogram/agent/dispatcher.py::process_user_turn` | 启动时检查 `OPENPROGRAM_TASK_WORKERS` 并初始化 runner 单例（idempotent） |

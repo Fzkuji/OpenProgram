@@ -3,7 +3,7 @@ from __future__ import annotations
 
 DESCRIPTION = (
     "Branch-to-branch communication: deliver a message to an EXISTING "
-    "agent, run one turn there, and (by default, async) have its reply "
+    "agent, run one turn there, and have its reply "
     "come back to you automatically. An agent's conversation is stored "
     "as a branch in the session DAG; `to` names the branch:\n"
     "\n"
@@ -30,8 +30,8 @@ DESCRIPTION = (
     "already delivered; reply only when you have something substantive "
     "to add, and when unsure, don't reply.\n"
     "\n"
-    "wait=False (DEFAULT): returns a delivery id immediately; you are NOT "
-    "blocked — keep working. The target's reply is delivered back to you "
-    "as a new message automatically when it finishes. wait=True: block "
-    "and return the reply text directly."
+    "Delivery is always asynchronous: this tool returns a delivery id "
+    "immediately and you are NOT blocked — keep working. The target's "
+    "reply is delivered back to you as a new message automatically when "
+    "it finishes."
 )

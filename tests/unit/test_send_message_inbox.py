@@ -82,24 +82,16 @@ def _capture_async(monkeypatch):
 
 def test_busy_send_enqueues(two_sessions, busy_target, monkeypatch):
     calls = _capture_async(monkeypatch)
-    out = _send_message_impl("hello t1", to="t1:b1", wait=False)
+    out = _send_message_impl("hello t1", to="t1:b1")
     assert "[queued]" in out
     assert "busy" in out
     assert calls == []                      # nothing delivered yet
     assert inbox.pending_count("t1") == 1
 
 
-def test_busy_send_wait_true_also_queues(two_sessions, busy_target, monkeypatch):
-    """wait=True must not block on a busy target — it queues and returns."""
-    calls = _capture_async(monkeypatch)
-    out = _send_message_impl("hello again", to="t1:b1", wait=True)
-    assert "[queued]" in out
-    assert calls == []
-
-
 def test_drain_delivers_then_removes(two_sessions, busy_target, monkeypatch):
     calls = _capture_async(monkeypatch)
-    _send_message_impl("hello t1", to="t1:b1", wait=False)
+    _send_message_impl("hello t1", to="t1:b1")
     assert inbox.pending_count("t1") == 1
 
     # Release the busy state before draining (turn ended).
@@ -122,7 +114,7 @@ def test_drain_delivers_then_removes(two_sessions, busy_target, monkeypatch):
 
 def test_drain_leaves_entry_on_failed_delivery(two_sessions, busy_target, monkeypatch):
     """Deliver-then-delete: a failed submission keeps the entry queued."""
-    _send_message_impl("keep me", to="t1:b1", wait=False)
+    _send_message_impl("keep me", to="t1:b1")
 
     def boom(**kw):
         raise RuntimeError("runner down")
@@ -133,13 +125,13 @@ def test_drain_leaves_entry_on_failed_delivery(two_sessions, busy_target, monkey
 
 
 def test_queued_delivery_inherits_spawn_depth(two_sessions, busy_target, monkeypatch):
-    from openprogram.functions.tools.send_message.send_message.send_message import (
+    from openprogram.functions.tools.send_message.send_message.depth import (
         set_spawn_depth, _spawn_depth,
     )
     calls = _capture_async(monkeypatch)
     tok = set_spawn_depth(3)
     try:
-        _send_message_impl("deep hello", to="t1:b1", wait=False)
+        _send_message_impl("deep hello", to="t1:b1")
     finally:
         _spawn_depth.reset(tok)
     delivered = inbox.drain("t1")
@@ -176,8 +168,8 @@ def test_cap_drops_oldest_and_notifies_sender(two_sessions):
 
 def test_duplicate_within_window_rejected(two_sessions, busy_target, monkeypatch):
     _capture_async(monkeypatch)
-    out1 = _send_message_impl("same words", to="t1:b1", wait=False)
-    out2 = _send_message_impl("same words", to="t1:b1", wait=False)
+    out1 = _send_message_impl("same words", to="t1:b1")
+    out2 = _send_message_impl("same words", to="t1:b1")
     assert "[queued]" in out1
     assert "duplicate message ignored" in out2
     assert inbox.pending_count("t1") == 1

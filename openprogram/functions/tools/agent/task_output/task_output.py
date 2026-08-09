@@ -8,14 +8,14 @@ from openprogram.functions._runtime import function
 @function(
     name="task_output",
     description=(
-        "Block until an async task spawned with agent(wait=False) "
-        "reaches a terminal state (completed/cancelled/errored). "
-        "Returns the task's final reply text plus its terminal "
-        "status. Pair with agent(wait=False) for parallel agent "
-        "execution.\n"
+        "Block until a background task spawned with "
+        "agent(run_in_background=true) reaches a terminal state "
+        "(completed/cancelled/errored). Returns the task's final reply "
+        "text plus its terminal status. Pair with "
+        "agent(run_in_background=true) for parallel agent execution.\n"
         "\n"
         "Args:\n"
-        "  task_id: id returned by agent(wait=False).\n"
+        "  task_id: id returned by agent(run_in_background=true).\n"
         "  timeout: max seconds to block. None = wait forever. "
         "On timeout the call returns with the task still running."
     ),
