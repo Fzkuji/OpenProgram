@@ -462,7 +462,7 @@ name becomes a class instance that:
   was registered in the shared registry
 - Has methods (``.execute``, ``.spec``) and attributes
   (``.expose``, ``.render_range``, ``._fn``, ``._wrapper``) that
-  other code (``spawn_program``, the webui, DAG visualizer) reads
+  other code (``program``, the webui, DAG visualizer) reads
 
 Both decorators contribute ``AgentTool`` entries to one shared
 registry, so the dispatcher / agent_loop / provider adapter only
@@ -535,7 +535,7 @@ def research(topic: str) -> str: ...
                   return value
         - functools.update_wrapper(self, research)
         - _registry["research"] = self     ← local registry
-                                              (for spawn_program /
+                                              (for program /
                                                webui instance lookup)
         - if as_tool=True:
             self._register_as_tool()
@@ -653,7 +653,7 @@ openprogram/agentic_programming/function.py
                                                        input_meta)
   _registry (file-local)                                instance-lookup
                                                        table for
-                                                       spawn_program /
+                                                       program /
                                                        webui
 
 openprogram/agent/dispatcher.py

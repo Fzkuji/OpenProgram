@@ -850,7 +850,7 @@ class agentic_function:
         spawning).
 
         Note: the file-local ``_registry`` (line 82) is kept and
-        populated separately; ``spawn_program`` and the webui use it to
+        populated separately; ``program`` (the tool) and the webui use it to
         look up the agentic_function *instance* (for ``.expose`` /
         ``.render_range`` / ``._fn`` / etc.) — that's distinct from
         looking up an ``AgentTool`` for dispatcher invocation, which

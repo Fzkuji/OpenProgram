@@ -460,7 +460,7 @@ Claude Code、Hermes、OpenClaw 都没有：
   共享注册表中注册的 ``AgentTool``
 - 拥有方法（``.execute``、``.spec``）和属性
   （``.expose``、``.render_range``、``._fn``、``._wrapper``），供
-  其它代码（``spawn_program``、webui、DAG 可视化器）读取
+  其它代码（``program``、webui、DAG 可视化器）读取
 
 两个装饰器都向同一个共享
 注册表贡献 ``AgentTool`` 条目，因此 dispatcher / agent_loop / provider adapter
@@ -532,7 +532,7 @@ def research(topic: str) -> str: ...
                   return value
         - functools.update_wrapper(self, research)
         - _registry["research"] = self     ← local registry
-                                              (for spawn_program /
+                                              (for program /
                                                webui instance lookup)
         - if as_tool=True:
             self._register_as_tool()
@@ -650,7 +650,7 @@ openprogram/agentic_programming/function.py
                                                        input_meta)
   _registry (file-local)                                instance-lookup
                                                        table for
-                                                       spawn_program /
+                                                       program /
                                                        webui
 
 openprogram/agent/dispatcher.py

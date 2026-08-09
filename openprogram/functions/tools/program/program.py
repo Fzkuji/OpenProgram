@@ -1,4 +1,4 @@
-"""spawn_program tool — invoke any registered @agentic_function.
+"""program tool — invoke any registered @agentic_function.
 
 OpenProgram's programs (``@agentic_function``-decorated Python functions)
 already know how to drive an LLM: they have their own system prompts,
@@ -17,7 +17,7 @@ its value, then hands the result back as a string. That's deliberate:
     sub-programs don't actually need
 
 If a program takes 10 minutes we do block for 10 minutes. If you want
-fire-and-forget, that's a future ``spawn_program_bg`` (not this tool).
+fire-and-forget, that's a future ``program_bg`` (not this tool).
 
 Two call modes:
 
@@ -36,10 +36,12 @@ from ..._helpers import read_bool_param, read_string_param
 from ..._runtime import function
 
 
-NAME = "spawn_program"
+NAME = "program"
 
 DESCRIPTION = (
-    "Invoke a registered @agentic_function sub-program by name. Call with "
+    "Run a predefined @agentic_function program by name (the counterpart of "
+    "the `agent` tool: `agent` spawns a free-form agent, `program` runs a "
+    "predefined agentic function). Call with "
     "`list_only=true` to see the catalogue; then call again with "
     "`program=<name>` and `args={...}` to run it. The sub-program shares "
     "the current runtime (same provider / session / context tree) and "
@@ -160,7 +162,7 @@ def execute(
         # tools), but handle it rather than returning the coroutine
         # object as a string.
         return (
-            f"Error: {program} is async; spawn_program currently only "
+            f"Error: {program} is async; the program tool currently only "
             "supports sync programs. File an issue if you need this."
         )
 

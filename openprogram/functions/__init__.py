@@ -174,7 +174,7 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             "agent", "send_message", "list_agents",
             "todo_read", "todo_write",
             "ask_user_question", "cron", "canvas",
-            "spawn_program", "mixture_of_agents",
+            "program", "mixture_of_agents",
             "agent_browser", "playwright_browser",
             "web_search", "web_fetch", "pdf",
             "image_generate", "image_analyze",
