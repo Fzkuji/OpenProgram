@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>功能清单对标：十二家能做的事逐条摆出来</title>
+<style>
+  :root{
+    --bg:#16150f; --pan:#1d1c14; --bd:#2e2c20; --tx:#bdb9a6; --acc:#d4843a;
+    --cb:#12110b; --dim:#8a8675;
+    --c0:#4f8ef7; --c1:#5aad4e; --c2:#d4843a; --c3:#9d6fe0; --c4:#2db3d5;
+    --no:#e0445a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:40px 24px 96px}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:23px;color:#f0eee6;margin:0 0 6px}
+  .sub{color:var(--tx);margin:0 0 18px;max-width:84ch}
+  h2{font-size:16px;color:var(--acc);margin:38px 0 8px;scroll-margin-top:20px}
+  h2 .num{color:var(--dim);font-size:12px;margin-right:8px;letter-spacing:.16em}
+  h2 .ly{font-size:10.5px;letter-spacing:.18em;padding:2px 8px;border-radius:99px;
+    margin-left:10px;vertical-align:2px;font-weight:600}
+  .ly0{color:#e0445a;border:1px solid #6d2530}
+  .ly1{color:#4f8ef7;border:1px solid #2c4a78}
+  .ly2{color:#5aad4e;border:1px solid #2f5228}
+  .ly3{color:#d4843a;border:1px solid #6b4519}
+  h3{font-size:13.5px;color:#f0eee6;margin:24px 0 6px;font-weight:600;scroll-margin-top:20px}
+  .lead{color:var(--dim);font-size:13px;margin:0 0 12px;max-width:90ch}
+  .card{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:8px;margin-bottom:16px}
+  svg{display:block;width:100%;height:auto;background:var(--cb);border-radius:8px}
+  .scroll{overflow-x:auto}
+  .scroll svg{min-width:900px}
+  .legend{font-size:12.5px;color:var(--dim);padding:8px 10px;line-height:1.8}
+  .legend b{color:#f0eee6}
+  code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
+  a{color:var(--acc)}
+  text{font-family:-apple-system,"Segoe UI",sans-serif}
+
+  .toc{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 24px}
+  .toc a{font-size:12px;color:var(--tx);text-decoration:none;border:1px solid var(--bd);
+    background:var(--pan);border-radius:99px;padding:4px 12px}
+  .toc a:hover{border-color:var(--acc);color:#f0eee6}
+  .toc a.l0{border-color:#6d2530}
+  .toc a.l1{border-color:#2c4a78} .toc a.l2{border-color:#2f5228}
+  .toc a.l3{border-color:#6b4519}
+
+  .tbl{overflow-x:auto;background:var(--pan);border:1px solid var(--bd);border-radius:12px;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:900px}
+  table.wide{min-width:1140px}
+  th{text-align:left;padding:10px 12px;color:var(--dim);font-weight:600;font-size:11px;
+    letter-spacing:.12em;border-bottom:1px solid var(--bd);white-space:nowrap;vertical-align:bottom}
+  td{padding:9px 12px;border-bottom:1px solid #26241a;vertical-align:top;line-height:1.6}
+  tr:last-child td{border-bottom:none}
+  td.y{color:var(--c1)} td.n{color:var(--no)} td.p{color:var(--c2)}
+  td b{color:#f0eee6;font-weight:600}
+  td.name{white-space:nowrap;color:#f0eee6;font-weight:600}
+  tr.us td{background:#1b2231}
+  tr.us td.name{color:#4f8ef7}
+  .src{display:block;color:#6b6a63;font:10.5px/1.5 Menlo,monospace;margin-top:3px;word-break:break-word}
+  .srcin{color:#6b6a63;font:10.5px/1.5 Menlo,monospace}
+
+  /* 功能全表 */
+  table.fx{min-width:1120px;font-size:12px}
+  table.fx th{padding:8px 4px;text-align:center;font-size:10px;letter-spacing:.04em}
+  table.fx th.fname{text-align:left;padding-left:12px;min-width:250px}
+  table.fx th.us{color:#4f8ef7}
+  table.fx td{padding:6px 4px;text-align:center;white-space:nowrap;font-size:13px;line-height:1.3}
+  table.fx td.fname{text-align:left;white-space:normal;padding-left:12px;font-size:12.5px;
+    color:#f0eee6;line-height:1.45}
+  table.fx td.us{background:#1b2231}
+  table.fx tr.grp td{background:var(--cb);color:var(--acc);font-size:11px;letter-spacing:.16em;
+    padding:7px 12px;text-align:left;border-bottom:1px solid var(--bd);border-top:1px solid var(--bd)}
+  table.fx tr.grp td b{color:#f0eee6;letter-spacing:0;font-size:12px}
+  table.fx tr.grp td.hc{color:#6b6a63;font-size:9.5px;letter-spacing:.02em;text-align:center;padding:7px 3px}
+  table.fx tr.grp td.hc.us{color:#4f8ef7;background:#181f2c}
+  .g1{color:#5aad4e} .g2{color:#d4843a} .g3{color:#4f8ef7} .g0{color:#4a483d}
+  .only{background:#241a12}
+
+  pre{background:var(--cb);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;
+    overflow-x:auto;margin:0 0 16px;font:12.5px/1.9 Menlo,monospace;color:#a5a190}
+  pre b{color:var(--acc);font-weight:400}
+  pre i{color:#6b6a63;font-style:normal}
+
+  .note{border-left:3px solid var(--bd);padding:2px 0 2px 13px;color:var(--dim);
+    font-size:12.5px;margin:0 0 16px;max-width:92ch;line-height:1.8}
+  .note b{color:#f0eee6}
+  .note.blue{border-left-color:#2c4a78}
+  .note.green{border-left-color:#2f5228}
+  .note.orange{border-left-color:#6b4519}
+  .note.red{border-left-color:#6d2530}
+
+  .three{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:0 0 18px}
+  .q{background:var(--pan);border:1px solid var(--bd);border-top-width:3px;border-radius:12px;padding:14px 16px}
+  .q .k{font-size:10.5px;letter-spacing:.2em;color:var(--dim);margin-bottom:5px}
+  .q h4{margin:0 0 8px;font-size:15px;font-weight:700;color:#f0eee6;line-height:1.45}
+  .q p{margin:0 0 8px;font-size:12.5px;color:#a5a190;line-height:1.7}
+  .q p:last-child{margin-bottom:0}
+  .q .ev{font:10.5px/1.6 Menlo,monospace;color:#6b6a63;display:block;margin-top:6px}
+  @media(max-width:980px){.three{grid-template-columns:1fr}}
+
+  ul{margin:0 0 14px;padding-left:20px;max-width:92ch}
+  li{margin-bottom:6px;font-size:13px;line-height:1.75}
+  li b{color:#f0eee6}
+  .key{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--dim);padding:9px 12px;
+    background:var(--pan);border:1px solid var(--bd);border-radius:10px;margin:0 0 12px}
+  .key span b{font-size:14px;margin-right:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>功能清单对标：十二家能做的事逐条摆出来</h1>
+<p class="sub">前面六轮子系统对标加一轮整框架对标，全部是按我们自己的设计维度去查的。这个查法只能查到"我们已经知道自己在做的事，别人怎么做"，查不到"别人有一整块功能而我们连想都没想过"。这一页换查法：不按设计维度，按功能清单。入口是各家的功能开关配置、命令清单、工具清单、出厂 agent 定义、帮助文本和运行时目录。<b>160 项功能，13 列，一格一个判定。</b></p>
+
+<div class="toc">
+  <a class="l0" href="#three">三个问题先回答</a>
+  <a class="l1" href="#matrix">1功能全表 160 项</a>
+  <a class="l1" href="#cover">覆盖度</a>
+  <a class="l2" href="#gaps">2只有别人有的 97 项</a>
+  <a class="l2" href="#newfound">这一轮多找出多少</a>
+  <a class="l2" href="#ours">3只有我们有的 6 项</a>
+  <a class="l3" href="#plan">4我们该补哪些</a>
+  <a href="#method">取证与状态</a>
+</div>
+
+<div class="note blue">
+  <b>和 <a href="framework-comparison.html">framework-comparison</a> 的分工</b>。那一份按<b>设计维度和机制</b>比：执行模型、状态存哪、上下文装配、权限审批这些我们自己关心的轴，每轴一句定性加一张图。这一份按<b>功能清单</b>比：用户能点到、能敲到、能看到的事，一条一格。两份的输入完全不同，所以结论也不重合：那一份找出 55 条缺口，这一份找出 97 条，重合只有 21 条。要看机制去那边，要看清单看这边。
+</div>
+
+<!-- ══════════════════════════ 三问 ══════════════════════════ -->
+<h2 id="three"><span class="num">00</span>三个问题先回答<span class="ly ly0">结论</span></h2>
+
+<div class="three">
+  <div class="q" style="border-top-color:#5aad4e">
+    <div class="k">只有别人有，最要紧的三个</div>
+    <h4>版本控制整类、删除拦截、被别人驱动的口子</h4>
+    <p><b>一，版本控制那一整类是空的。</b>十项里我们只占两项，是十三类里第二低。生成提交信息、一键提交推送开 PR、对当前 diff 做安全审查、从 PR 链接直接开 worktree，四项我们一项没有，buddy 四项全有。这是编码 agent 每天用得最多的几步，成本也最低。</p>
+    <p><b>二，删除操作没有底线。</b>我们的权限规则全在工具层，<code>bash</code> 里的 <code>rm -rf</code> 直接穿过去。buddy 的做法是在三个运行时同时挂钩子把删除改道系统回收站：Python 走 <code>sitecustomize</code>，Node 走 <code>NODE_OPTIONS=--require</code>，shell 走 <code>safe-bin/rm</code>。这是清单里唯一一条"没有它就可能丢数据"的。</p>
+    <p><b>三，别的程序进不来。</b>MCP 服务端、ACP、官方 SDK 三个口子我们一个都没有，"集成与被集成"这一类 13 项里我们只占 1.5 项，是十三类里最低。</p>
+    <span class="ev">buddy vendor/shim/{sitecustomize.py,genie-safe-delete.cjs} · product.json commands[] commit / commit-push-pr / security-review</span>
+  </div>
+  <div class="q" style="border-top-color:#4f8ef7">
+    <div class="k">只有我们有</div>
+    <h4>六项，核心那条核实成立</h4>
+    <p>上一轮认定的最强项是"会话是一张图且函数调用树写进同一张图"。按 160 项功能逐条扫完，<b>这条成立</b>：没有第二家把 <code>@agentic_function</code> 那样的每层调用写成会话图上的节点，也没有第二家把会话本体存成一个 git 仓库（别家是 JSONL 或 SQLite）。</p>
+    <p>另外四条上一轮没提：<b>多条分支 N 路合并成一条</b>、<b>按剩余消息预算裁子 agent 的工具面</b>、<b>升级前在临时端口把新代码启起来探健康再切</b>、<b>无人值守时直接把提问工具摘掉</b>（不是压掉提示，是策略层不给这个工具，所以结构上不可能卡住等人）。</p>
+    <p>六项集中在两处：会话数据结构，和"跑起来别出事"。功能面上我们没有任何一项是别人完全没有的。</p>
+    <span class="ev">contextgit/dag.py · store/session/git_session.py · agent/internals/_merge.py · agent/attended.py</span>
+  </div>
+  <div class="q" style="border-top-color:#d4843a">
+    <div class="k">这一轮比前六轮多找出多少</div>
+    <h4>97 条里 76 条是新的</h4>
+    <p>前六轮加整框架那一轮，一共认定 55 条"别人有我们没有"。这一轮按功能清单扫出 97 条，两边重合 21 条，<b>新增 76 条</b>。</p>
+    <p>新增的分布说明问题：<b>版本控制 8 条、界面形态 7 条、多 agent 6 条全部是新的</b>，前六轮一条都没碰到。编辑器集成 8 条里新增 6 条，集成与被集成 11 条里新增 9 条，部署与运维 9 条里新增 7 条。</p>
+    <p>原因清楚：版本控制、界面形态、部署运维这几类从来不是我们的设计维度，所以按维度扫永远扫不到。<b>换查法这件事本身是有效的</b>，产出比前六轮加起来还多接近一倍。</p>
+    <span class="ev">前六轮出处：runtime/sandbox · agent-collab-comparison · memory-comparison · memory-adoption · speaker-identity · chat-attachments · context/comparison · extension-gating · framework-comparison</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════ LAYER 1 ══════════════════════════ -->
+<h2 id="matrix"><span class="num">01</span>功能全表<span class="ly ly1">清单</span></h2>
+<p class="lead">160 项，13 类。我们那一列按"有实现代码才算有"判定，设计文档写了不算。表格很宽，自己横向滚。</p>
+
+<div class="key">
+  <span><b class="g1">●</b>有</span>
+  <span><b class="g2">◐</b>部分有，或只在某一个界面上能用</span>
+  <span><b class="g3">○</b>有，但默认关着或受门控</span>
+  <span><b class="g0">·</b>这一轮取证里没找到</span>
+  <span style="color:#4f8ef7">蓝底那列是我们</span>
+  <span style="color:#d4843a">橙底那行是只有我们有</span>
+</div>
+
+<div class="tbl">
+<table class="fx">
+<tr>
+  <th class="fname">功能</th><th class="us">我们</th><th>claude</th><th>codex</th><th>openclaw</th>
+  <th>opencode</th><th>hermes</th><th>pi-mono</th><th>pi-ai</th><th>weclaw</th>
+  <th>cc内</th><th>cx内</th><th>gm内</th><th>buddy</th>
+</tr>
+<tr class="grp"><td>01 <b>编辑器集成</b> <span style="color:#6b6a63">9 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
+<tr><td class="fname">官方 IDE 扩展或插件<span class="src">claude /ide · codex app-server 驱动 VS Code 扩展 · buddy --ide</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">被 IDE 经 ACP 驱动<span class="src">openclaw acp · opencode acp · hermes acp · buddy --acp · gm内 --experimental-acp</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g3">○</td><td class="g1">●</td></tr>
+<tr><td class="fname">LSP 诊断与符号跳转<span class="src">hermes 约25个语言服务器接进 write_file/patch · claude ENABLE_LSP_TOOL</span></td><td class="g0 us">·</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g3">○</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g3">○</td></tr>
+<tr><td class="fname">编辑器选区与打开文件进上下文<span class="src">codex /ide · opencode 扩展自动共享选区 · gm内 IDE companion</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">行内补全<span class="src">buddy product.json productFeatures.InlineCompletions</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">行内对话与 CodeLens 与状态栏动作<span class="src">buddy InlineChat / CodeLens / StatusBar / CodeAction / FloatShortcut</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">终端快捷键自动配置<span class="src">claude /terminal-setup · buddy /terminal-setup 覆盖十余种终端</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">浏览器控制<span class="src">openclaw 专属 Chrome 配置档 · hermes 五种后端 · codex chrome@openai-bundled</span></td><td class="g2 us">◐</td><td class="g3">○</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g3">○</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td></tr>
+<tr><td class="fname">桌面 GUI 控制<span class="src">codex computer-use@openai-bundled · buddy ComputerUse 默认关 · openclaw peekaboo</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g3">○</td></tr>
+<tr class="grp"><td>02 <b>会话与历史</b> <span style="color:#6b6a63">17 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
+<tr><td class="fname">恢复上次会话<span class="src">各家 --resume / -c</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">分支或 fork 会话<span class="src">codex fork · opencode --fork · buddy /fork</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">同一会话内多条历史并存<span class="src">我们 contextgit/dag.py head 指针 · pi-mono /tree 会话树</span></td><td class="g1 us">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td></tr>
+<tr class="only"><td class="fname">会话本体存成 git 仓库<span class="src">我们 store/session/git_session.py 每会话一个仓库、追加写；别家是 JSONL 或 SQLite</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">手动压缩上下文<span class="src">各家 /compact；我们 TUI 的 /compact 是死桩，只有网页可用</span></td><td class="g2 us">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">到阈值自动压缩<span class="src">opencode compaction.auto 默认 true · pi-mono compaction.enabled · 我们 finalize.py 明说不自动压</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">回退到历史某点并恢复文件<span class="src">我们 _rewind.py · claude /rewind · buddy /rewind Beta · hermes checkpoints 默认关</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">导出会话为文件<span class="src">pi-mono /export 出独立 HTML · openclaw /export-trajectory · opencode export --sanitize</span></td><td class="g2 us">◐</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">一键生成公开分享链接<span class="src">opencode /share 到 opncd.ai · pi-mono /share 到 GitHub gist</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">会话全文搜索<span class="src">我们 store/session/search.py FTS5 · hermes session_search FTS5</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">归档会话<span class="src">codex archive / unarchive · ~/.codex/archived_sessions/</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">后台或分离运行的会话<span class="src">buddy --bg 加 codebuddy ps/logs/attach/kill · hermes /background</span></td><td class="g2 us">◐</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">把活着的会话搬到另一台机器或另一端<span class="src">claude /teleport · codex --remote · opencode attach · buddy --remote-control</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g3">○</td><td class="g1">●</td></tr>
+<tr><td class="fname">跨渠道接管同一会话<span class="src">openclaw /dock · hermes /handoff</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">运行中插话改方向<span class="src">openclaw /steer · hermes /steer · pi-mono Enter 排队加 Alt+Enter 跟进</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">上下文占用可视化<span class="src">buddy /context 按类别拆 token · 我们只有网页面板有，TUI 的 /context 无后端处理器</span></td><td class="g2 us">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">临时旁支会话不进主历史<span class="src">codex /side 与 /btw · openclaw /btw · hermes /background</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr class="grp"><td>03 <b>代码理解</b> <span style="color:#6b6a63">10 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
+<tr><td class="fname">语义或向量代码检索<span class="src">我们 semble 需装 [search] 额外件 · openclaw QMD 索引任意目录</span></td><td class="g2 us">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td></tr>
+<tr><td class="fname">只读探索子 agent<span class="src">opencode explore · claude Explore · gm内 codebase_investigator · buddy code-explorer</span></td><td class="g2 us">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">外部依赖与文档研究 agent<span class="src">opencode scout，OPENCODE_EXPERIMENTAL_SCOUT 门控</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">把外部目录或仓库挂成命名上下文<span class="src">opencode references 的 @别名</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">生成项目说明文件<span class="src">claude /init · buddy /init 号称省三到五成 token</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">读别家格式的项目说明文件<span class="src">opencode 读 CLAUDE.md 与 .claude/skills · buddy 缺 CODEBUDDY.md 时读 AGENTS.md</span></td><td class="g2 us">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">把过往会话记录当资料读<span class="src">我们 read_conversation · openclaw sessions_history · hermes session_search</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">内置深度研究工作流<span class="src">buddy builtin/workflows/deep-research.workflow.js 五路扇出加三票对抗验证</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">读自身文档回答自身问题<span class="src">claude claude-code-guide 子 agent · gm内 get_internal_docs · openclaw docs 命令</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td></tr>
+<tr><td class="fname">图片与 PDF 输入<span class="src">claude Read 带 pages 参数 · pi-mono Ctrl+V 贴图；我们的附件正在另一个会话里做</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr class="grp"><td>04 <b>版本控制</b> <span style="color:#6b6a63">10 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
+<tr><td class="fname">生成提交信息<span class="src">buddy productFeatures.GenerateCommitMessage · claude /commit</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">一键提交推送开 PR<span class="src">buddy commit-push-pr，allowedTools 限死在 gh pr create</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">PR 或 Issue 评论触发机器人<span class="src">opencode /oc 提及触发 · buddy GitLab @codebuddy · gm内 @gemini-cli</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">从 PR 编号或链接直接开 worktree<span class="src">buddy -w #PR 或 PR 链接，支持 GitHub/GitLab/CNB</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">worktree 隔离执行<span class="src">我们 worktree/manager.py · hermes hermes -w · buddy isolation: worktree</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">worktree 建好后同步本地未跟踪文件<span class="src">buddy .worktreeinclude · hermes .worktreeinclude</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">影子 git 不污染用户历史<span class="src">我们 store/shadow_git · opencode snapshot 默认开 · hermes checkpoints 默认关</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g3">○</td><td class="g1">●</td></tr>
+<tr><td class="fname">AI 作者署名写进 git 历史<span class="src">codex ext/git-attribution</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">对当前 diff 做安全审查<span class="src">buddy /security-review · claude /security-review</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">非 git 的版本控制<span class="src">claude CLAUDE_CODE_PERFORCE_MODE · buddy WorktreeCreate 钩子可接 SVN/Perforce</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td></tr>
+<tr class="grp"><td>05 <b>任务与规划</b> <span style="color:#6b6a63">11 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
+<tr><td class="fname">待办清单工具<span class="src">各家 todowrite / TaskCreate；pi-mono 只有示例扩展</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">计划模式<span class="src">我们 enter_plan_mode · gm内 /plan 实验性</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g3">○</td><td class="g1">●</td></tr>
+<tr><td class="fname">目标条件驱动的自治循环<span class="src">我们 agent/goal/judge.py 独立裁判模型 · claude /goal · codex /goal · buddy /goal · hermes /goal</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">定时任务<span class="src">openclaw cron 加 Gmail Pub/Sub · buddy 自然语言转 cron，出厂带六个模板；我们的 cron 打到不存在的子命令</span></td><td class="g2 us">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">周期心跳式主动发起<span class="src">openclaw heartbeat，与 cron 是两条独立路径</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">常驻授权长期自主运行<span class="src">openclaw standing orders，带触发与升级规则</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">从聊天里抽承诺再回访<span class="src">openclaw src/commitments，置信度 0.86，每天最多主动三条</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">模型当场写编排脚本跑大规模并行<span class="src">buddy ultracode 最多 1000 个子 agent 并发 16 · claude Dynamic Workflows · codex code mode 默认关</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">类型化工作流运行时带审批检查点<span class="src">openclaw Lobster 加 llm-task</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">结构化提问用户<span class="src">我们 ask_user_question · buddy AskUserQuestion · opencode question · hermes clarify</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">按 JSON schema 约束输出<span class="src">buddy --json-schema 加 StructuredOutput · opencode format: json_schema</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td></tr>
+<tr class="grp"><td>06 <b>多 agent</b> <span style="color:#6b6a63">14 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
+<tr><td class="fname">派生子 agent<span class="src">我们 agent 工具三种起点 · pi-mono 只有示例扩展 · weclaw 是把消息广播给多个外部 CLI</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">agent 之间发消息<span class="src">我们 send_message · codex multi_agent_v1.send_message · buddy SendMessage</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">持久收件箱，跨会话去重有界<span class="src">我们 agent/inbox.py 60 秒去重窗口加 50 条上限 · claude 同为 50 条跨会话信箱</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">持久任务看板<span class="src">hermes ~/.hermes/kanban.db，多项目分板加自动拆解</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">agent 团队：队长加成员加邮箱<span class="src">buddy Agent Teams 带 @成员补全与共享任务表 · claude 需 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS</span></td><td class="g0 us">·</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g3">○</td></tr>
+<tr><td class="fname">团队可换执行后端<span class="src">buddy 进程内、独立进程、tmux 三种 · claude teammateMode: iterm2</span></td><td class="g0 us">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr class="only"><td class="fname">多条分支 N 路合并成一条<span class="src">我们 agent/internals/_merge.py 加 subagent merge</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">委派模式，队长只协调不动手<span class="src">buddy --permission-mode delegate，工具面砍到五个</span></td><td class="g0 us">·</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">多模型共识或交叉复核<span class="src">我们 mixture_of_agents · claude /advisor · openclaw oracle 技能</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">子 agent 深度预算<span class="src">我们 agent.max_spawn_depth 默认 1 · claude 默认 3 · hermes max_spawn_depth</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td></tr>
+<tr><td class="fname">并发数与每会话派生总量上限<span class="src">claude 并发 20 加每会话 200 次 · hermes max_concurrent_children 默认 3</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">子 agent 可恢复续跑<span class="src">buddy agentId 加 agent-{id}.jsonl，跨次调用带 resume 参数</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr class="only"><td class="fname">函数调用树写进同一张会话图<span class="src">我们 @agentic_function 跑起来时每层调用都是会话 DAG 上的 code 节点，与用户消息共用 caller/predecessor 边</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr class="only"><td class="fname">按剩余消息预算裁子 agent 的工具面<span class="src">我们 agent 派生时按预算裁工具，见 runtime/agent-collab-comparison</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr class="grp"><td>07 <b>记忆与知识</b> <span style="color:#6b6a63">10 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
+<tr><td class="fname">跨会话长期记忆<span class="src">我们 memory/scriptorium · codex memories 默认关 · openclaw 内置 SQLite 加 FTS5</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g3">○</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">后台记忆整理与巩固<span class="src">我们凌晨三点重整 · claude Dream System · openclaw dreaming 需自己打开</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g2">◐</td></tr>
+<tr><td class="fname">外部记忆服务可插拔<span class="src">hermes 八家记忆提供商 · openclaw honcho / lancedb / QMD</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">记忆编成可浏览的维基<span class="src">openclaw memory-wiki 带出处与主张</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">技能体系与渐进披露<span class="src">各家 SKILL.md；我们五层解析加远程缓存</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">技能市场或远程安装<span class="src">openclaw ClawHub · hermes Skills Hub 八个源 · pi-mono pi install npm/git</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">agent 自己造技能<span class="src">我们 distill 技能 · claude skillify · hermes skill_manage · openclaw Skill Workshop 默认关</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">技能与插件的安全扫描或信任分级<span class="src">hermes 四档信任加扫描 · buddy SkillSecurityScan 默认关；我们的插件沙箱是 stub</span></td><td class="g2 us">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g3">○</td></tr>
+<tr><td class="fname">技能捆绑包一次加载一组<span class="src">hermes bundles，斜杠命令一次拉一组技能</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">厂商知识库接入<span class="src">buddy knowledgeBases 的 Tencent 文档源，@ 可引</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr class="grp"><td>08 <b>扩展</b> <span style="color:#6b6a63">11 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
+<tr><td class="fname">插件系统<span class="src">各家；我们 openprogram/plugins 支持 pip/npm/git/path</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">插件市场<span class="src">claude 官方市场 · codex marketplace RPC · openclaw ClawHub · buddy cnb.cool 官方市场；我们只有技能远程装</span></td><td class="g2 us">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">MCP 客户端<span class="src">我们 mcp/client.py 全生命周期；pi-mono 明确不做 MCP</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">MCP 服务端，别的程序能调我们<span class="src">claude mcp serve · codex mcp-server · openclaw mcp serve · hermes mcp serve</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">MCP 交互式 HTML 组件<span class="src">buddy dist/web-ui/sandbox_proxy.html，io.modelcontextprotocol/ui 规范</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">事件钩子<span class="src">claude 约 28 个事件 · buddy 26 个事件 · 我们 24 个</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">钩子能用 LLM 判定或打 HTTP 回调<span class="src">buddy 四种动作 command/prompt/agent/http · claude 同为四种</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">用户写代码注册新工具<span class="src">opencode .opencode/tools/*.ts · pi-mono registerTool · codex dynamicTools 实验</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g3">○</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g2">◐</td><td class="g2">◐</td></tr>
+<tr><td class="fname">注册自定义模型供应商<span class="src">codex model_providers · opencode provider.npm · buddy models.json 热重载</span></td><td class="g1 us">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">从别家 agent 搬家<span class="src">codex /import 与 external-agent-migration · openclaw migrate-claude · hermes claw migrate</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g3">○</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g2">◐</td><td class="g2">◐</td></tr>
+<tr><td class="fname">输出风格或人格切换<span class="src">codex /personality · hermes 14 种人格加 SOUL.md · buddy 三种 output style</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr class="grp"><td>09 <b>界面形态</b> <span style="color:#6b6a63">12 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
+<tr><td class="fname">终端界面<span class="src">我们 Ink 加 Rich 双实现；weclaw 没有终端界面</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">网页界面<span class="src">我们 Next.js 18 个页面 · buddy --serve 带 xterm.js 分屏 · gm内 /remote 面板默认关</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g3">○</td><td class="g1">●</td></tr>
+<tr><td class="fname">桌面应用<span class="src">我们 Electron 带跨窗口拖标签 · codex codex app · opencode Electron Beta</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">移动端应用或 PWA<span class="src">openclaw iOS/Android 节点 App · buddy manifest.webmanifest 可装 PWA 加扫码配对</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g3">○</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">聊天渠道接入<span class="src">我们 4 个 · openclaw 28 个 · hermes 27 个 · buddy 6 个</span></td><td class="g1 us">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">语音输入或输出<span class="src">openclaw Swabble 唤醒词加 14 家 TTS · hermes Ctrl+B 按住说话；我们只有 openai 一家 TTS 真通</span></td><td class="g2 us">◐</td><td class="g1">●</td><td class="g3">○</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">电话呼入呼出<span class="src">openclaw voice-call 走 Twilio/Telnyx/Plivo，带 DTMF</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">主题切换<span class="src">opencode 11 套 · hermes 9 套皮肤加 7 套面板主题</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">Vim 模式<span class="src">claude 完整模态引擎带文本对象 · buddy /vim · codex /vim</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">快捷键全量可重映射<span class="src">buddy keybindings.json 分 16 个上下文带和弦 · claude 约 95 个可绑动作</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">独立二进制不装 Node<span class="src">pi-mono bun build --compile · buddy 原生安装器加 Homebrew tap · weclaw 是 Go</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">屏幕阅读器与无障碍<span class="src">claude --ax-screen-reader · gm内 --screen-reader</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td></tr>
+<tr class="grp"><td>10 <b>集成与被集成</b> <span style="color:#6b6a63">13 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
+<tr><td class="fname">HTTP API 服务端<span class="src">opencode serve 带 OpenAPI · buddy --serve 带 Swagger 与 PTY 接口；我们 181 个端点但无鉴权无版本</span></td><td class="g2 us">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">OpenAI 兼容端点<span class="src">openclaw /v1/chat/completions 默认关 · hermes /v1/chat/completions 与 /v1/responses</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">官方 SDK<span class="src">codex Python 加 TypeScript · opencode @opencode-ai/sdk · buddy 两语言 SDK</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">CI 集成<span class="src">opencode GitHub Action · buddy GitLab CI/CD 组件 · claude /install-github-app</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">入站 webhook<span class="src">openclaw webhooks 插件接 Zapier/n8n · buddy /api/v1/webhooks 带 wecom 与 wechat-kf</span></td><td class="g0 us">·</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">手机遥控正在跑的会话<span class="src">buddy --remote-control 加 Cloudflare 隧道与扫码 · codex remoteControl 配对</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g3">○</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g3">○</td><td class="g1">●</td></tr>
+<tr><td class="fname">云端跑任务<span class="src">codex cloud exec 实验性 · claude 云容器 · buddy sandbox e2b 与腾讯云 CVM</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">图像生成<span class="src">openclaw 10 个后端 · hermes FAL 九个模型 · buddy ImageGen 按部署档开关</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g3">○</td></tr>
+<tr><td class="fname">视频生成<span class="src">openclaw 16 个后端 · buddy Hunyuan-Video-Art</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g3">○</td></tr>
+<tr><td class="fname">网络搜索<span class="src">openclaw 12 家可换 · hermes 8 家含自建 SearXNG</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">智能家居与 IoT<span class="src">openclaw openhue / sonoscli / camsnap · hermes Home Assistant 工具</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">参加会议并出纪要<span class="src">openclaw Google Meet 插件加 meeting-notes · hermes Teams 会议</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">支付授权卡<span class="src">buddy WeixinPayInterception，任务中途暂停等真实付款确认</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g3">○</td></tr>
+<tr class="grp"><td>11 <b>部署与运维</b> <span style="color:#6b6a63">15 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
+<tr><td class="fname">常驻服务与开机自启<span class="src">我们写 launchd plist 与 systemd unit · claude server 与 self-hosted-runner</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">多平台部署文档<span class="src">openclaw 二十来个部署目标含 K8s 与 Fly.io · buddy Dev Container 官方 feature</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">多身份或多租户并存<span class="src">我们 agents add 命名人格 · hermes profile create 各带网关与记忆 · openclaw 一个网关多 agent</span></td><td class="g1 us">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">企业策略强制配置<span class="src">codex configRequirements 加 MDM · opencode .mobileconfig · claude managed-settings.d</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">用量与成本显示<span class="src">各家；我们 usage/ledger.py 按真实每百万 token 定价算</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">信用点配额与购买入口<span class="src">buddy 按模型的信用倍率与充值深链 · opencode Zen 与 Go 订阅</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">OpenTelemetry 导出<span class="src">claude 加 Datadog 与 Perfetto · buddy 仅 traces 加四个默认关的隐私开关 · openclaw 走插件</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g3">○</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g3">○</td><td class="g1">●</td></tr>
+<tr><td class="fname">自更新<span class="src">各家；weclaw 会自己换掉自己的二进制并清 macOS 隔离属性</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr class="only"><td class="fname">升级前冷启动探针加回滚<span class="src">我们 upgrade 在临时端口把新代码启起来探 /healthz 才切</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">健康自检<span class="src">我们 doctor 十项检查 · openclaw doctor 带引导迁移 · buddy doctor</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">可分享的诊断包<span class="src">openclaw diagnostics 脱敏支持包 · hermes debug share · codex doctor --json</span></td><td class="g0 us">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">备份与导入自身状态<span class="src">openclaw backup 打包全部状态 · hermes backup 与 import</span></td><td class="g0 us">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">进程预热做到秒开<span class="src">buddy cbc-prewarm，Unix socket 通知，3.7 秒降到约 1 毫秒</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">多实例管理器<span class="src">buddy instances.json 加网页切换 · openclaw 一台机器多网关</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">按需自动拉起本地模型服务<span class="src">openclaw 选到本地模型时自动起 vLLM/llama.cpp/MLX 并闲时关 · codex --oss --local-provider</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g2">◐</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr class="grp"><td>12 <b>安全</b> <span style="color:#6b6a63">15 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
+<tr><td class="fname">操作系统级沙箱<span class="src">我们 Seatbelt 与 bubblewrap · codex 三平台 · opencode 只有 Docker 安装法</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">沙箱后端可换<span class="src">hermes 七种终端后端含 modal 与 daytona · openclaw docker/ssh/OpenShell · buddy container/e2b/CVM</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">多档审批模式<span class="src">buddy 八档 · claude 六档 · 我们五档；weclaw 全自动批</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">LLM 判定的自动审批<span class="src">buddy auto 模式带 critique 二次评审 · codex Guardian · hermes smart 模式</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">不可绕过的硬底线<span class="src">hermes 连 yolo 也绕不过的阻断表 · buddy hard_deny</span></td><td class="g0 us">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">删除操作拦截进回收站<span class="src">buddy vendor/shim 同时挂 Python sitecustomize、Node NODE_OPTIONS 和 safe-bin/rm</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">凭据存操作系统钥匙串<span class="src">buddy 走 Keychain/keyring/凭据管理器 · codex keyring-store 可选；我们是 0600 明文</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g3">○</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">密钥用外部命令间接取<span class="src">pi-mono 值前加 ! 就当 shell 命令跑 · claude apiKeyHelper · openclaw SecretRef</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">提示注入扫描<span class="src">hermes 扫 AGENTS.md 与 .cursorrules，加 Tirith 执行前内容扫描</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">私网访问与 SSRF 防护<span class="src">hermes 挡 RFC1918 与云元数据 · openclaw 可选前置代理；我们只有 Origin 校验</span></td><td class="g2 us">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">威胁模型文档或形式化验证<span class="src">openclaw MITRE ATLAS 加 TLA+ 机检模型 · codex Bugcrowd 漏洞披露</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">合规管控与外部模型开关<span class="src">三家内网版按工蜂仓库的《AI Coding IDE 安全管控》决定放不放外部模型</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">每次编辑静默审计上报<span class="src">cc内 默认插件在每次 Write/Edit 与 UserPromptSubmit 上回调，未见开关</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td></tr>
+<tr><td class="fname">私有化或离线部署档<span class="src">buddy product.selfhosted.json · openclaw 自托管全套 · hermes Docker Compose</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr class="only"><td class="fname">无人值守时直接摘掉提问工具<span class="src">我们 agent/attended.py 在策略层去掉 ask_user_question，跑不起来就不会卡住等人</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr class="grp"><td>13 <b>开发者体验</b> <span style="color:#6b6a63">13 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
+<tr><td class="fname">实时成本可见<span class="src">各家；我们在底栏常驻</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">调试开关与分类日志<span class="src">claude --debug "api,hooks" · 我们约 30 个环境变量开关</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">确定性假模型驱动整个循环<span class="src">pi-mono faux provider，按脚本吐文本、思考与工具调用</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">请求录制与回放<span class="src">pi-mono HTTP 与 WebSocket 磁带 · buddy CODEBUDDY_RECORD_DIR / REPLAY_DIR</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">会话导出成训练样本<span class="src">hermes batch processing 批量生成轨迹 · pi-mono 靠外部 pi-share-hf</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">内置强化学习训练管线<span class="src">hermes Tinker-Atropos 的 GRPO 加 LoRA</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">使用洞察报告<span class="src">buddy /insights 生成 HTML 报告讲交互习惯与卡点 · claude /insights</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">人写与机器写的代码占比<span class="src">buddy CodeAdoptionRate</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
+<tr><td class="fname">不依赖模型的救援命令<span class="src">我们 rescue 十二项探针 · openclaw crestodian 免配置修复助手</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">会话中途换供应商还接得上<span class="src">pi-mono 归一化思考块签名与工具调用 id，一段历史换家继续跑</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">多把 key 轮换<span class="src">hermes credential pools 四种轮换策略</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td></tr>
+<tr><td class="fname">失败自动切模型或供应商<span class="src">claude --fallback-model 逐个试 · openclaw 认证档轮换加模型回退链</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">一键上报反馈与日志<span class="src">codex /feedback 带 include_logs 同意门 · buddy /feedback</span></td><td class="g0 us">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td></tr>
+</table>
+</div>
+
+<div class="note">
+  <b>三条读表须知</b>。第一，<code>pi-ai</code> 整列是空的，因为它不是产品：它是从 pi-mono 的 <code>packages/ai</code> 里摘出来的十个文件，README 明说"不编译不在运行时导入"，留在 <code>references/</code> 里只是给我们的 Python 移植当协议参考。它的真身在 pi-mono 那一列里。第二，<code>·</code> 表示这一轮的取证入口里没找到，不等于绝对没有。第三，<code>cc内</code> 和 <code>cx内</code> 两列几乎照抄上游，因为它们是启动器包装：<code>claude-code-internal</code> 直接依赖 <code>@anthropic-ai/claude-code@2.1.154</code> 原封不动，改动全在环境变量、模型路由和合规层。<code>gm内</code> 是真源码分支，但出厂 <code>docs/</code> 里 26 个文件有 25 个和上游逐字节相同。
+</div>
+
+<h3 id="cover">1.1覆盖度：谁能做的事多</h3>
+<p class="lead">按 160 项加权计分，<code>●</code> 记 1 分，<code>◐</code> 和 <code>○</code> 各记 0.5 分。</p>
+<div class="card scroll">
+<svg viewBox="0 0 960 330" role="img" aria-label="十三家在160项功能上的加权覆盖分条形图，buddy最高103分，我们56分排第八">
+  <rect x="0" y="0" width="960" height="330" fill="#12110b"/>
+  <text x="20" y="26" fill="#8a8675" font-size="11" letter-spacing="2">加权覆盖分 / 160</text>
+  <line x1="150" y1="36" x2="150" y2="300" stroke="#2e2c20"/>
+  <line x1="470" y1="36" x2="470" y2="300" stroke="#221f18"/>
+  <text x="470" y="318" fill="#4a483d" font-size="10" text-anchor="middle">50%</text>
+  <line x1="790" y1="36" x2="790" y2="300" stroke="#221f18"/>
+  <text x="790" y="318" fill="#4a483d" font-size="10" text-anchor="middle">100%</text>
+
+  <g font-size="11">
+  <g transform="translate(0,44)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">buddy</text><rect x="150" y="2" width="412" height="13" rx="2" fill="#d4843a"/><text x="572" y="12" fill="#8a8675" font-size="10">103.0</text></g>
+  <g transform="translate(0,64)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">claude</text><rect x="150" y="2" width="382" height="13" rx="2" fill="#9d6fe0"/><text x="542" y="12" fill="#8a8675" font-size="10">95.5</text></g>
+  <g transform="translate(0,84)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">cc内</text><rect x="150" y="2" width="376" height="13" rx="2" fill="#6b4d96"/><text x="536" y="12" fill="#8a8675" font-size="10">94.0</text></g>
+  <g transform="translate(0,104)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">hermes</text><rect x="150" y="2" width="368" height="13" rx="2" fill="#5aad4e"/><text x="528" y="12" fill="#8a8675" font-size="10">92.0</text></g>
+  <g transform="translate(0,124)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">openclaw</text><rect x="150" y="2" width="332" height="13" rx="2" fill="#2db3d5"/><text x="492" y="12" fill="#8a8675" font-size="10">83.0</text></g>
+  <g transform="translate(0,144)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">codex</text><rect x="150" y="2" width="260" height="13" rx="2" fill="#7a7566"/><text x="420" y="12" fill="#8a8675" font-size="10">65.0</text></g>
+  <g transform="translate(0,164)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">cx内</text><rect x="150" y="2" width="256" height="13" rx="2" fill="#5e5a4d"/><text x="416" y="12" fill="#8a8675" font-size="10">64.0</text></g>
+  <g transform="translate(0,184)"><text x="140" y="11" fill="#4f8ef7" text-anchor="end" font-weight="700">我们</text><rect x="150" y="2" width="224" height="13" rx="2" fill="#4f8ef7"/><text x="384" y="12" fill="#4f8ef7" font-size="10" font-weight="700">56.0</text></g>
+  <g transform="translate(0,204)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">opencode</text><rect x="150" y="2" width="214" height="13" rx="2" fill="#7a7566"/><text x="374" y="12" fill="#8a8675" font-size="10">53.5</text></g>
+  <g transform="translate(0,224)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">gm内</text><rect x="150" y="2" width="168" height="13" rx="2" fill="#5e5a4d"/><text x="328" y="12" fill="#8a8675" font-size="10">42.0</text></g>
+  <g transform="translate(0,244)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">pi-mono</text><rect x="150" y="2" width="152" height="13" rx="2" fill="#7a7566"/><text x="312" y="12" fill="#8a8675" font-size="10">38.0</text></g>
+  <g transform="translate(0,264)"><text x="140" y="11" fill="#bdb9a6" text-anchor="end">weclaw</text><rect x="150" y="2" width="34" height="13" rx="2" fill="#4a483d"/><text x="194" y="12" fill="#8a8675" font-size="10">8.5</text></g>
+  <g transform="translate(0,284)"><text x="140" y="11" fill="#6b6a63" text-anchor="end">pi-ai</text><rect x="150" y="2" width="2" height="13" rx="1" fill="#33312a"/><text x="162" y="12" fill="#6b6a63" font-size="10">0　协议参考源码，不是产品</text></g>
+  </g>
+</svg>
+</div>
+<div class="card legend">
+  <b>这张图上唯一反直觉的一条</b>：腾讯的 <b>codebuddy 排第一</b>，103 分，比 claude 还高 7.5 分。它不是靠一两个大功能拉开的，是靠长尾：74 个功能开关、47 个工具、16 个出厂 agent、5 套部署配置档、26 个钩子事件、16 个上下文的快捷键重映射、进程预热、删除拦截、支付授权卡。这些没有一个会出现在设计文档里，所以六轮按维度对标一次都没碰到。
+</div>
+
+<h3 id="bycat">1.2按大类看：我们和该类最强的一家</h3>
+<p class="lead">左端是我们，右端是这一类里覆盖最高的那家。差距最大的三类是编辑器集成、集成与被集成、版本控制。</p>
+<div class="card scroll">
+<svg viewBox="0 0 960 400" role="img" aria-label="十三个功能大类上我们与该类最高一家的覆盖率对比哑铃图，多agent类持平，编辑器集成差距最大">
+  <rect x="0" y="0" width="960" height="400" fill="#12110b"/>
+  <text x="20" y="24" fill="#8a8675" font-size="11" letter-spacing="2">类内覆盖率</text>
+  <line x1="200" y1="34" x2="200" y2="366" stroke="#2e2c20"/>
+  <line x1="400" y1="34" x2="400" y2="366" stroke="#221f18"/>
+  <line x1="600" y1="34" x2="600" y2="366" stroke="#221f18"/>
+  <line x1="800" y1="34" x2="800" y2="366" stroke="#221f18"/>
+  <text x="200" y="384" fill="#4a483d" font-size="10" text-anchor="middle">0</text>
+  <text x="400" y="384" fill="#4a483d" font-size="10" text-anchor="middle">33%</text>
+  <text x="600" y="384" fill="#4a483d" font-size="10" text-anchor="middle">67%</text>
+  <text x="800" y="384" fill="#4a483d" font-size="10" text-anchor="middle">100%</text>
+
+  <g font-size="11">
+  <g transform="translate(0,42)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">编辑器集成 9</text><line x1="212" y1="8" x2="668" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="212" cy="8" r="5" fill="#4f8ef7"/><circle cx="668" cy="8" r="5" fill="#d4843a"/><text x="686" y="12" fill="#6b6a63" font-size="10">buddy 78%</text></g>
+  <g transform="translate(0,67)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">集成与被集成 13</text><line x1="224" y1="8" x2="638" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="224" cy="8" r="5" fill="#4f8ef7"/><circle cx="638" cy="8" r="5" fill="#5aad4e"/><text x="656" y="12" fill="#6b6a63" font-size="10">hermes 73%</text></g>
+  <g transform="translate(0,92)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">版本控制 10</text><line x1="240" y1="8" x2="710" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="240" cy="8" r="5" fill="#4f8ef7"/><circle cx="710" cy="8" r="5" fill="#d4843a"/><text x="728" y="12" fill="#6b6a63" font-size="10">buddy 85%</text></g>
+  <g transform="translate(0,117)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">开发者体验 13</text><line x1="246" y1="8" x2="590" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="246" cy="8" r="5" fill="#4f8ef7"/><circle cx="590" cy="8" r="5" fill="#5aad4e"/><text x="608" y="12" fill="#6b6a63" font-size="10">hermes 65%</text></g>
+  <g transform="translate(0,142)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">代码理解 10</text><line x1="250" y1="8" x2="560" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="250" cy="8" r="5" fill="#4f8ef7"/><circle cx="560" cy="8" r="5" fill="#2db3d5"/><text x="578" y="12" fill="#6b6a63" font-size="10">openclaw 60%</text></g>
+  <g transform="translate(0,167)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">安全 15</text><line x1="260" y1="8" x2="620" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="260" cy="8" r="5" fill="#4f8ef7"/><circle cx="620" cy="8" r="5" fill="#d4843a"/><text x="638" y="12" fill="#6b6a63" font-size="10">buddy 70%</text></g>
+  <g transform="translate(0,192)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">界面形态 12</text><line x1="278" y1="8" x2="728" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="278" cy="8" r="5" fill="#4f8ef7"/><circle cx="728" cy="8" r="5" fill="#9d6fe0"/><text x="746" y="12" fill="#6b6a63" font-size="10">claude 88%</text></g>
+  <g transform="translate(0,217)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">部署与运维 15</text><line x1="284" y1="8" x2="638" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="284" cy="8" r="5" fill="#4f8ef7"/><circle cx="638" cy="8" r="5" fill="#5aad4e"/><text x="656" y="12" fill="#6b6a63" font-size="10">hermes 73%</text></g>
+  <g transform="translate(0,242)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">任务与规划 11</text><line x1="286" y1="8" x2="584" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="286" cy="8" r="5" fill="#4f8ef7"/><circle cx="584" cy="8" r="5" fill="#9d6fe0"/><text x="602" y="12" fill="#6b6a63" font-size="10">claude 64%</text></g>
+  <g transform="translate(0,267)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">会话与历史 17</text><line x1="482" y1="8" x2="608" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="482" cy="8" r="5" fill="#4f8ef7"/><circle cx="608" cy="8" r="5" fill="#9d6fe0"/><text x="626" y="12" fill="#6b6a63" font-size="10">claude 68%</text></g>
+  <g transform="translate(0,292)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">扩展 11</text><line x1="500" y1="8" x2="716" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="500" cy="8" r="5" fill="#4f8ef7"/><circle cx="716" cy="8" r="5" fill="#9d6fe0"/><text x="734" y="12" fill="#6b6a63" font-size="10">claude 86%</text></g>
+  <g transform="translate(0,317)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">记忆与知识 10</text><line x1="530" y1="8" x2="620" y2="8" stroke="#3a382d" stroke-width="2"/><circle cx="530" cy="8" r="5" fill="#4f8ef7"/><circle cx="620" cy="8" r="5" fill="#2db3d5"/><text x="638" y="12" fill="#6b6a63" font-size="10">openclaw 70%</text></g>
+  <g transform="translate(0,342)"><text x="190" y="12" fill="#5aad4e" text-anchor="end" font-weight="700">多 agent 14</text><circle cx="542" cy="8" r="6" fill="#4f8ef7"/><circle cx="542" cy="8" r="10" fill="none" stroke="#5aad4e" stroke-width="1.5"/><text x="560" y="12" fill="#5aad4e" font-size="10" font-weight="700">并列第一，57%</text></g>
+  </g>
+</svg>
+</div>
+<div class="card legend">
+  <b>十三类里只有一类我们不落后</b>：多 agent，8.0 分和 <code>cc内</code> 并列第一，claude、buddy、hermes 都在后面。这和前一份文档的结论一致：agent 协作那一轮对标结束时认定我们在八家里没有短板。<b>剩下十二类全部落后</b>，其中编辑器集成 6% 对 78%、集成与被集成 12% 对 73%、版本控制 20% 对 85% 是差得最远的三条。
+</div>
+
+<!-- ══════════════════════════ LAYER 2 ══════════════════════════ -->
+<h2 id="gaps"><span class="num">02</span>只有别人有的 97 项<span class="ly ly2">缺口</span></h2>
+<p class="lead">全表里我们那格是空、至少一家不空的行，一共 97 项，分三档。判定标准是我们的形态：单人本机、常驻 worker、通用 harness、有 TUI 和网页和桌面三个界面、没有托管服务也没有企业客户。</p>
+
+<div class="tbl">
+<table class="wide">
+<tr><th>功能</th><th>大类</th><th>谁有</th><th>依据</th></tr>
+<tr class="grp"><td colspan="4"><b class="g1">值得做</b> <span style="color:#6b6a63">65 项</span></td></tr>
+<tr><td class="name">被 IDE 经 ACP 驱动</td><td class="sz">编辑器集成</td><td>openclaw、opencode、hermes 等 5 家</td><td class="srcin">openclaw acp · opencode acp · hermes acp · buddy --acp · gm内 --experimental-acp</td></tr>
+<tr><td class="name">LSP 诊断与符号跳转</td><td class="sz">编辑器集成</td><td>hermes 等 5 家</td><td class="srcin">hermes 约25个语言服务器接进 write_file/patch · claude ENABLE_LSP_TOOL</td></tr>
+<tr><td class="name">终端快捷键自动配置</td><td class="sz">编辑器集成</td><td>claude、cc内、gm内 等 5 家</td><td class="srcin">claude /terminal-setup · buddy /terminal-setup 覆盖十余种终端</td></tr>
+<tr><td class="name">到阈值自动压缩</td><td class="sz">会话与历史</td><td>claude、openclaw、opencode 等 10 家</td><td class="srcin">opencode compaction.auto 默认 true · pi-mono compaction.enabled · 我们 finalize.py 明说不自动压</td></tr>
+<tr><td class="name">归档会话</td><td class="sz">会话与历史</td><td>codex、cx内</td><td class="srcin">codex archive / unarchive · ~/.codex/archived_sessions/</td></tr>
+<tr><td class="name">把活着的会话搬到另一台机器或另一端</td><td class="sz">会话与历史</td><td>claude、codex、opencode 等 7 家</td><td class="srcin">claude /teleport · codex --remote · opencode attach · buddy --remote-control</td></tr>
+<tr><td class="name">跨渠道接管同一会话</td><td class="sz">会话与历史</td><td>openclaw、hermes</td><td class="srcin">openclaw /dock · hermes /handoff</td></tr>
+<tr><td class="name">运行中插话改方向</td><td class="sz">会话与历史</td><td>openclaw、hermes、pi-mono</td><td class="srcin">openclaw /steer · hermes /steer · pi-mono Enter 排队加 Alt+Enter 跟进</td></tr>
+<tr><td class="name">临时旁支会话不进主历史</td><td class="sz">会话与历史</td><td>codex、openclaw、hermes 等 4 家</td><td class="srcin">codex /side 与 /btw · openclaw /btw · hermes /background</td></tr>
+<tr><td class="name">外部依赖与文档研究 agent</td><td class="sz">代码理解</td><td>opencode</td><td class="srcin">opencode scout，OPENCODE_EXPERIMENTAL_SCOUT 门控</td></tr>
+<tr><td class="name">把外部目录或仓库挂成命名上下文</td><td class="sz">代码理解</td><td>opencode</td><td class="srcin">opencode references 的 @别名</td></tr>
+<tr><td class="name">生成项目说明文件</td><td class="sz">代码理解</td><td>claude、codex、opencode 等 7 家</td><td class="srcin">claude /init · buddy /init 号称省三到五成 token</td></tr>
+<tr><td class="name">内置深度研究工作流</td><td class="sz">代码理解</td><td>buddy</td><td class="srcin">buddy builtin/workflows/deep-research.workflow.js 五路扇出加三票对抗验证</td></tr>
+<tr><td class="name">读自身文档回答自身问题</td><td class="sz">代码理解</td><td>claude、openclaw、cc内 等 5 家</td><td class="srcin">claude claude-code-guide 子 agent · gm内 get_internal_docs · openclaw docs 命令</td></tr>
+<tr><td class="name">图片与 PDF 输入</td><td class="sz">代码理解</td><td>claude、codex、openclaw 等 11 家</td><td class="srcin">claude Read 带 pages 参数 · pi-mono Ctrl+V 贴图；我们的附件正在另一个会话里做</td></tr>
+<tr><td class="name">生成提交信息</td><td class="sz">版本控制</td><td>claude、openclaw、hermes 等 5 家</td><td class="srcin">buddy productFeatures.GenerateCommitMessage · claude /commit</td></tr>
+<tr><td class="name">一键提交推送开 PR</td><td class="sz">版本控制</td><td>claude、openclaw、hermes 等 5 家</td><td class="srcin">buddy commit-push-pr，allowedTools 限死在 gh pr create</td></tr>
+<tr><td class="name">从 PR 编号或链接直接开 worktree</td><td class="sz">版本控制</td><td>claude、cc内、buddy 等 4 家</td><td class="srcin">buddy -w #PR 或 PR 链接，支持 GitHub/GitLab/CNB</td></tr>
+<tr><td class="name">worktree 建好后同步本地未跟踪文件</td><td class="sz">版本控制</td><td>hermes、buddy</td><td class="srcin">buddy .worktreeinclude · hermes .worktreeinclude</td></tr>
+<tr><td class="name">AI 作者署名写进 git 历史</td><td class="sz">版本控制</td><td>codex、cx内</td><td class="srcin">codex ext/git-attribution</td></tr>
+<tr><td class="name">对当前 diff 做安全审查</td><td class="sz">版本控制</td><td>claude、cc内、buddy</td><td class="srcin">buddy /security-review · claude /security-review</td></tr>
+<tr><td class="name">周期心跳式主动发起</td><td class="sz">任务与规划</td><td>openclaw</td><td class="srcin">openclaw heartbeat，与 cron 是两条独立路径</td></tr>
+<tr><td class="name">常驻授权长期自主运行</td><td class="sz">任务与规划</td><td>openclaw</td><td class="srcin">openclaw standing orders，带触发与升级规则</td></tr>
+<tr><td class="name">从聊天里抽承诺再回访</td><td class="sz">任务与规划</td><td>openclaw</td><td class="srcin">openclaw src/commitments，置信度 0.86，每天最多主动三条</td></tr>
+<tr><td class="name">模型当场写编排脚本跑大规模并行</td><td class="sz">任务与规划</td><td>claude、cc内、buddy 等 5 家</td><td class="srcin">buddy ultracode 最多 1000 个子 agent 并发 16 · claude Dynamic Workflows · codex code mode 默认关</td></tr>
+<tr><td class="name">类型化工作流运行时带审批检查点</td><td class="sz">任务与规划</td><td>openclaw</td><td class="srcin">openclaw Lobster 加 llm-task</td></tr>
+<tr><td class="name">按 JSON schema 约束输出</td><td class="sz">任务与规划</td><td>claude、opencode、cc内 等 5 家</td><td class="srcin">buddy --json-schema 加 StructuredOutput · opencode format: json_schema</td></tr>
+<tr><td class="name">持久任务看板</td><td class="sz">多 agent</td><td>hermes</td><td class="srcin">hermes ~/.hermes/kanban.db，多项目分板加自动拆解</td></tr>
+<tr><td class="name">agent 团队：队长加成员加邮箱</td><td class="sz">多 agent</td><td>claude、cc内、buddy</td><td class="srcin">buddy Agent Teams 带 @成员补全与共享任务表 · claude 需 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS</td></tr>
+<tr><td class="name">委派模式，队长只协调不动手</td><td class="sz">多 agent</td><td>cc内、buddy</td><td class="srcin">buddy --permission-mode delegate，工具面砍到五个</td></tr>
+<tr><td class="name">并发数与每会话派生总量上限</td><td class="sz">多 agent</td><td>claude、openclaw、hermes 等 6 家</td><td class="srcin">claude 并发 20 加每会话 200 次 · hermes max_concurrent_children 默认 3</td></tr>
+<tr><td class="name">子 agent 可恢复续跑</td><td class="sz">多 agent</td><td>buddy</td><td class="srcin">buddy agentId 加 agent-{id}.jsonl，跨次调用带 resume 参数</td></tr>
+<tr><td class="name">记忆编成可浏览的维基</td><td class="sz">记忆与知识</td><td>openclaw</td><td class="srcin">openclaw memory-wiki 带出处与主张</td></tr>
+<tr><td class="name">技能捆绑包一次加载一组</td><td class="sz">记忆与知识</td><td>hermes</td><td class="srcin">hermes bundles，斜杠命令一次拉一组技能</td></tr>
+<tr><td class="name">MCP 服务端，别的程序能调我们</td><td class="sz">扩展</td><td>claude、codex、openclaw 等 6 家</td><td class="srcin">claude mcp serve · codex mcp-server · openclaw mcp serve · hermes mcp serve</td></tr>
+<tr><td class="name">MCP 交互式 HTML 组件</td><td class="sz">扩展</td><td>buddy</td><td class="srcin">buddy dist/web-ui/sandbox_proxy.html，io.modelcontextprotocol/ui 规范</td></tr>
+<tr><td class="name">钩子能用 LLM 判定或打 HTTP 回调</td><td class="sz">扩展</td><td>claude、cc内、buddy 等 4 家</td><td class="srcin">buddy 四种动作 command/prompt/agent/http · claude 同为四种</td></tr>
+<tr><td class="name">从别家 agent 搬家</td><td class="sz">扩展</td><td>claude、openclaw、hermes 等 8 家</td><td class="srcin">codex /import 与 external-agent-migration · openclaw migrate-claude · hermes claw migrate</td></tr>
+<tr><td class="name">输出风格或人格切换</td><td class="sz">扩展</td><td>claude、codex、openclaw 等 7 家</td><td class="srcin">codex /personality · hermes 14 种人格加 SOUL.md · buddy 三种 output style</td></tr>
+<tr><td class="name">移动端应用或 PWA</td><td class="sz">界面形态</td><td>claude、openclaw、cc内 等 6 家</td><td class="srcin">openclaw iOS/Android 节点 App · buddy manifest.webmanifest 可装 PWA 加扫码配对</td></tr>
+<tr><td class="name">主题切换</td><td class="sz">界面形态</td><td>claude、codex、opencode 等 9 家</td><td class="srcin">opencode 11 套 · hermes 9 套皮肤加 7 套面板主题</td></tr>
+<tr><td class="name">Vim 模式</td><td class="sz">界面形态</td><td>claude、codex、cc内 等 7 家</td><td class="srcin">claude 完整模态引擎带文本对象 · buddy /vim · codex /vim</td></tr>
+<tr><td class="name">快捷键全量可重映射</td><td class="sz">界面形态</td><td>claude、codex、opencode 等 7 家</td><td class="srcin">buddy keybindings.json 分 16 个上下文带和弦 · claude 约 95 个可绑动作</td></tr>
+<tr><td class="name">屏幕阅读器与无障碍</td><td class="sz">界面形态</td><td>claude、cc内、gm内</td><td class="srcin">claude --ax-screen-reader · gm内 --screen-reader</td></tr>
+<tr><td class="name">OpenAI 兼容端点</td><td class="sz">集成与被集成</td><td>hermes</td><td class="srcin">openclaw /v1/chat/completions 默认关 · hermes /v1/chat/completions 与 /v1/responses</td></tr>
+<tr><td class="name">官方 SDK</td><td class="sz">集成与被集成</td><td>claude、codex、opencode 等 8 家</td><td class="srcin">codex Python 加 TypeScript · opencode @opencode-ai/sdk · buddy 两语言 SDK</td></tr>
+<tr><td class="name">入站 webhook</td><td class="sz">集成与被集成</td><td>openclaw、hermes、buddy 等 5 家</td><td class="srcin">openclaw webhooks 插件接 Zapier/n8n · buddy /api/v1/webhooks 带 wecom 与 wechat-kf</td></tr>
+<tr><td class="name">手机遥控正在跑的会话</td><td class="sz">集成与被集成</td><td>claude、openclaw、cc内 等 7 家</td><td class="srcin">buddy --remote-control 加 Cloudflare 隧道与扫码 · codex remoteControl 配对</td></tr>
+<tr><td class="name">OpenTelemetry 导出</td><td class="sz">部署与运维</td><td>claude、codex、opencode 等 9 家</td><td class="srcin">claude 加 Datadog 与 Perfetto · buddy 仅 traces 加四个默认关的隐私开关 · openclaw 走插件</td></tr>
+<tr><td class="name">可分享的诊断包</td><td class="sz">部署与运维</td><td>codex、openclaw、hermes 等 6 家</td><td class="srcin">openclaw diagnostics 脱敏支持包 · hermes debug share · codex doctor --json</td></tr>
+<tr><td class="name">备份与导入自身状态</td><td class="sz">部署与运维</td><td>openclaw、hermes 等 4 家</td><td class="srcin">openclaw backup 打包全部状态 · hermes backup 与 import</td></tr>
+<tr><td class="name">进程预热做到秒开</td><td class="sz">部署与运维</td><td>buddy</td><td class="srcin">buddy cbc-prewarm，Unix socket 通知，3.7 秒降到约 1 毫秒</td></tr>
+<tr><td class="name">按需自动拉起本地模型服务</td><td class="sz">部署与运维</td><td>codex、openclaw、cx内 等 6 家</td><td class="srcin">openclaw 选到本地模型时自动起 vLLM/llama.cpp/MLX 并闲时关 · codex --oss --local-provider</td></tr>
+<tr><td class="name">LLM 判定的自动审批</td><td class="sz">安全</td><td>claude、codex、hermes 等 6 家</td><td class="srcin">buddy auto 模式带 critique 二次评审 · codex Guardian · hermes smart 模式</td></tr>
+<tr><td class="name">不可绕过的硬底线</td><td class="sz">安全</td><td>hermes、buddy 等 4 家</td><td class="srcin">hermes 连 yolo 也绕不过的阻断表 · buddy hard_deny</td></tr>
+<tr><td class="name">删除操作拦截进回收站</td><td class="sz">安全</td><td>buddy</td><td class="srcin">buddy vendor/shim 同时挂 Python sitecustomize、Node NODE_OPTIONS 和 safe-bin/rm</td></tr>
+<tr><td class="name">凭据存操作系统钥匙串</td><td class="sz">安全</td><td>claude、cc内、buddy 等 5 家</td><td class="srcin">buddy 走 Keychain/keyring/凭据管理器 · codex keyring-store 可选；我们是 0600 明文</td></tr>
+<tr><td class="name">密钥用外部命令间接取</td><td class="sz">安全</td><td>claude、openclaw、hermes 等 6 家</td><td class="srcin">pi-mono 值前加 ! 就当 shell 命令跑 · claude apiKeyHelper · openclaw SecretRef</td></tr>
+<tr><td class="name">提示注入扫描</td><td class="sz">安全</td><td>hermes</td><td class="srcin">hermes 扫 AGENTS.md 与 .cursorrules，加 Tirith 执行前内容扫描</td></tr>
+<tr><td class="name">确定性假模型驱动整个循环</td><td class="sz">开发者体验</td><td>pi-mono</td><td class="srcin">pi-mono faux provider，按脚本吐文本、思考与工具调用</td></tr>
+<tr><td class="name">请求录制与回放</td><td class="sz">开发者体验</td><td>pi-mono、buddy 等 4 家</td><td class="srcin">pi-mono HTTP 与 WebSocket 磁带 · buddy CODEBUDDY_RECORD_DIR / REPLAY_DIR</td></tr>
+<tr><td class="name">使用洞察报告</td><td class="sz">开发者体验</td><td>claude、hermes、cc内 等 5 家</td><td class="srcin">buddy /insights 生成 HTML 报告讲交互习惯与卡点 · claude /insights</td></tr>
+<tr><td class="name">会话中途换供应商还接得上</td><td class="sz">开发者体验</td><td>pi-mono</td><td class="srcin">pi-mono 归一化思考块签名与工具调用 id，一段历史换家继续跑</td></tr>
+<tr><td class="name">多把 key 轮换</td><td class="sz">开发者体验</td><td>hermes</td><td class="srcin">hermes credential pools 四种轮换策略</td></tr>
+<tr><td class="name">失败自动切模型或供应商</td><td class="sz">开发者体验</td><td>claude、openclaw、hermes 等 7 家</td><td class="srcin">claude --fallback-model 逐个试 · openclaw 认证档轮换加模型回退链</td></tr>
+<tr class="grp"><td colspan="4"><b class="g2">不适用于我们的形态</b> <span style="color:#6b6a63">17 项</span></td></tr>
+<tr><td class="name">官方 IDE 扩展或插件</td><td class="sz">编辑器集成</td><td>claude、codex、opencode 等 8 家</td><td class="srcin">claude /ide · codex app-server 驱动 VS Code 扩展 · buddy --ide</td></tr>
+<tr><td class="name">编辑器选区与打开文件进上下文</td><td class="sz">编辑器集成</td><td>claude、codex、opencode 等 7 家</td><td class="srcin">codex /ide · opencode 扩展自动共享选区 · gm内 IDE companion</td></tr>
+<tr><td class="name">桌面 GUI 控制</td><td class="sz">编辑器集成</td><td>codex、openclaw、cx内 等 5 家</td><td class="srcin">codex computer-use@openai-bundled · buddy ComputerUse 默认关 · openclaw peekaboo</td></tr>
+<tr><td class="name">一键生成公开分享链接</td><td class="sz">会话与历史</td><td>claude、opencode、pi-mono 等 4 家</td><td class="srcin">opencode /share 到 opncd.ai · pi-mono /share 到 GitHub gist</td></tr>
+<tr><td class="name">PR 或 Issue 评论触发机器人</td><td class="sz">版本控制</td><td>claude、openclaw、opencode 等 7 家</td><td class="srcin">opencode /oc 提及触发 · buddy GitLab @codebuddy · gm内 @gemini-cli</td></tr>
+<tr><td class="name">团队可换执行后端</td><td class="sz">多 agent</td><td>buddy</td><td class="srcin">buddy 进程内、独立进程、tmux 三种 · claude teammateMode: iterm2</td></tr>
+<tr><td class="name">外部记忆服务可插拔</td><td class="sz">记忆与知识</td><td>openclaw、hermes</td><td class="srcin">hermes 八家记忆提供商 · openclaw honcho / lancedb / QMD</td></tr>
+<tr><td class="name">独立二进制不装 Node</td><td class="sz">界面形态</td><td>claude、codex、opencode 等 6 家</td><td class="srcin">pi-mono bun build --compile · buddy 原生安装器加 Homebrew tap · weclaw 是 Go</td></tr>
+<tr><td class="name">CI 集成</td><td class="sz">集成与被集成</td><td>claude、opencode、hermes 等 6 家</td><td class="srcin">opencode GitHub Action · buddy GitLab CI/CD 组件 · claude /install-github-app</td></tr>
+<tr><td class="name">图像生成</td><td class="sz">集成与被集成</td><td>codex、openclaw、hermes 等 6 家</td><td class="srcin">openclaw 10 个后端 · hermes FAL 九个模型 · buddy ImageGen 按部署档开关</td></tr>
+<tr><td class="name">多平台部署文档</td><td class="sz">部署与运维</td><td>claude、openclaw、hermes 等 6 家</td><td class="srcin">openclaw 二十来个部署目标含 K8s 与 Fly.io · buddy Dev Container 官方 feature</td></tr>
+<tr><td class="name">多实例管理器</td><td class="sz">部署与运维</td><td>openclaw、hermes、buddy</td><td class="srcin">buddy instances.json 加网页切换 · openclaw 一台机器多网关</td></tr>
+<tr><td class="name">威胁模型文档或形式化验证</td><td class="sz">安全</td><td>openclaw 等 4 家</td><td class="srcin">openclaw MITRE ATLAS 加 TLA+ 机检模型 · codex Bugcrowd 漏洞披露</td></tr>
+<tr><td class="name">私有化或离线部署档</td><td class="sz">安全</td><td>openclaw、hermes、buddy</td><td class="srcin">buddy product.selfhosted.json · openclaw 自托管全套 · hermes Docker Compose</td></tr>
+<tr><td class="name">会话导出成训练样本</td><td class="sz">开发者体验</td><td>hermes</td><td class="srcin">hermes batch processing 批量生成轨迹 · pi-mono 靠外部 pi-share-hf</td></tr>
+<tr><td class="name">人写与机器写的代码占比</td><td class="sz">开发者体验</td><td>buddy</td><td class="srcin">buddy CodeAdoptionRate</td></tr>
+<tr><td class="name">一键上报反馈与日志</td><td class="sz">开发者体验</td><td>claude、codex、hermes 等 6 家</td><td class="srcin">codex /feedback 带 include_logs 同意门 · buddy /feedback</td></tr>
+<tr class="grp"><td colspan="4"><b class="g0">明确不做</b> <span style="color:#6b6a63">15 项</span></td></tr>
+<tr><td class="name">行内补全</td><td class="sz">编辑器集成</td><td>buddy</td><td class="srcin">buddy product.json productFeatures.InlineCompletions</td></tr>
+<tr><td class="name">行内对话与 CodeLens 与状态栏动作</td><td class="sz">编辑器集成</td><td>buddy</td><td class="srcin">buddy InlineChat / CodeLens / StatusBar / CodeAction / FloatShortcut</td></tr>
+<tr><td class="name">非 git 的版本控制</td><td class="sz">版本控制</td><td>claude、cc内</td><td class="srcin">claude CLAUDE_CODE_PERFORCE_MODE · buddy WorktreeCreate 钩子可接 SVN/Perforce</td></tr>
+<tr><td class="name">厂商知识库接入</td><td class="sz">记忆与知识</td><td>buddy</td><td class="srcin">buddy knowledgeBases 的 Tencent 文档源，@ 可引</td></tr>
+<tr><td class="name">电话呼入呼出</td><td class="sz">界面形态</td><td>openclaw</td><td class="srcin">openclaw voice-call 走 Twilio/Telnyx/Plivo，带 DTMF</td></tr>
+<tr><td class="name">云端跑任务</td><td class="sz">集成与被集成</td><td>claude、cc内、buddy 等 5 家</td><td class="srcin">codex cloud exec 实验性 · claude 云容器 · buddy sandbox e2b 与腾讯云 CVM</td></tr>
+<tr><td class="name">视频生成</td><td class="sz">集成与被集成</td><td>openclaw、hermes</td><td class="srcin">openclaw 16 个后端 · buddy Hunyuan-Video-Art</td></tr>
+<tr><td class="name">智能家居与 IoT</td><td class="sz">集成与被集成</td><td>openclaw、hermes</td><td class="srcin">openclaw openhue / sonoscli / camsnap · hermes Home Assistant 工具</td></tr>
+<tr><td class="name">参加会议并出纪要</td><td class="sz">集成与被集成</td><td>openclaw、hermes</td><td class="srcin">openclaw Google Meet 插件加 meeting-notes · hermes Teams 会议</td></tr>
+<tr><td class="name">支付授权卡</td><td class="sz">集成与被集成</td><td>buddy</td><td class="srcin">buddy WeixinPayInterception，任务中途暂停等真实付款确认</td></tr>
+<tr><td class="name">企业策略强制配置</td><td class="sz">部署与运维</td><td>claude、codex、opencode 等 7 家</td><td class="srcin">codex configRequirements 加 MDM · opencode .mobileconfig · claude managed-settings.d</td></tr>
+<tr><td class="name">信用点配额与购买入口</td><td class="sz">部署与运维</td><td>claude、codex、opencode 等 5 家</td><td class="srcin">buddy 按模型的信用倍率与充值深链 · opencode Zen 与 Go 订阅</td></tr>
+<tr><td class="name">合规管控与外部模型开关</td><td class="sz">安全</td><td>cc内、cx内、gm内 等 4 家</td><td class="srcin">三家内网版按工蜂仓库的《AI Coding IDE 安全管控》决定放不放外部模型</td></tr>
+<tr><td class="name">每次编辑静默审计上报</td><td class="sz">安全</td><td>cc内</td><td class="srcin">cc内 默认插件在每次 Write/Edit 与 UserPromptSubmit 上回调，未见开关</td></tr>
+<tr><td class="name">内置强化学习训练管线</td><td class="sz">开发者体验</td><td>hermes</td><td class="srcin">hermes Tinker-Atropos 的 GRPO 加 LoRA</td></tr>
+</table>
+</div>
+
+<div class="note green">
+  <b>65 条"值得做"里，四条成本最低收益最高</b>。第一，<b>版本控制那一组六条</b>（提交信息、一键开 PR、diff 安全审查、从 PR 链接开 worktree、worktree 同步未跟踪文件、AI 署名），我们已经有完整的 worktree 生命周期和 shadow git，缺的只是把这些包成命令。第二，<b>删除拦截进回收站</b>，buddy 的三运行时 shim 是可以照抄的形状。第三，<b>密钥用外部命令间接取</b>，pi-mono 的做法是配置值前面加一个 <code>!</code> 就当 shell 命令跑、拿 stdout 当值，几行代码换掉我们现在的 0600 明文。第四，<b>确定性假模型</b>，pi-mono 的 faux provider 按脚本吐文本、思考块和工具调用，这是给核心循环补测试的前置条件，前一份文档已经把它排在第一位。
+</div>
+
+<h3 id="newfound">2.1这一轮比前六轮多找出多少</h3>
+<p class="lead">97 条里有 21 条前六轮已经点到，76 条是新的。按大类看新增落在哪。</p>
+<div class="card scroll">
+<svg viewBox="0 0 960 400" role="img" aria-label="按功能大类拆分的只有别人有条目数堆叠条形图，深色为前六轮已点到，橙色为本轮新增">
+  <rect x="0" y="0" width="960" height="400" fill="#12110b"/>
+  <text x="20" y="24" fill="#8a8675" font-size="11" letter-spacing="2">只有别人有的条目数</text>
+  <rect x="700" y="12" width="14" height="10" fill="#4a483d"/><text x="720" y="21" fill="#8a8675" font-size="10.5">前六轮已点到 21</text>
+  <rect x="828" y="12" width="14" height="10" fill="#d4843a"/><text x="848" y="21" fill="#8a8675" font-size="10.5">本轮新增 76</text>
+  <line x1="200" y1="34" x2="200" y2="366" stroke="#2e2c20"/>
+  <g stroke="#221f18">
+   <line x1="300" y1="34" x2="300" y2="366"/><line x1="400" y1="34" x2="400" y2="366"/>
+   <line x1="500" y1="34" x2="500" y2="366"/><line x1="600" y1="34" x2="600" y2="366"/>
+   <line x1="700" y1="34" x2="700" y2="366"/><line x1="800" y1="34" x2="800" y2="366"/>
+  </g>
+  <g fill="#4a483d" font-size="10" text-anchor="middle">
+   <text x="200" y="384">0</text><text x="400" y="384">4</text><text x="600" y="384">8</text><text x="800" y="384">12</text>
+  </g>
+  <g font-size="11">
+  <g transform="translate(0,42)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">集成与被集成</text><rect x="200" y="3" width="100" height="14" fill="#4a483d"/><rect x="300" y="3" width="450" height="14" fill="#d4843a"/><text x="762" y="14" fill="#8a8675" font-size="10">2 + 9</text></g>
+  <g transform="translate(0,67)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">安全</text><rect x="200" y="3" width="200" height="14" fill="#4a483d"/><rect x="400" y="3" width="300" height="14" fill="#d4843a"/><text x="712" y="14" fill="#8a8675" font-size="10">4 + 6</text></g>
+  <g transform="translate(0,92)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">开发者体验</text><rect x="200" y="3" width="200" height="14" fill="#4a483d"/><rect x="400" y="3" width="300" height="14" fill="#d4843a"/><text x="712" y="14" fill="#8a8675" font-size="10">4 + 6</text></g>
+  <g transform="translate(0,117)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">部署与运维</text><rect x="200" y="3" width="100" height="14" fill="#4a483d"/><rect x="300" y="3" width="350" height="14" fill="#d4843a"/><text x="662" y="14" fill="#8a8675" font-size="10">2 + 7</text></g>
+  <g transform="translate(0,142)"><text x="190" y="12" fill="#d4843a" text-anchor="end" font-weight="700">版本控制</text><rect x="200" y="3" width="400" height="14" fill="#d4843a"/><text x="612" y="14" fill="#d4843a" font-size="10" font-weight="700">0 + 8　整类全新</text></g>
+  <g transform="translate(0,167)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">编辑器集成</text><rect x="200" y="3" width="100" height="14" fill="#4a483d"/><rect x="300" y="3" width="300" height="14" fill="#d4843a"/><text x="612" y="14" fill="#8a8675" font-size="10">2 + 6</text></g>
+  <g transform="translate(0,192)"><text x="190" y="12" fill="#d4843a" text-anchor="end" font-weight="700">界面形态</text><rect x="200" y="3" width="350" height="14" fill="#d4843a"/><text x="562" y="14" fill="#d4843a" font-size="10" font-weight="700">0 + 7　整类全新</text></g>
+  <g transform="translate(0,217)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">会话与历史</text><rect x="200" y="3" width="100" height="14" fill="#4a483d"/><rect x="300" y="3" width="250" height="14" fill="#d4843a"/><text x="562" y="14" fill="#8a8675" font-size="10">2 + 5</text></g>
+  <g transform="translate(0,242)"><text x="190" y="12" fill="#d4843a" text-anchor="end" font-weight="700">多 agent</text><rect x="200" y="3" width="300" height="14" fill="#d4843a"/><text x="512" y="14" fill="#d4843a" font-size="10" font-weight="700">0 + 6　整类全新</text></g>
+  <g transform="translate(0,267)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">代码理解</text><rect x="200" y="3" width="50" height="14" fill="#4a483d"/><rect x="250" y="3" width="250" height="14" fill="#d4843a"/><text x="512" y="14" fill="#8a8675" font-size="10">1 + 5</text></g>
+  <g transform="translate(0,292)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">任务与规划</text><rect x="200" y="3" width="50" height="14" fill="#4a483d"/><rect x="250" y="3" width="250" height="14" fill="#d4843a"/><text x="512" y="14" fill="#8a8675" font-size="10">1 + 5</text></g>
+  <g transform="translate(0,317)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">扩展</text><rect x="200" y="3" width="100" height="14" fill="#4a483d"/><rect x="300" y="3" width="150" height="14" fill="#d4843a"/><text x="462" y="14" fill="#8a8675" font-size="10">2 + 3</text></g>
+  <g transform="translate(0,342)"><text x="190" y="12" fill="#bdb9a6" text-anchor="end">记忆与知识</text><rect x="200" y="3" width="50" height="14" fill="#4a483d"/><rect x="250" y="3" width="150" height="14" fill="#d4843a"/><text x="412" y="14" fill="#8a8675" font-size="10">1 + 3</text></g>
+  </g>
+</svg>
+</div>
+<div class="card legend">
+  <b>方法有效的证据</b>：深色段（前六轮已点到）只集中在安全、开发者体验、扩展、集成这四类，因为那四类恰好对应我们做过的四个子系统对标（沙箱、agent协作、记忆、宏观）。<b>版本控制、界面形态、多 agent 三类的深色段是零</b>：不是因为这三类不重要，是因为它们从来没被当成一个"设计维度"提出来过，所以按维度扫的六轮里没有任何一轮会走到那里。
+</div>
+
+<!-- ══════════════════════════ LAYER 3 ══════════════════════════ -->
+<h2 id="ours"><span class="num">03</span>只有我们有的 6 项<span class="ly ly1">独有</span></h2>
+<p class="lead">160 项里我们那格不空、其余十二列全空的行。核实上一轮认定的最强项，并列出上一轮没提到的四条。</p>
+<div class="tbl">
+<table class="wide">
+<tr><th>功能</th><th>它是什么</th><th>别人最接近的</th><th>依据</th></tr>
+<tr class="us">
+  <td class="name">函数调用树写进<br>同一张会话图</td>
+  <td><code>@agentic_function</code> 跑起来时，它自己的每一层调用都是会话 DAG 上的 code 节点，和用户消息、模型消息、工具结果共用同一套 caller 与 predecessor 边。</td>
+  <td>没有。<b>codex 的 code mode</b> 是反方向（模型当场写 JS 调工具，默认关）；<b>buddy 的 ultracode</b> 是模型写编排脚本扇出最多 1000 个子 agent，但脚本执行对会话是黑盒；<b>opencode</b> 的 <code>tool/*.ts</code> 和 <b>pi-mono</b> 的 registerTool 只把入参和返回值写进历史。</td>
+  <td class="srcin">agentic_programming/function.py · contextgit/dag.py</td>
+</tr>
+<tr class="us">
+  <td class="name">会话本体<br>存成 git 仓库</td>
+  <td>每个会话一个 git 仓库，追加写，没有可变的当前状态镜像文件。分支就是一个 head 指针。</td>
+  <td>没有。<b>claude</b> 每项目一堆 JSONL，<b>codex</b> 是 rollout JSONL 加五个 SQLite，<b>hermes</b> 是 SQLite 加 FTS5，<b>pi-mono</b> 是 JSONL 会话树，<b>opencode</b> 是 SQLite。多家用 git 做<b>影子仓库</b>存文件快照（opencode 的 snapshot、hermes 的 checkpoints、gm内 的 shadow repo），但没有一家把对话本身存进 git。</td>
+  <td class="srcin">store/session/git_session.py · store/session/session_store.py</td>
+</tr>
+<tr class="us">
+  <td class="name">多条分支<br>N 路合并成一条</td>
+  <td>几条并行长出来的分支可以指定一个 base 合并回一条，走 <code>subagent merge</code> 或网页 <code>/merge</code>。</td>
+  <td>没有。各家的 fork 开出去就回不来：<b>opencode</b> fork 出新会话，<b>codex</b> fork 出新 thread，<b>pi-mono</b> 切 <code>/tree</code> 时给被放弃的分支做个摘要注入当前位置，也不是合并。</td>
+  <td class="srcin">agent/internals/_merge.py</td>
+</tr>
+<tr class="us">
+  <td class="name">按剩余消息预算<br>裁子 agent 的工具面</td>
+  <td>派生子 agent 时按剩余预算决定给多少工具，不是给一张固定白名单。</td>
+  <td>各家都裁工具面，但按别的东西裁：<b>claude</b> 按 agentDepth 裁（深度小于上限才给派生工具），<b>buddy</b> 按每个 agent 的白名单裁，<b>opencode</b> 按 <code>permission.task</code> 的 glob 裁。</td>
+  <td class="srcin">见 runtime/agent-collab-comparison</td>
+</tr>
+<tr class="us">
+  <td class="name">升级前冷启动探针<br>加回滚</td>
+  <td>正在跑的服务把新代码在一个临时端口上启起来，轮询真实的 <code>/healthz</code> 通过了才动线上实例，带启动哨兵，探针失败自动回滚。</td>
+  <td>没有。各家的自更新都是"下载、替换、重启"：<b>weclaw</b> 换掉自己的二进制还顺手清 macOS 隔离属性，<b>codex</b> 的 daemon bootstrap 每小时重跑 install.sh 热换二进制，都没有先探活这一步。</td>
+  <td class="srcin">openprogram upgrade 流水线</td>
+</tr>
+<tr class="us">
+  <td class="name">无人值守时<br>直接摘掉提问工具</td>
+  <td>每会话一个开关决定 agent 能不能打断用户。默认无人值守，在策略层把 <code>ask_user_question</code> 这个工具本身去掉，所以一次放手跑的任务结构上不可能停在等人回答上。</td>
+  <td>各家的做法是压掉提示或自动批准，工具还在：<b>weclaw</b> 在 ACP 层把所有 <code>session/request_permission</code> 自动放行，<b>hermes</b> 的审批超时默认 60 秒后 fail-closed，<b>opencode</b> 靠 <code>--dangerously-skip-permissions</code>。</td>
+  <td class="srcin">agent/attended.py</td>
+</tr>
+</table>
+</div>
+
+<div class="note blue">
+  <b>六项的性质</b>。前三项是同一件事的三个面：把会话当成一张可以分叉、可以合并、可以把代码执行也放进去的图。这一条在功能清单上是真独有，也是上一轮认定的最强项，核实成立。后三项是"跑起来别出事"：预算裁剪、升级探活、结构性不卡住。<b>纯功能面上我们没有任何一项是十二家完全没有的</b>，独有全部落在数据结构和运行安全上。
+</div>
+
+<!-- ══════════════════════════ LAYER 4 ══════════════════════════ -->
+<h2 id="plan"><span class="num">04</span>我们该补哪些<span class="ly ly3">顺序</span></h2>
+<p class="lead">只排顺序，不写方案。65 条"值得做"里挑出成组的六批，每批是一次可以做完的事。</p>
+<div class="tbl">
+<table class="wide">
+<tr><th>批次</th><th>补什么</th><th>建在什么已有的东西上</th><th>为什么排这里</th></tr>
+<tr>
+  <td class="name">一</td>
+  <td><b>删除拦截进回收站</b>，加不可绕过的硬底线，加凭据进钥匙串，加密钥用外部命令间接取。</td>
+  <td>已有 <code>functions/permission_rule.py</code> 的规则引擎和 <code>_approval.py</code> 的八分支优先级链，缺的是工具层以下那一层。</td>
+  <td class="y">唯一一批"没有它可能丢数据"的。我们的 <code>bash</code> 现在能 <code>rm -rf</code> 穿过全部权限规则。</td>
+</tr>
+<tr>
+  <td class="name">二</td>
+  <td><b>版本控制那一组</b>：生成提交信息、一键提交推送开 PR、对当前 diff 做安全审查、从 PR 链接直接开 worktree、worktree 建好后同步未跟踪文件。</td>
+  <td>已有 <code>worktree/manager.py</code> 的完整状态机、shadow git、<code>apply_patch</code>。缺的只是把这些包成命令和提示词。</td>
+  <td class="y">十三类里第二低，四家都有，成本最低，日常频率最高。</td>
+</tr>
+<tr>
+  <td class="name">三</td>
+  <td><b>被别人驱动的三个口子</b>：MCP 服务端、ACP、官方 SDK。附带入站 webhook。</td>
+  <td>已有 181 个 REST 端点和一条 <code>/ws</code> 动作总线，工具注册表也现成。缺的是把它们包成标准协议并加鉴权。</td>
+  <td class="y">上一轮已认定，这一轮按功能扫又多出 ACP 和入站 webhook 两个具体形态。</td>
+</tr>
+<tr>
+  <td class="name">四</td>
+  <td><b>确定性假模型</b>加请求录制回放。</td>
+  <td>已有 31 个 provider 的统一消息类型，加一个假的进注册表即可。</td>
+  <td class="y">给核心循环补测试的前置条件。上一份文档已把它排在第一位，这里排在四是因为前三批都在补会丢数据或每天都在用的东西。</td>
+</tr>
+<tr>
+  <td class="name">五</td>
+  <td><b>会话与历史那一组</b>：到阈值自动压缩、归档、临时旁支、运行中插话改方向、跨渠道接管。加上把 TUI 里 <code>/compact</code> <code>/context</code> <code>/mcp</code> <code>/doctor</code> 四个死桩接上。</td>
+  <td>压缩、上下文统计、rewind 的后端全是真的，只是 TUI 那一侧没接。</td>
+  <td class="p">四个死桩是纯粹的接线工作，不接等于我们在自己的表里虚报。</td>
+</tr>
+<tr>
+  <td class="name">六</td>
+  <td><b>界面细节那一组</b>：主题、Vim 模式、快捷键全量重映射、无障碍、PWA。加 <code>/init</code>、使用洞察、可分享诊断包。</td>
+  <td>TUI 与网页都是自己的代码，改动面可控。</td>
+  <td class="p">单项收益小，但这一类 12 项我们只占 4.5 项，是"看起来不像个成品"的主要来源。</td>
+</tr>
+</table>
+</div>
+
+<div class="note orange">
+  <b>没排进来的两批，和不排的理由</b>。<b>编辑器集成</b>（行内补全、行内对话、CodeLens、状态栏动作）：这四项要求我们变成一个 IDE 插件产品，和常驻 worker 加三个自有界面的形态是两条路。真要接 IDE，走批次三的 ACP 就够，让 Zed 和 VS Code 来驱动我们，而不是我们去长成一个插件。<b>企业那一组</b>（合规管控与外部模型开关、每次编辑静默审计上报、信用点购买、企业策略强制配置）：三家内网版和 buddy 都有，但那是"把框架交给一个组织去管"才需要的东西，我们是单人本机，装上只有负担。
+</div>
+
+<!-- ══════════════════════════ 取证 ══════════════════════════ -->
+<h2 id="method"><span class="num">05</span>取证与状态</h2>
+<p class="lead">这一轮不读架构代码推功能，只走七个入口。哪条结论来自哪个入口如实标在表里。</p>
+<div class="tbl">
+<table class="wide">
+<tr><th>入口</th><th>拿到了什么</th><th>典型证据</th></tr>
+<tr><td class="name">功能开关配置</td><td>最直接的功能清单，一个文件就是一份台账</td><td class="srcin">buddy product.json 的 productFeatures 74 项 · codex features/src/lib.rs 的 Stage 分级 · claude 约 70 个 tengu_ 灰度门</td></tr>
+<tr><td class="name">命令清单</td><td>斜杠命令、CLI 子命令、快捷键绑定，命令名就是功能名</td><td class="srcin">codex tui/src/slash_command.rs 51 个 · buddy slash-commands.md 42 个 · openclaw 约 55 个顶层 CLI 命令</td></tr>
+<tr><td class="name">工具清单</td><td>模型能调什么就是能力边界</td><td class="srcin">buddy product.json tools[] 47 个 · hermes 约 82 个分 32 个 toolset · pi-mono 7 个其中 3 个默认关</td></tr>
+<tr><td class="name">出厂 agent 定义</td><td>专用 agent 加各自的工具白名单</td><td class="srcin">buddy agents[] 16 个 · claude Explore / Plan / claude-code-guide / verification · gm内 codebase_investigator</td></tr>
+<tr><td class="name">README 与帮助文本</td><td>写给用户看的功能描述，正是这一轮要的视角</td><td class="srcin">opencode 35 个文档页 · hermes 48 个功能页 · openclaw 约 350 个文档文件</td></tr>
+<tr><td class="name">运行时目录</td><td>目录名本身透露能力边界</td><td class="srcin">~/.codex/ 的 archived_sessions / memories_1.sqlite / goals_1.sqlite / node_repl / pets · ~/.claude/ 的 channels/discord/</td></tr>
+<tr><td class="name">界面入口</td><td>菜单、面板、设置分类、扩展贡献点</td><td class="srcin">buddy dist/web-ui/manifest.webmanifest 与 sandbox_proxy.html · hermes 面板插件 SDK</td></tr>
+</table>
+</div>
+
+<h3>各家取的是哪个版本</h3>
+<div class="tbl">
+<table class="wide">
+<tr><th>对象</th><th>取证来源</th><th>注意</th></tr>
+<tr><td class="name">OpenProgram</td><td>worktree 检出的 origin/main</td><td>另有两个会话在改 channels、web、webui 与 workflow-first，本页只描述已提交状态。附件相关的功能按 origin/main 现状记，正在实现中的不算</td></tr>
+<tr><td class="name">claude-code</td><td class="p">本机 2.1.226 二进制为准，<code>references/claude-code-leaked</code> 只作参考</td><td>泄露树里 <code>/ultraplan</code> 还是独立流程、<code>TeamCreate</code> 还在，二进制里已经变了。冲突处以二进制为准。另有一批只存在于 Anthropic 内部构建的功能（Buddy、Coordinator Mode、Undercover Mode）不计入</td></tr>
+<tr><td class="name">codex</td><td class="p">源码树加本机 CLI，另查 <code>~/.codex/</code></td><td>功能台账里有大量 UnderDevelopment 与 Experimental，本表用 <code>○</code> 标出，只看默认行为会误判</td></tr>
+<tr><td class="name">openclaw / opencode / hermes / pi-mono / weclaw</td><td><code>references/</code> 下的源码与文档</td><td>各仓库 HEAD。openclaw 与 hermes 的文档站本身就是功能清单，这一轮主要读的是文档不是代码</td></tr>
+<tr><td class="name">pi-ai</td><td class="n">协议参考源码，不是产品</td><td>十个文件 4493 行，README 明说不编译不在运行时导入；<code>src/utils/oauth/index.ts</code> 里 re-export 的三个文件在这个目录里根本不存在。整列为空是事实而不是漏查</td></tr>
+<tr><td class="name">国产四家</td><td>本机 <code>~/.npm-global/lib/node_modules/</code> 下的 npm 包</td><td>cc内 与 cx内 是启动器包装，vendor 的是上游原版二进制，功能列几乎照抄上游；gm内 是真源码分支但出厂文档 26 个里 25 个与上游逐字节相同；buddy 是自研，对比价值最高</td></tr>
+<tr><td class="name">Trae</td><td class="n">未获取到实现</td><td>本机没装，不写猜测。所以是十二家不是十三家</td></tr>
+</table>
+</div>
+
+<h3>本页的实现状态</h3>
+<div class="tbl">
+<table>
+<tr><th>条目</th><th>状态</th></tr>
+<tr><td>功能全表、覆盖度、只有别人有的 97 项、只有我们有的 6 项</td><td class="y">如实描述各仓库当前状态</td></tr>
+<tr><td>第四节的六个批次</td><td class="n">全部未实现，是计划不是现状</td></tr>
+<tr><td>我们那一列里标 <code>◐</code> 的格子</td><td class="p">多数是"后端真的、某一个界面没接"，具体哪个界面写在依据栏里</td></tr>
+</table>
+</div>
+
+<div class="note">
+  <b>相关文档</b>。<a href="framework-comparison.html">framework-comparison</a> 按设计维度和机制对标同样这十二家。<a href="framework-overview.html">framework-overview</a> 只讲我们内部一次对话怎么跑。子系统级的对照各有各的页：沙箱在 <a href="runtime/sandbox.html">runtime/sandbox</a>，agent 协作在 <a href="runtime/agent-collab-comparison.html">agent-collab-comparison</a>，长期记忆在 <a href="memory/memory-comparison.html">memory-comparison</a> 与 <a href="memory/memory-adoption.html">memory-adoption</a>，多人会话身份在 <a href="memory/speaker-identity.html">speaker-identity</a>，聊天附件在 <a href="ui/chat-attachments.html">chat-attachments</a>，上下文成分在 <a href="context/comparison.html">context/comparison</a>，扩展准入在 <a href="extension-gating/reference-comparison.html">extension-gating/reference-comparison</a>。
+</div>
+
+</div>
+</body>
+</html>

@@ -358,11 +358,12 @@ PAGE_ORDER: dict[str, int] = {
     "reference/design/ui/attachment-handling.md": 1010,
     "reference/design/ui/attachment-handling.html": 1011,
     "reference/design/ui/chat-attachments.html": 1012,
-    # The two whole-framework pages sit together at the end of the design root:
-    # first how one conversation runs inside us, then how we compare to the
-    # reference frameworks as a whole.
+    # The three whole-framework pages sit together at the end of the design
+    # root: first how one conversation runs inside us, then how we compare to
+    # the reference frameworks by design axis, then by feature list.
     "reference/design/framework-overview.md": 1020,
     "reference/design/framework-comparison.html": 1021,
+    "reference/design/feature-matrix.html": 1022,
     # Agentic program: the four-layer note that unifies tools, skills and
     # agentic functions as one concept sits after the calling-framework
     # note it builds on.
