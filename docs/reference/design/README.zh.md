@@ -73,7 +73,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`runtime/session/README.md`](runtime/session/README.md) | Session 子系统：数据模型、存储、命名、列表、生命周期 |
 | [`runtime/self-update.md`](runtime/self-update.zh.md) | 自我更新：一边改自己一边保持可用 |
 | [`runtime/permission-model.md`](runtime/permission-model.md) | 权限系统设计 |
-| [`runtime/sandbox.md`](runtime/sandbox.md) | 沙箱：两个平台的边界、开关在哪里丢掉、覆盖面、修复顺序（[图示](runtime/sandbox-architecture.html)） |
+| [`runtime/sandbox.md`](runtime/sandbox.md) | 沙箱：两个平台的边界、开关在哪里丢掉、覆盖面、八个参考框架的对标、修复顺序（[图示](runtime/sandbox-architecture.html)） |
 | [`runtime/agent-collaboration.md`](runtime/agent-collaboration.md) | Agent 协作：分支间通信原语 |
 | [`runtime/tool-toggle-management.md`](runtime/tool-toggle-management.md) | 工具开关 / 工具集管理设计 |
 | [`runtime/additional-working-directories.md`](runtime/additional-working-directories.md) | 会话多工作目录设计 |
