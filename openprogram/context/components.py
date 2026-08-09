@@ -269,13 +269,13 @@ def _build_skills(agent: Any) -> str:
 def _build_memory(agent: Any) -> str:
     try:
         from openprogram.memory import get_provider
-        mem_block = get_provider().system_prompt_block()
+        mem_block = get_provider().system_prompt()
         if mem_block.strip():
             return mem_block
     except Exception:
         # Memory is an optional subsystem: an unavailable or broken
         # provider degrades to no memory block, never a failed turn.
-        _log.debug("memory system prompt block unavailable", exc_info=True)
+        _log.debug("memory system prompt unavailable", exc_info=True)
     return ""
 
 

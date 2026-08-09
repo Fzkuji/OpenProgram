@@ -1,10 +1,10 @@
-"""Session watcher — fires on_session_end when a conversation goes idle.
+"""Session watcher — forces a memory write when a conversation goes idle.
 
 Polls the session DB every ``poll_interval`` seconds. For any session
 whose ``updated_at`` exceeds ``idle_minutes`` and which we haven't
-already processed, hands the message list to the memory provider's
-``on_session_end`` (which runs the LLM summarizer and appends journal
-notes).
+already handled, hands the message list to the memory provider's
+``write(..., force=True)``, which runs the writer over whatever the
+per-turn path left behind.
 
 State (already-processed session IDs and their last update timestamp)
 lives at ``<state>/memory/.state/session-end.json`` so a worker
@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from . import store
+from .provider import WriteIncomplete
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ def _save_processed(state: dict[str, float]) -> None:
     )
 
 
-def start_in_worker(
+def start_idle_session_watcher(
     *,
     idle_minutes: int = DEFAULT_IDLE_MINUTES,
     poll_interval: int = DEFAULT_POLL_INTERVAL,
@@ -102,26 +103,44 @@ def _scan(idle_minutes: int) -> int:
         if not messages:
             processed[sid] = updated_at
             continue
-        ok = _process_session(sid, messages)
+        left = _process_session(sid, messages)
         # 事件层 tap：空闲会话的 wiki ingest 起止（B 类）。懒 import 防循环。
         try:
             from openprogram.events import emit_safe
-            emit_safe("memory.ingest_ended", "system",
-                      {"ok": ok}, {"session": sid})
+            emit_safe("memory.ingest_ended", "system", {
+                "ok": left is None,
+                "retryable": left is not None and left.retryable,
+                "reason": left.reason if left else "",
+            }, {"session": sid})
         except Exception:
             pass
-        if ok:
+        if left is None:
             n_done += 1
             processed[sid] = updated_at
+        elif not left.retryable:
+            # Offering it again produces the same refusal, so stop
+            # offering it. The event above is what says so out loud.
+            logger.warning(
+                "memory: giving up on %s (%s)", sid, left.reason
+            )
+            processed[sid] = updated_at
+        else:
+            logger.info(
+                "memory: write incomplete for %s (%s); will retry",
+                sid, left.reason,
+            )
     _save_processed(processed)
     return n_done
 
 
-def _process_session(session_id: str, messages: list[dict[str, Any]]) -> bool:
+def _process_session(
+    session_id: str, messages: list[dict[str, Any]]
+) -> WriteIncomplete | None:
     """Write an idle conversation into memory.
 
-    Returns True on success — the caller marks the session processed.
-    Returns False on a retryable failure so the next poll tries again.
+    Returns nothing once the session is written — the caller marks it
+    processed. A ``WriteIncomplete`` carries why it is not, and whether
+    a later poll could finish it.
 
     Per-turn writing already handles a live session once enough has
     gathered; this catches the remainder, which would otherwise sit
@@ -138,24 +157,15 @@ def _process_session(session_id: str, messages: list[dict[str, Any]]) -> bool:
 
     try:
         from . import get_provider
-    except Exception:
-        return False
-
-    try:
-        done = get_provider().on_session_end(messages, session_id=session_id)
+        return get_provider().write(
+            messages, session_id=session_id, force=True,
+        )
     except Exception as exc:  # noqa: BLE001
-        # A missing CLI or an unreachable model is transient: the
-        # conversation is safe in the session store, so retrying next
-        # poll costs nothing and loses nothing.
+        # A provider that lets an exception out says nothing about
+        # whether the next poll would fare better, and the conversation
+        # is safe in the session store either way — so retry.
         logger.info("memory: write deferred for %s (%s)", session_id, exc)
-        return False
-    if not done:
-        # The provider wrote some of it, or none of it. Either way the
-        # session is not finished, and marking it processed here is how
-        # the remainder would be lost.
-        logger.info("memory: write incomplete for %s; will retry", session_id)
-        return False
-    return True
+        return WriteIncomplete(str(exc))
 
 
 def run_now(*, idle_minutes: int = DEFAULT_IDLE_MINUTES) -> int:

@@ -1349,9 +1349,9 @@ def main():
         if verb == "edit":
             sys.exit(_memory_edit(_mstore.ensure(), args.path))
         if verb == "sleep":
-            from openprogram.memory.scriptorium.writing import sweep
+            from openprogram.memory.scriptorium.writing import reorganize
             import json as _json
-            print(_json.dumps(sweep(), indent=2, ensure_ascii=False))
+            print(_json.dumps(reorganize(), indent=2, ensure_ascii=False))
             sys.exit(0)
         if verb == "export":
             import datetime as _dt

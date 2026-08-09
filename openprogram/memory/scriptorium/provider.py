@@ -12,9 +12,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..provider import MemoryProvider, fence_memory
+from ..provider import MemoryProvider, WriteIncomplete, fence_memory
 
 logger = logging.getLogger(__name__)
+
+# Transaction codes that clear on their own. Everything else the write
+# transaction raises is a verdict on the content the writer produced,
+# and the same content next poll gets the same verdict.
+RETRYABLE_CODES = frozenset({
+    "CONCURRENT_UPDATE", "GIT_COMMIT_FAILED", "EMBEDDING_UNAVAILABLE",
+})
 
 # How much conversation to gather before asking the model to write it up.
 # Small enough that a long session is written in several passes rather
@@ -37,7 +44,7 @@ class ScriptoriumMemoryProvider(MemoryProvider):
 
     # -- Reading --------------------------------------------------------
 
-    def system_prompt_block(self) -> str:
+    def system_prompt(self) -> str:
         """Core memory, injected into every session."""
         from .. import store
 
@@ -51,7 +58,7 @@ class ScriptoriumMemoryProvider(MemoryProvider):
         ).strip()
         return fence_memory(text) if body else ""
 
-    def prefetch(self, query: str, *, session_id: str = "") -> str:
+    def search(self, query: str, *, session_id: str = "") -> str:
         """Whatever memory bears on the turn about to run."""
         if not query or not query.strip():
             return ""
@@ -73,65 +80,63 @@ class ScriptoriumMemoryProvider(MemoryProvider):
 
     # -- Writing --------------------------------------------------------
 
-    def sync_turn(
+    def write(
         self,
-        user_content: str,
-        assistant_content: str,
+        messages: list[dict[str, Any]] | None = None,
         *,
         session_id: str = "",
-    ) -> None:
-        """Write memory if this turn brought the session over the line.
+        force: bool = False,
+    ) -> WriteIncomplete | None:
+        """Fold the conversation into memory once there is enough of it.
 
-        The turn's text is not taken from the arguments: the session
-        store already holds it, in order, and reading from there is what
-        lets a restart pick up where it left off. Cheap in the common
-        case — a cursor lookup and a token count, no model call.
-        """
-        from .writing import record_turn
+        Per turn, ``force`` False: cheap in the common case — a cursor
+        lookup and a token count, no model call — and it writes only
+        when the session has crossed the threshold. At a session
+        boundary, ``force`` True: there is no later batch to join, so
+        the remainder is written however little of it there is.
 
-        try:
-            record_turn(
-                session_id or self._session_id,
-                token_threshold=WRITE_TOKEN_THRESHOLD,
-            )
-        except Exception as exc:  # noqa: BLE001
-            # Memory must never take a conversation down with it.
-            logger.debug("memory write failed: %s", exc)
+        ``messages`` is left out on the per-turn call. The session store
+        already holds the conversation, in order, and reading it back
+        from there is what lets a restart pick up where it left off; the
+        idle watcher already has the list and passes it in.
 
-    def maintain(self, **kwargs: Any) -> dict[str, Any]:
-        """Reorganise topic files. Called by the nightly scheduler."""
-        from .writing import sweep
-
-        try:
-            return sweep(model=kwargs.get("model"))
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("memory maintenance failed: %s", exc)
-            return {"status": "failed", "error": str(exc)}
-
-    def on_session_end(
-        self,
-        messages: list[dict[str, Any]],
-        *,
-        session_id: str = "",
-    ) -> bool:
-        """Flush whatever is left, however little it is.
-
-        The threshold exists so that short exchanges do not each cost a
-        call. At the end of a session there is no later batch to join,
-        so the remainder is written regardless of size.
-
-        False when any of it is still unwritten. An unreachable model or
-        a rejected edit must not be reported as a finished session: the
-        watcher would mark it done and nothing would ever come back for
+        Nothing is returned once every turn has landed, and below the
+        threshold nothing was owed. Anything still unwritten comes back
+        as ``WriteIncomplete``: an unreachable model or a workspace
+        another writer holds is worth another pass, a batch the
+        transaction refused is not, and reporting either as finished
+        would mark the session done with nothing ever coming back for
         those turns.
         """
-        from .writing import flush
+        from .management.transaction import TransactionError
+        from . import writing
 
         try:
-            return flush(
+            return writing.write(
                 session_id or self._session_id, messages,
-                token_threshold=WRITE_TOKEN_THRESHOLD,
+                token_threshold=WRITE_TOKEN_THRESHOLD, force=force,
+            )
+        except TransactionError as exc:
+            logger.debug("memory write rejected: %s", exc)
+            return WriteIncomplete(
+                f"{exc.code}: {exc.message}",
+                retryable=exc.code in RETRYABLE_CODES,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.debug("memory flush failed: %s", exc)
-            return False
+            # Memory must never take a conversation down with it. A
+            # missing CLI or an unreachable model is transient: the
+            # conversation is safe in the session store, so the next
+            # pass costs nothing and loses nothing.
+            logger.debug("memory write deferred: %s", exc)
+            return WriteIncomplete(str(exc))
+
+    def reorganize(self, **kwargs: Any) -> dict[str, Any]:
+        """Rewrite topic files. Called by the nightly scheduler."""
+        from . import writing
+
+        try:
+            return writing.reorganize(model=kwargs.get("model"))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("memory reorganize failed: %s", exc)
+            return {"status": "failed", "error": str(exc)}
+

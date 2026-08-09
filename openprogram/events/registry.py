@@ -126,7 +126,10 @@ EVENTS: dict[str, EventSpec] = {
     ),
     "memory.ingest_ended": EventSpec(
         kind="notify",
-        payload_doc="{ok: bool} — the session memory ingest finished",
+        payload_doc="{ok: bool, retryable: bool, reason: str} — the session "
+                    "memory ingest finished; ok=false carries why it did not, "
+                    "and retryable=false is the failure a later poll will not "
+                    "fix, so the watcher stops offering that session",
     ),
     "channel.message_inbound": EventSpec(
         kind="notify",

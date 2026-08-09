@@ -384,7 +384,7 @@ async def _stream_assistant_response(
         if latest_user_text:
             try:
                 from openprogram.memory import get_provider
-                prefetch_block = get_provider().prefetch(latest_user_text)
+                prefetch_block = get_provider().search(latest_user_text)
             except Exception:
                 prefetch_block = ""
 

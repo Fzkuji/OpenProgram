@@ -72,9 +72,9 @@ Three things trigger a write:
 
 | Trigger | Where | What it does |
 |---|---|---|
-| A turn finishes | `provider.sync_turn` | Writes if the session has crossed the threshold |
-| A session goes idle | `session_watcher` | Flushes the remainder, however small |
-| 03:00 daily | `scheduler` | Reorganises topic files |
+| A turn finishes | `provider.write()` | Writes if the session has crossed the threshold |
+| A session goes idle | `provider.write(force=True)` | Writes the remainder, however small |
+| 03:00 daily | `provider.reorganize()` | Rewrites topic files |
 
 The conversation is read back from the session store rather than
 buffered in the process. That store is durable and ordered, so a turn's
@@ -84,13 +84,21 @@ module-level buffer would lose its contents on restart and hand out
 positions that change between runs, which is exactly what a cursor
 cannot tolerate.
 
+The first two rows are one method and one flag, not two hooks. What
+separates them is how hard to try, and every other word about them is
+the same, so naming them separately means naming the same action twice
+and getting neither name right. A per-turn call is not "writing this
+turn" either: it fires every turn but writes only on the turns that
+bring the session over the line, and what it writes is the batch that
+has gathered since the last one, which usually spans several turns.
+
 Each write takes the leading turns that reach the threshold, not the
 whole backlog: a session running all day arrives with far more than one
-model call can hold. The idle flush repeats that until nothing is left,
-because for it there is no later pass — the watcher marks a session
-processed on the way out, so a flush that stopped after one batch would
-strand the rest for good. It reports whether it finished, and an
-unfinished one is left for the next poll.
+model call can hold. Forced, `write` repeats that until nothing is
+left, because there is no later pass — the watcher marks a session
+processed on the way out, so stopping after one batch would strand the
+rest for good. What it reports back decides whether the watcher comes
+back, and the section on failure modes below says how.
 
 A turn is what a person said and what the assistant replied. Tool calls
 and their results are the machinery of a turn rather than its content,
@@ -98,12 +106,12 @@ and so are the turns the runtime schedules for itself: a finished
 sub-agent's notification and a merge prompt are written as user rows so
 the model has something to answer, but nobody said them.
 
-## Why the nightly sweep exists
+## Why the nightly reorganize exists
 
 Writing only ever makes files longer; nothing shortens them. Left alone,
 a workspace becomes one enormous file per subject with its timeline cut
 into pieces by topic — the shape that makes ordering and counting
-questions unanswerable. The 03:00 sweep splits files that have grown to
+questions unanswerable. The 03:00 pass splits files that have grown to
 cover several subjects, merges paragraphs that say the same thing, and
 repairs links.
 
@@ -113,7 +121,7 @@ It also runs on demand: `openprogram memory sleep`.
 
 - **Every session**: `core.md`, injected as a fenced `<memory-context>`
   block so recalled facts are never mistaken for the user talking now.
-- **Every turn**: whatever `prefetch` finds for that message — a BM25
+- **Every turn**: whatever `search` finds for that message — a BM25
   search over blocks and sources, top five, also fenced.
 - **On demand**: the `memory_*` tools.
 
@@ -155,11 +163,11 @@ openprogram/memory/           the framework side
     provider.py               MemoryProvider — the contract
     __init__.py               get_provider() / set_provider()
     store.py                  where memory lives; migration off the old layout
-    scheduler.py              daemon thread, 03:00 maintenance
-    session_watcher.py        idle-session flush
+    scheduler.py              daemon thread, the 03:00 reorganize
+    session_watcher.py        writes an idle session's remainder
     scriptorium/              the shipped implementation
         provider.py           satisfies the contract
-        writing.py            accumulate, write, reorganise
+        writing.py            accumulate, write, reorganize
         management/           the write transaction, staging, validation
         retrieval/            BM25 and embedding search
         markdown/             the topic format
@@ -176,7 +184,7 @@ in, and what tests use.
 
 The writer runs on the user's own login and default model, so background
 memory needs no separate credential. `openprogram memory sleep --model`
-and `scheduler.start_in_worker(model=...)` override it.
+and `scheduler.start_nightly_reorganizer(model=...)` override it.
 
 ## Migrating from the previous layer
 
@@ -196,15 +204,29 @@ for a new format is not a migration.
 |---|---|
 | No writer process available | Writing is deferred and retried; the conversation is safe in the session store |
 | Model unreachable mid-write | The turn is rolled back whole; the cursor does not advance, so the same turns are retried |
-| Another writer holds the lock | This pass is skipped; the next turn retries |
+| Another writer holds the lock | This pass writes nothing and says so; the next turn retries |
 | The writer's edits are rejected twice | The batch fails whole — one repair attempt, then nothing is installed and the cursor does not advance |
 | A hand edit breaks the format | The edit is validated in a staging copy and never installed; the committed file is untouched and the rejected text is kept for a retry |
 
 Memory never takes a conversation down with it: every provider hook
-swallows its own failures and logs them. Swallowed is not forgotten —
-`on_session_end` returns whether the session is finished, and the
-watcher leaves an unfinished one for the next poll instead of marking
-it processed.
+swallows its own failures and logs them. Swallowed is not forgotten.
+`write` returns nothing once a session owes nothing, which is how a
+hook that says nothing is read as a hook that had no problem, the same
+way a Claude Code hook only speaks up to intervene. Being below the
+threshold is silence too: nothing was owed yet. Anything left unwritten
+comes back as a `WriteIncomplete` carrying the reason and one more bit,
+whether a later pass could finish it. A held lock or an unreachable
+model can, so the watcher leaves the session unmarked and tries again.
+Content the write transaction refused cannot, so the watcher marks the
+session handled anyway and puts the reason on the event bus as
+`memory.ingest_ended` with `ok: false`. Retrying refused content
+forever only burns model quota, and a failure nobody can see is a
+failure that stays.
+
+Both calls report the same way. A per-turn write can hit a held lock
+just as an idle one can, and it used to swallow that as "nothing to do
+yet" — indistinguishable from the ordinary under-threshold case, so a
+turn that never got written said nothing at all.
 
 ## Plugin point
 
@@ -213,13 +235,35 @@ agent runtime:
 
 | Hook | When |
 |---|---|
-| `system_prompt_block()` | Session start |
-| `prefetch(query)` | Before each turn |
-| `sync_turn(user, assistant, session_id=)` | After each turn |
-| `on_session_end(messages, session_id=)` | Session boundary |
-| `on_pre_compress(messages)` | Before context compression |
-| `maintain(**kwargs)` | Nightly |
-| `get_tool_schemas()` / `handle_tool_call()` | Optional extra tools |
+| `name` / `is_available()` | Selection |
+| `initialize(session_id=)` / `shutdown()` | Session start and end |
+| `system_prompt()` | Session start |
+| `search(query)` | Before each turn |
+| `write(messages, session_id=, force=)` | After each turn, and at a session boundary |
+| `extract_before_discard(messages)` | Before context compression |
+| `reorganize(**kwargs)` | Nightly |
 
-Every one has a default, so an implementation only writes the hooks it
-has something to do for.
+All of it but `name` has a default, so an implementation only writes
+the hooks it has something to do for. One verb per action, and the same
+verb on both sides: the name of a hook here is the name of the function
+that carries it out in `scriptorium/`, so reading across the two layers
+takes no translation.
+
+`extract_before_discard` runs the other direction from the rest and is
+easy to read backwards. It stores nothing. The compactor is holding
+messages it means to drop and asks memory what in them belongs in the
+summary; the text that comes back is folded into that summary, so an
+insight outlives the raw turns.
+
+There is no hook for exposing tools. A memory system that ships extra
+tools arrives as a plugin, and a plugin already registers commands,
+skills, MCP servers, providers, hooks and agents through the
+contribution registry. A second private route through this interface
+would only be a way to bypass it.
+
+Recalled memory reaches the model inside a `<memory-context>` block
+with a system note, so old facts read as background rather than as
+something the user just asked for. `system_prompt` and `search` return
+text that is already fenced — `fence_memory` does the wrapping, and the
+provider applies it. Nothing fences again on the way out: fencing twice
+strips the inner block and leaves an empty one.

@@ -1,6 +1,6 @@
 """Memory sync runs AFTER the turn it is meant to count.
 
-``sync_turn`` is the "a turn finished" trigger in
+``write`` is the "a turn finished" trigger in
 docs/reference/design/memory/overview.md. The provider deliberately
 reads the turn back out of the session store rather than trusting the
 arguments — the store is durable and ordered, which is what the write
@@ -88,16 +88,16 @@ def _run_turn(text: str, *, session_id: str):
 @pytest.fixture
 def spy(tmp_db: SessionDB, monkeypatch: pytest.MonkeyPatch) -> list[dict]:
     """A memory provider that snapshots the session store the moment
-    ``sync_turn`` fires — the view the real provider goes on to read."""
+    ``write`` fires — the view the real provider goes on to read."""
     calls: list[dict] = []
 
     class _Provider:
-        def prefetch(self, _text, **_kw): return ""
-        def system_prompt_block(self): return ""
+        def search(self, _text, **_kw): return ""
+        def system_prompt(self): return ""
 
-        def sync_turn(self, user, assistant, *, session_id=""):
+        def write(self, messages=None, *, session_id="", force=False):
             calls.append({
-                "user": user, "assistant": assistant,
+                "messages": messages, "force": force,
                 "branch": tmp_db.get_branch(session_id),
             })
 
@@ -121,16 +121,18 @@ def test_this_turns_reply_is_already_in_the_store(spy: list[dict]):
     branch = spy[0]["branch"]
     assert "what is the answer" in _texts(branch, "user")
     assert REPLY in _texts(branch, "assistant"), (
-        "sync_turn fired while the assistant row was still the empty "
+        "write fired while the assistant row was still the empty "
         "placeholder — the reply would be counted a turn late"
     )
 
 
-def test_the_hook_still_carries_the_turns_text(spy: list[dict]):
+def test_the_hook_leaves_the_turns_text_to_the_store(spy: list[dict]):
+    """The text is not passed in. The provider reads the branch back
+    out of the session store, and gets no ``force`` from this path."""
     _run_turn("what is the answer", session_id="sync2")
 
-    assert spy[0]["user"] == "what is the answer"
-    assert spy[0]["assistant"] == REPLY
+    assert spy[0]["messages"] is None
+    assert spy[0]["force"] is False
 
 
 def test_no_session_id_no_memory_call(monkeypatch: pytest.MonkeyPatch):
@@ -139,4 +141,4 @@ def test_no_session_id_no_memory_call(monkeypatch: pytest.MonkeyPatch):
         raise AssertionError("memory must not be consulted without a session")
 
     monkeypatch.setattr("openprogram.memory.get_provider", _boom)
-    D._memory_sync_turn("", "hi", "there")
+    D._memory_write("")

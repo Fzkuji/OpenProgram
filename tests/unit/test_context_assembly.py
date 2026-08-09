@@ -97,8 +97,8 @@ def no_memory_prefetch(monkeypatch: pytest.MonkeyPatch):
     """Default: memory recalls nothing, so tests that don't care about
     prefetch see a clean prompt. The prefetch tests patch it themselves."""
     class _Provider:
-        def prefetch(self, _text, **_kw): return ""
-        def system_prompt_block(self): return ""
+        def search(self, _text, **_kw): return ""
+        def system_prompt(self): return ""
     monkeypatch.setattr("openprogram.memory.get_provider", lambda: _Provider())
 
 
@@ -301,10 +301,10 @@ def fake_prefetch(monkeypatch: pytest.MonkeyPatch):
     """Memory that recalls a different block for every query — the shape
     that used to poison the system prompt on every single turn."""
     class _Provider:
-        def prefetch(self, text):
+        def search(self, text):
             return f"<memory-context>\nrecalled for: {text}\n</memory-context>"
-        def system_prompt_block(self): return ""
-        def sync_turn(self, *a, **kw): return None
+        def system_prompt(self): return ""
+        def write(self, *a, **kw): return None
     monkeypatch.setattr("openprogram.memory.get_provider", lambda: _Provider())
 
 

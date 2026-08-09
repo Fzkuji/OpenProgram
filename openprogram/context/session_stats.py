@@ -198,10 +198,10 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
     try:
         import os as _os
         from openprogram.paths import get_state_dir as _gsd
-        from openprogram.memory import core as _mcore
+        from openprogram.memory import get_provider as _mprovider
         block = ""
         try:
-            block = _mcore.system_prompt_block() or ""
+            block = _mprovider().system_prompt() or ""
         except Exception:
             block = ""
         mem_items = []

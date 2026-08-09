@@ -22,7 +22,7 @@ rebuilt after every write.
 
 Writing happens in the background, not in the conversation: turns
 accumulate and are written once there is roughly 16k tokens' worth, and
-a nightly sweep reorganises what has landed.
+a nightly pass rewrites what has landed.
 
 ## File map
 
@@ -30,16 +30,16 @@ a nightly sweep reorganises what has landed.
 |---|---|
 | `store.py` | Where the workspace is; migration off the previous layout |
 | `provider.py` | `MemoryProvider` ABC and the `<memory-context>` fence |
-| `builtin/provider.py` | The lifecycle hooks the agent runtime calls |
-| `builtin/writing.py` | Accumulate, write, reorganise |
-| `scheduler.py` | Daemon thread; 03:00 sweep |
-| `session_watcher.py` | Flushes a session once it goes idle |
-| `management/` | The write transaction: staging, validation, install |
-| `retrieval/` | BM25 and embedding search over the workspace |
-| `markdown/` | The topic format — blocks, footnotes, links |
-| `prompts/` | What the writer is told |
-| `runtime/` | Cursors, thresholds, derived views |
-| `agent_runtime/` | The process that performs a write |
+| `scriptorium/provider.py` | The lifecycle hooks the agent runtime calls |
+| `scriptorium/writing.py` | Accumulate, write, reorganize |
+| `scheduler.py` | Daemon thread; the 03:00 reorganize |
+| `session_watcher.py` | Writes a session's remainder once it goes idle |
+| `scriptorium/management/` | The write transaction: staging, validation, install |
+| `scriptorium/retrieval/` | BM25 and embedding search over the workspace |
+| `scriptorium/markdown/` | The topic format — blocks, footnotes, links |
+| `scriptorium/prompts/` | What the writer is told |
+| `scriptorium/runtime/` | Cursors, thresholds, derived views |
+| `scriptorium/agent_runtime/` | The process that performs a write |
 
 ## Working here
 

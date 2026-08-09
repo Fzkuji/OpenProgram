@@ -1,10 +1,10 @@
 """Sleep scheduling — installs a daily background task in the worker.
 
-The worker calls ``start_in_worker(...)`` at boot. We spawn a daemon
-thread that sleeps until the next 03:00 local time, runs the sweep,
+The worker calls ``start_nightly_reorganizer(...)`` at boot. We spawn a
+daemon thread that sleeps until the next 03:00 local time, reorganizes,
 and loops. Lightweight; doesn't depend on a cron daemon.
 
-The sweep reorganises topic files: splitting one that has grown to cover
+Reorganizing rewrites topic files: splitting one that has grown to cover
 several subjects, merging paragraphs that say the same thing, repairing
 links. Writing only ever makes files longer, so without this a workspace
 ends up as one enormous file per subject with its timeline cut to pieces
@@ -36,7 +36,7 @@ def _seconds_until_next_3am() -> float:
     return (target - now).total_seconds()
 
 
-def start_in_worker(
+def start_nightly_reorganizer(
     *,
     model: str | None = None,             # defaults to the user's own
     daily_at: int = 3,                    # hour-of-day local
@@ -44,9 +44,9 @@ def start_in_worker(
 ) -> threading.Thread | None:
     """Spawn the sleep scheduler thread. Returns the thread or None if disabled.
 
-    ``model`` overrides what the reorganising pass runs on; left unset it
+    ``model`` overrides what the reorganizing pass runs on; left unset it
     uses the login and default model the user's own CLI already has, so
-    background maintenance needs no separate credential.
+    background work needs no separate credential.
     """
     if os.environ.get("OPENPROGRAM_NO_SLEEP", "").strip() in ("1", "true", "yes"):
         logger.info("memory sleep scheduler disabled by OPENPROGRAM_NO_SLEEP")
@@ -60,10 +60,10 @@ def start_in_worker(
             time.sleep(wait)
         while True:
             try:
-                report = get_provider().maintain(model=model)
-                logger.info("memory sleep sweep done: %s", report)
+                report = get_provider().reorganize(model=model)
+                logger.info("memory nightly reorganize done: %s", report)
             except Exception as e:  # noqa: BLE001
-                logger.warning("memory sleep sweep failed: %s", e)
+                logger.warning("memory nightly reorganize failed: %s", e)
             time.sleep(_seconds_until(daily_at))
 
     t = threading.Thread(target=_loop, name="memory-sleep", daemon=True)

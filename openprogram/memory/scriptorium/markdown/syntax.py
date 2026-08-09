@@ -94,7 +94,7 @@ def paragraphs(lines: list[str]) -> Iterator[tuple[str, tuple[str, ...]]]:
     paragraph_headings: tuple[str, ...] = ()
     in_fence = False
 
-    def flush() -> tuple[str, tuple[str, ...]] | None:
+    def take() -> tuple[str, tuple[str, ...]] | None:
         nonlocal paragraph
         if not paragraph:
             return None
@@ -104,24 +104,24 @@ def paragraphs(lines: list[str]) -> Iterator[tuple[str, tuple[str, ...]]]:
 
     for line in lines + [""]:
         if line.lstrip().startswith("```"):
-            if result := flush():
+            if result := take():
                 yield result
             in_fence = not in_fence
             continue
         if in_fence or definition_match(line) or re.match(
             r"\s*(?:<!--|<a\s)", line
         ):
-            if result := flush():
+            if result := take():
                 yield result
             continue
         if heading := re.match(r"^(#{1,6})\s+(.+?)\s*$", line):
-            if result := flush():
+            if result := take():
                 yield result
             level = len(heading.group(1))
             headings = headings[: level - 1] + [heading.group(2)]
             continue
         if not line.strip():
-            if result := flush():
+            if result := take():
                 yield result
             continue
         if not paragraph:
