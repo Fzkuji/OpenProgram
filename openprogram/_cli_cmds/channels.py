@@ -76,7 +76,11 @@ def _dispatch_access_verb(args, parser) -> None:
                       f"code={row.get('code','')}")
         return
     if verb == "approve":
-        uid = _access.approve(args.channel, args.id, args.code)
+        try:
+            uid = _access.approve(args.channel, args.id, args.code)
+        except ValueError as e:
+            print(f"[error] {e}")
+            sys.exit(1)
         if uid is None:
             print(f"[error] no pending pairing with code {args.code!r} "
                   f"on {args.channel}:{args.id} (codes expire after 1h)")
@@ -84,7 +88,11 @@ def _dispatch_access_verb(args, parser) -> None:
         print(f"Approved {uid} on {args.channel}:{args.id}")
         return
     if verb == "allow":
-        _access.approve_user(args.channel, args.id, args.user_id)
+        try:
+            _access.approve_user(args.channel, args.id, args.user_id)
+        except ValueError as e:
+            print(f"[error] {e}")
+            sys.exit(1)
         print(f"Allowlisted {args.user_id} on {args.channel}:{args.id}")
         return
     if verb == "revoke":
@@ -96,6 +104,12 @@ def _dispatch_access_verb(args, parser) -> None:
     if verb == "policy":
         _access.set_policy(args.channel, args.id, args.policy)
         print(f"{args.channel}:{args.id} access policy = {args.policy}")
+        if args.policy == "open":
+            print("[warning] every sender now reaches the agent, and this "
+                  "instance keeps one memory workspace shared by every "
+                  "conversation on the machine. A second person writing to "
+                  "this bot reads and writes your memories. Give them their "
+                  "own instance instead: openprogram --profile <name>")
         return
     parser.print_help()
 

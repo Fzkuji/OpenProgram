@@ -87,8 +87,11 @@ def run() -> int:
               "first message returns a code — approve yourself with:")
         print(f"  openprogram channels access approve {channel} <code>"
               + (f" --id {account_id}" if account_id != "default" else ""))
-        print("  (or open the door entirely: "
-              f"openprogram channels access policy {channel} open)")
+        print("\n[setup] this instance serves one person. The account "
+              "accepts a single approved sender, because memory is one "
+              "workspace shared by every agent and conversation here — a "
+              "second person would read and write your memories. Give them "
+              "their own instance: openprogram --profile <name>")
         return 0
     except (KeyboardInterrupt, EOFError):
         print("\n[setup] aborted.")

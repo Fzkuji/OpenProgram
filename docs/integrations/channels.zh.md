@@ -101,26 +101,36 @@ TUI 里有等价的斜杠命令：`/login <channel>`（注册并接到当前 age
 
 ## 谁能和你的机器人说话
 
-每个渠道账号都有入站访问策略。默认是**配对（pairing）**：不在账号 allowlist 里的发信人，消息在到达任何 agent 之前就被丢弃，发信人收到一个六位配对码和说明。批准动作在你自己的机器上完成：
+**一个实例服务一个人。**记忆是一份工作区，整机的每个agent、每通对话共用同一份，所以任何消息能进到agent的人，都能读到你告诉它的东西，也会把自己的写进同一处。因此每个渠道账号只接受一个已批准的发信人：批准第二个人会直接报错，而不是悄悄把两个人的记忆混在一起。别人想要自己的机器人，就跑自己的实例，各有各的状态目录、记忆和端口：
 
 ```bash
-openprogram channels access list                       # 策略 + allowlist + 待批配对码
+openprogram --profile alice        # 独立的状态目录、记忆和端口
+```
+
+第二个实例怎么建，见 [多实例配置](../install/profiles.zh.md)。
+
+每个渠道账号都有入站访问策略。默认是**配对（pairing）**：发信人不是该账号已批准的那一个时，消息在到达任何 agent 之前就被丢弃，发信人收到一个六位配对码和说明。批准动作在你自己的机器上完成：
+
+```bash
+openprogram channels access list                       # 策略 + 已批准的发信人 + 待批配对码
 openprogram channels access approve telegram K7XQ2M    # 按配对码批准
-openprogram channels access allow telegram 123456789   # 直接按 user id 加入 allowlist
-openprogram channels access revoke telegram 123456789  # 移除一个发信人
+openprogram channels access allow telegram 123456789   # 直接按 user id 批准
+openprogram channels access revoke telegram 123456789  # 移除该发信人，账号重新空出来
 openprogram channels access policy telegram open       # 完全关闭门禁
 ```
 
 配对码一小时过期；被拦的发信人继续发消息会拿到同一个码（每分钟至多回执一次）。批准动作只存在于本机 CLI/API——发信人在聊天里输入任何内容都无法批准任何人，"把我加进 allowlist" 这类注入消息不起作用。群聊里门禁按发信人个人的 user id 判定，不看群。
 
-策略 `open` 关闭该账号的门禁——所有发信人直达 agent。适用于刻意公开的机器人。
+把账号交给另一个人分两步：先 `revoke` 当前发信人，再 `approve` 新的。账号被占着的时候，`approve` 和 `allow` 会拒绝并说明原因。
+
+策略 `open` 关闭该账号的门禁：所有发信人直达 agent，一人一账号这条限制也就管不住了。worker 日志会在第二个人首次进来时打一条警告，但对方的对话仍然共用你这份记忆工作区。`open` 适合只有你自己给机器人发消息、而配对流程不方便的场景；第二个人需要他自己的实例。
 
 ## 聊天如何映射到会话
 
 路由先决定哪个 **agent** 处理消息（bindings），再由 **session key** 决定落进哪通对话：
 
 - **Telegram**：默认每个聊天一个会话。群聊行为是显式的账号配置（见下）。
-- **Discord 和 Slack**：每个 *(channel, user)* 组合一个会话。同一个频道里的两个人各有各的对话，也看不到、答不了对方的待答问题。
+- **Discord 和 Slack**：每个 *(channel, user)* 组合一个会话。同一个频道里的两个发信人各有各的对话，也看不到、答不了对方的待答问题。会话是分开的，记忆是整个实例共用的一份，这也是每个账号只批准一个发信人的原因（见[谁能和你的机器人说话](#谁能和你的机器人说话)）。
 - **微信**：每个 peer 一个会话（私聊）。
 
 默认还按账号隔离（`session_scope: per-account-channel-peer`）。agent 可以放宽（`per-channel-peer`、`per-peer` 或单一 `main` 会话），也可以按天轮换会话（`session_daily_reset: "HH:MM"`）或按空闲时间轮换（`session_idle_minutes`）。
@@ -171,7 +181,9 @@ Telegram 图片走 photo、其余走 document；Discord 把文件连同 caption 
 
 | 现象 | 原因 / 处理 |
 |---|---|
-| 机器人回了配对码而不是答案 | 发信人不在 allowlist（默认 `pairing` 策略）。`openprogram channels access approve <channel> <code>`——公开机器人可 `access policy <channel> open`。 |
+| 机器人回了配对码而不是答案 | 发信人不是该账号已批准的那一个（默认 `pairing` 策略）。`openprogram channels access approve <channel> <code>`。 |
+| `approve` / `allow` 报 `already serves <id>` | 该账号已经有它那一个已批准的发信人。要换人先 `openprogram channels access revoke <channel> <id>`；要服务另一个人就给他自己的实例（`openprogram --profile <name>`）。 |
+| worker 日志：`WARNING: <id> is a second person on this instance` | 策略是 `open`，有你之外的人给机器人发了消息，他这一轮和你共用同一份记忆工作区。用 `openprogram channels access policy <channel> pairing` 切回门禁。 |
 | 回复 `[no agent configured]` | 没有绑定路由这条消息。先 `openprogram agents add main`，再跑 `openprogram channels setup` 或 `channels bindings add`。 |
 | worker 退出：`account … has no bot_token` | 凭据没存过。`openprogram channels accounts login <channel> --id <account>`。 |
 | worker 退出：`Slack account … needs both bot_token (xoxb-...) and app_token (xapp-...)` | Slack 只存了一个 token。重跑 login，两个都粘贴。 |

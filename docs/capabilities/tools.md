@@ -82,7 +82,7 @@ Collaboration splits into four domains, one word each — see
 | `ask_user_question` | Ask the user 1-N questions with options | Nothing |
 | `enter_plan_mode` / `exit_plan_mode` | Enter / exit plan mode | Nothing |
 | `canvas` | Incrementally write into named blocks of a markdown file | Nothing |
-| `memory_*` | Read the persistent memory workspace — `memory_search` (by meaning), `memory_grep` (exact string), `memory_get` (one file, section or block), `memory_browse` (what exists), `memory_status` (size and revision), and `memory_update` to correct one thing. Recording the conversation is not among them: that happens in the background. | Nothing |
+| `memory_*` | Read the persistent memory workspace — `memory_search` (by meaning), `memory_grep` (exact string), `memory_get` (one file, section or block), `memory_browse` (what exists), `memory_status` (size and revision), and `memory_update` to correct one thing. Recording the conversation is not among them: that happens in the background. There is one workspace per instance, shared by every agent and every conversation including chat channels, which is why an instance serves one person ([Chat Channels](../integrations/channels.md#who-can-talk-to-your-bot)). | Nothing |
 | `worktree_*` | Git worktrees: `worktree_create` / `merge` / `discard` / `list` / `keep` | git |
 | `cron` | Register recurring agent tasks | Nothing |
 | `list_mcp_resources` / `read_mcp_resource` / `list_mcp_prompts` / `get_mcp_prompt` | Expose MCP resources / prompts primitives to the model (the `mcp_meta` directory) | A configured MCP server (see [MCP](mcp.md)) |

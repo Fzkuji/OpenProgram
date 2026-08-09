@@ -161,8 +161,11 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 | `setup` | 交互向导：选频道、登录（扫码 / token）、绑定 agent |
 | `accounts` | 管理频道机器人账号（WeChat、Telegram 等） |
 | `bindings` | 把入站频道消息路由到 agent |
+| `access` | 谁能进到 agent：`list`、`approve <code>`、`allow <user_id>`、`revoke <user_id>`、`policy pairing\|open`。每个账号只批准一个发信人，一个实例服务一个人（见[聊天渠道](../integrations/channels.zh.md#谁能和你的机器人说话)） |
 
 ### memory —— 持久记忆
+
+每个实例只有一份工作区，所有agent、所有对话（含聊天渠道）共用。
 
 | 动词 | 作用 |
 |------|------|
