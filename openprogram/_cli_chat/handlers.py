@@ -538,19 +538,19 @@ def _handle_rewind(args: list[str], console, session_id: str) -> bool:
 # --- Sandbox toggle --------------------------------------------------------
 
 def _handle_sandbox(console) -> bool:
-    from openprogram.sandbox import sandbox_enabled, is_available
-    if not is_available():
-        console.print(
-            "[yellow]System sandbox not available.[/]  "
-            "(macOS needs /usr/bin/sandbox-exec; Linux needs bubblewrap)"
-        )
+    from openprogram.sandbox import is_enabled, set_mode, unavailable_reason
+    current = is_enabled()
+    reason = unavailable_reason()
+    if not current and reason:
+        console.print(f"[yellow]System sandbox not available.[/]  ({reason})")
         return False
-    current = sandbox_enabled.get(False)
-    sandbox_enabled.set(not current)
-    state = "ON" if not current else "OFF"
-    console.print(f"[bold]Sandbox:[/] {state}")
+    # Persisted, not held on this thread's context: the flag has to reach
+    # background threads and spawned subprocesses too.
+    set_mode(not current)
+    console.print(f"[bold]Sandbox:[/] {'ON' if not current else 'OFF'}")
     if not current:
-        console.print("[dim]Bash commands restricted to cwd writes only.[/]")
+        console.print("[dim]Bash writes confined to the working directory; "
+                      "credential paths unreadable; no network.[/]")
     return False
 
 

@@ -11,14 +11,16 @@ if no bash exists.
 """
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
 import sys
 
 from openprogram.backend.base import Backend, RunResult, decode_maybe
-from openprogram.sandbox import is_available as _sandbox_available, sandbox_enabled, wrap_command as _sandbox_wrap
+from openprogram import sandbox as _sandbox
 
+log = logging.getLogger(__name__)
 
 _WIN_BASH_CACHE: str | None | bool = False  # False = not yet probed
 
@@ -52,22 +54,43 @@ def _windows_bash() -> str | None:
     return chosen
 
 
-def _invocation(command: str, cwd: str | None = None) -> tuple[str | list[str], bool]:
-    """Return ``(args, shell)`` for the host run. POSIX: the command
+def _invocation(command: str, cwd: str | None = None
+                ) -> tuple[str | list[str], bool, dict | None]:
+    """Return ``(args, shell, env)`` for the host run. POSIX: the command
     string via the host shell (unchanged). Windows: a real bash via
     ``[bash, "-c", command]`` (shell=False) when available, else the
-    command string via cmd.exe (shell=True) as a last resort.
+    command string via cmd.exe (shell=True) as a last resort. ``env`` is
+    None when the command runs unsandboxed, i.e. inherits ours.
 
-    When sandbox mode is enabled and the platform tool is present, the
-    command is wrapped so the child process can only write inside *cwd*.
+    With ``sandbox.mode`` set, the command is wrapped so the child can
+    only write inside *cwd*, cannot read the configured credential paths,
+    and gets a filtered environment. The policy is read from the config
+    on every call, so it holds in threads and subprocesses alike.
+
+    Raises ``SandboxUnavailable`` when a sandbox is configured, the
+    platform tool is missing, and ``sandbox.on_unavailable`` is
+    ``refuse`` — silently running the command unprotected is how a
+    security setting turns into a placebo.
     """
-    if sandbox_enabled.get(False) and _sandbox_available():
-        return _sandbox_wrap(command, cwd or os.getcwd())
+    policy = _sandbox.resolve_policy()
+    if policy is not None:
+        reason = _sandbox.unavailable_reason()
+        if reason is None:
+            args, shell = _sandbox.wrap_command(command, cwd or os.getcwd(), policy)
+            return (args, shell, _sandbox.child_env(policy))
+        if _sandbox.on_unavailable() == _sandbox.ON_UNAVAILABLE_REFUSE:
+            raise _sandbox.SandboxUnavailable(
+                f"sandbox.mode is on but the sandbox cannot run here: {reason}. "
+                "Install it, or set sandbox.on_unavailable=warn to run without "
+                "one, or set sandbox.mode=off."
+            )
+        log.warning("sandbox requested but unavailable (%s) — running "
+                    "the command WITHOUT a sandbox", reason)
     if sys.platform == "win32":
         bash = _windows_bash()
         if bash:
-            return ([bash, "-c", command], False)
-    return (command, True)
+            return ([bash, "-c", command], False, None)
+    return (command, True, None)
 
 
 class LocalBackend(Backend):
@@ -75,7 +98,12 @@ class LocalBackend(Backend):
 
     def run(self, command: str, timeout: float,
             cwd: str | None = None) -> RunResult:
-        args, use_shell = _invocation(command, cwd=cwd)
+        try:
+            args, use_shell, env = _invocation(command, cwd=cwd)
+        except _sandbox.SandboxUnavailable as e:
+            # The Backend contract is to report failures as a result, not
+            # to raise them at the tool.
+            return RunResult(exit_code=1, stdout="", stderr=str(e))
         try:
             proc = subprocess.run(
                 args,
@@ -84,6 +112,7 @@ class LocalBackend(Backend):
                 text=True,
                 timeout=timeout,
                 cwd=cwd,
+                env=env,
             )
             return RunResult(proc.returncode, proc.stdout, proc.stderr)
         except subprocess.TimeoutExpired as e:
@@ -96,11 +125,12 @@ class LocalBackend(Backend):
 
     def spawn(self, command: str,
               cwd: str | None = None) -> subprocess.Popen:
-        args, use_shell = _invocation(command, cwd=cwd)
+        args, use_shell, env = _invocation(command, cwd=cwd)
         return subprocess.Popen(
             args,
             shell=use_shell,
             cwd=cwd or None,
+            env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

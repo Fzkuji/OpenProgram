@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from openprogram import sandbox as _sandbox
+
 from ..markdown import parse_topic_tree
 from .block_views import BlockViewsMixin
 from .config import MemoryConfig
@@ -127,13 +129,29 @@ class MemoryWorkspace(
                 r"(?m)\^([A-Za-z0-9-]+)\s*$",
                 core.read_text(encoding="utf-8"),
             ))
+        # The writer's prompt carries text anyone who can message this
+        # agent controls, and whatever this command writes lands in the
+        # memory store and returns to a later session's context — an
+        # exfiltration path that never touches the network. So it runs
+        # under the same sandbox policy as the bash tool when one is
+        # configured. The nested CLI's own Read/Write/Edit still run
+        # inside that process and are outside this boundary.
+        args: Any = command
+        use_shell = True
+        env = None
+        policy = _sandbox.resolve_policy()
+        if policy is not None and _sandbox.is_available():
+            args, use_shell = _sandbox.wrap_command(
+                command, str(self.stage_dir), policy)
+            env = _sandbox.child_env(policy)
         result = subprocess.run(
-            command,
+            args,
             cwd=self.stage_dir,
-            shell=True,
+            shell=use_shell,
             text=True,
             capture_output=True,
             timeout=120,
+            env=env,
         )
         changed = self._workspace_fingerprint() != before
         if result.returncode != 0 and changed:

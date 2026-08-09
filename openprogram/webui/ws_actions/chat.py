@@ -1013,23 +1013,25 @@ async def handle_compact(ws, cmd: dict):
 
 
 async def handle_sandbox(ws, cmd: dict):
-    """Toggle system sandbox on/off for the current session."""
-    from openprogram.sandbox import sandbox_enabled, is_available
-    available = is_available()
-    if not available:
+    """Toggle the system sandbox on or off."""
+    from openprogram.sandbox import is_enabled, set_mode, unavailable_reason
+    current = is_enabled()
+    reason = unavailable_reason()
+    if not current and reason:
         await ws.send_text(json.dumps({
             "type": "chat_response",
             "data": {"type": "status",
-                     "content": "System sandbox not available "
-                                "(macOS needs sandbox-exec; Linux needs bubblewrap)"},
+                     "content": f"System sandbox not available ({reason})"},
         }))
         return
-    current = sandbox_enabled.get(False)
-    sandbox_enabled.set(not current)
+    # Persisted through the config, because the agent turn runs in a bare
+    # thread that this asyncio task's context never reaches.
+    set_mode(not current)
     state = "ON" if not current else "OFF"
     msg = f"Sandbox: {state}"
     if not current:
-        msg += " — bash commands restricted to cwd writes only"
+        msg += (" — bash writes confined to the working directory, "
+                "credential paths unreadable, no network")
     await ws.send_text(json.dumps({
         "type": "chat_response",
         "data": {"type": "status", "content": msg},

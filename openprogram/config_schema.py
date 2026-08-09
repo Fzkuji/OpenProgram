@@ -81,6 +81,26 @@ def _update_channels() -> list[str]:
         return ["stable"]
 
 
+def _sandbox_modes() -> tuple[str, ...]:
+    from openprogram.sandbox import MODES
+    return MODES
+
+
+def _sandbox_on_unavailable() -> tuple[str, ...]:
+    from openprogram.sandbox import ON_UNAVAILABLE
+    return ON_UNAVAILABLE
+
+
+def _sandbox_default_deny_read() -> tuple[str, ...]:
+    from openprogram.sandbox import DEFAULT_DENY_READ
+    return DEFAULT_DENY_READ
+
+
+def _sandbox_default_deny_write() -> tuple[str, ...]:
+    from openprogram.sandbox import DEFAULT_DENY_WRITE
+    return DEFAULT_DENY_WRITE
+
+
 def _coerce(widget: str, value: Any) -> Any:
     if widget == "number":
         return int(value)
@@ -233,6 +253,93 @@ SETTINGS: list[SettingSpec] = [
              "command in the background and ignore the exit code. Timeout "
              "defaults to 60 seconds per command. Read once at worker "
              "start — restart to apply.",
+    ),
+    SettingSpec(
+        key="sandbox.mode", path=("sandbox", "mode"), group="Sandbox",
+        label="Sandbox mode", widget="enum", apply=APPLY_LIVE,
+        default="off", choices=lambda: list(_sandbox_modes()),
+        help="`off` runs shell commands with your full user authority. "
+             "`workspace-write` wraps every command the bash tool runs "
+             "(macOS sandbox-exec, Linux bubblewrap) so it can write only "
+             "inside the working directory, cannot read the paths listed "
+             "under Blocked read paths, and has no network. Read per "
+             "command, so a change applies to the next command everywhere "
+             "— including background threads and spawned subprocesses.",
+    ),
+    SettingSpec(
+        key="sandbox.writable_roots", path=("sandbox", "writable_roots"),
+        group="Sandbox", label="Extra writable roots", widget="json",
+        apply=APPLY_LIVE, default=[],
+        validate=lambda v: (None if isinstance(v, list)
+                            and all(isinstance(x, str) for x in v)
+                            else "must be a JSON list of directory paths"),
+        help="Directories a sandboxed command may write besides the "
+             "working directory, as a JSON list. `~` is expanded.",
+    ),
+    SettingSpec(
+        key="sandbox.deny_read", path=("sandbox", "deny_read"),
+        group="Sandbox", label="Blocked read paths", widget="json",
+        apply=APPLY_LIVE, default=list(_sandbox_default_deny_read()),
+        validate=lambda v: (None if isinstance(v, list)
+                            and all(isinstance(x, str) for x in v)
+                            else "must be a JSON list of glob patterns"),
+        help="Globs a sandboxed command cannot read, as a JSON list. "
+             "Ships loaded with the credential paths, because a command "
+             "that reads a key can still deliver it without any network: "
+             "the memory writer's output returns to a later session's "
+             "context. `**` matches any depth; on Linux a pattern "
+             "containing a wildcard in the middle has no equivalent and "
+             "is skipped, since bubblewrap masks paths rather than "
+             "matching them.",
+    ),
+    SettingSpec(
+        key="sandbox.deny_write", path=("sandbox", "deny_write"),
+        group="Sandbox", label="Blocked write paths", widget="json",
+        apply=APPLY_LIVE, default=list(_sandbox_default_deny_write()),
+        validate=lambda v: (None if isinstance(v, list)
+                            and all(isinstance(x, str) for x in v)
+                            else "must be a JSON list of glob patterns"),
+        help="Globs a sandboxed command cannot write even inside the "
+             "working directory, as a JSON list — the paths that arrange "
+             "for code to run later outside the sandbox. The directory "
+             "the function watcher auto-imports is always blocked and is "
+             "not listed here, because a `.py` dropped there executes in "
+             "the agent process within seconds. Empty otherwise: adding "
+             "`**/.git/hooks/**` closes the next escape of that shape and "
+             "also makes `git init` and `git clone` fail, since both "
+             "write that directory.",
+    ),
+    SettingSpec(
+        key="sandbox.network", path=("sandbox", "network"), group="Sandbox",
+        label="Allow network inside the sandbox", widget="toggle",
+        apply=APPLY_LIVE, default=False,
+        help="Off means a sandboxed command has no network at all, which "
+             "is what stops anything it read from leaving the machine. "
+             "Turn it on and a sandboxed `pip install` works again, along "
+             "with every other outbound connection.",
+    ),
+    SettingSpec(
+        key="sandbox.pass_env", path=("sandbox", "pass_env"), group="Sandbox",
+        label="Extra environment variables to pass", widget="json",
+        apply=APPLY_LIVE, default=[],
+        validate=lambda v: (None if isinstance(v, list)
+                            and all(isinstance(x, str) for x in v)
+                            else "must be a JSON list of variable names"),
+        help="A sandboxed command inherits only PATH, HOME, SHELL, USER, "
+             "LOGNAME, TERM, TMPDIR, TZ, PWD, LANG and LC_*, so API keys "
+             "in your environment do not reach it. Name any additional "
+             "variables here.",
+    ),
+    SettingSpec(
+        key="sandbox.on_unavailable", path=("sandbox", "on_unavailable"),
+        group="Sandbox", label="When the sandbox cannot run", widget="enum",
+        apply=APPLY_LIVE, default="refuse",
+        choices=lambda: list(_sandbox_on_unavailable()),
+        help="What happens when the mode is on but the platform tool is "
+             "missing. `refuse` fails the command and says why. `warn` "
+             "runs it unsandboxed and logs a warning — convenient, and "
+             "the reason a security setting can end up doing nothing "
+             "without anyone noticing.",
     ),
     SettingSpec(
         key="update.channel", path=("update", "channel"), group="Updates",
