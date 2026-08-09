@@ -16,6 +16,22 @@ from .state import (
 )
 
 
+def _parse(value: str | None) -> datetime | None:
+    """An ISO 8601 stamp as an aware datetime, or None if it is not one.
+
+    A date-only stamp — what a written record carries — parses naive,
+    and subtracting a naive datetime from an aware ``now`` raises, so
+    anything without an offset is read as UTC.
+    """
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
 class OnlineMemoryRuntime:
     def __init__(
         self,
@@ -64,8 +80,9 @@ class OnlineMemoryRuntime:
         token_count = sum(self.token_counter(record.content) for record in batch)
         last_timestamp = max(
             (
-                datetime.fromisoformat(record.timestamp)
-                for record in batch if record.timestamp
+                stamp for stamp in
+                (_parse(record.timestamp) for record in batch)
+                if stamp is not None
             ),
             default=now,
         )
@@ -101,10 +118,7 @@ class OnlineMemoryRuntime:
             local_manager(workspace)
             state.local_batches = 0
             state.local_tokens = 0
-        last_global = (
-            datetime.fromisoformat(state.last_global_at)
-            if state.last_global_at else None
-        )
+        last_global = _parse(state.last_global_at)
         if global_manager and should_global_manage(
             last_global,
             now,

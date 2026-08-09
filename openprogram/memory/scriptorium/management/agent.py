@@ -12,6 +12,7 @@ if TYPE_CHECKING:  # the SDK is only needed to actually run a writer
 from .config import MemoryConfig
 from ..prompts import FEW_SHOT_INSTRUCTIONS, SYSTEM_PROMPT
 from .tools import management_tools
+from .transaction import TransactionError
 from .workspace import MemoryWorkspace
 from ..workspace_layout import runtime_dir
 
@@ -223,7 +224,15 @@ def _run_agent(
             )
             if usage_logger is not None:
                 usage_logger(repair)
-            _commit_turn(workspace, repair_baseline, audit)
+            repair_error = _commit_turn(workspace, repair_baseline, audit)
+            if repair_error is not None:
+                # Two rejected turns leave the workspace as it started.
+                # Reporting success here is what lets the caller advance
+                # its cursor past turns that never reached memory.
+                raise TransactionError(
+                    "COMMIT_REJECTED",
+                    f"repair edits were rejected too: {repair_error}",
+                )
         if final_output is not None:
             final_output.append(result.text)
         audit.append({

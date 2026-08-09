@@ -86,7 +86,17 @@ cannot tolerate.
 
 Each write takes the leading turns that reach the threshold, not the
 whole backlog: a session running all day arrives with far more than one
-model call can hold.
+model call can hold. The idle flush repeats that until nothing is left,
+because for it there is no later pass — the watcher marks a session
+processed on the way out, so a flush that stopped after one batch would
+strand the rest for good. It reports whether it finished, and an
+unfinished one is left for the next poll.
+
+A turn is what a person said and what the assistant replied. Tool calls
+and their results are the machinery of a turn rather than its content,
+and so are the turns the runtime schedules for itself: a finished
+sub-agent's notification and a merge prompt are written as user rows so
+the model has something to answer, but nobody said them.
 
 ## Why the nightly sweep exists
 
@@ -187,10 +197,14 @@ for a new format is not a migration.
 | No writer process available | Writing is deferred and retried; the conversation is safe in the session store |
 | Model unreachable mid-write | The turn is rolled back whole; the cursor does not advance, so the same turns are retried |
 | Another writer holds the lock | This pass is skipped; the next turn retries |
+| The writer's edits are rejected twice | The batch fails whole — one repair attempt, then nothing is installed and the cursor does not advance |
 | A hand edit breaks the format | `openprogram memory edit` validates and reports before the views are rebuilt |
 
 Memory never takes a conversation down with it: every provider hook
-swallows its own failures and logs them.
+swallows its own failures and logs them. Swallowed is not forgotten —
+`on_session_end` returns whether the session is finished, and the
+watcher leaves an unfinished one for the next poll instead of marking
+it processed.
 
 ## Plugin point
 

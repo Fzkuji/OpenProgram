@@ -113,16 +113,25 @@ class ScriptoriumMemoryProvider(MemoryProvider):
         messages: list[dict[str, Any]],
         *,
         session_id: str = "",
-    ) -> None:
+    ) -> bool:
         """Flush whatever is left, however little it is.
 
         The threshold exists so that short exchanges do not each cost a
         call. At the end of a session there is no later batch to join,
         so the remainder is written regardless of size.
+
+        False when any of it is still unwritten. An unreachable model or
+        a rejected edit must not be reported as a finished session: the
+        watcher would mark it done and nothing would ever come back for
+        those turns.
         """
         from .writing import flush
 
         try:
-            flush(session_id or self._session_id, messages)
+            return flush(
+                session_id or self._session_id, messages,
+                token_threshold=WRITE_TOKEN_THRESHOLD,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.debug("memory flush failed: %s", exc)
+            return False

@@ -132,14 +132,19 @@ class MemoryProvider(ABC):
         messages: list[dict[str, Any]],
         *,
         session_id: str = "",
-    ) -> None:
+    ) -> bool:
         """Called at session boundary (explicit close or idle timeout).
 
         Heavier extraction lives here. ``session_id`` identifies the
         conversation, the same way ``sync_turn`` takes it: the watcher
         processes many sessions in a loop and cannot rely on whichever
         one ``initialize`` last saw.
+
+        Return True once the session needs no further attention. False
+        asks the watcher to come back — swallowing a failure and
+        returning True marks the session done and loses those turns.
         """
+        return True
 
     def maintain(self, **kwargs: Any) -> dict[str, Any]:
         """Periodic upkeep, called by the nightly scheduler.

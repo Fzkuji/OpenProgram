@@ -142,12 +142,18 @@ def _process_session(session_id: str, messages: list[dict[str, Any]]) -> bool:
         return False
 
     try:
-        get_provider().on_session_end(messages, session_id=session_id)
+        done = get_provider().on_session_end(messages, session_id=session_id)
     except Exception as exc:  # noqa: BLE001
         # A missing CLI or an unreachable model is transient: the
         # conversation is safe in the session store, so retrying next
         # poll costs nothing and loses nothing.
         logger.info("memory: write deferred for %s (%s)", session_id, exc)
+        return False
+    if not done:
+        # The provider wrote some of it, or none of it. Either way the
+        # session is not finished, and marking it processed here is how
+        # the remainder would be lost.
+        logger.info("memory: write incomplete for %s; will retry", session_id)
         return False
     return True
 

@@ -16,6 +16,7 @@ which is exactly what a cursor cannot tolerate.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from .management import organize_topics
@@ -28,6 +29,10 @@ from .runtime.state import SourceRecord
 logger = logging.getLogger(__name__)
 
 PROVIDER = "openprogram"
+
+# Turns the runtime writes to drive itself: the notification a finished
+# sub-agent posts back, and the prompt a branch merge assembles.
+RUNTIME_SOURCES = frozenset({"task_followup", "merge_turn"})
 
 
 def _agent(model: str | None = None) -> Any:
@@ -62,6 +67,46 @@ def _text_of(message: dict[str, Any]) -> str:
     return ""
 
 
+def _is_runtime_turn(message: dict[str, Any]) -> bool:
+    """A turn the runtime scheduled, not one anybody said.
+
+    A sub-agent's completion notice and a merge prompt are written as
+    user-role rows so the model has something to answer, and the chat
+    marks them ``display="runtime"`` rather than drawing them as the
+    user talking (dag/overview.md). The reply carries the same
+    ``source`` as the trigger, so this covers both halves of the turn.
+    """
+    return (
+        message.get("display") == "runtime"
+        or message.get("source") in RUNTIME_SOURCES
+    )
+
+
+def _observed_at(value: Any) -> str | None:
+    """A session row's stamp, as the ISO 8601 the memory layer stores.
+
+    The session store keeps Unix seconds; everything downstream of a
+    ``SourceRecord`` wants a calendar time — the writer's observation
+    date is this string's first ten characters, the source archive
+    prints it beside the turn, and ``runtime/online`` parses it. So the
+    conversion belongs here, at the boundary between the two.
+
+    In the machine's own zone, offset included: the date a claim is
+    filed under should be the date the user would name, and an offset
+    keeps it comparable with an aware ``now``.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        return datetime.fromtimestamp(
+            float(value), timezone.utc
+        ).astimezone().isoformat()
+    except (TypeError, ValueError):
+        # Already a written date — ``archive_sessions`` builds records
+        # that way — so pass it through rather than mangling it.
+        return str(value).strip() or None
+
+
 def _records(
     session_id: str, messages: list[dict[str, Any]]
 ) -> list[SourceRecord]:
@@ -69,12 +114,18 @@ def _records(
 
     Only what a person said and what the assistant replied. Tool calls
     and their results are the machinery of a turn, not its content, and
-    recording them would bury the conversation in file listings.
+    recording them would bury the conversation in file listings; the
+    runtime's own scheduling turns are machinery for the same reason.
+
+    The ordinal is the row's position in the whole branch, skipped rows
+    included, because that is what the write cursor is compared against.
     """
     rows: list[SourceRecord] = []
     for index, message in enumerate(messages):
         role = message.get("role")
         if role not in ("user", "assistant"):
+            continue
+        if _is_runtime_turn(message):
             continue
         text = _text_of(message)
         if not text:
@@ -86,7 +137,7 @@ def _records(
             ordinal=index,
             role=role,
             content=text,
-            timestamp=str(message.get("timestamp") or "") or None,
+            timestamp=_observed_at(message.get("timestamp")),
         ))
     return rows
 
@@ -196,19 +247,50 @@ def record_turn(session_id: str, *, token_threshold: int) -> bool:
     )
 
 
-def flush(session_id: str, messages: list[dict[str, Any]] | None = None) -> bool:
-    """Write what a session has left, however little it is.
+def _pending(
+    session_id: str, messages: list[dict[str, Any]]
+) -> list[SourceRecord]:
+    """What this session still owes memory."""
+    from .. import store
 
-    The threshold keeps short exchanges from each costing a call. Once a
-    session is over there is no later batch to join, so the remainder
-    goes in regardless of size.
+    records = _records(session_id, messages)
+    if not records:
+        return []
+    return OnlineMemoryRuntime(
+        store.ensure(), token_counter=_counter()
+    ).pending(records)
+
+
+def flush(
+    session_id: str,
+    messages: list[dict[str, Any]] | None = None,
+    *,
+    token_threshold: int,
+) -> bool:
+    """Write what a session has left. True when none of it is left.
+
+    ``force`` gets it written however little there is: the threshold
+    keeps short exchanges from each costing a call, and once a session
+    is over there is no later batch to join. The threshold still bounds
+    one call's worth, so a day-long session takes several passes —
+    hence the loop. Stopping after the first pass would strand the rest
+    for good, because the caller marks the session done on the way out.
+
+    False means part of the backlog is still unwritten and the caller
+    should come back to it.
     """
     if not session_id:
         return False
     rows = messages if messages is not None else _branch(session_id)
-    return write_session(
-        session_id, rows, token_threshold=1, force=True
-    )
+    while _pending(session_id, rows):
+        if not write_session(
+            session_id, rows,
+            token_threshold=token_threshold, force=True,
+        ):
+            # No progress: another writer holds the workspace, or the
+            # batch was refused. Report it rather than claim a write.
+            return False
+    return True
 
 
 def sweep(*, model: str | None = None) -> dict[str, Any]:
