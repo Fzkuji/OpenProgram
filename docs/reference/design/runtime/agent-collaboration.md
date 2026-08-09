@@ -172,8 +172,11 @@ dispatch from a message is task tracking:
   turn is prefixed with a task receipt header (`[task from SID:HEAD] This
   is a tracked task …`) so the target knows the reply is the task's
   result, returned to the dispatcher automatically.
-- The result flows back exactly like a spawn's: terminal state → attach +
-  followup notification into the dispatcher's session.
+- At terminal state the result flows back as a followup notification into
+  the dispatcher's session, with the reply text carried inline in the
+  notification. A dispatch creates no branch, so there is no attach
+  pointer: attach records that a call created the branch it points at,
+  which is untrue of work handed to an agent that already exists.
 - `to` and `start_from` are mutually exclusive (the target branch keeps its
   own history; a fork-point choice contradicts that — the call errors).
   `to` is always asynchronous, so `run_in_background` is ignored.

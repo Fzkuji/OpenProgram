@@ -146,7 +146,9 @@ session）fork、继承到该节点为止的链。`run_in_background=true` 返�
   drain 时跑的是同一个 task。投出的这一轮带任务来源头
   （`[task from SID:HEAD] This is a tracked task …`），目标知道这轮的回复
   就是任务结果，会自动回给派活方。
-- 结果回流和 spawn 任务一致：终态后 attach + followup 通知回派活方会话。
+- 终态后结果回流：往派活方会话投一条followup通知，回复正文内联在通知里。
+  派活不创建分支，所以没有attach指针：attach记录的是"这次调用创造了它指向的
+  那条分支"，派给一个已经存在的agent不成立。
 - `to` 与 `start_from` 互斥（目标分支自带历史，再选 fork 点自相矛盾，直接
   报错）。`to` 必然异步，`run_in_background` 被忽略。派给自己当前分支被
   拒绝（直接继续做）。派活花的是消息预算，不是派生预算（§5.1），因为它不创建

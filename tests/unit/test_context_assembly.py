@@ -73,8 +73,9 @@ def _capturing_stream(sink: list):
         yield EventTextStart(content_index=0, partial=_build_partial(""))
         yield EventTextDelta(content_index=0, delta="ok",
                              partial=_build_partial("ok"))
-        yield EventTextEnd(content_index=0, partial=_build_partial("ok"))
-        yield EventDone(message=_final("ok"))
+        yield EventTextEnd(content_index=0, content="ok",
+                           partial=_build_partial("ok"))
+        yield EventDone(reason="stop", message=_final("ok"))
     return _fn
 
 
@@ -118,10 +119,17 @@ def _run_turn(text: str, sink: list, *, session_id="s1", tools=None):
                     cancel_event=cancel_event, stream_fn=stream)
 
     with patch.object(D, "_run_loop_blocking", _wrapped):
-        return D.process_user_turn(D.TurnRequest(
+        res = D.process_user_turn(D.TurnRequest(
             session_id=session_id, user_text=text, agent_id="main",
             source="tui", tools_override=tools,
         ))
+    # The turn has to actually finish. An event the provider schema
+    # rejects makes every assertion below read a half-built turn that
+    # died in the error path — and still pass, because the wire context
+    # was captured before the stream blew up.
+    assert not res.failed, res.error
+    assert res.final_text == "ok"
+    return res
 
 
 # A. One assembler
