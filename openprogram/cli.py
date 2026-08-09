@@ -813,9 +813,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_chaccess = channels_sub.add_parser("access",
         help="Inbound sender access control: allowlist + pairing codes. "
              "Unknown senders get a pairing code instead of driving the "
-             "agent; approve them here (never from the chat itself). One "
-             "approved sender per account: this instance serves one person, "
-             "and its memory workspace is shared by every conversation.")
+             "agent; approve them here (never from the chat itself). An "
+             "account takes any number of approved senders — they share one "
+             "agent and one memory, which records who said what.")
     p_chaccess_sub = p_chaccess.add_subparsers(dest="access_verb",
                                                metavar="verb")
     p_cha_list = p_chaccess_sub.add_parser("list",
@@ -845,8 +845,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Account id (default: 'default')")
     p_cha_policy = p_chaccess_sub.add_parser("policy",
         help="Set the inbound policy: pairing (default, unknown senders "
-             "get a code) or open (everyone gets through, and everyone "
-             "shares this instance's one memory workspace)")
+             "get a code) or open (everyone gets through)")
     p_cha_policy.add_argument("channel",
         choices=["wechat", "telegram", "discord", "slack"])
     p_cha_policy.add_argument("policy", choices=["pairing", "open"])

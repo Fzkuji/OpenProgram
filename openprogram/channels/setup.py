@@ -87,11 +87,10 @@ def run() -> int:
               "first message returns a code — approve yourself with:")
         print(f"  openprogram channels access approve {channel} <code>"
               + (f" --id {account_id}" if account_id != "default" else ""))
-        print("\n[setup] this instance serves one person. The account "
-              "accepts a single approved sender, because memory is one "
-              "workspace shared by every agent and conversation here — a "
-              "second person would read and write your memories. Give them "
-              "their own instance: openprogram --profile <name>")
+        print("[setup] approve as many people as you like with the same "
+              "command — they share this agent and its memory, which "
+              "records who said what. For a bot anyone should reach, drop "
+              f"the gate: openprogram channels access policy {channel} open")
         return 0
     except (KeyboardInterrupt, EOFError):
         print("\n[setup] aborted.")

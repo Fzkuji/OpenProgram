@@ -20,8 +20,6 @@ from openprogram.channels.base import Channel
 def _tmp_state(tmp_path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("openprogram.paths.get_state_dir",
                         lambda: tmp_path / "state")
-    _access._served_sender.clear()
-    _access._warned_senders.clear()
 
 
 def test_default_policy_is_pairing() -> None:
@@ -82,50 +80,51 @@ def test_open_policy_lets_everyone_through() -> None:
 
 
 # ---------------------------------------------------------------------------
-# single-user boundary — one approved sender per channel account
+# several people on one account — the gate judges each sender, not the count
 # ---------------------------------------------------------------------------
 
-def test_second_peer_refused_by_pairing_code() -> None:
-    _access.approve_user("telegram", "a1", "111", display="Owner")
-    _access.check_inbound("telegram", "a1", "222", "Stranger")
+def test_a_second_sender_is_approved_by_pairing_code() -> None:
+    """Everyone in a group chat can be approved on the same account. They
+    share the agent and its memory, which records who said what."""
+    _access.approve_user("telegram", "a1", "111", display="Ada")
+    _access.check_inbound("telegram", "a1", "222", "Bo")
     code = _access.describe("telegram", "a1")["pending"]["222"]["code"]
-    with pytest.raises(ValueError, match="single-user"):
-        _access.approve("telegram", "a1", code)
+
+    assert _access.approve("telegram", "a1", code) == "222"
+
     data = _access.describe("telegram", "a1")
-    assert list(data["allowlist"]) == ["111"]       # unchanged
-    assert "222" in data["pending"]                 # still not approved
-    assert _access.check_inbound("telegram", "a1", "222")[0] is False
+    assert sorted(data["allowlist"]) == ["111", "222"]
+    assert data["pending"] == {}
+    assert _access.check_inbound("telegram", "a1", "111")[0] is True
+    assert _access.check_inbound("telegram", "a1", "222")[0] is True
 
 
-def test_second_peer_refused_by_direct_allow() -> None:
-    _access.approve_user("discord", "a1", "111")
-    with pytest.raises(ValueError, match="single-user"):
-        _access.approve_user("discord", "a1", "222")
-    assert list(_access.describe("discord", "a1")["allowlist"]) == ["111"]
+def test_a_second_sender_is_approved_by_direct_allow() -> None:
+    _access.approve_user("discord", "a1", "111", display="Ada")
+    _access.approve_user("discord", "a1", "222", display="Bo")
+    _access.approve_user("discord", "a1", "333", display="Cy")
+    allowed = _access.describe("discord", "a1")["allowlist"]
+    assert sorted(allowed) == ["111", "222", "333"]
+    assert allowed["222"]["display"] == "Bo"
 
 
-def test_re_approving_the_same_peer_is_fine() -> None:
-    _access.approve_user("slack", "a1", "U7", display="Owner")
-    _access.approve_user("slack", "a1", "U7", display="Owner renamed")
-    assert list(_access.describe("slack", "a1")["allowlist"]) == ["U7"]
-
-
-def test_revoke_frees_the_account_for_someone_else() -> None:
+def test_revoking_one_sender_leaves_the_others() -> None:
     _access.approve_user("telegram", "a1", "111")
-    _access.revoke("telegram", "a1", "111")
     _access.approve_user("telegram", "a1", "222")
+
+    assert _access.revoke("telegram", "a1", "111") is True
+
     assert list(_access.describe("telegram", "a1")["allowlist"]) == ["222"]
+    assert _access.check_inbound("telegram", "a1", "111")[0] is False
+    assert _access.check_inbound("telegram", "a1", "222")[0] is True
 
 
-def test_open_policy_warns_once_on_a_second_person(capsys) -> None:
-    _access.set_policy("wechat", "a1", "open")
-    _access.check_inbound("wechat", "a1", "111")
-    capsys.readouterr()
-    assert _access.check_inbound("wechat", "a1", "222")[0] is True
-    warning = capsys.readouterr().out
-    assert "second person" in warning and "222" in warning
-    _access.check_inbound("wechat", "a1", "222")
-    assert capsys.readouterr().out == ""             # warned once, not per turn
+def test_re_approving_the_same_sender_updates_the_display_name() -> None:
+    _access.approve_user("slack", "a1", "U7", display="Ada")
+    _access.approve_user("slack", "a1", "U7", display="Ada Lovelace")
+    allowed = _access.describe("slack", "a1")["allowlist"]
+    assert list(allowed) == ["U7"]
+    assert allowed["U7"]["display"] == "Ada Lovelace"
 
 
 def test_set_policy_validates() -> None:

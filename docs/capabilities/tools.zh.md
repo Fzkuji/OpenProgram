@@ -82,7 +82,7 @@ OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调�
 | `ask_user_question` | 向用户提 1–N 个带选项的问题 | 无 |
 | `enter_plan_mode` / `exit_plan_mode` | 进入 / 退出计划模式 | 无 |
 | `canvas` | 往 markdown 文件的具名块里增量写入 | 无 |
-| `memory_*` | 读取持久记忆工作区——`memory_search`（按语义找）、`memory_grep`（找确切字符串）、`memory_get`（读一个文件、章节或段落）、`memory_browse`（看有什么）、`memory_status`（规模与版本），以及 `memory_update` 用来更正某一处。没有记录对话的工具：那件事在后台完成。每个实例只有一份工作区，所有agent、所有对话（含聊天渠道）共用，因此一个实例服务一个人（见[聊天渠道](../integrations/channels.zh.md#谁能和你的机器人说话)）。 | 无 |
+| `memory_*` | 读取持久记忆工作区——`memory_search`（按语义找）、`memory_grep`（找确切字符串）、`memory_get`（读一个文件、章节或段落）、`memory_browse`（看有什么）、`memory_status`（规模与版本），以及 `memory_update` 用来更正某一处。没有记录对话的工具：那件事在后台完成。每个实例只有一份工作区，所有agent、所有对话（含聊天渠道）共用（见[聊天渠道](../integrations/channels.zh.md#谁能和你的机器人说话)）。 | 无 |
 | `worktree_*` | git worktree：`worktree_create` / `merge` / `discard` / `list` / `keep` | git |
 | `cron` | 登记周期性 agent 任务 | 无 |
 | `list_mcp_resources` / `read_mcp_resource` / `list_mcp_prompts` / `get_mcp_prompt` | 把 MCP 的 resources / prompts 原语暴露给模型（`mcp_meta` 目录） | 已配置的 MCP server（见 [MCP](mcp.md)） |

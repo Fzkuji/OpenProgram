@@ -163,7 +163,7 @@ The `worker` subcommands offer finer control:
 | `setup` | Interactive wizard: pick a channel, log in (QR code / token), bind an agent |
 | `accounts` | Manage channel bot accounts (WeChat, Telegram, etc.) |
 | `bindings` | Route inbound channel messages to agents |
-| `access` | Who reaches the agent: `list`, `approve <code>`, `allow <user_id>`, `revoke <user_id>`, `policy pairing\|open`. One approved sender per account — an instance serves one person ([Chat Channels](../integrations/channels.md#who-can-talk-to-your-bot)) |
+| `access` | Who reaches the agent: `list`, `approve <code>`, `allow <user_id>`, `revoke <user_id>`, `policy pairing\|open`. An account takes any number of approved senders ([Chat Channels](../integrations/channels.md#who-can-talk-to-your-bot)) |
 
 ### memory — persistent memory
 

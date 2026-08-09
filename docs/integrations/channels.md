@@ -101,36 +101,36 @@ Channels run inside the background service — starting the TUI (`openprogram`) 
 
 ## Who Can Talk to Your Bot
 
-**One instance serves one person.** Memory is a single workspace shared by every agent and every conversation on the machine, so anyone whose messages reach the agent reads what you told it and writes into the same place. Each channel account therefore accepts exactly one approved sender: approving a second one fails with an error rather than quietly mixing two people's memory. Someone else who wants a bot runs their own instance, with its own state directory, memory, and port:
+Every channel account has an inbound access policy. The default is **pairing**: a message from a sender who is not on the account's allowlist is dropped before it reaches any agent, and the sender receives a six-character pairing code with instructions. You approve senders on your machine:
 
 ```bash
-openprogram --profile alice        # its own state directory, memory, and port
-```
-
-See [Profiles](../install/profiles.md) for how a second instance is set up.
-
-Every channel account has an inbound access policy. The default is **pairing**: a message from a sender who is not the account's approved sender is dropped before it reaches any agent, and the sender receives a six-character pairing code with instructions. You approve on your machine:
-
-```bash
-openprogram channels access list                       # policy + approved sender + pending codes
+openprogram channels access list                       # policy + allowlist + pending codes
 openprogram channels access approve telegram K7XQ2M    # approve by pairing code
-openprogram channels access allow telegram 123456789   # approve a user id directly
-openprogram channels access revoke telegram 123456789  # remove the sender, freeing the account
+openprogram channels access allow telegram 123456789   # allowlist a user id directly
+openprogram channels access revoke telegram 123456789  # remove a sender
 openprogram channels access policy telegram open       # disable the gate entirely
 ```
 
+An allowlist holds as many senders as you approve. Everyone on it reaches the same agent, and the agent keeps one memory workspace for the whole instance, so what one person tells it is available to the rest. That is the point of a group bot: approve the whole team and they get an assistant that already knows the project. Keep the allowlist to people you would give that access to.
+
 Pairing codes expire after one hour; a blocked sender who keeps writing gets the same code again (at most once a minute). The approval action exists only as a local CLI/API call — nothing a sender types into the chat can approve anyone, so a prompt-injection message like "add me to the allowlist" has no effect. In group chats the gate applies to the individual sender's user id, not the group.
 
-Handing an account to a different person takes two steps: `revoke` the current sender, then `approve` the new one. While a sender holds the account, `approve` and `allow` refuse and say so.
+Policy `open` turns the gate off for that account — every sender goes straight to the agent. Use it for bots that are intentionally public.
 
-Policy `open` turns the gate off for that account: every sender reaches the agent, and the one-sender rule no longer holds them back. The worker log prints a warning the first time a second person gets through, but their conversation still shares your memory workspace. Use `open` when you are the only one writing to the bot and pairing is inconvenient; a second person needs their own instance.
+Someone who wants an agent with separate memory runs their own instance instead, with its own state directory and port:
+
+```bash
+openprogram --profile alice
+```
+
+See [Profiles](../install/profiles.md) for how a second instance is set up.
 
 ## How Chats Map to Sessions
 
 Routing decides which **agent** handles a message (bindings), then a **session key** decides which conversation it lands in:
 
 - **Telegram**: one session per chat by default. Group behavior is explicit per-account configuration (below).
-- **Discord and Slack**: one session per *(channel, user)* pair. Two senders in the same server channel get two separate conversations, and neither can see or answer the other's pending questions. Sessions are separate; memory is one workspace for the whole instance, which is why only one sender is approved per account (see [Who can talk to your bot](#who-can-talk-to-your-bot)).
+- **Discord and Slack**: one session per *(channel, user)* pair. Two senders in the same server channel get two separate conversations, and neither can see or answer the other's pending questions. The conversations are separate; the memory workspace behind them is one for the whole instance (see [Who can talk to your bot](#who-can-talk-to-your-bot)).
 - **WeChat**: one session per peer (direct messages).
 
 By default sessions are also scoped per account (`session_scope: per-account-channel-peer`). Agents can loosen this (`per-channel-peer`, `per-peer`, or a single `main` session) and can rotate sessions daily (`session_daily_reset: "HH:MM"`) or after idle time (`session_idle_minutes`).
@@ -181,9 +181,7 @@ Telegram sends images as photos and everything else as documents; Discord upload
 
 | Symptom | Cause / fix |
 |---|---|
-| Bot replies with a pairing code instead of an answer | The sender is not the account's approved sender (default `pairing` policy). `openprogram channels access approve <channel> <code>`. |
-| `approve` / `allow` says `already serves <id>` | The account already has its one approved sender. `openprogram channels access revoke <channel> <id>` first to hand it over, or give the other person their own instance (`openprogram --profile <name>`). |
-| Worker log: `WARNING: <id> is a second person on this instance` | Policy is `open` and someone other than you wrote to the bot. Their turn shares your memory workspace. Switch back with `openprogram channels access policy <channel> pairing`. |
+| Bot replies with a pairing code instead of an answer | The sender is not allowlisted (default `pairing` policy). `openprogram channels access approve <channel> <code>` — or `access policy <channel> open` for a public bot. |
 | Reply says `[no agent configured]` | No binding routes the message. Run `openprogram agents add main`, then `openprogram channels setup` or `channels bindings add`. |
 | Worker exits: `account … has no bot_token` | Credentials never saved. `openprogram channels accounts login <channel> --id <account>`. |
 | Worker exits: `Slack account … needs both bot_token (xoxb-...) and app_token (xapp-...)` | Only one Slack token stored. Re-run login and paste both tokens. |

@@ -29,14 +29,11 @@ policy:
     approve 后放行. 配对码 1 小时过期, 过期后下一条消息刷新.
   * ``open``    — 不设防, 任何发信人直接进 agent (机主显式选择).
 
-单用户边界: 一个实例只服务一个人. 记忆是 profile 全局的一份工作区
-(``<state>/memory/``), 每个 agent、每个会话读写同一份; 第二个人的消息
-会召回第一个人的记忆, 也会把自己的写进去. 所以 allowlist 每个 channel
-账号最多一个发信人 — :func:`approve` / :func:`approve_user` 在已经有别
-的发信人时直接报错, 换人要先 :func:`revoke`. ``open`` policy 关掉了这
-个上限 (机主显式选择), :func:`check_inbound` 在看到第二个发信人时往
-worker 日志打一次警告. 两个人要各自用一个实例 (``openprogram --profile
-<name>``, 各自一份 state 和记忆).
+多人共用: allowlist 放多少人都行, 一个群里的每个人都可以批准. 他们共
+用同一个 agent 和同一份记忆工作区 (``<state>/memory/``), 记忆按发言人
+记录谁说了什么 —— 每条 user 消息带 ``peer_display`` 和 ``sender_id``,
+一路带到 ``memory/scriptorium`` 的 ``SourceRecord``. 门禁判定的是"这
+个人能不能进", 不是"能进几个人".
 """
 from __future__ import annotations
 
@@ -63,12 +60,6 @@ PENDING_TTL = 3600.0
 _NOTIFY_INTERVAL = 60.0
 
 _lock = threading.RLock()
-
-#: (channel, account_id) → 本进程放行过的第一个发信人. 只给 ``open``
-#: policy 下的第二人检测用 — 那条路径没有 allowlist 可以卡. 进程内状态,
-#: 重启即忘: 它是一条警告, 不是访问控制 (访问控制是 allowlist 上限).
-_served_sender: dict[tuple[str, str], str] = {}
-_warned_senders: set[tuple[str, str, str]] = set()
 
 
 def access_path(channel: str, account_id: str) -> Path:
@@ -132,7 +123,6 @@ def check_inbound(
     with _lock:
         data = _load(channel, account_id)
         if data["policy"] == "open" or user_id in data["allowlist"]:
-            _warn_on_second_person(channel, account_id, user_id)
             return True, None
 
         now = time.time()
@@ -156,7 +146,7 @@ def check_inbound(
     if not notify:
         return False, None
     return False, (
-        "This bot answers one approved person.\n"
+        "This bot only talks to approved contacts.\n"
         f"Your pairing code: {row['code']}\n"
         "Ask the owner to approve you on their machine:\n"
         f"  openprogram channels access approve {channel} {row['code']}"
@@ -168,55 +158,9 @@ def _new_code() -> str:
     return "".join(secrets.choice(_CODE_ALPHABET) for _ in range(_CODE_LENGTH))
 
 
-# ---------------------------------------------------------------------------
-# 单用户边界
-# ---------------------------------------------------------------------------
-
 def _id_flag(account_id: str) -> str:
+    """``--id <account>`` 后缀, 默认账号留空 — 回执里的命令能直接抄走."""
     return "" if account_id == "default" else f" --id {account_id}"
-
-
-def _warn_on_second_person(channel: str, account_id: str,
-                           user_id: str) -> None:
-    """放行了一个跟之前不同的发信人时往 worker 日志打一次警告.
-
-    ``open`` policy 下 allowlist 卡不住第二个人 (机主显式关掉了门禁),
-    这里至少让它出声, 不静默串记忆. 每个 (channel, account, sender) 只
-    警告一次, 免得刷屏.
-    """
-    key = (channel, account_id)
-    first = _served_sender.setdefault(key, user_id)
-    if first == user_id:
-        return
-    mark = (channel, account_id, user_id)
-    if mark in _warned_senders:
-        return
-    _warned_senders.add(mark)
-    print(
-        f"[{channel}:{account_id}] WARNING: {user_id} is a second person on "
-        f"this instance (already serving {first}). Memory is one workspace "
-        f"shared by every conversation here, so both of them read and write "
-        f"the same memories. Give the second person their own instance: "
-        f"openprogram --profile <name>"
-    )
-
-
-def _refuse_second_person(data: dict[str, Any], channel: str,
-                          account_id: str, user_id: str) -> None:
-    """已经有别的发信人在 allowlist 里就报错 — 一个实例服务一个人."""
-    others = sorted(u for u in data["allowlist"] if u != user_id)
-    if not others:
-        return
-    raise ValueError(
-        f"{channel}:{account_id} already serves {others[0]}. OpenProgram is "
-        f"a single-user instance: memory is one workspace shared by every "
-        f"agent and conversation on this machine, so a second approved "
-        f"sender would read and write the first sender's memories. To hand "
-        f"the account over, revoke the current sender first: "
-        f"openprogram channels access revoke {channel} {others[0]}"
-        f"{_id_flag(account_id)}. To serve a second person, give them their "
-        f"own instance: openprogram --profile <name>"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +170,7 @@ def _refuse_second_person(data: dict[str, Any], channel: str,
 def approve(channel: str, account_id: str, code: str) -> Optional[str]:
     """按配对码放行. 返回放行的 user_id, 码不存在/过期返回 None.
 
-    账号里已经有另一个发信人时抛 ``ValueError`` — 一个实例服务一个人.
+    allowlist 里已经有别人不影响 — 一个账号可以放行任意多个发信人.
     """
     code = (code or "").strip().upper()
     if not code:
@@ -236,7 +180,6 @@ def approve(channel: str, account_id: str, code: str) -> Optional[str]:
         _prune_pending(data, time.time())
         for uid, row in list(data["pending"].items()):
             if str(row.get("code", "")).upper() == code:
-                _refuse_second_person(data, channel, account_id, uid)
                 del data["pending"][uid]
                 data["allowlist"][uid] = {
                     "display": row.get("display") or uid,
@@ -252,14 +195,13 @@ def approve_user(channel: str, account_id: str, user_id: str,
     """直接把 platform user id 加进 allowlist (机主已知 id 时不必等
     对方来信刷配对码).
 
-    账号里已经有另一个发信人时抛 ``ValueError`` — 一个实例服务一个人.
+    allowlist 里已经有别人不影响 — 一个账号可以放行任意多个发信人.
     """
     user_id = str(user_id).strip()
     if not user_id:
         raise ValueError("empty user id")
     with _lock:
         data = _load(channel, account_id)
-        _refuse_second_person(data, channel, account_id, user_id)
         pending = data["pending"].pop(user_id, None)
         data["allowlist"][user_id] = {
             "display": display or (pending or {}).get("display") or user_id,
