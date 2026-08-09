@@ -326,6 +326,11 @@ PAGE_ORDER: dict[str, int] = {
     "reference/config.md": 4,
     "reference/claude-code-compaction.md": 5,
     "reference/design": 900,  # design-notes archive always last
+    # The memory notes read in order: what it is, how it works, how others do it.
+    "reference/design/memory/README.md": 0,
+    "reference/design/memory/overview.md": 1,
+    "reference/design/memory/memory-architecture.html": 2,
+    "reference/design/memory/memory-comparison.html": 3,
     # Within the design archive everything defaults to 999 (alphabetical).
     # >999 pins a page to the end of its section; the sandbox note and its
     # rendered companion stay adjacent, doc first.

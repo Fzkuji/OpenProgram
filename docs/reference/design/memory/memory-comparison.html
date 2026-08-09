@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>记忆写入：八个框架横向对比</title>
+<style>
+  :root{
+    --bg:#16150f; --pan:#1d1c14; --bd:#2e2c20; --tx:#bdb9a6; --acc:#d4843a;
+    --cb:#12110b; --dim:#8a8675;
+    --c0:#4f8ef7; --c1:#5aad4e; --c2:#d4843a; --c3:#9d6fe0; --c4:#2db3d5;
+    --no:#e0445a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:40px 24px 96px}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:23px;color:#f0eee6;margin:0 0 6px}
+  .sub{color:var(--tx);margin:0 0 18px;max-width:78ch}
+  .sub a{color:var(--acc)}
+  h2{font-size:16px;color:var(--acc);margin:34px 0 8px;scroll-margin-top:20px}
+  h2 .num{color:var(--dim);font-size:12px;margin-right:8px;letter-spacing:.16em}
+  h2 .tier{font-size:10px;letter-spacing:.18em;border:1px solid;border-radius:99px;
+    padding:2px 8px;margin-left:9px;vertical-align:2px;font-weight:400}
+  .t2{color:var(--c0);border-color:var(--c0)}
+  .t3{color:var(--c3);border-color:var(--c3)}
+  .lead{color:var(--dim);font-size:13px;margin:0 0 12px;max-width:82ch}
+  .card{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:8px;margin-bottom:16px}
+  svg{display:block;width:100%;height:auto;background:var(--cb);border-radius:8px}
+  .legend{font-size:12.5px;color:var(--dim);padding:8px 10px;line-height:1.8}
+  .legend b{color:#f0eee6}
+  code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
+  text{font-family:-apple-system,"Segoe UI",sans-serif}
+
+  .toc{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 26px}
+  .toc a{font-size:12px;color:var(--tx);text-decoration:none;border:1px solid var(--bd);
+    background:var(--pan);border-radius:99px;padding:4px 12px}
+  .toc a:hover{border-color:var(--acc);color:#f0eee6}
+
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+  .st{background:var(--pan);border:1px solid var(--bd);border-top-width:3px;border-radius:12px;padding:13px 15px}
+  .st .k{font-size:10.5px;letter-spacing:.2em;color:var(--dim);margin-bottom:5px}
+  .st h3{margin:0 0 5px;font-size:15px;font-weight:700;color:#f0eee6}
+  .st p{margin:0;font-size:12.5px;color:#a5a190;line-height:1.65}
+  .st a{color:var(--acc)}
+  @media(max-width:820px){.grid3{grid-template-columns:1fr}}
+
+  .tbl{overflow-x:auto;background:var(--pan);border:1px solid var(--bd);border-radius:12px;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:820px}
+  th{text-align:left;padding:10px 14px;color:var(--dim);font-weight:600;font-size:11px;
+    letter-spacing:.14em;border-bottom:1px solid var(--bd);white-space:nowrap}
+  td{padding:9px 14px;border-bottom:1px solid #26241a;vertical-align:top;line-height:1.6}
+  tr:last-child td{border-bottom:none}
+  td.y{color:var(--c1)} td.n{color:var(--no)} td.q{color:var(--dim)} td.h{color:var(--c2)}
+  td b{color:#f0eee6;font-weight:600}
+  td .src{display:block;font:11px Menlo,monospace;color:#6b6a63;margin-top:3px;word-break:break-all}
+  tr.us td{background:#141a12}
+  tr.us td:first-child{box-shadow:inset 3px 0 0 var(--c1)}
+  tr.plan td{background:#1a1622}
+  tr.plan td:first-child{box-shadow:inset 3px 0 0 var(--c3)}
+  .fw{font:11.5px Menlo,monospace;color:var(--tx);white-space:nowrap}
+
+  .note{border-left:3px solid var(--bd);padding:2px 0 2px 13px;color:var(--dim);
+    font-size:12.5px;margin:0 0 16px;max-width:86ch;line-height:1.8}
+  .note b{color:#f0eee6}
+  .note.k{border-left-color:var(--acc)}
+  .note.p{border-left-color:var(--c3)}
+  .note code{font-size:11.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>记忆写入：八个框架横向对比</h1>
+  <p class="sub">别人怎么把对话变成长期记忆，我们的选择落在哪一格，接下来要往哪走。
+    机制本身在 <a href="memory-architecture.html">记忆子系统：机制图解</a>，权威正文在
+    <code>docs/reference/design/memory/overview.md</code>。这页只做对照。</p>
+
+  <div class="grid3">
+    <div class="st" style="border-top-color:#5aad4e">
+      <div class="k">第一层 · 我们现在</div>
+      <h3>绿色行</h3>
+      <p>对着 <code>openprogram/memory/</code> 里跑着的代码核实过的行为。每张表里都有一行，底色发绿。</p>
+    </div>
+    <div class="st" style="border-top-color:#4f8ef7">
+      <div class="k">第二层 · 人家怎么做</div>
+      <h3>八个框架</h3>
+      <p><code>references/</code> 下全部八家。没有这个功能的照样列出来，因为"不做"本身是一种选择。</p>
+    </div>
+    <div class="st" style="border-top-color:#9d6fe0">
+      <div class="k">第三层 · 我们计划</div>
+      <h3>紫色行</h3>
+      <p>定稿但还没落地的部分，主要是游标。见第 09 节和 <a href="overview.html">overview.md</a> 的"写入游标"。</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>两条读之前要知道的：</b>一，<code>references/claude-code-leaked</code> 和
+    <code>references/codex-cli</code> 都是内部构建，比各自的公开版大得多，下面写的东西有一部分在公开版里没有。
+    二，所有结论都对着这两份快照里的实际代码，行号照录；找不到实现的地方写"只有调用点"。
+  </div>
+
+  <div class="toc">
+    <a href="#have">01 有没有长期记忆</a>
+    <a href="#when">02 什么时候写</a>
+    <a href="#what">03 写什么</a>
+    <a href="#cursor">04 哪些还没写</a>
+    <a href="#branch">05 分支和重开</a>
+    <a href="#recall">06 检索</a>
+    <a href="#core">07 常驻块写满怎么裁</a>
+    <a href="#size">08 实现规模</a>
+    <a href="#plan">09 我们的方案落在哪</a>
+  </div>
+
+  <!-- ══════════ 01 ══════════ -->
+  <h2 id="have"><span class="num">01</span>有没有长期记忆<span class="tier t2">第二层</span></h2>
+  <p class="lead">"关掉这次对话，下次还记不记得"。八家里四家记，四家不记。不记的那四家不是漏了，是把这件事推给了别人：
+    推给用户手写的 <code>AGENTS.md</code>，或者推给被它包起来的另一个进程。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="八个框架有没有长期记忆">
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">四家自己存，四家推出去</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">左边是自己写、自己存、自己读回来的；右边是完全不存，靠别的东西顶上。</text>
+
+    <line x1="580" y1="72" x2="580" y2="536" stroke="#2e2c20" stroke-width="1.4" stroke-dasharray="5 5"/>
+    <text x="300" y="92" fill="#5aad4e" font-size="13" font-weight="700" text-anchor="middle">有长期记忆</text>
+    <text x="870" y="92" fill="#e0445a" font-size="13" font-weight="700" text-anchor="middle">没有，另有东西顶上</text>
+
+    <!-- 有：5 行 -->
+    <g>
+      <rect x="40" y="108" width="510" height="76" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.5"/>
+      <text x="58" y="134" fill="#5aad4e" font-size="13.5" font-weight="700">claude-code</text>
+      <text x="58" y="156" fill="#bdb9a6" font-size="11.5">纯文件：MEMORY.md 当索引，topic 文件放细节，</text>
+      <text x="58" y="173" fill="#bdb9a6" font-size="11.5">还能同步到团队共享的一份</text>
+      <text x="530" y="134" fill="#5aad4e" font-size="11" text-anchor="end">纯文件</text>
+    </g>
+    <g>
+      <rect x="40" y="192" width="510" height="76" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.5"/>
+      <text x="58" y="218" fill="#5aad4e" font-size="13.5" font-weight="700">codex-cli</text>
+      <text x="58" y="240" fill="#bdb9a6" font-size="11.5">MEMORY.md 加摘要页加技能目录，另有一个</text>
+      <text x="58" y="257" fill="#bdb9a6" font-size="11.5">SQLite 库调度两级蒸馏任务</text>
+      <text x="530" y="218" fill="#d4843a" font-size="11" text-anchor="end">默认是关的</text>
+    </g>
+    <g>
+      <rect x="40" y="276" width="510" height="76" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.5"/>
+      <text x="58" y="302" fill="#5aad4e" font-size="13.5" font-weight="700">openclaw</text>
+      <text x="58" y="324" fill="#bdb9a6" font-size="11.5">MEMORY.md 是正本，SQLite 只是可重建的索引：</text>
+      <text x="58" y="341" fill="#bdb9a6" font-size="11.5">向量最近邻加全文，两路混合排序</text>
+      <text x="530" y="302" fill="#5aad4e" font-size="11" text-anchor="end">文件加索引</text>
+    </g>
+    <g>
+      <rect x="40" y="360" width="510" height="76" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.5"/>
+      <text x="58" y="386" fill="#5aad4e" font-size="13.5" font-weight="700">hermes-agent</text>
+      <text x="58" y="408" fill="#bdb9a6" font-size="11.5">内置 MEMORY.md 加 USER.md 两个 markdown，</text>
+      <text x="58" y="425" fill="#bdb9a6" font-size="11.5">另可外接八家托管服务，同时只开一家</text>
+      <text x="530" y="386" fill="#5aad4e" font-size="11" text-anchor="end">文件加外部服务</text>
+    </g>
+    <g>
+      <rect x="40" y="444" width="510" height="76" rx="9" fill="#141a12" stroke="#5aad4e" stroke-width="2.4"/>
+      <text x="58" y="470" fill="#5aad4e" font-size="13.5" font-weight="700">OpenProgram</text>
+      <text x="58" y="492" fill="#bdb9a6" font-size="11.5">sources/ 存原话且只追加，topics/ 存提炼，</text>
+      <text x="58" y="509" fill="#bdb9a6" font-size="11.5">core.md 是每次都进上下文的那一小块</text>
+      <text x="530" y="470" fill="#5aad4e" font-size="11" text-anchor="end">纯文件</text>
+    </g>
+
+    <!-- 没有：4 行 -->
+    <g>
+      <rect x="610" y="108" width="510" height="76" rx="9" fill="#241014" stroke="#e0445a" stroke-width="1.4"/>
+      <text x="628" y="134" fill="#e0445a" font-size="13.5" font-weight="700">opencode</text>
+      <text x="628" y="156" fill="#bdb9a6" font-size="11.5">顶上的是用户手写的 AGENTS.md 或 CLAUDE.md。</text>
+      <text x="628" y="173" fill="#bdb9a6" font-size="11.5">工具目录里一个记忆工具都没有</text>
+    </g>
+    <g>
+      <rect x="610" y="192" width="510" height="76" rx="9" fill="#241014" stroke="#e0445a" stroke-width="1.4"/>
+      <text x="628" y="218" fill="#e0445a" font-size="13.5" font-weight="700">pi-mono</text>
+      <text x="628" y="240" fill="#bdb9a6" font-size="11.5">会话是一棵 JSONL 树，但只服务回放和分支。</text>
+      <text x="628" y="257" fill="#bdb9a6" font-size="11.5">跨会话能带过去的只有 AGENTS.md</text>
+    </g>
+    <g>
+      <rect x="610" y="276" width="510" height="76" rx="9" fill="#241014" stroke="#e0445a" stroke-width="1.4"/>
+      <text x="628" y="302" fill="#e0445a" font-size="13.5" font-weight="700">pi-ai</text>
+      <text x="628" y="324" fill="#bdb9a6" font-size="11.5">只是调用各家模型的 SDK，连"会话"这个概念都没有。</text>
+      <text x="628" y="341" fill="#bdb9a6" font-size="11.5">消息数组由调用方自己拿着，每次全量传进来</text>
+    </g>
+    <g>
+      <rect x="610" y="360" width="510" height="76" rx="9" fill="#241014" stroke="#e0445a" stroke-width="1.4"/>
+      <text x="628" y="386" fill="#e0445a" font-size="13.5" font-weight="700">weclaw</text>
+      <text x="628" y="408" fill="#bdb9a6" font-size="11.5">微信到 agent 的桥。只存一个不透明的会话 id，</text>
+      <text x="628" y="425" fill="#bdb9a6" font-size="11.5">记忆全归它拉起来的那个进程管</text>
+    </g>
+    <g>
+      <rect x="610" y="444" width="510" height="76" rx="9" fill="#1d1c14" stroke="#3a382c" stroke-width="1.2" stroke-dasharray="4 4"/>
+      <text x="628" y="470" fill="#8a8675" font-size="12" font-weight="700">这四家都存了全部原文</text>
+      <text x="628" y="492" fill="#8a8675" font-size="11.5">codex、opencode、pi-mono 的转录文件都很完整，只是没人提炼、</text>
+      <text x="628" y="509" fill="#8a8675" font-size="11.5">也没人跨会话读。存了原文不等于有记忆。</text>
+    </g>
+  </svg>
+  </div>
+
+  <div class="tbl">
+  <table>
+    <tr><th>框架</th><th>有没有</th><th>形态</th><th>核实位置</th></tr>
+    <tr><td><b>claude-code</b></td><td class="y">有</td><td>纯文件：<code>MEMORY.md</code> 索引加 topic 文件加日期日志；团队版另同步一份到 HTTP 服务</td><td class="q"><span class="src">src/memdir/paths.ts:223-235<br>src/memdir/memdir.ts:34,348<br>src/services/teamMemorySync/index.ts:1-80</span></td></tr>
+    <tr><td><b>codex-cli</b></td><td class="h">有，但默认关着</td><td><code>~/.codex/memories/</code>：<code>MEMORY.md</code>、摘要页、技能目录、会话摘要；SQLite 只调度蒸馏任务</td><td class="q"><span class="src">memories/write/src/lib.rs:116-118<br>state/memory_migrations/0001_memories.sql:1-35<br>默认关：features/src/lib.rs:996-999</span></td></tr>
+    <tr><td><b>openclaw</b></td><td class="y">有</td><td><code>MEMORY.md</code> 是正本，SQLite 是可重建的索引，向量最近邻加全文混合排序</td><td class="q"><span class="src">src/memory/root-memory-files.ts:4,8<br>extensions/memory-core/src/memory/manager-db.ts:10<br>.../manager-search.ts:148</span></td></tr>
+    <tr><td><b>opencode</b></td><td class="n">没有</td><td>用户手写 <code>AGENTS.md</code> 或 <code>CLAUDE.md</code>；工具目录里没有记忆工具</td><td class="q"><span class="src">packages/opencode/src/session/instruction.ts:60-68<br>tool/ 目录整个列过</span></td></tr>
+    <tr><td><b>hermes-agent</b></td><td class="y">有</td><td><code>MEMORY.md</code> 加 <code>USER.md</code>；另可外接八家托管服务，同时只能开一家</td><td class="q"><span class="src">tools/memory_tool.py:56-60,138-173<br>agent/memory_manager.py:258-280</span></td></tr>
+    <tr><td><b>pi-ai</b></td><td class="n">没有</td><td>provider SDK，12 个文件，没有会话概念</td><td class="q"><span class="src">全仓 grep 无命中；唯一落盘的是 OAuth 凭证</span></td></tr>
+    <tr><td><b>pi-mono</b></td><td class="n">没有</td><td>会话 JSONL 树只为回放和分支；跨会话只有 <code>AGENTS.md</code></td><td class="q"><span class="src">packages/coding-agent/src/core/session-manager.ts:428-436</span></td></tr>
+    <tr><td><b>weclaw</b></td><td class="n">没有</td><td>只存不透明的会话 id，记忆交给被包的进程</td><td class="q"><span class="src">agent/cli_agent.go:25,226-231</span></td></tr>
+    <tr class="us"><td><b>OpenProgram</b></td><td class="y">有</td><td>Markdown 工作区：<code>sources/</code> 加 <code>topics/</code> 加 <code>core.md</code></td><td class="q"><span class="src">openprogram/memory/store.py:39</span></td></tr>
+  </table>
+  </div>
+
+  <div class="note k">
+    <b>两条容易看走眼的：</b>一，codex 这份内部构建里长期记忆是<b>完整实现但默认关着</b>的，
+    只看默认行为会得出"codex 没有记忆"的错误结论。二，weclaw 里唯一真正落盘的知识文件
+    （把粘进来的网址存成 markdown）是<b>故意绕开 agent</b> 的，存完之后也从没被任何提示词读回去。
+    分类要按"会不会被读回上下文"分，不能按"是不是 markdown"分。
+  </div>
+
+  <!-- ══════════ 02 ══════════ -->
+  <h2 id="when"><span class="num">02</span>什么时候写<span class="tier t2">第二层</span></h2>
+  <p class="lead">四家会写的框架，触发方式两两不同：一家每轮派个后台分身去写，一家在每轮开头甩出去一个不管结果的后台任务，
+    一家挂在 cron 上定时写，一家让模型自己想起来就写。我们攒够量再写。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="五种写入触发方式">
+    <defs>
+      <marker id="w-bl" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#4f8ef7"/></marker>
+      <marker id="w-cy" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#2db3d5"/></marker>
+    </defs>
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">同样一串轮次，五种下笔时机</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">横轴是一次会话里连续的轮次。描边亮的方块表示这一轮触发了一次写入。</text>
+
+    <!-- claude-code -->
+    <text x="150" y="102" fill="#4f8ef7" font-size="12.5" font-weight="700" text-anchor="end">claude-code</text>
+    <text x="150" y="118" fill="#8a8675" font-size="10.5" text-anchor="end">每轮派个分身</text>
+    <g>
+      <line x1="170" y1="98" x2="1010" y2="98" stroke="#2e2c20" stroke-width="1.2"/>
+      <g>
+        <rect x="170" y="86" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="266" y="86" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="362" y="86" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="458" y="86" width="24" height="24" rx="5" fill="#12110b" stroke="#3a382c" stroke-width="1.2"/>
+        <rect x="554" y="86" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="650" y="86" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="746" y="86" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="842" y="86" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+      </g>
+      <text x="470" y="130" fill="#8a8675" font-size="10.5" text-anchor="middle">这轮主 agent 自己</text>
+      <text x="470" y="144" fill="#8a8675" font-size="10.5" text-anchor="middle">写过记忆了，跳过</text>
+      <text x="890" y="103" fill="#4f8ef7" font-size="11">分身继承主会话的系统提示词和消息前缀</text>
+    </g>
+
+    <!-- codex -->
+    <text x="150" y="186" fill="#4f8ef7" font-size="12.5" font-weight="700" text-anchor="end">codex-cli</text>
+    <text x="150" y="202" fill="#8a8675" font-size="10.5" text-anchor="end">每轮开头甩出去</text>
+    <g>
+      <line x1="170" y1="182" x2="1010" y2="182" stroke="#2e2c20" stroke-width="1.2"/>
+      <g>
+        <rect x="170" y="170" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="266" y="170" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="362" y="170" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="458" y="170" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="554" y="170" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="650" y="170" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="746" y="170" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+        <rect x="842" y="170" width="24" height="24" rx="5" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+      </g>
+      <text x="180" y="216" fill="#8a8675" font-size="10.5">每轮都甩，但真干活的条件很严：额度不够就退，会话闲置不到六小时就不碰。</text>
+      <text x="180" y="232" fill="#8a8675" font-size="10.5">任务从数据库里抢一把租约，谁抢到谁做，做完写回水位。</text>
+    </g>
+
+    <!-- openclaw -->
+    <text x="150" y="278" fill="#2db3d5" font-size="12.5" font-weight="700" text-anchor="end">openclaw</text>
+    <text x="150" y="294" fill="#8a8675" font-size="10.5" text-anchor="end">挂 cron 定时</text>
+    <g>
+      <line x1="170" y1="274" x2="1010" y2="274" stroke="#2e2c20" stroke-width="1.2"/>
+      <g fill="#12110b" stroke="#3a382c" stroke-width="1.2">
+        <rect x="170" y="262" width="24" height="24" rx="5"/><rect x="266" y="262" width="24" height="24" rx="5"/>
+        <rect x="362" y="262" width="24" height="24" rx="5"/><rect x="458" y="262" width="24" height="24" rx="5"/>
+        <rect x="554" y="262" width="24" height="24" rx="5"/><rect x="650" y="262" width="24" height="24" rx="5"/>
+        <rect x="746" y="262" width="24" height="24" rx="5"/><rect x="842" y="262" width="24" height="24" rx="5"/>
+      </g>
+      <path d="M930 244 L930 274" stroke="#2db3d5" stroke-width="1.6" marker-end="url(#w-cy)"/>
+      <rect x="860" y="220" width="200" height="24" rx="6" fill="#1e2630" stroke="#2db3d5" stroke-width="1.4"/>
+      <text x="960" y="237" fill="#2db3d5" font-size="11.5" text-anchor="middle">每天凌晨三点</text>
+      <text x="180" y="308" fill="#8a8675" font-size="10.5">会话里一轮都不写。短期条目先攒着，定时任务按六项加权分排名，够格的才升成长期段落。</text>
+    </g>
+
+    <!-- hermes -->
+    <text x="150" y="360" fill="#d4843a" font-size="12.5" font-weight="700" text-anchor="end">hermes-agent</text>
+    <text x="150" y="376" fill="#8a8675" font-size="10.5" text-anchor="end">模型自己决定</text>
+    <g>
+      <line x1="170" y1="356" x2="1010" y2="356" stroke="#2e2c20" stroke-width="1.2"/>
+      <g fill="#12110b" stroke="#3a382c" stroke-width="1.2">
+        <rect x="170" y="344" width="24" height="24" rx="5"/><rect x="266" y="344" width="24" height="24" rx="5"/>
+        <rect x="458" y="344" width="24" height="24" rx="5"/><rect x="554" y="344" width="24" height="24" rx="5"/>
+        <rect x="650" y="344" width="24" height="24" rx="5"/><rect x="746" y="344" width="24" height="24" rx="5"/>
+      </g>
+      <rect x="362" y="344" width="24" height="24" rx="5" fill="#241f10" stroke="#d4843a" stroke-width="1.5"/>
+      <rect x="842" y="344" width="24" height="24" rx="5" fill="#241f10" stroke="#d4843a" stroke-width="1.5"/>
+      <text x="374" y="390" fill="#d4843a" font-size="10.5" text-anchor="middle">模型自己调了记忆工具</text>
+      <text x="854" y="390" fill="#d4843a" font-size="10.5" text-anchor="middle">满十轮，派个分身问一句要不要存</text>
+      <text x="180" y="406" fill="#8a8675" font-size="10.5">分身只是提醒，存不存、存什么还是模型说了算。</text>
+    </g>
+
+    <!-- 我们 -->
+    <text x="150" y="452" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="end">OpenProgram</text>
+    <text x="150" y="468" fill="#8a8675" font-size="10.5" text-anchor="end">攒够量再写</text>
+    <g>
+      <line x1="170" y1="448" x2="1010" y2="448" stroke="#2e2c20" stroke-width="1.2"/>
+      <g fill="#12110b" stroke="#3a382c" stroke-width="1.2">
+        <rect x="170" y="436" width="24" height="24" rx="5"/><rect x="266" y="436" width="24" height="24" rx="5"/>
+        <rect x="362" y="436" width="24" height="24" rx="5"/><rect x="458" y="436" width="24" height="24" rx="5"/>
+        <rect x="650" y="436" width="24" height="24" rx="5"/><rect x="746" y="436" width="24" height="24" rx="5"/>
+      </g>
+      <rect x="554" y="436" width="24" height="24" rx="5" fill="#101a10" stroke="#5aad4e" stroke-width="1.8"/>
+      <rect x="842" y="436" width="24" height="24" rx="5" fill="#101a10" stroke="#5aad4e" stroke-width="1.8"/>
+      <path d="M182 430 L566 430" stroke="#5aad4e" stroke-width="1.2" stroke-dasharray="3 3"/>
+      <text x="576" y="434" fill="#5aad4e" font-size="10.5">这一段加起来够 16k token 了</text>
+      <text x="854" y="484" fill="#5aad4e" font-size="10.5" text-anchor="middle">会话闲置，剩多少写多少</text>
+      <text x="890" y="454" fill="#8a8675" font-size="11">每轮都调一次，只在过线那轮真写</text>
+    </g>
+  </svg>
+  </div>
+
+  <div class="tbl">
+  <table>
+    <tr><th>框架</th><th>时机</th><th>触发点</th></tr>
+    <tr><td><b>claude-code</b></td><td>每轮结束派个分身；主 agent 自己写过就跳过这轮</td><td class="q"><span class="src">src/services/extractMemories/extractMemories.ts:348,598-603<br>互斥判定：:121-148</span></td></tr>
+    <tr><td><b>codex-cli</b></td><td>每轮开头甩出去一个不管结果的任务；只处理闲置超过六小时的会话，靠数据库租约防重</td><td class="q"><span class="src">app-server/src/request_processors/turn_processor.rs:578-591<br>memories/write/src/start.rs:23-81<br>memories/write/src/phase1.rs:149-187</span></td></tr>
+    <tr><td><b>openclaw</b></td><td>cron 定时，默认每天凌晨三点，按六项加权分决定谁能升上去</td><td class="q"><span class="src">src/memory-host-sdk/dreaming.ts:17,36-39<br>extensions/memory-core/src/dreaming.ts:163-187</span></td></tr>
+    <tr><td><b>opencode</b></td><td class="n">不写</td><td class="q"><span class="src">tool/ 下无记忆工具</span></td></tr>
+    <tr><td><b>hermes-agent</b></td><td>模型随时自己调工具写；每十轮派个后台分身提醒一次</td><td class="q"><span class="src">tools/memory_tool.py:619-686<br>agent/conversation_loop.py:429-439<br>agent/background_review.py:34-43</span></td></tr>
+    <tr><td><b>pi-ai</b></td><td class="n">不写</td><td class="q">—</td></tr>
+    <tr><td><b>pi-mono</b></td><td class="n">不写长期记忆；原文每个事件同步落盘</td><td class="q"><span class="src">packages/coding-agent/src/core/agent-session.ts:515</span></td></tr>
+    <tr><td><b>weclaw</b></td><td class="n">不写</td><td class="q">—</td></tr>
+    <tr class="us"><td><b>OpenProgram</b></td><td>每轮调一次，攒够 16k token 才真写；会话闲置强制写完；03:00 重整</td><td class="q"><span class="src">openprogram/memory/scriptorium/provider.py:30,117</span></td></tr>
+  </table>
+  </div>
+
+  <div class="note k">
+    <b>这里有个共识：</b>四家会写的里面，三家（claude-code、codex、openclaw）都把写入放在<b>会话之外</b>，
+    理由一样：正在对话的模型手上是任务，让它中途改记忆文件既费一次调用又跑题。
+    hermes 是唯一让主模型自己动手的，代价是记忆写不写全看它想不想得起来，所以才要每十轮提醒一次。
+    我们和这三家站一边。
+  </div>
+
+  <div class="note k">
+    <b>codex 的一招值得记：</b>它的写入任务从一张 SQLite 任务表里<b>抢租约</b>，
+    表上带重试次数和上次成功的水位，还先看一眼额度够不够再决定要不要开工。
+    我们现在靠一把跨进程写锁加一秒超时来串行化，效果类似但没有重试计数，
+    一批内容连续失败两次之后只留下事件总线上的一条记录。
+  </div>
+
+  <!-- ══════════ 03 ══════════ -->
+  <h2 id="what"><span class="num">03</span>写什么<span class="tier t2">第二层</span></h2>
+  <p class="lead">原话，还是模型提炼过的事实。两者都留的四家（claude-code、codex、pi-mono、我们）走的是同一条路：
+    原话只追加不改，提炼可以随便重写，出了问题拿原话对账。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="写原话还是写提炼">
+    <defs>
+      <marker id="s-or" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#d4843a"/></marker>
+      <marker id="s-gn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5aad4e"/></marker>
+    </defs>
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">三种存法</text>
+
+    <rect x="40" y="56" width="330" height="240" rx="10" fill="#1d1c14" stroke="#2e2c20" stroke-width="1.3"/>
+    <text x="60" y="82" fill="#e0445a" font-size="13" font-weight="700">只留原话</text>
+    <text x="60" y="102" fill="#8a8675" font-size="11">opencode · weclaw</text>
+    <g>
+      <rect x="60" y="120" width="290" height="26" rx="5" fill="#12110b" stroke="#3a382c"/>
+      <text x="74" y="138" fill="#bdb9a6" font-size="11">user: 预算表 4 月 15 号要交</text>
+      <rect x="60" y="152" width="290" height="26" rx="5" fill="#12110b" stroke="#3a382c"/>
+      <text x="74" y="170" fill="#bdb9a6" font-size="11">assistant: 好，我先建个 Flask 项目</text>
+      <rect x="60" y="184" width="290" height="26" rx="5" fill="#12110b" stroke="#3a382c"/>
+      <text x="74" y="202" fill="#bdb9a6" font-size="11">tool_use: write_file(app.py)</text>
+    </g>
+    <text x="60" y="238" fill="#8a8675" font-size="11">整段照抄进库里，只为把这次会话接回来。</text>
+    <text x="60" y="256" fill="#8a8675" font-size="11">没人从里面提炼，也没人跨会话读它。</text>
+    <text x="60" y="278" fill="#e0445a" font-size="11">下次新开一个对话，这些字等于不存在。</text>
+
+    <rect x="392" y="56" width="330" height="240" rx="10" fill="#1d1c14" stroke="#2e2c20" stroke-width="1.3"/>
+    <text x="412" y="82" fill="#2db3d5" font-size="13" font-weight="700">只留提炼</text>
+    <text x="412" y="102" fill="#8a8675" font-size="11">hermes-agent</text>
+    <g>
+      <rect x="412" y="120" width="290" height="46" rx="5" fill="#1e2630" stroke="#2db3d5" stroke-width="1.3"/>
+      <text x="426" y="140" fill="#bdb9a6" font-size="11">Craig 在用 Flask 做预算表，</text>
+      <text x="426" y="157" fill="#bdb9a6" font-size="11">截止 2024-04-15</text>
+    </g>
+    <text x="412" y="192" fill="#8a8675" font-size="11">原话不进记忆库。工具说明里直接写着</text>
+    <text x="412" y="210" fill="#8a8675" font-size="11">"别存流水账，那些去搜历史会话"。</text>
+    <text x="412" y="238" fill="#8a8675" font-size="11">好处是库小、读得快。</text>
+    <text x="412" y="262" fill="#e0445a" font-size="11">代价是提炼错了没有底稿可以对，</text>
+    <text x="412" y="280" fill="#e0445a" font-size="11">只能推翻重写。</text>
+
+    <rect x="744" y="56" width="376" height="240" rx="10" fill="#141a12" stroke="#5aad4e" stroke-width="1.6"/>
+    <text x="764" y="82" fill="#5aad4e" font-size="13" font-weight="700">两者都留</text>
+    <text x="764" y="102" fill="#8a8675" font-size="11">claude-code · codex-cli · pi-mono · OpenProgram</text>
+    <g>
+      <rect x="764" y="118" width="150" height="60" rx="6" fill="#12110b" stroke="#3a382c"/>
+      <text x="778" y="138" fill="#8a8675" font-size="11">原话</text>
+      <text x="778" y="156" fill="#6b6a63" font-size="10.5">只追加，不许改</text>
+      <text x="778" y="172" fill="#6b6a63" font-size="10.5">sources/</text>
+
+      <path d="M918 148 L968 148" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#s-gn)"/>
+
+      <rect x="972" y="118" width="130" height="60" rx="6" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
+      <text x="986" y="138" fill="#5aad4e" font-size="11">提炼</text>
+      <text x="986" y="156" fill="#6b6a63" font-size="10.5">随便重写</text>
+      <text x="986" y="172" fill="#6b6a63" font-size="10.5">topics/</text>
+
+      <path d="M1037 182 C 1037 216, 860 200, 845 182" fill="none" stroke="#d4843a" stroke-width="1.4" marker-end="url(#s-or)"/>
+      <text x="940" y="216" fill="#d4843a" font-size="11" text-anchor="middle">每句提炼带一个脚注指回原话</text>
+    </g>
+    <text x="764" y="248" fill="#8a8675" font-size="11">提炼是给模型看的，原话是用来对账的。</text>
+    <text x="764" y="268" fill="#8a8675" font-size="11">读到一句离谱的，能一路点回当时到底说了什么。</text>
+    <text x="764" y="288" fill="#d4843a" font-size="11">脚注这一条只有我们做了，其余三家都断在这儿。</text>
+  </svg>
+  </div>
+
+  <div class="note k">
+    <b>codex 是两遍提炼，不是一遍。</b>第一遍按会话做，把一次完整对话压成结构化的原始记忆和一份会话摘要；
+    第二遍另派一个没有网络、不问审批的子 agent，拿着全部第一遍产物加一份工作区差异，
+    重写 <code>MEMORY.md</code>、摘要页和技能目录。写的和整理的分成两个岗位，
+    和我们"写入"加"夜间重整"是同一个拆法，只是它拆在流水线里，我们拆在时间上。
+  </div>
+
+  <!-- ══════════ 04 ══════════ -->
+  <h2 id="cursor"><span class="num">04</span>怎么知道哪些还没写<span class="tier t2">第二层</span></h2>
+  <p class="lead">这是全页最关键的一格。八家给出五种形状：不记、记一个数、记一个身份、把标记塞进数据本身、记一整套身份。
+    只有最后一种是我们计划要走的，而目前没有第二家在用。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 630" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="游标的五种形状">
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">游标的五种形状</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">同一串消息 m1…m6，各家用什么记住"写到哪了"。橙色是游标本体。</text>
+
+    <!-- A 不记 -->
+    <text x="152" y="98" fill="#e0445a" font-size="12.5" font-weight="700" text-anchor="end">A · 不记</text>
+    <text x="152" y="114" fill="#8a8675" font-size="10.5" text-anchor="end">hermes · weclaw</text>
+    <g>
+      <g font-size="11" text-anchor="middle" fill="#8a8675">
+        <rect x="176" y="82" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="202" y="100">m1</text>
+        <rect x="244" y="82" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="270" y="100">m2</text>
+        <rect x="312" y="82" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="338" y="100">m3</text>
+        <rect x="380" y="82" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="406" y="100">m4</text>
+        <rect x="448" y="82" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="474" y="100">m5</text>
+        <rect x="516" y="82" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="542" y="100">m6</text>
+      </g>
+      <text x="596" y="93" fill="#8a8675" font-size="11.5">hermes 是模型自己想写就写，压根不存在"欠着"这回事。</text>
+      <text x="596" y="111" fill="#8a8675" font-size="11.5">weclaw 一轮结束把这一轮直接交出去，交完不管。</text>
+    </g>
+
+    <!-- B 记一个数 -->
+    <text x="152" y="182" fill="#e0445a" font-size="12.5" font-weight="700" text-anchor="end">B · 记一个数</text>
+    <text x="152" y="198" fill="#8a8675" font-size="10.5" text-anchor="end">codex · OpenProgram 现在</text>
+    <g>
+      <g font-size="11" text-anchor="middle">
+        <rect x="176" y="166" width="52" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="202" y="184" fill="#5aad4e">m1</text>
+        <rect x="244" y="166" width="52" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="270" y="184" fill="#5aad4e">m2</text>
+        <rect x="312" y="166" width="52" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="338" y="184" fill="#5aad4e">m3</text>
+        <rect x="380" y="166" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="406" y="184" fill="#8a8675">m4</text>
+        <rect x="448" y="166" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="474" y="184" fill="#8a8675">m5</text>
+        <rect x="516" y="166" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="542" y="184" fill="#8a8675">m6</text>
+      </g>
+      <rect x="584" y="166" width="128" height="26" rx="6" fill="#241f10" stroke="#d4843a" stroke-width="1.5"/>
+      <text x="648" y="184" fill="#d4843a" font-size="11.5" text-anchor="middle" font-family="Menlo,monospace">写到第 3 条</text>
+      <text x="728" y="177" fill="#8a8675" font-size="11.5">codex 记的是时间戳水位，我们记的是序号，</text>
+      <text x="728" y="195" fill="#8a8675" font-size="11.5">都是一个能比大小的标量。</text>
+      <text x="176" y="216" fill="#e0445a" font-size="11">codex 的粒度是整个会话文件，不会撞上分叉；我们的粒度是分支里第几条，一分叉就废，见下面。</text>
+    </g>
+
+    <!-- C 单个身份 -->
+    <text x="152" y="270" fill="#d4843a" font-size="12.5" font-weight="700" text-anchor="end">C · 记一个身份</text>
+    <text x="152" y="286" fill="#8a8675" font-size="10.5" text-anchor="end">claude-code · pi-mono</text>
+    <g>
+      <g font-size="11" text-anchor="middle">
+        <rect x="176" y="254" width="52" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="202" y="272" fill="#5aad4e">m1</text>
+        <rect x="244" y="254" width="52" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="270" y="272" fill="#5aad4e">m2</text>
+        <rect x="312" y="254" width="52" height="26" rx="6" fill="#241f10" stroke="#d4843a" stroke-width="2"/><text x="338" y="272" fill="#d4843a">m3</text>
+        <rect x="380" y="254" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="406" y="272" fill="#8a8675">m4</text>
+        <rect x="448" y="254" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="474" y="272" fill="#8a8675">m5</text>
+        <rect x="516" y="254" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="542" y="272" fill="#8a8675">m6</text>
+      </g>
+      <rect x="584" y="254" width="180" height="26" rx="6" fill="#241f10" stroke="#d4843a" stroke-width="1.5"/>
+      <text x="674" y="272" fill="#d4843a" font-size="11" text-anchor="middle" font-family="Menlo,monospace">lastUuid = "m3"</text>
+      <text x="780" y="265" fill="#8a8675" font-size="11.5">从数组头往后扫，扫到这个 id 就开始算新的。</text>
+      <text x="780" y="283" fill="#8a8675" font-size="11.5">claude-code 只存在进程里，重启就没了。</text>
+      <text x="176" y="308" fill="#d4843a" font-size="11">id 找不到了（比如被压缩清掉）就回退成"全都是新的"，宁可重写一遍也不让抽取彻底停摆。</text>
+    </g>
+
+    <!-- D 标记进数据 -->
+    <text x="152" y="366" fill="#2db3d5" font-size="12.5" font-weight="700" text-anchor="end">D · 标记塞进数据</text>
+    <text x="152" y="382" fill="#8a8675" font-size="10.5" text-anchor="end">opencode · openclaw</text>
+    <g>
+      <g font-size="11" text-anchor="middle">
+        <rect x="176" y="350" width="52" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="202" y="368" fill="#5aad4e">m1</text>
+        <rect x="244" y="350" width="52" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="270" y="368" fill="#5aad4e">m2</text>
+        <rect x="312" y="350" width="52" height="26" rx="6" fill="#1e2630" stroke="#2db3d5" stroke-width="2"/><text x="338" y="368" fill="#2db3d5">m3</text>
+        <rect x="380" y="350" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="406" y="368" fill="#8a8675">m4</text>
+        <rect x="448" y="350" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="474" y="368" fill="#8a8675">m5</text>
+        <rect x="516" y="350" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="542" y="368" fill="#8a8675">m6</text>
+      </g>
+      <path d="M338 344 L338 330" stroke="#2db3d5" stroke-width="1.4"/>
+      <text x="338" y="324" fill="#2db3d5" font-size="10.5" text-anchor="middle" font-family="Menlo,monospace">summary: true</text>
+      <text x="596" y="357" fill="#8a8675" font-size="11.5">没有独立的游标文件，边界就长在数据自己身上。</text>
+      <text x="596" y="375" fill="#8a8675" font-size="11.5">openclaw 是同一招的两个变体：条目上写 promotedAt 时间戳，</text>
+      <text x="596" y="393" fill="#8a8675" font-size="11.5">正文里再埋一句 HTML 注释当去重标记，两边互相印证。</text>
+      <text x="176" y="414" fill="#2db3d5" font-size="11">好处是游标不会和数据走散。代价是要改边界就得改数据本身。</text>
+    </g>
+
+    <!-- E 身份集合 -->
+    <text x="152" y="470" fill="#9d6fe0" font-size="12.5" font-weight="700" text-anchor="end">E · 记一整套身份</text>
+    <text x="152" y="486" fill="#8a8675" font-size="10.5" text-anchor="end">OpenProgram 计划</text>
+    <g>
+      <g font-size="11" text-anchor="middle">
+        <rect x="176" y="454" width="52" height="26" rx="6" fill="#221a30" stroke="#9d6fe0" stroke-width="1.6"/><text x="202" y="472" fill="#9d6fe0">m1</text>
+        <rect x="244" y="454" width="52" height="26" rx="6" fill="#221a30" stroke="#9d6fe0" stroke-width="1.6"/><text x="270" y="472" fill="#9d6fe0">m2</text>
+        <rect x="312" y="454" width="52" height="26" rx="6" fill="#221a30" stroke="#9d6fe0" stroke-width="1.6"/><text x="338" y="472" fill="#9d6fe0">m3</text>
+        <rect x="380" y="454" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="406" y="472" fill="#8a8675">m4</text>
+        <rect x="448" y="454" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="474" y="472" fill="#8a8675">m5</text>
+        <rect x="516" y="454" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="542" y="472" fill="#8a8675">m6</text>
+      </g>
+      <rect x="584" y="454" width="290" height="26" rx="6" fill="#221a30" stroke="#9d6fe0" stroke-width="1.5"/>
+      <text x="729" y="472" fill="#9d6fe0" font-size="11" text-anchor="middle" font-family="Menlo,monospace">{"written": ["m1","m2","m3"]}</text>
+      <text x="890" y="472" fill="#8a8675" font-size="11.5">每个线程一个文件</text>
+      <text x="176" y="504" fill="#9d6fe0" font-size="11">不需要"从哪开始扫"，因为集合本身就是答案：不在集合里的就是欠的。</text>
+    </g>
+
+    <line x1="32" y1="530" x2="1128" y2="530" stroke="#2e2c20" stroke-width="1"/>
+    <text x="32" y="560" fill="#d4843a" font-size="12.5" font-weight="700">为什么只有我们要集合</text>
+    <text x="32" y="584" fill="#bdb9a6" font-size="11.5">A 到 D 全都建立在"消息排成一条线"上：不管是数值、单个 id 还是数据里的标记，答案都是"这一点之后的都算新的"。</text>
+    <text x="32" y="604" fill="#bdb9a6" font-size="11.5">一个会话里分出两条分支，"这一点之后"就同时指向两串不同的消息，这句话本身失效。见第 05 节。</text>
+  </svg>
+  </div>
+
+  <div class="tbl">
+  <table>
+    <tr><th>框架</th><th>形状</th><th>存在哪</th><th>核实位置</th></tr>
+    <tr><td><b>claude-code</b></td><td>单条消息 UUID，向后扫</td><td class="n">进程内的闭包变量，不落盘，重启即失效</td><td class="q"><span class="src">src/services/extractMemories/extractMemories.ts:305-309,340,348<br>找不到就当全新：:103-108</span></td></tr>
+    <tr><td><b>codex-cli</b></td><td>整数时间戳水位，按会话文件粒度</td><td>SQLite 任务表，带租约和重试次数</td><td class="q"><span class="src">state/memory_migrations/0001_memories.sql:3,7,17-31<br>memories/write/src/phase1.rs:149-187</span></td></tr>
+    <tr><td><b>openclaw</b></td><td>条目上的 <code>promotedAt</code> 时间戳，加正文里埋的一句去重注释</td><td>条目自己身上，加 <code>MEMORY.md</code> 正文</td><td class="q"><span class="src">extensions/memory-core/src/short-term-promotion.ts:84,1602-1612,1666-1669,1737</span></td></tr>
+    <tr><td><b>opencode</b></td><td>消息上的 <code>summary: true</code> 布尔标记，加一个 <code>tail_start_id</code></td><td>消息自己身上</td><td class="q"><span class="src">packages/opencode/src/session/message-v2.ts:535-586<br>.../compaction.ts:386,437-442</span></td></tr>
+    <tr><td><b>hermes-agent</b></td><td class="n">记忆没有游标；落盘另有整数下标，压缩靠正文里的标记回扫</td><td>—</td><td class="q"><span class="src">agent/agent_init.py:1026<br>agent/context_compressor.py:37-51,1215-1226</span></td></tr>
+    <tr><td><b>pi-ai</b></td><td class="n">无</td><td>—</td><td class="q">—</td></tr>
+    <tr><td><b>pi-mono</b></td><td>单条 entry id <code>firstKeptEntryId</code>，向后走</td><td>写在压缩记录里，和转录同一个文件</td><td class="q"><span class="src">packages/coding-agent/src/core/session-manager.ts:67-77,315-422</span></td></tr>
+    <tr><td><b>weclaw</b></td><td class="n">无；只有一个按条数硬切的上限</td><td>—</td><td class="q"><span class="src">agent/http_agent.go:151-154</span></td></tr>
+    <tr class="us"><td><b>OpenProgram 现在</b></td><td class="n">整数序号，位置</td><td><code>runtime.json</code></td><td class="q"><span class="src">openprogram/memory/scriptorium/runtime/state.py:39-43<br>runtime/online.py:60-64</span></td></tr>
+    <tr class="plan"><td><b>OpenProgram 计划</b></td><td>已写消息 id 的集合</td><td>每线程一个 json 文件</td><td class="q"><span class="src">overview.md「写入游标」</span></td></tr>
+  </table>
+  </div>
+
+  <div class="note k">
+    <b>抄到的一招：</b>claude-code 在"游标指的那条消息找不到了"的时候，选择<b>把全部消息重新当成没写过</b>，
+    而不是返回零条。注释写得很直白：返回零条会让抽取在这个会话剩下的时间里彻底停摆。
+    重写一遍的代价是有限的，静默停摆的代价是没有上限的。我们的迁移方案里"从原话档案播种游标"是同一个取舍：
+    宁可多写一批，不可全丢。
+  </div>
+
+  <div class="note k">
+    <b>还有一招：</b>openclaw 的去重<b>记两处并互相印证</b>：条目侧记升级时间，
+    <code>MEMORY.md</code> 正文里再埋一句带 key 的 HTML 注释。任何一边丢了，另一边还拦得住重复。
+    我们的集合只记在游标文件里，原话档案虽然也能当种子用，但两边不会互相校验。
+  </div>
+
+  <!-- ══════════ 05 ══════════ -->
+  <h2 id="branch"><span class="num">05</span>分支和重开<span class="tier t2">第二层</span></h2>
+  <p class="lead">这条对我们最要紧。八家里只有 pi-mono 一家像我们一样，把分支放在<b>同一个会话内部</b>。
+    其余的要么根本不分叉，要么把"分叉"实现成另开一个会话文件、父子之间连根指针。
+    别人的游标不必处理"同一条会话里两条分支共享前缀"，因为它们没有这个东西。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="三种分支处理">
+    <defs>
+      <marker id="b-or" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#d4843a"/></marker>
+      <marker id="b-gy" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#8a8675"/></marker>
+    </defs>
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">用户回到第三条消息重新问一遍，三种处理</text>
+
+    <rect x="32" y="52" width="352" height="180" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+    <text x="52" y="78" fill="#e0445a" font-size="13" font-weight="700">压根不分叉</text>
+    <text x="52" y="98" fill="#8a8675" font-size="11">weclaw · pi-ai</text>
+    <g font-size="10.5" text-anchor="middle">
+      <line x1="76" y1="140" x2="336" y2="140" stroke="#3a382c" stroke-width="1.3"/>
+      <circle cx="76" cy="140" r="8" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/><text x="76" y="164" fill="#8a8675">m1</text>
+      <circle cx="141" cy="140" r="8" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/><text x="141" y="164" fill="#8a8675">m2</text>
+      <circle cx="206" cy="140" r="8" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/><text x="206" y="164" fill="#8a8675">m3</text>
+      <circle cx="271" cy="140" r="8" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/><text x="271" y="164" fill="#8a8675">m4</text>
+      <circle cx="336" cy="140" r="8" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/><text x="336" y="164" fill="#8a8675">m5</text>
+    </g>
+    <text x="52" y="196" fill="#8a8675" font-size="11">想重来只有清空重开一条。weclaw 一个微信联系人</text>
+    <text x="52" y="214" fill="#8a8675" font-size="11">只允许存在一条，旧的直接丢掉。</text>
+
+    <rect x="404" y="52" width="352" height="180" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+    <text x="424" y="78" fill="#2db3d5" font-size="13" font-weight="700">另开一条，连根指针</text>
+    <text x="424" y="97" fill="#8a8675" font-size="11">claude-code · codex · hermes</text>
+    <text x="424" y="113" fill="#8a8675" font-size="11">opencode · openclaw</text>
+    <g font-size="10.5" text-anchor="middle">
+      <line x1="448" y1="146" x2="578" y2="146" stroke="#3a382c" stroke-width="1.3"/>
+      <circle cx="448" cy="146" r="8" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/>
+      <circle cx="513" cy="146" r="8" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/>
+      <circle cx="578" cy="146" r="8" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/>
+      <text x="640" y="150" fill="#8a8675" text-anchor="start">会话 A，原样不动</text>
+      <path d="M578 156 C 578 178, 610 182, 636 182" fill="none" stroke="#2db3d5" stroke-width="1.4" marker-end="url(#b-gy)"/>
+      <line x1="640" y1="182" x2="726" y2="182" stroke="#3a382c" stroke-width="1.3"/>
+      <circle cx="640" cy="182" r="8" fill="#1e2630" stroke="#2db3d5" stroke-width="1.4"/>
+      <circle cx="705" cy="182" r="8" fill="#1e2630" stroke="#2db3d5" stroke-width="1.4"/>
+      <text x="672" y="206" fill="#2db3d5">会话 B，记着父亲是 A</text>
+    </g>
+    <text x="424" y="224" fill="#8a8675" font-size="11">每条会话内部还是一条直线，游标照旧能用。</text>
+
+    <rect x="776" y="52" width="352" height="180" rx="10" fill="#141a12" stroke="#5aad4e" stroke-width="1.6"/>
+    <text x="796" y="78" fill="#5aad4e" font-size="13" font-weight="700">同一条会话内部分叉</text>
+    <text x="796" y="98" fill="#8a8675" font-size="11">pi-mono · OpenProgram</text>
+    <g font-size="10.5" text-anchor="middle">
+      <line x1="820" y1="128" x2="950" y2="128" stroke="#3a382c" stroke-width="1.3"/>
+      <circle cx="820" cy="128" r="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
+      <circle cx="885" cy="128" r="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
+      <circle cx="950" cy="128" r="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
+      <line x1="950" y1="128" x2="1080" y2="128" stroke="#3a382c" stroke-width="1.3"/>
+      <circle cx="1015" cy="128" r="8" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/>
+      <circle cx="1080" cy="128" r="8" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/>
+      <path d="M950 138 C 950 158, 990 162, 1015 176" fill="none" stroke="#d4843a" stroke-width="1.5" marker-end="url(#b-or)"/>
+      <line x1="1015" y1="180" x2="1080" y2="180" stroke="#3a382c" stroke-width="1.3"/>
+      <circle cx="1015" cy="180" r="8" fill="#241f10" stroke="#d4843a" stroke-width="1.4"/>
+      <circle cx="1080" cy="180" r="8" fill="#241f10" stroke="#d4843a" stroke-width="1.4"/>
+      <text x="887" y="152" fill="#5aad4e">共享前缀</text>
+      <text x="1046" y="206" fill="#d4843a">新分支</text>
+    </g>
+    <text x="796" y="222" fill="#8a8675" font-size="11">一个会话 id 底下同时有两串消息，前三条是共用的。</text>
+
+    <line x1="32" y1="256" x2="1128" y2="256" stroke="#2e2c20" stroke-width="1"/>
+    <text x="32" y="286" fill="#d4843a" font-size="13" font-weight="700">在会话内 DAG 上，"这条之后"是个歧义句</text>
+
+    <g>
+      <text x="140" y="330" fill="#8a8675" font-size="11.5" text-anchor="end">主干（已写）</text>
+      <g font-size="10.5" text-anchor="middle">
+        <line x1="176" y1="326" x2="566" y2="326" stroke="#3a382c" stroke-width="1.3"/>
+        <rect x="152" y="313" width="48" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="176" y="331" fill="#5aad4e">m1</text>
+        <rect x="230" y="313" width="48" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="254" y="331" fill="#5aad4e">m2</text>
+        <rect x="308" y="313" width="48" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="332" y="331" fill="#5aad4e">m3</text>
+        <rect x="386" y="313" width="48" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="410" y="331" fill="#5aad4e">m4</text>
+        <rect x="464" y="313" width="48" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="488" y="331" fill="#5aad4e">m5</text>
+        <rect x="542" y="313" width="48" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="566" y="331" fill="#5aad4e">m6</text>
+      </g>
+      <path d="M332 341 C 332 366, 386 366, 410 388" fill="none" stroke="#d4843a" stroke-width="1.5" marker-end="url(#b-or)"/>
+      <text x="140" y="405" fill="#d4843a" font-size="11.5" text-anchor="end">新分支（欠着）</text>
+      <g font-size="10.5" text-anchor="middle">
+        <line x1="410" y1="401" x2="566" y2="401" stroke="#3a382c" stroke-width="1.3"/>
+        <rect x="386" y="388" width="48" height="26" rx="6" fill="#241f10" stroke="#d4843a" stroke-width="1.4"/><text x="410" y="406" fill="#d4843a">b4</text>
+        <rect x="464" y="388" width="48" height="26" rx="6" fill="#241f10" stroke="#d4843a" stroke-width="1.4"/><text x="488" y="406" fill="#d4843a">b5</text>
+        <rect x="542" y="388" width="48" height="26" rx="6" fill="#241f10" stroke="#d4843a" stroke-width="1.4"/><text x="566" y="406" fill="#d4843a">b6</text>
+      </g>
+
+      <rect x="620" y="300" width="248" height="52" rx="8" fill="#241014" stroke="#e0445a" stroke-width="1.3"/>
+      <text x="636" y="322" fill="#e0445a" font-size="11.5">序号说"写到第 6 条"</text>
+      <text x="636" y="341" fill="#bdb9a6" font-size="11">→ b4 b5 b6 编号 4 5 6，全被跳过</text>
+
+      <rect x="620" y="362" width="248" height="52" rx="8" fill="#241014" stroke="#e0445a" stroke-width="1.3"/>
+      <text x="636" y="384" fill="#e0445a" font-size="11.5">单 id 说"写到 m6"</text>
+      <text x="636" y="403" fill="#bdb9a6" font-size="11">→ 在分支这条线上根本扫不到 m6</text>
+
+      <rect x="888" y="330" width="240" height="56" rx="8" fill="#221a30" stroke="#9d6fe0" stroke-width="1.6"/>
+      <text x="904" y="353" fill="#9d6fe0" font-size="11.5">集合说"m1…m6 都写过"</text>
+      <text x="904" y="372" fill="#bdb9a6" font-size="11">→ b4 b5 b6 不在里面，正好是欠的</text>
+    </g>
+    <text x="32" y="444" fill="#8a8675" font-size="11.5">pi-mono 同样是会话内的树，它没撞上这个问题是因为它的那个 id 只用来划压缩起点，不用来决定哪些进长期记忆。</text>
+  </svg>
+  </div>
+
+  <div class="tbl">
+  <table>
+    <tr><th>框架</th><th>能不能分叉</th><th>怎么实现</th><th>核实位置</th></tr>
+    <tr><td><b>claude-code</b></td><td>能，功能最全</td><td><code>/branch</code> 整份复制成新会话；<code>/rewind</code> 能只回退对话、只回退文件或两者一起；子 agent 写到另一个文件</td><td class="q"><span class="src">src/commands/branch/branch.ts:61-173<br>src/components/MessageSelector.tsx:31<br>src/utils/sessionStorage.ts:247-258</span></td></tr>
+    <tr><td><b>codex-cli</b></td><td>能</td><td><code>codex fork</code> 和 TUI 里回退改旧提问，都是另开一条线程，源线程原样不动</td><td class="q"><span class="src">thread-store/src/types.rs:183-190<br>tui/src/app_backtrack.rs:7-8<br>rollout/src/recorder.rs:97-98</span></td></tr>
+    <tr><td><b>openclaw</b></td><td>能，只在子 agent 上</td><td>派子 agent 时可选继承父转录或者干净起步；没找到改旧消息重跑的实现</td><td class="q"><span class="src">src/agents/tools/sessions-spawn-tool.ts:190,307,343-344<br>改消息：grep 无命中</span></td></tr>
+    <tr><td><b>opencode</b></td><td>能复制，回退是删</td><td><code>fork</code> 深拷贝成独立会话；<code>revert</code> 只是打个标记，下一次提问时把标记之后的消息<b>真删掉</b></td><td class="q"><span class="src">packages/opencode/src/session/session.ts:733-774<br>.../revert.ts:100-134<br>.../prompt.ts:1155-1159</span></td></tr>
+    <tr><td><b>hermes-agent</b></td><td>能</td><td><code>/branch</code> 把整段历史复制进新会话，用父 id 连着；压缩也照样分出子会话，<code>/resume</code> 会自动顺着链找到最新那条</td><td class="q"><span class="src">cli.py:6682-6809<br>agent/conversation_compression.py:381-397<br>hermes_state.py:1851-1869</span></td></tr>
+    <tr><td><b>pi-ai</b></td><td class="n">没有会话</td><td>—</td><td class="q">—</td></tr>
+    <tr><td><b>pi-mono</b></td><td>能，会话内部就是树</td><td>改一条旧消息就变成它的兄弟分支；离开一条分支时可以给它生成一份摘要留下</td><td class="q"><span class="src">packages/agent/src/harness/agent-harness.ts:788-812<br>.../branch-summarization.ts:200-262</span></td></tr>
+    <tr><td><b>weclaw</b></td><td class="n">不能</td><td>一个微信联系人一条，<code>/new</code> 就是把旧的删掉</td><td class="q"><span class="src">messaging/handler.go:340-345</span></td></tr>
+    <tr class="us"><td><b>OpenProgram</b></td><td>能，会话本身是 DAG</td><td>重问、重试、派子 agent 都从中间分叉，一个会话 id 下多条分支共享前缀</td><td class="q"><span class="src">openprogram/store/session/session_store.py:988</span></td></tr>
+  </table>
+  </div>
+
+  <div class="note k">
+    <b>pi-mono 的一招值得记：</b>用户离开一条分支的时候，它可以先给这条分支生成一份摘要接在树上，
+    分支被放弃了但里面说过的话不至于凭空消失。这正好补上我们 overview.md 里承认的那个缺口：
+    只有 head 底下那条分支会被写，用户中途放弃的分支再也没有人走回去。
+  </div>
+
+  <div class="note k">
+    <b>opencode 有个反直觉的：</b><code>revert</code> 本身不删东西，但下一次提问一开始就会把标记之后的消息<b>硬删</b>。
+    也就是"改一条旧消息重跑"在它那里是不可逆的，想留住旧那条只能先 fork。
+    我们的 DAG 是两条都留着，代价就是要有办法说清哪条写过了。
+  </div>
+
+  <!-- ══════════ 06 ══════════ -->
+  <h2 id="recall"><span class="num">06</span>检索<span class="tier t2">第二层</span></h2>
+  <p class="lead">存下来的东西怎么回到上下文里。四条路：全量塞进去、关键词搜、向量搜、让模型自己挑。
+    第四条是 claude-code 独有的，也是最便宜的一条。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="四种检索方式">
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">四条取回路线</text>
+
+    <rect x="32" y="52" width="264" height="216" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+    <text x="52" y="78" fill="#8a8675" font-size="12.5" font-weight="700">全量塞进去</text>
+    <text x="52" y="100" fill="#6b6a63" font-size="11">opencode · pi-mono</text>
+    <text x="52" y="128" fill="#bdb9a6" font-size="11.5">AGENTS.md 整份进系统提示词，</text>
+    <text x="52" y="146" fill="#bdb9a6" font-size="11.5">不切块也不筛选。</text>
+    <text x="52" y="176" fill="#8a8675" font-size="11">要更细的东西，模型自己拿</text>
+    <text x="52" y="194" fill="#8a8675" font-size="11">读文件和 grep 工具去找。</text>
+    <text x="52" y="228" fill="#5aad4e" font-size="11">零基础设施。</text>
+    <text x="52" y="246" fill="#e0445a" font-size="11">文件一大就把预算吃光。</text>
+
+    <rect x="308" y="52" width="264" height="216" rx="10" fill="#141a12" stroke="#5aad4e" stroke-width="1.6"/>
+    <text x="328" y="78" fill="#5aad4e" font-size="12.5" font-weight="700">关键词搜</text>
+    <text x="328" y="100" fill="#6b6a63" font-size="11">hermes · codex · OpenProgram</text>
+    <text x="328" y="128" fill="#bdb9a6" font-size="11.5">我们用 BM25 打分取前五条，</text>
+    <text x="328" y="146" fill="#bdb9a6" font-size="11.5">每轮跑一次，不花模型调用。</text>
+    <text x="328" y="176" fill="#8a8675" font-size="11">hermes 用 SQLite 全文索引搜历史会话。</text>
+    <text x="328" y="194" fill="#8a8675" font-size="11">codex 更朴素，就是逐行字符串包含。</text>
+    <text x="328" y="228" fill="#5aad4e" font-size="11">快、便宜、结果可解释。</text>
+    <text x="328" y="246" fill="#e0445a" font-size="11">换个说法就搜不到。</text>
+
+    <rect x="584" y="52" width="264" height="216" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+    <text x="604" y="78" fill="#2db3d5" font-size="12.5" font-weight="700">向量搜</text>
+    <text x="604" y="100" fill="#6b6a63" font-size="11">openclaw</text>
+    <text x="604" y="128" fill="#bdb9a6" font-size="11.5">SQLite 里做最近邻，</text>
+    <text x="604" y="146" fill="#bdb9a6" font-size="11.5">再和全文索引混合排序。</text>
+    <text x="604" y="176" fill="#8a8675" font-size="11">换个说法照样搜得到。</text>
+    <text x="604" y="200" fill="#8a8675" font-size="11">还有一个专门的子 agent 在你说话前</text>
+    <text x="604" y="218" fill="#8a8675" font-size="11">先替你搜一遍，把结论塞回主上下文。</text>
+    <text x="604" y="248" fill="#e0445a" font-size="11">要嵌入、要索引、要重建，两万多行里一大半是它。</text>
+
+    <rect x="860" y="52" width="268" height="216" rx="10" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
+    <text x="880" y="78" fill="#4f8ef7" font-size="12.5" font-weight="700">让模型自己挑</text>
+    <text x="880" y="100" fill="#6b6a63" font-size="11">claude-code</text>
+    <text x="880" y="128" fill="#bdb9a6" font-size="11.5">扫一遍所有记忆文件的抬头，</text>
+    <text x="880" y="146" fill="#bdb9a6" font-size="11.5">列成"文件名加一句描述"的清单，</text>
+    <text x="880" y="164" fill="#bdb9a6" font-size="11.5">交给一个小模型挑不超过五个。</text>
+    <text x="880" y="194" fill="#8a8675" font-size="11">提示词里还写了条反直觉的规则：</text>
+    <text x="880" y="212" fill="#8a8675" font-size="11">正在用的工具，它的用法文档别选，</text>
+    <text x="880" y="230" fill="#8a8675" font-size="11">但那个工具的坑和已知问题要选。</text>
+    <text x="880" y="256" fill="#4f8ef7" font-size="11">不建索引，多一次便宜调用。</text>
+  </svg>
+  </div>
+
+  <div class="note k">
+    <b>最值得抄的一条。</b>claude-code 的做法是：<b>不建任何索引</b>，只让每个记忆文件在抬头写一句自我描述，
+    检索时把这些描述列成清单，花一次便宜的小模型调用挑出五个文件名。
+    这条路我们现在没有，而它和我们的 <code>topics/</code> 结构天生匹配。
+    它挑的判据也写得比"相关就选"细：拿不准就不选，宁可返回空。
+  </div>
+
+  <div class="note k">
+    <b>codex 有个闭环值得记：</b>模型用了哪条记忆，要在回答里埋一段隐藏标记说出来；
+    服务端把这段解析出来记一次使用计数，然后在正文里<b>删掉</b>再给用户看。
+    使用计数回过头喂给整理阶段的排序。用得多的留下来，没人用的自然沉底，
+    整个过程不需要任何人手工评分。我们的夜间重整目前只按内容合并，没有这种使用反馈。
+  </div>
+
+  <!-- ══════════ 07 ══════════ -->
+  <h2 id="core"><span class="num">07</span>常驻块：写满了怎么裁<span class="tier t2">第二层</span></h2>
+  <p class="lead">"每轮都进上下文的那一小块记忆"，八家里四家给它设了闸，一共六道。裁法只有两类，
+    <b>没有一家把裁什么完全交给模型自由发挥</b>：要么确定性截断，要么确定性拒绝然后让模型去改。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="常驻块写满了怎么裁">
+    <defs>
+      <marker id="c-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#8a8675"/></marker>
+    </defs>
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">六道闸，加我们的一共七种裁法</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">左边一列是闸门大小，中间是超了之后发生什么，右边是这件事有没有被说出来。</text>
+
+    <text x="180" y="86" fill="#8a8675" font-size="11" letter-spacing="1.5">闸门</text>
+    <text x="420" y="86" fill="#8a8675" font-size="11" letter-spacing="1.5">超了怎么办</text>
+    <text x="900" y="86" fill="#8a8675" font-size="11" letter-spacing="1.5">说不说出来</text>
+    <line x1="32" y1="96" x2="1128" y2="96" stroke="#2e2c20" stroke-width="1"/>
+
+    <!-- claude-code MEMORY.md -->
+    <text x="164" y="128" fill="#4f8ef7" font-size="12.5" font-weight="700" text-anchor="end">claude-code</text>
+    <text x="164" y="144" fill="#8a8675" font-size="10.5" text-anchor="end">MEMORY.md</text>
+    <text x="180" y="128" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">200 行</text>
+    <text x="180" y="146" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">25000 字节</text>
+    <g>
+      <rect x="300" y="110" width="560" height="44" rx="7" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.3"/>
+      <text x="316" y="130" fill="#bdb9a6" font-size="11.5">两道闸串着：先砍到 200 行，还超字节就退到<tspan fill="#f0eee6" font-weight="700">最后一个换行处</tspan>切，绝不切在半行中间。</text>
+      <text x="316" y="147" fill="#8a8675" font-size="11">字节闸是后加的，注释写着线上见过 200 行以内 197KB 的索引。</text>
+    </g>
+    <text x="876" y="126" fill="#5aad4e" font-size="11.5">说。截完在正文尾巴</text>
+    <text x="876" y="143" fill="#5aad4e" font-size="11.5">追加一条警告，点名</text>
+    <text x="876" y="160" fill="#5aad4e" font-size="11.5">哪道闸触发、怎么改</text>
+
+    <!-- claude-code SessionMemory -->
+    <text x="164" y="200" fill="#4f8ef7" font-size="12.5" font-weight="700" text-anchor="end">claude-code</text>
+    <text x="164" y="216" fill="#8a8675" font-size="10.5" text-anchor="end">SessionMemory</text>
+    <text x="180" y="200" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">每节 2000 token</text>
+    <text x="180" y="218" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">全文 12000 token</text>
+    <g>
+      <rect x="300" y="182" width="272" height="44" rx="7" fill="#241f10" stroke="#d4843a" stroke-width="1.3"/>
+      <text x="316" y="202" fill="#d4843a" font-size="11.5" font-weight="700">第一级：让模型自己压</text>
+      <text x="316" y="219" fill="#8a8675" font-size="11">提示词点名保住哪两节</text>
+      <path d="M576 204 L596 204" stroke="#8a8675" stroke-width="1.3" marker-end="url(#c-rd)"/>
+      <rect x="600" y="182" width="260" height="44" rx="7" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.3"/>
+      <text x="616" y="202" fill="#4f8ef7" font-size="11.5" font-weight="700">第二级：按行确定性截断</text>
+      <text x="616" y="219" fill="#8a8675" font-size="11">模型压不下去时兜底</text>
+    </g>
+    <text x="876" y="198" fill="#5aad4e" font-size="11.5">说。截过的地方留一句</text>
+    <text x="876" y="215" fill="#5aad4e" font-size="11.5">"本节因长度被截断"</text>
+
+    <!-- codex AGENTS.md -->
+    <text x="164" y="272" fill="#2db3d5" font-size="12.5" font-weight="700" text-anchor="end">codex-cli</text>
+    <text x="164" y="288" fill="#8a8675" font-size="10.5" text-anchor="end">AGENTS.md 和摘要页</text>
+    <text x="180" y="272" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">32 KiB 总预算</text>
+    <text x="180" y="290" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">摘要页 2500 token</text>
+    <g>
+      <rect x="300" y="254" width="560" height="44" rx="7" fill="#1e2630" stroke="#2db3d5" stroke-width="1.3"/>
+      <text x="316" y="274" fill="#bdb9a6" font-size="11.5">项目里多份 AGENTS.md 共用一份余额，按剩余字节直接切，切在哪算哪。</text>
+      <text x="316" y="291" fill="#e0445a" font-size="11">而全局那份 <tspan font-family="Menlo,monospace">~/.codex/AGENTS.md</tspan> 完全没有闸，多大都原样进去。</text>
+    </g>
+    <text x="876" y="270" fill="#e0445a" font-size="11.5">基本不说。只写一条</text>
+    <text x="876" y="287" fill="#e0445a" font-size="11.5">日志，用户和模型</text>
+    <text x="876" y="304" fill="#e0445a" font-size="11.5">都看不见</text>
+
+    <!-- openclaw -->
+    <text x="164" y="344" fill="#2db3d5" font-size="12.5" font-weight="700" text-anchor="end">openclaw</text>
+    <text x="164" y="360" fill="#8a8675" font-size="10.5" text-anchor="end">MEMORY.md</text>
+    <text x="180" y="344" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">10000 字符</text>
+    <text x="180" y="362" fill="#8a8675" font-size="10.5">故意低于注入闸 12000</text>
+    <g>
+      <rect x="300" y="326" width="560" height="44" rx="7" fill="#1e2630" stroke="#2db3d5" stroke-width="1.3"/>
+      <text x="316" y="346" fill="#bdb9a6" font-size="11.5"><tspan fill="#f0eee6" font-weight="700">按归属裁</tspan>：只丢自己自动升上来的段落，从日期最老的开始丢。</text>
+      <text x="316" y="363" fill="#5aad4e" font-size="11.5">人手写进这个文件的内容，一个字都不动。</text>
+    </g>
+    <text x="876" y="342" fill="#5aad4e" font-size="11.5">说。返回值里带着</text>
+    <text x="876" y="359" fill="#5aad4e" font-size="11.5">这次丢掉的是哪几天</text>
+
+    <!-- openclaw bootstrap -->
+    <text x="164" y="416" fill="#2db3d5" font-size="12.5" font-weight="700" text-anchor="end">openclaw</text>
+    <text x="164" y="432" fill="#8a8675" font-size="10.5" text-anchor="end">启动注入这一层</text>
+    <text x="180" y="416" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">每份 12000 字符</text>
+    <text x="180" y="434" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">总共 60000 字符</text>
+    <g>
+      <rect x="300" y="398" width="560" height="44" rx="7" fill="#1e2630" stroke="#2db3d5" stroke-width="1.4"/>
+      <text x="316" y="418" fill="#bdb9a6" font-size="11.5">一般文件留头 75 尾 25。AGENTS.md 特殊：<tspan fill="#f0eee6" font-weight="700">头 45、正则挑出的要点 35、尾 15</tspan>。</text>
+      <text x="316" y="435" fill="#8a8675" font-size="11">正则认标题和列表行，外加 must、never、security、commit 这类词，不是模型判断。</text>
+    </g>
+    <text x="876" y="414" fill="#5aad4e" font-size="11.5">说。系统提示词里</text>
+    <text x="876" y="431" fill="#5aad4e" font-size="11.5">另加一段截断警告，</text>
+    <text x="876" y="448" fill="#5aad4e" font-size="11.5">默认每次都加</text>
+
+    <!-- hermes -->
+    <text x="164" y="488" fill="#d4843a" font-size="12.5" font-weight="700" text-anchor="end">hermes-agent</text>
+    <text x="164" y="504" fill="#8a8675" font-size="10.5" text-anchor="end">MEMORY.md / USER.md</text>
+    <text x="180" y="488" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">2200 / 1375 字符</text>
+    <text x="180" y="506" fill="#8a8675" font-size="10.5">按字符不按 token</text>
+    <g>
+      <rect x="300" y="470" width="560" height="44" rx="7" fill="#241f10" stroke="#d4843a" stroke-width="1.4"/>
+      <text x="316" y="490" fill="#bdb9a6" font-size="11.5"><tspan fill="#f0eee6" font-weight="700">不裁，直接拒</tspan>。这次写入原样退回，一个字都不落盘。</text>
+      <text x="316" y="507" fill="#8a8675" font-size="11">删哪条由模型接着决定，但它必须先被拒一次才知道满了。</text>
+    </g>
+    <text x="876" y="486" fill="#5aad4e" font-size="11.5">说。拒绝信息直接回给</text>
+    <text x="876" y="503" fill="#5aad4e" font-size="11.5">模型，带着当前用量</text>
+    <text x="876" y="520" fill="#5aad4e" font-size="11.5">和上限两个数</text>
+
+    <!-- 我们 -->
+    <text x="164" y="560" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="end">OpenProgram</text>
+    <text x="164" y="576" fill="#8a8675" font-size="10.5" text-anchor="end">core.md</text>
+    <text x="180" y="560" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">2000 token</text>
+    <text x="180" y="578" fill="#8a8675" font-size="10.5">tiktoken 实际数</text>
+    <g>
+      <rect x="300" y="542" width="560" height="44" rx="7" fill="#141a12" stroke="#5aad4e" stroke-width="1.8"/>
+      <text x="316" y="562" fill="#bdb9a6" font-size="11.5"><tspan fill="#f0eee6" font-weight="700">整笔事务拒绝</tspan>。不只是这一条，整批一起退，工作区保持逐字节不变。</text>
+      <text x="316" y="579" fill="#8a8675" font-size="11">给写入模型一句现成的修复话术：core.md 满了，别动它，这条放进 topic 文件。</text>
+    </g>
+    <text x="876" y="558" fill="#5aad4e" font-size="11.5">说。修复指引直接给</text>
+    <text x="876" y="575" fill="#5aad4e" font-size="11.5">写入模型，它还有</text>
+    <text x="876" y="592" fill="#5aad4e" font-size="11.5">一次重来的机会</text>
+
+    <line x1="32" y1="612" x2="1128" y2="612" stroke="#2e2c20" stroke-width="1"/>
+  </svg>
+  </div>
+
+  <div class="tbl">
+  <table>
+    <tr><th>框架</th><th>常驻块</th><th>闸门</th><th>满了怎么办</th><th>谁决定</th><th>说不说</th><th>核实位置</th></tr>
+    <tr><td><b>claude-code</b> MEMORY.md</td><td class="y">有</td><td class="fw">200 行 + 25000 字节</td><td>先按行截，再退到最后一个换行处按字节截</td><td>确定性</td><td class="y">正文追加警告，点名哪道闸</td><td class="q"><span class="src">src/memdir/memdir.ts:35,38,57-103</span></td></tr>
+    <tr><td><b>claude-code</b> SessionMemory</td><td class="y">有</td><td class="fw">每节 2000 / 全文 12000 token</td><td>先让模型压，压不动再按行确定性截</td><td>先模型后确定性</td><td class="y">留 <code>[... section truncated for length ...]</code></td><td class="q"><span class="src">src/services/SessionMemory/prompts.ts:8-9,67,185,256-324</span></td></tr>
+    <tr><td><b>claude-code</b> CLAUDE.md</td><td class="y">有</td><td class="n">40000 字符只是警告，不截</td><td class="n">什么都不做，只在状态面板提示"文件过大"</td><td class="q">—</td><td class="y">状态面板提示</td><td class="q"><span class="src">src/utils/claudemd.ts:92,1132-1134</span></td></tr>
+    <tr><td><b>codex-cli</b></td><td class="y">有</td><td class="fw">项目 32 KiB；摘要页 2500 token；全局那份无闸</td><td>按剩余字节直接切，切在哪算哪</td><td>确定性</td><td class="n">只写一条日志</td><td class="q"><span class="src">core/src/config/mod.rs:211<br>core/src/agents_md.rs:94,116-124<br>ext/memories/src/lib.rs:16</span></td></tr>
+    <tr><td><b>openclaw</b> MEMORY.md</td><td class="y">有</td><td class="fw">10000 字符</td><td>只丢自动升上来的段落，按日期从老到新；人写的一律保留</td><td>确定性，按归属</td><td class="y">返回丢掉的日期列表</td><td class="q"><span class="src">extensions/memory-core/src/memory-budget.ts:25,100-164<br>short-term-promotion.ts:1719,1762</span></td></tr>
+    <tr><td><b>openclaw</b> 启动注入层</td><td class="y">有</td><td class="fw">每份 12000 / 总共 60000 字符</td><td>一般文件头 75 尾 25；AGENTS.md 头 45 加正则挑出的要点 35 加尾 15</td><td>确定性，正则挑</td><td class="y">系统提示词里加截断警告，默认每次都加</td><td class="q"><span class="src">src/agents/pi-embedded-helpers/bootstrap.ts:88-89,96-102,158-165</span></td></tr>
+    <tr><td><b>opencode</b></td><td class="n">没有记忆块</td><td class="n">AGENTS.md 无闸，确认不是没找到</td><td class="q">—</td><td class="q">—</td><td class="q">—</td><td class="q"><span class="src">packages/opencode/src/session/instruction.ts:91-93,155-169</span></td></tr>
+    <tr><td><b>hermes-agent</b></td><td class="y">有</td><td class="fw">2200 / 1375 字符</td><td>硬拒这次写入，让模型自己去 replace 或 remove</td><td>确定性拒绝 + 模型选删谁</td><td class="y">拒绝信息带用量和上限回给模型</td><td class="q"><span class="src">tools/memory_tool.py:149,295-306,359-366</span></td></tr>
+    <tr><td><b>pi-ai</b></td><td class="n">没有</td><td class="q">—</td><td class="q">—</td><td class="q">—</td><td class="q">—</td><td class="q">—</td></tr>
+    <tr><td><b>pi-mono</b></td><td class="y">有 AGENTS.md</td><td class="n">无闸，整份拼进去</td><td class="q">—</td><td class="q">—</td><td class="q">—</td><td class="q"><span class="src">packages/coding-agent/src/core/system-prompt.ts:61-68</span></td></tr>
+    <tr><td><b>weclaw</b></td><td class="n">没有</td><td class="q">配置里的固定系统提示词，不含学到的东西</td><td class="q">—</td><td class="q">—</td><td class="q">—</td><td class="q"><span class="src">config/config.go:28</span></td></tr>
+    <tr class="us"><td><b>OpenProgram</b> core.md</td><td class="y">有</td><td class="fw">2000 token</td><td>整笔事务拒绝，工作区逐字节不变</td><td>确定性拒绝 + 模型改写</td><td class="y">修复话术给写入模型，允许重来一次</td><td class="q"><span class="src">openprogram/memory/scriptorium/management/config.py:7<br>.../block_views.py:27-36<br>.../agent.py:96-99</span></td></tr>
+  </table>
+  </div>
+
+  <div class="note k">
+    <b>给"常驻块写满怎么裁"的结论：</b>七道闸里没有一道让模型自由判断该丢什么。
+    五道是确定性截断（claude-code 的 MEMORY.md、codex、openclaw 的两层，加 claude-code SessionMemory 的兜底那级），
+    两道是确定性拒绝再把选择权交回模型（hermes、我们）。
+    唯一沾一点模型判断的是 claude-code 的 SessionMemory，做法是<b>先让模型压、压不动再确定性兜底</b>，
+    而且判据写死在提示词里点名保住哪两节，不是让它自由发挥。
+    四条可以直接用的经验：<b>一，</b>闸门要两道，行数管不住长行，claude-code 的字节闸就是被一份 200 行 197KB 的索引逼出来的；
+    <b>二，</b>裁的时候看归属比看时间重要，openclaw 只丢自己写的、人写的一律不动；
+    <b>三，</b>要裁就整份都要裁到，codex 给项目级 AGENTS.md 设了闸却漏了全局那份，claude-code 反过来给自己管的 MEMORY.md 设了硬闸、给人管的 CLAUDE.md 只警告不截；
+    <b>四，</b>裁完必须留痕，codex 是唯一只写日志的，模型和用户都不知道自己少看了东西。
+    我们的 core.md 已经在"确定性拒绝加留痕"这一格，缺的是第二道闸和归属区分。
+  </div>
+
+  <!-- ══════════ 08 ══════════ -->
+  <h2 id="size"><span class="num">08</span>实现规模<span class="tier t2">第二层</span></h2>
+  <p class="lead">不含测试。彩条是长期记忆本身，灰条是压缩和转录存储。同一件事从 0 行到三万四千行都有人做，
+    差别几乎全在"要不要自己建索引"。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="各家记忆实现规模">
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">记忆相关代码行数</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">条长按同一比例。灰条不算长期记忆：转录落盘和上下文压缩每家都要做，和记不记得住无关。</text>
+
+    <g font-size="11.5">
+      <text x="188" y="92" fill="#2db3d5" text-anchor="end" font-weight="700">openclaw</text>
+      <rect x="200" y="80" width="820" height="18" rx="4" fill="#1e2630" stroke="#2db3d5" stroke-width="1.3"/>
+      <text x="1030" y="94" fill="#bdb9a6">34000</text>
+      <text x="212" y="94" fill="#2db3d5" font-size="11">向量、全文、做梦管道、升级排序。另外两个可换的后端还有 12000 行，没算进来</text>
+
+      <text x="188" y="128" fill="#4f8ef7" text-anchor="end" font-weight="700">codex-cli</text>
+      <rect x="200" y="116" width="215" height="18" rx="4" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.3"/>
+      <rect x="415" y="116" width="90" height="18" rx="4" fill="#1d1c14" stroke="#3a382c" stroke-width="1.3"/>
+      <text x="517" y="130" fill="#bdb9a6">8900 + 3700</text>
+      <text x="212" y="130" fill="#4f8ef7" font-size="11">两级蒸馏加读路径</text>
+      <text x="700" y="130" fill="#8a8675" font-size="11">另有约六万行转录存储和分叉，不属于记忆</text>
+
+      <text x="188" y="164" fill="#5aad4e" text-anchor="end" font-weight="700">OpenProgram</text>
+      <rect x="200" y="152" width="154" height="18" rx="4" fill="#141a12" stroke="#5aad4e" stroke-width="1.8"/>
+      <text x="366" y="166" fill="#bdb9a6">6380</text>
+      <text x="412" y="166" fill="#5aad4e" font-size="11">写入、事务、BM25、主题格式、夜间重整。全部是长期记忆，没有一行是压缩</text>
+
+      <text x="188" y="200" fill="#4f8ef7" text-anchor="end" font-weight="700">claude-code</text>
+      <rect x="200" y="188" width="119" height="18" rx="4" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.3"/>
+      <rect x="319" y="188" width="103" height="18" rx="4" fill="#1d1c14" stroke="#3a382c" stroke-width="1.3"/>
+      <text x="434" y="202" fill="#bdb9a6">4900 + 4300</text>
+      <text x="212" y="202" fill="#4f8ef7" font-size="11">记忆目录加抽取分身</text>
+      <text x="700" y="202" fill="#8a8675" font-size="11">另有 1500 行 CLAUDE.md 加载器和 2200 行团队同步</text>
+
+      <text x="188" y="236" fill="#d4843a" text-anchor="end" font-weight="700">hermes-agent</text>
+      <rect x="200" y="224" width="67" height="18" rx="4" fill="#241f10" stroke="#d4843a" stroke-width="1.3"/>
+      <rect x="267" y="224" width="57" height="18" rx="4" fill="#1d1c14" stroke="#3a382c" stroke-width="1.3"/>
+      <text x="336" y="238" fill="#bdb9a6">2800 + 2400</text>
+      <text x="700" y="238" fill="#8a8675" font-size="11">另有八个外接服务插件共 11600 行，默认全关</text>
+
+      <text x="188" y="272" fill="#8a8675" text-anchor="end" font-weight="700">pi-mono</text>
+      <rect x="200" y="260" width="121" height="18" rx="4" fill="#1d1c14" stroke="#3a382c" stroke-width="1.3"/>
+      <text x="333" y="274" fill="#8a8675">5000</text>
+      <text x="380" y="274" fill="#8a8675" font-size="11">全是会话树和压缩，长期记忆 0 行；而且同一套逻辑写了两遍</text>
+
+      <text x="188" y="308" fill="#8a8675" text-anchor="end" font-weight="700">opencode</text>
+      <rect x="200" y="296" width="37" height="18" rx="4" fill="#1d1c14" stroke="#3a382c" stroke-width="1.3"/>
+      <text x="249" y="310" fill="#8a8675">1550</text>
+      <text x="286" y="310" fill="#8a8675" font-size="11">压缩加存储，长期记忆 0 行</text>
+
+      <text x="188" y="344" fill="#8a8675" text-anchor="end" font-weight="700">weclaw</text>
+      <rect x="200" y="332" width="5" height="18" rx="2" fill="#1d1c14" stroke="#3a382c"/>
+      <text x="220" y="346" fill="#8a8675">200，全是会话 id 记账</text>
+
+      <text x="188" y="380" fill="#8a8675" text-anchor="end" font-weight="700">pi-ai</text>
+      <rect x="200" y="368" width="3" height="18" rx="1" fill="#3a382c"/>
+      <text x="216" y="382" fill="#8a8675">0，一行都没有</text>
+    </g>
+  </svg>
+  </div>
+
+  <div class="note">
+    <b>复杂度都花在检索上。</b>openclaw 的三万四千行里，向量、嵌入缓存、索引重建、混合排序占了绝大部分；
+    去掉这一层，它剩下的部分和 claude-code 的四千九百行是同一个量级。
+    我们六千三百行里没有向量必需项（嵌入是可选的），多出来的部分是事务和主题格式的校验。
+    真正的分水岭不是"有没有记忆"，是"要不要自己维护一个索引"。
+  </div>
+
+  <!-- ══════════ 09 ══════════ -->
+  <h2 id="plan"><span class="num">09</span>我们的方案落在哪<span class="tier t3">第三层</span></h2>
+  <p class="lead">把前八节的格子叠起来，我们计划中的位置就清楚了：多数格子里我们和最成熟的那几家重合，
+    只有游标这一格是我们独走，原因在第 05 节已经画清楚。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="我们的方案在各维度上的位置">
+    <defs>
+      <marker id="p-vi" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#9d6fe0"/></marker>
+    </defs>
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">七个维度上，我们和谁站在一起</text>
+
+    <g font-size="11.5">
+      <text x="200" y="76" fill="#8a8675" text-anchor="end">存什么形态</text>
+      <rect x="216" y="60" width="470" height="26" rx="6" fill="#141a12" stroke="#5aad4e" stroke-width="1.5"/>
+      <text x="232" y="78" fill="#5aad4e">纯文件，和 claude-code 一样</text>
+      <text x="706" y="78" fill="#8a8675" font-size="11">openclaw 加了索引，hermes 可以外接服务。文件的好处是能直接读、能进 git</text>
+
+      <text x="200" y="116" fill="#8a8675" text-anchor="end">谁来写</text>
+      <rect x="216" y="100" width="470" height="26" rx="6" fill="#141a12" stroke="#5aad4e" stroke-width="1.5"/>
+      <text x="232" y="118" fill="#5aad4e">会话之外的分身，和 claude-code、codex、openclaw 一样</text>
+      <text x="706" y="118" fill="#8a8675" font-size="11">四家里三家这么做。hermes 让主模型自己写，想不起来就不写</text>
+
+      <text x="200" y="156" fill="#8a8675" text-anchor="end">写什么</text>
+      <rect x="216" y="140" width="470" height="26" rx="6" fill="#141a12" stroke="#5aad4e" stroke-width="1.5"/>
+      <text x="232" y="158" fill="#5aad4e">原话和提炼都留，和 claude-code、codex、pi-mono 一样</text>
+      <text x="706" y="158" fill="#8a8675" font-size="11">而且每句提炼带脚注指回原话，这一条只有我们做了</text>
+
+      <text x="200" y="196" fill="#8a8675" text-anchor="end">检索</text>
+      <rect x="216" y="180" width="470" height="26" rx="6" fill="#141a12" stroke="#5aad4e" stroke-width="1.5"/>
+      <text x="232" y="198" fill="#5aad4e">关键词 BM25，和 hermes、codex 同一档</text>
+      <text x="706" y="198" fill="#d4843a" font-size="11">缺 claude-code 那条"让小模型挑文件"的路，见第 06 节</text>
+
+      <text x="200" y="236" fill="#8a8675" text-anchor="end">常驻块闸门</text>
+      <rect x="216" y="220" width="470" height="26" rx="6" fill="#141a12" stroke="#5aad4e" stroke-width="1.5"/>
+      <text x="232" y="238" fill="#5aad4e">确定性拒绝加留痕，和 hermes 一样</text>
+      <text x="706" y="238" fill="#d4843a" font-size="11">缺第二道字节闸，也没有区分人写的和自动写的</text>
+
+      <text x="200" y="276" fill="#8a8675" text-anchor="end">夜间整理</text>
+      <rect x="216" y="260" width="470" height="26" rx="6" fill="#141a12" stroke="#5aad4e" stroke-width="1.5"/>
+      <text x="232" y="278" fill="#5aad4e">有，和 claude-code、codex、openclaw 一样</text>
+      <text x="706" y="278" fill="#8a8675" font-size="11">四家都想通了同一件事：只写不整理，文件永远只会变长</text>
+
+      <text x="200" y="316" fill="#8a8675" text-anchor="end">会话结构</text>
+      <rect x="216" y="300" width="470" height="26" rx="6" fill="#141a12" stroke="#5aad4e" stroke-width="1.5"/>
+      <text x="232" y="318" fill="#5aad4e">会话内 DAG，只和 pi-mono 一样</text>
+      <text x="706" y="318" fill="#8a8675" font-size="11">其余六家要么线性，要么把分叉做成另一个会话文件</text>
+    </g>
+
+    <line x1="32" y1="344" x2="1128" y2="344" stroke="#2e2c20" stroke-width="1"/>
+
+    <g>
+      <text x="200" y="386" fill="#9d6fe0" text-anchor="end" font-size="12" font-weight="700">游标</text>
+      <rect x="216" y="368" width="470" height="30" rx="6" fill="#221a30" stroke="#9d6fe0" stroke-width="1.8"/>
+      <text x="232" y="388" fill="#9d6fe0" font-size="12">已写消息 id 的集合，没有第二家这么做</text>
+      <path d="M690 383 L716 383" stroke="#9d6fe0" stroke-width="1.5" marker-end="url(#p-vi)"/>
+      <text x="726" y="380" fill="#bdb9a6" font-size="11.5">因为上面最后一行：会话结构不一样，</text>
+      <text x="726" y="398" fill="#bdb9a6" font-size="11.5">别人的游标形状搬过来就是错的。</text>
+    </g>
+
+    <text x="32" y="440" fill="#8a8675" font-size="11.5">这不是我们比别人想得多。是别人的会话排成一条线，"这一点之后都算新的"这句话在他们那里没有歧义，</text>
+    <text x="32" y="460" fill="#8a8675" font-size="11.5">在我们这里有。同一个道理，pi-mono 有会话内的树却不需要集合，因为它的那个 id 只用来划压缩起点，不决定谁进长期记忆。</text>
+    <text x="32" y="484" fill="#d4843a" font-size="11.5">形状是被会话结构逼出来的，不是选出来的。</text>
+  </svg>
+  </div>
+
+  <div class="note p">
+    <b>方案本身在别处。</b>集合怎么落盘、分叉时怎么判、id 为什么永不删除、从位置游标怎么迁移，
+    权威描述在 <a href="overview.html">overview.md</a> 的「写入游标」一节，机制图在
+    <a href="memory-architecture.html">memory-architecture.html</a> 第 04 节。这一页只回答一个问题：
+    这个形状和外面各家是什么关系。
+  </div>
+
+  <div class="note">
+    <b>五件从对标里带回来、还没做的事。</b>
+    一，检索多加一条路：给每个 topic 文件写一句自我描述，让小模型从清单里挑，不建索引（claude-code，第 06 节）。
+    二，core.md 加第二道闸并区分归属：token 之外再加一道字节或行数闸，裁的时候只动自动写入的段落（claude-code 和 openclaw，第 07 节）。
+    三，用户放弃一条分支时给它留一份摘要，补上 overview.md 里承认的"只有 head 底下那条会被写"这个缺口（pi-mono，第 05 节）。
+    四，去重记两处并互相印证：游标集合之外，在 topic 正文的脚注里也留下来源 id，任一边丢了另一边还拦得住（openclaw，第 04 节）。
+    五，让使用情况回流到夜间重整：记录哪些块被检索命中过，把它当合并和淘汰的一个输入（codex，第 06 节）。
+  </div>
+
+  <div class="legend">
+    <b>一句话收尾</b>：八家里四家有长期记忆，四家把这件事推给用户手写的文件或者别的进程；
+    分支这件事六家线性或者另开会话，只有 pi-mono 和我们把分支放在同一条会话里；
+    常驻块写满了没有一道闸交给模型自由裁，只有截断和拒绝两类。
+    我们计划中的 id 集合游标之所以独一份，不是因为想得多，是因为会话结构不同，别人的形状搬过来会漏掉整条分支。
+  </div>
+
+</div>
+</body>
+</html>
