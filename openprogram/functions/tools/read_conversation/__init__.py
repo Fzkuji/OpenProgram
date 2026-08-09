@@ -1,4 +1,4 @@
-"""session_transcript — read a past session as plain text.
+"""read_conversation — read a past session as plain text.
 
 One tool. It renders a session's branch (conversation + the tool /
 function calls each turn made) into LLM-readable prose so the model can
@@ -10,6 +10,6 @@ Discovery is already covered: ``list_agents`` (``send_message``'s
 discovery tool) names the session ids and ``SID:HEAD`` branch tips
 this tool takes as arguments.
 """
-from .session_transcript import session_transcript
+from .read_conversation import read_conversation
 
-__all__ = ["session_transcript"]
+__all__ = ["read_conversation"]

@@ -143,7 +143,7 @@ A message is plain text, exactly like a user message. When the target should
 consider other branches, the sender writes that into `message`: quote the
 conclusion directly (each branch's reply already flowed back to the sender via
 reply-back), or name the branch (`SID:HEAD` or its name) and the target reads
-it itself with `session_transcript`. The target model decides how much of the
+it itself with `read_conversation`. The target model decides how much of the
 named branch to read, so context stays bounded without a dedicated aggregation
 parameter.
 
@@ -564,7 +564,7 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 
 > Note: "synthesize several branches" needs no dedicated mechanism — the
 > sender names the branches in `message` and the target reads them with
-> `session_transcript` (§2.2).
+> `read_conversation` (§2.2).
 
 ---
 

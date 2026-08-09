@@ -19,13 +19,13 @@ whole task, and that is yours.
 **Distilling the current conversation** — you already have it. Read back
 over the turns; do not re-read them through a tool.
 
-**Distilling a past session** — read it with the `session_transcript`
+**Distilling a past session** — read it with the `read_conversation`
 tool. It prints each turn's content plus the tool calls that turn made,
 with arguments, results, and whether each one failed.
 
 ```
 list_sessions                          # find the session id
-session_transcript(session_id="local_…")   # read its active branch
+read_conversation(session_id="local_…")   # read its active branch
 ```
 
 If the work happened on a side branch (a retry, a fork), get the tip from

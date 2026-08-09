@@ -210,7 +210,7 @@
       "research_agent",
       "semble_find_related",
       "semble_search",
-      "session_transcript",
+      "read_conversation",
       "spawn_program",
       "agent",
       "todo_read",

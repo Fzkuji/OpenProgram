@@ -16,7 +16,7 @@ Either triggers the bundled `distill` skill. Typical phrasings that also fire it
 
 **The current conversation** needs no arguments — the agent already has it.
 
-**A past session** is read with the `session_transcript` tool. You can name the session directly, or describe it ("the one where we set up the proxy") and let the agent find it with `list_agents`. It will confirm before distilling.
+**A past session** is read with the `read_conversation` tool. You can name the session directly, or describe it ("the one where we set up the proxy") and let the agent find it with `list_agents`. It will confirm before distilling.
 
 ## What comes out
 
@@ -50,7 +50,7 @@ A revised skill is live the moment the file is written, same as a new one. This 
 
 ## Reading a session yourself
 
-The tool the distill skill uses is available on its own. `session_transcript` renders a session's branch as plain text: each turn's content plus the tool calls that turn made, with arguments, results, and failures marked.
+The tool the distill skill uses is available on its own. `read_conversation` renders a session's branch as plain text: each turn's content plus the tool calls that turn made, with arguments, results, and failures marked.
 
 ```
 --- [2] assistant ---

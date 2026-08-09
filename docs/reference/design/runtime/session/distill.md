@@ -8,8 +8,8 @@ The design is deliberately thin. One new module renders a session as text; every
 
 | Piece | Where | What it does |
 |---|---|---|
-| Transcript renderer | `openprogram/store/session/transcript.py` | `render_session_transcript()` — one branch of a session as LLM-readable plain text |
-| Model-facing tool | `openprogram/functions/tools/session_transcript/` | `session_transcript` — the renderer as a `@function`, defaulting to the current session |
+| Transcript renderer | `openprogram/store/session/transcript.py` | `render_read_conversation()` — one branch of a session as LLM-readable plain text |
+| Model-facing tool | `openprogram/functions/tools/read_conversation/` | `read_conversation` — the renderer as a `@function`, defaulting to the current session |
 | The distill skill | `openprogram/skills_bundled/distill/` | Instructions for extracting a procedure and writing it out |
 | Product page | `docs/capabilities/distill.md` | User-facing documentation |
 
@@ -20,7 +20,7 @@ The design is deliberately thin. One new module renders a session as text; every
 Signature:
 
 ```python
-render_session_transcript(
+render_read_conversation(
     session_id,
     head_id=None,               # default: the session's active head
     include_function_calls=True,
@@ -44,7 +44,7 @@ Truncation is layered. Per-field caps stop one runaway tool result (a large file
 
 ## Discovery reuses existing tools
 
-`list_agents` (`functions/tools/send_message/`) already enumerates session ids and `SID:HEAD` branch tips. Those are exactly the arguments `session_transcript` takes, so no listing tool is added. The tool accepts a whole `SID:HEAD` string in `session_id` and splits it, since that is the form `list_agents` prints.
+`list_agents` (`functions/tools/send_message/`) already enumerates session ids and `SID:HEAD` branch tips. Those are exactly the arguments `read_conversation` takes, so no listing tool is added. The tool accepts a whole `SID:HEAD` string in `session_id` and splits it, since that is the form `list_agents` prints.
 
 ## The skill carries the judgment
 

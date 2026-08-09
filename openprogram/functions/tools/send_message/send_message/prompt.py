@@ -23,7 +23,7 @@ DESCRIPTION = (
     "\n"
     "To have the target consider other branches, name them in `message` "
     "(e.g. \"read branch SID:HEAD first\") — the target can read them "
-    "itself with session_transcript.\n"
+    "itself with read_conversation.\n"
     "\n"
     "When you RECEIVE a message from another branch (it starts with "
     "\"[message from SID:HEAD]\"), replying is optional — the message is "

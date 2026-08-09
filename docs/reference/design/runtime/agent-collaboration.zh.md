@@ -120,7 +120,7 @@ optional …` —— 收件方由此知道谁发的、怎么回、以及不回�
 
 message 就是纯文本，跟用户消息一样。要让目标参考别的分支，发送方直接写进
 `message`：结论已经通过回送回到发送方手里，直接引用；或者点名分支
-（`SID:HEAD` 或分支名），目标自己用 `session_transcript` 去读。读多少由目标
+（`SID:HEAD` 或分支名），目标自己用 `read_conversation` 去读。读多少由目标
 模型自己决定，context 天然有界，不需要专门的聚合参数。
 
 ### 2.3 `list_agents` — 看见对方（通信的前提）
@@ -449,7 +449,7 @@ UI 的会话选择列表（但 DAG 照画、能被 list_agents 列出供 agent �
 | 忙时收件箱（§5.4） | `openprogram/agent/inbox.py`（enqueue / drain），忙判定 `run_control.is_turn_running`，消费挂点 `dispatcher._drain_send_message_inbox` |
 
 > 注："综合多条"不需要专门机制：发送方在 `message` 里点名分支，目标用
-> `session_transcript` 自己读（§2.2）。
+> `read_conversation` 自己读（§2.2）。
 
 ---
 

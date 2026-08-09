@@ -1,10 +1,10 @@
-"""The ``session_transcript`` tool implementation."""
+"""The ``read_conversation`` tool implementation."""
 from __future__ import annotations
 
 from openprogram.functions._runtime import function
 
 _DESC = (
-    "Read a past session as a plain-text transcript: every turn's "
+    "Read an agent's conversation (a session branch) as a plain-text transcript: every turn's "
     "user / assistant content plus the tool and function calls that turn "
     "made (name, arguments, result, success or failure). Use it to learn "
     "what was actually done in earlier work — distilling a session into a "
@@ -16,12 +16,12 @@ _DESC = (
 
 
 @function(
-    name="session_transcript",
+    name="read_conversation",
     description=_DESC,
     toolset=["core"],
     max_result_chars=80_000,
 )
-def session_transcript(
+def read_conversation(
     session_id: str = "",
     head_id: str = "",
     include_function_calls: bool = True,
@@ -44,7 +44,7 @@ def session_transcript(
         sid = _current_session() or ""
     if not sid:
         return (
-            "[session_transcript error] no session_id given and no current "
+            "[read_conversation error] no session_id given and no current "
             "session — pass a session_id (see list_agents)."
         )
     # A `SID:HEAD` target pasted whole from list_agents: split it
@@ -63,7 +63,7 @@ def session_transcript(
             max_chars=max(1_000, int(max_chars)),
         )
     except Exception as e:  # noqa: BLE001 — tool results report, never raise
-        return f"[session_transcript error] {type(e).__name__}: {e}"
+        return f"[read_conversation error] {type(e).__name__}: {e}"
 
 
 def _current_session() -> str | None:

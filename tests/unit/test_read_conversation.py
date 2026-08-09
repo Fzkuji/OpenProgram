@@ -1,4 +1,4 @@
-"""render_session_transcript + the session_transcript tool registration."""
+"""render_session_transcript + the read_conversation tool registration."""
 
 from __future__ import annotations
 
@@ -147,7 +147,7 @@ def test_tool_is_registered_with_a_valid_schema():
     import openprogram.functions.tools  # noqa: F401 — fires registration
     from openprogram.functions import _runtime
 
-    tool = _runtime.get("session_transcript")
+    tool = _runtime.get("read_conversation")
     assert tool is not None
     schema = tool.parameters
     assert schema["type"] == "object"
