@@ -93,26 +93,57 @@ under the hood, so two concurrent agents on different branches
 can't fight over the same source tree. Other frameworks fork
 conversations by copying messages; we fork the underlying repo.
 
-## Layered memory
+## Memory that writes itself
 
-Memory isn't a single bag. `~/.openprogram/memory/` holds
-distinct pieces, each with its own timescale and purpose:
+Memory lives in one place, `~/.openprogram/memory/`, and all of it
+is Markdown you can open in any editor.
 
-| Piece | What it is |
+| Path | What it holds |
 |---|---|
-| `journal/` | Chronological notes, one Markdown file per day |
-| `wiki/` | Durable knowledge — an Obsidian-style vault of topic pages, plus an LLM-maintained `index.md`, a `log.md` timeline, and `reflections.md` |
-| `core.md` | Tiny (<2 KB) always-on block injected into every agent's system prompt |
-| `index.sqlite` | Full-text (FTS5) index over wiki + journal, used for recall |
-| `.state/` | Bookkeeping — recall hit counts, sleep-stage state |
+| `core.md` | A short always-on block, injected into every session's system prompt |
+| `topics/` | One file per subject, such as `topics/people/dave.md`. Every paragraph carries an ID and cites where the fact came from |
+| `sources/` | The conversation turns those citations point at. Added to, never rewritten |
+| `timeline/` | The same facts arranged by date, rebuilt from `topics/` |
+| `.scriptorium/` | Bookkeeping: how far each conversation has been read, and the lock that keeps two writers apart. Not memory |
 
-Consolidation runs as a "sleep" sweep (light → deep → REM) that
-merges journal entries into the wiki and rewrites `core.md`;
-`openprogram memory sleep` runs one now. Inspect or hand-edit
-from the CLI (`openprogram memory status / recall / show / edit`)
-or the web UI's Memory page. The split exists because "remember
-this permanently" and "what happened yesterday" want different
-storage strategies.
+Nothing is written per turn. Finished turns collect until there is
+enough to be worth a pass, and then one pass decides which subject
+each fact belongs to and writes it there. Where a fact was said is
+not where it is stored, so a detail about Dave lands in
+`topics/people/dave.md` however many conversations it took to
+learn. A conversation that goes quiet for half an hour is written
+whatever its size, so a short exchange is not left waiting for a
+batch that never comes.
+
+Every write lands whole or not at all. An edit that cites a source
+it did not supply, points at a paragraph that does not exist, or
+breaks the topic format is refused, and the workspace is left byte
+for byte as it was. Two writers never interleave: a background
+write that finds the workspace busy gives up after a second rather
+than making you wait, and comes back on the next pass.
+
+Writing only ever makes files longer, so at 03:00 a second pass
+splits a file that has grown to cover several subjects, merges
+paragraphs that say the same thing, and repairs links.
+`openprogram memory sleep` runs that pass now instead of tonight.
+
+Read and repair it by hand from the CLI:
+
+```bash
+openprogram memory status                        # where it is, what it holds, its revision
+openprogram memory recall xelatex thesis         # search and print the matching paragraphs
+openprogram memory show topics/people/dave.md
+openprogram memory edit topics/people/dave.md    # $EDITOR; the edit lands only if it validates
+openprogram memory export                        # tar.gz the whole workspace
+```
+
+The web UI's Memory page reads the same workspace. Agents reach it
+through `memory_search`, `memory_grep`, `memory_get`,
+`memory_browse`, `memory_update` and `memory_status`. There is no
+"save this" tool: recording the conversation is already happening
+in the background, and `memory_update` is for correcting what is
+there or writing down something you asked to be remembered right
+now.
 
 ## Mini-DAG — execution view in the right rail
 

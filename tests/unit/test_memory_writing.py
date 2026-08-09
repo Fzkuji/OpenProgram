@@ -451,3 +451,65 @@ def test_the_runtimes_own_turns_are_not_conversation():
         "the ordinal is the row's position in the branch — the cursor is "
         "compared against it, so skipping a row must not renumber"
     )
+
+
+# -- 6. Where the watcher keeps its own bookkeeping ------------------------
+
+
+def test_the_watcher_can_find_where_to_keep_its_state(memory_root):
+    """``store.state_dir`` imported ``workspace_layout`` from the wrong
+    package, so every call raised and the whole idle watcher was inert —
+    the outer handler in ``_loop`` swallowed it, and the path never ran
+    once in production. Calling it is the test."""
+    from openprogram.memory import session_watcher, store
+
+    path = session_watcher._processed_path()
+
+    assert path.parent == store.state_dir()
+    assert path.parent.parent == memory_root
+    assert path.parent.is_dir(), "the runtime directory is created on demand"
+    assert path.name == "session-end.json"
+
+
+def test_the_watchers_state_survives_a_memory_write(memory_root, written):
+    """The processed-session file sits inside the runtime directory, so a
+    write transaction installing a staged workspace must leave it alone —
+    and a file rewritten every poll must not read as a concurrent write."""
+    from openprogram.memory import session_watcher
+    from openprogram.memory.scriptorium import writing
+    from openprogram.memory.scriptorium.management.transaction import (
+        workspace_revision,
+    )
+
+    session_watcher._save_processed({"s8": 1786288829.9})
+
+    messages = [_turn(i, "user", f"turn {i} text") for i in range(3)]
+    assert writing.write("s9", messages, token_threshold=8, force=True) is None
+    assert session_watcher._load_processed() == {"s8": 1786288829.9}, (
+        "installing a staged workspace must not take the bookkeeping with it"
+    )
+
+    written_revision = workspace_revision(memory_root)
+    session_watcher._save_processed({"s8": 1786288829.9, "s9": 2.0})
+    assert workspace_revision(memory_root) == written_revision, (
+        "bookkeeping is not memory, so writing it must not move the revision"
+    )
+
+
+def test_a_session_that_owes_nothing_costs_no_model_call(memory_root, written):
+    """A conversation of nothing but the runtime's own scheduling turns.
+
+    The watcher offers it like any other idle session; there is no
+    evidence in it, so the forced write reports success without asking a
+    model anything."""
+    from openprogram.memory.scriptorium import writing
+
+    messages = [
+        {**_turn(0, "user", "the sub-agent finished"),
+         "source": "task_followup", "display": "runtime"},
+        {**_turn(1, "assistant", "noted"), "source": "task_followup"},
+        _turn(2, "assistant", ""),
+    ]
+
+    assert writing.write("s10", messages, token_threshold=8, force=True) is None
+    assert written == [], "nothing anybody said, so nothing to write up"

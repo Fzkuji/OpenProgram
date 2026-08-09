@@ -7,8 +7,11 @@ already handled, hands the message list to the memory provider's
 per-turn path left behind.
 
 State (already-processed session IDs and their last update timestamp)
-lives at ``<state>/memory/.state/session-end.json`` so a worker
-restart doesn't re-process every session.
+lives at ``<state>/memory/.scriptorium/session-end.json`` so a worker
+restart doesn't re-process every session. It goes in the runtime
+directory rather than beside the memory: it changes on every poll, and
+anything holding a workspace revision would read that as a concurrent
+write.
 """
 from __future__ import annotations
 
@@ -104,7 +107,7 @@ def _scan(idle_minutes: int) -> int:
             processed[sid] = updated_at
             continue
         left = _process_session(sid, messages)
-        # 事件层 tap：空闲会话的 wiki ingest 起止（B 类）。懒 import 防循环。
+        # 事件层 tap：空闲会话写入记忆的起止（B 类）。懒 import 防循环。
         try:
             from openprogram.events import emit_safe
             emit_safe("memory.ingest_ended", "system", {
