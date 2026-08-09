@@ -217,86 +217,98 @@ def test_agent_async_passes_caller_and_depth(store, monkeypatch):
     assert "agent spawned async" in out
     assert cap["caller_msg_id"] == "a1"
     assert cap["chain_messages"] == 1
+    # The child IS the new generation; the reply turn back on this lane
+    # is not, so it is handed the spawner's own count.
+    assert cap["chain_generations"] == 1
+    assert cap["caller_chain_generations"] == 0
 
 
 # ---- budget guards --------------------------------------------------------
 
-def test_agent_refuses_at_max_spawn_depth(store, captured_run):
-    """The spawn budget (MAX_SPAWN_DEPTH=1) is deliberately tighter than
-    the message budget: only the main agent may agent(); a spawned agent
-    delegating again gets refused."""
+def _spawn_at(counts: dict, fn=None):
+    """Call ``_agent_impl`` with the chain counters bound to ``counts``
+    (keys: generations, messages), the way the runner binds them on a
+    child or a follow-up turn."""
     from openprogram.functions.tools.send_message.send_message.depth import (
-        set_chain_messages, _chain_messages,
-    )
-    from openprogram.functions.tools.agent.agent.agent import (
-        MAX_SPAWN_DEPTH, _agent_impl,
-    )
-
-    def _call():
-        tok = set_chain_messages(MAX_SPAWN_DEPTH)
-        try:
-            return _agent_impl(prompt="go", start_from="clean")
-        finally:
-            _chain_messages.reset(tok)
-
-    out = _run_with_ctx(_call, session_id="p1", turn_id="a1")
-    assert "[agent refused]" in out
-    assert "spawn_caller" not in captured_run  # never reached the spawn
-
-
-def test_agent_spawned_agent_cannot_redelegate(store, captured_run):
-    """Depth 1 (a spawned agent) must NOT agent() again — it does the
-    work itself with its own tools."""
-    from openprogram.functions.tools.send_message.send_message.depth import (
-        set_chain_messages, _chain_messages,
+        set_chain_generations, set_chain_messages,
     )
     from openprogram.functions.tools.agent.agent.agent import _agent_impl
 
     def _call():
-        tok = set_chain_messages(1)
+        tokens = [
+            set_chain_generations(counts.get("generations", 0)),
+            set_chain_messages(counts.get("messages", 0)),
+        ]
         try:
-            return _agent_impl(prompt="go", start_from="clean")
+            return (fn or (lambda: _agent_impl(
+                prompt="go", start_from="clean")))()
         finally:
-            _chain_messages.reset(tok)
+            for tok in tokens:
+                tok.var.reset(tok)
 
-    out = _run_with_ctx(_call, session_id="p1", turn_id="a1")
+    return _run_with_ctx(_call, session_id="p1", turn_id="a1")
+
+
+def test_agent_refuses_at_max_spawn_depth(store, captured_run):
+    """The generation budget (MAX_SPAWN_DEPTH=1) is deliberately tighter
+    than the message budget: only the main agent may agent(); a spawned
+    agent delegating again gets refused."""
+    from openprogram.functions.tools.agent.agent.agent import MAX_SPAWN_DEPTH
+    out = _spawn_at({"generations": MAX_SPAWN_DEPTH})
+    assert "[agent refused]" in out and "generations" in out
+    assert "spawn_caller" not in captured_run  # never reached the spawn
+
+
+def test_agent_spawned_agent_cannot_redelegate(store, captured_run):
+    """One generation in (a spawned agent) must NOT agent() again — it
+    does the work itself with its own tools."""
+    out = _spawn_at({"generations": 1})
     assert "[agent refused]" in out
     assert "spawn_caller" not in captured_run
 
 
 def test_spawn_depth_zero_means_unlimited(store, captured_run, monkeypatch):
-    """agent.max_spawn_depth=0 turns the spawn guard off entirely — a
-    chain 50 deep still spawns."""
-    from openprogram.functions.tools.agent.agent.agent import _agent_impl
-    from openprogram.functions.tools.send_message.send_message.depth import (
-        set_chain_messages, _chain_messages,
-    )
+    """agent.max_spawn_depth=0 turns the generation guard off entirely —
+    a chain 50 generations in still spawns."""
     _set_config(monkeypatch, max_spawn_depth=0)
-
-    def _call():
-        tok = set_chain_messages(50)
-        try:
-            return _agent_impl(prompt="go", start_from="clean")
-        finally:
-            _chain_messages.reset(tok)
-
-    out = _run_with_ctx(_call, session_id="p1", turn_id="a1")
+    out = _spawn_at({"generations": 50})
     assert "[agent refused]" not in out
     assert captured_run["spawn_caller"] == "a1"   # the spawn really ran
 
 
-def test_agent_sync_child_sees_incremented_depth(store, monkeypatch):
-    """The sync path binds count+1 around the child turn, so a chain of
-    agent()-inside-agent() eventually trips the guard instead of recursing
-    forever (each generation used to start back at 0)."""
+def test_messages_alone_can_refuse_a_spawn(store, captured_run):
+    """A spawn hands the child a message, so a chain out of messages
+    cannot spawn either, however many generations it has left."""
     from openprogram.functions.tools.send_message.send_message.depth import (
-        current_chain_messages,
+        MAX_MESSAGES,
+    )
+    out = _spawn_at({"generations": 0, "messages": MAX_MESSAGES})
+    assert "[agent refused]" in out and "messages" in out
+    assert "spawn_caller" not in captured_run
+
+
+def test_the_two_budgets_do_not_spend_each_other(store, captured_run):
+    """Messages spent well past the generation limit still leave the
+    generation budget intact: this is the state a coordinator is in after
+    reading a worker's result, and it must be able to spawn again."""
+    out = _spawn_at({"generations": 0, "messages": 5})
+    assert "[agent refused]" not in out
+    assert captured_run["spawn_caller"] == "a1"
+
+
+def test_agent_sync_child_sees_both_counts_incremented(store, monkeypatch):
+    """The sync path binds both counts + 1 around the child turn, so a
+    chain of agent()-inside-agent() trips the generation guard instead of
+    recursing forever (each generation used to start back at 0)."""
+    from openprogram.functions.tools.send_message.send_message.depth import (
+        current_chain_generations, current_chain_messages,
     )
     from openprogram.agent.sub_agent_run import AgentTurnResult as _R
     seen = {}
 
     def fake_run(**kw):
-        seen["child_depth"] = current_chain_messages()
+        seen["messages"] = current_chain_messages()
+        seen["generations"] = current_chain_generations()
         return _R(head_id="h", final_text="(reply)")
 
     monkeypatch.setattr(
@@ -311,7 +323,7 @@ def test_agent_sync_child_sees_incremented_depth(store, monkeypatch):
         lambda: _agent_impl(prompt="go", start_from="clean"),
         session_id="p1", turn_id="a1",
     )
-    assert seen["child_depth"] == 1
+    assert seen == {"messages": 1, "generations": 1}
 
 
 # ---- tool exposure follows the remaining budget ---------------------------

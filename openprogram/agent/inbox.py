@@ -117,6 +117,7 @@ def enqueue(
     agent_id: str,
     chain_messages: int,
     target_head_id: Optional[str],
+    chain_generations: int = 0,
     task_id: Optional[str] = None,
 ) -> str:
     """Queue a message for a busy target session.
@@ -124,7 +125,8 @@ def enqueue(
     ``message`` is the full delivery body; the sender-receipt header is
     added at drain time. ``chain_messages`` is the SENDER's count at
     send time — drain delivers at count+1, exactly like the direct
-    path.
+    path. ``chain_generations`` is the sender's other count and travels
+    through unchanged: a queued delivery creates no agent either.
 
     ``task_id``: set for tracked-task dispatches (``agent(to=…)``) — the
     pre-created pending Task this entry will run when drained. Drain
@@ -156,6 +158,7 @@ def enqueue(
             "sender_agent_id": sender_agent_id,
             "agent_id": agent_id,
             "chain_messages": int(chain_messages),
+            "chain_generations": int(chain_generations),
             "target_head_id": target_head_id,
             "task_id": task_id,
             "enqueued_at": now,
@@ -350,6 +353,11 @@ def _deliver(session_id: str, entry: dict[str, Any]) -> None:
         chain_messages=int(
             entry.get("chain_messages", entry.get("spawn_depth", 0)) or 0
         ) + 1,
+        # The queue holds messages and dispatches, never a spawn, so the
+        # generation count arrives unchanged and the reply turn back at
+        # the sender runs at the same one.
+        chain_generations=int(entry.get("chain_generations") or 0),
+        caller_chain_generations=int(entry.get("chain_generations") or 0),
     )
 
 

@@ -103,6 +103,23 @@ def test_to_dispatch_runs_immediately_on_target_tip(parent_turn):
     assert kw["chain_messages"] == 1
 
 
+def test_to_dispatch_creates_no_generation(parent_turn):
+    """agent(to=…) hands work to an agent that already exists, so it
+    spends a message and leaves the generation count alone — the target
+    and the reply turn both run at the dispatcher's count."""
+    from openprogram.functions.tools.send_message.send_message.depth import (
+        set_chain_generations,
+    )
+    tok = set_chain_generations(1)
+    try:
+        _agent_impl("summarize the log", to="p1:a0")
+    finally:
+        tok.var.reset(tok)
+    kw = parent_turn.async_calls[-1]
+    assert kw["chain_generations"] == 1
+    assert kw["caller_chain_generations"] == 1
+
+
 def test_same_session_dispatch_result_reaches_the_dispatcher(parent_turn, monkeypatch):
     """A to= dispatch onto a branch in the SAME session creates no attach
     pointer (it spawns nothing), so its followup has to carry the reply

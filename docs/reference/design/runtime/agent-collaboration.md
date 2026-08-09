@@ -455,17 +455,28 @@ across sessions. Those side effects need boundaries.
 Recursive collaboration is allowed — a spawned agent can message further
 agents for multi-level decomposition — and three budgets keep it finite. A
 **chain** is everything that grows out of one user turn. Two of the
-budgets travel with the chain and every hop spends from the same pair of
-counters, replies included; the third counts siblings inside one turn.
+budgets travel with the chain, each on its own counter; the third counts
+siblings inside one turn.
 
-| Budget | Setting | Default | What it counts |
-|---|---|---|---|
-| **Spawn depth** | `agent.max_spawn_depth` | 1 | Generations of NEW agents the chain may create |
-| **Messages** | `agent.max_messages` | 8 | Messages the chain passes in total: spawns, `send_message` deliveries, and `agent(to=…)` dispatches all count |
-| **Fan-out** | `agent.max_spawn_fanout` | 8 | Agents ONE turn may create, counted per (session, turn) |
+| Budget | Setting | Default | Counter | What spends it |
+|---|---|---|---|---|
+| **Spawn depth** | `agent.max_spawn_depth` | 1 | `depth._chain_generations` | Creating an agent, and nothing else: `agent` without `to=`. The new agent runs one generation in |
+| **Messages** | `agent.max_messages` | 8 | `depth._chain_messages` | Every hop: a spawn, a `send_message` delivery, an `agent(to=…)` dispatch, and a result flowing back |
+| **Fan-out** | `agent.max_spawn_fanout` | 8 | `agent._fanout_used`, per (session, turn) | Creating an agent, counted per turn instead of per chain |
 
 **Setting any of them to 0 removes that limit entirely** — nothing
 accumulates against it and nothing is refused because of it.
+
+**Reading a result spends a message and no generation.** The turn that
+carries a finished agent's reply back is the *dispatcher's* turn, so it
+runs at the dispatcher's generation count (`Task.caller_chain_generations`,
+re-bound by `TaskRunner._dispatch_followup`) and one message further
+along. That keeps the most common multi-agent shape open: send a batch of
+work out, read what comes back, send the next batch. One counter for both
+budgets closes it — the coordinator's follow-up turn inherits the worker's
+count of 1, and every later `agent` call in that chain is refused. The
+message counter is what still ends such a chain: each wave costs messages,
+and the eighth stops it.
 
 ```bash
 openprogram config set agent.max_spawn_depth 2   # workers may open one more generation
@@ -475,12 +486,14 @@ openprogram config set agent.max_spawn_fanout 16 # wider parallel fan-out per tu
 
 **What the budgets do when they run out.** A call that would overrun is
 refused with a reason the model can act on, and it keeps every other
-tool. Once **both** chain budgets are spent, `agent`, `task_output` and
-`task_stop` leave the tool list altogether: a tool sitting in the
-listing makes the model try to call it, and offering it only to
-refuse the call wastes a turn. The fan-out budget never removes a tool.
-It is spent inside a turn, and the tool list is frozen at the turn
-boundary, so it can only refuse.
+tool. Once the **message** budget is spent, `agent`, `task_output` and
+`task_stop` leave the tool list altogether: every form of delegation
+hands a message over, so a chain out of messages can do nothing with
+them, and a tool sitting in the listing makes the model try to call it.
+The generation budget never removes a tool, because a chain out of
+generations still dispatches work to agents that already exist. Neither
+does the fan-out budget: it is spent inside a turn, and the tool list is
+frozen at the turn boundary, so it can only refuse.
 
 Typical behavior at the defaults (spawn depth 1, messages 8, fan-out 8):
 
@@ -489,6 +502,10 @@ Typical behavior at the defaults (spawn depth 1, messages 8, fan-out 8):
 - That same worker keeps `agent(to=…)` and `send_message`: it can hand
   work to agents that **already exist** and answer whoever wrote to it.
   Only creating a new generation is closed to it.
+- The main agent spawns a wave of workers, reads their results as they
+  come back, and spawns the next wave. Reading costs messages, never
+  generations, so the workers stay one generation deep however many
+  waves there are.
 - A and B messaging back and forth stop after the 8th message of the
   chain, whichever of them is holding the turn. The reply hop re-binds
   the finished task's count instead of adding to it, so one round trip
@@ -558,21 +575,27 @@ delegated subtask a 600 second timeout.
   `cancel_task` at submit time in `TaskRunner`, and the bound that makes
   it rarely necessary is the 50-iteration per-turn cap below.
 
-**How the count travels.** The counter lives in a ContextVar
-(`send_message…depth._chain_messages`). A chain crosses three thread
-boundaries and each one has to hand the count over explicitly, because a
-Python thread starts with its ContextVars at their defaults:
+**How the counts travel.** Both counters live in ContextVars
+(`send_message…depth._chain_messages`, `._chain_generations`). A chain
+crosses three thread boundaries and each one has to hand them over
+explicitly, because a Python thread starts with its ContextVars at their
+defaults:
 
-| Hop | How the count arrives |
+| Hop | How the counts arrive |
 |---|---|
-| Dispatcher → tool body | `copy_context()` in `functions/_runtime.py` carries it into the executor thread |
-| Sender → task worker | The count is persisted on the Task (`chain_messages`, always sender + 1) and re-bound by `TaskRunner._run_one` |
-| Task → reply follow-up | `TaskRunner._dispatch_followup` re-binds the finished task's count in its own thread |
+| Dispatcher → tool body | `copy_context()` in `functions/_runtime.py` carries both into the executor thread |
+| Sender → task worker | Both are persisted on the Task (`chain_messages`, always sender + 1; `chain_generations`, sender + 1 for a spawn and unchanged for a dispatch) and re-bound by `TaskRunner._run_one` |
+| Task → reply follow-up | `TaskRunner._dispatch_followup` re-binds the finished task's `chain_messages` and its `caller_chain_generations` in its own thread |
 
-The reply hop is the one that decides whether an A↔B back-and-forth can
-ever stop: the follow-up turn is where A reads B's answer and writes the
-next message, so a follow-up that started at 0 would give A a fresh
-budget on every round and the 8-message cap would never be reached.
+The reply hop is where the two budgets part company, and each direction
+matters. Messages carry over from the child: the follow-up turn is where
+A reads B's answer and writes the next message, so a follow-up that
+started at 0 would give A a fresh budget on every round and the
+8-message cap would never be reached. Generations go back to the
+dispatcher's count: the follow-up creates nobody, and inheriting the
+child's count left an agent that had read one worker's reply unable to
+create any further agent in that chain.
+
 The same thread also re-binds `_current_task_id` to the finished task's
 `parent_task_id`, so a task A spawns while reading the reply belongs to
 the same lineage cascading cancel walks (§5.3).

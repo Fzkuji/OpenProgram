@@ -115,6 +115,18 @@ class Task:
     # this count; further spawns/messages from it increment again.
     # 0 = a top-level (user-initiated) turn.
     chain_messages: int = 0
+    # Generations of agents this chain has created, the other half of
+    # the pair. The turn this task runs is at this count. A spawn sets
+    # it to the dispatcher's count + 1; a dispatch to an EXISTING agent
+    # (agent(to=…), send_message) creates nobody and passes it through.
+    chain_generations: int = 0
+    # The DISPATCHER's generation count, which the reply turn runs at
+    # (TaskRunner._dispatch_followup). Equal to chain_generations for a
+    # dispatch, one less for a spawn. Reading a result must not cost a
+    # generation: binding the finished child's count here is what left a
+    # coordinator unable to create a second wave of agents after the
+    # first wave reported back.
+    caller_chain_generations: int = 0
     # agent(archive_when_done=True): archive the spawned branch when
     # the task reaches terminal state, after the result flowed back.
     # Set only by the agent tool's spawn form; deliveries to existing

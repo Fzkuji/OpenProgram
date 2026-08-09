@@ -28,9 +28,10 @@ def tmp_db(tmp_path, monkeypatch):
     return db
 
 
-def _run_followup(task, monkeypatch):
+def _run_followup(task, monkeypatch, inside=None):
     """Fire ``_dispatch_followup`` for ``task`` and report the collaboration
-    ContextVars the follow-up turn ran with."""
+    ContextVars the follow-up turn ran with. ``inside`` runs in that turn
+    and its return value lands in ``seen["inside"]``."""
     from openprogram.agent.task.runner import TaskRunner
 
     seen: dict = {}
@@ -40,12 +41,15 @@ def _run_followup(task, monkeypatch):
         from openprogram.agent.run_control import get_current_session_id
         from openprogram.agent.task.runner import _current_task_id
         from openprogram.functions.tools.send_message.send_message.depth import (
-            current_chain_messages,
+            current_chain_generations, current_chain_messages,
         )
         seen["session_id"] = get_current_session_id()
         seen["task_id"] = _current_task_id.get()
         seen["chain_messages"] = current_chain_messages()
+        seen["chain_generations"] = current_chain_generations()
         seen["req_session"] = req.session_id
+        if inside is not None:
+            seen["inside"] = inside(req)
         done.set()
         return types.SimpleNamespace(
             final_text="", assistant_msg_id=None, user_msg_id=None,
@@ -96,6 +100,71 @@ def test_followup_of_a_top_level_task_has_no_parent(tmp_db, monkeypatch):
     follow-up must not invent one."""
     seen = _run_followup(_task(chain_messages=1), monkeypatch)
     assert seen["task_id"] is None
+
+
+def test_followup_runs_at_the_dispatchers_generation_count(tmp_db, monkeypatch):
+    """Reading a result creates nobody, so the follow-up turn runs at the
+    count the DISPATCHER had, not the finished child's."""
+    seen = _run_followup(
+        _task(chain_messages=1, chain_generations=1,
+              caller_chain_generations=0),
+        monkeypatch,
+    )
+    assert seen["chain_generations"] == 0
+    assert seen["chain_messages"] == 1   # the message half still travels
+
+
+def _seed_session(db, session_id):
+    """A session with one committed turn, so ``agent`` finds a parent."""
+    db.create_session(session_id, "main", title="caller")
+    db.append_message(session_id, {
+        "id": "u1", "role": "user", "content": "hi",
+        "timestamp": 0, "predecessor": None,
+    })
+    db.append_message(session_id, {
+        "id": "a1", "role": "assistant", "content": "ok",
+        "timestamp": 0, "predecessor": "u1",
+    })
+    db.commit_turn(session_id, "init")
+
+
+def test_followup_can_create_the_next_wave_of_agents(tmp_db, monkeypatch):
+    """The shape almost every multi-agent run has: send a batch of work
+    out, read what came back, send the next batch. The follow-up turn is
+    where the coordinator reads the first result, so ``agent`` has to
+    work there. One counter for both budgets made this impossible — the
+    follow-up inherited the worker's count of 1 and every spawn in the
+    chain was refused from then on.
+    """
+    from openprogram.agent.sub_agent_run import AgentTurnResult
+    _seed_session(tmp_db, "s_caller")
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run.run_agent_turn",
+        lambda **kw: AgentTurnResult(head_id="h_next",
+                                     final_text="(second wave)"),
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.sub_agent_run.write_attach_pointer_for_spawn",
+        lambda **kw: None,
+    )
+
+    def _spawn_again(req):
+        # A real follow-up turn gets these from TurnBindings; the turn
+        # itself is faked out here, so bind what the tool reads.
+        from openprogram.agent.run_control import set_current_session_id
+        from openprogram.store import _current_turn_id
+        from openprogram.functions.tools.agent.agent.agent import _agent_impl
+        set_current_session_id(req.session_id)
+        _current_turn_id.set("a1")
+        return _agent_impl(prompt="second wave", start_from="clean")
+
+    seen = _run_followup(
+        _task(chain_messages=1, chain_generations=1,
+              caller_chain_generations=0),
+        monkeypatch, inside=_spawn_again,
+    )
+    assert "[agent refused]" not in seen["inside"]
+    assert "(second wave)" in seen["inside"]
 
 
 def _in_empty_context(fn):

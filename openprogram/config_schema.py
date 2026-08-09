@@ -225,8 +225,10 @@ SETTINGS: list[SettingSpec] = [
         help="How many generations of NEW agents one chain may create. "
              "1 (default) = you spawn workers and a worker does the work "
              "itself; 2 lets a worker spawn its own worker. 0 = no "
-             "limit. A spawn past the limit is refused with a message "
-             "telling the agent to do the work itself.",
+             "limit. Only creating an agent counts, so an agent that "
+             "reads a worker's result can still create the next wave. A "
+             "spawn past the limit is refused with a message telling the "
+             "agent to do the work itself.",
     ),
     SettingSpec(
         key="agent.max_messages", path=("agent", "max_messages"),
@@ -237,6 +239,19 @@ SETTINGS: list[SettingSpec] = [
              "dispatches all count, and a reply coming back counts too, "
              "so A↔B ping-pong stops at the ceiling. 8 by default, "
              "0 = no limit.",
+    ),
+    SettingSpec(
+        key="agent.max_spawn_fanout", path=("agent", "max_spawn_fanout"),
+        group="Agent", label="Max spawn fan-out", widget="number",
+        apply=APPLY_LIVE, default=8, validate=_validate_limit,
+        help="How many agents ONE turn may create, counted per (session, "
+             "turn). The chain budgets bound how deep and how far a chain "
+             "goes, not how wide one turn opens it. 8 by default = two "
+             "widths of the task pool, so a turn can fill the pool and "
+             "keep one wave queued; the next spawn is refused and points "
+             "the agent at the ones it already has. 0 = no limit. Raise "
+             "OPENPROGRAM_TASK_WORKERS with it or the extra agents only "
+             "queue longer.",
     ),
     SettingSpec(
         key="hooks", path=("hooks",), group="Hooks",

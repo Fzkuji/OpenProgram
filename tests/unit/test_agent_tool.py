@@ -350,18 +350,18 @@ def test_fanout_zero_disables_the_cap(store, fake_dispatcher, monkeypatch):
 
 
 def test_fanout_slot_is_not_spent_by_a_refused_spawn(store, fake_dispatcher):
-    """The depth guard runs first, so a chain that is out of spawn
-    budget never burns its turn's fan-out slots."""
+    """The generation guard runs first, so a chain that is out of
+    generations never burns its turn's fan-out slots."""
     from openprogram.functions.tools.agent.agent.agent import (
         MAX_SPAWN_DEPTH, _fanout_used,
     )
     from openprogram.functions.tools.send_message.send_message.depth import (
-        set_chain_messages, _chain_messages,
+        set_chain_generations,
     )
-    tok = set_chain_messages(MAX_SPAWN_DEPTH)
+    tok = set_chain_generations(MAX_SPAWN_DEPTH)
     try:
         out = _call_agent(prompt="nope", session_id="p1", turn_id="a1")
     finally:
-        _chain_messages.reset(tok)
-    assert "spawn depth" in out
+        tok.var.reset(tok)
+    assert "generations of agents" in out
     assert _fanout_used.get(("p1", "a1"), 0) == 0

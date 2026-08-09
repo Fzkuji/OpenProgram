@@ -231,6 +231,8 @@ class TaskRunner:
         caller_msg_id: Optional[str] = None,
         caller_session_id: Optional[str] = None,
         chain_messages: int = 0,
+        chain_generations: int = 0,
+        caller_chain_generations: int = 0,
         archive_when_done: bool = False,
         task_id: Optional[str] = None,
     ) -> str:
@@ -282,6 +284,8 @@ class TaskRunner:
             caller_msg_id=caller_msg_id,
             caller_session_id=caller_session_id,
             chain_messages=chain_messages,
+            chain_generations=chain_generations,
+            caller_chain_generations=caller_chain_generations,
             archive_when_done=archive_when_done,
             status=TaskStatus.PENDING,
             created_at=existing.created_at if existing is not None else time.time(),
@@ -674,17 +678,23 @@ class TaskRunner:
                     branch_from = None
                 else:
                     branch_from = task.parent_msg_id
-                # Bind the chain's message count so send_message / agent
-                # calls made INSIDE this child turn see the right budget
-                # and the loop guard can trip (send_message §5.1).
-                _depth_tok = None
+                # Bind both chain counters so send_message / agent calls
+                # made INSIDE this child turn see the right budgets and
+                # the guards can trip (send_message §5.1). A spawned
+                # child arrives with one more generation than its
+                # dispatcher; a delivery to an existing agent arrives
+                # with the same generation count it was sent at.
+                _chain_tokens: list = []
                 try:
                     from openprogram.functions.tools.send_message.send_message.depth import (
-                        set_chain_messages, _chain_messages,
+                        set_chain_generations, set_chain_messages,
                     )
-                    _depth_tok = set_chain_messages(int(task.chain_messages or 0))
+                    _chain_tokens = [
+                        set_chain_messages(int(task.chain_messages or 0)),
+                        set_chain_generations(int(task.chain_generations or 0)),
+                    ]
                 except Exception:
-                    _depth_tok = None
+                    pass
                 try:
                     result = run_agent_turn(
                         session_id=session_id,
@@ -700,9 +710,9 @@ class TaskRunner:
                         advance_head=False,
                     )
                 finally:
-                    if _depth_tok is not None:
+                    for _tok in _chain_tokens:
                         try:
-                            _chain_messages.reset(_depth_tok)
+                            _tok.var.reset(_tok)
                         except Exception:
                             pass
             except Exception as exc:  # noqa: BLE001
@@ -1193,11 +1203,19 @@ class TaskRunner:
             # and tasks spawned here would record no parent, escaping the
             # cascade in cancel_task.
             from openprogram.functions.tools.send_message.send_message.depth import (
-                set_chain_messages,
+                set_chain_generations, set_chain_messages,
             )
             # The reply hop costs what the child already spent — an
             # explicit send_message reply lands at the same count.
             set_chain_messages(int(task.chain_messages or 0))
+            # Generations are the dispatcher's, not the child's: this
+            # turn is the dispatcher reading a result, and reading a
+            # result creates nobody. Binding the child's count instead
+            # left an agent that read one worker's reply unable to
+            # create any further agent in that chain, which is exactly
+            # the "dispatch a batch, read it, dispatch the next batch"
+            # shape the whole tool exists for.
+            set_chain_generations(int(task.caller_chain_generations or 0))
             # The follow-up continues the DISPATCHER's work, not the
             # finished task's, so it chains where the task did. None for a
             # task spawned from a plain user turn, which had no task either.

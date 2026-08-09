@@ -1,18 +1,30 @@
-"""Two budgets that bound one collaboration chain.
+"""Two budgets that bound one collaboration chain, one counter each.
 
 A chain is everything that grows out of one user turn: spawns
 (``agent``), messages (``send_message``), and task dispatches
-(``agent(to=…)``). Every hop carries a counter forward, so A→B→A
-back-and-forth costs the same as A→B→C.
+(``agent(to=…)``).
 
-  * **spawn budget** (``agent.max_spawn_depth``, default 1) — how many
-    generations of NEW agents may be created. 1 = the main agent
-    spawns workers, a worker does the work itself.
+  * **generation budget** (``agent.max_spawn_depth``, default 1) — how
+    many generations of NEW agents the chain has created. Only ``agent``
+    creating an agent adds to it. 1 = the main agent spawns workers, a
+    worker does the work itself.
   * **message budget** (``agent.max_messages``, default 8) — how many
-    messages the whole chain may pass, whatever the tool.
+    messages the chain has passed, whatever the tool. A spawn, a
+    ``send_message`` delivery, an ``agent(to=…)`` dispatch and a result
+    flowing back each cost one, so A→B→A costs the same as A→B→C.
 
-Either set to 0 means no limit at all. The counter lives in a
-ContextVar set by the task runner on the child turn (cross-thread) and
+Reading a result spends a message and no generation. The reply turn is
+the DISPATCHER's turn, so it runs at the dispatcher's generation count
+(``Task.caller_chain_generations``, re-bound by
+``TaskRunner._dispatch_followup``) and the agent that collected a batch
+of results can create the next batch. Counting both on one counter is
+what took that away: a coordinator that read one worker's result
+inherited the worker's count of 1 and every further ``agent`` call in
+that chain was refused, which is the shape of nearly every multi-agent
+run — dispatch a batch, read the results, dispatch the next.
+
+Either limit set to 0 means no limit at all. Both counters live in
+ContextVars set by the task runner on the child turn (cross-thread) and
 by the sync spawn path inline.
 
 A third budget bounds the chain sideways instead of downward and lives
@@ -27,6 +39,10 @@ import contextvars
 
 _chain_messages: contextvars.ContextVar[int] = contextvars.ContextVar(
     "send_message_chain_messages", default=0,
+)
+
+_chain_generations: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "send_message_chain_generations", default=0,
 )
 
 # Message budget: how many messages one chain may pass, whatever the
@@ -65,6 +81,18 @@ def set_chain_messages(count: int):
     return _chain_messages.set(count)
 
 
+def current_chain_generations() -> int:
+    return _chain_generations.get()
+
+
+def set_chain_generations(count: int):
+    """Bind the chain's generation count for the current execution
+    context. The task runner binds the child's count on a spawned turn
+    and the dispatcher's count on the reply turn; the sync spawn path
+    binds the child's inline. Returns the token."""
+    return _chain_generations.set(count)
+
+
 def config_limit(key: str, default: int) -> int:
     """``agent.<key>`` from config.json, falling back to ``default``.
     0 means "no limit" and is honoured as written."""
@@ -80,23 +108,27 @@ def max_messages() -> int:
     return config_limit("max_messages", MAX_MESSAGES)
 
 
-def budget_left(limit: int) -> bool:
-    """Is there room left under ``limit`` for one more hop? 0 = no
-    limit, so always yes."""
-    return not limit or current_chain_messages() < limit
+def budget_left(used: int, limit: int) -> bool:
+    """Is there room left under ``limit`` for one more? 0 = no limit, so
+    always yes."""
+    return not limit or used < limit
 
 
 def delegation_budget_left() -> bool:
     """Whether ``agent`` / ``task_output`` / ``task_stop`` still belong
-    in the tool list: true while EITHER budget has room, because
-    ``agent`` both spawns (spawn budget) and dispatches with ``to=``
-    (message budget).
+    in the tool list: true while the MESSAGE budget has room.
 
-    Deliberately binary — present or absent, never a per-depth variant
+    Every form of delegation hands a message over — a spawn, an
+    ``agent(to=…)`` dispatch and a ``send_message`` each cost one — so a
+    chain out of messages can do nothing with these three whatever its
+    generation count reads. The reverse does not hold: a chain out of
+    generations still dispatches work to agents that already exist, so
+    the generation budget refuses spawns at runtime and never removes
+    the tool.
+
+    Deliberately binary — present or absent, never a per-count variant
     of the tool set. Tool definitions must be byte-identical across
-    turns to hit the provider's prompt cache, and one set per depth
-    value would shred it. Between "some budget left" and "none left"
-    the runtime guards refuse the calls that overrun.
+    turns to hit the provider's prompt cache, and one set per counter
+    value would shred it.
     """
-    from openprogram.functions.tools.agent.agent.agent import max_spawn_depth
-    return budget_left(max_spawn_depth()) or budget_left(max_messages())
+    return budget_left(current_chain_messages(), max_messages())

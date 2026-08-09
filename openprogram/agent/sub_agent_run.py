@@ -391,6 +391,8 @@ def run_agent_turn_async(
     caller_msg_id: Optional[str] = None,
     caller_session_id: Optional[str] = None,
     chain_messages: int = 0,
+    chain_generations: int = 0,
+    caller_chain_generations: int = 0,
     archive_when_done: bool = False,
     task_id: Optional[str] = None,
 ) -> str:
@@ -425,6 +427,8 @@ def run_agent_turn_async(
         caller_msg_id=caller_msg_id,
         caller_session_id=caller_session_id,
         chain_messages=chain_messages,
+        chain_generations=chain_generations,
+        caller_chain_generations=caller_chain_generations,
         archive_when_done=archive_when_done,
         task_id=task_id,
     )

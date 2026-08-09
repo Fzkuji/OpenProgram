@@ -124,19 +124,24 @@ def test_drain_leaves_entry_on_failed_delivery(two_sessions, busy_target, monkey
     assert inbox.pending_count("t1") == 1
 
 
-def test_queued_delivery_inherits_chain_messages(two_sessions, busy_target, monkeypatch):
+def test_queued_delivery_inherits_both_chain_counts(two_sessions, busy_target, monkeypatch):
+    """A queued hop spends a message like a direct one, and creates no
+    agent, so the generation count crosses the queue unchanged."""
     from openprogram.functions.tools.send_message.send_message.depth import (
-        set_chain_messages, _chain_messages,
+        set_chain_generations, set_chain_messages,
     )
     calls = _capture_async(monkeypatch)
-    tok = set_chain_messages(3)
+    tokens = [set_chain_messages(3), set_chain_generations(1)]
     try:
         _send_message_impl("deep hello", to="t1:b1")
     finally:
-        _chain_messages.reset(tok)
+        for tok in tokens:
+            tok.var.reset(tok)
     delivered = inbox.drain("t1")
     assert delivered == 1
-    assert calls[0]["chain_messages"] == 4      # recorded depth 3, child +1
+    assert calls[0]["chain_messages"] == 4      # recorded 3 messages, +1
+    assert calls[0]["chain_generations"] == 1
+    assert calls[0]["caller_chain_generations"] == 1
 
 
 def test_drain_reads_legacy_spawn_depth_key(two_sessions, monkeypatch):

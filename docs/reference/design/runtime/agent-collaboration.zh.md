@@ -361,16 +361,24 @@ A、B 同时在跑（同 session 不同分支，或不同 session）：
 ### 5.1 每条链有三个预算
 
 允许递归协作（被派生的agent还能再往下派消息做多层分解），三个预算保证它有限。
-**链**指一次用户轮次产生的全部调用。其中两个预算跟着链走，每一跳都花同一对计数，
-回送也算；第三个数的是一轮之内的兄弟数量。
+**链**指一次用户轮次产生的全部调用。其中两个预算跟着链走，各有各的计数器；
+第三个数的是一轮之内的兄弟数量。
 
-| 预算 | 配置项 | 默认 | 计什么 |
-|---|---|---|---|
-| **派生深度** | `agent.max_spawn_depth` | 1 | 这条链能创建几代**新** agent |
-| **消息数** | `agent.max_messages` | 8 | 这条链总共能传几条消息：派生、`send_message` 投递、`agent(to=…)` 派活都计入 |
-| **扇出** | `agent.max_spawn_fanout` | 8 | 一轮能创建几个agent，按（会话，轮次）计 |
+| 预算 | 配置项 | 默认 | 计数器 | 什么动作花它 |
+|---|---|---|---|---|
+| **派生深度** | `agent.max_spawn_depth` | 1 | `depth._chain_generations` | 只有创建agent才花：不带`to=`的`agent`。新agent往下走一代 |
+| **消息数** | `agent.max_messages` | 8 | `depth._chain_messages` | 每一跳都花：派生、`send_message` 投递、`agent(to=…)` 派活、结果回送 |
+| **扇出** | `agent.max_spawn_fanout` | 8 | `agent._fanout_used`，按（会话，轮次）计 | 创建agent，按轮次计而不是按链计 |
 
 **任一项设成 0 就是取消该上限**：既不累积也不拒绝。
+
+**读结果花的是消息，不花代数。**把已完成agent的回复带回来的那一轮是**派发方**
+自己的轮次，所以它跑在派发方的代数上（`Task.caller_chain_generations`，由
+`TaskRunner._dispatch_followup`重新绑定），消息数则往前走一格。多agent最常见
+的形态因此保持通畅：派一批活出去，看回来的结果，再派下一批。两个预算共用一个
+计数器就会把这条路堵死：协调者的followup轮次继承worker的计数1，那条链里后续
+每次调用`agent`都会被拒。真正让这种链停下来的是消息计数：每一波都花消息，
+第8条把它停住。
 
 ```bash
 openprogram config set agent.max_spawn_depth 2   # 允许 worker 再开一代
@@ -379,15 +387,18 @@ openprogram config set agent.max_spawn_fanout 16 # 一轮铺得更宽
 ```
 
 **预算耗尽时的表现**：超额的那次调用被拒绝，理由回给模型，其它工具照常可用。
-**两个链上预算都耗尽**后，`agent`、`task_output`、`task_stop`直接从工具清单里消失。
-工具摆在清单里模型就会去调用，先给出再拒绝会浪费一轮。扇出预算从不摘工具：
-工具清单在轮次开始时冻结，这个数要到轮次里才花掉，所以它只能拒绝。
+**消息预算**耗尽后，`agent`、`task_output`、`task_stop`直接从工具清单里消失：
+任何一种派发都要交出一条消息，消息用完这三个工具就什么也做不成，而工具摆在清单里
+模型就会去调用。代数预算不摘工具，因为代数用完还能把活派给已存在的agent。扇出
+预算也不摘：工具清单在轮次开始时冻结，这个数要到轮次里才花掉，所以它只能拒绝。
 
 默认值（派生深度1、消息8、扇出8）下的典型行为：
 
 - 主 agent 派 worker。worker 再想派生会被告知自己动手做。
 - 同一个 worker 仍然有 `agent(to=…)` 和 `send_message`：能把任务交给**已存在**的
   agent，能回复给它发消息的 agent。对它关掉的只是"再开一代"。
+- 主agent派出一波worker，读回结果，再派下一波。读结果花消息不花代数，所以
+  不论派多少波，worker始终只在第一代上。
 - A和B来回对话在这条链的第8条消息后停下，不论此刻轮到谁。回送这一跳重新绑定
   已完成task的计数而不是加一，所以一个来回花1，8条够走八个来回。
 - 一轮里第9次调用`agent`被拒绝，并被指回它已经有的那8个。下一轮的扇出预算
@@ -431,18 +442,23 @@ hermes给每个被委派的子任务600秒超时。
   我们和hermes都没有的是一个没人盯着也会到点触发的死线。要加就是在`TaskRunner`
   提交时挂一个定时的`cancel_task`，而让它很少用得上的那条边界是下面每轮50次迭代的上限。
 
-**计数怎么传下去**。计数存在 ContextVar 里
-（`send_message…depth._chain_messages`）。一条链要跨三个线程边界，每个边界都得
-显式把计数交接过去，因为 Python 新起的线程里 ContextVar 全是默认值：
+**两个计数怎么传下去**。两个计数各存在一个 ContextVar 里
+（`send_message…depth._chain_messages`、`._chain_generations`）。一条链要跨三个
+线程边界，每个边界都得显式把它们交接过去，因为 Python 新起的线程里 ContextVar
+全是默认值：
 
 | 跨越 | 计数怎么到达 |
 |---|---|
-| dispatcher → 工具体 | `functions/_runtime.py` 里的 `copy_context()` 带进执行器线程 |
-| 发送方 → task worker | 计数写在 Task 实体上（`chain_messages`，恒为发送方 + 1），由 `TaskRunner._run_one` 重新绑定 |
-| task → 回送 followup | `TaskRunner._dispatch_followup` 在自己的线程里重新绑定这个已完成 task 的计数 |
+| dispatcher → 工具体 | `functions/_runtime.py` 里的 `copy_context()` 把两个都带进执行器线程 |
+| 发送方 → task worker | 两个都写在 Task 实体上（`chain_messages` 恒为发送方 + 1；`chain_generations` 派生时 + 1、派活时不动），由 `TaskRunner._run_one` 重新绑定 |
+| task → 回送 followup | `TaskRunner._dispatch_followup` 在自己的线程里绑定这个已完成 task 的 `chain_messages` 和它的 `caller_chain_generations` |
 
-回送这一跳决定了 A↔B 来回能不能停：followup 轮次正是 A 读到 B 回复、写下一条
-消息的地方，followup 若从 0 开始，A 每一轮都拿到全新预算，8 条上限永远走不到。
+回送这一跳正是两个预算分道的地方，两个方向都要紧。消息从孩子那边接着往下走：
+followup轮次正是A读到B回复、写下一条消息的地方，followup若从0开始，A每一轮
+都拿到全新预算，8条上限永远走不到。代数则退回派发方的计数：followup不创建
+任何agent，继承孩子的计数会让一个刚读完worker回复的agent在这条链里再也创建
+不出新agent。
+
 同一个线程还把 `_current_task_id` 绑成这个已完成 task 的 `parent_task_id`，
 于是 A 在读回复时派出的 task 落在级联取消要走的同一条谱系上（§5.3）。
 

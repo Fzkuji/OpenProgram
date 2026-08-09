@@ -40,6 +40,7 @@ from .delivery import (
     sender_header,
 )
 from .depth import (
+    current_chain_generations,
     current_chain_messages,
     max_messages,
 )
@@ -100,11 +101,14 @@ def _send_message_impl(
     # spent its messages, so A↔B / runaway recursion can't blow up. The
     # reply-followup inherits the same count, so back-and-forth also
     # counts toward it. 0 = no limit.
-    depth = current_chain_messages()
+    # A message creates no agent, so the generation count travels
+    # through untouched — only the message count moves.
+    messages = current_chain_messages()
+    generations = current_chain_generations()
     limit = max_messages()
-    if limit and depth >= limit:
+    if limit and messages >= limit:
         return (
-            f"[send_message refused] this chain has passed {depth} "
+            f"[send_message refused] this chain has passed {messages} "
             f"messages, the maximum ({limit}). Finish the work here "
             "instead of delegating further."
         )
@@ -160,7 +164,8 @@ def _send_message_impl(
             sender_msg_id=aid,
             sender_agent_id=parent_agent,
             agent_id=chosen_agent,
-            chain_messages=depth,
+            chain_messages=messages,
+            chain_generations=generations,
         )
         if queued is not None:
             return queued
@@ -194,7 +199,11 @@ def _send_message_impl(
             description=delivery_message,
             caller_msg_id=aid,
             caller_session_id=sid,  # reply returns to the sender
-            chain_messages=depth + 1,  # child inherits count+1 (loop guard)
+            chain_messages=messages + 1,  # target runs at count+1 (loop guard)
+            # No agent is created, so the target and the reply turn both
+            # run at the generation count this send was made at.
+            chain_generations=generations,
+            caller_chain_generations=generations,
         )
     except Exception as e:  # noqa: BLE001
         return f"[send_message error] {type(e).__name__}: {e}"

@@ -312,20 +312,20 @@
   </div>
 
   <!-- ══════════ 04 两个预算 ══════════ -->
-  <h2 id="budget"><span class="num">04</span>两个预算：一个计数器，两条上限线</h2>
-  <p class="lead">一条链是一次用户轮次产生的全部调用。链上每跳一次计数加一，回复回流也算一跳。两个预算读同一个计数器，只是上限线画在不同位置。</p>
+  <h2 id="budget"><span class="num">04</span>两个预算：两个计数器，各管一件事</h2>
+  <p class="lead">一条链是一次用户轮次产生的全部调用。消息数每跳加一，回复回流也算一跳；代数只有创建新agent时加一。读回结果花的是消息，不花代数，所以派一批活、看结果、再派一批走得通。</p>
 
   <div class="card">
   <svg viewBox="0 0 1160 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="两个预算">
     <defs>
       <marker id="b-gy" markerWidth="8" markerHeight="8" refX="6" refY="2.6" orient="auto"><path d="M0,0 L6,2.6 L0,5.2 Z" fill="#8a8675"/></marker>
     </defs>
-    <text x="24" y="32" fill="#d4843a" font-size="16" font-weight="700">一条链的计数器</text>
-    <text x="24" y="54" fill="#8a8675" font-size="12.5">spawn、send_message、agent(to=)每跳都+1。同一个计数，两条线管两件事。</text>
+    <text x="24" y="32" fill="#d4843a" font-size="16" font-weight="700">一条链的两个计数器</text>
+    <text x="24" y="54" fill="#8a8675" font-size="12.5">下面这条轴是消息数：spawn、send_message、agent(to=)、回流每跳都+1。代数是另一个计数器，只有创建新agent才+1。</text>
 
     <!-- 上限标注 -->
-    <text x="228" y="98" fill="#e0445a" font-size="12" font-weight="700">agent.max_spawn_depth = 1</text>
-    <text x="228" y="118" fill="#bdb9a6" font-size="11">计数到1的agent不能再创建新agent，只能自己完成</text>
+    <text x="228" y="98" fill="#e0445a" font-size="12" font-weight="700">agent.max_spawn_depth = 1（代数）</text>
+    <text x="228" y="118" fill="#bdb9a6" font-size="11">只有左边这一跳涨代数，后面的消息跳都不涨；worker不能再创建新agent</text>
     <text x="1052" y="98" fill="#e0445a" font-size="12" font-weight="700" text-anchor="end">agent.max_messages = 8</text>
     <text x="1052" y="118" fill="#bdb9a6" font-size="11" text-anchor="end">整条链传满8跳就不再投递，A和B来回也停</text>
     <line x1="220" y1="128" x2="220" y2="194" stroke="#e0445a" stroke-width="1.6" stroke-dasharray="5 4"/>
@@ -364,14 +364,14 @@
 
     <!-- 底部两条说明 -->
     <rect x="32" y="272" width="536" height="60" rx="8" fill="#12110b" stroke="#2e2c20" stroke-width="1"/>
-    <text x="50" y="294" fill="#d4843a" font-size="12" font-weight="700">只撞到一条线时</text>
-    <text x="50" y="314" fill="#bdb9a6" font-size="11.5">越界的那次调用被拒，并给出理由（"自己完成"或"就地收尾"），</text>
-    <text x="50" y="330" fill="#bdb9a6" font-size="11.5">别的工具全留着。worker还能用agent(to=)和send_message。</text>
+    <text x="50" y="294" fill="#d4843a" font-size="12" font-weight="700">代数用完时</text>
+    <text x="50" y="314" fill="#bdb9a6" font-size="11.5">越界的那次创建被拒，并给出理由（"自己完成"），别的工具全留着。</text>
+    <text x="50" y="330" fill="#bdb9a6" font-size="11.5">worker还能用agent(to=)和send_message，工具也不摘。</text>
 
     <rect x="592" y="272" width="536" height="60" rx="8" fill="#12110b" stroke="#2e2c20" stroke-width="1"/>
-    <text x="610" y="294" fill="#d4843a" font-size="12" font-weight="700">两条线都撞满时</text>
-    <text x="610" y="314" fill="#bdb9a6" font-size="11.5">agent、task_output、task_stop直接从工具列表里消失。</text>
-    <text x="610" y="330" fill="#8a8675" font-size="11.5">工具留在列表里模型就会尝试调用，给出之后再拒绝白费一轮。</text>
+    <text x="610" y="294" fill="#d4843a" font-size="12" font-weight="700">消息数用完时</text>
+    <text x="610" y="314" fill="#bdb9a6" font-size="11.5">agent、task_output、task_stop直接从工具列表里消失：每种派发都要</text>
+    <text x="610" y="330" fill="#8a8675" font-size="11.5">交出一条消息，留在列表里模型只会调用一次再被拒，白费一轮。</text>
   </svg>
   </div>
 
@@ -392,9 +392,11 @@ openprogram config set <b>agent.max_spawn_fanout</b> 0  <i># 一轮想创建多�
     改完即时生效，落盘在<code>~/.openprogram/config.json</code>的<code>agent</code>段。
     全设0之后，防失控就只剩并发上限（<code>OPENPROGRAM_TASK_WORKERS</code>，默认4）、
     每轮50次工具调用的上限和用户自己按停。<br>
-    <b>扇出预算不在上面那个链上计数器里。</b>派生把计数交给孩子、自己那份不动，
+    <b>扇出预算不在上面那两个链上计数器里。</b>派生把计数交给孩子、自己那份不动，
     所以链上计数器数不到兄弟。扇出按（会话，轮次）单独计，只拒绝不摘工具：
     工具清单在轮次开始时就冻结了，这个数在轮次里才花掉。<br>
+    <b>回流那一跳两个计数走不同方向。</b>消息数从孩子那边接着走，A↔B来回才会停；
+    代数退回派发方的计数，读结果不算创建，协调者读完第一波结果还能派第二波。<br>
     有一条规则不受预算影响：<b>自己发给自己一律拒</b>。<code>to=</code>指向发起方当前这条分支是直接的环，立刻拒掉。
   </div>
 

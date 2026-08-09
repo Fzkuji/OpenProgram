@@ -715,12 +715,12 @@
   <table>
     <tr><th></th><th>关键常量和它在哪</th></tr>
     <tr class="us"><td class="name">我们</td>
-      <td>深度1、一条链的消息预算8（派生、发消息、派活、回流全都计数）、一轮的扇出上限8、
-        并发4、每轮50次工具调用、收件箱上限50丢最旧、60秒内同发送方同内容视为重复。
+      <td>深度1（只数创建出来的代数）、一条链的消息预算8（派生、发消息、派活、回流全都计数）、
+        一轮的扇出上限8、并发4、每轮50次工具调用、收件箱上限50丢最旧、60秒内同发送方同内容视为重复。
         自己发给自己一律拒，不受预算影响。三个预算都能设0取消。
         每个数字的取值理由写在常量旁边，对照的就是这一页
         <span class="src">MAX_MESSAGES=8 send_message/depth.py；MAX_SPAWN_DEPTH=1 与
-          MAX_SPAWN_FANOUT=8 agent/agent.py；计数器是一个ContextVar depth.py；
+          MAX_SPAWN_FANOUT=8 agent/agent.py；两个计数器各一个ContextVar depth.py；
           每轮50次 agent/agent_loop.py:246；上限50和60秒 agent/inbox.py；自发拒 send_message.py:139-144</span></td></tr>
     <tr><td class="name">Claude Code</td>
       <td>深度3、并发20、信箱50条环形丢最旧、按消息uuid去重、fork递归用一个布尔开关拦、
@@ -827,13 +827,14 @@
   <table>
     <tr><th></th><th>做法</th><th>摘掉哪些，条件是什么</th></tr>
     <tr class="us"><td class="name">我们</td><td class="p">A按余额，另有B兜底</td>
-      <td>唯一的判定是<code>delegation_budget_left()</code>：派生预算和消息预算<b>都</b>没余额了，
-        才把<code>agent</code>、<code>task_output</code>、<code>task_stop</code>移出清单；只要还剩一个就全留着。
+      <td>唯一的判定是<code>delegation_budget_left()</code>：消息预算没余额了，
+        才把<code>agent</code>、<code>task_output</code>、<code>task_stop</code>移出清单。
+        每种派发都要交出一条消息，消息用完这三个工具做不成任何事。代数用完不摘工具，因为代数用完还能把活派给已存在的agent。
         <code>send_message</code>、<code>list_agents</code>、<code>archive_agent</code>、<code>list_tasks</code>从不摘。
         判定刻意是二值的，代码里写了理由：工具定义必须逐轮逐字节相同才命中提供商的提示缓存，
-        一层一套定义会把缓存打碎。越界的调用另有三条各自的拒绝文案
-        <span class="src">send_message/depth.py:60-73；挂点 agent/agent.py:595、task_output.py:37、task_stop.py:32；
-          清单过滤 functions/_helpers.py:141-147；拒绝文案 agent/agent.py:139-144,357-362 与 send_message.py:105-110</span></td></tr>
+        一层一套定义会把缓存打碎。越界的调用另有各自的拒绝文案
+        <span class="src">send_message/depth.py delegation_budget_left；挂点 agent/agent.py、task_output.py:37、task_stop.py:32；
+          清单过滤 functions/_helpers.py:141-147；拒绝文案 agent/agent.py 与 send_message.py</span></td></tr>
     <tr><td class="name">Claude Code</td><td class="p">A和B都做，而且做法换过一次</td>
       <td>泄露源码树里是无条件摘：<code>Agent</code>写死在"子agent一律不给"的集合里。
         2.1.226 二进制改成<b>按深度摘</b>：过滤函数里那一行是"深度小于上限才留着<code>Agent</code>"，
@@ -1034,12 +1035,14 @@
     <tr><td><b>派活和发消息分成两件事</b><br><code>agent(to=)</code>产生任务，<code>send_message</code>不产生</td>
       <td>八家里没有第二家这么分</td>
       <td>结果必回、可取消、取消级联这三条承诺绑在任务上，所以任务要查归属；消息不带这三条，所以谁都能发</td></tr>
-    <tr><td><b>防环用一条链的消息预算</b><br>深度1、消息8，回流也计数</td>
+    <tr><td><b>防环用一条链的消息预算</b><br>深度1、消息8，回流也计数；两个计数器分开</td>
       <td>消息计数这一手只有 openclaw 和我们做</td>
       <td>光有深度上限拦不住两个已存在的agent互相派活。codex-cli V2恰好就缺这一条，兄弟能直连又没有计数。
         8锚在openclaw上：它的agent之间来回循环默认5次交替回复、最多20次，
-        我们的计数器还要为派生和派活买单，所以落在两者之间。
-        回送这一跳重新绑定已完成task的计数而不是加一，一个来回花1，8条够走八个来回</td></tr>
+        我们的消息计数还要为派生和派活买单，所以落在两者之间。
+        回送这一跳重新绑定已完成task的计数而不是加一，一个来回花1，8条够走八个来回。
+        代数是另一个计数器，只有创建agent才涨，回送时退回派发方的计数：
+        读结果不算创建，协调者读完一批结果还能再派一批</td></tr>
     <tr><td><b>深度不跟Claude Code的3</b><br>五家都是1，我们也是1</td>
       <td>和openclaw、codex-cli V1、hermes、opencode一档</td>
       <td>Claude Code的3不能照搬：泄露源码树里没有深度计数器，<code>Agent</code>在每个子agent的
@@ -1051,7 +1054,7 @@
           过滤 tools/AgentTool/agentToolUtils.ts:94-113</span></td></tr>
     <tr><td><b>补了一条一轮之内的扇出上限</b><br><code>agent.max_spawn_fanout</code>默认8</td>
       <td>真正的扇出上限只有openclaw有</td>
-      <td>派生把计数交给孩子、自己那份不动，所以链上计数器数不到兄弟：在这条上限之前，
+      <td>派生把计数交给孩子、自己那份不动，所以两个链上计数器都数不到兄弟：在这条上限之前，
         一轮可以一直调<code>agent</code>直到50次迭代上限把它停下。
         openclaw是每个父最多5个活着的孩子（可配1到20），单位可以照搬；
         hermes的3和pi-mono的8校验的是一次调用里那个批量参数的长度，不能照搬，

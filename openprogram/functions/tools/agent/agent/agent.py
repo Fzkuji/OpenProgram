@@ -99,7 +99,7 @@ def max_spawn_depth() -> int:
 # Fan-out budget: how many NEW agents ONE parent turn may create. The
 # spawn budget above bounds the chain downward and the message budget
 # bounds it sideways between existing agents, but neither counts
-# siblings: a spawn hands the child ``depth + 1`` and leaves the
+# siblings: a spawn hands the child one more generation and leaves the
 # parent's own count untouched, so before this guard a single turn could
 # call ``agent`` until the turn's 50-iteration cap
 # (agent_loop.MAX_INNER_ITERATIONS) stopped it, i.e. up to 50 full agent
@@ -247,17 +247,20 @@ def _dispatch_to_existing(
     chosen_agent = (agent_id or "").strip() or parent_agent or "main"
 
     # Budget guard: a dispatch to an existing agent spends the message
-    # budget (branch-to-branch traffic), not the spawn budget — it
-    # creates no agent.
+    # budget (branch-to-branch traffic), not the generation budget — it
+    # creates no agent, so the generation count travels through
+    # unchanged.
     from openprogram.functions.tools.send_message.send_message.depth import (
+        current_chain_generations,
         current_chain_messages,
         max_messages,
     )
-    depth = current_chain_messages()
+    messages = current_chain_messages()
+    generations = current_chain_generations()
     limit = max_messages()
-    if limit and depth >= limit:
+    if limit and messages >= limit:
         return (
-            f"[agent refused] this chain has passed {depth} messages, "
+            f"[agent refused] this chain has passed {messages} messages, "
             f"the maximum ({limit}). Finish the work here instead of "
             "dispatching further."
         )
@@ -320,7 +323,9 @@ def _dispatch_to_existing(
                 wait=False,
                 caller_msg_id=aid,
                 caller_session_id=sid,
-                chain_messages=depth + 1,
+                chain_messages=messages + 1,
+                chain_generations=generations,
+                caller_chain_generations=generations,
                 status=TaskStatus.PENDING,
             )
             save_task(run_session, task)
@@ -332,7 +337,8 @@ def _dispatch_to_existing(
                     sender_msg_id=aid,
                     sender_agent_id=parent_agent,
                     agent_id=chosen_agent,
-                    chain_messages=depth,
+                    chain_messages=messages,
+                    chain_generations=generations,
                     target_head_id=target_tip,
                     task_id=task.id,
                 )
@@ -395,7 +401,9 @@ def _dispatch_to_existing(
             description=delivery_message,
             caller_msg_id=aid,
             caller_session_id=sid,
-            chain_messages=depth + 1,
+            chain_messages=messages + 1,
+            chain_generations=generations,
+            caller_chain_generations=generations,
         )
     except Exception as e:  # noqa: BLE001
         return f"[agent error] {type(e).__name__}: {e}"
@@ -459,30 +467,47 @@ def _agent_impl(
             for c in label
         )[:24]
 
-    # Spawn-budget guard — shares the chain counter with send_message so
-    # spawns and messages spend the same chain, but with a much tighter
-    # cap: only the main agent may spawn; a spawned agent works with its
-    # own tools, it never re-delegates (observed live: a 5-generation
+    # Generation guard — counts agents CREATED by this chain, and only
+    # that: reading a worker's result travels on the message counter, so
+    # an agent that collects a batch of replies can create the next
+    # batch. The cap is much tighter than the message budget on purpose:
+    # only the main agent may spawn; a spawned agent works with its own
+    # tools, it never re-delegates (observed live: a 5-generation
     # weather-query delegation chain, every hop just re-wording the same
-    # prompt). The message budget stays looser for branch-to-branch
-    # dialogue.
+    # prompt).
     from openprogram.functions.tools.send_message.send_message.depth import (
+        current_chain_generations,
         current_chain_messages,
+        max_messages,
+        set_chain_generations,
         set_chain_messages,
-        _chain_messages,
     )
-    depth = current_chain_messages()
+    generations = current_chain_generations()
+    messages = current_chain_messages()
     spawn_limit = max_spawn_depth()
-    if spawn_limit and depth >= spawn_limit:
+    if spawn_limit and generations >= spawn_limit:
         return (
-            f"[agent refused] spawn depth {depth} reached the max "
+            f"[agent refused] this chain has already created "
+            f"{generations} generations of agents, the maximum "
             f"({spawn_limit}). Do the work yourself with your own tools "
             "instead of delegating again."
         )
 
-    # Fan-out guard — the chain counter above bounds generations, this
-    # bounds siblings within one turn (see MAX_SPAWN_FANOUT). Claimed
-    # after the depth check so a refused generation never spends a slot.
+    # A spawn also hands the child a message, so it spends the message
+    # budget too — otherwise spawning would be a way around the cap that
+    # send_message and agent(to=…) both respect.
+    message_limit = max_messages()
+    if message_limit and messages >= message_limit:
+        return (
+            f"[agent refused] this chain has passed {messages} messages, "
+            f"the maximum ({message_limit}). Finish the work here "
+            "instead of spawning another agent."
+        )
+
+    # Fan-out guard — the counters above bound the chain downward and
+    # along, this bounds siblings within one turn (see
+    # MAX_SPAWN_FANOUT). Claimed after the two checks so a refused
+    # spawn never spends a slot.
     used = claim_fanout_slot(sid, aid)
     if used is not None:
         return (
@@ -559,13 +584,17 @@ def _agent_impl(
                 context_mode=mode,
                 # Anchor the spawned branch to THIS turn (clean mode gets
                 # its root's caller from this via the runner) and carry the
-                # chain depth so the guard above trips in the child too.
+                # chain counts so the guards above trip in the child too.
                 # Without caller_msg_id the async branch forked from ROOT.
                 caller_msg_id=aid,
                 # A fork into another session must return its reply to
                 # the caller's session, not the fork target's.
                 caller_session_id=sid if run_session != sid else None,
-                chain_messages=depth + 1,
+                chain_messages=messages + 1,
+                # The child IS the new generation; the reply turn back
+                # here is not, so it gets this turn's count.
+                chain_generations=generations + 1,
+                caller_chain_generations=generations,
                 # This call CREATES the branch — let the runner archive
                 # it at terminal state if the spawn asked for that.
                 archive_when_done=archive_when_done,
@@ -620,9 +649,13 @@ def _agent_impl(
             card_id=_card_id,
             tool_call_id=_tool_call_id,
         )
-        # Bind depth+1 for the child turn (same-context synchronous run),
-        # mirroring what the async runner does with task.chain_messages.
-        _depth_token = set_chain_messages(depth + 1)
+        # Bind both counts + 1 for the child turn (same-context
+        # synchronous run), mirroring what the async runner does from
+        # the Task's chain_messages / chain_generations.
+        _chain_tokens = [
+            set_chain_messages(messages + 1),
+            set_chain_generations(generations + 1),
+        ]
         try:
             result = run_agent_turn(
                 session_id=run_session,
@@ -639,7 +672,8 @@ def _agent_impl(
                 advance_head=False,  # same-session spawn never steals head
             )
         finally:
-            _chain_messages.reset(_depth_token)
+            for _token in _chain_tokens:
+                _token.var.reset(_token)
     except Exception as e:  # noqa: BLE001
         # The card is already on screen in "running" — close it out, or
         # it spins forever.
@@ -718,11 +752,11 @@ def _agent_impl(
     name="agent",
     description=DESCRIPTION,
     toolset=["core"],
-    # Exposed while the chain still has spawn OR message budget; gone
-    # once both are spent, because a tool sitting in the listing invites
-    # the model to reach for it. In between the runtime guards in
-    # _agent_impl refuse the calls that overrun — e.g. a spawned agent
-    # keeps `agent` for to= dispatch while its spawn budget reads 0.
+    # Exposed while the chain still has message budget; gone once that
+    # is spent, because every form of delegation hands a message over
+    # and a tool sitting in the listing invites the model to reach for
+    # it. The generation budget refuses at runtime instead — a spawned
+    # agent keeps `agent` for to= dispatch with no generations left.
     can_use=_delegation_budget_left,
 )
 def agent(

@@ -78,16 +78,18 @@ at the turn that opened it (dag/overview.md §4) instead of hanging
 off ROOT. Change spawn semantics in all three together, test all
 three together.
 
-A spawned agent NEVER re-delegates: the spawn budget
+A spawned agent NEVER re-delegates: the generation budget
 (`agent.max_spawn_depth`, default 1) is spent by the time it runs, so
 its `agent()` spawn is refused. Even a single "coordinator" hop
 degenerates into buck-passing, so no delegation hop is granted. It
 keeps the tool for `to=` dispatch and the `task_output` / `task_stop`
-companions, because the looser message budget
-(`agent.max_messages`, default 8) still has room — the two budgets
-share one per-chain counter. Tool exposure follows the counter and
-nothing else: agent/task_output/task_stop leave the listing only when
-BOTH budgets are spent (see runtime/agent-collaboration.md §5.1).
+companions, because the message budget (`agent.max_messages`, default
+8) is a separate counter and still has room. Tool exposure follows the
+message counter and nothing else: agent/task_output/task_stop leave the
+listing when the message budget is spent, never because generations ran
+out (see runtime/agent-collaboration.md §5.1). The agent that spawned
+the worker keeps its own generation count while it reads the result, so
+it can spawn the next wave.
 
 ## 7. The chat sibling switcher appears only on REAL forks
 
