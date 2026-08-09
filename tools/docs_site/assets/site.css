@@ -361,6 +361,42 @@ article:has(.home-grid) { max-width: none; }
 }
 article:has(.viz-frame) { max-width: none; }
 
+/* ── content fullscreen ──
+   CSS overlay rather than the Fullscreen API: the shell keeps its own theme,
+   scroll and SPA navigation, an iframe needs no allowfullscreen, and ESC stays
+   ours. Sits in the content area's top-right gutter, never over the text. */
+.fs-toggle {
+  position: fixed; top: 104px; right: calc(var(--toc-w) + 14px); z-index: 95;
+  width: 30px; height: 30px; padding: 0; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg-card); border: 1px solid var(--bd); color: var(--tx-faint);
+  border-radius: 8px; opacity: .6;
+  transition: opacity .15s, color .15s, border-color .15s;
+}
+.fs-toggle:hover { opacity: 1; color: var(--tx); border-color: var(--acc); }
+.fs-toggle .ic-collapse { display: none; }
+
+html[data-fs="1"] .fs-toggle { top: 12px; right: 14px; z-index: 160; opacity: 1; box-shadow: var(--shadow); }
+html[data-fs="1"] .fs-toggle .ic-expand { display: none; }
+html[data-fs="1"] .fs-toggle .ic-collapse { display: inline-flex; }
+
+html[data-fs="1"] body { overflow: hidden; }
+html[data-fs="1"] header.topbar,
+html[data-fs="1"] nav.tabbar,
+html[data-fs="1"] nav.sidebar,
+html[data-fs="1"] aside.toc,
+html[data-fs="1"] .breadcrumb,
+html[data-fs="1"] .page-updated,
+html[data-fs="1"] .prevnext { display: none; }
+html[data-fs="1"] main.content {
+  position: fixed; inset: 0; z-index: 150; margin: 0; overflow-y: auto;
+  background: var(--bg); padding: 16px 24px 24px;
+}
+html[data-fs="1"] article { max-width: none; }
+/* the h1 is the one block level with the floating exit button — keep it clear */
+html[data-fs="1"] article > h1 { padding-right: 40px; }
+html[data-fs="1"] .viz-frame { height: calc(100vh - 40px); }
+
 /* ── search overlay ── */
 .search-overlay {
   position: fixed; inset: 0; z-index: 200; display: none;
@@ -392,6 +428,7 @@ article:has(.viz-frame) { max-width: none; }
 @media (max-width: 1100px) {
   aside.toc { display: none; }
   main.content { margin-right: 0; }
+  .fs-toggle { right: 14px; }
 }
 @media (max-width: 860px) {
   .topbar button.hamburger { display: inline-flex; }
@@ -402,7 +439,9 @@ article:has(.viz-frame) { max-width: none; }
     box-shadow: var(--shadow);
   }
   nav.sidebar.open { transform: translateX(0); }
-  main.content { margin-left: 0; padding: 28px 22px 100px; }
+  /* padding-top clears the fullscreen button (ends at 100+30=130; chrome ends at 96) */
+  main.content { margin-left: 0; padding: 38px 22px 100px; }
+  .fs-toggle { top: 100px; right: 10px; }
   .scrim.show { display: block; position: fixed; inset: 56px 0 0; background: rgba(0,0,0,.35); z-index: 80; }
 }
 

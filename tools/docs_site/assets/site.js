@@ -137,6 +137,42 @@
   });
   if (scrim) scrim.addEventListener("click", closeDrawer);
 
+  // ── content fullscreen ─────────────────────────────────────────────────
+  // The button lives outside <article>, so it survives SPA swaps and needs no
+  // rebinding. Toggling data-fs on <html> is all the CSS overlay needs.
+  function setFullscreen(on) {
+    const main = document.querySelector("main.content");
+    const art = main && main.querySelector("article");
+    // The switch changes both the scroller (window ⇄ main.content) and the column
+    // width, so a pixel offset means nothing on the other side. Remember which
+    // block sat at the top of the column and put it back there.
+    const scrolled = (on ? window.scrollY : main ? main.scrollTop : 0) > 24;
+    const colTop = on ? 100 : 0; // where the column starts *right now*
+    const kids = scrolled && art ? Array.from(art.children) : [];
+    const anchor = kids.find((k) => k.getBoundingClientRect().bottom > colTop + 4);
+    if (on) ROOT.setAttribute("data-fs", "1");
+    else ROOT.removeAttribute("data-fs");
+    if (anchor) {
+      const scroller = on ? main : document.scrollingElement;
+      const top = scroller.scrollTop + anchor.getBoundingClientRect().top - (on ? 16 : 112);
+      // "instant": the page's own scroll-behavior is smooth, and animating a jump
+      // that follows a layout switch just gets cancelled halfway.
+      scroller.scrollTo({ top: top, behavior: "instant" });
+    }
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest(".fs-toggle");
+    if (b) setFullscreen(ROOT.getAttribute("data-fs") !== "1");
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setFullscreen(false);
+  });
+  // A click inside an embedded viz moves focus into the iframe, so its ESC never
+  // reaches us — the raw page forwards it (see build.py).
+  window.addEventListener("message", (e) => {
+    if (e.data === "op-docs-esc") setFullscreen(false);
+  });
+
   // ── per-page wiring (re-run after every SPA swap) ──────────────────────
   let tocObserver = null;
 

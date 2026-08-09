@@ -59,6 +59,17 @@ _IC_CHECK = (
     '<svg class="check" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"'
     ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3L13 5"/></svg>'
 )
+# corner brackets pointing out (expand) / in (collapse)
+_IC_EXPAND = (
+    '<svg class="ic-expand" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"'
+    ' stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M6.2 2H2v4.2M9.8 2H14v4.2M6.2 14H2V9.8M9.8 14H14V9.8"/></svg>'
+)
+_IC_COLLAPSE = (
+    '<svg class="ic-collapse" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"'
+    ' stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M2 6.2h4.2V2M14 6.2H9.8V2M2 9.8h4.2V14M14 9.8H9.8V14"/></svg>'
+)
 
 # Inline head script: set theme before first paint to avoid a flash.
 _THEME_BOOT = """
@@ -141,7 +152,7 @@ def render_page(
 
 <div class="scrim"></div>
 <div class="layout{layout_cls}">
-  {sidebar_html}<main class="content"><article>{breadcrumb_html}{body_html}{meta_html}{prevnext_html}</article></main>
+  {sidebar_html}<main class="content"><button class="fs-toggle" aria-label="Fullscreen" title="Fullscreen (Esc to exit)">{_IC_EXPAND}{_IC_COLLAPSE}</button><article>{breadcrumb_html}{body_html}{meta_html}{prevnext_html}</article></main>
   <aside class="toc">{toc_html}</aside>
 </div>
 

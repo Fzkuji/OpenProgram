@@ -206,6 +206,16 @@ def is_full_page(html_text: str) -> bool:
     return bool(_FULL_PAGE_RE.search(html_text))
 
 
+# Appended to the shipped .raw.html copy: once the reader clicks inside the
+# iframe, focus is in that document and its ESC never reaches the shell's key
+# handler, so forward it up (site.js listens for this message).
+_ESC_FORWARD = (
+    "\n<script>document.addEventListener('keydown',function(e){"
+    "if(e.key==='Escape'&&window.parent!==window)"
+    "parent.postMessage('op-docs-esc','*');});</script>\n"
+)
+
+
 def embed_html(raw_url: str) -> str:
     """Embed a standalone hand-written page via an isolated iframe.
 
@@ -484,7 +494,7 @@ def _build_into_out_root() -> int:
                 raw_rel = p.out.with_suffix("").with_suffix(".raw.html")
                 raw_path = OUT_ROOT / raw_rel
                 raw_path.parent.mkdir(parents=True, exist_ok=True)
-                raw_path.write_text(html_text, encoding="utf-8")
+                raw_path.write_text(html_text + _ESC_FORWARD, encoding="utf-8")
                 body = embed_html(DEPLOY_BASE + str(raw_rel).replace("\\", "/"))
                 toc = ""
             else:

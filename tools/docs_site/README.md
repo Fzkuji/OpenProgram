@@ -77,7 +77,7 @@ tools/docs_site/
   search.py       生成 search-index.json
   assets/
     site.css      全站样式 + 深浅双主题变量
-    site.js       主题切换 / 语言切换 / 锚点高亮 / 搜索 / 移动端抽屉
+    site.js       主题切换 / 语言切换 / 锚点高亮 / 搜索 / 移动端抽屉 / 正文全屏
     pygments-*.css  代码高亮（构建时生成，浅/深各一套）
 ```
 
