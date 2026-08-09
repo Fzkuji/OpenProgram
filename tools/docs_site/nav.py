@@ -331,6 +331,7 @@ PAGE_ORDER: dict[str, int] = {
     "reference/design/memory/overview.md": 1,
     "reference/design/memory/memory-architecture.html": 2,
     "reference/design/memory/memory-comparison.html": 3,
+    "reference/design/memory/memory-adoption.html": 4,
     # Within the design archive everything defaults to 999 (alphabetical).
     # >999 pins a page to the end of its section; the sandbox note and its
     # rendered companion stay adjacent, doc first.

@@ -30,8 +30,9 @@ Two properties we care about:
 
 ```
 <state>/memory/
-    core.md                  always-on block, injected every session
+    core.md                  always-on block, rendered from topics/core.md
     topics/                  the editable semantic memory
+        core.md              what must be visible in every conversation
         people/dave.md
         projects/budget-tracker.md
     sources/                 append-only evidence, written by the runtime
@@ -57,9 +58,9 @@ Craig is building a budget tracker in Flask, due 2024-04-15.[^e-1175dea39c] ^f88
 The block ID is how other views and links reach that paragraph; it
 survives edits and moves. The footnote is how a claim is traced back.
 
-`timeline/`, `recent_events.jsonl` and `relations.json` are derived —
-rebuilt from topics after every successful write. Editing them by hand
-accomplishes nothing.
+`core.md`, `timeline/`, `recent_events.jsonl` and `relations.json` are
+derived — rebuilt from topics after every successful write. Editing
+them by hand accomplishes nothing.
 
 ## When writing happens
 
@@ -212,6 +213,28 @@ no ordering between them and no knowledge of each other. Whichever is
 written first puts the shared ids in the set, and the other one skips
 exactly what it shares.
 
+### Every branch, at the session boundary
+
+Per turn, memory asks for the branch ending at the session's head,
+because that is the branch the turn happened on. At the boundary it
+asks for all of them: `list_branches` gives every live tip and one
+`get_branch` per tip gives the line behind it. Offering a shared prefix
+several times costs nothing, since its ids are in `written` already.
+
+The branch under the head is written however little it owes, because
+nothing comes back for it afterwards. The others are written once what
+they owe reaches the threshold. A branch of one turn is a retry, and a
+retry is a reply somebody rejected; a branch long enough to reach a
+batch is a line of conversation somebody went down and came back from,
+and what was said there belongs in memory like anything else. The idle
+allowance that lets a short head branch through does not apply to
+them — an abandoned branch's last message is old by definition, so the
+allowance would let every retry in.
+
+Turns the user rolled back are gone before memory sees them. `rewind`
+marks them and `get_branch` filters them out, so "abandoned on purpose"
+is the session store's judgment and not one memory makes again.
+
 ### Ids stay
 
 An id is never removed. Dropping the ids of a branch nobody visits any
@@ -226,6 +249,26 @@ proportional to that session rather than to every session ever written.
 Deleting a session deletes its cursor file. That is the only removal,
 and it is safe because the branches that could have run through those
 messages go with it.
+
+### An unreadable cursor is an empty one
+
+A cursor file that will not parse says memory does not know what it has
+written, and under a set the only safe reading of that is that it has
+written nothing. So it reads as an empty set and the thread is offered
+whole. One thread rewritten once is the cost, and the write transaction
+already folds paragraphs that say the same thing. Raising instead costs
+the thread: the failure travels up as a retryable `WriteIncomplete`,
+the watcher leaves the session unmarked, and every later pass reads the
+same file and reports the same thing, so nothing is ever written and
+nothing says why. claude-code makes the same choice when the message
+its cursor names has gone missing, for the same reason — rewriting a
+batch has a bound, silence does not.
+
+The cursor lives inside the workspace, under `.scriptorium/cursors/`,
+so a backup, a git checkout or a restore takes it along with the files
+it describes. Kept beside the workspace instead, memory restored from
+last week would meet a cursor from today and read the whole week as
+written.
 
 ### Migrating off the position cursor
 
@@ -253,13 +296,12 @@ last global pass.
 
 ### What this does not settle
 
-- **Only the branch under the head is offered.** Both write paths ask
-  for the branch ending at the session's head, so a branch the user
-  leaves before it crosses the threshold is never revisited: no walk
-  reaches its tip again. Cursors make writing several branches safe;
-  they do not go looking for branches. Enumerating `list_branches`
-  would, at the cost of writing branches that were abandoned on
-  purpose.
+- **A branch is only revisited at the session boundary.** Between
+  boundaries the per-turn path offers the head's branch alone, so a
+  branch left an hour ago waits for the session to go idle. Nothing is
+  lost by waiting, and nothing could be gained by trying earlier: the
+  head is written in five places, the one function all of them pass
+  through discards the previous value, and no event announces the move.
 - **Two branches, one set of topic files.** Records from different
   branches are folded into the same files, and the topic format has no
   way to say that two claims are alternatives from mutually exclusive
@@ -301,6 +343,51 @@ cover several subjects, merges paragraphs that say the same thing, and
 repairs links.
 
 It also runs on demand: `openprogram memory sleep`.
+
+A pass reports the files it changed. What to rearrange is the model's
+judgment, and a model that judges there is nothing to do does nothing,
+silently and correctly under its own criterion: measured on the same
+prompt, a single-subject conversation of 520,000 characters that had
+been folded into one 34,400-character file survived pass after pass
+untouched, because the criterion for splitting is that a file covers
+two subjects and that file covers one. Whether that is the right
+criterion is a separate question, and an empty list of changed files is
+what makes it a question anybody can ask.
+
+## The always-on block
+
+`core.md` is what every session starts with, and it is derived. Its
+content is `topics/core.md`, a subject file like any other, rendered
+under a 2,000-token budget after every successful write. Nothing writes
+to `core.md`: an edit there is replaced by the next render, the same
+way an edit to `timeline/` is.
+
+A subject file, because a fact that must be visible in every
+conversation is still a fact about something, and it carries the same
+block ID and the same evidence footnote as every other fact. The writer
+learns one kind of file and one set of rules. Keeping the always-on
+block as separate content is what left it with nobody maintaining it:
+writing only ever appended to it, the nightly pass only ever looked at
+`topics/`, and once it reached the budget the transaction refused
+whatever came next, so it froze at whichever facts happened to arrive
+first.
+
+The budget is a rendering limit rather than a gate. The render takes
+paragraphs in file order until the next one does not fit, and reports
+the block IDs it left out. What it leaves out is still in
+`topics/core.md`, still indexed, still reachable by `search` and
+`memory_get`, so leaving a paragraph out of the rendered block costs
+visibility and nothing else. That is what makes trimming safe without
+knowing who wrote what: openclaw separates its automatic lines from its
+hand-written ones because its always-on file is the only copy and
+dropping a line destroys it. Here the preference lives in the order
+instead — a paragraph earlier in the file is rendered first, and moving
+one is an ordinary edit that a person or the nightly pass can make.
+
+A workspace that has a hand-written `core.md` and no `topics/core.md`
+has that file moved into place the first time the block is rendered. It
+already carries block IDs and evidence footnotes, so it is a valid
+topic file exactly as it stands.
 
 ## What the model sees
 
@@ -455,9 +542,42 @@ strips the inner block and leaves an empty one.
 
 ## Appendix: Implementation status
 
-Everything above runs today except "The write cursor".
+Everything above runs today except "The always-on block", "The write
+cursor" and the two subsections after it, "Every branch, at the session
+boundary", and the sentence saying a reorganize pass reports the files
+it changed. Where those four come from, and what was decided against,
+is [`memory-adoption.html`](memory-adoption.html).
 
-What runs in place of it is a position cursor: `runtime.json` holds
+`core.md` is written rather than rendered. The writer edits it directly
+on its own judgment, `_synchronize` in `management/block_views.py`
+raises once it passes 2,000 tokens, which refuses the whole transaction
+including that turn's topic edits, and the repair guidance in
+`management/agent.py` then tells the writer to leave it alone and put
+the fact in a topic file. Nothing shortens it either: `organize_topics`
+builds its file list from `topics/**.md` only. So a full `core.md`
+stays full and stops accepting stable facts permanently. The design
+lands in `runtime/derived_views.py` (render it beside the other derived
+views), `management/block_views.py` (a budget where the gate is),
+`prompts/write.py` (the writer is pointed at `topics/core.md`) and
+`management/agent.py` (the repair line goes). Two special cases go with
+it: `workspace.baseline` and `_validate_topic_contract` each read
+`core.md`'s block IDs today, and a rendered block's IDs are always a
+subset of the topics' own.
+
+`reorganize` returns `{"status": ..., "topics": N}`, where `N` counts
+the files it looked at rather than the files it changed.
+
+Both write paths ask `get_branch` for the head's branch alone
+(`memory/session_watcher.py` and `scriptorium/writing.py`), so no other
+branch is ever offered. `list_branches` and the per-tip `get_branch`
+are already there to build on.
+
+`RuntimeStateStore.load` calls `json.loads` on `runtime.json` with
+nothing around it, so a file that will not parse raises rather than
+reading as empty.
+
+What runs in place of "The write cursor" is a position cursor:
+`runtime.json` holds
 `cursors: {thread: {message_id, ordinal}}`, `runtime/online.py` claims
 a record only when its ordinal is higher than the stored one, and
 `scriptorium/writing.py` builds that ordinal from the row's index in
