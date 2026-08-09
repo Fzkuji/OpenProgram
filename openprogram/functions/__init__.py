@@ -84,6 +84,10 @@ DEFAULT_TOOLS: list[str] = [
     # (docs/reference/design/runtime/agent-collaboration.md).
     "send_message",
     "list_agents",
+    # Outbound attachments — the agent hands a real file back to the
+    # user (chip in web chat, native upload on a chat platform).
+    # Hidden by ``unsafe_in`` wherever there is no attachment channel.
+    "send_file",
     "todo_create",
     "todo_update",
     "todo_list",

@@ -128,8 +128,8 @@ def test_to_turn_attachments_only_small_images(tmp_path) -> None:
 
     notes = _attachments.attachment_notes(saved)
     assert len(notes) == 2
-    assert str(img) in notes[0] and "image/png" in notes[0]
-    assert str(doc) in notes[1]
+    assert notes[0] == f"[attachment: a.png (png, 1 KB) @ {img}]"
+    assert notes[1] == f"[attachment: b.pdf (pdf, 1 KB) @ {doc}]"
 
 
 def test_oversize_image_stays_file_only(tmp_path, monkeypatch) -> None:
@@ -183,5 +183,5 @@ def test_base_passes_attachments_into_dispatch(
         attachments=(Attachment(name="x.png", url="https://u"),),
     ))
     assert seen["attachments"] and seen["attachments"][0]["type"] == "image"
-    assert f"[attachment: {img} (image/png, 3 bytes)]" in seen["user_text"]
+    assert f"[attachment: x.png (png, 1 KB) @ {img}]" in seen["user_text"]
     assert seen["user_text"].startswith("[Bob (7)] look\n\n")

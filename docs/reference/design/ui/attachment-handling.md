@@ -58,7 +58,7 @@ image, model.input does not contain "image" (a degraded codex config)
 - **PDF native document block**: the preferred path for Claude Code/opencode/openclaw. OpenProgram's capability overlay makes this path take effect automatically when a doc-capable model is configured, without making it a requirement.
 - **Path + paged tool read**: everyone does this when the agent explores files **mid-task on its own**. OpenProgram routes **user attachments** through this path on codex too, because codex cannot accept a document block; the head preview closes the reliability gap.
 - **Write to a managed directory**: openclaw's claim-check (inbound has only bytes, no path). We use a per-session git workdir rather than a global one + TTL, which suits agentic better (it is the agent's cwd, committed to git every turn, replayable).
-- **Rejected approach**: synthesizing a fake `read()` tool_use+tool_result at submit time to stuff the content in (opencode's approach) is not used, because (a) mirroring the real read/pdf tool caps drifts, (b) once you switch to a native block it becomes dead weight, and (c) it adds sync latency at submit time. Instead we use a passive `<attachment-preview>` content snippet that gives the model a constant-cost first glance.
+- **Rejected approach**: injecting the file body at submit time by replaying the read (opencode's approach) is not used, because (a) mirroring the real read/pdf tool caps drifts, (b) once you switch to a native block it becomes dead weight, and (c) it adds sync latency at submit time. Instead we use a passive `<attachment-preview>` content snippet that gives the model a constant-cost first glance. (What opencode actually injects is **two plain-text parts flagged `synthetic`** — a sentence "Called the Read tool with the following input …" plus the real read result — which reach the model as `role: "user"` text, not `tool_use` / `tool_result` content blocks. The three reasons above are unaffected by the correction.)
 
 ## Large-File Guarantee (no-context-blowup invariant)
 
@@ -80,9 +80,9 @@ Drag in ten 30MB PDFs at once: that one turn is about `10×(90B mention + 4KB pr
 
 ## Display Layer
 
-- **Chip**: parse `[attachment: name (type, KB[, P pages|L lines]) @ /abs]` → file name + type badge + size + a scope badge ("500 pages"/"200K lines"); strip the `@ /abs` suffix on display. The `<attachment-preview>…</…>` snippet is stripped from the bubble like a mention — the user sees the chip, not the 4KB head.
+- **Chip**: parse `[attachment: name (type, KB[, P pages|L lines]) @ /abs]` → file name + type badge + size + a scope badge ("500 pages"/"200K lines"); strip the `@ /abs` suffix on display but KEEP the captured path — it is what the chip opens, through `GET /api/file-raw` / `GET /api/file-read`. Images render the thumbnail in place of the file glyph. The `<attachment-preview>…</…>` snippet is stripped from the bubble like a mention — the user sees the chip, not the 4KB head.
 - **Delivery-mode sub-label** (UX honesty): derive "read on demand"/"sent inline"/"previewed first N lines" from `delivery_mode`, so the user knows exactly what the model actually got and doesn't have to guess "did it see my file".
-- **Optimistic-bubble timing** (critical): the frontend **never knows** the post-disk absolute path (`@/abs` is appended by `_persist_doc_attachments` after WS message handling). So the optimistic bubble's chip must render from **client-side data** (file.name/size/type/b64), not the mention text; on reload it re-parses the mention from the final stored text. Both must render into the same chip, with the reconciliation key = the client-computed sha8. Therefore the `[attachment: name (type, KB)]` the frontend sends is **intentionally path-less**, and the chip parser must **render the chip for both forms: path-less (in flight) and path-bearing (after rewrite)**.
+- **Optimistic-bubble timing**: the frontend cannot know the post-disk absolute path when it composes (`@/abs` is appended by `_persist_attachments` during WS message handling), so the `[attachment: name (type, KB)]` it sends is **intentionally path-less** and the chip parser renders **both forms: path-less (in flight) and path-bearing (after rewrite)** — a path-less chip is a label, a path-bearing one opens. The gap closes in the same turn rather than at the next reload: `chat_ack` echoes the STORED text and the local user turn is built from that, so the chip is clickable the moment the ack lands.
 - **Preview popup**: decode the full file locally, never send it. The HUMAN client scrolls the whole file, the MODEL only saw the 4KB head — that's the payoff.
 - **Sidebar title**: `_title_from_text` strips both mentions and `<attachment-preview>` before its 50-char truncation.
 
@@ -91,25 +91,29 @@ Drag in ten 30MB PDFs at once: that one turn is about `10×(90B mention + 4KB pr
 Implemented: bytes written to disk under `workdir/attachments` with
 `_safe_attach_name` sanitization and no-clobber naming; the
 `[attachment: name (type, KB) @ /abs]` mention with the backend-appended path;
-first-turn workdir-race fallback; image → ImageContent; `@`-mention and typed
-paths zero-copy with the file-resolve escape check; `_title_from_text` stripping
-mentions before truncation; the `user_msg["extra"]` attachment manifest.
+first-turn workdir-race fallback; image → ImageContent **and** a saved path +
+mention, so the human sees what the model sees; `@`-mention and typed paths
+zero-copy with the file-resolve escape check; `_title_from_text` stripping
+mentions before truncation; the `user_msg["extra"]` attachment manifest; the
+size caps (32MB per file, 64MB per turn) at both `write_bytes` and WS intake
+with the "too large" mention rewrite; sha256 within-session dedup and
+`attachments/.opdedup.json`; page/line counts inside the mention's parenthesized
+group and the one-time `<attachment-preview>` head snippet.
+
+Also implemented since, and shared with
+[chat-attachments](chat-attachments.html): one marker formatter/parser in
+`openprogram/attachments.py` that inbound channel attachments and the agent's
+outbound `send_file` both go through, `GET /api/file-raw` as the byte exit for
+an absolute path, and the chat's clickable chip + preview overlay.
 
 Designed and not yet landed:
 
 - the `"document"` modality in `providers/types.py` `Model.input` and in
   `validate_modalities.py`, and the `choose_delivery()` switch in the dispatcher;
-- the size caps (32MB per file, 64MB per turn) at both `write_bytes` and WS
-  intake, plus the "too large" mention rewrite;
-- sha256 within-session dedup and `attachments/.opdedup.json`;
-- page/line counts injected into the mention's parenthesized group, and the
-  one-time `<attachment-preview>` head snippet;
-- page/line count and truncated head in the `/api/file-resolve` response;
-- the frontend scope badge, delivery-mode sub-label, per-chip status/error
-  badges, and path-less/path-bearing chip consistency;
 - per-provider native document block builders, which need a doc-capable model
   configured before they can be exercised;
-- the remote-channel inbound staging directory feeding the same save call.
+- page/line count and truncated head in the `/api/file-resolve` response;
+- the delivery-mode sub-label and per-chip status/error badges.
 
 ## Tunable Constants
 

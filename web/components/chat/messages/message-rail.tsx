@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
 import { Markdown } from "@/lib/format-utils/markdown";
-import { parseUserAttachments, UserAttachments } from "./user-attachments";
+import { parseAttachments, AttachmentChips } from "./user-attachments";
 import { TurnFilesChips } from "./turn-files-chips";
 
 const EMPTY_ORDER: string[] = [];
@@ -120,7 +120,7 @@ function PreviewCard({
   assistantId?: string;
 }) {
   const { attachments, text } = useMemo(
-    () => parseUserAttachments(content),
+    () => parseAttachments(content),
     [content],
   );
   return (
@@ -130,7 +130,7 @@ function PreviewCard({
           <Markdown source={text} />
         </div>
       ) : null}
-      <UserAttachments items={attachments} />
+      <AttachmentChips items={attachments} />
       {assistantSummary ? (
         <div className="msg-rail-card-reply">
           <Markdown source={assistantSummary} />

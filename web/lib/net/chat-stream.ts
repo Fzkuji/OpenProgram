@@ -11,7 +11,7 @@
  * reachable via `getSocket()`; nothing reads it off `window`.
  *
  * Protocol:
- *   chat_ack       { session_id, msg_id }
+ *   chat_ack       { session_id, msg_id, text }
  *       → the user turn registered; create the assistant reply
  *         placeholder so streaming deltas have somewhere to land.
  *   chat_response  { type, msg_id, session_id, ... }
@@ -148,7 +148,9 @@ export function applyChatWsMessage(msg: WsEnvelope): void {
  *  `user_message` broadcast can arrive either side of the ack). The
  *  reply is created lazily on the first stream event / result instead,
  *  by which point the user turn is already in place. */
-function handleAck(d: { session_id?: string; msg_id?: string } | undefined): void {
+function handleAck(
+  d: { session_id?: string; msg_id?: string; text?: string } | undefined,
+): void {
   if (!d?.session_id) return;
   const sid = d.session_id;
   const tabs = useCenterTabs.getState();
@@ -166,10 +168,15 @@ function handleAck(d: { session_id?: string; msg_id?: string } | undefined): voi
   const text = getPendingUserText(sid);
   if (d.msg_id && typeof text === "string" && text) {
     const isRun = /^(run|create|fix)\s/i.test(text);
+    // The ack echoes the STORED text, which differs from the draft in
+    // one way that matters: attachment mentions now carry the absolute
+    // path the backend wrote once the bytes hit disk. Rendering the
+    // draft instead would give the bubble a chip with nothing to open
+    // until the next reload.
     appendLocalUserTurn(
       sid,
       d.msg_id,
-      text,
+      typeof d.text === "string" && d.text ? d.text : text,
       isRun ? "runtime" : undefined,
     );
     // Create the reply bubble right away (after the user turn, so the

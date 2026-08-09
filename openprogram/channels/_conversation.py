@@ -328,6 +328,14 @@ def _run_session_turn(
     user_msg_id = result.user_msg_id
     assistant_msg_id = result.assistant_msg_id
 
+    # ---- agent 交出来的文件 → 平台原生附件 -------------------------------
+    # reply_text 里的 [attachment: ... @ 路径] 是 send_file 工具登记的.
+    # 先把文件真的传上去, 再把标记从"发给平台的那份文本"里拿掉 —— 存进
+    # 会话 / 广播给网页的那份 (reply_text) 保留标记, 网页据此画 chip.
+    channel_text = _deliver_outbound_files(
+        channel, account_id, str(peer_id), reply_text,
+    )
+
     # ---- 持久化 + webui WS push ----------------------------------------
     user_msg = {
         "role": "user",
@@ -359,11 +367,11 @@ def _run_session_turn(
     if progress_handle is not None:
         from openprogram.channels._transport import MAX_CHARS as _MAX_CHARS
         limit = _MAX_CHARS.get(channel, 1800)
-        if len(reply_text) <= limit:
-            _maybe_edit(reply_text, force=True)
+        if len(channel_text) <= limit:
+            _maybe_edit(channel_text, force=True)
         else:
-            head = reply_text[: limit - 30]
-            tail = reply_text[limit - 30 :]
+            head = channel_text[: limit - 30]
+            tail = channel_text[limit - 30 :]
             _maybe_edit(head + "\n... (continued ↓)", force=True)
             try:
                 from openprogram.channels import _transport
@@ -374,4 +382,50 @@ def _run_session_turn(
                 pass
         return None
 
-    return reply_text
+    return channel_text
+
+
+def _deliver_outbound_files(
+    channel: str, account_id: str, peer_id: str, reply_text: str,
+) -> str:
+    """把 reply_text 里的附件标记逐个上传, 返回去掉标记后的平台文本.
+
+    传输层四个平台早就写好了 (``_transport.post_file``), 缺的只是这一步.
+    三种结局都不静默:
+
+    * 传成功 — 标记从平台文本里删掉 (文件本身已经在对话里了).
+    * 平台不支持 (WeChat iLink 没有文件上传接口) — 标记改写成一句人能读
+      的说明加路径, 学 weclaw 的做法; 既不把原始标记漏给用户, 也不假装
+      没这回事.
+    * 传失败 (网络 / 太大 / 凭据) — 同样改写成一句说明, 并落日志.
+    """
+    from openprogram.attachments import find_markers
+    markers = find_markers(reply_text)
+    if not markers:
+        return reply_text
+    from openprogram.channels import _transport
+    out = reply_text
+    for marker, name, path in markers:
+        try:
+            result = _transport.post_file(
+                channel, account_id, peer_id, path,
+            )
+        except Exception as e:  # noqa: BLE001
+            result = _transport.SendResult.fail("unknown", f"{type(e).__name__}: {e}")
+        if result.ok:
+            out = out.replace(marker, "")
+            continue
+        print(f"[{channel}:{account_id}] send_file {name!r} failed: "
+              f"{result.error_kind}: {result.error_detail}")
+        note = (f"(附件 {name} 没能发出来，这个平台不支持文件上传；"
+                f"文件在 {path})"
+                if result.error_kind == "not_supported"
+                else f"(附件 {name} 发送失败：{result.error_kind}；文件在 {path})")
+        out = out.replace(marker, note)
+    return _collapse_blank_lines(out)
+
+
+def _collapse_blank_lines(text: str) -> str:
+    """删掉标记后留下的空行收拢, 别让平台消息末尾挂一串换行."""
+    import re
+    return re.sub(r"\n{3,}", "\n\n", text).strip() or "(empty reply)"

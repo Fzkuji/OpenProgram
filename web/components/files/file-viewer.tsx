@@ -18,6 +18,13 @@
  * Content comes over WS (``project_file_read``) with the shared
  * files-shared readCache, invalidated by the mtime the tree listing
  * last reported (and refreshed by the editor after a save).
+ *
+ * ``abs`` mode swaps both outlets for the absolute-path routes
+ * (``/api/file-raw`` + ``/api/file-read``) so the same dispatch serves
+ * chat attachments, which live in the session workdir or a channel's
+ * inbound directory rather than under a project id. Everything else —
+ * which renderer runs for which extension — is deliberately the one
+ * implementation.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Download } from "lucide-react";
@@ -25,6 +32,8 @@ import { Download } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { Markdown } from "@/lib/format-utils/markdown";
 import {
+  absFileReadUrl,
+  absRawFileUrl,
   type FileReadResult,
   filesWsRequest,
   latestFileMtime,
@@ -51,6 +60,8 @@ function fmtSize(bytes: number): string {
 export function FileViewer({
   projectId,
   path,
+  abs = false,
+  sessionId,
   mdRendered = true,
   draft,
   onDraftChange,
@@ -58,6 +69,12 @@ export function FileViewer({
 }: {
   projectId: string;
   path: string;
+  /** ``path`` is an absolute worker-side path (a chat attachment), read
+   *  through the attachment-root-checked HTTP routes instead of the
+   *  project-scoped WS action. Never editable in this mode. */
+  abs?: boolean;
+  /** Scopes the attachment-root check to this session's bound project. */
+  sessionId?: string;
   /** Markdown files: true → <Markdown> render, false → source lines.
    *  The toggle UI lives in the file tab's toolbar. */
   mdRendered?: boolean;
@@ -72,32 +89,27 @@ export function FileViewer({
   onLoaded?: (data: FileReadResult | null) => void;
 }) {
   const ext = extOf(path);
+  const rawUrl = abs
+    ? absRawFileUrl(path, sessionId)
+    : rawFileUrl(projectId, path);
   if (IMAGE_EXTS.has(ext)) {
     return (
       <div className={styles.viewerScroll}>
-        <img
-          src={rawFileUrl(projectId, path)}
-          alt={path}
-          style={{ maxWidth: "100%" }}
-        />
+        <img src={rawUrl} alt={path} style={{ maxWidth: "100%" }} />
       </div>
     );
   }
   if (ext === "pdf") {
     // The browser's built-in PDF viewer renders this in its own
     // isolated process, not the page DOM.
-    return (
-      <iframe
-        src={rawFileUrl(projectId, path)}
-        title={path}
-        className={styles.pdfFrame}
-      />
-    );
+    return <iframe src={rawUrl} title={path} className={styles.pdfFrame} />;
   }
   return (
     <TextViewer
       projectId={projectId}
       path={path}
+      abs={abs}
+      sessionId={sessionId}
       isMarkdown={ext === "md"}
       rendered={mdRendered}
       draft={draft}
@@ -110,6 +122,8 @@ export function FileViewer({
 function TextViewer({
   projectId,
   path,
+  abs,
+  sessionId,
   isMarkdown,
   rendered,
   draft,
@@ -118,6 +132,8 @@ function TextViewer({
 }: {
   projectId: string;
   path: string;
+  abs?: boolean;
+  sessionId?: string;
   isMarkdown: boolean;
   rendered: boolean;
   draft?: string;
@@ -134,6 +150,32 @@ function TextViewer({
   useEffect(() => {
     let cancelled = false;
     setFailed(false);
+    if (abs) {
+      // No readCache / mtime here: an attachment is immutable in
+      // practice and has no tree listing reporting an mtime, so a cache
+      // would only add a staleness question nobody can answer.
+      setData(null);
+      fetch(absFileReadUrl(path, sessionId))
+        .then((r) => (r.ok ? r.json() : null))
+        .then((res: FileReadResult | null) => {
+          if (cancelled) return;
+          if (!res) {
+            setFailed(true);
+            onLoadedRef.current?.(null);
+            return;
+          }
+          setData(res);
+          onLoadedRef.current?.(res);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setFailed(true);
+          onLoadedRef.current?.(null);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
     const key = `${projectId}:${path}`;
     const knownMtime = latestFileMtime.get(path);
     const hit = readCache.get(key);
@@ -161,7 +203,7 @@ function TextViewer({
     return () => {
       cancelled = true;
     };
-  }, [projectId, path]);
+  }, [projectId, path, abs, sessionId]);
 
   if (failed) {
     return (
@@ -189,7 +231,7 @@ function TextViewer({
           </div>
           <a
             className={styles.downloadLink}
-            href={rawFileUrl(projectId, path)}
+            href={abs ? absRawFileUrl(path, sessionId) : rawFileUrl(projectId, path)}
             download={path.split("/").pop()}
           >
             <Download size={13} />

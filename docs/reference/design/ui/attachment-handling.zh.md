@@ -58,7 +58,7 @@ image, model.input 不含 "image"（退化的 codex 配置）
 - **PDF 原生 document block**：Claude Code/opencode/openclaw 的首选路径。OpenProgram 的能力叠加层让这条路在配置了 doc-capable 模型时自动生效，同时不把它当作前提。
 - **路径 + 分页工具读**：所有人在 agent **自己任务中途**探索文件时都这么做。OpenProgram 在 codex 上把**用户附件**也走这条，是因为 codex 收不了 document block；首部预览补上了可靠性差距。
 - **落盘到管理目录**：openclaw 的 claim-check（入站只有字节没有路径）。我们用 per-session git workdir 而非全局 + TTL，更适合 agentic（就是 agent 的 cwd、每轮 git 提交、可重放）。
-- **被否决的做法**：提交时合成一个假的 `read()` tool_use+tool_result 把内容塞进去（opencode 的做法）不采用，因为(a)要镜像真实 read/pdf 工具的上限会漂移、(b)一旦换成原生 block 就成死重、(c)增加提交时同步延迟。改用被动的 `<attachment-preview>` 内容片段，常数成本给模型第一眼。
+- **被否决的做法**：提交时把文件内容按重放读取的方式塞进去（opencode 的做法）不采用，因为(a)要镜像真实 read/pdf 工具的上限会漂移、(b)一旦换成原生 block 就成死重、(c)增加提交时同步延迟。改用被动的 `<attachment-preview>` 内容片段，常数成本给模型第一眼。（opencode 实际注入的是**两条标了 `synthetic` 的纯文本部分**——一句 "Called the Read tool with the following input …" 加真实读取结果——落到模型那侧是 `role: "user"` 文本，不是 `tool_use` 与 `tool_result` 内容块。上面三条否决理由不受这处更正影响。）
 
 ## 大文件保证（no-context-blowup invariant）
 
@@ -80,9 +80,9 @@ image, model.input 不含 "image"（退化的 codex 配置）
 
 ## 显示层
 
-- **chip**：解析 `[attachment: name (type, KB[, P pages|L lines]) @ /abs]` → 文件名 + 类型徽章 + 大小 + scope 徽章（"500 pages"/"200K lines"）；`@ /abs` 后缀显示时剥掉。`<attachment-preview>…</…>` 片段像提及一样从气泡里剥掉——用户看到 chip,不是 4KB 首部。
+- **chip**：解析 `[attachment: name (type, KB[, P pages|L lines]) @ /abs]` → 文件名 + 类型徽章 + 大小 + scope 徽章（"500 pages"/"200K lines"）；`@ /abs` 后缀显示时剥掉，但路径要捕获出来——chip 就是靠它经 `GET /api/file-raw` / `GET /api/file-read` 打开文件的。图片用缩略图代替文件图标。`<attachment-preview>…</…>` 片段像提及一样从气泡里剥掉——用户看到 chip,不是 4KB 首部。
 - **交付模式子标签**（UX 诚实）：从 `delivery_mode` 派生"read on demand"/"sent inline"/"previewed first N lines",让用户明确知道模型到底拿到了什么,不用猜"它看见我的文件没"。
-- **乐观气泡时序**（关键）：前端**永远不知道**落盘后的绝对路径(`@/abs` 是 `_persist_doc_attachments` 在 WS 消息处理后追加的)。所以乐观气泡的 chip 必须用**客户端数据**(file.name/size/type/b64)渲染,而非提及文本;重载时再用最终存储文本的提及解析。两者必须渲染成同一个 chip,对账键 = 客户端算的 sha8。因此前端发的 `[attachment: name (type, KB)]` 是**故意无路径**的,chip 解析器要对**无路径(在途)和有路径(改写后)两种形式都渲染 chip**。
+- **乐观气泡时序**：前端组合消息时拿不到落盘后的绝对路径(`@/abs` 是 `_persist_attachments` 在 WS 消息处理里追加的)，所以它发的 `[attachment: name (type, KB)]` 是**故意无路径**的，chip 解析器对**无路径(在途)和有路径(改写后)两种形式都渲染 chip**——无路径的是个标签，有路径的能点开。这个空档在同一轮里就补上，不用等下次重载：`chat_ack` 回显**存储后的正文**，本地用户气泡按它构建，ack 一到 chip 就可点。
 - **预览弹窗**:本地完整解码,永不发送。HUMAN 客户端滚完整文件,MODEL 只看了 4KB 首部——这就是回报。
 - **侧边栏标题**：`_title_from_text` 在 50 字截断前把提及和 `<attachment-preview>` 一并剥掉。
 
@@ -90,23 +90,25 @@ image, model.input 不含 "image"（退化的 codex 配置）
 
 已实现：字节落盘到 `workdir/attachments`，经 `_safe_attach_name` 清洗和
 no-clobber 命名；`[attachment: name (type, KB) @ /abs]` 提及 + 后端补路径；
-首轮 workdir 竞态 fallback；image → ImageContent；`@` 提及和打路径零复制 +
-file-resolve 逃逸检查；`_title_from_text` 截断前剥提及；`user_msg["extra"]`
-附件清单。
+首轮 workdir 竞态 fallback；image → ImageContent **并且**也落盘写提及，人看到
+的和模型看到的是同一样东西；`@` 提及和打路径零复制 + file-resolve 逃逸检查；
+`_title_from_text` 截断前剥提及；`user_msg["extra"]` 附件清单；`write_bytes`
+与 WS intake 双处的体积上限（单文件 32MB、每轮 64MB）及 "too large" 提及改写；
+sha256 会话内去重与 `attachments/.opdedup.json`；提及括号组里的页/行数和一次性
+的 `<attachment-preview>` 首部片段。
+
+之后又落地、与 [chat-attachments](chat-attachments.html) 共用的部分：
+`openprogram/attachments.py` 里唯一一份标记格式化/解析器，渠道入站附件和 agent
+出站 `send_file` 都走它；`GET /api/file-raw` 作为绝对路径的字节出口；聊天里可点
+的 chip 和预览浮层。
 
 已设计但尚未落地：
 
 - `providers/types.py` `Model.input` 和 `validate_modalities.py` 里的
   `"document"` 模态，以及 dispatcher 里的 `choose_delivery()` 分发；
-- `write_bytes` 与 WS intake 双处的体积上限（单文件 32MB、每轮 64MB）
-  及 "too large" 提及改写；
-- sha256 会话内去重与 `attachments/.opdedup.json`；
-- 注入到提及括号组里的页/行数，以及一次性的 `<attachment-preview>` 首部片段；
-- `/api/file-resolve` 返回里的页/行数与截断首部；
-- 前端 scope 徽章、交付模式子标签、每 chip 状态/错误徽章，以及无路径/有路径
-  两种形式的 chip 一致性；
 - 各 provider 的原生 document block 构建器，需要先配置 doc-capable 模型才能验证；
-- 远程渠道入站 staging 目录接进同一个保存调用。
+- `/api/file-resolve` 返回里的页/行数与截断首部；
+- 交付模式子标签与每 chip 状态/错误徽章。
 
 ## 可调常量
 

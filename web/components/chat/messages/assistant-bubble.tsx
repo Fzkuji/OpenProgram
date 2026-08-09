@@ -34,6 +34,7 @@ import { renderMarkdown, useMarkdownReady } from "./markdown";
 import { RuntimeBlock } from "./runtime-block";
 import { ToolsBlock } from "./tool-card";
 import { TurnFilesChips } from "./turn-files-chips";
+import { AttachmentChips, parseAttachments } from "./user-attachments";
 
 /** Categorized, actionable headline for a failed turn, by error reason
  *  (see docs/design/providers/reliability/error-taxonomy-propagation.md). Returns null
@@ -121,7 +122,14 @@ export function AssistantBubble({ msg, verdict }: {
     msg.status === "pending" ||
     msg.status === "running";
   const tools = msg.tools ?? [];
-  const hasContent = !!msg.content;
+  // Files the turn handed back via ``send_file`` ride the reply text as
+  // the same ``[attachment: … @ /abs]`` marker an inbound attachment
+  // uses — one lexicon, one parser, one chip, both directions. Pull
+  // them out here so the prose renders clean and the chips are
+  // clickable.
+  const { attachments: outboundFiles, text: contentText } =
+    parseAttachments(msg.content);
+  const hasContent = !!contentText;
 
   // 流式期间 chat-stream.ts 按事件到达顺序增量构建 msg.blocks（思考被
   // 工具调用打断后再来的 delta 开新段），所以进行中和落定/刷新走的是
@@ -398,7 +406,7 @@ export function AssistantBubble({ msg, verdict }: {
                     key="legacy_content"
                     className="chat-text message-content"
                     dangerouslySetInnerHTML={{
-                      __html: renderMarkdown(msg.content),
+                      __html: renderMarkdown(contentText),
                     }}
                   />,
                 );
@@ -477,7 +485,7 @@ export function AssistantBubble({ msg, verdict }: {
               {hasContent ? (
                 <div
                   className="chat-text message-content"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(contentText) }}
                 />
               ) : null}
               {streaming && !hasContent ? <TypingIndicator /> : null}
@@ -488,6 +496,9 @@ export function AssistantBubble({ msg, verdict }: {
               <summary>{verdict.summary}</summary>
               <pre>{verdict.json}</pre>
             </details>
+          ) : null}
+          {!streaming && outboundFiles.length > 0 ? (
+            <AttachmentChips items={outboundFiles} />
           ) : null}
           {!streaming && msg.id ? (
             <TurnFilesChips assistantMsgId={msg.id} blocks={msg.blocks} />

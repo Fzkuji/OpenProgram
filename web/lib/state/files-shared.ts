@@ -136,6 +136,22 @@ export function rawFileUrl(projectId: string, path: string): string {
   return `/files/raw?project_id=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}`;
 }
 
+/** Raw bytes of an ABSOLUTE path — chat attachments, which live in the
+ *  session workdir or a channel's inbound directory rather than under a
+ *  project id. `/files/raw` refuses absolute paths on purpose; this is
+ *  the separate route (`/api/file-raw`) that accepts one and checks it
+ *  against the attachment roots. */
+export function absRawFileUrl(absPath: string, sessionId?: string): string {
+  const sid = sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : "";
+  return `/api/file-raw?path=${encodeURIComponent(absPath)}${sid}`;
+}
+
+/** Text of an ABSOLUTE path, same root check as {@link absRawFileUrl}. */
+export function absFileReadUrl(absPath: string, sessionId?: string): string {
+  const sid = sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : "";
+  return `/api/file-read?path=${encodeURIComponent(absPath)}${sid}`;
+}
+
 /* ---- Unsaved editor drafts ---------------------------------------- */
 
 /** One file tab's unsaved editor buffer: the user's draft plus the

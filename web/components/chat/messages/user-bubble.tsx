@@ -18,7 +18,7 @@ import { useUserProfile } from "@/lib/prefs/user-profile";
 
 import { MessageActions } from "./message-actions";
 import { useAvatarAlign } from "./use-avatar-align";
-import { UserAttachments, parseUserAttachments } from "./user-attachments";
+import { AttachmentChips, parseAttachments } from "./user-attachments";
 import { setRunActive } from "@/lib/runtime-bridge/chat-handlers";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 
@@ -126,7 +126,7 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
   // Pull attachment markers out of the prose so they render as chips
   // (Claude-Code style) instead of raw "[attached: …]" / inlined <file>
   // text. msg.content itself is untouched — this is display-only.
-  const { attachments, text: cleanText } = parseUserAttachments(msg.content);
+  const { attachments, text: cleanText } = parseAttachments(msg.content);
 
   // Align the side avatar to the first line of text inside the bubble.
   const { containerRef, avatarTop } = useAvatarAlign(
@@ -158,7 +158,7 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
           <EditBox msg={msg} onDone={() => setEditing(false)} />
         ) : (
           <>
-            <UserAttachments items={attachments} />
+            <AttachmentChips items={attachments} />
             {cleanText}
           </>
         )}

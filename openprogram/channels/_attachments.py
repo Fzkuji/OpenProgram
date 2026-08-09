@@ -179,12 +179,22 @@ def to_turn_attachments(saved: list[dict]) -> list[dict]:
 
 
 def attachment_notes(saved: list[dict]) -> list[str]:
-    """每个落盘文件一行说明, 追加到 user_text — agent 拿路径用文件
-    工具读."""
-    notes = []
-    for row in saved:
-        mime = row.get("mime") or "unknown type"
-        notes.append(
-            f"[attachment: {row['path']} ({mime}, {row.get('size', 0)} bytes)]"
+    """每个落盘文件一行标记, 追加到 user_text — agent 拿路径用文件工具读,
+    网页聊天流拿同一条标记渲染成可点开的 chip.
+
+    词法跟网页上传那侧完全一致 (:func:`openprogram.attachments.format_marker`).
+    这里以前写的是 ``[attachment: <绝对路径> (<mime>, <N> bytes)]``:
+    另一套写法, 网页的 chip 正则两条都对不上, 于是从 Telegram 发进来的
+    图片在网页上打开同一会话时, 那行标记被当成正文 markdown 渲染出来.
+    两侧共用一个 formatter 就不会再各走各的.
+    """
+    from openprogram.attachments import format_marker
+    return [
+        format_marker(
+            row.get("name") or Path(row["path"]).name,
+            row["path"],
+            int(row.get("size") or 0),
+            mime=row.get("mime") or "",
         )
-    return notes
+        for row in saved
+    ]

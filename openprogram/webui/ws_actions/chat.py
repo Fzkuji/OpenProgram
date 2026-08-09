@@ -113,14 +113,21 @@ def _count_and_preview(raw: bytes, kind: str):
     return (None, None)
 
 
-def _inject_mention(text: str, name: str, dest, count, oversize: bool) -> str:
+def _inject_mention(text: str, name: str, dest, count, oversize: bool,
+                    size_bytes: int = 0, mime: str = "") -> str:
     """Rewrite this file's path-less ``[attachment: name (meta)]`` mention
     to embed the saved absolute path + (page/line) count — or mark it
     oversize. The count goes INSIDE the captured parens group so the
     single-token invariant holds and the chip / title strip regexes keep
     matching.
+
+    No mention to rewrite (images — the composer emits a preview strip,
+    not a mention) → append a complete one built by
+    ``attachments.format_marker``, so both branches leave the message
+    carrying the exact same lexicon.
     """
     import re
+    from openprogram import attachments as _att
     pat = re.compile(r"\[attachment:\s*" + re.escape(name) + r"\s*\(([^)\]]*)\)\]")
     if oversize:
         if pat.search(text):
@@ -137,8 +144,9 @@ def _inject_mention(text: str, name: str, dest, count, oversize: bool) -> str:
             lambda m: f"[attachment: {name} ({m.group(1)}{suffix}) @ {dest}]",
             text, count=1,
         )
-    extra = f" ({count})" if count else ""
-    return (text + f"\n[attachment: {name}{extra} @ {dest}]").strip()
+    marker = _att.format_marker(name, dest, size_bytes, mime=mime,
+                                count=count or "")
+    return (text + "\n" + marker).strip()
 
 
 def _preview_block(abs_path: str, preview: str, count_str, kind: str) -> str:
@@ -149,11 +157,37 @@ def _preview_block(abs_path: str, preview: str, count_str, kind: str) -> str:
             f'{preview}\n</attachment-preview>')
 
 
-def _persist_doc_attachments(session_id: str, documents: list, text: str) -> str:
-    """Save base64 'document' attachments to the session workdir so the
-    agent's own file tools (``pdf`` / ``read`` / ``bash``) can actually
-    reach them, and rewrite the ``[attachment: name (type, KB)]`` mention
+def _attachment_name(d: dict, index: int) -> str:
+    """Display/on-disk name for one incoming attachment.
+
+    A pasted screenshot arrives with bytes and a media type but no
+    filename. Naming it "file" would cost it its extension, and the
+    extension is what tells the chip it's an image and the raw endpoint
+    what content type to serve — so synthesise one from the media type.
+    """
+    import mimetypes
+    name = (d.get("filename") or "").strip()
+    if name:
+        return name
+    mime = (d.get("media_type") or "").partition(";")[0].strip()
+    ext = mimetypes.guess_extension(mime) or ""
+    if mime == "image/jpeg":
+        ext = ".jpg"      # guess_extension says .jpe, which nothing shows
+    stem = "image" if mime.startswith("image/") else "file"
+    return f"{stem}-{index}{ext}"
+
+
+def _persist_attachments(session_id: str, incoming: list, text: str) -> str:
+    """Save base64 attachments to the session workdir so the agent's own
+    file tools (``pdf`` / ``read`` / ``bash``) can actually reach them,
+    and rewrite (or append) the ``[attachment: name (type, KB)]`` mention
     in ``text`` to embed the saved ABSOLUTE PATH.
+
+    Images land on disk too, and keep going to the model as an
+    ImageContent block on top of that. Their bytes used to live only in
+    the outgoing request: the model saw the picture, the human saw an
+    empty bubble, and a reload lost it entirely. One path in the message
+    is what lets the chat render it back.
 
     This is the backend half of the uniform "every file is a path"
     model: a browser upload only carries bytes + a basename (the
@@ -208,9 +242,9 @@ def _persist_doc_attachments(session_id: str, documents: list, text: str) -> str
     turn_bytes = 0
     index_dirty = False
 
-    for d in documents:
+    for idx, d in enumerate(incoming, start=1):
         data = d.get("data")
-        name = (d.get("filename") or "file").strip()
+        name = _attachment_name(d, idx)
         if not data:
             continue
         try:
@@ -263,7 +297,9 @@ def _persist_doc_attachments(session_id: str, documents: list, text: str) -> str
 
         kind = _decoded_kind(raw, name)
         count_str, preview = _count_and_preview(raw, kind)
-        new_text = _inject_mention(new_text, name, dest, count_str, oversize=False)
+        new_text = _inject_mention(new_text, name, dest, count_str,
+                                   oversize=False, size_bytes=len(raw),
+                                   mime=d.get("media_type") or "")
         if preview:
             previews.append(_preview_block(str(dest), preview, count_str, kind))
 
@@ -575,17 +611,16 @@ async def handle_chat(ws, cmd: dict):
     conv["permission_mode"] = run_cfg.permission_mode
     msg_id = str(uuid.uuid4())[:8]
 
-    # Persist 'document' attachments to the session workdir so the agent's
-    # file tools can read them, and embed the saved ABSOLUTE PATH into the
-    # message text (every file is referenced by path, never inlined).
-    # Images stay inline and continue to the dispatcher as ImageContent
-    # blocks; documents are NOT passed as content blocks (providers have
-    # no document-block support here).
+    # Persist EVERY attachment to the session workdir so the agent's file
+    # tools can read them and the chat can render them back, and embed the
+    # saved ABSOLUTE PATH into the message text (every file is referenced
+    # by path, never inlined). Images additionally continue to the
+    # dispatcher as ImageContent blocks; documents are NOT passed as
+    # content blocks (providers have no document-block support here).
     if attachments:
-        _docs = [a for a in attachments if a.get("type") == "document"]
-        if _docs:
-            attachments = [a for a in attachments if a.get("type") != "document"] or None
-            text = _persist_doc_attachments(session_id, _docs, text)
+        text = _persist_attachments(session_id, attachments, text)
+        attachments = [a for a in attachments
+                       if a.get("type") != "document"] or None
 
     # Stage 1 (immediate, zero-latency sidebar placeholder): truncate the
     # user's first line into a title the instant the message is sent, so the
@@ -650,9 +685,15 @@ async def handle_chat(ws, cmd: dict):
         "attachments": bool(attachments),
     }, {"session": session_id})
 
+    # Echo the STORED text back. The composer only knows the path-less
+    # mention it wrote (``@ <abs path>`` is appended above, after the
+    # bytes hit disk), so an optimistic bubble built from the client's
+    # own draft has no path to open. Handing it the final text is what
+    # makes an attachment clickable in the turn you sent it, instead of
+    # only after a reload.
     await ws.send_text(json.dumps({
         "type": "chat_ack",
-        "data": {"session_id": session_id, "msg_id": msg_id},
+        "data": {"session_id": session_id, "msg_id": msg_id, "text": text},
     }))
 
     # Mark the session running + push the sidebar list right now, before

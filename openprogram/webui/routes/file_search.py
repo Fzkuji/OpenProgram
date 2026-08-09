@@ -10,22 +10,34 @@ Two endpoints:
 
 * ``GET /api/file-read?path=...&root=...`` — read a single file as text.
   Used by the web composer to expand ``@path`` tokens into the outgoing
-  message body. Limits payload size + blocks reads outside ``root`` so
-  random users with a webui port open can't exfiltrate /etc/passwd.
+  message body, and by the chat's attachment viewer (which passes an
+  ABSOLUTE ``path`` instead of a root-relative one). Limits payload size
+  + blocks reads outside ``root`` so random users with a webui port open
+  can't exfiltrate /etc/passwd.
 
-Both are read-only and scoped to the requested root. An explicit
-``root`` is only accepted when it falls under an allowed root (the
-project root or a session workdir) — see ``_resolve_root`` — so the
-containment check isn't defeated by simply asking for ``root=/etc``.
+* ``GET /api/file-raw?path=...`` — the BYTES behind an absolute path, so
+  the chat can render an attachment the user or the agent sent. The
+  files panel's ``/files/raw`` deliberately refuses absolute paths (it
+  is scoped to one project id); rather than weaken that invariant, this
+  is a second route with its own contract — an absolute path checked
+  against ``attachments.readable_roots()``.
+
+All are read-only and scoped. An explicit ``root`` is only accepted when
+it falls under an allowed root (the project root or a session workdir) —
+see ``_resolve_root`` — so the containment check isn't defeated by simply
+asking for ``root=/etc``.
 """
 from __future__ import annotations
 
+import mimetypes
 import os
 from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+
+from openprogram import attachments as _attach
 
 
 # Same skiplist as cli/src/utils/fileCompletions.ts so web + tui rank
@@ -58,20 +70,33 @@ def register(app) -> None:
         })
 
     @app.get("/api/file-read")
-    async def file_read(path: str, root: str | None = None):
-        """Read a single file under ``root``. Refuses paths that escape
-        ``root`` via ``..`` or symlinks resolving outside.
+    async def file_read(path: str, root: str | None = None,
+                        session_id: str = ""):
+        """Read a single file as text.
+
+        Two calling conventions: root-relative (the composer's ``@``
+        expansion — refuses paths that escape ``root`` via ``..`` or
+        symlinks resolving outside), or an absolute path checked against
+        the attachment roots (the chat's attachment viewer).
         """
-        cwd = _resolve_root(root)
-        target = (cwd / path).resolve()
-        try:
-            # Path.is_relative_to is 3.9+; we're on 3.12. Catch typing
-            # quirks where ``target`` is on a different drive on Win32.
-            if not target.is_relative_to(cwd):
-                raise HTTPException(status_code=400,
-                                    detail="path escapes root")
-        except ValueError:
-            raise HTTPException(status_code=400, detail="path escapes root")
+        if os.path.isabs(os.path.expanduser(path)):
+            target = _attach.resolve_within(
+                path, _attach.readable_roots(session_id or None))
+            if target is None:
+                raise HTTPException(status_code=403, detail="path not allowed")
+            rel = str(target)
+        else:
+            cwd = _resolve_root(root)
+            target = (cwd / path).resolve()
+            try:
+                # Path.is_relative_to is 3.9+; we're on 3.12. Catch typing
+                # quirks where ``target`` is on a different drive on Win32.
+                if not target.is_relative_to(cwd):
+                    raise HTTPException(status_code=400,
+                                        detail="path escapes root")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="path escapes root")
+            rel = str(target.relative_to(cwd))
         if not target.is_file():
             raise HTTPException(status_code=404, detail="not a file")
         try:
@@ -87,17 +112,47 @@ def register(app) -> None:
         if len(raw) > _READ_MAX_BYTES:
             raw = raw[:_READ_MAX_BYTES]
             truncated = True
-        # Best-effort decode; fall back to a binary-safe replace.
+        # Best-effort decode; fall back to a binary-safe replace. The
+        # viewer needs to tell "text with odd bytes" from "not text at
+        # all", so report it rather than showing a wall of U+FFFD.
+        binary = b"\x00" in raw[:8192]
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError:
             text = raw.decode("utf-8", errors="replace")
         return JSONResponse(content={
-            "path": str(target.relative_to(cwd)),
+            "path": rel,
             "size": size,
             "truncated": truncated,
+            "binary": binary,
             "content": text,
         })
+
+    @app.get("/api/file-raw")
+    async def file_raw(path: str, session_id: str = ""):
+        """Raw bytes of an absolute path inside the attachment roots.
+
+        Response headers mirror ``/files/raw``: untrusted bytes, so
+        nosniff + a CSP sandbox everywhere, with the same PDF carve-out
+        (a sandboxed response blocks the browser's built-in PDF viewer,
+        and that viewer renders in its own process, not the page DOM).
+        """
+        target = _attach.resolve_within(
+            path, _attach.readable_roots(session_id or None))
+        if target is None:
+            raise HTTPException(status_code=403, detail="path not allowed")
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="not a file")
+        headers = {"X-Content-Type-Options": "nosniff",
+                   "Content-Security-Policy": "sandbox"}
+        guessed = mimetypes.guess_type(str(target))[0]
+        if guessed and guessed.startswith("image/"):
+            return FileResponse(target, media_type=guessed, headers=headers)
+        if guessed == "application/pdf":
+            return FileResponse(target, media_type=guessed,
+                                headers={"X-Content-Type-Options": "nosniff"})
+        return FileResponse(target, media_type="application/octet-stream",
+                            filename=target.name, headers=headers)
 
     @app.get("/api/file-resolve")
     async def file_resolve(path: str, root: str | None = None):
@@ -170,28 +225,9 @@ def _allowed_roots() -> list[Path]:
 
 
 def _default_root() -> Path:
-    """The project root, in lookup order:
-
-      1. ``OPENPROGRAM_PROJECT_ROOT`` env var (deployment override).
-      2. The directory containing ``openprogram/`` — i.e. the package
-         parent. Works when the user launched ``openprogram worker run``
-         from the project root, which is the common case.
-      3. Process cwd.
-    """
-    env = os.environ.get("OPENPROGRAM_PROJECT_ROOT")
-    if env:
-        p = Path(os.path.expanduser(env)).resolve()
-        if p.is_dir():
-            return p
-    try:
-        import openprogram
-        pkg_dir = Path(openprogram.__file__).resolve().parent
-        parent = pkg_dir.parent
-        if parent.is_dir():
-            return parent
-    except Exception:  # noqa: BLE001
-        pass
-    return Path(os.getcwd()).resolve()
+    """The project root — ``attachments.project_root()``. Shared with the
+    attachment path policy so the two never drift apart."""
+    return _attach.project_root()
 
 
 def _walk(cwd: Path, needle: str, limit: int, max_scan: int) -> list[dict[str, Any]]:

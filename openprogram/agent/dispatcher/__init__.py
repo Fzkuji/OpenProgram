@@ -329,6 +329,10 @@ def _process_turn_once(
         req=req, assistant_msg_id=assistant_msg_id, db=db,
     )
     _project_baseline = _bindings.project_baseline
+    # Fresh outbound-attachment list for this turn — ``send_file`` calls
+    # append to it, step 4b below folds it into the reply text.
+    from openprogram.functions.tools import send_file as _send_file
+    _send_file.begin_turn()
 
     # 3b. Persist an assistant *placeholder* row so the row exists in
     #     the DB before tool_execution_end events start firing. This
@@ -448,6 +452,18 @@ def _process_turn_once(
         # exception, AND inside the early-return above (finally fires
         # before return is actually executed).
         _bindings.release()
+
+    # 4b. Files the turn handed back via ``send_file`` become attachment
+    #     markers on the end of the reply text. Doing it here — on the
+    #     one local every consumer reads — puts them in the stored
+    #     message (so web chat renders a chip), in the streamed result,
+    #     and in the TurnResult the channel layer uploads from, in one
+    #     move. Same lexicon as an inbound attachment, deliberately.
+    _outbound_files = _send_file.drain()
+    if _outbound_files:
+        _markers = _send_file.markers_for(_outbound_files)
+        final_text = (final_text + "\n\n" + _markers).strip() if final_text \
+            else _markers
 
     # 5. Persist the assistant message (phase 5) — extracted to
     #    persistence.py (dispatcher-split step 5). Returns the
