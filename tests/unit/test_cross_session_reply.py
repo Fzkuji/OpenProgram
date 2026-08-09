@@ -68,11 +68,12 @@ def test_followup_delivers_to_caller_session_when_cross(monkeypatch):
     assert "回复了" in seen["text"]
 
 
-def test_followup_same_session_unchanged(monkeypatch):
-    """Same-session (no caller_session_id): delivered to parent_session_id."""
+def _run_followup_inline(monkeypatch, task) -> dict:
+    """Fire _dispatch_followup on the calling thread and return the
+    TurnRequest fields the dispatcher would have seen."""
     from openprogram.agent.task import runner as runner_mod
 
-    seen = {}
+    seen: dict = {}
 
     def fake_process(req, **kw):
         seen["session_id"] = req.session_id
@@ -92,8 +93,30 @@ def test_followup_same_session_unchanged(monkeypatch):
         return _T()
     monkeypatch.setattr(runner_mod.threading, "Thread", run_inline)
 
-    r = runner_mod.get_runner()
-    task = _make_task(caller_session_id=None, caller_msg_id="cm1")
-    r._dispatch_followup(task)
+    runner_mod.get_runner()._dispatch_followup(task)
+    return seen
+
+
+def test_followup_same_session_spawn_uses_attach(monkeypatch):
+    """Same-session SPAWN (attach pointer written): delivered to
+    parent_session_id, and the notice points at the attach expansion
+    rather than repeating the reply."""
+    task = _make_task(caller_session_id=None, caller_msg_id="cm1",
+                      attach_pointer_id="ap1")
+    seen = _run_followup_inline(monkeypatch, task)
     assert seen["session_id"] == "B"           # same session as it ran in
     assert "嵌在上面" in seen["text"]          # same-session attach wording
+    assert "B's answer" not in seen["text"]    # context carries it, not the notice
+
+
+def test_followup_same_session_delivery_carries_reply_inline(monkeypatch):
+    """Same-session delivery to an EXISTING branch (agent(to=…) /
+    send_message) writes no attach pointer, so the reply must travel
+    inline — otherwise the initiator is told the transcript is attached
+    above and nothing is."""
+    task = _make_task(caller_session_id="B", caller_msg_id="cm1")  # ran where it was sent
+    seen = _run_followup_inline(monkeypatch, task)
+    assert seen["session_id"] == "B"
+    assert "B's answer" in seen["text"]        # the result actually arrives
+    assert "回复了" in seen["text"]
+    assert "嵌在上面" not in seen["text"]

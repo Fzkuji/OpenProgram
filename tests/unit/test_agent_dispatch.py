@@ -103,6 +103,54 @@ def test_to_dispatch_runs_immediately_on_target_tip(parent_turn):
     assert kw["chain_messages"] == 1
 
 
+def test_same_session_dispatch_result_reaches_the_dispatcher(parent_turn, monkeypatch):
+    """A to= dispatch onto a branch in the SAME session creates no attach
+    pointer (it spawns nothing), so its followup has to carry the reply
+    inline. It used to take the same-session spawn wording — "the whole
+    transcript is attached above" — with nothing attached, and the result
+    never reached the dispatcher."""
+    from openprogram.agent.task import runner as runner_mod
+    from openprogram.agent.task.types import Task, TaskStatus
+
+    _agent_impl("summarize the log", to="p1:a0", description="probe")
+    kw = parent_turn.async_calls[-1]
+    task = Task(
+        id="t_same1",
+        parent_session_id=kw["session_id"],
+        prompt=kw["prompt"],
+        agent_id=kw["agent_id"],
+        caller_session_id=kw["caller_session_id"],
+        caller_msg_id=kw["caller_msg_id"],
+        label=kw.get("label"),
+        status=TaskStatus.COMPLETED,
+        head_id="h1",
+        result_text="the summary",
+    )
+    # The shape that made the notice lie: same session, no attach pointer.
+    assert task.caller_session_id == task.parent_session_id
+    assert task.attach_pointer_id is None
+
+    seen: dict = {}
+
+    def fake_process(req, **_kw):
+        seen["session_id"] = req.session_id
+        seen["text"] = req.user_text
+        return type("_R", (), {})()
+
+    import openprogram.agent.dispatcher as disp
+    monkeypatch.setattr(disp, "process_user_turn", fake_process)
+
+    def run_inline(target=None, daemon=None, **_kw):
+        return type("_T", (), {"start": lambda self_: target()})()
+
+    monkeypatch.setattr(runner_mod.threading, "Thread", run_inline)
+    runner_mod.get_runner()._dispatch_followup(task)
+
+    assert seen["session_id"] == "p1"
+    assert "the summary" in seen["text"]
+    assert "嵌在上面" not in seen["text"]
+
+
 def test_to_addressing_by_branch_name(parent_turn):
     parent_turn.set_branch_name("p1", "a0", "research")
     out = _agent_impl("dig deeper", to="research")

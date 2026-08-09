@@ -1067,10 +1067,12 @@ class TaskRunner:
         the caller session — fire a synthetic user-role turn that
         prompts the parent agent to react to the result.
 
-        The attach pointer the runner just wrote lives in the chain
-        already, so the next turn's context-commit generator will
-        expand it as ``[Attached from branch "X"]:`` items and the
-        LLM sees the sub-agent's output naturally.
+        A spawn's attach pointer lives in the chain already, so the next
+        turn's context-commit generator expands it as
+        ``[Attached from branch "X"]:`` items and the LLM sees the
+        sub-agent's output naturally. A delivery to an existing branch
+        writes no pointer, so its reply travels inline in the
+        notification — see ``inline_reply`` below.
 
         **Anchoring** (dag/overview.md §4): the notification lands at the
         delivery session's HEAD *at injection time* and advances it, so
@@ -1094,10 +1096,19 @@ class TaskRunner:
         # Cross-session send_message: deliver to caller_session_id (the
         # sender), NOT the target session the task ran in.
         deliver_session = task.caller_session_id or task.parent_session_id
-        cross = bool(
+        # Carry the reply INLINE unless the initiator has an attach pointer
+        # to expand. Two things remove one: the task ran in a different
+        # session (the pointer, if any, is not on the delivery session's
+        # chain), or the task wrote no pointer at all — a delivery to an
+        # EXISTING branch (``agent(to=…)``, ``send_message``) creates none,
+        # because it spawns nothing to attach. Without this second case a
+        # same-session delivery told the initiator "the transcript is
+        # attached above" with nothing attached, and the result never
+        # arrived.
+        inline_reply = bool(
             task.caller_session_id
             and task.caller_session_id != task.parent_session_id
-        )
+        ) or not task.attach_pointer_id
 
         def _go():
             try:
@@ -1105,26 +1116,25 @@ class TaskRunner:
                     TurnRequest, process_user_turn,
                 )
                 # Followup prompt — push the parent agent to synthesize a
-                # reply, not echo the sub-agent's last line. Same-session:
-                # the sub-agent transcript is in context via the attach
-                # expansion. Cross-session: the attach pointer is in the
-                # other session and won't expand here, so carry the reply
-                # text inline.
+                # reply, not echo the sub-agent's last line. With an attach
+                # pointer the sub-agent transcript is already in context via
+                # the attach expansion; without one the reply text has to
+                # travel inline.
                 sub_request_line = (
                     f"用户原本让子 agent 做的事是：{sub_prompt}\n"
                     if sub_prompt else ""
                 )
-                cross_reply = ""
-                if cross:
+                reply_block = ""
+                if inline_reply:
                     reply_text = (task.result_text or "").strip() or "(无输出)"
-                    cross_reply = (
+                    reply_block = (
                         f"分支 {task.parent_session_id}:"
                         f"{task.head_id or '?'} 的回复是：\n{reply_text}\n\n"
                     )
-                if cross:
+                if inline_reply:
                     followup_text = (
                         f"[系统消息] 你之前发消息给的另一个分支 \"{label}\" "
-                        f"回复了。\n{sub_request_line}{cross_reply}"
+                        f"回复了。\n{sub_request_line}{reply_block}"
                         f"请基于这条回复继续——做总结、解读，或决定下一步"
                         f"（继续追问可再调 send_message）。"
                     )
