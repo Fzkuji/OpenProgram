@@ -99,8 +99,8 @@ def enqueue(
 ) -> str:
     """Queue a message for a busy target session.
 
-    ``message`` is the full delivery body (sources already assembled);
-    the sender-receipt header is added at drain time. ``spawn_depth`` is
+    ``message`` is the full delivery body; the sender-receipt header is
+    added at drain time. ``spawn_depth`` is
     the SENDER's depth at send time — drain delivers at depth+1, exactly
     like the direct path.
 

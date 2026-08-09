@@ -1,10 +1,10 @@
 # Agent collaboration: one cross-branch communication primitive
 
 All of agent collaboration collapses into **a single primitive: cross-branch
-communication**. An agent can spawn other agents, send messages to other
-branches or other sessions, and pull several branches together for one model to
-synthesize. These look like different operations, but **underneath they are the
-same thing**: deliver content to a branch, trigger that branch to run a turn,
+communication**. An agent can spawn other agents and send messages to other
+branches or other sessions. These look like different operations, but
+**underneath they are the same thing**: deliver content to a branch, trigger
+that branch to run a turn,
 and send the result back to the caller automatically. Everything is a tool call,
 and everything is built on the existing event layer.
 
@@ -29,12 +29,11 @@ Every collaboration operation is a **parameterization** of that primitive:
 |---|---|---|
 | **Spawn a sub-agent** | **Create** a branch + deliver a message + auto-reply | `agent` |
 | **Message an agent** | Deliver a message to an **existing** branch + auto-reply | `send_message` |
-| **Synthesize several branches** | Deliver content from **multiple source** branches so the target model synthesizes | `send_message(sources=…)` |
 
 Delivered content is always read and used by the target model. Count is
-arbitrary (spawn can create N, synthesis can merge N, a message can go to many),
-so it is not a distinguishing dimension. All three uses share one
-deliver → trigger → reply-back path.
+arbitrary (spawn can create N, a message can go to many), so it is not a
+distinguishing dimension. Both uses share one deliver → trigger → reply-back
+path.
 
 `attach` is not an operation. It is how a communication result is drawn as a
 "return edge" on the DAG (marking which branch the result came back from).
@@ -92,7 +91,6 @@ companions `task_output(task_id)` (block for the result) and
 send_message(
     message: str,                       # content/instruction delivered to the target
     to: str,                            # see to values below
-    sources: list[str] = [],            # also carry content from these branches (used when synthesizing)
     agent_id: str = "main",             # which agent the target runs as
     wait: bool = false,                 # false=async (default, returns instantly); true=block for the reply
 ) -> str
@@ -115,14 +113,11 @@ optional …` — so the receiver knows who sent it, how to answer, and that not
 answering is legitimate. Agent-tool spawns carry the bare prompt: they are
 workers, not correspondents.
 
-Two uses:
+One use:
 
 - **Message an existing branch/session**: `to="sid:head"` → deliver message
   to that branch, trigger one turn, and the answer is sent back automatically.
   Cross-session uses the same path (`to` can be any session).
-- **Synthesize several branches**: `sources=["s1:h1","s2:h2",...]` → carry the
-  content of those branches along with the delivery so the target model reads
-  and synthesizes them. Count is arbitrary. Combines with any `to`.
 
 Both tools drive the same primitive; a spawn is the same
 deliver → trigger → reply-back flow with a freshly created branch as the
@@ -131,8 +126,7 @@ target.
 **Unified execution flow** (whichever tool starts it):
 1. Resolve the target branch: `agent` creates it (`context` picks the fork
    point); `send_message` resolves `to` to an existing branch's current tip.
-2. Assemble the delivered content: `message` plus (if `sources` is given) the
-   content of each source branch.
+2. Assemble the delivered content: the sender-receipt header plus `message`.
 3. Deliver and trigger: `process_user_turn(TurnRequest(session_id=to,
    user_text=delivered content, branch_from=fork point))` → the target branch
    runs one turn and **the model reads everything delivered**.
@@ -147,21 +141,15 @@ target.
 - Events: delivery emits `branch.message_sent`; reply-back emits
   `branch.message_replied` (see §3).
 
-### 2.2 How much content each source contributes (the key to synthesis)
+### 2.2 Referencing other branches
 
-How each branch in `sources` is fed to the target model — **have each branch
-summarize itself first, then collect the summaries**:
-
-1. For each source branch, first produce a **summary aimed at this
-   communication** ("condense the conclusions of your branch into key points"),
-   reusing `branch_summarization`.
-2. Concatenate those summaries into `<branch label="...">summary</branch>`
-   blocks and deliver them together with `message` for the target model to
-   synthesize.
-
-This keeps context from blowing up, allows many sources, and hands the model
-condensed points instead of raw long conversations. Everything goes through
-"self-summarization"; there is no "full text vs. summary" parameter choice.
+A message is plain text, exactly like a user message. When the target should
+consider other branches, the sender writes that into `message`: quote the
+conclusion directly (each branch's reply already flowed back to the sender via
+reply-back), or name the branch (`SID:HEAD` or its name) and the target reads
+it itself with `session_transcript`. The target model decides how much of the
+named branch to read, so context stays bounded without a dedicated aggregation
+parameter.
 
 ### 2.3 `list_agents` — seeing each other (a precondition for communication)
 
@@ -305,7 +293,7 @@ emit_ws_frame(frame)                         # for sources: send a ready-made WS
 
 | type | When | origin | Key payload fields |
 |---|---|---|---|
-| `branch.message_sent` | send_message delivers | agent | from, to, sources, delivery_id, is_new, chain |
+| `branch.message_sent` | send_message delivers | agent | from, to, delivery_id, is_new, chain |
 | `branch.message_replied` | Target finishes and replies back automatically | agent | from, to, delivery_id, is_error |
 | `branch.created` / `.started` / `.failed` / `.cancelled` | Branch state transitions | agent | branch, parent, agent_id, status |
 | `sessions.listed` / `branches.listed` | Listing | agent | count |
@@ -374,8 +362,8 @@ sessions):
 5. **Repeatable**: A can `send_message` B again — neither branch blocks and
    nothing is serialized.
 
-Spawn (the `agent` tool) and synthesis (with sources) are two more
-parameterizations of the same flow and are not listed separately.
+Spawn (the `agent` tool) is another parameterization of the same flow and is
+not listed separately.
 
 ---
 
@@ -514,9 +502,9 @@ list_agents so agents can address it).
 - **Retry / circuit-breaker policy**: failures are replied back to the model and
   the model decides; no fixed built-in policy (see §5.5).
 - **Built-in aggregation functions** (voting, all-succeeded, etc.): synthesis
-  means feeding sources to the model and letting it synthesize (§2.2). A model
-  synthesizing is more flexible than a preset aggregation, so no fixed
-  aggregation operators.
+  means naming the branches in `message` and letting the target model read and
+  synthesize them (§2.2). A model synthesizing is more flexible than a preset
+  aggregation, so no fixed aggregation operators.
 
 ---
 
@@ -526,7 +514,7 @@ list_agents so agents can address it).
 - `openprogram/functions/tools/agent/` — `agent/` (spawn / fork) +
   `task_output/` + `task_stop/` (async form management)
 - `openprogram/functions/tools/send_message/` — `send_message/` (deliver +
-  trigger + auto reply-back + multi-source self-summarization) +
+  trigger + auto reply-back) +
   `list_agents/` (reuse db.list_sessions + db.list_branches)
 - Each tool calls `emit_safe(...)`; cross-session notifications use
   `emit_ws_frame`
@@ -536,7 +524,6 @@ list_agents so agents can address it).
   reply-back, attach edges)
 - `SessionStore` (list/append/set_head/commit/get)
 - `dispatcher.process_user_turn`
-- `branch_summarization` (multi-source self-summarization)
 - `openprogram.events` (emit_safe / emit_ws_frame)
 
 **Frontend (`web/`)**
@@ -561,7 +548,6 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 | Listing | `list_agents` lists the real multiple sessions and each one's branches |
 | Send to an existing branch in the same session | A sends to branch B of the same session, A does not block, B runs a turn, the reply returns to A automatically |
 | Cross-session | A sending to another session takes the same path; both frontends update live via ws.frame |
-| Multi-source synthesis | With 2 source branches, each summarizes itself first and the target model synthesizes a new answer |
 | Robustness (§5) | A↔B back-and-forth stops automatically at MAX_DEPTH; spawning 30 queues without blowing up; cancelling the parent stops every child (`tests/unit/test_cascade_cancel.py`); messaging a running B queues to its inbox and is delivered when its turn ends (`tests/unit/test_send_message_inbox.py`); the parent receives is_error when a child fails; oversized results are truncated with a file path |
 | Safety (§5.7-5.9) | Under deny it is held by tool.before; a nonexistent `to` raises an error; sub-branches have no more privilege than the parent and stay out of the UI picker |
 | Frontend | Pick a branch in the webui and send a message; the DAG shows communication nodes + the soft link edge on hover |
@@ -576,23 +562,21 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 | Tool template + registration | `openprogram/functions/tools/agent/agent/agent.py`, `functions/_runtime.py` (@function) |
 | session/branch data layer | `openprogram/store/session/session_store.py` (list_sessions:658 / list_branches:832 / append_message:706 / set_head:814 / commit_turn:455) |
 | Trigger a session to run a turn | `openprogram/agent/dispatcher/__init__.py` (process_user_turn:97) |
-| Multi-source self-summarization | `openprogram/agent/compaction/branch_summarization.py` |
 | List WS handlers | `webui/ws_actions/session.py:825`, `branch.py:221` |
 | attach edge (drawing only) | `openprogram/agent/sub_agent_run.py` (write_attach_pointer_for_spawn) |
 | Event bus | `openprogram/events/bus.py` (emit_safe / emit_ws_frame) |
 | Busy-target inbox (§5.4) | `openprogram/agent/inbox.py` (enqueue / drain), busy check `run_control.is_turn_running`, drain hook `dispatcher._drain_send_message_inbox` |
 
-> Note: "synthesize several branches" is provided by
-> `send_message(sources=[...])`; there is no separate tool. The multi-parent
-> ContextCommit lineage record in the underlying `_merge.py` is reused to record
-> "which branches this synthesis came from".
+> Note: "synthesize several branches" needs no dedicated mechanism — the
+> sender names the branches in `message` and the target reads them with
+> `session_transcript` (§2.2).
 
 ---
 
 ## Appendix: implementation status
 
 Everything in this document is implemented: the event layer (§3),
-`TaskRunner`, `SessionStore`, `process_user_turn`, `branch_summarization`,
+`TaskRunner`, `SessionStore`, `process_user_turn`,
 the `agent` tool family (`agent` / `task_output` / `task_stop`),
 `send_message` and its discovery tool `list_agents`, spawned-branch naming
 (§2.4 — the Stage 1 label at spawn plus the Stage 2 `finalize_turn`

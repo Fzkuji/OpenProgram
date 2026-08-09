@@ -213,7 +213,7 @@ to the front end.
 | `model.response_started` | agent_loop `:442` | observers | model stream begins |
 | `model.response_completed` | agent_loop `:466` | proactive wrap-up policies | wrap-up timing check |
 | `subagent.started` / `.ended` | task/runner `:115` (origin=`system`, session passed explicitly because a worker thread's ContextVar is unreliable) | observers | subagent state funnel |
-| `branch.message_sent` | send_message `:266` | observers + `ws.frame` | from/to/sources |
+| `branch.message_sent` | send_message `:266` | observers + `ws.frame` | from/to |
 | `branch.message_replied` | send_message `:344` | observers + `ws.frame` | carries is_error |
 | `question.asked` | questions `:164` (also `emit_ws_frame` `:161` for the front-end card) | channels question bridge (`_question_bridge.py:43`) | both on the bus and as a ws frame |
 | `question.replied` | questions `:275` (`resolve_question_and_broadcast:262`) | front end | **ws frame only** |
@@ -335,7 +335,7 @@ target branch, and bring the reply back.
 **Key files**: `functions/tools/send_message/send_message/send_message.py`,
 `functions/tools/send_message/list_agents/list_agents.py`.
 **Mechanisms**:
-- `send_message(message, to, sources, agent_id, wait)` →
+- `send_message(message, to, agent_id, wait)` →
   `_send_message_impl`.
 - `to` semantics (`_parse_to`): `SID:HEAD` (deliver to an existing branch
   = run one more turn from its head) or a branch name. Creating branches is
@@ -343,9 +343,6 @@ target branch, and bring the reply back.
   rejected with a redirect to it.
 - The parent anchor `_resolve_parent` (`:74`) reads the dispatcher's session/turn
   ContextVars and **falls back to the session head when the turn id is missing**.
-- **Source aggregation**: `_gather_sources` (`:128`) wraps each source branch's
-  tip text in a `<branch source=...>` block and prepends it for the target model
-  to synthesize.
 - Asynchronous delivery (the default) is handed to the task runner
   (`run_agent_turn_async`); when the run completes it writes an attach pointer and
   dispatches a follow-up back to the **initiating** session, so replies flow back

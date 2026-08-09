@@ -1,46 +1,7 @@
-"""Message assembly and delivery paths for send_message: source-branch
-synthesis blocks, the sender-receipt header, the busy-target inbox
-path, and oversized-reply clipping."""
+"""Message assembly and delivery paths for send_message: the
+sender-receipt header, the busy-target inbox path, and oversized-reply
+clipping."""
 from __future__ import annotations
-
-
-def _gather_sources(sources: list[str] | None) -> str:
-    """Pull each source branch's tip text and wrap it in a labelled block,
-    so the target model reads them and synthesizes. Each source is
-    ``"SID:HEAD"`` (or ``"SID"`` → that session's current head).
-
-    Returns the assembled block string (empty if no usable sources).
-    """
-    if not sources:
-        return ""
-    from openprogram.agent.session_db import default_db
-    from openprogram.agent.internals._merge import _peer_final_text
-    store = default_db()
-    blocks: list[str] = []
-    for raw in sources:
-        s = (raw or "").strip()
-        if not s:
-            continue
-        ssid, _, shead = s.partition(":")
-        ssid = ssid.strip()
-        shead = shead.strip() or None
-        if not ssid:
-            continue
-        try:
-            text, _hid = _peer_final_text(store, ssid, shead)
-        except Exception:
-            text = ""
-        text = (text or "").strip()
-        if not text:
-            text = "(this branch has no readable content)"
-        blocks.append(f'<branch source="{s}">\n{text}\n</branch>')
-    if not blocks:
-        return ""
-    return (
-        "下面是几条分支的内容，请阅读后综合，再回应本条消息：\n\n"
-        + "\n\n".join(blocks)
-        + "\n\n---\n\n"
-    )
 
 
 def sender_header(sender_session_id: str, sender_msg_id: str) -> str:

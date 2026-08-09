@@ -24,8 +24,8 @@ Design: docs/reference/design/runtime/agent-collaboration.md. This
 module is the entry point: the @function binding plus the main delivery
 flow. Concern-specific pieces live alongside: ``prompt.py`` (LLM-facing
 description), ``addressing.py`` (`to` parsing + branch-name lookup),
-``delivery.py`` (synthesis blocks, receipt header, busy-target inbox,
-reply clipping), ``depth.py`` (spawn-chain depth guard).
+``delivery.py`` (receipt header, busy-target inbox, reply clipping),
+``depth.py`` (spawn-chain depth guard).
 """
 from __future__ import annotations
 
@@ -39,7 +39,6 @@ from .addressing import (
 )
 from .delivery import (
     _clip_result,
-    _gather_sources,
     enqueue_for_busy_target,
     sender_header,
 )
@@ -88,7 +87,6 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
 def _send_message_impl(
     message: str,
     to: str = "",
-    sources: list[str] | None = None,
     agent_id: str = "",
     wait: bool = False,
 ) -> str:
@@ -195,11 +193,9 @@ def _send_message_impl(
             "`agent` tool to spawn a new one."
         )
 
-    # Synthesis: prepend each source branch's content as a labelled block,
-    # so the target model reads them and synthesizes (C5). Every delivery
-    # carries a sender-receipt header so the receiver knows who sent it
-    # and that replying is optional.
-    delivery_body = _gather_sources(sources) + message
+    # Every delivery carries a sender-receipt header so the receiver
+    # knows who sent it and that replying is optional.
+    delivery_body = message
     delivery_message = sender_header(sid, aid) + delivery_body
 
     # Busy target → inbox (design §5.4). Only cross-session sends can
@@ -225,7 +221,6 @@ def _send_message_impl(
         {
             "from": f"{sid}:{aid}",
             "to": f"{run_session}:{branch_from}",
-            "sources": sources or [],
         },
     )
     # Also push a UI frame so the sender's session shows a "message sent"
@@ -323,7 +318,6 @@ def _send_message_impl(
 def send_message(
     message: str,
     to: str,
-    sources: list[str] | None = None,
     agent_id: str = "",
     wait: bool = False,
 ) -> str:
@@ -331,7 +325,6 @@ def send_message(
     return _send_message_impl(
         message=message,
         to=to,
-        sources=sources,
         agent_id=agent_id,
         wait=wait,
     )

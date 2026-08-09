@@ -1,7 +1,7 @@
 # Agent 协作：一个分支间通信原语
 
 整套 agent 协作收敛成**一个原语：分支间通信**。一个 agent 能派生别的 agent、能给
-别的分支/别的 session 发消息、能把几条分支的内容汇给一个模型综合——这些表面上不同
+别的分支/别的 session 发消息——这些表面上不同
 的操作，**底层是同一件事**：往某条分支投递内容 → 触发那条分支跑一轮 → 结果自动回送
 发起方。全部做成工具调用，全部建在已有的事件层上。
 
@@ -23,10 +23,9 @@
 |---|---|---|
 | **派生子 agent** | **新建**一条分支 + 投消息 + 自动回 | `agent` |
 | **发消息给某 agent** | 往**已存在**分支投消息 + 自动回 | `send_message` |
-| **综合多条分支** | 投递时**带多个来源**分支的内容，让目标模型综合 | `send_message(sources=…)` |
 
-投来的内容一定被目标模型读取并使用。数量任意（派生能派 N 个、综合能合 N 条、发消息
-也能群发），不是区分维度。三种用法共用一条投递→触发→回送的路径。
+投来的内容一定被目标模型读取并使用。数量任意（派生能派 N 个、发消息
+也能群发），不是区分维度。两种用法共用一条投递→触发→回送的路径。
 
 `attach` 不是操作，是通信结果在 DAG 上的"回流连线"画法（标记结果从哪条分支回来）。
 
@@ -79,7 +78,6 @@ session）fork、继承到该节点为止的链。`wait=False` 返回 `task_id`�
 send_message(
     message: str,                       # 投给目标的内容/指令
     to: str,                            # 见下方 to 取值
-    sources: list[str] = [],            # 额外带上这些分支的内容一起投（综合多条时用）
     agent_id: str = "main",             # 目标用哪个 agent
     wait: bool = false,                 # false=异步(默认,瞬间返回)；true=同步等回复
 ) -> str
@@ -100,12 +98,10 @@ send_message(
 optional …` —— 收件方由此知道谁发的、怎么回、以及不回也是正当的。agent
 工具的派生投的是裸 prompt：它们是干活的 worker，不是通信对象。
 
-两种用法：
+一种用法：
 
 - **发消息给已有分支/session**：`to="sid:head"` → 往那条分支投 message，触发它
   跑一轮，答完自动回送。跨 session 同一路径（to 是任意 session）。
-- **综合多条分支**：`sources=["s1:h1","s2:h2",...]` → 投递时把这几条分支的内容一起
-  带上，目标模型读完综合。数量任意。可与任意 to 组合。
 
 两个工具驱动同一个原语：派生就是同一条投递→触发→回送流程，只是目标分支
 是当场新建的。
@@ -113,7 +109,7 @@ optional …` —— 收件方由此知道谁发的、怎么回、以及不回�
 **统一执行流程**（无论哪个工具发起）：
 1. 定目标分支：`agent` 当场新建（`context` 定 fork 点）；`send_message`
    把 `to` 解析到已存在分支的当前末端。
-2. 组装投递内容：`message` +（若有 `sources`）把每条来源分支的内容附上。
+2. 组装投递内容：发件人回执头 + `message`。
 3. 投递 + 触发：`process_user_turn(TurnRequest(session_id=目标, user_text=投递内容,
    branch_from=fork 起点))` → 目标分支跑一轮，**模型读到投来的全部内容**。
 4. **回送**：
@@ -123,17 +119,12 @@ optional …` —— 收件方由此知道谁发的、怎么回、以及不回�
    - `wait=true`：阻塞等目标答完，直接返回回复文本。
 - 事件：投递 emit `branch.message_sent`；回送 emit `branch.message_replied`（见 §3）。
 
-### 2.2 多条来源喂多少内容（综合的关键）
+### 2.2 引用别的分支
 
-`sources` 里每条分支怎么喂给目标模型——**先让每条分支自我总结，再汇集总结**：
-
-1. 对每条 source 分支，先让它产出一个**面向本次通信的总结**（"把你这条分支的结论
-   浓缩成要点"），复用 `branch_summarization`。
-2. 把这些总结拼成 `<branch label="...">总结</branch>` 块，连同 `message` 一起投给
-   目标模型综合。
-
-这样不爆 context、能带很多条、交给模型的是浓缩要点而非原始长对话。统一走"自我总结"，
-不设"喂全文/喂摘要"的参数选择。
+message 就是纯文本，跟用户消息一样。要让目标参考别的分支，发送方直接写进
+`message`：结论已经通过回送回到发送方手里，直接引用；或者点名分支
+（`SID:HEAD` 或分支名），目标自己用 `session_transcript` 去读。读多少由目标
+模型自己决定，context 天然有界，不需要专门的聚合参数。
 
 ### 2.3 `list_agents` — 看见对方（通信的前提）
 
@@ -251,7 +242,7 @@ emit_ws_frame(frame)                         # 源用：把现成 WS 帧经总�
 
 | type | 何时 | origin | payload 关键字段 |
 |---|---|---|---|
-| `branch.message_sent` | send_message 投递 | agent | from, to, sources, delivery_id, is_new, chain |
+| `branch.message_sent` | send_message 投递 | agent | from, to, delivery_id, is_new, chain |
 | `branch.message_replied` | 目标答完自动回送 | agent | from, to, delivery_id, is_error |
 | `branch.created` / `.started` / `.failed` / `.cancelled` | 分支状态转换 | agent | branch, parent, agent_id, status |
 | `sessions.listed` / `branches.listed` | 列举 | agent | count |
@@ -300,7 +291,7 @@ A、B 同时在跑（同 session 不同分支，或不同 session）：
    跑一轮，A 醒来读到、可继续。
 5. **可循环**：A 再 `send_message` 给 B……两条分支各自不阻塞、不串行。
 
-派生（`agent` 工具）和综合（带 sources）是同一流程的另两种参数化，不另列。
+派生（`agent` 工具）是同一流程的另一种参数化，不另列。
 
 ---
 
@@ -402,8 +393,8 @@ UI 的会话选择列表（但 DAG 照画、能被 list_agents 列出供 agent �
   已画，不再加冗余字段。
 - **ID 前缀分类**（fork_/msg_）：现有 id + name 足够寻址，不加。
 - **重试 / 熔断策略**：失败回送给模型，由模型决定，不内置固定策略（见 §5.5）。
-- **内置聚合函数**（投票 / 全部成功等）：综合就是把 sources 喂给模型让它综合（§2.2），
-  模型综合比预设聚合灵活，不做固定聚合算子。
+- **内置聚合函数**（投票 / 全部成功等）：综合就是在 `message` 里点名分支、让目标
+  模型自己读完综合（§2.2），模型综合比预设聚合灵活，不做固定聚合算子。
 
 ---
 
@@ -413,7 +404,7 @@ UI 的会话选择列表（但 DAG 照画、能被 list_agents 列出供 agent �
 - `openprogram/functions/tools/agent/` — `agent/`（派生 / fork）+
   `task_output/` + `task_stop/`（异步形态管理）
 - `openprogram/functions/tools/send_message/` — `send_message/`（投递 +
-  触发 + 自动回送 + 多源自我总结）+ `list_agents/`（复用
+  触发 + 自动回送）+ `list_agents/`（复用
   db.list_sessions + db.list_branches）
 - 各工具 `emit_safe(...)`；跨 session 通知用 `emit_ws_frame`
 
@@ -421,7 +412,6 @@ UI 的会话选择列表（但 DAG 照画、能被 list_agents 列出供 agent �
 - `TaskRunner`（线程池并发、await、cancel、_dispatch_followup 自动回送、attach 连线）
 - `SessionStore`（list/append/set_head/commit/get）
 - `dispatcher.process_user_turn`
-- `branch_summarization`（多源自我总结）
 - `openprogram.events`（emit_safe / emit_ws_frame）
 
 **前端（`web/`）**
@@ -443,7 +433,6 @@ UI 的会话选择列表（但 DAG 照画、能被 list_agents 列出供 agent �
 | 列举 | `list_agents` 列出真实的多 session 及各自的分支 |
 | 发给同 session 已有分支 | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
 | 跨 session | A 发给别的 session 走同一路径；两边前端经 ws.frame 实时更新 |
-| 多源综合 | 带 2 条 source 分支，每条先自我总结，目标模型综合出新回答 |
 | 健壮性（§5） | A↔B 互发到 MAX_DEPTH 自动停；派 30 个排队不打爆；取消父→子全停（`tests/unit/test_cascade_cancel.py`）；给正跑的 B 发消息落它的收件箱、等它这轮结束投递（`tests/unit/test_send_message_inbox.py`）；子失败父收到 is_error；超大结果截断给文件路径 |
 | 安全（§5.7-5.9） | deny 下被 tool.before 拦；不存在的 to 报错；子分支权限不高于父、不进 UI 选择列表 |
 | 前端 | webui 里选分支发消息，DAG 出现通信节点 + hover 软连接线 |
@@ -458,21 +447,20 @@ UI 的会话选择列表（但 DAG 照画、能被 list_agents 列出供 agent �
 | 工具范本 + 注册 | `openprogram/functions/tools/agent/agent/agent.py`、`functions/_runtime.py`（@function） |
 | session/branch 数据层 | `openprogram/store/session/session_store.py`（list_sessions:658 / list_branches:832 / append_message:706 / set_head:814 / commit_turn:455） |
 | 触发某 session 跑一轮 | `openprogram/agent/dispatcher/__init__.py`（process_user_turn:97） |
-| 多源自我总结 | `openprogram/agent/compaction/branch_summarization.py` |
 | 列表 WS handler | `webui/ws_actions/session.py:825`、`branch.py:221` |
 | attach 连线（仅画图） | `openprogram/agent/sub_agent_run.py`（write_attach_pointer_for_spawn） |
 | 事件总线 | `openprogram/events/bus.py`（emit_safe / emit_ws_frame） |
 | 忙时收件箱（§5.4） | `openprogram/agent/inbox.py`（enqueue / drain），忙判定 `run_control.is_turn_running`，消费挂点 `dispatcher._drain_send_message_inbox` |
 
-> 注："综合多条"由 `send_message(sources=[...])` 提供，不另设独立工具。底层
-> `_merge.py` 的多父 ContextCommit 血缘记录被复用来记下"这次综合来自哪几条分支"。
+> 注："综合多条"不需要专门机制：发送方在 `message` 里点名分支，目标用
+> `session_transcript` 自己读（§2.2）。
 
 ---
 
 ## 附：实现状态
 
 本文内容均已实现：事件层（§3）、`TaskRunner`、`SessionStore`、
-`process_user_turn`、`branch_summarization`、`agent` 工具族（`agent` /
+`process_user_turn`、`agent` 工具族（`agent` /
 `task_output` / `task_stop`）、`send_message` 及其列举工具 `list_agents`、
 派生分支命名（§2.4——派生时的 Stage 1 label + `finalize_turn` 的 Stage 2
 自动改名）、串行化的回送锚定（§2.5——`_dispatch_followup` +
