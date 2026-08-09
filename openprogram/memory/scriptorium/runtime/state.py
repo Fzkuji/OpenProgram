@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -55,13 +56,34 @@ class RuntimeStateStore:
         return RuntimeState(**payload)
 
     def save(self, state: RuntimeState) -> None:
+        """Replace the state file, through a temporary name of this write's own.
+
+        One shared ``runtime.json.tmp`` makes two writers overwrite each
+        other's half-written bytes and rename the survivor into place, and
+        the loser's rename fails on a file that is no longer there. The
+        write lock keeps that from happening today, which is a property of
+        the caller rather than of this function. A private temporary name
+        is the property this function can hold on its own.
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(".json.tmp")
-        temporary.write_text(
-            json.dumps(asdict(state), ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
+        handle, temporary = tempfile.mkstemp(
+            prefix=f"{self.path.stem}-{os.getpid()}-",
+            suffix=".json.tmp",
+            dir=self.path.parent,
         )
-        os.replace(temporary, self.path)
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as file:
+                file.write(
+                    json.dumps(asdict(state), ensure_ascii=False, indent=2) + "\n"
+                )
+            # mkstemp opens at 0600; the state file is read like the rest of
+            # the workspace, and a 600 file left behind is how a stray
+            # temporary is told apart from real state.
+            os.chmod(temporary, 0o644)
+            os.replace(temporary, self.path)
+        except BaseException:
+            Path(temporary).unlink(missing_ok=True)
+            raise
 
     def git_commit(self, message: str) -> str | None:
         try:

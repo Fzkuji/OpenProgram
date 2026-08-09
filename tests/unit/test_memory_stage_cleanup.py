@@ -112,3 +112,44 @@ def test_process_cleans_up_after_a_writer_that_raised(memory):
     with pytest.raises(RuntimeError):
         _runtime(memory).process([_record()], writer, force=True)
     assert _stage_dirs() == before
+
+
+# -- the state file's own temporary ----------------------------------------
+
+
+def test_saving_state_leaves_no_temporary_behind(tmp_path):
+    """One shared ``runtime.json.tmp`` is how two writers overwrite each
+    other's half-written bytes. A private name per write is the property
+    this function can hold without help from the caller's lock, and a
+    sibling project's stray ``runtime 2.json`` files, mode 600, are what
+    the leftovers look like when it does not."""
+    from openprogram.memory.scriptorium.runtime.state import (
+        RuntimeState,
+        RuntimeStateStore,
+    )
+
+    store = RuntimeStateStore(tmp_path)
+    names = set()
+    for tokens in (1, 2):
+        state = RuntimeState(local_tokens=tokens)
+
+        # Capture the name this write picked, then let it finish.
+        import tempfile as _tempfile
+        real = _tempfile.mkstemp
+
+        def spy(*args, **kwargs):
+            handle, path = real(*args, **kwargs)
+            names.add(os.path.basename(path))
+            return handle, path
+
+        _tempfile.mkstemp = spy
+        try:
+            store.save(state)
+        finally:
+            _tempfile.mkstemp = real
+
+    assert len(names) == 2, "each write picks a name of its own"
+    assert all(str(os.getpid()) in name for name in names)
+    assert list(store.path.parent.glob("*.tmp")) == []
+    assert store.path.stat().st_mode & 0o777 == 0o644
+    assert store.load().local_tokens == 2
