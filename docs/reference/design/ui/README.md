@@ -7,7 +7,8 @@ Web UI surfaces — the surface system, indicator dots, attachment handling, cha
 - [`interaction-feedback.md`](interaction-feedback.md) — the 0ms interaction-feedback rule (optimistic state first, data backfills)
 - [`state-layer.md`](state-layer.md) — web state layer: one store instance per session, with genuinely shared data global
 - [`composer-interaction-modes.md`](composer-interaction-modes.md) — composer interaction modes
-- [`attachment-handling.md`](attachment-handling.md) — attachment handling ([rendered](attachment-handling.html))
+- [`attachment-handling.md`](attachment-handling.md) — attachment handling: how an attached file reaches the model ([rendered](attachment-handling.html))
+- [`chat-attachments.html`](chat-attachments.html) — chat attachments both ways: what the transcript shows, how the agent hands a file back, how a readable file opens
 - [`gui-agent-context.md`](gui-agent-context.md) — GUI agent context flow
 - [`indicator-dots.md`](indicator-dots.md) — indicator dots
 - [`surface-system.md`](surface-system.md) — surface system

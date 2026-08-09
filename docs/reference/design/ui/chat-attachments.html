@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>聊天附件：双向流转与预览</title>
+<style>
+  :root{
+    --bg:#16150f; --pan:#1d1c14; --bd:#2e2c20; --tx:#bdb9a6; --acc:#d4843a;
+    --cb:#12110b; --dim:#8a8675;
+    --c0:#4f8ef7; --c1:#5aad4e; --c2:#d4843a; --c3:#9d6fe0; --c4:#2db3d5;
+    --no:#e0445a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:40px 24px 96px}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:23px;color:#f0eee6;margin:0 0 6px}
+  .sub{color:var(--tx);margin:0 0 18px;max-width:82ch}
+  h2{font-size:16px;color:var(--acc);margin:38px 0 8px;scroll-margin-top:20px}
+  h2 .num{color:var(--dim);font-size:12px;margin-right:8px;letter-spacing:.16em}
+  h2 .ly{font-size:10.5px;letter-spacing:.18em;padding:2px 8px;border-radius:99px;
+    margin-left:10px;vertical-align:2px;font-weight:600}
+  .ly1{color:#4f8ef7;border:1px solid #2c4a78}
+  .ly2{color:#5aad4e;border:1px solid #2f5228}
+  .ly3{color:#d4843a;border:1px solid #6b4519}
+  .ly4{color:#9d6fe0;border:1px solid #4c3670}
+  h3{font-size:13.5px;color:#f0eee6;margin:22px 0 6px;font-weight:600}
+  .lead{color:var(--dim);font-size:13px;margin:0 0 12px;max-width:88ch}
+  .card{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:8px;margin-bottom:16px}
+  svg{display:block;width:100%;height:auto;background:var(--cb);border-radius:8px}
+  .scroll{overflow-x:auto}
+  .scroll svg{min-width:820px}
+  .legend{font-size:12.5px;color:var(--dim);padding:8px 10px;line-height:1.8}
+  .legend b{color:#f0eee6}
+  code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
+  a{color:var(--acc)}
+  text{font-family:-apple-system,"Segoe UI",sans-serif}
+
+  .toc{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 24px}
+  .toc a{font-size:12px;color:var(--tx);text-decoration:none;border:1px solid var(--bd);
+    background:var(--pan);border-radius:99px;padding:4px 12px}
+  .toc a:hover{border-color:var(--acc);color:#f0eee6}
+  .toc a.l1{border-color:#2c4a78} .toc a.l2{border-color:#2f5228}
+  .toc a.l3{border-color:#6b4519} .toc a.l4{border-color:#4c3670}
+
+  .tbl{overflow-x:auto;background:var(--pan);border:1px solid var(--bd);border-radius:12px;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:900px}
+  table.wide{min-width:1140px}
+  th{text-align:left;padding:10px 12px;color:var(--dim);font-weight:600;font-size:11px;
+    letter-spacing:.12em;border-bottom:1px solid var(--bd);white-space:nowrap;vertical-align:bottom}
+  td{padding:9px 12px;border-bottom:1px solid #26241a;vertical-align:top;line-height:1.6}
+  tr:last-child td{border-bottom:none}
+  td.y{color:var(--c1)} td.n{color:var(--no)} td.p{color:var(--c2)}
+  td b{color:#f0eee6;font-weight:600}
+  td.name{white-space:nowrap;color:#f0eee6;font-weight:600}
+  tr.us td{background:#1b2231}
+  tr.us td.name{color:#4f8ef7}
+  .src{display:block;color:#6b6a63;font:10.5px/1.5 Menlo,monospace;margin-top:3px;word-break:break-word}
+
+  pre{background:var(--cb);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;
+    overflow-x:auto;margin:0 0 16px;font:12.5px/1.9 Menlo,monospace;color:#a5a190}
+  pre b{color:var(--acc);font-weight:400}
+  pre i{color:#6b6a63;font-style:normal}
+
+  .note{border-left:3px solid var(--bd);padding:2px 0 2px 13px;color:var(--dim);
+    font-size:12.5px;margin:0 0 16px;max-width:90ch;line-height:1.8}
+  .note b{color:#f0eee6}
+  .note.blue{border-left-color:#2c4a78}
+  .note.green{border-left-color:#2f5228}
+  .note.orange{border-left-color:#6b4519}
+  .note.purple{border-left-color:#4c3670}
+  .note.red{border-left-color:#6d2530}
+
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+  .dom{background:var(--pan);border:1px solid var(--bd);border-top-width:3px;border-radius:12px;padding:13px 15px}
+  .dom .k{font-size:10.5px;letter-spacing:.2em;color:var(--dim);margin-bottom:3px}
+  .dom h4{margin:0 0 6px;font-size:15px;font-weight:700;color:#f0eee6}
+  .dom p{margin:0 0 9px;font-size:12.5px;color:#a5a190;line-height:1.65}
+  .dom .tools{display:flex;flex-wrap:wrap;gap:5px}
+  .dom .tools span{font:11px Menlo,monospace;background:var(--cb);border:1px solid var(--bd);
+    border-radius:5px;padding:2px 7px;color:var(--tx)}
+  @media(max-width:980px){.grid3{grid-template-columns:1fr}}
+  ul{margin:0 0 14px;padding-left:20px;max-width:90ch}
+  li{margin-bottom:6px;font-size:13px;line-height:1.75}
+  li b{color:#f0eee6}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>聊天附件：双向流转与预览</h1>
+<p class="sub">用户发进来的文件和 agent 交出去的文件，在聊天流里各自是什么样子、能不能点开。四层：现状、八家对照、下一步、理想形态。附件<b>怎么进模型上下文</b>是另一个主题，写在 <a href="attachment-handling.html">attachment-handling</a>（<a href="attachment-handling.viz.html">图解版</a>），本页只在需要时引用它的结论。</p>
+
+<div class="toc">
+  <a class="l1" href="#now">1 现状</a>
+  <a class="l1" href="#now-in">入站四条路</a>
+  <a class="l1" href="#now-bubble">气泡里看到什么</a>
+  <a class="l1" href="#now-out">出站只有文本</a>
+  <a class="l1" href="#now-parts">零件够不着</a>
+  <a class="l1" href="#now-verdict">三件需求判定</a>
+  <a class="l2" href="#others">2 八家怎么做</a>
+  <a class="l2" href="#out4">出站四种设计</a>
+  <a class="l2" href="#tricks">没想到的招数</a>
+  <a class="l3" href="#plan">3 下一步</a>
+  <a class="l3" href="#planA">A 图能点开</a>
+  <a class="l3" href="#planB">B 发文件</a>
+  <a class="l3" href="#planC">C 点开就能看</a>
+  <a class="l4" href="#ideal">4 理想状态</a>
+  <a class="l4" href="#gaps">差距与取舍</a>
+  <a href="#status">实现状态</a>
+</div>
+
+<!-- ══════════════════════════ LAYER 1 ══════════════════════════ -->
+<h2 id="now"><span class="num">01</span>我们现在怎么做的<span class="ly ly1">现状</span></h2>
+<p class="lead">附件的字节、正文里的标记、模型看到的内容、用户看到的东西，是四件独立的事。现在这四件在网页和渠道两侧走了两套不一样的规则，所以同一个附件在不同界面结局不同。</p>
+
+<h3 id="now-in">1.1 入站四条路，两种标记词法</h3>
+<div class="card scroll">
+<svg viewBox="0 0 960 372" role="img" aria-label="入站四条路：来源、落盘位置、正文标记、模型收到、聊天流显示">
+  <defs>
+    <marker id="ar" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <path d="M0 0 L7 3.5 L0 7 z" fill="#5c5a4e"/>
+    </marker>
+  </defs>
+  <!-- column headers -->
+  <text x="16" y="24" fill="#8a8675" font-size="10.5" letter-spacing="1.6">来源</text>
+  <text x="180" y="24" fill="#8a8675" font-size="10.5" letter-spacing="1.6">字节落在哪</text>
+  <text x="404" y="24" fill="#8a8675" font-size="10.5" letter-spacing="1.6">正文里的标记</text>
+  <text x="680" y="24" fill="#8a8675" font-size="10.5" letter-spacing="1.6">模型收到</text>
+  <text x="830" y="24" fill="#8a8675" font-size="10.5" letter-spacing="1.6">聊天流显示</text>
+  <line x1="16" y1="32" x2="944" y2="32" stroke="#2e2c20"/>
+
+  <!-- row 1 : web image -->
+  <rect x="16" y="44" width="150" height="56" rx="8" fill="#1d1c14" stroke="#4f8ef7"/>
+  <text x="28" y="66" fill="#f0eee6" font-size="12" font-weight="600">网页 · 图片</text>
+  <text x="28" y="84" fill="#8a8675" font-size="10.5">粘贴 / 拖拽 / 选择器</text>
+  <line x1="166" y1="72" x2="192" y2="72" stroke="#5c5a4e" marker-end="url(#ar)"/>
+  <rect x="196" y="44" width="196" height="56" rx="8" fill="#12110b" stroke="#6d2530"/>
+  <text x="208" y="66" fill="#e0445a" font-size="11.5">不落盘</text>
+  <text x="208" y="84" fill="#8a8675" font-size="10.5">只在内存里 base64</text>
+  <line x1="392" y1="72" x2="418" y2="72" stroke="#5c5a4e" marker-end="url(#ar)"/>
+  <rect x="422" y="44" width="234" height="56" rx="8" fill="#12110b" stroke="#6d2530"/>
+  <text x="434" y="76" fill="#e0445a" font-size="11.5">没有标记</text>
+  <line x1="656" y1="72" x2="682" y2="72" stroke="#5c5a4e" marker-end="url(#ar)"/>
+  <rect x="686" y="44" width="126" height="56" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="698" y="70" fill="#5aad4e" font-size="11.5">ImageContent</text>
+  <text x="698" y="86" fill="#8a8675" font-size="10.5">内容块，看得见</text>
+  <rect x="822" y="44" width="122" height="56" rx="8" fill="#12110b" stroke="#6d2530"/>
+  <text x="834" y="70" fill="#e0445a" font-size="11.5">空白</text>
+  <text x="834" y="86" fill="#8a8675" font-size="10.5">发出即消失</text>
+
+  <!-- row 2 : web doc -->
+  <rect x="16" y="112" width="150" height="56" rx="8" fill="#1d1c14" stroke="#4f8ef7"/>
+  <text x="28" y="134" fill="#f0eee6" font-size="12" font-weight="600">网页 · 文档</text>
+  <text x="28" y="152" fill="#8a8675" font-size="10.5">pdf / 代码 / 二进制</text>
+  <line x1="166" y1="140" x2="192" y2="140" stroke="#5c5a4e" marker-end="url(#ar)"/>
+  <rect x="196" y="112" width="196" height="56" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="208" y="132" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">会话 workdir/attachments/</text>
+  <text x="208" y="152" fill="#8a8675" font-size="10.5">sha256 去重，32MB/64MB 上限</text>
+  <line x1="392" y1="140" x2="418" y2="140" stroke="#5c5a4e" marker-end="url(#ar)"/>
+  <rect x="422" y="112" width="234" height="56" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="434" y="134" fill="#d4843a" font-size="10" font-family="Menlo,monospace">[attachment: 名字 (pdf, 1531 KB,</text>
+  <text x="434" y="152" fill="#d4843a" font-size="10" font-family="Menlo,monospace">500 pages) @ /abs/path]</text>
+  <line x1="656" y1="140" x2="682" y2="140" stroke="#5c5a4e" marker-end="url(#ar)"/>
+  <rect x="686" y="112" width="126" height="56" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="698" y="138" fill="#5aad4e" font-size="11.5">路径</text>
+  <text x="698" y="154" fill="#8a8675" font-size="10.5">加 4KB 头部预览</text>
+  <rect x="822" y="112" width="122" height="56" rx="8" fill="#1d1c14" stroke="#6b4519"/>
+  <text x="834" y="138" fill="#d4843a" font-size="11.5">灰色 chip</text>
+  <text x="834" y="154" fill="#8a8675" font-size="10.5">点不动</text>
+
+  <!-- row 3 : mention -->
+  <rect x="16" y="180" width="150" height="56" rx="8" fill="#1d1c14" stroke="#4f8ef7"/>
+  <text x="28" y="202" fill="#f0eee6" font-size="12" font-weight="600">@提及 · 输入路径</text>
+  <text x="28" y="220" fill="#8a8675" font-size="10.5">file-search / file-resolve</text>
+  <line x1="166" y1="208" x2="192" y2="208" stroke="#5c5a4e" marker-end="url(#ar)"/>
+  <rect x="196" y="180" width="196" height="56" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="208" y="200" fill="#bdb9a6" font-size="11">原地不动</text>
+  <text x="208" y="220" fill="#8a8675" font-size="10.5">零拷贝，只取绝对路径</text>
+  <line x1="392" y1="208" x2="418" y2="208" stroke="#5c5a4e" marker-end="url(#ar)"/>
+  <rect x="422" y="180" width="234" height="56" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="434" y="212" fill="#d4843a" font-size="10" font-family="Menlo,monospace">同上，词法完全一致</text>
+  <line x1="656" y1="208" x2="682" y2="208" stroke="#5c5a4e" marker-end="url(#ar)"/>
+  <rect x="686" y="180" width="126" height="56" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="698" y="212" fill="#5aad4e" font-size="11.5">路径</text>
+  <rect x="822" y="180" width="122" height="56" rx="8" fill="#1d1c14" stroke="#6b4519"/>
+  <text x="834" y="206" fill="#d4843a" font-size="11.5">灰色 chip</text>
+  <text x="834" y="222" fill="#8a8675" font-size="10.5">点不动</text>
+
+  <!-- row 4 : channels -->
+  <rect x="16" y="248" width="150" height="66" rx="8" fill="#1d1c14" stroke="#2db3d5"/>
+  <text x="28" y="270" fill="#f0eee6" font-size="12" font-weight="600">渠道</text>
+  <text x="28" y="288" fill="#8a8675" font-size="10.5">Telegram / Discord</text>
+  <text x="28" y="304" fill="#8a8675" font-size="10.5">Slack（WeChat 无附件）</text>
+  <line x1="166" y1="281" x2="192" y2="281" stroke="#5c5a4e" marker-end="url(#ar)"/>
+  <rect x="196" y="248" width="196" height="66" rx="8" fill="#1d1c14" stroke="#6b4519"/>
+  <text x="208" y="268" fill="#bdb9a6" font-size="10" font-family="Menlo,monospace">状态目录/channels/&lt;渠道&gt;/</text>
+  <text x="208" y="284" fill="#bdb9a6" font-size="10" font-family="Menlo,monospace">accounts/&lt;账号&gt;/attachments/</text>
+  <text x="208" y="304" fill="#d4843a" font-size="10.5">另一个目录，20MB 上限，不去重</text>
+  <line x1="392" y1="281" x2="418" y2="281" stroke="#5c5a4e" marker-end="url(#ar)"/>
+  <rect x="422" y="248" width="234" height="66" rx="8" fill="#12110b" stroke="#6d2530"/>
+  <text x="434" y="270" fill="#e0445a" font-size="10" font-family="Menlo,monospace">[attachment: /abs/path</text>
+  <text x="434" y="286" fill="#e0445a" font-size="10" font-family="Menlo,monospace">(image/png, 20481 bytes)]</text>
+  <text x="434" y="306" fill="#e0445a" font-size="10.5">另一套词法，chip 正则不认</text>
+  <line x1="656" y1="281" x2="682" y2="281" stroke="#5c5a4e" marker-end="url(#ar)"/>
+  <rect x="686" y="248" width="126" height="66" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="698" y="274" fill="#5aad4e" font-size="11.5">图片 ImageContent</text>
+  <text x="698" y="292" fill="#5aad4e" font-size="11.5">其余给路径</text>
+  <rect x="822" y="248" width="122" height="66" rx="8" fill="#12110b" stroke="#6d2530"/>
+  <text x="834" y="276" fill="#e0445a" font-size="11.5">标记原样露出</text>
+  <text x="834" y="294" fill="#8a8675" font-size="10.5">当成正文渲染</text>
+
+  <line x1="16" y1="332" x2="944" y2="332" stroke="#2e2c20"/>
+  <text x="16" y="352" fill="#8a8675" font-size="11">发言人前缀</text>
+  <text x="96" y="352" fill="#d4843a" font-size="11" font-family="Menlo,monospace">[显示名 (id)]</text>
+  <text x="216" y="352" fill="#8a8675" font-size="11">加在正文最前，附件标记追加在最后，两者互不重叠，方括号已被 _one_line 消掉，不会伪造出第二个前缀。</text>
+</svg>
+</div>
+<div class="legend">
+  <b>入站的四条路都能把内容送进模型</b>，四条路里只有一条能在聊天流里留下可读的痕迹。网页图片模型看得见、人看不见；渠道附件模型看得见、人看到的是一串路径。
+  <span class="src">openprogram/channels/_attachments.py · openprogram/channels/base.py:226-243 · openprogram/webui/ws_actions/chat.py:152-280 · web/components/chat/composer/use-chat-submit.ts:139-173</span>
+</div>
+
+<h3 id="now-bubble">1.2 同一句话，三种结局</h3>
+<div class="card scroll">
+<svg viewBox="0 0 960 250" role="img" aria-label="三种附件在用户气泡里的实际渲染结果">
+  <text x="16" y="22" fill="#8a8675" font-size="10.5" letter-spacing="1.6">用户气泡的实际渲染</text>
+  <line x1="16" y1="30" x2="944" y2="30" stroke="#2e2c20"/>
+
+  <!-- bubble A : doc -->
+  <text x="16" y="54" fill="#f0eee6" font-size="12" font-weight="600">网页拖进一个 pdf</text>
+  <rect x="16" y="64" width="292" height="112" rx="12" fill="#1d1c14" stroke="#2e2c20"/>
+  <rect x="30" y="78" width="152" height="26" rx="6" fill="#12110b" stroke="#2e2c20"/>
+  <path d="M40 85 h8 l4 4 v10 h-12 z" fill="none" stroke="#8a8675" stroke-width="1.2"/>
+  <text x="60" y="95" fill="#bdb9a6" font-size="10.5">spec.pdf</text>
+  <text x="118" y="95" fill="#6b6a63" font-size="10">pdf · 1531 KB</text>
+  <text x="30" y="126" fill="#bdb9a6" font-size="11.5">帮我看下这个规格</text>
+  <text x="30" y="156" fill="#e0445a" font-size="10.5">静态 span，没有点击目标，没有缩略图</text>
+
+  <!-- bubble B : image -->
+  <text x="336" y="54" fill="#f0eee6" font-size="12" font-weight="600">网页粘贴一张截图</text>
+  <rect x="336" y="64" width="292" height="112" rx="12" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="350" y="96" fill="#bdb9a6" font-size="11.5">这个报错是什么意思</text>
+  <rect x="350" y="110" width="264" height="40" rx="8" fill="none" stroke="#6d2530" stroke-dasharray="4 3"/>
+  <text x="362" y="135" fill="#e0445a" font-size="10.5">这里本该有图，实际什么都没有</text>
+  <text x="336" y="169" fill="#e0445a" font-size="10.5">发送时 objectURL 就被回收，刷新后连字节都不在了</text>
+
+  <!-- bubble C : channel -->
+  <text x="656" y="54" fill="#f0eee6" font-size="12" font-weight="600">Telegram 发一张图</text>
+  <rect x="656" y="64" width="288" height="112" rx="12" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="670" y="88" fill="#bdb9a6" font-size="11.5">[张三 (10086)] 看这个</text>
+  <text x="670" y="112" fill="#e0445a" font-size="9.5" font-family="Menlo,monospace">[attachment: /Users/x/.op/channels/</text>
+  <text x="670" y="126" fill="#e0445a" font-size="9.5" font-family="Menlo,monospace">telegram/accounts/default/attachments/</text>
+  <text x="670" y="140" fill="#e0445a" font-size="9.5" font-family="Menlo,monospace">20260810-113000-a1b2c3d4-photo.jpg</text>
+  <text x="670" y="154" fill="#e0445a" font-size="9.5" font-family="Menlo,monospace">(image/jpeg, 20481 bytes)]</text>
+  <text x="656" y="169" fill="#e0445a" font-size="10.5">chip 正则要求 “KB” 和 “@ 路径”，这条两样都没有</text>
+
+  <line x1="16" y1="192" x2="944" y2="192" stroke="#2e2c20"/>
+  <text x="16" y="214" fill="#8a8675" font-size="11.5">chip 正则的两个必要条件：括号里以 <tspan fill="#d4843a" font-family="Menlo,monospace">N KB</tspan> 结尾的大小，以及可选的 <tspan fill="#d4843a" font-family="Menlo,monospace">@ 路径</tspan> 后缀。</text>
+  <text x="16" y="234" fill="#8a8675" font-size="11.5">渠道那条标记写的是 <tspan fill="#d4843a" font-family="Menlo,monospace">bytes</tspan> 而且没有 <tspan fill="#d4843a" font-family="Menlo,monospace">@</tspan>，两条正则都落空，于是它以正文身份被 markdown 渲染出来。</text>
+</svg>
+</div>
+<div class="legend">
+  <b>路径已经在正文里，只是被丢掉了。</b>chip 正则的 <code>(?:\s*@\s*[^\]]+)?</code> 匹配了绝对路径却不捕获，注释写的是“路径是给模型的，不是给 chip 的”。要让 chip 可点，这一处改动只是把它捕获出来。
+  <span class="src">web/components/chat/messages/user-attachments.tsx:47-51,126-146 · web/components/chat/messages/user-bubble.tsx:126-161</span>
+</div>
+
+<h3 id="now-out">1.3 出站只有一条文本管道</h3>
+<div class="card scroll">
+<svg viewBox="0 0 960 268" role="img" aria-label="agent 出站：只有文本，post_file 存在但无调用方">
+  <defs>
+    <marker id="ar2" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <path d="M0 0 L7 3.5 L0 7 z" fill="#5c5a4e"/>
+    </marker>
+    <marker id="ar3" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <path d="M0 0 L7 3.5 L0 7 z" fill="#6d2530"/>
+    </marker>
+  </defs>
+  <rect x="16" y="60" width="150" height="72" rx="10" fill="#1d1c14" stroke="#9d6fe0"/>
+  <text x="28" y="86" fill="#f0eee6" font-size="12.5" font-weight="600">agent 手上的文件</text>
+  <text x="28" y="106" fill="#8a8675" font-size="10.5">write / image_generate</text>
+  <text x="28" y="122" fill="#8a8675" font-size="10.5">canvas / 任何脚本产物</text>
+
+  <line x1="166" y1="96" x2="204" y2="96" stroke="#5c5a4e" marker-end="url(#ar2)"/>
+  <rect x="208" y="60" width="188" height="72" rx="10" fill="#12110b" stroke="#6b4519"/>
+  <text x="220" y="84" fill="#d4843a" font-size="12">回复正文里写一句路径</text>
+  <text x="220" y="104" fill="#8a8675" font-size="10.5">唯一可用的表达方式</text>
+  <text x="220" y="122" fill="#8a8675" font-size="10.5">没有任何工具能附上文件</text>
+
+  <line x1="396" y1="96" x2="434" y2="96" stroke="#5c5a4e" marker-end="url(#ar2)"/>
+  <rect x="438" y="34" width="236" height="56" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="450" y="56" fill="#f0eee6" font-size="12">网页气泡</text>
+  <text x="450" y="76" fill="#e0445a" font-size="10.5">整个聊天流里没有一个 img 标签</text>
+  <rect x="438" y="102" width="236" height="56" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="450" y="124" fill="#f0eee6" font-size="12">渠道消息</text>
+  <text x="450" y="144" fill="#e0445a" font-size="10.5">send_text_full 只送纯文本</text>
+
+  <rect x="700" y="34" width="244" height="124" rx="10" fill="#12110b" stroke="#6d2530" stroke-dasharray="5 4"/>
+  <text x="712" y="58" fill="#e0445a" font-size="12" font-weight="600">已经写好，零个调用方</text>
+  <text x="712" y="80" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">_transport.post_file</text>
+  <text x="712" y="98" fill="#8a8675" font-size="10.5">telegram sendPhoto / sendDocument</text>
+  <text x="712" y="114" fill="#8a8675" font-size="10.5">discord multipart 上传</text>
+  <text x="712" y="130" fill="#8a8675" font-size="10.5">slack external-upload 三步</text>
+  <text x="712" y="148" fill="#8a8675" font-size="10.5">wechat 返回 not_supported</text>
+  <path d="M674 96 C 686 96 688 96 698 96" stroke="#6d2530" stroke-width="1.4" stroke-dasharray="4 3" fill="none" marker-end="url(#ar3)"/>
+
+  <line x1="16" y1="182" x2="944" y2="182" stroke="#2e2c20"/>
+  <text x="16" y="206" fill="#8a8675" font-size="11.5">出站文件的<tspan fill="#f0eee6">传输层已经全部就位</tspan>：<tspan font-family="Menlo,monospace" fill="#d4843a">outbound.send_file()</tspan> 和 <tspan font-family="Menlo,monospace" fill="#d4843a">Channel.send_file()</tspan> 都是公开接口，四个平台的实现都在。</text>
+  <text x="16" y="228" fill="#8a8675" font-size="11.5">缺的只有<tspan fill="#f0eee6">一个让模型表达“我要把这个文件给你”的词法</tspan>，以及回信路径上把它接出来的那一步。</text>
+  <text x="16" y="250" fill="#8a8675" font-size="11.5">今天模型想给用户一个文件，只能贴路径；用户在网页上拿这条路径没有任何办法打开它。</text>
+</svg>
+</div>
+<div class="legend">
+  <b>image_generate 是最直观的例子。</b>它把图存到磁盘并返回路径，回复里于是出现一行本地绝对路径。浏览器加载不了本地路径，Telegram 那头拿到的也只是一行字。
+  <span class="src">openprogram/channels/_transport.py:186-211,777-780 · openprogram/channels/outbound.py:58-68 · openprogram/channels/base.py:256-261 · openprogram/functions/tools/image_generate/image_generate.py:33-40</span>
+</div>
+
+<h3 id="now-parts">1.4 现成零件很齐，够不着聊天</h3>
+<div class="card scroll">
+<svg viewBox="0 0 960 300" role="img" aria-label="现有查看器与字节出口的作用域，以及聊天气泡够不着它们">
+  <text x="16" y="22" fill="#8a8675" font-size="10.5" letter-spacing="1.6">按作用域划分的现有能力</text>
+  <line x1="16" y1="30" x2="944" y2="30" stroke="#2e2c20"/>
+
+  <rect x="16" y="46" width="300" height="152" rx="10" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="30" y="70" fill="#5aad4e" font-size="12.5" font-weight="600">项目根作用域</text>
+  <text x="30" y="92" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">GET /files/raw?project_id&amp;path</text>
+  <text x="30" y="108" fill="#8a8675" font-size="10.5">图片真类型 + nosniff + CSP sandbox</text>
+  <text x="30" y="124" fill="#8a8675" font-size="10.5">pdf 内联给浏览器自带阅读器</text>
+  <text x="30" y="140" fill="#8a8675" font-size="10.5">其余强制下载</text>
+  <text x="30" y="162" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">FileViewer</text>
+  <text x="30" y="178" fill="#8a8675" font-size="10.5">图片 / pdf / markdown 渲染 / 带行号代码</text>
+  <text x="30" y="192" fill="#8a8675" font-size="10.5">二进制给名字加大小加下载卡</text>
+
+  <rect x="330" y="46" width="290" height="152" rx="10" fill="#1d1c14" stroke="#6b4519"/>
+  <text x="344" y="70" fill="#d4843a" font-size="12.5" font-weight="600">会话 workdir 作用域</text>
+  <text x="344" y="92" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">GET /api/file-read</text>
+  <text x="344" y="108" fill="#8a8675" font-size="10.5">只出文本，1MB 截断，没有字节出口</text>
+  <text x="344" y="128" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">GET /api/file-resolve</text>
+  <text x="344" y="144" fill="#8a8675" font-size="10.5">只出绝对路径和大小</text>
+  <text x="344" y="166" fill="#8a8675" font-size="10.5">允许根已经包含</text>
+  <text x="344" y="182" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">状态目录/sessions</text>
+
+  <rect x="634" y="46" width="310" height="70" rx="10" fill="#12110b" stroke="#6d2530"/>
+  <text x="648" y="68" fill="#e0445a" font-size="12.5" font-weight="600">渠道账号作用域</text>
+  <text x="648" y="90" fill="#8a8675" font-size="10.5">没有任何 HTTP 出口，不在允许根里</text>
+  <text x="648" y="106" fill="#8a8675" font-size="10.5">网页永远读不到这里的字节</text>
+  <rect x="634" y="128" width="310" height="70" rx="10" fill="#12110b" stroke="#6b4519"/>
+  <text x="648" y="150" fill="#d4843a" font-size="12.5" font-weight="600">组合器内部</text>
+  <text x="648" y="172" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">FilePreviewModal</text>
+  <text x="648" y="188" fill="#8a8675" font-size="10.5">只对未发送的文档，只渲染文本</text>
+
+  <rect x="16" y="216" width="928" height="66" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="30" y="240" fill="#f0eee6" font-size="12.5" font-weight="600">聊天气泡</text>
+  <text x="30" y="262" fill="#e0445a" font-size="11.5">附件 chip 拿不到 project_id，也拿不到一条能取字节的 URL，于是它只能是一个静态标签。</text>
+  <text x="560" y="240" fill="#8a8675" font-size="11">同一个仓库里，<tspan fill="#f0eee6">turn-files-chips</tspan> 已经在做</text>
+  <text x="560" y="258" fill="#8a8675" font-size="11">“点一下开中心标签页”，走的是 <tspan font-family="Menlo,monospace" fill="#d4843a">fileTabId</tspan></text>
+  <text x="560" y="276" fill="#8a8675" font-size="11">加 <tspan font-family="Menlo,monospace" fill="#d4843a">useCenterTabs</tspan>，只服务本轮改过的文件。</text>
+</svg>
+</div>
+<div class="legend">
+  <b>查看器不用重写，路由要补一条。</b>浏览器能取到的字节只有项目根那一条 <code>/files/raw</code>，而附件躺在会话 workdir 和渠道账号目录里，两处都在它的作用域外。
+  <span class="src">openprogram/webui/server.py:1498-1531 · openprogram/webui/routes/file_search.py:60-155 · web/components/files/file-viewer.tsx:51-108 · web/components/chat/messages/turn-files-chips.tsx:14-27 · web/components/chat/composer/attach/file-tiles.tsx:290-357</span>
+</div>
+
+<h3 id="now-verdict">1.5 三件需求，现在各差在哪</h3>
+<div class="tbl">
+<table class="wide">
+<tr><th>需求</th><th>现在做得到吗</th><th>卡在哪一层</th><th>已经能复用的东西</th></tr>
+<tr>
+  <td class="name">用户发的图<br>能点开看</td>
+  <td class="n"><b>做不到</b><br>连缩略图都没有</td>
+  <td>存储层：网页图片根本不落盘<br>正文层：不写标记，消息里没有引用<br>接口层：会话目录没有字节出口<br>前端层：气泡里没有 img</td>
+  <td>文档那条落盘路径已经完整（去重、上限、路径回写），图片接进去即可</td>
+</tr>
+<tr>
+  <td class="name">agent 发图<br>发文件给用户</td>
+  <td class="n"><b>做不到</b><br>只能贴一行路径</td>
+  <td>工具层：没有对应工具<br>正文层：助手消息没有附件词法<br>渠道层：回信只走 send_text</td>
+  <td>四个平台的 <code>post_file</code> 全部实现完毕，公开接口就绪</td>
+</tr>
+<tr>
+  <td class="name">可读文件<br>点开就能看</td>
+  <td class="p"><b>一半</b><br>本轮改过的文件可以，附件不行</td>
+  <td>接口层：同上，缺字节出口<br>前端层：FileViewer 只认项目相对路径</td>
+  <td>FileViewer 已覆盖图片、pdf、markdown、代码、下载卡；中心标签页的打开方式 turn-files-chips 已经在用</td>
+</tr>
+</table>
+</div>
+<div class="note red">
+  <b>还有一个隐性缺陷</b>：从 Telegram 或 Discord 进来的附件，在网页上打开同一个会话时，那行 <code>[attachment: /abs (image/png, 20481 bytes)]</code> 会当成正文渲染出来。这不是显示不好看的问题，是两侧词法不统一的直接后果，修复入口就是让渠道复用网页那套标记。
+</div>
+
+<!-- ══════════════════════════ LAYER 2 ══════════════════════════ -->
+<h2 id="others"><span class="num">02</span>别人怎么做的<span class="ly ly2">八家对照</span></h2>
+<p class="lead">references 下八家全部读过。没有这个能力的如实标“没有”。八家里有五家能让 agent 主动把文件交给用户，其中三家用的是同一个招数：<b>在回复正文里写一条指令行，投递层把它抽走</b>。</p>
+
+<div class="tbl">
+<table class="wide">
+<tr><th>仓库</th><th>入站怎么进上下文</th><th>界面展示与点开</th><th>agent 主动发文件</th><th>可读文件预览 · 清理</th></tr>
+<tr>
+  <td class="name">claude-code<br><span style="font-weight:400;color:#6b6a63">TUI</span></td>
+  <td>图片 base64 内联块。字节存 <code>~/.claude/image-cache/&lt;会话&gt;/</code>，权限 0600。5MB 加 2000px 上限，sharp 缩放，JPEG 质量梯 80/60/40/20。桥接进来的网页与手机附件走路径注入，交给读工具
+    <span class="src">utils/imageStore.ts:9-67 · utils/imageResizer.ts:256-334 · bridge/inboundAttachments.ts:2-11</span></td>
+  <td><code>[Image #N]</code> 文本 chip，<b>OSC-8 超链接可点</b>，点开走系统默认看图器。非图片是一行摘要 <code>Read &lt;路径&gt; (N lines)</code>。终端内联图协议：没有
+    <span class="src">components/ClickableImageRef.tsx:16-34 · messages/AttachmentMessage.tsx:131-158</span></td>
+  <td class="y"><b>有，专门的工具参数</b>。<code>SendUserMessage</code>（旧名 Brief）带 <code>attachments: string[]</code>，描述写的是“照片、截图、diff、日志，任何用户应该看到的文件”。上传到服务端换 file_uuid 给手机与网页客户端渲染，30MB 上限。兄弟工具 <code>SendUserFile</code> 只在引用里出现，这份 dump 里目录缺失
+    <span class="src">tools/BriefTool/BriefTool.ts:25-30 · tools/BriefTool/upload.ts:32-166 · tools.ts:42-43</span></td>
+  <td>TUI 内置 markdown 渲染加语法高亮。PDF 转 document 块，或用 poppler 按页转 JPEG。图片没有内置查看器，靠 OSC-8 甩给系统。清理：每次会话启动清掉其他会话的图片缓存，内存路径表 200 条 LRU
+    <span class="src">utils/imageStore.ts:129-150</span></td>
+</tr>
+<tr>
+  <td class="name">codex-cli<br><span style="font-weight:400;color:#6b6a63">TUI</span></td>
+  <td>base64 data URL 作 <code>input_image</code>，外面包一层 <code>&lt;image name path&gt;</code> 标签。<b>字节留在原地不复制</b>。2048px 上限加 patch 预算。<b>sha1 内容寻址内存缓存，64MB LRU</b>。远程 URL 直接拒绝
+    <span class="src">protocol/src/local_media.rs:21-35 · utils/image/src/lib.rs:26-203</span></td>
+  <td><code>[Image #N]</code> 纯标签，<b>不可点</b>。kitty 与 sixel 协议在仓库里，只给吉祥物用，附件一次都没走过
+    <span class="src">tui/src/pets/image_protocol.rs:27-31 · tui/src/history_cell/messages.rs:95-96</span></td>
+  <td class="p"><b>没有通用工具</b>。图片生成写盘并打印 <code>file://</code>，提示语写“图片已经展示给用户了”
+    <span class="src">ext/image-generation/src/artifact.rs:31-43</span></td>
+  <td>TUI markdown 加 syntect 高亮。没有图片与 PDF 查看器。<code>file_opener</code> 配置把文件引用改写成 <code>vscode://</code> URI 交给编辑器
+    <span class="src">core/src/config/mod.rs:939-941</span></td>
+</tr>
+<tr>
+  <td class="name">openclaw<br><span style="font-weight:400;color:#6b6a63">网页 + TUI</span></td>
+  <td><b>两种模式按能力切</b>。模型能看就 base64 块，看不了就下沉到 media store 换一张认领单 <code>media://inbound/&lt;id&gt;</code> 写进正文。store 权限 0700，inbound 与 outbound 两个子目录。图 6MB 音视频 16MB 文档 100MB。EXIF 归正后重编码 JPEG
+    <span class="src">gateway/chat-attachments.ts:391-393 · media/store.ts:146-152 · media/constants.ts:1-4</span></td>
+  <td>网页<b>真缩略图</b>，点击开新标签页。非图片是卡片，音频带原生播放器，还有“检查中 / 不可用”状态徽标。TUI 只有标签
+    <span class="src">ui/src/ui/chat/grouped-render.ts:822-830,1203-1290</span></td>
+  <td class="y"><b>有，双通道</b>。正文里单独一行 <code>MEDIA:&lt;路径或URL&gt;</code>，系统提示里教；<b>只有白名单核心工具能发本地路径</b>，插件与 MCP 工具被排除，防止诱导读到不该读的文件。另有 <code>message</code> 工具带 attachments/media/caption/asDocument 等参数。出站文件先落 store 的 outbound 子目录再交给渠道
+    <span class="src">agents/system-prompt.ts:424-426 · agents/pi-embedded-subscribe.tools.ts:280-300 · media/outbound-attachment.ts:5-30</span></td>
+  <td>网页 markdown-it 加 DOMPurify 消毒，音视频原生播放器。PDF 与文档是<b>抽成文本给模型</b>，不是给人看。清理：媒体 TTL 两分钟
+    <span class="src">media/document-extractors.runtime.ts:14-45 · media/store.ts:24,188</span></td>
+</tr>
+<tr>
+  <td class="name">opencode<br><span style="font-weight:400;color:#6b6a63">网页 + TUI</span></td>
+  <td>base64 data URL 存进会话 SQLite 的 <code>part.data</code> 列，不落盘。<code>@</code> 提及的文件在提交时<b>真的跑一遍读工具</b>，把结果作为两条合成纯文本部分注入。5MB 加 2000px，Lanczos3 缩放，JPEG 质量梯。按 URL 去重
+    <span class="src">session/prompt.ts:888-922,982-1002 · image/image.ts:10-136</span></td>
+  <td>网页图片卡片，<b>点击开灯箱对话框</b>。非图片是文件图标卡，不可点。<code>@</code> 提及不是卡片，是正文里按字符偏移高亮的片段。TUI 有 MIME 徽标加文件名
+    <span class="src">ui/src/components/message-part.tsx:1103-1164 · tui/src/routes/session/index.tsx:1350-1358</span></td>
+  <td class="n"><b>没有</b>。工具可以返回 <code>attachments</code>，但那是流回模型上下文的，不是给用户的。没有任何渠道适配器
+    <span class="src">tool/tool.ts:52</span></td>
+  <td>网页内置。<code>GET /file/content</code> 返回文本或 base64 二进制，前端渲染图片音频与 SVG，另有文件标签页与 diff 视图。还有一个“用外部程序打开”菜单，开的是项目不是附件。清理：没有，data URL 随会话行级联删除
+    <span class="src">server/routes/…/file.ts:62-100 · ui/src/components/file-media.tsx:31-70</span></td>
+</tr>
+<tr>
+  <td class="name">hermes-agent<br><span style="font-weight:400;color:#6b6a63">聊天渠道为主</span></td>
+  <td><b>两种路由模式按轮切</b>。native 模式内联 base64 并<b>额外附一条路径提示</b>，让模型两样都有；text 模式先跑 vision_analyze 把图片描述前置，模型永远看不到像素。文档只给沙箱内路径，文本文件另外内联内容。字节按类型分缓存目录。<b>不预先限制大小</b>，被服务端拒了再压到 4MB
+    <span class="src">agent/image_routing.py:298-379 · gateway/run.py:7794-7900</span></td>
+  <td>主界面是 Telegram 与 Discord 自己的原生渲染。自家 CLI 与 TUI 只有一行标签，网页那侧是 xterm.js 终端流。三者都不可点
+    <span class="src">cli.py:5649 · web/src/pages/ChatPage.tsx:19-23</span></td>
+  <td class="y"><b>有，八家里最完整</b>。正文 <code>MEDIA:&lt;path&gt;</code> 指令加 <code>send_message</code> 工具两条路。安全闸 <code>validate_media_delivery_path</code>：<b>符号链接先解析再判断包含关系</b>，必须落在安全根或运维白名单里。能力按平台在系统提示里分别声明，CLI 明确写“这里没有附件通道，不要发 MEDIA 标签”。<code>![alt](url)</code> 也会被自动抽出来发成照片
+    <span class="src">gateway/platforms/base.py:867-905,2262-2301 · agent/prompt_builder.py:420-597</span></td>
+  <td>没有通用查看器，CLI 用 rich 渲染 markdown。入站文本文档直接内联进提示而不是预览。清理：图片与文档缓存 24 小时 TTL
+    <span class="src">gateway/platforms/base.py:672-690,989-1005</span></td>
+</tr>
+<tr>
+  <td class="name">pi-mono<br><span style="font-weight:400;color:#6b6a63">TUI</span></td>
+  <td><code>@file</code> 参数内联，同时给模型一条 <code>&lt;file name&gt;</code> 文本标记。<b>剪贴板粘贴反而只给路径</b>：写进 tmp 文件，把路径当文本插进编辑器，模型自己去读。2000px 加 4.5MB，先 PNG 再 JPEG 质量梯，跑在 worker 里，用户可在设置里关掉
+    <span class="src">cli/file-processor.ts:48-89 · modes/interactive/interactive-mode.ts:2442-2462 · utils/image-resize-core.ts:22-127</span></td>
+  <td><b>八家里唯一真正做终端内联图的</b>。kitty 与 iTerm2 协议，tmux 与 screen 下强制关闭，不支持时退回 <code>[Image: 名字 [mime] 800x600]</code>。但只渲染工具结果里的图，<b>用户自己发的图不回显</b>
+    <span class="src">tui/src/terminal-image.ts:1-109,447-453 · modes/interactive/components/user-message.ts:11-34</span></td>
+  <td class="n"><b>没有</b>。工具只有 bash edit find grep ls read write，没有渠道适配器</td>
+  <td>TUI markdown 加语法高亮加 diff 加终端内联图。没有 PDF。清理：tmp 剪贴板图片没有任何清理</td>
+</tr>
+<tr>
+  <td class="name">pi-ai<br><span style="font-weight:400;color:#6b6a63">协议层</span></td>
+  <td>只是 pi-mono 里那个包的只读副本，十二个文件，没有界面没有工具。图片 base64，<b>模型不声明 image 输入能力时整块剥掉</b>。工具结果里带图会被拆成文本加一条合成用户消息
+    <span class="src">providers/openai-completions.ts:561-570,657-714</span></td>
+  <td class="n">没有</td>
+  <td class="n">没有</td>
+  <td class="n">没有</td>
+</tr>
+<tr>
+  <td class="name">weclaw<br><span style="font-weight:400;color:#6b6a63">微信</span></td>
+  <td class="n"><b>agent 根本看不到图</b>。入站图片在到达 agent 之前就被短路：下载、嗅探魔数、写成 <code>&lt;时间戳&gt;.&lt;ext&gt;</code> 加一份 sidecar，回一句“Saved: 文件名”。语音是例外，用微信自己的转写文本当提示词。没有大小上限
+    <span class="src">messaging/handler.go:288-294,726-783</span></td>
+  <td class="n">没有界面，微信就是客户端</td>
+  <td class="y"><b>有，而且是隐式的</b>。不需要任何约定：回复里裸的绝对路径行或 <code>![](url)</code> 都会被抽出来上传，然后<b>把那行原地改写成“已发送附件：文件名”</b>，失败就追加“附件发送失败”。附件必须在允许根下，默认 <code>~/.weclaw/workspace</code>，另有扩展名白名单
+    <span class="src">messaging/attachment.go:17-107 · messaging/handler.go:491-524</span></td>
+  <td class="n">没有。markdown 是被<b>剥掉</b>而不是渲染，转成纯文本发给微信
+    <span class="src">messaging/markdown.go:7-40</span></td>
+</tr>
+</table>
+</div>
+
+<h3 id="out4">出站四种设计，抄哪一种</h3>
+<div class="card scroll">
+<svg viewBox="0 0 960 318" role="img" aria-label="agent 主动发文件的四种设计对比">
+  <text x="16" y="24" fill="#8a8675" font-size="10.5" letter-spacing="1.6">模型怎么表达“我要把这个文件给你”</text>
+  <line x1="16" y1="32" x2="944" y2="32" stroke="#2e2c20"/>
+
+  <rect x="16" y="46" width="224" height="196" rx="10" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="30" y="70" fill="#5aad4e" font-size="12.5" font-weight="600">工具参数</text>
+  <text x="30" y="88" fill="#6b6a63" font-size="10.5">claude-code</text>
+  <text x="30" y="112" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">SendUserMessage(</text>
+  <text x="30" y="128" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">  attachments: [路径])</text>
+  <text x="30" y="154" fill="#5aad4e" font-size="10.5">类型明确，模型不会写错格式</text>
+  <text x="30" y="172" fill="#5aad4e" font-size="10.5">工具层就能做存在性校验</text>
+  <text x="30" y="196" fill="#e0445a" font-size="10.5">发文件必须占一次工具调用</text>
+  <text x="30" y="214" fill="#e0445a" font-size="10.5">说话和给文件被拆成两件事</text>
+
+  <rect x="252" y="46" width="224" height="196" rx="10" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="266" y="70" fill="#5aad4e" font-size="12.5" font-weight="600">正文指令行</text>
+  <text x="266" y="88" fill="#6b6a63" font-size="10.5">openclaw · hermes</text>
+  <text x="266" y="112" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">MEDIA:/abs/path</text>
+  <text x="266" y="128" fill="#6b6a63" font-size="10">单独一行，投递层抽走</text>
+  <text x="266" y="154" fill="#5aad4e" font-size="10.5">和说话是同一个动作，零额外往返</text>
+  <text x="266" y="172" fill="#5aad4e" font-size="10.5">按渠道在系统提示里开关能力</text>
+  <text x="266" y="196" fill="#e0445a" font-size="10.5">模型可能写错路径，必须有安全闸</text>
+  <text x="266" y="214" fill="#e0445a" font-size="10.5">抽不干净就当正文漏给用户</text>
+
+  <rect x="488" y="46" width="224" height="196" rx="10" fill="#1d1c14" stroke="#6b4519"/>
+  <text x="502" y="70" fill="#d4843a" font-size="12.5" font-weight="600">隐式扫描</text>
+  <text x="502" y="88" fill="#6b6a63" font-size="10.5">weclaw</text>
+  <text x="502" y="112" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">任何裸绝对路径行</text>
+  <text x="502" y="128" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">或 ![alt](url)</text>
+  <text x="502" y="154" fill="#5aad4e" font-size="10.5">模型什么都不用学，零提示词成本</text>
+  <text x="502" y="172" fill="#5aad4e" font-size="10.5">那行会被改写成“已发送附件：x”</text>
+  <text x="502" y="196" fill="#e0445a" font-size="10.5">模型只是提一句路径也会被当成投递</text>
+  <text x="502" y="214" fill="#e0445a" font-size="10.5">意图和描述分不开</text>
+
+  <rect x="724" y="46" width="220" height="196" rx="10" fill="#12110b" stroke="#6d2530"/>
+  <text x="738" y="70" fill="#e0445a" font-size="12.5" font-weight="600">没有</text>
+  <text x="738" y="88" fill="#6b6a63" font-size="10.5">codex-cli · opencode · pi-mono · pi-ai</text>
+  <text x="738" y="118" fill="#8a8675" font-size="10.5">模型想给用户一个文件，</text>
+  <text x="738" y="136" fill="#8a8675" font-size="10.5">只能在正文里贴一句路径。</text>
+  <text x="738" y="164" fill="#8a8675" font-size="10.5">codex 的图片生成会打印</text>
+  <text x="738" y="182" fill="#8a8675" font-size="10.5">file:// 并宣称“已经展示给用户”，</text>
+  <text x="738" y="200" fill="#8a8675" font-size="10.5">实际 TUI 只画了一行文字。</text>
+  <text x="738" y="226" fill="#d4843a" font-size="10.5">这一格就是我们今天所在的位置。</text>
+
+  <line x1="16" y1="258" x2="944" y2="258" stroke="#2e2c20"/>
+  <text x="16" y="280" fill="#8a8675" font-size="11.5">三家用正文指令的实现，安全闸都长一个样：<tspan fill="#f0eee6">路径必须落在允许根内，符号链接先解析再判断包含关系</tspan>。openclaw 还多一层，</text>
+  <text x="16" y="300" fill="#8a8675" font-size="11.5">只有白名单里的核心工具能发本地路径，插件与 MCP 工具一律排除，防止被诱导读走不该读的文件。</text>
+</svg>
+</div>
+
+<h3 id="tricks">我们没想到的招数</h3>
+<div class="grid3">
+  <div class="dom" style="border-top-color:#9d6fe0">
+    <div class="k">产出即页面</div>
+    <h4>三家各做了一遍</h4>
+    <p>openclaw 把文档物化成 <code>/__openclaw__/canvas/documents/&lt;id&gt;/index.html</code>，聊天里用 <code>[embed ref="cv_123"]</code> 内联渲染，系统提示明确禁止在 embed 里用本地路径。codex 让助手输出 <code>::codex-inline-vis{</code> 指令行，TUI 把 HTML 片段物化成沙箱查看器并把那行改写成一个浏览器链接，片段 2MB 上限加严格 CSP。pi-mono 的 <code>/share</code> 把整个会话导出成自包含 HTML，发成私密 gist，给一个托管查看器地址。</p>
+    <div class="tools"><span>canvas-host</span><span>inline-vis</span><span>/share</span></div>
+  </div>
+  <div class="dom" style="border-top-color:#4f8ef7">
+    <div class="k">字节怎么安全地给到网页</div>
+    <h4>签名短时票据</h4>
+    <p>openclaw 的 <code>/__openclaw__/assistant-media?source=…&amp;mediaTicket=…</code>，票据格式 <code>v1.&lt;载荷&gt;.&lt;签名&gt;</code>，TTL 五分钟。这是“网页要看字节但不能给它任意路径”这个问题的一个成熟答案，比单纯校验允许根更严。</p>
+    <div class="tools"><span>ticket TTL 5min</span><span>root guard</span><span>symlink resolve</span></div>
+  </div>
+  <div class="dom" style="border-top-color:#2f5228">
+    <div class="k">chip 是编辑单元</div>
+    <h4>占位符没了就不发</h4>
+    <p>claude-code 把 <code>[Image #N]</code> 当成光标与 vim 操作里不可分割的一个原子单位，而且只有占位符还留在正文里，图片才会被发出去。用户删掉那个 chip 就等于取消这次附件，不需要另一个删除按钮。</p>
+    <div class="tools"><span>Cursor.ts:322</span><span>vim/operators.ts:469</span></div>
+  </div>
+</div>
+<div class="note green">
+  <b>另外几条值得记住的</b>：hermes 把宿主缓存路径改写成容器内路径，让沙箱里的 agent 打得开同一个文件；hermes 的 native 模式在内联像素的同时<b>还附一条路径提示</b>，模型两样都有；codex 有个 <code>view_image</code> 工具让模型自己把本地图片拉进上下文；pi-ai 在模型不声明 image 输入能力时把图片块整个剥掉，正是 attachment-handling 里记过的那个降级缺口；媒体清理三家三个尺度，openclaw 两分钟、hermes 二十四小时、claude-code 每次会话启动清掉别的会话。
+</div>
+<div class="note red">
+  <b>顺带纠正一处旧记载</b>：attachment-handling 里写 opencode 的做法是“提交时合成一个假的 read 工具调用与结果”。实际代码里注入的是<b>两条标了 synthetic 的纯文本部分</b>，内容是一句叙述“Called the Read tool with the following input …”加上真实读取结果，落到模型那侧是 <code>role: "user"</code> 的文本，不是 tool_use 与 tool_result 内容块。拒绝这条路线的三个理由不受影响，但描述需要改。
+</div>
+
+<!-- ══════════════════════════ LAYER 3 ══════════════════════════ -->
+<h2 id="plan"><span class="num">03</span>我们计划怎么优化<span class="ly ly3">下一步</span></h2>
+<p class="lead">三件需求，三条改动，共用一条新路由。每条改动都落在已有模块上，没有新组件、没有新数据表、没有新依赖。</p>
+
+<div class="card scroll">
+<svg viewBox="0 0 960 424" role="img" aria-label="三条改动在渠道、存储、接口、工具、前端五层的落点矩阵">
+  <text x="16" y="24" fill="#8a8675" font-size="10.5" letter-spacing="1.6">改哪几层</text>
+  <rect x="146" y="34" width="264" height="42" rx="8" fill="#1d1c14" stroke="#6b4519"/>
+  <text x="158" y="52" fill="#d4843a" font-size="12.5" font-weight="600">A · 用户发的图能点开看</text>
+  <text x="158" y="68" fill="#8a8675" font-size="10.5">顺手修掉渠道附件在网页露出标记</text>
+  <rect x="420" y="34" width="264" height="42" rx="8" fill="#1d1c14" stroke="#6b4519"/>
+  <text x="432" y="52" fill="#d4843a" font-size="12.5" font-weight="600">B · agent 发文件给用户</text>
+  <text x="432" y="68" fill="#8a8675" font-size="10.5">网页和渠道两条投递路都覆盖</text>
+  <rect x="694" y="34" width="250" height="42" rx="8" fill="#1d1c14" stroke="#6b4519"/>
+  <text x="706" y="52" fill="#d4843a" font-size="12.5" font-weight="600">C · 可读文件点开就能看</text>
+  <text x="706" y="68" fill="#8a8675" font-size="10.5">复用 FileViewer，不复用 docs_site</text>
+
+  <!-- row: 渠道层 -->
+  <rect x="16" y="86" width="120" height="62" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="28" y="122" fill="#f0eee6" font-size="12">渠道层</text>
+  <rect x="146" y="86" width="264" height="62" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="158" y="108" fill="#bdb9a6" font-size="11">attachment_notes 换成网页那套词法</text>
+  <text x="158" y="126" fill="#8a8675" font-size="10.5">一个函数，约 8 行</text>
+  <text x="158" y="142" fill="#6b6a63" font-size="10" font-family="Menlo,monospace">channels/_attachments.py:181</text>
+  <rect x="420" y="86" width="264" height="62" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="432" y="108" fill="#bdb9a6" font-size="11">回信前抽出标记，逐个调已有 send_file</text>
+  <text x="432" y="126" fill="#8a8675" font-size="10.5">约 30 行，WeChat 降级成文本说明</text>
+  <text x="432" y="142" fill="#6b6a63" font-size="10" font-family="Menlo,monospace">channels/base.py:256</text>
+  <rect x="694" y="86" width="250" height="62" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="706" y="122" fill="#5c5a4e" font-size="11">不涉及</text>
+
+  <!-- row: 存储层 -->
+  <rect x="16" y="152" width="120" height="62" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="28" y="188" fill="#f0eee6" font-size="12">存储层</text>
+  <rect x="146" y="152" width="264" height="62" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="158" y="174" fill="#bdb9a6" font-size="11">图片也走文档那条落盘路</text>
+  <text x="158" y="192" fill="#8a8675" font-size="10.5">同时保留 ImageContent 块给模型</text>
+  <text x="158" y="208" fill="#6b6a63" font-size="10" font-family="Menlo,monospace">webui/ws_actions/chat.py:584</text>
+  <rect x="420" y="152" width="264" height="62" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="432" y="188" fill="#5c5a4e" font-size="11">不涉及，文件已经在盘上</text>
+  <rect x="694" y="152" width="250" height="62" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="706" y="188" fill="#5c5a4e" font-size="11">不涉及</text>
+
+  <!-- row: 接口层 -->
+  <rect x="16" y="218" width="120" height="62" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="28" y="254" fill="#f0eee6" font-size="12">后端接口</text>
+  <rect x="146" y="218" width="798" height="62" rx="8" fill="#1d1c14" stroke="#d4843a"/>
+  <text x="158" y="240" fill="#d4843a" font-size="12" font-weight="600">三条改动的共同前提：一条字节出口</text>
+  <text x="158" y="258" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">GET /api/file-raw?path=&lt;绝对路径&gt;</text>
+  <text x="158" y="274" fill="#8a8675" font-size="10.5">复用 _allowed_roots 校验，响应头照抄 /files/raw</text>
+  <text x="592" y="240" fill="#8a8675" font-size="10.5">约 40 行。不扩 /files/raw：</text>
+  <text x="592" y="256" fill="#8a8675" font-size="10.5">它的“绝对路径一律拒绝”是值得保留的不变量，</text>
+  <text x="592" y="272" fill="#8a8675" font-size="10.5">两条路由各守各的契约。</text>
+
+  <!-- row: 工具层 -->
+  <rect x="16" y="284" width="120" height="62" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="28" y="320" fill="#f0eee6" font-size="12">工具层</text>
+  <rect x="146" y="284" width="264" height="62" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="158" y="320" fill="#5c5a4e" font-size="11">不涉及</text>
+  <rect x="420" y="284" width="264" height="62" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="432" y="306" fill="#bdb9a6" font-size="11">新工具 send_file(path, caption)</text>
+  <text x="432" y="324" fill="#8a8675" font-size="10.5">只校验存在与大小，登记一条标记</text>
+  <text x="432" y="340" fill="#8a8675" font-size="10.5">约 60 行，投递交给各界面自己完成</text>
+  <rect x="694" y="284" width="250" height="62" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="706" y="320" fill="#5c5a4e" font-size="11">不涉及</text>
+
+  <!-- row: 前端层 -->
+  <rect x="16" y="350" width="120" height="62" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="28" y="386" fill="#f0eee6" font-size="12">前端层</text>
+  <rect x="146" y="350" width="264" height="62" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="158" y="372" fill="#bdb9a6" font-size="11">chip 正则把已匹配的路径捕获出来</text>
+  <text x="158" y="390" fill="#8a8675" font-size="10.5">图片 chip 换成缩略图，其余可点</text>
+  <text x="158" y="406" fill="#6b6a63" font-size="10" font-family="Menlo,monospace">messages/user-attachments.tsx</text>
+  <rect x="420" y="350" width="264" height="62" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="432" y="372" fill="#bdb9a6" font-size="11">AssistantBubble 复用同一个 chip</text>
+  <text x="432" y="390" fill="#8a8675" font-size="10.5">画在 TurnFilesChips 旁边</text>
+  <text x="432" y="406" fill="#6b6a63" font-size="10" font-family="Menlo,monospace">messages/assistant-bubble.tsx:493</text>
+  <rect x="694" y="350" width="250" height="62" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="706" y="372" fill="#bdb9a6" font-size="11">FileViewer 多接受一个绝对路径入参</text>
+  <text x="706" y="390" fill="#8a8675" font-size="10.5">点开走中心标签页，图片走灯箱</text>
+  <text x="706" y="406" fill="#6b6a63" font-size="10" font-family="Menlo,monospace">files/file-viewer.tsx:51</text>
+</svg>
+</div>
+<div class="legend">
+  <b>三条改动都是半天量级</b>，因为每一层的目标模块都已经存在，改的是它们的入参和词法，不是它们的结构。共同前提那条路由先做，A 和 C 随后就能并行。
+</div>
+
+<h3 id="planA">A · 用户发的图能点开看</h3>
+<ul>
+  <li><b>存储</b>：网页图片今天不落盘，所以消息里没有任何可指向的东西。把它接进文档那条已经很完整的落盘路（sha256 去重、32MB 单文件与 64MB 单轮上限、路径回写），同时<b>保留</b>发给模型的 ImageContent 块。图片的 <code>_count_and_preview</code> 天然走 binary 分支返回空，不产生额外预览开销。</li>
+  <li><b>渠道</b>：<code>attachment_notes()</code> 改用网页那套词法，<code>[attachment: 名字 (ext, N KB) @ 绝对路径]</code>。发言人前缀加在正文最前、附件标记追加在正文最后，两者位置不重叠；前缀里的方括号已经被 <code>_one_line</code> 换成圆括号，标记的解析不受影响。</li>
+  <li><b>前端</b>：chip 正则里那段 <code>(?:\s*@\s*[^\]]+)?</code> 已经在匹配路径，只是不捕获。捕获它，<code>ParsedAttachment</code> 加一个 <code>path</code>，图片按扩展名直接渲染缩略图，其余保持 chip 但换成按钮。</li>
+</ul>
+
+<h3 id="planB">B · agent 发文件给用户</h3>
+<ul>
+  <li><b>工具，不是裸的正文指令</b>。<code>send_file(path, caption)</code> 不负责投递，只做三件事：校验路径、读大小、登记一条与入站完全同词法的标记。投递由各个界面按自己的方式完成，工具本身对渠道无知，加一个新渠道不用改工具。<br>
+    <b>为什么不学 openclaw 与 hermes 的裸 <code>MEDIA:</code> 指令行</b>：那条路线的失败模式是“抽不干净就当正文漏给用户”，而这个亏我们已经在渠道入站那侧吃过一次（第一层最后那条标记原样露出）。工具调用有存在性校验，也有地方给出“文件不在了”这种诚实反馈。<br>
+    <b>为什么也不学 weclaw 的隐式扫描</b>：模型在正文里提一句路径就会被当成投递意图，描述和意图分不开。</li>
+  <li><b>安全闸是必需项，不是加分项</b>。三家做正文指令的实现闸门长得一模一样：路径必须落在允许根内，<b>符号链接先完全解析再判断包含关系</b>。我们直接复用 <code>_allowed_roots()</code>（项目根加会话目录），拒绝时返回工具错误而不是静默丢弃。openclaw 还多一层，只有白名单核心工具能发本地路径，插件与 MCP 工具一律排除；等我们的插件工具能触发出站投递时再补这一层。</li>
+  <li><b>渠道</b>：<code>base.py</code> 拿到 <code>reply_text</code> 后先抽标记，逐个调已经写好的 <code>self.send_file()</code>，剩下的正文照旧走 <code>send_text_full</code>。WeChat 的 <code>not_supported</code> 学 weclaw 的做法，<b>把那行标记原地改写成一句可读的中文说明</b>，而不是把原始标记漏给用户，也不是静默吞掉。</li>
+  <li><b>按渠道声明能力</b>。学 hermes：系统提示里按当前渠道说明这个工具能不能用。CLI 与不支持文件的渠道明确写“这里没有附件通道”，省得模型调了才发现发不出去。</li>
+  <li><b>网页</b>：助手气泡复用同一个 chip 解析器。<code>parseUserAttachments</code> 已经是纯函数，挪到共享位置改个名即可，两侧共用一份词法是这条设计最大的收益。</li>
+</ul>
+
+<h3 id="planC">C · 可读文件点开就能看</h3>
+<ul>
+  <li><b>复用 FileViewer，不复用 docs_site。</b>docs_site 是构建期的静态站点生成器：输入是整棵 <code>docs/</code> 树，产物是带导航壳的 <code>docs/_site/</code>，一次构建 408 页。聊天要的是运行期任意单个文件的即时渲染，输入、时机、产物三样都对不上。<code>FileViewer</code> 恰好已经覆盖图片、pdf、markdown 渲染、带行号代码、二进制下载卡这五类，正是需要的东西。</li>
+  <li><b>入参</b>：<code>FileViewer</code> 现在绑 <code>projectId</code> 加相对路径，两个出口分别是 <code>rawFileUrl()</code> 和 WS <code>project_file_read</code>。加一个二选一的绝对路径入参，两个出口切到 <code>/api/file-raw</code> 和已有的 <code>/api/file-read</code>，后者的文本语义与 1MB 截断跟 WS 那条一致。</li>
+  <li><b>打开方式</b>：默认开中心文件标签页，走 <code>turn-files-chips</code> 已经在用的 <code>fileTabId</code> 加 <code>useCenterTabs</code>；图片和小文件额外给一个灯箱，把组合器里的 <code>FilePreviewModal</code> 提到共享位置，它现在只服务未发送的文档，提出来两边都能用。</li>
+  <li><b>点开的行为学 opencode 而不是 openclaw</b>：openclaw 点缩略图开新标签页，opencode 点图开灯箱。灯箱不打断阅读位置，聊天流里更合适；需要长期停留的大文件再走中心标签页。两条路都留。</li>
+  <li><b>docs_site 唯一值得借的</b>是它的 pygments 代码高亮。现在 <code>FileViewer</code> 的带行号 <code>pre</code> 够用，高亮等有人真的抱怨再说。</li>
+</ul>
+<div class="note orange">
+  <b>关于那条字节出口要不要签名票据</b>：openclaw 给它的媒体端点加了五分钟 TTL 的签名票据。我们现在不加。web UI 只监听本地端口，前面已经有同源守卫，路由本身又校验允许根，票据在这个前提下买不到额外的东西。如果哪天 web UI 暴露到本地之外，这是第一件要补的事。
+</div>
+
+<!-- ══════════════════════════ LAYER 4 ══════════════════════════ -->
+<h2 id="ideal"><span class="num">04</span>理想状态<span class="ly ly4">目标形态</span></h2>
+<p class="lead">一句话：<b>任何一个文件，不管从哪个渠道进来、谁产生的、什么格式，在任何一个界面里都能用同一套查看器打开；agent 交出来的文件和用户传进去的文件，除了一个来源字段之外没有区别。</b>下面这张图不受当前实现约束，虚线部分是已知做不到或代价太高的，理由跟在图后。</p>
+
+<div class="card scroll">
+<svg viewBox="0 0 960 396" role="img" aria-label="理想形态：一条附件记录汇聚四种来源，供四个界面读出，双向对称">
+  <defs>
+    <marker id="ai" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <path d="M0 0 L7 3.5 L0 7 z" fill="#9d6fe0"/>
+    </marker>
+  </defs>
+  <text x="16" y="24" fill="#8a8675" font-size="10.5" letter-spacing="1.6">来源</text>
+  <text x="368" y="24" fill="#8a8675" font-size="10.5" letter-spacing="1.6">唯一的附件记录</text>
+  <text x="716" y="24" fill="#8a8675" font-size="10.5" letter-spacing="1.6">读出的界面</text>
+  <line x1="16" y1="32" x2="944" y2="32" stroke="#2e2c20"/>
+
+  <!-- sources -->
+  <rect x="16" y="46" width="164" height="40" rx="8" fill="#1d1c14" stroke="#4f8ef7"/>
+  <text x="28" y="71" fill="#bdb9a6" font-size="11.5">网页上传 · 粘贴 · 拖拽</text>
+  <rect x="16" y="94" width="164" height="40" rx="8" fill="#1d1c14" stroke="#4f8ef7"/>
+  <text x="28" y="119" fill="#bdb9a6" font-size="11.5">@提及 · 输入路径</text>
+  <rect x="16" y="142" width="164" height="40" rx="8" fill="#1d1c14" stroke="#2db3d5"/>
+  <text x="28" y="167" fill="#bdb9a6" font-size="11.5">渠道入站附件</text>
+  <rect x="16" y="190" width="164" height="40" rx="8" fill="#1d1c14" stroke="#9d6fe0"/>
+  <text x="28" y="215" fill="#bdb9a6" font-size="11.5">agent 产出的文件</text>
+  <path d="M180 66 C 240 66 240 138 300 138" stroke="#9d6fe0" fill="none" marker-end="url(#ai)"/>
+  <path d="M180 114 C 240 114 240 138 300 138" stroke="#9d6fe0" fill="none" marker-end="url(#ai)"/>
+  <path d="M180 162 C 240 162 240 138 300 138" stroke="#9d6fe0" fill="none" marker-end="url(#ai)"/>
+  <path d="M180 210 C 240 210 240 138 300 138" stroke="#9d6fe0" fill="none" marker-end="url(#ai)"/>
+
+  <!-- record -->
+  <rect x="304" y="46" width="300" height="186" rx="12" fill="#1d1c14" stroke="#9d6fe0" stroke-width="1.6"/>
+  <text x="320" y="70" fill="#9d6fe0" font-size="12.5" font-weight="600">一条附件记录</text>
+  <text x="320" y="92" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">id · sha256 · 名字 · mime</text>
+  <text x="320" y="110" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">字节位置 · 页数或行数</text>
+  <text x="320" y="128" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">来源(用户/agent/渠道)</text>
+  <text x="320" y="146" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">会话 · 消息</text>
+  <line x1="320" y1="160" x2="588" y2="160" stroke="#2e2c20"/>
+  <text x="320" y="182" fill="#8a8675" font-size="10.5">正文里只留一个引用</text>
+  <text x="320" y="200" fill="#d4843a" font-size="10.5" font-family="Menlo,monospace">[attachment:&lt;id&gt;]</text>
+  <text x="320" y="222" fill="#8a8675" font-size="10.5">重命名 · 去重 · 跨轮引用都成了查询</text>
+
+  <path d="M604 138 C 660 138 660 66 700 66" stroke="#9d6fe0" fill="none" marker-end="url(#ai)"/>
+  <path d="M604 138 C 660 138 660 114 700 114" stroke="#9d6fe0" fill="none" marker-end="url(#ai)"/>
+  <path d="M604 138 C 660 138 660 162 700 162" stroke="#9d6fe0" fill="none" marker-end="url(#ai)"/>
+  <path d="M604 138 C 660 138 660 210 700 210" stroke="#9d6fe0" fill="none" marker-end="url(#ai)"/>
+
+  <!-- sinks -->
+  <rect x="704" y="46" width="240" height="40" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="716" y="65" fill="#bdb9a6" font-size="11.5">网页气泡的 chip 和缩略图</text>
+  <text x="716" y="80" fill="#6b6a63" font-size="10">同一个组件，不问来源</text>
+  <rect x="704" y="94" width="240" height="40" rx="8" fill="#1d1c14" stroke="#2f5228"/>
+  <text x="716" y="113" fill="#bdb9a6" font-size="11.5">中心标签页 · 灯箱</text>
+  <text x="716" y="128" fill="#6b6a63" font-size="10">同一个 FileViewer</text>
+  <rect x="704" y="142" width="240" height="40" rx="8" fill="#1d1c14" stroke="#6b4519"/>
+  <text x="716" y="161" fill="#bdb9a6" font-size="11.5">渠道原生文件回发</text>
+  <text x="716" y="176" fill="#6b6a63" font-size="10">网页能点开的，Telegram 就能收到</text>
+  <rect x="704" y="190" width="240" height="40" rx="8" fill="#12110b" stroke="#4c3670" stroke-dasharray="5 4"/>
+  <text x="716" y="209" fill="#9d6fe0" font-size="11.5">TUI 终端内联图片</text>
+  <text x="716" y="224" fill="#6b6a63" font-size="10">iTerm2 · kitty 协议，其余退回文件卡</text>
+
+  <line x1="16" y1="250" x2="944" y2="250" stroke="#2e2c20"/>
+  <rect x="16" y="264" width="456" height="116" rx="10" fill="#12110b" stroke="#4c3670" stroke-dasharray="5 4"/>
+  <text x="30" y="288" fill="#9d6fe0" font-size="12" font-weight="600">同样理想，但明确排在后面</text>
+  <text x="30" y="310" fill="#bdb9a6" font-size="11">附件表进 session_db，历史消息迁移</text>
+  <text x="30" y="326" fill="#8a8675" font-size="10.5">正文标记今天已经承载全部必要信息，收益不够动 schema</text>
+  <text x="30" y="348" fill="#bdb9a6" font-size="11">canvas 工具接上实时渲染面板</text>
+  <text x="30" y="364" fill="#8a8675" font-size="10.5">canvas-panel 组件在，和 canvas 工具没接线</text>
+
+  <rect x="488" y="264" width="456" height="116" rx="10" fill="#12110b" stroke="#6d2530"/>
+  <text x="502" y="288" fill="#e0445a" font-size="12" font-weight="600">主动排除的一项</text>
+  <text x="502" y="310" fill="#bdb9a6" font-size="11">全局内容寻址 blob 存储</text>
+  <text x="502" y="330" fill="#8a8675" font-size="10.5">它会打破“会话 workdir 每轮提交进 git、可重放”这条不变量。</text>
+  <text x="502" y="348" fill="#8a8675" font-size="10.5">代价是大二进制永久留在 git 历史，这是已知且被接受的成本，</text>
+  <text x="502" y="364" fill="#8a8675" font-size="10.5">记在 attachment-handling 里。</text>
+</svg>
+</div>
+<div class="legend">
+  <b>第三层和第四层的关系</b>：第三层做完，图里实线的部分基本成立，只是靠一句正文标记而不是一条记录来承载。第四层要的是把那句标记换成一个 id，剩下的界面全都不用改。
+</div>
+
+<h3 id="gaps">四条目标形态，各自差在哪</h3>
+<div class="tbl">
+<table class="wide">
+<tr><th>目标形态</th><th>它解决什么</th><th>现在的差距</th><th>为什么现在不做</th></tr>
+<tr>
+  <td class="name">一条附件记录<br>正文只留引用</td>
+  <td>重命名、去重、跨会话引用、“这个文件在哪几轮被提到过”都从字符串处理变成查询</td>
+  <td>全部信息编码在一句正文标记里，靠两条正则解析</td>
+  <td>要改 session_db schema 并迁移历史消息。正文标记今天承载得住全部必要信息，等“跨会话引用同一个文件”成为真实需求再动</td>
+</tr>
+<tr>
+  <td class="name">一个解析器<br>四个界面</td>
+  <td>网页、中心标签页、灯箱、终端拿到同一份“这个资源该怎么渲染”的判断</td>
+  <td>网页侧第三层做完就成立；TUI 完全没有附件概念，组合器里连贴图都不能</td>
+  <td>TUI 是一条独立工作线，不阻塞网页。八家里只有 pi-mono 真做了终端内联图，而且它连用户自己发的图都不回显；claude-code 与 codex 都只画一个 <code>[Image #N]</code> 标签。这条的实际收益低于看上去</td>
+</tr>
+<tr>
+  <td class="name">双向完全对称</td>
+  <td>用户给的和 agent 给的在数据模型和界面上没有区别，只差一个来源字段</td>
+  <td>第三层的 A 加 B 已经很接近，剩下的不对称在降级路径</td>
+  <td>可以顺手做：WeChat 收不到文件时改发一条带链接的文本，而不是把标记还原成本地路径</td>
+</tr>
+<tr>
+  <td class="name">产出可以是一张页面<br>不只是一个文件</td>
+  <td>agent 边写边渲染，用户在旁边看着文档成型，不用等文件落盘再点开</td>
+  <td><code>canvas</code> 工具已经在写带 id 的 markdown 块，<code>canvas-panel.tsx</code> 也在，两者没有接线</td>
+  <td>线格式已经定好，canvas.py 的注释里写着“等 WebUI 有更丰富的 canvas 界面时保持同样的线格式加渲染即可”。八家里三家各做了一遍这件事，需求是真的。这是第三层之后最值得做的一件</td>
+</tr>
+</table>
+</div>
+
+<h2 id="status">实现状态</h2>
+<p class="lead">本页第一层描述的是仓库当前行为，第三层和第四层描述的是尚未落地的目标形态。按项目文档惯例，未实现的部分用现在时正面陈述写在正文里，在这里统一标注。</p>
+<div class="tbl">
+<table>
+<tr><th>条目</th><th>状态</th><th>落点</th></tr>
+<tr><td>入站四条路、两套标记词法、发言人前缀与附件标记的相对位置</td><td class="y">已实现，第一层如实描述</td><td class="src">channels/_attachments.py · channels/base.py · webui/ws_actions/chat.py</td></tr>
+<tr><td>文档落盘、sha256 去重、单文件与单轮上限、超限改写、页数行数、头部预览</td><td class="y">已实现</td><td class="src">webui/ws_actions/chat.py:152-280</td></tr>
+<tr><td>网页图片落盘并写标记</td><td class="n">未实现（第三层 A）</td><td class="src">webui/ws_actions/chat.py:584</td></tr>
+<tr><td>渠道附件改用网页词法</td><td class="n">未实现（第三层 A）</td><td class="src">channels/_attachments.py:181</td></tr>
+<tr><td>字节出口路由 /api/file-raw</td><td class="n">未实现（第三层共同前提）</td><td class="src">webui/routes/file_search.py</td></tr>
+<tr><td>chip 捕获路径、图片缩略图、点开行为</td><td class="n">未实现（第三层 A 与 C）</td><td class="src">web/components/chat/messages/user-attachments.tsx</td></tr>
+<tr><td>send_file 工具与渠道回发接线</td><td class="n">未实现（第三层 B）</td><td class="src">openprogram/functions/tools/ · channels/base.py:256</td></tr>
+<tr><td>四个平台的 post_file 传输实现</td><td class="y">已实现，零调用方</td><td class="src">channels/_transport.py:186-211,777-780</td></tr>
+<tr><td>FileViewer 接受绝对路径</td><td class="n">未实现（第三层 C）</td><td class="src">web/components/files/file-viewer.tsx:51</td></tr>
+<tr><td>附件记录表、TUI 内联图片、canvas 实时渲染面板</td><td class="n">未实现（第四层）</td><td class="src">—</td></tr>
+<tr><td>document 模态与 choose_delivery 能力开关</td><td class="n">未实现，attachment-handling 的决策矩阵里那一列仍是设计</td><td class="src">providers/types.py:329</td></tr>
+</table>
+</div>
+<div class="note purple">
+  <b>与 attachment-handling 的分工</b>：那份文档回答“附件的内容怎么进模型上下文”，本页回答“附件在聊天界面里长什么样、能不能点开、agent 怎么交回来”。两份文档共用同一条正文标记词法，改动其中一方的词法必须同时看另一方。
+</div>
+
+</div>
+</body>
+</html>

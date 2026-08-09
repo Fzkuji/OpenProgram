@@ -343,6 +343,12 @@ PAGE_ORDER: dict[str, int] = {
     "reference/design/runtime/agent-collaboration.md": 1002,
     "reference/design/runtime/agent-collab-architecture.html": 1003,
     "reference/design/runtime/agent-collab-comparison.html": 1004,
+    # Chat attachments: the delivery note first, its rendered companion
+    # next, then the four-layer note on how attachments look and behave
+    # inside the chat itself.
+    "reference/design/ui/attachment-handling.md": 1010,
+    "reference/design/ui/attachment-handling.html": 1011,
+    "reference/design/ui/chat-attachments.html": 1012,
 }
 
 
