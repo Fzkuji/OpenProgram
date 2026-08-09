@@ -161,6 +161,17 @@ SETTINGS: list[SettingSpec] = [
              "fully trust.",
     ),
     SettingSpec(
+        key="web.allowed_origins", path=("web", "allowed_origins"),
+        group="Ports", label="Extra allowed origins", widget="text",
+        apply=APPLY_NEXT_START, default=[],
+        help="Browser origins the server accepts besides its own. It "
+             "otherwise refuses any request a page on another site makes, "
+             "which is what stops a site you visit from driving the agent. "
+             "Add an entry only for a front end you run yourself, such as a "
+             "reverse proxy: the full origin, e.g. "
+             "https://agent.example.com.",
+    ),
+    SettingSpec(
         key="search.default_provider", path=("search", "default_provider"),
         group="Search", label="Default web-search provider", widget="enum",
         apply=APPLY_LIVE, default="auto", choices=_search_choices,

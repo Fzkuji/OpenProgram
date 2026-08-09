@@ -51,6 +51,32 @@ openprogram ports                    # 查看
 openprogram ports --frontend 8101    # 持久化修改（--backend 是遗留别名）
 ```
 
+## 谁能连上这个服务
+
+API 不要求调用方鉴权，所以决定谁能连上它的只有两个设置。
+
+`web.host` 决定监听哪个网卡。默认 `127.0.0.1` 只接受本机连接。设成 `0.0.0.0`
+等于把 UI 连同所有已存的 API key 一起交给整个局域网，`/api/providers/…/reveal`
+是明文返回 key 的。
+
+只绑回环还不够，因为浏览器能从你随手打开的任何页面连上回环。有两条攻击正是走这里：
+一个页面可以直接向 `127.0.0.1` 开 WebSocket（同源策略管不到 WebSocket）驱动 agent，
+而 agent 手里有 `bash` 工具；或者某个站点的域名在页面加载后重新解析到 `127.0.0.1`，
+它的请求看上去就是同源的。所以服务在路由之前会检查：
+
+- 绑在回环上时，`Host` 头必须是回环地址；
+- 浏览器没有把这次请求标成 `Sec-Fetch-Site: cross-site`；
+- `Origin` 存在时，必须等于本次请求的 `Host`，或者本身是回环地址。
+
+其余一律 403。完全不带 `Origin` 的请求不是浏览器发的（终端 UI、`curl`、Python
+客户端都属于这类），放行。
+
+如果你自己在前面架了反向代理，把那个域名加进来，它的页面才会被接受：
+
+```bash
+openprogram config set web.allowed_origins '["https://agent.example.com"]'
+```
+
 ## 网络代理
 
 所有 LLM provider 流量按同一套规则解析代理，优先级如下：

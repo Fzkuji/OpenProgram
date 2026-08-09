@@ -51,6 +51,38 @@ openprogram ports                    # view
 openprogram ports --frontend 8101    # persist a change (--backend is a legacy alias)
 ```
 
+## Who can reach the server
+
+Nothing in the API asks the caller to authenticate, so two settings decide
+who can talk to it.
+
+`web.host` decides which interface it listens on. The default `127.0.0.1`
+accepts connections from this machine only. Setting `0.0.0.0` hands the UI —
+and every stored API key, which `/api/providers/…/reveal` returns in
+plaintext — to your whole network.
+
+Listening on loopback is not enough on its own, because a browser can reach
+loopback from any page you happen to visit. Two attacks do exactly that: a
+page can open a WebSocket to `127.0.0.1` (the same-origin policy does not
+cover WebSockets) and drive the agent, which owns a `bash` tool; or a
+site's own name can re-resolve to `127.0.0.1` after its page loads, so its
+requests arrive looking same-origin. So the server checks, before routing:
+
+- the `Host` header names a loopback address, whenever it is bound to one;
+- the browser did not label the request `Sec-Fetch-Site: cross-site`;
+- `Origin`, when present, matches the request's own `Host` or is loopback.
+
+Anything else gets a 403. A request with no `Origin` at all is not a browser
+request — that is the terminal UI, `curl`, and the Python clients — and
+passes.
+
+If you front the server with something you run yourself, a reverse proxy on
+your own domain, add that origin so its pages are accepted too:
+
+```bash
+openprogram config set web.allowed_origins '["https://agent.example.com"]'
+```
+
 ## Network proxy
 
 All LLM provider traffic resolves its proxy the same way, in this order:

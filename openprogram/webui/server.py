@@ -1290,6 +1290,32 @@ async def _handle_ws_command(ws, cmd: dict):
 # FastAPI app
 # ---------------------------------------------------------------------------
 
+def _web_config() -> dict:
+    """Bind host + extra allowed origins for the web surface.
+
+    Default is loopback: the service has no authentication, so binding
+    0.0.0.0 hands the sessions and the plaintext keys behind
+    ``/accounts/…/reveal`` to the whole LAN. A user who needs access from
+    another device sets ``web.host`` (and owns the risk); ``web.allowed_origins``
+    is the matching escape hatch for a reverse proxy in front of it.
+    """
+    host, allowed = "127.0.0.1", ()
+    try:
+        from openprogram.setup import _read_config
+        web = _read_config().get("web") or {}
+        host = str(web.get("host") or "127.0.0.1")
+        raw = web.get("allowed_origins") or ()
+        allowed = tuple(str(o) for o in raw) if isinstance(raw, (list, tuple)) else ()
+    except Exception as e:  # noqa: BLE001 — an unreadable config must not
+        _log(f"[web] config unreadable, defaulting to loopback: {e}")
+    from .origin_guard import is_loopback_hostname
+    return {
+        "host": host,
+        "bound_to_loopback": is_loopback_hostname(host),
+        "allowed_origins": allowed,
+    }
+
+
 def create_app():
     """Create and return the FastAPI application."""
     from contextlib import asynccontextmanager
@@ -1431,6 +1457,17 @@ def create_app():
         docs_url=None,
         redoc_url=None,
         lifespan=_lifespan,
+    )
+
+    # Nothing here authenticates a caller, so a browser visiting any site
+    # must not be able to reach it. Refuse cross-site requests and foreign
+    # Host headers before routing — see webui/origin_guard.py.
+    from .origin_guard import BrowserOriginGuard
+    _web_cfg = _web_config()
+    app.add_middleware(
+        BrowserOriginGuard,
+        allowed_origins=_web_cfg["allowed_origins"],
+        enforce_loopback_host=_web_cfg["bound_to_loopback"],
     )
 
     # Auth v2 REST + SSE routes. Kept in a dedicated module so server.py
@@ -1653,15 +1690,7 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
             )
 
         app = create_app()
-        # 默认只绑本机回环：服务无鉴权，绑 0.0.0.0 等于把会话和
-        # /accounts/…/reveal 的明文 key 暴露给整个局域网。需要多设备
-        # 访问的用户显式设置 web.host（自担风险）。
-        try:
-            from openprogram.setup import _read_config
-            _host = str((_read_config().get("web") or {}).get("host")
-                        or "127.0.0.1")
-        except Exception:
-            _host = "127.0.0.1"
+        _host = _web_config()["host"]
         config = uvicorn.Config(
             app, host=_host, port=port,
             log_level="warning",

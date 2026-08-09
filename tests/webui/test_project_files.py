@@ -520,7 +520,9 @@ def test_reveal_launch_failure_reported_not_raised(project_root, monkeypatch):
 def client(project_root):
     from openprogram.webui.server import create_app
     # 不进 lifespan（不用 with）——只测路由，避免启动钩子副作用。
-    return TestClient(create_app())
+    # base_url 必须是回环地址：BrowserOriginGuard 拿 Host 头挡 DNS
+    # rebinding，TestClient 默认的 "testserver" 会被判成外部主机。
+    return TestClient(create_app(), base_url="http://127.0.0.1:18100")
 
 
 def test_raw_image_inline_with_hardening_headers(client, project_root):
