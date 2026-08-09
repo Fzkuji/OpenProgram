@@ -102,6 +102,28 @@ from openprogram.agent.internals._approval import (
 )
 
 
+def _memory_sync_turn(
+    session_id: str, user_text: str, assistant_text: str,
+) -> None:
+    """Offer the finished turn to memory (design/memory §"When writing
+    happens": one call per turn, after it is persisted).
+
+    Usually cheap — the provider counts what this session has left
+    unwritten and does nothing until a batch is worth a model call.
+    Without the session id it can do nothing at all: that is what
+    identifies the thread whose turns are being counted. Best-effort,
+    memory never takes a turn down with it."""
+    if not session_id:
+        return
+    try:
+        from openprogram.memory import get_provider
+        get_provider().sync_turn(
+            user_text or "", assistant_text or "", session_id=session_id,
+        )
+    except Exception:
+        _log.debug("memory sync failed for %s", session_id, exc_info=True)
+
+
 def _drain_send_message_inbox(session_id: str) -> None:
     """Deliver messages other branches queued for this session while it
     was busy (send_message busy-queueing, agent-collaboration §5.4).
@@ -440,6 +462,14 @@ def _process_turn_once(
         assistant_msg_id=assistant_msg_id,
         user_msg_id=user_msg_id,
     )
+
+    # 5b. Hand the finished turn to memory. Must come after step 5:
+    #     the provider reads the turn back out of the session store
+    #     (memory/scriptorium/writing.py), so calling any earlier
+    #     counts a turn whose assistant row is still the empty
+    #     placeholder — the reply would only reach the threshold check
+    #     one turn late.
+    _memory_sync_turn(req.session_id, req.user_text, final_text)
 
     # 6. Turn-finalization bookkeeping — head/token update, context-
     #    commit backfill, usage feedback, auto-title, git + project

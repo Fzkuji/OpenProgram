@@ -124,36 +124,6 @@ def _set_content(msg, value) -> None:
         msg.content = value
 
 
-def _memory_sync_turn(messages: list, final_message, session_id: str = "") -> None:
-    """Best-effort post-turn write to memory.
-
-    Cheap: the provider checks whether this session has accumulated
-    enough unwritten conversation and usually does nothing. Without the
-    session id it can do nothing at all — that is what identifies the
-    thread whose turns are being counted.
-    """
-    if not session_id:
-        return
-    try:
-        from openprogram.memory import get_provider
-    except Exception:
-        return
-    user_text = _latest_user_text(messages)
-    if not user_text:
-        return
-    asst_text = ""
-    content = getattr(final_message, "content", None) or []
-    for c in content:
-        if hasattr(c, "type") and c.type == "text":
-            asst_text += getattr(c, "text", "") or ""
-    try:
-        get_provider().sync_turn(
-            user_text, asst_text, session_id=session_id
-        )
-    except Exception:
-        pass
-
-
 def _create_agent_stream() -> EventStream[AgentEvent, list[AgentMessage]]:
     return EventStream(
         is_done=lambda e: e.type == "agent_end",
@@ -524,10 +494,6 @@ async def _stream_assistant_response(
             ev_stream.push(AgentEventMessageEnd(message=final_message))
             emit_safe("model.response_completed", "agent",
                       {"is_error": event.type == "error"})
-            if event.type == "done":
-                _memory_sync_turn(
-                    messages, final_message, config.session_id or ""
-                )
             return final_message
 
     # Fallback: return partial if no done/error event
