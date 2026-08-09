@@ -159,8 +159,11 @@ one have". One call lists them all, grouped by session: each session line
 carries its id, title, agent, and busy/idle status
 (`run_control.is_turn_running`; omitted when the probe fails), and each
 branch line carries its name (if any), a ready-to-use `to="SID:HEAD"`
-address, and a preview of its tip. This is the entry point for "two agents
-seeing each other".
+address, its turn count and approximate size (`— 3 turns, ~2k chars`; sizes
+under 1000 characters show as `<1k chars`), and a preview of its tip. The
+size lets the model pick a sensible `max_chars` before reading the branch
+with `read_conversation`. This is the entry point for "two agents seeing
+each other".
 
 ### 2.4 New branches must have names
 

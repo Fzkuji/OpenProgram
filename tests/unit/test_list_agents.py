@@ -70,6 +70,26 @@ def test_list_agents_gives_to_per_branch(two_sessions):
     assert "to=p2:" in out
 
 
+def test_list_agents_shows_branch_stats(two_sessions):
+    out = list_agents()
+    # p1's branch: 2 turns, "hello one" + "answer one" = 19 chars < 1000
+    p1_branch = next(ln for ln in out.splitlines()
+                     if ln.strip().startswith("- to=p1:"))
+    assert "— 2 turns, <1k chars" in p1_branch
+
+
+def test_list_agents_stats_kilochars(two_sessions):
+    s = two_sessions
+    s.append_message("p1", {"id": "u3", "role": "user", "content": "x" * 3000,
+                            "timestamp": 2, "predecessor": "a1"})
+    s.commit_turn("p1", "t3")
+    out = list_agents()
+    p1_branch = next(ln for ln in out.splitlines()
+                     if ln.strip().startswith("- to=p1:"))
+    assert "3 turns" in p1_branch
+    assert "~3k chars" in p1_branch
+
+
 def test_list_agents_emits_event(two_sessions):
     from openprogram.events import get_event_bus
     got = []

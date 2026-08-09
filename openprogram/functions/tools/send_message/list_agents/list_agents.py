@@ -24,10 +24,25 @@ _DESCRIPTION = (
     "session, one line per branch: its name (if any), a ready-to-use "
     "`to=\"SID:HEAD\"` address for send_message, its busy/idle status, "
     "and a preview of its tip. A named branch can also be addressed by "
-    "name alone: send_message(to=\"<name>\"). Use this before "
-    "send_message to find the exact agent to talk to; to CREATE a new "
-    "agent, use the `agent` tool instead."
+    "name alone: send_message(to=\"<name>\"). Each branch line also "
+    "shows its turn count and approximate size, so you can pick a "
+    "sensible `max_chars` before calling read_conversation. Use this "
+    "before send_message to find the exact agent to talk to; to CREATE "
+    "a new agent, use the `agent` tool instead."
 )
+
+
+def _branch_stats(db, sid: str, head: str) -> str:
+    """`— N turns, ~Xk chars` for one branch; empty on any failure."""
+    try:
+        chain = db.get_branch(sid, head) or []
+        if not chain:
+            return ""
+        chars = sum(len(str(m.get("content") or "")) for m in chain)
+        size = f"~{chars // 1000}k chars" if chars >= 1000 else "<1k chars"
+        return f" — {len(chain)} turns, {size}"
+    except Exception:
+        return ""
 
 
 def _turn_running(session_id: str) -> bool | None:
@@ -75,8 +90,9 @@ def _list_agents_impl(limit: int = 50, agent_id: str = "", source: str = "") -> 
             name = b.get("name")
             preview = _last_text(sid, head_id=head)
             label = f" «{name}»" if name else ""
+            stats = _branch_stats(db, sid, head)
             lines.append(
-                f"  - to={sid}:{head}{label}"
+                f"  - to={sid}:{head}{label}{stats}"
                 + (f"\n      “{preview}”" if preview else "")
             )
         if not branches:

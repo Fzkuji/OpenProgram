@@ -132,7 +132,9 @@ list_agents(limit=50, agent_id?, source?) -> str   # db.list_sessions + db.list_
 agent 的对话就存在 session DAG 的分支里，所以"能跟谁说话"="有哪些
 session、每个有哪些分支"。一次调用全列出，按 session 分组：session 行带
 id、标题、agent、busy/idle 状态（`run_control.is_turn_running`，探测失败
-就不标）；分支行带名字（若有）、现成的 `to="SID:HEAD"` 地址、末端预览。
+就不标）；分支行带名字（若有）、现成的 `to="SID:HEAD"` 地址、轮数与近似字符量
+（`— 3 turns, ~2k chars`，不足1000字符显示`<1k chars`）、末端预览。
+模型可据此在调用`read_conversation`前选合适的`max_chars`。
 这是"两个 agent 互相看见"的入口。
 
 ### 2.4 新建分支要有名字
