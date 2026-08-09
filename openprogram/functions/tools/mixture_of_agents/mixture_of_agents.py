@@ -1,22 +1,25 @@
 """mixture_of_agents tool — query N models in parallel, synthesize with one.
 
-Ports hermes-agent's MoA into OpenProgram's provider layer. Instead of
-routing through OpenRouter with a single key, we dispatch to whichever
-providers the user has already configured (Anthropic / OpenAI / Gemini /
-etc.) via ``complete_simple`` — so each reference call uses its own key
-and counts against its own quota.
+Ports hermes-agent's MoA into OpenProgram's provider layer. hermes routes
+everything through OpenRouter with a hardcoded frontier lineup; we instead
+pick defaults from the local model registry (``openprogram.providers.
+get_models()``) — whatever subscription/API providers this install actually
+has — so the default call path always targets reachable models.
 
 Two layers, fixed:
 
   Layer 1 (references)  : N models answer the same prompt in parallel
   Layer 2 (aggregator)  : one model reads all N answers and synthesizes
 
-Spec-wise the tool takes a free-form ``user_prompt`` and optional lists
-of ``references`` / ``aggregator`` in ``provider:model`` form
-(e.g. ``anthropic:claude-sonnet-4-6``). If unspecified, we pick from a
-curated set of frontier models, silently dropping any whose provider key
-isn't in the environment. If too few references succeed (< 2), we fall
-back to returning the best single reference rather than erroring.
+Default selection: group the registry by provider, take the strongest-looking
+model per provider (keyword rank over the model id), and use up to
+``MAX_DEFAULT_REFERENCES`` distinct providers as references. The aggregator is
+the pick from the next unused provider, falling back to the first reference.
+With a single successful reference the aggregator is skipped entirely.
+
+Explicit ``references=["provider:model_id"]`` / ``aggregator="provider:model"``
+still override everything; unknown specs error with the list of available
+``provider:model`` pairs from the registry.
 
 Credit: design from Wang et al., "Mixture-of-Agents Enhances Large
 Language Model Capabilities" (arXiv:2406.04692), via hermes-agent's
@@ -34,17 +37,24 @@ from ..._runtime import function
 
 NAME = "mixture_of_agents"
 
-# Curated default reference set. ``provider:model_id`` strings — we pick a
-# diverse lineup across Anthropic / OpenAI / Gemini so at least one survives
-# even when one vendor is misbehaving.
-DEFAULT_REFERENCES = [
-    "anthropic:claude-sonnet-4-6",
-    "openai:gpt-5",
-    "google:gemini-2.5-pro",
-]
-DEFAULT_AGGREGATOR = "anthropic:claude-opus-4-7"
-
+MAX_DEFAULT_REFERENCES = 3
 MIN_SUCCESSFUL_REFERENCES = 1  # below this we surface an error
+
+# From the MoA paper via hermes: diverse sampling for references, focused
+# synthesis for the aggregator.
+REFERENCE_TEMPERATURE = 0.6
+AGGREGATOR_TEMPERATURE = 0.4
+
+# One retry per reference call (hermes uses 6 attempts with exponential
+# backoff against OpenRouter rate limits; our subscription providers fail
+# hard or succeed, so one short-backoff retry covers the transient cases).
+REFERENCE_ATTEMPTS = 2
+RETRY_BACKOFF_SECONDS = 2
+
+# Rough strength ranking over model-id keywords: earlier keyword wins when a
+# provider offers several models. ponytail: naive keyword rank, replace with
+# registry metadata if models ever carry a capability tier.
+STRENGTH_KEYWORDS = ("opus", "terra", "pro", "max", "plus", "sol")
 
 AGGREGATOR_SYSTEM = (
     "You have been provided with a set of responses from various models to "
@@ -58,10 +68,11 @@ AGGREGATOR_SYSTEM = (
 
 DESCRIPTION = (
     "Route a hard problem through multiple frontier LLMs collaboratively. "
-    "Fires N reference models in parallel (default 3) then synthesizes "
-    "their answers with an aggregator model. Expensive — one call here "
-    "costs (N+1) model calls. Use for complex math, algorithm design, or "
-    "multi-step analytical reasoning where diverse perspectives help."
+    "Fires N reference models in parallel (default up to 3, one per "
+    "configured provider) then synthesizes their answers with an aggregator "
+    "model. Expensive — one call here costs (N+1) model calls. Use for "
+    "complex math, algorithm design, or multi-step analytical reasoning "
+    "where diverse perspectives help."
 )
 
 
@@ -79,16 +90,16 @@ SPEC: dict[str, Any] = {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Reference models as `provider:model_id` strings "
-                    "(e.g. `anthropic:claude-sonnet-4-6`). Defaults to a "
-                    "curated frontier set, filtered by available API keys."
+                    "Reference models as `provider:model_id` strings. "
+                    "Defaults to the strongest model from each configured "
+                    "provider in the local registry (up to 3 providers)."
                 ),
             },
             "aggregator": {
                 "type": "string",
                 "description": (
-                    "Aggregator model as `provider:model_id`. Default is "
-                    "Claude Opus; any strong synthesis model works."
+                    "Aggregator model as `provider:model_id`. Defaults to a "
+                    "registry model from a provider not used as a reference."
                 ),
             },
         },
@@ -107,81 +118,128 @@ def _split(spec: str) -> tuple[str, str] | None:
     return provider, model_id
 
 
-def _env_key_for(provider: str) -> bool:
-    """Cheap availability probe — provider has an env API key configured."""
+def _strength_rank(model_id: str) -> int:
+    lowered = model_id.lower()
+    for i, kw in enumerate(STRENGTH_KEYWORDS):
+        if kw in lowered:
+            return i
+    return len(STRENGTH_KEYWORDS)
+
+
+def _registry_specs() -> list[str]:
+    """All registry models as sorted ``provider:model_id`` strings."""
+    from openprogram.providers import get_models
+    return sorted(f"{m.provider}:{m.id}" for m in get_models())
+
+
+def _pick_defaults() -> tuple[list[str], str | None]:
+    """Pick default (references, aggregator) from the model registry.
+
+    One model per provider (strongest by keyword rank, registry order as
+    tiebreak), providers in registry order. References take the first
+    ``MAX_DEFAULT_REFERENCES`` providers; the aggregator takes the next
+    unused provider's pick, falling back to the first reference.
+    """
+    from openprogram.providers import get_models
+
+    best_per_provider: dict[str, Any] = {}  # provider -> Model, registry order
+    for m in get_models():
+        cur = best_per_provider.get(m.provider)
+        if cur is None or _strength_rank(m.id) < _strength_rank(cur.id):
+            best_per_provider[m.provider] = m
+
+    picks = [f"{m.provider}:{m.id}" for m in best_per_provider.values()]
+    references = picks[:MAX_DEFAULT_REFERENCES]
+    if not references:
+        return [], None
+    aggregator = picks[MAX_DEFAULT_REFERENCES] if len(picks) > MAX_DEFAULT_REFERENCES else references[0]
+    return references, aggregator
+
+
+def _tool_check_fn() -> bool:
+    # MoA needs diverse perspectives: at least two distinct providers in the
+    # registry. A single provider still works via explicit `references`, but
+    # then the tool adds nothing over a plain model call.
     try:
-        from openprogram.providers.env_api_keys import resolve_provider_key
-        return bool(resolve_provider_key(provider))
+        from openprogram.providers import get_models
+        return len({m.provider for m in get_models()}) >= 2
     except Exception:
         return False
 
 
-def _any_provider_available() -> bool:
-    for spec in DEFAULT_REFERENCES + [DEFAULT_AGGREGATOR]:
-        parts = _split(spec)
-        if parts and _env_key_for(parts[0]):
-            return True
-    return False
+def _extract_text(resp: Any) -> str:
+    parts: list[str] = []
+    content = getattr(resp, "content", []) or []
+    for block in content if isinstance(content, list) else []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            parts.append(block.get("text", ""))
+        elif getattr(block, "type", None) == "text":
+            parts.append(getattr(block, "text", "") or "")
+    return "\n".join(p for p in parts if p).strip()
 
 
-def _tool_check_fn() -> bool:
-    # At least one default provider must be reachable. Users overriding
-    # ``references`` / ``aggregator`` at call time still work even if the
-    # defaults are gated out, but listing the tool requires something.
-    return _any_provider_available()
-
-
-async def _ask_one(spec: str, user_prompt: str) -> tuple[str, str, bool]:
-    """Return (spec, content_or_error, success)."""
+async def _call_model(
+    spec: str,
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float,
+    label: str,
+    attempts: int = 1,
+) -> tuple[str, bool]:
+    """Call one registry model. Returns (text_or_error, success)."""
     try:
         from openprogram.providers import (
             Context, SimpleStreamOptions, TextContent, UserMessage,
             complete_simple, get_model,
         )
     except ImportError as e:
-        return (spec, f"import error: {e}", False)
+        return (f"import error: {e}", False)
 
     parts = _split(spec)
     if not parts:
-        return (spec, f"bad spec {spec!r} (expected `provider:model`)", False)
+        return (f"bad spec {spec!r} (expected `provider:model`)", False)
     provider, model_id = parts
 
     model = get_model(provider, model_id)
     if model is None:
-        return (spec, f"unknown model {provider}/{model_id}", False)
-    if not _env_key_for(provider):
-        return (spec, f"no API key for {provider} in env", False)
+        return (f"unknown model {provider}/{model_id}", False)
 
     import time
     ctx = Context(
-        system_prompt="",
+        system_prompt=system_prompt,
         messages=[UserMessage(
             role="user",
             content=[TextContent(type="text", text=user_prompt)],
             timestamp=int(time.time() * 1000),
         )],
     )
-    opts = SimpleStreamOptions(max_tokens=8192)
+    opts = SimpleStreamOptions(max_tokens=8192, temperature=temperature)
 
-    try:
-        from openprogram.usage import usage_scope
-        with usage_scope(call_kind="tool", call_label="moa:proposer"):
-            resp = await complete_simple(model, ctx, opts)
-    except Exception as e:
-        return (spec, f"{type(e).__name__}: {e}", False)
+    last_error = "empty response"
+    for attempt in range(attempts):
+        if attempt > 0:
+            await asyncio.sleep(RETRY_BACKOFF_SECONDS)
+        try:
+            from openprogram.usage import usage_scope
+            with usage_scope(call_kind="tool", call_label=label):
+                resp = await complete_simple(model, ctx, opts)
+        except Exception as e:
+            last_error = f"{type(e).__name__}: {e}"
+            continue
+        text = _extract_text(resp)
+        if text:
+            return (text, True)
+        last_error = "empty response"
+    return (last_error, False)
 
-    # Extract text from AssistantMessage.content
-    parts_out: list[str] = []
-    content = getattr(resp, "content", []) or []
-    for block in content if isinstance(content, list) else []:
-        if isinstance(block, dict) and block.get("type") == "text":
-            parts_out.append(block.get("text", ""))
-        elif getattr(block, "type", None) == "text":
-            parts_out.append(getattr(block, "text", "") or "")
-    text = "\n".join(p for p in parts_out if p).strip()
-    if not text:
-        return (spec, "empty response", False)
-    return (spec, text, True)
+
+async def _ask_one(spec: str, user_prompt: str) -> tuple[str, str, bool]:
+    """Return (spec, content_or_error, success)."""
+    text, ok = await _call_model(
+        spec, "", user_prompt, REFERENCE_TEMPERATURE,
+        label="moa:proposer", attempts=REFERENCE_ATTEMPTS,
+    )
+    return (spec, text, ok)
 
 
 async def _aggregate(
@@ -189,54 +247,27 @@ async def _aggregate(
     user_prompt: str,
     reference_answers: list[tuple[str, str]],
 ) -> str:
-    """Call the aggregator with the references stitched into system prompt."""
-    from openprogram.providers import (
-        Context, SimpleStreamOptions, TextContent, UserMessage,
-        complete_simple, get_model,
-    )
-
-    parts = _split(aggregator_spec)
-    if not parts:
-        return f"Error: bad aggregator spec {aggregator_spec!r}."
-    provider, model_id = parts
-    model = get_model(provider, model_id)
-    if model is None:
-        return f"Error: unknown aggregator model {provider}/{model_id}."
-    if not _env_key_for(provider):
-        return f"Error: no API key for aggregator provider {provider}."
-
+    """Call the aggregator with the references stitched into the system prompt."""
     enumerated = "\n\n".join(
         f"### Model {i + 1} ({spec})\n{answer}"
         for i, (spec, answer) in enumerate(reference_answers)
     )
     system = f"{AGGREGATOR_SYSTEM}\n\n{enumerated}"
-
-    import time
-    ctx = Context(
-        system_prompt=system,
-        messages=[UserMessage(
-            role="user",
-            content=[TextContent(type="text", text=user_prompt)],
-            timestamp=int(time.time() * 1000),
-        )],
+    text, ok = await _call_model(
+        aggregator_spec, system, user_prompt, AGGREGATOR_TEMPERATURE,
+        label="moa:aggregator",
     )
-    opts = SimpleStreamOptions(max_tokens=8192)
+    if not ok:
+        return f"Error: aggregator call failed: {text}"
+    return text
 
-    try:
-        from openprogram.usage import usage_scope
-        with usage_scope(call_kind="tool", call_label="moa:aggregator"):
-            resp = await complete_simple(model, ctx, opts)
-    except Exception as e:
-        return f"Error: aggregator call failed: {type(e).__name__}: {e}"
 
-    parts_out: list[str] = []
-    content = getattr(resp, "content", []) or []
-    for block in content if isinstance(content, list) else []:
-        if isinstance(block, dict) and block.get("type") == "text":
-            parts_out.append(block.get("text", ""))
-        elif getattr(block, "type", None) == "text":
-            parts_out.append(getattr(block, "text", "") or "")
-    return "\n".join(p for p in parts_out if p).strip() or "(empty aggregator response)"
+def _unknown_spec_error(bad: list[str]) -> str:
+    available = "\n".join(f"- {s}" for s in _registry_specs())
+    return (
+        f"Error: unknown model spec(s): {', '.join(bad)}.\n"
+        f"Use `provider:model_id` from the local registry:\n{available}"
+    )
 
 
 async def execute(
@@ -250,29 +281,33 @@ async def execute(
     if not user_prompt:
         return "Error: `user_prompt` is required."
 
-    refs: list[str] = references or kw.get("reference_models") or list(DEFAULT_REFERENCES)
-    # Drop references whose provider key isn't set — silent filter so the
-    # model doesn't have to know which providers are live right now.
-    filtered: list[str] = []
-    for spec in refs:
-        parts = _split(spec)
-        if parts and _env_key_for(parts[0]):
-            filtered.append(spec)
-    if not filtered:
-        return (
-            "Error: none of the reference models are reachable. Set at least "
-            "one of ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY, or "
-            "pass `references=[...]` with models whose providers are set up."
-        )
+    from openprogram.providers import get_model
 
-    agg_spec = aggregator or DEFAULT_AGGREGATOR
-    # If the default aggregator isn't reachable, promote the first reachable
-    # reference — better than hard-failing.
-    agg_parts = _split(agg_spec)
-    if not (agg_parts and _env_key_for(agg_parts[0])):
-        agg_spec = filtered[0]
+    explicit_refs = references or kw.get("reference_models")
+    if explicit_refs:
+        refs = list(dict.fromkeys(explicit_refs))  # dedupe, keep order
+        bad = [s for s in refs
+               if not (p := _split(s)) or get_model(*p) is None]
+        if bad:
+            return _unknown_spec_error(bad)
+        agg_spec = aggregator
+    else:
+        refs, default_agg = _pick_defaults()
+        if not refs:
+            return (
+                "Error: the model registry is empty — configure at least one "
+                "provider, or pass `references=[...]`."
+            )
+        agg_spec = aggregator or default_agg
 
-    results = await asyncio.gather(*[_ask_one(s, user_prompt) for s in filtered])
+    if aggregator:
+        parts = _split(aggregator)
+        if not parts or get_model(*parts) is None:
+            return _unknown_spec_error([aggregator])
+    if not agg_spec:
+        agg_spec = refs[0]
+
+    results = await asyncio.gather(*[_ask_one(s, user_prompt) for s in refs])
 
     successful: list[tuple[str, str]] = []
     failed: list[tuple[str, str]] = []
@@ -281,9 +316,11 @@ async def execute(
 
     if len(successful) < MIN_SUCCESSFUL_REFERENCES:
         fail_detail = "\n".join(f"- {s}: {reason}" for s, reason in failed)
+        available = "\n".join(f"- {s}" for s in _registry_specs())
         return (
             f"Error: too few successful references "
-            f"({len(successful)}/{len(filtered)}).\n\nFailures:\n{fail_detail}"
+            f"({len(successful)}/{len(refs)}).\n\nFailures:\n{fail_detail}\n\n"
+            f"Available `provider:model` specs:\n{available}"
         )
 
     # Single-reference shortcut: skip the aggregator call, we'd be paying for
