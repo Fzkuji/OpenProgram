@@ -7,7 +7,9 @@ from __future__ import annotations
 from .loader import (
     Skill,
     list_skills,
+    load_skills,
     get_skill,
+    format_skills_for_prompt,
     register_plugin_skills,
     bundled_dir,
     user_dir,
@@ -21,7 +23,9 @@ from .tool import SkillTool, invoke
 __all__ = [
     "Skill",
     "list_skills",
+    "load_skills",
     "get_skill",
+    "format_skills_for_prompt",
     "register_plugin_skills",
     "bundled_dir",
     "user_dir",

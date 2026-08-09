@@ -1,15 +1,28 @@
-"""Five-source skill loader.
+"""The skill registry: one loader, one prompt renderer.
 
-Merges skills from:
+Skills are merged from five sources, listed here from lowest to highest
+precedence:
 
-    1. Bundled    — ``openprogram/skills_bundled/<name>/``
-    2. User       — ``~/.openprogram/skills/<name>/``
-    3. Project    — ``<cwd>/skills/<name>/``
-    4. Plugin     — registered via :func:`register_plugin_skills`
-    5. RemoteCache— ``~/.openprogram/cache/skills/<name>/``
+    1. Bundled     — ``openprogram/skills_bundled/<name>/``
+    2. RemoteCache — ``~/.openprogram/cache/skills/<name>/``
+    3. Plugin      — registered via :func:`register_plugin_skills`
+    4. User        — ``~/.openprogram/skills/<name>/``
+    5. Project     — ``<cwd>/skills/<name>/``
 
-Conflict policy: later source wins (so a project skill overrides
-the bundled one with the same name).
+Conflict policy: on a name collision the later source wins, so what the
+user wrote beats what a plugin or a registry pull installed, and both
+beat what OpenProgram ships. Within that, the more specific location
+wins: a project skill overrides the same name in the user's home.
+
+:func:`format_skills_for_prompt` renders the ``<available_skills>``
+block. Every path into the model reads this one function, so the chat
+system prompt and a ``Runtime(skills=...)`` exec show the same listing.
+
+Credit: the XML layout tracks OpenClaw's ``formatSkillsForPrompt`` so
+transcripts stay comparable; see
+``references/openclaw/src/agents/skills/skill-contract.ts``. The
+250-char description cap is claude-code's ``MAX_LISTING_DESC_CHARS``:
+the listing is for discovery, the ``skill`` tool loads the full body.
 """
 from __future__ import annotations
 
@@ -21,7 +34,12 @@ from typing import Iterable
 from openprogram.skills import frontmatter as _h
 
 
-SOURCES = ("bundled", "user", "project", "plugin", "remote-cache")
+SOURCES = ("bundled", "remote-cache", "plugin", "user", "project")
+
+# Discovery listings quote at most this much of a description. Long
+# SKILL.md descriptions run to several hundred words; the listing only
+# has to be enough for the model to decide whether to load the skill.
+MAX_LISTING_DESC_CHARS = 250
 
 
 @dataclass
@@ -86,14 +104,15 @@ def remote_cache_dir() -> Path:
 
 
 def _source_dirs(cwd: str | os.PathLike | None = None) -> list[tuple[str, Path]]:
+    """Source roots in precedence order, lowest first. See module docstring."""
     out: list[tuple[str, Path]] = [
         ("bundled", bundled_dir()),
-        ("user", user_dir()),
-        ("project", project_dir(cwd)),
+        ("remote-cache", remote_cache_dir()),
     ]
     for plugin_name, d in _PLUGIN_SKILL_DIRS.items():
         out.append((f"plugin:{plugin_name}", d))
-    out.append(("remote-cache", remote_cache_dir()))
+    out.append(("user", user_dir()))
+    out.append(("project", project_dir(cwd)))
     return out
 
 
@@ -181,6 +200,23 @@ def list_skills(cwd: str | os.PathLike | None = None) -> list[Skill]:
         for skill in _iter_source_skills(source, root):
             by_name[skill.name] = skill
     # Stable order: category then name.
+    return sorted(by_name.values(), key=lambda s: (s.category or "~", s.name))
+
+
+def load_skills(dirs: Iterable[str | os.PathLike]) -> list[Skill]:
+    """Return skills found under an explicit list of roots.
+
+    Same parser and same conflict rule as :func:`list_skills` (later root
+    wins), for the callers that name their own directories instead of the
+    five standard sources: ``Runtime(skills=[...])`` and
+    ``openprogram skills list --dir``. Missing directories are skipped so a
+    caller can pass candidate locations without checking each one.
+    """
+    by_name: dict[str, Skill] = {}
+    for d in dirs:
+        root = Path(d)
+        for skill in _iter_source_skills("explicit", root):
+            by_name[skill.name] = skill
     return sorted(by_name.values(), key=lambda s: (s.category or "~", s.name))
 
 
@@ -326,6 +362,64 @@ def complete(
         if ql in s.name.lower():
             add(s, "substring")
     return out[:limit]
+
+
+def _escape_xml(s: str) -> str:
+    return (
+        s.replace("&", "&amp;")
+         .replace("<", "&lt;")
+         .replace(">", "&gt;")
+         .replace('"', "&quot;")
+         .replace("'", "&apos;")
+    )
+
+
+def _listing_description(skill: Skill) -> str:
+    lines = (skill.description or "").strip().splitlines()
+    desc = lines[0].strip() if lines else ""
+    if len(desc) > MAX_LISTING_DESC_CHARS:
+        desc = desc[:MAX_LISTING_DESC_CHARS - 1].rstrip() + "…"
+    return desc
+
+
+def format_skills_for_prompt(skills: list[Skill]) -> str:
+    """Render the ``<available_skills>`` block for the system prompt.
+
+    One skill per entry: hierarchical name, first line of the description
+    capped at :data:`MAX_LISTING_DESC_CHARS`, and the absolute SKILL.md
+    path. The name is what the ``skill`` tool takes; the path is what
+    ``read`` takes, and it is also the base directory for the relative
+    paths a skill body refers to.
+
+    Every skill the caller passes is listed. Trimming the listing is the
+    user's call through ``skills.disabled``, not a silent cutoff here — a
+    skill the model never sees is a skill the user cannot reach.
+
+    Empty input returns ``""`` so callers can concatenate unconditionally.
+    """
+    if not skills:
+        return ""
+    lines = [
+        "",
+        "",
+        "The following skills provide specialized instructions for specific tasks.",
+        "Call the skill tool with a skill's name to load its instructions when the "
+        "task matches its description, or read the file at its location.",
+        "When a skill file references a relative path, resolve it against the skill "
+        "directory (parent of SKILL.md) and use that absolute path in tool commands.",
+        "",
+        "<available_skills>",
+    ]
+    for sk in skills:
+        lines.append("  <skill>")
+        lines.append(f"    <name>{_escape_xml(sk.name)}</name>")
+        lines.append(
+            f"    <description>{_escape_xml(_listing_description(sk))}</description>"
+        )
+        lines.append(f"    <location>{_escape_xml(sk.path)}</location>")
+        lines.append("  </skill>")
+    lines.append("</available_skills>")
+    return "\n".join(lines)
 
 
 def skill_resource_tree(skill: Skill) -> list[str]:

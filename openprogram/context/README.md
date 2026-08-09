@@ -220,7 +220,7 @@ render_range['subcalls']        in-frame 节点最多保留多少（默认 -1 �
 [1] 身份 banner    "You are <name> (agent_id=<id>). Users may address you via: <mentions>."
 [2] 工作区文件      AGENTS.md  → SOUL.md  → USER.md  （按顺序读三个，空的跳过）
 [3] 内联 prompt    agent.system_prompt  （用户在 agents show 里编辑的）
-[4] Skill 索引     "Skills available on demand:" + 一行一个启用的 skill 的 name+一句话描述（前 20 条）
+[4] Skill 索引     "<available_skills>" + 每份启用 skill 的 name + 描述首行（截 250 字符）+ SKILL.md 绝对路径
 [5] Memory 块      get_provider().system_prompt()  （持久化 memory 快照）
 ```
 

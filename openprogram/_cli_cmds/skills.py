@@ -170,40 +170,14 @@ def _cmd_skills_remove(name: str) -> int:
 
 
 def _cmd_skills_list(override_dirs, as_json: bool) -> int:
-    """Print skills the runtime would discover from all five sources
-    (bundled / user / project / plugin / remote-cache). When
-    ``override_dirs`` is set we fall back to the legacy flat loader
-    so callers passing ``--dir`` still work."""
-    if override_dirs:
-        # legacy path — flat dirs only
-        from openprogram.agentic_programming.skills import load_skills
-        skills = load_skills(override_dirs)
-        if as_json:
-            import json as _json
-            print(_json.dumps([{
-                "name": s.name,
-                "description": s.description,
-                "slug": s.slug,
-                "file_path": s.file_path,
-            } for s in skills], indent=2))
-            return 0
-        if not skills:
-            # Match the non-legacy branch (line 211 below) so callers
-            # passing ``--dir`` to an empty directory get the same
-            # "(no skills discovered)" line as the default discovery
-            # path. Without this the legacy branch silently printed
-            # "Discovered 0 skill(s):" + no rows, which read as a
-            # render bug.
-            print("(no skills discovered)")
-            return 0
-        print(f"Discovered {len(skills)} skill(s):\n")
-        for s in skills:
-            print(f"  {s.name}  ({s.slug})")
-            print(f"    {s.description[:100]}")
-        return 0
+    """Print the skills the runtime discovers.
 
-    from openprogram.skills.loader import list_skills
-    skills = list_skills()
+    Without ``--dir`` that is the five standard sources (bundled /
+    remote-cache / plugin / user / project). With ``--dir`` it is exactly
+    the directories named, read by the same loader so the rows mean the
+    same thing either way."""
+    from openprogram.skills import list_skills, load_skills
+    skills = load_skills(override_dirs) if override_dirs else list_skills()
 
     if as_json:
         import json as _json
@@ -238,54 +212,82 @@ def _cmd_skills_list(override_dirs, as_json: bool) -> int:
 
 
 def _cmd_skills_doctor(override_dirs) -> int:
-    """Scan skill dirs for broken SKILL.md files and duplicate names."""
+    """Scan skill dirs for broken SKILL.md files and shadowed names.
+
+    Reads the same roots the loader reads — the five standard sources, or
+    exactly the ``--dir`` list when given — and walks them the same way,
+    recursively, so a namespace directory holding nested skills
+    (``anthropic-skills/docx/SKILL.md``) is not mistaken for a broken one.
+
+    A name that appears in two sources is the override rule working, so it
+    is reported as shadowing rather than counted as a problem. Within one
+    source a name cannot repeat: it is the directory path."""
     from pathlib import Path as _Path
 
-    from openprogram.agentic_programming.skills import (
-        _parse_front_matter, default_skill_dirs,
-    )
+    from openprogram.skills.frontmatter import parse_frontmatter
+    from openprogram.skills.loader import _source_dirs
 
-    dirs = override_dirs or default_skill_dirs()
+    if override_dirs:
+        roots = [("explicit", _Path(d)) for d in override_dirs]
+    else:
+        roots = list(_source_dirs())
     issues: list[str] = []
-    seen_names: dict[str, str] = {}
+    shadowed: list[str] = []
+    # name -> (source, path) of the last source that defined it; the loader
+    # walks sources low to high, so the last one is the one that wins.
+    winner: dict[str, tuple[str, str]] = {}
+    count = 0
 
-    for d in dirs:
-        root = _Path(d)
+    for source, root in roots:
         if not root.is_dir():
-            print(f"[warn] skill dir does not exist: {d}")
+            print(f"[warn] skill dir does not exist: {root}")
             continue
+        found = sorted(root.rglob("SKILL.md"))
         for entry in sorted(root.iterdir()):
-            if not entry.is_dir():
-                continue
-            skill_md = entry / "SKILL.md"
-            if not skill_md.is_file():
+            if entry.is_dir() and not any(
+                p.is_relative_to(entry) for p in found
+            ):
                 issues.append(f"{entry}: missing SKILL.md")
+        for skill_md in found:
+            if not skill_md.is_file():
                 continue
+            count += 1
             try:
                 text = skill_md.read_text(encoding="utf-8")
             except OSError as e:
                 issues.append(f"{skill_md}: cannot read ({e})")
                 continue
-            fm = _parse_front_matter(text)
+            fm, _body = parse_frontmatter(text)
             if not fm:
                 issues.append(f"{skill_md}: no YAML front matter (--- ... --- block)")
                 continue
-            name = (fm.get("name") or "").strip()
-            description = (fm.get("description") or "").strip()
+            name = str(fm.get("name") or "").strip()
+            description = str(fm.get("description") or "").strip()
             if not name:
                 issues.append(f"{skill_md}: front matter missing `name`")
             if not description:
                 issues.append(f"{skill_md}: front matter missing `description`")
-            if name and name in seen_names and seen_names[name] != str(skill_md):
-                issues.append(
-                    f"{skill_md}: duplicate name {name!r} "
-                    f"(first seen at {seen_names[name]})"
+            if not name:
+                continue
+            key = skill_md.parent.relative_to(root).as_posix()
+            if key == ".":
+                key = name
+            if key in winner:
+                prev_source, prev_path = winner[key]
+                shadowed.append(
+                    f"{key!r}: [{source}] {skill_md} overrides "
+                    f"[{prev_source}] {prev_path}"
                 )
-            if name:
-                seen_names.setdefault(name, str(skill_md))
+            winner[key] = (source, str(skill_md))
 
+    if shadowed:
+        print(f"{len(shadowed)} skill(s) shadowed by a higher-priority source:")
+        for line in shadowed:
+            print(f"  - {line}")
+        print()
     if not issues:
-        print(f"All skill dirs OK ({len(seen_names)} skill(s) discovered).")
+        print(f"All skill dirs OK ({count} SKILL.md discovered, "
+              f"{len(winner)} distinct skill(s)).")
         return 0
     print(f"Found {len(issues)} issue(s):")
     for issue in issues:

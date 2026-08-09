@@ -32,12 +32,14 @@ author: ...
 ---
 ```
 
-Sources (merged for display; on conflict the latter overrides the former):
+Sources, lowest precedence first (merged for display; on conflict the latter overrides the former, so what the user wrote beats what was installed for them, and both beat what ships with the package):
 1. **Bundled** — `openprogram/skills_bundled/<name>/` (shipped with the package, matching claude-code `src/skills/bundled`)
-2. **User** — `~/.openprogram/skills/<name>/`
-3. **Project** — `<project>/skills/<name>/` (already exists)
-4. **Plugin-provided** — contributed by enabled plugins
-5. **Remote-pulled** — `~/.openprogram/cache/skills/<name>/` (matching opencode discovery, pulled from a remote index)
+2. **Remote-pulled** — `~/.openprogram/cache/skills/<name>/` (matching opencode discovery, pulled from a remote index)
+3. **Plugin-provided** — contributed by enabled plugins
+4. **User** — `~/.openprogram/skills/<name>/`
+5. **Project** — `<project>/skills/<name>/`
+
+A skill's name is its directory path relative to the source root, so nesting gives hierarchical names (`anthropic-skills/docx`) and a name collision means the same skill from two sources, not two different skills.
 
 Resource layout (hermes convention): `SKILL.md` + `references/` + `templates/`.
 

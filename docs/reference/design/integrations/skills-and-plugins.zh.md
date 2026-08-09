@@ -32,12 +32,14 @@ author: ...
 ---
 ```
 
-来源（合并显示，冲突时后者覆盖前者）：
+来源，按优先级从低到高（合并显示，冲突时后者覆盖前者：用户自己写的盖过给他装的，装的盖过随包发的）：
 1. **Bundled** — `openprogram/skills_bundled/<name>/`（随包发布，对标 claude-code `src/skills/bundled`）
-2. **User** — `~/.openprogram/skills/<name>/`
-3. **Project** — `<project>/skills/<name>/`（已存在）
-4. **Plugin-provided** — 已启用 plugin 贡献
-5. **Remote-pulled** — `~/.openprogram/cache/skills/<name>/`（对标 opencode discovery，按 index 远端拉取）
+2. **Remote-pulled** — `~/.openprogram/cache/skills/<name>/`（对标 opencode discovery，按 index 远端拉取）
+3. **Plugin-provided** — 已启用 plugin 贡献
+4. **User** — `~/.openprogram/skills/<name>/`
+5. **Project** — `<project>/skills/<name>/`
+
+技能的名字取自目录相对来源根的路径，所以嵌套目录给出层级名（`anthropic-skills/docx`），重名意味着同一份技能来自两个来源，而不是两份不同技能。
 
 资源布局（hermes 约定）：`SKILL.md` + `references/` + `templates/`。
 

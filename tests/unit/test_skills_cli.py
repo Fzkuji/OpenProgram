@@ -25,8 +25,10 @@ def test_list_renders_discovered_skills(tmp_path, capsys):
     rc = _cmd_skills_list([str(tmp_path)], as_json=False)
     assert rc == 0
     out = capsys.readouterr().out
-    assert "echo-tool" in out
-    assert "ping-tool" in out
+    # A skill is named by its directory, the rule every source shares —
+    # that is what makes `anthropic-skills/docx` a name and not a clash.
+    assert "echo" in out
+    assert "ping" in out
     assert "makes echoes" in out
 
 
@@ -35,8 +37,9 @@ def test_list_json_mode(tmp_path, capsys):
     rc = _cmd_skills_list([str(tmp_path)], as_json=True)
     assert rc == 0
     data = json.loads(capsys.readouterr().out)
-    assert data[0]["name"] == "echo-tool"
-    assert data[0]["slug"] == "echo"
+    assert data[0]["name"] == "echo"
+    assert data[0]["description"] == "makes echoes"
+    assert data[0]["path"].endswith("echo/SKILL.md")
 
 
 def test_list_empty_when_no_dirs_exist(tmp_path, capsys):
@@ -81,11 +84,25 @@ def test_doctor_flags_missing_name_or_description(tmp_path, capsys):
     assert "description" in out
 
 
-def test_doctor_flags_duplicate_names(tmp_path, capsys):
+def test_doctor_reports_a_shadowed_skill(tmp_path, capsys):
+    """Same name in two roots is the override rule working, not a fault:
+    the later root wins and the doctor says which file lost."""
     d1 = tmp_path / "a"
     d2 = tmp_path / "b"
-    _write_skill(d1, "sk", "dup-name", "first")
-    _write_skill(d2, "sk2", "dup-name", "second")
+    _write_skill(d1, "sk", "sk", "first")
+    _write_skill(d2, "sk", "sk", "second")
     rc = _cmd_skills_doctor([str(d1), str(d2)])
-    assert rc == 1
-    assert "duplicate name" in capsys.readouterr().out
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "shadowed" in out
+    assert "overrides" in out
+    assert str(d2 / "sk" / "SKILL.md") in out
+
+
+def test_doctor_accepts_nested_namespace_dirs(tmp_path, capsys):
+    """A namespace directory holds nested skills and no SKILL.md of its
+    own; the loader recurses, so the doctor must too."""
+    _write_skill(tmp_path, "anthropic-skills/docx", "docx", "word files")
+    rc = _cmd_skills_doctor([str(tmp_path)])
+    assert rc == 0
+    assert "missing SKILL.md" not in capsys.readouterr().out

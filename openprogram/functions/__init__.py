@@ -91,6 +91,11 @@ DEFAULT_TOOLS: list[str] = [
     "todo_create",
     "todo_update",
     "todo_list",
+    # The load verb for <available_skills>. The listing carries a capped
+    # summary; this pulls the SKILL.md body when the model picks one.
+    # Deferred (below) — the listing already names every skill, so the
+    # schema only has to exist on the turn a skill is actually loaded.
+    "skill",
     "playwright_browser",
     # Plan-mode gate — the LLM is allowed to enter plan mode on its
     # own when it judges the task warrants it (mirrors claude-code's
@@ -137,6 +142,9 @@ DEFERRED_DEFAULT_TOOLS: set = {
     "playwright_browser",
     # 378 tok。跨 session/branch 通信，多分支协作场景才用得上。
     "send_message",
+    # 技能加载动词。<available_skills> 每轮已经列了名字和描述，模型要用
+    # 才需要这个 schema；不用的会话不该为它付费。catalog 一行即可。
+    "skill",
 }
 
 # 常驻工具：schema 一直带在请求里（不 defer）。= DEFAULT_TOOLS 减去上面的冷门大块，

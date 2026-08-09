@@ -217,8 +217,8 @@
 存量按生产代码统计（不含测试）：<code>@function</code>共46个（32个<code>@function(...)</code>装饰器写法，
 14个<code>function(...)(fn)</code>模块级调用写法，两种写法进的是同一个注册表）；
 <code>@agentic_function</code>共4个（<code>extract_pdf_figures</code>、<code>extract_pdf_tables</code>、<code>interaction_demo</code>、<code>goal</code>）；
-技能<code>openprogram/skills_bundled/</code>下3份、仓库根<code>skills/</code>下4份，而喂进系统提示的
-<code>default_skill_dirs()</code>只读后者加<code>~/.openprogram/skills</code>（见第4问）。
+技能<code>openprogram/skills_bundled/</code>下3份、仓库根<code>skills/</code>下4份，加上用户目录和远端缓存装的，
+全部经<code>skills/loader.py</code>进系统提示（见第4问）。
 <b>三个刻度不是仅有的三个位置。</b>骨架里放一个<code>decision.make</code>是硬里嵌软；技能第三步写「调<code>survey_references</code>」是软里嵌硬。所以谱是连续的。
 </div>
 </div>
@@ -414,61 +414,54 @@
 <b>结论：我们已经证明了「把确定性外壳写进代码」这件事成立，还没开始做「流程里留决策点」。</b>
 </div>
 
-<h3>技能这一层今天有两套，而且两套互不认识</h3>
-<p class="lead">「技能没有注册」这个说法不准。准确的说法是：注册了两套，读的目录不一样，去重规则相反，喂给模型的格式也不一样。</p>
+<h3>技能这一层：一个注册表，一份清单，一个加载动词</h3>
+<p class="lead">这一层曾经有两套加载器，读的目录不一样，去重规则相反，喂给模型的格式也不一样。现在只剩一套：<code>openprogram/skills/loader.py</code>。<code>agentic_programming/skills.py</code>已删除。</p>
 
 <div class="card scroll">
-<svg viewBox="0 0 1120 340" role="img" aria-label="技能层现状：两个加载器、两个渲染器、一个没接上的工具">
-  <text x="20" y="26" fill="#e0445a" font-size="12.5" font-weight="600">两个加载器</text>
+<svg viewBox="0 0 1120 340" role="img" aria-label="技能层现状：一个加载器、一个渲染器、一个加载动词">
+  <text x="20" y="26" fill="#5aad4e" font-size="12.5" font-weight="600">一个加载器：skills/loader.py</text>
 
-  <rect x="20" y="40" width="330" height="118" rx="10" fill="#1d1c14" stroke="#3a2420"/>
-  <rect x="20" y="40" width="330" height="3" rx="1.5" fill="#e0445a"/>
-  <text x="36" y="62" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">agentic_programming/skills.py</text>
-  <text x="36" y="82" fill="#a5a190" font-size="11">只读 front matter 的 name 和 description</text>
-  <text x="36" y="99" fill="#a5a190" font-size="11">正文一个字都不读</text>
-  <text x="36" y="116" fill="#a5a190" font-size="11">扫2个目录：~/.openprogram/skills、&lt;repo&gt;/skills</text>
-  <text x="36" y="133" fill="#a5a190" font-size="11">同名先见先赢</text>
-  <text x="36" y="150" fill="#e0445a" font-size="11">读不到 skills_bundled/</text>
+  <rect x="20" y="40" width="530" height="140" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+  <rect x="20" y="40" width="530" height="3" rx="1.5" fill="#5aad4e"/>
+  <text x="36" y="63" fill="#f0eee6" font-size="11">五个来源，按优先级从低到高排：</text>
+  <text x="36" y="84" fill="#a5a190" font-size="11" font-family="Menlo,monospace">bundled  →  remote-cache  →  plugin  →  user  →  project</text>
+  <text x="36" y="105" fill="#a5a190" font-size="11">同名后见先赢。用户自己写的盖过给他装的，装的盖过随程序发的。</text>
+  <text x="36" y="124" fill="#a5a190" font-size="11">名字取自目录相对来源根的路径，所以有层级：anthropic-skills/docx。</text>
+  <text x="36" y="145" fill="#a5a190" font-size="11">读正文，也读 category / allowed_tools / triggers / aliases。</text>
+  <text x="36" y="166" fill="#5aad4e" font-size="11">skills_bundled/ 是第一来源，distill 和 self-update 现在在清单里。</text>
 
-  <rect x="366" y="40" width="330" height="118" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
-  <rect x="366" y="40" width="330" height="3" rx="1.5" fill="#5aad4e"/>
-  <text x="382" y="62" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">skills/loader.py</text>
-  <text x="382" y="82" fill="#a5a190" font-size="11">读正文，还读 category / allowed_tools /</text>
-  <text x="382" y="99" fill="#a5a190" font-size="11">triggers / aliases</text>
-  <text x="382" y="116" fill="#a5a190" font-size="11">扫5个来源：bundled、user、project、plugin、cache</text>
-  <text x="382" y="133" fill="#a5a190" font-size="11">同名后见先赢（和左边相反）</text>
-  <text x="382" y="150" fill="#8a8675" font-size="11">但它不喂系统提示</text>
+  <text x="580" y="26" fill="#5aad4e" font-size="12.5" font-weight="600">一个加载动词：skill 工具</text>
+  <rect x="580" y="40" width="518" height="140" rx="10" fill="#12110b" stroke="#5aad4e"/>
+  <text x="596" y="63" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">functions/tools/skill/</text>
+  <text x="596" y="84" fill="#a5a190" font-size="11">入参 name，收整条层级名或任何不歧义的短名（docx）。</text>
+  <text x="596" y="103" fill="#a5a190" font-size="11">返回正文加基准目录加同目录文件清单。</text>
+  <text x="596" y="124" fill="#a5a190" font-size="11">在 DEFERRED_DEFAULT_TOOLS 里：每轮只占 catalog 一行，</text>
+  <text x="596" y="140" fill="#a5a190" font-size="11">模型真要加载技能时才用 tool_search 拉 schema。</text>
+  <text x="596" y="166" fill="#8a8675" font-size="11">读清单里的 location 用 read 打开，同样有效，两条路都留着。</text>
 
-  <rect x="712" y="40" width="386" height="124" rx="10" fill="#12110b" stroke="#6b6a63" stroke-dasharray="4 4"/>
-  <text x="728" y="62" fill="#8a8675" font-size="11.5" font-weight="600">已经写好但没接上的：SkillTool</text>
-  <text x="728" y="84" fill="#a5a190" font-size="11" font-family="Menlo,monospace">openprogram/skills/tool.py:74</text>
-  <text x="728" y="103" fill="#a5a190" font-size="11">name = "Skill"</text>
-  <text x="728" y="120" fill="#a5a190" font-size="11">description = "Load a skill's SKILL.md into context"</text>
-  <text x="728" y="140" fill="#e0445a" font-size="11">从来没进过 _build_and_register_tool，</text>
-  <text x="728" y="154" fill="#e0445a" font-size="11">只被人手敲 /skill &lt;name&gt; 触发</text>
+  <text x="20" y="214" fill="#5aad4e" font-size="12.5" font-weight="600">一个渲染器：format_skills_for_prompt</text>
 
-  <text x="20" y="192" fill="#e0445a" font-size="12.5" font-weight="600">两个系统提示渲染器，输出不一样</text>
+  <rect x="20" y="228" width="330" height="46" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="36" y="250" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">runtime.py（exec 那条路）</text>
+  <text x="36" y="266" fill="#a5a190" font-size="11">Runtime(skills=True) 读五个来源</text>
 
-  <rect x="20" y="206" width="530" height="120" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
-  <text x="36" y="228" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">runtime.py:1677（exec 那条路）</text>
-  <text x="36" y="248" fill="#a5a190" font-size="11">调 format_skills_for_prompt，出 XML：</text>
-  <rect x="36" y="258" width="494" height="58" rx="6" fill="#12110b" stroke="#2e2c20"/>
-  <text x="50" y="277" fill="#7ea6e8" font-size="10.5" font-family="Menlo,monospace">&lt;available_skills&gt;&lt;skill&gt;</text>
-  <text x="50" y="292" fill="#7ea6e8" font-size="10.5" font-family="Menlo,monospace">  &lt;name&gt; &lt;description&gt; &lt;location&gt;/abs/path/SKILL.md&lt;/location&gt;</text>
-  <text x="50" y="308" fill="#5aad4e" font-size="10.5">给了绝对路径，模型能用 read 打开</text>
+  <rect x="366" y="228" width="330" height="46" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="382" y="250" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">context/components.py（chat 那条路）</text>
+  <text x="382" y="266" fill="#a5a190" font-size="11">skills_index 组件，减掉 skills.disabled</text>
 
-  <rect x="566" y="206" width="532" height="120" rx="10" fill="#1d1c14" stroke="#3a2420"/>
-  <text x="582" y="228" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">context/components.py:235（chat 那条路）</text>
-  <text x="582" y="248" fill="#a5a190" font-size="11">完全不调它，自己拼一段项目符号列表：</text>
-  <rect x="582" y="258" width="500" height="58" rx="6" fill="#12110b" stroke="#2e2c20"/>
-  <text x="596" y="277" fill="#a5a190" font-size="10.5" font-family="Menlo,monospace">Skills available on demand:</text>
-  <text x="596" y="292" fill="#a5a190" font-size="10.5" font-family="Menlo,monospace">  · &lt;name&gt; — &lt;描述首行，截到80字符&gt;</text>
-  <text x="596" y="308" fill="#e0445a" font-size="10.5">截到20条，不给路径。模型知道名字，不知道文件在哪</text>
+  <line x1="200" y1="278" x2="330" y2="296" stroke="#4a4838" stroke-width="2"/>
+  <line x1="530" y1="278" x2="400" y2="296" stroke="#4a4838" stroke-width="2"/>
+
+  <rect x="200" y="296" width="898" height="36" rx="8" fill="#12110b" stroke="#5aad4e"/>
+  <text x="216" y="319" fill="#7ea6e8" font-size="10.5" font-family="Menlo,monospace">&lt;available_skills&gt;&lt;skill&gt;&lt;name&gt;&lt;/name&gt;&lt;description&gt;&lt;/description&gt;&lt;location&gt;/abs/path/SKILL.md&lt;/location&gt;&lt;/skill&gt;</text>
 </svg>
 <div class="legend">
-两套的直接后果：<b>装在<code>skills_bundled/</code>里的三份技能（agentic-programming、distill、self-update）不在喂给系统提示的那条路上。</b>
-<code>default_skill_dirs()</code>（<code>skills.py:156</code>）返回的是<code>~/.openprogram/skills</code>和<code>&lt;repo_root&gt;/skills</code>，后者装的是另外4份。
-而<code>skills/agentic-programming/SKILL.md</code>和<code>skills_bundled/agentic-programming/SKILL.md</code>是两份已经漂开的近似副本。
+描述取首行，截到250字符（<code>MAX_LISTING_DESC_CHARS</code>，抄claude-code的数：清单只管发现，正文由<code>skill</code>工具加载）。
+<b>条数不截。</b>之前chat那条路截到20条，装了20份以上技能的用户后面那些模型根本看不见，而这正是要修的毛病。
+要让清单短，走<code>skills.disabled</code>（设置页、agent档案、Skills页开关都写这一个字段），不靠渲染器悄悄砍。
+代价看得见：只有3份自带技能时512 token；装满26份（自带加项目加19份远端拉的）是3055 token。这段在L0，是整段系统提示里最容易命中prefix cache的一段。
+还没合的一处：<code>skills/agentic-programming/SKILL.md</code>和<code>skills_bundled/agentic-programming/SKILL.md</code>是两份已经漂开的近似副本，
+project来源盖过bundled，所以模型看到的是前者。
 </div>
 </div>
 
@@ -855,11 +848,11 @@
 闭集分支（下一步走哪条路）用<code>decision.make</code>，应该少见；开放产出（这一步交出什么内容）用<code>runtime.exec</code>加输出契约加代码侧结构检查，那才是常态。</div>
 </div>
 
-<h3>模型眼里该是几种东西：今天三种半，应该是两种</h3>
+<h3>模型眼里该是几种东西：今天三种，应该是两种</h3>
 
 <div class="card scroll">
 <svg viewBox="0 0 1120 360" role="img" aria-label="模型看到的东西：今天与提议">
-  <text x="20" y="26" fill="#e0445a" font-size="12.5" font-weight="600">今天：三种半</text>
+  <text x="20" y="26" fill="#d4843a" font-size="12.5" font-weight="600">今天：三种</text>
 
   <rect x="20" y="40" width="470" height="52" rx="9" fill="#182436" stroke="#4f8ef7"/>
   <text x="36" y="62" fill="#9cc4ff" font-size="11.5" font-weight="600">① tools 数组：带完整 schema，直接可调</text>
@@ -871,11 +864,11 @@
 
   <rect x="20" y="160" width="470" height="52" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
   <text x="36" y="182" fill="#f0eee6" font-size="11.5" font-weight="600">③ &lt;available_skills&gt;：name + description + 绝对路径</text>
-  <text x="36" y="201" fill="#a5a190" font-size="11">靠 read 打开正文。走 runtime.exec 那条路才有</text>
+  <text x="36" y="201" fill="#a5a190" font-size="11">靠 skill 工具或 read 打开正文。chat 和 exec 两条路同一段文本</text>
 
-  <rect x="20" y="220" width="470" height="52" rx="9" fill="#1d1c14" stroke="#3a2420" stroke-dasharray="4 4"/>
-  <text x="36" y="242" fill="#e0445a" font-size="11.5" font-weight="600">③′ 同一批技能的另一种写法：项目符号列表，无路径</text>
-  <text x="36" y="261" fill="#a5a190" font-size="11">走 chat 那条路才有。名字知道了，文件在哪不知道</text>
+  <rect x="20" y="220" width="470" height="52" rx="9" fill="#12110b" stroke="#5aad4e" stroke-dasharray="4 4"/>
+  <text x="36" y="242" fill="#5aad4e" font-size="11.5" font-weight="600">曾经有个 ③′：同一批技能的项目符号列表，无路径</text>
+  <text x="36" y="261" fill="#a5a190" font-size="11">chat 那条路自己拼的，已删。两个渲染器合成一个</text>
 
   <rect x="20" y="282" width="470" height="66" rx="9" fill="#12110b" stroke="#3a2c1a"/>
   <text x="36" y="304" fill="#d4843a" font-size="11.5">② 和 ③ 形状完全一样：</text>
@@ -896,9 +889,9 @@
   <text x="616" y="158" fill="#5aad4e" font-size="12" font-weight="600">② 知道名字得先加载的：一份目录，一个加载动词</text>
   <text x="616" y="180" fill="#a5a190" font-size="11">deferred 工具和技能进同一份清单，每行 name + description + 类型。</text>
   <text x="616" y="198" fill="#a5a190" font-size="11">加载动作按类型分派：deferred 拉 schema，技能拉正文。</text>
-  <text x="616" y="220" fill="#f0eee6" font-size="11">已有零件：SkillTool（skills/tool.py:74，写好没注册）、</text>
+  <text x="616" y="220" fill="#f0eee6" font-size="11">已有零件：skill 工具（已注册，且本身就是 deferred）、</text>
   <text x="616" y="236" fill="#f0eee6" font-size="11">deferred 目录（_runtime.py:1212）、加载动词先例（tool_search）。</text>
-  <text x="616" y="254" fill="#d4843a" font-size="11">差的只是把它们接成一条。</text>
+  <text x="616" y="254" fill="#d4843a" font-size="11">差的只剩把两份目录渲染成一份。</text>
 
   <rect x="600" y="272" width="498" height="70" rx="9" fill="#12110b" stroke="#5aad4e"/>
   <text x="616" y="294" fill="#5aad4e" font-size="11.5">清单要有预算，抄 claude-code 的数：</text>
@@ -1042,7 +1035,7 @@
 其余全部复用：<code>@agentic_function</code>当统一注册点（DAG、expose、注册成工具、重试、超时预算自动获得），
 <code>agent()</code>／<code>task_output()</code>／<code>task_stop()</code>当并行执行底座（级联取消、派生深度、扇出、消息数四个预算已经在配置里），
 <code>decision.make</code>当闭集分支。<b>不新增装饰器，不新增名词进代码。</b>
-技能那一层同理：<code>SkillTool</code>已经写好，只差注册。
+技能那一层同理：<code>skill</code>工具复用<code>skills/tool.py</code>已有的解析和调用记录，没有新名词。
 </div>
 
 
@@ -1147,21 +1140,18 @@
 
 <div class="qa">
   <p class="q">4. <code>skills_bundled/</code>那个目录怎么办？技能要不要也有个「注册」动作？</p>
-  <p class="a">先纠正前提：<b>技能不是没有注册，是注册了两套，而且两套互不认识。</b></p>
-  <p class="a"><code>agentic_programming/skills.py</code>的<code>Skill</code>只有<code>name</code>／<code>description</code>／<code>file_path</code>／<code>base_dir</code>，只读front matter的两个字段、不读正文，扫两个目录，同名先见先赢。<code>skills/loader.py</code>的<code>Skill</code>读正文，还读<code>category</code>／<code>allowed_tools</code>／<code>triggers</code>／<code>aliases</code>，扫五个来源，同名后见先赢，规则正好相反。</p>
-  <p class="a">两套的后果是实打实的三条：<br>
-  <b>一，<code>skills_bundled/</code>不在喂给系统提示的那条路上。</b><code>default_skill_dirs()</code>（<code>skills.py:156</code>）返回<code>~/.openprogram/skills</code>和<code>&lt;repo_root&gt;/skills</code>，装在<code>skills_bundled/</code>里的三份（agentic-programming、distill、self-update）只有另一套loader看得见。而<code>skills/agentic-programming/SKILL.md</code>和<code>skills_bundled/agentic-programming/SKILL.md</code>是两份已经漂开的近似副本。<br>
-  <b>二，两个系统提示渲染器输出不一样。</b><code>runtime.py:1677</code>走<code>format_skills_for_prompt</code>，出<code>&lt;available_skills&gt;</code> XML，带<code>&lt;location&gt;</code>绝对路径；<code>context/components.py:235</code>完全不调它，自己拼一段项目符号列表，截到20条，<b>不给路径</b>。走chat那条路的模型知道技能名字，不知道文件在哪。<br>
-  <b>三，<code>SkillTool</code>已经写好但没接上。</b><code>openprogram/skills/tool.py:74</code>，<code>name = "Skill"</code>，<code>description = "Load a skill's SKILL.md into context"</code>，从来没进过<code>_build_and_register_tool</code>，现在只被人手敲<code>/skill &lt;name&gt;</code>触发。<code>skills.py:19</code>写明了当初的取舍：「We intentionally reuse <code>read</code> rather than adding a dedicated <code>skill</code> tool」。</p>
-  <p class="a">统一概念之后该做的三步，按代价从小到大：<b>一个加载器</b>（删掉<code>agentic_programming/skills.py</code>那份，全走<code>skills/loader.py</code>，它已经读5个来源、读正文、有category和aliases）；<b>一份清单</b>（两个渲染器收敛成一个，<code>skills_index</code>组件和exec那条路输出同一段文本）；<b>一个加载动词</b>（把已经存在的<code>SkillTool</code>注册进<code>_registry</code>）。</p>
-  <p class="a">第三步做完，技能就和工具在同一张表里、同一套门禁、同一份清单，这才是「统一概念」在实现上真正的落点。<b>让概念成立的不是共用装饰器，是共用注册表和共用清单。</b>两个装饰器已经共用注册表了，缺的正是技能这一形态。</p>
+  <p class="a">技能曾经注册了两套，而且两套互不认识：<code>agentic_programming/skills.py</code>只读front matter的两个字段、扫两个目录、同名先见先赢；<code>skills/loader.py</code>读正文、还读<code>category</code>／<code>allowed_tools</code>／<code>triggers</code>／<code>aliases</code>、扫五个来源、同名后见先赢。三条后果都是实打实的：<code>skills_bundled/</code>不在喂系统提示那条路上，所以<code>distill</code>和<code>self-update</code>模型根本看不见；两个渲染器输出不一样，chat那条路截到20条且不给路径；<code>SkillTool</code>写好了从来没注册。</p>
+  <p class="a">现在三条都合了。<b>一个加载器</b>：<code>agentic_programming/skills.py</code>已删除，<code>Runtime(skills=...)</code>和<code>skills_index</code>组件都走<code>skills/loader.py</code>。<b>一份清单</b>：<code>format_skills_for_prompt</code>是唯一渲染器，两条路输出同一段<code>&lt;available_skills&gt;</code>，带name、截到250字符的描述首行、绝对路径。<b>一个加载动词</b>：<code>skill</code>工具（<code>functions/tools/skill/</code>）进了注册表，收层级名或不歧义短名，返回正文加基准目录加同目录文件清单，调用记入<code>skills/tool.py</code>的<code>invoke_log.jsonl</code>，Skills页读的就是这份记录。</p>
+  <p class="a">冲突顺序也定死了：<code>bundled</code> → <code>remote-cache</code> → <code>plugin</code> → <code>user</code> → <code>project</code>，后见先赢。<b>用户自己写的盖过给他装的，装的盖过随程序发的；同是用户写的，项目里那份盖过家目录那份。</b>之前<code>remote-cache</code>排在最后，从ClawHub拉一个同名技能会盖掉用户自己写的，方向反了。</p>
+  <p class="a"><code>skill</code>工具在<code>DEFERRED_DEFAULT_TOOLS</code>里：清单每轮已经列了每份技能的名字和描述，schema只在模型真要加载时才由<code>tool_search</code>拉进当轮，平时只占catalog一行。<code>read</code>打开清单里的<code>location</code>同样有效，两条路都留着。<code>skills.py:19</code>当初写的取舍（「We intentionally reuse <code>read</code>」）没有作废，只是不再是唯一入口。</p>
+  <p class="a">技能现在和工具在同一张表里、同一套门禁、同一份清单。<b>让概念成立的不是共用装饰器，是共用注册表和共用清单。</b></p>
 </div>
 
 <div class="qa">
   <p class="q">5. 统一之后模型眼里该是一种还是几种？</p>
-  <p class="a">今天是<b>三种半</b>：①tools数组里的schema（46个<code>@function</code>加4个<code>@agentic_function</code>，<code>split_tools_for_dispatch</code>拆的）；②deferred目录（<code>defer=True</code>的，系统提示里一行name加description，靠<code>tool_search</code>把schema拉进当轮）；③<code>&lt;available_skills&gt;</code>（name加description加绝对路径，靠<code>read</code>打开）；③′同一批技能在chat那条路上的另一种写法，无路径。</p>
-  <p class="a">②和③<b>形状完全一样</b>：系统提示里一行name加description，外加一个把正文拉进来的动作。区别只有动作的名字（<code>tool_search</code>还是<code>read</code>）和目录的标签。</p>
-  <p class="a">统一之后应该是<b>两种</b>：能直接调的（tools数组，带schema），和知道名字得先加载的（一份目录，一个加载动词，按类型分派：deferred拉schema，技能拉正文）。</p>
+  <p class="a">曾经是<b>三种半</b>，那半种是同一批技能在chat那条路上的第二种写法，无路径、截到20条。它已经删了，现在是<b>三种</b>：①tools数组里的schema（<code>@function</code>加<code>@agentic_function</code>，<code>split_tools_for_dispatch</code>拆的）；②deferred目录（<code>defer=True</code>的，系统提示里一行name加description，靠<code>tool_search</code>把schema拉进当轮）；③<code>&lt;available_skills&gt;</code>（name加description加绝对路径，靠<code>skill</code>工具或<code>read</code>打开）。</p>
+  <p class="a">②和③<b>形状完全一样</b>：系统提示里一行name加description，外加一个把正文拉进来的动作。区别只有动作的名字和目录的标签。<code>skill</code>工具本身就在②里，所以两份目录现在至少指向同一套加载语义；把它们并成一份清单是下一步，那是渲染层的事，注册层已经并完了。</p>
+  <p class="a">终点是<b>两种</b>：能直接调的（tools数组，带schema），和知道名字得先加载的（一份目录，一个加载动词，按类型分派：deferred拉schema，技能拉正文）。</p>
   <p class="a"><b>两家参考实现已经这么做了，而且都是把「加载」做成工具。</b>opencode的<code>skill</code>是内建工具之一（<code>packages/opencode/src/tool/registry.ts:210</code>，和<code>read</code>／<code>grep</code>／<code>task</code>并列），入参<code>name</code>，返回<code>&lt;skill_content&gt;</code>加基准目录加<code>&lt;skill_files&gt;</code>，带<code>permission: "skill"</code>走同一套审批；系统提示那段（<code>core/src/skill/guidance.ts:18</code>）直接写「Use the skill tool to load a skill when a task matches its description」。claude-code的<code>SkillTool</code>和<code>ToolSearchTool</code>并排在同一个工具列表里（<code>src/tools.ts:212</code>），而且更进一步：<code>getSkillToolCommands</code>的注释写着「SkillTool shows ALL prompt-based commands that the model can invoke」，技能和斜杠命令进的是同一份清单。</p>
   <p class="a">清单要有预算，数可以直接抄claude-code的：<code>SKILL_BUDGET_CONTEXT_PERCENT = 0.01</code>（上下文窗口的1%），<code>MAX_LISTING_DESC_CHARS = 250</code>，注释说明理由「The listing is for discovery only，the Skill tool loads full content on invoke」。我们已经有全部零件，差的只是接成一条。</p>
 </div>
@@ -1231,8 +1221,8 @@
 </div>
 
 <div class="note">
-实现文件：<code>openprogram/agentic_programming/function.py</code>、<code>runtime.py</code>、<code>decision.py</code>、<code>session.py</code>、<code>skills.py</code>；
-<code>openprogram/functions/_runtime.py</code>、<code>openprogram/functions/agentics/</code>、<code>openprogram/functions/tools/</code>；
+实现文件：<code>openprogram/agentic_programming/function.py</code>、<code>runtime.py</code>、<code>decision.py</code>、<code>session.py</code>；
+<code>openprogram/functions/_runtime.py</code>、<code>openprogram/functions/agentics/</code>、<code>openprogram/functions/tools/</code>（技能加载动词在<code>tools/skill/</code>）；
 <code>openprogram/skills/loader.py</code>、<code>openprogram/skills/tool.py</code>；<code>openprogram/context/components.py</code>；
 <code>openprogram/skills_bundled/distill/SKILL.md</code>。
 相关设计页：<a href="calling-unification.html">函数与工具调用的统一</a>、<a href="../runtime/agent-collaboration.html">Agent协作</a>。

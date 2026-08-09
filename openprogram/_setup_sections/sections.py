@@ -117,10 +117,8 @@ def run_skills_section() -> int:
     """Pick which skills (SKILL.md entries) are enabled."""
     from openprogram.setup import _checkbox
     try:
-        from openprogram.agentic_programming import (
-            default_skill_dirs, load_skills,
-        )
-        skills = load_skills(default_skill_dirs())
+        from openprogram.skills import list_skills
+        skills = list_skills()
     except Exception as e:
         print(f"Failed to scan skills: {e}")
         return 1

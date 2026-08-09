@@ -385,10 +385,8 @@ async def handle_stats(ws, cmd: dict):
         top_applications = []
 
     try:
-        from openprogram.agentic_programming.skills import (
-            default_skill_dirs, load_skills,
-        )
-        skills_count = len(load_skills(default_skill_dirs()))
+        from openprogram.skills import list_skills
+        skills_count = len(list_skills())
     except Exception:
         skills_count = 0
 
@@ -402,10 +400,8 @@ async def handle_stats(ws, cmd: dict):
         session_rows = []
 
     try:
-        from openprogram.agentic_programming.skills import (
-            default_skill_dirs as _ds, load_skills as _ls,
-        )
-        top_skills = [{"name": s.name, "slug": s.slug} for s in _ls(_ds())]
+        from openprogram.skills import list_skills as _ls
+        top_skills = [{"name": s.name, "slug": s.leaf} for s in _ls()]
     except Exception:
         top_skills = []
 

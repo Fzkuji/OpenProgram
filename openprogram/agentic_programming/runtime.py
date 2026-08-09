@@ -472,7 +472,8 @@ class Runtime:
                          provider's standard env var (OPENAI_API_KEY, etc).
             skills:      Skill discovery for the system prompt. Three shapes:
                          - None (default) or False → skills disabled
-                         - True → probe default_skill_dirs() (user + repo)
+                         - True → the five standard sources
+                           (openprogram.skills.list_skills)
                          - list[str] → explicit directory list
                          When enabled, the <available_skills> block is
                          appended to system_prompt on every exec() call.
@@ -510,7 +511,7 @@ class Runtime:
         # first use; actual SKILL.md loading is lazy and cached so we
         # don't rescan the filesystem every exec().
         self._skills_config = skills
-        self._skills_cache_key: tuple[str, ...] | None = None
+        self._skills_cache_key: object = None
         self._skills_prompt_block: str = ""
         # Unified reasoning knob, matches pi-ai's ThinkingLevel:
         #   "off" | "low" | "medium" | "high" | "xhigh"
@@ -554,40 +555,42 @@ class Runtime:
 
     # --- Skills ---
 
-    def _resolved_skill_dirs(self) -> list[str]:
-        """Turn the constructor's ``skills`` argument into a concrete dir list.
+    def _skills_key(self) -> object:
+        """Normalize the constructor's ``skills`` argument into a cache key.
 
-        None / False → []. True → default dirs. list → as-is.
+        None / False → ``()``. True → ``True`` (the five standard sources).
+        list → the tuple of directories, read instead of those sources.
         """
         cfg = self._skills_config
-        if not cfg:
-            return []
         if cfg is True:
-            from openprogram.agentic_programming.skills import default_skill_dirs
-            return default_skill_dirs()
-        if isinstance(cfg, (list, tuple)):
-            return [str(d) for d in cfg]
-        return []
+            return True
+        if isinstance(cfg, (list, tuple)) and cfg:
+            return tuple(str(d) for d in cfg)
+        return ()
 
     def _skills_block(self) -> str:
         """Return the ``<available_skills>`` XML block for this runtime.
 
-        Cached per dir tuple so repeat exec() calls don't rescan unless the
-        configured dirs change. Empty string when skills are disabled or no
-        SKILL.md files were found — callers can unconditionally concatenate.
+        Same loader and same renderer as the chat path's ``skills_index``
+        component (openprogram/skills/loader.py) — one registry, one
+        listing format. Cached per config so repeat exec() calls don't
+        rescan unless it changes. Empty string when skills are disabled or
+        no SKILL.md files were found, so callers can concatenate freely.
         """
-        dirs = tuple(self._resolved_skill_dirs())
-        if self._skills_cache_key == dirs:
+        key = self._skills_key()
+        if self._skills_cache_key == key:
             return self._skills_prompt_block
-        if not dirs:
-            self._skills_cache_key = dirs
-            self._skills_prompt_block = ""
-            return ""
-        from openprogram.agentic_programming.skills import (
-            format_skills_for_prompt, load_skills,
+        from openprogram.skills import (
+            format_skills_for_prompt, list_skills, load_skills,
         )
-        self._skills_prompt_block = format_skills_for_prompt(load_skills(dirs))
-        self._skills_cache_key = dirs
+        if key is True:
+            skills = list_skills()
+        elif key:
+            skills = load_skills(key)
+        else:
+            skills = []
+        self._skills_prompt_block = format_skills_for_prompt(skills)
+        self._skills_cache_key = key
         return self._skills_prompt_block
 
     # --- Path dispatch ---

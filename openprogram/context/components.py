@@ -233,14 +233,17 @@ def _build_inline(agent: Any) -> str:
 
 
 def _build_skills(agent: Any) -> str:
+    """The ``<available_skills>`` listing — all five sources, one renderer.
+
+    Loader and renderer are ``openprogram.skills``, the same pair
+    ``Runtime._skills_block`` calls, so a skill reads identically whether
+    the model is in a chat turn or inside an agentic function."""
     try:
-        from openprogram.agentic_programming import (
-            default_skill_dirs, load_skills,
-        )
+        from openprogram.skills import format_skills_for_prompt, list_skills
     except Exception:
         return ""
     try:
-        skills = load_skills(default_skill_dirs())
+        skills = list_skills()
     except Exception:
         return ""
     if not skills:
@@ -251,19 +254,7 @@ def _build_skills(agent: Any) -> str:
     else:
         disabled = set(_attr(disabled_obj, "disabled", None) or [])
     enabled = [s for s in skills if s.name not in disabled]
-    if not enabled:
-        return ""
-    lines = ["Skills available on demand:"]
-    for s in enabled[:20]:
-        desc = (getattr(s, "description", "") or "").strip()
-        if desc:
-            desc = desc.splitlines()[0][:80]
-            lines.append(f"  · {s.name} — {desc}")
-        else:
-            lines.append(f"  · {s.name}")
-    if len(enabled) > 20:
-        lines.append(f"  ... (+{len(enabled) - 20} more)")
-    return "\n".join(lines)
+    return format_skills_for_prompt(enabled).strip("\n")
 
 
 def _build_memory(agent: Any) -> str:

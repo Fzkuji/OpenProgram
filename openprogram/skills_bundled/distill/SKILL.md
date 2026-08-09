@@ -24,18 +24,19 @@ tool. It prints each turn's content plus the tool calls that turn made,
 with arguments, results, and whether each one failed.
 
 ```
-list_sessions                          # find the session id
+list_agents(scope="all")                  # find the session id
 read_conversation(session_id="local_…")   # read its active branch
 ```
 
-If the work happened on a side branch (a retry, a fork), get the tip from
-`list_branches` and pass the HEAD half as `head_id`. If the transcript
-comes back truncated and the dropped turns matter, re-read with a larger
-`max_chars`.
+`list_agents` gives each conversation as a `SID:HEAD` address. If the work
+happened on a side branch (a retry, a fork), pass the HEAD half as
+`head_id`. If the transcript comes back truncated and the dropped turns
+matter, re-read with a larger `max_chars`.
 
 The user may name the session only vaguely ("the one where we fixed the
-proxy"). Use `list_sessions` previews to find candidates and confirm with
-the user before distilling the wrong one.
+proxy"). `list_agents` with the default `scope="session"` shows the
+current session's branches with previews; `scope="all"` reaches other
+sessions. Confirm with the user before distilling the wrong one.
 
 ## 2. Decide what actually generalizes
 

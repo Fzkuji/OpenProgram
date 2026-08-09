@@ -36,6 +36,7 @@ from . import process as _process_self_register  # noqa: F401
 from . import read as _read_self_register  # noqa: F401
 from . import semble as _semble_self_register  # noqa: F401
 from . import send_file as _send_file_self_register  # noqa: F401
+from . import skill as _skill_self_register  # noqa: F401
 from . import read_conversation as _read_conversation_self_register  # noqa: F401
 from . import program as _program_self_register  # noqa: F401
 from . import todo as _todo_self_register  # noqa: F401

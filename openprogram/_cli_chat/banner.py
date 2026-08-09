@@ -18,11 +18,9 @@ def _skill_inventory() -> tuple[int, list[tuple[str, str]]]:
     Respects ``skills.disabled`` in ``~/.openprogram/config.json``.
     """
     try:
-        from openprogram.agentic_programming import (
-            default_skill_dirs, load_skills,
-        )
+        from openprogram.skills import list_skills
         from openprogram.setup import read_disabled_skills
-        skills = load_skills(default_skill_dirs())
+        skills = list_skills()
         disabled = read_disabled_skills()
         skills = [s for s in skills if s.name not in disabled]
     except Exception:
