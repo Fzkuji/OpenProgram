@@ -165,6 +165,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 |---|---|
 | [`usage-metering.md`](usage-metering.md) | Usage 子系统（token/cost 记账、ledger、收口点、子进程、消费层） |
 | [`framework-overview.md`](framework-overview.md) | 框架总览：一次对话从输入到产出 |
+| [`framework-comparison.html`](framework-comparison.html) | 整框架对标：和十二家横向比，强在哪、弱在哪、别人有什么我们没想到（图解） |
 | [`docs-site.md`](docs-site.zh.md) | 文档站本身（构建、导航、双语路由） |
 
 ## research/ — 调研

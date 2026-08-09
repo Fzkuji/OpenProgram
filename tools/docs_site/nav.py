@@ -361,6 +361,11 @@ PAGE_ORDER: dict[str, int] = {
     # Workflow-first: the four-layer note on freezing recurring work into
     # code sits after the calling-framework note it builds on.
     "reference/design/function/workflow-first.html": 1020,
+    # The two whole-framework pages sit together at the end of the design root:
+    # first how one conversation runs inside us, then how we compare to the
+    # reference frameworks as a whole.
+    "reference/design/framework-overview.md": 1020,
+    "reference/design/framework-comparison.html": 1021,
 }
 
 

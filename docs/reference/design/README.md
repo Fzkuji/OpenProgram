@@ -169,6 +169,7 @@ Extension gating design + reference comparison — see
 |---|---|
 | [`usage-metering.md`](usage-metering.md) | Usage subsystem (token/cost accounting, ledger, collection point, subprocesses, consumers) |
 | [`framework-overview.md`](framework-overview.md) | Framework overview: one conversation from input to output |
+| [`framework-comparison.html`](framework-comparison.html) | Whole-framework comparison against twelve reference implementations: where we lead, where we lag, and what they have that we never considered (rendered) |
 | [`docs-site.md`](docs-site.md) | The documentation site itself (build, nav, bilingual routing) |
 
 ## research/ — investigations
