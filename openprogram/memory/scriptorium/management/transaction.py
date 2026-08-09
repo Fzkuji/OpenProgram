@@ -24,7 +24,6 @@ from ..runtime.state import RuntimeStateStore, SourceRecord
 from ..workspace_layout import is_internal_path, is_state_file, runtime_dir
 
 WRITABLE_PREFIX = "topics/"
-WRITABLE_FILES = {"core.md"}
 SOURCE_LABEL_PATTERN = re.compile(r"new-source-[a-z0-9-]+")
 SOURCE_PROVIDER = "claude-code"
 VALID_ROLES = ("user", "assistant", "system", "tool")
@@ -166,10 +165,11 @@ def validate_writable_path(path: str) -> None:
     """Reject a workspace-relative path a hand edit may not write.
 
     Two rules, and both are about where bytes may land: nothing may climb
-    out of the workspace, and inside it only Topic Markdown and ``core.md``
-    are authored by hand. ``sources/`` is the append-only evidence record
-    and the derived views are rebuilt from topics, so an edit to either is
-    refused rather than overwritten on the next write.
+    out of the workspace, and inside it only Topic Markdown is authored by
+    hand. ``sources/`` is the append-only evidence record, and ``core.md``
+    is rendered from ``topics/core.md`` like the rest of the derived views,
+    so an edit to either is refused rather than overwritten on the next
+    write.
     """
     candidate = Path(path)
     if candidate.is_absolute() or ".." in candidate.parts:
@@ -179,13 +179,11 @@ def validate_writable_path(path: str) -> None:
             path=path,
         )
     posix = candidate.as_posix()
-    if posix in WRITABLE_FILES:
-        return
     if posix.startswith(WRITABLE_PREFIX) and posix.endswith(".md"):
         return
     raise TransactionError(
         "READ_ONLY_PATH",
-        "only topics/**/*.md and core.md are writable",
+        "only topics/**/*.md is writable",
         path=path,
     )
 
@@ -365,14 +363,7 @@ def committed_baseline(workspace: Any) -> tuple[list[Any], set[str]]:
     afterwards would treat the patch's own placeholders as pre-existing.
     """
     units = parse_topic_tree(workspace.memory_dir / "topics")
-    block_ids = {unit.memory_id for unit in units}
-    core = workspace.memory_dir / "core.md"
-    if core.is_file():
-        block_ids.update(re.findall(
-            r"(?m)\^([A-Za-z0-9-]+)\s*$",
-            core.read_text(encoding="utf-8"),
-        ))
-    return units, block_ids
+    return units, {unit.memory_id for unit in units}
 
 
 def install_state(

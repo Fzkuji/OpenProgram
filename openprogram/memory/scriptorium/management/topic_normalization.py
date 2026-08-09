@@ -97,9 +97,6 @@ class TopicNormalizationMixin:
         if not topics.exists():
             return
         paths = sorted(topics.rglob("*.md"))
-        core = self.stage_dir / "core.md"
-        if core.is_file():
-            paths.append(core)
         texts = {path: path.read_text(encoding="utf-8") for path in paths}
         # What is on disk now. `texts` is rewritten in place below, so the
         # final write needs its own record of the original to compare against.
@@ -205,8 +202,8 @@ class TopicNormalizationMixin:
                 body = " ".join(
                     " ".join(lines[start:end]).split()
                 )
-                # Only evidence-bearing prose is a memory. Core.md summaries
-                # and topic intros carry no footnote and stay unidentified.
+                # Only evidence-bearing prose is a memory. Topic intros
+                # carry no footnote and stay unidentified.
                 if not body or "[^" not in body:
                     continue
                 assigned.setdefault(path, {})[end - 1] = (
@@ -219,10 +216,7 @@ class TopicNormalizationMixin:
         # within it, so a caller can tell which paragraph got which ID.
         self.last_block_id_map = {
             "{}#{}".format(
-                "core.md"
-                if path == core
-                else (Path("topics") / path.relative_to(topics)).as_posix(),
-                index,
+                (Path("topics") / path.relative_to(topics)).as_posix(), index
             ): value
             for path, rows in assigned.items()
             for index, (_line, value) in enumerate(sorted(rows.items()))
@@ -246,11 +240,7 @@ class TopicNormalizationMixin:
                         )
                 text = "\n".join(lines)
             rendered = []
-            topic_path = (
-                Path("core.md")
-                if path == core
-                else Path("topics") / path.relative_to(topics)
-            )
+            topic_path = Path("topics") / path.relative_to(topics)
             for line in text.splitlines():
                 match = definition_match(line)
                 if match:
@@ -307,14 +297,7 @@ class TopicNormalizationMixin:
         before = {unit.memory_id: unit for unit in before_units}
         units = parse_topic_tree(self.stage_dir / "topics")
         if before_block_ids:
-            surviving = {unit.memory_id for unit in units}
-            core = self.stage_dir / "core.md"
-            if core.is_file():
-                surviving.update(re.findall(
-                    r"(?m)\^([A-Za-z0-9-]+)\s*$",
-                    core.read_text(encoding="utf-8"),
-                ))
-            lost = before_block_ids - surviving
+            lost = before_block_ids - {unit.memory_id for unit in units}
             if lost:
                 raise ValueError(
                     "block ID must not be removed: "

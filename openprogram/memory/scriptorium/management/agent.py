@@ -93,10 +93,6 @@ def _repair_guidance(error: str) -> str:
             "Nothing under sources/ may be edited. Write the fact into a "
             "Topic file under topics/ instead."
         )
-    if "Core Memory exceeds" in error:
-        return (
-            "core.md is full. Leave it alone and put this in a Topic file."
-        )
     return ""
 
 

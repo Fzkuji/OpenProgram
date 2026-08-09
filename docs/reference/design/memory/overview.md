@@ -354,6 +354,14 @@ two subjects and that file covers one. Whether that is the right
 criterion is a separate question, and an empty list of changed files is
 what makes it a question anybody can ask.
 
+There is a second ceiling underneath that one, and a better criterion
+does not move it. How much a batch becomes is set by what the writer can
+hold, not by how much was said: measured on one prompt, 546,000
+characters of evidence produced 41,000 characters of topics, and 165,000
+characters produced 43,000. Three times the input, the same memory. What
+a pass decides to do and how much a pass can hold are separate limits,
+and only the first one answers to a rule.
+
 ## The always-on block
 
 `core.md` is what every session starts with, and it is derived. Its
@@ -370,7 +378,10 @@ block as separate content is what left it with nobody maintaining it:
 writing only ever appended to it, the nightly pass only ever looked at
 `topics/`, and once it reached the budget the transaction refused
 whatever came next, so it froze at whichever facts happened to arrive
-first.
+first. The guidance the writer was handed on hitting the budget, to
+leave the file alone and put the fact in a topic file, was correct and
+was followed, which is why nothing ever said that one more stable fact
+had been kept out.
 
 The budget is a rendering limit rather than a gate. The render takes
 paragraphs in file order until the next one does not fit, and reports
@@ -562,66 +573,26 @@ strips the inner block and leaves an empty one.
 
 ## Appendix: Implementation status
 
-Everything above runs today except "The always-on block", "The write
-cursor" and the two subsections after it, "Every branch, at the session
-boundary", and the sentence saying a reorganize pass reports the files
-it changed. Where those four come from, and what was decided against,
-is [`memory-adoption.html`](memory-adoption.html).
+Everything above runs today except "The write cursor" and the two
+subsections after it, and "Every branch, at the session boundary".
+Where those come from, and what was decided against, is
+[`memory-adoption.html`](memory-adoption.html).
 
-`core.md` is written rather than rendered, and once it is full it stops
-accepting stable facts permanently. The writer edits it directly on its
-own judgment, on instructions in `prompts/write.py` and
-`prompts/system.py`; `_synchronize` in `management/block_views.py`
-raises once the file passes 2,000 tokens, which refuses the whole
-transaction including that turn's topic edits; and the repair guidance
-in `management/agent.py` then tells the writer to leave it alone and
-put the fact in a topic file. Nothing shortens it either:
-`organize_topics` builds its file list from `topics/**.md` only.
+What runs in place of "The write cursor" is a position cursor:
+`runtime.json` holds `cursors: {thread: {message_id, ordinal}}`,
+`runtime/online.py` claims a record only when its ordinal is higher than
+the stored one, and `scriptorium/writing.py` builds that ordinal from
+the row's index in the branch it read. The index is a position in one
+branch, so a branch forked from an earlier message numbers its turns
+below the stored ordinal and the whole branch reads as already written.
+Measured on a session whose stored ordinal was 9, a six-record branch
+was offered as zero records.
 
-The refusal is wider than the writer's own edit. `_synchronize` runs on
-every `commit_edits`, and it measures the staged `core.md` rather than
-the change, so a `core.md` already over the budget on disk refuses
-every transaction after it, including one that edits only topic files
-and one that edits nothing at all. Measured on a workspace whose
-`core.md` a person had enlarged in an editor: a transaction with no
-edit in it raised `Core Memory exceeds 2000 tokens: 4004`, and the
-guidance handed to the writer was "core.md is full. Leave it alone and
-put this in a Topic file", which is what it had already done. Two
-rejected turns raise `COMMIT_REJECTED`, which is not in
-`RETRYABLE_CODES`, so the watcher marks the session handled and that
-conversation never reaches memory. The same happens to the next
-session, and to every one after it, until a person shortens the file by
-hand. `core.md` is writable by hand on purpose
-(`WRITABLE_FILES` in `management/transaction.py`), and it is plain
-Markdown in the workspace, so nothing stands between an editor and
-this state.
-
-The design lands in `runtime/derived_views.py` (render the block beside
-the other derived views), `management/block_views.py` (a budget where
-the gate is, reporting the block IDs it left out),
-`management/agent.py` (the repair line goes), and the two prompts,
-`prompts/write.py` and `prompts/system.py`, which each tell the writer
-to edit `core.md` and are pointed at `topics/core.md` instead. Being
-derived rather than authored also takes `core.md` out of
-`WRITABLE_FILES` and out of the hand-edit path `management/patching.py`
-documents, and `store.ensure()` stops seeding a bare `# Core` file.
-Five special cases go with it, all of them there because `core.md` is
-handled as a topic file that happens to sit outside `topics/`:
-`workspace.baseline`, `MemoryWorkspace.shell`,
-`transaction.committed_baseline` and `_validate_topic_contract` each
-fold its block IDs into the set the contract is checked against, and
-`topic_normalization` appends it to the files it assigns IDs in. A
-rendered block's IDs are always a subset of the topics' own, so all
-five go.
-
-Migration needs no step of its own. `topics/core.md` is created from
-the existing `core.md` the first time the block is rendered, the render
-then overwrites `core.md` in place, and a workspace that never had a
-`core.md` renders an empty block. Nothing is read from the old file
-after that first pass.
-
-`reorganize` returns `{"status": ..., "topics": N}`, where `N` counts
-the files it looked at rather than the files it changed.
+The three places the design lands are `runtime/state.py` (the state
+shape and the per-thread cursor files), `runtime/online.py` (what a
+session owes, and adding ids after the transaction installs), and
+`_records` in `scriptorium/writing.py` (identity by message id, and
+dropping the positional fallback).
 
 Both write paths ask `get_branch` for the head's branch alone
 (`memory/session_watcher.py` and `scriptorium/writing.py`), so no other
@@ -631,41 +602,3 @@ are already there to build on.
 `RuntimeStateStore.load` calls `json.loads` on `runtime.json` with
 nothing around it, so a file that will not parse raises rather than
 reading as empty.
-
-What runs in place of "The write cursor" is a position cursor:
-`runtime.json` holds
-`cursors: {thread: {message_id, ordinal}}`, `runtime/online.py` claims
-a record only when its ordinal is higher than the stored one, and
-`scriptorium/writing.py` builds that ordinal from the row's index in
-the branch it read. The index is a position in one branch, so a branch
-forked from an earlier message numbers its turns below the stored
-ordinal and reads as already written.
-
-How much of it reads that way depends on how far the branch has run.
-While it is no longer than what the cursor has already counted, all of
-it is skipped: measured on a session whose stored ordinal was 9, a
-branch forking at the fourth message and running six turns was offered
-as zero records. Once it runs past that high-water mark the tail is
-claimed and the turns before it never are: measured on the same
-session, a branch of fourteen new turns was offered as its last seven,
-so what reached the writer began in the middle of a conversation whose
-first seven turns memory will not be offered again. The first case
-loses a branch. The second case writes a fragment and calls the whole
-branch done.
-
-The design lands in `runtime/state.py` (the state shape and the
-per-thread cursor files), `runtime/online.py` (what a session owes, and
-adding ids after the transaction installs), and `_records` in
-`scriptorium/writing.py` (identity by message id, and dropping the
-positional fallback). `advance_cursor` and its "cursor cannot move
-backwards" check go with the ordinal; a set has no direction to move
-in. Migration is the seeding pass described above, reading
-`sources/openprogram/<session-id>.md` once per thread and then dropping
-`cursors` from `runtime.json`.
-
-Writing every branch rather than the head's alone is a separate change
-on top, and it lands in `_branch` in `scriptorium/writing.py` and in
-`memory/session_watcher.py`, which today both ask `get_branch` for one
-line. It also needs `should_incremental_write` in `runtime/state.py` to
-take its idle allowance as an argument, because that allowance is what
-would otherwise let every one-turn retry through.

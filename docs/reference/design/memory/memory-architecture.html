@@ -75,13 +75,14 @@
   <div class="grid3">
     <div class="st" style="border-top-color:#5aad4e">
       <div class="k">在跑的</div>
-      <p>两个写入入口、五步写入、暂存事务、夜间整理、<b>沉默即成功</b>的返回值契约。</p>
+      <p>两个写入入口、五步写入、暂存事务、夜间整理、<b>沉默即成功</b>的返回值契约，
+        以及<b>第 05 节</b>的常驻块派生视图：<code>core.md</code>是<code>topics/core.md</code>的渲染结果，
+        预算不再拒事务。</p>
     </div>
     <div class="st" style="border-top-color:#d4843a">
       <div class="k">定稿了还没落地</div>
-      <p>两个缺口的方案都定了，代码都还没换。<b>第 04 节</b>的ID集合游标：跑着的仍是位置游标，
-        分叉之后整条分支漏写。<b>第 05 节</b>的常驻块派生视图：跑着的仍是写入方直接编辑
-        <code>core.md</code>，写满之后永久拒收。</p>
+      <p><b>第 04 节</b>的ID集合游标：跑着的仍是位置游标，分叉之后整条分支漏写，
+        或者只写下一个从对话中间开始的片段。</p>
     </div>
     <div class="st" style="border-top-color:#8a8675">
       <div class="k">接口留着没接线</div>
@@ -556,12 +557,12 @@
 
   <!-- ══════════ 05 常驻块 ══════════ -->
   <h2 id="core"><span class="num">05</span>常驻块：谁在维护它</h2>
-  <p class="lead"><code>core.md</code>是每次会话开头都注入的那一小块。它有2000 token上限，
-    而上限之外没有任何东西在照看它：写入只往里加，夜间整理只列<code>topics/</code>。
-    于是它顶到上限的那一刻，也就是它最后一次改变的时刻。</p>
+  <p class="lead"><code>core.md</code>是每次会话开头都注入的那一小块。它现在是
+    <code>topics/core.md</code>的渲染结果，2000 token是渲染预算而不是闸门。
+    改之前它是被写的正本，顶到上限的那一刻就是它最后一次改变的时刻，而且此后每一笔事务都被它拒掉。</p>
 
   <div class="card">
-  <svg viewBox="0 0 1160 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="常驻块：现在的写入路径与计划中的派生视图">
+  <svg viewBox="0 0 1160 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="常驻块：改之前的写入路径与现在的派生视图">
     <defs>
       <marker id="k-no" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
       <marker id="k-gy" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#8a8675"/></marker>
@@ -569,11 +570,11 @@
     </defs>
 
     <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">同一个文件，两种身份：被写的，和被渲染的</text>
-    <text x="24" y="52" fill="#8a8675" font-size="12">左边是现在跑着的，右边是定稿还没落地的。分界线就一句话：正本在哪。</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">左边是改之前的，右边是现在跑着的。分界线就一句话：正本在哪。</text>
 
     <!-- ─────────── 现在 ─────────── -->
     <rect x="32" y="70" width="536" height="26" rx="6" fill="#241015"/>
-    <text x="48" y="88" fill="#e0445a" font-size="11.5" letter-spacing="1.4">现在 · core.md就是正本</text>
+    <text x="48" y="88" fill="#e0445a" font-size="11.5" letter-spacing="1.4">改之前 · core.md就是正本</text>
 
     <rect x="32" y="106" width="252" height="58" rx="8" fill="#12110b" stroke="#2e2c20" stroke-width="1.3"/>
     <text x="48" y="128" fill="#bdb9a6" font-size="12">写入agent直接编辑它</text>
@@ -609,7 +610,7 @@
 
     <!-- ─────────── 计划 ─────────── -->
     <rect x="596" y="70" width="532" height="26" rx="6" fill="#1a1622"/>
-    <text x="612" y="88" fill="#9d6fe0" font-size="11.5" letter-spacing="1.4">计划 · topics/core.md是正本，core.md是渲染结果</text>
+    <text x="612" y="88" fill="#9d6fe0" font-size="11.5" letter-spacing="1.4">现在 · topics/core.md是正本，core.md是渲染结果</text>
 
     <rect x="596" y="106" width="240" height="140" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.5"/>
     <text x="612" y="128" fill="#5aad4e" font-size="12" font-weight="700">topics/core.md正本</text>
@@ -649,12 +650,12 @@
 
     <rect x="596" y="452" width="532" height="80" rx="8" fill="#221a30" stroke="#9d6fe0" stroke-width="1.4"/>
     <text x="612" y="474" fill="#9d6fe0" font-size="12" font-weight="700">这一节的状态</text>
-    <text x="612" y="494" fill="#bdb9a6" font-size="11.5">设计定了，代码还没换。左边画的就是现在的真实行为。</text>
-    <text x="612" y="514" fill="#bdb9a6" font-size="11.5">改动落点见<tspan font-family="Menlo,monospace">overview.md</tspan>文末的实现状态附录。</text>
+    <text x="612" y="494" fill="#bdb9a6" font-size="11.5">已经落地。左边画的是改之前的行为，不再发生。</text>
+    <text x="612" y="514" fill="#bdb9a6" font-size="11.5">实测：一份11883 token的手写core.md，一笔不碰它的写入照样装成，渲染出1983 token。</text>
 
     <line x1="32" y1="552" x2="1128" y2="552" stroke="#2e2c20" stroke-width="1"/>
     <text x="32" y="578" fill="#8a8675" font-size="11.5">老实现里这件事是有人管的：<tspan font-family="Menlo,monospace">memory/core.py</tspan>的refresh_from_wiki把core.md从一个指定的wiki页重建出来，按标题边界截到预算，由sleep的deep阶段调用。</text>
-    <text x="32" y="600" fill="#8a8675" font-size="11.5">换成topics/sources这套结构时那条流程被删掉，没有补回来。计划里那一栏就是把它接回来，只是指定页从wiki页换成主题文件。</text>
+    <text x="32" y="600" fill="#8a8675" font-size="11.5">换成topics/sources这套结构时那条流程被删掉。右边那一栏就是把它接回来，只是指定页从wiki页换成主题文件。</text>
   </svg>
   </div>
   <div class="legend">
@@ -955,8 +956,9 @@
     <b>一句话收尾</b>：每轮一次和闲置一次是同一个方法的两种力度，写入永远先在暂存里做完再整体安装，
     游标记的是消息的身份而不是它排第几，常驻块是主题文件的渲染结果而不是一份被写的正本，
     写完了就闭嘴、写不完要说清是哪一种失败。
-    两个缺口都还没落地：位置游标漏分支，写满的core.md永久拒收。
-    落地之后仍然剩下的那四件，都跟"一个会话有好几条分支"有关。
+    常驻块那条已经落地；游标那条还没有，跑着的位置游标会漏掉整条分支，
+    或者写下一个从对话中间开始的片段再把整条记成已写。
+    落地之后仍然剩下的那几件，都跟"一个会话有好几条分支"有关。
   </div>
 
 </div>

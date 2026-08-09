@@ -291,6 +291,16 @@ def write(
     return None
 
 
+def _changed_files(audit: list[dict[str, Any]]) -> list[str]:
+    """The topic files an agent run committed a change to."""
+    return sorted({
+        path
+        for entry in audit
+        if entry.get("tool") == "commit" and entry.get("status") == "ok"
+        for path in entry.get("topic_paths") or []
+    })
+
+
 def reorganize(*, model: str | None = None) -> dict[str, Any]:
     """Rewrite every topic file. Called by the nightly scheduler.
 
@@ -298,18 +308,28 @@ def reorganize(*, model: str | None = None) -> dict[str, Any]:
     alone a workspace becomes one enormous file per subject with its
     timeline cut into pieces by topic, which is the shape that makes
     ordering and counting questions unanswerable.
+
+    ``changed_files`` is what this pass actually rewrote. What to
+    rearrange is the model's judgment, and a model that judges there is
+    nothing to do does nothing, silently and correctly under its own
+    criterion. An empty list is what makes that visible, and ``topics``
+    beside it counts the files the pass looked at.
     """
     from .. import store
 
     root = store.ensure()
     topics = list((root / "topics").rglob("*.md"))
     if not topics:
-        return {"status": "empty", "topics": 0}
+        return {"status": "empty", "topics": 0, "changed_files": []}
     try:
         with workspace_write_lock(root, timeout_s=5.0):
-            organize_topics(root, agent=_agent(model))
+            audit = organize_topics(root, agent=_agent(model))
     except TransactionError as exc:
         if exc.code == "CONCURRENT_UPDATE":
-            return {"status": "busy", "topics": len(topics)}
+            return {"status": "busy", "topics": len(topics), "changed_files": []}
         raise
-    return {"status": "ok", "topics": len(topics)}
+    return {
+        "status": "ok",
+        "topics": len(topics),
+        "changed_files": _changed_files(audit),
+    }

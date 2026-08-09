@@ -137,10 +137,32 @@ def test_put_keeping_the_block_id_lands(client, memory):
     ).read_text(encoding="utf-8")
 
 
-def test_core_save_lands(client, memory):
-    r = client.put("/api/memory/core", json={"content": "# Core\n\nAlways on.\n"})
+CORE = (
+    "# Core\n"
+    "\n"
+    "Always on.[^e-3f4c7a2b92] ^bcd23456\n"
+    "\n"
+    "[^e-3f4c7a2b92]: Time: `2026-01-03`; Sources: [D1:1](../sources/D1.md#d1-1)\n"
+)
+
+
+def test_core_save_lands_on_the_master_and_is_rendered(client, memory):
+    """The editor edits ``topics/core.md``; the root file is the render.
+
+    Editing the render instead would hand the browser a copy cut to the
+    token budget and save that truncated text back as the whole thing.
+    """
+    r = client.put("/api/memory/core", json={"content": CORE})
     assert r.status_code == 200, r.text
+    assert "Always on." in (
+        memory / "topics" / "core.md"
+    ).read_text(encoding="utf-8")
     assert "Always on." in (memory / "core.md").read_text(encoding="utf-8")
+
+    read_back = client.get("/api/memory/core")
+    assert read_back.json()["content"] == (
+        memory / "topics" / "core.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_delete_is_refused_while_another_topic_links_into_it(client, memory):

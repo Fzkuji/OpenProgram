@@ -3,7 +3,8 @@
 The workspace keeps the location the previous memory layer used, so an
 existing installation finds its memory in the same place. What is inside
 it changed: ``sources/`` and ``topics/`` in place of ``journal/`` and
-``wiki/``, with ``core.md`` unchanged.
+``wiki/``. ``core.md`` kept its place at the root, and is now
+rendered from ``topics/core.md`` rather than written.
 """
 
 from __future__ import annotations
@@ -92,7 +93,8 @@ def ensure() -> Path:
     _set_aside_superseded(base)
     for name in ("topics", "sources"):
         (base / name).mkdir(parents=True, exist_ok=True)
-    core_file = base / "core.md"
-    if not core_file.exists():
-        core_file.write_text("# Core\n", encoding="utf-8")
+    # Nothing seeds the always-on block. It is rendered from
+    # ``topics/core.md``, so an empty workspace has no block, and a
+    # placeholder written here would look like a master to the render and
+    # let it replace a hand-written ``core.md`` that was never moved.
     return base

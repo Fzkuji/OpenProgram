@@ -237,7 +237,7 @@ UPDATE_DESC = (
     "Correct or add one thing in memory. Conversation is written up in "
     "the background, so use this only for what the user asked you to "
     "remember right now, or to fix something you can see is wrong. "
-    "Send a unified diff over topics/**/*.md or core.md, with the "
+    "Send a unified diff over topics/**/*.md, with the "
     "revision you read from `memory_status`."
 )
 UPDATE_SPEC: dict[str, Any] = {

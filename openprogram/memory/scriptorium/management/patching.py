@@ -1,6 +1,6 @@
 """Restricted unified-diff application for the memory write transaction.
 
-Text create/update/delete under ``topics/**`` and ``core.md`` only. Renames,
+Text create/update/delete under ``topics/**`` only. Renames,
 copies, mode changes, symlinks and binary hunks are rejected rather than
 approximated, so a patch can never move data outside the writable surface.
 """

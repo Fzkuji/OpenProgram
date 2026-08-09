@@ -12,6 +12,6 @@ The complete source text is below and nothing needs to be copied anywhere. Files
 
 Preserve complete historical state changes. Use an observation date only to resolve explicit relative dates in the text it heads, not as the default date of every fact.
 
-Update `core.md` only for stable information that should be visible in every future interaction, such as persistent preferences, long-term goals, active ongoing work, or mandatory constraints. Keep source references in Core Memory.
+Write into `topics/core.md` the stable information that should be visible in every future interaction, such as persistent preferences, long-term goals, active ongoing work, or mandatory constraints. It is a subject file like any other and follows the same contract; the always-on `core.md` at the workspace root is rendered from it and is not yours to edit.
 
 {sessions}"""

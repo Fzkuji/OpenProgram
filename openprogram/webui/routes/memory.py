@@ -5,7 +5,7 @@ Four surfaces, matching the four things memory holds:
   topics/   the editable semantic memory, one file per subject
   timeline/ the derived time axis
   recent    the last units written, derived
-  core.md   the always-on block
+  core.md   the always-on block, rendered from topics/core.md
 
 ``sources/`` is deliberately absent: it is the append-only evidence
 record, reachable through the footnotes of whatever cites it, and a
@@ -216,10 +216,22 @@ def register(app):
 
     # -- core --------------------------------------------------------------
 
+    def _core_master() -> Path:
+        """The file the always-on block is rendered from.
+
+        Reading and editing both land on ``topics/core.md``. The root
+        ``core.md`` is the render, cut to a token budget, so editing that
+        would hand back a truncated file and save it as the whole thing.
+        A workspace whose block has not been rendered yet still has its
+        content at the root.
+        """
+        from openprogram.memory import store
+        master = store.topics_dir() / "core.md"
+        return master if master.is_file() else store.core()
+
     @app.get("/api/memory/core")
     async def get_core():
-        from openprogram.memory import store
-        path = store.core()
+        path = _core_master()
         if not path.is_file():
             return JSONResponse(content={"content": "", "size": 0, "mtime": 0})
         stat = path.stat()
@@ -236,10 +248,12 @@ def register(app):
         content = (await request.json()).get("content", "")
 
         def write(stage: Path) -> None:
-            (stage / "core.md").write_text(content, encoding="utf-8")
+            target = stage / "topics" / "core.md"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
 
-        # core.md is on every system prompt, so an oversized or malformed
-        # one is refused here rather than trimmed later.
+        # The block reaches every system prompt, so a malformed edit is
+        # refused here rather than breaking the next render.
         ok, message = _staged_edit(root, write)
         if not ok:
             return JSONResponse(content={"error": message}, status_code=400)

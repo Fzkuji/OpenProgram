@@ -123,12 +123,6 @@ class MemoryWorkspace(
         before_sources = self._tree_fingerprint(self.stage_dir / "sources")
         before_units = parse_topic_tree(self.stage_dir / "topics")
         before_block_ids = {unit.memory_id for unit in before_units}
-        core = self.stage_dir / "core.md"
-        if core.is_file():
-            before_block_ids.update(re.findall(
-                r"(?m)\^([A-Za-z0-9-]+)\s*$",
-                core.read_text(encoding="utf-8"),
-            ))
         # The writer's prompt carries text anyone who can message this
         # agent controls, and whatever this command writes lands in the
         # memory store and returns to a later session's context — an
@@ -166,12 +160,6 @@ class MemoryWorkspace(
         """Snapshot the staged tree so an edit can be committed against it."""
         units = parse_topic_tree(self.stage_dir / "topics")
         block_ids = {unit.memory_id for unit in units}
-        core = self.stage_dir / "core.md"
-        if core.is_file():
-            block_ids.update(re.findall(
-                r"(?m)\^([A-Za-z0-9-]+)\s*$",
-                core.read_text(encoding="utf-8"),
-            ))
         return (
             units,
             block_ids,
@@ -378,9 +366,7 @@ class MemoryWorkspace(
             if is_internal_path(relative):
                 continue
             lines.append(relative.as_posix())
-            if path.suffix != ".md" or (
-                topics not in path.parents and path.name != "core.md"
-            ):
+            if path.suffix != ".md" or topics not in path.parents:
                 continue
             heading = ""
             for line in path.read_text(encoding="utf-8").splitlines():

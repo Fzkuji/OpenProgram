@@ -7,34 +7,26 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-import tiktoken
-
-from ..runtime.derived_views import rebuild_derived_views
+from ..runtime.derived_views import (
+    promote_legacy_core,
+    rebuild_derived_views,
+    render_core_block,
+)
 from ..runtime.state import RuntimeStateStore
 from ..markdown import (
     definition_match,
     parse_topic_tree,
     render_definition,
 )
-from ..markdown.syntax import SINGLE_CITATION, definitions
 from ..workspace_layout import runtime_dir
 
 
 class BlockViewsMixin:
     def _synchronize(self) -> str:
-        core = self.stage_dir / "core.md"
-        if core.exists():
-            limit = self.config.core_max_tokens
-            token_count = len(
-                tiktoken.get_encoding("o200k_base").encode(
-                    core.read_text(encoding="utf-8")
-                )
-            )
-            if token_count > limit:
-                raise ValueError(
-                    f"Core Memory exceeds {limit} tokens: {token_count}"
-                )
-            self._validate_core_sources(core)
+        # A workspace that still keeps its always-on content at the root
+        # hands it to topics/ here, once, so the rest of this runs over
+        # one kind of file.
+        promote_legacy_core(self.stage_dir)
         return self._synchronize_block_topics(
             parse_topic_tree(self.stage_dir / "topics")
         )
@@ -54,25 +46,6 @@ class BlockViewsMixin:
             anchor = f'<a id="{source_anchor}"></a>'
         if not source.exists() or anchor not in source.read_text(encoding="utf-8"):
             raise ValueError(f"missing source reference: {ref}")
-
-    def _validate_core_sources(self, core: Path) -> None:
-        lines = core.read_text(encoding="utf-8").splitlines()
-        annotations = definitions(lines)
-        used = {
-            match.group("id")
-            for line in lines
-            if definition_match(line) is None
-            for match in SINGLE_CITATION.finditer(line)
-        }
-        missing = used - set(annotations)
-        if missing:
-            raise ValueError(f"undefined Core footnote: {sorted(missing)[0]}")
-        unused = set(annotations) - used
-        if unused:
-            raise ValueError(f"unused Core footnote: {sorted(unused)[0]}")
-        for _when, refs, _links in annotations.values():
-            for ref in refs:
-                self._validate_source_reference(ref)
 
     def _uses_block_topic_format(self, units: list[Any]) -> bool:
         if any(unit.evidence for unit in units):
@@ -169,6 +142,11 @@ class BlockViewsMixin:
         )
         state.creation_order = derived.creation_order
         state_store.save(state)
+        # The always-on block is a view of one topic file, rebuilt beside
+        # the others. Nothing writes it: an edit there is replaced here.
+        self.last_core_block = render_core_block(
+            self.stage_dir, budget_tokens=self.config.core_max_tokens
+        )
         return self._install_staged_state(len(units), "blocks")
 
     def _install_staged_state(
