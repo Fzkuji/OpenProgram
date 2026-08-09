@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from claude_agent_sdk import tool
 
 from ..runtime.tokenization import TokenCounter
 from .tools import execute_tool_call
@@ -33,6 +32,9 @@ def retrieval_tools(
     state: RetrievalToolState,
     search_tools: str = "fused",
 ) -> list[Any]:
+    # Imported here so reading memory does not require the agent SDK.
+    from claude_agent_sdk import tool
+
     definitions = tools_for(condition, search_tools)
 
     def make_tool(definition: dict[str, Any]):

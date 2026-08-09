@@ -100,6 +100,21 @@ dependencies = [
     # account flow falls back to the token-paste method when it's unavailable
     # (see openprogram/_compat.py::InteractivePty).
     "pywinpty>=2.0; sys_platform == 'win32'",
+    # Memory counts tokens to decide when a batch is worth writing and to
+    # keep core.md inside the budget it is injected under. Reading and
+    # searching memory need this; only writing needs the agent SDK, which
+    # is imported where a writer is actually constructed.
+    "tiktoken>=0.7",
+    # BM25 ranking for memory search. The embedding backend stays
+    # optional — search reports that it is unavailable rather than
+    # silently returning something else.
+    "rank-bm25>=0.2.2",
+    # The writer that turns conversation into topic files. Imported only
+    # where a writer is constructed, so reading memory works without it,
+    # but writing is a core feature and should not need a second install
+    # step. It drives the Claude Code CLI; when that is absent the write
+    # is deferred and logged rather than lost.
+    "claude-agent-sdk>=0.1",
 ]
 
 [project.optional-dependencies]

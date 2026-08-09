@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from claude_agent_sdk import tool
-
 from .workspace import MemoryWorkspace
 
 
@@ -13,6 +11,10 @@ def management_tools(
     workspace: MemoryWorkspace,
     audit: list[dict[str, Any]],
 ) -> list[Any]:
+    # Imported here so reading memory does not require the agent SDK:
+    # only a run that actually writes needs it.
+    from claude_agent_sdk import tool
+
     def _guidance(command: str, output: str) -> str:
         """What to do about a failure, appended to the raw error.
 

@@ -1,7 +1,7 @@
 /**
  * Small formatting + grouping helpers for the Memory page.
  */
-import type { WikiPage } from "./types";
+import type { TopicPage } from "./types";
 
 /** Human-readable byte size: 512 B / 12.3 KB / 1.4 MB. */
 export function formatSize(bytes: number): string {
@@ -34,8 +34,8 @@ export function formatDate(mtime: number, locale: "en" | "zh" = "en"): string {
  *  ``concepts/foo.md`` → "concepts"). Pages at the root land
  *  under the empty-string bucket so the caller can render them
  *  ungrouped. */
-export function groupByFolder(pages: WikiPage[]): Map<string, WikiPage[]> {
-  const groups = new Map<string, WikiPage[]>();
+export function groupByFolder(pages: TopicPage[]): Map<string, TopicPage[]> {
+  const groups = new Map<string, TopicPage[]>();
   for (const p of pages) {
     const parts = p.path.split("/");
     const folder = parts.length > 1 ? parts[0] : "";
