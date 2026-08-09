@@ -65,7 +65,7 @@ Building the site first, then rsyncing.
       2 dead links: capabilities/distill.md
 ```
 
-默认读当前会话的活跃分支。读别的会话传 `session_id`（id 用 `list_agents` 找）；读旁支而不是活跃分支传 `head_id`（分支端点用 `list_agents` 找）。输出太长会切在最后一个完整轮次上，并说明丢了几轮；需要的话把 `max_chars` 调大。
+默认读当前会话的活跃分支。读别的会话传 `session_id`（id 用 `list_agents` 找）；读旁支而不是活跃分支传 `head_id`（分支端点用 `list_agents` 找）。传`start_turn`/`end_turn`读一段轮次范围（1起、含端点，负数从尾部数，`start_turn=-10`读最后10轮）。输出太长会切在最后一个完整轮次上，并写明第一个被丢的轮号；从那里用`start_turn`接着读。
 
 用话说就行——"把那个会话的记录给我看看"——或者让 agent 在蒸馏过程中自己去调。
 

@@ -23,11 +23,15 @@ Signature:
 render_read_conversation(
     session_id,
     head_id=None,               # default: the session's active head
+    start_turn=0,               # 1-based, inclusive; 0 = first, negative = from the end
+    end_turn=0,                 # 1-based, inclusive; 0 = last, -1 = last turn
     include_function_calls=True,
     max_chars=60_000,
     store=None,                 # default: agent.session_db.default_db()
 ) -> str
 ```
+
+`start_turn`/`end_turn` select a closed range of turns by the same 1-based `[N]` numbers the transcript prints, Python-slice style with negatives counting from the end (`start_turn=-10` is the last 10 turns). The slice keeps global turn numbers, so pages read in sequence stay aligned; a sub-range is announced in the header as `turns 37-52 of 120`, and an empty range returns a one-line notice instead of an empty transcript.
 
 The store comes from `default_db()` rather than a hardcoded `~/.openprogram` path, so a project-bound session resolves through the same locator as everything else. The `store` parameter exists for tests.
 
@@ -38,7 +42,7 @@ Two nodes get explicit labels rather than passing as ordinary turns, because in 
 - **Compaction summaries** (`context/summary`) stand in for a collapsed range. Labeled so the reader knows detail was dropped there, not that the session was thin.
 - **Spawn branch roots** open a sub-branch. Labeled so a nested agent's work is not read as the main thread.
 
-Truncation is layered. Per-field caps stop one runaway tool result (a large file read) from evicting the reasoning around it; the total budget cuts at the last whole turn that fits and names how many turns were dropped, so a truncated transcript never looks like a complete one.
+Truncation is layered. Per-field caps stop one runaway tool result (a large file read) from evicting the reasoning around it; the total budget cuts at the last whole turn that fits and names the first dropped turn (`re-read with start_turn=N to continue`), so a truncated transcript never looks like a complete one and the reader can page on from where it stopped.
 
 `tools/dag_dump.py` remains the debugging view — node ids, lanes, tiers. The two do not overlap.
 

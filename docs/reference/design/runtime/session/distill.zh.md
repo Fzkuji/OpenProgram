@@ -23,11 +23,15 @@
 render_read_conversation(
     session_id,
     head_id=None,               # 缺省：会话的活跃 head
+    start_turn=0,               # 1 起、含端点；0=第一轮，负数从尾部数
+    end_turn=0,                 # 1 起、含端点；0=最后一轮，-1=最后一轮
     include_function_calls=True,
     max_chars=60_000,
     store=None,                 # 缺省：agent.session_db.default_db()
 ) -> str
 ```
+
+`start_turn`/`end_turn`按转写里打印的1起`[N]`序号选一段闭区间，语义对齐Python切片，负数从尾部数（`start_turn=-10`即最后10轮）。切片保留全局轮号，翻页时序号连续可对照；选了子范围时头部写成`turns 37-52 of 120`，空范围返回一行提示而不是空转写。
 
 store 走 `default_db()` 而不是写死 `~/.openprogram` 路径，这样绑定到项目的会话能通过同一套定位逻辑解析。`store` 参数是给测试用的。
 
@@ -38,7 +42,7 @@ store 走 `default_db()` 而不是写死 `~/.openprogram` 路径，这样绑定�
 - **压缩摘要**（`context/summary`）代表一段被折叠的范围。标注出来，读者才知道那里是细节被丢了，而不是会话本来就单薄。
 - **spawn 分支根**开启一条子分支。标注出来，嵌套 agent 的工作才不会被当成主线读。
 
-截断分两层。单字段上限防止一次失控的工具结果（读了个大文件）把周围的推理挤掉；总预算切在最后一个放得下的完整轮次上，并写明丢了几轮——被截断的转写不会看起来像完整的。
+截断分两层。单字段上限防止一次失控的工具结果（读了个大文件）把周围的推理挤掉；总预算切在最后一个放得下的完整轮次上，并写明第一个被丢的轮号（`re-read with start_turn=N to continue`），被截断的转写不会看起来像完整的，读者也能从断点接着翻。
 
 `tools/dag_dump.py` 仍是调试视图，看节点 id、lane、tier。两者不重叠。
 

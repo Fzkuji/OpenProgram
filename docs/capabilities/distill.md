@@ -65,7 +65,7 @@ Building the site first, then rsyncing.
       2 dead links: capabilities/distill.md
 ```
 
-It defaults to the current session's active branch. Pass `session_id` for another session (find ids with `list_agents`), and `head_id` to read a side branch rather than the active one (find tips with `list_agents`). Long output is cut at the last whole turn that fits and says how many turns it dropped; raise `max_chars` if you need them.
+It defaults to the current session's active branch. Pass `session_id` for another session (find ids with `list_agents`), and `head_id` to read a side branch rather than the active one (find tips with `list_agents`). Pass `start_turn`/`end_turn` to read a range of turns (1-based, inclusive, negatives count from the end — `start_turn=-10` reads the last 10 turns). Long output is cut at the last whole turn that fits and names the first dropped turn; continue with `start_turn` from there.
 
 Ask for it in words — "show me the transcript of that session" — or let the agent reach for it during distillation.
 

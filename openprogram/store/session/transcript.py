@@ -92,6 +92,8 @@ def _turn_header(msg: dict[str, Any], index: int) -> str:
 def render_session_transcript(
     session_id: str,
     head_id: Optional[str] = None,
+    start_turn: int = 0,
+    end_turn: int = 0,
     include_function_calls: bool = True,
     max_chars: int = MAX_TOTAL_CHARS,
     store: Any = None,
@@ -103,6 +105,12 @@ def render_session_transcript(
         head_id: branch tip to walk back from. Defaults to the session's
             active head; pass a tip from ``list_branches`` to read a
             different branch.
+        start_turn: first turn to include, as the 1-based ``[N]`` number
+            shown in transcript headers (inclusive). 0 means from the
+            first turn; negative counts from the end (``-10`` = last 10
+            turns).
+        end_turn: last turn to include (inclusive). 0 means through the
+            last turn; negative counts from the end (``-1`` = last turn).
         include_function_calls: print the tool / function calls made
             during each turn. Turn this off for a conversation-only view.
         max_chars: overall budget. The transcript is cut at the last
@@ -122,6 +130,20 @@ def render_session_transcript(
     if not branch:
         return f"[transcript] session {session_id} has no messages on this branch."
 
+    # Resolve the 1-based closed turn range; negatives count from the end.
+    total = len(branch)
+    start = int(start_turn) or 1
+    if start < 0:
+        start = total + start + 1
+    start = max(1, start)
+    end = int(end_turn) or total
+    if end < 0:
+        end = total + end + 1
+    end = min(total, end)
+    if start > end:
+        return f"[transcript] range selects no turns (session has {total} turns)"
+    turns = list(enumerate(branch, 1))[start - 1:end]
+
     # Calls hang off their caller turn, not off the branch chain, so
     # they need the raw node list. One pass, grouped by caller.
     calls_by_caller: dict[str, list[dict[str, Any]]] = {}
@@ -134,16 +156,20 @@ def render_session_transcript(
                 calls_by_caller.setdefault(caller, []).append(msg)
 
     head = head_id or (branch[-1].get("id") or "")
+    if (start, end) != (1, total):
+        range_note = f"branch head: {head} · turns {start}-{end} of {total}"
+    else:
+        range_note = f"branch head: {head} · {total} turns"
     lines = [
         f"# Session transcript: {session_id}",
-        f"branch head: {head} · {len(branch)} turns",
+        range_note,
         "",
     ]
     body: list[str] = []
     used = sum(len(ln) + 1 for ln in lines)
-    dropped = 0
+    dropped_at = 0
 
-    for i, msg in enumerate(branch, 1):
+    for i, msg in turns:
         turn = [_turn_header(msg, i)]
         text = _clip(msg.get("content"), MAX_TEXT_CHARS)
         if text:
@@ -154,17 +180,17 @@ def render_session_transcript(
 
         size = sum(len(ln) + 1 for ln in turn)
         if used + size > max_chars and body:
-            dropped = len(branch) - i + 1
+            dropped_at = i
             break
         body.extend(turn)
         used += size
 
     lines.extend(body)
-    if dropped:
+    if dropped_at:
         lines.append(
-            f"[transcript truncated: {dropped} later turn(s) omitted to stay "
-            f"under {max_chars} chars — re-read with a higher max_chars or a "
-            "narrower head_id if they matter]"
+            f"[transcript truncated: turns {dropped_at}-{end} omitted to stay "
+            f"under {max_chars} chars — re-read with start_turn={dropped_at} "
+            "to continue]"
         )
     return "\n".join(lines).rstrip() + "\n"
 

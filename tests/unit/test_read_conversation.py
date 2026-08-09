@@ -116,6 +116,36 @@ def test_head_id_selects_a_different_branch(db):
     assert "fork reply" in fork and "trunk reply" not in fork
 
 
+# Turn range
+
+
+def test_range_keeps_global_turn_numbers(db, session):
+    out = render_session_transcript(session, start_turn=2, end_turn=3, store=db)
+    assert "--- [2] assistant ---" in out
+    assert "--- [3] user ---" in out
+    assert "--- [1]" not in out and "--- [4]" not in out
+    assert "turns 2-3 of 4" in out
+
+
+def test_negative_range_reads_the_tail(db, session):
+    out = render_session_transcript(session, start_turn=-2, store=db)
+    assert "--- [3] user ---" in out
+    assert "--- [4] assistant ---" in out
+    assert "--- [1]" not in out
+    assert "turns 3-4 of 4" in out
+
+
+def test_empty_range_returns_notice(db, session):
+    out = render_session_transcript(session, start_turn=9, store=db)
+    assert out == "[transcript] range selects no turns (session has 4 turns)"
+
+
+def test_default_range_reads_everything(db, session):
+    assert render_session_transcript(session, store=db) == \
+        render_session_transcript(session, start_turn=0, end_turn=0, store=db)
+    assert "4 turns" in render_session_transcript(session, store=db)
+
+
 # Truncation and empties
 
 
@@ -123,6 +153,7 @@ def test_truncates_to_budget_and_says_so(db, session):
     out = render_session_transcript(session, max_chars=200, store=db)
     assert len(out) < 800
     assert "transcript truncated" in out
+    assert "start_turn=" in out
     assert "now delete them" not in out
 
 
@@ -152,7 +183,8 @@ def test_tool_is_registered_with_a_valid_schema():
     schema = tool.parameters
     assert schema["type"] == "object"
     assert set(schema["properties"]) == {
-        "session_id", "head_id", "include_function_calls", "max_chars",
+        "session_id", "head_id", "start_turn", "end_turn",
+        "include_function_calls", "max_chars",
     }
     # Every parameter optional: the tool defaults to the current session.
     assert not schema.get("required")
