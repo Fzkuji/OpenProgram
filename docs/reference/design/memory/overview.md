@@ -118,35 +118,39 @@ carries who said it.
 The identity comes from the turn, not from the session. A session row
 holds one peer, and in a group that peer is the group.
 
-A turn carries two pieces of identity, because either one alone loses
-somebody. A display name reads naturally in a topic file and is what a
-search for a person finds, and people rename themselves and share names
-with each other. A platform id survives a rename and separates two
-people called Ada, and a file full of numbers says nothing to whoever
-reads it. So a `SourceRecord` carries the display name and the id, and
-the label it renders is `display (id)`.
+Identity travels inside the message text, not in a field beside it. The
+channel adapter puts a label in front of what the sender wrote, and
+every stage downstream carries it without knowing it is there: the
+session store, a fork of the branch, the writer prompt, the source
+archive, and whatever a topic file ends up saying. `openclaw` and
+`hermes-agent`, the two reference frameworks that handle group chats,
+both do exactly this, and it is why neither of their memory layers
+holds a sender field at all.
 
-That label reaches the model through the slot that already exists. The
-writer prompt renders a batch as `[ref] speaker: text` and the source
-archive writes the same shape, so the change is the value in the
-speaker slot: the label where a turn has one, the bare role where it
-does not. Web, CLI and TUI turns have no channel identity behind them
-and keep the bare role, which is what the writer sees today. The write
-prompt says that the name in front of a line is the person who said it,
-so a fact lands under that person rather than under "the user".
+The label is `display (id)`, because either half alone loses somebody.
+A display name reads naturally in a topic file and is what a search for
+a person finds, and people rename themselves and share names with each
+other. A platform id survives a rename and separates two people called
+Ada, and a file full of numbers says nothing to whoever reads it. The
+display name is trimmed to one line on the way in, because one record
+per line is what both renderers assume and a display name is whatever
+its owner typed into the platform.
 
-The sender's platform id reaches the turn from the channel adapter,
-alongside the display name that already travels there. It is a separate
-field from `peer_id`, which is the routing target and the address a
-reply is sent back to; in a group `peer_id` is the group. The display
-name is trimmed to one line on the way in, because one record per line
-is what both renderers assume and a display name is whatever its owner
-typed into the platform.
+The prefix is added in `channels/base.py`, which holds the sender's id
+and display name side by side and is the only caller of
+`dispatch_inbound`, so one place covers every channel. `peer_id` stays
+what it is, the routing target and the address a reply is sent back to,
+which in a group is the group. Web, CLI and TUI turns never pass
+through that path and are untouched. The write prompt says that the
+name in brackets at the head of a line is the person who said it, so a
+fact lands under that person rather than under "the user".
 
 Identity is what memory records, and it partitions nothing. One
 workspace and one set of topic files, shared by everyone the account
-approves, because that sharing is what makes a team bot worth having.
-Someone who wants memory of their own runs their own instance
+approves, because that sharing is what makes a team bot worth having. A
+person is a topic file like any other subject, which is where a rename
+or a second channel is reconciled. Someone who wants memory of their
+own runs their own instance
 ([Chat Channels](../../../integrations/channels.md#who-can-talk-to-your-bot)).
 
 ## The write cursor
@@ -453,8 +457,10 @@ already arrives: `peer_display` is written onto each user row by
 a real `SessionDB`. The sender's own platform id stops earlier, at the
 access gate in `channels/base.py`, and reaches no further; `peer_id` on
 the turn is the routing target, which in a group is the group. The
-design lands in seven files, four carrying `sender_id` down from the
-channel adapter and three putting the identity to use, drawn out in
+design lands in two files, a prefix in `channels/base.py` and a
+sentence in the write prompt, because a label inside the message text
+needs no field of its own anywhere downstream. What the reference
+frameworks do, and what that buys, is drawn out in
 [`speaker-identity.html`](speaker-identity.html).
 
 What runs in place of "The write cursor" is a position cursor:
