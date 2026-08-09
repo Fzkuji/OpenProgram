@@ -9,7 +9,7 @@
 每一步都容错：你拒绝（UserDeclined）或超时（AskTimeout）都不会让流程崩，
 会记成 "(declined)" / "(timeout)" 并继续下一步。
 
-注册：AGENTIC_MODULES + TOOLSETS["full"]["tools"]（LLM 可见、fn-form 可启动）。
+注册：AGENTIC_MODULES（注册即曝光，LLM 可见、fn-form 可启动）。
 """
 from __future__ import annotations
 

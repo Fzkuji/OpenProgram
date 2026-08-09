@@ -154,11 +154,10 @@ def fresh_registry(monkeypatch: pytest.MonkeyPatch):
     """Each test gets a clean tool registry to register its own probe
     tool without interference from another test's @function decoration.
 
-    Also disables the Layer 2 exposure whitelist for the duration of
-    the test (via monkey-patching ``_exposed_set`` to return ``None``):
-    the ad-hoc probe tools tests register are never in the global
-    ``TOOLSETS["full"]["tools"]`` list, and the dispatcher path would
-    otherwise drop them at the Layer 2 filter.
+    Also disables the Layer 2 exposure filter for the duration of the
+    test (via monkey-patching ``_exposed_set`` to return ``None``), so
+    the dispatcher path keeps the ad-hoc probe tools these tests
+    register.
     """
     saved_reg = dict(R._registry)
     saved_ts = {k: set(v) for k, v in R._toolset_membership.items()}

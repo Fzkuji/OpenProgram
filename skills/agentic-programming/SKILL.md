@@ -404,4 +404,4 @@ If you remember nothing else from this skill, remember these:
 6. No `Args:` / `Returns:` sections in the docstring.
 7. **Internal** function → save to `openprogram/functions/agentics/<name>/__init__.py` AND add `("<name>", None)` to `openprogram/functions/_registry.py::AGENTIC_MODULES`.
    **External harness** function → save to `<harness>/<pkg>/agentics/<name>/__init__.py` AND make sure `<pkg>/agentics/__init__.py` exports it via `AGENTIC_FUNCTIONS = [...]`. No edit to `AGENTIC_MODULES` needed — auto-discovered (§1.1).
-8. If the LLM should also see it as a callable tool, add `"<name>"` to `openprogram/functions/__init__.py::TOOLSETS["full"]["tools"]` (the Layer 2 exposure whitelist). Without this the function exists but is invisible to LLMs.
+8. A registered function is LLM-visible by default. To keep one Python-only (an internal helper), register it with `expose=False`; `exposed_names()` is the live set of what LLMs can see.

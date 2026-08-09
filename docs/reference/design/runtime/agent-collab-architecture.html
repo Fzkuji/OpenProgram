@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Agent 协作 — 工具面</title>
+<title>Agent协作：工具面</title>
 <style>
   :root{
     --bg:#16150f; --pan:#1d1c14; --bd:#2e2c20; --tx:#bdb9a6; --acc:#d4843a;
@@ -80,15 +80,15 @@
 <body>
 <div class="wrap">
 
-  <h1>Agent 协作 — 工具面</h1>
-  <p class="sub">一个agent手上跟别的agent打交道的全部工具，按四个域摆开：计划、执行、实体、通讯。
-    这页讲清每个工具管什么、谁有权对谁做什么、两个预算怎么兜底。
+  <h1>Agent协作：工具面</h1>
+  <p class="sub">一个agent与别的agent交互的全部工具，按四个域摆开：计划、执行、实体、通讯。
+    这页说明每个工具做什么、哪个会话能操作哪些任务、两个预算怎么限制一条链的规模。
     设计文档：<code>docs/reference/design/runtime/agent-collaboration.md</code></p>
 
   <div class="toc">
     <a href="#vocab">01 四域词汇表</a>
     <a href="#four">02 一个agent能做的四件事</a>
-    <a href="#power">03 权力模型</a>
+    <a href="#power">03 消息和任务的区别</a>
     <a href="#budget">04 两个预算</a>
     <a href="#archive">05 归档</a>
     <a href="#scenes">06 典型场景</a>
@@ -103,42 +103,42 @@
     <div class="dom" style="border-top-color:#9d6fe0">
       <div class="k">计划</div>
       <h3 style="color:#9d6fe0">todo</h3>
-      <div class="noun">纸面上的"打算做"</div>
-      <p>手写的计划清单。只是写下来的意图，不对应任何在跑的东西，改它不会让任何agent动起来。</p>
+      <div class="noun">写下来的计划</div>
+      <p>手写的计划清单。只记录打算做什么，不对应任何在跑的东西，改它不会让任何agent运行。</p>
       <div class="tools"><span>todo_create</span><span>todo_update</span><span>todo_list</span></div>
     </div>
     <div class="dom" style="border-top-color:#d4843a">
       <div class="k">执行</div>
       <h3 style="color:#d4843a">task</h3>
-      <div class="noun">机器里的"正在做"</div>
-      <p>派出去正在跑的活：一个单号、一个状态、一份结果。它是台账上的条目，不是干活的那个实体。</p>
+      <div class="noun">正在运行的任务</div>
+      <p>派出去正在跑的任务：一个task_id、一个状态、一份结果。它是任务列表里的条目，不是执行任务的那个实体。</p>
       <div class="tools"><span>list_tasks</span><span>task_output</span><span>task_stop</span></div>
     </div>
     <div class="dom" style="border-top-color:#5aad4e">
       <div class="k">实体</div>
       <h3 style="color:#5aad4e">agent</h3>
-      <div class="noun">干活的那个东西</div>
-      <p>生一个新的、给已有的派活、查通讯录、让干完的退役。一个agent就是会话DAG里的一条分支。</p>
+      <div class="noun">执行任务的实体</div>
+      <p>新建一个、给已有的派任务、列出所有agent、把干完的归档。一个agent就是会话DAG里的一条分支。</p>
       <div class="tools"><span>agent</span><span>list_agents</span><span>archive_agent</span></div>
     </div>
     <div class="dom" style="border-top-color:#4f8ef7">
       <div class="k">通讯</div>
       <h3 style="color:#4f8ef7">message</h3>
-      <div class="noun">说话，和读历史</div>
-      <p>零权力地捎一句话过去；或者不打扰任何人，直接读任意一条分支的全文。</p>
+      <div class="noun">发消息，和读历史</div>
+      <p>发一条消息过去，不产生任务记录；或者直接读任意一条分支的全文，不触发对方运行。</p>
       <div class="tools"><span>send_message</span><span>read_conversation</span></div>
     </div>
   </div>
 
   <div class="note">
-    <b>最容易混的两组：</b>todo和task同是"任务"两个字，但一个在纸上一个在机器里，所以计划板用<code>todo_*</code>前缀，
-    执行台账用<code>list_tasks</code>这种动宾名。task和agent也不是一回事：停掉一个task只是停那一轮活，
-    agent本体还在通讯录里；让agent退役是<code>archive_agent</code>。
+    <b>最容易混的两组：</b>todo和task同是"任务"两个字，但一个是写下来的计划、一个是正在运行的执行记录，所以计划清单用<code>todo_*</code>前缀，
+    执行侧用<code>list_tasks</code>。task和agent也不是一回事：停掉一个task只是停那一轮运行，
+    agent本体还在agent列表里；把agent归档是<code>archive_agent</code>。
   </div>
 
   <!-- ══════════ 02 四件事 ══════════ -->
   <h2 id="four"><span class="num">02</span>一个agent能做的四件事</h2>
-  <p class="lead">生、派、聊、查。前两件产生<code>task_id</code>进台账，第三件不产生，第四件只读。</p>
+  <p class="lead">新建agent、派任务、发消息、查询。前两件产生<code>task_id</code>并记入任务列表，第三件不产生，第四件只读。</p>
 
   <div class="card">
   <svg viewBox="0 0 1160 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="一个agent能做的四件事">
@@ -151,7 +151,7 @@
     </defs>
 
     <text x="24" y="32" fill="#d4843a" font-size="16" font-weight="700">一个agent能做的四件事</text>
-    <text x="24" y="56" fill="#8a8675" font-size="12.5">生和派都开一份台账条目，聊只是把话放过去，查什么也不改。</text>
+    <text x="24" y="56" fill="#8a8675" font-size="12.5">新建和派任务都记一条任务，发消息只是把内容送过去，查询不改动任何状态。</text>
 
     <!-- 主体 -->
     <rect x="32" y="92" width="126" height="452" rx="10" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.6"/>
@@ -159,60 +159,60 @@
     <text x="95" y="322" fill="#8a8675" font-size="11.5" text-anchor="middle">当前agent</text>
     <text x="95" y="342" fill="#6b6a63" font-size="11" text-anchor="middle">一轮之内</text>
 
-    <!-- 生 -->
+    <!-- 新建 -->
     <line x1="160" y1="130" x2="226" y2="130" stroke="#5aad4e" stroke-width="1.6" marker-end="url(#a-gn)"/>
     <rect x="228" y="96" width="268" height="68" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.5"/>
-    <text x="244" y="122" fill="#5aad4e" font-size="14" font-weight="700">生 · 造一个新agent</text>
+    <text x="244" y="122" fill="#5aad4e" font-size="14" font-weight="700">新建 · 创建一个新agent</text>
     <text x="244" y="146" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">agent(prompt, description, …)</text>
     <line x1="498" y1="130" x2="556" y2="130" stroke="#5aad4e" stroke-width="1.6" marker-end="url(#a-gn)"/>
     <rect x="558" y="98" width="214" height="64" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
     <text x="576" y="124" fill="#5aad4e" font-size="13" font-weight="700">新分支 = 新agent</text>
     <text x="576" y="146" fill="#8a8675" font-size="11">description成为它的名字</text>
 
-    <!-- 派 -->
+    <!-- 派任务 -->
     <line x1="160" y1="246" x2="226" y2="246" stroke="#d4843a" stroke-width="1.6" marker-end="url(#a-or)"/>
     <rect x="228" y="212" width="268" height="68" rx="8" fill="#241f10" stroke="#d4843a" stroke-width="1.5"/>
-    <text x="244" y="238" fill="#d4843a" font-size="14" font-weight="700">派 · 给已有agent派受管任务</text>
+    <text x="244" y="238" fill="#d4843a" font-size="14" font-weight="700">派任务 · 给已有agent派受管任务</text>
     <text x="244" y="262" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">agent(to="名字", prompt=…)</text>
     <line x1="498" y1="246" x2="556" y2="246" stroke="#d4843a" stroke-width="1.6" marker-end="url(#a-or)"/>
     <rect x="558" y="214" width="214" height="64" rx="8" fill="#241f10" stroke="#d4843a" stroke-width="1.3"/>
     <text x="576" y="240" fill="#d4843a" font-size="13" font-weight="700">已有agent，不新建</text>
-    <text x="576" y="262" fill="#8a8675" font-size="11">它忙就排队，轮空就跑</text>
+    <text x="576" y="262" fill="#8a8675" font-size="11">它忙就排队，空闲就跑</text>
 
-    <!-- 聊 -->
+    <!-- 发消息 -->
     <line x1="160" y1="362" x2="226" y2="362" stroke="#4f8ef7" stroke-width="1.6" marker-end="url(#a-bl)"/>
     <rect x="228" y="328" width="268" height="68" rx="8" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
-    <text x="244" y="354" fill="#4f8ef7" font-size="14" font-weight="700">聊 · 给已有agent捎句话</text>
+    <text x="244" y="354" fill="#4f8ef7" font-size="14" font-weight="700">发消息 · 给已有agent发一条消息</text>
     <text x="244" y="378" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">send_message(to="名字", message=…)</text>
     <line x1="498" y1="362" x2="556" y2="362" stroke="#4f8ef7" stroke-width="1.6" marker-end="url(#a-bl)"/>
     <rect x="558" y="330" width="214" height="64" rx="8" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.3"/>
     <text x="576" y="356" fill="#4f8ef7" font-size="13" font-weight="700">已有agent</text>
     <text x="576" y="378" fill="#8a8675" font-size="11">读到之后自己决定</text>
-    <!-- 聊：不进台账 -->
+    <!-- 发消息：不记任务 -->
     <line x1="774" y1="362" x2="782" y2="362" stroke="#8a8675" stroke-width="1.3" stroke-dasharray="4 4"/>
     <line x1="786" y1="355" x2="800" y2="369" stroke="#e0445a" stroke-width="2"/>
     <line x1="800" y1="355" x2="786" y2="369" stroke="#e0445a" stroke-width="2"/>
-    <text x="562" y="418" fill="#8a8675" font-size="11">不进台账：没有单号，也就没有必回的结果</text>
+    <text x="562" y="418" fill="#8a8675" font-size="11">不记任务：没有task_id，也就没有必回的结果</text>
 
-    <!-- 查 -->
+    <!-- 查询 -->
     <line x1="160" y1="486" x2="226" y2="486" stroke="#2db3d5" stroke-width="1.6" marker-end="url(#a-cy)"/>
     <rect x="228" y="440" width="268" height="92" rx="8" fill="#1e2630" stroke="#2db3d5" stroke-width="1.5"/>
-    <text x="244" y="466" fill="#2db3d5" font-size="14" font-weight="700">查 · 只读，四本册子</text>
-    <text x="244" y="488" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">list_agents 通讯录 · list_tasks 派出去的活</text>
+    <text x="244" y="466" fill="#2db3d5" font-size="14" font-weight="700">查询 · 只读，四个来源</text>
+    <text x="244" y="488" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">list_agents agent列表 · list_tasks 派出去的任务</text>
     <text x="244" y="508" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">read_conversation 任意分支全文</text>
-    <text x="244" y="524" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">todo_list 自己的计划板</text>
+    <text x="244" y="524" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">todo_list 自己的计划清单</text>
     <text x="562" y="490" fill="#8a8675" font-size="12">返回一段文本，什么也不改</text>
 
-    <!-- 台账 -->
+    <!-- 任务记录 -->
     <rect x="848" y="92" width="270" height="200" rx="10" fill="#241f10" stroke="#d4843a" stroke-width="1.8"/>
-    <text x="866" y="120" fill="#d4843a" font-size="14" font-weight="700">任务台账</text>
+    <text x="866" y="120" fill="#d4843a" font-size="14" font-weight="700">任务记录</text>
     <text x="866" y="144" fill="#bdb9a6" font-size="11.5">task_id · 状态 · 结果</text>
-    <text x="866" y="168" fill="#bdb9a6" font-size="11.5">list_tasks() 看单子</text>
+    <text x="866" y="168" fill="#bdb9a6" font-size="11.5">list_tasks() 列出任务</text>
     <text x="866" y="190" fill="#bdb9a6" font-size="11.5">task_output(task_id) 取结果</text>
-    <text x="866" y="212" fill="#bdb9a6" font-size="11.5">task_stop(task_id) 叫停，级联</text>
+    <text x="866" y="212" fill="#bdb9a6" font-size="11.5">task_stop(task_id) 取消，级联</text>
     <text x="866" y="242" fill="#8a8675" font-size="10.5">后两个带归属检查：</text>
-    <text x="866" y="260" fill="#8a8675" font-size="10.5">只有派它的会话及其祖先动得了</text>
-    <text x="866" y="278" fill="#6b6a63" font-size="10.5">别的会话拿到单号也不行</text>
+    <text x="866" y="260" fill="#8a8675" font-size="10.5">只有派它的会话及其祖先能操作</text>
+    <text x="866" y="278" fill="#6b6a63" font-size="10.5">别的会话拿到task_id也不行</text>
 
     <path d="M774 130 L844 130" fill="none" stroke="#5aad4e" stroke-width="1.6" marker-end="url(#a-gn)"/>
     <path d="M774 246 C 812 246, 812 210, 844 208" fill="none" stroke="#d4843a" stroke-width="1.6" marker-end="url(#a-or)"/>
@@ -220,24 +220,24 @@
     <!-- 任务结果回流 -->
     <path d="M848 268 L812 268 L812 600 L95 600 L95 550" fill="none" stroke="#d4843a"
       stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a-or)"/>
-    <text x="440" y="590" fill="#d4843a" font-size="11.5" text-anchor="middle">任务结果自动回流：目标一跑完，结果就接到我这条会话后面，我醒来读到</text>
+    <text x="440" y="590" fill="#d4843a" font-size="11.5" text-anchor="middle">任务结果自动回流：目标跑完，结果接到我这条会话后面，我下一轮读到</text>
 
-    <!-- 聊的回复回流 -->
+    <!-- 消息回复的回流 -->
     <path d="M556 392 C 460 414, 320 418, 162 406" fill="none" stroke="#4f8ef7"
       stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a-bl)"/>
-    <text x="352" y="432" fill="#4f8ef7" font-size="11" text-anchor="middle">他要是回，回复也自动回来，回不回随他</text>
+    <text x="352" y="432" fill="#4f8ef7" font-size="11" text-anchor="middle">目标如果回复，回复也自动送回来，回不回由它决定</text>
   </svg>
   </div>
   <div class="legend">
-    <b>怎么读</b>：四条横道从左边的"我"出发。<b>生</b>和<b>派</b>都走<code>agent</code>这一个工具，区别只在有没有<code>to=</code>：
-    没有<code>to=</code>就新建一条分支，有<code>to=</code>就把活交给已经存在的那条。两者都开一份台账条目，拿回一个<code>task_id</code>。
-    <b>聊</b>走<code>send_message</code>，话送到就完，没有单号。<b>查</b>四个工具全是只读的。<br>
-    <b>颜色</b>：绿=造实体 · 橙=受管任务和台账 · 蓝=消息 · 青=只读。虚线=异步回流。
+    <b>怎么读</b>：四条横道从左边的"我"出发。<b>新建</b>和<b>派任务</b>都走<code>agent</code>这一个工具，区别只在有没有<code>to=</code>：
+    没有<code>to=</code>就新建一条分支，有<code>to=</code>就把任务交给已经存在的那条。两者都记一条任务，拿回一个<code>task_id</code>。
+    <b>发消息</b>走<code>send_message</code>，消息送达即结束，不产生<code>task_id</code>。<b>查询</b>四个工具全是只读的。<br>
+    <b>颜色</b>：绿=创建实体 · 橙=受管任务和任务记录 · 蓝=消息 · 青=只读。虚线=异步回流。
   </div>
 
-  <!-- ══════════ 03 权力模型 ══════════ -->
-  <h2 id="power"><span class="num">03</span>权力模型：消息零权力，任务有权力</h2>
-  <p class="lead">同样是"把内容送到另一条分支上跑一轮"，消息和任务给出的承诺完全不同。差别就写在收件人第一眼看到的那行抬头里。</p>
+  <!-- ══════════ 03 消息和任务的区别 ══════════ -->
+  <h2 id="power"><span class="num">03</span>消息和任务的区别：消息不产生任务记录，任务可追踪可取消</h2>
+  <p class="lead">同样是"把内容送到另一条分支上跑一轮"，消息和任务给出的承诺完全不同。差别就写在收件方第一眼看到的那行回执头里。</p>
 
   <div class="card">
   <svg viewBox="0 0 1160 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="消息与任务的承诺差异">
@@ -247,7 +247,7 @@
     </defs>
 
     <!-- 消息道 -->
-    <text x="32" y="48" fill="#4f8ef7" font-size="14" font-weight="700">消息 · 零权力</text>
+    <text x="32" y="48" fill="#4f8ef7" font-size="14" font-weight="700">消息 · 不产生任务记录</text>
     <rect x="32" y="72" width="130" height="64" rx="8" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
     <text x="97" y="100" fill="#4f8ef7" font-size="13" font-weight="700" text-anchor="middle">任意agent</text>
     <text x="97" y="120" fill="#8a8675" font-size="11" text-anchor="middle">谁都能发</text>
@@ -260,17 +260,17 @@
     <rect x="628" y="72" width="140" height="64" rx="8" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.5"/>
     <text x="698" y="100" fill="#4f8ef7" font-size="13" font-weight="700" text-anchor="middle">目标agent</text>
     <text x="698" y="120" fill="#8a8675" font-size="11" text-anchor="middle">自己决定做不做</text>
-    <text x="796" y="88" fill="#bdb9a6" font-size="11.5">没有单号，没有归属检查</text>
+    <text x="796" y="88" fill="#bdb9a6" font-size="11.5">没有task_id，没有归属检查</text>
     <text x="796" y="110" fill="#bdb9a6" font-size="11.5">对方看到后自己决定回不回</text>
     <text x="796" y="132" fill="#8a8675" font-size="11.5">所以多方同时发也是安全的</text>
 
     <line x1="32" y1="180" x2="1128" y2="180" stroke="#2e2c20" stroke-width="1"/>
 
     <!-- 任务道 -->
-    <text x="32" y="222" fill="#d4843a" font-size="14" font-weight="700">任务 · 有权力</text>
+    <text x="32" y="222" fill="#d4843a" font-size="14" font-weight="700">任务 · 可追踪可取消</text>
     <rect x="32" y="246" width="130" height="64" rx="8" fill="#241f10" stroke="#d4843a" stroke-width="1.5"/>
     <text x="97" y="274" fill="#d4843a" font-size="13" font-weight="700" text-anchor="middle">派发方</text>
-    <text x="97" y="294" fill="#8a8675" font-size="11" text-anchor="middle">只能派自己的活</text>
+    <text x="97" y="294" fill="#8a8675" font-size="11" text-anchor="middle">只能操作自己派的</text>
     <line x1="164" y1="278" x2="246" y2="278" stroke="#d4843a" stroke-width="1.6" marker-end="url(#p-or)"/>
     <text x="205" y="268" fill="#8a8675" font-size="10.5" text-anchor="middle">agent(to=…)</text>
     <rect x="248" y="246" width="322" height="64" rx="8" fill="#12110b" stroke="#d4843a" stroke-width="1.3" stroke-dasharray="5 4"/>
@@ -280,9 +280,9 @@
     <rect x="628" y="246" width="140" height="64" rx="8" fill="#241f10" stroke="#d4843a" stroke-width="1.5"/>
     <text x="698" y="274" fill="#d4843a" font-size="13" font-weight="700" text-anchor="middle">目标agent</text>
     <text x="698" y="294" fill="#8a8675" font-size="11" text-anchor="middle">这一轮归任务</text>
-    <text x="796" y="262" fill="#bdb9a6" font-size="11.5">有单号task_id：结果必回、可叫停</text>
+    <text x="796" y="262" fill="#bdb9a6" font-size="11.5">有task_id：结果必回、可取消</text>
     <text x="796" y="284" fill="#bdb9a6" font-size="11.5">取消会级联，子任务一起停</text>
-    <text x="796" y="306" fill="#8a8675" font-size="11.5">所以只能指向自己派出去的活</text>
+    <text x="796" y="306" fill="#8a8675" font-size="11.5">所以只能操作自己派出的任务</text>
 
     <rect x="32" y="344" width="1096" height="52" rx="8" fill="#241015" stroke="#e0445a" stroke-width="1.2"/>
     <text x="50" y="368" fill="#e0445a" font-size="12.5" font-weight="700">归属检查：</text>
@@ -294,24 +294,24 @@
   <div class="tbl">
   <table>
     <tr><th>承诺</th><th style="color:#4f8ef7">消息 send_message</th><th style="color:#d4843a">任务 agent() / agent(to=)</th></tr>
-    <tr><td><b>谁能发起</b></td><td class="y">任何agent，对任何未归档的分支</td><td>同样任何agent，但产生的单号只归自己</td></tr>
-    <tr><td><b>有没有单号</b></td><td class="n">没有，只回一个delivery_id告诉你送到了</td><td class="y">有<code>task_id</code>，进台账，<code>list_tasks</code>能查</td></tr>
-    <tr><td><b>对方必须回吗</b></td><td class="n">不必。抬头明说"没什么要补充就别回"</td><td class="y">必须。这一轮的最终回复就是任务结果</td></tr>
-    <tr><td><b>能不能叫停</b></td><td class="n">不能。话已经送到了，撤不回来</td><td class="y"><code>task_stop</code>，排队中的直接撤回，在跑的停那一轮</td></tr>
-    <tr><td><b>取消会不会传染</b></td><td class="n">无从传染</td><td class="y">级联：停一个任务，它派生的任务全停</td></tr>
-    <tr><td><b>能操作别人的吗</b></td><td>不涉及，消息本来就没有后续控制权</td><td class="n">不能。<code>task_output</code>/<code>task_stop</code>有归属检查</td></tr>
-    <tr><td><b>多方并发安不安全</b></td><td class="y">安全。零权力，最坏就是对方不理</td><td>安全但有账：目标忙就排队，不会被打断</td></tr>
+    <tr><td><b>谁能发起</b></td><td class="y">任何agent，对任何未归档的分支</td><td>同样任何agent，但产生的<code>task_id</code>只有自己能操作</td></tr>
+    <tr><td><b>有没有task_id</b></td><td class="n">没有，只回一个delivery_id告诉你送到了</td><td class="y">有<code>task_id</code>，记入任务列表，<code>list_tasks</code>能查</td></tr>
+    <tr><td><b>对方必须回吗</b></td><td class="n">不必。回执头明说"没什么要补充就别回"</td><td class="y">必须。这一轮的最终回复就是任务结果</td></tr>
+    <tr><td><b>能不能取消</b></td><td class="n">不能。消息已经送达，无法撤回</td><td class="y"><code>task_stop</code>，排队中的直接撤回，在跑的停那一轮</td></tr>
+    <tr><td><b>取消会不会级联</b></td><td class="n">不涉及</td><td class="y">级联：停一个任务，它派生的任务全停</td></tr>
+    <tr><td><b>能操作别人的任务吗</b></td><td>不涉及，消息发出后没有后续操作</td><td class="n">不能。<code>task_output</code>/<code>task_stop</code>有归属检查</td></tr>
+    <tr><td><b>多方并发安不安全</b></td><td class="y">安全。不产生任务记录，最坏的结果是对方不回复</td><td>安全，且有记录：目标忙就排队，不会被打断</td></tr>
   </table>
   </div>
 
   <div class="note">
-    杀掉一个agent本体的权力另算，只归<b>创造者</b>：每次spawn都把创造者记在新分支上，
-    <code>archive_agent</code>拒绝任何别的会话。没有记录创造者的分支属于它自己的会话。见下一节。
+    归档一个agent本体是另一件事，只有<b>创建它的会话</b>能做：每次派生都把创建者记在新分支上，
+    <code>archive_agent</code>拒绝任何别的会话。没有记录创建者的分支属于它自己的会话。见下一节。
   </div>
 
   <!-- ══════════ 04 两个预算 ══════════ -->
   <h2 id="budget"><span class="num">04</span>两个预算：一个计数器，两条上限线</h2>
-  <p class="lead">一条链是从一次用户轮长出来的全部东西。链上每跳一次计数加一，回复回流也算一跳。两个预算读同一个计数器，只是上限线画在不同位置。</p>
+  <p class="lead">一条链是一次用户轮次产生的全部调用。链上每跳一次计数加一，回复回流也算一跳。两个预算读同一个计数器，只是上限线画在不同位置。</p>
 
   <div class="card">
   <svg viewBox="0 0 1160 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="两个预算">
@@ -323,7 +323,7 @@
 
     <!-- 上限标注 -->
     <text x="228" y="98" fill="#e0445a" font-size="12" font-weight="700">agent.max_spawn_depth = 1</text>
-    <text x="228" y="118" fill="#bdb9a6" font-size="11">计数到1的agent不能再生新agent，只能自己干</text>
+    <text x="228" y="118" fill="#bdb9a6" font-size="11">计数到1的agent不能再创建新agent，只能自己完成</text>
     <text x="1052" y="98" fill="#e0445a" font-size="12" font-weight="700" text-anchor="end">agent.max_messages = 8</text>
     <text x="1052" y="118" fill="#bdb9a6" font-size="11" text-anchor="end">整条链传满8跳就不再投递，A和B来回也停</text>
     <line x1="220" y1="128" x2="220" y2="194" stroke="#e0445a" stroke-width="1.6" stroke-dasharray="5 4"/>
@@ -331,13 +331,13 @@
 
     <!-- 跳跃弧 -->
     <path d="M100 200 Q 160 156 220 200" fill="none" stroke="#5aad4e" stroke-width="1.6" marker-end="url(#b-gy)"/>
-    <text x="160" y="150" fill="#5aad4e" font-size="11" text-anchor="middle">生</text>
+    <text x="160" y="150" fill="#5aad4e" font-size="11" text-anchor="middle">新建</text>
     <path d="M220 200 Q 280 156 340 200" fill="none" stroke="#4f8ef7" stroke-width="1.6" marker-end="url(#b-gy)"/>
-    <text x="280" y="150" fill="#4f8ef7" font-size="11" text-anchor="middle">聊</text>
+    <text x="280" y="150" fill="#4f8ef7" font-size="11" text-anchor="middle">发消息</text>
     <path d="M340 200 Q 400 156 460 200" fill="none" stroke="#4f8ef7" stroke-width="1.6" marker-end="url(#b-gy)"/>
-    <text x="400" y="150" fill="#4f8ef7" font-size="11" text-anchor="middle">回</text>
+    <text x="400" y="150" fill="#4f8ef7" font-size="11" text-anchor="middle">回复</text>
     <path d="M460 200 Q 520 156 580 200" fill="none" stroke="#d4843a" stroke-width="1.6" marker-end="url(#b-gy)"/>
-    <text x="520" y="150" fill="#d4843a" font-size="11" text-anchor="middle">派</text>
+    <text x="520" y="150" fill="#d4843a" font-size="11" text-anchor="middle">派任务</text>
     <path d="M580 200 Q 640 156 700 200" fill="none" stroke="#4f8ef7" stroke-width="1.6" marker-end="url(#b-gy)"/>
     <path d="M700 200 Q 760 156 820 200" fill="none" stroke="#4f8ef7" stroke-width="1.6" marker-end="url(#b-gy)"/>
     <path d="M820 200 Q 880 156 940 200" fill="none" stroke="#4f8ef7" stroke-width="1.6" marker-end="url(#b-gy)"/>
@@ -363,24 +363,24 @@
     <!-- 底部两条说明 -->
     <rect x="32" y="272" width="536" height="60" rx="8" fill="#12110b" stroke="#2e2c20" stroke-width="1"/>
     <text x="50" y="294" fill="#d4843a" font-size="12" font-weight="700">只撞到一条线时</text>
-    <text x="50" y="314" fill="#bdb9a6" font-size="11.5">越界的那次调用被拒，并给出理由（"自己干"或"就地收尾"），</text>
+    <text x="50" y="314" fill="#bdb9a6" font-size="11.5">越界的那次调用被拒，并给出理由（"自己完成"或"就地收尾"），</text>
     <text x="50" y="330" fill="#bdb9a6" font-size="11.5">别的工具全留着。worker还能用agent(to=)和send_message。</text>
 
     <rect x="592" y="272" width="536" height="60" rx="8" fill="#12110b" stroke="#2e2c20" stroke-width="1"/>
     <text x="610" y="294" fill="#d4843a" font-size="12" font-weight="700">两条线都撞满时</text>
     <text x="610" y="314" fill="#bdb9a6" font-size="11.5">agent、task_output、task_stop直接从工具列表里消失。</text>
-    <text x="610" y="330" fill="#8a8675" font-size="11.5">摆在列表里就是在邀请模型去试，摆出来再拒等于白费一轮。</text>
+    <text x="610" y="330" fill="#8a8675" font-size="11.5">工具留在列表里模型就会尝试调用，给出之后再拒绝白费一轮。</text>
   </svg>
   </div>
 
   <p class="lead">两个都支持设0，0就是这条线不存在，什么也不拦。</p>
 <pre><i># 命令行改，即时生效</i>
-openprogram config set <b>agent.max_spawn_depth</b> 1   <i># 默认：主agent生worker，worker自己干活</i>
-openprogram config set <b>agent.max_spawn_depth</b> 2   <i># worker可以再开一代，第三代被拒</i>
+openprogram config set <b>agent.max_spawn_depth</b> 1   <i># 默认：主agent创建worker，worker自己完成工作</i>
+openprogram config set <b>agent.max_spawn_depth</b> 2   <i># worker可以再创建一层，第三层被拒</i>
 openprogram config set <b>agent.max_spawn_depth</b> 0   <i># 不限层数</i>
 
 openprogram config set <b>agent.max_messages</b> 8      <i># 默认：一条链最多传8跳</i>
-openprogram config set <b>agent.max_messages</b> 0      <i># 不限条数，agent之间随便聊</i>
+openprogram config set <b>agent.max_messages</b> 0      <i># 不限条数，agent之间可以一直互发</i>
 </pre>
   <div class="note">
     设置页的<b>Agent</b>分组里是同两个数字框：Max spawn depth、Max messages per chain，改完即时生效，
@@ -390,8 +390,8 @@ openprogram config set <b>agent.max_messages</b> 0      <i># 不限条数，agen
   </div>
 
   <!-- ══════════ 05 归档 ══════════ -->
-  <h2 id="archive"><span class="num">05</span>归档：砍的是被打扰权，不是历史</h2>
-  <p class="lead">分支在会话DAG里永远留着，fork、回放、读全文都指着它。所以退役不是删除，只是在分支上打一个<code>archived</code>标记。</p>
+  <h2 id="archive"><span class="num">05</span>归档：停止接收投递，历史保留</h2>
+  <p class="lead">分支在会话DAG里永远留着，fork、回放、读全文都要用它。所以归档不是删除，只是在分支上写一个<code>archived</code>标记。</p>
 
   <div class="card">
   <svg viewBox="0 0 1160 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="归档后的行为">
@@ -404,10 +404,10 @@ openprogram config set <b>agent.max_messages</b> 0      <i># 不限条数，agen
     <!-- 两种归档入口 -->
     <rect x="296" y="44" width="256" height="50" rx="8" fill="#241f10" stroke="#d4843a" stroke-width="1.3"/>
     <text x="312" y="66" fill="#d4843a" font-size="11.5" font-family="Menlo,monospace">agent(archive_when_done=true)</text>
-    <text x="312" y="84" fill="#8a8675" font-size="11">派出去时就说好：做完自动退役</text>
+    <text x="312" y="84" fill="#8a8675" font-size="11">派任务时就声明：做完自动归档</text>
     <rect x="608" y="44" width="256" height="50" rx="8" fill="#241f10" stroke="#d4843a" stroke-width="1.3"/>
     <text x="624" y="66" fill="#d4843a" font-size="11.5" font-family="Menlo,monospace">archive_agent(to="名字")</text>
-    <text x="624" y="84" fill="#8a8675" font-size="11">事后点名，谁干完了收谁</text>
+    <text x="624" y="84" fill="#8a8675" font-size="11">事后指定：干完的逐个归档</text>
     <path d="M424 96 L500 122" fill="none" stroke="#d4843a" stroke-width="1.4" marker-end="url(#r-or)"/>
     <path d="M736 96 L660 122" fill="none" stroke="#d4843a" stroke-width="1.4" marker-end="url(#r-or)"/>
 
@@ -442,11 +442,11 @@ openprogram config set <b>agent.max_messages</b> 0      <i># 不限条数，agen
     </g>
     <path d="M704 158 L784 156" fill="none" stroke="#5aad4e" stroke-width="1.4" marker-end="url(#r-gn)"/>
     <path d="M704 190 L784 192" fill="none" stroke="#5aad4e" stroke-width="1.4" marker-end="url(#r-gn)"/>
-    <text x="790" y="216" fill="#8a8675" font-size="11">另外 list_agents(scope="archived") 单独列退役的</text>
+    <text x="790" y="216" fill="#8a8675" font-size="11">另外 list_agents(scope="archived") 单独列已归档的</text>
 
     <text x="32" y="262" fill="#bdb9a6" font-size="12">拒收只写在一个地方：两条投递路径共用的地址解析器。地址一旦落到分支当前的tip上就查这个标记，所以没有哪条调用能绕开。</text>
-    <text x="32" y="286" fill="#bdb9a6" font-size="12">只有创造它的会话能归档它，别的会话点名会被拒；用户和界面不受限，人拥有一切。</text>
-    <text x="32" y="310" fill="#8a8675" font-size="12">没有反归档。归档的意思是"这段对话完了"；还想接着用，就用 agent(start_from="SID:MSG_ID") fork一条新的出来，新名字新生命周期。</text>
+    <text x="32" y="286" fill="#bdb9a6" font-size="12">只有创建它的会话能归档它，别的会话指定它会被拒绝；用户和界面不受这条限制。</text>
+    <text x="32" y="310" fill="#8a8675" font-size="12">没有反归档。归档的意思是"这段对话结束了"；还想接着用，就用 agent(start_from="SID:MSG_ID") fork一条新的出来，新名字新生命周期。</text>
   </svg>
   </div>
 
@@ -455,76 +455,76 @@ openprogram config set <b>agent.max_messages</b> 0      <i># 不限条数，agen
   <p class="lead">三条最常走的路。同一批工具，组合方式不同。</p>
 
   <div class="sc">
-    <h4>场景一 · 派一批活出去</h4>
-    <p class="why">手上有五件互不依赖的事。计划先落纸，再一件件派出去，最后回来销账。</p>
+    <h4>场景一 · 派一批任务出去</h4>
+    <p class="why">手上有五件互不依赖的事。先写成计划，再一件件派出去，最后回来更新计划。</p>
     <div class="steps">
       <div class="step"><div class="n">01 计划</div><div class="t">todo_create(subject=…)</div>
         <div class="d">五件事写成五条。<code>blocked_by</code>标出谁等谁。</div></div>
-      <div class="step"><div class="n">02 派</div><div class="t">agent(prompt, description, run_in_background=true)</div>
+      <div class="step"><div class="n">02 派任务</div><div class="t">agent(prompt, description, run_in_background=true)</div>
         <div class="d">逐条派。后台形式立刻返回<code>task_id</code>，不占我这一轮。</div></div>
       <div class="step"><div class="n">03 盯</div><div class="t">list_tasks()</div>
-        <div class="d">五个单号五个状态。要结果就<code>task_output</code>，要撤就<code>task_stop</code>。</div></div>
+        <div class="d">五个task_id五个状态。要结果就<code>task_output</code>，要取消就<code>task_stop</code>。</div></div>
       <div class="step"><div class="n">04 收</div><div class="t">结果自动回流</div>
-        <div class="d">不用轮询也行。谁跑完谁的结果就接到我这条会话后面，我醒来读到。</div></div>
-      <div class="step"><div class="n">05 销账</div><div class="t">todo_update(todo_id, status="completed")</div>
-        <div class="d">纸面回到和机器一致。</div></div>
+        <div class="d">不用轮询也行。哪个跑完，它的结果就接到我这条会话后面，我下一轮读到。</div></div>
+      <div class="step"><div class="n">05 更新计划</div><div class="t">todo_update(todo_id, status="completed")</div>
+        <div class="d">计划状态和实际执行一致。</div></div>
     </div>
   </div>
 
   <div class="sc">
     <h4>场景二 · 找一个已经存在的agent</h4>
-    <p class="why">活已经有人做过一半了，不该再生一个从零开始的。先看通讯录，再决定是捎话还是正式派活。</p>
+    <p class="why">这件事已经有agent做过一半，不需要再创建一个从零开始的。先查agent列表，再决定是发消息还是正式派任务。</p>
     <div class="steps">
-      <div class="step"><div class="n">01 看通讯录</div><div class="t">list_agents(scope="all")</div>
+      <div class="step"><div class="n">01 查agent列表</div><div class="t">list_agents(scope="all")</div>
         <div class="d">按会话分组。每条分支给名字、一个能直接用的<code>to="SID:HEAD"</code>、轮数和大致字数、还有末尾预览。</div></div>
-      <div class="step"><div class="n">02a 捎话</div><div class="t">send_message(to="名字", message=…)</div>
-        <div class="d">问一句、通知一声、把结论同步过去。不占单号，对方可以不理。</div></div>
-      <div class="step"><div class="n">02b 派活</div><div class="t">agent(to="名字", prompt=…)</div>
-        <div class="d">活确实归他做，而且我要结果。开单号，可叫停，结果必回。</div></div>
+      <div class="step"><div class="n">02a 发消息</div><div class="t">send_message(to="名字", message=…)</div>
+        <div class="d">问一句、通知一声、把结论同步过去。不产生<code>task_id</code>，对方可以不回复。</div></div>
+      <div class="step"><div class="n">02b 派任务</div><div class="t">agent(to="名字", prompt=…)</div>
+        <div class="d">这件事确实由它做，而且我要结果。产生<code>task_id</code>，可取消，结果必回。</div></div>
       <div class="step"><div class="n">03 忙就排队</div><div class="t">目标在跑就进收件箱</div>
-        <div class="d">不打断也不丢。他这一轮完了就接着跑我这条。</div></div>
+        <div class="d">不打断也不丢弃。它这一轮结束后就接着跑我这条。</div></div>
     </div>
   </div>
 
   <div class="sc">
-    <h4>场景三 · 复盘一段旧会话</h4>
-    <p class="why">想知道上次那件事到底怎么做成的，但不想惊动任何人，也不想把整段历史灌进上下文。</p>
+    <h4>场景三 · 回看一段旧会话</h4>
+    <p class="why">想知道上次那件事到底怎么做成的，但不想触发任何agent运行，也不想把整段历史全部读进上下文。</p>
     <div class="steps">
       <div class="step"><div class="n">01 拿地址</div><div class="t">list_agents(scope="all")</div>
-        <div class="d">同一份通讯录。顺手看它标的轮数和字数，心里有个体量。</div></div>
+        <div class="d">同一份agent列表。它标出的轮数和字数可以先判断体量。</div></div>
       <div class="step"><div class="n">02 只看结尾</div><div class="t">read_conversation(session_id="SID:HEAD", start_turn=-10)</div>
         <div class="d">负数从末尾数，<code>-10</code>就是最后十轮。<code>list_agents</code>给的<code>SID:HEAD</code>整串粘进去也认。</div></div>
       <div class="step"><div class="n">03 要不要工具细节</div><div class="t">include_function_calls=false</div>
         <div class="d">默认连每轮调了什么工具、参数、结果都给。只想看对话就关掉。</div></div>
       <div class="step"><div class="n">04 控体量</div><div class="t">max_chars=60000</div>
-        <div class="d">超了就丢后面的轮次。归档的分支也照读，读不打扰任何人。</div></div>
+        <div class="d">超了就丢后面的轮次。归档的分支也照读，读取不触发任何agent运行。</div></div>
     </div>
   </div>
 
   <!-- ══════════ 07 CC 对应 ══════════ -->
   <h2 id="cc"><span class="num">07</span>和Claude Code的对应</h2>
-  <p class="lead">同名的地方是有意对齐的，差别只有一处命名冲突和三个我们多出来的口子。</p>
+  <p class="lead">同名的地方是有意对齐的，差别只有一处命名冲突和三个我们额外提供的工具。</p>
 
   <div class="tbl">
   <table>
     <tr><th>这边</th><th>Claude Code</th><th>关系</th></tr>
-    <tr><td><code>agent</code></td><td>同名</td><td class="y">同义。生新agent的唯一入口；<code>to=</code>派活是我们这边的扩展</td></tr>
+    <tr><td><code>agent</code></td><td>同名</td><td class="y">同义。创建新agent的唯一入口；<code>to=</code>派任务是我们这边的扩展</td></tr>
     <tr><td><code>list_agents</code></td><td>同名</td><td class="y">同义。看得见对方是通信的前提</td></tr>
-    <tr><td><code>send_message</code></td><td>同名</td><td class="y">同义。跨分支捎话</td></tr>
+    <tr><td><code>send_message</code></td><td>同名</td><td class="y">同义。跨分支发消息</td></tr>
     <tr><td><code>task_output</code></td><td>TaskOutput</td><td class="y">参数形状照抄：<code>block</code>默认true，<code>timeout</code>毫秒，默认30000，上限600000</td></tr>
     <tr><td><code>task_stop</code></td><td>同名</td><td class="y">同义。我们额外加了归属检查和级联取消</td></tr>
     <tr><td><code>todo_create</code> / <code>todo_update</code> / <code>todo_list</code></td><td>TaskList</td>
-      <td>同物不同名。他们的TaskList是<b>计划板</b>，和我们的<code>list_tasks</code>撞名不撞义，
-        所以我们的计划板一律走<code>todo_*</code>前缀，把<code>list_tasks</code>这个名字留给真正在跑的活</td></tr>
-    <tr><td><code>list_tasks</code></td><td>没有</td><td>我们多出来的：让模型自己查后台跑着的活，不必攥着spawn时那个<code>task_id</code>不放</td></tr>
-    <tr><td><code>archive_agent</code></td><td>没有</td><td>我们多出来的：agent不退役，通讯录就会一直堆着早就做完的worker</td></tr>
-    <tr><td><code>read_conversation</code></td><td>没有</td><td>我们多出来的：一条分支渲染成可读的文字稿，带轮次范围和体量上限，不用去啃原始记录文件</td></tr>
+      <td>同物不同名。Claude Code的TaskList是<b>计划清单</b>，和我们的<code>list_tasks</code>撞名不撞义，
+        所以我们的计划清单一律走<code>todo_*</code>前缀，把<code>list_tasks</code>这个名字留给真正在运行的任务</td></tr>
+    <tr><td><code>list_tasks</code></td><td>没有</td><td>我们多出来的：让模型自己查后台正在跑的任务，不必一直保存派生时返回的<code>task_id</code></td></tr>
+    <tr><td><code>archive_agent</code></td><td>没有</td><td>我们多出来的：agent不归档，agent列表就会一直堆积早就做完的worker</td></tr>
+    <tr><td><code>read_conversation</code></td><td>没有</td><td>我们多出来的：一条分支渲染成可读的文字稿，带轮次范围和体量上限，不用直接读原始记录文件</td></tr>
   </table>
   </div>
 
   <div class="legend">
-    <b>一句话收尾</b>：四个名词分四个域，<code>agent</code>一个工具管生和派，消息零权力所以随便发，
-    任务有权力所以只能碰自己派的，两个预算兜住失控，归档只收回被打扰权。
+    <b>一句话收尾</b>：四个名词分四个域，<code>agent</code>一个工具管新建和派任务，消息不产生任务记录所以任何agent都能发，
+    任务可追踪可取消所以只能操作自己派出的，两个预算限制一条链的规模，归档只停止后续投递。
   </div>
 
 </div>
