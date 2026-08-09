@@ -244,14 +244,44 @@ def test_no_tool_declares_a_parameter_the_runtime_drops():
     (``cancel`` / ``on_update`` are stripped *and* injected, so they stay
     legal.) Cheap AST sweep over every ``@function`` /
     ``@agentic_function`` definition in the package.
+
+    Scope is "the .py files this repo owns", which git already answers
+    exactly: tracked files plus untracked ones .gitignore does not hide.
+    Walking the directory instead would sweep in code we do not control
+    and cannot fix — ``openprogram/functions/agentics/`` is where
+    ``openprogram programs install`` drops independent harness checkouts
+    (each with its own ``.git``, some with a ``.venv`` carrying a whole
+    site-packages, including stale copies of openprogram itself), and
+    .gitignore line "openprogram/functions/agentics/*" is what marks them
+    as not ours. Untracked-but-unignored files stay in scope so a tool
+    written and not yet committed is still guarded. Checking out this
+    repo as a git worktree leaves those installs behind, so a directory
+    walk also gives different answers in a worktree than in the main
+    checkout; asking git gives the same answer in both.
     """
     import ast
     import pathlib
+    import subprocess
 
-    root = pathlib.Path(__file__).resolve().parents[2] / "openprogram"
+    repo = pathlib.Path(__file__).resolve().parents[2]
+    try:
+        listing = subprocess.run(
+            ["git", "-C", str(repo), "ls-files", "-z",
+             "--cached", "--others", "--exclude-standard",
+             "--", "openprogram/*.py"],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover
+        pytest.skip(f"git unavailable, cannot scope the sweep: {exc}")
+    if listing.returncode != 0:  # pragma: no cover
+        pytest.skip(f"not a git checkout: {listing.stderr.strip()}")
+    paths = [repo / p for p in listing.stdout.split("\0") if p]
+    assert paths, "pathspec matched nothing — the sweep would be vacuous"
+
     dead = {"ctx", "context"}
     offenders: list[str] = []
-    for path in root.rglob("*.py"):
+    swept = 0
+    for path in paths:
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except (SyntaxError, UnicodeDecodeError, OSError):
@@ -265,11 +295,14 @@ def test_no_tool_declares_a_parameter_the_runtime_drops():
                 decorators.add(getattr(f, "id", None) or getattr(f, "attr", None))
             if not decorators & {"function", "agentic_function"}:
                 continue
+            swept += 1
             args = {a.arg for a in node.args.args + node.args.kwonlyargs}
             for bad in sorted(args & dead):
                 offenders.append(
-                    f"{path.name}:{node.lineno} {node.name}({bad}=…)"
+                    f"{path.relative_to(repo)}:{node.lineno} "
+                    f"{node.name}({bad}=…)"
                 )
+    assert swept, "no decorated definitions found — the sweep is broken"
     assert not offenders, (
         "these tool parameters never reach the model and are never "
         f"injected by the framework — rename them: {offenders}"
