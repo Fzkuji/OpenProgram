@@ -343,9 +343,17 @@ class TaskRunner:
         would otherwise loop forever). Pending/queued descendants flip
         straight to cancelled; running ones go through the same
         per-task cancel path as the root.
+
+        Descendants are cancelled BEFORE the root. Cancelling the root
+        makes its worker drop out, which frees a pool slot, and a queued
+        descendant gets picked up in that slot — running a task that the
+        cascade was about to cancel. Signalling descendants first means
+        the worker finds an already-terminal entity and bails without
+        calling ``run_agent_turn``.
         """
-        result = self._cancel_single(task_id, reason=reason)
-        if result is None:
+        # Unknown root: return None without touching anything, same as
+        # before. The lookup is free for a task on the pool.
+        if self._find_session_for_task(task_id) is None:
             return None
         cascade_reason = reason or f"parent task {task_id} cancelled"
         for child in self._descendant_tasks(task_id):
@@ -355,7 +363,7 @@ class TaskRunner:
                 self._cancel_single(child.id, reason=cascade_reason)
             except Exception:
                 pass
-        return result
+        return self._cancel_single(task_id, reason=reason)
 
     def _descendant_tasks(self, root_task_id: str) -> list[Task]:
         """All tasks reachable from ``root_task_id`` via parent_task_id,
@@ -1178,6 +1186,22 @@ class TaskRunner:
                 pass
 
         def _serial():
+            # A fresh thread starts with empty ContextVars, so the chain
+            # state this turn belongs to has to be re-bound by hand or the
+            # follow-up looks like a brand-new chain: the message budget
+            # would restart at 0 (A↔B ping-pong could never exhaust it)
+            # and tasks spawned here would record no parent, escaping the
+            # cascade in cancel_task.
+            from openprogram.functions.tools.send_message.send_message.depth import (
+                set_chain_messages,
+            )
+            # The reply hop costs what the child already spent — an
+            # explicit send_message reply lands at the same count.
+            set_chain_messages(int(task.chain_messages or 0))
+            # The follow-up continues the DISPATCHER's work, not the
+            # finished task's, so it chains where the task did. None for a
+            # task spawned from a plain user turn, which had no task either.
+            _current_task_id.set(task.parent_task_id)
             # One follow-up at a time per delivery session: the next one
             # reads a HEAD that already includes the previous answer.
             with self._followup_lock(deliver_session):

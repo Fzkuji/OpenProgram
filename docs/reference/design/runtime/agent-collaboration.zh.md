@@ -391,6 +391,28 @@ openprogram config set agent.max_messages 0      # agent 之间随便聊
 
 **自发拒绝**不受两个预算影响，永远生效：to 指向发起分支自己是直接环，立即拒绝。
 
+**计数怎么传下去**。计数存在 ContextVar 里
+（`send_message…depth._chain_messages`）。一条链要跨三个线程边界，每个边界都得
+显式把计数交接过去，因为 Python 新起的线程里 ContextVar 全是默认值：
+
+| 跨越 | 计数怎么到达 |
+|---|---|
+| dispatcher → 工具体 | `functions/_runtime.py` 里的 `copy_context()` 带进执行器线程 |
+| 发送方 → task worker | 计数写在 Task 实体上（`chain_messages`，恒为发送方 + 1），由 `TaskRunner._run_one` 重新绑定 |
+| task → 回送 followup | `TaskRunner._dispatch_followup` 在自己的线程里重新绑定这个已完成 task 的计数 |
+
+回送这一跳决定了 A↔B 来回能不能停：followup 轮次正是 A 读到 B 回复、写下一条
+消息的地方，followup 若从 0 开始，A 每一轮都拿到全新预算，8 条上限永远走不到。
+同一个线程还把 `_current_task_id` 绑成这个已完成 task 的 `parent_task_id`，
+于是 A 在读回复时派出的 task 落在级联取消要走的同一条谱系上（§5.3）。
+
+这些工具读的 session id（`run_control._current_session_id`）由 `TurnBindings`
+在一轮的时长内与 turn id 一并绑定，因此进入 `process_user_turn` 的每条路径上它
+都在，而不只是调用方碰巧先绑过的那几条。绑定只在无人绑定时补上：某个入口若把这个
+id 持有在比一轮更宽的作用域里（webui 执行线程、task runner worker、channel
+adapter），它继续持有，于是一个跑别的 session 的嵌套轮次不会把 cancel hook 或
+`runtime.ask` 指向一个没注册 turn token 的 session。
+
 ### 5.2 并发上限 + 排队
 
 - 派生走 `TaskRunner` 线程池，上限 `OPENPROGRAM_TASK_WORKERS`（默认 4）。一次派几十
@@ -407,6 +429,11 @@ openprogram config set agent.max_messages 0      # agent 之间随便聊
   pending/queued 的后代直接翻成 cancelled、不再被拾取；running 的后代走与根
   相同的单 task 取消路径：session cancel event + `kill_active_runtime` +
   30 秒强制取消看门狗。不留僵尸线程/子进程。
+- **后代先于根被取消**。取消根会让它的 worker 退出，空出来的线程池槽位立刻启动
+  下一个排队的 future，那正是级联还没走到的后代，于是它为用户已经叫停的工作跑
+  完了一整轮。先走链条，捡起这个后代的 worker 看到的实体已经是 `cancelled`，
+  直接返回，不会调 `run_agent_turn`。只改顺序：`cancel_task` 仍然返回根更新后的
+  实体，task id 解析不到 session 时仍然返回 `None`。
 - session 级取消（用户对某 session 按 Stop）额外清空该 session 的
   send_message 收件箱（`inbox.clear`）：排队消息是还没开始的新工作，用户停掉
   一个 session 就是要它的全部工作都停。每条被丢的消息在其发送方 session 落一条

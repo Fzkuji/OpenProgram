@@ -5,16 +5,22 @@ the agent_loop invokes records its placeholder / internal / exit nodes
 into the same DAG. The Runtime is shared via the ``_current_runtime``
 ContextVar that @agentic_function's _inject_runtime consults.
 
-``TurnBindings.bind`` sets every per-turn ContextVar (turn id, worktree
-cwd, GraphStore, DAG runtime), installs the session-scoped deferred-tool
-set and snapshots the project auto-commit baseline. ``release`` resets
-the tokens — the caller runs it in a ``finally`` so success, exception
-and early-return paths all unwind identically.
+``TurnBindings.bind`` sets every per-turn ContextVar (session id, turn
+id, worktree cwd, GraphStore, DAG runtime), installs the session-scoped
+deferred-tool set and snapshots the project auto-commit baseline.
+``release`` resets the tokens — the caller runs it in a ``finally`` so
+success, exception and early-return paths all unwind identically.
 """
 from __future__ import annotations
 
 import logging
 from typing import Optional, TYPE_CHECKING
+
+from openprogram.agent.run_control import (
+    get_current_session_id as _get_session_id,
+    reset_current_session_id as _reset_session_id,
+    set_current_session_id as _set_session_id,
+)
 
 if TYPE_CHECKING:
     from openprogram.agent.dispatcher.types import TurnRequest
@@ -31,6 +37,7 @@ class TurnBindings:
         self._store_token = None
         self._turn_id_token = None
         self._worktree_token = None
+        self._session_id_token = None
         self._req_session_id: Optional[str] = None
 
     @classmethod
@@ -57,6 +64,24 @@ class TurnBindings:
         # Tag this turn so file-mutating tools can attribute backups to
         # the right assistant message via checkpoint.helpers.
         self._turn_id_token = _turn_id_var.set(assistant_msg_id)
+        # The session half of the pair every collaboration tool reads
+        # (agent, send_message, todo, worktree_*, read_conversation).
+        # Their error text already promises "the dispatcher sets the
+        # session + turn ContextVars on entry", and until now only the
+        # turn half was true here: the session id was bound by whichever
+        # entry point happened to run the turn. A new thread starts with
+        # empty ContextVars, so the paths that call process_user_turn off
+        # their own thread (the task runner's follow-up, merge, the CLI
+        # /goal turn) left it unbound and every one of those tools failed
+        # with "no active parent turn".
+        #
+        # Fill in only when nothing is bound. An entry point that binds
+        # the id for a scope WIDER than the turn (webui exec thread, task
+        # runner worker, channel adapter) stays in charge of it, so a
+        # nested turn for another session cannot repoint the cancel hook
+        # or runtime.ask at a session that registered no turn token.
+        if _get_session_id() is None:
+            self._session_id_token = _set_session_id(req.session_id)
         # Bind the session's active agent worktree (if any) to the
         # _current_worktree_path ContextVar for the duration of this turn.
         # bash / edit / write / read consult that var to default their cwd
@@ -145,6 +170,8 @@ class TurnBindings:
                 _store_var.reset(self._store_token)
             if self._turn_id_token is not None:
                 _turn_id_var.reset(self._turn_id_token)
+            if self._session_id_token is not None:
+                _reset_session_id(self._session_id_token)
             if self._worktree_token is not None:
                 from openprogram.worktree.context import reset_worktree
                 reset_worktree(self._worktree_token)

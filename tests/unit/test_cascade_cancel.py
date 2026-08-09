@@ -120,6 +120,43 @@ def test_parent_cancel_dequeues_pending_child(store_fixture, fake_worker,
     assert all(call["prompt"] != "child" for call in calls)
 
 
+def test_pending_child_cannot_slip_into_the_freed_slot(
+        store_fixture, fake_worker, monkeypatch):
+    """The cascade reaches descendants before the root releases its worker.
+
+    Cancelling the root makes its worker drop out, which frees a pool
+    slot; the pool immediately starts the next queued future, which is
+    the child the cascade was on its way to cancel. Slowing the walk down
+    turns that interleaving from an occasional flake into every run.
+    """
+    monkeypatch.setenv("OPENPROGRAM_TASK_WORKERS", "1")
+    import openprogram.agent.task.runner as runner_mod
+    runner_mod.shutdown_runner()
+    calls, _barrier, _ = fake_worker
+    from openprogram.agent.task import get_runner, TaskStatus
+    runner = get_runner()
+
+    walk = runner._descendant_tasks
+    monkeypatch.setattr(
+        runner, "_descendant_tasks",
+        lambda root: (time.sleep(0.2), walk(root))[1],
+    )
+
+    parent = runner.spawn_task(
+        session_id="p1", prompt="parent", agent_id="main",
+        parent_msg_id="a_p1",
+    )
+    _wait_status(runner, parent, {TaskStatus.RUNNING})
+    child = runner.spawn_task(
+        session_id="p2", prompt="child", agent_id="main",
+        parent_msg_id="a_p2", parent_task_id=parent,
+    )
+    runner.cancel_task(parent)
+    runner.await_task(parent, timeout=5.0)
+    assert runner.await_task(child, timeout=5.0).status == TaskStatus.CANCELLED
+    assert all(call["prompt"] != "child" for call in calls), calls
+
+
 def test_parent_cancel_stops_running_child(store_fixture, fake_worker,
                                            monkeypatch):
     """Running child (different session) is cancelled through the normal

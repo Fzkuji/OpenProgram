@@ -495,6 +495,34 @@ protection falls to the concurrency cap (§5.2) plus the user's Stop.
 a `to` pointing at the issuing branch itself is a direct cycle and is
 refused immediately.
 
+**How the count travels.** The counter lives in a ContextVar
+(`send_message…depth._chain_messages`). A chain crosses three thread
+boundaries and each one has to hand the count over explicitly, because a
+Python thread starts with its ContextVars at their defaults:
+
+| Hop | How the count arrives |
+|---|---|
+| Dispatcher → tool body | `copy_context()` in `functions/_runtime.py` carries it into the executor thread |
+| Sender → task worker | The count is persisted on the Task (`chain_messages`, always sender + 1) and re-bound by `TaskRunner._run_one` |
+| Task → reply follow-up | `TaskRunner._dispatch_followup` re-binds the finished task's count in its own thread |
+
+The reply hop is the one that decides whether an A↔B back-and-forth can
+ever stop: the follow-up turn is where A reads B's answer and writes the
+next message, so a follow-up that started at 0 would give A a fresh
+budget on every round and the 8-message cap would never be reached.
+The same thread also re-binds `_current_task_id` to the finished task's
+`parent_task_id`, so a task A spawns while reading the reply belongs to
+the same lineage cascading cancel walks (§5.3).
+
+The session id those tools read (`run_control._current_session_id`) is
+bound by `TurnBindings` for the length of the turn, alongside the turn
+id, so it is present on every path into `process_user_turn` and not only
+the ones whose caller bound it first. Binding fills in only when nothing
+is bound: an entry point that owns the id for a scope wider than one turn
+(the webui exec thread, a task runner worker, a channel adapter) keeps
+it, so a nested turn for another session cannot repoint the cancel hook
+or `runtime.ask` at a session that registered no turn token.
+
 ### 5.2 Concurrency limit + queueing
 
 - Spawning runs on the `TaskRunner` thread pool, capped by
@@ -516,6 +544,14 @@ refused immediately.
   running ones go through the same per-task cancel path as the root —
   session cancel event + `kill_active_runtime` + the 30s force-cancel
   watchdog. No zombie threads or subprocesses remain.
+- **Descendants are cancelled before the root.** Cancelling the root makes
+  its worker drop out, and the freed pool slot immediately starts the next
+  queued future, which is a descendant the cascade had not reached yet. It
+  then ran a full turn for work the user had already stopped. Walking the
+  chain first means the worker that picks the descendant up finds an
+  entity already at `cancelled` and returns without calling
+  `run_agent_turn`. Ordering only; `cancel_task` still returns the root's
+  post-update entity, and `None` for a task id that resolves to no session.
 - Session-level cancel (the user's Stop on a session) additionally clears the
   session's send_message inbox (`inbox.clear`): the queued messages are new
   work that has not started yet, and a user stopping a session wants all of
