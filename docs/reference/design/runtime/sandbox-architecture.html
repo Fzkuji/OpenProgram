@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>沙箱：边界、缺口与修复顺序</title>
+<style>
+  :root{
+    --bg:#16150f; --pan:#1d1c14; --bd:#2e2c20; --tx:#bdb9a6; --acc:#d4843a;
+    --cb:#12110b; --dim:#8a8675;
+    --c0:#4f8ef7; --c1:#5aad4e; --c2:#d4843a; --c3:#9d6fe0; --c4:#2db3d5;
+    --no:#e0445a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:40px 24px 96px;
+    overflow-x:hidden}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:23px;color:#f0eee6;margin:0 0 6px}
+  .sub{color:var(--tx);margin:0 0 20px;max-width:80ch}
+  h2{font-size:16px;color:var(--acc);margin:34px 0 8px;scroll-margin-top:20px}
+  h2 .num{color:var(--dim);font-size:12px;margin-right:8px;letter-spacing:.16em}
+  .lead{color:var(--dim);font-size:13px;margin:0 0 12px;max-width:82ch}
+  .card{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:8px;margin-bottom:16px}
+  svg{display:block;width:100%;height:auto;background:var(--cb);border-radius:8px}
+  .legend{font-size:12.5px;color:var(--dim);padding:8px 10px;line-height:1.8}
+  .legend b{color:#f0eee6}
+  code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
+  text{font-family:-apple-system,"Segoe UI",sans-serif}
+
+  .toc{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 26px}
+  .toc a{font-size:12px;color:var(--tx);text-decoration:none;border:1px solid var(--bd);
+    background:var(--pan);border-radius:99px;padding:4px 12px}
+  .toc a:hover{border-color:var(--acc);color:#f0eee6}
+
+  /* 平台双卡 */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+  .plat{background:var(--pan);border:1px solid var(--bd);border-top-width:3px;border-radius:12px;padding:14px 16px}
+  .plat .k{font-size:10.5px;letter-spacing:.2em;color:var(--dim);margin-bottom:3px}
+  .plat h3{margin:0 0 3px;font-size:17px;font-weight:700}
+  .plat .noun{font:11.5px Menlo,monospace;color:var(--dim);margin-bottom:10px;word-break:break-all;line-height:1.7}
+  .plat .row{display:flex;gap:10px;padding:7px 0;border-top:1px solid #26241a;font-size:12.5px;line-height:1.65}
+  .plat .row .t{flex:0 0 78px;color:var(--dim);font-size:11.5px;padding-top:1px}
+  .plat .row .v{color:#a5a190}
+  .plat .row .v b{color:#f0eee6;font-weight:600}
+  .plat .row.bad .v b{color:var(--no)}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+
+  /* 表格 */
+  .tbl{overflow-x:auto;background:var(--pan);border:1px solid var(--bd);border-radius:12px;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:700px}
+  th{text-align:left;padding:10px 14px;color:var(--dim);font-weight:600;font-size:11px;
+    letter-spacing:.14em;border-bottom:1px solid var(--bd);white-space:nowrap}
+  td{padding:10px 14px;border-bottom:1px solid #26241a;vertical-align:top;line-height:1.65}
+  tr:last-child td{border-bottom:none}
+  td.y{color:var(--c1)} td.n{color:var(--no)} td.m{color:var(--c2)}
+  td b{color:#f0eee6;font-weight:600}
+  td.us{color:var(--no)}
+  th.us{color:var(--acc)}
+
+  .note{border-left:3px solid var(--bd);padding:2px 0 2px 13px;color:var(--dim);
+    font-size:12.5px;margin:0 0 16px;max-width:86ch;line-height:1.8}
+  .note b{color:#f0eee6}
+  .note.warn{border-left-color:var(--no)}
+  .note.warn b{color:var(--no)}
+
+  /* 修复路线 */
+  .steps{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px;margin-bottom:16px}
+  .step{flex:1 0 auto;min-width:208px;max-width:260px;background:var(--pan);
+    border:1px solid var(--bd);border-radius:11px;padding:12px 14px;display:flex;flex-direction:column}
+  .step .n{font:10px Menlo,monospace;letter-spacing:.18em;color:var(--dim)}
+  .step h4{margin:5px 0 6px;font-size:14.5px;color:#f0eee6}
+  .step .d{font-size:12.5px;color:#a5a190;line-height:1.65;flex:1}
+  .step .x{margin-top:10px;padding-top:9px;border-top:1px dashed #34311f;font-size:12px;color:var(--dim);line-height:1.6}
+  .step .x b{color:var(--no);font-weight:600}
+  .step.s1{border-top:3px solid var(--c2)}
+  .step.s2{border-top:3px solid var(--no)}
+  .step.s3{border-top:3px solid var(--c3)}
+  .step.s4{border-top:3px solid var(--c4)}
+  .step.s5{border-top:3px solid var(--c1)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>沙箱：边界、缺口与修复顺序</h1>
+  <p class="sub">沙箱是进程隔离层，把一条shell命令包起来限制它的子进程。这页画清楚四个方向各自能不能通过、
+    两个平台的机制差在哪、开关为什么在Web路径上不生效、25个执行点里只有1个走了沙箱、以及要补什么、按什么顺序补。
+    设计文档：<code>docs/reference/design/runtime/sandbox.md</code></p>
+
+  <div class="toc">
+    <a href="#edge">01 一张边界图</a>
+    <a href="#plat">02 两个平台</a>
+    <a href="#switch">03 开关为什么失效</a>
+    <a href="#cover">04 覆盖面</a>
+    <a href="#cmp">05 对标与凭证推理链</a>
+    <a href="#fix">06 修复路线</a>
+  </div>
+
+  <!-- ══════════ 01 边界 ══════════ -->
+  <h2 id="edge"><span class="num">01</span>一张边界图</h2>
+  <p class="lead">四个方向不对称：读整盘敞开，写被收在工作目录，执行只在macOS受限，网络两个平台都断。
+    最该防的东西全在敞开的那一条通道上。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="沙箱四个方向的边界">
+    <defs>
+      <marker id="e-gn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5aad4e"/></marker>
+      <marker id="e-or" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#d4843a"/></marker>
+      <marker id="e-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
+    </defs>
+
+    <text x="24" y="32" fill="#d4843a" font-size="16" font-weight="700">沙箱边界：四个方向</text>
+    <text x="24" y="55" fill="#8a8675" font-size="12.5">左边是被包住的子进程，中间竖线是沙箱边界，右边是边界外的东西。闸门画的是这个方向实际能不能通过。</text>
+
+    <!-- 子进程 -->
+    <rect x="40" y="288" width="290" height="130" rx="12" fill="#131b2a" stroke="#4f8ef7" stroke-width="1.7"/>
+    <text x="185" y="322" fill="#4f8ef7" font-size="15.5" font-weight="700" text-anchor="middle">沙箱内的子进程</text>
+    <text x="185" y="348" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace" text-anchor="middle">bash -c &lt;模型给的命令&gt;</text>
+    <text x="185" y="374" fill="#8a8675" font-size="11.5" text-anchor="middle">macOS由sandbox-exec包住</text>
+    <text x="185" y="394" fill="#8a8675" font-size="11.5" text-anchor="middle">Linux由bwrap包住</text>
+
+    <!-- 边界竖线 -->
+    <line x1="430" y1="96" x2="430" y2="646" stroke="#d4843a" stroke-width="1.5" stroke-dasharray="7 7" opacity=".8"/>
+    <text x="430" y="86" fill="#d4843a" font-size="12.5" text-anchor="middle" font-weight="700">沙箱边界</text>
+
+    <!-- 扇出连线 -->
+    <path d="M330,340 C 372,340 384,168 424,168" fill="none" stroke="#5aad4e" stroke-width="1.6"/>
+    <path d="M330,348 C 372,348 386,300 424,300" fill="none" stroke="#d4843a" stroke-width="1.6"/>
+    <path d="M330,358 C 372,358 386,420 424,420" fill="none" stroke="#d4843a" stroke-width="1.6"/>
+    <path d="M330,366 C 372,366 384,556 424,556" fill="none" stroke="#e0445a" stroke-width="1.6"/>
+
+    <!-- 闸门 01 读：全开 -->
+    <circle cx="430" cy="168" r="19" fill="#101a10" stroke="#5aad4e" stroke-width="1.8"/>
+    <path d="M422,159 L431,168 L422,177 M431,159 L440,168 L431,177" fill="none" stroke="#5aad4e" stroke-width="2"/>
+    <line x1="452" y1="168" x2="530" y2="168" stroke="#5aad4e" stroke-width="1.6" marker-end="url(#e-gn)"/>
+
+    <!-- 闸门 02 写：半开 -->
+    <circle cx="430" cy="300" r="19" fill="#241f10" stroke="#d4843a" stroke-width="1.8"/>
+    <path d="M422,291 L431,300 L422,309" fill="none" stroke="#d4843a" stroke-width="2"/>
+    <line x1="437" y1="288" x2="437" y2="312" stroke="#d4843a" stroke-width="2.2"/>
+    <line x1="452" y1="300" x2="530" y2="300" stroke="#d4843a" stroke-width="1.6" marker-end="url(#e-or)"/>
+
+    <!-- 闸门 03 执行：半开 -->
+    <circle cx="430" cy="420" r="19" fill="#241f10" stroke="#d4843a" stroke-width="1.8"/>
+    <path d="M422,411 L431,420 L422,429" fill="none" stroke="#d4843a" stroke-width="2"/>
+    <line x1="437" y1="408" x2="437" y2="432" stroke="#d4843a" stroke-width="2.2"/>
+    <line x1="452" y1="420" x2="530" y2="420" stroke="#d4843a" stroke-width="1.6" marker-end="url(#e-or)"/>
+
+    <!-- 闸门 04 网络：封死 -->
+    <circle cx="430" cy="556" r="19" fill="#2a1215" stroke="#e0445a" stroke-width="1.8"/>
+    <path d="M422,548 L438,564 M438,548 L422,564" fill="none" stroke="#e0445a" stroke-width="2.2"/>
+    <line x1="452" y1="556" x2="512" y2="556" stroke="#e0445a" stroke-width="1.6" stroke-dasharray="5 5" marker-end="url(#e-rd)"/>
+
+    <!-- 目标 01 读 -->
+    <rect x="532" y="106" width="596" height="126" rx="10" fill="#101a10" stroke="#5aad4e" stroke-width="1.5"/>
+    <text x="552" y="133" fill="#5aad4e" font-size="14.5" font-weight="700">文件读 · 整盘可读，两个平台一样</text>
+    <text x="552" y="156" fill="#8a8675" font-size="11.5" font-family="Menlo,monospace">macOS: (allow file-read* (subpath "/"))　Linux: --ro-bind / /</text>
+    <rect x="550" y="168" width="560" height="50" rx="8" fill="#241f10" stroke="#d4843a" stroke-width="1.3" stroke-dasharray="5 4"/>
+    <text x="566" y="188" fill="#d4843a" font-size="12" font-weight="700">最该防的东西全在这一侧：</text>
+    <text x="566" y="208" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">~/.ssh/id_*　~/.openprogram/auth/**　~/.claude.json　keychain　$OPENAI_API_KEY</text>
+
+    <!-- 目标 02 写 -->
+    <rect x="532" y="252" width="596" height="96" rx="10" fill="#241f10" stroke="#d4843a" stroke-width="1.5"/>
+    <text x="552" y="279" fill="#d4843a" font-size="14.5" font-weight="700">文件写 · 只有工作目录和临时目录</text>
+    <text x="552" y="302" fill="#a5a190" font-size="12">macOS另外整树放开了<tspan font-family="Menlo,monospace" fill="#bdb9a6">/private/var/folders</tspan>，写得进系统的per-user缓存目录</text>
+    <text x="552" y="326" fill="#a5a190" font-size="12">Linux的<tspan font-family="Menlo,monospace" fill="#bdb9a6">/tmp</tspan>是隔离tmpfs，用完即弃，但工作目录落在它下面时会被它盖掉</text>
+
+    <!-- 目标 03 执行 -->
+    <rect x="532" y="368" width="596" height="120" rx="10" fill="#241f10" stroke="#d4843a" stroke-width="1.5"/>
+    <text x="552" y="395" fill="#d4843a" font-size="14.5" font-weight="700">进程执行 · 两个平台方向相反</text>
+    <text x="552" y="419" fill="#a5a190" font-size="12">macOS只放行四个目录，<tspan fill="#e0445a" font-weight="700">git / python3 / node / ps 全在白名单外</tspan></text>
+    <text x="552" y="441" fill="#a5a190" font-size="12">Linux完全不限制，任何位置的任何二进制都能跑</text>
+    <text x="552" y="466" fill="#8a8675" font-size="11.5">白名单挡不住执行：<tspan font-family="Menlo,monospace" fill="#bdb9a6">/bin/bash -c</tspan> 自己就在里面，脚本可以从任何地方读进来</text>
+
+    <!-- 目标 04 网络 -->
+    <rect x="514" y="508" width="614" height="96" rx="10" fill="#2a1215" stroke="#e0445a" stroke-width="1.5" stroke-dasharray="6 5"/>
+    <text x="534" y="535" fill="#e0445a" font-size="14.5" font-weight="700">网络 · 出站入站全断，两个平台一致</text>
+    <text x="534" y="558" fill="#a5a190" font-size="12">macOS的profile从来没写过网络规则，被<tspan font-family="Menlo,monospace" fill="#bdb9a6">(deny default)</tspan>兜住；Linux是<tspan font-family="Menlo,monospace" fill="#bdb9a6">--unshare-net</tspan></text>
+    <text x="534" y="582" fill="#8a8675" font-size="11.5">DNS、回环、Docker socket实测都不通。这一侧比两个参考实现都严</text>
+
+    <!-- 底部结论 -->
+    <rect x="40" y="628" width="1088" height="52" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
+    <text x="60" y="652" fill="#f0eee6" font-size="13" font-weight="700">一句话：</text>
+    <text x="124" y="652" fill="#bdb9a6" font-size="12.5">网络这条最严的通道守住了直接外传，但凭证在敞开的读通道上，而它可以落盘、可以写进记忆库，绕开网络完成外传。</text>
+    <text x="124" y="672" fill="#8a8675" font-size="12">见第05节的推理链。</text>
+  </svg>
+  <div class="legend">
+    <b>闸门读法</b>：双箭头=不设限，单箭头加挡板=部分放行，叉=封死。
+    连线颜色跟闸门一致，虚线表示这个方向的请求到不了对面。
+  </div>
+  </div>
+
+  <!-- ══════════ 02 两个平台 ══════════ -->
+  <h2 id="plat"><span class="num">02</span>两个平台</h2>
+  <p class="lead">同一个<code>wrap_command</code>在两个平台走完全不同的机制，各自额外放行了一些东西，也各自有一处会真正咬到人的硬伤。</p>
+
+  <div class="grid2">
+    <div class="plat" style="border-top-color:#4f8ef7">
+      <div class="k">MACOS</div>
+      <h3 style="color:#4f8ef7">Seatbelt</h3>
+      <div class="noun">/usr/bin/sandbox-exec -p &lt;profile&gt; /bin/bash -c &lt;命令&gt;</div>
+      <div class="row"><div class="t">机制</div><div class="v">profile内联生成，<b>(deny default)</b>兜底，逐条往上加放行。嵌套再开一层沙箱会被拒，放宽不了。</div></div>
+      <div class="row"><div class="t">额外放行</div><div class="v"><b>sysctl-read</b>和<b>mach-lookup</b>都是无名字过滤的全开，结果是剪贴板可读、Apple Events通道开着、<code>security</code>能触达securityd。写范围里还整树带上了<b>/private/var/folders</b>。</div></div>
+      <div class="row bad"><div class="t">硬伤</div><div class="v"><b>开了就干不了活。</b><code>/dev</code>不在写白名单，<code>2&gt;/dev/null</code>直接报错；<code>/usr/bin/git</code>和<code>/usr/bin/python3</code>是跳板，真身在CLT目录、不在exec白名单，所以git和python全废。conda python、nvm node、<code>ps</code>、<code>/sbin</code>、<code>/usr/sbin</code>同样被拒。</div></div>
+      <div class="row bad"><div class="t">潜伏</div><div class="v">工作目录用f-string直接拼进<code>(subpath "{cwd}")</code>，<b>未转义</b>。配平括号的路径能放宽写范围，不配平的会让解析失败、命令不执行。目前没有模型可控的路径到得了这里。</div></div>
+    </div>
+
+    <div class="plat" style="border-top-color:#5aad4e">
+      <div class="k">LINUX</div>
+      <h3 style="color:#5aad4e">bubblewrap</h3>
+      <div class="noun">bwrap --ro-bind / / --bind &lt;cwd&gt; &lt;cwd&gt; --tmpfs /tmp --proc /proc --dev /dev --unshare-net</div>
+      <div class="row"><div class="t">机制</div><div class="v">挂载视图重建：根只读，工作目录单独bind成可写，网络命名空间单独隔离。<b>只隔离了net一个命名空间。</b></div></div>
+      <div class="row"><div class="t">额外放行</div><div class="v"><code>/dev/null</code>可写，exec完全不限制，环境变量全量继承（没有<code>--clearenv</code>），没有seccomp过滤。</div></div>
+      <div class="row bad"><div class="t">硬伤一</div><div class="v"><b>看得见也杀得掉沙箱外的进程。</b>没有<code>--unshare-pid</code>，<code>/proc</code>挂出来的是宿主PID视图。实测在沙箱里读到了沙箱外进程的<code>/proc/&lt;pid&gt;/environ</code>和内存映射，然后<code>kill -9</code>把它杀掉了。这意味着即使把子进程环境洗干净，agent主进程的key照样能从<code>/proc</code>读走。</div></div>
+      <div class="row bad"><div class="t">硬伤二</div><div class="v"><b>工作目录落在/tmp下会被抹掉。</b>bwrap按参数顺序挂载，<code>--bind cwd</code>在前、<code>--tmpfs /tmp</code>在后，后者盖住前者。实测<code>ls</code>、<code>cat</code>、写全部报文件不存在，宿主侧文件还在。memory写入器的暂存目录正是<code>tempfile</code>建的，这是接入的硬阻塞。</div></div>
+    </div>
+  </div>
+
+  <div class="tbl">
+  <table>
+    <tr><th>维度</th><th>macOS</th><th>Linux</th></tr>
+    <tr><td><b>网络</b></td><td class="y">断（deny default兜住）</td><td class="y">断（--unshare-net）</td></tr>
+    <tr><td><b>整盘可读</b></td><td class="n">是</td><td class="n">是</td></tr>
+    <tr><td><b>写范围</b></td><td class="m">cwd + /tmp + /private/tmp + 整个/private/var/folders</td><td class="y">cwd + 隔离tmpfs /tmp</td></tr>
+    <tr><td><b>/tmp语义</b></td><td>真实/tmp，与宿主共享、可持久</td><td>空tmpfs，用完即弃</td></tr>
+    <tr><td><b>exec限制</b></td><td class="n">有白名单，误伤git / python / node / ps</td><td class="m">完全不限制</td></tr>
+    <tr><td><b>/dev/null可写</b></td><td class="n">否，大批命令因此报错</td><td class="y">是</td></tr>
+    <tr><td><b>看得到宿主进程</b></td><td class="y">否，ps直接被拒</td><td class="n">是，且可发信号杀掉</td></tr>
+    <tr><td><b>环境变量</b></td><td class="n">全量继承</td><td class="n">全量继承</td></tr>
+    <tr><td><b>工作目录被遮蔽</b></td><td class="y">不会</td><td class="n">cwd在/tmp下时静默消失</td></tr>
+    <tr><td><b>用的shell</b></td><td>/bin/bash（不开沙箱时是/bin/sh）</td><td>bash，走PATH查找</td></tr>
+  </table>
+  </div>
+
+  <!-- ══════════ 03 开关 ══════════ -->
+  <h2 id="switch"><span class="num">03</span>开关为什么失效</h2>
+  <p class="lead">开关是一个<code>ContextVar</code>。设它的地方和真正执行命令的地方不在同一个上下文里，值就丢了。
+    三条路径里两条在丢，其中一条是用户最常用的Web。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="开关在三条路径上的传递">
+    <defs>
+      <marker id="s-gy" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#8a8675"/></marker>
+      <marker id="s-gn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5aad4e"/></marker>
+      <marker id="s-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
+    </defs>
+
+    <text x="24" y="30" fill="#d4843a" font-size="16" font-weight="700">开关从设置点到执行点</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12.5">红色竖线是上下文断掉的地方。跨过它，新的执行环境拿到的是空Context，读回默认值false。</text>
+
+    <text x="46" y="80" fill="#8a8675" font-size="11" letter-spacing="1.5">① 在哪里设开关</text>
+    <text x="336" y="80" fill="#8a8675" font-size="11" letter-spacing="1.5">② 轮次实际在哪里跑</text>
+    <text x="626" y="80" fill="#8a8675" font-size="11" letter-spacing="1.5">③ 执行点读回什么</text>
+    <text x="916" y="80" fill="#8a8675" font-size="11" letter-spacing="1.5">④ 命令的实际状态</text>
+
+    <!-- Row 1 Web -->
+    <text x="24" y="140" fill="#e0445a" font-size="12.5" font-weight="700" transform="rotate(-90 24 140)" text-anchor="middle">WEB</text>
+    <rect x="40" y="110" width="252" height="86" rx="9" fill="#12110b" stroke="#2e2c20" stroke-width="1.3"/>
+    <text x="58" y="136" fill="#f0eee6" font-size="13" font-weight="700">websocket的asyncio任务</text>
+    <text x="58" y="158" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">sandbox_enabled.set(True)</text>
+    <text x="58" y="180" fill="#5aad4e" font-size="11.5">界面立刻显示 Sandbox: ON</text>
+
+    <line x1="292" y1="153" x2="322" y2="153" stroke="#8a8675" stroke-width="1.5" marker-end="url(#s-gy)"/>
+    <line x1="312" y1="106" x2="312" y2="200" stroke="#e0445a" stroke-width="1.6" stroke-dasharray="5 5"/>
+    <text x="312" y="98" fill="#e0445a" font-size="11" text-anchor="middle">线程边界</text>
+
+    <rect x="330" y="110" width="252" height="86" rx="9" fill="#12110b" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="348" y="136" fill="#f0eee6" font-size="13" font-weight="700">裸threading.Thread</text>
+    <text x="348" y="158" fill="#bdb9a6" font-size="11.5">新线程拿到的是空Context</text>
+    <text x="348" y="180" fill="#8a8675" font-size="11.5">整个webui目录没有copy_context</text>
+
+    <line x1="582" y1="153" x2="612" y2="153" stroke="#e0445a" stroke-width="1.5" marker-end="url(#s-rd)"/>
+    <rect x="620" y="110" width="252" height="86" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="638" y="144" fill="#e0445a" font-size="15" font-weight="700">读回 false</text>
+    <text x="638" y="170" fill="#a5a190" font-size="11.5">和开关的显示状态相反</text>
+
+    <line x1="872" y1="153" x2="902" y2="153" stroke="#e0445a" stroke-width="1.5" marker-end="url(#s-rd)"/>
+    <rect x="910" y="110" width="216" height="86" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="928" y="144" fill="#e0445a" font-size="14" font-weight="700">命令裸跑</text>
+    <text x="928" y="170" fill="#a5a190" font-size="11.5">开关是个no-op</text>
+
+    <!-- Row 2 CLI -->
+    <text x="24" y="280" fill="#5aad4e" font-size="12.5" font-weight="700" transform="rotate(-90 24 280)" text-anchor="middle">CLI</text>
+    <rect x="40" y="250" width="252" height="86" rx="9" fill="#12110b" stroke="#2e2c20" stroke-width="1.3"/>
+    <text x="58" y="276" fill="#f0eee6" font-size="13" font-weight="700">REPL线程里的 /sandbox</text>
+    <text x="58" y="298" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">sandbox_enabled.set(True)</text>
+    <text x="58" y="320" fill="#8a8675" font-size="11.5">同一个线程继续往下走</text>
+
+    <line x1="292" y1="293" x2="322" y2="293" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#s-gn)"/>
+    <rect x="330" y="250" width="252" height="86" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
+    <text x="348" y="284" fill="#f0eee6" font-size="13" font-weight="700">同一线程、同一Context</text>
+    <text x="348" y="310" fill="#8a8675" font-size="11.5">没有任何边界要跨</text>
+
+    <line x1="582" y1="293" x2="612" y2="293" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#s-gn)"/>
+    <rect x="620" y="250" width="252" height="86" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
+    <text x="638" y="284" fill="#5aad4e" font-size="15" font-weight="700">读回 true</text>
+    <text x="638" y="310" fill="#a5a190" font-size="11.5">开关在这条路径上有效</text>
+
+    <line x1="872" y1="293" x2="902" y2="293" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#s-gn)"/>
+    <rect x="910" y="250" width="216" height="86" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
+    <text x="928" y="284" fill="#5aad4e" font-size="14" font-weight="700">命令被包住</text>
+    <text x="928" y="310" fill="#a5a190" font-size="11.5">仅限同线程的bash</text>
+
+    <!-- Row 3 spawn -->
+    <text x="24" y="404" fill="#e0445a" font-size="12.5" font-weight="700" transform="rotate(-90 24 404)" text-anchor="middle">FUNC</text>
+    <rect x="40" y="374" width="252" height="80" rx="9" fill="#12110b" stroke="#2e2c20" stroke-width="1.3"/>
+    <text x="58" y="400" fill="#f0eee6" font-size="13" font-weight="700">父进程里开关为true</text>
+    <text x="58" y="424" fill="#8a8675" font-size="11.5">CLI或Web都可能是这个起点</text>
+
+    <line x1="292" y1="414" x2="322" y2="414" stroke="#8a8675" stroke-width="1.5" marker-end="url(#s-gy)"/>
+    <line x1="312" y1="370" x2="312" y2="458" stroke="#e0445a" stroke-width="1.6" stroke-dasharray="5 5"/>
+    <text x="312" y="362" fill="#e0445a" font-size="11" text-anchor="middle">进程边界</text>
+
+    <rect x="330" y="374" width="252" height="80" rx="9" fill="#12110b" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="348" y="400" fill="#f0eee6" font-size="13" font-weight="700">mp spawn 出的新解释器</text>
+    <text x="348" y="424" fill="#8a8675" font-size="11.5">spawn不复制contextvars</text>
+
+    <line x1="582" y1="414" x2="612" y2="414" stroke="#e0445a" stroke-width="1.5" marker-end="url(#s-rd)"/>
+    <rect x="620" y="374" width="252" height="80" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="638" y="404" fill="#e0445a" font-size="15" font-weight="700">读回 false</text>
+    <text x="638" y="430" fill="#a5a190" font-size="11.5">只有usage上下文被显式恢复了</text>
+
+    <line x1="872" y1="414" x2="902" y2="414" stroke="#e0445a" stroke-width="1.5" marker-end="url(#s-rd)"/>
+    <rect x="910" y="374" width="216" height="80" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="928" y="404" fill="#e0445a" font-size="14" font-weight="700">全部裸跑</text>
+    <text x="928" y="430" fill="#a5a190" font-size="11.5">每个agentic function里的bash</text>
+  </svg>
+  <div class="legend">
+    <b>为什么说是漏改不是设计</b>：<code>functions/_runtime.py</code>和<code>agent/task/runner.py</code>把活交给别的线程时都正确做了<code>copy_context()</code>，
+    只有<code>webui/</code>下一次都没有。
+  </div>
+  </div>
+
+  <div class="note warn"><b>另外两件事</b>：开关没有配置项，<code>config_schema.py</code>的<code>SETTINGS</code>里找不到<code>sandbox</code>，
+  只能靠两个手动toggle，默认关；平台工具缺失时<code>_invocation</code>直接落到普通执行分支，<b>不报错也不提示</b>，
+  已经是ON的状态下工具消失就是无声降级。</div>
+
+  <!-- ══════════ 04 覆盖面 ══════════ -->
+  <h2 id="cover"><span class="num">04</span>覆盖面</h2>
+  <p class="lead">全仓库约25处会把内容变成运行中的进程，走沙箱的只有1处，而且还要求开关真的传到了执行点。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="25个执行点中只有1个走沙箱">
+    <text x="24" y="32" fill="#d4843a" font-size="16" font-weight="700">25个执行点，1个走沙箱</text>
+    <text x="24" y="55" fill="#8a8675" font-size="12.5">每个方块是一处会把内容变成进程的代码位置。</text>
+
+    <!-- 5x5 grid -->
+    <rect x="40" y="84" width="46" height="46" rx="7" fill="#101a10" stroke="#5aad4e" stroke-width="2"/>
+    <text x="63" y="113" fill="#5aad4e" font-size="18" font-weight="700" text-anchor="middle">✓</text>
+    <rect x="96" y="84" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="152" y="84" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="208" y="84" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="264" y="84" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="40" y="140" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="96" y="140" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="152" y="140" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="208" y="140" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="264" y="140" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="40" y="196" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="96" y="196" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="152" y="196" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="208" y="196" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="264" y="196" width="46" height="46" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <rect x="40" y="252" width="46" height="20" rx="5" fill="#16150f" stroke="#3a3729"/>
+    <rect x="96" y="252" width="46" height="20" rx="5" fill="#16150f" stroke="#3a3729"/>
+    <rect x="152" y="252" width="46" height="20" rx="5" fill="#16150f" stroke="#3a3729"/>
+    <rect x="208" y="252" width="46" height="20" rx="5" fill="#16150f" stroke="#3a3729"/>
+    <rect x="264" y="252" width="46" height="20" rx="5" fill="#16150f" stroke="#3a3729"/>
+    <text x="175" y="290" fill="#8a8675" font-size="11.5" text-anchor="middle">共约25处</text>
+
+    <!-- 右侧说明 -->
+    <rect x="356" y="84" width="772" height="60" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
+    <text x="376" y="110" fill="#5aad4e" font-size="13.5" font-weight="700">1处走沙箱：bash工具 → backend/local.py::_invocation</text>
+    <text x="376" y="132" fill="#a5a190" font-size="12">而且要同时满足：开关为真、用local backend（docker和ssh后端不走）、平台工具在</text>
+
+    <rect x="356" y="156" width="772" height="116" rx="9" fill="#16150f" stroke="#3a3729" stroke-width="1.3"/>
+    <text x="376" y="182" fill="#f0eee6" font-size="13.5" font-weight="700">其余24处零隔离，按性质分四类</text>
+    <text x="376" y="206" fill="#a5a190" font-size="12">模型直接给命令：execute_code（连解释器路径都是模型参数）、cron worker、memory的MCP shell、process工具</text>
+    <text x="376" y="228" fill="#a5a190" font-size="12">进程内直接执行代码：functions/_registry的exec_module、webui/_functions、plugins/loader</text>
+    <text x="376" y="250" fill="#a5a190" font-size="12">另起进程且环境全给：mcp/client（整个os.environ交给每个stdio server）、webui/routes/mcp、shell hooks、docker和ssh后端</text>
+    <text x="376" y="268" fill="#8a8675" font-size="11.5">用户自己敲的CLI（git clone / pip install / npm i）不包，符合预期</text>
+  </svg>
+  </div>
+
+  <p class="lead">从模型输出到宿主进程内任意代码，最短的一条路径不经过bash，也就不可能被<code>wrap_command</code>包住。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 232" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="最短逃逸路径">
+    <defs>
+      <marker id="p-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
+    </defs>
+    <text x="24" y="32" fill="#e0445a" font-size="15.5" font-weight="700">最短逃逸路径：模型输出 → 宿主进程内代码</text>
+
+    <rect x="24" y="58" width="248" height="92" rx="10" fill="#12110b" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="42" y="84" fill="#f0eee6" font-size="13" font-weight="700">01 模型调 write</text>
+    <text x="42" y="107" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">functions/agentics/x.py</text>
+    <text x="42" y="130" fill="#8a8675" font-size="11.5">写文件这个动作本身不可疑</text>
+    <line x1="272" y1="104" x2="300" y2="104" stroke="#e0445a" stroke-width="1.6" marker-end="url(#p-rd)"/>
+
+    <rect x="308" y="58" width="248" height="92" rx="10" fill="#12110b" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="326" y="84" fill="#f0eee6" font-size="13" font-weight="700">02 watcher 轮询</text>
+    <text x="326" y="107" fill="#bdb9a6" font-size="11.5">每2秒扫一次该目录</text>
+    <text x="326" y="130" fill="#8a8675" font-size="11.5">变化触发 _registry.rescan()</text>
+    <line x1="556" y1="104" x2="584" y2="104" stroke="#e0445a" stroke-width="1.6" marker-end="url(#p-rd)"/>
+
+    <rect x="592" y="58" width="248" height="92" rx="10" fill="#12110b" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="610" y="84" fill="#f0eee6" font-size="13" font-weight="700">03 exec_module</text>
+    <text x="610" y="107" fill="#bdb9a6" font-size="11.5" font-family="Menlo,monospace">spec.loader.exec_module()</text>
+    <text x="610" y="130" fill="#8a8675" font-size="11.5">导入即执行模块级代码</text>
+    <line x1="840" y1="104" x2="868" y2="104" stroke="#e0445a" stroke-width="1.6" marker-end="url(#p-rd)"/>
+
+    <rect x="876" y="58" width="252" height="92" rx="10" fill="#2a1215" stroke="#e0445a" stroke-width="1.6"/>
+    <text x="894" y="84" fill="#e0445a" font-size="13" font-weight="700">04 在agent进程内运行</text>
+    <text x="894" y="107" fill="#a5a190" font-size="11.5">拿到宿主进程的全部权限</text>
+    <text x="894" y="130" fill="#a5a190" font-size="11.5">包括进程内存里的凭证</text>
+
+    <rect x="24" y="164" width="1104" height="46" rx="8" fill="#16150f" stroke="#3a3729"/>
+    <text x="44" y="192" fill="#8a8675" font-size="12.5">全程<tspan fill="#e0445a" font-weight="700">不经工具审批</tspan>、<tspan fill="#e0445a" font-weight="700">不经shell</tspan>、<tspan fill="#e0445a" font-weight="700">不需要任何用户动作</tspan>。这条不该由shell沙箱解决，但它决定了沙箱做到多好都有一个上限。</text>
+  </svg>
+  </div>
+
+  <div class="note warn"><b>还有两处会拆掉闸门</b>：spawn出来的子agent把轮次的<code>permission_mode</code>设成<code>bypass</code>，
+  而<code>_gated_execute</code>在bypass那一步就短路，位置排在会拦住bash / execute_code / process的risky工具检查之前（规则层的deny和ask更靠前，仍然生效）；
+  <code>webui/_runtime_management.py</code>往<code>create_runtime()</code>传的<code>sandbox="read-only"</code>看着像在防护，
+  而provider那边把这个kwarg明确记为接受即忽略。</div>
+
+  <!-- ══════════ 05 对标 ══════════ -->
+  <h2 id="cmp"><span class="num">05</span>对标与凭证推理链</h2>
+  <p class="lead">三家参考实现里，两家做了沙箱、一家明确不做。逐项对下来，我们缺的不是策略条数，是配置面、联动和审计。</p>
+
+  <div class="tbl">
+  <table>
+    <tr><th>维度</th><th>Claude Code</th><th>Codex CLI</th><th>opencode</th><th class="us">OpenProgram</th></tr>
+    <tr><td><b>操作系统级隔离</b></td><td>有，外部runtime包</td><td>有，自研</td><td class="m">明确不做</td><td class="us">有，很薄</td></tr>
+    <tr><td><b>默认开</b></td><td>否</td><td class="y">是，read-only</td><td>—</td><td class="us">否</td></tr>
+    <tr><td><b>粒度</b></td><td>全局开关×单命令opt-out</td><td>per-command，工具可覆盖</td><td>per-tool×per-resource</td><td class="us">一个进程级布尔</td></tr>
+    <tr><td><b>配置入口</b></td><td>分层settings.json</td><td>config.toml加CLI flag</td><td>opencode.json加agent frontmatter</td><td class="us">无</td></tr>
+    <tr><td><b>沙箱与审批</b></td><td class="y">沙箱内bash免审批</td><td class="y">里面被拒→问→不带沙箱重跑</td><td>无沙箱，纯审批</td><td class="us">不联动</td></tr>
+    <tr><td><b>网络</b></td><td>提示式代理，空白名单即每个域名都问</td><td>默认断，可配代理和域名白名单</td><td class="n">不限制</td><td class="y">两个平台都断</td></tr>
+    <tr><td><b>凭证读屏蔽</b></td><td class="m">引擎有，出厂为空</td><td class="m">引擎有，出厂为空</td><td>*.env → ask</td><td class="us">连引擎都没有</td></tr>
+    <tr><td><b>配置文件写保护</b></td><td class="y">有，明确为了防逃逸</td><td class="y">有（.codex / .git / .agents）</td><td>无</td><td class="us">无</td></tr>
+    <tr><td><b>后端不可用</b></td><td class="y">照跑但启动时明确告警</td><td>静默none，Windows降级，WSL1硬报错</td><td>—</td><td class="us">静默放行</td></tr>
+    <tr><td><b>审计</b></td><td class="y">内核deny日志按命令归因并喂回模型</td><td class="y">结构化违规事件加OTel</td><td>权限事件总线</td><td class="us">无</td></tr>
+    <tr><td><b>子进程环境变量</b></td><td>由runtime处理</td><td class="m">可配置，默认不过滤</td><td class="n">不过滤</td><td class="us">不过滤</td></tr>
+    <tr><td><b>exec限制</b></td><td class="y">无，靠子进程继承沙箱</td><td class="y">无</td><td>—</td><td class="us">macOS有白名单，误伤自己人</td></tr>
+    <tr><td><b>进程隔离</b></td><td class="y">signal和process-info限同沙箱，Linux有--unshare-pid</td><td class="y">--unshare-pid加seccomp封ptrace</td><td>—</td><td class="us">Linux可杀宿主进程</td></tr>
+    <tr><td><b>受管范围</b></td><td>只有Bash和PowerShell</td><td>只有子进程</td><td>—</td><td class="us">只有bash工具</td></tr>
+  </table>
+  </div>
+
+  <div class="note"><b>两家做沙箱的共识，这里同样成立</b>：只包子进程、agent进程本身永远不进沙箱（它要调模型API）；
+  不和审批联动的沙箱没人开；不靠二进制路径限制执行，放开exec、靠子进程继承沙箱兜底。</div>
+
+  <p class="lead">但有一条它们的共识在这里不成立。两家出厂都不屏蔽凭证读取，因为它们在外传侧收口了；
+    我们的外传侧比它们都严，却因为memory而多出一条不碰网络的通道。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="凭证屏蔽的推理链">
+    <defs>
+      <marker id="c-gy" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#8a8675"/></marker>
+      <marker id="c-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
+    </defs>
+
+    <text x="24" y="30" fill="#d4843a" font-size="15.5" font-weight="700">同样是整盘可读，结论为什么相反</text>
+
+    <!-- Row A -->
+    <text x="24" y="66" fill="#8a8675" font-size="11.5" letter-spacing="1.5">参考实现</text>
+    <rect x="24" y="76" width="196" height="66" rx="9" fill="#12110b" stroke="#3a3729"/>
+    <text x="122" y="104" fill="#f0eee6" font-size="12.5" font-weight="700" text-anchor="middle">整盘可读</text>
+    <text x="122" y="126" fill="#8a8675" font-size="11.5" text-anchor="middle">凭证都读得到</text>
+    <line x1="220" y1="109" x2="246" y2="109" stroke="#8a8675" stroke-width="1.5" marker-end="url(#c-gy)"/>
+
+    <rect x="254" y="76" width="196" height="66" rx="9" fill="#12110b" stroke="#3a3729"/>
+    <text x="352" y="104" fill="#f0eee6" font-size="12.5" font-weight="700" text-anchor="middle">但外传侧收口</text>
+    <text x="352" y="126" fill="#8a8675" font-size="11.5" text-anchor="middle">代理逐域名弹窗，或默认断网</text>
+    <line x1="450" y1="109" x2="476" y2="109" stroke="#8a8675" stroke-width="1.5" marker-end="url(#c-gy)"/>
+
+    <rect x="484" y="76" width="196" height="66" rx="9" fill="#12110b" stroke="#3a3729"/>
+    <text x="582" y="104" fill="#f0eee6" font-size="12.5" font-weight="700" text-anchor="middle">读到了送不出去</text>
+    <text x="582" y="126" fill="#8a8675" font-size="11.5" text-anchor="middle">链路在这里断掉</text>
+    <line x1="680" y1="109" x2="706" y2="109" stroke="#8a8675" stroke-width="1.5" marker-end="url(#c-gy)"/>
+
+    <rect x="714" y="76" width="234" height="66" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
+    <text x="831" y="104" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="middle">所以出厂不屏蔽凭证读取</text>
+    <text x="831" y="126" fill="#a5a190" font-size="11.5" text-anchor="middle">引擎留着，配置留空</text>
+
+    <line x1="24" y1="168" x2="1136" y2="168" stroke="#2e2c20" stroke-width="1"/>
+
+    <!-- Row B -->
+    <text x="24" y="196" fill="#d4843a" font-size="11.5" letter-spacing="1.5">OpenProgram</text>
+    <rect x="24" y="206" width="196" height="72" rx="9" fill="#12110b" stroke="#3a3729"/>
+    <text x="122" y="234" fill="#f0eee6" font-size="12.5" font-weight="700" text-anchor="middle">整盘可读</text>
+    <text x="122" y="256" fill="#8a8675" font-size="11.5" text-anchor="middle">同上，一模一样</text>
+    <line x1="220" y1="242" x2="240" y2="242" stroke="#e0445a" stroke-width="1.5" marker-end="url(#c-rd)"/>
+
+    <rect x="248" y="206" width="196" height="72" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
+    <text x="346" y="234" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="middle">网络全断，比两家都严</text>
+    <text x="346" y="256" fill="#a5a190" font-size="11.5" text-anchor="middle">直接外传这条路是死的</text>
+    <line x1="444" y1="242" x2="464" y2="242" stroke="#e0445a" stroke-width="1.5" marker-end="url(#c-rd)"/>
+
+    <rect x="472" y="206" width="204" height="72" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="574" y="234" fill="#e0445a" font-size="12.5" font-weight="700" text-anchor="middle">但memory写入器可写</text>
+    <text x="574" y="256" fill="#a5a190" font-size="11.5" text-anchor="middle">凭证写进记忆库的一个条目</text>
+    <line x1="676" y1="242" x2="696" y2="242" stroke="#e0445a" stroke-width="1.5" marker-end="url(#c-rd)"/>
+
+    <rect x="704" y="206" width="204" height="72" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="806" y="234" fill="#e0445a" font-size="12.5" font-weight="700" text-anchor="middle">记忆库回到下次上下文</text>
+    <text x="806" y="256" fill="#a5a190" font-size="11.5" text-anchor="middle">读记忆就拿到了</text>
+    <line x1="908" y1="242" x2="928" y2="242" stroke="#e0445a" stroke-width="1.5" marker-end="url(#c-rd)"/>
+
+    <rect x="936" y="206" width="200" height="72" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.8"/>
+    <text x="1036" y="234" fill="#e0445a" font-size="12.5" font-weight="700" text-anchor="middle">所以凭证屏蔽是必需项</text>
+    <text x="1036" y="256" fill="#a5a190" font-size="11.5" text-anchor="middle">全程不碰网络</text>
+
+    <rect x="24" y="292" width="1112" height="26" rx="7" fill="#16150f" stroke="#3a3729"/>
+    <text x="44" y="310" fill="#8a8675" font-size="12">一条命令就够：<tspan font-family="Menlo,monospace" fill="#bdb9a6">cat ~/.openprogram/auth/*/default.json &gt; topics/x.md</tspan>。写入器的prompt里带着原始用户对话，注入方让它执行这条即可。</text>
+  </svg>
+  </div>
+
+  <!-- ══════════ 06 修复路线 ══════════ -->
+  <h2 id="fix"><span class="num">06</span>修复路线</h2>
+  <p class="lead">五步按依赖排，每一步都是下一步能产生价值的前提。顺序比条数重要：往profile里继续加规则解决不了任何一条。</p>
+
+  <div class="steps">
+    <div class="step s1">
+      <div class="n">STEP 01</div>
+      <h4>可用性</h4>
+      <div class="d">macOS补<code>/dev/null</code>等字符设备的读写；exec白名单换成不限制，靠子进程继承沙箱兜底；Linux按路径判断挂载顺序，cwd在<code>/tmp</code>下时先挂tmpfs再bind。</div>
+      <div class="x"><b>不做</b>：一开沙箱，macOS上git、python3、node和<code>2&gt;/dev/null</code>全部失败，Linux上<code>/tmp</code>里的工作区静默消失。用户第一件事就是关掉它，也就是现在这个状态。</div>
+    </div>
+    <div class="step s2">
+      <div class="n">STEP 02</div>
+      <h4>凭证屏蔽</h4>
+      <div class="d">两个平台加deny-read glob并且出厂就装弹：ssh、aws、<code>~/.openprogram/auth/**</code>、<code>~/.claude.json</code>、<code>**/.env</code>、keychain。macOS上deny读要和deny删除成对发。子进程环境变量按白名单传，Linux同时加<code>--unshare-pid</code>。</div>
+      <div class="x"><b>不做</b>：沙箱防不住这里唯一值得防的东西。接上memory写入器就补齐了那条不需要网络的凭证外传链路。</div>
+    </div>
+    <div class="step s3">
+      <div class="n">STEP 03</div>
+      <h4>开关语义</h4>
+      <div class="d">砍掉ContextVar，改成显式参数<code>sandbox: SandboxPolicy | None</code>由调用方传；工具定义带默认值，会话设置提供默认来源。<code>SETTINGS</code>加一组<code>sandbox.*</code>键。不可用时默认拒绝执行并说明原因。</div>
+      <div class="x"><b>不做</b>：开关在三个边界上丢，两处已实测。Web路径和每个agentic function里沙箱都是关的，界面显示什么都不影响。</div>
+    </div>
+    <div class="step s4">
+      <div class="n">STEP 04</div>
+      <h4>默认开</h4>
+      <div class="d">默认<code>workspace-write</code>语义。前提是01到03都做完，否则默认开等于默认坏。</div>
+      <div class="x"><b>不做</b>：一个默认关又没有配置项的机制在真实使用中不会运行，前三步全都无从检验。</div>
+    </div>
+    <div class="step s5">
+      <div class="n">STEP 05</div>
+      <h4>审批联动</h4>
+      <div class="d">正向：将在沙箱内执行且策略未放宽的bash跳过审批卡。反向：沙箱内被拒的命令带原因发起审批，批准后不带沙箱重跑，<code>pip install</code>和<code>git fetch</code>都走这条解决。权限规则和沙箱策略共用一个来源。</div>
+      <div class="x"><b>不做</b>：沙箱纯粹是额外负担，审批一次不少、能跑的命令变少，没人会打开它。</div>
+    </div>
+  </div>
+
+  <div class="note"><b>配套的profile修补清单</b>（不构成独立步骤，跟着01和02一起做）：
+  <code>sysctl-read</code>和<code>mach-lookup</code>收成具名白名单，<code>/private/var/folders</code>收窄到本进程的<code>TMPDIR</code>，
+  工作目录拼进profile前先转义，放开exec之前补上限定在同沙箱内的<code>signal</code>和<code>process-info*</code>，
+  Linux加<code>--new-session --die-with-parent --unshare-user --cap-drop ALL</code>，
+  把<code>.git</code>和<code>functions/agentics/</code>加进禁写，两条路径统一用<code>/bin/bash</code>。</div>
+
+  <div class="note"><b>接memory写入器的边界</b>：它有两个执行面。MCP的<code>shell</code>工具在OpenProgram进程内跑，形状和<code>_invocation</code>一致，包起来是几行；
+  Claude Code CLI子进程里的<code>Read</code>/<code>Write</code>/<code>Edit</code>/<code>Grep</code>/<code>Glob</code>在CLI进程内部执行，<code>wrap_command</code>够不着，
+  而这个CLI进程也不该被包进沙箱，因为它要调Anthropic API而沙箱没有网络。
+  所以准确的边界是<b>shell受限、SDK自带的文件工具不受限</b>，约束后者要靠<code>allowed_tools</code>。
+  第01、02步是硬前置，第03步是因为写入器跑在后台线程和子进程里、ContextVar到不了。</div>
+
+  <div class="legend">
+    <b>一句话收尾</b>：现在的问题不是策略不够严，是三件事同时成立：开关在真实调用路径上多半是关的、
+    开了之后macOS上正常工作干不了、最该防的凭证是敞开的。三条各自都能让这套机制归零，所以顺序是
+    可用性 → 凭证屏蔽 → 开关语义 → 默认开 → 审批联动。
+  </div>
+
+</div>
+</body>
+</html>

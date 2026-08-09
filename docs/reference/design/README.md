@@ -77,6 +77,7 @@ Proactivity applications (built on the base):
 | [`runtime/session/README.md`](runtime/session/README.md) | Session subsystem: data model, storage, naming, listing, lifecycle |
 | [`runtime/self-update.md`](runtime/self-update.md) | Self-update: staying usable while OpenProgram modifies itself |
 | [`runtime/permission-model.md`](runtime/permission-model.md) | Permission system design |
+| [`runtime/sandbox.md`](runtime/sandbox.md) | Sandbox: the boundary on both platforms, where the switch is lost, coverage, repair order ([rendered](runtime/sandbox-architecture.html)) |
 | [`runtime/agent-collaboration.md`](runtime/agent-collaboration.md) | Agent collaboration: cross-branch communication primitives |
 | [`runtime/tool-toggle-management.md`](runtime/tool-toggle-management.md) | Tool toggles / toolset management design |
 | [`runtime/additional-working-directories.md`](runtime/additional-working-directories.md) | Multiple working directories per session |
