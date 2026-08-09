@@ -106,6 +106,49 @@ and so are the turns the runtime schedules for itself: a finished
 sub-agent's notification and a merge prompt are written as user rows so
 the model has something to answer, but nobody said them.
 
+## Who said it
+
+Several people share one agent, so a session holds turns from more than
+one person. A Telegram group talks to a single conversation by default,
+and an agent set to `session_scope: main` collects every direct peer
+into one. Recording all of them as "the user" turns three people
+settling a budget into one person changing their mind, so every turn
+carries who said it.
+
+The identity comes from the turn, not from the session. A session row
+holds one peer, and in a group that peer is the group.
+
+A turn carries two pieces of identity, because either one alone loses
+somebody. A display name reads naturally in a topic file and is what a
+search for a person finds, and people rename themselves and share names
+with each other. A platform id survives a rename and separates two
+people called Ada, and a file full of numbers says nothing to whoever
+reads it. So a `SourceRecord` carries the display name and the id, and
+the label it renders is `display (id)`.
+
+That label reaches the model through the slot that already exists. The
+writer prompt renders a batch as `[ref] speaker: text` and the source
+archive writes the same shape, so the change is the value in the
+speaker slot: the label where a turn has one, the bare role where it
+does not. Web, CLI and TUI turns have no channel identity behind them
+and keep the bare role, which is what the writer sees today. The write
+prompt says that the name in front of a line is the person who said it,
+so a fact lands under that person rather than under "the user".
+
+The sender's platform id reaches the turn from the channel adapter,
+alongside the display name that already travels there. It is a separate
+field from `peer_id`, which is the routing target and the address a
+reply is sent back to; in a group `peer_id` is the group. The display
+name is trimmed to one line on the way in, because one record per line
+is what both renderers assume and a display name is whatever its owner
+typed into the platform.
+
+Identity is what memory records, and it partitions nothing. One
+workspace and one set of topic files, shared by everyone the account
+approves, because that sharing is what makes a team bot worth having.
+Someone who wants memory of their own runs their own instance
+([Chat Channels](../../../integrations/channels.md#who-can-talk-to-your-bot)).
+
 ## The write cursor
 
 A session is a DAG, not a line. Re-asking an earlier message, retrying
@@ -399,8 +442,23 @@ strips the inner block and leaves an empty one.
 
 ## Appendix: Implementation status
 
-Everything above runs today except "The write cursor". What runs in its
-place is a position cursor: `runtime.json` holds
+Everything above runs today except "Who said it" and "The write
+cursor".
+
+"Who said it" is designed and not built. `_records` in
+`scriptorium/writing.py` reads a row's `role` and nothing else, so every
+person on a shared session is recorded as `user`. Half the identity
+already arrives: `peer_display` is written onto each user row by
+`dispatcher/prep.py` and comes back from `get_branch`, verified against
+a real `SessionDB`. The sender's own platform id stops earlier, at the
+access gate in `channels/base.py`, and reaches no further; `peer_id` on
+the turn is the routing target, which in a group is the group. The
+design lands in seven files, four carrying `sender_id` down from the
+channel adapter and three putting the identity to use, drawn out in
+[`speaker-identity.html`](speaker-identity.html).
+
+What runs in place of "The write cursor" is a position cursor:
+`runtime.json` holds
 `cursors: {thread: {message_id, ordinal}}`, `runtime/online.py` claims
 a record only when its ordinal is higher than the stored one, and
 `scriptorium/writing.py` builds that ordinal from the row's index in

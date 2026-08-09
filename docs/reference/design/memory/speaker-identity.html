@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>发言人身份：记忆里谁说的</title>
+<style>
+  :root{
+    --bg:#16150f; --pan:#1d1c14; --bd:#2e2c20; --tx:#bdb9a6; --acc:#d4843a;
+    --cb:#12110b; --dim:#8a8675;
+    --c0:#4f8ef7; --c1:#5aad4e; --c2:#d4843a; --c3:#9d6fe0; --c4:#2db3d5;
+    --no:#e0445a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:40px 24px 96px}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:23px;color:#f0eee6;margin:0 0 6px}
+  .sub{color:var(--tx);margin:0 0 20px;max-width:78ch}
+  h2{font-size:16px;color:var(--acc);margin:34px 0 8px;scroll-margin-top:20px}
+  h2 .num{color:var(--dim);font-size:12px;margin-right:8px;letter-spacing:.16em}
+  .lead{color:var(--dim);font-size:13px;margin:0 0 12px;max-width:82ch}
+  .card{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:8px;margin-bottom:16px}
+  .card.scroll{overflow-x:auto}
+  .card.scroll svg{min-width:900px}
+  svg{display:block;width:100%;height:auto;background:var(--cb);border-radius:8px}
+  .legend{font-size:12.5px;color:var(--dim);padding:8px 10px;line-height:1.8}
+  .legend b{color:#f0eee6}
+  code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
+  text{font-family:-apple-system,"Segoe UI",sans-serif}
+
+  .toc{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 22px}
+  .toc a{font-size:12px;color:var(--tx);text-decoration:none;border:1px solid var(--bd);
+    background:var(--pan);border-radius:99px;padding:4px 12px}
+  .toc a:hover{border-color:var(--acc);color:#f0eee6}
+
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:0 0 22px}
+  .st{background:var(--pan);border:1px solid var(--bd);border-top-width:3px;border-radius:12px;padding:12px 15px}
+  .st .k{font-size:10.5px;letter-spacing:.2em;color:var(--dim);margin-bottom:5px}
+  .st p{margin:0;font-size:12.5px;color:#a5a190;line-height:1.7}
+  .st p b{color:#f0eee6;font-weight:600}
+  @media(max-width:860px){.grid3{grid-template-columns:1fr}}
+
+  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:16px}
+  .oc{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:8px 8px 12px}
+  .oc h4{margin:6px 4px 8px;font-size:13.5px;color:#f0eee6}
+  .oc .d{margin:8px 10px 0;font-size:12.5px;color:#a5a190;line-height:1.7}
+  .oc .d b{color:#f0eee6;font-weight:600}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+
+  /* 决策卡 */
+  .dec{background:var(--pan);border:1px solid var(--bd);border-left-width:3px;
+    border-radius:10px;padding:12px 15px;margin-bottom:12px}
+  .dec .q{font-size:13.5px;color:#f0eee6;font-weight:600;margin:0 0 3px}
+  .dec .a{font-size:12.5px;color:var(--dim);margin:0 0 10px}
+  .opt{display:flex;gap:10px;padding:7px 0;border-top:1px solid #26241a;font-size:12.5px;line-height:1.65}
+  .opt .tag{flex:0 0 60px;font:10.5px/1.9 Menlo,monospace;letter-spacing:.1em}
+  .opt.pick .tag{color:var(--c1)} .opt.drop .tag{color:var(--no)}
+  .opt .txt{color:#a5a190}
+  .opt .txt b{color:#f0eee6;font-weight:600}
+
+  .tbl{overflow-x:auto;background:var(--pan);border:1px solid var(--bd);border-radius:12px;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+  th{text-align:left;padding:10px 14px;color:var(--dim);font-weight:600;font-size:11px;
+    letter-spacing:.14em;border-bottom:1px solid var(--bd);white-space:nowrap}
+  td{padding:10px 14px;border-bottom:1px solid #26241a;vertical-align:top;line-height:1.65}
+  tr:last-child td{border-bottom:none}
+  td.y{color:var(--c1)} td.n{color:var(--no)}
+  td b{color:#f0eee6;font-weight:600}
+  td code{white-space:nowrap}
+
+  pre{background:var(--cb);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;
+    overflow-x:auto;margin:0 0 16px;font:12.5px/1.95 Menlo,monospace;color:#a5a190}
+  pre b{color:var(--acc);font-weight:400}
+  pre i{color:#6b6a63;font-style:normal}
+  pre u{color:var(--c1);text-decoration:none}
+
+  .note{border-left:3px solid var(--bd);padding:2px 0 2px 13px;color:var(--dim);
+    font-size:12.5px;margin:0 0 16px;max-width:88ch;line-height:1.8}
+  .note b{color:#f0eee6}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>发言人身份：记忆里谁说的</h1>
+  <p class="sub">一个agent可以被好几个人共用，共用同一份记忆工作区。记忆现在把所有人的话都记成"用户说"，
+    谁说的在写入那一步丢掉了。这页画清楚身份现在走到哪里断掉、断在哪一行、补上之后一条消息全程带着什么。
+    正文在<code>docs/reference/design/memory/overview.md</code>，整体机制在
+    <code>memory-architecture.html</code>。</p>
+
+  <div class="grid3">
+    <div class="st" style="border-top-color:#5aad4e">
+      <div class="k">已经存在的</div>
+      <p>发信人的<b>显示名</b>逐条消息带到了消息节点上：<code>peer_display</code>从渠道适配器一路存进
+        session store，<code>get_branch</code>读回来还在。</p>
+    </div>
+    <div class="st" style="border-top-color:#e0445a">
+      <div class="k">断点一</div>
+      <p>发信人的<b>稳定id</b>在<code>base.py</code>门禁那一步用完就丢，没进<code>dispatch_inbound</code>。
+        <code>TurnRequest.peer_id</code>装的是路由目标，群聊里是群id。</p>
+    </div>
+    <div class="st" style="border-top-color:#e0445a">
+      <div class="k">断点二</div>
+      <p><code>_records()</code>只读<code>role</code>，已经送到眼前的<code>peer_display</code>被丢掉，
+        三个人的话进<code>SourceRecord</code>之后全是<code>user</code>。</p>
+    </div>
+  </div>
+
+  <div class="toc">
+    <a href="#shape">01 一个会话里有几个人</a>
+    <a href="#chain">02 身份走到哪里断了</a>
+    <a href="#peerid">03 peer_id不是发言人id</a>
+    <a href="#after">04 补上之后一条消息带着什么</a>
+    <a href="#decide">05 六个设计决定</a>
+    <a href="#solo">06 单人场景的默认值</a>
+    <a href="#surface">07 改动面</a>
+  </div>
+
+  <!-- ══════════ 01会话形状 ══════════ -->
+  <h2 id="shape"><span class="num">01</span>一个会话里有几个人</h2>
+  <p class="lead">身份要不要逐条消息带，取决于一个session里会不会出现两个发言人。会。路由键
+    (<code>openprogram/channels/_session_routing.py:30</code> <code>session_key_for_agent</code>)
+    有两种配置把多个人放进同一条会话，其中一种还是Telegram群聊的默认值。</p>
+
+  <div class="card scroll">
+  <svg viewBox="0 0 1160 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="四种会话形状里发言人的分布">
+    <defs>
+      <marker id="s-gy" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#8a8675"/></marker>
+    </defs>
+
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">四种路由配置，会话里的人数不一样</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">左边两种把几个人放进同一条会话，右边两种一人一条。</text>
+
+    <!-- A: telegram group shared -->
+    <rect x="24" y="76" width="272" height="290" rx="10" fill="#241f10" stroke="#d4843a" stroke-width="1.8"/>
+    <text x="42" y="102" fill="#d4843a" font-size="13" font-weight="700">Telegram群，group_sessions=shared</text>
+    <text x="42" y="122" fill="#8a8675" font-size="11">默认值。整个群一条会话。</text>
+    <circle cx="66" cy="156" r="13" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
+    <text x="66" y="161" fill="#5aad4e" font-size="11" text-anchor="middle">甲</text>
+    <circle cx="66" cy="196" r="13" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.4"/>
+    <text x="66" y="201" fill="#4f8ef7" font-size="11" text-anchor="middle">乙</text>
+    <circle cx="66" cy="236" r="13" fill="#251c33" stroke="#9d6fe0" stroke-width="1.4"/>
+    <text x="66" y="241" fill="#9d6fe0" font-size="11" text-anchor="middle">丙</text>
+    <path d="M84 156 C 116 156, 118 190, 146 194" fill="none" stroke="#5aad4e" stroke-width="1.4" marker-end="url(#s-gy)"/>
+    <path d="M84 196 L 146 196" fill="none" stroke="#4f8ef7" stroke-width="1.4" marker-end="url(#s-gy)"/>
+    <path d="M84 236 C 116 236, 118 202, 146 198" fill="none" stroke="#9d6fe0" stroke-width="1.4" marker-end="url(#s-gy)"/>
+    <rect x="150" y="164" width="126" height="66" rx="8" fill="#12110b" stroke="#d4843a" stroke-width="1.6"/>
+    <text x="213" y="188" fill="#d4843a" font-size="12" font-weight="700" text-anchor="middle">一条会话</text>
+    <text x="213" y="208" fill="#8a8675" font-size="10.5" text-anchor="middle" font-family="Menlo,monospace">三个人的消息</text>
+    <text x="213" y="222" fill="#8a8675" font-size="10.5" text-anchor="middle" font-family="Menlo,monospace">交错排在一起</text>
+    <text x="42" y="270" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">peer_id = chat_id（群id）</text>
+    <text x="42" y="290" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">三条消息的peer_id相同</text>
+    <text x="42" y="316" fill="#e0445a" font-size="11.5" font-weight="700">session级身份在这里必然错</text>
+    <text x="42" y="336" fill="#8a8675" font-size="11">会话上只有一个peer_display，</text>
+    <text x="42" y="352" fill="#8a8675" font-size="11">而群里说话的是三个人。</text>
+
+    <!-- B: session_scope main -->
+    <rect x="312" y="76" width="272" height="290" rx="10" fill="#241f10" stroke="#d4843a" stroke-width="1.8"/>
+    <text x="330" y="102" fill="#d4843a" font-size="13" font-weight="700">agent配session_scope: main</text>
+    <text x="330" y="122" fill="#8a8675" font-size="11">所有私聊peer汇进同一条会话。</text>
+    <circle cx="354" cy="156" r="13" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
+    <text x="354" y="161" fill="#5aad4e" font-size="11" text-anchor="middle">甲</text>
+    <circle cx="354" cy="196" r="13" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.4"/>
+    <text x="354" y="201" fill="#4f8ef7" font-size="11" text-anchor="middle">乙</text>
+    <circle cx="354" cy="236" r="13" fill="#251c33" stroke="#9d6fe0" stroke-width="1.4"/>
+    <text x="354" y="241" fill="#9d6fe0" font-size="11" text-anchor="middle">丙</text>
+    <path d="M372 156 C 404 156, 406 190, 434 194" fill="none" stroke="#5aad4e" stroke-width="1.4" marker-end="url(#s-gy)"/>
+    <path d="M372 196 L 434 196" fill="none" stroke="#4f8ef7" stroke-width="1.4" marker-end="url(#s-gy)"/>
+    <path d="M372 236 C 404 236, 406 202, 434 198" fill="none" stroke="#9d6fe0" stroke-width="1.4" marker-end="url(#s-gy)"/>
+    <rect x="438" y="164" width="126" height="66" rx="8" fill="#12110b" stroke="#d4843a" stroke-width="1.6"/>
+    <text x="501" y="188" fill="#d4843a" font-size="12" font-weight="700" text-anchor="middle">一条会话</text>
+    <text x="501" y="208" fill="#8a8675" font-size="10.5" text-anchor="middle" font-family="Menlo,monospace">跨渠道跨账号</text>
+    <text x="501" y="222" fill="#8a8675" font-size="10.5" text-anchor="middle" font-family="Menlo,monospace">也汇到这一条</text>
+    <text x="330" y="270" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">session_key = "main"</text>
+    <text x="330" y="290" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">peer_id各不相同，但键一样</text>
+    <text x="330" y="316" fill="#e0445a" font-size="11.5" font-weight="700">session级身份在这里也必然错</text>
+    <text x="330" y="336" fill="#8a8675" font-size="11">会话被创建时记下的是第一个人，</text>
+    <text x="330" y="352" fill="#8a8675" font-size="11">后来的人只更新同一个字段。</text>
+
+    <!-- C: discord / slack -->
+    <rect x="600" y="76" width="272" height="290" rx="10" fill="#101a10" stroke="#5aad4e" stroke-width="1.8"/>
+    <text x="618" y="102" fill="#5aad4e" font-size="13" font-weight="700">Discord / Slack</text>
+    <text x="618" y="122" fill="#8a8675" font-size="11">peer_id拼上user_id，一人一条。</text>
+    <circle cx="642" cy="156" r="13" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
+    <text x="642" y="161" fill="#5aad4e" font-size="11" text-anchor="middle">甲</text>
+    <circle cx="642" cy="206" r="13" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.4"/>
+    <text x="642" y="211" fill="#4f8ef7" font-size="11" text-anchor="middle">乙</text>
+    <circle cx="642" cy="256" r="13" fill="#251c33" stroke="#9d6fe0" stroke-width="1.4"/>
+    <text x="642" y="261" fill="#9d6fe0" font-size="11" text-anchor="middle">丙</text>
+    <line x1="660" y1="156" x2="722" y2="156" stroke="#5aad4e" stroke-width="1.4" marker-end="url(#s-gy)"/>
+    <line x1="660" y1="206" x2="722" y2="206" stroke="#4f8ef7" stroke-width="1.4" marker-end="url(#s-gy)"/>
+    <line x1="660" y1="256" x2="722" y2="256" stroke="#9d6fe0" stroke-width="1.4" marker-end="url(#s-gy)"/>
+    <rect x="726" y="138" width="126" height="36" rx="7" fill="#12110b" stroke="#5aad4e" stroke-width="1.3"/>
+    <text x="789" y="161" fill="#5aad4e" font-size="11" text-anchor="middle">会话 甲</text>
+    <rect x="726" y="188" width="126" height="36" rx="7" fill="#12110b" stroke="#4f8ef7" stroke-width="1.3"/>
+    <text x="789" y="211" fill="#4f8ef7" font-size="11" text-anchor="middle">会话 乙</text>
+    <rect x="726" y="238" width="126" height="36" rx="7" fill="#12110b" stroke="#9d6fe0" stroke-width="1.3"/>
+    <text x="789" y="261" fill="#9d6fe0" font-size="11" text-anchor="middle">会话 丙</text>
+    <text x="618" y="304" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">peer_id = chat_id_user_id</text>
+    <text x="618" y="330" fill="#8a8675" font-size="11">session级身份在这里碰巧对，</text>
+    <text x="618" y="348" fill="#8a8675" font-size="11">因为一条会话只有一个人。</text>
+
+    <!-- D: web / cli -->
+    <rect x="888" y="76" width="248" height="290" rx="10" fill="#101a10" stroke="#5aad4e" stroke-width="1.8"/>
+    <text x="906" y="102" fill="#5aad4e" font-size="13" font-weight="700">网页/命令行/ TUI</text>
+    <text x="906" y="122" fill="#8a8675" font-size="11">没有渠道，没有peer身份。</text>
+    <circle cx="930" cy="196" r="13" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
+    <text x="930" y="201" fill="#5aad4e" font-size="11" text-anchor="middle">你</text>
+    <line x1="948" y1="196" x2="1004" y2="196" stroke="#5aad4e" stroke-width="1.4" marker-end="url(#s-gy)"/>
+    <rect x="1008" y="176" width="110" height="40" rx="7" fill="#12110b" stroke="#5aad4e" stroke-width="1.3"/>
+    <text x="1063" y="200" fill="#5aad4e" font-size="11" text-anchor="middle">会话</text>
+    <text x="906" y="270" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">source = "web" / "cli"</text>
+    <text x="906" y="290" fill="#bdb9a6" font-size="11" font-family="Menlo,monospace">peer_display / peer_id都空</text>
+    <text x="906" y="330" fill="#8a8675" font-size="11">默认值要在这里成立：</text>
+    <text x="906" y="348" fill="#8a8675" font-size="11">没有身份就写user，跟今天一样。</text>
+  </svg>
+  </div>
+  <div class="legend">
+    <b>结论</b>：身份必须逐条消息带。左边两种形状里，一条会话上只能记住一个peer，而说话的是好几个人，
+    会话级的字段永远指向其中一个。右边两种一人一条会话，逐条消息带身份也照样对，所以逐条是唯一一个四种形状都成立的做法。<br>
+    <b>出处</b>：<code>_session_routing.py:30-50</code>的分支；Telegram的
+    <code>peer_id_for</code>在<code>implementations/telegram.py:55</code>，
+    Discord在<code>implementations/discord.py:19</code>，Slack在<code>implementations/slack.py:22</code>；
+    <code>group_sessions</code>默认<code>shared</code>（<code>telegram.py:48</code>）。
+  </div>
+
+  <!-- ══════════ 02链路断点 ══════════ -->
+  <h2 id="chain"><span class="num">02</span>身份走到哪里断了</h2>
+  <p class="lead">一条群消息进来，经过八站到达主题文件。显示名活到了第七站，稳定id死在第二站，
+    两个都在第七站被扔掉。下面这张图每一站标出手上有哪些身份字段。</p>
+
+  <div class="card scroll">
+  <svg viewBox="0 0 1160 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="身份字段在八站链路上的存活情况">
+    <defs>
+      <marker id="c-gn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5aad4e"/></marker>
+      <marker id="c-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
+      <marker id="c-gy" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#8a8675"/></marker>
+    </defs>
+
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">一条Telegram群消息，从进来到写进主题文件</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">绿=身份还在 · 红=身份在这一站被丢掉 · 灰=这一站不碰身份</text>
+
+    <!--泳道标签-->
+    <text x="24" y="96" fill="#8a8675" font-size="11" font-weight="700">站点</text>
+    <text x="24" y="188" fill="#8a8675" font-size="11" font-weight="700">手上的</text>
+    <text x="24" y="204" fill="#8a8675" font-size="11" font-weight="700">身份字段</text>
+
+    <!--站1 -->
+    <rect x="96" y="72" width="152" height="60" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.6"/>
+    <text x="172" y="94" fill="#5aad4e" font-size="12" font-weight="700" text-anchor="middle">1渠道适配器</text>
+    <text x="172" y="114" fill="#8a8675" font-size="10" text-anchor="middle" font-family="Menlo,monospace">ChannelMessage</text>
+    <rect x="96" y="152" width="152" height="96" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.2"/>
+    <text x="108" y="174" fill="#5aad4e" font-size="10.5" font-family="Menlo,monospace">user_id ✓</text>
+    <text x="108" y="194" fill="#5aad4e" font-size="10.5" font-family="Menlo,monospace">user_display ✓</text>
+    <text x="108" y="214" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">chat_id</text>
+    <text x="108" y="236" fill="#6b6a63" font-size="10">两个都齐</text>
+
+    <!--站2 -->
+    <line x1="250" y1="102" x2="286" y2="102" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#c-gn)"/>
+    <rect x="288" y="72" width="164" height="60" rx="8" fill="#2a1418" stroke="#e0445a" stroke-width="1.8"/>
+    <text x="370" y="94" fill="#e0445a" font-size="12" font-weight="700" text-anchor="middle">2门禁+派发</text>
+    <text x="370" y="114" fill="#8a8675" font-size="10" text-anchor="middle" font-family="Menlo,monospace">base.py:165</text>
+    <rect x="288" y="152" width="164" height="96" rx="8" fill="#12110b" stroke="#e0445a" stroke-width="1.2"/>
+    <text x="300" y="174" fill="#e0445a" font-size="10.5" font-family="Menlo,monospace">user_id ✗ 用完丢</text>
+    <text x="300" y="194" fill="#5aad4e" font-size="10.5" font-family="Menlo,monospace">user_display ✓</text>
+    <text x="300" y="214" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">peer_id =群id</text>
+    <text x="300" y="236" fill="#e0445a" font-size="10">断点一：稳定id到此为止</text>
+
+    <!--站3 -->
+    <line x1="454" y1="102" x2="490" y2="102" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#c-gn)"/>
+    <rect x="492" y="72" width="152" height="60" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.6"/>
+    <text x="568" y="94" fill="#5aad4e" font-size="12" font-weight="700" text-anchor="middle">3 TurnRequest</text>
+    <text x="568" y="114" fill="#8a8675" font-size="10" text-anchor="middle" font-family="Menlo,monospace">types.py:49-50</text>
+    <rect x="492" y="152" width="152" height="96" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.2"/>
+    <text x="504" y="174" fill="#5aad4e" font-size="10.5" font-family="Menlo,monospace">peer_display ✓</text>
+    <text x="504" y="194" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">peer_id =群id</text>
+    <text x="504" y="220" fill="#6b6a63" font-size="10">peer_id是路由目标，</text>
+    <text x="504" y="236" fill="#6b6a63" font-size="10">不是发言人（见03）</text>
+
+    <!--站4 -->
+    <line x1="646" y1="102" x2="682" y2="102" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#c-gn)"/>
+    <rect x="684" y="72" width="152" height="60" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.6"/>
+    <text x="760" y="94" fill="#5aad4e" font-size="12" font-weight="700" text-anchor="middle">4组装消息dict</text>
+    <text x="760" y="114" fill="#8a8675" font-size="10" text-anchor="middle" font-family="Menlo,monospace">prep.py:93-106</text>
+    <rect x="684" y="152" width="152" height="96" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.2"/>
+    <text x="696" y="174" fill="#5aad4e" font-size="10.5" font-family="Menlo,monospace">peer_display ✓</text>
+    <text x="696" y="194" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">peer_id</text>
+    <text x="696" y="220" fill="#6b6a63" font-size="10">两个都进user_msg，</text>
+    <text x="696" y="236" fill="#6b6a63" font-size="10">跟source / agent_id并列</text>
+
+    <!--站5 -->
+    <line x1="838" y1="102" x2="874" y2="102" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#c-gn)"/>
+    <rect x="876" y="72" width="164" height="60" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.6"/>
+    <text x="958" y="94" fill="#5aad4e" font-size="12" font-weight="700" text-anchor="middle">5写进节点metadata</text>
+    <text x="958" y="114" fill="#8a8675" font-size="10" text-anchor="middle" font-family="Menlo,monospace">turn_writer.py:63</text>
+    <rect x="876" y="152" width="164" height="96" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.2"/>
+    <text x="888" y="174" fill="#5aad4e" font-size="10.5" font-family="Menlo,monospace">peer_display ✓</text>
+    <text x="888" y="194" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">peer_id</text>
+    <text x="888" y="220" fill="#6b6a63" font-size="10">白名单是"除了这六个原生</text>
+    <text x="888" y="236" fill="#6b6a63" font-size="10">键，其余全进metadata"</text>
+
+    <!--第二行-->
+    <path d="M1044 200 C 1096 200, 1104 240, 1104 268 L 1104 296 L 96 296 L 96 320"
+      fill="none" stroke="#5aad4e" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#c-gn)"/>
+    <text x="580" y="288" fill="#5aad4e" font-size="11" text-anchor="middle">节点存进session store，落盘</text>
+
+    <!--站6 -->
+    <rect x="96" y="330" width="196" height="60" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.6"/>
+    <text x="194" y="352" fill="#5aad4e" font-size="12" font-weight="700" text-anchor="middle">6读回一条分支</text>
+    <text x="194" y="372" fill="#8a8675" font-size="10" text-anchor="middle" font-family="Menlo,monospace">_msg_adapter.py:156</text>
+    <rect x="96" y="410" width="196" height="86" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.2"/>
+    <text x="108" y="432" fill="#5aad4e" font-size="10.5" font-family="Menlo,monospace">peer_display ✓</text>
+    <text x="108" y="452" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">peer_id</text>
+    <text x="108" y="478" fill="#6b6a63" font-size="10">base.update(meta)把metadata</text>
+    <text x="108" y="492" fill="#6b6a63" font-size="10">原样铺回消息dict上</text>
+
+    <!--站7 -->
+    <line x1="294" y1="360" x2="330" y2="360" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#c-gn)"/>
+    <rect x="332" y="330" width="212" height="60" rx="8" fill="#2a1418" stroke="#e0445a" stroke-width="1.8"/>
+    <text x="438" y="352" fill="#e0445a" font-size="12" font-weight="700" text-anchor="middle">7转成SourceRecord</text>
+    <text x="438" y="372" fill="#8a8675" font-size="10" text-anchor="middle" font-family="Menlo,monospace">writing.py:111 _records()</text>
+    <rect x="332" y="410" width="212" height="86" rx="8" fill="#12110b" stroke="#e0445a" stroke-width="1.2"/>
+    <text x="344" y="432" fill="#e0445a" font-size="10.5" font-family="Menlo,monospace">peer_display ✗ 没有读</text>
+    <text x="344" y="452" fill="#e0445a" font-size="10.5" font-family="Menlo,monospace">peer_id ✗ 没有读</text>
+    <text x="344" y="478" fill="#e0445a" font-size="10">断点二：只取了role，</text>
+    <text x="344" y="492" fill="#e0445a" font-size="10">三个人在这一行合并成"user"</text>
+
+    <!--站8 -->
+    <line x1="546" y1="360" x2="582" y2="360" stroke="#8a8675" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#c-gy)"/>
+    <rect x="584" y="330" width="212" height="60" rx="8" fill="#1d1c14" stroke="#8a8675" stroke-width="1.4"/>
+    <text x="690" y="352" fill="#bdb9a6" font-size="12" font-weight="700" text-anchor="middle">8渲染+归档</text>
+    <text x="690" y="372" fill="#8a8675" font-size="10" text-anchor="middle" font-family="Menlo,monospace">agent.py:20 / source_archive.py:144</text>
+    <rect x="584" y="410" width="212" height="86" rx="8" fill="#12110b" stroke="#8a8675" stroke-width="1.2"/>
+    <text x="596" y="432" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">拿到什么印什么</text>
+    <text x="596" y="458" fill="#6b6a63" font-size="10">两处都是f"…{speaker}: {content}"，</text>
+    <text x="596" y="474" fill="#6b6a63" font-size="10">speaker槽位一直在，</text>
+    <text x="596" y="490" fill="#6b6a63" font-size="10">只是第七站塞进去的是role</text>
+
+    <!--结果-->
+    <line x1="798" y1="360" x2="834" y2="360" stroke="#8a8675" stroke-width="1.5" marker-end="url(#c-gy)"/>
+    <rect x="836" y="318" width="300" height="84" rx="8" fill="#12110b" stroke="#e0445a" stroke-width="1.5"/>
+    <text x="852" y="342" fill="#e0445a" font-size="11.5" font-weight="700">写入agent看到的</text>
+    <text x="852" y="364" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">[…/m1] user:预算定5万</text>
+    <text x="852" y="382" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">[…/m3] user:预算定8万</text>
+    <text x="852" y="396" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">[…/m5] user:我同意8万</text>
+    <rect x="836" y="414" width="300" height="82" rx="8" fill="#12110b" stroke="#e0445a" stroke-width="1.5"/>
+    <text x="852" y="438" fill="#e0445a" font-size="11.5" font-weight="700">于是写出来的是</text>
+    <text x="852" y="460" fill="#bdb9a6" font-size="11">"用户先说预算5万，后来改成8万。"</text>
+    <text x="852" y="482" fill="#e0445a" font-size="10.5">三个人的三句话被读成一个人改主意。</text>
+
+    <text x="24" y="540" fill="#d4843a" font-size="12.5" font-weight="700">同一条链路上的两处代价不一样</text>
+    <text x="24" y="562" fill="#8a8675" font-size="11.5">断点二只是没读：字段就在手边的dict上，补一行取值就行，下面没有任何存储要改。</text>
+    <text x="24" y="582" fill="#8a8675" font-size="11.5">断点一是真的没存：要从渠道适配器一路把发信人的稳定id送到TurnRequest，动四个文件的签名和字段。</text>
+    <text x="24" y="602" fill="#8a8675" font-size="11.5">存储层不用动，因为节点metadata是白名单排除法，多一个键自动落盘也自动读回。</text>
+  </svg>
+  </div>
+  <div class="legend">
+    <b>怎么读</b>：上排是站点，下排是这一站手上有哪些身份字段。<b>红框</b>是身份在这一站掉了东西。
+    第五站到第六站之间那条虚线是落盘和读回，中间隔着重启、隔着分支。<br>
+    <b>已核实</b>：第五站到第六站这一段是真的通的。用<code>SessionDB</code>写两条带不同
+    <code>peer_display</code>的user消息再<code>get_branch</code>读回来，两个字段都还在，值也对得上。
+    所以断点二确实只是"没读"。
+  </div>
+
+  <!-- ══════════ 03 peer_id ══════════ -->
+  <h2 id="peerid"><span class="num">03</span>peer_id不是发言人id</h2>
+  <p class="lead">名字容易让人以为<code>TurnRequest.peer_id</code>就是发信人。它是路由目标，也是降级回发时的
+    outbound target。群聊里它等于群id，群里所有人共用一个值。</p>
+
+  <div class="grid2">
+    <div class="oc">
+      <svg viewBox="0 0 560 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="群聊里三个人共用一个peer_id">
+        <text x="16" y="26" fill="#d4843a" font-size="12.5" font-weight="700">Telegram群：三个人，一个peer_id</text>
+        <rect x="16" y="44" width="140" height="34" rx="7" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
+        <text x="86" y="66" fill="#5aad4e" font-size="11" text-anchor="middle">甲user_id=701</text>
+        <rect x="16" y="88" width="140" height="34" rx="7" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.3"/>
+        <text x="86" y="110" fill="#4f8ef7" font-size="11" text-anchor="middle">乙user_id=702</text>
+        <rect x="16" y="132" width="140" height="34" rx="7" fill="#251c33" stroke="#9d6fe0" stroke-width="1.3"/>
+        <text x="86" y="154" fill="#9d6fe0" font-size="11" text-anchor="middle">丙user_id=703</text>
+        <path d="M158 61 C 196 61, 200 100, 234 104" fill="none" stroke="#5aad4e" stroke-width="1.3"/>
+        <path d="M158 105 L 234 105" fill="none" stroke="#4f8ef7" stroke-width="1.3"/>
+        <path d="M158 149 C 196 149, 200 110, 234 106" fill="none" stroke="#9d6fe0" stroke-width="1.3"/>
+        <rect x="238" y="82" width="180" height="46" rx="7" fill="#12110b" stroke="#e0445a" stroke-width="1.5"/>
+        <text x="328" y="102" fill="#e0445a" font-size="11" text-anchor="middle" font-family="Menlo,monospace">peer_id = -1001234</text>
+        <text x="328" y="120" fill="#8a8675" font-size="10.5" text-anchor="middle">三条消息完全相同</text>
+        <text x="16" y="196" fill="#8a8675" font-size="11">用它做身份，三个人在记忆里就是同一个人。</text>
+        <text x="16" y="214" fill="#8a8675" font-size="11">它做路由是对的：回复要发回群里，不是发给某个人。</text>
+      </svg>
+      <div class="d"><b>peer_id有它自己的职责</b>，不能改语义去装发言人。发言人的稳定id需要一个新字段。</div>
+    </div>
+
+    <div class="oc">
+      <svg viewBox="0 0 560 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="显示名会变而id不变">
+        <text x="16" y="26" fill="#d4843a" font-size="12.5" font-weight="700">显示名会变，id不会</text>
+        <text x="16" y="54" fill="#8a8675" font-size="11">三月：</text>
+        <rect x="70" y="38" width="150" height="30" rx="6" fill="#12110b" stroke="#5aad4e" stroke-width="1.2"/>
+        <text x="145" y="58" fill="#5aad4e" font-size="11" text-anchor="middle" font-family="Menlo,monospace">"小王"  701</text>
+        <text x="16" y="98" fill="#8a8675" font-size="11">六月：</text>
+        <rect x="70" y="82" width="150" height="30" rx="6" fill="#12110b" stroke="#5aad4e" stroke-width="1.2"/>
+        <text x="145" y="102" fill="#5aad4e" font-size="11" text-anchor="middle" font-family="Menlo,monospace">"王工"  701</text>
+        <text x="238" y="58" fill="#e0445a" font-size="11">只带显示名：</text>
+        <text x="238" y="76" fill="#8a8675" font-size="11">记忆里出现两个人</text>
+        <text x="238" y="102" fill="#5aad4e" font-size="11">带上id：</text>
+        <text x="238" y="120" fill="#8a8675" font-size="11">同一个人换了个名</text>
+        <line x1="16" y1="140" x2="544" y2="140" stroke="#2e2c20" stroke-width="1"/>
+        <text x="16" y="166" fill="#8a8675" font-size="11">反过来也成立：两个人可以同时叫"小王"。</text>
+        <text x="16" y="186" fill="#8a8675" font-size="11">只带id的话，写入agent写出来的是"701说预算8万"，</text>
+        <text x="16" y="206" fill="#8a8675" font-size="11">主题文件会变成一串数字，检索也搜不到人名。</text>
+      </svg>
+      <div class="d"><b>两个都带</b>。显示名让主题文件读得懂，id让"同一个人"这件事在改名之后仍然成立。</div>
+    </div>
+  </div>
+
+  <div class="tbl">
+  <table>
+    <tr><th>渠道</th><th>peer_id_for返回</th><th>一条会话里的发言人</th><th>发信人稳定id在哪</th></tr>
+    <tr>
+      <td><b>Telegram</b>群，<code>shared</code>（默认）</td>
+      <td><code>chat_id</code></td>
+      <td class="n">多个</td>
+      <td><code>ch_msg.user_id</code>，只进门禁</td>
+    </tr>
+    <tr>
+      <td><b>Telegram</b>群，<code>per-user</code></td>
+      <td><code>chat_id_user_id</code></td>
+      <td class="y">一个</td>
+      <td>拼在peer_id里，需要拆</td>
+    </tr>
+    <tr>
+      <td><b>Telegram</b>私聊</td>
+      <td><code>chat_id</code></td>
+      <td class="y">一个</td>
+      <td><code>ch_msg.user_id</code>，只进门禁</td>
+    </tr>
+    <tr>
+      <td><b>Discord / Slack</b></td>
+      <td><code>chat_id_user_id</code></td>
+      <td class="y">一个</td>
+      <td>拼在peer_id里，需要拆</td>
+    </tr>
+    <tr>
+      <td><b>WeChat</b>私聊</td>
+      <td><code>chat_id</code></td>
+      <td class="y">一个</td>
+      <td><code>ch_msg.user_id</code>，只进门禁</td>
+    </tr>
+    <tr>
+      <td><b>网页/命令行/ TUI</b></td>
+      <td>无</td>
+      <td class="y">一个</td>
+      <td>没有</td>
+    </tr>
+  </table>
+  </div>
+  <div class="note">
+    最后一列说明为什么不能靠拆<code>peer_id</code>拿身份：五种形状里三种根本没把user_id拼进去，
+    另两种拼了但拼法各渠道自己定，拆的规则要跟着<code>peer_id_for</code>的每个实现走。
+    <b>从<code>ChannelMessage.user_id</code>直接传一路更短也更稳</b>，那里本来就是渠道适配器已经解析好的字段。
+  </div>
+
+  <!-- ══════════ 04补上之后 ══════════ -->
+  <h2 id="after"><span class="num">04</span>补上之后一条消息带着什么</h2>
+  <p class="lead">同一条链路，两个断点接上。多出来的只有一个字段<code>sender_id</code>，
+    和<code>SourceRecord</code>上的两个字段。</p>
+
+  <div class="card scroll">
+  <svg viewBox="0 0 1160 440" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="补上身份之后的完整链路">
+    <defs>
+      <marker id="f-gn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5aad4e"/></marker>
+    </defs>
+
+    <text x="24" y="30" fill="#5aad4e" font-size="15" font-weight="700">接上之后：显示名和稳定id全程同行</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">蓝色是新增的字段，其余原样。</text>
+
+    <rect x="24" y="74" width="150" height="72" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.5"/>
+    <text x="99" y="98" fill="#5aad4e" font-size="12" font-weight="700" text-anchor="middle">渠道适配器</text>
+    <text x="36" y="120" fill="#4f8ef7" font-size="10.5" font-family="Menlo,monospace">user_id = "702"</text>
+    <text x="36" y="138" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">user_display = "乙"</text>
+
+    <line x1="176" y1="110" x2="212" y2="110" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#f-gn)"/>
+
+    <rect x="214" y="74" width="176" height="72" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.5"/>
+    <text x="302" y="98" fill="#5aad4e" font-size="12" font-weight="700" text-anchor="middle">dispatch_inbound</text>
+    <text x="226" y="120" fill="#4f8ef7" font-size="10.5" font-family="Menlo,monospace">sender_id="702"新</text>
+    <text x="226" y="138" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">user_display="乙"</text>
+
+    <line x1="392" y1="110" x2="428" y2="110" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#f-gn)"/>
+
+    <rect x="430" y="74" width="176" height="72" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.5"/>
+    <text x="518" y="98" fill="#5aad4e" font-size="12" font-weight="700" text-anchor="middle">TurnRequest</text>
+    <text x="442" y="120" fill="#4f8ef7" font-size="10.5" font-family="Menlo,monospace">sender_id="702"新</text>
+    <text x="442" y="138" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">peer_display="乙"</text>
+
+    <line x1="608" y1="110" x2="644" y2="110" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#f-gn)"/>
+
+    <rect x="646" y="74" width="200" height="72" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.5"/>
+    <text x="746" y="98" fill="#5aad4e" font-size="12" font-weight="700" text-anchor="middle">消息节点metadata</text>
+    <text x="658" y="120" fill="#4f8ef7" font-size="10.5" font-family="Menlo,monospace">sender_id="702"自动落盘</text>
+    <text x="658" y="138" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">peer_display="乙"</text>
+
+    <line x1="848" y1="110" x2="884" y2="110" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#f-gn)"/>
+
+    <rect x="886" y="74" width="250" height="72" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.5"/>
+    <text x="1011" y="98" fill="#5aad4e" font-size="12" font-weight="700" text-anchor="middle">SourceRecord</text>
+    <text x="898" y="120" fill="#4f8ef7" font-size="10.5" font-family="Menlo,monospace">speaker="乙"  speaker_id="702"新</text>
+    <text x="898" y="138" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">role="user"（保留，没被取代）</text>
+
+    <path d="M1011 150 L 1011 176 L 100 176 L 100 202" fill="none" stroke="#5aad4e"
+      stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#f-gn)"/>
+    <text x="580" y="170" fill="#5aad4e" font-size="11" text-anchor="middle">一个label属性，两个出口共用</text>
+
+    <!--出口1: prompt -->
+    <rect x="24" y="210" width="540" height="106" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.5"/>
+    <text x="40" y="234" fill="#5aad4e" font-size="12" font-weight="700">出口一 · 写入agent的prompt</text>
+    <text x="40" y="252" fill="#6b6a63" font-size="10">render_conversation，management/agent.py:20</text>
+    <text x="40" y="276" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">[openprogram/g1/m1] 甲(701):预算定5万</text>
+    <text x="40" y="294" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">[openprogram/g1/m3] 乙(702):预算定8万</text>
+    <text x="40" y="310" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">[openprogram/g1/m5] 丙(703):我同意8万</text>
+
+    <!--出口2: archive -->
+    <rect x="580" y="210" width="556" height="106" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.5"/>
+    <text x="596" y="234" fill="#5aad4e" font-size="12" font-weight="700">出口二 · sources/归档</text>
+    <text x="596" y="252" fill="#6b6a63" font-size="10">archive_source_records，management/source_archive.py:144</text>
+    <text x="596" y="276" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">&lt;!-- source-id:openprogram/g1/m3 --&gt;</text>
+    <text x="596" y="294" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">[2026-08-10T…] 乙(702):预算定8万</text>
+    <text x="596" y="312" fill="#6b6a63" font-size="10">证据脚注指回来的就是这一行，谁说的看得见</text>
+
+    <!--结果-->
+    <rect x="24" y="334" width="1112" height="84" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.6"/>
+    <text x="40" y="358" fill="#5aad4e" font-size="12" font-weight="700">于是写出来的是</text>
+    <text x="40" y="382" fill="#bdb9a6" font-size="11.5">"甲提的预算是5万。乙改成8万，丙表示同意。"</text>
+    <text x="40" y="404" fill="#8a8675" font-size="11">三个人分开，主题文件按人分（topics/people/），关系写进topics/relationship/。记忆仍然只有一份，共用不变。</text>
+  </svg>
+  </div>
+  <div class="legend">
+    <b>标签只有一处逻辑</b>：<code>SourceRecord</code>上一个<code>label</code>属性，prompt和归档各自读它。
+    有身份就是<code>显示名(id)</code>，没有就退回<code>role</code>，assistant一律是<code>assistant</code>。
+    两个出口的格式串本来就是<code>f"…{speaker}: {content}"</code>，槽位不用改。
+  </div>
+
+  <!-- ══════════ 05决定 ══════════ -->
+  <h2 id="decide"><span class="num">05</span>六个设计决定</h2>
+  <p class="lead">每条给出选定的做法和被否掉的做法。绿=选定，红=否掉。</p>
+
+  <div class="dec" style="border-left-color:#5aad4e">
+    <p class="q">A.身份取自哪一层</p>
+    <p class="a">会话级只有一个peer字段，群聊里说话的是好几个人。</p>
+    <div class="opt pick"><span class="tag">选定</span><span class="txt"><b>逐条消息</b>。每条user消息自带发言人，四种会话形状全都成立。</span></div>
+    <div class="opt drop"><span class="tag">否掉</span><span class="txt"><b>会话meta上取一次</b>。Telegram群默认<code>shared</code>，一条会话上只能记住一个人；<code>session_scope: main</code>同理。</span></div>
+  </div>
+
+  <div class="dec" style="border-left-color:#5aad4e">
+    <p class="q">B. SourceRecord带什么</p>
+    <p class="a">显示名会改也会重名，id不变但读不出是谁。</p>
+    <div class="opt pick"><span class="tag">选定</span><span class="txt"><b>两个都带</b>：<code>speaker</code>显示名+ <code>speaker_id</code>稳定id，都默认空字符串。</span></div>
+    <div class="opt drop"><span class="tag">否掉</span><span class="txt"><b>只带id</b>。主题文件写成"702说预算8万"，人名搜不到，读的人也认不出。</span></div>
+    <div class="opt drop"><span class="tag">否掉</span><span class="txt"><b>只带显示名</b>。改名之后同一个人变成两个人，重名的两个人合成一个。</span></div>
+    <div class="opt drop"><span class="tag">否掉</span><span class="txt"><b>把role换成发言人</b>。role还有别的用处（<code>_records</code>靠它过滤非对话行），加两个字段比改一个语义安全。</span></div>
+  </div>
+
+  <div class="dec" style="border-left-color:#5aad4e">
+    <p class="q">C.稳定id怎么从渠道走到dispatcher</p>
+    <p class="a"><code>peer_id</code>已经被路由目标占了，不能挪用。</p>
+    <div class="opt pick"><span class="tag">选定</span><span class="txt"><b>加一个<code>sender_id</code></b>，从<code>ChannelMessage.user_id</code>出发，经<code>dispatch_inbound</code>和<code>TurnRequest</code>到<code>user_msg</code>。存储层不用改，节点metadata是排除法白名单。</span></div>
+    <div class="opt drop"><span class="tag">否掉</span><span class="txt"><b>拆<code>peer_id</code></b>。五种形状里三种压根没把user_id拼进去，拆的规则还得跟着每个<code>peer_id_for</code>实现走。</span></div>
+    <div class="opt drop"><span class="tag">否掉</span><span class="txt"><b>改<code>peer_id</code>的含义</b>。它同时是降级回发的outbound target，群聊里必须是群id。</span></div>
+    <div class="opt drop"><span class="tag">否掉</span><span class="txt"><b>把<code>peer_display</code>改名成<code>sender_display</code></b>。语义确实是发信人显示名，但这个名字散在webui、session store、broadcast十几处，改名的收益不抵风险。</span></div>
+  </div>
+
+  <div class="dec" style="border-left-color:#5aad4e">
+    <p class="q">D. prompt里怎么呈现</p>
+    <p class="a">目标是让写入agent写出"甲提的预算是5万"，而不是"用户说预算5万"。</p>
+    <div class="opt pick"><span class="tag">选定</span><span class="txt"><b>换掉speaker槽位的值，格式不动</b>。<code>render_conversation</code>现在就是<code>[{ref}] {speaker}: {text}</code>，把<code>role</code>换成<code>label</code>。<code>WRITE_MEMORY</code>加一句：一行前面的名字是说这句话的人，把事实归给他。</span></div>
+    <div class="opt drop"><span class="tag">否掉</span><span class="txt"><b>另起一个发言人清单段落</b>。模型要在清单和正文之间来回对，比每行自带名字更容易错。</span></div>
+    <div class="opt drop"><span class="tag">否掉</span><span class="txt"><b>改成JSON或结构化块</b>。整套prompt是纯文本行，为一个字段引入第二种格式不划算。</span></div>
+  </div>
+
+  <div class="dec" style="border-left-color:#5aad4e">
+    <p class="q">E.显示名是外部输入，要不要处理</p>
+    <p class="a">显示名由发信人在平台上自己设，会被直接拼进写入agent的prompt。</p>
+    <div class="opt pick"><span class="tag">选定</span><span class="txt"><b>去掉换行、截断长度</b>。一行一条是<code>render_conversation</code>和归档的格式前提，显示名里的换行会把一条记录劈成两条，让ref对不上内容。</span></div>
+    <div class="opt drop"><span class="tag">否掉</span><span class="txt"><b>不处理</b>。注入风险本身不是新增的（消息正文一样是外部输入），但格式被劈开是实打实的损坏。</span></div>
+    <div class="opt drop"><span class="tag">否掉</span><span class="txt"><b>整套转义</b>。归档文件是给人读的Markdown，转义会让它难读，而id才是可信的那一半。</span></div>
+  </div>
+
+  <div class="dec" style="border-left-color:#5aad4e">
+    <p class="q">F.记忆要不要按人隔离</p>
+    <p class="a">共用一份记忆是产品形态，不是缺陷。</p>
+    <div class="opt pick"><span class="tag">选定</span><span class="txt"><b>不隔离</b>。一份工作区，一套主题文件，所有人共用。身份是记录的一部分，不是访问控制。</span></div>
+    <div class="opt drop"><span class="tag">否掉</span><span class="txt"><b>给记忆加scope或按人分目录</b>。团队机器人的价值就在于一个人告诉它的东西别人也能用上。要独立记忆的人跑自己的实例（<code>openprogram --profile &lt;name&gt;</code>）。</span></div>
+  </div>
+
+  <!-- ══════════ 06单人 ══════════ -->
+  <h2 id="solo"><span class="num">06</span>单人场景的默认值</h2>
+  <p class="lead">没有渠道就没有peer身份。默认值要让这些路径的输出跟今天<b>一模一样</b>，
+    这样这次改动对单人用户是零影响。</p>
+
+  <div class="tbl">
+  <table>
+    <tr><th>入口</th><th>今天写进消息的字段</th><th>speaker / speaker_id</th><th>标签</th></tr>
+    <tr>
+      <td><b>网页</b> <code>ws_actions/chat.py:612</code></td>
+      <td><code>source="web"</code>，无peer字段</td>
+      <td>都是空</td>
+      <td class="y"><code>user</code>，跟今天一致</td>
+    </tr>
+    <tr>
+      <td><b>命令行走dispatcher</b> <code>_cli_chat/handlers.py:361</code></td>
+      <td><code>source="cli"</code>，无peer字段</td>
+      <td>都是空</td>
+      <td class="y"><code>user</code>，跟今天一致</td>
+    </tr>
+    <tr>
+      <td><b>命令行直跑</b> <code>_cli_chat/turn.py:61</code></td>
+      <td><code>source="cli"</code>，<code>peer_display="you"</code></td>
+      <td>speaker="you"，id空</td>
+      <td><code>you</code></td>
+    </tr>
+    <tr>
+      <td><b>私聊渠道</b>（Telegram / WeChat私聊）</td>
+      <td><code>peer_display</code>有值</td>
+      <td>两个都有值</td>
+      <td><code>显示名(id)</code></td>
+    </tr>
+    <tr>
+      <td><b>子agent /合并轮次</b></td>
+      <td><code>source="task_followup"</code> / <code>"merge_turn"</code></td>
+      <td>不适用</td>
+      <td class="y">整条被<code>_records</code>跳过，本来就不是谁说的</td>
+    </tr>
+  </table>
+  </div>
+
+  <div class="note">
+    第三行是唯一一处输出会变的：命令行直跑那条路径今天就往消息上写了<code>peer_display="you"</code>，
+    补上取值之后标签从<code>user</code>变成<code>you</code>。<b>要不要保留这个"you"</b>是个小决定：
+    保留就是"字段有值就用"这条规则的自然结果，去掉则要在<code>_records</code>里为一个字面量开特例。
+    倾向保留。
+  </div>
+
+  <!-- ══════════ 07改动面 ══════════ -->
+  <h2 id="surface"><span class="num">07</span>改动面</h2>
+  <p class="lead">七个文件。上四个是把稳定id送过来，下三个是把身份用起来。存储层、webui、TUI不用动。</p>
+
+  <div class="tbl">
+  <table>
+    <tr><th>文件</th><th>改什么</th><th>规模</th></tr>
+    <tr>
+      <td><code>openprogram/channels/base.py:204</code></td>
+      <td><code>dispatch_inbound</code>调用处多传一个<code>sender_id=ch_msg.user_id</code></td>
+      <td>1行</td>
+    </tr>
+    <tr>
+      <td><code>openprogram/channels/_conversation.py:69</code></td>
+      <td><code>dispatch_inbound</code>签名加参数，第283行的<code>TurnRequest</code>透传</td>
+      <td>2行+文档串</td>
+    </tr>
+    <tr>
+      <td><code>openprogram/agent/dispatcher/types.py:50</code></td>
+      <td><code>TurnRequest</code>加<code>sender_id</code>字段，注释说清它跟<code>peer_id</code>的分工</td>
+      <td>1字段</td>
+    </tr>
+    <tr>
+      <td><code>openprogram/agent/dispatcher/prep.py:101</code></td>
+      <td><code>user_msg</code>多一个键。下游<code>turn_writer.py:63</code>的排除法白名单自动收录，存储层不动</td>
+      <td>1行</td>
+    </tr>
+    <tr>
+      <td><code>openprogram/memory/scriptorium/runtime/state.py:16</code></td>
+      <td><code>SourceRecord</code>加<code>speaker</code> / <code>speaker_id</code>两个字段，加一个<code>label</code>属性</td>
+      <td>2字段+ 1属性</td>
+    </tr>
+    <tr>
+      <td><code>openprogram/memory/scriptorium/writing.py:111</code></td>
+      <td><code>_records()</code>读<code>peer_display</code> / <code>sender_id</code>；第207行<code>turns</code>用<code>label</code>而不是<code>role</code></td>
+      <td>3行</td>
+    </tr>
+    <tr>
+      <td><code>openprogram/memory/scriptorium/management/source_archive.py:144</code></td>
+      <td>归档行用<code>record.label</code>替<code>record.role</code></td>
+      <td>1行</td>
+    </tr>
+    <tr>
+      <td><code>openprogram/memory/scriptorium/prompts/write.py</code></td>
+      <td><code>WRITE_MEMORY</code>加一句：行首的名字是说这句话的人</td>
+      <td>1句</td>
+    </tr>
+  </table>
+  </div>
+
+  <div class="note">
+    <b>存储层为什么不用改</b>：<code>turn_writer.py:63</code>的<code>user_meta</code>是排除法，
+    "除了id / role / content / timestamp / extra / predecessor这六个原生键，其余全进metadata"；
+    读回时<code>_msg_adapter.py:156</code>的<code>base.update(meta)</code>又原样铺回消息dict。
+    多一个键两边都不用配合。这一点已经用真实的<code>SessionDB</code>写读验证过。<br>
+    <b>测试怎么写</b>：一条会话里放两个不同<code>peer_display</code> / <code>sender_id</code>的user消息，
+    断言<code>_records()</code>出来的两条<code>SourceRecord</code>身份可区分、写入prompt里两个名字都出现；
+    另一条断言没有身份时标签退回<code>user</code>。全用假的写入agent，不调真模型。
+  </div>
+
+  <h2><span class="num">08</span>实现状态</h2>
+  <div class="note">
+    <b>这一页描述的是设计，还没有落地。</b>今天跑的是<code>_records()</code>只取<code>role</code>，
+    所有人的话在记忆里都是<code>user</code>。已核实为真的三件事：显示名逐条消息存到了节点上并能读回；
+    发信人稳定id止步于<code>base.py</code>的门禁；两个渲染出口的speaker槽位现成可用。
+    文字方案在<code>docs/reference/design/memory/overview.md</code>的"谁说的"一节。
+  </div>
+
+</div>
+</body>
+</html>
