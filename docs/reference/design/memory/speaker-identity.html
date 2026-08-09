@@ -104,15 +104,15 @@
 <div class="wrap">
 
   <h1>发言人身份：记忆里谁说的</h1>
-  <p class="sub">一个agent可以被好几个人共用，共用同一份记忆工作区。记忆现在把所有人的话都记成"用户说"，
-    谁说的在写入那一步丢掉了。这页分三层：<b style="color:#e8a0aa">我们现在怎么做</b>、
-    <b style="color:#8fd2e0">references里八个框架各自怎么做</b>、<b style="color:#a3d69a">我们计划怎么做</b>。
+  <p class="sub">一个agent可以被好几个人共用，共用同一份记忆工作区。发言人标签现在在渠道那一侧就拼进消息正文，
+    往下每一站原样搬运。这页分三层：<b style="color:#e8a0aa">改之前是什么样</b>、
+    <b style="color:#8fd2e0">references里八个框架各自怎么做</b>、<b style="color:#a3d69a">我们怎么做的</b>。
     第三层是照着第二层重写过的，原方案七个文件，学完之后两个文件。
     正文在<code>docs/reference/design/memory/overview.md</code>，整体机制在<code>memory-architecture.html</code>。</p>
 
   <div class="toc">
     <a class="g1" href="#shape">01 一个会话里有几个人</a>
-    <a class="g1" href="#chain">02 身份走到哪里断了</a>
+    <a class="g1" href="#chain">02 身份原本走到哪里断了</a>
     <a class="g2" href="#coverage">03 八个框架有没有这个功能</a>
     <a class="g2" href="#how">04 两个真做了的框架怎么做</a>
     <a class="g2" href="#diff">05 它们之间的分歧</a>
@@ -123,19 +123,20 @@
   </div>
 
   <!-- ══════════════════════════════════════════════════════════ -->
-  <!-- 层一：我们现在怎么做                                        -->
+  <!-- 层一：改之前是什么样                                        -->
   <!-- ══════════════════════════════════════════════════════════ -->
   <section class="layer now">
     <div class="lhead">
       <span class="lchip">层一</span>
-      <span class="ltitle">我们现在怎么做</span>
+      <span class="ltitle">改之前是什么样</span>
     </div>
-    <p class="lsub">现状，不是设计。发信人的显示名逐条消息存到了消息节点上，稳定id止步于门禁，
-      记忆写入那一步两个都没读。下面两节说清楚这为什么是真问题，以及断在哪一行。</p>
+    <p class="lsub">这一层记的是改动落地之前的样子。发信人的显示名逐条消息存到了消息节点上，稳定id止步于门禁，
+      记忆写入那一步两个都没读。下面两节说清楚这为什么是真问题，以及断在哪一行。
+      第01节的会话形状今天照旧成立，那是这个改动存在的理由。</p>
 
   <div class="grid3">
     <div class="st" style="border-top-color:#5aad4e">
-      <div class="k">已经存在的</div>
+      <div class="k">当时已经有的</div>
       <p>发信人的<b>显示名</b>逐条消息带到了消息节点上：<code>user_display</code>从渠道适配器一路存进
         session store，<code>get_branch</code>读回来还在。</p>
     </div>
@@ -253,9 +254,10 @@
     <code>implementations/telegram.py:55-60</code>，<code>group_sessions</code>默认<code>shared</code>（<code>telegram.py:48</code>）。
   </div>
 
-  <h2 id="chain"><span class="num">02</span>身份走到哪里断了</h2>
-  <p class="lead">一条群消息进来，经过八站到达主题文件。显示名活到了第七站，稳定id死在第二站，
-    两个都在第七站被扔掉。下面这张图每一站标出手上有哪些身份字段。</p>
+  <h2 id="chain"><span class="num">02</span>身份原本走到哪里断了</h2>
+  <p class="lead">一条群消息进来，经过八站到达主题文件。改之前：显示名活到了第七站，稳定id死在第二站，
+    两个都在第七站被扔掉。下面这张图每一站标出手上有哪些身份字段。
+    第七站今天仍然只读<code>role</code>，变的是第二站把身份拼进了正文，正文原样一路走到底。</p>
 
   <div class="card scroll">
   <svg viewBox="0 0 1160 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="身份字段在八站链路上的存活情况">
@@ -582,7 +584,7 @@
   </div>
 
   <h2 id="diff"><span class="num">05</span>它们之间的分歧</h2>
-  <p class="lead">共识只有一条（名字进正文），剩下四处两边选得不一样。这四处正好是我们要自己拿主意的地方。</p>
+  <p class="lead">共识只有一条（名字进正文），剩下四处两边选得不一样。这四处正好是我们自己拿了主意的地方，第08节一条条给出选法。</p>
 
   <div class="tbl">
   <table>
@@ -627,24 +629,24 @@
   </section>
 
   <!-- ══════════════════════════════════════════════════════════ -->
-  <!-- 层三：我们计划怎么做                                        -->
+  <!-- 层三：我们怎么做的                                          -->
   <!-- ══════════════════════════════════════════════════════════ -->
   <section class="layer plan">
     <div class="lhead">
       <span class="lchip">层三</span>
-      <span class="ltitle">我们计划怎么做</span>
+      <span class="ltitle">我们怎么做的</span>
     </div>
     <p class="lsub">按hermes的形状做，标签内容取openclaw的<code>名字 (id)</code>。
       原方案是把身份当结构化字段一路透传，动七个文件；照着改之后只动两个文件，
-      因为身份进了正文，下游全部自动继承。</p>
+      因为身份进了正文，下游全部自动继承。这一层是已经在跑的东西。</p>
 
   <h2 id="plan"><span class="num">06</span>学来的做法：一处前缀</h2>
   <p class="lead">动手的地方是<code>base.py:_dispatch_and_reply</code>。那里同时握着
     <code>ch_msg.user_id</code>和<code>ch_msg.user_display</code>，而且是<code>dispatch_inbound</code>
-    的<b>唯一</b>调用点（全仓只有<code>base.py:204</code>这一处），所有渠道都从这里过。</p>
+    的<b>唯一</b>调用点（全仓只有这一处），所有渠道都从这里过。</p>
 
   <div class="card scroll">
-  <svg viewBox="0 0 1160 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="新方案：一处前缀，下游全部自动继承">
+  <svg viewBox="0 0 1160 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="落地的做法：一处前缀，下游全部自动继承">
     <defs>
       <marker id="p-gn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5aad4e"/></marker>
     </defs>
@@ -654,9 +656,9 @@
 
     <rect x="24" y="74" width="230" height="88" rx="9" fill="#241f10" stroke="#d4843a" stroke-width="2"/>
     <text x="139" y="98" fill="#d4843a" font-size="12.5" font-weight="700" text-anchor="middle">1渠道适配器 · 唯一改动点</text>
-    <text x="36" y="120" fill="#bdb9a6" font-size="10" font-family="Menlo,monospace">label = "乙 (702)"</text>
-    <text x="36" y="138" fill="#bdb9a6" font-size="10" font-family="Menlo,monospace">user_text = f"[{label}] " + text</text>
-    <text x="36" y="155" fill="#6b6a63" font-size="9.5">base.py，3行</text>
+    <text x="36" y="120" fill="#bdb9a6" font-size="10" font-family="Menlo,monospace">speaker_prefix("702","乙")</text>
+    <text x="36" y="138" fill="#bdb9a6" font-size="10" font-family="Menlo,monospace">→ "[乙 (702)] " + user_text</text>
+    <text x="36" y="155" fill="#6b6a63" font-size="9.5">base.py，一个函数加一行调用</text>
 
     <line x1="256" y1="118" x2="290" y2="118" stroke="#5aad4e" stroke-width="1.5" marker-end="url(#p-gn)"/>
 
@@ -720,7 +722,7 @@
   </div>
 
   <h2 id="surface"><span class="num">07</span>七个文件变两个文件</h2>
-  <p class="lead">左边是学之前的方案，右边是学之后的。划掉的六处全是"把身份当结构化字段透传"才需要的中转站，
+  <p class="lead">左边是学之前的方案，右边是落地的这一版。划掉的六处全是"把身份当结构化字段透传"才需要的中转站，
     留下的两处一处换了改法、一处原样保留。</p>
 
   <div class="card scroll">
@@ -775,14 +777,14 @@
 
     <!-- 右：新方案 -->
     <rect x="590" y="72" width="546" height="370" rx="10" fill="#111710" stroke="#5aad4e" stroke-width="1.8"/>
-    <text x="610" y="98" fill="#5aad4e" font-size="13" font-weight="700">新方案 · 身份进正文（学hermes/openclaw）</text>
+    <text x="610" y="98" fill="#5aad4e" font-size="13" font-weight="700">在跑的这一版 · 身份进正文（学hermes/openclaw）</text>
     <text x="610" y="118" fill="#8a8675" font-size="11">2个文件，0个新字段，0个新属性，0处下游取值改写</text>
 
     <rect x="610" y="140" width="506" height="102" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.5"/>
     <text x="624" y="164" fill="#5aad4e" font-size="11.5" font-weight="700" font-family="Menlo,monospace">openprogram/channels/base.py</text>
-    <text x="624" y="186" fill="#bdb9a6" font-size="10.5">调 dispatch_inbound 之前给 user_text 加一行前缀。</text>
-    <text x="624" y="204" fill="#bdb9a6" font-size="10.5">名字压成一行并截断，防止把一条记录劈成两条。</text>
-    <text x="624" y="228" fill="#6b6a63" font-size="10.5" font-family="Menlo,monospace">3行 · 唯一调用点，所有渠道共用</text>
+    <text x="624" y="186" fill="#bdb9a6" font-size="10.5">调 dispatch_inbound 之前给 user_text 加前缀。</text>
+    <text x="624" y="204" fill="#bdb9a6" font-size="10.5">名字压成一行、截到64字符、方括号换圆括号。</text>
+    <text x="624" y="228" fill="#6b6a63" font-size="10.5" font-family="Menlo,monospace">speaker_prefix() · 唯一调用点，所有渠道共用</text>
 
     <rect x="610" y="256" width="506" height="86" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.5"/>
     <text x="624" y="280" fill="#5aad4e" font-size="11.5" font-weight="700" font-family="Menlo,monospace">scriptorium/prompts/write.py</text>
@@ -800,13 +802,15 @@
     <b>网页、命令行、TUI三条路径零改动</b>：它们不经过<code>channels/base.py</code>，
     <code>user_text</code>不带前缀，写入agent看到的跟今天一模一样。
     这不是靠默认值兜住的，是因为改动点根本不在它们那条路上。<br>
-    <b>测试怎么写</b>：一条会话里放两个不同<code>user_display</code>的入站消息，
-    断言两条<code>SourceRecord</code>的<code>content</code>各自带着不同的名字前缀、写入prompt里两个名字都出现；
-    另一条断言显示名里的换行被压掉。全用假的写入agent，不调真模型。
+    <b>测试</b>：<code>tests/unit/test_channels_base_inbound.py</code>里三条。一条把两个不同发信人的入站消息
+    过一遍入站路径，断言各自的<code>user_text</code>带着自己的标签；一条把换行、方括号、超长名字喂进显示名，
+    断言标签仍是一行、方括号变圆括号、名字截到<code>SENDER_NAME_MAX_CHARS</code>，且没有身份可用时不加前缀；
+    一条断言全仓只有<code>channels/base.py</code>调<code>speaker_prefix</code>，网页和命令行那两条路径因此逐字不变。
+    全程假的<code>dispatch_inbound</code>，不调真模型。
   </div>
 
   <h2 id="decide"><span class="num">08</span>抄了什么，没抄什么</h2>
-  <p class="lead">五条。抄=照参考实现改，保留=原方案本来就对，不抄=参考实现有但我们不要。</p>
+  <p class="lead">六条。抄=照参考实现改，保留=原方案本来就对，不抄=参考实现有但我们不要。</p>
 
   <div class="dec" style="border-left-color:#2db3d5">
     <p class="q">A.身份放正文，还是放结构化字段</p>
@@ -822,22 +826,29 @@
     <div class="opt drop"><span class="tag">不抄</span><span class="txt"><b>hermes只带显示名</b>。改名之后同一个人在记忆里变成两个人，重名的两个人合成一个。</span></div>
   </div>
 
+  <div class="dec" style="border-left-color:#e0445a">
+    <p class="q">C.私聊要不要也加前缀</p>
+    <p class="a">两个参考实现在这一点上一致：私聊不加，理由是一对一时会话本身已经指名道姓。</p>
+    <div class="opt drop"><span class="tag">不抄</span><span class="txt"><b>私聊也加</b>。我们的私聊不保证只有一个发言人：agent配成<code>session_scope: main</code>时，所有私聊peer汇进同一条会话（<code>_session_routing.py</code>），那条会话里说话的是好几个人，而<code>chat_type</code>全是<code>direct</code>。scope是<code>_conversation.py</code>拿到agent之后才算出来的，<code>base.py</code>这一站根本不知道，所以"按私聊跳过"在这里既不安全也判断不了。</span></div>
+    <div class="opt pick"><span class="tag">保留</span><span class="txt"><b>无条件加，代价可数</b>。一人一条会话的Discord/Slack私聊里，前缀是每轮多出来的十几个token，换来的是一个不用维护的判定分支。真拿不到身份（<code>user_id</code>和<code>user_display</code>都空）时不加，前缀退回空串。</span></div>
+  </div>
+
   <div class="dec" style="border-left-color:#5aad4e">
-    <p class="q">C.显示名是外部输入，要不要处理</p>
+    <p class="q">D.显示名是外部输入，要不要处理</p>
     <p class="a">显示名由发信人在平台上自己设，会被直接拼进写入agent的prompt。</p>
-    <div class="opt pick"><span class="tag">保留</span><span class="txt"><b>去掉换行、截断长度</b>。一行一条是<code>render_conversation</code>和归档的格式前提，显示名里的换行会把一条记录劈成两条，让ref对不上内容。openclaw同样做（<code>sanitizeEnvelopeHeaderPart</code>）。</span></div>
+    <div class="opt pick"><span class="tag">保留</span><span class="txt"><b>去掉换行、截到64字符、方括号换成圆括号</b>。一行一条是<code>render_conversation</code>和归档的格式前提，显示名里的换行会把一条记录劈成两条，让ref对不上内容；显示名里的方括号能在正文里伪造出第二个发言人前缀，把话安到别人头上。openclaw三样都做（<code>sanitizeEnvelopeHeaderPart</code>，注释写的就是"header部分不能有能力打断这个方括号前缀"）。</span></div>
     <div class="opt drop"><span class="tag">否掉</span><span class="txt"><b>整套转义</b>。归档文件是给人读的Markdown，转义会让它难读，而id才是可信的那一半。</span></div>
   </div>
 
   <div class="dec" style="border-left-color:#e0445a">
-    <p class="q">D.要不要把前缀从显示和历史里剥掉</p>
+    <p class="q">E.要不要把前缀从显示和历史里剥掉</p>
     <p class="a">openclaw为此写了<code>strip-inbound-meta.ts</code>，317行。</p>
     <div class="opt drop"><span class="tag">不抄</span><span class="txt"><b>不剥</b>。那317行是为openclaw那块当轮JSON元数据付的，它的正文前缀同样不剥。hermes一行都没写。代价是webui和TUI里用户自己那条消息前面会多一个方括号名字，可接受。</span></div>
     <div class="opt drop"><span class="tag">不抄</span><span class="txt"><b>整块JSON元数据</b>（<code>inbound-meta.ts:436-541</code>，106行）。它装的是回复链、转发来源、群成员、位置这些openclaw专有的渠道上下文，跟"谁说的"是两件事。</span></div>
   </div>
 
   <div class="dec" style="border-left-color:#5aad4e">
-    <p class="q">E.记忆要不要按人隔离</p>
+    <p class="q">F.记忆要不要按人隔离</p>
     <p class="a">共用一份记忆是产品形态，不是缺陷。</p>
     <div class="opt pick"><span class="tag">保留</span><span class="txt"><b>不隔离</b>。一份工作区，一套主题文件，所有人共用。身份是记录的一部分，不是访问控制。两个参考实现的记忆层也都不按人分区。</span></div>
     <div class="opt copy"><span class="tag">抄</span><span class="txt"><b>人物写成主题页</b>。openclaw的<code>memory-wiki</code>里，人是一张带<code>canonicalId</code>+<code>aliases</code>+<code>handles</code>的markdown页（<code>markdown.ts:42-56</code>、<code>compile.ts:424-445</code>），由模型自己维护，不是管道里的字段。我们的<code>topics/people/</code>就是同一个东西，跨渠道同一人的合并也归它管。</span></div>
@@ -846,11 +857,15 @@
 
   <h2 id="status"><span class="num">09</span>实现状态</h2>
   <div class="note">
-    <b>这一页第三层描述的是设计，还没有落地。</b>今天跑的是<code>_records()</code>只取<code>role</code>，
-    所有人的话在记忆里都是<code>user</code>。已核实为真的四件事：显示名逐条消息存到了节点上并能读回；
-    发信人稳定id止步于<code>base.py</code>的门禁；两个渲染出口的格式串不用改；
-    <code>dispatch_inbound</code>全仓只有<code>base.py:204</code>一个调用点，所以一处前缀覆盖所有渠道。
-    文字方案在<code>docs/reference/design/memory/overview.md</code>的"谁说的"一节。
+    <b>这一页第三层已经在跑。</b>入站消息的正文由<code>channels/base.py</code>的
+    <code>speaker_prefix()</code>加上<code>[显示名 (id)] </code>，写入prompt里加了一句告诉模型这个名字是谁说的。
+    下游一个字段都没加：<code>_records()</code>仍然只取<code>role</code>，
+    <code>SourceRecord</code>、<code>render_conversation</code>、<code>source_archive</code>一行未动，
+    身份跟着<code>content</code>自己走到了主题文件。<br>
+    网页、命令行、TUI不经过<code>channels/base.py</code>，输出跟改之前逐字一致，
+    <code>test_channels_base_inbound.py</code>里有一条测试盯着这一点。
+    文字说明在<code>docs/reference/design/memory/overview.md</code>的"谁说的"一节，
+    产品侧在<code>docs/integrations/channels.md</code>。
   </div>
 
   </section>

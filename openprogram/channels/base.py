@@ -29,6 +29,10 @@ from typing import Optional
 #: 占大量 token.
 QUOTED_MAX_CHARS = 500
 
+#: 发言人标签里显示名的截断上限. 显示名是发信人自己在平台上填的, 长度
+#: 由平台管, 这里只挡住病态长度不让它盖过消息本身.
+SENDER_NAME_MAX_CHARS = 64
+
 
 def _quoted_block(quoted: str) -> str:
     """被引用消息 → agent 可见的统一 quoted 块 (markdown 引用格式)."""
@@ -37,6 +41,41 @@ def _quoted_block(quoted: str) -> str:
         q = q[:QUOTED_MAX_CHARS] + "…"
     lines = "\n".join("> " + ln for ln in q.splitlines())
     return f"[quoted message]\n{lines}"
+
+
+def _one_line(value: str) -> str:
+    """身份字段压成一行, 方括号换成圆括号.
+
+    显示名是发信人在平台上自己设的任意文本. 换行会把记忆归档里的一条
+    记录劈成两条, 让证据脚注指向的行对不上内容; 方括号能在正文里伪造
+    出第二个发言人前缀. 两样都在这里消掉 — openclaw 的
+    ``sanitizeEnvelopeHeaderPart`` 同理.
+    """
+    s = value.replace("[", "(").replace("]", ")")
+    s = " ".join(s.split())
+    if len(s) > SENDER_NAME_MAX_CHARS:
+        s = s[:SENDER_NAME_MAX_CHARS] + "…"
+    return s
+
+
+def speaker_prefix(user_id: str, user_display: str) -> str:
+    """入站正文的发言人前缀 ``"[显示名 (id)] "``, 无身份可用时是空串.
+
+    一个群 (或 ``session_scope: main`` 的 agent) 把好几个人放进同一条
+    会话, 而消息本身只有 ``role: user``. 身份走正文而不走结构化字段:
+    正文往下每一站原样搬运, session store、分支、写入 prompt、sources
+    归档都不用为它加字段.
+
+    显示名读得出是谁, 但会改也会重名; id 不变但读不出是谁, 所以两个
+    都带上.
+    """
+    name = _one_line(user_display)
+    uid = _one_line(user_id)
+    if name and uid and name != uid:
+        label = f"{name} ({uid})"
+    else:
+        label = name or uid
+    return f"[{label}] " if label else ""
 
 
 @dataclass(frozen=True)
@@ -199,6 +238,9 @@ class Channel(abc.ABC):
                 user_text = f"{user_text}\n\n{joined}" if user_text else joined
         if ch_msg.quoted_text:
             user_text = _quoted_block(ch_msg.quoted_text) + "\n\n" + user_text
+
+        # ---- 谁说的 → 正文最前面, 下游一个字段都不加 --------------------
+        user_text = speaker_prefix(ch_msg.user_id, ch_msg.user_display) + user_text
 
         from openprogram.channels._conversation import dispatch_inbound
         reply_text = dispatch_inbound(

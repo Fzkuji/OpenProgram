@@ -197,5 +197,5 @@ def test_allowed_sender_reaches_dispatch(monkeypatch) -> None:
     _access.approve_user("faketg", "acct1", "7")
     ch = _GateChannel()
     ch._dispatch_and_reply(_msg())
-    assert seen["user_text"] == "hi"
+    assert seen["user_text"] == "[Bob (7)] hi"
     assert ch.sent == []

@@ -135,6 +135,19 @@ openprogram --profile alice
 
 默认还按账号隔离（`session_scope: per-account-channel-peer`）。agent 可以放宽（`per-channel-peer`、`per-peer` 或单一 `main` 会话），也可以按天轮换会话（`session_daily_reset: "HH:MM"`）或按空闲时间轮换（`session_idle_minutes`）。
 
+### 谁说的
+
+好几个人共用一通对话时（Telegram 群聊默认的 `shared`，或者 agent 配成 `session_scope: main`），每条进来的消息前面都带着发信人的名字：
+
+```
+[Ada (7391)] 预算定 5 万
+[Bo (8022)] 改成 8 万
+```
+
+显示名是平台上看到的那个名字，数字是发信人的平台 id：id 在改名之后不变，也能把两个取了同一个名字的人分开。agent 把这个标签当消息的一部分读，所以它回的是对的那个人，记忆也把每条事实记在说这话的人名下，而不是统统记成一个匿名"用户"。显示名是它的主人在平台上随手填的任何东西，所以拼进去之前会压成一行、截到 64 字符、方括号换成圆括号。
+
+标签只加在聊天渠道的消息上，而且每一条都加，私聊也加，因为 `session_scope: main` 会把私聊 peer 也放进同一通会话。网页、命令行、TUI 的对话不受影响。标签是消息正文的一部分，所以网页记录里回看自己那条消息时也能看到它。
+
 ### Telegram 群聊行为
 
 两个账号级设置把 Telegram 的群聊语义变成显式配置（改完重启 worker 生效）：

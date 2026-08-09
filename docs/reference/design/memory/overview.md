@@ -132,18 +132,27 @@ A display name reads naturally in a topic file and is what a search for
 a person finds, and people rename themselves and share names with each
 other. A platform id survives a rename and separates two people called
 Ada, and a file full of numbers says nothing to whoever reads it. The
-display name is trimmed to one line on the way in, because one record
-per line is what both renderers assume and a display name is whatever
-its owner typed into the platform.
+display name is trimmed to one line and capped at 64 characters on the
+way in, and its square brackets become round ones. One record per line
+is what both renderers assume, and a display name is whatever its owner
+typed into the platform: a newline in it splits one archived record into
+two and leaves the evidence footnote pointing at a line that is not the
+content, and a bracket in it forges a second speaker prefix.
 
 The prefix is added in `channels/base.py`, which holds the sender's id
 and display name side by side and is the only caller of
-`dispatch_inbound`, so one place covers every channel. `peer_id` stays
-what it is, the routing target and the address a reply is sent back to,
+`dispatch_inbound`, so one place covers every channel. It goes on every
+channel turn rather than only on group turns: an agent set to
+`session_scope: main` puts direct peers in one session too, and the
+scope is resolved further down, so a direct message is not reliably one
+speaker and `base.py` is not where that is known. `peer_id` stays what
+it is, the routing target and the address a reply is sent back to,
 which in a group is the group. Web, CLI and TUI turns never pass
 through that path and are untouched. The write prompt says that the
-name in brackets at the head of a line is the person who said it, so a
-fact lands under that person rather than under "the user".
+name in brackets at the head of a user message is the person who said
+it, so a fact lands under that person rather than under "the user".
+What the reference frameworks do here, and what following them saved,
+is drawn out in [`speaker-identity.html`](speaker-identity.html).
 
 Identity is what memory records, and it partitions nothing. One
 workspace and one set of topic files, shared by everyone the account
@@ -446,25 +455,9 @@ strips the inner block and leaves an empty one.
 
 ## Appendix: Implementation status
 
-Everything above runs today except "Who said it" and "The write
-cursor".
+Everything above runs today except "The write cursor".
 
-"Who said it" is designed and not built. `_records` in
-`scriptorium/writing.py` reads a row's `role` and nothing else, so every
-person on a shared session is recorded as `user`. Half the identity
-already arrives: `peer_display` is written onto each user row by
-`dispatcher/prep.py` and comes back from `get_branch`, verified against
-a real `SessionDB`. The sender's own platform id stops earlier, at the
-access gate in `channels/base.py`, and reaches no further; `peer_id` on
-the turn is the routing target, which in a group is the group. The
-design lands in two files, a prefix in `channels/base.py` and a
-sentence in the write prompt, because a label inside the message text
-needs no field of its own anywhere downstream. What the reference
-frameworks do, and what that buys, is drawn out in
-[`speaker-identity.html`](speaker-identity.html).
-
-What runs in place of "The write cursor" is a position cursor:
-`runtime.json` holds
+What runs in place of it is a position cursor: `runtime.json` holds
 `cursors: {thread: {message_id, ordinal}}`, `runtime/online.py` claims
 a record only when its ordinal is higher than the stored one, and
 `scriptorium/writing.py` builds that ordinal from the row's index in

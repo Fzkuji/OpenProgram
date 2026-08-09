@@ -38,7 +38,7 @@ LLM Context
 |------|------|
 | [`overview.md`](overview.md) | The two-tier architecture (entity/virtual + provenance recall) and the linear summary chain running today in `openprogram/memory/` |
 | [`memory-architecture.html`](memory-architecture.html) | Visualization: the two write entry points, the five write steps, the staged transaction, the id-set cursor, which of the nine provider hooks are wired, and the failure contract |
-| [`speaker-identity.html`](speaker-identity.html) | Visualization in three layers: how several people share one session and where speaker identity breaks today, what all eight reference frameworks do about it, and the two-file design that follows from them (designed, not built) |
+| [`speaker-identity.html`](speaker-identity.html) | Visualization in three layers: how several people share one session and where speaker identity used to break, what all eight reference frameworks do about it, and the two-file change that follows from them and now runs |
 | [`git-as-entity-memory.md`](git-as-entity-memory.md) | The entity layer's git substrate (Session-Git + Project-Git) |
 | [`entity-memory.md`](entity-memory.md) | Entity memory: Session-Git + Project-Git, organized by lifecycle |
 | [`virtual-memory.md`](virtual-memory.md) | Abstract memory: Timeline + Graph + Core, organized by type × lifecycle |
