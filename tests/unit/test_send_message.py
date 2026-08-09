@@ -203,6 +203,69 @@ def test_existing_missing_head_errors(parent_turn):
     assert "needs the branch head" in out
 
 
+# --- Existing-target normalization: SID:HEAD names the branch, not a
+# fork point — delivery snaps onto the branch's current tip. ---
+
+def test_existing_stale_head_lands_on_current_tip(parent_turn):
+    """The target branch ran more turns since the sender saw its head:
+    delivering to the old head continues from the CURRENT tip instead of
+    forking a new branch off history."""
+    s = parent_turn
+    # Advance the a0 branch: its tip moves a0 → a2.
+    s.append_message("p1", {"id": "u2", "role": "user", "content": "later",
+                            "timestamp": 0, "predecessor": "a0"})
+    s.append_message("p1", {"id": "a2", "role": "assistant", "content": "later reply",
+                            "timestamp": 0, "predecessor": "u2"})
+    s.commit_turn("p1", "advance")
+    branches_before = len(s.list_branches("p1"))
+
+    out = _send_message_impl("more", to="p1:a0", wait=True)  # stale head
+    assert "(from=a2)" in out  # fake_run continued from the CURRENT tip
+    # No new branch: the reply chained after the tip, tip count unchanged.
+    assert len(s.list_branches("p1")) == branches_before
+    tips = {b["head_msg_id"] for b in s.list_branches("p1")}
+    assert "head_x" in tips and "a2" not in tips
+
+
+def test_existing_shared_ancestor_errors_with_candidates(parent_turn):
+    """A node that several branches share is an ambiguous address — the
+    error lists each candidate branch's current tip."""
+    s = parent_turn
+    # Two branches forking off a0: tips b1 and b2, a0/u0 shared ancestors.
+    s.append_message("p1", {"id": "b1", "role": "assistant", "content": "x",
+                            "timestamp": 0, "predecessor": "a0"})
+    s.append_message("p1", {"id": "b2", "role": "assistant", "content": "y",
+                            "timestamp": 0, "predecessor": "a0"})
+    s.commit_turn("p1", "split")
+    out = _send_message_impl("hi", to="p1:u0", wait=True)
+    assert "shared ancestor" in out
+    assert "p1:b1" in out and "p1:b2" in out
+
+
+def test_existing_unknown_node_errors(parent_turn):
+    out = _send_message_impl("hi", to="p1:nosuchnode", wait=True)
+    assert "not found" in out and "list_branches" in out
+
+
+def test_fork_off_node_is_unchanged_by_normalization(parent_turn):
+    """to="new:SID:MSG" is the explicit fork syntax — it uses the given
+    node verbatim, never snapped to a tip."""
+    s = parent_turn
+    s.append_message("p1", {"id": "u2", "role": "user", "content": "later",
+                            "timestamp": 0, "predecessor": "a0"})
+    s.append_message("p1", {"id": "a2", "role": "assistant", "content": "later reply",
+                            "timestamp": 0, "predecessor": "u2"})
+    s.commit_turn("p1", "advance")
+    got, unsub = _collect_events()
+    try:
+        out = _send_message_impl("fork here", to="new:p1:a0", wait=True)
+    finally:
+        unsub()
+    assert "(from=a0)" in out  # forked off the named node, not the tip
+    sent = next(e for e in got if e.type == "branch.message_sent")
+    assert sent.payload["is_new"] is True
+
+
 # --- C5: sources synthesis ---
 
 def test_sources_prepended_to_delivery(parent_turn):

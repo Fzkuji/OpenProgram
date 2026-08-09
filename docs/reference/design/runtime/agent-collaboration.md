@@ -82,7 +82,7 @@ send_message(
 |---|---|
 | `"new"` | Start a fresh ROOT branch in the current session's DAG (a new entry point in the same graph, not a new session), deliver message, let it run |
 | `"new:sid:msg_id"` | Fork a new branch from a node, deliver message, let it run |
-| `"sid:head"` | Deliver message to an existing branch |
+| `"sid:head"` | Deliver message to an existing branch. The node names the branch, not a fork point: delivery always lands on the branch's current tip, so a stale head (the branch ran more turns since) is still a valid address and never forks off history. A node that is a shared ancestor of several branches is ambiguous — the error lists the candidates (name + `sid:current-tip`). To fork off a specific node, use `"new:sid:msg_id"`. |
 | `"<branch name>"` | Deliver to a named branch. Tried when the value matches none of the syntaxes above: exact name match wins, a unique prefix is accepted next; several matches return an error listing the candidates (name + `sid:head`), zero matches point to `list_branches`. `list_branches` marks each branch's name so the model can address by name directly. |
 
 Every delivery to an **existing** branch (direct or queued, see §5.4) is

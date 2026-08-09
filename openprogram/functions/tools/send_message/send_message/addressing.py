@@ -22,6 +22,49 @@ def _parse_to(to: str) -> tuple[str, str | None, str | None]:
     return "existing", sid or None, (head or None)
 
 
+def _normalize_existing_target(
+    session_id: str, node_id: str
+) -> tuple[str, object]:
+    """Snap an existing-branch target node onto its branch's CURRENT tip.
+
+    ``to="SID:HEAD"`` names a BRANCH (via any node on it), not a fork
+    point — the branch may have run more turns since the sender saw its
+    head, so delivering onto the given node verbatim would fork a new
+    branch off history instead of continuing the conversation. Explicit
+    forking has its own syntax (``to="new:SID:MSG"``).
+
+    Returns one of:
+      ("ok", tip_id)                      — deliver onto this tip
+      ("ambiguous", [(name, tip_id), …])  — node is a shared ancestor of
+                                            several branches
+      ("none", None)                      — node is on no branch of the
+                                            session (or doesn't exist)
+    """
+    from openprogram.agent.session_db import default_db
+    db = default_db()
+    tips = db.list_branches(session_id) or []
+    # Fast path: the node already IS a branch tip.
+    for t in tips:
+        if t.get("head_msg_id") == node_id:
+            return "ok", node_id
+    containing: list[tuple[str, str]] = []
+    for t in tips:
+        tip = t.get("head_msg_id")
+        if not tip:
+            continue
+        try:
+            chain = db.get_branch(session_id, tip) or []
+        except Exception:
+            continue
+        if any(m.get("id") == node_id for m in chain):
+            containing.append((t.get("name") or "", tip))
+    if len(containing) == 1:
+        return "ok", containing[0][1]
+    if len(containing) > 1:
+        return "ambiguous", containing
+    return "none", None
+
+
 def _resolve_branch_by_name(name: str) -> tuple[str, object]:
     """Resolve a branch NAME into a (session_id, head_id) target.
 

@@ -6,7 +6,12 @@ its reply auto-returns to the sender. Three usages via ``to``:
   * ``"new"``            — start a fresh ROOT branch in the CURRENT session's
                            DAG, deliver the message, run it. (spawn)
   * ``"new:sid:msg_id"`` — fork a new branch off a node, deliver, run.
-  * ``"sid:head"``       — deliver to an existing branch.
+  * ``"sid:head"``       — deliver to an existing branch. The node names
+                           the BRANCH, not a fork point: delivery always
+                           lands on the branch's current tip, so a stale
+                           head (the branch ran more turns since) is
+                           still a valid address. To fork off a specific
+                           node, use ``"new:sid:msg_id"``.
 
 Async by default (``wait=False``): returns immediately with a delivery id;
 the target runs in the background and its reply comes back to the sender
@@ -25,7 +30,11 @@ from __future__ import annotations
 from openprogram.functions._runtime import function
 from openprogram.functions.tools.send_message.shared import _emit_branch_ui
 
-from .addressing import _parse_to, _resolve_branch_by_name
+from .addressing import (
+    _normalize_existing_target,
+    _parse_to,
+    _resolve_branch_by_name,
+)
 from .delivery import (
     _clip_result,
     _gather_sources,
@@ -145,6 +154,30 @@ def _send_message_impl(
                     "neither a session:head target nor a branch name (see "
                     "list_branches / list_sessions)."
                 )
+        # SID:HEAD names a BRANCH, not a fork point: snap the given node
+        # onto that branch's CURRENT tip so the delivery continues the
+        # conversation instead of forking off a stale head. Runs before
+        # the self-target guard so an old head of the sender's own chain
+        # normalizes to its tip and the guard still catches the loop.
+        status, norm = _normalize_existing_target(run_session, branch_from)
+        if status == "ok":
+            branch_from = norm
+        elif status == "ambiguous":
+            lines = "\n".join(
+                f"  «{n or '(unnamed)'}» → {run_session}:{h}" for n, h in norm  # type: ignore[union-attr]
+            )
+            return (
+                f"[send_message error] node {branch_from!r} is a shared "
+                "ancestor of several branches — address the branch you "
+                "mean by its current tip (see list_branches):\n"
+                f"{lines}"
+            )
+        else:
+            return (
+                f"[send_message error] target {to!r} not found — the node "
+                f"is on no branch of session {run_session} (see "
+                "list_branches for ready targets)."
+            )
         # Self-target guard: messaging your own current turn is a direct loop.
         if run_session == sid and branch_from == aid:
             return (
