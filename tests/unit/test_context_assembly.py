@@ -73,8 +73,9 @@ def _capturing_stream(sink: list):
         yield EventTextStart(content_index=0, partial=_build_partial(""))
         yield EventTextDelta(content_index=0, delta="ok",
                              partial=_build_partial("ok"))
-        yield EventTextEnd(content_index=0, partial=_build_partial("ok"))
-        yield EventDone(message=_final("ok"))
+        yield EventTextEnd(content_index=0, content="ok",
+                           partial=_build_partial("ok"))
+        yield EventDone(reason="stop", message=_final("ok"))
     return _fn
 
 
@@ -96,8 +97,8 @@ def no_memory_prefetch(monkeypatch: pytest.MonkeyPatch):
     """Default: memory recalls nothing, so tests that don't care about
     prefetch see a clean prompt. The prefetch tests patch it themselves."""
     class _Provider:
-        def prefetch(self, _text, **_kw): return ""
-        def system_prompt_block(self): return ""
+        def search(self, _text, **_kw): return ""
+        def system_prompt(self): return ""
     monkeypatch.setattr("openprogram.memory.get_provider", lambda: _Provider())
 
 
@@ -118,10 +119,17 @@ def _run_turn(text: str, sink: list, *, session_id="s1", tools=None):
                     cancel_event=cancel_event, stream_fn=stream)
 
     with patch.object(D, "_run_loop_blocking", _wrapped):
-        return D.process_user_turn(D.TurnRequest(
+        res = D.process_user_turn(D.TurnRequest(
             session_id=session_id, user_text=text, agent_id="main",
             source="tui", tools_override=tools,
         ))
+    # The turn has to actually finish. An event the provider schema
+    # rejects makes every assertion below read a half-built turn that
+    # died in the error path — and still pass, because the wire context
+    # was captured before the stream blew up.
+    assert not res.failed, res.error
+    assert res.final_text == "ok"
+    return res
 
 
 # A. One assembler
@@ -293,10 +301,10 @@ def fake_prefetch(monkeypatch: pytest.MonkeyPatch):
     """Memory that recalls a different block for every query — the shape
     that used to poison the system prompt on every single turn."""
     class _Provider:
-        def prefetch(self, text):
+        def search(self, text):
             return f"<memory-context>\nrecalled for: {text}\n</memory-context>"
-        def system_prompt_block(self): return ""
-        def sync_turn(self, *a, **kw): return None
+        def system_prompt(self): return ""
+        def write(self, *a, **kw): return None
     monkeypatch.setattr("openprogram.memory.get_provider", lambda: _Provider())
 
 

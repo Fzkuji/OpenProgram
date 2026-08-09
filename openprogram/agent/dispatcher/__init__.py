@@ -102,26 +102,29 @@ from openprogram.agent.internals._approval import (
 )
 
 
-def _memory_sync_turn(
-    session_id: str, user_text: str, assistant_text: str,
-) -> None:
+def _memory_write(session_id: str) -> None:
     """Offer the finished turn to memory (design/memory §"When writing
     happens": one call per turn, after it is persisted).
 
     Usually cheap — the provider counts what this session has left
-    unwritten and does nothing until a batch is worth a model call.
-    Without the session id it can do nothing at all: that is what
-    identifies the thread whose turns are being counted. Best-effort,
-    memory never takes a turn down with it."""
+    unwritten and does nothing until a batch is worth a model call. The
+    turn's text is not passed: the provider reads the conversation back
+    out of the session store, which is durable and ordered. Without the
+    session id it can do nothing at all: that is what identifies the
+    thread whose turns are being counted. Best-effort, memory never
+    takes a turn down with it."""
     if not session_id:
         return
     try:
         from openprogram.memory import get_provider
-        get_provider().sync_turn(
-            user_text or "", assistant_text or "", session_id=session_id,
-        )
+        left = get_provider().write(session_id=session_id)
     except Exception:
-        _log.debug("memory sync failed for %s", session_id, exc_info=True)
+        _log.debug("memory write failed for %s", session_id, exc_info=True)
+        return
+    if left is not None:
+        # Nothing to do about it here — the next turn comes back around,
+        # and the idle watcher is what finally has to finish the session.
+        _log.debug("memory write incomplete for %s (%s)", session_id, left.reason)
 
 
 def _drain_send_message_inbox(session_id: str) -> None:
@@ -472,7 +475,7 @@ def _process_turn_once(
     #     counts a turn whose assistant row is still the empty
     #     placeholder — the reply would only reach the threshold check
     #     one turn late.
-    _memory_sync_turn(req.session_id, req.user_text, final_text)
+    _memory_write(req.session_id)
 
     # 6. Turn-finalization bookkeeping — head/token update, context-
     #    commit backfill, usage feedback, auto-title, git + project

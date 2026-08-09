@@ -221,7 +221,7 @@ render_range['subcalls']        in-frame 节点最多保留多少（默认 -1 �
 [2] 工作区文件      AGENTS.md  → SOUL.md  → USER.md  （按顺序读三个，空的跳过）
 [3] 内联 prompt    agent.system_prompt  （用户在 agents show 里编辑的）
 [4] Skill 索引     "Skills available on demand:" + 一行一个启用的 skill 的 name+一句话描述（前 20 条）
-[5] Memory 块      BuiltinMemoryProvider().system_prompt_block()  （持久化 memory 快照）
+[5] Memory 块      get_provider().system_prompt()  （持久化 memory 快照）
 ```
 
 **为什么是这个顺序**：越靠前的越稳定，prefix cache 命中率越高。身份和工作区文件是几乎不变的；inline prompt 偶尔改；skill 列表会随启用/禁用变；memory 每天都在长。把不变的放前面，整段 system prompt 的 cache 命中率最高。

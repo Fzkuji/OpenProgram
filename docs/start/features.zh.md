@@ -86,25 +86,49 @@ docstring 与 `content` 的拆分、一份基于规则的校验清单，
 因此在不同分支上并发的两个 agent 不会争抢同一份源码树。
 其他框架通过复制消息来分叉对话；我们分叉的是底层的仓库。
 
-## 分层记忆
+## 自己写自己的记忆
 
-记忆不是一个大杂烩。`~/.openprogram/memory/` 下有几个各司其职的
-部分，各有自己的时间尺度和用途：
+记忆只在一个地方，`~/.openprogram/memory/`，而且全部是可以用任何
+编辑器打开的Markdown。
 
-| 部分 | 是什么 |
+| 路径 | 放什么 |
 |---|---|
-| `journal/` | 按时间排列的笔记，每天一个 Markdown 文件 |
-| `wiki/` | 持久知识 —— Obsidian 风格的主题页面库，外加 LLM 维护的 `index.md`、`log.md` 时间线和 `reflections.md` |
-| `core.md` | 极小（<2 KB）的常驻块，注入每个 agent 的 system prompt |
-| `index.sqlite` | 覆盖 wiki + journal 的全文（FTS5）索引，供回忆检索 |
-| `.state/` | 簿记 —— 回忆命中计数、sleep 阶段状态 |
+| `core.md` | 一小段常驻内容，注入每个会话的system prompt |
+| `topics/` | 一个主题一个文件，比如`topics/people/dave.md`。每个段落带一个ID，并标注这条事实的出处 |
+| `sources/` | 那些出处指向的对话原文。只追加，不改写 |
+| `timeline/` | 同一批事实按日期排列，从`topics/`重建 |
+| `.scriptorium/` | 内部状态：每个对话读到哪了，以及避免两个写入者相撞的锁。它不是记忆 |
 
-整合以「sleep」扫描的形式运行（light → deep → REM），把 journal
-条目合并进 wiki 并重写 `core.md`；`openprogram memory sleep`
-可以立即跑一次。检查或手动编辑可以走 CLI
-（`openprogram memory status / recall / show / edit`）或 web UI 的
-Memory 页面。之所以拆分，是因为「永久记住这个」和
-「昨天发生了什么」需要不同的存储策略。
+不会每轮都写。说完的对话先攒着，攒到够写一次了才跑一趟，由这一趟
+判断每条事实属于哪个主题、写进那个文件。一条事实在哪儿说的，不决定
+它存在哪儿，所以关于Dave的细节最终都落在`topics/people/dave.md`，
+无论它是分几次对话学到的。安静超过半小时的对话不管攒了多少都会被
+写掉，短对话不会一直等一个永远凑不齐的批次。
+
+每次写入要么整体落地，要么完全不落地。引用了没提供的出处、指向了
+不存在的段落、或者破坏了主题格式的改动会被整体拒绝，工作区一个字节
+都不变。两个写入者不会交错：后台写入发现工作区被占用时，等一秒就
+放弃，不会让你等，下一轮再来。
+
+写入只会让文件越来越长，所以每天凌晨3点还有第二趟：把已经涵盖多个
+主题的文件拆开，合并说同一件事的段落，修复链接。
+`openprogram memory sleep`可以现在就跑这一趟，不等到今晚。
+
+用CLI查看和手动修：
+
+```bash
+openprogram memory status                        # 在哪、有什么、当前版本号
+openprogram memory recall xelatex thesis         # 搜索并打印匹配的段落
+openprogram memory show topics/people/dave.md
+openprogram memory edit topics/people/dave.md    # 用$EDITOR打开，校验通过才落地
+openprogram memory export                        # 把整个工作区打成tar.gz
+```
+
+Web UI的Memory页面读的是同一个工作区。agent通过`memory_search`、
+`memory_grep`、`memory_get`、`memory_browse`、`memory_update`、
+`memory_status`访问它。没有「保存这条」这样的工具：记录对话本来就在
+后台发生，`memory_update`是用来订正已有内容、或者写下你当场要求
+记住的东西的。
 
 ## Mini-DAG — 右栏中的执行视图
 

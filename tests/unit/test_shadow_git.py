@@ -1,6 +1,7 @@
 """ShadowGitStore — independent git history for agent file changes."""
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -186,3 +187,35 @@ def test_diff_can_be_limited_to_one_path(store: ShadowGitStore, project_dir: Pat
     only_a = store.diff(sha1, sha2, "a.py")
     assert "a.py" in only_a
     assert "b.py" not in only_a
+
+
+def test_same_size_edit_with_stale_mtime_still_commits(
+        store: ShadowGitStore, project_dir: Path):
+    """A same-size edit whose mtime predates the index must not be lost.
+
+    ``seed_baseline`` / ``commit_turn`` used to mirror files with
+    ``shutil.copy2``, which replays the SOURCE's mtime onto the shadow
+    file. Git's index caches (size, mtime) at one-second resolution, so
+    a two-byte edit landing on an mtime git had already recorded clean
+    was skipped by ``git add`` — nothing staged, ``commit_turn``
+    returned None, and the turn's whole diff vanished. Backdating both
+    files makes the collision deterministic instead of a 1-in-N flake.
+    """
+    import os
+
+    f = project_dir / "flag.py"
+    backup = project_dir / "flag.py.bak"
+    stale = time.time() - 10
+
+    f.write_text("x\n")
+    backup.write_text("x\n")
+    os.utime(backup, (stale, stale))
+
+    assert store.seed_baseline([(str(f), str(backup))])
+
+    f.write_text("y\n")            # same size as the baseline
+    os.utime(f, (stale, stale))    # ... and older than the index
+
+    sha = store.commit_turn("t_same_size", [str(f)])
+    assert sha, "same-size edit was dropped from the shadow repo"
+    assert "+y" in store.diff(f"{sha}~1", sha)

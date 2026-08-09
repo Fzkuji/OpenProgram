@@ -25,6 +25,23 @@ logger = logging.getLogger(__name__)
 _TIMEOUT = 5.0
 
 
+def _mirror(src: str, dst: Path) -> None:
+    """Copy ``src`` into the shadow work tree at ``dst``.
+
+    ``shutil.copy`` (content + mode), never ``copy2``: copy2 also
+    replays the SOURCE's mtime onto the shadow file, and git's index
+    caches (size, mtime) with **one-second** resolution. A same-size
+    edit whose replayed mtime falls in a second git already recorded as
+    clean is invisible to ``git add`` — the turn then stages nothing and
+    ``commit_turn`` returns None, so the whole turn's diff silently
+    disappears from the file-review UI. Letting the copy carry the
+    current time keeps the shadow file's mtime at or after the index's
+    own, which is exactly the condition that makes git re-hash instead
+    of trusting the stat cache.
+    """
+    shutil.copy(src, str(dst))
+
+
 def _shadow_root() -> Path:
     from openprogram.paths import get_state_dir
     return Path(get_state_dir()) / "shadow-git"
@@ -108,7 +125,7 @@ class ShadowGitStore:
                     continue
                 shadow_path = self.repo_path / rel
                 shadow_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(str(src), str(shadow_path))
+                _mirror(str(src), shadow_path)
                 self._git("add", str(rel))
                 copied += 1
 
@@ -153,7 +170,7 @@ class ShadowGitStore:
                 if shadow_path.exists() or not Path(backup_src).is_file():
                     continue
                 shadow_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(backup_src, str(shadow_path))
+                _mirror(backup_src, shadow_path)
                 self._git("add", str(rel))
                 staged += 1
             if staged == 0:

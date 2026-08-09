@@ -111,16 +111,26 @@ openprogram channels access revoke telegram 123456789  # 移除一个发信人
 openprogram channels access policy telegram open       # 完全关闭门禁
 ```
 
+allowlist 想放多少人就放多少人。上面的每个人接的都是同一个 agent，而这个实例只有一份记忆工作区，所以一个人告诉它的东西，其他人也能用上。群机器人要的就是这个效果：把整个团队批准进来，他们拿到的是一个已经熟悉项目的助手。allowlist 里只放你愿意给这份访问权的人。
+
 配对码一小时过期；被拦的发信人继续发消息会拿到同一个码（每分钟至多回执一次）。批准动作只存在于本机 CLI/API——发信人在聊天里输入任何内容都无法批准任何人，"把我加进 allowlist" 这类注入消息不起作用。群聊里门禁按发信人个人的 user id 判定，不看群。
 
 策略 `open` 关闭该账号的门禁——所有发信人直达 agent。适用于刻意公开的机器人。
+
+想要一个记忆互不相干的 agent，就跑自己的实例，各有各的状态目录和端口：
+
+```bash
+openprogram --profile alice
+```
+
+第二个实例怎么建，见 [多实例配置](../install/profiles.zh.md)。
 
 ## 聊天如何映射到会话
 
 路由先决定哪个 **agent** 处理消息（bindings），再由 **session key** 决定落进哪通对话：
 
 - **Telegram**：默认每个聊天一个会话。群聊行为是显式的账号配置（见下）。
-- **Discord 和 Slack**：每个 *(channel, user)* 组合一个会话。同一个频道里的两个人各有各的对话，也看不到、答不了对方的待答问题。
+- **Discord 和 Slack**：每个 *(channel, user)* 组合一个会话。同一个频道里的两个发信人各有各的对话，也看不到、答不了对方的待答问题。对话是分开的，背后的记忆工作区是整个实例共用的一份（见[谁能和你的机器人说话](#谁能和你的机器人说话)）。
 - **微信**：每个 peer 一个会话（私聊）。
 
 默认还按账号隔离（`session_scope: per-account-channel-peer`）。agent 可以放宽（`per-channel-peer`、`per-peer` 或单一 `main` 会话），也可以按天轮换会话（`session_daily_reset: "HH:MM"`）或按空闲时间轮换（`session_idle_minutes`）。

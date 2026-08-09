@@ -84,7 +84,11 @@ def _dispatch_access_verb(args, parser) -> None:
         print(f"Approved {uid} on {args.channel}:{args.id}")
         return
     if verb == "allow":
-        _access.approve_user(args.channel, args.id, args.user_id)
+        try:
+            _access.approve_user(args.channel, args.id, args.user_id)
+        except ValueError as e:
+            print(f"[error] {e}")
+            sys.exit(1)
         print(f"Allowlisted {args.user_id} on {args.channel}:{args.id}")
         return
     if verb == "revoke":

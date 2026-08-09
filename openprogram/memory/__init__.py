@@ -6,7 +6,7 @@ ships with it, in ``scriptorium/``.
 
     provider.py          the contract — MemoryProvider
     store.py             where memory lives on disk
-    scheduler.py         when maintenance runs (nightly)
+    scheduler.py         when reorganizing runs (nightly)
     session_watcher.py   when a session goes idle
     scriptorium/         the shipped implementation
 

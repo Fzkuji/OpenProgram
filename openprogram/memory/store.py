@@ -46,7 +46,7 @@ def state_dir() -> Path:
     A file that changed on every poll would otherwise look like a
     concurrent write to anything holding a revision.
     """
-    from .workspace_layout import runtime_dir
+    from .scriptorium.workspace_layout import runtime_dir
 
     path = runtime_dir(root())
     path.mkdir(parents=True, exist_ok=True)

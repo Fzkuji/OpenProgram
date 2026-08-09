@@ -195,6 +195,13 @@ def build_branches_payload(session_id: str | None) -> dict:
             graph = build_session_graph(session_id, active_head)
             leaves = db.list_branches(session_id)
             for row in leaves:
+                # An archived branch is retired from the agent list
+                # (agent-collaboration.md §2.6). The panel is the same
+                # list in visual form, so it drops them too — same
+                # filter list_agents applies. They stay in the History
+                # graph below, which is the view that shows what exists.
+                if row.get("archived"):
+                    continue
                 mid = row["head_msg_id"]
                 name = row.get("name")
                 if not name:

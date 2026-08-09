@@ -684,8 +684,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_med = memory_sub.add_parser("edit",
         help="Open a memory file in $EDITOR; the edit lands only if it validates.")
     p_med.add_argument("path", help="Path of the memory file to open")
-    memory_sub.add_parser("sleep",
+    p_msleep = memory_sub.add_parser("sleep",
         help="Reorganise topic files now, instead of waiting for tonight.")
+    p_msleep.add_argument("--model", default=None,
+        help="Model to reorganise with (default: whatever your own CLI uses)")
     p_mexp = memory_sub.add_parser("export",
         help="Tar+gzip the entire memory dir to a path.")
     p_mexp.add_argument("--out", default=None,
@@ -811,7 +813,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_chaccess = channels_sub.add_parser("access",
         help="Inbound sender access control: allowlist + pairing codes. "
              "Unknown senders get a pairing code instead of driving the "
-             "agent; approve them here (never from the chat itself).")
+             "agent; approve them here (never from the chat itself). An "
+             "account takes any number of approved senders — they share one "
+             "agent and one memory, which records who said what.")
     p_chaccess_sub = p_chaccess.add_subparsers(dest="access_verb",
                                                metavar="verb")
     p_cha_list = p_chaccess_sub.add_parser("list",
@@ -1349,9 +1353,12 @@ def main():
         if verb == "edit":
             sys.exit(_memory_edit(_mstore.ensure(), args.path))
         if verb == "sleep":
-            from openprogram.memory.scriptorium.writing import sweep
+            from openprogram.memory.scriptorium.writing import reorganize
             import json as _json
-            print(_json.dumps(sweep(), indent=2, ensure_ascii=False))
+            print(_json.dumps(
+                reorganize(model=getattr(args, "model", None)),
+                indent=2, ensure_ascii=False,
+            ))
             sys.exit(0)
         if verb == "export":
             import datetime as _dt

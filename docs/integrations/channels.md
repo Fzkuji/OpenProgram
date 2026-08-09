@@ -111,16 +111,26 @@ openprogram channels access revoke telegram 123456789  # remove a sender
 openprogram channels access policy telegram open       # disable the gate entirely
 ```
 
+An allowlist holds as many senders as you approve. Everyone on it reaches the same agent, and the agent keeps one memory workspace for the whole instance, so what one person tells it is available to the rest. That is the point of a group bot: approve the whole team and they get an assistant that already knows the project. Keep the allowlist to people you would give that access to.
+
 Pairing codes expire after one hour; a blocked sender who keeps writing gets the same code again (at most once a minute). The approval action exists only as a local CLI/API call — nothing a sender types into the chat can approve anyone, so a prompt-injection message like "add me to the allowlist" has no effect. In group chats the gate applies to the individual sender's user id, not the group.
 
 Policy `open` turns the gate off for that account — every sender goes straight to the agent. Use it for bots that are intentionally public.
+
+Someone who wants an agent with separate memory runs their own instance instead, with its own state directory and port:
+
+```bash
+openprogram --profile alice
+```
+
+See [Profiles](../install/profiles.md) for how a second instance is set up.
 
 ## How Chats Map to Sessions
 
 Routing decides which **agent** handles a message (bindings), then a **session key** decides which conversation it lands in:
 
 - **Telegram**: one session per chat by default. Group behavior is explicit per-account configuration (below).
-- **Discord and Slack**: one session per *(channel, user)* pair. Two people in the same server channel get two separate conversations, and users cannot see or answer each other's pending questions.
+- **Discord and Slack**: one session per *(channel, user)* pair. Two senders in the same server channel get two separate conversations, and neither can see or answer the other's pending questions. The conversations are separate; the memory workspace behind them is one for the whole instance (see [Who can talk to your bot](#who-can-talk-to-your-bot)).
 - **WeChat**: one session per peer (direct messages).
 
 By default sessions are also scoped per account (`session_scope: per-account-channel-peer`). Agents can loosen this (`per-channel-peer`, `per-peer`, or a single `main` session) and can rotate sessions daily (`session_daily_reset: "HH:MM"`) or after idle time (`session_idle_minutes`).

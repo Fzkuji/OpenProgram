@@ -87,7 +87,7 @@ def prepare_turn(
     if req.user_text:
         try:
             from openprogram.memory import get_provider
-            memory_prefetch = get_provider().prefetch(req.user_text) or ""
+            memory_prefetch = get_provider().search(req.user_text) or ""
         except Exception:
             memory_prefetch = ""
     user_msg: dict[str, Any] = {
@@ -140,12 +140,20 @@ def prepare_turn(
         user_msg["extra"] = json.dumps({"attachments": manifest},
                                          default=str)
     # Ensure ROOT node exists (session DAG root). Idempotent.
+    #
+    # ``advance_head=False``: seeding the graph root is not a turn
+    # extending the conversation, so it must not move head — the head
+    # policy belongs to the TurnWriter alone (context/compaction.md §5).
+    # With the shim's default the seed set head to "ROOT", which an
+    # ordinary turn then overwrote milliseconds later and nobody
+    # noticed; a session whose FIRST turn is a spawn turn writes
+    # nothing head-advancing after it, so head stayed parked on ROOT.
     _ROOT_ID = "ROOT"
     try:
         from openprogram.context.nodes import Call as _RCall, ROLE_USER as _RU
         from openprogram.store import GraphStoreShim as _GShim0
         if not db.message_exists(req.session_id, _ROOT_ID):
-            _GShim0(db, req.session_id).append(_RCall(
+            _GShim0(db, req.session_id, advance_head=False).append(_RCall(
                 id=_ROOT_ID, created_at=time.time(), role=_RU,
                 output="", metadata={"display": "root"},
             ))

@@ -374,7 +374,7 @@ Same backend and sessions as the UIs (`~/.openprogram/`) — a `--print` run or 
 | **Deep work** | `deep_work(task, level)` runs an autonomous plan → execute → evaluate → revise loop until the output meets the chosen quality bar. State persists to disk. |
 | **Functions that author functions** | New / fixed `@agentic_function`s are written by the agent itself via ordinary file-editing tools, guided by the `agentic-programming` skill. No dedicated `create()` / `fix()` calls. |
 | **Conversation as a git DAG** | Sessions are commits + branches + merges, with the right sidebar exposing the operations. File-touching branches run in isolated git worktrees. |
-| **Layered memory** | A layered store under `~/.openprogram/memory/` — `journal/` (daily notes), `wiki/` (long-lived pages), `core.md` (always-loaded profile), `index.sqlite` (recall index). The agent picks the layer. |
+| **Memory that writes itself** | Markdown under `~/.openprogram/memory/`: `core.md` (always loaded), `topics/` (one file per subject, every paragraph citing its source), `sources/` (the conversations those citations point at). Conversations are folded into topics in the background, and every write lands whole or not at all. |
 | **Mini-DAG execution view** | The right rail draws every node + edge of the active session and scrolls with the chat. |
 | **Multi-agent + multi-channel** | Every row tagged with its producer agent; channel layer wires external transports (Telegram, Discord, Slack, WeChat). |
 | **Session distill** | `/distill` turns a finished session into a reusable skill or `@agentic_function` — the next run starts from the procedure instead of the blank page ([guide](docs/capabilities/distill.md)). |

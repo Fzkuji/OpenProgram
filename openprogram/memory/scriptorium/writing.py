@@ -19,6 +19,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from ..provider import WriteIncomplete
 from .management import organize_topics
 from .management.agent import _run_agent
 from .management.api import render_writer_task
@@ -170,8 +171,7 @@ def write_session(
     """Write a session's unwritten turns. True when something was written.
 
     Returns False without calling a model when the session holds nothing
-    new, when the batch is below the threshold, or when another writer
-    holds the workspace.
+    new, or when the batch is below the threshold. Both are ordinary.
     """
     from .. import store
 
@@ -213,38 +213,25 @@ def write_session(
     def organizer(space: Any) -> None:
         organize_topics(space.memory_dir, agent=agent)
 
-    try:
-        # Short wait: a chat session writing right now is ordinary, and
-        # the next turn brings this back around. Nothing should queue
-        # behind background maintenance.
-        with workspace_write_lock(root, timeout_s=1.0):
-            return runtime.process(
-                pending,
-                writer,
-                local_manager=organizer,
-                global_manager=organizer,
-                force=force,
-            )
-    except TransactionError as exc:
-        if exc.code == "CONCURRENT_UPDATE":
-            logger.debug("memory busy; leaving this batch for the next turn")
-            return False
-        raise
+    # Short wait: a chat session writing right now is ordinary, and the
+    # next turn brings this back around. The busy workspace raises
+    # rather than becoming a bare False, because a caller that cannot
+    # tell "not enough to write yet" from "somebody else holds the
+    # lock" has nothing truthful to report about either.
+    with workspace_write_lock(root, timeout_s=1.0):
+        return runtime.process(
+            pending,
+            writer,
+            local_manager=organizer,
+            global_manager=organizer,
+            force=force,
+        )
 
 
 def _branch(session_id: str) -> list[dict[str, Any]]:
     from openprogram.agent.session_db import default_db
 
     return default_db().get_branch(session_id) or []
-
-
-def record_turn(session_id: str, *, token_threshold: int) -> bool:
-    """Called after a finished turn. Writes only when enough has gathered."""
-    if not session_id:
-        return False
-    return write_session(
-        session_id, _branch(session_id), token_threshold=token_threshold
-    )
 
 
 def _pending(
@@ -261,40 +248,51 @@ def _pending(
     ).pending(records)
 
 
-def flush(
+def write(
     session_id: str,
     messages: list[dict[str, Any]] | None = None,
     *,
     token_threshold: int,
-) -> bool:
-    """Write what a session has left. True when none of it is left.
+    force: bool = False,
+) -> WriteIncomplete | None:
+    """Fold a session's conversation into memory. Nothing back on success.
 
-    ``force`` gets it written however little there is: the threshold
-    keeps short exchanges from each costing a call, and once a session
-    is over there is no later batch to join. The threshold still bounds
-    one call's worth, so a day-long session takes several passes —
-    hence the loop. Stopping after the first pass would strand the rest
-    for good, because the caller marks the session done on the way out.
+    Unforced, this is the after-every-turn call: one pass, which writes
+    only if the session has crossed the threshold. Having written
+    nothing because there is not yet enough is the ordinary outcome and
+    not something to report.
 
-    False means part of the backlog is still unwritten and the caller
-    should come back to it.
+    Forced, it is the session-boundary call, and it gets written however
+    little there is: the threshold keeps short exchanges from each
+    costing a call, and once a session is over there is no later batch
+    to join. The threshold still bounds one call's worth, so a day-long
+    session takes several passes — hence the loop. Stopping after the
+    first pass would strand the rest for good, because the caller marks
+    the session done on the way out.
+
+    A ``WriteIncomplete`` means turns are still unwritten. Whatever
+    ``write_session`` raises travels up to the provider, which is where
+    a transaction code becomes retryable or not.
     """
     if not session_id:
-        return False
+        return WriteIncomplete("no session id", retryable=False)
     rows = messages if messages is not None else _branch(session_id)
+    if not force:
+        write_session(session_id, rows, token_threshold=token_threshold)
+        return None
     while _pending(session_id, rows):
         if not write_session(
             session_id, rows,
             token_threshold=token_threshold, force=True,
         ):
-            # No progress: another writer holds the workspace, or the
-            # batch was refused. Report it rather than claim a write.
-            return False
-    return True
+            # Forced, with turns still pending and nothing raised: the
+            # batch reached no file and said nothing about why.
+            return WriteIncomplete("the writer made no progress")
+    return None
 
 
-def sweep(*, model: str | None = None) -> dict[str, Any]:
-    """Reorganise every topic file. Called by the nightly scheduler.
+def reorganize(*, model: str | None = None) -> dict[str, Any]:
+    """Rewrite every topic file. Called by the nightly scheduler.
 
     Writing only ever makes files longer; nothing shortens them. Left
     alone a workspace becomes one enormous file per subject with its

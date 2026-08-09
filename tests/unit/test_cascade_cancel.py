@@ -150,6 +150,50 @@ def test_parent_cancel_stops_running_child(store_fixture, fake_worker,
     assert cancel_seen.is_set()
 
 
+def test_cancel_request_does_not_resurrect_a_finished_task(
+        store_fixture, fake_worker):
+    """The cancel-request stamp must not blind-write a stale snapshot.
+
+    ``_cancel_single`` reads the task, then stamps ``cancel_requested_at``
+    on it. The worker it signalled two lines earlier can reach its own
+    terminal write inside that window; a blind ``save_task`` of the stale
+    snapshot rewrote ``status: running`` over the worker's ``cancelled``
+    and pinned the task non-terminal forever. Forcing the stale read
+    makes the race deterministic — it is otherwise a rare interleaving
+    that only shows up as an occasional ``running != cancelled``.
+    """
+    import openprogram.agent.task.runner as runner_mod
+    from openprogram.agent.task import get_runner, TaskStatus
+    from openprogram.agent.task.store import (
+        load_task, save_task, update_task_status,
+    )
+    from openprogram.agent.task.types import Task
+
+    # Build the runner FIRST: its startup reconcile errors any
+    # pre-existing non-terminal task.
+    runner = get_runner()
+    save_task("p1", Task(id="t_resurrect", parent_session_id="p1",
+                         prompt="x", agent_id="main",
+                         status=TaskStatus.RUNNING))
+    stale = load_task("p1", "t_resurrect")
+    # The worker wins the race and writes its terminal status.
+    update_task_status("p1", "t_resurrect", TaskStatus.CANCELLED)
+
+    # Plain setattr, not the monkeypatch fixture: undoing it has to be
+    # scoped to this one call, and monkeypatch.undo() would also drop
+    # store_fixture's / fake_worker's patches.
+    original = runner_mod._store_load
+    runner_mod._store_load = (
+        lambda sid, tid: stale if tid == "t_resurrect" else original(sid, tid)
+    )
+    try:
+        runner._cancel_single("t_resurrect")
+    finally:
+        runner_mod._store_load = original
+
+    assert load_task("p1", "t_resurrect").status == TaskStatus.CANCELLED
+
+
 def test_grandchild_stops_too(store_fixture, fake_worker, monkeypatch):
     """Recursion: parent → child → grandchild, all cancelled from the root."""
     monkeypatch.setenv("OPENPROGRAM_TASK_WORKERS", "1")

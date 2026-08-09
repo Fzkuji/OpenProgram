@@ -76,6 +76,40 @@ def test_head_id_advances_on_dag(dag_db: DagSessionDB):
     assert sess["head_id"] == msgs[-1]["id"]
 
 
+def test_first_turn_spawn_leaves_head_off_root(dag_db: DagSessionDB):
+    """A session whose FIRST turn is a spawn turn never parks head on ROOT.
+
+    Spawn turns are head-neutral (context/compaction.md §5): branch root,
+    placeholder, reply and finalize all run with ``advance_head=False``.
+    The ROOT node the turn-prep step seeds is the one write left, so
+    seeding it through a head-advancing shim made "ROOT" the last value
+    written and the session head stayed there for good. Ordinary sessions
+    hid it because their first turn overwrites head milliseconds later.
+    """
+    req = D.TurnRequest(
+        session_id="s-dag-spawn",
+        agent_id="claude",
+        user_text="go",
+        source="agent_spawn",
+        branch_from=None,
+        # Cross-session spawn: the caller lives in another session's
+        # graph, so this session has no turn of its own yet.
+        spawn_caller="other-session-reply",
+        advance_head=False,
+    )
+    with __import__("unittest.mock", fromlist=["patch"]).patch.object(
+        D, "_run_loop_blocking", side_effect=_stub_loop("done")
+    ):
+        D.process_user_turn(req, on_event=lambda _e: None)
+
+    # The spawn really ran — its branch root is on the graph.
+    roots = [m for m in dag_db.get_messages("s-dag-spawn")
+             if m.get("content") == "go"]
+    assert roots, "spawn branch root was never written"
+
+    assert (dag_db.get_session("s-dag-spawn") or {}).get("head_id") != "ROOT"
+
+
 def test_history_passed_to_loop_on_dag(dag_db: DagSessionDB):
     # Round 1
     with __import__("unittest.mock", fromlist=["patch"]).patch.object(

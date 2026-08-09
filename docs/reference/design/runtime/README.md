@@ -15,3 +15,4 @@ Agent execution runtime — the run loop, worktrees, async tasks, streaming/resu
 - [`session/`](session/) — the session subsystem: data model, storage, naming, listing, lifecycle, broadcast
 - [`operations/streaming-resume.md`](operations/streaming-resume.md)
 - [`operations/user-input-requests.md`](operations/user-input-requests.md) — pause a running function to ask the user (`runtime.ask`/`confirm`), question registry + WS/REST protocol + subprocess bridge
+- [`sandbox.md`](sandbox.md) — the process isolation layer: the boundary on both platforms, where the switch is lost, which execution points it covers, repair order ([rendered](sandbox-architecture.html))

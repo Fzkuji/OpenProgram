@@ -149,7 +149,11 @@ export function MemoryPage() {
       setSelectedTopic(null);
       fetchTopics();
     } else {
-      alert(text("Delete failed", "删除失败"));
+      // A refused delete says why (a block another topic still links to,
+      // for one), so show the reason instead of swallowing it — same as
+      // the PUT path above.
+      const detail = await r.json().catch(() => ({}));
+      alert(detail.error || text("Delete failed", "删除失败"));
     }
   }
 

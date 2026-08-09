@@ -28,6 +28,12 @@ policy:
   * ``pairing`` — 默认. 未知发信人首次来信生成配对码并回执说明; 机主
     approve 后放行. 配对码 1 小时过期, 过期后下一条消息刷新.
   * ``open``    — 不设防, 任何发信人直接进 agent (机主显式选择).
+
+多人共用: allowlist 放多少人都行, 一个群里的每个人都可以批准. 他们共
+用同一个 agent 和同一份记忆工作区 (``<state>/memory/``), 记忆按发言人
+记录谁说了什么 —— 每条 user 消息带 ``peer_display`` 和 ``sender_id``,
+一路带到 ``memory/scriptorium`` 的 ``SourceRecord``. 门禁判定的是"这
+个人能不能进", 不是"能进几个人".
 """
 from __future__ import annotations
 
@@ -116,9 +122,7 @@ def check_inbound(
         return False, None
     with _lock:
         data = _load(channel, account_id)
-        if data["policy"] == "open":
-            return True, None
-        if user_id in data["allowlist"]:
+        if data["policy"] == "open" or user_id in data["allowlist"]:
             return True, None
 
         now = time.time()
@@ -146,7 +150,7 @@ def check_inbound(
         f"Your pairing code: {row['code']}\n"
         "Ask the owner to approve you on their machine:\n"
         f"  openprogram channels access approve {channel} {row['code']}"
-        + (f" --id {account_id}" if account_id != "default" else "")
+        + _id_flag(account_id)
     )
 
 
@@ -154,12 +158,20 @@ def _new_code() -> str:
     return "".join(secrets.choice(_CODE_ALPHABET) for _ in range(_CODE_LENGTH))
 
 
+def _id_flag(account_id: str) -> str:
+    """``--id <account>`` 后缀, 默认账号留空 — 回执里的命令能直接抄走."""
+    return "" if account_id == "default" else f" --id {account_id}"
+
+
 # ---------------------------------------------------------------------------
 # 本机管理面 (CLI / webui — 永远不由 channel 消息触发)
 # ---------------------------------------------------------------------------
 
 def approve(channel: str, account_id: str, code: str) -> Optional[str]:
-    """按配对码放行. 返回放行的 user_id, 码不存在/过期返回 None."""
+    """按配对码放行. 返回放行的 user_id, 码不存在/过期返回 None.
+
+    allowlist 里已经有别人不影响 — 一个账号可以放行任意多个发信人.
+    """
     code = (code or "").strip().upper()
     if not code:
         return None
@@ -181,7 +193,10 @@ def approve(channel: str, account_id: str, code: str) -> Optional[str]:
 def approve_user(channel: str, account_id: str, user_id: str,
                  display: str = "") -> None:
     """直接把 platform user id 加进 allowlist (机主已知 id 时不必等
-    对方来信刷配对码)."""
+    对方来信刷配对码).
+
+    allowlist 里已经有别人不影响 — 一个账号可以放行任意多个发信人.
+    """
     user_id = str(user_id).strip()
     if not user_id:
         raise ValueError("empty user id")

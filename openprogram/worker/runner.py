@@ -238,10 +238,10 @@ def run_foreground() -> int:
 
     # Memory subsystem — nightly reorganisation + session-end writer.
     try:
-        from openprogram.memory.scheduler import start_in_worker as _start_sleep
-        from openprogram.memory.session_watcher import start_in_worker as _start_watcher
-        _start_sleep()
-        _start_watcher()
+        from openprogram.memory.scheduler import start_nightly_reorganizer
+        from openprogram.memory.session_watcher import start_idle_session_watcher
+        start_nightly_reorganizer()
+        start_idle_session_watcher()
         print("[worker] memory: nightly reorganisation + session-end writer running")
     except Exception as exc:  # noqa: BLE001
         print(f"[worker] memory subsystem failed to start: {exc}")
