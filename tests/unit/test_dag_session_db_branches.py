@@ -233,3 +233,69 @@ def test_bump_branch_turns_coexists_with_name(db):
     meta = db.get_branch_meta("s1", "n1")
     assert meta["name"] == "y"
     assert meta["turns"] == 1
+
+
+# meta.json has more than one writer: the Stage-2 auto-namer runs on a
+# background thread while the task runner archives the same branch
+# (agent-collaboration.md §2.6). Staging every write through one shared
+# ``meta.json.tmp`` let the two interleave their bytes into it — the
+# rename then published invalid JSON (read_meta swallows the decode
+# error and returns {}, so a rebuild lost title / head / branches) and
+# the loser of the rename raised FileNotFoundError at the caller.
+
+
+def test_concurrent_meta_writers_never_publish_a_torn_file(db):
+    import json as _json
+    import threading
+
+    db.create_session("s1", agent_id="a")
+    _append(db, "s1", "n1")
+    meta_path = db._session_dir("s1") / "meta.json"
+
+    errors: list[str] = []
+    torn: list[str] = []
+    stop = threading.Event()
+
+    def namer():
+        i = 0
+        while not stop.is_set():
+            try:
+                db.set_branch_name("s1", "n1", f"auto-{i}", auto_named=True)
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{type(e).__name__}: {e}")
+            i += 1
+
+    def archiver():
+        while not stop.is_set():
+            try:
+                db.set_branch_meta("s1", "n1", archived=True)
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{type(e).__name__}: {e}")
+
+    def reader():
+        while not stop.is_set():
+            try:
+                _json.loads(meta_path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                torn.append("meta.json missing")
+            except _json.JSONDecodeError as e:
+                torn.append(f"torn json: {e}")
+
+    threads = [threading.Thread(target=f)
+               for f in (namer, archiver, reader)]
+    for t in threads:
+        t.start()
+    time.sleep(1.0)
+    stop.set()
+    for t in threads:
+        t.join(10)
+
+    assert errors == []
+    assert torn == []
+    # Both writers' fields survive: the entry is merged field by field
+    # under the index lock, so naming never drops the archive flag.
+    meta = db.get_branch_meta("s1", "n1")
+    assert meta["archived"] is True
+    assert meta["name"].startswith("auto-")
+    on_disk = _json.loads(meta_path.read_text(encoding="utf-8"))
+    assert on_disk["branches"]["n1"]["archived"] is True

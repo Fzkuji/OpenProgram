@@ -139,8 +139,9 @@ class GraphStoreShim:
         fname = f"{node.seq:04d}-{role_letter}-{node.id}.json"
         fpath = git.path / "history" / fname
         if fpath.exists():
-            tmp = fpath.with_suffix(".json.tmp")
-            tmp.write_text(
-                __import__("json").dumps(node.to_dict(), ensure_ascii=False, default=str)
-            , encoding="utf-8")
-            tmp.replace(fpath)
+            from .git_session import atomic_write_text
+            atomic_write_text(
+                fpath,
+                __import__("json").dumps(
+                    node.to_dict(), ensure_ascii=False, default=str),
+            )

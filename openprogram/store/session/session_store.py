@@ -44,7 +44,7 @@ from ._msg_adapter import (
     _row_to_session,
 )
 
-from .git_session import GitSession
+from .git_session import GitSession, atomic_write_text
 from .memory_index import SessionMemoryIndex
 
 
@@ -309,13 +309,11 @@ class SessionStore:
             return {}
 
     def _save_locations(self) -> None:
-        tmp = self._locations_path().with_suffix(".json.tmp")
         try:
-            tmp.write_text(
+            atomic_write_text(
+                self._locations_path(),
                 json.dumps(self._locations, indent=2, ensure_ascii=False),
-                encoding="utf-8",
             )
-            tmp.replace(self._locations_path())
         except OSError as e:
             _log.warning("locations.json NOT saved (%s); session placement "
                          "may be lost on restart", e)
@@ -468,14 +466,12 @@ class SessionStore:
         return entry
 
     def _save_index(self) -> None:
-        p = self._index_path()
-        tmp = p.with_suffix(".json.tmp")
         try:
-            tmp.write_text(
-                json.dumps(self._index, indent=2, ensure_ascii=False, default=str),
-                encoding="utf-8",
+            atomic_write_text(
+                self._index_path(),
+                json.dumps(self._index, indent=2, ensure_ascii=False,
+                           default=str),
             )
-            tmp.replace(p)
         except OSError as e:
             _log.warning("index.json NOT saved (%s); session list may be "
                          "stale until the next rebuild", e)

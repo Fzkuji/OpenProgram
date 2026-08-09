@@ -29,6 +29,7 @@ import shutil
 import subprocess
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -39,6 +40,34 @@ from typing import Any, Iterable, Optional
 
 class GitSessionError(RuntimeError):
     """Raised when a git command fails or repo state is unexpected."""
+
+
+# Atomic file replace
+
+
+def atomic_write_text(fpath: Path, text: str) -> Path:
+    """Write ``text`` to ``fpath`` via a private temp file + rename.
+
+    The temp file carries a random suffix because the destination is
+    NOT single-writer: ``meta.json`` is rewritten by every branch-meta
+    write, and the Stage-2 auto-namer runs on a background thread while
+    the task runner archives the same branch. A shared ``<name>.tmp``
+    let those two threads write the same staging file at once — the
+    rename then published a file holding both writers' bytes (invalid
+    JSON, so the next rebuild read an empty meta and lost the session's
+    title / head / branches), and the loser of the rename race raised
+    FileNotFoundError. ``os.replace`` is atomic per file, so a private
+    temp per write makes last-writer-wins the only outcome.
+    """
+    tmp = fpath.with_name(f"{fpath.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(fpath)
+    finally:
+        # No-op after a successful replace; cleans up when write_text
+        # or replace raised so a failed write leaves no litter.
+        tmp.unlink(missing_ok=True)
+    return fpath
 
 
 # GitSession
@@ -175,11 +204,10 @@ class GitSession:
         # tree), re-create it so the write below can't FileNotFoundError.
         hdir.mkdir(parents=True, exist_ok=True)
         fpath = hdir / fname
-        # Atomic-ish: write to tmp then rename. Avoids partial reads if
-        # another thread reads the file mid-write.
-        tmp = fpath.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
-        tmp.replace(fpath)
+        # Write to a private tmp then rename, so a reader never sees a
+        # half-written node.
+        atomic_write_text(
+            fpath, json.dumps(payload, ensure_ascii=False, default=str))
         self.mark_synced()
         return fpath
 
@@ -189,9 +217,8 @@ class GitSession:
         """
         self._ensure_init()
         fpath = self.path / "meta.json"
-        tmp = fpath.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(meta, ensure_ascii=False, default=str), encoding="utf-8")
-        tmp.replace(fpath)
+        atomic_write_text(
+            fpath, json.dumps(meta, ensure_ascii=False, default=str))
         self.mark_synced()
         return fpath
 
