@@ -694,12 +694,51 @@ io 已释放** —— 它是历史的安全网,不是删光。整会话上下文
 
 ---
 
+## 八、记忆块怎么介绍自己
+
+模型叫不出名字的组件，模型也没法拿它推理。十五个组件里，只有记忆这一块因此付出代价：问它记得什么，上下文里找不到答案的 agent 会去翻文件系统，而第一个看起来像记忆系统的东西，往往是同一台机器上装着的别的 harness。
+
+### 两个块，两句开场白
+
+记忆进上下文有两条路，两条路的职责不同。
+
+每轮召回那一块拼在用户消息前面（见四、L2 第 2 条）。它的开场是 <memory-context> 围栏加一句"这是回忆不是用户新说的"。这句话要挡的是旧事实被读成新要求，它做到了。
+
+常驻那一块（memory_global，L0 order 50）用 `<memory>` 开场，说自己的事：哪个子系统写的、工作区在磁盘哪里、这块是预算内渲染出来的摘要而非记忆的全部、剩下的用哪两个工具去看。它由 `fence_core` 产出，跟 `fence_memory` 平行，共用 `sanitize_context`。
+
+界碑是换一句开场白，不是再套一层。`fence_memory` 不幂等：`sanitize_context` 剥的是整个 `<memory-context>…</memory-context>` 块，连内容一起，所以给已经围好的文本再包一次，得到的是一个空围栏。
+
+### 用两种货币各说一遍
+
+工具目录负责便宜的那一半。六个 `memory_*` 进 `DEFAULT_TOOLS`，六个同时进 `DEFERRED_DEFAULT_TOOLS`，目录只发名字、schema 不上线：六个名字每轮 20 token，六份 schema 是 670。工具表里的一个名字比一句散文更硬，因为模型对自己的工具表信任度更高。
+
+散文负责工具名答不出的部分：记忆在磁盘哪里、常驻块是摘要而不是全部、写它的是后台写手而不是用户。这句话 65 token，坐在 L0 缓存前缀里，按会话计一次而不是按轮计。
+
+### 关掉、空着、取不到是三个不同的块
+
+`_build_memory` 区分它能处在的三种状态。
+
+- 后端被关掉（`memory.backend = "none"`）：什么都不出。那是用户的决定，不需要解说。
+- 工作区是空的：一行，说记忆开着、还没有内容、会自己长、没出问题。
+- provider 抛了异常：一行，说这轮没取到记忆，并且这个"没有"不构成关于用户说过什么的证据。
+
+把三种状态压成同一个"块不出现"，就是模型把系统故障读成"用户从没跟我说过这个"的原因。后两种状态下这一行取代常驻块，那些轮次比正常轮次更省，而不是更贵。
+
+### 摆在模型面前的东西里，哪些属于 harness
+
+`<environment>` 在已有的 OS 和 Shell 之外，点名 harness 的名字和它自己的状态目录。常驻记忆的开场白点名记忆工作区的绝对路径。两句合起来回答那个 agent 答错的问题：`~/.openprogram` 底下的状态属于跑这个 agent 的框架，不属于它正在改的项目，也不属于同机器上别的工具。
+
+写手那一侧已经画好了这条线：它跑 Claude Code SDK 时传 `setting_sources=[]`，宿主的 `CLAUDE.md` 到不了写记忆的那个 agent。上下文层给读记忆的那个 agent 画同一条线。
+
+---
+
 ## 附录：实现状态
 
-- `ContextComponent`、三个注册表与组装器在 `context/components.py`，已注册 14 个组件。
+- `ContextComponent`、三个注册表与组装器在 `context/components.py`，已注册 15 个组件。默认 agent 跑一次真实装配出现 11 个（另 4 个条件为假），合计约 1638 token，其中记忆块约 821。
 - 对话和函数调用统一走 `render_context`（`context/nodes.py`）+ `render_dag_messages` 渲染管道。对话场景 `frame_entry_seq=None`（顶层，全可见），函数调用场景由 `callers`/`subcalls`/`expose` 控制可见范围。
 - L2 处境（`_situational_prefix` + `_compute_call_path`）在 step 6a/6b 运行。
 - computer-use 指导与 token 预算提示未注册。
+- 第八节是设计，代码还没跟上。当前 `memory_global` 用 `fence_memory` 包 `core.md`，常驻块带的是召回围栏和召回那句话，`fence_core` 还不存在。`_build_memory` 对关掉 / 空 / 取不到三态一律返回空串。六个 `memory_*` 一个都不在 `DEFAULT_TOOLS` 里，只能经 `toolset="memory"` 或 `toolset="full"` 到达会话。`<environment>` 只报 OS 和 Shell。四处改动、各自落点、实测 token 代价见 [`memory-introspection.html`](memory-introspection.html)。
 
 ---
 
@@ -707,5 +746,6 @@ io 已释放** —— 它是历史的安全网,不是删光。整会话上下文
 - [`overview.md`](overview.md) —— 上下文层的机制（L1 历史由 DAG + ContextCommit 产出；expose/render_range 在那）
 - [`comparison.md`](comparison.md) —— 与参考项目的成分对比
 - [`context-compaction.html`](context-compaction.html) —— 上下文压缩设计（文本级四层管道 + DAG 级节点 visibility 精简）
+- [`memory-introspection.html`](memory-introspection.html) —— 第八节的可视化：逐块量出来的装配现状、八家参考实现在"模型知不知道自己有记忆"上的对照、每处改动的落点
 - [`../providers/request-build.md`](../providers/request-build.md) —— 下游：Context 翻译成各家 wire + 缓存落地
 - [`../runtime/execution/agentic-self-recursion.md`](../runtime/execution/agentic-self-recursion.md) —— `_situational_prefix`，L2 处境的雏形

@@ -326,6 +326,15 @@ PAGE_ORDER: dict[str, int] = {
     "reference/config.md": 4,
     "reference/claude-code-compaction.md": 5,
     "reference/design": 900,  # design-notes archive always last
+    # The context notes read in order: the layer, then compaction, then how the
+    # blocks are composed and compared, then the two rendered companions.
+    "reference/design/context/README.md": 0,
+    "reference/design/context/overview.md": 1,
+    "reference/design/context/compaction.md": 2,
+    "reference/design/context/composition.md": 3,
+    "reference/design/context/comparison.md": 4,
+    "reference/design/context/context-compaction.html": 5,
+    "reference/design/context/memory-introspection.html": 6,
     # The memory notes read in order: what it is, how it works, how others do it.
     "reference/design/memory/README.md": 0,
     "reference/design/memory/overview.md": 1,

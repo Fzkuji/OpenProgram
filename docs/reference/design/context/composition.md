@@ -620,12 +620,51 @@ In `_call_via_providers` in `runtime.py`, when building the current turn's user 
 
 ---
 
+## 8. What the Memory Block Says About Itself
+
+A component the model cannot name is a component the model cannot reason about. Memory is the one where that costs something: asked what it remembers, an agent that finds no answer in its context goes looking on the filesystem, and the first thing that looks like a memory system is whatever other harness happens to be installed on the same machine.
+
+### Two blocks, two opening sentences
+
+Memory reaches the model twice, and the two carry different jobs.
+
+The per-turn recall block is prefixed to the user message (§4 L2, item 2). It opens with the `<memory-context>` fence and the note that this is recalled memory rather than new user input. That sentence exists to stop old facts from reading as a fresh request, and it does that job.
+
+The resident block (`memory_global`, L0 order 50) opens with `<memory>` and a note of its own: which subsystem wrote it, where that subsystem keeps its workspace, that the block is a summary rendered under a token budget rather than everything memory holds, and which tools reach the rest. It is produced by `fence_core`, a sibling of `fence_memory` sharing `sanitize_context`.
+
+A marker is a different opening sentence, never an extra layer. `fence_memory` is not idempotent: `sanitize_context` strips the whole `<memory-context>…</memory-context>` block, body included, so wrapping an already-fenced string returns a fence with nothing in it.
+
+### The model is told twice, in two currencies
+
+The tool catalog carries the cheap half. The six `memory_*` tools are in `DEFAULT_TOOLS` and all six are in `DEFERRED_DEFAULT_TOOLS`, so the catalog ships their names and the schemas stay off the wire — six names cost 20 tokens a turn, against 670 for the schemas. A name in the tool list is a harder signal than a sentence of prose, because the model trusts its tool list.
+
+The prose carries what a tool name cannot: where memory lives on disk, that the resident block is a summary rather than the whole store, and that a background writer rather than the user produced it. That sentence costs 65 tokens and sits in the L0 cached prefix, so it is charged once per session rather than once per turn.
+
+### Off, empty, and unavailable are three different blocks
+
+`_build_memory` distinguishes the three states it can be in.
+
+- The backend is switched off (`memory.backend = "none"`): nothing is emitted. That state is the user's decision and needs no narration.
+- The workspace is empty: one line saying memory is on, holds nothing yet, fills in on its own, and that nothing is wrong.
+- The provider raised: one line saying memory did not load this turn, and that the absence is not evidence about what the user has said.
+
+Collapsing all three into an absent block is what lets a model read a system fault as "the user never told me this." In the latter two states the status line replaces the resident block, so those turns cost less than a healthy one, not more.
+
+### Which of the things in front of the model belong to the harness
+
+`<environment>` names the harness and the directory the harness keeps its own state in, alongside the OS and shell it already reports. The resident memory opener names the memory workspace by absolute path. Together they answer the question the agent got wrong: the state under `~/.openprogram` belongs to the framework running the agent, not to the project the agent is editing, and neither belongs to whatever other tooling shares the machine.
+
+The memory writer already draws this line on its own side — it runs the Claude Code SDK with `setting_sources=[]`, so the host's `CLAUDE.md` never reaches the agent that writes memory. The context layer draws the same line for the agent that reads it.
+
+---
+
 ## Appendix: Implementation Status
 
-- `ContextComponent`, the three registries, and the assembler live in `context/components.py`, with 14 components registered.
+- `ContextComponent`, the three registries, and the assembler live in `context/components.py`, with 15 components registered. A real assembly on a default agent emits 11 of them (the other 4 are conditional and off) totalling ~1,638 tokens, of which the memory block is ~821.
 - Conversation and function calls both go through `render_context` (`context/nodes.py`) and the `render_dag_messages` rendering pipeline. In the conversation scenario `frame_entry_seq=None` (top level, fully visible); in the function-call scenario the visible range is controlled by `callers`/`subcalls`/`expose`.
 - The L2 situation (`_situational_prefix` + `_compute_call_path`) runs at step 6a/6b.
 - Computer-use guidance and the token budget hint are not registered.
+- §8 is designed, not yet built. Today `memory_global` wraps `core.md` with `fence_memory`, so the resident block carries the recall fence and its recall sentence; `fence_core` does not exist yet. `_build_memory` returns the empty string for all three of off / empty / unavailable. None of the six `memory_*` tools are in `DEFAULT_TOOLS`; they reach a session only through `toolset="memory"` or `toolset="full"`. `<environment>` reports OS and shell only. The four changes, their landing points, and their measured token cost are laid out in [`memory-introspection.html`](memory-introspection.html).
 
 ---
 
@@ -633,5 +672,6 @@ In `_call_via_providers` in `runtime.py`, when building the current turn's user 
 - [`overview.md`](overview.md) — the context layer's mechanism (L1 history is produced by DAG + ContextCommit; expose/render_range live there)
 - [`comparison.md`](comparison.md) — component comparison with reference projects
 - [`context-compaction.html`](context-compaction.html) — context-compaction design (text-level four-stage pipeline + DAG-level node visibility pruning)
+- [`memory-introspection.html`](memory-introspection.html) — §8 rendered: the assembled context measured block by block, the eight reference implementations compared on whether their model knows it has memory, and the landing point of each change
 - [`../providers/request-build.md`](../providers/request-build.md) — downstream: Context translated into each vendor's wire + cache landing
 - [`../runtime/execution/agentic-self-recursion.md`](../runtime/execution/agentic-self-recursion.md) — `_situational_prefix`, the prototype of the L2 situation
