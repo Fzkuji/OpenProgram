@@ -1,4 +1,4 @@
-"""archive_agent — retire an agent from the contact list.
+"""archive_agent — remove an agent from the agent list.
 
 Branches live forever in the session DAG (fork / replay /
 read_conversation depend on that), so ``list_agents`` would otherwise
@@ -7,15 +7,13 @@ entry ``archived``: the branch leaves ``list_agents`` (a dedicated
 ``scope="archived"`` still lists it) and refuses further
 ``send_message`` / ``agent(to=)`` deliveries. Nothing else changes —
 ``read_conversation`` still reads it and ``agent(start_from="SID:MSG_ID")``
-still forks it. Archiving removes the agent's right to be disturbed,
-not its history.
+still forks it. Archiving stops new deliveries, it keeps the history.
 
 There is no unarchive: to reuse an archived agent's memory, fork it.
 
-Permission: only the creator archives. A spawned branch records its
-creator (``spawner_session_id``, stamped at spawn terminal state); a
-top-level branch belongs to its own session. Calls with no session
-context (the user / UI) are not gated.
+Any session may archive any branch. Archiving interrupts nothing that
+is running and deletes nothing, so it is not gated the way task_stop
+is (§5.10).
 
 Design: docs/reference/design/runtime/agent-collaboration.md.
 """
@@ -31,16 +29,15 @@ from openprogram.functions.tools.send_message.shared import (
 
 
 _DESCRIPTION = (
-    "Archive an agent you created (or a finished branch of this "
-    "session): it leaves list_agents and refuses further send_message "
-    "/ agent(to=) deliveries. Its history is untouched — "
-    "read_conversation still reads it, agent(start_from=\"SID:MSG_ID\") "
-    "still forks it, and list_agents(scope=\"archived\") still lists "
-    "it. There is no unarchive; to reuse an archived agent's memory, "
-    "fork it. `to` accepts \"SID:HEAD\" or a branch name (see "
-    "list_agents). Only the session that created the agent may "
-    "archive it. To archive at spawn time instead, pass "
-    "agent(archive_when_done=true)."
+    "Archive an agent whose work is finished: it leaves list_agents "
+    "and refuses further send_message / agent(to=) deliveries. Its "
+    "history is untouched — read_conversation still reads it, "
+    "agent(start_from=\"SID:MSG_ID\") still forks it, and "
+    "list_agents(scope=\"archived\") still lists it. There is no "
+    "unarchive; to reuse an archived agent's memory, fork it. `to` "
+    "accepts \"SID:HEAD\" or a branch name (see list_agents). Any "
+    "session may archive any agent. To archive at spawn time instead, "
+    "pass agent(archive_when_done=true)."
 )
 
 
@@ -69,24 +66,6 @@ def _archive_agent_impl(to: str, reason: str = "") -> str:
         return f"[archive_agent error] {type(e).__name__}: {e}"
     if meta.get("archived"):
         return f"[archive_agent] agent {sid}:{tip} is already archived."
-
-    # Creator gate. No session context (user / UI direct call) is not
-    # gated — the human owns everything (same stance as task_stop §5.10).
-    if cur:
-        spawner = meta.get("spawner_session_id")
-        if spawner:
-            if spawner != cur:
-                return (
-                    f"[archive_agent refused] agent {sid}:{tip} was "
-                    f"created by session {spawner} — only its creator "
-                    "can archive it."
-                )
-        elif sid != cur:
-            return (
-                f"[archive_agent refused] agent {sid}:{tip} is a "
-                "top-level branch of another session — only that "
-                "session (or the user) can archive it."
-            )
 
     fields: dict = {"archived": True, "archived_at": time.time()}
     if (reason or "").strip():

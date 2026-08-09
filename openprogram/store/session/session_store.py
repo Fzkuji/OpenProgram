@@ -1299,22 +1299,20 @@ class SessionStore:
         (``auto_named`` / ``name_locked`` / ``name_gen_count`` / ``turns``;
         see docs/design/runtime/branch-naming.md). Unspecified existing
         fields are preserved — callers that only touch the name must not
-        wipe the lock or counters."""
+        wipe the lock, the counters, or the archive flag."""
         pair = self._open(session_id, create_if_missing=True)
         if pair is None:
             return
         git, idx = pair
-        branches = dict(idx.meta.get("branches") or {})
-        now = time.time()
-        existing = dict(branches.get(head_msg_id) or {})
-        existing.update({
-            "name": name,
-            "created_at": existing.get("created_at", now),
-            "updated_at": now,
-        })
-        existing.update(fields)
-        branches[head_msg_id] = existing
-        idx.set_meta(branches=branches)
+
+        def _mutate(entry: dict) -> None:
+            now = time.time()
+            entry["name"] = name
+            entry.setdefault("created_at", now)
+            entry["updated_at"] = now
+            entry.update(fields)
+
+        idx.update_branch_entry(head_msg_id, _mutate)
         self._persist_meta(git, idx)
 
     def get_branch_meta(self, session_id: str, head_msg_id: str) -> dict[str, Any]:
@@ -1333,19 +1331,20 @@ class SessionStore:
     ) -> None:
         """Merge ``fields`` into a branch's meta entry without touching
         its name. Used for lifecycle facts that ride the same entry as
-        the name (``archived`` / ``archived_at`` / ``spawner_session_id``
+        the name (``archived`` / ``archived_at`` / ``archived_reason``
         — see agent-collaboration.md, archiving)."""
         pair = self._open(session_id, create_if_missing=True)
         if pair is None:
             return
         git, idx = pair
-        branches = dict(idx.meta.get("branches") or {})
-        entry = dict(branches.get(head_msg_id) or {})
-        entry.update(fields)
-        entry.setdefault("created_at", time.time())
-        entry["updated_at"] = time.time()
-        branches[head_msg_id] = entry
-        idx.set_meta(branches=branches)
+
+        def _mutate(entry: dict) -> None:
+            now = time.time()
+            entry.update(fields)
+            entry.setdefault("created_at", now)
+            entry["updated_at"] = now
+
+        idx.update_branch_entry(head_msg_id, _mutate)
         self._persist_meta(git, idx)
 
     def bump_branch_turns(self, session_id: str, head_msg_id: str) -> int:
@@ -1357,13 +1356,13 @@ class SessionStore:
         if pair is None:
             return 0
         git, idx = pair
-        branches = dict(idx.meta.get("branches") or {})
-        entry = dict(branches.get(head_msg_id) or {})
-        entry["turns"] = int(entry.get("turns", 0)) + 1
-        branches[head_msg_id] = entry
-        idx.set_meta(branches=branches)
+
+        def _mutate(entry: dict) -> None:
+            entry["turns"] = int(entry.get("turns", 0)) + 1
+
+        merged = idx.update_branch_entry(head_msg_id, _mutate)
         self._persist_meta(git, idx)
-        return entry["turns"]
+        return int(merged.get("turns", 0))
 
     def delete_branch_name(self, session_id: str, head_msg_id: str) -> None:
         pair = self._open(session_id)

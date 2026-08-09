@@ -1,16 +1,20 @@
 """Agent archiving — archive_when_done + archive_agent.
 
-Archiving removes a branch's right to be disturbed, never its history.
+Archiving stops new deliveries to a branch and keeps its history.
 All fake — no real LLM, no live task pool run (async deliveries are
 captured at run_agent_turn_async, the sync spawn at run_agent_turn;
 same technique as test_send_message.py / test_agent_dispatch.py):
 
   * agent(archive_when_done=True): sync spawn archives at terminal;
-    async spawn passes the flag + creator through to the runner, whose
-    terminal hook stamps + archives; the flag survives Task round-trip
-  * archive_agent: creator archives by address or name; non-creator
-    refused; own top-level branch allowed; no session context allowed;
-    already-archived is an idempotent notice
+    async spawn passes the flag through to the runner, whose terminal
+    hook archives; the flag survives Task round-trip
+  * archive_agent: archives by address or name, in this session or
+    another one, with or without session context; already-archived is
+    an idempotent notice
+  * Stage-2 auto-rename never resurrects an archived agent: the label
+    write-back merges field by field and bails on an archive that
+    landed while the LLM was running, and an already-archived branch
+    is skipped before the LLM is called at all
   * list_agents: scope="session" / "all" hide archived branches;
     scope="archived" lists exactly them
   * archived target: send_message and agent(to=) refuse via the one
@@ -95,9 +99,9 @@ def parent_turn(tmp_path, monkeypatch):
 # --- archive_when_done: terminal-state auto-archive ---
 
 def test_sync_spawn_archive_when_done_archives_at_terminal(parent_turn, monkeypatch):
-    """A blocking spawn with archive_when_done=True stamps the creator
-    and archives the new branch after the result is in hand — and the
-    result still flows back."""
+    """A blocking spawn with archive_when_done=True archives the new
+    branch after the result is in hand — and the result still flows
+    back."""
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run.run_agent_turn",
         lambda **kw: SimpleNamespace(
@@ -108,50 +112,43 @@ def test_sync_spawn_archive_when_done_archives_at_terminal(parent_turn, monkeypa
     meta = parent_turn.get_branch_meta("p1", "sp1")
     assert meta.get("archived") is True
     assert meta.get("archived_at")
-    assert meta.get("spawner_session_id") == "p1"
 
 
 def test_sync_spawn_default_keeps_agent_live(parent_turn, monkeypatch):
-    """Default archive_when_done=False: the creator is stamped (so a
-    later archive_agent can gate on it) but the branch stays live."""
+    """Default archive_when_done=False: the branch stays live and the
+    spawn writes no archive meta at all."""
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run.run_agent_turn",
         lambda **kw: SimpleNamespace(
             head_id="sp2", final_text="done", failed=False, error=None),
     )
     _agent_impl("do it")
-    meta = parent_turn.get_branch_meta("p1", "sp2")
-    assert not meta.get("archived")
-    assert meta.get("spawner_session_id") == "p1"
+    assert not parent_turn.get_branch_meta("p1", "sp2").get("archived")
 
 
-def test_async_spawn_passes_flag_and_creator_to_runner(parent_turn):
+def test_async_spawn_passes_archive_flag_to_runner(parent_turn):
     out = _agent_impl("do it", run_in_background=True, archive_when_done=True)
     assert "[agent spawned async]" in out
     kw = parent_turn.async_calls[-1]
-    assert kw["spawner_session_id"] == "p1"
     assert kw["archive_when_done"] is True
 
 
 def test_runner_terminal_hook_archives_spawn_branch(parent_turn):
-    """The runner's terminal hook: spawner stamped always, archived only
-    when the spawn asked for it; deliveries (no spawner) untouched."""
+    """The runner's terminal hook archives only when the spawn asked
+    for it; a delivery (flag False) never touches meta."""
     from openprogram.agent.task import get_runner
     from openprogram.agent.task.types import Task
 
     runner = get_runner()
     runner._finalize_spawn_branch_meta(Task(
         id="t_x1", parent_session_id="p1", prompt="x", agent_id="main",
-        head_id="a0", spawner_session_id="p1", archive_when_done=True,
+        head_id="a0", archive_when_done=True,
     ))
-    meta = parent_turn.get_branch_meta("p1", "a0")
-    assert meta.get("archived") is True
-    assert meta.get("spawner_session_id") == "p1"
+    assert parent_turn.get_branch_meta("p1", "a0").get("archived") is True
 
-    # A delivery task (spawner_session_id=None) never touches meta.
     runner._finalize_spawn_branch_meta(Task(
         id="t_x2", parent_session_id="p2", prompt="x", agent_id="main",
-        head_id="a9", archive_when_done=True,
+        head_id="a9", archive_when_done=False,
     ))
     assert parent_turn.get_branch_meta("p2", "a9") == {}
 
@@ -159,45 +156,27 @@ def test_runner_terminal_hook_archives_spawn_branch(parent_turn):
 def test_task_roundtrip_preserves_archive_fields(parent_turn):
     from openprogram.agent.task.types import Task
     t = Task(id="t_r", parent_session_id="p1", prompt="x", agent_id="main",
-             spawner_session_id="p1", archive_when_done=True)
+             archive_when_done=True)
     t2 = Task.from_dict(t.to_dict())
-    assert t2.spawner_session_id == "p1"
     assert t2.archive_when_done is True
 
 
-# --- archive_agent: by-name archiving + creator gate ---
+# --- archive_agent: any session may archive any branch ---
 
-def test_archive_agent_creator_archives_spawned_branch(parent_turn):
-    """The session that spawned a branch (spawner_session_id) may
-    archive it, even in another session."""
-    parent_turn.set_branch_meta("p2", "a9", spawner_session_id="p1")
+def test_archive_agent_archives_another_sessions_branch(parent_turn):
+    """Archiving is not gated on who created the branch: it interrupts
+    nothing and deletes nothing, so any session may archive any agent."""
     out = _archive_agent_impl("p2:a9")
     assert "[archive_agent] archived p2:a9" in out
     assert parent_turn.get_branch_meta("p2", "a9").get("archived") is True
 
 
-def test_archive_agent_non_creator_refused(parent_turn):
-    parent_turn.set_branch_meta("p2", "a9", spawner_session_id="p3")
-    out = _archive_agent_impl("p2:a9")
-    assert "[archive_agent refused]" in out
-    assert "created by session p3" in out
-    assert not parent_turn.get_branch_meta("p2", "a9").get("archived")
-
-
 def test_archive_agent_own_toplevel_branch_allowed(parent_turn):
-    """A top-level branch of the current session (no spawner recorded)
-    may be archived by the session itself."""
     out = _archive_agent_impl("p1:a0", reason="done with it")
     assert "[archive_agent] archived p1:a0" in out
     meta = parent_turn.get_branch_meta("p1", "a0")
     assert meta.get("archived") is True
     assert meta.get("archived_reason") == "done with it"
-
-
-def test_archive_agent_foreign_toplevel_refused(parent_turn):
-    out = _archive_agent_impl("p2:a9")
-    assert "[archive_agent refused]" in out
-    assert "another session" in out
 
 
 def test_archive_agent_without_session_context_allowed(parent_turn, monkeypatch):
@@ -228,6 +207,83 @@ def test_archive_agent_already_archived_is_notice(parent_turn):
 def test_archive_agent_unknown_target_errors(parent_turn):
     out = _archive_agent_impl("p1:nosuchnode")
     assert "[archive_agent error]" in out and "not found" in out
+
+
+# --- the archive flag survives Stage-2 auto-rename ---
+
+class _ImmediateThread:
+    """Runs the target on start(), so the auto-namer's background
+    write-back is observable without real threads."""
+
+    def __init__(self, target=None, daemon=None, **kw):
+        self._target = target
+
+    def start(self):
+        self._target()
+
+
+def _sync_threads(monkeypatch, titles):
+    monkeypatch.setattr(
+        titles, "threading", SimpleNamespace(Thread=_ImmediateThread))
+
+
+def test_branch_name_write_keeps_archive_flag(parent_turn):
+    """Field-level write-back: a name write merges into the branch's
+    meta entry, so the archive flag written by someone else stays."""
+    _archive_agent_impl("p1:a0")
+    parent_turn.set_branch_name("p1", "a0", "older topic")
+    meta = parent_turn.get_branch_meta("p1", "a0")
+    assert meta["name"] == "older topic"
+    assert meta.get("archived") is True
+
+
+def test_auto_rename_writeback_keeps_archived(parent_turn, monkeypatch):
+    """Read-modify-write timing: the auto-namer reads the branch meta,
+    the branch is archived while the LLM generates a label, and the
+    write-back must not bring the agent back."""
+    from openprogram.agent.dispatcher import titles
+
+    _sync_threads(monkeypatch, titles)
+
+    def _llm_that_archives(system, prompt):
+        _archive_agent_impl("p1:a0")
+        return "older topic"
+
+    monkeypatch.setattr(
+        "openprogram.providers.default_llm.build_default_llm",
+        lambda: _llm_that_archives)
+
+    titles.maybe_auto_name_branch(parent_turn, "p1", "a0")
+
+    meta = parent_turn.get_branch_meta("p1", "a0")
+    assert meta.get("archived") is True
+    assert not meta.get("name")
+    assert "p1:a0" not in _list_agents_impl(scope="session")
+
+
+def test_auto_rename_skips_archived_branch(parent_turn, monkeypatch):
+    """An archived branch needs no new name: no LLM call, no turn
+    counter bump, no write."""
+    from openprogram.agent.dispatcher import titles
+
+    _sync_threads(monkeypatch, titles)
+    _archive_agent_impl("p1:a0")
+
+    prompts: list[str] = []
+
+    def _llm(system, prompt):
+        prompts.append(prompt)
+        return "should not be used"
+
+    monkeypatch.setattr(
+        "openprogram.providers.default_llm.build_default_llm", lambda: _llm)
+
+    titles.maybe_auto_name_branch(parent_turn, "p1", "a0")
+
+    assert prompts == []
+    meta = parent_turn.get_branch_meta("p1", "a0")
+    assert not meta.get("name")
+    assert "turns" not in meta
 
 
 # --- list_agents: scope visibility ---

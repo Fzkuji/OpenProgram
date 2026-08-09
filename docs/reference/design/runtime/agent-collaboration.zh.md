@@ -255,7 +255,9 @@ HEAD 并推进它。**每个投递 session 有一把回送串行锁
 所以没有归档标记时 `list_agents` 会攒下历史上派生过的每一个 agent，模型还会
 继续去找那些任务早就做完的 worker。归档就是这个标记：分支 meta 条目上的
 `archived: true`，和分支名同一个 `branches` 条目，用 `set_branch_meta` 写、
-`get_branch_meta` 读。
+`get_branch_meta` 读。和名字共用一个条目是安全的：每个写入方都在索引锁里按字段
+合并，Stage-2 自动命名（branch-naming.md）只写 `name` 和它自己的计数器，冲不掉
+归档标记；何况已归档的分支根本不进自动命名，活干完的 agent 不需要新名字。
 
 **归档后分支不再接收新的投递，它的历史照常保留。**
 
@@ -283,15 +285,17 @@ HEAD 并推进它。**每个投递 session 有一把回送串行锁
 - **`archive_agent(to, reason="")`**：事后归档。`to` 收 `send_message` 那套
   地址（`"SID:HEAD"` 或分支名）。对已归档分支再归档是一句幂等提示，不是错误。
 
-**只有创建者能归档。** 每次派生都会把创建者记在新分支上
-（`spawner_session_id`，在终态和归档标记一起写），`archive_agent` 拒绝其他
-session。没记创建者的分支属于顶层，归它自己的 session：那个 session 可以
-归档它，别的 session 不行。没有 session 上下文的调用（用户、UI）不受这条限制，
-和 §5.10 的任务归属一致。
+**任何 session 都能归档任何 agent。** 归档不像 `task_stop`（§5.10）那样设门，
+因为它做的事和 `task_stop` 不是一回事：它不中断任何在跑的工作，也不删任何数据。
+分支上已经在跑的任务照跑到完，`read_conversation` 照读，
+`agent(start_from="SID:MSG_ID")` 照 fork。变的只有两件事：这个分支从 `list_agents`
+里消失，并且不再接收 `send_message` 和 `agent(to=)`。谁都看得出一个 agent 的活
+干完了，那谁都可以说出来。
 
-**没有反归档。** 这个标记的含义是"这段对话结束了"，而结束的对话若还有值得复用的
-记忆，做法是用 `agent(start_from="SID:MSG_ID")` fork 出一条新分支，它有自己的名字和
-自己的生命周期。反归档工具只会是同一件事的第二种写法。
+**归档是单向的，没有反归档。** 这个标记的含义是"这段对话结束了"，而结束的对话若
+还有值得复用的记忆，做法是用 `agent(start_from="SID:MSG_ID")` fork 出一条新分支，
+它有自己的名字和自己的生命周期，复用记忆本来就需要这样一条新分支。反归档工具只会
+是同一件事的第二种写法。
 
 ---
 
@@ -482,7 +486,7 @@ session 上下文的调用（用户、UI）不受这条限制。
 |---|---|
 | 派生（`agent` 工具） | agent 调一次，新建分支跑一轮，结果自动回到发起方；派生过程在事件日志里可见 |
 | 列举 | `list_agents` 列出真实的多 session 及各自的分支 |
-| 归档（§2.6） | 已归档 agent 从 `list_agents` 消失、在 `scope="archived"` 里出现；`send_message` 与 `agent(to=)` 拒收，`read_conversation` 与 `agent(start_from=…)` 照常；只有创建它的 session 能归档 |
+| 归档（§2.6） | 已归档 agent 从 `list_agents` 消失、在 `scope="archived"` 里出现；`send_message` 与 `agent(to=)` 拒收，`read_conversation` 与 `agent(start_from=…)` 照常；任何 session 都能归档任何 agent，且标记单向 |
 | 发给同 session 已有分支 | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
 | 跨 session | A 发给别的 session 走同一路径；两边实时更新 |
 | 健壮性（§5） | A↔B 互发到消息预算用完自动停，预算为 0 时不停；一次派 30 个是排队不是过载；取消父→子全停；给正忙的 B 发消息先排队、等它这轮结束再投；子失败父会被告知；超大结果截断并给出文件路径 |

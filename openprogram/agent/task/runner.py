@@ -231,7 +231,6 @@ class TaskRunner:
         caller_msg_id: Optional[str] = None,
         caller_session_id: Optional[str] = None,
         chain_messages: int = 0,
-        spawner_session_id: Optional[str] = None,
         archive_when_done: bool = False,
         task_id: Optional[str] = None,
     ) -> str:
@@ -283,7 +282,6 @@ class TaskRunner:
             caller_msg_id=caller_msg_id,
             caller_session_id=caller_session_id,
             chain_messages=chain_messages,
-            spawner_session_id=spawner_session_id,
             archive_when_done=archive_when_done,
             status=TaskStatus.PENDING,
             created_at=existing.created_at if existing is not None else time.time(),
@@ -747,11 +745,9 @@ class TaskRunner:
                 if new_status == TaskStatus.COMPLETED and not updated.wait:
                     self._dispatch_followup(updated)
                 # Spawn-branch bookkeeping at terminal state, AFTER the
-                # result flowed back: stamp who created the branch (the
-                # archive_agent permission check reads it), and archive
-                # it when the spawn asked for archive_when_done.
-                # Best-effort — a meta write failure must never affect
-                # the result path.
+                # result flowed back: archive the branch when the spawn
+                # asked for archive_when_done. Best-effort — a meta
+                # write failure must never affect the result path.
                 self._finalize_spawn_branch_meta(updated)
             # Tell tail clients the session changed so attach card
             # picks up the new head / text.
@@ -1046,24 +1042,19 @@ class TaskRunner:
     def _finalize_spawn_branch_meta(self, task: Task) -> None:
         """Terminal-state meta for a branch this task CREATED.
 
-        Only spawn tasks carry ``spawner_session_id`` (deliveries to
-        existing branches leave it None) — nothing here runs for them.
-        Stamps the creator on the new branch tip, and archives the
-        branch when the spawn asked for ``archive_when_done``.
-        Archiving removes the branch's right to be disturbed
-        (send_message / agent(to=) refuse it), never its history.
+        Only the agent tool's spawn form sets ``archive_when_done``
+        (deliveries to existing branches leave it False) — nothing here
+        runs for them. Archiving stops further send_message / agent(to=)
+        deliveries to the branch and keeps its history.
         Best-effort: failures are logged and swallowed.
         """
-        if not task.spawner_session_id or not task.head_id:
+        if not task.archive_when_done or not task.head_id:
             return
         try:
             from openprogram.agent.session_db import default_db
-            fields: dict = {"spawner_session_id": task.spawner_session_id}
-            if task.archive_when_done:
-                fields["archived"] = True
-                fields["archived_at"] = time.time()
             default_db().set_branch_meta(
-                task.parent_session_id, task.head_id, **fields,
+                task.parent_session_id, task.head_id,
+                archived=True, archived_at=time.time(),
             )
         except Exception:
             _log.debug(

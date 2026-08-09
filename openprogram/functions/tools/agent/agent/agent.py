@@ -304,14 +304,14 @@ def _agent_impl(
     """
     if (to or "").strip():
         # archive_when_done characterizes a branch THIS call creates;
-        # a to= dispatch targets an existing agent this call did not
-        # create — only its creator may archive it (archive_agent).
+        # a to= dispatch targets an existing agent, whose lifecycle this
+        # call does not own.
         if archive_when_done:
             return (
                 "[agent error] archive_when_done applies to the branch "
                 "this call spawns — to= dispatches to an EXISTING agent "
                 "instead. Drop archive_when_done, or archive the target "
-                "later with archive_agent (creator only)."
+                "later with archive_agent."
             )
         # Dispatch to an EXISTING agent — always async, returns a
         # task_id immediately; run_in_background is meaningless here
@@ -435,10 +435,8 @@ def _agent_impl(
                 # the caller's session, not the fork target's.
                 caller_session_id=sid if run_session != sid else None,
                 chain_messages=depth + 1,
-                # This call CREATES the branch — record the creator so
-                # archive_agent can gate on it, and let the runner
-                # archive the branch at terminal state if asked.
-                spawner_session_id=sid,
+                # This call CREATES the branch — let the runner archive
+                # it at terminal state if the spawn asked for that.
                 archive_when_done=archive_when_done,
                 attach_pointer_id=attach_id,
             )
@@ -558,22 +556,20 @@ def _agent_impl(
     except Exception:
         pass
 
-    # Spawn-branch meta, after the result is in hand: stamp the creator
-    # (archive_agent gates on it) and archive on request. Best-effort —
-    # the result below flows back regardless.
-    if result.head_id:
+    # Spawn-branch meta, after the result is in hand: archive on
+    # request. Best-effort — the result below flows back regardless.
+    if result.head_id and archive_when_done:
         try:
             import time as _time
             from openprogram.agent.session_db import default_db
-            _fields: dict = {"spawner_session_id": sid}
-            if archive_when_done:
-                _fields["archived"] = True
-                _fields["archived_at"] = _time.time()
-            default_db().set_branch_meta(run_session, result.head_id, **_fields)
+            default_db().set_branch_meta(
+                run_session, result.head_id,
+                archived=True, archived_at=_time.time(),
+            )
         except Exception:
             import logging
             logging.getLogger(__name__).debug(
-                "spawn branch meta stamp failed", exc_info=True,
+                "spawn branch archive stamp failed", exc_info=True,
             )
 
     if result.error and not result.final_text:

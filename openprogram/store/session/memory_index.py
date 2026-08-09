@@ -93,6 +93,24 @@ class SessionMemoryIndex:
         with self._lock:
             self.meta.update(fields)
 
+    def update_branch_entry(self, head_msg_id: str, mutate) -> dict:
+        """Merge one branch's ``meta["branches"]`` entry and return it.
+
+        ``mutate(entry)`` gets the current entry and sets only the keys
+        it owns. Read, merge and write happen inside the lock, so a
+        writer that sets the name cannot drop a key another thread wrote
+        in between — the Stage-2 auto-namer runs on a background thread
+        and would otherwise write back a branches dict it read before
+        ``archive_agent`` set ``archived`` (agent-collaboration.md §2.6).
+        """
+        with self._lock:
+            branches = dict(self.meta.get("branches") or {})
+            entry = dict(branches.get(head_msg_id) or {})
+            mutate(entry)
+            branches[head_msg_id] = entry
+            self.meta["branches"] = branches
+            return dict(entry)
+
     # Queries
 
     def get(self, node_id: str) -> Optional[Call]:

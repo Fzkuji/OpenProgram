@@ -305,8 +305,8 @@
   </div>
 
   <div class="note">
-    归档一个agent本体是另一件事，只有<b>创建它的会话</b>能做：每次派生都把创建者记在新分支上，
-    <code>archive_agent</code>拒绝任何别的会话。没有记录创建者的分支属于它自己的会话。见下一节。
+    归档一个agent本体是另一件事，<b>任何会话都能做</b>：归档不中断在跑的工作、也不删数据，
+    所以<code>archive_agent</code>不做<code>task_stop</code>那样的归属检查。见下一节。
   </div>
 
   <!-- ══════════ 04 两个预算 ══════════ -->
@@ -445,7 +445,7 @@ openprogram config set <b>agent.max_messages</b> 0      <i># 不限条数，agen
     <text x="790" y="216" fill="#8a8675" font-size="11">另外 list_agents(scope="archived") 单独列已归档的</text>
 
     <text x="32" y="262" fill="#bdb9a6" font-size="12">拒收只写在一个地方：两条投递路径共用的地址解析器。地址一旦落到分支当前的tip上就查这个标记，所以没有哪条调用能绕开。</text>
-    <text x="32" y="286" fill="#bdb9a6" font-size="12">只有创建它的会话能归档它，别的会话指定它会被拒绝；用户和界面不受这条限制。</text>
+    <text x="32" y="286" fill="#bdb9a6" font-size="12">任何会话都能归档任何agent：归档不中断在跑的工作、也不删数据，所以不做归属检查。</text>
     <text x="32" y="310" fill="#8a8675" font-size="12">没有反归档。归档的意思是"这段对话结束了"；还想接着用，就用 agent(start_from="SID:MSG_ID") fork一条新的出来，新名字新生命周期。</text>
   </svg>
   </div>

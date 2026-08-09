@@ -339,14 +339,16 @@ def maybe_auto_name_branch(db, session_id: str, head_id: str) -> None:
     Bumps the branch's own turn counter; when it hits a
     ``_RETITLE_AT_TURNS`` threshold, spawns a background thread that asks
     the LLM for a short label and writes it back — but only if the branch
-    is not user-locked. The write-back re-reads the lock first, so a name
-    the user set (manually or via the button) during the LLM call is never
-    overwritten (branch-naming.md 优先级与锁)."""
+    is not user-locked and not archived. The write-back re-reads both
+    flags first, so a name the user set (manually or via the button)
+    during the LLM call is never overwritten (branch-naming.md 优先级与锁),
+    and a branch archived during the call is not renamed afterwards
+    (agent-collaboration.md §2.6: an archived agent needs no new name)."""
     try:
         meta = db.get_branch_meta(session_id, head_id)
     except Exception:
         return
-    if meta.get("name_locked"):
+    if meta.get("name_locked") or meta.get("archived"):
         return
 
     try:
@@ -378,11 +380,12 @@ def maybe_auto_name_branch(db, session_id: str, head_id: str) -> None:
         if not label:
             return
 
-        # Re-read the lock before writing — the user may have named the
-        # branch while the LLM was running. If so, leave it alone.
+        # Re-read the flags before writing — the user may have named the
+        # branch, or archived it, while the LLM was running. Either way,
+        # leave it alone.
         try:
             cur = db.get_branch_meta(session_id, head_id)
-            if cur.get("name_locked"):
+            if cur.get("name_locked") or cur.get("archived"):
                 return
             db.set_branch_name(
                 session_id, head_id, label,

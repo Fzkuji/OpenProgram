@@ -115,13 +115,10 @@ class Task:
     # this count; further spawns/messages from it increment again.
     # 0 = a top-level (user-initiated) turn.
     chain_messages: int = 0
-    # Set only when this task CREATES a branch (the agent tool's spawn
-    # form; deliveries to existing branches leave it None). The runner
-    # stamps it into the new branch's meta at terminal state so
-    # ``archive_agent`` can verify "only the creator archives".
-    spawner_session_id: Optional[str] = None
     # agent(archive_when_done=True): archive the spawned branch when
     # the task reaches terminal state, after the result flowed back.
+    # Set only by the agent tool's spawn form; deliveries to existing
+    # branches leave it False.
     archive_when_done: bool = False
     label: Optional[str] = None
     # Branch tip we *expect* this task to produce when it commits.

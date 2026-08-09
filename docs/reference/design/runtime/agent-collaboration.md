@@ -315,7 +315,11 @@ Branches live forever in the session DAG — fork, replay, and
 addressing workers whose job finished long ago. Archiving is that flag:
 `archived: true` on the branch's meta entry, the same `branches` entry that
 carries the name, written with `set_branch_meta` and read with
-`get_branch_meta`.
+`get_branch_meta`. Sharing an entry with the name is safe because every
+writer merges field by field under the index lock: Stage-2 auto-naming
+(branch-naming.md) sets `name` and its own counters and cannot drop the
+archive flag, and it skips archived branches anyway — an agent whose work
+is finished needs no new name.
 
 **Archiving stops new deliveries to a branch and keeps its history.**
 
@@ -348,19 +352,20 @@ Two ways to archive:
   name). Archiving an already-archived branch is an idempotent notice, not
   an error.
 
-**Only the creator archives.** Every spawn records its creator on the new
-branch (`spawner_session_id`, stamped alongside the archive flag at
-terminal state), and `archive_agent` refuses any other session. A branch
-with no recorded creator is top-level and belongs to its own session: that
-session may archive it, another session may not. Calls with no session
-context (the user, the UI) are not gated, the same rule as §5.10's task
-ownership.
+**Any session may archive any agent.** Archiving is not gated the way
+`task_stop` is (§5.10), because it does not do what `task_stop` does: it
+interrupts no running work and deletes nothing. A task already running on
+the branch runs to its end, `read_conversation` still reads the branch and
+`agent(start_from="SID:MSG_ID")` still forks it. All that changes is that
+the branch leaves `list_agents` and stops accepting `send_message` and
+`agent(to=)`. Any session can see that an agent is finished, so any session
+can say so.
 
-**There is no unarchive.** The mark means "this conversation is finished",
-and a finished conversation whose memory is worth reusing is forked with
-`agent(start_from="SID:MSG_ID")` — a fresh branch with its own name and its
-own lifecycle. An unarchive tool would only be a second way to do the same
-thing.
+**Archiving is one-way; there is no unarchive.** The flag means "this
+conversation is finished", and a finished conversation whose memory is worth
+reusing is forked with `agent(start_from="SID:MSG_ID")` — a fresh branch
+with its own name and its own lifecycle, which is what reusing it actually
+requires. An unarchive tool would only be a second way to do the same thing.
 
 ---
 
@@ -612,7 +617,7 @@ session event log.
 |---|---|
 | Spawn (the `agent` tool) | The agent calls once, a new branch runs a turn, and the result automatically follows up back to the caller; spawn events are visible in the event log |
 | Listing | `list_agents` lists the real multiple sessions and each one's branches |
-| Archiving (§2.6) | An archived agent leaves `list_agents` and shows up under `scope="archived"`; `send_message` and `agent(to=)` refuse it while `read_conversation` and `agent(start_from=…)` still work; only the creating session may archive it |
+| Archiving (§2.6) | An archived agent leaves `list_agents` and shows up under `scope="archived"`; `send_message` and `agent(to=)` refuse it while `read_conversation` and `agent(start_from=…)` still work; any session may archive any agent, and the flag is one-way |
 | Send to an existing branch in the same session | A sends to branch B of the same session, A does not block, B runs a turn, the reply returns to A automatically |
 | Cross-session | A sending to another session takes the same path; both sides update live |
 | Robustness (§5) | A↔B back-and-forth stops when the chain's message budget runs out, and a budget of 0 never stops it; spawning 30 at once queues instead of overloading; cancelling the parent stops every child; messaging a busy B queues and is delivered when its turn ends; the parent is told when a child fails; oversized results are truncated with a file path |
