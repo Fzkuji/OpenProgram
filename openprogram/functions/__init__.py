@@ -56,6 +56,7 @@ from ._runtime import (
 # composable); both end up in the same registry.
 from . import tools as _tools_self_register  # noqa: F401
 from . import agentics as _agentics_self_register  # noqa: F401
+from .tools.memory import MEMORY_TOOL_NAMES
 
 # Layer 2 — exposure is registration-driven: ``exposed_names()`` (see
 # ``_runtime.py``) is every registered tool minus the ones registered
@@ -188,11 +189,11 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
         "includes": ["default"],
     },
     "memory": {
-        "tools":    ["memory_note", "memory_recall", "memory_reflect",
-                     "memory_get", "memory_browse", "memory_lint",
-                     "memory_ingest", "memory_backlinks",
-                     "memory_rename", "memory_relink", "memory_delete",
-                     "memory_review", "memory_status"],
+        # Read from the bundle, not restated: a name the registry does not
+        # know is dropped silently at resolution, so a hand-copied list
+        # goes on quietly handing out less than it says. This one spent a
+        # while offering three of the six memory tools.
+        "tools":    list(MEMORY_TOOL_NAMES),
         "includes": ["default"],
     },
     "safe": {

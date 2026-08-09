@@ -223,8 +223,9 @@ def run_memory_section() -> int:
     _write_config(cfg)
     print(f"Memory backend: {picked}")
     if picked == "none":
-        print("(The memory tools (memory_note / memory_recall / memory_reflect / "
-              "memory_get) will no-op until a backend is selected.)")
+        from openprogram.functions.tools.memory import MEMORY_TOOL_NAMES
+        print(f"({' / '.join(MEMORY_TOOL_NAMES)} are hidden from the model "
+              "until a backend is selected.)")
     return 0
 
 

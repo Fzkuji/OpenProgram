@@ -61,6 +61,19 @@ def is_state_file(relative: Path) -> bool:
     )
 
 
+def resolve_within(root: Path | str, relative: str) -> Path | None:
+    """Resolve ``relative`` inside ``root``, or None if it lands outside.
+
+    A shared string prefix is not containment: ``topics-private/`` begins
+    with the same characters as ``topics/`` and is a different directory.
+    Resolving first is what collapses ``..`` and follows symlinks, so the
+    answer is about where the path actually lands.
+    """
+    base = Path(root).resolve()
+    target = (base / relative).resolve()
+    return target if target.is_relative_to(base) else None
+
+
 def runtime_dir(memory_dir: Path | str) -> Path:
     """This workspace's runtime directory, keeping the name it already has."""
     root = Path(memory_dir)

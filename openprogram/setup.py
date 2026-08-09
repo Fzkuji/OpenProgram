@@ -115,18 +115,16 @@ def read_disabled_tools() -> set[str]:
     Kept in this module so the tools package doesn't import config from
     deeper webui modules and drag in FastAPI at tool-registry import time.
 
-    Also honours ``memory.backend == "none"`` by hiding every memory
-    tool (note / recall / reflect / get / browse / lint / ingest),
-    since they have no backing store in that mode.
+    Also honours ``memory.backend == "none"`` by hiding every memory tool,
+    since they have no backing store in that mode. Which tools those are
+    is read from the bundle that registers them, so a renamed tool cannot
+    survive the switch by no longer matching a name written down here.
     """
     cfg = _read_config()
     disabled = set(cfg.get("tools", {}).get("disabled", []) or [])
     if (cfg.get("memory", {}) or {}).get("backend") == "none":
-        disabled.update({
-            "memory_note", "memory_recall", "memory_reflect",
-            "memory_get", "memory_browse", "memory_lint",
-            "memory_ingest", "memory_backlinks",
-        })
+        from openprogram.functions.tools.memory import MEMORY_TOOL_NAMES
+        disabled.update(MEMORY_TOOL_NAMES)
     return disabled
 
 

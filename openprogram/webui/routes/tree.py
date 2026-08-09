@@ -64,19 +64,16 @@ def register(app):
         ``tools.disabled``), so the model never sees it. Toggle via
         ``POST /api/settings {key:"tools.disabled.<name>", value:<on>}``."""
         from openprogram.functions import agent_tools
+        from openprogram.functions.tools.memory import MEMORY_TOOL_NAMES
         from openprogram.setup import read_disabled_tools
         disabled = read_disabled_tools()
         _TOOL_GROUPS = {
             "bash": "file", "read": "file", "write": "file", "edit": "file",
             "glob": "file", "grep": "file", "list": "file",
             "apply_patch": "file", "process": "file",
-            "memory_note": "memory", "memory_recall": "memory",
-            "memory_reflect": "memory", "memory_get": "memory",
-            "memory_browse": "memory", "memory_lint": "memory",
-            "memory_ingest": "memory", "memory_backlinks": "memory",
-            "memory_rename": "memory", "memory_relink": "memory",
-            "memory_delete": "memory", "memory_review": "memory",
-            "memory_status": "memory",
+            # Read from the bundle so a renamed memory tool lands in its
+            # group rather than falling out of the grouping entirely.
+            **{name: "memory" for name in MEMORY_TOOL_NAMES},
             "web_search": "web", "web_fetch": "web",
             "agent_browser": "web", "playwright_browser": "web",
             "pdf": "web", "image_analyze": "web", "image_generate": "web",

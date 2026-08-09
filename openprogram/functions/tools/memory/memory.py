@@ -13,6 +13,7 @@ memory, ``sources/**`` the read-only evidence it cites, and
 from __future__ import annotations
 
 import json
+from contextlib import closing
 from typing import Any
 
 from openprogram.memory import store
@@ -269,12 +270,15 @@ def memory_update(
     if not (base_revision or "").strip() or not (patch or "").strip():
         return "memory_update needs base_revision and patch."
     try:
-        result = MemoryWorkspace(_root()).update(
-            base_revision=base_revision,
-            patch=patch,
-            sources=sources,
-            commit_message=commit_message,
-        )
+        # The workspace stages a copy of memory under the temp directory;
+        # dropped without closing, one copy is left behind per call.
+        with closing(MemoryWorkspace(_root())) as space:
+            result = space.update(
+                base_revision=base_revision,
+                patch=patch,
+                sources=sources,
+                commit_message=commit_message,
+            )
     except TransactionError as exc:
         return _fail(exc)
     return _dump({

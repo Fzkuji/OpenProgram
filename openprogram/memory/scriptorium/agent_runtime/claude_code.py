@@ -250,7 +250,11 @@ class ClaudeCodeAgent:
                 # Overriding these is what isolates a benchmark run from the
                 # user's own login. An inherited run wants the opposite, and
                 # the CLI reads its own config only when nothing is set here.
-                env=None if self.config.inherit_auth else {
+                # Empty, never None: the SDK spreads this mapping over
+                # os.environ (`{**inherited_env, **options.env}`), so None
+                # raises before the CLI is ever spawned, and `{}` is what
+                # "add nothing to the inherited environment" looks like.
+                env={} if self.config.inherit_auth else {
                     "ANTHROPIC_BASE_URL": self.config.base_url,
                     "ANTHROPIC_API_KEY": self.config.api_key,
                     "ANTHROPIC_AUTH_TOKEN": "",

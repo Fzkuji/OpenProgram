@@ -198,7 +198,7 @@ for a new format is not a migration.
 | Model unreachable mid-write | The turn is rolled back whole; the cursor does not advance, so the same turns are retried |
 | Another writer holds the lock | This pass is skipped; the next turn retries |
 | The writer's edits are rejected twice | The batch fails whole — one repair attempt, then nothing is installed and the cursor does not advance |
-| A hand edit breaks the format | `openprogram memory edit` validates and reports before the views are rebuilt |
+| A hand edit breaks the format | The edit is validated in a staging copy and never installed; the committed file is untouched and the rejected text is kept for a retry |
 
 Memory never takes a conversation down with it: every provider hook
 swallows its own failures and logs them. Swallowed is not forgotten —

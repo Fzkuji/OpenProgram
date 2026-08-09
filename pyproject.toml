@@ -114,7 +114,9 @@ dependencies = [
     # but writing is a core feature and should not need a second install
     # step. It drives the Claude Code CLI; when that is absent the write
     # is deferred and logged rather than lost.
-    "claude-agent-sdk>=0.1",
+    # 0.1.51 is where `permission_mode="dontAsk"` became a permission mode;
+    # an older SDK sends the writer's runs with a mode the CLI rejects.
+    "claude-agent-sdk>=0.1.51",
 ]
 
 [project.optional-dependencies]

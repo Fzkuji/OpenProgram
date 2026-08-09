@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -94,39 +95,41 @@ class OnlineMemoryRuntime:
         ):
             return False
 
-        workspace = MemoryWorkspace(
+        # The workspace stages a copy of memory under the temp directory,
+        # so it is closed however this batch ends.
+        with closing(MemoryWorkspace(
             self.memory_dir,
             config=self.memory_config,
-        )
-        workspace.archive_source_records(list(batch))
-        writer(workspace, batch)
+        )) as workspace:
+            workspace.archive_source_records(list(batch))
+            writer(workspace, batch)
 
-        state = self.store.load()
-        for record in batch:
-            state.advance_cursor(
-                record.thread_id, record.message_id, ordinal=record.ordinal
-            )
-        state.local_batches += 1
-        state.local_tokens += token_count
-        state.write_commits_since_global += 1
-        if local_manager and should_local_reorganize(
-            state.local_batches,
-            state.local_tokens,
-            batch_threshold=self.local_batch_threshold,
-            token_threshold=self.local_token_threshold,
-        ):
-            local_manager(workspace)
-            state.local_batches = 0
-            state.local_tokens = 0
-        last_global = _parse(state.last_global_at)
-        if global_manager and should_global_manage(
-            last_global,
-            now,
-            new_write_commits=state.write_commits_since_global,
-        ):
-            global_manager(workspace)
-            state.last_global_at = now.isoformat()
-            state.write_commits_since_global = 0
+            state = self.store.load()
+            for record in batch:
+                state.advance_cursor(
+                    record.thread_id, record.message_id, ordinal=record.ordinal
+                )
+            state.local_batches += 1
+            state.local_tokens += token_count
+            state.write_commits_since_global += 1
+            if local_manager and should_local_reorganize(
+                state.local_batches,
+                state.local_tokens,
+                batch_threshold=self.local_batch_threshold,
+                token_threshold=self.local_token_threshold,
+            ):
+                local_manager(workspace)
+                state.local_batches = 0
+                state.local_tokens = 0
+            last_global = _parse(state.last_global_at)
+            if global_manager and should_global_manage(
+                last_global,
+                now,
+                new_write_commits=state.write_commits_since_global,
+            ):
+                global_manager(workspace)
+                state.last_global_at = now.isoformat()
+                state.write_commits_since_global = 0
         state.creation_order = self.store.load().creation_order
         self.store.git_commit("Scriptorium: incremental memory transaction")
         self.store.save(state)

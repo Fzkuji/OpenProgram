@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .transaction import WRITABLE_FILES, WRITABLE_PREFIX, TransactionError
+from .transaction import TransactionError, validate_writable_path
 
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _REJECTED_HEADERS = (
@@ -47,7 +47,7 @@ def apply_patch(stage_dir: Path, patch: str) -> list[str]:
         )
     changed: list[str] = []
     for entry in files:
-        _validate_path(entry.path)
+        validate_writable_path(entry.path)
         target = stage_dir / entry.path
         if entry.deletes:
             if not target.is_file():
@@ -81,26 +81,6 @@ def apply_patch(stage_dir: Path, patch: str) -> list[str]:
         target.write_text("".join(updated), encoding="utf-8")
         changed.append(entry.path)
     return sorted(set(changed))
-
-
-def _validate_path(path: str) -> None:
-    candidate = Path(path)
-    if candidate.is_absolute() or ".." in candidate.parts:
-        raise TransactionError(
-            "PATH_OUTSIDE_WORKSPACE",
-            "patch path escapes the workspace",
-            path=path,
-        )
-    posix = candidate.as_posix()
-    if posix in WRITABLE_FILES:
-        return
-    if posix.startswith(WRITABLE_PREFIX) and posix.endswith(".md"):
-        return
-    raise TransactionError(
-        "READ_ONLY_PATH",
-        "only topics/**/*.md and core.md are writable",
-        path=path,
-    )
 
 
 def _parse(patch: str) -> list[FilePatch]:

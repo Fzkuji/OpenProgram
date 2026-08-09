@@ -182,6 +182,68 @@ def _need_subcommand(parser) -> None:
     sys.exit(2)
 
 
+def _memory_edit(root, path: str) -> int:
+    """Open one memory file in $EDITOR and land the result transactionally.
+
+    The editor is pointed at a scratch copy, never at the committed file.
+    A hand edit can drop a block ID or strand a footnote, and the check for
+    that runs against the tree as it was *before* the edit — so it has to be
+    read before anything is written. Editing the real file in place would
+    make the file its own baseline, which is how a deleted block ID used to
+    pass validation.
+
+    A rejected edit therefore changes nothing on disk, and the scratch copy
+    is left behind so the work that was rejected is not lost with it.
+    """
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    from openprogram.memory.scriptorium.management.transaction import (
+        TransactionError, staged_edit, validate_writable_path,
+    )
+    from openprogram.memory.scriptorium.workspace_layout import resolve_within
+
+    name = path if path.endswith(".md") else path + ".md"
+    target = resolve_within(root, name)
+    if target is None:
+        print(f"{path!r} is outside the memory workspace.")
+        return 1
+    relative = target.relative_to(Path(root).resolve()).as_posix()
+    try:
+        validate_writable_path(relative)
+    except TransactionError as exc:
+        print(f"Cannot edit {relative}: {exc.message}")
+        return 1
+    if not target.is_file():
+        print(f"No memory file at {relative!r}.")
+        return 1
+
+    before = target.read_text(encoding="utf-8")
+    scratch = Path(tempfile.mkdtemp(prefix="openprogram-memory-edit-"))
+    draft = scratch / target.name
+    draft.write_text(before, encoding="utf-8")
+    subprocess.call([os.environ.get("EDITOR", "vi"), str(draft)])
+    edited = draft.read_text(encoding="utf-8")
+    if edited == before:
+        shutil.rmtree(scratch, ignore_errors=True)
+        print(f"{relative} unchanged.")
+        return 0
+
+    ok, message = staged_edit(
+        root, lambda stage: (stage / relative).write_text(edited, encoding="utf-8")
+    )
+    if not ok:
+        print(f"Rejected: {message}")
+        print(f"{relative} is unchanged; your edit is kept at {draft}")
+        return 1
+    shutil.rmtree(scratch, ignore_errors=True)
+    print(f"{relative} validated and derived views rebuilt")
+    return 0
+
+
 def _needs_first_run_setup() -> bool:
     """True when no LLM provider is configured yet.
 
@@ -620,7 +682,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print one memory file, e.g. topics/people/dave.md.")
     p_ms.add_argument("path", help="Path of the memory file to print")
     p_med = memory_sub.add_parser("edit",
-        help="Open a memory file in $EDITOR, then validate it.")
+        help="Open a memory file in $EDITOR; the edit lands only if it validates.")
     p_med.add_argument("path", help="Path of the memory file to open")
     memory_sub.add_parser("sleep",
         help="Reorganise topic files now, instead of waiting for tonight.")
@@ -1285,25 +1347,7 @@ def main():
             print(found.get("content", ""))
             sys.exit(0)
         if verb == "edit":
-            import os, subprocess
-            root = _mstore.ensure()
-            name = args.path if args.path.endswith(".md") else args.path + ".md"
-            target = root / name
-            if not target.exists():
-                print(f"No memory file at {name!r}.")
-                sys.exit(1)
-            subprocess.call([os.environ.get("EDITOR", "vi"), str(target)])
-            # Validate rather than reindex: an edit by hand can break the
-            # block IDs and citations other views reach through.
-            from openprogram.memory.scriptorium.management import MemoryWorkspace
-            from openprogram.memory.scriptorium.management.transaction import (
-                committed_baseline, install_state,
-            )
-            space = MemoryWorkspace(root)
-            units, ids = committed_baseline(space)
-            install_state(space, units, ids)
-            print("memory validated and derived views rebuilt")
-            sys.exit(0)
+            sys.exit(_memory_edit(_mstore.ensure(), args.path))
         if verb == "sleep":
             from openprogram.memory.scriptorium.writing import sweep
             import json as _json

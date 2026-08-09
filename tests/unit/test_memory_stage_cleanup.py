@@ -1,0 +1,114 @@
+"""Every ``MemoryWorkspace`` closes its staging tree, on both outcomes.
+
+Building one copies the whole workspace into a fresh temp directory. Nothing
+removes that copy when the object is dropped, so a caller that opens a
+workspace per write and never closes it leaves one staged copy of memory
+behind per call — invisible until the temp directory is full.
+
+The callers checked here are the two that open a workspace outside the web
+routes and the CLI: the ``memory_update`` tool and the background runtime.
+"""
+from __future__ import annotations
+
+import glob
+import os
+import tempfile
+
+import pytest
+
+SOURCE = '# Conversation 1\n\n<a id="d1-1"></a>\n\nuser: remember this\n'
+NOTE = (
+    "# Note\n"
+    "\n"
+    "A fact worth keeping.[^e-1f4c7a2b90] ^abc12345\n"
+    "\n"
+    "[^e-1f4c7a2b90]: Time: `2026-01-01`; Sources: [D1:1](../sources/D1.md#d1-1)\n"
+)
+PATCH = (
+    "--- a/topics/note.md\n"
+    "+++ b/topics/note.md\n"
+    "@@ -3,1 +3,1 @@\n"
+    "-A fact worth keeping.[^e-1f4c7a2b90] ^abc12345\n"
+    "+A fact worth remembering.[^e-1f4c7a2b90] ^abc12345\n"
+)
+
+
+def _stage_dirs() -> set[str]:
+    """The workspace staging trees currently sitting in the temp directory."""
+    return set(glob.glob(
+        os.path.join(tempfile.gettempdir(), "scriptorium-topics-*")
+    ))
+
+
+@pytest.fixture
+def memory(tmp_path, monkeypatch):
+    """A memory workspace holding one valid topic. Returns its root."""
+    import openprogram.paths as paths
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
+
+    from openprogram.memory import store
+    root = store.ensure()
+    (root / "sources").mkdir(parents=True, exist_ok=True)
+    (root / "sources" / "D1.md").write_text(SOURCE, encoding="utf-8")
+    (root / "topics" / "note.md").write_text(NOTE, encoding="utf-8")
+    return root
+
+
+# ---- the memory_update tool -------------------------------------------
+
+
+def test_memory_update_cleans_up_on_both_paths(memory):
+    import json
+
+    from openprogram.functions.tools.memory.memory import (
+        memory_status, memory_update,
+    )
+    before = _stage_dirs()
+
+    rejected = memory_update(base_revision="not-the-revision", patch=PATCH)
+    assert json.loads(rejected)["error"]["code"] == "CONCURRENT_UPDATE"
+    assert _stage_dirs() == before
+
+    revision = json.loads(memory_status())["revision"]
+    accepted = json.loads(memory_update(base_revision=revision, patch=PATCH))
+    assert accepted["ok"] is True, accepted
+    assert "worth remembering" in (
+        memory / "topics/note.md"
+    ).read_text(encoding="utf-8")
+    assert _stage_dirs() == before
+
+
+# ---- the background runtime -------------------------------------------
+
+
+def _record(content: str = "remember this"):
+    from openprogram.memory.scriptorium.runtime.state import SourceRecord
+    return SourceRecord(
+        provider="claude-code", thread_id="t1", message_id="m1",
+        ordinal=1, role="user", content=content,
+    )
+
+
+def _runtime(memory):
+    from openprogram.memory.scriptorium.runtime.online import OnlineMemoryRuntime
+    return OnlineMemoryRuntime(memory, token_counter=len)
+
+
+def test_process_cleans_up_after_a_batch_it_wrote(memory):
+    before = _stage_dirs()
+
+    assert _runtime(memory).process(
+        [_record()], lambda workspace, batch: None, force=True
+    ) is True
+    assert _stage_dirs() == before
+
+
+def test_process_cleans_up_after_a_writer_that_raised(memory):
+    before = _stage_dirs()
+
+    def writer(workspace, batch):
+        raise RuntimeError("the writer gave up")
+
+    with pytest.raises(RuntimeError):
+        _runtime(memory).process([_record()], writer, force=True)
+    assert _stage_dirs() == before

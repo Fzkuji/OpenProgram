@@ -13,7 +13,8 @@ import errno
 import hashlib
 import os
 import re
-from contextlib import contextmanager
+from collections.abc import Callable
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -159,6 +160,82 @@ else:
             fcntl.flock(handle, fcntl.LOCK_UN)
         except OSError:
             pass
+
+
+def validate_writable_path(path: str) -> None:
+    """Reject a workspace-relative path a hand edit may not write.
+
+    Two rules, and both are about where bytes may land: nothing may climb
+    out of the workspace, and inside it only Topic Markdown and ``core.md``
+    are authored by hand. ``sources/`` is the append-only evidence record
+    and the derived views are rebuilt from topics, so an edit to either is
+    refused rather than overwritten on the next write.
+    """
+    candidate = Path(path)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise TransactionError(
+            "PATH_OUTSIDE_WORKSPACE",
+            "path escapes the workspace",
+            path=path,
+        )
+    posix = candidate.as_posix()
+    if posix in WRITABLE_FILES:
+        return
+    if posix.startswith(WRITABLE_PREFIX) and posix.endswith(".md"):
+        return
+    raise TransactionError(
+        "READ_ONLY_PATH",
+        "only topics/**/*.md and core.md are writable",
+        path=path,
+    )
+
+
+def staged_edit(
+    root: Path,
+    write: Callable[[Path], None],
+    *,
+    deleting: str = "",
+    timeout_s: float = 5.0,
+) -> tuple[bool, str]:
+    """Apply a hand edit through the workspace stage, or not at all.
+
+    ``write`` edits the staging copy the way it would edit the real tree.
+    Someone editing a topic file by hand can drop a block ID or strand a
+    footnote, and nothing else would notice until a later write failed, so
+    the check runs here while the person who made the edit is still looking
+    at it.
+
+    Two things make that check mean something. The baseline is read from
+    the committed workspace *before* anything is staged — read afterwards
+    it would measure the edit against itself, and a dropped block ID would
+    look like there never was one. And the edit lands only by installing a
+    validated stage, so a rejected edit leaves the committed workspace
+    byte-for-byte as it was rather than needing to be undone.
+
+    ``deleting`` names a topic whose block IDs go away on purpose. Every
+    other committed ID must still be reachable after the edit.
+    """
+    from .workspace import MemoryWorkspace
+
+    try:
+        # The lock spans staging, validation and install: the background
+        # writer stages from this same tree and would otherwise install
+        # over the edit, or be installed over by it.
+        with workspace_write_lock(root, timeout_s=timeout_s):
+            with closing(MemoryWorkspace(root)) as space:
+                units, block_ids = committed_baseline(space)
+                if deleting:
+                    block_ids -= {
+                        unit.memory_id for unit in units
+                        if unit.topic_path == deleting
+                    }
+                write(space.stage_dir)
+                install_state(space, units, block_ids)
+    except TransactionError as exc:
+        return False, exc.message
+    except Exception as exc:  # noqa: BLE001
+        return False, str(exc)
+    return True, ""
 
 
 def parse_sources(raw: Any, limits: TransactionLimits) -> list[SourceInput]:

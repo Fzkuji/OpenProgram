@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from contextlib import closing
 from pathlib import Path
 
 from fastapi import Request
@@ -40,16 +39,9 @@ def _title_of(text: str, fallback: str) -> str:
 
 
 def _within(root: Path, relative: str) -> Path | None:
-    """Resolve inside root, or None if the path climbs out of it.
-
-    A shared string prefix is not containment: ``topics-private/`` begins
-    with the same characters as ``topics/`` and is a different directory.
-    Resolving first is what collapses ``..`` and follows symlinks, so the
-    answer is about where the path actually lands.
-    """
-    root = root.resolve()
-    target = (root / relative).resolve()
-    return target if target.is_relative_to(root) else None
+    """Resolve inside root, or None if the path climbs out of it."""
+    from openprogram.memory.scriptorium.workspace_layout import resolve_within
+    return resolve_within(root, relative)
 
 
 def _staged_edit(
@@ -58,49 +50,16 @@ def _staged_edit(
     *,
     deleting: str = "",
 ) -> tuple[bool, str]:
-    """Apply a hand edit through the workspace stage, or not at all.
+    """Bind this module's lock timeout to the shared staged edit.
 
-    ``write`` edits the staging copy the way it would edit the real tree.
-    Someone editing a topic file by hand can drop a block ID or strand a
-    footnote, and nothing else would notice until a later write failed, so
-    the check runs here while the person who made the edit is still looking
-    at it.
-
-    Two things make that check mean something. The baseline is read from
-    the committed workspace *before* anything is staged — read afterwards
-    it would measure the edit against itself, and a dropped block ID would
-    look like there never was one. And the edit lands only by installing a
-    validated stage, so a rejected edit leaves the committed workspace
-    byte-for-byte as it was rather than needing to be undone.
-
-    ``deleting`` names a topic whose block IDs go away on purpose. Every
-    other committed ID must still be reachable after the edit.
+    The same transaction serves ``openprogram memory edit``; see
+    ``management.transaction.staged_edit`` for why the baseline is read
+    before anything is staged.
     """
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
-    from openprogram.memory.scriptorium.management.transaction import (
-        TransactionError, committed_baseline, install_state,
-        workspace_write_lock,
+    from openprogram.memory.scriptorium.management.transaction import staged_edit
+    return staged_edit(
+        root, write, deleting=deleting, timeout_s=WRITE_LOCK_TIMEOUT_S
     )
-
-    try:
-        # The lock spans staging, validation and install: the background
-        # writer stages from this same tree and would otherwise install
-        # over the edit, or be installed over by it.
-        with workspace_write_lock(root, timeout_s=WRITE_LOCK_TIMEOUT_S):
-            with closing(MemoryWorkspace(root)) as space:
-                units, block_ids = committed_baseline(space)
-                if deleting:
-                    block_ids -= {
-                        unit.memory_id for unit in units
-                        if unit.topic_path == deleting
-                    }
-                write(space.stage_dir)
-                install_state(space, units, block_ids)
-    except TransactionError as exc:
-        return False, exc.message
-    except Exception as exc:  # noqa: BLE001
-        return False, str(exc)
-    return True, ""
 
 
 def register(app):

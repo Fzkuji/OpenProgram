@@ -41,7 +41,17 @@ _register(UPDATE_NAME, UPDATE_SPEC, memory_update, max_chars=8_000)
 _register(STATUS_NAME, STATUS_SPEC, memory_status, max_chars=8_000)
 
 
+# What "the memory tools" means, for everything that has to name them as a
+# group: the toolset preset, the Functions page grouping, and the switch
+# that hides them when there is no backing store. Written once here so a
+# renamed tool cannot leave one of those lists quietly pointing at nothing.
+MEMORY_TOOL_NAMES: tuple[str, ...] = (
+    SEARCH_NAME, GREP_NAME, GET_NAME, BROWSE_NAME, UPDATE_NAME, STATUS_NAME,
+)
+
+
 __all__ = [
     "SEARCH_NAME", "GREP_NAME", "GET_NAME",
     "BROWSE_NAME", "UPDATE_NAME", "STATUS_NAME",
+    "MEMORY_TOOL_NAMES",
 ]
