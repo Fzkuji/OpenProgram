@@ -1,126 +1,127 @@
-"""Memory routes — wiki pages, journal, core, governance pages.
+"""Memory routes — topic pages, the timeline, and core memory.
 
-These handlers don't touch server.py module state; they're pure
-filesystem ops over ``openprogram.memory.store`` paths. That makes
-this group the safest extraction to do first.
+Pure filesystem reads over ``openprogram.memory.store`` paths; no
+server.py module state.
+
+The route names still say ``wiki`` and ``journal``. They now serve
+``topics/`` and ``timeline/``, which occupy the same two places in the
+UI — curated pages, and a time axis. The paths are kept so the memory
+tab keeps working; renaming them means changing the frontend too, and
+that is a rename, not a behaviour change.
 """
 from __future__ import annotations
 
-from fastapi import Request
+from pathlib import Path
+
 from fastapi.responses import JSONResponse
+
+
+def _title_of(text: str, fallback: str) -> str:
+    """The first Markdown heading, which is how topic files name themselves."""
+    for line in text.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip() or fallback
+    return fallback
 
 
 def register(app):
     @app.get("/api/memory/wiki")
-    async def list_wiki_pages():
+    async def list_topic_pages():
         from openprogram.memory import store
-        from openprogram.memory.wiki import helpers as h
-        wdir = store.wiki_dir()
+        root = store.topics_dir()
         pages = []
-        for p in sorted(wdir.rglob("*.md")):
-            if p.name in store.GOVERNANCE_PAGES:
-                continue
-            rel = str(p.relative_to(wdir))
+        for path in sorted(root.rglob("*.md")):
             try:
-                text = p.read_text(encoding="utf-8")
-                fm, _ = h.parse_frontmatter(text)
-            except Exception:
-                fm = {}
-            stat = p.stat()
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            stat = path.stat()
+            relative = path.relative_to(root)
             pages.append({
-                "path": rel,
-                "title": fm.get("title", p.stem),
-                "type": fm.get("type", ""),
+                "path": str(relative),
+                "title": _title_of(text, path.stem),
+                # The subject grouping is the directory: topics/people/…
+                "type": relative.parts[0] if len(relative.parts) > 1 else "",
                 "size": stat.st_size,
                 "mtime": stat.st_mtime,
             })
         return JSONResponse(content=pages)
 
     @app.get("/api/memory/wiki/{path:path}")
-    async def get_wiki_page(path: str):
+    async def get_topic_page(path: str):
         from openprogram.memory import store
-        from openprogram.memory.wiki import helpers as h
-        wdir = store.wiki_dir()
-        target = (wdir / path).resolve()
-        if not str(target).startswith(str(wdir.resolve())):
-            return JSONResponse(content={"error": "invalid path"}, status_code=400)
-        if not target.exists():
+        root = store.topics_dir()
+        target = (root / path).resolve()
+        if not str(target).startswith(str(root.resolve())):
+            return JSONResponse(content={"error": "forbidden"}, status_code=403)
+        if not target.is_file():
             return JSONResponse(content={"error": "not found"}, status_code=404)
-        text = target.read_text(encoding="utf-8")
-        fm, _ = h.parse_frontmatter(text)
-        return JSONResponse(content={"path": path, "content": text, "frontmatter": fm})
-
-    @app.put("/api/memory/wiki/{path:path}")
-    async def update_wiki_page(path: str, request: Request):
-        from openprogram.memory import store
-        wdir = store.wiki_dir()
-        target = (wdir / path).resolve()
-        if not str(target).startswith(str(wdir.resolve())):
-            return JSONResponse(content={"error": "invalid path"}, status_code=400)
-        body = await request.json()
-        content = body.get("content", "")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-        return JSONResponse(content={"ok": True})
+        return JSONResponse(content={
+            "path": path,
+            "content": target.read_text(encoding="utf-8"),
+        })
 
     @app.delete("/api/memory/wiki/{path:path}")
-    async def delete_wiki_page(path: str):
+    async def delete_topic_page(path: str):
         from openprogram.memory import store
-        wdir = store.wiki_dir()
-        target = (wdir / path).resolve()
-        if not str(target).startswith(str(wdir.resolve())):
-            return JSONResponse(content={"error": "invalid path"}, status_code=400)
-        if not target.exists():
+        root = store.topics_dir()
+        target = (root / path).resolve()
+        if not str(target).startswith(str(root.resolve())):
+            return JSONResponse(content={"error": "forbidden"}, status_code=403)
+        if not target.is_file():
             return JSONResponse(content={"error": "not found"}, status_code=404)
         target.unlink()
         return JSONResponse(content={"ok": True})
 
     @app.get("/api/memory/journal")
-    async def list_journal():
+    async def list_timeline_days():
+        """The dates the timeline covers, newest first.
+
+        ``timeline/`` nests by year and month, so the day files are
+        found by glob rather than by listing one directory.
+        """
         from openprogram.memory import store
-        files = []
-        for p in sorted(store.journal_dir().glob("*.md")):
-            stat = p.stat()
-            files.append({"date": p.stem, "size": stat.st_size, "mtime": stat.st_mtime})
-        return JSONResponse(content=files)
+        root = store.timeline_dir()
+        if not root.is_dir():
+            return JSONResponse(content=[])
+        days = sorted(
+            {
+                "-".join(path.relative_to(root).with_suffix("").parts)
+                for path in root.rglob("*.md")
+            },
+            reverse=True,
+        )
+        return JSONResponse(content=days)
 
     @app.get("/api/memory/journal/{date}")
-    async def get_journal(date: str):
+    async def get_timeline_day(date: str):
         from openprogram.memory import store
-        p = store.journal_for(date)
-        if not p.exists():
-            return JSONResponse(content={"error": "not found"}, status_code=404)
-        return JSONResponse(content={"date": date, "content": p.read_text(encoding="utf-8")})
+        root = store.timeline_dir()
+        target = (root / Path(*date.split("-"))).with_suffix(".md")
+        resolved = target.resolve()
+        if not str(resolved).startswith(str(root.resolve())):
+            return JSONResponse(content={"error": "forbidden"}, status_code=403)
+        if not resolved.is_file():
+            return JSONResponse(content={"date": date, "content": ""})
+        return JSONResponse(content={
+            "date": date,
+            "content": resolved.read_text(encoding="utf-8"),
+        })
 
     @app.get("/api/memory/core")
     async def get_core():
         from openprogram.memory import store
-        p = store.core()
-        content = p.read_text(encoding="utf-8") if p.exists() else ""
-        size = p.stat().st_size if p.exists() else 0
-        mtime = int(p.stat().st_mtime) if p.exists() else 0
-        return JSONResponse(content={"content": content, "size": size, "mtime": mtime})
-
-    @app.put("/api/memory/core")
-    async def put_core(body: dict):
-        from openprogram.memory import store
-        p = store.core()
-        p.write_text(body.get("content", ""), encoding="utf-8")
-        return JSONResponse(content={"ok": True})
+        path = store.core()
+        content = path.read_text(encoding="utf-8") if path.is_file() else ""
+        return JSONResponse(content={"content": content})
 
     @app.get("/api/memory/wiki-system")
-    async def get_wiki_system():
+    async def list_derived_views():
+        """Views the runtime maintains, which are read-only to everyone else."""
         from openprogram.memory import store
-        names = ["index.md", "log.md", "overview.md", "reflections.md"]
-        result = []
-        for name in names:
-            p = store.wiki_dir() / name
-            if p.exists():
-                stat = p.stat()
-                result.append({
-                    "path": name,
-                    "title": name.replace(".md", "").capitalize(),
-                    "size": stat.st_size,
-                    "mtime": int(stat.st_mtime),
-                })
-        return JSONResponse(content=result)
+        root = store.root()
+        names = ("recent_events.jsonl", "relations.json")
+        return JSONResponse(content=[
+            {"path": name, "size": (root / name).stat().st_size}
+            for name in names if (root / name).is_file()
+        ])

@@ -1,32 +1,32 @@
-"""Builtin memory provider implementation.
+"""Markdown-workspace memory, wired to the agent runtime's hooks.
 
-Thin adapter wiring the storage layer (journal + wiki + core)
-to the agent runtime via :class:`MemoryProvider` lifecycle hooks.
-
-Under the hybrid wiki schema the heavy lifting moved out of this
-file:
-
-* Ingest now goes through :func:`openprogram.memory.ingest.ingest_session`,
-  driven by ``session_watcher`` — not by ``on_session_end`` here.
-* Per-turn pattern-matched extraction is gone — the LLM writes
-  journal explicitly via ``memory_note``.
-
-Only the read path + system-prompt block remain wired here.
+Turns are not written as they happen. Each one is archived as evidence
+and left to accumulate; the model is only asked to fold them into topic
+files once there is a batch worth a call. Writing a paragraph per turn
+would cost a model call per turn and produce memory shaped like a
+transcript rather than like knowledge.
 """
+
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from .. import core
 from ..provider import MemoryProvider, fence_memory
-from . import recall
 
 logger = logging.getLogger(__name__)
 
+# How much conversation to gather before asking the model to write it up.
+# Small enough that a long session is written in several passes rather
+# than one oversized call, large enough that a short exchange does not
+# trigger one at all.
+WRITE_TOKEN_THRESHOLD = 16_000
+
 
 class BuiltinMemoryProvider(MemoryProvider):
-    """File-based memory: journal + wiki + core."""
+    """File-based memory: sources + topics + core."""
+
+    _session_id: str = ""
 
     @property
     def name(self) -> str:
@@ -35,18 +35,43 @@ class BuiltinMemoryProvider(MemoryProvider):
     def initialize(self, *, session_id: str = "", **kwargs: Any) -> None:
         self._session_id = session_id
 
+    # -- Reading --------------------------------------------------------
+
     def system_prompt_block(self) -> str:
-        return core.system_prompt_block()
+        """Core memory, injected into every session."""
+        from .. import store
+
+        try:
+            text = store.core().read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+        # A bare heading is the empty state, not content worth injecting.
+        body = "\n".join(
+            line for line in text.splitlines() if not line.startswith("# ")
+        ).strip()
+        return fence_memory(text) if body else ""
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
+        """Whatever memory bears on the turn about to run."""
         if not query or not query.strip():
             return ""
         try:
-            raw = recall.recall_for_prompt(query)
-        except Exception as e:  # noqa: BLE001
-            logger.debug("recall failed: %s", e)
+            from ..retrieval import inspect
+            from .. import store
+
+            found = inspect.search(store.ensure(), query, top_k=5)
+        except Exception as exc:  # noqa: BLE001
+            # An empty or unindexed workspace is the ordinary case on a
+            # fresh install, not something to surface mid-turn.
+            logger.debug("memory recall failed: %s", exc)
             return ""
-        return fence_memory(raw) if raw else ""
+        rendered = "\n\n".join(
+            hit["content"]
+            for hit in found.get("results", []) if hit.get("content")
+        ).strip()
+        return fence_memory(rendered) if rendered else ""
+
+    # -- Writing --------------------------------------------------------
 
     def sync_turn(
         self,
@@ -55,14 +80,34 @@ class BuiltinMemoryProvider(MemoryProvider):
         *,
         session_id: str = "",
     ) -> None:
-        return
+        """Write memory if this turn brought the session over the line.
+
+        The turn's text is not taken from the arguments: the session
+        store already holds it, in order, and reading from there is what
+        lets a restart pick up where it left off. Cheap in the common
+        case — a cursor lookup and a token count, no model call.
+        """
+        from .writing import record_turn
+
+        try:
+            record_turn(
+                session_id or self._session_id,
+                token_threshold=WRITE_TOKEN_THRESHOLD,
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Memory must never take a conversation down with it.
+            logger.debug("memory write failed: %s", exc)
 
     def on_session_end(self, messages: list[dict[str, Any]]) -> None:
-        """Deprecated — session_watcher calls agentic ingest directly."""
-        return
+        """Flush whatever is left, however little it is.
 
-    def on_pre_compress(self, messages: list[dict[str, Any]]) -> str:
-        return ""
+        The threshold exists so that short exchanges do not each cost a
+        call. At the end of a session there is no later batch to join,
+        so the remainder is written regardless of size.
+        """
+        from .writing import flush
 
-    def get_tool_schemas(self) -> list[dict[str, Any]]:
-        return []
+        try:
+            flush(self._session_id, messages)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("memory flush failed: %s", exc)

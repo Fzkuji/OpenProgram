@@ -72,7 +72,7 @@ OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调�
 | `todo_create` / `todo_update` / `todo_list` | 会话规划板:手写计划清单(建条目、改状态/认领人、按状态分组列出);真正派活用`agent`,追踪用`list_tasks` | 无 |
 | `enter_plan_mode` / `exit_plan_mode` | 进入 / 退出计划模式 | 无 |
 | `canvas` | 往 markdown 文件的具名块里增量写入 | 无 |
-| `memory_*` | 持久记忆库读写——13 个入口：`memory_note`、`memory_recall`、`memory_reflect`、`memory_get`、`memory_browse`、`memory_lint`、`memory_ingest`，外加 wiki 维护（`backlinks` / `rename` / `relink` / `delete` / `review` / `status`） | 无 |
+| `memory_*` | 读取持久记忆工作区——`memory_search`（按语义找）、`memory_grep`（找确切字符串）、`memory_get`（读一个文件、章节或段落）、`memory_browse`（看有什么）、`memory_status`（规模与版本），以及 `memory_update` 用来更正某一处。没有记录对话的工具：那件事在后台完成。 | 无 |
 | `worktree_*` | git worktree：`worktree_create` / `merge` / `discard` / `list` / `keep` | git |
 | `cron` | 登记周期性 agent 任务 | 无 |
 | `list_mcp_resources` / `read_mcp_resource` / `list_mcp_prompts` / `get_mcp_prompt` | 把 MCP 的 resources / prompts 原语暴露给模型（`mcp_meta` 目录） | 已配置的 MCP server（见 [MCP](mcp.md)） |

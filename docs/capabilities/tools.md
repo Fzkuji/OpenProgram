@@ -72,7 +72,7 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 | `todo_create` / `todo_update` / `todo_list` | Session planning board — a written checklist of intent (create entries, update status/owner, list grouped by status); dispatch actual work with `agent`, track it with `list_tasks` | Nothing |
 | `enter_plan_mode` / `exit_plan_mode` | Enter / exit plan mode | Nothing |
 | `canvas` | Incrementally write into named blocks of a markdown file | Nothing |
-| `memory_*` | Read / write the persistent memory vault — 13 entry points: `memory_note`, `memory_recall`, `memory_reflect`, `memory_get`, `memory_browse`, `memory_lint`, `memory_ingest`, plus wiki maintenance (`backlinks` / `rename` / `relink` / `delete` / `review` / `status`) | Nothing |
+| `memory_*` | Read the persistent memory workspace — `memory_search` (by meaning), `memory_grep` (exact string), `memory_get` (one file, section or block), `memory_browse` (what exists), `memory_status` (size and revision), and `memory_update` to correct one thing. Recording the conversation is not among them: that happens in the background. | Nothing |
 | `worktree_*` | Git worktrees: `worktree_create` / `merge` / `discard` / `list` / `keep` | git |
 | `cron` | Register recurring agent tasks | Nothing |
 | `list_mcp_resources` / `read_mcp_resource` / `list_mcp_prompts` / `get_mcp_prompt` | Expose MCP resources / prompts primitives to the model (the `mcp_meta` directory) | A configured MCP server (see [MCP](mcp.md)) |
