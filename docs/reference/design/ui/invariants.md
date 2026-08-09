@@ -78,17 +78,16 @@ at the turn that opened it (dag/overview.md §4) instead of hanging
 off ROOT. Change spawn semantics in all three together, test all
 three together.
 
-A spawned agent NEVER re-delegates — enforced at the toolset level:
-agent/task_output/task_stop carry `unsafe_in=["agent_spawn"]`, so after
-the dispatcher's `req.source` filter a spawned agent's tool list simply
-does not contain them (a tool sitting in the list invites the model to
-use it; offering it and then refusing wastes a turn — bad design). The
-`MAX_AGENT_DEPTH=1` depth guard is only a backstop (catches bypass paths
-like tools_override); send_message keeps the looser
-`MAX_SPAWN_DEPTH=8` (budgeted for multi-round branch-to-branch
-dialogue, not delegation), both sharing one per-chain depth counter.
-Even a single "coordinator" hop degenerates into buck-passing, so no
-delegation hop is granted to a spawned agent at all.
+A spawned agent NEVER re-delegates: the spawn budget
+(`agent.max_spawn_depth`, default 1) is spent by the time it runs, so
+its `agent()` spawn is refused. Even a single "coordinator" hop
+degenerates into buck-passing, so no delegation hop is granted. It
+keeps the tool for `to=` dispatch and the `task_output` / `task_stop`
+companions, because the looser message budget
+(`agent.max_messages`, default 8) still has room — the two budgets
+share one per-chain counter. Tool exposure follows the counter and
+nothing else: agent/task_output/task_stop leave the listing only when
+BOTH budgets are spent (see runtime/agent-collaboration.md §5.1).
 
 ## 7. The chat sibling switcher appears only on REAL forks
 

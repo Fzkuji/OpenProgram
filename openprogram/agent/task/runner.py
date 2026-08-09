@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import contextvars
 import json
+import logging
 import os
 import threading
 import time
@@ -66,6 +67,8 @@ from openprogram.agent.task.types import (
     mint_task_id,
 )
 
+
+_log = logging.getLogger(__name__)
 
 _DEFAULT_MAX_WORKERS = 4
 # Hard ceiling on the wait we'll give a worker to honour cancel before
@@ -227,7 +230,9 @@ class TaskRunner:
         wait: bool = True,
         caller_msg_id: Optional[str] = None,
         caller_session_id: Optional[str] = None,
-        spawn_depth: int = 0,
+        chain_messages: int = 0,
+        spawner_session_id: Optional[str] = None,
+        archive_when_done: bool = False,
         task_id: Optional[str] = None,
     ) -> str:
         """Create a Task entity, persist it, queue it on the pool.
@@ -277,7 +282,9 @@ class TaskRunner:
             wait=wait,
             caller_msg_id=caller_msg_id,
             caller_session_id=caller_session_id,
-            spawn_depth=spawn_depth,
+            chain_messages=chain_messages,
+            spawner_session_id=spawner_session_id,
+            archive_when_done=archive_when_done,
             status=TaskStatus.PENDING,
             created_at=existing.created_at if existing is not None else time.time(),
         )
@@ -651,15 +658,15 @@ class TaskRunner:
                     branch_from = None
                 else:
                     branch_from = task.parent_msg_id
-                # Bind the spawn-chain depth so send_message calls made
-                # INSIDE this child turn see the right depth and the loop
-                # guard can trip (send_message §5.1).
+                # Bind the chain's message count so send_message / agent
+                # calls made INSIDE this child turn see the right budget
+                # and the loop guard can trip (send_message §5.1).
                 _depth_tok = None
                 try:
                     from openprogram.functions.tools.send_message.send_message.depth import (
-                        set_spawn_depth, _spawn_depth,
+                        set_chain_messages, _chain_messages,
                     )
-                    _depth_tok = set_spawn_depth(int(task.spawn_depth or 0))
+                    _depth_tok = set_chain_messages(int(task.chain_messages or 0))
                 except Exception:
                     _depth_tok = None
                 try:
@@ -679,7 +686,7 @@ class TaskRunner:
                 finally:
                     if _depth_tok is not None:
                         try:
-                            _spawn_depth.reset(_depth_tok)
+                            _chain_messages.reset(_depth_tok)
                         except Exception:
                             pass
             except Exception as exc:  # noqa: BLE001
@@ -739,6 +746,13 @@ class TaskRunner:
                 # the caller is already blocked on the result).
                 if new_status == TaskStatus.COMPLETED and not updated.wait:
                     self._dispatch_followup(updated)
+                # Spawn-branch bookkeeping at terminal state, AFTER the
+                # result flowed back: stamp who created the branch (the
+                # archive_agent permission check reads it), and archive
+                # it when the spawn asked for archive_when_done.
+                # Best-effort — a meta write failure must never affect
+                # the result path.
+                self._finalize_spawn_branch_meta(updated)
             # Tell tail clients the session changed so attach card
             # picks up the new head / text.
             _broadcast_session_reload(session_id, reason=f"task_{new_status.value}")
@@ -1028,6 +1042,34 @@ class TaskRunner:
             _refresh_context_stats(task.parent_session_id)
         except Exception:
             pass
+
+    def _finalize_spawn_branch_meta(self, task: Task) -> None:
+        """Terminal-state meta for a branch this task CREATED.
+
+        Only spawn tasks carry ``spawner_session_id`` (deliveries to
+        existing branches leave it None) — nothing here runs for them.
+        Stamps the creator on the new branch tip, and archives the
+        branch when the spawn asked for ``archive_when_done``.
+        Archiving removes the branch's right to be disturbed
+        (send_message / agent(to=) refuse it), never its history.
+        Best-effort: failures are logged and swallowed.
+        """
+        if not task.spawner_session_id or not task.head_id:
+            return
+        try:
+            from openprogram.agent.session_db import default_db
+            fields: dict = {"spawner_session_id": task.spawner_session_id}
+            if task.archive_when_done:
+                fields["archived"] = True
+                fields["archived_at"] = time.time()
+            default_db().set_branch_meta(
+                task.parent_session_id, task.head_id, **fields,
+            )
+        except Exception:
+            _log.debug(
+                "spawn branch meta finalize failed for task %s",
+                task.id, exc_info=True,
+            )
 
     def _dispatch_followup(self, task: Task) -> None:
         """Auto-followup: async task finished, nobody's listening on

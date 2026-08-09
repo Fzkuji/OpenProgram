@@ -72,7 +72,7 @@ def fake_dispatcher(monkeypatch):
 
 
 def _call_agent(*, prompt: str, description: str = "", agent_id: str = "",
-               context: str = "inherit",
+               start_from: str = "inherit",
                session_id: str | None = None, turn_id: str | None = None):
     """Invoke the agent tool's underlying Python (skipping the @function
     wrapper which is for LLM-facing dispatch). ContextVars must be set
@@ -87,7 +87,7 @@ def _call_agent(*, prompt: str, description: str = "", agent_id: str = "",
         try:
             return _agent_impl(
                 prompt=prompt, description=description, agent_id=agent_id,
-                context=context,
+                start_from=start_from,
             )
         finally:
             _current_session_id.reset(tok1)
@@ -97,7 +97,7 @@ def _call_agent(*, prompt: str, description: str = "", agent_id: str = "",
 
 
 def test_agent_inherit_default(store, fake_dispatcher):
-    """Default context=inherit: forks off the caller turn, history
+    """Default start_from=inherit: forks off the caller turn, history
     inherited. Result string carries ``branch=<sid>:<head_id>``."""
     out = _call_agent(
         prompt="find the answer", description="finder",
@@ -114,10 +114,10 @@ def test_agent_inherit_default(store, fake_dispatcher):
 
 
 def test_agent_clean_mode_starts_new_root(store, fake_dispatcher):
-    """context=clean: new root (caller=None) in the same session.
+    """start_from=clean: new root (caller=None) in the same session.
     Result string still carries branch=<sid>:<head_id> — same session."""
     out = _call_agent(
-        prompt="find the answer", description="finder", context="clean",
+        prompt="find the answer", description="finder", start_from="clean",
         session_id="p1", turn_id="a1",
     )
     assert "(spawned reply)" in out
@@ -152,10 +152,10 @@ def test_agent_without_turn_returns_error(store, fake_dispatcher):
 
 
 def test_agent_fork_off_node_address(store, fake_dispatcher):
-    """context="SID:MSG_ID" forks the new branch off that exact node."""
+    """start_from="SID:MSG_ID" forks the new branch off that exact node."""
     out = _call_agent(
         prompt="continue from there", description="forker",
-        context="p1:u1", session_id="p1", turn_id="a1",
+        start_from="p1:u1", session_id="p1", turn_id="a1",
     )
     assert "(spawned reply)" in out
     assert "[spawned agent branch=p1:" in out
@@ -164,19 +164,19 @@ def test_agent_fork_off_node_address(store, fake_dispatcher):
 
 def test_agent_fork_unknown_session_errors(store, fake_dispatcher):
     out = _call_agent(
-        prompt="x", context="nosuch:u1",
+        prompt="x", start_from="nosuch:u1",
         session_id="p1", turn_id="a1",
     )
     assert "[agent error]" in out and "not found" in out
 
 
-def test_agent_unknown_context_returns_error(store, fake_dispatcher):
+def test_agent_unknown_start_from_returns_error(store, fake_dispatcher):
     out = _call_agent(
-        prompt="x", context="weird",
+        prompt="x", start_from="weird",
         session_id="p1", turn_id="a1",
     )
     assert "[agent error]" in out
-    assert "unknown context" in out
+    assert "unknown start_from" in out
 
 
 # --- tool_call_id propagation --------------------------------------------
@@ -213,3 +213,64 @@ def test_current_tool_call_id_visible_inside_tool_body():
 def test_current_tool_call_id_is_none_outside_a_tool_call():
     from openprogram.functions._runtime import current_tool_call_id
     assert current_tool_call_id() is None
+
+
+# --- LLM-facing schema ----------------------------------------------------
+
+
+def test_agent_exposes_start_from_to_the_llm():
+    """The spawn-point parameter must survive into the tool schema.
+
+    ``_build_parameters_schema`` drops framework-injected kwargs by name,
+    and ``context`` is on that list — so while this parameter was named
+    ``context`` no model could ever set it: it silently kept its default
+    and every ``clean`` / ``inherit`` / ``SID:MSG_ID`` choice documented
+    in the description was unreachable. ``start_from`` avoids the
+    reserved name; this test keeps it that way.
+    """
+    from openprogram.functions._runtime import all_tools
+    tool = next(t for t in all_tools() if t.name == "agent")
+    props = (tool.parameters or {}).get("properties", {})
+    assert "start_from" in props, sorted(props)
+    assert "context" not in props
+
+
+def test_no_tool_declares_a_parameter_the_runtime_drops():
+    """Repo-wide guard for the same class of bug.
+
+    ``ctx`` and ``context`` are stripped from every generated schema and
+    never injected back, so a tool parameter with either name is dead on
+    arrival: the LLM cannot set it and the framework never fills it in.
+    (``cancel`` / ``on_update`` are stripped *and* injected, so they stay
+    legal.) Cheap AST sweep over every ``@function`` /
+    ``@agentic_function`` definition in the package.
+    """
+    import ast
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "openprogram"
+    dead = {"ctx", "context"}
+    offenders: list[str] = []
+    for path in root.rglob("*.py"):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError, OSError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            decorators = set()
+            for d in node.decorator_list:
+                f = d.func if isinstance(d, ast.Call) else d
+                decorators.add(getattr(f, "id", None) or getattr(f, "attr", None))
+            if not decorators & {"function", "agentic_function"}:
+                continue
+            args = {a.arg for a in node.args.args + node.args.kwonlyargs}
+            for bad in sorted(args & dead):
+                offenders.append(
+                    f"{path.name}:{node.lineno} {node.name}({bad}=…)"
+                )
+    assert not offenders, (
+        "these tool parameters never reach the model and are never "
+        f"injected by the framework — rename them: {offenders}"
+    )

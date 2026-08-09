@@ -62,17 +62,28 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 
 ## Session and collaboration
 
+Collaboration splits into four domains, one word each — see
+[agent collaboration](../reference/design/runtime/agent-collaboration.md) §1.
+
+| Domain | Tool | What it does | Requires |
+|---|---|---|---|
+| Planning | `todo_create` / `todo_update` / `todo_list` | The session planning board — a written checklist of intent (create entries, set status / owner / dependencies, list them grouped by status). Writing an entry starts nothing | Nothing |
+| Execution | `list_tasks` / `task_output` / `task_stop` | The work actually running: list this session's background tasks, wait for one's result, or stop one. Only the session that dispatched a task may fetch or stop it | Nothing |
+| Entity | `agent` | Spawn a new agent and collect its reply, or with `to=` hand a tracked task to an agent that already exists. `run_in_background=true` returns a task id instead of blocking; `start_from` picks where a new agent begins (`clean` / `inherit` / `SID:MSG_ID`); `archive_when_done=true` retires it once its task ends and the result has come back | Nothing |
+| Entity | `list_agents` | The contact list: which agents exist, their names, addresses, sizes and busy state (`scope="archived"` shows the retired ones) | Nothing |
+| Entity | `archive_agent` | Retire an agent you created: it leaves `list_agents` and refuses further `send_message` / `agent(to=)` deliveries, while `read_conversation` still reads its history and `agent(start_from="SID:MSG_ID")` still forks it. Only the creating session may archive; there is no unarchive | Nothing |
+| Communication | `send_message` | Say something to an existing agent, addressed by `"SID:HEAD"` or by name. No task, no ticket, nothing to cancel — which is why anyone may write to anyone | Nothing |
+| Communication | `read_conversation` | Read any agent's history as a plain-text transcript, tool calls included, with turn ranges and a character budget | Nothing |
+
 | Tool | What it does | Requires |
 |---|---|---|
-| `agent` (+ `list_tasks` / `task_output` / `task_stop`) | Spawn another agent within the same session and collect its reply, or dispatch a tracked task to an existing agent with `to=`; list, fetch or stop its background tasks (only the dispatching session may fetch or stop a task) | Nothing |
 | `program` | Invoke any registered `@agentic_function` | Nothing |
-| `send_message` (+ `list_agents`) | Cross-branch communication with existing agents | Nothing |
 | `mixture_of_agents` | Ask N models in parallel, then synthesize; defaults picked from the model registry, one per provider | At least 2 providers in the model registry |
 | `ask_user_question` | Ask the user 1-N questions with options | Nothing |
-| `todo_create` / `todo_update` / `todo_list` | Session planning board — a written checklist of intent (create entries, update status/owner, list grouped by status); dispatch actual work with `agent`, track it with `list_tasks` | Nothing |
 | `enter_plan_mode` / `exit_plan_mode` | Enter / exit plan mode | Nothing |
 | `canvas` | Incrementally write into named blocks of a markdown file | Nothing |
 | `memory_*` | Read the persistent memory workspace — `memory_search` (by meaning), `memory_grep` (exact string), `memory_get` (one file, section or block), `memory_browse` (what exists), `memory_status` (size and revision), and `memory_update` to correct one thing. Recording the conversation is not among them: that happens in the background. | Nothing |
 | `worktree_*` | Git worktrees: `worktree_create` / `merge` / `discard` / `list` / `keep` | git |
 | `cron` | Register recurring agent tasks | Nothing |
 | `list_mcp_resources` / `read_mcp_resource` / `list_mcp_prompts` / `get_mcp_prompt` | Expose MCP resources / prompts primitives to the model (the `mcp_meta` directory) | A configured MCP server (see [MCP](mcp.md)) |
+| `tool_search` | Load a deferred tool's full schema on demand — rarely-used tools sit in the listing as one line until the model asks for them | Nothing |

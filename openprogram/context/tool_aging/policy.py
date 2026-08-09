@@ -57,11 +57,12 @@ MAX_TOOL_RESULT_CHARS = _env_int(
 MAX_TOOL_ARGS_CHARS = 200
 
 # Tools whose results are short + semantically load-bearing —
-# never aged, even on old turns. todo_read/todo_write maintain the
-# agent's plan; web_search seeds the URLs the agent wants to revisit.
+# never aged, even on old turns. The todo board holds the agent's
+# plan; web_search seeds the URLs the agent wants to revisit.
 PRUNE_PROTECTED_TOOLS: frozenset[str] = frozenset({
-    "todo_read",
-    "todo_write",
+    "todo_create",
+    "todo_update",
+    "todo_list",
     "web_search",
 })
 

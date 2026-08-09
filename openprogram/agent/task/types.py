@@ -110,10 +110,19 @@ class Task:
     # back to the INITIATOR's session — that's caller_session_id. None
     # means "same as parent_session_id" (the common case).
     caller_session_id: Optional[str] = None
-    # Spawn-chain depth for the loop guard (send_message §5.1). The
-    # child turn this task runs is at this depth; further spawns from it
-    # increment again. 0 = a top-level (user-initiated) turn.
-    spawn_depth: int = 0
+    # Messages passed by this collaboration chain so far, for the loop
+    # guard (send_message §5.1). The child turn this task runs is at
+    # this count; further spawns/messages from it increment again.
+    # 0 = a top-level (user-initiated) turn.
+    chain_messages: int = 0
+    # Set only when this task CREATES a branch (the agent tool's spawn
+    # form; deliveries to existing branches leave it None). The runner
+    # stamps it into the new branch's meta at terminal state so
+    # ``archive_agent`` can verify "only the creator archives".
+    spawner_session_id: Optional[str] = None
+    # agent(archive_when_done=True): archive the spawned branch when
+    # the task reaches terminal state, after the result flowed back.
+    archive_when_done: bool = False
     label: Optional[str] = None
     # Branch tip we *expect* this task to produce when it commits.
     # Filled in by the runner immediately so the UI can stitch

@@ -6,6 +6,9 @@ true) and ``timeout`` in milliseconds (default 30s, capped at 10min).
 from __future__ import annotations
 
 from openprogram.functions._runtime import function
+from openprogram.functions.tools.send_message.send_message.depth import (
+    delegation_budget_left,
+)
 
 # Claude Code's TaskOutput cap: 600000 ms.
 _MAX_TIMEOUT_MS = 600_000
@@ -29,9 +32,9 @@ _DEFAULT_TIMEOUT_MS = 30_000
         "  timeout: max wait time in ms (default 30000, max 600000)."
     ),
     toolset=["core"],
-    # Same as agent: a spawned agent neither delegates nor waits on
-    # delegated work.
-    unsafe_in=["agent_spawn"],
+    # Same as agent: present while the chain has collaboration budget
+    # left, gone once it is spent.
+    can_use=delegation_budget_left,
 )
 def task_output(
     task_id: str,

@@ -12,7 +12,7 @@ branch:
   * ``"<branch name>"``  — address a named branch directly.
 
 Creating agents is the ``agent`` tool's job (spawn = ``agent(...)``,
-fork off a node = ``agent(context="SID:MSG_ID")``); send_message only
+fork off a node = ``agent(start_from="SID:MSG_ID")``); send_message only
 talks to branches that already exist.
 
 Delivery is always asynchronous: the call returns immediately with a
@@ -24,7 +24,7 @@ module is the entry point: the @function binding plus the main delivery
 flow. Concern-specific pieces live alongside: ``prompt.py`` (LLM-facing
 description), ``addressing.py`` (`to` parsing + branch-name lookup),
 ``delivery.py`` (receipt header, busy-target inbox),
-``depth.py`` (spawn-chain depth guard).
+``depth.py`` (the chain's spawn / message budgets).
 """
 from __future__ import annotations
 
@@ -40,8 +40,8 @@ from .delivery import (
     sender_header,
 )
 from .depth import (
-    MAX_SPAWN_DEPTH,
-    current_spawn_depth,
+    current_chain_messages,
+    max_messages,
 )
 from .prompt import DESCRIPTION
 
@@ -96,15 +96,17 @@ def _send_message_impl(
             "+ turn ContextVars on entry)."
         )
 
-    # Depth guard (§5.1): refuse deliveries past MAX_SPAWN_DEPTH so A↔B /
-    # runaway recursion can't blow up. The reply-followup inherits the
-    # same depth, so back-and-forth also counts toward it.
-    depth = current_spawn_depth()
-    if depth >= MAX_SPAWN_DEPTH:
+    # Message-budget guard (§5.1): refuse deliveries once the chain has
+    # spent its messages, so A↔B / runaway recursion can't blow up. The
+    # reply-followup inherits the same count, so back-and-forth also
+    # counts toward it. 0 = no limit.
+    depth = current_chain_messages()
+    limit = max_messages()
+    if limit and depth >= limit:
         return (
-            f"[send_message refused] spawn depth {depth} reached the max "
-            f"({MAX_SPAWN_DEPTH}). This chain is too deep — finish the work "
-            "here instead of delegating further."
+            f"[send_message refused] this chain has passed {depth} "
+            f"messages, the maximum ({limit}). Finish the work here "
+            "instead of delegating further."
         )
 
     chosen_agent = (agent_id or "").strip() or parent_agent or "main"
@@ -114,7 +116,7 @@ def _send_message_impl(
             f"[send_message error] to={to!r} is not a valid target — "
             "send_message only talks to EXISTING branches. To create a "
             "new agent, use the `agent` tool (fork off a node with "
-            "agent(context=\"SID:MSG_ID\"))."
+            "agent(start_from=\"SID:MSG_ID\"))."
         )
     if not (to or "").strip():
         return (
@@ -158,7 +160,7 @@ def _send_message_impl(
             sender_msg_id=aid,
             sender_agent_id=parent_agent,
             agent_id=chosen_agent,
-            spawn_depth=depth,
+            chain_messages=depth,
         )
         if queued is not None:
             return queued
@@ -192,7 +194,7 @@ def _send_message_impl(
             description=delivery_message,
             caller_msg_id=aid,
             caller_session_id=sid,  # reply returns to the sender
-            spawn_depth=depth + 1,  # child inherits depth+1 (loop guard)
+            chain_messages=depth + 1,  # child inherits count+1 (loop guard)
         )
     except Exception as e:  # noqa: BLE001
         return f"[send_message error] {type(e).__name__}: {e}"

@@ -2,16 +2,16 @@
 
 Same-session multi-agent model: a turn is just
 ``(predecessor, prompt, agent_id)``. The new turn lands as a branch
-in the parent session's DAG. Three context modes:
+in the parent session's DAG. Three start points:
 
-  * ``context="clean"`` (default) — the spawned agent starts at a new
+  * ``start_from="clean"`` (default) — the spawned agent starts at a new
     root (``caller=null``), inside the same session repo. It sees
     only the prompt; the result becomes a peer DAG tree alongside
     the original conversation.
-  * ``context="inherit"`` — the spawned agent forks off the caller's
+  * ``start_from="inherit"`` — the spawned agent forks off the caller's
     turn, inheriting the conversation that led up to it. Same DAG
     semantics as a "fork from here" click.
-  * ``context="SID:MSG_ID"`` — the spawned agent forks off that exact
+  * ``start_from="SID:MSG_ID"`` — the spawned agent forks off that exact
     node (any session), inheriting the chain up to it. This is how a
     new branch is forked from an arbitrary point in the DAG.
 
@@ -36,18 +36,30 @@ LLM sees a clear message it can act on.
 from __future__ import annotations
 
 from openprogram.functions._runtime import function
+from openprogram.functions.tools.send_message.send_message.depth import (
+    delegation_budget_left as _delegation_budget_left,
+)
 
 from .prompt import DESCRIPTION
 
 
-# agent() delegation cap. ONE level: the main agent may spawn workers;
-# a spawned agent does the work itself — it never re-delegates. Even a
-# single "coordinator" hop turned out to be an agent avoiding its job
-# in practice (observed live: a weather query bounced through a whole
-# delegation chain, every hop re-wording the same prompt). Deliberately
-# much tighter than send_message's MAX_SPAWN_DEPTH=8, which budgets
-# multi-round branch-to-branch conversation, not delegation.
-MAX_AGENT_DEPTH = 1
+# Spawn budget: how many generations of NEW agents a chain may create.
+# ONE level by default — the main agent spawns workers; a worker does
+# the work itself. Even a single "coordinator" hop turned out to be an
+# agent avoiding its job in practice (observed live: a weather query
+# bounced through a whole delegation chain, every hop re-wording the
+# same prompt). Deliberately tighter than the message budget
+# (MAX_MESSAGES=8), which pays for multi-round conversation, not for
+# creating agents. Module-level fallback for ``agent.max_spawn_depth``.
+MAX_SPAWN_DEPTH = 1
+
+
+def max_spawn_depth() -> int:
+    """``agent.max_spawn_depth`` from config; 0 = unlimited."""
+    from openprogram.functions.tools.send_message.send_message.depth import (
+        config_limit,
+    )
+    return config_limit("max_spawn_depth", MAX_SPAWN_DEPTH)
 
 
 def _resolve_parent() -> tuple[str | None, str | None, str | None]:
@@ -80,7 +92,7 @@ def _dispatch_to_existing(
     prompt: str,
     to: str,
     agent_id: str,
-    context: str,
+    start_from: str,
     description: str,
 ) -> str:
     """``agent(to=…)`` — dispatch a tracked task to an EXISTING agent.
@@ -94,12 +106,12 @@ def _dispatch_to_existing(
     its current turn ends. Always asynchronous.
     """
     # to= dispatches onto an existing branch, which keeps its own
-    # history — a context/fork-point choice contradicts that.
-    if (context or "").strip().lower() not in ("", "clean"):
+    # history — a start_from/fork-point choice contradicts that.
+    if (start_from or "").strip().lower() not in ("", "clean"):
         return (
-            "[agent error] to= and context are mutually exclusive — "
+            "[agent error] to= and start_from are mutually exclusive — "
             "to= dispatches the task onto an EXISTING branch, which "
-            "keeps its own history. Drop context, or drop to= and "
+            "keeps its own history. Drop start_from, or drop to= and "
             "spawn a new agent."
         )
     # Same parent resolution as send_message (falls back to the session
@@ -115,19 +127,20 @@ def _dispatch_to_existing(
         )
     chosen_agent = (agent_id or "").strip() or parent_agent or "main"
 
-    # Depth guard: a dispatch to an existing agent budgets like
-    # send_message's branch-to-branch traffic (MAX_SPAWN_DEPTH), not
-    # like spawn delegation (MAX_AGENT_DEPTH).
+    # Budget guard: a dispatch to an existing agent spends the message
+    # budget (branch-to-branch traffic), not the spawn budget — it
+    # creates no agent.
     from openprogram.functions.tools.send_message.send_message.depth import (
-        MAX_SPAWN_DEPTH,
-        current_spawn_depth,
+        current_chain_messages,
+        max_messages,
     )
-    depth = current_spawn_depth()
-    if depth >= MAX_SPAWN_DEPTH:
+    depth = current_chain_messages()
+    limit = max_messages()
+    if limit and depth >= limit:
         return (
-            f"[agent refused] spawn depth {depth} reached the max "
-            f"({MAX_SPAWN_DEPTH}). This chain is too deep — finish the "
-            "work here instead of dispatching further."
+            f"[agent refused] this chain has passed {depth} messages, "
+            f"the maximum ({limit}). Finish the work here instead of "
+            "dispatching further."
         )
 
     # Addressing is send_message's, verbatim: SID:HEAD snaps to the
@@ -188,7 +201,7 @@ def _dispatch_to_existing(
                 wait=False,
                 caller_msg_id=aid,
                 caller_session_id=sid,
-                spawn_depth=depth + 1,
+                chain_messages=depth + 1,
                 status=TaskStatus.PENDING,
             )
             save_task(run_session, task)
@@ -200,7 +213,7 @@ def _dispatch_to_existing(
                     sender_msg_id=aid,
                     sender_agent_id=parent_agent,
                     agent_id=chosen_agent,
-                    spawn_depth=depth,
+                    chain_messages=depth,
                     target_head_id=target_tip,
                     task_id=task.id,
                 )
@@ -263,7 +276,7 @@ def _dispatch_to_existing(
             description=delivery_message,
             caller_msg_id=aid,
             caller_session_id=sid,
-            spawn_depth=depth + 1,
+            chain_messages=depth + 1,
         )
     except Exception as e:  # noqa: BLE001
         return f"[agent error] {type(e).__name__}: {e}"
@@ -280,15 +293,26 @@ def _agent_impl(
     prompt: str,
     description: str = "",
     agent_id: str = "",
-    context: str = "clean",
+    start_from: str = "clean",
     run_in_background: bool = False,
     to: str = "",
+    archive_when_done: bool = False,
 ) -> str:
     """Implementation body. Pulled out of the @function-wrapped binding
     so unit tests can drive it directly with their own ContextVars
     instead of going through the AgentTool execute path.
     """
     if (to or "").strip():
+        # archive_when_done characterizes a branch THIS call creates;
+        # a to= dispatch targets an existing agent this call did not
+        # create — only its creator may archive it (archive_agent).
+        if archive_when_done:
+            return (
+                "[agent error] archive_when_done applies to the branch "
+                "this call spawns — to= dispatches to an EXISTING agent "
+                "instead. Drop archive_when_done, or archive the target "
+                "later with archive_agent (creator only)."
+            )
         # Dispatch to an EXISTING agent — always async, returns a
         # task_id immediately; run_in_background is meaningless here
         # and ignored.
@@ -296,7 +320,7 @@ def _agent_impl(
             prompt=prompt,
             to=to.strip(),
             agent_id=agent_id,
-            context=context,
+            start_from=start_from,
             description=description,
         )
     sid, aid, parent_agent = _resolve_parent()
@@ -316,30 +340,31 @@ def _agent_impl(
             for c in label
         )[:24]
 
-    # Depth guard — shares send_message's counter so agent() and
-    # send_message deliveries count toward the same chain, but with a
-    # much tighter cap: only the main agent may spawn; a spawned agent
-    # works with its own tools, it never re-delegates (observed live: a
-    # 5-generation weather-query delegation chain, every hop just
-    # re-wording the same prompt). send_message keeps its own looser
-    # MAX_SPAWN_DEPTH for branch-to-branch dialogue.
+    # Spawn-budget guard — shares the chain counter with send_message so
+    # spawns and messages spend the same chain, but with a much tighter
+    # cap: only the main agent may spawn; a spawned agent works with its
+    # own tools, it never re-delegates (observed live: a 5-generation
+    # weather-query delegation chain, every hop just re-wording the same
+    # prompt). The message budget stays looser for branch-to-branch
+    # dialogue.
     from openprogram.functions.tools.send_message.send_message.depth import (
-        current_spawn_depth,
-        set_spawn_depth,
-        _spawn_depth,
+        current_chain_messages,
+        set_chain_messages,
+        _chain_messages,
     )
-    depth = current_spawn_depth()
-    if depth >= MAX_AGENT_DEPTH:
+    depth = current_chain_messages()
+    spawn_limit = max_spawn_depth()
+    if spawn_limit and depth >= spawn_limit:
         return (
-            f"[agent refused] spawn depth {depth} reached the agent() max "
-            f"({MAX_AGENT_DEPTH}). Do the work yourself with your own "
-            "tools instead of delegating again."
+            f"[agent refused] spawn depth {depth} reached the max "
+            f"({spawn_limit}). Do the work yourself with your own tools "
+            "instead of delegating again."
         )
 
-    # Resolve the context mode. Besides the two named modes, a node
+    # Resolve the start point. Besides the two named modes, a node
     # address "SID:MSG_ID" forks the new branch off that exact node —
     # the spawned agent inherits the chain up to it.
-    mode = (context or "").strip() or "clean"
+    mode = (start_from or "").strip() or "clean"
     run_session = sid
     branch_from: str | None = None
     if mode.lower() in ("inherit", "clean"):
@@ -351,13 +376,13 @@ def _agent_impl(
         fork_msg = fork_msg.strip()
         if not fork_sid or not fork_msg:
             return (
-                f"[agent error] context {context!r} — a node address needs "
+                f"[agent error] start_from {start_from!r} — a node address needs "
                 "both parts: 'SID:MSG_ID'."
             )
         from openprogram.agent.session_db import default_db
         if default_db().get_session(fork_sid) is None:
             return (
-                f"[agent error] context {context!r} — session "
+                f"[agent error] start_from {start_from!r} — session "
                 f"{fork_sid!r} not found (see list_agents)."
             )
         run_session = fork_sid
@@ -365,7 +390,7 @@ def _agent_impl(
         mode = "inherit"  # fork = inherit the chain up to the node
     else:
         return (
-            f"[agent error] unknown context {context!r} — use 'clean' "
+            f"[agent error] unknown start_from {start_from!r} — use 'clean' "
             "(default, new root, no parent history), 'inherit' (fork off "
             "this turn, full chain visible), or 'SID:MSG_ID' (fork off "
             "that exact node)."
@@ -409,7 +434,12 @@ def _agent_impl(
                 # A fork into another session must return its reply to
                 # the caller's session, not the fork target's.
                 caller_session_id=sid if run_session != sid else None,
-                spawn_depth=depth + 1,
+                chain_messages=depth + 1,
+                # This call CREATES the branch — record the creator so
+                # archive_agent can gate on it, and let the runner
+                # archive the branch at terminal state if asked.
+                spawner_session_id=sid,
+                archive_when_done=archive_when_done,
                 attach_pointer_id=attach_id,
             )
             # Live counterpart of the placeholder row above, so the card
@@ -462,8 +492,8 @@ def _agent_impl(
             tool_call_id=_tool_call_id,
         )
         # Bind depth+1 for the child turn (same-context synchronous run),
-        # mirroring what the async runner does with task.spawn_depth.
-        _depth_token = set_spawn_depth(depth + 1)
+        # mirroring what the async runner does with task.chain_messages.
+        _depth_token = set_chain_messages(depth + 1)
         try:
             result = run_agent_turn(
                 session_id=run_session,
@@ -480,7 +510,7 @@ def _agent_impl(
                 advance_head=False,  # same-session spawn never steals head
             )
         finally:
-            _spawn_depth.reset(_depth_token)
+            _chain_messages.reset(_depth_token)
     except Exception as e:  # noqa: BLE001
         # The card is already on screen in "running" — close it out, or
         # it spins forever.
@@ -528,6 +558,24 @@ def _agent_impl(
     except Exception:
         pass
 
+    # Spawn-branch meta, after the result is in hand: stamp the creator
+    # (archive_agent gates on it) and archive on request. Best-effort —
+    # the result below flows back regardless.
+    if result.head_id:
+        try:
+            import time as _time
+            from openprogram.agent.session_db import default_db
+            _fields: dict = {"spawner_session_id": sid}
+            if archive_when_done:
+                _fields["archived"] = True
+                _fields["archived_at"] = _time.time()
+            default_db().set_branch_meta(run_session, result.head_id, **_fields)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).debug(
+                "spawn branch meta stamp failed", exc_info=True,
+            )
+
     if result.error and not result.final_text:
         return f"[agent error: head={result.head_id}] {result.error}"
 
@@ -543,20 +591,21 @@ def _agent_impl(
     name="agent",
     description=DESCRIPTION,
     toolset=["core"],
-    # A spawned agent never even sees this tool (the dispatcher filters
-    # by req.source) — the delegated agent does the work itself, no
-    # re-subcontracting. With the tool absent from the listing the model
-    # won't reach for it; the depth guard in _agent_impl is a backstop
-    # (e.g. when tools_override explicitly puts the tool back).
-    unsafe_in=["agent_spawn"],
+    # Exposed while the chain still has spawn OR message budget; gone
+    # once both are spent, because a tool sitting in the listing invites
+    # the model to reach for it. In between the runtime guards in
+    # _agent_impl refuse the calls that overrun — e.g. a spawned agent
+    # keeps `agent` for to= dispatch while its spawn budget reads 0.
+    can_use=_delegation_budget_left,
 )
 def agent(
     prompt: str,
     description: str = "",
     agent_id: str = "",
-    context: str = "clean",
+    start_from: str = "clean",
     run_in_background: bool = False,
     to: str = "",
+    archive_when_done: bool = False,
 ) -> str:
     """Spawn a new agent, or dispatch a tracked task to an existing one.
 
@@ -572,12 +621,12 @@ def agent(
     is ignored); the result comes back automatically.
 
     Args:
-        prompt: full instruction. In ``context="clean"`` this is ALL
+        prompt: full instruction. In ``start_from="clean"`` this is ALL
             the spawned agent sees, so include any context it needs.
         description: short label (1-3 words) used as the branch name.
         agent_id: agent profile to run under. Defaults to this
             session's agent.
-        context: ``"clean"`` (default) ⇒ the spawned agent starts at
+        start_from: ``"clean"`` (default) ⇒ the spawned agent starts at
             a new root with only the prompt visible. ``"inherit"`` ⇒
             forks off this turn and sees the full chain that led here.
             ``"SID:MSG_ID"`` ⇒ forks off that exact node. Mutually
@@ -589,10 +638,18 @@ def agent(
         to: dispatch target — an existing branch, addressed as
             ``"SID:HEAD"`` or by branch name (see list_agents). A busy
             target queues the task and runs it when its turn ends.
+        archive_when_done: True ⇒ archive the spawned branch once its
+            task reaches terminal state (after the result flowed
+            back): it disappears from list_agents and refuses further
+            send_message / agent(to=) deliveries; its history stays
+            readable and forkable. Default False keeps the agent
+            addressable for follow-up questions. Spawn-only —
+            incompatible with ``to``.
     """
     return _agent_impl(
         prompt=prompt, description=description,
-        agent_id=agent_id, context=context,
+        agent_id=agent_id, start_from=start_from,
         run_in_background=run_in_background,
         to=to,
+        archive_when_done=archive_when_done,
     )

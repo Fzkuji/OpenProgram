@@ -266,7 +266,7 @@ each under its own license. Enormous thanks to their authors.
   (`<available_skills>` XML formatter, name / description / location).
 - [**Claude Code**](https://www.anthropic.com/claude-code) — overall ergonomics
   of the `DEFAULT_TOOLS` set (bash + read / write / edit + glob / grep / list
-  + apply_patch + todo_read / todo_write) and the `todo` tool's JSON schema.
+  + apply_patch + the todo planning board) and the todo tools' JSON schema.
 - **Anthropic / OpenAI / Google SDKs** — provider HTTP contracts; our
   providers call the raw HTTP APIs to keep SDK dependencies optional.
 

@@ -183,7 +183,7 @@ tool aging vs. whole-segment semantic compaction).
   and the tool_result is swapped for a one-line semantic stub.
 - **per-item cap**: any tool_result over `MAX_TOOL_RESULT_CHARS=4000` is truncated at head and tail (truncated even within the tail,
   to prevent a single turn from blowing up).
-- **critical-tool protection**: `PRUNE_PROTECTED_TOOLS={todo_read, todo_write, web_search}`
+- **critical-tool protection**: `PRUNE_PROTECTED_TOOLS={todo_create, todo_update, todo_list, web_search}`
   do not participate in aging.
 
 Data flow: `get_branch` → hang caller-children tool rows back onto the assistant → tool aging (full in tail

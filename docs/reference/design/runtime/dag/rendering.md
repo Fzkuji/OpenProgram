@@ -412,9 +412,10 @@ switcher** (they are genuine alternative continuations of the initiator's dialog
 `source=from_branch` gets no agent_spawn-style isolation — see `ui/invariants.md`
 rule 7).
 
-**A sub-agent spawning again**: forbidden at the data layer
-(`MAX_AGENT_DEPTH=1` — only the main agent may agent(); a spawned agent always
-does the work itself, see `ui/invariants.md` rule 6). The renderer recurses
+**A sub-agent spawning again**: forbidden at the data layer at the default
+spawn budget (`agent.max_spawn_depth=1` — only the main agent may agent(); a
+spawned agent does the work itself, see `ui/invariants.md` rule 6, and a
+larger budget allows further generations). The renderer recurses
 anyway (§12 — a spawn on an agent's thread is a triangle like any other), so
 historical multi-generation delegation chains remain drawable.
 

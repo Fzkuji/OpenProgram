@@ -346,8 +346,8 @@ target branch, and bring the reply back.
   (`run_agent_turn_async`); when the run completes it writes an attach pointer and
   dispatches a follow-up back to the **initiating** session, so replies flow back
   automatically.
-- **Guards**: the depth guard `MAX_SPAWN_DEPTH=8` (`:35`, checked at `:209`;
-  children inherit depth+1, and an A↔B round trip counts too); a self-reference
+- **Guards**: the message budget `agent.max_messages` (default 8, `depth.py`;
+  children inherit count+1, and an A↔B round trip counts too); a self-reference
   guard (messaging your own current turn is rejected outright); the target session
   must already exist and is never silently created; and tool.before interception
   applies (an attended gate can block it).

@@ -251,7 +251,7 @@ def test_session_cancel_clears_inbox_with_sender_notice(store_fixture):
         sender_msg_id="a_p1",
         sender_agent_id="main",
         agent_id="main",
-        spawn_depth=0,
+        chain_messages=0,
         target_head_id="a_p2",
     )
     assert inbox.pending_count("p2") == 1

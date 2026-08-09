@@ -8,7 +8,7 @@ that branch to run a turn,
 and send the result back to the caller automatically. Everything is a tool call,
 and everything is built on the existing event layer.
 
-> Scope: this is design, not code. Implementation status is in the final section.
+> §1 is the vocabulary the whole tool surface is built on; read it first.
 
 ---
 
@@ -41,21 +41,87 @@ path.
 
 ---
 
-## 1. Vocabulary (reuse existing abstractions, invent nothing)
+## 1. Four domains, one word each
 
-| Concept | Definition | Source |
-|---|---|---|
-| **session** | An independent conversation with a `session_id`, backed by one git repository | `SessionStore` |
-| **branch** | A `(session_id, head_id)` pair. Different heads in the same session = two branches of one conversation; different sessions = cross-conversation | Established in `merge.py`; same-session and cross-session take the same path |
-| **deliver** | Append a message node to a branch | `append_message` (any session_id, no permission restriction) |
-| **trigger** | Make a branch run one agent turn | `process_user_turn(TurnRequest(...))` |
-| **auto reply-back** | When the target finishes, feed its reply back to the caller as new input + trigger it to run | `TaskRunner._dispatch_followup` (already exists) |
-| **attach edge** | The pointer node on the DAG marking "which branch the result flowed back from" (drawing only) | `write_attach_pointer_for_spawn` |
+Collaboration is four domains. Each owns one noun and one set of tools, and
+the words never overlap — a term means the same thing everywhere it appears.
 
-The DAG rendering is already settled in `dag/dag-live.html` (cross-branch
-communication scenario: asynchronous, send returns instantly, reply comes back
-asynchronously, communication point-line shown on hover; spawn = sub-branch
-service scenario; return flow = soft link edge).
+| Domain | Noun | Tools | What it is |
+|---|---|---|---|
+| Planning | **todo** | `todo_create` / `todo_update` / `todo_list` | A hand-written checklist: entries, status, owner, dependencies. Intent on paper — nothing runs because an entry exists |
+| Execution | **task** | `task_output` / `task_stop` / `list_tasks` | Work handed out and now running: a ticket id, a status, a result |
+| Entity | **agent** | `agent` / `list_agents` / `archive_agent` | Who does the work: create a new one, hand work to an existing one (`to=`), read the contact list, retire one that is finished |
+| Communication | **message** | `send_message` / `read_conversation` | Talking and reading: pass a word along, read any branch in full |
+
+Writing "benchmark the parser" on the todo board starts nothing. `agent(…)`
+starts something, and what comes back is a task id. The board says what was
+meant; `list_tasks` says what is running.
+
+An agent's conversation is a **branch**: a `(session_id, head_id)` pair
+inside a session. Two heads in one session are two branches of one
+conversation; two sessions are two conversations. Every agent address is a
+branch — `"SID:HEAD"`, or the branch's name.
+
+### Authority follows creation
+
+Three powers exist over dispatched work, and all three belong to the
+dispatcher alone:
+
+| Power | What it means |
+|---|---|
+| The result comes back | When the task ends, its reply lands in the dispatcher's conversation automatically — whether the dispatcher waited or walked away |
+| It can be stopped | `task_stop` cancels the task; one still queued is withdrawn before it ever runs |
+| Cancellation cascades | Stopping a task stops everything that task dispatched, all the way down |
+
+`read_conversation` makes every task id readable, so ownership is checked
+rather than assumed: `task_output` and `task_stop` refuse a task another
+session dispatched (§5.10). Only the human is ungated.
+
+`send_message` carries none of that power, which is exactly why anyone may
+write to anyone. It delivers a message and the receiver answers or does not.
+No ticket, no cancel, no cascade — a message cannot disturb work that is
+already running.
+
+### `agent` has two modes
+
+| Call | What happens |
+|---|---|
+| `agent(prompt=…)` | Creates a new agent and runs it. Blocks for the reply, or returns a task id with `run_in_background=true` |
+| `agent(prompt=…, to="reviewer")` | Creates nothing. The prompt goes to the existing agent named `reviewer` as a tracked task and runs as its next turn, queued behind whatever it is doing now — one turn at a time. Always returns a task id |
+
+Both produce a task; only the first produces an agent. `to` and `start_from`
+are mutually exclusive: the target already has a history, so there is no
+fork point left to choose.
+
+A whole delegation reads in the four words:
+
+```
+todo_create("benchmark the parser")            → todo #1 on the board
+todo_update("1", status="in_progress")
+agent("benchmark the parser", "bench",
+      run_in_background=true)                  → task_id=t_7f2
+list_tasks()                                   → t_7f2 running — bench
+send_message("how far along?", to="bench")     → the agent answers, no task created
+task_output("t_7f2")                           → the result, when it lands
+todo_update("1", status="completed")
+archive_agent(to="bench")                      → retired from the contact list
+```
+
+### Names shared with Claude Code
+
+`agent`, `list_agents`, `send_message`, `task_output` and `task_stop` carry
+the same meaning here as in Claude Code, deliberately — a model that knows
+those names already knows these tools.
+
+One name deliberately differs. Claude Code's `TaskList` is a todo planning
+board, not a view of running work. The planning board here takes the
+`todo_*` prefix instead, so the collision cannot happen and `list_tasks`
+keeps its literal reading: the tasks that are running.
+
+Three tools have no Claude Code counterpart — `list_tasks` (there, a model
+cannot enumerate its background tasks), `archive_agent` (retiring an agent
+from the contact list, §2.6), and `read_conversation` (another agent's
+history as a readable transcript, rather than the raw session files).
 
 ---
 
@@ -74,13 +140,14 @@ agent(
     prompt: str,                        # instruction for the spawned agent
     description: str = "",              # short label, becomes the branch name
     agent_id: str = "",                 # agent profile; defaults to the session's
-    context: str = "clean",             # "clean" / "inherit" / "SID:MSG_ID"
+    start_from: str = "clean",          # "clean" / "inherit" / "SID:MSG_ID"
     run_in_background: bool = false,    # false=block for the reply; true=task_id
     to: str = "",                       # dispatch to an EXISTING agent instead
+    archive_when_done: bool = false,    # retire the spawned agent at terminal state (§2.6)
 ) -> str
 ```
 
-`context` picks where the new branch starts: `"clean"` (default) is a new
+`start_from` picks where the new branch starts: `"clean"` (default) is a new
 root seeing only the prompt; `"inherit"` forks off the calling turn with the
 full chain; `"SID:MSG_ID"` forks off that exact node (any session),
 inheriting the chain up to it. `run_in_background=true` returns a `task_id`; its
@@ -106,12 +173,12 @@ dispatch from a message is task tracking:
   result, returned to the dispatcher automatically.
 - The result flows back exactly like a spawn's: terminal state → attach +
   followup notification into the dispatcher's session.
-- `to` and `context` are mutually exclusive (the target branch keeps its
+- `to` and `start_from` are mutually exclusive (the target branch keeps its
   own history; a fork-point choice contradicts that — the call errors).
   `to` is always asynchronous, so `run_in_background` is ignored.
   Dispatching to the caller's own current branch is refused (do the work
-  directly). Depth budgets like send_message traffic (`MAX_SPAWN_DEPTH`,
-  default 8), not like spawn delegation (depth cap 1).
+  directly). A dispatch spends the message budget, not the spawn budget
+  (§5.1) — it creates no agent.
 
 **`send_message` — talk to an EXISTING agent:**
 
@@ -127,7 +194,7 @@ send_message(
 
 | to | Meaning |
 |---|---|
-| `"sid:head"` | Deliver message to an existing branch. The node names the branch, not a fork point: delivery always lands on the branch's current tip, so a stale head (the branch ran more turns since) is still a valid address and never forks off history. A node that is a shared ancestor of several branches is ambiguous — the error lists the candidates (name + `sid:current-tip`). To fork off a specific node, use `agent(context="sid:msg_id")`. |
+| `"sid:head"` | Deliver message to an existing branch. The node names the branch, not a fork point: delivery always lands on the branch's current tip, so a stale head (the branch ran more turns since) is still a valid address and never forks off history. A node that is a shared ancestor of several branches is ambiguous — the error lists the candidates (name + `sid:current-tip`). To fork off a specific node, use `agent(start_from="sid:msg_id")`. |
 | `"<branch name>"` | Deliver to a named branch. Tried when the value is not `SID:HEAD` syntax: exact name match wins, a unique prefix is accepted next; several matches return an error listing the candidates (name + `sid:head`), zero matches point to `list_agents`. `list_agents` marks each branch's name so the model can address by name directly. |
 
 The removed spawn addressing (`to="new"` / `"new:sid:msg_id"`) is rejected
@@ -150,20 +217,15 @@ Both tools drive the same primitive; a spawn is the same
 deliver → trigger → reply-back flow with a freshly created branch as the
 target.
 
-**Unified execution flow** (whichever tool starts it):
-1. Resolve the target branch: `agent` creates it (`context` picks the fork
-   point); `send_message` resolves `to` to an existing branch's current tip.
-2. Assemble the delivered content: the sender-receipt header plus `message`.
-3. Deliver and trigger: `process_user_turn(TurnRequest(session_id=to,
-   user_text=delivered content, branch_from=fork point))` → the target branch
-   runs one turn and **the model reads everything delivered**.
-4. **Reply back** (always asynchronous): the send returns "delivered +
-   delivery_id" instantly, the caller keeps going unblocked; when the target
-   finishes, `_dispatch_followup` **automatically** feeds the reply into the
-   caller session as a new message + triggers it to run a turn, so the caller
-   wakes up and reads it.
-- Events: delivery emits `branch.message_sent` (see §3); the reply-back is the
-  followup turn itself.
+**One flow, whichever tool starts it:**
+1. The target branch is resolved — `agent` creates it (`start_from` picks
+   where it starts); `send_message` resolves `to` onto an existing branch's
+   current tip.
+2. The receipt header plus the message is delivered there.
+3. The target runs one turn and the model reads everything delivered.
+4. The reply comes back on its own. The send returned instantly, so the
+   caller never blocked; when the target finishes, its answer is appended to
+   the caller's conversation and the caller runs a turn to read it.
 
 ### 2.2 Referencing other branches
 
@@ -178,8 +240,13 @@ parameter.
 ### 2.3 `list_agents` — seeing each other (a precondition for communication)
 
 ```
-list_agents(limit=50, agent_id?, source?) -> str   # db.list_sessions + db.list_branches
+list_agents(scope="session", limit=20, agent_id?, source?) -> str   # db.list_sessions + db.list_branches
 ```
+
+`scope` picks the view: `"session"` (default) lists the current session's
+branches — the agents spawned here; `"all"` widens to every session, most
+recently active first, without previews; `"archived"` lists the current
+session's retired branches (§2.6), which the other two scopes hide.
 
 An agent's conversation is stored as a branch in the session DAG, so "which
 agents can I talk to" = "which sessions exist, and which branches does each
@@ -239,134 +306,83 @@ sub-branch forked from and which branch each result flowed back from.
 The sub-branch itself stays a parallel independent branch and **does not
 merge back into the mainline**.
 
+### 2.6 Archiving: retiring an agent from the contact list
+
+Branches live forever in the session DAG — fork, replay, and
+`read_conversation` all depend on that — so without a retirement mark
+`list_agents` accumulates every agent ever spawned, and the model keeps
+addressing workers whose job finished long ago. Archiving is that mark:
+`archived: true` on the branch's meta entry, the same `branches` entry that
+carries the name, written with `set_branch_meta` and read with
+`get_branch_meta`.
+
+**Archiving removes a branch's right to be disturbed, never its history.**
+
+| Operation on an archived branch | Behavior |
+|---|---|
+| `list_agents` (`scope="session"` / `"all"`) | Hidden |
+| `list_agents(scope="archived")` | Listed — exactly the retired branches |
+| `send_message(to=…)` | Refused: `agent SID:HEAD is archived` |
+| `agent(to=…)` | Refused, same message |
+| `read_conversation` | Reads it as usual |
+| `agent(start_from="SID:MSG_ID")` | Forks it as usual |
+
+The refusal lives in exactly one place: `resolve_existing_target` (the
+addressing both delivery paths share, §2.1) checks the flag right after it
+snaps an address onto the branch's current tip, so every delivery inherits
+the guard and no caller can route around it. `archive_agent` reaches
+archived branches through that same resolver with `allow_archived=True`.
+
+Two ways to archive:
+
+- **`agent(archive_when_done=true)`** — the spawn declares up front that
+  the agent it creates is a one-shot worker. The branch is marked at
+  terminal state (`completed` / `errored` / `cancelled`), after the result
+  has flowed back to the caller; the synchronous spawn form marks it once
+  the result is in hand. The write is best-effort: a failed meta write is
+  logged and the result still returns. Spawn-only — combined with `to=` the
+  call errors, because a dispatch targets an agent it did not create.
+- **`archive_agent(to, reason="")`** — retire an agent after the fact. `to`
+  takes the same addresses as `send_message` (`"SID:HEAD"` or a branch
+  name). Archiving an already-archived branch is an idempotent notice, not
+  an error.
+
+**Only the creator archives.** Every spawn records its creator on the new
+branch (`spawner_session_id`, stamped alongside the archive flag at
+terminal state), and `archive_agent` refuses any other session. A branch
+with no recorded creator is top-level and belongs to its own session: that
+session may archive it, another session may not. Calls with no session
+context (the user, the UI) are not gated — the human owns everything, the
+same stance as §5.10's task ownership.
+
+**There is no unarchive.** The mark means "this conversation is finished",
+and a finished conversation whose memory is worth reusing is forked with
+`agent(start_from="SID:MSG_ID")` — a fresh branch with its own name and its
+own lifecycle. An unarchive tool would only be a second way to spell that.
+
 ---
 
-## 3. Foundation: the event layer (the whole design, self-contained)
+## 3. What collaboration looks like while it happens
 
-The communication primitive is built on the event layer. This section spells the
-event layer out in full — it is the framework-wide unified event stream
-(the `openprogram/events/` package: `bus.py` + `tool_gate.py` + `bridges.py`), and
-communication is just one more set of sources and consumers on it.
+Collaboration runs on the framework's shared event layer, so it is visible
+live rather than only in hindsight. Three effects follow from that, and they
+are the whole of what a user or an agent needs to know about it:
 
-### 3.1 Why an event layer exists
+- **Both sides update in real time.** A message delivered to another
+  session appears in that session's UI as it lands, and the reply appears in
+  the sender's UI when it comes back. Neither side has to reload.
+- **Everything is on the record.** Deliveries, branch state changes and
+  listings are written to the session's event log
+  (`~/.openprogram/sessions/<sid>/events.jsonl`, always on), so a
+  collaboration can be replayed and audited after the fact.
+- **A delivery can be held for confirmation.** Under an unattended policy
+  that denies side effects, `send_message` is stopped before it delivers and
+  waits for approval. Sub-agents are held by the same gate, and
+  `permission_mode=bypass` does not turn it off.
 
-Signals for "something happened" were scattered across several mechanisms in the
-framework (AgentEvent in the agent loop, `_emit` in auth, on_event in context, WS
-broadcast in channels, poll in memory, logging in store). The event layer unifies
-them into **one bus: sources emit into it, consumers subscribe from it, and the
-two never know about each other** — to "do something at a certain moment", just
-subscribe to the matching type.
-
-### 3.2 The Event model
-
-The three essentials (what happened, its content, when) are fixed; correlation
-information goes into an open metadata pocket rather than being hard-coded.
-
-```python
-@dataclass(frozen=True)
-class Event:
-    id: str          # unique id
-    ts: float        # when it happened
-    type: str        # what happened (see §3.4)
-    origin: str      # who caused it: user / agent / tool / system / proactive
-    payload: dict    # the content of this event (command, file path, which branch got a message, ...)
-    metadata: dict   # open pocket: {"session":..., "turn":..., "lane":...}, filled only when needed
-```
-
-session/turn/lane go in the pocket rather than becoming fixed fields: they are
-extra correlations and mean nothing for half the events (auth/channel), and an
-open dict lets new correlation dimensions be added later without changing the
-model. `make_event(type, origin, payload, metadata)` fills in the current
-session/turn automatically from ContextVars.
-
-### 3.3 A process-level singleton bus
-
-All components (webui, agent loop, channels, memory, auth, task runner,
-communication tools) live in **the same worker process** (each as a daemon
-thread), so the bus is a **process-level singleton** `get_event_bus()`. Every
-thread in the process gets the same instance and emits/subscribes directly, with
-no cross-process bridging.
-
-```python
-bus.emit(event)                              # broadcast, fire-and-forget, never blocks the caller
-bus.subscribe(handler, types={...})          # subscribe by type, returns unsubscribe
-emit_safe(type, origin, payload, metadata)   # for sources: build + emit, swallowing all exceptions
-emit_ws_frame(frame)                         # for sources: send a ready-made WS frame to the frontend via the bus (decouples webui)
-```
-
-### 3.4 Two kinds of event source + every existing event type
-
-| | Class A: agent activity (has a turn) | Class B: system state (maybe no agent running) |
-|---|---|---|
-| Examples | user message, model reply, before/after tool, file change, turn end, subtask start/stop | credential rate limit, context overflow, inbound external message, skill change |
-
-**Event types the framework already has:**
-
-| Class | type | When | Source |
-|---|---|---|---|
-| A | `user.prompt_submitted` | User sends a message | dispatcher |
-| A | `model.response_started`/`.completed` | Model starts / finishes speaking | agent_loop |
-| A | `tool.before` | Tool is about to execute (**interceptable**, see §3.5) | agent_loop |
-| A | `tool.after` | Tool finished executing | agent_loop |
-| A | `file.changed` | A file was modified | write/edit/apply_patch |
-| A | `subagent.started`/`.ended` | Subtask start/stop | TaskRunner |
-| B | `credential.cooldown`/`.exhausted`/`.rotated` | Credential throttled / exhausted / rotated | events/bridges.py←AuthStore |
-| B | `context.compaction_recommended`/`.compacted` | Context hit threshold / was compacted | context/engine |
-| B | `channel.message_inbound` | External message arrives | channels |
-| B | `memory.ingest_started`/`.ended` | Wiki ingest start/stop | memory watcher |
-| B | `skills.changed`/`plugins.update_available` | Skill changed / new plugin version | webui watcher |
-
-**Events introduced by communication** (class A):
-
-| type | When | origin | Key payload fields |
-|---|---|---|---|
-| `branch.message_sent` | send_message delivers | agent | from, to, delivery_id, is_new, chain |
-| `branch.created` / `.started` / `.failed` / `.cancelled` | Branch state transitions | agent | branch, parent, agent_id, status |
-| `sessions.listed` / `branches.listed` | Listing | agent | count |
-
-`chain` (the spawn chain) travels in metadata and is used for depth-based loop
-prevention (§5.1); state events support progress monitoring, auditing, and
-troubleshooting.
-
-Communication reuses the existing `subagent.started`/`.ended` (TaskRunner emits
-them as usual for the spawn use).
-
-### 3.5 Two interaction modes: observe vs. intercept
-
-- **Observation (default, asynchronous)**: emit and go; subscribers receive
-  asynchronously and the source does not wait. The vast majority of events work
-  this way.
-- **Interception (only `tool.before`, synchronous)**: downstream can say "do not
-  execute" before a tool runs. The single entry point `_execute_tool_calls` has a
-  synchronous consultation point before `tool.execute()` (`openprogram/events/tool_gate.py`,
-  `register_tool_gate`). It must be fast (no LLM calls); when multiple parties
-  weigh in, the strictest answer wins; it also applies to subagents (it sits
-  outside the approval wrapper, and `permission_mode=bypass` cannot turn it off).
-  **The communication tool `send_message` uses it for unattended
-  interception** (see §5).
-
-### 3.6 How communication uses the event layer
-
-- Every communication action calls `emit_safe(...)` (delivery, reply-back,
-  listing) — proactive, auditing, and frontend refresh are all subscribers to
-  that one stream, mutually uncoupled.
-- **Frontend notifications all go through `emit_ws_frame(frame)`**: for
-  cross-session traffic, the target session's frontend receives a `ws.frame`
-  event via the bus, webui subscribes and rebroadcasts it verbatim, and both
-  frontends see "message received from X" and "X replied" in real time. The
-  frontend protocol needs no changes, and the communication tool knows nothing
-  about webui.
-- **Unattended interception uses the synchronous `tool.before` point**: delivery
-  is a side effect, so under an unattended + deny policy it is held for
-  confirmation.
-
-### 3.7 One principle
-
-**Not every call is an event; only moments that some consumer wants to react to
-are.** The tables above are filtered by that rule, and every event communication
-introduces has a definite responder (frontend rendering, proactive, auditing).
-Evolution is additive only: new event types and new payload fields never affect
-existing subscribers (they read only the fields they care about).
+The event layer itself — the bus, the event model, the registry, the veto
+protocol — is documented in
+[proactive/event-layer](../proactive/event-layer.md).
 
 ---
 
@@ -398,21 +414,50 @@ not listed separately.
 Communication creates branches, triggers other branches to run, and writes
 across sessions. Those side effects need boundaries.
 
-### 5.1 Recursive spawning + infinite-loop protection
+### 5.1 Two budgets bound every chain
 
-**Recursive spawning is allowed** (a sub-branch can `send_message` further
-sub-branches for multi-level task decomposition), kept in check by:
+Recursive collaboration is allowed — a spawned agent can message further
+agents for multi-level decomposition — and two budgets keep it finite. A
+**chain** is everything that grows out of one user turn, and every hop
+spends from the same pair of counters, replies included.
 
-- **Depth limit**: every delivery carries a **spawn chain** in Event metadata
-  (`chain: [issuing branch, …, current]`). When `send_message` runs and the
-  chain length is ≥ `MAX_DEPTH` (default 8), it refuses and returns the reason to
-  the model. Reply-back (the automatic followup) inherits the same chain and does
-  not reset it, so back-and-forth between A and B counts toward the depth and
-  stops automatically at the ceiling.
-- **Self-send refusal**: a `to` pointing at **the issuing branch itself** (a
-  direct cycle) is refused immediately.
-- Chain information flows only in metadata and never enters model-visible
-  content.
+| Budget | Setting | Default | What it counts |
+|---|---|---|---|
+| **Spawn depth** | `agent.max_spawn_depth` | 1 | Generations of NEW agents the chain may create |
+| **Messages** | `agent.max_messages` | 8 | Messages the chain passes in total: spawns, `send_message` deliveries, and `agent(to=…)` dispatches all count |
+
+**Setting either to 0 removes that limit entirely** — nothing accumulates
+against it and nothing is refused because of it.
+
+```bash
+openprogram config set agent.max_spawn_depth 2   # workers may open one more generation
+openprogram config set agent.max_messages 0      # unlimited conversation between agents
+```
+
+**What the budgets do when they run out.** A call that would overrun is
+refused with a reason the model can act on, and it keeps every other
+tool. Once **both** budgets are spent, `agent`, `task_output` and
+`task_stop` leave the tool list altogether: a tool sitting in the
+listing invites the model to reach for it, and offering it only to
+refuse the call wastes a turn.
+
+Typical behavior at the defaults (spawn depth 1, messages 8):
+
+- The main agent spawns workers. A worker asked to spawn again is told
+  to do the work itself with its own tools.
+- That same worker keeps `agent(to=…)` and `send_message`: it can hand
+  work to agents that **already exist** and answer whoever wrote to it.
+  Only creating a new generation is closed to it.
+- A and B messaging back and forth stop after the 8th message of the
+  chain, whichever of them is holding the turn.
+
+At `agent.max_spawn_depth: 2` a worker may open one more generation and
+the third refuses. At `0` and `0` nothing is ever refused, and runaway
+protection falls to the concurrency cap (§5.2) plus the user's Stop.
+
+**Self-send refusal** is unconditional and independent of both budgets:
+a `to` pointing at the issuing branch itself is a direct cycle and is
+refused immediately.
 
 ### 5.2 Concurrency limit + queueing
 
@@ -454,9 +499,9 @@ sender's own turn, whose token is the one the check would see.
 - **Queueing**: a busy target's message is persisted to the target session's
   inbox (`<session-repo>/inbox.json`, `openprogram/agent/inbox.py` — same
   placement pattern as `tasks.json`), recording the delivery body, sender
-  `SID:HEAD`, sender agent, spawn depth at send time, and enqueue time. The
-  sender immediately gets back "target busy, message queued, processed when
-  its current turn ends".
+  `SID:HEAD`, sender agent, the chain's message count at send time, and
+  enqueue time. The sender immediately gets back "target busy, message
+  queued, processed when its current turn ends".
 - **Draining**: the dispatcher drains the inbox at turn end
   (`_process_turn_once` → `_drain_send_message_inbox`, on both the success and
   the error return), delivering each entry as one async turn through the
@@ -464,8 +509,8 @@ sender's own turn, whose token is the one the check would see.
   continued from the target's current head. Delivery-then-delete: an entry is
   removed only after its delivery turn was submitted — a crash between the two
   may re-deliver (acceptable); the reverse order could lose a message (not
-  acceptable). The queued turn inherits the spawn depth recorded at enqueue
-  (+1), so a queued hop still counts toward the §5.1 depth guard.
+  acceptable). A queued hop spends the message budget exactly like a direct
+  one (§5.1).
 - **Limits** (mirroring Claude Code cross-session messaging): at most 50
   pending entries per target — a full inbox drops the oldest and leaves a
   system notice in the dropped message's sender session; an identical message
@@ -503,14 +548,11 @@ not blow up the caller's context or block the main flow.
 
 ### 5.8 Unattended interception + validation
 
-- `send_message` goes through the event layer's synchronous `tool.before`
-  consultation point: under an unattended + deny policy it is held for
-  confirmation (this also applies to sub-branches, sitting outside the approval
-  wrapper).
-- Before delivering, validate that `to` actually exists
-  (`db.get_session` is not None); if it does not, raise an error rather than
-  silently creating it. The existing three-layer gating (check_fn / can_use /
-  requires_approval) still applies.
+- Under an unattended policy that denies side effects, `send_message` is held
+  for confirmation before it delivers (§3). Sub-branches are held by the same
+  gate, which `permission_mode=bypass` does not turn off.
+- A `to` that names nothing is an error, never a silent creation. The regular
+  permission gating applies on top.
 
 ### 5.9 Branch visibility
 
@@ -559,81 +601,20 @@ gated — the human owns everything.
 
 ---
 
-## 6. Backend and frontend checklist
+## 6. Behavior you can check
 
-**Backend (tools)**
-- `openprogram/functions/tools/agent/` — `agent/` (spawn / fork) +
-  `task_output/` + `task_stop/` (async form management)
-- `openprogram/functions/tools/send_message/` — `send_message/` (deliver +
-  trigger + auto reply-back) +
-  `list_agents/` (reuse db.list_sessions + db.list_branches)
-- Each tool calls `emit_safe(...)`; cross-session notifications use
-  `emit_ws_frame`
-
-**Backend (reused existing components)**
-- `TaskRunner` (thread-pool concurrency, await, cancel, _dispatch_followup auto
-  reply-back, attach edges)
-- `SessionStore` (list/append/set_head/commit/get)
-- `dispatcher.process_user_turn`
-- `openprogram.events` (emit_safe / emit_ws_frame)
-
-**Frontend (`web/`)**
-- Session / branch list panel (WS handlers already exist) + a "pick `to` →
-  send message" interaction entry point
-- On `branch.message_sent` (via ws.frame) → render
-  communication nodes plus the return-flow soft link edge in that session's DAG /
-  message stream (shown on hover; dag-live is already settled)
-- Spawn progress reuses the existing `task_status` frame + the tasks panel
-
----
-
-## 7. Verifiable behaviors
-
-If the design holds, each behavior below is independently verifiable. Verify
-through the webui (`cd web && npm run build` + `openprogram worker restart`) or
-the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
+Each line below is independently observable — in the web UI, or in the
+session event log.
 
 | Behavior | What you see |
 |---|---|
 | Spawn (the `agent` tool) | The agent calls once, a new branch runs a turn, and the result automatically follows up back to the caller; spawn events are visible in the event log |
 | Listing | `list_agents` lists the real multiple sessions and each one's branches |
+| Archiving (§2.6) | An archived agent leaves `list_agents` and shows up under `scope="archived"`; `send_message` and `agent(to=)` refuse it while `read_conversation` and `agent(start_from=…)` still work; only the creating session may archive it |
 | Send to an existing branch in the same session | A sends to branch B of the same session, A does not block, B runs a turn, the reply returns to A automatically |
-| Cross-session | A sending to another session takes the same path; both frontends update live via ws.frame |
-| Robustness (§5) | A↔B back-and-forth stops automatically at MAX_DEPTH; spawning 30 queues without blowing up; cancelling the parent stops every child (`tests/unit/test_cascade_cancel.py`); messaging a running B queues to its inbox and is delivered when its turn ends (`tests/unit/test_send_message_inbox.py`); the parent receives is_error when a child fails; oversized results are truncated with a file path |
-| Safety (§5.7-5.9) | Under deny it is held by tool.before; a nonexistent `to` raises an error; sub-branches have no more privilege than the parent and stay out of the UI picker |
-| Frontend | Pick a branch in the webui and send a message; the DAG shows communication nodes + the soft link edge on hover |
+| Cross-session | A sending to another session takes the same path; both sides update live |
+| Robustness (§5) | A↔B back-and-forth stops when the chain's message budget runs out, and a budget of 0 never stops it; spawning 30 at once queues instead of blowing up; cancelling the parent stops every child; messaging a busy B queues and is delivered when its turn ends; the parent is told when a child fails; oversized results are truncated with a file path |
+| Safety (§5.7-5.9) | Under a deny policy a delivery is held for confirmation; a nonexistent `to` raises an error; sub-branches have no more privilege than the parent and stay out of the UI picker |
+| Frontend | Pick a branch in the web UI and send a message; the DAG shows the communication node plus the return-flow edge on hover |
 
 ---
-
-## 8. Key file reference
-
-| Thing | Location |
-|---|---|
-| Sub-agent spawn + auto reply-back | `openprogram/agent/sub_agent_run.py`, `agent/task/runner.py` (spawn_task / _dispatch_followup) |
-| Tool template + registration | `openprogram/functions/tools/agent/agent/agent.py`, `functions/_runtime.py` (@function) |
-| session/branch data layer | `openprogram/store/session/session_store.py` (list_sessions:658 / list_branches:832 / append_message:706 / set_head:814 / commit_turn:455) |
-| Trigger a session to run a turn | `openprogram/agent/dispatcher/__init__.py` (process_user_turn:97) |
-| List WS handlers | `webui/ws_actions/session.py:825`, `branch.py:221` |
-| attach edge (drawing only) | `openprogram/agent/sub_agent_run.py` (write_attach_pointer_for_spawn) |
-| Event bus | `openprogram/events/bus.py` (emit_safe / emit_ws_frame) |
-| Busy-target inbox (§5.4) | `openprogram/agent/inbox.py` (enqueue / drain), busy check `run_control.is_turn_running`, drain hook `dispatcher._drain_send_message_inbox` |
-
-> Note: "synthesize several branches" needs no dedicated mechanism — the
-> sender names the branches in `message` and the target reads them with
-> `read_conversation` (§2.2).
-
----
-
-## Appendix: implementation status
-
-Everything in this document is implemented: the event layer (§3),
-`TaskRunner`, `SessionStore`, `process_user_turn`,
-the `agent` tool family (`agent` — spawn and `to=` dispatch — /
-`task_output` / `task_stop`, with the §5.10 ownership gate),
-`send_message` and its discovery tool `list_agents`, spawned-branch naming
-(§2.4 — the Stage 1 label at spawn plus the Stage 2 `finalize_turn`
-rename), the serialized reply-back anchoring (§2.5 — `_dispatch_followup` +
-`_followup_lock`), cascading cancel (§5.3 — `TaskRunner.cancel_task` over
-`parent_task_id`, plus `inbox.clear` on session-level stop;
-`tests/unit/test_cascade_cancel.py`), and the busy-target inbox (§5.4 —
-`tests/unit/test_send_message_inbox.py`).

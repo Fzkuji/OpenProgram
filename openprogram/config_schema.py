@@ -94,6 +94,17 @@ def _coerce(widget: str, value: Any) -> Any:
     return str(value)
 
 
+def _validate_limit(v: Any) -> Optional[str]:
+    """A collaboration budget: any whole number ≥ 0, where 0 = no limit."""
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return "must be a whole number (0 = no limit)"
+    if n < 0:
+        return "must be 0 (no limit) or a positive whole number"
+    return None
+
+
 def _validate_hooks(v: Any) -> Optional[str]:
     if not isinstance(v, dict):
         return 'must be a JSON object: {"<event>": [{"command": "...", "timeout": 60}]}'
@@ -175,6 +186,26 @@ SETTINGS: list[SettingSpec] = [
              "loop's own stop rules (judge failures, idle spin) and "
              "/goal clear. Read when the goal is set; each goal keeps "
              "the bound it started with.",
+    ),
+    SettingSpec(
+        key="agent.max_spawn_depth", path=("agent", "max_spawn_depth"),
+        group="Agent", label="Max spawn depth", widget="number",
+        apply=APPLY_LIVE, default=1, validate=_validate_limit,
+        help="How many generations of NEW agents one chain may create. "
+             "1 (default) = you spawn workers and a worker does the work "
+             "itself; 2 lets a worker spawn its own worker. 0 = no "
+             "limit. A spawn past the limit is refused with a message "
+             "telling the agent to do the work itself.",
+    ),
+    SettingSpec(
+        key="agent.max_messages", path=("agent", "max_messages"),
+        group="Agent", label="Max messages per chain", widget="number",
+        apply=APPLY_LIVE, default=8, validate=_validate_limit,
+        help="How many messages one collaboration chain may pass in "
+             "total — spawns, send_message deliveries, and agent(to=…) "
+             "dispatches all count, and a reply coming back counts too, "
+             "so A↔B ping-pong stops at the ceiling. 8 by default, "
+             "0 = no limit.",
     ),
     SettingSpec(
         key="hooks", path=("hooks",), group="Hooks",

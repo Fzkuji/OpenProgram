@@ -28,7 +28,7 @@ def _normalize_existing_target(
     point — the branch may have run more turns since the sender saw its
     head, so delivering onto the given node verbatim would fork a new
     branch off history instead of continuing the conversation. Forking
-    off a node is the agent tool's job (``agent(context="SID:MSG_ID")``).
+    off a node is the agent tool's job (``agent(start_from="SID:MSG_ID")``).
 
     Returns one of:
       ("ok", tip_id)                      — deliver onto this tip
@@ -63,12 +63,17 @@ def _normalize_existing_target(
 
 
 def resolve_existing_target(
-    to: str, current_session_id: str
+    to: str, current_session_id: str, *, allow_archived: bool = False,
 ) -> tuple[str, object]:
     """Resolve ``to`` (a ``SID:HEAD`` address or a branch name) onto an
     existing branch's CURRENT tip. Shared by ``send_message`` and the
     ``agent`` tool's ``to=`` dispatch — one addressing behavior, two
     callers.
+
+    An archived branch resolves but is refused (one guard for every
+    delivery path): archiving removes the branch's right to be
+    disturbed, not its history. ``allow_archived=True`` skips that
+    guard — ``archive_agent`` uses it to address archived branches.
 
     Returns ``("ok", (session_id, tip_id))`` or ``("error", body)``
     where ``body`` is the message without a tool prefix (each caller
@@ -109,6 +114,20 @@ def resolve_existing_target(
     # conversation instead of forking off a stale head.
     status, norm = _normalize_existing_target(run_session, branch_from)
     if status == "ok":
+        if not allow_archived:
+            try:
+                archived = bool(
+                    db.get_branch_meta(run_session, norm).get("archived")
+                )
+            except Exception:
+                archived = False
+            if archived:
+                return "error", (
+                    f"agent {run_session}:{norm} is archived — it no "
+                    "longer accepts messages or tasks. Its history is "
+                    "still readable with read_conversation, and "
+                    f"agent(start_from=\"{run_session}:MSG_ID\") can fork it."
+                )
         return "ok", (run_session, norm)
     if status == "ambiguous":
         lines = "\n".join(

@@ -11,7 +11,7 @@ the end; the assistant at position ``len-TAIL_TURNS`` (or the first
 assistant if there are fewer) is the cutoff. Every tool BEFORE that
 cutoff index ages; tools at-or-after stay full.
 
-Protected tools (todo_read / todo_write / web_search) keep their full
+Protected tools (the todo board / web_search) keep their full
 rendering even when out of tail — they're short, semantically load-
 bearing, and the model relies on them as durable state. We still set
 locked=True so downstream rules (microcompact/summarize) skip them too.

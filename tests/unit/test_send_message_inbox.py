@@ -124,19 +124,39 @@ def test_drain_leaves_entry_on_failed_delivery(two_sessions, busy_target, monkey
     assert inbox.pending_count("t1") == 1
 
 
-def test_queued_delivery_inherits_spawn_depth(two_sessions, busy_target, monkeypatch):
+def test_queued_delivery_inherits_chain_messages(two_sessions, busy_target, monkeypatch):
     from openprogram.functions.tools.send_message.send_message.depth import (
-        set_spawn_depth, _spawn_depth,
+        set_chain_messages, _chain_messages,
     )
     calls = _capture_async(monkeypatch)
-    tok = set_spawn_depth(3)
+    tok = set_chain_messages(3)
     try:
         _send_message_impl("deep hello", to="t1:b1")
     finally:
-        _spawn_depth.reset(tok)
+        _chain_messages.reset(tok)
     delivered = inbox.drain("t1")
     assert delivered == 1
-    assert calls[0]["spawn_depth"] == 4      # recorded depth 3, child +1
+    assert calls[0]["chain_messages"] == 4      # recorded depth 3, child +1
+
+
+def test_drain_reads_legacy_spawn_depth_key(two_sessions, monkeypatch):
+    """An inbox.json written before the rename stores the count under
+    ``spawn_depth``; drain still honours it."""
+    calls = _capture_async(monkeypatch)
+    inbox.enqueue(
+        "t1", message="old entry", sender_session_id="p1",
+        sender_msg_id="a1", sender_agent_id="main", agent_id="main",
+        chain_messages=0, target_head_id="b1",
+    )
+    path = inbox._inbox_path("t1")
+    blob = json.loads(path.read_text(encoding="utf-8"))
+    entry = blob["entries"][0]
+    entry.pop("chain_messages")
+    entry["spawn_depth"] = 5
+    path.write_text(json.dumps(blob), encoding="utf-8")
+
+    assert inbox.drain("t1") == 1
+    assert calls[0]["chain_messages"] == 6      # legacy 5, child +1
 
 
 def test_cap_drops_oldest_and_notifies_sender(two_sessions):
@@ -144,14 +164,14 @@ def test_cap_drops_oldest_and_notifies_sender(two_sessions):
         assert inbox.enqueue(
             "t1", message=f"msg {i}", sender_session_id="p1",
             sender_msg_id="a1", sender_agent_id="main", agent_id="main",
-            spawn_depth=0, target_head_id="b1",
+            chain_messages=0, target_head_id="b1",
         ) == "queued"
     assert inbox.pending_count("t1") == inbox.MAX_PENDING
 
     assert inbox.enqueue(
         "t1", message="one too many", sender_session_id="p1",
         sender_msg_id="a1", sender_agent_id="main", agent_id="main",
-        spawn_depth=0, target_head_id="b1",
+        chain_messages=0, target_head_id="b1",
     ) == "queued"
     assert inbox.pending_count("t1") == inbox.MAX_PENDING
     path = inbox._inbox_path("t1")
@@ -179,7 +199,7 @@ def test_duplicate_outside_window_accepted(two_sessions):
     assert inbox.enqueue(
         "t1", message="same words", sender_session_id="p1",
         sender_msg_id="a1", sender_agent_id="main", agent_id="main",
-        spawn_depth=0, target_head_id="b1",
+        chain_messages=0, target_head_id="b1",
     ) == "queued"
     # Age the queued copy past the dedup window.
     path = inbox._inbox_path("t1")
@@ -189,6 +209,6 @@ def test_duplicate_outside_window_accepted(two_sessions):
     assert inbox.enqueue(
         "t1", message="same words", sender_session_id="p1",
         sender_msg_id="a1", sender_agent_id="main", agent_id="main",
-        spawn_depth=0, target_head_id="b1",
+        chain_messages=0, target_head_id="b1",
     ) == "queued"
     assert inbox.pending_count("t1") == 2
