@@ -268,8 +268,8 @@ def _build_skills(agent: Any) -> str:
 
 def _build_memory(agent: Any) -> str:
     try:
-        from openprogram.memory.builtin import BuiltinMemoryProvider
-        mem_block = BuiltinMemoryProvider().system_prompt_block()
+        from openprogram.memory import get_provider
+        mem_block = get_provider().system_prompt_block()
         if mem_block.strip():
             return mem_block
     except Exception:

@@ -65,7 +65,7 @@ Craig is building a budget tracker in Flask, due 2024-04-15.[^e-1175dea39c] ^f88
 
 | 触发 | 位置 | 做什么 |
 |---|---|---|
-| 一轮结束 | `BuiltinMemoryProvider.sync_turn` | 会话过线才写 |
+| 一轮结束 | `provider.sync_turn` | 会话过线才写 |
 | 会话空闲 | `session_watcher` | 把剩下的写掉，不论多少 |
 | 每天 03:00 | `scheduler` | 重新整理 topic 文件 |
 
@@ -120,22 +120,29 @@ Craig is building a budget tracker in Flask, due 2024-04-15.[^e-1175dea39c] ^f88
 
 ## 代码地图
 
+包分成契约和它的一个实现。
+
 ```
-openprogram/memory/
-    __init__.py            对外 API
-    store.py               工作区位置，以及从旧布局的迁移
-    provider.py            MemoryProvider 基类 + 上下文围栏
-    builtin/provider.py    agent 运行时调用的生命周期钩子
-    builtin/writing.py     累积、写入、整理
-    scheduler.py           守护线程，03:00 整理
-    session_watcher.py     空闲会话收尾
-    management/            写入事务、暂存、校验
-    retrieval/             工作区上的 BM25 与向量检索
-    markdown/              topic 格式
-    prompts/               对写入模型说的话
-    runtime/               游标、阈值、派生视图
-    agent_runtime/         实际执行写入的进程
+openprogram/memory/           框架侧
+    provider.py               MemoryProvider —— 契约
+    __init__.py               get_provider() / set_provider()
+    store.py                  记忆位置；从旧布局的迁移
+    scheduler.py              守护线程，03:00 维护
+    session_watcher.py        空闲会话收尾
+    scriptorium/              随包提供的实现
+        provider.py           满足契约
+        writing.py            累积、写入、整理
+        management/           写入事务、暂存、校验
+        retrieval/            BM25 与向量检索
+        markdown/             topic 格式
+        prompts/              对写入模型说的话
+        runtime/              游标、阈值、派生视图
+        agent_runtime/        实际执行写入的进程
 ```
+
+agent 循环、工具、网页端、CLI 都不指名任何实现，一律调 `get_provider()`。
+换记忆系统就是写一个满足 `MemoryProvider` 的类，让 `get_provider()` 返回它。
+`set_provider()` 是受支持的入口，测试也用它。
 
 写入跑在用户自己的登录和默认模型上，所以后台记忆不需要另配凭证。
 `openprogram memory sleep --model` 和 `scheduler.start_in_worker(model=...)`
@@ -165,6 +172,15 @@ openprogram/memory/
 ## 插件点
 
 `MemoryProvider`（`provider.py`）是记忆与 agent 运行时之间的接口：
-`system_prompt_block`、`prefetch`、`sync_turn`、`on_session_end`、
-`on_pre_compress`，外加一个可选的工具面。运行时里的四个调用点直接构造
-`BuiltinMemoryProvider`；换一个 provider 就是换掉这个类。
+
+| 钩子 | 何时调用 |
+|---|---|
+| `system_prompt_block()` | 会话开始 |
+| `prefetch(query)` | 每轮之前 |
+| `sync_turn(user, assistant, session_id=)` | 每轮之后 |
+| `on_session_end(messages, session_id=)` | 会话边界 |
+| `on_pre_compress(messages)` | 上下文压缩前 |
+| `maintain(**kwargs)` | 每晚 |
+| `get_tool_schemas()` / `handle_tool_call()` | 可选的额外工具 |
+
+每个都有默认实现，所以一个实现只需要写它真正有事可做的那几个。

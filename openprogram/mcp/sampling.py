@@ -34,7 +34,7 @@ from typing import Any, Optional
 
 def _read_default_model() -> Optional[tuple[str, str]]:
     """Return ``(provider, model_id)`` from the user's default agent."""
-    from openprogram.memory.llm_bridge import _read_default_model as _r
+    from openprogram.providers.default_llm import _read_default_model as _r
     return _r()
 
 

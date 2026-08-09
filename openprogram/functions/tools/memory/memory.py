@@ -16,13 +16,13 @@ import json
 from typing import Any
 
 from openprogram.memory import store
-from openprogram.memory.management import MemoryWorkspace
-from openprogram.memory.management.transaction import (
+from openprogram.memory.scriptorium.management import MemoryWorkspace
+from openprogram.memory.scriptorium.management.transaction import (
     TransactionError,
     workspace_revision,
 )
 from openprogram.memory.provider import sanitize_context
-from openprogram.memory.retrieval import inspect
+from openprogram.memory.scriptorium.retrieval import inspect
 
 MAX_SNIPPETS = 8
 

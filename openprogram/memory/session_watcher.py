@@ -2,7 +2,7 @@
 
 Polls the session DB every ``poll_interval`` seconds. For any session
 whose ``updated_at`` exceeds ``idle_minutes`` and which we haven't
-already processed, hands the message list to the builtin provider's
+already processed, hands the message list to the memory provider's
 ``on_session_end`` (which runs the LLM summarizer and appends journal
 notes).
 
@@ -137,12 +137,12 @@ def _process_session(session_id: str, messages: list[dict[str, Any]]) -> bool:
         pass
 
     try:
-        from .builtin.writing import flush
+        from . import get_provider
     except Exception:
         return False
 
     try:
-        flush(session_id, messages)
+        get_provider().on_session_end(messages, session_id=session_id)
     except Exception as exc:  # noqa: BLE001
         # A missing CLI or an unreachable model is transient: the
         # conversation is safe in the session store, so retrying next

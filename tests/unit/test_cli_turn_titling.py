@@ -47,7 +47,7 @@ def _stub_runtime_and_llm(monkeypatch: pytest.MonkeyPatch):
     # Phase-2 LLM unavailable → background thread no-ops, leaving the
     # phase-1 truncated title in place for a deterministic assertion.
     monkeypatch.setattr(
-        "openprogram.memory.llm_bridge.build_default_llm",
+        "openprogram.providers.default_llm.build_default_llm",
         lambda: None,
     )
 

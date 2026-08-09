@@ -72,7 +72,7 @@ Three things trigger a write:
 
 | Trigger | Where | What it does |
 |---|---|---|
-| A turn finishes | `BuiltinMemoryProvider.sync_turn` | Writes if the session has crossed the threshold |
+| A turn finishes | `provider.sync_turn` | Writes if the session has crossed the threshold |
 | A session goes idle | `session_watcher` | Flushes the remainder, however small |
 | 03:00 daily | `scheduler` | Reorganises topic files |
 
@@ -138,22 +138,31 @@ than making a user wait; the next turn brings it back around.
 
 ## Code map
 
+The package splits into the contract and one implementation of it.
+
 ```
-openprogram/memory/
-    __init__.py            public API
-    store.py               where the workspace is, and migration off the old layout
-    provider.py            MemoryProvider ABC + context fencing
-    builtin/provider.py    the lifecycle hooks the agent runtime calls
-    builtin/writing.py     accumulate, write, reorganise
-    scheduler.py           daemon thread, 03:00 sweep
-    session_watcher.py     idle-session flush
-    management/            the write transaction, staging, validation
-    retrieval/             BM25 and embedding search over the workspace
-    markdown/              the topic format
-    prompts/               what the writer is told
-    runtime/               cursors, thresholds, derived views
-    agent_runtime/         the process that does the writing
+openprogram/memory/           the framework side
+    provider.py               MemoryProvider — the contract
+    __init__.py               get_provider() / set_provider()
+    store.py                  where memory lives; migration off the old layout
+    scheduler.py              daemon thread, 03:00 maintenance
+    session_watcher.py        idle-session flush
+    scriptorium/              the shipped implementation
+        provider.py           satisfies the contract
+        writing.py            accumulate, write, reorganise
+        management/           the write transaction, staging, validation
+        retrieval/            BM25 and embedding search
+        markdown/             the topic format
+        prompts/              what the writer is told
+        runtime/              cursors, thresholds, derived views
+        agent_runtime/        the process that does the writing
 ```
+
+Nothing in the agent loop, the tools, the web UI or the CLI names an
+implementation: the runtime calls `get_provider()`. Swapping memory
+systems means writing a class that satisfies `MemoryProvider` and
+pointing `get_provider()` at it. `set_provider()` is the supported way
+in, and what tests use.
 
 The writer runs on the user's own login and default model, so background
 memory needs no separate credential. `openprogram memory sleep --model`
@@ -186,7 +195,17 @@ swallows its own failures and logs them.
 ## Plugin point
 
 `MemoryProvider` (`provider.py`) is the interface between memory and the
-agent runtime: `system_prompt_block`, `prefetch`, `sync_turn`,
-`on_session_end`, `on_pre_compress`, plus an optional tool surface. The
-four call sites in the runtime construct `BuiltinMemoryProvider`
-directly; an alternative provider replaces that class.
+agent runtime:
+
+| Hook | When |
+|---|---|
+| `system_prompt_block()` | Session start |
+| `prefetch(query)` | Before each turn |
+| `sync_turn(user, assistant, session_id=)` | After each turn |
+| `on_session_end(messages, session_id=)` | Session boundary |
+| `on_pre_compress(messages)` | Before context compression |
+| `maintain(**kwargs)` | Nightly |
+| `get_tool_schemas()` / `handle_tool_call()` | Optional extra tools |
+
+Every one has a default, so an implementation only writes the hooks it
+has something to do for.

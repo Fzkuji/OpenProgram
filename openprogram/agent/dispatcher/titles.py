@@ -111,7 +111,7 @@ def _post_process_title(raw: str) -> str:
 def _generate_llm_title(user_text: str, assistant_text: str) -> str | None:
     """Call LLM to generate a session title. Returns the post-processed
     title string, or None on failure."""
-    from openprogram.memory.llm_bridge import build_default_llm
+    from openprogram.providers.default_llm import build_default_llm
 
     llm = build_default_llm()
     if llm is None:
@@ -365,7 +365,7 @@ def maybe_auto_name_branch(db, session_id: str, head_id: str) -> None:
             return
         prompt = build_branch_name_prompt(chain)
 
-        from openprogram.memory.llm_bridge import build_default_llm
+        from openprogram.providers.default_llm import build_default_llm
         llm = build_default_llm()
         if llm is None:
             return

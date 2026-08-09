@@ -23,14 +23,14 @@ logger = logging.getLogger(__name__)
 WRITE_TOKEN_THRESHOLD = 16_000
 
 
-class BuiltinMemoryProvider(MemoryProvider):
+class ScriptoriumMemoryProvider(MemoryProvider):
     """File-based memory: sources + topics + core."""
 
     _session_id: str = ""
 
     @property
     def name(self) -> str:
-        return "builtin"
+        return "scriptorium"
 
     def initialize(self, *, session_id: str = "", **kwargs: Any) -> None:
         self._session_id = session_id
@@ -56,7 +56,7 @@ class BuiltinMemoryProvider(MemoryProvider):
         if not query or not query.strip():
             return ""
         try:
-            from ..retrieval import inspect
+            from .retrieval import inspect
             from .. import store
 
             found = inspect.search(store.ensure(), query, top_k=5)
@@ -98,7 +98,22 @@ class BuiltinMemoryProvider(MemoryProvider):
             # Memory must never take a conversation down with it.
             logger.debug("memory write failed: %s", exc)
 
-    def on_session_end(self, messages: list[dict[str, Any]]) -> None:
+    def maintain(self, **kwargs: Any) -> dict[str, Any]:
+        """Reorganise topic files. Called by the nightly scheduler."""
+        from .writing import sweep
+
+        try:
+            return sweep(model=kwargs.get("model"))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("memory maintenance failed: %s", exc)
+            return {"status": "failed", "error": str(exc)}
+
+    def on_session_end(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        session_id: str = "",
+    ) -> None:
         """Flush whatever is left, however little it is.
 
         The threshold exists so that short exchanges do not each cost a
@@ -108,6 +123,6 @@ class BuiltinMemoryProvider(MemoryProvider):
         from .writing import flush
 
         try:
-            flush(self._session_id, messages)
+            flush(session_id or self._session_id, messages)
         except Exception as exc:  # noqa: BLE001
             logger.debug("memory flush failed: %s", exc)

@@ -48,8 +48,8 @@ def _revalidate(root: Path) -> tuple[bool, str]:
     the check runs here, while the person who made the edit is still
     looking at it.
     """
-    from openprogram.memory.management import MemoryWorkspace
-    from openprogram.memory.management.transaction import (
+    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.scriptorium.management.transaction import (
         TransactionError, committed_baseline, install_state,
     )
 

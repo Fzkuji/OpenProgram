@@ -86,8 +86,8 @@ def prepare_turn(
     memory_prefetch = ""
     if req.user_text:
         try:
-            from openprogram.memory.builtin import BuiltinMemoryProvider
-            memory_prefetch = BuiltinMemoryProvider().prefetch(req.user_text) or ""
+            from openprogram.memory import get_provider
+            memory_prefetch = get_provider().prefetch(req.user_text) or ""
         except Exception:
             memory_prefetch = ""
     user_msg: dict[str, Any] = {

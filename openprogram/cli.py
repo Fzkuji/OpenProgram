@@ -1253,7 +1253,7 @@ def main():
     if args.command == "memory":
         verb = getattr(args, "memory_verb", None)
         from openprogram.memory import store as _mstore
-        from openprogram.memory.retrieval import inspect as _inspect
+        from openprogram.memory.scriptorium.retrieval import inspect as _inspect
         if verb == "status":
             root = _mstore.ensure()
             import json as _json
@@ -1295,8 +1295,8 @@ def main():
             subprocess.call([os.environ.get("EDITOR", "vi"), str(target)])
             # Validate rather than reindex: an edit by hand can break the
             # block IDs and citations other views reach through.
-            from openprogram.memory.management import MemoryWorkspace
-            from openprogram.memory.management.transaction import (
+            from openprogram.memory.scriptorium.management import MemoryWorkspace
+            from openprogram.memory.scriptorium.management.transaction import (
                 committed_baseline, install_state,
             )
             space = MemoryWorkspace(root)
@@ -1305,7 +1305,7 @@ def main():
             print("memory validated and derived views rebuilt")
             sys.exit(0)
         if verb == "sleep":
-            from openprogram.memory.builtin.writing import sweep
+            from openprogram.memory.scriptorium.writing import sweep
             import json as _json
             print(_json.dumps(sweep(), indent=2, ensure_ascii=False))
             sys.exit(0)

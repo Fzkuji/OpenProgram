@@ -1,4 +1,11 @@
-"""Glue between the memory subsystem and the LLM provider stack.
+"""Build a plain text-in/text-out callable on the default agent's model.
+
+Lived under memory while memory was its only caller. It is not about
+memory — turn titling and MCP sampling use it too — so it sits with the
+providers it resolves.
+
+Original docstring:
+Glue between the memory subsystem and the LLM provider stack.
 
 Sleep (deep / REM) and session-end summarization both need to call an
 LLM but don't want to import the agent runtime. This module exposes

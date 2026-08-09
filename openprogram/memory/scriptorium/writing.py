@@ -18,12 +18,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..management import organize_topics
-from ..management.agent import _run_agent
-from ..management.api import render_writer_task
-from ..management.transaction import TransactionError, workspace_write_lock
-from ..runtime.online import OnlineMemoryRuntime
-from ..runtime.state import SourceRecord
+from .management import organize_topics
+from .management.agent import _run_agent
+from .management.api import render_writer_task
+from .management.transaction import TransactionError, workspace_write_lock
+from .runtime.online import OnlineMemoryRuntime
+from .runtime.state import SourceRecord
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +37,13 @@ def _agent(model: str | None = None) -> Any:
     already paying for, so it asks for no separate credential and no
     separate model.
     """
-    from ..agent_runtime import ClaudeCodeAgent, ClaudeCodeConfig
+    from .agent_runtime import ClaudeCodeAgent, ClaudeCodeConfig
 
     return ClaudeCodeAgent(ClaudeCodeConfig.inherited(model=model))
 
 
 def _counter() -> Any:
-    from ..runtime.tokenization import TokenCounter
+    from .runtime.tokenization import TokenCounter
 
     return TokenCounter.resolve(requested_model="claude").count
 

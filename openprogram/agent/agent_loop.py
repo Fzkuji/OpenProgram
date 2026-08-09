@@ -135,7 +135,7 @@ def _memory_sync_turn(messages: list, final_message, session_id: str = "") -> No
     if not session_id:
         return
     try:
-        from openprogram.memory.builtin import BuiltinMemoryProvider
+        from openprogram.memory import get_provider
     except Exception:
         return
     user_text = _latest_user_text(messages)
@@ -147,7 +147,7 @@ def _memory_sync_turn(messages: list, final_message, session_id: str = "") -> No
         if hasattr(c, "type") and c.type == "text":
             asst_text += getattr(c, "text", "") or ""
     try:
-        BuiltinMemoryProvider().sync_turn(
+        get_provider().sync_turn(
             user_text, asst_text, session_id=session_id
         )
     except Exception:
@@ -413,8 +413,8 @@ async def _stream_assistant_response(
         latest_user_text = _latest_user_text(messages)
         if latest_user_text:
             try:
-                from openprogram.memory.builtin import BuiltinMemoryProvider
-                prefetch_block = BuiltinMemoryProvider().prefetch(latest_user_text)
+                from openprogram.memory import get_provider
+                prefetch_block = get_provider().prefetch(latest_user_text)
             except Exception:
                 prefetch_block = ""
 

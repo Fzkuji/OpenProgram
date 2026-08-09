@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.memory.management import MemoryConfig, MemoryWorkspace
+from openprogram.memory.scriptorium.management import MemoryConfig, MemoryWorkspace
 
 
 def _workspace(tmp_path: Path, *, limit: int) -> MemoryWorkspace:

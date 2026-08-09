@@ -18,9 +18,14 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from .builtin.writing import sweep as run_sweep
 
 logger = logging.getLogger(__name__)
+
+
+def get_provider():
+    from . import get_provider as _resolve
+
+    return _resolve()
 
 
 def _seconds_until_next_3am() -> float:
@@ -55,7 +60,7 @@ def start_in_worker(
             time.sleep(wait)
         while True:
             try:
-                report = run_sweep(model=model)
+                report = get_provider().maintain(model=model)
                 logger.info("memory sleep sweep done: %s", report)
             except Exception as e:  # noqa: BLE001
                 logger.warning("memory sleep sweep failed: %s", e)
