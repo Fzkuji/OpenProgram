@@ -18,12 +18,18 @@ export interface TimelineDay {
   mtime: number;
 }
 
-/** One memory paragraph, as the derived recent view records it. */
+/**
+ * One memory paragraph, as the derived recent view records it.
+ * Field names match what `rebuild_derived_views` writes into
+ * `recent_events.jsonl` — tests/unit/test_memory_recent_contract.py
+ * fails if either side renames one. `when` is null on a unit whose
+ * date comes only from its evidence rows.
+ */
 export interface RecentEvent {
-  block_id?: string;
-  path?: string;
-  content?: string;
-  when?: string;
+  memory_id: string;
+  topic_path: string;
+  content: string;
+  when: string | null;
 }
 
 /**

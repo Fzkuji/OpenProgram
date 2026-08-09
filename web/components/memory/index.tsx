@@ -409,12 +409,12 @@ export function MemoryPage() {
                     </div>
                     <div className={styles.preview}>
                       <div className={styles.markdown}>
-                        {recentEvents.map((event, i) => (
-                          <div key={event.block_id ?? i} style={{ marginBottom: "1rem" }}>
+                        {recentEvents.map((event) => (
+                          <div key={event.memory_id} style={{ marginBottom: "1rem" }}>
                             <div style={{ fontSize: "0.75rem", opacity: 0.6 }}>
-                              {[event.when, event.path].filter(Boolean).join(" · ")}
+                              {[event.when, event.topic_path].filter(Boolean).join(" · ")}
                             </div>
-                            <div>{event.content ?? ""}</div>
+                            <div>{event.content}</div>
                           </div>
                         ))}
                       </div>
