@@ -1,16 +1,19 @@
-"""task — spawn another agent in the same session and return its reply.
+"""agent — spawn another agent in the same session and return its reply.
 
 Same-session multi-agent model: a turn is just
 ``(predecessor, prompt, agent_id)``. The new turn lands as a branch
-in the parent session's DAG. Two context modes:
+in the parent session's DAG. Three context modes:
 
-  * ``context="inherit"`` (default) — the spawned agent forks off
-    the caller's turn, inheriting the conversation that led up to
-    it. Same DAG semantics as a "fork from here" click.
-  * ``context="clean"`` — the spawned agent starts at a new root
-    (``caller=null``), inside the same session repo. It sees
+  * ``context="clean"`` (default) — the spawned agent starts at a new
+    root (``caller=null``), inside the same session repo. It sees
     only the prompt; the result becomes a peer DAG tree alongside
     the original conversation.
+  * ``context="inherit"`` — the spawned agent forks off the caller's
+    turn, inheriting the conversation that led up to it. Same DAG
+    semantics as a "fork from here" click.
+  * ``context="SID:MSG_ID"`` — the spawned agent forks off that exact
+    node (any session), inheriting the chain up to it. This is how a
+    new branch is forked from an arbitrary point in the DAG.
 
 Returns the spawned agent's final text. The branch tip
 (``session_id:head_id``) is recoverable from the chat history via
@@ -37,14 +40,14 @@ from openprogram.functions._runtime import function
 from .prompt import DESCRIPTION
 
 
-# task() delegation cap. ONE level: the main agent may spawn workers;
+# agent() delegation cap. ONE level: the main agent may spawn workers;
 # a spawned agent does the work itself — it never re-delegates. Even a
 # single "coordinator" hop turned out to be an agent avoiding its job
 # in practice (observed live: a weather query bounced through a whole
 # delegation chain, every hop re-wording the same prompt). Deliberately
 # much tighter than send_message's MAX_SPAWN_DEPTH=8, which budgets
 # multi-round branch-to-branch conversation, not delegation.
-MAX_TASK_DEPTH = 1
+MAX_AGENT_DEPTH = 1
 
 
 def _resolve_parent() -> tuple[str | None, str | None, str | None]:
@@ -73,7 +76,7 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
     return sid, aid, agent_id
 
 
-def _task_impl(
+def _agent_impl(
     prompt: str,
     description: str = "",
     agent_id: str = "",
@@ -87,7 +90,7 @@ def _task_impl(
     sid, aid, parent_agent = _resolve_parent()
     if not sid or not aid:
         return (
-            "[task error] no active parent turn — task() must be called "
+            "[agent error] no active parent turn — agent() must be called "
             "from inside an assistant turn (the dispatcher sets the "
             "session + turn ContextVars on entry)."
         )
@@ -101,10 +104,10 @@ def _task_impl(
             for c in label
         )[:24]
 
-    # Depth guard — shares send_message's counter so task() and
-    # send_message spawns count toward the same chain, but with a much
-    # tighter cap: only the main agent may task(); a spawned agent works
-    # with its own tools, it never re-delegates (observed live: a
+    # Depth guard — shares send_message's counter so agent() and
+    # send_message deliveries count toward the same chain, but with a
+    # much tighter cap: only the main agent may spawn; a spawned agent
+    # works with its own tools, it never re-delegates (observed live: a
     # 5-generation weather-query delegation chain, every hop just
     # re-wording the same prompt). send_message keeps its own looser
     # MAX_SPAWN_DEPTH for branch-to-branch dialogue.
@@ -114,24 +117,51 @@ def _task_impl(
         _spawn_depth,
     )
     depth = current_spawn_depth()
-    if depth >= MAX_TASK_DEPTH:
+    if depth >= MAX_AGENT_DEPTH:
         return (
-            f"[task refused] spawn depth {depth} reached the task() max "
-            f"({MAX_TASK_DEPTH}). Do the work yourself with your own "
+            f"[agent refused] spawn depth {depth} reached the agent() max "
+            f"({MAX_AGENT_DEPTH}). Do the work yourself with your own "
             "tools instead of delegating again."
         )
 
-    mode = (context or "").strip().lower() or "clean"
-    if mode not in ("inherit", "clean"):
+    # Resolve the context mode. Besides the two named modes, a node
+    # address "SID:MSG_ID" forks the new branch off that exact node —
+    # the spawned agent inherits the chain up to it.
+    mode = (context or "").strip() or "clean"
+    run_session = sid
+    branch_from: str | None = None
+    if mode.lower() in ("inherit", "clean"):
+        mode = mode.lower()
+        branch_from = aid if mode == "inherit" else None
+    elif ":" in mode:
+        fork_sid, _, fork_msg = mode.partition(":")
+        fork_sid = fork_sid.strip()
+        fork_msg = fork_msg.strip()
+        if not fork_sid or not fork_msg:
+            return (
+                f"[agent error] context {context!r} — a node address needs "
+                "both parts: 'SID:MSG_ID'."
+            )
+        from openprogram.agent.session_db import default_db
+        if default_db().get_session(fork_sid) is None:
+            return (
+                f"[agent error] context {context!r} — session "
+                f"{fork_sid!r} not found (see list_agents)."
+            )
+        run_session = fork_sid
+        branch_from = fork_msg
+        mode = "inherit"  # fork = inherit the chain up to the node
+    else:
         return (
-            f"[task error] unknown context {context!r} — use 'clean' "
-            "(default, new root, no parent history) or 'inherit' "
-            "(spawned agent forks off this turn and sees the full chain)."
+            f"[agent error] unknown context {context!r} — use 'clean' "
+            "(default, new root, no parent history), 'inherit' (fork off "
+            "this turn, full chain visible), or 'SID:MSG_ID' (fork off "
+            "that exact node)."
         )
 
     if not wait:
         # Async path: submit and return the task_id. Caller can
-        # invoke await_task / cancel_task / get_task. The runner is
+        # invoke task_output / task_stop / get_task. The runner is
         # responsible for state transitions + attach card update.
         try:
             from openprogram.agent.sub_agent_run import run_agent_turn_async
@@ -151,10 +181,10 @@ def _task_impl(
                 chosen_agent=chosen_agent,
             )
             task_id = run_agent_turn_async(
-                session_id=sid,
+                session_id=run_session,
                 prompt=prompt,
                 agent_id=chosen_agent,
-                branch_from=aid if mode == "inherit" else None,
+                branch_from=branch_from,
                 label=label or None,
                 subject=description or prompt[:60],
                 description=description or prompt,
@@ -164,6 +194,9 @@ def _task_impl(
                 # chain depth so the guard above trips in the child too.
                 # Without caller_msg_id the async branch forked from ROOT.
                 caller_msg_id=aid,
+                # A fork into another session must return its reply to
+                # the caller's session, not the fork target's.
+                caller_session_id=sid if run_session != sid else None,
                 spawn_depth=depth + 1,
                 attach_pointer_id=attach_id,
             )
@@ -185,11 +218,11 @@ def _task_impl(
                     task_id=task_id,
                 )
         except Exception as e:  # noqa: BLE001
-            return f"[task error] {type(e).__name__}: {e}"
+            return f"[agent error] {type(e).__name__}: {e}"
         return (
-            f"[task spawned async] task_id={task_id}\n"
-            f"Call await_task(task_id={task_id!r}) to retrieve result, "
-            f"or cancel_task(task_id={task_id!r}) to stop it."
+            f"[agent spawned async] task_id={task_id}\n"
+            f"Call task_output(task_id={task_id!r}) to retrieve result, "
+            f"or task_stop(task_id={task_id!r}) to stop it."
         )
 
     # Announce the spawn BEFORE running it: a synchronous spawn blocks
@@ -221,17 +254,17 @@ def _task_impl(
         _depth_token = set_spawn_depth(depth + 1)
         try:
             result = run_agent_turn(
-                session_id=sid,
+                session_id=run_session,
                 prompt=prompt,
                 agent_id=chosen_agent,
-                branch_from=aid if mode == "inherit" else None,
+                branch_from=branch_from,
                 label=label or None,
                 # clean mode = new branch → its root's caller = the spawning
                 # node, so the DAG attaches the branch to this turn instead of
                 # forking it from ROOT (dag/overview.md §2.3). The async path
                 # (runner.py) already does this; without it here the sync
                 # path's sub-branch rendered as an unrelated root-level fork.
-                spawn_caller=aid if mode != "inherit" else None,
+                spawn_caller=aid if branch_from is None else None,
                 advance_head=False,  # same-session spawn never steals head
             )
         finally:
@@ -248,13 +281,13 @@ def _task_impl(
             )
         except Exception:
             pass
-        return f"[task error] {type(e).__name__}: {e}"
+        return f"[agent error] {type(e).__name__}: {e}"
 
     # Write an attach pointer node so the DAG paints a `function=attach`
     # square_outline on the caller's lane referencing the sub-branch tip.
     # Without this the sub-branch is orphaned in the graph view (no
     # reference edge connects it back to main). Matches what /spawn and
-    # the async task path do.
+    # the async path do.
     try:
         write_attach_pointer_for_spawn(
             session_id=sid,
@@ -284,28 +317,28 @@ def _task_impl(
         pass
 
     if result.error and not result.final_text:
-        return f"[task error: head={result.head_id}] {result.error}"
+        return f"[agent error: head={result.head_id}] {result.error}"
 
     out = result.final_text or "(spawned agent returned no text)"
     if result.error:
-        out = f"{out}\n\n[task warning] {result.error}"
+        out = f"{out}\n\n[agent warning] {result.error}"
 
-    tail = f"branch={sid}:{result.head_id or '?'}"
+    tail = f"branch={run_session}:{result.head_id or '?'}"
     return f"{out}\n\n[spawned agent {tail}]"
 
 
 @function(
-    name="task",
+    name="agent",
     description=DESCRIPTION,
     toolset=["core"],
     # A spawned agent never even sees this tool (the dispatcher filters
     # by req.source) — the delegated agent does the work itself, no
     # re-subcontracting. With the tool absent from the listing the model
-    # won't reach for it; the depth guard in _task_impl is a backstop
+    # won't reach for it; the depth guard in _agent_impl is a backstop
     # (e.g. when tools_override explicitly puts the tool back).
     unsafe_in=["agent_spawn"],
 )
-def task(
+def agent(
     prompt: str,
     description: str = "",
     agent_id: str = "",
@@ -316,8 +349,8 @@ def task(
 
     With ``wait=True`` (default) blocks until the spawned agent
     finishes and returns its final reply. With ``wait=False`` returns
-    immediately with a task_id; call :func:`await_task` to retrieve
-    the result, or :func:`cancel_task` to stop it.
+    immediately with a task_id; call :func:`task_output` to retrieve
+    the result, or :func:`task_stop` to stop it.
 
     Args:
         prompt: instruction for the spawned agent. In
@@ -329,10 +362,11 @@ def task(
         context: ``"clean"`` (default) ⇒ the spawned agent starts at
             a new root with only the prompt visible. ``"inherit"`` ⇒
             forks off this turn and sees the full chain that led here.
+            ``"SID:MSG_ID"`` ⇒ forks off that exact node.
         wait: True (default) blocks for the final reply. False
             returns ``task_id`` immediately for parallel execution.
     """
-    return _task_impl(
+    return _agent_impl(
         prompt=prompt, description=description,
         agent_id=agent_id, context=context, wait=wait,
     )

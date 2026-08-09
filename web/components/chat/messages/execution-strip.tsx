@@ -27,8 +27,11 @@ import {
   WrenchIcon,
 } from "@/components/animated-icons";
 
-/** spawn 类工具：在摘要里算"子代理"，不算普通函数调用。 */
-export const SPAWNING_TOOL_NAMES = new Set(["task", "send_message"]);
+/** spawn 类工具：在摘要里算"子代理"，不算普通函数调用。
+ * `agent` 生新分支；`send_message` 虽不再 spawn，但它仍触发目标分支跑
+ * 一轮、仍在 caller 轮上落 attach 指针卡（runner 的 attach 路径），所以
+ * 摘要里同样按"子代理活动"计。 */
+export const SPAWNING_TOOL_NAMES = new Set(["agent", "send_message"]);
 
 function wsSend(payload: unknown): void {
   const sock = getSocket();

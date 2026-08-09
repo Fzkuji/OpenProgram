@@ -2,9 +2,9 @@
 their JSON schema — the model naturally passes null to mean "unspecified",
 and the impl already treats None/"" as "use the default". Before this fix a
 bare {"type":"string"} rejected null at the validator and the whole tool call
-failed (observed: task's agent_id=None → "None is not of type 'string'").
+failed (observed: agent's agent_id=None → "None is not of type 'string'").
 
-Applies to EVERY tool, not just task.
+Applies to EVERY tool, not just agent.
 """
 from __future__ import annotations
 
@@ -148,14 +148,14 @@ def test_get_mcp_prompt_arguments_closed():
     assert args.get("additionalProperties") is False
 
 
-# ── the actual bug: the task tool's agent_id ──
+# ── the actual bug: the agent tool's agent_id ──
 
-def test_task_tool_agent_id_accepts_null():
+def test_agent_tool_agent_id_accepts_null():
     from openprogram.functions import agent_tools
-    task = next((t for t in agent_tools(toolset="full") if t.name == "task"), None)
-    assert task is not None, "task tool must be registered"
-    params = task.parameters
-    assert params, "task tool must expose a parameters schema"
+    tool = next((t for t in agent_tools(toolset="full") if t.name == "agent"), None)
+    assert tool is not None, "agent tool must be registered"
+    params = tool.parameters
+    assert params, "agent tool must expose a parameters schema"
     props = params["properties"]
     assert "agent_id" in props
     assert _accepts_null(props["agent_id"]), props["agent_id"]

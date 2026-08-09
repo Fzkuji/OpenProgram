@@ -1,11 +1,11 @@
-"""cancel_task — signal cancel for an in-flight async task() spawn."""
+"""task_stop — signal cancel for an in-flight async agent() spawn."""
 from __future__ import annotations
 
 from openprogram.functions._runtime import function
 
 
 @function(
-    name="cancel_task",
+    name="task_stop",
     description=(
         "Cancel an in-flight async task. Idempotent — calling on an "
         "already-terminal task is a no-op. The runner sets the "
@@ -20,16 +20,16 @@ from openprogram.functions._runtime import function
         "task entity."
     ),
     toolset=["core"],
-    # Same as task: a spawned agent has no delegated work to cancel.
+    # Same as agent: a spawned agent has no delegated work to cancel.
     unsafe_in=["agent_spawn"],
 )
-def cancel_task(task_id: str, reason: str = "") -> str:
+def task_stop(task_id: str, reason: str = "") -> str:
     """Signal cancel for an async task."""
     if not task_id or not isinstance(task_id, str):
-        return "[cancel_task error] task_id required"
+        return "[task_stop error] task_id required"
     from openprogram.agent.task import get_runner
     runner = get_runner()
     t = runner.cancel_task(task_id.strip(), reason=reason or None)
     if t is None:
-        return f"[cancel_task error] unknown task_id={task_id!r}"
-    return f"[cancel_task] task_id={task_id} status={t.status.value}"
+        return f"[task_stop error] unknown task_id={task_id!r}"
+    return f"[task_stop] task_id={task_id} status={t.status.value}"

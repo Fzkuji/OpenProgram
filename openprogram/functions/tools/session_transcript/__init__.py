@@ -6,8 +6,8 @@ reason about work that happened outside its own context — what the
 ``distill`` skill reads when turning a past session into a reusable
 skill or agentic function.
 
-Discovery is already covered: ``list_sessions`` and ``list_branches``
-(``send_message``) name the session ids and ``SID:HEAD`` branch tips
+Discovery is already covered: ``list_agents`` (``send_message``'s
+discovery tool) names the session ids and ``SID:HEAD`` branch tips
 this tool takes as arguments.
 """
 from .session_transcript import session_transcript

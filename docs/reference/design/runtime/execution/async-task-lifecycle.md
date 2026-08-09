@@ -121,7 +121,7 @@ entity and the task's product, which is self-consistent.
 All spawns go through the task entity, so `/task` does not block
 synchronously. The semantics:
 
-- The agent-facing tool `task(prompt, ...)` is **async** — it returns `task_id` immediately without blocking the main conversation. Once the LLM has the id, it can choose to do other things, or immediately call `await_task(task_id)` for synchronous semantics (D15).
+- The agent-facing tool `agent(prompt, ...)` is **async** — it returns `task_id` immediately without blocking the main conversation. Once the LLM has the id, it can choose to do other things, or immediately call `task_output(task_id)` for synchronous semantics (D15).
 - Compatibility flag: `/task --sync` (or a `wait=True` parameter) wraps a `spawn → await` at the tool layer, returning the result synchronously, transparently to the LLM.
 - `_task_impl` keeps its `run_agent_turn` call, but routes through the runner entry point.
 
@@ -160,8 +160,8 @@ Broadcast events:
 The agent uses a trio:
 
 - `spawn_task(prompt, description, agent_id?, context?, wait=False)` → returns `task_id` (wait=False) or the final result (wait=True). Wraps `runner.submit(...)`.
-- `await_task(task_id, timeout=None)` → blocks the calling thread until completed / cancelled / timeout, returning `{status, result_text, head_id, error}`. The LLM calls this to wrap up in concurrent scenarios.
-- `cancel_task(task_id, reason?)` → `{ok, status}`.
+- `task_output(task_id, timeout=None)` → blocks the calling thread until completed / cancelled / timeout, returning `{status, result_text, head_id, error}`. The LLM calls this to wrap up in concurrent scenarios.
+- `task_stop(task_id, reason?)` → `{ok, status}`.
 
 The variant `await_tasks([id1, id2, ...], mode="all"|"any", timeout)` is used
 for plan mode's wait_all (D14). The trio plus wait_all makes four tools, but
@@ -213,7 +213,7 @@ pool of 4 will leave 6 stuck in `queued`, shown queued in the UI.
 user sees an attach card + the full result), but it routes through the task
 entity underneath.
 
-The LLM-facing `task(prompt, ...)` tool provides two semantics:
+The LLM-facing `agent(prompt, ...)` tool provides two semantics:
 
 - `wait=True` (default, backward compatible): internally spawn + await + return result_text as the return value to the LLM. From the LLM's perspective, identical to the synchronous tool.
 - `wait=False`: returns `task_id`, and the LLM decides when to await on its own. Used by new code / plan mode.
@@ -228,7 +228,7 @@ the LLM explains both modes + recommended usage.
 
 ### Scenario A: a single sync `/task`
 
-The most common case: the LLM calls `task(prompt="probe X")`, expecting to
+The most common case: the LLM calls `agent(prompt="probe X")`, expecting to
 block and get the result. Behavior matches the synchronous tool, and it routes
 through the task entity underneath.
 
@@ -243,7 +243,7 @@ through the task entity underneath.
 | **D7 sub-agent** | The tool wrapper spawns + awaits internally: zero change to the LLM call site |
 | **D8 ContextCommit** | The placeholder attach card exists briefly (milliseconds to seconds, since it waits synchronously for the result) and is updated immediately on completion; the UI barely sees the running state |
 | **D9 WS API** | The tool call goes through the in-process API (no need to go via WS); the UI can still see it via list_tasks |
-| **D10 agent tool** | `task(...)` defaults to wait=True, covering 99% of existing code paths |
+| **D10 agent tool** | `agent(...)` defaults to wait=True, covering 99% of existing code paths |
 | **D11 UI** | The Tasks panel flashes once; the attach card appears directly in the completed state |
 | **D12 error** | Worker throws → status=`errored` → the tool gets a `[task error] ...` string (preserving the existing error format) |
 | **D13 test** | unit: mock the runner, verify spawn + await are called twice in order; integration: actually run a trivial agent |
@@ -263,12 +263,12 @@ cancels later.
 | **D2 state machine** | When spawn returns, it's usually already `queued` or `running`, transparent to the LLM |
 | **D3 worker pool** | Submit does not block the caller thread; the caller LLM continues to the next tool call |
 | **D4 persistence** | Same as A |
-| **D5 cancel** | The LLM calls `cancel_task(id)`, or the user cancels in the UI; both paths are the same (both go into runner.cancel) |
+| **D5 cancel** | The LLM calls `task_stop(id)`, or the user cancels in the UI; both paths are the same (both go into runner.cancel) |
 | **D6 session binding** | Same as A |
 | **D7 sub-agent** | spawn / await are decoupled: between the two tool calls the LLM can read files, search code, etc. |
 | **D8 ContextCommit** | The placeholder attach card is written in the spawn turn, status=running; on subsequent turns the LLM still sees this block as a placeholder in the ContextCommit (the generator sees status=running and does not expand) |
 | **D9 WS API** | spawn_task → returns task_id; the UI immediately sees a new row in the Tasks panel |
-| **D10 agent tool** | `spawn_task` returns `task_id` to the LLM; a subsequent `await_task(task_id)` retrieves the result |
+| **D10 agent tool** | `spawn_task` returns `task_id` to the LLM; a subsequent `task_output(task_id)` retrieves the result |
 | **D11 UI** | A running row in the Tasks panel + the sidebar total count + an attach card with a status badge |
 | **D12 error** | Same as A, but the LLM perceives the error only at await time (it can also discover it earlier via get_task before awaiting) |
 | **D13 test** | unit: after spawn returns task_id, status = queued/running; after await, the state transition is correct |
@@ -288,7 +288,7 @@ The plan agent lists 5 research tasks, spawns 5 tasks, and calls
 | **D2 state machine** | With pool size=4, 4 go → running and 1 → queued; the first to finish transitions to completed, and the queued one starts running |
 | **D3 worker pool** | The key scenario. FIFO-fair; when the pool is full, spawn returns task_id immediately with status=`pending`/`queued`, and await_tasks waits automatically |
 | **D4 persistence** | Each task gets its own row in tasks.json; commit on every state transition. Expect roughly ~10-20 git commits for one plan |
-| **D5 cancel** | `cancel_task(id)` cancels one; to cancel the whole plan, the plan agent iterates and cancels all children itself (a `cancel_tasks(parent_msg_id=...)` batch API is a possible future addition) |
+| **D5 cancel** | `task_stop(id)` cancels one; to cancel the whole plan, the plan agent iterates and cancels all children itself (a `cancel_tasks(parent_msg_id=...)` batch API is a possible future addition) |
 | **D6 session binding** | All 5 tasks run on the same parent_session; after landing they are 5 parallel branches (branch label = task description) |
 | **D7 sub-agent** | 5 concurrent sub-agents run at the same time, isolated by the thread pool; the ContextVar (`current_session_id`) is thread-local and they don't interfere with each other |
 | **D8 ContextCommit** | 5 placeholder attach cards line up hanging off the plan agent's fork point; completion order doesn't matter, and the UI updates each one independently. On subsequent LLM turns, these 5 blocks in the ContextCommit are attach expansions, handled per scenario C in `context.md` |
@@ -318,7 +318,7 @@ Stop in the UI or the agent decides to abort.
 | **D7 sub-agent** | After the sub-agent loop gets the cancel, it follows the dispatcher's existing cancelled branch: the placeholder is already inserted, the error folds into the same row → status=cancelled, and partial output lands on disk |
 | **D8 ContextCommit** | The attach card status goes from running → cancelled; content writes partial output + a `[cancelled at T]` marker; the generator can also selectively expand cancelled (first version: don't expand cancelled, just show the marker) |
 | **D9 WS API** | cancel_task returns immediately (doesn't wait for the worker), the UI shows a "cancelling..." state; another task_status broadcast goes out when the worker actually exits |
-| **D10 agent tool** | The LLM can call `cancel_task(id)`; a subsequent `await_task(id)` returns the cancelled terminal state immediately |
+| **D10 agent tool** | The LLM can call `task_stop(id)`; a subsequent `task_output(id)` returns the cancelled terminal state immediately |
 | **D11 UI** | The Stop button already exists; clicking it triggers cancel_task; the spinner turns into a spinner + dim color until the worker exits |
 | **D12 error** | cancel timeout: after 30s, force-transition the status but keep the worker thread; log a warn; the UI hints "task may still be running in background" |
 | **D13 test** | The key test: a fake sync_fn deliberately ignores cancel_event for 30 seconds, assert the runner force-transitions to cancelled state after 30s |
@@ -377,7 +377,7 @@ The landing order, in dependency order:
 | 6 | `openprogram/webui/ws_actions/task.py` (new) | 4 handlers corresponding to D9; register in `ws_actions/__init__.py` |
 | 7 | `openprogram/webui/_execute/__init__.py::_run_spawn` | Switch to `submit_agent_task`; write the placeholder attach card with task_id + status=running |
 | 8 | `openprogram/context/commit/generator.py` | When handling attach nodes, check `extra.attach.status`: running / cancelled / errored do not expand, only placeholder (D8) |
-| 9 | `openprogram/functions/tools/task/task/task.py` | `_task_impl` internally switches to `submit_agent_task` + defaults to wait=True; returns task_id when wait=False |
+| 9 | `openprogram/functions/tools/agent/agent/agent.py` | `_agent_impl` internally switches to `submit_agent_task` + defaults to wait=True; returns task_id when wait=False |
 | 10 | `web/components/right-sidebar/tasks-panel.tsx` (new) | UI representation (D11); subscribes to the `task_status` ws event |
 | 11 | `web/components/chat/messages/attach-card.tsx` | Render the status badge (running / done / cancelled / error) |
 | 12 | `openprogram/agent/dispatcher.py::process_user_turn` | On startup, check `OPENPROGRAM_TASK_WORKERS` and initialize the runner singleton (idempotent) |

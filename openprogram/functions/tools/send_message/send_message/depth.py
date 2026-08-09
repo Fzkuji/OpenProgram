@@ -1,11 +1,11 @@
-"""Spawn-chain depth tracking for send_message (and task()).
+"""Spawn-chain depth tracking for send_message (and agent()).
 
-Depth of the current spawn chain (A→B→C…). Each send_message that
-spawns increments it for the child turn; when it reaches
-MAX_SPAWN_DEPTH further spawns are refused — the guard against A↔B /
-runaway recursion (design §5.1). Set by the task runner on the child
-turn (cross-thread) and by the sync path inline. task() shares this
-counter with its own tighter cap (MAX_TASK_DEPTH).
+Depth of the current spawn chain (A→B→C…). Each send_message delivery
+increments it for the child turn; when it reaches MAX_SPAWN_DEPTH
+further deliveries are refused — the guard against A↔B / runaway
+recursion (design §5.1). Set by the task runner on the child turn
+(cross-thread) and by the sync path inline. agent() shares this
+counter with its own tighter cap (MAX_AGENT_DEPTH).
 """
 from __future__ import annotations
 

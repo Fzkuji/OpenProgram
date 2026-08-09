@@ -61,7 +61,7 @@ export function drawNodes(
     const onHead = !!headAncestors[id];
     const color = _branchColor(node, stableLeafOfNode);
     const isBranchOp =
-      node.function === "task" ||
+      node.function === "agent" ||
       node.function === "attach" ||
       node.function === "merge";
     const oocFlag = contextSet && !contextSet[id] && !isBranchOp;

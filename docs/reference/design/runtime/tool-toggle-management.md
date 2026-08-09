@@ -63,7 +63,7 @@ A materialized list is persisted all the way to the DB:
 3. On every later turn: `load_session_run_config` → `tools_override_from_config` hits `:85-86` `if cfg.tools_override: return list(cfg.tools_override)`, **returning the old snapshot verbatim**
 4. That list reaches `_model_tools.py:423-428` and goes through `agent_tools(names=[...])`, **honoring only the names in the snapshot**
 
-**Consequence**: after a new tool is added to DEFAULT_TOOLS (`functions/__init__.py:69`) — list_sessions or send_message, say — **every session that ever enabled web_search or picked a non-full profile** keeps its original name list forever and never sees the new tool.
+**Consequence**: after a new tool is added to DEFAULT_TOOLS (`functions/__init__.py:69`) — list_agents or send_message, say — **every session that ever enabled web_search or picked a non-full profile** keeps its original name list forever and never sees the new tool.
 
 By contrast, a session that never touched either toggle stores `tools_enabled=True` (a bool), and `:87-90` returns `list(DEFAULT_TOOLS)` live on each turn, so new tools appear automatically. **The difference is "store a bool / intent" versus "store a materialized list".**
 
@@ -135,7 +135,7 @@ When the design is correct, all of the following hold at once, and they are also
 - **Intent round-trip**: storing `web_search=True` reads back True; an old session lacking the field reads back None without error.
 - **Dict output**: `enabled=True` → a dict containing enabled; with web_search → the expansion contains web_search; `enabled=False` → `[]`.
 - **Writes do not materialize**: after a new session enables web_search or picks research, `tools_override` in the DB is NULL or a dict, never a full list.
-- **New tools appear automatically**: expanding `{enabled: True}` intent includes the tools most recently added to DEFAULT_TOOLS (send_message, list_sessions).
+- **New tools appear automatically**: expanding `{enabled: True}` intent includes the tools most recently added to DEFAULT_TOOLS (send_message, list_agents).
 - **Cache stability**: a session with unchanged intent sends two turns back to back and provider usage shows a cache hit on the second, with no toolset thrash.
 - **All writers agree**: no second `list(_DEFAULT_TOOLS)` or `[t.name for t in` materialization exists anywhere in the repo; webui, channels, and the TUI (`session.py`, `cli/src/ws/client.ts`) all pass intent through wherever web_search can be enabled or a profile picked.
 
@@ -322,7 +322,7 @@ Regression coverage lives in `tests/context/test_tool_defer.py`:
 ### 9.3 Tests (regression protection)
 
 - `tests/unit/test_tool_expansion_deterministic.py` — deterministic expansion (stable cache prefix)
-- `tests/unit/test_session_config_tools_intent.py` — intent round-trip, verbatim pass-through of user-picked lists, and end to end: the expanded intent includes new tools (send_message / list_sessions) and web_search layering takes effect
+- `tests/unit/test_session_config_tools_intent.py` — intent round-trip, verbatim pass-through of user-picked lists, and end to end: the expanded intent includes new tools (send_message / list_agents) and web_search layering takes effect
 - `tests/unit/test_session_config.py::test_tools_enabled_yields_live_intent_not_snapshot` — `tools=True` produces `{enabled:True}` intent rather than a list snapshot
 - `tests/context/test_tool_defer.py` — the deferral properties of §7.6, including the turn-boundary freeze
 - `tests/context/test_budget.py` — each half of the tool pricing against a real tokenized payload (§7.5)

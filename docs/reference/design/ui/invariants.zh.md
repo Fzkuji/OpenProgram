@@ -57,8 +57,8 @@ agent 的 agent.json `model`。当前默认掉出启用集合时，三处必须*
 
 ## 6. spawn 的三个入口语义必须一致
 
-spawn 一个 sub-agent 分支有三个入口：`task()` 同步路径
-（functions/tools/task/task/task.py）、异步 runner
+spawn 一个 sub-agent 分支有三个入口：`agent()` 同步路径
+（functions/tools/agent/agent/agent.py）、异步 runner
 （agent/task/runner.py）、`send_message`
 （functions/tools/send_message/）。三者对 clean 模式必须一致地传
 `spawn_caller=<发起节点>`，使分支根节点 `caller` 指向发起它的那轮
@@ -66,10 +66,10 @@ spawn 一个 sub-agent 分支有三个入口：`task()` 同步路径
 一起改，一起测。
 
 被 spawn 的 agent **一律不得再委托**——根治手段是工具清单级的：
-task/await_task/cancel_task 标 `unsafe_in=["agent_spawn"]`，dispatcher
+agent/task_output/task_stop 标 `unsafe_in=["agent_spawn"]`，dispatcher
 按 `req.source` 过滤后，被 spawn 的 agent 的工具清单里**根本没有**这些
 工具（工具摆在清单里模型就会想用，先给再拒是浪费一轮的坏设计）。
-`MAX_TASK_DEPTH=1` 的深度守卫只是兜底（挡 tools_override 之类的旁路）；
+`MAX_AGENT_DEPTH=1` 的深度守卫只是兜底（挡 tools_override 之类的旁路）；
 send_message 保留宽松的 `MAX_SPAWN_DEPTH=8`（预算给分支间多轮对话，
 不是委托链），两者共用一个链上深度计数器。哪怕只放开"协调者"这一层，
 模型也会退化成层层推活儿，所以被 spawn 的 agent 一层委托都不给。

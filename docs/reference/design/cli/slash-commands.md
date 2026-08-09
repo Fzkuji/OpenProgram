@@ -136,12 +136,12 @@ context: inline          (default)
   the rendered prompt enters the current session context
 
 context: fork
-  run in a task sub-agent (uses existing functions/tools/task)
+  run in an agent sub-agent (uses existing functions/tools/agent)
   the agent field determines subagent_type; allowed-tools determines the visible tool set
   the sub-agent's final message is presented as a "command result" and does not pollute the main context
 ```
 
-`context: fork` is equivalent to "typing `/review` automatically turns into a single call to `task(subagent_type=general-purpose, prompt=...)`." This step grafts claude-code's fork mode directly onto our existing subagent mechanism.
+`context: fork` is equivalent to "typing `/review` automatically turns into a single call to `agent(prompt=...)`." This step grafts claude-code's fork mode directly onto our existing subagent mechanism.
 
 ---
 
@@ -321,7 +321,7 @@ The pieces are independently shippable and land in dependency order:
 3  L3 skills auto-injection (skills/loader exposes to_command_spec())
 4  L2 mcp prompts auto-injection (mcp/registry already has list_prompts)
 5  L1 plugins onboarded onto the new table (plugins/loader already has _commands, plus an adapter layer)
-6  context: fork wired to the task tool
+6  context: fork wired to the agent tool
 7  paths / requires trigger-condition evaluation
 8  watcher hot reload
 9  builtin commands migrated to type: local + frontmatter

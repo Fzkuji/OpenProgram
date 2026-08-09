@@ -1,26 +1,28 @@
 """send_message — the single branch-to-branch communication primitive.
 
-Deliver a message to a branch → trigger that branch to run one turn →
-its reply auto-returns to the sender. Three usages via ``to``:
+Deliver a message to an EXISTING branch → trigger that branch to run
+one turn → its reply auto-returns to the sender. ``to`` names the
+branch:
 
-  * ``"new"``            — start a fresh ROOT branch in the CURRENT session's
-                           DAG, deliver the message, run it. (spawn)
-  * ``"new:sid:msg_id"`` — fork a new branch off a node, deliver, run.
   * ``"sid:head"``       — deliver to an existing branch. The node names
                            the BRANCH, not a fork point: delivery always
                            lands on the branch's current tip, so a stale
                            head (the branch ran more turns since) is
-                           still a valid address. To fork off a specific
-                           node, use ``"new:sid:msg_id"``.
+                           still a valid address.
+  * ``"<branch name>"``  — address a named branch directly.
+
+Creating agents is the ``agent`` tool's job (spawn = ``agent(...)``,
+fork off a node = ``agent(context="SID:MSG_ID")``); send_message only
+talks to branches that already exist.
 
 Async by default (``wait=False``): returns immediately with a delivery id;
 the target runs in the background and its reply comes back to the sender
 automatically (the task runner's followup). ``wait=True`` blocks for the
 reply.
 
-Design: docs/design/runtime/agent-collaboration.md. This module is the
-entry point: the @function binding plus the main delivery flow.
-Concern-specific pieces live alongside: ``prompt.py`` (LLM-facing
+Design: docs/reference/design/runtime/agent-collaboration.md. This
+module is the entry point: the @function binding plus the main delivery
+flow. Concern-specific pieces live alongside: ``prompt.py`` (LLM-facing
 description), ``addressing.py`` (`to` parsing + branch-name lookup),
 ``delivery.py`` (synthesis blocks, receipt header, busy-target inbox,
 reply clipping), ``depth.py`` (spawn-chain depth guard).
@@ -51,14 +53,14 @@ from .prompt import DESCRIPTION
 
 
 def _resolve_parent() -> tuple[str | None, str | None, str | None]:
-    """Current (session_id, turn_id, agent_id) for anchoring the spawn.
+    """Current (session_id, turn_id, agent_id) for anchoring the send.
 
-    Reads the dispatcher's ContextVars first (same as the ``task`` tool).
-    ``_current_turn_id`` isn't always bound on every execution path (e.g.
-    a followup turn, or some sub-call stacks), so when it's missing we
-    fall back to the session's current head — that head IS a valid parent
-    anchor for the new branch, which is what callers actually need. This
-    is what fixes the "no active parent turn" the model sometimes hit."""
+    Reads the dispatcher's ContextVars first (same as the ``agent``
+    tool). ``_current_turn_id`` isn't always bound on every execution
+    path (e.g. a followup turn, or some sub-call stacks), so when it's
+    missing we fall back to the session's current head — that head IS a
+    valid parent anchor, which is what callers actually need. This is
+    what fixes the "no active parent turn" the model sometimes hit."""
     try:
         from openprogram.agent.run_control import _current_session_id
         sid = _current_session_id.get(None)
@@ -85,7 +87,7 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
 
 def _send_message_impl(
     message: str,
-    to: str = "new",
+    to: str = "",
     sources: list[str] | None = None,
     agent_id: str = "",
     wait: bool = False,
@@ -102,7 +104,7 @@ def _send_message_impl(
             "+ turn ContextVars on entry)."
         )
 
-    # Depth guard (§5.1): refuse spawning past MAX_SPAWN_DEPTH so A↔B /
+    # Depth guard (§5.1): refuse deliveries past MAX_SPAWN_DEPTH so A↔B /
     # runaway recursion can't blow up. The reply-followup inherits the
     # same depth, so back-and-forth also counts toward it.
     depth = current_spawn_depth()
@@ -114,106 +116,96 @@ def _send_message_impl(
         )
 
     chosen_agent = (agent_id or "").strip() or parent_agent or "main"
-    kind, tgt_sid, fork_msg = _parse_to(to)
+    kind, tgt_sid, head = _parse_to(to)
+    if kind == "spawn_syntax":
+        return (
+            f"[send_message error] to={to!r} is not a valid target — "
+            "send_message only talks to EXISTING branches. To create a "
+            "new agent, use the `agent` tool (fork off a node with "
+            "agent(context=\"SID:MSG_ID\"))."
+        )
+    if not (to or "").strip():
+        return (
+            "[send_message error] `to` is required — pass a SID:HEAD "
+            "address or a branch name (see list_agents)."
+        )
 
-    # Resolve target into (run_session, branch_from, is_new):
-    #   new      → fresh root in current session
-    #   fork     → fork off a node (inherit that chain)
-    #   existing → deliver onto an existing branch = run one more turn off
-    #              its head (the branch "continues" with the message)
-    if kind == "existing":
-        run_session = tgt_sid or sid
-        branch_from = fork_msg  # the branch head to continue from
-        is_new = False
-        from openprogram.agent.session_db import default_db
-        db = default_db()
-        # Not valid SID:HEAD syntax (missing head, or the SID part is not
-        # a session)? Treat the whole `to` as a branch NAME: exact match
-        # first, unique prefix next (see _resolve_branch_by_name).
-        if not branch_from or db.get_session(run_session) is None:
-            status, resolved = _resolve_branch_by_name(to)
-            if status == "ok":
-                run_session, branch_from = resolved  # type: ignore[misc]
-            elif status == "ambiguous":
-                lines = "\n".join(
-                    f"  «{n}» → {s}:{h}" for n, s, h in resolved  # type: ignore[union-attr]
-                )
-                return (
-                    f"[send_message error] branch name {to!r} matches "
-                    f"several branches — use the exact SID:HEAD target:\n"
-                    f"{lines}"
-                )
-            elif not branch_from and db.get_session(run_session) is not None:
-                return (
-                    "[send_message error] to=\"SID:HEAD\" needs the branch "
-                    "head after the colon (see list_branches for ready targets)."
-                )
-            else:
-                return (
-                    f"[send_message error] target {to!r} not found — it is "
-                    "neither a session:head target nor a branch name (see "
-                    "list_branches / list_sessions)."
-                )
-        # SID:HEAD names a BRANCH, not a fork point: snap the given node
-        # onto that branch's CURRENT tip so the delivery continues the
-        # conversation instead of forking off a stale head. Runs before
-        # the self-target guard so an old head of the sender's own chain
-        # normalizes to its tip and the guard still catches the loop.
-        status, norm = _normalize_existing_target(run_session, branch_from)
+    # Resolve the target: deliver onto an existing branch = run one more
+    # turn off its head (the branch "continues" with the message).
+    run_session = tgt_sid or sid
+    branch_from = head  # the branch head to continue from
+    from openprogram.agent.session_db import default_db
+    db = default_db()
+    # Not valid SID:HEAD syntax (missing head, or the SID part is not
+    # a session)? Treat the whole `to` as a branch NAME: exact match
+    # first, unique prefix next (see _resolve_branch_by_name).
+    if not branch_from or db.get_session(run_session) is None:
+        status, resolved = _resolve_branch_by_name(to)
         if status == "ok":
-            branch_from = norm
+            run_session, branch_from = resolved  # type: ignore[misc]
         elif status == "ambiguous":
             lines = "\n".join(
-                f"  «{n or '(unnamed)'}» → {run_session}:{h}" for n, h in norm  # type: ignore[union-attr]
+                f"  «{n}» → {s}:{h}" for n, s, h in resolved  # type: ignore[union-attr]
             )
             return (
-                f"[send_message error] node {branch_from!r} is a shared "
-                "ancestor of several branches — address the branch you "
-                "mean by its current tip (see list_branches):\n"
+                f"[send_message error] branch name {to!r} matches "
+                f"several branches — use the exact SID:HEAD target:\n"
                 f"{lines}"
+            )
+        elif not branch_from and db.get_session(run_session) is not None:
+            return (
+                "[send_message error] to=\"SID:HEAD\" needs the branch "
+                "head after the colon (see list_agents for ready targets)."
             )
         else:
             return (
-                f"[send_message error] target {to!r} not found — the node "
-                f"is on no branch of session {run_session} (see "
-                "list_branches for ready targets)."
+                f"[send_message error] target {to!r} not found — it is "
+                "neither a session:head target nor a branch name (see "
+                "list_agents)."
             )
-        # Self-target guard: messaging your own current turn is a direct loop.
-        if run_session == sid and branch_from == aid:
-            return (
-                "[send_message refused] target is your own current turn — "
-                "that's a direct loop. Pick a different branch or use to=new."
-            )
-    elif kind == "fork":
-        run_session = tgt_sid or sid
-        branch_from = fork_msg
-        is_new = True
-        if not branch_from:
-            return (
-                "[send_message error] to=\"new:SID:MSG_ID\" needs a "
-                "fork node id after the second colon."
-            )
-    else:  # "new" — fresh branch in the current session repo (new root)
-        run_session = sid
-        branch_from = None
-        is_new = True
+    # SID:HEAD names a BRANCH, not a fork point: snap the given node
+    # onto that branch's CURRENT tip so the delivery continues the
+    # conversation instead of forking off a stale head. Runs before
+    # the self-target guard so an old head of the sender's own chain
+    # normalizes to its tip and the guard still catches the loop.
+    status, norm = _normalize_existing_target(run_session, branch_from)
+    if status == "ok":
+        branch_from = norm
+    elif status == "ambiguous":
+        lines = "\n".join(
+            f"  «{n or '(unnamed)'}» → {run_session}:{h}" for n, h in norm  # type: ignore[union-attr]
+        )
+        return (
+            f"[send_message error] node {branch_from!r} is a shared "
+            "ancestor of several branches — address the branch you "
+            "mean by its current tip (see list_agents):\n"
+            f"{lines}"
+        )
+    else:
+        return (
+            f"[send_message error] target {to!r} not found — the node "
+            f"is on no branch of session {run_session} (see "
+            "list_agents for ready targets)."
+        )
+    # Self-target guard: messaging your own current turn is a direct loop.
+    if run_session == sid and branch_from == aid:
+        return (
+            "[send_message refused] target is your own current turn — "
+            "that's a direct loop. Pick a different branch, or use the "
+            "`agent` tool to spawn a new one."
+        )
 
     # Synthesis: prepend each source branch's content as a labelled block,
-    # so the target model reads them and synthesizes (C5).
+    # so the target model reads them and synthesizes (C5). Every delivery
+    # carries a sender-receipt header so the receiver knows who sent it
+    # and that replying is optional.
     delivery_body = _gather_sources(sources) + message
-    # Deliveries to an EXISTING branch carry a sender-receipt header so
-    # the receiver knows who sent it and that replying is optional. New
-    # branches (spawn/fork) get the bare message — they are workers, not
-    # correspondents.
-    if kind == "existing":
-        delivery_message = sender_header(sid, aid) + delivery_body
-    else:
-        delivery_message = delivery_body
+    delivery_message = sender_header(sid, aid) + delivery_body
 
     # Busy target → inbox (design §5.4). Only cross-session sends can
     # race another turn: a same-session send runs inside the sender's
     # own turn, which is the very token is_turn_running would see.
-    if kind == "existing" and run_session != sid:
+    if run_session != sid:
         queued = enqueue_for_busy_target(
             run_session,
             branch_from,
@@ -232,19 +224,17 @@ def _send_message_impl(
         "agent",
         {
             "from": f"{sid}:{aid}",
-            "to": f"{run_session}:{branch_from}" if branch_from else run_session,
-            "is_new": is_new,
+            "to": f"{run_session}:{branch_from}",
             "sources": sources or [],
         },
     )
     # Also push a UI frame so the sender's session shows a "message sent"
     # line in its chat stream (front-end useWS handles `branch_message`).
-    _to_label = f"{run_session}:{branch_from}" if branch_from else f"{run_session} (new branch)"
-    _emit_branch_ui(sid, "sent", _to_label, message)
+    _emit_branch_ui(sid, "sent", f"{run_session}:{branch_from}", message)
 
-    # Async (default): submit to the task runner. It runs the new branch
-    # on a worker thread, writes the attach pointer, and dispatches a
-    # followup back to THIS session when done — that followup IS the
+    # Async (default): submit to the task runner. It runs the target
+    # branch on a worker thread, writes the attach pointer, and dispatches
+    # a followup back to THIS session when done — that followup IS the
     # auto-return of the reply to the sender.
     if not wait:
         try:
@@ -254,7 +244,7 @@ def _send_message_impl(
                 prompt=delivery_message,
                 agent_id=chosen_agent,
                 branch_from=branch_from,
-                context_mode="inherit" if branch_from else "clean",
+                context_mode="inherit",
                 label=message[:60],  # Stage-1 placeholder name (Stage-2 LLM refines later)
                 subject=message[:60],
                 description=delivery_message,
@@ -284,11 +274,8 @@ def _send_message_impl(
             agent_id=chosen_agent,
             branch_from=branch_from,
             label=message[:60],  # Stage-1 placeholder name
-            # New branch (branch_from=None) → root's caller = spawning node,
-            # so it's an explicit spawn, not seq-stitched into a sibling.
-            spawn_caller=aid if branch_from is None else None,
-            # A spawn/fork in the SENDER's own session must not steal
-            # its head; a cross-session send continues the target's
+            # A delivery in the SENDER's own session must not steal its
+            # head; a cross-session send continues the target's
             # conversation and advances theirs as usual.
             advance_head=(run_session != sid),
         )
@@ -335,12 +322,12 @@ def _send_message_impl(
 )
 def send_message(
     message: str,
-    to: str = "new",
+    to: str,
     sources: list[str] | None = None,
     agent_id: str = "",
     wait: bool = False,
 ) -> str:
-    """Deliver a message to a branch, run it, get the reply back."""
+    """Deliver a message to an existing branch, run it, get the reply back."""
     return _send_message_impl(
         message=message,
         to=to,

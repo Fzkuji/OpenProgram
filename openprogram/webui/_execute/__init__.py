@@ -234,7 +234,7 @@ def _run_spawn(*, session_id: str, msg_id: str, kwargs: dict, agent_id: str) -> 
     _s._broadcast_chat_response(session_id, msg_id, {
         "type": "result",
         "content": payload,
-        "function": "task",
+        "function": "agent",
         "display": "runtime",
     })
 
@@ -409,7 +409,7 @@ def _run_spawn_async(
             f"The task is running in the background. The Branches panel will "
             f"animate while it runs; the attach card will update when it finishes."
         ),
-        "function": "task",
+        "function": "agent",
         "display": "runtime",
     })
 

@@ -136,12 +136,12 @@ context: inline          （默认）
   渲染后的 prompt 进当前会话上下文
 
 context: fork
-  开 task 子 agent 跑（已有 functions/tools/task）
+  开 agent 子 agent 跑（已有 functions/tools/agent）
   agent 字段决定 subagent_type；allowed-tools 决定可见工具集
   子 agent 返回的最终消息以「命令结果」形式呈现，不污染主上下文
 ```
 
-`context: fork` 等价于"敲 `/review` 自动转成调一次 `task(subagent_type=general-purpose, prompt=...)`"。这一步把 claude-code 的 fork 模式直接嫁接到我们已有的 subagent 机制上。
+`context: fork` 等价于"敲 `/review` 自动转成调一次 `agent(prompt=...)`"。这一步把 claude-code 的 fork 模式直接嫁接到我们已有的 subagent 机制上。
 
 ---
 
@@ -321,7 +321,7 @@ Ink TUI（`cli/src/commands/registry.ts`）只硬编码 TUI 本地动作（主�
 3  L3 skills 自动注入（skills/loader 暴露 to_command_spec()）
 4  L2 mcp prompts 自动注入（mcp/registry 已有 list_prompts）
 5  L1 plugins 接入新表（plugins/loader 已有 _commands，加一层 adapter）
-6  context: fork 接 task 工具
+6  context: fork 接 agent 工具
 7  paths / requires 触发条件评估
 8  watcher 热重载
 9  builtin 命令迁移成 type: local + frontmatter

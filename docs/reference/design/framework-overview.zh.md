@@ -206,10 +206,10 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 ### ⑤ 协作　send_message + 跨 session + 防护
 
 **职责**：分支/会话之间投递消息、跑分支、把回复带回来。
-**关键文件**：`functions/tools/send_message/send_message/send_message.py`、`functions/tools/send_message/list_branches/list_branches.py`。
+**关键文件**：`functions/tools/send_message/send_message/send_message.py`、`functions/tools/send_message/list_agents/list_agents.py`。
 **关键机制**：
 - `send_message(message, to, sources, agent_id, wait)`（`:393` → `_send_message_impl:186`）。
-- to 语义（`_parse_to:167`）：`new`（当前 session 新根）/ `new:SID:MSG_ID`（fork 某节点继承其链）/ `SID:HEAD`（投到已存在分支 = 从其 head 再跑一轮）。
+- to 语义（`_parse_to`）：`SID:HEAD`（投到已存在分支 = 从其 head 再跑一轮）或分支名。建分支归 `agent` 工具（spawn / 从节点 fork）；`to="new"` 语法直接报错并指向它。
 - 父锚点 `_resolve_parent`（`:74`）读 dispatcher 的 session/turn ContextVar，**turn id 缺失时回退到 session head**（修了"no active parent turn"）。
 - **sources 综合**：`_gather_sources`（`:128`）把每个源分支 tip 文本包成 `<branch source=...>` 块前置给目标模型综合。
 - 异步（默认）交给 task runner（`run_agent_turn_async`），跑完写 attach pointer 并 dispatch followup 回**发起方** session（回复自动回流）。

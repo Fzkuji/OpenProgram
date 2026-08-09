@@ -69,8 +69,8 @@ helpers with session routing logic, not raw frames — exempt.)
 
 ## 6. The three spawn entry points share one semantics
 
-A sub-agent branch spawns via three entry points: the sync `task()`
-path (functions/tools/task/task/task.py), the async runner
+A sub-agent branch spawns via three entry points: the sync `agent()`
+path (functions/tools/agent/agent/agent.py), the async runner
 (agent/task/runner.py), and `send_message`
 (functions/tools/send_message/). For clean mode all three must pass
 `spawn_caller=<spawning node>`, so the branch root's `caller` points
@@ -79,11 +79,11 @@ off ROOT. Change spawn semantics in all three together, test all
 three together.
 
 A spawned agent NEVER re-delegates — enforced at the toolset level:
-task/await_task/cancel_task carry `unsafe_in=["agent_spawn"]`, so after
+agent/task_output/task_stop carry `unsafe_in=["agent_spawn"]`, so after
 the dispatcher's `req.source` filter a spawned agent's tool list simply
 does not contain them (a tool sitting in the list invites the model to
 use it; offering it and then refusing wastes a turn — bad design). The
-`MAX_TASK_DEPTH=1` depth guard is only a backstop (catches bypass paths
+`MAX_AGENT_DEPTH=1` depth guard is only a backstop (catches bypass paths
 like tools_override); send_message keeps the looser
 `MAX_SPAWN_DEPTH=8` (budgeted for multi-round branch-to-branch
 dialogue, not delegation), both sharing one per-chain depth counter.

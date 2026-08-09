@@ -12,7 +12,7 @@ from typing import Optional
 
 def _current_session_id() -> Optional[str]:
     """Pull the session id from the dispatcher's ContextVar — same
-    source the task tool uses."""
+    source the agent tool uses."""
     try:
         from openprogram.agent.run_control import _current_session_id as _sid
         return _sid.get(None)

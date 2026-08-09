@@ -6,8 +6,8 @@ the spawning turn and the DAG attaches the branch to that turn instead of
 forking it from ROOT. An inherit-mode spawn (branch_from set) passes
 ``spawn_caller=None`` — the fork point is already the predecessor.
 
-The sync task() path (commit 1d1fe016) had dropped this; the async runner
-and send_message already had it. These tests pin all three so a refactor
+The sync agent() path (commit 1d1fe016) had dropped this; the async
+runner already had it. These tests pin the entry points so a refactor
 can't silently re-orphan a sub-branch at the root.
 
 Each entry imports ``run_agent_turn`` from
@@ -85,51 +85,32 @@ def _run_with_ctx(fn, *, session_id, turn_id):
     return copy_context().run(_go)
 
 
-# ---- entry 1: sync task() (task.py _task_impl) --------------------------
+# ---- entry 1: sync agent() (agent.py _agent_impl) -----------------------
 
-def test_task_sync_clean_passes_spawn_caller(store, captured_run):
-    from openprogram.functions.tools.task.task.task import _task_impl
+def test_agent_sync_clean_passes_spawn_caller(store, captured_run):
+    from openprogram.functions.tools.agent.agent.agent import _agent_impl
     _run_with_ctx(
-        lambda: _task_impl(prompt="go", context="clean", wait=True),
+        lambda: _agent_impl(prompt="go", context="clean", wait=True),
         session_id="p1", turn_id="a1",
     )
     assert captured_run["branch_from"] is None
     assert captured_run["spawn_caller"] == "a1"
 
 
-def test_task_sync_inherit_passes_no_spawn_caller(store, captured_run):
-    from openprogram.functions.tools.task.task.task import _task_impl
+def test_agent_sync_inherit_passes_no_spawn_caller(store, captured_run):
+    from openprogram.functions.tools.agent.agent.agent import _agent_impl
     _run_with_ctx(
-        lambda: _task_impl(prompt="go", context="inherit", wait=True),
+        lambda: _agent_impl(prompt="go", context="inherit", wait=True),
         session_id="p1", turn_id="a1",
     )
     assert captured_run["branch_from"] == "a1"
     assert captured_run["spawn_caller"] is None
 
 
-# ---- entry 2: send_message (send_message.py _send_message_impl) ---
-
-def test_send_message_new_root_passes_spawn_caller(store, captured_run):
-    from openprogram.functions.tools.send_message.send_message.send_message import (
-        _send_message_impl,
-    )
+def test_agent_sync_fork_passes_no_spawn_caller(store, captured_run):
+    from openprogram.functions.tools.agent.agent.agent import _agent_impl
     _run_with_ctx(
-        lambda: _send_message_impl(message="do it", to="new", wait=True),
-        session_id="p1", turn_id="a1",
-    )
-    # target=new → branch_from=None → explicit spawn attached to caller.
-    assert captured_run["branch_from"] is None
-    assert captured_run["spawn_caller"] == "a1"
-
-
-def test_send_message_fork_passes_no_spawn_caller(store, captured_run):
-    from openprogram.functions.tools.send_message.send_message.send_message import (
-        _send_message_impl,
-    )
-    _run_with_ctx(
-        lambda: _send_message_impl(
-            message="do it", to="new:p1:u1", wait=True,
-        ),
+        lambda: _agent_impl(prompt="go", context="p1:u1", wait=True),
         session_id="p1", turn_id="a1",
     )
     # fork off an existing node → branch_from set → no spawn_caller.
@@ -206,9 +187,9 @@ def test_runner_inherit_passes_no_spawn_caller(store, monkeypatch):
         runner_mod.shutdown_runner()
 
 
-# ---- entry 1b: async task() (task.py _task_impl wait=False) -------------
+# ---- entry 1b: async agent() (agent.py _agent_impl wait=False) ----------
 
-def test_task_async_passes_caller_and_depth(store, monkeypatch):
+def test_agent_async_passes_caller_and_depth(store, monkeypatch):
     """The wait=False branch must anchor the spawn to the calling turn
     (caller_msg_id) and carry the incremented chain depth — dropping
     caller_msg_id re-orphaned async spawns at ROOT (the c919c000 case)."""
@@ -221,62 +202,62 @@ def test_task_async_passes_caller_and_depth(store, monkeypatch):
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run.run_agent_turn_async", fake_async,
     )
-    from openprogram.functions.tools.task.task.task import _task_impl
+    from openprogram.functions.tools.agent.agent.agent import _agent_impl
     out = _run_with_ctx(
-        lambda: _task_impl(prompt="go", context="clean", wait=False),
+        lambda: _agent_impl(prompt="go", context="clean", wait=False),
         session_id="p1", turn_id="a1",
     )
-    assert "task spawned async" in out
+    assert "agent spawned async" in out
     assert cap["caller_msg_id"] == "a1"
     assert cap["spawn_depth"] == 1
 
 
-# ---- depth guard: task() refuses past MAX_SPAWN_DEPTH --------------------
+# ---- depth guard: agent() refuses past MAX_SPAWN_DEPTH -------------------
 
-def test_task_refuses_at_max_task_depth(store, captured_run):
-    """task()'s own cap (MAX_TASK_DEPTH=1) is deliberately tighter than
-    send_message's MAX_SPAWN_DEPTH: only the main agent may task();
+def test_agent_refuses_at_max_agent_depth(store, captured_run):
+    """task()'s own cap (MAX_AGENT_DEPTH=1) is deliberately tighter than
+    send_message's MAX_SPAWN_DEPTH: only the main agent may agent();
     a spawned agent delegating again gets refused."""
     from openprogram.functions.tools.send_message.send_message.send_message import (
         set_spawn_depth, _spawn_depth,
     )
-    from openprogram.functions.tools.task.task.task import MAX_TASK_DEPTH, _task_impl
+    from openprogram.functions.tools.agent.agent.agent import MAX_AGENT_DEPTH, _agent_impl
 
     def _call():
-        tok = set_spawn_depth(MAX_TASK_DEPTH)
+        tok = set_spawn_depth(MAX_AGENT_DEPTH)
         try:
-            return _task_impl(prompt="go", context="clean", wait=True)
+            return _agent_impl(prompt="go", context="clean", wait=True)
         finally:
             _spawn_depth.reset(tok)
 
     out = _run_with_ctx(_call, session_id="p1", turn_id="a1")
-    assert "[task refused]" in out
+    assert "[agent refused]" in out
     assert "spawn_caller" not in captured_run  # never reached the spawn
 
 
-def test_task_spawned_agent_cannot_redelegate(store, captured_run):
-    """Depth 1 (a spawned agent) must NOT task() again — it does the
+def test_agent_spawned_agent_cannot_redelegate(store, captured_run):
+    """Depth 1 (a spawned agent) must NOT agent() again — it does the
     work itself with its own tools."""
     from openprogram.functions.tools.send_message.send_message.send_message import (
         set_spawn_depth, _spawn_depth,
     )
-    from openprogram.functions.tools.task.task.task import _task_impl
+    from openprogram.functions.tools.agent.agent.agent import _agent_impl
 
     def _call():
         tok = set_spawn_depth(1)
         try:
-            return _task_impl(prompt="go", context="clean", wait=True)
+            return _agent_impl(prompt="go", context="clean", wait=True)
         finally:
             _spawn_depth.reset(tok)
 
     out = _run_with_ctx(_call, session_id="p1", turn_id="a1")
-    assert "[task refused]" in out
+    assert "[agent refused]" in out
     assert "spawn_caller" not in captured_run
 
 
-def test_task_sync_child_sees_incremented_depth(store, monkeypatch):
+def test_agent_sync_child_sees_incremented_depth(store, monkeypatch):
     """The sync path binds depth+1 around the child turn, so a chain of
-    task()-inside-task() eventually trips the guard instead of recursing
+    agent()-inside-agent() eventually trips the guard instead of recursing
     forever (each generation used to start back at depth 0)."""
     from openprogram.functions.tools.send_message.send_message.send_message import (
         current_spawn_depth,
@@ -295,22 +276,22 @@ def test_task_sync_child_sees_incremented_depth(store, monkeypatch):
         "openprogram.agent.sub_agent_run.write_attach_pointer_for_spawn",
         lambda **kw: None,
     )
-    from openprogram.functions.tools.task.task.task import _task_impl
+    from openprogram.functions.tools.agent.agent.agent import _agent_impl
     _run_with_ctx(
-        lambda: _task_impl(prompt="go", context="clean", wait=True),
+        lambda: _agent_impl(prompt="go", context="clean", wait=True),
         session_id="p1", turn_id="a1",
     )
     assert seen["child_depth"] == 1
 
 
-def test_spawned_agent_toolset_has_no_task_tools():
+def test_spawned_agent_toolset_has_no_spawn_tools():
     """根治转包：被 spawn 的 agent（source=agent_spawn）的工具清单里
-    根本没有 task/await_task/cancel_task——工具不在清单里模型就不会
+    根本没有 agent/task_output/task_stop——工具不在清单里模型就不会
     想去用；深度守卫只是 tools_override 等旁路的兜底。"""
     from openprogram.functions import agent_tools
     spawn_names = {t.name for t in agent_tools(source="agent_spawn")}
-    assert "task" not in spawn_names
-    assert "await_task" not in spawn_names
-    assert "cancel_task" not in spawn_names
-    # 主 agent 照常有 task
-    assert "task" in {t.name for t in agent_tools()}
+    assert "agent" not in spawn_names
+    assert "task_output" not in spawn_names
+    assert "task_stop" not in spawn_names
+    # 主 agent 照常有 agent
+    assert "agent" in {t.name for t in agent_tools()}

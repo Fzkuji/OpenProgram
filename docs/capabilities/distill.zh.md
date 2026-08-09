@@ -16,7 +16,7 @@
 
 **当前对话**不需要任何参数——agent 手里已经有了。
 
-**过去的会话**用 `session_transcript` 工具读。你可以直接给会话 id，也可以描述它（"配代理那次"），让 agent 用 `list_sessions` 去找。找到后它会先跟你确认再动手。
+**过去的会话**用 `session_transcript` 工具读。你可以直接给会话 id，也可以描述它（"配代理那次"），让 agent 用 `list_agents` 去找。找到后它会先跟你确认再动手。
 
 ## 产出什么
 
@@ -65,7 +65,7 @@ Building the site first, then rsyncing.
       2 dead links: capabilities/distill.md
 ```
 
-默认读当前会话的活跃分支。读别的会话传 `session_id`（id 用 `list_sessions` 找）；读旁支而不是活跃分支传 `head_id`（分支端点用 `list_branches` 找）。输出太长会切在最后一个完整轮次上，并说明丢了几轮；需要的话把 `max_chars` 调大。
+默认读当前会话的活跃分支。读别的会话传 `session_id`（id 用 `list_agents` 找）；读旁支而不是活跃分支传 `head_id`（分支端点用 `list_agents` 找）。输出太长会切在最后一个完整轮次上，并说明丢了几轮；需要的话把 `max_chars` 调大。
 
 用话说就行——"把那个会话的记录给我看看"——或者让 agent 在蒸馏过程中自己去调。
 

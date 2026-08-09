@@ -77,12 +77,12 @@ DEFAULT_TOOLS: list[str] = [
     "glob",
     "grep",
     "list",
-    "task",
-    # Branch-to-branch communication — agent can see other sessions/
-    # branches and message them (docs/design/runtime/agent-collaboration.md).
+    "agent",
+    # Branch-to-branch communication — an agent can see other agents
+    # (sessions/branches) and message them
+    # (docs/reference/design/runtime/agent-collaboration.md).
     "send_message",
-    "list_sessions",
-    "list_branches",
+    "list_agents",
     "todo_read",
     "todo_write",
     "playwright_browser",
@@ -171,7 +171,7 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             "bash", "read", "write", "edit",
             "glob", "grep", "list",
             "apply_patch", "process", "execute_code",
-            "task", "send_message", "list_sessions", "list_branches",
+            "agent", "send_message", "list_agents",
             "todo_read", "todo_write",
             "ask_user_question", "cron", "canvas",
             "spawn_program", "mixture_of_agents",

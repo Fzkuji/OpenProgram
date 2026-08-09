@@ -1,13 +1,13 @@
-"""send_message — C1 core path (to="new" spawn usage).
+"""send_message — existing-branch delivery (the only send_message use).
 
 Covers, with a fake run_agent_turn (no real LLM):
-  * target parsing (new / fork / existing)
+  * target parsing (existing / removed spawn syntax)
   * sync delivery → run → reply text returned to caller
   * branch.message_sent / branch.message_replied events emitted
   * no active parent turn → clear error
-  * to=existing → not-yet-implemented error (C3 placeholder)
+  * spawn syntax (to="new"/"new:…") → error pointing to the agent tool
 
-See docs/design/runtime/agent-collaboration.md.
+See docs/reference/design/runtime/agent-collaboration.md.
 """
 from __future__ import annotations
 
@@ -19,16 +19,13 @@ from openprogram.functions.tools.send_message.send_message.send_message import (
 )
 
 
-def test_parse_to_new():
-    assert _parse_to("new") == ("new", None, None)
-
-
-def test_parse_to_fork():
-    assert _parse_to("new:sess1:msg9") == ("fork", "sess1", "msg9")
-
-
 def test_parse_to_existing():
     assert _parse_to("sess1:head7") == ("existing", "sess1", "head7")
+
+
+def test_parse_to_spawn_syntax_flagged():
+    assert _parse_to("new") == ("spawn_syntax", None, None)
+    assert _parse_to("new:sess1:msg9") == ("spawn_syntax", None, None)
 
 
 def test_resolve_parent_falls_back_to_head(tmp_path, monkeypatch):
@@ -94,7 +91,7 @@ def parent_turn(tmp_path, monkeypatch):
     turn_tok = store_mod._current_turn_id.set("a1")
 
     # Fake run_agent_turn — deterministic reply, no LLM.
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None, advance_head=True):
+    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, advance_head=True):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         s.append_message(session_id, {
             "id": "head_x", "role": "assistant",
@@ -138,27 +135,27 @@ def test_no_active_turn_errors():
     sid_tok = run_control._current_session_id.set(None)
     turn_tok = store_mod._current_turn_id.set(None)
     try:
-        out = _send_message_impl("hello", to="new", wait=True)
+        out = _send_message_impl("hello", to="p1:a0", wait=True)
     finally:
         run_control._current_session_id.reset(sid_tok)
         store_mod._current_turn_id.reset(turn_tok)
     assert "no active parent turn" in out
 
 
-def test_spawn_new_sync_returns_reply(parent_turn):
-    got, unsub = _collect_events()
-    try:
-        out = _send_message_impl("do the thing", to="new", wait=True)
-    finally:
-        unsub()
-    assert "reply to: do the thing" in out
-    assert "branch p1:head_x" in out
-    types = [e.type for e in got]
-    assert "branch.message_sent" in types
-    assert "branch.message_replied" in types
+def test_spawn_syntax_errors_and_points_to_agent_tool(parent_turn):
+    """The removed spawn addressing gets a clear redirect, not a spawn."""
+    for target in ("new", "new:p1:a0"):
+        out = _send_message_impl("do the thing", to=target, wait=True)
+        assert "not a valid target" in out
+        assert "`agent` tool" in out
 
 
-# --- C3: target = existing branch (same session) ---
+def test_empty_to_errors(parent_turn):
+    out = _send_message_impl("hello", to="", wait=True)
+    assert "`to` is required" in out
+
+
+# --- target = existing branch (same session) ---
 
 def test_existing_branch_continues_from_head(parent_turn):
     """to=SID:HEAD runs one turn forked off that head (branch_from=HEAD)."""
@@ -168,8 +165,8 @@ def test_existing_branch_continues_from_head(parent_turn):
 
 
 def test_existing_delivery_carries_receipt_header(parent_turn):
-    """Deliveries to an existing branch are prefixed with the sender
-    receipt header ([message from SID:HEAD] + reply-is-optional note)."""
+    """Deliveries are prefixed with the sender receipt header
+    ([message from SID:HEAD] + reply-is-optional note)."""
     out = _send_message_impl("ping", to="p1:a0", wait=True)
     # fake_run echoes the prompt it received
     assert "[message from p1:a1]" in out
@@ -177,20 +174,18 @@ def test_existing_delivery_carries_receipt_header(parent_turn):
     assert "Replying is optional" in out
 
 
-def test_new_branch_delivery_has_no_receipt_header(parent_turn):
-    out = _send_message_impl("work", to="new", wait=True)
-    assert "[message from" not in out
-
-
-def test_existing_branch_is_not_new_event(parent_turn):
+def test_existing_branch_events(parent_turn):
     got, unsub = _collect_events()
     try:
         _send_message_impl("more", to="p1:a0", wait=True)
     finally:
         unsub()
     sent = next(e for e in got if e.type == "branch.message_sent")
-    assert sent.payload["is_new"] is False
     assert sent.payload["to"] == "p1:a0"
+    assert sent.payload["from"] == "p1:a1"
+    assert sent.origin == "agent"
+    types = [e.type for e in got]
+    assert "branch.message_replied" in types
 
 
 def test_existing_missing_session_errors(parent_turn):
@@ -244,26 +239,7 @@ def test_existing_shared_ancestor_errors_with_candidates(parent_turn):
 
 def test_existing_unknown_node_errors(parent_turn):
     out = _send_message_impl("hi", to="p1:nosuchnode", wait=True)
-    assert "not found" in out and "list_branches" in out
-
-
-def test_fork_off_node_is_unchanged_by_normalization(parent_turn):
-    """to="new:SID:MSG" is the explicit fork syntax — it uses the given
-    node verbatim, never snapped to a tip."""
-    s = parent_turn
-    s.append_message("p1", {"id": "u2", "role": "user", "content": "later",
-                            "timestamp": 0, "predecessor": "a0"})
-    s.append_message("p1", {"id": "a2", "role": "assistant", "content": "later reply",
-                            "timestamp": 0, "predecessor": "u2"})
-    s.commit_turn("p1", "advance")
-    got, unsub = _collect_events()
-    try:
-        out = _send_message_impl("fork here", to="new:p1:a0", wait=True)
-    finally:
-        unsub()
-    assert "(from=a0)" in out  # forked off the named node, not the tip
-    sent = next(e for e in got if e.type == "branch.message_sent")
-    assert sent.payload["is_new"] is True
+    assert "not found" in out and "list_agents" in out
 
 
 # --- C5: sources synthesis ---
@@ -272,7 +248,7 @@ def test_sources_prepended_to_delivery(parent_turn):
     """sources branch content is wrapped in a block and prepended to the
     message delivered to the target model."""
     out = _send_message_impl(
-        "synthesize these", to="new", sources=["p1:a1"], wait=True)
+        "synthesize these", to="p1:a0", sources=["p1:a1"], wait=True)
     # fake_run echoes the prompt it received, so the source block shows up
     assert "<branch source=\"p1:a1\">" in out
     assert "synthesize these" in out
@@ -281,7 +257,7 @@ def test_sources_prepended_to_delivery(parent_turn):
 def test_sources_event_records_them(parent_turn):
     got, unsub = _collect_events()
     try:
-        _send_message_impl("go", to="new", sources=["p1:a1"], wait=True)
+        _send_message_impl("go", to="p1:a0", sources=["p1:a1"], wait=True)
     finally:
         unsub()
     sent = next(e for e in got if e.type == "branch.message_sent")
@@ -289,7 +265,7 @@ def test_sources_event_records_them(parent_turn):
 
 
 def test_no_sources_no_block(parent_turn):
-    out = _send_message_impl("plain", to="new", wait=True)
+    out = _send_message_impl("plain", to="p1:a0", wait=True)
     assert "<branch source" not in out
 
 
@@ -301,7 +277,7 @@ def test_depth_guard_refuses(parent_turn):
     )
     tok = set_spawn_depth(MAX_SPAWN_DEPTH)
     try:
-        out = _send_message_impl("go deeper", to="new", wait=True)
+        out = _send_message_impl("go deeper", to="p1:a0", wait=True)
     finally:
         _spawn_depth.reset(tok)
     assert "spawn depth" in out and "max" in out
@@ -319,12 +295,12 @@ def test_result_truncated_when_huge(parent_turn, monkeypatch):
     from openprogram.agent.sub_agent_run import AgentTurnResult
     big = "x" * 40_000
 
-    def fake_big(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None, advance_head=True):
+    def fake_big(*, session_id, prompt, agent_id, branch_from=None, label=None, advance_head=True):
         return AgentTurnResult(head_id="h", final_text=big,
                                failed=False, error=None)
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run.run_agent_turn", fake_big)
-    out = _send_message_impl("big", to="new", wait=True)
+    out = _send_message_impl("big", to="p1:a0", wait=True)
     assert "truncated" in out
     assert "full reply saved to" in out
     assert len(out) < 40_000
@@ -361,16 +337,4 @@ def test_name_addressing_ambiguous_lists_candidates(parent_turn):
 def test_name_addressing_zero_hits_errors(parent_turn):
     out = _send_message_impl("hi", to="nosuchname", wait=True)
     assert "not found" in out
-    assert "list_branches" in out
-
-
-def test_spawn_sent_event_payload(parent_turn):
-    got, unsub = _collect_events()
-    try:
-        _send_message_impl("x", to="new", wait=True)
-    finally:
-        unsub()
-    sent = next(e for e in got if e.type == "branch.message_sent")
-    assert sent.payload["is_new"] is True
-    assert sent.payload["from"] == "p1:a1"
-    assert sent.origin == "agent"
+    assert "list_agents" in out

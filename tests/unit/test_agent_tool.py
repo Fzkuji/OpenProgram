@@ -1,4 +1,4 @@
-"""task tool — same-session spawn from inside a turn."""
+"""agent tool — same-session spawn from inside a turn."""
 from __future__ import annotations
 
 from contextvars import copy_context
@@ -71,21 +71,21 @@ def fake_dispatcher(monkeypatch):
     return captured
 
 
-def _call_task(*, prompt: str, description: str = "", agent_id: str = "",
+def _call_agent(*, prompt: str, description: str = "", agent_id: str = "",
                context: str = "inherit",
                session_id: str | None = None, turn_id: str | None = None):
-    """Invoke the task tool's underlying Python (skipping the @function
+    """Invoke the agent tool's underlying Python (skipping the @function
     wrapper which is for LLM-facing dispatch). ContextVars must be set
     so _resolve_parent finds them."""
     from openprogram.agent.run_control import _current_session_id
     from openprogram.store import _current_turn_id
-    from openprogram.functions.tools.task.task.task import _task_impl
+    from openprogram.functions.tools.agent.agent.agent import _agent_impl
 
     def _go():
         tok1 = _current_session_id.set(session_id)
         tok2 = _current_turn_id.set(turn_id)
         try:
-            return _task_impl(
+            return _agent_impl(
                 prompt=prompt, description=description, agent_id=agent_id,
                 context=context,
             )
@@ -96,10 +96,10 @@ def _call_task(*, prompt: str, description: str = "", agent_id: str = "",
     return copy_context().run(_go)
 
 
-def test_task_inherit_default(store, fake_dispatcher):
+def test_agent_inherit_default(store, fake_dispatcher):
     """Default context=inherit: forks off the caller turn, history
     inherited. Result string carries ``branch=<sid>:<head_id>``."""
-    out = _call_task(
+    out = _call_agent(
         prompt="find the answer", description="finder",
         session_id="p1", turn_id="a1",
     )
@@ -113,10 +113,10 @@ def test_task_inherit_default(store, fake_dispatcher):
     assert fake_dispatcher["history_override"] is None
 
 
-def test_task_clean_mode_starts_new_root(store, fake_dispatcher):
+def test_agent_clean_mode_starts_new_root(store, fake_dispatcher):
     """context=clean: new root (caller=None) in the same session.
     Result string still carries branch=<sid>:<head_id> — same session."""
-    out = _call_task(
+    out = _call_agent(
         prompt="find the answer", description="finder", context="clean",
         session_id="p1", turn_id="a1",
     )
@@ -126,37 +126,56 @@ def test_task_clean_mode_starts_new_root(store, fake_dispatcher):
     assert fake_dispatcher["history_override"] == []   # empty start
 
 
-def test_task_resolves_parent_agent_when_not_supplied(store, fake_dispatcher):
-    _call_task(prompt="x", session_id="p1", turn_id="a1")
+def test_agent_resolves_parent_agent_when_not_supplied(store, fake_dispatcher):
+    _call_agent(prompt="x", session_id="p1", turn_id="a1")
     assert fake_dispatcher["agent_id"] == "main"
 
 
-def test_task_explicit_agent_id_wins(store, fake_dispatcher):
-    _call_task(
+def test_agent_explicit_agent_id_wins(store, fake_dispatcher):
+    _call_agent(
         prompt="x", agent_id="researcher",
         session_id="p1", turn_id="a1",
     )
     assert fake_dispatcher["agent_id"] == "researcher"
 
 
-def test_task_without_session_returns_error(store, fake_dispatcher):
-    out = _call_task(prompt="x", session_id=None, turn_id="a1")
-    assert "[task error]" in out
+def test_agent_without_session_returns_error(store, fake_dispatcher):
+    out = _call_agent(prompt="x", session_id=None, turn_id="a1")
+    assert "[agent error]" in out
     assert "no active parent turn" in out
 
 
-def test_task_without_turn_returns_error(store, fake_dispatcher):
-    out = _call_task(prompt="x", session_id="p1", turn_id=None)
-    assert "[task error]" in out
+def test_agent_without_turn_returns_error(store, fake_dispatcher):
+    out = _call_agent(prompt="x", session_id="p1", turn_id=None)
+    assert "[agent error]" in out
     assert "no active parent turn" in out
 
 
-def test_task_unknown_context_returns_error(store, fake_dispatcher):
-    out = _call_task(
+def test_agent_fork_off_node_address(store, fake_dispatcher):
+    """context="SID:MSG_ID" forks the new branch off that exact node."""
+    out = _call_agent(
+        prompt="continue from there", description="forker",
+        context="p1:u1", session_id="p1", turn_id="a1",
+    )
+    assert "(spawned reply)" in out
+    assert "[spawned agent branch=p1:" in out
+    assert fake_dispatcher["predecessor"] == "u1"
+
+
+def test_agent_fork_unknown_session_errors(store, fake_dispatcher):
+    out = _call_agent(
+        prompt="x", context="nosuch:u1",
+        session_id="p1", turn_id="a1",
+    )
+    assert "[agent error]" in out and "not found" in out
+
+
+def test_agent_unknown_context_returns_error(store, fake_dispatcher):
+    out = _call_agent(
         prompt="x", context="weird",
         session_id="p1", turn_id="a1",
     )
-    assert "[task error]" in out
+    assert "[agent error]" in out
     assert "unknown context" in out
 
 
@@ -166,7 +185,7 @@ def test_task_unknown_context_returns_error(store, fake_dispatcher):
 def test_current_tool_call_id_visible_inside_tool_body():
     """``_execute`` binds the LLM's tool_call_id so a tool body can
     correlate what it emits with the UI block drawn for its call —
-    task() uses it to anchor the spawn card on the right timeline row.
+    agent() uses it to anchor the spawn card on the right timeline row.
     Covers the sync body path, which runs in an executor thread and only
     sees the value because ``_invoke`` copies the context across."""
     import asyncio

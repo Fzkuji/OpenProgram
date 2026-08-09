@@ -215,7 +215,7 @@ def write_attach_pointer_for_spawn(
     node_id: Optional[str] = None,
 ) -> Optional[str]:
     """Write an `attach`-function pointer node for a synchronous
-    task() spawn (LLM tool call, wait=True). Mirrors the body of
+    agent() spawn (LLM tool call, wait=True). Mirrors the body of
     ``_run_spawn`` in webui/_execute/__init__.py — kept in sync so the
     DAG sees the same node shape whether the user typed ``/spawn`` or
     the LLM called the ``task`` tool.
@@ -232,7 +232,7 @@ def write_attach_pointer_for_spawn(
         sess_row = store.get_session(session_id) or {}
         head_before = sess_row.get("head_id")
         # Anchor the attach pointer DIRECTLY to the caller turn (the
-        # LLM reply that ran the task() tool call, or the user_msg of
+        # LLM reply that ran the agent() tool call, or the user_msg of
         # a slash-command path). This is the call-edge semantics from
         # docs/design/runtime/dag-node-model.md: attach is a function_call
         # whose ``predecessor`` is the turn that triggered it. Previously
@@ -287,7 +287,7 @@ def write_attach_pointer_for_spawn(
                 store.set_head(session_id, head_before)
             except Exception:
                 pass
-        store.commit_turn(session_id, f"task tool spawn: {label or chosen_agent}")
+        store.commit_turn(session_id, f"agent tool spawn: {label or chosen_agent}")
         # Hide the spawned sub-branch from the Branches panel — its
         # content is now reachable from main via the attach pointer.
         # Same retirement the async runner does on completion (see
@@ -328,7 +328,7 @@ def write_attach_placeholder_for_spawn(
     """Write a ``status=running`` placeholder attach card for an async
     spawn, anchored at the CALLING node（在哪调用就锚在哪）. The runner
     patches it on terminal via ``_update_attach_card``. Without this the
-    task(wait=False) path had no card at all — the result later arrived
+    agent(wait=False) path had no card at all — the result later arrived
     as a task_followup with nothing anchoring it in the transcript.
     """
     import json as _json
@@ -368,7 +368,7 @@ def write_attach_placeholder_for_spawn(
             except Exception:
                 pass
         store.commit_turn(
-            session_id, f"task tool spawn (async): {label or chosen_agent}",
+            session_id, f"agent tool spawn (async): {label or chosen_agent}",
         )
         return attach_node_id
     except Exception:

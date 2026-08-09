@@ -1,10 +1,12 @@
-"""Prompt text for the task tool (description shown to the LLM)."""
+"""Prompt text for the agent tool (description shown to the LLM)."""
 from __future__ import annotations
 
 DESCRIPTION = (
     "Spawn another agent in the same session and run one turn against "
     "it. Returns the spawned agent's final reply (wait=True, default) "
-    "or a task_id to await later (wait=False).\n"
+    "or a task_id to await later (wait=False). This is the ONE tool "
+    "that creates new agents; to talk to an agent that already exists, "
+    "use send_message instead.\n"
     "\n"
     "Context modes, chosen per call:\n"
     "  clean (DEFAULT): the agent starts at a new root seeing ONLY the "
@@ -15,6 +17,10 @@ DESCRIPTION = (
     "conversation chain. Use it only when the sub-task genuinely "
     "depends on the running dialogue. Costs more tokens and carries "
     "noise from prior tool calls.\n"
+    "  'SID:MSG_ID': the agent forks off that exact node (any "
+    "session), inheriting the chain up to it. Use it to branch a new "
+    "line of work from a specific point in the DAG (node addresses "
+    "come from list_agents / the chat history).\n"
     "\n"
     "If YOU are a spawned agent this tool is unavailable — do the work "
     "with your own tools. Re-delegation is refused (depth cap 1).\n"
@@ -26,8 +32,8 @@ DESCRIPTION = (
     "  prompt: full instruction. In 'clean' mode this is ALL it sees.\n"
     "  description: short label (1-3 words), used as the branch name.\n"
     "  agent_id: agent profile to run as. Defaults to this session's.\n"
-    "  context: 'clean' (default) or 'inherit'.\n"
+    "  context: 'clean' (default), 'inherit', or 'SID:MSG_ID'.\n"
     "  wait: True (default) blocks and returns the final text. False "
     "returns a task_id immediately — use it to run agents in parallel, "
-    "then call await_task(task_id)."
+    "then call task_output(task_id)."
 )

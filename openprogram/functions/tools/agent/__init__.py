@@ -1,0 +1,11 @@
+"""agent tool family — same-session agent spawning.
+
+``agent`` spawns another agent in the same session; ``task_output`` /
+``task_stop`` manage its async (wait=False) form. One tool per
+subdirectory; self-register via @function on import.
+"""
+from .agent import agent
+from .task_output import task_output
+from .task_stop import task_stop
+
+__all__ = ["agent", "task_output", "task_stop"]

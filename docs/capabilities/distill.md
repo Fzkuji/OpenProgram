@@ -16,7 +16,7 @@ Either triggers the bundled `distill` skill. Typical phrasings that also fire it
 
 **The current conversation** needs no arguments — the agent already has it.
 
-**A past session** is read with the `session_transcript` tool. You can name the session directly, or describe it ("the one where we set up the proxy") and let the agent find it with `list_sessions`. It will confirm before distilling.
+**A past session** is read with the `session_transcript` tool. You can name the session directly, or describe it ("the one where we set up the proxy") and let the agent find it with `list_agents`. It will confirm before distilling.
 
 ## What comes out
 
@@ -65,7 +65,7 @@ Building the site first, then rsyncing.
       2 dead links: capabilities/distill.md
 ```
 
-It defaults to the current session's active branch. Pass `session_id` for another session (find ids with `list_sessions`), and `head_id` to read a side branch rather than the active one (find tips with `list_branches`). Long output is cut at the last whole turn that fits and says how many turns it dropped; raise `max_chars` if you need them.
+It defaults to the current session's active branch. Pass `session_id` for another session (find ids with `list_agents`), and `head_id` to read a side branch rather than the active one (find tips with `list_agents`). Long output is cut at the last whole turn that fits and says how many turns it dropped; raise `max_chars` if you need them.
 
 Ask for it in words — "show me the transcript of that session" — or let the agent reach for it during distillation.
 

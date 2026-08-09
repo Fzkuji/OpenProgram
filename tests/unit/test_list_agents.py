@@ -1,16 +1,13 @@
-"""list_sessions / list_branches — C2 discovery tools.
+"""list_agents — the discovery tool for branch-to-branch communication.
 
-See docs/design/runtime/agent-collaboration.md.
+See docs/reference/design/runtime/agent-collaboration.md.
 """
 from __future__ import annotations
 
 import pytest
 
-from openprogram.functions.tools.send_message.list_sessions.list_sessions import (
-    _list_sessions_impl as list_sessions,
-)
-from openprogram.functions.tools.send_message.list_branches.list_branches import (
-    _list_branches_impl as list_branches,
+from openprogram.functions.tools.send_message.list_agents.list_agents import (
+    _list_agents_impl as list_agents,
 )
 from openprogram.functions.tools.send_message.shared import _clip
 
@@ -53,61 +50,35 @@ def test_clip():
     assert _clip("line1\nline2") == "line1 line2"
 
 
-def test_list_sessions_lists_both(two_sessions):
-    out = list_sessions()
+def test_list_agents_lists_both_sessions(two_sessions):
+    out = list_agents()
     assert "p1" in out and "p2" in out
     assert "first" in out and "second" in out
     assert "[main]" in out and "[research]" in out
 
 
-def test_list_sessions_marks_current(two_sessions):
-    out = list_sessions()
-    # p1 is the current session
-    p1_line = next(ln for ln in out.splitlines() if ln.startswith("- p1"))
+def test_list_agents_marks_current_session(two_sessions):
+    out = list_agents()
+    p1_line = next(ln for ln in out.splitlines() if ln.startswith("p1"))
     assert "← current" in p1_line
 
 
-def test_list_sessions_emits_event(two_sessions):
+def test_list_agents_gives_to_per_branch(two_sessions):
+    out = list_agents()
+    # every session's branches carry a ready-to-use to=SID:HEAD
+    assert "to=p1:" in out
+    assert "to=p2:" in out
+
+
+def test_list_agents_emits_event(two_sessions):
     from openprogram.events import get_event_bus
     got = []
     unsub = get_event_bus().subscribe(lambda e: got.append(e),
-                                      types={"sessions.listed"})
+                                      types={"agents.listed"})
     try:
-        list_sessions()
+        list_agents()
     finally:
         unsub()
-    assert any(e.type == "sessions.listed" for e in got)
-
-
-def test_list_branches_gives_to(two_sessions):
-    out = list_branches("p1")
-    # the line must carry a ready-to-use to=p1:HEAD
-    assert "to=p1:" in out
-
-
-def test_list_branches_defaults_to_current(two_sessions):
-    out = list_branches()  # no arg → current session p1
-    assert "to=p1:" in out
-
-
-def test_list_branches_emits_event(two_sessions):
-    from openprogram.events import get_event_bus
-    got = []
-    unsub = get_event_bus().subscribe(lambda e: got.append(e),
-                                      types={"branches.listed"})
-    try:
-        list_branches("p1")
-    finally:
-        unsub()
-    ev = next(e for e in got if e.type == "branches.listed")
-    assert ev.payload["session"] == "p1"
-
-
-def test_list_branches_no_session_errors(monkeypatch):
-    from openprogram.agent import run_control
-    tok = run_control._current_session_id.set(None)
-    try:
-        out = list_branches()
-    finally:
-        run_control._current_session_id.reset(tok)
-    assert "no session_id" in out
+    ev = next(e for e in got if e.type == "agents.listed")
+    assert ev.payload["sessions"] == 2
+    assert ev.payload["branches"] >= 2

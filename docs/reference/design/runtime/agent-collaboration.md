@@ -25,11 +25,11 @@ The whole collaboration story has exactly one primitive:
 
 Every collaboration operation is a **parameterization** of that primitive:
 
-| Operation | Which use of communication it is |
-|---|---|
-| **Spawn a sub-agent** | **Create** a branch + deliver a message + auto-reply |
-| **Message a branch** | Deliver a message to an **existing** branch + auto-reply |
-| **Synthesize several branches** | Deliver content from **multiple source** branches so the target model synthesizes |
+| Operation | Which use of communication it is | Tool |
+|---|---|---|
+| **Spawn a sub-agent** | **Create** a branch + deliver a message + auto-reply | `agent` |
+| **Message an agent** | Deliver a message to an **existing** branch + auto-reply | `send_message` |
+| **Synthesize several branches** | Deliver content from **multiple source** branches so the target model synthesizes | `send_message(sources=…)` |
 
 Delivered content is always read and used by the target model. Count is
 arbitrary (spawn can create N, synthesis can merge N, a message can go to many),
@@ -61,44 +61,62 @@ service scenario; return flow = soft link edge).
 
 ## 2. The primitive as tools
 
-Wrap the primitive into tools an agent can call. **One core tool plus two
-listing tools.**
+Wrap the primitive into tools an agent can call. The division of labor
+mirrors Claude Code: **`agent` creates agents, `send_message` talks to
+them, `list_agents` sees them.**
 
-### 2.1 `send_message` — cross-branch communication (the core, the only collaboration primitive)
+### 2.1 The tools
+
+**`agent` — spawn a new agent (the only tool that creates branches):**
+
+```
+agent(
+    prompt: str,                        # instruction for the spawned agent
+    description: str = "",              # short label, becomes the branch name
+    agent_id: str = "",                 # agent profile; defaults to the session's
+    context: str = "clean",             # "clean" / "inherit" / "SID:MSG_ID"
+    wait: bool = true,                  # true=block for the reply; false=task_id
+) -> str
+```
+
+`context` picks where the new branch starts: `"clean"` (default) is a new
+root seeing only the prompt; `"inherit"` forks off the calling turn with the
+full chain; `"SID:MSG_ID"` forks off that exact node (any session),
+inheriting the chain up to it. `wait=False` returns a `task_id`; its
+companions `task_output(task_id)` (block for the result) and
+`task_stop(task_id)` (cancel) manage the async form.
+
+**`send_message` — talk to an EXISTING agent:**
 
 ```
 send_message(
     message: str,                       # content/instruction delivered to the target
-    to: str = "new",                # see to values below
+    to: str,                            # see to values below
     sources: list[str] = [],            # also carry content from these branches (used when synthesizing)
     agent_id: str = "main",             # which agent the target runs as
     wait: bool = false,                 # false=async (default, returns instantly); true=block for the reply
 ) -> str
 ```
 
-**`to` values — creating a branch and sending a message are different values of the same parameter:**
+**`to` values — every value names a branch that already exists:**
 
 | to | Meaning |
 |---|---|
-| `"new"` | Start a fresh ROOT branch in the current session's DAG (a new entry point in the same graph, not a new session), deliver message, let it run |
-| `"new:sid:msg_id"` | Fork a new branch from a node, deliver message, let it run |
-| `"sid:head"` | Deliver message to an existing branch. The node names the branch, not a fork point: delivery always lands on the branch's current tip, so a stale head (the branch ran more turns since) is still a valid address and never forks off history. A node that is a shared ancestor of several branches is ambiguous — the error lists the candidates (name + `sid:current-tip`). To fork off a specific node, use `"new:sid:msg_id"`. |
-| `"<branch name>"` | Deliver to a named branch. Tried when the value matches none of the syntaxes above: exact name match wins, a unique prefix is accepted next; several matches return an error listing the candidates (name + `sid:head`), zero matches point to `list_branches`. `list_branches` marks each branch's name so the model can address by name directly. |
+| `"sid:head"` | Deliver message to an existing branch. The node names the branch, not a fork point: delivery always lands on the branch's current tip, so a stale head (the branch ran more turns since) is still a valid address and never forks off history. A node that is a shared ancestor of several branches is ambiguous — the error lists the candidates (name + `sid:current-tip`). To fork off a specific node, use `agent(context="sid:msg_id")`. |
+| `"<branch name>"` | Deliver to a named branch. Tried when the value is not `SID:HEAD` syntax: exact name match wins, a unique prefix is accepted next; several matches return an error listing the candidates (name + `sid:head`), zero matches point to `list_agents`. `list_agents` marks each branch's name so the model can address by name directly. |
 
-Every delivery to an **existing** branch (direct or queued, see §5.4) is
-prefixed with a sender-receipt header —
+The removed spawn addressing (`to="new"` / `"new:sid:msg_id"`) is rejected
+with an error that points to the `agent` tool.
+
+Every delivery (direct or queued, see §5.4) is prefixed with a
+sender-receipt header —
 `[message from SID:HEAD] To reply, use send_message(to="SID:HEAD"). Replying is
 optional …` — so the receiver knows who sent it, how to answer, and that not
-answering is legitimate. New-branch deliveries (spawn/fork) carry the bare
-message: they are workers, not correspondents.
+answering is legitimate. Agent-tool spawns carry the bare prompt: they are
+workers, not correspondents.
 
-**Creating a branch is not a separate operation; it is just `to` set to
-`new` / `new:…`.** Three uses:
+Two uses:
 
-- **Create and run (spawn / fork)**: `to="new"` or
-  `"new:sid:msg_id"` → new branch + deliver message; when it finishes, the
-  result flows back automatically. (Want several? Call several times, each
-  asynchronous and parallel.)
 - **Message an existing branch/session**: `to="sid:head"` → deliver message
   to that branch, trigger one turn, and the answer is sent back automatically.
   Cross-session uses the same path (`to` can be any session).
@@ -106,10 +124,13 @@ message: they are workers, not correspondents.
   content of those branches along with the delivery so the target model reads
   and synthesizes them. Count is arbitrary. Combines with any `to`.
 
-**Unified execution flow** (whichever use it is):
-1. Resolve `to`: `new` → current session with empty `branch_from` (fresh ROOT branch);
-   `new:sid:msg_id` → fork inside sid with `branch_from=msg_id`; `sid:head` →
-   `set_head` to that branch.
+Both tools drive the same primitive; a spawn is the same
+deliver → trigger → reply-back flow with a freshly created branch as the
+target.
+
+**Unified execution flow** (whichever tool starts it):
+1. Resolve the target branch: `agent` creates it (`context` picks the fork
+   point); `send_message` resolves `to` to an existing branch's current tip.
 2. Assemble the delivered content: `message` plus (if `sources` is given) the
    content of each source branch.
 3. Deliver and trigger: `process_user_turn(TurnRequest(session_id=to,
@@ -142,29 +163,31 @@ This keeps context from blowing up, allows many sources, and hands the model
 condensed points instead of raw long conversations. Everything goes through
 "self-summarization"; there is no "full text vs. summary" parameter choice.
 
-### 2.3 `list_sessions` / `list_branches` — seeing each other (a precondition for communication)
+### 2.3 `list_agents` — seeing each other (a precondition for communication)
 
 ```
-list_sessions(limit=50, agent_id?, source?) -> str      # db.list_sessions
-list_branches(session_id?) -> str                        # db.list_branches
+list_agents(limit=50, agent_id?, source?) -> str   # db.list_sessions + db.list_branches
 ```
 
-Before communicating you need to name a `to`/sources, so you first have to
-list which sessions exist and which branches each one has (`(session_id,
-head_id)` + name). This is the entry point for "two agents seeing each other".
-The data layer and WS handlers already exist (`handle_list_sessions` /
-`handle_list_branches`); only the tool wrappers are missing.
+An agent's conversation is stored as a branch in the session DAG, so "which
+agents can I talk to" = "which sessions exist, and which branches does each
+one have". One call lists them all, grouped by session: each session line
+carries its id, title, agent, and busy/idle status
+(`run_control.is_turn_running`; omitted when the probe fails), and each
+branch line carries its name (if any), a ready-to-use `to="SID:HEAD"`
+address, and a preview of its tip. This is the entry point for "two agents
+seeing each other".
 
 ### 2.4 New branches must have names
 
-Every time `send_message` creates a branch with `to="new"` / `"new:…"`,
+Every time the `agent` tool creates a branch,
 **the branch must be given a name** — otherwise the web UI can only show an
 8-digit hex short id and a pile of branches becomes indistinguishable.
 
 - **Named immediately (Stage 1)**: at creation, pass a short label to
   `run_agent_turn(... label=…)` → `store.set_branch_name`. The label is taken
-  from the delivered `message` (truncated to ~24 characters), or the model
-  supplies a name explicitly in the call. This way a branch has a readable name
+  from the delivered prompt (truncated to ~24 characters), or the model
+  supplies a name explicitly in the call (`description`). This way a branch has a readable name
   from birth, with no wait on an LLM.
 - **Renamed automatically in the background (Stage 2)**: once the branch is
   actually in conversation, `finalize_turn` fires when `turns` hits the
@@ -172,7 +195,7 @@ Every time `send_message` creates a branch with `to="new"` / `"new:…"`,
   more fitting title from the branch content, overwriting the Stage 1 temporary
   name. The rules are in [branch-naming](operations/branch-naming.md), which
   defines the naming tiers, locks, and trigger points. This section only
-  stresses one thing: **branches spawned by send_message and branches the user
+  stresses one thing: **branches spawned by the agent tool and branches the user
   forks by hand use the same naming path (both get a Stage 1 placeholder name
   plus Stage 2 automatic renaming); neither may be skipped.**
 
@@ -338,7 +361,7 @@ existing subscribers (they read only the fields they care about).
 A and B run at the same time (different branches of one session, or different
 sessions):
 
-1. **See**: A calls `list_sessions` → sees B; `list_branches` → sees B's active
+1. **See**: A calls `list_agents` → sees B's session and its active
    branch `(B_session, B_head)`.
 2. **Send**: A calls `send_message("...", to="B_session:B_head")` →
    returns instantly and A carries on.
@@ -351,8 +374,8 @@ sessions):
 5. **Repeatable**: A can `send_message` B again — neither branch blocks and
    nothing is serialized.
 
-Spawn (to="new") and synthesis (with sources) are two more parameterizations
-of the same flow and are not listed separately.
+Spawn (the `agent` tool) and synthesis (with sources) are two more
+parameterizations of the same flow and are not listed separately.
 
 ---
 
@@ -470,7 +493,7 @@ not blow up the caller's context or block the main flow.
   consultation point: under an unattended + deny policy it is held for
   confirmation (this also applies to sub-branches, sitting outside the approval
   wrapper).
-- Before delivering, validate that `to` (when not "new") actually exists
+- Before delivering, validate that `to` actually exists
   (`db.get_session` is not None); if it does not, raise an error rather than
   silently creating it. The existing three-layer gating (check_fn / can_use /
   requires_approval) still applies.
@@ -480,7 +503,7 @@ not blow up the caller's context or block the main flow.
 Branches are marked **internal (sub-spawned) vs. user-visible**: an internal
 branch can only be triggered by `send_message` and does not appear in the UI's
 session picker (but it is still drawn in the DAG and can be listed by
-list_branches so agents can address it).
+list_agents so agents can address it).
 
 ### 5.10 Explicitly out of scope (and why)
 
@@ -499,10 +522,12 @@ list_branches so agents can address it).
 
 ## 6. Backend and frontend checklist
 
-**Backend (tools, `openprogram/functions/tools/send_message/`)**
-- `send_message/` — the one core: deliver + trigger + auto reply-back +
-  multi-source self-summarization
-- `list_sessions/` / `list_branches/` — reuse db.list_*
+**Backend (tools)**
+- `openprogram/functions/tools/agent/` — `agent/` (spawn / fork) +
+  `task_output/` + `task_stop/` (async form management)
+- `openprogram/functions/tools/send_message/` — `send_message/` (deliver +
+  trigger + auto reply-back + multi-source self-summarization) +
+  `list_agents/` (reuse db.list_sessions + db.list_branches)
 - Each tool calls `emit_safe(...)`; cross-session notifications use
   `emit_ws_frame`
 
@@ -532,8 +557,8 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 
 | Behavior | What you see |
 |---|---|
-| Spawn (`to="new"`) | The agent calls once, a new branch runs a turn, and the result automatically follows up back to the caller; message_sent/replied events are visible in the event log |
-| Listing | `list_sessions` / `list_branches` list the real multiple sessions / multiple branches |
+| Spawn (the `agent` tool) | The agent calls once, a new branch runs a turn, and the result automatically follows up back to the caller; spawn events are visible in the event log |
+| Listing | `list_agents` lists the real multiple sessions and each one's branches |
 | Send to an existing branch in the same session | A sends to branch B of the same session, A does not block, B runs a turn, the reply returns to A automatically |
 | Cross-session | A sending to another session takes the same path; both frontends update live via ws.frame |
 | Multi-source synthesis | With 2 source branches, each summarizes itself first and the target model synthesizes a new answer |
@@ -548,7 +573,7 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 | Thing | Location |
 |---|---|
 | Sub-agent spawn + auto reply-back | `openprogram/agent/sub_agent_run.py`, `agent/task/runner.py` (spawn_task / _dispatch_followup) |
-| Tool template + registration | `openprogram/functions/tools/task/task/task.py`, `functions/_runtime.py` (@function) |
+| Tool template + registration | `openprogram/functions/tools/agent/agent/agent.py`, `functions/_runtime.py` (@function) |
 | session/branch data layer | `openprogram/store/session/session_store.py` (list_sessions:658 / list_branches:832 / append_message:706 / set_head:814 / commit_turn:455) |
 | Trigger a session to run a turn | `openprogram/agent/dispatcher/__init__.py` (process_user_turn:97) |
 | Multi-source self-summarization | `openprogram/agent/compaction/branch_summarization.py` |
@@ -568,9 +593,10 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 
 Everything in this document is implemented: the event layer (§3),
 `TaskRunner`, `SessionStore`, `process_user_turn`, `branch_summarization`,
-`send_message` and the two listing tools, spawned-branch naming (§2.4 — the
-Stage 1 label at spawn plus the Stage 2 `finalize_turn` rename), the
-serialized reply-back anchoring (§2.5 — `_dispatch_followup` +
+the `agent` tool family (`agent` / `task_output` / `task_stop`),
+`send_message` and its discovery tool `list_agents`, spawned-branch naming
+(§2.4 — the Stage 1 label at spawn plus the Stage 2 `finalize_turn`
+rename), the serialized reply-back anchoring (§2.5 — `_dispatch_followup` +
 `_followup_lock`), cascading cancel (§5.3 — `TaskRunner.cancel_task` over
 `parent_task_id`, plus `inbox.clear` on session-level stop;
 `tests/unit/test_cascade_cancel.py`), and the busy-target inbox (§5.4 —

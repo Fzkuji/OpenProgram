@@ -11,7 +11,7 @@ _DESC = (
     "reusable skill, reviewing how a task was solved, or recovering a "
     "procedure from a conversation that is no longer in context. "
     "Defaults to the current session's active branch. Find session ids "
-    "with `list_sessions` and branch tips with `list_branches`."
+    "and branch tips with `list_agents`."
 )
 
 
@@ -32,7 +32,7 @@ def session_transcript(
     Args:
         session_id: Session to read. Empty means the current session.
         head_id: Branch tip to walk back from (the HEAD half of a
-            `list_branches` `SID:HEAD` target). Empty means the
+            `list_agents` `SID:HEAD` target). Empty means the
             session's active branch.
         include_function_calls: Include the tool / function calls each
             turn made. Set false for a conversation-only view.
@@ -45,9 +45,9 @@ def session_transcript(
     if not sid:
         return (
             "[session_transcript error] no session_id given and no current "
-            "session — pass a session_id (see list_sessions)."
+            "session — pass a session_id (see list_agents)."
         )
-    # A `SID:HEAD` target pasted whole from list_branches: split it
+    # A `SID:HEAD` target pasted whole from list_agents: split it
     # rather than failing on a session id that does not exist.
     head = (head_id or "").strip()
     if ":" in sid and not head:

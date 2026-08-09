@@ -151,7 +151,7 @@ export function AssistantBubble({ msg, verdict }: {
   // needs the backend to stamp the LLM tool_call_id onto the code node
   // (then match on it here and keep FIFO only as the fallback).
   const runtimeChildren = msg.runtimeChildren ?? [];
-  // Spawned/attach 卡按调用顺序排队：每遇到一个 tool==="task" 的块就取
+  // Spawned/attach 卡按调用顺序排队：每遇到一个 tool==="agent" 的块就取
   // 一张，画在该工具块的紧后面——思考 → 工具调用 → Spawned 卡 → 回复
   //（在哪调用就画在哪）。剩下没配到块的卡（老数据没记 blocks）兜底画
   // 在回复文本之前。
@@ -282,7 +282,7 @@ export function AssistantBubble({ msg, verdict }: {
               // ── 分段：text 块常驻；连续的 thinking/tool 块聚成一段
               // 执行痕迹。已落定的轮次把每段折成一条摘要条（点击展开
               // 逐块序列）；流式进行中的轮次平铺，让用户实时看到它在
-              // 干嘛。段内出现 task/send_message 调用时，把对应的
+              // 干嘛。段内出现 agent/send_message 调用时，把对应的
               // Spawned 卡（一行态）挂在该段摘要条下面——在哪调用就
               // 画在哪。
               type ExecSeg = {

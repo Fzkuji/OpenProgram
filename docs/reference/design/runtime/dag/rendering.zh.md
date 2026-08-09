@@ -181,7 +181,7 @@ Viewport 的职责是让人一眼看清会话结构；50 个工具方块平铺�
 | 事件 | 新分支的根 | 挂接 |
 |---|---|---|
 | retry / 改写某轮 | 分叉出的 user / llm 节点 | 与被替换节点共享 predecessor |
-| spawn（task / send_message 派活） | source=agent_spawn 的 user 节点 | caller=发起节点，predecessor 空 |
+| spawn（agent / send_message 派活） | source=agent_spawn 的 user 节点 | caller=发起节点，predecessor 空 |
 | merge 出的新主线 | merge 节点本身 | 落 base 分支 lane（见场景 8），不新开 |
 
 **分支按实际占用列紧贴排**：一条分支占用的列 = 起始列到其可见**链**节点的最深
@@ -335,8 +335,8 @@ lane 色；**绝不给某类线固定颜色**。类型只靠线型：
 切换器**（它是发起方对话的真实延续替代；`source=from_branch` 不做
 agent_spawn 那样的隔离，隔离规则见 `ui/invariants.md` 规则 7）。
 
-**子代理再 spawn**：数据语义上已被禁止（`MAX_TASK_DEPTH=1`，只有主 agent
-能 task()，被 spawn 的 agent 一律自己干活，见 `ui/invariants.md` 规则 6）。
+**子代理再 spawn**：数据语义上已被禁止（`MAX_AGENT_DEPTH=1`，只有主 agent
+能 agent()，被 spawn 的 agent 一律自己干活，见 `ui/invariants.md` 规则 6）。
 渲染层本来就递归（第十二节——agent 线程上的 spawn 是一个普通三角形），历史
 数据里的多代委托链照样画得出来。
 
@@ -590,7 +590,7 @@ tooltip 和检查器里。
 回收行。
 
 **头就是 agent，spawn 就是调用**。spawn 根画成方块——派发 agent 就是一次
-函数调用，方块就是调用词汇。派发调用节点（`task` / `send_message`）归并进
+函数调用，方块就是调用词汇。派发调用节点（`agent` / `send_message`）归并进
 它：一次 spawn 一颗字形（没开出 spawn 的派发调用保留自己的方块——那次失败值得
 一颗节点）。agent 的内部轮不上链——归并进它（第〇节），展开后回复画三角形、
 调用画方块——它自己的线程再右移一列，点方块展开。spawn 方块在屏上期间（即所属轮次

@@ -4,21 +4,18 @@ from __future__ import annotations
 
 
 def _parse_to(to: str) -> tuple[str, str | None, str | None]:
-    """Parse the ``to`` arg into (kind, session_id, fork_msg_id).
+    """Parse the ``to`` arg into (kind, session_id, head_id).
 
-    kind ∈ {"new", "fork", "existing"}:
-      * "new"            → ("new", None, None)
-      * "new:SID:MSG_ID" → ("fork", SID, MSG_ID)
-      * "SID:HEAD"       → ("existing", SID, HEAD)
+    kind ∈ {"existing", "spawn_syntax"}:
+      * "SID:HEAD"          → ("existing", SID, HEAD)
+      * "new" / "new:…"     → ("spawn_syntax", None, None) — the removed
+                              spawn addressing; the caller reports "use
+                              the agent tool" for these.
     """
-    t = (to or "new").strip()
-    if t == "new":
-        return "new", None, None
-    if t.startswith("new:"):
-        rest = t[len("new:"):]
-        sid, _, msg = rest.partition(":")
-        return "fork", sid or None, (msg or None)
-    sid, sep, head = t.partition(":")
+    t = (to or "").strip()
+    if t == "new" or t.startswith("new:"):
+        return "spawn_syntax", None, None
+    sid, _, head = t.partition(":")
     return "existing", sid or None, (head or None)
 
 
@@ -30,8 +27,8 @@ def _normalize_existing_target(
     ``to="SID:HEAD"`` names a BRANCH (via any node on it), not a fork
     point — the branch may have run more turns since the sender saw its
     head, so delivering onto the given node verbatim would fork a new
-    branch off history instead of continuing the conversation. Explicit
-    forking has its own syntax (``to="new:SID:MSG"``).
+    branch off history instead of continuing the conversation. Forking
+    off a node is the agent tool's job (``agent(context="SID:MSG_ID")``).
 
     Returns one of:
       ("ok", tip_id)                      — deliver onto this tip

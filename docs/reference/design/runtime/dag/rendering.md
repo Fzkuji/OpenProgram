@@ -222,7 +222,7 @@ branch:
 | Event | New branch's root | Attachment |
 |---|---|---|
 | retry / rewrite a turn | the forked-off user / llm node | shares predecessor with the replaced node |
-| spawn (task / send_message dispatch) | the `source=agent_spawn` user node | caller = the initiating node, predecessor empty |
+| spawn (agent / send_message dispatch) | the `source=agent_spawn` user node | caller = the initiating node, predecessor empty |
 | the new mainline from a merge | the merge node itself | lands in the base branch lane (see scenario 8), no new lane opened |
 
 **Branches are packed by actual column occupancy**: the columns a branch occupies = from
@@ -413,7 +413,7 @@ switcher** (they are genuine alternative continuations of the initiator's dialog
 rule 7).
 
 **A sub-agent spawning again**: forbidden at the data layer
-(`MAX_TASK_DEPTH=1` — only the main agent may task(); a spawned agent always
+(`MAX_AGENT_DEPTH=1` — only the main agent may agent(); a spawned agent always
 does the work itself, see `ui/invariants.md` rule 6). The renderer recurses
 anyway (§12 — a spawn on an agent's thread is a triangle like any other), so
 historical multi-generation delegation chains remain drawable.
@@ -733,7 +733,7 @@ per event, top to bottom in call order. Fold reclaims the rows (rule ②).
 
 **The head IS the agent, and the spawn IS a call.** A spawn root draws as a
 SQUARE — dispatching an agent is a function call, and the square is the call
-vocabulary. The dispatch call node (`task` / `send_message`) folds into it:
+vocabulary. The dispatch call node (`agent` / `send_message`) folds into it:
 one spawn, one glyph (a dispatch that opened no spawn keeps its own square —
 that failure is worth seeing). The agent's internal turns are not chain
 nodes — they merge into it (§0), replies drawing as triangles and calls as

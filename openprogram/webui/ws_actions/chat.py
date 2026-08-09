@@ -623,12 +623,12 @@ async def handle_chat(ws, cmd: dict):
         # idea as git: /task probe → `git checkout -b probe`.
         # ASYNC path: don't tag — the spawned turn lives on its own
         # session (or independent branch), not as a fork of THIS
-        # message. Marking it function="task" made the user msg
+        # message. Marking it function="agent" made the user msg
         # surface in the Branches panel as a stray named branch
         # (with the raw command as its label) because lane.py
         # treated it as a fork tip with no follow-up.
         if parsed.get("wait", True):
-            user_msg["function"] = "task"
+            user_msg["function"] = "agent"
     if attachments:
         manifest = [
             {"type": a.get("type"), "media_type": a.get("media_type"),

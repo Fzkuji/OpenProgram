@@ -1,8 +1,8 @@
 """Shared helpers for the send_message tool family.
 
-Session/branch enumeration used by the discovery tools
-(``list_sessions`` / ``list_branches``) plus the branch-communication
-UI frame emitter used by ``send_message``.
+Session/branch enumeration used by the discovery tool
+(``list_agents``) plus the branch-communication UI frame emitter used
+by ``send_message``.
 """
 from __future__ import annotations
 

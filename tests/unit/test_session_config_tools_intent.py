@@ -81,7 +81,7 @@ def test_intent_expands_to_live_tools_including_new_ones():
     names = {t.name for t in (resolved or [])}
     # the collaboration tools added to DEFAULT_TOOLS must be present
     assert "send_message" in names
-    assert "list_sessions" in names
+    assert "list_agents" in names
 
 
 def test_web_search_overlay_adds_the_tool():
