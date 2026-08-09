@@ -9,7 +9,7 @@ web 端不只是"带项目 chip 的聊天"，而是一个工作区：项目文�
 
 | 资产 | 位置 | 用于 |
 |---|---|---|
-| Project 实体层（id/name/path/sessions、settings.json） | `openprogram/store/project_store.py` | 全部 |
+| Project 实体层（id/name/path/sessions、settings.json） | `openprogram/store/project/project_store.py` | 全部 |
 | Project WS actions（list/create/remove/config/sessions/workdirs） | `openprogram/webui/ws_actions/project.py` | 列表页、工作区 |
 | `/projects` 页（列表 + settings/sessions/info tab） | `web/components/projects/projects-page.tsx` | 演化为新列表页 |
 | 聊天组件群（composer、messages、top-bar） | `web/components/chat/` | 工作区左栏 |

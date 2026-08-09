@@ -53,7 +53,7 @@ model reachability, and the centralized status-to-message mapper.
 
 ## 3. The entry point
 
-`openprogram/webui/_model_catalog/credentials.py`, re-exported from
+`openprogram/webui/_model_listing/credentials.py`, re-exported from
 `_model_catalog/__init__.py`.
 
 ```python

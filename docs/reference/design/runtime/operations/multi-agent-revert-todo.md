@@ -30,7 +30,7 @@ A session materializes `<repo>/workdir/` (with a `.gitkeep`) on init, reachable
 via `GitSession.workdir_path` and `SessionStore.session_workdir(sid)`.
 `commit_all` picks up workdir edits through `git add -A`.
 
-`openprogram/agent/_workdir.py::apply_default_workdir(runtime, session_id)` is
+`openprogram/agent/internals/_workdir.py::apply_default_workdir(runtime, session_id)` is
 called from `webui/_execute/__init__.py` after the chat runtime is fetched, so
 `runtime.set_workdir` defaults to the session's `workdir/`; `/api/run` still
 overrides it with its own `set_workdir` call. In-process tools consult

@@ -20,7 +20,7 @@
 
 ## 2. token
 
-`openprogram/webui/_pause_stop.py` 中的 `CancelToken`：
+`openprogram/agent/run_control.py` 中的 `CancelToken`：
 
 ```
 CancelToken:
@@ -125,7 +125,7 @@ WS `stop` 动作的两阶段行为不变：先尝试优雅停止，宽限期后�
 ## 附录：实现状态
 
 已实现。`CancelToken`、`begin_turn`、`end_turn` 与 `current_token` 位于
-`openprogram/webui/_pause_stop.py`；取消桥在
+`openprogram/agent/run_control.py`；取消桥在
 `openprogram/agent/dispatcher/__init__.py`。测试：
 `tests/unit/test_turn_cancellation.py`。
 

@@ -89,7 +89,7 @@ if gate_error:
 
 ## Gate site 2 — tools
 
-**`openprogram/agent/_model_tools.py:174-272`** — `resolve_tools()`.
+**`openprogram/agent/internals/_model_tools.py:174-272`** — `resolve_tools()`.
 
 The function accepts either:
 - `wanted: list[str]` — explicit per-turn override (no gating applied, caller already chose).
@@ -114,7 +114,7 @@ The `enabled: list[str]` form still wins, being the explicit override; `disabled
 
 ## Gate site 3 — MCP
 
-**`openprogram/agent/_model_tools.py:192-224`** — `_apply_mcp_gate()`, an inner helper invoked at every return path of `resolve_tools`.
+**`openprogram/agent/internals/_model_tools.py:192-224`** — `_apply_mcp_gate()`, an inner helper invoked at every return path of `resolve_tools`.
 
 MCP tools surface from `agent_tools()` with names like `slack__send_message` or `github-mcp__create_issue` (server name + `__` + tool name). The gate filters by the `<server>` prefix:
 

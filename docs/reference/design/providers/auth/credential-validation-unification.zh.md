@@ -45,7 +45,7 @@ key。Catalog 来自 models.dev，与凭证解耦。单个 `provider/error.ts` �
 
 ## 3. 统一入口
 
-`openprogram/webui/_model_catalog/credentials.py`，从 `_model_catalog/__init__.py`
+`openprogram/webui/_model_listing/credentials.py`，从 `_model_catalog/__init__.py`
 重新导出。
 
 ```python

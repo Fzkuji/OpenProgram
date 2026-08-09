@@ -42,7 +42,7 @@ OpenProgram 的工具分两类：
    bash 走 `get_active_backend().run(...)`，目前 `LocalBackend.run` 接收
    `cwd` 参数但调用方没传；edit / write / read 强制要求绝对路径。
 
-`openprogram/agent/_runtime.py` 里的 ContextVar
+`openprogram/functions/_runtime.py` 里的 ContextVar
 `_current_worktree_path: Optional[str]` 承载当前路径。dispatcher 每次进 turn 时，
 若 session 当前有 active worktree（从 session meta 读），就 `set` 这个 var。
 工具实现按需消费：
@@ -423,12 +423,12 @@ agent 跑到一半（worktree 里 commit 了 5 个 patch），用户决定自己
 | 1 | 新建 `openprogram/worktree/types.py` | `Worktree` dataclass + `WorktreeStatus` Enum + 序列化 |
 | 2 | 新建 `openprogram/worktree/manager.py` | `WorktreeManager`：create / merge / discard / list / keep；底层 `subprocess.run(["git", "worktree", ...])`；持久化到 `<session-repo>/worktrees/<id>.json` |
 | 3 | 新建 `openprogram/worktree/_paths.py` | worktree path 策略：`~/.openprogram/worktrees/<id>-<slug>/`；隔离校验（D4）|
-| 4 | 改 `openprogram/agent/_workdir.py` | `apply_default_workdir` 优先返回 active worktree path |
+| 4 | 改 `openprogram/agent/internals/_workdir.py` | `apply_default_workdir` 优先返回 active worktree path |
 | 5 | 改 `openprogram/agent/dispatcher.py` | turn 开始时读 session.meta.active_worktree_id → 设 `_current_worktree_path` ContextVar |
 | 6 | 改 `openprogram/functions/tools/bash/bash.py` | 调 `backend.run(cmd, cwd=_current_worktree_path.get())` |
 | 7 | 改 `openprogram/functions/tools/edit/edit.py` + write/read | 路径落在 worktree 之外时写 warning（D6）|
 | 8 | 新建 `openprogram/functions/tools/worktree/` | 4 个 @function 工具：worktree_create / worktree_merge / worktree_discard / worktree_list；走 WorktreeManager |
-| 9 | 改 `openprogram/store/session_store.py` | session.meta 加 `active_worktree_id` 字段；helper `set_active_worktree` / `get_active_worktree` |
+| 9 | 改 `openprogram/store/session/session_store.py` | session.meta 加 `active_worktree_id` 字段；helper `set_active_worktree` / `get_active_worktree` |
 | 10 | 新建 `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree`（用户手动 UI 操作）|
 | 11 | 新建 `web/components/chat/composer/worktree-chip.tsx` | chip 组件 + hover panel + Merge/Discard/Keep 按钮 |
 | 12 | 改 `web/components/chat/composer/composer.tsx` | 引入 chip |

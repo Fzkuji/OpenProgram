@@ -119,7 +119,7 @@ Design points:
 
 | Item | Location |
 |---|---|
-| merge engine | `openprogram/agent/_merge.py` `process_merge_turn` |
+| merge engine | `openprogram/agent/internals/_merge.py` `process_merge_turn` |
 | merge WS action | `openprogram/webui/ws_actions/merge.py` |
 | merge UI | `web/components/right-sidebar/branches/merge-modal.tsx` |
 | attach parsing | `openprogram/webui/ws_actions/branch.py` `_attach_info` |

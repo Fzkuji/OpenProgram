@@ -26,7 +26,7 @@ removes the cleanup obligation instead of adding another place to remember it.
 
 ## 2. The token
 
-`CancelToken` in `openprogram/webui/_pause_stop.py`:
+`CancelToken` in `openprogram/agent/run_control.py`:
 
 ```
 CancelToken:
@@ -145,7 +145,7 @@ the stop, and it is committed.
 ## Appendix: Implementation Status
 
 Implemented. `CancelToken`, `begin_turn`, `end_turn` and `current_token` live
-in `openprogram/webui/_pause_stop.py`; the cancel bridge is in
+in `openprogram/agent/run_control.py`; the cancel bridge is in
 `openprogram/agent/dispatcher/__init__.py`. Tests:
 `tests/unit/test_turn_cancellation.py`.
 

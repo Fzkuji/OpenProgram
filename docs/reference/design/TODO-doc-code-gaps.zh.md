@@ -9,7 +9,7 @@
 ## ~~路径错误~~（已修复）
 
 ### ~~extension-gating/implementation.md~~
-- ~~文档写的路径: `openprogram/agents/gating.py`, `openprogram/agents/manager.py`~~
+- ~~文档写的路径: `openprogram/agent/management/gating.py`, `openprogram/agent/management/manager.py`~~
 - ~~实际路径: `openprogram/agent/management/gating.py`, `openprogram/agent/management/manager.py`~~
 - 状态: ✅ 已修正，文档路径现已正确
 

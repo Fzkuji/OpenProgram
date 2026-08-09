@@ -465,8 +465,9 @@ each under its own license. Enormous thanks to their authors.
 - [**Claude Code**](https://www.anthropic.com/claude-code) — overall ergonomics
   of the `DEFAULT_TOOLS` set (bash + read / write / edit + glob / grep / list
   + apply_patch + the todo planning board) and the todo tools' JSON schema.
-- **Anthropic / OpenAI / Google SDKs** — provider HTTP contracts; our
-  providers call the raw HTTP APIs to keep SDK dependencies optional.
+- **Anthropic / OpenAI / Google SDKs** — the wire contracts, and the clients
+  the first-party providers stream through. All three ship as base
+  dependencies; the CLI-backed and OAuth providers talk raw HTTP instead.
 
 Individual tool files call out their direct inspirations in file-level
 docstrings where the lineage is more specific. These MIT-licensed components

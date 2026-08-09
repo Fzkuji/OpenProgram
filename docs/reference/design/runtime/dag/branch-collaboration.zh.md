@@ -119,7 +119,7 @@ def send_to_branch(target_branch: str, message: str, wait_reply: bool = False) -
 
 | 事 | 位置 |
 |---|---|
-| 合并引擎 | `openprogram/agent/_merge.py` `process_merge_turn` |
+| 合并引擎 | `openprogram/agent/internals/_merge.py` `process_merge_turn` |
 | 合并 WS action | `openprogram/webui/ws_actions/merge.py` |
 | 合并 UI | `web/components/right-sidebar/branches/merge-modal.tsx` |
 | attach 解析 | `openprogram/webui/ws_actions/branch.py` `_attach_info` |

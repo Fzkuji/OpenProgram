@@ -11,7 +11,7 @@ file tree right, with the project list as an expandable table.
 
 | Asset | Where | Reused for |
 |---|---|---|
-| Project entity layer (id/name/path/sessions, settings.json) | `openprogram/store/project_store.py` | everything |
+| Project entity layer (id/name/path/sessions, settings.json) | `openprogram/store/project/project_store.py` | everything |
 | Project WS actions (list/create/remove/config/sessions/workdirs) | `openprogram/webui/ws_actions/project.py` | list page, workspace |
 | `/projects` page (list + settings/sessions/info tabs) | `web/components/projects/projects-page.tsx` | evolves into the new list page |
 | Chat component tree (composer, messages, top-bar) | `web/components/chat/` | workspace left pane |

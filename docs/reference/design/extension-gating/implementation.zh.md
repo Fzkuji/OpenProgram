@@ -89,7 +89,7 @@ if gate_error:
 
 ## 门控点 2 —— tools
 
-**`openprogram/agent/_model_tools.py:174-272`** —— `resolve_tools()`。
+**`openprogram/agent/internals/_model_tools.py:174-272`** —— `resolve_tools()`。
 
 该函数接受以下任一形式：
 - `wanted: list[str]` —— 每回合的显式覆盖（不施加门控，调用方已自行选择）。
@@ -114,7 +114,7 @@ if isinstance(wanted, dict):
 
 ## 门控点 3 —— MCP
 
-**`openprogram/agent/_model_tools.py:192-224`** —— `_apply_mcp_gate()`，一个在 `resolve_tools` 的每个返回路径上都会调用的内部辅助函数。
+**`openprogram/agent/internals/_model_tools.py:192-224`** —— `_apply_mcp_gate()`，一个在 `resolve_tools` 的每个返回路径上都会调用的内部辅助函数。
 
 MCP 工具从 `agent_tools()` 中以 `slack__send_message` 或 `github-mcp__create_issue`（服务器名 + `__` + 工具名）这样的名称浮现。门控按 `<server>` 前缀过滤：
 

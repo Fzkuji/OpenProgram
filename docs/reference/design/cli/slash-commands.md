@@ -303,7 +303,7 @@ GET    /api/commands/conflicts          # conflict table (same name, multiple so
 
 Frontend:
 
-`web/components/chat/composer/use-slash-menu.ts` is changed to read `/api/commands`, deleting the internal hardcoded list (keeping a dispatcher compatibility layer that maps client-side `/compact`, `/clear`, etc. to builtin local commands).
+`web/components/chat/composer/slash/use-slash-menu.ts` is changed to read `/api/commands`, deleting the internal hardcoded list (keeping a dispatcher compatibility layer that maps client-side `/compact`, `/clear`, etc. to builtin local commands).
 
 CLI:
 

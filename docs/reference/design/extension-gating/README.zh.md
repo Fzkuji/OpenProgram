@@ -55,7 +55,7 @@ Plugin **不在**这个列表中 —— plugin 是宿主层面的“贡献者”
 │  └─────────────┘  └────────────┘  └────────────┘               │
 └────────────────────────────────────────────────────────────────┘
               │
-              │  shared helper: openprogram/agents/gating.py
+              │  shared helper: openprogram/agent/management/gating.py
               │
               ▼
    match_any(name, patterns)          —  fnmatch wildcard match

@@ -55,7 +55,7 @@ Plugins are **not** in this list — plugin is a host-level "contributor". Gatin
 │  └─────────────┘  └────────────┘  └────────────┘               │
 └────────────────────────────────────────────────────────────────┘
               │
-              │  shared helper: openprogram/agents/gating.py
+              │  shared helper: openprogram/agent/management/gating.py
               │
               ▼
    match_any(name, patterns)          —  fnmatch wildcard match

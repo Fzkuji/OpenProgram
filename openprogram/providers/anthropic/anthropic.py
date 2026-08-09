@@ -17,14 +17,14 @@ import re
 import time
 from typing import Any, AsyncGenerator
 
-# The ``anthropic`` Python SDK is an optional extra (``openprogram[anthropic]``)
-# — importing this module must succeed without it so the provider
-# *catalog* (which side-effect-imports this package) stays usable in
-# environments that haven't installed the SDK yet. Any actual streaming
-# call below re-checks ``_anthropic`` and raises a clear error.
+# The ``anthropic`` SDK is a base dependency (installed by default). This
+# guarded import only stays defensive so importing this module succeeds
+# even in a stripped env and the provider *catalog* (which side-effect-
+# imports this package) stays usable. Any actual streaming call below
+# re-checks ``_anthropic`` and raises a clear error.
 try:
     import anthropic as _anthropic
-except ImportError:  # pragma: no cover — SDK is an optional extra
+except ImportError:  # pragma: no cover — base dep, normally present
     _anthropic = None  # type: ignore[assignment]
 
 from ..types import (

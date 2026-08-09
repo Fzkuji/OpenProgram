@@ -42,7 +42,7 @@ OpenProgram's tools fall into two categories:
    bash goes through `get_active_backend().run(...)`; currently `LocalBackend.run` accepts
    a `cwd` argument but callers don't pass it; edit / write / read require absolute paths.
 
-A ContextVar `_current_worktree_path: Optional[str]` in `openprogram/agent/_runtime.py` carries the
+A ContextVar `_current_worktree_path: Optional[str]` in `openprogram/functions/_runtime.py` carries the
 active path. Each time the dispatcher enters a turn, if the session currently has an active worktree
 (read from session meta), it `set`s this var. Tool implementations consume it as needed:
 
@@ -422,12 +422,12 @@ The work, in dependency order:
 | 1 | new `openprogram/worktree/types.py` | `Worktree` dataclass + `WorktreeStatus` Enum + serialization |
 | 2 | new `openprogram/worktree/manager.py` | `WorktreeManager`: create / merge / discard / list / keep; underlying `subprocess.run(["git", "worktree", ...])`; persists to `<session-repo>/worktrees/<id>.json` |
 | 3 | new `openprogram/worktree/_paths.py` | worktree path policy: `~/.openprogram/worktrees/<id>-<slug>/`; isolation check (D4) |
-| 4 | edit `openprogram/agent/_workdir.py` | `apply_default_workdir` prefers returning the active worktree path |
+| 4 | edit `openprogram/agent/internals/_workdir.py` | `apply_default_workdir` prefers returning the active worktree path |
 | 5 | edit `openprogram/agent/dispatcher.py` | at the start of a turn, read session.meta.active_worktree_id → set the `_current_worktree_path` ContextVar |
 | 6 | edit `openprogram/functions/tools/bash/bash.py` | call `backend.run(cmd, cwd=_current_worktree_path.get())` |
 | 7 | edit `openprogram/functions/tools/edit/edit.py` + write/read | warning when path outside worktree (D6) |
 | 8 | new `openprogram/functions/tools/worktree/` | 4 @function tools: worktree_create / worktree_merge / worktree_discard / worktree_list; go through WorktreeManager |
-| 9 | edit `openprogram/store/session_store.py` | add an `active_worktree_id` field to session.meta; helpers `set_active_worktree` / `get_active_worktree` |
+| 9 | edit `openprogram/store/session/session_store.py` | add an `active_worktree_id` field to session.meta; helpers `set_active_worktree` / `get_active_worktree` |
 | 10 | new `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree` (user manual UI operations) |
 | 11 | new `web/components/chat/composer/worktree-chip.tsx` | chip component + hover panel + Merge/Discard/Keep buttons |
 | 12 | edit `web/components/chat/composer/composer.tsx` | bring in the chip |

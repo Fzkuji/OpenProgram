@@ -9,7 +9,7 @@ This file records the divergences between the design docs and the actual code, o
 ## ~~Path errors~~ (fixed)
 
 ### ~~extension-gating/implementation.md~~
-- ~~Paths written in the doc: `openprogram/agents/gating.py`, `openprogram/agents/manager.py`~~
+- ~~Paths written in the doc: `openprogram/agent/management/gating.py`, `openprogram/agent/management/manager.py`~~
 - ~~Actual paths: `openprogram/agent/management/gating.py`, `openprogram/agent/management/manager.py`~~
 - Status: ✅ Corrected; the doc paths are now right.
 

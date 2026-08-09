@@ -26,7 +26,7 @@ turn id 就是 assistant 消息 id。Dispatcher 把 `_current_turn_id` ContextVa
 和 `SessionStore.session_workdir(sid)` 访问。`commit_all` 通过 `git add -A` 收集
 workdir 的改动。
 
-`openprogram/agent/_workdir.py::apply_default_workdir(runtime, session_id)` 在取到
+`openprogram/agent/internals/_workdir.py::apply_default_workdir(runtime, session_id)` 在取到
 chat runtime 之后从 `webui/_execute/__init__.py` 调用，使 `runtime.set_workdir`
 默认指向该会话的 `workdir/`；`/api/run` 仍通过自己的 `set_workdir` 调用覆盖。
 进程内工具查询 `get_default_workdir()` 而非 `os.getcwd()`，正是这一点让切换 cwd
