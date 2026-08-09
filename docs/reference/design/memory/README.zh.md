@@ -38,6 +38,7 @@ LLM Context
 |------|------|
 | [`overview.md`](overview.md) | 两级架构（实体/虚拟两层 + provenance 召回），以及 `openprogram/memory/` 里在跑的线性总结链 |
 | [`memory-architecture.html`](memory-architecture.html) | 可视化：两个写入入口、五步写入、暂存事务、ID 集合游标、九个接口方法的接线状况、失败契约 |
+| [`speaker-identity.html`](speaker-identity.html) | 可视化：几个人怎么共用一通会话、发言人身份在通往记忆的路上断在哪两处、补上要动的七个文件（已定稿，未落地） |
 | [`git-as-entity-memory.md`](git-as-entity-memory.md) | 实体层的 git 底座（Session-Git + Project-Git） |
 | [`entity-memory.md`](entity-memory.md) | 实体记忆：Session-Git + Project-Git，按生命周期组织 |
 | [`virtual-memory.md`](virtual-memory.md) | 抽象记忆：Timeline + Graph + Core，按类型 × 生命周期组织 |
