@@ -160,7 +160,7 @@ Broadcast events:
 The agent uses a trio:
 
 - `agent(prompt, description, agent_id?, context?, run_in_background=False)` → returns the final result (foreground default) or `task_id` (`run_in_background=True`). Wraps `runner.submit(...)`.
-- `task_output(task_id, block=True, timeout=30000)` → waits (timeout in ms, capped at 600000; Claude Code's TaskOutput shape) until completed / cancelled / timeout, returning the reply text plus terminal status; `block=false` peeks at the current status immediately. `task_list()` lists the session's background tasks (id, status, subject) so the LLM can keep track of parallel work.
+- `task_output(task_id, block=True, timeout=30000)` → waits (timeout in ms, capped at 600000; Claude Code's TaskOutput shape) until completed / cancelled / timeout, returning the reply text plus terminal status; `block=false` peeks at the current status immediately. `list_tasks()` lists the session's background tasks (id, status, subject) so the LLM can keep track of parallel work.
 - `task_stop(task_id, reason?)` → `{ok, status}`.
 
 The variant `await_tasks([id1, id2, ...], mode="all"|"any", timeout)` is used

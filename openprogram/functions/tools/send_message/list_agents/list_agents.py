@@ -2,9 +2,9 @@
 
 Discovery for branch-to-branch communication: an agent's conversation
 is stored as a branch in the session DAG, so "which agents can I talk
-to" = "which sessions exist, and which branches does each one have".
-One call lists them all, grouped by session; every line gives a
-``to="SID:HEAD"`` address ready for send_message.
+to" = "which branches exist". By default only the current session's
+branches are shown (that is where spawned agents live); scope="all"
+widens to every session, most recently active first.
 
 Design: docs/reference/design/runtime/agent-collaboration.md (C2).
 """
@@ -20,15 +20,16 @@ from openprogram.functions.tools.send_message.shared import (
 
 _DESCRIPTION = (
     "List the agents you can talk to. An agent's conversation is stored "
-    "as a branch in the session DAG, so the output is grouped by "
-    "session, one line per branch: its name (if any), a ready-to-use "
-    "`to=\"SID:HEAD\"` address for send_message, its busy/idle status, "
-    "and a preview of its tip. A named branch can also be addressed by "
-    "name alone: send_message(to=\"<name>\"). Each branch line also "
-    "shows its turn count and approximate size, so you can pick a "
-    "sensible `max_chars` before calling read_conversation. Use this "
-    "before send_message to find the exact agent to talk to; to CREATE "
-    "a new agent, use the `agent` tool instead."
+    "as a branch in the session DAG; each line gives a ready-to-use "
+    "`to=\"SID:HEAD\"` address for send_message, the branch name (if "
+    "any — a «name» works directly as `to` too), busy/idle status, and "
+    "turn count / approximate size so you can pick a sensible "
+    "`max_chars` before read_conversation. Default scope=\"session\" "
+    "shows only the current session's branches — the agents spawned "
+    "here. Pass scope=\"all\" to find agents in OTHER sessions: every "
+    "session is listed, most recently active first, without previews "
+    "(limit defaults to 20). To CREATE a new agent, use the `agent` "
+    "tool instead."
 )
 
 
@@ -54,9 +55,69 @@ def _turn_running(session_id: str) -> bool | None:
         return None
 
 
-def _list_agents_impl(limit: int = 50, agent_id: str = "", source: str = "") -> str:
+def _session_lines(db, r: dict, cur: str, *, preview: bool) -> tuple[list[str], int]:
+    """Render one session header + its branch lines; returns (lines, n_branches)."""
+    sid = r.get("id", "?")
+    mark = "  ← current session" if sid == cur else ""
+    title = r.get("title") or "(untitled)"
+    sess_agent = r.get("agent_id") or "?"
+    busy = _turn_running(sid)
+    status = "" if busy is None else (" [busy]" if busy else " [idle]")
+    lines = [f"{sid}  [{sess_agent}]  {title}{status}{mark}"]
+    try:
+        branches = db.list_branches(sid) or []
+    except Exception:
+        branches = []
+    for b in branches:
+        head = b.get("head_msg_id", "?")
+        name = b.get("name")
+        label = f" «{name}»" if name else ""
+        stats = _branch_stats(db, sid, head)
+        line = f"  - to={sid}:{head}{label}{stats}"
+        if preview:
+            tip = _last_text(sid, head_id=head)
+            if tip:
+                line += f"\n      “{tip}”"
+        lines.append(line)
+    if not branches:
+        lines.append("  (no branches)")
+    return lines, len(branches)
+
+
+def _list_agents_impl(
+    scope: str = "session",
+    limit: int = 20,
+    agent_id: str = "",
+    source: str = "",
+) -> str:
     from openprogram.events import emit_safe
     db = _db()
+    cur = _current_session()
+
+    if scope != "all":
+        if not cur:
+            return ('[list_agents error] no active session context — '
+                    'use scope="all" to list every session')
+        try:
+            rows = [r for r in db.list_sessions(limit=10_000)
+                    if r.get("id") == cur]
+        except Exception as e:  # noqa: BLE001
+            return f"[list_agents error] {type(e).__name__}: {e}"
+        if not rows:
+            return "(current session not found)"
+        lines, total_branches = _session_lines(db, rows[0], cur, preview=True)
+        emit_safe(
+            "agents.listed", "agent",
+            {"sessions": 1, "branches": total_branches},
+        )
+        header = (
+            f"{total_branches} branch(es) in this session — pass a `to` "
+            "below to send_message (a «name» works directly as `to` too); "
+            'scope="all" lists other sessions:'
+        )
+        return "\n".join([header, *lines])
+
+    # scope="all" — list_sessions returns most recently active first.
     try:
         rows = db.list_sessions(
             limit=max(1, int(limit)),
@@ -65,51 +126,35 @@ def _list_agents_impl(limit: int = 50, agent_id: str = "", source: str = "") -> 
         )
     except Exception as e:  # noqa: BLE001
         return f"[list_agents error] {type(e).__name__}: {e}"
-
-    cur = _current_session()
     if not rows:
         return "(no sessions)"
 
     lines: list[str] = []
     total_branches = 0
     for r in rows:
-        sid = r.get("id", "?")
-        mark = "  ← current session" if sid == cur else ""
-        title = r.get("title") or "(untitled)"
-        sess_agent = r.get("agent_id") or "?"
-        busy = _turn_running(sid)
-        status = "" if busy is None else (" [busy]" if busy else " [idle]")
-        lines.append(f"{sid}  [{sess_agent}]  {title}{status}{mark}")
-        try:
-            branches = db.list_branches(sid) or []
-        except Exception:
-            branches = []
-        total_branches += len(branches)
-        for b in branches:
-            head = b.get("head_msg_id", "?")
-            name = b.get("name")
-            preview = _last_text(sid, head_id=head)
-            label = f" «{name}»" if name else ""
-            stats = _branch_stats(db, sid, head)
-            lines.append(
-                f"  - to={sid}:{head}{label}{stats}"
-                + (f"\n      “{preview}”" if preview else "")
-            )
-        if not branches:
-            lines.append("  (no branches)")
+        s_lines, n = _session_lines(db, r, cur, preview=False)
+        lines.extend(s_lines)
+        total_branches += n
 
     emit_safe(
         "agents.listed", "agent",
         {"sessions": len(rows), "branches": total_branches},
     )
     header = (
-        f"{len(rows)} session(s), {total_branches} branch(es) — pass a "
-        "`to` below to send_message (a «name» works directly as `to` too):"
+        f"{len(rows)} session(s), {total_branches} branch(es), most "
+        "recently active first — pass a `to` below to send_message "
+        "(a «name» works directly as `to` too):"
     )
     return "\n".join([header, *lines])
 
 
 @function(name="list_agents", description=_DESCRIPTION, toolset=["core"])
-def list_agents(limit: int = 50, agent_id: str = "", source: str = "") -> str:
-    """List talkable agents: sessions and their branches as `to` targets."""
-    return _list_agents_impl(limit=limit, agent_id=agent_id, source=source)
+def list_agents(
+    scope: str = "session",
+    limit: int = 20,
+    agent_id: str = "",
+    source: str = "",
+) -> str:
+    """List talkable agents: this session's branches, or all sessions."""
+    return _list_agents_impl(scope=scope, limit=limit,
+                             agent_id=agent_id, source=source)

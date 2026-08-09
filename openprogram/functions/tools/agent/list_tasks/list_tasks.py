@@ -1,4 +1,9 @@
-"""task_list — list this session's background agent tasks."""
+"""list_tasks — list this session's background agent tasks.
+
+Named verb-object to pair with ``list_agents``; ``task_list`` would
+collide with Claude Code's TaskList (a todo planning board — our todo
+board uses the ``todo_*`` prefix instead).
+"""
 from __future__ import annotations
 
 from openprogram.functions._runtime import function
@@ -8,7 +13,7 @@ _SUBJECT_CLIP = 80
 
 
 @function(
-    name="task_list",
+    name="list_tasks",
     description=(
         "List the background tasks of the current session — everything "
         "spawned here with agent(run_in_background=true), newest first: "
@@ -19,18 +24,18 @@ _SUBJECT_CLIP = 80
     ),
     toolset=["core"],
 )
-def task_list() -> str:
+def list_tasks() -> str:
     """Render the current session's task table as text."""
-    return _task_list_impl()
+    return _list_tasks_impl()
 
 
-def _task_list_impl() -> str:
+def _list_tasks_impl() -> str:
     """Implementation body — kept apart from the @function binding so
     tests can call it directly (the binding object is not callable)."""
     from openprogram.agent.run_control import _current_session_id
     sid = _current_session_id.get(None)
     if not sid:
-        return "[task_list error] no active session context"
+        return "[list_tasks error] no active session context"
     from openprogram.agent.task import get_runner
     tasks = get_runner().list_tasks(sid, limit=_ROW_LIMIT)
     if not tasks:

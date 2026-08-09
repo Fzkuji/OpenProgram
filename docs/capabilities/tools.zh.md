@@ -64,7 +64,7 @@ OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调�
 
 | 工具 | 做什么 | 需要什么 |
 |---|---|---|
-| `agent`（+ `task_list` / `task_output` / `task_stop`） | 在同一会话里派生另一个 agent 并取回回复；列出/获取/停止它的后台任务 | 无 |
+| `agent`（+ `list_tasks` / `task_output` / `task_stop`） | 在同一会话里派生另一个 agent 并取回回复；列出/获取/停止它的后台任务 | 无 |
 | `program` | 调用任意已注册的 `@agentic_function` | 无 |
 | `send_message`（+ `list_agents`） | 与已存在的 agent 分支间通信 | 无 |
 | `mixture_of_agents` | 并行问N个模型再综合;默认从模型注册表选,每个provider取一个 | 模型注册表里至少2个provider |

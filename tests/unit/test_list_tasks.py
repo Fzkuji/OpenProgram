@@ -1,11 +1,11 @@
-"""task_list renders the current session's task table; task_output's
+"""list_tasks renders the current session's task table; task_output's
 ``block``/``timeout`` params (Claude Code TaskOutput shape) resolve to
 sane runner waits."""
 from __future__ import annotations
 
 from openprogram.agent.run_control import _current_session_id
 from openprogram.agent.task.types import Task, TaskStatus
-from openprogram.functions.tools.agent.task_list.task_list import _task_list_impl
+from openprogram.functions.tools.agent.list_tasks.list_tasks import _list_tasks_impl
 from openprogram.functions.tools.agent.task_output.task_output import _task_output_impl
 
 
@@ -35,7 +35,7 @@ def _with_runner(monkeypatch, runner):
     monkeypatch.setattr(task_mod, "get_runner", lambda: runner)
 
 
-def test_task_list_renders_rows(monkeypatch) -> None:
+def test_list_tasks_renders_rows(monkeypatch) -> None:
     runner = _FakeRunner([
         _task("t1", TaskStatus.RUNNING, "survey plan A " + "x" * 100),
         _task("t2", TaskStatus.COMPLETED),
@@ -43,7 +43,7 @@ def test_task_list_renders_rows(monkeypatch) -> None:
     _with_runner(monkeypatch, runner)
     tok = _current_session_id.set("s1")
     try:
-        out = _task_list_impl()
+        out = _list_tasks_impl()
     finally:
         _current_session_id.reset(tok)
     assert "t1" in out and "[running]" in out
@@ -51,8 +51,8 @@ def test_task_list_renders_rows(monkeypatch) -> None:
     assert "…" in out  # long prompt clipped
 
 
-def test_task_list_needs_session_context() -> None:
-    assert "no active session" in _task_list_impl()
+def test_list_tasks_needs_session_context() -> None:
+    assert "no active session" in _list_tasks_impl()
 
 
 def test_task_output_nonblocking_peek_uses_tiny_wait(monkeypatch) -> None:

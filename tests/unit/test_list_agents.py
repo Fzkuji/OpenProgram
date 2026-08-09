@@ -51,20 +51,20 @@ def test_clip():
 
 
 def test_list_agents_lists_both_sessions(two_sessions):
-    out = list_agents()
+    out = list_agents(scope="all")
     assert "p1" in out and "p2" in out
     assert "first" in out and "second" in out
     assert "[main]" in out and "[research]" in out
 
 
 def test_list_agents_marks_current_session(two_sessions):
-    out = list_agents()
+    out = list_agents(scope="all")
     p1_line = next(ln for ln in out.splitlines() if ln.startswith("p1"))
     assert "← current" in p1_line
 
 
 def test_list_agents_gives_to_per_branch(two_sessions):
-    out = list_agents()
+    out = list_agents(scope="all")
     # every session's branches carry a ready-to-use to=SID:HEAD
     assert "to=p1:" in out
     assert "to=p2:" in out
@@ -96,9 +96,32 @@ def test_list_agents_emits_event(two_sessions):
     unsub = get_event_bus().subscribe(lambda e: got.append(e),
                                       types={"agents.listed"})
     try:
-        list_agents()
+        list_agents(scope="all")
     finally:
         unsub()
     ev = next(e for e in got if e.type == "agents.listed")
     assert ev.payload["sessions"] == 2
     assert ev.payload["branches"] >= 2
+
+
+def test_list_agents_default_scope_is_current_session_only(two_sessions):
+    out = list_agents()
+    assert "to=p1:" in out
+    assert "p2" not in out
+
+
+def test_list_agents_default_scope_keeps_preview(two_sessions):
+    out = list_agents()
+    assert "answer one" in out
+
+
+def test_list_agents_all_scope_has_no_preview(two_sessions):
+    out = list_agents(scope="all")
+    assert "answer one" not in out and "answer two" not in out
+
+
+def test_list_agents_all_scope_limit(two_sessions):
+    out = list_agents(scope="all", limit=1)
+    # list_sessions is most-recently-active first; only one session shows
+    assert out.count("to=") == 1
+    assert "1 session(s)" in out
