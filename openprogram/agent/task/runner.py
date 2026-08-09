@@ -471,20 +471,30 @@ class TaskRunner:
             elif cur_task.status == TaskStatus.RUNNING:
                 # Stamp request time but stay in running. Worker will
                 # detect cancel and self-flip.
-                stamped = Task.from_dict({
-                    **cur_task.to_dict(),
-                    "cancel_requested_at": time.time(),
-                })
-                _store_save(
-                    session_id,
-                    stamped,
-                    commit_message=f"task: {task_id} cancel requested",
+                #
+                # This MUST go through the store's locked
+                # read-modify-write, not save_task: the worker was
+                # signalled a few lines above and can reach its own
+                # terminal write inside the window since _store_load.
+                # A blind save of the snapshot we read then rewrote
+                # ``status: running`` over the worker's ``cancelled``,
+                # resurrecting a finished task — the row stayed
+                # non-terminal forever (phantom "running" in the task
+                # panel, reconciled to "worker died before completion"
+                # on next startup). update_task_status applies the
+                # field under the same lock and raises on a status that
+                # has since moved on.
+                _store_update_status(
+                    session_id, task_id, TaskStatus.RUNNING,
+                    cancel_requested_at=time.time(),
                 )
                 # Watchdog: force cancel if worker doesn't honour signal.
                 self._schedule_force_cancel(session_id, task_id)
-                return cur_task
+                return _store_load(session_id, task_id) or cur_task
         except ValueError:
-            pass
+            # The worker moved the task on while we were stamping —
+            # its state is the truthful one.
+            return _store_load(session_id, task_id) or cur_task
         return cur_task
 
     def get_task(self, task_id: str) -> Optional[Task]:
