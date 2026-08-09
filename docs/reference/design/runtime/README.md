@@ -15,4 +15,5 @@ Agent execution runtime — the run loop, worktrees, async tasks, streaming/resu
 - [`session/`](session/) — the session subsystem: data model, storage, naming, listing, lifecycle, broadcast
 - [`operations/streaming-resume.md`](operations/streaming-resume.md)
 - [`operations/user-input-requests.md`](operations/user-input-requests.md) — pause a running function to ask the user (`runtime.ask`/`confirm`), question registry + WS/REST protocol + subprocess bridge
+- [`agent-collaboration.md`](agent-collaboration.md) — **authoritative**: agent collaboration as one cross-branch communication primitive — the four domains, the tool surface, the two budgets ([the tool surface rendered](agent-collab-architecture.html), [the eight reference implementations compared](agent-collab-comparison.html))
 - [`sandbox.md`](sandbox.md) — the process isolation layer: the boundary on both platforms, where the switch is lost, which execution points it covers, how eight reference harnesses compare, repair order ([rendered](sandbox-architecture.html))

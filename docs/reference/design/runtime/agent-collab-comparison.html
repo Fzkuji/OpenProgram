@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent协作：八家实现对照</title>
+<style>
+  :root{
+    --bg:#16150f; --pan:#1d1c14; --bd:#2e2c20; --tx:#bdb9a6; --acc:#d4843a;
+    --cb:#12110b; --dim:#8a8675;
+    --c0:#4f8ef7; --c1:#5aad4e; --c2:#d4843a; --c3:#9d6fe0; --c4:#2db3d5;
+    --no:#e0445a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:40px 24px 96px}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:23px;color:#f0eee6;margin:0 0 6px}
+  .sub{color:var(--tx);margin:0 0 18px;max-width:82ch}
+  h2{font-size:16px;color:var(--acc);margin:36px 0 8px;scroll-margin-top:20px}
+  h2 .num{color:var(--dim);font-size:12px;margin-right:8px;letter-spacing:.16em}
+  h2 .ly{font-size:10.5px;letter-spacing:.18em;padding:2px 8px;border-radius:99px;
+    margin-left:10px;vertical-align:2px;font-weight:600}
+  .ly1{color:#4f8ef7;border:1px solid #2c4a78}
+  .ly2{color:#5aad4e;border:1px solid #2f5228}
+  .ly3{color:#9d6fe0;border:1px solid #4c3670}
+  .lead{color:var(--dim);font-size:13px;margin:0 0 12px;max-width:84ch}
+  .card{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:8px;margin-bottom:16px}
+  svg{display:block;width:100%;height:auto;background:var(--cb);border-radius:8px}
+  .legend{font-size:12.5px;color:var(--dim);padding:8px 10px;line-height:1.8}
+  .legend b{color:#f0eee6}
+  code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
+  a{color:var(--acc)}
+  text{font-family:-apple-system,"Segoe UI",sans-serif}
+
+  .toc{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 24px}
+  .toc a{font-size:12px;color:var(--tx);text-decoration:none;border:1px solid var(--bd);
+    background:var(--pan);border-radius:99px;padding:4px 12px}
+  .toc a:hover{border-color:var(--acc);color:#f0eee6}
+  .toc a.l1{border-color:#2c4a78} .toc a.l2{border-color:#2f5228} .toc a.l3{border-color:#4c3670}
+
+  .tbl{overflow-x:auto;background:var(--pan);border:1px solid var(--bd);border-radius:12px;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:900px}
+  table.wide{min-width:1120px}
+  th{text-align:left;padding:10px 12px;color:var(--dim);font-weight:600;font-size:11px;
+    letter-spacing:.12em;border-bottom:1px solid var(--bd);white-space:nowrap;vertical-align:bottom}
+  td{padding:9px 12px;border-bottom:1px solid #26241a;vertical-align:top;line-height:1.6}
+  tr:last-child td{border-bottom:none}
+  td.y{color:var(--c1)} td.n{color:var(--no)} td.p{color:var(--c2)}
+  td b{color:#f0eee6;font-weight:600}
+  td.name{white-space:nowrap;color:#f0eee6;font-weight:600}
+  tr.us td{background:#1b2231}
+  tr.us td.name{color:#4f8ef7}
+  .src{display:block;color:#6b6a63;font:10.5px/1.5 Menlo,monospace;margin-top:3px;word-break:break-word}
+
+  pre{background:var(--cb);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;
+    overflow-x:auto;margin:0 0 16px;font:12.5px/1.9 Menlo,monospace;color:#a5a190}
+  pre b{color:var(--acc);font-weight:400}
+  pre i{color:#6b6a63;font-style:normal}
+
+  .note{border-left:3px solid var(--bd);padding:2px 0 2px 13px;color:var(--dim);
+    font-size:12.5px;margin:0 0 16px;max-width:88ch;line-height:1.8}
+  .note b{color:#f0eee6}
+  .note.blue{border-left-color:#2c4a78}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+  .dom{background:var(--pan);border:1px solid var(--bd);border-top-width:3px;border-radius:12px;padding:13px 15px}
+  .dom .k{font-size:10.5px;letter-spacing:.2em;color:var(--dim);margin-bottom:3px}
+  .dom h3{margin:0 0 3px;font-size:17px;font-weight:700}
+  .dom .noun{font:12px Menlo,monospace;color:var(--dim);margin-bottom:8px}
+  .dom p{margin:0 0 10px;font-size:12.5px;color:#a5a190;line-height:1.65}
+  .dom .tools{display:flex;flex-wrap:wrap;gap:5px}
+  .dom .tools span{font:11px Menlo,monospace;background:var(--cb);border:1px solid var(--bd);
+    border-radius:5px;padding:2px 7px;color:var(--tx)}
+  @media(max-width:980px){.grid4{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:560px){.grid4{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Agent协作：八家实现对照</h1>
+  <p class="sub">同一个问题问八个参考实现：一个agent怎么把活交给另一个agent，交出去以后还能不能管。
+    八个维度逐条对照，每条都覆盖全部八家，没有这个功能的如实标"没有"。
+    我们自己的机制在<a href="agent-collab-architecture.html">Agent协作：工具面</a>那页，
+    设计正文是<code>agent-collaboration.md</code>。</p>
+
+  <div class="toc">
+    <a class="l1" href="#layers">00 三层怎么分</a>
+    <a class="l2" href="#matrix">01 八家总表</a>
+    <a class="l2" href="#spawn">02 能不能生子agent</a>
+    <a class="l2" href="#talk">03 能不能直接通信</a>
+    <a class="l2" href="#track">04 追踪和级联取消</a>
+    <a class="l2" href="#loop">05 防死循环</a>
+    <a class="l2" href="#tools">06 子agent的工具集怎么裁</a>
+    <a class="l2" href="#name">07 身份寻址和实现规模</a>
+    <a class="l3" href="#plan">08 我们计划怎么做</a>
+  </div>
+
+  <!-- ══════════ 00 三层 ══════════ -->
+  <h2 id="layers"><span class="num">00</span>三层怎么分<span class="ly ly1">第一层</span></h2>
+  <p class="lead">这页装第二层和第三层。第一层是我们已经跑起来的机制，它有自己的一页，两页互相链接。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 358" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="三层的边界">
+    <defs>
+      <marker id="l-gy" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#8a8675"/></marker>
+    </defs>
+
+    <!-- 第一层 -->
+    <rect x="20" y="20" width="1120" height="88" rx="10" fill="#161d29" stroke="#2c4a78" stroke-width="1.6"/>
+    <rect x="20" y="20" width="5" height="88" rx="2.5" fill="#4f8ef7"/>
+    <text x="44" y="46" fill="#4f8ef7" font-size="11" letter-spacing="3">第一层</text>
+    <text x="44" y="70" fill="#f0eee6" font-size="16" font-weight="700">我们现在怎么做</text>
+    <text x="44" y="94" fill="#8a8675" font-size="12">一个原语：往一条分支投递内容，触发它跑一轮，结果自动回送。四个域十二个工具。</text>
+    <rect x="700" y="38" width="420" height="52" rx="8" fill="#12110b" stroke="#2c4a78" stroke-width="1.2"/>
+    <text x="720" y="60" fill="#4f8ef7" font-size="12" font-weight="600">另一页：Agent协作 · 工具面</text>
+    <text x="720" y="80" fill="#8a8675" font-size="11">四域词汇 · 权力模型 · 两个预算 · 归档 · 典型场景</text>
+
+    <!-- 第二层 -->
+    <rect x="20" y="120" width="1120" height="120" rx="10" fill="#161d15" stroke="#2f5228" stroke-width="1.6"/>
+    <rect x="20" y="120" width="5" height="120" rx="2.5" fill="#5aad4e"/>
+    <text x="44" y="146" fill="#5aad4e" font-size="11" letter-spacing="3">第二层</text>
+    <text x="44" y="170" fill="#f0eee6" font-size="16" font-weight="700">人家怎么做</text>
+    <text x="44" y="192" fill="#8a8675" font-size="12">八个参考实现，八个维度。这页从01到07全是这一层。</text>
+    <g font-size="11.5" text-anchor="middle">
+      <rect x="44" y="204" width="122" height="24" rx="5" fill="#12110b" stroke="#3a5c33"/><text x="105" y="220" fill="#bdb9a6">claude-code</text>
+      <rect x="176" y="204" width="112" height="24" rx="5" fill="#12110b" stroke="#3a5c33"/><text x="232" y="220" fill="#bdb9a6">codex-cli</text>
+      <rect x="298" y="204" width="112" height="24" rx="5" fill="#12110b" stroke="#3a5c33"/><text x="354" y="220" fill="#bdb9a6">openclaw</text>
+      <rect x="420" y="204" width="112" height="24" rx="5" fill="#12110b" stroke="#3a5c33"/><text x="476" y="220" fill="#bdb9a6">opencode</text>
+      <rect x="542" y="204" width="128" height="24" rx="5" fill="#12110b" stroke="#3a5c33"/><text x="606" y="220" fill="#bdb9a6">hermes-agent</text>
+      <rect x="680" y="204" width="92" height="24" rx="5" fill="#12110b" stroke="#3a5c33"/><text x="726" y="220" fill="#bdb9a6">pi-ai</text>
+      <rect x="782" y="204" width="102" height="24" rx="5" fill="#12110b" stroke="#3a5c33"/><text x="833" y="220" fill="#bdb9a6">pi-mono</text>
+      <rect x="894" y="204" width="98" height="24" rx="5" fill="#12110b" stroke="#3a5c33"/><text x="943" y="220" fill="#bdb9a6">weclaw</text>
+    </g>
+
+    <!-- 第三层 -->
+    <rect x="20" y="252" width="1120" height="88" rx="10" fill="#1c1729" stroke="#4c3670" stroke-width="1.6"/>
+    <rect x="20" y="252" width="5" height="88" rx="2.5" fill="#9d6fe0"/>
+    <text x="44" y="278" fill="#9d6fe0" font-size="11" letter-spacing="3">第三层</text>
+    <text x="44" y="302" fill="#f0eee6" font-size="16" font-weight="700">我们计划怎么做</text>
+    <text x="44" y="326" fill="#8a8675" font-size="12">四域词汇和刚定的工具面从哪来、哪里刻意跟别人不一样、设计已定但代码还没跟上的还剩什么。第08节。</text>
+
+    <path d="M580 108 L580 118" fill="none" stroke="#8a8675" stroke-width="1.4" marker-end="url(#l-gy)"/>
+    <path d="M580 240 L580 250" fill="none" stroke="#8a8675" stroke-width="1.4" marker-end="url(#l-gy)"/>
+  </svg>
+  </div>
+
+  <div class="note blue">
+    <b>怎么核实的。</b>七个仓库直接读源码，给文件路径加行号。Claude Code 是两个来源交叉验证：
+    泄露源码树只有适配层（最后一次提交是 2026 年 4 月），本机装的 2.1.226 二进制里才有真正的实现，
+    两者的设计已经不一样了。凡是取自二进制的结论都标字节偏移，写成<code>二进制 @250599082</code>这种形式。
+    两边不一致的地方在下面逐条点出来。
+  </div>
+
+  <!-- ══════════ 01 总表 ══════════ -->
+  <h2 id="matrix"><span class="num">01</span>八家总表<span class="ly ly2">第二层</span></h2>
+  <p class="lead">八个维度一屏看完。每格都有下面的小节展开，含代码位置。</p>
+
+  <div class="tbl">
+  <table class="wide">
+    <tr>
+      <th></th><th>生子agent</th><th>直接通信</th><th>任务追踪</th><th>级联取消</th>
+      <th>防环手段</th><th>裁工具</th><th>寻址</th><th>规模</th>
+    </tr>
+    <tr class="us">
+      <td class="name">我们</td>
+      <td class="y">进程内，深度1</td><td class="y">能，任意对任意</td><td class="y">task_id，三个工具</td><td class="y">级联</td>
+      <td class="y">六种</td><td>按剩余余额摘</td><td>分支名 / SID:HEAD</td><td>4.5k</td>
+    </tr>
+    <tr>
+      <td class="name">Claude Code</td>
+      <td class="y">进程内，深度3</td><td class="y">能，跨机器也能</td><td class="y">agentId，三个工具</td><td class="y">级联</td>
+      <td class="y">五种</td><td>按深度摘，再调用时拒</td><td>名字@团队名</td><td>24k</td>
+    </tr>
+    <tr>
+      <td class="name">codex-cli</td>
+      <td class="y">进程内，V1深度1，V2无上限</td><td class="y">能，兄弟直连</td><td class="y">ThreadId，四个工具</td><td class="p">只有一半</td>
+      <td class="p">两种</td><td>摘，V1额外再拒</td><td>路径式 /root/x</td><td>7k</td>
+    </tr>
+    <tr>
+      <td class="name">openclaw</td>
+      <td class="y">进程内或外部进程，深度1</td><td class="p">能，但要开开关</td><td class="y">runId，只有list</td><td class="y">级联</td>
+      <td class="y">八种</td><td>摘，spawn时再查一次</td><td>session key</td><td>17k</td>
+    </tr>
+    <tr>
+      <td class="name">opencode</td>
+      <td class="y">进程内，隐式深度1</td><td class="n">不能</td><td class="p">子session id</td><td class="y">级联</td>
+      <td class="p">三种</td><td>按规则形状，摘或拒</td><td>agent类型名</td><td>0.4k</td>
+    </tr>
+    <tr>
+      <td class="name">hermes-agent</td>
+      <td class="y">进程内线程池，深度1</td><td class="p">树内不能，看板间接</td><td class="n">模型拿不到id</td><td class="y">级联</td>
+      <td class="y">五种</td><td>工具集级摘</td><td>匿名，一次性</td><td>2.9k</td>
+    </tr>
+    <tr>
+      <td class="name">pi-mono</td>
+      <td class="p">子进程，无深度上限</td><td class="n">不能</td><td class="n">没有</td><td class="p">只级联一层</td>
+      <td class="p">两种</td><td>白名单摘</td><td>磁盘上的 .md 名</td><td>1.3k</td>
+    </tr>
+    <tr>
+      <td class="name">pi-ai</td>
+      <td class="n">没有</td><td class="n">没有</td><td class="n">没有</td><td class="n">不适用</td>
+      <td class="n">没有</td><td class="n">不适用</td><td class="n">没有</td><td>0</td>
+    </tr>
+    <tr>
+      <td class="name">weclaw</td>
+      <td class="n">没有</td><td class="n">不能</td><td class="n">没有</td><td class="n">不适用</td>
+      <td class="p">一种</td><td class="n">不适用</td><td>@名字</td><td>1.1k</td>
+    </tr>
+  </table>
+  </div>
+
+  <div class="note">
+    <b>一眼能看出的三件事。</b>生子agent几乎人人都有，而且都收敛到同一个形状：进程内、深度上限1。
+    直接通信只有四家做，其中一家还默认关着。任务追踪的差别最大：从"模型能拿到task_id并且能取消"
+    一路到"模型连id都拿不到"。
+  </div>
+
+  <!-- ══════════ 02 生子agent ══════════ -->
+  <h2 id="spawn"><span class="num">02</span>能不能生子agent<span class="ly ly2">第二层</span></h2>
+  <p class="lead">三问：能不能生、同进程还是子进程、有没有层数限制。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 356" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="生子agent的四种位置">
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">从"没有"到"进程内且不限层数"，八家落在四个位置</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">中间那一格挤了六家：进程内派生、深度上限压到很低。这是目前的共识做法。</text>
+
+    <!-- 轴 -->
+    <line x1="24" y1="76" x2="1136" y2="76" stroke="#2e2c20" stroke-width="1.4"/>
+
+    <!-- 桶1 -->
+    <rect x="24" y="90" width="248" height="196" rx="10" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/>
+    <text x="44" y="116" fill="#e0445a" font-size="13" font-weight="700">没有这个概念</text>
+    <text x="44" y="136" fill="#6b6a63" font-size="11">派生的入口就不存在</text>
+    <rect x="44" y="150" width="208" height="42" rx="7" fill="#241015" stroke="#5c2830"/>
+    <text x="60" y="170" fill="#bdb9a6" font-size="12.5" font-weight="600">pi-ai</text>
+    <text x="60" y="186" fill="#6b6a63" font-size="10.5">只是一份协议快照，没有agent循环</text>
+    <rect x="44" y="200" width="208" height="42" rx="7" fill="#241015" stroke="#5c2830"/>
+    <text x="60" y="220" fill="#bdb9a6" font-size="12.5" font-weight="600">weclaw</text>
+    <text x="60" y="236" fill="#6b6a63" font-size="10.5">起外部CLI子进程，但那是顶层agent</text>
+
+    <!-- 桶2 -->
+    <rect x="286" y="90" width="212" height="196" rx="10" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/>
+    <text x="306" y="116" fill="#d4843a" font-size="13" font-weight="700">有，但不在核心里</text>
+    <text x="306" y="136" fill="#6b6a63" font-size="11">核心明确不做，示例扩展做</text>
+    <rect x="306" y="150" width="172" height="92" rx="7" fill="#241f10" stroke="#5c4520"/>
+    <text x="322" y="170" fill="#bdb9a6" font-size="12.5" font-weight="600">pi-mono</text>
+    <text x="322" y="188" fill="#8a8675" font-size="10.5">子进程：每个子agent</text>
+    <text x="322" y="203" fill="#8a8675" font-size="10.5">起一个新的 pi 进程</text>
+    <text x="322" y="222" fill="#e0445a" font-size="10.5">没有层数上限，而且子进程会</text>
+    <text x="322" y="236" fill="#e0445a" font-size="10.5">重新加载同一个扩展</text>
+
+    <!-- 桶3 -->
+    <rect x="512" y="90" width="452" height="196" rx="10" fill="#101a10" stroke="#3a5c33" stroke-width="1.5"/>
+    <text x="532" y="116" fill="#5aad4e" font-size="13" font-weight="700">进程内派生，有层数上限</text>
+    <text x="532" y="136" fill="#6b6a63" font-size="11">六家都在这里，上限都定得很低</text>
+    <g font-size="12">
+      <rect x="532" y="150" width="200" height="38" rx="6" fill="#1b2231" stroke="#4f8ef7"/>
+      <text x="546" y="166" fill="#4f8ef7" font-size="12.5" font-weight="700">我们</text>
+      <text x="546" y="182" fill="#8a8675" font-size="10.5">线程池，深度1，设0即不限</text>
+      <rect x="744" y="150" width="200" height="38" rx="6" fill="#12110b" stroke="#3a5c33"/>
+      <text x="758" y="166" fill="#bdb9a6" font-size="12.5" font-weight="600">Claude Code</text>
+      <text x="758" y="182" fill="#8a8675" font-size="10.5">嵌套查询循环，深度3</text>
+      <rect x="532" y="196" width="200" height="38" rx="6" fill="#12110b" stroke="#3a5c33"/>
+      <text x="546" y="212" fill="#bdb9a6" font-size="12.5" font-weight="600">codex-cli V1</text>
+      <text x="546" y="228" fill="#8a8675" font-size="10.5">tokio任务，深度1</text>
+      <rect x="744" y="196" width="200" height="38" rx="6" fill="#12110b" stroke="#3a5c33"/>
+      <text x="758" y="212" fill="#bdb9a6" font-size="12.5" font-weight="600">openclaw</text>
+      <text x="758" y="228" fill="#8a8675" font-size="10.5">深度1，配置可放到5</text>
+      <rect x="532" y="242" width="200" height="38" rx="6" fill="#12110b" stroke="#3a5c33"/>
+      <text x="546" y="258" fill="#bdb9a6" font-size="12.5" font-weight="600">opencode</text>
+      <text x="546" y="274" fill="#8a8675" font-size="10.5">没有计数器，靠权限注入</text>
+      <rect x="744" y="242" width="200" height="38" rx="6" fill="#12110b" stroke="#3a5c33"/>
+      <text x="758" y="258" fill="#bdb9a6" font-size="12.5" font-weight="600">hermes-agent</text>
+      <text x="758" y="274" fill="#8a8675" font-size="10.5">线程池，深度1，可配到3</text>
+    </g>
+
+    <!-- 桶4 -->
+    <rect x="978" y="90" width="158" height="196" rx="10" fill="#241015" stroke="#5c2830" stroke-width="1.4"/>
+    <text x="996" y="116" fill="#e0445a" font-size="13" font-weight="700">进程内，</text>
+    <text x="996" y="134" fill="#e0445a" font-size="13" font-weight="700">没有层数上限</text>
+    <rect x="996" y="150" width="122" height="86" rx="7" fill="#12110b" stroke="#5c2830"/>
+    <text x="1010" y="170" fill="#bdb9a6" font-size="12.5" font-weight="600">codex-cli V2</text>
+    <text x="1010" y="188" fill="#8a8675" font-size="10.5">算出了子层数，</text>
+    <text x="1010" y="203" fill="#8a8675" font-size="10.5">但从不去检查它</text>
+    <text x="1010" y="222" fill="#8a8675" font-size="10.5">默认关闭</text>
+
+    <text x="24" y="312" fill="#bdb9a6" font-size="12">还有三家在进程内之外另开了一条子进程通道：openclaw 的 ACP 运行时跑在宿主机上、hermes 的 ACP 外部CLI 和看板每卡片一个进程、Claude Code 的 tmux 队友和云端 agent。</text>
+    <text x="24" y="336" fill="#8a8675" font-size="12">这些通道解决的是隔离，不是层数：层数照样由上面那个上限管。</text>
+  </svg>
+  </div>
+
+  <div class="tbl">
+  <table>
+    <tr><th></th><th>能不能</th><th>同进程还是子进程</th><th>层数限制，以及在哪儿判</th></tr>
+    <tr class="us"><td class="name">我们</td><td class="y">能，<code>agent</code></td>
+      <td>进程内线程池，默认4个worker</td>
+      <td><code>agent.max_spawn_depth</code>默认1，设0即不限。越界返回"自己动手做"
+        <span class="src">functions/tools/agent/agent/agent.py:355-362；配置默认 config_schema.py:201-210</span></td></tr>
+    <tr><td class="name">Claude Code</td><td class="y">能，<code>Agent</code>（旧名<code>Task</code>）</td>
+      <td>进程内嵌套查询循环。另有 tmux/iTerm 子进程队友，和<code>isolation:"remote"</code>的云端agent</td>
+      <td><b>深度3</b>，环境变量<code>CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code>可改；并发上限20。
+        <b>泄露源码树里根本没有深度计数器</b>，这个上限只存在于二进制
+        <span class="src">二进制 @250599082 var WJu=3；判定 @258438030；并发 @250622624 yny=20</span></td></tr>
+    <tr><td class="name">codex-cli</td><td class="y">能，<code>spawn_agent</code></td>
+      <td>进程内 tokio 任务，复用同一个线程管理器，没有任何进程创建</td>
+      <td>V1 深度1；<b>V2 算出了子层数却从不检查</b>，等于不限，只剩并发上限兜底
+        <span class="src">core/src/config/mod.rs:284；V1 判定 handlers/multi_agents/spawn.rs:65-71；V2 计算 multi_agents_v2/spawn.rs:62</span></td></tr>
+    <tr><td class="name">openclaw</td><td class="y">能，<code>sessions_spawn</code></td>
+      <td>两种运行时：<code>subagent</code>进程内，<code>acp</code>是宿主机上的外部进程，沙箱里禁用</td>
+      <td>深度1，配置可放到5。层数从 session key 里数<code>:subagent:</code>段得出
+        <span class="src">config/agent-limits.ts:8；判定 agents/subagent-spawn.ts:784-791</span></td></tr>
+    <tr><td class="name">opencode</td><td class="y">能，<code>task</code>建子session</td>
+      <td>进程内，同一个 prompt 循环重入，不起进程</td>
+      <td><b>没有数字上限</b>。给子session注入一条<code>task: * deny</code>，这条规则把<code>task</code>工具
+        从子的schema里删掉，于是深度实际是1。agent自己写<code>permission.task=allow</code>就无限
+        <span class="src">tool/task.ts:133-135；agent/subagent-permissions.ts:18,25</span></td></tr>
+    <tr><td class="name">hermes-agent</td><td class="y">能，<code>delegate_task</code></td>
+      <td>默认进程内线程池。另两条子进程路径：ACP 外部CLI、看板每张卡片起一个 hermes 进程</td>
+      <td><code>MAX_DEPTH=1</code>，配置钳在[1,3]
+        <span class="src">tools/delegate_tool.py:133,136-137；判定 :1958-1972</span></td></tr>
+    <tr><td class="name">pi-mono</td><td class="p">核心刻意不做，示例扩展做</td>
+      <td>子进程：每个子agent起一个新的<code>pi --mode json -p --no-session</code></td>
+      <td><b>没有</b>。而且子进程会重新加载同一个扩展目录，其中<code>worker</code>这个agent不声明工具白名单，
+        于是它拿得到派生工具，构成一条无界递归路径，官方的实现流程恰好用的就是它
+        <span class="src">README.md:476"No sub-agents"；examples/extensions/subagent/index.ts:329-333；agents/worker.md:1-5</span></td></tr>
+    <tr><td class="name">pi-ai</td><td class="n">没有</td><td>不适用</td>
+      <td>不适用。整个仓库是 pi-mono 里 LLM 传输层的只读快照，不编译也不被导入
+        <span class="src">README.md:1-19</span></td></tr>
+    <tr><td class="name">weclaw</td><td class="n">没有</td>
+      <td>它确实起子进程，但起的是用户配置的 agent CLI 本体，属于顶层agent</td>
+      <td>不适用，没有嵌套
+        <span class="src">agent/cli_agent.go:140,159；接口只有四个方法 agent/agent.go:79-95</span></td></tr>
+  </table>
+  </div>
+
+  <!-- ══════════ 03 直接通信 ══════════ -->
+  <h2 id="talk"><span class="num">03</span>agent之间能不能直接通信<span class="ly ly2">第二层</span></h2>
+  <p class="lead">问的是有没有一条不经过父级的通道。有的家只有"父派活、子交活"这一条线，有的家兄弟能互相寻址。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 322" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="三种通信拓扑">
+    <defs>
+      <marker id="t-gy" markerWidth="8" markerHeight="8" refX="6" refY="2.6" orient="auto"><path d="M0,0 L6,2.6 L0,5.2 Z" fill="#8a8675"/></marker>
+      <marker id="t-bl" markerWidth="8" markerHeight="8" refX="6" refY="2.6" orient="auto"><path d="M0,0 L6,2.6 L0,5.2 Z" fill="#4f8ef7"/></marker>
+    </defs>
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">三种拓扑</text>
+
+    <!-- P1 无通道 -->
+    <rect x="24" y="48" width="352" height="196" rx="10" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/>
+    <text x="44" y="74" fill="#e0445a" font-size="13" font-weight="700">没有agent之间的通道</text>
+    <circle cx="118" cy="120" r="18" fill="#1d1c14" stroke="#8a8675" stroke-width="1.4"/>
+    <text x="118" y="125" fill="#bdb9a6" font-size="11" text-anchor="middle">人</text>
+    <circle cx="230" cy="98" r="16" fill="#1d1c14" stroke="#5c2830" stroke-width="1.4"/>
+    <text x="230" y="103" fill="#8a8675" font-size="10.5" text-anchor="middle">A</text>
+    <circle cx="230" cy="146" r="16" fill="#1d1c14" stroke="#5c2830" stroke-width="1.4"/>
+    <text x="230" y="151" fill="#8a8675" font-size="10.5" text-anchor="middle">B</text>
+    <line x1="138" y1="112" x2="210" y2="100" stroke="#8a8675" stroke-width="1.4" marker-end="url(#t-gy)"/>
+    <line x1="138" y1="128" x2="210" y2="142" stroke="#8a8675" stroke-width="1.4" marker-end="url(#t-gy)"/>
+    <line x1="248" y1="112" x2="248" y2="132" stroke="#3a382c" stroke-width="1.4" stroke-dasharray="4 4"/>
+    <line x1="242" y1="116" x2="254" y2="128" stroke="#e0445a" stroke-width="2"/>
+    <line x1="254" y1="116" x2="242" y2="128" stroke="#e0445a" stroke-width="2"/>
+    <text x="44" y="192" fill="#bdb9a6" font-size="11.5">weclaw：一条微信消息可以同时发给多个agent，</text>
+    <text x="44" y="209" fill="#bdb9a6" font-size="11.5">但它们互相看不到对方的回复。pi-ai 连agent都没有。</text>
+    <text x="44" y="230" fill="#6b6a63" font-size="11">weclaw · pi-ai</text>
+
+    <!-- P2 只经父级 -->
+    <rect x="396" y="48" width="352" height="196" rx="10" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/>
+    <text x="416" y="74" fill="#d4843a" font-size="13" font-weight="700">只经父级</text>
+    <circle cx="512" cy="104" r="18" fill="#241f10" stroke="#d4843a" stroke-width="1.5"/>
+    <text x="512" y="109" fill="#d4843a" font-size="11" text-anchor="middle">父</text>
+    <circle cx="452" cy="164" r="16" fill="#1d1c14" stroke="#8a8675" stroke-width="1.3"/>
+    <text x="452" y="169" fill="#8a8675" font-size="10.5" text-anchor="middle">A</text>
+    <circle cx="572" cy="164" r="16" fill="#1d1c14" stroke="#8a8675" stroke-width="1.3"/>
+    <text x="572" y="169" fill="#8a8675" font-size="10.5" text-anchor="middle">B</text>
+    <line x1="500" y1="120" x2="464" y2="148" stroke="#d4843a" stroke-width="1.4" marker-end="url(#t-gy)"/>
+    <line x1="524" y1="120" x2="560" y2="148" stroke="#d4843a" stroke-width="1.4" marker-end="url(#t-gy)"/>
+    <line x1="470" y1="176" x2="554" y2="176" stroke="#3a382c" stroke-width="1.4" stroke-dasharray="4 4"/>
+    <line x1="506" y1="170" x2="518" y2="182" stroke="#e0445a" stroke-width="2"/>
+    <line x1="518" y1="170" x2="506" y2="182" stroke="#e0445a" stroke-width="2"/>
+    <text x="416" y="206" fill="#bdb9a6" font-size="11.5">父派活、子交活，兄弟之间没有地址。</text>
+    <text x="416" y="230" fill="#6b6a63" font-size="11">opencode · pi-mono · hermes-agent（委派树内）</text>
+
+    <!-- P3 可直连 -->
+    <rect x="768" y="48" width="368" height="196" rx="10" fill="#161d29" stroke="#2c4a78" stroke-width="1.5"/>
+    <text x="788" y="74" fill="#4f8ef7" font-size="13" font-weight="700">可以直连</text>
+    <circle cx="884" cy="104" r="18" fill="#1b2231" stroke="#4f8ef7" stroke-width="1.5"/>
+    <text x="884" y="109" fill="#4f8ef7" font-size="11" text-anchor="middle">父</text>
+    <circle cx="824" cy="164" r="16" fill="#1b2231" stroke="#4f8ef7" stroke-width="1.3"/>
+    <text x="824" y="169" fill="#4f8ef7" font-size="10.5" text-anchor="middle">A</text>
+    <circle cx="944" cy="164" r="16" fill="#1b2231" stroke="#4f8ef7" stroke-width="1.3"/>
+    <text x="944" y="169" fill="#4f8ef7" font-size="10.5" text-anchor="middle">B</text>
+    <circle cx="1064" cy="120" r="16" fill="#1b2231" stroke="#4f8ef7" stroke-width="1.3" stroke-dasharray="3 3"/>
+    <text x="1064" y="125" fill="#4f8ef7" font-size="10" text-anchor="middle">别的</text>
+    <text x="1064" y="150" fill="#6b6a63" font-size="10" text-anchor="middle">会话/机器</text>
+    <line x1="872" y1="120" x2="836" y2="148" stroke="#4f8ef7" stroke-width="1.4" marker-end="url(#t-bl)"/>
+    <line x1="896" y1="120" x2="932" y2="148" stroke="#4f8ef7" stroke-width="1.4" marker-end="url(#t-bl)"/>
+    <line x1="842" y1="172" x2="926" y2="172" stroke="#4f8ef7" stroke-width="1.6" marker-end="url(#t-bl)"/>
+    <line x1="926" y1="180" x2="842" y2="180" stroke="#4f8ef7" stroke-width="1.6" marker-end="url(#t-bl)"/>
+    <line x1="960" y1="156" x2="1046" y2="130" stroke="#4f8ef7" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#t-bl)"/>
+    <text x="788" y="206" fill="#bdb9a6" font-size="11.5">兄弟能互相寻址，父不在这条路径上。</text>
+    <text x="788" y="230" fill="#6b6a63" font-size="11">我们 · Claude Code · codex-cli · openclaw（要开开关）</text>
+
+    <text x="24" y="278" fill="#bdb9a6" font-size="12">四家能直连的里面，三家的地址还能越出本进程：Claude Code 能发给本机另一个会话和另一台机器上的会话，我们能发给任意别的会话，openclaw 靠 session key 跨会话。</text>
+    <text x="24" y="302" fill="#8a8675" font-size="12">hermes 是个特例：委派树里子agent之间没有通道，但看板那条线的 worker 之间靠共享数据库上的评论交换信息，属于间接通信。</text>
+  </svg>
+  </div>
+
+  <div class="tbl">
+  <table>
+    <tr><th></th><th>能不能直连</th><th>怎么连的，怎么投递</th></tr>
+    <tr class="us"><td class="name">我们</td><td class="y">能</td>
+      <td><code>send_message(to=)</code>，任何agent对任何未归档的分支，跨会话同一条路径，不做归属检查。
+        目标正忙就进它会话的收件箱排队，本轮结束后消费
+        <span class="src">functions/tools/send_message/send_message/send_message.py:82,154；地址解析 addressing.py:77-156；收件箱 agent/inbox.py</span></td></tr>
+    <tr><td class="name">Claude Code</td><td class="y">能，而且能跨机器</td>
+      <td><code>SendMessage</code>。<code>to</code>可以是队友名字、<code>main</code>（回主对话）、<code>*</code>（广播）、
+        <code>uds:/路径.sock</code>（本机另一个会话）、<code>bridge:会话id</code>（另一台机器）、裸agentId。
+        队友走文件信箱<code>~/.claude/teams/{团队}/inboxes/{名字}.json</code>，进程内子agent走内存队列。
+        给一个已经结束的agent发消息会把它从记录里唤醒接着跑
+        <span class="src">tools/SendMessageTool/SendMessageTool.ts；utils/peerAddress.ts:8-21；utils/teammateMailbox.ts:4-8,56-66；唤醒 tools/AgentTool/resumeAgent.ts:42-67；地址表 二进制 @258816708</span></td></tr>
+    <tr><td class="name">codex-cli</td><td class="y">能，兄弟直连</td>
+      <td><code>send_message</code>和<code>followup_task</code>直接投到目标线程，父不在路径上。
+        地址是路径式的，接受绝对路径，所以一个兄弟可以直接寻另一个兄弟。两种投递：只排队，或者立刻唤醒对方跑一轮
+        <span class="src">handlers/multi_agents_v2/message_tool.rs:11-24,51-131；绝对路径 protocol/src/agent_path.rs:59-71；投递 core/src/agent/control.rs:171</span></td></tr>
+    <tr><td class="name">openclaw</td><td class="p">能，但默认关着</td>
+      <td><code>sessions_send</code>跨agent要求配置里打开开关，还要逐对allowlist放行。
+        对话是有界的来回循环。<b>子agent被禁用这个工具</b>，只能走通告队列回父
+        <span class="src">agents/tools/sessions-send-tool.ts:193,249-256；来回循环 sessions-send-tool.a2a.ts:94；子agent禁用 agents/pi-tools.policy.ts:49-50</span></td></tr>
+    <tr><td class="name">opencode</td><td class="n">不能</td>
+      <td>全部是父子往返。内置工具表里没有任何消息类工具。父可以给还在跑的子追加消息，方向仍然是父到子
+        <span class="src">tool/registry.ts:217-236 是完整的内置工具表；父到子 tool/task.ts:242-257</span></td></tr>
+    <tr><td class="name">hermes-agent</td><td class="p">委派树内不能，另一条线间接能</td>
+      <td>子只向父汇报，<code>send_message</code>写在"子绝不能有"的名单里。
+        但看板那条线不一样：每张卡片一个 worker 进程，它们靠共享数据库的卡片评论交换信息，
+        根卡片上还有一块约定格式的公共区
+        <span class="src">黑名单 tools/delegate_tool.py:50；看板 toolsets.py:252-269；公共区 hermes_cli/kanban_swarm.py:11-14,26,226-268</span></td></tr>
+    <tr><td class="name">pi-mono</td><td class="n">不能</td>
+      <td>父到子只在派生时给一段prompt，子到父只在退出时给一段stdout。
+        串行模式下上一个的输出用字符串替换塞进下一个的任务描述，这是兄弟之间仅有的数据通道
+        <span class="src">examples/extensions/subagent/index.ts:530,569；并行任务之间完全隔离 :618-639</span></td></tr>
+    <tr><td class="name">pi-ai</td><td class="n">没有</td><td>没有agent，也就没有通信</td></tr>
+    <tr><td class="name">weclaw</td><td class="n">不能</td>
+      <td>只有人对多个agent的广播：<code>@a @b 消息</code>把同一条原文分发给几个agent，
+        每个的回复各自加前缀发回给人。agent之间看不到对方
+        <span class="src">messaging/handler.go:456-486；命令表只有7条 :686-698</span></td></tr>
+  </table>
+  </div>
+
+  <!-- ══════════ 04 追踪和取消 ══════════ -->
+  <h2 id="track"><span class="num">04</span>派出去的活怎么追踪，取消是不是级联<span class="ly ly2">第二层</span></h2>
+  <p class="lead">四问：有没有任务id、能不能查状态、结果怎么回来、能不能取消。加上第五问：停掉父的会不会停掉子孙。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 268" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="取消传播的三种形态">
+    <defs>
+      <marker id="c-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
+    </defs>
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">取消传播的三种形态</text>
+
+    <!-- 级联到底 -->
+    <rect x="24" y="48" width="352" height="176" rx="10" fill="#101a10" stroke="#3a5c33" stroke-width="1.4"/>
+    <text x="44" y="74" fill="#5aad4e" font-size="13" font-weight="700">级联到底</text>
+    <circle cx="200" cy="104" r="15" fill="#241015" stroke="#e0445a" stroke-width="1.6"/>
+    <text x="200" y="109" fill="#e0445a" font-size="10.5" text-anchor="middle">停</text>
+    <circle cx="150" cy="150" r="13" fill="#241015" stroke="#e0445a" stroke-width="1.4"/>
+    <circle cx="250" cy="150" r="13" fill="#241015" stroke="#e0445a" stroke-width="1.4"/>
+    <circle cx="128" cy="192" r="11" fill="#241015" stroke="#e0445a" stroke-width="1.3"/>
+    <circle cx="176" cy="192" r="11" fill="#241015" stroke="#e0445a" stroke-width="1.3"/>
+    <circle cx="272" cy="192" r="11" fill="#241015" stroke="#e0445a" stroke-width="1.3"/>
+    <line x1="190" y1="117" x2="160" y2="138" stroke="#e0445a" stroke-width="1.4" marker-end="url(#c-rd)"/>
+    <line x1="210" y1="117" x2="240" y2="138" stroke="#e0445a" stroke-width="1.4" marker-end="url(#c-rd)"/>
+    <line x1="143" y1="163" x2="132" y2="180" stroke="#e0445a" stroke-width="1.3" marker-end="url(#c-rd)"/>
+    <line x1="157" y1="163" x2="171" y2="180" stroke="#e0445a" stroke-width="1.3" marker-end="url(#c-rd)"/>
+    <line x1="256" y1="163" x2="268" y2="180" stroke="#e0445a" stroke-width="1.3" marker-end="url(#c-rd)"/>
+    <text x="44" y="216" fill="#6b6a63" font-size="11">我们 · Claude Code · openclaw · opencode · hermes-agent</text>
+
+    <!-- 只停一个 -->
+    <rect x="396" y="48" width="352" height="176" rx="10" fill="#241f10" stroke="#5c4520" stroke-width="1.4"/>
+    <text x="416" y="74" fill="#d4843a" font-size="13" font-weight="700">只停一个</text>
+    <circle cx="572" cy="104" r="15" fill="#241015" stroke="#e0445a" stroke-width="1.6"/>
+    <text x="572" y="109" fill="#e0445a" font-size="10.5" text-anchor="middle">停</text>
+    <circle cx="522" cy="150" r="13" fill="#1d1c14" stroke="#5aad4e" stroke-width="1.4"/>
+    <circle cx="622" cy="150" r="13" fill="#1d1c14" stroke="#5aad4e" stroke-width="1.4"/>
+    <circle cx="500" cy="192" r="11" fill="#1d1c14" stroke="#5aad4e" stroke-width="1.3"/>
+    <circle cx="548" cy="192" r="11" fill="#1d1c14" stroke="#5aad4e" stroke-width="1.3"/>
+    <circle cx="644" cy="192" r="11" fill="#1d1c14" stroke="#5aad4e" stroke-width="1.3"/>
+    <line x1="562" y1="117" x2="532" y2="138" stroke="#3a382c" stroke-width="1.3" stroke-dasharray="3 3"/>
+    <line x1="582" y1="117" x2="612" y2="138" stroke="#3a382c" stroke-width="1.3" stroke-dasharray="3 3"/>
+    <text x="416" y="216" fill="#6b6a63" font-size="11">codex-cli 的 interrupt_agent，V2 里这是唯一的取消动词</text>
+
+    <!-- 一层后孤儿 -->
+    <rect x="768" y="48" width="368" height="176" rx="10" fill="#241015" stroke="#5c2830" stroke-width="1.4"/>
+    <text x="788" y="74" fill="#e0445a" font-size="13" font-weight="700">停一层，再下一层成孤儿</text>
+    <circle cx="944" cy="104" r="15" fill="#241015" stroke="#e0445a" stroke-width="1.6"/>
+    <text x="944" y="109" fill="#e0445a" font-size="10.5" text-anchor="middle">停</text>
+    <circle cx="894" cy="150" r="13" fill="#241015" stroke="#e0445a" stroke-width="1.4"/>
+    <circle cx="994" cy="150" r="13" fill="#241015" stroke="#e0445a" stroke-width="1.4"/>
+    <circle cx="872" cy="192" r="11" fill="#1d1c14" stroke="#8a8675" stroke-width="1.3" stroke-dasharray="3 2"/>
+    <circle cx="1016" cy="192" r="11" fill="#1d1c14" stroke="#8a8675" stroke-width="1.3" stroke-dasharray="3 2"/>
+    <line x1="934" y1="117" x2="904" y2="138" stroke="#e0445a" stroke-width="1.4" marker-end="url(#c-rd)"/>
+    <line x1="954" y1="117" x2="984" y2="138" stroke="#e0445a" stroke-width="1.4" marker-end="url(#c-rd)"/>
+    <text x="872" y="217" fill="#8a8675" font-size="10.5" text-anchor="middle">孤儿</text>
+    <text x="1016" y="217" fill="#8a8675" font-size="10.5" text-anchor="middle">孤儿</text>
+    <text x="788" y="240" fill="#6b6a63" font-size="11">pi-mono：子进程没登记进统一清理表，父被强杀就留下孤儿</text>
+
+    <text x="24" y="256" fill="#8a8675" font-size="12">五家做级联的都用同一套办法：沿父指针走一遍，用一个已访问集合防住畸形环。差别只在走的是内存里的对象树还是持久化的任务记录。</text>
+  </svg>
+  </div>
+
+  <div class="tbl">
+  <table class="wide">
+    <tr><th></th><th>模型拿得到任务id吗</th><th>能查状态吗</th><th>结果怎么回来</th><th>模型能取消吗</th><th>取消级联吗</th></tr>
+    <tr class="us"><td class="name">我们</td>
+      <td class="y"><code>t_</code>开头</td><td class="y"><code>list_tasks</code></td>
+      <td class="y">自动接到派发方会话后面，派发方下一轮读到</td>
+      <td class="y"><code>task_stop</code>，带归属检查</td>
+      <td class="y">级联。沿<code>parent_task_id</code>广度优先，已访问集合防环
+        <span class="src">agent/task/runner.py:336-380；回流 :1075-1186；归属 functions/tools/agent/_ownership.py:21-58</span></td></tr>
+    <tr><td class="name">Claude Code</td>
+      <td class="y"><code>agentId</code></td><td class="y">任务注册表；<code>TaskOutput</code>取结果</td>
+      <td class="y">同步子agent直接进工具结果；后台agent写磁盘再发一条通知</td>
+      <td class="y"><code>TaskStop</code>，带归属检查，主会话可以停任何一个</td>
+      <td class="p">二进制里级联，泄露源码树里<b>不级联</b>：那边后台agent刻意不挂父的中止信号，
+        为的是用户按ESC不误杀后台工作
+        <span class="src">级联 二进制 @265089223，祖先判定 @253677780；不级联 tools/AgentTool/AgentTool.tsx:694-696</span></td></tr>
+    <tr><td class="name">codex-cli</td>
+      <td class="y">ThreadId加路径</td><td class="y"><code>list_agents</code>、<code>get_status</code>，还能订阅推送</td>
+      <td class="y">完成监视器合成一条消息投给父；<code>wait_agent</code>可阻塞等，默认30秒上限1小时</td>
+      <td class="y"><code>interrupt_agent</code>；V1还有<code>close_agent</code></td>
+      <td class="p"><b>只有一半</b>：<code>close_agent</code>级联，<code>interrupt_agent</code>只停一个。
+        V2根本没有<code>close_agent</code>，所以V2只剩不级联的那个
+        <span class="src">级联 core/src/agent/control/legacy.rs:86-101，后代枚举 control.rs:732-756；不级联 control.rs:247-257</span></td></tr>
+    <tr><td class="name">openclaw</td>
+      <td class="y">runId</td><td class="p"><code>subagents</code>工具只有list一个动作</td>
+      <td class="y">推送不轮询：<code>sessions_yield</code>结束本轮，结果作为下一条消息到达</td>
+      <td class="n">模型没有取消工具，取消是聊天命令<code>/subagents kill</code>和一个HTTP接口</td>
+      <td class="y">级联。递归下去，用已见集合防环，每个子还清队列并落一条中止标记
+        <span class="src">agents/subagent-control.ts:205,232,238,256；kill命令 auto-reply/reply/commands-subagents/action-kill.ts:27</span></td></tr>
+    <tr><td class="name">opencode</td>
+      <td class="p">子session id，可以拿它复用之前那个子session</td>
+      <td class="n">没有查询工具，提示词明确禁止轮询状态</td>
+      <td class="y">前台是工具返回值，后台是往父会话塞一条合成消息</td>
+      <td class="n">模型没有取消工具，取消在宿主侧</td>
+      <td class="y">级联。中止信号加上对后台任务元数据的广度优先遍历，走到不动点为止；删session也递归
+        <span class="src">session/run-state.ts:116-148；tool/task.ts:296-306；测试 test/tool/task.test.ts:870</span></td></tr>
+    <tr><td class="name">hermes-agent</td>
+      <td class="n">拿不到。返回里只有序号、状态、摘要、用量，内部id只给运维看</td>
+      <td class="n">没有模型工具，状态查询是网关的RPC</td>
+      <td class="y">全同步阻塞，一次性返回全部子任务的结果</td>
+      <td class="n">模型没有，中断是网关RPC</td>
+      <td class="y">级联。中断递归进活跃子对象。协作式，不硬杀线程
+        <span class="src">结果字段 tools/delegate_tool.py:1684-1720；递归 run_agent.py:1690-1730</span></td></tr>
+    <tr><td class="name">pi-mono</td>
+      <td class="n">没有。工具拿到的调用id直接被丢弃</td>
+      <td class="n">没有。进度只能靠回调推给界面</td>
+      <td class="y">读子进程stdout的事件流，取最后一段助手文本，单任务截到50KB</td>
+      <td class="n">没有句柄，只有环境里那个中止信号</td>
+      <td class="p">只一层：中止信号触发SIGTERM，5秒后SIGKILL。子进程没登记进统一清理表，父被强杀就留孤儿
+        <span class="src">丢弃id examples/extensions/subagent/index.ts:466；杀进程 :393-403；未登记 对比 src/utils/shell.ts:172</span></td></tr>
+    <tr><td class="name">pi-ai</td>
+      <td class="n">没有</td><td class="n">没有</td><td class="n">没有</td><td class="n">没有</td>
+      <td class="n">不适用。只有一个平的中止信号给单次HTTP请求</td></tr>
+    <tr><td class="name">weclaw</td>
+      <td class="n">没有</td><td class="n">没有</td><td class="y">同步返回值，按微信用户id关联</td>
+      <td class="n">没有，命令表里就没有取消</td>
+      <td class="n">不适用，没有层级。只有进程关停时的统一取消
+        <span class="src">messaging/handler.go:541-556；命令表 :686-698</span></td></tr>
+  </table>
+  </div>
+
+  <!-- ══════════ 05 防死循环 ══════════ -->
+  <h2 id="loop"><span class="num">05</span>防死循环怎么做<span class="ly ly2">第二层</span></h2>
+  <p class="lead">把各家用的手段摆成一张矩阵。空格表示这家确实没有这个手段，不是没查到。</p>
+
+  <div class="card">
+<svg viewBox="0 0 1160 490" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="八家的防死循环手段矩阵">
+<text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">防死循环：每家点亮了哪几格</text>
+<text x="24" y="52" fill="#8a8675" font-size="12">格子里是这家实际用的数值。空格表示这家没有这个手段，不是没查到。</text>
+<text x="219" y="80" fill="#8a8675" font-size="11.5" text-anchor="middle">深度上限</text>
+<text x="341" y="80" fill="#8a8675" font-size="11.5" text-anchor="middle">扇出上限</text>
+<text x="463" y="80" fill="#8a8675" font-size="11.5" text-anchor="middle">并发上限</text>
+<text x="585" y="80" fill="#8a8675" font-size="11.5" text-anchor="middle">消息计数</text>
+<text x="707" y="80" fill="#8a8675" font-size="11.5" text-anchor="middle">信箱上限</text>
+<text x="829" y="80" fill="#8a8675" font-size="11.5" text-anchor="middle">去重</text>
+<text x="951" y="80" fill="#8a8675" font-size="11.5" text-anchor="middle">限速</text>
+<text x="1073" y="80" fill="#8a8675" font-size="11.5" text-anchor="middle">超时·轮次</text>
+<rect x="16" y="94" width="1128" height="32" rx="6" fill="#1b2231"/>
+<text x="30" y="114" fill="#4f8ef7" font-size="12.5" font-weight="700">我们</text>
+<rect x="165" y="98" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="219" y="113" fill="#5aad4e" font-size="11.5" text-anchor="middle">1</text>
+<line x1="332" y1="110" x2="350" y2="110" stroke="#3a382c" stroke-width="1.6"/>
+<rect x="409" y="98" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="463" y="113" fill="#5aad4e" font-size="11.5" text-anchor="middle">4</text>
+<rect x="531" y="98" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="585" y="113" fill="#5aad4e" font-size="11.5" text-anchor="middle">8</text>
+<rect x="653" y="98" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="707" y="113" fill="#5aad4e" font-size="11.5" text-anchor="middle">50</text>
+<rect x="775" y="98" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="829" y="113" fill="#5aad4e" font-size="11.5" text-anchor="middle">60秒</text>
+<line x1="942" y1="110" x2="960" y2="110" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="1064" y1="110" x2="1082" y2="110" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="16" y1="128" x2="1144" y2="128" stroke="#22201a" stroke-width="1"/>
+<text x="30" y="150" fill="#f0eee6" font-size="12.5" font-weight="600">Claude Code</text>
+<rect x="165" y="134" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="219" y="149" fill="#5aad4e" font-size="11.5" text-anchor="middle">3</text>
+<line x1="332" y1="146" x2="350" y2="146" stroke="#3a382c" stroke-width="1.6"/>
+<rect x="409" y="134" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="463" y="149" fill="#5aad4e" font-size="11.5" text-anchor="middle">20</text>
+<line x1="576" y1="146" x2="594" y2="146" stroke="#3a382c" stroke-width="1.6"/>
+<rect x="653" y="134" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="707" y="149" fill="#5aad4e" font-size="11.5" text-anchor="middle">50</text>
+<rect x="775" y="134" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="829" y="149" fill="#5aad4e" font-size="11.5" text-anchor="middle">按uuid</text>
+<line x1="942" y1="146" x2="960" y2="146" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="1064" y1="146" x2="1082" y2="146" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="16" y1="164" x2="1144" y2="164" stroke="#22201a" stroke-width="1"/>
+<text x="30" y="186" fill="#f0eee6" font-size="12.5" font-weight="600">codex-cli</text>
+<rect x="165" y="170" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="219" y="185" fill="#5aad4e" font-size="11.5" text-anchor="middle">V1=1 V2无</text>
+<line x1="332" y1="182" x2="350" y2="182" stroke="#3a382c" stroke-width="1.6"/>
+<rect x="409" y="170" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="463" y="185" fill="#5aad4e" font-size="11.5" text-anchor="middle">6 / 4</text>
+<line x1="576" y1="182" x2="594" y2="182" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="698" y1="182" x2="716" y2="182" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="820" y1="182" x2="838" y2="182" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="942" y1="182" x2="960" y2="182" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="1064" y1="182" x2="1082" y2="182" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="16" y1="200" x2="1144" y2="200" stroke="#22201a" stroke-width="1"/>
+<text x="30" y="222" fill="#f0eee6" font-size="12.5" font-weight="600">openclaw</text>
+<rect x="165" y="206" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="219" y="221" fill="#5aad4e" font-size="11.5" text-anchor="middle">1</text>
+<rect x="287" y="206" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="341" y="221" fill="#5aad4e" font-size="11.5" text-anchor="middle">5</text>
+<rect x="409" y="206" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="463" y="221" fill="#5aad4e" font-size="11.5" text-anchor="middle">8 / 4</text>
+<rect x="531" y="206" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="585" y="221" fill="#5aad4e" font-size="11.5" text-anchor="middle">20</text>
+<line x1="698" y1="218" x2="716" y2="218" stroke="#3a382c" stroke-width="1.6"/>
+<rect x="775" y="206" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="829" y="221" fill="#5aad4e" font-size="11.5" text-anchor="middle">按键</text>
+<rect x="897" y="206" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="951" y="221" fill="#5aad4e" font-size="11.5" text-anchor="middle">2秒</text>
+<rect x="1019" y="206" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="1073" y="221" fill="#5aad4e" font-size="11.5" text-anchor="middle">重试3</text>
+<line x1="16" y1="236" x2="1144" y2="236" stroke="#22201a" stroke-width="1"/>
+<text x="30" y="258" fill="#f0eee6" font-size="12.5" font-weight="600">opencode</text>
+<rect x="165" y="242" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="219" y="257" fill="#5aad4e" font-size="11.5" text-anchor="middle">隐式1</text>
+<line x1="332" y1="254" x2="350" y2="254" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="454" y1="254" x2="472" y2="254" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="576" y1="254" x2="594" y2="254" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="698" y1="254" x2="716" y2="254" stroke="#3a382c" stroke-width="1.6"/>
+<rect x="775" y="242" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="829" y="257" fill="#5aad4e" font-size="11.5" text-anchor="middle">连3次</text>
+<line x1="942" y1="254" x2="960" y2="254" stroke="#3a382c" stroke-width="1.6"/>
+<rect x="1019" y="242" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="1073" y="257" fill="#5aad4e" font-size="11.5" text-anchor="middle">步数∞</text>
+<line x1="16" y1="272" x2="1144" y2="272" stroke="#22201a" stroke-width="1"/>
+<text x="30" y="294" fill="#f0eee6" font-size="12.5" font-weight="600">hermes-agent</text>
+<rect x="165" y="278" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="219" y="293" fill="#5aad4e" font-size="11.5" text-anchor="middle">1</text>
+<rect x="287" y="278" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="341" y="293" fill="#5aad4e" font-size="11.5" text-anchor="middle">3</text>
+<rect x="409" y="278" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="463" y="293" fill="#5aad4e" font-size="11.5" text-anchor="middle">3</text>
+<line x1="576" y1="290" x2="594" y2="290" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="698" y1="290" x2="716" y2="290" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="820" y1="290" x2="838" y2="290" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="942" y1="290" x2="960" y2="290" stroke="#3a382c" stroke-width="1.6"/>
+<rect x="1019" y="278" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="1073" y="293" fill="#5aad4e" font-size="11.5" text-anchor="middle">600秒·50轮</text>
+<line x1="16" y1="308" x2="1144" y2="308" stroke="#22201a" stroke-width="1"/>
+<text x="30" y="330" fill="#f0eee6" font-size="12.5" font-weight="600">pi-mono</text>
+<line x1="210" y1="326" x2="228" y2="326" stroke="#3a382c" stroke-width="1.6"/>
+<rect x="287" y="314" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="341" y="329" fill="#5aad4e" font-size="11.5" text-anchor="middle">8</text>
+<rect x="409" y="314" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="463" y="329" fill="#5aad4e" font-size="11.5" text-anchor="middle">4</text>
+<line x1="576" y1="326" x2="594" y2="326" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="698" y1="326" x2="716" y2="326" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="820" y1="326" x2="838" y2="326" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="942" y1="326" x2="960" y2="326" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="1064" y1="326" x2="1082" y2="326" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="16" y1="344" x2="1144" y2="344" stroke="#22201a" stroke-width="1"/>
+<text x="30" y="366" fill="#f0eee6" font-size="12.5" font-weight="600">pi-ai</text>
+<line x1="210" y1="362" x2="228" y2="362" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="332" y1="362" x2="350" y2="362" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="454" y1="362" x2="472" y2="362" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="576" y1="362" x2="594" y2="362" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="698" y1="362" x2="716" y2="362" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="820" y1="362" x2="838" y2="362" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="942" y1="362" x2="960" y2="362" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="1064" y1="362" x2="1082" y2="362" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="16" y1="380" x2="1144" y2="380" stroke="#22201a" stroke-width="1"/>
+<text x="30" y="402" fill="#f0eee6" font-size="12.5" font-weight="600">weclaw</text>
+<line x1="210" y1="398" x2="228" y2="398" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="332" y1="398" x2="350" y2="398" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="454" y1="398" x2="472" y2="398" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="576" y1="398" x2="594" y2="398" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="698" y1="398" x2="716" y2="398" stroke="#3a382c" stroke-width="1.6"/>
+<rect x="775" y="386" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="829" y="401" fill="#5aad4e" font-size="11.5" text-anchor="middle">5分钟</text>
+<line x1="942" y1="398" x2="960" y2="398" stroke="#3a382c" stroke-width="1.6"/>
+<line x1="1064" y1="398" x2="1082" y2="398" stroke="#3a382c" stroke-width="1.6"/>
+<text x="24" y="444" fill="#bdb9a6" font-size="12">一眼可见的两件事：深度上限是唯一一个几乎人人都做的手段，而消息计数只有三家做。</text>
+<text x="24" y="466" fill="#8a8675" font-size="12">codex-cli 的 V2 通道同时去掉了深度上限、保留了兄弟之间的直接寻址，两个 agent 互相派活没有任何计数拦得住。</text>
+</svg>
+  </div>
+
+  <div class="tbl">
+  <table>
+    <tr><th></th><th>关键常量和它在哪</th></tr>
+    <tr class="us"><td class="name">我们</td>
+      <td>深度1、一条链的消息预算8（派生、发消息、派活、回流全都计数）、并发4、
+        收件箱上限50丢最旧、60秒内同发送方同内容视为重复。自己发给自己一律拒，不受预算影响。两个预算都能设0取消
+        <span class="src">MAX_MESSAGES=8 send_message/depth.py:25；MAX_SPAWN_DEPTH=1 agent/agent.py:54；
+          计数器是一个ContextVar depth.py:22-24；上限50和60秒 agent/inbox.py:34-35；自发拒 send_message.py:139-144</span></td></tr>
+    <tr><td class="name">Claude Code</td>
+      <td>深度3、并发20、信箱50条环形丢最旧、按消息uuid去重、fork递归用一个布尔开关拦、
+        队友名册是平的不许队友再生队友、预算到顶就不许起新agent。<b>没有发消息的限速，也没有消息条数上限</b>
+        <span class="src">二进制 @250599082 深度3；@250622624 并发20；@253677687 信箱50；@253677581 uuid去重；
+          fork拦截 tools/AgentTool/forkSubagent.ts:78-89；队友平铺 AgentTool.tsx:273</span></td></tr>
+    <tr><td class="name">codex-cli</td>
+      <td>只有两个上限：深度（V1=1，V2没有）和并发（全局6，V2每会话4）。
+        <b>没有去重、没有消息计数、没有限速、没有环检测。</b>V2既去掉了深度上限又允许兄弟互相寻址，
+        两个agent互相派活没有任何计数拦得住
+        <span class="src">core/src/config/mod.rs:212-213,284；并发判定 core/src/agent/control/execution.rs:68-76</span></td></tr>
+    <tr><td class="name">openclaw</td>
+      <td>层数最多的一家：深度1（可配到5）、每个agent最多5个子（可配到20）、并发8和4、
+        跨agent对话默认5轮上限20轮、插话限速2秒、通告重试上限3次、列表按子会话键去重，另有一个默认关闭的通用工具环检测器
+        <span class="src">config/agent-limits.ts:3-8；来回轮次 agents/tools/sessions-send-helpers.ts:15-16；
+          限速 agents/subagent-control.ts:45,507-516；重试 agents/subagent-registry-helpers.ts:35</span></td></tr>
+    <tr><td class="name">opencode</td>
+      <td>深度靠权限注入实现，没有数字。另有一个重复调用检测：最近3次是同一个工具且入参逐字节相同就弹权限询问。
+        步数上限默认是无限
+        <span class="src">DOOM_LOOP_THRESHOLD=3 session/processor.ts:35，判定 :519-546；步数 session/prompt.ts:1281</span></td></tr>
+    <tr><td class="name">hermes-agent</td>
+      <td>深度1（可配到3）、并发子3、每个子最多50轮迭代、每个子硬超时600秒加心跳检测、
+        一个全局的派生暂停开关。<b>没有去重，没有消息计数。</b>另外从结构上禁递归：派生工具集从叶子身上剥掉
+        <span class="src">tools/delegate_tool.py:132-133,136-137,512-523；暂停开关 :149-172；剥工具集 :672-680</span></td></tr>
+    <tr><td class="name">pi-mono</td>
+      <td>只有扇出上限8和并发4，加上单任务输出截到50KB。<b>没有深度上限、没有去重、没有限速，主循环也没有轮次上限。</b>
+        实际存在一条无界递归路径
+        <span class="src">examples/extensions/subagent/index.ts:27-30；主循环 packages/agent/src/agent-loop.ts:170</span></td></tr>
+    <tr><td class="name">pi-ai</td><td class="n">全都没有。没有工具调用循环，也就没有环可防</td></tr>
+    <tr><td class="name">weclaw</td>
+      <td>只有两处去重：微信消息id去重5分钟，一次广播内的agent名去重。
+        没有深度、没有计数、没有限速。环在结构上不可能出现，因为agent没有回到处理器的通道
+        <span class="src">messaging/handler.go:273,63-64；名字去重 :246-253</span></td></tr>
+  </table>
+  </div>
+
+  <!-- ══════════ 06 裁工具 ══════════ -->
+  <h2 id="tools"><span class="num">06</span>子agent的工具集怎么裁<span class="ly ly2">第二层</span></h2>
+  <p class="lead">一共只有两种做法：从清单里摘掉，或者留在清单里等调用时再拒。差别在于模型看不看得见这个工具。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 386" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="裁工具的两种做法和三种组合">
+    <defs>
+      <marker id="w-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
+      <marker id="w-gn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5aad4e"/></marker>
+    </defs>
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">两种做法</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">摘掉的代价是工具定义变了，命不中提供商的提示缓存；留着再拒的代价是模型会先浪费一轮去调。</text>
+
+    <!-- A 摘掉 -->
+    <rect x="24" y="70" width="548" height="140" rx="10" fill="#101a10" stroke="#3a5c33" stroke-width="1.4"/>
+    <text x="44" y="96" fill="#5aad4e" font-size="13" font-weight="700">做法A · 从清单里摘掉</text>
+    <text x="44" y="116" fill="#8a8675" font-size="11.5">构造请求时就把工具过滤掉，模型压根看不见它</text>
+    <g font-size="11" font-family="Menlo,monospace">
+      <rect x="44" y="130" width="76" height="26" rx="5" fill="#12110b" stroke="#3a5c33"/><text x="82" y="147" fill="#bdb9a6" text-anchor="middle">read</text>
+      <rect x="128" y="130" width="76" height="26" rx="5" fill="#12110b" stroke="#3a5c33"/><text x="166" y="147" fill="#bdb9a6" text-anchor="middle">write</text>
+      <rect x="212" y="130" width="76" height="26" rx="5" fill="#12110b" stroke="#3a5c33"/><text x="250" y="147" fill="#bdb9a6" text-anchor="middle">bash</text>
+      <rect x="296" y="130" width="86" height="26" rx="5" fill="#1a1a16" stroke="#3a382c" stroke-dasharray="4 3"/>
+      <text x="339" y="147" fill="#5f5d52" text-anchor="middle">agent</text>
+      <line x1="304" y1="136" x2="374" y2="150" stroke="#e0445a" stroke-width="1.6"/>
+    </g>
+    <text x="44" y="180" fill="#bdb9a6" font-size="11.5">模型的下一轮里不会出现这个名字，所以不会去调它。</text>
+    <text x="44" y="198" fill="#6b6a63" font-size="11">openclaw · hermes-agent · pi-mono · codex-cli V2</text>
+
+    <!-- B 调用时拒 -->
+    <rect x="588" y="70" width="548" height="140" rx="10" fill="#241f10" stroke="#5c4520" stroke-width="1.4"/>
+    <text x="608" y="96" fill="#d4843a" font-size="13" font-weight="700">做法B · 留在清单里，调用时拒</text>
+    <text x="608" y="116" fill="#8a8675" font-size="11.5">工具定义保持不变，判定挪到执行入口</text>
+    <g font-size="11" font-family="Menlo,monospace">
+      <rect x="608" y="130" width="76" height="26" rx="5" fill="#12110b" stroke="#5c4520"/><text x="646" y="147" fill="#bdb9a6" text-anchor="middle">read</text>
+      <rect x="692" y="130" width="76" height="26" rx="5" fill="#12110b" stroke="#5c4520"/><text x="730" y="147" fill="#bdb9a6" text-anchor="middle">write</text>
+      <rect x="776" y="130" width="76" height="26" rx="5" fill="#12110b" stroke="#5c4520"/><text x="814" y="147" fill="#bdb9a6" text-anchor="middle">bash</text>
+      <rect x="860" y="130" width="86" height="26" rx="5" fill="#12110b" stroke="#d4843a"/><text x="903" y="147" fill="#d4843a" text-anchor="middle">agent</text>
+    </g>
+    <path d="M946 143 L978 143" fill="none" stroke="#e0445a" stroke-width="1.4" marker-end="url(#w-rd)"/>
+    <rect x="982" y="126" width="140" height="34" rx="6" fill="#241015" stroke="#5c2830"/>
+    <text x="1052" y="147" fill="#e0445a" font-size="11" text-anchor="middle">调用被拒，附理由</text>
+    <text x="608" y="180" fill="#bdb9a6" font-size="11.5">好处是工具定义逐字节不变，提示缓存还能命中。</text>
+    <text x="608" y="198" fill="#6b6a63" font-size="11">Claude Code 的 fork 路径</text>
+
+    <!-- 组合 -->
+    <text x="24" y="248" fill="#d4843a" font-size="14" font-weight="700">实际用起来是三种组合</text>
+    <rect x="24" y="262" width="360" height="104" rx="9" fill="#12110b" stroke="#3a382c"/>
+    <text x="44" y="286" fill="#bdb9a6" font-size="12.5" font-weight="600">只做A</text>
+    <text x="44" y="308" fill="#8a8675" font-size="11.5">摘掉就完事。工具定义每层不一样，</text>
+    <text x="44" y="325" fill="#8a8675" font-size="11.5">缓存跟着分层。</text>
+    <text x="44" y="350" fill="#6b6a63" font-size="11">openclaw · hermes · pi-mono · codex V2</text>
+
+    <rect x="400" y="262" width="360" height="104" rx="9" fill="#12110b" stroke="#3a382c"/>
+    <text x="420" y="286" fill="#bdb9a6" font-size="12.5" font-weight="600">A和B都做</text>
+    <text x="420" y="308" fill="#8a8675" font-size="11.5">摘掉，并且在执行入口再拒一次，</text>
+    <text x="420" y="325" fill="#8a8675" font-size="11.5">防的是定义过期的那一轮。</text>
+    <text x="420" y="350" fill="#6b6a63" font-size="11">Claude Code · codex V1 · openclaw · opencode</text>
+
+    <rect x="776" y="262" width="360" height="104" rx="9" fill="#1b2231" stroke="#4f8ef7" stroke-width="1.4"/>
+    <text x="796" y="286" fill="#4f8ef7" font-size="12.5" font-weight="700">我们：按剩余余额决定摘不摘</text>
+    <text x="796" y="308" fill="#bdb9a6" font-size="11.5">两个预算都花光才摘，只要还剩一个就全留着。</text>
+    <text x="796" y="325" fill="#bdb9a6" font-size="11.5">刻意是二值的，不按层数分档。</text>
+    <text x="796" y="350" fill="#8a8675" font-size="11">分档会让每层的工具定义都不一样，缓存全废。</text>
+  </svg>
+  </div>
+
+  <div class="tbl">
+  <table>
+    <tr><th></th><th>做法</th><th>摘掉哪些，条件是什么</th></tr>
+    <tr class="us"><td class="name">我们</td><td class="p">A按余额，另有B兜底</td>
+      <td>唯一的判定是<code>delegation_budget_left()</code>：派生预算和消息预算<b>都</b>没余额了，
+        才把<code>agent</code>、<code>task_output</code>、<code>task_stop</code>移出清单；只要还剩一个就全留着。
+        <code>send_message</code>、<code>list_agents</code>、<code>archive_agent</code>、<code>list_tasks</code>从不摘。
+        判定刻意是二值的，代码里写了理由：工具定义必须逐轮逐字节相同才命中提供商的提示缓存，
+        一层一套定义会把缓存打碎。越界的调用另有三条各自的拒绝文案
+        <span class="src">send_message/depth.py:60-73；挂点 agent/agent.py:595、task_output.py:37、task_stop.py:32；
+          清单过滤 functions/_helpers.py:141-147；拒绝文案 agent/agent.py:139-144,357-362 与 send_message.py:105-110</span></td></tr>
+    <tr><td class="name">Claude Code</td><td class="p">A和B都做，而且做法换过一次</td>
+      <td>泄露源码树里是无条件摘：<code>Agent</code>写死在"子agent一律不给"的集合里。
+        2.1.226 二进制改成<b>按深度摘</b>：过滤函数里那一行是"深度小于上限才留着<code>Agent</code>"，
+        同时调用入口还会再拒一次，防的是工具定义过期的那一轮。
+        <b>fork 路径刻意反过来</b>：fork 出来的子拿到的是父的全套工具，包括<code>Agent</code>本身，
+        为的就是工具定义和父一模一样好命中缓存，递归只在调用时拒
+        <span class="src">无条件摘 src/constants/tools.ts:36-46，过滤 tools/AgentTool/agentToolUtils.ts:94-95；
+          按深度摘 二进制 @256834811；fork保全套 tools/AgentTool/forkSubagent.ts:44-71；
+          fork拒绝文案 AgentTool.tsx:333 与 二进制 @258441552</span></td></tr>
+    <tr><td class="name">codex-cli</td><td class="p">V1是A加B，V2只有A</td>
+      <td>构造工具清单时判一个开关，到深度就不给协作工具。V1的处理函数里还会再拒一次，V2只摘不拒。
+        角色之间的差异不是靠允许名单，而是给每个角色叠一层配置文件
+        <span class="src">core/src/tools/spec_plan.rs:561-572,1099；V1再拒 handlers/multi_agents/spawn.rs:67-71；
+          角色配置 core/src/agent/role.rs:37,249</span></td></tr>
+    <tr><td class="name">openclaw</td><td class="p">A加B</td>
+      <td>两张拒绝名单：所有子agent一律不给网关、agent列表、会话状态、定时任务、跨agent发消息这五个；
+        到了叶子层再加上子agent列表、会话列表、会话历史、派生这四个。
+        即便派生工具已经被摘掉，真到派生时还会再查一次深度
+        <span class="src">agents/pi-tools.policy.ts:42-51,57-62,170-175；再查一次 agents/subagent-spawn.ts:786</span></td></tr>
+    <tr><td class="name">opencode</td><td class="p">A和B按规则形状分</td>
+      <td>拒绝规则的模式是<code>"*"</code>就走摘掉：构造请求时把工具从schema里删；
+        带具体模式的拒绝规则就走留着再拒，调用时抛异常，异常文本把命中的规则原样贴给模型
+        <span class="src">摘掉 permission/index.ts:215-225 与 session/llm/request.ts:198-204；
+          再拒 permission/index.ts:86-90，文案 packages/core/src/v1/permission.ts:84-90</span></td></tr>
+    <tr><td class="name">hermes-agent</td><td class="y">只做A，粒度是工具集</td>
+      <td>子的工具集等于它申请的和父拥有的交集，再剥掉派生、追问、记忆、代码执行四个工具集。
+        因为工具根本不在schema里，所以不需要拒绝文案。<b>有一处缺口</b>：
+        <code>send_message</code>写在"子绝不能有"的名单里，但那个名单只用来生成文档，
+        没有对应的工具集剥离，继承了消息工具集的子照样拿得到它
+        <span class="src">tools/delegate_tool.py:945-961,672-680；名单 :45-53；缺口对照 toolsets.py:190</span></td></tr>
+    <tr><td class="name">pi-mono</td><td class="y">只做A</td>
+      <td>把agent声明的工具白名单转成命令行参数传给子进程，子进程按白名单过滤工具注册表，
+        不在名单里的工具连可执行包装都不构造，系统提示也按存活下来的工具重建
+        <span class="src">core/agent-session.ts:2253-2342；白名单来源 core/sdk.ts:280-286；传参 examples/extensions/subagent/index.ts:290</span></td></tr>
+    <tr><td class="name">pi-ai</td><td class="n">不适用</td><td>没有工具执行器，工具定义只是传输格式的一部分</td></tr>
+    <tr><td class="name">weclaw</td><td class="n">不适用</td>
+      <td>自己一个LLM工具都不定义，工具全在被它包装的那个CLI里，对它完全不透明
+        <span class="src">全仓只有一处 tool 字样，是展示用途 agent/acp_agent.go:139</span></td></tr>
+  </table>
+  </div>
+
+  <!-- ══════════ 07 身份寻址和规模 ══════════ -->
+  <h2 id="name"><span class="num">07</span>agent的身份和寻址，以及实现规模<span class="ly ly2">第二层</span></h2>
+  <p class="lead">有没有名字，怎么找到一个已经存在的agent。分水岭是"agent是活的实体"还是"agent只是一份定义"。</p>
+
+  <div class="tbl">
+  <table class="wide">
+    <tr><th></th><th>有名字吗</th><th>怎么找到已经存在的</th><th>地址长什么样</th></tr>
+    <tr class="us"><td class="name">我们</td>
+      <td class="y">有。建分支时先给一个24字符的占位名，之后后台用LLM在第1、6、16、40轮改成更贴切的</td>
+      <td class="y"><code>list_agents</code>，三个视图：本会话、全部会话、已归档。每条给出可直接粘的地址、轮数、大致字数和末尾预览</td>
+      <td><code>SID:HEAD</code>、分支名、名字的唯一前缀。地址落在分支当前的末端，所以旧的head也是有效地址
+        <span class="src">list_agents.py:100-179；地址解析 send_message/addressing.py:77-156,200-208；改名 agent/dispatcher/titles.py:339-405</span></td></tr>
+    <tr><td class="name">Claude Code</td>
+      <td class="y">有。队友id是<code>名字@团队名</code>，可复现可读、不用查表就能算出来；
+        子agent的名字来自派生时的<code>name</code>参数，重名的话注册表自动加<code>-2</code>、<code>-3</code>，
+        <code>main</code>是保留名</td>
+      <td class="y"><code>ListAgents</code>（旧名<code>ListPeers</code>）。
+        列的是"你能发消息的对象"：自己派生的子agent、本机别的会话、云端会话、连上远程控制时还有别的机器</td>
+      <td>名字 / <code>main</code> / <code>*</code> / <code>uds:路径</code> / <code>bridge:会话id</code> / 裸agentId。
+        重名取最新，另有一个后缀用来消歧
+        <span class="src">utils/agentId.ts:36-57；注册表 二进制 @254742111,@254743413；ListAgents 提示 二进制 @250608059</span></td></tr>
+    <tr><td class="name">codex-cli</td>
+      <td class="y">有，两套。机器用的是路径式地址，根是<code>/root</code>；
+        人看的是从一份101个科学家名字的表里分配的昵称</td>
+      <td class="y"><code>list_agents</code>，可以按路径前缀过滤。另外活着的子agent会被动注入进环境上下文，不查也看得见</td>
+      <td>路径式，接受绝对路径所以兄弟能寻兄弟；也接受裸ThreadId
+        <span class="src">protocol/src/agent_path.rs:15-19,54-71,129-146；昵称表 core/src/agent/agent_names.txt；列表 core/src/agent/control.rs:383-395,361-381</span></td></tr>
+    <tr><td class="name">openclaw</td>
+      <td class="y">有。agent在配置文件里定义，不是markdown前言</td>
+      <td class="y"><code>agents_list</code>，但这个工具在子agent那里被摘掉了</td>
+      <td>session key，形如<code>agent:&lt;id&gt;:…:subagent:…</code>；也接受标签加agentId
+        <span class="src">sessions/session-key-utils.ts:108-126；agents-list-tool.ts:37；子agent禁用 pi-tools.policy.ts:45</span></td></tr>
+    <tr><td class="name">opencode</td>
+      <td class="p">有名字，但那是"agent类型"不是活实例</td>
+      <td class="n">没有独立的列表工具。可用的agent名字被烘进<code>task</code>工具的描述里。
+        找不到"某个正在跑的agent"，只能用之前拿到的id重连自己那个子session</td>
+      <td>裸名字字符串
+        <span class="src">tool/task.ts:46,116；名字烘进描述 tool/registry.ts:252-265；agent定义 agent/agent.ts:35-55</span></td></tr>
+    <tr><td class="name">hermes-agent</td>
+      <td class="n">委派出去的子agent匿名且一次性，用一段目标文本寻址</td>
+      <td class="n">没有列表工具。内部有一个<code>sa-序号-随机</code>的id，只暴露给运维接口</td>
+      <td>没有。看板那条线不一样，那边用配置档名当卡片的负责人
+        <span class="src">参数表 tools/delegate_tool.py:2675-2751；内部id :920-922；看板 hermes_cli/kanban_db.py:5674-5679</span></td></tr>
+    <tr><td class="name">pi-mono</td>
+      <td class="p">有，但那是磁盘上的markdown定义，不是活进程</td>
+      <td class="n">找不到。每次调用重新扫目录，而且子进程带着"不留会话"启动，跑完什么都不剩</td>
+      <td>名字字符串，线性扫描匹配。没有列表工具，模型只能从报错信息里知道有哪些名字
+        <span class="src">examples/extensions/subagent/agents.ts:52-56,97-116；启动参数 index.ts:288；解析 index.ts:272-286</span></td></tr>
+    <tr><td class="name">pi-ai</td><td class="n">没有</td><td class="n">没有</td><td class="n">没有</td></tr>
+    <tr><td class="name">weclaw</td>
+      <td class="y">有，配置里的键名，另有内置和自定义别名</td>
+      <td class="n">没有列表工具。<code>/info</code>只报当前那一个，而且那是给人用的命令不是agent能调的工具</td>
+      <td><code>@名字</code>或<code>/名字</code>
+        <span class="src">config/config.go:16-33；解析 messaging/handler.go:206-265；别名 :169,187</span></td></tr>
+  </table>
+  </div>
+
+  <div class="card">
+<svg viewBox="0 0 1160 616" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="各家这块的代码规模">
+<text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">这块大概多少代码</text>
+<text x="24" y="52" fill="#8a8675" font-size="12">各家的量法不同（有的按目录、有的按文件行段），只看数量级。均不含测试。</text>
+<text x="138" y="103" fill="#f0eee6" font-size="12.5" font-weight="600" text-anchor="end">Claude Code</text>
+<rect x="150" y="91" width="700" height="24" rx="4" fill="#d4843a" fill-opacity="0.28" stroke="#d4843a" stroke-width="1.2"/>
+<text x="860" y="108" fill="#d4843a" font-size="12" font-weight="600">24,385 行</text>
+<text x="150" y="128" fill="#6b6a63" font-size="10.5">泄露源码树，AgentTool + SendMessageTool + Task*Tool + swarm + tasks + coordinator</text>
+<text x="138" y="157" fill="#f0eee6" font-size="12.5" font-weight="600" text-anchor="end">openclaw</text>
+<rect x="150" y="145" width="495" height="24" rx="4" fill="#d4843a" fill-opacity="0.28" stroke="#d4843a" stroke-width="1.2"/>
+<text x="655" y="162" fill="#d4843a" font-size="12" font-weight="600">17,240 行</text>
+<text x="150" y="182" fill="#6b6a63" font-size="10.5">73 个非测试 ts 文件</text>
+<text x="138" y="211" fill="#f0eee6" font-size="12.5" font-weight="600" text-anchor="end">codex-cli</text>
+<rect x="150" y="199" width="203" height="24" rx="4" fill="#d4843a" fill-opacity="0.28" stroke="#d4843a" stroke-width="1.2"/>
+<text x="363" y="216" fill="#d4843a" font-size="12" font-weight="600">7,059 行</text>
+<text x="150" y="236" fill="#6b6a63" font-size="10.5">多 agent 核心，另有 3676 行支撑代码、13114 行测试</text>
+<text x="138" y="265" fill="#4f8ef7" font-size="12.5" font-weight="700" text-anchor="end">我们</text>
+<rect x="150" y="253" width="130" height="24" rx="4" fill="#4f8ef7" fill-opacity="0.28" stroke="#4f8ef7" stroke-width="1.2"/>
+<text x="290" y="270" fill="#4f8ef7" font-size="12" font-weight="600">4,523 行</text>
+<text x="150" y="290" fill="#6b6a63" font-size="10.5">协作工具 1991 + task 包 1759 + inbox 343 + sub_agent_run 430</text>
+<text x="138" y="319" fill="#f0eee6" font-size="12.5" font-weight="600" text-anchor="end">hermes-agent</text>
+<rect x="150" y="307" width="83" height="24" rx="4" fill="#5aad4e" fill-opacity="0.28" stroke="#5aad4e" stroke-width="1.2"/>
+<text x="243" y="324" fill="#5aad4e" font-size="12" font-weight="600">2,900 行</text>
+<text x="150" y="344" fill="#6b6a63" font-size="10.5">委派子系统，另有约 1600 行的 Kanban 多 agent 那条线</text>
+<text x="138" y="373" fill="#f0eee6" font-size="12.5" font-weight="600" text-anchor="end">pi-mono</text>
+<rect x="150" y="361" width="38" height="24" rx="4" fill="#5aad4e" fill-opacity="0.28" stroke="#5aad4e" stroke-width="1.2"/>
+<text x="198" y="378" fill="#5aad4e" font-size="12" font-weight="600">1,310 行</text>
+<text x="150" y="398" fill="#6b6a63" font-size="10.5">示例扩展整目录，其中真正的机制约 190 行</text>
+<text x="138" y="427" fill="#f0eee6" font-size="12.5" font-weight="600" text-anchor="end">weclaw</text>
+<rect x="150" y="415" width="30" height="24" rx="4" fill="#5aad4e" fill-opacity="0.28" stroke="#5aad4e" stroke-width="1.2"/>
+<text x="190" y="432" fill="#5aad4e" font-size="12" font-weight="600">1,050 行</text>
+<text x="150" y="452" fill="#6b6a63" font-size="10.5">agent 相关全部，多 agent 路由核心约 150 行</text>
+<text x="138" y="481" fill="#f0eee6" font-size="12.5" font-weight="600" text-anchor="end">opencode</text>
+<rect x="150" y="469" width="12" height="24" rx="4" fill="#8a8675" fill-opacity="0.28" stroke="#8a8675" stroke-width="1.2"/>
+<text x="172" y="486" fill="#8a8675" font-size="12" font-weight="600">415 行</text>
+<text x="150" y="506" fill="#6b6a63" font-size="10.5">委派专属，另有约 365 行复用的后台任务设施</text>
+<text x="138" y="535" fill="#f0eee6" font-size="12.5" font-weight="600" text-anchor="end">pi-ai</text>
+<rect x="150" y="523" width="2" height="24" rx="4" fill="#8a8675" fill-opacity="0.28" stroke="#8a8675" stroke-width="1.2"/>
+<text x="162" y="540" fill="#8a8675" font-size="12" font-weight="600">0 行</text>
+<text x="150" y="560" fill="#6b6a63" font-size="10.5">没有这块代码</text>
+</svg>
+  </div>
+
+  <div class="legend">
+    <b>规模这条要小心读。</b>各家的边界不一样：openclaw 那17240行里包含界面命令和注册表，
+    Claude Code 那24385行来自泄露源码树而真正在跑的是二进制，codex-cli 的7059行不含它那13114行测试。
+    真正稳的结论只有一条：这块功能的合理体量在几千行，超过一万行的两家都把队友、跨机器、通告队列这类东西一起算了进去。
+  </div>
+
+  <!-- ══════════ 08 第三层 ══════════ -->
+  <h2 id="plan"><span class="num">08</span>我们计划怎么做<span class="ly ly3">第三层</span></h2>
+  <p class="lead">四个域各管一个名词，词不重叠。整套工具面建在一个原语上：往一条分支投递内容，触发它跑一轮，结果自动回送。
+    工具面本身在<a href="agent-collab-architecture.html">另一页</a>展开，这里只说它和上面八家的关系。</p>
+
+  <div class="grid4">
+    <div class="dom" style="border-top-color:#9d6fe0">
+      <div class="k">计划</div>
+      <h3 style="color:#9d6fe0">todo</h3>
+      <div class="noun">写下来的计划</div>
+      <p>手写的清单。改它不会让任何agent运行。</p>
+      <div class="tools"><span>todo_create</span><span>todo_update</span><span>todo_list</span></div>
+    </div>
+    <div class="dom" style="border-top-color:#d4843a">
+      <div class="k">执行</div>
+      <h3 style="color:#d4843a">task</h3>
+      <div class="noun">正在运行的任务</div>
+      <p>一个task_id、一个状态、一份必回的结果。可取消，取消级联。</p>
+      <div class="tools"><span>list_tasks</span><span>task_output</span><span>task_stop</span></div>
+    </div>
+    <div class="dom" style="border-top-color:#5aad4e">
+      <div class="k">实体</div>
+      <h3 style="color:#5aad4e">agent</h3>
+      <div class="noun">执行任务的实体</div>
+      <p>一个agent就是会话图里的一条分支。新建、给已有的派活、列出、归档。</p>
+      <div class="tools"><span>agent</span><span>list_agents</span><span>archive_agent</span></div>
+    </div>
+    <div class="dom" style="border-top-color:#4f8ef7">
+      <div class="k">通讯</div>
+      <h3 style="color:#4f8ef7">message</h3>
+      <div class="noun">发消息，和读历史</div>
+      <p>发一条消息，不产生任务记录；或者读任意分支的全文，不触发对方运行。</p>
+      <div class="tools"><span>send_message</span><span>read_conversation</span></div>
+    </div>
+  </div>
+
+  <div class="tbl">
+  <table class="wide">
+    <tr><th>我们的选择</th><th>取自谁</th><th>为什么这么定</th></tr>
+    <tr><td><b>工具名字对齐 Claude Code</b><br><code>agent</code> <code>list_agents</code> <code>send_message</code> <code>task_output</code> <code>task_stop</code></td>
+      <td>Claude Code</td>
+      <td>认识那批名字的模型就已经认识这批工具。<code>task_output</code>连参数形状都照抄</td></tr>
+    <tr><td><b>计划清单改叫<code>todo_*</code></b></td><td>刻意跟 Claude Code 不同</td>
+      <td>那边的<code>TaskList</code>是计划板不是运行中任务的视图。改前缀之后<code>list_tasks</code>保住了字面意思：正在跑的任务</td></tr>
+    <tr><td><b>地址是一条分支，不是一个进程</b><br><code>SID:HEAD</code>或分支名</td>
+      <td>和 codex-cli 的路径式地址、openclaw 的 session key 同类</td>
+      <td>agent的对话本身就是会话图里的分支，(会话id, 头节点)已经唯一定位它，不需要再造一个agent实体表</td></tr>
+    <tr><td><b>任何agent能给任何agent发消息，不做归属检查</b></td>
+      <td>比 openclaw 松，和 codex-cli V2、Claude Code 一档</td>
+      <td>发消息不产生任务记录、不能取消、不会级联，最坏结果是对方不回。openclaw 给子agent关掉这个工具，我们不关</td></tr>
+    <tr><td><b>派活和发消息分成两件事</b><br><code>agent(to=)</code>产生任务，<code>send_message</code>不产生</td>
+      <td>八家里没有第二家这么分</td>
+      <td>结果必回、可取消、取消级联这三条承诺绑在任务上，所以任务要查归属；消息不带这三条，所以谁都能发</td></tr>
+    <tr><td><b>防环用一条链的消息预算</b><br>深度1、消息8，回流也计数</td>
+      <td>消息计数这一手只有 openclaw 和我们做</td>
+      <td>光有深度上限拦不住两个已存在的agent互相派活。codex-cli V2 恰好就缺这一条，兄弟能直连又没有计数</td></tr>
+    <tr><td><b>裁工具按剩余余额，而且刻意是二值</b></td>
+      <td>其他家要么无条件摘，要么按深度分档</td>
+      <td>按深度分档会让每一层的工具定义都不一样，提供商的提示缓存全部作废。
+        Claude Code 的 fork 路径出于同样的理由反过来选了"全给，调用时再拒"</td></tr>
+    <tr><td><b>多三个工具</b><br><code>list_tasks</code> <code>archive_agent</code> <code>read_conversation</code></td>
+      <td>Claude Code 没有对应物</td>
+      <td>模型要能自己查后台在跑什么；agent不归档，agent列表就一直堆积早做完的worker；
+        读别人的历史要有可读文字稿而不是原始会话文件</td></tr>
+  </table>
+  </div>
+
+  <div class="note">
+    <b>设计已定、代码还没跟上的三条</b>，对着代码逐条核过：
+    结果超长时截断头尾并把全文落文件（<code>agent-collaboration.md</code> §5.6），在回流路径上还没有实现；
+    内部分支不进会话选择器的可见性标记（§5.9），分支元数据里目前只有归档相关字段；
+    会话级取消清空收件箱（§5.3）目前只挂在网页入口上，命令行按停的路径不会清。
+  </div>
+
+  <div class="legend">
+    <b>一句话收尾</b>：生子agent是共识，进程内加一个很低的深度上限；直接通信是分水岭，只有四家做；
+    防死循环是最参差的一条，从八种手段到一种都没有。我们在防环上比多数家密，
+    在裁工具上是八家里唯一按剩余余额决定摘不摘的，而且刻意做成二值，理由是保住提示缓存。
+  </div>
+
+</div>
+</body>
+</html>

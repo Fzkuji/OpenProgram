@@ -15,4 +15,5 @@ Agent 执行运行时 —— 运行循环、worktree、异步任务、流式传�
 - [`session/`](session/) — Session 子系统：数据模型、存储、命名、列举、生命周期、广播
 - [`operations/streaming-resume.md`](operations/streaming-resume.md)
 - [`operations/user-input-requests.md`](operations/user-input-requests.md) — 暂停正在运行的函数以向用户提问(`runtime.ask`/`confirm`),问题注册表 + WS/REST 协议 + 子进程桥接
+- [`agent-collaboration.md`](agent-collaboration.md) — **权威**：agent 协作收敛成一个分支间通信原语 —— 四个域、工具面、两个预算（[工具面图示](agent-collab-architecture.html)、[八家参考实现对照](agent-collab-comparison.html)）
 - [`sandbox.md`](sandbox.md) — 进程隔离层：两个平台的边界、开关在哪里丢掉、覆盖了哪些执行点、八个参考框架的对标、修复顺序（[图示](sandbox-architecture.html)）

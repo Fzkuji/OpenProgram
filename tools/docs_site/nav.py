@@ -331,6 +331,12 @@ PAGE_ORDER: dict[str, int] = {
     # rendered companion stay adjacent, doc first.
     "reference/design/runtime/sandbox.md": 1000,
     "reference/design/runtime/sandbox-architecture.html": 1001,
+    # Same treatment for agent collaboration: the design note first, then its
+    # two rendered companions (our tool surface, then the eight reference
+    # implementations compared).
+    "reference/design/runtime/agent-collaboration.md": 1002,
+    "reference/design/runtime/agent-collab-architecture.html": 1003,
+    "reference/design/runtime/agent-collab-comparison.html": 1004,
 }
 
 
