@@ -1,0 +1,197 @@
+"""Memory web routes — path containment, transactional saves, stage cleanup.
+
+The topic editor writes memory from the browser, so these routes are the one
+place a hand edit reaches the workspace without going through the structured
+transaction. Three things are checked here: a request cannot name a file
+outside the directory it addresses, a rejected edit leaves the committed file
+byte-for-byte alone, and neither outcome leaves a staged copy of memory behind
+in the temp directory.
+
+The fixtures build a minimal but *valid* workspace — one topic paragraph
+carrying a block ID and a footnote that resolves to an archived source —
+because anything less is refused by the parser before the routes are reached.
+"""
+from __future__ import annotations
+
+import glob
+import os
+import tempfile
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+SOURCE = '# Conversation 1\n\n<a id="d1-1"></a>\n\nuser: remember this\n'
+NOTE = (
+    "# Note\n"
+    "\n"
+    "A fact worth keeping.[^e-1f4c7a2b90] ^abc12345\n"
+    "\n"
+    "[^e-1f4c7a2b90]: Time: `2026-01-01`; Sources: [D1:1](../sources/D1.md#d1-1)\n"
+)
+# A second topic whose paragraph links into NOTE's block.
+LINKING = (
+    "# Other\n"
+    "\n"
+    "See [the note](note.md#^abc12345).[^e-2f4c7a2b91] ^def45678\n"
+    "\n"
+    "[^e-2f4c7a2b91]: Time: `2026-01-02`; Sources: [D1:1](../sources/D1.md#d1-1)\n"
+)
+
+
+def _stage_dirs() -> set[str]:
+    """The workspace staging trees currently sitting in the temp directory."""
+    return set(glob.glob(
+        os.path.join(tempfile.gettempdir(), "scriptorium-topics-*")
+    ))
+
+
+@pytest.fixture
+def memory(tmp_path, monkeypatch):
+    """A memory workspace holding one valid topic. Returns its root."""
+    import openprogram.paths as paths
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
+
+    from openprogram.memory import store
+    root = store.ensure()
+    (root / "sources").mkdir(parents=True, exist_ok=True)
+    (root / "sources" / "D1.md").write_text(SOURCE, encoding="utf-8")
+    (root / "topics" / "note.md").write_text(NOTE, encoding="utf-8")
+    return root
+
+
+@pytest.fixture
+def client(memory):
+    from openprogram.webui.routes import memory as routes
+    app = FastAPI()
+    routes.register(app)
+    return TestClient(app)
+
+
+# ---- path containment -------------------------------------------------
+
+
+def test_within_rejects_paths_that_leave_the_root(tmp_path):
+    from openprogram.webui.routes.memory import _within
+
+    root = tmp_path / "topics"
+    root.mkdir()
+    (tmp_path / "topics-private").mkdir()
+
+    assert _within(root, "note.md") == (root / "note.md").resolve()
+    assert _within(root, "people/alice.md") == (root / "people/alice.md").resolve()
+    # A sibling whose name merely starts with the root's name is outside it.
+    assert _within(root, "../topics-private/secret.md") is None
+    assert _within(root, "sub/../../topics-private/secret.md") is None
+    assert _within(root, "..") is None
+    assert _within(root, "/etc/passwd") is None
+
+
+@pytest.mark.parametrize("path", [
+    # ``..`` percent-encoded, which is how it survives the HTTP client and
+    # the router to reach the route as one path parameter.
+    "..%2Ftopics-private%2Fsecret.md",
+    "sub%2F..%2F..%2Ftopics-private%2Fsecret.md",
+    "..%2F..%2Fescape.md",
+])
+def test_put_refuses_to_write_outside_topics(client, memory, path):
+    r = client.put(f"/api/memory/topics/{path}", json={"content": "# Pwned\n"})
+    assert r.status_code == 403, r.text
+    assert not (memory / "topics-private").exists()
+    assert not (memory / "escape.md").exists()
+    assert not (memory.parent / "escape.md").exists()
+
+
+def test_delete_refuses_to_reach_outside_topics(client, memory):
+    private = memory / "topics-private"
+    private.mkdir()
+    (private / "secret.md").write_text("# Secret\n", encoding="utf-8")
+
+    r = client.delete("/api/memory/topics/..%2Ftopics-private%2Fsecret.md")
+    assert r.status_code == 403, r.text
+    assert (private / "secret.md").is_file()
+
+
+def test_timeline_refuses_a_date_that_is_really_a_path(client):
+    assert client.get("/api/memory/timeline/%2E%2E").status_code == 403
+    assert client.get("/api/memory/timeline/not-a-date").status_code == 403
+    assert client.get("/api/memory/timeline/2026-01-02").status_code == 200
+
+
+# ---- a save either lands whole or not at all --------------------------
+
+
+def test_put_dropping_a_block_id_is_refused_and_changes_nothing(client, memory):
+    r = client.put("/api/memory/topics/note.md", json={"content": "# Note\n"})
+    assert r.status_code == 400, r.text
+    assert "abc12345" in r.json()["error"]
+    assert (memory / "topics/note.md").read_text(encoding="utf-8") == NOTE
+
+
+def test_put_keeping_the_block_id_lands(client, memory):
+    edited = NOTE.replace("worth keeping", "worth remembering")
+    r = client.put("/api/memory/topics/note.md", json={"content": edited})
+    assert r.status_code == 200, r.text
+    assert "worth remembering" in (
+        memory / "topics/note.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_core_save_lands(client, memory):
+    r = client.put("/api/memory/core", json={"content": "# Core\n\nAlways on.\n"})
+    assert r.status_code == 200, r.text
+    assert "Always on." in (memory / "core.md").read_text(encoding="utf-8")
+
+
+def test_delete_is_refused_while_another_topic_links_into_it(client, memory):
+    (memory / "topics/other.md").write_text(LINKING, encoding="utf-8")
+
+    r = client.delete("/api/memory/topics/note.md")
+    assert r.status_code == 400, r.text
+    assert "abc12345" in r.json()["error"]
+    assert (memory / "topics/note.md").is_file()
+
+
+def test_delete_removes_a_topic_nothing_points_at(client, memory):
+    r = client.delete("/api/memory/topics/note.md")
+    assert r.status_code == 200, r.text
+    assert not (memory / "topics/note.md").exists()
+
+
+def test_save_gives_up_while_the_workspace_lock_is_held(
+    client, memory, monkeypatch
+):
+    from openprogram.memory.scriptorium.management.transaction import (
+        workspace_write_lock,
+    )
+    from openprogram.webui.routes import memory as routes
+
+    monkeypatch.setattr(routes, "WRITE_LOCK_TIMEOUT_S", 0.2)
+    edited = NOTE.replace("worth keeping", "worth remembering")
+
+    with workspace_write_lock(memory):
+        r = client.put("/api/memory/topics/note.md", json={"content": edited})
+    assert r.status_code == 400, r.text
+    assert "lock" in r.json()["error"]
+    assert (memory / "topics/note.md").read_text(encoding="utf-8") == NOTE
+
+    # Released again, the same edit goes through.
+    r = client.put("/api/memory/topics/note.md", json={"content": edited})
+    assert r.status_code == 200, r.text
+
+
+# ---- staging leaves nothing behind ------------------------------------
+
+
+def test_stage_directories_are_cleaned_up_on_both_paths(client):
+    before = _stage_dirs()
+
+    rejected = client.put("/api/memory/topics/note.md", json={"content": "# Note\n"})
+    assert rejected.status_code == 400, rejected.text
+    accepted = client.put(
+        "/api/memory/topics/note.md",
+        json={"content": NOTE.replace("worth keeping", "worth remembering")},
+    )
+    assert accepted.status_code == 200, accepted.text
+
+    assert _stage_dirs() == before

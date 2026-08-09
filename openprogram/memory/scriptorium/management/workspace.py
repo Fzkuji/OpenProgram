@@ -53,7 +53,16 @@ class MemoryWorkspace(
         self.last_created_blocks = 0
         self._refresh_stage()
 
-    def _refresh_stage(self) -> None:
+    def close(self) -> None:
+        """Remove the staging directory.
+
+        A workspace built for a single edit and dropped leaves one staged
+        copy of memory in the temp directory per call. ``contextlib.closing``
+        is the usual caller.
+        """
+        self._discard_stage()
+
+    def _discard_stage(self) -> None:
         # Staged sources are chmod'd read-only, so restore write access before
         # removing the tree: on some systems the file's own mode blocks it.
         sources = self.stage_dir / "sources"
@@ -62,6 +71,9 @@ class MemoryWorkspace(
                 if path.is_file():
                     path.chmod(0o644)
         shutil.rmtree(self.stage_dir, ignore_errors=True)
+
+    def _refresh_stage(self) -> None:
+        self._discard_stage()
         self.stage_dir.mkdir()
         for name in ("topics", "timeline", "sources"):
             source = self.memory_dir / name

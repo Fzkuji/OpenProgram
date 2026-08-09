@@ -18,10 +18,17 @@ silently breaking the views that reach through them.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from contextlib import closing
 from pathlib import Path
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
+
+# How long a save waits for the background writer to finish its transaction
+# before giving up. Long enough to cover one write, short enough that a
+# click does not look hung.
+WRITE_LOCK_TIMEOUT_S = 5.0
 
 
 def _title_of(text: str, fallback: str) -> str:
@@ -33,30 +40,62 @@ def _title_of(text: str, fallback: str) -> str:
 
 
 def _within(root: Path, relative: str) -> Path | None:
-    """Resolve inside root, or None if the path climbs out of it."""
+    """Resolve inside root, or None if the path climbs out of it.
+
+    A shared string prefix is not containment: ``topics-private/`` begins
+    with the same characters as ``topics/`` and is a different directory.
+    Resolving first is what collapses ``..`` and follows symlinks, so the
+    answer is about where the path actually lands.
+    """
+    root = root.resolve()
     target = (root / relative).resolve()
-    if not str(target).startswith(str(root.resolve())):
-        return None
-    return target
+    return target if target.is_relative_to(root) else None
 
 
-def _revalidate(root: Path) -> tuple[bool, str]:
-    """Reparse the workspace and rebuild derived views after a hand edit.
+def _staged_edit(
+    root: Path,
+    write: Callable[[Path], None],
+    *,
+    deleting: str = "",
+) -> tuple[bool, str]:
+    """Apply a hand edit through the workspace stage, or not at all.
 
+    ``write`` edits the staging copy the way it would edit the real tree.
     Someone editing a topic file by hand can drop a block ID or strand a
-    footnote. Nothing else would notice until a later write failed, so
-    the check runs here, while the person who made the edit is still
-    looking at it.
+    footnote, and nothing else would notice until a later write failed, so
+    the check runs here while the person who made the edit is still looking
+    at it.
+
+    Two things make that check mean something. The baseline is read from
+    the committed workspace *before* anything is staged — read afterwards
+    it would measure the edit against itself, and a dropped block ID would
+    look like there never was one. And the edit lands only by installing a
+    validated stage, so a rejected edit leaves the committed workspace
+    byte-for-byte as it was rather than needing to be undone.
+
+    ``deleting`` names a topic whose block IDs go away on purpose. Every
+    other committed ID must still be reachable after the edit.
     """
     from openprogram.memory.scriptorium.management import MemoryWorkspace
     from openprogram.memory.scriptorium.management.transaction import (
         TransactionError, committed_baseline, install_state,
+        workspace_write_lock,
     )
 
     try:
-        space = MemoryWorkspace(root)
-        units, ids = committed_baseline(space)
-        install_state(space, units, ids)
+        # The lock spans staging, validation and install: the background
+        # writer stages from this same tree and would otherwise install
+        # over the edit, or be installed over by it.
+        with workspace_write_lock(root, timeout_s=WRITE_LOCK_TIMEOUT_S):
+            with closing(MemoryWorkspace(root)) as space:
+                units, block_ids = committed_baseline(space)
+                if deleting:
+                    block_ids -= {
+                        unit.memory_id for unit in units
+                        if unit.topic_path == deleting
+                    }
+                write(space.stage_dir)
+                install_state(space, units, block_ids)
     except TransactionError as exc:
         return False, exc.message
     except Exception as exc:  # noqa: BLE001
@@ -106,20 +145,20 @@ def register(app):
     async def save_topic(path: str, request: Request):
         from openprogram.memory import store
         root = store.ensure()
-        target = _within(store.topics_dir(), path)
-        if target is None:
+        topics = store.topics_dir()
+        target = _within(topics, path)
+        if target is None or target == topics.resolve():
             return JSONResponse(content={"error": "forbidden"}, status_code=403)
-        body = await request.json()
-        previous = target.read_text(encoding="utf-8") if target.is_file() else None
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(body.get("content", ""), encoding="utf-8")
-        ok, message = _revalidate(root)
+        relative = target.relative_to(topics.resolve())
+        content = (await request.json()).get("content", "")
+
+        def write(stage: Path) -> None:
+            staged = stage / "topics" / relative
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            staged.write_text(content, encoding="utf-8")
+
+        ok, message = _staged_edit(root, write)
         if not ok:
-            # A rejected edit must not be left half-applied.
-            if previous is None:
-                target.unlink(missing_ok=True)
-            else:
-                target.write_text(previous, encoding="utf-8")
             return JSONResponse(content={"error": message}, status_code=400)
         return JSONResponse(content={"ok": True})
 
@@ -127,13 +166,23 @@ def register(app):
     async def delete_topic(path: str):
         from openprogram.memory import store
         root = store.ensure()
-        target = _within(store.topics_dir(), path)
+        topics = store.topics_dir()
+        target = _within(topics, path)
         if target is None:
             return JSONResponse(content={"error": "forbidden"}, status_code=403)
         if not target.is_file():
             return JSONResponse(content={"error": "not found"}, status_code=404)
-        target.unlink()
-        _revalidate(root)
+        relative = target.relative_to(topics.resolve())
+
+        def write(stage: Path) -> None:
+            (stage / "topics" / relative).unlink(missing_ok=True)
+
+        # Dropping this topic's own blocks is the point of the request. A
+        # block another topic still links to is a different matter, and the
+        # install refuses it.
+        ok, message = _staged_edit(root, write, deleting=relative.as_posix())
+        if not ok:
+            return JSONResponse(content={"error": message}, status_code=400)
         return JSONResponse(content={"ok": True})
 
     # -- timeline ----------------------------------------------------------
@@ -163,6 +212,13 @@ def register(app):
     @app.get("/api/memory/timeline/{date}")
     async def get_timeline_day(date: str):
         from openprogram.memory import store
+        from openprogram.memory.scriptorium.markdown.models import (
+            is_valid_temporal_value,
+        )
+        # The date becomes a path, so it is checked as a date first:
+        # ``..`` split on "-" is a single part and has no suffix to replace.
+        if not is_valid_temporal_value(date):
+            return JSONResponse(content={"error": "forbidden"}, status_code=403)
         root = store.timeline_dir()
         target = _within(root, str(Path(*date.split("-")).with_suffix(".md")))
         if target is None:
@@ -218,17 +274,14 @@ def register(app):
     async def save_core(request: Request):
         from openprogram.memory import store
         root = store.ensure()
-        path = store.core()
-        body = await request.json()
-        previous = path.read_text(encoding="utf-8") if path.is_file() else None
-        path.write_text(body.get("content", ""), encoding="utf-8")
-        ok, message = _revalidate(root)
+        content = (await request.json()).get("content", "")
+
+        def write(stage: Path) -> None:
+            (stage / "core.md").write_text(content, encoding="utf-8")
+
+        # core.md is on every system prompt, so an oversized or malformed
+        # one is refused here rather than trimmed later.
+        ok, message = _staged_edit(root, write)
         if not ok:
-            # core.md is on every system prompt, so an oversized or
-            # malformed one is refused here rather than trimmed later.
-            if previous is None:
-                path.unlink(missing_ok=True)
-            else:
-                path.write_text(previous, encoding="utf-8")
             return JSONResponse(content={"error": message}, status_code=400)
         return JSONResponse(content={"ok": True})

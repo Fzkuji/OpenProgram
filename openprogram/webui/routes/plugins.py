@@ -295,8 +295,9 @@ def register(app):
         # slug 为空 → index.html
         rel = slug.strip("/") or "index.html"
         target = (root / rel).resolve()
-        # path traversal 防护
-        if not str(target).startswith(str(root)):
+        # path traversal 防护：字符串前缀不是包含关系，<root>-private/ 也以
+        # <root> 开头却是另一个目录
+        if not target.is_relative_to(root):
             return JSONResponse(content={"error": "invalid path"}, status_code=400)
         if target.is_dir():
             target = target / "index.html"

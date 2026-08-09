@@ -133,7 +133,8 @@ def uninstall(name: str) -> dict[str, Any]:
         return {"success": ok, "log": log}
     if src == "path":
         d = Path(p.manifest.root)
-        if d.is_dir() and str(d).startswith(str(paths.plugins_dir().resolve())):
+        # 真正的包含判断：<plugins>-backup/ 也以 <plugins> 开头，不能被 rmtree
+        if d.is_dir() and d.resolve().is_relative_to(paths.plugins_dir().resolve()):
             shutil.rmtree(d, ignore_errors=True)
             return {"success": True, "log": f"removed {d}"}
         return {"success": False, "log": f"refusing to remove path outside plugins dir: {d}"}
