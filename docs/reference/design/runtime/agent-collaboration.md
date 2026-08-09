@@ -195,7 +195,7 @@ send_message(
 
 | to | Meaning |
 |---|---|
-| `"sid:head"` | Deliver message to an existing branch. The node names the branch, not a fork point: delivery always lands on the branch's current tip, so a stale head (the branch ran more turns since) is still a valid address and never forks off history. A node that is a shared ancestor of several branches is ambiguous — the error lists the candidates (name + `sid:current-tip`). To fork off a specific node, use `agent(start_from="sid:msg_id")`. |
+| `"sid:head"` | Deliver message to an existing branch. The node names the branch, not a fork point: delivery always lands on the branch's current tip, so a stale head (the branch ran more turns since) is still a valid address and never forks off history. A node that is a shared ancestor of several branches is ambiguous — the error lists the candidates (name + `sid:current-tip`). Snapping applies to live branches only: the head of a branch a merge absorbed resolves to itself (§2.6). To fork off a specific node, use `agent(start_from="sid:msg_id")`. |
 | `"<branch name>"` | Deliver to a named branch. Tried when the value is not `SID:HEAD` syntax: exact name match wins, a unique prefix is accepted next; several matches return an error listing the candidates (name + `sid:head`), zero matches point to `list_agents`. `list_agents` marks each branch's name so the model can address by name directly. |
 
 The removed spawn addressing (`to="new"` / `"new:sid:msg_id"`) is rejected
@@ -326,7 +326,7 @@ is finished needs no new name.
 | Operation on an archived branch | Behavior |
 |---|---|
 | `list_agents` (`scope="session"` / `"all"`) | Hidden |
-| `list_agents(scope="archived")` | Listed: exactly the archived branches |
+| `list_agents(scope="archived")` | Listed: every archived branch, including one a merge absorbed |
 | `send_message(to=…)` | Refused: `agent SID:HEAD is archived` |
 | `agent(to=…)` | Refused, same message |
 | `read_conversation` | Reads it as usual |
@@ -337,6 +337,32 @@ addressing both delivery paths share, §2.1) checks the flag right after it
 snaps an address onto the branch's current tip, so every delivery inherits
 the guard and no caller can route around it. `archive_agent` reaches
 archived branches through that same resolver with `allow_archived=True`.
+
+**Archiving is orthogonal to merging.** A merge absorbs a branch into
+another one, and the absorbed head leaves `list_branches` because its
+content is now reachable from the branch that absorbed it. That is a fact
+about where content lives, and it happens on its own: the task runner
+absorbs a background spawn's branch the moment the spawn completes
+successfully. Archiving is a fact about the agent that worked on the
+branch, and it is always an explicit act. Neither implies the other, so the
+two are stored apart (`merged_heads` in the session meta,
+`archived` on the branch entry) and read apart:
+
+- `list_agents(scope="archived")` reads the archive flag off the branch
+  entries (`store.list_archived_branches`) rather than filtering the live
+  tip list, so every archived branch is listed whether or not a merge
+  absorbed it. This is what makes `archive_when_done` observable on a spawn
+  that succeeded, which is exactly the case where the merge comes first.
+- The default scope and `scope="all"` list live branch tips, so a merged
+  branch stays out of both, archived or not. That is the merge's own
+  behavior and archiving does not change it.
+- A merged head keeps addressing its own branch. `resolve_existing_target`
+  snaps onto the current tip of a live branch; the head of a branch a merge
+  retired is snapped nowhere and resolves to itself
+  (`store.merged_heads`). Without that rule
+  `archive_agent(to="SID:MERGED_HEAD")` resolves to whichever live branch
+  absorbed the node, archives that branch instead, and reports success for
+  it.
 
 Two ways to archive:
 
@@ -617,7 +643,7 @@ session event log.
 |---|---|
 | Spawn (the `agent` tool) | The agent calls once, a new branch runs a turn, and the result automatically follows up back to the caller; spawn events are visible in the event log |
 | Listing | `list_agents` lists the real multiple sessions and each one's branches |
-| Archiving (§2.6) | An archived agent leaves `list_agents` and shows up under `scope="archived"`; `send_message` and `agent(to=)` refuse it while `read_conversation` and `agent(start_from=…)` still work; any session may archive any agent, and the flag is one-way |
+| Archiving (§2.6) | An archived agent leaves `list_agents` and shows up under `scope="archived"`; `send_message` and `agent(to=)` refuse it while `read_conversation` and `agent(start_from=…)` still work; any session may archive any agent, and the flag is one-way; a spawn that completed and was merged is still listed under `scope="archived"`, and its head still addresses its own branch |
 | Send to an existing branch in the same session | A sends to branch B of the same session, A does not block, B runs a turn, the reply returns to A automatically |
 | Cross-session | A sending to another session takes the same path; both sides update live |
 | Robustness (§5) | A↔B back-and-forth stops when the chain's message budget runs out, and a budget of 0 never stops it; spawning 30 at once queues instead of overloading; cancelling the parent stops every child; messaging a busy B queues and is delivered when its turn ends; the parent is told when a child fails; oversized results are truncated with a file path |

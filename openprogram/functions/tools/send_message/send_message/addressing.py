@@ -30,6 +30,12 @@ def _normalize_existing_target(
     branch off history instead of continuing the conversation. Forking
     off a node is the agent tool's job (``agent(start_from="SID:MSG_ID")``).
 
+    Snapping applies to LIVE branches only. A merged head names a
+    branch a merge retired, and that branch keeps its own identity:
+    resolving it onto the live branch that absorbed it would make
+    archive_agent / read_conversation act on a different agent, so a
+    merged head resolves to itself.
+
     Returns one of:
       ("ok", tip_id)                      — deliver onto this tip
       ("ambiguous", [(name, tip_id), …])  — node is a shared ancestor of
@@ -44,6 +50,12 @@ def _normalize_existing_target(
     for t in tips:
         if t.get("head_msg_id") == node_id:
             return "ok", node_id
+    # A retired branch's head is still that branch's address.
+    try:
+        if node_id in db.merged_heads(session_id):
+            return "ok", node_id
+    except Exception:
+        pass
     containing: list[tuple[str, str]] = []
     for t in tips:
         tip = t.get("head_msg_id")

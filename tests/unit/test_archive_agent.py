@@ -15,6 +15,9 @@ same technique as test_send_message.py / test_agent_dispatch.py):
     write-back merges field by field and bails on an archive that
     landed while the LLM was running, and an already-archived branch
     is skipped before the LLM is called at all
+  * archiving is orthogonal to merging: a completed spawn is absorbed
+    into its parent (mark_merged), and its head still addresses ITS
+    branch, still archives, and still shows up under scope="archived"
   * list_agents: scope="session" / "all" hide archived branches;
     scope="archived" lists exactly them
   * archived target: send_message and agent(to=) refuse via the one
@@ -284,6 +287,85 @@ def test_auto_rename_skips_archived_branch(parent_turn, monkeypatch):
     meta = parent_turn.get_branch_meta("p1", "a0")
     assert not meta.get("name")
     assert "turns" not in meta
+
+
+# --- merged branches: archiving stays orthogonal to the merge ---
+
+def _merged_spawn(store, *, head="sp_head", name="fox-research"):
+    """Build what a completed background spawn leaves behind on p1: a
+    spawn branch off a1, its head absorbed by ``mark_merged``, and the
+    task follow-up chain the parent continued on TOP of that head.
+    Returns the retired head id."""
+    store.spawn_branch("p1", "a1", source="agent", node_id="sp_root",
+                       prompt="do it", register_head=False)
+    store.append_message("p1", {"id": head, "role": "assistant",
+                                "content": "sub done", "timestamp": 1,
+                                "predecessor": "sp_root"})
+    store.set_branch_name("p1", head, name)
+    store.mark_merged("p1", [head])
+    store.append_message("p1", {"id": "fu_u", "role": "user",
+                                "content": "[task done]", "timestamp": 2,
+                                "predecessor": head})
+    store.append_message("p1", {"id": "fu_a", "role": "assistant",
+                                "content": "noted", "timestamp": 3,
+                                "predecessor": "fu_u"})
+    store.commit_turn("p1", "spawn merged")
+    return head
+
+
+def test_merged_head_addresses_its_own_retired_branch(parent_turn):
+    """The head of a branch a merge absorbed keeps naming THAT branch.
+    Snapping it onto the live branch that swallowed it would archive
+    the parent's follow-up chain and report success for it."""
+    head = _merged_spawn(parent_turn)
+    out = _archive_agent_impl(f"p1:{head}")
+    assert f"[archive_agent] archived p1:{head}" in out
+    assert "«fox-research»" in out
+    assert parent_turn.get_branch_meta("p1", head).get("archived") is True
+    # The live branch that absorbed it is untouched.
+    assert parent_turn.get_branch_meta("p1", "fu_a") == {}
+
+
+def test_send_message_to_merged_head_targets_that_branch(parent_turn):
+    """Same resolver, same rule for deliveries: a merged head is not a
+    back door into the parent's conversation."""
+    head = _merged_spawn(parent_turn)
+    out = _send_message_impl("still there?", to=f"p1:{head}")
+    assert "error" not in out
+    assert parent_turn.async_calls[-1]["branch_from"] == head
+
+
+def test_archived_scope_lists_a_merged_branch(parent_turn):
+    """A merge hides a branch from the live list; archiving is a
+    separate fact, so scope="archived" lists it either way."""
+    head = _merged_spawn(parent_turn)
+    # Merged but not archived: hidden everywhere.
+    assert head not in _list_agents_impl(scope="session")
+    assert head not in _list_agents_impl(scope="archived")
+
+    _archive_agent_impl(f"p1:{head}")
+    archived_out = _list_agents_impl(scope="archived")
+    assert f"p1:{head}" in archived_out
+    assert "«fox-research»" in archived_out
+    # The default scopes still hide merged branches AND archived ones.
+    assert head not in _list_agents_impl(scope="session")
+    assert head not in _list_agents_impl(scope="all")
+
+
+def test_archive_when_done_spawn_visible_after_merge(parent_turn):
+    """End to end: a successful background spawn is absorbed by the
+    runner's merge, and archive_when_done still leaves an agent that
+    scope="archived" can show."""
+    from openprogram.agent.task import get_runner
+    from openprogram.agent.task.types import Task
+
+    head = _merged_spawn(parent_turn)
+    get_runner()._finalize_spawn_branch_meta(Task(
+        id="t_m", parent_session_id="p1", prompt="x", agent_id="main",
+        head_id=head, archive_when_done=True,
+    ))
+    assert f"p1:{head}" in _list_agents_impl(scope="archived")
+    assert head not in _list_agents_impl(scope="session")
 
 
 # --- list_agents: scope visibility ---

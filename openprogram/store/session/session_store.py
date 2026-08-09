@@ -1152,31 +1152,8 @@ class SessionStore:
                 cur = kids[0]
             main_tip_id = cur
 
-        merged = set((idx.meta.get("merged_heads") or []))
-        # Fallback: auto-detect merged peers by scanning recent
-        # ContextCommits for multi-parent commits (= merge commits).
-        # Their non-primary parents resolve to head_node_ids that
-        # got consumed by the merge. This catches the case where
-        # ``mark_merged`` was bypassed by an early-return in
-        # ``process_merge_turn`` so the panel still cleans up.
-        try:
-            from openprogram.context.commit.store import (
-                list_commits, load_commit,
-            )
-            for _c in list_commits(self, session_id, limit=50) or []:
-                pids = list(_c.commit_parents or [])
-                if len(pids) > 1:
-                    for _pid in pids[1:]:
-                        try:
-                            _peer = load_commit(self, _pid, session_id=session_id)
-                        except Exception as e:  # noqa: BLE001 — one bad peer must not
-                            # drop the rest of the merge scan.
-                            _log.debug("merge peer %s unreadable: %s", _pid, e)
-                            _peer = None
-                        if _peer is not None and _peer.head_node_id:
-                            merged.add(_peer.head_node_id)
-        except Exception as e:  # noqa: BLE001 — commit subsystem is optional here
-            _log.debug("merge-head scan skipped for %s: %s", session_id, e)
+        merged = self.merged_heads(session_id)
+
         def _conv_child(kid_id: str) -> bool:
             """A child that CONTINUES the conversation. Execution-layer
             rows (attach pointers, runtime nodes, sub-call replies) and
@@ -1465,6 +1442,76 @@ class SessionStore:
         if changed:
             idx.set_meta(merged_heads=cur)
             self._persist_meta(git, idx)
+
+    def merged_heads(self, session_id: str) -> set[str]:
+        """Head ids a merge absorbed into another branch.
+
+        ``list_branches`` hides these (their content is reachable from
+        the surviving branch), and addressing uses the same set to keep
+        a merged head resolving to ITSELF instead of snapping onto
+        whichever live branch swallowed it.
+        """
+        pair = self._open(session_id)
+        if pair is None:
+            return set()
+        _git, idx = pair
+        merged = set(idx.meta.get("merged_heads") or [])
+        # Fallback: auto-detect merged peers by scanning recent
+        # ContextCommits for multi-parent commits (= merge commits).
+        # Their non-primary parents resolve to head_node_ids that
+        # got consumed by the merge. This catches the case where
+        # ``mark_merged`` was bypassed by an early-return in
+        # ``process_merge_turn`` so the panel still cleans up.
+        try:
+            from openprogram.context.commit.store import (
+                list_commits, load_commit,
+            )
+            for _c in list_commits(self, session_id, limit=50) or []:
+                pids = list(_c.commit_parents or [])
+                if len(pids) > 1:
+                    for _pid in pids[1:]:
+                        try:
+                            _peer = load_commit(self, _pid, session_id=session_id)
+                        except Exception as e:  # noqa: BLE001 — one bad peer must not
+                            # drop the rest of the merge scan.
+                            _log.debug("merge peer %s unreadable: %s", _pid, e)
+                            _peer = None
+                        if _peer is not None and _peer.head_node_id:
+                            merged.add(_peer.head_node_id)
+        except Exception as e:  # noqa: BLE001 — commit subsystem is optional here
+            _log.debug("merge-head scan skipped for %s: %s", session_id, e)
+        return merged
+
+    def list_archived_branches(self, session_id: str) -> list[dict[str, Any]]:
+        """Every archived branch of the session, most recently touched
+        first, in the same row shape as ``list_branches``.
+
+        Archiving and merging are orthogonal: a merge absorbs a branch
+        into another one and drops it from the live tip list, archiving
+        records that the agent on it is finished. This view reads the
+        ``archived`` flag straight off the branch entries, so a branch
+        that was both merged and archived is still listed.
+        """
+        pair = self._open(session_id)
+        if pair is None:
+            return []
+        _git, idx = pair
+        rows: list[dict[str, Any]] = []
+        # Snapshot: a concurrent turn can add a branch entry mid-scan.
+        for head, entry in list((idx.meta.get("branches") or {}).items()):
+            if not isinstance(entry, dict) or not entry.get("archived"):
+                continue
+            if head not in idx.nodes_by_id:
+                continue
+            rows.append({
+                "head_msg_id": head,
+                "name": entry.get("name"),
+                "created_at": entry.get("created_at"),
+                "updated_at": entry.get("updated_at"),
+                "archived": True,
+            })
+        rows.sort(key=lambda r: r.get("updated_at") or 0, reverse=True)
+        return rows
 
     def drop_message(self, session_id: str, node_id: str) -> bool:
         """Remove a single node by id — no descendant walk.

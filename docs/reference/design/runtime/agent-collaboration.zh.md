@@ -166,7 +166,7 @@ send_message(
 
 | to | 含义 |
 |---|---|
-| `"sid:head"` | 往一条已存在分支投 message。节点指认的是分支，不是 fork 点：投递永远落在该分支的当前末端，旧 head（分支后来又跑过 turn）仍是有效地址，不会从历史节点岔出新分支。节点若是多条分支的公共祖先则报歧义，错误里列出候选（名字 + `sid:当前末端`）。要从指定节点 fork 用 `agent(start_from="sid:msg_id")`。 |
+| `"sid:head"` | 往一条已存在分支投 message。节点指认的是分支，不是 fork 点：投递永远落在该分支的当前末端，旧 head（分支后来又跑过 turn）仍是有效地址，不会从历史节点岔出新分支。节点若是多条分支的公共祖先则报歧义，错误里列出候选（名字 + `sid:当前末端`）。归位只作用于活分支：被合并吸收的那条分支，它的 head 解析到自己（§2.6）。要从指定节点 fork 用 `agent(start_from="sid:msg_id")`。 |
 | `"<分支名>"` | 按名投递。不是 `SID:HEAD` 语法时按名字解析：精确匹配优先，唯一前缀次之；多个命中返回错误并列出候选（名字 + `sid:head`），零命中提示用 `list_agents`。`list_agents` 输出里标出每条分支的名字，模型可以直接按名寻址。 |
 
 已删除的 spawn 寻址（`to="new"` / `"new:sid:msg_id"`）直接报错，并指向
@@ -264,7 +264,7 @@ HEAD 并推进它。**每个投递 session 有一把回送串行锁
 | 对已归档分支的操作 | 行为 |
 |---|---|
 | `list_agents`（`scope="session"` / `"all"`） | 不列 |
-| `list_agents(scope="archived")` | 列出，恰好就是这些已归档分支 |
+| `list_agents(scope="archived")` | 列出每一条已归档分支，包括已被合并吸收的 |
 | `send_message(to=…)` | 报错：`agent SID:HEAD is archived` |
 | `agent(to=…)` | 同样报错，同一句话 |
 | `read_conversation` | 照读 |
@@ -274,6 +274,23 @@ HEAD 并推进它。**每个投递 session 有一把回送串行锁
 地址归位到分支当前末端之后立刻查这个标记，于是每条投递都自带这道守卫，谁也
 绕不过去。`archive_agent` 用同一个寻址加 `allow_archived=True` 来指认已归档
 分支。
+
+**归档和合并正交。**合并把一条分支吸收进另一条，被吸收的head从`list_branches`
+里消失，因为它的内容已经能从吸收它的那条分支读到。这讲的是内容存在哪里，而且它
+自动发生：后台派生一旦成功完成，task runner就吸收掉它的分支。归档讲的是分支上
+那个agent已经收工，永远是一次显式动作。两者互不蕴含，于是分开存、分开读
+（`merged_heads`在session meta上，`archived`在分支条目上）：
+
+- `list_agents(scope="archived")`读的是分支条目上的归档标记
+  （`store.list_archived_branches`），不是从活分支末端列表里筛，所以每一条已归档
+  分支都会列出，不管有没有被合并吸收。`archive_when_done`在成功派生上看得见效果，
+  靠的就是这一点：成功恰好就是合并先发生的那种情况。
+- 默认scope和`scope="all"`列的是活分支末端，所以被合并的分支不进这两个视图，
+  归不归档都一样。这是合并本来的行为，归档不改它。
+- 被合并分支的head仍然指认它自己那条分支。`resolve_existing_target`只把地址归位
+  到活分支的当前末端；已退休分支的head不归位到别处，解析到它自己
+  （`store.merged_heads`）。没有这条规则，`archive_agent(to="SID:MERGED_HEAD")`
+  会解析到吸收了这个节点的那条活分支，归档错的那一条，还报成功。
 
 两种归档方式：
 
@@ -486,7 +503,7 @@ session 上下文的调用（用户、UI）不受这条限制。
 |---|---|
 | 派生（`agent` 工具） | agent 调一次，新建分支跑一轮，结果自动回到发起方；派生过程在事件日志里可见 |
 | 列举 | `list_agents` 列出真实的多 session 及各自的分支 |
-| 归档（§2.6） | 已归档 agent 从 `list_agents` 消失、在 `scope="archived"` 里出现；`send_message` 与 `agent(to=)` 拒收，`read_conversation` 与 `agent(start_from=…)` 照常；任何 session 都能归档任何 agent，且标记单向 |
+| 归档（§2.6） | 已归档 agent 从 `list_agents` 消失、在 `scope="archived"` 里出现；`send_message` 与 `agent(to=)` 拒收，`read_conversation` 与 `agent(start_from=…)` 照常；任何 session 都能归档任何 agent，且标记单向；成功完成、已被合并吸收的派生同样出现在 `scope="archived"` 里，它的 head 也仍然指认它自己那条分支 |
 | 发给同 session 已有分支 | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
 | 跨 session | A 发给别的 session 走同一路径；两边实时更新 |
 | 健壮性（§5） | A↔B 互发到消息预算用完自动停，预算为 0 时不停；一次派 30 个是排队不是过载；取消父→子全停；给正忙的 B 发消息先排队、等它这轮结束再投；子失败父会被告知；超大结果截断并给出文件路径 |

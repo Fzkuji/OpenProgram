@@ -62,8 +62,10 @@ def _session_lines(
     db, r: dict, cur: str, *, preview: bool, archived: bool = False,
 ) -> tuple[list[str], int]:
     """Render one session header + its branch lines; returns (lines,
-    n_branches). ``archived`` flips the filter: False (default) lists
-    only live branches, True lists only archived ones."""
+    n_branches). ``archived`` flips the view: False (default) lists the
+    live branch tips, True lists the archived branches — read off the
+    archive flag rather than filtered out of the live tips, so a branch
+    a merge absorbed is still listed once it is archived."""
     sid = r.get("id", "?")
     mark = "  ← current session" if sid == cur else ""
     title = r.get("title") or "(untitled)"
@@ -72,10 +74,13 @@ def _session_lines(
     status = "" if busy is None else (" [busy]" if busy else " [idle]")
     lines = [f"{sid}  [{sess_agent}]  {title}{status}{mark}"]
     try:
-        branches = db.list_branches(sid) or []
+        if archived:
+            branches = db.list_archived_branches(sid) or []
+        else:
+            branches = [b for b in db.list_branches(sid) or []
+                        if not b.get("archived")]
     except Exception:
         branches = []
-    branches = [b for b in branches if bool(b.get("archived")) == archived]
     for b in branches:
         head = b.get("head_msg_id", "?")
         name = b.get("name")
