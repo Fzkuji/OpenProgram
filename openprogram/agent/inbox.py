@@ -234,7 +234,9 @@ def _deliver(session_id: str, entry: dict[str, Any]) -> None:
     the direct existing-branch delivery in send_message."""
     from openprogram.agent.session_db import default_db
     from openprogram.agent.sub_agent_run import run_agent_turn_async
-    from openprogram.functions.tools.send_message.send_message import sender_header
+    from openprogram.functions.tools.send_message.send_message.delivery import (
+        sender_header,
+    )
 
     # Continue from the branch's CURRENT head: the turn that made the
     # target busy has advanced it, and the queued message logically

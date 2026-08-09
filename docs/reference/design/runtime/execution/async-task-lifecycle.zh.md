@@ -357,7 +357,7 @@ agent 自己想撤。
 | 6 | `openprogram/webui/ws_actions/task.py` (新建) | 4 个 handler 对应 D9；注册到 `ws_actions/__init__.py` |
 | 7 | `openprogram/webui/_execute/__init__.py::_run_spawn` | 改用 `submit_agent_task`；写 placeholder attach card 时带 task_id + status=running |
 | 8 | `openprogram/context/commit/generator.py` | 处理 attach 节点时检查 `extra.attach.status`：running / cancelled / errored 不展开，只占位 (D8) |
-| 9 | `openprogram/functions/tools/task/task.py` | `_task_impl` 内部改走 `submit_agent_task` + 默认 wait=True；wait=False 时返回 task_id |
+| 9 | `openprogram/functions/tools/task/task/task.py` | `_task_impl` 内部改走 `submit_agent_task` + 默认 wait=True；wait=False 时返回 task_id |
 | 10 | `web/components/right-sidebar/tasks-panel.tsx` (新建) | UI 表达 (D11)；订阅 `task_status` ws 事件 |
 | 11 | `web/components/chat/messages/attach-card.tsx` | 渲染 status badge (running / done / cancelled / error) |
 | 12 | `openprogram/agent/dispatcher.py::process_user_turn` | 启动时检查 `OPENPROGRAM_TASK_WORKERS` 并初始化 runner 单例（idempotent） |

@@ -10,7 +10,17 @@ prompts — to the LLM. The MCP protocol's other two primitives besides
 
 Mirrors claude-code's :file:`src/tools/{ListMcpResourcesTool,
 ReadMcpResourceTool}` and its prompts-as-slash-commands surface, but
-keeps everything as four straightforward LLM-callable tools.
+keeps everything as four straightforward LLM-callable tools — one per
+subdirectory, sharing client plumbing in ``shared.py``.
 """
-from . import resources as _resources_self_register  # noqa: F401
-from . import prompts as _prompts_self_register  # noqa: F401
+from .list_mcp_prompts import list_mcp_prompts
+from .get_mcp_prompt import get_mcp_prompt
+from .list_mcp_resources import list_mcp_resources
+from .read_mcp_resource import read_mcp_resource
+
+__all__ = [
+    "list_mcp_prompts",
+    "get_mcp_prompt",
+    "list_mcp_resources",
+    "read_mcp_resource",
+]

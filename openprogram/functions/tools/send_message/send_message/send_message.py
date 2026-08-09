@@ -13,70 +13,32 @@ the target runs in the background and its reply comes back to the sender
 automatically (the task runner's followup). ``wait=True`` blocks for the
 reply.
 
-Design: docs/design/runtime/agent-collaboration.md. This file is C1 —
-the core path for ``to="new"`` (spawn usage). Existing-branch /
-cross-session / synthesis / robustness land in later steps.
+Design: docs/design/runtime/agent-collaboration.md. This module is the
+entry point: the @function binding plus the main delivery flow.
+Concern-specific pieces live alongside: ``prompt.py`` (LLM-facing
+description), ``addressing.py`` (`to` parsing + branch-name lookup),
+``delivery.py`` (synthesis blocks, receipt header, busy-target inbox,
+reply clipping), ``depth.py`` (spawn-chain depth guard).
 """
 from __future__ import annotations
 
-import contextvars
-
 from openprogram.functions._runtime import function
+from openprogram.functions.tools.send_message.shared import _emit_branch_ui
 
-
-# Depth of the current spawn chain (A→B→C…). Each send_message that
-# spawns increments it for the child turn; when it reaches MAX_SPAWN_DEPTH
-# further spawns are refused — the guard against A↔B / runaway recursion
-# (design §5.1). Set by the runner on the child turn (cross-thread) and by
-# the sync path inline.
-_spawn_depth: contextvars.ContextVar[int] = contextvars.ContextVar(
-    "send_message_spawn_depth", default=0,
+from .addressing import _parse_to, _resolve_branch_by_name
+from .delivery import (
+    _clip_result,
+    _gather_sources,
+    enqueue_for_busy_target,
+    sender_header,
 )
-MAX_SPAWN_DEPTH = 8
-
-
-def current_spawn_depth() -> int:
-    return _spawn_depth.get()
-
-
-def set_spawn_depth(depth: int):
-    """Bind the spawn depth for the current execution context (used by the
-    task runner when starting a spawned child turn). Returns the token."""
-    return _spawn_depth.set(depth)
-
-
-_DESCRIPTION = (
-    "Branch-to-branch communication: deliver a message to a branch, run "
-    "one turn there, and (by default, async) have its reply come back to "
-    "you automatically. ONE tool for spawning sub-agents, messaging other "
-    "branches, and synthesizing across branches — chosen by `to`:\n"
-    "\n"
-    "  to=\"new\" (DEFAULT): create a fresh branch and run `message` "
-    "in it — i.e. spawn a sub-agent / open a new line of work. The new "
-    "branch sees ONLY `message` (a clean worker); pack what it needs into "
-    "the message. Want several? call this several times — they run in "
-    "parallel, each returning to you when done.\n"
-    "  to=\"new:SID:MSG_ID\": fork a new branch off an existing node "
-    "(it inherits the chain up to that node), then run `message`.\n"
-    "  to=\"SID:HEAD\": deliver `message` to an existing branch and "
-    "trigger it to respond. If the target is busy running a turn, the "
-    "message is queued and processed when that turn ends.\n"
-    "  to=\"<branch name>\": address a named branch directly (exact "
-    "name, or a unique prefix — see list_branches for names).\n"
-    "\n"
-    "When you RECEIVE a message from another branch (it starts with "
-    "\"[message from SID:HEAD]\"), replying is optional — the message is "
-    "already delivered; reply only when you have something substantive "
-    "to add, and when unsure, don't reply.\n"
-    "\n"
-    "wait=False (DEFAULT): returns a delivery id immediately; you are NOT "
-    "blocked — keep working. The target's reply is delivered back to you "
-    "as a new message automatically when it finishes. wait=True: block "
-    "and return the reply text directly.\n"
-    "\n"
-    "Use this to offload sub-tasks, run parallel explorations, or hand a "
-    "message to another agent/branch."
+from .depth import (
+    MAX_SPAWN_DEPTH,
+    _spawn_depth,
+    current_spawn_depth,
+    set_spawn_depth,
 )
+from .prompt import DESCRIPTION
 
 
 def _resolve_parent() -> tuple[str | None, str | None, str | None]:
@@ -110,151 +72,6 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
         except Exception:
             agent_id = None
     return sid, aid, agent_id
-
-
-def _emit_branch_ui(session_id: str, kind: str, peer: str, text: str) -> None:
-    """Push a UI frame so the given session's chat stream shows a branch
-    communication line. kind ∈ {"sent","replied"}. Best-effort."""
-    try:
-        from openprogram.events import emit_ws_frame
-        summary = (text or "").replace("\n", " ").strip()
-        if len(summary) > 120:
-            summary = summary[:119] + "…"
-        emit_ws_frame({
-            "type": "branch_message",
-            "data": {
-                "session_id": session_id,
-                "kind": kind,        # "sent" → 我发给X；"replied" → X回复了
-                "peer": peer,        # 对端分支标识
-                "summary": summary,
-            },
-        })
-    except Exception:
-        pass
-
-
-def _gather_sources(sources: list[str] | None) -> str:
-    """Pull each source branch's tip text and wrap it in a labelled block,
-    so the target model reads them and synthesizes. Each source is
-    ``"SID:HEAD"`` (or ``"SID"`` → that session's current head).
-
-    Returns the assembled block string (empty if no usable sources).
-    """
-    if not sources:
-        return ""
-    from openprogram.agent.session_db import default_db
-    from openprogram.agent.internals._merge import _peer_final_text
-    store = default_db()
-    blocks: list[str] = []
-    for raw in sources:
-        s = (raw or "").strip()
-        if not s:
-            continue
-        ssid, _, shead = s.partition(":")
-        ssid = ssid.strip()
-        shead = shead.strip() or None
-        if not ssid:
-            continue
-        try:
-            text, _hid = _peer_final_text(store, ssid, shead)
-        except Exception:
-            text = ""
-        text = (text or "").strip()
-        if not text:
-            text = "(this branch has no readable content)"
-        blocks.append(f'<branch source="{s}">\n{text}\n</branch>')
-    if not blocks:
-        return ""
-    return (
-        "下面是几条分支的内容，请阅读后综合，再回应本条消息：\n\n"
-        + "\n\n".join(blocks)
-        + "\n\n---\n\n"
-    )
-
-
-def sender_header(sender_session_id: str, sender_msg_id: str) -> str:
-    """The receipt header prepended to every message delivered to an
-    existing branch (direct and queued-consume paths), so the receiver
-    knows who sent it and how to answer."""
-    src = f"{sender_session_id}:{sender_msg_id}"
-    return (
-        f"[message from {src}] To reply, use send_message(to=\"{src}\"). "
-        "Replying is optional — this message is already delivered; if you "
-        "have nothing substantive to add, do not reply.\n\n"
-    )
-
-
-def _resolve_branch_by_name(name: str) -> tuple[str, object]:
-    """Resolve a branch NAME into a (session_id, head_id) target.
-
-    Exact match wins; a unique prefix is accepted next. The current
-    session's branches are searched first, then every other session.
-    Returns one of:
-      ("ok", (session_id, head_id))
-      ("ambiguous", [(name, session_id, head_id), ...])
-      ("none", None)
-    """
-    from openprogram.agent.session_db import default_db
-    db = default_db()
-    needle = (name or "").strip()
-    if not needle:
-        return "none", None
-    try:
-        from openprogram.agent.run_control import _current_session_id
-        cur = _current_session_id.get(None)
-    except Exception:
-        cur = None
-    sids: list[str] = []
-    if cur:
-        sids.append(cur)
-    try:
-        for row in db.list_sessions(limit=200) or []:
-            sid = row.get("id")
-            if sid and sid not in sids:
-                sids.append(sid)
-    except Exception:
-        pass
-    candidates: list[tuple[str, str, str]] = []
-    for sid in sids:
-        try:
-            branches = db.list_branches(sid) or []
-        except Exception:
-            continue
-        for b in branches:
-            bname = (b.get("name") or "").strip()
-            head = b.get("head_msg_id")
-            if bname and head:
-                candidates.append((bname, sid, head))
-    exact = [c for c in candidates if c[0] == needle]
-    if len(exact) == 1:
-        return "ok", (exact[0][1], exact[0][2])
-    if len(exact) > 1:
-        return "ambiguous", exact
-    prefix = [c for c in candidates if c[0].startswith(needle)]
-    if len(prefix) == 1:
-        return "ok", (prefix[0][1], prefix[0][2])
-    if len(prefix) > 1:
-        return "ambiguous", prefix
-    return "none", None
-
-
-def _parse_to(to: str) -> tuple[str, str | None, str | None]:
-    """Parse the ``to`` arg into (kind, session_id, fork_msg_id).
-
-    kind ∈ {"new", "fork", "existing"}:
-      * "new"            → ("new", None, None)
-      * "new:SID:MSG_ID" → ("fork", SID, MSG_ID)
-      * "SID:HEAD"       → ("existing", SID, HEAD)
-    """
-    t = (to or "new").strip()
-    if t == "new":
-        return "new", None, None
-    if t.startswith("new:"):
-        rest = t[len("new:"):]
-        sid, _, msg = rest.partition(":")
-        return "fork", sid or None, (msg or None)
-    sid, sep, head = t.partition(":")
-    return "existing", sid or None, (head or None)
 
 
 def _send_message_impl(
@@ -360,47 +177,22 @@ def _send_message_impl(
     else:
         delivery_message = delivery_body
 
-    # Busy target → inbox (design §5.4: don't interrupt, don't drop —
-    # queue). Only cross-session sends can race another turn: a
-    # same-session send runs inside the sender's own turn, which is the
-    # very token is_turn_running would see.
+    # Busy target → inbox (design §5.4). Only cross-session sends can
+    # race another turn: a same-session send runs inside the sender's
+    # own turn, which is the very token is_turn_running would see.
     if kind == "existing" and run_session != sid:
-        from openprogram.agent.run_control import is_turn_running
-        if is_turn_running(run_session):
-            from openprogram.agent import inbox
-            try:
-                status = inbox.enqueue(
-                    run_session,
-                    message=delivery_body,
-                    sender_session_id=sid,
-                    sender_msg_id=aid,
-                    sender_agent_id=parent_agent,
-                    agent_id=chosen_agent,
-                    spawn_depth=depth,
-                    target_head_id=branch_from,
-                )
-            except Exception as e:  # noqa: BLE001
-                return f"[send_message error] {type(e).__name__}: {e}"
-            if status == "duplicate":
-                return (
-                    "[send_message] duplicate message ignored — an "
-                    "identical message from you is already queued for "
-                    "this target (sent within the last 60s)."
-                )
-            # Race window: the target may have finished between the busy
-            # check and the enqueue — drain now so the message doesn't
-            # sit a whole extra turn.
-            if not is_turn_running(run_session):
-                try:
-                    inbox.drain(run_session)
-                except Exception:
-                    pass
-            return (
-                f"[queued] target branch {run_session}:{branch_from} is "
-                "busy running a turn. Your message is queued; it will be "
-                "processed when the target's current turn ends and its "
-                "reply will come back to you automatically."
-            )
+        queued = enqueue_for_busy_target(
+            run_session,
+            branch_from,
+            delivery_body,
+            sender_session_id=sid,
+            sender_msg_id=aid,
+            sender_agent_id=parent_agent,
+            agent_id=chosen_agent,
+            spawn_depth=depth,
+        )
+        if queued is not None:
+            return queued
 
     emit_safe(
         "branch.message_sent",
@@ -503,35 +295,9 @@ def _send_message_impl(
     return f"{out}\n\n[branch {run_session}:{result.head_id or '?'}]"
 
 
-_MAX_RESULT_CHARS = 30_000
-
-
-def _clip_result(text: str) -> str:
-    """Truncate an oversized reply head+tail and save the full text to a
-    file, returning a path the caller can read (§5.6) — so a huge branch
-    reply doesn't blow up the sender's context."""
-    s = text or ""
-    if len(s) <= _MAX_RESULT_CHARS:
-        return s
-    import tempfile
-    import os
-    head = s[: _MAX_RESULT_CHARS // 2]
-    tail = s[-_MAX_RESULT_CHARS // 2:]
-    try:
-        fd, path = tempfile.mkstemp(prefix="branch_reply_", suffix=".txt")
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(s)
-    except Exception:
-        path = "(could not write file)"
-    return (
-        f"{head}\n\n... [truncated {len(s)} chars; full reply saved to "
-        f"{path}] ...\n\n{tail}"
-    )
-
-
 @function(
     name="send_message",
-    description=_DESCRIPTION,
+    description=DESCRIPTION,
     toolset=["core"],
 )
 def send_message(

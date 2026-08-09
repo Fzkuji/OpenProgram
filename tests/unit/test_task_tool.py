@@ -79,7 +79,7 @@ def _call_task(*, prompt: str, description: str = "", agent_id: str = "",
     so _resolve_parent finds them."""
     from openprogram.agent.run_control import _current_session_id
     from openprogram.store import _current_turn_id
-    from openprogram.functions.tools.task.task import _task_impl
+    from openprogram.functions.tools.task.task.task import _task_impl
 
     def _go():
         tok1 = _current_session_id.set(session_id)

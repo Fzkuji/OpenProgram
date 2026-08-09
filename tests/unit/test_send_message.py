@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.functions.tools.send_message.send_message import (
+from openprogram.functions.tools.send_message.send_message.send_message import (
     _send_message_impl,
     _parse_to,
 )
@@ -36,7 +36,7 @@ def test_resolve_parent_falls_back_to_head(tmp_path, monkeypatch):
     anchor falls back to the session head (fixes 'no active parent turn')."""
     from openprogram.store.session.session_store import SessionStore
     from openprogram.agent import session_db as sdb_mod
-    from openprogram.functions.tools.send_message.send_message import _resolve_parent
+    from openprogram.functions.tools.send_message.send_message.send_message import _resolve_parent
 
     s = SessionStore(tmp_path / "g")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
@@ -233,7 +233,7 @@ def test_no_sources_no_block(parent_turn):
 # --- C6: robustness ---
 
 def test_depth_guard_refuses(parent_turn):
-    from openprogram.functions.tools.send_message.send_message import (
+    from openprogram.functions.tools.send_message.send_message.send_message import (
         set_spawn_depth, _spawn_depth, MAX_SPAWN_DEPTH,
     )
     tok = set_spawn_depth(MAX_SPAWN_DEPTH)

@@ -34,37 +34,7 @@ from __future__ import annotations
 
 from openprogram.functions._runtime import function
 
-
-_DESCRIPTION = (
-    "Spawn another agent in the same session and run one turn against "
-    "it. Returns the spawned agent's final reply (wait=True, default) "
-    "or a task_id to await later (wait=False).\n"
-    "\n"
-    "Context modes, chosen per call:\n"
-    "  clean (DEFAULT): the agent starts at a new root seeing ONLY the "
-    "prompt — no history, no prior tool results. Use it whenever you "
-    "can write a self-contained instruction; pack everything it needs "
-    "into the prompt. Cheaper and more focused.\n"
-    "  inherit: the agent forks off this turn and sees the whole "
-    "conversation chain. Use it only when the sub-task genuinely "
-    "depends on the running dialogue. Costs more tokens and carries "
-    "noise from prior tool calls.\n"
-    "\n"
-    "If YOU are a spawned agent this tool is unavailable — do the work "
-    "with your own tools. Re-delegation is refused (depth cap 1).\n"
-    "\n"
-    "The reply lands as a branch in the session DAG; merge it back "
-    "with merge_branches.\n"
-    "\n"
-    "Args:\n"
-    "  prompt: full instruction. In 'clean' mode this is ALL it sees.\n"
-    "  description: short label (1-3 words), used as the branch name.\n"
-    "  agent_id: agent profile to run as. Defaults to this session's.\n"
-    "  context: 'clean' (default) or 'inherit'.\n"
-    "  wait: True (default) blocks and returns the final text. False "
-    "returns a task_id immediately — use it to run agents in parallel, "
-    "then call await_task(task_id)."
-)
+from .prompt import DESCRIPTION
 
 
 # task() delegation cap. ONE level: the main agent may spawn workers;
@@ -138,7 +108,7 @@ def _task_impl(
     # 5-generation weather-query delegation chain, every hop just
     # re-wording the same prompt). send_message keeps its own looser
     # MAX_SPAWN_DEPTH for branch-to-branch dialogue.
-    from openprogram.functions.tools.send_message.send_message import (
+    from openprogram.functions.tools.send_message.send_message.depth import (
         current_spawn_depth,
         set_spawn_depth,
         _spawn_depth,
@@ -168,9 +138,11 @@ def _task_impl(
             from openprogram.agent.sub_agent_run import (
                 write_attach_placeholder_for_spawn,
             )
-            # 先落一张 running 占位 attach 卡，锚在发起调用的这轮——卡片
-            # 在哪被调用就显示在哪；runner 终态时原地补结果。没有这张卡，
-            # wait=False 的结果只能靠 task_followup 漂回来、无处锚定。
+            # Drop a "running" placeholder attach card first, anchored on
+            # the calling turn — the card shows up where it was invoked;
+            # the runner fills in the result in place at terminal state.
+            # Without this card, a wait=False result could only drift
+            # back via task_followup with nowhere to anchor.
             attach_id = write_attach_placeholder_for_spawn(
                 session_id=sid,
                 caller_msg_id=aid,
@@ -324,12 +296,13 @@ def _task_impl(
 
 @function(
     name="task",
-    description=_DESCRIPTION,
+    description=DESCRIPTION,
     toolset=["core"],
-    # 被 spawn 的 agent 根本看不到这个工具（dispatcher 按 req.source
-    # 过滤）——派活的 agent 自己干活，不再转包。工具不在清单里，模型
-    # 就不会想去用；_task_impl 里的深度守卫只是兜底（比如工具被
-    # tools_override 显式塞回来的路径）。
+    # A spawned agent never even sees this tool (the dispatcher filters
+    # by req.source) — the delegated agent does the work itself, no
+    # re-subcontracting. With the tool absent from the listing the model
+    # won't reach for it; the depth guard in _task_impl is a backstop
+    # (e.g. when tools_override explicitly puts the tool back).
     unsafe_in=["agent_spawn"],
 )
 def task(
@@ -363,75 +336,3 @@ def task(
         prompt=prompt, description=description,
         agent_id=agent_id, context=context, wait=wait,
     )
-
-
-@function(
-    name="await_task",
-    description=(
-        "Block until an async task spawned with task(wait=False) "
-        "reaches a terminal state (completed/cancelled/errored). "
-        "Returns the task's final reply text plus its terminal "
-        "status. Pair with task(wait=False) for parallel agent "
-        "execution.\n"
-        "\n"
-        "Args:\n"
-        "  task_id: id returned by task(wait=False).\n"
-        "  timeout: max seconds to block. None = wait forever. "
-        "On timeout the call returns with the task still running."
-    ),
-    toolset=["core"],
-    unsafe_in=["agent_spawn"],  # 同 task：被 spawn 的 agent 不派活也不等活
-)
-def await_task(task_id: str, timeout: float = 0) -> str:
-    """Wait for an async task and return its final reply."""
-    if not task_id or not isinstance(task_id, str):
-        return "[await_task error] task_id required"
-    from openprogram.agent.task import get_runner
-    runner = get_runner()
-    eff_timeout = None if (timeout is None or timeout <= 0) else float(timeout)
-    t = runner.await_task(task_id.strip(), timeout=eff_timeout)
-    if t is None:
-        return f"[await_task error] unknown task_id={task_id!r}"
-    status = t.status.value
-    if status == "completed":
-        out = t.result_text or "(spawned agent returned no text)"
-        return f"{out}\n\n[task {task_id} status={status}]"
-    if status == "cancelled":
-        return f"[task {task_id} cancelled] {t.error or ''}".rstrip()
-    if status == "errored":
-        return f"[task {task_id} errored] {t.error or 'unknown error'}"
-    # still running / queued
-    return (
-        f"[task {task_id} still {status}] "
-        f"timed out after {timeout}s; call await_task again to keep waiting."
-    )
-
-
-@function(
-    name="cancel_task",
-    description=(
-        "Cancel an in-flight async task. Idempotent — calling on an "
-        "already-terminal task is a no-op. The runner sets the "
-        "session's cancel event, which propagates into the LLM "
-        "stream + tool pre-invocation hook so the spawned agent "
-        "stops at its next cooperative checkpoint. A 30s watchdog "
-        "force-flips the entity if the worker won't drop.\n"
-        "\n"
-        "Args:\n"
-        "  task_id: id of the task to cancel.\n"
-        "  reason: optional human-readable reason recorded on the "
-        "task entity."
-    ),
-    toolset=["core"],
-    unsafe_in=["agent_spawn"],  # 同 task
-)
-def cancel_task(task_id: str, reason: str = "") -> str:
-    """Signal cancel for an async task."""
-    if not task_id or not isinstance(task_id, str):
-        return "[cancel_task error] task_id required"
-    from openprogram.agent.task import get_runner
-    runner = get_runner()
-    t = runner.cancel_task(task_id.strip(), reason=reason or None)
-    if t is None:
-        return f"[cancel_task error] unknown task_id={task_id!r}"
-    return f"[cancel_task] task_id={task_id} status={t.status.value}"

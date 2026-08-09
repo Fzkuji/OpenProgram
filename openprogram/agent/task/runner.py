@@ -613,7 +613,7 @@ class TaskRunner:
                 # guard can trip (send_message §5.1).
                 _depth_tok = None
                 try:
-                    from openprogram.functions.tools.send_message.send_message import (
+                    from openprogram.functions.tools.send_message.send_message.depth import (
                         set_spawn_depth, _spawn_depth,
                     )
                     _depth_tok = set_spawn_depth(int(task.spawn_depth or 0))

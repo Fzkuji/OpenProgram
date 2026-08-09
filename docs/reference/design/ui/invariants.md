@@ -70,7 +70,7 @@ helpers with session routing logic, not raw frames — exempt.)
 ## 6. The three spawn entry points share one semantics
 
 A sub-agent branch spawns via three entry points: the sync `task()`
-path (functions/tools/task/task.py), the async runner
+path (functions/tools/task/task/task.py), the async runner
 (agent/task/runner.py), and `send_message`
 (functions/tools/send_message/). For clean mode all three must pass
 `spawn_caller=<spawning node>`, so the branch root's `caller` points

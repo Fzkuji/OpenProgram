@@ -386,8 +386,8 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 ## 6. 前后端清单
 
 **后端（工具，`openprogram/functions/tools/send_message/`）**
-- `send_message.py` — 唯一核心：投递 + 触发 + 自动回送 + 多源自我总结
-- `list_sessions.py` / `list_branches.py` — 复用 db.list_*
+- `send_message/` — 唯一核心：投递 + 触发 + 自动回送 + 多源自我总结
+- `list_sessions/` / `list_branches/` — 复用 db.list_*
 - 各工具 `emit_safe(...)`；跨 session 通知用 `emit_ws_frame`
 
 **后端（复用既有组件）**
@@ -428,7 +428,7 @@ UI 的会话选择列表（但 DAG 照画、能被 list_branches 列出供 agent
 | 事 | 位置 |
 |---|---|
 | 子 agent 派生 + 自动回送 | `openprogram/agent/sub_agent_run.py`、`agent/task/runner.py`（spawn_task / _dispatch_followup） |
-| 工具范本 + 注册 | `openprogram/functions/tools/task/task.py`、`functions/_runtime.py`（@function） |
+| 工具范本 + 注册 | `openprogram/functions/tools/task/task/task.py`、`functions/_runtime.py`（@function） |
 | session/branch 数据层 | `openprogram/store/session/session_store.py`（list_sessions:658 / list_branches:832 / append_message:706 / set_head:814 / commit_turn:455） |
 | 触发某 session 跑一轮 | `openprogram/agent/dispatcher/__init__.py`（process_user_turn:97） |
 | 多源自我总结 | `openprogram/agent/compaction/branch_summarization.py` |

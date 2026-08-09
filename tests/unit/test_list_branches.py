@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import pytest
 
-from openprogram.functions.tools.send_message.list_branches import (
+from openprogram.functions.tools.send_message.list_sessions.list_sessions import (
     _list_sessions_impl as list_sessions,
-    _list_branches_impl as list_branches,
-    _clip,
 )
+from openprogram.functions.tools.send_message.list_branches.list_branches import (
+    _list_branches_impl as list_branches,
+)
+from openprogram.functions.tools.send_message.shared import _clip
 
 
 @pytest.fixture

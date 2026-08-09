@@ -88,7 +88,7 @@ def _run_with_ctx(fn, *, session_id, turn_id):
 # ---- entry 1: sync task() (task.py _task_impl) --------------------------
 
 def test_task_sync_clean_passes_spawn_caller(store, captured_run):
-    from openprogram.functions.tools.task.task import _task_impl
+    from openprogram.functions.tools.task.task.task import _task_impl
     _run_with_ctx(
         lambda: _task_impl(prompt="go", context="clean", wait=True),
         session_id="p1", turn_id="a1",
@@ -98,7 +98,7 @@ def test_task_sync_clean_passes_spawn_caller(store, captured_run):
 
 
 def test_task_sync_inherit_passes_no_spawn_caller(store, captured_run):
-    from openprogram.functions.tools.task.task import _task_impl
+    from openprogram.functions.tools.task.task.task import _task_impl
     _run_with_ctx(
         lambda: _task_impl(prompt="go", context="inherit", wait=True),
         session_id="p1", turn_id="a1",
@@ -110,7 +110,7 @@ def test_task_sync_inherit_passes_no_spawn_caller(store, captured_run):
 # ---- entry 2: send_message (send_message.py _send_message_impl) ---
 
 def test_send_message_new_root_passes_spawn_caller(store, captured_run):
-    from openprogram.functions.tools.send_message.send_message import (
+    from openprogram.functions.tools.send_message.send_message.send_message import (
         _send_message_impl,
     )
     _run_with_ctx(
@@ -123,7 +123,7 @@ def test_send_message_new_root_passes_spawn_caller(store, captured_run):
 
 
 def test_send_message_fork_passes_no_spawn_caller(store, captured_run):
-    from openprogram.functions.tools.send_message.send_message import (
+    from openprogram.functions.tools.send_message.send_message.send_message import (
         _send_message_impl,
     )
     _run_with_ctx(
@@ -221,7 +221,7 @@ def test_task_async_passes_caller_and_depth(store, monkeypatch):
     monkeypatch.setattr(
         "openprogram.agent.sub_agent_run.run_agent_turn_async", fake_async,
     )
-    from openprogram.functions.tools.task.task import _task_impl
+    from openprogram.functions.tools.task.task.task import _task_impl
     out = _run_with_ctx(
         lambda: _task_impl(prompt="go", context="clean", wait=False),
         session_id="p1", turn_id="a1",
@@ -237,10 +237,10 @@ def test_task_refuses_at_max_task_depth(store, captured_run):
     """task()'s own cap (MAX_TASK_DEPTH=1) is deliberately tighter than
     send_message's MAX_SPAWN_DEPTH: only the main agent may task();
     a spawned agent delegating again gets refused."""
-    from openprogram.functions.tools.send_message.send_message import (
+    from openprogram.functions.tools.send_message.send_message.send_message import (
         set_spawn_depth, _spawn_depth,
     )
-    from openprogram.functions.tools.task.task import MAX_TASK_DEPTH, _task_impl
+    from openprogram.functions.tools.task.task.task import MAX_TASK_DEPTH, _task_impl
 
     def _call():
         tok = set_spawn_depth(MAX_TASK_DEPTH)
@@ -257,10 +257,10 @@ def test_task_refuses_at_max_task_depth(store, captured_run):
 def test_task_spawned_agent_cannot_redelegate(store, captured_run):
     """Depth 1 (a spawned agent) must NOT task() again — it does the
     work itself with its own tools."""
-    from openprogram.functions.tools.send_message.send_message import (
+    from openprogram.functions.tools.send_message.send_message.send_message import (
         set_spawn_depth, _spawn_depth,
     )
-    from openprogram.functions.tools.task.task import _task_impl
+    from openprogram.functions.tools.task.task.task import _task_impl
 
     def _call():
         tok = set_spawn_depth(1)
@@ -278,7 +278,7 @@ def test_task_sync_child_sees_incremented_depth(store, monkeypatch):
     """The sync path binds depth+1 around the child turn, so a chain of
     task()-inside-task() eventually trips the guard instead of recursing
     forever (each generation used to start back at depth 0)."""
-    from openprogram.functions.tools.send_message.send_message import (
+    from openprogram.functions.tools.send_message.send_message.send_message import (
         current_spawn_depth,
     )
     from openprogram.agent.sub_agent_run import AgentTurnResult as _R
@@ -295,7 +295,7 @@ def test_task_sync_child_sees_incremented_depth(store, monkeypatch):
         "openprogram.agent.sub_agent_run.write_attach_pointer_for_spawn",
         lambda **kw: None,
     )
-    from openprogram.functions.tools.task.task import _task_impl
+    from openprogram.functions.tools.task.task.task import _task_impl
     _run_with_ctx(
         lambda: _task_impl(prompt="go", context="clean", wait=True),
         session_id="p1", turn_id="a1",

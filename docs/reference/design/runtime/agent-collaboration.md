@@ -500,9 +500,9 @@ list_branches so agents can address it).
 ## 6. Backend and frontend checklist
 
 **Backend (tools, `openprogram/functions/tools/send_message/`)**
-- `send_message.py` — the one core: deliver + trigger + auto reply-back +
+- `send_message/` — the one core: deliver + trigger + auto reply-back +
   multi-source self-summarization
-- `list_sessions.py` / `list_branches.py` — reuse db.list_*
+- `list_sessions/` / `list_branches/` — reuse db.list_*
 - Each tool calls `emit_safe(...)`; cross-session notifications use
   `emit_ws_frame`
 
@@ -548,7 +548,7 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 | Thing | Location |
 |---|---|
 | Sub-agent spawn + auto reply-back | `openprogram/agent/sub_agent_run.py`, `agent/task/runner.py` (spawn_task / _dispatch_followup) |
-| Tool template + registration | `openprogram/functions/tools/task/task.py`, `functions/_runtime.py` (@function) |
+| Tool template + registration | `openprogram/functions/tools/task/task/task.py`, `functions/_runtime.py` (@function) |
 | session/branch data layer | `openprogram/store/session/session_store.py` (list_sessions:658 / list_branches:832 / append_message:706 / set_head:814 / commit_turn:455) |
 | Trigger a session to run a turn | `openprogram/agent/dispatcher/__init__.py` (process_user_turn:97) |
 | Multi-source self-summarization | `openprogram/agent/compaction/branch_summarization.py` |

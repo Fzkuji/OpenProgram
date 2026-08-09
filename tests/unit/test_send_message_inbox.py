@@ -17,7 +17,7 @@ import threading
 import pytest
 
 from openprogram.agent import inbox
-from openprogram.functions.tools.send_message.send_message import (
+from openprogram.functions.tools.send_message.send_message.send_message import (
     _send_message_impl,
 )
 
@@ -133,7 +133,7 @@ def test_drain_leaves_entry_on_failed_delivery(two_sessions, busy_target, monkey
 
 
 def test_queued_delivery_inherits_spawn_depth(two_sessions, busy_target, monkeypatch):
-    from openprogram.functions.tools.send_message.send_message import (
+    from openprogram.functions.tools.send_message.send_message.send_message import (
         set_spawn_depth, _spawn_depth,
     )
     calls = _capture_async(monkeypatch)
