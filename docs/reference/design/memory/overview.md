@@ -77,12 +77,12 @@ Three things trigger a write:
 | 03:00 daily | `provider.reorganize()` | Rewrites topic files |
 
 The conversation is read back from the session store rather than
-buffered in the process. That store is durable and ordered, so a turn's
-identity survives a worker restart and the cursor in
-`runtime/online.py` can tell what has already been written. A
+buffered in the process. That store is durable and it gives every turn
+a stable id, which is what the cursor in `runtime/online.py` records. A
 module-level buffer would lose its contents on restart and hand out
-positions that change between runs, which is exactly what a cursor
-cannot tolerate.
+positions that change between runs, and in a session that branches a
+position is not an identity at all. The next section says what the
+cursor holds instead.
 
 The first two rows are one method and one flag, not two hooks. What
 separates them is how hard to try, and every other word about them is
@@ -105,6 +105,135 @@ and their results are the machinery of a turn rather than its content,
 and so are the turns the runtime schedules for itself: a finished
 sub-agent's notification and a merge prompt are written as user rows so
 the model has something to answer, but nobody said them.
+
+## The write cursor
+
+A session is a DAG, not a line. Re-asking an earlier message, retrying
+a reply and spawning a sub-agent all fork the chain, so one session
+holds several branches that share a prefix and diverge after it
+([`../runtime/dag/overview.md`](../runtime/dag/overview.md) §4).
+Everything said on a branch belongs in memory, and nothing said on the
+shared prefix belongs in memory twice.
+
+The cursor therefore records identity, not position. One file per
+thread holds the ids of the messages memory has taken:
+
+```
+<state>/memory/.scriptorium/cursors/openprogram/<session-id>.json
+    {"written": ["a3f1c2", "9d0e77", "4b21ae"]}
+```
+
+The path carries the provider and the thread, the file carries the ids
+in the order they were written. A number cannot carry that identity:
+the fourth message of a branch and the fourth message of the trunk are
+two different messages under the same number, so a cursor holding
+"written through nine" reads an entire branch numbered four to nine as
+already written and offers none of it.
+
+### Working out what a session owes
+
+`write` reads the branch that ends at the session's head. `get_branch`
+walks `predecessor` edges from that head back to the start of the
+branch and returns the line in order, so by the time memory sees it the
+walk is done. The turns on that line whose ids are not in `written` are
+what the session owes, in branch order. The batch is the leading part
+of them that reaches the threshold, and their ids join `written` when
+the write transaction installs, never before.
+
+The ids are the whole boundary, so a branch needs no identifier of its
+own. The tip cannot serve as one anyway: a branch's tip is a different
+node after every turn, so keying by it would open a new cursor per
+turn. A record still carries an ordinal, and it still orders the batch
+the source archive appends, but it no longer decides what is owed.
+
+### At a fork
+
+The turn that opens a branch carries the predecessor of the turn it
+replaces, and nothing else about it is special. Its branch runs back
+through the shared prefix, whose ids are in `written` already, so the
+new turns are owed and the prefix is not. The trunk and the branch need
+no ordering between them and no knowledge of each other. Whichever is
+written first puts the shared ids in the set, and the other one skips
+exactly what it shares.
+
+### Ids stay
+
+An id is never removed. Dropping the ids of a branch nobody visits any
+more looks like tidying, and it is the one operation that breaks what
+the set is for: a fork can start at any message, so a message has to
+stay recognisable for as long as any future branch could run back
+through it, which is as long as the session exists. The set grows with
+the session at the rate the source archive already grows, one entry per
+message, and one file per thread keeps a turn's cursor read
+proportional to that session rather than to every session ever written.
+
+Deleting a session deletes its cursor file. That is the only removal,
+and it is safe because the branches that could have run through those
+messages go with it.
+
+### Migrating off the position cursor
+
+An installation upgrading from the position cursor has
+`cursors: {thread: {message_id, ordinal}}` in `runtime.json`. It names
+the last message written per thread and nothing before it, so the set
+cannot be reconstructed from it.
+
+The set is seeded from the source archive instead.
+`sources/openprogram/<session-id>.md` carries a `source-id` comment per
+archived message, and on the write path a batch is archived before the
+cursor advances, so the archive covers everything the old cursor
+pointed past. Seeding from it re-writes nothing that was written. It
+can cover a little more than the old cursor did, because the archive
+records what was handed to the writer: a batch archived by a write that
+then failed reads as written and is not offered again. That costs at
+most one interrupted batch per thread, once, against re-writing every
+session's whole history, which is what discarding the old state would
+cost. A workspace with no `sources/` tree, from before the source
+archive existed, seeds empty and is written from the start.
+
+`cursors` leaves `runtime.json` once seeded. The counters stay there:
+`creation_order`, the local batch and token counts, and the time of the
+last global pass.
+
+### What this does not settle
+
+- **Only the branch under the head is offered.** Both write paths ask
+  for the branch ending at the session's head, so a branch the user
+  leaves before it crosses the threshold is never revisited: no walk
+  reaches its tip again. Cursors make writing several branches safe;
+  they do not go looking for branches. Enumerating `list_branches`
+  would, at the cost of writing branches that were abandoned on
+  purpose.
+- **Two branches, one set of topic files.** Records from different
+  branches are folded into the same files, and the topic format has no
+  way to say that two claims are alternatives from mutually exclusive
+  branches. Retrieval returns both, and the nightly reorganize merges
+  paragraphs that say the same thing whether or not they came from the
+  same line of the conversation.
+- **Cross-session spawn.** A spawn branch inside the same session
+  shares that session's cursor and archive and needs nothing extra. A
+  cross-session spawn's branch root points into another session's
+  graph, and the thread here is the session id, so the two halves are
+  written under two threads and neither walk crosses into the other.
+  Nothing is written twice and nothing is skipped; what is missing is
+  the link saying that the sub-agent's branch continues the caller's
+  conversation.
+- **Compaction summaries.** A summary node takes the predecessor of the
+  first turn it covers, which makes it a sibling of the line the head
+  is on rather than a member of it, so the ordinary walk sees the raw
+  turns and writes those. A head that moves onto the summary's own line
+  makes the summary an unwritten assistant turn whose text restates
+  turns already in memory, under an id the cursor has never seen.
+- **Rows the store gave no id.** `_records` falls back to a positional
+  id for a row without one, and that string names different messages on
+  different branches. The session store always supplies an id, so the
+  fallback is unreachable; under an id-keyed cursor it is wrong rather
+  than merely unused, and it goes.
+- **`written` means handed to the writer, not cited.** A batch the
+  writer folds into one paragraph citing one of its five turns marks
+  all five written. That is intended, and it is why the archive is a
+  fair seed above, but the cursor is not evidence that a particular
+  turn's content reached a file.
 
 ## Why the nightly reorganize exists
 
@@ -267,3 +396,22 @@ something the user just asked for. `system_prompt` and `search` return
 text that is already fenced — `fence_memory` does the wrapping, and the
 provider applies it. Nothing fences again on the way out: fencing twice
 strips the inner block and leaves an empty one.
+
+## Appendix: Implementation status
+
+Everything above runs today except "The write cursor". What runs in its
+place is a position cursor: `runtime.json` holds
+`cursors: {thread: {message_id, ordinal}}`, `runtime/online.py` claims
+a record only when its ordinal is higher than the stored one, and
+`scriptorium/writing.py` builds that ordinal from the row's index in
+the branch it read. The index is a position in one branch, so a branch
+forked from an earlier message numbers its turns below the stored
+ordinal and the whole branch reads as already written. Measured on a
+session whose stored ordinal was 9, a six-record branch was offered as
+zero records.
+
+The three places the design lands are `runtime/state.py` (the state
+shape and the per-thread cursor files), `runtime/online.py` (what a
+session owes, and adding ids after the transaction installs), and
+`_records` in `scriptorium/writing.py` (identity by message id, and
+dropping the positional fallback).
