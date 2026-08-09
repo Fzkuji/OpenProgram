@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agentic Program：工具、技能、agentic function是同一个概念</title>
+<style>
+  :root{
+    --bg:#16150f; --pan:#1d1c14; --bd:#2e2c20; --tx:#bdb9a6; --acc:#d4843a;
+    --cb:#12110b; --dim:#8a8675;
+    --c0:#4f8ef7; --c1:#5aad4e; --c2:#d4843a; --c3:#9d6fe0; --c4:#2db3d5;
+    --no:#e0445a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:40px 24px 96px}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:23px;color:#f0eee6;margin:0 0 6px}
+  .sub{color:var(--tx);margin:0 0 20px;max-width:80ch}
+  h2{font-size:16px;color:var(--acc);margin:38px 0 8px;scroll-margin-top:20px}
+  h2 .num{color:var(--dim);font-size:12px;margin-right:8px;letter-spacing:.16em}
+  h3{font-size:13.5px;color:#f0eee6;margin:22px 0 7px;font-weight:600}
+  .lead{color:var(--dim);font-size:13px;margin:0 0 12px;max-width:82ch}
+  .card{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:8px;margin-bottom:16px}
+  /* 图在正常宽度下自适应缩放；窄到看不清时改为卡片内横向滚动，
+     820 这个下限刚好低于文档站 iframe 的可用宽度，所以常规阅读不会出现横向滚动条 */
+  .card.scroll{overflow-x:auto}
+  .card.scroll svg{min-width:820px}
+  svg{display:block;width:100%;height:auto;background:var(--cb);border-radius:8px}
+  .legend{font-size:12.5px;color:var(--dim);padding:8px 10px;line-height:1.8}
+  .legend b{color:#f0eee6}
+  code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
+  a{color:var(--acc)}
+  text{font-family:-apple-system,"Segoe UI",sans-serif}
+  b{color:#f0eee6;font-weight:600}
+
+  .toc{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 26px}
+  .toc a{font-size:12px;color:var(--tx);text-decoration:none;border:1px solid var(--bd);
+    background:var(--pan);border-radius:99px;padding:4px 12px}
+  .toc a:hover{border-color:var(--acc);color:#f0eee6}
+
+  .tbl{overflow-x:auto;background:var(--pan);border:1px solid var(--bd);border-radius:12px;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:840px}
+  th{text-align:left;padding:9px 13px;color:var(--dim);font-weight:600;font-size:11px;
+    letter-spacing:.14em;border-bottom:1px solid var(--bd);white-space:nowrap}
+  td{padding:9px 13px;border-bottom:1px solid #26241a;vertical-align:top;line-height:1.6}
+  tr:last-child td{border-bottom:none}
+  td.y{color:var(--c1)} td.n{color:var(--no)} td.m{color:var(--c2)}
+  td.nm{font:11.5px Menlo,monospace;color:var(--tx);white-space:nowrap}
+
+  pre{background:var(--cb);border:1px solid var(--bd);border-radius:10px;padding:13px 15px;
+    overflow-x:auto;margin:0 0 16px;font:12px/1.9 Menlo,monospace;color:#a5a190}
+
+  .note{border-left:3px solid var(--bd);padding:2px 0 2px 13px;color:var(--dim);
+    font-size:12.5px;margin:0 0 16px;max-width:86ch;line-height:1.8}
+  .note.warn{border-left-color:var(--no)}
+  .note.ok{border-left-color:var(--c1)}
+
+  /* 流程条 */
+  .fw{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:13px 15px;margin-bottom:12px}
+  .fw h4{margin:0 0 2px;font:13.5px -apple-system,sans-serif;color:#f0eee6}
+  .fw .sig{font:11.5px Menlo,monospace;color:var(--acc);margin:0 0 3px;word-break:break-all}
+  .fw .why{margin:0 0 11px;font-size:12.5px;color:var(--dim);line-height:1.65}
+  .flow{display:flex;align-items:stretch;overflow-x:auto;padding:2px 0 7px}
+  .fx{flex:0 0 auto;min-width:152px;max-width:236px;border:1px solid var(--bd);
+    border-radius:9px;padding:7px 10px;background:var(--cb)}
+  .fx.code{border-left:3px solid var(--c0)}
+  .fx.llm{border-left:3px solid var(--c2)}
+  .fx.gate{border-left:3px solid var(--c1)}
+  .fx.fan{border-left:3px solid var(--c3)}
+  .fx .k{font-size:9.5px;letter-spacing:.18em;color:var(--dim)}
+  .fx .t{font:11.5px/1.5 Menlo,monospace;color:#f0eee6;margin:3px 0 4px;word-break:break-word}
+  .fx .d{font-size:11.5px;color:#a5a190;line-height:1.55}
+  .arw{flex:0 0 auto;align-self:center;color:#4a4838;padding:0 7px;font-size:15px}
+  .cost{display:inline-block;font:11px Menlo,monospace;background:var(--cb);
+    border:1px solid var(--bd);border-radius:6px;padding:2px 8px;color:var(--c4);margin-top:8px}
+  .cost.lines{color:var(--dim);margin-left:6px}
+
+  .lg{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--dim);margin:0 0 14px}
+  .lg span{display:flex;align-items:center;gap:6px}
+  .lg i{width:10px;height:10px;border-radius:3px;display:inline-block;font-style:normal}
+
+  /* 问答卡 */
+  .qa{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:13px 16px;margin-bottom:11px}
+  .qa .q{font-size:13px;color:#f0eee6;font-weight:600;margin:0 0 6px}
+  .qa .a{font-size:12.5px;color:#a5a190;line-height:1.75;margin:0}
+  .qa .a b{color:var(--acc);font-weight:600}
+  .qa .a + .a{margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Agentic Program：工具、技能、agentic function是同一个概念</h1>
+<p class="sub">三者本来就是同一件事的三个刻度：<b>一段可复用的工作，区别只在多少写进了代码</b>。
+工具是一步就完的最小形态，技能是只给指导、流程仍由模型走的最松形态，agentic function是流程写死、只留决策点的最紧形态。
+统一叫<b>agentic program</b>之后，它们是同一个概念在一条连续谱上的三个位置，不是三个并列的东西。
+这一页把这条谱画出来，给出「该写哪一种」的判据，并核实统一概念之后实现要不要跟着统一。</p>
+
+<div class="toc">
+  <a href="#s1">1 我们现在怎么做的</a>
+  <a href="#s2">2 别人怎么做的</a>
+  <a href="#s3">3 计划怎么优化</a>
+  <a href="#s4">4 理想状态</a>
+  <a href="#s5">5 六个设计问题的回答</a>
+</div>
+
+
+<!-- ===================== 1 ===================== -->
+<h2 id="s1"><span class="num">01</span>我们现在怎么做的</h2>
+<p class="lead">先把谱画出来。轴是「这段工作的步骤表落在哪里，有没有约束力」。同一件工作三种写法都能做，差别在于运行之前有多少已经定了。</p>
+
+<div class="lg">
+  <span><i style="background:#4f8ef7"></i>代码定死（解释器执行，不照做不可能）</span>
+  <span><i style="background:#12110b;border:1px dashed #4f8ef7"></i>散文写了（模型读了可以不照做）</span>
+  <span><i style="background:#d4843a"></i>模型现定（每次跑都可能不一样）</span>
+  <span><i style="background:#3a382c"></i>不存在</span>
+</div>
+
+<div class="card scroll">
+<svg viewBox="0 0 1120 510" role="img" aria-label="连续谱：三种形态在同一条轴上的位置，以及各自代码管什么模型管什么">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#4a4838"/>
+    </marker>
+  </defs>
+
+  <text x="20" y="26" fill="#f0eee6" font-size="13" font-weight="600">一条轴：这段工作的步骤表落在哪里</text>
+  <text x="20" y="46" fill="#8a8675" font-size="11.5">可测量的说法：同一件事跑两遍，有多少东西一定相同。左端几乎没有，右端骨架逐字相同、只有内容不同。</text>
+
+  <line x1="150" y1="100" x2="1090" y2="100" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+  <line x1="150" y1="100" x2="160" y2="100" stroke="#4a4838" stroke-width="1.5" marker-start="url(#ah)"/>
+  <text x="150" y="86" fill="#8a8675" font-size="11.5">步骤表不存在</text>
+  <text x="1090" y="86" fill="#8a8675" font-size="11.5" text-anchor="end">步骤表是代码</text>
+
+  <circle cx="300" cy="100" r="5" fill="#d4843a"/>
+  <circle cx="620" cy="100" r="5" fill="#7ea6e8"/>
+  <circle cx="940" cy="100" r="5" fill="#4f8ef7"/>
+  <line x1="300" y1="105" x2="300" y2="122" stroke="#2e2c20"/>
+  <line x1="620" y1="105" x2="620" y2="122" stroke="#2e2c20"/>
+  <line x1="940" y1="105" x2="940" y2="122" stroke="#2e2c20"/>
+
+  <!-- 列头 -->
+  <text x="300" y="142" fill="#f0eee6" font-size="12.5" font-family="Menlo,monospace" text-anchor="middle">@function</text>
+  <text x="300" y="160" fill="#d4843a" font-size="12" text-anchor="middle">工具</text>
+  <text x="300" y="179" fill="#6b6a63" font-size="11" text-anchor="middle">生产里46个</text>
+
+  <text x="620" y="142" fill="#f0eee6" font-size="12.5" font-family="Menlo,monospace" text-anchor="middle">SKILL.md</text>
+  <text x="620" y="160" fill="#7ea6e8" font-size="12" text-anchor="middle">技能</text>
+  <text x="620" y="179" fill="#6b6a63" font-size="11" text-anchor="middle">仓库里7份，进提示的4份</text>
+
+  <text x="940" y="142" fill="#f0eee6" font-size="12" font-family="Menlo,monospace" text-anchor="middle">@agentic_function</text>
+  <text x="940" y="160" fill="#4f8ef7" font-size="12" text-anchor="middle">agentic函数</text>
+  <text x="940" y="179" fill="#6b6a63" font-size="11" text-anchor="middle">生产里4个</text>
+
+  <!-- 矩阵 -->
+  <text x="24" y="205" fill="#8a8675" font-size="10.5" letter-spacing="0.14em">这一格由谁定</text>
+
+  <!-- r1 -->
+  <text x="24" y="238" fill="#f0eee6" font-size="11.5">有哪些步骤</text>
+  <rect x="145" y="218" width="306" height="30" rx="7" fill="#2a1e12" stroke="#d4843a"/>
+  <text x="298" y="238" fill="#e8a468" font-size="11.5" text-anchor="middle">对话里现定</text>
+  <rect x="467" y="218" width="306" height="30" rx="7" fill="#12110b" stroke="#4f8ef7" stroke-dasharray="4 3"/>
+  <text x="620" y="238" fill="#7ea6e8" font-size="11.5" text-anchor="middle">散文里列了</text>
+  <rect x="789" y="218" width="306" height="30" rx="7" fill="#182436" stroke="#4f8ef7"/>
+  <text x="942" y="238" fill="#9cc4ff" font-size="11.5" text-anchor="middle">Python里定死</text>
+
+  <!-- r2 -->
+  <text x="24" y="278" fill="#f0eee6" font-size="11.5">步骤的顺序</text>
+  <rect x="145" y="258" width="306" height="30" rx="7" fill="#2a1e12" stroke="#d4843a"/>
+  <text x="298" y="278" fill="#e8a468" font-size="11.5" text-anchor="middle">对话里现定</text>
+  <rect x="467" y="258" width="306" height="30" rx="7" fill="#12110b" stroke="#4f8ef7" stroke-dasharray="4 3"/>
+  <text x="620" y="278" fill="#7ea6e8" font-size="11.5" text-anchor="middle">散文里建议</text>
+  <rect x="789" y="258" width="306" height="30" rx="7" fill="#182436" stroke="#4f8ef7"/>
+  <text x="942" y="278" fill="#9cc4ff" font-size="11.5" text-anchor="middle">Python里定死</text>
+
+  <!-- r3 -->
+  <text x="24" y="318" fill="#f0eee6" font-size="11.5">并行扇出宽度</text>
+  <rect x="145" y="298" width="306" height="30" rx="7" fill="#2a1e12" stroke="#d4843a"/>
+  <text x="298" y="318" fill="#e8a468" font-size="11.5" text-anchor="middle">对话里现定</text>
+  <rect x="467" y="298" width="306" height="30" rx="7" fill="#12110b" stroke="#4f8ef7" stroke-dasharray="4 3"/>
+  <text x="620" y="318" fill="#7ea6e8" font-size="11.5" text-anchor="middle">散文里建议</text>
+  <rect x="789" y="298" width="306" height="30" rx="7" fill="#182436" stroke="#4f8ef7"/>
+  <text x="942" y="318" fill="#9cc4ff" font-size="11.5" text-anchor="middle">Python里定死</text>
+
+  <!-- r4 -->
+  <text x="24" y="358" fill="#f0eee6" font-size="11.5">验收闸门</text>
+  <rect x="145" y="338" width="306" height="30" rx="7" fill="#191811" stroke="#2e2c20"/>
+  <text x="298" y="358" fill="#6b6a63" font-size="11.5" text-anchor="middle">不存在</text>
+  <rect x="467" y="338" width="306" height="30" rx="7" fill="#12110b" stroke="#4f8ef7" stroke-dasharray="4 3"/>
+  <text x="620" y="358" fill="#7ea6e8" font-size="11.5" text-anchor="middle">散文里提醒</text>
+  <rect x="789" y="338" width="306" height="30" rx="7" fill="#182436" stroke="#4f8ef7"/>
+  <text x="942" y="358" fill="#9cc4ff" font-size="11.5" text-anchor="middle">代码检查，不过不放行</text>
+
+  <!-- r5 -->
+  <text x="24" y="398" fill="#f0eee6" font-size="11.5">产出的形状</text>
+  <rect x="145" y="378" width="306" height="30" rx="7" fill="#191811" stroke="#2e2c20"/>
+  <text x="298" y="398" fill="#6b6a63" font-size="11.5" text-anchor="middle">不约束，返回什么都行</text>
+  <rect x="467" y="378" width="306" height="30" rx="7" fill="#191811" stroke="#2e2c20"/>
+  <text x="620" y="398" fill="#6b6a63" font-size="11.5" text-anchor="middle">不存在</text>
+  <rect x="789" y="378" width="306" height="30" rx="7" fill="#182436" stroke="#4f8ef7"/>
+  <text x="942" y="398" fill="#9cc4ff" font-size="11.5" text-anchor="middle">代码定死，不合就重问</text>
+
+  <!-- r6 -->
+  <text x="24" y="438" fill="#f0eee6" font-size="11.5">产出的内容</text>
+  <rect x="145" y="418" width="306" height="30" rx="7" fill="#2a1e12" stroke="#d4843a"/>
+  <text x="298" y="438" fill="#e8a468" font-size="11.5" text-anchor="middle">模型</text>
+  <rect x="467" y="418" width="306" height="30" rx="7" fill="#2a1e12" stroke="#d4843a"/>
+  <text x="620" y="438" fill="#e8a468" font-size="11.5" text-anchor="middle">模型</text>
+  <rect x="789" y="418" width="306" height="30" rx="7" fill="#2a1e12" stroke="#d4843a"/>
+  <text x="942" y="438" fill="#e8a468" font-size="11.5" text-anchor="middle">模型</text>
+
+  <rect x="20" y="462" width="1075" height="36" rx="8" fill="#12110b" stroke="#3a2c1a"/>
+  <text x="38" y="485" fill="#d4843a" font-size="11.5">最后一行三格全是模型：三种写法从来没有一种把「内容」收进代码，它们抢的全是上面五行。这条谱只关于上面五行。</text>
+</svg>
+<div class="legend">
+存量按生产代码统计（不含测试）：<code>@function</code>共46个（32个<code>@function(...)</code>装饰器写法，
+14个<code>function(...)(fn)</code>模块级调用写法，两种写法进的是同一个注册表）；
+<code>@agentic_function</code>共4个（<code>extract_pdf_figures</code>、<code>extract_pdf_tables</code>、<code>interaction_demo</code>、<code>goal</code>）；
+技能<code>openprogram/skills_bundled/</code>下3份、仓库根<code>skills/</code>下4份，而喂进系统提示的
+<code>default_skill_dirs()</code>只读后者加<code>~/.openprogram/skills</code>（见第4问）。
+<b>三个刻度不是仅有的三个位置。</b>骨架里放一个<code>decision.make</code>是硬里嵌软；技能第三步写「调<code>survey_references</code>」是软里嵌硬。所以谱是连续的。
+</div>
+</div>
+
+<h3>装饰器不决定你在谱上的位置</h3>
+<p class="lead">这是核实之后最反直觉的一条，也是后面「装饰器要不要合并」的前提。谱上的位置由你写的代码决定，装饰器管的是另一个正交的维度。</p>
+
+<div class="card scroll">
+<svg viewBox="0 0 1120 350" role="img" aria-label="谱上位置与装饰器选择是两个正交维度">
+  <text x="20" y="26" fill="#f0eee6" font-size="13" font-weight="600">横轴是概念位置，纵轴是装饰器管的事：内部的模型调用记不记账</text>
+
+  <line x1="150" y1="288" x2="1080" y2="288" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+  <line x1="150" y1="288" x2="150" y2="70" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="160" y="308" fill="#8a8675" font-size="11">步骤表不存在</text>
+  <text x="1080" y="308" fill="#8a8675" font-size="11" text-anchor="end">步骤表是代码</text>
+  <text x="26" y="80" fill="#8a8675" font-size="11">进DAG</text>
+  <text x="26" y="96" fill="#6b6a63" font-size="10.5">可被后续</text>
+  <text x="26" y="110" fill="#6b6a63" font-size="10.5">调用看见</text>
+  <text x="26" y="262" fill="#8a8675" font-size="11">不进DAG</text>
+  <text x="26" y="278" fill="#6b6a63" font-size="10.5">对外是黑盒</text>
+
+  <!-- agentic 带 -->
+  <rect x="170" y="112" width="900" height="66" rx="10" fill="#182436" stroke="#4f8ef7" opacity="0.45"/>
+  <text x="186" y="134" fill="#9cc4ff" font-size="11.5" font-family="Menlo,monospace">@agentic_function</text>
+  <text x="186" y="152" fill="#6b93cc" font-size="10.5">模型调用走 runtime.exec，每次落一个 ModelCall 节点，受 expose / render_range 约束</text>
+  <circle cx="640" cy="168" r="4.5" fill="#4f8ef7"/>
+  <text x="640" y="196" fill="#a5a190" font-size="10.5" text-anchor="middle">interaction_demo</text>
+  <circle cx="880" cy="168" r="4.5" fill="#4f8ef7"/>
+  <text x="880" y="196" fill="#a5a190" font-size="10.5" text-anchor="middle">extract_pdf_figures</text>
+  <circle cx="1010" cy="168" r="4.5" fill="#4f8ef7"/>
+  <text x="1010" y="196" fill="#a5a190" font-size="10.5" text-anchor="middle">goal</text>
+
+  <!-- function 带 -->
+  <rect x="170" y="214" width="900" height="60" rx="10" fill="#2a1e12" stroke="#d4843a" opacity="0.45"/>
+  <text x="186" y="234" fill="#e8a468" font-size="11.5" font-family="Menlo,monospace">@function</text>
+  <text x="186" y="251" fill="#c08b52" font-size="10.5">体内调模型也不进DAG，只在 usage 里记一笔 call_kind="tool"</text>
+  <circle cx="230" cy="266" r="4.5" fill="#d4843a"/>
+  <text x="230" y="284" fill="#a5a190" font-size="10.5" text-anchor="middle">read</text>
+  <circle cx="300" cy="266" r="4.5" fill="#d4843a"/>
+  <text x="300" y="284" fill="#a5a190" font-size="10.5" text-anchor="middle">grep</text>
+  <circle cx="1000" cy="266" r="4.5" fill="#d4843a"/>
+  <text x="1000" y="284" fill="#a5a190" font-size="10.5" text-anchor="middle">mixture_of_agents</text>
+
+  <!-- 技能 -->
+  <circle cx="620" cy="300" r="4.5" fill="#12110b" stroke="#7ea6e8" stroke-dasharray="2 2"/>
+  <text x="632" y="304" fill="#7ea6e8" font-size="10.5">技能：没有装饰器，也没有帐</text>
+
+  <rect x="700" y="34" width="395" height="66" rx="9" fill="#12110b" stroke="#e0445a"/>
+  <text x="716" y="55" fill="#e0445a" font-size="11.5" font-weight="600">同一个 @function 覆盖了整条横轴</text>
+  <text x="716" y="74" fill="#a5a190" font-size="11">mixture_of_agents 是完全固化的多步流程：并行扇出N个模型，</text>
+  <text x="716" y="90" fill="#a5a190" font-size="11">最少成功数闸门，再一次聚合调用。它写成了工具。</text>
+</svg>
+<div class="legend">
+<code>mixture_of_agents</code>（<code>openprogram/functions/tools/mixture_of_agents/mixture_of_agents.py:290</code>）用<code>asyncio.gather</code>并行发N个模型，
+用<code>MIN_SUCCESSFUL_REFERENCES</code>做闸门，再调一次聚合模型。步骤、扇出、闸门全在代码里，站在谱的最右端，
+但它经<code>complete_simple</code>直连provider，不经<code>runtime.exec</code>，所以一个ModelCall节点都不落。
+<b>结论：装饰器选的是「内部要不要记账」，和「多少写进代码」是两个维度。</b>
+</div>
+</div>
+
+<h3>引擎造好了什么，生产里真正用到了什么</h3>
+<p class="lead">落差不在引擎。引擎里做决策的那几个入口，一次都没在生产代码里被调用过。</p>
+
+<div class="card scroll">
+<svg viewBox="0 0 1120 316" role="img" aria-label="引擎能力与实际使用次数对照">
+  <text x="20" y="26" fill="#5aad4e" font-size="12" font-weight="600">引擎里有，生产里在用</text>
+  <g font-size="11.5">
+    <rect x="20" y="40" width="205" height="94" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
+    <rect x="20" y="40" width="205" height="3" rx="1.5" fill="#5aad4e"/>
+    <text x="34" y="63" fill="#f0eee6" font-family="Menlo,monospace" font-size="11">runtime.exec(content=)</text>
+    <text x="34" y="82" fill="#a5a190">一次模型调用，落一个</text>
+    <text x="34" y="98" fill="#a5a190">ModelCall节点</text>
+    <text x="34" y="122" fill="#5aad4e" font-family="Menlo,monospace">3 处</text>
+
+    <rect x="240" y="40" width="205" height="94" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
+    <rect x="240" y="40" width="205" height="3" rx="1.5" fill="#5aad4e"/>
+    <text x="254" y="63" fill="#f0eee6" font-family="Menlo,monospace" font-size="11">DAG节点（入口/出口）</text>
+    <text x="254" y="82" fill="#a5a190">进入写status=running，</text>
+    <text x="254" y="98" fill="#a5a190">退出补output与耗时</text>
+    <text x="254" y="122" fill="#5aad4e" font-family="Menlo,monospace">4 处，全自动</text>
+
+    <rect x="460" y="40" width="205" height="94" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
+    <rect x="460" y="40" width="205" height="3" rx="1.5" fill="#5aad4e"/>
+    <text x="474" y="63" fill="#f0eee6" font-family="Menlo,monospace" font-size="11">expose / render_range</text>
+    <text x="474" y="82" fill="#a5a190">裁剪外面看得见什么、</text>
+    <text x="474" y="98" fill="#a5a190">里面看得见什么</text>
+    <text x="474" y="122" fill="#5aad4e" font-family="Menlo,monospace">4 处，取默认</text>
+
+    <rect x="680" y="40" width="205" height="94" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
+    <rect x="680" y="40" width="205" height="3" rx="1.5" fill="#5aad4e"/>
+    <text x="694" y="63" fill="#f0eee6" font-family="Menlo,monospace" font-size="11">重试 + timeout_s</text>
+    <text x="694" y="82" fill="#a5a190">退避重试、墙钟预算、</text>
+    <text x="694" y="98" fill="#a5a190">on_retry观测钩子</text>
+    <text x="694" y="122" fill="#5aad4e" font-family="Menlo,monospace">全局默认生效</text>
+
+    <rect x="900" y="40" width="200" height="94" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
+    <rect x="900" y="40" width="200" height="3" rx="1.5" fill="#5aad4e"/>
+    <text x="914" y="63" fill="#f0eee6" font-family="Menlo,monospace" font-size="11">注册成工具</text>
+    <text x="914" y="82" fill="#a5a190">和@function进同一个</text>
+    <text x="914" y="98" fill="#a5a190">registry，模型可直接调</text>
+    <text x="914" y="122" fill="#5aad4e" font-family="Menlo,monospace">4 处</text>
+  </g>
+
+  <text x="20" y="172" fill="#e0445a" font-size="12" font-weight="600">引擎里有，生产里 0 次</text>
+  <g font-size="11.5">
+    <rect x="20" y="186" width="205" height="94" rx="9" fill="#1d1c14" stroke="#3a2420"/>
+    <rect x="20" y="186" width="205" height="3" rx="1.5" fill="#e0445a"/>
+    <text x="34" y="209" fill="#f0eee6" font-family="Menlo,monospace" font-size="11">decision.make(...)</text>
+    <text x="34" y="228" fill="#a5a190">从闭集里选下一步，选中</text>
+    <text x="34" y="244" fill="#a5a190">的函数直接跑并返回</text>
+    <text x="34" y="268" fill="#e0445a" font-family="Menlo,monospace">0 处（只有测试）</text>
+
+    <rect x="240" y="186" width="205" height="94" rx="9" fill="#1d1c14" stroke="#3a2420"/>
+    <rect x="240" y="186" width="205" height="3" rx="1.5" fill="#e0445a"/>
+    <text x="254" y="209" fill="#f0eee6" font-family="Menlo,monospace" font-size="11">exec(choices=...)</text>
+    <text x="254" y="228" fill="#a5a190">先干活再收尾选一个，</text>
+    <text x="254" y="244" fill="#a5a190">同一套选项与解析</text>
+    <text x="254" y="268" fill="#e0445a" font-family="Menlo,monospace">0 处</text>
+
+    <rect x="460" y="186" width="205" height="94" rx="9" fill="#1d1c14" stroke="#3a2420"/>
+    <rect x="460" y="186" width="205" height="3" rx="1.5" fill="#e0445a"/>
+    <text x="474" y="209" fill="#f0eee6" font-family="Menlo,monospace" font-size="11">exec(tools=, max_iter=)</text>
+    <text x="474" y="228" fill="#a5a190">步内工具循环。goal绕开它，</text>
+    <text x="474" y="244" fill="#a5a190">改用run_agent_turn派子agent</text>
+    <text x="474" y="268" fill="#e0445a" font-family="Menlo,monospace">0 处</text>
+
+    <rect x="680" y="186" width="205" height="94" rx="9" fill="#1d1c14" stroke="#3a2420"/>
+    <rect x="680" y="186" width="205" height="3" rx="1.5" fill="#e0445a"/>
+    <text x="694" y="209" fill="#f0eee6" font-family="Menlo,monospace" font-size="11">exec(response_format=)</text>
+    <text x="694" y="228" fill="#a5a190">provider原生结构化输出</text>
+    <text x="694" y="268" fill="#e0445a" font-family="Menlo,monospace">0 处</text>
+
+    <rect x="900" y="186" width="200" height="94" rx="9" fill="#1d1c14" stroke="#3a2c1a"/>
+    <rect x="900" y="186" width="200" height="3" rx="1.5" fill="#d4843a"/>
+    <text x="914" y="209" fill="#f0eee6" font-size="11">于是每处各写一遍</text>
+    <text x="914" y="228" fill="#a5a190">_parse_json_array、</text>
+    <text x="914" y="244" fill="#a5a190">parse_json、手抠花括号</text>
+    <text x="914" y="268" fill="#d4843a" font-family="Menlo,monospace">3 套解析代码</text>
+  </g>
+</svg>
+<div class="legend">这张图是整份设计的起点：<b>决策原语建好了，但没有一个生产调用点。</b>
+不是因为它不好用，是因为现有4个agentic function根本不需要分支，它们的形状都是「确定性循环里放一个模型算子」。</div>
+</div>
+
+<h3>现有4个agentic function长什么样</h3>
+<p class="lead">四个的骨架高度一致：代码算出一个固定的集合，循环里每项调一次模型，模型的回答只作为数据流回代码，从不决定下一步走哪儿。</p>
+
+<div class="lg">
+  <span><i style="background:var(--c0)"></i>代码步骤（确定）</span>
+  <span><i style="background:var(--c2)"></i>模型步骤</span>
+  <span><i style="background:var(--c1)"></i>闸门 / 校验</span>
+  <span><i style="background:var(--c3)"></i>并行扇出</span>
+</div>
+
+<div class="fw">
+  <h4>extract_pdf_figures</h4>
+  <p class="sig">openprogram/functions/agentics/extract_pdf_figures/__init__.py:98</p>
+  <p class="why">整份文件里唯一需要判断的是看图给框。翻页、映射坐标、裁剪、写盘全是代码。模型答错一页不影响其余页。</p>
+  <div class="flow">
+    <div class="fx code"><div class="k">CODE</div><div class="t">_parse_pages</div><div class="d">页码范围解析成 lo, hi</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx code"><div class="k">CODE 循环</div><div class="t">for page in lo..hi</div><div class="d">渲染成预览PNG</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx llm"><div class="k">LLM 每页一次</div><div class="t">runtime.exec(图+提示)</div><div class="d">回图框坐标JSON</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx code"><div class="k">CODE</div><div class="t">_parse_json_array</div><div class="d">手写解析，容错靠抠花括号</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx code"><div class="k">CODE</div><div class="t">坐标映射 + 裁剪 + 写盘</div><div class="d">回 [{page,label,caption,path}]</div></div>
+  </div>
+  <span class="cost">模型调用次数 = 页数</span><span class="cost lines">217行</span>
+</div>
+
+<div class="fw">
+  <h4>goal</h4>
+  <p class="sig">openprogram/functions/agentics/goal/__init__.py:312</p>
+  <p class="why">只有一个判断，判断本身派一个子agent去做（带只读工具），回来解析成定死的JSON。所有记账、重试计数、预算、停机规则都在<code>goal.py</code>里，在模型外面。</p>
+  <div class="flow">
+    <div class="fx code"><div class="k">CODE</div><div class="t">render_session_view</div><div class="d">压缩上下文视图（摘要+尾巴）</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx code"><div class="k">CODE</div><div class="t">_decision_prompt</div><div class="d">提示就是函数docstring</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx llm"><div class="k">LLM 一次</div><div class="t">run_agent_turn(tools_override)</div><div class="d">只读工具，自己决定查不查</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx gate"><div class="k">GATE</div><div class="t">_parse_decision</div><div class="d">met必须是bool，checklist长度必须对齐，否则算失败一次</div></div>
+  </div>
+  <span class="cost">模型调用次数 = 1</span><span class="cost lines">418行</span>
+</div>
+
+<div class="note">
+<code>extract_pdf_tables</code>（121行）和<code>interaction_demo</code>（119行）是同一形状的更小版本。
+四个里没有一个用<code>decision.make</code>、没有一个用<code>exec(choices=)</code>、没有一个用<code>exec(tools=)</code>。
+四个都取<code>as_tool=True</code>和<code>expose="io"</code>的默认值，全部对模型可见。
+<b>结论：我们已经证明了「把确定性外壳写进代码」这件事成立，还没开始做「流程里留决策点」。</b>
+</div>
+
+<h3>技能这一层今天有两套，而且两套互不认识</h3>
+<p class="lead">「技能没有注册」这个说法不准。准确的说法是：注册了两套，读的目录不一样，去重规则相反，喂给模型的格式也不一样。</p>
+
+<div class="card scroll">
+<svg viewBox="0 0 1120 340" role="img" aria-label="技能层现状：两个加载器、两个渲染器、一个没接上的工具">
+  <text x="20" y="26" fill="#e0445a" font-size="12.5" font-weight="600">两个加载器</text>
+
+  <rect x="20" y="40" width="330" height="118" rx="10" fill="#1d1c14" stroke="#3a2420"/>
+  <rect x="20" y="40" width="330" height="3" rx="1.5" fill="#e0445a"/>
+  <text x="36" y="62" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">agentic_programming/skills.py</text>
+  <text x="36" y="82" fill="#a5a190" font-size="11">只读 front matter 的 name 和 description</text>
+  <text x="36" y="99" fill="#a5a190" font-size="11">正文一个字都不读</text>
+  <text x="36" y="116" fill="#a5a190" font-size="11">扫2个目录：~/.openprogram/skills、&lt;repo&gt;/skills</text>
+  <text x="36" y="133" fill="#a5a190" font-size="11">同名先见先赢</text>
+  <text x="36" y="150" fill="#e0445a" font-size="11">读不到 skills_bundled/</text>
+
+  <rect x="366" y="40" width="330" height="118" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+  <rect x="366" y="40" width="330" height="3" rx="1.5" fill="#5aad4e"/>
+  <text x="382" y="62" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">skills/loader.py</text>
+  <text x="382" y="82" fill="#a5a190" font-size="11">读正文，还读 category / allowed_tools /</text>
+  <text x="382" y="99" fill="#a5a190" font-size="11">triggers / aliases</text>
+  <text x="382" y="116" fill="#a5a190" font-size="11">扫5个来源：bundled、user、project、plugin、cache</text>
+  <text x="382" y="133" fill="#a5a190" font-size="11">同名后见先赢（和左边相反）</text>
+  <text x="382" y="150" fill="#8a8675" font-size="11">但它不喂系统提示</text>
+
+  <rect x="712" y="40" width="386" height="124" rx="10" fill="#12110b" stroke="#6b6a63" stroke-dasharray="4 4"/>
+  <text x="728" y="62" fill="#8a8675" font-size="11.5" font-weight="600">已经写好但没接上的：SkillTool</text>
+  <text x="728" y="84" fill="#a5a190" font-size="11" font-family="Menlo,monospace">openprogram/skills/tool.py:74</text>
+  <text x="728" y="103" fill="#a5a190" font-size="11">name = "Skill"</text>
+  <text x="728" y="120" fill="#a5a190" font-size="11">description = "Load a skill's SKILL.md into context"</text>
+  <text x="728" y="140" fill="#e0445a" font-size="11">从来没进过 _build_and_register_tool，</text>
+  <text x="728" y="154" fill="#e0445a" font-size="11">只被人手敲 /skill &lt;name&gt; 触发</text>
+
+  <text x="20" y="192" fill="#e0445a" font-size="12.5" font-weight="600">两个系统提示渲染器，输出不一样</text>
+
+  <rect x="20" y="206" width="530" height="120" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="36" y="228" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">runtime.py:1677（exec 那条路）</text>
+  <text x="36" y="248" fill="#a5a190" font-size="11">调 format_skills_for_prompt，出 XML：</text>
+  <rect x="36" y="258" width="494" height="58" rx="6" fill="#12110b" stroke="#2e2c20"/>
+  <text x="50" y="277" fill="#7ea6e8" font-size="10.5" font-family="Menlo,monospace">&lt;available_skills&gt;&lt;skill&gt;</text>
+  <text x="50" y="292" fill="#7ea6e8" font-size="10.5" font-family="Menlo,monospace">  &lt;name&gt; &lt;description&gt; &lt;location&gt;/abs/path/SKILL.md&lt;/location&gt;</text>
+  <text x="50" y="308" fill="#5aad4e" font-size="10.5">给了绝对路径，模型能用 read 打开</text>
+
+  <rect x="566" y="206" width="532" height="120" rx="10" fill="#1d1c14" stroke="#3a2420"/>
+  <text x="582" y="228" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">context/components.py:235（chat 那条路）</text>
+  <text x="582" y="248" fill="#a5a190" font-size="11">完全不调它，自己拼一段项目符号列表：</text>
+  <rect x="582" y="258" width="500" height="58" rx="6" fill="#12110b" stroke="#2e2c20"/>
+  <text x="596" y="277" fill="#a5a190" font-size="10.5" font-family="Menlo,monospace">Skills available on demand:</text>
+  <text x="596" y="292" fill="#a5a190" font-size="10.5" font-family="Menlo,monospace">  · &lt;name&gt; — &lt;描述首行，截到80字符&gt;</text>
+  <text x="596" y="308" fill="#e0445a" font-size="10.5">截到20条，不给路径。模型知道名字，不知道文件在哪</text>
+</svg>
+<div class="legend">
+两套的直接后果：<b>装在<code>skills_bundled/</code>里的三份技能（agentic-programming、distill、self-update）不在喂给系统提示的那条路上。</b>
+<code>default_skill_dirs()</code>（<code>skills.py:156</code>）返回的是<code>~/.openprogram/skills</code>和<code>&lt;repo_root&gt;/skills</code>，后者装的是另外4份。
+而<code>skills/agentic-programming/SKILL.md</code>和<code>skills_bundled/agentic-programming/SKILL.md</code>是两份已经漂开的近似副本。
+</div>
+</div>
+
+<h3>为什么重复出现的工作模式一个都没被固化</h3>
+<div class="note warn">
+判断标准写了，实现路径只写了一半。<code>skills_bundled/distill/SKILL.md</code>的§3明确给了两条出路：需要判断的写SKILL.md，机械的写<code>@agentic_function</code>。
+但整份文档只有§5「Write the SKILL.md」写完整了，函数那条只留了一句「去加载agentic-programming技能」就转走。
+结果是可预期的：现有4个agentic function没有一个是distill产出的，而每次会话结束时最省力的选择永远是写散文。
+<b>把一次性劳动固化成代码，缺的不是能力，是把「写函数」这条路写得和「写散文」一样省力。</b>
+</div>
+
+
+<!-- ===================== 2 ===================== -->
+<h2 id="s2"><span class="num">02</span>别人怎么做的</h2>
+<p class="lead">八家全查了。两个问题分开看：一是有没有「流程固化成代码」这一层，二是有没有把工具和技能统一起来。第一个问题只有两家做了，第二个问题有两家做了，而且方向相反。</p>
+
+<div class="card scroll">
+<svg viewBox="0 0 1120 300" role="img" aria-label="八家参考实现在同一条轴上的落点">
+  <line x1="70" y1="70" x2="1050" y2="70" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+  <line x1="70" y1="70" x2="80" y2="70" stroke="#4a4838" stroke-width="1.5" marker-start="url(#ah)"/>
+  <text x="70" y="56" fill="#8a8675" font-size="11.5">步骤表不存在</text>
+  <text x="1050" y="56" fill="#8a8675" font-size="11.5" text-anchor="end">步骤表是代码</text>
+  <text x="20" y="28" fill="#f0eee6" font-size="13" font-weight="600">八家参考实现的落点</text>
+
+  <circle cx="200" cy="70" r="5" fill="#8a8675"/>
+  <circle cx="560" cy="70" r="5" fill="#d4843a"/>
+  <circle cx="900" cy="70" r="5" fill="#5aad4e"/>
+  <line x1="200" y1="75" x2="200" y2="100" stroke="#2e2c20"/>
+  <line x1="560" y1="75" x2="560" y2="100" stroke="#2e2c20"/>
+  <line x1="900" y1="75" x2="900" y2="100" stroke="#2e2c20"/>
+
+  <rect x="30" y="100" width="340" height="182" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+  <rect x="30" y="100" width="340" height="3" rx="1.5" fill="#8a8675"/>
+  <text x="46" y="124" fill="#f0eee6" font-size="12" font-weight="600">没有这一层（5家）</text>
+  <text x="46" y="146" fill="#a5a190" font-size="11.5" font-family="Menlo,monospace">claude-code-leaked</text>
+  <text x="46" y="161" fill="#6b6a63" font-size="10.5">只有一个叫workflows的保留目录名，没有加载器</text>
+  <text x="46" y="183" fill="#a5a190" font-size="11.5" font-family="Menlo,monospace">opencode</text>
+  <text x="46" y="198" fill="#6b6a63" font-size="10.5">command/skill/agent全是markdown模板展开成提示词</text>
+  <text x="46" y="220" fill="#a5a190" font-size="11.5" font-family="Menlo,monospace">pi-ai / pi-mono</text>
+  <text x="46" y="235" fill="#6b6a63" font-size="10.5">只有写死的agent循环加钩子；</text>
+  <text x="46" y="250" fill="#6b6a63" font-size="10.5">durable-harness.md是设计稿，源码里零命中</text>
+  <text x="46" y="272" fill="#a5a190" font-size="11.5" font-family="Menlo,monospace">weclaw</text>
+
+  <rect x="390" y="100" width="340" height="182" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+  <rect x="390" y="100" width="340" height="3" rx="1.5" fill="#d4843a"/>
+  <text x="406" y="124" fill="#f0eee6" font-size="12" font-weight="600">有实例，没有通用层（1家）</text>
+  <text x="406" y="148" fill="#a5a190" font-size="11.5" font-family="Menlo,monospace">hermes-agent</text>
+  <text x="406" y="168" fill="#a5a190" font-size="11.5">按插件各写各的pipeline：TeamsMeetingPipeline</text>
+  <text x="406" y="184" fill="#a5a190" font-size="11.5">是真状态机，每步落盘，失败进retry_scheduled；</text>
+  <text x="406" y="200" fill="#a5a190" font-size="11.5">mixture_of_agents是写死的「N路并行再聚合」两段式</text>
+  <text x="406" y="224" fill="#d4843a" font-size="11.5">边界说得最直白：</text>
+  <text x="406" y="242" fill="#a5a190" font-size="11.5">「脚本干机械活（抓取、比对、计算），</text>
+  <text x="406" y="258" fill="#a5a190" font-size="11.5">agent干推理」，cron还有个no_agent模式完全不过模型</text>
+
+  <rect x="750" y="100" width="340" height="182" rx="10" fill="#1d1c14" stroke="#5aad4e"/>
+  <rect x="750" y="100" width="340" height="3" rx="1.5" fill="#5aad4e"/>
+  <text x="766" y="124" fill="#f0eee6" font-size="12" font-weight="600">真有这一层（2家）</text>
+  <text x="766" y="148" fill="#5aad4e" font-size="11.5" font-family="Menlo,monospace">openclaw</text>
+  <text x="766" y="166" fill="#a5a190" font-size="11.5">两个东西：Lobster（typed JSON管线，外部npm包）</text>
+  <text x="766" y="182" fill="#a5a190" font-size="11.5">加 Task Flow（SQLite持久化状态机）</text>
+  <text x="766" y="206" fill="#5aad4e" font-size="11.5" font-family="Menlo,monospace">codex-cli</text>
+  <text x="766" y="224" fill="#a5a190" font-size="11.5">SessionTask trait，注释原文写着</text>
+  <text x="766" y="240" fill="#a5a190" font-size="11.5">「encapsulate a specific Codex workflow」</text>
+  <text x="766" y="262" fill="#6b6a63" font-size="11">regular / review / compact / user_shell 各是一个Rust结构体</text>
+</svg>
+</div>
+
+<div class="tbl">
+<table>
+<thead><tr>
+<th>仓库</th><th>固化层叫什么</th><th>决策入口</th><th>失败恢复</th><th>并行扇出</th><th>最值得抄的</th>
+</tr></thead>
+<tbody>
+<tr>
+  <td class="nm">openclaw</td>
+  <td class="y"><b>Lobster</b>（工作流shell）<br><b>Task Flow</b>（编排状态机）</td>
+  <td class="y">返回值里有<code>needs_input</code>加JSON schema加<code>resumeToken</code>；<code>approval: required</code>停下等布尔批准；步骤里调<code>llm-task --action json</code>拿枚举，下游用写死的<code>condition:</code>分支</td>
+  <td class="y">SQLite <code>flow_runs</code>表带<code>revision</code>列做冲突安全的续跑，WAL检查点，取消意图跨重启保留</td>
+  <td class="m">TaskFlow把多个子任务挂到一个flow上，取消级联到活着的子任务。没有内建的「等N个再收集」原语</td>
+  <td>把决策点定义成一份返回值契约，而不是一个函数签名</td>
+</tr>
+<tr>
+  <td class="nm">codex-cli</td>
+  <td class="y"><b>SessionTask</b> trait<br><code>kind()</code> / <code>run()</code> / <code>abort()</code></td>
+  <td class="m"><code>review.rs</code>：固定提示词加强制<code>AskForApproval::Never</code>加一次性子线程，回来尽力解析JSON，解析不出就退回纯文本。管线里有<code>final_output_json_schema</code>参数但review自己没用</td>
+  <td class="y">rollout JSONL加<code>--last</code>恢复，另有SQL状态库；冷rollout压缩是独立后台worker，恢复路径不被它阻塞</td>
+  <td class="y">spawn_agent / wait_agent / interrupt_agent 是一等工具，父子拓扑持久化在agent-graph-store</td>
+  <td>一个trait当统一注册点：新固化一个流程就自动获得生命周期、取消、遥测</td>
+</tr>
+<tr>
+  <td class="nm">hermes-agent</td>
+  <td class="m">按插件各写的<b>pipeline</b>，没有通用抽象</td>
+  <td class="n">没有。<code>mixture_of_agents</code>只在固定阶段调模型；<code>delegate_task</code>由调用方模型决定派不派，派出去之后全是代码</td>
+  <td class="y">JSON store原子写，每步落盘，<code>retry_scheduled</code>状态支持断点续；会话层是SQLite加WAL加<code>/resume</code></td>
+  <td class="y">ThreadPoolExecutor批量派子agent，并发上限/子超时/派生深度三个参数，可中断可暂停，子agent工具集被剥</td>
+  <td>cron的<code>no_agent</code>模式：同一个自动化面上留一条完全不过模型的廉价路径</td>
+</tr>
+<tr>
+  <td class="nm">pi-mono</td>
+  <td class="n">没有。只有写死的<code>runLoop</code>加<code>AgentLoopConfig</code>钩子</td>
+  <td class="m"><code>beforeToolCall</code> / <code>shouldStopAfterTurn</code> / <code>prepareNextTurn</code>三个钩子，加provider级<code>toolChoice: {type:"function"}</code>强制发一次指定调用</td>
+  <td class="m">JSONL事件日志加resume/fork；退避重试默认3次；<b>durable-harness.md只是设计稿</b>，类型名在源码里零命中</td>
+  <td class="y">循环原生并行tool call；子agent编排在example扩展里，用有界并发worker池而不是裸<code>Promise.all</code></td>
+  <td><code>mapWithConcurrencyLimit</code>；chain模式用<code>{previous}</code>做步间传递</td>
+</tr>
+<tr>
+  <td class="nm">opencode</td>
+  <td class="n">没有</td>
+  <td class="m"><code>plan_exit</code>一个写死的Yes/No闸门，只管一次模式切换，不是通用机制</td>
+  <td class="m">git影子仓自动快照，按消息<code>revert</code>/<code>unrevert</code>重放补丁。是文件状态回退，不是步骤检查点</td>
+  <td class="m">Task工具一次派一个子会话，后台模式还锁在实验开关后面。要并行得模型自己发多次</td>
+  <td><b>把「加载技能」做成一个内建工具</b>（见下）</td>
+</tr>
+<tr>
+  <td class="nm">claude-code-leaked</td>
+  <td class="n">没有。<code>workflows</code>只是<code>CLAUDE_CONFIG_DIRECTORIES</code>里的一个保留名，唯一消费者是@补全</td>
+  <td class="n">弱。EnterPlanMode硬闸住编辑但「计划」是自由文本；TaskList是模型自己改的共享状态，不是代码骨架</td>
+  <td class="m">只有会话级resume。compact是上下文截断，不是流程检查点（因为没有流程可检查）</td>
+  <td class="m">靠提示词让模型「在一条消息里发多个Task调用」，团队工具持久化但没有拓扑图</td>
+  <td><b>技能和斜杠命令进同一份清单，清单有token预算</b>（见下）</td>
+</tr>
+<tr>
+  <td class="nm">pi-ai</td>
+  <td class="n">没有（是个SDK）</td>
+  <td class="m">只有原语：typebox校验的Tool加<code>toolChoice</code>强制。没有<code>generateObject</code>这类自由结构化输出</td>
+  <td class="n">没有</td>
+  <td class="n">没有（在pi-mono那层）</td>
+  <td><code>toolChoice: {type:"function", name}</code>当「停下来强制一次定型决策」的原语</td>
+</tr>
+<tr>
+  <td class="nm">weclaw</td>
+  <td class="n">没有</td>
+  <td class="n">没有</td>
+  <td class="n">没有自己的。会话续跑整个甩给被包的CLI agent，映射只在内存里，重启即丢</td>
+  <td class="m">goroutine广播给N个agent收回复，无取消、无部分失败策略</td>
+  <td>反面价值：在传输层<b>刻意不建</b>这一层，整个组件因此小到一个接口</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h3>统一这件事，两家已经做了，方向相反</h3>
+<p class="lead">这一节是这次新查的。问题是：别人有没有把工具和技能收成一个概念。答案是有两家，一家往左统一（全变成markdown），一家往右统一（技能进工具表）。</p>
+
+<div class="card scroll">
+<svg viewBox="0 0 1120 330" role="img" aria-label="两家把技能和工具统一的做法">
+  <rect x="20" y="20" width="530" height="290" rx="11" fill="#1d1c14" stroke="#5aad4e"/>
+  <text x="40" y="46" fill="#5aad4e" font-size="13" font-weight="600">opencode：技能是一个内建工具</text>
+  <text x="40" y="66" fill="#8a8675" font-size="11">packages/opencode/src/tool/registry.ts:210</text>
+
+  <rect x="40" y="80" width="490" height="52" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="54" y="101" fill="#a5a190" font-size="10.5" font-family="Menlo,monospace">builtin: [ shell, read, glob, grep, edit, write, task,</text>
+  <text x="54" y="118" fill="#a5a190" font-size="10.5" font-family="Menlo,monospace">          fetch, todo, search, <tspan fill="#5aad4e">skill</tspan>, patch, question ]</text>
+
+  <rect x="40" y="146" width="490" height="82" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="54" y="167" fill="#f0eee6" font-size="11.5">skill 工具和 read / grep / task 完全平级</text>
+  <text x="54" y="186" fill="#a5a190" font-size="11">入参 name，注释写着「the name of the skill from available_skills」</text>
+  <text x="54" y="203" fill="#a5a190" font-size="11">返回 &lt;skill_content&gt; 加基准目录加 &lt;skill_files&gt;</text>
+  <text x="54" y="218" fill="#a5a190" font-size="11">带 permission: "skill"，走的是同一套审批</text>
+
+  <rect x="40" y="236" width="490" height="66" rx="8" fill="#12110b" stroke="#3a2c1a"/>
+  <text x="54" y="257" fill="#d4843a" font-size="11">系统提示那段（core/src/skill/guidance.ts:18）直接写：</text>
+  <text x="54" y="276" fill="#a5a190" font-size="11">"Use the skill tool to load a skill when a task</text>
+  <text x="54" y="291" fill="#a5a190" font-size="11">matches its description."</text>
+
+  <rect x="570" y="20" width="530" height="290" rx="11" fill="#1d1c14" stroke="#5aad4e"/>
+  <text x="590" y="46" fill="#5aad4e" font-size="13" font-weight="600">claude-code：一份清单装下技能和斜杠命令</text>
+  <text x="590" y="66" fill="#8a8675" font-size="11">src/tools.ts:212，SkillTool 和 ToolSearchTool 并排</text>
+
+  <rect x="590" y="80" width="490" height="52" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="604" y="101" fill="#a5a190" font-size="11">两个加载动词并存：ToolSearchTool 拉 deferred 工具的schema，</text>
+  <text x="604" y="119" fill="#a5a190" font-size="11">SkillTool 拉技能正文。发现清单是同一种形状。</text>
+
+  <rect x="590" y="146" width="490" height="82" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="604" y="167" fill="#f0eee6" font-size="11.5">比opencode更进一步：清单里不只有技能</text>
+  <text x="604" y="186" fill="#a5a190" font-size="11">getSkillToolCommands 的注释：「SkillTool shows ALL</text>
+  <text x="604" y="203" fill="#a5a190" font-size="11">prompt-based commands that the model can invoke」</text>
+  <text x="604" y="218" fill="#a5a190" font-size="11">技能和斜杠命令进的是同一份清单</text>
+
+  <rect x="590" y="236" width="490" height="66" rx="8" fill="#12110b" stroke="#5aad4e"/>
+  <text x="604" y="257" fill="#5aad4e" font-size="11.5">清单本身有预算，理由写在注释里</text>
+  <text x="604" y="276" fill="#a5a190" font-size="11">SKILL_BUDGET_CONTEXT_PERCENT = 0.01（上下文的1%），</text>
+  <text x="604" y="291" fill="#a5a190" font-size="11">MAX_LISTING_DESC_CHARS = 250：清单只管发现，正文调用时才加载</text>
+</svg>
+<div class="legend">
+往左统一的那家也在这张表上：<b>opencode把command、skill、agent全做成markdown模板展开成提示词</b>，
+这是把三样都降到最松的形态。但它同时把「加载技能」提升成了工具，所以它两个方向都做了一半。
+<b>claude-code的取法是我们该抄的：保留三种形态，统一的是发现清单和加载动作。</b>
+另有一条相关的：claude-code的技能front matter里有<code>context: 'inline' | 'fork'</code>（<code>src/skills/loadSkillsDir.ts:311</code>），
+同一份定义用一个开关切两种执行方式，定义不变，执行方式变。
+</div>
+</div>
+
+<h3>两个真做成固化层的，它们各自的形状</h3>
+
+<div class="card scroll">
+<svg viewBox="0 0 1120 300" role="img" aria-label="openclaw与codex-cli的固化层形状对比">
+  <rect x="20" y="20" width="530" height="264" rx="11" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="40" y="46" fill="#5aad4e" font-size="13" font-weight="600">openclaw：返回值契约加持久状态机</text>
+  <text x="40" y="66" fill="#8a8675" font-size="11">流程的每一步返回一个带status的对象，status决定运行时怎么办</text>
+
+  <rect x="40" y="80" width="150" height="64" rx="8" fill="#12110b" stroke="#5aad4e"/>
+  <text x="54" y="102" fill="#5aad4e" font-size="11.5" font-family="Menlo,monospace">status: ok</text>
+  <text x="54" y="122" fill="#a5a190" font-size="11">继续下一步</text>
+
+  <rect x="200" y="80" width="170" height="64" rx="8" fill="#12110b" stroke="#d4843a"/>
+  <text x="214" y="102" fill="#d4843a" font-size="11.5" font-family="Menlo,monospace">needs_input</text>
+  <text x="214" y="119" fill="#a5a190" font-size="11">带 schema 加 resumeToken</text>
+  <text x="214" y="133" fill="#6b6a63" font-size="10.5">挂起，等一份定型的输入</text>
+
+  <rect x="380" y="80" width="150" height="64" rx="8" fill="#12110b" stroke="#9d6fe0"/>
+  <text x="394" y="102" fill="#9d6fe0" font-size="11.5" font-family="Menlo,monospace">approval</text>
+  <text x="394" y="122" fill="#a5a190" font-size="11">停下等一个布尔</text>
+
+  <rect x="40" y="154" width="490" height="52" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="54" y="176" fill="#f0eee6" font-size="11.5">Task Flow：SQLite <tspan font-family="Menlo,monospace">flow_runs</tspan>（currentStep / stateJson / waitJson / revision）</text>
+  <text x="54" y="194" fill="#a5a190" font-size="11">崩了从currentStep接着跑，revision防并发覆盖，取消意图跨重启保留</text>
+
+  <rect x="40" y="220" width="490" height="48" rx="8" fill="#12110b" stroke="#3a2c1a"/>
+  <text x="54" y="241" fill="#d4843a" font-size="11.5">它自己写的非目标，几乎就是我们要划的那条线：</text>
+  <text x="54" y="259" fill="#a5a190" font-size="11">"It does not own branching or business logic. Keep conditionals above the runtime."</text>
+
+  <rect x="570" y="20" width="530" height="264" rx="11" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="590" y="46" fill="#5aad4e" font-size="13" font-weight="600">codex-cli：一个trait当统一注册点</text>
+  <text x="590" y="66" fill="#8a8675" font-size="11">每个固化流程实现同一个trait，自动获得生命周期、取消、遥测</text>
+
+  <rect x="590" y="80" width="230" height="64" rx="8" fill="#12110b" stroke="#5aad4e"/>
+  <text x="604" y="102" fill="#5aad4e" font-size="11.5" font-family="Menlo,monospace">trait SessionTask</text>
+  <text x="604" y="122" fill="#a5a190" font-size="11">kind() / run() / abort()</text>
+
+  <rect x="832" y="80" width="248" height="64" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="846" y="100" fill="#a5a190" font-size="11" font-family="Menlo,monospace">regular · review</text>
+  <text x="846" y="117" fill="#a5a190" font-size="11" font-family="Menlo,monospace">compact · user_shell</text>
+  <text x="846" y="132" fill="#6b6a63" font-size="10.5">四个Rust结构体，跑在后台Tokio任务上</text>
+
+  <rect x="590" y="154" width="490" height="114" rx="8" fill="#12110b" stroke="#2e2c20"/>
+  <text x="604" y="176" fill="#f0eee6" font-size="11.5">review.rs 的完整形状（最值得照抄的一个）</text>
+  <text x="604" y="197" fill="#a5a190" font-size="11">1. 固定系统提示词 REVIEW_PROMPT，不给模型改的余地</text>
+  <text x="604" y="215" fill="#a5a190" font-size="11">2. 强制 AskForApproval::Never，子线程不许问人</text>
+  <text x="604" y="233" fill="#a5a190" font-size="11">3. 一次性子线程跑完就回来（run_codex_thread_one_shot）</text>
+  <text x="604" y="251" fill="#a5a190" font-size="11">4. 尽力解析成定型事件，解析不出退回纯文本，不炸</text>
+</svg>
+<div class="legend">
+两家的取法不同但结论一致：<b>固化层要么给出一份「每步返回什么」的契约（openclaw），要么给出一个「每个流程实现什么」的统一注册点（codex）。</b>
+我们两样都已经有了：<code>@agentic_function</code>就是那个统一注册点（DAG节点、<code>expose</code>、注册成工具、重试、超时预算都自动获得），
+返回值就是那份契约。缺的是有人去用，以及缺一样东西：断点续跑。
+</div>
+</div>
+
+
+<!-- ===================== 3 ===================== -->
+<h2 id="s3"><span class="num">03</span>我们计划怎么优化</h2>
+
+<h3>先解决最实际的问题：我要加一个能力，该写哪一种</h3>
+<p class="lead">统一概念之后这是第一个要回答的问题。三问，每问都能机械地判，第一个命中就停。第三问是「值不值」，不是「是什么」。</p>
+
+<div class="card scroll">
+<svg viewBox="0 0 1120 444" role="img" aria-label="该写哪一种的判据决策树">
+  <text x="20" y="26" fill="#f0eee6" font-size="13" font-weight="600">三问决策树，右边一列是「选对了怎么验证」</text>
+
+  <!-- Q1 -->
+  <rect x="20" y="44" width="300" height="72" rx="9" fill="#1d1c14" stroke="#d4843a"/>
+  <text x="36" y="68" fill="#f0eee6" font-size="12" font-weight="600">Q1 需要模型在中间参与吗</text>
+  <text x="36" y="88" fill="#a5a190" font-size="10.5">不是「调不调模型」，是「要不要停下来看模型</text>
+  <text x="36" y="104" fill="#a5a190" font-size="10.5">答了什么，再决定后面怎么走」</text>
+  <line x1="320" y1="80" x2="366" y2="80" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="332" y="74" fill="#6b6a63" font-size="10.5">否</text>
+
+  <rect x="368" y="44" width="256" height="72" rx="9" fill="#2a1e12" stroke="#d4843a"/>
+  <text x="384" y="70" fill="#e8a468" font-size="12.5" font-family="Menlo,monospace">@function</text>
+  <text x="384" y="91" fill="#a5a190" font-size="11">工具。哪怕体内调了模型，只要</text>
+  <text x="384" y="107" fill="#a5a190" font-size="11">外面看是一进一出，就是工具</text>
+  <line x1="624" y1="80" x2="666" y2="80" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="668" y="44" width="430" height="72" rx="9" fill="#12110b" stroke="#2e2c20"/>
+  <text x="684" y="67" fill="#5aad4e" font-size="11" font-weight="600">验证：参数schema能完整描述输入</text>
+  <text x="684" y="88" fill="#a5a190" font-size="11">description里不需要写「用之前先……」。要写，说明它</text>
+  <text x="684" y="105" fill="#a5a190" font-size="11">不是一步，是被硬压成一步的多步流程</text>
+
+  <!-- 竖线 Q1 -> Q2 -->
+  <line x1="80" y1="116" x2="80" y2="146" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="88" y="136" fill="#6b6a63" font-size="10.5">是</text>
+
+  <!-- Q2 -->
+  <rect x="20" y="152" width="300" height="72" rx="9" fill="#1d1c14" stroke="#7ea6e8"/>
+  <text x="36" y="176" fill="#f0eee6" font-size="12" font-weight="600">Q2 参与点提前点得出来吗</text>
+  <text x="36" y="196" fill="#a5a190" font-size="10.5">写代码的时候，能不能说出模型要在第几步、</text>
+  <text x="36" y="212" fill="#a5a190" font-size="10.5">一共几次进来</text>
+  <line x1="320" y1="188" x2="366" y2="188" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="332" y="182" fill="#6b6a63" font-size="10.5">否</text>
+
+  <rect x="368" y="152" width="256" height="72" rx="9" fill="#12110b" stroke="#7ea6e8" stroke-dasharray="4 3"/>
+  <text x="384" y="178" fill="#7ea6e8" font-size="12.5" font-family="Menlo,monospace">SKILL.md</text>
+  <text x="384" y="199" fill="#a5a190" font-size="11">技能。每次几个、在哪儿，得跑</text>
+  <text x="384" y="215" fill="#a5a190" font-size="11">起来看到东西才知道</text>
+  <line x1="624" y1="188" x2="666" y2="188" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="668" y="152" width="430" height="72" rx="9" fill="#12110b" stroke="#2e2c20"/>
+  <text x="684" y="175" fill="#5aad4e" font-size="11" font-weight="600">验证：内容是判断依据，不是步骤编号</text>
+  <text x="684" y="196" fill="#a5a190" font-size="11">整份文档里出现「第1步、第2步」，说明步骤表其实写</text>
+  <text x="684" y="213" fill="#a5a190" font-size="11">得出来，只是写在了不强制的地方</text>
+
+  <!-- 竖线 Q2 -> Q3 -->
+  <line x1="80" y1="224" x2="80" y2="254" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="88" y="244" fill="#6b6a63" font-size="10.5">是</text>
+
+  <!-- Q3 -->
+  <rect x="20" y="260" width="300" height="72" rx="9" fill="#1d1c14" stroke="#4f8ef7"/>
+  <text x="36" y="286" fill="#f0eee6" font-size="12" font-weight="600">Q3 漏一步会被当场发现吗</text>
+  <text x="36" y="308" fill="#a5a190" font-size="10.5">这是「值不值」的问题，</text>
+  <text x="36" y="324" fill="#a5a190" font-size="10.5">不是「是什么」的问题</text>
+  <line x1="320" y1="296" x2="366" y2="296" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="332" y="290" fill="#6b6a63" font-size="10.5">会</text>
+
+  <rect x="368" y="260" width="256" height="72" rx="9" fill="#12110b" stroke="#7ea6e8" stroke-dasharray="4 3"/>
+  <text x="384" y="286" fill="#7ea6e8" font-size="12" font-weight="600">技能就够，别写代码</text>
+  <text x="384" y="307" fill="#a5a190" font-size="11">结果明显不对就会被看见，</text>
+  <text x="384" y="323" fill="#a5a190" font-size="11">不值得为它付一份代码的维护</text>
+
+  <line x1="130" y1="332" x2="130" y2="360" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+  <text x="138" y="352" fill="#6b6a63" font-size="10.5">不会</text>
+
+  <rect x="20" y="366" width="604" height="70" rx="9" fill="#182436" stroke="#4f8ef7"/>
+  <text x="36" y="391" fill="#9cc4ff" font-size="12.5" font-family="Menlo,monospace">@agentic_function</text>
+  <text x="36" y="412" fill="#a5a190" font-size="11">「验证过再交付」「引用要核实」「八个仓库都要查」。把清单从记性搬进代码的唯一</text>
+  <text x="36" y="428" fill="#a5a190" font-size="11">理由，就是漏了不会被发现</text>
+  <line x1="624" y1="400" x2="666" y2="400" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="668" y="366" width="430" height="70" rx="9" fill="#12110b" stroke="#2e2c20"/>
+  <text x="684" y="389" fill="#5aad4e" font-size="11" font-weight="600">验证：你能说出这一次的模型调用次数上界</text>
+  <text x="684" y="410" fill="#a5a190" font-size="11">说不出来，说明流程没真的固化，只是把一段散文换了</text>
+  <text x="684" y="427" fill="#a5a190" font-size="11">个地方放</text>
+</svg>
+<div class="legend">
+这个判据能解释现有的分布，不是事后编的：46个工具、7份技能、4个agentic function。
+绝大多数能力真的是一进一出（Q1答否）；「参与点提前点得出来，而且漏了看不出来」本来就是少数。
+<b>三问都不适用的第四种情况：这件事只做一次。</b>那就直接干，什么都别写。
+</div>
+</div>
+
+<h3>线划在哪：代码持有什么，模型持有什么</h3>
+
+<div class="card scroll">
+<svg viewBox="0 0 1120 268" role="img" aria-label="agentic program里代码持有与模型持有的东西">
+  <rect x="20" y="20" width="330" height="234" rx="11" fill="#1d1c14" stroke="#4f8ef7"/>
+  <rect x="20" y="20" width="330" height="3" rx="1.5" fill="#4f8ef7"/>
+  <text x="40" y="48" fill="#4f8ef7" font-size="13" font-weight="600">代码持有（收进来）</text>
+  <text x="40" y="76" fill="#f0eee6" font-size="11.5">步骤顺序</text>
+  <text x="40" y="93" fill="#6b6a63" font-size="11">哪几步、什么次序、能不能跳</text>
+  <text x="40" y="118" fill="#f0eee6" font-size="11.5">扇出宽度与分区</text>
+  <text x="40" y="135" fill="#6b6a63" font-size="11">派几个、每个看哪一份、怎么合</text>
+  <text x="40" y="160" fill="#f0eee6" font-size="11.5">验收闸门</text>
+  <text x="40" y="177" fill="#6b6a63" font-size="11">下一步之前必须过什么检查</text>
+  <text x="40" y="202" fill="#f0eee6" font-size="11.5">产出契约</text>
+  <text x="40" y="219" fill="#6b6a63" font-size="11">每步必须交出什么形状，缺了就重问</text>
+  <text x="40" y="240" fill="#f0eee6" font-size="11.5">退出条件与预算</text>
+
+  <rect x="770" y="20" width="330" height="234" rx="11" fill="#1d1c14" stroke="#d4843a"/>
+  <rect x="770" y="20" width="330" height="3" rx="1.5" fill="#d4843a"/>
+  <text x="790" y="48" fill="#d4843a" font-size="13" font-weight="600">模型持有（留出去）</text>
+  <text x="790" y="76" fill="#f0eee6" font-size="11.5">对开放内容的判断</text>
+  <text x="790" y="93" fill="#6b6a63" font-size="11">是不是同一个东西、哪条值得抄</text>
+  <text x="790" y="118" fill="#f0eee6" font-size="11.5">从非结构输入里抽结论</text>
+  <text x="790" y="135" fill="#6b6a63" font-size="11">读代码，产出一条带出处的断言</text>
+  <text x="790" y="160" fill="#f0eee6" font-size="11.5">措辞</text>
+  <text x="790" y="177" fill="#6b6a63" font-size="11">同一个意思用哪句话说</text>
+  <text x="790" y="202" fill="#f0eee6" font-size="11.5">失败之后改什么</text>
+  <text x="790" y="219" fill="#6b6a63" font-size="11">检查没过，看日志决定动哪里</text>
+  <text x="790" y="240" fill="#f0eee6" font-size="11.5">步内取舍：这一步开哪些文件</text>
+
+  <rect x="370" y="60" width="380" height="148" rx="11" fill="#12110b" stroke="#2e2c20"/>
+  <text x="390" y="86" fill="#f0eee6" font-size="12" font-weight="600">一步 = 一份定死的输入契约</text>
+  <text x="390" y="105" fill="#f0eee6" font-size="12" font-weight="600">　　　+ 一次模型调用</text>
+  <text x="390" y="124" fill="#f0eee6" font-size="12" font-weight="600">　　　+ 一份定死的输出契约</text>
+  <text x="390" y="152" fill="#a5a190" font-size="11.5">agentic program从不问模型「接下来干什么」，</text>
+  <text x="390" y="170" fill="#a5a190" font-size="11.5">凡是它自己推得出来的都不问。</text>
+  <text x="390" y="192" fill="#d4843a" font-size="11.5">只在答案真的推不出来的地方开口。</text>
+
+  <line x1="350" y1="134" x2="366" y2="134" stroke="#4f8ef7" stroke-width="1.5"/>
+  <line x1="754" y1="134" x2="770" y2="134" stroke="#d4843a" stroke-width="1.5"/>
+</svg>
+<div class="note">推论一条，很容易搞反：<b>agentic program里大多数步骤不该是<code>decision.make</code>。</b>
+一个到处是<code>decision.make</code>的程序，只是把模型的自由度换成了一组固定选项，没有真的收进代码。
+闭集分支（下一步走哪条路）用<code>decision.make</code>，应该少见；开放产出（这一步交出什么内容）用<code>runtime.exec</code>加输出契约加代码侧结构检查，那才是常态。</div>
+</div>
+
+<h3>模型眼里该是几种东西：今天三种半，应该是两种</h3>
+
+<div class="card scroll">
+<svg viewBox="0 0 1120 360" role="img" aria-label="模型看到的东西：今天与提议">
+  <text x="20" y="26" fill="#e0445a" font-size="12.5" font-weight="600">今天：三种半</text>
+
+  <rect x="20" y="40" width="470" height="52" rx="9" fill="#182436" stroke="#4f8ef7"/>
+  <text x="36" y="62" fill="#9cc4ff" font-size="11.5" font-weight="600">① tools 数组：带完整 schema，直接可调</text>
+  <text x="36" y="81" fill="#a5a190" font-size="11">46个 @function 加 4个 @agentic_function（split_tools_for_dispatch 拆的）</text>
+
+  <rect x="20" y="100" width="470" height="52" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="36" y="122" fill="#f0eee6" font-size="11.5" font-weight="600">② deferred 目录：系统提示里一行 name + description</text>
+  <text x="36" y="141" fill="#a5a190" font-size="11">defer=True 的，靠 tool_search 把 schema 拉进当轮</text>
+
+  <rect x="20" y="160" width="470" height="52" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="36" y="182" fill="#f0eee6" font-size="11.5" font-weight="600">③ &lt;available_skills&gt;：name + description + 绝对路径</text>
+  <text x="36" y="201" fill="#a5a190" font-size="11">靠 read 打开正文。走 runtime.exec 那条路才有</text>
+
+  <rect x="20" y="220" width="470" height="52" rx="9" fill="#1d1c14" stroke="#3a2420" stroke-dasharray="4 4"/>
+  <text x="36" y="242" fill="#e0445a" font-size="11.5" font-weight="600">③′ 同一批技能的另一种写法：项目符号列表，无路径</text>
+  <text x="36" y="261" fill="#a5a190" font-size="11">走 chat 那条路才有。名字知道了，文件在哪不知道</text>
+
+  <rect x="20" y="282" width="470" height="66" rx="9" fill="#12110b" stroke="#3a2c1a"/>
+  <text x="36" y="304" fill="#d4843a" font-size="11.5">② 和 ③ 形状完全一样：</text>
+  <text x="36" y="323" fill="#a5a190" font-size="11">系统提示里一行 name + description，加一个把正文拉进来的动作。</text>
+  <text x="36" y="337" fill="#a5a190" font-size="11">区别只有动作的名字（tool_search 还是 read）和目录的标签。</text>
+
+  <line x1="510" y1="180" x2="576" y2="180" stroke="#4a4838" stroke-width="2" marker-end="url(#ah)"/>
+
+  <text x="600" y="26" fill="#5aad4e" font-size="12.5" font-weight="600">提议：两种</text>
+
+  <rect x="600" y="40" width="498" height="86" rx="9" fill="#182436" stroke="#4f8ef7"/>
+  <text x="616" y="64" fill="#9cc4ff" font-size="12" font-weight="600">① 能直接调的</text>
+  <text x="616" y="85" fill="#a5a190" font-size="11">tools 数组，带 schema。不变。</text>
+  <text x="616" y="104" fill="#a5a190" font-size="11">agentic program 的三种形态里，工具和 agentic function 已经</text>
+  <text x="616" y="118" fill="#a5a190" font-size="11">在同一个数组里了（同一个 _build_and_register_tool）</text>
+
+  <rect x="600" y="134" width="498" height="128" rx="9" fill="#1d1c14" stroke="#5aad4e"/>
+  <text x="616" y="158" fill="#5aad4e" font-size="12" font-weight="600">② 知道名字得先加载的：一份目录，一个加载动词</text>
+  <text x="616" y="180" fill="#a5a190" font-size="11">deferred 工具和技能进同一份清单，每行 name + description + 类型。</text>
+  <text x="616" y="198" fill="#a5a190" font-size="11">加载动作按类型分派：deferred 拉 schema，技能拉正文。</text>
+  <text x="616" y="220" fill="#f0eee6" font-size="11">已有零件：SkillTool（skills/tool.py:74，写好没注册）、</text>
+  <text x="616" y="236" fill="#f0eee6" font-size="11">deferred 目录（_runtime.py:1212）、加载动词先例（tool_search）。</text>
+  <text x="616" y="254" fill="#d4843a" font-size="11">差的只是把它们接成一条。</text>
+
+  <rect x="600" y="272" width="498" height="70" rx="9" fill="#12110b" stroke="#5aad4e"/>
+  <text x="616" y="294" fill="#5aad4e" font-size="11.5">清单要有预算，抄 claude-code 的数：</text>
+  <text x="616" y="313" fill="#a5a190" font-size="11">上下文窗口的 1%，每条描述截到 250 字符。</text>
+  <text x="616" y="330" fill="#a5a190" font-size="11">清单只管发现，正文调用的时候才加载。</text>
+</svg>
+</div>
+
+<h3>建议优先固化的三个原语</h3>
+<p class="lead">按「出现频率 × 搞错的代价」排。三个都是原语，后面两个组合直接调它们。三个都通过了上面的三问：模型必须中间参与，参与点提前点得出来，漏一步不会被当场发现。</p>
+
+<div class="fw">
+  <h4>1. survey_references　对标参考实现</h4>
+  <p class="sig">survey_references(question: str, dimensions: list[str], repos: list[str] = None) -&gt; dict</p>
+  <p class="why">这套流程手写了不止一遍，每遍都要重申「按同一批维度查、给文件路径和行号、没有的如实标没有」。
+  漏掉最后一条就会拿到编造的结论。派出去的四个agent还因为共用同一个模型覆盖，一起撞上配额上限同时死，然后靠手工重发。</p>
+  <div class="flow">
+    <div class="fx code"><div class="k">CODE</div><div class="t">discover(repos)</div><div class="d">references/下的目录就是仓库清单，不用人列</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx code"><div class="k">CODE</div><div class="t">build_prompt(repo, dims)</div><div class="d">维度逐字带上，「没有就标没有」写在模板里，不靠记性</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx fan"><div class="k">FAN-OUT</div><div class="t">agent(run_in_background=True)</div><div class="d">一仓一个，模型降级清单写在代码里</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx code"><div class="k">CODE</div><div class="t">task_output(t)</div><div class="d">逐个收，失败的按降级清单重派</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx gate"><div class="k">GATE</div><div class="t">完整性检查</div><div class="d">仓库×维度的格子必须填满，空格子重问那一仓那一维</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx llm"><div class="k">LLM 一次</div><div class="t">merge(rows)</div><div class="d">判断哪些是可比的、哪些值得抄</div></div>
+  </div>
+  <span class="cost">顶层模型调用上界 = 仓库数 + 空格子数 + 1</span><span class="cost lines">约120行</span>
+</div>
+
+<div class="fw">
+  <h4>2. verify　实施纪律的闸门</h4>
+  <p class="sig">verify(checks: list[Check], max_rounds: int = 2) -&gt; Report</p>
+  <p class="why">真实发生过：假测试全绿，真跑挖出七个问题。要害不在修，在于<b>检查清单本身该是代码而不是记性</b>，
+  而且清单里必须能放「真跑一次」这种项，不只是单测。</p>
+  <div class="flow">
+    <div class="fx code"><div class="k">CODE</div><div class="t">for check in checks</div><div class="d">单测 / checklinks / checklang / 真跑一次，各是一条</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx code"><div class="k">CODE</div><div class="t">run + 收 (name, ok, tail)</div><div class="d">子进程跑，不过模型</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx gate"><div class="k">GATE</div><div class="t">全绿？</div><div class="d">是就返回，一次模型调用都不花</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx llm"><div class="k">LLM 每轮一次</div><div class="t">读失败输出，决定改哪里</div><div class="d">这是唯一需要判断的地方</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx code"><div class="k">CODE</div><div class="t">轮数用完就报告不修</div><div class="d">上界写在参数里</div></div>
+  </div>
+  <span class="cost">模型调用上界 = max_rounds（全绿时为0）</span><span class="cost lines">约60行</span>
+</div>
+
+<div class="fw">
+  <h4>3. read_own_code　核实而不是推断</h4>
+  <p class="sig">read_own_code(scope: str, questions: list[str]) -&gt; list[Finding]</p>
+  <p class="why">犯过的最贵的错：引用了一个没核实的索引，结论直接错。
+  代价小得离谱的修法是让代码去查引用，而不是让人去记得核实。这一条的「防住的伤害除以行数」是三个里最高的。</p>
+  <div class="flow">
+    <div class="fx code"><div class="k">CODE</div><div class="t">locate(scope)</div><div class="d">有.codegraph就用，没有就grep</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx llm"><div class="k">LLM 每问一次</div><div class="t">回答 + 必须给 file:line</div><div class="d">出处是输出契约的一部分，不是礼貌</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx gate"><div class="k">GATE</div><div class="t">引用真伪检查</div><div class="d">路径必须存在，行号必须在文件长度内，该行必须含断言里的标识符</div></div>
+    <div class="arw">&#8594;</div>
+    <div class="fx code"><div class="k">CODE</div><div class="t">不过的重问一次</div><div class="d">还不过就标成「未核实」，不许静默通过</div></div>
+  </div>
+  <span class="cost">模型调用上界 = 2 × 问题数</span><span class="cost lines">约80行</span>
+</div>
+
+<h3>再往上两个组合（等原语稳了再做）</h3>
+<div class="tbl">
+<table>
+<thead><tr><th>组合</th><th>骨架</th><th>模型只管</th><th>规模</th></tr></thead>
+<tbody>
+<tr>
+  <td class="nm">design_page(topic, layers, out)</td>
+  <td>read_own_code查现状 → survey_references查八家 → 计划层和理想层各一次调用 → 用固定样式模板拼HTML → 建站 → checklinks → 登记nav</td>
+  <td>四层各自的内容</td>
+  <td>约100行，调用前两个原语</td>
+</tr>
+<tr>
+  <td class="nm">parallel_worktree(tasks)</td>
+  <td>一任务一个worktree → 一worktree一个agent → 收 → 按序rebase到origin/main → push → 清理</td>
+  <td>每个worktree里的活</td>
+  <td>约90行。两个agent撞同一个文件这件事在结构上不可能再发生</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h3>断点续跑：数据早就在盘上了，只差一次读</h3>
+
+<div class="card scroll">
+<svg viewBox="0 0 1120 296" role="img" aria-label="断点续跑：现状与最小补法">
+  <text x="20" y="26" fill="#e0445a" font-size="12" font-weight="600">先澄清一个误解：session.py 的 Session 不管这件事</text>
+  <rect x="20" y="40" width="1080" height="62" rx="9" fill="#1d1c14" stroke="#3a2420"/>
+  <text x="38" y="63" fill="#a5a190" font-size="11.5">它是 ask_user 在CLI下的文件传递目录：uuid键的目录，meta.json加一个answer触发文件，原进程轮询 wait_for_answer。</text>
+  <text x="38" y="83" fill="#a5a190" font-size="11.5">run_with_session 在 finally 里 cleanup() 把目录删掉。跑了半小时的流程崩掉，它什么都不留。</text>
+
+  <text x="20" y="132" fill="#5aad4e" font-size="12" font-weight="600">真正已经落盘的是DAG</text>
+  <rect x="20" y="146" width="250" height="76" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="36" y="168" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">进入函数</text>
+  <text x="36" y="187" fill="#a5a190" font-size="11">create_pending_call_node</text>
+  <text x="36" y="204" fill="#a5a190" font-size="11">写 status=running, output=None</text>
+  <line x1="270" y1="184" x2="316" y2="184" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="318" y="146" width="250" height="76" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
+  <text x="334" y="168" fill="#f0eee6" font-size="11" font-family="Menlo,monospace">退出函数</text>
+  <text x="334" y="187" fill="#a5a190" font-size="11">_update_function_call_exit</text>
+  <text x="334" y="204" fill="#a5a190" font-size="11">同一个id补上output与耗时</text>
+  <line x1="568" y1="184" x2="614" y2="184" stroke="#4a4838" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="616" y="146" width="250" height="76" rx="9" fill="#1d1c14" stroke="#5aad4e"/>
+  <text x="632" y="168" fill="#5aad4e" font-size="11">git支撑的会话库</text>
+  <text x="632" y="187" fill="#a5a190" font-size="11">每个已完成步骤的输入和输出</text>
+  <text x="632" y="204" fill="#a5a190" font-size="11">已经在磁盘上，只是没人读回来</text>
+
+  <rect x="884" y="146" width="216" height="76" rx="9" fill="#12110b" stroke="#d4843a" stroke-dasharray="4 4"/>
+  <text x="900" y="168" fill="#d4843a" font-size="11" font-family="Menlo,monospace">once(key, fn)</text>
+  <text x="900" y="187" fill="#a5a190" font-size="11">跑之前查同名同参且已完成</text>
+  <text x="900" y="204" fill="#a5a190" font-size="11">的节点，命中就回放</text>
+
+  <rect x="20" y="238" width="1080" height="52" rx="9" fill="#12110b" stroke="#3a2c1a"/>
+  <text x="38" y="259" fill="#d4843a" font-size="11.5">上界要说清楚：这只对「输入决定输出」的步骤正确。</text>
+  <text x="38" y="277" fill="#a5a190" font-size="11.5">写文件的步骤不是被回放，是被跳过。文件还在就对，文件没了就错。所以必须显式选择加入，不能默认开。约30行，不是新装饰器。</text>
+</svg>
+</div>
+
+<h3>需要新增的机制一共只有四样</h3>
+<div class="tbl">
+<table>
+<thead><tr><th>要加什么</th><th>为什么</th><th>规模</th><th>不加什么</th></tr></thead>
+<tbody>
+<tr><td class="nm">once(key, fn)</td><td>断点续跑。读现成的DAG节点，不新增写入方、不新增文件格式</td><td>约30行</td><td class="n">不加SQLite flow_runs表（openclaw那套对我们是重复造DAG）</td></tr>
+<tr><td class="nm">exec_json(prompt, schema)</td><td>开放产出的输出契约。现在三处各手写一遍JSON解析，<code>response_format=</code>零使用</td><td>约25行，包一层现成的<code>exec</code>加<code>json_parsing.parse_json</code></td><td class="n">不加新的schema DSL，<code>decision.py</code>的<code>_normalize_field</code>已经能表达嵌套结构</td></tr>
+<tr><td class="nm">fan_out(prompts, fallback_models)</td><td>并行步骤的固定写法，含模型降级。四个agent同时死在配额上就是缺这个</td><td>约40行，包<code>agent()</code>加<code>task_output()</code></td><td class="n">不加调度器、不加并发池。<code>agent.max_spawn_fanout</code>已经在限上界</td></tr>
+<tr><td class="nm">一个 schema 生成器</td><td>合并<code>_build_parameters_schema</code>和<code>_build_agentic_tool_spec</code>。两份已经漂了，agentic那份认不出<code>X | None</code>、不放宽null、不写<code>additionalProperties:false</code>（见第3问）</td><td>删约60行近似重复，改两个调用点</td><td class="n">不合并装饰器。<code>_is_agentic</code>扛着九处行为，压进一个参数只会更难发现</td></tr>
+</tbody>
+</table>
+</div>
+<div class="note ok">
+其余全部复用：<code>@agentic_function</code>当统一注册点（DAG、expose、注册成工具、重试、超时预算自动获得），
+<code>agent()</code>／<code>task_output()</code>／<code>task_stop()</code>当并行执行底座（级联取消、派生深度、扇出、消息数四个预算已经在配置里），
+<code>decision.make</code>当闭集分支。<b>不新增装饰器，不新增名词进代码。</b>
+技能那一层同理：<code>SkillTool</code>已经写好，只差注册。
+</div>
+
+
+<!-- ===================== 4 ===================== -->
+<h2 id="s4"><span class="num">04</span>理想状态</h2>
+
+<div class="card scroll">
+<svg viewBox="0 0 1120 330" role="img" aria-label="理想状态与现在的差距">
+  <text x="20" y="26" fill="#f0eee6" font-size="13" font-weight="600">做到位之后，写代码和用这套系统是什么样</text>
+
+  <rect x="20" y="44" width="258" height="124" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+  <rect x="20" y="44" width="258" height="3" rx="1.5" fill="#4f8ef7"/>
+  <text x="38" y="70" fill="#f0eee6" font-size="12" font-weight="600">一个概念，一份清单</text>
+  <text x="38" y="92" fill="#a5a190" font-size="11.5">「这个仓库有哪些 agentic</text>
+  <text x="38" y="109" fill="#a5a190" font-size="11.5">program」有一个答案，</text>
+  <text x="38" y="126" fill="#a5a190" font-size="11.5">不管它是一步的、一份散文</text>
+  <text x="38" y="143" fill="#a5a190" font-size="11.5">还是一段固化流程。</text>
+  <text x="38" y="160" fill="#5aad4e" font-size="11">模型和人看的是同一份</text>
+
+  <rect x="294" y="44" width="258" height="124" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+  <rect x="294" y="44" width="258" height="3" rx="1.5" fill="#5aad4e"/>
+  <text x="312" y="70" fill="#f0eee6" font-size="12" font-weight="600">干过一次就往右移一格</text>
+  <text x="312" y="92" fill="#a5a190" font-size="11.5">会话结束时 distill 的产出</text>
+  <text x="312" y="109" fill="#a5a190" font-size="11.5">是「把这份技能的第2到4步</text>
+  <text x="312" y="126" fill="#a5a190" font-size="11.5">收进代码」，不是又一份散文。</text>
+  <text x="312" y="143" fill="#a5a190" font-size="11.5">同一个主题第二次做是改它。</text>
+  <text x="312" y="160" fill="#5aad4e" font-size="11">技能退成路由：什么情况跑哪个</text>
+
+  <rect x="568" y="44" width="258" height="124" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+  <rect x="568" y="44" width="258" height="3" rx="1.5" fill="#d4843a"/>
+  <text x="586" y="70" fill="#f0eee6" font-size="12" font-weight="600">顶层模型的活变小</text>
+  <text x="586" y="92" fill="#a5a190" font-size="11.5">从「把这一整件事想清楚再做」</text>
+  <text x="586" y="109" fill="#a5a190" font-size="11.5">缩成「挑哪个 program、填什么</text>
+  <text x="586" y="126" fill="#a5a190" font-size="11.5">参数」。这一步本身就是一次</text>
+  <text x="586" y="143" fill="#a5a190" font-size="11.5">decision.make，选项是那份清单。</text>
+  <text x="586" y="160" fill="#5aad4e" font-size="11">决策原语第一次有真实用途</text>
+
+  <rect x="842" y="44" width="258" height="124" rx="10" fill="#1d1c14" stroke="#2e2c20"/>
+  <rect x="842" y="44" width="258" height="3" rx="1.5" fill="#9d6fe0"/>
+  <text x="860" y="70" fill="#f0eee6" font-size="12" font-weight="600">成本是代码里的一个数</text>
+  <text x="860" y="92" fill="#a5a190" font-size="11.5">不是「次数固定」，是</text>
+  <text x="860" y="109" fill="#a5a190" font-size="11.5">上界写在代码里、看得见。</text>
+  <text x="860" y="126" fill="#a5a190" font-size="11.5">八个仓对标 = 8次派发</text>
+  <text x="860" y="143" fill="#a5a190" font-size="11.5">加1次合并，不管谁来跑。</text>
+  <text x="860" y="160" fill="#5aad4e" font-size="11">跑两遍花的钱是同一个量级</text>
+
+  <text x="20" y="204" fill="#e0445a" font-size="12" font-weight="600">现在做不到的，如实列</text>
+  <rect x="20" y="218" width="352" height="94" rx="10" fill="#1d1c14" stroke="#3a2420"/>
+  <text x="38" y="242" fill="#f0eee6" font-size="11.5">步骤级续跑不存在</text>
+  <text x="38" y="262" fill="#a5a190" font-size="11">DAG里数据齐了，缺一个读回来的 once()。</text>
+  <text x="38" y="279" fill="#a5a190" font-size="11">而且只对纯步骤正确，写文件的步骤</text>
+  <text x="38" y="296" fill="#a5a190" font-size="11">是跳过不是回放，必须显式选择加入。</text>
+
+  <rect x="386" y="218" width="352" height="94" rx="10" fill="#1d1c14" stroke="#3a2420"/>
+  <text x="404" y="242" fill="#f0eee6" font-size="11.5">单个 program 的成本没有账</text>
+  <text x="404" y="262" fill="#a5a190" font-size="11">usage/ledger.py 记的是用量事件，</text>
+  <text x="404" y="279" fill="#a5a190" font-size="11">没有任何东西把它和某个函数调用节点</text>
+  <text x="404" y="296" fill="#a5a190" font-size="11">连起来。「这次跑花了多少」现在答不了。</text>
+
+  <rect x="752" y="218" width="348" height="94" rx="10" fill="#1d1c14" stroke="#3a2420"/>
+  <text x="770" y="242" fill="#f0eee6" font-size="11.5">决策原语的人机工程未经检验</text>
+  <text x="770" y="262" fill="#a5a190" font-size="11">decision.make 生产调用数为0，</text>
+  <text x="770" y="279" fill="#a5a190" font-size="11">它在真实规模下好不好用是未知的。</text>
+  <text x="770" y="296" fill="#a5a190" font-size="11">先做三个原语，用出来再谈扩展它。</text>
+</svg>
+</div>
+
+
+<!-- ===================== 5 ===================== -->
+<h2 id="s5"><span class="num">05</span>六个设计问题的回答</h2>
+
+<div class="qa">
+  <p class="q">1. 连续谱的轴是什么？谱上只有三个刻度吗？</p>
+  <p class="a">轴是<b>这段工作的步骤表落在哪里，以及它有没有约束力</b>：工具那一端步骤表根本不存在（只覆盖一步，步与步之间的事全在对话里现决定）；技能是步骤表写成散文（写下来了，模型读了可以不照做）；agentic function是步骤表写成Python（解释器执行，不照做不可能）。</p>
+  <p class="a">两个候选说法里，<b>「多少写进代码」比「控制流握在谁手里」准。</b>控制流那个说法在工具那一端会失真：<code>mixture_of_agents</code>是一个<code>@function</code>工具，体内是「并行扇出N个模型 → 最少成功数闸门 → 一次聚合调用」，控制流完全在代码里。所以控制流不是区分点。</p>
+  <p class="a">可测量的定义：<b>同一件事跑两遍，有多少东西一定相同。</b>工具几乎没有，技能大致相同、细节会漂，agentic function骨架逐字相同、只有内容不同。这把轴从一个说法变成一个能测的量。</p>
+  <p class="a"><b>不是只有三个刻度。</b>三个是常见落点。骨架里放一个<code>decision.make</code>是硬里嵌软；技能第三步写「调<code>survey_references</code>」是软里嵌硬。所以谱是连续的，一段工作可以一部分硬一部分软。</p>
+  <p class="a">还有一条要写进设计：<b>装饰器不决定你在谱上的位置。</b>见第3问。</p>
+</div>
+
+<div class="qa">
+  <p class="q">2. 我要加一个能力，该写哪一种？</p>
+  <p class="a">三问，第一个命中就停（图见第3节）：</p>
+  <p class="a"><b>Q1 需要模型在中间参与吗？</b>不是问「调不调模型」，是问「要不要停下来看模型答了什么，再决定后面怎么走」。答否就是工具，哪怕体内调了模型。<code>mixture_of_agents</code>体内调N+1次模型，外面看是一进一出，所以它是工具，写法没错。</p>
+  <p class="a"><b>Q2 参与点提前点得出来吗？</b>写代码的时候能不能说出模型要在第几步、一共几次进来。答否就是技能：每次几个、在哪儿，得跑起来看到东西才知道。</p>
+  <p class="a"><b>Q3 漏一步会被当场发现吗？</b>这是「值不值」，不是「是什么」。会发现（结果明显不对）就技能够用，别付一份代码的维护成本。不会发现（验证过再交付、引用要核实、八个仓库都要查）才写agentic function。<b>把清单从记性搬进代码的唯一理由，就是漏了不会被发现。</b></p>
+  <p class="a">三种各有一条可证伪的验收：<b>工具</b>选对了，参数schema能完整描述输入，description里不需要写「用之前先……」；<b>技能</b>选对了，内容是判断依据不是步骤编号，整份文档里没有「第1步/第2步」；<b>agentic function</b>选对了，你能说出这一次的模型调用次数上界，说不出来说明流程没真的固化。</p>
+  <p class="a">这个判据能解释现有分布（46 / 7 / 4），不是事后编的：绝大多数能力真的是一进一出，「参与点提前点得出来而且漏了看不出来」本来就是少数。第四种情况是「这件事只做一次」，那就直接干，什么都别写。</p>
+</div>
+
+<div class="qa">
+  <p class="q">3. 两个装饰器要不要合并成一个、用参数区分？</p>
+  <p class="a"><b>不合并装饰器，合并schema生成器。</b>下面是核实的结果。</p>
+  <p class="a"><b>已经统一的部分比想象的多。</b><code>@agentic_function._register_as_tool</code>（<code>function.py:963</code>）调的就是<code>@function</code>用的那个<code>_build_and_register_tool</code>（<code>_runtime.py:1037</code>）。同一个<code>_registry</code>，同一个tools数组，同样六层门禁，20个关键字参数同名同义（<code>name</code>、<code>description</code>、<code>parameters</code>、<code>label</code>、<code>toolset</code>、<code>unsafe_in</code>、<code>check_fn</code>、<code>requires_env</code>、<code>can_use</code>、<code>defer</code>、<code>cache</code>等）。所以<b>注册路径、工具面暴露、调用约定这三样差得很小。</b></p>
+  <p class="a"><b>真正差的第一样：参数schema生成器是两份，而且已经漂了。</b><code>_build_parameters_schema</code>（<code>_runtime.py:426</code>）会读docstring的<code>Args:</code>段、把可选参数放宽成允许null、递归写<code>additionalProperties:false</code>、用<code>get_type_hints</code>解字符串注解、认PEP-604的<code>X | None</code>、认<code>Literal</code>。<code>_build_agentic_tool_spec</code>（<code>function.py:1302</code>）一样都没有：它读<code>input={}</code>的UI元数据，只判<code>typing.Union</code>而PEP-604的origin是<code>types.UnionType</code>，认不出的一律落到<code>{"type":"string"}</code>。
+  <code>_runtime.py:312-321</code>有一整段注释说明这个union问题曾经打断过生产里的工具调用，<b>那个修复没有搬到agentic这边，现在还是活的。</b>这一处该合，合完删约60行近似重复，顺手修掉一个活问题。</p>
+  <p class="a"><b>真正差的第二样：<code>_is_agentic</code>不是装饰，是开关。</b>它扛着九处行为：<code>loop_runner.py:108</code>决定渲染成带执行图的运行块还是折叠的工具卡；<code>runtime_attach.py:128</code>决定要不要fork出子进程跑（为了停止键能SIGKILL整个进程组）；<code>forced_tool.py:74</code>和<code>webui/routes/chat.py:184</code>是两道硬门，非agentic直接报错或400；<code>tree.py:93</code>决定进不进Functions面板的内建列表。合成一个装饰器就要把这九处压进一个参数，那个参数一翻就同时翻九件事，和两个装饰器是同一回事，只是更难发现。</p>
+  <p class="a"><b>还有一个名字撞车得先解决。</b><code>_build_and_register_tool(expose: bool)</code>的<code>expose</code>是「给不给模型看」，<code>@agentic_function(expose="io"|"llm"|"full"|"hidden")</code>的<code>expose</code>是「DAG里露多少」。两个不相干的意思共用一个词，而且agentic那边压根没给注册函数传<code>expose</code>（<code>function.py:963-977</code>），永远取<code>True</code>。</p>
+  <p class="a"><b>为什么概念统一而实现不统一是可接受的：因为两个装饰器区分的从来不是概念位置。</b><code>mixture_of_agents</code>用<code>@function</code>写了一个完全固化的多步流程，站在谱的最右端；<code>interaction_demo</code>用<code>@agentic_function</code>写了一个很小的东西。装饰器选的是<b>内部要不要记账</b>：<code>@agentic_function</code>的模型调用走<code>runtime.exec</code>，每次落一个ModelCall节点进DAG，受<code>expose</code>／<code>render_range</code>约束；<code>@function</code>的模型调用（<code>mixture_of_agents</code>用<code>complete_simple</code>直连）不进DAG，只在usage里记一笔<code>call_kind="tool"</code>。这是一个和「多少写进代码」正交的维度，不该合并。</p>
+  <p class="a">代价对比：合schema生成器约删60行、修一个活问题、改两个调用点，<b>该做</b>；合装饰器要把九处行为压进一个开关、先给<code>expose</code>解歧义、还要在「description取第一段还是取整份docstring」里二选一（4个agentic function的docstring就是提示词，截成第一段会直接改掉它们的行为），<b>不该做</b>。</p>
+</div>
+
+<div class="qa">
+  <p class="q">4. <code>skills_bundled/</code>那个目录怎么办？技能要不要也有个「注册」动作？</p>
+  <p class="a">先纠正前提：<b>技能不是没有注册，是注册了两套，而且两套互不认识。</b></p>
+  <p class="a"><code>agentic_programming/skills.py</code>的<code>Skill</code>只有<code>name</code>／<code>description</code>／<code>file_path</code>／<code>base_dir</code>，只读front matter的两个字段、不读正文，扫两个目录，同名先见先赢。<code>skills/loader.py</code>的<code>Skill</code>读正文，还读<code>category</code>／<code>allowed_tools</code>／<code>triggers</code>／<code>aliases</code>，扫五个来源，同名后见先赢，规则正好相反。</p>
+  <p class="a">两套的后果是实打实的三条：<br>
+  <b>一，<code>skills_bundled/</code>不在喂给系统提示的那条路上。</b><code>default_skill_dirs()</code>（<code>skills.py:156</code>）返回<code>~/.openprogram/skills</code>和<code>&lt;repo_root&gt;/skills</code>，装在<code>skills_bundled/</code>里的三份（agentic-programming、distill、self-update）只有另一套loader看得见。而<code>skills/agentic-programming/SKILL.md</code>和<code>skills_bundled/agentic-programming/SKILL.md</code>是两份已经漂开的近似副本。<br>
+  <b>二，两个系统提示渲染器输出不一样。</b><code>runtime.py:1677</code>走<code>format_skills_for_prompt</code>，出<code>&lt;available_skills&gt;</code> XML，带<code>&lt;location&gt;</code>绝对路径；<code>context/components.py:235</code>完全不调它，自己拼一段项目符号列表，截到20条，<b>不给路径</b>。走chat那条路的模型知道技能名字，不知道文件在哪。<br>
+  <b>三，<code>SkillTool</code>已经写好但没接上。</b><code>openprogram/skills/tool.py:74</code>，<code>name = "Skill"</code>，<code>description = "Load a skill's SKILL.md into context"</code>，从来没进过<code>_build_and_register_tool</code>，现在只被人手敲<code>/skill &lt;name&gt;</code>触发。<code>skills.py:19</code>写明了当初的取舍：「We intentionally reuse <code>read</code> rather than adding a dedicated <code>skill</code> tool」。</p>
+  <p class="a">统一概念之后该做的三步，按代价从小到大：<b>一个加载器</b>（删掉<code>agentic_programming/skills.py</code>那份，全走<code>skills/loader.py</code>，它已经读5个来源、读正文、有category和aliases）；<b>一份清单</b>（两个渲染器收敛成一个，<code>skills_index</code>组件和exec那条路输出同一段文本）；<b>一个加载动词</b>（把已经存在的<code>SkillTool</code>注册进<code>_registry</code>）。</p>
+  <p class="a">第三步做完，技能就和工具在同一张表里、同一套门禁、同一份清单，这才是「统一概念」在实现上真正的落点。<b>让概念成立的不是共用装饰器，是共用注册表和共用清单。</b>两个装饰器已经共用注册表了，缺的正是技能这一形态。</p>
+</div>
+
+<div class="qa">
+  <p class="q">5. 统一之后模型眼里该是一种还是几种？</p>
+  <p class="a">今天是<b>三种半</b>：①tools数组里的schema（46个<code>@function</code>加4个<code>@agentic_function</code>，<code>split_tools_for_dispatch</code>拆的）；②deferred目录（<code>defer=True</code>的，系统提示里一行name加description，靠<code>tool_search</code>把schema拉进当轮）；③<code>&lt;available_skills&gt;</code>（name加description加绝对路径，靠<code>read</code>打开）；③′同一批技能在chat那条路上的另一种写法，无路径。</p>
+  <p class="a">②和③<b>形状完全一样</b>：系统提示里一行name加description，外加一个把正文拉进来的动作。区别只有动作的名字（<code>tool_search</code>还是<code>read</code>）和目录的标签。</p>
+  <p class="a">统一之后应该是<b>两种</b>：能直接调的（tools数组，带schema），和知道名字得先加载的（一份目录，一个加载动词，按类型分派：deferred拉schema，技能拉正文）。</p>
+  <p class="a"><b>两家参考实现已经这么做了，而且都是把「加载」做成工具。</b>opencode的<code>skill</code>是内建工具之一（<code>packages/opencode/src/tool/registry.ts:210</code>，和<code>read</code>／<code>grep</code>／<code>task</code>并列），入参<code>name</code>，返回<code>&lt;skill_content&gt;</code>加基准目录加<code>&lt;skill_files&gt;</code>，带<code>permission: "skill"</code>走同一套审批；系统提示那段（<code>core/src/skill/guidance.ts:18</code>）直接写「Use the skill tool to load a skill when a task matches its description」。claude-code的<code>SkillTool</code>和<code>ToolSearchTool</code>并排在同一个工具列表里（<code>src/tools.ts:212</code>），而且更进一步：<code>getSkillToolCommands</code>的注释写着「SkillTool shows ALL prompt-based commands that the model can invoke」，技能和斜杠命令进的是同一份清单。</p>
+  <p class="a">清单要有预算，数可以直接抄claude-code的：<code>SKILL_BUDGET_CONTEXT_PERCENT = 0.01</code>（上下文窗口的1%），<code>MAX_LISTING_DESC_CHARS = 250</code>，注释说明理由「The listing is for discovery only，the Skill tool loads full content on invoke」。我们已经有全部零件，差的只是接成一条。</p>
+</div>
+
+<div class="qa">
+  <p class="q">6. 这次不改代码。真要改名，影响面多大？</p>
+  <p class="a">分四层，代价差一个数量级。见下表。<b>建议：0和1现在就做，2等新名字用顺了再机械替，3单独当一次提示词改动来评，4不做。</b></p>
+</div>
+
+<div class="card scroll">
+<svg viewBox="0 0 1120 372" role="img" aria-label="改名影响面四层">
+  <text x="20" y="26" fill="#f0eee6" font-size="13" font-weight="600">改名影响面：四层，代价差一个数量级</text>
+
+  <rect x="20" y="42" width="1078" height="76" rx="10" fill="#1d1c14" stroke="#5aad4e"/>
+  <rect x="20" y="42" width="4" height="76" rx="2" fill="#5aad4e"/>
+  <text x="40" y="64" fill="#5aad4e" font-size="12" font-weight="600">层0　文档里怎么讲这件事</text>
+  <text x="40" y="85" fill="#a5a190" font-size="11.5">docs/ 里 125 个文件受影响（全站 428 个的 29%）。agentic_function 在 *.md 里 591 处 / 119 个文件。中英双份，实际约63组对照。</text>
+  <text x="40" y="105" fill="#5aad4e" font-size="11.5">零风险，只是量大。现在就能做。</text>
+
+  <rect x="20" y="128" width="1078" height="60" rx="10" fill="#1d1c14" stroke="#5aad4e"/>
+  <rect x="20" y="128" width="4" height="60" rx="2" fill="#5aad4e"/>
+  <text x="40" y="150" fill="#5aad4e" font-size="12" font-weight="600">层1　加一行别名，新代码写新名</text>
+  <text x="40" y="171" fill="#a5a190" font-size="11.5">agentic_program = agentic_function。1 处改动，零风险。<tspan fill="#5aad4e">建议先只做这一层，让新名字先用顺。</tspan></text>
+
+  <rect x="20" y="198" width="1078" height="76" rx="10" fill="#1d1c14" stroke="#d4843a"/>
+  <rect x="20" y="198" width="4" height="76" rx="2" fill="#d4843a"/>
+  <text x="40" y="220" fill="#d4843a" font-size="12" font-weight="600">层2　真改标识符</text>
+  <text x="40" y="241" fill="#a5a190" font-size="11.5">生产 231 处 / 58 文件，测试 146 处 / 24 文件，examples 加 scripts 52 处 / 12 文件。</text>
+  <text x="40" y="261" fill="#a5a190" font-size="11.5">from openprogram.agentic_programming 共 160 行，<tspan fill="#5aad4e">全是同一种写法，可以一条 sed</tspan>。机械，跑全套测试即可。</text>
+
+  <rect x="20" y="284" width="1078" height="76" rx="10" fill="#1d1c14" stroke="#e0445a"/>
+  <rect x="20" y="284" width="4" height="76" rx="2" fill="#e0445a"/>
+  <text x="40" y="306" fill="#e0445a" font-size="12" font-weight="600">层3　改模型看得见的字</text>
+  <text x="40" y="327" fill="#a5a190" font-size="11.5">program 工具的 description（program.py:42,44，每轮都在 tools 数组里）、两份 agentic-programming SKILL.md 的 frontmatter description</text>
+  <text x="40" y="347" fill="#a5a190" font-size="11.5">（每轮都在系统提示里，30 和 31 处）、6 条错误串。约40处。<tspan fill="#e0445a">这不是重构，是改提示词。改完模型行为会变，得重新看效果。</tspan></text>
+</svg>
+<div class="legend">
+<b>层4（不建议做）：目录名与线上格式。</b><code>openprogram/functions/agentics/</code>被132处斜杠路径引用（61个文件），牵到
+<code>.gitignore:51,57,58</code>和<code>pyproject.toml:201,215,216</code>；<code>kind="agentic_function"</code>（<code>streaming/__init__.py:24</code>）是跨进程流协议里的枚举值。
+共170处以上，改了只换来一次全仓大改，目录名和线上枚举本来就不是概念名。
+<br>另一个要一起处理的：<code>skills/agentic-programming/SKILL.md</code>和<code>skills_bundled/agentic-programming/SKILL.md</code>是两份已经漂开的近似副本（30处和31处），
+改名之前先把它们合成一份，否则改名等于把同一个错误抄两遍。
+</div>
+</div>
+
+<h3>三个上一版的结论，改名之后仍然成立</h3>
+
+<div class="qa">
+  <p class="q"><code>decision.make</code>现在的形态够不够表达「让模型判断哪条值得抄」？</p>
+  <p class="a"><b>不够，而且方向不对。</b>「哪条值得抄」不是从一组固定选项里挑一项，是产出一个开放列表，而<code>decision.make</code>是闭集选择器。
+  要分清两种入口：<b>闭集分支</b>（下一步走哪条路）用它，在agentic program里应该少见；<b>开放产出</b>（这一步交出什么内容）用<code>runtime.exec</code>加输出契约加代码侧结构检查，那才是常态。
+  第二种现在没有便利入口，<code>exec(response_format=)</code>零使用，三个地方各手写一遍JSON解析。补一个<code>exec_json(prompt, schema)</code>就够，约25行，不是新层。</p>
+</div>
+
+<div class="qa">
+  <p class="q">跑了半小时的 program 中间失败了怎么办？<code>session.py</code>管不管？</p>
+  <p class="a"><b>不管。</b><code>Session</code>是<code>ask_user</code>在CLI下的文件传递目录：uuid键目录，<code>meta.json</code>加一个<code>answer</code>触发文件，原进程<code>wait_for_answer</code>轮询，<code>run_with_session</code>在<code>finally</code>里<code>cleanup()</code>删目录。跑了半小时崩掉，它什么都不留。
+  真正落盘的是DAG：<code>create_pending_call_node</code>进入时写<code>status=running</code>、<code>output=None</code>的节点，<code>_update_function_call_exit</code>退出时补上输出和耗时，进git支撑的会话库。
+  <b>每个已完成步骤的输入和输出已经在磁盘上了，只是没人读回来。</b>最省的补法是<code>once(key, fn)</code>，约30行，不新增写入方、不新增文件格式。上界必须说清：只对「输入决定输出」的步骤正确，写文件的步骤是被跳过不是被回放，所以要显式选择加入。</p>
+</div>
+
+<div class="qa">
+  <p class="q">成本可预测是不是主要收益之一？</p>
+  <p class="a">是，但要说准：固化之后<b>不是每次调用次数固定，是次数有上界且上界写在代码里、看得见</b>。
+  排在成本前面的收益其实是另外两个：<b>漏步骤变得不可能</b>（清单是代码，不是记性），<b>结论可核实</b>（出处检查是闸门，不是礼貌）。
+  三次真实事故里，两次是漏步骤和没核实，一次是两个agent撞同一个文件，都不是成本问题。</p>
+</div>
+
+<div class="note">
+实现文件：<code>openprogram/agentic_programming/function.py</code>、<code>runtime.py</code>、<code>decision.py</code>、<code>session.py</code>、<code>skills.py</code>；
+<code>openprogram/functions/_runtime.py</code>、<code>openprogram/functions/agentics/</code>、<code>openprogram/functions/tools/</code>；
+<code>openprogram/skills/loader.py</code>、<code>openprogram/skills/tool.py</code>；<code>openprogram/context/components.py</code>；
+<code>openprogram/skills_bundled/distill/SKILL.md</code>。
+相关设计页：<a href="calling-unification.html">函数与工具调用的统一</a>、<a href="../runtime/agent-collaboration.html">Agent协作</a>。
+</div>
+
+</div>
+</body>
+</html>
