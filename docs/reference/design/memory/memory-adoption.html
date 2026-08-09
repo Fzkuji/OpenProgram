@@ -65,6 +65,7 @@
   .note{border-left:3px solid var(--bd);padding:2px 0 2px 13px;color:var(--dim);
     font-size:12.5px;margin:0 0 16px;max-width:86ch;line-height:1.8}
   .note b{color:#f0eee6}
+  .note a{color:var(--acc)}
   .note.k{border-left-color:var(--acc)}
   .note.p{border-left-color:var(--c3)}
   .note.no{border-left-color:var(--no)}
@@ -78,7 +79,7 @@
   <p class="sub">
     <a href="memory-comparison.html">八个框架横向对比</a>挑出了几条别人做得比我们好的地方。
     这一页只回答接下来的问题：放进我们的结构里，每一条该怎么落，或者为什么不落。
-    权威正文在 <a href="overview.md">overview.md</a>，机制图在
+    权威正文在<a href="overview.html">overview.md</a>，机制图在
     <a href="memory-architecture.html">记忆子系统：机制图解</a>。
   </p>
 
@@ -672,50 +673,72 @@
   <p class="lead">三条采纳的方案，落到文件上是这些位置。否掉的那条不落任何文件。</p>
 
   <div class="card scroll">
-    <svg viewBox="0 0 1140 296" role="img" aria-label="三条方案的改动落点">
+    <svg viewBox="0 0 1140 440" role="img" aria-label="三条方案的改动落点">
       <text x="18" y="26" fill="#8a8675" font-size="11" letter-spacing="1.6">方案</text>
       <text x="250" y="26" fill="#8a8675" font-size="11" letter-spacing="1.6">落点</text>
       <text x="700" y="26" fill="#8a8675" font-size="11" letter-spacing="1.6">这个位置现在做什么</text>
       <line x1="18" y1="36" x2="1122" y2="36" stroke="#2e2c20"/>
 
-      <rect x="18" y="46" width="1104" height="112" rx="8" fill="#1d1c14" stroke="#2e2c20"/>
-      <rect x="18" y="46" width="3" height="112" fill="#d4843a"/>
+      <rect x="18" y="46" width="1104" height="222" rx="8" fill="#1d1c14" stroke="#2e2c20"/>
+      <rect x="18" y="46" width="3" height="222" fill="#d4843a"/>
       <text x="36" y="70" fill="#f0eee6" font-size="12.5" font-weight="600">core.md 变派生视图</text>
       <text x="36" y="90" fill="#8a8675" font-size="11">02节</text>
+      <text x="36" y="118" fill="#8a8675" font-size="10.5">上面五行改行为，</text>
+      <text x="36" y="134" fill="#8a8675" font-size="10.5">下面五行是它不再</text>
+      <text x="36" y="150" fill="#8a8675" font-size="10.5">被当成正本之后，</text>
+      <text x="36" y="166" fill="#8a8675" font-size="10.5">顺带要拆掉的特判</text>
 
       <text x="250" y="70" fill="#d4843a" font-size="11.5">runtime/derived_views.py</text>
       <text x="700" y="70" fill="#bdb9a6" font-size="11.5">重建 timeline、recent_events、relations，core.md 加进来</text>
-      <text x="250" y="90" fill="#d4843a" font-size="11.5">management/block_views.py:27-36</text>
-      <text x="700" y="90" fill="#bdb9a6" font-size="11.5">2000 token 超限就 raise，改成渲染预算</text>
+      <text x="250" y="90" fill="#d4843a" font-size="11.5">management/block_views.py:24-36</text>
+      <text x="700" y="90" fill="#bdb9a6" font-size="11.5">_synchronize一超2000 token就raise，改成渲染预算并报出挤掉的块ID</text>
       <text x="250" y="110" fill="#d4843a" font-size="11.5">management/agent.py:96-99</text>
       <text x="700" y="110" fill="#bdb9a6" font-size="11.5">修复话术"core.md 满了，别动它"，删掉</text>
       <text x="250" y="130" fill="#d4843a" font-size="11.5">prompts/write.py:15</text>
       <text x="700" y="130" fill="#bdb9a6" font-size="11.5">让写入方直接编辑 core.md，改成写 topics/core.md</text>
-      <text x="250" y="150" fill="#d4843a" font-size="11.5">scriptorium/writing.py:294-315</text>
-      <text x="700" y="150" fill="#bdb9a6" font-size="11.5">reorganize 返回 status 和 topics 数，加改过的文件和被挤出的块ID</text>
+      <text x="250" y="150" fill="#d4843a" font-size="11.5">prompts/system.py:7,15</text>
+      <text x="700" y="150" fill="#bdb9a6" font-size="11.5">同一句话在系统提示词里又说了两遍，一起改</text>
 
-      <rect x="18" y="168" width="1104" height="70" rx="8" fill="#1d1c14" stroke="#2e2c20"/>
-      <rect x="18" y="168" width="3" height="70" fill="#9d6fe0"/>
-      <text x="36" y="192" fill="#f0eee6" font-size="12.5" font-weight="600">会话边界写全部分支</text>
-      <text x="36" y="212" fill="#8a8675" font-size="11">03节</text>
+      <text x="250" y="176" fill="#8a8675" font-size="11.5">management/transaction.py:27,169-190</text>
+      <text x="700" y="176" fill="#bdb9a6" font-size="11.5">WRITABLE_FILES把core.md列为可手改，派生之后它不再可写</text>
+      <text x="250" y="196" fill="#8a8675" font-size="11.5">management/patching.py:1-5</text>
+      <text x="700" y="196" fill="#bdb9a6" font-size="11.5">补丁的可写面同样写着topics/**和core.md</text>
+      <text x="250" y="216" fill="#8a8675" font-size="11.5">workspace.py 与 transaction.py 的四处基线</text>
+      <text x="700" y="216" fill="#bdb9a6" font-size="11.5">取基线时把core.md的块ID并进校验集合，四处都可以去掉</text>
+      <text x="250" y="236" fill="#8a8675" font-size="11.5">topic_normalization.py:100,222,250,311</text>
+      <text x="700" y="236" fill="#bdb9a6" font-size="11.5">分配块ID时把core.md追加进文件列表，当成第五个主题文件</text>
+      <text x="250" y="256" fill="#8a8675" font-size="11.5">store.py:95</text>
+      <text x="700" y="256" fill="#bdb9a6" font-size="11.5">ensure()建工作区时塞一个空的# Core，派生之后由渲染负责</text>
 
-      <text x="250" y="192" fill="#9d6fe0" font-size="11.5">scriptorium/writing.py:231-291</text>
-      <text x="700" y="192" fill="#bdb9a6" font-size="11.5">_branch 只取 head 那条，强制模式循环写到没有欠账</text>
-      <text x="250" y="212" fill="#9d6fe0" font-size="11.5">runtime/state.py:111-121</text>
-      <text x="700" y="212" fill="#bdb9a6" font-size="11.5">should_incremental_write 的闲置分支要能关掉</text>
-      <text x="250" y="232" fill="#9d6fe0" font-size="11.5">memory/session_watcher.py:103</text>
-      <text x="700" y="232" fill="#bdb9a6" font-size="11.5">会话闲置时 db.get_branch(sid) 只拿 head 那条，这是方案的入口</text>
+      <rect x="18" y="278" width="1104" height="90" rx="8" fill="#1d1c14" stroke="#2e2c20"/>
+      <rect x="18" y="278" width="3" height="90" fill="#9d6fe0"/>
+      <text x="36" y="302" fill="#f0eee6" font-size="12.5" font-weight="600">会话边界写全部分支</text>
+      <text x="36" y="322" fill="#8a8675" font-size="11">03节</text>
 
-      <rect x="18" y="248" width="1104" height="40" rx="8" fill="#1d1c14" stroke="#2e2c20"/>
-      <rect x="18" y="248" width="3" height="40" fill="#5aad4e"/>
-      <text x="36" y="273" fill="#f0eee6" font-size="12.5" font-weight="600">游标读不出来等于空集合</text>
-      <text x="250" y="273" fill="#5aad4e" font-size="11.5">runtime/state.py:51-55</text>
-      <text x="700" y="273" fill="#bdb9a6" font-size="11.5">load 里的 json.loads 没有兜底，读不出来就抛</text>
+      <text x="250" y="302" fill="#9d6fe0" font-size="11.5">scriptorium/writing.py:231-291</text>
+      <text x="700" y="302" fill="#bdb9a6" font-size="11.5">_branch只取head那条，强制模式循环写到没有欠账</text>
+      <text x="250" y="322" fill="#9d6fe0" font-size="11.5">runtime/state.py:111-121</text>
+      <text x="700" y="322" fill="#bdb9a6" font-size="11.5">should_incremental_write的闲置分支要能关掉</text>
+      <text x="250" y="342" fill="#9d6fe0" font-size="11.5">memory/session_watcher.py:103</text>
+      <text x="700" y="342" fill="#bdb9a6" font-size="11.5">会话闲置时db.get_branch(sid)只拿head那条，这是方案的入口</text>
+
+      <rect x="18" y="378" width="1104" height="40" rx="8" fill="#1d1c14" stroke="#2e2c20"/>
+      <rect x="18" y="378" width="3" height="40" fill="#5aad4e"/>
+      <text x="36" y="403" fill="#f0eee6" font-size="12.5" font-weight="600">游标读不出来等于空集合</text>
+      <text x="250" y="403" fill="#5aad4e" font-size="11.5">runtime/state.py:51-55</text>
+      <text x="700" y="403" fill="#bdb9a6" font-size="11.5">load里的json.loads没有兜底，读不出来就抛</text>
     </svg>
   </div>
 
+  <p class="note"><b>这张表不含把位置游标换成ID集合本身。</b>
+  那是这四条之外的一次改动，落在<code>runtime/state.py</code>、<code>runtime/online.py</code>和
+  <code>writing.py</code>的<code>_records</code>，迁移从原话档案播种，
+  完整写法在<a href="overview.html">overview.md</a>的「写入游标」和文末实现状态附录。
+  上面第二块的"会话边界写全部分支"要等它先落地：位置游标下枚举再多分支也没用，
+  分叉出来的那条本来就整条读成已写。</p>
+
   <p class="note k"><b>实现状态</b>：这一页四条都还没落地，正文写法见
-  <a href="overview.md">overview.md</a> 的对应小节和文末的实现状态附录。
+  <a href="overview.html">overview.md</a>的对应小节和文末的实现状态附录。
   01节是判决不做，不占实现状态里的位置。</p>
 
 </div>

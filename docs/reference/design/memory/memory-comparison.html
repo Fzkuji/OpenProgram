@@ -63,6 +63,7 @@
   .note{border-left:3px solid var(--bd);padding:2px 0 2px 13px;color:var(--dim);
     font-size:12.5px;margin:0 0 16px;max-width:86ch;line-height:1.8}
   .note b{color:#f0eee6}
+  .note a{color:var(--acc)}
   .note.k{border-left-color:var(--acc)}
   .note.p{border-left-color:var(--c3)}
   .note code{font-size:11.5px}
@@ -90,7 +91,8 @@
     <div class="st" style="border-top-color:#9d6fe0">
       <div class="k">第三层 · 我们计划</div>
       <h3>紫色行</h3>
-      <p>定稿但还没落地的部分，主要是游标。见第 09 节和 <a href="overview.html">overview.md</a> 的"写入游标"。</p>
+      <p>定稿但还没落地的两处：<b>游标</b>（第 04、05、09 节）和<b>常驻块</b>（第 07 节）。
+        权威描述见<a href="overview.html">overview.md</a>的"写入游标"和"常驻块"两节。</p>
     </div>
   </div>
 
@@ -687,6 +689,72 @@
   </table>
   </div>
 
+  <p class="lead" style="margin-top:22px">上面回答的是"会话结构长什么样"。真正决定漏不漏的是下一个问题：
+    <b>分叉之后，游标怎么办</b>。八家给出三种办法，没有一家是"什么都不做"，因为不做的后果各家都知道。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="分叉之后各家的游标怎么办">
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">分叉之后，游标怎么办：三种办法</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">下标当游标的前提是"一个游标作用域里只有一条线"。分叉威胁的正是这个前提，各家的办法就是各自保住它。</text>
+
+    <!-- 办法一 -->
+    <rect x="32" y="72" width="1096" height="118" rx="9" fill="#1d1c14" stroke="#2db3d5" stroke-width="1.4"/>
+    <text x="52" y="98" fill="#2db3d5" font-size="13" font-weight="700">办法一 · 换一个新的游标作用域，共享前缀重抽一遍</text>
+    <text x="440" y="98" fill="#8a8675" font-size="11">codex · claude-code · openclaw</text>
+    <text x="52" y="122" fill="#bdb9a6" font-size="11.5">codex：fork出来是新的thread_id，而记忆游标那张表的主键就是thread_id，新线程没有行，于是从头抽。</text>
+    <text x="52" y="141" fill="#bdb9a6" font-size="11.5">openclaw：fork出来是新会话，冲刷标记被<tspan fill="#f0eee6" font-weight="700">刻意清空</tspan>，注释写着宁可在新会话里重提一次，也不要因为哈希撞上而漏掉。</text>
+    <text x="52" y="160" fill="#bdb9a6" font-size="11.5">claude-code：游标是进程里的一个闭包变量，同一个进程里接着走就沿用，换个进程起来就是空的，空的意味着全部当新的。</text>
+    <text x="52" y="181" fill="#8a8675" font-size="11">代价：共享前缀被抽第二遍。codex靠Phase 2整合分身在语义上合并，没有任何机械去重。它们接受这个代价。</text>
+
+    <!-- 办法二 -->
+    <rect x="32" y="202" width="1096" height="100" rx="9" fill="#1d1c14" stroke="#9d6fe0" stroke-width="1.4"/>
+    <text x="52" y="228" fill="#9d6fe0" font-size="13" font-weight="700">办法二 · 把边界带过去，翻译成新那套坐标</text>
+    <text x="440" y="228" fill="#8a8675" font-size="11">opencode · hermes</text>
+    <text x="52" y="252" fill="#bdb9a6" font-size="11.5">opencode：fork时每条消息都换一个新id，压缩边界<tspan font-family="Menlo,monospace">tail_start_id</tspan>跟着查表换成新id，所以前缀不必重压。</text>
+    <text x="52" y="271" fill="#bdb9a6" font-size="11.5">hermes：<tspan font-family="Menlo,monospace">/branch</tspan>把历史整段拷进新会话，然后在分叉那一行手动把下标推到拷贝的长度。</text>
+    <text x="52" y="292" fill="#8a8675" font-size="11">这一招成立的前提是分叉<tspan fill="#f0eee6">拷贝了一份</tspan>，新那套坐标从头开始，所以旧下标能被翻译或者一次性推过去。</text>
+
+    <!-- 办法三 -->
+    <rect x="32" y="314" width="1096" height="82" rx="9" fill="#1d1c14" stroke="#5aad4e" stroke-width="1.4"/>
+    <text x="52" y="340" fill="#5aad4e" font-size="13" font-weight="700">办法三 · 前缀根本不进视野</text>
+    <text x="440" y="340" fill="#8a8675" font-size="11">pi-mono</text>
+    <text x="52" y="364" fill="#bdb9a6" font-size="11.5">它和我们一样是会话内的树，但它要的是"这条分支相对最近公共祖先的增量"：从叶子往回走到公共祖先就停。</text>
+    <text x="52" y="385" fill="#8a8675" font-size="11">共享前缀是被走法排除的，不是被游标排除的。所以它有树，却根本不需要为这件事记游标。</text>
+
+    <!-- 我们 -->
+    <line x1="32" y1="412" x2="1128" y2="412" stroke="#2e2c20" stroke-width="1"/>
+    <rect x="32" y="424" width="1096" height="62" rx="9" fill="#241015" stroke="#e0445a" stroke-width="1.6"/>
+    <text x="52" y="450" fill="#e0445a" font-size="13" font-weight="700">我们现在 · 三种都没做</text>
+    <text x="52" y="472" fill="#bdb9a6" font-size="11.5">分叉不换会话id，所以作用域不换；分叉不拷贝，所以没有新坐标可以翻译；<tspan font-family="Menlo,monospace">get_branch</tspan>从head一路走回起点，所以前缀进视野。而游标还是一个下标。</text>
+  </svg>
+  </div>
+
+  <div class="tbl">
+  <table>
+    <tr><th>框架</th><th>分叉之后游标作用域</th><th>共享前缀会不会重抽</th><th>核实位置</th></tr>
+    <tr><td><b>codex-cli</b></td><td>换新的：fork给一个新<code>thread_id</code>，游标表主键就是它</td><td class="h">会，整段重抽。只有Phase 2整合分身在语义上合并</td><td class="q"><span class="src">thread-store/src/types.rs:78-79,97<br>state/memory_migrations/0001_memories.sql:1-12<br>state/src/runtime/memories.rs:104-108<br>memories/write/src/phase1.rs:290</span></td></tr>
+    <tr><td><b>claude-code</b></td><td>一个进程一个：游标是闭包变量，不落盘</td><td class="h">同一进程里接着走不会；换进程起来会，而且是有意的</td><td class="q"><span class="src">src/services/extractMemories/extractMemories.ts:305-307,86-88<br>src/utils/backgroundHousekeeping.ts:34-36<br>src/commands/branch/branch.ts:68,117-146</span></td></tr>
+    <tr><td><b>openclaw</b></td><td>换新的：fork出新会话，冲刷标记刻意清空</td><td class="h">会。注释点名理由：宁可重提一次，不要因哈希相同而漏掉</td><td class="q"><span class="src">src/auto-reply/reply/session.ts:756-767,793-799<br>src/config/sessions/types.ts:370-371<br>src/auto-reply/reply/memory-flush.ts:117-123</span></td></tr>
+    <tr><td><b>opencode</b></td><td>换新的，但边界跟着翻译：fork重发每条消息id，<code>tail_start_id</code>查表换新</td><td class="y">不会</td><td class="q"><span class="src">packages/opencode/src/session/session.ts:748-758,767-769<br>.../compaction.ts:244-248</span></td></tr>
+    <tr><td><b>hermes-agent</b></td><td>换新会话，下标手动推到拷贝长度</td><td class="y">不会。压缩换会话时反而重置为0，因为新会话真的是空的</td><td class="q"><span class="src">cli.py:6701-6705,6744-6756,6776-6777<br>agent/agent_init.py:1026<br>agent/conversation_compression.py:379-380,407-408</span></td></tr>
+    <tr><td><b>pi-mono</b></td><td>不需要：只取叶子到最近公共祖先的增量</td><td class="y">不会，被走法排除</td><td class="q"><span class="src">packages/agent/src/harness/compaction/branch-summarization.ts:87-97<br>packages/agent/src/harness/agent-harness.ts:737-834</span></td></tr>
+    <tr><td><b>pi-ai</b> · <b>weclaw</b></td><td class="q">没有会话分叉</td><td class="q">不适用</td><td class="q"><span class="src">weclaw agent/http_agent.go:76-78（/new就是清空）</span></td></tr>
+    <tr class="us"><td><b>OpenProgram现在</b></td><td class="n">不换：同一个会话id，同一个游标，同一条下标轴</td><td class="n">不重抽，但整条分支被读成已写</td><td class="q"><span class="src">openprogram/memory/scriptorium/runtime/online.py:55-65<br>.../writing.py:111-142,231-234</span></td></tr>
+    <tr class="plan"><td><b>OpenProgram计划</b></td><td>不换作用域，改成按id记：不在集合里的就是欠的</td><td class="y">不会。共享前缀的id早在集合里，天然跳过</td><td class="q"><span class="src">overview.md「写入游标」</span></td></tr>
+  </table>
+  </div>
+
+  <div class="note k">
+    <b>一句话把这一格说完：</b>凡是用下标或者时间戳当游标的，都靠"一个游标作用域里只有一条线"这个前提活着，
+    而它们保住这个前提的办法是<b>分叉的时候换一个作用域</b>：codex换thread_id，openclaw换会话，
+    claude-code换进程，hermes干脆在分叉那一行把下标手动推过去。
+    换作用域之所以可行，是因为它们的分叉都<b>拷贝了一份</b>，新那边的坐标从头开始。
+    我们的分叉不拷贝，两条线共用一张图和一个会话id，作用域没得换，坐标也没得翻译，
+    于是唯一剩下的办法就是别再用坐标：记id，不记第几条。
+    pi-mono证明了这不是唯一解，它同样是会话内的树，靠"只取到最近公共祖先"把前缀挡在视野外；
+    但那要求每一次取都知道要跟哪条比，而记忆要的是"这个会话还欠什么"，没有第二条线可比。
+  </div>
+
   <div class="note k">
     <b>pi-mono 的一招值得记：</b>用户离开一条分支的时候，它可以先给这条分支生成一份摘要接在树上，
     分支被放弃了但里面说过的话不至于凭空消失。这正好补上我们 overview.md 里承认的那个缺口：
@@ -905,6 +973,112 @@
   </table>
   </div>
 
+  <p class="lead" style="margin-top:22px">上面那张表回答的是"这一刻超了怎么办"。还有一个问题它没回答，而我们的缺口正好落在那里：
+    <b>写满之后，新的稳定事实还进不进得来</b>。这取决于常驻块有没有人维护，以及它的正本是不是就是它自己。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="常驻块有没有人维护，满了之后新事实还进不进得来">
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">谁在维护常驻块，写满之后还进得来吗</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">正本在哪，决定了裁一段是"这次没显示"还是"这条没了"；有没有维护通道，决定了满了之后还进不进得来。</text>
+
+    <text x="196" y="86" fill="#8a8675" font-size="11" letter-spacing="1.5">正本在哪</text>
+    <text x="520" y="86" fill="#8a8675" font-size="11" letter-spacing="1.5">维护通道</text>
+    <text x="912" y="86" fill="#8a8675" font-size="11" letter-spacing="1.5">写满之后新事实还进得来吗</text>
+    <line x1="32" y1="96" x2="1128" y2="96" stroke="#2e2c20" stroke-width="1"/>
+
+    <!-- claude-code -->
+    <text x="180" y="126" fill="#4f8ef7" font-size="12.5" font-weight="700" text-anchor="end">claude-code</text>
+    <text x="180" y="142" fill="#8a8675" font-size="10.5" text-anchor="end">MEMORY.md</text>
+    <rect x="196" y="108" width="300" height="42" rx="7" fill="#1d2738" stroke="#4f8ef7" stroke-width="1.3"/>
+    <text x="210" y="127" fill="#bdb9a6" font-size="11.5">主题文件目录。<tspan fill="#f0eee6" font-weight="700">它是索引，不是记忆</tspan></text>
+    <text x="210" y="144" fill="#8a8675" font-size="10.5">提示词原话：绝不要把记忆内容直接写进MEMORY.md</text>
+    <rect x="520" y="108" width="352" height="42" rx="7" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
+    <text x="534" y="127" fill="#5aad4e" font-size="11.5">有。后台dream分身，隔24小时且攒够5个会话触发</text>
+    <text x="534" y="144" fill="#8a8675" font-size="10.5">四段式提示词，最后一段就叫"剪枝和建索引"，把它压回200行以内</text>
+    <text x="912" y="132" fill="#5aad4e" font-size="12" font-weight="700">进得来。写入路上根本没有闸</text>
+
+    <!-- codex -->
+    <text x="180" y="184" fill="#2db3d5" font-size="12.5" font-weight="700" text-anchor="end">codex-cli</text>
+    <text x="180" y="200" fill="#8a8675" font-size="10.5" text-anchor="end">memory_summary.md</text>
+    <rect x="196" y="166" width="300" height="42" rx="7" fill="#1e2630" stroke="#2db3d5" stroke-width="1.3"/>
+    <text x="210" y="185" fill="#bdb9a6" font-size="11.5">SQLite表，再渲染成一份原始记忆文件</text>
+    <text x="210" y="202" fill="#8a8675" font-size="10.5">常驻块是这条链的最后一环，全程派生</text>
+    <rect x="520" y="166" width="352" height="42" rx="7" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
+    <text x="534" y="185" fill="#5aad4e" font-size="11.5">有。会话开始时触发的整合分身，隔6小时一次，整份重写</text>
+    <text x="534" y="202" fill="#8a8675" font-size="10.5">另有一条数据库剪枝：30天没被选用过的原始条目直接删掉</text>
+    <text x="912" y="190" fill="#5aad4e" font-size="12" font-weight="700">进得来。每一轮都重写一遍</text>
+
+    <!-- openclaw -->
+    <text x="180" y="242" fill="#2db3d5" font-size="12.5" font-weight="700" text-anchor="end">openclaw</text>
+    <text x="180" y="258" fill="#8a8675" font-size="10.5" text-anchor="end">MEMORY.md</text>
+    <rect x="196" y="224" width="300" height="42" rx="7" fill="#1e2630" stroke="#2db3d5" stroke-width="1.3"/>
+    <text x="210" y="243" fill="#bdb9a6" font-size="11.5">它自己就是正本，人写的和自动写的混在一起</text>
+    <text x="210" y="260" fill="#8a8675" font-size="10.5">所以才必须按归属裁</text>
+    <rect x="520" y="224" width="352" height="42" rx="7" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
+    <text x="534" y="243" fill="#5aad4e" font-size="11.5">有。每天03:00的cron，做梦管道跑完就往里升</text>
+    <text x="534" y="260" fill="#8a8675" font-size="10.5">升之前先按预算压一次，从最老的自动段落开始丢</text>
+    <text x="912" y="238" fill="#5aad4e" font-size="12" font-weight="700">进得来。<tspan fill="#f0eee6">丢光了也照样把新的写进去</tspan></text>
+    <text x="912" y="256" fill="#8a8675" font-size="10.5">注释原话：拒掉新写入等于吞掉最新材料</text>
+
+    <!-- hermes -->
+    <text x="180" y="300" fill="#d4843a" font-size="12.5" font-weight="700" text-anchor="end">hermes-agent</text>
+    <text x="180" y="316" fill="#8a8675" font-size="10.5" text-anchor="end">MEMORY.md / USER.md</text>
+    <rect x="196" y="282" width="300" height="42" rx="7" fill="#241f10" stroke="#d4843a" stroke-width="1.3"/>
+    <text x="210" y="301" fill="#bdb9a6" font-size="11.5">它自己就是正本，世界上只有这一份</text>
+    <rect x="520" y="282" width="352" height="42" rx="7" fill="#241f10" stroke="#d4843a" stroke-width="1.3"/>
+    <text x="534" y="301" fill="#d4843a" font-size="11.5">没有。八家里唯一没有维护通道的</text>
+    <text x="534" y="318" fill="#8a8675" font-size="10.5">grep过consolidate / distill / prune / compact / dream，零命中</text>
+    <text x="912" y="296" fill="#d4843a" font-size="12" font-weight="700">进得来，但要模型自己先腾地方</text>
+    <text x="912" y="314" fill="#8a8675" font-size="10.5">拒绝信息回给的是<tspan fill="#f0eee6">正在对话的主模型</tspan></text>
+
+    <!-- opencode / pi-mono -->
+    <text x="180" y="358" fill="#8a8675" font-size="12.5" font-weight="700" text-anchor="end">opencode · pi-mono</text>
+    <rect x="196" y="340" width="300" height="30" rx="7" fill="#1d1c14" stroke="#2e2c20" stroke-width="1.3"/>
+    <text x="210" y="359" fill="#8a8675" font-size="11.5">人手写的AGENTS.md，整份拼进去</text>
+    <rect x="520" y="340" width="352" height="30" rx="7" fill="#1d1c14" stroke="#2e2c20" stroke-width="1.3"/>
+    <text x="534" y="359" fill="#8a8675" font-size="11.5">不适用：没有自动写入，也就没有维护问题</text>
+    <text x="912" y="359" fill="#8a8675" font-size="12">不适用</text>
+
+    <!-- 我们 -->
+    <line x1="32" y1="386" x2="1128" y2="386" stroke="#2e2c20" stroke-width="1"/>
+    <text x="180" y="418" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="end">OpenProgram现在</text>
+    <text x="180" y="434" fill="#8a8675" font-size="10.5" text-anchor="end">core.md</text>
+    <rect x="196" y="400" width="300" height="42" rx="7" fill="#241015" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="210" y="419" fill="#bdb9a6" font-size="11.5">它自己就是正本</text>
+    <text x="210" y="436" fill="#8a8675" font-size="10.5">写入方直接编辑它，和主题文件同一套契约</text>
+    <rect x="520" y="400" width="352" height="42" rx="7" fill="#241015" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="534" y="419" fill="#e0445a" font-size="11.5">没有。夜间整理的文件列表只从topics/**.md来</text>
+    <text x="534" y="436" fill="#8a8675" font-size="10.5">老实现里有一条确定性重建流程，重构时删掉了</text>
+    <text x="912" y="415" fill="#e0445a" font-size="12" font-weight="700">进不来。<tspan fill="#f0eee6">八家里没有第二个是这样</tspan></text>
+    <text x="912" y="433" fill="#8a8675" font-size="10.5">修复话术回给后台写入方，写的是"别动它"</text>
+  </svg>
+  </div>
+
+  <div class="tbl">
+  <table>
+    <tr><th>框架</th><th>正本</th><th>维护通道与触发条件</th><th>满了之后</th><th>核实位置</th></tr>
+    <tr><td><b>claude-code</b></td><td>主题文件目录的索引</td><td class="y">dream分身：满24小时且攒够5个会话</td><td class="y">写入路上没有闸，截断只在注入时做，磁盘原文不动</td><td class="q"><span class="src">src/memdir/memdir.ts:227,322-325,363<br>src/services/autoDream/autoDream.ts:63-66,140-141,166-171<br>src/services/autoDream/consolidationPrompt.ts:53-61</span></td></tr>
+    <tr><td><b>codex-cli</b></td><td>SQLite表 → 原始记忆文件 → 常驻块</td><td class="y">整合分身：会话开始触发，成功后冷却6小时；另有30天未选用即删的数据库剪枝</td><td class="y">整份重写；注入时再按2500 token兜底截断</td><td class="q"><span class="src">state/src/runtime/memories.rs:21<br>memories/write/src/phase2.rs:139-166<br>memories/write/src/phase1.rs:110-133<br>ext/memories/src/lib.rs:16</span></td></tr>
+    <tr><td><b>openclaw</b></td><td>文件自己</td><td class="y">每天03:00的cron，做梦管道跑完往里升</td><td class="y">升之前按预算丢最老的自动段落；全丢光也照样写入新的</td><td class="q"><span class="src">src/memory-host-sdk/dreaming.ts:17<br>extensions/memory-core/src/memory-budget.ts:25,100-164<br>.../short-term-promotion.ts:1706-1727</span></td></tr>
+    <tr><td><b>hermes-agent</b></td><td>文件自己</td><td class="n">没有</td><td class="h">硬拒这一次写入，把用量和上限回给正在对话的主模型，由它replace或remove腾地方</td><td class="q"><span class="src">tools/memory_tool.py:149,295-306<br>consolidate / distill / prune / compact / dream全部无命中</span></td></tr>
+    <tr><td><b>opencode</b> · <b>pi-mono</b></td><td>人手写的文件</td><td class="q">不适用</td><td class="q">没有闸</td><td class="q"><span class="src">packages/opencode/src/session/instruction.ts:60-93<br>packages/coding-agent/src/core/resource-loader.ts:57-100</span></td></tr>
+    <tr class="us"><td><b>OpenProgram现在</b></td><td>文件自己</td><td class="n">没有。<code>organize_topics</code>只列<code>topics/**.md</code></td><td class="n">整笔事务拒绝，修复话术让写入方别动它</td><td class="q"><span class="src">openprogram/memory/scriptorium/management/api.py:83-94<br>.../block_views.py:24-36<br>.../agent.py:96-99</span></td></tr>
+    <tr class="plan"><td><b>OpenProgram计划</b></td><td><code>topics/core.md</code></td><td>每次写入事务装成之后跟着重建，和别的派生视图一起</td><td>装到预算为止，装不下的留在正本，检索照样命中</td><td class="q"><span class="src">overview.md「常驻块」</span></td></tr>
+  </table>
+  </div>
+
+  <div class="note k">
+    <b>这一格才是我们和别人真正分开的地方。</b>八家里没有一家会因为常驻块写满就永久停止接收。
+    三家有维护通道：claude-code的dream分身、codex的整合分身、openclaw的每日cron，
+    满了就重写或者按预算腾地方。hermes没有维护通道，做法和我们最像，也是硬拒；
+    但它的拒绝信息回给的是<b>正在对话的那个主模型</b>，附上当前用量和上限两个数，模型下一步就能删一条再写。
+    我们的拒绝回给的是后台写入方，而且话术明确写着"别动它，这条放进主题文件"，
+    于是唯一能腾出地方的那个动作被指名禁止了。所以别家的"满"是这一刻满，我们的"满"是永久满。
+    <br><b>还有一条形状上的：</b>claude-code的MEMORY.md提示词里写着"绝不要把记忆内容直接写进这个文件"，
+    它是主题文件目录的<b>索引</b>；在它的常驻会话模式里，这份索引干脆由夜间dream从日志和主题文件重新蒸馏出来。
+    我们计划中的"<code>core.md</code>是<code>topics/core.md</code>的渲染结果"和这条是同一个形状，不是我们独创的。
+  </div>
+
   <div class="note k">
     <b>给"常驻块写满怎么裁"的结论：</b>七道闸里没有一道让模型自由判断该丢什么。
     五道是确定性截断（claude-code 的 MEMORY.md、codex、openclaw 的两层，加 claude-code SessionMemory 的兜底那级），
@@ -915,7 +1089,11 @@
     <b>二，</b>裁的时候看归属比看时间重要，openclaw 只丢自己写的、人写的一律不动；
     <b>三，</b>要裁就整份都要裁到，codex 给项目级 AGENTS.md 设了闸却漏了全局那份，claude-code 反过来给自己管的 MEMORY.md 设了硬闸、给人管的 CLAUDE.md 只警告不截；
     <b>四，</b>裁完必须留痕，codex 是唯一只写日志的，模型和用户都不知道自己少看了东西。
-    我们的 core.md 已经在"确定性拒绝加留痕"这一格，缺的是第二道闸和归属区分。
+    我们的core.md现在在"确定性拒绝加留痕"这一格。
+    第一条和第二条我们不打算照抄：第二道闸仍然是闸，仍然在写入的路上，加了它还是会把稳定事实挡在外面；
+    归属区分之所以要紧，是因为openclaw的常驻文件是唯一一份、丢一行等于销毁一行，
+    而把core.md变成派生视图之后丢不再等于销毁，归属也就不用判了。
+    判决和理由在<a href="memory-adoption.html">对标之后抄什么</a>第 02 节。
   </div>
 
   <!-- ══════════ 08 ══════════ -->
@@ -1023,7 +1201,7 @@
       <text x="200" y="236" fill="#8a8675" text-anchor="end">常驻块闸门</text>
       <rect x="216" y="220" width="470" height="26" rx="6" fill="#141a12" stroke="#5aad4e" stroke-width="1.5"/>
       <text x="232" y="238" fill="#5aad4e">确定性拒绝加留痕，和 hermes 一样</text>
-      <text x="706" y="238" fill="#d4843a" font-size="11">缺第二道字节闸，也没有区分人写的和自动写的</text>
+      <text x="706" y="238" fill="#e0445a" font-size="11">但没有维护通道，写满就永久拒收，八家里独一份，见第 07 节</text>
 
       <text x="200" y="276" fill="#8a8675" text-anchor="end">夜间整理</text>
       <rect x="216" y="260" width="470" height="26" rx="6" fill="#141a12" stroke="#5aad4e" stroke-width="1.5"/>
@@ -1063,7 +1241,7 @@
   <div class="note">
     <b>五件从对标里带回来、还没做的事。</b>
     一，检索多加一条路：给每个 topic 文件写一句自我描述，让小模型从清单里挑，不建索引（claude-code，第 06 节）。
-    二，core.md 加第二道闸并区分归属：token 之外再加一道字节或行数闸，裁的时候只动自动写入的段落（claude-code 和 openclaw，第 07 节）。
+    二，给core.md一条维护通道：把它变成<code>topics/core.md</code>的渲染结果，2000 token从闸门变成渲染预算，装不下的留在正本（claude-code和openclaw，第 07 节）。
     三，用户放弃一条分支时给它留一份摘要，补上 overview.md 里承认的"只有 head 底下那条会被写"这个缺口（pi-mono，第 05 节）。
     四，去重记两处并互相印证：游标集合之外，在 topic 正文的脚注里也留下来源 id，任一边丢了另一边还拦得住（openclaw，第 04 节）。
     五，让使用情况回流到夜间重整：记录哪些块被检索命中过，把它当合并和淘汰的一个输入（codex，第 06 节）。
@@ -1072,8 +1250,9 @@
   <div class="legend">
     <b>一句话收尾</b>：八家里四家有长期记忆，四家把这件事推给用户手写的文件或者别的进程；
     分支这件事六家线性或者另开会话，只有 pi-mono 和我们把分支放在同一条会话里；
-    常驻块写满了没有一道闸交给模型自由裁，只有截断和拒绝两类。
-    我们计划中的 id 集合游标之所以独一份，不是因为想得多，是因为会话结构不同，别人的形状搬过来会漏掉整条分支。
+    常驻块写满了没有一道闸交给模型自由裁，只有截断和拒绝两类，而且没有一家满了就永久不收。
+    我们有两处独一份，性质相反：<b>id集合游标</b>是被会话结构逼出来的，别人的形状搬过来会漏掉整条分支；
+    <b>写满就永久拒收的常驻块</b>不是逼出来的，是维护通道在重构时丢了没补。
   </div>
 
 </div>

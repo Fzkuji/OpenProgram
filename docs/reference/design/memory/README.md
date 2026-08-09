@@ -37,8 +37,8 @@ LLM Context
 | Document | Content |
 |------|------|
 | [`overview.md`](overview.md) | The two-tier architecture (entity/virtual + provenance recall) and the linear summary chain running today in `openprogram/memory/` |
-| [`memory-architecture.html`](memory-architecture.html) | Visualization: the two write entry points, the five write steps, the staged transaction, the id-set cursor, which of the nine provider hooks are wired, and the failure contract |
-| [`memory-comparison.html`](memory-comparison.html) | Visualization: how the eight reference frameworks write and track long-term memory, across eight dimensions, and where our choices and our planned id-set cursor land against them |
+| [`memory-architecture.html`](memory-architecture.html) | Visualization: the two write entry points, the five write steps, the staged transaction, the id-set cursor, who maintains the always-on block, which of the nine provider hooks are wired, and the failure contract |
+| [`memory-comparison.html`](memory-comparison.html) | Visualization: how the eight reference frameworks write and track long-term memory, across eight dimensions, including what each does to its cursor at a fork and what maintains its always-on block, and where our choices and our two planned changes land against them |
 | [`memory-adoption.html`](memory-adoption.html) | Visualization in three layers: the four moves worth borrowing from that comparison, what each would cost here, and the verdict on each — three adopted, one rejected on measured per-turn latency |
 | [`speaker-identity.html`](speaker-identity.html) | Visualization in three layers: how several people share one session and where speaker identity used to break, what all eight reference frameworks do about it, and the two-file change that follows from them and now runs |
 | [`git-as-entity-memory.md`](git-as-entity-memory.md) | The entity layer's git substrate (Session-Git + Project-Git) |

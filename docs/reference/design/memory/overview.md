@@ -374,7 +374,7 @@ first.
 
 The budget is a rendering limit rather than a gate. The render takes
 paragraphs in file order until the next one does not fit, and reports
-the block IDs it left out. What it leaves out is still in
+how many tokens it laid down and the block IDs it left out. What it leaves out is still in
 `topics/core.md`, still indexed, still reachable by `search` and
 `memory_get`, so leaving a paragraph out of the rendered block costs
 visibility and nothing else. That is what makes trimming safe without
@@ -387,7 +387,27 @@ one is an ordinary edit that a person or the nightly pass can make.
 A workspace that has a hand-written `core.md` and no `topics/core.md`
 has that file moved into place the first time the block is rendered. It
 already carries block IDs and evidence footnotes, so it is a valid
-topic file exactly as it stands.
+topic file exactly as it stands. A workspace that has both keeps
+`topics/core.md` and lets the render overwrite the loose file, because
+that is what being derived means and the content is not at risk either
+way.
+
+### What this does not settle
+
+- **Nothing reorders the source file.** The budget decides visibility,
+  and preference lives in the order, so a paragraph that arrives after
+  the file has grown past 2,000 tokens is written, indexed and
+  searchable but never rendered. The nightly pass organizes by subject
+  and knows nothing about the budget, so nothing moves it up on its
+  own. Losing visibility is not losing content, but the block is what
+  the model reads without being asked.
+- **The report has no reader.** The render says how many tokens it laid
+  down and which block IDs it left out. Nothing consumes that yet, so
+  the first sign that the block is over its budget is still somebody
+  reading the file.
+- **The budget is approximate.** It is counted with `tiktoken`'s
+  `o200k_base`, which is not the tokenizer of every model the block is
+  injected into.
 
 ## What the model sees
 
@@ -548,21 +568,57 @@ boundary", and the sentence saying a reorganize pass reports the files
 it changed. Where those four come from, and what was decided against,
 is [`memory-adoption.html`](memory-adoption.html).
 
-`core.md` is written rather than rendered. The writer edits it directly
-on its own judgment, `_synchronize` in `management/block_views.py`
-raises once it passes 2,000 tokens, which refuses the whole transaction
-including that turn's topic edits, and the repair guidance in
-`management/agent.py` then tells the writer to leave it alone and put
-the fact in a topic file. Nothing shortens it either: `organize_topics`
-builds its file list from `topics/**.md` only. So a full `core.md`
-stays full and stops accepting stable facts permanently. The design
-lands in `runtime/derived_views.py` (render it beside the other derived
-views), `management/block_views.py` (a budget where the gate is),
-`prompts/write.py` (the writer is pointed at `topics/core.md`) and
-`management/agent.py` (the repair line goes). Two special cases go with
-it: `workspace.baseline` and `_validate_topic_contract` each read
-`core.md`'s block IDs today, and a rendered block's IDs are always a
-subset of the topics' own.
+`core.md` is written rather than rendered, and once it is full it stops
+accepting stable facts permanently. The writer edits it directly on its
+own judgment, on instructions in `prompts/write.py` and
+`prompts/system.py`; `_synchronize` in `management/block_views.py`
+raises once the file passes 2,000 tokens, which refuses the whole
+transaction including that turn's topic edits; and the repair guidance
+in `management/agent.py` then tells the writer to leave it alone and
+put the fact in a topic file. Nothing shortens it either:
+`organize_topics` builds its file list from `topics/**.md` only.
+
+The refusal is wider than the writer's own edit. `_synchronize` runs on
+every `commit_edits`, and it measures the staged `core.md` rather than
+the change, so a `core.md` already over the budget on disk refuses
+every transaction after it, including one that edits only topic files
+and one that edits nothing at all. Measured on a workspace whose
+`core.md` a person had enlarged in an editor: a transaction with no
+edit in it raised `Core Memory exceeds 2000 tokens: 4004`, and the
+guidance handed to the writer was "core.md is full. Leave it alone and
+put this in a Topic file", which is what it had already done. Two
+rejected turns raise `COMMIT_REJECTED`, which is not in
+`RETRYABLE_CODES`, so the watcher marks the session handled and that
+conversation never reaches memory. The same happens to the next
+session, and to every one after it, until a person shortens the file by
+hand. `core.md` is writable by hand on purpose
+(`WRITABLE_FILES` in `management/transaction.py`), and it is plain
+Markdown in the workspace, so nothing stands between an editor and
+this state.
+
+The design lands in `runtime/derived_views.py` (render the block beside
+the other derived views), `management/block_views.py` (a budget where
+the gate is, reporting the block IDs it left out),
+`management/agent.py` (the repair line goes), and the two prompts,
+`prompts/write.py` and `prompts/system.py`, which each tell the writer
+to edit `core.md` and are pointed at `topics/core.md` instead. Being
+derived rather than authored also takes `core.md` out of
+`WRITABLE_FILES` and out of the hand-edit path `management/patching.py`
+documents, and `store.ensure()` stops seeding a bare `# Core` file.
+Five special cases go with it, all of them there because `core.md` is
+handled as a topic file that happens to sit outside `topics/`:
+`workspace.baseline`, `MemoryWorkspace.shell`,
+`transaction.committed_baseline` and `_validate_topic_contract` each
+fold its block IDs into the set the contract is checked against, and
+`topic_normalization` appends it to the files it assigns IDs in. A
+rendered block's IDs are always a subset of the topics' own, so all
+five go.
+
+Migration needs no step of its own. `topics/core.md` is created from
+the existing `core.md` the first time the block is rendered, the render
+then overwrites `core.md` in place, and a workspace that never had a
+`core.md` renders an empty block. Nothing is read from the old file
+after that first pass.
 
 `reorganize` returns `{"status": ..., "topics": N}`, where `N` counts
 the files it looked at rather than the files it changed.
@@ -583,12 +639,33 @@ a record only when its ordinal is higher than the stored one, and
 `scriptorium/writing.py` builds that ordinal from the row's index in
 the branch it read. The index is a position in one branch, so a branch
 forked from an earlier message numbers its turns below the stored
-ordinal and the whole branch reads as already written. Measured on a
-session whose stored ordinal was 9, a six-record branch was offered as
-zero records.
+ordinal and reads as already written.
 
-The three places the design lands are `runtime/state.py` (the state
-shape and the per-thread cursor files), `runtime/online.py` (what a
-session owes, and adding ids after the transaction installs), and
-`_records` in `scriptorium/writing.py` (identity by message id, and
-dropping the positional fallback).
+How much of it reads that way depends on how far the branch has run.
+While it is no longer than what the cursor has already counted, all of
+it is skipped: measured on a session whose stored ordinal was 9, a
+branch forking at the fourth message and running six turns was offered
+as zero records. Once it runs past that high-water mark the tail is
+claimed and the turns before it never are: measured on the same
+session, a branch of fourteen new turns was offered as its last seven,
+so what reached the writer began in the middle of a conversation whose
+first seven turns memory will not be offered again. The first case
+loses a branch. The second case writes a fragment and calls the whole
+branch done.
+
+The design lands in `runtime/state.py` (the state shape and the
+per-thread cursor files), `runtime/online.py` (what a session owes, and
+adding ids after the transaction installs), and `_records` in
+`scriptorium/writing.py` (identity by message id, and dropping the
+positional fallback). `advance_cursor` and its "cursor cannot move
+backwards" check go with the ordinal; a set has no direction to move
+in. Migration is the seeding pass described above, reading
+`sources/openprogram/<session-id>.md` once per thread and then dropping
+`cursors` from `runtime.json`.
+
+Writing every branch rather than the head's alone is a separate change
+on top, and it lands in `_branch` in `scriptorium/writing.py` and in
+`memory/session_watcher.py`, which today both ask `get_branch` for one
+line. It also needs `should_incremental_write` in `runtime/state.py` to
+take its idle allowance as an argument, because that allowance is what
+would otherwise let every one-turn retry through.

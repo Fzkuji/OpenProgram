@@ -284,15 +284,29 @@ ID从不删除。把没人再去的分支的ID清掉看着像打扫，而它恰�
 于是它冻结在最先到达的那批事实上。
 
 预算是渲染的上限，不是闸门。渲染按正本里的文件顺序装，装到下一段放不进去
-为止，并报出被留在外面的块ID。留在外面的段落还在 `topics/core.md` 里，照样
-被索引，照样能被 `search` 和 `memory_get` 找到，所以把一段留出渲染结果，
+为止，并报出装进去了多少token、哪些块ID被留在了外面。留在外面的段落还在
+`topics/core.md` 里，照样被索引，照样能被 `search` 和 `memory_get` 找到，所以把一段留出渲染结果，
 代价只是可见性。这也是不必先分清谁写的就能安全裁剪的原因：openclaw 要区分
 自动写的和人写的，是因为它的常驻文件就是唯一一份，丢一行等于销毁一行。在
 这里，偏好落在顺序上：靠前的段落先渲染，挪动一段是人和夜间那一趟都做得到
 的普通编辑。
 
 已经有一份手写 `core.md` 而没有 `topics/core.md` 的工作区，第一次渲染时把
-这个文件移过去。它本来就带着块ID和证据脚注，原样就是一个合法的主题文件。
+这个文件移过去。它本来就带着块ID和证据脚注，原样就是一个合法的主题文件。两份
+都有的工作区保留`topics/core.md`，让渲染覆盖掉那份散着的，因为派生的含义就是
+这个，而两边内容都不会有风险。
+
+### 这套方案没解决的
+
+- **没有任何东西给正本重新排序。**预算决定的是可见性，而偏好落在顺序上，
+  所以一段在文件长过2000 token之后才到的事实，写进去了、也被索引了、也搜
+  得到，但永远渲染不出来。夜间那一趟按主题整理，不知道预算这回事，不会主动
+  把它挪上去。看不见不等于没有，但常驻块正是模型不用问就会读到的那一块。
+- **报出来的东西没有读者。**渲染会说这次装了多少token、把哪些块ID留在了外面。
+  目前没有任何东西消费它，所以发现常驻块超出预算的第一个途径，仍然是有人去
+  读那个文件。
+- **预算是近似的。**它按`tiktoken`的`o200k_base`计数，而这不是每一个被注
+  入这块内容的模型所用的分词器。
 
 ## 模型看到什么
 
@@ -427,18 +441,41 @@ agents。在这个接口上再开一条私路，只会变成绕过它的办法�
 从哪来、还有哪一条被否掉了，见
 [`memory-adoption.html`](memory-adoption.html)。
 
-`core.md` 现在是被写的，不是被渲染的。写入方按自己的判断直接编辑它，
-`management/block_views.py` 里的 `_synchronize` 一超过 2000 token 就抛，
-整笔事务连同这一轮的主题改动一起被拒，`management/agent.py` 的修复话术接着
-告诉写入方别动它、把这条事实放进主题文件。也没有任何东西让它变短：
-`organize_topics` 的文件列表只从 `topics/**.md` 来。于是一个装满的
-`core.md` 就一直满着，从此不再接收稳定事实。方案落在
-`runtime/derived_views.py`（和别的派生视图一起渲染）、
-`management/block_views.py`（闸门改成预算）、
-`prompts/write.py`（把写入方指向 `topics/core.md`）、
-`management/agent.py`（删掉那句修复话术）。跟着一起走的还有两处特判：
-`workspace.baseline` 和 `_validate_topic_contract` 现在都单独读一遍
-`core.md` 的块ID，而渲染出来的块，它的ID永远是主题那些ID的子集。
+`core.md`现在是被写的，不是被渲染的，而且一旦写满就永久不再接收稳定事实。
+写入方按`prompts/write.py`和`prompts/system.py`的指示，凭自己的判断直接
+编辑它；`management/block_views.py`里的`_synchronize`一超过2000 token
+就抛，整笔事务连同这一轮的主题改动一起被拒；`management/agent.py`的修复话
+术接着告诉写入方别动它、把这条事实放进主题文件。也没有任何东西让它变短：
+`organize_topics`的文件列表只从`topics/**.md`来。
+
+拒绝的范围比写入方那一次编辑大得多。`_synchronize`在每一次`commit_edits`
+里都跑，而且它量的是暂存里的整份`core.md`，不是这次改动，所以一份磁盘上已经
+超标的`core.md`会拒掉它之后的每一笔事务，包括只改主题文件的，也包括一个字
+都没改的。实测：一份被人在编辑器里撑大过的`core.md`，一笔没有任何改动的事
+务报`Core Memory exceeds 2000 tokens: 4004`，而交给写入方的指引是"core.md
+is full. Leave it alone and put this in a Topic file"，那正是它已经做过的事。
+两轮被拒之后抛`COMMIT_REJECTED`，它不在`RETRYABLE_CODES`里，于是看门狗把
+会话标成已处理，这段对话再也不进记忆。下一个会话同样，之后每一个都同样，直到
+有人手工把那个文件改短。而`core.md`本来就是允许手改的
+（`management/transaction.py`的`WRITABLE_FILES`），它就是工作区里一份普通
+Markdown，编辑器和这个状态之间没有任何东西挡着。
+
+方案落在`runtime/derived_views.py`（和别的派生视图一起渲染）、
+`management/block_views.py`（闸门改成预算，并报出装了多少token、挤掉了哪些块ID）、
+`management/agent.py`（删掉那句修复话术），以及两份提示词
+`prompts/write.py`和`prompts/system.py`，它们各自都写着让写入方编辑
+`core.md`，改成指向`topics/core.md`。从被写变成被渲染，也意味着`core.md`
+离开`WRITABLE_FILES`、离开`management/patching.py`记着的那块手改面，
+`store.ensure()`也不再预先塞一个空的`# Core`。跟着一起走的还有五处特判，
+它们存在的原因都一样，即`core.md`被当成一个碰巧不在`topics/`里的主题文件：
+`workspace.baseline`、`MemoryWorkspace.shell`、
+`transaction.committed_baseline`和`_validate_topic_contract`都把它的块ID并
+进要校验的集合，`topic_normalization`还把它追加进分配ID的文件列表。渲染出来
+的块，它的ID永远是主题那些ID的子集，所以这五处都可以去掉。
+
+迁移不需要单独一步。`topics/core.md`在第一次渲染时从现有的`core.md`建出
+来，渲染随后就地覆盖`core.md`，从来没有过`core.md`的工作区渲染出一块空的。
+那一趟之后，旧文件里不再读出任何东西。
 
 `reorganize` 现在返回 `{"status": ..., "topics": N}`，其中 `N` 数的是它看过
 几个文件，不是它改过几个。
@@ -455,10 +492,24 @@ agents。在这个接口上再开一条私路，只会变成绕过它的办法�
 `runtime/online.py`只认领序号大于已存序号的记录，而
 `scriptorium/writing.py`用行在它读到的那条分支里的下标当序号。下标是某一
 条分支里的位置，所以从早前消息分叉出来的分支，它的轮次编号低于已存序号，
-整条分支被读成已经写过。实测：已存序号是9时，一条6条记录的分支被认领
-到0条。
+读起来就是已经写过。
+
+具体漏掉多少，取决于这条分支走了多远。只要它还没超过游标数到的高度，就整条
+被跳过：实测，已存序号是9的会话上，一条从第四条消息分出去、往下聊了6轮的分
+支，被认领到0条。一旦它走过那个高度，超出去的那一段会被认领，而它前面的永远
+不会：同一个会话上，一条新增14轮的分支被认领到最后7轮，交到写入器手上的那一
+批从一段对话的中间开始，而它前面那7轮记忆再也不会拿到。第一种情形是漏掉一条
+分支，第二种是写下一个片段，然后把整条分支记成已写。
 
 方案落在三处：`runtime/state.py`（状态形状与每个thread一个游标文件）、
 `runtime/online.py`（一个会话欠什么，以及事务安装成功之后把ID加进去）、
 `scriptorium/writing.py`的`_records`（以消息ID为身份，并去掉按位置生成
-的退路）。
+的退路）。`advance_cursor`和它那条"游标不能后退"的检查跟着序号一起去掉，
+集合没有方向可退。迁移就是上面说的播种：每个thread读一遍
+`sources/openprogram/<session-id>.md`，然后把`cursors`从`runtime.json`里删掉。
+
+写每一条分支而不只是head那条，是叠在它上面的另一次改动，落在
+`scriptorium/writing.py`的`_branch`和`memory/session_watcher.py`，这两处今天
+向`get_branch`要的都是一条线。它还需要`runtime/state.py`的
+`should_incremental_write`把闲置放行改成可传参，因为正是那条放行会把每一次
+只有一轮的重试都放进来。

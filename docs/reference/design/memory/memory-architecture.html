@@ -67,7 +67,8 @@
 <div class="wrap">
 
   <h1>记忆子系统：机制图解</h1>
-  <p class="sub">一段对话怎么变成磁盘上的主题文件，写到一半失败会怎样，会话分叉之后靠什么认出哪些已经写过。
+  <p class="sub">一段对话怎么变成磁盘上的主题文件，写到一半失败会怎样，会话分叉之后靠什么认出哪些已经写过，
+    每次会话都注入的那一小块记忆归谁维护。
     正文在 <code>docs/reference/design/memory/overview.md</code>，这页只画机制。
     别家怎么做的、我们的选择落在哪一格，在 <a href="memory-comparison.html">记忆写入：八个框架横向对比</a>。</p>
 
@@ -78,7 +79,9 @@
     </div>
     <div class="st" style="border-top-color:#d4843a">
       <div class="k">定稿了还没落地</div>
-      <p>第三节那套 <b>ID 集合游标</b>。跑着的仍是位置游标，分叉之后会漏写一整条分支。</p>
+      <p>两个缺口的方案都定了，代码都还没换。<b>第 04 节</b>的ID集合游标：跑着的仍是位置游标，
+        分叉之后整条分支漏写。<b>第 05 节</b>的常驻块派生视图：跑着的仍是写入方直接编辑
+        <code>core.md</code>，写满之后永久拒收。</p>
     </div>
     <div class="st" style="border-top-color:#8a8675">
       <div class="k">接口留着没接线</div>
@@ -92,9 +95,10 @@
     <a href="#steps">02 写入的五个步骤</a>
     <a href="#txn">03 事务：改在暂存，验过才装</a>
     <a href="#cursor">04 游标：身份不是位置</a>
-    <a href="#hooks">05 接口的九个方法</a>
-    <a href="#fail">06 失败会怎样</a>
-    <a href="#open">07 还没解决的</a>
+    <a href="#core">05 常驻块：谁在维护它</a>
+    <a href="#hooks">06 接口的九个方法</a>
+    <a href="#fail">07 失败会怎样</a>
+    <a href="#open">08 还没解决的</a>
   </div>
 
   <!-- ══════════ 01 总图 ══════════ -->
@@ -542,11 +546,127 @@
     <b>为什么位置当不了身份</b>：编号是"在我读到的这条线里排第几"，
     分支的第四条和主干的第四条是两条不同的消息，却共用同一个编号。
     换成 id 之后，边界就只是一个集合，分支自己不需要任何标识。
-    分支的 tip 每聊一轮就换一个节点，拿它当键会一轮开一个新游标。
+    分支的tip每聊一轮就换一个节点，拿它当键会一轮开一个新游标。<br>
+    <b>漏掉多少，取决于分支走了多远</b>。上图画的是分支还没超过已写高度的情形，六条一条都不认领。
+    分支继续往下聊，超过那个高度之后，超出去的那一段会被认领，而它前面的永远不会：
+    同一个会话，游标存9，一条新增十四轮的分支实测认领了<b>最后七轮</b>，
+    交到写入器手上的那一批从一段对话的中间开始，而它前面那七轮之后再也不会被拿出来。
+    第一种情形是漏掉一条分支，第二种是<b>写下一个片段，然后把整条分支记成已写</b>。
   </div>
 
-  <!-- ══════════ 05 九个方法 ══════════ -->
-  <h2 id="hooks"><span class="num">05</span>接口的九个方法</h2>
+  <!-- ══════════ 05 常驻块 ══════════ -->
+  <h2 id="core"><span class="num">05</span>常驻块：谁在维护它</h2>
+  <p class="lead"><code>core.md</code>是每次会话开头都注入的那一小块。它有2000 token上限，
+    而上限之外没有任何东西在照看它：写入只往里加，夜间整理只列<code>topics/</code>。
+    于是它顶到上限的那一刻，也就是它最后一次改变的时刻。</p>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="常驻块：现在的写入路径与计划中的派生视图">
+    <defs>
+      <marker id="k-no" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
+      <marker id="k-gy" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#8a8675"/></marker>
+      <marker id="k-vi" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#9d6fe0"/></marker>
+    </defs>
+
+    <text x="24" y="30" fill="#d4843a" font-size="15" font-weight="700">同一个文件，两种身份：被写的，和被渲染的</text>
+    <text x="24" y="52" fill="#8a8675" font-size="12">左边是现在跑着的，右边是定稿还没落地的。分界线就一句话：正本在哪。</text>
+
+    <!-- ─────────── 现在 ─────────── -->
+    <rect x="32" y="70" width="536" height="26" rx="6" fill="#241015"/>
+    <text x="48" y="88" fill="#e0445a" font-size="11.5" letter-spacing="1.4">现在 · core.md就是正本</text>
+
+    <rect x="32" y="106" width="252" height="58" rx="8" fill="#12110b" stroke="#2e2c20" stroke-width="1.3"/>
+    <text x="48" y="128" fill="#bdb9a6" font-size="12">写入agent直接编辑它</text>
+    <text x="48" y="148" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">prompts/write.py · prompts/system.py</text>
+    <path d="M284 135 L316 135" stroke="#8a8675" stroke-width="1.4" marker-end="url(#k-gy)"/>
+
+    <rect x="320" y="106" width="248" height="58" rx="8" fill="#241f10" stroke="#d4843a" stroke-width="1.4"/>
+    <text x="336" y="128" fill="#d4843a" font-size="12">2000 token闸，超了就抛</text>
+    <text x="336" y="148" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">management/block_views.py的_synchronize</text>
+
+    <path d="M444 164 L444 186" stroke="#e0445a" stroke-width="1.5" marker-end="url(#k-no)"/>
+    <rect x="32" y="188" width="536" height="58" rx="8" fill="#241015" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="48" y="210" fill="#e0445a" font-size="12" font-weight="700">整笔事务被拒，这一轮的主题改动一起回滚</text>
+    <text x="48" y="230" fill="#bdb9a6" font-size="11.5">修复话术只有一句：core.md满了，别动它，这条放进主题文件。</text>
+
+    <path d="M300 246 L300 268" stroke="#e0445a" stroke-width="1.5" marker-end="url(#k-no)"/>
+    <rect x="32" y="270" width="536" height="52" rx="8" fill="#12110b" stroke="#e0445a" stroke-width="1.3"/>
+    <text x="48" y="292" fill="#e0445a" font-size="12" font-weight="700">从此每一条稳定事实都被劝走</text>
+    <text x="48" y="312" fill="#bdb9a6" font-size="11.5">而且没有任何东西让它变短：夜间整理的文件列表只从topics/**.md来。</text>
+
+    <!-- 更宽的那一层 -->
+    <rect x="32" y="336" width="536" height="106" rx="8" fill="#12110b" stroke="#e0445a" stroke-width="1.6"/>
+    <text x="48" y="358" fill="#e0445a" font-size="12" font-weight="700">闸量的是暂存里的整份core.md，不是这次改动</text>
+    <text x="48" y="378" fill="#bdb9a6" font-size="11.5">所以一份已经超标的core.md会拒掉它之后的每一笔事务，包括只改主题文件的，</text>
+    <text x="48" y="396" fill="#bdb9a6" font-size="11.5">和一个字都没改的。而它本来就允许人手编辑，是普通Markdown。</text>
+    <text x="48" y="418" fill="#8a8675" font-size="11">实测：人在编辑器里把它撑大之后，一笔没有任何改动的事务报</text>
+    <text x="48" y="435" fill="#8a8675" font-size="11" font-family="Menlo,monospace">Core Memory exceeds 2000 tokens: 4004</text>
+
+    <rect x="32" y="452" width="536" height="80" rx="8" fill="#241015" stroke="#e0445a" stroke-width="1.4"/>
+    <text x="48" y="474" fill="#e0445a" font-size="12" font-weight="700">两次被拒之后：这个会话的对话不进记忆，下一个也不进</text>
+    <text x="48" y="494" fill="#bdb9a6" font-size="11.5">报COMMIT_REJECTED，它不在可重试集合里，所以观察者照样把会话标成已处理。</text>
+    <text x="48" y="514" fill="#bdb9a6" font-size="11.5">这个状态要靠人去改短那个文件才会结束。</text>
+
+    <!-- ─────────── 计划 ─────────── -->
+    <rect x="596" y="70" width="532" height="26" rx="6" fill="#1a1622"/>
+    <text x="612" y="88" fill="#9d6fe0" font-size="11.5" letter-spacing="1.4">计划 · topics/core.md是正本，core.md是渲染结果</text>
+
+    <rect x="596" y="106" width="240" height="140" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.5"/>
+    <text x="612" y="128" fill="#5aad4e" font-size="12" font-weight="700">topics/core.md正本</text>
+    <text x="612" y="147" fill="#8a8675" font-size="11">一个普通主题文件，不设上限</text>
+    <rect x="612" y="158" width="208" height="20" rx="3" fill="#2a2a1c"/>
+    <text x="622" y="172" fill="#bdb9a6" font-size="10.5">段落^a1</text>
+    <rect x="612" y="182" width="208" height="20" rx="3" fill="#2a2a1c"/>
+    <text x="622" y="196" fill="#bdb9a6" font-size="10.5">段落^b2</text>
+    <rect x="612" y="206" width="208" height="20" rx="3" fill="#241f14"/>
+    <text x="622" y="220" fill="#8a8675" font-size="10.5">段落^c3 · 这次没装进去</text>
+    <text x="612" y="240" fill="#8a8675" font-size="10.5">写入方和夜间整理都只认识它</text>
+
+    <path d="M840 176 L876 176" stroke="#9d6fe0" stroke-width="1.6" marker-end="url(#k-vi)"/>
+    <text x="858" y="168" fill="#9d6fe0" font-size="10.5" text-anchor="middle">渲染</text>
+
+    <rect x="888" y="106" width="240" height="140" rx="8" fill="#12110b" stroke="#9d6fe0" stroke-width="1.5"/>
+    <text x="904" y="128" fill="#9d6fe0" font-size="12" font-weight="700">core.md派生</text>
+    <text x="904" y="147" fill="#8a8675" font-size="11">每次写入装成之后跟着重建</text>
+    <rect x="904" y="158" width="208" height="20" rx="3" fill="#2a2a1c"/>
+    <text x="914" y="172" fill="#bdb9a6" font-size="10.5">段落^a1</text>
+    <rect x="904" y="182" width="208" height="20" rx="3" fill="#2a2a1c"/>
+    <text x="914" y="196" fill="#bdb9a6" font-size="10.5">段落^b2</text>
+    <text x="904" y="220" fill="#5aad4e" font-size="10.5">装到2000 token为止</text>
+    <text x="904" y="238" fill="#5aad4e" font-size="10.5">装不下的不报错，只报出块ID</text>
+
+    <rect x="596" y="262" width="532" height="86" rx="8" fill="#12110b" stroke="#9d6fe0" stroke-width="1.3"/>
+    <text x="612" y="284" fill="#f0eee6" font-size="12" font-weight="700">预算是渲染上限，不是闸门</text>
+    <text x="612" y="304" fill="#bdb9a6" font-size="11.5">被挤出去的段落还在正本里，照样被索引，照样能被search和memory_get找到。</text>
+    <text x="612" y="323" fill="#bdb9a6" font-size="11.5">所以留在外面只损失可见性，不损失内容，裁剪也就不必先分清是谁写的。</text>
+    <text x="612" y="341" fill="#8a8675" font-size="11">想让某一段一直在，就把它在正本里排到前面，这是普通编辑。</text>
+
+    <rect x="596" y="356" width="532" height="86" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.3"/>
+    <text x="612" y="378" fill="#f0eee6" font-size="12" font-weight="700">为什么必须先变成派生视图，才谈得上裁</text>
+    <text x="612" y="398" fill="#bdb9a6" font-size="11.5">事务有一条硬契约：改之前存在的块ID，改之后必须还找得到。</text>
+    <text x="612" y="417" fill="#bdb9a6" font-size="11.5">core.md里今天可能有独苗，裁掉它整笔就被拒；渲染结果的ID永远是正本ID</text>
+    <text x="612" y="435" fill="#bdb9a6" font-size="11.5">的子集，裁掉一段，ID在正本里活着。</text>
+
+    <rect x="596" y="452" width="532" height="80" rx="8" fill="#221a30" stroke="#9d6fe0" stroke-width="1.4"/>
+    <text x="612" y="474" fill="#9d6fe0" font-size="12" font-weight="700">这一节的状态</text>
+    <text x="612" y="494" fill="#bdb9a6" font-size="11.5">设计定了，代码还没换。左边画的就是现在的真实行为。</text>
+    <text x="612" y="514" fill="#bdb9a6" font-size="11.5">改动落点见<tspan font-family="Menlo,monospace">overview.md</tspan>文末的实现状态附录。</text>
+
+    <line x1="32" y1="552" x2="1128" y2="552" stroke="#2e2c20" stroke-width="1"/>
+    <text x="32" y="578" fill="#8a8675" font-size="11.5">老实现里这件事是有人管的：<tspan font-family="Menlo,monospace">memory/core.py</tspan>的refresh_from_wiki把core.md从一个指定的wiki页重建出来，按标题边界截到预算，由sleep的deep阶段调用。</text>
+    <text x="32" y="600" fill="#8a8675" font-size="11.5">换成topics/sources这套结构时那条流程被删掉，没有补回来。计划里那一栏就是把它接回来，只是指定页从wiki页换成主题文件。</text>
+  </svg>
+  </div>
+  <div class="legend">
+    <b>两个方向的区别</b>：现在是<b>拒绝</b>，拒绝落在写入的路上，代价是内容进不来；
+    计划是<b>不装</b>，不装落在渲染的路上，代价只是这一次没被看见。
+    <b>为什么不给它加第二道闸</b>：第二道闸仍然是闸，仍然在写入的路上，仍然会把稳定事实挡在外面。
+    别家要区分"人写的"和"自动写的"才敢裁，是因为它们的常驻文件是唯一一份，丢一行等于销毁一行；
+    这里正本是全量的，所以归属这件事根本不用判。
+  </div>
+
+  <!-- ══════════ 06九个方法 ══════════ -->
+  <h2 id="hooks"><span class="num">06</span>接口的九个方法</h2>
   <p class="lead">记忆和 agent 运行时之间只有这一个接口。除了 <code>name</code> 之外每个方法都有默认实现，
     所以换一套记忆系统只需要写它有事可做的那几个。下图按会话的生命周期摆开，并如实标出哪些还没接线。</p>
 
@@ -650,8 +770,8 @@
     带工具的记忆系统按插件接进来，插件本来就能注册命令、技能、MCP、hook 和 agent，再开一条私道只会绕过它。
   </div>
 
-  <!-- ══════════ 06 失败 ══════════ -->
-  <h2 id="fail"><span class="num">06</span>失败会怎样</h2>
+  <!-- ══════════ 07失败 ══════════ -->
+  <h2 id="fail"><span class="num">07</span>失败会怎样</h2>
   <p class="lead">写入的返回值只有三种，观察者读的就是它。不吭声等于成功，失败要说清是哪一种：会自己好的，和再试也一样的。</p>
 
   <div class="card">
@@ -728,15 +848,16 @@
   </svg>
   </div>
 
-  <!-- ══════════ 07 还没解决的 ══════════ -->
-  <h2 id="open"><span class="num">07</span>还没解决的</h2>
-  <p class="lead">游标让"写好几条分支"这件事变得安全，它不负责去找分支。以下四件是知道的、没修的。</p>
+  <!-- ══════════ 08还没解决的 ══════════ -->
+  <h2 id="open"><span class="num">08</span>还没解决的</h2>
+  <p class="lead">上面两节的方案落地之后，仍然剩下这四件。它们都跟"一个会话有好几条分支"有关，
+    而且都不是游标能解决的：游标让写好几条分支这件事变得安全，它不负责去找分支，也不负责表达分支之间的关系。</p>
 
   <div class="grid2">
 
     <div class="oc">
-      <svg viewBox="0 0 560 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="只有 head 那条分支会被处理">
-        <text x="16" y="26" fill="#d4843a" font-size="12.5" font-weight="700">只有 head 那条分支会被处理</text>
+      <svg viewBox="0 0 560 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="一条分支只在会话边界上被回访">
+        <text x="16" y="26" fill="#d4843a" font-size="12.5" font-weight="700">一条分支只在会话边界上被回访</text>
         <line x1="60" y1="70" x2="220" y2="70" stroke="#3a382c" stroke-width="1.3"/>
         <g font-size="10.5" text-anchor="middle">
           <circle cx="60" cy="70" r="7" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
@@ -758,14 +879,12 @@
           <circle cx="348" cy="118" r="7" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/>
           <circle cx="420" cy="118" r="7" fill="#12110b" stroke="#3a382c" stroke-width="1.3"/>
         </g>
-        <g stroke="#e0445a" stroke-width="2">
-          <line x1="414" y1="112" x2="426" y2="124"/><line x1="426" y1="112" x2="414" y2="124"/>
-        </g>
-        <text x="440" y="122" fill="#8a8675" font-size="11">没人再走到这个 tip</text>
-        <text x="16" y="160" fill="#8a8675" font-size="11">两条写入路径要的都是"结束在 head 的那条分支"。</text>
-        <text x="16" y="178" fill="#8a8675" font-size="11">用户在分支还没攒够阈值时离开，它就再也不会被回访。</text>
+        <text x="440" y="122" fill="#8a8675" font-size="11">要等会话闲下来</text>
+        <text x="16" y="160" fill="#8a8675" font-size="11">每一轮里，两条写入路径要的都是"结束在head的那条分支"。</text>
+        <text x="16" y="178" fill="#8a8675" font-size="11">会话边界上才会枚举每条分支各要一遍。</text>
       </svg>
-      <div class="d">枚举全部分支的接口是有的，记忆没用它。<b>用了就会把故意放弃的分支也写进记忆。</b></div>
+      <div class="d">边界那一遍是定稿的方案（还没落地）。<b>等着不丢东西，早一点也拿不到更多</b>：
+        head的写入散在五处，它们唯一共同经过的那个函数把旧值丢掉了，也没有任何事件宣布这次移动。</div>
     </div>
 
     <div class="oc">
@@ -834,8 +953,10 @@
 
   <div class="legend">
     <b>一句话收尾</b>：每轮一次和闲置一次是同一个方法的两种力度，写入永远先在暂存里做完再整体安装，
-    游标记的是消息的身份而不是它排第几，写完了就闭嘴、写不完要说清是哪一种失败。
-    剩下四件都跟"一个会话有好几条分支"有关，都还没修。
+    游标记的是消息的身份而不是它排第几，常驻块是主题文件的渲染结果而不是一份被写的正本，
+    写完了就闭嘴、写不完要说清是哪一种失败。
+    两个缺口都还没落地：位置游标漏分支，写满的core.md永久拒收。
+    落地之后仍然剩下的那四件，都跟"一个会话有好几条分支"有关。
   </div>
 
 </div>
