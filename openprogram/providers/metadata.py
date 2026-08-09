@@ -392,8 +392,21 @@ def _provider_dir(provider_id: str) -> Path | None:
     return None
 
 
+# Providers that ship no dir of their own because they ride another
+# provider's wire. ``claude-code`` is the Claude subscription connected
+# direct to api.anthropic.com through the anthropic Messages wire + the
+# anthropic credential pool (providers/anthropic/_claude_code_direct_runtime.py,
+# providers/anthropic/anthropic.py::_pool). Without this its model rows get
+# stamped api="openai-completions" + a hostless base_url, and every
+# stream_simple/complete_simple call dies with the nonsense
+# ``ValueError: unknown url type: '/chat/completions'`` instead of talking to
+# Anthropic. Resolved here, in the single dir lookup, so provider_apis(),
+# provider_base_url() and resolved_endpoints() all agree.
+_WIRE_SIBLING: dict[str, str] = {"claude-code": "anthropic"}
+
+
 def _endpoints(provider_id: str) -> dict:
-    d = _provider_dir(provider_id)
+    d = _provider_dir(_WIRE_SIBLING.get(provider_id, provider_id))
     if d is None:
         return {}
     try:

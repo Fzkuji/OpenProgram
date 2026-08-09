@@ -123,6 +123,22 @@ def test_credential_and_chat_agree_on_wire():
     assert not bad, f"credential/chat wire mismatch: {bad}"
 
 
+def test_claude_code_rides_the_anthropic_wire():
+    """``claude-code`` ships no provider dir of its own — the Claude
+    subscription connects direct to api.anthropic.com over the Anthropic
+    Messages wire, using the ``anthropic`` credential pool. Without that
+    mapping its model rows are stamped ``openai-completions`` with an EMPTY
+    base_url, and every stream_simple/complete_simple call dies with
+    ``ValueError: unknown url type: '/chat/completions'`` instead of
+    reaching Anthropic (or failing with an honest auth error)."""
+    assert cat.default_api_for("claude-code") == "anthropic-messages"
+    assert cat.provider_base_url("claude-code") == "https://api.anthropic.com"
+    assert cat.provider_endpoints("claude-code")["default"] == {
+        "api": "anthropic-messages",
+        "base_url": "https://api.anthropic.com",
+    }
+
+
 def test_override_table_stays_empty():
     """Everything derives; the manual override table must stay empty so
     no one re-introduces a per-provider entry that can drift. Add one

@@ -11,11 +11,12 @@ Two layers, fixed:
   Layer 1 (references)  : N models answer the same prompt in parallel
   Layer 2 (aggregator)  : one model reads all N answers and synthesizes
 
-Default selection: group the registry by provider, take the strongest-looking
-model per provider (keyword rank over the model id), and use up to
-``MAX_DEFAULT_REFERENCES`` distinct providers as references. The aggregator is
-the pick from the next unused provider, falling back to the first reference.
-With a single successful reference the aggregator is skipped entirely.
+Default selection: group the registry by provider, drop the providers with no
+working credential, take the strongest-looking model per surviving provider
+(keyword rank over the model id), and use up to ``MAX_DEFAULT_REFERENCES``
+distinct providers as references. The aggregator is the pick from the next
+unused provider, falling back to the first reference. With a single successful
+reference the aggregator is skipped entirely.
 
 Explicit ``references=["provider:model_id"]`` / ``aggregator="provider:model"``
 still override everything; unknown specs error with the list of available
@@ -132,18 +133,35 @@ def _registry_specs() -> list[str]:
     return sorted(f"{m.provider}:{m.id}" for m in get_models())
 
 
+def _usable_providers() -> set[str]:
+    """Registry providers that actually have a working credential.
+
+    A provider can be enabled (models listed, picker shows them) with no
+    credential stored — every call to it fails at auth. Reuses the model
+    picker's own signal (``metadata.is_configured``: auth store, CLI binary,
+    OAuth file, env key) so the default lineup never burns one of its three
+    reference slots on a guaranteed failure.
+    """
+    from openprogram.providers import get_models
+    from openprogram.providers.metadata import is_configured
+    return {p for p in {m.provider for m in get_models()} if is_configured(p)}
+
+
 def _pick_defaults() -> tuple[list[str], str | None]:
     """Pick default (references, aggregator) from the model registry.
 
-    One model per provider (strongest by keyword rank, registry order as
-    tiebreak), providers in registry order. References take the first
-    ``MAX_DEFAULT_REFERENCES`` providers; the aggregator takes the next
+    One model per credentialed provider (strongest by keyword rank, registry
+    order as tiebreak), providers in registry order. References take the
+    first ``MAX_DEFAULT_REFERENCES`` providers; the aggregator takes the next
     unused provider's pick, falling back to the first reference.
     """
     from openprogram.providers import get_models
 
+    usable = _usable_providers()
     best_per_provider: dict[str, Any] = {}  # provider -> Model, registry order
     for m in get_models():
+        if m.provider not in usable:
+            continue
         cur = best_per_provider.get(m.provider)
         if cur is None or _strength_rank(m.id) < _strength_rank(cur.id):
             best_per_provider[m.provider] = m
@@ -157,12 +175,11 @@ def _pick_defaults() -> tuple[list[str], str | None]:
 
 
 def _tool_check_fn() -> bool:
-    # MoA needs diverse perspectives: at least two distinct providers in the
-    # registry. A single provider still works via explicit `references`, but
+    # MoA needs diverse perspectives: at least two distinct reachable
+    # providers. A single provider still works via explicit `references`, but
     # then the tool adds nothing over a plain model call.
     try:
-        from openprogram.providers import get_models
-        return len({m.provider for m in get_models()}) >= 2
+        return len(_usable_providers()) >= 2
     except Exception:
         return False
 
@@ -323,14 +340,21 @@ async def execute(
             f"Available `provider:model` specs:\n{available}"
         )
 
+    # Why the lineup shrank — reported on BOTH paths, so "I only got one
+    # answer" always comes with the reason the others dropped out.
+    skipped = ["**Skipped**: " + ", ".join(
+        f"{s} ({reason[:60]})" for s, reason in failed)] if failed else []
+
     # Single-reference shortcut: skip the aggregator call, we'd be paying for
     # a rephrase of one answer.
     if len(successful) == 1:
         spec, text = successful[0]
-        return (
-            f"# mixture_of_agents (1 reference, skipped aggregator)\n\n"
-            f"**Model**: {spec}\n\n{text}"
-        )
+        header_lines = [
+            "# mixture_of_agents (1 reference, skipped aggregator)",
+            f"**Model**: {spec}",
+            *skipped,
+        ]
+        return "\n".join(header_lines) + "\n\n" + text
 
     final = await _aggregate(agg_spec, user_prompt, successful)
 
@@ -338,11 +362,8 @@ async def execute(
         f"# mixture_of_agents",
         f"**References**: {', '.join(s for s, _ in successful)}",
         f"**Aggregator**: {agg_spec}",
+        *skipped,
     ]
-    if failed:
-        header_lines.append(
-            "**Skipped**: " + ", ".join(f"{s} ({reason[:60]})" for s, reason in failed)
-        )
     return "\n".join(header_lines) + "\n\n" + final
 
 

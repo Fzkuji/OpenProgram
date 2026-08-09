@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 import openprogram.providers as providers
+import openprogram.providers.metadata as provider_metadata
 from openprogram.functions.tools.mixture_of_agents import mixture_of_agents as moa
 
 
@@ -28,12 +29,18 @@ FOUR_PROVIDER_REGISTRY = [
 ]
 
 
-def _patch_registry(monkeypatch, models):
+def _patch_registry(monkeypatch, models, unconfigured=()):
+    """Fake the registry. ``unconfigured`` names providers that are enabled
+    but have no working credential — the real machine's auth store must
+    never decide a unit test's outcome."""
     monkeypatch.setattr(providers, "get_models", lambda provider=None: list(models))
     known = {(m.provider, m.id) for m in models}
     monkeypatch.setattr(
         providers, "get_model",
         lambda p, mid: _model(p, mid) if (p, mid) in known else None,
+    )
+    monkeypatch.setattr(
+        provider_metadata, "is_configured", lambda p: p not in set(unconfigured),
     )
 
 
@@ -62,6 +69,21 @@ def test_pick_defaults_empty_registry(monkeypatch):
     assert moa._pick_defaults() == ([], None)
 
 
+def test_pick_defaults_skips_providers_without_a_credential(monkeypatch):
+    """An enabled-but-uncredentialed provider (models listed, no key stored)
+    fails every call at auth. It must not eat a reference slot — the next
+    credentialed provider takes it."""
+    _patch_registry(monkeypatch, FOUR_PROVIDER_REGISTRY,
+                    unconfigured=["claude-code"])
+    refs, agg = moa._pick_defaults()
+    assert refs == [
+        "openai-codex:gpt-5.6-terra",
+        "opencode-go:deepseek-v4-pro",
+        "deepseek:deepseek-v4-flash",
+    ]
+    assert agg == refs[0]  # no fourth provider left over
+
+
 # --- check_fn ---
 
 def test_check_fn_needs_two_providers(monkeypatch):
@@ -71,6 +93,14 @@ def test_check_fn_needs_two_providers(monkeypatch):
                                   if m.provider == "claude-code"])
     assert moa._tool_check_fn() is False
     _patch_registry(monkeypatch, [])
+    assert moa._tool_check_fn() is False
+
+
+def test_check_fn_counts_only_credentialed_providers(monkeypatch):
+    """Four providers on paper, one credentialed — MoA has nothing to mix."""
+    _patch_registry(monkeypatch, FOUR_PROVIDER_REGISTRY, unconfigured=[
+        "claude-code", "openai-codex", "opencode-go",
+    ])
     assert moa._tool_check_fn() is False
 
 
@@ -155,6 +185,10 @@ def test_execute_single_success_skips_aggregator(monkeypatch):
     out = asyncio.run(moa.execute(user_prompt="q"))
     assert "skipped aggregator" in out
     assert "ONLY" in out
+    # The other two died — say so, or the caller can't tell a deliberate
+    # single-model answer from a lineup that collapsed.
+    assert "**Skipped**:" in out
+    assert "openai-codex:gpt-5.6-terra (boom)" in out
 
 
 def test_execute_all_failed_reports_registry(monkeypatch):
