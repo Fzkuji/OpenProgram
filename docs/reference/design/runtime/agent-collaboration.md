@@ -80,7 +80,7 @@ send_message(
 
 | to | Meaning |
 |---|---|
-| `"new"` | Create a brand-new branch from ROOT (new session), deliver message, let it run |
+| `"new"` | Start a fresh ROOT branch in the current session's DAG (a new entry point in the same graph, not a new session), deliver message, let it run |
 | `"new:sid:msg_id"` | Fork a new branch from a node, deliver message, let it run |
 | `"sid:head"` | Deliver message to an existing branch |
 | `"<branch name>"` | Deliver to a named branch. Tried when the value matches none of the syntaxes above: exact name match wins, a unique prefix is accepted next; several matches return an error listing the candidates (name + `sid:head`), zero matches point to `list_branches`. `list_branches` marks each branch's name so the model can address by name directly. |
@@ -95,7 +95,7 @@ message: they are workers, not correspondents.
 **Creating a branch is not a separate operation; it is just `to` set to
 `new` / `new:…`.** Three uses:
 
-- **Create and run (spawn / open a new session / fork)**: `to="new"` or
+- **Create and run (spawn / fork)**: `to="new"` or
   `"new:sid:msg_id"` → new branch + deliver message; when it finishes, the
   result flows back automatically. (Want several? Call several times, each
   asynchronous and parallel.)
@@ -107,7 +107,7 @@ message: they are workers, not correspondents.
   and synthesizes them. Count is arbitrary. Combines with any `to`.
 
 **Unified execution flow** (whichever use it is):
-1. Resolve `to`: `new` → new session with empty `branch_from`;
+1. Resolve `to`: `new` → current session with empty `branch_from` (fresh ROOT branch);
    `new:sid:msg_id` → fork inside sid with `branch_from=msg_id`; `sid:head` →
    `set_head` to that branch.
 2. Assemble the delivered content: `message` plus (if `sources` is given) the

@@ -3,8 +3,8 @@
 Deliver a message to a branch → trigger that branch to run one turn →
 its reply auto-returns to the sender. Three usages via ``to``:
 
-  * ``"new"``            — create a fresh branch (new session) from ROOT,
-                           deliver the message, run it. (spawn / new chat)
+  * ``"new"``            — start a fresh ROOT branch in the CURRENT session's
+                           DAG, deliver the message, run it. (spawn)
   * ``"new:sid:msg_id"`` — fork a new branch off a node, deliver, run.
   * ``"sid:head"``       — deliver to an existing branch.
 

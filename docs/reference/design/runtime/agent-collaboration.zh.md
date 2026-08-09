@@ -68,7 +68,7 @@ send_message(
 
 | to | 含义 |
 |---|---|
-| `"new"` | 从 ROOT 全新创建一条分支（新 session），投 message 让它跑 |
+| `"new"` | 在当前 session 的 DAG 里从 ROOT 新起一条分支（同一张图的新入口，不是新会话），投 message 让它跑 |
 | `"new:sid:msg_id"` | 从某节点 fork 出一条新分支，投 message 让它跑 |
 | `"sid:head"` | 往一条已存在分支投 message |
 | `"<分支名>"` | 按名投递。以上语法都不匹配时按名字解析：精确匹配优先，唯一前缀次之；多个命中返回错误并列出候选（名字 + `sid:head`），零命中提示用 `list_branches`。`list_branches` 输出里标出每条分支的名字，模型可以直接按名寻址。 |
