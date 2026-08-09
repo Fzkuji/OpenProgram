@@ -62,6 +62,69 @@ def _normalize_existing_target(
     return "none", None
 
 
+def resolve_existing_target(
+    to: str, current_session_id: str
+) -> tuple[str, object]:
+    """Resolve ``to`` (a ``SID:HEAD`` address or a branch name) onto an
+    existing branch's CURRENT tip. Shared by ``send_message`` and the
+    ``agent`` tool's ``to=`` dispatch — one addressing behavior, two
+    callers.
+
+    Returns ``("ok", (session_id, tip_id))`` or ``("error", body)``
+    where ``body`` is the message without a tool prefix (each caller
+    prepends its own ``[send_message error]`` / ``[agent error]`` tag).
+    """
+    from openprogram.agent.session_db import default_db
+    db = default_db()
+    _, tgt_sid, head = _parse_to(to)
+    run_session = tgt_sid or current_session_id
+    branch_from = head
+    # Not valid SID:HEAD syntax (missing head, or the SID part is not
+    # a session)? Treat the whole `to` as a branch NAME: exact match
+    # first, unique prefix next (see _resolve_branch_by_name).
+    if not branch_from or db.get_session(run_session) is None:
+        status, resolved = _resolve_branch_by_name(to)
+        if status == "ok":
+            run_session, branch_from = resolved  # type: ignore[misc]
+        elif status == "ambiguous":
+            lines = "\n".join(
+                f"  «{n}» → {s}:{h}" for n, s, h in resolved  # type: ignore[union-attr]
+            )
+            return "error", (
+                f"branch name {to!r} matches several branches — use the "
+                f"exact SID:HEAD target:\n{lines}"
+            )
+        elif not branch_from and db.get_session(run_session) is not None:
+            return "error", (
+                "to=\"SID:HEAD\" needs the branch head after the colon "
+                "(see list_agents for ready targets)."
+            )
+        else:
+            return "error", (
+                f"target {to!r} not found — it is neither a session:head "
+                "target nor a branch name (see list_agents)."
+            )
+    # SID:HEAD names a BRANCH, not a fork point: snap the given node
+    # onto that branch's CURRENT tip so the delivery continues the
+    # conversation instead of forking off a stale head.
+    status, norm = _normalize_existing_target(run_session, branch_from)
+    if status == "ok":
+        return "ok", (run_session, norm)
+    if status == "ambiguous":
+        lines = "\n".join(
+            f"  «{n or '(unnamed)'}» → {run_session}:{h}" for n, h in norm  # type: ignore[union-attr]
+        )
+        return "error", (
+            f"node {branch_from!r} is a shared ancestor of several "
+            "branches — address the branch you mean by its current tip "
+            f"(see list_agents):\n{lines}"
+        )
+    return "error", (
+        f"target {to!r} not found — the node is on no branch of session "
+        f"{run_session} (see list_agents for ready targets)."
+    )
+
+
 def _resolve_branch_by_name(name: str) -> tuple[str, object]:
     """Resolve a branch NAME into a (session_id, head_id) target.
 

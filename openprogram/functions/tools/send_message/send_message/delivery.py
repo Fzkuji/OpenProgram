@@ -15,6 +15,21 @@ def sender_header(sender_session_id: str, sender_msg_id: str) -> str:
     )
 
 
+def task_header(sender_session_id: str, sender_msg_id: str) -> str:
+    """The receipt header prepended to a tracked-task dispatch
+    (``agent(to=…)``, direct and queued-consume paths). Unlike the
+    message header, it tells the receiver this turn IS the task: the
+    reply is not optional chatter but the task's result, returned to
+    the dispatcher automatically."""
+    src = f"{sender_session_id}:{sender_msg_id}"
+    return (
+        f"[task from {src}] This is a tracked task dispatched to your "
+        "branch via the agent tool. Do the work in this turn; your final "
+        "reply is returned to the dispatcher automatically when the turn "
+        "ends.\n\n"
+    )
+
+
 def enqueue_for_busy_target(
     run_session: str,
     branch_from: str | None,

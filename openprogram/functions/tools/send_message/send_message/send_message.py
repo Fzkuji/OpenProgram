@@ -32,9 +32,8 @@ from openprogram.functions._runtime import function
 from openprogram.functions.tools.send_message.shared import _emit_branch_ui
 
 from .addressing import (
-    _normalize_existing_target,
     _parse_to,
-    _resolve_branch_by_name,
+    resolve_existing_target,
 )
 from .delivery import (
     enqueue_for_busy_target,
@@ -109,7 +108,7 @@ def _send_message_impl(
         )
 
     chosen_agent = (agent_id or "").strip() or parent_agent or "main"
-    kind, tgt_sid, head = _parse_to(to)
+    kind, _, _ = _parse_to(to)
     if kind == "spawn_syntax":
         return (
             f"[send_message error] to={to!r} is not a valid target — "
@@ -125,61 +124,15 @@ def _send_message_impl(
 
     # Resolve the target: deliver onto an existing branch = run one more
     # turn off its head (the branch "continues" with the message).
-    run_session = tgt_sid or sid
-    branch_from = head  # the branch head to continue from
-    from openprogram.agent.session_db import default_db
-    db = default_db()
-    # Not valid SID:HEAD syntax (missing head, or the SID part is not
-    # a session)? Treat the whole `to` as a branch NAME: exact match
-    # first, unique prefix next (see _resolve_branch_by_name).
-    if not branch_from or db.get_session(run_session) is None:
-        status, resolved = _resolve_branch_by_name(to)
-        if status == "ok":
-            run_session, branch_from = resolved  # type: ignore[misc]
-        elif status == "ambiguous":
-            lines = "\n".join(
-                f"  «{n}» → {s}:{h}" for n, s, h in resolved  # type: ignore[union-attr]
-            )
-            return (
-                f"[send_message error] branch name {to!r} matches "
-                f"several branches — use the exact SID:HEAD target:\n"
-                f"{lines}"
-            )
-        elif not branch_from and db.get_session(run_session) is not None:
-            return (
-                "[send_message error] to=\"SID:HEAD\" needs the branch "
-                "head after the colon (see list_agents for ready targets)."
-            )
-        else:
-            return (
-                f"[send_message error] target {to!r} not found — it is "
-                "neither a session:head target nor a branch name (see "
-                "list_agents)."
-            )
-    # SID:HEAD names a BRANCH, not a fork point: snap the given node
-    # onto that branch's CURRENT tip so the delivery continues the
-    # conversation instead of forking off a stale head. Runs before
-    # the self-target guard so an old head of the sender's own chain
-    # normalizes to its tip and the guard still catches the loop.
-    status, norm = _normalize_existing_target(run_session, branch_from)
-    if status == "ok":
-        branch_from = norm
-    elif status == "ambiguous":
-        lines = "\n".join(
-            f"  «{n or '(unnamed)'}» → {run_session}:{h}" for n, h in norm  # type: ignore[union-attr]
-        )
-        return (
-            f"[send_message error] node {branch_from!r} is a shared "
-            "ancestor of several branches — address the branch you "
-            "mean by its current tip (see list_agents):\n"
-            f"{lines}"
-        )
-    else:
-        return (
-            f"[send_message error] target {to!r} not found — the node "
-            f"is on no branch of session {run_session} (see "
-            "list_agents for ready targets)."
-        )
+    # Resolution (SID:HEAD → current tip, or branch name lookup) is the
+    # shared resolver — the agent tool's to= dispatch uses the same one.
+    # It normalizes stale heads onto the branch tip BEFORE the
+    # self-target guard below, so an old head of the sender's own chain
+    # still trips the loop check.
+    status, payload = resolve_existing_target(to, sid)
+    if status != "ok":
+        return f"[send_message error] {payload}"
+    run_session, branch_from = payload  # type: ignore[misc]
     # Self-target guard: messaging your own current turn is a direct loop.
     if run_session == sid and branch_from == aid:
         return (

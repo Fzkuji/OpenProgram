@@ -96,6 +96,7 @@ def enqueue(
     agent_id: str,
     spawn_depth: int,
     target_head_id: Optional[str],
+    task_id: Optional[str] = None,
 ) -> str:
     """Queue a message for a busy target session.
 
@@ -103,6 +104,12 @@ def enqueue(
     added at drain time. ``spawn_depth`` is
     the SENDER's depth at send time — drain delivers at depth+1, exactly
     like the direct path.
+
+    ``task_id``: set for tracked-task dispatches (``agent(to=…)``) — the
+    pre-created pending Task this entry will run when drained. Drain
+    reuses the id (the dispatcher already holds it), delivers with the
+    task header, and skips the entry if the task was withdrawn
+    (``task_stop``) while queued.
 
     Returns ``"queued"`` or ``"duplicate"`` (identical message from the
     same sender session already queued within DEDUP_WINDOW_SECS).
@@ -129,6 +136,7 @@ def enqueue(
             "agent_id": agent_id,
             "spawn_depth": int(spawn_depth),
             "target_head_id": target_head_id,
+            "task_id": task_id,
             "enqueued_at": now,
         })
         dropped = None
@@ -175,6 +183,22 @@ def _notify_sender(entry: dict[str, Any], content: str) -> None:
         pass
 
 
+def discard_task(session_id: str, task_id: str) -> bool:
+    """Withdraw a tracked-task entry (``agent(to=…)``) from the target's
+    inbox — task_stop on a still-queued dispatch. Returns True when an
+    entry was removed."""
+    path = _inbox_path(session_id)
+    if path is None or not path.exists():
+        return False
+    with _session_lock(session_id):
+        entries = _load(path)
+        remaining = [e for e in entries if e.get("task_id") != task_id]
+        if len(remaining) == len(entries):
+            return False
+        _write(path, remaining)
+        return True
+
+
 def clear(session_id: str, *, reason: str = "the target session was stopped") -> int:
     """Session-level cancel: drop every queued entry for ``session_id``
     and leave a system notice in each sender session.
@@ -197,6 +221,20 @@ def clear(session_id: str, *, reason: str = "the target session was stopped") ->
             f"was discarded: {reason}. It was not delivered. "
             f"Message: {preview}"
         ))
+        # A tracked-task entry has a pending Task entity waiting on the
+        # delivery — flip it to cancelled so the dispatcher's
+        # task_output doesn't wait forever on work that will never run.
+        tid = entry.get("task_id")
+        if tid:
+            try:
+                from openprogram.agent.task.store import update_task_status
+                from openprogram.agent.task.types import TaskStatus
+                update_task_status(
+                    session_id, str(tid), TaskStatus.CANCELLED,
+                    error=f"withdrawn: {reason}",
+                )
+            except Exception:
+                pass
     return len(entries)
 
 
@@ -218,6 +256,14 @@ def drain(session_id: str) -> int:
         return 0
     delivered = 0
     for entry in entries:
+        # A tracked-task entry whose task was withdrawn (task_stop while
+        # queued) or otherwise finished must not run — drop the entry.
+        tid = entry.get("task_id")
+        if tid and _task_is_terminal(session_id, str(tid)):
+            with _session_lock(session_id):
+                remaining = [e for e in _load(path) if e.get("id") != entry.get("id")]
+                _write(path, remaining)
+            continue
         try:
             _deliver(session_id, entry)
         except Exception:
@@ -229,13 +275,26 @@ def drain(session_id: str) -> int:
     return delivered
 
 
+def _task_is_terminal(session_id: str, task_id: str) -> bool:
+    try:
+        from openprogram.agent.task.store import load_task
+        from openprogram.agent.task.types import is_terminal
+        t = load_task(session_id, task_id)
+        return t is not None and is_terminal(t.status)
+    except Exception:
+        return False
+
+
 def _deliver(session_id: str, entry: dict[str, Any]) -> None:
     """Trigger one turn on the target for a queued entry — same shape as
-    the direct existing-branch delivery in send_message."""
+    the direct existing-branch delivery in send_message. A tracked-task
+    entry (``task_id`` set) delivers with the task header and reuses the
+    pre-created task id so the dispatcher's handle stays valid."""
     from openprogram.agent.session_db import default_db
     from openprogram.agent.sub_agent_run import run_agent_turn_async
     from openprogram.functions.tools.send_message.send_message.delivery import (
         sender_header,
+        task_header,
     )
 
     # Continue from the branch's CURRENT head: the turn that made the
@@ -245,11 +304,14 @@ def _deliver(session_id: str, entry: dict[str, Any]) -> None:
     head = (default_db().get_session(session_id) or {}).get("head_id") \
         or entry.get("target_head_id")
     message = str(entry.get("message") or "")
-    prompt = sender_header(
+    tid = entry.get("task_id")
+    header = task_header if tid else sender_header
+    prompt = header(
         str(entry.get("sender_session_id") or ""),
         str(entry.get("sender_msg_id") or ""),
     ) + message
     run_agent_turn_async(
+        task_id=str(tid) if tid else None,
         session_id=session_id,
         prompt=prompt,
         agent_id=str(entry.get("agent_id") or "main"),
@@ -271,6 +333,7 @@ __all__ = [
     "DEDUP_WINDOW_SECS",
     "enqueue",
     "drain",
+    "discard_task",
     "clear",
     "pending_count",
 ]

@@ -28,6 +28,7 @@ Every collaboration operation is a **parameterization** of that primitive:
 | Operation | Which use of communication it is | Tool |
 |---|---|---|
 | **Spawn a sub-agent** | **Create** a branch + deliver a message + auto-reply | `agent` |
+| **Dispatch a task to an existing agent** | Deliver a **tracked task** to an existing branch + auto-reply | `agent(to=…)` |
 | **Message an agent** | Deliver a message to an **existing** branch + auto-reply | `send_message` |
 
 Delivered content is always read and used by the target model. Count is
@@ -75,6 +76,7 @@ agent(
     agent_id: str = "",                 # agent profile; defaults to the session's
     context: str = "clean",             # "clean" / "inherit" / "SID:MSG_ID"
     run_in_background: bool = false,    # false=block for the reply; true=task_id
+    to: str = "",                       # dispatch to an EXISTING agent instead
 ) -> str
 ```
 
@@ -84,6 +86,32 @@ full chain; `"SID:MSG_ID"` forks off that exact node (any session),
 inheriting the chain up to it. `run_in_background=true` returns a `task_id`; its
 companions `task_output(task_id)` (block for the result) and
 `task_stop(task_id)` (cancel) manage the background form.
+
+**`to=` — dispatch a tracked task to an EXISTING agent.** With `to` set the
+tool creates no branch: the prompt is handed to the named existing branch
+as a formal task. Addressing is send_message's, verbatim (`"SID:HEAD"`
+snaps onto the branch's current tip; a branch name resolves exact-first,
+then unique prefix; ambiguity lists candidates). What distinguishes a
+dispatch from a message is task tracking:
+
+- A **Task entity** is created (the runner's ledger): the dispatcher gets
+  a `task_id` back immediately, `task_output` waits on it, `task_stop`
+  withdraws or cancels it, and `list_tasks` shows it.
+- Delivery reuses the message machinery: an idle target runs the task as
+  the next turn on its branch; a busy target queues it in its inbox
+  (§5.4) — the Task entity is pre-created in `pending` so the id exists
+  while the work waits, and the drain runs the SAME task. The delivered
+  turn is prefixed with a task receipt header (`[task from SID:HEAD] This
+  is a tracked task …`) so the target knows the reply is the task's
+  result, returned to the dispatcher automatically.
+- The result flows back exactly like a spawn's: terminal state → attach +
+  followup notification into the dispatcher's session.
+- `to` and `context` are mutually exclusive (the target branch keeps its
+  own history; a fork-point choice contradicts that — the call errors).
+  `to` is always asynchronous, so `run_in_background` is ignored.
+  Dispatching to the caller's own current branch is refused (do the work
+  directly). Depth budgets like send_message traffic (`MAX_SPAWN_DEPTH`,
+  default 8), not like spawn delegation (depth cap 1).
 
 **`send_message` — talk to an EXISTING agent:**
 
@@ -491,7 +519,32 @@ branch can only be triggered by `send_message` and does not appear in the UI's
 session picker (but it is still drawn in the DAG and can be listed by
 list_agents so agents can address it).
 
-### 5.10 Explicitly out of scope (and why)
+### 5.10 Task ownership (task_output / task_stop)
+
+`read_conversation` can read any branch, so any agent can learn any
+task_id — without a gate, any agent could wait on or kill work it never
+dispatched. `task_output` and `task_stop` therefore verify ownership
+before acting: the current session must be the task's dispatcher
+(`caller_session_id`, or `parent_session_id` for a same-session spawn),
+or an ancestor on the task chain (the current task is an ancestor via
+`parent_task_id`, or the current session dispatched one of the task's
+ancestors — the same lineage cascading cancel walks). Anything else is
+refused: `[task_stop error] task {id} was not dispatched by this
+session`. Calls with no session context (the user, the UI) are not
+gated — the human owns everything.
+
+`task_stop` on a `to=`-dispatched task is state-dependent:
+
+- **queued** (target was busy, task waiting in its inbox) → the entry is
+  withdrawn from the inbox and the entity flips to `cancelled`. No
+  session-level cancel is sent: the target is busy running someone
+  else's turn, which a withdrawal must not kill.
+- **running** → cancels that one turn on the target branch (the task's
+  cancel event + session cancel bridge + runtime kill + 30s watchdog),
+  not the target agent or its session.
+- **terminal** → idempotent no-op.
+
+### 5.11 Explicitly out of scope (and why)
 
 - **An extra parentID field**: `(session_id, head_id)` plus caller/predecessor
   already forms the tree and the DAG already draws it, so no redundant field.
@@ -575,7 +628,8 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 
 Everything in this document is implemented: the event layer (§3),
 `TaskRunner`, `SessionStore`, `process_user_turn`,
-the `agent` tool family (`agent` / `task_output` / `task_stop`),
+the `agent` tool family (`agent` — spawn and `to=` dispatch — /
+`task_output` / `task_stop`, with the §5.10 ownership gate),
 `send_message` and its discovery tool `list_agents`, spawned-branch naming
 (§2.4 — the Stage 1 label at spawn plus the Stage 2 `finalize_turn`
 rename), the serialized reply-back anchoring (§2.5 — `_dispatch_followup` +

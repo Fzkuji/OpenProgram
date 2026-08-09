@@ -76,17 +76,229 @@ def _resolve_parent() -> tuple[str | None, str | None, str | None]:
     return sid, aid, agent_id
 
 
+def _dispatch_to_existing(
+    prompt: str,
+    to: str,
+    agent_id: str,
+    context: str,
+    description: str,
+) -> str:
+    """``agent(to=…)`` — dispatch a tracked task to an EXISTING agent.
+
+    No branch is created: the task runs as the target branch's next
+    turn (send_message's addressing + delivery path), but unlike a
+    message it is a formal task — a Task entity is created, the
+    dispatcher gets a task_id (``task_output`` waits, ``task_stop``
+    withdraws/cancels), and the result flows back like a spawn's.
+    Busy target → the task queues in the target's inbox and runs when
+    its current turn ends. Always asynchronous.
+    """
+    # to= dispatches onto an existing branch, which keeps its own
+    # history — a context/fork-point choice contradicts that.
+    if (context or "").strip().lower() not in ("", "clean"):
+        return (
+            "[agent error] to= and context are mutually exclusive — "
+            "to= dispatches the task onto an EXISTING branch, which "
+            "keeps its own history. Drop context, or drop to= and "
+            "spawn a new agent."
+        )
+    # Same parent resolution as send_message (falls back to the session
+    # head when no turn id is bound — e.g. a followup turn).
+    from openprogram.functions.tools.send_message.send_message.send_message import (
+        _resolve_parent as _resolve_sender,
+    )
+    sid, aid, parent_agent = _resolve_sender()
+    if not sid or not aid:
+        return (
+            "[agent error] no active parent turn — agent(to=…) must be "
+            "called from inside an assistant turn."
+        )
+    chosen_agent = (agent_id or "").strip() or parent_agent or "main"
+
+    # Depth guard: a dispatch to an existing agent budgets like
+    # send_message's branch-to-branch traffic (MAX_SPAWN_DEPTH), not
+    # like spawn delegation (MAX_AGENT_DEPTH).
+    from openprogram.functions.tools.send_message.send_message.depth import (
+        MAX_SPAWN_DEPTH,
+        current_spawn_depth,
+    )
+    depth = current_spawn_depth()
+    if depth >= MAX_SPAWN_DEPTH:
+        return (
+            f"[agent refused] spawn depth {depth} reached the max "
+            f"({MAX_SPAWN_DEPTH}). This chain is too deep — finish the "
+            "work here instead of dispatching further."
+        )
+
+    # Addressing is send_message's, verbatim: SID:HEAD snaps to the
+    # branch's current tip; a name resolves exact-first then unique
+    # prefix; ambiguity lists candidates.
+    from openprogram.functions.tools.send_message.send_message.addressing import (
+        resolve_existing_target,
+    )
+    status, payload = resolve_existing_target(to, sid)
+    if status != "ok":
+        return f"[agent error] {payload}"
+    run_session, target_tip = payload  # type: ignore[misc]
+
+    # Self-dispatch guard: a task cannot be dispatched to its own
+    # dispatcher — just do the work.
+    if run_session == sid and target_tip == aid:
+        return (
+            "[agent refused] to= points at your own current branch — a "
+            "task cannot be dispatched to its dispatcher. Continue the "
+            "work here directly."
+        )
+
+    label = (description or "").strip()
+    if label:
+        label = "".join(
+            c if c.isalnum() or c in "-_" else "_" for c in label
+        )[:24]
+
+    from openprogram.functions.tools.send_message.send_message.delivery import (
+        task_header,
+    )
+    delivery_message = task_header(sid, aid) + prompt
+
+    # Busy target → pre-create the Task (so the dispatcher holds a real
+    # task_id while the work waits) and queue the dispatch in the
+    # target's inbox; drain runs it, reusing the id. Same cross-session-
+    # only reasoning as send_message: a same-session dispatch runs
+    # inside the dispatcher's own turn, whose token is the one the busy
+    # check would see.
+    if run_session != sid:
+        from openprogram.agent.run_control import is_turn_running
+        if is_turn_running(run_session):
+            from openprogram.agent import inbox
+            from openprogram.agent.task.runner import _current_task_id
+            from openprogram.agent.task.store import save_task, update_task_status
+            from openprogram.agent.task.types import Task, TaskStatus, mint_task_id
+            task = Task(
+                id=mint_task_id(),
+                parent_session_id=run_session,
+                prompt=delivery_message,
+                agent_id=chosen_agent,
+                subject=description or prompt[:60],
+                description=delivery_message,
+                context_mode="inherit",
+                parent_msg_id=target_tip,
+                parent_task_id=_current_task_id.get(),
+                label=label or None,
+                wait=False,
+                caller_msg_id=aid,
+                caller_session_id=sid,
+                spawn_depth=depth + 1,
+                status=TaskStatus.PENDING,
+            )
+            save_task(run_session, task)
+            try:
+                q = inbox.enqueue(
+                    run_session,
+                    message=prompt,
+                    sender_session_id=sid,
+                    sender_msg_id=aid,
+                    sender_agent_id=parent_agent,
+                    agent_id=chosen_agent,
+                    spawn_depth=depth,
+                    target_head_id=target_tip,
+                    task_id=task.id,
+                )
+            except Exception as e:  # noqa: BLE001
+                try:
+                    update_task_status(
+                        run_session, task.id, TaskStatus.ERRORED,
+                        error=f"enqueue failed: {e}",
+                    )
+                except Exception:
+                    pass
+                return f"[agent error] {type(e).__name__}: {e}"
+            if q == "duplicate":
+                try:
+                    update_task_status(
+                        run_session, task.id, TaskStatus.CANCELLED,
+                        error="duplicate dispatch",
+                    )
+                except Exception:
+                    pass
+                return (
+                    "[agent] duplicate dispatch ignored — an identical "
+                    "task from you is already queued for this target "
+                    "(sent within the last 60s)."
+                )
+            # Race window: the target may have finished between the busy
+            # check and the enqueue — drain now.
+            if not is_turn_running(run_session):
+                try:
+                    inbox.drain(run_session)
+                except Exception:
+                    pass
+            return (
+                f"[task dispatched, queued] task_id={task.id} "
+                f"target={run_session}:{target_tip} — the target is busy "
+                "running a turn; your task runs when it ends and the "
+                "result comes back automatically. task_output(task_id) "
+                "waits for it; task_stop(task_id) withdraws it."
+            )
+
+    from openprogram.events import emit_safe
+    from openprogram.functions.tools.send_message.shared import _emit_branch_ui
+    emit_safe(
+        "branch.message_sent",
+        "agent",
+        {"from": f"{sid}:{aid}", "to": f"{run_session}:{target_tip}"},
+    )
+    _emit_branch_ui(sid, "sent", f"{run_session}:{target_tip}", prompt)
+
+    try:
+        from openprogram.agent.sub_agent_run import run_agent_turn_async
+        task_id = run_agent_turn_async(
+            session_id=run_session,
+            prompt=delivery_message,
+            agent_id=chosen_agent,
+            branch_from=target_tip,
+            context_mode="inherit",
+            label=label or None,
+            subject=description or prompt[:60],
+            description=delivery_message,
+            caller_msg_id=aid,
+            caller_session_id=sid,
+            spawn_depth=depth + 1,
+        )
+    except Exception as e:  # noqa: BLE001
+        return f"[agent error] {type(e).__name__}: {e}"
+    return (
+        f"[task dispatched] task_id={task_id} "
+        f"target={run_session}:{target_tip}\n"
+        "The target branch is running your task as its next turn; the "
+        "result comes back to you automatically. task_output(task_id) "
+        "waits for it; task_stop(task_id) cancels it."
+    )
+
+
 def _agent_impl(
     prompt: str,
     description: str = "",
     agent_id: str = "",
     context: str = "clean",
     run_in_background: bool = False,
+    to: str = "",
 ) -> str:
     """Implementation body. Pulled out of the @function-wrapped binding
     so unit tests can drive it directly with their own ContextVars
     instead of going through the AgentTool execute path.
     """
+    if (to or "").strip():
+        # Dispatch to an EXISTING agent — always async, returns a
+        # task_id immediately; run_in_background is meaningless here
+        # and ignored.
+        return _dispatch_to_existing(
+            prompt=prompt,
+            to=to.strip(),
+            agent_id=agent_id,
+            context=context,
+            description=description,
+        )
     sid, aid, parent_agent = _resolve_parent()
     if not sid or not aid:
         return (
@@ -344,32 +556,43 @@ def agent(
     agent_id: str = "",
     context: str = "clean",
     run_in_background: bool = False,
+    to: str = "",
 ) -> str:
-    """Spawn another agent in the same session.
+    """Spawn a new agent, or dispatch a tracked task to an existing one.
 
-    With ``run_in_background=False`` (default) blocks until the
-    spawned agent finishes and returns its final reply. With
+    Without ``to``: spawns a new agent. ``run_in_background=False``
+    (default) blocks until it finishes and returns its final reply;
     ``run_in_background=True`` returns immediately with a task_id;
     call :func:`task_output` to retrieve the result, or
     :func:`task_stop` to stop it.
 
+    With ``to``: no agent is created — the task is dispatched to the
+    named EXISTING branch and runs as its next turn. Always
+    asynchronous: returns a task_id immediately (``run_in_background``
+    is ignored); the result comes back automatically.
+
     Args:
-        prompt: instruction for the spawned agent. In
-            ``context="clean"`` this is ALL it sees, so include any
-            context it needs.
+        prompt: full instruction. In ``context="clean"`` this is ALL
+            the spawned agent sees, so include any context it needs.
         description: short label (1-3 words) used as the branch name.
         agent_id: agent profile to run under. Defaults to this
             session's agent.
         context: ``"clean"`` (default) ⇒ the spawned agent starts at
             a new root with only the prompt visible. ``"inherit"`` ⇒
             forks off this turn and sees the full chain that led here.
-            ``"SID:MSG_ID"`` ⇒ forks off that exact node.
+            ``"SID:MSG_ID"`` ⇒ forks off that exact node. Mutually
+            exclusive with ``to``.
         run_in_background: False (default) blocks for the final
             reply. True returns ``task_id`` immediately for parallel
             execution; completion notifies the caller automatically.
+            Ignored when ``to`` is set (always async).
+        to: dispatch target — an existing branch, addressed as
+            ``"SID:HEAD"`` or by branch name (see list_agents). A busy
+            target queues the task and runs it when its turn ends.
     """
     return _agent_impl(
         prompt=prompt, description=description,
         agent_id=agent_id, context=context,
         run_in_background=run_in_background,
+        to=to,
     )

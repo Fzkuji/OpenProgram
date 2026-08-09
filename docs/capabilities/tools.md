@@ -64,12 +64,12 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 
 | Tool | What it does | Requires |
 |---|---|---|
-| `agent` (+ `list_tasks` / `task_output` / `task_stop`) | Spawn another agent within the same session and collect its reply; list, fetch or stop its background tasks | Nothing |
+| `agent` (+ `list_tasks` / `task_output` / `task_stop`) | Spawn another agent within the same session and collect its reply, or dispatch a tracked task to an existing agent with `to=`; list, fetch or stop its background tasks (only the dispatching session may fetch or stop a task) | Nothing |
 | `program` | Invoke any registered `@agentic_function` | Nothing |
 | `send_message` (+ `list_agents`) | Cross-branch communication with existing agents | Nothing |
 | `mixture_of_agents` | Ask N models in parallel, then synthesize; defaults picked from the model registry, one per provider | At least 2 providers in the model registry |
 | `ask_user_question` | Ask the user 1-N questions with options | Nothing |
-| `todo_read` / `todo_write` | In-session task list | Nothing |
+| `todo_create` / `todo_update` / `todo_list` | Session planning board — a written checklist of intent (create entries, update status/owner, list grouped by status); dispatch actual work with `agent`, track it with `list_tasks` | Nothing |
 | `enter_plan_mode` / `exit_plan_mode` | Enter / exit plan mode | Nothing |
 | `canvas` | Incrementally write into named blocks of a markdown file | Nothing |
 | `memory_*` | Read / write the persistent memory vault — 13 entry points: `memory_note`, `memory_recall`, `memory_reflect`, `memory_get`, `memory_browse`, `memory_lint`, `memory_ingest`, plus wiki maintenance (`backlinks` / `rename` / `relink` / `delete` / `review` / `status`) | Nothing |

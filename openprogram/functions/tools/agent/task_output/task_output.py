@@ -49,6 +49,10 @@ def _task_output_impl(
 ) -> str:
     if not task_id or not isinstance(task_id, str):
         return "[task_output error] task_id required"
+    from openprogram.functions.tools.agent._ownership import check_task_ownership
+    denied = check_task_ownership(task_id.strip(), "task_output")
+    if denied:
+        return denied
     from openprogram.agent.task import get_runner
     runner = get_runner()
     # Never pass 0 to the runner: its restart-recovery path treats a

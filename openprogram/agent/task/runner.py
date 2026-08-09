@@ -228,6 +228,7 @@ class TaskRunner:
         caller_msg_id: Optional[str] = None,
         caller_session_id: Optional[str] = None,
         spawn_depth: int = 0,
+        task_id: Optional[str] = None,
     ) -> str:
         """Create a Task entity, persist it, queue it on the pool.
 
@@ -238,13 +239,29 @@ class TaskRunner:
         ``caller_session_id`` (cross-session messaging): the session the
         reply should be delivered back to. Defaults to ``session_id``
         (the task runs and replies in the caller's own session).
+
+        ``task_id``: reuse a pre-created pending Task (a tracked
+        dispatch that sat in the target's inbox while it was busy).
+        The pre-created entity's dispatch-time facts (parent_task_id,
+        created_at) survive the resubmission — the inbox drain runs on
+        the TARGET's thread, whose ambient task context is not the
+        dispatcher's. A terminal pre-created task (withdrawn while
+        queued) is NOT resurrected: the id is returned untouched.
         """
+        existing: Optional[Task] = None
+        if task_id:
+            existing = _store_load(session_id, task_id)
+            if existing is not None and is_terminal(existing.status):
+                return task_id
         if parent_task_id is None:
-            # Spawned from inside a running task's turn — record the
-            # chain so cascading cancel can find this child.
-            parent_task_id = _current_task_id.get()
+            if existing is not None:
+                parent_task_id = existing.parent_task_id
+            else:
+                # Spawned from inside a running task's turn — record the
+                # chain so cascading cancel can find this child.
+                parent_task_id = _current_task_id.get()
         task = Task(
-            id=mint_task_id(),
+            id=task_id or mint_task_id(),
             parent_session_id=session_id,
             prompt=prompt,
             agent_id=agent_id,
@@ -262,7 +279,7 @@ class TaskRunner:
             caller_session_id=caller_session_id,
             spawn_depth=spawn_depth,
             status=TaskStatus.PENDING,
-            created_at=time.time(),
+            created_at=existing.created_at if existing is not None else time.time(),
         )
         _store_save(session_id, task)
         _broadcast_task_status(task)
@@ -386,6 +403,32 @@ class TaskRunner:
             info = None
         else:
             session_id = info["session_id"]
+        if info is None:
+            # Not on the pool. A PENDING task with no pool entry is a
+            # tracked dispatch still queued in the target's inbox
+            # (agent(to=…) hit a busy target) — withdraw it: pull the
+            # inbox entry and flip the entity. NO session-level cancel
+            # here: the target is busy running someone ELSE's turn,
+            # which withdrawing a queued task must not kill.
+            queued_task = _store_load(session_id, task_id)
+            if queued_task is not None and queued_task.status == TaskStatus.PENDING:
+                try:
+                    from openprogram.agent import inbox
+                    inbox.discard_task(session_id, task_id)
+                except Exception:
+                    pass
+                try:
+                    updated = _store_update_status(
+                        session_id, task_id, TaskStatus.CANCELLED,
+                        cancel_requested_at=time.time(),
+                        error=reason or "withdrawn before delivery",
+                    )
+                except ValueError:
+                    updated = _store_load(session_id, task_id)
+                if updated is not None:
+                    _broadcast_task_status(updated)
+                    self._wake_done(task_id)
+                return updated
         # Bridge to existing session-level cancel infra so the LLM
         # stream + bash subprocess + agent_loop pre-invocation hook
         # all see the signal.

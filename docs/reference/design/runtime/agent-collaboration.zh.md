@@ -22,6 +22,7 @@
 | 操作 | 是通信的哪种用法 | 工具 |
 |---|---|---|
 | **派生子 agent** | **新建**一条分支 + 投消息 + 自动回 | `agent` |
+| **给已有 agent 派活** | 往**已存在**分支投**受管任务** + 自动回 | `agent(to=…)` |
 | **发消息给某 agent** | 往**已存在**分支投消息 + 自动回 | `send_message` |
 
 投来的内容一定被目标模型读取并使用。数量任意（派生能派 N 个、发消息
@@ -63,6 +64,7 @@ agent(
     agent_id: str = "",                 # agent 档案；默认用本会话的
     context: str = "clean",             # "clean" / "inherit" / "SID:MSG_ID"
     run_in_background: bool = false,    # false=阻塞等回复；true=返回 task_id
+    to: str = "",                       # 改为给已有 agent 派活
 ) -> str
 ```
 
@@ -71,6 +73,24 @@ agent(
 session）fork、继承到该节点为止的链。`run_in_background=true` 返回 `task_id`，配套
 `task_output(task_id)`（阻塞取结果）和 `task_stop(task_id)`（取消）管理
 异步形态。
+
+**`to=` — 给已有 agent 派受管任务。** 传了 `to` 就不新建分支：prompt 作为
+一件正式任务派给指认的已有分支。寻址与 send_message 完全一致
+（`"SID:HEAD"` 归位到分支当前末端；分支名先精确匹配、再唯一前缀；歧义列出
+候选）。派活与发消息的区别在任务追踪：
+
+- 创建 **Task 记录**（runner 的台账）：派活方立即拿到 `task_id`，
+  `task_output` 可等，`task_stop` 可撤单或取消，`list_tasks` 可见。
+- 投递复用消息机制：目标空闲，任务作为它分支上的下一轮立刻跑；目标忙，任务
+  排进它的收件箱（§5.4）——Task 记录以 `pending` 预建，排队期间 id 就存在，
+  drain 时跑的是同一个 task。投出的这一轮带任务来源头
+  （`[task from SID:HEAD] This is a tracked task …`），目标知道这轮的回复
+  就是任务结果，会自动回给派活方。
+- 结果回流和 spawn 任务一致：终态后 attach + followup 通知回派活方会话。
+- `to` 与 `context` 互斥（目标分支自带历史，再选 fork 点自相矛盾，直接
+  报错）。`to` 必然异步，`run_in_background` 被忽略。派给自己当前分支被
+  拒绝（直接继续干）。深度按 send_message 的通信预算计
+  （`MAX_SPAWN_DEPTH`，默认 8），不按 spawn 委派的深度 1 上限。
 
 **`send_message` — 和已存在的 agent 通信：**
 
@@ -385,7 +405,27 @@ B 空闲则立即投递（原有行为）。
 分支标记 **内部（子派生）vs 用户可见**：内部分支只能被 `send_message` 触发，不进
 UI 的会话选择列表（但 DAG 照画、能被 list_agents 列出供 agent 寻址）。
 
-### 5.10 明确不做（及理由）
+### 5.10 任务归属（task_output / task_stop）
+
+`read_conversation` 能读任意分支，任何 agent 都能拿到任意 task_id——
+不设门槛，任何 agent 都能等待或杀掉别人派的活。所以 `task_output` 和
+`task_stop` 执行前核对归属：当前 session 必须是该 task 的派活方
+（`caller_session_id`，同 session spawn 则是 `parent_session_id`），或在
+任务链祖先上（当前 task 经 `parent_task_id` 是它的祖先，或当前 session
+派发过它的某个祖先——与级联取消走的是同一条链）。都不是则拒绝：
+`[task_stop error] task {id} was not dispatched by this session`。无
+session 上下文的调用（用户、UI）不设限——人拥有一切。
+
+`task_stop` 对 `to=` 派出的任务按状态分三种：
+
+- **排队中**（目标当时忙，任务在它收件箱里）→ 从收件箱撤单，记录翻
+  `cancelled`。不发 session 级取消：目标正在跑的是别人的轮，撤单不能
+  杀它。
+- **在跑** → 取消目标分支上的那一轮（task 取消事件 + session 取消桥 +
+  runtime 终止 + 30 秒看门狗），不杀目标 agent 或它的 session。
+- **已终态** → 幂等 no-op。
+
+### 5.11 明确不做（及理由）
 
 - **parentID 额外字段**：`(session_id, head_id)` + caller/predecessor 已构成树，DAG
   已画，不再加冗余字段。
@@ -458,8 +498,8 @@ UI 的会话选择列表（但 DAG 照画、能被 list_agents 列出供 agent �
 ## 附：实现状态
 
 本文内容均已实现：事件层（§3）、`TaskRunner`、`SessionStore`、
-`process_user_turn`、`agent` 工具族（`agent` /
-`task_output` / `task_stop`）、`send_message` 及其列举工具 `list_agents`、
+`process_user_turn`、`agent` 工具族（`agent`——派生与 `to=` 派活——/
+`task_output` / `task_stop`，含 §5.10 归属门）、`send_message` 及其列举工具 `list_agents`、
 派生分支命名（§2.4——派生时的 Stage 1 label + `finalize_turn` 的 Stage 2
 自动改名）、串行化的回送锚定（§2.5——`_dispatch_followup` +
 `_followup_lock`）、级联取消（§5.3——`TaskRunner.cancel_task` 沿

@@ -391,8 +391,13 @@ def run_agent_turn_async(
     caller_msg_id: Optional[str] = None,
     caller_session_id: Optional[str] = None,
     spawn_depth: int = 0,
+    task_id: Optional[str] = None,
 ) -> str:
     """Submit an agent turn to the task runner, return ``task_id``.
+
+    ``task_id``: reuse a pre-created pending Task (tracked dispatch
+    queued in the inbox) instead of minting a new id — the dispatcher
+    already holds this id, so drain must run the SAME task.
 
     Non-blocking counterpart of :func:`run_agent_turn`. The runner
     walks the task through the state machine on a worker thread and
@@ -419,4 +424,5 @@ def run_agent_turn_async(
         caller_msg_id=caller_msg_id,
         caller_session_id=caller_session_id,
         spawn_depth=spawn_depth,
+        task_id=task_id,
     )
