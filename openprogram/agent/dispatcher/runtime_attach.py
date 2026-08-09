@@ -193,25 +193,35 @@ def _wrap_agentic_runtime_block(
             else:
                 result = await orig_execute(call_id, args, cancel, on_update)
         finally:
+            # ContextVar.reset has exactly two tolerable failures, and
+            # this teardown must survive both: ValueError for a token
+            # minted in another context, RuntimeError for one already
+            # spent. A cancelled turn reaches here with a spent token,
+            # and letting that escape replaces the CancelledError — the
+            # turn then never reports as cancelled and its children keep
+            # running. Both leave the var where the other context put it.
             try:
                 _call_id_var.reset(_call_token)
-            except Exception:
-                pass
+            except (ValueError, RuntimeError):
+                _log.debug("call-id token already spent or foreign",
+                           exc_info=True)
             if _pred_token is not None:
                 try:
                     _forced_pred_var.reset(_pred_token)
-                except Exception:
-                    pass
+                except (ValueError, RuntimeError):
+                    _log.debug("predecessor token already spent or foreign",
+                               exc_info=True)
             if _node_token is not None:
                 try:
                     _forced_node_var.reset(_node_token)
-                except Exception:
-                    pass
+                except (ValueError, RuntimeError):
+                    _log.debug("node token already spent or foreign",
+                               exc_info=True)
             if _live_ctx is not None:
                 try:
                     _live_ctx.__exit__(None, None, None)
                 except Exception:
-                    pass
+                    _log.debug("live-context teardown failed", exc_info=True)
 
         # Finalize the placeholder.
         try:

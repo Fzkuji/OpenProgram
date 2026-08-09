@@ -189,7 +189,10 @@ def process_user_turn(
         goal_session = bool(_g and _g.get("status") in ("active",
                                                         "waiting_user"))
     except Exception:
-        pass
+        # No readable goal means this turn is treated as a plain session,
+        # which is the correct default for one that never had a goal.
+        _log.debug("goal state unreadable for session %s", req.session_id,
+                   exc_info=True)
     result = _process_turn_once(
         req, on_event=on_event, cancel_event=cancel_event)
     continue_goal_turns = None

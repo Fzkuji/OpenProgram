@@ -326,9 +326,11 @@ def run_loop_blocking(
                         mime_type=att.get("media_type") or "image/png",
                     ))
                 except Exception:
-                    # Malformed attachment — skip silently rather
-                    # than aborting the whole turn.
-                    pass
+                    # Malformed attachment — drop it rather than abort the
+                    # whole turn. The user sent an image and the model will
+                    # not see it, so this is not a quiet loss.
+                    _log.warning("image attachment dropped for session %s",
+                                 req.session_id, exc_info=True)
         if not content_blocks:
             content_blocks = [TextContent(text="")]
         prompt = UserMessage(

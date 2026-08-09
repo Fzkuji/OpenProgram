@@ -47,27 +47,31 @@ def _shadow_root_for(session_id: str, paths: list[str]) -> Optional[str]:
     from pathlib import Path
 
     candidates: list[str] = []
+    # Each source is optional: a session need not be bound to a project,
+    # run in a worktree, or have a resolvable workdir. An unavailable one
+    # drops out of the ordering; the common-ancestor fallback below still
+    # produces a root.
     try:
         from openprogram.store.project import project_commit as _pc
         project = _pc._project_for(session_id)
         if project is not None and project.path:
             candidates.append(project.path)
     except Exception:
-        pass
+        _log.debug("no bound project for session %s", session_id, exc_info=True)
     try:
         from openprogram.worktree.context import current_worktree_path
         wt = current_worktree_path()
         if wt:
             candidates.append(wt)
     except Exception:
-        pass
+        _log.debug("no active worktree for session %s", session_id, exc_info=True)
     try:
         from openprogram.agent.internals._workdir import project_workdir_for
         wd = project_workdir_for(session_id)
         if wd is not None:
             candidates.append(str(wd))
     except Exception:
-        pass
+        _log.debug("no project workdir for session %s", session_id, exc_info=True)
 
     resolved = [Path(p).resolve() for p in paths]
     for cand in candidates:
@@ -120,10 +124,18 @@ def commit_turn_to_shadow_git(
         paths = CheckpointStore(
             store._session_dir(session_id)).list_backed_paths(assistant_msg_id)
         if not paths:
+            # The ordinary case — the turn edited nothing. Said out loud
+            # anyway: this and the two below all surface to the caller as
+            # a bare None, so without a line each there is no way to tell
+            # "nothing changed" from "the shadow repo is broken".
+            _log.debug("no checkpointed paths for session %s turn %s",
+                       session_id, assistant_msg_id)
             return None
 
         root = _shadow_root_for(session_id, list(paths))
         if root is None:
+            _log.debug("no shadow root for session %s turn %s over %d path(s)",
+                       session_id, assistant_msg_id, len(paths))
             return None
 
         shadow = ShadowGitStore(root)
@@ -145,7 +157,10 @@ def commit_turn_to_shadow_git(
             ]
             shadow.seed_baseline(items)
         except Exception:
-            pass
+            # The turn still commits without a baseline; its diff just
+            # reads as an add where it should have read as a modify.
+            _log.debug("shadow baseline not seeded for session %s turn %s",
+                       session_id, assistant_msg_id, exc_info=True)
         before = shadow.head_sha()
         first_line = (user_text or "").strip().splitlines()
         after = shadow.commit_turn(
@@ -153,6 +168,8 @@ def commit_turn_to_shadow_git(
             (first_line[0][:60] if first_line else "") or "turn",
         )
         if not after:
+            _log.debug("shadow repo %s produced no commit for session %s "
+                       "turn %s", root, session_id, assistant_msg_id)
             return None
 
         pair = store._open(session_id)
@@ -188,9 +205,11 @@ def commit_turn_to_shadow_git(
             tmp.replace(fp)
         return after
     except Exception:
-        import logging
-        logging.getLogger(__name__).debug(
-            "shadow-git turn commit skipped", exc_info=True)
+        # The turn's diff falls back to the approximate difflib path. Say
+        # which turn: a bare "skipped" cannot be tied to a session, and
+        # the caller only sees the None this returns.
+        _log.debug("shadow-git turn commit skipped for session %s turn %s",
+                   session_id, assistant_msg_id, exc_info=True)
         return None
 
 
@@ -309,7 +328,8 @@ def finalize_turn(
     except Exception:
         # ContextCommit backfill is best-effort: the conversation persists
         # regardless, and the next turn will rebuild the chain.
-        pass
+        _log.debug("context-commit backfill skipped for session %s",
+                   req.session_id, exc_info=True)
 
     # 6.4. Feed real provider usage back into the context engine so
     # subsequent prepare() calls budget against true numbers instead of
@@ -339,7 +359,11 @@ def finalize_turn(
                 on_event=on_event,
             )
     except Exception:
-        pass
+        # The next prepare() budgets against our own estimate instead of
+        # the provider's count. Worth seeing: a persistent failure here
+        # means every later turn is budgeted on an estimate.
+        _log.warning("provider usage not fed back for session %s",
+                     req.session_id, exc_info=True)
 
     # 6.5. Auto-title: background LLM generation at turn thresholds.
     _assistant_text = assistant_msg.get("content") or ""
@@ -352,7 +376,9 @@ def finalize_turn(
     try:
         maybe_auto_name_branch(db, req.session_id, assistant_msg_id)
     except Exception:
-        pass
+        # The branch keeps its current badge; the next turn tries again.
+        _log.debug("branch auto-name skipped for session %s",
+                   req.session_id, exc_info=True)
 
     # 6.6. Compaction signal: when context is approaching the model's
     # window, surface a "compaction_recommended" event so the UI can
@@ -382,7 +408,10 @@ def finalize_turn(
             _msg = (req.user_text or "").strip().splitlines()[0][:60] or "turn"
             db.commit_turn(req.session_id, f"turn: {_msg}")
     except Exception:
-        pass
+        # The turn's data is on disk either way; next turn's commit sweeps
+        # it up. A repeat means the session repo is no longer committing.
+        _log.warning("session git commit failed for %s", req.session_id,
+                     exc_info=True)
 
     # 6.9. Project auto-commit (entity layer, half 2): if this session is
     # bound to a real project directory and the agent edited files there,
@@ -431,9 +460,15 @@ def finalize_turn(
                             )
                             _tmp.replace(_fp)
             except Exception:
-                pass
+                # Without the stamp a later revert_turn falls back to the
+                # file-snapshot restore instead of a git-aware undo.
+                _log.warning("project-commit stamp not written for %s turn %s",
+                             req.session_id, assistant_msg_id, exc_info=True)
     except Exception:
-        pass
+        # Opt-in feature; the edits are still on disk and in the session
+        # repo, they just did not land in the project's own git.
+        _log.warning("project auto-commit failed for session %s",
+                     req.session_id, exc_info=True)
 
     # 6.93. Shadow-git commit — see commit_turn_to_shadow_git.
     commit_turn_to_shadow_git(

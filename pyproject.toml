@@ -251,6 +251,11 @@ select = ["E722", "S110"]
 # the rules on globally would produce a gate nobody can pass, so those paths
 # are muted here and cleaned up path by path. To extend the gate, clean a
 # directory and delete its line below.
+#
+# Every pattern here matches whole paths, and `*` crosses `/` — so
+# "openprogram/*.py" would mute the entire package including the three gated
+# paths, and did until the top-level modules were named one by one below.
+# Check a new pattern against a nested file before trusting it.
 "openprogram/agent/agent.py" = ["E722", "S110"]
 "openprogram/agent/internals/*" = ["E722", "S110"]
 "openprogram/agent/task/*" = ["E722", "S110"]
@@ -262,15 +267,20 @@ select = ["E722", "S110"]
 "openprogram/cli/*" = ["E722", "S110"]
 "openprogram/commands/*" = ["E722", "S110"]
 "openprogram/contextgit/*" = ["E722", "S110"]
+"openprogram/events/*" = ["E722", "S110"]
 "openprogram/functions/*" = ["E722", "S110"]
+"openprogram/mcp/*" = ["E722", "S110"]
 "openprogram/memory/*" = ["E722", "S110"]
+"openprogram/plugins/*" = ["E722", "S110"]
 "openprogram/providers/*" = ["E722", "S110"]
 "openprogram/skills/*" = ["E722", "S110"]
 "openprogram/usage/*" = ["E722", "S110"]
 "openprogram/webui/*" = ["E722", "S110"]
 "openprogram/worker/*" = ["E722", "S110"]
 "openprogram/worktree/*" = ["E722", "S110"]
-"openprogram/*.py" = ["E722", "S110"]
+"openprogram/_cli_chat/*" = ["E722", "S110"]
+"openprogram/_cli_cmds/*" = ["E722", "S110"]
+"openprogram/{__init__,__main__,_compat,_ports,cli,cli_chat,cli_ink,config_schema,paths,setup,tts}.py" = ["E722", "S110"]
 "tests/*" = ["E722", "S110"]
 "tools/*" = ["E722", "S110"]
 "scripts/*" = ["E722", "S110"]

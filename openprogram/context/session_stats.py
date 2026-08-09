@@ -28,7 +28,10 @@ local estimate drifts from what the provider charges.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Optional
+
+_log = logging.getLogger(__name__)
 
 
 def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
@@ -89,11 +92,18 @@ def compute_breakdown(session_id: str, head_id: Optional[str] = None) -> dict:
                             parts.append(
                                 json.dumps(tc, ensure_ascii=False, default=str)
                             )
-                        except Exception:
-                            pass
+                        except (TypeError, ValueError):
+                            # One unserializable call drops out of the
+                            # estimate; the ring reads slightly low.
+                            _log.debug(
+                                "tool call not counted for session %s",
+                                session_id, exc_info=True)
                     content = "\n".join(p for p in parts if p)
-            except Exception:
-                pass
+            except (TypeError, ValueError):
+                # Unparseable extra: the message counts by its visible
+                # text alone, without its thinking and tool-call blocks.
+                _log.debug("message extra not parsed for session %s",
+                           session_id, exc_info=True)
         msgs.append({
             "role": m.get("role") or "",
             "content": content,

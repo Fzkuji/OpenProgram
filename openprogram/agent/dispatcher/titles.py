@@ -287,7 +287,10 @@ def _broadcast_title_update(session_id: str, title: str) -> None:
         }, default=str)
         _s._broadcast(msg)
     except Exception:
-        pass
+        # The title is already stored; only the live push is lost, and a
+        # reconnecting client reads the stored one.
+        _log.debug("title broadcast failed for session %s", session_id,
+                   exc_info=True)
 
 
 # --- Branch auto-naming (see docs/design/runtime/branch-naming.md) ---------
@@ -413,7 +416,10 @@ def _broadcast_branches_refresh(session_id: str) -> None:
         }, default=str)
         _s._broadcast(msg)
     except Exception:
-        pass
+        # The branch name is already stored; the badge refreshes on the
+        # next branches_list the client asks for.
+        _log.debug("branches refresh failed for session %s", session_id,
+                   exc_info=True)
 
 
 def trigger_compaction(session_id: str, agent_id: str = "main",

@@ -12,8 +12,8 @@
 三条具体义务：
 
 1. **精确 catch。** 文件 IO 抛 `OSError`；JSON 抛 `ValueError`（以及
-   `json.JSONDecodeError`）；用外部 token 做 `ContextVar.reset` 抛 `ValueError`。写出
-   这个操作实际会抛的东西。
+   `json.JSONDecodeError`）；`ContextVar.reset` 用外部 token 抛 `ValueError`、用已消费的
+   token 抛 `RuntimeError`。写出这个操作实际会抛的东西，全部。
 2. **绝不吞掉程序员错误。** `AttributeError`、`TypeError`、`NameError` 这类是我们自己
    代码的缺陷，不是需要容忍的状况。宽到足以掩盖它们的 handler，要么收窄到掩盖不了，
    要么打日志让缺陷可见。
@@ -57,11 +57,16 @@ except OSError:
 把原先掩盖缺陷的宽 catch 收窄：
 
 ```python
-except ValueError:
-    # ContextVar.reset raises this for a token minted in another context —
-    # the only tolerable failure here.
-    _log.debug("context var teardown in a foreign context", exc_info=True)
+except (ValueError, RuntimeError):
+    # ContextVar.reset raises ValueError for a token minted in another
+    # context and RuntimeError for one already spent. Narrowing to only
+    # the first lets a cancelled turn's spent token escape and replace
+    # the CancelledError.
+    _log.debug("context var token already spent or foreign", exc_info=True)
 ```
+
+只有先弄清全集，收窄才是对的。去查这个调用实际会抛什么：上面的 `ContextVar.reset` 抛
+两种毫不相关的类型，只写其中一种的 handler，会把本来被吞掉的失败变成跑出去的失败。
 
 一个可选子系统，写明理由：
 
@@ -101,6 +106,11 @@ handler 直接删掉，而不是加注释。
 它们承载的状态一旦被静默损坏，事后最难诊断。其他位置通过 `per-file-ignores` 静音，因
 为几百处存量点会让门禁根本过不了，也就等于没人理它。静音列表就是待办清单：清理干净一
 个目录，删掉它那一行，门禁就覆盖它。
+
+`per-file-ignores` 的 pattern 匹配的是整条路径，其中的 `*` 会跨 `/`，所以
+`openprogram/*.py` 静音的是整个包而不是顶层那几个模块——顶层模块因此改成逐个列名。新
+加 pattern 之前先拿一个嵌套文件验一下：静音过头的 pattern 会把门禁关掉，而且不会让任
+何检查失败。
 
 `BLE001`（盲目 `except Exception`）刻意不启用。会打日志并降级的边界 handler 是正确设
 计，把它们全标出来产出的是噪声而非信号。第 2 节改由评审来约束这类代码。

@@ -15,8 +15,9 @@ never landed.
 Three concrete obligations:
 
 1. **Catch specifically.** File IO raises `OSError`; JSON raises `ValueError`
-   (and `json.JSONDecodeError`); a `ContextVar.reset` with a foreign token
-   raises `ValueError`. Name what the operation actually raises.
+   (and `json.JSONDecodeError`); `ContextVar.reset` raises `ValueError` for a
+   foreign token and `RuntimeError` for a spent one. Name everything the
+   operation actually raises.
 2. **Never swallow a programmer error.** `AttributeError`, `TypeError`,
    `NameError` and friends are defects in our own code, not conditions to
    tolerate. A handler broad enough to hide one must either be narrowed until
@@ -67,11 +68,18 @@ except OSError:
 A narrow catch where a broad one was hiding defects:
 
 ```python
-except ValueError:
-    # ContextVar.reset raises this for a token minted in another context —
-    # the only tolerable failure here.
-    _log.debug("context var teardown in a foreign context", exc_info=True)
+except (ValueError, RuntimeError):
+    # ContextVar.reset raises ValueError for a token minted in another
+    # context and RuntimeError for one already spent. Narrowing to only
+    # the first lets a cancelled turn's spent token escape and replace
+    # the CancelledError.
+    _log.debug("context var token already spent or foreign", exc_info=True)
 ```
+
+Narrowing is only correct once you know the full set. Check what the call
+actually raises — `ContextVar.reset` above raises two unrelated types, and a
+handler that names one of them turns a swallowed failure into an escaping
+one.
 
 An optional subsystem, with the reason stated:
 
@@ -113,6 +121,12 @@ Everywhere else is muted through `per-file-ignores`, because several hundred
 pre-existing sites would make the gate unpassable and therefore ignored. The
 mute list is the backlog: clean a directory, delete its line, and the gate
 covers it.
+
+A `per-file-ignores` pattern matches the whole path and its `*` crosses `/`,
+so `openprogram/*.py` mutes every module in the package rather than the
+top-level ones — which is why the top-level modules are named individually.
+Check any new pattern against a nested file before trusting it: a pattern
+that mutes too much turns the gate off without failing anything.
 
 `BLE001` (blind `except Exception`) is deliberately not enabled. A boundary
 handler that logs and degrades is correct design, and flagging every one of
