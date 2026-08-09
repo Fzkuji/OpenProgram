@@ -1,9 +1,9 @@
 """Self-recursion guard for @agentic_function (regression test).
 
 An agentic harness (e.g. ``wiki_agent``) runs an inner agent loop via
-``runtime.exec()`` with the FULL toolset, and the FULL toolset lists the
-harness entry points themselves (gui_agent / research_agent /
-wiki_agent — see ``openprogram.functions.TOOLSETS["full"]``). The inner
+``runtime.exec()`` with the FULL toolset, and the FULL toolset is every
+exposed tool, harness entry points included (gui_agent /
+research_agent / wiki_agent). The inner
 model could in principle call ``wiki_agent`` from inside ``wiki_agent``
 → unbounded nesting (the "7-layer nesting" root cause).
 

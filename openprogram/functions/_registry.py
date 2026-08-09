@@ -20,11 +20,11 @@ harness's own ``<pkg>/agentics/__init__.py`` exports
 ``AGENTIC_FUNCTIONS``, done — no edit to this file.
 
 What's *exposed* to LLMs (Layer 2 of the selection cascade) is a
-separate concern — that lives in ``TOOLSETS["full"]["tools"]`` in
-``openprogram.functions.__init__``. Membership in any registration
-mechanism here says "load this module so its decorators run";
-membership in ``TOOLSETS["full"]["tools"]`` says "let LLMs see this
-name".
+separate concern — a registered tool is exposed unless it opted out
+with ``expose=False``, and ``exposed_names()`` in ``_runtime`` is the
+live set. Membership in any registration mechanism here says "load
+this module so its decorators run"; ``expose=False`` on the decorator
+says "keep this one out of every LLM tool table".
 """
 
 from __future__ import annotations

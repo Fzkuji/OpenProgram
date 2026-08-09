@@ -375,4 +375,4 @@ If you remember nothing else from this skill, remember these:
 5. Every LLM-visible parameter needs a `description` in `input={...}`.
 6. No `Args:` / `Returns:` sections in the docstring.
 7. Save to `openprogram/functions/agentics/<name>/__init__.py` unless the user said otherwise. Add `("<name>", None)` to `openprogram/functions/_registry.py::AGENTIC_MODULES` so the loader actually imports it (otherwise the @agentic_function decorator never fires and the function won't be discoverable).
-8. If the LLM should also see it as a callable tool, add `"<name>"` to `openprogram/functions/__init__.py::TOOLSETS["full"]["tools"]` (the Layer 2 exposure whitelist). Without this the function exists but is invisible to LLMs.
+8. A registered function is LLM-visible by default. To keep one Python-only (an internal helper), register it with `expose=False`; `exposed_names()` is the live set of what LLMs can see.

@@ -1,7 +1,7 @@
 # Agent 协作：一个分支间通信原语
 
 整套 agent 协作收敛成**一个原语：分支间通信**。一个 agent 能派生别的 agent、能给
-别的分支/别的 session 发消息——这些表面上不同
+别的分支/别的 session 发消息。这些表面上不同
 的操作，**底层是同一件事**：往某条分支投递内容 → 触发那条分支跑一轮 → 结果自动回送
 发起方。全部做成工具调用，全部建在已有的事件层上。
 
@@ -39,39 +39,40 @@
 
 | 域 | 名词 | 工具 | 是什么 |
 |---|---|---|---|
-| 计划 | **todo** | `todo_create` / `todo_update` / `todo_list` | 手写的计划清单：条目、状态、负责人、依赖。纸面上的"打算做"，有条目不代表有东西在跑 |
-| 执行 | **task** | `task_output` / `task_stop` / `list_tasks` | 派出去正在跑的活：单号、状态、结果 |
-| 实体 | **agent** | `agent` / `list_agents` / `archive_agent` | 干活的实体：生新的、给已有的派活（`to=`）、查通讯录、把干完的退役 |
-| 通讯 | **message** | `send_message` / `read_conversation` | 说话和读历史：捎一句话，读任何分支的全文 |
+| 计划 | **todo** | `todo_create` / `todo_update` / `todo_list` | 手写的计划清单：条目、状态、负责人、依赖。只记录打算做什么，有条目不代表有东西在跑 |
+| 执行 | **task** | `task_output` / `task_stop` / `list_tasks` | 派出去正在跑的任务：task_id、状态、结果 |
+| 实体 | **agent** | `agent` / `list_agents` / `archive_agent` | 执行任务的实体：新建一个、给已有的派任务（`to=`）、列出所有 agent、把干完的归档 |
+| 通讯 | **message** | `send_message` / `read_conversation` | 发消息和读历史：投一条消息，读任何分支的全文 |
 
-在 todo 板上写"跑一遍 parser 基准"不会启动任何东西。`agent(…)` 才启动东西，
-拿回来的是一个 task_id。板子说的是打算做什么，`list_tasks` 说的是什么正在跑。
+在 todo 清单上写"跑一遍 parser 基准"不会启动任何东西。`agent(…)` 才启动东西，
+拿回来的是一个 task_id。清单说的是打算做什么，`list_tasks` 说的是什么正在跑。
 
 一个 agent 的对话就是一条**分支**：session 内的 `(session_id, head_id)` 对。
 同 session 两个 head 是一次会话的两条分支，两个 session 是两次会话。agent 的
 地址永远是分支：`"SID:HEAD"`，或者分支名。
 
-### 权力跟创造走
+### 只有派活方能操作任务
 
-派出去的活上有三样权力，三样都只归派活方：
+派出去的任务上有三件事，三件都只有派活方能做：
 
-| 权力 | 含义 |
+| 能做什么 | 含义 |
 |---|---|
-| 结果必回 | 任务结束时回复自动落进派活方的对话，不管派活方是在等还是走开了 |
-| 可叫停 | `task_stop` 取消任务；还在排队的直接撤单，一轮都不跑 |
-| 级联取消 | 停掉一个任务，它派出去的所有活跟着停，一路到底 |
+| 结果必回 | 任务结束时回复自动落进派活方的对话，不管派活方是在等还是已经去做别的 |
+| 可取消 | `task_stop` 取消任务；还在排队的直接撤回，一轮都不跑 |
+| 级联取消 | 停掉一个任务，它派出去的所有任务跟着停，一路到底 |
 
 `read_conversation` 能读到任何 task_id，所以归属要查而不是默认：
-`task_output` 和 `task_stop` 拒绝别的 session 派出的任务（§5.10）。只有人不受限。
+`task_output` 和 `task_stop` 拒绝别的 session 派出的任务（§5.10）。没有 session
+上下文的调用（用户、UI）不受这条限制。
 
-`send_message` 一样权力都没有，所以人人可发不会乱。它只投递一条消息，收件方
-回不回都行，不产生单号、不能取消、不会级联。发消息扰不动已经在跑的活。
+`send_message` 这三件事都不带，所以任何 agent 都能发。它只投递一条消息，收件方
+回不回都行，不产生 task_id、不能取消、不会级联。发消息不会打断已经在跑的任务。
 
 ### `agent` 的两种模式
 
 | 调用 | 发生什么 |
 |---|---|
-| `agent(prompt=…)` | 生一个新 agent 并跑它。阻塞等回复；`run_in_background=true` 则返回 task_id |
+| `agent(prompt=…)` | 新建一个 agent 并跑它。阻塞等回复；`run_in_background=true` 则返回 task_id |
 | `agent(prompt=…, to="reviewer")` | 不创建任何东西。prompt 作为受管任务派给已存在的 `reviewer`，作为它的下一轮跑，排在它手上这一轮后面，一次一轮。永远返回 task_id |
 
 两种都产生 task，只有第一种产生 agent。`to` 与 `start_from` 互斥：目标自带
@@ -88,7 +89,7 @@ list_tasks()                                   → t_7f2 running（bench）
 send_message("进展如何？", to="bench")          → agent 回话，不产生任务
 task_output("t_7f2")                           → 结果到了就拿到
 todo_update("1", status="completed")
-archive_agent(to="bench")                      → 从通讯录退役
+archive_agent(to="bench")                      → 从 agent 列表归档
 ```
 
 ### 与 Claude Code 同名的部分
@@ -96,20 +97,20 @@ archive_agent(to="bench")                      → 从通讯录退役
 `agent`、`list_agents`、`send_message`、`task_output`、`task_stop` 与
 Claude Code 同名同义，这是刻意的：认识那批名字的模型就已经认识这批工具。
 
-有一个名字刻意不同。Claude Code 的 `TaskList` 是 todo 规划板，不是在跑的活的
-清单。这里的规划板改用 `todo_*` 前缀，撞不上，`list_tasks` 也就保住了字面
+有一个名字刻意不同。Claude Code 的 `TaskList` 是 todo 规划清单，不是正在运行的
+任务清单。这里的规划清单改用 `todo_*` 前缀，撞不上，`list_tasks` 也就保住了字面
 意思：正在跑的任务。
 
-三个工具在 Claude Code 里没有对应：`list_tasks`（那边没给模型开查后台任务的
-口子）、`archive_agent`（把 agent 从通讯录里退役，§2.6）、`read_conversation`
+三个工具在 Claude Code 里没有对应：`list_tasks`（那边没有让模型查询后台任务的
+工具）、`archive_agent`（把 agent 从 agent 列表里归档，§2.6）、`read_conversation`
 （把别的 agent 的历史读成可读文本，而不是直接读原始会话文件）。
 
 ---
 
 ## 2. 原语的工具形态
 
-把原语包成 agent 能调的工具。分工对齐 Claude Code：**`agent` 生、
-`send_message` 聊、`list_agents` 看**。
+把原语包成 agent 能调的工具。分工对齐 Claude Code：**`agent` 新建 agent、
+`send_message` 发消息、`list_agents` 列出 agent**。
 
 ### 2.1 工具
 
@@ -138,17 +139,17 @@ session）fork、继承到该节点为止的链。`run_in_background=true` 返�
 （`"SID:HEAD"` 归位到分支当前末端；分支名先精确匹配、再唯一前缀；歧义列出
 候选）。派活与发消息的区别在任务追踪：
 
-- 创建 **Task 记录**（runner 的台账）：派活方立即拿到 `task_id`，
-  `task_output` 可等，`task_stop` 可撤单或取消，`list_tasks` 可见。
+- 创建 **Task 记录**（runner 侧的任务条目）：派活方立即拿到 `task_id`，
+  `task_output` 可等，`task_stop` 可撤回或取消，`list_tasks` 可见。
 - 投递复用消息机制：目标空闲，任务作为它分支上的下一轮立刻跑；目标忙，任务
-  排进它的收件箱（§5.4）——Task 记录以 `pending` 预建，排队期间 id 就存在，
+  排进它的收件箱（§5.4）。Task 记录以 `pending` 预建，排队期间 id 就存在，
   drain 时跑的是同一个 task。投出的这一轮带任务来源头
   （`[task from SID:HEAD] This is a tracked task …`），目标知道这轮的回复
   就是任务结果，会自动回给派活方。
 - 结果回流和 spawn 任务一致：终态后 attach + followup 通知回派活方会话。
 - `to` 与 `start_from` 互斥（目标分支自带历史，再选 fork 点自相矛盾，直接
   报错）。`to` 必然异步，`run_in_background` 被忽略。派给自己当前分支被
-  拒绝（直接继续干）。派活花的是消息预算，不是派生预算（§5.1）——它不创建
+  拒绝（直接继续做）。派活花的是消息预算，不是派生预算（§5.1），因为它不创建
   agent。
 
 **`send_message` — 和已存在的 agent 通信：**
@@ -161,7 +162,7 @@ send_message(
 ) -> str
 ```
 
-**`to` 取值——每个取值都指认一条已存在的分支：**
+**`to` 取值，每个取值都指认一条已存在的分支：**
 
 | to | 含义 |
 |---|---|
@@ -173,8 +174,8 @@ send_message(
 
 每次投递（直投或 §5.4 的排队消费）都会加一个发件人回执头：
 `[message from SID:HEAD] To reply, use send_message(to="SID:HEAD"). Replying is
-optional …` —— 收件方由此知道谁发的、怎么回、以及不回也是正当的。agent
-工具的派生投的是裸 prompt：它们是干活的 worker，不是通信对象。
+optional …`。收件方由此知道谁发的、怎么回、以及不回也是正当的。agent
+工具的派生投的是裸 prompt：被派生的 agent 没有需要回信的发送方。
 
 一种用法：
 
@@ -219,15 +220,15 @@ id、标题、agent、busy/idle 状态（`run_control.is_turn_running`，探测�
 
 ### 2.4 新建分支要有名字
 
-`agent` 工具每次创建分支，**都必须给分支一个名字**
-——否则 web 端只能显示 8 位 hex 短号，一堆分支分不清谁是谁。
+`agent` 工具每次创建分支，**都必须给分支一个名字**。
+否则 web 端只能显示 8 位 hex 短号，一堆分支分不清谁是谁。
 
 - **立刻有名（Stage 1）**：创建时把一个简短 label 传给 `run_agent_turn(... label=…)`
   → `store.set_branch_name`。label 从投递的 prompt 摘一句（截断到 ~24 字），或让
-  模型在调用时显式带一个名字（`description`）。这样分支一出生就有可读名，不用等 LLM。
+  模型在调用时显式带一个名字（`description`）。这样分支创建时就有可读名，不用等 LLM。
 - **后台自动改好名（Stage 2）**：分支正常聊起来后，由 `finalize_turn` 在 `turns`
   命中阈值 `{1,6,16,40}` 时，后台线程用 LLM 依据分支内容生成更贴切的标题，覆盖
-  Stage 1 的临时名。规则见 [branch-naming](operations/branch-naming.zh.md)——那里定义
+  Stage 1 的临时名。规则见 [branch-naming](operations/branch-naming.zh.md)，那里定义
   了命名的分级、锁、触发点；本节只强调：**agent 工具派生的分支和用户手动
   fork 的分支，走同一套命名（都要 Stage 1 占位名 + Stage 2 自动改名），不能漏。**
 
@@ -248,20 +249,20 @@ HEAD 并推进它。**每个投递 session 有一把回送串行锁
 `predecessor = caller_msg_id`，DAG 上照样能看出每条子分支从哪一轮 fork 出去、
 每个结果从哪条分支回流。子分支本身是并列的独立一支，**不并回主线**。
 
-### 2.6 归档：把一个 agent 从通讯录里退役
+### 2.6 归档：把一个 agent 从 agent 列表里移出
 
 分支在 session DAG 里永久存在，fork、回放、`read_conversation` 都依赖这一点，
-所以没有退役标记时 `list_agents` 会攒下历史上派生过的每一个 agent，模型还会
-继续去找那些活早就干完的 worker。归档就是这个标记：分支 meta 条目上的
+所以没有归档标记时 `list_agents` 会攒下历史上派生过的每一个 agent，模型还会
+继续去找那些任务早就做完的 worker。归档就是这个标记：分支 meta 条目上的
 `archived: true`，和分支名同一个 `branches` 条目，用 `set_branch_meta` 写、
 `get_branch_meta` 读。
 
-**归档砍掉的是分支被打扰的权利，不是它的历史。**
+**归档后分支不再接收新的投递，它的历史照常保留。**
 
 | 对已归档分支的操作 | 行为 |
 |---|---|
 | `list_agents`（`scope="session"` / `"all"`） | 不列 |
-| `list_agents(scope="archived")` | 列出，恰好就是这些退役分支 |
+| `list_agents(scope="archived")` | 列出，恰好就是这些已归档分支 |
 | `send_message(to=…)` | 报错：`agent SID:HEAD is archived` |
 | `agent(to=…)` | 同样报错，同一句话 |
 | `read_conversation` | 照读 |
@@ -279,14 +280,14 @@ HEAD 并推进它。**每个投递 session 有一把回送串行锁
   结果回流之后；同步派生形态则在结果拿到手后打标。这次写入是 best-effort：
   meta 写失败只记日志，结果照常返回。只对派生生效，和 `to=` 同时传会报错，
   因为派活指向的是本次调用没有创建的 agent。
-- **`archive_agent(to, reason="")`**：事后退役。`to` 收 `send_message` 那套
+- **`archive_agent(to, reason="")`**：事后归档。`to` 收 `send_message` 那套
   地址（`"SID:HEAD"` 或分支名）。对已归档分支再归档是一句幂等提示，不是错误。
 
 **只有创建者能归档。** 每次派生都会把创建者记在新分支上
 （`spawner_session_id`，在终态和归档标记一起写），`archive_agent` 拒绝其他
-session。没记创建者的分支属于顶层，归它自己的 session 所有：那个 session 可以
-归档它，别的 session 不行。没有 session 上下文的调用（用户、UI）不设门——人拥有
-一切，和 §5.10 的任务归属同一立场。
+session。没记创建者的分支属于顶层，归它自己的 session：那个 session 可以
+归档它，别的 session 不行。没有 session 上下文的调用（用户、UI）不受这条限制，
+和 §5.10 的任务归属一致。
 
 **没有反归档。** 这个标记的含义是"这段对话结束了"，而结束的对话若还有值得复用的
 记忆，做法是用 `agent(start_from="SID:MSG_ID")` fork 出一条新分支，它有自己的名字和
@@ -305,9 +306,9 @@ session。没记创建者的分支属于顶层，归它自己的 session 所有�
   （`~/.openprogram/sessions/<sid>/events.jsonl`，始终开启），一次协作事后可
   以回放、可以审计。
 - **投递可以被拦下确认。** 值守策略拒绝副作用时，`send_message` 在投递前被
-  拦住等确认。子 agent 走同一道闸，`permission_mode=bypass` 关不掉它。
+  拦住等确认。子 agent 走同一个拦截点，`permission_mode=bypass` 关不掉它。
 
-事件层本身——总线、事件模型、注册表、否决协议——写在
+事件层本身（总线、事件模型、注册表、否决协议）写在
 [proactive/event-layer](../proactive/event-layer.zh.md)。
 
 ---
@@ -332,12 +333,12 @@ A、B 同时在跑（同 session 不同分支，或不同 session）：
 
 ## 5. 健壮性与安全
 
-通信会创建分支、触发别的分支跑、跨 session 写——这些副作用必须有边界。
+通信会创建分支、触发别的分支跑、跨 session 写，这些副作用必须有边界。
 
 ### 5.1 每条链有两个预算
 
-允许递归协作——被派生的 agent 还能再往下派消息做多层分解——两个预算保证它有限。
-**链**指一次用户轮次长出来的全部东西，每一跳都花同一对计数，回送也算。
+允许递归协作（被派生的 agent 还能再往下派消息做多层分解），两个预算保证它有限。
+**链**指一次用户轮次产生的全部调用，每一跳都花同一对计数，回送也算。
 
 | 预算 | 配置项 | 默认 | 计什么 |
 |---|---|---|---|
@@ -352,14 +353,14 @@ openprogram config set agent.max_messages 0      # agent 之间随便聊
 ```
 
 **预算耗尽时的表现**：超额的那次调用被拒绝，理由回给模型，其它工具照常可用。
-**两个预算都耗尽**后，`agent`、`task_output`、`task_stop` 直接从工具清单里消失
-——工具摆在清单里模型就会想用，先给再拒是浪费一轮。
+**两个预算都耗尽**后，`agent`、`task_output`、`task_stop` 直接从工具清单里消失。
+工具摆在清单里模型就会去调用，先给出再拒绝会浪费一轮。
 
 默认值（派生深度 1、消息 8）下的典型行为：
 
-- 主 agent 派 worker。worker 再想派生会被告知自己动手干。
-- 同一个 worker 仍然有 `agent(to=…)` 和 `send_message`：能把活交给**已存在**的
-  agent，能回复给它写信的人。对它关掉的只是"再开一代"。
+- 主 agent 派 worker。worker 再想派生会被告知自己动手做。
+- 同一个 worker 仍然有 `agent(to=…)` 和 `send_message`：能把任务交给**已存在**的
+  agent，能回复给它发消息的 agent。对它关掉的只是"再开一代"。
 - A 和 B 来回对话在这条链的第 8 条消息后停下，不论此刻轮到谁。
 
 `agent.max_spawn_depth: 2` 时 worker 可以再开一代，第三代被拒。两项都是 `0` 时
@@ -370,7 +371,7 @@ openprogram config set agent.max_messages 0      # agent 之间随便聊
 ### 5.2 并发上限 + 排队
 
 - 派生走 `TaskRunner` 线程池，上限 `OPENPROGRAM_TASK_WORKERS`（默认 4）。一次派几十
-  个：超出上限的**排队**，槽位空出再跑，不打爆。
+  个：超出上限的**排队**，槽位空出再跑，不会过载。
 - 可选 **token 预算**：一次协作的总派生数 / 总 token 设上限，到顶拒绝新派生（防一个
   失控分解派出几百个）。文档默认不强制，留参数。
 
@@ -381,7 +382,7 @@ openprogram config set agent.max_messages 0      # agent 之间随便聊
   当前 task ContextVar 默认填入）。`TaskRunner.cancel_task` 沿这条链对持久化
   实体做广度优先遍历（visited 集合防环，即使出现畸形环也能终止）：
   pending/queued 的后代直接翻成 cancelled、不再被拾取；running 的后代走与根
-  相同的单 task 取消路径——session cancel event + `kill_active_runtime` +
+  相同的单 task 取消路径：session cancel event + `kill_active_runtime` +
   30 秒强制取消看门狗。不留僵尸线程/子进程。
 - session 级取消（用户对某 session 按 Stop）额外清空该 session 的
   send_message 收件箱（`inbox.clear`）：排队消息是还没开始的新工作，用户停掉
@@ -390,10 +391,10 @@ openprogram config set agent.max_messages 0      # agent 之间随便聊
 
 ### 5.4 发给"正在跑"的分支（竞态）
 
-A 给 B 发消息时 B 可能正跑一轮。**不打断、不丢弃——排队。**忙判定是
+A 给 B 发消息时 B 可能正跑一轮。**不打断、不丢弃，排队。**忙判定是
 `run_control.is_turn_running(target)`：每个并发 turn 入口（webui chat、task
 runner worker）都在 finally 里成对注册/注销 cancel token，token 在场就是进程内
-"正有一轮在跑"的权威信号。只有跨 session 投递才做这个检查——同 session 投递本来
+"正有一轮在跑"的权威信号。只有跨 session 投递才做这个检查。同 session 投递本来
 就跑在发送方自己的 turn 里，检查看到的就是自己的 token。
 
 - **入队**：目标忙时消息持久化到目标 session 的收件箱
@@ -415,8 +416,8 @@ B 空闲则立即投递（原有行为）。
 ### 5.5 失败回送
 
 子/目标分支失败（崩溃 / 超时 / 模型报错）：**也回送**，回送内容带 `is_error` + 原因
-（"B 失败了：<原因>"），发起方模型读到后自行决定重发/换路/放弃。**不内置重试/熔断**
-——父是模型，由它判断比固定策略好。
+（"B 失败了：<原因>"），发起方模型读到后自行决定重发/换路/放弃。**不内置重试/熔断**：
+父是模型，由它判断比固定策略好。
 
 ### 5.6 结果截断
 
@@ -434,7 +435,7 @@ B 空闲则立即投递（原有行为）。
 ### 5.8 值守拦截 + 校验
 
 - 值守策略拒绝副作用时，`send_message` 在投递前被拦下等确认（§3）。子分支走同
-  一道闸，`permission_mode=bypass` 关不掉它。
+  一个拦截点，`permission_mode=bypass` 关不掉它。
 - `to` 指向不存在的东西就报错，不会静默新建。常规权限门控照常叠加在上面。
 
 ### 5.9 分支可见性
@@ -444,22 +445,22 @@ UI 的会话选择列表（但 DAG 照画、能被 list_agents 列出供 agent �
 
 ### 5.10 任务归属（task_output / task_stop）
 
-`read_conversation` 能读任意分支，任何 agent 都能拿到任意 task_id——
-不设门槛，任何 agent 都能等待或杀掉别人派的活。所以 `task_output` 和
+`read_conversation` 能读任意分支，任何 agent 都能拿到任意 task_id。
+不设门槛的话，任何 agent 都能等待或取消别人派出的任务。所以 `task_output` 和
 `task_stop` 执行前核对归属：当前 session 必须是该 task 的派活方
 （`caller_session_id`，同 session spawn 则是 `parent_session_id`），或在
 任务链祖先上（当前 task 经 `parent_task_id` 是它的祖先，或当前 session
-派发过它的某个祖先——与级联取消走的是同一条链）。都不是则拒绝：
+派发过它的某个祖先，与级联取消走的是同一条链）。都不是则拒绝：
 `[task_stop error] task {id} was not dispatched by this session`。无
-session 上下文的调用（用户、UI）不设限——人拥有一切。
+session 上下文的调用（用户、UI）不受这条限制。
 
 `task_stop` 对 `to=` 派出的任务按状态分三种：
 
-- **排队中**（目标当时忙，任务在它收件箱里）→ 从收件箱撤单，记录翻
-  `cancelled`。不发 session 级取消：目标正在跑的是别人的轮，撤单不能
-  杀它。
+- **排队中**（目标当时忙，任务在它收件箱里）→ 从收件箱撤回，记录翻
+  `cancelled`。不发 session 级取消：目标正在跑的是别人的轮，撤回不能
+  终止它。
 - **在跑** → 取消目标分支上的那一轮（task 取消事件 + session 取消桥 +
-  runtime 终止 + 30 秒看门狗），不杀目标 agent 或它的 session。
+  runtime 终止 + 30 秒看门狗），不终止目标 agent 或它的 session。
 - **已终态** → 幂等 no-op。
 
 ### 5.11 明确不做（及理由）
@@ -475,7 +476,7 @@ session 上下文的调用（用户、UI）不设限——人拥有一切。
 
 ## 6. 可以核对的行为
 
-下面每一条都能独立看到——在 web 界面里，或者在 session 事件日志里。
+下面每一条都能独立看到：在 web 界面里，或者在 session 事件日志里。
 
 | 行为 | 表现 |
 |---|---|
@@ -484,7 +485,7 @@ session 上下文的调用（用户、UI）不设限——人拥有一切。
 | 归档（§2.6） | 已归档 agent 从 `list_agents` 消失、在 `scope="archived"` 里出现；`send_message` 与 `agent(to=)` 拒收，`read_conversation` 与 `agent(start_from=…)` 照常；只有创建它的 session 能归档 |
 | 发给同 session 已有分支 | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
 | 跨 session | A 发给别的 session 走同一路径；两边实时更新 |
-| 健壮性（§5） | A↔B 互发到消息预算用完自动停，预算为 0 时不停；一次派 30 个是排队不是打爆；取消父→子全停；给正忙的 B 发消息先排队、等它这轮结束再投；子失败父会被告知；超大结果截断并给出文件路径 |
+| 健壮性（§5） | A↔B 互发到消息预算用完自动停，预算为 0 时不停；一次派 30 个是排队不是过载；取消父→子全停；给正忙的 B 发消息先排队、等它这轮结束再投；子失败父会被告知；超大结果截断并给出文件路径 |
 | 安全（§5.7-5.9） | deny 策略下投递被拦下等确认；不存在的 to 报错；子分支权限不高于父、不进 UI 选择列表 |
 | 前端 | web 界面里选分支发消息，DAG 出现通信节点，hover 显示回流连线 |
 

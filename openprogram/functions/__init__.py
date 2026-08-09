@@ -57,12 +57,12 @@ from ._runtime import (
 from . import tools as _tools_self_register  # noqa: F401
 from . import agentics as _agentics_self_register  # noqa: F401
 
-# Layer 2 — exposure whitelist lives in ``TOOLSETS["full"]["tools"]``
-# (see below). The ``full`` preset *is* the universe; every other
-# preset and the per-call cascade filter subsets of it. Tools in the
-# registry but not in ``full`` stay internal-only (Python-direct
-# callable but invisible to any LLM). No separate ``EXPOSED_TOOLS``
-# constant — one name, one source of truth.
+# Layer 2 — exposure is registration-driven: ``exposed_names()`` (see
+# ``_runtime.py``) is every registered tool minus the ones registered
+# with ``expose=False``. That set is the universe every preset and the
+# per-call cascade filter subsets of; there is no hand-maintained
+# whitelist to keep in sync, and a plugin / MCP tool that registers at
+# runtime is exposed the moment it registers.
 
 
 # The safe default set: file ops + shell + search + multi-file patch +
@@ -136,21 +136,22 @@ DEFERRED_DEFAULT_TOOLS: set = {
 
 # 常驻工具：schema 一直带在请求里（不 defer）。= DEFAULT_TOOLS 减去上面的冷门大块，
 # 再加 tool_search 引导器（它是加载其余工具的唯一入口，永不 defer）。
-# full 里 DEFAULT_TOOLS 之外的工具也默认 defer。
+# DEFAULT_TOOLS 之外的已曝光工具也默认 defer。
 # 这是治「exec 默认全塞 ~14000 token」的唯一旋钮 —— 保守取，宁多勿缺。
 RESIDENT_TOOLS: set = (
-    (set(DEFAULT_TOOLS) - DEFERRED_DEFAULT_TOOLS) | {"tool_search"}
+    (set(DEFAULT_TOOLS) - DEFERRED_DEFAULT_TOOLS)
+    | {"tool_search"}
+    # `agent` 是常驻的，而它自己的返回文本会写 "Call task_output(task_id=…) to
+    # retrieve result, or task_stop(task_id) to cancel"。这两个 defer 掉，模型
+    # 照着提示调用就撞 InputValidationError，得先 tool_search 才能接上，白费一轮。
+    | {"task_output", "task_stop"}
 )
 
 
 # Hermes-style named presets. ``default`` is the always-on minimal
-# safe set above; ``full`` is the *exposure whitelist* — the universe
-# of every tool name that may ever appear in any LLM's tools array.
-# Every other preset (research / browser / coding / …) is a curated
-# subset of ``full``. Anything in the registry but NOT in ``full``
-# stays internal (Python-direct callable but never reaches the LLM)
-# — that's how private @agentic_function helpers like ``_pick_stage``
-# don't leak into the model's tool table.
+# safe set above; ``full`` is every exposed tool, computed live rather
+# than written down (see ``_preset_tool_names``). Every other preset
+# (research / browser / coding / …) is a curated subset of it.
 #
 # Composition: an entry can carry ``includes`` (Hermes pattern) that
 # names other presets to expand. ``_expand_preset`` walks them
@@ -162,51 +163,12 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
         "includes": [],
     },
     "full": {
-        # Static exposure whitelist. Adding a tool to the registry
-        # without adding its name here keeps it invisible to LLMs.
-        # The order is "leaf @function tools first, then agentics,
-        # then harnesses" purely for readability — _expand_preset
-        # dedupes so order doesn't matter semantically.
-        "tools":    [
-            # leaf @function tools (tools/)
-            "bash", "read", "write", "edit",
-            "glob", "grep", "list",
-            "apply_patch", "process", "execute_code",
-            "agent", "send_message", "list_agents",
-            "todo_create", "todo_update", "todo_list",
-            "ask_user_question", "cron", "canvas",
-            "program", "mixture_of_agents",
-            "agent_browser", "playwright_browser",
-            "web_search", "web_fetch", "pdf",
-            "image_generate", "image_analyze",
-            "memory_note", "memory_recall", "memory_reflect",
-            "memory_get", "memory_browse", "memory_lint",
-            "memory_ingest", "memory_backlinks",
-            "memory_rename", "memory_relink", "memory_delete",
-            "memory_review", "memory_status",
-            "tool_search",  # Layer 7 bootstrap; always exposed
-            "enter_plan_mode", "exit_plan_mode",
-            "list_mcp_resources", "read_mcp_resource",
-            "list_mcp_prompts", "get_mcp_prompt",
-            "worktree_create", "worktree_merge", "worktree_discard",
-            "worktree_list", "worktree_keep",
-
-            # agentic side
-            # The three harness entry points + the two PDF-extraction
-            # utilities. Every other @agentic_function (the composable
-            # building blocks like wait / ask_user, the third-party
-            # bundled examples, the internal
-            # stage helpers gui_step / observe / etc.) is registered
-            # for Python-direct invocation but NOT whitelisted: the
-            # LLM never sees them, only the harness entry points and
-            # the PDF utilities are the LLM-callable surface.
-            "extract_pdf_figures",
-            "extract_pdf_tables",
-            "gui_agent",
-            "research_agent",
-            "wiki_agent",
-            "interaction_demo",
-        ],
+        # Resolved from the registry by ``_preset_tool_names``, never
+        # written out here: a static copy is a list someone forgets to
+        # update. The empty list is the placeholder that keeps the
+        # entry shaped like every other preset, so ``toolset="full"``
+        # resolves and other presets may ``includes`` it.
+        "tools":    [],
         "includes": [],
     },
     "research": {
@@ -251,6 +213,23 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
 }
 
 
+def _preset_tool_names(name: str, entry: dict[str, list[str]]) -> list[str]:
+    """The tool names a preset contributes directly (before ``includes``).
+
+    Every preset but one is the literal list in its entry. ``full`` is
+    the exception: it means "every exposed tool", so it is read from
+    the live registry instead of being written down. A tool joins it by
+    registering, and a private helper stays out of it by registering
+    with ``expose=False`` — neither needs an edit here.
+    """
+    if name == "full":
+        exposed = _exposed_set()
+        if exposed is None:      # exposure filter disabled by a test fixture
+            return sorted(t.name for t in _all_agent_tools())
+        return sorted(exposed)
+    return list(entry.get("tools", []) or [])
+
+
 def _expand_preset(name: str, _seen: set[str] | None = None) -> list[str]:
     """Resolve a preset name to a flat, deduplicated function-name list.
 
@@ -273,7 +252,7 @@ def _expand_preset(name: str, _seen: set[str] | None = None) -> list[str]:
             if t not in seen_tools:
                 out.append(t)
                 seen_tools.add(t)
-    for t in entry.get("tools", []) or []:
+    for t in _preset_tool_names(name, entry):
         if t not in seen_tools:
             out.append(t)
             seen_tools.add(t)
@@ -296,9 +275,9 @@ def _exposed_set() -> set[str] | None:
 
 
 def list_available() -> list[str]:
-    """Names of every registered function that (a) is on the exposure
-    whitelist, (b) passes its sidecar gating, and (c) the user hasn't
-    disabled via ``openprogram setup tools``.
+    """Names of every registered function that (a) is exposed, (b)
+    passes its sidecar gating, and (c) the user hasn't disabled via
+    ``openprogram setup tools``.
 
     Reads ``check_fn`` / ``requires_env`` / ``can_use`` from each
     registered AgentTool's sidecar attributes (set by ``@function``).
@@ -394,11 +373,11 @@ def agent_tools(
     if names is None and toolset is None:
         names = DEFAULT_TOOLS
     picked = _filter_agent_tools(names=names, toolset=toolset, source=source)
-    # Layer 2 — exposure whitelist. Anything decorated but not on the
-    # whitelist never reaches the LLM, no matter what preset, allow,
-    # or check_fn says. This is the cascade's foundation: every later
-    # filter operates on a subset of the exposed universe. ``None``
-    # means the test harness disabled this layer.
+    # Layer 2 — exposure. Anything registered with ``expose=False``
+    # never reaches the LLM, no matter what preset, allow, or check_fn
+    # says. This is the cascade's foundation: every later filter
+    # operates on a subset of the exposed universe. ``None`` means the
+    # test harness disabled this layer.
     exposed = _exposed_set()
     if exposed is not None:
         picked = [t for t in picked if t.name in exposed]
@@ -579,7 +558,7 @@ __all__ = [
 
 
 def apply_default_deferral() -> None:
-    """把 full 白名单里不在 RESIDENT_TOOLS 的工具标 _defer=True。幂等。
+    """把已曝光工具里不在 RESIDENT_TOOLS 的标 _defer=True。幂等。
     在本模块 import 末尾调一次（所有工具已注册）。best-effort：失败不影响 import。
 
     效果：split_tools_for_dispatch 后，只有常驻工具带完整 schema（~2000 token），

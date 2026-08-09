@@ -656,7 +656,7 @@ def test_agentic_function_available_if_false_returns_raw_fn() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Layer 2 — exposure whitelist (TOOLSETS["full"]["tools"])
+# Layer 2 — exposure (registration-driven, opt out with expose=False)
 # ---------------------------------------------------------------------------
 
 def test_exposure_is_registration_driven() -> None:
@@ -682,6 +682,43 @@ def test_exposure_is_registration_driven() -> None:
     listed = F.list_registered_agent_tools()
     assert "exposed_probe" in listed
     assert "hidden_probe" not in listed
+
+
+def test_full_preset_is_exactly_the_exposed_universe() -> None:
+    """``full`` is computed, not written down: it resolves to exactly
+    ``exposed_names()``, so a freshly registered tool is in it with no
+    edit to any list."""
+    import openprogram.functions as F
+    from openprogram.functions._runtime import exposed_names
+
+    @function(name="full_preset_probe")
+    def p() -> str:
+        return "x"
+
+    resolved = {t.name for t in F.agent_tools(toolset="full",
+                                              include_disabled=True)}
+    assert resolved == exposed_names()
+    assert "full_preset_probe" in resolved
+
+
+def test_full_preset_leaks_no_private_helper() -> None:
+    """Private helpers stay out of ``full``: leaf tools opt out with
+    ``expose=False``, and internal @agentic_functions with
+    ``as_tool=False`` never enter the shared registry at all. Deleting
+    the hand-written whitelist must not let either reach the LLM."""
+    import openprogram.functions as F
+    from openprogram.agentic_programming.function import _registry as _agentics
+
+    @function(name="full_preset_private_probe", expose=False)
+    def p() -> str:
+        return "x"
+
+    resolved = {t.name for t in F.agent_tools(toolset="full",
+                                              include_disabled=True)}
+    assert "full_preset_private_probe" not in resolved
+    internal = {n for n, f in _agentics.items() if not f.as_tool}
+    assert internal, "expected at least one as_tool=False agentic helper"
+    assert not (internal & resolved)
 
 
 def test_exposure_disabled_via_monkeypatch(monkeypatch: pytest.MonkeyPatch) -> None:
