@@ -14,7 +14,7 @@ same technique as test_send_message.py / test_agent_dispatch.py):
   * list_agents: scope="session" / "all" hide archived branches;
     scope="archived" lists exactly them
   * archived target: send_message and agent(to=) refuse via the one
-    shared guard; read_conversation and agent(context="SID:MSG_ID")
+    shared guard; read_conversation and agent(start_from="SID:MSG_ID")
     forks are unaffected
 
 See docs/reference/design/runtime/agent-collaboration.md.
@@ -284,10 +284,10 @@ def test_read_conversation_still_reads_archived_branch(parent_turn):
 
 
 def test_fork_from_archived_node_still_works(parent_turn):
-    """agent(context="SID:MSG_ID") forks an archived branch's history —
+    """agent(start_from="SID:MSG_ID") forks an archived branch's history —
     the archive removed the right to be disturbed, not the history."""
     _archive_agent_impl("p1:a0")
-    out = _agent_impl("continue from here", context="p1:a0",
+    out = _agent_impl("continue from here", start_from="p1:a0",
                       run_in_background=True)
     assert "[agent spawned async]" in out
     kw = parent_turn.async_calls[-1]

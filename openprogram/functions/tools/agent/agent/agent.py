@@ -2,16 +2,16 @@
 
 Same-session multi-agent model: a turn is just
 ``(predecessor, prompt, agent_id)``. The new turn lands as a branch
-in the parent session's DAG. Three context modes:
+in the parent session's DAG. Three start points:
 
-  * ``context="clean"`` (default) — the spawned agent starts at a new
+  * ``start_from="clean"`` (default) — the spawned agent starts at a new
     root (``caller=null``), inside the same session repo. It sees
     only the prompt; the result becomes a peer DAG tree alongside
     the original conversation.
-  * ``context="inherit"`` — the spawned agent forks off the caller's
+  * ``start_from="inherit"`` — the spawned agent forks off the caller's
     turn, inheriting the conversation that led up to it. Same DAG
     semantics as a "fork from here" click.
-  * ``context="SID:MSG_ID"`` — the spawned agent forks off that exact
+  * ``start_from="SID:MSG_ID"`` — the spawned agent forks off that exact
     node (any session), inheriting the chain up to it. This is how a
     new branch is forked from an arbitrary point in the DAG.
 
@@ -92,7 +92,7 @@ def _dispatch_to_existing(
     prompt: str,
     to: str,
     agent_id: str,
-    context: str,
+    start_from: str,
     description: str,
 ) -> str:
     """``agent(to=…)`` — dispatch a tracked task to an EXISTING agent.
@@ -106,12 +106,12 @@ def _dispatch_to_existing(
     its current turn ends. Always asynchronous.
     """
     # to= dispatches onto an existing branch, which keeps its own
-    # history — a context/fork-point choice contradicts that.
-    if (context or "").strip().lower() not in ("", "clean"):
+    # history — a start_from/fork-point choice contradicts that.
+    if (start_from or "").strip().lower() not in ("", "clean"):
         return (
-            "[agent error] to= and context are mutually exclusive — "
+            "[agent error] to= and start_from are mutually exclusive — "
             "to= dispatches the task onto an EXISTING branch, which "
-            "keeps its own history. Drop context, or drop to= and "
+            "keeps its own history. Drop start_from, or drop to= and "
             "spawn a new agent."
         )
     # Same parent resolution as send_message (falls back to the session
@@ -293,7 +293,7 @@ def _agent_impl(
     prompt: str,
     description: str = "",
     agent_id: str = "",
-    context: str = "clean",
+    start_from: str = "clean",
     run_in_background: bool = False,
     to: str = "",
     archive_when_done: bool = False,
@@ -320,7 +320,7 @@ def _agent_impl(
             prompt=prompt,
             to=to.strip(),
             agent_id=agent_id,
-            context=context,
+            start_from=start_from,
             description=description,
         )
     sid, aid, parent_agent = _resolve_parent()
@@ -361,10 +361,10 @@ def _agent_impl(
             "instead of delegating again."
         )
 
-    # Resolve the context mode. Besides the two named modes, a node
+    # Resolve the start point. Besides the two named modes, a node
     # address "SID:MSG_ID" forks the new branch off that exact node —
     # the spawned agent inherits the chain up to it.
-    mode = (context or "").strip() or "clean"
+    mode = (start_from or "").strip() or "clean"
     run_session = sid
     branch_from: str | None = None
     if mode.lower() in ("inherit", "clean"):
@@ -376,13 +376,13 @@ def _agent_impl(
         fork_msg = fork_msg.strip()
         if not fork_sid or not fork_msg:
             return (
-                f"[agent error] context {context!r} — a node address needs "
+                f"[agent error] start_from {start_from!r} — a node address needs "
                 "both parts: 'SID:MSG_ID'."
             )
         from openprogram.agent.session_db import default_db
         if default_db().get_session(fork_sid) is None:
             return (
-                f"[agent error] context {context!r} — session "
+                f"[agent error] start_from {start_from!r} — session "
                 f"{fork_sid!r} not found (see list_agents)."
             )
         run_session = fork_sid
@@ -390,7 +390,7 @@ def _agent_impl(
         mode = "inherit"  # fork = inherit the chain up to the node
     else:
         return (
-            f"[agent error] unknown context {context!r} — use 'clean' "
+            f"[agent error] unknown start_from {start_from!r} — use 'clean' "
             "(default, new root, no parent history), 'inherit' (fork off "
             "this turn, full chain visible), or 'SID:MSG_ID' (fork off "
             "that exact node)."
@@ -602,7 +602,7 @@ def agent(
     prompt: str,
     description: str = "",
     agent_id: str = "",
-    context: str = "clean",
+    start_from: str = "clean",
     run_in_background: bool = False,
     to: str = "",
     archive_when_done: bool = False,
@@ -621,12 +621,12 @@ def agent(
     is ignored); the result comes back automatically.
 
     Args:
-        prompt: full instruction. In ``context="clean"`` this is ALL
+        prompt: full instruction. In ``start_from="clean"`` this is ALL
             the spawned agent sees, so include any context it needs.
         description: short label (1-3 words) used as the branch name.
         agent_id: agent profile to run under. Defaults to this
             session's agent.
-        context: ``"clean"`` (default) ⇒ the spawned agent starts at
+        start_from: ``"clean"`` (default) ⇒ the spawned agent starts at
             a new root with only the prompt visible. ``"inherit"`` ⇒
             forks off this turn and sees the full chain that led here.
             ``"SID:MSG_ID"`` ⇒ forks off that exact node. Mutually
@@ -648,7 +648,7 @@ def agent(
     """
     return _agent_impl(
         prompt=prompt, description=description,
-        agent_id=agent_id, context=context,
+        agent_id=agent_id, start_from=start_from,
         run_in_background=run_in_background,
         to=to,
         archive_when_done=archive_when_done,

@@ -1,19 +1,8 @@
-"""todo functions — todo_read + todo_write self-register on import."""
+"""todo planning board — todo_create / todo_update / todo_list
+self-register on import."""
 
-from .todo import (
-    READ_NAME,
-    READ_SPEC,
-    WRITE_NAME,
-    WRITE_SPEC,
-    read_execute,
-    write_execute,
-)
+from .todo_create import todo_create
+from .todo_list import todo_list
+from .todo_update import todo_update
 
-__all__ = [
-    "READ_NAME",
-    "WRITE_NAME",
-    "READ_SPEC",
-    "WRITE_SPEC",
-    "read_execute",
-    "write_execute",
-]
+__all__ = ["todo_create", "todo_list", "todo_update"]

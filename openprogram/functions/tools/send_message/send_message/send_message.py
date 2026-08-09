@@ -12,7 +12,7 @@ branch:
   * ``"<branch name>"``  — address a named branch directly.
 
 Creating agents is the ``agent`` tool's job (spawn = ``agent(...)``,
-fork off a node = ``agent(context="SID:MSG_ID")``); send_message only
+fork off a node = ``agent(start_from="SID:MSG_ID")``); send_message only
 talks to branches that already exist.
 
 Delivery is always asynchronous: the call returns immediately with a
@@ -116,7 +116,7 @@ def _send_message_impl(
             f"[send_message error] to={to!r} is not a valid target — "
             "send_message only talks to EXISTING branches. To create a "
             "new agent, use the `agent` tool (fork off a node with "
-            "agent(context=\"SID:MSG_ID\"))."
+            "agent(start_from=\"SID:MSG_ID\"))."
         )
     if not (to or "").strip():
         return (

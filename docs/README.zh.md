@@ -262,7 +262,7 @@ OpenProgram 站在前人的肩膀上。工具框架、provider 抽象和若干�
   (`<available_skills>` XML 格式器,name / description / location)。
 - [**Claude Code**](https://www.anthropic.com/claude-code) —— `DEFAULT_TOOLS`
   集合的整体人机工学(bash + read / write / edit + glob / grep / list
-  + apply_patch + todo_read / todo_write)以及 `todo` 工具的 JSON schema。
+  + apply_patch + todo 规划板)以及 todo 工具的 JSON schema。
 - **Anthropic / OpenAI / Google SDK** —— provider 的 HTTP 契约;我们的
   provider 直接调原生 HTTP API,让 SDK 依赖保持可选。
 

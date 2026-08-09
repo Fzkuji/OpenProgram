@@ -6,7 +6,7 @@ at run_agent_turn_async, same technique as test_send_message.py):
   * addressing reuse (SID:HEAD → current tip, branch-name resolution)
   * idle target → immediate dispatch with the task header + caller
     routing + depth inheritance
-  * to + context mutual exclusion, self-dispatch guard, depth guard
+  * to + start_from mutual exclusion, self-dispatch guard, depth guard
   * busy target → pending Task pre-created + inbox entry carrying its id
   * task_stop three states: queued → withdrawn from the inbox;
     running → per-turn cancel on the target; terminal → idempotent no-op
@@ -126,8 +126,8 @@ def test_to_unknown_target_errors(parent_turn):
     assert "[agent error]" in out and "not found" in out
 
 
-def test_to_and_context_conflict(parent_turn):
-    out = _agent_impl("hi", to="p1:a0", context="inherit")
+def test_to_and_start_from_conflict(parent_turn):
+    out = _agent_impl("hi", to="p1:a0", start_from="inherit")
     assert "mutually exclusive" in out
     assert not parent_turn.async_calls
 

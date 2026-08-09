@@ -97,7 +97,7 @@ def _run_with_ctx(fn, *, session_id, turn_id):
 def test_agent_sync_clean_passes_spawn_caller(store, captured_run):
     from openprogram.functions.tools.agent.agent.agent import _agent_impl
     _run_with_ctx(
-        lambda: _agent_impl(prompt="go", context="clean"),
+        lambda: _agent_impl(prompt="go", start_from="clean"),
         session_id="p1", turn_id="a1",
     )
     assert captured_run["branch_from"] is None
@@ -107,7 +107,7 @@ def test_agent_sync_clean_passes_spawn_caller(store, captured_run):
 def test_agent_sync_inherit_passes_no_spawn_caller(store, captured_run):
     from openprogram.functions.tools.agent.agent.agent import _agent_impl
     _run_with_ctx(
-        lambda: _agent_impl(prompt="go", context="inherit"),
+        lambda: _agent_impl(prompt="go", start_from="inherit"),
         session_id="p1", turn_id="a1",
     )
     assert captured_run["branch_from"] == "a1"
@@ -117,7 +117,7 @@ def test_agent_sync_inherit_passes_no_spawn_caller(store, captured_run):
 def test_agent_sync_fork_passes_no_spawn_caller(store, captured_run):
     from openprogram.functions.tools.agent.agent.agent import _agent_impl
     _run_with_ctx(
-        lambda: _agent_impl(prompt="go", context="p1:u1"),
+        lambda: _agent_impl(prompt="go", start_from="p1:u1"),
         session_id="p1", turn_id="a1",
     )
     # fork off an existing node → branch_from set → no spawn_caller.
@@ -211,7 +211,7 @@ def test_agent_async_passes_caller_and_depth(store, monkeypatch):
     )
     from openprogram.functions.tools.agent.agent.agent import _agent_impl
     out = _run_with_ctx(
-        lambda: _agent_impl(prompt="go", context="clean", run_in_background=True),
+        lambda: _agent_impl(prompt="go", start_from="clean", run_in_background=True),
         session_id="p1", turn_id="a1",
     )
     assert "agent spawned async" in out
@@ -235,7 +235,7 @@ def test_agent_refuses_at_max_spawn_depth(store, captured_run):
     def _call():
         tok = set_chain_messages(MAX_SPAWN_DEPTH)
         try:
-            return _agent_impl(prompt="go", context="clean")
+            return _agent_impl(prompt="go", start_from="clean")
         finally:
             _chain_messages.reset(tok)
 
@@ -255,7 +255,7 @@ def test_agent_spawned_agent_cannot_redelegate(store, captured_run):
     def _call():
         tok = set_chain_messages(1)
         try:
-            return _agent_impl(prompt="go", context="clean")
+            return _agent_impl(prompt="go", start_from="clean")
         finally:
             _chain_messages.reset(tok)
 
@@ -276,7 +276,7 @@ def test_spawn_depth_zero_means_unlimited(store, captured_run, monkeypatch):
     def _call():
         tok = set_chain_messages(50)
         try:
-            return _agent_impl(prompt="go", context="clean")
+            return _agent_impl(prompt="go", start_from="clean")
         finally:
             _chain_messages.reset(tok)
 
@@ -308,7 +308,7 @@ def test_agent_sync_child_sees_incremented_depth(store, monkeypatch):
     )
     from openprogram.functions.tools.agent.agent.agent import _agent_impl
     _run_with_ctx(
-        lambda: _agent_impl(prompt="go", context="clean"),
+        lambda: _agent_impl(prompt="go", start_from="clean"),
         session_id="p1", turn_id="a1",
     )
     assert seen["child_depth"] == 1

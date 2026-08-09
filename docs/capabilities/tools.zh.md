@@ -62,18 +62,28 @@ OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调�
 
 ## 会话与协作
 
+协作分四个域，一词一义，见
+[agent 协作](../reference/design/runtime/agent-collaboration.zh.md) §1。
+
+| 域 | 工具 | 做什么 | 需要什么 |
+|---|---|---|---|
+| 计划 | `todo_create` / `todo_update` / `todo_list` | 会话规划板：手写的计划清单（建条目、设状态/负责人/依赖、按状态分组列出）。写一条不会启动任何东西 | 无 |
+| 执行 | `list_tasks` / `task_output` / `task_stop` | 真正在跑的活：列出本会话的后台任务、等某个任务的结果、停掉某个任务。只有派活方会话能取结果或叫停 | 无 |
+| 实体 | `agent` | 生一个新 agent 并取回回复，或用 `to=` 给已存在的 agent 派受管任务。`run_in_background=true` 不阻塞、直接返回 task_id；`start_from` 决定新 agent 从哪起（`clean` / `inherit` / `SID:MSG_ID`）；`archive_when_done=true` 让它在任务结束、结果回流之后自动退役 | 无 |
+| 实体 | `list_agents` | 通讯录：有哪些 agent、它们的名字、地址、体量和忙闲（`scope="archived"` 看已退役的） | 无 |
+| 实体 | `archive_agent` | 把自己创建的 agent 退役：它从 `list_agents` 消失，并拒收后续 `send_message` / `agent(to=)` 投递；`read_conversation` 照读它的历史，`agent(start_from="SID:MSG_ID")` 照 fork。只有创建它的会话能归档，且没有反归档 | 无 |
+| 通讯 | `send_message` | 跟已存在的 agent 说话，按 `"SID:HEAD"` 或名字寻址。不产生任务、不产生单号、没有东西可取消，所以人人可发不会乱 | 无 |
+| 通讯 | `read_conversation` | 把任意 agent 的历史读成纯文本（含工具调用），可指定轮次范围和字数预算 | 无 |
+
 | 工具 | 做什么 | 需要什么 |
 |---|---|---|
-| `agent`（+ `list_tasks` / `task_output` / `task_stop`） | 在同一会话里派生另一个 agent 并取回回复，或用 `to=` 给已有 agent 派受管任务；列出/获取/停止它的后台任务（只有派活方会话能获取/停止某个任务）。`archive_when_done=true` 让派生出的 agent 在任务终态、结果回流之后自动退役 | 无 |
 | `program` | 调用任意已注册的 `@agentic_function` | 无 |
-| `send_message`（+ `list_agents`） | 与已存在的 agent 分支间通信 | 无 |
-| `archive_agent` | 把自己创建的 agent 退役：它从 `list_agents` 消失（`scope="archived"` 仍列出），并拒收后续 `send_message` / `agent(to=)` 投递；`read_conversation` 照读它的历史，`agent(context="SID:MSG_ID")` 照 fork。只有创建它的会话能归档，且没有反归档 | 无 |
 | `mixture_of_agents` | 并行问N个模型再综合;默认从模型注册表选,每个provider取一个 | 模型注册表里至少2个provider |
 | `ask_user_question` | 向用户提 1–N 个带选项的问题 | 无 |
-| `todo_create` / `todo_update` / `todo_list` | 会话规划板:手写计划清单(建条目、改状态/认领人、按状态分组列出);真正派活用`agent`,追踪用`list_tasks` | 无 |
 | `enter_plan_mode` / `exit_plan_mode` | 进入 / 退出计划模式 | 无 |
 | `canvas` | 往 markdown 文件的具名块里增量写入 | 无 |
 | `memory_*` | 持久记忆库读写——13 个入口：`memory_note`、`memory_recall`、`memory_reflect`、`memory_get`、`memory_browse`、`memory_lint`、`memory_ingest`，外加 wiki 维护（`backlinks` / `rename` / `relink` / `delete` / `review` / `status`） | 无 |
 | `worktree_*` | git worktree：`worktree_create` / `merge` / `discard` / `list` / `keep` | git |
 | `cron` | 登记周期性 agent 任务 | 无 |
 | `list_mcp_resources` / `read_mcp_resource` / `list_mcp_prompts` / `get_mcp_prompt` | 把 MCP 的 resources / prompts 原语暴露给模型（`mcp_meta` 目录） | 已配置的 MCP server（见 [MCP](mcp.md)） |
+| `tool_search` | 按需加载被延迟的工具的完整 schema——冷门工具在清单里只占一行，模型要用时再取 | 无 |

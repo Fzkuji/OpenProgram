@@ -66,7 +66,7 @@ from . import agentics as _agentics_self_register  # noqa: F401
 
 
 # The safe default set: file ops + shell + search + multi-file patch +
-# todos. Matches Claude Code's defaults. Omits ``process`` (long-lived
+# the todo planning board. Omits ``process`` (long-lived
 # background sessions) — opt-in via toolset="coding" instead.
 DEFAULT_TOOLS: list[str] = [
     "bash",
@@ -83,8 +83,9 @@ DEFAULT_TOOLS: list[str] = [
     # (docs/reference/design/runtime/agent-collaboration.md).
     "send_message",
     "list_agents",
-    "todo_read",
-    "todo_write",
+    "todo_create",
+    "todo_update",
+    "todo_list",
     "playwright_browser",
     # Plan-mode gate — the LLM is allowed to enter plan mode on its
     # own when it judges the task warrants it (mirrors claude-code's
@@ -172,7 +173,7 @@ TOOLSETS: dict[str, dict[str, list[str]]] = {
             "glob", "grep", "list",
             "apply_patch", "process", "execute_code",
             "agent", "send_message", "list_agents",
-            "todo_read", "todo_write",
+            "todo_create", "todo_update", "todo_list",
             "ask_user_question", "cron", "canvas",
             "program", "mixture_of_agents",
             "agent_browser", "playwright_browser",

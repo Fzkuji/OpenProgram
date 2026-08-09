@@ -182,7 +182,7 @@ tool aging vs 整段语义压缩)。
   tool_result 换 1 行语义 stub。
 - **单条上限**:任何 tool_result 超 `MAX_TOOL_RESULT_CHARS=4000` 截首尾(tail 内也
   截,防单 turn 爆)。
-- **关键 tool 保护**:`PRUNE_PROTECTED_TOOLS={todo_read, todo_write, web_search}`
+- **关键 tool 保护**:`PRUNE_PROTECTED_TOOLS={todo_create, todo_update, todo_list, web_search}`
   不参与 aging。
 
 数据流:`get_branch` → 把 caller-children tool 行挂回 assistant → tool aging(tail

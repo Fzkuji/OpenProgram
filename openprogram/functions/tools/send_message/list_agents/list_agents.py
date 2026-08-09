@@ -133,7 +133,7 @@ def _list_agents_impl(
                 f"{total_branches} archived branch(es) in this session — "
                 "no longer addressable (send_message / agent(to=) refuse "
                 "them); read_conversation still reads them, "
-                'agent(context="SID:MSG_ID") still forks them:'
+                'agent(start_from="SID:MSG_ID") still forks them:'
             )
         else:
             header = (

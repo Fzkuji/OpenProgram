@@ -28,7 +28,7 @@ def _normalize_existing_target(
     point — the branch may have run more turns since the sender saw its
     head, so delivering onto the given node verbatim would fork a new
     branch off history instead of continuing the conversation. Forking
-    off a node is the agent tool's job (``agent(context="SID:MSG_ID")``).
+    off a node is the agent tool's job (``agent(start_from="SID:MSG_ID")``).
 
     Returns one of:
       ("ok", tip_id)                      — deliver onto this tip
@@ -126,7 +126,7 @@ def resolve_existing_target(
                     f"agent {run_session}:{norm} is archived — it no "
                     "longer accepts messages or tasks. Its history is "
                     "still readable with read_conversation, and "
-                    f"agent(context=\"{run_session}:MSG_ID\") can fork it."
+                    f"agent(start_from=\"{run_session}:MSG_ID\") can fork it."
                 )
         return "ok", (run_session, norm)
     if status == "ambiguous":

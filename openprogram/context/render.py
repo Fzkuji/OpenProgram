@@ -37,7 +37,7 @@ def _aged_code_ids(graph: Graph, read_ids: list[str],
 
     The last ``TAIL_TURNS`` llm nodes keep full fidelity; code nodes
     before that window collapse to a one-line stub (protected tools like
-    todo_read are never aged). This is a pre-pass over read_ids — the
+    todo_list are never aged). This is a pre-pass over read_ids — the
     renderer stays a strict translation, aging policy lives here.
 
     The boundary comes from :mod:`openprogram.context.aging`, which

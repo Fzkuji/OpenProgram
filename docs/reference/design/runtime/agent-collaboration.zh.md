@@ -5,7 +5,7 @@
 的操作，**底层是同一件事**：往某条分支投递内容 → 触发那条分支跑一轮 → 结果自动回送
 发起方。全部做成工具调用，全部建在已有的事件层上。
 
-> 范围：本文是设计，不含代码。实现状态见末节。
+> §1 是整个工具面的词汇总纲，先读它。
 
 ---
 
@@ -32,19 +32,77 @@
 
 ---
 
-## 1. 名词对齐（沿用现有抽象，不发明）
+## 1. 四个域，一词一义
 
-| 概念 | 定义 | 来源 |
-|---|---|---|
-| **session** | 一个独立会话，有 `session_id`，对应一个 git 仓库 | `SessionStore` |
-| **branch（分支）** | `(session_id, head_id)` 对。同 session 不同 head = 同会话两条分支；不同 session = 跨会话 | `merge.py` 已确立，同/跨 session 走同一路径 |
-| **投递** | 往某分支追加一条消息节点 | `append_message`（任意 session_id，无权限限制） |
-| **触发** | 让某分支跑一轮 agent | `process_user_turn(TurnRequest(...))` |
-| **自动回送** | 目标答完，把回复作为新输入喂回发起方 + 触发它跑 | `TaskRunner._dispatch_followup`（已存在） |
-| **attach 连线** | DAG 上标记"结果从哪条分支回流来"的指针节点（只画图） | `write_attach_pointer_for_spawn` |
+协作分四个域。每个域有一个名词、一套工具，域之间不重叠：同一个词在哪里
+出现都是同一个意思。
 
-DAG 画法已在 `dag/dag-live.html` 定稿（分支间通信场景：异步、send 瞬间返回、回复异步
-回送、通信点线 hover 显示；派生=子分支服务场景；回流=软连接线）。
+| 域 | 名词 | 工具 | 是什么 |
+|---|---|---|---|
+| 计划 | **todo** | `todo_create` / `todo_update` / `todo_list` | 手写的计划清单：条目、状态、负责人、依赖。纸面上的"打算做"，有条目不代表有东西在跑 |
+| 执行 | **task** | `task_output` / `task_stop` / `list_tasks` | 派出去正在跑的活：单号、状态、结果 |
+| 实体 | **agent** | `agent` / `list_agents` / `archive_agent` | 干活的实体：生新的、给已有的派活（`to=`）、查通讯录、把干完的退役 |
+| 通讯 | **message** | `send_message` / `read_conversation` | 说话和读历史：捎一句话，读任何分支的全文 |
+
+在 todo 板上写"跑一遍 parser 基准"不会启动任何东西。`agent(…)` 才启动东西，
+拿回来的是一个 task_id。板子说的是打算做什么，`list_tasks` 说的是什么正在跑。
+
+一个 agent 的对话就是一条**分支**：session 内的 `(session_id, head_id)` 对。
+同 session 两个 head 是一次会话的两条分支，两个 session 是两次会话。agent 的
+地址永远是分支：`"SID:HEAD"`，或者分支名。
+
+### 权力跟创造走
+
+派出去的活上有三样权力，三样都只归派活方：
+
+| 权力 | 含义 |
+|---|---|
+| 结果必回 | 任务结束时回复自动落进派活方的对话，不管派活方是在等还是走开了 |
+| 可叫停 | `task_stop` 取消任务；还在排队的直接撤单，一轮都不跑 |
+| 级联取消 | 停掉一个任务，它派出去的所有活跟着停，一路到底 |
+
+`read_conversation` 能读到任何 task_id，所以归属要查而不是默认：
+`task_output` 和 `task_stop` 拒绝别的 session 派出的任务（§5.10）。只有人不受限。
+
+`send_message` 一样权力都没有，所以人人可发不会乱。它只投递一条消息，收件方
+回不回都行，不产生单号、不能取消、不会级联。发消息扰不动已经在跑的活。
+
+### `agent` 的两种模式
+
+| 调用 | 发生什么 |
+|---|---|
+| `agent(prompt=…)` | 生一个新 agent 并跑它。阻塞等回复；`run_in_background=true` 则返回 task_id |
+| `agent(prompt=…, to="reviewer")` | 不创建任何东西。prompt 作为受管任务派给已存在的 `reviewer`，作为它的下一轮跑，排在它手上这一轮后面，一次一轮。永远返回 task_id |
+
+两种都产生 task，只有第一种产生 agent。`to` 与 `start_from` 互斥：目标自带
+历史，没有 fork 点可选。
+
+一次完整的委派就是这四个词：
+
+```
+todo_create("跑一遍 parser 基准")              → 板上 todo #1
+todo_update("1", status="in_progress")
+agent("跑一遍 parser 基准", "bench",
+      run_in_background=true)                  → task_id=t_7f2
+list_tasks()                                   → t_7f2 running（bench）
+send_message("进展如何？", to="bench")          → agent 回话，不产生任务
+task_output("t_7f2")                           → 结果到了就拿到
+todo_update("1", status="completed")
+archive_agent(to="bench")                      → 从通讯录退役
+```
+
+### 与 Claude Code 同名的部分
+
+`agent`、`list_agents`、`send_message`、`task_output`、`task_stop` 与
+Claude Code 同名同义，这是刻意的：认识那批名字的模型就已经认识这批工具。
+
+有一个名字刻意不同。Claude Code 的 `TaskList` 是 todo 规划板，不是在跑的活的
+清单。这里的规划板改用 `todo_*` 前缀，撞不上，`list_tasks` 也就保住了字面
+意思：正在跑的任务。
+
+三个工具在 Claude Code 里没有对应：`list_tasks`（那边没给模型开查后台任务的
+口子）、`archive_agent`（把 agent 从通讯录里退役，§2.6）、`read_conversation`
+（把别的 agent 的历史读成可读文本，而不是直接读原始会话文件）。
 
 ---
 
@@ -62,14 +120,14 @@ agent(
     prompt: str,                        # 给被派生 agent 的指令
     description: str = "",              # 简短 label，成为分支名
     agent_id: str = "",                 # agent 档案；默认用本会话的
-    context: str = "clean",             # "clean" / "inherit" / "SID:MSG_ID"
+    start_from: str = "clean",          # "clean" / "inherit" / "SID:MSG_ID"
     run_in_background: bool = false,    # false=阻塞等回复；true=返回 task_id
     to: str = "",                       # 改为给已有 agent 派活
     archive_when_done: bool = false,    # 派生的 agent 终态即归档（§2.6）
 ) -> str
 ```
 
-`context` 决定新分支从哪起：`"clean"`（默认）新根、只见 prompt；
+`start_from` 决定新分支从哪起：`"clean"`（默认）新根、只见 prompt；
 `"inherit"` 从当前轮 fork、带全链；`"SID:MSG_ID"` 从那个节点（任意
 session）fork、继承到该节点为止的链。`run_in_background=true` 返回 `task_id`，配套
 `task_output(task_id)`（阻塞取结果）和 `task_stop(task_id)`（取消）管理
@@ -88,7 +146,7 @@ session）fork、继承到该节点为止的链。`run_in_background=true` 返�
   （`[task from SID:HEAD] This is a tracked task …`），目标知道这轮的回复
   就是任务结果，会自动回给派活方。
 - 结果回流和 spawn 任务一致：终态后 attach + followup 通知回派活方会话。
-- `to` 与 `context` 互斥（目标分支自带历史，再选 fork 点自相矛盾，直接
+- `to` 与 `start_from` 互斥（目标分支自带历史，再选 fork 点自相矛盾，直接
   报错）。`to` 必然异步，`run_in_background` 被忽略。派给自己当前分支被
   拒绝（直接继续干）。派活花的是消息预算，不是派生预算（§5.1）——它不创建
   agent。
@@ -107,7 +165,7 @@ send_message(
 
 | to | 含义 |
 |---|---|
-| `"sid:head"` | 往一条已存在分支投 message。节点指认的是分支，不是 fork 点：投递永远落在该分支的当前末端，旧 head（分支后来又跑过 turn）仍是有效地址，不会从历史节点岔出新分支。节点若是多条分支的公共祖先则报歧义，错误里列出候选（名字 + `sid:当前末端`）。要从指定节点 fork 用 `agent(context="sid:msg_id")`。 |
+| `"sid:head"` | 往一条已存在分支投 message。节点指认的是分支，不是 fork 点：投递永远落在该分支的当前末端，旧 head（分支后来又跑过 turn）仍是有效地址，不会从历史节点岔出新分支。节点若是多条分支的公共祖先则报歧义，错误里列出候选（名字 + `sid:当前末端`）。要从指定节点 fork 用 `agent(start_from="sid:msg_id")`。 |
 | `"<分支名>"` | 按名投递。不是 `SID:HEAD` 语法时按名字解析：精确匹配优先，唯一前缀次之；多个命中返回错误并列出候选（名字 + `sid:head`），零命中提示用 `list_agents`。`list_agents` 输出里标出每条分支的名字，模型可以直接按名寻址。 |
 
 已删除的 spawn 寻址（`to="new"` / `"new:sid:msg_id"`）直接报错，并指向
@@ -126,16 +184,13 @@ optional …` —— 收件方由此知道谁发的、怎么回、以及不回�
 两个工具驱动同一个原语：派生就是同一条投递→触发→回送流程，只是目标分支
 是当场新建的。
 
-**统一执行流程**（无论哪个工具发起）：
-1. 定目标分支：`agent` 当场新建（`context` 定 fork 点）；`send_message`
-   把 `to` 解析到已存在分支的当前末端。
-2. 组装投递内容：发件人回执头 + `message`。
-3. 投递 + 触发：`process_user_turn(TurnRequest(session_id=目标, user_text=投递内容,
-   branch_from=fork 起点))` → 目标分支跑一轮，**模型读到投来的全部内容**。
-4. **回送**（永远异步）：瞬间返回"已投递 + delivery_id"，发起方不阻塞继续；目标
-   答完，`_dispatch_followup` **自动**把回复作为新消息喂回发起方 session + 触发它
-   跑一轮，发起方醒来读到。
-- 事件：投递 emit `branch.message_sent`（见 §3）；回送就是 followup 轮本身。
+**一条流程，谁发起都一样：**
+1. 定目标分支：`agent` 当场新建（`start_from` 定起点）；`send_message` 把
+   `to` 解析到已存在分支的当前末端。
+2. 发件人回执头加上消息，一起投过去。
+3. 目标跑一轮，模型读到投来的全部内容。
+4. 回复自己回来。发送瞬间就返回了，发起方全程不阻塞；目标答完，答案追加到
+   发起方的对话里，发起方跑一轮读到它。
 
 ### 2.2 引用别的分支
 
@@ -210,7 +265,7 @@ HEAD 并推进它。**每个投递 session 有一把回送串行锁
 | `send_message(to=…)` | 报错：`agent SID:HEAD is archived` |
 | `agent(to=…)` | 同样报错，同一句话 |
 | `read_conversation` | 照读 |
-| `agent(context="SID:MSG_ID")` | 照 fork |
+| `agent(start_from="SID:MSG_ID")` | 照 fork |
 
 拒收只写在一处：两条投递路径共用的寻址 `resolve_existing_target`（§2.1）在把
 地址归位到分支当前末端之后立刻查这个标记，于是每条投递都自带这道守卫，谁也
@@ -234,114 +289,26 @@ session。没记创建者的分支属于顶层，归它自己的 session 所有�
 一切，和 §5.10 的任务归属同一立场。
 
 **没有反归档。** 这个标记的含义是"这段对话结束了"，而结束的对话若还有值得复用的
-记忆，做法是用 `agent(context="SID:MSG_ID")` fork 出一条新分支，它有自己的名字和
+记忆，做法是用 `agent(start_from="SID:MSG_ID")` fork 出一条新分支，它有自己的名字和
 自己的生命周期。反归档工具只会是同一件事的第二种写法。
 
 ---
 
-## 3. 底座：事件层（整个设计，自包含）
+## 3. 协作进行时是什么样
 
-通信原语建在事件层上。这里把事件层完整写清——它是框架级的统一事件流
-（`openprogram/events/` 包：`bus.py` + `tool_gate.py` + `bridges.py`），通信只是
-它的又一组源 + 消费者。
+协作跑在框架统一的事件层上，所以过程是实时可见的，不是事后才知道。由此有三
+个效果，用户和 agent 需要知道的就是这三条：
 
-### 3.1 为什么有事件层
+- **两边实时更新。** 投给另一个 session 的消息，落地那一刻就出现在那个
+  session 的界面上；回复回来时出现在发送方的界面上。两边都不用刷新。
+- **全程留痕。** 投递、分支状态变化、列表查询都写进 session 的事件日志
+  （`~/.openprogram/sessions/<sid>/events.jsonl`，始终开启），一次协作事后可
+  以回放、可以审计。
+- **投递可以被拦下确认。** 值守策略拒绝副作用时，`send_message` 在投递前被
+  拦住等确认。子 agent 走同一道闸，`permission_mode=bypass` 关不掉它。
 
-框架里"某件事发生了"的信号分散在多套机制里（agent loop 的 AgentEvent、auth 的
-`_emit`、context 的 on_event、channels 的 WS 广播、memory 的 poll、store 的日志）。
-事件层把它们统一成**一条总线：源往里 emit，消费者从里 subscribe，源和消费者互不
-认识**——想"在某时机做某事"，订阅对应类型即可。
-
-### 3.2 Event 模型
-
-核心三样（是什么事 + 内容 + 时间）固定；关联信息放进开放的 metadata 口袋，不写死。
-
-```python
-@dataclass(frozen=True)
-class Event:
-    id: str          # 唯一编号
-    ts: float        # 发生时间
-    type: str        # 是什么事（见 §3.4）
-    origin: str      # 谁引起的：user / agent / tool / system / proactive
-    payload: dict    # 这件事的内容（命令、文件路径、哪条分支收到消息……）
-    metadata: dict   # 开放口袋：{"session":..., "turn":..., "lane":...}，需要才塞
-```
-
-session/turn/lane 进口袋不做固定字段：它们是外加关联、对一半事件（auth/channel）没
-意义；开放 dict 让以后加关联维度不改模型。`make_event(type, origin, payload, metadata)`
-会自动从 ContextVar 填上当前 session/turn。
-
-### 3.3 进程级单例总线
-
-所有组件（webui、agent loop、channels、memory、auth、task runner、通信工具）都在
-**同一个 worker 进程**里（各是 daemon 线程），所以总线是**进程级单例** `get_event_bus()`。
-同进程所有线程拿同一实例，直接 emit/subscribe，不跨进程桥接。
-
-```python
-bus.emit(event)                              # 广播，fire-and-forget，不阻塞调用方
-bus.subscribe(handler, types={...})          # 按类型订阅，返回 unsubscribe
-emit_safe(type, origin, payload, metadata)   # 源用：构建+emit，吞掉一切异常
-emit_ws_frame(frame)                         # 源用：把现成 WS 帧经总线送前端（解耦 webui）
-```
-
-### 3.4 两类事件源 + 现有全部事件类型
-
-| | A 类：agent 活动（带 turn） | B 类：系统状态（可能没 agent 在跑） |
-|---|---|---|
-| 例子 | 用户消息、模型回复、工具前后、文件改、turn 结束、子任务起止 | 凭据限流、上下文溢出、外部消息进、技能变 |
-
-**框架现有的事件类型**：
-
-| 类 | type | 何时 | 来源 |
-|---|---|---|---|
-| A | `user.prompt_submitted` | 用户发消息 | dispatcher |
-| A | `model.response_started`/`.completed` | 模型开始/说完 | agent_loop |
-| A | `tool.before` | 工具即将执行（**可拦截**，见 §3.5） | agent_loop |
-| A | `tool.after` | 工具执行完 | agent_loop |
-| A | `file.changed` | 文件被改 | write/edit/apply_patch |
-| A | `subagent.started`/`.ended` | 子任务起止 | TaskRunner |
-| B | `credential.cooldown`/`.exhausted`/`.rotated` | 凭据限流/耗尽/轮换 | events/bridges.py←AuthStore |
-| B | `context.compaction_recommended`/`.compacted` | 上下文到阈值/已压缩 | context/engine |
-| B | `channel.message_inbound` | 外部消息进 | channels |
-| B | `memory.ingest_started`/`.ended` | wiki ingest 起止 | memory watcher |
-| B | `skills.changed`/`plugins.update_available` | 技能改/插件新版 | webui watcher |
-
-**通信引入的事件**（A 类）：
-
-| type | 何时 | origin | payload 关键字段 |
-|---|---|---|---|
-| `branch.message_sent` | send_message 投递 | agent | from, to, delivery_id, is_new, chain |
-| `branch.created` / `.started` / `.failed` / `.cancelled` | 分支状态转换 | agent | branch, parent, agent_id, status |
-| `sessions.listed` / `branches.listed` | 列举 | agent | count |
-
-`chain`（派生链）只在 metadata 流转，不进模型可见内容；防循环靠 §5.1 的两个预算。
-状态事件支持进度监听/审计/排查。
-
-通信复用已有 `subagent.started`/`.ended`（派生用法时 TaskRunner 照发）。
-
-### 3.5 两种交互：观察 vs 拦截
-
-- **观察型（默认，异步）**：emit 出去，订阅者异步收到，源不等。绝大多数事件走这条。
-- **拦截型（仅 `tool.before`，同步）**：工具执行前能让下游说"别执行"。单一入口
-  `_execute_tool_calls` 在 `tool.execute()` 前有同步问询点（`openprogram/events/tool_gate.py`
-  `register_tool_gate`）。必须快（不许调 LLM）；多方表态取最严；对 subagent 也生效
-  （在 approval 包装外，`permission_mode=bypass` 关不掉它）。**通信工具
-  `send_message` 走它做值守拦截**（见 §5）。
-
-### 3.6 通信怎么用事件层
-
-- 每个通信动作 `emit_safe(...)`（投递、回送、列举）—— proactive / 审计 / 前端刷新
-  都是这条流的订阅者，互不耦合。
-- **前端通知统一走 `emit_ws_frame(frame)`**：跨 session 时目标 session 的前端经总线
-  收到 `ws.frame` 事件、webui 订阅后原样广播，两边前端实时看到"收到来自 X 的消息"
-  "X 回复了"。前端零改协议、通信工具不认识 webui。
-- **值守拦截走 `tool.before` 同步点**：投递是副作用，无人值守 + deny 时拦下要求确认。
-
-### 3.7 一条原则
-
-**不是所有调用都是事件，只有"有消费者想响应"的时机才是。** 上表按这条筛选，通信引入的
-几个事件都有确定的响应方（前端渲染、proactive、审计）。演进方向是只加不改：新增事件类型、
-给 payload 加字段都不影响既有订阅者（它们只读自己关心的字段）。
+事件层本身——总线、事件模型、注册表、否决协议——写在
+[proactive/event-layer](../proactive/event-layer.zh.md)。
 
 ---
 
@@ -466,10 +433,9 @@ B 空闲则立即投递（原有行为）。
 
 ### 5.8 值守拦截 + 校验
 
-- `send_message` 走事件层 `tool.before` 同步问询点：无人值守 + deny 策略时拦下要求
-  确认（对子分支也生效，在 approval 包装外）。
-- 投递前校验 `to` 真实存在（`db.get_session` 非 None），不存在报错、
-  不静默新建。沿用三层门控（check_fn / can_use / requires_approval）。
+- 值守策略拒绝副作用时，`send_message` 在投递前被拦下等确认（§3）。子分支走同
+  一道闸，`permission_mode=bypass` 关不掉它。
+- `to` 指向不存在的东西就报错，不会静默新建。常规权限门控照常叠加在上面。
 
 ### 5.9 分支可见性
 
@@ -507,77 +473,19 @@ session 上下文的调用（用户、UI）不设限——人拥有一切。
 
 ---
 
-## 6. 前后端清单
+## 6. 可以核对的行为
 
-**后端（工具）**
-- `openprogram/functions/tools/agent/` — `agent/`（派生 / fork）+
-  `task_output/` + `task_stop/`（异步形态管理）
-- `openprogram/functions/tools/send_message/` — `send_message/`（投递 +
-  触发 + 自动回送）+ `list_agents/`（复用
-  db.list_sessions + db.list_branches）+ `archive_agent/`（分支退役，§2.6）
-- 各工具 `emit_safe(...)`；跨 session 通知用 `emit_ws_frame`
-
-**后端（复用既有组件）**
-- `TaskRunner`（线程池并发、await、cancel、_dispatch_followup 自动回送、attach 连线）
-- `SessionStore`（list/append/set_head/commit/get）
-- `dispatcher.process_user_turn`
-- `openprogram.events`（emit_safe / emit_ws_frame）
-
-**前端（`web/`）**
-- session / branch 列表面板（已有 WS handler）+ "选 to → 发消息"交互入口
-- 收到 `branch.message_sent`（经 ws.frame）→ 在对应
-  session 的 DAG / 消息流渲染通信节点 + 回流软连接线（hover 显示，dag-live 已定稿）
-- 派生进度复用现有 `task_status` 帧 + tasks 面板
-
----
-
-## 7. 可验证的行为
-
-设计成立时，下列行为各自独立可验证。验证手段是 webui（`cd web && npm run build` +
-`openprogram worker restart`）或事件日志（`~/.openprogram/sessions/<sid>/events.jsonl`，常开）。
+下面每一条都能独立看到——在 web 界面里，或者在 session 事件日志里。
 
 | 行为 | 表现 |
 |---|---|
-| 派生（`agent` 工具） | agent 调一次，新建分支跑一轮，结果自动 followup 回发起方；spawn 事件在事件日志可见 |
+| 派生（`agent` 工具） | agent 调一次，新建分支跑一轮，结果自动回到发起方；派生过程在事件日志里可见 |
 | 列举 | `list_agents` 列出真实的多 session 及各自的分支 |
-| 归档（§2.6） | 已归档 agent 从 `list_agents` 消失、在 `scope="archived"` 里出现；`send_message` 与 `agent(to=)` 拒收，`read_conversation` 与 `agent(context=…)` 照常；只有创建它的 session 能归档（`tests/unit/test_archive_agent.py`） |
+| 归档（§2.6） | 已归档 agent 从 `list_agents` 消失、在 `scope="archived"` 里出现；`send_message` 与 `agent(to=)` 拒收，`read_conversation` 与 `agent(start_from=…)` 照常；只有创建它的 session 能归档 |
 | 发给同 session 已有分支 | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
-| 跨 session | A 发给别的 session 走同一路径；两边前端经 ws.frame 实时更新 |
-| 健壮性（§5） | A↔B 互发到消息预算用完自动停，预算为 0 时不停；派 30 个排队不打爆；取消父→子全停（`tests/unit/test_cascade_cancel.py`）；给正跑的 B 发消息落它的收件箱、等它这轮结束投递（`tests/unit/test_send_message_inbox.py`）；子失败父收到 is_error；超大结果截断给文件路径 |
-| 安全（§5.7-5.9） | deny 下被 tool.before 拦；不存在的 to 报错；子分支权限不高于父、不进 UI 选择列表 |
-| 前端 | webui 里选分支发消息，DAG 出现通信节点 + hover 软连接线 |
+| 跨 session | A 发给别的 session 走同一路径；两边实时更新 |
+| 健壮性（§5） | A↔B 互发到消息预算用完自动停，预算为 0 时不停；一次派 30 个是排队不是打爆；取消父→子全停；给正忙的 B 发消息先排队、等它这轮结束再投；子失败父会被告知；超大结果截断并给出文件路径 |
+| 安全（§5.7-5.9） | deny 策略下投递被拦下等确认；不存在的 to 报错；子分支权限不高于父、不进 UI 选择列表 |
+| 前端 | web 界面里选分支发消息，DAG 出现通信节点，hover 显示回流连线 |
 
 ---
-
-## 8. 关键文件速查
-
-| 事 | 位置 |
-|---|---|
-| 子 agent 派生 + 自动回送 | `openprogram/agent/sub_agent_run.py`、`agent/task/runner.py`（spawn_task / _dispatch_followup） |
-| 工具范本 + 注册 | `openprogram/functions/tools/agent/agent/agent.py`、`functions/_runtime.py`（@function） |
-| session/branch 数据层 | `openprogram/store/session/session_store.py`（list_sessions:658 / list_branches:832 / append_message:706 / set_head:814 / commit_turn:455） |
-| 触发某 session 跑一轮 | `openprogram/agent/dispatcher/__init__.py`（process_user_turn:97） |
-| 列表 WS handler | `webui/ws_actions/session.py:825`、`branch.py:221` |
-| attach 连线（仅画图） | `openprogram/agent/sub_agent_run.py`（write_attach_pointer_for_spawn） |
-| 事件总线 | `openprogram/events/bus.py`（emit_safe / emit_ws_frame） |
-| 忙时收件箱（§5.4） | `openprogram/agent/inbox.py`（enqueue / drain），忙判定 `run_control.is_turn_running`，消费挂点 `dispatcher._drain_send_message_inbox` |
-| 归档（§2.6） | `functions/tools/send_message/archive_agent/archive_agent.py`，守卫在 `send_message/addressing.py`（`resolve_existing_target`），终态打标在 `agent/task/runner.py`（`_finalize_spawn_branch_meta`），标记本身在 `store/session/session_store.py`（`set_branch_meta` / `list_branches`） |
-
-> 注："综合多条"不需要专门机制：发送方在 `message` 里点名分支，目标用
-> `read_conversation` 自己读（§2.2）。
-
----
-
-## 附：实现状态
-
-本文内容均已实现：事件层（§3）、`TaskRunner`、`SessionStore`、
-`process_user_turn`、`agent` 工具族（`agent`——派生与 `to=` 派活——/
-`task_output` / `task_stop`，含 §5.10 归属门）、`send_message` 及其列举工具
-`list_agents`、退役工具 `archive_agent`（§2.6——`archive_when_done` 加创建者
-门；`tests/unit/test_archive_agent.py`）、
-派生分支命名（§2.4——派生时的 Stage 1 label + `finalize_turn` 的 Stage 2
-自动改名）、串行化的回送锚定（§2.5——`_dispatch_followup` +
-`_followup_lock`）、级联取消（§5.3——`TaskRunner.cancel_task` 沿
-`parent_task_id` 遍历，session 级停止时附带 `inbox.clear`；
-`tests/unit/test_cascade_cancel.py`），以及忙时收件箱（§5.4——
-`tests/unit/test_send_message_inbox.py`）。
