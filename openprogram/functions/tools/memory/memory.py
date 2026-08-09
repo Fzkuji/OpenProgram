@@ -1,434 +1,297 @@
-"""Memory tools — agent-facing entry points to the persistent vault.
+"""Memory tools — reading and correcting the Markdown memory workspace.
 
-Seven tools:
+Memory is written in the background, so there is no tool here for
+"save this". What the agent needs mid-conversation is to look things up,
+and occasionally to fix something it can see is wrong or to record a
+fact the user asked it to remember right now.
 
-  WRITE:
-    memory_note     record a single observation into today's journal log
-
-  READ:
-    memory_browse   unified catalog (wiki folder tree + recent days)
-    memory_get      fetch a wiki page (by filename) or journal day (YYYY-MM-DD)
-    memory_recall   keyword FTS over the whole memory store
-    memory_reflect  multi-page LLM synthesis
-
-  ADMIN:
-    memory_ingest   manual consolidation of the current session
-    memory_lint     wiki structural health report
+Everything is a file: ``topics/**/*.md`` is the editable semantic
+memory, ``sources/**`` the read-only evidence it cites, and
+``timeline/`` a derived view rebuilt after every write.
 """
+
 from __future__ import annotations
 
-import re
+import json
 from typing import Any
 
-from openprogram.memory import journal, store, wiki
-from openprogram.memory.builtin.recall import recall_for_prompt
-from openprogram.memory.provider import sanitize_context
-
-
-# memory_note
-
-NOTE_NAME = "memory_note"
-NOTE_DESC = (
-    "Record a fact, preference, decision, or lesson in long-term memory. "
-    "Use when you learn something likely to matter in future conversations. "
-    "Appended to today's journal file; the next session-end / sleep "
-    "folds it into the wiki."
+from openprogram.memory import store
+from openprogram.memory.scriptorium.management import MemoryWorkspace
+from openprogram.memory.scriptorium.management.transaction import (
+    TransactionError,
+    workspace_revision,
 )
+from openprogram.memory.provider import sanitize_context
+from openprogram.memory.scriptorium.retrieval import inspect
 
-NOTE_SPEC: dict[str, Any] = {
-    "name": NOTE_NAME, "description": NOTE_DESC,
+MAX_SNIPPETS = 8
+
+
+def _root():
+    return store.ensure()
+
+
+def _fail(exc: TransactionError) -> str:
+    return json.dumps(
+        {"ok": False, "error": {"code": exc.code, "message": exc.message,
+                                "path": exc.path}},
+        ensure_ascii=False,
+    )
+
+
+def _dump(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+# -- search ----------------------------------------------------------------
+
+SEARCH_NAME = "memory_search"
+SEARCH_DESC = (
+    "Search memory by meaning and return the matching paragraphs with "
+    "their file paths and block IDs. Use this when you know what you are "
+    "looking for but not how it was worded. For an exact name, ID or "
+    "phrase use `memory_grep` instead."
+)
+SEARCH_SPEC: dict[str, Any] = {
+    "name": SEARCH_NAME,
+    "description": SEARCH_DESC,
     "parameters": {
         "type": "object",
         "properties": {
-            "text": {"type": "string", "description": "One factual sentence, <200 chars."},
-            "type": {
+            "query": {"type": "string", "description": "what to look for"},
+            "top_k": {"type": "integer", "description": "results, max 10"},
+            "path_prefix": {
                 "type": "string",
-                "enum": ["user-pref", "env", "project", "procedure", "fact", "observation"],
+                "description": "restrict to a subtree, e.g. topics/people/",
             },
-            "tags": {"type": "array", "items": {"type": "string"}},
-            "confidence": {"type": "number"},
         },
-        "required": ["text"],
+        "required": ["query"],
     },
 }
 
 
-def note(
-    text: str | None = None,
-    type: str | None = None,
-    tags: list[str] | None = None,
-    confidence: float | None = None,
+def memory_search(
+    query: str | None = None,
+    top_k: int = MAX_SNIPPETS,
+    path_prefix: str | None = None,
     **_: Any,
 ) -> str:
-    text = (text or "").strip()
-    if not text:
-        return "Error: memory_note requires `text`."
-    if len(text) > 400:
-        return f"Error: text too long ({len(text)} chars). Keep it under 200."
-    kind = (type or "fact").strip()
-    tag_list = [str(t).lower() for t in (tags or []) if t][:3]
-    conf = max(0.0, min(1.0, float(confidence if confidence is not None else 0.7)))
-    journal.append_text(text, type=kind, tags=tag_list, confidence=conf)
-    return f"Noted: ({kind}) {text}"
+    if not (query or "").strip():
+        return "memory_search needs a query."
+    try:
+        found = inspect.search(
+            _root(), query, top_k=int(top_k or MAX_SNIPPETS),
+            path_prefix=path_prefix or None,
+        )
+    except TransactionError as exc:
+        return _fail(exc)
+    results = found.get("results", [])
+    if not results:
+        return f"No memory matches {query!r}."
+    lines = []
+    for hit in results:
+        where = hit.get("path", "?")
+        block = hit.get("event_id")
+        head = f"{where}" + (f"#^{block}" if block else "")
+        lines.append(f"--- {head}\n{sanitize_context(hit.get('content', ''))}")
+    return "\n\n".join(lines)
 
 
-# memory_browse
+# -- grep ------------------------------------------------------------------
 
-BROWSE_NAME = "memory_browse"
-BROWSE_DESC = (
-    "Return the unified memory catalog: wiki folder tree (topic axis) + "
-    "recent journal days (time axis). Read this first; then "
-    "`memory_get <name>` on the pages or days that look relevant."
+GREP_NAME = "memory_grep"
+GREP_DESC = (
+    "Find an exact string in memory — a name, an identifier, a quoted "
+    "phrase. Returns matching lines with their file and line number."
 )
-
-BROWSE_SPEC: dict[str, Any] = {
-    "name": BROWSE_NAME, "description": BROWSE_DESC,
-    "parameters": {"type": "object", "properties": {}, "required": []},
-}
-
-
-def memory_browse(**_: Any) -> str:
-    parts: list[str] = ["=== Wiki (folder tree) ===", ""]
-    tree = wiki.tree(max_depth=6).strip()
-    parts.append(tree or "(empty — use `memory_note` or `memory_ingest`.)")
-    parts.append("")
-    parts.append("=== Short-term (recent days) ===")
-    parts.append("")
-    files = sorted(store.journal_dir().glob("*.md"))[-14:]
-    if not files:
-        parts.append("(no journal notes yet)")
-    else:
-        for f in reversed(files):
-            date = f.stem
-            try:
-                entries = journal.read_day(date)
-            except Exception:
-                entries = []
-            preview = ""
-            if entries:
-                first = entries[0].text.strip().replace("\n", " ")
-                if len(first) > 80:
-                    first = first[:77] + "..."
-                preview = f" — {first}"
-            parts.append(f"- {date} ({len(entries)} entries){preview}")
-    parts.append("")
-    parts.append(
-        "`memory_get \"<page filename>\"` reads a wiki page; "
-        "`memory_get \"<YYYY-MM-DD>\"` reads a journal day."
-    )
-    return "\n".join(parts)
-
-
-# memory_get
-
-GET_NAME = "memory_get"
-GET_DESC = (
-    "Fetch a memory page. Accepts a wiki page filename (e.g. "
-    "'Claude Max Proxy', case-insensitive) or an ISO date "
-    "('YYYY-MM-DD') for a journal day."
-)
-
-GET_SPEC: dict[str, Any] = {
-    "name": GET_NAME, "description": GET_DESC,
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "target": {"type": "string", "description": "Wiki page name or YYYY-MM-DD."},
-        },
-        "required": ["target"],
-    },
-}
-
-_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-
-
-def memory_get(target: str | None = None, **_: Any) -> str:
-    target = (target or "").strip()
-    if not target:
-        return "Error: memory_get requires `target`."
-    if _DATE_RE.match(target):
-        path = store.journal_for(target)
-        if not path.exists():
-            return f"No journal file for {target}."
-        return path.read_text(encoding="utf-8")
-    content = wiki.read(target)
-    if content is None:
-        return f"No memory matches {target!r}. Try `memory_browse` first."
-    return content
-
-
-# memory_recall
-
-RECALL_NAME = "memory_recall"
-RECALL_DESC = (
-    "Keyword FTS over the whole memory store. Returns ranked snippets. "
-    "Use as a fallback when you don't know which wiki page to read."
-)
-
-RECALL_SPEC: dict[str, Any] = {
-    "name": RECALL_NAME, "description": RECALL_DESC,
+GREP_SPEC: dict[str, Any] = {
+    "name": GREP_NAME,
+    "description": GREP_DESC,
     "parameters": {
         "type": "object",
         "properties": {
             "query": {"type": "string"},
-            "wiki_k": {"type": "integer"},
-            "short_k": {"type": "integer"},
-            "short_days": {"type": "integer"},
+            "prefix": {"type": "string", "description": "restrict to a subtree"},
+            "case_sensitive": {"type": "boolean"},
         },
         "required": ["query"],
     },
 }
 
 
-def recall(
+def memory_grep(
     query: str | None = None,
-    wiki_k: int | None = None,
-    short_k: int | None = None,
-    short_days: int | None = None,
+    prefix: str = "",
+    case_sensitive: bool = False,
     **_: Any,
 ) -> str:
-    query = (query or "").strip()
-    if not query:
-        return "Error: memory_recall requires `query`."
-    text = recall_for_prompt(
-        query,
-        wiki_k=int(wiki_k) if wiki_k else 5,
-        short_k=int(short_k) if short_k else 5,
-        short_days=int(short_days) if short_days else 30,
-    )
-    return sanitize_context(text) if text else f"No memories matched {query!r}."
-
-
-# memory_reflect
-
-REFLECT_NAME = "memory_reflect"
-REFLECT_DESC = (
-    "Collect cross-cutting recall snippets and ask the model to synthesise. "
-    "More expensive than memory_recall — use only when raw snippets aren't enough."
-)
-
-REFLECT_SPEC: dict[str, Any] = {
-    "name": REFLECT_NAME, "description": REFLECT_DESC,
-    "parameters": {
-        "type": "object",
-        "properties": {"query": {"type": "string"}},
-        "required": ["query"],
-    },
-}
-
-
-def reflect(query: str | None = None, **_: Any) -> str:
-    query = (query or "").strip()
-    if not query:
-        return "Error: memory_reflect requires `query`."
-    raw = recall_for_prompt(query, wiki_k=10, short_k=10, short_days=90)
-    if not raw:
-        return f"No memories to reflect on for {query!r}."
-    return (
-        f"Reflection sources for {query!r}:\n\n{sanitize_context(raw)}\n\n"
-        "(Synthesize a coherent answer. Note conflicts. Cite [[wikilinks]].)"
+    if not (query or "").strip():
+        return "memory_grep needs a query."
+    try:
+        found = inspect.grep(
+            _root(), query, prefix=prefix or "",
+            case_sensitive=bool(case_sensitive),
+        )
+    except TransactionError as exc:
+        return _fail(exc)
+    matches = found.get("matches", [])
+    if not matches:
+        return f"No line in memory contains {query!r}."
+    return "\n".join(
+        f"{m.get('path')}:{m.get('line')}: {m.get('text', '').strip()}"
+        for m in matches
     )
 
 
-# memory_ingest
+# -- read ------------------------------------------------------------------
 
-INGEST_NAME = "memory_ingest"
-INGEST_DESC = (
-    "Manually consolidate the current conversation into the wiki via the "
-    "two-step agentic ingest pipeline. Use only when the user explicitly "
-    "says 'remember this' — session_watcher fires it automatically after "
-    "30 minutes of idle."
+GET_NAME = "memory_get"
+GET_DESC = (
+    "Read a memory file, or one section or block of it. Pass `heading` "
+    "for a single section and `block_id` for a single paragraph with the "
+    "footnotes it cites — reading a whole file is rarely what you want."
 )
-
-INGEST_SPEC: dict[str, Any] = {
-    "name": INGEST_NAME, "description": INGEST_DESC,
-    "parameters": {
-        "type": "object",
-        "properties": {"session_id": {"type": "string"}},
-        "required": ["session_id"],
-    },
-}
-
-
-def memory_ingest(session_id: str | None = None, **_: Any) -> str:
-    sid = (session_id or "").strip()
-    if not sid:
-        return "Error: memory_ingest requires `session_id`."
-    from openprogram.memory.wiki.ingest import ingest_session_by_id
-    result = ingest_session_by_id(sid)
-    if not result.get("ok"):
-        return f"Ingest failed: {result.get('error')}"
-    report = result.get("report") or "Ingest complete (no report)."
-    commit = result.get("commit") or {}
-    if commit.get("committed"):
-        report += f"\n\n[git commit {commit.get('hash')}]"
-    return report
-
-
-# memory_lint
-
-LINT_NAME = "memory_lint"
-LINT_DESC = (
-    "Wiki health check. Reports missing/unknown `type:`, folder-stem "
-    "mismatches, broken `[[wikilinks]]`, orphans, refactor candidates."
-)
-
-LINT_SPEC: dict[str, Any] = {
-    "name": LINT_NAME, "description": LINT_DESC,
-    "parameters": {"type": "object", "properties": {}, "required": []},
-}
-
-
-def memory_lint(**_: Any) -> str:
-    from openprogram.memory.wiki import ops as wiki_ops
-    return wiki_ops.lint()
-
-
-# memory_rename
-
-RENAME_NAME = "memory_rename"
-RENAME_DESC = (
-    "Rename a wiki page (filename stem). Moves the file/folder AND "
-    "rewrites every `[[old]]` → `[[new]]` across the vault. Updates "
-    "the link index. Use this — never `mv` directly."
-)
-
-RENAME_SPEC: dict[str, Any] = {
-    "name": RENAME_NAME, "description": RENAME_DESC,
-    "parameters": {
-        "type": "object",
-        "properties": {"old": {"type": "string"}, "new": {"type": "string"}},
-        "required": ["old", "new"],
-    },
-}
-
-
-def memory_rename(old: str | None = None, new: str | None = None, **_: Any) -> str:
-    old = (old or "").strip()
-    new = (new or "").strip()
-    if not old or not new:
-        return "Error: memory_rename requires both `old` and `new`."
-    from openprogram.memory.wiki import ops as wiki_ops
-    r = wiki_ops.rename(old, new)
-    if not r.get("ok"):
-        return f"Rename failed: {r.get('error')}"
-    return f"Renamed [[{old}]] → [[{new}]]; {r.get('rewrites', 0)} pages updated."
-
-
-# memory_relink
-
-RELINK_NAME = "memory_relink"
-RELINK_DESC = (
-    "Cascade-rewrite `[[old]]` → `[[new]]` across the vault WITHOUT "
-    "moving any file. Use when a page was renamed externally and "
-    "wikilinks to it are broken."
-)
-
-RELINK_SPEC: dict[str, Any] = {
-    "name": RELINK_NAME, "description": RELINK_DESC,
-    "parameters": {
-        "type": "object",
-        "properties": {"old": {"type": "string"}, "new": {"type": "string"}},
-        "required": ["old", "new"],
-    },
-}
-
-
-def memory_relink(old: str | None = None, new: str | None = None, **_: Any) -> str:
-    old = (old or "").strip()
-    new = (new or "").strip()
-    if not old or not new:
-        return "Error: memory_relink requires both `old` and `new`."
-    from openprogram.memory.wiki import ops as wiki_ops
-    r = wiki_ops.relink(old, new)
-    return f"Relinked [[{old}]] → [[{new}]] in {r.get('rewrites', 0)} pages."
-
-
-# memory_delete
-
-DELETE_NAME = "memory_delete"
-DELETE_DESC = (
-    "Delete a wiki page (leaf or empty topic folder). Strips every "
-    "`[[name]]` reference into plain text. Refuses to delete a topic "
-    "that still has subtopic children."
-)
-
-DELETE_SPEC: dict[str, Any] = {
-    "name": DELETE_NAME, "description": DELETE_DESC,
-    "parameters": {
-        "type": "object",
-        "properties": {"name": {"type": "string"}},
-        "required": ["name"],
-    },
-}
-
-
-def memory_delete(name: str | None = None, **_: Any) -> str:
-    name = (name or "").strip()
-    if not name:
-        return "Error: memory_delete requires `name`."
-    from openprogram.memory.wiki import ops as wiki_ops
-    r = wiki_ops.delete_page(name)
-    if not r.get("ok"):
-        return f"Delete failed: {r.get('error')}"
-    return (
-        f"Deleted {r.get('deleted')}; stripped {r.get('refs_stripped', 0)} references."
-    )
-
-
-# memory_review
-
-REVIEW_NAME = "memory_review"
-REVIEW_DESC = (
-    "Manage the review queue. No args: list pending items "
-    "(contradictions / duplicates / missing pages / suggestions). "
-    "With `resolve_id` + `action`: mark an item resolved."
-)
-
-REVIEW_SPEC: dict[str, Any] = {
-    "name": REVIEW_NAME, "description": REVIEW_DESC,
+GET_SPEC: dict[str, Any] = {
+    "name": GET_NAME,
+    "description": GET_DESC,
     "parameters": {
         "type": "object",
         "properties": {
-            "resolve_id": {"type": "integer"},
-            "action": {"type": "string"},
-            "note": {"type": "string"},
+            "path": {"type": "string", "description": "e.g. topics/people/dave.md"},
+            "heading": {"type": "string"},
+            "block_id": {"type": "string", "description": "without the ^"},
         },
+        "required": ["path"],
     },
 }
 
 
-def memory_review(
-    resolve_id: int | None = None,
-    action: str | None = None,
-    note: str | None = None,
+def memory_get(
+    path: str | None = None,
+    heading: str | None = None,
+    block_id: str | None = None,
     **_: Any,
 ) -> str:
-    from openprogram.memory.wiki import ops as wiki_ops
-    if resolve_id is not None:
-        r = wiki_ops.review_resolve(int(resolve_id), action=(action or "ack"), note=(note or ""))
-        return r.get("error") if not r.get("ok") else f"Marked #{resolve_id} resolved ({action or 'ack'})."
-    items = wiki_ops.review_list(only_pending=True)
-    if not items:
-        return "Review queue is empty."
-    lines = [f"# Review queue ({len(items)} pending)", ""]
-    for it in items[:30]:
-        lines.append(f"## #{it.get('id')} [{it.get('kind')}] {it.get('title','')}")
-        if it.get("detail"):
-            lines.append(it["detail"])
-        lines.append(f"_source: {it.get('source_slug','')} | created: {it.get('created_at','')}_")
-        lines.append("")
-    return "\n".join(lines).rstrip()
+    if not (path or "").strip():
+        return "memory_get needs a path. Use `memory_browse` to see them."
+    try:
+        found = inspect.read_file(
+            _root(), path, heading=heading or None,
+            block_id=(block_id or None),
+        )
+    except TransactionError as exc:
+        return _fail(exc)
+    return sanitize_context(found.get("content", "")) or "(empty)"
 
 
-# memory_status
+# -- browse ----------------------------------------------------------------
+
+BROWSE_NAME = "memory_browse"
+BROWSE_DESC = (
+    "List what memory holds: the topic files, the archived sources, and "
+    "the derived timeline. Start here when you do not know what exists."
+)
+BROWSE_SPEC: dict[str, Any] = {
+    "name": BROWSE_NAME,
+    "description": BROWSE_DESC,
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "prefix": {
+                "type": "string",
+                "description": "restrict to a subtree, e.g. topics/",
+            },
+        },
+        "required": [],
+    },
+}
+
+
+def memory_browse(prefix: str = "", **_: Any) -> str:
+    try:
+        listing = inspect.list_files(_root(), prefix=prefix or "")
+    except TransactionError as exc:
+        return _fail(exc)
+    files = listing.get("files", [])
+    if not files:
+        return (
+            "Memory is empty. It fills in on its own as you talk — "
+            "there is nothing to do about this."
+        )
+    lines = [f"{len(files)} file(s):", ""]
+    lines += [
+        f"  {f.get('path')}"
+        + (f"  ({f.get('blocks')} blocks)" if f.get("blocks") else "")
+        for f in files
+    ]
+    if listing.get("truncated"):
+        lines.append("  … truncated; narrow with `prefix`.")
+    return "\n".join(lines)
+
+
+# -- update ----------------------------------------------------------------
+
+UPDATE_NAME = "memory_update"
+UPDATE_DESC = (
+    "Correct or add one thing in memory. Conversation is written up in "
+    "the background, so use this only for what the user asked you to "
+    "remember right now, or to fix something you can see is wrong. "
+    "Send a unified diff over topics/**/*.md or core.md, with the "
+    "revision you read from `memory_status`."
+)
+UPDATE_SPEC: dict[str, Any] = {
+    "name": UPDATE_NAME,
+    "description": UPDATE_DESC,
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "base_revision": {"type": "string"},
+            "patch": {"type": "string", "description": "unified diff"},
+            "sources": {
+                "type": "array",
+                "description": "quoted statements the edit rests on",
+                "items": {"type": "object"},
+            },
+            "commit_message": {"type": "string"},
+        },
+        "required": ["base_revision", "patch"],
+    },
+}
+
+
+def memory_update(
+    base_revision: str | None = None,
+    patch: str | None = None,
+    sources: list[dict[str, Any]] | None = None,
+    commit_message: str | None = None,
+    **_: Any,
+) -> str:
+    if not (base_revision or "").strip() or not (patch or "").strip():
+        return "memory_update needs base_revision and patch."
+    try:
+        result = MemoryWorkspace(_root()).update(
+            base_revision=base_revision,
+            patch=patch,
+            sources=sources,
+            commit_message=commit_message,
+        )
+    except TransactionError as exc:
+        return _fail(exc)
+    return _dump({
+        "ok": True,
+        "revision": result.revision,
+        "block_ids": result.block_ids,
+        "changed_files": result.changed_files,
+    })
+
+
+# -- status ----------------------------------------------------------------
 
 STATUS_NAME = "memory_status"
 STATUS_DESC = (
-    "Summary of the memory vault — page count by type, FTS rows, "
-    "pending reviews, last reindex, vault root."
+    "How much memory exists and the current revision, which "
+    "`memory_update` needs."
 )
-
 STATUS_SPEC: dict[str, Any] = {
     "name": STATUS_NAME, "description": STATUS_DESC,
     "parameters": {"type": "object", "properties": {}, "required": []},
@@ -436,81 +299,21 @@ STATUS_SPEC: dict[str, Any] = {
 
 
 def memory_status(**_: Any) -> str:
-    from openprogram.memory.wiki import ops as wiki_ops
-    s = wiki_ops.stats()
-    lines = [
-        "# Memory status", "",
-        f"Vault: `{s.get('vault_root')}`",
-        f"Total pages: **{s.get('pages_total', 0)}**",
-        f"FTS rows: wiki={s.get('fts_wiki_rows', 0)} journal={s.get('fts_short_rows', 0)}",
-        f"Pending reviews: **{s.get('pending_reviews', 0)}**",
-        f"Last reindex: {s.get('last_reindex') or '(never)'}",
-        "", "## Pages by type",
-    ]
-    by_type = s.get("pages_by_type", {})
-    if by_type:
-        for t, n in sorted(by_type.items(), key=lambda kv: -kv[1]):
-            lines.append(f"- `{t}`: {n}")
-    else:
-        lines.append("- (none)")
-    return "\n".join(lines)
-
-
-# memory_backlinks
-
-BACKLINKS_NAME = "memory_backlinks"
-BACKLINKS_DESC = (
-    "List every wiki page that has a `[[wikilink]]` to the given page. "
-    "Obsidian's backlinks panel in tool form — useful for 'what mentions X?'"
-)
-
-BACKLINKS_SPEC: dict[str, Any] = {
-    "name": BACKLINKS_NAME, "description": BACKLINKS_DESC,
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "name": {"type": "string", "description": "Wiki page filename stem."},
-        },
-        "required": ["name"],
-    },
-}
-
-
-def memory_backlinks(name: str | None = None, **_: Any) -> str:
-    name = (name or "").strip()
-    if not name:
-        return "Error: memory_backlinks requires `name`."
-    from openprogram.memory.wiki import ops as wiki_ops
-    hits = wiki_ops.backlinks(name)
-    if not hits:
-        return f"No pages link to [[{name}]]."
-    lines = [f"# Backlinks to [[{name}]] ({len(hits)} pages)", ""]
-    for h in hits:
-        lines.append(f"## `{h['page']}`")
-        lines.append(h['snippet'])
-        lines.append("")
-    return "\n".join(lines).rstrip()
-
-
-# Back-compat alias
-WIKI_GET_NAME = GET_NAME
-WIKI_GET_SPEC = GET_SPEC
-wiki_get = memory_get
+    root = _root()
+    try:
+        return _dump(inspect.status(root))
+    except TransactionError as exc:
+        return _fail(exc)
+    except Exception:  # noqa: BLE001
+        return _dump({"workspace": str(root),
+                      "revision": workspace_revision(root)})
 
 
 __all__ = [
-    "NOTE_NAME", "NOTE_SPEC", "note",
-    "RECALL_NAME", "RECALL_SPEC", "recall",
-    "REFLECT_NAME", "REFLECT_SPEC", "reflect",
+    "SEARCH_NAME", "SEARCH_SPEC", "memory_search",
+    "GREP_NAME", "GREP_SPEC", "memory_grep",
     "GET_NAME", "GET_SPEC", "memory_get",
-    "WIKI_GET_NAME", "WIKI_GET_SPEC", "wiki_get",
     "BROWSE_NAME", "BROWSE_SPEC", "memory_browse",
-    "LINT_NAME", "LINT_SPEC", "memory_lint",
-    "INGEST_NAME", "INGEST_SPEC", "memory_ingest",
-    "BACKLINKS_NAME", "BACKLINKS_SPEC", "memory_backlinks",
-    "RENAME_NAME", "RENAME_SPEC", "memory_rename",
-    "RELINK_NAME", "RELINK_SPEC", "memory_relink",
-    "DELETE_NAME", "DELETE_SPEC", "memory_delete",
-    "REVIEW_NAME", "REVIEW_SPEC", "memory_review",
+    "UPDATE_NAME", "UPDATE_SPEC", "memory_update",
     "STATUS_NAME", "STATUS_SPEC", "memory_status",
 ]

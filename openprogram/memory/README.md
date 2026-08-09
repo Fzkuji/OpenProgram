@@ -2,105 +2,55 @@
 
 Persistent, machine-wide memory for OpenProgram agents.
 
-**Design docs:** [`docs/design/memory/overview.md`](../../docs/design/memory/overview.md) (v1,
-what this directory implements today) and
-[`docs/design/memory/overview.md`](../../docs/design/memory/overview.md) (the target
-two-tier entity/virtual design — Phase 0+1 done, Phase 2+ pending).
-Read those first — this README is a navigation aid for working in the
+**Design doc:** [`docs/reference/design/memory/overview.md`](../../docs/reference/design/memory/overview.md).
+Read that first — this README is a navigation aid for working in the
 directory, not a substitute.
-
-> **v1 vs v2:** the code in this directory is the v1 linear chain
-> (`journal → wiki → core`). The git-backed *entity* layer (Session-Git
-> + Project-Git) is already built under `openprogram/store/`, but the v2
-> *virtual* layer (timeline + knowledge graph with provenance) is not —
-> v1 is still what runs. See overview.md §0.5 for the status table.
 
 ## TL;DR
 
-Three layers on disk under `<state>/memory/`:
+Memory is a workspace of Markdown files under `<state>/memory/`:
 
-1. `journal/YYYY-MM-DD.md` — raw daily notes appended after every
-   conversation ends idle.
-2. `wiki/<kind>/<slug>.md` — curated knowledge pages with frontmatter,
-   organised by `user/` / `entities/` / `concepts/` / `procedures/`.
-3. `core.md` — the <2 KB always-on snippet injected into every system
-   prompt.
+1. `sources/` — the append-only evidence record: what was said, archived
+   verbatim, written only by the runtime.
+2. `topics/**/*.md` — the editable semantic memory, one file per subject.
+   Every paragraph ends in a stable `^block-id` and cites a footnote
+   pointing at the source it rests on.
+3. `core.md` — the small always-on block injected into every session.
 
-A background "sleep" sweep at 03:00 local time promotes high-confidence
-journal notes into the wiki and regenerates `core.md`. Plus an
-`on_session_end` hook that summarises freshly idle conversations into
-journal.
+`timeline/`, `recent_events.jsonl` and `relations.json` are derived and
+rebuilt after every write.
+
+Writing happens in the background, not in the conversation: turns
+accumulate and are written once there is roughly 16k tokens' worth, and
+a nightly sweep reorganises what has landed.
 
 ## File map
 
-| File                  | Role                                              |
-|-----------------------|---------------------------------------------------|
-| `provider.py`         | `MemoryProvider` abstract base (plugin seam)      |
-| `builtin/`            | Default `BuiltinMemoryProvider`                   |
-| `builtin/summarizer.py` | Session-end LLM prompt + JSON parser            |
-| `builtin/recall.py`   | FTS query + ranking for `memory_recall` tool      |
-| `journal.py`       | Append-only daily file writer                     |
-| `wiki/`               | Wiki page read / write helpers (package)          |
-| `core.py`             | `core.md` render + write                          |
-| `index.py`            | SQLite FTS index management                       |
-| `store.py`            | Filesystem layout (paths)                         |
-| `schema.py`           | Dataclasses (`JournalEntry`, `WikiPage`, …)     |
-| `session_watcher.py`  | Polls SessionDB; fires `on_session_end`           |
-| `scheduler.py`        | Daemon thread that runs sleep daily at 03:00      |
-| `llm_bridge.py`       | Provider-agnostic LLM callable factory            |
-| `recall_counts.py`    | Per-page recall counter (recency boost)           |
-| `sleep/runner.py`     | Orchestrates light → deep → REM                   |
-| `sleep/light.py`      | Dedupe + score (no LLM)                           |
-| `sleep/deep.py`       | Promote to wiki + rewrite `core.md` (LLM)         |
-| `sleep/rem.py`        | Cross-page reflections (LLM)                      |
-| `sleep/scoring.py`    | Signal heuristics                                 |
+| Path | Role |
+|---|---|
+| `store.py` | Where the workspace is; migration off the previous layout |
+| `provider.py` | `MemoryProvider` ABC and the `<memory-context>` fence |
+| `builtin/provider.py` | The lifecycle hooks the agent runtime calls |
+| `builtin/writing.py` | Accumulate, write, reorganise |
+| `scheduler.py` | Daemon thread; 03:00 sweep |
+| `session_watcher.py` | Flushes a session once it goes idle |
+| `management/` | The write transaction: staging, validation, install |
+| `retrieval/` | BM25 and embedding search over the workspace |
+| `markdown/` | The topic format — blocks, footnotes, links |
+| `prompts/` | What the writer is told |
+| `runtime/` | Cursors, thresholds, derived views |
+| `agent_runtime/` | The process that performs a write |
 
-## Plugin point
+## Working here
 
-To swap in a different memory backend (mem0 / Honcho / vector store / …)
-subclass `MemoryProvider` and register the implementation. The runtime
-only consumes these hooks:
+The writer runs on the user's own login and default model, so nothing
+needs a separate API key. A write is transactional: it stages, validates
+and installs, or it changes nothing.
 
-```python
-initialize(session_id, **kwargs)
-system_prompt_block() -> str
-prefetch(query, *, session_id="") -> list[str]
-on_session_end(messages) -> None
-on_pre_compress(messages) -> str
-```
+Two invariants worth knowing before editing:
 
-Everything else — three-layer split, sleep phases, FTS index — is
-implementation detail of the builtin provider.
-
-## Common ops
-
-```bash
-# Look at today's raw observations
-cat ~/.openprogram/memory/journal/$(date +%Y-%m-%d).md
-
-# See what's in the always-on core
-cat ~/.openprogram/memory/core.md
-
-# When did sleep last run, and did it promote anything?
-cat ~/.openprogram/memory/.state/last-sleep.json
-
-# Manually trigger a session-end scan (idle_minutes=0 = process everything)
-python -c "from openprogram.memory.session_watcher import run_now; print(run_now(idle_minutes=0))"
-
-# Manually trigger a sleep sweep
-python -c "from openprogram.memory.sleep import run_sweep; from openprogram.memory.llm_bridge import build_default_llm; print(run_sweep(llm=build_default_llm()))"
-
-# Wipe everything (will rebuild on next session-end)
-rm -rf ~/.openprogram/memory/journal ~/.openprogram/memory/wiki ~/.openprogram/memory/core.md ~/.openprogram/memory/index.sqlite ~/.openprogram/memory/.state
-```
-
-## Provider quirks
-
-Some chat providers silently ignore the OpenAI `system` role. The
-`claude-code` provider is the current known offender — both supported
-daemons (`meridian` and the older `claude-max-api-proxy`) forward
-through the Claude Code SDK, which only honours the user turn.
-`llm_bridge.build_default_llm` detects those providers and folds the
-system prompt into the user message before calling them, so the
-summarizer's instructions actually reach the model. New offending
-provider IDs go in the `_proxy_providers` set in `llm_bridge.py`.
+- **Block IDs are the runtime's.** A `^id` that disappears breaks every
+  view and link reaching it, so the writer copies them through and the
+  transaction rejects an edit that drops one.
+- **`sources/` is append-only.** Topics can be rewritten freely; the
+  evidence they cite cannot.

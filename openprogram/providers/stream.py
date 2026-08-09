@@ -65,7 +65,7 @@ async def stream_simple(
     # NOTE: the claude-code Meridian-profile header (x-meridian-profile) is
     # injected one layer down, in openai_completions.stream_simple — that's
     # the single chokepoint EVERY claude-code request passes through. This
-    # wrapper is bypassed by some callers (e.g. memory/llm_bridge.py calls
+    # wrapper is bypassed by some callers (e.g. providers/default_llm.py calls
     # the raw api-provider directly), so injecting here would miss them.
     # See docs/design/claude-code-meridian-profile.md.
 

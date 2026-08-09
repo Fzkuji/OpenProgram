@@ -1,7 +1,7 @@
 """MemoryProvider abstract interface (Hermes-inspired).
 
 The provider is the integration point between the memory subsystem and
-the agent runtime. There is one default ``BuiltinMemoryProvider``; the
+the agent runtime. There is one shipped implementation in ``scriptorium/``; the
 abstract class keeps the door open for plugin providers (mem0, Honcho,
 Hindsight, ...) without rewiring the agent.
 
@@ -12,8 +12,9 @@ Lifecycle hooks (called from agent runtime, all optional except
     system_prompt_block()                — static text added to the system prompt
     prefetch(query, *, session_id="")    — recall before each turn
     sync_turn(user, asst, *, session_id="") — write after each turn
-    on_session_end(messages)              — extract at session boundary
+    on_session_end(messages, session_id)  — extract at session boundary
     on_pre_compress(messages) -> str      — extract before context compression
+    maintain(**kwargs) -> dict            — periodic upkeep (nightly)
 
 Tool surface (so providers can expose extra tools to the agent):
 
@@ -126,12 +127,28 @@ class MemoryProvider(ABC):
     def on_turn_start(self, turn_number: int, message: str, **kwargs: Any) -> None:
         """Per-turn tick. Use for periodic maintenance, scope tracking."""
 
-    def on_session_end(self, messages: list[dict[str, Any]]) -> None:
+    def on_session_end(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        session_id: str = "",
+    ) -> None:
         """Called at session boundary (explicit close or idle timeout).
 
-        Heavier extraction lives here — typically an LLM-summarize pass
-        producing 3–10 journal notes from the full conversation.
+        Heavier extraction lives here. ``session_id`` identifies the
+        conversation, the same way ``sync_turn`` takes it: the watcher
+        processes many sessions in a loop and cannot rely on whichever
+        one ``initialize`` last saw.
         """
+
+    def maintain(self, **kwargs: Any) -> dict[str, Any]:
+        """Periodic upkeep, called by the nightly scheduler.
+
+        Whatever a memory system needs doing when nobody is talking:
+        reorganising, compacting, re-indexing. Returns a short report for
+        the log. Doing nothing is a valid implementation.
+        """
+        return {"status": "skipped"}
 
     def on_pre_compress(self, messages: list[dict[str, Any]]) -> str:
         """Extract insights before context compression discards messages.

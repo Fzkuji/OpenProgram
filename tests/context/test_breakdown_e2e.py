@@ -15,7 +15,7 @@ from openprogram.context.breakdown import compute_call_breakdown
 # 实测（o200k_base）：defer 后常驻 21 工具 ≈4.6k token（描述+schema 都算），
 # 全量 59 工具若都常驻 ≈13k。断言"缩小到不足全常驻的一半"而不是钉死绝对值，
 # 这样加工具不会误伤，估算口径退化仍会被抓。
-EXPECTED_MIN_DEFERRED = 30   # 实测 deferred 38 个，下浮
+EXPECTED_MIN_DEFERRED = 22   # 实测 deferred 28 个，下浮
 
 
 def test_full_toolset_schema_shrunk_after_defer():

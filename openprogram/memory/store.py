@@ -1,148 +1,98 @@
-"""File-system layout for the memory subsystem.
+"""Where memory lives on disk.
 
-All paths route through the active state directory so ``--profile`` and
-``OPENPROGRAM_STATE_DIR`` overrides flow through automatically.
-
-Wiki layout — Obsidian-style hierarchical vault (RAH pattern), with
-nashsu-style `type:` frontmatter for semantic role enrichment:
-
-    <state>/memory/
-        journal/YYYY-MM-DD.md
-        wiki/                          # Obsidian vault, git-tracked
-            AGENTS.md                  # ingest-agent entrypoint (read-only)
-            SCHEMA.md                  # protocol (read-only)
-            purpose.md                 # scope rules (read-only)
-            index.md                   # LLM-maintained catalog
-            log.md                     # append-only timeline
-            overview.md                # 2-4 paragraph TL;DR
-            reflections.md             # sleep-REM appends here
-            <Topic>/<Topic>.md         # folder form (has children)
-            <Leaf>.md                  # bare leaf
-            ...
-        core.md
-        index.sqlite                   # FTS over wiki + journal
-        .state/
-            recall-counts.json
-            sleep-stage.json
-            last-sleep.json
-            sleep.lock
-            review-queue.json          # ingest-flagged human-review items
-            session-end.json           # processed-session bookkeeping
+The workspace keeps the location the previous memory layer used, so an
+existing installation finds its memory in the same place. What is inside
+it changed: ``sources/`` and ``topics/`` in place of ``journal/`` and
+``wiki/``, with ``core.md`` unchanged.
 """
+
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from typing import Iterable
 
-
-# Valid `type:` frontmatter values. Folder location is the primary
-# taxonomy; type is secondary role-hint metadata.
-WIKI_PAGE_TYPES = (
-    "entity",
-    "concept",
-    "procedure",
-    "user",
-    "source",
-    "query",
-    "synthesis",
-)
-
-# Page-level filenames that are governance / bookkeeping and must
-# never be treated as content pages.
-GOVERNANCE_PAGES = (
-    "AGENTS.md", "SCHEMA.md", "purpose.md",
-    "index.md", "log.md", "overview.md", "reflections.md",
-)
+logger = logging.getLogger(__name__)
 
 
 def root() -> Path:
-    """Top-level memory directory. Created on first call."""
+    """The memory workspace, created on first use."""
     from openprogram.paths import get_state_dir
-    p = get_state_dir() / "memory"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+
+    path = get_state_dir() / "memory"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
-def journal_dir() -> Path:
-    p = root() / "journal"
-    # One-shot migration: legacy short-term/ → journal/. Renamed 2026-05
-    # because "short-term" was misleading — these files accumulate
-    # across years, they're a chronological journal not a transient
-    # buffer.
-    legacy = root() / "short-term"
-    if legacy.exists() and not p.exists():
-        try:
-            legacy.rename(p)
-        except OSError:
-            pass
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+def sources_dir() -> Path:
+    return root() / "sources"
 
 
-def journal_for(date_iso: str) -> Path:
-    return journal_dir() / f"{date_iso}.md"
+def topics_dir() -> Path:
+    return root() / "topics"
 
 
-def wiki_dir() -> Path:
-    p = root() / "wiki"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
-
-
-def wiki_index() -> Path:
-    return wiki_dir() / "index.md"
-
-
-def wiki_log() -> Path:
-    return wiki_dir() / "log.md"
-
-
-def wiki_overview() -> Path:
-    return wiki_dir() / "overview.md"
-
-
-def wiki_reflections() -> Path:
-    return wiki_dir() / "reflections.md"
+def timeline_dir() -> Path:
+    return root() / "timeline"
 
 
 def core() -> Path:
     return root() / "core.md"
 
 
-def index_db() -> Path:
-    return root() / "index.sqlite"
-
-
 def state_dir() -> Path:
-    p = root() / ".state"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    """Bookkeeping that is about memory but is not memory.
+
+    Inside the runtime directory, which the workspace revision ignores.
+    A file that changed on every poll would otherwise look like a
+    concurrent write to anything holding a revision.
+    """
+    from .workspace_layout import runtime_dir
+
+    path = runtime_dir(root())
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
-def recall_counts_path() -> Path:
-    return state_dir() / "recall-counts.json"
+# What the previous memory layer kept at the workspace root. None of it
+# means anything to the current one, and left in place it would show up
+# in every listing — one installation had 3934 wiki files.
+_SUPERSEDED = ("journal", "wiki", ".state", "index.sqlite")
 
 
-def last_sleep_path() -> Path:
-    return state_dir() / "last-sleep.json"
+def _set_aside_superseded(base: Path) -> Path | None:
+    """Move the previous layer's files out of the workspace, once.
 
-
-def sleep_lock_path() -> Path:
-    return state_dir() / "sleep.lock"
-
-
-def review_queue_path() -> Path:
-    return state_dir() / "review-queue.json"
-
-
-def iter_wiki_pages() -> Iterable[Path]:
-    """Yield every wiki content .md page (governance docs excluded)."""
-    for p in sorted(wiki_dir().rglob("*.md")):
-        if p.name in GOVERNANCE_PAGES:
+    Moved rather than deleted, and to a sibling directory rather than a
+    subdirectory: inside the workspace it would still be listed, and
+    deleting someone's notes to make room for a new format is not a
+    migration.
+    """
+    present = [name for name in _SUPERSEDED if (base / name).exists()]
+    if not present:
+        return None
+    archive = base.parent / f"{base.name}-superseded"
+    archive.mkdir(parents=True, exist_ok=True)
+    for name in present:
+        target = archive / name
+        if target.exists():
+            # A previous pass already saved a copy; leave it as the
+            # record and drop the leftover rather than merging blindly.
             continue
-        yield p
+        (base / name).rename(target)
+    logger.info(
+        "memory: moved the previous layout (%s) to %s",
+        ", ".join(present), archive,
+    )
+    return archive
 
 
-def iter_journal() -> Iterable[Path]:
-    for child in sorted(journal_dir().glob("*.md")):
-        yield child
+def ensure() -> Path:
+    """Create the workspace skeleton if it is not there yet."""
+    base = root()
+    _set_aside_superseded(base)
+    for name in ("topics", "sources"):
+        (base / name).mkdir(parents=True, exist_ok=True)
+    core_file = base / "core.md"
+    if not core_file.exists():
+        core_file.write_text("# Core\n", encoding="utf-8")
+    return base

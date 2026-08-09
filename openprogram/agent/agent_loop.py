@@ -124,14 +124,18 @@ def _set_content(msg, value) -> None:
         msg.content = value
 
 
-def _memory_sync_turn(messages: list, final_message) -> None:
-    """Best-effort post-turn write to journal memory.
+def _memory_sync_turn(messages: list, final_message, session_id: str = "") -> None:
+    """Best-effort post-turn write to memory.
 
-    Cheap pattern matching only — heavier extraction lives in the
-    session-end watcher.
+    Cheap: the provider checks whether this session has accumulated
+    enough unwritten conversation and usually does nothing. Without the
+    session id it can do nothing at all — that is what identifies the
+    thread whose turns are being counted.
     """
+    if not session_id:
+        return
     try:
-        from openprogram.memory.builtin import BuiltinMemoryProvider
+        from openprogram.memory import get_provider
     except Exception:
         return
     user_text = _latest_user_text(messages)
@@ -143,7 +147,9 @@ def _memory_sync_turn(messages: list, final_message) -> None:
         if hasattr(c, "type") and c.type == "text":
             asst_text += getattr(c, "text", "") or ""
     try:
-        BuiltinMemoryProvider().sync_turn(user_text, asst_text)
+        get_provider().sync_turn(
+            user_text, asst_text, session_id=session_id
+        )
     except Exception:
         pass
 
@@ -407,8 +413,8 @@ async def _stream_assistant_response(
         latest_user_text = _latest_user_text(messages)
         if latest_user_text:
             try:
-                from openprogram.memory.builtin import BuiltinMemoryProvider
-                prefetch_block = BuiltinMemoryProvider().prefetch(latest_user_text)
+                from openprogram.memory import get_provider
+                prefetch_block = get_provider().prefetch(latest_user_text)
             except Exception:
                 prefetch_block = ""
 
@@ -519,7 +525,9 @@ async def _stream_assistant_response(
             emit_safe("model.response_completed", "agent",
                       {"is_error": event.type == "error"})
             if event.type == "done":
-                _memory_sync_turn(messages, final_message)
+                _memory_sync_turn(
+                    messages, final_message, config.session_id or ""
+                )
             return final_message
 
     # Fallback: return partial if no done/error event

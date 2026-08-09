@@ -11,7 +11,7 @@ import { formatDate } from "./format";
 import { DocIcon, TypeBadge } from "./icons";
 import { useTranslation } from "@/lib/i18n";
 import { type AnimatedNavIconHandle, XIcon } from "@/components/animated-icons";
-import type { EditorState, WikiPage } from "./types";
+import type { EditorState, TopicPage } from "./types";
 import styles from "./memory-page.module.css";
 
 export function TabButton({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode }) {
@@ -35,12 +35,12 @@ export function TabButton({ active, onClick, icon, children }: { active: boolean
 
 export function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelect, forceOpen }: {
   folder: string;
-  pages: WikiPage[];
+  pages: TopicPage[];
   expanded: Set<string>;
   onToggle: (f: string) => void;
-  selected: WikiPage | null;
+  selected: TopicPage | null;
   forceOpen?: boolean;
-  onSelect: (p: WikiPage) => void;
+  onSelect: (p: TopicPage) => void;
 }) {
   const { locale } = useTranslation();
   const isExpanded = !folder || expanded.has(folder) || forceOpen;

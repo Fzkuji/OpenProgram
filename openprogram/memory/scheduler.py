@@ -4,11 +4,11 @@ The worker calls ``start_in_worker(...)`` at boot. We spawn a daemon
 thread that sleeps until the next 03:00 local time, runs the sweep,
 and loops. Lightweight; doesn't depend on a cron daemon.
 
-The LLM callable is supplied by the caller (worker) so this module
-stays independent of any provider SDK. If no LLM is wired in, the
-sweep still runs but ``deep`` becomes a no-op (which is OK — light
-will keep collecting candidates and recovery happens once the LLM is
-configured).
+The sweep reorganises topic files: splitting one that has grown to cover
+several subjects, merging paragraphs that say the same thing, repairing
+links. Writing only ever makes files longer, so without this a workspace
+ends up as one enormous file per subject with its timeline cut to pieces
+— the shape that makes ordering and counting questions unanswerable.
 """
 from __future__ import annotations
 
@@ -17,11 +17,15 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
-from typing import Callable
 
-from .sleep import run_sweep
 
 logger = logging.getLogger(__name__)
+
+
+def get_provider():
+    from . import get_provider as _resolve
+
+    return _resolve()
 
 
 def _seconds_until_next_3am() -> float:
@@ -34,15 +38,15 @@ def _seconds_until_next_3am() -> float:
 
 def start_in_worker(
     *,
-    llm: Callable[[str, str], str] | None = None,
+    model: str | None = None,             # defaults to the user's own
     daily_at: int = 3,                    # hour-of-day local
     initial_delay: float | None = None,   # override for tests
 ) -> threading.Thread | None:
     """Spawn the sleep scheduler thread. Returns the thread or None if disabled.
 
-    ``llm`` is a callable ``(system_prompt, user_text) -> str`` that the
-    worker constructs once (default agent's provider). ``None`` is OK —
-    the sweep still cleans up but skips LLM phases.
+    ``model`` overrides what the reorganising pass runs on; left unset it
+    uses the login and default model the user's own CLI already has, so
+    background maintenance needs no separate credential.
     """
     if os.environ.get("OPENPROGRAM_NO_SLEEP", "").strip() in ("1", "true", "yes"):
         logger.info("memory sleep scheduler disabled by OPENPROGRAM_NO_SLEEP")
@@ -56,7 +60,7 @@ def start_in_worker(
             time.sleep(wait)
         while True:
             try:
-                report = run_sweep(llm=llm)
+                report = get_provider().maintain(model=model)
                 logger.info("memory sleep sweep done: %s", report)
             except Exception as e:  # noqa: BLE001
                 logger.warning("memory sleep sweep failed: %s", e)

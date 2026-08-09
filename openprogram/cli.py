@@ -609,27 +609,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ---- memory (persistent, machine-wide knowledge) ----------------------
     p_memory = sub.add_parser("memory",
-        help="Inspect / manage persistent memory (journal + wiki + core).")
+        help="Inspect / manage persistent memory (topics + sources + core).")
     memory_sub = p_memory.add_subparsers(dest="memory_verb", metavar="verb")
     memory_sub.add_parser("status",
-        help="Show paths, counts, last sleep timestamp.")
+        help="Show the workspace path, what it holds, and its revision.")
     p_mr = memory_sub.add_parser("recall",
-        help="Search wiki + recent journal and print raw snippets.")
+        help="Search memory and print the matching paragraphs.")
     p_mr.add_argument("query", nargs="+", help="Words to recall memories for")
-    p_mr.add_argument("--days", type=int, default=30,
-        help="Limit journal search to last N days (default 30).")
     p_ms = memory_sub.add_parser("show",
-        help="Print a wiki page (slug or 'kind/slug').")
-    p_ms.add_argument("path", help="Wiki page path or name to print")
+        help="Print one memory file, e.g. topics/people/dave.md.")
+    p_ms.add_argument("path", help="Path of the memory file to print")
     p_med = memory_sub.add_parser("edit",
-        help="Open a wiki page in $EDITOR.")
-    p_med.add_argument("path", help="Wiki page path or name to open in $EDITOR")
-    p_msleep = memory_sub.add_parser("sleep",
-        help="Run a sleep sweep now (light → deep → REM).")
-    p_msleep.add_argument("--phase", choices=["light", "deep", "rem"],
-        help="Run only one phase instead of the full sweep.")
-    memory_sub.add_parser("reflections",
-        help="Print the latest entries from wiki/reflections.md.")
+        help="Open a memory file in $EDITOR, then validate it.")
+    p_med.add_argument("path", help="Path of the memory file to open")
+    memory_sub.add_parser("sleep",
+        help="Reorganise topic files now, instead of waiting for tonight.")
     p_mexp = memory_sub.add_parser("export",
         help="Tar+gzip the entire memory dir to a path.")
     p_mexp.add_argument("--out", default=None,
@@ -1259,73 +1253,64 @@ def main():
     if args.command == "memory":
         verb = getattr(args, "memory_verb", None)
         from openprogram.memory import store as _mstore
-        from openprogram.memory import index as _midx
+        from openprogram.memory.scriptorium.retrieval import inspect as _inspect
         if verb == "status":
-            stats = _midx.stats()
-            print(f"memory root:     {_mstore.root()}")
-            print(f"wiki pages:      {stats['wiki_pages']}")
-            print(f"short entries:   {stats['short_entries']}")
-            print(f"last reindex:    {stats['last_reindex'] or '(never)'}")
-            ls = _mstore.last_sleep_path()
-            if ls.exists():
-                # Python 3.11 can't nest the same quote inside an
-                # f-string expression (PEP 701 lifted that restriction
-                # in 3.12). Compute the snippet first, then interpolate.
-                _snippet = ls.read_text(encoding="utf-8").strip()[:200]
-                print(f"last sleep:      {_snippet}")
-            else:
-                print("last sleep:      (never)")
+            root = _mstore.ensure()
+            import json as _json
+            print(f"memory root:     {root}")
+            print(_json.dumps(_inspect.status(root), indent=2, ensure_ascii=False))
             sys.exit(0)
         if verb == "recall":
-            from openprogram.memory.builtin.recall import recall_for_prompt
+            root = _mstore.ensure()
             q = " ".join(args.query)
-            text = recall_for_prompt(q, short_days=args.days)
-            print(text or f"No memories matched {q!r}.")
+            found = _inspect.search(root, q, top_k=8)
+            results = found.get("results", [])
+            if not results:
+                print(f"No memories matched {q!r}.")
+                sys.exit(0)
+            for hit in results:
+                block = hit.get("event_id")
+                head = hit.get("path", "?") + (f"#^{block}" if block else "")
+                print(f"--- {head}")
+                print(hit.get("content", "").strip())
+                print()
             sys.exit(0)
         if verb == "show":
-            from openprogram.memory import wiki as _w
-            content = _w.read(args.path)
-            if content is None:
-                print(f"No wiki page matches {args.path!r}.")
+            root = _mstore.ensure()
+            try:
+                found = _inspect.read_file(root, args.path)
+            except Exception as exc:  # noqa: BLE001
+                print(f"Cannot read {args.path!r}: {exc}")
                 sys.exit(1)
-            print(content)
+            print(found.get("content", ""))
             sys.exit(0)
         if verb == "edit":
             import os, subprocess
-            from openprogram.memory import wiki as _w
-            target = _w.find(args.path)
-            if target is None:
-                literal = _w.root() / (args.path if args.path.endswith(".md") else args.path + ".md")
-                if not literal.exists():
-                    print(f"No wiki page matches {args.path!r}.")
-                    sys.exit(1)
-                target = literal
-            editor = os.environ.get("EDITOR", "vi")
-            subprocess.call([editor, str(target)])
-            _midx.reindex_all()
+            root = _mstore.ensure()
+            name = args.path if args.path.endswith(".md") else args.path + ".md"
+            target = root / name
+            if not target.exists():
+                print(f"No memory file at {name!r}.")
+                sys.exit(1)
+            subprocess.call([os.environ.get("EDITOR", "vi"), str(target)])
+            # Validate rather than reindex: an edit by hand can break the
+            # block IDs and citations other views reach through.
+            from openprogram.memory.scriptorium.management import MemoryWorkspace
+            from openprogram.memory.scriptorium.management.transaction import (
+                committed_baseline, install_state,
+            )
+            space = MemoryWorkspace(root)
+            units, ids = committed_baseline(space)
+            install_state(space, units, ids)
+            print("memory validated and derived views rebuilt")
             sys.exit(0)
         if verb == "sleep":
-            from openprogram.memory.sleep import run_sweep, run_phase
-            from openprogram.memory.llm_bridge import build_default_llm
-            llm = build_default_llm()
-            phase = getattr(args, "phase", None)
-            report = run_phase(phase, llm=llm) if phase else run_sweep(llm=llm)
+            from openprogram.memory.scriptorium.writing import sweep
             import json as _json
-            print(_json.dumps(report, indent=2, ensure_ascii=False))
-            sys.exit(0)
-        if verb == "reflections":
-            r = _mstore.wiki_reflections()
-            if not r.exists():
-                print("(no reflections yet)")
-                sys.exit(0)
-            text = r.read_text(encoding="utf-8")
-            blocks = text.strip().split("\n## ")
-            tail = blocks[-3:] if len(blocks) > 3 else blocks
-            print("\n## ".join(tail))
+            print(_json.dumps(sweep(), indent=2, ensure_ascii=False))
             sys.exit(0)
         if verb == "export":
             import datetime as _dt
-            import shutil as _sh
             import tarfile as _tar
             out = getattr(args, "out", None) or (
                 f"./openprogram-memory-{_dt.date.today().isoformat()}.tar.gz"

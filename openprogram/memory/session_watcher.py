@@ -2,7 +2,7 @@
 
 Polls the session DB every ``poll_interval`` seconds. For any session
 whose ``updated_at`` exceeds ``idle_minutes`` and which we haven't
-already processed, hands the message list to the builtin provider's
+already processed, hands the message list to the memory provider's
 ``on_session_end`` (which runs the LLM summarizer and appends journal
 notes).
 
@@ -118,86 +118,37 @@ def _scan(idle_minutes: int) -> int:
 
 
 def _process_session(session_id: str, messages: list[dict[str, Any]]) -> bool:
-    """Run the two-step wiki ingest over an idle conversation.
+    """Write an idle conversation into memory.
 
-    Returns True on success — caller marks the session as processed.
-    Returns False on retryable failure (LLM call failed, network error,
-    etc.) so the next poll tries again.
+    Returns True on success — the caller marks the session processed.
+    Returns False on a retryable failure so the next poll tries again.
 
-    Switched 2026-05-11 from a one-shot "extract facts → journal"
-    summarizer to the Karpathy / nashsu LLM-Wiki ingest: a two-step
-    analyse-then-generate pass that writes wiki pages directly. The
-    old journal path is still available via
-    ``BuiltinMemoryProvider.on_session_end`` for back-compat or for
-    plugin providers that don't implement ingest; if either step of
-    the ingest fails we fall through to it.
+    Per-turn writing already handles a live session once enough has
+    gathered; this catches the remainder, which would otherwise sit
+    unwritten because the conversation ended below the threshold. The
+    cursor makes the overlap harmless: whatever the live path already
+    wrote is skipped here.
     """
-    # 事件层 tap：ingest 开始（B 类）。
     try:
         from openprogram.events import emit_safe
         emit_safe("memory.ingest_started", "system",
                   {"messages": len(messages)}, {"session": session_id})
     except Exception:
         pass
+
     try:
-        from .wiki.ingest import ingest_session, _build_runtime
+        from . import get_provider
     except Exception:
         return False
 
-    # Pre-flight: is any LLM runtime available at all? ``ingest_session``
-    # builds its own runtime internally via ``_build_runtime``; we probe
-    # the same way first so we can DEFER (not drop) when no provider is
-    # configured yet.
-    runtime = _build_runtime()
-    if runtime is None:
-        # No LLM available right now (fresh install with no provider
-        # configured yet, or a transient resolution failure). Return
-        # False so we DON'T mark this session processed — it stays in
-        # the queue and gets ingested once a provider is configured.
-        #
-        # Previously this returned True ("mark processed") to avoid
-        # looping, but that silently dropped every conversation on any
-        # machine where no runtime resolved. Re-trying is cheap, and the
-        # raw conversation is never lost — it lives permanently in
-        # session-git (the entity layer). So a deferred ingest costs
-        # nothing and loses nothing.
-        logger.debug(
-            "memory: no LLM runtime available; deferring ingest of %s (will retry)",
-            session_id,
-        )
-        return False
-
     try:
-        # Pass the runtime we already built so ingest doesn't build a
-        # second one. ``ingest_session`` takes ``runtime=`` (a Runtime
-        # object with ``.exec``), not an ``llm=`` callable.
-        result = ingest_session(session_id, messages, runtime=runtime)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("memory: wiki ingest crashed for %s: %s", session_id, e)
+        get_provider().on_session_end(messages, session_id=session_id)
+    except Exception as exc:  # noqa: BLE001
+        # A missing CLI or an unreachable model is transient: the
+        # conversation is safe in the session store, so retrying next
+        # poll costs nothing and loses nothing.
+        logger.info("memory: write deferred for %s (%s)", session_id, exc)
         return False
-
-    if result.get("ok"):
-        logger.info(
-            "memory: ingested session %s into wiki (files=%d reviews=%d)",
-            session_id, result.get("n_files", 0), result.get("n_reviews", 0),
-        )
-        return True
-
-    # Ingest failed. Distinguish "LLM unreachable" (retry next poll)
-    # from "LLM responded but didn't follow the protocol" (don't loop
-    # forever; mark processed and move on).
-    err = (result.get("error") or "").lower()
-    transient = any(
-        token in err
-        for token in ("analysis", "generation:", "timeout", "connection", "unreachable")
-    )
-    if transient:
-        logger.info("memory: %s — will retry next poll", result.get("error"))
-        return False
-    logger.info(
-        "memory: ingest produced no usable output for %s (%s); marking processed",
-        session_id, result.get("error"),
-    )
     return True
 
 

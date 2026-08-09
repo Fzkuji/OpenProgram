@@ -18,7 +18,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Iterable
 
-from openprogram.memory.wiki import helpers as _h
+from openprogram.skills import frontmatter as _h
 
 
 SOURCES = ("bundled", "user", "project", "plugin", "remote-cache")

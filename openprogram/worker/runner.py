@@ -236,18 +236,13 @@ def run_foreground() -> int:
     except Exception:  # noqa: BLE001
         pass
 
-    # Memory subsystem — daily sleep sweep + session-end watcher.
+    # Memory subsystem — nightly reorganisation + session-end writer.
     try:
         from openprogram.memory.scheduler import start_in_worker as _start_sleep
         from openprogram.memory.session_watcher import start_in_worker as _start_watcher
-        from openprogram.memory.llm_bridge import build_default_llm
-        _llm = build_default_llm()
-        _start_sleep(llm=_llm)
+        _start_sleep()
         _start_watcher()
-        if _llm is not None:
-            print("[worker] memory: sleep + session-end watcher running")
-        else:
-            print("[worker] memory: watcher running, no default LLM (sleep deep/REM will skip)")
+        print("[worker] memory: nightly reorganisation + session-end writer running")
     except Exception as exc:  # noqa: BLE001
         print(f"[worker] memory subsystem failed to start: {exc}")
 
