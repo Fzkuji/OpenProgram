@@ -2,18 +2,19 @@
  * Backend HTTP base + browser opener shared by TUI flows that talk to
  * the worker's REST API (the same FastAPI app the WS rides on).
  *
- * The worker serves WS on `OPENPROGRAM_WS` (e.g. ws://127.0.0.1:18109/ws)
+ * The worker serves WS on `OPENPROGRAM_WS` (e.g. ws://127.0.0.1:18100/ws)
  * and REST on the same host:port. We derive the http base from that so
  * the TUI hits whatever port the user actually launched on — no second
- * config. Falls back to the same default the WS client uses (18109), not
- * the older 8765 some call sites still hard-code.
+ * config. Falls back to the same default the WS client uses (18100, the
+ * single port since the frontend moved onto the backend — see
+ * docs/reference/design/cli/single-port.md).
  */
 
 export function backendBase(): string {
   return (
     process.env.OPENPROGRAM_BACKEND_URL
     || process.env.OPENPROGRAM_WS?.replace('ws://', 'http://').replace('/ws', '')
-    || 'http://127.0.0.1:18109'
+    || 'http://127.0.0.1:18100'
   );
 }
 

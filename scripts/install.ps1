@@ -182,7 +182,7 @@ function Install-Web {
     else { Step "building web production bundle"; cmd /c "npm run build" }
   }
   finally { Pop-Location }
-  Ok "web UI ready (frontend :18100, backend :18109)"
+  Ok "web UI ready (:18100 serves both the UI and the API)"
 }
 
 # ---- 6. default extras: [all] = browser + channels (opt out with -Minimal) ----

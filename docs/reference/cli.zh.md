@@ -27,7 +27,7 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 |------|------|----------|
 | `openprogram` | 打开聊天；裸跑会先问开终端 UI 还是 Web UI，没有 worker 时自动拉起 | — |
 | `openprogram tui`（别名 `chat`） | 直接启动终端 UI，跳过界面选择（macOS/Linux 用 Ink，Windows 用 Rich） | `--print`、`--resume` 在动词后同样可用 |
-| `openprogram web` | 启动服务并打开浏览器 UI（`http://localhost:18100`） | `--port`（backend，默认 18109）、`--web-port`（frontend，默认 18100）、`--no-browser` |
+| `openprogram web` | 启动服务并打开浏览器 UI（`http://localhost:18100`） | `--port`（默认：已存偏好，否则 18100）、`--web-port`（同一个单端口的旧别名）、`--no-browser` |
 
 ## 后台服务
 
@@ -55,7 +55,7 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 |------|------|----------|
 | `setup` | 首次运行的设置向导 | `menu` 打开交互选择器；给一个分区名直达（model / tools / agent / skills / ui / memory / profile / search / tts / channels / backend） |
 | `config` | 查看 / 修改设置 | `list`（全部设置：值、分组、生效方式）、`get <key>`、`set <key> <value>` |
-| `ports` | 查看 / 持久化 Web UI 端口 | `--backend PORT`（默认 18109）、`--frontend PORT`（默认 18100） |
+| `ports` | 查看 / 持久化 Web UI 的单端口 | `--frontend PORT`（默认 18100）、`--backend PORT`（`--frontend` 的旧别名，两个端口已合并） |
 | `completion` | 输出 shell 补全脚本 | `bash` / `zsh` / `powershell` / `pwsh` |
 
 ### providers —— LLM provider 与凭据

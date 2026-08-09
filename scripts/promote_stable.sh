@@ -3,10 +3,10 @@
 #
 # Layout this script assumes (see docs in the repo root README):
 #   dev    = this repo checkout, run via `openprogram-dev`
-#            (profile ~/.openprogram-dev, ports 18200/18209)
+#            (profile ~/.openprogram-dev, port 18200)
 #   stable = git worktree ../OpenProgram-stable on branch `stable`,
 #            run via `openprogram` (venv ~/.openprogram-stable-env,
-#            default profile ~/.openprogram, ports 18100/18109)
+#            default profile ~/.openprogram, port 18100)
 #
 # Usage:
 #   scripts/promote_stable.sh            # promote origin/main

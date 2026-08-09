@@ -29,7 +29,7 @@ openprogram --profile <name>     # state-directory profile, reroutes to ~/.openp
 |------|------|----------|
 | `openprogram` | Open the chat; a bare run first asks terminal UI vs web UI, auto-launches a worker if none is running | — |
 | `openprogram tui` (alias `chat`) | Launch the terminal UI directly, skipping the surface prompt (Ink on macOS/Linux, Rich on Windows) | `--print`, `--resume` also work after the verb |
-| `openprogram web` | Start the service and open the browser UI (`http://localhost:18100`) | `--port` (backend, default 18109), `--web-port` (frontend, default 18100), `--no-browser` |
+| `openprogram web` | Start the service and open the browser UI (`http://localhost:18100`) | `--port` (default: stored pref, then 18100), `--web-port` (legacy alias for the same single port), `--no-browser` |
 
 ## Background service
 
@@ -57,7 +57,7 @@ The `worker` subcommands offer finer control:
 |------|------|----------|
 | `setup` | First-run setup wizard | `menu` opens the interactive picker; give a section name to jump straight there (model / tools / agent / skills / ui / memory / profile / search / tts / channels / backend) |
 | `config` | View / change settings | `list` (every setting: value, group, apply mode), `get <key>`, `set <key> <value>` |
-| `ports` | View / persist the Web UI ports | `--backend PORT` (default 18109), `--frontend PORT` (default 18100) |
+| `ports` | View / persist the single Web UI port | `--frontend PORT` (default 18100), `--backend PORT` (legacy alias for `--frontend`; the ports are merged) |
 | `completion` | Print a shell completion script | `bash` / `zsh` / `powershell` / `pwsh` |
 
 ### providers — LLM providers and credentials
