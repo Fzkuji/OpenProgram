@@ -37,6 +37,7 @@ LLM Context
 | Document | Content |
 |------|------|
 | [`overview.md`](overview.md) | The two-tier architecture (entity/virtual + provenance recall) and the linear summary chain running today in `openprogram/memory/` |
+| [`memory-architecture.html`](memory-architecture.html) | Visualization: the two write entry points, the five write steps, the staged transaction, the id-set cursor, which of the nine provider hooks are wired, and the failure contract |
 | [`git-as-entity-memory.md`](git-as-entity-memory.md) | The entity layer's git substrate (Session-Git + Project-Git) |
 | [`entity-memory.md`](entity-memory.md) | Entity memory: Session-Git + Project-Git, organized by lifecycle |
 | [`virtual-memory.md`](virtual-memory.md) | Abstract memory: Timeline + Graph + Core, organized by type × lifecycle |

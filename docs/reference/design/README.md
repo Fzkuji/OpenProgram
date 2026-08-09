@@ -21,7 +21,7 @@ supporting notes / investigations that should not override it.
 | Doc | Topic |
 |---|---|
 | [`memory/README.md`](memory/README.md) | Memory system overview: architecture, design principles, implementation status |
-| [`memory/overview.md`](memory/overview.md) | Memory subsystem: entity/virtual two-tier + provenance-navigated recall, and the chain running today |
+| [`memory/overview.md`](memory/overview.md) | Memory subsystem: entity/virtual two-tier + provenance-navigated recall, and the chain running today ([visualization](memory/memory-architecture.html)) |
 | [`memory/entity-memory.md`](memory/entity-memory.md) | Entity memory: Session-Git + Project-Git, organized by lifecycle |
 | [`memory/git-as-entity-memory.md`](memory/git-as-entity-memory.md) | Entity memory on Git: Session-Git + Project-Git |
 | [`memory/virtual-memory.md`](memory/virtual-memory.md) | Abstract memory: Timeline + Graph + Core, organized by type × lifecycle |

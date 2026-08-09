@@ -18,7 +18,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | Doc | Topic |
 |---|---|
 | [`memory/README.md`](memory/README.md) | 记忆系统总览：架构、设计原则、实施状态 |
-| [`memory/overview.md`](memory/overview.md) | 记忆子系统：实体/抽象两层 + 溯源导航式回忆，以及当前在跑的总结链 |
+| [`memory/overview.md`](memory/overview.md) | 记忆子系统：实体/抽象两层 + 溯源导航式回忆，以及当前在跑的总结链（[可视化](memory/memory-architecture.html)） |
 | [`memory/entity-memory.md`](memory/entity-memory.md) | 实体记忆：Session-Git + Project-Git，按生命周期组织 |
 | [`memory/git-as-entity-memory.md`](memory/git-as-entity-memory.md) | 用 Git 做实体记忆：Session-Git + Project-Git |
 | [`memory/virtual-memory.md`](memory/virtual-memory.md) | 抽象记忆：Timeline + Graph + Core，按类型 × 生命周期组织 |
