@@ -65,6 +65,7 @@ agent(
     context: str = "clean",             # "clean" / "inherit" / "SID:MSG_ID"
     run_in_background: bool = false,    # false=阻塞等回复；true=返回 task_id
     to: str = "",                       # 改为给已有 agent 派活
+    archive_when_done: bool = false,    # 派生的 agent 终态即归档（§2.6）
 ) -> str
 ```
 
@@ -146,8 +147,12 @@ message 就是纯文本，跟用户消息一样。要让目标参考别的分支
 ### 2.3 `list_agents` — 看见对方（通信的前提）
 
 ```
-list_agents(limit=50, agent_id?, source?) -> str   # db.list_sessions + db.list_branches
+list_agents(scope="session", limit=20, agent_id?, source?) -> str   # db.list_sessions + db.list_branches
 ```
+
+`scope` 决定看哪一片：`"session"`（默认）列当前 session 的分支，也就是在这里
+派生出来的 agent；`"all"` 放宽到所有 session，最近活跃优先，不带预览；
+`"archived"` 列当前 session 已归档的分支（§2.6），前两种视图会把它们藏起来。
 
 agent 的对话就存在 session DAG 的分支里，所以"能跟谁说话"="有哪些
 session、每个有哪些分支"。一次调用全列出，按 session 分组：session 行带
@@ -187,6 +192,50 @@ HEAD 并推进它。**每个投递 session 有一把回送串行锁
 这样锚定不丢回流出处：派生时写下的 **attach 指针**仍然挂
 `predecessor = caller_msg_id`，DAG 上照样能看出每条子分支从哪一轮 fork 出去、
 每个结果从哪条分支回流。子分支本身是并列的独立一支，**不并回主线**。
+
+### 2.6 归档：把一个 agent 从通讯录里退役
+
+分支在 session DAG 里永久存在，fork、回放、`read_conversation` 都依赖这一点，
+所以没有退役标记时 `list_agents` 会攒下历史上派生过的每一个 agent，模型还会
+继续去找那些活早就干完的 worker。归档就是这个标记：分支 meta 条目上的
+`archived: true`，和分支名同一个 `branches` 条目，用 `set_branch_meta` 写、
+`get_branch_meta` 读。
+
+**归档砍掉的是分支被打扰的权利，不是它的历史。**
+
+| 对已归档分支的操作 | 行为 |
+|---|---|
+| `list_agents`（`scope="session"` / `"all"`） | 不列 |
+| `list_agents(scope="archived")` | 列出，恰好就是这些退役分支 |
+| `send_message(to=…)` | 报错：`agent SID:HEAD is archived` |
+| `agent(to=…)` | 同样报错，同一句话 |
+| `read_conversation` | 照读 |
+| `agent(context="SID:MSG_ID")` | 照 fork |
+
+拒收只写在一处：两条投递路径共用的寻址 `resolve_existing_target`（§2.1）在把
+地址归位到分支当前末端之后立刻查这个标记，于是每条投递都自带这道守卫，谁也
+绕不过去。`archive_agent` 用同一个寻址加 `allow_archived=True` 来指认已归档
+分支。
+
+两种归档方式：
+
+- **`agent(archive_when_done=true)`**：派生时就声明这个 agent 是一次性 worker。
+  分支在任务终态（`completed` / `errored` / `cancelled`）被打上标记，时点在
+  结果回流之后；同步派生形态则在结果拿到手后打标。这次写入是 best-effort：
+  meta 写失败只记日志，结果照常返回。只对派生生效，和 `to=` 同时传会报错，
+  因为派活指向的是本次调用没有创建的 agent。
+- **`archive_agent(to, reason="")`**：事后退役。`to` 收 `send_message` 那套
+  地址（`"SID:HEAD"` 或分支名）。对已归档分支再归档是一句幂等提示，不是错误。
+
+**只有创建者能归档。** 每次派生都会把创建者记在新分支上
+（`spawner_session_id`，在终态和归档标记一起写），`archive_agent` 拒绝其他
+session。没记创建者的分支属于顶层，归它自己的 session 所有：那个 session 可以
+归档它，别的 session 不行。没有 session 上下文的调用（用户、UI）不设门——人拥有
+一切，和 §5.10 的任务归属同一立场。
+
+**没有反归档。** 这个标记的含义是"这段对话结束了"，而结束的对话若还有值得复用的
+记忆，做法是用 `agent(context="SID:MSG_ID")` fork 出一条新分支，它有自己的名字和
+自己的生命周期。反归档工具只会是同一件事的第二种写法。
 
 ---
 
@@ -443,7 +492,7 @@ session 上下文的调用（用户、UI）不设限——人拥有一切。
   `task_output/` + `task_stop/`（异步形态管理）
 - `openprogram/functions/tools/send_message/` — `send_message/`（投递 +
   触发 + 自动回送）+ `list_agents/`（复用
-  db.list_sessions + db.list_branches）
+  db.list_sessions + db.list_branches）+ `archive_agent/`（分支退役，§2.6）
 - 各工具 `emit_safe(...)`；跨 session 通知用 `emit_ws_frame`
 
 **后端（复用既有组件）**
@@ -469,6 +518,7 @@ session 上下文的调用（用户、UI）不设限——人拥有一切。
 |---|---|
 | 派生（`agent` 工具） | agent 调一次，新建分支跑一轮，结果自动 followup 回发起方；spawn 事件在事件日志可见 |
 | 列举 | `list_agents` 列出真实的多 session 及各自的分支 |
+| 归档（§2.6） | 已归档 agent 从 `list_agents` 消失、在 `scope="archived"` 里出现；`send_message` 与 `agent(to=)` 拒收，`read_conversation` 与 `agent(context=…)` 照常；只有创建它的 session 能归档（`tests/unit/test_archive_agent.py`） |
 | 发给同 session 已有分支 | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
 | 跨 session | A 发给别的 session 走同一路径；两边前端经 ws.frame 实时更新 |
 | 健壮性（§5） | A↔B 互发到 MAX_DEPTH 自动停；派 30 个排队不打爆；取消父→子全停（`tests/unit/test_cascade_cancel.py`）；给正跑的 B 发消息落它的收件箱、等它这轮结束投递（`tests/unit/test_send_message_inbox.py`）；子失败父收到 is_error；超大结果截断给文件路径 |
@@ -489,6 +539,7 @@ session 上下文的调用（用户、UI）不设限——人拥有一切。
 | attach 连线（仅画图） | `openprogram/agent/sub_agent_run.py`（write_attach_pointer_for_spawn） |
 | 事件总线 | `openprogram/events/bus.py`（emit_safe / emit_ws_frame） |
 | 忙时收件箱（§5.4） | `openprogram/agent/inbox.py`（enqueue / drain），忙判定 `run_control.is_turn_running`，消费挂点 `dispatcher._drain_send_message_inbox` |
+| 归档（§2.6） | `functions/tools/send_message/archive_agent/archive_agent.py`，守卫在 `send_message/addressing.py`（`resolve_existing_target`），终态打标在 `agent/task/runner.py`（`_finalize_spawn_branch_meta`），标记本身在 `store/session/session_store.py`（`set_branch_meta` / `list_branches`） |
 
 > 注："综合多条"不需要专门机制：发送方在 `message` 里点名分支，目标用
 > `read_conversation` 自己读（§2.2）。
@@ -499,7 +550,9 @@ session 上下文的调用（用户、UI）不设限——人拥有一切。
 
 本文内容均已实现：事件层（§3）、`TaskRunner`、`SessionStore`、
 `process_user_turn`、`agent` 工具族（`agent`——派生与 `to=` 派活——/
-`task_output` / `task_stop`，含 §5.10 归属门）、`send_message` 及其列举工具 `list_agents`、
+`task_output` / `task_stop`，含 §5.10 归属门）、`send_message` 及其列举工具
+`list_agents`、退役工具 `archive_agent`（§2.6——`archive_when_done` 加创建者
+门；`tests/unit/test_archive_agent.py`）、
 派生分支命名（§2.4——派生时的 Stage 1 label + `finalize_turn` 的 Stage 2
 自动改名）、串行化的回送锚定（§2.5——`_dispatch_followup` +
 `_followup_lock`）、级联取消（§5.3——`TaskRunner.cancel_task` 沿

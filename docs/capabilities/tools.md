@@ -64,9 +64,10 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 
 | Tool | What it does | Requires |
 |---|---|---|
-| `agent` (+ `list_tasks` / `task_output` / `task_stop`) | Spawn another agent within the same session and collect its reply, or dispatch a tracked task to an existing agent with `to=`; list, fetch or stop its background tasks (only the dispatching session may fetch or stop a task) | Nothing |
+| `agent` (+ `list_tasks` / `task_output` / `task_stop`) | Spawn another agent within the same session and collect its reply, or dispatch a tracked task to an existing agent with `to=`; list, fetch or stop its background tasks (only the dispatching session may fetch or stop a task). `archive_when_done=true` retires the spawned agent once its task reaches terminal state, after the result flowed back | Nothing |
 | `program` | Invoke any registered `@agentic_function` | Nothing |
 | `send_message` (+ `list_agents`) | Cross-branch communication with existing agents | Nothing |
+| `archive_agent` | Retire an agent you created: it leaves `list_agents` (`scope="archived"` still lists it) and refuses further `send_message` / `agent(to=)` deliveries, while `read_conversation` still reads its history and `agent(context="SID:MSG_ID")` still forks it. Only the creating session may archive; there is no unarchive | Nothing |
 | `mixture_of_agents` | Ask N models in parallel, then synthesize; defaults picked from the model registry, one per provider | At least 2 providers in the model registry |
 | `ask_user_question` | Ask the user 1-N questions with options | Nothing |
 | `todo_create` / `todo_update` / `todo_list` | Session planning board — a written checklist of intent (create entries, update status/owner, list grouped by status); dispatch actual work with `agent`, track it with `list_tasks` | Nothing |

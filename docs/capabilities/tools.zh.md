@@ -64,9 +64,10 @@ OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调�
 
 | 工具 | 做什么 | 需要什么 |
 |---|---|---|
-| `agent`（+ `list_tasks` / `task_output` / `task_stop`） | 在同一会话里派生另一个 agent 并取回回复，或用 `to=` 给已有 agent 派受管任务；列出/获取/停止它的后台任务（只有派活方会话能获取/停止某个任务） | 无 |
+| `agent`（+ `list_tasks` / `task_output` / `task_stop`） | 在同一会话里派生另一个 agent 并取回回复，或用 `to=` 给已有 agent 派受管任务；列出/获取/停止它的后台任务（只有派活方会话能获取/停止某个任务）。`archive_when_done=true` 让派生出的 agent 在任务终态、结果回流之后自动退役 | 无 |
 | `program` | 调用任意已注册的 `@agentic_function` | 无 |
 | `send_message`（+ `list_agents`） | 与已存在的 agent 分支间通信 | 无 |
+| `archive_agent` | 把自己创建的 agent 退役：它从 `list_agents` 消失（`scope="archived"` 仍列出），并拒收后续 `send_message` / `agent(to=)` 投递；`read_conversation` 照读它的历史，`agent(context="SID:MSG_ID")` 照 fork。只有创建它的会话能归档，且没有反归档 | 无 |
 | `mixture_of_agents` | 并行问N个模型再综合;默认从模型注册表选,每个provider取一个 | 模型注册表里至少2个provider |
 | `ask_user_question` | 向用户提 1–N 个带选项的问题 | 无 |
 | `todo_create` / `todo_update` / `todo_list` | 会话规划板:手写计划清单(建条目、改状态/认领人、按状态分组列出);真正派活用`agent`,追踪用`list_tasks` | 无 |

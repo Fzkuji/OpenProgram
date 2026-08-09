@@ -77,6 +77,7 @@ agent(
     context: str = "clean",             # "clean" / "inherit" / "SID:MSG_ID"
     run_in_background: bool = false,    # false=block for the reply; true=task_id
     to: str = "",                       # dispatch to an EXISTING agent instead
+    archive_when_done: bool = false,    # retire the spawned agent at terminal state (§2.6)
 ) -> str
 ```
 
@@ -178,8 +179,13 @@ parameter.
 ### 2.3 `list_agents` — seeing each other (a precondition for communication)
 
 ```
-list_agents(limit=50, agent_id?, source?) -> str   # db.list_sessions + db.list_branches
+list_agents(scope="session", limit=20, agent_id?, source?) -> str   # db.list_sessions + db.list_branches
 ```
+
+`scope` picks the view: `"session"` (default) lists the current session's
+branches — the agents spawned here; `"all"` widens to every session, most
+recently active first, without previews; `"archived"` lists the current
+session's retired branches (§2.6), which the other two scopes hide.
 
 An agent's conversation is stored as a branch in the session DAG, so "which
 agents can I talk to" = "which sessions exist, and which branches does each
@@ -238,6 +244,60 @@ pointer** written at spawn time does hang off
 sub-branch forked from and which branch each result flowed back from.
 The sub-branch itself stays a parallel independent branch and **does not
 merge back into the mainline**.
+
+### 2.6 Archiving: retiring an agent from the contact list
+
+Branches live forever in the session DAG — fork, replay, and
+`read_conversation` all depend on that — so without a retirement mark
+`list_agents` accumulates every agent ever spawned, and the model keeps
+addressing workers whose job finished long ago. Archiving is that mark:
+`archived: true` on the branch's meta entry, the same `branches` entry that
+carries the name, written with `set_branch_meta` and read with
+`get_branch_meta`.
+
+**Archiving removes a branch's right to be disturbed, never its history.**
+
+| Operation on an archived branch | Behavior |
+|---|---|
+| `list_agents` (`scope="session"` / `"all"`) | Hidden |
+| `list_agents(scope="archived")` | Listed — exactly the retired branches |
+| `send_message(to=…)` | Refused: `agent SID:HEAD is archived` |
+| `agent(to=…)` | Refused, same message |
+| `read_conversation` | Reads it as usual |
+| `agent(context="SID:MSG_ID")` | Forks it as usual |
+
+The refusal lives in exactly one place: `resolve_existing_target` (the
+addressing both delivery paths share, §2.1) checks the flag right after it
+snaps an address onto the branch's current tip, so every delivery inherits
+the guard and no caller can route around it. `archive_agent` reaches
+archived branches through that same resolver with `allow_archived=True`.
+
+Two ways to archive:
+
+- **`agent(archive_when_done=true)`** — the spawn declares up front that
+  the agent it creates is a one-shot worker. The branch is marked at
+  terminal state (`completed` / `errored` / `cancelled`), after the result
+  has flowed back to the caller; the synchronous spawn form marks it once
+  the result is in hand. The write is best-effort: a failed meta write is
+  logged and the result still returns. Spawn-only — combined with `to=` the
+  call errors, because a dispatch targets an agent it did not create.
+- **`archive_agent(to, reason="")`** — retire an agent after the fact. `to`
+  takes the same addresses as `send_message` (`"SID:HEAD"` or a branch
+  name). Archiving an already-archived branch is an idempotent notice, not
+  an error.
+
+**Only the creator archives.** Every spawn records its creator on the new
+branch (`spawner_session_id`, stamped alongside the archive flag at
+terminal state), and `archive_agent` refuses any other session. A branch
+with no recorded creator is top-level and belongs to its own session: that
+session may archive it, another session may not. Calls with no session
+context (the user, the UI) are not gated — the human owns everything, the
+same stance as §5.10's task ownership.
+
+**There is no unarchive.** The mark means "this conversation is finished",
+and a finished conversation whose memory is worth reusing is forked with
+`agent(context="SID:MSG_ID")` — a fresh branch with its own name and its
+own lifecycle. An unarchive tool would only be a second way to spell that.
 
 ---
 
@@ -566,7 +626,8 @@ gated — the human owns everything.
   `task_output/` + `task_stop/` (async form management)
 - `openprogram/functions/tools/send_message/` — `send_message/` (deliver +
   trigger + auto reply-back) +
-  `list_agents/` (reuse db.list_sessions + db.list_branches)
+  `list_agents/` (reuse db.list_sessions + db.list_branches) +
+  `archive_agent/` (retire a branch, §2.6)
 - Each tool calls `emit_safe(...)`; cross-session notifications use
   `emit_ws_frame`
 
@@ -597,6 +658,7 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 |---|---|
 | Spawn (the `agent` tool) | The agent calls once, a new branch runs a turn, and the result automatically follows up back to the caller; spawn events are visible in the event log |
 | Listing | `list_agents` lists the real multiple sessions and each one's branches |
+| Archiving (§2.6) | An archived agent leaves `list_agents` and shows up under `scope="archived"`; `send_message` and `agent(to=)` refuse it while `read_conversation` and `agent(context=…)` still work; only the creating session may archive it (`tests/unit/test_archive_agent.py`) |
 | Send to an existing branch in the same session | A sends to branch B of the same session, A does not block, B runs a turn, the reply returns to A automatically |
 | Cross-session | A sending to another session takes the same path; both frontends update live via ws.frame |
 | Robustness (§5) | A↔B back-and-forth stops automatically at MAX_DEPTH; spawning 30 queues without blowing up; cancelling the parent stops every child (`tests/unit/test_cascade_cancel.py`); messaging a running B queues to its inbox and is delivered when its turn ends (`tests/unit/test_send_message_inbox.py`); the parent receives is_error when a child fails; oversized results are truncated with a file path |
@@ -617,6 +679,7 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 | attach edge (drawing only) | `openprogram/agent/sub_agent_run.py` (write_attach_pointer_for_spawn) |
 | Event bus | `openprogram/events/bus.py` (emit_safe / emit_ws_frame) |
 | Busy-target inbox (§5.4) | `openprogram/agent/inbox.py` (enqueue / drain), busy check `run_control.is_turn_running`, drain hook `dispatcher._drain_send_message_inbox` |
+| Archiving (§2.6) | `functions/tools/send_message/archive_agent/archive_agent.py`, the guard in `send_message/addressing.py` (`resolve_existing_target`), the terminal-state stamp in `agent/task/runner.py` (`_finalize_spawn_branch_meta`), the flag itself in `store/session/session_store.py` (`set_branch_meta` / `list_branches`) |
 
 > Note: "synthesize several branches" needs no dedicated mechanism — the
 > sender names the branches in `message` and the target reads them with
@@ -630,7 +693,9 @@ Everything in this document is implemented: the event layer (§3),
 `TaskRunner`, `SessionStore`, `process_user_turn`,
 the `agent` tool family (`agent` — spawn and `to=` dispatch — /
 `task_output` / `task_stop`, with the §5.10 ownership gate),
-`send_message` and its discovery tool `list_agents`, spawned-branch naming
+`send_message` with its discovery tool `list_agents` and its lifecycle tool
+`archive_agent` (§2.6 — `archive_when_done` plus the creator gate;
+`tests/unit/test_archive_agent.py`), spawned-branch naming
 (§2.4 — the Stage 1 label at spawn plus the Stage 2 `finalize_turn`
 rename), the serialized reply-back anchoring (§2.5 — `_dispatch_followup` +
 `_followup_lock`), cascading cancel (§5.3 — `TaskRunner.cancel_task` over

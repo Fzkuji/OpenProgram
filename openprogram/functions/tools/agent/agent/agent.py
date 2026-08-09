@@ -283,12 +283,23 @@ def _agent_impl(
     context: str = "clean",
     run_in_background: bool = False,
     to: str = "",
+    archive_when_done: bool = False,
 ) -> str:
     """Implementation body. Pulled out of the @function-wrapped binding
     so unit tests can drive it directly with their own ContextVars
     instead of going through the AgentTool execute path.
     """
     if (to or "").strip():
+        # archive_when_done characterizes a branch THIS call creates;
+        # a to= dispatch targets an existing agent this call did not
+        # create — only its creator may archive it (archive_agent).
+        if archive_when_done:
+            return (
+                "[agent error] archive_when_done applies to the branch "
+                "this call spawns — to= dispatches to an EXISTING agent "
+                "instead. Drop archive_when_done, or archive the target "
+                "later with archive_agent (creator only)."
+            )
         # Dispatch to an EXISTING agent — always async, returns a
         # task_id immediately; run_in_background is meaningless here
         # and ignored.
@@ -410,6 +421,11 @@ def _agent_impl(
                 # the caller's session, not the fork target's.
                 caller_session_id=sid if run_session != sid else None,
                 spawn_depth=depth + 1,
+                # This call CREATES the branch — record the creator so
+                # archive_agent can gate on it, and let the runner
+                # archive the branch at terminal state if asked.
+                spawner_session_id=sid,
+                archive_when_done=archive_when_done,
                 attach_pointer_id=attach_id,
             )
             # Live counterpart of the placeholder row above, so the card
@@ -528,6 +544,24 @@ def _agent_impl(
     except Exception:
         pass
 
+    # Spawn-branch meta, after the result is in hand: stamp the creator
+    # (archive_agent gates on it) and archive on request. Best-effort —
+    # the result below flows back regardless.
+    if result.head_id:
+        try:
+            import time as _time
+            from openprogram.agent.session_db import default_db
+            _fields: dict = {"spawner_session_id": sid}
+            if archive_when_done:
+                _fields["archived"] = True
+                _fields["archived_at"] = _time.time()
+            default_db().set_branch_meta(run_session, result.head_id, **_fields)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).debug(
+                "spawn branch meta stamp failed", exc_info=True,
+            )
+
     if result.error and not result.final_text:
         return f"[agent error: head={result.head_id}] {result.error}"
 
@@ -557,6 +591,7 @@ def agent(
     context: str = "clean",
     run_in_background: bool = False,
     to: str = "",
+    archive_when_done: bool = False,
 ) -> str:
     """Spawn a new agent, or dispatch a tracked task to an existing one.
 
@@ -589,10 +624,18 @@ def agent(
         to: dispatch target — an existing branch, addressed as
             ``"SID:HEAD"`` or by branch name (see list_agents). A busy
             target queues the task and runs it when its turn ends.
+        archive_when_done: True ⇒ archive the spawned branch once its
+            task reaches terminal state (after the result flowed
+            back): it disappears from list_agents and refuses further
+            send_message / agent(to=) deliveries; its history stays
+            readable and forkable. Default False keeps the agent
+            addressable for follow-up questions. Spawn-only —
+            incompatible with ``to``.
     """
     return _agent_impl(
         prompt=prompt, description=description,
         agent_id=agent_id, context=context,
         run_in_background=run_in_background,
         to=to,
+        archive_when_done=archive_when_done,
     )

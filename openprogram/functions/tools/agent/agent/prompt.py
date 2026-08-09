@@ -51,5 +51,11 @@ DESCRIPTION = (
     "result with task_output(task_id), or stop the agent early with "
     "task_stop(task_id). Ignored when 'to' is set.\n"
     "  to: dispatch target — an existing branch as 'SID:HEAD' or a "
-    "branch name (see list_agents). Mutually exclusive with context."
+    "branch name (see list_agents). Mutually exclusive with context.\n"
+    "  archive_when_done: true ⇒ archive the spawned branch when its "
+    "task ends (after the result came back): it leaves list_agents and "
+    "refuses further send_message / agent(to=) deliveries, while its "
+    "history stays readable (read_conversation) and forkable "
+    "(context='SID:MSG_ID'). Default false keeps the agent around for "
+    "follow-up questions. Spawn-only — incompatible with 'to'."
 )

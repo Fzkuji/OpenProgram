@@ -28,8 +28,11 @@ _DESCRIPTION = (
     "shows only the current session's branches — the agents spawned "
     "here. Pass scope=\"all\" to find agents in OTHER sessions: every "
     "session is listed, most recently active first, without previews "
-    "(limit defaults to 20). To CREATE a new agent, use the `agent` "
-    "tool instead."
+    "(limit defaults to 20). Archived agents (archive_agent / "
+    "agent(archive_when_done=true)) are hidden from both; "
+    "scope=\"archived\" lists exactly them — still readable with "
+    "read_conversation, no longer addressable. To CREATE a new agent, "
+    "use the `agent` tool instead."
 )
 
 
@@ -55,8 +58,12 @@ def _turn_running(session_id: str) -> bool | None:
         return None
 
 
-def _session_lines(db, r: dict, cur: str, *, preview: bool) -> tuple[list[str], int]:
-    """Render one session header + its branch lines; returns (lines, n_branches)."""
+def _session_lines(
+    db, r: dict, cur: str, *, preview: bool, archived: bool = False,
+) -> tuple[list[str], int]:
+    """Render one session header + its branch lines; returns (lines,
+    n_branches). ``archived`` flips the filter: False (default) lists
+    only live branches, True lists only archived ones."""
     sid = r.get("id", "?")
     mark = "  ← current session" if sid == cur else ""
     title = r.get("title") or "(untitled)"
@@ -68,6 +75,7 @@ def _session_lines(db, r: dict, cur: str, *, preview: bool) -> tuple[list[str], 
         branches = db.list_branches(sid) or []
     except Exception:
         branches = []
+    branches = [b for b in branches if bool(b.get("archived")) == archived]
     for b in branches:
         head = b.get("head_msg_id", "?")
         name = b.get("name")
@@ -95,6 +103,9 @@ def _list_agents_impl(
     cur = _current_session()
 
     if scope != "all":
+        # "session" (default) lists the live branches; "archived" lists
+        # exactly the retired ones, same per-branch format.
+        archived_scope = scope == "archived"
         if not cur:
             return ('[list_agents error] no active session context — '
                     'use scope="all" to list every session')
@@ -105,16 +116,25 @@ def _list_agents_impl(
             return f"[list_agents error] {type(e).__name__}: {e}"
         if not rows:
             return "(current session not found)"
-        lines, total_branches = _session_lines(db, rows[0], cur, preview=True)
+        lines, total_branches = _session_lines(
+            db, rows[0], cur, preview=True, archived=archived_scope)
         emit_safe(
             "agents.listed", "agent",
             {"sessions": 1, "branches": total_branches},
         )
-        header = (
-            f"{total_branches} branch(es) in this session — pass a `to` "
-            "below to send_message (a «name» works directly as `to` too); "
-            'scope="all" lists other sessions:'
-        )
+        if archived_scope:
+            header = (
+                f"{total_branches} archived branch(es) in this session — "
+                "no longer addressable (send_message / agent(to=) refuse "
+                "them); read_conversation still reads them, "
+                'agent(context="SID:MSG_ID") still forks them:'
+            )
+        else:
+            header = (
+                f"{total_branches} branch(es) in this session — pass a `to` "
+                "below to send_message (a «name» works directly as `to` too); "
+                'scope="all" lists other sessions:'
+            )
         return "\n".join([header, *lines])
 
     # scope="all" — list_sessions returns most recently active first.
@@ -155,6 +175,8 @@ def list_agents(
     agent_id: str = "",
     source: str = "",
 ) -> str:
-    """List talkable agents: this session's branches, or all sessions."""
+    """List talkable agents: this session's branches ("session",
+    default), every session ("all"), or the retired ones
+    ("archived")."""
     return _list_agents_impl(scope=scope, limit=limit,
                              agent_id=agent_id, source=source)

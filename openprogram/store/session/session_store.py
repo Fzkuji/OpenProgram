@@ -1255,6 +1255,7 @@ class SessionStore:
                 "name": name,
                 "created_at": (label or {}).get("created_at") if isinstance(label, dict) else node.created_at,
                 "updated_at": (label or {}).get("updated_at") if isinstance(label, dict) else node.created_at,
+                "archived": bool(label.get("archived")) if isinstance(label, dict) else False,
             })
         # Main_tip may have children (the /task spawn it stopped at), so
         # the leaf-only loop above won't include it. Push it in by hand so
@@ -1274,6 +1275,7 @@ class SessionStore:
                     "name": name,
                     "created_at": main_node.created_at,
                     "updated_at": main_node.created_at,
+                    "archived": bool(label.get("archived")) if isinstance(label, dict) else False,
                 })
         # Compaction no longer clones the kept tail (§8): a summary node
         # splices into the chain and the tail keeps its own ids, so the
@@ -1325,6 +1327,26 @@ class SessionStore:
             return {}
         _git, idx = pair
         return dict((idx.meta.get("branches") or {}).get(head_msg_id) or {})
+
+    def set_branch_meta(
+        self, session_id: str, head_msg_id: str, **fields: Any,
+    ) -> None:
+        """Merge ``fields`` into a branch's meta entry without touching
+        its name. Used for lifecycle facts that ride the same entry as
+        the name (``archived`` / ``archived_at`` / ``spawner_session_id``
+        — see agent-collaboration.md, archiving)."""
+        pair = self._open(session_id, create_if_missing=True)
+        if pair is None:
+            return
+        git, idx = pair
+        branches = dict(idx.meta.get("branches") or {})
+        entry = dict(branches.get(head_msg_id) or {})
+        entry.update(fields)
+        entry.setdefault("created_at", time.time())
+        entry["updated_at"] = time.time()
+        branches[head_msg_id] = entry
+        idx.set_meta(branches=branches)
+        self._persist_meta(git, idx)
 
     def bump_branch_turns(self, session_id: str, head_msg_id: str) -> int:
         """Increment a branch's per-branch turn counter and return the
