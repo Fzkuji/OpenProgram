@@ -36,18 +36,30 @@ LLM sees a clear message it can act on.
 from __future__ import annotations
 
 from openprogram.functions._runtime import function
+from openprogram.functions.tools.send_message.send_message.depth import (
+    delegation_budget_left as _delegation_budget_left,
+)
 
 from .prompt import DESCRIPTION
 
 
-# agent() delegation cap. ONE level: the main agent may spawn workers;
-# a spawned agent does the work itself — it never re-delegates. Even a
-# single "coordinator" hop turned out to be an agent avoiding its job
-# in practice (observed live: a weather query bounced through a whole
-# delegation chain, every hop re-wording the same prompt). Deliberately
-# much tighter than send_message's MAX_SPAWN_DEPTH=8, which budgets
-# multi-round branch-to-branch conversation, not delegation.
-MAX_AGENT_DEPTH = 1
+# Spawn budget: how many generations of NEW agents a chain may create.
+# ONE level by default — the main agent spawns workers; a worker does
+# the work itself. Even a single "coordinator" hop turned out to be an
+# agent avoiding its job in practice (observed live: a weather query
+# bounced through a whole delegation chain, every hop re-wording the
+# same prompt). Deliberately tighter than the message budget
+# (MAX_MESSAGES=8), which pays for multi-round conversation, not for
+# creating agents. Module-level fallback for ``agent.max_spawn_depth``.
+MAX_SPAWN_DEPTH = 1
+
+
+def max_spawn_depth() -> int:
+    """``agent.max_spawn_depth`` from config; 0 = unlimited."""
+    from openprogram.functions.tools.send_message.send_message.depth import (
+        config_limit,
+    )
+    return config_limit("max_spawn_depth", MAX_SPAWN_DEPTH)
 
 
 def _resolve_parent() -> tuple[str | None, str | None, str | None]:
@@ -115,19 +127,20 @@ def _dispatch_to_existing(
         )
     chosen_agent = (agent_id or "").strip() or parent_agent or "main"
 
-    # Depth guard: a dispatch to an existing agent budgets like
-    # send_message's branch-to-branch traffic (MAX_SPAWN_DEPTH), not
-    # like spawn delegation (MAX_AGENT_DEPTH).
+    # Budget guard: a dispatch to an existing agent spends the message
+    # budget (branch-to-branch traffic), not the spawn budget — it
+    # creates no agent.
     from openprogram.functions.tools.send_message.send_message.depth import (
-        MAX_SPAWN_DEPTH,
-        current_spawn_depth,
+        current_chain_messages,
+        max_messages,
     )
-    depth = current_spawn_depth()
-    if depth >= MAX_SPAWN_DEPTH:
+    depth = current_chain_messages()
+    limit = max_messages()
+    if limit and depth >= limit:
         return (
-            f"[agent refused] spawn depth {depth} reached the max "
-            f"({MAX_SPAWN_DEPTH}). This chain is too deep — finish the "
-            "work here instead of dispatching further."
+            f"[agent refused] this chain has passed {depth} messages, "
+            f"the maximum ({limit}). Finish the work here instead of "
+            "dispatching further."
         )
 
     # Addressing is send_message's, verbatim: SID:HEAD snaps to the
@@ -188,7 +201,7 @@ def _dispatch_to_existing(
                 wait=False,
                 caller_msg_id=aid,
                 caller_session_id=sid,
-                spawn_depth=depth + 1,
+                chain_messages=depth + 1,
                 status=TaskStatus.PENDING,
             )
             save_task(run_session, task)
@@ -200,7 +213,7 @@ def _dispatch_to_existing(
                     sender_msg_id=aid,
                     sender_agent_id=parent_agent,
                     agent_id=chosen_agent,
-                    spawn_depth=depth,
+                    chain_messages=depth,
                     target_head_id=target_tip,
                     task_id=task.id,
                 )
@@ -263,7 +276,7 @@ def _dispatch_to_existing(
             description=delivery_message,
             caller_msg_id=aid,
             caller_session_id=sid,
-            spawn_depth=depth + 1,
+            chain_messages=depth + 1,
         )
     except Exception as e:  # noqa: BLE001
         return f"[agent error] {type(e).__name__}: {e}"
@@ -327,24 +340,25 @@ def _agent_impl(
             for c in label
         )[:24]
 
-    # Depth guard — shares send_message's counter so agent() and
-    # send_message deliveries count toward the same chain, but with a
-    # much tighter cap: only the main agent may spawn; a spawned agent
-    # works with its own tools, it never re-delegates (observed live: a
-    # 5-generation weather-query delegation chain, every hop just
-    # re-wording the same prompt). send_message keeps its own looser
-    # MAX_SPAWN_DEPTH for branch-to-branch dialogue.
+    # Spawn-budget guard — shares the chain counter with send_message so
+    # spawns and messages spend the same chain, but with a much tighter
+    # cap: only the main agent may spawn; a spawned agent works with its
+    # own tools, it never re-delegates (observed live: a 5-generation
+    # weather-query delegation chain, every hop just re-wording the same
+    # prompt). The message budget stays looser for branch-to-branch
+    # dialogue.
     from openprogram.functions.tools.send_message.send_message.depth import (
-        current_spawn_depth,
-        set_spawn_depth,
-        _spawn_depth,
+        current_chain_messages,
+        set_chain_messages,
+        _chain_messages,
     )
-    depth = current_spawn_depth()
-    if depth >= MAX_AGENT_DEPTH:
+    depth = current_chain_messages()
+    spawn_limit = max_spawn_depth()
+    if spawn_limit and depth >= spawn_limit:
         return (
-            f"[agent refused] spawn depth {depth} reached the agent() max "
-            f"({MAX_AGENT_DEPTH}). Do the work yourself with your own "
-            "tools instead of delegating again."
+            f"[agent refused] spawn depth {depth} reached the max "
+            f"({spawn_limit}). Do the work yourself with your own tools "
+            "instead of delegating again."
         )
 
     # Resolve the context mode. Besides the two named modes, a node
@@ -420,7 +434,7 @@ def _agent_impl(
                 # A fork into another session must return its reply to
                 # the caller's session, not the fork target's.
                 caller_session_id=sid if run_session != sid else None,
-                spawn_depth=depth + 1,
+                chain_messages=depth + 1,
                 # This call CREATES the branch — record the creator so
                 # archive_agent can gate on it, and let the runner
                 # archive the branch at terminal state if asked.
@@ -478,8 +492,8 @@ def _agent_impl(
             tool_call_id=_tool_call_id,
         )
         # Bind depth+1 for the child turn (same-context synchronous run),
-        # mirroring what the async runner does with task.spawn_depth.
-        _depth_token = set_spawn_depth(depth + 1)
+        # mirroring what the async runner does with task.chain_messages.
+        _depth_token = set_chain_messages(depth + 1)
         try:
             result = run_agent_turn(
                 session_id=run_session,
@@ -496,7 +510,7 @@ def _agent_impl(
                 advance_head=False,  # same-session spawn never steals head
             )
         finally:
-            _spawn_depth.reset(_depth_token)
+            _chain_messages.reset(_depth_token)
     except Exception as e:  # noqa: BLE001
         # The card is already on screen in "running" — close it out, or
         # it spins forever.
@@ -577,12 +591,12 @@ def _agent_impl(
     name="agent",
     description=DESCRIPTION,
     toolset=["core"],
-    # A spawned agent never even sees this tool (the dispatcher filters
-    # by req.source) — the delegated agent does the work itself, no
-    # re-subcontracting. With the tool absent from the listing the model
-    # won't reach for it; the depth guard in _agent_impl is a backstop
-    # (e.g. when tools_override explicitly puts the tool back).
-    unsafe_in=["agent_spawn"],
+    # Exposed while the chain still has spawn OR message budget; gone
+    # once both are spent, because a tool sitting in the listing invites
+    # the model to reach for it. In between the runtime guards in
+    # _agent_impl refuse the calls that overrun — e.g. a spawned agent
+    # keeps `agent` for to= dispatch while its spawn budget reads 0.
+    can_use=_delegation_budget_left,
 )
 def agent(
     prompt: str,

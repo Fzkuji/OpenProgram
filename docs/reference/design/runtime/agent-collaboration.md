@@ -111,8 +111,8 @@ dispatch from a message is task tracking:
   own history; a fork-point choice contradicts that — the call errors).
   `to` is always asynchronous, so `run_in_background` is ignored.
   Dispatching to the caller's own current branch is refused (do the work
-  directly). Depth budgets like send_message traffic (`MAX_SPAWN_DEPTH`,
-  default 8), not like spawn delegation (depth cap 1).
+  directly). A dispatch spends the message budget, not the spawn budget
+  (§5.1) — it creates no agent.
 
 **`send_message` — talk to an EXISTING agent:**
 
@@ -384,9 +384,9 @@ emit_ws_frame(frame)                         # for sources: send a ready-made WS
 | `branch.created` / `.started` / `.failed` / `.cancelled` | Branch state transitions | agent | branch, parent, agent_id, status |
 | `sessions.listed` / `branches.listed` | Listing | agent | count |
 
-`chain` (the spawn chain) travels in metadata and is used for depth-based loop
-prevention (§5.1); state events support progress monitoring, auditing, and
-troubleshooting.
+`chain` (the spawn chain) travels in metadata and never enters model-visible
+content; the budgets in §5.1 are what stop a loop. State events support
+progress monitoring, auditing, and troubleshooting.
 
 Communication reuses the existing `subagent.started`/`.ended` (TaskRunner emits
 them as usual for the spawn use).
@@ -458,21 +458,50 @@ not listed separately.
 Communication creates branches, triggers other branches to run, and writes
 across sessions. Those side effects need boundaries.
 
-### 5.1 Recursive spawning + infinite-loop protection
+### 5.1 Two budgets bound every chain
 
-**Recursive spawning is allowed** (a sub-branch can `send_message` further
-sub-branches for multi-level task decomposition), kept in check by:
+Recursive collaboration is allowed — a spawned agent can message further
+agents for multi-level decomposition — and two budgets keep it finite. A
+**chain** is everything that grows out of one user turn, and every hop
+spends from the same pair of counters, replies included.
 
-- **Depth limit**: every delivery carries a **spawn chain** in Event metadata
-  (`chain: [issuing branch, …, current]`). When `send_message` runs and the
-  chain length is ≥ `MAX_DEPTH` (default 8), it refuses and returns the reason to
-  the model. Reply-back (the automatic followup) inherits the same chain and does
-  not reset it, so back-and-forth between A and B counts toward the depth and
-  stops automatically at the ceiling.
-- **Self-send refusal**: a `to` pointing at **the issuing branch itself** (a
-  direct cycle) is refused immediately.
-- Chain information flows only in metadata and never enters model-visible
-  content.
+| Budget | Setting | Default | What it counts |
+|---|---|---|---|
+| **Spawn depth** | `agent.max_spawn_depth` | 1 | Generations of NEW agents the chain may create |
+| **Messages** | `agent.max_messages` | 8 | Messages the chain passes in total: spawns, `send_message` deliveries, and `agent(to=…)` dispatches all count |
+
+**Setting either to 0 removes that limit entirely** — nothing accumulates
+against it and nothing is refused because of it.
+
+```bash
+openprogram config set agent.max_spawn_depth 2   # workers may open one more generation
+openprogram config set agent.max_messages 0      # unlimited conversation between agents
+```
+
+**What the budgets do when they run out.** A call that would overrun is
+refused with a reason the model can act on, and it keeps every other
+tool. Once **both** budgets are spent, `agent`, `task_output` and
+`task_stop` leave the tool list altogether: a tool sitting in the
+listing invites the model to reach for it, and offering it only to
+refuse the call wastes a turn.
+
+Typical behavior at the defaults (spawn depth 1, messages 8):
+
+- The main agent spawns workers. A worker asked to spawn again is told
+  to do the work itself with its own tools.
+- That same worker keeps `agent(to=…)` and `send_message`: it can hand
+  work to agents that **already exist** and answer whoever wrote to it.
+  Only creating a new generation is closed to it.
+- A and B messaging back and forth stop after the 8th message of the
+  chain, whichever of them is holding the turn.
+
+At `agent.max_spawn_depth: 2` a worker may open one more generation and
+the third refuses. At `0` and `0` nothing is ever refused, and runaway
+protection falls to the concurrency cap (§5.2) plus the user's Stop.
+
+**Self-send refusal** is unconditional and independent of both budgets:
+a `to` pointing at the issuing branch itself is a direct cycle and is
+refused immediately.
 
 ### 5.2 Concurrency limit + queueing
 
@@ -514,9 +543,9 @@ sender's own turn, whose token is the one the check would see.
 - **Queueing**: a busy target's message is persisted to the target session's
   inbox (`<session-repo>/inbox.json`, `openprogram/agent/inbox.py` — same
   placement pattern as `tasks.json`), recording the delivery body, sender
-  `SID:HEAD`, sender agent, spawn depth at send time, and enqueue time. The
-  sender immediately gets back "target busy, message queued, processed when
-  its current turn ends".
+  `SID:HEAD`, sender agent, the chain's message count at send time, and
+  enqueue time. The sender immediately gets back "target busy, message
+  queued, processed when its current turn ends".
 - **Draining**: the dispatcher drains the inbox at turn end
   (`_process_turn_once` → `_drain_send_message_inbox`, on both the success and
   the error return), delivering each entry as one async turn through the
@@ -524,8 +553,8 @@ sender's own turn, whose token is the one the check would see.
   continued from the target's current head. Delivery-then-delete: an entry is
   removed only after its delivery turn was submitted — a crash between the two
   may re-deliver (acceptable); the reverse order could lose a message (not
-  acceptable). The queued turn inherits the spawn depth recorded at enqueue
-  (+1), so a queued hop still counts toward the §5.1 depth guard.
+  acceptable). A queued hop spends the message budget exactly like a direct
+  one (§5.1).
 - **Limits** (mirroring Claude Code cross-session messaging): at most 50
   pending entries per target — a full inbox drops the oldest and leaves a
   system notice in the dropped message's sender session; an identical message
@@ -661,7 +690,7 @@ the event log (`~/.openprogram/sessions/<sid>/events.jsonl`, always on).
 | Archiving (§2.6) | An archived agent leaves `list_agents` and shows up under `scope="archived"`; `send_message` and `agent(to=)` refuse it while `read_conversation` and `agent(context=…)` still work; only the creating session may archive it (`tests/unit/test_archive_agent.py`) |
 | Send to an existing branch in the same session | A sends to branch B of the same session, A does not block, B runs a turn, the reply returns to A automatically |
 | Cross-session | A sending to another session takes the same path; both frontends update live via ws.frame |
-| Robustness (§5) | A↔B back-and-forth stops automatically at MAX_DEPTH; spawning 30 queues without blowing up; cancelling the parent stops every child (`tests/unit/test_cascade_cancel.py`); messaging a running B queues to its inbox and is delivered when its turn ends (`tests/unit/test_send_message_inbox.py`); the parent receives is_error when a child fails; oversized results are truncated with a file path |
+| Robustness (§5) | A↔B back-and-forth stops when the chain's message budget runs out, and a budget of 0 never stops it; spawning 30 queues without blowing up; cancelling the parent stops every child (`tests/unit/test_cascade_cancel.py`); messaging a running B queues to its inbox and is delivered when its turn ends (`tests/unit/test_send_message_inbox.py`); the parent receives is_error when a child fails; oversized results are truncated with a file path |
 | Safety (§5.7-5.9) | Under deny it is held by tool.before; a nonexistent `to` raises an error; sub-branches have no more privilege than the parent and stay out of the UI picker |
 | Frontend | Pick a branch in the webui and send a message; the DAG shows communication nodes + the soft link edge on hover |
 

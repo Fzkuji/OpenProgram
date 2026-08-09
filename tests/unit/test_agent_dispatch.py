@@ -100,7 +100,7 @@ def test_to_dispatch_runs_immediately_on_target_tip(parent_turn):
     assert "summarize the log" in kw["prompt"]
     assert kw["caller_session_id"] == "p1"
     assert kw["caller_msg_id"] == "a1"
-    assert kw["spawn_depth"] == 1
+    assert kw["chain_messages"] == 1
 
 
 def test_to_addressing_by_branch_name(parent_turn):
@@ -142,16 +142,16 @@ def test_to_ignores_run_in_background(parent_turn):
     assert "[task dispatched]" in out  # still the async dispatch path
 
 
-def test_to_depth_guard(parent_turn):
+def test_to_message_budget_guard(parent_turn):
     from openprogram.functions.tools.send_message.send_message.depth import (
-        set_spawn_depth, _spawn_depth, MAX_SPAWN_DEPTH,
+        set_chain_messages, _chain_messages, MAX_MESSAGES,
     )
-    tok = set_spawn_depth(MAX_SPAWN_DEPTH)
+    tok = set_chain_messages(MAX_MESSAGES)
     try:
         out = _agent_impl("deeper", to="p1:a0")
     finally:
-        _spawn_depth.reset(tok)
-    assert "spawn depth" in out and "max" in out
+        _chain_messages.reset(tok)
+    assert "[agent refused]" in out and "messages" in out
 
 
 # --- to= dispatch, busy target → pending task + inbox entry ---
@@ -179,7 +179,7 @@ def test_to_busy_target_precreates_task_and_queues(parent_turn, monkeypatch):
     assert t.caller_session_id == "p1"
     assert t.caller_msg_id == "a1"
     assert t.parent_msg_id == "a9"
-    assert t.spawn_depth == 1
+    assert t.chain_messages == 1
     # Inbox entry carries the task id.
     path = inbox._inbox_path("p2")
     entries = inbox._load(path)
@@ -269,7 +269,7 @@ def test_drain_skips_withdrawn_tracked_entry(parent_turn, monkeypatch):
     get_runner().cancel_task(tid)
     inbox.enqueue("p2", message="audit the config", sender_session_id="p1",
                   sender_msg_id="a1", sender_agent_id="main", agent_id="main",
-                  spawn_depth=0, target_head_id="a9", task_id=tid)
+                  chain_messages=0, target_head_id="a9", task_id=tid)
     monkeypatch.setattr(
         "openprogram.agent.run_control.is_turn_running", lambda sid: False)
     delivered = inbox.drain("p2")

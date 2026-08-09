@@ -90,8 +90,8 @@ session）fork、继承到该节点为止的链。`run_in_background=true` 返�
 - 结果回流和 spawn 任务一致：终态后 attach + followup 通知回派活方会话。
 - `to` 与 `context` 互斥（目标分支自带历史，再选 fork 点自相矛盾，直接
   报错）。`to` 必然异步，`run_in_background` 被忽略。派给自己当前分支被
-  拒绝（直接继续干）。深度按 send_message 的通信预算计
-  （`MAX_SPAWN_DEPTH`，默认 8），不按 spawn 委派的深度 1 上限。
+  拒绝（直接继续干）。派活花的是消息预算，不是派生预算（§5.1）——它不创建
+  agent。
 
 **`send_message` — 和已存在的 agent 通信：**
 
@@ -314,7 +314,8 @@ emit_ws_frame(frame)                         # 源用：把现成 WS 帧经总�
 | `branch.created` / `.started` / `.failed` / `.cancelled` | 分支状态转换 | agent | branch, parent, agent_id, status |
 | `sessions.listed` / `branches.listed` | 列举 | agent | count |
 
-`chain`（派生链）走 metadata，用于深度防循环（§5.1）；状态事件支持进度监听/审计/排查。
+`chain`（派生链）只在 metadata 流转，不进模型可见内容；防循环靠 §5.1 的两个预算。
+状态事件支持进度监听/审计/排查。
 
 通信复用已有 `subagent.started`/`.ended`（派生用法时 TaskRunner 照发）。
 
@@ -366,16 +367,38 @@ A、B 同时在跑（同 session 不同分支，或不同 session）：
 
 通信会创建分支、触发别的分支跑、跨 session 写——这些副作用必须有边界。
 
-### 5.1 递归派生 + 死循环防护
+### 5.1 每条链有两个预算
 
-**允许递归派生**（子分支能再 `send_message` 派子分支，做多层任务分解），靠以下防爆：
+允许递归协作——被派生的 agent 还能再往下派消息做多层分解——两个预算保证它有限。
+**链**指一次用户轮次长出来的全部东西，每一跳都花同一对计数，回送也算。
 
-- **深度上限**：每次投递在 Event metadata 里带一条**派生链**（`chain: [发起分支, …,
-  当前]`）。`send_message` 执行时若链长 ≥ `MAX_DEPTH`（默认 8），拒绝并把理由回给
-  模型。回送（自动 followup）继承同一条链，不重置——所以 A↔B 互发的来回也算进深度，
-  到顶自动停。
-- **自发拒绝**：to 指向**发起分支自己**（直接环）立即拒绝。
-- 链信息只在 metadata 流转，不进模型可见内容。
+| 预算 | 配置项 | 默认 | 计什么 |
+|---|---|---|---|
+| **派生深度** | `agent.max_spawn_depth` | 1 | 这条链能创建几代**新** agent |
+| **消息数** | `agent.max_messages` | 8 | 这条链总共能传几条消息：派生、`send_message` 投递、`agent(to=…)` 派活都计入 |
+
+**任一项设成 0 就是取消该上限**：既不累积也不拒绝。
+
+```bash
+openprogram config set agent.max_spawn_depth 2   # 允许 worker 再开一代
+openprogram config set agent.max_messages 0      # agent 之间随便聊
+```
+
+**预算耗尽时的表现**：超额的那次调用被拒绝，理由回给模型，其它工具照常可用。
+**两个预算都耗尽**后，`agent`、`task_output`、`task_stop` 直接从工具清单里消失
+——工具摆在清单里模型就会想用，先给再拒是浪费一轮。
+
+默认值（派生深度 1、消息 8）下的典型行为：
+
+- 主 agent 派 worker。worker 再想派生会被告知自己动手干。
+- 同一个 worker 仍然有 `agent(to=…)` 和 `send_message`：能把活交给**已存在**的
+  agent，能回复给它写信的人。对它关掉的只是"再开一代"。
+- A 和 B 来回对话在这条链的第 8 条消息后停下，不论此刻轮到谁。
+
+`agent.max_spawn_depth: 2` 时 worker 可以再开一代，第三代被拒。两项都是 `0` 时
+什么都不拒，防失控就只剩并发上限（§5.2）和用户按停止。
+
+**自发拒绝**不受两个预算影响，永远生效：to 指向发起分支自己是直接环，立即拒绝。
 
 ### 5.2 并发上限 + 排队
 
@@ -409,14 +432,13 @@ runner worker）都在 finally 里成对注册/注销 cancel token，token 在�
 - **入队**：目标忙时消息持久化到目标 session 的收件箱
   （`<session-repo>/inbox.json`，`openprogram/agent/inbox.py`，与 `tasks.json`
   同一放置模式），记录投递全文、发送方 `SID:HEAD`、发送方 agent、发送时的
-  spawn 深度、入队时间。发送方立刻得到"目标正忙，消息已排队，对方本轮结束后
+  链上的消息数、入队时间。发送方立刻得到"目标正忙，消息已排队，对方本轮结束后
   处理"。
 - **消费**：dispatcher 在 turn 收尾时清空收件箱（`_process_turn_once` →
   `_drain_send_message_inbox`，成功和 error 两个 return 点都挂），每条经正常
   路径投出一轮异步 turn（`run_agent_turn_async` → auto-followup 回流发送方），
   从目标当前 head 继续。先投递后删除：两步之间崩溃可能重复投递（可接受），
-  反过来会丢消息（不可接受）。排队触发的 turn 继承入队时记录的 spawn 深度
-  （+1），排队跳数照样计入 §5.1 的深度闸。
+  反过来会丢消息（不可接受）。排队这一跳和直投一样花消息预算（§5.1）。
 - **上限**（对齐 Claude Code 跨会话消息的限制）：每个目标最多积压 50 条，满了
   丢最旧并在被丢消息的发送方 session 落一条系统提示；同一发送方 60 秒内与仍在
   队列中的副本内容完全相同的消息按重复拒收，并告知发送方。
@@ -521,7 +543,7 @@ session 上下文的调用（用户、UI）不设限——人拥有一切。
 | 归档（§2.6） | 已归档 agent 从 `list_agents` 消失、在 `scope="archived"` 里出现；`send_message` 与 `agent(to=)` 拒收，`read_conversation` 与 `agent(context=…)` 照常；只有创建它的 session 能归档（`tests/unit/test_archive_agent.py`） |
 | 发给同 session 已有分支 | A 发给同 session 的 B 分支，A 不阻塞，B 跑一轮，回复自动回 A |
 | 跨 session | A 发给别的 session 走同一路径；两边前端经 ws.frame 实时更新 |
-| 健壮性（§5） | A↔B 互发到 MAX_DEPTH 自动停；派 30 个排队不打爆；取消父→子全停（`tests/unit/test_cascade_cancel.py`）；给正跑的 B 发消息落它的收件箱、等它这轮结束投递（`tests/unit/test_send_message_inbox.py`）；子失败父收到 is_error；超大结果截断给文件路径 |
+| 健壮性（§5） | A↔B 互发到消息预算用完自动停，预算为 0 时不停；派 30 个排队不打爆；取消父→子全停（`tests/unit/test_cascade_cancel.py`）；给正跑的 B 发消息落它的收件箱、等它这轮结束投递（`tests/unit/test_send_message_inbox.py`）；子失败父收到 is_error；超大结果截断给文件路径 |
 | 安全（§5.7-5.9） | deny 下被 tool.before 拦；不存在的 to 报错；子分支权限不高于父、不进 UI 选择列表 |
 | 前端 | webui 里选分支发消息，DAG 出现通信节点 + hover 软连接线 |
 

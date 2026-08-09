@@ -68,6 +68,13 @@ def captured_run(monkeypatch):
     return cap
 
 
+def _set_config(monkeypatch, **agent_keys):
+    """Pin the ``agent.*`` budget settings config_schema exposes."""
+    monkeypatch.setattr(
+        "openprogram.setup._read_config", lambda: {"agent": dict(agent_keys)},
+    )
+
+
 def _run_with_ctx(fn, *, session_id, turn_id):
     """Run ``fn`` with the session/turn ContextVars the spawn impls read."""
     from openprogram.agent.run_control import _current_session_id
@@ -209,26 +216,28 @@ def test_agent_async_passes_caller_and_depth(store, monkeypatch):
     )
     assert "agent spawned async" in out
     assert cap["caller_msg_id"] == "a1"
-    assert cap["spawn_depth"] == 1
+    assert cap["chain_messages"] == 1
 
 
-# ---- depth guard: agent() refuses past MAX_SPAWN_DEPTH -------------------
+# ---- budget guards --------------------------------------------------------
 
-def test_agent_refuses_at_max_agent_depth(store, captured_run):
-    """task()'s own cap (MAX_AGENT_DEPTH=1) is deliberately tighter than
-    send_message's MAX_SPAWN_DEPTH: only the main agent may agent();
-    a spawned agent delegating again gets refused."""
+def test_agent_refuses_at_max_spawn_depth(store, captured_run):
+    """The spawn budget (MAX_SPAWN_DEPTH=1) is deliberately tighter than
+    the message budget: only the main agent may agent(); a spawned agent
+    delegating again gets refused."""
     from openprogram.functions.tools.send_message.send_message.depth import (
-        set_spawn_depth, _spawn_depth,
+        set_chain_messages, _chain_messages,
     )
-    from openprogram.functions.tools.agent.agent.agent import MAX_AGENT_DEPTH, _agent_impl
+    from openprogram.functions.tools.agent.agent.agent import (
+        MAX_SPAWN_DEPTH, _agent_impl,
+    )
 
     def _call():
-        tok = set_spawn_depth(MAX_AGENT_DEPTH)
+        tok = set_chain_messages(MAX_SPAWN_DEPTH)
         try:
             return _agent_impl(prompt="go", context="clean")
         finally:
-            _spawn_depth.reset(tok)
+            _chain_messages.reset(tok)
 
     out = _run_with_ctx(_call, session_id="p1", turn_id="a1")
     assert "[agent refused]" in out
@@ -239,34 +248,55 @@ def test_agent_spawned_agent_cannot_redelegate(store, captured_run):
     """Depth 1 (a spawned agent) must NOT agent() again — it does the
     work itself with its own tools."""
     from openprogram.functions.tools.send_message.send_message.depth import (
-        set_spawn_depth, _spawn_depth,
+        set_chain_messages, _chain_messages,
     )
     from openprogram.functions.tools.agent.agent.agent import _agent_impl
 
     def _call():
-        tok = set_spawn_depth(1)
+        tok = set_chain_messages(1)
         try:
             return _agent_impl(prompt="go", context="clean")
         finally:
-            _spawn_depth.reset(tok)
+            _chain_messages.reset(tok)
 
     out = _run_with_ctx(_call, session_id="p1", turn_id="a1")
     assert "[agent refused]" in out
     assert "spawn_caller" not in captured_run
 
 
-def test_agent_sync_child_sees_incremented_depth(store, monkeypatch):
-    """The sync path binds depth+1 around the child turn, so a chain of
-    agent()-inside-agent() eventually trips the guard instead of recursing
-    forever (each generation used to start back at depth 0)."""
+def test_spawn_depth_zero_means_unlimited(store, captured_run, monkeypatch):
+    """agent.max_spawn_depth=0 turns the spawn guard off entirely — a
+    chain 50 deep still spawns."""
+    from openprogram.functions.tools.agent.agent.agent import _agent_impl
     from openprogram.functions.tools.send_message.send_message.depth import (
-        current_spawn_depth,
+        set_chain_messages, _chain_messages,
+    )
+    _set_config(monkeypatch, max_spawn_depth=0)
+
+    def _call():
+        tok = set_chain_messages(50)
+        try:
+            return _agent_impl(prompt="go", context="clean")
+        finally:
+            _chain_messages.reset(tok)
+
+    out = _run_with_ctx(_call, session_id="p1", turn_id="a1")
+    assert "[agent refused]" not in out
+    assert captured_run["spawn_caller"] == "a1"   # the spawn really ran
+
+
+def test_agent_sync_child_sees_incremented_depth(store, monkeypatch):
+    """The sync path binds count+1 around the child turn, so a chain of
+    agent()-inside-agent() eventually trips the guard instead of recursing
+    forever (each generation used to start back at 0)."""
+    from openprogram.functions.tools.send_message.send_message.depth import (
+        current_chain_messages,
     )
     from openprogram.agent.sub_agent_run import AgentTurnResult as _R
     seen = {}
 
     def fake_run(**kw):
-        seen["child_depth"] = current_spawn_depth()
+        seen["child_depth"] = current_chain_messages()
         return _R(head_id="h", final_text="(reply)")
 
     monkeypatch.setattr(
@@ -284,14 +314,55 @@ def test_agent_sync_child_sees_incremented_depth(store, monkeypatch):
     assert seen["child_depth"] == 1
 
 
-def test_spawned_agent_toolset_has_no_spawn_tools():
-    """根治转包：被 spawn 的 agent（source=agent_spawn）的工具清单里
-    根本没有 agent/task_output/task_stop——工具不在清单里模型就不会
-    想去用；深度守卫只是 tools_override 等旁路的兜底。"""
-    from openprogram.functions import agent_tools
-    spawn_names = {t.name for t in agent_tools(source="agent_spawn")}
-    assert "agent" not in spawn_names
-    assert "task_output" not in spawn_names
-    assert "task_stop" not in spawn_names
-    # 主 agent 照常有 agent
-    assert "agent" in {t.name for t in agent_tools()}
+# ---- tool exposure follows the remaining budget ---------------------------
+
+_TOOLS_UNDER_TEST = ["agent", "task_output", "task_stop", "read"]
+
+
+def _spawn_tool_names(depth: int) -> set:
+    """Tool names the dispatcher would hand a turn whose chain has
+    passed ``depth`` messages. Goes through ``resolve_tools`` — the very
+    resolver loop_runner calls, in the same execution context the depth
+    is bound in, which is what makes a ContextVar-backed ``can_use``
+    hook work at render time."""
+    from contextvars import copy_context
+    from openprogram.agent.internals._model_tools import resolve_tools
+    from openprogram.functions.tools.send_message.send_message.depth import (
+        set_chain_messages,
+    )
+
+    def _go():
+        set_chain_messages(depth)
+        tools = resolve_tools(
+            {"tools": list(_TOOLS_UNDER_TEST)}, source="agent_spawn",
+        )
+        return {t.name for t in (tools or [])}
+
+    return copy_context().run(_go)
+
+
+def test_spawn_tools_visible_while_budget_remains():
+    """A spawned agent (spawn budget spent, messages left) keeps agent /
+    task_output / task_stop: it cannot spawn — the runtime guard refuses
+    that — but agent(to=…) and the task companions still work."""
+    names = _spawn_tool_names(1)
+    assert {"agent", "task_output", "task_stop"} <= names
+
+
+def test_spawn_tools_disappear_when_budget_spent():
+    """Both budgets spent → the three tools leave the listing entirely."""
+    from openprogram.functions.tools.send_message.send_message.depth import (
+        MAX_MESSAGES,
+    )
+    names = _spawn_tool_names(MAX_MESSAGES)
+    assert "agent" not in names
+    assert "task_output" not in names
+    assert "task_stop" not in names
+    # Everything else is untouched.
+    assert "read" in names
+
+
+def test_message_budget_zero_keeps_tools_forever(monkeypatch):
+    """agent.max_messages=0 = no limit, so the tools never disappear."""
+    _set_config(monkeypatch, max_messages=0)
+    assert {"agent", "task_output", "task_stop"} <= _spawn_tool_names(999)

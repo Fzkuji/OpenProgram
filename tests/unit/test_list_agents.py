@@ -125,3 +125,14 @@ def test_list_agents_all_scope_limit(two_sessions):
     # list_sessions is most-recently-active first; only one session shows
     assert out.count("to=") == 1
     assert "1 session(s)" in out
+
+
+def test_list_agents_unknown_scope_errors(two_sessions):
+    """An unrecognised scope used to fall through to the session view and
+    silently list live branches — a typo (scope="archive") looked like
+    "nothing was archived". It names the legal values instead."""
+    out = list_agents(scope="archive")
+    assert "[list_agents error]" in out
+    assert "'archive'" in out
+    for legal in ("session", "all", "archived"):
+        assert f'"{legal}"' in out

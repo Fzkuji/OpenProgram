@@ -230,7 +230,7 @@ class TaskRunner:
         wait: bool = True,
         caller_msg_id: Optional[str] = None,
         caller_session_id: Optional[str] = None,
-        spawn_depth: int = 0,
+        chain_messages: int = 0,
         spawner_session_id: Optional[str] = None,
         archive_when_done: bool = False,
         task_id: Optional[str] = None,
@@ -282,7 +282,7 @@ class TaskRunner:
             wait=wait,
             caller_msg_id=caller_msg_id,
             caller_session_id=caller_session_id,
-            spawn_depth=spawn_depth,
+            chain_messages=chain_messages,
             spawner_session_id=spawner_session_id,
             archive_when_done=archive_when_done,
             status=TaskStatus.PENDING,
@@ -658,15 +658,15 @@ class TaskRunner:
                     branch_from = None
                 else:
                     branch_from = task.parent_msg_id
-                # Bind the spawn-chain depth so send_message calls made
-                # INSIDE this child turn see the right depth and the loop
-                # guard can trip (send_message §5.1).
+                # Bind the chain's message count so send_message / agent
+                # calls made INSIDE this child turn see the right budget
+                # and the loop guard can trip (send_message §5.1).
                 _depth_tok = None
                 try:
                     from openprogram.functions.tools.send_message.send_message.depth import (
-                        set_spawn_depth, _spawn_depth,
+                        set_chain_messages, _chain_messages,
                     )
-                    _depth_tok = set_spawn_depth(int(task.spawn_depth or 0))
+                    _depth_tok = set_chain_messages(int(task.chain_messages or 0))
                 except Exception:
                     _depth_tok = None
                 try:
@@ -686,7 +686,7 @@ class TaskRunner:
                 finally:
                     if _depth_tok is not None:
                         try:
-                            _spawn_depth.reset(_depth_tok)
+                            _chain_messages.reset(_depth_tok)
                         except Exception:
                             pass
             except Exception as exc:  # noqa: BLE001

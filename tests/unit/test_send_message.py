@@ -239,16 +239,16 @@ def test_existing_unknown_node_errors(parent_turn):
 
 # --- C6: robustness ---
 
-def test_depth_guard_refuses(parent_turn):
+def test_message_budget_refuses(parent_turn):
     from openprogram.functions.tools.send_message.send_message.depth import (
-        set_spawn_depth, _spawn_depth, MAX_SPAWN_DEPTH,
+        set_chain_messages, _chain_messages, MAX_MESSAGES,
     )
-    tok = set_spawn_depth(MAX_SPAWN_DEPTH)
+    tok = set_chain_messages(MAX_MESSAGES)
     try:
         out = _send_message_impl("go deeper", to="p1:a0")
     finally:
-        _spawn_depth.reset(tok)
-    assert "spawn depth" in out and "max" in out
+        _chain_messages.reset(tok)
+    assert "[send_message refused]" in out and "messages" in out
 
 
 def test_self_target_refused(parent_turn):
@@ -259,16 +259,16 @@ def test_self_target_refused(parent_turn):
     assert "your own current turn" in out
 
 
-def test_delivery_inherits_spawn_depth(parent_turn):
+def test_delivery_inherits_chain_messages(parent_turn):
     from openprogram.functions.tools.send_message.send_message.depth import (
-        set_spawn_depth, _spawn_depth,
+        set_chain_messages, _chain_messages,
     )
-    tok = set_spawn_depth(2)
+    tok = set_chain_messages(2)
     try:
         _send_message_impl("deep", to="p1:a0")
     finally:
-        _spawn_depth.reset(tok)
-    assert parent_turn.async_calls[-1]["spawn_depth"] == 3  # child = depth+1
+        _chain_messages.reset(tok)
+    assert parent_turn.async_calls[-1]["chain_messages"] == 3  # child = depth+1
 
 
 # --- Name addressing (to="<branch name>") ---

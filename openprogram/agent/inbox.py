@@ -94,16 +94,16 @@ def enqueue(
     sender_msg_id: str,
     sender_agent_id: Optional[str],
     agent_id: str,
-    spawn_depth: int,
+    chain_messages: int,
     target_head_id: Optional[str],
     task_id: Optional[str] = None,
 ) -> str:
     """Queue a message for a busy target session.
 
     ``message`` is the full delivery body; the sender-receipt header is
-    added at drain time. ``spawn_depth`` is
-    the SENDER's depth at send time — drain delivers at depth+1, exactly
-    like the direct path.
+    added at drain time. ``chain_messages`` is the SENDER's count at
+    send time — drain delivers at count+1, exactly like the direct
+    path.
 
     ``task_id``: set for tracked-task dispatches (``agent(to=…)``) — the
     pre-created pending Task this entry will run when drained. Drain
@@ -134,7 +134,7 @@ def enqueue(
             "sender_msg_id": sender_msg_id,
             "sender_agent_id": sender_agent_id,
             "agent_id": agent_id,
-            "spawn_depth": int(spawn_depth),
+            "chain_messages": int(chain_messages),
             "target_head_id": target_head_id,
             "task_id": task_id,
             "enqueued_at": now,
@@ -322,9 +322,13 @@ def _deliver(session_id: str, entry: dict[str, Any]) -> None:
         description=prompt,
         caller_msg_id=entry.get("sender_msg_id"),
         caller_session_id=entry.get("sender_session_id"),
-        # Inherit the depth recorded at enqueue time (+1 for the child
-        # turn) — a queued hop still counts toward the spawn-depth guard.
-        spawn_depth=int(entry.get("spawn_depth") or 0) + 1,
+        # Inherit the count recorded at enqueue time (+1 for the child
+        # turn) — a queued hop still counts toward the message budget.
+        # ``spawn_depth`` is the pre-rename key, read for inboxes
+        # written by an older build.
+        chain_messages=int(
+            entry.get("chain_messages", entry.get("spawn_depth", 0)) or 0
+        ) + 1,
     )
 
 

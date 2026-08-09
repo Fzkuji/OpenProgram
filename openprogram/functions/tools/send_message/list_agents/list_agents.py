@@ -99,6 +99,12 @@ def _list_agents_impl(
     source: str = "",
 ) -> str:
     from openprogram.events import emit_safe
+    if scope not in ("session", "all", "archived"):
+        return (
+            f'[list_agents error] unknown scope {scope!r} — use "session" '
+            '(this session\'s branches, the default), "all" (every '
+            'session), or "archived" (this session\'s retired branches).'
+        )
     db = _db()
     cur = _current_session()
 

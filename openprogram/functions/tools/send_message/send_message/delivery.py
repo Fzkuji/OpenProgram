@@ -39,7 +39,7 @@ def enqueue_for_busy_target(
     sender_msg_id: str,
     sender_agent_id: str | None,
     agent_id: str,
-    spawn_depth: int,
+    chain_messages: int,
 ) -> str | None:
     """Busy target → inbox (design §5.4: don't interrupt, don't drop —
     queue). Returns the status string to hand back to the sender, or
@@ -61,7 +61,7 @@ def enqueue_for_busy_target(
             sender_msg_id=sender_msg_id,
             sender_agent_id=sender_agent_id,
             agent_id=agent_id,
-            spawn_depth=spawn_depth,
+            chain_messages=chain_messages,
             target_head_id=branch_from,
         )
     except Exception as e:  # noqa: BLE001

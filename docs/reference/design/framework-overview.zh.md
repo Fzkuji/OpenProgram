@@ -211,7 +211,7 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 - to 语义（`_parse_to`）：`SID:HEAD`（投到已存在分支 = 从其 head 再跑一轮）或分支名。建分支归 `agent` 工具（spawn / 从节点 fork）；`to="new"` 语法直接报错并指向它。
 - 父锚点 `_resolve_parent`（`:74`）读 dispatcher 的 session/turn ContextVar，**turn id 缺失时回退到 session head**（修了"no active parent turn"）。
 - 投递一律异步：交给 task runner（`run_agent_turn_async`），跑完写 attach pointer 并 dispatch followup 回**发起方** session（回复自动回流）。
-- **防护**：深度守卫 `MAX_SPAWN_DEPTH=8`（`:35`，判定在 `:209`，子继承 depth+1，A↔B 来回也计入）；自指守卫（投给自己当前 turn 直接拒）；目标 session 必须存在不静默创建；tool.before 拦截（值守可拦）。
+- **防护**：消息预算 `agent.max_messages`（默认 8，`depth.py`，子继承 count+1，A↔B 来回也计入）；自指守卫（投给自己当前 turn 直接拒）；目标 session 必须存在不静默创建；tool.before 拦截（值守可拦）。
 **对外事件**：`branch.message_sent`；并 `emit_ws_frame("branch_message",...)`（`_emit_branch_ui`）在发起方聊天流显示「已发送」行。
 
 ---

@@ -335,8 +335,9 @@ lane 色；**绝不给某类线固定颜色**。类型只靠线型：
 切换器**（它是发起方对话的真实延续替代；`source=from_branch` 不做
 agent_spawn 那样的隔离，隔离规则见 `ui/invariants.md` 规则 7）。
 
-**子代理再 spawn**：数据语义上已被禁止（`MAX_AGENT_DEPTH=1`，只有主 agent
-能 agent()，被 spawn 的 agent 一律自己干活，见 `ui/invariants.md` 规则 6）。
+**子代理再 spawn**：默认派生预算下数据语义已禁止（`agent.max_spawn_depth=1`，
+只有主 agent 能 agent()，被 spawn 的 agent 自己干活，见 `ui/invariants.md`
+规则 6；调大预算就能再开代）。
 渲染层本来就递归（第十二节——agent 线程上的 spawn 是一个普通三角形），历史
 数据里的多代委托链照样画得出来。
 

@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from openprogram.functions._runtime import function
+from openprogram.functions.tools.send_message.send_message.depth import (
+    delegation_budget_left,
+)
 
 
 @function(
@@ -24,8 +27,9 @@ from openprogram.functions._runtime import function
         "task entity."
     ),
     toolset=["core"],
-    # Same as agent: a spawned agent has no delegated work to cancel.
-    unsafe_in=["agent_spawn"],
+    # Same as agent: present while the chain has collaboration budget
+    # left, gone once it is spent.
+    can_use=delegation_budget_left,
 )
 def task_stop(task_id: str, reason: str = "") -> str:
     """Signal cancel for an async task."""
