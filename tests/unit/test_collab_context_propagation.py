@@ -11,6 +11,7 @@ Design: docs/reference/design/runtime/agent-collaboration.md §5.1, §5.3.
 """
 from __future__ import annotations
 
+import contextvars
 import threading
 import types
 
@@ -97,30 +98,31 @@ def test_followup_of_a_top_level_task_has_no_parent(tmp_db, monkeypatch):
     assert seen["task_id"] is None
 
 
+def _in_empty_context(fn):
+    """Run ``fn`` with every ContextVar at its default — what a freshly
+    started thread gets, without the thread."""
+    return contextvars.Context().run(fn)
+
+
 def test_dispatcher_binds_the_session_id_when_nothing_did(tmp_db):
     """``agent`` / ``send_message`` read the session id from the ambient
-    ContextVar and say the dispatcher binds it. On a thread that bound
-    nothing (the follow-up thread, merge, the CLI goal turn) it has to."""
+    ContextVar and say the dispatcher binds it. Where nothing bound it
+    (the follow-up thread, merge, the CLI goal turn) it has to."""
     from openprogram.agent.dispatcher.turn_context import TurnBindings
     from openprogram.agent.dispatcher.types import TurnRequest
     from openprogram.agent.run_control import get_current_session_id
 
-    seen: dict = {}
-
     def _go():
         b = TurnBindings.bind(
-            req=TurnRequest(session_id="s9", user_text="hi", agent_id="main", source="test"),
+            req=TurnRequest(session_id="s9", user_text="hi",
+                            agent_id="main", source="test"),
             assistant_msg_id="a9", db=tmp_db,
         )
-        seen["inside"] = get_current_session_id()
+        inside = get_current_session_id()
         b.release()
-        seen["after"] = get_current_session_id()
+        return inside, get_current_session_id()
 
-    t = threading.Thread(target=_go)
-    t.start()
-    t.join(timeout=10)
-    assert seen["inside"] == "s9"
-    assert seen["after"] is None
+    assert _in_empty_context(_go) == ("s9", None)
 
 
 def test_dispatcher_leaves_an_outer_binding_alone(tmp_db):
@@ -130,28 +132,18 @@ def test_dispatcher_leaves_an_outer_binding_alone(tmp_db):
     from openprogram.agent.dispatcher.turn_context import TurnBindings
     from openprogram.agent.dispatcher.types import TurnRequest
     from openprogram.agent.run_control import (
-        get_current_session_id, reset_current_session_id,
-        set_current_session_id,
+        get_current_session_id, set_current_session_id,
     )
 
-    seen: dict = {}
-
     def _go():
-        token = set_current_session_id("s_outer")
-        try:
-            b = TurnBindings.bind(
-                req=TurnRequest(session_id="s_inner", user_text="hi", source="test",
-                                agent_id="main"),
-                assistant_msg_id="a1", db=tmp_db,
-            )
-            seen["inside"] = get_current_session_id()
-            b.release()
-            seen["after"] = get_current_session_id()
-        finally:
-            reset_current_session_id(token)
+        set_current_session_id("s_outer")
+        b = TurnBindings.bind(
+            req=TurnRequest(session_id="s_inner", user_text="hi",
+                            agent_id="main", source="test"),
+            assistant_msg_id="a1", db=tmp_db,
+        )
+        inside = get_current_session_id()
+        b.release()
+        return inside, get_current_session_id()
 
-    t = threading.Thread(target=_go)
-    t.start()
-    t.join(timeout=10)
-    assert seen["inside"] == "s_outer"
-    assert seen["after"] == "s_outer"
+    assert _in_empty_context(_go) == ("s_outer", "s_outer")
