@@ -244,10 +244,10 @@ export function MemoryPage() {
       <div className={styles.body}>
         <div className={styles.layout}>
           <div className={styles.tabBar}>
-            <TabButton active={tab === "topics"} onClick={() => setTab("topics")} icon={<FileTextIcon size={14} />}>{text("Topics", "主题")}</TabButton>
+            <TabButton active={tab === "topics"} onClick={() => setTab("topics")} icon={<FileTextIcon size={13} />}>{text("Topics", "主题")}</TabButton>
             <TabButton active={tab === "timeline"} onClick={() => setTab("timeline")} icon={<ClockIcon className={styles.fileIcon} />}>{text("Timeline", "时间线")}</TabButton>
-            <TabButton active={tab === "recent"} onClick={() => setTab("recent")} icon={<ActivityIcon size={14} />}>{text("Recent", "最近")}</TabButton>
-            <TabButton active={tab === "core"} onClick={() => setTab("core")} icon={<SparklesIcon size={14} />}>{text("Core", "核心")}</TabButton>
+            <TabButton active={tab === "recent"} onClick={() => setTab("recent")} icon={<ActivityIcon size={13} />}>{text("Recent", "最近")}</TabButton>
+            <TabButton active={tab === "core"} onClick={() => setTab("core")} icon={<SparklesIcon size={13} />}>{text("Core", "核心")}</TabButton>
           </div>
 
           {/* ── Topics ── */}
