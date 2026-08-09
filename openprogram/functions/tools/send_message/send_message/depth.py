@@ -14,6 +14,12 @@ back-and-forth costs the same as A→B→C.
 Either set to 0 means no limit at all. The counter lives in a
 ContextVar set by the task runner on the child turn (cross-thread) and
 by the sync spawn path inline.
+
+A third budget bounds the chain sideways instead of downward and lives
+with the tool it guards: ``agent.max_spawn_fanout`` (default 8) caps
+the agents ONE turn may create, because a spawn hands its count to the
+child and leaves the parent's own untouched, so nothing here counts
+siblings. See ``functions/tools/agent/agent/agent.MAX_SPAWN_FANOUT``.
 """
 from __future__ import annotations
 
@@ -22,6 +28,29 @@ import contextvars
 _chain_messages: contextvars.ContextVar[int] = contextvars.ContextVar(
     "send_message_chain_messages", default=0,
 )
+
+# Message budget: how many messages one chain may pass, whatever the
+# tool. The reply hop re-binds the finished task's count rather than
+# incrementing it (task.runner._dispatch_followup), so one A→B→A
+# round trip costs 1 and 8 buys eight round trips.
+#
+# openclaw is the only reference implementation that counts the same
+# thing and it is the anchor for this number: its agent-to-agent flow
+# runs a ping-pong loop capped at 5 alternating replies by default, 20
+# at most, 0 to disable (agents/tools/sessions-send-helpers.ts:15-16).
+# 8 sits between its default and its ceiling, which is where we want to
+# be: our counter is charged for more than conversation — spawns and
+# agent(to=…) dispatches spend it too — so an equal-strength setting has
+# to be at least openclaw's. The other seven have nothing to compare
+# against; codex-cli V2 is the cautionary case, with sibling agents able
+# to address each other directly and no counter anywhere.
+#
+# Raise it for long negotiations between two agents (openclaw's own
+# ceiling of 20 is a defensible upper bound), lower it if chains are
+# spending their budget on acknowledgements instead of work. 0 removes
+# the limit. Worth knowing when tuning: openclaw also injects "turn N of
+# M" into each prompt and gives the agents a token to end early, so its
+# agents can stop themselves; ours only find out by being refused.
 MAX_MESSAGES = 8
 
 

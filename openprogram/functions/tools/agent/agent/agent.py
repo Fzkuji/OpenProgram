@@ -35,6 +35,9 @@ LLM sees a clear message it can act on.
 """
 from __future__ import annotations
 
+import threading
+from collections import OrderedDict
+
 from openprogram.functions._runtime import function
 from openprogram.functions.tools.send_message.send_message.depth import (
     delegation_budget_left as _delegation_budget_left,
@@ -51,6 +54,37 @@ from .prompt import DESCRIPTION
 # same prompt). Deliberately tighter than the message budget
 # (MAX_MESSAGES=8), which pays for multi-round conversation, not for
 # creating agents. Module-level fallback for ``agent.max_spawn_depth``.
+#
+# Calibrated against the eight reference implementations (see
+# docs/reference/design/runtime/agent-collab-comparison.html §05). Five
+# of them cap generations at 1: openclaw, codex-cli V1, hermes-agent,
+# opencode (by injecting a deny rule instead of counting) and us.
+# Claude Code's 3 is the outlier and it does not transfer:
+#
+#   * its leaked source tree has no depth counter at all. `Agent` is
+#     removed from every subagent's tool pool unless USER_TYPE=ant
+#     (src/constants/tools.ts:36-46), so an external user's effective
+#     depth there is 1. The depth-3 constant in the 2.1.226 binary
+#     replaces that env gate; it loosens a hard 1, it does not extend
+#     an already-working 3.
+#   * background subagents are capped at 1 regardless of the counter:
+#     the async tool allowlist (tools.ts:55-71) omits `Agent`, so an
+#     agent spawned to run unattended can never spawn again. Depth 3
+#     only ever applies to synchronous nesting, where the parent's tool
+#     call blocks for the whole child run and a human is watching.
+#     Our unattended path is `run_in_background=True`, so 1 is the
+#     value Claude Code enforces on the path that matches ours.
+#   * their per-level tool pool is rebuilt and `Agent` disappears at the
+#     last level, which they pay for in prompt-cache misses. Ours is
+#     deliberately binary (depth.delegation_budget_left), so a raised
+#     limit would leave `agent` visible at every level and each extra
+#     generation would cost a refused call instead of a smaller tool
+#     list.
+#
+# Raise it when a spawned worker genuinely needs its own workers — a
+# decomposition whose sub-parts are themselves multi-agent. 2 is the
+# next sensible value; the refusal text tells the worker to do the work
+# itself, so a chain that hits the limit still finishes.
 MAX_SPAWN_DEPTH = 1
 
 
@@ -60,6 +94,91 @@ def max_spawn_depth() -> int:
         config_limit,
     )
     return config_limit("max_spawn_depth", MAX_SPAWN_DEPTH)
+
+
+# Fan-out budget: how many NEW agents ONE parent turn may create. The
+# spawn budget above bounds the chain downward and the message budget
+# bounds it sideways between existing agents, but neither counts
+# siblings: a spawn hands the child ``depth + 1`` and leaves the
+# parent's own count untouched, so before this guard a single turn could
+# call ``agent`` until the turn's 50-iteration cap
+# (agent_loop.MAX_INNER_ITERATIONS) stopped it, i.e. up to 50 full agent
+# runs from one runaway turn.
+#
+# 8 comes from the two reference implementations that guard the same
+# thing, read for what they actually count rather than for their number:
+#
+#   * openclaw caps live children per parent session at 5, range 1-20
+#     (config/agent-limits.ts:5, enforced agents/subagent-spawn.ts:793).
+#     That is the only true fan-out cap among the eight and it is a
+#     spawn-time refusal, exactly like this one.
+#   * hermes caps the task list of one ``delegate_task`` call at 3
+#     (tools/delegate_tool.py:132) and separately truncates extra
+#     ``delegate_task`` calls within one turn (run_agent.py:2344) —
+#     that second guard is this one, aimed at the same runaway.
+#   * pi-mono's 8 (examples/extensions/subagent/index.ts:27) caps one
+#     call's task array and nothing else, so a parent there can still
+#     spawn without bound over a conversation.
+#
+# hermes' 3 and pi-mono's 8 are batch-argument validation and do not
+# transfer: ``agent`` creates one child per call, so a per-call cap
+# would always read 1. openclaw's unit transfers, its number does not:
+# it runs a pool of 8 against a per-parent cap of 5, we run 4
+# (task.runner._DEFAULT_MAX_WORKERS) and background children queue on
+# it, so a per-parent cap below the pool width would refuse fan-out
+# that the pool is sized to absorb. 8 is two pool widths — a turn can
+# fill the pool and keep one wave queued behind it, and the ninth spawn
+# is refused with the existing agents' addresses so the model reuses
+# them instead. It is also the most permissive of the three references,
+# which is the right side to err on: this guard exists to stop a
+# runaway, not to shape normal parallelism.
+#
+# Raise it for genuinely wide parallel work (one agent per file over a
+# large set) and raise OPENPROGRAM_TASK_WORKERS with it, or the extra
+# children only queue longer. 0 removes the limit.
+MAX_SPAWN_FANOUT = 8
+
+# Children already created by each parent turn, keyed (session, turn).
+# Module state rather than a ContextVar because every tool body runs in
+# its own ``copy_context()`` (functions/_runtime.py), so a ContextVar
+# written by one ``agent`` call is invisible to the next one in the same
+# turn. Bounded: a turn's key is dropped once _FANOUT_TURNS newer turns
+# have run, long after the turn itself ended.
+_FANOUT_TURNS = 256
+_fanout_lock = threading.Lock()
+_fanout_used: OrderedDict[tuple[str, str], int] = OrderedDict()
+
+
+def max_spawn_fanout() -> int:
+    """``agent.max_spawn_fanout`` from config; 0 = unlimited."""
+    from openprogram.functions.tools.send_message.send_message.depth import (
+        config_limit,
+    )
+    return config_limit("max_spawn_fanout", MAX_SPAWN_FANOUT)
+
+
+def claim_fanout_slot(session_id: str, turn_id: str) -> int | None:
+    """Reserve one child slot for this parent turn.
+
+    Returns ``None`` when the spawn may proceed, or the number already
+    created when the turn is at its limit. Counted per turn rather than
+    per live child: a turn that spawns, collects and spawns again is the
+    same runaway shape as one that spawns in a burst, and the count is
+    what the refusal text has to quote.
+    """
+    limit = max_spawn_fanout()
+    if not limit:
+        return None
+    key = (session_id, turn_id)
+    with _fanout_lock:
+        used = _fanout_used.get(key, 0)
+        if used >= limit:
+            return used
+        _fanout_used[key] = used + 1
+        _fanout_used.move_to_end(key)
+        while len(_fanout_used) > _FANOUT_TURNS:
+            _fanout_used.popitem(last=False)
+    return None
 
 
 def _resolve_parent() -> tuple[str | None, str | None, str | None]:
@@ -359,6 +478,18 @@ def _agent_impl(
             f"[agent refused] spawn depth {depth} reached the max "
             f"({spawn_limit}). Do the work yourself with your own tools "
             "instead of delegating again."
+        )
+
+    # Fan-out guard — the chain counter above bounds generations, this
+    # bounds siblings within one turn (see MAX_SPAWN_FANOUT). Claimed
+    # after the depth check so a refused generation never spends a slot.
+    used = claim_fanout_slot(sid, aid)
+    if used is not None:
+        return (
+            f"[agent refused] this turn has already created {used} "
+            f"agents, the maximum ({max_spawn_fanout()}). Give the rest "
+            "of the work to one of them with agent(to=…) (see "
+            "list_agents), or do it here."
         )
 
     # Resolve the start point. Besides the two named modes, a node

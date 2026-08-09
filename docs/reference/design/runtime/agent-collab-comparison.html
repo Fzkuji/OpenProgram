@@ -114,7 +114,7 @@
     <text x="44" y="94" fill="#8a8675" font-size="12">一个原语：往一条分支投递内容，触发它跑一轮，结果自动回送。四个域十二个工具。</text>
     <rect x="700" y="38" width="420" height="52" rx="8" fill="#12110b" stroke="#2c4a78" stroke-width="1.2"/>
     <text x="720" y="60" fill="#4f8ef7" font-size="12" font-weight="600">另一页：Agent协作 · 工具面</text>
-    <text x="720" y="80" fill="#8a8675" font-size="11">四域词汇 · 权力模型 · 两个预算 · 归档 · 典型场景</text>
+    <text x="720" y="80" fill="#8a8675" font-size="11">四域词汇 · 权力模型 · 三个预算 · 归档 · 典型场景</text>
 
     <!-- 第二层 -->
     <rect x="20" y="120" width="1120" height="120" rx="10" fill="#161d15" stroke="#2f5228" stroke-width="1.6"/>
@@ -165,7 +165,7 @@
     <tr class="us">
       <td class="name">我们</td>
       <td class="y">进程内，深度1</td><td class="y">能，任意对任意</td><td class="y">task_id，三个工具</td><td class="y">级联</td>
-      <td class="y">六种</td><td>按剩余余额摘</td><td>分支名 / SID:HEAD</td><td>4.5k</td>
+      <td class="y">八种</td><td>按剩余余额摘</td><td>分支名 / SID:HEAD</td><td>4.5k</td>
     </tr>
     <tr>
       <td class="name">Claude Code</td>
@@ -295,8 +295,9 @@
     <tr><th></th><th>能不能</th><th>同进程还是子进程</th><th>层数限制，以及在哪儿判</th></tr>
     <tr class="us"><td class="name">我们</td><td class="y">能，<code>agent</code></td>
       <td>进程内线程池，默认4个worker</td>
-      <td><code>agent.max_spawn_depth</code>默认1，设0即不限。越界返回"自己动手做"
-        <span class="src">functions/tools/agent/agent/agent.py:355-362；配置默认 config_schema.py:201-210</span></td></tr>
+      <td><code>agent.max_spawn_depth</code>默认1，设0即不限。越界返回"自己动手做"。
+        另有一条一轮之内的扇出上限<code>agent.max_spawn_fanout</code>默认8
+        <span class="src">functions/tools/agent/agent/agent.py；配置默认 config_schema.py</span></td></tr>
     <tr><td class="name">Claude Code</td><td class="y">能，<code>Agent</code>（旧名<code>Task</code>）</td>
       <td>进程内嵌套查询循环。另有 tmux/iTerm 子进程队友，和<code>isolation:"remote"</code>的云端agent</td>
       <td><b>深度3</b>，环境变量<code>CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code>可改；并发上限20。
@@ -589,7 +590,8 @@
 <text x="30" y="114" fill="#4f8ef7" font-size="12.5" font-weight="700">我们</text>
 <rect x="165" y="98" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
 <text x="219" y="113" fill="#5aad4e" font-size="11.5" text-anchor="middle">1</text>
-<line x1="332" y1="110" x2="350" y2="110" stroke="#3a382c" stroke-width="1.6"/>
+<rect x="287" y="98" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="341" y="113" fill="#5aad4e" font-size="11.5" text-anchor="middle">8</text>
 <rect x="409" y="98" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
 <text x="463" y="113" fill="#5aad4e" font-size="11.5" text-anchor="middle">4</text>
 <rect x="531" y="98" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
@@ -599,7 +601,8 @@
 <rect x="775" y="98" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
 <text x="829" y="113" fill="#5aad4e" font-size="11.5" text-anchor="middle">60秒</text>
 <line x1="942" y1="110" x2="960" y2="110" stroke="#3a382c" stroke-width="1.6"/>
-<line x1="1064" y1="110" x2="1082" y2="110" stroke="#3a382c" stroke-width="1.6"/>
+<rect x="1019" y="98" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
+<text x="1073" y="113" fill="#5aad4e" font-size="11.5" text-anchor="middle">50轮</text>
 <line x1="16" y1="128" x2="1144" y2="128" stroke="#22201a" stroke-width="1"/>
 <text x="30" y="150" fill="#f0eee6" font-size="12.5" font-weight="600">Claude Code</text>
 <rect x="165" y="134" width="108" height="23" rx="5" fill="#1c2a18" stroke="#5aad4e" stroke-width="1.1"/>
@@ -712,10 +715,13 @@
   <table>
     <tr><th></th><th>关键常量和它在哪</th></tr>
     <tr class="us"><td class="name">我们</td>
-      <td>深度1、一条链的消息预算8（派生、发消息、派活、回流全都计数）、并发4、
-        收件箱上限50丢最旧、60秒内同发送方同内容视为重复。自己发给自己一律拒，不受预算影响。两个预算都能设0取消
-        <span class="src">MAX_MESSAGES=8 send_message/depth.py:25；MAX_SPAWN_DEPTH=1 agent/agent.py:54；
-          计数器是一个ContextVar depth.py:22-24；上限50和60秒 agent/inbox.py:34-35；自发拒 send_message.py:139-144</span></td></tr>
+      <td>深度1、一条链的消息预算8（派生、发消息、派活、回流全都计数）、一轮的扇出上限8、
+        并发4、每轮50次工具调用、收件箱上限50丢最旧、60秒内同发送方同内容视为重复。
+        自己发给自己一律拒，不受预算影响。三个预算都能设0取消。
+        每个数字的取值理由写在常量旁边，对照的就是这一页
+        <span class="src">MAX_MESSAGES=8 send_message/depth.py；MAX_SPAWN_DEPTH=1 与
+          MAX_SPAWN_FANOUT=8 agent/agent.py；计数器是一个ContextVar depth.py；
+          每轮50次 agent/agent_loop.py:246；上限50和60秒 agent/inbox.py；自发拒 send_message.py:139-144</span></td></tr>
     <tr><td class="name">Claude Code</td>
       <td>深度3、并发20、信箱50条环形丢最旧、按消息uuid去重、fork递归用一个布尔开关拦、
         队友名册是平的不许队友再生队友、预算到顶就不许起新agent。<b>没有发消息的限速，也没有消息条数上限</b>
@@ -1030,7 +1036,36 @@
       <td>结果必回、可取消、取消级联这三条承诺绑在任务上，所以任务要查归属；消息不带这三条，所以谁都能发</td></tr>
     <tr><td><b>防环用一条链的消息预算</b><br>深度1、消息8，回流也计数</td>
       <td>消息计数这一手只有 openclaw 和我们做</td>
-      <td>光有深度上限拦不住两个已存在的agent互相派活。codex-cli V2 恰好就缺这一条，兄弟能直连又没有计数</td></tr>
+      <td>光有深度上限拦不住两个已存在的agent互相派活。codex-cli V2恰好就缺这一条，兄弟能直连又没有计数。
+        8锚在openclaw上：它的agent之间来回循环默认5次交替回复、最多20次，
+        我们的计数器还要为派生和派活买单，所以落在两者之间。
+        回送这一跳重新绑定已完成task的计数而不是加一，一个来回花1，8条够走八个来回</td></tr>
+    <tr><td><b>深度不跟Claude Code的3</b><br>五家都是1，我们也是1</td>
+      <td>和openclaw、codex-cli V1、hermes、opencode一档</td>
+      <td>Claude Code的3不能照搬：泄露源码树里没有深度计数器，<code>Agent</code>在每个子agent的
+        工具池里被摘掉，除非<code>USER_TYPE=ant</code>，所以外部用户在那边的实际深度就是1；
+        它的异步工具白名单里也没有<code>Agent</code>，后台子agent无论计数器写几都不能再派生。
+        深度3只作用于同步嵌套，那条路上父的工具调用一直阻塞到孩子跑完、人还在看着。
+        我们的无人值守路径是<code>run_in_background=True</code>，在那条路上他们用的正是1
+        <span class="src">泄露源码树 src/constants/tools.ts:36-46 与 :55-71；
+          过滤 tools/AgentTool/agentToolUtils.ts:94-113</span></td></tr>
+    <tr><td><b>补了一条一轮之内的扇出上限</b><br><code>agent.max_spawn_fanout</code>默认8</td>
+      <td>真正的扇出上限只有openclaw有</td>
+      <td>派生把计数交给孩子、自己那份不动，所以链上计数器数不到兄弟：在这条上限之前，
+        一轮可以一直调<code>agent</code>直到50次迭代上限把它停下。
+        openclaw是每个父最多5个活着的孩子（可配1到20），单位可以照搬；
+        hermes的3和pi-mono的8校验的是一次调用里那个批量参数的长度，不能照搬，
+        因为<code>agent</code>一次只创建一个孩子。8是我们四个worker的两倍宽度，
+        一轮填满池子、后面再排一波，第9次被拒并被指回它已经有的那8个</td></tr>
+    <tr><td><b>不加插话限速，不加子任务硬超时</b></td>
+      <td>openclaw有2秒限速，hermes有600秒超时</td>
+      <td>2秒限速守的是openclaw的steer通道：那条路中止孩子正在跑的一轮、清空队列、再重启，
+        所以两次steer挨太近会互相中止；它那条不中断的send通道完全没有限速。
+        我们的<code>send_message</code>属于不中断的那种，目标忙就进收件箱，没有可打断的东西。
+        hermes的600秒是调用方一侧的<code>Future.result(timeout=…)</code>，不是杀：
+        到点只设一个协作式中断标志然后放弃线程，卡在阻塞I/O的孩子照样跑。
+        这两半我们都有且更强，<code>task_output(timeout=)</code>是同样的等待、
+        <code>task_stop</code>还会杀运行时并在30秒后强制置终态</td></tr>
     <tr><td><b>裁工具按剩余余额，而且刻意是二值</b></td>
       <td>其他家要么无条件摘，要么按深度分档</td>
       <td>按深度分档会让每一层的工具定义都不一样，提供商的提示缓存全部作废。
@@ -1053,6 +1088,8 @@
     <b>一句话收尾</b>：生子agent是共识，进程内加一个很低的深度上限；直接通信是分水岭，只有四家做；
     防死循环是最参差的一条，从八种手段到一种都没有。我们在防环上比多数家密，
     在裁工具上是八家里唯一按剩余余额决定摘不摘的，而且刻意做成二值，理由是保住提示缓存。
+    这一页的数字反过来校准了我们自己的：深度和消息保持1和8，补上一条一轮之内的扇出上限8，
+    插话限速和子任务硬超时查清楚各自防的是什么之后没有采用。理由逐条写在常量旁边。
   </div>
 
 </div>

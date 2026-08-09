@@ -450,34 +450,39 @@ not listed separately.
 Communication creates branches, triggers other branches to run, and writes
 across sessions. Those side effects need boundaries.
 
-### 5.1 Two budgets bound every chain
+### 5.1 Three budgets bound every chain
 
 Recursive collaboration is allowed — a spawned agent can message further
-agents for multi-level decomposition — and two budgets keep it finite. A
-**chain** is everything that grows out of one user turn, and every hop
-spends from the same pair of counters, replies included.
+agents for multi-level decomposition — and three budgets keep it finite. A
+**chain** is everything that grows out of one user turn. Two of the
+budgets travel with the chain and every hop spends from the same pair of
+counters, replies included; the third counts siblings inside one turn.
 
 | Budget | Setting | Default | What it counts |
 |---|---|---|---|
 | **Spawn depth** | `agent.max_spawn_depth` | 1 | Generations of NEW agents the chain may create |
 | **Messages** | `agent.max_messages` | 8 | Messages the chain passes in total: spawns, `send_message` deliveries, and `agent(to=…)` dispatches all count |
+| **Fan-out** | `agent.max_spawn_fanout` | 8 | Agents ONE turn may create, counted per (session, turn) |
 
-**Setting either to 0 removes that limit entirely** — nothing accumulates
-against it and nothing is refused because of it.
+**Setting any of them to 0 removes that limit entirely** — nothing
+accumulates against it and nothing is refused because of it.
 
 ```bash
 openprogram config set agent.max_spawn_depth 2   # workers may open one more generation
 openprogram config set agent.max_messages 0      # unlimited conversation between agents
+openprogram config set agent.max_spawn_fanout 16 # wider parallel fan-out per turn
 ```
 
 **What the budgets do when they run out.** A call that would overrun is
 refused with a reason the model can act on, and it keeps every other
-tool. Once **both** budgets are spent, `agent`, `task_output` and
+tool. Once **both** chain budgets are spent, `agent`, `task_output` and
 `task_stop` leave the tool list altogether: a tool sitting in the
 listing makes the model try to call it, and offering it only to
-refuse the call wastes a turn.
+refuse the call wastes a turn. The fan-out budget never removes a tool.
+It is spent inside a turn, and the tool list is frozen at the turn
+boundary, so it can only refuse.
 
-Typical behavior at the defaults (spawn depth 1, messages 8):
+Typical behavior at the defaults (spawn depth 1, messages 8, fan-out 8):
 
 - The main agent spawns workers. A worker asked to spawn again is told
   to do the work itself with its own tools.
@@ -485,15 +490,73 @@ Typical behavior at the defaults (spawn depth 1, messages 8):
   work to agents that **already exist** and answer whoever wrote to it.
   Only creating a new generation is closed to it.
 - A and B messaging back and forth stop after the 8th message of the
-  chain, whichever of them is holding the turn.
+  chain, whichever of them is holding the turn. The reply hop re-binds
+  the finished task's count instead of adding to it, so one round trip
+  costs 1 and 8 buys eight round trips.
+- A turn that calls `agent` a ninth time is refused and pointed at the
+  eight agents it already has. The next turn starts a fresh fan-out
+  budget, so this stops a runaway turn without becoming a quota on the
+  session.
 
 At `agent.max_spawn_depth: 2` a worker may open one more generation and
-the third refuses. At `0` and `0` nothing is ever refused, and runaway
-protection falls to the concurrency cap (§5.2) plus the user's Stop.
+the third refuses. At `0`, `0` and `0` nothing is ever refused, and
+runaway protection falls to the concurrency cap and the per-turn
+iteration cap (§5.2) plus the user's Stop.
 
-**Self-send refusal** is unconditional and independent of both budgets:
-a `to` pointing at the issuing branch itself is a direct cycle and is
-refused immediately.
+**Self-send refusal** is unconditional and independent of all three
+budgets: a `to` pointing at the issuing branch itself is a direct cycle
+and is refused immediately.
+
+**Where the numbers come from.** Each default is calibrated against the
+eight reference implementations surveyed in
+`agent-collab-comparison.html` §05, and the reasoning is kept next to
+each constant in the code (`agent.MAX_SPAWN_DEPTH`,
+`agent.MAX_SPAWN_FANOUT`, `depth.MAX_MESSAGES`).
+
+- **Spawn depth 1** is what openclaw, codex-cli V1, hermes-agent and
+  opencode all settle on. Claude Code's 3 does not transfer: its leaked
+  tree has no depth counter and strips the `Agent` tool from every
+  subagent unless `USER_TYPE=ant`, so an external user's effective depth
+  there is 1, and its async tool allowlist omits `Agent` outright, so a
+  background subagent never spawns whatever the counter says. Depth 3
+  applies only to synchronous nesting, where the parent's tool call
+  blocks for the whole child run. Our unattended path is
+  `run_in_background=True`, and 1 is the value Claude Code enforces
+  there.
+- **Messages 8** is anchored on openclaw, the only reference that counts
+  the same thing: its agent-to-agent ping-pong stops after 5 alternating
+  replies by default and 20 at most. 8 sits between them, which is where
+  a counter that also pays for spawns and dispatches belongs.
+- **Fan-out 8** covers the one runaway nothing else counted. A spawn
+  hands its count to the child and leaves the parent's own untouched, so
+  before this budget a single turn could call `agent` until the
+  50-iteration cap stopped it. openclaw is the only reference with a
+  true fan-out cap (5 live children per parent, range 1 to 20); hermes'
+  3 and pi-mono's 8 validate the length of a batch argument, which does
+  not transfer because `agent` creates one child per call. 8 is two
+  widths of our four-worker pool, so a turn can fill the pool and keep
+  one wave queued behind it.
+
+**Two guards we looked at and did not take.** openclaw rate-limits
+parent-to-child messages to one every 2 seconds, and hermes gives each
+delegated subtask a 600 second timeout.
+
+- The 2 second limit guards openclaw's *steer* path, which aborts the
+  child's in-flight run, drains its queues and restarts it, so two
+  steers close together abort each other mid-abort. Its non-interrupting
+  sibling send has no rate limit at all. `send_message` is the
+  non-interrupting kind: a busy target queues (§5.4) and the message is
+  delivered as its own turn, so there is nothing to thrash.
+- hermes' 600 seconds is a caller-side `Future.result(timeout=…)`, not a
+  kill. On expiry it sets a cooperative interrupt flag and abandons the
+  worker thread, and a child wedged in blocking I/O keeps running. We
+  already have both halves of that and stronger: `task_output(timeout=)`
+  is the same caller-side wait (default 30s, ceiling 600s), and
+  `task_stop` cancels cooperatively, kills the active runtime and forces
+  the entity terminal after 30s. What neither we nor hermes have is a
+  deadline that fires with nobody watching. Adding one means scheduling
+  `cancel_task` at submit time in `TaskRunner`, and the bound that makes
+  it rarely necessary is the 50-iteration per-turn cap below.
 
 **How the count travels.** The counter lives in a ContextVar
 (`send_message…depth._chain_messages`). A chain crosses three thread
@@ -526,12 +589,16 @@ or `runtime.ask` at a session that registered no turn token.
 ### 5.2 Concurrency limit + queueing
 
 - Spawning runs on the `TaskRunner` thread pool, capped by
-  `OPENPROGRAM_TASK_WORKERS` (default 4). Spawn dozens at once and anything over
+  `OPENPROGRAM_TASK_WORKERS` (default 4). Spawn eight at once and anything over
   the cap **queues**, running as slots free up, without overloading anything.
-- Optional **token budget**: cap the total spawns / total tokens for one
-  collaboration and refuse new spawns at the ceiling (guards against one runaway
-  decomposition spawning hundreds). Not enforced by default in this document; the
-  parameter is left available.
+  This is a global pool, so it bounds what runs at once and not how much
+  work one turn can create. That is the fan-out budget's job (§5.1).
+- Every turn, spawned ones included, stops after 50 inner tool-call
+  iterations (`agent_loop.MAX_INNER_ITERATIONS`). A caller-supplied
+  `max_iterations` can tighten it and never raise it. The stream ends
+  cleanly and the turn counts as finished, so a model that keeps asking
+  for one more tool call still returns. hermes-agent caps a delegated
+  subagent at the same 50.
 
 ### 5.3 Cancellation propagation (cascading)
 
@@ -583,11 +650,19 @@ sender's own turn, whose token is the one the check would see.
   may re-deliver (acceptable); the reverse order could lose a message (not
   acceptable). A queued hop spends the message budget exactly like a direct
   one (§5.1).
-- **Limits** (mirroring Claude Code cross-session messaging): at most 50
-  pending entries per target — a full inbox drops the oldest and leaves a
-  system notice in the dropped message's sender session; an identical message
-  from the same sender within 60s of a still-queued copy is rejected as a
-  duplicate, and the sender is told so.
+- **Limits**: at most 50 pending entries per target — a full inbox drops
+  the oldest and leaves a system notice in the dropped message's sender
+  session; an identical message from the same sender within 60s of a
+  still-queued copy is rejected as a duplicate, and the sender is told
+  so. 50 is Claude Code's number for the same structure, a 50-entry ring
+  that drops the oldest, and it is the only reference implementation
+  with a mailbox to compare against. The 60s window has no equivalent
+  anywhere: Claude Code dedups by message uuid and weclaw by inbound
+  message id, both of which only catch a byte-identical retransmission
+  of one message object and never a model that composed the same text
+  twice. The check fires only against entries that are still queued, so
+  the window bounds one thing, how long a sender waits before the same
+  text counts as a deliberate resend instead of a retry loop.
 
 If B is idle, delivery is immediate (the pre-queue behavior).
 

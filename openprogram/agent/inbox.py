@@ -31,7 +31,28 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
+# Inbox depth. 50 is Claude Code's number for the same thing: its
+# cross-session mailbox is a 50-entry ring that drops the oldest
+# (2.1.226 binary @253677687), and it is the only reference
+# implementation with a queue to compare against — openclaw and
+# codex-cli deliver into a running thread instead of a mailbox, and the
+# other five have no inbox at all. Raise it if a session is legitimately
+# addressed by more than 50 senders while one turn runs; the overflow
+# notice in the dropped sender's session tells you when that happens.
 MAX_PENDING = 50
+
+# Duplicate window. The check only fires against entries that are STILL
+# QUEUED, so this bounds one thing: how long a sender has to wait before
+# the same text counts as a deliberate resend rather than a retry loop.
+# A model that retries because it got no answer retries inside the same
+# turn, seconds apart, so 60s covers the loop with room to spare while
+# leaving a genuine "I asked five minutes ago, asking again" through.
+# No reference implementation has a content-plus-time duplicate check to
+# copy: Claude Code dedups by message uuid and weclaw by inbound message
+# id for 5 minutes, both of which only catch a byte-identical
+# retransmission of the same message object, never a model that composed
+# the same text twice. Shorten it if deliberate resends are being
+# refused; lengthen it if retry loops get through.
 DEDUP_WINDOW_SECS = 60.0
 
 _locks: dict[str, threading.Lock] = {}

@@ -307,3 +307,61 @@ def test_no_tool_declares_a_parameter_the_runtime_drops():
         "these tool parameters never reach the model and are never "
         f"injected by the framework — rename them: {offenders}"
     )
+
+
+# --------------------------------------------------------------------------
+# Fan-out budget (agent.max_spawn_fanout) — how many agents ONE turn may
+# create. The chain counter bounds generations downward; this bounds
+# siblings, which nothing else counts.
+# --------------------------------------------------------------------------
+
+def test_fanout_refuses_the_spawn_past_the_limit(store, fake_dispatcher):
+    from openprogram.functions.tools.agent.agent.agent import MAX_SPAWN_FANOUT
+
+    for i in range(MAX_SPAWN_FANOUT):
+        out = _call_agent(prompt=f"task {i}", session_id="p1", turn_id="a1")
+        assert "[agent refused]" not in out, f"spawn {i} was refused"
+    out = _call_agent(prompt="one too many", session_id="p1", turn_id="a1")
+    assert "[agent refused]" in out
+    assert f"already created {MAX_SPAWN_FANOUT} agents" in out
+    assert "agent(to=" in out  # points at reusing the agents it has
+
+
+def test_fanout_is_counted_per_turn(store, fake_dispatcher):
+    """A new turn spawns with a fresh budget — the cap stops one runaway
+    turn, it is not a session-lifetime quota."""
+    from openprogram.functions.tools.agent.agent.agent import MAX_SPAWN_FANOUT
+
+    for i in range(MAX_SPAWN_FANOUT + 1):
+        _call_agent(prompt=f"task {i}", session_id="p1", turn_id="a1")
+    out = _call_agent(prompt="next turn", session_id="p1", turn_id="a2")
+    assert "[agent refused]" not in out
+
+
+def test_fanout_zero_disables_the_cap(store, fake_dispatcher, monkeypatch):
+    from openprogram.functions.tools.agent.agent.agent import MAX_SPAWN_FANOUT
+    monkeypatch.setattr(
+        "openprogram.setup._read_config",
+        lambda: {"agent": {"max_spawn_fanout": 0}},
+    )
+    for i in range(MAX_SPAWN_FANOUT + 2):
+        out = _call_agent(prompt=f"task {i}", session_id="p1", turn_id="a1")
+        assert "[agent refused]" not in out
+
+
+def test_fanout_slot_is_not_spent_by_a_refused_spawn(store, fake_dispatcher):
+    """The depth guard runs first, so a chain that is out of spawn
+    budget never burns its turn's fan-out slots."""
+    from openprogram.functions.tools.agent.agent.agent import (
+        MAX_SPAWN_DEPTH, _fanout_used,
+    )
+    from openprogram.functions.tools.send_message.send_message.depth import (
+        set_chain_messages, _chain_messages,
+    )
+    tok = set_chain_messages(MAX_SPAWN_DEPTH)
+    try:
+        out = _call_agent(prompt="nope", session_id="p1", turn_id="a1")
+    finally:
+        _chain_messages.reset(tok)
+    assert "spawn depth" in out
+    assert _fanout_used.get(("p1", "a1"), 0) == 0

@@ -209,6 +209,21 @@ def _restore_shipped_tools():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _reset_spawn_fanout():
+    """Clear the per-turn spawn fan-out counter between tests.
+
+    It is keyed (session_id, turn_id), which is unique per turn in a
+    real run but reused by tests that all spawn from "p1"/"a1" — without
+    this, the ninth such test in a session would be refused by a counter
+    the previous eight filled.
+    """
+    from openprogram.functions.tools.agent.agent.agent import _fanout_used
+    _fanout_used.clear()
+    yield
+    _fanout_used.clear()
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

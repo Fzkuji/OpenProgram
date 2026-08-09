@@ -383,11 +383,18 @@ openprogram config set <b>agent.max_spawn_depth</b> 0   <i># 不限层数</i>
 
 openprogram config set <b>agent.max_messages</b> 8      <i># 默认：一条链最多传8跳</i>
 openprogram config set <b>agent.max_messages</b> 0      <i># 不限条数，agent之间可以一直互发</i>
+
+openprogram config set <b>agent.max_spawn_fanout</b> 8  <i># 默认：一轮最多创建8个agent</i>
+openprogram config set <b>agent.max_spawn_fanout</b> 0  <i># 一轮想创建多少个都行</i>
 </pre>
   <div class="note">
-    设置页的<b>Agent</b>分组里是同两个数字框：Max spawn depth、Max messages per chain，改完即时生效，
-    落盘在<code>~/.openprogram/config.json</code>的<code>agent</code>段。
-    两个都设0之后，防失控就只剩并发上限（<code>OPENPROGRAM_TASK_WORKERS</code>，默认4）和用户自己按停。<br>
+    设置页的<b>Agent</b>分组里是同样的数字框：Max spawn depth、Max messages per chain、Max spawn fan-out，
+    改完即时生效，落盘在<code>~/.openprogram/config.json</code>的<code>agent</code>段。
+    全设0之后，防失控就只剩并发上限（<code>OPENPROGRAM_TASK_WORKERS</code>，默认4）、
+    每轮50次工具调用的上限和用户自己按停。<br>
+    <b>扇出预算不在上面那个链上计数器里。</b>派生把计数交给孩子、自己那份不动，
+    所以链上计数器数不到兄弟。扇出按（会话，轮次）单独计，只拒绝不摘工具：
+    工具清单在轮次开始时就冻结了，这个数在轮次里才花掉。<br>
     有一条规则不受预算影响：<b>自己发给自己一律拒</b>。<code>to=</code>指向发起方当前这条分支是直接的环，立刻拒掉。
   </div>
 
