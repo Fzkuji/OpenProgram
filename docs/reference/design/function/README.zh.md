@@ -12,6 +12,7 @@
 | 主题 | 来源 |
 |---|---|
 | 函数 / 工具调用框架（`@function` / `@agentic_function`、共享注册表、gating、延迟加载） | [`calling-unification.md`](calling-unification.md) |
+| 全面workflow化：控制流哪些收进代码、哪些留给模型，八家参考实现各自把线划在哪，先固化哪几个工作模式 | [`workflow-first.html`](workflow-first.html) |
 | 装饰器用法、元数据规范、tool-call 循环、纯 Python 辅助函数 | 产品页在 [`capabilities/agentic-programming/`](../../../capabilities/agentic-programming/README.md) —— 那里是唯一归属；这里原先的设计副本已删除 |
 
 ## 实现文件
