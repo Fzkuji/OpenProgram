@@ -172,54 +172,185 @@ holds several branches that share a prefix and diverge after it
 Everything said on a branch belongs in memory, and nothing said on the
 shared prefix belongs in memory twice.
 
-The cursor therefore records identity, not position. One file per
-thread holds the ids of the messages memory has taken:
+### Why a position cannot be an identity
 
-```
-<state>/memory/.scriptorium/cursors/openprogram/<session-id>.json
-    {"written": ["a3f1c2", "9d0e77", "4b21ae"]}
-```
+An ordinal is not a property of a message. `get_branch` walks
+`predecessor` edges back from a head and hands back a list, and the
+ordinal is what counting the rows of that list produces. It comes into
+existence at the moment the chain is flattened, it describes the
+flattening, and it is gone again when the list is. Before the walk
+there is no number. After it, the number and the message's own id have
+nothing to do with each other.
 
-The path carries the provider and the thread, the file carries the ids
-in the order they were written. A number cannot carry that identity:
-the fourth message of a branch and the fourth message of the trunk are
-two different messages under the same number, so a cursor holding
-"written through nine" reads an entire branch numbered four to nine as
-already written and offers none of it.
+Two things follow. The same message reached along two lines gets two
+numbers, and two different messages at the same depth on two lines get
+the same one: the trunk's fourth message and a branch's fourth message
+are not the same message and are both "four". And one line's numbering
+is not stable between two reads either, because `get_branch` filters
+out the turns `rewind` marked and compaction splices a summary node in
+at the position of the first turn it covers, and either shifts every
+row after it.
 
-### Working out what a session owes
+A cursor holding "written through nine" therefore reads a branch forked
+at the third message, whose turns number from zero, as entirely written
+and offers none of it. A branch that runs past nine gives up only its
+tail, which writes a fragment starting in the middle of a conversation
+and then marks the whole branch written. Measured on a session whose
+stored ordinal was nine: a five-turn branch was offered as zero turns,
+and an eleven-turn branch as its last two.
 
-`write` reads the branch that ends at the session's head. `get_branch`
-walks `predecessor` edges from that head back to the start of the
-branch and returns the line in order, so by the time memory sees it the
-walk is done. The turns on that line whose ids are not in `written` are
-what the session owes, in branch order. The batch is the leading part
-of them that reaches the threshold, and their ids join `written` when
-the write transaction installs, never before.
+The shape refuses the correction as well. `advance_cursor` raises when
+a new ordinal is below the stored one, on the reasoning that a cursor
+only ever moves forward. Moving backwards is exactly what a branch
+forked from an earlier message needs, so a caller that worked out the
+right answer could not record it. That is not a missing check. A
+monotonic counter and a branching conversation are different shapes,
+and one cannot be repaired into the other.
 
-The ids are the whole boundary, so a branch needs no identifier of its
-own. The tip cannot serve as one anyway: a branch's tip is a different
-node after every turn, so keying by it would open a new cursor per
-turn. A record still carries an ordinal, and it still orders the batch
-the source archive appends, but it no longer decides what is owed.
+The two failures are not equally loud, and the quieter one is worse. A
+branch read as entirely written produces nothing, and nothing at least
+looks like nothing. A branch that gives up only its tail produces a
+write that succeeds: memory gains a fragment beginning in the middle of
+a conversation, the whole branch is recorded as done, and no code path
+reports anything. Where the bookkeeping moves last, a failure defaults
+to doing the work again; here it defaults to skipping the work quietly
+and keeping a decapitated record of it.
+
+So the boundary has to be keyed on what identifies a message, and what
+identifies a message is the node it is.
+
+### Two ways to carry that identity
+
+|  | A mark on the node | A set of ids beside memory |
+|---|---|---|
+| What a session owes | Walk back from the head collecting unmarked turns, stop at the first marked one | Walk the whole branch, subtract the set |
+| At a fork | The walk reaches the shared prefix, finds it marked, stops | The prefix's ids are in the set, so they are skipped |
+| What is stored | One field on a node that already exists | One file per thread holding every id ever written |
+| How it grows | Nothing new | One entry per message, kept as long as the session exists |
+| What a read costs | A few steps back from the head | The thread's whole list |
+| Migration | Mark what the source archive covers | Seed the set from the same archive |
+| A mark or an entry lost | The walk stops early and everything older is stranded | The turn is offered again |
+| Coupling | Memory writes one field into the session store | Memory keeps its own books |
+
+The mark is what this design takes. Keeping memory's books outside the
+session store looks like the cheaper choice because it keeps a
+pluggable subsystem from writing into the runtime's storage, and it is
+not. Once the books have to stay right across a fork, "outside" means a
+set, and a set brings a file layout, a migration, a rule that an id is
+never removed, and a read whose cost grows with the session. The mark
+brings none of those. What it costs is one field written by memory into
+a node, and a node already carries where the turn came from, whether it
+is the runtime talking to itself, which branch it roots, and whether
+`rewind` retired it. One more field saying memory has taken this turn is
+the same kind of thing.
+
+A set is exact and a walk is not, and that is the real price. The walk
+assumes the marks form a prefix of the branch, which is what the writer
+produces: a batch is the leading turns that reach the threshold, so
+marking always fills in from the oldest end. Two things bend the
+assumption. A turn memory never records, a sub-agent's completion notice
+or a merge prompt, carries no mark and would stop the walk at itself, so
+the walk steps over what memory does not record rather than stopping on
+it. And a mark lost after its transaction installed strands everything
+older than it, where a set would offer those turns again. One field per
+node written without a lock is how a mark gets lost, and the section on
+where the mark goes says what that window actually is.
+
+### What others do
+
+Nine reference frameworks were read for this. Three of them store a
+conversation that branches: claude-code, openclaw and pi-mono all keep
+a parent pointer per entry in one append-only file. Of the rest, three
+keep the conversation in a straight line, one destroys a branch by
+rewriting the whole session when a turn is retried, and two hold no
+conversation at all. A straight line makes a position an identity,
+because there is only ever one list, so most of them never meet this
+question.
+
+Nobody writes "memory has taken this turn" onto a conversation turn.
+The two shapes that are actually in use are to make the unit coarse
+enough that branching stops mattering, and to derive the delta from the
+tree instead of storing it. codex-cli takes the first: a fork starts a
+new rollout file, and its extraction jobs live in a SQLite table keyed
+by thread with a success watermark and a lease, so the unit is a whole
+thread and a fork is simply a new key. pi-mono takes the second: its
+session storage exposes no way to change an entry at all, annotating one
+means appending a `label` entry that points at it, moving the cursor
+means appending a `leaf` entry that points at it, and the set of turns a
+branch summary covers is computed at navigation time by walking from the
+abandoned leaf up to its common ancestor with the new one. claude-code
+keeps a per-message cursor in process memory and treats a cursor whose
+message it can no longer find as a reason to reprocess the session from
+the start, with a comment saying that returning nothing would disable
+extraction for the rest of the session. openclaw is the one that writes
+a processed flag back, `promotedAt`, but it writes it onto a derived
+candidate record rather than onto the transcript, and its own memory
+hook then reads the transcript flat, taking the last fifteen lines with
+no parent walk, which mixes abandoned branches into what it writes.
+
+Two of those are worth taking. Reprocessing beats going silent when the
+bookkeeping is lost, which is the rule below for a mark that goes
+missing. And appending a marker that points at a node, rather than
+changing the node, is a real alternative to the mark: here it would put
+a node in the conversation graph for every batch written, which is a
+worse trade than one field, because every reader of the graph would then
+have to know to skip them.
+
+### What a session owes
+
+Memory asks for the branch ending at the session's head and walks it
+back from the tip. Turns memory does not record are stepped over. Every
+recorded turn without the mark is owed, and the walk stops at the first
+recorded turn that carries it. What comes back is the owed turns in
+branch order, oldest first; the batch is the leading part of them that
+reaches the threshold, and the marks go on once the write transaction
+installs, never before.
+
+### When the mark goes on
+
+Two conditions, not one. The write transaction has to install, and it
+has to have changed a file. A writer that spends every one of its turns
+on the same rejected edit finishes without raising anything and without
+touching a file, and a run judged by its exit alone reads that as a
+batch written. The transaction already reports the topic files a turn
+changed; an empty list is a batch that reached no file, and marking it
+would lose those turns for good. Measured elsewhere on this same writer:
+twenty turns spent on one rejected edit, a successful return, and a
+topic file one byte long.
+
+That rule is not special to the mark. Any state that says a thing is
+done has to be checkable against something the work produced, which is
+also why the nightly pass reports the files it changed rather than the
+files it looked at. The absence of an error is not a product.
+
+The order of the three steps follows from which of them can be replayed.
+Evidence is archived first, then the topic files are written, then the
+marks go on. Archiving is append-only and addressed by content, so a
+batch archived twice leaves the archive byte for byte as it was. Topic
+files carry block IDs and footnotes that a half-write would corrupt, so
+they go in through a transaction that installs whole or not at all. A
+writer that dies between the two leaves evidence nobody cites, no marks,
+and the same batch owed next time, which is a redo. Marking first would
+turn the same crash into losing the turns silently, and nothing recovers
+from that.
 
 ### At a fork
 
 The turn that opens a branch carries the predecessor of the turn it
-replaces, and nothing else about it is special. Its branch runs back
-through the shared prefix, whose ids are in `written` already, so the
-new turns are owed and the prefix is not. The trunk and the branch need
-no ordering between them and no knowledge of each other. Whichever is
-written first puts the shared ids in the set, and the other one skips
-exactly what it shares.
+replaces, and nothing else about it is special. Walking back from the
+branch's tip reaches the shared prefix, whose turns are marked already,
+and stops there. The trunk and the branch need no ordering between them
+and no knowledge of each other. Whichever is written first marks the
+shared turns, and the other one stops at them.
 
 ### Every branch, at the session boundary
 
 Per turn, memory asks for the branch ending at the session's head,
-because that is the branch the turn happened on. At the boundary it
-asks for all of them: `list_branches` gives every live tip and one
-`get_branch` per tip gives the line behind it. Offering a shared prefix
-several times costs nothing, since its ids are in `written` already.
+because that is the branch the turn happened on. At the boundary it asks
+for all of them: `list_branches` gives every live tip and one
+`get_branch` per tip gives the line behind it. Walking a shared prefix
+several times costs nothing, since the walk stops at its first marked
+turn.
 
 The branch under the head is written however little it owes, because
 nothing comes back for it afterwards. The others are written once what
@@ -227,75 +358,125 @@ they owe reaches the threshold. A branch of one turn is a retry, and a
 retry is a reply somebody rejected; a branch long enough to reach a
 batch is a line of conversation somebody went down and came back from,
 and what was said there belongs in memory like anything else. The idle
-allowance that lets a short head branch through does not apply to
-them — an abandoned branch's last message is old by definition, so the
+allowance that lets a short head branch through does not apply to them,
+because an abandoned branch's last message is old by definition and the
 allowance would let every retry in.
 
 Turns the user rolled back are gone before memory sees them. `rewind`
 marks them and `get_branch` filters them out, so "abandoned on purpose"
 is the session store's judgment and not one memory makes again.
 
-### Ids stay
+### Where the mark goes
 
-An id is never removed. Dropping the ids of a branch nobody visits any
-more looks like tidying, and it is the one operation that breaks what
-the set is for: a fork can start at any message, so a message has to
-stay recognisable for as long as any future branch could run back
-through it, which is as long as the session exists. The set grows with
-the session at the rate the source archive already grows, one entry per
-message, and one file per thread keeps a turn's cursor read
-proportional to that session rather than to every session ever written.
+On the node, in `metadata`, under a key naming the provider that wrote
+it. The interface is pluggable and two providers would each want their
+own answer, so one boolean shared between them would be wrong the day a
+second one exists.
 
-Deleting a session deletes its cursor file. That is the only removal,
-and it is safe because the branches that could have run through those
-messages go with it.
+Nothing has to be taught to carry it. `metadata` is a free-form dict on
+both paths: the message adapter puts every field it does not recognise
+into it, and the reader keeps the top-level fields of a node and passes
+`metadata` through whole. Nor is writing to a stored node new. `rewind`
+stamps `rewound` on the turns it retires and rewrites their files,
+`revert` does the same with `reverted`, and the store already offers a
+call that merges a metadata patch into a node and rewrites it.
 
-### An unreadable cursor is an empty one
+The append invariants are not in the way. They are checked when a node
+is appended, a mutation never reaches them, and what they read is
+`predecessor`, `caller`, `role`, `input` and three metadata keys
+(`display`, `spawn_branch_root` with `source`, and `covers_ids`). A key
+of memory's own collides with none of them, and the read-side walk in
+`get_branch` reads the same set.
 
-A cursor file that will not parse says memory does not know what it has
-written, and under a set the only safe reading of that is that it has
-written nothing. So it reads as an empty set and the thread is offered
-whole. One thread rewritten once is the cost, and the write transaction
-already folds paragraphs that say the same thing. Raising instead costs
-the thread: the failure travels up as a retryable `WriteIncomplete`,
-the watcher leaves the session unmarked, and every later pass reads the
-same file and reports the same thing, so nothing is ever written and
-nothing says why. claude-code makes the same choice when the message
-its cursor names has gone missing, for the same reason — rewriting a
-batch has a bound, silence does not.
+A mark travels with the node. There is no session export format today,
+and a session directory is self-describing JSON, so copying one is how a
+session moves and the copy carries every mark with it. Arriving on a
+machine whose memory workspace is empty, it would arrive with every turn
+already claiming to have been written. Naming the provider in the key
+does not separate the two, because the other machine runs the same
+provider. What separates them is the workspace, so the mark's value is
+the identity of the memory workspace that wrote it, an id generated once
+and kept in the runtime directory, and a walk stops only on a mark that
+names the workspace it is walking for. A restored backup keeps its id
+and keeps its marks; a session copied in from elsewhere is written from
+the start. Clearing marks on import would do the same job and needs an
+import path that does not exist. An external file gets this for free, by
+not travelling at all.
 
-The cursor lives inside the workspace, under `.scriptorium/cursors/`,
-so a backup, a git checkout or a restore takes it along with the files
-it describes. Kept beside the workspace instead, memory restored from
-last week would meet a cursor from today and read the whole week as
-written.
+### What it costs the session store
+
+Nothing there hashes a whole tree. The one full-byte tree hash in this
+system is the memory workspace's revision, and it is rooted at
+`<state>/memory` while sessions live under `<state>/sessions`, so a
+marked node cannot read as a concurrent memory write. The mark is
+bookkeeping rather than content, and the checksum that could confuse the
+two does not reach it.
+
+What a rewrite does trip is the session index cache. Staleness is the
+history directory's mtime, and a rewrite bumps it exactly as an append
+does, so another process holding that session rebuilds its index once:
+measured at 14 to 50 milliseconds for a 289-node session of 4.2 MB, and
+self-limiting, because the rebuild records the new fingerprint rather
+than repeating per read.
+
+The cost that grows is git. A session directory is committed with
+`git add -A` once per turn, so every node whose bytes changed becomes a
+new blob. Marking the batch a write ingested is a few dozen nodes per
+write, and the repository grows by what the batch weighs. Marking every
+node in the session on every write would add the session's whole weight
+per turn, which is quadratic over its life. So the mark goes on the
+batch and never on a sweep.
+
+Two things must not happen. The mark must not move the session's
+`updated_at`: the idle watcher decides a session is already handled by
+comparing that exact value, so moving it hands the session straight back
+to a forced write and the model call inside it. And the mark must not go
+through the path that records the session as synced, because that
+fingerprint would cover writes the marking process never read, and an
+index that skipped them would then never rebuild. Writing the node file
+directly is what `rewind` does, and the turn finalizer already rewrites
+a node file in place to stamp its checkpoint, so the shape is in use
+twice already.
+
+Two more things are worth knowing before writing the code. A node file is
+written without a lock, so marking a node while something else rewrites
+the same node loses one of the two writes whole rather than merging
+them; memory marks turns that are already finished, and the per-turn
+write runs on the turn's own thread after the turn has been persisted,
+which leaves the idle watcher meeting a session that has just woken up
+as the window. And every metadata key is spread onto the top level of
+the dicts `get_branch` hands back, so the mark's name has to be one no
+message field uses.
 
 ### Migrating off the position cursor
 
 An installation upgrading from the position cursor has
-`cursors: {thread: {message_id, ordinal}}` in `runtime.json`. It names
-the last message written per thread and nothing before it, so the set
-cannot be reconstructed from it.
+`cursors: {thread: {message_id, ordinal}}` in `runtime.json` and no
+marks on any node, so a walk back from a head would collect the whole
+session.
 
-The set is seeded from the source archive instead.
+The source archive says which turns were handed to the writer.
 `sources/openprogram/<session-id>.md` carries a `source-id` comment per
 archived message, and on the write path a batch is archived before the
-cursor advances, so the archive covers everything the old cursor
-pointed past. Seeding from it re-writes nothing that was written. It
-can cover a little more than the old cursor did, because the archive
-records what was handed to the writer: a batch archived by a write that
-then failed reads as written and is not offered again. That costs at
-most one interrupted batch per thread, once, against re-writing every
-session's whole history, which is what discarding the old state would
-cost. A workspace with no `sources/` tree, from before the source
-archive existed, seeds empty and is written from the start.
+cursor advances, so the archive covers everything the old cursor pointed
+past. Marking those nodes re-writes nothing that was written. It can
+cover a little more, because a batch archived by a write that then
+failed reads as written and is not offered again; that costs at most one
+interrupted batch per thread, once, against re-writing every session's
+whole history, which is what placing no marks would cost. A workspace
+with no `sources/` tree, from before the source archive existed, is
+written from the start.
 
-`cursors` leaves `runtime.json` once seeded. The counters stay there:
-`creation_order`, the local batch and token counts, and the time of the
-last global pass.
+`cursors` leaves `runtime.json` once the marks are placed. The counters
+stay there: `creation_order`, the local batch and token counts, and the
+time of the last global pass.
 
 ### What this does not settle
 
+- **Nothing checks that the marks form a prefix.** The walk stops at the
+  first marked turn it meets and trusts that everything behind it is
+  marked too. That holds because a batch is always the oldest turns
+  owed, and it is an assumption rather than a checked invariant.
 - **A branch is only revisited at the session boundary.** Between
   boundaries the per-turn path offers the head's branch alone, so a
   branch left an hour ago waits for the session to go idle. Nothing is
@@ -308,30 +489,29 @@ last global pass.
   branches. Retrieval returns both, and the nightly reorganize merges
   paragraphs that say the same thing whether or not they came from the
   same line of the conversation.
-- **Cross-session spawn.** A spawn branch inside the same session
-  shares that session's cursor and archive and needs nothing extra. A
-  cross-session spawn's branch root points into another session's
-  graph, and the thread here is the session id, so the two halves are
-  written under two threads and neither walk crosses into the other.
-  Nothing is written twice and nothing is skipped; what is missing is
-  the link saying that the sub-agent's branch continues the caller's
-  conversation.
+- **Cross-session spawn.** A spawn branch inside the same session is an
+  ordinary part of that session's graph and needs nothing extra. A
+  cross-session spawn's branch root points into another session's graph
+  and terminates the walk there, so the two halves are written under two
+  sessions and neither walk crosses into the other. Nothing is written
+  twice and nothing is skipped; what is missing is the link saying that
+  the sub-agent's branch continues the caller's conversation.
 - **Compaction summaries.** A summary node takes the predecessor of the
-  first turn it covers, which makes it a sibling of the line the head
-  is on rather than a member of it, so the ordinary walk sees the raw
-  turns and writes those. A head that moves onto the summary's own line
-  makes the summary an unwritten assistant turn whose text restates
-  turns already in memory, under an id the cursor has never seen.
+  first turn it covers, which makes it a sibling of the line the head is
+  on rather than a member of it, so the ordinary walk sees the raw turns
+  and writes those. A head that moves onto the summary's own line makes
+  the summary an unwritten assistant turn whose text restates turns
+  already in memory.
 - **Rows the store gave no id.** `_records` falls back to a positional
   id for a row without one, and that string names different messages on
-  different branches. The session store always supplies an id, so the
-  fallback is unreachable; under an id-keyed cursor it is wrong rather
-  than merely unused, and it goes.
-- **`written` means handed to the writer, not cited.** A batch the
-  writer folds into one paragraph citing one of its five turns marks
-  all five written. That is intended, and it is why the archive is a
-  fair seed above, but the cursor is not evidence that a particular
-  turn's content reached a file.
+  different branches. It is the handle the source archive files the turn
+  under, so it is wrong for the same reason a positional cursor is. The
+  session store always supplies an id, so the fallback is unreachable,
+  and it goes.
+- **A mark means handed to the writer, not cited.** A batch the writer
+  folds into one paragraph citing one of its five turns marks all five.
+  That is intended, and it is why the archive is a fair seed above, but
+  a mark is not evidence that a particular turn's content reached a file.
 
 ## Why the nightly reorganize exists
 
@@ -573,32 +753,31 @@ strips the inner block and leaves an empty one.
 
 ## Appendix: Implementation status
 
-Everything above runs today except "The write cursor" and the two
+Everything above runs today except "The write cursor" and the six
 subsections after it, and "Every branch, at the session boundary".
 Where those come from, and what was decided against, is
 [`memory-adoption.html`](memory-adoption.html).
 
-What runs in place of "The write cursor" is a position cursor:
+What runs in place of the write cursor is a position cursor:
 `runtime.json` holds `cursors: {thread: {message_id, ordinal}}`,
 `runtime/online.py` claims a record only when its ordinal is higher than
 the stored one, and `scriptorium/writing.py` builds that ordinal from
-the row's index in the branch it read. The index is a position in one
-branch, so a branch forked from an earlier message numbers its turns
-below the stored ordinal and the whole branch reads as already written.
-Measured on a session whose stored ordinal was 9, a six-record branch
-was offered as zero records.
+the row's index in the branch it read. `RuntimeState.advance_cursor`
+raises `cursor cannot move backwards` when a new ordinal is below the
+stored one, so the shape refuses even the act of correcting itself.
 
-The three places the design lands are `runtime/state.py` (the state
-shape and the per-thread cursor files), `runtime/online.py` (what a
-session owes, and adding ids after the transaction installs), and
-`_records` in `scriptorium/writing.py` (identity by message id, and
-dropping the positional fallback).
+The design lands in three places. `openprogram/store/session/` gains the
+mark: a node's `metadata` takes a key naming the provider whose value
+identifies the memory workspace, written once the write transaction has
+installed and reported a non-empty list of changed files, through the
+same file rewrite `rewind` uses. `runtime/online.py` works out what a
+session owes by walking back from the head instead of comparing
+ordinals, and `runtime/state.py` loses `cursors` and `advance_cursor`
+and keeps the counters. `_records` in `scriptorium/writing.py` drops its
+positional id fallback. The migration reads the `source-id` comments out
+of `sources/` and marks those nodes, once.
 
 Both write paths ask `get_branch` for the head's branch alone
 (`memory/session_watcher.py` and `scriptorium/writing.py`), so no other
 branch is ever offered. `list_branches` and the per-tip `get_branch`
 are already there to build on.
-
-`RuntimeStateStore.load` calls `json.loads` on `runtime.json` with
-nothing around it, so a file that will not parse raises rather than
-reading as empty.

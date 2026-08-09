@@ -81,8 +81,9 @@
     </div>
     <div class="st" style="border-top-color:#d4843a">
       <div class="k">定稿了还没落地</div>
-      <p><b>第 04 节</b>的ID集合游标：跑着的仍是位置游标，分叉之后整条分支漏写，
-        或者只写下一个从对话中间开始的片段。</p>
+      <p><b>第 04 节</b>的写入游标：跑着的仍是位置游标，分叉之后整条分支漏写，
+        或者只写下一个从对话中间开始的片段。要走的是<b>在节点上打「已写」标记</b>，
+        从 head 往回走到第一个有标记的为止。</p>
     </div>
     <div class="st" style="border-top-color:#8a8675">
       <div class="k">接口留着没接线</div>
@@ -417,16 +418,15 @@
     分支上说的话都该进记忆，共享前缀上说的话不该进第二遍。</p>
 
   <div class="card">
-  <svg viewBox="0 0 1160 660" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="写入游标：位置与身份">
+  <svg viewBox="0 0 1160 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="写入游标：位置、节点标记与外部集合">
     <defs>
-      <marker id="c-gy" markerWidth="8" markerHeight="8" refX="6" refY="2.6" orient="auto"><path d="M0,0 L6,2.6 L0,5.2 Z" fill="#4a4838"/></marker>
       <marker id="c-or" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#d4843a"/></marker>
+      <marker id="c-gr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5aad4e"/></marker>
     </defs>
 
     <text x="24" y="32" fill="#d4843a" font-size="15" font-weight="700">同一个会话，主干写完之后从第三条消息分出去</text>
     <text x="24" y="54" fill="#8a8675" font-size="12">主干 9 条已经写进记忆。用户回到 m3 重新问，新分支往下又聊了 6 条，head 现在在 b9。</text>
 
-    <!-- 主干 -->
     <text x="104" y="104" fill="#8a8675" font-size="11.5" text-anchor="end">主干</text>
     <g>
       <line x1="150" y1="100" x2="880" y2="100" stroke="#3a382c" stroke-width="1.4"/>
@@ -444,11 +444,9 @@
       <text x="920" y="105" fill="#8a8675" font-size="11">这 9 条已经写过</text>
     </g>
 
-    <!-- 分叉 -->
     <path d="M330 118 C 330 160, 392 158, 392 196" fill="none" stroke="#d4843a" stroke-width="1.6" marker-end="url(#c-or)"/>
     <text x="348" y="152" fill="#d4843a" font-size="11">从 m3 分出去</text>
 
-    <!-- 分支 -->
     <text x="104" y="216" fill="#d4843a" font-size="11.5" text-anchor="end">新分支</text>
     <g>
       <line x1="420" y1="212" x2="880" y2="212" stroke="#3a382c" stroke-width="1.4"/>
@@ -464,14 +462,12 @@
       <text x="920" y="228" fill="#8a8675" font-size="10.5">这 6 条从没写过</text>
     </g>
 
-    <!-- 共享前缀括号 -->
     <path d="M122 130 L122 142 L358 142 L358 130" fill="none" stroke="#5aad4e" stroke-width="1.2"/>
     <text x="240" y="160" fill="#5aad4e" font-size="11" text-anchor="middle">共享前缀</text>
 
-    <!-- 判定行 -->
     <line x1="32" y1="256" x2="1128" y2="256" stroke="#2e2c20" stroke-width="1"/>
 
-    <text x="366" y="292" fill="#e0445a" font-size="12.5" font-weight="700" text-anchor="end">旧方案 · 记"写到第几条"</text>
+    <text x="366" y="292" fill="#e0445a" font-size="12.5" font-weight="700" text-anchor="end">现在跑的 · 记「写到第几条」</text>
     <text x="366" y="312" fill="#8a8675" font-size="11" text-anchor="end">游标存 ordinal=9，只收编号大于 9 的</text>
     <g font-size="12" text-anchor="middle">
       <text x="420" y="296" fill="#8a8675">4</text><text x="510" y="296" fill="#8a8675">5</text>
@@ -489,70 +485,138 @@
     <text x="920" y="300" fill="#e0445a" font-size="11.5" font-weight="700">六条全部 ≤ 9</text>
     <text x="920" y="318" fill="#bdb9a6" font-size="11">一条都不写</text>
 
-    <text x="366" y="376" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="end">新方案 · 记"已写消息 ID 的集合"</text>
-    <text x="366" y="396" fill="#8a8675" font-size="11" text-anchor="end">id 不在集合里，就是欠着的</text>
+    <text x="366" y="376" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="end">要走的 · 在节点上打「已写」标记</text>
+    <text x="366" y="396" fill="#8a8675" font-size="11" text-anchor="end">从 head 往回走，收没标记的，遇到有标记的就停</text>
     <g font-size="11" text-anchor="middle" fill="#8a8675">
-      <text x="420" y="380">新 id</text><text x="510" y="380">新 id</text><text x="600" y="380">新 id</text>
-      <text x="690" y="380">新 id</text><text x="780" y="380">新 id</text><text x="870" y="380">新 id</text>
+      <text x="420" y="380">无标记</text><text x="510" y="380">无标记</text><text x="600" y="380">无标记</text>
+      <text x="690" y="380">无标记</text><text x="780" y="380">无标记</text><text x="870" y="380">无标记</text>
     </g>
     <g stroke="#5aad4e" stroke-width="2.2" fill="none">
       <path d="M413 392 L419 400 L429 386"/><path d="M503 392 L509 400 L519 386"/>
       <path d="M593 392 L599 400 L609 386"/><path d="M683 392 L689 400 L699 386"/>
       <path d="M773 392 L779 400 L789 386"/><path d="M863 392 L869 400 L879 386"/>
     </g>
+    <path d="M392 368 L360 368" stroke="#5aad4e" stroke-width="1.4" marker-end="url(#c-gr)" transform="translate(0,0)"/>
     <text x="920" y="380" fill="#5aad4e" font-size="11.5" font-weight="700">六条全部欠着</text>
-    <text x="920" y="398" fill="#bdb9a6" font-size="11">一条不漏地写进去</text>
+    <text x="920" y="398" fill="#bdb9a6" font-size="11">走到 m3 有标记，停</text>
 
-    <!-- 前缀说明 -->
-    <rect x="32" y="424" width="1096" height="52" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.2"/>
-    <text x="50" y="448" fill="#5aad4e" font-size="12" font-weight="700">分叉点之前为什么自动不会重复写：</text>
-    <text x="270" y="448" fill="#bdb9a6" font-size="12">分支这条线往回走，走到 m3 m2 m1 还是那三条消息，id 一模一样，已经在集合里，于是被跳过。</text>
-    <text x="50" y="468" fill="#bdb9a6" font-size="12">两条线之间不需要任何顺序，也不需要互相知道：谁先写，谁就把共享的那几个 id 放进集合，另一条来的时候恰好跳过它们共享的那一段。</text>
+    <text x="366" y="440" fill="#9d6fe0" font-size="12.5" font-weight="700" text-anchor="end">另一个能走通的 · 记忆自己存 ID 集合</text>
+    <text x="366" y="460" fill="#8a8675" font-size="11" text-anchor="end">走完整条分支，减去集合里的 ID</text>
+    <g font-size="11" text-anchor="middle" fill="#8a8675">
+      <text x="420" y="444">新 id</text><text x="510" y="444">新 id</text><text x="600" y="444">新 id</text>
+      <text x="690" y="444">新 id</text><text x="780" y="444">新 id</text><text x="870" y="444">新 id</text>
+    </g>
+    <g stroke="#9d6fe0" stroke-width="2.2" fill="none">
+      <path d="M413 456 L419 464 L429 450"/><path d="M503 456 L509 464 L519 450"/>
+      <path d="M593 456 L599 464 L609 450"/><path d="M683 456 L689 464 L699 450"/>
+      <path d="M773 456 L779 464 L789 450"/><path d="M863 456 L869 464 L879 450"/>
+    </g>
+    <text x="920" y="444" fill="#9d6fe0" font-size="11.5" font-weight="700">六条全部欠着</text>
+    <text x="920" y="462" fill="#bdb9a6" font-size="11">结果一样，代价不一样</text>
 
-    <!-- 底部四条 -->
-    <rect x="32" y="492" width="266" height="130" rx="9" fill="#12110b" stroke="#2e2c20"/>
-    <text x="50" y="516" fill="#d4843a" font-size="12" font-weight="700">游标存在哪</text>
-    <text x="50" y="538" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">.scriptorium/cursors/</text>
-    <text x="50" y="554" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">openprogram/&lt;会话 id&gt;.json</text>
-    <text x="50" y="578" fill="#bdb9a6" font-size="11">一个线程一个文件。一轮的游标</text>
-    <text x="50" y="596" fill="#bdb9a6" font-size="11">读取只跟这个会话有关，不跟</text>
-    <text x="50" y="614" fill="#bdb9a6" font-size="11">历史上写过的所有会话有关</text>
+    <rect x="32" y="490" width="1096" height="52" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.2"/>
+    <text x="50" y="514" fill="#5aad4e" font-size="12" font-weight="700">分叉点之前为什么自动不会重复写：</text>
+    <text x="270" y="514" fill="#bdb9a6" font-size="12">分支这条线往回走，走到 m3 还是那条消息，标记就在它身上，走行到此为止。</text>
+    <text x="50" y="534" fill="#bdb9a6" font-size="12">两条线之间不需要任何顺序，也不需要互相知道：谁先写，谁就给共享的那几条打上标记，另一条来的时候正好停在它们上面。</text>
 
-    <rect x="310" y="492" width="266" height="130" rx="9" fill="#12110b" stroke="#2e2c20"/>
-    <text x="328" y="516" fill="#d4843a" font-size="12" font-weight="700">id 只增不删</text>
-    <text x="328" y="540" fill="#bdb9a6" font-size="11">分叉可以从任意一条消息开始，</text>
-    <text x="328" y="558" fill="#bdb9a6" font-size="11">所以只要会话还在，每条消息都</text>
-    <text x="328" y="576" fill="#bdb9a6" font-size="11">得一直认得出来</text>
-    <text x="328" y="600" fill="#8a8675" font-size="10.5">清理没人走的分支看着像整理，</text>
-    <text x="328" y="616" fill="#8a8675" font-size="10.5">恰好废掉这个集合的全部用处</text>
+    <rect x="32" y="558" width="354" height="122" rx="9" fill="#12110b" stroke="#2e2c20"/>
+    <text x="50" y="582" fill="#d4843a" font-size="12" font-weight="700">标记写在哪</text>
+    <text x="50" y="604" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">节点 metadata，键名带 provider</text>
+    <text x="50" y="626" fill="#bdb9a6" font-size="11">值是记忆工作区的标识，导出的会话</text>
+    <text x="50" y="644" fill="#bdb9a6" font-size="11">带着标记去到别处，不会被误认</text>
+    <text x="50" y="666" fill="#8a8675" font-size="10.5">rewind 盖 rewound 就是同一条路</text>
 
-    <rect x="588" y="492" width="266" height="130" rx="9" fill="#12110b" stroke="#2e2c20"/>
-    <text x="606" y="516" fill="#d4843a" font-size="12" font-weight="700">怎么从老游标迁过来</text>
-    <text x="606" y="540" fill="#bdb9a6" font-size="11">老游标只记得最后一条，重建不</text>
-    <text x="606" y="558" fill="#bdb9a6" font-size="11">出集合。改从原文存档里的</text>
-    <text x="606" y="576" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">&lt;!-- source-id:… --&gt;</text>
-    <text x="606" y="598" fill="#bdb9a6" font-size="11">播种：存档在推游标之前就写了，</text>
-    <text x="606" y="616" fill="#bdb9a6" font-size="11">所以覆盖老游标指过的一切</text>
+    <rect x="398" y="558" width="354" height="122" rx="9" fill="#12110b" stroke="#2e2c20"/>
+    <text x="416" y="582" fill="#d4843a" font-size="12" font-weight="700">什么时候打上</text>
+    <text x="416" y="604" fill="#bdb9a6" font-size="11">两个条件：事务安装成功，并且这一趟</text>
+    <text x="416" y="622" fill="#bdb9a6" font-size="11">确实改动过文件</text>
+    <text x="416" y="646" fill="#8a8675" font-size="10.5">实测：二十轮撞同一处被拒编辑，</text>
+    <text x="416" y="664" fill="#8a8675" font-size="10.5">返回成功，主题文件只有一个字节</text>
 
-    <rect x="866" y="492" width="262" height="130" rx="9" fill="#241f10" stroke="#d4843a" stroke-width="1.4"/>
-    <text x="884" y="516" fill="#d4843a" font-size="12" font-weight="700">这一节的状态</text>
-    <text x="884" y="540" fill="#bdb9a6" font-size="11">设计定了，代码还没换。跑着的</text>
-    <text x="884" y="558" fill="#bdb9a6" font-size="11">仍是位置游标，上面画的红叉</text>
-    <text x="884" y="576" fill="#bdb9a6" font-size="11">就是现在的真实行为</text>
-    <text x="884" y="600" fill="#8a8675" font-size="10.5">实测：存的是 9，一条六条记录的</text>
-    <text x="884" y="616" fill="#8a8675" font-size="10.5">分支被算成零条</text>
+    <rect x="764" y="558" width="364" height="122" rx="9" fill="#241f10" stroke="#d4843a" stroke-width="1.4"/>
+    <text x="782" y="582" fill="#d4843a" font-size="12" font-weight="700">这一节的状态</text>
+    <text x="782" y="604" fill="#bdb9a6" font-size="11">设计定了，代码还没换。跑着的仍是位置</text>
+    <text x="782" y="622" fill="#bdb9a6" font-size="11">游标，上面那排红叉是改之前的真实行为</text>
+    <text x="782" y="646" fill="#8a8675" font-size="10.5">实测：存的是 9，一条五轮的分支被算成零轮，</text>
+    <text x="782" y="664" fill="#8a8675" font-size="10.5">一条十一轮的分支被算成最后两轮</text>
   </svg>
   </div>
   <div class="legend">
-    <b>为什么位置当不了身份</b>：编号是"在我读到的这条线里排第几"，
-    分支的第四条和主干的第四条是两条不同的消息，却共用同一个编号。
-    换成 id 之后，边界就只是一个集合，分支自己不需要任何标识。
-    分支的tip每聊一轮就换一个节点，拿它当键会一轮开一个新游标。<br>
-    <b>漏掉多少，取决于分支走了多远</b>。上图画的是分支还没超过已写高度的情形，六条一条都不认领。
-    分支继续往下聊，超过那个高度之后，超出去的那一段会被认领，而它前面的永远不会：
-    同一个会话，游标存9，一条新增十四轮的分支实测认领了<b>最后七轮</b>，
-    交到写入器手上的那一批从一段对话的中间开始，而它前面那七轮之后再也不会被拿出来。
-    第一种情形是漏掉一条分支，第二种是<b>写下一个片段，然后把整条分支记成已写</b>。
+    <b>为什么位置当不了身份</b>：编号是链表被展开成列表的那一刻数出来的，它描述的是这次展开，
+    不是消息本身。展开之前没有这个号，展开之后这个号和消息的 ID 没有关系。
+    同一条消息沿两条线走到会拿到两个号，两条线上深度相同的两条不同消息会拿到同一个号；
+    而且 <code>get_branch</code> 会滤掉 <code>rewind</code> 标记过的轮次、压缩会把摘要节点接在中间，
+    所以同一条线在两次读取之间也不稳定。<br>
+    <b>这个形状连纠正都不接受</b>：<code>advance_cursor</code> 在新序号低于已存序号时抛
+    <code>cursor cannot move backwards</code>，而往回走恰恰是分叉需要的。
+    单调计数器和会分叉的对话是两个形状，其中一个修不成另一个。<br>
+    <b>两种失效不是一样响的</b>：分支还没超过已写高度时一条都不认领，是漏掉一条分支；
+    超过之后只认领超出去的那一段，是<b>写下一个从对话中间开始的片段，然后把整条分支记成已写</b>。
+    后一种是成功返回的，没有任何东西会提示它出过错。
+  </div>
+
+  <div class="card">
+  <svg viewBox="0 0 1160 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="四层：现状、别人、两种做法、取哪一个">
+    <rect x="24" y="16" width="240" height="24" rx="6" fill="#211316"/>
+    <text x="38" y="33" fill="#e0445a" font-size="11.5" letter-spacing="1.4">第一层 · 我们现在</text>
+    <rect x="24" y="48" width="1112" height="66" rx="8" fill="#1d1c14" stroke="#2e2c20"/>
+    <text x="42" y="72" fill="#f0eee6" font-size="12">位置游标：<tspan font-family="Menlo,monospace" fill="#bdb9a6">runtime.json</tspan> 里一个 thread 一条 <tspan font-family="Menlo,monospace" fill="#bdb9a6">{message_id, ordinal}</tspan>，只认领序号更大的记录</text>
+    <text x="42" y="94" fill="#8a8675" font-size="11">序号来自 <tspan font-family="Menlo,monospace">enumerate(get_branch(...))</tspan>，而 <tspan font-family="Menlo,monospace">advance_cursor</tspan> 明确拒绝往回移动，所以连改对都做不到</text>
+
+    <rect x="24" y="128" width="240" height="24" rx="6" fill="#101722"/>
+    <text x="38" y="145" fill="#4f8ef7" font-size="11.5" letter-spacing="1.4">第二层 · 别人怎么做</text>
+    <rect x="24" y="160" width="1112" height="118" rx="8" fill="#1d1c14" stroke="#2e2c20"/>
+    <text x="42" y="184" fill="#bdb9a6" font-size="11.5">读了九个参考框架。<tspan fill="#f0eee6" font-weight="600">三个存的对话会分叉</tspan>（claude-code、openclaw、pi-mono，都是一份追加写的文件里每条带父指针）；三个是直线；一个在重试时把整个会话重写掉、旧分支直接毁掉；两个不存对话。</text>
+    <text x="42" y="206" fill="#bdb9a6" font-size="11.5">直线让位置就是身份，所以大多数根本碰不到这个问题。<tspan fill="#f0eee6" font-weight="600">没有任何一个把「记忆取走过这一轮」写到对话轮次上。</tspan></text>
+    <text x="42" y="230" fill="#8a8675" font-size="11">codex-cli：分叉开一份新文件，抽取任务按 thread 记水位和租约，<tspan fill="#bdb9a6">把单位放粗到分叉不再重要</tspan></text>
+    <text x="42" y="248" fill="#8a8675" font-size="11">pi-mono：存储根本不提供改动一条记录的方法，加注解和移游标都靠追加一条指向它的记录，分支摘要覆盖谁在切换的那一刻从树上现算，<tspan fill="#bdb9a6">从拓扑推增量</tspan></text>
+    <text x="42" y="266" fill="#8a8675" font-size="11">claude-code：游标放进程内存，指的消息找不到就整个会话重新处理；openclaw：写 <tspan font-family="Menlo,monospace">promotedAt</tspan>，但写在派生记录上，它的记忆钩子读对话时平着取最后十五行</text>
+
+    <rect x="24" y="292" width="240" height="24" rx="6" fill="#141a12"/>
+    <text x="38" y="309" fill="#5aad4e" font-size="11.5" letter-spacing="1.4">第三层 · 两种做法并排</text>
+
+    <rect x="24" y="324" width="548" height="160" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
+    <text x="42" y="348" fill="#5aad4e" font-size="12.5" font-weight="700">在节点上打标记</text>
+    <text x="42" y="370" fill="#bdb9a6" font-size="11">欠账：从 head 往回走，遇到第一个有标记的就停</text>
+    <text x="42" y="390" fill="#bdb9a6" font-size="11">要存的：一个本来就存在的节点上多一个字段</text>
+    <text x="42" y="410" fill="#bdb9a6" font-size="11">增长：不增长；一次读取只走几步</text>
+    <text x="42" y="430" fill="#bdb9a6" font-size="11">迁移：把归档覆盖到的节点标上</text>
+    <text x="42" y="450" fill="#e0445a" font-size="11">丢一个标记：走行提前停下，更老的全部搁浅</text>
+    <text x="42" y="470" fill="#e0445a" font-size="11">耦合：记忆往会话存储里写一个字段</text>
+
+    <rect x="588" y="324" width="548" height="160" rx="8" fill="#1a1622" stroke="#9d6fe0" stroke-width="1.3"/>
+    <text x="606" y="348" fill="#9d6fe0" font-size="12.5" font-weight="700">记忆自己存一份 ID 集合</text>
+    <text x="606" y="370" fill="#bdb9a6" font-size="11">欠账：走完整条分支，减去集合</text>
+    <text x="606" y="390" fill="#bdb9a6" font-size="11">要存的：每个 thread 一个文件，装下写过的每个 ID</text>
+    <text x="606" y="410" fill="#bdb9a6" font-size="11">增长：每条消息一项；一次读取要整份清单</text>
+    <text x="606" y="430" fill="#bdb9a6" font-size="11">迁移：用同一份归档播种同一个集合</text>
+    <text x="606" y="450" fill="#5aad4e" font-size="11">丢一个条目：那一轮被重新拿出来，精确</text>
+    <text x="606" y="470" fill="#bdb9a6" font-size="11">耦合：记忆自己记账，但带出文件、迁移、只增不删</text>
+
+    <rect x="24" y="498" width="240" height="24" rx="6" fill="#241f10"/>
+    <text x="38" y="515" fill="#d4843a" font-size="11.5" letter-spacing="1.4">第四层 · 取哪一个</text>
+    <text x="284" y="515" fill="#f0eee6" font-size="12" font-weight="600">取节点标记。</text>
+    <text x="380" y="515" fill="#bdb9a6" font-size="11.5">「记在外面」一旦要在分叉之后仍然正确，就只能是集合，而集合带出文件怎么放、怎么迁移、ID 为什么不能删、读取代价随会话增长这一串。</text>
+    <text x="284" y="537" fill="#bdb9a6" font-size="11.5">代价是集合精确而走行不精确：走行假定标记构成一段前缀，靠「一批永远是最老的那几轮」成立，它是假定不是不变量。会话存储本来就在给节点存来源、显示类别、分支根、rewind 状态，多一个字段是同一类东西。</text>
+  </svg>
+  </div>
+  <div class="legend">
+    <b>先做能幂等重放的那一步</b>：三步的顺序是先归档证据、再写主题文件、最后打标记。
+    归档是追加式、按内容寻址的，同一批归档两次逐字节不变；主题文件带块 ID 和脚注，
+    半写会污染，所以走整装或不装的事务。写入器死在两步之间，留下的是没人引用的证据、
+    没有标记、下次仍然欠着的同一批，也就是一次<b>重做</b>。反过来先打标记，同一次崩溃变成安静地丢掉这些轮次。<br>
+    <b>「做完了」都要有可核对的产物</b>：标记要事务安装成功<i>并且</i>这一趟确实改动过文件，
+    夜间那一趟要报出改过哪些文件而不是看过哪些文件。没有报错不是产出。<br>
+    <b>它让会话存储付出什么（核实过）</b>：会话那边没有整树哈希，
+    唯一那个逐字节整树哈希是记忆工作区的版本号，根在 <code>&lt;state&gt;/memory</code>，
+    和 <code>&lt;state&gt;/sessions</code> 不相交，所以标记不会被读成一次并发的记忆写入。
+    会被碰到的是会话索引缓存：过期判定看 history 目录的 mtime，一次重写和一次追加一样会让它变，
+    别的进程重建一次索引，实测 289 个节点 4.2 MB 是 <b>14 到 50 毫秒</b>，而且自限。
+    真正会增长的是 git：会话目录每轮 <code>git add -A</code> 一次，
+    字节变过的节点都会成为新 blob，所以<b>标记只打在这一批上，不做全量扫一遍</b>，
+    否则每轮加上整个会话的重量，一生下来是平方级。
+    另外两条硬约束：标记不能动 <code>updated_at</code>（闲置看门狗就是按它判断"已处理"，
+    动了等于把会话送回一次强制写入），也不能走"把会话记成已同步"的那条路径。
   </div>
 
   <!-- ══════════ 05 常驻块 ══════════ -->

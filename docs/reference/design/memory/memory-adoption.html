@@ -153,18 +153,18 @@
       <rect x="620" y="195" width="112" height="24" rx="12" fill="none" stroke="#d4843a"/>
       <text x="676" y="211" fill="#d4843a" font-size="12" text-anchor="middle">改造后采纳</text>
       <text x="790" y="204" fill="#bdb9a6" font-size="11.5">目的照收，摘要节点不要。会话边界枚举全部</text>
-      <text x="790" y="222" fill="#bdb9a6" font-size="11.5">分支即可，id 集合天然去掉共享前缀</text>
+      <text x="790" y="222" fill="#bdb9a6" font-size="11.5">分支即可，走到有标记的前缀就停</text>
 
       <!-- lane 4 -->
       <rect x="18" y="244" width="1104" height="58" rx="9" fill="#1d1c14" stroke="#2e2c20"/>
       <rect x="18" y="244" width="3" height="58" fill="#5aad4e"/>
       <text x="36" y="268" fill="#f0eee6" font-size="13" font-weight="600">游标找不到时，把全部消息重新当成没写过</text>
-      <text x="36" y="288" fill="#8a8675" font-size="11.5">返回零条会让抽取彻底停摆，重写一遍的代价有限</text>
+      <text x="36" y="288" fill="#8a8675" font-size="11.5">返回零条会让抽取彻底停摆，重做一遍的代价有限</text>
       <text x="470" y="276" fill="#4f8ef7" font-size="12">claude-code</text>
       <rect x="620" y="261" width="72" height="24" rx="12" fill="none" stroke="#5aad4e"/>
       <text x="656" y="277" fill="#5aad4e" font-size="12" text-anchor="middle">采纳</text>
       <text x="790" y="270" fill="#bdb9a6" font-size="11.5">迁移那条已覆盖一半，另一半没覆盖：</text>
-      <text x="790" y="288" fill="#bdb9a6" font-size="11.5">读不出来的游标文件现在会抛，然后无限重试</text>
+      <text x="790" y="288" fill="#bdb9a6" font-size="11.5">读不出来的账本现在会抛，然后无限重试</text>
     </svg>
   </div>
 
@@ -664,9 +664,17 @@
   </div>
 
   <p class="note"><b>和迁移那条的分工。</b>
-  overview.md 的「从位置游标迁移」处理的是一次性的：老状态没法反推出集合，于是从原话档案播种，
+  overview.md 的「从位置游标迁移」处理的是一次性的：老状态没法反推出账，于是从原话档案播种，
   宁可多写一批也不全丢。那是同一个取舍，但它只在升级那一刻发生。
-  这里说的是日常运行时游标文件本身出问题，和迁移无关，两条都要有，方向一致。</p>
+  这里说的是日常运行时账本本身出问题，和迁移无关，两条都要有，方向一致。</p>
+
+  <p class="note k"><b>账本换了形状之后，这一条落在哪。</b>
+  写入游标最后取的是<b>在节点上打「已写」标记</b>，不是记忆自己存一份 ID 集合，
+  所以没有一个会读不出来的游标文件了。这一条的方向仍然成立，只是换了对象：
+  账本读不出来时按「都没写过」处理，而不是抛异常让这个会话永远写不进去。
+  节点标记这边对应的是标记丢了就重做一遍，以及 <code>RuntimeStateStore.load</code>
+  对着一份解析不了的 <code>runtime.json</code> 应当读成空计数器而不是抛。
+  两种做法的并排对比在 <a href="memory-architecture.html#cursor">机制图解第 04 节</a>。</p>
 
   <!-- ============================ 05 ============================ -->
   <h2 id="land"><span class="num">05</span>改动落在哪</h2>
