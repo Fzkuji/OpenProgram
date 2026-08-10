@@ -381,12 +381,12 @@
 
     <rect x="304" y="100" width="250" height="58" rx="8" fill="#231b12" stroke="#6b4620"/>
     <text x="318" y="120" fill="#d4843a" font-size="12" font-weight="700">路A · 常驻</text>
-    <text x="318" y="138" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">scriptorium/provider.py:47-59</text>
+    <text x="318" y="138" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">local_backend.py:47-59</text>
     <text x="318" y="152" fill="#8a8675" font-size="10.5">system_prompt()读core.md全文</text>
 
     <rect x="304" y="162" width="250" height="58" rx="8" fill="#161d29" stroke="#2c4a78"/>
     <text x="318" y="182" fill="#4f8ef7" font-size="12" font-weight="700">路B · 每轮召回</text>
-    <text x="318" y="200" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">scriptorium/provider.py:61-79</text>
+    <text x="318" y="200" fill="#8a8675" font-size="10.5" font-family="Menlo,monospace">local_backend.py:61-79</text>
     <text x="318" y="214" fill="#8a8675" font-size="10.5">search()拿用户这句去BM25，取前五</text>
 
     <!-- 共用围栏 -->
@@ -395,7 +395,7 @@
     <path d="M616 184 L664 184" fill="none" stroke="#8a8675" stroke-width="1.6" marker-end="url(#p-gy)"/>
     <rect x="668" y="150" width="200" height="68" rx="8" fill="#1a1912" stroke="#d4843a" stroke-width="1.6"/>
     <text x="768" y="172" fill="#d4843a" font-size="12.5" font-weight="700" text-anchor="middle">fence_memory()</text>
-    <text x="768" y="190" fill="#8a8675" font-size="10.5" text-anchor="middle" font-family="Menlo,monospace">memory/provider.py:83-94</text>
+    <text x="768" y="190" fill="#8a8675" font-size="10.5" text-anchor="middle" font-family="Menlo,monospace">memory/backend.py:83-94</text>
     <text x="768" y="207" fill="#e0445a" font-size="10.5" text-anchor="middle">两条路共用一句开场白</text>
 
     <!-- 出口 -->
@@ -430,8 +430,8 @@
   </div>
 
   <div class="note orange">
-    <b>常驻块已经有围栏，缺的不是围栏。</b><code>ScriptoriumMemoryProvider.system_prompt()</code>
-    （<code>scriptorium/provider.py:59</code>）就是<code>return fence_memory(text) if body else ""</code>，
+    <b>常驻块已经有围栏，缺的不是围栏。</b><code>LocalMemoryBackend.system_prompt()</code>
+    （<code>local_backend.py:59</code>）就是<code>return fence_memory(text) if body else ""</code>，
     所以<code>&lt;memory-context&gt;</code>一直在。围栏那句话是给召回写的，它要挡的是"模型把旧事实当成用户刚提的新要求"，
     这个职责它做到了。常驻块借用它，就等于用一句"这是回忆"去回答"你是谁"。
   </div>
@@ -466,7 +466,7 @@
 
       <rect x="266" y="40" width="188" height="60" rx="8" fill="#1a1912" stroke="#2e2c20"/>
       <text x="360" y="60" fill="#f0eee6" font-size="12" font-weight="700" text-anchor="middle">system_prompt()</text>
-      <text x="360" y="78" fill="#8a8675" font-size="10.5" text-anchor="middle" font-family="Menlo,monospace">scriptorium/provider.py:47</text>
+      <text x="360" y="78" fill="#8a8675" font-size="10.5" text-anchor="middle" font-family="Menlo,monospace">local_backend.py:47</text>
       <text x="360" y="93" fill="#8a8675" font-size="10.5" text-anchor="middle">读文件 + 判空</text>
 
       <path d="M454 70 L504 70" fill="none" stroke="#8a8675" stroke-width="1.5" marker-end="url(#s-gy)"/>
@@ -630,7 +630,7 @@
       <tr class="us">
         <td class="name">OpenProgram<br><span style="font-weight:400;color:#8a8675;font-size:11px">我们</span></td>
         <td class="p">系统提示L0 order 50常驻 + 每轮user消息前缀召回<span class="src">components.py:424 / prep.py:90</span></td>
-        <td class="p"><b>有，但只说了半句</b><br><code>&lt;memory-context&gt;</code> + 一句System note<span class="src">memory/provider.py:83-94</span></td>
+        <td class="p"><b>有，但只说了半句</b><br><code>&lt;memory-context&gt;</code> + 一句System note<span class="src">memory/backend.py:83-94</span></td>
         <td class="n"><b>没有</b>。上下文十五个组件里搜不到memory这个词<span class="src">components.py全文</span></td>
         <td class="n"><b>有六个，一个都不默认给</b><br>只在<code>toolset="memory"</code>或<code>"full"</code>里<span class="src">functions/__init__.py:72-114, 195</span></td>
         <td class="n"><b>不能</b>。关掉 / 空 / 坏三态同形，四道catch都返回空串<span class="src">components.py:269-279</span></td>
@@ -932,7 +932,7 @@
       <rect x="20" y="368" width="1120" height="86" rx="7" fill="#12110b" stroke="#2e2c20"/>
       <text x="36" y="392" fill="#f0eee6" font-size="12.5" font-weight="700">一句话的差别</text>
       <text x="36" y="414" fill="#a5a190" font-size="11.5">说了的四家，模型问"我的记忆系统是怎么设计的"时会先看自己的框架；没说的四家，模型会去满硬盘找，找到谁的算谁的。</text>
-      <text x="36" y="436" fill="#a5a190" font-size="11.5">我们这边已经有一处做对了：记忆写手跑Claude Code SDK时传setting_sources=[]，明确不加载宿主的CLAUDE.md（scriptorium/agent_runtime/claude_code.py:249）。</text>
+      <text x="36" y="436" fill="#a5a190" font-size="11.5">我们这边已经有一处做对了：记忆写手跑Claude Code SDK时传setting_sources=[]，明确不加载宿主的CLAUDE.md（memory/agent_runtime/claude_code.py:249）。</text>
       <text x="36" y="452" fill="#8a8675" font-size="11">写手隔离了宿主，主对话agent却从没被告知宿主是谁，隔离做了一半。</text>
     </g>
   </svg>
@@ -958,7 +958,7 @@
     <div class="dom" style="border-top-color:#d4843a">
       <div class="k">改动B · 常驻块的身份</div>
       <h3>换一句开场白，不是再包一层</h3>
-      <div class="noun">memory/provider.py:83旁边 + scriptorium/provider.py:59</div>
+      <div class="noun">memory/backend.py:83旁边 + local_backend.py:59</div>
       <p>加一个跟<code>fence_memory</code>平行的<code>fence_core</code>，共用<code>sanitize_context</code>，
         常驻那条路把<code>fence_memory</code>换成它。不是套两层，套两层会因为
         <code>_FENCE_BLOCK_RE</code>剥掉整个内块而得到空围栏（第02节实测）。</p>
@@ -1100,7 +1100,7 @@
         <text x="486" y="58" fill="#9d6fe0" font-size="12.5" font-weight="700">记忆系统自己描述自己</text>
         <text x="486" y="78" fill="#a5a190" font-size="11">头部由provider渲染：名字、根路径、主题文件数、</text>
         <text x="486" y="94" fill="#a5a190" font-size="11">上次写入时间、这块占了预算的百分之几</text>
-        <text x="880" y="58" fill="#8a8675" font-size="11">差：MemoryProvider要多一个describe()</text>
+        <text x="880" y="58" fill="#8a8675" font-size="11">差：MemoryBackend要多一个describe()</text>
         <text x="880" y="76" fill="#8a8675" font-size="11">先不做：那个接口只有五个方法是有意的，</text>
         <text x="880" y="94" fill="#8a8675" font-size="11">而改动C的一行状态已覆盖实测到的失败</text>
       </g>

@@ -17,7 +17,7 @@ import pytest
 def _without_agent_sdk(monkeypatch: pytest.MonkeyPatch):
     """The fake agent edits the real stage without SDK-decorated tool wrappers."""
     monkeypatch.setattr(
-        "openprogram.memory.scriptorium.management.agent.management_tools",
+        "openprogram.memory.management.agent.management_tools",
         lambda _workspace, _audit: [],
     )
     monkeypatch.setitem(
@@ -29,7 +29,7 @@ def _without_agent_sdk(monkeypatch: pytest.MonkeyPatch):
     )
     monkeypatch.setitem(sys.modules, "rank_bm25", SimpleNamespace(BM25Plus=object))
     yield
-    sys.modules.pop("openprogram.memory.scriptorium.retrieval.bm25", None)
+    sys.modules.pop("openprogram.memory.retrieval.bm25", None)
 
 
 def _record(
@@ -39,7 +39,7 @@ def _record(
     ordinal: int = 1,
     trust_state: str = "trusted",
 ):
-    from openprogram.memory.scriptorium.runtime.state import SourceRecord
+    from openprogram.memory.runtime.state import SourceRecord
 
     return SourceRecord(
         provider="openprogram",
@@ -59,14 +59,14 @@ def _record(
 
 
 def _archive(root: Path, *records) -> None:
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.management import MemoryWorkspace
 
     with closing(MemoryWorkspace(root)) as workspace:
         workspace.archive_source_records(list(records))
 
 
 def _legacy_source(root: Path, source_id: str, content: str) -> None:
-    from openprogram.memory.scriptorium.source_format import provider_source_location
+    from openprogram.memory.source_format import provider_source_location
 
     relative, anchor = provider_source_location(source_id)
     path = root / relative
@@ -80,7 +80,7 @@ def _legacy_source(root: Path, source_id: str, content: str) -> None:
 
 
 def _source_link(root: Path, source_id: str) -> str:
-    from openprogram.memory.scriptorium.source_format import provider_source_location
+    from openprogram.memory.source_format import provider_source_location
 
     v2 = provider_source_location(source_id, v2=True)
     legacy = provider_source_location(source_id)
@@ -191,7 +191,7 @@ class _SourceVisibilityAgent(_WriterAgent):
 
 
 def _topic_refs(root: Path) -> set[str]:
-    from openprogram.memory.scriptorium.markdown import parse_topic_tree
+    from openprogram.memory.markdown import parse_topic_tree
 
     return {
         ref
@@ -203,7 +203,7 @@ def _topic_refs(root: Path) -> set[str]:
 def test_backfill_ignores_markers_and_sends_only_uncited_trusted_sources(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     root = tmp_path / "memory"
     cited = _record("cited", "already represented", ordinal=1)
@@ -253,8 +253,8 @@ def test_backfill_ignores_markers_and_sends_only_uncited_trusted_sources(
 def test_backfill_is_idempotent_and_does_not_construct_an_agent_twice(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
-    from openprogram.memory.scriptorium import writing
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory import writing
+    from openprogram.memory.management.transaction import (
         workspace_revision,
     )
 
@@ -288,8 +288,8 @@ def test_backfill_is_idempotent_and_does_not_construct_an_agent_twice(
 def test_backfill_transaction_rejects_a_pending_ref_the_agent_reads_itself(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
-    from openprogram.memory.scriptorium import writing
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory import writing
+    from openprogram.memory.management.transaction import (
         TransactionError,
     )
 
@@ -315,7 +315,7 @@ def test_backfill_transaction_rejects_a_pending_ref_the_agent_reads_itself(
 def test_backfill_does_not_expose_unselected_sources_to_the_writer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     root = tmp_path / "memory"
     trusted = _record("trusted-visible", "selected trusted source", ordinal=1)
@@ -341,7 +341,7 @@ def test_backfill_does_not_expose_unselected_sources_to_the_writer(
 def test_backfill_restricts_intermediate_workspace_commits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     root = tmp_path / "memory"
     trusted = _record("trusted-intermediate", "allowed", ordinal=1)
@@ -380,7 +380,7 @@ def test_backfill_restricts_intermediate_workspace_commits(
 
     agent = IntermediateCommitAgent()
     monkeypatch.setattr(
-        "openprogram.memory.scriptorium.management.agent.management_tools",
+        "openprogram.memory.management.agent.management_tools",
         capture_workspace,
     )
     monkeypatch.setattr(writing, "_agent", lambda _model=None: agent)
@@ -396,7 +396,7 @@ def test_backfill_restricts_intermediate_workspace_commits(
 def test_restricted_backfill_transaction_cannot_remove_an_existing_source_ref(
     tmp_path: Path,
 ):
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.management import MemoryWorkspace
 
     root = tmp_path / "memory"
     cited = _record("keep-cited", "existing", ordinal=1)
@@ -427,7 +427,7 @@ def test_restricted_backfill_transaction_cannot_remove_an_existing_source_ref(
 def test_a_failed_batch_rolls_back_and_a_retry_resumes_at_its_first_uncited_ref(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     root = tmp_path / "memory"
     records = [
@@ -463,8 +463,8 @@ def test_a_failed_batch_rolls_back_and_a_retry_resumes_at_its_first_uncited_ref(
 def test_first_batch_failure_preserves_the_only_legacy_core_and_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
-    from openprogram.memory.scriptorium import writing
-    from openprogram.memory.scriptorium.retrieval.bm25 import parse_source_file
+    from openprogram.memory import writing
+    from openprogram.memory.retrieval.bm25 import parse_source_file
 
     root = tmp_path / "memory"
     owner_principal = "owner/install/0123456789abcdef"
@@ -517,7 +517,7 @@ def test_memory_backfill_cli_reports_counts_and_revision(
 ):
     from openprogram import cli
     from openprogram.memory import store
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     root = tmp_path / "memory"
     report = {

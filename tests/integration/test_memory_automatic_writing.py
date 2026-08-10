@@ -1,4 +1,4 @@
-"""Composed coverage for automatic Scriptorium writing.
+"""Composed coverage for automatic memory writing.
 
 The model response is scripted at the API-provider boundary.  Everything
 above it is production code: SessionDB, default model resolution, the
@@ -45,11 +45,11 @@ def _configure_runtime(
     from openprogram.agent import authority
     from openprogram.agent.management import manager
     from openprogram.agent.session_db import SessionDB
-    from openprogram.memory import set_provider
+    from openprogram.memory import set_backend
 
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
     authority._reset_owner_cache_for_tests()
-    set_provider(None)
+    set_backend(None)
     if available_model:
         install_registry(monkeypatch, {
             PROVIDER_ID: {
@@ -103,8 +103,8 @@ def test_idle_writer_composes_real_runtime_and_installs_topic(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Removing any production handoff leaves no installed, marked result."""
-    from openprogram.memory import get_provider, session_watcher, store
-    from openprogram.memory.scriptorium.provider import ScriptoriumMemoryProvider
+    from openprogram.memory import get_backend, session_watcher, store
+    from openprogram.memory.local_backend import LocalMemoryBackend
     from openprogram.providers import api_registry
 
     db = _configure_runtime(tmp_path, monkeypatch)
@@ -127,8 +127,8 @@ def test_idle_writer_composes_real_runtime_and_installs_topic(
 
     try:
         updated_at = _append_paired_turn(db)
-        provider = get_provider()
-        assert type(provider) is ScriptoriumMemoryProvider
+        provider = get_backend()
+        assert type(provider) is LocalMemoryBackend
 
         assert session_watcher._scan(idle_minutes=0) == 1
 
@@ -195,9 +195,9 @@ def test_idle_writer_composes_real_runtime_and_installs_topic(
         assert f'"ref":"{SOURCE_ID}"' in prompt
         assert '"speaker":"B (telegram-user-42)"' in prompt
     finally:
-        from openprogram.memory import set_provider
+        from openprogram.memory import set_backend
 
-        set_provider(None)
+        set_backend(None)
         _close_store(db)
 
 
@@ -228,8 +228,8 @@ def test_permanent_writer_startup_failure_is_not_offered_next_poll(
     reason_fragment: str,
 ):
     """Raw config/auth failures are durable non-retry verdicts."""
-    from openprogram.memory import get_provider, session_watcher, store
-    from openprogram.memory.scriptorium.provider import ScriptoriumMemoryProvider
+    from openprogram.memory import get_backend, session_watcher, store
+    from openprogram.memory.local_backend import LocalMemoryBackend
     from openprogram.providers import api_registry
 
     db = _configure_runtime(
@@ -251,7 +251,7 @@ def test_permanent_writer_startup_failure_is_not_offered_next_poll(
 
     try:
         updated_at = _append_paired_turn(db)
-        assert type(get_provider()) is ScriptoriumMemoryProvider
+        assert type(get_backend()) is LocalMemoryBackend
 
         assert session_watcher._scan(idle_minutes=0) == 0
         processed = session_watcher._load_processed()
@@ -284,7 +284,7 @@ def test_permanent_writer_startup_failure_is_not_offered_next_poll(
             1 if failure == "lazy-credential" else 0
         )
     finally:
-        from openprogram.memory import set_provider
+        from openprogram.memory import set_backend
 
-        set_provider(None)
+        set_backend(None)
         _close_store(db)

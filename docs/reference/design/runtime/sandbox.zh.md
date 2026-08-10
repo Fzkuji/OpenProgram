@@ -301,9 +301,9 @@ CPU、内存和进程数配额明确不属于本沙箱项目。Linux PID namespa
 
 memory写入器有两个执行面，`wrap_command`只够得着其中一个。
 
-MCP`shell`工具（`memory/scriptorium/management/tools.py` → `workspace.shell()`）在OpenProgram进程内执行。它以暂存目录为cwd调用`LocalBackend._invocation(..., force_sandbox=True)`，因此即使interactive bash被显式关闭，只要宿主原生沙箱不可用，该工具仍会拒绝执行。
+MCP`shell`工具（`memory/management/tools.py` → `workspace.shell()`）在OpenProgram进程内执行。它以暂存目录为cwd调用`LocalBackend._invocation(..., force_sandbox=True)`，因此即使interactive bash被显式关闭，只要宿主原生沙箱不可用，该工具仍会拒绝执行。
 
-Claude Code CLI子进程（`memory/scriptorium/agent_runtime/claude_code.py`）是另一回事。它的`Read`/`Write`/`Edit`/`Grep`/`Glob`在CLI进程内部执行，`wrap_command`碰不到，而`permission_mode="dontAsk"`把它自己的审批也关了。这个CLI进程也不该被包进沙箱：它要调Anthropic API，而沙箱没有网络。
+Claude Code CLI子进程（`memory/agent_runtime/claude_code.py`）是另一回事。它的`Read`/`Write`/`Edit`/`Grep`/`Glob`在CLI进程内部执行，`wrap_command`碰不到，而`permission_mode="dontAsk"`把它自己的审批也关了。这个CLI进程也不该被包进沙箱：它要调Anthropic API，而沙箱没有网络。
 
 CLI进程仍不进入OS沙箱，因为它需要访问Anthropic API。它自带的`Read`、`Write`、`Edit`、`Grep`、`Glob`和`Bash`现在被显式禁用。OpenProgram通过MCP提供五个文件操作的替代工具：路径必须位于暂存工作区内，`sources/`下的写入会被拒绝，每次结果都记入写入器审计。MCP `shell`替代工具调用`LocalBackend._invocation(..., force_sandbox=True)`；平台沙箱不可用时直接拒绝执行。
 

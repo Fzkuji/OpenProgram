@@ -211,7 +211,7 @@ def test_agent_loop_executes_tool_through_registered_scripted_provider(
         def search(self, query: str) -> str:
             return ""
 
-    monkeypatch.setattr("openprogram.memory.get_provider", EmptyMemory)
+    monkeypatch.setattr("openprogram.memory.get_backend", EmptyMemory)
     registered_provider.add_response(ScriptedToolCall("echo", {"value": "hi"}, "call-1"))
     registered_provider.add_response(ScriptedText("tool completed"))
     executed: list[tuple[str, dict]] = []

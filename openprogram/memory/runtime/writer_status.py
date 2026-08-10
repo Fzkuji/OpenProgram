@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from openprogram import _compat as fcntl
-from openprogram.memory.provider import MemoryWriteFailureCode
+from openprogram.memory.backend import MemoryWriteFailureCode
 from openprogram.store.session.git_session import atomic_write_text
 
 from ..workspace_layout import runtime_dir

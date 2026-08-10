@@ -1,4 +1,4 @@
-"""Node-level Scriptorium write markers and branch-local ingestion."""
+"""Node-level memory write markers and branch-local ingestion."""
 from __future__ import annotations
 
 import atexit
@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 
-from openprogram.memory.scriptorium.writing import (
+from openprogram.memory.writing import (
     WRITTEN_NODE_MARKER as MARKER,
 )
 LARGE_OUTPUT = "large result line\n" * 4_000
@@ -91,7 +91,7 @@ def _write_v2_archive(path: Path, *frames: str, tail: str = "") -> None:
 
 
 def _stub_writer(monkeypatch: pytest.MonkeyPatch, calls: list[str]) -> None:
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     def run(memory_dir, *, agent, task, stage=None, **kwargs):
         calls.append(task)
@@ -130,7 +130,7 @@ def test_workspace_id_is_one_durable_value_under_concurrent_first_use(
 
 def test_fork_suffixes_after_a_marked_m3_are_returned_in_full(environment):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     db, _memory = environment
     session_id = "forked"
@@ -159,7 +159,7 @@ def test_fork_suffixes_after_a_marked_m3_are_returned_in_full(environment):
 
 def test_a_marker_from_another_workspace_is_ignored(environment):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     db, _memory = environment
     _append(db, "foreign", "m1", None)
@@ -173,7 +173,7 @@ def test_a_marker_from_another_workspace_is_ignored(environment):
 
 
 def test_records_refuse_to_invent_an_id_for_a_source_message():
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     with pytest.raises(ValueError, match="stable.*id"):
         writing._records("missing-id", [{
@@ -185,11 +185,11 @@ def test_records_refuse_to_invent_an_id_for_a_source_message():
 def test_failed_rejected_and_unchanged_batches_mark_nothing(
     tmp_path: Path, outcome: str,
 ):
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management.transaction import (
         TransactionError,
     )
-    from openprogram.memory.scriptorium.runtime.online import OnlineMemoryRuntime
-    from openprogram.memory.scriptorium.runtime.state import SourceRecord
+    from openprogram.memory.runtime.online import OnlineMemoryRuntime
+    from openprogram.memory.runtime.state import SourceRecord
 
     record = SourceRecord(
         provider="openprogram",
@@ -234,8 +234,8 @@ def test_failed_rejected_and_unchanged_batches_mark_nothing(
 
 
 def test_process_archives_then_writes_then_marks(tmp_path: Path):
-    from openprogram.memory.scriptorium.runtime.online import OnlineMemoryRuntime
-    from openprogram.memory.scriptorium.runtime.state import SourceRecord
+    from openprogram.memory.runtime.online import OnlineMemoryRuntime
+    from openprogram.memory.runtime.state import SourceRecord
 
     memory = tmp_path / "memory"
     record = SourceRecord(
@@ -270,7 +270,7 @@ def test_write_session_marks_only_the_selected_oldest_batch(
     environment, monkeypatch: pytest.MonkeyPatch,
 ):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     db, _memory = environment
     calls: list[str] = []
@@ -296,7 +296,7 @@ def test_write_session_marks_only_the_selected_oldest_batch(
 def test_shared_prefix_is_written_once_across_live_branches(
     environment, monkeypatch: pytest.MonkeyPatch,
 ):
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     db, _memory = environment
     calls: list[str] = []
@@ -328,7 +328,7 @@ def test_legacy_archive_migration_marks_only_its_first_header_once(
     environment,
 ):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+    from openprogram.memory.runtime.state import RuntimeStateStore
 
     db, memory = environment
     _append(db, "legacy", "m1", None)
@@ -353,7 +353,7 @@ def test_legacy_archive_migration_marks_only_its_first_header_once(
         encoding="utf-8",
     )
 
-    from openprogram.memory.scriptorium.runtime import mark_archived_turns
+    from openprogram.memory.runtime import mark_archived_turns
 
     assert mark_archived_turns.migrate(memory, db, store.workspace_id()) is True
     marker = store.workspace_id()
@@ -381,8 +381,8 @@ def test_normal_write_migrates_archived_markers_before_pending(
     environment, monkeypatch: pytest.MonkeyPatch,
 ):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium import writing
-    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+    from openprogram.memory import writing
+    from openprogram.memory.runtime.state import RuntimeStateStore
 
     db, memory = environment
     now = time.time()
@@ -428,8 +428,8 @@ def test_migration_merges_legacy_and_v2_nodes_for_the_same_session(
     environment,
 ):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium.runtime import mark_archived_turns
-    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+    from openprogram.memory.runtime import mark_archived_turns
+    from openprogram.memory.runtime.state import RuntimeStateStore
 
     db, memory = environment
     _append(db, "mixed", "m1", None)
@@ -470,8 +470,8 @@ def test_v2_migration_ignores_body_frames_and_stops_at_invalid_tail(
     environment,
 ):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium.runtime import mark_archived_turns
-    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+    from openprogram.memory.runtime import mark_archived_turns
+    from openprogram.memory.runtime.state import RuntimeStateStore
 
     db, memory = environment
     predecessor = None
@@ -523,8 +523,8 @@ def test_v2_migration_does_not_normalize_noncanonical_line_endings(
     environment,
 ):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium.runtime import mark_archived_turns
-    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+    from openprogram.memory.runtime import mark_archived_turns
+    from openprogram.memory.runtime.state import RuntimeStateStore
 
     db, memory = environment
     _append(db, "crlf-v2", "m1", None)
@@ -551,9 +551,9 @@ def test_migration_marks_only_the_continuous_archived_branch_prefix(
     environment,
 ):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium import writing
-    from openprogram.memory.scriptorium.runtime import mark_archived_turns
-    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+    from openprogram.memory import writing
+    from openprogram.memory.runtime import mark_archived_turns
+    from openprogram.memory.runtime.state import RuntimeStateStore
 
     db, memory = environment
     predecessor = None
@@ -609,9 +609,9 @@ def test_legacy_migration_does_not_trust_a_body_that_looks_like_a_header(
     environment,
 ):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium import writing
-    from openprogram.memory.scriptorium.runtime import mark_archived_turns
-    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+    from openprogram.memory import writing
+    from openprogram.memory.runtime import mark_archived_turns
+    from openprogram.memory.runtime.state import RuntimeStateStore
 
     db, memory = environment
     _append(db, "legacy-body", "m1", None)
@@ -656,8 +656,8 @@ def test_legacy_migration_does_not_trust_a_body_that_looks_like_a_header(
 
 def test_migration_prefix_uses_the_live_memory_record_filter(environment):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium.runtime import mark_archived_turns
-    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+    from openprogram.memory.runtime import mark_archived_turns
+    from openprogram.memory.runtime.state import RuntimeStateStore
 
     db, memory = environment
     _append(db, "filtered-migration", "u1", None)
@@ -706,7 +706,7 @@ def test_migration_prefix_uses_the_live_memory_record_filter(environment):
 
 
 def test_migration_prefix_filter_skips_tool_rows():
-    from openprogram.memory.scriptorium.runtime import mark_archived_turns
+    from openprogram.memory.runtime import mark_archived_turns
 
     rows = [
         {"id": "u1", "role": "user", "content": "one"},
@@ -731,8 +731,8 @@ def test_migration_keeps_cursors_when_marker_writes_fail(
     environment, monkeypatch: pytest.MonkeyPatch,
 ):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium.runtime import mark_archived_turns
-    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+    from openprogram.memory.runtime import mark_archived_turns
+    from openprogram.memory.runtime.state import RuntimeStateStore
 
     db, memory = environment
     _append(db, "a-successful-migration", "m1", None)
@@ -909,7 +909,7 @@ def test_write_session_marks_a_batch_without_internal_index_rebuilds(
     environment, monkeypatch: pytest.MonkeyPatch,
 ):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     db, _memory = environment
     calls: list[str] = []
@@ -1026,9 +1026,9 @@ def test_migration_ignores_body_comments_and_wrong_archive_sessions(
     environment,
 ):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium import writing
-    from openprogram.memory.scriptorium.runtime import mark_archived_turns
-    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+    from openprogram.memory import writing
+    from openprogram.memory.runtime import mark_archived_turns
+    from openprogram.memory.runtime.state import RuntimeStateStore
 
     db, memory = environment
     _append(db, "attacker", "a1", None)
@@ -1107,8 +1107,8 @@ def test_migration_groups_one_sessions_markers_without_internal_rebuilds(
 ):
     from openprogram.agent.session_db import SessionDB
     from openprogram.memory import store
-    from openprogram.memory.scriptorium.runtime import mark_archived_turns
-    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+    from openprogram.memory.runtime import mark_archived_turns
+    from openprogram.memory.runtime.state import RuntimeStateStore
 
     db, memory = environment
     predecessor = None
@@ -1178,8 +1178,8 @@ def test_migration_without_an_archive_removes_cursor_and_marks_nothing(
     environment,
 ):
     from openprogram.memory import store
-    from openprogram.memory.scriptorium.runtime import mark_archived_turns
-    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+    from openprogram.memory.runtime import mark_archived_turns
+    from openprogram.memory.runtime.state import RuntimeStateStore
 
     db, memory = environment
     _append(db, "no-archive", "m1", None)
@@ -1201,7 +1201,7 @@ def test_migration_without_an_archive_removes_cursor_and_marks_nothing(
 def test_force_processes_head_first_and_skips_a_short_abandoned_branch(
     environment, monkeypatch: pytest.MonkeyPatch,
 ):
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     db, _memory = environment
     calls: list[str] = []
@@ -1230,7 +1230,7 @@ def test_force_processes_head_first_and_skips_a_short_abandoned_branch(
 def test_force_uses_explicit_current_head_and_writes_its_short_final_batch(
     environment, monkeypatch: pytest.MonkeyPatch,
 ):
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     db, _memory = environment
     calls: list[str] = []
@@ -1275,7 +1275,7 @@ def test_force_uses_explicit_current_head_and_writes_its_short_final_batch(
 
 
 def test_runtime_state_loads_a_clean_default_from_malformed_json(tmp_path: Path):
-    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+    from openprogram.memory.runtime.state import RuntimeStateStore
 
     store = RuntimeStateStore(tmp_path / "memory")
     store.path.parent.mkdir(parents=True, exist_ok=True)

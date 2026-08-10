@@ -153,7 +153,7 @@ def _run_tool_loop(monkeypatch: pytest.MonkeyPatch) -> tuple[list, list]:
         def search(self, query: str) -> str:
             return ""
 
-    monkeypatch.setattr("openprogram.memory.get_provider", EmptyMemory)
+    monkeypatch.setattr("openprogram.memory.get_backend", EmptyMemory)
 
     executed: list[tuple[str, dict]] = []
 

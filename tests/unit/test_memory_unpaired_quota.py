@@ -19,8 +19,8 @@ def _archive(writing, message_id: str, text: str) -> str:
 def test_unpaired_archive_refuses_messages_after_global_rate_limit(
     tmp_path, monkeypatch,
 ):
-    from openprogram.memory.scriptorium import writing
-    from openprogram.memory.scriptorium.source_format import scan_source_archive
+    from openprogram.memory import writing
+    from openprogram.memory.source_format import scan_source_archive
 
     monkeypatch.setattr(
         "openprogram.paths.get_state_dir", lambda: tmp_path / "state",
@@ -42,7 +42,7 @@ def test_unpaired_archive_refuses_messages_after_global_rate_limit(
 def test_unpaired_archive_refuses_a_message_that_exceeds_storage_quota(
     tmp_path, monkeypatch,
 ):
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     monkeypatch.setattr(
         "openprogram.paths.get_state_dir", lambda: tmp_path / "state",
@@ -62,7 +62,7 @@ def test_unpaired_archive_refuses_a_message_that_exceeds_storage_quota(
 
 
 def test_unpaired_archive_refuses_an_oversized_identity(tmp_path, monkeypatch):
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     monkeypatch.setattr(
         "openprogram.paths.get_state_dir", lambda: tmp_path / "state",
@@ -81,7 +81,7 @@ def test_unpaired_archive_refuses_an_oversized_identity(tmp_path, monkeypatch):
 
 
 def test_unpaired_archive_refuses_empty_text(tmp_path, monkeypatch):
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     monkeypatch.setattr(
         "openprogram.paths.get_state_dir", lambda: tmp_path / "state",
@@ -93,7 +93,7 @@ def test_unpaired_archive_refuses_empty_text(tmp_path, monkeypatch):
 def test_unpaired_archive_is_off_with_the_backend_disabled(
     tmp_path, monkeypatch,
 ):
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     monkeypatch.setattr(
         "openprogram.paths.get_state_dir", lambda: tmp_path / "state",
@@ -105,8 +105,8 @@ def test_unpaired_archive_is_off_with_the_backend_disabled(
 
 def test_a_rejected_message_leaves_no_partial_state(tmp_path, monkeypatch):
     """A refusal consumes no quota slot and writes no archive bytes."""
-    from openprogram.memory.scriptorium import writing
-    from openprogram.memory.scriptorium.workspace_layout import runtime_dir
+    from openprogram.memory import writing
+    from openprogram.memory.workspace_layout import runtime_dir
 
     monkeypatch.setattr(
         "openprogram.paths.get_state_dir", lambda: tmp_path / "state",
@@ -136,8 +136,8 @@ def test_concurrent_attempts_cannot_exceed_the_window_quota(
     senders share one counter rather than each seeing the last free slot."""
     import threading
 
-    from openprogram.memory.scriptorium import writing
-    from openprogram.memory.scriptorium.source_format import scan_source_archive
+    from openprogram.memory import writing
+    from openprogram.memory.source_format import scan_source_archive
 
     monkeypatch.setattr(
         "openprogram.paths.get_state_dir", lambda: tmp_path / "state",

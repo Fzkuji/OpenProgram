@@ -101,7 +101,7 @@ def spy(tmp_db: SessionDB, monkeypatch: pytest.MonkeyPatch) -> list[dict]:
                 "branch": tmp_db.get_branch(session_id),
             })
 
-    monkeypatch.setattr("openprogram.memory.get_provider", lambda: _Provider())
+    monkeypatch.setattr("openprogram.memory.get_backend", lambda: _Provider())
     return calls
 
 
@@ -140,5 +140,5 @@ def test_no_session_id_no_memory_call(monkeypatch: pytest.MonkeyPatch):
     def _boom():
         raise AssertionError("memory must not be consulted without a session")
 
-    monkeypatch.setattr("openprogram.memory.get_provider", _boom)
+    monkeypatch.setattr("openprogram.memory.get_backend", _boom)
     D._memory_write("")

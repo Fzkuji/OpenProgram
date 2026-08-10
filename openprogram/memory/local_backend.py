@@ -12,8 +12,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..provider import (
-    MemoryProvider,
+from .backend import (
+    MemoryBackend,
     WriteFailure,
     classify_memory_write_failure,
     fence_memory,
@@ -28,14 +28,14 @@ logger = logging.getLogger(__name__)
 WRITE_TOKEN_THRESHOLD = 16_000
 
 
-class ScriptoriumMemoryProvider(MemoryProvider):
+class LocalMemoryBackend(MemoryBackend):
     """File-based memory: sources + topics + core."""
 
     _session_id: str = ""
 
     @property
     def name(self) -> str:
-        return "scriptorium"
+        return "local"
 
     def initialize(self, *, session_id: str = "", **kwargs: Any) -> None:
         self._session_id = session_id
@@ -44,7 +44,7 @@ class ScriptoriumMemoryProvider(MemoryProvider):
 
     def system_prompt(self) -> str:
         """Core memory, injected into every session."""
-        from .. import store
+        from . import store
 
         try:
             text = store.core().read_text(encoding="utf-8").strip()
@@ -68,7 +68,7 @@ class ScriptoriumMemoryProvider(MemoryProvider):
             return ""
         try:
             from .retrieval import inspect
-            from .. import store
+            from . import store
 
             found = inspect.search(store.ensure(), query, top_k=5)
         except Exception as exc:  # noqa: BLE001

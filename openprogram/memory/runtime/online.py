@@ -1,4 +1,4 @@
-"""Online orchestration for incremental Scriptorium maintenance."""
+"""Online orchestration for incremental memory-workspace maintenance."""
 
 from __future__ import annotations
 
@@ -153,6 +153,6 @@ class OnlineMemoryRuntime:
                 state.last_global_at = now.isoformat()
                 state.write_commits_since_global = 0
         state.creation_order = self.store.load().creation_order
-        self.store.git_commit("Scriptorium: incremental memory transaction")
+        self.store.git_commit("memory: incremental transaction")
         self.store.save(state)
         return True

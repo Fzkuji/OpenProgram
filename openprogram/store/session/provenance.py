@@ -14,7 +14,7 @@ that exposes the entity layer as *coordinates* memory can map onto:
     agent-attributed commit history.
 
 Why it lives on the store side, not inside ``memory/``: memory is
-pluggable (``MemoryProvider``). Keeping "how to read the git DAG +
+pluggable (``MemoryBackend``). Keeping "how to read the git DAG +
 provenance" here means any memory backend (builtin / mem0 / a graph DB)
 maps the *same* stable surface instead of each re-deriving the git
 layout. The entity layer owns "expose mappable coordinates"; memory owns

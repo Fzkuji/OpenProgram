@@ -30,20 +30,20 @@ agent，都会让链分叉，于是一个会话里同时有好几条分支，共
     {"cursors": {"<session-id>": {"message_id": "a3f1c2", "ordinal": 9}}}
 ```
 
-它是`openprogram/memory/scriptorium/runtime/state.py`里的
-`RuntimeState.cursors`。键是`thread_id`，而`scriptorium/writing.py`往里填的
+它是`openprogram/memory/runtime/state.py`里的
+`RuntimeState.cursors`。键是`thread_id`，而`memory/writing.py`往里填的
 是会话id，所以一个有六条分支的会话，六条分支共用一个游标。
 
 整套机制只有三个函数：
 
 | 函数 | 文件 | 做什么 |
 |---|---|---|
-| `_records` | `scriptorium/writing.py` | 把一条分支变成`SourceRecord`。`ordinal=index`，也就是这一行在交给它的那个列表里的位置，跳过的行也算 |
-| `OnlineMemoryRuntime.pending` | `scriptorium/runtime/online.py` | 只留下`record.ordinal > 已存序号`的记录 |
-| `RuntimeState.advance_cursor` | `scriptorium/runtime/state.py` | 写入事务安装成功之后，存下这一批最后一条的序号 |
+| `_records` | `memory/writing.py` | 把一条分支变成`SourceRecord`。`ordinal=index`，也就是这一行在交给它的那个列表里的位置，跳过的行也算 |
+| `OnlineMemoryRuntime.pending` | `memory/runtime/online.py` | 只留下`record.ordinal > 已存序号`的记录 |
+| `RuntimeState.advance_cursor` | `memory/runtime/state.py` | 写入事务安装成功之后，存下这一批最后一条的序号 |
 
 每轮那次调用的路径是`dispatcher/__init__.py:_memory_write`→
-`ScriptoriumMemoryProvider.write`→`writing.write`→`write_session`。会话
+`LocalMemoryBackend.write`→`writing.write`→`write_session`。会话
 边界那次是`memory/session_watcher.py:_process_session`。两条路都只向
 `SessionStore.get_branch(session_id)`要一条分支：终止于会话head的那条。
 
@@ -344,7 +344,7 @@ head往回走会把整个会话都收进来。
 ### 它让会话存储付出什么
 
 **会话存储那边没有任何东西对整棵树做哈希。**这套系统里唯一一个逐字节的整树
-哈希是记忆工作区的版本号：`scriptorium/management/transaction.py`里的
+哈希是记忆工作区的版本号：`memory/management/transaction.py`里的
 `workspace_revision`，根在`memory/store.py:root()`返回的那个目录，也就是
 `<state>/memory`。会话在`<state>/sessions`。两者不相交，所以一个被标记的
 节点不可能被读成一次并发的记忆写入。
@@ -422,11 +422,11 @@ head往回走会把整个会话都收进来。
 | 1 | `openprogram/store/session/session_store.py` | 新增`merge_node_metadata(session_id, node_id, patch)`：`_open`，合进`node.metadata`，用`atomic_write_text`重写history文件。不碰`_persist_meta`，不碰`updated_at`，不走`write_history` | 新增约20行 |
 | 2 | `openprogram/store/session/session_node_writer.py` | `update`把metadata重写委托给第1项，不再自己重复一遍 | 删约12行 |
 | 3 | `openprogram/memory/store.py` | 新增`workspace_id()`：在`state_dir()`里读出或生成一个十六进制标识 | 新增约12行 |
-| 4 | `openprogram/memory/scriptorium/runtime/state.py` | 去掉`RuntimeState.cursors`和`advance_cursor`，留下计数器；`RuntimeStateStore.load`读不出文件时返回空状态 | 删约10行，改约4行 |
-| 5 | `openprogram/memory/scriptorium/runtime/online.py` | `pending`改成`unwritten_turns(records, marked_ids)`；`process`收一个`mark`回调，只在写入器报出改过文件时调用它 | 改约25行 |
-| 6 | `openprogram/memory/scriptorium/writing.py` | `_records`去掉按位置生成ID的退路；`write_session`的写入器闭包返回`_changed_files(audit)`并提供`mark`回调；`_pending`改读标记 | 改约40行 |
-| 7 | `openprogram/memory/scriptorium/writing.py` | `write(force=True)`向`list_branches`要每个尖端，每个尖端跑一趟，head那条先跑 | 新增约30行 |
-| 8 | `openprogram/memory/scriptorium/runtime/mark_archived_turns.py` | 一次性迁移：读取可信归档候选，在真实DAG上只标连续前缀，全部成功后删掉`cursors` | 新增约50行 |
+| 4 | `openprogram/memory/runtime/state.py` | 去掉`RuntimeState.cursors`和`advance_cursor`，留下计数器；`RuntimeStateStore.load`读不出文件时返回空状态 | 删约10行，改约4行 |
+| 5 | `openprogram/memory/runtime/online.py` | `pending`改成`unwritten_turns(records, marked_ids)`；`process`收一个`mark`回调，只在写入器报出改过文件时调用它 | 改约25行 |
+| 6 | `openprogram/memory/writing.py` | `_records`去掉按位置生成ID的退路；`write_session`的写入器闭包返回`_changed_files(audit)`并提供`mark`回调；`_pending`改读标记 | 改约40行 |
+| 7 | `openprogram/memory/writing.py` | `write(force=True)`向`list_branches`要每个尖端，每个尖端跑一趟，head那条先跑 | 新增约30行 |
+| 8 | `openprogram/memory/runtime/mark_archived_turns.py` | 一次性迁移：读取可信归档候选，在真实DAG上只标连续前缀，全部成功后删掉`cursors` | 新增约50行 |
 
 测试，都在`tests/unit/`下：
 
@@ -528,7 +528,7 @@ head往回走会把整个会话都收进来。
 观察，第三层已经落地：
 
 - 会话节点用`metadata.memory_written_scriptorium = <workspace-id>`记录当前
-  Scriptorium工作区已经处理过该轮；其他工作区的同名标记不生效。工作区标识
+  记忆工作区已经处理过该轮；其他工作区的同名标记不生效。工作区标识
   在记忆运行时目录中原子创建并复用，格式为`w-`加8位十六进制字符。
 - `_records`只接受节点自己的稳定ID；待写轮次改为在过滤后的分支上从新到旧
   查找当前工作区的最近标记，没有标记时交出整条分支。阈值批次仍从最老的

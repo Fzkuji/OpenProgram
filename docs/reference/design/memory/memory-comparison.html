@@ -339,7 +339,7 @@
     <tr><td><b>pi-ai</b></td><td class="n">不写</td><td class="q">—</td></tr>
     <tr><td><b>pi-mono</b></td><td class="n">不写长期记忆；原文每个事件同步落盘</td><td class="q"><span class="src">packages/coding-agent/src/core/agent-session.ts:515</span></td></tr>
     <tr><td><b>weclaw</b></td><td class="n">不写</td><td class="q">—</td></tr>
-    <tr class="us"><td><b>OpenProgram</b></td><td>每轮调一次，攒够 16k token 才真写；会话闲置强制写完；03:00 重整</td><td class="q"><span class="src">openprogram/memory/scriptorium/provider.py:30,117</span></td></tr>
+    <tr class="us"><td><b>OpenProgram</b></td><td>每轮调一次，攒够 16k token 才真写；会话闲置强制写完；03:00 重整</td><td class="q"><span class="src">openprogram/memory/provider.py:30,117</span></td></tr>
   </table>
   </div>
 
@@ -969,7 +969,7 @@
     <tr><td><b>pi-ai</b></td><td class="n">没有</td><td class="q">—</td><td class="q">—</td><td class="q">—</td><td class="q">—</td><td class="q">—</td></tr>
     <tr><td><b>pi-mono</b></td><td class="y">有 AGENTS.md</td><td class="n">无闸，整份拼进去</td><td class="q">—</td><td class="q">—</td><td class="q">—</td><td class="q"><span class="src">packages/coding-agent/src/core/system-prompt.ts:61-68</span></td></tr>
     <tr><td><b>weclaw</b></td><td class="n">没有</td><td class="q">配置里的固定系统提示词，不含学到的东西</td><td class="q">—</td><td class="q">—</td><td class="q">—</td><td class="q"><span class="src">config/config.go:28</span></td></tr>
-    <tr class="us"><td><b>OpenProgram</b> topics/core.md → core.md</td><td class="y">有</td><td class="fw">2000 token渲染预算</td><td>Runtime按确定性顺序生成预算内常驻块；Topic正本不删除</td><td>确定性渲染</td><td class="y">未进入常驻块的Topic仍可检索</td><td class="q"><span class="src">openprogram/memory/scriptorium/management/config.py<br>.../block_views.py</span></td></tr>
+    <tr class="us"><td><b>OpenProgram</b> topics/core.md → core.md</td><td class="y">有</td><td class="fw">2000 token渲染预算</td><td>Runtime按确定性顺序生成预算内常驻块；Topic正本不删除</td><td>确定性渲染</td><td class="y">未进入常驻块的Topic仍可检索</td><td class="q"><span class="src">openprogram/memory/management/config.py<br>.../block_views.py</span></td></tr>
   </table>
   </div>
 

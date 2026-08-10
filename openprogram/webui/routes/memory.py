@@ -50,7 +50,7 @@ def _title_of(text: str, fallback: str) -> str:
 
 def _within(root: Path, relative: str) -> Path | None:
     """Resolve inside root, or None if the path climbs out of it."""
-    from openprogram.memory.scriptorium.workspace_layout import resolve_within
+    from openprogram.memory.workspace_layout import resolve_within
     return resolve_within(root, relative)
 
 
@@ -66,7 +66,7 @@ def _staged_edit(
     ``management.transaction.staged_edit`` for why the baseline is read
     before anything is staged.
     """
-    from openprogram.memory.scriptorium.management.transaction import staged_edit
+    from openprogram.memory.management.transaction import staged_edit
     return staged_edit(
         root, write, deleting=deleting, timeout_s=WRITE_LOCK_TIMEOUT_S
     )
@@ -78,7 +78,7 @@ def register(app):
     @router.get("/api/memory/status")
     def get_status():
         from openprogram.memory import store
-        from openprogram.memory.scriptorium.retrieval import inspect
+        from openprogram.memory.retrieval import inspect
 
         return JSONResponse(content=inspect.status(store.ensure()))
 
@@ -190,7 +190,7 @@ def register(app):
     @router.get("/api/memory/timeline/{date}")
     async def get_timeline_day(date: str):
         from openprogram.memory import store
-        from openprogram.memory.scriptorium.markdown.models import (
+        from openprogram.memory.markdown.models import (
             is_valid_temporal_value,
         )
         # The date becomes a path, so it is checked as a date first:

@@ -94,7 +94,7 @@ def test_memory_update_cleans_up_on_both_paths(memory, monkeypatch):
 
 
 def _record(content: str = "remember this"):
-    from openprogram.memory.scriptorium.runtime.state import SourceRecord
+    from openprogram.memory.runtime.state import SourceRecord
     return SourceRecord(
         provider="claude-code", thread_id="t1", message_id="m1",
         ordinal=1, role="user", content=content,
@@ -102,7 +102,7 @@ def _record(content: str = "remember this"):
 
 
 def _runtime(memory):
-    from openprogram.memory.scriptorium.runtime.online import OnlineMemoryRuntime
+    from openprogram.memory.runtime.online import OnlineMemoryRuntime
     return OnlineMemoryRuntime(memory, token_counter=len)
 
 
@@ -135,7 +135,7 @@ def test_saving_state_leaves_no_temporary_behind(tmp_path):
     this function can hold without help from the caller's lock, and a
     sibling project's stray ``runtime 2.json`` files, mode 600, are what
     the leftovers look like when it does not."""
-    from openprogram.memory.scriptorium.runtime.state import (
+    from openprogram.memory.runtime.state import (
         RuntimeState,
         RuntimeStateStore,
     )

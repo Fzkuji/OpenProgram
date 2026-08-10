@@ -36,20 +36,20 @@ the session store, in the memory workspace's runtime file:
 ```
 
 `RuntimeState.cursors` in
-`openprogram/memory/scriptorium/runtime/state.py` holds it. The key is
-`thread_id`, which `scriptorium/writing.py` fills with the session id, so
+`openprogram/memory/runtime/state.py` holds it. The key is
+`thread_id`, which `memory/writing.py` fills with the session id, so
 a session with six branches has one cursor between them.
 
 Three functions are the whole mechanism:
 
 | Function | File | What it does |
 |---|---|---|
-| `_records` | `scriptorium/writing.py` | Turns the branch into `SourceRecord`s. `ordinal=index`, the row's position in the list it was handed, skipped rows included |
-| `OnlineMemoryRuntime.pending` | `scriptorium/runtime/online.py` | Keeps a record only when `record.ordinal > stored ordinal` |
-| `RuntimeState.advance_cursor` | `scriptorium/runtime/state.py` | Stores the batch's last ordinal, after the write transaction installs |
+| `_records` | `memory/writing.py` | Turns the branch into `SourceRecord`s. `ordinal=index`, the row's position in the list it was handed, skipped rows included |
+| `OnlineMemoryRuntime.pending` | `memory/runtime/online.py` | Keeps a record only when `record.ordinal > stored ordinal` |
+| `RuntimeState.advance_cursor` | `memory/runtime/state.py` | Stores the batch's last ordinal, after the write transaction installs |
 
 The per-turn call reaches them through
-`dispatcher/__init__.py:_memory_write` → `ScriptoriumMemoryProvider.write`
+`dispatcher/__init__.py:_memory_write` → `LocalMemoryBackend.write`
 → `writing.write` → `write_session`. The session-boundary call reaches
 them through `memory/session_watcher.py:_process_session`. Both ask
 `SessionStore.get_branch(session_id)` for one branch: the one ending at
@@ -429,7 +429,7 @@ counts, and the time of the last global pass.
 
 **Nothing there hashes a whole tree.** The one full-byte tree hash in
 this system is the memory workspace's revision — `workspace_revision`
-in `scriptorium/management/transaction.py`, rooted at the directory
+in `memory/management/transaction.py`, rooted at the directory
 `memory/store.py:root()` returns, `<state>/memory`. Sessions live under
 `<state>/sessions`. The two are disjoint, so a marked node cannot read
 as a concurrent memory write.
@@ -527,11 +527,11 @@ migration.
 | 1 | `openprogram/store/session/session_store.py` | New `merge_node_metadata(session_id, node_id, patch)`: `_open`, merge into `node.metadata`, rewrite the history file with `atomic_write_text`. No `_persist_meta`, no `updated_at`, no `write_history` | ~20 new |
 | 2 | `openprogram/store/session/session_node_writer.py` | `update` delegates its metadata rewrite to #1 instead of repeating it | ~12 removed |
 | 3 | `openprogram/memory/store.py` | New `workspace_id()`: read or generate a hex id in `state_dir()` | ~12 new |
-| 4 | `openprogram/memory/scriptorium/runtime/state.py` | Drop `RuntimeState.cursors` and `advance_cursor`; keep the counters; `RuntimeStateStore.load` returns an empty state on an unreadable file | ~10 removed, ~4 changed |
-| 5 | `openprogram/memory/scriptorium/runtime/online.py` | `pending` becomes `unwritten_turns(records, marked_ids)`; `process` takes a `mark` callback and calls it only when the writer reported changed files | ~25 changed |
-| 6 | `openprogram/memory/scriptorium/writing.py` | `_records` drops the positional-id fallback; `write_session`'s writer closure returns `_changed_files(audit)` and supplies the `mark` callback; `_pending` reads marks | ~40 changed |
-| 7 | `openprogram/memory/scriptorium/writing.py` | `write(force=True)` asks `list_branches` and runs one pass per tip, head's branch first | ~30 new |
-| 8 | `openprogram/memory/scriptorium/runtime/mark_archived_turns.py` | One-time migration: read trusted archive candidates, mark only continuous prefixes on real DAG paths, then delete `cursors` | ~50 new |
+| 4 | `openprogram/memory/runtime/state.py` | Drop `RuntimeState.cursors` and `advance_cursor`; keep the counters; `RuntimeStateStore.load` returns an empty state on an unreadable file | ~10 removed, ~4 changed |
+| 5 | `openprogram/memory/runtime/online.py` | `pending` becomes `unwritten_turns(records, marked_ids)`; `process` takes a `mark` callback and calls it only when the writer reported changed files | ~25 changed |
+| 6 | `openprogram/memory/writing.py` | `_records` drops the positional-id fallback; `write_session`'s writer closure returns `_changed_files(audit)` and supplies the `mark` callback; `_pending` reads marks | ~40 changed |
+| 7 | `openprogram/memory/writing.py` | `write(force=True)` asks `list_branches` and runs one pass per tip, head's branch first | ~30 new |
+| 8 | `openprogram/memory/runtime/mark_archived_turns.py` | One-time migration: read trusted archive candidates, mark only continuous prefixes on real DAG paths, then delete `cursors` | ~50 new |
 
 Tests, all in `tests/unit/`:
 

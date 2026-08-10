@@ -201,10 +201,10 @@ def _memory_edit(root, path: str) -> int:
     import tempfile
     from pathlib import Path
 
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management.transaction import (
         TransactionError, staged_edit, validate_writable_path,
     )
-    from openprogram.memory.scriptorium.workspace_layout import resolve_within
+    from openprogram.memory.workspace_layout import resolve_within
 
     name = path if path.endswith(".md") else path + ".md"
     target = resolve_within(root, name)
@@ -1363,7 +1363,7 @@ def main():
             sys.exit(1)
         verb = getattr(args, "memory_verb", None)
         from openprogram.memory import store as _mstore
-        from openprogram.memory.scriptorium.retrieval import inspect as _inspect
+        from openprogram.memory.retrieval import inspect as _inspect
         if verb == "status":
             root = _mstore.ensure()
             import json as _json
@@ -1397,7 +1397,7 @@ def main():
         if verb == "edit":
             sys.exit(_memory_edit(_mstore.ensure(), args.path))
         if verb == "sleep":
-            from openprogram.memory.scriptorium.writing import reorganize
+            from openprogram.memory.writing import reorganize
             import json as _json
             print(_json.dumps(
                 reorganize(model=getattr(args, "model", None)),
@@ -1405,7 +1405,7 @@ def main():
             ))
             sys.exit(0)
         if verb == "backfill":
-            from openprogram.memory.scriptorium.writing import backfill
+            from openprogram.memory.writing import backfill
             import json as _json
             report = backfill(
                 _mstore.ensure(), model=getattr(args, "model", None),

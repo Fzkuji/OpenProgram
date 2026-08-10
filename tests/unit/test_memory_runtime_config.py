@@ -27,16 +27,16 @@ def test_backend_none_disables_every_runtime_surface(monkeypatch, tmp_path):
         "openprogram.setup._read_config",
         lambda: {"memory": {"backend": "none"}},
     )
-    monkeypatch.setattr(memory, "_provider", None)
+    monkeypatch.setattr(memory, "_backend", None)
 
-    provider = memory.get_provider()
-    assert provider.name == "none"
-    assert provider.system_prompt() == ""
-    assert provider.search("remember this") == ""
-    assert provider.write(session_id="s1", force=True) is None
-    assert provider.reorganize() == {"status": "disabled"}
+    backend = memory.get_backend()
+    assert backend.name == "none"
+    assert backend.system_prompt() == ""
+    assert backend.search("remember this") == ""
+    assert backend.write(session_id="s1", force=True) is None
+    assert backend.reorganize() == {"status": "disabled"}
 
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     assert writing.write("s1", token_threshold=1, force=True) is None
     assert writing.reorganize() == {"status": "disabled"}
@@ -47,7 +47,7 @@ def test_backend_none_disables_every_runtime_surface(monkeypatch, tmp_path):
     assert start_nightly_reorganizer(initial_delay=0) is None
     assert start_idle_session_watcher(poll_interval=1) is None
 
-    from openprogram.memory.scriptorium.writing import (
+    from openprogram.memory.writing import (
         archive_unpaired_group_message,
     )
 

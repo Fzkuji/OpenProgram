@@ -22,8 +22,8 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 
-def get_provider():
-    from . import get_provider as _resolve
+def get_backend():
+    from . import get_backend as _resolve
 
     return _resolve()
 
@@ -64,7 +64,7 @@ def start_nightly_reorganizer(
             time.sleep(wait)
         while True:
             try:
-                report = get_provider().reorganize(model=model)
+                report = get_backend().reorganize(model=model)
                 logger.info("memory nightly reorganize done: %s", report)
             except Exception as e:  # noqa: BLE001
                 logger.warning("memory nightly reorganize failed: %s", e)

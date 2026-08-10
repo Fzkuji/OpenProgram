@@ -29,7 +29,7 @@ dispatch 里处理, 而 dispatch 只对已放行的发信人运行, 顺序上也
 多人共用: allowlist 放多少人都行, 一个群里的每个人都可以由机主分别
 批准. 他们共用同一个 agent 和同一份记忆工作区 (``<state>/memory/``), 记忆按发言人
 记录谁说了什么 —— 每条渠道 user 消息带 ``speaker_display`` 和 ``speaker_id``,
-一路带到 ``memory/scriptorium`` 的 ``SourceRecord``. 门禁判定的是"这
+一路带到 ``memory/`` 的 ``SourceRecord``. 门禁判定的是"这
 个人能不能进", 不是"能进几个人".
 """
 from __future__ import annotations

@@ -99,7 +99,7 @@ def no_memory_prefetch(monkeypatch: pytest.MonkeyPatch):
     class _Provider:
         def search(self, _text, **_kw): return ""
         def system_prompt(self): return ""
-    monkeypatch.setattr("openprogram.memory.get_provider", lambda: _Provider())
+    monkeypatch.setattr("openprogram.memory.get_backend", lambda: _Provider())
 
 
 class _Tool:
@@ -305,7 +305,7 @@ def fake_prefetch(monkeypatch: pytest.MonkeyPatch):
             return f"<memory-context>\nrecalled for: {text}\n</memory-context>"
         def system_prompt(self): return ""
         def write(self, *a, **kw): return None
-    monkeypatch.setattr("openprogram.memory.get_provider", lambda: _Provider())
+    monkeypatch.setattr("openprogram.memory.get_backend", lambda: _Provider())
 
 
 def test_prefetch_renders_in_the_user_message_not_the_system_prompt(

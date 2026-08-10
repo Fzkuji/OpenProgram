@@ -21,6 +21,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# Persisted directory names. Both values are historical — they date from
+# earlier names the subsystem carried — and they stay as written: a stored
+# run's hash covers every byte of its workspace, so renaming a directory
+# inside one would invalidate the record it was published with.
 RUNTIME_DIR = ".scriptorium"
 LEGACY_RUNTIME_DIRS = (".nativemem",)
 RUNTIME_DIR_NAMES = (RUNTIME_DIR, *LEGACY_RUNTIME_DIRS)
@@ -28,7 +32,7 @@ STATE_FILE = "runtime.json"
 # A workspace may be a repository of its own; `--git-commit on` expects that.
 VERSION_CONTROL_DIRS = (".git",)
 
-TEMPORARY_PREFIX = "scriptorium-"
+TEMPORARY_PREFIX = "scriptorium-"  # historical value; see RUNTIME_DIR above
 
 
 def is_runtime_name(name: str) -> bool:

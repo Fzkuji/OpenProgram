@@ -179,7 +179,7 @@ speakerless记录为`false`；speaker过滤仍兼容命中v2身份与legacy hint
 `speaker_trusted`区分可信v2身份与legacy兼容hint。主题段落
 表示关于某个主题的整理结果，不表示某个人说过的话，因此不会被speaker过滤命中。
 
-`memory_search`在工具schema中公开`speaker`并传给`inspect.search`；`MemoryProvider.search`
+`memory_search`在工具schema中公开`speaker`并传给`inspect.search`；`MemoryBackend.search`
 保持原签名，普通每轮召回不会自动继承speaker过滤。`memory_grep`也保持不变。embedding结果
 没有等价的可信speaker字段，所以`method=embedding`与`speaker`同时使用时返回
 `INVALID_ARGUMENT`，不会忽略过滤条件。
@@ -291,29 +291,29 @@ BM25持久缓存格式是v8；旧缓存缺少当前speaker或trust字段，因�
 
 ## 代码地图
 
-包分成契约和它的一个实现。
+包里放着契约和它的一个实现。
 
 ```
-openprogram/memory/           框架侧
-    provider.py               MemoryProvider —— 契约
-    __init__.py               get_provider() / set_provider()
+openprogram/memory/           记忆子系统
+    backend.py                MemoryBackend —— 契约
+    local_backend.py          LocalMemoryBackend —— 随包提供的实现
+    __init__.py               get_backend() / set_backend()
     store.py                  记忆位置；从旧布局的迁移
     scheduler.py              守护线程，03:00 重写
     session_watcher.py        写掉空闲会话剩下的部分
-    scriptorium/              随包提供的实现
-        provider.py           满足契约
-        writing.py            累积、写入、整理
-        management/           写入事务、暂存、校验
-        retrieval/            BM25 与向量检索
-        markdown/             topic 格式
-        prompts/              对写入模型说的话
-        runtime/              节点标记迁移、阈值、派生视图、writer状态
-        agent_runtime/        实际执行写入的进程
+    writing.py                累积、写入、整理
+    management/               写入事务、暂存、校验
+    retrieval/                BM25 与向量检索
+    markdown/                 topic 格式
+    prompts/                  对写入模型说的话
+    runtime/                  节点标记迁移、阈值、派生视图、writer状态
+    agent_runtime/            实际执行写入的进程
 ```
 
-agent 循环、工具、网页端、CLI 都不指名任何实现，一律调 `get_provider()`。
-换记忆系统就是写一个满足 `MemoryProvider` 的类，让 `get_provider()` 返回它。
-`set_provider()` 是受支持的入口，测试也用它。
+agent 循环、工具、网页端、CLI 都不指名任何实现，一律调 `get_backend()`。
+换记忆系统就是写一个满足 `MemoryBackend` 的类，让 `get_backend()` 返回它。
+`set_backend()` 是受支持的入口，测试也用它。配置键就叫 `memory.backend`，
+子系统里一律用 backend 这个词；本仓库里的 provider 专指 LLM 供应商。
 
 写入跑在用户自己的登录和默认模型上，所以后台记忆不需要另配凭证。
 `openprogram memory sleep --model` 和
@@ -356,7 +356,7 @@ agent 循环、工具、网页端、CLI 都不指名任何实现，一律调 `ge
 
 ## 插件点
 
-`MemoryProvider`（`provider.py`）是记忆与 agent 运行时之间的接口：
+`MemoryBackend`（`backend.py`）是记忆与 agent 运行时之间的接口：
 
 | 钩子 | 何时调用 |
 |---|---|
@@ -369,7 +369,7 @@ agent 循环、工具、网页端、CLI 都不指名任何实现，一律调 `ge
 | `reorganize(**kwargs)` | 每晚 |
 
 除了 `name`，每个都有默认实现，所以一个实现只需要写它真正有事可做的那几
-个。一个动作一个动词，两边同名：这里钩子叫什么，`scriptorium/` 里执行它
+个。一个动作一个动词，两边同名：这里钩子叫什么，`local_backend.py` 里执行它
 的函数就叫什么，跨层读代码不需要在脑子里转译。
 
 `extract_before_discard` 的方向和其余几个相反，容易理解反。它不存任何东
@@ -429,7 +429,7 @@ topic结果继续使用`#^block-id`。
 
 BM25缓存格式是v8，`speaker`可按稳定id、规范化显示名或标签做不区分大小写的精确
 过滤，并与路径、日期和排序组合；带speaker的结果只来自`sources/`。
-`memory_search`已经传递这个参数，`MemoryProvider.search`和`memory_grep`保持不变。
+`memory_search`已经传递这个参数，`MemoryBackend.search`和`memory_grep`保持不变。
 embedding结果没有等价身份字段，因此`method=embedding`与`speaker`组合会显式返回
 `INVALID_ARGUMENT`，不会静默忽略过滤。
 

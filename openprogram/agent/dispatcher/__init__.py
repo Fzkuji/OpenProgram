@@ -118,14 +118,14 @@ def _memory_write(session_id: str) -> None:
     from openprogram.memory import (
         MemoryWriteFailureCode,
         classify_memory_write_failure,
-        get_provider,
+        get_backend,
     )
-    from openprogram.memory.scriptorium.runtime.writer_status import (
+    from openprogram.memory.runtime.writer_status import (
         record_active_workspace_failure,
     )
 
     try:
-        provider = get_provider()
+        provider = get_backend()
     except Exception as exc:
         record_active_workspace_failure(
             MemoryWriteFailureCode.MEMORY_PROVIDER_RESOLUTION_FAILED,
@@ -514,7 +514,7 @@ def _process_turn_once(
 
     # 5b. Hand the finished turn to memory. Must come after step 5:
     #     the provider reads the turn back out of the session store
-    #     (memory/scriptorium/writing.py), so calling any earlier
+    #     (memory/writing.py), so calling any earlier
     #     counts a turn whose assistant row is still the empty
     #     placeholder — the reply would only reach the threshold check
     #     one turn late.

@@ -1,4 +1,4 @@
-"""Authoritative Scriptorium Topic Markdown API."""
+"""Authoritative topic-Markdown API for the memory workspace."""
 
 from .models import (
     BLOCK_ID,

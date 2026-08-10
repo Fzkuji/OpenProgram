@@ -143,7 +143,7 @@ def test_edit_that_changes_nothing_is_not_a_write(memory, editor, capsys):
 
 
 def test_edit_gives_up_while_the_workspace_lock_is_held(memory, editor):
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management.transaction import (
         workspace_write_lock,
     )
     editor.content = NOTE.replace("worth keeping", "worth remembering")

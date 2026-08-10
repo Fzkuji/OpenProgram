@@ -1,9 +1,14 @@
-"""MemoryProvider abstract interface (Hermes-inspired).
+"""MemoryBackend abstract interface (Hermes-inspired).
 
-The provider is the integration point between the memory subsystem and
-the agent runtime. There is one shipped implementation in ``scriptorium/``; the
-abstract class keeps the door open for plugin providers (mem0, Honcho,
-Hindsight, ...) without rewiring the agent.
+The backend is the integration point between the memory subsystem and
+the agent runtime. There is one shipped implementation,
+``LocalMemoryBackend`` in ``local_backend.py``; the abstract class keeps
+the door open for plugin backends (mem0, Honcho, Hindsight, ...) without
+rewiring the agent.
+
+The config key is ``memory.backend``, and this is the word for it
+everywhere in the subsystem. "Provider" in this codebase means an LLM
+vendor and nothing else.
 
 The whole surface, and all of it but ``name`` has a default:
 
@@ -19,15 +24,15 @@ The whole surface, and all of it but ``name`` has a default:
     reorganize(**kwargs) -> dict           — rewrite what has landed (nightly)
 
 One verb per action, and the same verb in the implementation: the name
-here is the name in ``scriptorium/``, so reading across the two layers
-takes no translation. ``write`` is one method rather than a per-turn one
+here is the name in ``local_backend.py``, so reading across the two
+layers takes no translation. ``write`` is one method rather than a per-turn one
 and a session-end one because the difference between the two is a single
 flag — how hard to try — and every other word about them is the same.
 
 Recalled memory has to reach the model inside a ``<memory-context>``
 block with a system note, so old facts are read as background data
 rather than as something the user just asked for. ``fence_memory``
-builds that block, and the provider applies it: ``system_prompt`` and
+builds that block, and the backend applies it: ``system_prompt`` and
 ``search`` return text that is already fenced. Nothing fences on the way
 out — fencing twice strips the inner block and leaves an empty one, so
 the wrapping happens once, where the text is produced.
@@ -114,8 +119,8 @@ def classify_memory_write_failure(
     from openprogram.providers.utils.errors import ErrorReason, classify_error
 
     try:
-        from .scriptorium.management.transaction import TransactionError
-    except ImportError:  # pragma: no cover - base provider can load alone
+        from .management.transaction import TransactionError
+    except ImportError:  # pragma: no cover - base backend can load alone
         TransactionError = ()  # type: ignore[assignment,misc]
 
     if isinstance(exc, TransactionError):
@@ -205,7 +210,7 @@ _FENCE_NOTE_RE = re.compile(
 
 
 def sanitize_context(text: str) -> str:
-    """Strip fence tags and system notes from provider-supplied text.
+    """Strip fence tags and system notes from backend-supplied text.
 
     Used when echoing recalled memory back into a tool result, so the
     fence shows up only at injection time and isn't double-wrapped.
@@ -233,8 +238,8 @@ def fence_memory(raw: str) -> str:
 # Provider base class
 
 
-class MemoryProvider(ABC):
-    """Abstract memory provider."""
+class MemoryBackend(ABC):
+    """Abstract memory backend."""
 
     @property
     @abstractmethod
@@ -242,7 +247,7 @@ class MemoryProvider(ABC):
         """Short identifier (``builtin``, ``honcho``, ``mem0``, ...)."""
 
     def is_available(self) -> bool:
-        """True if the provider can be activated. Default: always available."""
+        """True if the backend can be activated. Default: always available."""
         return True
 
     def initialize(self, *, session_id: str = "", **kwargs: Any) -> None:
@@ -256,8 +261,8 @@ class MemoryProvider(ABC):
     def system_prompt(self) -> str:
         """Static text injected into the system prompt at session start.
 
-        The shipped provider returns ``core.md``. A plugin can return a
-        brief provider-specific instruction line instead. Fence anything
+        The shipped backend returns ``core.md``. A plugin can return a
+        brief backend-specific instruction line instead. Fence anything
         recalled from memory with ``fence_memory`` before returning it.
         Empty string skips injection.
         """
@@ -287,14 +292,14 @@ class MemoryProvider(ABC):
         """Fold conversation into memory.
 
         Called after every turn, and again when the session goes idle.
-        The two differ by ``force`` alone. Left False, the provider
+        The two differ by ``force`` alone. Left False, the backend
         decides there is enough to be worth writing and usually does
         nothing — writing a paragraph per turn costs a model call per
         turn and produces memory shaped like a transcript. Set True at a
         session boundary, where there is no later batch to join, it
         writes the remainder however little of it there is.
 
-        ``messages`` may be omitted, in which case the provider reads
+        ``messages`` may be omitted, in which case the backend reads
         the conversation itself; the shipped one reads the durable
         session store, which is what lets a restart pick up where it
         left off. ``session_id`` names the conversation whose turns are

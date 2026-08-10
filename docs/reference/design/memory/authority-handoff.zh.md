@@ -4,7 +4,7 @@
 > 发言人归因本身见 [`speaker-identity.html`](speaker-identity.html)；
 > 配套可视化是 [`authority-landscape.html`](authority-landscape.html)。
 > 关联代码：`openprogram/agent/authority.py`、`openprogram/channels/_access.py`、
-> `openprogram/channels/base.py`、`openprogram/memory/scriptorium/writing.py`。
+> `openprogram/channels/base.py`、`openprogram/memory/writing.py`。
 
 ## 模型
 

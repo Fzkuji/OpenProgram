@@ -13,8 +13,8 @@ import json
 import pathlib
 import re
 
-from openprogram.memory.scriptorium.markdown import EvidenceAnnotation, MemoryUnit
-from openprogram.memory.scriptorium.runtime.derived_views import rebuild_derived_views
+from openprogram.memory.markdown import EvidenceAnnotation, MemoryUnit
+from openprogram.memory.runtime.derived_views import rebuild_derived_views
 
 
 TYPES_TS = (

@@ -29,22 +29,22 @@ from openprogram.agent.authority import (
     owner_principal_id,
 )
 from openprogram.memory import store
-from openprogram.memory.scriptorium.management import MemoryWorkspace
-from openprogram.memory.scriptorium.management.transaction import (
+from openprogram.memory.management import MemoryWorkspace
+from openprogram.memory.management.transaction import (
     TransactionError,
     provenance_from_authority,
     workspace_write_lock,
     workspace_revision,
 )
-from openprogram.memory.provider import sanitize_context
-from openprogram.memory.scriptorium.retrieval import inspect
-from openprogram.memory.scriptorium.source_format import (
+from openprogram.memory.backend import sanitize_context
+from openprogram.memory.retrieval import inspect
+from openprogram.memory.source_format import (
     encode_source_metadata,
     provider_source_location,
     scan_source_archive,
 )
-from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
-from openprogram.memory.scriptorium.workspace_layout import runtime_dir
+from openprogram.memory.runtime.state import RuntimeStateStore
+from openprogram.memory.workspace_layout import runtime_dir
 
 MAX_SNIPPETS = 8
 
@@ -489,7 +489,7 @@ def _promote_source(
             _restore_source_bytes(path, original, mode)
             raise
         RuntimeStateStore(root).git_commit(
-            f"Scriptorium: trust source {source_id}"
+            f"memory: trust source {source_id}"
         )
         return {
             "source_id": source_id,
@@ -509,7 +509,7 @@ def memory_promote(source_id: str | None = None, **_: Any) -> str:
         authority = authority_from_message(session_id, _current_turn_id.get() or "")
         root = _root()
         result = _promote_source(root, str(source_id), authority)
-        from openprogram.memory.scriptorium.writing import (
+        from openprogram.memory.writing import (
             distill_promoted_source,
         )
 

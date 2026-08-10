@@ -222,7 +222,7 @@ class Channel(abc.ABC):
             if ch_msg.chat_type in {"group", "channel", "thread"} \
                     and ch_msg.text:
                 try:
-                    from openprogram.memory.scriptorium.writing import (
+                    from openprogram.memory.writing import (
                         archive_unpaired_group_message,
                     )
 

@@ -29,17 +29,17 @@ a nightly pass rewrites what has landed.
 | Path | Role |
 |---|---|
 | `store.py` | Where the workspace is; migration off the previous layout |
-| `provider.py` | `MemoryProvider` ABC and the `<memory-context>` fence |
-| `scriptorium/provider.py` | The lifecycle hooks the agent runtime calls |
-| `scriptorium/writing.py` | Accumulate, write, reorganize |
+| `backend.py` | `MemoryBackend` ABC and the `<memory-context>` fence |
+| `local_backend.py` | `LocalMemoryBackend` — the lifecycle hooks the agent runtime calls |
+| `writing.py` | Accumulate, write, reorganize |
 | `scheduler.py` | Daemon thread; the 03:00 reorganize |
 | `session_watcher.py` | Writes a session's remainder once it goes idle |
-| `scriptorium/management/` | The write transaction: staging, validation, install |
-| `scriptorium/retrieval/` | BM25 and embedding search over the workspace |
-| `scriptorium/markdown/` | The topic format — blocks, footnotes, links |
-| `scriptorium/prompts/` | What the writer is told |
-| `scriptorium/runtime/` | Cursors, thresholds, derived views |
-| `scriptorium/agent_runtime/` | The process that performs a write |
+| `management/` | The write transaction: staging, validation, install |
+| `retrieval/` | BM25 and embedding search over the workspace |
+| `markdown/` | The topic format — blocks, footnotes, links |
+| `prompts/` | What the writer is told |
+| `runtime/` | Cursors, thresholds, derived views |
+| `agent_runtime/` | The process that performs a write |
 
 ## Working here
 

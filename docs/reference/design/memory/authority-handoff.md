@@ -6,7 +6,7 @@
 > [`authority-landscape.html`](authority-landscape.html).
 > Related code: `openprogram/agent/authority.py`,
 > `openprogram/channels/_access.py`, `openprogram/channels/base.py`,
-> `openprogram/memory/scriptorium/writing.py`.
+> `openprogram/memory/writing.py`.
 
 ## The model
 
@@ -193,8 +193,8 @@ the policy and the case its test has to cover.
 
 | # | Read surface | Enforcing Runtime entry point | Case | Test level |
 |---|---|---|---|---|
-| 1 | Core system prompt | `ScriptoriumMemoryProvider.system_prompt` | A paired session receives `core.shared.md`; no owner block appears in it | unit |
-| 2 | Automatic per-turn recall | `ScriptoriumMemoryProvider.search` | A paired session's recall returns no `owner` block and no pending Source | unit |
+| 1 | Core system prompt | `LocalMemoryBackend.system_prompt` | A paired session receives `core.shared.md`; no owner block appears in it | unit |
+| 2 | Automatic per-turn recall | `LocalMemoryBackend.search` | A paired session's recall returns no `owner` block and no pending Source | unit |
 | 3 | Explicit `memory_search` | `MemoryBM25Index.search` | A paired requester's hits exclude `owner` blocks at every `top_k` | unit |
 | 4 | Embedding search | `MemoryEmbeddingIndex.search` | Same exclusion as row 3, same requester, same query | unit |
 | 5 | `memory_get` | `inspect.read_file` | A paired requester reading a Topic file receives only its `shared` blocks; an all-`owner` file is a not-found, not an empty file | unit |

@@ -1,18 +1,25 @@
 """Persistent, machine-wide memory for OpenProgram agents.
 
-This package is the framework side: the contract a memory system has to
-meet, and the points at which the runtime calls it. One implementation
-ships with it, in ``scriptorium/``.
+This package holds both the contract a memory system has to meet and the
+shipped implementation of it: a Markdown workspace the model writes and
+edits.
 
-    provider.py          the contract — MemoryProvider
+    backend.py           the contract — MemoryBackend
+    local_backend.py     the shipped implementation — LocalMemoryBackend
     store.py             where memory lives on disk
     scheduler.py         when reorganizing runs (nightly)
     session_watcher.py   when a session goes idle
-    scriptorium/         the shipped implementation
+    writing.py           accumulate, write, reorganize
+    management/          the write transaction: staging, validation, install
+    retrieval/           BM25 and embedding search over the workspace
+    markdown/            the topic format — blocks, footnotes, links
+    prompts/             what the writer is told
+    runtime/             cursors, thresholds, derived views
+    agent_runtime/       the process that performs a write
 
-The runtime never names an implementation. It calls ``get_provider()``,
+The runtime never names an implementation. It calls ``get_backend()``,
 which returns the configured one. Swapping memory systems means writing
-a class that satisfies ``MemoryProvider`` and pointing ``get_provider()`` at
+a class that satisfies ``MemoryBackend`` and pointing ``get_backend()`` at
 it; nothing in the agent loop, the tools, the web UI or the CLI changes.
 
 Storage location: ``<state>/memory/`` (profile-global by default —
@@ -21,19 +28,19 @@ shared across every agent and conversation on the machine).
 
 from __future__ import annotations
 
-from .provider import (
-    MemoryProvider,
+from .backend import (
+    MemoryBackend,
     MemoryWriteFailureClassification,
     MemoryWriteFailureCode,
     WriteFailure,
     classify_memory_write_failure,
 )
 
-_provider: MemoryProvider | None = None
+_backend: MemoryBackend | None = None
 DISABLED_MESSAGE = "memory is disabled by memory.backend=none"
 
 
-class _DisabledMemoryProvider(MemoryProvider):
+class _DisabledMemoryBackend(MemoryBackend):
     @property
     def name(self) -> str:
         return "none"
@@ -48,36 +55,36 @@ def is_enabled() -> bool:
     return ((_read_config().get("memory") or {}).get("backend") != "none")
 
 
-def get_provider() -> MemoryProvider:
+def get_backend() -> MemoryBackend:
     """The memory system in use.
 
-    Cached: the hooks are called on every turn, and building a provider
+    Cached: the hooks are called on every turn, and building a backend
     should not be part of that cost.
     """
-    global _provider
-    if _provider is None:
+    global _backend
+    if _backend is None:
         if not is_enabled():
-            _provider = _DisabledMemoryProvider()
+            _backend = _DisabledMemoryBackend()
         else:
-            from .scriptorium import ScriptoriumMemoryProvider
+            from .local_backend import LocalMemoryBackend
 
-            _provider = ScriptoriumMemoryProvider()
-    return _provider
+            _backend = LocalMemoryBackend()
+    return _backend
 
 
-def set_provider(instance: MemoryProvider | None) -> None:
+def set_backend(instance: MemoryBackend | None) -> None:
     """Install a different memory system, or reset to the default.
 
     Exists so a test can substitute one, and so an alternative
     implementation has a supported way in.
     """
-    global _provider
-    _provider = instance
+    global _backend
+    _backend = instance
 
 
 __all__ = [
-    "DISABLED_MESSAGE", "MemoryProvider",
+    "DISABLED_MESSAGE", "MemoryBackend",
     "MemoryWriteFailureClassification", "MemoryWriteFailureCode",
-    "WriteFailure", "classify_memory_write_failure", "get_provider",
-    "is_enabled", "set_provider",
+    "WriteFailure", "classify_memory_write_failure", "get_backend",
+    "is_enabled", "set_backend",
 ]

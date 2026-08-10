@@ -16,8 +16,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from openprogram.memory.scriptorium.management import MemoryConfig, MemoryWorkspace
-from openprogram.memory.scriptorium.runtime.derived_views import (
+from openprogram.memory.management import MemoryConfig, MemoryWorkspace
+from openprogram.memory.runtime.derived_views import (
     promote_legacy_core,
     render_core_block,
 )

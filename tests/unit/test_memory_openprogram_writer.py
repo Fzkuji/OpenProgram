@@ -45,7 +45,7 @@ def test_writer_defaults_to_the_chat_agents_model(monkeypatch):
     _patch_model_resolution(monkeypatch, seen)
     monkeypatch.setattr("openprogram.setup._read_config", lambda: {})
 
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     writer = writing._agent()
     assert writer.model.id == "default-model"
@@ -60,7 +60,7 @@ def test_writer_setting_overrides_only_the_model(monkeypatch):
         lambda: {"memory": {"writer": {"model": "other/model"}}},
     )
 
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     writer = writing._agent()
     assert writer.model.id == "override-model"
@@ -90,7 +90,7 @@ def test_openprogram_writer_preserves_structured_permanent_errors(
             ),
         )
 
-    from openprogram.memory.scriptorium.agent_runtime import (
+    from openprogram.memory.agent_runtime import (
         AgentExecutionError,
         OpenProgramAgent,
     )
@@ -118,9 +118,9 @@ def test_openprogram_writer_executes_the_existing_managed_tools(
         ScriptedText,
         ScriptedToolCall,
     )
-    from openprogram.memory.scriptorium.agent_runtime import OpenProgramAgent
-    from openprogram.memory.scriptorium.management.tools import management_tools
-    from openprogram.memory.scriptorium.management.workspace import MemoryWorkspace
+    from openprogram.memory.agent_runtime import OpenProgramAgent
+    from openprogram.memory.management.tools import management_tools
+    from openprogram.memory.management.workspace import MemoryWorkspace
 
     scripted = ScriptedProvider()
     scripted.add_response(ScriptedToolCall(
@@ -153,7 +153,7 @@ def test_openprogram_writer_rejects_an_unenforceable_budget(monkeypatch, tmp_pat
     seen: list[str | None] = []
     _patch_model_resolution(monkeypatch, seen)
 
-    from openprogram.memory.scriptorium.agent_runtime import OpenProgramAgent
+    from openprogram.memory.agent_runtime import OpenProgramAgent
 
     writer = OpenProgramAgent()
     try:

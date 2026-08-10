@@ -232,7 +232,7 @@ def test_unpaired_group_message_is_archived_without_entering_agent(
     monkeypatch,
 ) -> None:
     from openprogram.paths import get_state_dir
-    from openprogram.memory.scriptorium.retrieval.bm25 import MemoryBM25Index
+    from openprogram.memory.retrieval.bm25 import MemoryBM25Index
 
     called = []
     monkeypatch.setattr(
@@ -261,7 +261,7 @@ def test_unpaired_group_message_is_archived_without_entering_agent(
 
 def test_unpaired_direct_message_is_not_archived() -> None:
     from openprogram.paths import get_state_dir
-    from openprogram.memory.scriptorium.retrieval.bm25 import MemoryBM25Index
+    from openprogram.memory.retrieval.bm25 import MemoryBM25Index
 
     ch = _GateChannel()
     ch._dispatch_and_reply(_msg(text="direct private", message_id="m-10"))

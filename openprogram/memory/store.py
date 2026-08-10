@@ -49,7 +49,7 @@ def state_dir() -> Path:
     A file that changed on every poll would otherwise look like a
     concurrent write to anything holding a revision.
     """
-    from .scriptorium.workspace_layout import runtime_dir
+    from .workspace_layout import runtime_dir
 
     path = runtime_dir(root())
     path.mkdir(parents=True, exist_ok=True)
@@ -70,7 +70,7 @@ def workspace_id() -> str:
         return current
 
     from openprogram.store.session.git_session import atomic_write_text
-    from .scriptorium.management.transaction import workspace_write_lock
+    from .management.transaction import workspace_write_lock
 
     with workspace_write_lock(root()):
         try:

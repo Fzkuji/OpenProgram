@@ -2,12 +2,12 @@
 
 Polls the session DB every ``poll_interval`` seconds. For any session
 whose ``updated_at`` exceeds ``idle_minutes`` and which we haven't
-already handled, hands the message list to the memory provider's
+already handled, hands the message list to the memory backend's
 ``write(..., force=True)``, which runs the writer over whatever the
 per-turn path left behind.
 
 State (already-processed session IDs and their last update timestamp)
-lives at ``<state>/memory/.scriptorium/session-end.json`` so a worker
+lives at ``<state>/memory/<runtime-dir>/session-end.json`` so a worker
 restart doesn't re-process every session. It goes in the runtime
 directory rather than beside the memory: it changes on every poll, and
 anything holding a workspace revision would read that as a concurrent
@@ -28,7 +28,7 @@ from typing import Any
 from openprogram import _compat as fcntl
 
 from . import store
-from .provider import WriteFailure
+from .backend import WriteFailure
 
 logger = logging.getLogger(__name__)
 
@@ -277,8 +277,8 @@ def _process_session(
         pass
 
     try:
-        from . import get_provider
-        left = get_provider().write(
+        from . import get_backend
+        left = get_backend().write(
             messages, session_id=session_id, force=True,
         )
     except Exception as exc:  # noqa: BLE001
@@ -291,7 +291,7 @@ def _process_session(
             reason_code="WRITER_FAILURE_UNKNOWN",
         )
     if left is not None:
-        from .scriptorium.runtime.writer_status import (
+        from .runtime.writer_status import (
             record_active_workspace_failure,
         )
 

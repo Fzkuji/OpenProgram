@@ -46,13 +46,13 @@ def recorder():
 
 
 def _run(config, recorder, cwd):
-    from openprogram.memory.scriptorium.agent_runtime import ClaudeCodeAgent
+    from openprogram.memory.agent_runtime import ClaudeCodeAgent
     agent = ClaudeCodeAgent(config, query_fn=recorder)
     return agent.run(prompt="hello", system_prompt="be brief", cwd=cwd)
 
 
 def test_inherited_login_adds_nothing_to_the_environment(tmp_path, recorder):
-    from openprogram.memory.scriptorium.agent_runtime import ClaudeCodeConfig
+    from openprogram.memory.agent_runtime import ClaudeCodeConfig
 
     result = _run(ClaudeCodeConfig.inherited(), recorder, tmp_path)
 
@@ -61,7 +61,7 @@ def test_inherited_login_adds_nothing_to_the_environment(tmp_path, recorder):
 
 
 def test_nested_claude_disables_builtin_file_and_command_tools(tmp_path, recorder):
-    from openprogram.memory.scriptorium.agent_runtime import ClaudeCodeConfig
+    from openprogram.memory.agent_runtime import ClaudeCodeConfig
 
     _run(ClaudeCodeConfig.inherited(), recorder, tmp_path)
 
@@ -75,7 +75,7 @@ def test_nested_claude_disables_builtin_file_and_command_tools(tmp_path, recorde
 def test_a_provisioned_credential_still_overrides_the_environment(
     tmp_path, recorder
 ):
-    from openprogram.memory.scriptorium.agent_runtime import ClaudeCodeConfig
+    from openprogram.memory.agent_runtime import ClaudeCodeConfig
 
     _run(
         ClaudeCodeConfig(

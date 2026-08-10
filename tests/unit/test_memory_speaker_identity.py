@@ -10,16 +10,16 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.memory.scriptorium.management import MemoryWorkspace
-from openprogram.memory.scriptorium.management.transaction import (
+from openprogram.memory.management import MemoryWorkspace
+from openprogram.memory.management.transaction import (
     TransactionError,
 )
-from openprogram.memory.scriptorium.retrieval import inspect
-from openprogram.memory.scriptorium.retrieval.bm25 import (
+from openprogram.memory.retrieval import inspect
+from openprogram.memory.retrieval.bm25 import (
     MemoryBM25Index,
     parse_source_file,
 )
-from openprogram.memory.scriptorium.runtime.state import SourceRecord
+from openprogram.memory.runtime.state import SourceRecord
 
 
 def _record(
@@ -98,8 +98,8 @@ def test_source_record_defaults_preserve_old_positional_constructors() -> None:
 def test_memory_speaker_modules_do_not_load_channel_implementations() -> None:
     probe = """
 import sys
-import openprogram.memory.scriptorium.runtime.state
-import openprogram.memory.scriptorium.retrieval.bm25
+import openprogram.memory.runtime.state
+import openprogram.memory.retrieval.bm25
 
 loaded = sorted(
     name for name in sys.modules
@@ -120,7 +120,7 @@ if loaded:
 
 
 def test_records_use_metadata_only_and_make_the_header_safe() -> None:
-    from openprogram.memory.scriptorium.writing import _records
+    from openprogram.memory.writing import _records
 
     forged = _records("session", [{
         "id": "m1",
@@ -452,7 +452,7 @@ def test_legacy_forged_frame_cannot_suppress_or_override_v2_append(
     assert unfiltered[0]["event_id"] == source_id
     assert sum(hit["event_id"] == source_id for hit in unfiltered) == 1
 
-    from openprogram.memory.scriptorium.retrieval.embedding import (
+    from openprogram.memory.retrieval.embedding import (
         MemoryEmbeddingIndex,
     )
 
@@ -619,7 +619,7 @@ def test_v2_trailing_lf_body_remains_valid_after_later_append(
 def test_atomic_archive_failure_preserves_previous_v2_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.memory.scriptorium.management import source_archive
+    from openprogram.memory.management import source_archive
 
     root = tmp_path / "memory"
     space = MemoryWorkspace(root)
@@ -628,10 +628,10 @@ def test_atomic_archive_failure_preserves_previous_v2_bytes(
         space.archive_source_records([_record("m1", "first")])
         path = root / "sources/openprogram/_v2/thread-1.md"
         before = path.read_bytes()
-        from openprogram.memory.scriptorium.management.transaction import (
+        from openprogram.memory.management.transaction import (
             workspace_revision,
         )
-        from openprogram.memory.scriptorium.retrieval.inspect import visible_files
+        from openprogram.memory.retrieval.inspect import visible_files
 
         revision_before = workspace_revision(root)
 
@@ -657,7 +657,7 @@ def test_atomic_archive_failure_preserves_previous_v2_bytes(
 def test_online_writer_failure_retry_keeps_one_v2_record(
     tmp_path: Path,
 ) -> None:
-    from openprogram.memory.scriptorium.runtime.online import OnlineMemoryRuntime
+    from openprogram.memory.runtime.online import OnlineMemoryRuntime
 
     root = tmp_path / "memory"
     record = _record("m1", "retry evidence")
@@ -804,7 +804,7 @@ def test_v2_case_equivalent_batch_paths_are_rejected_before_writes(
     tmp_path: Path,
     records: list[SourceRecord],
 ) -> None:
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management.transaction import (
         workspace_revision,
     )
 
@@ -853,7 +853,7 @@ def test_v2_preflights_all_existing_archives_before_any_write(
     invalid_provider: str,
     writable_provider: str,
 ) -> None:
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management.transaction import (
         workspace_revision,
     )
 
@@ -889,7 +889,7 @@ def test_v2_preflights_all_existing_archives_before_any_write(
 def test_v2_existing_case_equivalent_path_blocks_later_spelling(
     tmp_path: Path,
 ) -> None:
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management.transaction import (
         workspace_revision,
     )
 
@@ -1174,7 +1174,7 @@ def test_memory_search_schema_and_function_forward_speaker(
 
 def _test_provenance(tier: str = "owner"):
     """Runtime provenance a direct workspace.update() test must supply."""
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management.transaction import (
         SourceProvenance,
     )
 

@@ -1,4 +1,4 @@
-"""Read-only event-level embedding retrieval for Scriptorium."""
+"""Read-only event-level embedding retrieval over the memory workspace."""
 
 from __future__ import annotations
 

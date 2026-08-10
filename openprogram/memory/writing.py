@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, TYPE_CHECKING
 from urllib.parse import quote
 
-from ..provider import MemoryWriteFailureCode, WriteFailure
+from .backend import MemoryWriteFailureCode, WriteFailure
 from .management import organize_topics
 from .management.agent import _run_agent
 from .management.api import render_writer_task
@@ -42,6 +42,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 PROVIDER = "openprogram"
+# Persisted in session-node metadata. The value is historical — it dates
+# from when the subsystem carried a code name — and it stays as written:
+# changing it would orphan every node already marked.
 WRITTEN_NODE_MARKER = "memory_written_scriptorium"
 
 # Turns the runtime writes to drive itself: the notification a finished
@@ -257,7 +260,7 @@ def archive_unpaired_group_message(
     timestamp: float = 0.0,
 ) -> str:
     """Archive denied group speech as pending evidence, without an agent turn."""
-    from .. import is_enabled, store
+    from . import is_enabled, store
     from .management import MemoryWorkspace
 
     if not is_enabled():
@@ -347,7 +350,7 @@ def write_session(
     Returns False without calling a model when the session holds nothing
     new, or when the batch is below the threshold. Both are ordinary.
     """
-    from .. import store
+    from . import store
 
     records = _records(session_id, messages)
     if not records:
@@ -437,7 +440,7 @@ def _pending(
     session_id: str, messages: list[dict[str, Any]]
 ) -> list[SourceRecord]:
     """What this session still owes memory."""
-    from .. import store
+    from . import store
 
     records = _records(session_id, messages)
     if not records:
@@ -502,10 +505,10 @@ def write(
     the session done on the way out.
 
     A ``WriteFailure`` means turns are still unwritten. Whatever
-    ``write_session`` raises travels up to the provider, which is where
+    ``write_session`` raises travels up to the backend, which is where
     a transaction code becomes retryable or not.
     """
-    from .. import is_enabled
+    from . import is_enabled
 
     if not is_enabled():
         return None
@@ -514,7 +517,7 @@ def write(
             "no session id", retryable=False,
             reason_code=MemoryWriteFailureCode.MISSING_SESSION_ID,
         )
-    from .. import store
+    from . import store
     from openprogram.agent.session_db import default_db
     from .runtime.mark_archived_turns import migrate
 
@@ -751,7 +754,7 @@ def backfill(
 ) -> dict[str, str | int]:
     """Write every uncited trusted source, resumable at batch boundaries."""
     if batch_token_budget is None:
-        from .provider import WRITE_TOKEN_THRESHOLD
+        from .local_backend import WRITE_TOKEN_THRESHOLD
 
         batch_token_budget = WRITE_TOKEN_THRESHOLD
     root = Path(memory_dir).resolve()
@@ -806,7 +809,7 @@ def reorganize(*, model: str | None = None) -> dict[str, Any]:
     criterion. An empty list is what makes that visible, and ``topics``
     beside it counts the files the pass looked at.
     """
-    from .. import is_enabled, store
+    from . import is_enabled, store
 
     if not is_enabled():
         return {"status": "disabled"}

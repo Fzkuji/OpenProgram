@@ -544,7 +544,7 @@
     <tr><td><b>U03</b></td><td><code>functions/tools/execute_code</code></td><td class="n">模型代码</td><td>local路径通过<code>LocalBackend.run</code>复用<code>_invocation</code>；解释器、cwd与临时脚本均进入同一策略测试</td></tr>
     <tr><td><b>U04</b></td><td><code>cron/worker.py</code> direct command</td><td class="n">模型请求保存 / 无人值守</td><td>创建先检查<code>schedule.create</code>，修改、重排或删除先检查<code>schedule.manage</code>；<code>paired</code>档必须在任何job持久化变更前deny。认证本地owner批准创建或修改后保存新的不可变job authority，固化principal、<code>authority_tier=owner</code>、command、cwd、policy与hash；触发时强制沙箱，ask与升级均deny</td></tr>
     <tr><td><b>U05</b></td><td><code>cron/worker.py</code> prompt job</td><td class="n">模型prompt / 无人值守</td><td>同样要求owner批准创建；重建请求时显式<code>source=cron</code>并加载不可变job authority，内部所有副作用继续按<code>owner</code>档常量表检查</td></tr>
-    <tr><td><b>U06</b></td><td><code>scriptorium/agent_runtime/claude_code.py</code></td><td class="n">模型驱动的嵌套agent</td><td>协议层关闭内置命令与文件工具，注入OpenProgram受管MCP工具</td></tr>
+    <tr><td><b>U06</b></td><td><code>memory/agent_runtime/claude_code.py</code></td><td class="n">模型驱动的嵌套agent</td><td>协议层关闭内置命令与文件工具，注入OpenProgram受管MCP工具</td></tr>
     <tr><td><b>U07</b></td><td><code>functions/watcher.py → _registry.exec_module</code></td><td class="n">模型可写Python</td><td>任何模型可写目录禁止自动导入；导入目录改为owner控制并记录来源</td></tr>
     <tr><td><b>U08</b></td><td><code>webui/_functions.py</code>动态重载</td><td class="n">模型可写Python</td><td>与U07共享同一条目录所有权约束；不能在宿主进程重载模型写入的模块</td></tr>
     <tr><td><b>U09</b></td><td><code>agent/process_runner.py</code></td><td>已注册agentic function</td><td>spawn请求显式序列化SandboxPolicy；子进程内的命令、文件与嵌套工具保持同一策略</td></tr>

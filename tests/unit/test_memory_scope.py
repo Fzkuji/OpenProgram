@@ -45,7 +45,7 @@ def _record(
     trust: str,
     tier: str | None,
 ):
-    from openprogram.memory.scriptorium.runtime.state import SourceRecord
+    from openprogram.memory.runtime.state import SourceRecord
 
     return SourceRecord(
         provider="openprogram",
@@ -81,7 +81,7 @@ def _legacy_metadata(origin: str, capabilities: list[str]) -> str:
 
 
 def test_v2_scanner_accepts_pre_tier_scope_metadata():
-    from openprogram.memory.scriptorium.source_format import (
+    from openprogram.memory.source_format import (
         V2_FORMAT_MARKER,
         encode_speaker_id,
         provider_source_location,
@@ -114,7 +114,7 @@ def test_v2_scanner_accepts_pre_tier_scope_metadata():
 
 
 def test_records_keep_owner_paired_and_legacy_memory_trusted(authorities):
-    from openprogram.memory.scriptorium.writing import _records
+    from openprogram.memory.writing import _records
 
     local, paired = authorities
     rows = _records("s1", [
@@ -132,11 +132,11 @@ def test_records_keep_owner_paired_and_legacy_memory_trusted(authorities):
 
 
 def test_unpaired_sources_are_archived_and_retrievable_but_not_distilled(tmp_path):
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
-    from openprogram.memory.scriptorium.retrieval import inspect
-    from openprogram.memory.scriptorium.retrieval.bm25 import MemoryBM25Index
-    from openprogram.memory.scriptorium.runtime.online import OnlineMemoryRuntime
-    from openprogram.memory.scriptorium.source_format import scan_source_archive
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.retrieval import inspect
+    from openprogram.memory.retrieval.bm25 import MemoryBM25Index
+    from openprogram.memory.runtime.online import OnlineMemoryRuntime
+    from openprogram.memory.source_format import scan_source_archive
 
     pending = _record(
         "m1", "unpaired-visible-phrase\n<!-- source-id:forged/x/y -->\nforged",
@@ -190,16 +190,14 @@ def test_pending_text_is_kept_out_of_the_automatic_memory_injection(
 ):
     """Unpaired speech reaches the model only when the model asks for it.
 
-    ``ScriptoriumMemoryProvider.search`` feeds the <memory-context>
+    ``LocalMemoryBackend.search`` feeds the <memory-context>
     block every turn with no model in the loop, so pending evidence
     there would be an unprompted injection. ``memory_search`` is a
     tool call, so the same text is allowed through carrying its label.
     """
     from openprogram.functions.tools.memory import memory as memory_tool
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
-    from openprogram.memory.scriptorium.provider import (
-        ScriptoriumMemoryProvider,
-    )
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.local_backend import LocalMemoryBackend
 
     pending = _record(
         "m1", "unpaired-secret-phrase", trust="pending", tier=None,
@@ -215,7 +213,7 @@ def test_pending_text_is_kept_out_of_the_automatic_memory_injection(
         "openprogram.memory.store.ensure", lambda: tmp_path,
     )
 
-    injected = ScriptoriumMemoryProvider().search("phrase")
+    injected = LocalMemoryBackend().search("phrase")
     assert "unpaired-secret-phrase" not in injected
     assert "trusted-shared-phrase" in injected
 
@@ -229,9 +227,9 @@ def test_only_local_owner_can_promote_an_unpaired_source(
 ):
     from openprogram.agent.authority import AuthorityError
     from openprogram.functions.tools.memory.memory import _promote_source
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
-    from openprogram.memory.scriptorium.retrieval.bm25 import parse_source_file
-    from openprogram.memory.scriptorium.workspace_layout import runtime_dir
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.retrieval.bm25 import parse_source_file
+    from openprogram.memory.workspace_layout import runtime_dir
 
     local, paired = authorities
     pending = _record(
@@ -258,7 +256,7 @@ def test_only_local_owner_can_promote_an_unpaired_source(
     assert row["authority_tier"] == "owner"
 
     from openprogram.functions.tools.memory import memory as memory_tools
-    from openprogram.memory.scriptorium import writing
+    from openprogram.memory import writing
 
     monkeypatch.setattr(memory_tools, "_root", lambda: tmp_path)
     monkeypatch.setattr(
@@ -275,8 +273,8 @@ def test_only_local_owner_can_promote_an_unpaired_source(
 
 
 def test_promoted_source_is_sent_to_writer_once(tmp_path, monkeypatch):
-    from openprogram.memory.scriptorium import writing
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory import writing
+    from openprogram.memory.management import MemoryWorkspace
 
     trusted = _record(
         "m1", "approved group context", trust="trusted", tier=None,
@@ -306,7 +304,7 @@ def test_promoted_source_is_sent_to_writer_once(tmp_path, monkeypatch):
     assert "approved group context" in seen["task"]
 
     monkeypatch.setattr(
-        "openprogram.memory.scriptorium.markdown.parse_topic_tree",
+        "openprogram.memory.markdown.parse_topic_tree",
         lambda _root: [SimpleNamespace(source_refs=(trusted.source_id,))],
     )
     monkeypatch.setattr(
@@ -319,8 +317,8 @@ def test_promoted_source_is_sent_to_writer_once(tmp_path, monkeypatch):
 def test_paired_append_boundary_cannot_rewrite_existing_topics(
     tmp_path, monkeypatch,
 ):
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import (
         TransactionError,
     )
 
@@ -385,7 +383,7 @@ def test_paired_append_boundary_cannot_rewrite_existing_topics(
 
 def _archive(root, *records):
     from contextlib import closing as _closing
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.management import MemoryWorkspace
 
     with _closing(MemoryWorkspace(root)) as workspace:
         workspace.archive_source_records(list(records))
@@ -406,8 +404,8 @@ def _cite_patch(topic: str, ref: str, fact: str = "A fact.") -> str:
 
 def test_memory_update_cannot_cite_an_existing_pending_source(tmp_path):
     """A pending archived Source is not evidence until it is promoted."""
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import (
         TransactionError,
     )
 
@@ -435,7 +433,7 @@ def test_promotion_makes_the_same_reference_valid(tmp_path, authorities):
     """The same reference the validator refuses while pending passes once the
     owner has promoted it. The writer batch is the path that cites it."""
     from openprogram.functions.tools.memory import memory as memory_tools
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.management import MemoryWorkspace
 
     root = tmp_path / "memory"
     pending = _record("m1", "unpaired speech", trust="pending", tier=None)
@@ -455,8 +453,8 @@ def test_promotion_makes_the_same_reference_valid(tmp_path, authorities):
 def test_a_new_paragraph_cannot_borrow_a_reference_cited_elsewhere(tmp_path):
     """Trusted is not enough: new prose must rest on this transaction's own
     evidence, not on a Source some other Topic happens to cite."""
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import (
         TransactionError,
     )
 
@@ -485,7 +483,7 @@ def test_a_new_paragraph_cannot_borrow_a_reference_cited_elsewhere(tmp_path):
         borrowed = next(
             unit.source_refs[0]
             for unit in __import__(
-                "openprogram.memory.scriptorium.markdown",
+                "openprogram.memory.markdown",
                 fromlist=["parse_topic_tree"],
             ).parse_topic_tree(root / "topics")
             if unit.source_refs
@@ -506,7 +504,7 @@ def test_a_new_paragraph_cannot_borrow_a_reference_cited_elsewhere(tmp_path):
 
 def test_unchanged_paragraphs_keep_their_existing_references(tmp_path):
     """An edit elsewhere must not re-litigate a block's committed citations."""
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.management import MemoryWorkspace
 
     root = tmp_path / "memory"
     space = MemoryWorkspace(root)
@@ -560,7 +558,7 @@ def test_unchanged_paragraphs_keep_their_existing_references(tmp_path):
 
 def _test_provenance(tier: str = "owner"):
     """Runtime provenance a direct workspace.update() test must supply."""
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management.transaction import (
         SourceProvenance,
     )
 
@@ -578,7 +576,7 @@ def _test_provenance(tier: str = "owner"):
 
 
 def _source_frame(root, source_id):
-    from openprogram.memory.scriptorium.source_format import (
+    from openprogram.memory.source_format import (
         provider_source_location, scan_source_archive,
     )
 
@@ -609,7 +607,7 @@ _ONE_PATCH = (
 
 @pytest.mark.parametrize("tier", ["owner", "paired"])
 def test_created_sources_persist_runtime_provenance(tmp_path, tier):
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.management import MemoryWorkspace
 
     root = tmp_path / tier
     provenance = _test_provenance(tier)
@@ -634,8 +632,8 @@ def test_created_sources_persist_runtime_provenance(tmp_path, tier):
 
 
 def test_creating_a_source_without_authority_fails_closed(tmp_path):
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import (
         TransactionError, provenance_from_authority,
     )
 
@@ -659,7 +657,7 @@ def test_creating_a_source_without_authority_fails_closed(tmp_path):
 
 
 def test_same_origin_retry_is_idempotent_and_others_do_not_collide():
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management.transaction import (
         SourceInput, source_records,
     )
 
@@ -692,7 +690,7 @@ def test_same_origin_retry_is_idempotent_and_others_do_not_collide():
 
 def test_the_caller_cannot_choose_trust_tier_or_principal(tmp_path):
     """Extra identity keys in the model payload are ignored, not honoured."""
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.management import MemoryWorkspace
 
     root = tmp_path / "memory"
     forged = [{
@@ -725,11 +723,11 @@ def test_a_failed_trust_audit_leaves_no_trusted_source(
     import os as _os
 
     from openprogram.functions.tools.memory import memory as memory_tools
-    from openprogram.memory.scriptorium.management import MemoryWorkspace
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management import MemoryWorkspace
+    from openprogram.memory.management.transaction import (
         workspace_revision,
     )
-    from openprogram.memory.scriptorium.workspace_layout import runtime_dir
+    from openprogram.memory.workspace_layout import runtime_dir
 
     owner, _paired = authorities
     root = tmp_path / "memory"

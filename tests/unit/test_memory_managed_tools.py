@@ -7,8 +7,8 @@ import pytest
 
 @pytest.fixture
 def managed(tmp_path):
-    from openprogram.memory.scriptorium.management.tools import management_tools
-    from openprogram.memory.scriptorium.management.workspace import MemoryWorkspace
+    from openprogram.memory.management.tools import management_tools
+    from openprogram.memory.management.workspace import MemoryWorkspace
 
     workspace = MemoryWorkspace(tmp_path / "memory")
     audit = []

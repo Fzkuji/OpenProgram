@@ -125,7 +125,7 @@ def test_timeline_refuses_a_date_that_is_really_a_path(client):
 def test_status_route_returns_the_inspect_status_contract(
     client, monkeypatch,
 ):
-    from openprogram.memory.scriptorium.retrieval import inspect
+    from openprogram.memory.retrieval import inspect
 
     expected = {
         "workspace": "/memory",
@@ -213,7 +213,7 @@ def test_delete_removes_a_topic_nothing_points_at(client, memory):
 def test_save_gives_up_while_the_workspace_lock_is_held(
     client, memory, monkeypatch
 ):
-    from openprogram.memory.scriptorium.management.transaction import (
+    from openprogram.memory.management.transaction import (
         workspace_write_lock,
     )
     from openprogram.webui.routes import memory as routes

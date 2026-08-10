@@ -301,9 +301,9 @@ CPU, memory, and process-count quotas are explicitly outside this sandbox projec
 
 The memory writer has two execution surfaces and only one of them is reachable by `wrap_command`.
 
-The MCP `shell` tool (`memory/scriptorium/management/tools.py` → `workspace.shell()`) runs inside the OpenProgram process. It calls `LocalBackend._invocation(..., force_sandbox=True)` with the staging directory as cwd, so it refuses to execute when the host-native backend is unavailable even if interactive bash was explicitly turned off.
+The MCP `shell` tool (`memory/management/tools.py` → `workspace.shell()`) runs inside the OpenProgram process. It calls `LocalBackend._invocation(..., force_sandbox=True)` with the staging directory as cwd, so it refuses to execute when the host-native backend is unavailable even if interactive bash was explicitly turned off.
 
-The Claude Code CLI subprocess (`memory/scriptorium/agent_runtime/claude_code.py`) is a different matter. Its `Read`, `Write`, `Edit`, `Grep` and `Glob` execute inside the CLI process, where `wrap_command` cannot reach them, and `permission_mode="dontAsk"` disables its own approvals. The CLI process must not be sandboxed either, because it calls the Anthropic API and the sandbox has no network.
+The Claude Code CLI subprocess (`memory/agent_runtime/claude_code.py`) is a different matter. Its `Read`, `Write`, `Edit`, `Grep` and `Glob` execute inside the CLI process, where `wrap_command` cannot reach them, and `permission_mode="dontAsk"` disables its own approvals. The CLI process must not be sandboxed either, because it calls the Anthropic API and the sandbox has no network.
 
 The CLI process remains outside the OS sandbox so that it can call the Anthropic API. Its built-in `Read`, `Write`, `Edit`, `Grep`, `Glob`, and `Bash` tools are now explicitly disabled. OpenProgram injects MCP replacements for the five file operations; those replacements resolve paths against the staged workspace, reject writes under `sources/`, and append every result to the writer audit. The MCP `shell` replacement uses `LocalBackend._invocation(..., force_sandbox=True)` and refuses to execute when the platform sandbox is unavailable.
 
