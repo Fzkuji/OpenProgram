@@ -978,11 +978,29 @@ def test_memory_search_schema_and_function_forward_speaker(
 
     def fake_search(root, query, **kwargs):
         seen.update({"root": root, "query": query, **kwargs})
-        return {"method": "bm25", "results": [{
-            "event_id": "openprogram/thread/m1",
-            "path": "sources/openprogram/thread.md",
-            "content": "budget",
-        }]}
+        return {"method": "bm25", "results": [
+            {
+                "event_id": "openprogram/thread/m1",
+                "path": "sources/openprogram/_v2/thread.md",
+                "content": "trusted budget",
+                "speaker_id": "u456",
+                "speaker_display": "Ada",
+                "speaker_trusted": True,
+            },
+            {
+                "event_id": "openprogram/thread/m2",
+                "path": "sources/openprogram/thread.md",
+                "content": "legacy body-prefix budget",
+                "speaker_id": "u789",
+                "speaker_display": "Bo",
+                "speaker_trusted": False,
+            },
+            {
+                "event_id": "topic-block",
+                "path": "topics/projects/budget.md",
+                "content": "topic budget",
+            },
+        ]}
 
     monkeypatch.setattr(tool, "_root", lambda: tmp_path / "memory")
     monkeypatch.setattr(tool.inspect, "search", fake_search)
@@ -991,4 +1009,21 @@ def test_memory_search_schema_and_function_forward_speaker(
 
     assert "speaker" in tool.SEARCH_SPEC["parameters"]["properties"]
     assert seen["speaker"] == "u456"
-    assert "budget" in rendered
+    assert (
+        f"sources/openprogram/_v2/thread.md#{_anchor('openprogram/thread/m1')}"
+        in rendered
+    )
+    assert (
+        f"sources/openprogram/thread.md#{_anchor('openprogram/thread/m2')}"
+        in rendered
+    )
+    assert "#^openprogram/thread/" not in rendered
+    assert "topics/projects/budget.md#^topic-block" in rendered
+    assert (
+        'speaker: {"speaker_trusted":true,"speaker_id":"u456",'
+        '"speaker_display":"Ada"}' in rendered
+    )
+    assert (
+        'speaker: {"speaker_trusted":false,"speaker_id":"u789",'
+        '"speaker_display":"Bo"}' in rendered
+    )

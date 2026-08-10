@@ -24,6 +24,7 @@ from openprogram.memory.scriptorium.management.transaction import (
 )
 from openprogram.memory.provider import sanitize_context
 from openprogram.memory.scriptorium.retrieval import inspect
+from openprogram.memory.scriptorium.source_format import provider_source_location
 
 MAX_SNIPPETS = 8
 
@@ -49,7 +50,7 @@ def _dump(payload: dict[str, Any]) -> str:
 SEARCH_NAME = "memory_search"
 SEARCH_DESC = (
     "Search memory by meaning and return the matching paragraphs with "
-    "their file paths and block IDs. Use this when you know what you are "
+    "their file paths and stable anchors. Use this when you know what you are "
     "looking for but not how it was worded. For an exact name, ID or "
     "phrase use `memory_grep` instead."
 )
@@ -97,10 +98,32 @@ def memory_search(
         return f"No memory matches {query!r}."
     lines = []
     for hit in results:
-        where = hit.get("path", "?")
+        where = str(hit.get("path") or "?")
         block = hit.get("event_id")
-        head = f"{where}" + (f"#^{block}" if block else "")
-        lines.append(f"--- {head}\n{sanitize_context(hit.get('content', ''))}")
+        source = where.startswith("sources/")
+        suffix = ""
+        if block:
+            if source:
+                location = provider_source_location(str(block))
+                if location is not None:
+                    suffix = f"#{location[1]}"
+            else:
+                suffix = f"#^{block}"
+        metadata = ""
+        if source:
+            metadata = "\nspeaker: " + json.dumps({
+                "speaker_trusted": hit.get("speaker_trusted") is True,
+                "speaker_id": sanitize_context(
+                    str(hit.get("speaker_id") or "")
+                ),
+                "speaker_display": sanitize_context(
+                    str(hit.get("speaker_display") or "")
+                ),
+            }, ensure_ascii=False, separators=(",", ":"))
+        lines.append(
+            f"--- {where}{suffix}{metadata}\n"
+            f"{sanitize_context(str(hit.get('content') or ''))}"
+        )
     return "\n\n".join(lines)
 
 
