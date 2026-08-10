@@ -238,18 +238,26 @@ class SourceArchiveMixin:
                 raise ValueError("source record role/speaker label is empty")
             grouped.setdefault(location[0], []).append(record)
         paths = _preflight_archive_paths(target_root, list(grouped))
-        refs = []
-        for relative, rows in grouped.items():
+        existing: dict[Path, tuple[str, set[str]]] = {}
+        for relative in grouped:
             path = paths[relative]
-            path.parent.mkdir(parents=True, exist_ok=True)
             text = _read_literal_text(path) if path.exists() else ""
             if text:
                 scan = scan_v2_archive(text, relative)
                 if not scan.complete:
-                    raise ValueError(f"invalid or truncated v2 archive: {relative}")
+                    raise ValueError(
+                        f"invalid or truncated v2 archive: {relative}"
+                    )
                 known = scan.known_source_ids
             else:
                 known = set()
+            existing[relative] = (text, known)
+
+        refs = []
+        for relative, rows in grouped.items():
+            path = paths[relative]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            text, known = existing[relative]
             additions = []
             for record in rows:
                 refs.append(record.source_id)

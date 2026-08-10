@@ -841,6 +841,49 @@ def test_v2_same_logical_path_accepts_multiple_messages(tmp_path: Path) -> None:
     ] == ["openprogram/thread/m1", "openprogram/thread/m2"]
 
 
+@pytest.mark.parametrize(
+    ("invalid_provider", "writable_provider"),
+    [("aaa", "zzz"), ("zzz", "aaa")],
+    ids=["invalid-first", "invalid-last"],
+)
+def test_v2_preflights_all_existing_archives_before_any_write(
+    tmp_path: Path,
+    invalid_provider: str,
+    writable_provider: str,
+) -> None:
+    from openprogram.memory.scriptorium.management.transaction import (
+        workspace_revision,
+    )
+
+    root = tmp_path / "memory"
+    invalid = root / f"sources/{invalid_provider}/_v2/thread.md"
+    invalid.parent.mkdir(parents=True)
+    invalid.write_text(
+        "<!-- openprogram-source-archive:v2 -->\n\n"
+        '<a id="truncated"></a>\n',
+        encoding="utf-8",
+    )
+    records = [
+        SourceRecord(
+            writable_provider, "thread", "m1", 1, "user", "would append"
+        ),
+        SourceRecord(
+            invalid_provider, "thread", "m1", 1, "user", "invalid target"
+        ),
+    ]
+    space = MemoryWorkspace(root)
+    revision_before = workspace_revision(root)
+    tree_before = _source_tree(root)
+    try:
+        with pytest.raises(ValueError, match="invalid or truncated"):
+            space.archive_source_records(records)
+    finally:
+        space.close()
+
+    assert workspace_revision(root) == revision_before
+    assert _source_tree(root) == tree_before
+
+
 def test_v2_existing_case_equivalent_path_blocks_later_spelling(
     tmp_path: Path,
 ) -> None:
