@@ -15,6 +15,7 @@ module-level from-import.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import threading
@@ -363,128 +364,133 @@ def run_loop_blocking(
         # don't carry the input args, so we stash them at start time.
         tool_inputs_by_id: dict[str, dict] = {}
 
-        async for ev in _aiter_event_stream(ev_stream):
-            envelope = _agent_event_to_envelope(ev, req)
-            if envelope is not None:
-                on_event(envelope)
-            # Side-effects we care about for the final result.
-            # Approval is gated INSIDE the wrapped tool execute (see
-            # _wrap_with_approval) — by the time tool_execution_start
-            # fires, the user has already approved (or the wrapper
-            # short-circuited with a denial result).
-            if hasattr(ev, "type"):
-                if ev.type == "tool_execution_start":
-                    _tid = getattr(ev, "tool_call_id", None)
-                    _args = getattr(ev, "args", None)
-                    if _tid is not None:
-                        tool_inputs_by_id[_tid] = {
-                            "tool": getattr(ev, "tool_name", None),
-                            "input": json.dumps(_args, default=str)
-                                     if _args is not None else None,
+        # aclosing so an early exit (the LLMError raise below) runs the
+        # generator's finally/aclose here, instead of leaving it for the
+        # GC to schedule on a loop we are about to close.
+        async with contextlib.aclosing(
+                _aiter_event_stream(ev_stream)) as _events:
+            async for ev in _events:
+                envelope = _agent_event_to_envelope(ev, req)
+                if envelope is not None:
+                    on_event(envelope)
+                # Side-effects we care about for the final result.
+                # Approval is gated INSIDE the wrapped tool execute (see
+                # _wrap_with_approval) — by the time tool_execution_start
+                # fires, the user has already approved (or the wrapper
+                # short-circuited with a denial result).
+                if hasattr(ev, "type"):
+                    if ev.type == "tool_execution_start":
+                        _tid = getattr(ev, "tool_call_id", None)
+                        _args = getattr(ev, "args", None)
+                        if _tid is not None:
+                            tool_inputs_by_id[_tid] = {
+                                "tool": getattr(ev, "tool_name", None),
+                                "input": json.dumps(_args, default=str)
+                                         if _args is not None else None,
+                            }
+                    if ev.type == "tool_execution_end":
+                        _tid = getattr(ev, "tool_call_id", None)
+                        _meta = tool_inputs_by_id.get(_tid, {})
+                        _tc = {
+                            "id": _tid,
+                            "tool_call_id": _tid,
+                            "tool": getattr(ev, "tool_name", None) or _meta.get("tool"),
+                            "input": _meta.get("input"),
+                            "result": _shorten(getattr(ev, "result", "")),
+                            "is_error": bool(getattr(ev, "is_error", False)),
                         }
-                if ev.type == "tool_execution_end":
-                    _tid = getattr(ev, "tool_call_id", None)
-                    _meta = tool_inputs_by_id.get(_tid, {})
-                    _tc = {
-                        "id": _tid,
-                        "tool_call_id": _tid,
-                        "tool": getattr(ev, "tool_name", None) or _meta.get("tool"),
-                        "input": _meta.get("input"),
-                        "result": _shorten(getattr(ev, "result", "")),
-                        "is_error": bool(getattr(ev, "is_error", False)),
-                    }
-                    tool_calls.append(_tc)
-                if ev.type == "turn_end":
-                    msg = getattr(ev, "message", None)
-                    if getattr(msg, "stop_reason", None) == "error":
-                        # Stream-level provider failure (HTTP 4xx/5xx
-                        # surfaced as an error event, not an exception).
-                        # Without this the turn "succeeds" with empty
-                        # text — a blank assistant bubble. Re-raise as
-                        # LLMError so the dispatcher's exception path
-                        # renders the red error bubble with taxonomy,
-                        # same as a synchronously-raised failure.
-                        from openprogram.providers.utils.errors import (
-                            ErrorReason, LLMError,
-                        )
-                        _reason_val = getattr(msg, "error_reason", None)
-                        try:
-                            _reason = (ErrorReason(_reason_val)
-                                       if _reason_val else ErrorReason.UNKNOWN)
-                        except ValueError:
-                            _reason = ErrorReason.UNKNOWN
-                        raise LLMError(
-                            message=(getattr(msg, "error_message", "") or
-                                     "provider returned an error"),
-                            reason=_reason,
-                            retryable=bool(
-                                getattr(msg, "error_retryable", None) or False),
-                            retry_after_s=getattr(
-                                msg, "error_retry_after_s", None),
-                            provider=getattr(msg, "provider", None),
-                            model=getattr(msg, "model", None),
-                        )
-                    text = _extract_text(msg)
-                    if text:
-                        final_text_parts.append(text)
-                    usage = _extract_usage(msg)
-                    for k in ("input_tokens", "output_tokens",
-                              "cache_read_tokens", "cache_write_tokens"):
-                        usage_total[k] += usage.get(k, 0)
-                    # 当前上下文占用 ≈ 最后一次调用的 prompt 体积
-                    # （input + cache_read）。turn 内多次调用的 input
-                    # 之和会远超窗口，只能用于计费，不能用于占用率。
-                    usage_total["context_tokens"] = (
-                        usage.get("input_tokens", 0)
-                        + usage.get("cache_read_tokens", 0)
-                    )
-                    # Build ordered blocks from msg.content so the
-                    # webui can render thinking / text / tool cards
-                    # interleaved in their original LLM emission
-                    # order. Without this the bubble shows all LLM
-                    # text first and then every tool card stacked at
-                    # the bottom — wrong when the LLM said something,
-                    # called a tool, then kept narrating.
-                    if ordered_blocks_out is not None and msg is not None:
-                        try:
-                            for blk in getattr(msg, "content", None) or []:
-                                btype = getattr(blk, "type", None)
-                                if btype == "text":
-                                    _t = getattr(blk, "text", "") or ""
-                                    if _t:
-                                        ordered_blocks_out.append(
-                                            {"type": "text", "text": _t}
-                                        )
-                                elif btype == "thinking":
-                                    _t = getattr(blk, "thinking", "") or ""
-                                    if _t:
-                                        ordered_blocks_out.append(
-                                            {"type": "thinking", "text": _t}
-                                        )
-                                elif btype == "toolCall":
-                                    _tid = getattr(blk, "id", None)
-                                    _name = getattr(blk, "name", None)
-                                    _args = getattr(blk, "arguments", None)
-                                    try:
-                                        _input = (
-                                            json.dumps(_args, default=str)
-                                            if _args is not None else None
-                                        )
-                                    except (TypeError, ValueError):
-                                        _input = None
-                                    ordered_blocks_out.append({
-                                        "type": "tool",
-                                        "tool": _name,
-                                        "tool_call_id": _tid,
-                                        "input": _input,
-                                    })
-                        except Exception:
-                            # Provider block shapes vary; a normalisation miss
-                            # costs one rendered block, not the turn.
-                            _log.debug(
-                                "provider block normalisation failed",
-                                exc_info=True,
+                        tool_calls.append(_tc)
+                    if ev.type == "turn_end":
+                        msg = getattr(ev, "message", None)
+                        if getattr(msg, "stop_reason", None) == "error":
+                            # Stream-level provider failure (HTTP 4xx/5xx
+                            # surfaced as an error event, not an exception).
+                            # Without this the turn "succeeds" with empty
+                            # text — a blank assistant bubble. Re-raise as
+                            # LLMError so the dispatcher's exception path
+                            # renders the red error bubble with taxonomy,
+                            # same as a synchronously-raised failure.
+                            from openprogram.providers.utils.errors import (
+                                ErrorReason, LLMError,
                             )
+                            _reason_val = getattr(msg, "error_reason", None)
+                            try:
+                                _reason = (ErrorReason(_reason_val)
+                                           if _reason_val else ErrorReason.UNKNOWN)
+                            except ValueError:
+                                _reason = ErrorReason.UNKNOWN
+                            raise LLMError(
+                                message=(getattr(msg, "error_message", "") or
+                                         "provider returned an error"),
+                                reason=_reason,
+                                retryable=bool(
+                                    getattr(msg, "error_retryable", None) or False),
+                                retry_after_s=getattr(
+                                    msg, "error_retry_after_s", None),
+                                provider=getattr(msg, "provider", None),
+                                model=getattr(msg, "model", None),
+                            )
+                        text = _extract_text(msg)
+                        if text:
+                            final_text_parts.append(text)
+                        usage = _extract_usage(msg)
+                        for k in ("input_tokens", "output_tokens",
+                                  "cache_read_tokens", "cache_write_tokens"):
+                            usage_total[k] += usage.get(k, 0)
+                        # 当前上下文占用 ≈ 最后一次调用的 prompt 体积
+                        # （input + cache_read）。turn 内多次调用的 input
+                        # 之和会远超窗口，只能用于计费，不能用于占用率。
+                        usage_total["context_tokens"] = (
+                            usage.get("input_tokens", 0)
+                            + usage.get("cache_read_tokens", 0)
+                        )
+                        # Build ordered blocks from msg.content so the
+                        # webui can render thinking / text / tool cards
+                        # interleaved in their original LLM emission
+                        # order. Without this the bubble shows all LLM
+                        # text first and then every tool card stacked at
+                        # the bottom — wrong when the LLM said something,
+                        # called a tool, then kept narrating.
+                        if ordered_blocks_out is not None and msg is not None:
+                            try:
+                                for blk in getattr(msg, "content", None) or []:
+                                    btype = getattr(blk, "type", None)
+                                    if btype == "text":
+                                        _t = getattr(blk, "text", "") or ""
+                                        if _t:
+                                            ordered_blocks_out.append(
+                                                {"type": "text", "text": _t}
+                                            )
+                                    elif btype == "thinking":
+                                        _t = getattr(blk, "thinking", "") or ""
+                                        if _t:
+                                            ordered_blocks_out.append(
+                                                {"type": "thinking", "text": _t}
+                                            )
+                                    elif btype == "toolCall":
+                                        _tid = getattr(blk, "id", None)
+                                        _name = getattr(blk, "name", None)
+                                        _args = getattr(blk, "arguments", None)
+                                        try:
+                                            _input = (
+                                                json.dumps(_args, default=str)
+                                                if _args is not None else None
+                                            )
+                                        except (TypeError, ValueError):
+                                            _input = None
+                                        ordered_blocks_out.append({
+                                            "type": "tool",
+                                            "tool": _name,
+                                            "tool_call_id": _tid,
+                                            "input": _input,
+                                        })
+                            except Exception:
+                                # Provider block shapes vary; a normalisation miss
+                                # costs one rendered block, not the turn.
+                                _log.debug(
+                                    "provider block normalisation failed",
+                                    exc_info=True,
+                                )
 
         return "".join(final_text_parts).strip(), usage_total, tool_calls
 
@@ -496,4 +502,11 @@ def run_loop_blocking(
         # Let the cancel-bridge thread exit before the loop it would post to
         # is gone.
         _turn_over.set()
+        # Close any async generator the provider/agent layers left open
+        # (an abandoned one otherwise schedules its aclose onto this loop
+        # right as we close it, which never runs and warns at GC time).
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        except Exception:
+            _log.debug("asyncgen shutdown failed", exc_info=True)
         loop.close()

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import React from 'react';
-import { render } from 'ink-testing-library';
+import { render } from './renderToFrame.js';
 import { Welcome } from '../src/components/Welcome.js';
 
 const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');

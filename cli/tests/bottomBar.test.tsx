@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import React from 'react';
-import { render } from 'ink-testing-library';
+import { render } from './renderToFrame.js';
 import { BottomBar } from '../src/components/BottomBar.js';
 
 const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
@@ -16,16 +16,17 @@ describe('BottomBar', () => {
     expect(out).toContain('local_abc1234');
   });
 
-  it('switches the left hint when slashMode is active', () => {
+  it('switches the left hint for busy and exit-pending', () => {
+    // Idle hint is context-only; slash/file picker instructions live
+    // beside those pickers, not in the persistent bottom bar.
     const idle = render(<BottomBar agent="main" />);
-    const idleOut = stripAnsi(idle.lastFrame() ?? '');
-    // Idle hint is now context-only; "type / for commands" lives inside
-    // the input box, not in the bottom bar.
-    expect(idleOut).toContain('ctrl+c quit');
+    expect(stripAnsi(idle.lastFrame() ?? '')).toContain('ctrl+r search context');
 
-    const slash = render(<BottomBar agent="main" slashMode />);
-    const slashOut = stripAnsi(slash.lastFrame() ?? '');
-    expect(slashOut).toContain('↑↓ choose');
+    const busy = render(<BottomBar agent="main" busy />);
+    expect(stripAnsi(busy.lastFrame() ?? '')).toContain('esc to stop');
+
+    const exiting = render(<BottomBar agent="main" exitPending />);
+    expect(stripAnsi(exiting.lastFrame() ?? '')).toContain('press ctrl+c again to exit');
   });
 
   it('renders permission + thinking effort cycle indicators', () => {

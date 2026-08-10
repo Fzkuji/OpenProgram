@@ -6,8 +6,8 @@ import type { AccountsState, AddStarted } from '../src/utils/providerAccounts.js
 // We assert on the returned React element's PROPS rather than rendering it.
 // The picker builder returns a <Picker> or <LineInput> with fully-formed
 // items / handlers, so prop inspection exercises all the panel's logic
-// (which rows, what each selection does) without needing Ink to render —
-// ink-testing-library can't resolve `ink` under vitest in this repo.
+// (which rows, what each selection does) without needing Ink to render.
+// Rendering tests use tests/renderToFrame.tsx instead.
 
 const flush = () => new Promise((r) => setTimeout(r, 10));
 
