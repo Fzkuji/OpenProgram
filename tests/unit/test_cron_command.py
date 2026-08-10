@@ -58,15 +58,15 @@ def test_create_with_command_persists_command_field(sched):
     assert spec["job_authority"]["authority_tier"] == "owner"
 
 
-def test_shared_channel_cannot_create_or_delete_jobs(sched, monkeypatch):
-    from openprogram.agent.authority import shared_channel_authority
+def test_paired_channel_cannot_create_or_delete_jobs(sched, monkeypatch):
+    from openprogram.agent.authority import paired_channel_authority
 
     assert "Created cron entry" in _create(cron="@daily", command="echo kept")
     entry_id = cron_tool._load(str(sched))[0]["id"]
     monkeypatch.setattr(
         cron_tool,
         "_caller_authority",
-        lambda: shared_channel_authority("telegram", "main", "u456", "B"),
+        lambda: paired_channel_authority("telegram", "main", "u456", "B"),
     )
     out = _create(cron="@daily", command="echo no")
     assert "authority" in out.lower()

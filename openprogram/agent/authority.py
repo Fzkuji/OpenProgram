@@ -123,7 +123,7 @@ def local_owner_authority() -> dict[str, Any]:
     }
 
 
-def shared_channel_authority(
+def paired_channel_authority(
     channel: str,
     account_id: str,
     user_id: str,
@@ -340,7 +340,7 @@ def decide_tool_authority(
 
 __all__ = [
     "AuthorityError", "AuthorityDecision", "AuthorityTier", "TIER_CAPABILITIES",
-    "owner_principal_id", "local_owner_authority", "shared_channel_authority",
+    "owner_principal_id", "local_owner_authority", "paired_channel_authority",
     "runtime_authority", "normalize_authority",
     "authority_from_message", "has_capability", "decide_capability",
     "render_model_input", "render_model_input_from", "sanitize_speaker_display",

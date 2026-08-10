@@ -78,9 +78,8 @@ that prompt-injection surface entirely.
    archived speech (they cannot converse, but group archives still carry
    their lines).
 3. **Scope-batch naming**: runtime values use paired/unpaired terminology.
-   The remaining `shared_channel_authority` helper name is symbol-level debt;
-   rename it in the follow-up batch with no compatibility alias, updating
-   all call sites in one pass.
+   The authority helper is named `paired_channel_authority`, matching the
+   runtime tier terminology; the earlier shared-channel name has no alias.
 4. **The historical diagnostics-key report is closed without a product code
    change.** At 2026-08-10 20:53 CST, a Codex `exec` call directly ran
    `sed -n 1,220p /Users/fzkuji/.openprogram/config.json`; the tool result
@@ -146,12 +145,12 @@ that prompt-injection surface entirely.
   The Web boundary uses one router dependency, including reads, and returns a
   structured `MEMORY_DISABLED` response. The focused route/config tests pass,
   and the combined memory/authority/channel set passes 298 tests.
-- **Combined coverage — deferred:** add a full automatic-writing integration
-  test and an unavailable-model failure test; the current unavailable-model
-  coverage exercises only the successful path.
-- **Naming cleanup — deferred:** rename `shared_channel_authority` to paired
-  terminology the next time its authority call sites change. Its returned tier
-  is already `paired`.
+- **Combined coverage — resolved:** the automatic-writing integration test
+  composes the real session store, writer runtime, staged install, markers,
+  and idle-watcher state. Unavailable-model and lazy credential failures are
+  non-retryable and skipped by the following watcher poll.
+- **Naming cleanup — resolved:** `paired_channel_authority` now matches the
+  returned `paired` tier, with no compatibility alias for the old name.
 
 ## Sequencing
 

@@ -32,7 +32,7 @@ def authorities(tmp_path, monkeypatch):
     authority._reset_owner_cache_for_tests()
     return (
         authority.local_owner_authority(),
-        authority.shared_channel_authority(
+        authority.paired_channel_authority(
             "telegram", "main", "u456", "B",
         ),
     )

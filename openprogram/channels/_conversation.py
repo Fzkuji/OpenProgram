@@ -285,8 +285,8 @@ def _run_session_turn(
                     break
             _maybe_edit("\n".join(progress_lines))
 
-    from openprogram.agent.authority import shared_channel_authority
-    _authority = shared_channel_authority(
+    from openprogram.agent.authority import paired_channel_authority
+    _authority = paired_channel_authority(
         channel, account_id, speaker_id or "",
         speaker_display or user_display,
     )
