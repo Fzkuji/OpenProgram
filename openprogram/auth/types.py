@@ -4,7 +4,7 @@ Auth v2 — type definitions.
 Design goals that shape every type here:
 
   - one process-wide source of truth (:class:`AuthStore`) keyed by
-    ``(provider_id, profile_id)``; every runtime asks the store, never
+    ``(provider_id, account_id)``; every runtime asks the store, never
     caches its own copy
   - credentials are a tagged union so future auth kinds (SSO, hardware
     keys, enterprise JWT brokers) drop in without touching call sites
@@ -33,8 +33,8 @@ from typing import Any, Callable, Literal, Optional, Protocol
 
 # Schema version for on-disk credential files. Every write stamps this;
 # every read checks it. Mismatches are treated as corrupt rather than
-# silently migrated — callers escalate to "re-auth this profile".
-CREDENTIAL_SCHEMA_VERSION = 2
+# silently migrated — callers escalate to "re-auth this account".
+CREDENTIAL_SCHEMA_VERSION = 3
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ CredentialKind = Literal[
     "cli_delegated",    # another tool's auth file we read through (read-only)
     "device_code",      # same payload shape as oauth but obtained via device flow;
                         # kept distinct so metrics + UI can show the origin
-    "external_process", # credential is produced by shelling out to a helper each use
+    "credential_process", # credential is produced by shelling out to a helper each use
     "sso",              # enterprise SSO — reserved, not implemented; kind exists so
                         # the discriminator carries a valid value when stubbed out
 ]
@@ -98,10 +98,10 @@ class AuthReference:
       — Claude Code CLI reads its own OAuth from this file. Our job
       is ensuring its HOME/XDG vars point at the right dir so the CLI
       finds the file; we never decode the contents.
-    - ``kind="credential_ref"`` + ``provider_id`` + ``profile_id`` —
-      "use whatever AuthManager currently returns for this pool".
-      Useful for cross-profile reuse (a subprocess runtime that wants
-      to share credentials with an API runtime's profile without
+    - ``kind="credential_ref"`` + ``provider_id`` + ``account_id`` —
+      "use whatever CredentialProvider currently returns for this pool".
+      Useful for cross-account reuse (a subprocess runtime that wants
+      to share credentials with an API runtime's account without
       duplicating the Credential entry).
 
     Intentionally not a union member of :class:`CredentialPayload` —
@@ -113,9 +113,9 @@ class AuthReference:
     # external_file: path to a vendor-CLI-owned auth file. The runtime
     # only uses this to derive HOME / env vars; contents are opaque.
     store_path: Optional[str] = None
-    # credential_ref: target pool to delegate to. Resolve via AuthManager.
+    # credential_ref: target pool to delegate to. Resolve via CredentialProvider.
     provider_id: Optional[str] = None
-    profile_id: Optional[str] = None
+    account_id: Optional[str] = None
     # Free-form metadata for provider-specific hints (e.g. the HOME dir
     # the CLI expects, the env var name it reads from).
     metadata: dict = field(default_factory=dict)
@@ -125,10 +125,10 @@ class AuthReference:
             raise ValueError(
                 "AuthReference(kind='external_file') requires store_path"
             )
-        if self.kind == "credential_ref" and not (self.provider_id and self.profile_id):
+        if self.kind == "credential_ref" and not (self.provider_id and self.account_id):
             raise ValueError(
                 "AuthReference(kind='credential_ref') requires provider_id "
-                "and profile_id"
+                "and account_id"
             )
 
 
@@ -143,7 +143,7 @@ class Credential:
     """
 
     provider_id: str
-    profile_id: str
+    account_id: str
     kind: CredentialKind
     payload: CredentialPayload
     status: CredentialStatus = "valid"
@@ -162,7 +162,7 @@ class Credential:
     use_count: int = 0
     last_error: Optional[str] = None
     # Marks credentials that come from a ``kind="cli_delegated"`` source
-    # or an external-import profile. Write operations (refresh, rotate) on
+    # or an external-import account. Write operations (refresh, rotate) on
     # read-only credentials either no-op or raise AuthReadOnlyError
     # depending on the call site — the manager enforces the rule, not
     # individual sources.
@@ -175,7 +175,7 @@ class Credential:
         return {
             "v": CREDENTIAL_SCHEMA_VERSION,
             "provider_id": self.provider_id,
-            "profile_id": self.profile_id,
+            "account_id": self.account_id,
             "kind": self.kind,
             "payload": _payload_to_dict(self.payload),
             "status": self.status,
@@ -199,7 +199,7 @@ class Credential:
             )
         return cls(
             provider_id=d["provider_id"],
-            profile_id=d["profile_id"],
+            account_id=d["account_id"],
             kind=d["kind"],
             payload=_payload_from_dict(d["kind"], d["payload"]),
             status=d.get("status", "valid"),
@@ -252,9 +252,9 @@ PoolStrategy = Literal["fixed", "fill_first", "round_robin", "random", "least_us
 class CredentialPool:
     """Multiple credentials for the same provider, picked by strategy.
 
-    Pool membership is a property of :class:`Profile`: a profile can bundle
+    Pool membership is a property of :class:`Account`: a account can bundle
     several keys (e.g. two OpenAI keys for hedging against rate limits).
-    Profiles without multiple keys still go through the pool — it's just
+    Accounts without multiple keys still go through the pool — it's just
     a one-element list. Unifying the code path avoids two "thin vs fat"
     branches in the manager.
 
@@ -270,7 +270,7 @@ class CredentialPool:
     """
 
     provider_id: str
-    profile_id: str
+    account_id: str
     strategy: PoolStrategy = "fill_first"
     credentials: list[Credential] = field(default_factory=list)
     # Strategy-private state. Kept on the pool rather than in a closure so
@@ -281,14 +281,14 @@ class CredentialPool:
     # Empty ⇒ the first credential.
     active_credential_id: str = ""
     # Pool-level cascade: if every member is cooled-down / broken, the
-    # manager falls back to these provider+profile pairs in order before
-    # giving up. Each entry is a (provider_id, profile_id) tuple.
+    # manager falls back to these provider+account pairs in order before
+    # giving up. Each entry is a (provider_id, account_id) tuple.
     fallback_chain: list[tuple[str, str]] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
             "provider_id": self.provider_id,
-            "profile_id": self.profile_id,
+            "account_id": self.account_id,
             "strategy": self.strategy,
             "credentials": [c.to_dict() for c in self.credentials],
             "_rr_cursor": self._rr_cursor,
@@ -300,7 +300,7 @@ class CredentialPool:
     def from_dict(cls, d: dict) -> "CredentialPool":
         return cls(
             provider_id=d["provider_id"],
-            profile_id=d["profile_id"],
+            account_id=d["account_id"],
             strategy=d.get("strategy", "fill_first"),
             credentials=[Credential.from_dict(c) for c in (d.get("credentials") or [])],
             _rr_cursor=d.get("_rr_cursor", 0),
@@ -310,29 +310,35 @@ class CredentialPool:
 
 
 # ---------------------------------------------------------------------------
-# Profile — isolation boundary
+# Account — isolation boundary
 # ---------------------------------------------------------------------------
 
 @dataclass
-class Profile:
+class Account:
     """A fully isolated auth + subprocess environment.
 
-    Each profile has its own filesystem root:
-      ~/.openprogram/profiles/<name>/
-        auth/<provider>/<profile_id>.json   credential pools
+    Each account has its own filesystem root (the directory is still
+    named ``accounts/`` on disk — renaming it would strand every
+    existing user's stored credentials for no functional gain):
+      ~/.openprogram/accounts/<name>/
+        auth/<provider>/<account_id>.json   credential pools
         home/                                subprocess HOME override
-        .env                                 per-profile env vars
+        .env                                 per-account env vars
         metadata.json                        display name, created_at, …
 
-    When a call runs "under" a profile, subprocesses it spawns see
+    When a call runs "under" an account, subprocesses it spawns see
     ``HOME``, ``XDG_*`` pointed at ``home/`` so tools like ``git`` /
-    ``ssh`` / ``gh`` / ``npm`` don't leak credentials across profiles.
-    This matches hermes-agent's profile model, which is the only OSS
+    ``ssh`` / ``gh`` / ``npm`` don't leak credentials across accounts.
+    This matches hermes-agent's isolation model, which is the only OSS
     agent framework that has taken this problem seriously.
+
+    Distinct from the workspace account in :mod:`openprogram.paths`
+    (``--account`` / ``~/.openprogram-<name>``), which scopes config and
+    sessions rather than credentials.
     """
 
     name: str                                  # user-facing identifier
-    root: Path                                 # profile filesystem root
+    root: Path                                 # account filesystem root
     created_at_ms: int
     display_name: str = ""
     description: str = ""
@@ -371,17 +377,17 @@ class AuthEventType(str, Enum):
     POOL_MEMBER_COOLDOWN = "pool_member_cooldown"
     POOL_ROTATED = "pool_rotated"
     POOL_EXHAUSTED = "pool_exhausted"
-    # Profile-lifecycle
-    PROFILE_CREATED = "profile_created"
-    PROFILE_DELETED = "profile_deleted"
-    PROFILE_ACTIVATED = "profile_activated"
+    # Account-lifecycle
+    ACCOUNT_CREATED = "account_created"
+    ACCOUNT_DELETED = "account_deleted"
+    ACCOUNT_ACTIVATED = "account_activated"
 
 
 @dataclass
 class AuthEvent:
     type: AuthEventType
     provider_id: str = ""
-    profile_id: str = ""
+    account_id: str = ""
     credential_id: str = ""
     detail: dict = field(default_factory=dict)
     timestamp_ms: int = field(default_factory=lambda: int(time.time() * 1000))
@@ -403,16 +409,16 @@ class AuthError(Exception):
     """
 
     provider_id: str = ""
-    profile_id: str = ""
+    account_id: str = ""
 
-    def __init__(self, message: str, *, provider_id: str = "", profile_id: str = "") -> None:
+    def __init__(self, message: str, *, provider_id: str = "", account_id: str = "") -> None:
         super().__init__(message)
         self.provider_id = provider_id
-        self.profile_id = profile_id
+        self.account_id = account_id
 
 
 class AuthConfigError(AuthError):
-    """Provider/profile not registered, or registered wrong."""
+    """Provider/account not registered, or registered wrong."""
 
 
 class AuthCorruptCredentialError(AuthError):
@@ -463,8 +469,8 @@ class AuthNeedsReauthError(AuthError):
     Webui listens for this, surfaces a banner, doesn't retry."""
 
 
-class AuthExternalProcessError(AuthError):
-    """A configured ``external_process`` helper failed to produce a token.
+class AuthCredentialProcessError(AuthError):
+    """A configured ``credential_process`` helper failed to produce a token.
 
     Deliberately NOT swallowed by the resolver's fall-through ladder: the
     user explicitly configured a helper command, so silently dropping to
@@ -491,8 +497,8 @@ class RemovalStep:
     Example: a credential imported from ``~/.codex/auth.json`` needs one
     step — a note that the user must ``codex logout`` to remove the
     underlying file (we don't touch external CLI stores). A credential
-    we created via PKCE has one step — delete ``profiles/<p>/auth/<prov>/
-    <profile>.json``. A credential that was also referenced by an env var
+    we created via PKCE has one step — delete ``accounts/<p>/auth/<prov>/
+    <account>.json``. A credential that was also referenced by an env var
     hint has an informational step telling the user to unset that var.
 
     Steps with ``executable=True`` are run by the manager on removal;
@@ -525,12 +531,12 @@ class CredentialSource(Protocol):
       * ``qwen_cli.py``, ``gh_cli.py`` — same pattern
 
     ``try_import`` is allowed to return multiple credentials (e.g. a file
-    with several accounts); each becomes its own profile id.
+    with several accounts); each becomes its own account id.
     """
 
     source_id: str
 
-    def try_import(self, profile_root: Path) -> list[Credential]: ...
+    def try_import(self, account_root: Path) -> list[Credential]: ...
 
     def removal_steps(self, cred: Credential) -> list[RemovalStep]: ...
 
@@ -584,13 +590,13 @@ __all__ = [
     "CredentialPayload", "Credential",
     "AuthReference",
     "PoolStrategy", "CredentialPool",
-    "Profile",
+    "Account",
     "AuthEventType", "AuthEvent", "AuthEventListener",
     "AuthError", "AuthConfigError", "AuthCorruptCredentialError",
     "AuthReadOnlyError", "AuthRefreshError", "AuthRotationConsumedError",
     "AuthExpiredError", "AuthRateLimitedError", "AuthBillingBlockedError",
     "AuthRevokedError", "AuthNeedsReauthError", "AuthPoolExhaustedError",
-    "AuthExternalProcessError",
+    "AuthCredentialProcessError",
     "RemovalStep",
     "CredentialSource", "LoginMethod", "LoginUi",
 ]

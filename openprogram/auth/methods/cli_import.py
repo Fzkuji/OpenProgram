@@ -84,11 +84,11 @@ class CliImportMethod(LoginMethod):
         provider_id: str,
         config: CliImportConfig,
         *,
-        profile_id: str = "default",
+        account_id: str = "default",
     ) -> None:
         self.provider_id = provider_id
         self._cfg = config
-        self._profile_id = profile_id
+        self._account_id = account_id
 
     async def run(self, ui: LoginUi) -> Credential:
         path = Path(self._cfg.store_path).expanduser()
@@ -110,7 +110,7 @@ class CliImportMethod(LoginMethod):
             metadata = self._extract_metadata(data)
             return Credential(
                 provider_id=self.provider_id,
-                profile_id=self._profile_id,
+                account_id=self._account_id,
                 kind="cli_delegated",
                 payload=CredentialData(
                     kind="cli_delegated",
@@ -137,7 +137,7 @@ class CliImportMethod(LoginMethod):
 
         return Credential(
             provider_id=self.provider_id,
-            profile_id=self._profile_id,
+            account_id=self._account_id,
             kind="oauth",
             payload=CredentialData(
                 kind="oauth",

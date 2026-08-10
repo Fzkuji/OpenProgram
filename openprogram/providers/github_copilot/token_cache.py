@@ -1,7 +1,7 @@
 """Short-lived Copilot API token cache.
 
 Copilot's two-tier auth: the GitHub OAuth token (long-lived, managed by
-AuthManager) vs the Copilot **api_token** (short-lived, ~30 min,
+CredentialProvider) vs the Copilot **api_token** (short-lived, ~30 min,
 obtained by exchanging the GitHub OAuth token at
 ``api.github.com/copilot_internal/v2/token``). Request bearers against
 the Copilot chat backend use the api_token, not the GitHub OAuth.

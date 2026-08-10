@@ -14,7 +14,7 @@ def test_credential_data_defaults():
 
 def test_credential_roundtrip_api_key():
     cred = Credential(
-        provider_id="openai", profile_id="default", kind="api_key",
+        provider_id="openai", account_id="default", kind="api_key",
         payload=CredentialData(kind="api_key", auth_value="sk-x",
                                base_url="https://ep/v1"),
     )
@@ -27,7 +27,7 @@ def test_credential_roundtrip_api_key():
 
 def test_credential_roundtrip_oauth_data():
     cred = Credential(
-        provider_id="openai-codex", profile_id="default", kind="oauth",
+        provider_id="openai-codex", account_id="default", kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value="at",
             data={"refresh_token": "rt", "expires_at_ms": 123,

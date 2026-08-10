@@ -10,7 +10,7 @@ Resolution order:
   1. :func:`auth.context.get_credential_override` — lets tests or
      middleware inject a specific credential for this scope without
      writing the store.
-  2. :meth:`AuthManager.acquire_sync` — the proper v2 path. Returns a
+  2. :meth:`CredentialProvider.acquire_sync` — the proper v2 path. Returns a
      refreshed access_token/api_key from the provider pool. If the
      provider isn't registered or the pool is empty, raises
      :class:`AuthConfigError`; we fall through rather than propagate.
@@ -23,13 +23,13 @@ triggers a "please log in" banner or just proceeds key-less (useful for
 local model endpoints that don't need auth).
 
 One deliberate exception to "fall through silently":
-:class:`AuthExternalProcessError` propagates. When the user configured a
+:class:`AuthCredentialProcessError` propagates. When the user configured a
 helper command, the answer to "the helper is broken" is an error naming
 the helper, not a quiet downgrade to a stale key from another layer.
 
 Intentionally sync: most provider call sites are sync (FastAPI
 dependencies, CLI entry points). Async callers should call
-:meth:`AuthManager.acquire` directly.
+:meth:`CredentialProvider.acquire` directly.
 """
 from __future__ import annotations
 
@@ -38,14 +38,14 @@ from typing import Optional
 
 from .account_selection import get_active_account
 from .context import (
-    get_active_profile_id,
+    get_active_account_id,
     get_credential_override,
 )
-from .manager import get_manager
+from .credential_provider import get_credential_provider
 from .types import (
     AuthConfigError,
     AuthError,
-    AuthExternalProcessError,
+    AuthCredentialProcessError,
     Credential,
 )
 
@@ -71,8 +71,8 @@ def resolve_connection(cred: "Credential") -> "ResolvedConnection | None":
     """Translate a Credential into what one request needs.
 
     cli_delegated reads its external file here for the freshest token.
-    external_process runs its helper here (cached for ``cache_seconds``)
-    and raises :class:`AuthExternalProcessError` if the helper fails —
+    credential_process runs its helper here (cached for ``cache_seconds``)
+    and raises :class:`AuthCredentialProcessError` if the helper fails —
     a user who configured a helper must not have it silently replaced by
     whatever other credential the ladder finds. sso raises
     :class:`AuthConfigError`; the kind exists but no flow implements it.
@@ -82,16 +82,16 @@ def resolve_connection(cred: "Credential") -> "ResolvedConnection | None":
     auth_value = p.auth_value
     if kind == "cli_delegated":
         auth_value = _read_delegated_token(p) or ""
-    elif kind == "external_process":
-        from .methods.external_process import token_for_payload
+    elif kind == "credential_process":
+        from .methods.credential_process import token_for_payload
         auth_value = token_for_payload(
-            p.data, scope=f"{cred.provider_id}/{cred.profile_id}",
+            p.data, scope=f"{cred.provider_id}/{cred.account_id}",
         )
     elif kind == "sso":
         raise AuthConfigError(
             "enterprise SSO credentials are not implemented; "
             "no login flow can produce or use kind='sso'",
-            provider_id=cred.provider_id, profile_id=cred.profile_id,
+            provider_id=cred.provider_id, account_id=cred.account_id,
         )
     if not auth_value:
         return None
@@ -104,16 +104,16 @@ def resolve_connection(cred: "Credential") -> "ResolvedConnection | None":
 
 def resolve_api_key_sync(
     provider_id: str,
-    profile_id: Optional[str] = None,
+    account_id: Optional[str] = None,
 ) -> Optional[str]:
     """Return a bearer string for the provider, or None if no path yields one.
 
-    ``profile_id`` defaults to the provider's active profile
+    ``account_id`` defaults to the provider's active account
     (:func:`auth.account_selection.get_active_account` — its pinned account, else the
     ambient scope, else ``"default"``). Explicit override is useful for scripts
-    that want a specific profile regardless of the active selection.
+    that want a specific account regardless of the active selection.
     """
-    profile = profile_id or get_active_account(provider_id)
+    account = account_id or get_active_account(provider_id)
 
     # Layer 1 — scope-injected override (tests, DI).
     override = get_credential_override(provider_id)
@@ -122,13 +122,13 @@ def resolve_api_key_sync(
         if token:
             return token
 
-    # Layer 2 — AuthManager.
+    # Layer 2 — CredentialProvider.
     try:
-        cred = get_manager().acquire_sync(provider_id, profile)
+        cred = get_credential_provider().acquire_sync(provider_id, account)
         token = _extract_token(cred)
         if token:
             return token
-    except AuthExternalProcessError:
+    except AuthCredentialProcessError:
         # The user configured this helper. A broken helper is their bug
         # to fix, not a cue to hand back some other layer's credential.
         raise
@@ -153,7 +153,7 @@ def resolve_api_key_sync(
 
 def resolve_store_api_key_sync(
     provider_id: str,
-    profile_id: Optional[str] = None,
+    account_id: Optional[str] = None,
 ) -> Optional[str]:
     """API-key-shaped credential from the AuthStore only, or None.
 
@@ -163,11 +163,11 @@ def resolve_store_api_key_sync(
     that puts it in ``x-api-key`` just 401s. This is the single key
     source ``resolve_provider_key`` reads.
 
-    ``external_process`` IS included: a helper prints a plain key that
+    ``credential_process`` IS included: a helper prints a plain key that
     goes in the same header an ``api_key`` would. Helper failures raise
     rather than returning None, for the reason in the module docstring.
     """
-    profile = profile_id or get_active_account(provider_id)
+    account = account_id or get_active_account(provider_id)
 
     override = get_credential_override(provider_id)
     if override is not None:
@@ -177,11 +177,11 @@ def resolve_store_api_key_sync(
         return None
 
     try:
-        cred = get_manager().acquire_sync(provider_id, profile)
+        cred = get_credential_provider().acquire_sync(provider_id, account)
     except (AuthConfigError, AuthError, RuntimeError):
         return None
     payload = getattr(cred, "payload", None)
-    if payload is not None and getattr(payload, "kind", "") == "external_process":
+    if payload is not None and getattr(payload, "kind", "") == "credential_process":
         conn = resolve_connection(cred)
         return conn.auth_value if conn else None
     if payload is not None and getattr(payload, "kind", "") == "api_key":

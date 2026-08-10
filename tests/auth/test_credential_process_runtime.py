@@ -1,4 +1,4 @@
-"""The external_process helper actually runs on the resolver's path.
+"""The credential_process helper actually runs on the resolver's path.
 
 Every test here uses a throwaway helper script in ``tmp_path``. Nothing
 reads the real keychain, the user's home, or any configured provider.
@@ -10,13 +10,13 @@ import textwrap
 
 import pytest
 
-from openprogram.auth.methods.external_process import (
+from openprogram.auth.methods.credential_process import (
     clear_token_cache,
     token_for_payload,
 )
 from openprogram.auth.resolver import resolve_connection
 from openprogram.auth.types import (
-    AuthExternalProcessError,
+    AuthCredentialProcessError,
     Credential,
     CredentialData,
 )
@@ -37,11 +37,11 @@ def _script(tmp_path, name: str, body: str) -> str:
     return str(path)
 
 
-def _cred(data: dict, *, profile: str = "default") -> Credential:
+def _cred(data: dict, *, account: str = "default") -> Credential:
     return Credential(
-        provider_id="helperco", profile_id=profile,
-        kind="external_process",
-        payload=CredentialData(kind="external_process", data=data),
+        provider_id="helperco", account_id=account,
+        kind="credential_process",
+        payload=CredentialData(kind="credential_process", data=data),
     )
 
 
@@ -58,7 +58,7 @@ def test_json_parse_walks_key_path(tmp_path):
     }))
     assert conn is not None
     assert conn.auth_value == "sk-from-json"
-    assert conn.kind == "external_process"
+    assert conn.kind == "credential_process"
 
 
 def test_text_parse_strips_output(tmp_path):
@@ -112,8 +112,8 @@ def test_cache_is_scoped_per_profile(tmp_path):
     counter = tmp_path / "runs"
     helper = _counting_helper(tmp_path, counter)
     data = {"command": [helper], "parses": "text", "cache_seconds": 300}
-    resolve_connection(_cred(data, profile="work"))
-    resolve_connection(_cred(data, profile="personal"))
+    resolve_connection(_cred(data, account="work"))
+    resolve_connection(_cred(data, account="personal"))
     assert _forks(counter) == 2
 
 
@@ -124,7 +124,7 @@ def test_cache_expires(tmp_path, monkeypatch):
 
     clock = {"t": 1000.0}
     monkeypatch.setattr(
-        "openprogram.auth.methods.external_process.time.monotonic",
+        "openprogram.auth.methods.credential_process.time.monotonic",
         lambda: clock["t"],
     )
     resolve_connection(_cred(data))
@@ -143,14 +143,14 @@ def test_nonzero_exit_raises_with_stderr(tmp_path):
         echo 'corporate vpn is down' >&2
         exit 3
     """)
-    with pytest.raises(AuthExternalProcessError) as e:
+    with pytest.raises(AuthCredentialProcessError) as e:
         resolve_connection(_cred({"command": [helper], "parses": "text"}))
     assert "exited 3" in str(e.value)
     assert "corporate vpn is down" in str(e.value)
 
 
 def test_missing_executable_raises(tmp_path):
-    with pytest.raises(AuthExternalProcessError):
+    with pytest.raises(AuthCredentialProcessError):
         resolve_connection(_cred({"command": [str(tmp_path / "nope")]}))
 
 
@@ -158,7 +158,7 @@ def test_timeout_raises(tmp_path):
     helper = _script(tmp_path, "slow.sh", """
         sleep 5
     """)
-    with pytest.raises(AuthExternalProcessError) as e:
+    with pytest.raises(AuthCredentialProcessError) as e:
         resolve_connection(_cred({
             "command": [helper], "parses": "text", "timeout_seconds": 0.3,
         }))
@@ -169,7 +169,7 @@ def test_bad_json_raises(tmp_path):
     helper = _script(tmp_path, "h.sh", """
         echo 'not json at all'
     """)
-    with pytest.raises(AuthExternalProcessError) as e:
+    with pytest.raises(AuthCredentialProcessError) as e:
         resolve_connection(_cred({"command": [helper], "parses": "json"}))
     assert "not valid JSON" in str(e.value)
 
@@ -178,7 +178,7 @@ def test_missing_json_key_path_raises(tmp_path):
     helper = _script(tmp_path, "h.sh", """
         echo '{"other": "x"}'
     """)
-    with pytest.raises(AuthExternalProcessError):
+    with pytest.raises(AuthCredentialProcessError):
         resolve_connection(_cred({
             "command": [helper], "parses": "json", "json_key_path": ["token"],
         }))
@@ -192,7 +192,7 @@ def test_failure_is_not_cached(tmp_path):
     """)
     data = {"command": [helper], "parses": "text", "cache_seconds": 300}
     for _ in range(2):
-        with pytest.raises(AuthExternalProcessError):
+        with pytest.raises(AuthCredentialProcessError):
             resolve_connection(_cred(data))
     assert _forks(counter) == 2
 
@@ -205,14 +205,14 @@ def test_resolve_api_key_sync_does_not_swallow_helper_failure(tmp_path, monkeypa
     cred = _cred({"command": [helper], "parses": "text"})
 
     class FakeManager:
-        def acquire_sync(self, provider_id, profile_id=None):
+        def acquire_sync(self, provider_id, account_id=None):
             return cred
 
-    monkeypatch.setattr(resolver_mod, "get_manager", lambda: FakeManager())
+    monkeypatch.setattr(resolver_mod, "get_credential_provider", lambda: FakeManager())
     monkeypatch.setattr(resolver_mod, "get_active_account", lambda p: "default")
     monkeypatch.setattr(resolver_mod, "get_credential_override", lambda p: None)
 
-    with pytest.raises(AuthExternalProcessError):
+    with pytest.raises(AuthCredentialProcessError):
         resolver_mod.resolve_api_key_sync("helperco")
 
 

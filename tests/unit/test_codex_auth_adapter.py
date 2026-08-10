@@ -15,8 +15,8 @@ from unittest.mock import patch
 
 import pytest
 
-from openprogram.auth.manager import (
-    AuthManager,
+from openprogram.auth.credential_provider import (
+    CredentialProvider,
     get_provider_config,
     register_provider_config,
     ProviderAuthConfig,
@@ -129,7 +129,7 @@ def test_register_codex_auth_is_idempotent():
     assert cfg.refresh_skew_seconds == 60
 
 
-# ---- end-to-end with AuthManager + fake refresh --------------------------
+# ---- end-to-end with CredentialProvider + fake refresh --------------------------
 
 def test_manager_refreshes_expired_codex_credential(store):
     # Set up: seed the store with an expired OAuth cred and register a
@@ -137,7 +137,7 @@ def test_manager_refreshes_expired_codex_credential(store):
     # whole manager path without a real HTTP call.
     expired = Credential(
         provider_id=adapter.PROVIDER_ID,
-        profile_id="default",
+        account_id="default",
         kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value="old",
@@ -150,7 +150,7 @@ def test_manager_refreshes_expired_codex_credential(store):
     )
     pool = CredentialPool(
         provider_id=adapter.PROVIDER_ID,
-        profile_id="default",
+        account_id="default",
         credentials=[expired],
     )
     store.put_pool(pool)
@@ -159,7 +159,7 @@ def test_manager_refreshes_expired_codex_credential(store):
         assert cred.payload.data["refresh_token"] == "R-old"
         return Credential(
             provider_id=cred.provider_id,
-            profile_id=cred.profile_id,
+            account_id=cred.account_id,
             kind="oauth",
             payload=CredentialData(
                 kind="oauth", auth_value="NEW-ACCESS",
@@ -178,7 +178,7 @@ def test_manager_refreshes_expired_codex_credential(store):
         refresh=fake_refresh,
     ))
 
-    mgr = AuthManager(store=store)
+    mgr = CredentialProvider(store=store)
     result = asyncio.run(mgr.acquire(adapter.PROVIDER_ID, "default"))
     assert result.payload.auth_value == "NEW-ACCESS"
     # Verify persistence: disk copy is rotated too.
@@ -193,7 +193,7 @@ def test_acquire_sync_from_non_async_caller(store):
     # Seed with a fresh cred — no refresh needed, pure happy path.
     fresh = Credential(
         provider_id=adapter.PROVIDER_ID,
-        profile_id="default",
+        account_id="default",
         kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value="A",
@@ -206,11 +206,11 @@ def test_acquire_sync_from_non_async_caller(store):
     )
     store.put_pool(CredentialPool(
         provider_id=adapter.PROVIDER_ID,
-        profile_id="default",
+        account_id="default",
         credentials=[fresh],
     ))
 
-    mgr = AuthManager(store=store)
+    mgr = CredentialProvider(store=store)
     cred = mgr.acquire_sync(adapter.PROVIDER_ID, "default")
     assert cred.payload.auth_value == "A"
 
@@ -218,7 +218,7 @@ def test_acquire_sync_from_non_async_caller(store):
 def test_acquire_sync_works_inside_running_loop(store):
     fresh = Credential(
         provider_id=adapter.PROVIDER_ID,
-        profile_id="default",
+        account_id="default",
         kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value="A",
@@ -230,10 +230,10 @@ def test_acquire_sync_works_inside_running_loop(store):
         ),
     )
     store.put_pool(CredentialPool(
-        provider_id=adapter.PROVIDER_ID, profile_id="default",
+        provider_id=adapter.PROVIDER_ID, account_id="default",
         credentials=[fresh],
     ))
-    mgr = AuthManager(store=store)
+    mgr = CredentialProvider(store=store)
 
     async def inside():
         # Direct call from a running event loop should still work via the
@@ -308,7 +308,7 @@ def test_resolve_codex_bearer_reads_auth_value_not_access_token(monkeypatch):
 
     cred = Credential(
         provider_id=adapter.PROVIDER_ID,
-        profile_id="default",
+        account_id="default",
         kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value="THE-BEARER-1952",
@@ -324,6 +324,6 @@ def test_resolve_codex_bearer_reads_auth_value_not_access_token(monkeypatch):
     class _Mgr:
         def acquire_sync(self, provider_id, *a, **k):
             return cred
-    monkeypatch.setattr("openprogram.auth.manager.get_manager", lambda: _Mgr())
+    monkeypatch.setattr("openprogram.auth.credential_provider.get_credential_provider", lambda: _Mgr())
 
     assert ocx._resolve_codex_bearer_token(None) == "THE-BEARER-1952"

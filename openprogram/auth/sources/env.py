@@ -30,13 +30,13 @@ from ..types import (
 class EnvApiKeySource:
     """Reads one named env var, turns it into an ``api_key`` credential.
 
-    ``profile_id`` is a constant — env keys aren't per-profile, they're a
-    single global value in the user's shell. The default profile adopts it.
+    ``account_id`` is a constant — env keys aren't per-account, they're a
+    single global value in the user's shell. The default account adopts it.
     """
 
     provider_id: str
     env_var: str
-    profile_id: str = "default"
+    account_id: str = "default"
     # Sometimes the env value has a ``Bearer `` prefix from someone copying
     # from a curl. Stripped by default; turn off if a provider really does
     # accept the literal prefix.
@@ -46,7 +46,7 @@ class EnvApiKeySource:
     def source_id(self) -> str:
         return f"env:{self.env_var}"
 
-    def try_import(self, profile_root: Path) -> list[Credential]:
+    def try_import(self, account_root: Path) -> list[Credential]:
         raw = os.environ.get(self.env_var)
         if not raw:
             return []
@@ -58,7 +58,7 @@ class EnvApiKeySource:
         return [
             Credential(
                 provider_id=self.provider_id,
-                profile_id=self.profile_id,
+                account_id=self.account_id,
                 kind="api_key",
                 payload=CredentialData(kind="api_key", auth_value=value),
                 source=self.source_id,

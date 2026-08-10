@@ -148,12 +148,12 @@ class PkceLoginMethod(LoginMethod):
         provider_id: str,
         config: PkceConfig,
         *,
-        profile_id: str = "default",
+        account_id: str = "default",
         metadata: dict | None = None,
     ) -> None:
         self.provider_id = provider_id
         self._cfg = config
-        self._profile_id = profile_id
+        self._account_id = account_id
         self._metadata = dict(metadata or {})
 
     async def run(self, ui: LoginUi) -> Credential:
@@ -241,7 +241,7 @@ class PkceLoginMethod(LoginMethod):
             metadata["email"] = email
         return Credential(
             provider_id=self.provider_id,
-            profile_id=self._profile_id,
+            account_id=self._account_id,
             kind="oauth",
             payload=CredentialData(
                 kind="oauth",

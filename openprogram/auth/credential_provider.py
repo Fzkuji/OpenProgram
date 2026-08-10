@@ -14,7 +14,7 @@ can't provide on their own:
 
   * **Fallback chains.** If a pool is exhausted (every key cooling down,
     revoked, or needing reauth), the manager walks the configured
-    fallback chain — ``[(provider_id, profile_id), ...]`` — trying the
+    fallback chain — ``[(provider_id, account_id), ...]`` — trying the
     next one. This is the only place that knows about fallback; pools
     don't chain, runtimes don't reimplement it.
 
@@ -89,7 +89,7 @@ class ProviderAuthConfig:
     # Per-provider cooldown policy override (defaults kick in if None).
     failure_policy: Optional[PoolFailurePolicy] = None
     # Fallback chain: if the primary pool is exhausted, try these
-    # (provider_id, profile_id) pairs in order. If they're exhausted
+    # (provider_id, account_id) pairs in order. If they're exhausted
     # too, the manager raises :class:`AuthPoolExhaustedError`.
     fallback_chain: list[tuple[str, str]] = field(default_factory=list)
 
@@ -159,21 +159,21 @@ def get_provider_config(provider_id: str) -> ProviderAuthConfig:
 
 
 # ---------------------------------------------------------------------------
-# AuthManager — the orchestrator
+# CredentialProvider — the orchestrator
 # ---------------------------------------------------------------------------
 
-class AuthManager:
+class CredentialProvider:
     """Pool-aware credential acquirer with in-flight refresh dedup and
     fallback chains.
 
-    Instantiate once per process (or use :func:`get_manager`). Hold a
+    Instantiate once per process (or use :func:`get_credential_provider`). Hold a
     reference in your runtime; don't construct it per-call — the
     in-flight future bookkeeping depends on identity.
     """
 
     def __init__(self, store: Optional[AuthStore] = None) -> None:
         self._store = store or get_store()
-        # (provider_id, profile_id, credential_id) → Future that resolves
+        # (provider_id, account_id, credential_id) → Future that resolves
         # to the refreshed Credential. Multiple coroutines awaiting the
         # same future get the same refreshed credential; exactly one
         # upstream refresh call happens per key.
@@ -186,7 +186,7 @@ class AuthManager:
 
     # -- acquire (async) -----------------------------------------------------
 
-    def acquire_sync(self, provider_id: str, profile_id: Optional[str] = None) -> Credential:
+    def acquire_sync(self, provider_id: str, account_id: Optional[str] = None) -> Credential:
         """Sync wrapper around :meth:`acquire`.
 
         Three cases:
@@ -205,7 +205,7 @@ class AuthManager:
         except RuntimeError:
             running = None
         if running is None:
-            return asyncio.run(self.acquire(provider_id, profile_id))
+            return asyncio.run(self.acquire(provider_id, account_id))
 
         import threading
         box: dict = {}
@@ -213,14 +213,14 @@ class AuthManager:
         def _runner() -> None:
             try:
                 box["cred"] = asyncio.run(
-                    self.acquire(provider_id, profile_id),
+                    self.acquire(provider_id, account_id),
                 )
             except BaseException as e:  # noqa: BLE001
                 box["err"] = e
 
         t = threading.Thread(
             target=_runner, daemon=True,
-            name=f"acquire_sync-{provider_id}-{profile_id}",
+            name=f"acquire_sync-{provider_id}-{account_id}",
         )
         t.start()
         t.join()
@@ -228,10 +228,10 @@ class AuthManager:
             raise box["err"]
         return box["cred"]
 
-    async def acquire(self, provider_id: str, profile_id: Optional[str] = None) -> Credential:
-        """Return a usable credential for ``(provider, profile)``.
+    async def acquire(self, provider_id: str, account_id: Optional[str] = None) -> Credential:
+        """Return a usable credential for ``(provider, account)``.
 
-        When ``profile_id`` is None the provider's ACTIVE profile is used
+        When ``account_id`` is None the provider's ACTIVE account is used
         (:func:`auth.account_selection.get_active_account` — its pinned account, else the
         ambient ``auth_scope``, else ``"default"``), so a request runs on
         whichever account the user activated for that provider.
@@ -244,31 +244,31 @@ class AuthManager:
 
         Does not persist every mutation — only refreshes are written
         back, to keep the hot path cheap. Cooldown updates happen via
-        :meth:`report_failure`.
+        :meth:`apply_failure`.
         """
-        if profile_id is None:
+        if account_id is None:
             from .account_selection import get_active_account
-            profile_id = get_active_account(provider_id)
-        return await self._acquire_recursive(provider_id, profile_id, visited=set())
+            account_id = get_active_account(provider_id)
+        return await self._acquire_recursive(provider_id, account_id, visited=set())
 
     async def _acquire_recursive(
         self,
         provider_id: str,
-        profile_id: str,
+        account_id: str,
         *,
         visited: set[tuple[str, str]],
     ) -> Credential:
-        key = (provider_id, profile_id)
+        key = (provider_id, account_id)
         if key in visited:
             # Fallback chain cycles back to a pool we already tried.
             # Preserve the outermost exception rather than looping forever.
             raise AuthPoolExhaustedError(
-                f"fallback chain for {provider_id}/{profile_id} cycled",
-                provider_id=provider_id, profile_id=profile_id,
+                f"fallback chain for {provider_id}/{account_id} cycled",
+                provider_id=provider_id, account_id=account_id,
             )
         visited.add(key)
 
-        pool = self._store.find_pool(provider_id, profile_id)
+        pool = self._store.find_pool(provider_id, account_id)
         if pool is None:
             # No pool registered. If a fallback chain exists on the
             # provider config, try it. Otherwise it's a genuine config
@@ -284,8 +284,8 @@ class AuthManager:
                 except AuthPoolExhaustedError:
                     continue
             raise AuthConfigError(
-                f"no auth configured for {provider_id}/{profile_id}",
-                provider_id=provider_id, profile_id=profile_id,
+                f"no auth configured for {provider_id}/{account_id}",
+                provider_id=provider_id, account_id=account_id,
             )
 
         # Pick a healthy credential — may raise PoolExhausted.
@@ -314,7 +314,7 @@ class AuthManager:
             self._store._emit(AuthEvent(                  # type: ignore[attr-defined]
                 type=AuthEventType.POOL_EXHAUSTED,
                 provider_id=provider_id,
-                profile_id=profile_id,
+                account_id=account_id,
             ))
             raise
 
@@ -334,10 +334,10 @@ class AuthManager:
             # the user's problem; we surface it cleanly.
             if _oauth_stale(cred, get_provider_config(cred.provider_id).refresh_skew_seconds):
                 raise AuthReadOnlyError(
-                    f"read-only credential for {cred.provider_id}/{cred.profile_id} "
+                    f"read-only credential for {cred.provider_id}/{cred.account_id} "
                     "is expired; re-run the external CLI's login",
                     provider_id=cred.provider_id,
-                    profile_id=cred.profile_id,
+                    account_id=cred.account_id,
                 )
             return cred
 
@@ -349,13 +349,13 @@ class AuthManager:
             # Expired and no refresh path registered → the user must
             # re-auth. Don't leave them thinking the API call succeeded.
             raise AuthNeedsReauthError(
-                f"credential for {cred.provider_id}/{cred.profile_id} "
+                f"credential for {cred.provider_id}/{cred.account_id} "
                 "is expired and no refresh is configured",
                 provider_id=cred.provider_id,
-                profile_id=cred.profile_id,
+                account_id=cred.account_id,
             )
 
-        key = (cred.provider_id, cred.profile_id, cred.credential_id)
+        key = (cred.provider_id, cred.account_id, cred.credential_id)
         async with self._in_flight_lock:
             future = self._in_flight.get(key)
             if future is None:
@@ -371,12 +371,12 @@ class AuthManager:
             return await future
 
         try:
-            async with self._store.async_lock(cred.provider_id, cred.profile_id):
+            async with self._store.async_lock(cred.provider_id, cred.account_id):
                 # Under the lock, re-check disk — a cross-process refresh
                 # may have already happened (mtime-watch will rehydrate
                 # the pool). If our credential is no longer stale in the
                 # fresh view, just use it.
-                fresh_pool = self._store.find_pool(cred.provider_id, cred.profile_id)
+                fresh_pool = self._store.find_pool(cred.provider_id, cred.account_id)
                 if fresh_pool is not None:
                     for fc in fresh_pool.credentials:
                         if fc.credential_id == cred.credential_id:
@@ -389,13 +389,13 @@ class AuthManager:
                 self._store._emit(AuthEvent(                     # type: ignore[attr-defined]
                     type=AuthEventType.REFRESH_STARTED,
                     provider_id=cred.provider_id,
-                    profile_id=cred.profile_id,
+                    account_id=cred.account_id,
                     credential_id=cred.credential_id,
                 ))
                 refreshed = await self._call_refresh(cred, cfg)
                 # Persist: the pool object holds the same credential, so
                 # mutate it in place and put_pool the whole thing.
-                pool_to_save = self._store.find_pool(cred.provider_id, cred.profile_id) or pool
+                pool_to_save = self._store.find_pool(cred.provider_id, cred.account_id) or pool
                 for i, existing in enumerate(pool_to_save.credentials):
                     if existing.credential_id == cred.credential_id:
                         pool_to_save.credentials[i] = refreshed
@@ -404,7 +404,7 @@ class AuthManager:
                 self._store._emit(AuthEvent(                     # type: ignore[attr-defined]
                     type=AuthEventType.REFRESH_SUCCEEDED,
                     provider_id=cred.provider_id,
-                    profile_id=cred.profile_id,
+                    account_id=cred.account_id,
                     credential_id=cred.credential_id,
                 ))
                 future.set_result(refreshed)
@@ -413,9 +413,9 @@ class AuthManager:
             # Reload from disk once; maybe a peer process already
             # succeeded. If the disk copy is usable now, we're fine.
             self._store._reload_if_disk_changed(          # type: ignore[attr-defined]
-                (cred.provider_id, cred.profile_id),
+                (cred.provider_id, cred.account_id),
             )
-            fresh_pool = self._store.find_pool(cred.provider_id, cred.profile_id)
+            fresh_pool = self._store.find_pool(cred.provider_id, cred.account_id)
             if fresh_pool is not None:
                 for fc in fresh_pool.credentials:
                     if fc.credential_id == cred.credential_id and not _oauth_stale(
@@ -448,7 +448,7 @@ class AuthManager:
             if _is_permanent_refresh_failure(e):
                 try:
                     save_pool = self._store.find_pool(
-                        cred.provider_id, cred.profile_id,
+                        cred.provider_id, cred.account_id,
                     ) or pool
                     target = next(
                         (c for c in save_pool.credentials
@@ -470,7 +470,7 @@ class AuthManager:
             self._store._emit(AuthEvent(                         # type: ignore[attr-defined]
                 type=AuthEventType.REFRESH_FAILED,
                 provider_id=cred.provider_id,
-                profile_id=cred.profile_id,
+                account_id=cred.account_id,
                 credential_id=cred.credential_id,
                 detail={"error": str(e)},
             ))
@@ -490,14 +490,14 @@ class AuthManager:
             )
         raise AuthRefreshError("no refresh callable registered",
                                provider_id=cred.provider_id,
-                               profile_id=cred.profile_id)
+                               account_id=cred.account_id)
 
     # -- failure reporting ---------------------------------------------------
 
-    def report_failure(
+    def apply_failure(
         self,
         provider_id: str,
-        profile_id: str,
+        account_id: str,
         credential_id: str,
         reason: str,
         *,
@@ -511,7 +511,7 @@ class AuthManager:
         Callers (the HTTP wrapper around provider APIs) classify each
         error response before calling.
         """
-        pool = self._store.find_pool(provider_id, profile_id)
+        pool = self._store.find_pool(provider_id, account_id)
         if pool is None:
             return
         cred = next(
@@ -525,11 +525,11 @@ class AuthManager:
         self._store.put_pool(pool)
         self._store._emit(ev)          # type: ignore[attr-defined]
 
-    def report_success(self, provider_id: str, profile_id: str, credential_id: str) -> None:
+    def apply_success(self, provider_id: str, account_id: str, credential_id: str) -> None:
         """Called on 2xx. Clears transient error state if its cooldown
         window has passed. Cheap; OK to call on every successful
         response."""
-        pool = self._store.find_pool(provider_id, profile_id)
+        pool = self._store.find_pool(provider_id, account_id)
         if pool is None:
             return
         cred = next(
@@ -599,28 +599,28 @@ def _oauth_stale(cred: Credential, skew_seconds: int) -> bool:
 
 import threading  # noqa: E402  (module-level threading only used here)
 
-_manager: Optional[AuthManager] = None
+_manager: Optional[CredentialProvider] = None
 _manager_lock = threading.Lock()
 
 
-def get_manager() -> AuthManager:
+def get_credential_provider() -> CredentialProvider:
     global _manager
     with _manager_lock:
         if _manager is None:
-            _manager = AuthManager()
+            _manager = CredentialProvider()
         return _manager
 
 
-def set_manager_for_testing(manager: Optional[AuthManager]) -> None:
+def set_credential_provider_for_testing(manager: Optional[CredentialProvider]) -> None:
     global _manager
     with _manager_lock:
         _manager = manager
 
 
 # Public re-exports for convenience — callers just import from
-# ``openprogram.auth.manager`` and get everything they need.
+# ``openprogram.auth.credential_provider`` and get everything they need.
 __all__ = [
-    "AuthManager", "get_manager", "set_manager_for_testing",
+    "CredentialProvider", "get_credential_provider", "set_credential_provider_for_testing",
     "ProviderAuthConfig", "register_provider_config", "get_provider_config",
     "RefreshFn", "AsyncRefreshFn",
 ]

@@ -57,7 +57,7 @@ status 列本身已承载全部答案，因此不需要额外的标记。窗口�
 
 ## 状态如何维护
 
-- `auth/usage.py report_failure` —— 只有 `rate_limit`、`rate_limit_long`、
+- `auth/usage.py record_call_failure` —— 只有 `rate_limit`、`rate_limit_long`、
   `billing_blocked`、`needs_reauth` 会到达账号池；`request_error`、
   `server_error`、`network_error` 直接返回，不触碰它。
 - `auth/pool.py mark_failure` —— `billing_blocked` 设置状态但不带冷却时间戳：

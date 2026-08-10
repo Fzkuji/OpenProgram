@@ -58,7 +58,7 @@ openprogram config set ui.web_port 8101
 | 变量 | 用途 | 代码 |
 |------|------|------|
 | `OPENPROGRAM_PROFILE` | 状态目录 profile，等价 `--profile`，改道到 `~/.openprogram-<name>/` | `openprogram/paths.py` |
-| `OPENPROGRAM_HOME` | auth profiles 的替代基目录 | `openprogram/auth/profiles.py` |
+| `OPENPROGRAM_HOME` | auth 账号的替代基目录 | `openprogram/auth/accounts.py` |
 | `OPENPROGRAM_WORKDIR` | agent 默认工作目录（优先于 config 的 `default_workdir`） | `openprogram/paths.py` |
 
 ### 端口与 web

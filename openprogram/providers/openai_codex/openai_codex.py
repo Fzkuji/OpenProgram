@@ -82,7 +82,7 @@ def _resolve_codex_bearer_token(opts_api_key: str | None) -> str:
          always wins.
       2. The provider's env var (handled by ``resolve_provider_key``) —
          covers users on a bare API key with no OAuth flow.
-      3. AuthManager's OAuth credential pool — covers users who ran
+      3. CredentialProvider's OAuth credential pool — covers users who ran
          ``codex login`` (or the OpenProgram OAuth wizard) so the
          pool has a ``CredentialData(kind="oauth").auth_value`` ready.
 
@@ -108,14 +108,14 @@ def _resolve_codex_bearer_token(opts_api_key: str | None) -> str:
     # refresh/re-login rewrites the payload), which silently broke codex —
     # and chatgpt-subscription, which routes through this same resolver.
     try:
-        from openprogram.auth.manager import get_manager
+        from openprogram.auth.credential_provider import get_credential_provider
         from openprogram.auth.resolver import resolve_connection
-        cred = get_manager().acquire_sync("openai-codex")
+        cred = get_credential_provider().acquire_sync("openai-codex")
         conn = resolve_connection(cred)
         if conn and conn.auth_value:
             return conn.auth_value
     except Exception:
-        # AuthManager raises when no provider config is registered or
+        # CredentialProvider raises when no provider config is registered or
         # no credentials exist. Both are recoverable — fall through to
         # the empty-string return so the caller's check fires the same
         # actionable error message.

@@ -4,7 +4,7 @@ A *source* discovers credentials that already exist elsewhere on the user's
 machine — environment variables, other CLIs' on-disk auth stores — and
 offers to adopt them. Every source answers two questions:
 
-  * ``try_import(profile_root)`` — given a fresh/empty profile, what
+  * ``try_import(account_root)`` — given a fresh/empty account, what
     credentials can I import right now? Returns zero or more
     :class:`Credential` objects, pre-populated with enough ``source`` /
     ``metadata`` provenance that later rotation or revocation knows where

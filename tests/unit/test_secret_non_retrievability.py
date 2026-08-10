@@ -79,11 +79,11 @@ def _put_credential(
     store.put_pool(
         CredentialPool(
             provider_id=provider,
-            profile_id=name,
+            account_id=name,
             credentials=[
                 Credential(
                     provider_id=provider,
-                    profile_id=name,
+                    account_id=name,
                     kind=kind,
                     payload=CredentialData(kind=kind, auth_value=value),
                 )

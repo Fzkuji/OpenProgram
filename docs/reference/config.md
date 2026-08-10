@@ -58,7 +58,7 @@ Set these in the shell that launches `openprogram` (or the worker). Every one ha
 | Variable | Purpose | Code |
 |------|------|------|
 | `OPENPROGRAM_PROFILE` | State-directory profile, equivalent to `--profile`, reroutes to `~/.openprogram-<name>/` | `openprogram/paths.py` |
-| `OPENPROGRAM_HOME` | Alternative base directory for auth profiles | `openprogram/auth/profiles.py` |
+| `OPENPROGRAM_HOME` | Alternative base directory for auth accounts | `openprogram/auth/accounts.py` |
 | `OPENPROGRAM_WORKDIR` | Default agent working directory (takes precedence over the config's `default_workdir`) | `openprogram/paths.py` |
 
 ### Ports and web

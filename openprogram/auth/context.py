@@ -1,20 +1,20 @@
-"""Ambient auth context — which profile/provider is "current" for this task.
+"""Ambient auth context — which account/provider is "current" for this task.
 
 Problem: tools run inside an agent's tool-call loop. When a tool like
 ``web_fetch`` / ``bash`` needs a credential, it shouldn't need the
-caller to thread ``profile_id`` through every layer down to the helper.
+caller to thread ``account_id`` through every layer down to the helper.
 But globals are wrong — one Python process can run many parallel agents,
-each under a different profile, and a global would leak credentials
+each under a different account, and a global would leak credentials
 across them.
 
 :mod:`contextvars` is the right primitive. Each async task inherits a
 copy of the parent task's context automatically, so setting the context at
-the top of a request (``async with auth_scope(profile="work"): …``)
+the top of a request (``async with auth_scope(account="work"): …``)
 propagates to every tool call inside without plumbing.
 
 Values stored here:
 
-  * ``active_profile_id`` — required. Identifies the :class:`Profile` the
+  * ``active_account_id`` — required. Identifies the :class:`Account` the
     current task should consult for credential lookups. Defaults to
     ``"default"``.
   * ``active_provider_hint`` — optional. If the work in this scope is
@@ -27,12 +27,12 @@ Values stored here:
     provider_id. Overrides the real pool pick.
   * ``subprocess_env_hook`` — callable producing an env dict for any
     subprocess the agent spawns inside this scope. Defaults to
-    ``ProfileManager.subprocess_env`` once wired, None otherwise.
+    ``AccountManager.subprocess_env`` once wired, None otherwise.
 
 The :func:`auth_scope` async-context-manager is the only public way to
 *enter* a scope. It guarantees the old values are restored on exit
 regardless of exceptions — important so a crashed tool doesn't leave
-the wrong profile active for whatever runs next.
+the wrong account active for whatever runs next.
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ import contextvars
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator, Optional
 
-from .profiles import DEFAULT_PROFILE_NAME
+from .accounts import DEFAULT_ACCOUNT_NAME
 from .types import Credential
 
 
@@ -49,9 +49,9 @@ from .types import Credential
 # ContextVars — the actual ambient state
 # ---------------------------------------------------------------------------
 
-_active_profile_id: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "openprogram.auth.active_profile_id",
-    default=DEFAULT_PROFILE_NAME,
+_active_account_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "openprogram.auth.active_account_id",
+    default=DEFAULT_ACCOUNT_NAME,
 )
 _active_provider_hint: contextvars.ContextVar[str] = contextvars.ContextVar(
     "openprogram.auth.active_provider_hint",
@@ -72,10 +72,10 @@ _subprocess_env_hook: contextvars.ContextVar[Optional[Callable[[], dict[str, str
 # Read-side API — what tools call
 # ---------------------------------------------------------------------------
 
-def get_active_profile_id() -> str:
-    """Return the profile id for the current task. Always returns a
+def get_active_account_id() -> str:
+    """Return the account id for the current task. Always returns a
     non-empty string — defaults to ``"default"``."""
-    return _active_profile_id.get()
+    return _active_account_id.get()
 
 
 def get_active_provider_hint() -> str:
@@ -98,7 +98,7 @@ def get_credential_override(provider_id: str) -> Optional[Credential]:
 def get_subprocess_env() -> Optional[dict[str, str]]:
     """Return the env dict the current scope wants subprocesses to use,
     or ``None`` if unset — the caller should then fall through to
-    ``os.environ.copy()`` (i.e. "no profile isolation requested")."""
+    ``os.environ.copy()`` (i.e. "no account isolation requested")."""
     hook = _subprocess_env_hook.get()
     if hook is None:
         return None
@@ -119,7 +119,7 @@ class AuthScope:
     aren't using the asyncio loop.
     """
 
-    profile_id: str = DEFAULT_PROFILE_NAME
+    account_id: str = DEFAULT_ACCOUNT_NAME
     provider_hint: str = ""
     credential_overrides: dict[str, Credential] = field(default_factory=dict)
     subprocess_env_hook: Optional[Callable[[], dict[str, str]]] = None
@@ -128,7 +128,7 @@ class AuthScope:
 @contextlib.contextmanager
 def auth_scope(
     *,
-    profile_id: str = DEFAULT_PROFILE_NAME,
+    account_id: str = DEFAULT_ACCOUNT_NAME,
     provider_hint: str = "",
     credential_overrides: Optional[dict[str, Credential]] = None,
     subprocess_env_hook: Optional[Callable[[], dict[str, str]]] = None,
@@ -143,14 +143,14 @@ def auth_scope(
     """
     overrides = dict(credential_overrides or {})
     tokens = [
-        _active_profile_id.set(profile_id),
+        _active_account_id.set(account_id),
         _active_provider_hint.set(provider_hint),
         _credential_overrides.set(overrides),
         _subprocess_env_hook.set(subprocess_env_hook),
     ]
     try:
         yield AuthScope(
-            profile_id=profile_id,
+            account_id=account_id,
             provider_hint=provider_hint,
             credential_overrides=overrides,
             subprocess_env_hook=subprocess_env_hook,
@@ -160,7 +160,7 @@ def auth_scope(
         _subprocess_env_hook.reset(tokens[3])
         _credential_overrides.reset(tokens[2])
         _active_provider_hint.reset(tokens[1])
-        _active_profile_id.reset(tokens[0])
+        _active_account_id.reset(tokens[0])
 
 
 @contextlib.asynccontextmanager
@@ -194,7 +194,7 @@ __all__ = [
     "AuthScope",
     "auth_scope",
     "auth_scope_async",
-    "get_active_profile_id",
+    "get_active_account_id",
     "get_active_provider_hint",
     "get_credential_override",
     "get_subprocess_env",

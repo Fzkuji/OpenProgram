@@ -2,7 +2,7 @@
 
 Responsibilities:
 
-  * surface the list of profiles and pools so the Settings UI can render
+  * surface the list of accounts and pools so the Settings UI can render
   * accept add/remove of credentials with uniform payload shapes (the UI
     doesn't need to know CredentialKind internals — it submits a
     ``type`` discriminator and we build the right dataclass)
@@ -34,10 +34,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from openprogram.auth.manager import get_manager
-from openprogram.auth.profiles import (
-    DEFAULT_PROFILE_NAME,
-    get_profile_manager,
+from openprogram.auth.credential_provider import get_credential_provider
+from openprogram.auth.accounts import (
+    DEFAULT_ACCOUNT_NAME,
+    get_account_manager,
 )
 from openprogram.auth.store import get_store
 from openprogram.auth.types import (
@@ -100,9 +100,9 @@ def _payload_preview(cred: Credential) -> dict[str, Any]:
             "store_path": payload.data.get("store_path"),
             "access_key_path": payload.data.get("access_key_path"),
         }
-    if payload.kind == "external_process":
+    if payload.kind == "credential_process":
         return {
-            "type": "external_process",
+            "type": "credential_process",
             "command": payload.data.get("command"),
             "cache_seconds": payload.data.get("cache_seconds"),
         }
@@ -116,7 +116,7 @@ def _credential_view(cred: Credential) -> dict[str, Any]:
         "credential_id": cred.credential_id,
         "kind": cred.kind,
         "provider_id": cred.provider_id,
-        "profile_id": cred.profile_id,
+        "account_id": cred.account_id,
         "status": cred.status,
         "source": cred.source,
         "metadata": cred.metadata,
@@ -134,7 +134,7 @@ def _credential_view(cred: Credential) -> dict[str, Any]:
 def _pool_view(pool: CredentialPool) -> dict[str, Any]:
     return {
         "provider_id": pool.provider_id,
-        "profile_id": pool.profile_id,
+        "account_id": pool.account_id,
         "strategy": pool.strategy,
         "fallback_chain": [list(t) for t in pool.fallback_chain],
         "credentials": [_credential_view(c) for c in pool.credentials],
@@ -145,7 +145,7 @@ def _pool_view(pool: CredentialPool) -> dict[str, Any]:
 # Request bodies
 # ---------------------------------------------------------------------------
 
-class CreateProfileBody(BaseModel):
+class CreateAccountBody(BaseModel):
     name: str
     display_name: str = ""
     description: str = ""
@@ -158,14 +158,14 @@ class AddCredentialBody(BaseModel):
     fields happens here so endpoints return a 400 with a clear message
     rather than a 500 from the dataclass constructor."""
 
-    type: str = Field(..., description="api_key | oauth | external_process")
+    type: str = Field(..., description="api_key | oauth | credential_process")
     api_key: Optional[str] = None
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
     expires_at_ms: Optional[int] = None
     client_id: Optional[str] = None
-    # external_process: helper argv plus how to read its stdout. Defaults
-    # mirror ExternalProcessConfig so a command-only body still behaves.
+    # credential_process: helper argv plus how to read its stdout. Defaults
+    # mirror CredentialProcessConfig so a command-only body still behaves.
     command: Optional[list[str]] = None
     parses: str = "json"
     json_key_path: Optional[list[str]] = None
@@ -174,14 +174,14 @@ class AddCredentialBody(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Profiles
+# Accounts
 # ---------------------------------------------------------------------------
 
-@router.get("/profiles")
-def list_profiles() -> dict[str, Any]:
-    pm = get_profile_manager()
+@router.get("/accounts")
+def list_accounts() -> dict[str, Any]:
+    pm = get_account_manager()
     return {
-        "profiles": [
+        "accounts": [
             {
                 "name": p.name,
                 "display_name": p.display_name,
@@ -189,17 +189,17 @@ def list_profiles() -> dict[str, Any]:
                 "created_at_ms": p.created_at_ms,
                 "root": str(p.root),
             }
-            for p in pm.list_profiles()
+            for p in pm.list_accounts()
         ],
-        "default": DEFAULT_PROFILE_NAME,
+        "default": DEFAULT_ACCOUNT_NAME,
     }
 
 
-@router.post("/profiles")
-def create_profile(body: CreateProfileBody) -> dict[str, Any]:
-    pm = get_profile_manager()
+@router.post("/accounts")
+def create_account(body: CreateAccountBody) -> dict[str, Any]:
+    pm = get_account_manager()
     try:
-        profile = pm.create_profile(
+        account = pm.create_account(
             body.name,
             display_name=body.display_name,
             description=body.description,
@@ -207,18 +207,18 @@ def create_profile(body: CreateProfileBody) -> dict[str, Any]:
     except AuthConfigError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {
-        "name": profile.name,
-        "display_name": profile.display_name,
-        "description": profile.description,
-        "root": str(profile.root),
+        "name": account.name,
+        "display_name": account.display_name,
+        "description": account.description,
+        "root": str(account.root),
     }
 
 
-@router.delete("/profiles/{name}")
-def delete_profile(name: str) -> dict[str, Any]:
-    pm = get_profile_manager()
+@router.delete("/accounts/{name}")
+def delete_account(name: str) -> dict[str, Any]:
+    pm = get_account_manager()
     try:
-        pm.delete_profile(name)
+        pm.delete_account(name)
     except AuthConfigError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"deleted": name}
@@ -229,66 +229,66 @@ def delete_profile(name: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 @router.get("/pools")
-def list_pools(profile: Optional[str] = None) -> dict[str, Any]:
-    """List pools, optionally filtered by profile.
+def list_pools(account: Optional[str] = None) -> dict[str, Any]:
+    """List pools, optionally filtered by account.
 
     Returns masked previews — no raw secrets. Use this to drive the
     Settings > Providers pane in the UI."""
     store = get_store()
     pools = store.list_pools()
-    if profile:
-        pools = [p for p in pools if p.profile_id == profile]
+    if account:
+        pools = [p for p in pools if p.account_id == account]
     return {"pools": [_pool_view(p) for p in pools]}
 
 
-@router.get("/pools/{provider_id}/{profile_id}")
-def get_pool(provider_id: str, profile_id: str) -> dict[str, Any]:
+@router.get("/pools/{provider_id}/{account_id}")
+def get_pool(provider_id: str, account_id: str) -> dict[str, Any]:
     store = get_store()
-    pool = store.find_pool(provider_id, profile_id)
+    pool = store.find_pool(provider_id, account_id)
     if pool is None:
         raise HTTPException(status_code=404, detail="pool not found")
     return _pool_view(pool)
 
 
-@router.post("/pools/{provider_id}/{profile_id}/credentials")
+@router.post("/pools/{provider_id}/{account_id}/credentials")
 def add_credential(
     provider_id: str,
-    profile_id: str,
+    account_id: str,
     body: AddCredentialBody,
 ) -> dict[str, Any]:
     store = get_store()
     try:
-        cred = _build_credential(provider_id, profile_id, body)
+        cred = _build_credential(provider_id, account_id, body)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     store.add_credential(cred)
     return _credential_view(cred)
 
 
-@router.delete("/pools/{provider_id}/{profile_id}/credentials/{credential_id}")
+@router.delete("/pools/{provider_id}/{account_id}/credentials/{credential_id}")
 def remove_credential(
     provider_id: str,
-    profile_id: str,
+    account_id: str,
     credential_id: str,
 ) -> dict[str, Any]:
     store = get_store()
     # Capture pre-state so we can tell 404 from no-op.
-    pool = store.find_pool(provider_id, profile_id)
+    pool = store.find_pool(provider_id, account_id)
     if pool is None or not any(c.credential_id == credential_id for c in pool.credentials):
         raise HTTPException(status_code=404, detail="credential not found")
-    store.remove_credential(provider_id, profile_id, credential_id)
+    store.remove_credential(provider_id, account_id, credential_id)
     return {"removed": credential_id}
 
 
 def _build_credential(
     provider_id: str,
-    profile_id: str,
+    account_id: str,
     body: AddCredentialBody,
 ) -> Credential:
     """Validate-and-construct a :class:`Credential` from a UI payload.
 
     We accept only the types the UI can reasonably ask for directly —
-    ``api_key``, ``oauth``, ``external_process``. ``cli_delegated``
+    ``api_key``, ``oauth``, ``credential_process``. ``cli_delegated``
     comes from the discovery flow, not manual creation;
     ``device_code`` / ``sso`` come from dedicated login flows."""
     kind = body.type
@@ -297,7 +297,7 @@ def _build_credential(
             raise ValueError("api_key is required for type=api_key")
         return Credential(
             provider_id=provider_id,
-            profile_id=profile_id,
+            account_id=account_id,
             kind="api_key",
             payload=CredentialData(kind="api_key", auth_value=body.api_key.strip()),
             source="webui_paste",
@@ -308,7 +308,7 @@ def _build_credential(
             raise ValueError("access_token is required for type=oauth")
         return Credential(
             provider_id=provider_id,
-            profile_id=profile_id,
+            account_id=account_id,
             kind="oauth",
             payload=CredentialData(
                 kind="oauth",
@@ -322,17 +322,17 @@ def _build_credential(
             source="webui_paste",
             metadata=dict(body.metadata),
         )
-    if kind == "external_process":
+    if kind == "credential_process":
         if not body.command:
-            raise ValueError("command is required for type=external_process")
+            raise ValueError("command is required for type=credential_process")
         if body.parses not in ("json", "text"):
             raise ValueError("parses must be 'json' or 'text'")
         return Credential(
             provider_id=provider_id,
-            profile_id=profile_id,
-            kind="external_process",
+            account_id=account_id,
+            kind="credential_process",
             payload=CredentialData(
-                kind="external_process",
+                kind="credential_process",
                 data={
                     "command": list(body.command),
                     "parses": body.parses,
@@ -369,7 +369,7 @@ def run_doctor_route() -> dict[str, Any]:
 
 
 @router.post("/adopt_all")
-def adopt_all_route(profile: Optional[str] = None) -> dict[str, Any]:
+def adopt_all_route(account: Optional[str] = None) -> dict[str, Any]:
     """Batch-adopt every credential discover() finds.
 
     Server-side equivalent of ``providers adopt --all``. Idempotent —
@@ -378,8 +378,8 @@ def adopt_all_route(profile: Optional[str] = None) -> dict[str, Any]:
     toast per success.
     """
     from openprogram.auth.cli import run_adopt_all
-    target_profile = profile or DEFAULT_PROFILE_NAME
-    return run_adopt_all(target_profile)
+    target_account = account or DEFAULT_ACCOUNT_NAME
+    return run_adopt_all(target_account)
 
 
 @router.get("/aliases")
@@ -407,9 +407,9 @@ def discover_credentials() -> dict[str, Any]:
     )
     from openprogram.providers.env_api_keys import PROVIDER_ENV_VARS
 
-    pm = get_profile_manager()
-    default_profile = pm.get_profile(DEFAULT_PROFILE_NAME)
-    profile_root = default_profile.root
+    pm = get_account_manager()
+    default_account = pm.get_account(DEFAULT_ACCOUNT_NAME)
+    account_root = default_account.root
 
     sources = [
         CodexCliSource(),
@@ -422,7 +422,7 @@ def discover_credentials() -> dict[str, Any]:
     found: list[dict[str, Any]] = []
     for src in sources:
         try:
-            creds = src.try_import(profile_root)
+            creds = src.try_import(account_root)
         except Exception as e:
             # One broken source shouldn't poison discovery of the others.
             found.append({
@@ -516,7 +516,7 @@ def _event_to_json(event: AuthEvent) -> str:
     return json.dumps({
         "type": event.type.value,
         "provider_id": event.provider_id,
-        "profile_id": event.profile_id,
+        "account_id": event.account_id,
         "credential_id": event.credential_id,
         "detail": event.detail,
         "timestamp_ms": event.timestamp_ms,

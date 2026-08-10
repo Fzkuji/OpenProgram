@@ -4,7 +4,7 @@
 
 ## 存放位置
 
-所有凭据统一存在凭据库：`~/.openprogram/auth/<provider>/<profile>.json`（权限 0600；使用 `--profile <name>` 时根目录换成 `~/.openprogram-<name>/`）。
+所有凭据统一存在凭据库：`~/.openprogram/auth/<provider>/<account>.json`（权限 0600；使用 `--profile <name>` 时工作区根目录换成 `~/.openprogram-<name>/`）。
 
 运行时**只从凭据库取密钥，不直接读环境变量**。环境变量里的 key（如 `OPENAI_API_KEY`）需要先导入（见下文 discover），之后改环境变量不影响已导入的凭据。两个例外是云凭据链：Amazon Bedrock（`AWS_PROFILE` / access key / bearer token 等）和 Google Vertex（ADC），它们在运行时自动识别。
 
@@ -50,7 +50,7 @@ Gemini CLI 的登录态不走 discover：`google-gemini-cli` provider 直接读 
 
 ### 辅助命令（外部进程）
 
-有些企业环境的 token 由厂商或自研 CLI 签发（`aws`、`sso-helper`、`token-fetcher`），拿不到可以直接粘贴的 API key。这类 provider 在 Settings → Providers 里按 `external_process` 类型添加：填命令 argv、stdout 的解析方式、缓存窗口。
+有些企业环境的 token 由厂商或自研 CLI 签发（`aws`、`sso-helper`、`token-fetcher`），拿不到可以直接粘贴的 API key。这类 provider 在 Settings → Providers 里按 `credential_process` 类型添加：填命令 argv、stdout 的解析方式、缓存窗口。
 
 | 字段 | 含义 | 默认值 |
 |---|---|---|
@@ -72,8 +72,8 @@ Gemini CLI 的登录态不走 discover：`google-gemini-cli` provider 直接读 
 openprogram providers status <provider>    # 当前凭据是否可用
 openprogram providers doctor               # 过期、刷新失败、冷却、冲突
 openprogram providers logout <provider>    # 删除凭据
-openprogram providers use <provider> [profile]   # 多账号切换
-openprogram providers list                 # 按 profile 列出凭据池
+openprogram providers use <provider> [account]   # 多账号切换
+openprogram providers list                 # 按账号列出凭据池
 ```
 
-每个 provider 支持多账号（命名 profile），一个账号的凭据池可以放多个 API key。某个 key 返回 401 / 402 / 429 / 503 时进入冷却，凭据池自动把下一把健康的 key 交给后续请求，策略可选（默认 `fill_first`，即"备用 key"语义；另有 `round_robin`、`random`、`least_used`）。跨账号轮换（而不是只用当前激活账号）是每个 provider 单独的开关，默认关闭。
+每个 provider 支持多个命名账号，一个账号的凭据池可以放多个 API key。某个 key 返回 401 / 402 / 429 / 503 时进入冷却，凭据池自动把下一把健康的 key 交给后续请求，策略可选（默认 `fill_first`，即"备用 key"语义；另有 `round_robin`、`random`、`least_used`）。跨账号轮换（而不是只用当前激活账号）是每个 provider 单独的开关，默认关闭。

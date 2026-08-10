@@ -8,9 +8,9 @@ login side described in [unified-auth-storage.md](./unified-auth-storage.md).
 
 ## An account is a profile
 
-AuthStore keys every credential pool by `(provider_id, profile_id)` and persists
+AuthStore keys every credential pool by `(provider_id, account_id)` and persists
 one file per pool at `~/.openprogram/auth/<provider>/<profile>.json`, and
-`ProfileManager` already does profile CRUD. "Multiple accounts" and "multiple
+`AccountManager` already does profile CRUD. "Multiple accounts" and "multiple
 profiles" are therefore the same concept — each account is a profile id.
 
 The constraint that forces this model is OAuth refresh-token rotation:
@@ -23,16 +23,16 @@ every provider, and each named api-key is a profile too.
 
 The storage and rotation machinery it builds on:
 
-- Multi-profile storage plus `ProfileManager` CRUD (`auth/store.py`,
-  `auth/profiles.py`).
+- Multi-profile storage plus `AccountManager` CRUD (`auth/store.py`,
+  `auth/accounts.py`).
 - The pool strategy model — `PoolStrategy = fill_first | round_robin | random |
   least_used`, `credentials[]`, `_rr_cursor`, `fallback_chain`, and per-credential
   `cooldown_until_ms` / `status`, all serialized (`auth/types.py:335-390`).
 - Pool selection honouring strategy, health filter, and cooldown skip
-  (`auth/pool.py:99-161`); fallback recursion (`auth/manager.py:247-312`);
+  (`auth/pool.py:99-161`); fallback recursion (`auth/credential_provider.py`);
   cooldown durations with `mark_failure` / `mark_success` / `clear_cooldown`
-  (`auth/pool.py:57-276`); and the manager wrappers `report_failure` /
-  `report_success` (`auth/manager.py:450-497`).
+  (`auth/pool.py:57-276`); and the credential-provider wrappers `apply_failure` /
+  `apply_success` (`auth/credential_provider.py`).
 - A multi-profile REST surface (`webui/_auth_routes.py`: `/profiles`, `/pools`,
   `/pools/.../credentials`, `/doctor`, SSE `/events`).
 - The unified login endpoints (`/api/providers/{id}/login/{start,poll,submit,
@@ -43,15 +43,15 @@ The storage and rotation machinery it builds on:
 Rotation and per-account selection are inert unless two connections exist, and
 without them the rest of the surface is decoration:
 
-1. **Active-profile selection at request time.** `AuthManager.acquire` defaults
-   to `profile_id="default"`, so unless the request path enters
+1. **Active-profile selection at request time.** `CredentialProvider.acquire` defaults
+   to `account_id="default"`, so unless the request path enters
    `auth_scope(...)` a user cannot actually run on "work" rather than
    "personal". `auth/account_selection.py` provides `get_active_account(provider)` /
    `set_active_account(provider)` plus `get_active_pin`; `acquire` and the
    resolver default to it, and the chat/execute entry enters the scope. The
    default stays `"default"`, so activating another profile is opt-in.
-2. **Outcome reporting from the call path.** `report_failure` and
-   `report_success` only matter if a provider runtime feeds a 429/402/5xx back
+2. **Outcome reporting from the call path.** `record_call_failure` and
+   `record_call_success` only matter if a provider runtime feeds a 429/402/5xx back
    to the pool. Without that, `cooldown_until_ms` stays 0, `fill_first` always
    returns credential #0, and rotation and fallback never engage. The call path
    (`auth/usage.py` plus `openai_completions.stream_simple`) acquires per

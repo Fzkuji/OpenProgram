@@ -77,7 +77,7 @@ Programs register at startup, so run `openprogram restart` after installing (or 
 ## Multiple accounts or keys for the same provider — how do I switch?
 
 ```bash
-openprogram providers login openai --profile work   # add a second account
+openprogram providers login openai --account work   # add a second account
 openprogram providers use openai work               # switch to the "work" account
 openprogram providers list                          # list accounts, the active one is marked
 ```

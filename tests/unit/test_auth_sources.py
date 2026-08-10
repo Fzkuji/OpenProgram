@@ -184,9 +184,9 @@ def test_gh_source_parses_two_hosts(tmp_path: Path):
     assert len(creds) == 2
     by_host = {c.metadata["host"]: c for c in creds}
     assert by_host["github.com"].payload.auth_value == "gho_abc123"
-    assert by_host["github.com"].profile_id == "default"
+    assert by_host["github.com"].account_id == "default"
     assert by_host["github.enterprise.example"].payload.auth_value == "gho_zzz999"
-    assert by_host["github.enterprise.example"].profile_id == "github.enterprise.example"
+    assert by_host["github.enterprise.example"].account_id == "github.enterprise.example"
 
 
 def test_gh_source_filter_by_host(tmp_path: Path):

@@ -30,7 +30,7 @@ def _runtime_build_error_response(exc: Exception, provider: str | None = None):
 
     Building a runtime acquires the provider credential (codex/anthropic
     refresh OAuth in ``__init__``). When that credential is expired with a
-    dead refresh token, AuthManager raises ``AuthNeedsReauthError`` /
+    dead refresh token, CredentialProvider raises ``AuthNeedsReauthError`` /
     ``AuthReadOnlyError`` / ``AuthPoolExhaustedError`` / ``AuthConfigError``;
     the anthropic runtime instead raises ``ValueError("No Anthropic
     credential …")`` once resolution comes back empty. A failed/expired

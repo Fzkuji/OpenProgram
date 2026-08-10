@@ -4,7 +4,7 @@ This page covers where provider credentials come from, where they are stored, an
 
 ## Storage location
 
-All credentials live in one credential store: `~/.openprogram/auth/<provider>/<profile>.json` (permissions 0600; with `--profile <name>` the root directory becomes `~/.openprogram-<name>/`).
+All credentials live in one credential store: `~/.openprogram/auth/<provider>/<account>.json` (permissions 0600; with `--profile <name>` the workspace root directory becomes `~/.openprogram-<name>/`).
 
 At runtime, keys are **read from the credential store only — environment variables are not read directly**. A key in an environment variable (such as `OPENAI_API_KEY`) must be imported first (see discover below); changing the environment variable afterwards does not affect the imported credential. The two exceptions are cloud credential chains: Amazon Bedrock (`AWS_PROFILE` / access keys / bearer token, etc.) and Google Vertex (ADC), both detected automatically at runtime.
 
@@ -50,7 +50,7 @@ The Gemini CLI login state does not go through discover: the `google-gemini-cli`
 
 ### Helper command (external process)
 
-Some corporate setups issue tokens through a vendor or in-house CLI (`aws`, `sso-helper`, `token-fetcher`) rather than an API key you can paste. Add such a provider in Settings → Providers with type `external_process`: the command's argv, how to read its stdout, and a cache window.
+Some corporate setups issue tokens through a vendor or in-house CLI (`aws`, `sso-helper`, `token-fetcher`) rather than an API key you can paste. Add such a provider in Settings → Providers with type `credential_process`: the command's argv, how to read its stdout, and a cache window.
 
 | Field | Meaning | Default |
 |---|---|---|
@@ -72,8 +72,8 @@ Enterprise SSO (`sso`) is not implemented. The credential kind is reserved, and 
 openprogram providers status <provider>    # are the current credentials usable
 openprogram providers doctor               # expiry, refresh failures, cooldown, conflicts
 openprogram providers logout <provider>    # delete credentials
-openprogram providers use <provider> [profile]   # switch between multiple accounts
-openprogram providers list                 # list credential pools by profile
+openprogram providers use <provider> [account]   # switch between multiple accounts
+openprogram providers list                 # list credential pools by account
 ```
 
-Every provider supports multiple accounts (named profiles), and one account's credential pool can hold multiple API keys. A key that returns 401 / 402 / 429 / 503 is put on a cooldown and the pool hands the next healthy key to the following request — automatically, with selectable strategies (`fill_first` is the default "backup key" behavior; `round_robin`, `random`, and `least_used` are also available). Rotating across whole accounts (instead of the single active one) is a separate per-provider switch, off by default.
+Every provider supports multiple named accounts, and one account's credential pool can hold multiple API keys. A key that returns 401 / 402 / 429 / 503 is put on a cooldown and the pool hands the next healthy key to the following request — automatically, with selectable strategies (`fill_first` is the default "backup key" behavior; `round_robin`, `random`, and `least_used` are also available). Rotating across whole accounts (instead of the single active one) is a separate per-provider switch, off by default.

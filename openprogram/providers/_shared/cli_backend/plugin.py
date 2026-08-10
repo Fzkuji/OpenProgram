@@ -63,7 +63,7 @@ class PrepareExecutionContext:
     provider: str
     model_id: str
     agent_dir: Optional[str] = None
-    auth_profile_id: Optional[str] = None
+    auth_account_id: Optional[str] = None
     # ``config`` intentionally left untyped here — it's the whole
     # OpenProgram config object, which we don't want to circular-import.
     config: Optional[object] = None
@@ -159,7 +159,7 @@ class CliBackendPlugin:
     text_transforms: Optional[PluginTextTransforms] = None
     """Input/output text transforms applied around the CLI boundary."""
 
-    default_auth_profile_id: Optional[str] = None
+    default_auth_account_id: Optional[str] = None
     """Preferred auth-profile id when caller didn't specify one."""
 
     auth_epoch_mode: CliBackendAuthEpochMode = "combined"

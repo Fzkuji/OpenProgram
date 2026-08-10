@@ -1,9 +1,9 @@
 """
 OpenAICodexRuntime — thin Runtime subclass that burns ChatGPT subscription.
 
-Reads OAuth tokens from auth v2's :class:`AuthManager` (registered via
+Reads OAuth tokens from auth v2's :class:`CredentialProvider` (registered via
 :mod:`.auth_adapter`). First run adopts the Codex CLI's
-``~/.codex/auth.json`` into our own store; after that, AuthManager owns
+``~/.codex/auth.json`` into our own store; after that, CredentialProvider owns
 refresh + rotation. Rotated tokens are mirrored back into
 ``~/.codex/auth.json`` so the Codex CLI stays in sync with us.
 
@@ -23,8 +23,8 @@ from typing import Any, Optional
 _log = logging.getLogger(__name__).warning
 
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.auth.context import get_active_profile_id
-from openprogram.auth.manager import AuthManager, get_manager
+from openprogram.auth.context import get_active_account_id
+from openprogram.auth.credential_provider import CredentialProvider, get_credential_provider
 from openprogram.auth.store import AuthStore
 from openprogram.auth.types import (
     AuthConfigError,
@@ -123,10 +123,10 @@ def ensure_codex_model_registered(mid: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Credential acquisition — AuthManager-first, with one-shot import fallback
+# Credential acquisition — CredentialProvider-first, with one-shot import fallback
 # ---------------------------------------------------------------------------
 
-def _ensure_credential(manager: AuthManager, profile_id: str) -> Credential:
+def _ensure_credential(manager: CredentialProvider, account_id: str) -> Credential:
     """Resolve a Codex credential for the given profile.
 
     Try the store first. If no pool exists, attempt a one-shot import
@@ -136,24 +136,24 @@ def _ensure_credential(manager: AuthManager, profile_id: str) -> Credential:
     should render a "please run `codex login --device-auth`" message.
     """
     try:
-        return manager.acquire_sync(auth_adapter.PROVIDER_ID, profile_id)
+        return manager.acquire_sync(auth_adapter.PROVIDER_ID, account_id)
     except AuthConfigError:
         pass  # fall through to import path
 
-    imported = auth_adapter.import_from_codex_file(profile_id=profile_id)
+    imported = auth_adapter.import_from_codex_file(account_id=account_id)
     if imported is None:
         raise AuthConfigError(
             f"{auth_adapter.codex_auth_path()} not found or unusable. "
             "Run: codex login --device-auth",
             provider_id=auth_adapter.PROVIDER_ID,
-            profile_id=profile_id,
+            account_id=account_id,
         )
     manager.store.put_pool(CredentialPool(
         provider_id=auth_adapter.PROVIDER_ID,
-        profile_id=profile_id,
+        account_id=account_id,
         credentials=[imported],
     ))
-    return manager.acquire_sync(auth_adapter.PROVIDER_ID, profile_id)
+    return manager.acquire_sync(auth_adapter.PROVIDER_ID, account_id)
 
 
 def _account_id_for(cred: Credential) -> str:
@@ -205,11 +205,11 @@ class OpenAICodexRuntime(Runtime):
         while isinstance(model, str) and model.startswith(f"{auth_adapter.PROVIDER_ID}:"):
             model = model.split(":", 1)[1]
 
-        self._manager = get_manager()
-        self._profile_id = profile or get_active_profile_id()
+        self._manager = get_credential_provider()
+        self._account_id = profile or get_active_account_id()
         self._cached_access_token: str = ""
 
-        cred = _ensure_credential(self._manager, self._profile_id)
+        cred = _ensure_credential(self._manager, self._account_id)
         if cred.kind != "oauth":
             # OpenAICodexRuntime targets the ChatGPT Responses backend
             # (requires a chatgpt-account-id header minted from the JWT).
@@ -217,7 +217,7 @@ class OpenAICodexRuntime(Runtime):
             # `openai` pool, not `openai-codex`. Surface this clearly
             # instead of crashing on a missing .access_token attribute.
             raise AuthConfigError(
-                f"openai-codex/{self._profile_id} credential is "
+                f"openai-codex/{self._account_id} credential is "
                 f"{cred.kind!r}, but this runtime needs OAuth (ChatGPT "
                 "Responses backend). Run `codex login` (don't pick the "
                 "API-key option) to get OAuth tokens into "
@@ -225,7 +225,7 @@ class OpenAICodexRuntime(Runtime):
                 "codex_cli`. If you only have a bare OpenAI key, switch "
                 "your chat provider to `openai`, not `openai-codex`.",
                 provider_id=auth_adapter.PROVIDER_ID,
-                profile_id=self._profile_id,
+                account_id=self._account_id,
             )
         access = cred.payload.auth_value
         account_id = _account_id_for(cred)
@@ -261,11 +261,11 @@ class OpenAICodexRuntime(Runtime):
         self.system = system
 
     def exec(self, *args: Any, **kwargs: Any) -> Any:
-        # Re-acquire on every call — AuthManager refreshes internally if
+        # Re-acquire on every call — CredentialProvider refreshes internally if
         # the access token is close to expiry, dedup'ing concurrent
         # refreshes. If the cred pointer is unchanged we skip the header
         # update to keep this cheap.
-        cred = self._manager.acquire_sync(auth_adapter.PROVIDER_ID, self._profile_id)
+        cred = self._manager.acquire_sync(auth_adapter.PROVIDER_ID, self._account_id)
         access = cred.payload.auth_value
         if access != self._cached_access_token:
             self.api_key = access

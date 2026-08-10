@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.auth.manager import AuthManager
+from openprogram.auth.credential_provider import CredentialProvider
 from openprogram.auth.store import AuthStore, set_store_for_testing
 from openprogram.auth.types import (
     AuthConfigError,
@@ -55,7 +55,7 @@ def _write_creds(path: Path, access: str = "ya29.fake", refresh: str = "1//ref")
 def test_ensure_credential_imports_from_gemini_cli_file_when_pool_absent(isolated):
     store, _tmp, creds_path = isolated
     _write_creds(creds_path, access="ya29.fromfile")
-    mgr = AuthManager(store=store)
+    mgr = CredentialProvider(store=store)
 
     cred = _ensure_credential(mgr, "default")
     assert cred.kind == "cli_delegated"
@@ -69,7 +69,7 @@ def test_ensure_credential_imports_from_gemini_cli_file_when_pool_absent(isolate
 
 def test_ensure_credential_raises_when_no_pool_and_no_file(isolated):
     store, *_ = isolated
-    mgr = AuthManager(store=store)
+    mgr = CredentialProvider(store=store)
     with pytest.raises(AuthConfigError, match="gemini auth login"):
         _ensure_credential(mgr, "default")
 
@@ -81,7 +81,7 @@ def test_access_token_reads_live_file_for_cli_delegated(isolated):
     _write_creds(creds_path, access="ya29.original")
     cred = Credential(
         provider_id=auth_adapter.PROVIDER_ID,
-        profile_id="default",
+        account_id="default",
         kind="cli_delegated",
         payload=CredentialData(
             kind="cli_delegated",
@@ -103,7 +103,7 @@ def test_access_token_reads_live_file_for_cli_delegated(isolated):
 def test_access_token_reads_oauth_payload_directly():
     cred = Credential(
         provider_id=auth_adapter.PROVIDER_ID,
-        profile_id="default",
+        account_id="default",
         kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value="ya29.oauth_direct",
@@ -120,13 +120,13 @@ def test_access_token_reads_oauth_payload_directly():
 def test_profile_isolation(isolated):
     store, _tmp, creds_path = isolated
 
-    def seed(profile_id: str, token: str) -> None:
+    def seed(account_id: str, token: str) -> None:
         store.put_pool(CredentialPool(
             provider_id=auth_adapter.PROVIDER_ID,
-            profile_id=profile_id,
+            account_id=account_id,
             credentials=[Credential(
                 provider_id=auth_adapter.PROVIDER_ID,
-                profile_id=profile_id,
+                account_id=account_id,
                 kind="oauth",
                 payload=CredentialData(
                     kind="oauth", auth_value=token,
@@ -141,6 +141,6 @@ def test_profile_isolation(isolated):
 
     seed("personal", "ya29.personal")
     seed("work", "ya29.work")
-    mgr = AuthManager(store=store)
+    mgr = CredentialProvider(store=store)
     assert _access_token_for(_ensure_credential(mgr, "personal")) == "ya29.personal"
     assert _access_token_for(_ensure_credential(mgr, "work")) == "ya29.work"

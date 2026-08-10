@@ -32,8 +32,8 @@ openprogram <noun> [<noun> ...] <verb> [<arg> ...]
 openprogram providers login <prov>               ✓
 openprogram providers list                       ✓
 openprogram providers status <prov>              ✓
-openprogram providers profiles list              ✓  (nouns stack: providers > profiles)
-openprogram providers profiles create <n>        ✓
+openprogram providers accounts list              ✓  (nouns stack: providers > accounts)
+openprogram providers accounts create <n>        ✓
 openprogram providers doctor                     ✓
 openprogram providers setup                      ✓  (interactive wizard)
 

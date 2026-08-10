@@ -3,7 +3,7 @@
 /**
  * Settings → Auth page.
  *
- * A table-driven view of credential pools for the active profile, with
+ * A table-driven view of credential pools for the active account, with
  * three actions:
  *   • Discover — scan external sources (Codex CLI, Claude Code, env
  *     vars, …) and show what could be adopted, read-only preview.
@@ -20,7 +20,7 @@ import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
 import { subscribeProviderAuthEvents as subscribeAuthEvents } from "@/lib/net/provider-auth-events";
 import type {
-  AuthProfile,
+  AuthAccount,
   CredentialView,
   DiscoveredCredential,
   PoolView,
@@ -40,8 +40,8 @@ const POOL_REFETCH_EVENTS = new Set([
 
 export default function AuthSettingsPage() {
   const { text } = useTranslation();
-  const [profiles, setProfiles] = useState<AuthProfile[]>([]);
-  const [activeProfile, setActiveProfile] = useState<string>("default");
+  const [accounts, setAccounts] = useState<AuthAccount[]>([]);
+  const [activeAccount, setActiveAccount] = useState<string>("default");
   const [pools, setPools] = useState<PoolView[]>([]);
   const [discovered, setDiscovered] = useState<DiscoveredCredential[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,14 +60,14 @@ export default function AuthSettingsPage() {
     refreshToken: "",
   });
 
-  const reload = useCallback(async (profile: string) => {
+  const reload = useCallback(async (account: string) => {
     setError(null);
     try {
       const [p, pl] = await Promise.all([
-        api.listProviderProfiles(),
-        api.listProviderPools(profile),
+        api.listProviderAccounts(),
+        api.listProviderPools(account),
       ]);
-      setProfiles(p.profiles);
+      setAccounts(p.accounts);
       setPools(pl.pools);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -77,16 +77,16 @@ export default function AuthSettingsPage() {
   }, []);
 
   useEffect(() => {
-    reload(activeProfile);
-  }, [activeProfile, reload]);
+    reload(activeAccount);
+  }, [activeAccount, reload]);
 
   useEffect(() => {
     return subscribeAuthEvents((ev) => {
-      if (POOL_REFETCH_EVENTS.has(ev.type) && ev.profile_id === activeProfile) {
-        reload(activeProfile);
+      if (POOL_REFETCH_EVENTS.has(ev.type) && ev.account_id === activeAccount) {
+        reload(activeAccount);
       }
     });
-  }, [activeProfile, reload]);
+  }, [activeAccount, reload]);
 
   const onDiscover = async () => {
     try {
@@ -102,12 +102,12 @@ export default function AuthSettingsPage() {
     if (!addForm.provider.trim()) return;
     try {
       if (addForm.type === "api_key") {
-        await api.addProviderCredential(addForm.provider.trim(), activeProfile, {
+        await api.addProviderCredential(addForm.provider.trim(), activeAccount, {
           type: "api_key",
           api_key: addForm.apiKey.trim(),
         });
       } else {
-        await api.addProviderCredential(addForm.provider.trim(), activeProfile, {
+        await api.addProviderCredential(addForm.provider.trim(), activeAccount, {
           type: "oauth",
           access_token: addForm.accessToken.trim(),
           refresh_token: addForm.refreshToken.trim() || undefined,
@@ -120,7 +120,7 @@ export default function AuthSettingsPage() {
         accessToken: "",
         refreshToken: "",
       });
-      reload(activeProfile);
+      reload(activeAccount);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -128,8 +128,8 @@ export default function AuthSettingsPage() {
 
   const onRemove = async (cred: CredentialView) => {
     try {
-      await api.removeProviderCredential(cred.provider_id, cred.profile_id, cred.credential_id);
-      reload(activeProfile);
+      await api.removeProviderCredential(cred.provider_id, cred.account_id, cred.credential_id);
+      reload(activeAccount);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -143,8 +143,8 @@ export default function AuthSettingsPage() {
         <h1 className="text-2xl font-semibold">{text("Auth", "认证")}</h1>
         <p className="text-sm text-muted-foreground">
           {text(
-            "Credential pools for each provider in the active profile. Secrets are masked on display; the raw value never leaves the server after it has been stored.",
-            "当前 profile 下每个 provider 的凭据池。密钥展示时会被遮蔽；保存后原始值不会离开服务器。",
+            "Credential pools for each provider in the active account. Secrets are masked on display; the raw value never leaves the server after it has been stored.",
+            "当前账号下每个 provider 的凭据池。密钥展示时会被遮蔽；保存后原始值不会离开服务器。",
           )}
         </p>
       </header>
@@ -157,13 +157,13 @@ export default function AuthSettingsPage() {
 
       <section className="space-y-2">
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">{text("Profile", "配置档案")}</label>
+          <label className="text-sm font-medium">{text("Account", "账号")}</label>
           <select
             className="rounded border bg-background px-2 py-1 text-sm"
-            value={activeProfile}
-            onChange={(e) => setActiveProfile(e.target.value)}
+            value={activeAccount}
+            onChange={(e) => setActiveAccount(e.target.value)}
           >
-            {profiles.map((p) => (
+            {accounts.map((p) => (
               <option key={p.name} value={p.name}>
                 {p.display_name || p.name}
               </option>
@@ -185,14 +185,14 @@ export default function AuthSettingsPage() {
         {pools.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {text(
-              "No credentials for this profile yet. Add one below or click Discover to scan external sources.",
-              "这个 profile 还没有凭据。可以在下方添加，或点击发现扫描外部来源。",
+              "No credentials for this account yet. Add one below or click Discover to scan external sources.",
+              "这个账号还没有凭据。可以在下方添加，或点击发现扫描外部来源。",
             )}
           </p>
         ) : (
           <div className="space-y-4">
             {pools.map((pool) => (
-              <PoolCard key={`${pool.provider_id}:${pool.profile_id}`} pool={pool} onRemove={onRemove} text={text} />
+              <PoolCard key={`${pool.provider_id}:${pool.account_id}`} pool={pool} onRemove={onRemove} text={text} />
             ))}
           </div>
         )}
@@ -213,7 +213,7 @@ export default function AuthSettingsPage() {
                 <div className="font-mono text-xs text-muted-foreground">{d.source_id}</div>
                 {d.credential ? (
                   <div>
-                    {d.credential.provider_id} / {d.credential.profile_id}
+                    {d.credential.provider_id} / {d.credential.account_id}
                     {" — "}
                     {renderPayloadPreview(d.credential, text)}
                   </div>
@@ -310,7 +310,7 @@ function PoolCard({
         <div>
           <div className="font-medium">{pool.provider_id}</div>
           <div className="text-xs text-muted-foreground">
-            {text("profile", "配置档案")}：{pool.profile_id} · {text("strategy", "策略")}：{pool.strategy}
+            {text("account", "账号")}：{pool.account_id} · {text("strategy", "策略")}：{pool.strategy}
           </div>
         </div>
         <div className="text-xs text-muted-foreground">{pool.credentials.length} {text("credential(s)", "个凭据")}</div>
@@ -352,6 +352,6 @@ function renderPayloadPreview(cred: CredentialView, text: (en: string, zh: strin
     return `OAuth ${p.access_token_preview ?? ""}${p.has_refresh_token ? ` (${text("+refresh", "+刷新")})` : ""}`;
   if (p.type === "cli_delegated") return `${text("CLI-delegated", "CLI 委托")} -> ${p.store_path ?? ""}`;
   if (p.type === "device_code") return `${text("Device code", "设备码")} ${p.access_token_preview ?? ""}`;
-  if (p.type === "external_process") return `${text("Helper", "辅助进程")} ${(p.command || []).join(" ")}`;
+  if (p.type === "credential_process") return `${text("Helper", "辅助进程")} ${(p.command || []).join(" ")}`;
   return cred.kind;
 }

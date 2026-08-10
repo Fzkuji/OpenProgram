@@ -4,7 +4,7 @@ Used by providers that don't have OAuth: OpenAI direct, Groq, Together,
 custom vLLM deployments with a shared key, anything where the user is
 expected to have a raw key string. Still wrapped in the :class:`LoginMethod`
 interface so the settings UI can treat every auth flow uniformly — a
-user adding a new profile doesn't need to know whether it's OAuth or a
+user adding a new account doesn't need to know whether it's OAuth or a
 key paste, they just pick the provider.
 
 Validation is intentionally minimal: we only reject empty strings. Format
@@ -26,8 +26,8 @@ from ..types import (
 class ApiKeyPasteMethod(LoginMethod):
     """Prompts the user for a key and returns an api_key credential.
 
-    The ``profile_id`` is supplied by the caller so one provider can hold
-    several keys under named profiles ("personal", "work", etc).
+    The ``account_id`` is supplied by the caller so one provider can hold
+    several keys under named accounts ("personal", "work", etc).
     ``metadata`` lets the UI pass through display-only fields (nickname,
     org name) so the settings page has something human-readable to show
     next to each pool member.
@@ -39,12 +39,12 @@ class ApiKeyPasteMethod(LoginMethod):
         self,
         provider_id: str,
         *,
-        profile_id: str = "default",
+        account_id: str = "default",
         prompt_message: str = "",
         metadata: dict | None = None,
     ) -> None:
         self.provider_id = provider_id
-        self._profile_id = profile_id
+        self._account_id = account_id
         self._prompt_message = prompt_message or f"Paste your {provider_id} API key"
         self._metadata = dict(metadata or {})
 
@@ -62,7 +62,7 @@ class ApiKeyPasteMethod(LoginMethod):
             raise ValueError("empty API key")
         return Credential(
             provider_id=self.provider_id,
-            profile_id=self._profile_id,
+            account_id=self._account_id,
             kind="api_key",
             payload=CredentialData(kind="api_key", auth_value=key),
             source=f"{self.method_id}:{self.provider_id}",

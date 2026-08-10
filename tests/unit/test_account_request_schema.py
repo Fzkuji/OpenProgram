@@ -62,11 +62,11 @@ def _put_account(store: AuthStore, name: str = "work", value: str = _SECRET) -> 
     store.put_pool(
         CredentialPool(
             provider_id="openai",
-            profile_id=name,
+            account_id=name,
             credentials=[
                 Credential(
                     provider_id="openai",
-                    profile_id=name,
+                    account_id=name,
                     kind="api_key",
                     payload=CredentialData(kind="api_key", auth_value=value),
                 )
@@ -76,9 +76,9 @@ def _put_account(store: AuthStore, name: str = "work", value: str = _SECRET) -> 
 
 
 def _account_state(store: AuthStore) -> list[tuple[str, str]]:
-    """Every stored openai account as (profile, secret) — the mutation probe."""
+    """Every stored openai account as (account, secret) — the mutation probe."""
     return sorted(
-        (pool.profile_id, pool.credentials[0].payload.auth_value)
+        (pool.account_id, pool.credentials[0].payload.auth_value)
         for pool in store.list_pools()
         if pool.provider_id == "openai" and pool.credentials
     )

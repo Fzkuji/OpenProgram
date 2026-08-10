@@ -34,7 +34,7 @@ class _StubAuthStore:
 def test_translate_mapped_types():
     ev = translate_auth_event(AuthEvent(
         type=AuthEventType.POOL_MEMBER_COOLDOWN,
-        provider_id="anthropic", profile_id="p1", credential_id="c1",
+        provider_id="anthropic", account_id="p1", credential_id="c1",
         detail={"until_ms": 123},
     ))
     assert ev is not None
@@ -52,7 +52,7 @@ def test_translate_mapped_types():
 
 
 def test_unmapped_types_return_none():
-    for t in (AuthEventType.LOGIN_STARTED, AuthEventType.PROFILE_CREATED,
+    for t in (AuthEventType.LOGIN_STARTED, AuthEventType.ACCOUNT_CREATED,
               AuthEventType.POOL_MEMBER_ADDED):
         assert translate_auth_event(AuthEvent(type=t)) is None
 

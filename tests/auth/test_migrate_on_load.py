@@ -6,10 +6,10 @@ def test_store_migrates_old_payload_on_first_load(tmp_path):
     auth = tmp_path / "auth" / "openai"
     auth.mkdir(parents=True)
     (auth / "default.json").write_text(json.dumps({
-        "v": 1, "provider_id": "openai", "profile_id": "default",
+        "v": 1, "provider_id": "openai", "account_id": "default",
         "kind": "api_key", "credential_id": "cred_1",
         "credentials": [{
-            "v": 1, "provider_id": "openai", "profile_id": "default",
+            "v": 1, "provider_id": "openai", "account_id": "default",
             "kind": "api_key", "credential_id": "cred_1",
             "payload": {"api_key": "sk-old", "__type__": "ApiKeyPayload"},
         }],

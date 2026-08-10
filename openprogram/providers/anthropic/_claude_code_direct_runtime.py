@@ -165,7 +165,7 @@ class ClaudeCodeRuntime(Runtime):
         # (opts.api_key is set) so it never refreshes, and Anthropic 400s
         # "credit balance too low" (treating the expired token as a plain
         # pay-as-you-go call). Leaving api_key unpinned makes the anthropic
-        # wire re-resolve (and AuthManager-refresh) on EVERY turn.
+        # wire re-resolve (and CredentialProvider-refresh) on EVERY turn.
         if not api_key:
             from openprogram.auth.resolver import resolve_api_key_sync
             if not resolve_api_key_sync("anthropic"):

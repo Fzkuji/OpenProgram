@@ -112,14 +112,14 @@ export function makeAccountsClient(providerId: string): AccountsClient {
 
 // ---- login-mode add: the shared /login/* flow ---------------------------
 // Used when a provider reports add_mode="login" (OAuth / device-code /
-// import-from-CLI). `profile` is the new account name the credential lands in.
+// import-from-CLI). `account` is the new account name the credential lands in.
 
 export async function startLogin(
   providerId: string,
   method: string,
-  profile: string,
+  account: string,
 ): Promise<{ session?: string; method?: string; error?: string }> {
-  return postTo(`/api/providers/${encodeURIComponent(providerId)}/login/start`, { method, profile });
+  return postTo(`/api/providers/${encodeURIComponent(providerId)}/login/start`, { method, account });
 }
 
 export async function pollLogin(

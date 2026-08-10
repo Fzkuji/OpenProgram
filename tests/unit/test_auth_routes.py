@@ -14,11 +14,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from openprogram.auth.manager import AuthManager, set_manager_for_testing
-from openprogram.auth.profiles import (
-    DEFAULT_PROFILE_NAME,
-    ProfileManager,
-    set_profile_manager_for_testing,
+from openprogram.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
+from openprogram.auth.accounts import (
+    DEFAULT_ACCOUNT_NAME,
+    AccountManager,
+    set_account_manager_for_testing,
 )
 from openprogram.auth.store import AuthStore, set_store_for_testing
 from openprogram.auth.types import (
@@ -34,13 +34,13 @@ from openprogram.webui._auth_routes import router
 
 @pytest.fixture
 def client(tmp_path):
-    """FastAPI test client with isolated store + profile manager."""
+    """FastAPI test client with isolated store + account manager."""
     store = AuthStore(root=tmp_path / "store")
     set_store_for_testing(store)
-    set_manager_for_testing(AuthManager(store=store))
+    set_credential_provider_for_testing(CredentialProvider(store=store))
 
-    pm = ProfileManager(root=tmp_path / "profiles")
-    set_profile_manager_for_testing(pm)
+    pm = AccountManager(root=tmp_path / "profiles")
+    set_account_manager_for_testing(pm)
 
     # Reset the SSE wire-up so each test gets a fresh listener on our new store.
     _auth_routes._wired = False
@@ -52,55 +52,55 @@ def client(tmp_path):
         yield c, store, pm
 
     set_store_for_testing(None)
-    set_manager_for_testing(None)
-    set_profile_manager_for_testing(None)
+    set_credential_provider_for_testing(None)
+    set_account_manager_for_testing(None)
 
 
-# ---- profiles ---------------------------------------------------------
+# ---- accounts ---------------------------------------------------------
 
-def test_list_profiles_includes_default(client):
+def test_list_accounts_includes_default(client):
     c, store, pm = client
-    resp = c.get("/api/providers/profiles")
+    resp = c.get("/api/providers/accounts")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["default"] == DEFAULT_PROFILE_NAME
-    names = [p["name"] for p in body["profiles"]]
-    assert DEFAULT_PROFILE_NAME in names
+    assert body["default"] == DEFAULT_ACCOUNT_NAME
+    names = [p["name"] for p in body["accounts"]]
+    assert DEFAULT_ACCOUNT_NAME in names
 
 
-def test_create_profile_ok(client):
+def test_create_account_ok(client):
     c, *_ = client
-    resp = c.post("/api/providers/profiles", json={"name": "work", "display_name": "Work"})
+    resp = c.post("/api/providers/accounts", json={"name": "work", "display_name": "Work"})
     assert resp.status_code == 200
     assert resp.json()["name"] == "work"
     assert resp.json()["display_name"] == "Work"
 
 
-def test_create_profile_duplicate_is_400(client):
+def test_create_account_duplicate_is_400(client):
     c, *_ = client
-    c.post("/api/providers/profiles", json={"name": "dup"})
-    r = c.post("/api/providers/profiles", json={"name": "dup"})
+    c.post("/api/providers/accounts", json={"name": "dup"})
+    r = c.post("/api/providers/accounts", json={"name": "dup"})
     assert r.status_code == 400
 
 
-def test_create_profile_invalid_name_is_400(client):
+def test_create_account_invalid_name_is_400(client):
     c, *_ = client
-    r = c.post("/api/providers/profiles", json={"name": "../evil"})
+    r = c.post("/api/providers/accounts", json={"name": "../evil"})
     assert r.status_code == 400
 
 
-def test_delete_profile(client):
+def test_delete_account(client):
     c, *_ = client
-    c.post("/api/providers/profiles", json={"name": "scratch"})
-    r = c.delete("/api/providers/profiles/scratch")
+    c.post("/api/providers/accounts", json={"name": "scratch"})
+    r = c.delete("/api/providers/accounts/scratch")
     assert r.status_code == 200
-    r = c.get("/api/providers/profiles")
-    assert "scratch" not in [p["name"] for p in r.json()["profiles"]]
+    r = c.get("/api/providers/accounts")
+    assert "scratch" not in [p["name"] for p in r.json()["accounts"]]
 
 
-def test_delete_default_profile_forbidden(client):
+def test_delete_default_account_forbidden(client):
     c, *_ = client
-    r = c.delete(f"/api/providers/profiles/{DEFAULT_PROFILE_NAME}")
+    r = c.delete(f"/api/providers/accounts/{DEFAULT_ACCOUNT_NAME}")
     assert r.status_code == 400
 
 
@@ -198,27 +198,27 @@ def test_remove_nonexistent_credential_is_404(client):
     assert r.status_code == 404
 
 
-def test_list_pools_filtered_by_profile(client):
+def test_list_pools_filtered_by_account(client):
     c, store, pm = client
-    pm.create_profile("work")
+    pm.create_account("work")
     store.put_pool(CredentialPool(
-        provider_id="openai", profile_id="work",
+        provider_id="openai", account_id="work",
         credentials=[Credential(
-            provider_id="openai", profile_id="work", kind="api_key",
+            provider_id="openai", account_id="work", kind="api_key",
             payload=CredentialData(kind="api_key", auth_value="work-key"),
         )],
     ))
     store.put_pool(CredentialPool(
-        provider_id="openai", profile_id="default",
+        provider_id="openai", account_id="default",
         credentials=[Credential(
-            provider_id="openai", profile_id="default", kind="api_key",
+            provider_id="openai", account_id="default", kind="api_key",
             payload=CredentialData(kind="api_key", auth_value="default-key"),
         )],
     ))
-    r = c.get("/api/providers/pools?profile=work")
+    r = c.get("/api/providers/pools?account=work")
     body = r.json()
     assert len(body["pools"]) == 1
-    assert body["pools"][0]["profile_id"] == "work"
+    assert body["pools"][0]["account_id"] == "work"
 
 
 # ---- discover ---------------------------------------------------------
@@ -276,7 +276,7 @@ def test_event_listener_fans_out_to_subscribers(client):
             store._emit(AuthEvent(
                 type=AuthEventType.REFRESH_SUCCEEDED,
                 provider_id="openai-codex",
-                profile_id="default",
+                account_id="default",
                 credential_id="cred_abc",
             ))
             event = await asyncio.wait_for(q.get(), timeout=1.0)
@@ -293,7 +293,7 @@ def test_event_to_json_has_expected_shape():
     event = AuthEvent(
         type=AuthEventType.POOL_EXHAUSTED,
         provider_id="prov",
-        profile_id="prof",
+        account_id="prof",
         credential_id="cid",
         detail={"reason": "everyone is cooling down"},
     )
@@ -335,9 +335,9 @@ def test_doctor_route_empty_store(client):
 def test_doctor_route_flags_expired_oauth(client):
     c, store, _ = client
     store.put_pool(CredentialPool(
-        provider_id="random-oauth-provider", profile_id="default",
+        provider_id="random-oauth-provider", account_id="default",
         credentials=[Credential(
-            provider_id="random-oauth-provider", profile_id="default",
+            provider_id="random-oauth-provider", account_id="default",
             kind="oauth",
             payload=CredentialData(
                 kind="oauth", auth_value="t-expired",

@@ -2,7 +2,7 @@
 
 When rotation is on, requests try a provider's accounts in THIS order (the user
 drags to set priority — who's used first, then next). Stored as a small JSON map
-at ``~/.openprogram/auth/_account_priority.json`` (``provider_id -> [profile
+at ``~/.openprogram/auth/_account_priority.json`` (``provider_id -> [account
 names]``), like ``_active.json``. Empty / missing ⇒ the default order
 (``default`` first, then alphabetical), so nothing changes until a user reorders.
 """
@@ -82,10 +82,10 @@ def account_priority_key(provider_id: str):
     order = get_account_priority(provider_id)
     index = {name: i for i, name in enumerate(order)}
 
-    def key(profile: str):
-        if profile in index:
-            return (0, index[profile], "")
-        return (1, 0 if profile == "default" else 1, profile)
+    def key(account: str):
+        if account in index:
+            return (0, index[account], "")
+        return (1, 0 if account == "default" else 1, account)
 
     return key
 

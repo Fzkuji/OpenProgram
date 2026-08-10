@@ -3,7 +3,7 @@ Provider → Connectivity check button.
 
 Credential validation now lives in ``credentials.validate_credential`` — a
 model-independent auth probe (``GET /key`` / ``GET /models`` / ``x-api-key
-/v1/models`` / ``?key=`` / AuthManager) with an inference ping only as layer 2
+/v1/models`` / ``?key=`` / CredentialProvider) with an inference ping only as layer 2
 when a model is named. ``test_provider`` is a thin adapter that delegates to it
 and reshapes the result into the legacy ``{ok, latency_ms, model?, note?,
 error?}`` dict the React ``Connectivity`` component reads.
@@ -82,11 +82,11 @@ def _codex_ping(
         "originator": "openprogram",
         "OpenAI-Beta": "responses=experimental",
     }
-    # Codex credential lives in the OAuth pool, not env/config — ask AuthManager.
+    # Codex credential lives in the OAuth pool, not env/config — ask CredentialProvider.
     if not api_key:
         try:
-            from openprogram.auth.manager import get_manager
-            cred = get_manager().acquire_sync(provider_id)
+            from openprogram.auth.credential_provider import get_credential_provider
+            cred = get_credential_provider().acquire_sync(provider_id)
             api_key = getattr(cred.payload, "access_token", None) or None
             account_id = (getattr(cred.payload, "extra", None) or {}).get("account_id", "")
             if account_id:

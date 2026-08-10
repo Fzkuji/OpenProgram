@@ -33,14 +33,14 @@ const dropLast = (value: string): string => Array.from(value).slice(0, -1).join(
 
 export function ProviderLoginFlow({
   providerId,
-  profileId,
+  accountId,
   method,
   label,
   onDone,
   onCancel,
 }: {
   providerId: string;
-  profileId: string;
+  accountId: string;
   method: string;
   label: string;
   /** Called once the flow reaches a terminal state. */
@@ -113,7 +113,7 @@ export function ProviderLoginFlow({
 
     void (async () => {
       setLines([`Starting ${label}…`]);
-      const r = await startLogin(providerId, method, profileId);
+      const r = await startLogin(providerId, method, accountId);
       if (cancelled) return;
       if (r.error || !r.session) {
         finishedRef.current = true;

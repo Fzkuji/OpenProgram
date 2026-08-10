@@ -7,8 +7,8 @@ provider 可以有多个账号，另有可开关的轮换与故障转移。某�
 
 ## 一个账号就是一个 profile
 
-AuthStore 以 `(provider_id, profile_id)` 为键存放每个凭据池，每个池一个文件，
-位于 `~/.openprogram/auth/<provider>/<profile>.json`，而 `ProfileManager` 已经
+AuthStore 以 `(provider_id, account_id)` 为键存放每个凭据池，每个池一个文件，
+位于 `~/.openprogram/auth/<provider>/<profile>.json`，而 `AccountManager` 已经
 提供 profile 的 CRUD。因此"多账号"与"多 profile"是同一个概念 —— 每个账号就是
 一个 profile id。
 
@@ -21,15 +21,15 @@ profile。既然这个模型同样适用于 api-key provider，那么"账号 = p
 
 它所依托的存储与轮换机制：
 
-- 多 profile 存储与 `ProfileManager` CRUD（`auth/store.py`、`auth/profiles.py`）。
+- 多 profile 存储与 `AccountManager` CRUD（`auth/store.py`、`auth/accounts.py`）。
 - 凭据池策略模型 —— `PoolStrategy = fill_first | round_robin | random |
   least_used`、`credentials[]`、`_rr_cursor`、`fallback_chain`，以及每个凭据的
   `cooldown_until_ms` / `status`，全部已序列化（`auth/types.py:335-390`）。
 - 遵循策略、健康过滤与冷却跳过的池选择（`auth/pool.py:99-161`）；fallback
-  递归（`auth/manager.py:247-312`）；冷却时长与
+  递归（`auth/credential_provider.py`）；冷却时长与
   `mark_failure` / `mark_success` / `clear_cooldown`（`auth/pool.py:57-276`）；
-  以及 manager 封装 `report_failure` / `report_success`
-  （`auth/manager.py:450-497`）。
+  以及 credential_provider 封装 `apply_failure` / `apply_success`
+  （`auth/credential_provider.py`）。
 - 一套多 profile REST 界面（`webui/_auth_routes.py`：`/profiles`、`/pools`、
   `/pools/.../credentials`、`/doctor`、SSE `/events`）。
 - 统一登录端点（`/api/providers/{id}/login/{start,poll,submit,cancel}`）
@@ -39,13 +39,13 @@ profile。既然这个模型同样适用于 api-key provider，那么"账号 = p
 
 轮换与按账号选择需要两处连接才不是空转，缺了它们，其余界面都只是摆设：
 
-1. **请求时的激活 profile 选择。** `AuthManager.acquire` 默认
-   `profile_id="default"`，因此除非请求路径进入 `auth_scope(...)`，用户无法真正
+1. **请求时的激活 profile 选择。** `CredentialProvider.acquire` 默认
+   `account_id="default"`，因此除非请求路径进入 `auth_scope(...)`，用户无法真正
    以"work"而非"personal"运行。`auth/account_selection.py` 提供
    `get_active_account(provider)` / `set_active_account(provider)` 以及
    `get_active_pin`；`acquire` 与 resolver 以它为默认，chat/execute 入口进入
    该作用域。默认仍是 `"default"`，激活其他 profile 是可选行为。
-2. **调用路径回报结果。** `report_failure` 与 `report_success` 只有在 provider
+2. **调用路径回报结果。** `record_call_failure` 与 `record_call_success` 只有在 provider
    runtime 把 429/402/5xx 回报给凭据池时才有意义。没有这一步，
    `cooldown_until_ms` 恒为 0，`fill_first` 永远返回第 0 个凭据，轮换与 fallback
    都不会启动。调用路径（`auth/usage.py` 与 `openai_completions.stream_simple`）

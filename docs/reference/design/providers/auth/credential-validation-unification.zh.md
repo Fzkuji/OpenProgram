@@ -52,7 +52,7 @@ key。Catalog 来自 models.dev，与凭证解耦。单个 `provider/error.ts` �
 def validate_credential(
     provider_id: str,
     *,
-    api_key: str | None = None,  # 显式传入（持久化前校验）；None => 从 env+config+AuthManager 解析
+    api_key: str | None = None,  # 显式传入（持久化前校验）；None => 从 env+config+CredentialProvider 解析
     model: str | None = None,    # 仅在需要额外检查第 2 层模型可达性时设置
     timeout: float = 15.0,
     use_cache: bool = True,      # 60 秒 TTL，类似 OpenClaw 的 models.authStatus
@@ -67,7 +67,7 @@ class CredentialResult:
                     "valid_model_unavailable", "missing", "not_applicable", "unknown"]
     ok: bool          # status 属于 {valid, valid_no_balance, valid_model_unavailable}
     kind: str         # 实际运行的探测：openai_bearer | openrouter_key | anthropic_native | anthropic_compat | google_query | oauth | cloud | none
-    via: str | None   # "GET /models"、"GET /key"、"AuthManager"、"POST /chat/completions(model)"
+    via: str | None   # "GET /models"、"GET /key"、"CredentialProvider"、"POST /chat/completions(model)"
     http_status: int | None
     latency_ms: int | None
     model: str | None # 第 2 层运行时回显
@@ -107,7 +107,7 @@ class CredentialResult:
 | `anthropic_native` | anthropic | `GET https://api.anthropic.com/v1/models`，`x-api-key` + `anthropic-version: 2023-06-01`（Bearer 会被忽略） |
 | `anthropic_compat` | minimax、minimax-cn（任何 registry 中 `api='anthropic-messages'` 且不是原生 `anthropic` 的 provider） | `GET {base}/v1/models`，`x-api-key` + `anthropic-version` —— 与原生相同的探测，但打向 provider 自己的 base_url（例如 `https://api.minimaxi.com/anthropic`）。`openai_bearer` 的 `GET {base}/models` 在这些主机上会 404，从而把一个好 key 误判为 `invalid_credential`。 |
 | `google_query` | google | `GET https://generativelanguage.googleapis.com/v1beta/models?key=…&pageSize=1` |
-| `oauth` | openai-codex、gemini-subscription、github-copilot、claude-code、opencode | `AuthManager.acquire_sync(pid).status`（`fresh`→valid，`needs_reauth`→invalid）；除一次可选的 token 刷新外无网络调用 |
+| `oauth` | openai-codex、gemini-subscription、github-copilot、claude-code、opencode | `CredentialProvider.acquire_sync(pid).status`（`fresh`→valid，`needs_reauth`→invalid）；除一次可选的 token 刷新外无网络调用 |
 | `cloud` | amazon-bedrock、google-vertex、azure-openai-responses | 在加入原生 list 调用之前，通用探测返回 `not_applicable`（SigV4 / ADC / 按 deployment 加 key） |
 
 ## 6. 状态码解释
@@ -205,7 +205,7 @@ OAuth `needs_reauth`、第 2 层 `429→valid_model_unavailable`、离线→`unk
   节流以避免探测突发。
 - Anthropic OAuth（`ANTHROPIC_OAUTH_TOKEN`）在同一个 `/v1/models` 探测上需要
   `Authorization: Bearer` 加 `anthropic-beta: oauth-…`；要么确认这个 beta 值，
-  要么把它路由到 AuthManager 路径。
+  要么把它路由到 CredentialProvider 路径。
 - openai-codex 没有仅鉴权的列表端点（ChatGPT 后端会 403），所以它唯一的端到端
-  探测是第 2 层的 `/responses` ping。默认检查依赖 AuthManager 的
+  探测是第 2 层的 `/responses` ping。默认检查依赖 CredentialProvider 的
   `Credential.status`，那是结构性的而非端到端的。

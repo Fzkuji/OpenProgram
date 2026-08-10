@@ -2,7 +2,7 @@
 
 One file connecting three moving parts:
 
-  * :class:`openprogram.auth.manager.AuthManager` — generic orchestrator
+  * :class:`openprogram.auth.credential_provider.CredentialProvider` — generic orchestrator
     that wants a ``refresh_fn`` per provider
   * :class:`openprogram.auth.sources.CodexCliSource` — discovers the
     existing ``~/.codex/auth.json`` state
@@ -32,7 +32,7 @@ from typing import Any, Optional
 
 import httpx
 
-from openprogram.auth.manager import (
+from openprogram.auth.credential_provider import (
     ProviderAuthConfig,
     register_provider_config,
 )
@@ -132,7 +132,7 @@ def jwt_expiry_epoch_ms(access_token: str) -> Optional[int]:
 # ---------------------------------------------------------------------------
 
 def _codex_refresh(cred: Credential) -> Credential:
-    """Synchronous refresh — called by AuthManager via executor.
+    """Synchronous refresh — called by CredentialProvider via executor.
 
     1. Use the current refresh_token to request new tokens from
        auth.openai.com.
@@ -160,7 +160,7 @@ def _codex_refresh(cred: Credential) -> Credential:
     )
     if response.status_code != 200:
         # Rotation-consumed case: OpenAI returns 400 invalid_grant when
-        # the refresh_token has already been used. AuthManager's
+        # the refresh_token has already been used. CredentialProvider's
         # AuthRotationConsumedError path handles the reload+retry; we
         # surface it through the generic RuntimeError for now (manager
         # matches on RuntimeError in one codepath, on the typed error in
@@ -192,7 +192,7 @@ def _codex_refresh(cred: Credential) -> Credential:
 
     return Credential(
         provider_id=cred.provider_id,
-        profile_id=cred.profile_id,
+        account_id=cred.account_id,
         kind="oauth",
         payload=new_payload,
         status="valid",
@@ -256,7 +256,7 @@ def _iso_now() -> str:
 
 def import_from_codex_file(
     *,
-    profile_id: str = "default",
+    account_id: str = "default",
     auth_path: Optional[Path] = None,
 ) -> Optional[Credential]:
     """Read the Codex CLI's auth.json, produce an ``oauth`` credential.
@@ -264,7 +264,7 @@ def import_from_codex_file(
     Returns ``None`` if the file is absent or unusable — callers decide
     whether that's a failure. Not to be confused with
     :class:`CodexCliSource` which produces a *delegated* (read-only)
-    credential; this one produces a writable one so AuthManager can
+    credential; this one produces a writable one so CredentialProvider can
     rotate it.
     """
     path = Path(auth_path) if auth_path else codex_auth_path()
@@ -318,7 +318,7 @@ def import_from_codex_file(
 
     return Credential(
         provider_id=PROVIDER_ID,
-        profile_id=profile_id,
+        account_id=account_id,
         kind="oauth",
         payload=CredentialData(
             kind="oauth",
@@ -345,10 +345,10 @@ _REGISTERED = False
 
 
 def register_codex_auth() -> None:
-    """Register the Codex provider config with :mod:`auth.manager`.
+    """Register the Codex provider config with :mod:`auth.credential_provider`.
 
     Called at module import. Idempotent. Tests that need to swap the
-    refresh function can call :func:`openprogram.auth.manager.register_provider_config`
+    refresh function can call :func:`openprogram.auth.credential_provider.register_provider_config`
     directly — last registration wins.
     """
     global _REGISTERED

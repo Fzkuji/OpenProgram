@@ -134,7 +134,7 @@ openprogram logs tail worker -f      # follow worker.log
 openprogram completion bash          # autocomplete: bash | zsh | powershell
 openprogram secrets list             # same as `providers list` (openclaw-style alias)
 openprogram providers use <prov> [profile]  # pick which account a provider runs on
-openprogram providers login <prov> --profile work  # add a second account
+openprogram providers login <prov> --account work  # add a second account
 openprogram worker status            # is the backend up? on what port?
 openprogram --print --resume <id>    # continue a previous chat headlessly
 ```

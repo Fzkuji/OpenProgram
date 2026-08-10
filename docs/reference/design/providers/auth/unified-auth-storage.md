@@ -9,7 +9,7 @@ web, and TUI.
 ## The store
 
 `openprogram/auth/store.py` implements `AuthStore` at
-`~/.openprogram/auth/<provider_id>/<profile_id>.json` — 0600, atomic
+`~/.openprogram/auth/<provider_id>/<account_id>.json` — 0600, atomic
 write→fsync→replace, cross-process `flock`, and an in-memory mtime/size watch so
 a file changed underneath is re-loaded. `openprogram/auth/types.py` defines the
 credential kinds:
@@ -20,9 +20,9 @@ credential kinds:
 | `oauth` | copy: access + refresh + `expires_at_ms` + client_id + token_endpoint |
 | `device_code` | copy (same shape as oauth) |
 | `cli_delegated` | **POINTER only** — `store_path` + key-paths into an external file; re-read each use |
-| `external_process` | argv run on demand |
+| `credential_process` | argv run on demand |
 
-`AuthManager` is **store-authoritative and never re-discovers**: it serves
+`CredentialProvider` is **store-authoritative and never re-discovers**: it serves
 whatever pool is on disk. Importing is an explicit, write-once step
 (`cli_import`, `import_from_codex_file`), so once a credential is copied into
 the store, nothing re-reads the external file.

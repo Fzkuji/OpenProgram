@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from openprogram.auth.context import auth_scope
-from openprogram.auth.manager import AuthManager, set_manager_for_testing
+from openprogram.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
 from openprogram.auth.resolver import resolve_api_key_sync
 from openprogram.auth.store import AuthStore, set_store_for_testing
 from openprogram.auth.types import (
@@ -25,18 +25,18 @@ from openprogram.providers.google_gemini_cli import auth_adapter as gemini_adapt
 def store(tmp_path):
     s = AuthStore(root=tmp_path / "store")
     set_store_for_testing(s)
-    # Reset the module-level AuthManager so its _store ref points at our fresh store.
-    set_manager_for_testing(AuthManager(store=s))
+    # Reset the module-level CredentialProvider so its _store ref points at our fresh store.
+    set_credential_provider_for_testing(CredentialProvider(store=s))
     yield s
     set_store_for_testing(None)
-    set_manager_for_testing(None)
+    set_credential_provider_for_testing(None)
 
 
 # ---- resolver ------------------------------------------------------------
 
 def test_resolver_uses_override_first(store):
     pinned = Credential(
-        provider_id="openai", profile_id="default", kind="api_key",
+        provider_id="openai", account_id="default", kind="api_key",
         payload=CredentialData(kind="api_key", auth_value="sk-OVERRIDE"),
     )
     with auth_scope(credential_overrides={"openai": pinned}):
@@ -46,11 +46,11 @@ def test_resolver_uses_override_first(store):
 def test_resolver_uses_store_when_no_override(store, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     cred = Credential(
-        provider_id="openai", profile_id="default", kind="api_key",
+        provider_id="openai", account_id="default", kind="api_key",
         payload=CredentialData(kind="api_key", auth_value="sk-STORE"),
     )
     store.put_pool(CredentialPool(
-        provider_id="openai", profile_id="default", credentials=[cred],
+        provider_id="openai", account_id="default", credentials=[cred],
     ))
     assert resolve_api_key_sync("openai") == "sk-STORE"
 
@@ -70,37 +70,37 @@ def test_resolver_returns_none_when_nothing_matches(store, monkeypatch):
 
 def test_resolver_extracts_oauth_access_token(store):
     cred = Credential(
-        provider_id="anthropic", profile_id="default", kind="oauth",
+        provider_id="anthropic", account_id="default", kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value="ACC",
             data={"refresh_token": "REF", "expires_at_ms": int(time.time() * 1000) + 3600_000},
         ),
     )
     store.put_pool(CredentialPool(
-        provider_id="anthropic", profile_id="default", credentials=[cred],
+        provider_id="anthropic", account_id="default", credentials=[cred],
     ))
     assert resolve_api_key_sync("anthropic") == "ACC"
 
 
 def test_resolver_respects_active_profile(store):
     personal = Credential(
-        provider_id="openai", profile_id="personal", kind="api_key",
+        provider_id="openai", account_id="personal", kind="api_key",
         payload=CredentialData(kind="api_key", auth_value="sk-PERSONAL"),
     )
     work = Credential(
-        provider_id="openai", profile_id="work", kind="api_key",
+        provider_id="openai", account_id="work", kind="api_key",
         payload=CredentialData(kind="api_key", auth_value="sk-WORK"),
     )
     store.put_pool(CredentialPool(
-        provider_id="openai", profile_id="personal", credentials=[personal],
+        provider_id="openai", account_id="personal", credentials=[personal],
     ))
     store.put_pool(CredentialPool(
-        provider_id="openai", profile_id="work", credentials=[work],
+        provider_id="openai", account_id="work", credentials=[work],
     ))
 
-    with auth_scope(profile_id="work"):
+    with auth_scope(account_id="work"):
         assert resolve_api_key_sync("openai") == "sk-WORK"
-    with auth_scope(profile_id="personal"):
+    with auth_scope(account_id="personal"):
         assert resolve_api_key_sync("openai") == "sk-PERSONAL"
 
 

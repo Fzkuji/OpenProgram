@@ -336,7 +336,7 @@ export function buildProviderAccountsPicker(
     return (
       <ProviderLoginFlow
         providerId={provider}
-        profileId={name || 'default'}
+        accountId={name || 'default'}
         method={method}
         label={methodLabel(method)}
         onDone={({ message }) => {

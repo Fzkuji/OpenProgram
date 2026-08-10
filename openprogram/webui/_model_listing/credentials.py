@@ -3,7 +3,7 @@
 Validating a *credential* must never invoke a *model*. Each provider KIND has a
 model-independent auth probe (``GET /models``, ``GET /key`` for OpenRouter,
 ``x-api-key /v1/models`` for Anthropic, ``?key=`` for Google, or the
-``AuthManager`` credential status for OAuth providers). A completion ping runs
+``CredentialProvider`` credential status for OAuth providers). A completion ping runs
 ONLY as layer 2 — when a caller explicitly names a model to check that one
 model's reachability.
 
@@ -85,7 +85,7 @@ _OAUTH_PROVIDERS = frozenset({
     "opencode", "opencode-go",
 })
 # claude-code speaks the anthropic-messages wire but uses OAuth subscription
-# tokens (stored in the AuthManager under the "anthropic" pool) instead of
+# tokens (stored in the CredentialProvider under the "anthropic" pool) instead of
 # a raw x-api-key. Kind is "anthropic_native" so wire-invariant tests pass;
 # validate_credential handles it via _oauth_check (see below).
 _ANTHROPIC_OAUTH_PROVIDERS = frozenset({"claude-code"})
@@ -295,24 +295,24 @@ def _layer2_ping(provider_id: str, kind: str, api_key: str, base: str | None,
 
 
 def _oauth_check(provider_id: str, kind: str) -> CredentialResult:
-    """OAuth/subscription providers carry no api_key — read the AuthManager
+    """OAuth/subscription providers carry no api_key — read the CredentialProvider
     credential status instead of touching a model."""
     try:
-        from openprogram.auth.manager import get_manager
-        cred = get_manager().acquire_sync(provider_id)
+        from openprogram.auth.credential_provider import get_credential_provider
+        cred = get_credential_provider().acquire_sync(provider_id)
     except Exception:
-        return _result(provider_id, UNKNOWN, kind=kind, via="AuthManager",
+        return _result(provider_id, UNKNOWN, kind=kind, via="CredentialProvider",
                        detail=(f"Not logged in or couldn't read login state — run "
                                f"`openprogram providers login {provider_id}`."))
     st = getattr(cred, "status", None)
     token = getattr(getattr(cred, "payload", None), "access_token", None)
     if st == "needs_reauth":
-        return _result(provider_id, INVALID_CREDENTIAL, kind=kind, via="AuthManager",
+        return _result(provider_id, INVALID_CREDENTIAL, kind=kind, via="CredentialProvider",
                        detail=f"Login expired — run `openprogram providers login {provider_id}`.")
     if st in ("fresh", "expiring_soon", "stale", "refreshing") or token:
-        return _result(provider_id, VALID, kind=kind, via="AuthManager",
+        return _result(provider_id, VALID, kind=kind, via="CredentialProvider",
                        detail=f"Logged in{f' ({st})' if st else ''}.")
-    return _result(provider_id, UNKNOWN, kind=kind, via="AuthManager", detail="Login state unknown.")
+    return _result(provider_id, UNKNOWN, kind=kind, via="CredentialProvider", detail="Login state unknown.")
 
 
 # 60s cache (doc §8)

@@ -57,7 +57,7 @@ def test_validate_accepts_legacy_import_from_name():
         __name__ = "fake.adapter"
         PROVIDER_ID = "fake"
         @staticmethod
-        def import_from_my_vendor(*, profile_id: str = "default"):
+        def import_from_my_vendor(*, account_id: str = "default"):
             return None
     # Doesn't raise — ``import_from_<source>`` counts.
     validate_provider_auth_module(Fake(), require_import=True)
@@ -68,6 +68,6 @@ def test_validate_accepts_canonical_import_from_external():
         __name__ = "fake.adapter"
         PROVIDER_ID = "fake"
         @staticmethod
-        def import_from_external(*, profile_id: str = "default"):
+        def import_from_external(*, account_id: str = "default"):
             return None
     validate_provider_auth_module(Fake(), require_import=True)

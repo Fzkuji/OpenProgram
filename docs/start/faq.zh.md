@@ -77,7 +77,7 @@ hf download Salesforce/GPA-GUI-Detector model.pt --local-dir ~/GPA-GUI-Detector
 ## 同一个 provider 有多个账户或多个 key，怎么切换？
 
 ```bash
-openprogram providers login openai --profile work   # 添加第二个账户
+openprogram providers login openai --account work   # 添加第二个账户
 openprogram providers use openai work               # 切到 work 账户
 openprogram providers list                          # 查看各账户，激活的有标记
 ```

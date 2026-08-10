@@ -35,7 +35,7 @@ class QwenCliSource:
     """Reads ``~/.qwen/oauth_creds.json`` and adopts it read-only."""
 
     provider_id: str = "qwen"
-    profile_id: str = "default"
+    account_id: str = "default"
     override_path: str = ""
 
     source_id: str = "qwen_cli"
@@ -45,7 +45,7 @@ class QwenCliSource:
             return Path(self.override_path).expanduser()
         return Path.home() / ".qwen" / "oauth_creds.json"
 
-    def try_import(self, profile_root: Path) -> list[Credential]:
+    def try_import(self, account_root: Path) -> list[Credential]:
         path = self._resolve_path()
         if not path.exists():
             return []
@@ -68,7 +68,7 @@ class QwenCliSource:
         return [
             Credential(
                 provider_id=self.provider_id,
-                profile_id=self.profile_id,
+                account_id=self.account_id,
                 kind="cli_delegated",
                 payload=CredentialData(
                     kind="cli_delegated",

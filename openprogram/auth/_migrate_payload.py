@@ -1,9 +1,20 @@
-"""One-shot migration: old 6-payload JSON → new CredentialData structure.
+"""On-load migration of stored credential JSON to the current schema.
 
-Runtime code only understands the new structure (see types._payload_from_dict).
-This searches ~/.openprogram/auth/**.json, rewrites each credential's payload
-in place, atomically. Idempotent: a payload already in the new shape is left
-as-is. Old format is NOT supported after migration.
+Runtime code only understands the current shape; everything older is
+rewritten here, in place and atomically, before it reaches
+``Credential.from_dict``. Two steps, applied in order:
+
+  * **v1 → v2** — old 6-payload JSON (carrying a ``__type__``
+    discriminator) becomes the flat :class:`CredentialData` structure
+    (see ``types._payload_from_dict``).
+  * **v2 → v3** — the two auth renames land on disk: the credential
+    ``kind`` value ``"external_process"`` becomes ``"credential_process"``,
+    and the ``profile_id`` field (on pools and credentials alike) becomes
+    ``account_id``.
+
+Every step is idempotent: data already in the current shape is left
+untouched, so a repeated load is a cheap no-op. Old formats are not
+supported after migration — reads go through the migrated shape only.
 """
 from __future__ import annotations
 
@@ -19,7 +30,7 @@ _TYPE_TO_KIND = {
     "OAuthPayload": "oauth",
     "DeviceCodePayload": "device_code",
     "CliDelegatedPayload": "cli_delegated",
-    "ExternalProcessPayload": "external_process",
+    "ExternalProcessPayload": "credential_process",
     "SsoPayload": "sso",
 }
 # Which old field became auth_value (rest go into data).
@@ -52,6 +63,54 @@ def migrate_payload_dict(old: dict) -> dict:
     }
 
 
+# v2 → v3: the credential kind that shells out to a helper took AWS's
+# name for the same concept. Old files still say "external_process".
+_KIND_V2_TO_V3 = {"external_process": "credential_process"}
+
+
+def _migrate_kind_and_account(doc: dict) -> bool:
+    """Apply the v2 → v3 renames to one loaded pool document, in place.
+
+    Two independent renames, both idempotent:
+
+      * ``kind: "external_process"`` → ``"credential_process"``, on the
+        credential and on its nested payload (they carry the kind twice).
+      * ``profile_id`` → ``account_id``, on the pool and on every
+        credential. ``fallback_chain`` entries are positional pairs, so
+        they need no rewriting.
+
+    Returns True iff anything changed.
+    """
+    changed = False
+
+    def _rename_account(node: dict) -> None:
+        nonlocal changed
+        if "profile_id" in node:
+            # setdefault, not overwrite: if a half-migrated file somehow
+            # carries both, the new field is the authority.
+            node.setdefault("account_id", node["profile_id"])
+            node.pop("profile_id")
+            changed = True
+
+    def _rename_kind(node: dict) -> None:
+        nonlocal changed
+        new = _KIND_V2_TO_V3.get(node.get("kind"))
+        if new is not None:
+            node["kind"] = new
+            changed = True
+
+    _rename_account(doc)
+    for c in doc.get("credentials") or []:
+        if not isinstance(c, dict):
+            continue
+        _rename_account(c)
+        _rename_kind(c)
+        payload = c.get("payload")
+        if isinstance(payload, dict):
+            _rename_kind(payload)
+    return changed
+
+
 def _migrate_file(path: Path) -> bool:
     try:
         doc = json.loads(path.read_text())
@@ -78,6 +137,14 @@ def _migrate_file(path: Path) -> bool:
     top = doc.get("payload")
     if isinstance(top, dict) and "__type__" in top:
         doc["payload"] = migrate_payload_dict(top)
+        changed = True
+    # v2 → v3 renames. Runs for every file (not just ones that needed the
+    # payload rewrite above), since a store written at v2 has the new
+    # payload shape but the old kind value and field name.
+    if _migrate_kind_and_account(doc):
+        for c in creds:
+            if isinstance(c, dict):
+                c["v"] = CREDENTIAL_SCHEMA_VERSION
         changed = True
     if not changed:
         return False

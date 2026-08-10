@@ -88,7 +88,7 @@ class CliRunner:
         system_prompt: Optional[str] = None,
         image_paths: Iterable[str] = (),
         resume: bool = False,
-        auth_profile_id: Optional[str] = None,
+        auth_account_id: Optional[str] = None,
         thinking_level: Optional[str] = None,
     ) -> AsyncIterator[CliEvent]:
         """Run one turn against the CLI and yield events.
@@ -109,7 +109,7 @@ class CliRunner:
                 system_prompt=system_prompt,
                 image_paths=tuple(image_paths),
                 resume=resume,
-                auth_profile_id=auth_profile_id,
+                auth_account_id=auth_account_id,
                 thinking_level=thinking_level,
             ):
                 yield ev
@@ -121,7 +121,7 @@ class CliRunner:
             system_prompt=system_prompt,
             image_paths=tuple(image_paths),
             resume=resume,
-            auth_profile_id=auth_profile_id,
+            auth_account_id=auth_account_id,
             thinking_level=thinking_level,
         ):
             yield ev
@@ -134,7 +134,7 @@ class CliRunner:
         system_prompt: Optional[str],
         image_paths: tuple[str, ...],
         resume: bool,
-        auth_profile_id: Optional[str],
+        auth_account_id: Optional[str],
         thinking_level: Optional[str],
     ) -> AsyncIterator[CliEvent]:
         cfg = self._config
@@ -142,7 +142,7 @@ class CliRunner:
         prompt = self._apply_input_transforms(prompt)
         system_prompt = self._apply_input_transforms(system_prompt)
 
-        prepared = await self._call_prepare_execution(model_id, auth_profile_id)
+        prepared = await self._call_prepare_execution(model_id, auth_account_id)
 
         argv = self._build_argv(
             prompt=prompt,
@@ -246,7 +246,7 @@ class CliRunner:
         system_prompt: Optional[str],
         image_paths: tuple[str, ...],
         resume: bool,
-        auth_profile_id: Optional[str],
+        auth_account_id: Optional[str],
         thinking_level: Optional[str],
     ) -> AsyncIterator[CliEvent]:
         """Persistent-process mode. Reuses ``self._live_proc`` across calls.
@@ -273,7 +273,7 @@ class CliRunner:
 
         # Spawn on first use (or after close / auth bump).
         if self._live_proc is None or self._live_proc.returncode is not None:
-            prepared = await self._call_prepare_execution(model_id, auth_profile_id)
+            prepared = await self._call_prepare_execution(model_id, auth_account_id)
             # For live mode, session/resume args are baked into the spawn;
             # later turns reuse the same process regardless of ``resume``.
             argv = self._build_argv(
@@ -460,7 +460,7 @@ class CliRunner:
                     return
 
     async def _call_prepare_execution(
-        self, model_id: str, auth_profile_id: Optional[str]
+        self, model_id: str, auth_account_id: Optional[str]
     ) -> Optional[PreparedExecution]:
         if self.plugin.prepare_execution is None:
             return None
@@ -468,7 +468,7 @@ class CliRunner:
             workspace_dir=self.workspace_dir,
             provider=self.plugin.id,
             model_id=model_id,
-            auth_profile_id=auth_profile_id,
+            auth_account_id=auth_account_id,
         )
         maybe = self.plugin.prepare_execution(ctx)
         if inspect.isawaitable(maybe):

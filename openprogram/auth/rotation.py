@@ -111,22 +111,22 @@ def get_accounts_out_of_rotation(provider_id: str) -> set:
     return set(str(x) for x in v) if isinstance(v, list) else set()
 
 
-def is_account_in_rotation(provider_id: str, profile: str) -> bool:
-    """Whether ``profile`` participates in rotation (default True)."""
-    return profile not in get_accounts_out_of_rotation(provider_id)
+def is_account_in_rotation(provider_id: str, account: str) -> bool:
+    """Whether ``account`` participates in rotation (default True)."""
+    return account not in get_accounts_out_of_rotation(provider_id)
 
 
-def set_account_in_rotation(provider_id: str, profile: str, in_rotation: bool) -> None:
-    """Put ``profile`` into / take it out of the provider's rotation."""
+def set_account_in_rotation(provider_id: str, account: str, in_rotation: bool) -> None:
+    """Put ``account`` into / take it out of the provider's rotation."""
     provider_id = (provider_id or "").strip()
-    profile = (profile or "").strip()
-    if not provider_id or not profile:
+    account = (account or "").strip()
+    if not provider_id or not account:
         return
     with _LOCK:
         data = _read_excluded()
-        cur = [str(x) for x in data.get(provider_id, []) if x != profile]
+        cur = [str(x) for x in data.get(provider_id, []) if x != account]
         if not in_rotation:
-            cur.append(profile)
+            cur.append(account)
         if cur:
             data[provider_id] = sorted(set(cur))
         else:

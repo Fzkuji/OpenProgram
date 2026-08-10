@@ -8,7 +8,7 @@
 ## 存储
 
 `openprogram/auth/store.py` 实现了 `AuthStore`，位于
-`~/.openprogram/auth/<provider_id>/<profile_id>.json` —— 0600 权限、原子的
+`~/.openprogram/auth/<provider_id>/<account_id>.json` —— 0600 权限、原子的
 write→fsync→replace、跨进程 `flock`，以及内存中的 mtime/size 监视，使得文件在
 底层被改动后会重新加载。`openprogram/auth/types.py` 定义了凭据 kind：
 
@@ -18,9 +18,9 @@ write→fsync→replace、跨进程 `flock`，以及内存中的 mtime/size 监�
 | `oauth` | 副本：access + refresh + `expires_at_ms` + client_id + token_endpoint |
 | `device_code` | 副本（与 oauth 同形态） |
 | `cli_delegated` | **仅指针** —— `store_path` + 指向外部文件的 key-path；每次使用时重读 |
-| `external_process` | 按需运行的 argv |
+| `credential_process` | 按需运行的 argv |
 
-`AuthManager` **以存储为准，从不重新发现**：磁盘上是什么池，它就提供什么。
+`CredentialProvider` **以存储为准，从不重新发现**：磁盘上是什么池，它就提供什么。
 导入是显式的一次性写入步骤（`cli_import`、`import_from_codex_file`），因此一旦
 凭据被复制进存储，就不会再有任何东西去读外部文件。
 `openprogram/auth/methods/cli_import.py` 的 `mode="copy"` 会对外部文件解引用

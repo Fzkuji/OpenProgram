@@ -60,7 +60,7 @@ Runtime. That Runtime is lightweight: its models go through the
 resolves from the `anthropic` pool. Model alias normalisation (opus / sonnet /
 haiku) carries over.
 
-**Expiry.** When a `cli_delegated` credential expires, AuthManager raises
+**Expiry.** When a `cli_delegated` credential expires, CredentialProvider raises
 `AuthReadOnlyError` — the credential is read-only and cannot refresh itself —
 and the message directs the user to `claude login`. The direct path reuses this
 rather than adding its own expiry handling.

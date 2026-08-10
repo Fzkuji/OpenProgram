@@ -568,14 +568,14 @@ async def stream_simple(
         else:
             # Clean completion — clear any transient cooldown state on the key.
             if _cred_id:
-                _auth_usage.report_success(model.provider, _cred_profile, _cred_id)
+                _auth_usage.record_call_success(model.provider, _cred_profile, _cred_id)
             yield EventDone(type="done", reason=stop_reason, message=final)
 
     except _openai.APIError as e:
         # Cool this key down (429 → rate_limit, 402 → billing, 401/403 →
         # needs_reauth, 5xx → server_error) so the next request rotates.
         if _cred_id:
-            _auth_usage.report_failure(
+            _auth_usage.record_call_failure(
                 model.provider, _cred_profile, _cred_id,
                 getattr(e, "status_code", None), str(e),
             )
@@ -588,7 +588,7 @@ async def stream_simple(
         # Non-API error (connection/timeout/etc.) — cool down briefly so a flaky
         # key/endpoint rotates rather than being hammered.
         if _cred_id:
-            _auth_usage.report_failure(model.provider, _cred_profile, _cred_id, None, str(e))
+            _auth_usage.record_call_failure(model.provider, _cred_profile, _cred_id, None, str(e))
         if not _cancelled():
             raise  # same rationale as the APIError branch above
         # User cancel that surfaced as an exception — finalize as

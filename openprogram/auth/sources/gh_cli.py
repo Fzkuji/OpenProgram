@@ -55,7 +55,7 @@ class GhCliSource:
             return Path(self.override_path).expanduser()
         return _gh_config_dir() / "hosts.yml"
 
-    def try_import(self, profile_root: Path) -> list[Credential]:
+    def try_import(self, account_root: Path) -> list[Credential]:
         path = self._resolve_path()
         if not path.exists():
             return []
@@ -81,12 +81,12 @@ class GhCliSource:
             }
             if fields.get("user"):
                 metadata["user"] = fields["user"]
-            # Profile id encodes the host so two hosts don't collide.
-            profile_id = "default" if host == "github.com" else host
+            # Account id encodes the host so two hosts don't collide.
+            account_id = "default" if host == "github.com" else host
             out.append(
                 Credential(
                     provider_id=self.provider_id,
-                    profile_id=profile_id,
+                    account_id=account_id,
                     kind="api_key",
                     payload=CredentialData(kind="api_key", auth_value=token),
                     source=self.source_id,

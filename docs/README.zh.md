@@ -133,7 +133,7 @@ openprogram logs tail worker -f      # 跟踪 worker.log
 openprogram completion bash          # 自动补全:bash | zsh | powershell
 openprogram secrets list             # 等价 `providers list`(openclaw 风格别名)
 openprogram providers use <prov> [profile]  # 选择 provider 当前跑哪个账号
-openprogram providers login <prov> --profile work  # 添加第二个账号
+openprogram providers login <prov> --account work  # 添加第二个账号
 openprogram worker status            # 后端起了吗?在哪个端口?
 openprogram --print --resume <id>    # headless 接着之前的聊天继续
 ```

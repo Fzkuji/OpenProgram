@@ -454,12 +454,12 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
           the key box and the sign-in button coexist instead of the sign-in
           entry disappearing. */}
       {state.add_mode === "api_key" && (provider.login_methods?.length ?? 0) > 0 && (
-        <ProviderLogin provider={provider} profileId={newName.trim() || undefined} bare
+        <ProviderLogin provider={provider} accountId={newName.trim() || undefined} bare
           leadingInput={<Input className="flex-1 font-mono" placeholder={text("name (optional)", "名字（可选）")} value={newName} onChange={(e) => setNewName(e.target.value)} />}
           onChanged={() => { setNewName(""); load(); onChanged?.(); }} />
       )}
       {state.add_mode === "login" && (
-        <ProviderLogin provider={provider} profileId={newName.trim() || undefined} bare
+        <ProviderLogin provider={provider} accountId={newName.trim() || undefined} bare
           leadingInput={<Input className="flex-1 font-mono" placeholder={text("name (optional)", "名字（可选）")} value={newName} onChange={(e) => setNewName(e.target.value)} />}
           onChanged={() => { setNewName(""); load(); }} />
       )}

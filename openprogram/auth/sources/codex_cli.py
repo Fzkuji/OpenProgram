@@ -52,7 +52,7 @@ def _codex_binary_present() -> bool:
     refresh tokens get consumed by other processes, and the in-process
     runtime ends up with stale bytes it can't refresh. In that case we
     should claim ownership (adopt as ``oauth``) so OpenProgram's own
-    AuthManager can refresh the tokens.
+    CredentialProvider can refresh the tokens.
     """
     import shutil
     return shutil.which("codex") is not None
@@ -63,7 +63,7 @@ class CodexCliSource:
     """Reads ``~/.codex/auth.json`` and adopts its tokens read-only."""
 
     provider_id: str = "openai-codex"
-    profile_id: str = "default"
+    account_id: str = "default"
     # Allow tests to point at a fake file without monkey-patching $HOME.
     override_path: str = ""
 
@@ -77,7 +77,7 @@ class CodexCliSource:
             return Path(codex_home).expanduser() / "auth.json"
         return Path.home() / ".codex" / "auth.json"
 
-    def try_import(self, profile_root: Path) -> list[Credential]:
+    def try_import(self, account_root: Path) -> list[Credential]:
         path = self._resolve_path()
         if not path.exists():
             return []
@@ -110,13 +110,13 @@ class CodexCliSource:
         #   * codex binary missing → ``oauth``. The file is a one-shot
         #     snapshot of an OAuth session; nobody else will refresh it
         #     when the access_token expires. Copy the tokens into our
-        #     own store and let AuthManager own refresh. Writable so
+        #     own store and let CredentialProvider own refresh. Writable so
         #     refresh-token rotation actually persists.
         if _codex_binary_present():
             return [
                 Credential(
                     provider_id=self.provider_id,
-                    profile_id=self.profile_id,
+                    account_id=self.account_id,
                     kind="cli_delegated",
                     payload=CredentialData(
                         kind="cli_delegated",
@@ -137,7 +137,7 @@ class CodexCliSource:
         # Codex CLI not installed — bytes-copy the tokens. The Codex
         # OAuth token endpoint, client_id, and rotation scheme match
         # what ``providers/openai_codex/auth_adapter.register_codex_auth``
-        # would refresh against, so AuthManager can take over cleanly.
+        # would refresh against, so CredentialProvider can take over cleanly.
         access_token = tokens.get("access_token") or ""
         refresh_token = tokens.get("refresh_token") or ""
         if not access_token or not refresh_token:
@@ -146,7 +146,7 @@ class CodexCliSource:
         return [
             Credential(
                 provider_id=self.provider_id,
-                profile_id=self.profile_id,
+                account_id=self.account_id,
                 kind="oauth",
                 payload=CredentialData(
                     kind="oauth",

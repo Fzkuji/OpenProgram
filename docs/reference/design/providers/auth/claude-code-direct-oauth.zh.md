@@ -52,7 +52,7 @@ OpenProgram 每次使用时重读 `claudeAiOauth.accessToken`。刷新由外部 
 wire，token 从 `anthropic` pool 解析。模型 alias 归一化（opus / sonnet / haiku）
 沿用。
 
-**过期。** `cli_delegated` 凭证过期时，AuthManager 抛出 `AuthReadOnlyError`
+**过期。** `cli_delegated` 凭证过期时，CredentialProvider 抛出 `AuthReadOnlyError`
 —— 该凭证是只读的，无法自行刷新 —— 错误信息引导用户执行 `claude login`。
 直连路径复用这套处理，而不另做一份过期逻辑。
 

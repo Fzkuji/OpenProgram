@@ -26,12 +26,12 @@ from openprogram.auth.pool import (
 def _pool(*keys: str, strategy="fill_first") -> CredentialPool:
     creds = [
         Credential(
-            provider_id="p", profile_id="d", kind="api_key",
+            provider_id="p", account_id="d", kind="api_key",
             payload=CredentialData(kind="api_key", auth_value=k),
         )
         for k in keys
     ]
-    return CredentialPool(provider_id="p", profile_id="d", strategy=strategy, credentials=creds)
+    return CredentialPool(provider_id="p", account_id="d", strategy=strategy, credentials=creds)
 
 
 # ---- pick: strategies ------------------------------------------------------

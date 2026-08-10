@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from openprogram.auth import usage
-from openprogram.auth.manager import AuthManager, set_manager_for_testing
+from openprogram.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
 from openprogram.auth.store import AuthStore, set_store_for_testing
 from openprogram.auth.types import Credential, CredentialData
 
@@ -14,16 +14,16 @@ from openprogram.auth.types import Credential, CredentialData
 def store(tmp_path):
     s = AuthStore(root=tmp_path / "store")
     set_store_for_testing(s)
-    set_manager_for_testing(AuthManager(store=s))
+    set_credential_provider_for_testing(CredentialProvider(store=s))
     yield s
     set_store_for_testing(None)
-    set_manager_for_testing(None)
+    set_credential_provider_for_testing(None)
 
 
 def _seed(store, provider, profile, keys):
     for k in keys:
         store.add_credential(Credential(
-            provider_id=provider, profile_id=profile, kind="api_key",
+            provider_id=provider, account_id=profile, kind="api_key",
             payload=CredentialData(kind="api_key", auth_value=k), source="test",
         ))
 
@@ -42,19 +42,19 @@ def test_acquire_pooled_returns_token_profile_credid(store):
     assert cred_id  # non-empty
 
 
-def test_report_failure_cools_down_and_rotates(store):
+def test_record_call_failure_cools_down_and_rotates(store):
     _seed(store, "rot", "default", ["KEY-A", "KEY-B"])
     # fill_first → first acquire is KEY-A
     tok1, prof1, id1 = usage.acquire_pooled("rot")
     assert tok1.auth_value == "KEY-A"
     # a 429 on KEY-A cools it down …
-    usage.report_failure("rot", prof1, id1, status=429, error_text="429 Too Many Requests")
+    usage.record_call_failure("rot", prof1, id1, status=429, error_text="429 Too Many Requests")
     # … so the next acquire rotates to KEY-B
     tok2, _, id2 = usage.acquire_pooled("rot")
     assert tok2.auth_value == "KEY-B"
     assert id2 != id1
     # both cooled → no healthy credential left → None (caller falls back)
-    usage.report_failure("rot", "default", id2, status=402, error_text="billing")
+    usage.record_call_failure("rot", "default", id2, status=402, error_text="billing")
     assert usage.acquire_pooled("rot") is None
 
 
@@ -70,7 +70,7 @@ def test_fixed_uses_active_key_and_does_not_failover(store):
     assert tok.auth_value == "KEY-B"
     assert cid == ids[1]
     # cooling the pinned key changes nothing — "fixed" means fixed (no failover)
-    usage.report_failure("fx", "default", ids[1], status=429)
+    usage.record_call_failure("fx", "default", ids[1], status=429)
     tok2, _, _ = usage.acquire_pooled("fx")
     assert tok2.auth_value == "KEY-B"
 
@@ -83,7 +83,7 @@ def test_rotation_on_fails_over_from_the_active_key(store):
     pool.active_credential_id = ids[1]  # KEY-B is the default/first try
     store.put_pool(pool)
     assert usage.acquire_pooled("fx2")[0].auth_value == "KEY-B"          # active tried first
-    usage.report_failure("fx2", "default", ids[1], status=429)
+    usage.record_call_failure("fx2", "default", ids[1], status=429)
     assert usage.acquire_pooled("fx2")[0].auth_value == "KEY-A"          # cooled → fail over
 
 
@@ -93,7 +93,7 @@ def test_pick_account_rotates_and_skips_cooled(store):
     _seed(store, "rp", "backup", ["KEY-B"])
     pools = [p for p in store.list_pools() if p.provider_id == "rp"]
     # round-robin alternates across the accounts
-    picks = [usage._pick_account("rp", pools, "round_robin").profile_id for _ in range(4)]
+    picks = [usage._pick_account("rp", pools, "round_robin").account_id for _ in range(4)]
     assert set(picks) == {"default", "backup"}
     assert picks[0] != picks[1]
     # cool the default account's credential → it's skipped
@@ -103,13 +103,13 @@ def test_pick_account_rotates_and_skips_cooled(store):
     store.put_pool(pool)
     pools = [p for p in store.list_pools() if p.provider_id == "rp"]
     chosen = usage._pick_account("rp", pools, "fill_first")
-    assert chosen.profile_id == "backup"
+    assert chosen.account_id == "backup"
 
 
-def test_report_success_is_safe_noop_without_credential(store):
+def test_record_call_success_is_safe_noop_without_credential(store):
     # empty credential id must not raise (the non-pool provider path)
-    usage.report_success("rot", "default", "")
-    usage.report_failure("rot", "default", "", status=429)
+    usage.record_call_success("rot", "default", "")
+    usage.record_call_failure("rot", "default", "", status=429)
 
 
 @pytest.mark.parametrize("status,expected", [
@@ -143,13 +143,13 @@ def test_non_key_failures_do_not_touch_the_pool(monkeypatch, status, error_text)
     called = []
 
     class _FakeManager:
-        def report_failure(self, *a, **k):
+        def apply_failure(self, *a, **k):
             called.append(a)
 
     monkeypatch.setattr(
-        "openprogram.auth.manager.get_manager", lambda: _FakeManager()
+        "openprogram.auth.credential_provider.get_credential_provider", lambda: _FakeManager()
     )
-    usage.report_failure("openrouter", "default", "cred-1", status=status,
+    usage.record_call_failure("openrouter", "default", "cred-1", status=status,
                          error_text=error_text)
     assert called == []
 

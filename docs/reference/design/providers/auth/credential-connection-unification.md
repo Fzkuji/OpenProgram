@@ -34,7 +34,7 @@ tracks, a credential can only contribute half of the answer:
 If the last step squeezes `Credential` into a str before handing it over
 (pulling one string out of each of the 6 payloads: `ApiKeyPayload→api_key`,
 `OAuth/DeviceCode→access_token`, `CliDelegated→read external file`,
-`external_process→run the helper`, `sso→unsupported`), then the base_url, headers, and kind the
+`credential_process→run the helper`, `sso→unsupported`), then the base_url, headers, and kind the
 credential knows about are all lost. Two consequences follow: even when a
 credential stores a `base_url`, the wire layer cannot read it; and the anthropic
 wire can only guess whether a token is OAuth via `"sk-ant-oat" in key`, because
@@ -58,7 +58,7 @@ class CredentialData:
     # -- Shared fields: every auth method answers "what does a request use"
     #    in the same place --
     kind: str                     # "api_key" | "oauth" | "device_code" |
-                                  # "cli_delegated" | "external_process" | "sso"
+                                  # "cli_delegated" | "credential_process" | "sso"
     auth_value: str = ""          # the auth value that ends up in Authorization/x-api-key:
                                   #   api_key kinds -> the key itself
                                   #   oauth/device -> access_token
@@ -83,7 +83,7 @@ fields:
 | `oauth` | access_token | `refresh_token` / `expires_at_ms` / `client_id` / `token_endpoint` / `scope` / `id_token` |
 | `device_code` | access_token | `refresh_token` / `expires_at_ms` / `device_code_flow_id` |
 | `cli_delegated` | empty | `store_path` / `access_key_path` / `refresh_key_path` / `expires_key_path` |
-| `external_process` | empty | `command` / `parses` / `json_key_path` / `cache_seconds` |
+| `credential_process` | empty | `command` / `parses` / `json_key_path` / `cache_seconds` |
 | `sso` | empty | `broker` / `subject` |
 
 **Display information stays out of the payload.** Account email, display name,
@@ -113,8 +113,8 @@ def resolve_connection(cred: Credential) -> ResolvedConnection | None:
     """Translate one Credential into the connection information for a request.
     cli_delegated reads the external file here to obtain the token (preserving its
     "the external CLI is authoritative" semantics).
-    external_process runs its helper here, reusing a token cached for
-    cache_seconds; a helper failure raises AuthExternalProcessError, which the
+    credential_process runs its helper here, reusing a token cached for
+    cache_seconds; a helper failure raises AuthCredentialProcessError, which the
     resolver ladder re-raises instead of falling through, because a helper the
     user configured deliberately must not be silently replaced by another layer.
     sso raises AuthConfigError -- the kind is reserved and no flow implements it."""
@@ -200,7 +200,7 @@ write→fsync→replace). Conversion rules:
 | `OAuthPayload` | `oauth` | `access_token` | `refresh_token` `expires_at_ms` `scope` `client_id` `token_endpoint` `id_token` `extra` |
 | `DeviceCodePayload` | `device_code` | `access_token` | `refresh_token` `expires_at_ms` `device_code_flow_id` |
 | `CliDelegatedPayload` | `cli_delegated` | `""` | `store_path` `access_key_path` `refresh_key_path` `expires_key_path` |
-| `ExternalProcessPayload` | `external_process` | `""` | `command` `parses` `json_key_path` `cache_seconds` |
+| `ExternalProcessPayload` | `credential_process` | `""` | `command` `parses` `json_key_path` `cache_seconds` |
 | `SsoPayload` | `sso` | `""` | `broker` `subject` |
 
 The migrator is idempotent: a payload already in the new structure (top-level
@@ -214,7 +214,7 @@ skips them.
 
 - `resolve_connection`: one case per kind — api_key with and without base_url,
   oauth yielding access_token, cli_delegated reading the external file live,
-  external_process running a fake helper script (json and text parsing, the
+  credential_process running a fake helper script (json and text parsing, the
   cache window de-duplicating forks, and every failure mode raising rather than
   falling through), sso raising.
 - Serialization round trip: `CredentialData` → dict → `CredentialData` with

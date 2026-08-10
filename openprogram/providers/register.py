@@ -56,7 +56,7 @@ def register_builtins() -> None:
             _StreamFnProvider(anthropic.stream_simple, anthropic.stream_simple),
         )
         # Side-effect import: registers the anthropic OAuth refresh fn with
-        # AuthManager (register_anthropic_auth). Without it the subscription
+        # CredentialProvider (register_anthropic_auth). Without it the subscription
         # token expires (8h) and never refreshes → "No API key configured for
         # provider 'claude-code'" mid-chat. Same pattern as codex below.
         from openprogram.providers.anthropic import auth_adapter as _anth_auth  # noqa: F401
@@ -102,10 +102,10 @@ def register_builtins() -> None:
             _StreamFnProvider(stream_openai_codex_responses, stream_simple_openai_codex_responses),
         )
         # Side-effect import: registers the OAuth refresh fn with
-        # AuthManager so codex's stream funcs can acquire/refresh the
+        # CredentialProvider so codex's stream funcs can acquire/refresh the
         # ChatGPT OAuth access_token. Without this import,
         # register_codex_auth() never runs and acquiring credentials
-        # via AuthManager raises ProviderConfigMissing — manifesting
+        # via CredentialProvider raises ProviderConfigMissing — manifesting
         # as "No API key for provider: openai-codex" the moment a
         # channel-routed turn fires.
         from openprogram.providers.openai_codex import auth_adapter as _codex_auth  # noqa: F401

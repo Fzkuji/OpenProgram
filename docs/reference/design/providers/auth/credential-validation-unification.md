@@ -60,7 +60,7 @@ model reachability, and the centralized status-to-message mapper.
 def validate_credential(
     provider_id: str,
     *,
-    api_key: str | None = None,  # explicit (verify-before-persist); None => resolve from env+config+AuthManager
+    api_key: str | None = None,  # explicit (verify-before-persist); None => resolve from env+config+CredentialProvider
     model: str | None = None,    # set ONLY to additionally check layer-2 model reachability
     timeout: float = 15.0,
     use_cache: bool = True,      # 60s TTL, like OpenClaw models.authStatus
@@ -75,7 +75,7 @@ class CredentialResult:
                     "valid_model_unavailable", "missing", "not_applicable", "unknown"]
     ok: bool          # status in {valid, valid_no_balance, valid_model_unavailable}
     kind: str         # probe that ran: openai_bearer | openrouter_key | anthropic_native | anthropic_compat | google_query | oauth | cloud | none
-    via: str | None   # "GET /models", "GET /key", "AuthManager", "POST /chat/completions(model)"
+    via: str | None   # "GET /models", "GET /key", "CredentialProvider", "POST /chat/completions(model)"
     http_status: int | None
     latency_ms: int | None
     model: str | None # echoed when layer 2 ran
@@ -116,7 +116,7 @@ distinct outcome: `429/5xx` or OpenRouter's "no endpoints" resolve to
 | `anthropic_native` | anthropic | `GET https://api.anthropic.com/v1/models`, `x-api-key` + `anthropic-version: 2023-06-01` (Bearer is ignored) |
 | `anthropic_compat` | minimax, minimax-cn (any registry provider with `api='anthropic-messages'` that isn't native `anthropic`) | `GET {base}/v1/models`, `x-api-key` + `anthropic-version` — same probe as native but against the provider's OWN base_url (e.g. `https://api.minimaxi.com/anthropic`). The `openai_bearer` `GET {base}/models` 404s on these hosts and would brand a good key `invalid_credential`. |
 | `google_query` | google | `GET https://generativelanguage.googleapis.com/v1beta/models?key=…&pageSize=1` |
-| `oauth` | openai-codex, gemini-subscription, github-copilot, claude-code, opencode | `AuthManager.acquire_sync(pid).status` (`fresh`→valid, `needs_reauth`→invalid); no network beyond an optional token refresh |
+| `oauth` | openai-codex, gemini-subscription, github-copilot, claude-code, opencode | `CredentialProvider.acquire_sync(pid).status` (`fresh`→valid, `needs_reauth`→invalid); no network beyond an optional token refresh |
 | `cloud` | amazon-bedrock, google-vertex, azure-openai-responses | `not_applicable` for the generic probe (SigV4 / ADC / deployment-keyed) until a native list-call is added |
 
 ## 6. Status-code interpretation
@@ -222,8 +222,8 @@ Open points:
   burst of probes.
 - Anthropic OAuth (`ANTHROPIC_OAUTH_TOKEN`) needs `Authorization: Bearer` plus
   `anthropic-beta: oauth-…` on the same `/v1/models` probe; either confirm the
-  beta value or route it through the AuthManager path.
+  beta value or route it through the CredentialProvider path.
 - openai-codex has no auth-only listing endpoint (the ChatGPT backend 403s), so
   its only end-to-end probe is a layer-2 `/responses` ping. The default check
-  relies on AuthManager `Credential.status`, which is structural rather than
+  relies on CredentialProvider `Credential.status`, which is structural rather than
   end-to-end.

@@ -39,7 +39,7 @@ def translate_auth_event(ev: AuthEvent) -> Event | None:
         "system",
         payload={
             "provider": ev.provider_id,
-            "profile": ev.profile_id,
+            "profile": ev.account_id,
             "credential": ev.credential_id,
             "detail": dict(ev.detail or {}),
         },

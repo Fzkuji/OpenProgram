@@ -21,15 +21,15 @@ def test_wire_uses_credential_base_url_over_catalog():
 
 @pytest.fixture
 def store(tmp_path):
-    from openprogram.auth.manager import AuthManager, set_manager_for_testing
+    from openprogram.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
     from openprogram.auth.store import AuthStore, set_store_for_testing
 
     s = AuthStore(root=tmp_path / "store")
     set_store_for_testing(s)
-    set_manager_for_testing(AuthManager(store=s))
+    set_credential_provider_for_testing(CredentialProvider(store=s))
     yield s
     set_store_for_testing(None)
-    set_manager_for_testing(None)
+    set_credential_provider_for_testing(None)
 
 
 def test_acquire_pooled_returns_resolved_connection_with_base_url(store):
@@ -40,7 +40,7 @@ def test_acquire_pooled_returns_resolved_connection_with_base_url(store):
     from openprogram.auth.types import Credential, CredentialData
 
     store.add_credential(Credential(
-        provider_id="openai-compat", profile_id="default", kind="api_key",
+        provider_id="openai-compat", account_id="default", kind="api_key",
         payload=CredentialData(
             kind="api_key", auth_value="sk-bailian-key",
             base_url="https://bailian/v1",
@@ -50,11 +50,11 @@ def test_acquire_pooled_returns_resolved_connection_with_base_url(store):
 
     got = u.acquire_pooled("openai-compat")
     assert got is not None
-    conn, profile, cred_id = got
+    conn, account, cred_id = got
     assert isinstance(conn, ResolvedConnection)
     assert conn.auth_value == "sk-bailian-key"
     assert conn.base_url == "https://bailian/v1"
-    assert profile == "default"
+    assert account == "default"
     assert cred_id
 
 
@@ -65,7 +65,7 @@ def test_acquire_pooled_conn_base_url_none_when_unset(store):
     from openprogram.auth.types import Credential, CredentialData
 
     store.add_credential(Credential(
-        provider_id="plain", profile_id="default", kind="api_key",
+        provider_id="plain", account_id="default", kind="api_key",
         payload=CredentialData(kind="api_key", auth_value="sk-plain"),
         source="test",
     ))

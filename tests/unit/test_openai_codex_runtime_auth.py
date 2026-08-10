@@ -1,4 +1,4 @@
-"""End-to-end test that OpenAICodexRuntime uses AuthManager correctly.
+"""End-to-end test that OpenAICodexRuntime uses CredentialProvider correctly.
 
 These tests don't construct a real Runtime (that needs the openai-codex
 provider registry + HTTP client setup); instead they exercise the
@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.auth.manager import (
-    AuthManager,
+from openprogram.auth.credential_provider import (
+    CredentialProvider,
     ProviderAuthConfig,
     register_provider_config,
 )
@@ -73,7 +73,7 @@ def test_ensure_credential_imports_from_codex_file_when_pool_absent(isolated):
             "account_id": "acc_fromfile",
         },
     }))
-    mgr = AuthManager(store=store)
+    mgr = CredentialProvider(store=store)
 
     cred = _ensure_credential(mgr, "default")
     assert cred.payload.auth_value == access
@@ -87,7 +87,7 @@ def test_ensure_credential_imports_from_codex_file_when_pool_absent(isolated):
 
 def test_ensure_credential_raises_when_no_pool_and_no_file(isolated):
     store, tmp = isolated
-    mgr = AuthManager(store=store)
+    mgr = CredentialProvider(store=store)
     # ~/.codex/auth.json does not exist — import path returns None,
     # _ensure_credential should surface a config error.
     with pytest.raises(AuthConfigError, match="codex login"):
@@ -100,7 +100,7 @@ def test_ensure_credential_triggers_refresh_when_jwt_expired(isolated):
     expired_access = _jwt(int(time.time()) - 60, account_id="acc_exp")
     cred = Credential(
         provider_id=auth_adapter.PROVIDER_ID,
-        profile_id="default",
+        account_id="default",
         kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value=expired_access,
@@ -113,7 +113,7 @@ def test_ensure_credential_triggers_refresh_when_jwt_expired(isolated):
     )
     store.put_pool(CredentialPool(
         provider_id=auth_adapter.PROVIDER_ID,
-        profile_id="default",
+        account_id="default",
         credentials=[cred],
     ))
 
@@ -123,7 +123,7 @@ def test_ensure_credential_triggers_refresh_when_jwt_expired(isolated):
     def fake_refresh(c):
         return Credential(
             provider_id=c.provider_id,
-            profile_id=c.profile_id,
+            account_id=c.account_id,
             kind="oauth",
             payload=CredentialData(
                 kind="oauth", auth_value=new_access,
@@ -143,7 +143,7 @@ def test_ensure_credential_triggers_refresh_when_jwt_expired(isolated):
         refresh=fake_refresh,
     ))
 
-    mgr = AuthManager(store=store)
+    mgr = CredentialProvider(store=store)
     result = _ensure_credential(mgr, "default")
     assert result.payload.auth_value == new_access
 
@@ -151,7 +151,7 @@ def test_ensure_credential_triggers_refresh_when_jwt_expired(isolated):
 def test_account_id_prefers_metadata_over_jwt():
     cred = Credential(
         provider_id=auth_adapter.PROVIDER_ID,
-        profile_id="default",
+        account_id="default",
         kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value=_jwt(int(time.time()) + 60, account_id="acc_from_jwt"),
@@ -169,7 +169,7 @@ def test_account_id_prefers_metadata_over_jwt():
 def test_account_id_falls_back_to_jwt():
     cred = Credential(
         provider_id=auth_adapter.PROVIDER_ID,
-        profile_id="default",
+        account_id="default",
         kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value=_jwt(int(time.time()) + 60, account_id="acc_jwt_only"),
@@ -187,13 +187,13 @@ def test_profile_isolation(isolated):
     """Two profiles each with their own credential — acquire returns each."""
     store, tmp = isolated
 
-    def seed(profile_id: str, token: str) -> None:
+    def seed(account_id: str, token: str) -> None:
         store.put_pool(CredentialPool(
             provider_id=auth_adapter.PROVIDER_ID,
-            profile_id=profile_id,
+            account_id=account_id,
             credentials=[Credential(
                 provider_id=auth_adapter.PROVIDER_ID,
-                profile_id=profile_id,
+                account_id=account_id,
                 kind="oauth",
                 payload=CredentialData(
                     kind="oauth", auth_value=token,
@@ -209,7 +209,7 @@ def test_profile_isolation(isolated):
     seed("personal", _jwt(int(time.time()) + 3600, account_id="acc_personal"))
     seed("work", _jwt(int(time.time()) + 3600, account_id="acc_work"))
 
-    mgr = AuthManager(store=store)
+    mgr = CredentialProvider(store=store)
     c_personal = _ensure_credential(mgr, "personal")
     c_work = _ensure_credential(mgr, "work")
     assert _account_id_for(c_personal) == "acc_personal"

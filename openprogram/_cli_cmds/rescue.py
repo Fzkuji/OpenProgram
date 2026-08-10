@@ -211,7 +211,7 @@ def _probe_credential_freshness() -> Finding:
     """OAuth credentials with refresh registered and time left?"""
     try:
         from openprogram.auth.store import get_store
-        from openprogram.auth.manager import get_provider_config
+        from openprogram.auth.credential_provider import get_provider_config
         import time as _time
         pools = get_store().list_pools()
     except Exception as e:  # noqa: BLE001

@@ -2,7 +2,7 @@
 Auth v2 — credential pool rotation + cooldown bookkeeping.
 
 A :class:`CredentialPool` (in :mod:`.types`) holds several credentials
-for one ``(provider, profile)``. This module decides which one the next
+for one ``(provider, account)``. This module decides which one the next
 API call should use, and what happens to a credential that just returned
 401 / 402 / 429 / 503.
 
@@ -128,7 +128,7 @@ def pick(pool: CredentialPool, *, now_ms: Optional[int] = None) -> Credential:
     if not pool.credentials:
         raise AuthPoolExhaustedError(
             "pool has no credentials",
-            provider_id=pool.provider_id, profile_id=pool.profile_id,
+            provider_id=pool.provider_id, account_id=pool.account_id,
         )
 
     strategy = pool.strategy
@@ -152,7 +152,7 @@ def pick(pool: CredentialPool, *, now_ms: Optional[int] = None) -> Credential:
         raise AuthPoolExhaustedError(
             f"all {len(pool.credentials)} credentials in pool are unavailable",
             provider_id=pool.provider_id,
-            profile_id=pool.profile_id,
+            account_id=pool.account_id,
         )
 
     if strategy == "fill_first":
@@ -231,7 +231,7 @@ def mark_failure(
         return AuthEvent(
             type=AuthEventType.REVOKED,
             provider_id=cred.provider_id,
-            profile_id=cred.profile_id,
+            account_id=cred.account_id,
             credential_id=cred.credential_id,
             detail={"reason": reason, "message": detail},
         )
@@ -241,7 +241,7 @@ def mark_failure(
         return AuthEvent(
             type=AuthEventType.NEEDS_REAUTH,
             provider_id=cred.provider_id,
-            profile_id=cred.profile_id,
+            account_id=cred.account_id,
             credential_id=cred.credential_id,
             detail={"reason": reason, "message": detail},
         )
@@ -257,7 +257,7 @@ def mark_failure(
         return AuthEvent(
             type=AuthEventType.POOL_MEMBER_COOLDOWN,
             provider_id=cred.provider_id,
-            profile_id=cred.profile_id,
+            account_id=cred.account_id,
             credential_id=cred.credential_id,
             detail={"reason": reason, "message": detail},
         )
@@ -285,7 +285,7 @@ def mark_failure(
     return AuthEvent(
         type=AuthEventType.POOL_MEMBER_COOLDOWN,
         provider_id=cred.provider_id,
-        profile_id=cred.profile_id,
+        account_id=cred.account_id,
         credential_id=cred.credential_id,
         detail={
             "reason": reason,

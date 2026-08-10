@@ -13,7 +13,7 @@ Implemented:
   * :mod:`.device_code`     — RFC 8628 device authorization
   * :mod:`.api_key_paste`   — simplest: one prompt, one key
   * :mod:`.cli_import`      — read another CLI's on-disk auth file
-  * :mod:`.external_process`— shell out to a helper each API call
+  * :mod:`.credential_process`— shell out to a helper each API call
   * :mod:`.sso`             — protocol stub (enterprise SSO placeholder)
 
 See individual modules for design notes. The pattern is consistent:
@@ -24,7 +24,7 @@ with a concrete ``run(ui)`` implementation that returns a
 from .api_key_paste import ApiKeyPasteMethod
 from .cli_import import CliImportMethod
 from .device_code import DeviceCodeConfig, DeviceCodeMethod
-from .external_process import ExternalProcessMethod
+from .credential_process import CredentialProcessMethod
 from .pkce_oauth import PkceConfig, PkceLoginMethod
 from .sso import SsoStubMethod
 
@@ -32,7 +32,7 @@ __all__ = [
     "ApiKeyPasteMethod",
     "CliImportMethod",
     "DeviceCodeConfig", "DeviceCodeMethod",
-    "ExternalProcessMethod",
+    "CredentialProcessMethod",
     "PkceConfig", "PkceLoginMethod",
     "SsoStubMethod",
 ]

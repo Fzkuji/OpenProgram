@@ -9,7 +9,7 @@ import type {
   AgenticFunction,
   FunctionsMeta,
   AddCredentialBody,
-  AuthProfile,
+  AuthAccount,
   CredentialView,
   DiscoveredCredential,
   PoolView,
@@ -177,39 +177,39 @@ export const api = {
 
   // ----- Auth v2 -----------------------------------------------------------
 
-  listProviderProfiles: () =>
-    jsonFetch<{ profiles: AuthProfile[]; default: string }>("/api/providers/profiles"),
+  listProviderAccounts: () =>
+    jsonFetch<{ accounts: AuthAccount[]; default: string }>("/api/providers/accounts"),
 
-  createProviderProfile: (name: string, display_name = "", description = "") =>
-    jsonFetch<AuthProfile>("/api/providers/profiles", {
+  createProviderAccount: (name: string, display_name = "", description = "") =>
+    jsonFetch<AuthAccount>("/api/providers/accounts", {
       method: "POST",
       body: JSON.stringify({ name, display_name, description }),
     }),
 
-  deleteProviderProfile: (name: string) =>
-    jsonFetch<{ deleted: string }>(`/api/providers/profiles/${encodeURIComponent(name)}`, {
+  deleteProviderAccount: (name: string) =>
+    jsonFetch<{ deleted: string }>(`/api/providers/accounts/${encodeURIComponent(name)}`, {
       method: "DELETE",
     }),
 
-  listProviderPools: (profile?: string) => {
-    const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
+  listProviderPools: (account?: string) => {
+    const qs = account ? `?account=${encodeURIComponent(account)}` : "";
     return jsonFetch<{ pools: PoolView[] }>(`/api/providers/pools${qs}`);
   },
 
-  getProviderPool: (provider: string, profile: string) =>
+  getProviderPool: (provider: string, account: string) =>
     jsonFetch<PoolView>(
-      `/api/providers/pools/${encodeURIComponent(provider)}/${encodeURIComponent(profile)}`,
+      `/api/providers/pools/${encodeURIComponent(provider)}/${encodeURIComponent(account)}`,
     ),
 
-  addProviderCredential: (provider: string, profile: string, body: AddCredentialBody) =>
+  addProviderCredential: (provider: string, account: string, body: AddCredentialBody) =>
     jsonFetch<CredentialView>(
-      `/api/providers/pools/${encodeURIComponent(provider)}/${encodeURIComponent(profile)}/credentials`,
+      `/api/providers/pools/${encodeURIComponent(provider)}/${encodeURIComponent(account)}/credentials`,
       { method: "POST", body: JSON.stringify(body) },
     ),
 
-  removeProviderCredential: (provider: string, profile: string, credentialId: string) =>
+  removeProviderCredential: (provider: string, account: string, credentialId: string) =>
     jsonFetch<{ removed: string }>(
-      `/api/providers/pools/${encodeURIComponent(provider)}/${encodeURIComponent(profile)}/credentials/${encodeURIComponent(credentialId)}`,
+      `/api/providers/pools/${encodeURIComponent(provider)}/${encodeURIComponent(account)}/credentials/${encodeURIComponent(credentialId)}`,
       { method: "DELETE" },
     ),
 
@@ -221,8 +221,8 @@ export const api = {
   runProvidersDoctor: () =>
     jsonFetch<DoctorReport>("/api/providers/doctor", { method: "POST" }),
 
-  adoptAllProviderCredentials: (profile?: string) => {
-    const qs = profile ? `?profile=${encodeURIComponent(profile)}` : "";
+  adoptAllProviderCredentials: (account?: string) => {
+    const qs = account ? `?account=${encodeURIComponent(account)}` : "";
     return jsonFetch<AdoptAllReport>(`/api/providers/adopt_all${qs}`, {
       method: "POST",
     });
@@ -267,7 +267,7 @@ export interface DoctorFinding {
 
 export interface DoctorReport {
   pools_checked: number;
-  profiles_checked: number;
+  accounts_checked: number;
   findings: DoctorFinding[];
 }
 

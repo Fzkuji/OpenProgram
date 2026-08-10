@@ -13,7 +13,7 @@ Copilot's auth has two tiers:
      as the actual bearer for Copilot chat completions; expires in ~30
      minutes; we re-mint it from the GitHub OAuth token as needed.
 
-The adapter registers Copilot with AuthManager using the **GitHub OAuth
+The adapter registers Copilot with CredentialProvider using the **GitHub OAuth
 token** as the primary credential. The ``api_token`` exchange happens
 transparently inside :mod:`providers._shared.github_copilot_headers`
 (unchanged). This split matches what OpenClaw / pi-ai do: the short-
@@ -28,7 +28,7 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
-from openprogram.auth.manager import (
+from openprogram.auth.credential_provider import (
     ProviderAuthConfig,
     register_provider_config,
 )
@@ -47,7 +47,7 @@ _ENV_TOKEN_VARS = ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")
 
 def import_from_env_tokens(
     *,
-    profile_id: str = "default",
+    account_id: str = "default",
 ) -> Optional[Credential]:
     """Read Copilot-compatible GitHub tokens from environment variables.
 
@@ -61,7 +61,7 @@ def import_from_env_tokens(
         if value:
             return Credential(
                 provider_id=PROVIDER_ID,
-                profile_id=profile_id,
+                account_id=account_id,
                 kind="api_key",
                 payload=CredentialData(kind="api_key", auth_value=value),
                 source=f"env:{var}",
@@ -78,7 +78,7 @@ def import_oauth_credential(
     access_token: str,
     refresh_token: str = "",
     *,
-    profile_id: str = "default",
+    account_id: str = "default",
     expires_at_ms: int = 0,
     metadata: Optional[dict[str, Any]] = None,
 ) -> Credential:
@@ -92,7 +92,7 @@ def import_oauth_credential(
     md = {"imported_from": "github_device_code"} | (metadata or {})
     return Credential(
         provider_id=PROVIDER_ID,
-        profile_id=profile_id,
+        account_id=account_id,
         kind="oauth",
         payload=CredentialData(
             kind="oauth",
@@ -110,11 +110,11 @@ def import_oauth_credential(
 
 
 def register_github_copilot_auth() -> None:
-    """Register Copilot with :mod:`auth.manager`.
+    """Register Copilot with :mod:`auth.credential_provider`.
 
     No refresh fn is registered: GitHub OAuth access tokens don't expire
     short-term, and the Copilot short-lived api_token is minted outside
-    AuthManager's purview. If a future Copilot change shortens OAuth
+    CredentialProvider's purview. If a future Copilot change shortens OAuth
     access-token lifetimes, add a ``refresh`` here pointing at
     :func:`providers.utils.oauth.github_copilot.refresh_github_copilot_token`
     (sync-wrapped).

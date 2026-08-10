@@ -4,12 +4,12 @@ Auth v2 — persistent credential store.
 Responsibilities:
 
   * hold the canonical in-memory map of :class:`CredentialPool` objects
-    keyed by ``(provider_id, profile_id)``
+    keyed by ``(provider_id, account_id)``
   * persist each pool to its own JSON file at
-    ``<profile_root>/auth/<provider_id>/<profile_id>.json`` with 0600
+    ``<account_root>/auth/<provider_id>/<account_id>.json`` with 0600
     permissions
   * serialize concurrent mutations per pool (one ``asyncio.Lock`` per
-    ``(provider, profile)`` key plus a short-lived file lock on write)
+    ``(provider, account)`` key plus a short-lived file lock on write)
   * detect cross-process edits via mtime + size tracking, reload the
     in-memory copy when an outside writer has bumped the file, so
     two OpenProgram processes (or OpenProgram + an external CLI that
@@ -23,10 +23,10 @@ Design references:
   * Claude Code's ``invalidateOAuthCacheIfDiskChanged`` — the mtime
     re-read pattern
   * hermes-agent ``tools/mcp_oauth_manager.py`` — in-flight refresh
-    dedup (implemented in :mod:`auth.manager`, not here)
+    dedup (implemented in :mod:`auth.credential_provider`, not here)
 
 Nothing here imports httpx or talks to LLM providers. Refresh itself
-happens in :mod:`auth.manager`; this module just stores the result.
+happens in :mod:`auth.credential_provider`; this module just stores the result.
 """
 from __future__ import annotations
 
@@ -47,11 +47,11 @@ from .types import (
     AuthEventType,
     Credential,
     CredentialPool,
-    Profile,
+    Account,
 )
 
 # Default root. Overridable per-process via ``AuthStore(root=...)`` and
-# per-profile via :class:`Profile.root`.
+# per-account via :class:`Account.root`.
 DEFAULT_ROOT = Path.home() / ".openprogram"
 
 # How long we'll wait for an OS-level advisory file lock before giving up
@@ -150,7 +150,7 @@ class AuthStore:
         self,
         root: Optional[Path] = None,
         *,
-        profile: Optional[Profile] = None,
+        account: Optional[Account] = None,
     ) -> None:
         self._root = root or DEFAULT_ROOT
         # One-shot: migrate any old-format payload JSON under this root to the
@@ -163,7 +163,7 @@ class AuthStore:
             # Migration must never block store startup; a genuinely corrupt
             # file surfaces later via from_dict's AuthCorruptCredentialError.
             pass
-        self._profile = profile
+        self._profile = account
         self._pools: dict[tuple[str, str], CredentialPool] = {}
         # Per-pool asyncio lock for in-process serialization. sync paths
         # use the thread RLock; async paths use the asyncio lock.
@@ -201,15 +201,15 @@ class AuthStore:
         except Exception:
             return provider_id
 
-    def _pool_path(self, provider_id: str, profile_id: str) -> Path:
-        """Resolve the on-disk path for ``(provider, profile)``.
+    def _pool_path(self, provider_id: str, account_id: str) -> Path:
+        """Resolve the on-disk path for ``(provider, account)``.
 
         Returns the canonical path first; if that file doesn't exist,
         falls back to any directory whose alias resolves to this
         provider (so legacy login dirs like ``openai-codex/`` keep
         working when the canonical id is ``openai-codex``).
         """
-        canonical = self.base_dir() / provider_id / f"{profile_id}.json"
+        canonical = self.base_dir() / provider_id / f"{account_id}.json"
         if canonical.exists():
             return canonical
         # Reverse-alias scan: any short name that resolves to this
@@ -218,7 +218,7 @@ class AuthStore:
             from openprogram.auth.aliases import known_aliases
             for alias, target in known_aliases().items():
                 if target == provider_id and alias != provider_id:
-                    alt = self.base_dir() / alias / f"{profile_id}.json"
+                    alt = self.base_dir() / alias / f"{account_id}.json"
                     if alt.exists():
                         return alt
         except Exception:
@@ -253,28 +253,28 @@ class AuthStore:
 
     # -- reads ----------------------------------------------------------------
 
-    def get_pool(self, provider_id: str, profile_id: str) -> CredentialPool:
-        """Return the pool for ``(provider, profile)``, loading from disk
+    def get_pool(self, provider_id: str, account_id: str) -> CredentialPool:
+        """Return the pool for ``(provider, account)``, loading from disk
         if necessary. Raises :class:`AuthConfigError` if not found."""
         with self._sync_lock:
-            key = (self._canon(provider_id), profile_id)
+            key = (self._canon(provider_id), account_id)
             self._reload_if_disk_changed(key)
             pool = self._pools.get(key)
             if pool is None:
                 pool = self._load_from_disk(key)
                 if pool is None:
                     raise AuthConfigError(
-                        f"no credentials for {provider_id}/{profile_id}",
+                        f"no credentials for {provider_id}/{account_id}",
                         provider_id=provider_id,
-                        profile_id=profile_id,
+                        account_id=account_id,
                     )
                 self._pools[key] = pool
             return pool
 
-    def find_pool(self, provider_id: str, profile_id: str) -> Optional[CredentialPool]:
+    def find_pool(self, provider_id: str, account_id: str) -> Optional[CredentialPool]:
         """Like :meth:`get_pool` but returns ``None`` instead of raising."""
         try:
-            return self.get_pool(provider_id, profile_id)
+            return self.get_pool(provider_id, account_id)
         except AuthConfigError:
             return None
 
@@ -318,19 +318,19 @@ class AuthStore:
         object, because we atomically re-write the whole file.
         """
         pool.provider_id = self._canon(pool.provider_id)
-        key = (pool.provider_id, pool.profile_id)
+        key = (pool.provider_id, pool.account_id)
         with self._sync_lock:
             self._pools[key] = pool
             self._persist(pool)
 
     def add_credential(self, cred: Credential) -> CredentialPool:
-        """Append ``cred`` to the pool at ``(cred.provider_id, cred.profile_id)``,
+        """Append ``cred`` to the pool at ``(cred.provider_id, cred.account_id)``,
         creating the pool if absent. Returns the updated pool."""
         cred.provider_id = self._canon(cred.provider_id)
-        key = (cred.provider_id, cred.profile_id)
+        key = (cred.provider_id, cred.account_id)
         with self._sync_lock:
             pool = self._pools.get(key) or self._load_from_disk(key) or CredentialPool(
-                provider_id=cred.provider_id, profile_id=cred.profile_id,
+                provider_id=cred.provider_id, account_id=cred.account_id,
             )
             pool.credentials.append(cred)
             self._pools[key] = pool
@@ -338,17 +338,17 @@ class AuthStore:
             self._emit(AuthEvent(
                 type=AuthEventType.POOL_MEMBER_ADDED,
                 provider_id=cred.provider_id,
-                profile_id=cred.profile_id,
+                account_id=cred.account_id,
                 credential_id=cred.credential_id,
                 detail={"source": cred.source, "kind": cred.kind},
             ))
             return pool
 
-    def remove_credential(self, provider_id: str, profile_id: str, credential_id: str) -> None:
+    def remove_credential(self, provider_id: str, account_id: str, credential_id: str) -> None:
         """Remove a single credential from a pool. If the pool becomes
-        empty the pool file is *not* deleted — the profile may want to
+        empty the pool file is *not* deleted — the account may want to
         add new credentials back. Use :meth:`delete_pool` to nuke it."""
-        key = (self._canon(provider_id), profile_id)
+        key = (self._canon(provider_id), account_id)
         with self._sync_lock:
             pool = self._pools.get(key) or self._load_from_disk(key)
             if pool is None:
@@ -362,15 +362,15 @@ class AuthStore:
             self._emit(AuthEvent(
                 type=AuthEventType.POOL_MEMBER_REMOVED,
                 provider_id=provider_id,
-                profile_id=profile_id,
+                account_id=account_id,
                 credential_id=credential_id,
             ))
 
-    def delete_pool(self, provider_id: str, profile_id: str) -> None:
+    def delete_pool(self, provider_id: str, account_id: str) -> None:
         """Delete a pool entirely (in-memory and on-disk)."""
         provider_id = self._canon(provider_id)
-        key = (provider_id, profile_id)
-        path = self._pool_path(provider_id, profile_id)
+        key = (provider_id, account_id)
+        path = self._pool_path(provider_id, account_id)
         with self._sync_lock:
             self._pools.pop(key, None)
             self._fstat.pop(key, None)
@@ -383,16 +383,16 @@ class AuthStore:
             self._emit(AuthEvent(
                 type=AuthEventType.POOL_MEMBER_REMOVED,
                 provider_id=provider_id,
-                profile_id=profile_id,
+                account_id=account_id,
                 detail={"reason": "pool_deleted"},
             ))
 
     # -- locks (public — used by manager) ------------------------------------
 
-    def async_lock(self, provider_id: str, profile_id: str) -> asyncio.Lock:
+    def async_lock(self, provider_id: str, account_id: str) -> asyncio.Lock:
         """Per-pool asyncio lock. Refresh code grabs this to serialize
         refresh_token rotation within the process."""
-        key = (provider_id, profile_id)
+        key = (provider_id, account_id)
         with self._sync_lock:
             lock = self._async_locks.get(key)
             if lock is None:
@@ -403,7 +403,7 @@ class AuthStore:
     # -- persistence internals -----------------------------------------------
 
     def _persist(self, pool: CredentialPool) -> None:
-        path = self._pool_path(pool.provider_id, pool.profile_id)
+        path = self._pool_path(pool.provider_id, pool.account_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
         data = json.dumps(pool.to_dict(), indent=2, ensure_ascii=False)
@@ -425,7 +425,7 @@ class AuthStore:
             # Record observed fstat so we don't treat our own write as a
             # cross-process change on the next read.
             st = path.stat()
-            self._fstat[(pool.provider_id, pool.profile_id)] = (st.st_mtime, st.st_size)
+            self._fstat[(pool.provider_id, pool.account_id)] = (st.st_mtime, st.st_size)
 
     def _load_from_disk(self, key: tuple[str, str]) -> Optional[CredentialPool]:
         path = self._pool_path(*key)
@@ -442,7 +442,7 @@ class AuthStore:
         except json.JSONDecodeError as e:
             raise AuthCorruptCredentialError(
                 f"{path} is not valid JSON: {e}",
-                provider_id=key[0], profile_id=key[1],
+                provider_id=key[0], account_id=key[1],
             ) from e
         pool = CredentialPool.from_dict(d)
         self._fstat[key] = (st.st_mtime, st.st_size)

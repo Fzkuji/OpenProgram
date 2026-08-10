@@ -454,7 +454,7 @@ def _init_providers():
             # provider that bypasses ``_is_configured`` (e.g.
             # ``_is_configured("openai-codex")`` returns False under
             # some config-file layouts even when an OAuth token is in
-            # AuthManager). Suppress the user-visible "no provider"
+            # CredentialProvider). Suppress the user-visible "no provider"
             # warning when any agent has a pinned model.provider —
             # ``_cli_chat.setup._get_chat_runtime`` will try it next
             # and the banner will say so.

@@ -13,9 +13,9 @@ Design calls:
   * Every call goes through a ``cache_seconds`` window so we don't fork
     the helper on every single request. Matches what ``aws`` and ``gcloud``
     do internally.
-  * Helper runs under the *current profile*'s subprocess HOME (see
-    :class:`Profile`) so corporate creds that bleed in via ``~/.aws/``
-    don't cross profile boundaries.
+  * Helper runs under the *current account*'s subprocess HOME (see
+    :class:`Account`) so corporate creds that bleed in via ``~/.aws/``
+    don't cross account boundaries.
   * Helper stderr is captured and surfaced on failure; stdout is parsed
     as JSON or raw text per config. No shell interpolation — we take a
     ``list[str]`` argv so there's nothing to escape.
@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from ..types import (
-    AuthExternalProcessError,
+    AuthCredentialProcessError,
     Credential,
     CredentialData,
     LoginMethod,
@@ -40,7 +40,7 @@ from ..types import (
 
 
 @dataclass
-class ExternalProcessConfig:
+class CredentialProcessConfig:
     command: list[str]
     parses: Literal["json", "text"] = "json"
     # Which key path to extract when ``parses == "json"``. Same walking
@@ -48,10 +48,10 @@ class ExternalProcessConfig:
     json_key_path: list[str] = field(default_factory=list)
     cache_seconds: int = 300
     # Working directory for the helper. Resolved relative to the current
-    # profile's home when None.
+    # account's home when None.
     cwd: str | None = None
-    # Additional env vars for the helper. Profile env + os.environ merge
-    # in the Profile layer; these layer on top.
+    # Additional env vars for the helper. Account env + os.environ merge
+    # in the Account layer; these layer on top.
     env: dict[str, str] = field(default_factory=dict)
     # Max wall time for one helper invocation. Too short → user sees
     # noise; too long → a hung helper hangs the agent. One minute is a
@@ -59,29 +59,29 @@ class ExternalProcessConfig:
     timeout_seconds: float = 60.0
 
 
-class ExternalProcessMethod(LoginMethod):
+class CredentialProcessMethod(LoginMethod):
     """Runs a helper during login to verify it produces output.
 
     The login flow doesn't actually persist a cached token — it just
     records the helper invocation shape. Every API call later re-runs
-    the helper (via ``CredentialData(kind="external_process")``), subject to
+    the helper (via ``CredentialData(kind="credential_process")``), subject to
     the ``cache_seconds`` de-dup window applied by :func:`token_for_payload`
     on the resolver's path.
     """
 
-    method_id = "external_process"
+    method_id = "credential_process"
 
     def __init__(
         self,
         provider_id: str,
-        config: ExternalProcessConfig,
+        config: CredentialProcessConfig,
         *,
-        profile_id: str = "default",
+        account_id: str = "default",
         metadata: dict | None = None,
     ) -> None:
         self.provider_id = provider_id
         self._cfg = config
-        self._profile_id = profile_id
+        self._account_id = account_id
         self._metadata = dict(metadata or {})
 
     async def run(self, ui: LoginUi) -> Credential:
@@ -99,10 +99,10 @@ class ExternalProcessMethod(LoginMethod):
 
         return Credential(
             provider_id=self.provider_id,
-            profile_id=self._profile_id,
-            kind="external_process",
+            account_id=self._account_id,
+            kind="credential_process",
             payload=CredentialData(
-                kind="external_process",
+                kind="credential_process",
                 data={
                     "command": list(self._cfg.command),
                     "parses": self._cfg.parses,
@@ -115,18 +115,18 @@ class ExternalProcessMethod(LoginMethod):
         )
 
 
-def config_from_payload(data: dict) -> ExternalProcessConfig:
+def config_from_payload(data: dict) -> CredentialProcessConfig:
     """Rebuild the helper config from a stored ``CredentialData.data``.
 
-    Missing keys fall back to :class:`ExternalProcessConfig` defaults, so
+    Missing keys fall back to :class:`CredentialProcessConfig` defaults, so
     a credential written by an older/leaner producer (the web UI stores
     only ``command``) still runs with sane parsing + cache behaviour.
     """
     command = list(data.get("command") or [])
     if not command:
-        raise AuthExternalProcessError("external_process credential has no command")
-    defaults = ExternalProcessConfig(command=command)
-    return ExternalProcessConfig(
+        raise AuthCredentialProcessError("credential_process credential has no command")
+    defaults = CredentialProcessConfig(command=command)
+    return CredentialProcessConfig(
         command=command,
         parses=data.get("parses") or defaults.parses,
         json_key_path=list(data.get("json_key_path") or []),
@@ -137,21 +137,21 @@ def config_from_payload(data: dict) -> ExternalProcessConfig:
     )
 
 
-def _parse_output(cfg: ExternalProcessConfig, output: str) -> str:
+def _parse_output(cfg: CredentialProcessConfig, output: str) -> str:
     if cfg.parses == "text":
         return output.strip()
     try:
         node: object = json.loads(output)
     except json.JSONDecodeError as e:
-        raise AuthExternalProcessError(f"helper output is not valid JSON: {e}") from e
+        raise AuthCredentialProcessError(f"helper output is not valid JSON: {e}") from e
     for key in cfg.json_key_path:
         if not isinstance(node, dict) or key not in node:
-            raise AuthExternalProcessError(
+            raise AuthCredentialProcessError(
                 f"helper JSON has no key path {'.'.join(cfg.json_key_path)!r}"
             )
         node = node[key]
     if not isinstance(node, str) or not node:
-        raise AuthExternalProcessError("helper JSON key path did not yield a non-empty string")
+        raise AuthCredentialProcessError("helper JSON key path did not yield a non-empty string")
     return node
 
 
@@ -162,7 +162,7 @@ _token_cache: dict[tuple, tuple[float, str]] = {}
 _cache_lock = threading.Lock()
 
 
-def _cache_key(cfg: ExternalProcessConfig, scope: str) -> tuple:
+def _cache_key(cfg: CredentialProcessConfig, scope: str) -> tuple:
     return (scope, tuple(cfg.command), cfg.parses, tuple(cfg.json_key_path), cfg.cwd)
 
 
@@ -170,9 +170,9 @@ def token_for_payload(data: dict, *, scope: str = "") -> str:
     """Run the helper (or reuse a cached run) and return the token.
 
     ``scope`` separates cache entries that share a command but must not
-    share a token — pass ``f"{provider_id}/{profile_id}"``.
+    share a token — pass ``f"{provider_id}/{account_id}"``.
 
-    Raises :class:`AuthExternalProcessError` on any failure. Callers must
+    Raises :class:`AuthCredentialProcessError` on any failure. Callers must
     NOT swallow it: the user explicitly configured this helper, so a
     silent fallback to some other credential layer is exactly the
     failure mode this method exists to avoid.
@@ -186,10 +186,10 @@ def token_for_payload(data: dict, *, scope: str = "") -> str:
             return hit[1]
     try:
         output = _run_helper_sync(cfg)
-    except AuthExternalProcessError:
+    except AuthCredentialProcessError:
         raise
     except Exception as e:  # noqa: BLE001 — normalize to our error type
-        raise AuthExternalProcessError(str(e)) from e
+        raise AuthCredentialProcessError(str(e)) from e
     token = _parse_output(cfg, output)
     if cfg.cache_seconds > 0:
         with _cache_lock:
@@ -203,12 +203,12 @@ def clear_token_cache() -> None:
         _token_cache.clear()
 
 
-def _run_helper_sync(cfg: ExternalProcessConfig) -> str:
+def _run_helper_sync(cfg: CredentialProcessConfig) -> str:
     """Sync bridge for :func:`_run_helper`.
 
     The resolver is sync by design (see :mod:`auth.resolver`), and it may
     itself be called from inside a running loop. Mirrors
-    :meth:`AuthManager.acquire_sync`: own loop when free, private thread
+    :meth:`CredentialProvider.acquire_sync`: own loop when free, private thread
     when a loop is already running on this thread.
     """
     try:
@@ -234,7 +234,7 @@ def _run_helper_sync(cfg: ExternalProcessConfig) -> str:
     return box["out"]
 
 
-async def _run_helper(cfg: ExternalProcessConfig) -> str:
+async def _run_helper(cfg: CredentialProcessConfig) -> str:
     env = os.environ.copy()
     env.update(cfg.env)
     proc = await asyncio.create_subprocess_exec(

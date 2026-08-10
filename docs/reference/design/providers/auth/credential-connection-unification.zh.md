@@ -27,7 +27,7 @@
 
 如果最后一步把 `Credential` 压成一个 str 再交出去（按 6 种 payload 各自抽出一根
 字符串：`ApiKeyPayload→api_key`、`OAuth/DeviceCode→access_token`、
-`CliDelegated→读外部文件`、`external_process→执行辅助命令`、`sso→不支持`），那么凭据知道的
+`CliDelegated→读外部文件`、`credential_process→执行辅助命令`、`sso→不支持`），那么凭据知道的
 base_url、headers 以及自己的 kind 就全部丢失。后果有两个：凭据里即使存了
 `base_url`，wire 层也读不到；anthropic wire 只能靠 `"sk-ant-oat" in key`
 猜这是不是 OAuth token，因为 kind 信息也一并没了。
@@ -46,7 +46,7 @@ base_url、headers 以及自己的 kind 就全部丢失。后果有两个：凭�
 class CredentialData:
     # —— 共性字段：所有验证方式都在同一位置回答的「发请求要用什么」——
     kind: str                     # "api_key" | "oauth" | "device_code" |
-                                  # "cli_delegated" | "external_process" | "sso"
+                                  # "cli_delegated" | "credential_process" | "sso"
     auth_value: str = ""          # 最终要放进 Authorization/x-api-key 的鉴权值：
                                   #   api_key 类 → key 本身
                                   #   oauth/device → access_token
@@ -67,7 +67,7 @@ class CredentialData:
 | `oauth` | access_token | `refresh_token` / `expires_at_ms` / `client_id` / `token_endpoint` / `scope` / `id_token` |
 | `device_code` | access_token | `refresh_token` / `expires_at_ms` / `device_code_flow_id` |
 | `cli_delegated` | 空 | `store_path` / `access_key_path` / `refresh_key_path` / `expires_key_path` |
-| `external_process` | 空 | `command` / `parses` / `json_key_path` / `cache_seconds` |
+| `credential_process` | 空 | `command` / `parses` / `json_key_path` / `cache_seconds` |
 | `sso` | 空 | `broker` / `subject` |
 
 **展示信息不进 payload。** 账号邮箱、显示名、org id 等留在 `Credential.metadata`
@@ -89,8 +89,8 @@ class ResolvedConnection:
 def resolve_connection(cred: Credential) -> ResolvedConnection | None:
     """把一份 Credential 翻译成一次请求的连接信息。
     cli_delegated 在此现读外部文件取 token（保持它「外部 CLI 权威」的语义）。
-    external_process 在这里执行辅助命令，命中 cache_seconds 缓存窗口则复用；
-    命令失败抛 AuthExternalProcessError，resolver 各层原样上抛不再回退，
+    credential_process 在这里执行辅助命令，命中 cache_seconds 缓存窗口则复用；
+    命令失败抛 AuthCredentialProcessError，resolver 各层原样上抛不再回退，
     因为用户显式配置的取值方式不该被别处的凭据悄悄顶替。
     sso 抛 AuthConfigError：该类型是预留的，没有任何流程能产出或使用它。"""
 ```
@@ -162,7 +162,7 @@ Credential(CredentialData{auth_value, base_url, headers, kind, data})
 | `OAuthPayload` | `oauth` | `access_token` | `refresh_token` `expires_at_ms` `scope` `client_id` `token_endpoint` `id_token` `extra` |
 | `DeviceCodePayload` | `device_code` | `access_token` | `refresh_token` `expires_at_ms` `device_code_flow_id` |
 | `CliDelegatedPayload` | `cli_delegated` | `""` | `store_path` `access_key_path` `refresh_key_path` `expires_key_path` |
-| `ExternalProcessPayload` | `external_process` | `""` | `command` `parses` `json_key_path` `cache_seconds` |
+| `ExternalProcessPayload` | `credential_process` | `""` | `command` `parses` `json_key_path` `cache_seconds` |
 | `SsoPayload` | `sso` | `""` | `broker` `subject` |
 
 迁移器是幂等的：payload 已是新结构（有 `kind` 顶层字段、无 `__type__`）则跳过。
@@ -173,7 +173,7 @@ payload，迁移器跳过它们。
 ## 测试
 
 - `resolve_connection`：每种 kind 各一条 —— api_key 带/不带 base_url、oauth 出
-  access_token、cli_delegated 现读外部文件、external_process 跑假辅助脚本
+  access_token、cli_delegated 现读外部文件、credential_process 跑假辅助脚本
   （json 与 text 两种解析、缓存窗口内不重复 fork、各类失败一律报错不回落）、
   sso 报错。
 - 序列化往返：`CredentialData` → dict → `CredentialData` 字段一致（含 `data`）。

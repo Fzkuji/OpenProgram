@@ -29,7 +29,7 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from openprogram.auth.manager import (
+from openprogram.auth.credential_provider import (
     ProviderAuthConfig,
     register_provider_config,
 )
@@ -48,7 +48,7 @@ def gemini_cli_credentials_path() -> Path:
 
 def import_from_gemini_cli(
     *,
-    profile_id: str = "default",
+    account_id: str = "default",
     path: Optional[Path] = None,
 ) -> Optional[Credential]:
     """Read Gemini CLI's OAuth file; return a delegated credential or None."""
@@ -73,7 +73,7 @@ def import_from_gemini_cli(
 
     return Credential(
         provider_id=PROVIDER_ID,
-        profile_id=profile_id,
+        account_id=account_id,
         kind="cli_delegated",
         payload=CredentialData(
             kind="cli_delegated",

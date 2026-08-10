@@ -17,7 +17,7 @@ Ctrl-C in questionary returns ``None`` from the prompt; treat that as
 "go back / cancel". The top-level :func:`run_interactive_setup` loops
 until the user picks Quit or sends EOF.
 
-All real work (scanning, adopting, login, profile CRUD) is delegated to
+All real work (scanning, adopting, login, account CRUD) is delegated to
 the same helpers that the non-interactive CLI uses — this module only
 handles presentation.
 """
@@ -92,14 +92,14 @@ def run_interactive_setup() -> int:
                 Choice("Scan & import discoverable",           value="scan"),
                 Choice("Add a provider login",                 value="login"),
                 Choice("Diagnose current pools",               value="doctor"),
-                Choice("Manage profiles",                      value="profiles"),
+                Choice("Manage accounts",                      value="accounts"),
             ]
         else:
             choices = [
                 Choice("Scan & import discoverable",           value="scan"),
                 Choice("Add a provider login",                 value="login"),
                 Choice("Skip (set up providers later)",        value="done"),
-                Choice("Manage profiles",                      value="profiles"),
+                Choice("Manage accounts",                      value="accounts"),
             ]
         # unsafe_ask lets KeyboardInterrupt propagate. When called from
         # `openprogram setup`'s providers section, the outer
@@ -123,8 +123,8 @@ def run_interactive_setup() -> int:
             _action_pick_provider_and_login()
         elif pick == "doctor":
             _action_run_doctor()
-        elif pick == "profiles":
-            _action_profiles_menu()
+        elif pick == "accounts":
+            _action_accounts_menu()
 
 
 def _show_provider_status() -> bool:
@@ -142,7 +142,7 @@ def _show_provider_status() -> bool:
             CodexCliSource, EnvApiKeySource,
             GhCliSource, QwenCliSource,
         )
-        from .profiles import DEFAULT_PROFILE_NAME, get_profile_manager
+        from .accounts import DEFAULT_ACCOUNT_NAME, get_account_manager
         from openprogram.providers.env_api_keys import PROVIDER_ENV_VARS
     except Exception:
         return False
@@ -158,24 +158,24 @@ def _show_provider_status() -> bool:
 
     # Scan for unimported credentials. Cheap — the sources only read
     # files in well-known paths.
-    pm = get_profile_manager()
-    profile = DEFAULT_PROFILE_NAME
-    profile_obj = pm.get_profile(profile)
+    pm = get_account_manager()
+    account = DEFAULT_ACCOUNT_NAME
+    account_obj = pm.get_account(account)
     sources_list: list[Any] = [
-        CodexCliSource(profile_id=profile),
-        QwenCliSource(profile_id=profile),
+        CodexCliSource(account_id=account),
+        QwenCliSource(account_id=account),
         GhCliSource(),
     ]
     for p_id, env_var in PROVIDER_ENV_VARS.items():
         sources_list.append(EnvApiKeySource(
-            provider_id=p_id, env_var=env_var, profile_id=profile,
+            provider_id=p_id, env_var=env_var, account_id=account,
         ))
 
     available_rows: list[str] = []
     for src in sources_list:
         try:
-            for cred in src.try_import(profile_obj.root):
-                existing = store.find_pool(cred.provider_id, profile)
+            for cred in src.try_import(account_obj.root):
+                existing = store.find_pool(cred.provider_id, account)
                 if existing and any(c.source == cred.source
                                     for c in existing.credentials):
                     continue
@@ -234,29 +234,29 @@ def _action_scan_and_import() -> None:
         GhCliSource,
         QwenCliSource,
     )
-    from .profiles import DEFAULT_PROFILE_NAME, get_profile_manager
+    from .accounts import DEFAULT_ACCOUNT_NAME, get_account_manager
     from .store import get_store
 
     store = get_store()
-    pm = get_profile_manager()
-    profile = _pick_profile(pm, default=DEFAULT_PROFILE_NAME) or DEFAULT_PROFILE_NAME
-    profile_obj = pm.get_profile(profile)
+    pm = get_account_manager()
+    account = _pick_account(pm, default=DEFAULT_ACCOUNT_NAME) or DEFAULT_ACCOUNT_NAME
+    account_obj = pm.get_account(account)
 
     sources: list[Any] = [
-        CodexCliSource(profile_id=profile),
-        QwenCliSource(profile_id=profile),
+        CodexCliSource(account_id=account),
+        QwenCliSource(account_id=account),
         GhCliSource(),
     ]
     from openprogram.providers.env_api_keys import PROVIDER_ENV_VARS
     for p_id, env_var in PROVIDER_ENV_VARS.items():
         sources.append(
-            EnvApiKeySource(provider_id=p_id, env_var=env_var, profile_id=profile),
+            EnvApiKeySource(provider_id=p_id, env_var=env_var, account_id=account),
         )
 
     candidates: list[tuple[Any, Any]] = []
     for src in sources:
         try:
-            for cred in src.try_import(profile_obj.root):
+            for cred in src.try_import(account_obj.root):
                 candidates.append((src, cred))
         except Exception:
             continue
@@ -269,8 +269,8 @@ def _action_scan_and_import() -> None:
     # so re-runs default to "nothing new" rather than "import everything".
     choices = []
     for i, (src, cred) in enumerate(candidates):
-        cred.profile_id = profile
-        existing = store.find_pool(cred.provider_id, cred.profile_id)
+        cred.account_id = account
+        existing = store.find_pool(cred.provider_id, cred.account_id)
         already = existing is not None and any(
             c.source == cred.source for c in existing.credentials
         )
@@ -294,12 +294,12 @@ def _action_scan_and_import() -> None:
     adopted = 0
     for i in picks:
         src, cred = candidates[i]
-        existing = store.find_pool(cred.provider_id, cred.profile_id)
+        existing = store.find_pool(cred.provider_id, cred.account_id)
         if existing and any(c.source == cred.source for c in existing.credentials):
             continue  # user left it checked but it's already in — skip
         store.add_credential(cred)
         adopted += 1
-        _say(f"  + {cred.provider_id}/{cred.profile_id}: {_preview(cred)}")
+        _say(f"  + {cred.provider_id}/{cred.account_id}: {_preview(cred)}")
     _say(f"  Imported {adopted}.")
     # First-run convenience: subscription providers have no list-models API, so
     # adopting their credentials should also enable their default model set
@@ -315,7 +315,7 @@ def _action_scan_and_import() -> None:
 def _action_pick_provider_and_login() -> None:
     from .cli import _cmd_login, _available_login_methods
     from .aliases import known_aliases
-    from .profiles import DEFAULT_PROFILE_NAME, get_profile_manager
+    from .accounts import DEFAULT_ACCOUNT_NAME, get_account_manager
     from .store import get_store
 
     # Popular canonical providers, plus anything we already have a pool
@@ -333,10 +333,10 @@ def _action_pick_provider_and_login() -> None:
         ("mistral",           "Mistral"),
     ]
     store = get_store()
-    pm = get_profile_manager()
-    profile = _pick_profile(pm, default=DEFAULT_PROFILE_NAME) or DEFAULT_PROFILE_NAME
+    pm = get_account_manager()
+    account = _pick_account(pm, default=DEFAULT_ACCOUNT_NAME) or DEFAULT_ACCOUNT_NAME
 
-    existing = {p.provider_id for p in store.list_pools() if p.profile_id == profile}
+    existing = {p.provider_id for p in store.list_pools() if p.account_id == account}
     popular_ids = {pid for pid, _ in popular}
     choices = []
     for prov_id, label in popular:
@@ -353,7 +353,7 @@ def _action_pick_provider_and_login() -> None:
     choices.append(Choice("← Back", value="__back__"))
 
     provider = questionary.select(
-        f"Pick a provider to log into  (profile: {profile})",
+        f"Pick a provider to log into  (account: {account})",
         choices=choices,
         qmark="›",
     ).unsafe_ask()
@@ -383,14 +383,14 @@ def _action_pick_provider_and_login() -> None:
 
     # Hand off to the shared login implementation — it does the
     # paste/import work and writes to the store.
-    _cmd_login(provider, profile, method)
+    _cmd_login(provider, account, method)
 
 
 def _action_run_doctor() -> None:
     from .cli import run_doctor, _print_doctor_report
     report = run_doctor()
     _print_doctor_report(
-        report["pools_checked"], report["profiles_checked"], report["findings"],
+        report["pools_checked"], report["accounts_checked"], report["findings"],
     )
 
 
@@ -399,40 +399,40 @@ def _action_list_pools() -> None:
     _cmd_list(profile_filter=None, as_json=False)
 
 
-def _action_profiles_menu() -> None:
-    from .profiles import get_profile_manager, AuthConfigError
-    pm = get_profile_manager()
+def _action_accounts_menu() -> None:
+    from .accounts import get_account_manager, AuthConfigError
+    pm = get_account_manager()
 
     while True:
-        profiles = pm.list_profiles()
+        accounts = pm.list_accounts()
         labels = [Choice(f"{p.name:16s}  {p.display_name or '-'}", value=p.name)
-                  for p in profiles]
-        labels.append(Choice("+ Create new profile", value="__create__"))
+                  for p in accounts]
+        labels.append(Choice("+ Create new account", value="__create__"))
         labels.append(Choice("← Back",               value="__back__"))
 
         pick = questionary.select(
-            "Profiles", choices=labels, qmark="›",
+            "Accounts", choices=labels, qmark="›",
         ).unsafe_ask()
         if pick is None or pick == "__back__":
             return
 
         if pick == "__create__":
-            name = questionary.text("Profile name:").unsafe_ask()
+            name = questionary.text("Account name:").unsafe_ask()
             if not name:
                 continue
             display = questionary.text(
                 "Display name (optional):", default="",
             ).unsafe_ask() or ""
             try:
-                pm.create_profile(name.strip(), display_name=display)
-                _say(f"  Created profile {name}.")
+                pm.create_account(name.strip(), display_name=display)
+                _say(f"  Created account {name}.")
             except AuthConfigError as e:
                 _say(f"  Failed: {e}")
             continue
 
-        # Existing profile selected — offer delete or back.
+        # Existing account selected — offer delete or back.
         sub = questionary.select(
-            f"Profile {pick!r}",
+            f"Account {pick!r}",
             choices=[
                 Choice("Delete",  value="delete"),
                 Choice("← Back",  value="__back__"),
@@ -441,12 +441,12 @@ def _action_profiles_menu() -> None:
         ).unsafe_ask()
         if sub == "delete":
             ok = questionary.confirm(
-                f"Delete profile {pick!r} and all its credentials?",
+                f"Delete account {pick!r} and all its credentials?",
                 default=False,
             ).unsafe_ask()
             if ok:
                 try:
-                    pm.delete_profile(pick)
+                    pm.delete_account(pick)
                     _say(f"  Deleted {pick}.")
                 except AuthConfigError as e:
                     _say(f"  Failed: {e}")
@@ -456,8 +456,8 @@ def _action_profiles_menu() -> None:
 # Small helpers
 # ---------------------------------------------------------------------------
 
-def _pick_profile(pm, *, default: str) -> Optional[str]:
-    """Ask which profile to act on. Returns None on cancel.
+def _pick_account(pm, *, default: str) -> Optional[str]:
+    """Ask which account to act on. Returns None on cancel.
 
     Never pass default= to questionary.select — questionary flags the
     default-matching choice permanently and the cursor-row highlight
@@ -465,14 +465,14 @@ def _pick_profile(pm, *, default: str) -> Optional[str]:
     reorder instead so the default sits at index 0 where the initial
     cursor lands.
     """
-    profiles = pm.list_profiles()
-    if len(profiles) == 1:
-        return profiles[0].name
-    ordered = ([p for p in profiles if p.name == default]
-               + [p for p in profiles if p.name != default])
+    accounts = pm.list_accounts()
+    if len(accounts) == 1:
+        return accounts[0].name
+    ordered = ([p for p in accounts if p.name == default]
+               + [p for p in accounts if p.name != default])
     choices = [Choice(p.name, value=p.name) for p in ordered]
     return questionary.select(
-        "Which profile?",
+        "Which account?",
         choices=choices,
         qmark="›",
     ).unsafe_ask()

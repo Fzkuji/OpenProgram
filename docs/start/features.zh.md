@@ -145,8 +145,8 @@ Web UI的Memory页面读的是同一个工作区。agent通过`memory_search`、
 一套独立凭据。
 
 ```bash
-openprogram providers login openai --profile work      # 添加第二个账户
-openprogram providers login openai --profile personal
+openprogram providers login openai --account work      # 添加第二个账户
+openprogram providers login openai --account personal
 openprogram providers use openai work                  # 用 "work" 账户运行 openai
 openprogram providers use openai                        # 切回默认账户
 openprogram providers list                              # 当前激活的会被标记

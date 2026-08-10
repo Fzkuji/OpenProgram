@@ -306,10 +306,10 @@ def auth_store_has_credential(provider_id: str) -> bool:
     whether an env var or external CLI dotfile was also populated.
     """
     try:
-        from openprogram.auth.manager import get_manager
+        from openprogram.auth.credential_provider import get_credential_provider
         from openprogram.auth.aliases import resolve as _canon
         target = _canon(provider_id)
-        store = get_manager().store
+        store = get_credential_provider().store
         return any(
             _canon(p.provider_id) == target and p.credentials
             for p in store.list_pools()

@@ -24,15 +24,15 @@ def test_credential_ref_shape():
     ref = AuthReference(
         kind="credential_ref",
         provider_id="openai-codex",
-        profile_id="work",
+        account_id="work",
     )
     assert ref.provider_id == "openai-codex"
-    assert ref.profile_id == "work"
+    assert ref.account_id == "work"
 
 
 def test_credential_ref_requires_both_ids():
     with pytest.raises(ValueError, match="provider_id"):
-        AuthReference(kind="credential_ref", profile_id="default")
+        AuthReference(kind="credential_ref", account_id="default")
     with pytest.raises(ValueError, match="provider_id"):
         AuthReference(kind="credential_ref", provider_id="anthropic")
 

@@ -162,7 +162,7 @@ provider; codex is wired to all of them.
 **Deliberately off or not built:**
 
 - **API-key rotation** — the machinery lives in the auth layer (`auth/pool.py`:
-  `pick` rotation, `mark_failure` / `report_failure` cooldowns with strategies
+  `pick` rotation, `mark_failure` / `record_call_failure` cooldowns with strategies
   and TTLs). Rotation on acquire is automatic once a pool has more than one
   credential. Per-call failure-cooldown reporting is not wired into the live
   single-account path, because cooling down the only credential would lock the

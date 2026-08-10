@@ -6,21 +6,21 @@ claude-code keeps its Meridian-backed routes (the literal
 ``/api/providers/claude-code/accounts/*`` handlers in ``routes/providers.py``,
 registered first so they shadow the ``{provider}`` routes here); every OTHER
 provider is served from this module, backed by the AuthStore (one credential
-pool per profile) and the per-provider active selector (``auth/account_selection.py``). The
+pool per account) and the per-provider active selector (``auth/account_selection.py``). The
 response shapes deliberately match claude-code's — ``{installed, ready, active,
 accounts:[{name,email,...}]}`` — so a single ``<ProviderAccounts>`` React
 component and a single Ink picker drive every provider without branching on
 identity.
 
-An *account is a profile*: the AuthStore keys each credential pool by
-``(provider_id, profile_id)``, so "multiple accounts" and "multiple profiles"
-are the same concept — each account is a profile id. The active account is the
+An *account is a account*: the AuthStore keys each credential pool by
+``(provider_id, account_id)``, so "multiple accounts" and "multiple accounts"
+are the same concept — each account is a account id. The active account is the
 per-provider pin in ``~/.openprogram/auth/_active.json`` (empty pin ⇒ the
-``default`` profile is in effect).
+``default`` account is in effect).
 
 Add flow: generic providers report ``add_mode="login"`` and the UI drives the
 unified login endpoints (``/api/providers/{id}/login/{start,poll,submit}``) with
-``profile=<new account name>``; claude-code reports ``add_mode="code_paste"`` and
+``account=<new account name>``; claude-code reports ``add_mode="code_paste"`` and
 uses its own ``/accounts/add`` + ``/accounts/add/code`` pair. Everything else
 (list / use / rename / remove) is identical across both backends.
 
@@ -67,10 +67,10 @@ def _api_key_of(cred) -> str:
 
 
 def _validate_account(provider: str, name: str) -> dict:
-    """LIVE, kind-aware validation of ONE account (profile) — what "does it
+    """LIVE, kind-aware validation of ONE account (account) — what "does it
     actually work" means per credential type, with NO model call:
       * api_key      → auth-probe the key against the provider's endpoint.
-      * oauth/device → refresh + check THIS profile's token (the OAuth login
+      * oauth/device → refresh + check THIS account's token (the OAuth login
                        is what works; a model being unavailable is NOT an auth
                        failure, so we never do a model ping here).
     Returns {status, detail?, via?} (status: valid / invalid_credential /
@@ -101,12 +101,12 @@ def _validate_account(provider: str, name: str) -> dict:
                 _gs().put_pool(pool)
         return result
     if kind in ("oauth", "device_code"):
-        from openprogram.auth.manager import get_manager
+        from openprogram.auth.credential_provider import get_credential_provider
         from openprogram.auth.resolver import _extract_token
         try:
-            tok = _extract_token(get_manager().acquire_sync(provider, name))
+            tok = _extract_token(get_credential_provider().acquire_sync(provider, name))
             if tok:
-                return {"status": "valid", "via": "AuthManager", "detail": "Signed in (token valid)."}
+                return {"status": "valid", "via": "CredentialProvider", "detail": "Signed in (token valid)."}
             return {"status": "needs_reauth", "detail": "no usable token — sign in again."}
         except Exception as e:
             return {"status": "needs_reauth", "detail": str(e)}
@@ -140,23 +140,23 @@ def _oauth_email(cred) -> str:
 
 
 def _account_record(pool, pinned: str, disabled: set = frozenset()) -> dict:
-    """One ACCOUNT = one profile (holding one credential). Uniform shape for every
+    """One ACCOUNT = one account (holding one credential). Uniform shape for every
     provider. API-key credentials expose only ``has_value`` and ``masked_key``;
     login credentials keep their non-secret identity metadata. ``is_active``
     is the explicit pin (single-active, rotation off), while ``enabled`` is the
     independent rotation selection. Never returns a credential value."""
     cred = _primary_cred(pool)
     kind = getattr(cred, "kind", "") if cred else ""
-    profile = pool.profile_id
+    account = pool.account_id
     if kind == "api_key":
-        name = profile
+        name = account
         raw_key = _api_key_of(cred)
         email = ""
     else:
         email = _oauth_email(cred)
         # Show the email as the name for an un-renamed account; a custom rename
-        # (profile != "default") wins. No separate identity column.
-        name = email if (email and profile == "default") else profile
+        # (account != "default") wins. No separate identity column.
+        name = email if (email and account == "default") else account
         identity = ""
     # A rate_limited credential whose throttle window has passed is
     # usable again — report it as valid instead of a stale state. No
@@ -166,13 +166,13 @@ def _account_record(pool, pinned: str, disabled: set = frozenset()) -> dict:
     if status == "rate_limited" and cred and not _cooling(cred):
         status = "valid"
     record = {
-        "id": profile,
+        "id": account,
         "name": name,
         "email": email,
         "kind": kind,
         "status": status,
-        "is_active": profile == pinned,
-        "enabled": profile not in disabled,
+        "is_active": account == pinned,
+        "enabled": account not in disabled,
     }
     if kind == "api_key":
         record.update({
@@ -238,7 +238,7 @@ def _pool_id(provider: str) -> str:
 
 
 def _generic_summary(provider: str) -> dict:
-    """Unified account state: accounts = profiles (one credential each), the
+    """Unified account state: accounts = accounts (one credential each), the
     effective active account, the rotation toggle + strategy, and how "add"
     works (paste a key vs sign in)."""
     from openprogram.auth.store import get_store
@@ -255,7 +255,7 @@ def _generic_summary(provider: str) -> dict:
     disabled = get_accounts_out_of_rotation(pool)      # accounts turned OFF for rotation
     pools = [p for p in store.list_pools() if p.provider_id == pool]
     _k = account_priority_key(pool)                # honour the user's drag order
-    pools.sort(key=lambda p: _k(p.profile_id))
+    pools.sort(key=lambda p: _k(p.account_id))
     accounts = [_account_record(p, pinned, disabled) for p in pools]
     rot = get_rotation(pool)
     has_key = bool(_api_key_env(provider))
@@ -284,7 +284,7 @@ def register(app):
     @app.post("/api/providers/{provider}/accounts/use")
     def api_accounts_use(provider: str, body: Any = Body(default=None)):
         """Make an account active (the one requests run on). ``{"id": ""}``
-        clears the pin so the default profile takes over."""
+        clears the pin so the default account takes over."""
         error = check_request_body(body, allowed={"id"}, required={"id"})
         if error is not None:
             return JSONResponse(content={"error": error}, status_code=400)
@@ -379,12 +379,12 @@ def register(app):
             return JSONResponse(
                 content={"error": "account id not found"}, status_code=404
             )
-        # Re-key every credential onto the new profile, write the new pool, then
+        # Re-key every credential onto the new account, write the new pool, then
         # drop the old file (put-before-delete so a crash never loses the creds).
         for c in pool.credentials:
-            c.profile_id = new
+            c.account_id = new
         moved = CredentialPool(
-            provider_id=pid, profile_id=new, strategy=pool.strategy,
+            provider_id=pid, account_id=new, strategy=pool.strategy,
             credentials=pool.credentials, fallback_chain=pool.fallback_chain,
         )
         store.put_pool(moved)
@@ -397,7 +397,7 @@ def register(app):
     def api_accounts_add(provider: str, body: Any = Body(default=None)):
         """Generic add hands the UI the login methods + target account name; the
         actual credential capture runs through the unified ``/login/*`` flow with
-        ``profile=<name>``. No credential is accepted here."""
+        ``account=<name>``. No credential is accepted here."""
         if body is None:
             body = {}
         error = check_request_body(body, allowed={"name"})
@@ -419,13 +419,13 @@ def register(app):
         })
 
     # ---- per-account key ops (api-key accounts) ---------------------------
-    # An account is a profile holding one credential. For api-key accounts the
+    # An account is a account holding one credential. For api-key accounts the
     # key can be added / replaced / validated; rotation is a per-
     # provider toggle across accounts. claude-code (Meridian) is guarded.
 
     @app.post("/api/providers/{provider}/accounts/keys")
     def api_accounts_add_key(provider: str, body: Any = Body(default=None)):
-        """Add a new api-key ACCOUNT: create the profile <name> with the key.
+        """Add a new api-key ACCOUNT: create the account <name> with the key.
         validate:true auth-probes first and rejects an invalid key. Blank name
         auto-picks 'default' (or key-N)."""
         # One of the two endpoints that legitimately carries a credential, so
@@ -479,7 +479,7 @@ def register(app):
         from openprogram.auth.types import Credential, CredentialData
         store = get_store()
         pid = _pool_id(provider)
-        existing = {p.profile_id for p in store.list_pools() if p.provider_id == pid}
+        existing = {p.account_id for p in store.list_pools() if p.provider_id == pid}
         name = name_field.strip()
         if not name:
             name = "default" if "default" not in existing else f"key-{len(existing) + 1}"
@@ -490,7 +490,7 @@ def register(app):
                 status_code=409,
             )
         store.add_credential(Credential(
-            provider_id=pid, profile_id=name, kind="api_key",
+            provider_id=pid, account_id=name, kind="api_key",
             payload=CredentialData(kind="api_key", auth_value=key), source="webui_add",
         ))
         if not existing and not get_active_pin(pid):
@@ -571,7 +571,7 @@ def register(app):
             return JSONResponse(content={"ok": True, "results": []})
         from openprogram.auth.store import get_store
         pid = _pool_id(provider)
-        out = [{"id": p.profile_id, **_validate_account(provider, p.profile_id)}
+        out = [{"id": p.account_id, **_validate_account(provider, p.account_id)}
                for p in get_store().list_pools() if p.provider_id == pid]
         return JSONResponse(content={"ok": True, "results": out})
 

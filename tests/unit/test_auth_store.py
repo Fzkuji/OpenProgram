@@ -22,9 +22,9 @@ from openprogram.auth import (
 )
 
 
-def _oauth_cred(provider="openai-codex", profile="default", access="A", refresh="R") -> Credential:
+def _oauth_cred(provider="openai-codex", account="default", access="A", refresh="R") -> Credential:
     return Credential(
-        provider_id=provider, profile_id=profile, kind="oauth",
+        provider_id=provider, account_id=account, kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value=access,
             data={"refresh_token": refresh, "expires_at_ms": 0, "client_id": "cid"},
@@ -32,9 +32,9 @@ def _oauth_cred(provider="openai-codex", profile="default", access="A", refresh=
     )
 
 
-def _api_cred(provider="openai", profile="default", key="sk-xxx") -> Credential:
+def _api_cred(provider="openai", account="default", key="sk-xxx") -> Credential:
     return Credential(
-        provider_id=provider, profile_id=profile, kind="api_key",
+        provider_id=provider, account_id=account, kind="api_key",
         payload=CredentialData(kind="api_key", auth_value=key), source="env_OPENAI_API_KEY",
     )
 
@@ -167,7 +167,7 @@ def test_list_pools_enumerates_multiple_providers(tmp_path: Path):
     s.add_credential(_api_cred())
     s.add_credential(_api_cred(provider="anthropic", key="ant-k"))
     pools = s.list_pools()
-    ids = sorted((p.provider_id, p.profile_id) for p in pools)
+    ids = sorted((p.provider_id, p.account_id) for p in pools)
     assert ids == [("anthropic", "default"), ("openai", "default"), ("openai-codex", "default")]
 
 
@@ -282,7 +282,7 @@ def test_list_pools_reports_legacy_alias_dir_as_canonical(tmp_path: Path):
     d = tmp_path / "auth" / "bailian"
     d.mkdir(parents=True)
     legacy = CredentialPool(
-        provider_id="bailian", profile_id="default",
+        provider_id="bailian", account_id="default",
         credentials=[_api_cred(provider="bailian", key="sk-legacy")],
     )
     (d / "default.json").write_text(json.dumps(legacy.to_dict()), encoding="utf-8")

@@ -48,7 +48,7 @@ With one class, type tests become value tests:
 | `isinstance(payload, (OAuthPayload, DeviceCodePayload))` | `payload.kind in ("oauth", "device_code")` |
 | `isinstance(payload, DeviceCodePayload)` | `payload.kind == "device_code"` |
 | `isinstance(payload, CliDelegatedPayload)` | `payload.kind == "cli_delegated"` |
-| `isinstance(payload, ExternalProcessPayload)` | `payload.kind == "external_process"` |
+| `isinstance(payload, ExternalProcessPayload)` | `payload.kind == "credential_process"` |
 | `isinstance(payload, SsoPayload)` | `payload.kind == "sso"` |
 | `payload.access_token` / `payload.api_key` | `payload.auth_value` |
 | `payload.refresh_token` | `payload.data.get("refresh_token", "")` |
@@ -63,7 +63,7 @@ With one class, type tests become value tests:
 | `OAuthPayload(access_token=A, refresh_token=R, expires_at_ms=E, scope=S, client_id=C, token_endpoint=T, id_token=I, extra=X)` | `CredentialData(kind="oauth", auth_value=A, data={"refresh_token":R,"expires_at_ms":E,"scope":S,"client_id":C,"token_endpoint":T,"id_token":I,"extra":X})` |
 | `DeviceCodePayload(access_token=A, refresh_token=R, expires_at_ms=E, device_code_flow_id=F, extra=X)` | `CredentialData(kind="device_code", auth_value=A, data={"refresh_token":R,"expires_at_ms":E,"device_code_flow_id":F,"extra":X})` |
 | `CliDelegatedPayload(store_path=P, access_key_path=A, refresh_key_path=R, expires_key_path=E)` | `CredentialData(kind="cli_delegated", data={"store_path":P,"access_key_path":A,"refresh_key_path":R,"expires_key_path":E})` |
-| `ExternalProcessPayload(command=C, parses=Pa, json_key_path=J, cache_seconds=S)` | `CredentialData(kind="external_process", data={"command":C,"parses":Pa,"json_key_path":J,"cache_seconds":S})` |
+| `ExternalProcessPayload(command=C, parses=Pa, json_key_path=J, cache_seconds=S)` | `CredentialData(kind="credential_process", data={"command":C,"parses":Pa,"json_key_path":J,"cache_seconds":S})` |
 
 ## Resolution: one read exit
 
@@ -87,7 +87,7 @@ Rules the resolver enforces:
 
 - `cli_delegated` reads its external file at resolve time, so the token is
   always the freshest one on disk.
-- `external_process` and `sso` are not wired to a request, and a credential with
+- `credential_process` and `sso` are not wired to a request, and a credential with
   no auth value cannot make one — both yield `None`, and the caller falls back.
 - An empty `base_url` becomes `None`, which is what lets the wire layer
   distinguish "this credential specifies no endpoint" from "this credential

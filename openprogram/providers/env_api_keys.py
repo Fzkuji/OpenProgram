@@ -63,12 +63,12 @@ def resolve_provider_key(provider: str) -> str | None:
         return "<authenticated>" if _vertex_adc_ok() else None
     try:
         from openprogram.auth.resolver import resolve_store_api_key_sync
-        from openprogram.auth.types import AuthExternalProcessError
+        from openprogram.auth.types import AuthCredentialProcessError
     except ImportError:
         return None
     try:
         return resolve_store_api_key_sync(provider)
-    except AuthExternalProcessError:
+    except AuthCredentialProcessError:
         # A configured helper that fails is an error the user must see,
         # not a "no key here" shrug — see auth.resolver's module docstring.
         raise
@@ -203,7 +203,7 @@ def resolve_api_key_with_auth_store(provider_id: str) -> str | None:
     catalogue). Returns ``None`` for providers that
     have no standard env var (OAuth / daemon providers like
     ``openai-codex``, ``claude-code``, ``github-copilot``) — those
-    need their own resolution path (e.g. AuthManager.acquire_sync,
+    need their own resolution path (e.g. CredentialProvider.acquire_sync,
     daemon HEAD probe).
     """
     # AuthStore FIRST: the account manager ("Add key" in the web form) saves

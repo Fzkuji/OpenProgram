@@ -163,8 +163,8 @@ way from every surface. An **account is a profile**: an independent set of
 credentials for a provider.
 
 ```bash
-openprogram providers login openai --profile work      # add a second account
-openprogram providers login openai --profile personal
+openprogram providers login openai --account work      # add a second account
+openprogram providers login openai --account personal
 openprogram providers use openai work                  # run openai on "work"
 openprogram providers use openai                        # back to the default account
 openprogram providers list                              # the active one is marked

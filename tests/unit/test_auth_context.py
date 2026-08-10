@@ -10,7 +10,7 @@ from openprogram.auth.context import (
     auth_scope,
     auth_scope_async,
     capture,
-    get_active_profile_id,
+    get_active_account_id,
     get_active_provider_hint,
     get_credential_override,
     get_subprocess_env,
@@ -21,42 +21,42 @@ from openprogram.auth.types import Credential, CredentialData
 def _fake_cred(provider_id: str) -> Credential:
     return Credential(
         provider_id=provider_id,
-        profile_id="default",
+        account_id="default",
         kind="api_key",
         payload=CredentialData(kind="api_key", auth_value="k"),
     )
 
 
 def test_default_profile_when_no_scope():
-    assert get_active_profile_id() == "default"
+    assert get_active_account_id() == "default"
     assert get_active_provider_hint() == ""
     assert get_credential_override("openai") is None
     assert get_subprocess_env() is None
 
 
 def test_auth_scope_sets_and_resets():
-    with auth_scope(profile_id="work", provider_hint="openai"):
-        assert get_active_profile_id() == "work"
+    with auth_scope(account_id="work", provider_hint="openai"):
+        assert get_active_account_id() == "work"
         assert get_active_provider_hint() == "openai"
     # Restored.
-    assert get_active_profile_id() == "default"
+    assert get_active_account_id() == "default"
     assert get_active_provider_hint() == ""
 
 
 def test_auth_scope_nested_restores_outer():
-    with auth_scope(profile_id="outer"):
-        with auth_scope(profile_id="inner"):
-            assert get_active_profile_id() == "inner"
-        assert get_active_profile_id() == "outer"
-    assert get_active_profile_id() == "default"
+    with auth_scope(account_id="outer"):
+        with auth_scope(account_id="inner"):
+            assert get_active_account_id() == "inner"
+        assert get_active_account_id() == "outer"
+    assert get_active_account_id() == "default"
 
 
 def test_auth_scope_restores_on_exception():
     with pytest.raises(RuntimeError):
-        with auth_scope(profile_id="explode"):
-            assert get_active_profile_id() == "explode"
+        with auth_scope(account_id="explode"):
+            assert get_active_account_id() == "explode"
             raise RuntimeError("boom")
-    assert get_active_profile_id() == "default"
+    assert get_active_account_id() == "default"
 
 
 def test_credential_override_only_within_scope():
@@ -83,10 +83,10 @@ def test_subprocess_env_hook_called_each_time():
 
 def test_async_scope_propagates_into_created_tasks():
     async def inner():
-        return get_active_profile_id()
+        return get_active_account_id()
 
     async def main():
-        async with auth_scope_async(profile_id="worker"):
+        async with auth_scope_async(account_id="worker"):
             # asyncio.create_task copies the context at creation time.
             t = asyncio.create_task(inner())
             return await t
@@ -96,16 +96,16 @@ def test_async_scope_propagates_into_created_tasks():
 
 def test_async_scope_does_not_leak_across_tasks():
     async def task_a(barrier):
-        async with auth_scope_async(profile_id="A"):
+        async with auth_scope_async(account_id="A"):
             barrier.a_entered.set()
             await barrier.b_done.wait()
-            return get_active_profile_id()
+            return get_active_account_id()
 
     async def task_b(barrier):
         await barrier.a_entered.wait()
         # Inside task B — task A's scope must NOT be visible here.
-        async with auth_scope_async(profile_id="B"):
-            got = get_active_profile_id()
+        async with auth_scope_async(account_id="B"):
+            got = get_active_account_id()
         barrier.b_done.set()
         return got
 
@@ -129,10 +129,10 @@ def test_capture_replays_context_in_thread():
     done = threading.Event()
 
     def worker(ctx):
-        ctx.run(lambda: seen.append(get_active_profile_id()))
+        ctx.run(lambda: seen.append(get_active_account_id()))
         done.set()
 
-    with auth_scope(profile_id="threadscope"):
+    with auth_scope(account_id="threadscope"):
         ctx = capture()
 
     t = threading.Thread(target=worker, args=(ctx,))
@@ -142,4 +142,4 @@ def test_capture_replays_context_in_thread():
     assert seen == ["threadscope"]
     # Main thread is back to default — the thread's context replay
     # didn't touch the main context.
-    assert get_active_profile_id() == "default"
+    assert get_active_account_id() == "default"

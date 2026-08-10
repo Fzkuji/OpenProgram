@@ -1,4 +1,4 @@
-"""Anthropic auth adapter — registers with AuthManager.
+"""Anthropic auth adapter — registers with CredentialProvider.
 
 Three credential routes the adapter exposes:
 
@@ -29,7 +29,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from openprogram.auth.manager import (
+from openprogram.auth.credential_provider import (
     ProviderAuthConfig,
     register_provider_config,
 )
@@ -78,7 +78,7 @@ def build_pkce_config():
 def import_api_key(
     api_key: str,
     *,
-    profile_id: str = "default",
+    account_id: str = "default",
     metadata: Optional[dict[str, Any]] = None,
 ) -> Credential:
     """Wrap a pasted ANTHROPIC_API_KEY as a :class:`Credential`.
@@ -91,7 +91,7 @@ def import_api_key(
     md = {"imported_from": "paste"} | (metadata or {})
     return Credential(
         provider_id=PROVIDER_ID,
-        profile_id=profile_id,
+        account_id=account_id,
         kind="api_key",
         payload=CredentialData(kind="api_key", auth_value=api_key.strip()),
         source="anthropic_paste",
@@ -103,7 +103,7 @@ def import_api_key(
 def import_setup_token(
     token: str,
     *,
-    profile_id: str = "default",
+    account_id: str = "default",
     metadata: Optional[dict[str, Any]] = None,
 ) -> Credential:
     """Wrap a pasted ``claude setup-token`` (sk-ant-oat…) as an OAuth credential.
@@ -122,7 +122,7 @@ def import_setup_token(
     far_future_ms = int(time.time() * 1000) + 365 * 24 * 3600 * 1000
     return Credential(
         provider_id=PROVIDER_ID,
-        profile_id=profile_id,
+        account_id=account_id,
         kind="oauth",
         payload=CredentialData(
             kind="oauth",
@@ -146,7 +146,7 @@ def import_setup_token(
 # ---------------------------------------------------------------------------
 
 def _anthropic_refresh(cred: Credential) -> Credential:
-    """Synchronous refresh — called by AuthManager via executor.
+    """Synchronous refresh — called by CredentialProvider via executor.
 
     No-op for credentials without a refresh_token (api_key won't reach
     here; setup-token / delegated have none). For a PKCE-minted OAuth
@@ -196,7 +196,7 @@ def _anthropic_refresh(cred: Credential) -> Credential:
     )
     return Credential(
         provider_id=cred.provider_id,
-        profile_id=cred.profile_id,
+        account_id=cred.account_id,
         kind="oauth",
         payload=new_payload,
         status="valid",
@@ -218,7 +218,7 @@ def _anthropic_refresh(cred: Credential) -> Credential:
 # ---------------------------------------------------------------------------
 
 def register_anthropic_auth() -> None:
-    """Register the Anthropic provider config with :mod:`auth.manager`.
+    """Register the Anthropic provider config with :mod:`auth.credential_provider`.
 
     Called at module import. Idempotent; tests that need to swap refresh
     or failure-policy can call :func:`register_provider_config` directly

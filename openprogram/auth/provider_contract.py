@@ -8,7 +8,7 @@ Four things every adapter does:
 
 1. Export a ``PROVIDER_ID`` string matching the registry key.
 2. Call :func:`register_provider_config` at import time so
-   :class:`AuthManager` knows about the provider (refresh fn, fallback
+   :class:`CredentialProvider` knows about the provider (refresh fn, fallback
    chain, cooldowns). The adapter chooses what to pass.
 3. Optionally provide an ``import_from_<source>`` function that reads
    an external credential store (the vendor CLI's auth.json, an env
@@ -43,7 +43,7 @@ class ProviderAuthContract(Protocol):
     shape at test time.
 
     - ``PROVIDER_ID``: matches the key the adapter registers with
-      :func:`openprogram.auth.manager.register_provider_config`. Use
+      :func:`openprogram.auth.credential_provider.register_provider_config`. Use
       this same string in :class:`Credential.provider_id`.
     - ``import_from_external``: read whatever external credential store
       this provider's CLI / extension populates, and return a
@@ -58,7 +58,7 @@ class ProviderAuthContract(Protocol):
     PROVIDER_ID: str
 
     def import_from_external(
-        self, *, profile_id: str = "default",
+        self, *, account_id: str = "default",
     ) -> Optional[Credential]:
         ...
 

@@ -64,7 +64,7 @@ notification; the accounts panel is only for diagnosis.
 
 ## How the status is maintained
 
-- `auth/usage.py report_failure` — only `rate_limit`, `rate_limit_long`,
+- `auth/usage.py record_call_failure` — only `rate_limit`, `rate_limit_long`,
   `billing_blocked`, and `needs_reauth` reach the pool; `request_error`,
   `server_error`, and `network_error` return without touching it.
 - `auth/pool.py mark_failure` — `billing_blocked` sets the status with no

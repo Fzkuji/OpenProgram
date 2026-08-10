@@ -56,7 +56,7 @@ def _check_plugin_loader() -> tuple[bool, str, str]:
 
 
 def _check_providers() -> tuple[bool, str, str]:
-    """Real provider status — what credentials does ``AuthManager`` actually
+    """Real provider status — what credentials does ``CredentialProvider`` actually
     have on disk?
 
     Earlier versions of this check called ``check_providers()`` from the
@@ -84,7 +84,7 @@ def _check_providers() -> tuple[bool, str, str]:
         # Pools with at least one credential count as "have something".
         if not p.credentials:
             continue
-        label = p.provider_id if p.profile_id == "default" else f"{p.provider_id}/{p.profile_id}"
+        label = p.provider_id if p.account_id == "default" else f"{p.provider_id}/{p.account_id}"
         if label not in names_seen:
             names_seen.append(label)
 

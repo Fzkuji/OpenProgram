@@ -75,7 +75,7 @@ export interface FunctionsMeta {
 // Auth v2 — mirrors openprogram/auth/types.py
 // ---------------------------------------------------------------------------
 
-export interface AuthProfile {
+export interface AuthAccount {
   name: string;
   display_name: string;
   description: string;
@@ -88,7 +88,7 @@ export type CredentialKind =
   | "oauth"
   | "cli_delegated"
   | "device_code"
-  | "external_process"
+  | "credential_process"
   | "sso";
 
 export type CredentialStatus =
@@ -120,7 +120,7 @@ export interface CredentialView {
   credential_id: string;
   kind: CredentialKind;
   provider_id: string;
-  profile_id: string;
+  account_id: string;
   status: CredentialStatus;
   source: string;
   metadata: Record<string, unknown>;
@@ -136,7 +136,7 @@ export interface CredentialView {
 
 export interface PoolView {
   provider_id: string;
-  profile_id: string;
+  account_id: string;
   strategy: "fill_first" | "round_robin" | "random" | "least_used";
   fallback_chain: [string, string][];
   credentials: CredentialView[];
@@ -171,21 +171,21 @@ export type AuthEventType =
   | "pool_member_cooldown"
   | "pool_rotated"
   | "pool_exhausted"
-  | "profile_created"
-  | "profile_deleted"
-  | "profile_activated";
+  | "account_created"
+  | "account_deleted"
+  | "account_activated";
 
 export interface AuthEventPayload {
   type: AuthEventType;
   provider_id: string;
-  profile_id: string;
+  account_id: string;
   credential_id: string;
   detail: Record<string, unknown>;
   timestamp_ms: number;
 }
 
 export interface AddCredentialBody {
-  type: "api_key" | "oauth" | "external_process";
+  type: "api_key" | "oauth" | "credential_process";
   api_key?: string;
   access_token?: string;
   refresh_token?: string;

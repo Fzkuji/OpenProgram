@@ -1,4 +1,4 @@
-"""Unit tests for auth.manager — refresh dedup + fallback chains."""
+"""Unit tests for auth.credential_provider — refresh dedup + fallback chains."""
 from __future__ import annotations
 
 import asyncio
@@ -18,8 +18,8 @@ from openprogram.auth import (
     Credential,
     CredentialData,
 )
-from openprogram.auth.manager import (
-    AuthManager,
+from openprogram.auth.credential_provider import (
+    CredentialProvider,
     ProviderAuthConfig,
     register_provider_config,
     get_provider_config,
@@ -36,7 +36,7 @@ def _oauth(
     if expires_at_ms is None:
         expires_at_ms = int(time.time() * 1000) + 3600_000
     return Credential(
-        provider_id=provider, profile_id=profile, kind="oauth",
+        provider_id=provider, account_id=profile, kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value=access,
             data={"refresh_token": refresh, "expires_at_ms": expires_at_ms, "client_id": "cid"},
@@ -46,14 +46,14 @@ def _oauth(
 
 def _api(provider="openai", profile="default", key="k") -> Credential:
     return Credential(
-        provider_id=provider, profile_id=profile, kind="api_key",
+        provider_id=provider, account_id=profile, kind="api_key",
         payload=CredentialData(kind="api_key", auth_value=key),
     )
 
 
-def _manager(tmp_path: Path) -> tuple[AuthManager, AuthStore]:
+def _manager(tmp_path: Path) -> tuple[CredentialProvider, AuthStore]:
     store = AuthStore(root=tmp_path)
-    return AuthManager(store=store), store
+    return CredentialProvider(store=store), store
 
 
 # ---- happy path ------------------------------------------------------------
@@ -106,7 +106,7 @@ def test_expired_oauth_triggers_refresh(tmp_path: Path):
 
     def refresh(c):
         return Credential(
-            provider_id=c.provider_id, profile_id=c.profile_id,
+            provider_id=c.provider_id, account_id=c.account_id,
             kind="oauth", credential_id=c.credential_id,
             payload=CredentialData(
                 kind="oauth", auth_value="new",
@@ -204,7 +204,7 @@ def test_concurrent_refresh_is_deduped(tmp_path: Path):
         # Simulate a slow refresh so all 10 acquires overlap.
         await asyncio.sleep(0.05)
         return Credential(
-            provider_id=c.provider_id, profile_id=c.profile_id,
+            provider_id=c.provider_id, account_id=c.account_id,
             kind="oauth", credential_id=c.credential_id,
             payload=CredentialData(
                 kind="oauth", auth_value=f"new-{call_count['n']}",
@@ -308,23 +308,23 @@ def test_pool_exhausted_with_no_fallback_raises(tmp_path: Path):
 
 # ---- failure reporting -----------------------------------------------------
 
-def test_report_failure_cools_down_credential(tmp_path: Path):
+def test_apply_failure_cools_down_credential(tmp_path: Path):
     m, store = _manager(tmp_path)
     cred = _api(key="k")
     store.add_credential(cred)
-    m.report_failure("openai", "default", cred.credential_id, "rate_limit")
+    m.apply_failure("openai", "default", cred.credential_id, "rate_limit")
     reloaded = store.get_pool("openai", "default").credentials[0]
     assert reloaded.cooldown_until_ms > int(time.time() * 1000)
     assert reloaded.status == "rate_limited"
 
 
-def test_report_success_clears_expired_cooldown(tmp_path: Path):
+def test_apply_success_clears_expired_cooldown(tmp_path: Path):
     m, store = _manager(tmp_path)
     cred = _api(key="k")
     cred.cooldown_until_ms = 1   # in the past
     cred.status = "rate_limited"
     store.add_credential(cred)
-    m.report_success("openai", "default", cred.credential_id)
+    m.apply_success("openai", "default", cred.credential_id)
     # In-memory is cleared; disk write skipped on purpose, but the
     # status transition we care about happened.
     assert cred.status == "valid"
@@ -338,7 +338,7 @@ def test_refresh_emits_started_and_succeeded(tmp_path: Path):
     register_provider_config(ProviderAuthConfig(
         provider_id="openai-codex",
         refresh=lambda c: Credential(
-            provider_id=c.provider_id, profile_id=c.profile_id,
+            provider_id=c.provider_id, account_id=c.account_id,
             kind="oauth", credential_id=c.credential_id,
             payload=CredentialData(
                 kind="oauth", auth_value="new",

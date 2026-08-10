@@ -1,11 +1,11 @@
 """Per-provider active account selection.
 
-When a request resolves a credential for a provider WITHOUT an explicit profile,
-it uses that provider's *active* profile — so a user can run "openai on the work
+When a request resolves a credential for a provider WITHOUT an explicit account,
+it uses that provider's *active* account — so a user can run "openai on the work
 account, anthropic on personal" at the same time. Stored as a small JSON map at
-``~/.openprogram/auth/_active.json`` (``provider_id -> profile_id``).
+``~/.openprogram/auth/_active.json`` (``provider_id -> account_id``).
 
-Falls back to the ambient :func:`auth.context.get_active_profile_id` (which
+Falls back to the ambient :func:`auth.context.get_active_account_id` (which
 defaults to ``"default"``), so NOTHING changes until a user actually activates a
 non-default account — the whole feature is opt-in and backward compatible.
 
@@ -49,15 +49,15 @@ def _write(data: dict) -> None:
 
 
 def get_active_account(provider_id: str) -> str:
-    """Profile a request uses for ``provider_id`` when none is passed
+    """Account a request uses for ``provider_id`` when none is passed
     explicitly: the per-provider active pin if set, else the ambient scope
     (``"default"`` unless an ``auth_scope`` is entered)."""
     with _LOCK:
         pinned = _read().get(provider_id)
     if pinned:
         return pinned
-    from .context import get_active_profile_id
-    return get_active_profile_id()
+    from .context import get_active_account_id
+    return get_active_account_id()
 
 
 def get_active_pin(provider_id: str) -> str:
@@ -67,23 +67,23 @@ def get_active_pin(provider_id: str) -> str:
         return _read().get(provider_id, "") or ""
 
 
-def set_active_account(provider_id: str, profile_id: str) -> None:
-    """Pin ``provider_id`` to ``profile_id``. An empty ``profile_id`` clears the
+def set_active_account(provider_id: str, account_id: str) -> None:
+    """Pin ``provider_id`` to ``account_id``. An empty ``account_id`` clears the
     pin (back to the ambient default)."""
     provider_id = (provider_id or "").strip()
-    profile_id = (profile_id or "").strip()
+    account_id = (account_id or "").strip()
     if not provider_id:
         return
     with _LOCK:
         data = _read()
-        if profile_id:
-            data[provider_id] = profile_id
+        if account_id:
+            data[provider_id] = account_id
         else:
             data.pop(provider_id, None)
         _write(data)
 
 
 def all_active() -> dict:
-    """Every explicit pin (provider_id -> profile_id)."""
+    """Every explicit pin (provider_id -> account_id)."""
     with _LOCK:
         return dict(_read())

@@ -2,7 +2,7 @@ import pytest
 
 from openprogram.auth.types import (
     AuthConfigError,
-    AuthExternalProcessError,
+    AuthCredentialProcessError,
     Credential,
     CredentialData,
 )
@@ -10,7 +10,7 @@ from openprogram.auth.resolver import resolve_connection, ResolvedConnection
 
 
 def _cred(payload):
-    return Credential(provider_id="p", profile_id="default",
+    return Credential(provider_id="p", account_id="default",
                       kind=payload.kind, payload=payload)
 
 
@@ -34,10 +34,10 @@ def test_oauth_uses_access_token_as_auth_value():
     assert conn.auth_value == "at"
 
 
-def test_external_process_without_command_raises():
+def test_credential_process_without_command_raises():
     # No command configured is a broken credential, not a "no key" shrug.
-    with pytest.raises(AuthExternalProcessError):
-        resolve_connection(_cred(CredentialData(kind="external_process")))
+    with pytest.raises(AuthCredentialProcessError):
+        resolve_connection(_cred(CredentialData(kind="credential_process")))
 
 
 def test_sso_raises_not_implemented():

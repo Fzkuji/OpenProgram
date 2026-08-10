@@ -1,6 +1,6 @@
 """Surface-agnostic login driver.
 
-Given ``(provider, profile, method, LoginUi)`` it runs the login and returns a
+Given ``(provider, account, method, LoginUi)`` it runs the login and returns a
 ``Credential``. Every surface — the CLI terminal, the web UI, the TUI — supplies
 its OWN ``LoginUi`` (forwarding ``open_url`` / ``prompt`` / ``show_progress`` /
 ``show_code`` to its frontend), so the flow logic lives here exactly once.
@@ -24,7 +24,7 @@ from .types import AuthConfigError, Credential, LoginUi
 
 async def run_login(
     provider: str,
-    profile: str,
+    account: str,
     method: str,
     ui: LoginUi,
     *,
@@ -37,11 +37,11 @@ async def run_login(
 
     if method == "api_key":
         key = (api_key or "").strip() or (await ui.prompt("Paste the API key", secret=True)).strip()
-        return _cli._login_paste_api_key(provider, profile, api_key=key)
+        return _cli._login_paste_api_key(provider, account, api_key=key)
 
     if method == "import_from_cli":
         await ui.show_progress(f"Importing your existing {provider} login…")
-        return _cli._login_import_from_cli(provider, profile)
+        return _cli._login_import_from_cli(provider, account)
 
     if method == "pkce_oauth":
         from .methods.pkce_oauth import PkceLoginMethod
@@ -51,7 +51,7 @@ async def run_login(
         # the direct runtime (which resolves from `anthropic`) finds them.
         store_provider = _credential_provider_id(provider)
         return await PkceLoginMethod(
-            provider_id=store_provider, config=cfg, profile_id=profile
+            provider_id=store_provider, config=cfg, account_id=account
         ).run(ui)
 
     if method == "setup_token":
@@ -64,10 +64,10 @@ async def run_login(
         if not token:
             raise AuthConfigError("no setup-token provided")
         from openprogram.providers.anthropic import auth_adapter as _anth
-        return _anth.import_setup_token(token, profile_id=profile)
+        return _anth.import_setup_token(token, account_id=account)
 
     if method == "device_code":
-        return await _run_device_code(provider, profile, ui)
+        return await _run_device_code(provider, account, ui)
 
     raise AuthConfigError(f"unsupported login method: {method!r}")
 
@@ -92,7 +92,7 @@ def _pkce_config(provider: str):
     raise AuthConfigError(f"no PKCE config registered for {provider!r}")
 
 
-async def _run_device_code(provider: str, profile: str, ui: LoginUi) -> Credential:
+async def _run_device_code(provider: str, account: str, ui: LoginUi) -> Credential:
     """Device-code OAuth (GitHub Copilot today). Bridges the sync
     OAuthLoginCallbacks onto the async LoginUi: the user_code + verification URL
     are surfaced through the ui, then we poll for the token."""
@@ -129,7 +129,7 @@ async def _run_device_code(provider: str, profile: str, ui: LoginUi) -> Credenti
     return import_oauth_credential(
         creds.access,
         getattr(creds, "refresh", "") or "",
-        profile_id=profile,
+        account_id=account,
         expires_at_ms=getattr(creds, "expires", 0) or 0,
     )
 

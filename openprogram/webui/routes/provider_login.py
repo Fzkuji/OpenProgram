@@ -10,7 +10,7 @@ provider's native login works from every surface instead of "go use the other
 one".
 
 Shape:
-  POST /api/providers/{name}/login/start   {method?, profile?, api_key?}
+  POST /api/providers/{name}/login/start   {method?, account?, api_key?}
       -> {session, method}; spawns the login coroutine in the background.
   GET  /api/providers/{name}/login/poll?session=&cursor=
       -> {events[], cursor, waiting, prompt, done, ok, error, name}
@@ -45,7 +45,7 @@ class _LoginSession:
         self.done: bool = False
         self.ok: bool = False
         self.error: str | None = None
-        self.name: str | None = None        # saved profile id on success
+        self.name: str | None = None        # saved account id on success
         self.task: asyncio.Task | None = None
         self.started_at: float = time.time()
         self.done_at: float | None = None
@@ -80,8 +80,8 @@ class _RemoteLoginUi:
             self._s.pending = None
 
 
-def _free_profile(provider: str) -> str:
-    """Pick a profile id for a NEW account that no existing credential occupies.
+def _free_account(provider: str) -> str:
+    """Pick a account id for a NEW account that no existing credential occupies.
 
     First account → "default"; thereafter "account-2", "account-3", … The pool
     is the credential pool id (claude-code's credentials live under
@@ -92,7 +92,7 @@ def _free_profile(provider: str) -> str:
         from openprogram.auth.store import get_store
         pool = _pool_id(provider)
         taken = {
-            p.profile_id for p in get_store().list_pools()
+            p.account_id for p in get_store().list_pools()
             if p.provider_id == pool and p.credentials
         }
     except Exception:
@@ -146,20 +146,20 @@ def register(app):
         except Exception:
             pass
         b = body or {}
-        explicit_profile = (b.get("profile") or "").strip()
+        explicit_account = (b.get("account") or "").strip()
         api_key = b.get("api_key")
         method = (b.get("method") or "").strip()
         if not method:
             from openprogram.auth.login_method_registry import default_method
             method = default_method(name)
 
-        # An account == a profile == one credential. If the user named the
-        # account, honour it; otherwise pick a profile that ISN'T already
-        # occupied, so a new sign-in never lands in a profile that already
+        # An account == a account == one credential. If the user named the
+        # account, honour it; otherwise pick a account that ISN'T already
+        # occupied, so a new sign-in never lands in a account that already
         # holds a credential (which would hide it behind the existing one in
         # the UI and make the runtime resolve the wrong credential). The pool
         # is keyed by the credential pool id (claude-code shares `anthropic`).
-        profile = explicit_profile or _free_profile(name)
+        account = explicit_account or _free_account(name)
 
         sess = _LoginSession()
         sid = secrets.token_hex(8)
@@ -168,7 +168,7 @@ def register(app):
         async def _drive() -> None:
             from openprogram.auth.login_driver import run_login, persist
             try:
-                cred = await run_login(name, profile, method, _RemoteLoginUi(sess), api_key=api_key)
+                cred = await run_login(name, account, method, _RemoteLoginUi(sess), api_key=api_key)
                 persist(cred)
                 # Subscription providers have no list-models API; enable their
                 # default model set into config on first login (no-op if the
@@ -180,7 +180,7 @@ def register(app):
                     enable_default_models_on_login(name)
                 except Exception:
                     pass
-                sess.name = getattr(cred, "profile_id", profile)
+                sess.name = getattr(cred, "account_id", account)
                 sess.ok = True
             except asyncio.CancelledError:
                 raise

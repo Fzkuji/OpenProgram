@@ -31,9 +31,9 @@ def test_build_pkce_config_shape():
 
 def test_import_setup_token_lands_oauth_in_anthropic_pool():
     from openprogram.providers.anthropic import auth_adapter as a
-    cred = a.import_setup_token("  sk-ant-oat-FAKE  ", profile_id="work")
+    cred = a.import_setup_token("  sk-ant-oat-FAKE  ", account_id="work")
     assert cred.provider_id == "anthropic"   # not claude-code
-    assert cred.profile_id == "work"
+    assert cred.account_id == "work"
     assert cred.kind == "oauth"
     assert cred.payload.auth_value == "sk-ant-oat-FAKE"   # trimmed
     assert cred.payload.data.get("refresh_token", "") == ""  # setup-token has none
@@ -69,7 +69,7 @@ def test_refresh_posts_refresh_token(monkeypatch):
     monkeypatch.setattr(httpx, "post", _fake_post)
 
     cred = Credential(
-        provider_id="anthropic", profile_id="default", kind="oauth",
+        provider_id="anthropic", account_id="default", kind="oauth",
         payload=CredentialData(
             kind="oauth", auth_value="sk-ant-oat-OLD",
             data={
@@ -126,7 +126,7 @@ def test_setup_token_method_stores_under_anthropic():
 
     cred = asyncio.run(run_login("claude-code", "acct2", "setup_token", _Ui()))
     assert cred.provider_id == "anthropic"
-    assert cred.profile_id == "acct2"
+    assert cred.account_id == "acct2"
     assert cred.payload.auth_value == "sk-ant-oat-PASTED"
 
 
@@ -159,7 +159,7 @@ def test_pkce_manual_paste_flow(monkeypatch):
 
     from openprogram.providers.anthropic import auth_adapter as a
     cfg = a.build_pkce_config()  # real config (carries code=true)
-    cred = asyncio.run(PkceLoginMethod("anthropic", cfg, profile_id="default").run(_Ui()))
+    cred = asyncio.run(PkceLoginMethod("anthropic", cfg, account_id="default").run(_Ui()))
     assert captured["code"] == "THECODE"  # split on '#'
     assert captured["redirect_uri"] == "https://console.anthropic.com/oauth/code/callback"
     assert cred.payload.auth_value == "sk-ant-oat-X"

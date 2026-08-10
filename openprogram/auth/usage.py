@@ -5,7 +5,7 @@ The pool machinery (``auth/pool.py``) cools a credential down on failure and
 skips it on the next acquire — but ONLY if someone reports the failure. These
 helpers are that someone: the provider call path acquires a credential via
 :func:`acquire_pooled` (recording exactly which one it used), then reports the
-result via :func:`report_success` / :func:`report_failure`. A 429 on key #0 cools
+result via :func:`record_call_success` / :func:`record_call_failure`. A 429 on key #0 cools
 it down; the outer runtime retry re-acquires and the pool hands back key #1.
 
 No-op unless the provider has an AuthStore pool: env-key / OAuth / claude-code
@@ -25,11 +25,11 @@ if TYPE_CHECKING:
 
 def acquire_pooled(
     provider_id: str,
-    profile_id: Optional[str] = None,
+    account_id: Optional[str] = None,
 ) -> Optional[Tuple["ResolvedConnection", str, str]]:
     """Pick a credential from the provider's pool for THIS request.
 
-    Returns ``(conn, profile_id, credential_id)`` — ``conn`` is a
+    Returns ``(conn, account_id, credential_id)`` — ``conn`` is a
     :class:`~openprogram.auth.resolver.ResolvedConnection` carrying the bearer
     value plus any credential-specific ``base_url``/``headers`` — so the
     caller can report the outcome against the exact credential it used, and
@@ -38,21 +38,21 @@ def acquire_pooled(
     caller then falls back to its own key resolution, e.g. ``opts.api_key`` /
     an env var / a Meridian token).
 
-    Normally the provider's ACTIVE account (profile, ``auth/account_selection.py``) is used.
+    Normally the provider's ACTIVE account (account, ``auth/account_selection.py``) is used.
     When rotation is ON for the provider (``auth/rotation.py``), a request instead
-    rotates across ALL the provider's accounts (profiles) by the chosen strategy,
+    rotates across ALL the provider's accounts (accounts) by the chosen strategy,
     skipping ones whose credential is cooling down — so a 429 on one account fails
-    over to the next. ``profile_id`` (explicit) always pins one account, bypassing
+    over to the next. ``account_id`` (explicit) always pins one account, bypassing
     rotation.
     """
     from .store import get_store
     from .account_selection import get_active_account
-    from .manager import get_manager
+    from .credential_provider import get_credential_provider
     from .types import AuthError, AuthConfigError
     from .resolver import resolve_connection
 
     store = get_store()
-    mgr = get_manager()
+    mgr = get_credential_provider()
 
     def _resolve(prof: str) -> Optional[Tuple["ResolvedConnection", str, str]]:
         pool = store.find_pool(provider_id, prof)
@@ -63,11 +63,11 @@ def acquire_pooled(
         except (AuthError, AuthConfigError):
             return None
         conn = resolve_connection(cred)
-        return (conn, cred.profile_id, cred.credential_id) if conn else None
+        return (conn, cred.account_id, cred.credential_id) if conn else None
 
-    # Explicit profile pins one account (no rotation).
-    if profile_id is not None:
-        return _resolve(profile_id)
+    # Explicit account pins one account (no rotation).
+    if account_id is not None:
+        return _resolve(account_id)
 
     from .rotation import get_rotation
     rot = get_rotation(provider_id)
@@ -79,11 +79,11 @@ def acquire_pooled(
         # break the request.
         from .rotation import get_accounts_out_of_rotation
         disabled = get_accounts_out_of_rotation(provider_id)
-        kept = [p for p in pools if p.profile_id not in disabled]
+        kept = [p for p in pools if p.account_id not in disabled]
         pools = kept or pools
         chosen = _pick_account(provider_id, pools, rot["strategy"])
         if chosen is not None:
-            got = _resolve(chosen.profile_id)
+            got = _resolve(chosen.account_id)
             if got is not None:
                 return got
         # fall through to the active account if rotation found nothing usable
@@ -116,7 +116,7 @@ def _pick_account(provider_id: str, pools: list, strategy: str):
     now = int(_t.time() * 1000)
     from .account_priority import account_priority_key
     _k = account_priority_key(provider_id)             # the user's drag order is the priority
-    pools = sorted(pools, key=lambda p: _k(p.profile_id))
+    pools = sorted(pools, key=lambda p: _k(p.account_id))
     healthy = [p for p in pools if _account_healthy(p, now)]
     candidates = healthy or pools  # all cooling → use one anyway (better than nothing)
     if strategy == "round_robin":
@@ -160,9 +160,9 @@ def classify_failure(status: Optional[int], error_text: str = "") -> str:
     return "server_error"
 
 
-def report_failure(
+def record_call_failure(
     provider_id: str,
-    profile_id: str,
+    account_id: str,
     credential_id: str,
     status: Optional[int] = None,
     error_text: str = "",
@@ -181,9 +181,9 @@ def report_failure(
     if reason in ("request_error", "server_error", "network_error"):
         return
     try:
-        from .manager import get_manager
-        get_manager().report_failure(
-            provider_id, profile_id, credential_id,
+        from .credential_provider import get_credential_provider
+        get_credential_provider().apply_failure(
+            provider_id, account_id, credential_id,
             reason,
             detail=(error_text or "")[:200],
         )
@@ -191,14 +191,14 @@ def report_failure(
         pass
 
 
-def report_success(provider_id: str, profile_id: str, credential_id: str) -> None:
+def record_call_success(provider_id: str, account_id: str, credential_id: str) -> None:
     """Clear transient error state on a 2xx. Cheap (no fsync); safe no-op when
     there's no credential id."""
     if not credential_id:
         return
     try:
-        from .manager import get_manager
-        get_manager().report_success(provider_id, profile_id, credential_id)
+        from .credential_provider import get_credential_provider
+        get_credential_provider().apply_success(provider_id, account_id, credential_id)
     except Exception:
         pass
 
@@ -237,7 +237,7 @@ def stored_but_unusable(provider_id: str) -> Optional[str]:
 __all__ = [
     "acquire_pooled",
     "classify_failure",
-    "report_failure",
-    "report_success",
+    "record_call_failure",
+    "record_call_success",
     "stored_but_unusable",
 ]

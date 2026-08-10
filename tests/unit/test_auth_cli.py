@@ -11,11 +11,11 @@ from unittest.mock import patch
 import pytest
 
 from openprogram.auth.cli import build_parser, dispatch
-from openprogram.auth.manager import AuthManager, set_manager_for_testing
-from openprogram.auth.profiles import (
-    DEFAULT_PROFILE_NAME,
-    ProfileManager,
-    set_profile_manager_for_testing,
+from openprogram.auth.credential_provider import CredentialProvider, set_credential_provider_for_testing
+from openprogram.auth.accounts import (
+    DEFAULT_ACCOUNT_NAME,
+    AccountManager,
+    set_account_manager_for_testing,
 )
 from openprogram.auth.store import AuthStore, set_store_for_testing
 from openprogram.auth.types import (
@@ -29,9 +29,9 @@ from openprogram.auth.types import (
 def isolated(tmp_path, monkeypatch, capsys):
     store = AuthStore(root=tmp_path / "store")
     set_store_for_testing(store)
-    set_manager_for_testing(AuthManager(store=store))
-    pm = ProfileManager(root=tmp_path / "profiles")
-    set_profile_manager_for_testing(pm)
+    set_credential_provider_for_testing(CredentialProvider(store=store))
+    pm = AccountManager(root=tmp_path / "profiles")
+    set_account_manager_for_testing(pm)
     # Redirect Codex path so imports don't touch the real file.
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "fake_codex"))
     # Isolate ~/.openprogram so the config.json api_keys mirror inside
@@ -42,8 +42,8 @@ def isolated(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HOME", str(fake_home))
     yield store, pm, tmp_path, capsys
     set_store_for_testing(None)
-    set_manager_for_testing(None)
-    set_profile_manager_for_testing(None)
+    set_credential_provider_for_testing(None)
+    set_account_manager_for_testing(None)
 
 
 def _parse(argv):
@@ -76,9 +76,9 @@ def test_list_empty_suggests_next_steps(isolated):
 def test_list_json_emits_array(isolated):
     store, _, _, cap = isolated
     store.put_pool(CredentialPool(
-        provider_id="openai", profile_id="default",
+        provider_id="openai", account_id="default",
         credentials=[Credential(
-            provider_id="openai", profile_id="default", kind="api_key",
+            provider_id="openai", account_id="default", kind="api_key",
             payload=CredentialData(kind="api_key", auth_value="sk-deadbeef1234"),
             source="cli_paste",
         )],
@@ -93,21 +93,21 @@ def test_list_json_emits_array(isolated):
     assert "sk-deadbeef1234" not in body[0]["credentials"][0]["preview"]
 
 
-def test_list_respects_profile_filter(isolated):
+def test_list_respects_account_filter(isolated):
     store, pm, _, cap = isolated
-    pm.create_profile("work")
+    pm.create_account("work")
     for prof, tag in [("default", "personal"), ("work", "work")]:
         store.put_pool(CredentialPool(
-            provider_id="openai", profile_id=prof,
+            provider_id="openai", account_id=prof,
             credentials=[Credential(
-                provider_id="openai", profile_id=prof, kind="api_key",
+                provider_id="openai", account_id=prof, kind="api_key",
                 payload=CredentialData(kind="api_key", auth_value=f"sk-{tag}-11112222"),
             )],
         ))
-    rc = dispatch(_parse(["list", "--profile", "work", "--json"]))
+    rc = dispatch(_parse(["list", "--account", "work", "--json"]))
     body = json.loads(cap.readouterr().out)
     assert len(body) == 1
-    assert body[0]["profile_id"] == "work"
+    assert body[0]["account_id"] == "work"
 
 
 # ---- discover ------------------------------------------------------------
@@ -192,11 +192,11 @@ def test_adopt_unknown_source(isolated):
     assert "Unknown source" in err
 
 
-def test_adopt_routes_to_non_default_profile(isolated, monkeypatch):
+def test_adopt_routes_to_non_default_account(isolated, monkeypatch):
     store, pm, _, cap = isolated
-    pm.create_profile("work")
+    pm.create_account("work")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-adopt-to-work-1")
-    rc = dispatch(_parse(["adopt", "env:OPENAI_API_KEY", "--profile", "work"]))
+    rc = dispatch(_parse(["adopt", "env:OPENAI_API_KEY", "--account", "work"]))
     assert rc == 0
     assert store.find_pool("openai", "work") is not None
     assert store.find_pool("openai", "default") is None
@@ -207,9 +207,9 @@ def test_adopt_routes_to_non_default_profile(isolated, monkeypatch):
 def test_logout_removes_pool(isolated, monkeypatch):
     store, _, _, cap = isolated
     store.put_pool(CredentialPool(
-        provider_id="openai", profile_id="default",
+        provider_id="openai", account_id="default",
         credentials=[Credential(
-            provider_id="openai", profile_id="default", kind="api_key",
+            provider_id="openai", account_id="default", kind="api_key",
             payload=CredentialData(kind="api_key", auth_value="sk-goodbye-12345"),
         )],
     ))
@@ -242,9 +242,9 @@ def test_status_reports_missing_credential(isolated):
 def test_status_reports_valid_credential(isolated):
     store, _, _, cap = isolated
     store.put_pool(CredentialPool(
-        provider_id="openai", profile_id="default",
+        provider_id="openai", account_id="default",
         credentials=[Credential(
-            provider_id="openai", profile_id="default", kind="api_key",
+            provider_id="openai", account_id="default", kind="api_key",
             payload=CredentialData(kind="api_key", auth_value="sk-working-key-555"),
             source="cli_paste",
         )],
@@ -346,31 +346,31 @@ def test_login_oauth_only_headless_fails_clean_not_hang(isolated, monkeypatch):
     assert "interactive terminal" in cap.readouterr().err
 
 
-# ---- profile -------------------------------------------------------------
+# ---- account -------------------------------------------------------------
 
-def test_profile_list(isolated):
+def test_account_list(isolated):
     _, pm, _, cap = isolated
-    pm.create_profile("work")
-    rc = dispatch(_parse(["profiles", "list"]))
+    pm.create_account("work")
+    rc = dispatch(_parse(["accounts", "list"]))
     assert rc == 0
     out = cap.readouterr().out
     assert "work" in out
-    assert DEFAULT_PROFILE_NAME in out
+    assert DEFAULT_ACCOUNT_NAME in out
 
 
-def test_profile_create_and_delete(isolated):
+def test_account_create_and_delete(isolated):
     _, _, _, cap = isolated
-    assert dispatch(_parse(["profiles", "create", "scratch"])) == 0
-    assert "Created profile scratch" in cap.readouterr().out
-    assert dispatch(_parse(["profiles", "delete", "scratch", "--yes"])) == 0
-    assert "Deleted profile scratch" in cap.readouterr().out
+    assert dispatch(_parse(["accounts", "create", "scratch"])) == 0
+    assert "Created account scratch" in cap.readouterr().out
+    assert dispatch(_parse(["accounts", "delete", "scratch", "--yes"])) == 0
+    assert "Deleted account scratch" in cap.readouterr().out
 
 
-def test_profile_create_duplicate(isolated):
+def test_account_create_duplicate(isolated):
     _, _, _, cap = isolated
-    dispatch(_parse(["profiles", "create", "dup"]))
+    dispatch(_parse(["accounts", "create", "dup"]))
     cap.readouterr()
-    rc = dispatch(_parse(["profiles", "create", "dup"]))
+    rc = dispatch(_parse(["accounts", "create", "dup"]))
     assert rc == 1
 
 
@@ -438,9 +438,9 @@ def test_login_resolves_alias(isolated, monkeypatch):
 def test_status_resolves_alias(isolated):
     store, _, _, cap = isolated
     store.put_pool(CredentialPool(
-        provider_id="anthropic", profile_id="default",
+        provider_id="anthropic", account_id="default",
         credentials=[Credential(
-            provider_id="anthropic", profile_id="default", kind="api_key",
+            provider_id="anthropic", account_id="default", kind="api_key",
             payload=CredentialData(kind="api_key", auth_value="sk-ant-abc12345678"),
             source="cli_paste",
         )],
@@ -476,9 +476,9 @@ def test_doctor_flags_expired_oauth_without_refresh(isolated):
     store, _, _, cap = isolated
     # Provider with no refresh registered → expired oauth must be ERROR.
     store.put_pool(CredentialPool(
-        provider_id="random-oauth-provider", profile_id="default",
+        provider_id="random-oauth-provider", account_id="default",
         credentials=[Credential(
-            provider_id="random-oauth-provider", profile_id="default",
+            provider_id="random-oauth-provider", account_id="default",
             kind="oauth",
             payload=CredentialData(
                 kind="oauth", auth_value="tok-expired",
@@ -499,9 +499,9 @@ def test_doctor_flags_missing_source_file(isolated, tmp_path):
     # Pretend we imported from a file that no longer exists.
     ghost = tmp_path / "gone.json"
     store.put_pool(CredentialPool(
-        provider_id="openai-codex", profile_id="default",
+        provider_id="openai-codex", account_id="default",
         credentials=[Credential(
-            provider_id="openai-codex", profile_id="default", kind="api_key",
+            provider_id="openai-codex", account_id="default", kind="api_key",
             payload=CredentialData(kind="api_key", auth_value="sk-orphaned-123456"),
             source="codex_cli_import",
             metadata={"source_path": str(ghost), "imported_from": "codex_cli"},
@@ -518,9 +518,9 @@ def test_doctor_flags_missing_source_file(isolated, tmp_path):
 def test_doctor_healthy_api_key_pool_passes(isolated):
     store, _, _, cap = isolated
     store.put_pool(CredentialPool(
-        provider_id="openai", profile_id="default",
+        provider_id="openai", account_id="default",
         credentials=[Credential(
-            provider_id="openai", profile_id="default", kind="api_key",
+            provider_id="openai", account_id="default", kind="api_key",
             payload=CredentialData(kind="api_key", auth_value="sk-healthy-key-12345"),
             source="cli_paste",
         )],

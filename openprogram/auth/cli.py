@@ -13,27 +13,27 @@ Subcommands:
     also takes a fully non-interactive API-key path — ``--api-key <key>``,
     ``--api-key-stdin``, or simply piping the key on stdin (no tty) — so
     no getpass prompt or method picker ever blocks an automated caller.
-  * ``openprogram providers list`` — tabular view of pools per profile with
+  * ``openprogram providers list`` — tabular view of pools per account with
     masked secret previews.
   * ``openprogram providers discover`` — non-destructive scan of external
     sources. Shows what could be imported but doesn't commit.
   * ``openprogram providers adopt`` — accept a previously-discovered
     credential into the store. Usually follows ``discover``.
-  * ``openprogram providers logout <provider> [--profile P]`` — remove all
-    credentials for the provider in the given profile and print any
+  * ``openprogram providers logout <provider> [--account A]`` — remove all
+    credentials for the provider in the given account and print any
     non-executable :class:`RemovalStep` so the user knows what they
     still need to clean up manually.
-  * ``openprogram providers profiles {list,create,delete} [...]`` — profile
+  * ``openprogram providers accounts {list,create,delete} [...]`` — account
     CRUD without requiring the WebUI.
-  * ``openprogram providers status <provider> [--profile P]`` — show the
-    active credential for a provider and whether AuthManager would
+  * ``openprogram providers status <provider> [--account A]`` — show the
+    active credential for a provider and whether CredentialProvider would
     resolve it right now.
 
 Design constraints:
 
   * no webserver or browser — this must work over SSH
   * no dependency on the WebUI routes — CLI and webui both hit
-    :mod:`auth.store` + :mod:`auth.manager` directly
+    :mod:`auth.store` + :mod:`auth.credential_provider` directly
   * secrets are masked on display; paste flows read via
     :func:`getpass.getpass` so the key doesn't appear in shell history
     or in terminal scroll-back of a screen-sharing session
@@ -50,11 +50,11 @@ from typing import Any, Optional
 
 from .aliases import known_aliases, resolve as _resolve_alias
 from .context import auth_scope
-from .manager import AuthManager, get_manager
-from .profiles import (
-    DEFAULT_PROFILE_NAME,
-    ProfileManager,
-    get_profile_manager,
+from .credential_provider import CredentialProvider, get_credential_provider
+from .accounts import (
+    DEFAULT_ACCOUNT_NAME,
+    AccountManager,
+    get_account_manager,
 )
 from .store import AuthStore, get_store
 from .types import (
@@ -77,8 +77,8 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
     Per docs/design/cli/naming.md, commands have the shape
     ``<noun> [<noun> ...] <verb>``. This function is called with the
     ``providers`` subparser as its parent, so the verbs land as
-    ``providers login``, ``providers list``, etc. ``profiles`` is the
-    only nested noun (`providers profiles list` / `create` / `delete`).
+    ``providers login``, ``providers list``, etc. ``accounts`` is the
+    only nested noun (`providers accounts list` / `create` / `delete`).
 
     Expected use from :func:`openprogram.cli.main`::
 
@@ -92,8 +92,8 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
     # login
     p_login = auth_sub.add_parser("login", help="Log into a provider")
     p_login.add_argument("provider", help="Provider id (e.g. openai-codex, anthropic)")
-    p_login.add_argument("--profile", default=DEFAULT_PROFILE_NAME,
-                         help=f"Profile (default: {DEFAULT_PROFILE_NAME})")
+    p_login.add_argument("--account", default=DEFAULT_ACCOUNT_NAME,
+                         help=f"Account (default: {DEFAULT_ACCOUNT_NAME})")
     p_login.add_argument("--method", default=None,
                          help="Advanced: force a specific login method. Omit it "
                               "and the right one for the provider is picked "
@@ -110,9 +110,9 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
                               "minimax-cn --api-key-stdin`.")
 
     # list
-    p_list = auth_sub.add_parser("list", help="List pools per profile")
-    p_list.add_argument("--profile", default=None,
-                        help="Filter to one profile (default: all)")
+    p_list = auth_sub.add_parser("list", help="List pools per account")
+    p_list.add_argument("--account", default=None,
+                        help="Filter to one account (default: all)")
     p_list.add_argument("--json", action="store_true", help="Output JSON")
 
     # available — browse/search the full provider catalogue
@@ -150,8 +150,8 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
     p_adopt.add_argument("source_id", nargs="?", default=None,
         help="Source id from `discover` output (e.g. codex_cli, "
              "env:OPENAI_API_KEY). Omit when using --all.")
-    p_adopt.add_argument("--profile", default=DEFAULT_PROFILE_NAME,
-                         help=f"Target profile (default: {DEFAULT_PROFILE_NAME})")
+    p_adopt.add_argument("--account", default=DEFAULT_ACCOUNT_NAME,
+                         help=f"Target account (default: {DEFAULT_ACCOUNT_NAME})")
     p_adopt.add_argument("--all", dest="adopt_all", action="store_true",
                          help="Adopt every credential discover() finds. "
                               "Skips pools that already contain the same credential_id.")
@@ -159,19 +159,19 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
     # logout
     p_logout = auth_sub.add_parser("logout", help="Remove credentials for a provider")
     p_logout.add_argument("provider", help="Provider id to log out of")
-    p_logout.add_argument("--profile", default=DEFAULT_PROFILE_NAME, help="Profile to remove credentials from")
+    p_logout.add_argument("--account", default=DEFAULT_ACCOUNT_NAME, help="Account to remove credentials from")
     p_logout.add_argument("--yes", action="store_true", help="Skip confirmation")
 
     # status
     p_status = auth_sub.add_parser("status", help="Check a provider's current credential")
     p_status.add_argument("provider", help="Provider id to check")
-    p_status.add_argument("--profile", default=DEFAULT_PROFILE_NAME, help="Profile to check")
+    p_status.add_argument("--account", default=DEFAULT_ACCOUNT_NAME, help="Account to check")
 
-    # use — pick which account (profile) a provider runs on
-    p_use = auth_sub.add_parser("use", help="Set which account (profile) a provider runs on")
+    # use — pick which account (account) a provider runs on
+    p_use = auth_sub.add_parser("use", help="Set which account (account) a provider runs on")
     p_use.add_argument("provider", help="Provider id")
-    p_use.add_argument("profile", nargs="?", default="",
-                       help="Profile to activate; omit to clear back to the default")
+    p_use.add_argument("account", nargs="?", default="",
+                       help="Account to activate; omit to clear back to the default")
 
     # doctor — diagnostic report over every pool
     p_doctor = auth_sub.add_parser(
@@ -195,17 +195,17 @@ def build_parser(sub: "argparse._SubParsersAction") -> None:
         "migrate", help="Migrate stored credentials to the current format",
     )
 
-    # profiles (plural noun, per CLI naming convention — see
+    # accounts (plural noun, per CLI naming convention — see
     # docs/design/cli/naming.md). Verbs follow: list/create/delete.
-    p_profiles = auth_sub.add_parser("profiles", help="Profile management")
-    prof_sub = p_profiles.add_subparsers(dest="profiles_cmd", metavar="verb")
-    prof_sub.add_parser("list", help="List profiles")
-    pc = prof_sub.add_parser("create", help="Create a profile")
-    pc.add_argument("name", help="New profile name")
-    pc.add_argument("--display-name", default="", help="Human-readable label for the profile")
-    pc.add_argument("--description", default="", help="Optional description for the profile")
-    pd = prof_sub.add_parser("delete", help="Delete a profile")
-    pd.add_argument("name", help="Profile name to delete")
+    p_accounts = auth_sub.add_parser("accounts", help="Account management")
+    acct_sub = p_accounts.add_subparsers(dest="accounts_cmd", metavar="verb")
+    acct_sub.add_parser("list", help="List accounts")
+    pc = acct_sub.add_parser("create", help="Create an account")
+    pc.add_argument("name", help="New account name")
+    pc.add_argument("--display-name", default="", help="Human-readable label for the account")
+    pc.add_argument("--description", default="", help="Optional description for the account")
+    pd = acct_sub.add_parser("delete", help="Delete an account")
+    pd.add_argument("name", help="Account name to delete")
     pd.add_argument("--yes", action="store_true", help="Skip confirmation")
 
     # (Removed: `providers claude-code accounts <verb>` — that was the
@@ -226,14 +226,14 @@ def dispatch(args: argparse.Namespace) -> int:
     cmd = args.providers_cmd
     if cmd == "login":
         return _cmd_login(
-            _resolve_alias(args.provider), args.profile, args.method,
+            _resolve_alias(args.provider), args.account, args.method,
             api_key=getattr(args, "api_key", None),
             api_key_stdin=getattr(args, "api_key_stdin", False),
         )
     if cmd == "list":
-        return _cmd_list(args.profile, args.json)
+        return _cmd_list(args.account, args.json)
     if cmd == "use":
-        return _cmd_use(_resolve_alias(args.provider), args.profile)
+        return _cmd_use(_resolve_alias(args.provider), args.account)
     if cmd in ("available", "search", "catalog"):
         return _cmd_available(
             args.query, args.json, getattr(args, "configured", False),
@@ -242,18 +242,18 @@ def dispatch(args: argparse.Namespace) -> int:
         return _cmd_discover(args.json)
     if cmd == "adopt":
         if getattr(args, "adopt_all", False):
-            return _cmd_adopt_all(args.profile)
+            return _cmd_adopt_all(args.account)
         if args.source_id is None:
             print("Usage: openprogram providers adopt <source_id> | --all",
                   file=sys.stderr)
             return 2
-        return _cmd_adopt(args.source_id, args.profile)
+        return _cmd_adopt(args.source_id, args.account)
     if cmd == "logout":
         return _cmd_logout(
-            _resolve_alias(args.provider), args.profile, skip_confirm=args.yes,
+            _resolve_alias(args.provider), args.account, skip_confirm=args.yes,
         )
     if cmd == "status":
-        return _cmd_status(_resolve_alias(args.provider), args.profile)
+        return _cmd_status(_resolve_alias(args.provider), args.account)
     if cmd == "doctor":
         return _cmd_doctor(args.json)
     if cmd == "setup":
@@ -262,26 +262,26 @@ def dispatch(args: argparse.Namespace) -> int:
         return _cmd_aliases(args.json)
     if cmd == "migrate":
         return _cmd_migrate()
-    if cmd == "profiles":
-        return _dispatch_profiles(args)
+    if cmd == "accounts":
+        return _dispatch_accounts(args)
     # No subcommand — print the help hint.
     print("Usage: openprogram providers <verb>\n"
           "Verbs: available (list/search the catalogue), login, logout, "
           "list (configured pools), status, discover, adopt, doctor, "
-          "setup, aliases, migrate, profiles",
+          "setup, aliases, migrate, accounts",
           file=sys.stderr)
     return 2
 
 
-def _dispatch_profiles(args: argparse.Namespace) -> int:
-    pc = args.profiles_cmd
+def _dispatch_accounts(args: argparse.Namespace) -> int:
+    pc = args.accounts_cmd
     if pc == "list":
-        return _cmd_profile_list()
+        return _cmd_account_list()
     if pc == "create":
-        return _cmd_profile_create(args.name, args.display_name, args.description)
+        return _cmd_account_create(args.name, args.display_name, args.description)
     if pc == "delete":
-        return _cmd_profile_delete(args.name, args.yes)
-    print("Usage: openprogram providers profiles <verb>\n"
+        return _cmd_account_delete(args.name, args.yes)
+    print("Usage: openprogram providers accounts <verb>\n"
           "Verbs: list, create, delete", file=sys.stderr)
     return 2
 
@@ -310,8 +310,8 @@ def _payload_summary(cred: Credential) -> str:
         return f"device_code {_mask(p.auth_value)} exp={_fmt_expiry(p.data.get('expires_at_ms', 0))}"
     if p.kind == "cli_delegated":
         return f"cli_delegated → {p.data.get('store_path')}"
-    if p.kind == "external_process":
-        return f"external_process {' '.join(p.data.get('command', []))}"
+    if p.kind == "credential_process":
+        return f"credential_process {' '.join(p.data.get('command', []))}"
     return cred.kind
 
 
@@ -339,7 +339,7 @@ def _fmt_duration(ms: int) -> str:
 # login — interactive wizard
 # ---------------------------------------------------------------------------
 
-def _cmd_login(provider: str, profile: str, method: Optional[str], *,
+def _cmd_login(provider: str, account: str, method: Optional[str], *,
                api_key: Optional[str] = None,
                api_key_stdin: bool = False) -> int:
     store = get_store()
@@ -407,7 +407,7 @@ def _cmd_login(provider: str, profile: str, method: Optional[str], *,
         if chosen_or_none is not None:
             chosen = chosen_or_none
         else:
-            print(f"Login to {provider} (profile: {profile})")
+            print(f"Login to {provider} (account: {account})")
             print("Available methods:")
             for i, (mid, label) in enumerate(choices, 1):
                 print(f"  {i}. {label}")
@@ -419,7 +419,7 @@ def _cmd_login(provider: str, profile: str, method: Optional[str], *,
                 return 1
 
     try:
-        cred = _run_login_method(provider, profile, chosen, api_key=supplied_key)
+        cred = _run_login_method(provider, account, chosen, api_key=supplied_key)
     except KeyboardInterrupt:
         print("\nAborted.", file=sys.stderr)
         return 130
@@ -432,12 +432,12 @@ def _cmd_login(provider: str, profile: str, method: Optional[str], *,
 
     store.add_credential(cred)
     saved_provider = cred.provider_id
-    saved_profile = cred.profile_id
+    saved_account = cred.account_id
     print(f"\n✓ Saved credential {cred.credential_id} for "
-          f"{saved_provider}/{saved_profile}")
+          f"{saved_provider}/{saved_account}")
     print(f"  kind: {cred.kind}")
     print(f"  preview: {_payload_summary(cred)}")
-    print(f"  store: {store.root}/{saved_provider}/{saved_profile}.json")
+    print(f"  store: {store.root}/{saved_provider}/{saved_account}.json")
     # OAuth pool hygiene: a fresh PKCE / device-code login supersedes
     # any older OAuth rows in the same pool (refresh-token rotation
     # makes them dead bytes). Drop them so ``providers status`` doesn't
@@ -511,7 +511,7 @@ def _prune_superseded_oauth(store: AuthStore, new_cred: Credential) -> list[str]
     """
     if new_cred.kind != "oauth":
         return []
-    pool = store.find_pool(new_cred.provider_id, new_cred.profile_id)
+    pool = store.find_pool(new_cred.provider_id, new_cred.account_id)
     if pool is None:
         return []
     removed: list[str] = []
@@ -521,13 +521,13 @@ def _prune_superseded_oauth(store: AuthStore, new_cred: Credential) -> list[str]
         if sibling.kind != "oauth":
             continue
         store.remove_credential(
-            sibling.provider_id, sibling.profile_id, sibling.credential_id,
+            sibling.provider_id, sibling.account_id, sibling.credential_id,
         )
         removed.append(sibling.credential_id)
     return removed
 
 
-def _run_login_method(provider: str, profile: str, method: str, *,
+def _run_login_method(provider: str, account: str, method: str, *,
                       api_key: Optional[str] = None) -> Credential:
     """Drive a login from the terminal via the shared surface-agnostic driver
     (``openprogram/auth/login_driver.py``) so the CLI, web and TUI all run the
@@ -539,7 +539,7 @@ def _run_login_method(provider: str, profile: str, method: str, *,
             print_note(title, body)
     from openprogram.auth.login_driver import run_login
     ui = _TerminalLoginUi()
-    return asyncio.run(run_login(provider, profile, method, ui, api_key=api_key))
+    return asyncio.run(run_login(provider, account, method, ui, api_key=api_key))
 
 
 # ---------------------------------------------------------------------------
@@ -607,7 +607,7 @@ _LOGIN_NOTES: dict[str, tuple[str, list[str]]] = {
 
 
 
-def _login_paste_api_key(provider: str, profile: str, *,
+def _login_paste_api_key(provider: str, account: str, *,
                          api_key: Optional[str] = None) -> Credential:
     # ``api_key`` is the non-interactive path (--api-key / --api-key-stdin /
     # piped stdin); when it's None we fall back to the hidden terminal
@@ -622,7 +622,7 @@ def _login_paste_api_key(provider: str, profile: str, *,
     store_provider = "anthropic" if provider == "claude-code" else provider
     return Credential(
         provider_id=store_provider,
-        profile_id=profile,
+        account_id=account,
         kind="api_key",
         payload=CredentialData(kind="api_key", auth_value=key),
         source="cli_paste",
@@ -630,7 +630,7 @@ def _login_paste_api_key(provider: str, profile: str, *,
     )
 
 
-def _login_import_from_cli(provider: str, profile: str) -> Credential:
+def _login_import_from_cli(provider: str, account: str) -> Credential:
     """Delegate to the per-provider adapter's ``import_from_*`` helper.
 
     Adapters produce either writable OAuth (Codex — we rotate) or
@@ -638,7 +638,7 @@ def _login_import_from_cli(provider: str, profile: str) -> Credential:
     The distinction is invisible here; we just hand off."""
     if provider == "openai-codex":
         from openprogram.providers.openai_codex import auth_adapter
-        cred = auth_adapter.import_from_codex_file(profile_id=profile)
+        cred = auth_adapter.import_from_codex_file(account_id=account)
         if cred is None:
             raise AuthConfigError(
                 f"{auth_adapter.codex_auth_path()} not found. "
@@ -647,7 +647,7 @@ def _login_import_from_cli(provider: str, profile: str) -> Credential:
         return cred
     if provider == "gemini-subscription":
         from openprogram.providers.google_gemini_cli import auth_adapter
-        cred = auth_adapter.import_from_gemini_cli(profile_id=profile)
+        cred = auth_adapter.import_from_gemini_cli(account_id=account)
         if cred is None:
             raise AuthConfigError(
                 f"{auth_adapter.gemini_cli_credentials_path()} not found. "
@@ -656,8 +656,8 @@ def _login_import_from_cli(provider: str, profile: str) -> Credential:
         return cred
     if provider == "qwen":
         from openprogram.auth.sources.qwen_cli import QwenCliSource
-        src = QwenCliSource(profile_id=profile)
-        creds = src.try_import(get_profile_manager().get_profile(profile).root)
+        src = QwenCliSource(account_id=account)
+        creds = src.try_import(get_account_manager().get_account(account).root)
         if not creds:
             raise AuthConfigError(
                 "~/.qwen/oauth_creds.json not found. Run `qwen login` first."
@@ -750,12 +750,12 @@ def _cmd_available(
 # list
 # ---------------------------------------------------------------------------
 
-def _cmd_use(provider: str, profile: str) -> int:
-    """Set which account (profile) a provider runs on. Empty profile clears the
+def _cmd_use(provider: str, account: str) -> int:
+    """Set which account (account) a provider runs on. Empty account clears the
     pin (back to the default). This is what makes a second logged-in account
     actually take effect at request time."""
     from openprogram.auth.account_selection import set_active_account, get_active_pin
-    set_active_account(provider, profile)
+    set_active_account(provider, account)
     pin = get_active_pin(provider)
     if pin:
         print(f"✓ {provider} now runs on account '{pin}'.")
@@ -764,18 +764,18 @@ def _cmd_use(provider: str, profile: str) -> int:
     return 0
 
 
-def _cmd_list(profile_filter: Optional[str], as_json: bool) -> int:
+def _cmd_list(account_filter: Optional[str], as_json: bool) -> int:
     store = get_store()
-    pm = get_profile_manager()
+    pm = get_account_manager()
     pools = store.list_pools()
-    if profile_filter:
-        pools = [p for p in pools if p.profile_id == profile_filter]
+    if account_filter:
+        pools = [p for p in pools if p.account_id == account_filter]
 
     if as_json:
         out = [
             {
                 "provider_id": p.provider_id,
-                "profile_id": p.profile_id,
+                "account_id": p.account_id,
                 "strategy": p.strategy,
                 "credentials": [
                     {
@@ -800,15 +800,15 @@ def _cmd_list(profile_filter: Optional[str], as_json: bool) -> int:
         return 0
 
     from openprogram.auth.account_selection import get_active_pin
-    print(f"{'provider':28s}  {'profile':16s}  credential")
+    print(f"{'provider':28s}  {'account':16s}  credential")
     for p in pools:
-        # Mark the profile this provider is pinned to run on (→ active); an
+        # Mark the account this provider is pinned to run on (→ active); an
         # unpinned provider runs on 'default'.
         active = get_active_pin(p.provider_id)
-        marker = " ← active" if active and active == p.profile_id else ""
+        marker = " ← active" if active and active == p.account_id else ""
         for c in p.credentials:
             ro = " [read-only]" if c.read_only else ""
-            print(f"{p.provider_id:28s}  {p.profile_id:16s}  "
+            print(f"{p.provider_id:28s}  {p.account_id:16s}  "
                   f"{c.credential_id} — {_payload_summary(c)}{ro}{marker}")
     return 0
 
@@ -826,8 +826,8 @@ def _cmd_discover(as_json: bool) -> int:
     )
     from openprogram.providers.env_api_keys import PROVIDER_ENV_VARS
 
-    pm = get_profile_manager()
-    default = pm.get_profile(DEFAULT_PROFILE_NAME)
+    pm = get_account_manager()
+    default = pm.get_account(DEFAULT_ACCOUNT_NAME)
     sources: list[Any] = [
         CodexCliSource(),
         QwenCliSource(),
@@ -847,7 +847,7 @@ def _cmd_discover(as_json: bool) -> int:
             found.append({
                 "source_id": src.source_id,
                 "provider": cred.provider_id,
-                "profile": cred.profile_id,
+                "account": cred.account_id,
                 "kind": cred.kind,
                 "preview": _payload_summary(cred),
                 "read_only": cred.read_only,
@@ -876,12 +876,12 @@ def _cmd_discover(as_json: bool) -> int:
 # adopt
 # ---------------------------------------------------------------------------
 
-def _cmd_adopt(source_id: str, profile: str) -> int:
+def _cmd_adopt(source_id: str, account: str) -> int:
     store = get_store()
-    pm = get_profile_manager()
-    profile_obj = pm.get_profile(profile)
+    pm = get_account_manager()
+    account_obj = pm.get_account(account)
 
-    src = _source_by_id(source_id, profile)
+    src = _source_by_id(source_id, account)
     if src is None:
         print(f"Unknown source: {source_id!r}. "
               f"Run `openprogram providers discover` to see available ids.",
@@ -889,7 +889,7 @@ def _cmd_adopt(source_id: str, profile: str) -> int:
         return 1
 
     try:
-        creds = src.try_import(profile_obj.root)
+        creds = src.try_import(account_obj.root)
     except Exception as e:
         print(f"Source failed: {e}", file=sys.stderr)
         return 1
@@ -899,26 +899,26 @@ def _cmd_adopt(source_id: str, profile: str) -> int:
         return 1
 
     for cred in creds:
-        # Force the caller's requested profile — some sources default
+        # Force the caller's requested account — some sources default
         # to "default" but the user may be scoping to "work".
-        cred.profile_id = profile
+        cred.account_id = account
         store.add_credential(cred)
-        print(f"✓ Adopted {cred.provider_id}/{cred.profile_id}: {_payload_summary(cred)}")
+        print(f"✓ Adopted {cred.provider_id}/{cred.account_id}: {_payload_summary(cred)}")
     return 0
 
 
-def _cmd_adopt_all(profile: str) -> int:
+def _cmd_adopt_all(account: str) -> int:
     """Batch-adopt every credential the discovery layer finds (CLI wrapper).
 
     Delegates to :func:`run_adopt_all` for the actual work; this function
     only formats output. Exit 0 on success (even zero adopted), 1 if
     any source errored.
     """
-    result = run_adopt_all(profile)
+    result = run_adopt_all(account)
     for item in result["events"]:
         level = item["level"]
         if level == "adopted":
-            print(f"  + {item['provider_id']}/{profile}: {item['preview']}")
+            print(f"  + {item['provider_id']}/{account}: {item['preview']}")
         elif level == "error":
             print(f"  ! {item['source_id']}: {item['error']}", file=sys.stderr)
     print(f"\nAdopted {result['adopted']} · "
@@ -926,7 +926,7 @@ def _cmd_adopt_all(profile: str) -> int:
     return 1 if result["errored"] else 0
 
 
-def run_adopt_all(profile: str) -> dict[str, Any]:
+def run_adopt_all(account: str) -> dict[str, Any]:
     """Pure batch-adopt — no stdout, returns a structured report.
 
     Used by the CLI ``adopt --all`` verb and the
@@ -945,17 +945,17 @@ def run_adopt_all(profile: str) -> dict[str, Any]:
     from openprogram.providers.env_api_keys import PROVIDER_ENV_VARS
 
     store = get_store()
-    pm = get_profile_manager()
-    profile_obj = pm.get_profile(profile)
+    pm = get_account_manager()
+    account_obj = pm.get_account(account)
 
     sources: list[Any] = [
-        CodexCliSource(profile_id=profile),
-        QwenCliSource(profile_id=profile),
+        CodexCliSource(account_id=account),
+        QwenCliSource(account_id=account),
         GhCliSource(),
     ]
     for provider, env_var in PROVIDER_ENV_VARS.items():
         sources.append(
-            EnvApiKeySource(provider_id=provider, env_var=env_var, profile_id=profile),
+            EnvApiKeySource(provider_id=provider, env_var=env_var, account_id=account),
         )
 
     events: list[dict[str, Any]] = []
@@ -964,7 +964,7 @@ def run_adopt_all(profile: str) -> dict[str, Any]:
     errored = 0
     for src in sources:
         try:
-            creds = src.try_import(profile_obj.root)
+            creds = src.try_import(account_obj.root)
         except Exception as e:
             events.append({
                 "level": "error",
@@ -974,8 +974,8 @@ def run_adopt_all(profile: str) -> dict[str, Any]:
             errored += 1
             continue
         for cred in creds:
-            cred.profile_id = profile
-            existing = store.find_pool(cred.provider_id, cred.profile_id)
+            cred.account_id = account
+            existing = store.find_pool(cred.provider_id, cred.account_id)
             if existing is not None and any(
                 c.source == cred.source for c in existing.credentials
             ):
@@ -1004,11 +1004,11 @@ def run_adopt_all(profile: str) -> dict[str, Any]:
         "skipped": skipped,
         "errored": errored,
         "events": events,
-        "profile": profile,
+        "account": account,
     }
 
 
-def _source_by_id(source_id: str, profile: str):
+def _source_by_id(source_id: str, account: str):
     from openprogram.auth.sources import (
         CodexCliSource,
         EnvApiKeySource,
@@ -1018,9 +1018,9 @@ def _source_by_id(source_id: str, profile: str):
     from openprogram.providers.env_api_keys import PROVIDER_ENV_VARS
 
     if source_id == "codex_cli":
-        return CodexCliSource(profile_id=profile)
+        return CodexCliSource(account_id=account)
     if source_id == "qwen_cli":
-        return QwenCliSource(profile_id=profile)
+        return QwenCliSource(account_id=account)
     if source_id == "gh_cli":
         return GhCliSource()
     if source_id.startswith("env:"):
@@ -1030,7 +1030,7 @@ def _source_by_id(source_id: str, profile: str):
         )
         if provider is None:
             return None
-        return EnvApiKeySource(provider_id=provider, env_var=env_var, profile_id=profile)
+        return EnvApiKeySource(provider_id=provider, env_var=env_var, account_id=account)
     return None
 
 
@@ -1038,16 +1038,16 @@ def _source_by_id(source_id: str, profile: str):
 # logout
 # ---------------------------------------------------------------------------
 
-def _cmd_logout(provider: str, profile: str, *, skip_confirm: bool) -> int:
+def _cmd_logout(provider: str, account: str, *, skip_confirm: bool) -> int:
     store = get_store()
-    pool = store.find_pool(provider, profile)
+    pool = store.find_pool(provider, account)
     if pool is None or not pool.credentials:
-        print(f"No credentials for {provider}/{profile} — nothing to remove.")
+        print(f"No credentials for {provider}/{account} — nothing to remove.")
         return 0
 
     if not skip_confirm:
         print(f"About to remove {len(pool.credentials)} credential(s) for "
-              f"{provider}/{profile}:")
+              f"{provider}/{account}:")
         for c in pool.credentials:
             print(f"  - {c.credential_id} ({_payload_summary(c)})")
         confirm = input("Proceed? [y/N]: ").strip().lower()
@@ -1056,9 +1056,9 @@ def _cmd_logout(provider: str, profile: str, *, skip_confirm: bool) -> int:
             return 0
 
     removed_steps = _collect_removal_steps(pool)
-    store.delete_pool(provider, profile)
+    store.delete_pool(provider, account)
     print(f"✓ Removed {len(pool.credentials)} credential(s) from "
-          f"{store.root}/{provider}/{profile}.json")
+          f"{store.root}/{provider}/{account}.json")
 
     non_exec = [s for s in removed_steps if not s.executable]
     if non_exec:
@@ -1074,7 +1074,7 @@ def _collect_removal_steps(pool: CredentialPool) -> list[RemovalStep]:
     the user reads through them regardless."""
     steps: list[RemovalStep] = []
     for cred in pool.credentials:
-        src = _source_by_id(cred.source, cred.profile_id) if cred.source else None
+        src = _source_by_id(cred.source, cred.account_id) if cred.source else None
         if src is not None and hasattr(src, "removal_steps"):
             try:
                 steps.extend(src.removal_steps(cred))
@@ -1087,22 +1087,22 @@ def _collect_removal_steps(pool: CredentialPool) -> list[RemovalStep]:
 # status
 # ---------------------------------------------------------------------------
 
-def _cmd_status(provider: str, profile: str) -> int:
-    manager = get_manager()
-    with auth_scope(profile_id=profile):
+def _cmd_status(provider: str, account: str) -> int:
+    manager = get_credential_provider()
+    with auth_scope(account_id=account):
         try:
-            cred = manager.acquire_sync(provider, profile)
+            cred = manager.acquire_sync(provider, account)
         except AuthConfigError as e:
-            print(f"No credential configured for {provider}/{profile}.")
+            print(f"No credential configured for {provider}/{account}.")
             print(f"  → {e}")
-            print(f"Try: openprogram providers login {provider} --profile {profile}")
+            print(f"Try: openprogram providers login {provider} --account {account}")
             return 1
         except AuthError as e:
             print(f"Credential exists but is not usable: {e}")
             return 1
 
     print(f"Provider: {provider}")
-    print(f"Profile:  {profile}")
+    print(f"Account:  {account}")
     print(f"Kind:     {cred.kind}")
     print(f"Status:   {cred.status}")
     print(f"Preview:  {_payload_summary(cred)}")
@@ -1114,44 +1114,44 @@ def _cmd_status(provider: str, profile: str) -> int:
 
 
 # ---------------------------------------------------------------------------
-# profile CRUD
+# account CRUD
 # ---------------------------------------------------------------------------
 
-def _cmd_profile_list() -> int:
-    pm = get_profile_manager()
-    profiles = pm.list_profiles()
+def _cmd_account_list() -> int:
+    pm = get_account_manager()
+    accounts = pm.list_accounts()
     print(f"{'name':16s}  {'display name':24s}  root")
-    for p in profiles:
+    for p in accounts:
         print(f"{p.name:16s}  {p.display_name or '-':24s}  {p.root}")
     return 0
 
 
-def _cmd_profile_create(name: str, display_name: str, description: str) -> int:
-    pm = get_profile_manager()
+def _cmd_account_create(name: str, display_name: str, description: str) -> int:
+    pm = get_account_manager()
     try:
-        profile = pm.create_profile(
+        account = pm.create_account(
             name, display_name=display_name, description=description,
         )
     except AuthConfigError as e:
-        print(f"Failed to create profile: {e}", file=sys.stderr)
+        print(f"Failed to create account: {e}", file=sys.stderr)
         return 1
-    print(f"✓ Created profile {profile.name} at {profile.root}")
+    print(f"✓ Created account {account.name} at {account.root}")
     return 0
 
 
-def _cmd_profile_delete(name: str, skip_confirm: bool) -> int:
-    pm = get_profile_manager()
+def _cmd_account_delete(name: str, skip_confirm: bool) -> int:
+    pm = get_account_manager()
     if not skip_confirm:
-        confirm = input(f"Delete profile {name!r} and all its credentials? [y/N]: ").strip().lower()
+        confirm = input(f"Delete account {name!r} and all its credentials? [y/N]: ").strip().lower()
         if confirm not in ("y", "yes"):
             print("Aborted.")
             return 0
     try:
-        pm.delete_profile(name)
+        pm.delete_account(name)
     except AuthConfigError as e:
-        print(f"Failed to delete profile: {e}", file=sys.stderr)
+        print(f"Failed to delete account: {e}", file=sys.stderr)
         return 1
-    print(f"✓ Deleted profile {name}")
+    print(f"✓ Deleted account {name}")
     return 0
 
 
@@ -1202,7 +1202,7 @@ def _cmd_doctor(as_json: bool) -> int:
     else:
         _print_doctor_report(
             report["pools_checked"],
-            report["profiles_checked"],
+            report["accounts_checked"],
             findings,
         )
 
@@ -1212,21 +1212,21 @@ def _cmd_doctor(as_json: bool) -> int:
 
 def run_doctor() -> dict[str, Any]:
     """Pure analysis — no printing, no process exit. Returns a dict with
-    ``pools_checked``, ``profiles_checked``, ``findings``.
+    ``pools_checked``, ``accounts_checked``, ``findings``.
 
     Checks (a superset of OpenClaw's ``doctor-auth`` list adapted for
     our store layout): expired OAuth, refresh availability, cooldown
-    state, pool exhaustion, orphaned profile references, empty profiles,
+    state, pool exhaustion, orphaned account references, empty accounts,
     duplicate credential ids, imported creds whose source file is gone.
 
     Used by the CLI ``doctor`` verb and the ``POST /api/providers/doctor``
     REST route. Extracting this makes both share one source of truth.
     """
-    from .manager import get_provider_config
+    from .credential_provider import get_provider_config
 
     store = get_store()
-    pm = get_profile_manager()
-    profiles = {p.name: p for p in pm.list_profiles()}
+    pm = get_account_manager()
+    accounts = {p.name: p for p in pm.list_accounts()}
     pools = store.list_pools()
 
     findings: list[dict[str, Any]] = []
@@ -1238,22 +1238,22 @@ def run_doctor() -> dict[str, Any]:
         add("WARN", "no_pools",
             "No credential pools configured. Run `openprogram providers setup`.")
 
-    # Profiles referenced by pools but not registered with ProfileManager.
-    pool_profile_ids = {p.profile_id for p in pools}
-    orphaned_profile_refs = pool_profile_ids - set(profiles.keys())
-    for pid in sorted(orphaned_profile_refs):
+    # Accounts referenced by pools but not registered with AccountManager.
+    pool_account_ids = {p.account_id for p in pools}
+    orphaned_account_refs = pool_account_ids - set(accounts.keys())
+    for pid in sorted(orphaned_account_refs):
         add("ERROR", "orphan_profile_ref",
-            f"Pool references profile {pid!r} which no longer exists.",
-            profile=pid)
+            f"Pool references account {pid!r} which no longer exists.",
+            account=pid)
 
-    # Profiles that exist but nobody's logged into.
-    empty_profiles = sorted(set(profiles.keys()) - pool_profile_ids)
-    for pid in empty_profiles:
-        if pid == DEFAULT_PROFILE_NAME:
+    # Accounts that exist but nobody's logged into.
+    empty_accounts = sorted(set(accounts.keys()) - pool_account_ids)
+    for pid in empty_accounts:
+        if pid == DEFAULT_ACCOUNT_NAME:
             continue  # default is expected to start empty
         add("INFO", "empty_profile",
-            f"Profile {pid!r} has no credentials yet.",
-            profile=pid)
+            f"Account {pid!r} has no credentials yet.",
+            account=pid)
 
     now_ms = int(time.time() * 1000)
 
@@ -1268,9 +1268,9 @@ def run_doctor() -> dict[str, Any]:
         for cid, n in seen.items():
             if n > 1:
                 add("ERROR", "duplicate_credential_id",
-                    f"Pool {pool.provider_id}/{pool.profile_id} has "
+                    f"Pool {pool.provider_id}/{pool.account_id} has "
                     f"{n} credentials with id {cid!r}.",
-                    provider=pool.provider_id, profile=pool.profile_id)
+                    provider=pool.provider_id, account=pool.account_id)
 
         usable = 0
         for c in pool.credentials:
@@ -1283,10 +1283,10 @@ def run_doctor() -> dict[str, Any]:
                 from pathlib import Path as _P
                 if not _P(src_path).exists():
                     add("WARN", "missing_source_file",
-                        f"{pool.provider_id}/{pool.profile_id} was imported "
+                        f"{pool.provider_id}/{pool.account_id} was imported "
                         f"from {src_path} which no longer exists. "
                         "Consider re-running login if the external CLI logged out.",
-                        provider=pool.provider_id, profile=pool.profile_id,
+                        provider=pool.provider_id, account=pool.account_id,
                         credential_id=c.credential_id,
                         source_path=src_path)
 
@@ -1294,10 +1294,10 @@ def run_doctor() -> dict[str, Any]:
             cooldown_until = getattr(c, "cooldown_until_ms", 0) or 0
             if cooldown_until and cooldown_until > now_ms:
                 add("WARN", "cooling_down",
-                    f"{pool.provider_id}/{pool.profile_id} credential "
+                    f"{pool.provider_id}/{pool.account_id} credential "
                     f"{c.credential_id} cooling down for "
                     f"{_fmt_duration(cooldown_until - now_ms)}.",
-                    provider=pool.provider_id, profile=pool.profile_id,
+                    provider=pool.provider_id, account=pool.account_id,
                     credential_id=c.credential_id)
                 continue
 
@@ -1310,20 +1310,20 @@ def run_doctor() -> dict[str, Any]:
                         # as WARN because next call will either refresh
                         # or raise AuthReadOnlyError clearly.
                         add("WARN", "expired_token",
-                            f"{pool.provider_id}/{pool.profile_id} access "
+                            f"{pool.provider_id}/{pool.account_id} access "
                             "token expired; will refresh on next use."
                             + (" (read-only — external CLI)" if c.read_only else ""),
                             provider=pool.provider_id,
-                            profile=pool.profile_id,
+                            account=pool.account_id,
                             credential_id=c.credential_id)
                         usable += 1  # refresh path makes it usable
                     else:
                         add("ERROR", "expired_no_refresh",
-                            f"{pool.provider_id}/{pool.profile_id} access "
+                            f"{pool.provider_id}/{pool.account_id} access "
                             "token expired and no refresh configured. "
                             f"Run `openprogram providers login {pool.provider_id}`.",
                             provider=pool.provider_id,
-                            profile=pool.profile_id,
+                            account=pool.account_id,
                             credential_id=c.credential_id)
                         continue
                 else:
@@ -1344,23 +1344,23 @@ def run_doctor() -> dict[str, Any]:
                     "refresh callback registered — will need manual re-login "
                     "after expiry.",
                     provider=pool.provider_id,
-                    profile=pool.profile_id)
+                    account=pool.account_id)
 
         if usable == 0 and pool.credentials:
             add("ERROR", "pool_exhausted",
-                f"{pool.provider_id}/{pool.profile_id} has "
+                f"{pool.provider_id}/{pool.account_id} has "
                 f"{len(pool.credentials)} credential(s) but none are usable.",
-                provider=pool.provider_id, profile=pool.profile_id)
+                provider=pool.provider_id, account=pool.account_id)
 
     return {
         "pools_checked": len(pools),
-        "profiles_checked": len(profiles),
+        "accounts_checked": len(accounts),
         "findings": findings,
     }
 
 
-def _print_doctor_report(pools_count: int, profiles_count: int, findings) -> None:
-    print(f"Checked {pools_count} pool(s) across {profiles_count} profile(s).\n")
+def _print_doctor_report(pools_count: int, accounts_count: int, findings) -> None:
+    print(f"Checked {pools_count} pool(s) across {accounts_count} account(s).\n")
     if not findings:
         print("✓ All checks passed.")
         return
@@ -1409,8 +1409,8 @@ def _run_setup() -> int:
     )
 
     store = get_store()
-    pm = get_profile_manager()
-    default = pm.get_profile(DEFAULT_PROFILE_NAME)
+    pm = get_account_manager()
+    default = pm.get_account(DEFAULT_ACCOUNT_NAME)
 
     print("═" * 60)
     print("  OpenProgram — provider setup")
@@ -1471,7 +1471,7 @@ def _run_setup() -> int:
                 # Dedup by source label — credential_id is freshly
                 # minted every try_import, so id-equality never matches
                 # and we used to create duplicates on every wizard run.
-                existing = store.find_pool(cred.provider_id, cred.profile_id)
+                existing = store.find_pool(cred.provider_id, cred.account_id)
                 if existing and any(
                     c.source == cred.source for c in existing.credentials
                 ):
@@ -1493,13 +1493,13 @@ def _run_setup() -> int:
         ("openai",       "OpenAI (raw API key)"),
     ]
     for prov_id, label in popular:
-        if store.find_pool(prov_id, DEFAULT_PROFILE_NAME) is not None:
+        if store.find_pool(prov_id, DEFAULT_ACCOUNT_NAME) is not None:
             continue
         pick = _confirm(f"  Log into {label} now?", default=False)
         if not pick:
             continue
         try:
-            rc = _cmd_login(prov_id, DEFAULT_PROFILE_NAME, method=None)
+            rc = _cmd_login(prov_id, DEFAULT_ACCOUNT_NAME, method=None)
             if rc != 0:
                 print(f"    (skipped — {prov_id} login exited {rc})")
         except (KeyboardInterrupt, EOFError):

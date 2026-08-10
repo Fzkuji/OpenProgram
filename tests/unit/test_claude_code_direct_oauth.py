@@ -74,7 +74,7 @@ def test_resolver_reads_cli_delegated_token(tmp_path):
 
     cred = Credential(
         provider_id="anthropic",
-        profile_id="default",
+        account_id="default",
         kind="cli_delegated",
         payload=CredentialData(
             kind="cli_delegated",
@@ -95,7 +95,7 @@ def test_resolver_cli_delegated_missing_file_is_none(tmp_path):
 
     cred = Credential(
         provider_id="anthropic",
-        profile_id="default",
+        account_id="default",
         kind="cli_delegated",
         payload=CredentialData(
             kind="cli_delegated",

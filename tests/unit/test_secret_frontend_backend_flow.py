@@ -97,11 +97,11 @@ def secret_flow(tmp_path, monkeypatch):
     store.put_pool(
         CredentialPool(
             provider_id="openai",
-            profile_id="work",
+            account_id="work",
             credentials=[
                 Credential(
                     provider_id="openai",
-                    profile_id="work",
+                    account_id="work",
                     kind="api_key",
                     payload=CredentialData(
                         kind="api_key", auth_value=_STORED_SECRET

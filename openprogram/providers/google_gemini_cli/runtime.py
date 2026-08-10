@@ -8,7 +8,7 @@ subprocess, no argv juggling, no stdout JSON parsing.
 
 Mirrors :class:`openprogram.providers.openai_codex.runtime.OpenAICodexRuntime`:
 
-- AuthManager-first credential acquisition with one-shot import from
+- CredentialProvider-first credential acquisition with one-shot import from
   ``~/.gemini/oauth_creds.json`` if no pool exists yet
 - model id resolved via the ``gemini-subscription/<id>`` registry entries
   already populated in ``providers/enabled_models.py``
@@ -25,8 +25,8 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.auth.context import get_active_profile_id
-from openprogram.auth.manager import AuthManager, get_manager
+from openprogram.auth.context import get_active_account_id
+from openprogram.auth.credential_provider import CredentialProvider, get_credential_provider
 from openprogram.auth.types import (
     AuthConfigError,
     Credential,
@@ -45,34 +45,34 @@ _KNOWN_GEMINI_MODELS = [
 ]
 
 
-def _ensure_credential(manager: AuthManager, profile_id: str) -> Credential:
+def _ensure_credential(manager: CredentialProvider, account_id: str) -> Credential:
     """Resolve a Gemini CLI credential, importing the CLI's OAuth file on miss."""
     try:
-        return manager.acquire_sync(auth_adapter.PROVIDER_ID, profile_id)
+        return manager.acquire_sync(auth_adapter.PROVIDER_ID, account_id)
     except AuthConfigError:
         pass
 
-    imported = auth_adapter.import_from_gemini_cli(profile_id=profile_id)
+    imported = auth_adapter.import_from_gemini_cli(account_id=account_id)
     if imported is None:
         raise AuthConfigError(
             f"{auth_adapter.gemini_cli_credentials_path()} not found or unusable. "
             "Run: gemini auth login",
             provider_id=auth_adapter.PROVIDER_ID,
-            profile_id=profile_id,
+            account_id=account_id,
         )
     manager.store.put_pool(CredentialPool(
         provider_id=auth_adapter.PROVIDER_ID,
-        profile_id=profile_id,
+        account_id=account_id,
         credentials=[imported],
     ))
-    return manager.acquire_sync(auth_adapter.PROVIDER_ID, profile_id)
+    return manager.acquire_sync(auth_adapter.PROVIDER_ID, account_id)
 
 
 def _access_token_for(cred: Credential) -> str:
     """Pull the current access token out of whatever payload shape was returned.
 
     The credential can be either its own ``oauth`` kind (after
-    AuthManager refreshed it) or a ``cli_delegated`` kind that still
+    CredentialProvider refreshed it) or a ``cli_delegated`` kind that still
     points at the on-disk JSON. Both carry an access token; the store
     path just differs.
     """
@@ -91,7 +91,7 @@ def _access_token_for(cred: Credential) -> str:
         f"gemini-subscription credential payload kind {payload.kind!r} "
         "has no access token path this runtime understands.",
         provider_id=auth_adapter.PROVIDER_ID,
-        profile_id=cred.profile_id,
+        account_id=cred.account_id,
     )
 
 
@@ -118,19 +118,19 @@ class GeminiCLIRuntime(Runtime):
         profile: Optional[str] = None,
         **_ignored: Any,
     ) -> None:
-        self._manager = get_manager()
-        self._profile_id = profile or get_active_profile_id()
+        self._manager = get_credential_provider()
+        self._account_id = profile or get_active_account_id()
         self._cached_access_token: str = ""
 
-        cred = _ensure_credential(self._manager, self._profile_id)
+        cred = _ensure_credential(self._manager, self._account_id)
         if cred.kind not in ("oauth", "cli_delegated"):
             raise AuthConfigError(
-                f"gemini-subscription/{self._profile_id} credential is "
+                f"gemini-subscription/{self._account_id} credential is "
                 f"{cred.kind!r}, but this runtime needs OAuth (Cloud Code "
                 "Assist backend). Run `gemini auth login` to populate "
                 "~/.gemini/oauth_creds.json, then retry.",
                 provider_id=auth_adapter.PROVIDER_ID,
-                profile_id=self._profile_id,
+                account_id=self._account_id,
             )
         access = _access_token_for(cred)
         self._cached_access_token = access
@@ -142,10 +142,10 @@ class GeminiCLIRuntime(Runtime):
         return list(_KNOWN_GEMINI_MODELS)
 
     def exec(self, *args: Any, **kwargs: Any) -> Any:
-        # Re-acquire on every call — AuthManager refreshes internally if
+        # Re-acquire on every call — CredentialProvider refreshes internally if
         # the access token is close to expiry, dedup'ing concurrent
         # refreshes. Cheap when nothing rotated.
-        cred = self._manager.acquire_sync(auth_adapter.PROVIDER_ID, self._profile_id)
+        cred = self._manager.acquire_sync(auth_adapter.PROVIDER_ID, self._account_id)
         access = _access_token_for(cred)
         if access != self._cached_access_token:
             self.api_key = access
