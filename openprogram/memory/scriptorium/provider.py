@@ -89,8 +89,8 @@ class ScriptoriumMemoryProvider(MemoryProvider):
     ) -> WriteIncomplete | None:
         """Fold the conversation into memory once there is enough of it.
 
-        Per turn, ``force`` False: cheap in the common case — a cursor
-        lookup and a token count, no model call — and it writes only
+        Per turn, ``force`` False: cheap in the common case — a node-marker
+        scan and a token count, no model call — and it writes only
         when the session has crossed the threshold. At a session
         boundary, ``force`` True: there is no later batch to join, so
         the remainder is written however little of it there is.

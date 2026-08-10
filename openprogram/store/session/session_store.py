@@ -962,19 +962,9 @@ class SessionStore:
         for m in msgs:
             self.append_message(session_id, m)
 
-    def merge_node_metadata(
-        self, session_id: str, node_id: str, patch: dict[str, Any],
-    ) -> None:
-        """Merge metadata into one persisted node without touching session meta."""
-        pair = self._open(session_id)
-        if pair is None:
-            return
-        git, idx = pair
-        node = idx.nodes_by_id.get(node_id)
-        if node is None:
-            return
-        current = node.metadata if isinstance(node.metadata, dict) else {}
-        node.metadata = {**current, **patch}
+    @staticmethod
+    def _rewrite_history_node(git: GitSession, node: Call) -> None:
+        """Atomically replace one existing history node without syncing it."""
         role_letter = (node.role or "x")[0]
         path = git.path / "history" / (
             f"{node.seq:04d}-{role_letter}-{node.id}.json"
@@ -984,6 +974,51 @@ class SessionStore:
                 path,
                 json.dumps(node.to_dict(), ensure_ascii=False, default=str),
             )
+
+    def update_node(
+        self, session_id: str, node_id: str, **fields: Any,
+    ) -> None:
+        """Update one current node and rewrite its history file once."""
+        pair = self._open(session_id)
+        if pair is None:
+            return
+        git, idx = pair
+        node = idx.nodes_by_id.get(node_id)
+        if node is None:
+            return
+        metadata = fields.pop("metadata", {})
+        for key, value in fields.items():
+            setattr(node, key, value)
+        if "output" in fields:
+            self.spill_large_node(session_id, node)
+        if isinstance(metadata, dict):
+            current = node.metadata if isinstance(node.metadata, dict) else {}
+            node.metadata = {**current, **metadata}
+        self._rewrite_history_node(git, node)
+
+    def merge_node_metadata_batch(
+        self,
+        session_id: str,
+        patches: dict[str, dict[str, Any]],
+    ) -> None:
+        """Merge one session's node metadata with one index open."""
+        pair = self._open(session_id)
+        if pair is None:
+            return
+        git, idx = pair
+        for node_id, patch in patches.items():
+            node = idx.nodes_by_id.get(node_id)
+            if node is None:
+                continue
+            current = node.metadata if isinstance(node.metadata, dict) else {}
+            node.metadata = {**current, **patch}
+            self._rewrite_history_node(git, node)
+
+    def merge_node_metadata(
+        self, session_id: str, node_id: str, patch: dict[str, Any],
+    ) -> None:
+        """Merge metadata into one persisted node without touching session meta."""
+        self.merge_node_metadata_batch(session_id, {node_id: patch})
 
     def get_messages(self, session_id: str, *, limit: Optional[int] = None) -> list[dict[str, Any]]:
         pair = self._open(session_id)

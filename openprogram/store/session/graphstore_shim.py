@@ -117,23 +117,4 @@ class GraphStoreShim:
         (rewritten in place — the file is named by seq+role+id, which
         stays the same).
         """
-        pair = self.store._open(self.session_id)
-        if not pair:
-            return
-        _git, idx = pair
-        node = idx.nodes_by_id.get(node_id)
-        if node is None:
-            return
-        metadata = fields.pop("metadata", {})
-        for k, v in fields.items():
-            setattr(node, k, v)
-        # An llm/code node's real output arrives here, not at append —
-        # spill on the way in so rendering never has to write.
-        if "output" in fields:
-            self.store.spill_large_node(self.session_id, node)
-        # The shared primitive performs the single atomic history rewrite.
-        self.store.merge_node_metadata(
-            self.session_id,
-            node_id,
-            metadata if isinstance(metadata, dict) else {},
-        )
+        self.store.update_node(self.session_id, node_id, **fields)

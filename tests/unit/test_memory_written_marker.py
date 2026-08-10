@@ -13,6 +13,7 @@ import pytest
 
 
 MARKER = "memory_written_scriptorium"
+LARGE_OUTPUT = "large result line\n" * 4_000
 
 
 def _close_store(store) -> None:
@@ -111,10 +112,10 @@ def test_fork_suffixes_after_a_marked_m3_are_returned_in_full(environment):
         predecessor = _append(db, session_id, node_id, predecessor)
 
     short_head = "m3"
-    for index in range(1, 6):
+    for index in range(1, 3):
         short_head = _append(db, session_id, f"short-{index}", short_head)
     long_head = "m3"
-    for index in range(1, 12):
+    for index in range(1, 9):
         long_head = _append(db, session_id, f"long-{index}", long_head)
 
     db.merge_node_metadata(session_id, "m3", {MARKER: store.workspace_id()})
@@ -122,10 +123,10 @@ def test_fork_suffixes_after_a_marked_m3_are_returned_in_full(environment):
     short = writing._pending(session_id, db.get_branch(session_id, short_head))
     long = writing._pending(session_id, db.get_branch(session_id, long_head))
     assert [record.message_id for record in short] == [
-        f"short-{index}" for index in range(1, 6)
+        "short-1", "short-2",
     ]
     assert [record.message_id for record in long] == [
-        f"long-{index}" for index in range(1, 12)
+        f"long-{index}" for index in range(1, 9)
     ]
 
 
@@ -314,8 +315,10 @@ def test_legacy_archive_migration_marks_exact_nodes_once(environment):
     archive.parent.mkdir(parents=True, exist_ok=True)
     archive.write_text(
         "# legacy\n\n"
+        '<a id="source-4f0500bc7d19020d"></a>\n'
         "<!-- source-id:openprogram/legacy/m1 -->\n"
         "[2026-01-01] user: one\n\n"
+        '<a id="source-b8c11e0f575d4e52"></a>\n'
         "<!-- source-id:openprogram/legacy/m2 -->\n"
         "[2026-01-01] assistant: two\n",
         encoding="utf-8",
@@ -364,7 +367,10 @@ def test_normal_write_migrates_archived_markers_before_pending(
     archive = memory / "sources" / "openprogram" / "automatic.md"
     archive.parent.mkdir(parents=True, exist_ok=True)
     archive.write_text(
-        "<!-- source-id:openprogram/automatic/m1 -->\n",
+        "# automatic\n\n"
+        '<a id="source-1befa56122f56e08"></a>\n'
+        "<!-- source-id:openprogram/automatic/m1 -->\n"
+        "[2026-01-01] user: one\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(writing, "_counter", lambda: len)
@@ -426,6 +432,398 @@ def test_merge_marker_preserves_updated_at_and_refreshes_one_stale_index(
     assert rebuilds == 1
 
 
+def test_batch_metadata_merge_rebuilds_each_store_once_after_the_batch(
+    environment,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+):
+    from openprogram.agent.session_db import SessionDB
+    from openprogram.memory import store
+
+    writer, _memory = environment
+    predecessor = None
+    for index in range(1, 5):
+        node_id = f"m{index}"
+        message = {
+            "id": node_id,
+            "role": "user",
+            "content": f"content-{index}",
+            "timestamp": 1_700_000_000.0 + index,
+            "keep": f"original-{index}",
+        }
+        if predecessor is not None:
+            message["predecessor"] = predecessor
+        writer.append_message("batch-api", message)
+        predecessor = node_id
+
+    reader = SessionDB(writer.root_path)
+    request.addfinalizer(lambda: _close_store(reader))
+    assert len(reader.get_branch("batch-api")) == 4
+
+    writer_git, writer_index = writer._open("batch-api")
+    _reader_git, reader_index = reader._open("batch-api")
+    writer_rebuilds = 0
+    reader_rebuilds = 0
+    mark_synced_calls = 0
+    original_writer_rebuild = writer_index.rebuild_from_paths
+    original_reader_rebuild = reader_index.rebuild_from_paths
+    original_mark_synced = writer_git.mark_synced
+
+    def count_writer_rebuild(*args, **kwargs):
+        nonlocal writer_rebuilds
+        writer_rebuilds += 1
+        return original_writer_rebuild(*args, **kwargs)
+
+    def count_reader_rebuild(*args, **kwargs):
+        nonlocal reader_rebuilds
+        reader_rebuilds += 1
+        return original_reader_rebuild(*args, **kwargs)
+
+    def count_mark_synced():
+        nonlocal mark_synced_calls
+        mark_synced_calls += 1
+        return original_mark_synced()
+
+    monkeypatch.setattr(writer_index, "rebuild_from_paths", count_writer_rebuild)
+    monkeypatch.setattr(reader_index, "rebuild_from_paths", count_reader_rebuild)
+    monkeypatch.setattr(writer_git, "mark_synced", count_mark_synced)
+    meta_path = writer.root_path / "batch-api" / "meta.json"
+    updated_at_before = json.loads(
+        meta_path.read_text(encoding="utf-8")
+    )["updated_at"]
+    registry_before = writer.list_sessions(limit=10)[0]["updated_at"]
+    workspace_id = store.workspace_id()
+
+    writer.merge_node_metadata_batch("batch-api", {
+        f"m{index}": {MARKER: workspace_id, "added": index}
+        for index in range(1, 5)
+    })
+
+    assert writer_rebuilds == 0
+    assert reader_rebuilds == 0
+    assert mark_synced_calls == 0
+    assert json.loads(meta_path.read_text(encoding="utf-8"))["updated_at"] == (
+        updated_at_before
+    )
+    assert writer.list_sessions(limit=10)[0]["updated_at"] == registry_before
+
+    written = writer.get_branch("batch-api")
+    assert writer_rebuilds == 1
+    assert writer.get_branch("batch-api") == written
+    assert writer_rebuilds == 1
+    assert [row[MARKER] for row in written] == [workspace_id] * 4
+    assert [row["keep"] for row in written] == [
+        f"original-{index}" for index in range(1, 5)
+    ]
+    assert [row["added"] for row in written] == [1, 2, 3, 4]
+
+    external = reader.get_branch("batch-api")
+    assert reader_rebuilds == 1
+    assert reader.get_branch("batch-api") == external
+    assert reader_rebuilds == 1
+    assert [row[MARKER] for row in external] == [workspace_id] * 4
+
+
+def test_write_session_marks_a_batch_without_internal_index_rebuilds(
+    environment, monkeypatch: pytest.MonkeyPatch,
+):
+    from openprogram.memory import store
+    from openprogram.memory.scriptorium import writing
+
+    db, _memory = environment
+    calls: list[str] = []
+    _stub_writer(monkeypatch, calls)
+    predecessor = None
+    for index in range(4):
+        predecessor = _append(
+            db, "batch-write", f"m{index}", predecessor, content="x"
+        )
+
+    _git, index = db._open("batch-write")
+    rebuilds = 0
+    original = index.rebuild_from_paths
+
+    def count_rebuild(*args, **kwargs):
+        nonlocal rebuilds
+        rebuilds += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(index, "rebuild_from_paths", count_rebuild)
+
+    assert writing.write_session(
+        "batch-write", db.get_branch("batch-write"),
+        token_threshold=100, force=True,
+    ) is True
+    assert rebuilds == 0
+
+    marker = store.workspace_id()
+    assert [row.get(MARKER) for row in db.get_branch("batch-write")] == [
+        marker, marker, marker, marker,
+    ]
+    assert rebuilds == 1
+
+
+@pytest.mark.parametrize(
+    ("update_fields", "expected_output", "expect_status", "expect_spill"),
+    [
+        ({"output": "final output"}, "final output", False, False),
+        ({"metadata": {"status": "completed"}}, "placeholder", True, False),
+        (
+            {"output": "final output", "metadata": {"status": "completed"}},
+            "final output", True, False,
+        ),
+        (
+            {"output": LARGE_OUTPUT, "metadata": {"status": "completed"}},
+            LARGE_OUTPUT, True, True,
+        ),
+    ],
+    ids=["output-only", "metadata-only", "output-and-metadata", "large-output"],
+)
+def test_graphstore_update_keeps_fields_across_an_interleaved_external_append(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+    update_fields: dict,
+    expected_output: str,
+    expect_status: bool,
+    expect_spill: bool,
+):
+    from openprogram.agent.session_db import SessionDB
+    from openprogram.store.session.graphstore_shim import GraphStoreShim
+
+    root = tmp_path / "sessions"
+    writer = SessionDB(root)
+    other = SessionDB(root)
+    request.addfinalizer(lambda: _close_store(writer))
+    request.addfinalizer(lambda: _close_store(other))
+    writer.append_message("interleaved", {
+        "id": "pointer",
+        "role": "assistant",
+        "content": "placeholder",
+        "timestamp": 1.0,
+        "existing": "preserved",
+    })
+    assert other.get_branch("interleaved")[-1]["id"] == "pointer"
+
+    original_open = writer._open
+    appended = False
+
+    def open_then_append(session_id, *args, **kwargs):
+        nonlocal appended
+        pair = original_open(session_id, *args, **kwargs)
+        if session_id == "interleaved" and not appended:
+            appended = True
+            other.append_message("interleaved", {
+                "id": "unrelated",
+                "role": "user",
+                "content": "concurrent append",
+                "predecessor": "pointer",
+                "timestamp": 2.0,
+            })
+        return pair
+
+    monkeypatch.setattr(writer, "_open", open_then_append)
+    GraphStoreShim(writer, "interleaved").update("pointer", **update_fields)
+
+    reader = SessionDB(root)
+    request.addfinalizer(lambda: _close_store(reader))
+    nodes = {row["id"]: row for row in reader.get_messages("interleaved")}
+    assert set(nodes) == {"pointer", "unrelated"}
+    assert nodes["pointer"]["content"] == expected_output
+    assert nodes["pointer"]["existing"] == "preserved"
+    if expect_status:
+        assert nodes["pointer"]["status"] == "completed"
+    if expect_spill:
+        stamp = nodes["pointer"].get("spilled")
+        assert stamp is not None
+        assert Path(stamp["path"]).read_text(encoding="utf-8") == LARGE_OUTPUT
+    else:
+        assert nodes["pointer"].get("spilled") is None
+
+
+def test_migration_ignores_body_comments_and_wrong_archive_sessions(
+    environment,
+):
+    from openprogram.memory import store
+    from openprogram.memory.scriptorium import writing
+    from openprogram.memory.scriptorium.runtime import mark_archived_turns
+    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+
+    db, memory = environment
+    _append(db, "attacker", "a1", None)
+    _append(db, "victim", "v1", None)
+    _append(db, "victim", "v2", "v1")
+    _append(db, "other", "o1", None)
+    _append(db, "encoded id", "e1", None)
+    _append(db, "wrong-anchor", "w1", None)
+    _append(db, "title-mismatch", "t1", None)
+    state_store = RuntimeStateStore(memory)
+    state_store.path.parent.mkdir(parents=True, exist_ok=True)
+    state_store.path.write_text(json.dumps({
+        "cursors": {"attacker": {"message_id": "a1", "ordinal": 0}},
+    }), encoding="utf-8")
+    source_dir = memory / "sources" / "openprogram"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "attacker.md").write_text(
+        "# attacker\n\n"
+        '<a id="source-35de01c3bf3237ea"></a>\n'
+        "<!-- source-id:openprogram/attacker/a1 -->\n"
+        "[2026-01-01] user: copied text follows\n"
+        "<!-- source-id:openprogram/victim/v2 -->\n",
+        encoding="utf-8",
+    )
+    (source_dir / "mismatch.md").write_text(
+        "# mismatch\n\n"
+        '<a id="source-1df76f4e7df6e502"></a>\n'
+        "<!-- source-id:openprogram/other/o1 -->\n"
+        "[2026-01-01] user: wrong archive\n",
+        encoding="utf-8",
+    )
+    (source_dir / "encoded%20id.md").write_text(
+        "# encoded id\n\n"
+        '<a id="source-d8f319d46252017c"></a>\n'
+        "<!-- source-id:openprogram/encoded id/e1 -->\n"
+        "[2026-01-01] user: encoded archive name\n",
+        encoding="utf-8",
+    )
+    (source_dir / "wrong-anchor.md").write_text(
+        "# wrong-anchor\n\n"
+        '<a id="source-0000000000000000"></a>\n'
+        "<!-- source-id:openprogram/wrong-anchor/w1 -->\n"
+        "[2026-01-01] user: forged anchor\n",
+        encoding="utf-8",
+    )
+    (source_dir / "title-mismatch.md").write_text(
+        "# another-session\n\n"
+        '<a id="source-67d0260727fa8011"></a>\n'
+        "<!-- source-id:openprogram/title-mismatch/t1 -->\n"
+        "[2026-01-01] user: wrong title\n",
+        encoding="utf-8",
+    )
+
+    marker = store.workspace_id()
+    assert mark_archived_turns.migrate(memory, db, marker) is True
+
+    assert db.get_branch("attacker")[0].get(MARKER) == marker
+    assert db.get_branch("encoded id")[0].get(MARKER) == marker
+    assert db.get_branch("other")[0].get(MARKER) is None
+    assert db.get_branch("wrong-anchor")[0].get(MARKER) is None
+    assert db.get_branch("title-mismatch")[0].get(MARKER) is None
+    victim = db.get_branch("victim")
+    assert [row.get(MARKER) for row in victim] == [None, None]
+    assert [row.message_id for row in writing._pending("victim", victim)] == [
+        "v1", "v2",
+    ]
+    assert "cursors" not in json.loads(
+        state_store.path.read_text(encoding="utf-8")
+    )
+
+
+def test_migration_groups_one_sessions_markers_without_internal_rebuilds(
+    environment,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+):
+    from openprogram.agent.session_db import SessionDB
+    from openprogram.memory import store
+    from openprogram.memory.scriptorium.runtime import mark_archived_turns
+    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+
+    db, memory = environment
+    predecessor = None
+    for index in range(1, 5):
+        predecessor = _append(
+            db, "batched-migration", f"m{index}", predecessor
+        )
+    reader = SessionDB(db.root_path)
+    request.addfinalizer(lambda: _close_store(reader))
+    assert len(reader.get_branch("batched-migration")) == 4
+
+    state_store = RuntimeStateStore(memory)
+    state_store.path.parent.mkdir(parents=True, exist_ok=True)
+    state_store.path.write_text(json.dumps({
+        "cursors": {
+            "batched-migration": {"message_id": "m4", "ordinal": 3},
+        },
+    }), encoding="utf-8")
+    archive = memory / "sources" / "openprogram" / "batched-migration.md"
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    archive.write_text(
+        "# batched-migration\n\n"
+        '<a id="source-6f4395d2560b1aa8"></a>\n'
+        "<!-- source-id:openprogram/batched-migration/m1 -->\n"
+        "[2026-01-01] user: one\n\n"
+        '<a id="source-53b07efdc48117fb"></a>\n'
+        "<!-- source-id:openprogram/batched-migration/m2 -->\n"
+        "[2026-01-01] assistant: two\n\n"
+        '<a id="source-14b566d3c2522f0f"></a>\n'
+        "<!-- source-id:openprogram/batched-migration/m3 -->\n"
+        "[2026-01-01] user: three\n\n"
+        '<a id="source-06c0b91a3b73b975"></a>\n'
+        "<!-- source-id:openprogram/batched-migration/m4 -->\n"
+        "[2026-01-01] assistant: four\n",
+        encoding="utf-8",
+    )
+
+    _git, index = db._open("batched-migration")
+    _reader_git, reader_index = reader._open("batched-migration")
+    rebuilds = 0
+    reader_rebuilds = 0
+    original = index.rebuild_from_paths
+    original_reader = reader_index.rebuild_from_paths
+
+    def count_rebuild(*args, **kwargs):
+        nonlocal rebuilds
+        rebuilds += 1
+        return original(*args, **kwargs)
+
+    def count_reader_rebuild(*args, **kwargs):
+        nonlocal reader_rebuilds
+        reader_rebuilds += 1
+        return original_reader(*args, **kwargs)
+
+    monkeypatch.setattr(index, "rebuild_from_paths", count_rebuild)
+    monkeypatch.setattr(reader_index, "rebuild_from_paths", count_reader_rebuild)
+
+    marker = store.workspace_id()
+    assert mark_archived_turns.migrate(memory, db, marker) is True
+    assert rebuilds == 0
+    assert reader_rebuilds == 0
+
+    assert [row.get(MARKER) for row in db.get_branch("batched-migration")] == [
+        marker, marker, marker, marker,
+    ]
+    assert rebuilds == 1
+    assert [
+        row.get(MARKER) for row in reader.get_branch("batched-migration")
+    ] == [marker, marker, marker, marker]
+    assert reader_rebuilds == 1
+
+
+def test_migration_without_an_archive_removes_cursor_and_marks_nothing(
+    environment,
+):
+    from openprogram.memory import store
+    from openprogram.memory.scriptorium.runtime import mark_archived_turns
+    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+
+    db, memory = environment
+    _append(db, "no-archive", "m1", None)
+    state_store = RuntimeStateStore(memory)
+    state_store.path.parent.mkdir(parents=True, exist_ok=True)
+    state_store.path.write_text(json.dumps({
+        "cursors": {"no-archive": {"message_id": "m1", "ordinal": 0}},
+    }), encoding="utf-8")
+
+    assert mark_archived_turns.migrate(
+        memory, db, store.workspace_id()
+    ) is True
+    assert db.get_branch("no-archive")[0].get(MARKER) is None
+    assert "cursors" not in json.loads(
+        state_store.path.read_text(encoding="utf-8")
+    )
+
+
 def test_force_processes_head_first_and_skips_a_short_abandoned_branch(
     environment, monkeypatch: pytest.MonkeyPatch,
 ):
@@ -453,6 +851,53 @@ def test_force_processes_head_first_and_skips_a_short_abandoned_branch(
     assert "openprogram/force/short" not in sent
     assert db.get_branch("force", long_abandoned)[-1]["id"] == "long"
     assert db.get_branch("force", short_abandoned)[-1]["id"] == "short"
+
+
+def test_force_uses_explicit_current_head_and_writes_its_short_final_batch(
+    environment, monkeypatch: pytest.MonkeyPatch,
+):
+    from openprogram.memory.scriptorium import writing
+
+    db, _memory = environment
+    calls: list[str] = []
+    _stub_writer(monkeypatch, calls)
+    root = _append(
+        db, "force-order", "root", None, content="r" * 10, timestamp=1.0
+    )
+    current = root
+    for index, content in enumerate(("a" * 6, "b" * 6, "c" * 6,
+                                     "d" * 6, "tail"), start=1):
+        current = _append(
+            db, "force-order", f"current-{index}", current,
+            content=content, timestamp=1.0 + index,
+        )
+    abandoned = _append(
+        db, "force-order", "abandoned", root,
+        content="s", timestamp=100.0,
+    )
+    db.set_head("force-order", current)
+
+    tips = db.list_branches("force-order")
+    assert [tip["head_msg_id"] for tip in tips[:2]] == [abandoned, current]
+    assert db.get_session("force-order")["head_id"] == current
+
+    assert writing.write(
+        "force-order", token_threshold=10, force=True
+    ) is None
+
+    sent = "\n".join(calls)
+    assert "openprogram/force-order/abandoned" not in sent
+    for index in range(1, 6):
+        assert f"openprogram/force-order/current-{index}" in sent
+    assert "openprogram/force-order/current-5" in calls[-1]
+    assert writing._pending(
+        "force-order", db.get_branch("force-order", current)
+    ) == []
+    assert [
+        record.message_id for record in writing._pending(
+            "force-order", db.get_branch("force-order", abandoned)
+        )
+    ] == ["abandoned"]
 
 
 def test_runtime_state_loads_a_clean_default_from_malformed_json(tmp_path: Path):

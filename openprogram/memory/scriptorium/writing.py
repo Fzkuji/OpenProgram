@@ -226,12 +226,10 @@ def write_session(
         return _changed_files(audit)
 
     def mark(batch: tuple[SourceRecord, ...]) -> None:
-        for record in batch:
-            db.merge_node_metadata(
-                session_id,
-                record.message_id,
-                {MARKER: workspace_id},
-            )
+        db.merge_node_metadata_batch(session_id, {
+            record.message_id: {MARKER: workspace_id}
+            for record in batch
+        })
 
     def organizer(space: Any) -> None:
         organize_topics(space.memory_dir, agent=agent)
@@ -283,7 +281,7 @@ def _force_branches(
 
     db = default_db()
     session = db.get_session(session_id)
-    current = (session or {}).get("last_node_id")
+    current = (session or {}).get("head_id")
     heads: list[str] = [current] if current else []
     for branch in db.list_branches(session_id):
         head = branch.get("head_msg_id")

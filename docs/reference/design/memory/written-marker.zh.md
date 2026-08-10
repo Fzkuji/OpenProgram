@@ -525,29 +525,30 @@ head往回走会把整个会话都收进来。
 - 来源证据先归档，写入器随后安装记忆事务；只有写入器报告了非空的实际改动
   文件列表，才给这一批的来源节点打标记。异常、事务拒绝和无改动结果不打
   标记。
-- `SessionStore.merge_node_metadata`负责合并节点metadata并原子重写history
-  文件；它不改会话`updated_at`，不调用`write_history`或`mark_synced`。
-  `GraphStoreShim.update`复用这条路径，其他进程的旧索引仍会在下一次读取时
-  重建一次。
+- `SessionStore.merge_node_metadata_batch`在一次`_open`中合并同一会话一批
+  节点的metadata并逐文件原子重写history；它不改会话`updated_at`，不调用
+  `write_history`或`mark_synced`。单节点merge复用该批量原语；
+  `GraphStoreShim.update`通过一次`_open`同时更新普通字段、metadata和spill，
+  然后只重写一次节点。批后当前进程和其他进程的旧索引各在下一次读取时重建
+  一次。
 - `RuntimeState.cursors`和`advance_cursor`已经移除，其余整理计数器保留；
   损坏的`runtime.json`读为空状态。旧安装会在正常写入路径计算pending之前，
-  从`sources/openprogram/*.md`的精确`source-id`注释播种节点标记，完成这次
-  尝试后再移除旧`cursors`字段。
-- 会话边界处理先写当前head分支的全部欠账，再检查其他活分支；其他分支只有
-  达到正常token阈值才写，不使用闲置短分支放行。共享前缀由先处理的分支标记，
-  后续分支只交出分叉后的未写后缀。
+  从`sources/openprogram/*.md`中同时通过解码文件名、会话标题、确定性anchor
+  和紧邻`source-id`注释校验的结构化来源header播种节点标记；正文中的孤立
+  注释和跨会话header不生效。完成这次尝试后再移除旧`cursors`字段。
+- 会话边界从`get_session()['head_id']`确定当前head，先写完该分支的全部欠账，
+  再检查其他活分支；其他分支只有达到正常token阈值才写，不使用闲置短分支
+  放行。共享前缀由先处理的分支标记，后续分支只交出分叉后的未写后缀。
 
 验证结果如下：
 
-- `python -m pytest -q tests/unit/test_memory_written_marker.py tests/unit/test_memory_writing.py tests/unit/test_memory_write_timing.py`：37项通过。
-- 直接相关的store/runtime回归组：79项通过；覆盖`GraphStoreShim.update`
-  调用路径的补充组：42项通过。
+- `python -m pytest -q tests/unit/test_memory_written_marker.py tests/unit/test_memory_writing.py tests/unit/test_memory_write_timing.py`：47项通过。
+- 直接相关的store/runtime和`GraphStoreShim.update`调用路径回归组：121项通过。
 - `python -m pytest -q --ignore=tests/integration/test_test_framework.py`：
-  2544项通过、7项跳过、2项deselected、1项xfail。11项origin-guard/403
-  失败与实现前记录一致；另有2项全量进程中的临时stage目录集合断言失败，
-  两项一起隔离重跑均通过。本次新增和修改的memory测试随后在独立临时目录中
-  按顺序执行39项，结束时没有stage目录或延迟flush timer残留。本次改动没有
-  修改那些无关失败的实现。
+  2556项通过、7项跳过、2项deselected、1项xfail。11项origin-guard/403
+  失败与实现前记录一致，没有新增失败。本次新增和修改的memory测试随后在
+  独立临时目录中按顺序执行49项，结束时没有stage目录或延迟flush timer残留。
+  本次改动没有修改那些无关失败的实现。
 
 第四层仍未实现：没有改成由记忆主题/来源内容本身充当唯一账本；没有把分支
 来源写进记忆块或检索结果；没有用事件通知替换轮询；没有加入跨会话spawn
