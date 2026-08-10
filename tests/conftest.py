@@ -224,6 +224,27 @@ def _reset_spawn_fanout():
     _fanout_used.clear()
 
 
+@pytest.fixture(autouse=True)
+def _drop_tmp_rooted_session_store():
+    """Forget a process-wide SessionStore a test rooted under its tmp_path.
+
+    ``default_store()`` caches one instance for the process. A test that
+    redirects ``get_state_dir`` and then reaches any code calling
+    ``default_db()`` leaves that cached store pointing at a tmp directory
+    which pytest deletes, so every later test in the same worker shares a
+    store rooted outside the test home. Dropping it here rebuilds it from
+    whatever the next test's state dir is.
+    """
+    yield
+    from openprogram.store.session import session_store
+
+    cached = getattr(session_store, "_default_store", None)
+    if cached is None:
+        return
+    if "openprogram-test-home" not in str(getattr(cached, "root_path", "")):
+        session_store._default_store = None
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
