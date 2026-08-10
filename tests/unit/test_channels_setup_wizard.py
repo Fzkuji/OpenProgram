@@ -105,7 +105,8 @@ def _stub_prompts(monkeypatch: pytest.MonkeyPatch, *,
 # ---------------------------------------------------------------------------
 
 def test_setup_wechat_full_flow(state_dir, stub_agents,
-                                 monkeypatch: pytest.MonkeyPatch) -> None:
+                                 monkeypatch: pytest.MonkeyPatch,
+                                 capsys: pytest.CaptureFixture[str]) -> None:
     """First-time wechat setup: no existing account, login fakes the
     QR scan, catch-all binding, don't start the worker."""
     _stub_prompts(monkeypatch,
@@ -138,6 +139,9 @@ def test_setup_wechat_full_flow(state_dir, stub_agents,
     assert len(rules) == 1
     assert rules[0]["agent_id"] == "main"
     assert rules[0]["match"] == {"channel": "wechat", "account_id": "default"}
+    output = capsys.readouterr().out
+    assert "channels access approve wechat <code>" in output
+    assert "channels access policy" not in output
 
 
 def test_setup_skips_login_when_already_configured(

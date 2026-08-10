@@ -87,10 +87,9 @@ def run() -> int:
               "first message returns a code — approve yourself with:")
         print(f"  openprogram channels access approve {channel} <code>"
               + (f" --id {account_id}" if account_id != "default" else ""))
-        print("[setup] approve as many people as you like with the same "
-              "command — they share this agent and its memory, which "
-              "records who said what. For a bot anyone should reach, drop "
-              f"the gate: openprogram channels access policy {channel} open")
+        print("[setup] run the approval command for each contact you want "
+              "to authorize. Approved contacts share this agent and its "
+              "memory, which records who said what.")
         return 0
     except (KeyboardInterrupt, EOFError):
         print("\n[setup] aborted.")
