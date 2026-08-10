@@ -8,8 +8,8 @@ Everything said on a branch belongs in memory, and nothing said on the
 shared prefix belongs in memory twice. This note is about the one fact
 that decides both: which turns memory has already written.
 
-Four layers, answering four different questions. Layer 1 is what runs
-today and why it is wrong. Layer 2 is what the reference frameworks
+Four layers, answering four different questions. Layer 1 records the
+pre-migration implementation and why it was wrong. Layer 2 is what the reference frameworks
 under `references/` do, including the ones that do nothing. Layer 3 is
 the change to make next, down to the files and the size of the diff.
 Layer 4 is the shape this would have if the current implementation were
@@ -20,7 +20,10 @@ the memory subsystem around it is [`overview.md`](overview.md).
 
 ---
 
-## Layer 1 — What runs today
+## Layer 1 — What the migration replaced
+
+This layer is retained as the problem statement. The appendix records the
+current implementation.
 
 ### One number per session
 
@@ -390,10 +393,13 @@ An installation upgrading from the position cursor has
 marks on any node, so a walk back from a head would collect the whole
 session.
 
-The source archive says which turns were handed to the writer.
-`sources/openprogram/<session-id>.md` carries a
+The source archive says which turns were handed to the writer. Legacy
+`sources/openprogram/<session-id>.md` files carry a validated anchor and
 `<!-- source-id:openprogram/<session>/<message> -->` comment per archived
-message, written by `archive_source_records`, and on the write path a
+message. Canonical `sources/openprogram/_v2/<session-id>.md` files carry
+the same source id inside strict `record-lines` frames. Migration consumes
+only the v2 parser's valid prefix: record content cannot create an id, and
+parsing never resumes after an invalid or truncated frame. On the write path a
 batch is archived before the cursor advances
 (`OnlineMemoryRuntime.process` calls `workspace.archive_source_records`
 before `state.advance_cursor`), so the archive covers everything the old
@@ -648,7 +654,16 @@ not, and nothing is currently lost by waiting.
 
 ## Appendix: Implementation status
 
-Layer 1 runs. Layer 2 is observation. Layer 3 is designed and not built:
-no node carries a mark, `RuntimeState.cursors` and `advance_cursor` are
-still what decides, and both write paths still ask `get_branch` for the
-head's branch alone. Layer 4 is not scheduled.
+As of 2026-08-10, Layer 1 describes the implementation that was replaced,
+Layer 2 remains the open-source framework audit, and Layer 3 is implemented.
+Session nodes carry `metadata.memory_written_scriptorium = <workspace-id>`;
+pending work is the unmarked suffix of each branch; a successful non-empty
+write marks exactly its source batch; and forced session-boundary writing
+handles the current head before other live branch tips.
+
+`RuntimeState.cursors` and `advance_cursor` have been removed. An installation
+that still has legacy `cursors` performs one migration before pending work is
+computed: validated legacy headers and strict v2 valid-prefix frames are
+merged per session, their source nodes are marked, and only then is the old
+field removed. The v2 migration does not trust record content or resume after
+a malformed tail. Layer 4 remains unimplemented and unscheduled.

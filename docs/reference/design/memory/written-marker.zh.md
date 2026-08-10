@@ -6,7 +6,7 @@ agent，都会让链分叉，于是一个会话里同时有好几条分支，共
 每条分支上说过的话都该进记忆，共享前缀上说过的话不该进两次。这份文档只讲
 决定这两件事的那一个事实：哪些轮次记忆已经写过。
 
-四层，回答四个不同的问题。第一层是现在跑的是什么、错在哪。第二层是
+四层，回答四个不同的问题。第一层记录迁移前的实现和错误。第二层是
 `references/`下各个框架怎么做，包括那些根本没有这个功能的。第三层是下一步
 动手做什么，具体到文件和改动量。第四层是不受当前实现约束、重新设计这块该是
 什么样，以及为什么它们都不是下一步。
@@ -16,7 +16,9 @@ agent，都会让链分叉，于是一个会话里同时有好几条分支，共
 
 ---
 
-## 第一层：现在怎么做的
+## 第一层：迁移替换了什么
+
+这一层保留为问题说明；附录记录当前实现。
 
 ### 一个会话一个数字
 
@@ -316,9 +318,12 @@ claude-code已经用在它自己游标上的那一条：账目信不过的时候
 `cursors: {thread: {message_id, ordinal}}`，而所有节点上都没有标记，于是从
 head往回走会把整个会话都收进来。
 
-来源归档说得清哪些轮次被交给过写入器。`sources/openprogram/<session-id>.md`
-里每条归档过的消息都有一行`<!-- source-id:openprogram/<session>/<message> -->`
-注释，由`archive_source_records`写下；而写入路径上一批的归档发生在游标前进
+来源归档说得清哪些轮次被交给过写入器。legacy
+`sources/openprogram/<session-id>.md`里每条归档过的消息都有经过anchor校验的
+`<!-- source-id:openprogram/<session>/<message> -->`注释；canonical
+`sources/openprogram/_v2/<session-id>.md`把相同ID放在严格的`record-lines` frame中。
+迁移只读取v2 parser返回的合法前缀：正文不能产生ID，遇到非法或截断frame后不会
+重新开始解析。而写入路径上一批的归档发生在游标前进
 之前（`OnlineMemoryRuntime.process`先调`workspace.archive_source_records`，
 再调`state.advance_cursor`），所以归档覆盖了旧游标越过的一切。
 
@@ -533,9 +538,10 @@ head往回走会把整个会话都收进来。
   一次。
 - `RuntimeState.cursors`和`advance_cursor`已经移除，其余整理计数器保留；
   损坏的`runtime.json`读为空状态。旧安装会在正常写入路径计算pending之前，
-  从`sources/openprogram/*.md`中同时通过解码文件名、会话标题、确定性anchor
-  和紧邻`source-id`注释校验的结构化来源header播种节点标记；正文中的孤立
-  注释和跨会话header不生效。完成这次尝试后再移除旧`cursors`字段。
+  同时扫描`sources/openprogram/*.md`中经过文件名、标题、确定性anchor和紧邻
+  `source-id`校验的legacy header，以及`sources/openprogram/_v2/*.md`中严格解析的
+  合法frame前缀。两种来源按session合并后批量标记节点，最后才删除旧`cursors`；
+  正文伪frame和非法尾部之后的内容不生效。
 - 会话边界从`get_session()['head_id']`确定当前head，先写完该分支的全部欠账，
   再检查其他活分支；其他分支只有达到正常token阈值才写，不使用闲置短分支
   放行。共享前缀由先处理的分支标记，后续分支只交出分叉后的未写后缀。

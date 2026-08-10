@@ -36,12 +36,13 @@ Two properties we care about:
         people/dave.md
         projects/budget-tracker.md
     sources/                 append-only evidence, written by the runtime
-        openprogram/<session-id>.md
+        openprogram/_v2/<session-id>.md
+        openprogram/<session-id>.md    legacy, read-only
     timeline/                derived time axis, rebuilt after every write
         2026/08/09.md
     recent_events.jsonl      derived
     relations.json           derived
-    .scriptorium/            runtime state: cursors, write lock, history
+    .scriptorium/            runtime state: workspace id, write lock, history
 ```
 
 **Sources** are what was said, archived verbatim and never edited.
@@ -78,12 +79,13 @@ Three things trigger a write:
 | 03:00 daily | `provider.reorganize()` | Rewrites topic files |
 
 The conversation is read back from the session store rather than
-buffered in the process. That store is durable and it gives every turn
-a stable id, which is what the cursor in `runtime/online.py` records. A
-module-level buffer would lose its contents on restart and hand out
-positions that change between runs, and in a session that branches a
-position is not an identity at all. The next section says what the
-cursor holds instead.
+buffered in the process. That store is durable and gives every turn a
+stable id. After a successful memory transaction, the source nodes in
+that batch receive `metadata.memory_written_scriptorium = <workspace-id>`.
+Pending work is the suffix after the nearest matching mark on the current
+branch; no session-wide position is used. A module-level buffer would lose
+its contents on restart, while a position changes meaning when a session
+branches.
 
 The first two rows are one method and one flag, not two hooks. What
 separates them is how hard to try, and every other word about them is
@@ -352,10 +354,12 @@ cache rebuilds and public positional-constructor compatibility.
 
 ## Which turns memory has written
 
-A session is a DAG, so this cannot be a position: a branch forked from
-an earlier message renumbers, and the position cursor running today
-offers such a branch as nothing at all, or as its tail alone. The design
-that replaces it, a mark on the node, is
+A session is a DAG, so the implementation uses a mark on each written
+source node rather than a position. It walks the selected branch from its
+tip to the nearest mark for this memory workspace, then writes the
+unmarked suffix from oldest to newest. A fork therefore inherits the marks
+on its shared prefix and keeps its own suffix pending. The design, framework
+comparison, measured cost and current implementation are in
 [`written-marker.md`](written-marker.md).
 
 ## Why the nightly reorganize exists
@@ -500,7 +504,7 @@ openprogram/memory/           the framework side
         retrieval/            BM25 and embedding search
         markdown/             the topic format
         prompts/              what the writer is told
-        runtime/              cursors, thresholds, derived views
+        runtime/              node-mark migration, thresholds, derived views
         agent_runtime/        the process that does the writing
 ```
 
@@ -531,9 +535,9 @@ for a new format is not a migration.
 | Failure | Effect |
 |---|---|
 | No writer process available | Writing is deferred and retried; the conversation is safe in the session store |
-| Model unreachable mid-write | The turn is rolled back whole; the cursor does not advance, so the same turns are retried |
+| Model unreachable mid-write | The turn is rolled back whole; no source nodes are marked, so the same turns are retried |
 | Another writer holds the lock | This pass writes nothing and says so; the next turn retries |
-| The writer's edits are rejected twice | The batch fails whole — one repair attempt, then nothing is installed and the cursor does not advance |
+| The writer's edits are rejected twice | The batch fails whole — one repair attempt, then nothing is installed and no source nodes are marked |
 | A hand edit breaks the format | The edit is validated in a staging copy and never installed; the committed file is untouched and the rejected text is kept for a retry |
 
 Memory never takes a conversation down with it: every provider hook
@@ -598,15 +602,21 @@ strips the inner block and leaves an empty one.
 
 ## Appendix: Implementation status
 
-Everything above runs today except "Which turns memory has written".
+The branch-aware written marker and trusted speaker/v2 source protocol are
+implemented. `runtime/online.py` computes pending records from the current
+branch's node marks, and successful non-empty writes mark exactly their
+source batch. Forced session-boundary writing handles the current head first
+and then other live branch tips without re-writing a shared prefix.
 
-"Which turns memory has written" still runs the position cursor:
-`runtime.json` holds `cursors: {thread: {message_id, ordinal}}` and
-`runtime/online.py` claims a record only when its ordinal is higher than
-the stored one. The replacement, its cost and the files it touches are
-in [`written-marker.md`](written-marker.md); where the surrounding
-choices came from, and what was decided against, is
-[`memory-adoption.html`](memory-adoption.html).
+Old `runtime.json` files may still contain `cursors` until their first write.
+That one-time migration validates both legacy
+`sources/openprogram/*.md` headers and the valid prefix of strict
+`sources/openprogram/_v2/*.md` frames, merges their source node ids per
+session, applies the marks, and only then removes `cursors`. It never derives
+an id from record content and never resumes after an invalid v2 frame. The
+full design and measured cost are in
+[`written-marker.md`](written-marker.md); the broader adoption decisions are
+in [`memory-adoption.html`](memory-adoption.html).
 
 The speaker design is implemented with independent trusted transport
 fields. `SourceRecord.speaker_label` supplies the safe record header,

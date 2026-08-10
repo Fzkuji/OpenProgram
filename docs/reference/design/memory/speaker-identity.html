@@ -1170,6 +1170,8 @@
     同一source id的合法v2事件在检索、链接和校验中优先于legacy；没有v2时仍可读取legacy。
     <code>speaker_trusted</code>对v2 marker为true、对legacy hint或speakerless记录为false。Markdown尾双空格、
     CRLF/尾换行、完整伪造块、截断停止、v5缓存重建和独立进程导入均有回归测试。<br>
+    分支感知的已写节点标记也已经实现；旧<code>runtime.json</code>的<code>cursors</code>迁移会同时读取经过校验的legacy header与
+    严格v2合法前缀，按session合并节点标记后才删除旧字段，不从正文或非法尾部之后提取ID。<br>
     文字说明在<code>docs/reference/design/memory/overview.md</code>的"谁说的"一节，
     产品侧在<code>docs/integrations/channels.md</code>。
   </div>

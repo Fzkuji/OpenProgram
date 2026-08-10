@@ -32,12 +32,13 @@ OpenProgram 怎么让 agent 跨会话"记住"事情。
         people/dave.md
         projects/budget-tracker.md
     sources/                 只追加的证据，由运行时写入
-        openprogram/<session-id>.md
+        openprogram/_v2/<session-id>.md
+        openprogram/<session-id>.md    旧格式，只读
     timeline/                派生的时间轴，每次写入后重建
         2026/08/09.md
     recent_events.jsonl      派生
     relations.json           派生
-    .scriptorium/            运行时状态：游标、写锁、历史
+    .scriptorium/            运行时状态：工作区ID、写锁、历史
 ```
 
 **sources** 是说过的话，原样归档、从不编辑。**topics** 是这些话的含义
@@ -71,9 +72,10 @@ Craig is building a budget tracker in Flask, due 2024-04-15.[^e-1175dea39c] ^f88
 | 每天 03:00 | `provider.reorganize()` | 重写 topic 文件 |
 
 对话内容是从会话存储里读回来的，不在进程里缓存。那个存储持久，而且给每
-一轮一个稳定的ID，`runtime/online.py`里的游标记的就是这个ID。用模块级
-缓冲的话，重启即丢，给出的位置还会在两次运行之间变；而在一个会分叉的会
-话里，位置根本就不是身份。下一节讲游标改记什么。
+一轮一个稳定ID。记忆事务成功后，该批来源节点会写入
+`metadata.memory_written_scriptorium = <workspace-id>`。待写内容是在当前分支
+上从末端反向找到本工作区最近标记之后的后缀，不再使用会话级位置。模块级
+缓冲在重启时会丢失，而位置在会话分叉后也不能唯一表示消息。
 
 前两行是同一个方法加一个开关，不是两个钩子。区别只在于要多用力去写，其
 余的话完全一样，分成两个名字等于把同一个动作命名两遍，而且两个都起不准。
@@ -189,9 +191,10 @@ BM25持久缓存格式是v6；v5可能缓存从现已归为legacy的文件解析
 
 ## 哪些轮次已经写进记忆
 
-一个会话是DAG，所以这件事不能用位置来记：从早前消息分出去的分支会重新编号，
-而现在跑着的位置游标会把这样一条分支读成一条都没有，或者只剩尾巴。取代它的
-设计是在节点上打「已写」标记，完整内容在
+一个会话是DAG，所以当前实现把状态记在已写来源节点上，不再记录会话位置。
+读取时从所选分支末端反向找到本记忆工作区最近的标记，再按从旧到新的顺序处理
+未标记后缀。分支共享前缀上的标记会被两条分支共同读取，各自分叉后的后缀保持
+独立待写。设计、开源框架对照、实测开销和当前实现见
 [`written-marker.zh.md`](written-marker.zh.md)。
 
 ## 夜间重写为什么必要
@@ -304,7 +307,7 @@ openprogram/memory/           框架侧
         retrieval/            BM25 与向量检索
         markdown/             topic 格式
         prompts/              对写入模型说的话
-        runtime/              游标、阈值、派生视图
+        runtime/              节点标记迁移、阈值、派生视图
         agent_runtime/        实际执行写入的进程
 ```
 
@@ -331,9 +334,9 @@ agent 循环、工具、网页端、CLI 都不指名任何实现，一律调 `ge
 | 失效 | 后果 |
 |---|---|
 | 没有可用的写入进程 | 推迟并重试；对话安全地留在会话存储里 |
-| 写到一半模型不可达 | 该轮整体回滚；游标不前进，同样的内容会重试 |
+| 写到一半模型不可达 | 该轮整体回滚；来源节点不打标记，同样的内容会重试 |
 | 锁被别的写入者占着 | 这次什么都没写，并如实报出来；下一轮再试 |
-| 写入的编辑连续两次被拒 | 整批失败：先给一次修复机会，仍不通过就什么都不装，游标不前进 |
+| 写入的编辑连续两次被拒 | 整批失败：先给一次修复机会，仍不通过就什么都不装，来源节点也不打标记 |
 | 手改破坏了格式 | 改动在暂存副本里校验，不通过就不安装；已提交的文件原样不动，被拒的文本留着供重试 |
 
 记忆绝不会把对话一起拖垮：每个 provider 钩子都自己吞掉异常并记日志。吞掉
@@ -382,13 +385,18 @@ agents。在这个接口上再开一条私路，只会变成绕过它的办法�
 
 ## 附录：实现状态
 
-除了"哪些轮次已经写进记忆"最后一节，上面的内容都已经在跑。
+分支感知的已写节点标记和可信speaker/v2来源协议都已经实现。
+`runtime/online.py`根据当前分支的节点标记计算待写记录，只有安装成功且实际改过
+记忆文件的批次才给来源节点打标记。会话结束时先处理当前head，再检查其他活分支，
+共享前缀不会重复写入。
 
-"哪些轮次已经写进记忆"现在跑的仍是位置游标：`runtime.json`里放
-`cursors: {thread: {message_id, ordinal}}`，`runtime/online.py`只认领序号大于
-已存序号的记录。取代它的方案、代价和要动哪些文件，在
-[`written-marker.zh.md`](written-marker.zh.md)；周边这些选择从哪来、还有哪一条
-被否掉了，见[`memory-adoption.html`](memory-adoption.html)。
+旧`runtime.json`在首次写入前仍可能包含`cursors`。一次性迁移会同时校验legacy
+`sources/openprogram/*.md`的结构化header，以及严格
+`sources/openprogram/_v2/*.md`中首个非法frame之前的合法前缀；按session合并其中的
+来源节点ID、批量写入标记，最后才删除`cursors`。迁移不从正文提取ID，也不会在非法
+v2 frame之后重新开始解析。完整方案和实测代价见
+[`written-marker.zh.md`](written-marker.zh.md)，更广的采用决策见
+[`memory-adoption.html`](memory-adoption.html)。
 
 "谁说的"已经按独立可信字段实现。渠道入口把实际发信人的`speaker_id`和
 `speaker_display`与路由`peer_id`、正文分开传到持久化节点；网页、命令行、TUI和

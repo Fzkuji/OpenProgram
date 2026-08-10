@@ -96,7 +96,7 @@
   </div>
 
   <!-- ═══════════════ 01 ═══════════════ -->
-  <h2 id="l1"><span class="num">01</span>第一层 · 现在怎么做的</h2>
+  <h2 id="l1"><span class="num">01</span>第一层 · 迁移前的实现</h2>
   <p class="lead">写到哪了，记的是一个整数，键是会话id。一个会话有六条分支，六条分支共用这一个整数。</p>
 
   <div class="card"><div class="scroll">
@@ -454,7 +454,7 @@
   </div>
 
   <!-- ═══════════════ 03 ═══════════════ -->
-  <h2 id="l3"><span class="num">03</span>第三层 · 计划怎么改</h2>
+  <h2 id="l3"><span class="num">03</span>第三层 · 当前方案：节点标记</h2>
   <p class="lead">边界只能落在能标识一条消息的东西上，而标识一条消息的就是它这个节点本身。
     所以"记忆写过这一轮"这件事，记在这一轮身上。</p>
 
@@ -813,9 +813,12 @@
   </svg>
   </div></div>
 
-  <div class="note"><b>实现状态。</b>第一层在跑。第二层是观察。第三层已定稿、尚未落地：没有任何节点带着标记，
-    <code>RuntimeState.cursors</code>和<code>advance_cursor</code>仍然是判定的依据，
-    两条写入路径也仍然只向<code>get_branch</code>要 head 那条分支。第四层没有排期。</div>
+  <div class="note"><b>实现状态（2026-08-10）。</b>第一层记录迁移前的实现，第二层是开源框架审计，第三层已经实现：
+    会话节点用<code>metadata.memory_written_scriptorium = &lt;workspace-id&gt;</code>记录写入状态，当前分支按节点标记计算待写后缀，
+    成功且实际修改记忆的批次才打标记；会话结束时先处理当前head，再处理其他活分支。
+    <code>RuntimeState.cursors</code>和<code>advance_cursor</code>已经移除。旧安装首次写入时同时校验legacy header和
+    <code>sources/openprogram/_v2/*.md</code>的严格合法前缀，合并节点后才删除旧<code>cursors</code>；正文伪frame和非法尾部后的内容不参与迁移。
+    结构化speaker字段、可信v2 frame和speaker过滤也已经实现。第四层仍未实现。</div>
 
 </div>
 </body>
