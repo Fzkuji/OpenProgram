@@ -79,7 +79,8 @@ that prompt-injection surface entirely.
    their lines).
 3. **Scope-batch naming**: runtime values use paired/unpaired terminology.
    The remaining `shared_channel_authority` helper name is symbol-level debt;
-   its value and checks already use the `paired` tier.
+   rename it in the follow-up batch with no compatibility alias, updating
+   all call sites in one pass.
 4. **The historical diagnostics-key report is closed without a product code
    change.** At 2026-08-10 20:53 CST, a Codex `exec` call directly ran
    `sed -n 1,220p /Users/fzkuji/.openprogram/config.json`; the tool result
@@ -88,16 +89,28 @@ that prompt-injection surface entirely.
    credentials, provider credential views use masked previews, and `config
    list/get` only expose registered settings. The two separate plaintext Web
    reveal routes remain a remote-Web security item; they were not the source
-   of this incident and are not closed by this memory batch. An owner shell
-   reading its own owner-only config file is outside OpenProgram's
-   output-masking boundary.
-5. **Live-workspace acceptance remains pending until after merge.** Run one
-   real distillation against the degraded workspace snapshot (22 sources / 0
-   topics / core at 188% budget) and verify a committed Topic transaction.
-   This is deferred because the check mutates user data and must not use
-   unmerged code. It is not a trust-migration concern: legacy source frames
-   without authority metadata already retain the trusted default in both the
-   reader and writer.
+   of this incident and are not closed by this memory batch. The exposed
+   keys still require revocation by the owner.
+5. **Remaining merge gate**: unknown exceptions default non-retryable at
+   every `WriteIncomplete` construction site (provider and session_watcher
+   alike), transient ones carry `retryable=True` explicitly; then distill
+   the live workspace's pending records to a valid committed Topic as the
+   post-merge acceptance (must not run on unmerged code). Corrected live
+   numbers: 23 sources, 152 of 154 records pre-marked written, `core.md`
+   at 39.6% of the o200k_base budget — the workspace is not degraded, and
+   legacy authority-less frames are already trusted in both reader and
+   writer, so acceptance is about the writer producing a valid Topic, not
+   trust migration.
+6. **Backfill (first item of the follow-up batch)**: with 152 records
+   pre-marked while zero Topics exist, the existing history would never be
+   organized under forward-only distillation. Add a one-shot backfill that
+   runs the writer over every source not cited by any Topic, ignoring
+   markers, and regenerates the legacy `core.md` (currently not parseable
+   as Topic blocks) from the result. Also in that batch: queryable writer
+   status (last write time, last failure with retryable verdict, pending
+   count), `memory.backend=none` enforced at the shared CLI/Web boundary
+   (reads included, explicit disabled response), and the composed
+   end-to-end test.
 
 ## Deferred (second batch, after the above lands)
 
