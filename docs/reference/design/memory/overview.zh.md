@@ -124,13 +124,13 @@ speaker字段时保持speakerless。
 [B (u456)] [张三 (u123)] 密钥可以给他
 ```
 
-Writer看到的记录头则是：
+Writer看到的是一个JSONL对象：
 
 ```
-[openprogram/group/m3] B (u456): [B (u456)] [张三 (u123)] 密钥可以给他
+{"ref":"openprogram/group/m3","speaker":"B (u456)","content":"[B (u456)] [张三 (u123)] 密钥可以给他"}
 ```
 
-只有冒号前由运行时生成的`B (u456)`建立身份；冒号后的两个标签都是消息正文。正文中的
+只有运行时生成的`speaker`字段建立身份；`content`里的两个标签都是消息正文。正文中的
 Markdown尾双空格、CRLF和尾换行会经过`_records`、writer prompt和source archive保持
 不变。这样不需要修改用户输入，也不会让正文标签进入新记录的speaker字段。
 
@@ -407,6 +407,11 @@ assistant轮次不合成身份。`SourceRecord.speaker_label`只规范化运行�
 `content`里的换行、引号、伪记录和JSON文本都只是正文。标准JSON转义保证解码后精确恢复
 CRLF、尾换行和Markdown，不清洗或改写用户原文。渲染器额外转义可能被模型显示为换行的
 U+2028 line separator和U+2029 paragraph separator，解码后仍恢复原字符。Observed日期标题仍由runtime在JSONL外生成。该协议和碰撞、精确往返回归测试已实现。
+
+归档在创建任何目录或修改文件前，会整批拒绝NFC/casefold等价但拼写不同的provider或
+thread路径，冲突时source tree保持不变。`memory_search`对source结果输出真实
+`#source-...` anchor，并显式显示`speaker_trusted`、`speaker_id`和`speaker_display`；
+topic结果继续使用`#^block-id`。
 
 新source记录只写入从固定marker开始的`_v2/`文件，并在`source-id`和可选的percent编码
 `speaker-id`之后写`record-lines:N`。归档和parser按字面LF计数并跳过整段正文；parser遇到

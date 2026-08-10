@@ -633,9 +633,11 @@ full design and measured cost are in
 in [`memory-adoption.html`](memory-adoption.html).
 
 The speaker design is implemented with independent trusted transport
-fields. `SourceRecord.speaker_label` supplies the safe record header,
-the writer prompt trusts only that header, and the message body is
-preserved through `_records`, writer rendering and source archiving,
+fields. `SourceRecord.speaker_label` supplies the serializer's `speaker`
+value; each turn is one compact JSONL object with separate `ref`, `speaker`
+and `content` fields, and the writer prompt trusts only `speaker`. Standard
+JSON escaping plus explicit U+2028/U+2029 escaping keeps every turn on one
+physical and displayed line while decoding recovers the exact body,
 including Markdown trailing spaces, CRLF and trailing LF. New source
 records go only to a marker-led `_v2/` archive, percent-encode the speaker
 id and use `record-lines:N` to keep complete source-like blocks inside the
@@ -643,6 +645,9 @@ body. Parsing and deduplication proceed strictly from the v2 marker and
 stop at the first invalid frame. Legacy files are frozen, never contribute
 trusted speaker fields or deduplication IDs, and retain only the restricted
 `user` body-prefix retrieval hint. A valid v2 event wins when both trees
-contain the same source ID. BM25 cache v6 exposes source-only speaker
-filtering by stable id or readable label; `memory_search` forwards it,
-while an embedding request with `speaker` is rejected explicitly.
+contain the same source ID. Before any archive write, NFC/casefold-equivalent
+provider or thread paths are rejected as one batch, leaving the source tree
+unchanged. BM25 cache v6 exposes source-only speaker filtering by stable id
+or readable label. Public `memory_search` source results use the real
+`#source-...` anchor and show `speaker_trusted`, `speaker_id` and
+`speaker_display`; an embedding request with `speaker` is rejected explicitly.

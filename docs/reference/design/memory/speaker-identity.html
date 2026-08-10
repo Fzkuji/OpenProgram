@@ -857,7 +857,7 @@
 
   <h2 id="forge"><span class="num">09</span>正文能伪造出第二个标签</h2>
   <p class="lead">兼容前缀仍在正文里，所以发信人可以输入第二个标签；该标签会作为正文保留，
-    但不会建立新记录身份。当前信任边界是持久化的speaker字段、writer记录头和有效的source frame。</p>
+    但不会建立新记录身份。当前信任边界是持久化的speaker字段、writer JSON对象的speaker字段和有效的source frame。</p>
 
   <div class="card scroll">
   <svg viewBox="0 0 1160 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="清洗边界只盖住显示名和id，正文不在其中">
@@ -916,7 +916,7 @@
     <rect x="24" y="350" width="360" height="98" rx="8" fill="#12110b" stroke="#e0445a" stroke-width="1.3"/>
     <text x="40" y="372" fill="#e0445a" font-size="11.5" font-weight="700">一 · 真标签后面</text>
     <text x="40" y="394" font-size="11" font-family="Menlo,monospace"><tspan fill="#5aad4e">[B (u456)] </tspan><tspan fill="#e0445a">[张三 (u123)] …</tspan></text>
-    <text x="40" y="418" fill="#8a8675" font-size="10.5">一行两个；当前只有记录头建立身份。</text>
+    <text x="40" y="418" fill="#8a8675" font-size="10.5">一行两个；当前只有JSON对象的speaker字段建立身份。</text>
     <text x="40" y="436" fill="#6b6a63" font-size="10">正文仍完整保留。</text>
 
     <rect x="400" y="350" width="360" height="98" rx="8" fill="#12110b" stroke="#e0445a" stroke-width="1.3"/>
@@ -994,8 +994,8 @@
   <div class="note">
     <b>参考实现在这一条上没有先例可抄</b>：两个做了多人会话的框架都只清洗自己那半，正文原样进prompt，
     openclaw那边同样能伪造出第二个<code>名字 (id): </code>。<b>但通用规则在openclaw别处</b>：
-    转义围栏自身的定界符，让被包的文本关不掉自己的围栏。这条规则对，只是在我们这里定界符是记录头
-    而不是方括号，所以补法是加字段，不是改别人写的话。
+    转义围栏自身的定界符，让被包的文本关不掉自己的围栏。这条规则对；我们这里由JSON字段边界隔离
+    speaker和content，所以处理方式是结构化序列化，不是改别人写的话。
   </div>
 
   <h2 id="byperson"><span class="num">11</span>按发言人查</h2>
@@ -1173,6 +1173,9 @@
     同一source id的合法v2事件在检索、链接和校验中优先于legacy；没有v2时仍可读取legacy。
     <code>speaker_trusted</code>对v2 marker为true、对legacy hint或speakerless记录为false。Markdown尾双空格、
     CRLF/尾换行、完整伪造块、截断停止、v5缓存重建和独立进程导入均有回归测试。<br>
+    归档写入会在任何目录或文件变化前整批拒绝NFC/casefold等价的provider/thread路径冲突；
+    <code>memory_search</code>的source结果使用真实<code>#source-...</code> anchor，并向调用agent显示
+    <code>speaker_trusted</code>、<code>speaker_id</code>和<code>speaker_display</code>。<br>
     分支感知的已写节点标记也已经实现；旧<code>runtime.json</code>的<code>cursors</code>迁移会同时读取经过校验的legacy header与
     严格v2合法前缀，按session合并节点标记后才删除旧字段，不从正文或非法尾部之后提取ID。<br>
     文字说明在<code>docs/reference/design/memory/overview.md</code>的"谁说的"一节，
