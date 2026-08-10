@@ -623,12 +623,15 @@ source batch. Forced session-boundary writing handles the current head first
 and then other live branch tips without re-writing a shared prefix.
 
 Old `runtime.json` files may still contain `cursors` until their first write.
-That one-time migration validates both legacy
-`sources/openprogram/*.md` headers and the valid prefix of strict
-`sources/openprogram/_v2/*.md` frames, merges their source node ids per
-session, applies the marks, and only then removes `cursors`. It never derives
-an id from record content and never resumes after an invalid v2 frame. The
-full design and measured cost are in
+That one-time migration trusts only the first valid legacy header at the exact
+byte position after each file title and the valid prefix of strict
+`sources/openprogram/_v2/*.md` frames. It filters those candidate ids on their
+real DAG paths with the live write-time record rules and marks only the
+continuous prefix before the first gap. An archived tail after a gap is
+re-written. `cursors` is removed only after every session's marker batch
+succeeds, and remains for retry on failure. Later legacy headers can be user
+content, and the v2 parser never resumes after an invalid frame. The full
+design and measured cost are in
 [`written-marker.md`](written-marker.md); the broader adoption decisions are
 in [`memory-adoption.html`](memory-adoption.html).
 

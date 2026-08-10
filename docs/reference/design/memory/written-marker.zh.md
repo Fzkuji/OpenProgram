@@ -317,22 +317,28 @@ claude-code已经用在它自己游标上的那一条：账目信不过的时候
 `cursors: {thread: {message_id, ordinal}}`，而所有节点上都没有标记，于是从
 head往回走会把整个会话都收进来。
 
-来源归档说得清哪些轮次被交给过写入器。legacy
-`sources/openprogram/<session-id>.md`里每条归档过的消息都有经过anchor校验的
-`<!-- source-id:openprogram/<session>/<message> -->`注释；canonical
-`sources/openprogram/_v2/<session-id>.md`把相同ID放在严格的`record-lines` frame中。
-迁移只读取v2 parser返回的合法前缀：正文不能产生ID，遇到非法或截断frame后不会
-重新开始解析。而写入路径上一批的归档发生在游标前进
-之前（`OnlineMemoryRuntime.process`先调`workspace.archive_source_records`，
-再调`state.advance_cursor`），所以归档覆盖了旧游标越过的一切。
+来源归档提供候选节点，但两种格式的可信边界不同。canonical
+`sources/openprogram/_v2/<session-id>.md`把ID放在严格的`record-lines` frame中；
+迁移只读取parser返回的合法前缀，正文不能产生ID，遇到非法或截断frame后不会
+重新开始解析。legacy `sources/openprogram/<session-id>.md`没有正文行数或结束
+标记。第一条记录开始以后，用户正文可以逐字包含一组anchor、正确hash和
+`source-id`，它与下一条真实记录没有可验证的区别。因此legacy迁移只接受文件标题
+`# <session-id>\n\n`后字节位置上的第一组合法header；后面的legacy记录宁可重写，
+也不据此打标记。
 
-把那些节点标上，不会把写过的重写一遍。它可能比旧游标多盖一点，因为一批归档
-之后写入失败了，读起来就是已写、不会再被拿出来；这个代价最多是每个thread
-一次、一批被打断的内容，对面是把每个会话的完整历史重写一遍，那才是一个标记
-都不打的代价。完全没有`sources/`目录的工作区，也就是早于来源归档的那些，
-从头写一遍。
+候选集合也不能直接变成标记。旧ordinal错误可能留下“共享前缀已归档、分支中间
+未归档、分支尾部又归档”的集合；如果直接给尾节点打标记，新读取会从尖端立即
+停止，中间轮次永久不会再交给写入器。迁移对每个候选节点读取到该节点的真实DAG
+路径，复用`writing._records`的角色、正文和runtime轮次过滤规则，只保留从第一条
+可写记录开始连续存在于候选集合中的前缀，遇到第一个缺口即停止。各条路径的安全
+前缀再按session合并。工具节点、runtime轮次和空正文不参与前缀也不打标记。
 
-标记打完之后`cursors`就从`runtime.json`里离开。计数器留在那里：
+这条规则可能把已经归档的分支尾部再写一次，也会让legacy文件第一条之后的记录
+再写一次。重复写入可由后续整理合并；多标一个尾节点会让缺口永久消失，所以迁移
+选择少标。完全没有`sources/`目录的工作区从头写一遍。
+
+所有session的安全前缀都成功写入节点之后，`cursors`才从`runtime.json`里离开；
+任一批标记写入抛错时旧字段保留，下一次重试。计数器留在那里：
 `creation_order`、局部批次与token计数、上一次全局整理的时间。
 
 ### 它让会话存储付出什么
@@ -395,7 +401,7 @@ head往回走会把整个会话都收进来。
 | 要存什么 | 一个本来就存在的节点上多一个字段 | 每个thread一个文件，装下写过的每一个ID |
 | 怎么增长 | 不增长 | 每条消息一项，会话在多久就留多久 |
 | 一次读取的代价 | 从尖端往回走几步 | 这个thread的整份清单 |
-| 迁移 | 把来源归档覆盖到的节点标上 | 用同一份归档播种同一个集合 |
+| 迁移 | 从可信归档候选中只标DAG连续前缀 | 用同一份安全前缀播种集合 |
 | 标记或条目丢了 | 走行提前停下，比它更老的全部搁浅 | 那一轮会被重新拿出来 |
 | 耦合 | 记忆往会话存储里写一个字段 | 记忆自己记账 |
 
@@ -420,7 +426,7 @@ head往回走会把整个会话都收进来。
 | 5 | `openprogram/memory/scriptorium/runtime/online.py` | `pending`改成`unwritten_turns(records, marked_ids)`；`process`收一个`mark`回调，只在写入器报出改过文件时调用它 | 改约25行 |
 | 6 | `openprogram/memory/scriptorium/writing.py` | `_records`去掉按位置生成ID的退路；`write_session`的写入器闭包返回`_changed_files(audit)`并提供`mark`回调；`_pending`改读标记 | 改约40行 |
 | 7 | `openprogram/memory/scriptorium/writing.py` | `write(force=True)`向`list_branches`要每个尖端，每个尖端跑一趟，head那条先跑 | 新增约30行 |
-| 8 | `openprogram/memory/scriptorium/runtime/mark_archived_turns.py` | 一次性迁移：从`sources/`里解析`source-id`注释，把那些节点标上，删掉`cursors` | 新增约50行 |
+| 8 | `openprogram/memory/scriptorium/runtime/mark_archived_turns.py` | 一次性迁移：读取可信归档候选，在真实DAG上只标连续前缀，全部成功后删掉`cursors` | 新增约50行 |
 
 测试，都在`tests/unit/`下：
 
@@ -437,8 +443,9 @@ head往回走会把整个会话都收进来。
 
 ### 这套方案没解决的
 
-- **没有任何东西检查标记确实构成一段前缀。**走行停在它遇到的第一条带标记的
-  轮次上，并且相信它后面的也都带着标记。
+- **在线写入没有通用的前缀检查。**一次性迁移会在真实DAG路径上显式验证连续
+  前缀；正常写入仍靠“每批只取最老的待写轮次”维持这个不变量。走行停在它遇到
+  的第一条带标记的轮次上，并且相信更早的可写轮次也都带着标记。
 - **一条分支只在会话边界上被回访。**两次边界之间，每一轮的路径只拿head那条，
   所以一小时前离开的分支要等这个会话闲置下来。等着不丢东西，早一点也拿不到
   更多：head的写入散在五处，它们唯一共同经过的那个函数把旧值丢掉了，也没有
@@ -537,23 +544,24 @@ head往回走会把整个会话都收进来。
   一次。
 - `RuntimeState.cursors`和`advance_cursor`已经移除，其余整理计数器保留；
   损坏的`runtime.json`读为空状态。旧安装会在正常写入路径计算pending之前，
-  同时扫描`sources/openprogram/*.md`中经过文件名、标题、确定性anchor和紧邻
-  `source-id`校验的legacy header，以及`sources/openprogram/_v2/*.md`中严格解析的
-  合法frame前缀。两种来源按session合并后批量标记节点，最后才删除旧`cursors`；
-  正文伪frame和非法尾部之后的内容不生效。
+  读取`sources/openprogram/*.md`标题后字节位置上的第一组合法legacy header，
+  以及`sources/openprogram/_v2/*.md`中严格解析的合法frame前缀。候选ID随后在
+  真实DAG路径上经过与`writing._records`相同的过滤，只标记无缺口的连续前缀；
+  legacy后续header、正文伪header、v2非法尾部后的frame和缺口后的候选都不生效。
+  所有session的批量标记成功后才删除旧`cursors`，失败时保留供重试。
 - 会话边界从`get_session()['head_id']`确定当前head，先写完该分支的全部欠账，
   再检查其他活分支；其他分支只有达到正常token阈值才写，不使用闲置短分支
   放行。共享前缀由先处理的分支标记，后续分支只交出分叉后的未写后缀。
 
 验证结果如下：
 
-- `python -m pytest -q tests/unit/test_memory_written_marker.py tests/unit/test_memory_writing.py tests/unit/test_memory_write_timing.py`：47项通过。
-- 直接相关的store/runtime和`GraphStoreShim.update`调用路径回归组：121项通过。
-- `python -m pytest -q --ignore=tests/integration/test_test_framework.py`：
-  2556项通过、7项跳过、2项deselected、1项xfail。11项origin-guard/403
-  失败与实现前记录一致，没有新增失败。本次新增和修改的memory测试随后在
-  独立临时目录中按顺序执行49项，结束时没有stage目录或延迟flush timer残留。
-  本次改动没有修改那些无关失败的实现。
+- `python -m pytest -q tests/unit/test_memory_written_marker.py tests/unit/test_memory_writing.py tests/unit/test_memory_write_timing.py`：59项通过。
+- memory、DAG branch、predecessor和session branch相关回归组：159项通过。
+- `python -m tools.docs_site.build`构建415页；`python -m tools.docs_site.checklinks`
+  报告0条断链。修改的Python文件通过ruff、`py_compile`和`git diff --check`。
+- 迁移加固之前的全仓基线为2556项通过、7项跳过、2项deselected、1项xfail，
+  另有11项已记录的origin-guard/403失败。合并分支在发布前重新执行全量验证，
+  不把这份旧基线当成本次补丁的验证结果。
 
 第四层仍未实现：没有改成由记忆主题/来源内容本身充当唯一账本；没有把分支
 来源写进记忆块或检索结果；没有用事件通知替换轮询；没有加入跨会话spawn

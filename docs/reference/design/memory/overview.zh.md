@@ -390,11 +390,13 @@ agents。在这个接口上再开一条私路，只会变成绕过它的办法�
 记忆文件的批次才给来源节点打标记。会话结束时先处理当前head，再检查其他活分支，
 共享前缀不会重复写入。
 
-旧`runtime.json`在首次写入前仍可能包含`cursors`。一次性迁移会同时校验legacy
-`sources/openprogram/*.md`的结构化header，以及严格
-`sources/openprogram/_v2/*.md`中首个非法frame之前的合法前缀；按session合并其中的
-来源节点ID、批量写入标记，最后才删除`cursors`。迁移不从正文提取ID，也不会在非法
-v2 frame之后重新开始解析。完整方案和实测代价见
+旧`runtime.json`在首次写入前仍可能包含`cursors`。一次性迁移只信任legacy
+`sources/openprogram/*.md`标题后字节位置上的第一组合法header，以及严格
+`sources/openprogram/_v2/*.md`中首个非法frame之前的合法前缀。两处得到的候选ID还要
+在真实DAG路径上经过与在线写入相同的记录过滤，只给第一个缺口之前的连续前缀打标记；
+缺口后的已归档尾部会重写。所有session的标记批次成功后才删除`cursors`，失败时保留
+供重试。legacy后续header可能来自正文，v2 parser也不会在非法frame后重新开始解析。
+完整方案和实测代价见
 [`written-marker.zh.md`](written-marker.zh.md)，更广的采用决策见
 [`memory-adoption.html`](memory-adoption.html)。
 

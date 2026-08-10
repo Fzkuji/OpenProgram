@@ -13,7 +13,7 @@ from .state import RuntimeStateStore
 
 
 SOURCE_HEADER = re.compile(
-    r'(?:\A|\n\n)<a id="(source-[0-9a-f]{16})"></a>\n'
+    r'<a id="(source-[0-9a-f]{16})"></a>\n'
     r"<!-- source-id:(openprogram/([^/\n]+)/([^>\n]+)) -->\n"
 )
 MARKER = "memory_written_scriptorium"
@@ -27,24 +27,26 @@ def _payload(path: Path) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _archived_node_ids(archive: Path) -> tuple[str, list[str]] | None:
-    """Validated session and node IDs from provider source headers."""
+def _legacy_archived_node(archive: Path) -> tuple[str, str] | None:
+    """The one legacy source header record content cannot precede."""
     try:
         text = archive.read_text(encoding="utf-8")
     except OSError:
         return None
     session_id = unquote(archive.stem)
-    if not text.startswith(f"# {session_id}\n"):
+    heading = f"# {session_id}\n\n"
+    if not text.startswith(heading):
         return None
-    node_ids: list[str] = []
-    for match in SOURCE_HEADER.finditer(text):
-        anchor, source_id, source_session, node_id = match.groups()
-        expected_anchor = (
-            "source-" + hashlib.sha256(source_id.encode()).hexdigest()[:16]
-        )
-        if source_session == session_id and anchor == expected_anchor:
-            node_ids.append(node_id.strip())
-    return session_id, node_ids
+    match = SOURCE_HEADER.match(text, len(heading))
+    if match is None:
+        return None
+    anchor, source_id, source_session, node_id = match.groups()
+    expected_anchor = "source-" + hashlib.sha256(
+        source_id.encode()
+    ).hexdigest()[:16]
+    if source_session != session_id or anchor != expected_anchor:
+        return None
+    return session_id, node_id.strip()
 
 
 def _v2_archived_nodes(
@@ -65,6 +67,29 @@ def _v2_archived_nodes(
     return nodes
 
 
+def _continuous_archived_prefixes(
+    session_store, candidates: dict[str, set[str]],
+) -> dict[str, set[str]]:
+    """Keep only archived prefixes under the live write-time turn filter."""
+    from ..writing import _records
+
+    grouped: dict[str, set[str]] = {}
+    for session_id, node_ids in candidates.items():
+        safe: set[str] = set()
+        # ponytail: this one-time migration is O(candidates x path length).
+        # Keep SessionStore's DAG semantics; add an index only if measured
+        # migration duration requires it.
+        for node_id in node_ids:
+            branch = session_store.get_branch(session_id, node_id) or []
+            for record in _records(session_id, branch):
+                if record.message_id not in node_ids:
+                    break
+                safe.add(record.message_id)
+        if safe:
+            grouped[session_id] = safe
+    return grouped
+
+
 def migrate(memory_dir: Path, session_store, workspace_id: str) -> bool:
     """Seed markers from archived source IDs and then remove cursors."""
     state_store = RuntimeStateStore(Path(memory_dir))
@@ -78,25 +103,24 @@ def migrate(memory_dir: Path, session_store, workspace_id: str) -> bool:
         if payload is None or "cursors" not in payload:
             return False
         source_dir = Path(memory_dir) / "sources" / "openprogram"
-        grouped: dict[str, dict[str, dict[str, str]]] = {}
+        candidates: dict[str, set[str]] = {}
         if source_dir.exists():
             for archive in sorted(source_dir.glob("*.md")):
-                parsed = _archived_node_ids(archive)
+                parsed = _legacy_archived_node(archive)
                 if parsed is None:
                     continue
-                session_id, node_ids = parsed
-                grouped.setdefault(session_id, {}).update({
-                    node_id: {MARKER: workspace_id}
-                    for node_id in node_ids
-                })
+                session_id, node_id = parsed
+                candidates.setdefault(session_id, set()).add(node_id)
             for archive in sorted((source_dir / "_v2").glob("*.md")):
                 for session_id, node_id in _v2_archived_nodes(
                     archive, Path(memory_dir),
                 ):
-                    grouped.setdefault(session_id, {})[node_id] = {
-                        MARKER: workspace_id,
-                    }
-        for session_id, patches in grouped.items():
+                    candidates.setdefault(session_id, set()).add(node_id)
+        grouped = _continuous_archived_prefixes(session_store, candidates)
+        for session_id, node_ids in grouped.items():
+            patches = {
+                node_id: {MARKER: workspace_id} for node_id in node_ids
+            }
             session_store.merge_node_metadata_batch(session_id, patches)
         state_store.save(state_store.load())
     return True

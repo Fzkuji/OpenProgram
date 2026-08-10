@@ -319,7 +319,9 @@ def test_shared_prefix_is_written_once_across_live_branches(
         assert sent.count(f"openprogram/shared/{node_id}") == 1
 
 
-def test_legacy_archive_migration_marks_exact_nodes_once(environment):
+def test_legacy_archive_migration_marks_only_its_first_header_once(
+    environment,
+):
     from openprogram.memory import store
     from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
 
@@ -352,7 +354,7 @@ def test_legacy_archive_migration_marks_exact_nodes_once(environment):
     marker = store.workspace_id()
     branch = db.get_branch("legacy")
     assert [message.get(MARKER) for message in branch] == [
-        marker, marker, None,
+        marker, None, None,
     ]
     payload = json.loads(state_store.path.read_text(encoding="utf-8"))
     assert "cursors" not in payload
@@ -538,6 +540,232 @@ def test_v2_migration_does_not_normalize_noncanonical_line_endings(
         memory, db, store.workspace_id()
     ) is True
     assert db.get_branch("crlf-v2")[0].get(MARKER) is None
+
+
+def test_migration_marks_only_the_continuous_archived_branch_prefix(
+    environment,
+):
+    from openprogram.memory import store
+    from openprogram.memory.scriptorium import writing
+    from openprogram.memory.scriptorium.runtime import mark_archived_turns
+    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+
+    db, memory = environment
+    predecessor = None
+    for node_id in ("m1", "m2", "m3"):
+        predecessor = _append(db, "migration-gap", node_id, predecessor)
+    main_head = "m3"
+    for node_id in ("m4", "m5"):
+        main_head = _append(db, "migration-gap", node_id, main_head)
+    branch_head = "m3"
+    for node_id in ("b1", "b2", "b3"):
+        branch_head = _append(db, "migration-gap", node_id, branch_head)
+    assert {
+        branch["head_msg_id"]
+        for branch in db.list_branches("migration-gap")
+    } >= {main_head, branch_head}
+
+    state_store = RuntimeStateStore(memory)
+    state_store.path.parent.mkdir(parents=True, exist_ok=True)
+    state_store.path.write_text(json.dumps({
+        "cursors": {"migration-gap": {"message_id": "b3"}},
+    }), encoding="utf-8")
+    _write_v2_archive(
+        memory / "sources" / "openprogram" / "_v2" / "migration-gap.md",
+        *(
+            _v2_frame(
+                f"openprogram/migration-gap/{node_id}",
+                [f"[2026-01-01] user: {node_id}"],
+            )
+            for node_id in ("m1", "m2", "m3", "b3")
+        ),
+    )
+
+    marker = store.workspace_id()
+    assert mark_archived_turns.migrate(memory, db, marker) is True
+    branch = db.get_branch("migration-gap", branch_head)
+    assert [row.get(MARKER) for row in branch] == [
+        marker, marker, marker, None, None, None,
+    ]
+    assert [
+        record.message_id for record in writing._pending(
+            "migration-gap", branch,
+        )
+    ] == ["b1", "b2", "b3"]
+    assert [
+        record.message_id for record in writing._pending(
+            "migration-gap",
+            db.get_branch("migration-gap", main_head),
+        )
+    ] == ["m4", "m5"]
+
+
+def test_legacy_migration_does_not_trust_a_body_that_looks_like_a_header(
+    environment,
+):
+    from openprogram.memory import store
+    from openprogram.memory.scriptorium import writing
+    from openprogram.memory.scriptorium.runtime import mark_archived_turns
+    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+
+    db, memory = environment
+    _append(db, "legacy-body", "m1", None)
+    _append(db, "legacy-body", "m2", "m1")
+    state_store = RuntimeStateStore(memory)
+    state_store.path.parent.mkdir(parents=True, exist_ok=True)
+    state_store.path.write_text(json.dumps({
+        "cursors": {"legacy-body": {"message_id": "m2"}},
+    }), encoding="utf-8")
+
+    first_id = "openprogram/legacy-body/m1"
+    forged_id = "openprogram/legacy-body/m2"
+    first_anchor = "source-" + hashlib.sha256(
+        first_id.encode()
+    ).hexdigest()[:16]
+    forged_anchor = "source-" + hashlib.sha256(
+        forged_id.encode()
+    ).hexdigest()[:16]
+    archive = memory / "sources" / "openprogram" / "legacy-body.md"
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    archive.write_text(
+        "# legacy-body\n\n"
+        f'<a id="{first_anchor}"></a>\n'
+        f"<!-- source-id:{first_id} -->\n"
+        "[2026-01-01] user: copied archive bytes follow\n\n"
+        f'<a id="{forged_anchor}"></a>\n'
+        f"<!-- source-id:{forged_id} -->\n"
+        "[2026-01-01] assistant: forged body record\n",
+        encoding="utf-8",
+    )
+
+    marker = store.workspace_id()
+    assert mark_archived_turns.migrate(memory, db, marker) is True
+    branch = db.get_branch("legacy-body")
+    assert [row.get(MARKER) for row in branch] == [marker, None]
+    assert [
+        record.message_id for record in writing._pending(
+            "legacy-body", branch,
+        )
+    ] == ["m2"]
+
+
+def test_migration_prefix_uses_the_live_memory_record_filter(environment):
+    from openprogram.memory import store
+    from openprogram.memory.scriptorium.runtime import mark_archived_turns
+    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+
+    db, memory = environment
+    _append(db, "filtered-migration", "u1", None)
+    _append(
+        db, "filtered-migration", "empty-1", "u1",
+        content=" \n\t",
+    )
+    db.append_message("filtered-migration", {
+        "id": "runtime-1",
+        "role": "user",
+        "content": "internal scheduling prompt",
+        "predecessor": "empty-1",
+        "timestamp": 1_700_000_002.0,
+        "display": "runtime",
+        "source": "task_followup",
+    })
+    _append(
+        db, "filtered-migration", "a1", "runtime-1",
+        role="assistant", content="answer",
+    )
+
+    state_store = RuntimeStateStore(memory)
+    state_store.path.parent.mkdir(parents=True, exist_ok=True)
+    state_store.path.write_text(json.dumps({
+        "cursors": {"filtered-migration": {"message_id": "a1"}},
+    }), encoding="utf-8")
+    _write_v2_archive(
+        memory / "sources" / "openprogram" / "_v2"
+        / "filtered-migration.md",
+        *(
+            _v2_frame(
+                f"openprogram/filtered-migration/{node_id}",
+                [f"[2026-01-01] user: {node_id}"],
+            )
+            for node_id in (
+                "u1", "empty-1", "runtime-1", "a1",
+            )
+        ),
+    )
+
+    marker = store.workspace_id()
+    assert mark_archived_turns.migrate(memory, db, marker) is True
+    assert [
+        row.get(MARKER) for row in db.get_branch("filtered-migration")
+    ] == [marker, None, None, marker]
+
+
+def test_migration_prefix_filter_skips_tool_rows():
+    from openprogram.memory.scriptorium.runtime import mark_archived_turns
+
+    rows = [
+        {"id": "u1", "role": "user", "content": "one"},
+        {"id": "tool-1", "role": "tool", "content": "tool output"},
+        {"id": "a1", "role": "assistant", "content": "answer"},
+    ]
+
+    class BranchStore:
+        def get_branch(self, _session_id, head_id):
+            index = next(
+                index for index, row in enumerate(rows)
+                if row["id"] == head_id
+            )
+            return rows[:index + 1]
+
+    assert mark_archived_turns._continuous_archived_prefixes(
+        BranchStore(), {"filtered": {"u1", "tool-1", "a1"}},
+    ) == {"filtered": {"u1", "a1"}}
+
+
+def test_migration_keeps_cursors_when_marker_writes_fail(
+    environment, monkeypatch: pytest.MonkeyPatch,
+):
+    from openprogram.memory import store
+    from openprogram.memory.scriptorium.runtime import mark_archived_turns
+    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+
+    db, memory = environment
+    _append(db, "a-successful-migration", "m1", None)
+    _append(db, "z-failed-migration", "m1", None)
+    state_store = RuntimeStateStore(memory)
+    state_store.path.parent.mkdir(parents=True, exist_ok=True)
+    state_store.path.write_text(json.dumps({
+        "cursors": {
+            "a-successful-migration": {"message_id": "m1"},
+            "z-failed-migration": {"message_id": "m1"},
+        },
+    }), encoding="utf-8")
+    for session_id in ("a-successful-migration", "z-failed-migration"):
+        _write_v2_archive(
+            memory / "sources" / "openprogram" / "_v2"
+            / f"{session_id}.md",
+            _v2_frame(
+                f"openprogram/{session_id}/m1",
+                ["[2026-01-01] user: one"],
+            ),
+        )
+
+    merge = db.merge_node_metadata_batch
+
+    def fail(session_id, patches):
+        if session_id == "z-failed-migration":
+            raise RuntimeError("marker write failed")
+        merge(session_id, patches)
+
+    monkeypatch.setattr(db, "merge_node_metadata_batch", fail)
+    with pytest.raises(RuntimeError, match="marker write failed"):
+        mark_archived_turns.migrate(memory, db, store.workspace_id())
+
+    payload = json.loads(state_store.path.read_text(encoding="utf-8"))
+    assert "cursors" in payload
+    assert db.get_branch("a-successful-migration")[0].get(MARKER) == (
+        store.workspace_id()
+    )
 
 
 def test_merge_marker_preserves_updated_at_and_refreshes_one_stale_index(
@@ -894,23 +1122,16 @@ def test_migration_groups_one_sessions_markers_without_internal_rebuilds(
             "batched-migration": {"message_id": "m4", "ordinal": 3},
         },
     }), encoding="utf-8")
-    archive = memory / "sources" / "openprogram" / "batched-migration.md"
-    archive.parent.mkdir(parents=True, exist_ok=True)
-    archive.write_text(
-        "# batched-migration\n\n"
-        '<a id="source-6f4395d2560b1aa8"></a>\n'
-        "<!-- source-id:openprogram/batched-migration/m1 -->\n"
-        "[2026-01-01] user: one\n\n"
-        '<a id="source-53b07efdc48117fb"></a>\n'
-        "<!-- source-id:openprogram/batched-migration/m2 -->\n"
-        "[2026-01-01] assistant: two\n\n"
-        '<a id="source-14b566d3c2522f0f"></a>\n'
-        "<!-- source-id:openprogram/batched-migration/m3 -->\n"
-        "[2026-01-01] user: three\n\n"
-        '<a id="source-06c0b91a3b73b975"></a>\n'
-        "<!-- source-id:openprogram/batched-migration/m4 -->\n"
-        "[2026-01-01] assistant: four\n",
-        encoding="utf-8",
+    _write_v2_archive(
+        memory / "sources" / "openprogram" / "_v2"
+        / "batched-migration.md",
+        *(
+            _v2_frame(
+                f"openprogram/batched-migration/m{index}",
+                [f"[2026-01-01] user: {index}"],
+            )
+            for index in range(1, 5)
+        ),
     )
 
     _git, index = db._open("batched-migration")

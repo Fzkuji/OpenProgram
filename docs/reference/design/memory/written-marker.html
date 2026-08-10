@@ -681,6 +681,57 @@
   </svg>
   </div></div>
 
+  <h3>一次性迁移：只标记可验证的连续前缀</h3>
+  <div class="card"><div class="scroll">
+  <svg viewBox="0 0 1160 330" xmlns="http://www.w3.org/2000/svg" role="img"
+       aria-label="legacy和v2归档候选经过DAG连续前缀校验后才写入节点标记">
+    <defs>
+      <marker id="mig-gr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#5aad4e"/></marker>
+      <marker id="mig-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
+    </defs>
+
+    <text x="24" y="28" fill="#d4843a" font-size="13" font-weight="700">归档先产生候选ID；候选ID不能直接变成标记</text>
+    <rect x="24" y="42" width="520" height="62" rx="8" fill="#241f10" stroke="#d4843a"/>
+    <text x="42" y="65" fill="#d4843a" font-size="11.5" font-weight="700">legacy</text>
+    <text x="104" y="65" fill="#bdb9a6" font-size="11">只接受文件标题后字节位置上的第一组合法header</text>
+    <text x="42" y="87" fill="#8a8675" font-size="10.5">没有正文长度；第二组合法header可能逐字来自用户正文，因此后续记录重新写入。</text>
+
+    <rect x="558" y="42" width="578" height="62" rx="8" fill="#141a12" stroke="#5aad4e"/>
+    <text x="576" y="65" fill="#5aad4e" font-size="11.5" font-weight="700">v2</text>
+    <text x="610" y="65" fill="#bdb9a6" font-size="11">读取严格record-lines parser的合法前缀</text>
+    <text x="576" y="87" fill="#8a8675" font-size="10.5">正文按行数跳过；首个非法或截断frame终止解析，不从后面的内容重新开始。</text>
+
+    <text x="24" y="132" fill="#bdb9a6" font-size="11.5">旧ordinal错误可能留下：</text>
+    <line x1="190" y1="128" x2="772" y2="128" stroke="#3a382c" stroke-width="1.3"/>
+    <g text-anchor="middle" font-size="10">
+      <circle cx="224" cy="128" r="9" fill="#16240f" stroke="#5aad4e"/><text x="224" y="153" fill="#5aad4e">m1 ✓</text>
+      <circle cx="310" cy="128" r="9" fill="#16240f" stroke="#5aad4e"/><text x="310" y="153" fill="#5aad4e">m2 ✓</text>
+      <circle cx="396" cy="128" r="9" fill="#16240f" stroke="#5aad4e"/><text x="396" y="153" fill="#5aad4e">m3 ✓</text>
+      <circle cx="482" cy="128" r="9" fill="#2a1418" stroke="#e0445a"/><text x="482" y="153" fill="#e0445a">b1 ×</text>
+      <circle cx="568" cy="128" r="9" fill="#2a1418" stroke="#e0445a"/><text x="568" y="153" fill="#e0445a">b2 ×</text>
+      <circle cx="654" cy="128" r="9" fill="#16240f" stroke="#5aad4e"/><text x="654" y="153" fill="#5aad4e">b3 ✓</text>
+    </g>
+    <text x="790" y="132" fill="#8a8675" font-size="10.5">共享前缀 + 未归档中段 + 已归档尾部</text>
+
+    <rect x="24" y="174" width="520" height="92" rx="8" fill="#2a1418" stroke="#e0445a"/>
+    <text x="42" y="198" fill="#e0445a" font-size="11.5" font-weight="700">直接标记所有候选：会永久漏写</text>
+    <text x="42" y="220" fill="#bdb9a6" font-size="10.5">b3得到标记后，从分支尖端倒序读取会立即停止。</text>
+    <path d="M494 236 L282 236" stroke="#e0445a" stroke-width="1.4" marker-end="url(#mig-rd)"/>
+    <text x="42" y="252" fill="#e0445a" font-size="10.5">b1、b2不再进入任何写入批次。</text>
+
+    <rect x="558" y="174" width="578" height="92" rx="8" fill="#101a10" stroke="#5aad4e"/>
+    <text x="576" y="198" fill="#5aad4e" font-size="11.5" font-weight="700">当前迁移：在真实DAG上保留连续前缀</text>
+    <text x="576" y="220" fill="#bdb9a6" font-size="10.5">复用writing._records过滤；从第一条可写记录开始，遇到b1缺口即停止。</text>
+    <path d="M592 238 L812 238" stroke="#5aad4e" stroke-width="1.4" marker-end="url(#mig-gr)"/>
+    <text x="826" y="242" fill="#5aad4e" font-size="10.5">只标m1–m3</text>
+    <text x="576" y="258" fill="#8a8675" font-size="10.5">b1、b2、b3下次一起写；b3允许重复，缺口不会被跳过。</text>
+
+    <rect x="24" y="282" width="1112" height="32" rx="7" fill="#1d1c14" stroke="#2e2c20"/>
+    <text x="42" y="302" fill="#f0eee6" font-size="11.5" font-weight="700">提交顺序：</text>
+    <text x="112" y="302" fill="#bdb9a6" font-size="11.5">所有session的安全前缀都成功写入节点后才删除cursors；任一批失败，cursors保留供重试。</text>
+  </svg>
+  </div></div>
+
   <h3>反面意见：外部集合精确，走行不精确</h3>
   <div class="tbl">
   <table>
@@ -690,7 +741,7 @@
     <tr><td><b>要存什么</b></td><td class="y">一个本来就存在的节点上多一个字段</td><td>每个 thread 一个文件，装下写过的每一个 ID</td></tr>
     <tr><td><b>怎么增长</b></td><td class="y">不增长</td><td class="n">每条消息一项，会话在多久就留多久</td></tr>
     <tr><td><b>一次读取的代价</b></td><td class="y">从尖端往回走几步</td><td class="n">这个 thread 的整份清单</td></tr>
-    <tr><td><b>迁移</b></td><td>把来源归档覆盖到的节点标上</td><td>用同一份归档播种同一个集合</td></tr>
+    <tr><td><b>迁移</b></td><td>从可信归档候选中只标DAG连续前缀</td><td>用同一份安全前缀播种集合</td></tr>
     <tr><td><b>标记或条目丢了</b></td><td class="n">走行提前停下，比它更老的全部搁浅</td><td class="y">那一轮会被重新拿出来</td></tr>
     <tr><td><b>耦合</b></td><td class="n">记忆往会话存储里写一个字段</td><td class="y">记忆自己记账</td></tr>
   </table>
@@ -817,7 +868,9 @@
     会话节点用<code>metadata.memory_written_scriptorium = &lt;workspace-id&gt;</code>记录写入状态，当前分支按节点标记计算待写后缀，
     成功且实际修改记忆的批次才打标记；会话结束时先处理当前head，再处理其他活分支。
     <code>RuntimeState.cursors</code>和<code>advance_cursor</code>已经移除。旧安装首次写入时同时校验legacy header和
-    <code>sources/openprogram/_v2/*.md</code>的严格合法前缀，合并节点后才删除旧<code>cursors</code>；正文伪frame和非法尾部后的内容不参与迁移。
+    <code>sources/openprogram/_v2/*.md</code>的严格合法前缀：legacy只接受标题后第一组合法header，v2遇到非法frame停止。
+    候选ID在真实DAG路径上经过与在线写入相同的记录过滤，只标记第一个缺口之前的连续前缀；缺口后的尾部允许重写。
+    所有session标记成功后才删除旧<code>cursors</code>，失败时保留供重试。
     结构化speaker字段、可信v2 frame和speaker过滤也已经实现。第四层仍未实现。</div>
 
 </div>

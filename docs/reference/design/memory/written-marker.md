@@ -392,29 +392,38 @@ An installation upgrading from the position cursor has
 marks on any node, so a walk back from a head would collect the whole
 session.
 
-The source archive says which turns were handed to the writer. Legacy
-`sources/openprogram/<session-id>.md` files carry a validated anchor and
-`<!-- source-id:openprogram/<session>/<message> -->` comment per archived
-message. Canonical `sources/openprogram/_v2/<session-id>.md` files carry
-the same source id inside strict `record-lines` frames. Migration consumes
-only the v2 parser's valid prefix: record content cannot create an id, and
-parsing never resumes after an invalid or truncated frame. On the write path a
-batch is archived before the cursor advances
-(`OnlineMemoryRuntime.process` calls `workspace.archive_source_records`
-before `state.advance_cursor`), so the archive covers everything the old
-cursor pointed past.
+The source archive supplies candidate nodes, but the two formats have
+different trust boundaries. Canonical
+`sources/openprogram/_v2/<session-id>.md` files put ids inside strict
+`record-lines` frames. Migration consumes only the parser's valid prefix:
+record content cannot create an id, and parsing never resumes after an
+invalid or truncated frame. Legacy
+`sources/openprogram/<session-id>.md` has no body length or end marker.
+After its first record starts, user content can contain a complete anchor,
+the correct hash and a `source-id` that is byte-for-byte indistinguishable
+from the next real record. Legacy migration therefore accepts only the first
+valid header at the exact byte position after `# <session-id>\n\n`. Later
+legacy records are re-written rather than trusted as marks.
 
-Marking those nodes re-writes nothing that was written. It can cover a
-little more, because a batch archived by a write that then failed reads
-as written and is not offered again; that costs at most one interrupted
-batch per thread, once, against re-writing every session's whole
-history, which is what placing no marks would cost. A workspace with no
-`sources/` tree, from before the source archive existed, is written from
-the start.
+The candidate set also cannot be marked directly. The old ordinal bug can
+produce an archived shared prefix, an unwritten middle of a branch, and an
+archived branch tip. Marking that tip would make the new reverse walk stop
+immediately and permanently omit the middle. For every candidate node,
+migration reads the real DAG path ending at that node, applies the same role,
+content and runtime-turn filtering as `writing._records`, and keeps only the
+continuous archived prefix starting at the first eligible record. The first
+gap stops that path. Safe prefixes are then merged per session. Tool nodes,
+runtime turns and empty bodies neither create a gap nor receive a mark.
 
-`cursors` leaves `runtime.json` once the marks are placed. The counters
-stay: `creation_order`, the local batch and token counts, and the time
-of the last global pass.
+This can re-write an already archived branch tail and every legacy record
+after the first. A duplicate can be reconciled later; an over-marked tail
+would make a gap permanently unreachable, so migration deliberately
+under-marks. A workspace with no `sources/` tree is written from the start.
+
+`cursors` leaves `runtime.json` only after every session's safe prefix has
+been marked successfully. If any batch write raises, the old field remains
+for retry. The counters stay: `creation_order`, the local batch and token
+counts, and the time of the last global pass.
 
 ### What it costs the session store
 
@@ -493,7 +502,7 @@ than with the backlog:
 | What is stored | One field on a node that already exists | One file per thread holding every id ever written |
 | How it grows | Not at all | One entry per message, kept as long as the session |
 | What one read costs | A few steps back from the tip | The thread's whole list |
-| Migration | Mark what the source archive covers | Seed the set from the same archive |
+| Migration | Mark only the DAG-continuous prefix of trusted archive candidates | Seed the set from the same safe prefix |
 | A mark or an entry lost | The walk stops early, everything older is stranded | The turn is offered again |
 | Coupling | Memory writes one field into the session store | Memory keeps its own books |
 
@@ -522,7 +531,7 @@ migration.
 | 5 | `openprogram/memory/scriptorium/runtime/online.py` | `pending` becomes `unwritten_turns(records, marked_ids)`; `process` takes a `mark` callback and calls it only when the writer reported changed files | ~25 changed |
 | 6 | `openprogram/memory/scriptorium/writing.py` | `_records` drops the positional-id fallback; `write_session`'s writer closure returns `_changed_files(audit)` and supplies the `mark` callback; `_pending` reads marks | ~40 changed |
 | 7 | `openprogram/memory/scriptorium/writing.py` | `write(force=True)` asks `list_branches` and runs one pass per tip, head's branch first | ~30 new |
-| 8 | `openprogram/memory/scriptorium/runtime/mark_archived_turns.py` | One-time migration: parse `source-id` comments out of `sources/`, mark those nodes, delete `cursors` | ~50 new |
+| 8 | `openprogram/memory/scriptorium/runtime/mark_archived_turns.py` | One-time migration: read trusted archive candidates, mark only continuous prefixes on real DAG paths, then delete `cursors` | ~50 new |
 
 Tests, all in `tests/unit/`:
 
@@ -541,9 +550,11 @@ the only runtime cost worth re-measuring after the change.
 
 ### What this still does not settle
 
-- **Nothing checks that the marks form a prefix.** The walk stops at the
-  first marked turn it meets and trusts that everything behind it is
-  marked too.
+- **Online writes have no general prefix check.** The one-time migration
+  explicitly validates a continuous prefix on each real DAG path; normal
+  writes still preserve the invariant by taking the oldest pending records
+  in every batch. The walk stops at the first marked turn it meets and trusts
+  that every earlier eligible turn is marked too.
 - **A branch is only revisited at the session boundary.** Between
   boundaries the per-turn path offers the head's branch alone, so a
   branch left an hour ago waits for the session to go idle. Nothing is
@@ -662,7 +673,10 @@ handles the current head before other live branch tips.
 
 `RuntimeState.cursors` and `advance_cursor` have been removed. An installation
 that still has legacy `cursors` performs one migration before pending work is
-computed: validated legacy headers and strict v2 valid-prefix frames are
-merged per session, their source nodes are marked, and only then is the old
-field removed. The v2 migration does not trust record content or resume after
-a malformed tail. Layer 4 remains unimplemented and unscheduled.
+computed. It trusts only the first valid legacy header immediately after the
+file title and the strict v2 parser's valid-prefix frames. Candidate ids are
+then filtered on their real DAG paths with `writing._records`, and only the
+continuous archived prefix before the first gap is marked. Later legacy
+headers, body-forged headers, candidates after a gap and frames after a bad v2
+tail are ignored. The old field is removed only after every marker batch
+succeeds. Layer 4 remains unimplemented and unscheduled.
