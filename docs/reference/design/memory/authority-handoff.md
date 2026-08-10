@@ -110,11 +110,8 @@ that prompt-injection surface entirely.
    Add a one-shot backfill that runs the writer over every source not cited by
    any Topic, ignoring markers. The acceptance transaction already promoted
    the legacy core into `topics/core.md`; backfill must preserve that result.
-   Also in that batch: queryable writer
-   status (last write time, last failure with retryable verdict, pending
-   count), `memory.backend=none` enforced at the shared CLI/Web boundary
-   (reads included, explicit disabled response), and the composed
-   end-to-end test.
+   Also in that batch: queryable writer status (last write time, last failure
+   with retryable verdict, pending count) and the composed end-to-end test.
 
 ## Deferred (second batch, after the above lands)
 
@@ -137,15 +134,18 @@ that prompt-injection surface entirely.
 - **D4 — deferred:** remove the no-op residue at
   `openprogram/functions/tools/memory/memory.py:151` in the memory cleanup
   batch.
-- **Memory batch:** isolate staging directories used by
+- **Memory batch — resolved:** staging directories used by
   `test_memory_routes.py::test_stage_directories_are_cleaned_up_on_both_paths`;
-  the current shared location can fail intermittently under `pytest -n auto`.
+  are now isolated per test, so parallel workers no longer inspect one shared
+  temporary location.
 - **Memory observability — deferred:** persist the last successful write time,
   latest failure reason, and pending count, then expose the same fields in
   status and the Web UI.
-- **Disabled backend — deferred:** make `memory.backend=none` reject the CLI
-  memory verbs and all `/api/memory/*` routes before `store.ensure()` can
-  create or mutate a workspace.
+- **Disabled backend — resolved:** commit `ce5db175` rejects every CLI memory
+  verb and all nine `/api/memory/*` routes before any workspace accessor runs.
+  The Web boundary uses one router dependency, including reads, and returns a
+  structured `MEMORY_DISABLED` response. The focused route/config tests pass,
+  and the combined memory/authority/channel set passes 298 tests.
 - **Combined coverage — deferred:** add a full automatic-writing integration
   test and an unavailable-model failure test; the current unavailable-model
   coverage exercises only the successful path.

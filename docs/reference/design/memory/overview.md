@@ -675,9 +675,10 @@ override. Provider authentication and configuration failures retain
 `retryable=false`, so the idle watcher does not repeat them. With
 `memory.backend=none`, the disabled provider emits no memory system prompt or
 recall and performs no automatic writes or organization; memory schedulers,
-idle watchers and unpaired-group archiving do not start or write.
-CLI memory verbs and `/api/memory/*` routes do not yet enforce that disabled
-state; their shared guard is deferred to the next memory batch. The real
+idle watchers and unpaired-group archiving do not start or write. Every CLI
+memory verb and all nine `/api/memory/*` routes reject the disabled state before
+any workspace accessor runs; the Web routes share one router dependency and
+return a structured `MEMORY_DISABLED` response. The real
 default provider completed a Topic write and transaction validation in an
 isolated workspace. The post-merge live pass also completed: a compatibility
 reader accepted the exact pre-tier `origin_scope` metadata shape in all 23

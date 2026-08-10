@@ -1192,7 +1192,7 @@
     pending来源只能由本地交互owner通过<code>memory_promote</code>提升；提升会记录审计事件并使用同一writer事务写入Topic，已有引用时跳过。该改动没有修改Source v2的
     <code>record-lines:N</code> framing或<code>speaker-id</code> percent编码格式。后台writer现在使用默认聊天agent的
     provider、模型与凭据，<code>memory.writer.model</code>可实时覆盖；<code>memory.backend=none</code>关闭提示注入、召回、
-    自动写入、整理和记忆线程。正式工作区已有23个v1 source文件仍使用旧<code>origin_scope</code>字段；读取器只接受该旧格式的精确canonical结构并映射为当前tier，不重写append-only文件。154个frame已全部通过扫描，随后2条待处理消息完成Topic事务和marker写入。hold队列、按请求方档位过滤读取结果、152个未引用frame的backfill、CLI/Web禁用guard和远程Web认证仍延期。
+    自动写入、整理和记忆线程，CLI与Web memory入口也会在访问工作区前拒绝。正式工作区已有23个v1 source文件仍使用旧<code>origin_scope</code>字段；读取器只接受该旧格式的精确canonical结构并映射为当前tier，不重写append-only文件。154个frame已全部通过扫描，随后2条待处理消息完成Topic事务和marker写入。hold队列、按请求方档位过滤读取结果、152个未引用frame的backfill和远程Web认证仍延期。
   </div>
 
   </section>

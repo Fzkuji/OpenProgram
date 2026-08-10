@@ -202,7 +202,7 @@
   </div>
 </div>
 
-<div class="pipe-note">同一memory稳定化批次已经完成：后台writer沿用默认聊天agent的provider、模型和凭据，<code>memory.writer.model</code>允许实时覆盖；未分类异常默认不可重试；<code>memory.backend=none</code>停止提示注入、召回、自动写入、整理与记忆线程。正式工作区的23个旧v1 source文件经精确兼容读取后全部通过frame校验，一次真实写入把2条待处理消息提交为3个Topic文件、5个block；重复扫描没有改动revision。CLI memory动词和<code>/api/memory/*</code>的禁用guard、152个未引用frame的backfill、状态可观测字段和组合端到端测试仍在后续批次。</div>
+<div class="pipe-note">同一memory稳定化批次已经完成：后台writer沿用默认聊天agent的provider、模型和凭据，<code>memory.writer.model</code>允许实时覆盖；未分类异常默认不可重试；<code>memory.backend=none</code>停止提示注入、召回、自动写入、整理与记忆线程，CLI memory动词和全部<code>/api/memory/*</code>入口也会在访问工作区前拒绝。正式工作区的23个旧v1 source文件经精确兼容读取后全部通过frame校验，一次真实写入把2条待处理消息提交为3个Topic文件、5个block；重复扫描没有改动revision。152个未引用frame的backfill、状态可观测字段和组合端到端测试仍在后续批次。</div>
 
 </div></body>
 </html>

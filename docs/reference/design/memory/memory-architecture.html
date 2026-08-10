@@ -1015,7 +1015,7 @@
   </div>
 
   <div class="legend">
-    <b>实现状态（2026-08-10）</b>：每轮写入与闲置写入使用同一事务；节点自身记录工作区写入标记；会话边界枚举活分支；常驻块由<code>topics/core.md</code>渲染；后台writer沿用默认聊天agent，并允许<code>memory.writer.model</code>实时覆盖；未分类异常默认不可重试；<code>memory.backend=none</code>关闭提示、召回、自动写入、整理和记忆线程。正式工作区验收中，23个旧v1 source文件（154个frame）经<code>origin_scope</code>到<code>authority_tier</code>的只读兼容后全部解析；2条待处理消息提交为3个Topic文件、5个唯一block，6个source引用和relation目标均通过校验，两条节点marker写入成功，第二次扫描处理数为0且revision不变。仍未实现：152个未引用历史frame的一次性backfill、CLI与Web memory入口的<code>backend=none</code>guard、writer状态持久化、组合端到端测试，以及越权请求hold队列、按请求方档位过滤读取结果、互斥分支语义、跨会话spawn关系和由head变化事件直接触发写入。
+    <b>实现状态（2026-08-10）</b>：每轮写入与闲置写入使用同一事务；节点自身记录工作区写入标记；会话边界枚举活分支；常驻块由<code>topics/core.md</code>渲染；后台writer沿用默认聊天agent，并允许<code>memory.writer.model</code>实时覆盖；未分类异常默认不可重试；<code>memory.backend=none</code>关闭提示、召回、自动写入、整理和记忆线程，CLI与全部<code>/api/memory/*</code>入口也会在访问工作区前拒绝。正式工作区验收中，23个旧v1 source文件（154个frame）经<code>origin_scope</code>到<code>authority_tier</code>的只读兼容后全部解析；2条待处理消息提交为3个Topic文件、5个唯一block，6个source引用和relation目标均通过校验，两条节点marker写入成功，第二次扫描处理数为0且revision不变。仍未实现：152个未引用历史frame的一次性backfill、writer状态持久化、组合端到端测试，以及越权请求hold队列、按请求方档位过滤读取结果、互斥分支语义、跨会话spawn关系和由head变化事件直接触发写入。
   </div>
 
 </div>

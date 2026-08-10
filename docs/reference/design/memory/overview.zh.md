@@ -442,7 +442,8 @@ source归档并排除主动提炼。已配对内容与owner内容都进入可信
 `memory.writer.model`只覆盖writer模型且实时生效。provider返回的认证和配置错误保留
 `retryable=false`，不会进入闲置观察器的重复重试。`memory.backend=none`使用空provider，并在
 启动前停止记忆工具、系统提示、每轮召回、自动写入、夜间整理、闲置观察器和未配对群聊归档。
-CLI memory动词与`/api/memory/*`路由尚未执行同一关闭校验，该共享guard留到下一批实现。
+全部CLI memory动词和九个`/api/memory/*`路由会在任何工作区访问前拒绝；Web路由共用一个
+router dependency并返回结构化`MEMORY_DISABLED`响应。
 真实默认provider已在隔离工作区完成Topic写入和事务校验，合并后的正式工作区验收也已完成：
 兼容读取器接受23个append-only source文件中154个frame使用的旧`origin_scope`元数据格式，随后
 一个含2条消息的待处理会话提交了3个Topic文件和5个block。6个source引用与全部relation目标均
