@@ -88,8 +88,8 @@ def _catalogued_clone_origin(root: str, expected: str) -> str | None:
 
 
 def _program_sources_path() -> Path:
-    from openprogram import paths
-    return paths.get_state_dir() / _PROGRAM_SOURCES_FILE
+    from openprogram.protected_paths import program_sources_path
+    return Path(program_sources_path())
 
 
 def _read_program_sources() -> list[dict]:
@@ -186,11 +186,8 @@ def agentics_dir() -> Optional[str]:
     is imported during that package's load).
     """
     try:
-        import openprogram
-        return os.path.join(
-            os.path.dirname(os.path.abspath(openprogram.__file__)),
-            "functions", "agentics",
-        )
+        from openprogram.protected_paths import agentics_root
+        return agentics_root()
     except Exception:
         return None
 

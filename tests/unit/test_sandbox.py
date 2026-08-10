@@ -27,6 +27,7 @@ from openprogram.sandbox import (
     policy_snapshot,
     policy_to_dict,
     resolve_policy,
+    validate_read_path,
     validate_write_path,
     wrap_command,
 )
@@ -181,6 +182,134 @@ def test_write_tool_enforces_process_policy(tmp_path, cfg, monkeypatch):
 
     assert result.startswith("Error: sandbox policy:")
     assert not (outside / "blocked.txt").exists()
+
+
+# --- in-process read enforcement -------------------------------------------
+
+def _install_deny_read(monkeypatch, *patterns: str) -> None:
+    monkeypatch.setattr(
+        sandbox, "_process_policy_override", sandbox._NO_PROCESS_POLICY,
+    )
+    sandbox.install_policy_snapshot({
+        "enabled": True,
+        "policy": policy_to_dict(SandboxPolicy(
+            deny_read=patterns, deny_write=(),
+        )),
+    })
+
+
+def _tool_text(tool, args) -> str:
+    result = asyncio.run(tool.execute("c", args, None, None))
+    return "".join(block.text for block in result.content)
+
+
+@pytest.fixture
+def secrets(tmp_path):
+    """A workspace holding one denied file and one allowed file."""
+    work = tmp_path / "work"
+    vault = tmp_path / "vault"
+    work.mkdir(); vault.mkdir()
+    (vault / "id_rsa").write_text("PRIVATE KEY", encoding="utf-8")
+    (work / "ok.txt").write_text("PRIVATE KEY lookalike", encoding="utf-8")
+    return work, vault
+
+
+def test_read_path_allows_everything_without_policy(cfg, secrets):
+    _work, vault = secrets
+    cfg["sandbox"] = {"mode": "danger-full-access"}
+    assert validate_read_path(vault / "id_rsa") is None
+
+
+def test_read_path_denies_configured_glob(cfg, monkeypatch, secrets):
+    work, vault = secrets
+    _install_deny_read(monkeypatch, str(vault) + "/**")
+    assert validate_read_path(vault / "id_rsa")
+    assert validate_read_path(work / "ok.txt") is None
+
+
+def test_read_tool_refuses_denied_path(cfg, monkeypatch, secrets):
+    from openprogram.functions.tools.read.read import read
+
+    work, vault = secrets
+    _install_deny_read(monkeypatch, str(vault) + "/**")
+
+    denied = _tool_text(read, {"file_path": str(vault / "id_rsa")})
+    assert denied.startswith("Error: sandbox policy:")
+    assert "PRIVATE KEY" not in denied
+
+    allowed = _tool_text(read, {"file_path": str(work / "ok.txt")})
+    assert "PRIVATE KEY lookalike" in allowed
+
+
+def test_list_tool_hides_denied_entries(cfg, monkeypatch, secrets):
+    from openprogram.functions.tools.list.list import list_dir
+
+    _work, vault = secrets
+    _install_deny_read(monkeypatch, str(vault / "id_rsa"))
+
+    out = _tool_text(list_dir, {"path": str(vault)})
+    assert "id_rsa" not in out
+
+
+def test_list_tool_refuses_denied_directory(cfg, monkeypatch, secrets):
+    from openprogram.functions.tools.list.list import list_dir
+
+    _work, vault = secrets
+    _install_deny_read(monkeypatch, str(vault) + "/**")
+
+    out = _tool_text(list_dir, {"path": str(vault)})
+    assert out.startswith("Error: sandbox policy:")
+
+
+def test_glob_tool_drops_denied_matches(cfg, monkeypatch, tmp_path):
+    from openprogram.functions.tools.glob.glob import glob_tool
+
+    root = tmp_path / "root"
+    (root / "keys").mkdir(parents=True)
+    (root / "keys" / "id_rsa").write_text("k", encoding="utf-8")
+    (root / "app.py").write_text("x", encoding="utf-8")
+    _install_deny_read(monkeypatch, str(root / "keys") + "/**")
+
+    out = _tool_text(glob_tool, {"pattern": "**/*", "path": str(root)})
+    assert "id_rsa" not in out
+    assert "app.py" in out
+
+
+def test_grep_tool_drops_denied_files(cfg, monkeypatch, tmp_path):
+    from openprogram.functions.tools.grep.grep import grep
+
+    root = tmp_path / "root"
+    (root / "keys").mkdir(parents=True)
+    (root / "keys" / "id_rsa").write_text("NEEDLE", encoding="utf-8")
+    (root / "app.py").write_text("NEEDLE", encoding="utf-8")
+    _install_deny_read(monkeypatch, str(root / "keys") + "/**")
+
+    for mode in ("files_with_matches", "content", "count"):
+        out = _tool_text(grep, {
+            "pattern": "NEEDLE", "path": str(root), "output_mode": mode,
+        })
+        assert "id_rsa" not in out, mode
+        assert "app.py" in out, mode
+
+
+def test_sandbox_module_does_not_import_function_registry():
+    """A broken tool import must not be able to break policy construction."""
+    import ast
+    source = (
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__)))),
+            "openprogram", "sandbox", "__init__.py")
+    )
+    with open(source, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read())
+    imported = {
+        node.module for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module
+    } | {
+        alias.name for node in ast.walk(tree)
+        if isinstance(node, ast.Import) for alias in node.names
+    }
+    assert not any(name.startswith("openprogram.functions") for name in imported)
 
 
 # --- glob translation ------------------------------------------------------

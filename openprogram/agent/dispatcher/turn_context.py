@@ -38,6 +38,7 @@ class TurnBindings:
         self._turn_id_token = None
         self._worktree_token = None
         self._session_id_token = None
+        self._turn_request_token = None
         self._req_session_id: Optional[str] = None
 
     @classmethod
@@ -64,6 +65,12 @@ class TurnBindings:
         # Tag this turn so file-mutating tools can attribute backups to
         # the right assistant message via checkpoint.helpers.
         self._turn_id_token = _turn_id_var.set(assistant_msg_id)
+        # The execution context an inner AgentSession inherits. A program
+        # spawned from this turn derives its own request from this one, so
+        # its tools carry the same authority, source and permission mode
+        # rather than running ungated (see turn_request_context).
+        from openprogram.agent.turn_request_context import set_turn_request
+        self._turn_request_token = set_turn_request(req)
         # The session half of the pair every collaboration tool reads
         # (agent, send_message, todo, worktree_*, read_conversation).
         # Their error text already promises "the dispatcher sets the
@@ -170,6 +177,11 @@ class TurnBindings:
                 _store_var.reset(self._store_token)
             if self._turn_id_token is not None:
                 _turn_id_var.reset(self._turn_id_token)
+            if self._turn_request_token is not None:
+                from openprogram.agent.turn_request_context import (
+                    reset_turn_request,
+                )
+                reset_turn_request(self._turn_request_token)
             if self._session_id_token is not None:
                 _reset_session_id(self._session_id_token)
             if self._worktree_token is not None:

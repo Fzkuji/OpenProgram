@@ -274,6 +274,10 @@ def _child_entry(
             source="web",
             **(authority_snapshot or {}),
         )
+        # Same context the dispatcher binds in-process: an inner
+        # AgentSession created inside this tool inherits it.
+        from openprogram.agent.turn_request_context import set_turn_request
+        set_turn_request(req)
 
         # Bridge child-side on_event into the parent via the queue.
         def _on_event(env: dict) -> None:

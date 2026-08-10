@@ -208,6 +208,52 @@ def test_prompt_job_rebuilds_a_noninteractive_cron_turn(sched, tmp_path,
     assert "policy_hash=" + spec["policy_hash"] in log_path.read_text()
 
 
+def test_prompt_job_installs_the_frozen_policy_before_the_turn(
+    sched, tmp_path, monkeypatch,
+):
+    """The verified policy must be applied, not merely checked.
+
+    Until it is installed, in-process read tools inside the prompt turn
+    see the host — the deny-read list is never consulted because no
+    policy is active in this process.
+    """
+    from openprogram import sandbox
+
+    _create(cron="@daily", prompt="summarize", cwd=str(tmp_path))
+    spec = cron_tool._load(str(sched))[0]["execution"]
+    monkeypatch.setattr(
+        sandbox, "_process_policy_override", sandbox._NO_PROCESS_POLICY,
+    )
+    # Config says the sandbox is off; the frozen job policy must win.
+    monkeypatch.setattr(
+        "openprogram.setup._read_config",
+        lambda: {"sandbox": {"mode": "danger-full-access"}},
+    )
+    assert sandbox.resolve_policy() is None
+
+    seen = {}
+
+    class Result:
+        failed = False
+        final_text = "done"
+        error = None
+
+    def fake_turn(_req, **_kw):
+        seen["policy"] = sandbox.resolve_policy()
+        return Result()
+
+    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", fake_turn)
+    worker._run_prompt_job(spec, str(tmp_path / "policy.log"))
+
+    active = seen["policy"]
+    assert active is not None
+    assert sandbox.policy_hash(active) == spec["policy_hash"]
+    # And the read tools now actually enforce it.
+    assert active.deny_read
+    denied = os.path.expanduser(active.deny_read[0].replace("/**", "/probe"))
+    assert sandbox.validate_read_path(denied)
+
+
 def test_worker_spawn_prompt_uses_managed_prompt_entry(
     sched, tmp_path, monkeypatch,
 ):

@@ -548,7 +548,7 @@
     <tr><td><b>U07</b></td><td><code>functions/watcher.py → _registry.exec_module</code></td><td class="n">模型可写Python</td><td>任何模型可写目录禁止自动导入；导入目录改为owner控制并记录来源</td></tr>
     <tr><td><b>U08</b></td><td><code>webui/_functions.py</code>动态重载</td><td class="n">模型可写Python</td><td>与U07共享同一条目录所有权约束；不能在宿主进程重载模型写入的模块</td></tr>
     <tr><td><b>U09</b></td><td><code>agent/process_runner.py</code></td><td>已注册agentic function</td><td>spawn请求显式序列化SandboxPolicy；子进程内的命令、文件与嵌套工具保持同一策略</td></tr>
-    <tr><td><b>U10</b></td><td><code>plugins/loader.py</code></td><td>owner安装的plugin</td><td>plugin清单与代码目录不可由模型修改；加载事件记录来源，community plugin另行进程隔离</td></tr>
+    <tr><td><b>U10</b></td><td><code>plugins/loader.py</code></td><td>owner安装的plugin</td><td>plugin清单与代码目录不可由模型修改；加载事件记录来源。trust默认<code>untrusted</code>且拒绝加载，只有owner显式提升信任的plugin才加载，并在宿主进程内执行（<code>plugins/sandbox.py</code>的subprocess隔离未实现，不宣称已进程隔离）</td></tr>
     <tr><td><b>U11</b></td><td><code>mcp/client.py</code> stdio server</td><td>owner配置的server</td><td>MCP配置不可由模型静默改写；启动argv与环境显式保存并审计</td></tr>
     <tr><td><b>U12</b></td><td><code>webui/routes/mcp.py</code> one-shot</td><td class="n">HTTP请求体</td><td>要求已认证owner请求并进入与MCP stdio一致的启动策略；删除“已沙箱”但实现未隔离的声明</td></tr>
     <tr><td><b>U13</b></td><td><code>events/shell_hooks.py</code> gate command</td><td>owner配置；模型事件作stdin</td><td>命令本身按受信配置处理；配置目录受保护，超时或启动失败不能成为安全强制规则</td></tr>

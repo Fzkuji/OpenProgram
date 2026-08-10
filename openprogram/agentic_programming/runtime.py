@@ -1547,6 +1547,41 @@ class Runtime:
 
     # ---- Default backend: openprogram.providers (pi-ai) ---------------------
 
+    def _gate_inner_tools(self, agent_tools):
+        """Wrap an inner session's tools with the outer turn's approval gate.
+
+        Returns the list unchanged when no turn is bound above us — a
+        library-only ``Runtime()`` has no execution context to inherit and
+        no user to approve anything, so there is nothing to enforce.
+        Failures here are never silent: an inner session that cannot be
+        gated runs with no tools rather than with ungated ones.
+        """
+        if not agent_tools:
+            return agent_tools
+        from openprogram.agent.turn_request_context import (
+            get_turn_request, inner_turn_request,
+        )
+        if get_turn_request() is None:
+            return agent_tools
+        try:
+            from openprogram.agent.internals._approval import wrap_with_approval
+            req = inner_turn_request("program")
+            if req is None:
+                return agent_tools
+            # No approval surface down here — the inner request is
+            # non-interactive by construction, so every gate that would
+            # ask instead denies. The sink keeps sandbox.violation events
+            # from crashing the wrapper.
+            return [wrap_with_approval(t, req, lambda _env: None)
+                    for t in agent_tools]
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "inner tool gating failed; running this call without tools "
+                "rather than ungated"
+            )
+            return None
+
     def _call_via_providers(
         self,
         content: list[dict],
@@ -1706,6 +1741,13 @@ class Runtime:
         # otherwise the runtime's own _stream_fn (set when Runtime(call=fn)
         # wraps a callable into a CallableModel). None → real provider.
         _stream_fn = _current_stream_fn.get(None) or getattr(self, "_stream_fn", None)
+        # Inner tools go through the SAME gate as the outer agent loop.
+        # Without this a program spawned from a turn handed its agent raw
+        # tools: no hard constraints, no authority tier, no deny rules —
+        # the outer turn's restrictions vanished one level down. The inner
+        # request inherits the outer one (turn_request_context), so nothing
+        # here can widen what the caller was allowed to do.
+        agent_tools = self._gate_inner_tools(agent_tools)
         session = AgentSession(
             model=self.api_model,
             tools=agent_tools,

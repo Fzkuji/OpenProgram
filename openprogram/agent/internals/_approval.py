@@ -34,6 +34,10 @@ EventCallback = Callable[[dict], None]
 _FORCE_APPROVAL_TOOLS = {"exit_plan_mode"}
 # auto 档下即便未声明 requires_approval 也仍要审批的高风险工具。
 _RISKY_TOOLS = {"bash", "exec", "shell", "execute_code", "process"}
+# Non-interactive git side effects: creating a worktree, merging one back,
+# or discarding one all mutate the repository outside the spawned agent's
+# working directories, and a spawned turn has no approval surface to ask.
+_WORKTREE_TOOLS = {"worktree_create", "worktree_merge", "worktree_discard"}
 _WRITE_TOOLS = {"write", "write_file", "edit", "edit_file"}
 _PATCH_PATH_PREFIXES = (
     "*** Add File: ",
@@ -140,7 +144,7 @@ def _hard_constraint_violation(
         return None
     if req.source != "agent_spawn":
         return None
-    if tool_name in _RISKY_TOOLS:
+    if tool_name in _RISKY_TOOLS or tool_name in _WORKTREE_TOOLS:
         return f"agent_spawn cannot execute {tool_name}"
     if tool_name in _WRITE_TOOLS:
         if not _path_is_safe(tool_name, args, req):

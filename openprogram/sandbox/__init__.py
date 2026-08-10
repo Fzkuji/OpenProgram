@@ -364,8 +364,8 @@ def _agentics_dir() -> str:
 
 
 def _agentics_root() -> str:
-    import openprogram.functions as _f
-    return os.path.join(os.path.dirname(os.path.abspath(_f.__file__)), "agentics")
+    from openprogram.protected_paths import agentics_root
+    return agentics_root()
 
 
 def unavailable_policy() -> str:
@@ -452,8 +452,8 @@ def validate_write_path(path, *, cwd: str | None = None) -> str | None:
     agentics_key = agentics.casefold()
     if target_key == agentics_key or target_key.startswith(agentics_key + os.sep):
         return "writes to auto-imported agentic Python are forbidden"
-    from openprogram.functions._programs import _program_sources_path
-    if target_key == os.path.realpath(_program_sources_path()).casefold():
+    from openprogram.protected_paths import program_sources_path
+    if target_key == os.path.realpath(program_sources_path()).casefold():
         return "writes to the agentic source registry are forbidden"
 
     policy = resolve_policy()
@@ -474,6 +474,46 @@ def validate_write_path(path, *, cwd: str | None = None) -> str | None:
         if regex and re.match(regex, target):
             return f"path is denied by sandbox policy: {target}"
     return None
+
+
+def validate_read_path(path) -> str | None:
+    """Return a sandbox-policy violation for a direct file read, if any.
+
+    The OS sandbox enforces ``deny_read`` for commands it wraps, but the
+    in-process read tools (read / grep / glob / list) never go through a
+    child process — they open the file in the host interpreter, where no
+    Seatbelt or bwrap rule applies. This is that missing enforcement
+    point. No active policy (danger-full-access, or a plain library use)
+    means no restriction, exactly as for writes.
+    """
+    matcher = read_denier()
+    if matcher is None:
+        return None
+    target = os.path.realpath(os.path.expanduser(os.fspath(path)))
+    if matcher(target):
+        return f"path is denied by sandbox policy: {target}"
+    return None
+
+
+def read_denier():
+    """A ``path -> bool`` deny test for the active policy, or None.
+
+    Returned once and reused across a directory walk: ``validate_read_path``
+    per file would recompile every deny regex per candidate. Takes a real
+    path (already resolved) and answers whether reading it is denied.
+    """
+    policy = resolve_policy()
+    if policy is None or not policy.deny_read:
+        return None
+    regexes = [re.compile(rx) for rx in _regexes_for(policy.deny_read)]
+    if not regexes:
+        return None
+
+    def _denied(target: str) -> bool:
+        real = os.path.realpath(target)
+        return any(rx.match(real) for rx in regexes)
+
+    return _denied
 
 
 def _static_prefix(pattern: str) -> str:

@@ -40,6 +40,10 @@ def list_dir(path: str, show_hidden: bool = False) -> str:
     """
     if not os.path.isabs(path):
         return f"Error: path must be absolute, got {path!r}"
+    from openprogram.sandbox import validate_read_path, read_denier
+    violation = validate_read_path(path)
+    if violation:
+        return f"Error: sandbox policy: {violation}"
     if not os.path.isdir(path):
         return f"Error: not a directory: {path}"
 
@@ -48,11 +52,15 @@ def list_dir(path: str, show_hidden: bool = False) -> str:
     except Exception as e:
         return f"Error listing {path}: {type(e).__name__}: {e}"
 
+    # A listing leaks the key filenames even when each file is unreadable.
+    denied = read_denier()
     rows: list[str] = []
     for name in entries:
         if not show_hidden and name.startswith("."):
             continue
         full = os.path.join(path, name)
+        if denied is not None and denied(full):
+            continue
         try:
             if os.path.isdir(full):
                 rows.append(f"{name}/")

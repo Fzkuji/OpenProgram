@@ -77,9 +77,18 @@ def glob_tool(pattern: str, path: str | None = None) -> str:
             "$HOME or `/`."
         )
 
+    from openprogram.sandbox import validate_read_path, read_denier
+    violation = validate_read_path(root)
+    if violation:
+        return f"Error: sandbox policy: {violation}"
+
     full_pattern = os.path.join(root, pattern)
     matches = _glob.glob(full_pattern, recursive=True)
     matches = [m for m in matches if os.path.isfile(m)]
+    # A filename list is itself the leak for `~/.ssh/**` and friends.
+    denied = read_denier()
+    if denied is not None:
+        matches = [m for m in matches if not denied(m)]
     matches.sort(key=lambda p: os.path.getmtime(p), reverse=True)
 
     if not matches:

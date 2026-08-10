@@ -173,11 +173,20 @@ def _run_prompt_job(spec: dict[str, Any], log_path: str) -> None:
         with redirect_stdout(log_fh), redirect_stderr(log_fh):
             print(f"# policy_hash={spec['policy_hash']}")
             try:
-                verified, _policy, error = _verify_execution_spec(spec)
-                if error or verified is None:
+                verified, policy, error = _verify_execution_spec(spec)
+                if error or verified is None or policy is None:
                     print(f"# refused: {error or 'invalid execution spec'}")
                     return
                 spec = verified
+                # The frozen policy was verified above but never applied,
+                # so in-process tools (read/grep/glob/list) still saw the
+                # host. Pin it the way a spawned subprocess is pinned
+                # (process_runner._child_entry) before any tool exists —
+                # a later config edit cannot widen this job.
+                _sandbox.install_policy_snapshot({
+                    "enabled": True,
+                    "policy": _sandbox.policy_to_dict(policy),
+                })
                 job_authority = spec["job_authority"]
                 from openprogram.agent.dispatcher import TurnRequest, process_user_turn
                 result = process_user_turn(TurnRequest(

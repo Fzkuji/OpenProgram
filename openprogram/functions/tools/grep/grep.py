@@ -38,8 +38,39 @@ def _run_rg(pattern: str, path: str, glob: str | None,
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     if proc.returncode not in (0, 1):
         return f"Error: rg exited {proc.returncode}: {proc.stderr.strip()}"
-    out = proc.stdout.rstrip()
+    out = _drop_denied_lines(proc.stdout.rstrip())
     return out or "No matches"
+
+
+def _line_path(line: str) -> str:
+    """The file path an rg output line starts with.
+
+    Every mode we ask rg for is path-prefixed (``-l`` bare path, ``-c``
+    ``path:count``, ``-n -H`` ``path:line:text``), and a path may itself
+    contain colons, so take the longest prefix that is an existing file.
+    """
+    if os.path.exists(line):
+        return line
+    idx = len(line)
+    while True:
+        idx = line.rfind(":", 0, idx)
+        if idx < 0:
+            return line
+        head = line[:idx]
+        if os.path.exists(head):
+            return head
+
+
+def _drop_denied_lines(out: str) -> str:
+    """Remove result lines naming a deny-read path. rg runs in-process
+    here (no OS sandbox wraps it), so the policy has no other seam."""
+    from openprogram.sandbox import read_denier
+    denied = read_denier()
+    if denied is None or not out:
+        return out
+    return "\n".join(
+        line for line in out.splitlines() if not denied(_line_path(line))
+    )
 
 
 def _run_python_fallback(pattern: str, path: str, glob: str | None,
@@ -56,6 +87,9 @@ def _run_python_fallback(pattern: str, path: str, glob: str | None,
     content_lines: list[str] = []
     counts: dict[str, int] = {}
 
+    from openprogram.sandbox import read_denier
+    denied = read_denier()
+
     if os.path.isfile(path):
         candidates = [path]
     else:
@@ -66,6 +100,8 @@ def _run_python_fallback(pattern: str, path: str, glob: str | None,
                 if glob and not fnmatch.fnmatch(f, glob):
                     continue
                 candidates.append(fp)
+    if denied is not None:
+        candidates = [fp for fp in candidates if not denied(fp)]
 
     for fp in candidates:
         try:
@@ -127,6 +163,10 @@ def grep(pattern: str,
             root = os.getcwd()
     if not os.path.exists(root):
         return f"Error: path not found: {root}"
+    from openprogram.sandbox import validate_read_path
+    violation = validate_read_path(root)
+    if violation:
+        return f"Error: sandbox policy: {violation}"
     if shutil.which("rg"):
         return _run_rg(pattern, root, glob, output_mode, case_insensitive)
     return _run_python_fallback(pattern, root, glob, output_mode, case_insensitive)
