@@ -91,22 +91,23 @@ that prompt-injection surface entirely.
    reveal routes remain a remote-Web security item; they were not the source
    of this incident and are not closed by this memory batch. The exposed
    keys still require revocation by the owner.
-5. **Retry classification is complete; live acceptance remains**: unknown
+5. **Retry classification and live acceptance are complete**: unknown
    exceptions default non-retryable in both the provider and session watcher,
    while explicitly classified transient exceptions preserve
-   `retryable=True`. Distill the live workspace's pending records to a valid
-   committed Topic as the post-merge acceptance. Corrected live
-   numbers: 23 sources, 152 of 154 records pre-marked written, `core.md`
-   at 39.6% of the o200k_base budget — the workspace is not degraded, and
-   legacy authority-less frames are already trusted in both reader and
-   writer, so acceptance is about the writer producing a valid Topic, not
-   trust migration.
-6. **Backfill (first item of the follow-up batch)**: with 152 records
-   pre-marked while zero Topics exist, the existing history would never be
-   organized under forward-only distillation. Add a one-shot backfill that
-   runs the writer over every source not cited by any Topic, ignoring
-   markers, and regenerates the legacy `core.md` (currently not parseable
-   as Topic blocks) from the result. Also in that batch: queryable writer
+   `retryable=True`. A post-merge writer run distilled the two pending live
+   records into three Topic files with five validated blocks; the runtime
+   recorded one local batch, rebuilt derived `core.md`, and every resulting
+   evidence link resolves to its source anchor. The corrected pre-run state
+   was 23 sources, 152 of 154 records pre-marked written, and legacy `core.md`
+   at 39.6% of the o200k_base budget. Legacy authority-less frames were
+   already trusted in both reader and writer, so this acceptance verified the
+   writer transaction rather than a trust migration.
+6. **Backfill (first item of the follow-up batch)**: 152 records were
+   pre-marked while zero Topics existed, and the acceptance run processed only
+   the two pending records, so most existing history remains outside Topics.
+   Add a one-shot backfill that runs the writer over every source not cited by
+   any Topic, ignoring markers, then rebuilds derived `core.md` from the full
+   result. Also in that batch: queryable writer
    status (last write time, last failure with retryable verdict, pending
    count), `memory.backend=none` enforced at the shared CLI/Web boundary
    (reads included, explicit disabled response), and the composed
