@@ -249,7 +249,9 @@ a forged claim under the person it names.
 `sources/` stays keyed by conversation. The archived line's slot before
 the colon now holds the safe speaker label, so
 `[2026-08-09T…] user: [Ada (7391)] the budget is 50k` becomes
-`[2026-08-09T…] Ada (7391): the budget is 50k`. A percent-encoded
+`[2026-08-09T…] Ada (7391): [Ada (7391)] the budget is 50k`: the
+runtime header changes, while the compatibility prefix remains part of
+the message body. A percent-encoded
 `<!-- speaker-id:7391 -->` comment carries the stable id, while an empty
 speaker marker distinguishes a trusted display-only identity even when
 that display is `user`, `assistant`, `system` or `tool`.
@@ -259,8 +261,11 @@ LF-separated physical lines in the record, and both source parsing and
 archive deduplication skip exactly those lines. The body can therefore
 contain a valid hash anchor, source comment, speaker comment and record
 line without creating a second event or hiding a later real record.
-Literal CRLF and trailing newlines are preserved. No directory per
-person is added: a person remains an attribute of a conversation record.
+Literal CRLF and trailing newlines are preserved. A speaker marker is
+trusted only when it is adjacent to a valid `record-lines` frame whose
+declared record body is present; an unframed marker is ignored. A framed
+record with no speaker marker is speakerless. No directory per person is
+added: a person remains an attribute of a conversation record.
 
 The query rides the filters `search` already carries. `inspect.search`
 takes `path_prefix`, `date_from` and `date_to` and hands them to
@@ -314,8 +319,14 @@ transaction exists to refuse. Only an unframed historical record whose
 record-header role is `user` may read the old runtime prefix at the start
 of its content as a retrieval-only fallback. A framed record without a
 speaker marker stays speakerless even if its body starts with `[Victim]`,
-and assistant/system/tool records never use the fallback. No identity is
-written back to an old archive.
+an unframed speaker marker establishes no identity, and non-`user`
+records never use the fallback. Only valid framed runtime blocks enter
+archive deduplication: an old unframed record cannot suppress a later
+canonical append, and once that framed copy exists a replay does not add
+another one. No identity is written back to an old archive. Without a
+separate trusted inventory, the body prefix of an unframed legacy `user`
+record is limited retrieval compatibility, not evidence with the same
+authenticity as the framed protocol.
 
 The BM25 cache schema is version 5 because event rows now carry speaker
 fields; version-4 data is ignored and rebuilt. Tests cover trusted
@@ -584,10 +595,14 @@ choices came from, and what was decided against, is
 
 The speaker design is implemented with independent trusted transport
 fields. `SourceRecord.speaker_label` supplies the safe record header,
-the writer prompt trusts only that header, and the body remains byte-for-
-byte user content. New source records percent-encode the speaker id and
-use `record-lines:N` to keep complete source-like blocks inside the body.
-Only unframed historical `user` records use the legacy body-prefix
+the writer prompt trusts only that header, and the message body is
+preserved through `_records`, writer rendering and source archiving,
+including Markdown trailing spaces, CRLF and trailing LF. New source
+records percent-encode the speaker id and use `record-lines:N` to keep
+complete source-like blocks inside the body. A speaker marker is trusted
+only with a valid adjacent frame; unframed markers are ignored and
+unframed records do not participate in archive deduplication. Only
+unframed historical `user` records use the limited legacy body-prefix
 fallback. BM25 cache v5 exposes source-only speaker filtering by stable
 id or readable label; `memory_search` forwards it, while an embedding
 request with `speaker` is rejected explicitly.
