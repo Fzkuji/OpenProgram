@@ -213,11 +213,10 @@ writing memory from a live session as it runs.
 
 ---
 
-## Layer 3 — The change: a mark on the node
+## Layer 3 — Current implementation: a mark on the node
 
-The boundary has to be keyed on what identifies a message, and what
-identifies a message is the node it is. So the record of "memory has
-written this turn" goes on the turn.
+The boundary is keyed on what identifies a message: its node. The record
+of "memory has written this turn" is stored on that turn.
 
 ### Where the mark goes
 
