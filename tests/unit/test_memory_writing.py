@@ -425,7 +425,7 @@ def test_provider_permanent_verdict_stops_the_idle_retry_loop(
     """An auth/config verdict from the chat provider must not be retried.
 
     The writer used to erase ``retryable=False`` when it converted every
-    exception into ``WriteIncomplete``.  The idle watcher then repeated a
+    exception into ``WriteFailure``.  The idle watcher then repeated a
     permanent login failure every five minutes.
     """
     from openprogram.memory.scriptorium import writing
@@ -551,10 +551,10 @@ def test_nothing_returned_marks_the_session_handled(watched):
 
 
 def test_a_retryable_failure_leaves_it_for_the_next_poll(watched):
-    from openprogram.memory.provider import WriteIncomplete
+    from openprogram.memory.provider import WriteFailure
 
     run, events = watched
-    n_done, processed = run(WriteIncomplete("model unreachable"))
+    n_done, processed = run(WriteFailure("model unreachable"))
 
     assert n_done == 0
     assert "idle1" not in processed, "unmarked, so the next poll retries"
@@ -567,11 +567,11 @@ def test_a_retryable_failure_leaves_it_for_the_next_poll(watched):
 def test_a_hopeless_failure_is_marked_and_reported(watched):
     """Marked handled so the loop stops burning quota, and the reason
     goes out on the bus rather than only into the log."""
-    from openprogram.memory.provider import WriteIncomplete
+    from openprogram.memory.provider import WriteFailure
 
     run, events = watched
     n_done, processed = run(
-        WriteIncomplete("COMMIT_REJECTED: block ID removed", retryable=False)
+        WriteFailure("COMMIT_REJECTED: block ID removed", retryable=False)
     )
 
     assert n_done == 0, "it was never written"

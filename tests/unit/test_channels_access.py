@@ -35,9 +35,9 @@ def test_access_scope_cannot_escape_the_channel_state_directory() -> None:
 
 
 def test_unknown_sender_blocked_and_gets_code() -> None:
-    decision = _access.check_inbound("telegram", "a1", "999", "Eve")
+    decision = _access.decide_inbound_sender("telegram", "a1", "999", "Eve")
     assert decision.allowed is False
-    assert decision.admission == "unpaired"
+    assert decision.pairing_state == "unpaired"
     assert decision.check == "stable_sender_allowlist"
     assert decision.reason_code == "PAIRING_REQUIRED"
     assert decision.reply is not None
@@ -53,9 +53,9 @@ def test_unknown_sender_blocked_and_gets_code() -> None:
 
 def test_repeat_messages_reuse_code_and_stay_silent_for_full_hour(monkeypatch) -> None:
     monkeypatch.setattr(_access.time, "time", lambda: 1_000.0)
-    first = _access.check_inbound("telegram", "a1", "999", "Eve")
+    first = _access.decide_inbound_sender("telegram", "a1", "999", "Eve")
     monkeypatch.setattr(_access.time, "time", lambda: 4_599.0)
-    second = _access.check_inbound("telegram", "a1", "999", "Renamed")
+    second = _access.decide_inbound_sender("telegram", "a1", "999", "Renamed")
     assert second.allowed is False
     assert second.reply is None
     assert second.reason_code == "PAIRING_ALREADY_PENDING"
@@ -65,11 +65,11 @@ def test_repeat_messages_reuse_code_and_stay_silent_for_full_hour(monkeypatch) -
 
 def test_only_three_pairing_requests_can_be_pending_per_account() -> None:
     for user_id in ("u1", "u2", "u3"):
-        assert _access.check_inbound(
+        assert _access.decide_inbound_sender(
             "telegram", "a1", user_id, user_id,
         ).reason_code == "PAIRING_REQUIRED"
 
-    fourth = _access.check_inbound("telegram", "a1", "u4", "Fourth")
+    fourth = _access.decide_inbound_sender("telegram", "a1", "u4", "Fourth")
     assert fourth.allowed is False
     assert fourth.reply is None
     assert fourth.reason_code == "PAIRING_PENDING_LIMIT"
@@ -79,19 +79,19 @@ def test_only_three_pairing_requests_can_be_pending_per_account() -> None:
 
 
 def test_approve_by_code_allows_sender() -> None:
-    _access.check_inbound("discord", "a1", "42", "Bob")
+    _access.decide_inbound_sender("discord", "a1", "42", "Bob")
     code = _access.describe("discord", "a1")["pending"]["42"]["code"]
     assert _access.approve("discord", "a1", code.lower()) == "42"
-    decision = _access.check_inbound("discord", "a1", "42", "Bob")
+    decision = _access.decide_inbound_sender("discord", "a1", "42", "Bob")
     assert decision.allowed is True and decision.reply is None
-    assert decision.admission == "paired"
+    assert decision.pairing_state == "paired"
     assert decision.reason_code == "PAIRED_SENDER"
     assert _access.describe("discord", "a1")["pending"] == {}
 
 
 def test_approve_bad_or_expired_code_returns_none(monkeypatch) -> None:
     assert _access.approve("discord", "a1", "NOPE99") is None
-    _access.check_inbound("discord", "a1", "42", "Bob")
+    _access.decide_inbound_sender("discord", "a1", "42", "Bob")
     code = _access.describe("discord", "a1")["pending"]["42"]["code"]
     monkeypatch.setattr(_access.time, "time",
                         lambda: 2_000_000_000.0)   # way past TTL
@@ -100,10 +100,10 @@ def test_approve_bad_or_expired_code_returns_none(monkeypatch) -> None:
 
 def test_approve_user_and_revoke() -> None:
     _access.approve_user("slack", "a1", "U7", display="Carol")
-    assert _access.check_inbound("slack", "a1", "U7").allowed is True
+    assert _access.decide_inbound_sender("slack", "a1", "U7").allowed is True
     assert _access.revoke("slack", "a1", "U7") is True
     assert _access.revoke("slack", "a1", "U7") is False  # already gone
-    assert _access.check_inbound("slack", "a1", "U7").allowed is False
+    assert _access.decide_inbound_sender("slack", "a1", "U7").allowed is False
 
 
 def test_legacy_open_policy_is_ignored_fail_closed() -> None:
@@ -111,7 +111,7 @@ def test_legacy_open_policy_is_ignored_fail_closed() -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('{"policy":"open","allowlist":{},"pending":{}}')
 
-    decision = _access.check_inbound("wechat", "a1", "stranger")
+    decision = _access.decide_inbound_sender("wechat", "a1", "stranger")
     assert decision.allowed is False
     assert _access.describe("wechat", "a1")["policy"] == "pairing"
 
@@ -133,7 +133,7 @@ def test_a_second_sender_is_approved_by_pairing_code() -> None:
     """Everyone in a group chat can be approved on the same account. They
     share the agent and its memory, which records who said what."""
     _access.approve_user("telegram", "a1", "111", display="Ada")
-    _access.check_inbound("telegram", "a1", "222", "Bo")
+    _access.decide_inbound_sender("telegram", "a1", "222", "Bo")
     code = _access.describe("telegram", "a1")["pending"]["222"]["code"]
 
     assert _access.approve("telegram", "a1", code) == "222"
@@ -141,8 +141,8 @@ def test_a_second_sender_is_approved_by_pairing_code() -> None:
     data = _access.describe("telegram", "a1")
     assert sorted(data["allowlist"]) == ["111", "222"]
     assert data["pending"] == {}
-    assert _access.check_inbound("telegram", "a1", "111").allowed is True
-    assert _access.check_inbound("telegram", "a1", "222").allowed is True
+    assert _access.decide_inbound_sender("telegram", "a1", "111").allowed is True
+    assert _access.decide_inbound_sender("telegram", "a1", "222").allowed is True
 
 
 def test_a_second_sender_is_approved_by_direct_allow() -> None:
@@ -161,8 +161,8 @@ def test_revoking_one_sender_leaves_the_others() -> None:
     assert _access.revoke("telegram", "a1", "111") is True
 
     assert list(_access.describe("telegram", "a1")["allowlist"]) == ["222"]
-    assert _access.check_inbound("telegram", "a1", "111").allowed is False
-    assert _access.check_inbound("telegram", "a1", "222").allowed is True
+    assert _access.decide_inbound_sender("telegram", "a1", "111").allowed is False
+    assert _access.decide_inbound_sender("telegram", "a1", "222").allowed is True
 
 
 def test_re_approving_the_same_sender_updates_the_display_name() -> None:
@@ -176,16 +176,16 @@ def test_re_approving_the_same_sender_updates_the_display_name() -> None:
 def test_mutable_display_name_never_matches_the_allowlist() -> None:
     _access.approve_user("slack", "a1", "U7", display="Shared Name")
 
-    assert _access.check_inbound(
+    assert _access.decide_inbound_sender(
         "slack", "a1", "U7", "Renamed",
     ).allowed is True
-    assert _access.check_inbound(
+    assert _access.decide_inbound_sender(
         "slack", "a1", "U8", "Shared Name",
     ).allowed is False
 
 
 def test_empty_sender_id_is_dropped_silently() -> None:
-    decision = _access.check_inbound("telegram", "a1", "")
+    decision = _access.decide_inbound_sender("telegram", "a1", "")
     assert decision.allowed is False and decision.reply is None
     assert decision.reason_code == "STABLE_SENDER_ID_MISSING"
 

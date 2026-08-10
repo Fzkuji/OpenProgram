@@ -17,7 +17,7 @@ from typing import Any
 from ..management.transaction import TransactionError, workspace_revision
 from ..workspace_layout import is_internal_path
 from ..markdown import parse_topic_tree
-from ..source_format import is_v2_source_path, scan_v2_archive
+from ..source_format import is_v2_source_path, scan_source_archive
 
 DERIVED_DIRS = ("timeline",)
 DERIVED_FILES = ("recent_events.jsonl", "relations.json")
@@ -157,7 +157,7 @@ def _visible_source_lines(
     lines = text.split("\n")
     if not is_v2_source_path(relative):
         return list(enumerate(lines, start=1))
-    scan = scan_v2_archive(text, relative)
+    scan = scan_source_archive(text, relative)
     visible: list[tuple[int, str]] = []
     for frame in scan.frames:
         for index in range(frame.frame_start, frame.record_end + 1):

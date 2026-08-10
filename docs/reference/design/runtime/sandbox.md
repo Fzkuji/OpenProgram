@@ -67,7 +67,7 @@ Mount order matters and is not cosmetic. `--tmpfs /tmp` is emitted **before** th
 
 `--unshare-user` is deliberately absent. The non-setuid build already creates a user namespace on its own, so the flag adds nothing, and the setuid build does not support it at all.
 
-Availability is an execution check, not only a PATH check. The first Linux check for each `bwrap` executable starts `/bin/true` with the PID, IPC, UTS, network, mount and capability restrictions required by the policy. A host that has `bwrap` installed but forbids unprivileged user namespaces is therefore treated as unavailable and follows `sandbox.on_unavailable`; it is never reported as sandboxed after an unsandboxed fallback.
+Availability is an execution check, not only a PATH check. The first Linux check for each `bwrap` executable starts `/bin/true` with the PID, IPC, UTS, network, mount and capability restrictions required by the policy. A host that has `bwrap` installed but forbids unprivileged user namespaces is therefore treated as unavailable and follows `sandbox.unavailable_policy`; it is never reported as sandboxed after an unsandboxed fallback.
 
 #### 1.3 What the deny list holds
 
@@ -91,17 +91,17 @@ On Linux the environment filter alone would not be enough. Without `--unshare-pi
 
 ### 2. The switch
 
-The policy is read from `sandbox.*` in `~/.openprogram/config.json` at the moment a command is wrapped. New installations default to `workspace-write`; an existing explicit `off` remains off. Seven keys are registered in `openprogram/config_schema.py::SETTINGS`, so `openprogram config`, the setup wizard, the TUI settings screen and the web settings page all render them:
+The policy is read from `sandbox.*` in `~/.openprogram/config.json` at the moment a command is wrapped. New installations default to `workspace-write`; an existing explicit `danger-full-access` remains unsandboxed. Seven keys are registered in `openprogram/config_schema.py::SETTINGS`, so `openprogram config`, the setup wizard, the TUI settings screen and the web settings page all render them:
 
 | Key | Meaning | Default |
 |---|---|---|
-| `sandbox.mode` | `off` or `workspace-write` | `workspace-write` |
+| `sandbox.mode` | `danger-full-access` or `workspace-write` | `workspace-write` |
 | `sandbox.writable_roots` | directories writable besides the working directory | `[]` |
 | `sandbox.deny_read` | globs no sandboxed command may read | the credential list in §1.3 |
 | `sandbox.deny_write` | globs no sandboxed command may write | `[]`, plus the always-on agentics directory |
 | `sandbox.network` | network inside the sandbox | `false` |
 | `sandbox.pass_env` | extra environment names to pass through | `[]` |
-| `sandbox.on_unavailable` | `refuse` or `warn` when the platform backend is missing or cannot create its required isolation | `refuse` |
+| `sandbox.unavailable_policy` | `refuse` or `warn` when the platform backend is missing or cannot create its required isolation | `refuse` |
 
 `/sandbox` in the CLI REPL and in the web UI both write `sandbox.mode` through `set_setting`, so the toggle is persistent rather than per-session.
 
@@ -109,7 +109,7 @@ The policy is read from `sandbox.*` in `~/.openprogram/config.json` at the momen
 
 **Only a local interactive owner can request one exact retry with relaxed configurable restrictions.** The rerun still uses the OS sandbox, preserves credential filtering and the non-configurable agentics write prohibition, and never applies to cron, subagents or shared channels. `permission_mode="bypass"` cannot remove the hard floor or the sandbox.
 
-**An unavailable backend refuses by default.** `_invocation` raises `SandboxUnavailable` when `sandbox.mode` is on, the platform backend is missing or its required isolation probe fails, and `sandbox.on_unavailable` is `refuse`; `LocalBackend.run` turns that into a failed `RunResult` whose message names the reason and the explicit unsafe alternatives. `warn` restores the old behaviour of running unprotected, with a log line.
+**An unavailable backend refuses by default.** `_invocation` raises `SandboxUnavailable` when `sandbox.mode` is on, the platform backend is missing or its required isolation probe fails, and `sandbox.unavailable_policy` is `refuse`; `LocalBackend.run` turns that into a failed `RunResult` whose message names the reason and the explicit unsafe alternatives. `warn` restores the old behaviour of running unprotected, with a log line.
 
 Granularity is still one setting for the whole installation: not per agent, not per tool, not per command. `wrap_command` takes an explicit policy, so a caller that has one can pass it, but nothing supplies a different policy per call site yet.
 
@@ -199,7 +199,7 @@ Two rows deserve emphasis because they invert what the first pass concluded from
 | `weclaw` | none | `~/.weclaw/config.json`, no security key exists | approvals auto-answered "allow" | — |
 | **OpenProgram** | one setting for the installation | seven `sandbox.*` keys in `config_schema.SETTINGS` | **unconnected** | **hard refusal** naming the two ways out, `warn` available |
 
-The spread on the last column is the useful part. `openclaw` refuses to run when Docker is missing and prints the two ways out (`src/agents/sandbox/docker.ts:324-333`), and refuses to substitute a stock image for a missing one. `claude-code` runs anyway but its own source records why it must be noisy: a fixed bug where `isSandboxingEnabled()` silently returned false on missing dependencies is annotated "This is a security footgun — users configure allowedDomains expecting enforcement, get none." That is the behaviour we had, and `sandbox.on_unavailable` now defaults to `refuse` instead.
+The spread on the last column is the useful part. `openclaw` refuses to run when Docker is missing and prints the two ways out (`src/agents/sandbox/docker.ts:324-333`), and refuses to substitute a stock image for a missing one. `claude-code` runs anyway but its own source records why it must be noisy: a fixed bug where `isSandboxingEnabled()` silently returned false on missing dependencies is annotated "This is a security footgun — users configure allowedDomains expecting enforcement, get none." That is the behaviour we had, and `sandbox.unavailable_policy` now defaults to `refuse` instead.
 
 ### 7. Moves the first pass did not see
 
@@ -281,7 +281,7 @@ These five steps have been implemented. The ordering below is retained to record
 
 **3. Switch semantics — done.** The `ContextVar` is gone. The policy is resolved from `sandbox.*` in the config at the moment a command is wrapped, which survives the asyncio-task-to-thread hop, the `spawn` subprocess and a nested CLI, because a file does not belong to a context. It also sits below the permission layer, so `permission_mode="bypass"` short-circuits the approval card and not the sandbox. `wrap_command` takes an explicit policy for callers that hold one; nothing yet supplies a different policy per tool or per call site, which is what "the call site can override" was meant to buy. An unavailable backend refuses by default and names the two ways out.
 
-**4. On by default — done.** New installations use `workspace-write`; an existing explicit `off` is preserved.
+**4. On by default — done.** New installations use `workspace-write`; an existing explicit `danger-full-access` is preserved.
 
 **5. Approval integration — done, with three distinct decisions.**
 
@@ -315,7 +315,7 @@ The threat this closes is concrete rather than hypothetical. Any text that reach
 
 ## Implementation status
 
-As of 2026-08-10, repair steps 1–5 and the expanded architecture steps 04–08 are implemented. New installations default to `workspace-write`; an explicit existing `off` remains unchanged.
+As of 2026-08-10, repair steps 1–5 and the expanded architecture steps 04–08 are implemented. New installations default to `workspace-write`; an explicit existing `danger-full-access` remains unchanged.
 
 - Hard constraints and the fixed authority-tier capability check run before permission rules, approval and `permission_mode="bypass"`.
 - Cron stores a signed immutable execution spec with its owner tier and runs unattended with a forced sandbox and no approval escalation. `execute_code`, spawned agentic processes and one-shot MCP calls use the same policy boundary.
@@ -328,7 +328,7 @@ Final verification on 2026-08-10: the complete tracked local suite excluding int
 
 Known limits:
 
-- Windows has no host-native sandbox backend. With sandboxing enabled, commands are refused by default; OpenProgram does not select Docker automatically. An owner must explicitly turn the sandbox off or select the unsafe `sandbox.on_unavailable=warn` behavior.
+- Windows has no host-native sandbox backend. With sandboxing enabled, commands are refused by default; OpenProgram does not select Docker automatically. An owner must explicitly turn the sandbox off or select the unsafe `sandbox.unavailable_policy=warn` behavior.
 - `ps` and `top` do not run inside Seatbelt because macOS refuses to execute setuid binaries in this profile.
 - Linux cannot express a middle-wildcard deny-read pattern such as `**/.env`; known concrete paths are masked, while this glob remains macOS-only. Protect sensitive Linux content with an exact path or a concrete directory rule such as `/absolute/path/to/secrets/**`.
 - Sandbox policy is installation-wide. There is no per-tool sandbox override; authority and permission rules remain separate per-operation controls.

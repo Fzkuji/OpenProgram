@@ -124,7 +124,7 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 | 动词 | 作用 |
 |------|------|
 | `spawn` | 在某会话里生成一个新分支的 agent：`--session` 和 `--prompt` 必填；`--parent-msg` 指定分叉节点，`--label` 命名分支，`--agent` 选 agent profile（默认 `main`），`--context inherit\|clean`（或 `--clean`），`--no-json` 打印人类可读摘要 |
-| `merge` | 把多个平级会话合并进目标会话形成新 turn：`--target` 与可重复的 `--sub SID` 必填；`--message` 是合并指令，`--agent` 选合并 agent，`--base N` 把某个 peer 标记为合并基底，`--no-json` 打印人类可读摘要 |
+| `merge` | 把多个 subagent 会话合并进目标会话形成新 turn：`--target` 与可重复的 `--branch SID` 必填；`--message` 是合并指令，`--agent` 选合并 agent，`--base N` 把某个分支标记为合并基底，`--no-json` 打印人类可读摘要 |
 
 ### programs
 

@@ -31,7 +31,7 @@ from ..workspace_layout import runtime_dir
 from ..source_format import (
     is_v2_source_path,
     provider_source_location,
-    scan_v2_archive,
+    scan_source_archive,
 )
 
 # The cache sits beside the runtime directory and takes its name, so a
@@ -449,7 +449,7 @@ def _parse_v2_source_file(
     path: Path, sources_root: Path, relative: str, text: str
 ) -> list[MemoryEvent]:
     lines = text.split("\n")
-    scan = scan_v2_archive(text, relative)
+    scan = scan_source_archive(text, relative)
     events = []
     for frame in scan.frames:
         record = _SOURCE_RECORD_RE.match(lines[frame.record_index])

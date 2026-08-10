@@ -13,7 +13,9 @@ from pathlib import Path
 import pytest
 
 
-MARKER = "memory_written_scriptorium"
+from openprogram.memory.scriptorium.writing import (
+    WRITTEN_NODE_MARKER as MARKER,
+)
 LARGE_OUTPUT = "large result line\n" * 4_000
 
 

@@ -499,7 +499,7 @@ def test_always_allow_does_not_persist_complex_shell(monkeypatch):
 
 @pytest.mark.parametrize(("speaker_kind", "interaction", "tier"), [
     ("owner", "interactive", "paired"),
-    ("human", "shared", "owner"),
+    ("human", "non-interactive", "owner"),
     ("owner", "non-interactive", "owner"),
 ])
 def test_only_interactive_owner_can_request_approval(

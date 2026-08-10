@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
-from ..source_format import scan_v2_archive
+from ..source_format import scan_source_archive
+from ..writing import WRITTEN_NODE_MARKER
 from .state import RuntimeStateStore
 
 
@@ -16,7 +17,6 @@ SOURCE_HEADER = re.compile(
     r'<a id="(source-[0-9a-f]{16})"></a>\n'
     r"<!-- source-id:(openprogram/([^/\n]+)/([^>\n]+)) -->\n"
 )
-MARKER = "memory_written_scriptorium"
 
 
 def _payload(path: Path) -> dict[str, Any] | None:
@@ -60,7 +60,7 @@ def _v2_archived_nodes(
     except (OSError, ValueError):
         return []
     nodes: list[tuple[str, str]] = []
-    for frame in scan_v2_archive(text, relative).frames:
+    for frame in scan_source_archive(text, relative).frames:
         parts = frame.source_id.split("/", 2)
         if len(parts) == 3 and parts[0] == "openprogram":
             nodes.append((parts[1], parts[2]))
@@ -119,7 +119,7 @@ def migrate(memory_dir: Path, session_store, workspace_id: str) -> bool:
         grouped = _continuous_archived_prefixes(session_store, candidates)
         for session_id, node_ids in grouped.items():
             patches = {
-                node_id: {MARKER: workspace_id} for node_id in node_ids
+                node_id: {WRITTEN_NODE_MARKER: workspace_id} for node_id in node_ids
             }
             session_store.merge_node_metadata_batch(session_id, patches)
         state_store.save(state_store.load())

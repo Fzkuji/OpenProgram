@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from . import store
-from .provider import WriteIncomplete
+from .provider import WriteFailure
 
 logger = logging.getLogger(__name__)
 
@@ -143,11 +143,11 @@ def _scan(idle_minutes: int) -> int:
 
 def _process_session(
     session_id: str, messages: list[dict[str, Any]]
-) -> WriteIncomplete | None:
+) -> WriteFailure | None:
     """Write an idle conversation into memory.
 
     Returns nothing once the session is written — the caller marks it
-    processed. A ``WriteIncomplete`` carries why it is not, and whether
+    processed. A ``WriteFailure`` carries why it is not, and whether
     a later poll could finish it.
 
     Per-turn writing already handles a live session once enough has
@@ -173,7 +173,7 @@ def _process_session(
         # unclassified exception may be a permanent config/auth failure.
         logger.info("memory: write deferred for %s (%s)", session_id, exc)
         verdict = getattr(exc, "retryable", None)
-        return WriteIncomplete(
+        return WriteFailure(
             str(exc), retryable=False if verdict is None else bool(verdict),
         )
 

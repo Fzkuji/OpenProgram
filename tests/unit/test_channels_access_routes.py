@@ -40,7 +40,7 @@ def test_access_management_rejects_non_loopback_requests():
 def test_web_owner_can_list_and_approve_pending_pairing(monkeypatch):
     from openprogram.channels import _access
 
-    pending = _access.check_inbound(
+    pending = _access.decide_inbound_sender(
         "telegram", "default", "u7", "[Eve]\n\u202e",
     )
     assert pending.reply is not None
@@ -63,7 +63,7 @@ def test_web_owner_can_list_and_approve_pending_pairing(monkeypatch):
     assert row["pending"][0]["code"] == code
     assert approved.status_code == 200
     assert approved.json() == {"ok": True, "user_id": "u7"}
-    assert _access.check_inbound(
+    assert _access.decide_inbound_sender(
         "telegram", "default", "u7", "Renamed",
     ).allowed is True
 
@@ -80,7 +80,7 @@ def test_web_owner_can_revoke_paired_sender(monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"ok": True, "user_id": "u7"}
-    assert _access.check_inbound(
+    assert _access.decide_inbound_sender(
         "telegram", "default", "u7", "Eve",
     ).allowed is False
 

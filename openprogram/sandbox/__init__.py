@@ -42,13 +42,13 @@ from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
 
-MODE_OFF = "off"
+MODE_DANGER_FULL_ACCESS = "danger-full-access"
 MODE_WORKSPACE_WRITE = "workspace-write"
-MODES = (MODE_OFF, MODE_WORKSPACE_WRITE)
+MODES = (MODE_DANGER_FULL_ACCESS, MODE_WORKSPACE_WRITE)
 
-ON_UNAVAILABLE_REFUSE = "refuse"
-ON_UNAVAILABLE_WARN = "warn"
-ON_UNAVAILABLE = (ON_UNAVAILABLE_REFUSE, ON_UNAVAILABLE_WARN)
+UNAVAILABLE_POLICY_REFUSE = "refuse"
+UNAVAILABLE_POLICY_WARN = "warn"
+UNAVAILABLE_POLICY = (UNAVAILABLE_POLICY_REFUSE, UNAVAILABLE_POLICY_WARN)
 
 # Loaded, not just present. Both reference harnesses ship a deny-read
 # engine with an empty list and close the loop on egress instead; that
@@ -267,10 +267,18 @@ def escalated_policy():
         _execution_policy_override.reset(token)
 
 
-def is_likely_violation(
+def is_sandbox_denial(
     exit_code: int, stdout: str, stderr: str, *, sandboxed: bool,
 ) -> bool:
-    """Classify a failed sandboxed command without treating all failures alike."""
+    """True when a sandboxed command most likely failed on the sandbox.
+
+    A heuristic on the child's own output, not a verdict from the
+    sandbox: no backend reports "I denied this". A command that prints
+    one of these strings for its own reasons reads as a false positive,
+    and a backend phrasing a denial differently reads as a miss. Use it
+    to word an error message, never to decide whether access was
+    granted.
+    """
     if not sandboxed or exit_code == 0:
         return False
     text = f"{stdout}\n{stderr}".lower()
@@ -360,15 +368,15 @@ def _agentics_root() -> str:
     return os.path.join(os.path.dirname(os.path.abspath(_f.__file__)), "agentics")
 
 
-def on_unavailable() -> str:
-    v = str(_config_section().get("on_unavailable") or ON_UNAVAILABLE_REFUSE)
-    return v if v in ON_UNAVAILABLE else ON_UNAVAILABLE_REFUSE
+def unavailable_policy() -> str:
+    v = str(_config_section().get("unavailable_policy") or UNAVAILABLE_POLICY_REFUSE)
+    return v if v in UNAVAILABLE_POLICY else UNAVAILABLE_POLICY_REFUSE
 
 
 def set_mode(enabled: bool) -> None:
     """Persist the on/off state. Used by the ``/sandbox`` toggles."""
     from openprogram.config_schema import set_setting
-    set_setting("sandbox.mode", MODE_WORKSPACE_WRITE if enabled else MODE_OFF)
+    set_setting("sandbox.mode", MODE_WORKSPACE_WRITE if enabled else MODE_DANGER_FULL_ACCESS)
 
 
 def is_enabled() -> bool:

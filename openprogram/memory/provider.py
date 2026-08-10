@@ -41,7 +41,7 @@ from typing import Any
 
 
 @dataclass(frozen=True)
-class WriteIncomplete:
+class WriteFailure:
     """What ``write`` returns when turns are still unwritten.
 
     ``retryable`` separates a condition that clears on its own — a lock
@@ -147,7 +147,7 @@ class MemoryProvider(ABC):
         *,
         session_id: str = "",
         force: bool = False,
-    ) -> WriteIncomplete | None:
+    ) -> WriteFailure | None:
         """Fold conversation into memory.
 
         Called after every turn, and again when the session goes idle.
@@ -170,7 +170,7 @@ class MemoryProvider(ABC):
         session handled. The opposite reading is what makes a missing
         ``return`` an endless retry.
 
-        Return ``WriteIncomplete`` when turns are still unwritten:
+        Return ``WriteFailure`` when turns are still unwritten:
 
         * ``retryable=True`` leaves the session unmarked, so the next
           poll offers it again.

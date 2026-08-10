@@ -210,7 +210,7 @@ class Channel(abc.ABC):
         stable_sender_id = ch_msg.user_id or (
             ch_msg.chat_id if ch_msg.is_dm else ""
         )
-        access_decision = _access.check_inbound(
+        access_decision = _access.decide_inbound_sender(
             self.platform_id, self.account_id,
             stable_sender_id,
             display=safe_display,

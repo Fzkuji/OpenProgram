@@ -38,7 +38,7 @@ cli.py re-exports these at module level so external callers
 - **`rescue.py`** — ``openprogram rescue``
 - **`sessions.py`** — ``openprogram sessions`` handlers (list / resume)
 - **`skills.py`** — ``openprogram skills`` handlers
-- **`peer.py`** — ``openprogram peer`` (spawn / merge peer sessions)
+- **`subagent.py`** — ``openprogram subagent`` (spawn / merge subagent sessions)
 - **`web.py`** — ``openprogram web`` handler
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

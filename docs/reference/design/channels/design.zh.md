@@ -85,7 +85,7 @@
       }
    c. 交给 base.Channel.handle_inbound(ch_msg) — base 起一个 per-message
       daemon 线程 (turn 停在 runtime.ask 时不能堵 poll loop), 线程里:
-        c1. _access.check_inbound(平台, 账号, user_id) — allowlist/配对
+        c1. _access.decide_inbound_sender(平台, 账号, user_id) — allowlist/配对
             门禁. 未知发信人 → 消息丢弃、回一个配对码; 批准只能走本机
             CLI (`channels access approve`) 或本地 Web UI，永远不由 channel
             文本触发（注入边界）。
@@ -239,7 +239,7 @@ class SendResult:
 
 ### 4.5 入站 access 门禁
 
-`_access.py` 给每个 (channel, account) 维护一份 `access.json`。准入策略固定为 `pairing`：文件只包含按平台稳定 user id 索引的 `allowlist`，以及最多 3 个 `pending` 请求；旧文件中的 `policy: "open"` 会被忽略。新请求生成排除 `0O1I` 的 8 位大写码，1 小时过期；同一发信人在有效期内不重复提示，超过 pending 上限的请求静默忽略。`base._dispatch_and_reply` 在路由之前调 `check_inbound`，因此未配对发信人永远到不了 `dispatch_inbound`。写操作（`approve` / `approve_user` / `revoke`）只暴露给本机 CLI 和 loopback Web UI；入站路径只能读 allowlist、生成 pending 码，任何 channel 消息都无法批准任何人。
+`_access.py` 给每个 (channel, account) 维护一份 `access.json`。准入策略固定为 `pairing`：文件只包含按平台稳定 user id 索引的 `allowlist`，以及最多 3 个 `pending` 请求；旧文件中的 `policy: "open"` 会被忽略。新请求生成排除 `0O1I` 的 8 位大写码，1 小时过期；同一发信人在有效期内不重复提示，超过 pending 上限的请求静默忽略。`base._dispatch_and_reply` 在路由之前调 `decide_inbound_sender`，因此未配对发信人永远到不了 `dispatch_inbound`。写操作（`approve` / `approve_user` / `revoke`）只暴露给本机 CLI 和 loopback Web UI；入站路径只能读 allowlist、生成 pending 码，任何 channel 消息都无法批准任何人。
 
 ### 4.6 plugin 扩展点
 

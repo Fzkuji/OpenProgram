@@ -67,7 +67,7 @@ bwrap --new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts
 
 `--unshare-user`是故意不加的。非setuid的构建本来就自己建用户命名空间，加了没有增量；setuid的构建根本不支持这个参数。
 
-可用性按实际执行能力判断，不只检查PATH中是否存在文件。Linux针对每个`bwrap`可执行文件的首次检查会用策略要求的PID、IPC、UTS、网络、挂载和capability限制执行`/bin/true`。因此，已经安装`bwrap`但禁止非特权用户命名空间的宿主会被判为不可用，并按`sandbox.on_unavailable`处理；普通宿主执行不会被标记为已进入沙箱。
+可用性按实际执行能力判断，不只检查PATH中是否存在文件。Linux针对每个`bwrap`可执行文件的首次检查会用策略要求的PID、IPC、UTS、网络、挂载和capability限制执行`/bin/true`。因此，已经安装`bwrap`但禁止非特权用户命名空间的宿主会被判为不可用，并按`sandbox.unavailable_policy`处理；普通宿主执行不会被标记为已进入沙箱。
 
 #### 1.3 屏蔽清单里有什么
 
@@ -91,17 +91,17 @@ Linux上光洗环境变量不够。没有`--unshare-pid`时，`/proc/<agent_pid>
 
 ### 2. 开关
 
-策略在包装命令的那一刻从`~/.openprogram/config.json`的`sandbox.*`读出来。新安装默认`workspace-write`；已有配置中显式的`off`保持不变。七个键注册在`openprogram/config_schema.py::SETTINGS`里，所以`openprogram config`、setup向导、TUI设置页和Web设置页都会渲染它们：
+策略在包装命令的那一刻从`~/.openprogram/config.json`的`sandbox.*`读出来。新安装默认`workspace-write`；已有配置中显式的`danger-full-access`保持不变。七个键注册在`openprogram/config_schema.py::SETTINGS`里，所以`openprogram config`、setup向导、TUI设置页和Web设置页都会渲染它们：
 
 | 键 | 含义 | 默认 |
 |---|---|---|
-| `sandbox.mode` | `off`或`workspace-write` | `workspace-write` |
+| `sandbox.mode` | `danger-full-access`或`workspace-write` | `workspace-write` |
 | `sandbox.writable_roots` | 工作目录之外还可写的目录 | `[]` |
 | `sandbox.deny_read` | 沙箱内不可读的glob | §1.3那份凭证清单 |
 | `sandbox.deny_write` | 沙箱内不可写的glob | `[]`，外加常开的agentics目录 |
 | `sandbox.network` | 沙箱内是否有网络 | `false` |
 | `sandbox.pass_env` | 额外透传的环境变量名 | `[]` |
-| `sandbox.on_unavailable` | 平台后端缺失或无法创建所需隔离时`refuse`还是`warn` | `refuse` |
+| `sandbox.unavailable_policy` | 平台后端缺失或无法创建所需隔离时`refuse`还是`warn` | `refuse` |
 
 CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以这个开关是持久的，不是单次会话的。
 
@@ -109,7 +109,7 @@ CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以�
 
 **只有本地interactive owner可以申请一次精确重试并放宽可配置限制。**重试仍使用OS沙箱，凭证环境过滤和不可配置的agentics禁写保持生效；cron、subagent和共享渠道不能使用该路径。`permission_mode="bypass"`也不能取消hard floor或沙箱。
 
-**平台后端不可用时默认拒绝执行。**`sandbox.mode`开着、平台后端缺失或所需隔离探测失败、`sandbox.on_unavailable`是`refuse`时，`_invocation`抛`SandboxUnavailable`，`LocalBackend.run`把它变成失败的`RunResult`，文案给出原因和显式的不安全替代设置。`warn`恢复原来不受保护的执行行为，附一行日志。
+**平台后端不可用时默认拒绝执行。**`sandbox.mode`开着、平台后端缺失或所需隔离探测失败、`sandbox.unavailable_policy`是`refuse`时，`_invocation`抛`SandboxUnavailable`，`LocalBackend.run`把它变成失败的`RunResult`，文案给出原因和显式的不安全替代设置。`warn`恢复原来不受保护的执行行为，附一行日志。
 
 粒度仍然是整个安装一个设置：不分agent、不分工具、不分命令。`wrap_command`接收显式策略，手上有策略的调用方可以传进去，但目前没有任何地方按调用点给出不同的策略。
 
@@ -199,7 +199,7 @@ CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以�
 | `weclaw` | 无 | `~/.weclaw/config.json`，没有任何安全相关的键 | 审批被自动答成allow | 无 |
 | **OpenProgram** | 整个安装一个设置 | `config_schema.SETTINGS`里七个`sandbox.*`键 | **不联动** | **硬拒绝**并给出两条出路，另有`warn`可选 |
 
-最后一列的分布是最有用的部分。`openclaw`在Docker缺失时直接拒绝运行，并给出两条出路（`src/agents/sandbox/docker.ts:324-333`），镜像缺失时也拒绝拿一个通用镜像顶替。`claude-code`是照跑，但它自己的源码写清了为什么必须出声：修过的那个bug是`isSandboxingEnabled()`在依赖缺失时静默返回false，注释写的是"This is a security footgun — users configure allowedDomains expecting enforcement, get none."我们原来的行为正是那个bug描述的状态，现在`sandbox.on_unavailable`默认是`refuse`。
+最后一列的分布是最有用的部分。`openclaw`在Docker缺失时直接拒绝运行，并给出两条出路（`src/agents/sandbox/docker.ts:324-333`），镜像缺失时也拒绝拿一个通用镜像顶替。`claude-code`是照跑，但它自己的源码写清了为什么必须出声：修过的那个bug是`isSandboxingEnabled()`在依赖缺失时静默返回false，注释写的是"This is a security footgun — users configure allowedDomains expecting enforcement, get none."我们原来的行为正是那个bug描述的状态，现在`sandbox.unavailable_policy`默认是`refuse`。
 
 ### 7. 前两轮没见过的招数
 
@@ -281,7 +281,7 @@ CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以�
 
 **3. 开关语义，已完成。**`ContextVar`已经删掉。策略在包装命令的那一刻从配置里的`sandbox.*`解析，asyncio任务到线程、spawn子进程、嵌套CLI三个边界都扛得住，因为文件不属于任何上下文。它同时坐在权限层之下，所以`permission_mode="bypass"`短路掉的是审批卡而不是沙箱。`wrap_command`接收显式策略供手上有策略的调用方使用；目前还没有按工具或按调用点给出不同策略的地方，那正是"调用点可覆盖"原本要买到的东西。平台工具不可用时默认拒绝执行，并给出两条出路。
 
-**4. 默认开，已完成。**新安装使用`workspace-write`；已有配置中显式的`off`保持不变。
+**4. 默认开，已完成。**新安装使用`workspace-write`；已有配置中显式的`danger-full-access`保持不变。
 
 **5. 审批联动，已完成，分为三个独立决策。**
 
@@ -315,7 +315,7 @@ CLI进程仍不进入OS沙箱，因为它需要访问Anthropic API。它自带�
 
 ## 实现状态
 
-截至2026-08-10，修复顺序第1—5步和扩展架构第04—08步均已实现。新安装默认`workspace-write`；已有配置中显式的`off`保持不变。
+截至2026-08-10，修复顺序第1—5步和扩展架构第04—08步均已实现。新安装默认`workspace-write`；已有配置中显式的`danger-full-access`保持不变。
 
 - hard constraint和固定权限档能力检查在权限规则、审批及`permission_mode="bypass"`之前判定。
 - cron保存带签名且固化owner权限档的不可变执行spec，以强制沙箱和禁止审批升级的方式无人值守执行。`execute_code`、agentic子进程和one-shot MCP使用同一策略边界。
@@ -328,7 +328,7 @@ CLI进程仍不进入OS沙箱，因为它需要访问Anthropic API。它自带�
 
 已知限制：
 
-- Windows没有宿主原生沙箱后端。启用沙箱时默认拒绝命令，OpenProgram不会自动选择Docker。owner必须显式关闭沙箱，或显式设置不安全的`sandbox.on_unavailable=warn`。
+- Windows没有宿主原生沙箱后端。启用沙箱时默认拒绝命令，OpenProgram不会自动选择Docker。owner必须显式关闭沙箱，或显式设置不安全的`sandbox.unavailable_policy=warn`。
 - macOS拒绝在该Seatbelt profile中执行setuid二进制，因此`ps`和`top`不可用。
 - Linux不能表达`**/.env`这类中段通配deny-read；已知具体路径会被遮蔽，该glob只在macOS生效。Linux敏感内容要使用精确路径，或`/absolute/path/to/secrets/**`这类具有确定前缀的目录级规则。
 - 沙箱策略以安装为粒度，不支持per-tool沙箱覆盖；authority与权限规则继续提供逐操作控制。

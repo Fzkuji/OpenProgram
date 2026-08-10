@@ -71,7 +71,7 @@ def _invocation(command: str, cwd: str | None = None, *,
     on every call, so it holds in threads and subprocesses alike.
 
     Raises ``SandboxUnavailable`` when a sandbox is configured, the
-    platform tool is missing, and ``sandbox.on_unavailable`` is
+    platform tool is missing, and ``sandbox.unavailable_policy`` is
     ``refuse`` — silently running the command unprotected is how a
     security setting turns into a placebo.
     """
@@ -97,11 +97,11 @@ def _invocation(command: str, cwd: str | None = None, *,
             args, shell = _sandbox.wrap_command(command, cwd or os.getcwd(), policy)
             return (args, shell, prepared_env, True)
         if (force_sandbox
-                or _sandbox.on_unavailable() == _sandbox.ON_UNAVAILABLE_REFUSE):
+                or _sandbox.unavailable_policy() == _sandbox.UNAVAILABLE_POLICY_REFUSE):
             raise _sandbox.SandboxUnavailable(
                 f"sandbox.mode is on but the sandbox cannot run here: {reason}. "
-                "Install it, or set sandbox.on_unavailable=warn to run without "
-                "one, or set sandbox.mode=off."
+                "Install it, or set sandbox.unavailable_policy=warn to run without "
+                "one, or set sandbox.mode=danger-full-access."
             )
         log.warning("sandbox requested but unavailable (%s) — running "
                     "the command WITHOUT a sandbox", reason)
@@ -137,7 +137,7 @@ class LocalBackend(Backend):
                 env=env,
             )
             sandbox_error = (
-                "denied" if _sandbox.is_likely_violation(
+                "denied" if _sandbox.is_sandbox_denial(
                     proc.returncode, proc.stdout, proc.stderr,
                     sandboxed=sandboxed,
                 ) else None

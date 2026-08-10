@@ -40,7 +40,7 @@ from openprogram.memory.scriptorium.retrieval import inspect
 from openprogram.memory.scriptorium.source_format import (
     encode_source_metadata,
     provider_source_location,
-    scan_v2_archive,
+    scan_source_archive,
 )
 from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
 from openprogram.memory.scriptorium.workspace_layout import runtime_dir
@@ -150,8 +150,7 @@ def memory_search(
             f"--- {where}{suffix}{metadata}\n"
             f"{sanitize_context(str(hit.get('content') or ''))}"
         )
-    rendered = "\n\n".join(lines)
-    return rendered
+    return "\n\n".join(lines)
 
 
 # -- grep ------------------------------------------------------------------
@@ -396,7 +395,7 @@ def _promote_source(
             raise ValueError(f"source not found: {source_id}")
         with path.open("r", encoding="utf-8", newline="") as handle:
             original = handle.read()
-        scan = scan_v2_archive(original, location[0])
+        scan = scan_source_archive(original, location[0])
         if not scan.complete:
             raise ValueError("source archive is invalid or truncated")
         frame = next(

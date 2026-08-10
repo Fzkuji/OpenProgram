@@ -90,7 +90,7 @@ def test_tier_table_allows_only_memory_append_for_paired(authority_state):
     for tool in ("bash", "read", "memory_search", "memory_promote", "clarify"):
         decision = authority.decide_tool_authority(paired, tool)
         assert decision.allowed is False
-        assert decision.admission == "paired"
+        assert decision.tier == "paired"
         assert decision.check == "tier_capability_table"
         assert decision.reason_code == "AUTHORITY_CAPABILITY_DENIED"
 
@@ -105,7 +105,6 @@ def test_missing_and_unknown_tiers_fail_closed_with_distinct_codes():
 
     assert missing.to_dict() == {
         "allowed": False,
-        "admission": "denied",
         "check": "tier_capability_table",
         "reason_code": "AUTHORITY_TIER_MISSING",
         "tier": None,
@@ -113,6 +112,18 @@ def test_missing_and_unknown_tiers_fail_closed_with_distinct_codes():
     }
     assert unknown.reason_code == "AUTHORITY_TIER_UNKNOWN"
     assert unknown.tier == "administrator"
+
+
+def test_non_string_tier_is_denied_not_raised():
+    """An unhashable tier must fail closed, not blow up the `in` test."""
+    from openprogram.agent import authority
+
+    for bogus in ([{"owner"}], {"owner": True}, 7, True):
+        decision = authority.decide_tool_authority(
+            {"authority_tier": bogus}, "read",
+        )
+        assert decision.allowed is False
+        assert decision.reason_code == "AUTHORITY_TIER_UNKNOWN"
 
 
 def test_display_name_is_sanitized_before_any_model_envelope(authority_state):
@@ -213,7 +224,6 @@ def test_tier_denial_precedes_bypass_and_returns_structured_reason(authority_sta
     assert result.details["reason_code"] == "AUTHORITY_CAPABILITY_DENIED"
     assert result.details["authority_decision"] == {
         "allowed": False,
-        "admission": "paired",
         "check": "tier_capability_table",
         "reason_code": "AUTHORITY_CAPABILITY_DENIED",
         "tier": "paired",

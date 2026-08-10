@@ -1,4 +1,4 @@
-"""``openprogram peer`` — spawn / merge peer agent branches from the shell.
+"""``openprogram subagent`` — spawn / merge agent branches from the shell.
 
 These commands invoke ``run_agent_turn`` / ``process_merge_turn``
 directly against the in-process ``SessionStore`` singleton — no WS, no
@@ -6,9 +6,8 @@ webui. Useful for scripting batch agent fan-out from CI / shell
 pipelines.
 
 Same-session multi-agent model: every spawn lands as a branch (or
-new root) inside the target session's git repo. Agents are peers, not
-parent/sub — a spawn is a sibling branch, and a merge folds N peer
-branches back into one turn.
+new root) inside the target session's git repo. A spawn is a sibling
+branch, and a merge folds N spawned branches back into one turn.
 
 Output is JSON for easy piping; ``--json=false`` prints a human-readable
 summary instead.
@@ -37,7 +36,7 @@ def _print(payload: dict[str, Any], *, as_json: bool) -> None:
             print(f"{k}: {v}")
 
 
-def _cmd_peer_spawn(
+def _cmd_subagent_spawn(
     session: str,
     prompt: str,
     *,
@@ -108,23 +107,24 @@ def _cmd_peer_spawn(
     return 1 if result.failed else 0
 
 
-def _cmd_peer_merge(
+def _cmd_subagent_merge(
     target: str,
-    subs: list[str],
+    branches: list[str],
     message: str,
     *,
     agent_id: str = "main",
-    base_peer: int | None = None,
+    base_branch: int | None = None,
     as_json: bool = True,
 ) -> int:
-    """Merge ``subs`` (peer branches) onto ``target`` with the given
-    instruction. Each item in ``subs`` is ``sid`` (= that session's
-    HEAD) or ``sid:head_id`` (a specific branch tip — same-session or
+    """Merge ``branches`` onto ``target`` with the given instruction.
+
+    Each item in ``branches`` is ``sid`` (= that session's HEAD) or
+    ``sid:head_id`` (a specific branch tip — same-session or
     cross-session). Writes a multi-parent ContextCommit on target.
 
-    ``base_peer`` (0-based index into ``subs``) optionally marks one
-    peer as the merge base — the merge agent writes its reply as a
-    continuation of that branch, with the others as supplemental
+    ``base_branch`` (0-based index into ``branches``) optionally marks
+    one branch as the merge base — the merge agent writes its reply as
+    a continuation of that branch, with the others as supplemental
     context. Equivalent to attach-style merging."""
     from openprogram.agent.session_db import default_db
     from openprogram.agent.internals._merge import process_merge_turn
@@ -134,12 +134,12 @@ def _cmd_peer_merge(
         _print({"error": f"unknown target session: {target}"}, as_json=as_json)
         return 2
 
-    if not subs:
-        _print({"error": "no peer branches given"}, as_json=as_json)
+    if not branches:
+        _print({"error": "no branches given"}, as_json=as_json)
         return 2
 
     peers: list[dict] = []
-    for s in subs:
+    for s in branches:
         s = (str(s) or "").strip()
         if not s:
             continue
@@ -157,7 +157,7 @@ def _cmd_peer_merge(
         peers=peers,
         message=message,
         agent_id=agent_id,
-        base_peer=base_peer,
+        base_peer=base_branch,
     )
     out = {
         "target_assistant_id": result.target_assistant_id,
@@ -166,7 +166,7 @@ def _cmd_peer_merge(
         "final_text": result.final_text,
         "failed": result.failed,
         "error": result.error,
-        "base_peer": result.base_peer,
+        "base_branch": result.base_peer,
     }
     _print(out, as_json=as_json)
     return 1 if result.failed else 0

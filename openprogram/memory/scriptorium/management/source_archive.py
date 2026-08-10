@@ -15,7 +15,7 @@ from ..source_format import (
     encode_source_metadata,
     encode_speaker_id,
     provider_source_location,
-    scan_v2_archive,
+    scan_source_archive,
     valid_v2_source_id,
 )
 from ..workspace_layout import resolve_within, runtime_dir
@@ -177,7 +177,7 @@ class SourceArchiveMixin:
         path = self.stage_dir / relative
         if not path.is_file():
             return None
-        scan = scan_v2_archive(_read_literal_text(path), relative)
+        scan = scan_source_archive(_read_literal_text(path), relative)
         return location if ref in scan.known_source_ids else None
 
     def _source_link(
@@ -244,7 +244,7 @@ class SourceArchiveMixin:
             path = paths[relative]
             text = _read_literal_text(path) if path.exists() else ""
             if text:
-                scan = scan_v2_archive(text, relative)
+                scan = scan_source_archive(text, relative)
                 if not scan.complete:
                     raise ValueError(
                         f"invalid or truncated v2 archive: {relative}"

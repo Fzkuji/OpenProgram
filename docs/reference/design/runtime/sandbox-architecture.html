@@ -407,9 +407,9 @@
   </table>
   </div>
   <div class="legend">
-    <b>七个配置键</b>：<code>sandbox.mode</code>、<code>writable_roots</code>、<code>deny_read</code>、<code>deny_write</code>、<code>network</code>、<code>pass_env</code>、<code>on_unavailable</code>，
+    <b>七个配置键</b>：<code>sandbox.mode</code>、<code>writable_roots</code>、<code>deny_read</code>、<code>deny_write</code>、<code>network</code>、<code>pass_env</code>、<code>unavailable_policy</code>，
     都在<code>config_schema.py</code>的<code>SETTINGS</code>里，所以<code>openprogram config</code>、setup向导、TUI设置页和Web设置页一起有。
-    新安装默认<code>mode=workspace-write</code>；已有用户的显式<code>off</code>保持不变。平台工具不可用时默认拒绝，不退回宿主执行。
+    新安装默认<code>mode=workspace-write</code>；已有用户的显式<code>danger-full-access</code>保持不变。平台工具不可用时默认拒绝，不退回宿主执行。
   </div>
   </div>
 
@@ -1227,7 +1227,7 @@
     <div class="step s8">
       <div class="n">STEP 08 · 已完成</div>
       <h4>新安装默认开启</h4>
-      <div class="d">第04步、05A、身份批次I、05B、第06和第07步，以及记忆跨scope约束与U01—U23清单全部通过后，macOS与Linux新安装在后端可用时默认<code>workspace-write</code>。保留现有用户明确设置；迁移只提示，不覆盖<code>off</code>。Windows没有宿主原生后端，沙箱启用时默认拒绝，不能显示为已启用后直接在宿主执行。</div>
+      <div class="d">第04步、05A、身份批次I、05B、第06和第07步，以及记忆跨scope约束与U01—U23清单全部通过后，macOS与Linux新安装在后端可用时默认<code>workspace-write</code>。保留现有用户明确设置；迁移只提示，不覆盖<code>danger-full-access</code>。Windows没有宿主原生后端，沙箱启用时默认拒绝，不能显示为已启用后直接在宿主执行。</div>
       <div class="x"><b>验收</b>：不能只依赖单元测试。用全新profile和真实子进程，在macOS与Linux分别执行下面的命令矩阵，并验证退出码、产物位置、网络结果、凭证拒读和工作区外拒写；main、subagent、cron、execute_code、文件工具和嵌套agent还要分别执行端到端策略用例。另用“共享成员写入pending记忆→owner说按之前定的执行”验证该记录不会进入owner自动上下文；显式召回后scope取交集，只有owner提升或精确审批才能增加能力。</div>
       <div class="src">参考：codex-cli的新会话默认；openclaw默认off只记录其产品选择，不作为OpenProgram默认值依据</div>
     </div>
@@ -1257,7 +1257,7 @@
     文件和命令操作改用OpenProgram提供的受管MCP工具，因此副作用回到宿主的路径、scope、审批和沙箱判定。</div>
 
   <h2 id="status"><span class="num">11</span>实现状态</h2>
-  <p class="lead">记录日期：2026-08-10。第01—08步与身份批次I均已实现；新安装默认<code>workspace-write</code>，已有显式<code>off</code>不被迁移覆盖。状态以当前代码、完整单元测试和双平台真实子进程矩阵为准。</p>
+  <p class="lead">记录日期：2026-08-10。第01—08步与身份批次I均已实现；新安装默认<code>workspace-write</code>，已有显式<code>danger-full-access</code>不被迁移覆盖。状态以当前代码、完整单元测试和双平台真实子进程矩阵为准。</p>
 
   <div class="tbl">
   <table>
@@ -1271,7 +1271,7 @@
     <tr><td><b>I authority scope依赖</b></td><td class="y">已完成</td><td>owner principal、speaker、interaction和capability集合显式进入TurnRequest、Task、inbox、continuation、subagent与spawn snapshot</td><td>恢复缺字段时对宿主副作用deny，不使用ContextVar补值</td></tr>
     <tr><td><b>05B cron创建与管理</b></td><td class="y">已完成</td><td>创建消费<code>schedule.create</code>，修改/重排/删除消费<code>schedule.manage</code>；job capability固化owner、scope、policy与内容hash</td><td>共享渠道在持久化改变前deny</td></tr>
     <tr><td><b>07 审批联动</b></td><td class="y">已完成</td><td>scope先判定；违规结构化；只有本地interactive owner可精确单次升级；Always allow精确到规范化operation</td><td>hard floor与凭证环境过滤不能被批准取消</td></tr>
-    <tr><td><b>08 默认开启</b></td><td class="y">已完成</td><td><code>sandbox.mode</code>默认<code>workspace-write</code>；macOS与Linux的git/python/npm/make/conda及拒绝矩阵通过</td><td>保留显式<code>off</code>；未知平台默认refuse</td></tr>
+    <tr><td><b>08 默认开启</b></td><td class="y">已完成</td><td><code>sandbox.mode</code>默认<code>workspace-write</code>；macOS与Linux的git/python/npm/make/conda及拒绝矩阵通过</td><td>保留显式<code>danger-full-access</code>；未知平台默认refuse</td></tr>
   </table>
   </div>
 
@@ -1293,7 +1293,7 @@
   <div class="tbl">
   <table>
     <tr><th>其他已知限制</th><th>当前行为</th><th>范围决定</th></tr>
-    <tr><td><b>Windows</b></td><td>没有宿主原生沙箱后端；沙箱开启时默认拒绝执行。只有owner显式关闭沙箱或选择不安全的<code>on_unavailable=warn</code>才会改变该行为</td><td>不自动选择Docker，不把普通宿主执行显示为已启用沙箱</td></tr>
+    <tr><td><b>Windows</b></td><td>没有宿主原生沙箱后端；沙箱开启时默认拒绝执行。只有owner显式关闭沙箱或选择不安全的<code>unavailable_policy=warn</code>才会改变该行为</td><td>不自动选择Docker，不把普通宿主执行显示为已启用沙箱</td></tr>
     <tr><td><b>per-tool覆盖</b></td><td>沙箱策略当前以安装为粒度；工具仍分别执行authority、权限规则、审批与hard constraints</td><td>本批次不增加per-tool SandboxPolicy覆盖</td></tr>
     <tr><td><b>CPU / 内存 / 进程数</b></td><td>有命令timeout和Linux namespace，但没有资源配额</td><td>明确不在范围内；PID namespace不能描述为进程数限制</td></tr>
   </table>

@@ -52,7 +52,6 @@ class AuthorityDecision:
     """One auditable result from the fixed tier-capability table."""
 
     allowed: bool
-    admission: str
     check: str
     reason_code: str
     tier: str | None
@@ -142,7 +141,7 @@ def paired_channel_authority(
         ),
         "principal_id": owner_principal_id(),
         "authority_tier": "paired",
-        "interaction": "shared",
+        "interaction": "non-interactive",
     }
 
 
@@ -199,18 +198,18 @@ def decide_capability(
     raw_tier = _raw_tier(value)
     if raw_tier is None:
         decision = AuthorityDecision(
-            False, "denied", "tier_capability_table",
+            False, "tier_capability_table",
             "AUTHORITY_TIER_MISSING", None, str(capability),
         )
-    elif raw_tier not in TIER_CAPABILITIES:
+    elif not isinstance(raw_tier, str) or raw_tier not in TIER_CAPABILITIES:
         decision = AuthorityDecision(
-            False, "denied", "tier_capability_table",
+            False, "tier_capability_table",
             "AUTHORITY_TIER_UNKNOWN", str(raw_tier), str(capability),
         )
     else:
         allowed = str(capability) in TIER_CAPABILITIES[raw_tier]
         decision = AuthorityDecision(
-            allowed, str(raw_tier), "tier_capability_table",
+            allowed, "tier_capability_table",
             "AUTHORITY_ALLOWED" if allowed else "AUTHORITY_CAPABILITY_DENIED",
             str(raw_tier), str(capability),
         )
@@ -325,8 +324,8 @@ def capability_for_tool(tool_name: str, args: Mapping[str, Any] | None = None) -
     if name in _REPLY_LOCAL_TOOLS:
         return "runtime.control"
     # Installed agentic and MCP extensions may use arbitrary names. Treat an
-    # unclassified extension as executable code: local-owner can still use
-    # existing extensions, while shared and unknown external scopes cannot.
+    # unclassified extension as executable code: only the owner tier holds
+    # process.exec, so a paired speaker cannot reach an unclassified tool.
     return "process.exec"
 
 

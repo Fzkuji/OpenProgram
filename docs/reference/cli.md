@@ -126,7 +126,7 @@ The `worker` subcommands offer finer control:
 | Verb | What it does |
 |------|------|
 | `spawn` | Spawn an agent in a session as a new branch: `--session` and `--prompt` required; `--parent-msg` picks the fork node, `--label` names the branch, `--agent` picks the agent profile (default `main`), `--context inherit\|clean` (or `--clean`), `--no-json` for a human-readable summary |
-| `merge` | Merge peer sessions into a target with a new turn: `--target` and repeatable `--sub SID` required; `--message` is the merge instruction, `--agent` the merge agent, `--base N` marks one peer as the merge base, `--no-json` for a human-readable summary |
+| `merge` | Merge subagent sessions into a target with a new turn: `--target` and repeatable `--branch SID` required; `--message` is the merge instruction, `--agent` the merge agent, `--base N` marks one branch as the merge base, `--no-json` for a human-readable summary |
 
 ### programs
 

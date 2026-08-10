@@ -1,7 +1,7 @@
 """入站 access 门禁 — 每个 channel 账号一份 allowlist + pairing 状态.
 
 未知发信人的消息不驱动 agent. ``base.Channel._dispatch_and_reply`` 在
-路由 / dispatch 之前调 :func:`check_inbound`; 不在 allowlist 里的发信
+路由 / dispatch 之前调 :func:`decide_inbound_sender`; 不在 allowlist 里的发信
 人拿到一个配对码, 消息本身被丢弃. 机主在本机确认:
 
     openprogram channels access approve telegram ABCD2345
@@ -9,7 +9,7 @@
     openprogram channels access revoke telegram 123456
 
 安全边界: **approve / revoke 只能由本机进程调用 (CLI /
-webui), 永远不接 channel 消息触发**. check_inbound 是入站路径上唯一
+webui), 永远不接 channel 消息触发**. decide_inbound_sender 是入站路径上唯一
 入口, 它只读 allowlist、只写 pending 表 — 一条精心构造的消息最多给
 自己刷一个配对码, 不可能把自己放进 allowlist. /answer 等文本命令在
 dispatch 里处理, 而 dispatch 只对已放行的发信人运行, 顺序上也到不了.
@@ -70,7 +70,7 @@ _log = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class AccessDecision:
     allowed: bool
-    admission: str
+    pairing_state: str
     check: str
     reason_code: str
     reply: Optional[str] = None
@@ -81,14 +81,14 @@ class AccessDecision:
 
 def _decision(
     allowed: bool,
-    admission: str,
+    pairing_state: str,
     reason_code: str,
     reply: Optional[str] = None,
 ) -> AccessDecision:
     value = AccessDecision(
-        allowed, admission, "stable_sender_allowlist", reason_code, reply,
+        allowed, pairing_state, "stable_sender_allowlist", reason_code, reply,
     )
-    _log.info("channel admission decision %s", value.to_dict())
+    _log.info("channel pairing decision %s", value.to_dict())
     return value
 
 
@@ -181,10 +181,10 @@ def _prune_pending(data: dict[str, Any], now: float) -> None:
 # 入站路径 (只读 allowlist / 只写 pending)
 # ---------------------------------------------------------------------------
 
-def check_inbound(
+def decide_inbound_sender(
     channel: str, account_id: str, user_id: str, display: str = "",
 ) -> AccessDecision:
-    """Return one structured admission decision for a stable sender ID.
+    """Return one structured pairing decision for a stable sender ID.
 
     * ``allowed=True`` → 消息照常进 dispatch, ``reply`` 恒为 None.
     * ``allowed=False`` → 消息丢弃; ``reply`` 非 None 时 adapter 把它发回给

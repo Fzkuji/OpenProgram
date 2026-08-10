@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
 
-from ..provider import WriteIncomplete
+from ..provider import WriteFailure
 from .management import organize_topics
 from .management.agent import _run_agent
 from .management.api import render_writer_task
@@ -29,7 +29,7 @@ from .runtime.state import SourceRecord
 logger = logging.getLogger(__name__)
 
 PROVIDER = "openprogram"
-MARKER = "memory_written_scriptorium"
+WRITTEN_NODE_MARKER = "memory_written_scriptorium"
 
 # Turns the runtime writes to drive itself: the notification a finished
 # sub-agent posts back, and the prompt a branch merge assembles.
@@ -216,7 +216,7 @@ def _marked_ids(
     return {
         str(message.get("id"))
         for message in messages
-        if message.get("id") and message.get(MARKER) == workspace_id
+        if message.get("id") and message.get(WRITTEN_NODE_MARKER) == workspace_id
     }
 
 
@@ -300,7 +300,7 @@ def write_session(
 
     def mark(batch: tuple[SourceRecord, ...]) -> None:
         db.merge_node_metadata_batch(session_id, {
-            record.message_id: {MARKER: workspace_id}
+            record.message_id: {WRITTEN_NODE_MARKER: workspace_id}
             for record in batch
         })
 
@@ -374,7 +374,7 @@ def write(
     *,
     token_threshold: int,
     force: bool = False,
-) -> WriteIncomplete | None:
+) -> WriteFailure | None:
     """Fold a session's conversation into memory. Nothing back on success.
 
     Unforced, this is the after-every-turn call: one pass, which writes
@@ -390,7 +390,7 @@ def write(
     first pass would strand the rest for good, because the caller marks
     the session done on the way out.
 
-    A ``WriteIncomplete`` means turns are still unwritten. Whatever
+    A ``WriteFailure`` means turns are still unwritten. Whatever
     ``write_session`` raises travels up to the provider, which is where
     a transaction code becomes retryable or not.
     """
@@ -399,7 +399,7 @@ def write(
     if not is_enabled():
         return None
     if not session_id:
-        return WriteIncomplete("no session id", retryable=False)
+        return WriteFailure("no session id", retryable=False)
     from .. import store
     from openprogram.agent.session_db import default_db
     from .runtime.mark_archived_turns import migrate
@@ -432,9 +432,9 @@ def write(
             ):
                 # Pending turns reached no topic file, so no source node
                 # was marked and a later pass must retry this branch.
-                return WriteIncomplete("the writer made no progress")
+                return WriteFailure("the writer made no progress")
             if head is None:
-                return WriteIncomplete("session nodes unavailable")
+                return WriteFailure("session nodes unavailable")
             branch_rows = db.get_branch(session_id, head) or []
     return None
 

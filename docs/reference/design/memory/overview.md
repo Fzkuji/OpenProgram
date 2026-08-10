@@ -561,7 +561,7 @@ swallows its own failures and logs them. Swallowed is not forgotten.
 hook that says nothing is read as a hook that had no problem, the same
 way a Claude Code hook only speaks up to intervene. Being below the
 threshold is silence too: nothing was owed yet. Anything left unwritten
-comes back as a `WriteIncomplete` carrying the reason and one more bit,
+comes back as a `WriteFailure` carrying the reason and one more bit,
 whether a later pass could finish it. A held lock or an unreachable
 model can, so the watcher leaves the session unmarked and tries again.
 Content the write transaction refused cannot, so the watcher marks the

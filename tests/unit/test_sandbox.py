@@ -54,7 +54,7 @@ def test_workspace_write_by_default(cfg):
 
 
 def test_explicit_off_disables_sandbox(cfg):
-    cfg["sandbox"] = {"mode": "off"}
+    cfg["sandbox"] = {"mode": "danger-full-access"}
     assert resolve_policy() is None
 
 
@@ -120,7 +120,7 @@ def test_installed_process_snapshot_survives_config_change_and_thread(
 ):
     on(cfg, network=True, writable_roots=["/owner-extra"])
     snapshot = policy_snapshot()
-    cfg["sandbox"]["mode"] = "off"
+    cfg["sandbox"]["mode"] = "danger-full-access"
     monkeypatch.setattr(
         sandbox, "_process_policy_override", sandbox._NO_PROCESS_POLICY,
     )
@@ -402,7 +402,7 @@ def test_is_available_returns_bool():
 
 def test_invocation_plain_when_off(cfg):
     from openprogram.backend.local import _invocation
-    cfg["sandbox"] = {"mode": "off"}
+    cfg["sandbox"] = {"mode": "danger-full-access"}
     args, shell, env, sandboxed = _invocation("echo hi", cwd="/tmp")
     assert env is None
     assert sandboxed is False
@@ -424,18 +424,18 @@ def test_invocation_wraps_when_on(cfg):
 def test_invocation_refuses_when_unavailable(cfg, monkeypatch):
     from openprogram.backend.local import _invocation
     on(cfg)
-    cfg["sandbox"]["on_unavailable"] = "refuse"
+    cfg["sandbox"]["unavailable_policy"] = "refuse"
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "no tool here")
     with pytest.raises(SandboxUnavailable) as e:
         _invocation("echo hi", cwd="/tmp")
     assert "no tool here" in str(e.value)
-    assert "sandbox.mode=off" in str(e.value)
+    assert "sandbox.mode=danger-full-access" in str(e.value)
 
 
 def test_invocation_warns_and_runs_when_configured_to(cfg, monkeypatch):
     from openprogram.backend.local import _invocation
     on(cfg)
-    cfg["sandbox"]["on_unavailable"] = "warn"
+    cfg["sandbox"]["unavailable_policy"] = "warn"
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "no tool here")
     args, shell, env, sandboxed = _invocation("echo hi", cwd="/tmp")
     assert env is None
@@ -488,7 +488,7 @@ def test_sandbox_settings_are_registered():
     keys = {s.key for s in SETTINGS}
     assert {"sandbox.mode", "sandbox.deny_read", "sandbox.deny_write",
             "sandbox.writable_roots", "sandbox.network",
-            "sandbox.on_unavailable", "sandbox.pass_env"} <= keys
+            "sandbox.unavailable_policy", "sandbox.pass_env"} <= keys
     assert _BY_KEY["sandbox.mode"].default == MODE_WORKSPACE_WRITE
 
 

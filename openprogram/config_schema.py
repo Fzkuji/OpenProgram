@@ -86,9 +86,9 @@ def _sandbox_modes() -> tuple[str, ...]:
     return MODES
 
 
-def _sandbox_on_unavailable() -> tuple[str, ...]:
-    from openprogram.sandbox import ON_UNAVAILABLE
-    return ON_UNAVAILABLE
+def _sandbox_unavailable_policy() -> tuple[str, ...]:
+    from openprogram.sandbox import UNAVAILABLE_POLICY
+    return UNAVAILABLE_POLICY
 
 
 def _sandbox_default_deny_read() -> tuple[str, ...]:
@@ -271,8 +271,9 @@ SETTINGS: list[SettingSpec] = [
         key="sandbox.mode", path=("sandbox", "mode"), group="Sandbox",
         label="Sandbox mode", widget="enum", apply=APPLY_LIVE,
         default="workspace-write", choices=lambda: list(_sandbox_modes()),
-        help="`off` runs local model-driven commands with your full user "
-             "authority. `workspace-write` applies the host-native sandbox "
+        help="`danger-full-access` runs local model-driven commands with "
+             "your full user authority. "
+             "`workspace-write` applies the host-native sandbox "
              "(macOS sandbox-exec, Linux bubblewrap), restricts writes to "
              "the working directory and configured roots, blocks the paths "
              "listed under Blocked read paths, and disables network. Read per "
@@ -347,10 +348,10 @@ SETTINGS: list[SettingSpec] = [
              "variables here.",
     ),
     SettingSpec(
-        key="sandbox.on_unavailable", path=("sandbox", "on_unavailable"),
+        key="sandbox.unavailable_policy", path=("sandbox", "unavailable_policy"),
         group="Sandbox", label="When the sandbox cannot run", widget="enum",
         apply=APPLY_LIVE, default="refuse",
-        choices=lambda: list(_sandbox_on_unavailable()),
+        choices=lambda: list(_sandbox_unavailable_policy()),
         help="What happens when the mode is on but the platform backend is "
              "missing or cannot create its required isolation. `refuse` "
              "fails the command and says why. `warn` "

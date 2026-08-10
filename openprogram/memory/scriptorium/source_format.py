@@ -168,7 +168,7 @@ def decode_source_metadata(token: str) -> dict[str, Any] | None:
     return legacy if legacy is not None and _metadata_token(payload) == token else None
 
 
-def scan_v2_archive(text: str, relative: str | Path) -> V2Scan:
+def scan_source_archive(text: str, relative: str | Path) -> V2Scan:
     """Parse the valid v2 prefix without resynchronizing after an error."""
     lines = text.split("\n")
     if len(lines) < 3 or lines[0] != V2_FORMAT_MARKER or lines[1] != "":

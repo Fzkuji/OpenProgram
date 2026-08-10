@@ -610,17 +610,17 @@ def build_parser() -> argparse.ArgumentParser:
     sessions_sub.add_parser("aliases",
         help="List every session↔channel-peer alias")
 
-    # ---- peer -------------------------------------------------------------
-    # Peer-session spawn / merge ops. See ``openprogram/agent/sub_agent_run.py``
+    # ---- subagent ----------------------------------------------------------
+    # Subagent spawn / merge ops. See ``openprogram/agent/sub_agent_run.py``
     # and ``openprogram/agent/_merge.py`` for the model. These commands run
     # against the in-process SessionStore singleton — no WS, no webui.
-    p_peer = sub.add_parser("peer",
-        help="Spawn / merge peer agent sessions.")
-    peer_sub = p_peer.add_subparsers(
-        dest="peer_verb", metavar="verb",
+    p_subagent = sub.add_parser("subagent",
+        help="Spawn / merge subagent sessions.")
+    subagent_sub = p_subagent.add_subparsers(
+        dest="subagent_verb", metavar="verb",
     )
 
-    p_sa_spawn = peer_sub.add_parser("spawn",
+    p_sa_spawn = subagent_sub.add_parser("spawn",
         help="Spawn an agent in the given session as a new branch.")
     p_sa_spawn.add_argument("--session", required=True,
         help="Session id to spawn into (the new branch / root lives here)")
@@ -643,21 +643,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_sa_spawn.add_argument("--no-json", action="store_true",
         help="Print human-readable summary instead of JSON")
 
-    p_sa_merge = peer_sub.add_parser("merge",
-        help="Merge N peer sessions into the target with a new turn.")
+    p_sa_merge = subagent_sub.add_parser("merge",
+        help="Merge N subagent sessions into the target with a new turn.")
     p_sa_merge.add_argument("--target", required=True,
         help="Target session id (gets the merge reply + multi-parent commit)")
-    p_sa_merge.add_argument("--sub", action="append", default=[],
+    p_sa_merge.add_argument("--branch", action="append", default=[],
         metavar="SID", required=True,
-        help="Peer session id to include in the merge (repeat for multiple)")
+        help="Subagent session id to include in the merge "
+             "(repeat for multiple)")
     p_sa_merge.add_argument("--message", default="",
         help="Merge instruction (the merge agent reads this alongside "
-             "each peer's final text)")
+             "each branch's final text)")
     p_sa_merge.add_argument("--agent", default="main",
         help="Agent profile to run the merge under (default: main)")
     p_sa_merge.add_argument("--base", type=int, default=None,
         metavar="N",
-        help="0-based index into --sub list. Marks that peer as the "
+        help="0-based index into --branch list. Marks that branch as the "
              "merge BASE — the reply is written as a continuation of "
              "it, with the others as supplemental context "
              "(attach-style merge).")
@@ -1033,7 +1034,7 @@ def build_parser() -> argparse.ArgumentParser:
     # 但它们是本函数局部变量 — 经 set_defaults 盖进 args,嵌套子命令
     # 由更深一层覆盖,args._cmd_parser 恒为选中路径上最深的一个。
     for _p in (p_logs, p_programs, p_skills, p_plugins, p_trash, p_sessions,
-               p_peer, p_memory, p_worker, p_channels, p_chacct,
+               p_subagent, p_memory, p_worker, p_channels, p_chacct,
                p_chaccess, p_chb, p_mcp, p_browser, p_agents,
                p_config, p_upgrade, p_providers):
         _p.set_defaults(_cmd_parser=_p)
@@ -1547,14 +1548,14 @@ def main():
         _dispatch_agents_verb(args, args._cmd_parser)
         return
 
-    if args.command == "peer":
-        verb = getattr(args, "peer_verb", None)
+    if args.command == "subagent":
+        verb = getattr(args, "subagent_verb", None)
         as_json = not getattr(args, "no_json", False)
         if verb == "spawn":
             context = getattr(args, "context", "inherit") or "inherit"
             if getattr(args, "clean", False):
                 context = "clean"
-            sys.exit(_cmd_peer_spawn(
+            sys.exit(_cmd_subagent_spawn(
                 session=args.session,
                 prompt=args.prompt,
                 parent_msg=getattr(args, "parent_msg", None),
@@ -1564,12 +1565,12 @@ def main():
                 as_json=as_json,
             ))
         if verb == "merge":
-            sys.exit(_cmd_peer_merge(
+            sys.exit(_cmd_subagent_merge(
                 target=args.target,
-                subs=list(getattr(args, "sub", []) or []),
+                branches=list(getattr(args, "branch", []) or []),
                 message=getattr(args, "message", ""),
                 agent_id=getattr(args, "agent", "main"),
-                base_peer=getattr(args, "base", None),
+                base_branch=getattr(args, "base", None),
                 as_json=as_json,
             ))
         _need_subcommand(args._cmd_parser)
@@ -1655,9 +1656,9 @@ from openprogram._cli_cmds.browser import (  # noqa: E402,F401
     _cmd_browser_list,
     _cmd_browser_rm,
 )
-from openprogram._cli_cmds.peer import (  # noqa: E402,F401
-    _cmd_peer_spawn,
-    _cmd_peer_merge,
+from openprogram._cli_cmds.subagent import (  # noqa: E402,F401
+    _cmd_subagent_spawn,
+    _cmd_subagent_merge,
 )
 
 from openprogram._cli_cmds.sessions import (  # noqa: E402,F401

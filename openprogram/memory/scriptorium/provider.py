@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..provider import MemoryProvider, WriteIncomplete, fence_memory
+from ..provider import MemoryProvider, WriteFailure, fence_memory
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,13 @@ class ScriptoriumMemoryProvider(MemoryProvider):
         return fence_memory(text) if body else ""
 
     def search(self, query: str, *, session_id: str = "") -> str:
-        """Whatever memory bears on the turn about to run."""
+        """Whatever memory bears on the turn about to run.
+
+        Pending evidence — text archived from an unpaired speaker — is
+        dropped here. It stays reachable through the ``memory_search``
+        tool, where the model asks for it and sees its trust_state, but
+        it never enters the turn's context unasked.
+        """
         if not query or not query.strip():
             return ""
         try:
@@ -74,7 +80,8 @@ class ScriptoriumMemoryProvider(MemoryProvider):
             return ""
         rendered = "\n\n".join(
             hit["content"]
-            for hit in found.get("results", []) if hit.get("content")
+            for hit in found.get("results", [])
+            if hit.get("content") and hit.get("trust_state") != "pending"
         ).strip()
         return fence_memory(rendered) if rendered else ""
 
@@ -86,7 +93,7 @@ class ScriptoriumMemoryProvider(MemoryProvider):
         *,
         session_id: str = "",
         force: bool = False,
-    ) -> WriteIncomplete | None:
+    ) -> WriteFailure | None:
         """Fold the conversation into memory once there is enough of it.
 
         Per turn, ``force`` False: cheap in the common case — a node-marker
@@ -102,7 +109,7 @@ class ScriptoriumMemoryProvider(MemoryProvider):
 
         Nothing is returned once every turn has landed, and below the
         threshold nothing was owed. Anything still unwritten comes back
-        as ``WriteIncomplete``: an unreachable model or a workspace
+        as ``WriteFailure``: an unreachable model or a workspace
         another writer holds is worth another pass, a batch the
         transaction refused is not, and reporting either as finished
         would mark the session done with nothing ever coming back for
@@ -118,7 +125,7 @@ class ScriptoriumMemoryProvider(MemoryProvider):
             )
         except TransactionError as exc:
             logger.debug("memory write rejected: %s", exc)
-            return WriteIncomplete(
+            return WriteFailure(
                 f"{exc.code}: {exc.message}",
                 retryable=exc.code in RETRYABLE_CODES,
             )
@@ -128,7 +135,7 @@ class ScriptoriumMemoryProvider(MemoryProvider):
             # an unknown exception may be a permanent config/auth failure.
             logger.debug("memory write deferred: %s", exc)
             verdict = getattr(exc, "retryable", None)
-            return WriteIncomplete(
+            return WriteFailure(
                 str(exc), retryable=False if verdict is None else bool(verdict),
             )
 

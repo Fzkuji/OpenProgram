@@ -90,7 +90,7 @@ This document describes the structure and message flow. For the requirements and
    c. hand it to base.Channel.handle_inbound(ch_msg) — the base class
       spawns a per-message daemon thread (a turn paused on runtime.ask
       must not block the poll loop) and in it:
-        c1. _access.check_inbound(platform, account, user_id) — the
+        c1. _access.decide_inbound_sender(platform, account, user_id) — the
             allowlist/pairing gate. Unknown sender → the message is
             dropped and a pairing code goes back; approval happens only
             via the local CLI (`channels access approve`) or local Web UI,
@@ -253,7 +253,7 @@ The caller can distinguish between "token expired, please log in again" vs "wron
 
 ### 4.5 Inbound Access Control
 
-`_access.py` holds one `access.json` per (channel, account). Admission is always `pairing`: the file contains an `allowlist` keyed only by stable platform user id and at most three `pending` requests. A legacy `policy: "open"` field is ignored. A new request gets an 8-character uppercase code without `0O1I`; it expires after 1 hour, and the same sender is not prompted again during that hour. Excess requests are silently ignored. `base._dispatch_and_reply` calls `check_inbound` before routing, so an unpaired sender never reaches `dispatch_inbound`. The mutating operations (`approve` / `approve_user` / `revoke`) are available only through the local CLI and loopback Web UI; the inbound path can only read the allowlist and mint pending codes, so no channel message can approve anyone.
+`_access.py` holds one `access.json` per (channel, account). Admission is always `pairing`: the file contains an `allowlist` keyed only by stable platform user id and at most three `pending` requests. A legacy `policy: "open"` field is ignored. A new request gets an 8-character uppercase code without `0O1I`; it expires after 1 hour, and the same sender is not prompted again during that hour. Excess requests are silently ignored. `base._dispatch_and_reply` calls `decide_inbound_sender` before routing, so an unpaired sender never reaches `dispatch_inbound`. The mutating operations (`approve` / `approve_user` / `revoke`) are available only through the local CLI and loopback Web UI; the inbound path can only read the allowlist and mint pending codes, so no channel message can approve anyone.
 
 ### 4.6 Plugin Extension Point
 
