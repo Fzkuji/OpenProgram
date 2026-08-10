@@ -48,6 +48,19 @@ def _anchor(source_id: str) -> str:
     return "source-" + hashlib.sha256(source_id.encode()).hexdigest()[:16]
 
 
+def _source_tree(root: Path) -> tuple[tuple[str, str | bytes], ...]:
+    sources = root / "sources"
+    if not sources.exists():
+        return ()
+    return tuple(
+        (
+            path.relative_to(sources).as_posix(),
+            "directory" if path.is_dir() else path.read_bytes(),
+        )
+        for path in sorted(sources.rglob("*"))
+    )
+
+
 def _block(
     source_id: str,
     line: str,
@@ -769,6 +782,91 @@ def test_provider_dot_segment_is_rejected_and_v2_name_is_unambiguous(
     event = parse_source_file(v2_path, root / "sources")[0]
     assert event.event_id == "_v2/thread/m1"
     assert event.path == "sources/_v2/_v2/thread.md"
+
+
+@pytest.mark.parametrize(
+    "records",
+    [
+        [
+            SourceRecord("OpenProgram", "thread", "m1", 1, "user", "one"),
+            SourceRecord("openprogram", "thread", "m2", 2, "user", "two"),
+        ],
+        [
+            SourceRecord("openprogram", "Thread", "m1", 1, "user", "one"),
+            SourceRecord("openprogram", "thread", "m2", 2, "user", "two"),
+        ],
+    ],
+    ids=["provider-case", "thread-case"],
+)
+def test_v2_case_equivalent_batch_paths_are_rejected_before_writes(
+    tmp_path: Path,
+    records: list[SourceRecord],
+) -> None:
+    from openprogram.memory.scriptorium.management.transaction import (
+        workspace_revision,
+    )
+
+    root = tmp_path / "memory"
+    space = MemoryWorkspace(root)
+    revision_before = workspace_revision(root)
+    tree_before = _source_tree(root)
+    try:
+        with pytest.raises(ValueError) as caught:
+            space.archive_source_records(records)
+        assert workspace_revision(root) == revision_before
+        assert _source_tree(root) == tree_before
+        assert "source archive path collision" in str(caught.value)
+    finally:
+        space.close()
+
+
+def test_v2_same_logical_path_accepts_multiple_messages(tmp_path: Path) -> None:
+    root = tmp_path / "memory"
+    records = [
+        SourceRecord("openprogram", "thread", "m1", 1, "user", "one"),
+        SourceRecord("openprogram", "thread", "m2", 2, "user", "two"),
+    ]
+    space = MemoryWorkspace(root)
+    try:
+        assert space.archive_source_records(records) == [
+            "openprogram/thread/m1",
+            "openprogram/thread/m2",
+        ]
+    finally:
+        space.close()
+
+    path = root / "sources/openprogram/_v2/thread.md"
+    assert [
+        event.event_id for event in parse_source_file(path, root / "sources")
+    ] == ["openprogram/thread/m1", "openprogram/thread/m2"]
+
+
+def test_v2_existing_case_equivalent_path_blocks_later_spelling(
+    tmp_path: Path,
+) -> None:
+    from openprogram.memory.scriptorium.management.transaction import (
+        workspace_revision,
+    )
+
+    root = tmp_path / "memory"
+    first = SourceRecord("OpenProgram", "Thread", "m1", 1, "user", "one")
+    conflicting = SourceRecord(
+        "openprogram", "thread", "m2", 2, "user", "two"
+    )
+    space = MemoryWorkspace(root)
+    try:
+        space.archive_source_records([first])
+        revision_before = workspace_revision(root)
+        tree_before = _source_tree(root)
+
+        with pytest.raises(ValueError) as caught:
+            space.archive_source_records([conflicting])
+
+        assert workspace_revision(root) == revision_before
+        assert _source_tree(root) == tree_before
+        assert "source archive path collision" in str(caught.value)
+    finally:
+        space.close()
 
 
 @pytest.mark.parametrize("message_id", ["m] forged", "m>forged"])

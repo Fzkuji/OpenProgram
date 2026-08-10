@@ -3,6 +3,7 @@
 import os
 import re
 import tempfile
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,60 @@ def _write_literal_text(path: Path, value: str, *, temporary_dir: Path) -> None:
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
+
+
+def _source_path_key(relative: Path) -> str:
+    return unicodedata.normalize("NFC", relative.as_posix()).casefold()
+
+
+def _preflight_archive_paths(
+    target_root: Path, relatives: list[Path]
+) -> dict[Path, Path]:
+    root = target_root.resolve()
+    sources_root = (root / "sources").resolve()
+    planned: dict[str, Path] = {}
+    resolved: dict[Path, Path] = {}
+
+    for relative in relatives:
+        path = resolve_within(root, relative.as_posix())
+        if path is None or not path.is_relative_to(sources_root):
+            raise ValueError("source archive path escapes sources")
+        resolved[relative] = path
+        for length in range(1, len(relative.parts) + 1):
+            prefix = Path(*relative.parts[:length])
+            key = _source_path_key(prefix)
+            previous = planned.setdefault(key, prefix)
+            if previous != prefix:
+                raise ValueError(
+                    "source archive path collision: "
+                    f"{previous.as_posix()} and {prefix.as_posix()}"
+                )
+
+    for relative in relatives:
+        current = root
+        prefix = Path()
+        for part in relative.parts:
+            if not current.is_dir():
+                break
+            expected = prefix / part
+            exact = None
+            key = _source_path_key(Path(part))
+            for existing in current.iterdir():
+                if _source_path_key(Path(existing.name)) != key:
+                    continue
+                actual = existing.relative_to(root)
+                if actual != expected:
+                    raise ValueError(
+                        "source archive path collision: "
+                        f"{expected.as_posix()} and {actual.as_posix()}"
+                    )
+                exact = existing
+            if exact is None:
+                break
+            current = exact
+            prefix = expected
+
+    return resolved
 
 
 class SourceArchiveMixin:
@@ -182,12 +237,10 @@ class SourceArchiveMixin:
             if not normalize_identity_header_part(str(record.speaker_label)):
                 raise ValueError("source record role/speaker label is empty")
             grouped.setdefault(location[0], []).append(record)
+        paths = _preflight_archive_paths(target_root, list(grouped))
         refs = []
         for relative, rows in grouped.items():
-            path = resolve_within(target_root, relative.as_posix())
-            sources_root = (target_root / "sources").resolve()
-            if path is None or not path.is_relative_to(sources_root):
-                raise ValueError("source archive path escapes sources")
+            path = paths[relative]
             path.parent.mkdir(parents=True, exist_ok=True)
             text = _read_literal_text(path) if path.exists() else ""
             if text:
