@@ -63,6 +63,31 @@ that prompt-injection surface entirely.
    do not write history-scanning migration code. Rollout day, every
    non-owner account gets a pairing code on first contact.
 
+## Memory writer and trust semantics (settled 2026-08-10, second round)
+
+1. **Writer model**: the auto-organize writer stops hardcoding
+   ClaudeCodeAgent and follows the default chat agent (provider, model,
+   credentials). New setting `memory.writer.model`, default = the default
+   agent, editable in the web settings UI. Do not default to a cheap model:
+   weak models misread organizing instructions; users downgrade explicitly
+   if they want to save.
+2. **Paired speech is trusted.** Content from paired accounts enters the
+   normal distillation flow exactly like the owner's, attributed by
+   speaker. Pairing is the trust decision; no second gate inside.
+   `pending` + `memory_promote` apply only to unpaired group members'
+   archived speech (they cannot converse, but group archives still carry
+   their lines).
+3. **Scope-batch naming**: the ~430-line uncommitted scope work must be
+   re-keyed from shared-channel/three-tier vocabulary to paired/unpaired
+   before commit.
+4. **Execution order for the memory stabilization batch**: mask keys in
+   diagnostics output (bug, fix immediately) → non-retryable auth/config
+   errors (stop the 5-min failure loop) → default-agent writer → one real
+   distillation on the live workspace as acceptance (22 sources / 0 topics
+   / core at 188% budget) → scope batch (after renaming) → end-to-end test
+   → complete `memory.backend=none` teardown (no prompt injection, no
+   recall, no writes, no organizer, no worker thread).
+
 ## Deferred (second batch, after the above lands)
 
 - **Hold queue**: a paired sender's over-tier request (e.g. "restart the
