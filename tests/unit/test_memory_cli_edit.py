@@ -42,6 +42,9 @@ def _stage_dirs() -> set[str]:
 def memory(tmp_path, monkeypatch):
     """A memory workspace holding one valid topic. Returns its root."""
     import openprogram.paths as paths
+    stage_root = tmp_path / "temp"
+    stage_root.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(stage_root))
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
 
     from openprogram.memory import store

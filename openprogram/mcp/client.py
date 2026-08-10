@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import os
+import shlex
 import sys
 import threading
 from typing import Any, Optional
@@ -173,8 +174,11 @@ async def _list_roots_callback(context):  # noqa: ANN001 — SDK type
 class MCPClient:
     """Holds one MCP server connection for the worker's lifetime."""
 
-    def __init__(self, config: MCPServerConfig) -> None:
+    def __init__(self, config: MCPServerConfig, *, force_sandbox: bool = False,
+                 sandbox_cwd: str | None = None) -> None:
         self.config = config
+        self.force_sandbox = force_sandbox
+        self.sandbox_cwd = sandbox_cwd
         self.tools: list[Tool] = []
         self.error: Optional[str] = None
         # Coarse classifier for the UI / management API:
@@ -516,14 +520,47 @@ class MCPClient:
                     self._session = None
 
     async def _run_local(self) -> None:
-        cmd = self.config.command
-        params = StdioServerParameters(
-            command=cmd[0],
-            args=cmd[1:],
-            env={**os.environ, **self.config.env},
-        )
+        params = self._local_parameters()
         async with stdio_client(params) as (read, write):
             await self._run_session(read, write)
+
+    def _local_parameters(self) -> StdioServerParameters:
+        cmd = self.config.command
+        if not self.force_sandbox:
+            params = StdioServerParameters(
+                command=cmd[0],
+                args=cmd[1:],
+                env={**os.environ, **self.config.env},
+            )
+        else:
+            from openprogram import sandbox
+            from openprogram.backend.local import _invocation
+
+            policy = sandbox.resolve_policy(required=True)
+            command = shlex.join(cmd)
+            args, use_shell, env = _invocation(
+                command,
+                cwd=self.sandbox_cwd,
+                policy=policy,
+                force_sandbox=True,
+            )
+            if use_shell or not isinstance(args, list) or not args:
+                raise RuntimeError("forced MCP sandbox did not return fixed argv")
+            safe_config_env = sandbox.child_env(policy, self.config.env)
+            merged_env = {**(env or {}), **safe_config_env}
+            params = StdioServerParameters(
+                command=args[0],
+                args=args[1:],
+                env=merged_env,
+                cwd=self.sandbox_cwd,
+            )
+        print(
+            f"[mcp] '{self.config.name}' local launch "
+            f"argv={cmd!r} env_keys={sorted(self.config.env)} "
+            f"sandbox={'forced' if self.force_sandbox else 'owner-configured'}",
+            file=sys.stderr,
+        )
+        return params
 
     async def _run_http(self) -> None:
         from mcp.client.streamable_http import streamablehttp_client

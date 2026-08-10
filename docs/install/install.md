@@ -6,17 +6,17 @@
 
 ```
 OpenProgram  (the host runtime — install this first, anywhere you like)
-└── openprogram/functions/agentics/      ← programs live here, auto-discovered
+└── openprogram/functions/agentics/      ← owner-installed programs live here
     ├── GUI-Agent-Harness/               ← `gui_agent`      (clone in + run its installer)
     ├── Research-Agent-Harness/          ← `research_agent` (openprogram programs install research)
     └── Wiki-Agent-Harness/              ← `wiki_agent`     (openprogram programs install wiki)
 ```
 
-A program dropped into `functions/agentics/` is **auto-registered** at launch
-(`import_installed_programs()` imports its `agentics` sub-package, firing the
-`@agentic_function` decorator) — so it shows up in the **web UI** and function
-list with no extra wiring. Install order is therefore always: **OpenProgram
-first, then the program(s).**
+A program installed with `openprogram programs install` is source-recorded and
+registered at launch (`import_installed_programs()` imports its `agentics`
+sub-package, firing the `@agentic_function` decorator), so it appears in the
+**web UI** and function list. An unrecorded directory is not imported. Install
+order is therefore always: **OpenProgram first, then the program(s).**
 
 > ⚠️ Installing just the Python package is **not** the whole job — it doesn't
 > build the web UI (needs `npm`), fetch the GUI agent's model weight, or warm the
@@ -125,14 +125,14 @@ curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/ins
 
 ## Adding agent programs
 
-Programs always land in `functions/agentics/<Repo>/` and auto-register on the next
-start. The **universal** way — works for the bundled harnesses *and your own* —
-is to clone a repo into that folder and run its installer:
+Programs installed through the CLI land in `functions/agentics/<Repo>/` and
+register on the next start. The same command works for bundled harnesses and
+third-party repositories; run a harness-specific installer afterward when it
+has additional assets:
 
 ```bash
-cd openprogram/functions/agentics
-git clone <harness-repo>
-cd <Harness>
+openprogram programs install <harness-repo>
+cd openprogram/functions/agentics/<Harness>
 ./scripts/install.sh          # if it ships one (Windows: .\scripts\install.ps1)
 ```
 

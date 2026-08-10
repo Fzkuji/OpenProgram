@@ -211,11 +211,11 @@ class ClaudeCodeAgent:
             raise ValueError(f"agent working directory does not exist: {cwd}")
         server_name = "agent_memory"
         mcp_servers = {}
-        # The workspace is a scratch directory, so the built-in file tools are
-        # safe here and are what the model is trained to reach for. Editing
-        # through them beats scripting the same change in a shell heredoc.
-        builtin_tools = ["Read", "Edit", "Write", "Grep", "Glob"]
-        allowed_tools = list(builtin_tools)
+        # Built-in CLI tools execute inside the nested Claude process and do
+        # not cross OpenProgram's policy boundary. Only MCP replacements are
+        # exposed; the host validates their paths and mutations.
+        blocked_builtin_tools = ["Read", "Edit", "Write", "Grep", "Glob", "Bash"]
+        allowed_tools: list[str] = []
         if tools:
             mcp_servers[server_name] = create_sdk_mcp_server(
                 server_name, tools=tools
@@ -233,8 +233,9 @@ class ClaudeCodeAgent:
                 # filters what may run. Leaving this empty left weaker models
                 # with the MCP shell as their sole visible tool, so they wrote
                 # tool names into shell commands instead of calling the tools.
-                tools=builtin_tools,
+                tools=[],
                 allowed_tools=allowed_tools,
+                disallowed_tools=blocked_builtin_tools,
                 system_prompt=system_prompt,
                 mcp_servers=mcp_servers,
                 permission_mode="dontAsk",

@@ -1,8 +1,8 @@
 # Harnesses
 
 A **harness** (an *agentic program*) is a self-contained git repo of
-agentic functions — OpenProgram discovers it under
-`openprogram/functions/agentics/` and its functions register like
+agentic functions. `openprogram programs install` records its source under
+`openprogram/functions/agentics/`, and its functions then register like
 built-ins. This is a **general mechanism**: the first-party programs
 (gui / research / wiki) and any third-party repo install the exact same
 way. Cross-platform (macOS / Linux / Windows); no symlinks required.
@@ -51,14 +51,15 @@ The same four steps for first-party and third-party:
 3. **Verify the contract** — the clone must contain a package with
    `agentics/__init__.py` (see Part 2). A repo that doesn't match is
    reported and will simply not register; it never breaks the load.
-4. On the next launch the registry imports `<package>.agentics`, the
+4. **Record the owner-approved source.** On the next launch the registry imports
+   only recorded `<package>.agentics` packages, the
    `@agentic_function` decorators fire, and the functions appear in
    chat / the Functions page / `openprogram programs run`.
 
-Guard rails: `install` refuses to touch an existing **dev symlink**
-(that's yours, see below) or a same-named directory that isn't a git
-clone. `uninstall` on a symlink removes only the link — never the
-checkout it points to.
+Guard rails: for an existing **dev symlink**, `install` verifies the harness
+contract and records the link without modifying its target. It refuses a
+same-named non-git directory. `uninstall` on a symlink removes only the link,
+never the checkout it points to.
 
 ## First-party programs (gui / research / wiki)
 
@@ -166,7 +167,7 @@ Then use it — the harness's functions are callable like any built-in
 | `[!] … no package with an agentics/__init__.py was found` at install | Same as above — the repo doesn't satisfy the contract (Part 2). |
 | `ModuleNotFoundError` for the harness's own deps | The dep install step failed — `pip install` the clone (or its requirements.txt) and check the error. |
 | Imports inside the harness fail (`from <pkg>.x import y`) | The package dir isn't named like the import root, or a missing `__init__.py`. The package folder name must equal the import name. |
-| `[skip] … is a dev symlink` on install | Intentional: the installer never touches your linked checkout. Remove the link first if you really want a clone. |
+| An existing dev symlink does not load | Run `openprogram programs install <git-source>` once to verify and record it; the installer does not modify the linked checkout. |
 | A function loads but errors when *run* on Windows | The harness's own code is platform-specific — its concern, not the install's. See its README. |
 
 ---

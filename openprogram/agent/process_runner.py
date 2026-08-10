@@ -64,6 +64,7 @@ def _child_entry(
     answer_queue: "Optional[mp.Queue]" = None,
     stop_queue: "Optional[mp.Queue]" = None,
     usage_ctx_snapshot: Optional[dict] = None,
+    sandbox_policy_snapshot: Optional[dict] = None,
     authority_snapshot: Optional[dict] = None,
 ) -> None:
     # Detach into our own process group so ``killpg`` from the parent
@@ -72,6 +73,12 @@ def _child_entry(
         os.setpgrp()
     except Exception:
         pass
+
+    # ``spawn`` starts with a fresh interpreter. Pin it to the parent's
+    # effective policy before any tool/runtime is created; later config edits
+    # cannot widen an already-running child.
+    from openprogram.sandbox import install_policy_snapshot
+    install_policy_snapshot(sandbox_policy_snapshot or {"enabled": False})
 
     # Restore the parent's UsageContext, then override call_kind/call_label
     # with this subprocess's actual identity. The snapshot carries the
@@ -242,6 +249,8 @@ def _child_entry(
             try:
                 abs_wd = os.path.abspath(os.path.expanduser(work_dir))
                 os.makedirs(abs_wd, exist_ok=True)
+                from openprogram.worktree.context import set_worktree
+                set_worktree(abs_wd)
                 if hasattr(rt, "set_workdir"):
                     rt.set_workdir(abs_wd)
             except Exception:
@@ -435,6 +444,10 @@ def _decline_bridged_question(qid: str) -> None:
 # Parent API
 # ---------------------------------------------------------------------------
 
+def _capture_sandbox_snapshot() -> dict:
+    from openprogram.sandbox import policy_snapshot
+    return policy_snapshot()
+
 def run_agentic_in_subprocess(
     *,
     tool_name: str,
@@ -477,12 +490,14 @@ def run_agentic_in_subprocess(
         usage_ctx_snapshot: Optional[dict] = _uctx_snapshot()
     except Exception:
         usage_ctx_snapshot = None
+    sandbox_policy_snapshot = _capture_sandbox_snapshot()
+
     p = ctx.Process(
         target=_child_entry,
         args=(tool_name, dict(kwargs or {}), session_id, anchor_msg_id,
               work_dir, result_path, event_queue, parent_call_id,
               answer_queue, stop_queue, usage_ctx_snapshot,
-              authority),
+              sandbox_policy_snapshot, authority),
         daemon=False,
     )
     p.start()

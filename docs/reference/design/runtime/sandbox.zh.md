@@ -300,7 +300,7 @@ CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以�
 
 *反向*：沙箱内被拒的命令带上原因发起审批，批准后不带沙箱重跑，这是域名白名单的廉价替代品，`pip install`、`npm i`、`git fetch`都走这条路解决。
 
-*向下，这是本轮新增的一条*：一条任何bypass都掀不动的底线，加上按上下文的默认值。`_gated_execute`在`permission_mode="bypass"`时短路，位置在`_RISKY_TOOLS`检查之前，而`sub_agent_run.py`设的正是这个模式，所以今天的子agent跑bash时根本没有risky工具这道闸。`hermes-agent`把hardline列表放在所有bypass检查之前，并在拒绝文案里写明没有任何设置能掀开它，这里适用同样的形状。配套采用按上下文的默认值：cron worker是无人值守触发的、完全没有审批路径，而`hermes-agent`把cron默认设成deny、把subagent默认设成自动deny并留审计行，理由很具体，工作线程里弹窗会死锁。最后，在信任任何命令pattern规则之前，包括今天的`SAFE_AUTO_ALLOWLIST`前缀匹配，先按`hermes-agent`的做法归一化命令（剥ANSI、剥空字节、NFKC），再按`openclaw`的做法解包argv，遇到无法证明透明的启动器就拦而不是猜。对原始字符串做前缀匹配，被`env X=1 <cmd>`和全角字符两招就破了。
+*向下，已完成*：一条任何bypass都掀不动的底线，加上按上下文的默认值。`_hard_constraint_violation`跑在`_gated_execute`最前面，排在规则层和`permission_mode="bypass"`短路之前，所以无论是存下来的allow规则还是`sub_agent_run.py`设的那个模式，都掀不动它。`agent_spawn`轮次直接被拒掉`bash`/`exec`/`shell`/`execute_code`/`process`，`write`/`edit`/`apply_patch`只能落在本轮工作目录之内。配套的按上下文默认值一并生效：cron worker无人值守触发、没有审批路径，所以`cron`轮次只剩只读工具，两种非交互来源都直接拒绝而不是挂在审批卡上，理由很具体，工作线程里弹窗会死锁。最后，在信任任何命令pattern规则之前，包括今天的`SAFE_AUTO_ALLOWLIST`前缀匹配，先按`hermes-agent`的做法归一化命令（剥ANSI、剥空字节、NFKC），再按`openclaw`的做法解包argv，遇到无法证明透明的启动器就拦而不是猜。对原始字符串做前缀匹配，被`env X=1 <cmd>`和全角字符两招就破了。
 
 权限规则和沙箱策略还应共用一个来源：用户写的`deny: Read(~/.ssh/**)`同时成为沙箱的deny-read条目。
 
@@ -318,9 +318,9 @@ MCP`shell`工具（`memory/scriptorium/management/tools.py` → `workspace.shell
 
 Claude Code CLI子进程（`memory/scriptorium/agent_runtime/claude_code.py`）是另一回事。它的`Read`/`Write`/`Edit`/`Grep`/`Glob`在CLI进程内部执行，`wrap_command`碰不到，而`permission_mode="dontAsk"`把它自己的审批也关了。这个CLI进程也不该被包进沙箱：它要调Anthropic API，而沙箱没有网络。
 
-上一轮的结论是：约束这些内置工具只能靠`allowed_tools`。`openclaw`给出了同一个问题的第二种解法。它驱动嵌套的Codex app-server时也不把那个进程包进沙箱，而是坐在两者之间的协议上，把每个方法分类，拦掉会动用嵌套agent自身执行与文件能力的那些（`command/`、`fs/`、`windowsSandbox/`），再注入替代工具把同样的操作绕回自己的沙箱（`extensions/codex/src/app-server/sandbox-guard.ts`、`run-attempt.ts:4125,4147`）。Claude Agent SDK有对等的缝：`allowed_tools`已经拿掉了`Bash`，再加一个`can_use_tool`回调和几个由MCP提供的`Read`/`Write`/`Edit`替代工具，就能把文件操作放回我们自己的策略下面。这比现在只用`allowed_tools`要多做不少工作，也不是第一步该做的事，但准确的说法是：这些内置工具**按现在的接法在沙箱之外**，而不是原理上够不着。
+CLI进程仍不进入OS沙箱，因为它需要访问Anthropic API。它自带的`Read`、`Write`、`Edit`、`Grep`、`Glob`和`Bash`现在被显式禁用。OpenProgram通过MCP提供五个文件操作的替代工具：路径必须位于暂存工作区内，`sources/`下的写入会被拒绝，每次结果都记入写入器审计。MCP `shell`替代工具调用`LocalBackend._invocation(..., force_sandbox=True)`；平台沙箱不可用时直接拒绝执行。
 
-第1到3步是前置条件，都已完成，所以接上之后的边界就是准确的那句：**MCP `shell`工具在沙箱内，SDK自带的文件工具不在。**
+当前边界是：**嵌套CLI可以访问模型API，但不能调用自带的文件或命令工具；暴露给它的文件和命令操作全部由宿主MCP执行，命令强制经过OS沙箱。**
 
 它挡住的威胁是具体的，不是假想的。只要挂了消息渠道，进入写入器prompt的文本就是攻击方可影响的：入站消息正文里带着发信人自己在平台上设的显示名。从那里被执行的命令本可以读`~/.openprogram/auth/*/default.json`并写进某个topic文件，而记忆库内容会回到之后会话的上下文里，这是一条不碰网络的外传路径，也正是"网络已经断了"没能覆盖的部分。
 
@@ -328,15 +328,19 @@ Claude Code CLI子进程（`memory/scriptorium/agent_runtime/claude_code.py`）�
 
 ## 实现状态
 
-已落地：§1和§2描述的就是当前代码，两个平台都实测过。修复顺序的第1、2、3步已完成，memory写入器的MCP `shell`面已接上。
+已落地：
+
+- §1和§2描述的是当前macOS与Linux实现，修复顺序第1、2、3步已完成。
+- `_hard_constraint_violation`排在权限规则和`permission_mode="bypass"`之前。`agent_spawn`轮次不能调用`bash`/`exec`/`shell`/`execute_code`/`process`，也不能写到工作目录之外；`cron`轮次只允许只读工具。非交互请求在需要审批时立即拒绝。
+- `write`、`edit`和`apply_patch`检查写入路径，始终拒绝`functions/agentics/`自动导入目录和owner来源登记文件。运行时只导入由`openprogram programs install`登记的路径；agentic子进程接收父进程有效沙箱策略的序列化副本。
+- memory写入器禁用嵌套CLI自带的文件与命令工具，改用受管MCP替代工具，并强制MCP `shell`经过OS沙箱。本地一次性MCP测试同样强制使用沙箱且只接受回环请求；浏览器请求还必须同源。
 
 未实现：
 
-- 第4步（默认开）和第5步（三个方向的审批联动）。
+- 第4步（默认开），以及第5步的正向和反向两条（沙箱内命令跳过审批卡；沙箱内被拒的命令升级成不带沙箱重跑）。
 - 按工具、按调用点的策略。`wrap_command`接收显式策略，但每个调用方解析的都是同一份配置。
-- 嵌套Claude Code CLI自带的`Read`/`Write`/`Edit`/`Grep`/`Glob`，按现在的接法在沙箱之外。
+- memory写入器受管文件工具与通用`file.changed`/沙箱事件的完全一致性；路径检查和写入器审计已经实现。
 - 现有`SAFE_AUTO_ALLOWLIST`前缀匹配之前的命令归一化和argv解包。
-- `permission_mode="bypass"`之下的hardline底线，以及cron和子agent的按上下文审批默认值。
 - 违规审计、资源限额、配置静态检查、Windows支持。
 - `sysctl-read`和`mach-lookup`的具名白名单，以及把`/private/var/folders`收窄到`TMPDIR`。
 - git hook和git config的写保护，现在是opt-in而不是默认。
@@ -345,4 +349,5 @@ Claude Code CLI子进程（`memory/scriptorium/agent_runtime/claude_code.py`）�
 
 - `ps`和`top`在Seatbelt沙箱里跑不了。它们是setuid，平台无论exec策略怎么写都拒绝把setuid二进制exec进沙箱。
 - Linux上，中间带通配符的deny-read glob（比如`**/.env`）没有对应实现：bubblewrap是把路径盖掉而不是做匹配，所以这类pattern在Linux被丢弃，只在macOS生效。
-- §3里其余23个执行点仍然不在沙箱内，包括`execute_code`、cron worker和函数watcher的自动导入。
+- §3的执行点清单尚未全部处理。本批次不修改`execute_code`和通用Web重载执行。cron direct执行已经固化策略并使用`force_sandbox=True`；函数自动导入现在只接受owner登记的程序来源。
+- `program-sources.json`出现之前已存在的树内Harness默认不再导入，owner需要重新运行`openprogram programs install <名称或URL>`完成登记。同一命令可以登记现有开发symlink，不修改symlink目标。

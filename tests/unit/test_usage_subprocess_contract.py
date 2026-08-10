@@ -36,10 +36,12 @@ def reset_usage_context():
 def test_child_entry_accepts_usage_snapshot_param():
     from openprogram.agent.process_runner import _child_entry
     params = list(inspect.signature(_child_entry).parameters)
-    # The snapshot must be the LAST positional param (appended, so older
-    # call sites that omit it still default to None).
+    # New snapshots append after this one; usage keeps its original
+    # positional slot so older callers that supplied it still bind correctly.
     assert "usage_ctx_snapshot" in params
-    assert params[-1] == "usage_ctx_snapshot"
+    assert params[-3:] == [
+        "usage_ctx_snapshot", "sandbox_policy_snapshot", "authority_snapshot",
+    ]
     # and it must be optional (defaults to None) so non-metering callers work
     sig = inspect.signature(_child_entry)
     assert sig.parameters["usage_ctx_snapshot"].default is None

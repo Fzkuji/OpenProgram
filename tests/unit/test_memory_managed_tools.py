@@ -55,6 +55,13 @@ def test_managed_file_tools_reject_escape_and_source_mutation(managed, tmp_path)
     assert denied["is_error"]
     assert source.read_text() == "evidence"
 
+    case_variant = workspace.stage_dir / "Sources" / "forged.txt"
+    denied = _call(
+        handlers["Write"], file_path=str(case_variant), content="changed",
+    )
+    assert denied["is_error"]
+    assert not case_variant.exists()
+
 
 def test_managed_shell_requires_the_os_sandbox(managed, monkeypatch):
     from openprogram import sandbox

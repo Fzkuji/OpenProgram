@@ -254,11 +254,11 @@ def _install_third_party(ref: str, *, upgrade: bool = False) -> None:
     own declared deps (its pyproject/setup.py, else requirements.txt),
     then verify the harness contract (an importable package exposing
     ``<pkg>/agentics/__init__.py`` — see docs/installing-harnesses.md).
-    The clone auto-registers on next launch via directory discovery; no
-    catalogue edit is needed.
+    The verified source is owner-recorded and registers on the next launch;
+    no catalogue edit is needed.
     """
     import subprocess
-    from openprogram.functions._programs import agentics_dir
+    from openprogram.functions._programs import agentics_dir, record_program_source
     from openprogram.functions._registry import _find_python_package
 
     base = agentics_dir()
@@ -273,8 +273,14 @@ def _install_third_party(ref: str, *, upgrade: bool = False) -> None:
     dest = os.path.join(base, repo_name)
 
     if os.path.islink(dest):
-        print(f"[skip] {repo_name}: {dest} is a dev symlink — managed by "
-              f"you, not the installer. Remove it first to install a clone.")
+        pkg = _find_python_package(dest)
+        if not pkg:
+            print(f"[x] {repo_name}: dev symlink has no package with an "
+                  f"agentics/__init__.py; it was not registered.")
+            sys.exit(1)
+        record_program_source(dest, source=url, kind="git-symlink")
+        print(f"[ok] {repo_name}: owner-recorded dev symlink at {dest}. "
+              f"The installer will not modify its target.")
         return
     already = os.path.isdir(os.path.join(dest, ".git"))
     if os.path.isdir(dest) and not already:
@@ -322,6 +328,7 @@ def _install_third_party(ref: str, *, upgrade: bool = False) -> None:
 
     pkg = _find_python_package(dest)
     if pkg:
+        record_program_source(dest, source=url, kind="git")
         print(f"[ok] {repo_name} installed at {dest} "
               f"(package: {os.path.basename(pkg)}). "
               f"It will register on next launch.")
@@ -347,7 +354,7 @@ def _cmd_install(name: str, *, upgrade: bool = False) -> None:
     (or the ``owner/Some-Harness`` shorthand).
     """
     import subprocess
-    from openprogram.functions._programs import agentics_dir
+    from openprogram.functions._programs import agentics_dir, record_program_source
 
     if _looks_like_git_ref(name):
         _install_third_party(name, upgrade=upgrade)
@@ -424,6 +431,7 @@ def _cmd_install(name: str, *, upgrade: bool = False) -> None:
 
         # Confirm the package imports (registers the function).
         if prog.in_tree_pkg_dir(base):
+            record_program_source(dest, source=prog.repo, kind="catalog")
             print(f"[ok] {prog.function} installed at {dest}. "
                   f"It will appear on next launch.")
         else:
@@ -437,7 +445,7 @@ def _cmd_uninstall(name: str) -> None:
     Third-party harnesses are addressed by their clone-dir name
     (``openprogram programs uninstall Some-Harness``)."""
     import shutil
-    from openprogram.functions._programs import agentics_dir
+    from openprogram.functions._programs import agentics_dir, remove_program_source
 
     progs = _resolve_programs(name)
     if not progs:
@@ -448,11 +456,13 @@ def _cmd_uninstall(name: str) -> None:
             dest = os.path.join(base, name)
             if os.path.islink(dest):
                 os.unlink(dest)
+                remove_program_source(dest)
                 print(f"[ok] {name}: dev symlink removed ({dest}); "
                       f"the linked checkout itself is untouched.")
             else:
                 try:
                     shutil.rmtree(dest)
+                    remove_program_source(dest)
                     print(f"[ok] {name} removed ({dest}).")
                 except OSError as e:
                     print(f"[x] {name}: could not remove {dest}: {e}")
@@ -469,6 +479,7 @@ def _cmd_uninstall(name: str) -> None:
             continue
         try:
             shutil.rmtree(dest)
+            remove_program_source(dest)
             print(f"[ok] {prog.function} removed ({dest}).")
         except OSError as e:
             print(f"[x] {prog.function}: could not remove {dest}: {e}")

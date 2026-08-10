@@ -28,7 +28,7 @@ openprogram programs run <name> -a key=value  # 直接运行一个 program
 
 `programs run` 还接受 `--provider`（claude-code / openai-codex / gemini-cli / anthropic / openai / gemini，默认自动探测）和 `--model` 覆盖模型。
 
-`programs install` 把 harness 克隆到 `openprogram/functions/agentics/` 下，并安装其自己的 `pyproject.toml` / `requirements.txt` 声明的依赖。该目录下的一切——不论是安装的 harness 还是手动 `git clone`——在 worker 下次重启时自动注册。
+`programs install` 把Harness克隆到 `openprogram/functions/agentics/` 下，安装其 `pyproject.toml` / `requirements.txt` 声明的依赖，并登记批准的来源。worker重启时只注册已登记的Harness；已有手动克隆可以通过同一条安装命令和Git来源完成登记。
 
 ## 用哪种方式触发
 

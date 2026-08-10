@@ -112,6 +112,10 @@ class SandboxPolicy:
     pass_env: tuple[str, ...] = ()
 
 
+_NO_PROCESS_POLICY = object()
+_process_policy_override: object | SandboxPolicy | None = _NO_PROCESS_POLICY
+
+
 # --- availability ----------------------------------------------------------
 
 def unavailable_reason() -> str | None:
@@ -160,6 +164,10 @@ def resolve_policy(*, required: bool = False) -> SandboxPolicy | None:
     Read per command, so a toggle takes effect on the next command in
     every process rather than only in the context that flipped it.
     """
+    if _process_policy_override is not _NO_PROCESS_POLICY:
+        if _process_policy_override is None:
+            return _with_hard_floor(SandboxPolicy()) if required else None
+        return _process_policy_override  # type: ignore[return-value]
     sb = _config_section()
     if (str(sb.get("mode") or MODE_OFF).strip().lower() != MODE_WORKSPACE_WRITE
             and not required):
@@ -219,13 +227,38 @@ def policy_hash(policy: SandboxPolicy) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def policy_snapshot() -> dict:
+    """Serializable effective policy for a fresh subprocess."""
+    policy = resolve_policy()
+    return {
+        "enabled": policy is not None,
+        "policy": policy_to_dict(policy) if policy is not None else None,
+    }
+
+
+def install_policy_snapshot(snapshot: dict) -> None:
+    """Pin this process to the parent's serialized sandbox decision."""
+    global _process_policy_override
+    if not isinstance(snapshot, dict) or not isinstance(
+        snapshot.get("enabled"), bool
+    ):
+        raise ValueError("sandbox policy snapshot is invalid")
+    if snapshot["enabled"]:
+        _process_policy_override = policy_from_dict(snapshot.get("policy"))
+    else:
+        _process_policy_override = None
+
+
 def _agentics_dir() -> str:
     """Absolute glob for the directory the function watcher auto-imports.
     Resolved rather than configured — it moves with the installation, and
     a user editing the deny list must not be able to drop it."""
+    return os.path.join(_agentics_root(), "**")
+
+
+def _agentics_root() -> str:
     import openprogram.functions as _f
-    return os.path.join(os.path.dirname(os.path.abspath(_f.__file__)),
-                        "agentics", "**")
+    return os.path.join(os.path.dirname(os.path.abspath(_f.__file__)), "agentics")
 
 
 def on_unavailable() -> str:
@@ -302,6 +335,38 @@ def _glob_to_regex(pattern: str) -> str | None:
     if not p.startswith(("/", "*")):
         rx = "(.*/)?" + rx
     return "^" + rx + "$"
+
+
+def validate_write_path(path, *, cwd: str | None = None) -> str | None:
+    """Return a sandbox-policy violation for a direct file write, if any."""
+    target = os.path.realpath(os.path.expanduser(os.fspath(path)))
+    agentics = os.path.realpath(_agentics_root())
+    target_key = target.casefold()
+    agentics_key = agentics.casefold()
+    if target_key == agentics_key or target_key.startswith(agentics_key + os.sep):
+        return "writes to auto-imported agentic Python are forbidden"
+    from openprogram.functions._programs import _program_sources_path
+    if target_key == os.path.realpath(_program_sources_path()).casefold():
+        return "writes to the agentic source registry are forbidden"
+
+    policy = resolve_policy()
+    if policy is None:
+        return None
+    if cwd is None:
+        try:
+            from openprogram.worktree.context import current_worktree_path
+            cwd = current_worktree_path()
+        except Exception:
+            cwd = None
+    base = os.path.realpath(cwd or os.getcwd())
+    roots = _writable_roots(base, policy)
+    if not any(target == root or target.startswith(root + os.sep) for root in roots):
+        return f"path is outside writable roots: {target}"
+    for pattern in policy.deny_write:
+        regex = _glob_to_regex(pattern)
+        if regex and re.match(regex, target):
+            return f"path is denied by sandbox policy: {target}"
+    return None
 
 
 def _static_prefix(pattern: str) -> str:

@@ -40,6 +40,10 @@ def write(file_path: str, content: str) -> str:
     file_path = resolved_path
     if not os.path.isabs(file_path):
         return f"Error: file_path must be absolute, got {file_path!r}"
+    from openprogram.sandbox import validate_write_path
+    violation = validate_write_path(file_path)
+    if violation:
+        return f"Error: sandbox policy: {violation}"
 
     # Read-before-edit gate — ONLY for overwriting an EXISTING file
     # (Claude-Code contract: a Write to a new file needs no prior read,

@@ -300,7 +300,7 @@ Five steps, in dependency order. Each one is a precondition for the value of the
 
 *Backward:* a command denied inside the sandbox raises an approval request carrying the reason, and reruns unsandboxed on approval — the cheap substitute for a domain allowlist, since `pip install`, `npm i` and `git fetch` all resolve through it.
 
-*Downward, and this is the addition this pass produced:* a floor that no bypass lifts, and a per-context default. `_gated_execute` short-circuits on `permission_mode="bypass"` before the `_RISKY_TOOLS` check, and `sub_agent_run.py` sets exactly that mode, so a sub-agent today runs bash with no risky-tool gate at all. `hermes-agent` puts its hardline list ahead of every bypass check and states in the refusal text that no setting lifts it; the same shape applies here. Alongside it, adopt per-context defaults: the cron worker fires unattended with no approval path, and `hermes-agent` defaults cron to deny and sub-agents to auto-deny with an audit line, for the concrete reason that a prompt in a worker thread would deadlock. Finally, before any command-pattern rule is trusted — including today's `SAFE_AUTO_ALLOWLIST` prefix match — normalize the command the way `hermes-agent` does (strip ANSI, strip nulls, NFKC) and un-wrap the argv the way `openclaw` does, blocking rather than guessing when a launcher is not provably transparent. A prefix match against a raw string is defeated by `env X=1 <cmd>` and by fullwidth characters.
+*Downward, done:* a floor that no bypass lifts, and a per-context default. `_hard_constraint_violation` runs first inside `_gated_execute`, ahead of the rule layer and ahead of the `permission_mode="bypass"` short-circuit, so neither a stored allow rule nor the mode `sub_agent_run.py` sets can remove it. An `agent_spawn` turn is refused `bash` / `exec` / `shell` / `execute_code` / `process` outright, and `write` / `edit` / `apply_patch` only reach paths inside the turn's working directories. Per-context defaults come with it: the cron worker fires unattended with no approval path, so a `cron` turn is limited to read-only tools, and both non-interactive sources are denied rather than parked on an approval card, for the concrete reason that a prompt in a worker thread would deadlock. Finally, before any command-pattern rule is trusted — including today's `SAFE_AUTO_ALLOWLIST` prefix match — normalize the command the way `hermes-agent` does (strip ANSI, strip nulls, NFKC) and un-wrap the argv the way `openclaw` does, blocking rather than guessing when a launcher is not provably transparent. A prefix match against a raw string is defeated by `env X=1 <cmd>` and by fullwidth characters.
 
 Permission rules and sandbox policy should also share a source: a user's `deny: Read(~/.ssh/**)` becomes a sandbox deny-read entry.
 
@@ -318,9 +318,9 @@ The MCP `shell` tool (`memory/scriptorium/management/tools.py` → `workspace.sh
 
 The Claude Code CLI subprocess (`memory/scriptorium/agent_runtime/claude_code.py`) is a different matter. Its `Read`, `Write`, `Edit`, `Grep` and `Glob` execute inside the CLI process, where `wrap_command` cannot reach them, and `permission_mode="dontAsk"` disables its own approvals. The CLI process must not be sandboxed either, because it calls the Anthropic API and the sandbox has no network.
 
-The first pass concluded that constraining those built-in tools is therefore a job for `allowed_tools` alone. `openclaw` shows a second option for the same problem. When it drives a nested Codex app-server it does not sandbox that process either; it sits on the protocol between them, classifies every method, blocks the ones that would use the nested agent's own execution and filesystem (`command/`, `fs/`, `windowsSandbox/`), and injects replacement tools that route the same operations back through openclaw's sandbox (`extensions/codex/src/app-server/sandbox-guard.ts`, `run-attempt.ts:4125,4147`). The Claude Agent SDK exposes the equivalent seam: `allowed_tools` already removes `Bash`, and a `can_use_tool` callback plus MCP-provided replacements for `Read` / `Write` / `Edit` would put the file operations back under our policy instead of leaving them outside it. That is more work than the current `allowed_tools` restriction and it is not a step-1 item, but the accurate statement is that the built-in tools are **outside the sandbox as currently wired**, not that they are unreachable in principle.
+The CLI process remains outside the OS sandbox so that it can call the Anthropic API. Its built-in `Read`, `Write`, `Edit`, `Grep`, `Glob`, and `Bash` tools are now explicitly disabled. OpenProgram injects MCP replacements for the five file operations; those replacements resolve paths against the staged workspace, reject writes under `sources/`, and append every result to the writer audit. The MCP `shell` replacement uses `LocalBackend._invocation(..., force_sandbox=True)` and refuses to execute when the platform sandbox is unavailable.
 
-Steps 1 to 3 were the prerequisites and they are done, so the boundary after connecting is the accurate one: **the MCP `shell` tool is sandboxed, the SDK's built-in file tools are not.**
+The current boundary is therefore explicit: **the nested CLI has API access but no built-in file or command tools; all exposed file and command operations are host-managed MCP tools, and commands are forced through the OS sandbox.**
 
 The threat this closes is concrete rather than hypothetical. Any text that reaches the writer's prompt is attacker-influenced whenever a message channel is attached, since the inbound message body carries a display name the sender sets themselves. A command that gets executed from there could read `~/.openprogram/auth/*/default.json` and write it into a topic file, and the memory store returns to the context of a later session — an exfiltration path that never touches the network, which is why the network being off did not cover it.
 
@@ -328,15 +328,19 @@ The threat this closes is concrete rather than hypothetical. Any text that reach
 
 ## Implementation status
 
-Landed: §1 and §2 describe the code as it stands, measured on both platforms. Repair-order steps 1, 2 and 3 are done, and the memory writer's MCP `shell` surface is connected.
+Landed:
+
+- §1 and §2 describe the measured macOS and Linux implementation. Repair-order steps 1, 2 and 3 are complete.
+- `_hard_constraint_violation` runs before permission rules and before `permission_mode="bypass"`. An `agent_spawn` turn cannot invoke `bash` / `exec` / `shell` / `execute_code` / `process` or write outside its working directories; a `cron` turn is limited to read-only tools. Non-interactive requests are denied immediately when an approval would otherwise be required.
+- `write`, `edit`, and `apply_patch` validate write targets. The auto-imported `functions/agentics/` directory and the owner source registry are always rejected. Runtime import is limited to source paths recorded by `openprogram programs install`, and spawned agentic processes receive a serialized copy of the parent's effective sandbox policy.
+- The memory writer disables the nested CLI's built-in file and command tools, supplies managed MCP replacements, and forces its MCP `shell` through the OS sandbox. Local one-shot MCP tests are also forced through that sandbox and are restricted to loopback requests; browser requests must additionally be same-origin.
 
 Not implemented:
 
-- Steps 4 (on by default) and 5 (approval integration, in all three directions).
+- Step 4 (on by default), and step 5's forward and reverse directions (sandboxed commands skipping the approval card; sandbox-denied commands escalating to an unsandboxed retry).
 - Per-tool and per-call-site policy. `wrap_command` takes an explicit policy, but every caller resolves the same one from the config.
-- The nested Claude Code CLI's built-in `Read` / `Write` / `Edit` / `Grep` / `Glob`, which are outside the sandbox as currently wired.
+- Generic `file.changed` / sandbox-event parity for the memory writer's managed file replacements; their path checks and writer audit are implemented.
 - Command normalization and argv un-wrapping ahead of the existing `SAFE_AUTO_ALLOWLIST` prefix match.
-- A hardline floor below `permission_mode="bypass"`, and per-context approval defaults for cron and sub-agents.
 - Violation auditing, resource limits, config linting, and Windows support.
 - Named `sysctl-read` and `mach-lookup` allowlists, and narrowing `/private/var/folders` to `TMPDIR`.
 - Git hooks and git config write protection, which is opt-in rather than default.
@@ -345,4 +349,5 @@ Known limits, measured:
 
 - `ps` and `top` do not run inside a Seatbelt sandbox. They are setuid and the platform refuses to exec setuid binaries into one, whatever the exec policy says.
 - On Linux, a deny-read glob with a wildcard in the middle, such as `**/.env`, has no equivalent: bubblewrap masks paths and does not match them, so those patterns are dropped there and enforced on macOS only.
-- The remaining 23 execution points in §3 are still unsandboxed, including `execute_code`, the cron worker, and the function watcher's auto-import.
+- The §3 execution-point inventory is not fully closed. This batch does not change `execute_code` or general Web reload execution. Cron direct execution already uses a frozen policy and `force_sandbox=True`; function auto-import is now restricted to owner-recorded program sources.
+- Existing in-tree harness clones that predate `program-sources.json` fail closed until the owner reruns `openprogram programs install <name-or-url>`. The same command records an existing development symlink without modifying its target.

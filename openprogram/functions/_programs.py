@@ -9,11 +9,12 @@ own repos (own deps, tests, docs, release cadence):
     research_agent  <- research_harness      (Research-Agent-Harness)
     wiki_agent      <- wiki_agent_harness    (Wiki-Agent-Harness)
 
-Install model: clone into ``functions/agentics/``
--------------------------------------------------
-Each program is ``git clone``-d into
+Install model: owner-recorded source under ``functions/agentics/``
+------------------------------------------------------------------
+The standard installer clones each program into
 ``openprogram/functions/agentics/<Repo-Name>/`` as a **real directory**
-(NOT a symlink, NOT a site-packages install). That keeps the harness
+(not a site-packages install). An existing development symlink can be
+recorded explicitly without modifying its target. This keeps the harness
 code right next to the bundled agentic functions:
 
   * it's discoverable by the same machinery that lists built-in functions,
@@ -45,9 +46,9 @@ Install / remove with::
 The clone directories are git-ignored by the parent repo (see
 ``.gitignore``) — they remain independent checkouts of their own repos.
 
-Installing a THIRD-PARTY harness (any repo, not just these three) works
-the same way without a registry edit: clone it into ``agentics/`` and it
-auto-registers, as long as it satisfies the package contract. Full
+Installing a THIRD-PARTY harness (any repo, not just these three) uses
+the same CLI command. The installer verifies the package contract and records
+the approved source; unrecorded directories are not imported. Full
 procedure (the canonical install flow, written to be agent-executable):
 ``docs/installing-harnesses.md``.
 """
@@ -56,13 +57,107 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
 import os
 import sys
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterator, Optional
 
 
 _GH = "https://github.com/Fzkuji"
+_PROGRAM_SOURCES_FILE = "program-sources.json"
+
+
+def _program_sources_path() -> Path:
+    from openprogram import paths
+    return paths.get_state_dir() / _PROGRAM_SOURCES_FILE
+
+
+def _read_program_sources() -> list[dict]:
+    try:
+        payload = json.loads(_program_sources_path().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    rows = payload.get("programs", []) if isinstance(payload, dict) else []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _is_direct_child(path: str, base: str) -> bool:
+    # Check where the install entry lives, not where a deliberate dev
+    # symlink points.  The owner records the entry under agentics explicitly.
+    parent = os.path.realpath(os.path.dirname(os.path.abspath(path)))
+    return parent.casefold() == os.path.realpath(base).casefold()
+
+
+def record_program_source(path, *, source: str, kind: str = "git") -> None:
+    """Record an owner-installed harness before runtime import is allowed."""
+    base = agentics_dir()
+    root = os.path.abspath(os.path.expanduser(os.fspath(path)))
+    if not base or not _is_direct_child(root, base) or not os.path.isdir(root):
+        raise ValueError("program source must be a directory directly under agentics")
+    rows = [
+        row for row in _read_program_sources()
+        if os.path.abspath(str(row.get("path", ""))).casefold()
+        != root.casefold()
+    ]
+    rows.append({
+        "path": root,
+        "source": str(source),
+        "kind": str(kind),
+        "recorded_at": time.time(),
+    })
+    target = _program_sources_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps({"version": 1, "programs": rows}, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    os.replace(temporary, target)
+
+
+def remove_program_source(path) -> None:
+    root = os.path.abspath(os.path.expanduser(os.fspath(path)))
+    rows = [
+        row for row in _read_program_sources()
+        if os.path.abspath(str(row.get("path", ""))).casefold()
+        != root.casefold()
+    ]
+    target = _program_sources_path()
+    if not target.exists():
+        return
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps({"version": 1, "programs": rows}, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    os.replace(temporary, target)
+
+
+def owner_controlled_program_sources(base: str | None = None) -> list[dict]:
+    """Return valid owner-recorded roots under the live agentics directory."""
+    live_base = base or agentics_dir()
+    if not live_base:
+        return []
+    out = []
+    for row in _read_program_sources():
+        root = os.path.abspath(str(row.get("path", "")))
+        if _is_direct_child(root, live_base) and os.path.isdir(root):
+            out.append({**row, "path": root})
+    return out
+
+
+def is_owner_controlled_program_path(path) -> bool:
+    candidate = os.path.realpath(os.fspath(path))
+    return any(
+        candidate.casefold() == os.path.realpath(row["path"]).casefold()
+        or candidate.casefold().startswith(
+            os.path.realpath(row["path"]).casefold() + os.sep
+        )
+        for row in owner_controlled_program_sources()
+    )
 
 
 def agentics_dir() -> Optional[str]:
@@ -156,8 +251,9 @@ class Program:
         standard layout) or its package is importable some other way
         (e.g. ``pip install -e`` during local harness development).
         """
-        if self.in_tree_pkg_dir():
-            return True
+        pkg_dir = self.in_tree_pkg_dir()
+        if pkg_dir:
+            return is_owner_controlled_program_path(pkg_dir)
         try:
             return importlib.util.find_spec(self.package) is not None
         except (ImportError, ValueError):
@@ -257,7 +353,7 @@ def import_installed_programs() -> list[str]:
         # Make an in-tree clone importable by putting its repo dir (the
         # parent of the package) on sys.path.
         pkg_dir = prog.in_tree_pkg_dir(base)
-        if pkg_dir:
+        if pkg_dir and is_owner_controlled_program_path(pkg_dir):
             repo_dir = os.path.dirname(pkg_dir)
             if repo_dir not in sys.path:
                 sys.path.insert(0, repo_dir)

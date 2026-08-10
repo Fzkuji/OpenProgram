@@ -6,17 +6,16 @@
 
 ```
 OpenProgram  (the host runtime — install this first, anywhere you like)
-└── openprogram/functions/agentics/      ← programs live here, auto-discovered
+└── openprogram/functions/agentics/      ← owner安装的program位于此处
     ├── GUI-Agent-Harness/               ← `gui_agent`      (clone in + run its installer)
     ├── Research-Agent-Harness/          ← `research_agent` (openprogram programs install research)
     └── Wiki-Agent-Harness/              ← `wiki_agent`     (openprogram programs install wiki)
 ```
 
-放入 `functions/agentics/` 的程序会在启动时被**自动注册**
+通过 `openprogram programs install` 安装的程序会登记来源，并在启动时注册
 （`import_installed_programs()` 导入它的 `agentics` 子包，触发
-`@agentic_function` 装饰器）—— 因此它会出现在 **web UI** 和函数
-列表中，无需任何额外接线。所以安装顺序始终是：**先装 OpenProgram，
-再装程序。**
+`@agentic_function` 装饰器），因此它会出现在 **web UI** 和函数列表中。
+未登记的目录不会被导入。所以安装顺序始终是：**先装 OpenProgram，再装程序。**
 
 > ⚠️ 只安装 Python 包**并不是**全部工作 —— 它不会
 > 构建 web UI（需要 `npm`）、不会拉取 GUI agent 的模型权重，也不会预热
@@ -108,14 +107,13 @@ curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/ins
 
 ## 添加 agent 程序
 
-程序总是落在 `functions/agentics/<Repo>/`，并在下次
-启动时自动注册。**通用**方式 —— 既适用于已编目的 harness，*也适用于你自己的* ——
-就是把一个 repo 克隆进该文件夹，然后运行它的安装脚本：
+通过CLI安装的程序位于 `functions/agentics/<Repo>/`，并在下次启动时注册。
+同一条命令适用于已编目的Harness和第三方仓库；如果Harness还有额外资产，随后运行
+它自己的安装脚本：
 
 ```bash
-cd openprogram/functions/agentics
-git clone <harness-repo>
-cd <Harness>
+openprogram programs install <harness-repo>
+cd openprogram/functions/agentics/<Harness>
 ./scripts/install.sh          # if it ships one (Windows: .\scripts\install.ps1)
 ```
 

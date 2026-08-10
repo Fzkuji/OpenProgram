@@ -373,6 +373,29 @@ def test_agent_spawn_bypass_allows_workspace_write_and_safe_read(tmp_path,
         assert ran["called"]
 
 
+@pytest.mark.parametrize(("tool_name", "args"), [
+    ("write", {"file_path": "blocked.py", "content": "x"}),
+    ("edit", {"file_path": "blocked.py", "old_string": "a", "new_string": "b"}),
+    ("apply_patch", {"patch": "*** Begin Patch\n"
+                                "*** Update File: blocked.py\n"
+                                "@@\n-a\n+b\n"
+                                "*** End Patch"}),
+])
+def test_agentics_python_is_never_model_writable(monkeypatch, tool_name, args):
+    from openprogram.functions._programs import agentics_dir
+
+    root = agentics_dir()
+    assert root
+    monkeypatch.chdir(root)
+    tool, ran = _make_tool(tool_name)
+    req = TurnRequest(session_id="s", user_text="", agent_id="main",
+                      source="web", permission_mode="bypass",
+                      permission_rules=PermissionRules(allow=[tool_name]))
+    result = _run_with_args(tool, req, args)
+    assert _denied(result)
+    assert not ran["called"]
+
+
 def test_agent_spawn_ask_rule_denies_without_waiting_for_approval():
     tool, ran = _make_tool("write")
     req = TurnRequest(

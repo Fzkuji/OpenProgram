@@ -1,8 +1,8 @@
 # Harness
 
 **harness**（一个 *agentic program*）是一个自包含的、由 agentic
-function 组成的 git 仓库——OpenProgram 在
-`openprogram/functions/agentics/` 下发现它，其函数会像内置函数一样注册。
+function 组成的 git 仓库。`openprogram programs install`在
+`openprogram/functions/agentics/` 下登记其来源，随后其函数会像内置函数一样注册。
 这是一套**通用机制**：第一方程序（gui / research / wiki）与任何第三方仓库
 的安装方式完全相同。跨平台（macOS / Linux / Windows）；无需 symlink。
 
@@ -50,13 +50,14 @@ openprogram programs install <ref> --upgrade    # git pull + 重新解析依赖
 3. **校验契约（contract）**——克隆中必须包含一个带有
    `agentics/__init__.py` 的 package（见第二部分）。不匹配的仓库会被
    报告并直接不注册；它绝不会破坏加载过程。
-4. 在下次启动时，registry 导入 `<package>.agentics`，
+4. **登记owner批准的来源。** 下次启动时，registry只导入已登记的
+   `<package>.agentics`，
    `@agentic_function` 装饰器触发，函数随即出现在
    chat / Functions 页面 / `openprogram programs run` 中。
 
-防护机制：`install` 拒绝触碰已存在的 **dev symlink**
-（那是你的，见下文）或同名但不是 git 克隆的目录。对 symlink 执行
-`uninstall` 只会删除该链接——绝不会删除它指向的检出。
+防护机制：对于已存在的 **dev symlink**，`install`会校验Harness契约并登记该链接，
+但不修改链接目标；同名且不是Git克隆的目录仍会被拒绝。对symlink执行`uninstall`
+只删除链接，不删除它指向的检出。
 
 ## 第一方程序（gui / research / wiki）
 
@@ -162,7 +163,7 @@ OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list
 | 安装时出现 `[!] … no package with an agentics/__init__.py was found` | 同上——该仓库不满足契约（第二部分）。 |
 | harness 自身依赖出现 `ModuleNotFoundError` | 依赖安装步骤失败——对该克隆（或其 requirements.txt）执行 `pip install` 并检查错误。 |
 | harness 内部的导入失败（`from <pkg>.x import y`） | package 目录的命名与导入根不一致，或缺少 `__init__.py`。package 文件夹名必须等于导入名。 |
-| 安装时出现 `[skip] … is a dev symlink` | 这是有意为之：安装器绝不会触碰你链接的检出。如果你确实想要一份克隆，先移除该链接。 |
+| 现有dev symlink没有加载 | 运行一次`openprogram programs install <Git来源>`完成校验与登记；安装器不会修改链接目标。 |
 | 函数能加载，但在 Windows 上*运行*时报错 | harness 自身代码是平台相关的——这是它的事情，不是安装的事情。查看它的 README。 |
 
 ---

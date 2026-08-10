@@ -34,11 +34,12 @@ EventCallback = Callable[[dict], None]
 _FORCE_APPROVAL_TOOLS = {"exit_plan_mode"}
 # auto 档下即便未声明 requires_approval 也仍要审批的高风险工具。
 _RISKY_TOOLS = {"bash", "exec", "shell", "execute_code", "process"}
-_WRITE_TOOLS = {"write", "write_file", "edit"}
+_WRITE_TOOLS = {"write", "write_file", "edit", "edit_file"}
 _PATCH_PATH_PREFIXES = (
     "*** Add File: ",
     "*** Update File: ",
     "*** Delete File: ",
+    "*** Move to: ",
 )
 _NON_INTERACTIVE_SOURCES = {"agent_spawn", "cron"}
 _CRON_READ_ONLY_TOOLS = {
@@ -103,6 +104,36 @@ def _hard_constraint_violation(
     req: "TurnRequest",
 ) -> str | None:
     """Return the non-configurable constraint violated by a spawned turn."""
+    import os
+    from openprogram.functions.permission_rule import parse_command
+    from openprogram.functions._programs import agentics_dir
+    from openprogram.worktree.context import current_worktree_path
+
+    protected = agentics_dir()
+
+    def _targets_agentics(path: str | None) -> bool:
+        if not path or not protected:
+            return False
+        if not os.path.isabs(path):
+            path = os.path.join(current_worktree_path() or os.getcwd(), path)
+        target = os.path.realpath(path)
+        root = os.path.realpath(protected)
+        return target == root or target.startswith(root + os.sep)
+
+    if tool_name in _WRITE_TOOLS:
+        path = parse_command(tool_name, args)
+        if _targets_agentics(path):
+            return "model tools cannot write auto-imported agentic Python"
+    if tool_name == "apply_patch":
+        patch = args.get("patch") if isinstance(args, dict) else None
+        if isinstance(patch, str):
+            for line in patch.splitlines():
+                prefix = next(
+                    (p for p in _PATCH_PATH_PREFIXES if line.startswith(p)), None
+                )
+                if prefix and _targets_agentics(line[len(prefix):].strip()):
+                    return "model tools cannot write auto-imported agentic Python"
+
     if req.source == "cron":
         if tool_name not in _CRON_READ_ONLY_TOOLS:
             return f"cron cannot execute side-effect tool {tool_name}"

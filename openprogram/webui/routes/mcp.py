@@ -26,7 +26,7 @@ from __future__ import annotations
 import tempfile
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from openprogram.mcp import (
@@ -42,6 +42,36 @@ from openprogram.mcp.config import (
     parse_entry,
     save_configs,
 )
+
+
+def _require_local_request(request: Request) -> None:
+    """Allow loopback clients; browser requests must also be same-origin."""
+    from urllib.parse import urlsplit
+    from openprogram.webui.origin_guard import is_loopback_hostname
+
+    client_host = getattr(getattr(request, "client", None), "host", "")
+    host = request.headers.get("host", "").strip().lower()
+    origin = request.headers.get("origin", "").strip().lower()
+    site = request.headers.get("sec-fetch-site", "").strip().lower()
+    try:
+        origin_host = urlsplit(origin).netloc.lower()
+    except ValueError:
+        origin_host = ""
+    if (not is_loopback_hostname(client_host)
+            or (origin and (
+                not origin_host
+                or origin_host != host
+                or site not in ("same-origin", "none")
+            ))):
+        raise HTTPException(
+            status_code=403,
+            detail="one-shot MCP tests require a local request",
+        )
+
+
+def _one_shot_client(cfg: MCPServerConfig, sandbox_cwd: str):
+    from openprogram.mcp.client import MCPClient
+    return MCPClient(cfg, force_sandbox=True, sandbox_cwd=sandbox_cwd)
 
 
 def register(app: FastAPI) -> None:
@@ -683,31 +713,33 @@ def register(app: FastAPI) -> None:
         })
 
     @app.post("/api/mcp/test")
-    async def test_config(body: dict):
+    async def test_config(body: dict, request: Request):
         """Spawn a config in a one-shot sandbox to verify the command
         actually starts up and returns a ``tools/list``. Doesn't write
         to disk and doesn't touch the live registry.
 
         Body: same shape as ``POST /api/mcp/servers``.
         """
+        _require_local_request(request)
         cfg = _parse_body(body)
-        from openprogram.mcp.client import MCPClient
-        client = MCPClient(cfg)
-        try:
-            await client.start()
-            ok = client.is_ready and client.error is None
-            return JSONResponse(content={
-                "ok": ok,
-                "ready": client.is_ready,
-                "error": client.error,
-                "tool_count": len(client.tools),
-                "tools": [t.name for t in client.tools],
-            })
-        finally:
+        with tempfile.TemporaryDirectory(prefix="openprogram-mcp-test-") as cwd:
+            client = _one_shot_client(cfg, cwd)
             try:
-                await client.stop()
-            except Exception:  # noqa: BLE001
-                pass
+                await client.start()
+                ok = client.is_ready and client.error is None
+                return JSONResponse(content={
+                    "ok": ok,
+                    "ready": client.is_ready,
+                    "error": client.error,
+                    "tool_count": len(client.tools),
+                    "tools": [t.name for t in client.tools],
+                    "sandboxed": cfg.type == "local",
+                })
+            finally:
+                try:
+                    await client.stop()
+                except Exception:  # noqa: BLE001
+                    pass
 
     @app.get("/api/mcp/config-path")
     async def config_path():

@@ -150,6 +150,7 @@ def _wrap_agentic_runtime_block(
                 # runtime_id so the second write is a no-op upsert.
                 loop = _asyncio.get_event_loop()
                 from openprogram.agent.authority import runtime_authority
+                from openprogram.worktree.context import current_worktree_path
                 out = await loop.run_in_executor(
                     None,
                     lambda: run_agentic_in_subprocess(
@@ -157,7 +158,7 @@ def _wrap_agentic_runtime_block(
                         kwargs=dict(args or {}),
                         session_id=req.session_id,
                         anchor_msg_id=assistant_msg_id,
-                        work_dir=None,
+                        work_dir=current_worktree_path(),
                         on_event=on_event,
                         # LLM-driven: pass the LLM's tool_call_id so the
                         # subprocess writes its placeholder under the

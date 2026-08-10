@@ -96,14 +96,14 @@ openprogram
 
 ### 3. 添加 harness
 
-Harness 是 `openprogram/functions/agentics/` 下的程序。任何克隆进那个目录的东西在下次 worker 重启时自动注册——这是任何程序(包括你自己写的)接入 OpenProgram 的通用方式。纯 Python 的 harness 还有一行快捷命令 `openprogram programs install <name>`,替你克隆进去。
+Harness 是 `openprogram/functions/agentics/` 下的程序。使用 `openprogram programs install <名称或Git来源>` 安装：该命令会克隆或检查仓库、登记owner批准的来源，并在下次worker重启后启用它。只把目录复制到这里不会触发导入。
 
 | Harness | 安装 | 功能 |
 |---|---|---|
 | [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | `openprogram programs install gui`(会拉 PyTorch),再跑它的安装器装检测器/OCR 资产——**[指南](https://github.com/Fzkuji/GUI-Agent-Harness#1-install)** | 通过视觉操控桌面应用和 OSWorld 虚拟机。 |
 | [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | `openprogram programs install research` | 文献调研 → 实验 → 论文初稿。 |
 | [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | `openprogram programs install wiki` | 把笔记 / 文档 / 聊天整理成带 `[[wikilinks]]` 的 Obsidian 知识库。 |
-| **任意第三方 harness** | `openprogram programs install <owner>/<repo>`(或完整 git URL) | 同一套流程——克隆、依赖、契约检查;无需在任何地方登记。 |
+| **任意第三方 harness** | `openprogram programs install <owner>/<repo>`(或完整 git URL) | 同一套流程——克隆、依赖、契约检查和owner来源登记。 |
 
 写一个自己的可安装 harness 只差一份布局契约——完整指南(安装、管理、编写、测试、发布)见
 **[installing-harnesses.md](capabilities/installing-harnesses.md)**。

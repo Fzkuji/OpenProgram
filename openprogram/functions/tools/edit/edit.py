@@ -48,6 +48,10 @@ def edit(file_path: str,
     file_path = resolved_path
     if not os.path.isabs(file_path):
         return f"Error: file_path must be absolute, got {file_path!r}"
+    from openprogram.sandbox import validate_write_path
+    violation = validate_write_path(file_path)
+    if violation:
+        return f"Error: sandbox policy: {violation}"
     if not os.path.exists(file_path):
         return f"Error: file not found: {file_path}"
     if old_string == new_string:

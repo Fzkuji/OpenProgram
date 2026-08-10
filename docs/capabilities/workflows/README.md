@@ -28,7 +28,7 @@ openprogram programs run <name> -a key=value  # run a program directly
 
 `programs run` also accepts `--provider` (claude-code / openai-codex / gemini-cli / anthropic / openai / gemini, auto-detected by default) and `--model` to override the model.
 
-`programs install` clones the harness into `openprogram/functions/agentics/` and installs the dependencies its own `pyproject.toml` / `requirements.txt` declares. Everything under that directory — an installed harness or a manual `git clone` — auto-registers the next time the worker restarts.
+`programs install` clones the harness into `openprogram/functions/agentics/`, installs the dependencies declared by its `pyproject.toml` / `requirements.txt`, and records the approved source. Only recorded harnesses register when the worker restarts; a manual clone can be recorded by running the same install command with its git source.
 
 ## How to trigger them
 

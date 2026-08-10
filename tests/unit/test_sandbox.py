@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import asyncio
 import subprocess
 import sys
 import tempfile
@@ -22,8 +23,10 @@ from openprogram.sandbox import (
     is_available,
     policy_from_dict,
     policy_hash,
+    policy_snapshot,
     policy_to_dict,
     resolve_policy,
+    validate_write_path,
     wrap_command,
 )
 
@@ -101,6 +104,74 @@ def test_policy_resolves_in_a_fresh_thread(cfg):
     t.start()
     t.join()
     assert seen == [True]
+
+
+def test_installed_process_snapshot_survives_config_change_and_thread(
+    cfg, monkeypatch,
+):
+    on(cfg, network=True, writable_roots=["/owner-extra"])
+    snapshot = policy_snapshot()
+    cfg["sandbox"]["mode"] = "off"
+    monkeypatch.setattr(
+        sandbox, "_process_policy_override", sandbox._NO_PROCESS_POLICY,
+    )
+    sandbox.install_policy_snapshot(snapshot)
+
+    seen = []
+    thread = threading.Thread(target=lambda: seen.append(resolve_policy()))
+    thread.start()
+    thread.join()
+
+    assert seen[0] is not None
+    assert seen[0].network is True
+    assert seen[0].writable_roots == ("/owner-extra",)
+
+
+def test_write_path_uses_process_policy_roots(tmp_path, cfg, monkeypatch):
+    work = tmp_path / "work"
+    extra = tmp_path / "extra"
+    outside = tmp_path / "outside"
+    work.mkdir(); extra.mkdir(); outside.mkdir()
+    monkeypatch.setattr(
+        sandbox, "_process_policy_override", sandbox._NO_PROCESS_POLICY,
+    )
+    sandbox.install_policy_snapshot({
+        "enabled": True,
+        "policy": policy_to_dict(SandboxPolicy(
+            writable_roots=(str(extra),),
+            deny_read=(),
+            deny_write=(str(extra / "blocked") + "/**",),
+        )),
+    })
+
+    assert validate_write_path(work / "ok.txt", cwd=str(work)) is None
+    assert validate_write_path(extra / "ok.txt", cwd=str(work)) is None
+    assert validate_write_path(outside / "no.txt", cwd=str(work))
+    assert validate_write_path(extra / "blocked" / "no.txt", cwd=str(work))
+
+
+def test_write_tool_enforces_process_policy(tmp_path, cfg, monkeypatch):
+    from openprogram.functions.tools.write.write import write
+
+    work = tmp_path / "work"
+    outside = tmp_path / "outside"
+    work.mkdir(); outside.mkdir()
+    monkeypatch.setattr(
+        sandbox, "_process_policy_override", sandbox._NO_PROCESS_POLICY,
+    )
+    sandbox.install_policy_snapshot({
+        "enabled": True,
+        "policy": policy_to_dict(SandboxPolicy(deny_read=(), deny_write=())),
+    })
+
+    tool_result = asyncio.run(write.execute(
+        "c", {"file_path": str(outside / "blocked.txt"), "content": "secret"},
+        None, None,
+    ))
+    result = "".join(block.text for block in tool_result.content)
+
+    assert result.startswith("Error: sandbox policy:")
+    assert not (outside / "blocked.txt").exists()
 
 
 # --- glob translation ------------------------------------------------------

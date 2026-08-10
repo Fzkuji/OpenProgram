@@ -123,21 +123,19 @@ class MemoryWorkspace(
         before_sources = self._tree_fingerprint(self.stage_dir / "sources")
         before_units = parse_topic_tree(self.stage_dir / "topics")
         before_block_ids = {unit.memory_id for unit in before_units}
-        # The writer's prompt carries text anyone who can message this
-        # agent controls, and whatever this command writes lands in the
-        # memory store and returns to a later session's context — an
-        # exfiltration path that never touches the network. So it runs
-        # under the same sandbox policy as the bash tool when one is
-        # configured. The nested CLI's own Read/Write/Edit still run
-        # inside that process and are outside this boundary.
-        args: Any = command
-        use_shell = True
-        env = None
-        policy = _sandbox.resolve_policy()
-        if policy is not None and _sandbox.is_available():
-            args, use_shell = _sandbox.wrap_command(
-                command, str(self.stage_dir), policy)
-            env = _sandbox.child_env(policy)
+        # This MCP endpoint is the nested agent's only command path. It is
+        # always sandboxed, even while interactive shell sandboxing remains
+        # disabled globally; an unavailable platform boundary is a refusal.
+        from openprogram.backend.local import _invocation
+
+        policy = _sandbox.resolve_policy(required=True)
+        assert policy is not None
+        args, use_shell, env = _invocation(
+            command,
+            str(self.stage_dir),
+            policy=policy,
+            force_sandbox=True,
+        )
         result = subprocess.run(
             args,
             cwd=self.stage_dir,

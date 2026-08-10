@@ -237,6 +237,15 @@ def execute(patch: str, **_: Any) -> str:
     if not sections:
         return "Error: patch contains no file operations"
 
+    # Validate the complete patch before changing its first file; a later
+    # denied path must not leave an earlier section partially applied.
+    from openprogram.sandbox import validate_write_path
+    for _op, path, _body in sections:
+        if os.path.isabs(path):
+            violation = validate_write_path(path)
+            if violation:
+                return f"Error: sandbox policy: {violation}"
+
     results: list[str] = []
     for op, path, body in sections:
         if not os.path.isabs(path):

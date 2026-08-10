@@ -96,14 +96,14 @@ First run sets up your provider, then asks which surface to open. Skip the promp
 
 ### 3. Add a harness
 
-Harnesses are programs under `openprogram/functions/agentics/`. Anything cloned into that folder auto-registers on the next worker restart — that's the universal way any program (including your own) plugs into OpenProgram. Pure-Python harnesses also have a one-line shortcut, `openprogram programs install <name>`, which clones them there for you.
+Harnesses are programs under `openprogram/functions/agentics/`. Install them with `openprogram programs install <name-or-git-source>`: the command clones or verifies the repository, records its owner-approved source, and makes it available after the next worker restart. A directory copied there without this install step is not imported.
 
 | Harness | Install | What it does |
 |---|---|---|
 | [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | `openprogram programs install gui` (pulls PyTorch), then its installer for the detector/OCR assets — **[guide](https://github.com/Fzkuji/GUI-Agent-Harness#1-install)** | Drives desktop apps & OSWorld VMs by vision. |
 | [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | `openprogram programs install research` | Literature survey → experiments → paper draft. |
 | [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | `openprogram programs install wiki` | Turns notes / docs / chats into an Obsidian vault with `[[wikilinks]]`. |
-| **Any third-party harness** | `openprogram programs install <owner>/<repo>` (or a full git URL) | Same flow — clone, deps, contract check; no registration anywhere. |
+| **Any third-party harness** | `openprogram programs install <owner>/<repo>` (or a full git URL) | Same flow — clone, deps, contract check, and owner source registration. |
 
 Writing your own installable harness is one layout contract away — the
 full guide (install, manage, author, test, publish) is

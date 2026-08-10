@@ -6,18 +6,19 @@ Two mechanisms, in order:
      (``openprogram/functions/agentics/<name>/``). Loaded explicitly so
      that import order and dependency conditions are obvious.
 
-  2. **Auto-discovered external harnesses** — any symlink (or directory)
-     under ``openprogram/functions/agentics/`` is treated as an
-     external harness. For each, we find its Python package
+  2. **Auto-discovered external harnesses** — owner-recorded symlinks and
+     directories under ``openprogram/functions/agentics/`` are treated as
+     external harnesses. For each, we find its Python package
      (``<harness>/<pkg>/__init__.py``) and import ``<pkg>.agentics``.
      That sub-package must expose ``AGENTIC_FUNCTIONS = [...]`` — the
      ``@agentic_function`` decorators on the listed callables fire on
      import and register themselves with the shared AgentTool registry.
 
 The auto-discovery convention replaces the old per-harness
-``file_override`` mechanism: drop a symlink under ``agentics/``, the
-harness's own ``<pkg>/agentics/__init__.py`` exports
-``AGENTIC_FUNCTIONS``, done — no edit to this file.
+``file_override`` mechanism: run ``openprogram programs install`` to record
+the directory or development symlink; the harness's own
+``<pkg>/agentics/__init__.py`` exports ``AGENTIC_FUNCTIONS``. No edit to this
+file is required.
 
 What's *exposed* to LLMs (Layer 2 of the selection cascade) is a
 separate concern — a registered tool is exposed unless it opted out
@@ -31,9 +32,13 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import logging
 import os
 import sys
 from typing import Iterator, Optional
+
+
+logger = logging.getLogger(__name__)
 
 
 AGENTIC_MODULES: list[tuple[str, Optional[str]]] = [
@@ -61,8 +66,8 @@ _NOT_A_HARNESS = {
 
 
 def load_agentic_modules(agentics_dir: str) -> None:
-    """Import every entry in AGENTIC_MODULES, then auto-discover external
-    harnesses by walking symlinks under ``agentics_dir``.
+    """Import every entry in AGENTIC_MODULES, then discover owner-recorded
+    external harnesses under ``agentics_dir``.
 
     Failures are swallowed per-entry so a missing external harness
     symlink (e.g. on a fresh clone without the side repos) doesn't kill
@@ -102,6 +107,19 @@ def load_agentic_modules(agentics_dir: str) -> None:
     #    ``pip install -e`` their checkout and it registers via (2) above.
     for harness_name, harness_root in _iter_external_harness_dirs(agentics_dir):
         try:
+            from openprogram.functions._programs import (
+                owner_controlled_program_sources,
+            )
+            source = next(
+                (row for row in owner_controlled_program_sources(agentics_dir)
+                 if row["path"] == harness_root),
+                {},
+            )
+            logger.info(
+                "loading owner-controlled agentic program path=%s source=%s",
+                harness_root,
+                source.get("source", "unknown"),
+            )
             _import_external_harness(harness_root)
         except Exception as e:
             _debug_registry_error(f"external:{harness_name}", e)
@@ -137,13 +155,16 @@ def _iter_external_harness_dirs(agentics_dir: str) -> Iterator[tuple[str, str]]:
     """
     if not os.path.isdir(agentics_dir):
         return
+    from openprogram.functions._programs import owner_controlled_program_sources
     skip = set(_NOT_A_HARNESS) | _official_program_dir_names()
-    for name in sorted(os.listdir(agentics_dir)):
+    for row in sorted(
+        owner_controlled_program_sources(agentics_dir),
+        key=lambda item: os.path.basename(item["path"]),
+    ):
+        name = os.path.basename(row["path"])
         if name in skip or name.startswith("."):
             continue
-        path = os.path.join(agentics_dir, name)
-        # Real directory OR symlink-to-directory; skip plain files.
-        target = os.path.realpath(path)
+        target = row["path"]
         if not os.path.isdir(target):
             continue
         yield name, target
@@ -244,6 +265,16 @@ def _load_external_file(
     abs_path = os.path.join(agentics_dir, rel_path)
     if not os.path.isfile(abs_path):
         return
+    from openprogram.functions._programs import is_owner_controlled_program_path
+    explicit = {
+        os.path.realpath(os.path.join(agentics_dir, override))
+        for _name, override in AGENTIC_MODULES if override is not None
+    }
+    if (os.path.realpath(abs_path) not in explicit
+            and not is_owner_controlled_program_path(abs_path)):
+        raise PermissionError(
+            f"refusing to import unrecorded agentic source: {abs_path}"
+        )
 
     inner_pkg_dir = os.path.dirname(abs_path)
     sys_path_root = os.path.dirname(inner_pkg_dir)
