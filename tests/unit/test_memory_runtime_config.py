@@ -66,6 +66,7 @@ def test_backend_none_disables_every_runtime_surface(monkeypatch, tmp_path):
         ["show", "topics/example.md"],
         ["edit", "topics/example.md"],
         ["sleep"],
+        ["backfill"],
         ["export"],
     ],
 )

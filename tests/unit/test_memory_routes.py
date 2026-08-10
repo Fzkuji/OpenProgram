@@ -252,6 +252,7 @@ def test_stage_directories_are_cleaned_up_on_both_paths(client):
 @pytest.mark.parametrize(
     ("method", "path", "body"),
     [
+        ("GET", "/api/memory/status", None),
         ("GET", "/api/memory/topics", None),
         ("GET", "/api/memory/topics/example.md", None),
         ("PUT", "/api/memory/topics/example.md", {"content": "# Example\n"}),
