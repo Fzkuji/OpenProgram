@@ -98,7 +98,7 @@ def test_process_cleans_up_after_a_batch_it_wrote(memory):
     before = _stage_dirs()
 
     assert _runtime(memory).process(
-        [_record()], lambda workspace, batch: None, force=True
+        [_record()], lambda workspace, batch: ["topics/note.md"], force=True
     ) is True
     assert _stage_dirs() == before
 

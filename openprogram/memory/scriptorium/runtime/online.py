@@ -17,6 +17,19 @@ from .state import (
 )
 
 
+def unwritten_turns(
+    records: list[SourceRecord], marked_ids: set[str] | frozenset[str],
+) -> list[SourceRecord]:
+    """Unmarked branch suffix after the newest marked source record."""
+    pending: list[SourceRecord] = []
+    for record in reversed(records):
+        if record.message_id in marked_ids:
+            break
+        pending.append(record)
+    pending.reverse()
+    return pending
+
+
 def _parse(value: str | None) -> datetime | None:
     """An ISO 8601 stamp as an aware datetime, or None if it is not one.
 
@@ -52,30 +65,27 @@ class OnlineMemoryRuntime:
         self.local_token_threshold = local_token_threshold
         self.memory_config = memory_config or MemoryConfig()
 
-    def pending(self, records: list[SourceRecord]) -> list[SourceRecord]:
-        state = self.store.load()
-        return sorted(
-            [
-                record for record in records
-                if record.ordinal > int(
-                    state.cursors.get(record.thread_id, {}).get("ordinal", -1)
-                )
-            ],
-            key=lambda record: (record.thread_id, record.ordinal),
-        )
+    def pending(
+        self,
+        records: list[SourceRecord],
+        marked_ids: set[str] | frozenset[str] = frozenset(),
+    ) -> list[SourceRecord]:
+        return unwritten_turns(records, marked_ids)
 
     def process(
         self,
         records: list[SourceRecord],
         writer,
         *,
+        marked_ids: set[str] | frozenset[str] = frozenset(),
+        mark=None,
         local_manager=None,
         global_manager=None,
         now: datetime | None = None,
         force: bool = False,
     ) -> bool:
         now = now or datetime.now(timezone.utc)
-        batch = tuple(self.pending(records))
+        batch = tuple(self.pending(records, marked_ids))
         if not batch:
             return False
         token_count = sum(self.token_counter(record.content) for record in batch)
@@ -102,13 +112,14 @@ class OnlineMemoryRuntime:
             config=self.memory_config,
         )) as workspace:
             workspace.archive_source_records(list(batch))
-            writer(workspace, batch)
+            changed_files = writer(workspace, batch)
+            if not changed_files:
+                return False
+
+            if mark is not None:
+                mark(batch)
 
             state = self.store.load()
-            for record in batch:
-                state.advance_cursor(
-                    record.thread_id, record.message_id, ordinal=record.ordinal
-                )
             state.local_batches += 1
             state.local_tokens += token_count
             state.write_commits_since_global += 1

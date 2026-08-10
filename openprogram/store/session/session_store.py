@@ -962,6 +962,29 @@ class SessionStore:
         for m in msgs:
             self.append_message(session_id, m)
 
+    def merge_node_metadata(
+        self, session_id: str, node_id: str, patch: dict[str, Any],
+    ) -> None:
+        """Merge metadata into one persisted node without touching session meta."""
+        pair = self._open(session_id)
+        if pair is None:
+            return
+        git, idx = pair
+        node = idx.nodes_by_id.get(node_id)
+        if node is None:
+            return
+        current = node.metadata if isinstance(node.metadata, dict) else {}
+        node.metadata = {**current, **patch}
+        role_letter = (node.role or "x")[0]
+        path = git.path / "history" / (
+            f"{node.seq:04d}-{role_letter}-{node.id}.json"
+        )
+        if path.exists():
+            atomic_write_text(
+                path,
+                json.dumps(node.to_dict(), ensure_ascii=False, default=str),
+            )
+
     def get_messages(self, session_id: str, *, limit: Optional[int] = None) -> list[dict[str, Any]]:
         pair = self._open(session_id)
         if pair is None:

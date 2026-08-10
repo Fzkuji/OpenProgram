@@ -1,4 +1,4 @@
-"""Persistent runtime cursors and deterministic maintenance triggers."""
+"""Persistent deterministic maintenance counters and source records."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import tempfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -30,18 +30,11 @@ class SourceRecord:
 
 @dataclass
 class RuntimeState:
-    cursors: dict[str, dict[str, object]] = field(default_factory=dict)
     creation_order: dict[str, int] = field(default_factory=dict)
     write_commits_since_global: int = 0
     local_batches: int = 0
     local_tokens: int = 0
     last_global_at: str | None = None
-
-    def advance_cursor(self, thread_id: str, message_id: str, *, ordinal: int) -> None:
-        current = self.cursors.get(thread_id)
-        if current is not None and int(current["ordinal"]) > ordinal:
-            raise ValueError("cursor cannot move backwards")
-        self.cursors[thread_id] = {"message_id": message_id, "ordinal": ordinal}
 
 
 class RuntimeStateStore:
@@ -52,8 +45,16 @@ class RuntimeStateStore:
     def load(self) -> RuntimeState:
         if not self.path.exists():
             return RuntimeState()
-        payload = json.loads(self.path.read_text(encoding="utf-8"))
-        return RuntimeState(**payload)
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                return RuntimeState()
+            known = {item.name for item in fields(RuntimeState)}
+            return RuntimeState(**{
+                key: value for key, value in payload.items() if key in known
+            })
+        except (OSError, TypeError, ValueError):
+            return RuntimeState()
 
     def save(self, state: RuntimeState) -> None:
         """Replace the state file, through a temporary name of this write's own.

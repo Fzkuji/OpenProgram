@@ -1,9 +1,8 @@
 """The background writer's silent-loss paths.
 
-Everything memory writes goes through a cursor: turns are handed to the
-writer, then the cursor moves past them and they are never offered
-again. So every failure on this path has the same shape — the cursor
-advances over turns that never reached a file, and nothing says so.
+Turns are handed to the writer and marked only after they reach a topic
+file. Every failure on this path must therefore leave the source nodes
+unmarked so a later pass can offer them again.
 
 Four of them lived here at once. The session store stamps Unix seconds
 and the memory layer parses ISO 8601, so every write raised before it
@@ -22,10 +21,17 @@ instead.
 """
 from __future__ import annotations
 
+import atexit
 from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
+
+
+def _close_store(store) -> None:
+    """Flush and release a real SessionStore created by a test."""
+    store._flush_index()
+    atexit.unregister(store._flush_index)
 
 
 @pytest.fixture
@@ -53,7 +59,10 @@ def written(monkeypatch):
 
     def _write(memory_dir, *, agent, task, stage=None, **_kw):
         prompts.append(task)
-        return []
+        return [{
+            "tool": "commit", "status": "ok",
+            "topic_paths": ["topics/note.md"],
+        }]
 
     monkeypatch.setattr(writing, "_counter", lambda: len)
     monkeypatch.setattr(writing, "_agent", lambda model=None: object())
@@ -70,7 +79,9 @@ def _turn(index: int, role: str, text: str) -> dict:
 # -- 1. The timestamp the session store actually writes --------------------
 
 
-def test_the_stores_own_timestamp_survives_the_trip(tmp_path, memory_root, written):
+def test_the_stores_own_timestamp_survives_the_trip(
+    tmp_path, memory_root, written, monkeypatch, request,
+):
     """The session store stamps Unix seconds; ``fromisoformat`` in
     ``runtime/online`` used to be handed that float as a string and
     raised ``Invalid isoformat string`` before any model was called."""
@@ -78,6 +89,8 @@ def test_the_stores_own_timestamp_survives_the_trip(tmp_path, memory_root, writt
     from openprogram.memory.scriptorium import writing
 
     db = SessionDB(tmp_path / "sessions")
+    request.addfinalizer(lambda: _close_store(db))
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
     db.append_message("s1", {"id": "u1", "role": "user", "content": "who is dave"})
     db.append_message("s1", {"id": "a1", "role": "assistant",
                              "content": "your neighbour", "predecessor": "u1"})
@@ -110,23 +123,37 @@ def test_a_written_date_is_left_alone():
 # -- 2. The idle write finishes the backlog --------------------------------
 
 
-def test_a_forced_write_finishes_every_pending_turn(memory_root, written):
+def test_a_forced_write_finishes_every_pending_turn(
+    tmp_path, memory_root, written, monkeypatch, request,
+):
     """A session that ends with more backlog than one call can hold.
 
     It used to take the leading batch and stop; the watcher then marked
     the session processed and the rest was never offered again."""
     from openprogram.memory.scriptorium import writing
 
-    messages = [_turn(i, "user" if i % 2 == 0 else "assistant", f"turn {i} text")
-                for i in range(6)]
+    from openprogram.agent.session_db import SessionDB
 
-    assert writing.write("s2", messages, token_threshold=8, force=True) is None
+    db = SessionDB(tmp_path / "sessions")
+    request.addfinalizer(lambda: _close_store(db))
+    predecessor = None
+    for i in range(6):
+        message = _turn(
+            i, "user" if i % 2 == 0 else "assistant", f"turn {i} text"
+        )
+        if predecessor is not None:
+            message["predecessor"] = predecessor
+        db.append_message("s2", message)
+        predecessor = message["id"]
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+
+    assert writing.write("s2", token_threshold=8, force=True) is None
 
     sent = "\n".join(written)
     assert len(written) == 6, "one call per batch, six batches of one turn"
     for i in range(6):
         assert f"turn {i} text" in sent
-    assert writing._pending("s2", messages) == [], "the cursor covers all six"
+    assert writing._pending("s2", db.get_branch("s2")) == []
 
 
 def test_a_write_that_cannot_finish_says_so(memory_root, written, monkeypatch):
@@ -310,7 +337,10 @@ def watched(tmp_path, monkeypatch):
         n = session_watcher._scan(idle_minutes=1)
         return n, session_watcher._load_processed()
 
-    return run, events
+    try:
+        yield run, events
+    finally:
+        _close_store(db)
 
 
 def test_nothing_returned_marks_the_session_handled(watched):
@@ -385,7 +415,7 @@ def no_tools(monkeypatch):
 
 def test_a_second_rejected_commit_is_reported(tmp_path, no_tools, monkeypatch):
     """Two invalid turns install nothing. Returning an ``ok`` audit lets
-    the caller advance its cursor past turns that reached no file."""
+    the caller mark turns that reached no file as written."""
     from openprogram.memory.scriptorium.management import agent as agent_module
     from openprogram.memory.scriptorium.management.transaction import TransactionError
 
@@ -448,8 +478,8 @@ def test_the_runtimes_own_turns_are_not_conversation():
 
     assert [r.message_id for r in records] == ["m0", "m1", "m6"]
     assert [r.ordinal for r in records] == [0, 1, 6], (
-        "the ordinal is the row's position in the branch — the cursor is "
-        "compared against it, so skipping a row must not renumber"
+        "source archive ordering retains the branch positions even when "
+        "runtime-only rows are filtered out"
     )
 
 
@@ -471,7 +501,9 @@ def test_the_watcher_can_find_where_to_keep_its_state(memory_root):
     assert path.name == "session-end.json"
 
 
-def test_the_watchers_state_survives_a_memory_write(memory_root, written):
+def test_the_watchers_state_survives_a_memory_write(
+    tmp_path, memory_root, written, monkeypatch, request,
+):
     """The processed-session file sits inside the runtime directory, so a
     write transaction installing a staged workspace must leave it alone —
     and a file rewritten every poll must not read as a concurrent write."""
@@ -480,11 +512,22 @@ def test_the_watchers_state_survives_a_memory_write(memory_root, written):
     from openprogram.memory.scriptorium.management.transaction import (
         workspace_revision,
     )
+    from openprogram.agent.session_db import SessionDB
 
     session_watcher._save_processed({"s8": 1786288829.9})
 
-    messages = [_turn(i, "user", f"turn {i} text") for i in range(3)]
-    assert writing.write("s9", messages, token_threshold=8, force=True) is None
+    db = SessionDB(tmp_path / "sessions")
+    request.addfinalizer(lambda: _close_store(db))
+    predecessor = None
+    for i in range(3):
+        message = _turn(i, "user", f"turn {i} text")
+        if predecessor is not None:
+            message["predecessor"] = predecessor
+        db.append_message("s9", message)
+        predecessor = message["id"]
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+
+    assert writing.write("s9", token_threshold=8, force=True) is None
     assert session_watcher._load_processed() == {"s8": 1786288829.9}, (
         "installing a staged workspace must not take the bookkeeping with it"
     )

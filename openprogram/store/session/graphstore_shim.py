@@ -120,28 +120,20 @@ class GraphStoreShim:
         pair = self.store._open(self.session_id)
         if not pair:
             return
-        git, idx = pair
+        _git, idx = pair
         node = idx.nodes_by_id.get(node_id)
         if node is None:
             return
+        metadata = fields.pop("metadata", {})
         for k, v in fields.items():
-            if k == "metadata" and isinstance(v, dict):
-                node.metadata = {**(node.metadata or {}), **v}
-            else:
-                setattr(node, k, v)
+            setattr(node, k, v)
         # An llm/code node's real output arrives here, not at append —
         # spill on the way in so rendering never has to write.
         if "output" in fields:
             self.store.spill_large_node(self.session_id, node)
-        # Rewrite the on-disk JSON for this node so a worker restart
-        # picks up the new content.
-        role_letter = (node.role or "x")[0]
-        fname = f"{node.seq:04d}-{role_letter}-{node.id}.json"
-        fpath = git.path / "history" / fname
-        if fpath.exists():
-            from .git_session import atomic_write_text
-            atomic_write_text(
-                fpath,
-                __import__("json").dumps(
-                    node.to_dict(), ensure_ascii=False, default=str),
-            )
+        # The shared primitive performs the single atomic history rewrite.
+        self.store.merge_node_metadata(
+            self.session_id,
+            node_id,
+            metadata if isinstance(metadata, dict) else {},
+        )

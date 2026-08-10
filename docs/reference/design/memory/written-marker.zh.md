@@ -513,6 +513,43 @@ head往回走会把整个会话都收进来。
 
 ## 附录：实现状态
 
-第一层在跑。第二层是观察。第三层已定稿、尚未落地：没有任何节点带着标记，
-`RuntimeState.cursors`和`advance_cursor`仍然是判定的依据，两条写入路径也
-仍然只向`get_branch`要head那条分支。第四层没有排期。
+截至2026年8月10日，第一层描述的是迁移前的实现，第二层仍是对开源框架的
+观察，第三层已经落地：
+
+- 会话节点用`metadata.memory_written_scriptorium = <workspace-id>`记录当前
+  Scriptorium工作区已经处理过该轮；其他工作区的同名标记不生效。工作区标识
+  在记忆运行时目录中原子创建并复用，格式为`w-`加8位十六进制字符。
+- `_records`只接受节点自己的稳定ID；待写轮次改为在过滤后的分支上从新到旧
+  查找当前工作区的最近标记，没有标记时交出整条分支。阈值批次仍从最老的
+  待写轮次开始。
+- 来源证据先归档，写入器随后安装记忆事务；只有写入器报告了非空的实际改动
+  文件列表，才给这一批的来源节点打标记。异常、事务拒绝和无改动结果不打
+  标记。
+- `SessionStore.merge_node_metadata`负责合并节点metadata并原子重写history
+  文件；它不改会话`updated_at`，不调用`write_history`或`mark_synced`。
+  `GraphStoreShim.update`复用这条路径，其他进程的旧索引仍会在下一次读取时
+  重建一次。
+- `RuntimeState.cursors`和`advance_cursor`已经移除，其余整理计数器保留；
+  损坏的`runtime.json`读为空状态。旧安装会在正常写入路径计算pending之前，
+  从`sources/openprogram/*.md`的精确`source-id`注释播种节点标记，完成这次
+  尝试后再移除旧`cursors`字段。
+- 会话边界处理先写当前head分支的全部欠账，再检查其他活分支；其他分支只有
+  达到正常token阈值才写，不使用闲置短分支放行。共享前缀由先处理的分支标记，
+  后续分支只交出分叉后的未写后缀。
+
+验证结果如下：
+
+- `python -m pytest -q tests/unit/test_memory_written_marker.py tests/unit/test_memory_writing.py tests/unit/test_memory_write_timing.py`：37项通过。
+- 直接相关的store/runtime回归组：79项通过；覆盖`GraphStoreShim.update`
+  调用路径的补充组：42项通过。
+- `python -m pytest -q --ignore=tests/integration/test_test_framework.py`：
+  2544项通过、7项跳过、2项deselected、1项xfail。11项origin-guard/403
+  失败与实现前记录一致；另有2项全量进程中的临时stage目录集合断言失败，
+  两项一起隔离重跑均通过。本次新增和修改的memory测试随后在独立临时目录中
+  按顺序执行39项，结束时没有stage目录或延迟flush timer残留。本次改动没有
+  修改那些无关失败的实现。
+
+第四层仍未实现：没有改成由记忆主题/来源内容本身充当唯一账本；没有把分支
+来源写进记忆块或检索结果；没有用事件通知替换轮询；没有加入跨会话spawn
+链接、压缩摘要语义或通用的前缀不变量检查。调度器设计、GUI记忆端点和
+feature matrix也未改动。

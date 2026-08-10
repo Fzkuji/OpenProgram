@@ -10,6 +10,8 @@ rendered from ``topics/core.md`` rather than written.
 from __future__ import annotations
 
 import logging
+import re
+import uuid
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -52,6 +54,33 @@ def state_dir() -> Path:
     path = runtime_dir(root())
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+_WORKSPACE_ID = re.compile(r"w-[0-9a-f]{8}")
+
+
+def workspace_id() -> str:
+    """Stable identity for markers written by this memory workspace."""
+    path = state_dir() / "workspace-id"
+    try:
+        current = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        current = ""
+    if _WORKSPACE_ID.fullmatch(current):
+        return current
+
+    from openprogram.store.session.git_session import atomic_write_text
+    from .scriptorium.management.transaction import workspace_write_lock
+
+    with workspace_write_lock(root()):
+        try:
+            current = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            current = ""
+        if not _WORKSPACE_ID.fullmatch(current):
+            current = f"w-{uuid.uuid4().hex[:8]}"
+            atomic_write_text(path, current + "\n")
+    return current
 
 
 # What the previous memory layer kept at the workspace root. None of it

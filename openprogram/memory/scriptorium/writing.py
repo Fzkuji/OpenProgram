@@ -5,12 +5,8 @@ batch has gathered — roughly sixteen thousand tokens of conversation,
 rather than a call per turn.
 
 The conversation is read back from the session store rather than
-accumulated in memory. That store is durable and ordered, so a turn's
-identity survives a worker restart, and the cursor in ``runtime/online``
-can tell what has already been written without keeping any state of its
-own here. The alternative, buffering turns in a module-level dict, loses
-the buffer on restart and hands out positions that change between runs —
-which is exactly what a cursor cannot tolerate.
+accumulated in memory. That store is durable and ordered, and the source
+nodes themselves record which memory workspace has written them.
 """
 
 from __future__ import annotations
@@ -30,6 +26,7 @@ from .runtime.state import SourceRecord
 logger = logging.getLogger(__name__)
 
 PROVIDER = "openprogram"
+MARKER = "memory_written_scriptorium"
 
 # Turns the runtime writes to drive itself: the notification a finished
 # sub-agent posts back, and the prompt a branch merge assembles.
@@ -118,8 +115,8 @@ def _records(
     recording them would bury the conversation in file listings; the
     runtime's own scheduling turns are machinery for the same reason.
 
-    The ordinal is the row's position in the whole branch, skipped rows
-    included, because that is what the write cursor is compared against.
+    The ordinal retains source ordering for the append-only archive. A
+    record's identity is always the session node's own stable ID.
     """
     rows: list[SourceRecord] = []
     for index, message in enumerate(messages):
@@ -131,16 +128,29 @@ def _records(
         text = _text_of(message)
         if not text:
             continue
+        message_id = str(message.get("id") or "").strip()
+        if not message_id:
+            raise ValueError("memory source message requires a stable id")
         rows.append(SourceRecord(
             provider=PROVIDER,
             thread_id=session_id or "session",
-            message_id=str(message.get("id") or f"m{index:06d}"),
+            message_id=message_id,
             ordinal=index,
             role=role,
             content=text,
             timestamp=_observed_at(message.get("timestamp")),
         ))
     return rows
+
+
+def _marked_ids(
+    messages: list[dict[str, Any]], workspace_id: str,
+) -> set[str]:
+    return {
+        str(message.get("id"))
+        for message in messages
+        if message.get("id") and message.get(MARKER) == workspace_id
+    }
 
 
 def _first_batch(
@@ -180,18 +190,22 @@ def write_session(
         return False
 
     root = store.ensure()
+    workspace_id = store.workspace_id()
+    from openprogram.agent.session_db import default_db
+    db = default_db()
     counter = _counter()
     runtime = OnlineMemoryRuntime(
         root, token_counter=counter, token_threshold=token_threshold
     )
-    pending = runtime.pending(records)
+    marked_ids = _marked_ids(messages, workspace_id)
+    pending = runtime.pending(records, marked_ids)
     if not pending:
         return False
     pending = _first_batch(pending, counter, token_threshold)
 
     agent = _agent(model)
 
-    def writer(space: Any, batch: tuple[SourceRecord, ...]) -> None:
+    def writer(space: Any, batch: tuple[SourceRecord, ...]) -> list[str]:
         observed = next(
             (
                 record.timestamp[:10]
@@ -199,7 +213,7 @@ def write_session(
             ),
             "undated",
         )
-        _run_agent(
+        audit = _run_agent(
             space.memory_dir,
             agent=agent,
             task=render_writer_task([{
@@ -209,6 +223,15 @@ def write_session(
             }]),
             stage="write",
         )
+        return _changed_files(audit)
+
+    def mark(batch: tuple[SourceRecord, ...]) -> None:
+        for record in batch:
+            db.merge_node_metadata(
+                session_id,
+                record.message_id,
+                {MARKER: workspace_id},
+            )
 
     def organizer(space: Any) -> None:
         organize_topics(space.memory_dir, agent=agent)
@@ -222,6 +245,8 @@ def write_session(
         return runtime.process(
             pending,
             writer,
+            marked_ids=marked_ids,
+            mark=mark,
             local_manager=organizer,
             global_manager=organizer,
             force=force,
@@ -243,9 +268,33 @@ def _pending(
     records = _records(session_id, messages)
     if not records:
         return []
+    workspace_id = store.workspace_id()
     return OnlineMemoryRuntime(
         store.ensure(), token_counter=_counter()
-    ).pending(records)
+    ).pending(records, _marked_ids(messages, workspace_id))
+
+
+def _force_branches(
+    session_id: str,
+    fallback: list[dict[str, Any]] | None,
+) -> tuple[Any, list[tuple[str | None, list[dict[str, Any]]]]]:
+    """Current head path first, followed by the other live tip paths."""
+    from openprogram.agent.session_db import default_db
+
+    db = default_db()
+    session = db.get_session(session_id)
+    current = (session or {}).get("last_node_id")
+    heads: list[str] = [current] if current else []
+    for branch in db.list_branches(session_id):
+        head = branch.get("head_msg_id")
+        if head and not branch.get("archived") and head not in heads:
+            heads.append(head)
+    branches = [
+        (head, db.get_branch(session_id, head) or []) for head in heads
+    ]
+    if not branches and fallback is not None:
+        branches.append((None, fallback))
+    return db, branches
 
 
 def write(
@@ -276,18 +325,42 @@ def write(
     """
     if not session_id:
         return WriteIncomplete("no session id", retryable=False)
+    from .. import store
+    from openprogram.agent.session_db import default_db
+    from .runtime.mark_archived_turns import migrate
+
+    root = store.ensure()
+    migrate(root, default_db(), store.workspace_id())
     rows = messages if messages is not None else _branch(session_id)
     if not force:
         write_session(session_id, rows, token_threshold=token_threshold)
         return None
-    while _pending(session_id, rows):
-        if not write_session(
-            session_id, rows,
-            token_threshold=token_threshold, force=True,
-        ):
-            # Forced, with turns still pending and nothing raised: the
-            # batch reached no file and said nothing about why.
-            return WriteIncomplete("the writer made no progress")
+    db, branches = _force_branches(session_id, messages)
+    for branch_index, (head, branch_rows) in enumerate(branches):
+        if head is not None:
+            branch_rows = db.get_branch(session_id, head) or []
+        while True:
+            pending = _pending(session_id, branch_rows)
+            if not pending:
+                break
+            force_branch = branch_index == 0
+            counter = _counter()
+            if not force_branch and sum(
+                counter(record.content) for record in pending
+            ) < token_threshold:
+                break
+            if not write_session(
+                session_id,
+                branch_rows,
+                token_threshold=token_threshold,
+                force=force_branch,
+            ):
+                # Pending turns reached no topic file, so no source node
+                # was marked and a later pass must retry this branch.
+                return WriteIncomplete("the writer made no progress")
+            if head is None:
+                return WriteIncomplete("session nodes unavailable")
+            branch_rows = db.get_branch(session_id, head) or []
     return None
 
 
