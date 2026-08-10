@@ -2,8 +2,16 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
+from fastapi import Body, Request, Response
 from fastapi.responses import JSONResponse
+
+from ._credential_secrets import (
+    is_declared_credential_name,
+    is_nonempty_printable_ascii,
+    mask_credential,
+)
 
 
 def _validate_api_key(env_var: str, value: str) -> str | None:
@@ -29,8 +37,10 @@ def _validate_api_key(env_var: str, value: str) -> str | None:
         # `unknown` (offline / ambiguous) must not block a save — only a
         # definitively rejected credential is an error here.
         return r.detail if r.status == "invalid_credential" else None
-    except Exception as e:
-        return str(e)
+    except Exception:
+        # A transport failure is an ``unknown`` validation result. Only a
+        # definite provider rejection may block credential replacement.
+        return None
 
 
 def register(app):
@@ -39,7 +49,7 @@ def register(app):
         from openprogram.webui import server as _s
         config = _s._load_config()
         keys = config.get("api_keys", {})
-        masked = {k: (v[:8] + "..." if len(v) > 8 else "***") for k, v in keys.items() if v}
+        masked = {k: mask_credential(v) for k, v in keys.items() if v}
         return JSONResponse(content={"api_keys": masked})
 
     # /api/settings — the schema-driven settings the TUI panel + `openprogram
@@ -50,41 +60,66 @@ def register(app):
         return JSONResponse(content={"settings": get_settings()})
 
     @app.post("/api/settings")
-    async def set_setting_api(body: dict = None):
-        from openprogram.config_schema import set_setting
-        if not body or "key" not in body:
+    async def set_setting_api(body: Any = Body(default=None)):
+        """Set one schema-declared setting. Credentials are not settings — they
+        go through /api/config and the account endpoints, which mask and
+        rotate; ``set_setting`` writes plain config with neither."""
+        if not isinstance(body, dict) or not set(body).issubset({"key", "value"}):
+            return JSONResponse(
+                content={"error": "body must contain only key and value"},
+                status_code=400,
+            )
+        key = body.get("key")
+        if not isinstance(key, str) or not key:
             return JSONResponse(content={"error": "Missing key"}, status_code=400)
-        res = set_setting(body["key"], body.get("value"))
+        if is_declared_credential_name(key) or "api_key" in key.lower():
+            return JSONResponse(
+                content={"error": "credentials are not settings"}, status_code=400
+            )
+        from openprogram.config_schema import set_setting
+        res = set_setting(key, body.get("value"))
         return JSONResponse(content=res, status_code=400 if res.get("error") else 200)
 
     @app.post("/api/config")
-    async def save_config(body: dict = None):
+    async def save_config(body: Any = Body(default=None)):
         from openprogram import setup as _setup
-        if not body or "api_keys" not in body:
-            return JSONResponse(content={"error": "Missing api_keys"}, status_code=400)
-        items = {k: (v or "").strip() for k, v in body["api_keys"].items()}
-        # Validate BEFORE mutating: reject a masked / garbled value. API keys are
-        # printable ASCII; the UI's masked preview is "••••" (U+2022 bullets) and
-        # saving those would overwrite the real key with non-ASCII junk that then
-        # crashes outbound requests with a UnicodeEncodeError.
+        if not isinstance(body, dict) or set(body) != {"api_keys"}:
+            return JSONResponse(
+                content={"error": "body must contain only api_keys"},
+                status_code=400,
+            )
+        items = body["api_keys"]
+        if not isinstance(items, dict):
+            return JSONResponse(
+                content={"error": "api_keys must be an object"},
+                status_code=400,
+            )
+
+        # Validate the complete request before probing or mutating anything.
         for key, val in items.items():
-            if val and any(ord(ch) < 0x20 or ord(ch) > 0x7e for ch in val):
+            if not is_declared_credential_name(key):
                 return JSONResponse(
-                    content={"error": (
-                        f"{key}: the value has invalid characters — it looks "
-                        "like the masked placeholder, not a real key. Re-type "
-                        "the key and Save."
-                    )},
+                    content={"error": f"unknown credential name: {key}"},
+                    status_code=400,
+                )
+            if not is_nonempty_printable_ascii(val):
+                return JSONResponse(
+                    content={"error": f"{key}: invalid credential value"},
+                    status_code=400,
+                )
+
+        for key, val in items.items():
+            error = _validate_api_key(key, val)
+            if error is not None:
+                return JSONResponse(
+                    content={"error": f"{key}: credential rejected"},
                     status_code=400,
                 )
 
         def _merge_keys(config: dict) -> None:
             keys = config.setdefault("api_keys", {})
             for key, val in items.items():
-                if val:
-                    keys[key] = val
-                else:
-                    keys.pop(key, None)
+                keys[key] = val
 
         # Atomic read-modify-write so a concurrent settings save (TUI / CLI)
         # can't clobber these keys, or vice-versa.
@@ -92,23 +127,73 @@ def register(app):
         # Reflect into the live process env so the running worker resolves the
         # key immediately.
         for key, val in items.items():
-            if val:
-                os.environ[key] = val
-            else:
-                os.environ.pop(key, None)
+            os.environ[key] = val
         return JSONResponse(content={"saved": True})
 
+    @app.delete("/api/config/key/{env_var}")
+    async def delete_config_key(env_var: str, request: Request):
+        if not is_declared_credential_name(env_var):
+            return JSONResponse(
+                content={"error": "unknown credential name"},
+                status_code=404,
+            )
+        if await request.body():
+            return JSONResponse(
+                content={"error": "request body is not allowed"},
+                status_code=400,
+            )
+
+        from openprogram import setup as _setup
+
+        def _delete_key(config: dict) -> None:
+            keys = config.get("api_keys")
+            if isinstance(keys, dict):
+                keys.pop(env_var, None)
+
+        _setup.update_config(_delete_key)
+        os.environ.pop(env_var, None)
+        return Response(status_code=204)
+
     @app.post("/api/config/verify")
-    async def verify_key(body: dict = None):
-        """Verify a single API key without saving."""
+    async def verify_key(body: Any = Body(default=None)):
+        """Probe one credential without saving it.
+
+        ``value`` omitted ⇒ probe the STORED credential, which is how the UI
+        re-checks a key it can no longer read. A supplied ``value`` must be a
+        real key: a displayed mask is rejected rather than silently falling
+        back to the stored value, so "verify" can never report a mask as valid.
+        """
+        if not isinstance(body, dict) or not set(body).issubset({"env", "value"}):
+            return JSONResponse(
+                content={"error": "body must contain only env and value"},
+                status_code=400,
+            )
+        env_var = body.get("env")
+        if not is_declared_credential_name(env_var):
+            return JSONResponse(
+                content={"error": "unknown credential name"}, status_code=404
+            )
+
         from openprogram.webui import server as _s
-        if not body or "env" not in body:
-            return JSONResponse(content={"error": "Missing env"}, status_code=400)
-        value = body.get("value", "")
-        if not value or value.endswith("..."):
-            config = _s._load_config()
-            value = config.get("api_keys", {}).get(body["env"], "")
-        if not value:
-            return JSONResponse(content={"valid": False, "error": "No key provided"})
-        error = _validate_api_key(body["env"], value)
+
+        if "value" in body:
+            value = body["value"]
+            if not is_nonempty_printable_ascii(value):
+                return JSONResponse(
+                    content={"error": "invalid credential value"}, status_code=400
+                )
+            stored = _s._load_config().get("api_keys", {}).get(env_var, "")
+            if stored and value == mask_credential(stored):
+                return JSONResponse(
+                    content={"error": "a masked value is not a credential"},
+                    status_code=400,
+                )
+        else:
+            value = os.environ.get(env_var) or _s._load_config().get(
+                "api_keys", {}
+            ).get(env_var, "")
+            if not value:
+                return JSONResponse(content={"valid": False, "error": "No key stored"})
+
+        error = _validate_api_key(env_var, value)
         return JSONResponse(content={"valid": error is None, "error": error})

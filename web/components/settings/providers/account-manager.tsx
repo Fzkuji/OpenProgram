@@ -1,40 +1,31 @@
 "use client";
 
 import { Reorder, useDragControls } from "framer-motion";
-import { Eye, EyeOff, GripVertical, Pencil, X } from "lucide-react";
+import { GripVertical, Pencil, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useTranslation } from "@/lib/i18n";
+import { normalizeSecretReplacement } from "@/lib/net/secret-replacement";
 
 import { ProviderLogin } from "./provider-login";
 import styles from "../settings-page.module.css";
-import type { Provider } from "./types";
+import type { Provider, ProviderAccountView } from "./types";
 
 /** ONE management panel for every provider's accounts. An *account* is a profile
  *  holding one credential. EVERY provider uses the exact same fixed-column row;
- *  only the left content differs — api-key shows an editable KEY, login/claude
- *  show the account EMAIL. Right-hand controls (status · Validate · active ·
+ *  only the left content differs — api-key shows a masked key with an explicit
+ *  replacement action, while login/claude shows the account email. Right-hand
+ *  controls (status · Validate · active ·
  *  Remove) are fixed-width so they never reflow. The active control is a single
  *  toggle: it shows the STATE by default and the ACTION on hover, and "none
  *  active" is allowed. A drag handle (≥2 accounts) sets the rotation priority.
  *  See docs/design/unified-account-management.md / the plan file. */
 
-interface Account {
-  id: string;
-  name: string;        // label (api-key) or email (login)
-  identity: string;    // masked key (api-key); "" for login
-  email?: string;
-  kind?: string;
-  status?: string;
-  is_active: boolean;     // single-active pin (rotation OFF)
-  enabled?: boolean;      // independent on/off for rotation (rotation ON); default true
-  can_reveal?: boolean;
-}
 interface State {
-  accounts: Account[];
+  accounts: ProviderAccountView[];
   active: string;
   pinned?: string;
   rotation: boolean;
@@ -51,7 +42,6 @@ interface State {
 }
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
-const NON_ASCII = /[^\x20-\x7e]/;
 
 function statusClass(status: string): string {
   if (status === "valid" || status.startsWith("valid")) return `${styles.statusBadge} ${styles.valid}`;
@@ -104,7 +94,7 @@ function AccountRow({
   provider, account, multi, rotation, onChanged, refresh, onCommit,
 }: {
   provider: string;
-  account: Account;
+  account: ProviderAccountView;
   multi: boolean;
   rotation: boolean;
   onChanged?: () => void;
@@ -117,12 +107,10 @@ function AccountRow({
 
   const [renaming, setRenaming] = useState(false);
   const [renameVal, setRenameVal] = useState(account.name);
-  const [keyMode, setKeyMode] = useState<"masked" | "revealed" | "editing">("masked");
-  const [keyVal, setKeyVal] = useState(account.identity);
+  const [editingKey, setEditingKey] = useState(false);
+  const [replacement, setReplacement] = useState("");
   const [vres, setVres] = useState<{ status: string; detail?: string } | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => { if (keyMode === "masked") setKeyVal(account.identity); }, [account.identity, keyMode]);
 
   const validate = useCallback(async () => {
     setVres({ status: "checking" });
@@ -139,29 +127,38 @@ function AccountRow({
     const nv = renameVal.trim();
     setRenaming(false);
     if (!nv || nv === account.id) return;
-    await fetch(`${base}/rename`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ id: account.id, name: nv }) });
+    // A refused rename (name taken, invalid characters) answers 4xx and leaves
+    // the account named as it was — surface it instead of showing the new name.
+    const r = await fetch(`${base}/rename`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ id: account.id, name: nv }) });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      setVres({ status: "unknown", detail: d.error });
+    }
     refresh();
   }
-  async function reveal() {
-    if (keyMode === "revealed") { setKeyMode("masked"); setKeyVal(account.identity); return; }
-    if (keyMode === "editing") return;
-    const d = await fetch(`${base}/${encodeURIComponent(account.id)}/reveal`).then((r) => r.json());
-    if (d.ok) { setKeyVal(d.value); setKeyMode("revealed"); }
-  }
-  function onKeyInput(v: string) {
-    if (keyMode !== "editing") { setKeyMode("editing"); setKeyVal(""); return; }
-    setKeyVal(v);
-  }
   async function update() {
-    const v = keyVal.trim();
-    if (!v || NON_ASCII.test(v)) return;
+    const v = normalizeSecretReplacement(replacement, account.masked_key);
+    if (v === null) return;
     setBusy(true);
-    const d = await fetch(`${base}/${encodeURIComponent(account.id)}/update`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ api_key: v, validate: true }) }).then((r) => r.json());
-    setBusy(false);
-    if (d.ok) { setKeyMode("masked"); await refresh(); onChanged?.(); void validate(); }
-    else setVres({ status: "invalid_credential", detail: d.error });
+    try {
+      const d = await fetch(`${base}/${encodeURIComponent(account.id)}/update`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ api_key: v, validate: true }) }).then((r) => r.json());
+      if (d.ok) {
+        setEditingKey(false);
+        setReplacement("");
+        await refresh();
+        onChanged?.();
+        void validate();
+      } else {
+        setVres({ status: "invalid_credential", detail: d.error });
+      }
+    } catch {
+      setVres({ status: "unknown" });
+    } finally {
+      setBusy(false);
+    }
   }
-  function cancelEdit() { setKeyMode("masked"); setKeyVal(account.identity); }
+  function startEdit() { setReplacement(""); setEditingKey(true); }
+  function cancelEdit() { setReplacement(""); setEditingKey(false); }
   async function activate() {
     await fetch(`${base}/use`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ id: account.id }) });
     refresh();
@@ -180,7 +177,6 @@ function AccountRow({
     refresh(); onChanged?.();
   }
 
-  const editing = keyMode === "editing";
   const status = vres?.status ?? "checking";
 
   return (
@@ -206,7 +202,7 @@ function AccountRow({
         ) : (
           <span className={styles.acctName}>
             <span className={styles.acctNameText}>{account.name}</span>
-            {/* same icon-button as the key eye/cancel: .iconBtn 28px, 15px glyph */}
+            {/* Keep rename and cancel controls on the same compact icon size. */}
             <button className={styles.iconBtn} title={text("Rename", "重命名")}
               onClick={() => { setRenameVal(account.name); setRenaming(true); }} style={{ flexShrink: 0 }}>
               <Pencil size={15} />
@@ -214,18 +210,23 @@ function AccountRow({
           </span>
         )}
 
-        {account.can_reveal && !renaming && (
+        {account.kind === "api_key" && !renaming && (
           <span className={styles.acctKey}>
-            <Input className="flex-1 font-mono" value={keyVal}
-              placeholder={text("paste a new key to replace", "粘贴新 key 替换")}
-              onChange={(e) => onKeyInput(e.target.value)} disabled={busy} />
-            <button className={styles.iconBtn} title={text("Show / hide", "显示 / 隐藏")} onClick={reveal}>
-              {keyMode === "revealed" ? <EyeOff size={15} /> : <Eye size={15} />}
-            </button>
-            {editing && (
+            {editingKey ? (
               <>
-                <Button size="sm" onClick={update} disabled={busy || !keyVal.trim()}>{text("Update", "更新")}</Button>
+                <Input className="flex-1 font-mono" type="password" autoFocus
+                  value={replacement} autoComplete="new-password"
+                  placeholder={text("paste a new key to replace", "粘贴新 key 替换")}
+                  onChange={(e) => setReplacement(e.target.value)} disabled={busy} />
+                <Button size="sm" onClick={update} disabled={busy || !replacement.trim()}>{text("Update", "更新")}</Button>
                 <button className={styles.iconBtn} title={text("Cancel", "取消")} onClick={cancelEdit}><X size={14} /></button>
+              </>
+            ) : (
+              <>
+                <Input className="flex-1 font-mono" readOnly
+                  value={account.has_value ? account.masked_key : ""}
+                  placeholder={text("Not set", "未设置")} />
+                <Button size="sm" onClick={startEdit}>{text("Replace", "替换")}</Button>
               </>
             )}
           </span>
@@ -300,7 +301,7 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
     });
   }, [state?.accounts]);
 
-  function onReorder(next: Account[]) {
+  function onReorder(next: ProviderAccountView[]) {
     const ids = next.map((a) => a.id);
     orderRef.current = ids;
     setOrder(ids);
@@ -315,9 +316,11 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
     const key = newKey.trim();
     if (!key) return;
     setBusy(true); setMsg(text("Validating…", "验证中…"));
-    const d = await fetch(`${base}/keys`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ name: newName.trim(), api_key: key, validate: true }) }).then((r) => r.json());
+    // A rejected key answers 4xx with {error}; only a 2xx {ok:true} stored it.
+    const r = await fetch(`${base}/keys`, { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ name: newName.trim(), api_key: key, validate: true }) });
+    const d = await r.json().catch(() => ({}));
     setBusy(false);
-    if (d.ok) { setNewKey(""); setNewName(""); setMsg(""); await load(); onChanged?.(); }
+    if (r.ok && d.ok) { setNewKey(""); setNewName(""); setMsg(""); await load(); onChanged?.(); }
     else setMsg(d.error || text("Could not add the key.", "添加失败。"));
   }
   async function toggleRotation(enabled: boolean) {
@@ -398,7 +401,7 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
   // Render in local drag order; fall back to server order until the order
   // state has synced (or if it ever drifts out of sync with the account set).
   const byId = new Map(accounts.map((a) => [a.id, a] as const));
-  const ordered = order.map((id) => byId.get(id)).filter(Boolean) as Account[];
+  const ordered = order.map((id) => byId.get(id)).filter(Boolean) as ProviderAccountView[];
   const items = ordered.length === accounts.length ? ordered : accounts;
 
   return (
@@ -542,8 +545,8 @@ export function AccountManager({ provider, onChanged }: { provider: Provider; on
           ? (multi
               ? (state.rotation
                   ? text("Rotation on — every account on is used in turn (drag ⠿ to set priority). Turn any account off to drop it from the rotation; the others keep going.", "已开启轮询 —— 所有「已激活」的账号轮流使用(拖 ⠿ 调优先级)。把某个账号停用即可踢出轮询,其余照常。")
-                  : text("Drag ⠿ to set rotation order. Each key is an account — Activate one to use it, the eye reveals / edits it, Validate checks it.", "拖 ⠿ 调轮询顺序。每个 key 是一个账号 —— Activate 选一个使用,眼睛查看/编辑,Validate 验证。"))
-              : text("Add more keys as accounts to switch between them or rotate on rate limits. The eye reveals / edits the key.", "添加多个 key 作为账号即可切换或限流时轮询。眼睛可查看/编辑 key。"))
+                  : text("Drag ⠿ to set rotation order. Each key is an account — Activate one to use it, Replace enters a new key, and Validate checks it.", "拖 ⠿ 调整轮询顺序。每个 key 是一个账号 —— Activate 选择使用的账号，Replace 输入新 key，Validate 执行验证。"))
+              : text("Add more keys as accounts to switch between them or rotate on rate limits. Stored keys stay masked; Replace enters a new value.", "添加多个 key 作为账号，即可切换账号或在限流时轮询。已保存的 key 始终显示为掩码；Replace 用于输入新值。"))
           : text("Each account is a separate sign-in. Activate to switch which the framework runs on.", "每个账号是一次独立登录。Activate 切换框架跑哪个。")}
       </div>
 

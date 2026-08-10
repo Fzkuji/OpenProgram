@@ -3,8 +3,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
-  Eye,
-  EyeOff,
   RefreshCw,
   CircleCheck,
   CircleX,
@@ -24,7 +22,6 @@ interface Props {
 
 export function ProviderDetail({ provider }: Props) {
   const qc = useQueryClient();
-  const [revealKey, setRevealKey] = useState(false);
   const [baseUrl, setBaseUrl] = useState(provider.base_url ?? "");
   const [testResult, setTestResult] = useState<
     { ok: boolean; msg: string } | null
@@ -32,8 +29,8 @@ export function ProviderDetail({ provider }: Props) {
   const [wizardOpen, setWizardOpen] = useState(false);
 
   const { data: keyPreview } = useQuery({
-    queryKey: ["key", provider.api_key_env, revealKey],
-    queryFn: () => api.getKey(provider.api_key_env!, revealKey),
+    queryKey: ["key", provider.api_key_env],
+    queryFn: () => api.getKey(provider.api_key_env!),
     enabled: !!provider.api_key_env,
   });
 
@@ -144,41 +141,22 @@ export function ProviderDetail({ provider }: Props) {
               <Row
                 label={`API Key (${provider.api_key_env})`}
                 control={
-                  <div className="flex gap-2">
-                    <Input
-                      readOnly
-                      value={
-                        keyPreview
-                          ? revealKey
-                            ? keyPreview.value ?? ""
-                            : keyPreview.masked ?? "(not set)"
-                          : "…"
-                      }
-                      className="h-8 flex-1 font-mono text-[12px]"
-                      style={{
-                        background: "var(--bg-input)",
-                        borderColor: "var(--border)",
-                        color: "var(--text-primary)",
-                      }}
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 w-8 p-0"
-                      onClick={() => setRevealKey((v) => !v)}
-                      style={{
-                        background: "transparent",
-                        borderColor: "var(--border)",
-                        color: "var(--text-primary)",
-                      }}
-                    >
-                      {revealKey ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
+                  <Input
+                    readOnly
+                    value={
+                      keyPreview
+                        ? keyPreview.has_value
+                          ? keyPreview.masked
+                          : "(not set)"
+                        : "…"
+                    }
+                    className="h-8 flex-1 font-mono text-[12px]"
+                    style={{
+                      background: "var(--bg-input)",
+                      borderColor: "var(--border)",
+                      color: "var(--text-primary)",
+                    }}
+                  />
                 }
               />
             )}

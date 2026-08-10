@@ -98,8 +98,8 @@ export const api = {
       method: "DELETE",
     }),
 
-  getKey: (envVar: string, reveal = false) =>
-    jsonFetch<KeyPreview>(`/api/config/key/${envVar}${reveal ? "?reveal=1" : ""}`),
+  getKey: (envVar: string) =>
+    jsonFetch<KeyPreview>(`/api/config/key/${envVar}`),
 
   listFunctions: () => jsonFetch<AgenticFunction[]>("/api/functions"),
 

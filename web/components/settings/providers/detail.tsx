@@ -187,7 +187,7 @@ export function Detail({
       {/* ONE management panel for every provider's credentials (P-D). An account
           is a named, switchable credential — a KEY for api-key providers, a
           SIGN-IN for login providers, a Claude subscription for claude-code.
-          Same UI everywhere; only "add" + the identity label differ inside.
+          Same UI everywhere; only the add flow and account label differ inside.
           See account-manager.tsx. */}
       {(provider.id === "claude-code" ||
         !!provider.api_key_env ||

@@ -36,6 +36,19 @@ export interface Provider {
   login_methods?: { id: string; label: string }[];
 }
 
+/** Masked-only account projection returned by the provider account API. */
+export interface ProviderAccountView {
+  id: string;
+  name: string;
+  email?: string;
+  kind?: string;
+  status?: string;
+  is_active: boolean;
+  enabled?: boolean;
+  has_value: boolean;
+  masked_key: string;
+}
+
 export interface Model {
   id: string;
   name?: string;

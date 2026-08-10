@@ -5,7 +5,8 @@
  *
  * Two-pane layout: provider list (search + grouped by enabled/disabled)
  * on the left; detail pane on the right with enable toggle, API key
- * input (mask/reveal/save), base URL override, connectivity check, and
+ * input (masked status and explicit replacement), base URL override,
+ * connectivity check, and
  * model list (toggle / search / fetch remote / bulk enable / disable).
  *
  * Originally a single 800-line file (providers-section.tsx); now split

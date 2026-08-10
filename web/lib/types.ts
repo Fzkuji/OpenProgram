@@ -39,8 +39,7 @@ export interface TestResult {
 
 export interface KeyPreview {
   has_value: boolean;
-  masked?: string;
-  value?: string;
+  masked: string;
 }
 
 export interface FunctionParamDetail {

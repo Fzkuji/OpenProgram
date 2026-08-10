@@ -2,7 +2,7 @@
 
 Pure dispatch to ``openprogram.webui._model_listing`` and
 ``openprogram.providers.configuration``. Plus the web-search provider
-catalog and per-env-var API-key reveal endpoint.
+catalog and per-env-var masked credential-status endpoint.
 
 The heavier runtime-switching routes (/api/model, /api/provider/{name},
 /api/models) still live in server.py because they mutate module-level
@@ -12,7 +12,16 @@ from __future__ import annotations
 
 import os
 
+from typing import Any
+
+from fastapi import Body, Request
 from fastapi.responses import JSONResponse
+
+from ._credential_secrets import (
+    check_request_body,
+    is_declared_credential_name,
+    mask_credential,
+)
 
 
 def register(app):
@@ -69,7 +78,7 @@ def register(app):
         return JSONResponse(content={"provider": read_search_default_provider()})
 
     @app.post("/api/search-providers/{provider_id}/test")
-    async def api_test_search_provider(provider_id: str, body: dict = None):
+    async def api_test_search_provider(provider_id: str, body: Any = Body(default=None)):
         """Run a tiny live query against the named search backend.
 
         Mirrors /api/providers/{name}/test (the LLM provider connectivity
@@ -78,6 +87,11 @@ def register(app):
         zero-result-friendly query ("openprogram health check") and asks
         for 1 result to minimise API quota burn.
         """
+        # Probes the STORED search key; the body carries nothing.
+        if body is not None:
+            error = check_request_body(body, allowed=set())
+            if error is not None:
+                return JSONResponse(content={"error": error}, status_code=400)
         import time as _t
         from openprogram.functions.tools.web_search.registry import registry as _wsr
         import openprogram.functions.tools.web_search.providers  # noqa: F401
@@ -125,11 +139,18 @@ def register(app):
             })
 
     @app.post("/api/search-providers/default")
-    async def api_set_search_providers_default(body: dict = None):
+    async def api_set_search_providers_default(body: Any = Body(default=None)):
+        error = check_request_body(body, allowed={"provider"}, required={"provider"})
+        if error is not None:
+            return JSONResponse(content={"error": error}, status_code=400)
         from openprogram.setup import write_search_default_provider
         from openprogram.functions.tools.web_search.registry import registry as _wsr
         import openprogram.functions.tools.web_search.providers  # noqa: F401
-        name = (body or {}).get("provider")
+        name = body["provider"]
+        if not isinstance(name, (str, type(None))):
+            return JSONResponse(
+                content={"error": "provider must be a string"}, status_code=400
+            )
         if name in (None, "", "auto"):
             write_search_default_provider(None)
             return JSONResponse(content={"ok": True, "provider": None})
@@ -148,16 +169,29 @@ def register(app):
         return JSONResponse(content={"providers": _mc.list_providers()})
 
     @app.post("/api/providers/custom")
-    async def api_create_custom_provider(body: dict = None):
+    async def api_create_custom_provider(body: Any = Body(default=None)):
         """Create a config-only custom provider (OpenAI-compatible endpoint we
         don't ship). Body: {label, base_url, id?}. ``id`` is optional — when
         omitted it's derived by slugifying ``label`` with collisions auto-
         resolved (``-2``/``-3``…). An explicit ``id`` keeps strict validation
-        (kebab-case slug, no collision with an existing provider id or alias)."""
+        (kebab-case slug, no collision with an existing provider id or alias).
+        The key for the new provider is added afterwards through the account
+        endpoints, so no credential is accepted here."""
+        error = check_request_body(
+            body, allowed={"id", "label", "base_url"}, required={"base_url"}
+        )
+        if error is not None:
+            return JSONResponse(content={"error": error}, status_code=400)
+        if not all(
+            isinstance(body.get(field, ""), str)
+            for field in ("id", "label", "base_url")
+        ):
+            return JSONResponse(
+                content={"error": "invalid custom provider body"}, status_code=400
+            )
         from openprogram.providers import storage as provider_storage
-        b = body or {}
         res = provider_storage.create_custom_provider(
-            b.get("id", ""), b.get("label", ""), b.get("base_url", "")
+            body.get("id", ""), body.get("label", ""), body["base_url"]
         )
         return JSONResponse(content=res, status_code=200 if res.get("ok") else 400)
 
@@ -173,12 +207,21 @@ def register(app):
         return JSONResponse(content=res, status_code=200 if res.get("ok") else 400)
 
     @app.post("/api/providers/{name}/models")
-    async def api_add_manual_model(name: str, body: dict = None):
+    async def api_add_manual_model(name: str, body: Any = Body(default=None)):
         """Add a manually-typed model id (enabled) for a provider whose /models
         list is unavailable. Writes a minimal spec row (source=manual)."""
+        error = check_request_body(body, allowed={"id", "name"}, required={"id"})
+        if error is not None:
+            return JSONResponse(content={"error": error}, status_code=400)
+        model_label = body.get("name")
+        if not isinstance(body["id"], str) or not isinstance(
+            model_label, (str, type(None))
+        ):
+            return JSONResponse(
+                content={"error": "invalid manual model body"}, status_code=400
+            )
         from openprogram.providers import storage as provider_storage
-        b = body or {}
-        res = provider_storage.add_manual_model(name, b.get("id", ""), b.get("name"))
+        res = provider_storage.add_manual_model(name, body["id"], model_label)
         return JSONResponse(content=res, status_code=200 if res.get("ok") else 400)
 
     @app.get("/api/providers/{name}/models")
@@ -233,40 +276,57 @@ def register(app):
         emit_ws_frame({"type": "agent_settings_changed", "data": {}})
 
     @app.post("/api/providers/{name}/toggle")
-    async def api_toggle_provider(name: str, body: dict = None):
+    async def api_toggle_provider(name: str, body: Any = Body(default=None)):
+        error = check_request_body(body, allowed={"enabled"}, required={"enabled"})
+        if error is not None:
+            return JSONResponse(content={"error": error}, status_code=400)
+        enabled = body["enabled"]
+        if not isinstance(enabled, bool):
+            return JSONResponse(
+                content={"error": "enabled must be a boolean"}, status_code=400
+            )
         from openprogram.webui import _model_listing as _mc
-        enabled = bool((body or {}).get("enabled", False))
         res = _mc.toggle_provider(name, enabled)
         _clear_stale_defaults()
         _broadcast_settings_changed()
         return JSONResponse(content=res)
 
     @app.post("/api/providers/{name}/models/{model_id:path}/toggle")
-    async def api_toggle_model(name: str, model_id: str, body: dict = None):
+    async def api_toggle_model(name: str, model_id: str, body: Any = Body(default=None)):
+        error = check_request_body(body, allowed={"enabled"}, required={"enabled"})
+        if error is not None:
+            return JSONResponse(content={"error": error}, status_code=400)
+        enabled = body["enabled"]
+        if not isinstance(enabled, bool):
+            return JSONResponse(
+                content={"error": "enabled must be a boolean"}, status_code=400
+            )
         from openprogram.webui import _model_listing as _mc
-        enabled = bool((body or {}).get("enabled", False))
         res = _mc.toggle_model(name, model_id, enabled)
         _clear_stale_defaults()
         _broadcast_settings_changed()
         return JSONResponse(content=res)
 
     @app.get("/api/config/key/{env_var}")
-    async def api_get_api_key(env_var: str, reveal: bool = False):
-        """Return the current value of an API-key env var, masked by
-        default. With ?reveal=1 returns plaintext (only safe because the
-        webui is bound to localhost)."""
+    async def api_get_api_key(env_var: str, request: Request):
+        """Return only presence and the stable mask of a declared credential."""
+        if "reveal" in request.query_params:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "credential reveal is not available"},
+            )
+        if not is_declared_credential_name(env_var):
+            return JSONResponse(
+                status_code=404,
+                content={"error": "unknown credential name"},
+            )
         from openprogram.webui import server as _s
         val = os.environ.get(env_var) or _s._load_config().get("api_keys", {}).get(env_var, "")
         if not val:
-            return JSONResponse(content={"has_value": False, "value": "", "masked": ""})
-        if reveal:
-            return JSONResponse(content={"has_value": True, "value": val, "masked": ""})
-        if len(val) > 12:
-            mid = "•" * min(max(len(val) - 8, 6), 24)
-            masked = val[:4] + mid + val[-4:]
-        else:
-            masked = "•" * len(val)
-        return JSONResponse(content={"has_value": True, "value": "", "masked": masked})
+            return JSONResponse(content={"has_value": False, "masked": ""})
+        return JSONResponse(
+            content={"has_value": True, "masked": mask_credential(val)}
+        )
 
     @app.get("/api/models/enabled")
     async def api_enabled_models():
@@ -279,9 +339,24 @@ def register(app):
         return JSONResponse(content=provider_storage.get_provider_config(name))
 
     @app.post("/api/providers/{name}/config")
-    async def api_set_provider_config(name: str, body: dict = None):
+    async def api_set_provider_config(name: str, body: Any = Body(default=None)):
+        """Non-secret provider settings (base_url, label, …). Credentials go
+        through the account endpoints, never here — a key-shaped field would
+        land in provider config, which has no rotation or masking contract."""
+        error = check_request_body(body, allowed={"base_url", "use_responses_api"})
+        if error is not None:
+            return JSONResponse(content={"error": error}, status_code=400)
+        # ``base_url: null`` is how the UI clears an override — storage reads a
+        # falsy value as "drop it", so null and "" mean the same thing here.
+        base_url = body.get("base_url", "")
+        if not isinstance(base_url, (str, type(None))) or not isinstance(
+            body.get("use_responses_api", False), bool
+        ):
+            return JSONResponse(
+                content={"error": "invalid provider config body"}, status_code=400
+            )
         from openprogram.providers import storage as provider_storage
-        return JSONResponse(content=provider_storage.set_provider_config(name, body or {}))
+        return JSONResponse(content=provider_storage.set_provider_config(name, body))
 
     @app.post("/api/providers/{name}/fetch-models")
     async def api_fetch_models(name: str):
@@ -299,18 +374,40 @@ def register(app):
     # `def` (not `async def`) so FastAPI runs them in its threadpool instead of
     # blocking the event loop for the ~1s probe.
     @app.post("/api/providers/{name}/test")
-    def api_test_provider(name: str, body: dict = None):
+    def api_test_provider(name: str, body: Any = Body(default=None)):
+        """Probe the provider's STORED credential. A key in the body would be
+        an un-stored secret probed over the wire, so the body carries only an
+        optional model id."""
+        if body is None:
+            body = {}
+        error = check_request_body(body, allowed={"model"})
+        if error is not None:
+            return JSONResponse(content={"error": error}, status_code=400)
+        model = body.get("model")
+        if not isinstance(model, (str, type(None))):
+            return JSONResponse(
+                content={"error": "model must be a string"}, status_code=400
+            )
         from openprogram.webui import _model_listing as _mc
-        model = (body or {}).get("model")
         return JSONResponse(content=_mc.test_provider(name, model=model))
 
     @app.post("/api/providers/{name}/validate")
-    def api_validate_provider(name: str, body: dict = None):
+    def api_validate_provider(name: str, body: Any = Body(default=None)):
         # Unified credential validator — model-independent unless {model} given.
         # Returns the rich CredentialResult shape (status / kind / via / detail);
         # /test stays as the legacy-shaped alias the React component reads.
+        # Validates the STORED credential; a key in the body is refused.
+        if body is None:
+            body = {}
+        error = check_request_body(body, allowed={"model"})
+        if error is not None:
+            return JSONResponse(content={"error": error}, status_code=400)
+        model = body.get("model")
+        if not isinstance(model, (str, type(None))):
+            return JSONResponse(
+                content={"error": "model must be a string"}, status_code=400
+            )
         from openprogram.webui import _model_listing as _mc
-        model = (body or {}).get("model")
         return JSONResponse(
             content=_mc.validate_credential(name, model=model, use_cache=False).to_dict()
         )
@@ -349,8 +446,24 @@ def register(app):
         })
 
     @app.post("/api/providers/{name}/configure/step/{step_id}")
-    async def run_configure_step(name: str, step_id: str, body: dict = None):
+    async def run_configure_step(name: str, step_id: str, body: Any = Body(default=None)):
+        """Run one configuration step. Steps declare their own ``input_key``,
+        so the field set is open — but a credential-shaped field is refused:
+        the context is echoed back in the response, which would put a secret
+        on a read path."""
+        from ._credential_secrets import has_credential_field
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            return JSONResponse(
+                content={"error": "body must be a JSON object"}, status_code=400
+            )
+        if has_credential_field(body):
+            return JSONResponse(
+                content={"error": "this endpoint does not accept credentials"},
+                status_code=400,
+            )
         from openprogram.providers import configuration as _cfg
-        ctx = dict(body or {})
+        ctx = dict(body)
         result = _cfg.run_step(name, step_id, ctx)
         return JSONResponse(content={"result": result, "context": ctx})
