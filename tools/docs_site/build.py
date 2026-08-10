@@ -40,11 +40,6 @@ ASSETS_SRC = Path(__file__).parent / "assets"
 # Override with OPENPROGRAM_DOCS_BASE (must start and end with "/").
 DEPLOY_BASE = os.environ.get("OPENPROGRAM_DOCS_BASE", "/docs/")
 
-# Scheme + host the site is published under. Only sitemap.xml needs it, since
-# sitemap entries must be absolute URLs.
-SITE_ORIGIN = os.environ.get(
-    "OPENPROGRAM_DOCS_ORIGIN", "https://fzkuji.github.io")
-
 _SLUG_DEDUP: dict[str, int] = {}
 
 
@@ -566,63 +561,9 @@ def _build_into_out_root() -> int:
 
     searchmod.write_index(search_records, OUT_ROOT)
     _write_home(tabs)
-    _copy_static_root()
-    _write_sitemap()
 
     print(f"built {rendered} pages → {OUT_ROOT}")
     return 0
-
-
-def _copy_static_root() -> None:
-    """Ship docs/_static_root/* at the site root verbatim.
-
-    Search-engine ownership proofs and robots.txt only count when they are
-    reachable at the exact root URL the provider asks for, so they cannot go
-    through markdown rendering.
-    """
-    src = DOCS_ROOT / "_static_root"
-    if not src.is_dir():
-        return
-    for path in src.rglob("*"):
-        if not path.is_file():
-            continue
-        dst = OUT_ROOT / path.relative_to(src)
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, dst)
-
-
-def _write_sitemap() -> None:
-    """List every built page so crawlers index the whole site from one fetch.
-
-    Entries are absolute URLs under SITE_ORIGIN + DEPLOY_BASE; the .raw.html
-    iframe payloads are left out because their shell page already covers them.
-    """
-    base = SITE_ORIGIN.rstrip("/") + DEPLOY_BASE
-    static_root = {
-        p.name for p in (DOCS_ROOT / "_static_root").glob("*") if p.is_file()
-    }
-    urls = []
-    for path in sorted(OUT_ROOT.rglob("*.html")):
-        rel = path.relative_to(OUT_ROOT).as_posix()
-        if rel.endswith(".raw.html") or rel in static_root:
-            continue
-        # index.html is the same document as the bare directory URL; list the
-        # canonical bare form only.
-        if rel == "index.html":
-            urls.append(base)
-        elif rel.endswith("/index.html"):
-            urls.append(base + rel[: -len("index.html")])
-        else:
-            urls.append(base + rel)
-
-    body = "\n".join(
-        f"  <url><loc>{_html.escape(u)}</loc></url>" for u in urls)
-    (OUT_ROOT / "sitemap.xml").write_text(
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-        f"{body}\n</urlset>\n",
-        encoding="utf-8",
-    )
 
 
 def _write_home(tabs) -> None:
