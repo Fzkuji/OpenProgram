@@ -10,6 +10,7 @@ provider 无关的统一格式如何翻译成各家 wire 格式,以及 prompt �
 
 - [`request-build`](request-build.md) — **总设计**:统一格式 Context、每 provider 翻译、缓存三 mode。
 - [`cache-control-passthrough`](../plans/cache-control-passthrough.md)(在 `docs/plans/`)— Anthropic `cache_control` 逐块透传。
+- [`record-replay`](record-replay.md) — 把 provider 调用录成脱敏 JSONL 录制文件,离线回放跑确定性测试。
 - 上游(内容怎么分层组装,L0/L1/L2)见 [`context/composition.md`](../context/composition.md)。
 
 ## [auth/](auth/) — 凭证 · 认证 · 账号

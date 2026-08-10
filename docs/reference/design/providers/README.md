@@ -10,6 +10,7 @@ How the provider-agnostic unified format is translated into each vendor's wire f
 
 - [`request-build`](request-build.md) — **Overall design**: the unified-format Context, per-provider translation, and the caching modes.
 - [`cache-control-passthrough`](../plans/cache-control-passthrough.md) (in `docs/plans/`) — per-block passthrough of Anthropic `cache_control`.
+- [`record-replay`](record-replay.md) — recording provider calls to a redacted JSONL recording file and replaying them offline for deterministic tests.
 - For upstream (how content is layered and assembled, L0/L1/L2) see [`context/composition.md`](../context/composition.md).
 
 ## [auth/](auth/) — Credentials · Authentication · Accounts
