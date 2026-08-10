@@ -338,9 +338,11 @@ PAGE_ORDER: dict[str, int] = {
     # The memory notes read in order: what it is, how it works, how others do it.
     "reference/design/memory/README.md": 0,
     "reference/design/memory/overview.md": 1,
-    "reference/design/memory/memory-architecture.html": 2,
-    "reference/design/memory/memory-comparison.html": 3,
-    "reference/design/memory/memory-adoption.html": 4,
+    "reference/design/memory/written-marker.md": 2,
+    "reference/design/memory/written-marker.html": 3,
+    "reference/design/memory/memory-architecture.html": 4,
+    "reference/design/memory/memory-comparison.html": 5,
+    "reference/design/memory/memory-adoption.html": 6,
     # Within the design archive everything defaults to 999 (alphabetical).
     # >999 pins a page to the end of its section; the sandbox note and its
     # rendered companion stay adjacent, doc first.

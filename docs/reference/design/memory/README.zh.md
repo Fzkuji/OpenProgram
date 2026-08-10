@@ -37,7 +37,9 @@ LLM Context
 | 文档 | 内容 |
 |------|------|
 | [`overview.md`](overview.md) | 两级架构（实体/虚拟两层 + provenance 召回），以及 `openprogram/memory/` 里在跑的线性总结链 |
-| [`memory-architecture.html`](memory-architecture.html) | 可视化：两个写入入口、五步写入、暂存事务、ID 集合游标、常驻块归谁维护、九个接口方法的接线状况、失败契约 |
+| [`written-marker.zh.md`](written-marker.zh.md) | 记忆怎么知道哪些轮次已经写过，分四层：现在跑的位置游标以及它在分叉处丢掉什么、references 下八个框架各自怎么做、在节点上打「已写」标记的完整设计（含要改哪些文件、多大的改动量）、不受当前实现约束的理想形态 |
+| [`written-marker.html`](written-marker.html) | 上述四层的可视化：序号从哪来、分叉时漏掉什么、八个框架并排、走行与三步写入的顺序、以及从记忆自身内容推导的那条路 |
+| [`memory-architecture.html`](memory-architecture.html) | 可视化：两个写入入口、五步写入、暂存事务、写入游标、常驻块归谁维护、九个接口方法的接线状况、失败契约 |
 | [`memory-comparison.html`](memory-comparison.html) | 可视化：`references/` 下八个框架怎么写长期记忆、怎么记住哪些还没写，八个维度逐条对照，包括分叉之后各家的游标怎么办、各家的常驻块归谁维护，以及我们的选择和两处计划中的改动落在哪一格 |
 | [`memory-adoption.html`](memory-adoption.html) | 三层可视化：从那份对照里挑出的四条做法，放进我们的结构各要付什么代价，以及逐条判决（三条采纳，一条按实测的每轮耗时否掉） |
 | [`speaker-identity.html`](speaker-identity.html) | 三层可视化：改之前是什么样（几个人共用一通会话、身份断在哪两处）、references下八个框架各自怎么做、我们怎么做的（两个文件，已落地） |

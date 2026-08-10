@@ -674,7 +674,7 @@
   账本读不出来时按「都没写过」处理，而不是抛异常让这个会话永远写不进去。
   节点标记这边对应的是标记丢了就重做一遍，以及 <code>RuntimeStateStore.load</code>
   对着一份解析不了的 <code>runtime.json</code> 应当读成空计数器而不是抛。
-  两种做法的并排对比在 <a href="memory-architecture.html#cursor">机制图解第 04 节</a>。</p>
+  两种做法的并排对比在 <a href="written-marker.html">written-marker.md</a> 第三层。</p>
 
   <!-- ============================ 05 ============================ -->
   <h2 id="land"><span class="num">05</span>改动落在哪</h2>
@@ -741,7 +741,7 @@
   <p class="note"><b>这张表不含把位置游标换成ID集合本身。</b>
   那是这四条之外的一次改动，落在<code>runtime/state.py</code>、<code>runtime/online.py</code>和
   <code>writing.py</code>的<code>_records</code>，迁移从原话档案播种，
-  完整写法在<a href="overview.html">overview.md</a>的「写入游标」和文末实现状态附录。
+  完整写法在 <a href="written-marker.html">written-marker.md</a>。
   上面第二块的"会话边界写全部分支"要等它先落地：位置游标下枚举再多分支也没用，
   分叉出来的那条本来就整条读成已写。</p>
 

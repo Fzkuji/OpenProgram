@@ -92,7 +92,7 @@
       <div class="k">第三层 · 我们计划</div>
       <h3>紫色行</h3>
       <p>定稿但还没落地的两处：<b>游标</b>（第 04、05、09 节）和<b>常驻块</b>（第 07 节）。
-        权威描述见<a href="overview.html">overview.md</a>的"写入游标"和"常驻块"两节。</p>
+        权威描述见 <a href="written-marker.html">written-marker.md</a> 和 <a href="overview.html">overview.md</a> 的「常驻块」一节。</p>
     </div>
   </div>
 
@@ -552,7 +552,7 @@
     <tr><td><b>pi-mono</b></td><td>单条 entry id <code>firstKeptEntryId</code>，向后走</td><td>写在压缩记录里，和转录同一个文件</td><td class="q"><span class="src">packages/coding-agent/src/core/session-manager.ts:67-77,315-422</span></td></tr>
     <tr><td><b>weclaw</b></td><td class="n">无；只有一个按条数硬切的上限</td><td>—</td><td class="q"><span class="src">agent/http_agent.go:151-154</span></td></tr>
     <tr class="us"><td><b>OpenProgram 现在</b></td><td class="n">整数序号，位置</td><td><code>runtime.json</code></td><td class="q"><span class="src">openprogram/memory/scriptorium/runtime/state.py:39-43<br>runtime/online.py:60-64</span></td></tr>
-    <tr class="plan"><td><b>OpenProgram 计划</b></td><td>已写消息 id 的集合</td><td>每线程一个 json 文件</td><td class="q"><span class="src">overview.md「写入游标」</span></td></tr>
+    <tr class="plan"><td><b>OpenProgram 计划</b></td><td>节点上的「已写」标记</td><td>会话节点的 <code>metadata</code></td><td class="q"><span class="src">written-marker.md 第三层</span></td></tr>
   </table>
   </div>
 
@@ -740,7 +740,7 @@
     <tr><td><b>pi-mono</b></td><td>不需要：只取叶子到最近公共祖先的增量</td><td class="y">不会，被走法排除</td><td class="q"><span class="src">packages/agent/src/harness/compaction/branch-summarization.ts:87-97<br>packages/agent/src/harness/agent-harness.ts:737-834</span></td></tr>
     <tr><td><b>pi-ai</b> · <b>weclaw</b></td><td class="q">没有会话分叉</td><td class="q">不适用</td><td class="q"><span class="src">weclaw agent/http_agent.go:76-78（/new就是清空）</span></td></tr>
     <tr class="us"><td><b>OpenProgram现在</b></td><td class="n">不换：同一个会话id，同一个游标，同一条下标轴</td><td class="n">不重抽，但整条分支被读成已写</td><td class="q"><span class="src">openprogram/memory/scriptorium/runtime/online.py:55-65<br>.../writing.py:111-142,231-234</span></td></tr>
-    <tr class="plan"><td><b>OpenProgram计划</b></td><td>不换作用域，改成按id记：不在集合里的就是欠的</td><td class="y">不会。共享前缀的id早在集合里，天然跳过</td><td class="q"><span class="src">overview.md「写入游标」</span></td></tr>
+    <tr class="plan"><td><b>OpenProgram计划</b></td><td>不换作用域，改成从分支尖端往回走：没标记的就是欠的</td><td class="y">不会。共享前缀早已带标记，走行停在那里</td><td class="q"><span class="src">written-marker.md 第三层</span></td></tr>
   </table>
   </div>
 
@@ -1232,8 +1232,8 @@
   </div>
 
   <div class="note p">
-    <b>方案本身在别处。</b>集合怎么落盘、分叉时怎么判、id 为什么永不删除、从位置游标怎么迁移，
-    权威描述在 <a href="overview.html">overview.md</a> 的「写入游标」一节，机制图在
+    <b>方案本身在别处。</b>标记写在哪、什么时候打上、分叉时怎么走、标记丢了怎么办、从位置游标怎么迁移，
+    权威描述在 <a href="written-marker.html">written-marker.md</a>，机制图在
     <a href="memory-architecture.html">memory-architecture.html</a> 第 04 节。这一页只回答一个问题：
     这个形状和外面各家是什么关系。
   </div>
