@@ -390,16 +390,18 @@ def provider(monkeypatch):
     )
 
 
-def test_a_raising_write_is_retryable(memory_root, provider, monkeypatch):
+def test_an_unclassified_value_error_is_not_retryable(
+    memory_root, provider, monkeypatch,
+):
     from openprogram.memory.scriptorium import writing
 
     def _boom(*_a, **_kw):
-        raise RuntimeError("model unreachable")
+        raise ValueError("API key required")
 
     monkeypatch.setattr(writing, "write", _boom)
     left = _watch()
-    assert left is not None and left.retryable
-    assert "model unreachable" in left.reason
+    assert left is not None and left.retryable is False
+    assert left.reason == "API key required"
 
 
 def test_provider_permanent_verdict_stops_the_idle_retry_loop(

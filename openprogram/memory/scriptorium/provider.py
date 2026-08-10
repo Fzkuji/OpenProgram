@@ -123,14 +123,13 @@ class ScriptoriumMemoryProvider(MemoryProvider):
                 retryable=exc.code in RETRYABLE_CODES,
             )
         except Exception as exc:  # noqa: BLE001
-            # Memory must never take a conversation down with it. A
-            # missing CLI or an unreachable model is transient: the
-            # conversation is safe in the session store, so the next
-            # pass costs nothing and loses nothing.
+            # Memory must never take a conversation down with it. Retry only
+            # exceptions that explicitly classify themselves as transient;
+            # an unknown exception may be a permanent config/auth failure.
             logger.debug("memory write deferred: %s", exc)
             verdict = getattr(exc, "retryable", None)
             return WriteIncomplete(
-                str(exc), retryable=True if verdict is None else bool(verdict),
+                str(exc), retryable=False if verdict is None else bool(verdict),
             )
 
     def reorganize(self, **kwargs: Any) -> dict[str, Any]:

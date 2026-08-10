@@ -675,7 +675,11 @@ override. Provider authentication and configuration failures retain
 `retryable=false`, so the idle watcher does not repeat them. With
 `memory.backend=none`, the disabled provider emits no memory system prompt or
 recall and performs no automatic writes or organization; memory schedulers,
-idle watchers and unpaired-group archiving do not start or write. The real
+idle watchers and unpaired-group archiving do not start or write.
+CLI memory verbs and `/api/memory/*` routes do not yet enforce that disabled
+state; their shared guard is deferred to the next memory batch. The real
 default provider completed a Topic write and transaction validation in an
 isolated workspace. Existing production sources without authority metadata
-remain pending; no identity inference or trust migration is performed.
+retain the legacy trusted default; this batch does not reclassify them. A real
+distillation against the degraded live workspace remains pending until after
+merge because it mutates user data, not because it changes source trust.

@@ -77,16 +77,27 @@ that prompt-injection surface entirely.
    `pending` + `memory_promote` apply only to unpaired group members'
    archived speech (they cannot converse, but group archives still carry
    their lines).
-3. **Scope-batch naming**: the ~430-line uncommitted scope work must be
-   re-keyed from shared-channel/three-tier vocabulary to paired/unpaired
-   before commit.
-4. **Execution order for the memory stabilization batch**: mask keys in
-   diagnostics output (bug, fix immediately) → non-retryable auth/config
-   errors (stop the 5-min failure loop) → default-agent writer → one real
-   distillation on the live workspace as acceptance (22 sources / 0 topics
-   / core at 188% budget) → scope batch (after renaming) → end-to-end test
-   → complete `memory.backend=none` teardown (no prompt injection, no
-   recall, no writes, no organizer, no worker thread).
+3. **Scope-batch naming**: runtime values use paired/unpaired terminology.
+   The remaining `shared_channel_authority` helper name is symbol-level debt;
+   its value and checks already use the `paired` tier.
+4. **The historical diagnostics-key report is closed without a product code
+   change.** At 2026-08-10 20:53 CST, a Codex `exec` call directly ran
+   `sed -n 1,220p /Users/fzkuji/.openprogram/config.json`; the tool result
+   therefore recorded the complete file. No OpenProgram diagnostic command
+   was involved. `openprogram doctor` reports provider identifiers rather than
+   credentials, provider credential views use masked previews, and `config
+   list/get` only expose registered settings. The two separate plaintext Web
+   reveal routes remain a remote-Web security item; they were not the source
+   of this incident and are not closed by this memory batch. An owner shell
+   reading its own owner-only config file is outside OpenProgram's
+   output-masking boundary.
+5. **Live-workspace acceptance remains pending until after merge.** Run one
+   real distillation against the degraded workspace snapshot (22 sources / 0
+   topics / core at 188% budget) and verify a committed Topic transaction.
+   This is deferred because the check mutates user data and must not use
+   unmerged code. It is not a trust-migration concern: legacy source frames
+   without authority metadata already retain the trusted default in both the
+   reader and writer.
 
 ## Deferred (second batch, after the above lands)
 
@@ -112,6 +123,18 @@ that prompt-injection surface entirely.
 - **Memory batch:** isolate staging directories used by
   `test_memory_routes.py::test_stage_directories_are_cleaned_up_on_both_paths`;
   the current shared location can fail intermittently under `pytest -n auto`.
+- **Memory observability — deferred:** persist the last successful write time,
+  latest failure reason, and pending count, then expose the same fields in
+  status and the Web UI.
+- **Disabled backend — deferred:** make `memory.backend=none` reject the CLI
+  memory verbs and all `/api/memory/*` routes before `store.ensure()` can
+  create or mutate a workspace.
+- **Combined coverage — deferred:** add a full automatic-writing integration
+  test and an unavailable-model failure test; the current unavailable-model
+  coverage exercises only the successful path.
+- **Naming cleanup — deferred:** rename `shared_channel_authority` to paired
+  terminology the next time its authority call sites change. Its returned tier
+  is already `paired`.
 
 ## Sequencing
 
