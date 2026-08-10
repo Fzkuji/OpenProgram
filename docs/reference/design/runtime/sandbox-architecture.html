@@ -1299,7 +1299,7 @@
   </table>
   </div>
 
-  <div class="note"><b>最终验证记录 · 2026-08-10</b>：完整<code>tests/unit</code>为2263 passed、4 skipped、0 failed。
+  <div class="note"><b>最终验证记录 · 2026-08-10</b>：本机完整受跟踪测试集（排除integration）为2731 passed、4 skipped、1 xfailed；<a href="https://github.com/Fzkuji/OpenProgram/actions/runs/31398444213">GitHub Actions run 31398444213</a>的Python 3.11、3.12、3.13、Web、文档和示例job全部通过，其中Linux Python 3.11为2723 passed、12 skipped、1 xfailed。Linux runner先启用Ubuntu 24.04的非特权user namespace能力，再执行真实cron bubblewrap用例；安装但无法工作的二进制不会被计入覆盖。
     macOS在真实<code>LocalBackend + sandbox-exec</code>下通过git clone/status/diff/add/commit、Python venv、npm ci offline/test/build、make/clang、conda info和uname；<code>.env</code>、工作区外写入、网络与剪贴板访问均被拒绝。
     Linux在一次性Docker Linux内核环境中执行真实bubblewrap，通过git、Python venv、npm、make、使用只读base cache的工作区conda clone/run，以及凭证拒读、工作区外拒写和网络拒绝；容器随后删除。Docker只用于Linux分支验证，不是OpenProgram沙箱实现。</div>
 

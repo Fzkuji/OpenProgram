@@ -324,7 +324,7 @@ As of 2026-08-10, repair steps 1–5 and the expanded architecture steps 04–08
 - Sandbox denials are structured. Only a local interactive owner can approve one exact retry under an escalated policy that retains the hard floor and credential filtering. Persistent approval stores the normalized exact operation; complex shell expressions are once-only.
 - Nested Claude Code built-ins are disabled and replaced by managed MCP file and shell tools.
 
-The complete unit suite reports 2263 passed, 4 skipped and 0 failed. The real macOS Seatbelt and Linux bubblewrap matrices cover git, Python, npm, make, conda, credential denial, outside-workspace denial and network denial.
+Final verification on 2026-08-10: the complete tracked local suite excluding integration reports 2731 passed, 4 skipped and 1 expected failure; GitHub Actions run 31398444213 passes Python 3.11, 3.12 and 3.13, Web, docs and examples, with the Linux 3.11 job reporting 2723 passed, 12 skipped and 1 expected failure. That runner enables Ubuntu 24.04's unprivileged-user-namespace facility before the real cron bubblewrap test, so an installed-but-inoperable binary is not counted as Linux coverage. The real macOS Seatbelt and Linux bubblewrap matrices cover git, Python, npm, make, conda, credential denial, outside-workspace denial and network denial.
 
 Known limits:
 

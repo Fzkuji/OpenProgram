@@ -235,7 +235,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "capabilities/installing-harnesses.md", "capabilities/skills.md",
             "capabilities/distill.md",
             "capabilities/plugins.md", "capabilities/mcp.md",
-            "capabilities/tools.md"]),
+            "capabilities/tools.md", "capabilities/lsp.md"]),
     ],
     "interfaces": [
         ("Overview", "概览", ["interfaces/README.md"]),
@@ -294,7 +294,8 @@ PAGE_ORDER: dict[str, int] = {
     "capabilities/plugins.md": 6,
     "capabilities/mcp.md": 7,
     "capabilities/tools.md": 8,
-    "capabilities/goal.md": 9,
+    "capabilities/lsp.md": 9,
+    "capabilities/goal.md": 10,
     "capabilities/agentic-programming/philosophy.md": 1,
     "capabilities/agentic-programming/embedding-in-your-own-stack.md": 2,
     "capabilities/agentic-programming/writing-functions": 3,

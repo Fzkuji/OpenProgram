@@ -14,6 +14,7 @@ OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调�
 | `glob` | 按文件名模式找文件 | 无 |
 | `grep` | 内容搜索，优先 ripgrep，缺 rg 回退 Python re | 无（装 `rg` 更快） |
 | `semble_search` / `semble_find_related` | 语义 + 词法代码搜索，返回排好序的代码块 | `pip install 'openprogram[search]'`（可选 extra；缺包时工具直接回这行安装提示） |
+| `lsp_diagnostics` / `lsp_references` / `lsp_definition` | 从 language server 拿类型检查错误、真实调用点、真实定义位置，见[Language server 工具](lsp.md) | Python 装 `pyright`，TypeScript 装 `typescript-language-server`（缺哪个工具就报哪条安装命令） |
 
 ## 执行
 
