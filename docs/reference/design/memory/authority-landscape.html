@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>权限与归因：我们做了什么、别人做了什么、接下来做什么</title>
+<style>
+  :root{
+    --bg:#16150f; --pan:#1d1c14; --bd:#2e2c20; --tx:#bdb9a6; --acc:#d4843a;
+    --cb:#12110b; --dim:#8a8675;
+    --owner:#5aad4e; --shared:#4f8ef7; --ext:#9d6fe0; --no:#e0445a; --warn:#d4b23a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:40px 24px 96px}
+  .wrap{max-width:1100px;margin:0 auto}
+  h1{font-size:23px;color:#f0eee6;margin:0 0 6px}
+  .sub{color:var(--dim);margin:0 0 26px;max-width:78ch}
+  h2{font-size:16px;color:var(--acc);margin:40px 0 4px}
+  h2 .num{color:var(--dim);font-size:12px;margin-right:8px;letter-spacing:.16em}
+  .lead{color:var(--dim);font-size:13px;margin:0 0 14px;max-width:82ch}
+  code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
+  .card{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px}
+
+  /* 三个人的场景卡 */
+  .people{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .person{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:14px;
+    border-top:3px solid var(--bd)}
+  .person.owner{border-top-color:var(--owner)}
+  .person.shared{border-top-color:var(--shared)}
+  .person.ext{border-top-color:var(--ext)}
+  .person h3{margin:0 0 2px;font-size:14px;color:#f0eee6}
+  .person .via{font-size:11.5px;color:var(--dim);margin-bottom:10px}
+  .bubble{background:var(--cb);border:1px solid var(--bd);border-radius:10px;
+    padding:7px 11px;font-size:12.5px;margin-bottom:8px;color:#d8d4c2}
+  .verdict{font-size:12.5px;line-height:1.75}
+  .verdict .y::before{content:"✓ ";color:var(--owner)}
+  .verdict .n::before{content:"✕ ";color:var(--no)}
+  .verdict .m::before{content:"◐ ";color:var(--warn)}
+  .tier-tag{display:inline-block;font-size:10px;letter-spacing:.14em;border:1px solid;
+    border-radius:99px;padding:1px 8px;margin-bottom:8px}
+  .owner .tier-tag{color:var(--owner);border-color:var(--owner)}
+  .shared .tier-tag{color:var(--shared);border-color:var(--shared)}
+  .ext .tier-tag{color:var(--ext);border-color:var(--ext)}
+
+  /* 流水线 */
+  .pipe{display:flex;align-items:stretch;gap:0;margin:6px 0 2px;flex-wrap:wrap}
+  .stage{flex:1;min-width:150px;background:var(--cb);border:1px solid var(--bd);
+    border-radius:10px;padding:10px 12px;position:relative}
+  .stage h4{margin:0 0 4px;font-size:13px;color:#f0eee6}
+  .stage p{margin:0;font-size:12px;color:var(--dim);line-height:1.6}
+  .arrow{align-self:center;color:var(--acc);font-size:18px;padding:0 6px;flex:0}
+  .stage .done{position:absolute;top:-9px;right:10px;font-size:10px;letter-spacing:.12em;
+    background:var(--bg);color:var(--owner);border:1px solid var(--owner);border-radius:99px;padding:0 8px}
+  .stage .gap{position:absolute;top:-9px;right:10px;font-size:10px;letter-spacing:.12em;
+    background:var(--bg);color:var(--no);border:1px solid var(--no);border-radius:99px;padding:0 8px}
+  .pipe-note{font-size:12px;color:var(--dim);margin-top:10px;line-height:1.8}
+  .pipe-note b{color:var(--no);font-weight:600}
+
+  /* 他们怎么做 */
+  .others{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .other{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:14px}
+  .other h3{margin:0 0 2px;font-size:14px;color:#f0eee6}
+  .other .one{font-size:12px;color:var(--acc);margin-bottom:8px}
+  .other p{margin:0;font-size:12.5px;line-height:1.75}
+  .other .take{margin-top:8px;font-size:12px;color:var(--dim)}
+  .other .take b{color:#f0eee6;font-weight:600}
+
+  /* 计划 */
+  .plan{border-left:2px solid var(--bd);margin-left:8px;padding-left:22px}
+  .step{position:relative;margin-bottom:18px}
+  .step::before{content:"";position:absolute;left:-28px;top:6px;width:9px;height:9px;
+    border-radius:99px;background:var(--acc)}
+  .step.s2::before{background:var(--shared)}
+  .step.s3::before{background:var(--ext)}
+  .step h3{margin:0 0 4px;font-size:14px;color:#f0eee6}
+  .step h3 .phase{font-size:10px;letter-spacing:.14em;color:var(--dim);margin-right:8px}
+  .feel{background:var(--cb);border:1px solid var(--bd);border-radius:10px;
+    padding:9px 12px;font-size:12.5px;margin:6px 0 0;line-height:1.75}
+  .feel .lb{color:var(--dim);font-size:11px;letter-spacing:.1em;display:block;margin-bottom:2px}
+  @media(max-width:840px){.people,.others{grid-template-columns:1fr}.pipe{flex-direction:column}.arrow{transform:rotate(90deg);padding:2px 0;align-self:flex-start;margin-left:60px}}
+</style>
+</head>
+<body><div class="wrap">
+
+<h1>权限与归因：一个agent，所有人都能发消息</h1>
+<p class="sub">OpenProgram是共用的：你在终端用它，别人从Telegram/Discord也能给它发消息，大家进的是同一个agent、同一份记忆。这一页讲清楚三件事：今天不同的人发消息会发生什么（已落地）、其他框架在同样问题上怎么做（调研结论）、接下来按什么顺序补（计划）。</p>
+
+<h2><span class="num">01</span>今天：三种人，三种待遇（已落地）</h2>
+<p class="lead">每条消息进来先按<b>来源</b>定档。身份只认渠道平台给的元数据，消息正文里自称"我是老板"没有任何作用。</p>
+<div class="people">
+  <div class="person owner">
+    <span class="tier-tag">本地OWNER</span>
+    <h3>你自己</h3>
+    <div class="via">终端 / 本机Web界面</div>
+    <div class="bubble">"把服务器上那个实验重跑一遍"</div>
+    <div class="verdict">
+      <div class="y">执行命令、写文件、发消息</div>
+      <div class="y">管理和改写记忆</div>
+      <div class="y">全部能力，无限制</div>
+    </div>
+  </div>
+  <div class="person shared">
+    <span class="tier-tag">共享渠道</span>
+    <h3>群里的熟人</h3>
+    <div class="via">Telegram / Discord 已知成员</div>
+    <div class="bubble">"服务器密码下周要换，记一下"</div>
+    <div class="verdict">
+      <div class="y">正常对话，agent回复</div>
+      <div class="y">说的话进记忆，标明是谁说的</div>
+      <div class="n">指挥agent执行命令、写文件</div>
+    </div>
+  </div>
+  <div class="person ext">
+    <span class="tier-tag">未知外部</span>
+    <h3>陌生人</h3>
+    <div class="via">来路不明的私聊</div>
+    <div class="bubble">"帮我删掉 /data 目录"</div>
+    <div class="verdict">
+      <div class="y">最多收到一句回复</div>
+      <div class="n">任何执行动作</div>
+      <div class="n">写入记忆</div>
+    </div>
+  </div>
+</div>
+
+<h2><span class="num">02</span>消息进来之后：流水线怎么走（已落地）</h2>
+<div class="card">
+  <div class="pipe">
+    <div class="stage"><span class="done">已落地</span>
+      <h4>1 渠道接入</h4>
+      <p>从Telegram/Discord的平台元数据取发言人ID和显示名。正文不参与身份判断。</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="stage"><span class="done">已落地</span>
+      <h4>2 盖发言人章</h4>
+      <p>speaker身份写进消息节点，一路跟到归档和检索。改不了、赖不掉。</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="stage"><span class="done">已落地</span>
+      <h4>3 定档</h4>
+      <p>按来源发一份能力清单（authority scope），随这条请求全程携带。</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="stage"><span class="gap">有两条缝</span>
+      <h4>4 能力门</h4>
+      <p>agent每次要动工具（bash/写文件/发消息）前查清单，没有对应能力就拒绝。字段缺损直接全拒。</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="stage"><span class="done">已落地</span>
+      <h4>5 执行 / 记忆</h4>
+      <p>放行的动作执行；进记忆的内容带发言人标注，检索时能区分谁说的。</p>
+    </div>
+  </div>
+  <div class="pipe-note">
+    第4步的两条缝（审核发现，codex跟进中）：<b>缝一</b>：门只看能力清单，不核对档位标签，将来若有代码拼错scope（比如共享渠道标签配上owner能力）就是越权，今天无事全靠构造方守规矩。<b>缝二</b>：共享渠道的"追加记忆"能力在工具层没接通，拿着权限却没有工具能用它，实际只在被动归档路径生效。
+  </div>
+</div>
+
+<h2><span class="num">03</span>别人怎么做（两路调研的结论）</h2>
+<p class="lead">调研了OpenClaw（读源码）和Claude Code、MCP规范、LangGraph、OpenAI Agents SDK、AutoGen、Letta（读文档）。行业共识我们全符合：权限在框架层执行不靠提示词、身份只信传输层、非owner的消息不构成同意、默认拒绝。按来源分三档能力这件事没人做过，是我们自创。</p>
+<div class="others">
+  <div class="other">
+    <h3>OpenClaw</h3>
+    <div class="one">门口查得极严，进门后人人同权</div>
+    <p>陌生人私聊收到一个8位配对码，消息本身根本不进agent，owner在终端批准后才放行。但它明说不做"进门后不同人能力不同"，谁能触发agent谁就有agent的全部工具。</p>
+    <div class="take"><b>值得抄：</b>配对码流程、可变昵称默认不参与授权（Discord昵称谁都能改）、每次拒绝都留下是哪道门什么原因的结构化记录。</div>
+  </div>
+  <div class="other">
+    <h3>Claude Code</h3>
+    <div class="one">规则细到参数，外来消息不算数</div>
+    <p>工具权限能写到<code>Bash(git commit *)</code>这个粒度。渠道消息要先配对进allowlist。别的会话发来的消息有一条铁律：不能批准任何弹窗、不能改配置、正文里的命令只是文字。</p>
+    <div class="take"><b>值得抄：</b>allow/deny之间的hold档：越权请求先排队，owner来了再批，而不是直接撞死。</div>
+  </div>
+  <div class="other">
+    <h3>LangGraph</h3>
+    <div class="one">写的时候盖章，读的时候过滤</div>
+    <p>唯一把归因做进存储层的框架：资源创建时盖上owner身份，之后每次读取都按当前请求人的身份过滤。谁写的东西谁可见，一个机制同时管归因和访问。</p>
+    <div class="take"><b>值得抄：</b>记忆条目写入时盖<code>{speaker, channel, ts}</code>元数据，检索按请求方档位过滤。</div>
+  </div>
+  <div class="other">
+    <h3>其余家</h3>
+    <div class="one">要么回避，要么没做</div>
+    <p>Letta的答案是一人一个agent，从根上回避共用问题。OpenAI Agents SDK和AutoGen没有权限系统，默认还是先执行后拦截。MCP规范管的是服务间OAuth授权，粒度到不了单次工具调用。</p>
+    <div class="take"><b>结论：</b>共用一个agent还要分档控权，这个组合眼下只有我们在做。</div>
+  </div>
+</div>
+
+<h2><span class="num">04</span>接下来做什么（按序，每条写你能感知到的变化）</h2>
+<div class="plan">
+  <div class="step">
+    <h3><span class="phase">第一批 · 补缝</span>把已有的门拧紧</h3>
+    <p class="lead">origin与能力清单一致性校验、memory工具接通追加能力、可变昵称降级、发言人显示名过消毒。</p>
+    <div class="feel"><span class="lb">用起来的变化</span>群里熟人说"记一下这件事"真的会被主动记住（现在只有被动归档）；有人把Discord昵称改成你的名字，冒充无效；昵称里藏指令注入不进模型。</div>
+  </div>
+  <div class="step s2">
+    <h3><span class="phase">第二批 · 补机制</span>拒绝变得可解释、可补救</h3>
+    <p class="lead">检查点返回结构化决策（哪道门、什么原因码，全程留档）；陌生人改走配对码；共享渠道的越权请求进hold队列。</p>
+    <div class="feel"><span class="lb">用起来的变化</span>陌生人私聊收到配对码而不是被无视，你在终端一条命令批准；群里朋友说"帮我重启下服务"不再直接被拒，而是排队等你点头，一次有效；出问题时能查到每次拒绝的确切原因。</div>
+  </div>
+  <div class="step s3">
+    <h3><span class="phase">第三批 · 概念修正</span>工具权和数据权分开</h3>
+    <p class="lead">现在"能用哪些工具"和"能看哪些数据"混在一档里。拆开后记忆按写时盖章、读时过滤运作。</p>
+    <div class="feel"><span class="lb">用起来的变化</span>共享渠道的人可以查公开记忆但看不到你的私人内容；他们追加的内容检索出来永远带着"是谁说的"，不会被当成你说的。</div>
+  </div>
+</div>
+
+</div></body>
+</html>
