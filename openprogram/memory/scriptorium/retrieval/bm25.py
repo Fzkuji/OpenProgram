@@ -399,8 +399,6 @@ def _structured_speaker(
 def _legacy_speaker(label: str, body: str) -> tuple[str, str, str]:
     """Read the historical body prefix only for a ``user`` record."""
     safe_label = normalize_identity_header_part(label.strip())
-    if safe_label.casefold() not in {"user", "assistant", "system", "tool"}:
-        return "", safe_label, safe_label
     if safe_label.casefold() != "user":
         return "", "", ""
     legacy = _LEGACY_SPEAKER_RE.match(body)
@@ -456,7 +454,7 @@ def parse_source_file(path: Path, sources_root: Path) -> list[MemoryEvent]:
                     and record_count > 0
                     and record_end <= len(lines)
                 ):
-                    if encoded_id is not None:
+                    if framed and encoded_id is not None:
                         speaker_id, speaker_display, speaker_label = (
                             _structured_speaker(record.group(2), encoded_id)
                         )

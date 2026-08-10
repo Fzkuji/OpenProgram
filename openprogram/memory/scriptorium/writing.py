@@ -54,14 +54,14 @@ def _counter() -> Any:
 def _text_of(message: dict[str, Any]) -> str:
     content = message.get("content")
     if isinstance(content, str):
-        return content.strip()
+        return content
     if isinstance(content, list):
         parts = [
             block.get("text", "")
             for block in content
             if isinstance(block, dict) and block.get("type") == "text"
         ]
-        return "\n".join(part for part in parts if part).strip()
+        return "\n".join(part for part in parts if part)
     return ""
 
 
@@ -126,7 +126,7 @@ def _records(
         if _is_runtime_turn(message):
             continue
         text = _text_of(message)
-        if not text:
+        if not text.strip():
             continue
         message_id = str(message.get("id") or "").strip()
         if not message_id:

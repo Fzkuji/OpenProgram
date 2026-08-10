@@ -263,9 +263,8 @@ class SourceArchiveMixin:
                 index = record_end
                 continue
             if cursor < len(lines) and _SOURCE_RECORD_RE.match(lines[cursor]):
-                # Historical archives have no body boundary. Compatibility is
-                # intentionally limited to their first physical record line.
-                known.add(source_id)
+                # Historical records remain readable but cannot establish
+                # trusted deduplication identity without a body boundary.
                 index = cursor + 1
                 continue
             index += 1

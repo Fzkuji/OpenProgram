@@ -137,6 +137,54 @@ def test_writer_uses_trusted_speaker_header_and_preserves_body(
     ) in written[0]
 
 
+def test_source_text_stays_literal_through_writer_and_archive(tmp_path):
+    from openprogram.memory.scriptorium import writing
+    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.scriptorium.management.api import render_writer_task
+
+    string_content = "Markdown hard break  \r\nstring tail\r\n"
+    list_content = "List hard break  \r\n\nlist tail\r\n"
+    records = writing._records("literal", [
+        _turn(0, "user", string_content),
+        {
+            **_turn(1, "assistant", ""),
+            "content": [
+                {"type": "text", "text": "List hard break  \r\n"},
+                {"type": "image", "source": "ignored"},
+                {"type": "text", "text": "list tail\r\n"},
+            ],
+        },
+        _turn(2, "assistant", " \r\n\t"),
+    ])
+
+    assert [record.content for record in records] == [
+        string_content,
+        list_content,
+    ]
+    task = render_writer_task([{
+        "observation_date": records[-1].timestamp[:10],
+        "turns": [
+            (record.speaker_label, record.content) for record in records
+        ],
+        "refs": [record.source_id for record in records],
+    }])
+    assert task.endswith(
+        f"[{records[0].source_id}] user: {string_content}\n"
+        f"[{records[1].source_id}] assistant: {list_content}"
+    )
+
+    space = MemoryWorkspace(tmp_path / "memory")
+    try:
+        space.archive_source_records(records)
+    finally:
+        space.close()
+    path = tmp_path / "memory/sources/openprogram/literal.md"
+    with path.open(encoding="utf-8", newline="") as handle:
+        archived = handle.read()
+    assert f"[{records[0].timestamp}] user: {string_content}" in archived
+    assert f"[{records[1].timestamp}] assistant: {list_content}" in archived
+
+
 def test_a_written_date_is_left_alone():
     """``archive_sessions`` builds records from an observation date. It
     is already what the memory layer stores, so it passes through."""
