@@ -89,7 +89,7 @@ openprogram config set ui.web_port 8101
 | `OPENPROGRAM_MAX_RETRIES` | Runtime 的 API 瞬态故障重试次数（默认 6） | `openprogram/agentic_programming/runtime.py` |
 | `OPENPROGRAM_RETRY_BACKOFF_BASE` | 指数重试退避的基数秒数（默认 1.5） | `openprogram/agentic_programming/runtime.py` |
 | `OPENPROGRAM_EXEC_TIMEOUT_S` | 调用方没传 `timeout_s` 时每次 `runtime.exec` 的默认墙钟预算（秒；没设或为 `0` = 不限时） | `openprogram/agentic_programming/runtime.py` |
-| `OPENPROGRAM_FALLBACK_MODELS` | 逗号分隔的 `provider/model` 列表，主模型失败时按序切换 | `openprogram/providers/utils/failover.py` |
+| `OPENPROGRAM_FALLBACK_MODELS` | 主模型在产生输出前失败时使用的候选链。不设置＝同一 provider 下启用的其他模型（最多 2 个）；设成逗号分隔的 `provider/model` 列表可覆盖它并允许跨 provider；设成 `off` 关闭故障转移 | `openprogram/providers/utils/failover.py` |
 | `OPENPROGRAM_PROVIDER_STREAM_RETRIES` | 流式请求的最大重试次数 | `openprogram/providers/utils/stream_retry.py` |
 | `OPENPROGRAM_STRICT_TOOLS` | `0` = 关闭严格工具 schema（默认开） | `openprogram/providers/_schema/__init__.py` |
 | `OPENPROGRAM_FORCE_IPV4` | `1` = 强制 IPv4 源地址（IPv6 网络异常时用） | `openprogram/providers/utils/http_client.py` |

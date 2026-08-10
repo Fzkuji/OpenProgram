@@ -34,7 +34,7 @@ Sources studied (all under `references/`, read-only):
 | TCP keepalive tuning | undici default | no | **SO_KEEPALIVE 30/10/3** | — | **SO_KEEPALIVE 30/10/3** |
 | Connection reuse | undici keep-alive | WS pool, 55-min recycle | **shared client + rebuild on stale** | — | shared loop-keyed client |
 | API-key rotation | **yes** | no | **yes (pool + cooldowns)** | — | yes (pool + cooldowns) |
-| Provider/model failover | **yes** | WS→HTTP only | **yes (chain)** | — | yes (chain, opt-in) |
+| Provider/model failover | **yes** | WS→HTTP only | **yes (chain)** | — | **yes (chain, on by default)** |
 | After-first-token break | error | error | **partial + continue** | error | partial + continue |
 | OAuth refresh mid-call | — | — | **per-request token provider** | per-call | per-call resolve |
 | Rate-limit header parse | — | **yes (x-ratelimit-*)** | yes (Nous) | — | yes (x-ratelimit-* / anthropic-ratelimit-*) |
@@ -149,8 +149,13 @@ provider; codex is wired to all of them.
   `stream_with_failover` wrapper that tries the primary and then each
   configured fallback on a **pre-content** failover-worthy failure. It forwards
   events, suppresses the duplicate `start`, and never switches after a token has
-  streamed. Default-off: a no-op unless `OPENPROGRAM_FALLBACK_MODELS`
-  (`"provider/model,provider2/model2"`) is set.
+  streamed. **On by default, conservatively:** with nothing configured the chain
+  is the user's other enabled models of the *same provider* (at most 2, in
+  config-row order), so a failover reuses the credential the call was already
+  going to use and never contacts a provider the user has not configured. Set
+  `OPENPROGRAM_FALLBACK_MODELS="provider/model,provider2/model2"` to override
+  with an explicit list, which may cross providers; set it to `off` (or `none`)
+  to disable failover entirely.
 - gemini_cli shares the same client, so it carries the same timeout semantics
   rather than its own single-float timeout.
 
@@ -183,4 +188,4 @@ provider; codex is wired to all of them.
 | `OPENPROGRAM_TCP_KEEPIDLE_S` / `_KEEPINTVL_S` / `_KEEPCNT` | 30 / 10 / 3 | keepalive probe timing (~60 s detection) |
 | `OPENPROGRAM_FORCE_IPV4` | 0 | bind IPv4 source (broken-IPv6 VPNs) |
 | `OPENPROGRAM_PARTIAL_RECOVERY` | 1 | salvage partial output on mid-stream break |
-| `OPENPROGRAM_FALLBACK_MODELS` | (empty) | `provider/model,…` — enable provider/model failover |
+| `OPENPROGRAM_FALLBACK_MODELS` | (empty) = same-provider chain | `provider/model,…` — explicit failover chain, may cross providers; `off`/`none` disables |

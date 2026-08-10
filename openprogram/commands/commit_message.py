@@ -1,7 +1,13 @@
-"""Read-only commit-message generation from the current Git diff."""
+"""Read-only commit-message generation from the current Git diff.
+
+Also hosts the pure string helpers the `commit-push-pr` skill uses to build
+exact commit trailers, PR bodies, and the `gh pr create` argv. They are pure
+so they can be unit-tested and called from a one-line `python3 -c`.
+"""
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -9,6 +15,99 @@ from typing import Any
 
 _MAX_STATUS_CHARS = 20_000
 _MAX_CHANGE_CONTEXT_CHARS = 80_000
+
+#: Identity written when the acting model is unknown or unmapped.
+CO_AUTHOR_NAME = "OpenProgram"
+CO_AUTHOR_EMAIL = "noreply@openprogram.dev"
+#: Fixed last line of a generated pull-request body.
+PR_FOOTER = "Generated with OpenProgram"
+
+# A trailer line: "Token: value" / "Token-Name: value". Git's own rule, minus
+# the "---" separator handling we do not need here.
+_TRAILER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]*:\s|^[A-Za-z-]+ #")
+
+
+def co_author_trailer(model: str | None = None, *, enabled: bool | None = None) -> str | None:
+    """`Co-Authored-By: <name> <email>` for the acting model, or None when off.
+
+    ``enabled`` defaults to the ``git.co_author`` config toggle. ``model`` is
+    the display name of the model doing the work; unknown/empty falls back to
+    the generic OpenProgram identity.
+    """
+    if enabled is None:
+        enabled = _co_author_enabled()
+    if not enabled:
+        return None
+    name = (model or "").strip() or CO_AUTHOR_NAME
+    return f"Co-Authored-By: {name} <{CO_AUTHOR_EMAIL}>"
+
+
+def _co_author_enabled() -> bool:
+    try:
+        from openprogram import setup as _setup
+
+        return bool((_setup._read_config().get("git", {}) or {}).get("co_author", True))
+    except Exception:
+        return True
+
+
+def apply_trailers(message: str, *, co_author: str | None) -> str:
+    """Append ``co_author`` to ``message`` as a git trailer. Idempotent.
+
+    A blank line is inserted before the trailer when the message does not
+    already end in a trailer block; when it does (e.g. ``Signed-off-by:``)
+    the new trailer joins that block directly.
+    """
+    body = message.rstrip()
+    if not co_author:
+        return body
+    lines = body.splitlines()
+    if any(line.strip() == co_author for line in lines):
+        return body
+    if not lines:
+        return co_author
+    separator = "\n" if _TRAILER_RE.match(lines[-1]) else "\n\n"
+    return body + separator + co_author
+
+
+def pr_body(
+    summary: str,
+    *,
+    changes: list[str] | None = None,
+    testing: list[str] | None = None,
+) -> str:
+    """Assemble a pull-request body ending in exactly one PR_FOOTER line."""
+    parts = [f"## Summary\n\n{summary.strip()}"]
+    if changes:
+        parts.append("## What changed\n\n" + "\n".join(f"- {c}" for c in changes))
+    if testing:
+        parts.append("## Testing\n\n" + "\n".join(f"- {t}" for t in testing))
+    body = "\n\n".join(parts)
+    return append_pr_footer(body)
+
+
+def append_pr_footer(body: str) -> str:
+    """Append PR_FOOTER unless the body already ends with it. Idempotent."""
+    text = body.rstrip()
+    if text.endswith(PR_FOOTER):
+        return text
+    return f"{text}\n\n{PR_FOOTER}"
+
+
+def gh_pr_create_argv(
+    *, base: str, head: str, title: str, body_file: str, draft: bool = False,
+) -> list[str]:
+    """The exact `gh pr create` argv the commit-push-pr skill documents."""
+    argv = [
+        "gh", "pr", "create",
+        "--base", base,
+        "--head", head,
+        "--title", title,
+        "--body-file", body_file,
+    ]
+    if draft:
+        argv.append("--draft")
+    return argv
 
 
 def _truncate(text: str, limit: int, label: str) -> str:

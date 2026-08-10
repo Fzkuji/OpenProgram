@@ -89,7 +89,7 @@ Set these in the shell that launches `openprogram` (or the worker). Every one ha
 | `OPENPROGRAM_MAX_RETRIES` | Runtime retry count for transient API failures (default 6) | `openprogram/agentic_programming/runtime.py` |
 | `OPENPROGRAM_RETRY_BACKOFF_BASE` | Base seconds for the exponential retry backoff (default 1.5) | `openprogram/agentic_programming/runtime.py` |
 | `OPENPROGRAM_EXEC_TIMEOUT_S` | Default wall-clock budget in seconds for every `runtime.exec` when the caller passes no `timeout_s` (unset or `0` = unbounded) | `openprogram/agentic_programming/runtime.py` |
-| `OPENPROGRAM_FALLBACK_MODELS` | Comma-separated `provider/model` list; switched to in order when the main model fails | `openprogram/providers/utils/failover.py` |
+| `OPENPROGRAM_FALLBACK_MODELS` | Failover chain used when the main model fails before any output. Unset = the other enabled models of the same provider (max 2); a comma-separated `provider/model` list overrides it and may cross providers; `off` disables failover | `openprogram/providers/utils/failover.py` |
 | `OPENPROGRAM_PROVIDER_STREAM_RETRIES` | Maximum retries for streaming requests | `openprogram/providers/utils/stream_retry.py` |
 | `OPENPROGRAM_STRICT_TOOLS` | `0` = turn off strict tool schemas (on by default) | `openprogram/providers/_schema/__init__.py` |
 | `OPENPROGRAM_FORCE_IPV4` | `1` = force an IPv4 source address (for broken IPv6 networks) | `openprogram/providers/utils/http_client.py` |

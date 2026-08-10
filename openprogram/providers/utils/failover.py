@@ -8,10 +8,9 @@ network) are failover-worthy; request-level problems (auth, invalid
 request, context overflow, content policy) would fail on any provider, so
 they are not.
 
-This is a PURE classifier — it has no opinion on *which* fallback to use,
-or on whether failover is even enabled. A runtime fallback chain (driven
-by a configured fallback list) layers on top; with no fallback configured
-the classifier is simply unused, so shipping it changes no behaviour.
+``failover_category`` / ``should_failover`` are a PURE classifier — they
+have no opinion on *which* fallback to use. The runtime fallback chain
+(:func:`resolve_fallback_models` and below) layers on top.
 """
 
 from __future__ import annotations
@@ -94,10 +93,12 @@ def should_failover(
 
 # ---------------------------------------------------------------------------
 # Orchestration — try a primary model, fall back to others on a
-# failover-worthy *pre-content* failure. DISABLED by default: with no
-# fallback configured, resolve_fallback_models() returns [] and callers use
-# the plain stream fn unchanged (zero behaviour change). Enable by setting
-# OPENPROGRAM_FALLBACK_MODELS="provider/model,provider2/model2,...".
+# failover-worthy *pre-content* failure. ON by default, conservatively: with
+# nothing configured the chain is the user's other enabled models of the SAME
+# provider (max 2), so a failover never contacts a provider the user has not
+# configured and never opens a new billing relationship.
+# OPENPROGRAM_FALLBACK_MODELS="provider/model,provider2/model2,..." overrides
+# it with an explicit list (may cross providers); "off"/"none" disables.
 # ---------------------------------------------------------------------------
 
 # Event types that mean real output has begun — once any of these has been
@@ -110,17 +111,59 @@ _CONTENT_EVENT_TYPES = frozenset({
 })
 
 
-def resolve_fallback_models(primary_model: Any) -> list[Any]:
-    """Resolve the configured fallback models for ``primary_model``.
+# How many implicit (same-provider) fallbacks to try. Small on purpose: a
+# rate-limited provider shouldn't turn one failure into a long serial retry
+# storm across every model the user enabled.
+_IMPLICIT_FALLBACK_LIMIT = 2
 
-    Reads ``OPENPROGRAM_FALLBACK_MODELS`` — a comma-separated list of
-    ``provider/model`` ids. Unresolvable entries and the primary itself are
-    skipped. Returns ``[]`` when nothing is configured (the default), which
-    keeps failover entirely off.
+
+def _same_provider_fallbacks(primary_model: Any) -> list[Any]:
+    """The user's other enabled models on the SAME provider as the primary.
+
+    Same provider = same credential the call was already using, so this can
+    never route a prompt to a provider the user never configured. Order is
+    ENABLED_MODELS insertion order (the user's config row order), capped at
+    ``_IMPLICIT_FALLBACK_LIMIT``.
+    """
+    from openprogram.providers.enabled_models import ENABLED_MODELS
+
+    prov = getattr(primary_model, "provider", "") or ""
+    pid = getattr(primary_model, "id", "") or ""
+    if not prov:
+        return []
+    out: list[Any] = []
+    for m in ENABLED_MODELS.values():
+        if getattr(m, "provider", "") != prov or getattr(m, "id", "") == pid:
+            continue
+        out.append(m)
+        if len(out) >= _IMPLICIT_FALLBACK_LIMIT:
+            break
+    return out
+
+
+def resolve_fallback_models(primary_model: Any) -> list[Any]:
+    """Resolve the fallback models for ``primary_model``.
+
+    ``OPENPROGRAM_FALLBACK_MODELS`` decides:
+
+    - unset/empty → the implicit default chain: up to
+      ``_IMPLICIT_FALLBACK_LIMIT`` other enabled models of the primary's own
+      provider (see :func:`_same_provider_fallbacks`).
+    - ``"off"`` / ``"none"`` (case-insensitive) → ``[]``, failover disabled.
+    - anything else → an explicit comma-separated list of ``provider/model``
+      ids, which may cross providers (the user asked for it). Unresolvable
+      entries and the primary itself are skipped.
+
+    Never raises: any import/lookup failure resolves to ``[]``.
     """
     raw = os.environ.get("OPENPROGRAM_FALLBACK_MODELS", "").strip()
-    if not raw:
+    if raw.lower() in ("off", "none"):
         return []
+    if not raw:
+        try:
+            return _same_provider_fallbacks(primary_model)
+        except Exception:
+            return []
     try:
         from openprogram.providers import get_model
     except Exception:

@@ -385,6 +385,16 @@ SETTINGS: list[SettingSpec] = [
              "without anyone noticing.",
     ),
     SettingSpec(
+        key="git.co_author", path=("git", "co_author"), group="Git",
+        label="Co-author commits", widget="toggle", apply=APPLY_LIVE,
+        default=True,
+        help="Add the trailer `Co-Authored-By: <model> <noreply@openprogram.dev>` "
+             "to commits OpenProgram writes, so the AI contribution is visible "
+             "in `git log`. The model's display name is used when known, "
+             "otherwise `OpenProgram`. Turning this off stops OpenProgram "
+             "adding any attribution trailer.",
+    ),
+    SettingSpec(
         key="update.channel", path=("update", "channel"), group="Updates",
         label="Update channel", widget="enum", apply=APPLY_LIVE,
         default="stable", choices=_update_channels,

@@ -412,12 +412,14 @@ async def _stream_assistant_response(
 
     fn = stream_fn or _default_stream_simple
 
-    # Provider/model failover — DEFAULT OFF. resolve_fallback_models() returns
-    # [] unless OPENPROGRAM_FALLBACK_MODELS is set, in which case the default
-    # stream fn is wrapped to try those models on a failover-worthy pre-content
-    # failure. Only the default fn is wrapped (a caller-supplied stream_fn is
-    # left untouched); wrapped in try/except so failover can never break the
-    # normal path.
+    # Provider/model failover — ON by default, conservatively.
+    # resolve_fallback_models() defaults to the user's other enabled models of
+    # the SAME provider (max 2), so failover never reaches a provider the user
+    # has not configured; OPENPROGRAM_FALLBACK_MODELS overrides it with an
+    # explicit (possibly cross-provider) list, and "off"/"none" disables it.
+    # The chain only engages on a failover-worthy pre-content failure. Only the
+    # default fn is wrapped (a caller-supplied stream_fn is left untouched);
+    # wrapped in try/except so failover can never break the normal path.
     if stream_fn is None:
         try:
             from openprogram.providers.utils.failover import (

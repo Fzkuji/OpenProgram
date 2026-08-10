@@ -32,7 +32,7 @@ OpenProgram 如何稳健地调用 LLM —— 重试、退避、超时、连接�
 | TCP keepalive 调优 | undici 默认 | 否 | **SO_KEEPALIVE 30/10/3** | — | **SO_KEEPALIVE 30/10/3** |
 | 连接复用 | undici keep-alive | WS 连接池，55 分钟回收 | **共享 client + 失活时重建** | — | 按事件循环共享 client |
 | API-key 轮换 | **是** | 否 | **是（连接池 + 冷却）** | — | 是（连接池 + 冷却） |
-| Provider/模型故障转移 | **是** | 仅 WS→HTTP | **是（链式）** | — | 是（链式，需显式开启） |
+| Provider/模型故障转移 | **是** | 仅 WS→HTTP | **是（链式）** | — | **是（链式，默认开启）** |
 | 首 token 之后中断 | 报错 | 报错 | **部分结果 + 续接** | 报错 | 部分结果 + 续接 |
 | 调用中途刷新 OAuth | — | — | **逐请求 token provider** | 逐次调用 | 逐次调用解析 |
 | 限流 header 解析 | — | **是（x-ratelimit-*）** | 是（Nous） | — | 是（x-ratelimit-* / anthropic-ratelimit-*） |
@@ -138,9 +138,12 @@ SSE 调控器是两个预算加一个兜底：
 - **Provider/模型故障转移**（`failover.py` + `agent_loop.py`）—— 一个分类器
   （rate_limit / overloaded / server / timeout / network）加一个
   `stream_with_failover` 包装器：在**内容产生之前**发生值得转移的失败时，
-  依次尝试主模型和每个已配置的候选。它转发事件、抑制重复的 `start`，
-  并且在已经流出 token 之后绝不切换。默认关闭：未设置
-  `OPENPROGRAM_FALLBACK_MODELS`（`"provider/model,provider2/model2"`）时是 no-op。
+  依次尝试主模型和每个候选。它转发事件、抑制重复的 `start`，
+  并且在已经流出 token 之后绝不切换。**默认开启，且保守：**什么都不配置时，
+  候选链就是用户在**同一 provider** 下启用的其他模型（最多 2 个，按配置行顺序），
+  因此故障转移复用本来就要用的那份凭据，绝不会去联系用户没有配置过的 provider。
+  设置 `OPENPROGRAM_FALLBACK_MODELS="provider/model,provider2/model2"` 可用显式
+  名单覆盖它，显式名单允许跨 provider；设成 `off`（或 `none`）则完全关闭故障转移。
 - gemini_cli 共用同一个 client，因此具有相同的超时语义，而不是自带一个单一浮点
   超时值。
 
@@ -170,4 +173,4 @@ SSE 调控器是两个预算加一个兜底：
 | `OPENPROGRAM_TCP_KEEPIDLE_S` / `_KEEPINTVL_S` / `_KEEPCNT` | 30 / 10 / 3 | keepalive 探测时序（约 60 s 检测） |
 | `OPENPROGRAM_FORCE_IPV4` | 0 | 绑定 IPv4 源地址（损坏的 IPv6 VPN） |
 | `OPENPROGRAM_PARTIAL_RECOVERY` | 1 | 在流中途中断时抢救部分输出 |
-| `OPENPROGRAM_FALLBACK_MODELS` | （空） | `provider/model,…`——启用 provider/模型故障转移 |
+| `OPENPROGRAM_FALLBACK_MODELS` | （空）＝同 provider 候选链 | `provider/model,…`——显式故障转移链，允许跨 provider；`off`/`none` 关闭 |
