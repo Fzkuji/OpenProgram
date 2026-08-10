@@ -19,6 +19,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: pip install -e ".[dev]"
+      - name: Install bubblewrap
+        # sandbox.mode defaults to workspace-write and fails closed without
+        # a backend, so the runner needs the real Linux sandbox
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
       - name: Run tests
         run: python -m pytest tests/ --ignore=tests/integration
 
