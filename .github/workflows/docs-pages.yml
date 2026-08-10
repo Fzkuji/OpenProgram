@@ -1,4 +1,4 @@
-name: Docs site
+name: Publish openprogram.io
 
 on:
   push:
@@ -9,23 +9,17 @@ on:
       - ".github/workflows/docs-pages.yml"
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-# One deployment at a time; a newer push supersedes a queued one but never
-# cancels a running deploy.
+# One publish at a time; a newer push supersedes a queued one but never
+# interrupts a push that is already writing to the site repository.
 concurrency:
-  group: pages
+  group: publish-site
   cancel-in-progress: false
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     # The site is served at the domain root, so links and sitemap entries carry
-    # no path prefix. The generated reference pages are produced from the real
-    # argparse tree and config schema, which is why the package is installed.
+    # no path prefix — unlike the local server, which mounts it under /docs.
     env:
       OPENPROGRAM_DOCS_BASE: /
       OPENPROGRAM_DOCS_ORIGIN: https://openprogram.io
@@ -34,25 +28,28 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
+      # The package itself is needed because the generated reference pages come
+      # from reading the real argparse tree and config schema.
       - name: Install package and docs build dependencies
         run: pip install -e . markdown-it-py mdit-py-plugins pygments
+
       - name: Generate reference pages
         run: python -m tools.docs_site.generate_reference
+
       - name: Build docs site
         run: python -m tools.docs_site.build
+
       - name: Check docs links
         run: python -m tools.docs_site.checklinks
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs/_site
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish to the site repository
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          deploy_key: ${{ secrets.SITE_DEPLOY_KEY }}
+          external_repository: Fzkuji/openprogram-site
+          publish_branch: main
+          publish_dir: ./docs/_site
+          # Keep the site repo's own README; everything else mirrors the build.
+          exclude_assets: ""
+          commit_message: "Publish openprogram.io (${{ github.sha }})"
