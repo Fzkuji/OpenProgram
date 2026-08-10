@@ -27,6 +27,7 @@ import {
 } from "./catalog-list";
 import { hostname, slugFromUrl } from "./helpers";
 import type { CatalogState, Source } from "./types";
+import { activateOnKey } from "@/lib/utils";
 
 export function DiscoverySources() {
   const { text } = useTranslation();
@@ -369,6 +370,9 @@ export function DiscoverySources() {
               <li key={s.url} className="rounded-md border border-[var(--border)] overflow-hidden">
                 <div
                   role="button"
+                  tabIndex={0}
+                  aria-expanded={expanded.has(s.url)}
+                  onKeyDown={activateOnKey(() => toggleExpand(s.url))}
                   onClick={() => toggleExpand(s.url)}
                   className="flex items-start gap-3 p-3 cursor-pointer hover:bg-bg-hover hover:text-nav-color-hover select-none"
                 >

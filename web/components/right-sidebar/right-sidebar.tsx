@@ -48,6 +48,7 @@ import { renderMarkdown, useMarkdownReady } from "../chat/messages/markdown";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
 import { setRightDockApi } from "@/lib/right-dock";
+import { activateOnKey } from "@/lib/utils";
 
 // View IDs that round-trip through the `data-view` attribute — e.g.
 // "detail" picks `<div data-view="detail">`.
@@ -257,6 +258,8 @@ export function RightSidebar() {
           onMouseEnter={() => filesIconRef.current?.startAnimation?.()}
           onMouseLeave={() => filesIconRef.current?.stopAnimation?.()}
           role="button"
+          tabIndex={0}
+          onKeyDown={activateOnKey(() => onNavClick(VIEW_FILES))}
           title={text("Project files", "项目文件")}
         >
           <span className={sidebarNavIconClass}>

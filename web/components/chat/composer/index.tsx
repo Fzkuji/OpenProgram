@@ -905,6 +905,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
             onMouseEnter={() => sendIconRef.current?.startAnimation?.()}
             onMouseLeave={() => sendIconRef.current?.stopAnimation?.()}
             title={showStop ? text("Stop", "停止") : sendTitle}
+            aria-label={showStop ? text("Stop", "停止") : sendTitle}
             type="button"
           >
             {showStop ? <StopIcon /> : <SendIcon ref={sendIconRef} />}

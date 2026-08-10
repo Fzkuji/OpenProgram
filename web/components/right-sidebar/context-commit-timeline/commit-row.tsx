@@ -5,6 +5,7 @@ import styles from "./styles.module.css";
 import { CommitMetaContent } from "./commit-meta";
 import { ItemList } from "./item-list";
 import type { CommitDetail, CommitMeta } from "./types";
+import { activateOnKey } from "@/lib/utils";
 
 export function CommitRow(props: {
   meta: CommitMeta;
@@ -20,6 +21,9 @@ export function CommitRow(props: {
       <div
         onClick={onToggle}
         role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onKeyDown={activateOnKey(onToggle)}
         style={{
           padding: "8px 10px",
           cursor: "pointer",

@@ -11,6 +11,7 @@
 import type React from "react";
 
 import { useTranslation } from "@/lib/i18n";
+import { useModalA11y } from "@/lib/use-modal-a11y";
 
 interface MergeModalProps {
   /** Selected branch head ids (≥2 when this modal is open). */
@@ -36,17 +37,21 @@ export function MergeModal({
   onMerge,
 }: MergeModalProps) {
   const { t, locale } = useTranslation();
+  const title =
+    locale === "zh"
+      ? `合并 ${selected.length} 个分支`
+      : `Merge ${selected.length} branches`;
+  // Escape / Tab-trap / focus restore — the panel had none, so the only
+  // way out was clicking the backdrop.
+  const modal = useModalA11y(onCancel, title);
   return (
     <div className="branches-merge-modal-backdrop" onClick={onCancel}>
       <div
+        {...modal}
         className="branches-merge-modal"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="branches-merge-modal-title">
-          {locale === "zh"
-            ? `合并 ${selected.length} 个分支`
-            : `Merge ${selected.length} branches`}
-        </div>
+        <div className="branches-merge-modal-title">{title}</div>
         <div className="branches-merge-mode">
           <label className="branches-merge-mode-row">
             <input

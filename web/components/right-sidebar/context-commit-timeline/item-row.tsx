@@ -6,6 +6,7 @@ import { useState } from "react";
 import styles from "./styles.module.css";
 import { StateBadge } from "./state-badge";
 import type { CommitItem } from "./types";
+import { activateOnKey } from "@/lib/utils";
 
 export function ItemRow(props: { item: CommitItem }) {
   const it = props.item;
@@ -16,6 +17,9 @@ export function ItemRow(props: { item: CommitItem }) {
       className={styles.item + (open ? " " + styles.itemOpen : "")}
       onClick={() => setOpen((v) => !v)}
       role="button"
+      tabIndex={0}
+      aria-expanded={open}
+      onKeyDown={activateOnKey(() => setOpen((v) => !v))}
     >
       <div className={styles.itemHead}>
         <span className={styles.itemLabel}>{it.role}</span>

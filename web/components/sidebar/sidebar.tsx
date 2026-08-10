@@ -62,6 +62,7 @@ import {
 import { refreshFunctionsList } from "@/lib/state/functions-actions";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
+import { activateOnKey } from "@/lib/utils";
 import { UserMenuFooter } from "../user-menu-footer";
 import { SessionsList } from "./sessions-list";
 import { FavoritesList } from "./favorites-list";
@@ -89,7 +90,7 @@ function readPersistedSidebarOpen(): boolean {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { t } = useTranslation();
+  const { t, text } = useTranslation();
 
   const [open, setOpen] = useState<boolean>(true);
   const [favCollapsed, setFavCollapsed] = useState(false);
@@ -250,6 +251,10 @@ export function Sidebar() {
   return (
     <div
       id="sidebar"
+      /* Landmark so screen readers can jump straight to navigation
+         instead of tabbing in from the top of the document. */
+      role="navigation"
+      aria-label={text("Sidebar", "侧边栏")}
       className={
         // Shell layout — bg / border / flex column / width transition.
         // `relative` is the anchor for the (legacy) `#userMenuFooterMount`
@@ -336,6 +341,8 @@ export function Sidebar() {
           onMouseEnter={() => newChatIconRef.current?.startAnimation?.()}
           onMouseLeave={() => newChatIconRef.current?.stopAnimation?.()}
           role="button"
+          tabIndex={0}
+          onKeyDown={activateOnKey(newChat)}
         >
           <span
             className="flex size-[22.4px] shrink-0 -mx-[3.2px] items-center
@@ -407,9 +414,10 @@ export function Sidebar() {
               doRefresh();
             }}
             title={t("sidebar.refresh")}
+            aria-label={t("sidebar.refresh")}
           >
             {refreshDone ? (
-              <span>&#10003;</span>
+              <span aria-hidden="true">&#10003;</span>
             ) : (
               <RefreshCw
                 ref={refreshSvgRef}

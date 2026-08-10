@@ -219,6 +219,14 @@ export function AssistantBubble({ msg, verdict }: {
       className="message assistant"
       data-msg-id={msg.id}
       data-agent-id={msg.agentId || undefined}
+      /* Each turn is an article so screen readers can jump message to
+         message (and announce the sender) instead of hearing the whole
+         transcript as one undifferentiated run of text. Streaming text
+         itself is NOT a live region — token-by-token deltas would flood
+         the announcement queue; the short pending/typing status below
+         carries the aria-live instead. */
+      role="article"
+      aria-label={sender}
     >
       <div className="message-header" style={{ top: avatarTop }}>
         {/* Per-message agent avatar. Seeded on the sender's display

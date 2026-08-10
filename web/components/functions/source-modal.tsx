@@ -7,6 +7,7 @@ import type { AgenticFunction } from "@/lib/types";
 import { api } from "@/lib/net/api";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
+import { useModalA11y } from "@/lib/use-modal-a11y";
 
 interface Props {
   fn: AgenticFunction;
@@ -18,6 +19,7 @@ export function SourceModal({ fn, onClose }: Props) {
   const qc = useQueryClient();
   const [edited, setEdited] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const modal = useModalA11y(onClose, text("Source of ", "源码：") + fn.name);
 
   const { data } = useQuery({
     queryKey: ["source", fn.name],
@@ -57,6 +59,7 @@ export function SourceModal({ fn, onClose }: Props) {
       onClick={onClose}
     >
       <div
+        {...modal}
         className="flex h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border"
         style={{
           background: "var(--bg-secondary)",
@@ -93,8 +96,16 @@ export function SourceModal({ fn, onClose }: Props) {
               {saving ? <Loader2 className="animate-spin" /> : <Save />}
               {text("Save", "保存")}
             </Button>
-            <button onClick={onClose}>
-              <X className="h-4 w-4" style={{ color: "var(--text-muted)" }} />
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={text("Close", "关闭")}
+            >
+              <X
+                className="h-4 w-4"
+                style={{ color: "var(--text-muted)" }}
+                aria-hidden="true"
+              />
             </button>
           </div>
         </div>

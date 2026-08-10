@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import styles from "./icon-picker.module.css";
 import { useTranslation } from "@/lib/i18n";
+import { useModalA11y } from "@/lib/use-modal-a11y";
 import {
   type AnimatedNavIconHandle,
   AtomIcon,
@@ -116,17 +117,20 @@ export function IconPicker({
   onClose: () => void;
 }) {
   const { text } = useTranslation();
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Replaces the old document-level Escape listener: same Escape, plus
+  // the Tab trap and focus restore it was missing.
+  const modal = useModalA11y(
+    onClose,
+    text("Pick an icon", "选择图标"),
+  );
 
   return (
     <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.picker} onClick={(e) => e.stopPropagation()}>
+      <div
+        {...modal}
+        className={styles.picker}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.head}>
           <span className={styles.title}>
             {text("Pick an icon for", "为以下函数选择图标")} <code>{name}</code>

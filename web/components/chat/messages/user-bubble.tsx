@@ -138,6 +138,11 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
       ref={containerRef}
       className={"message user" + (editing ? " is-editing" : "")}
       data-msg-id={msg.id}
+      /* Same per-turn article semantics as the assistant bubble, so
+         screen-reader users can step through the transcript turn by
+         turn and hear who is speaking. */
+      role="article"
+      aria-label={profile.name || text("User", "用户")}
     >
       <div className="message-header" style={{ top: avatarTop }}>
         {/* "You" avatar + name — from the local user profile

@@ -14,11 +14,11 @@
  * overlay keeps the reading position in the transcript. Files worth
  * living with belong in the project tree, which already has tabs.
  */
-import { useEffect } from "react";
 import { createPortal } from "react-dom";
 
 import { FileViewer } from "@/components/files/file-viewer";
 import { useTranslation } from "@/lib/i18n";
+import { useModalA11y } from "@/lib/use-modal-a11y";
 import { useSessionStore } from "@/lib/session-store";
 import { absRawFileUrl } from "@/lib/state/files-shared";
 
@@ -34,13 +34,9 @@ export function AttachmentPreview({
   const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Replaces the old window-level Escape listener: same Escape, plus
+  // the Tab trap and focus-return to the chip that opened the preview.
+  const modal = useModalA11y(onClose, filename);
 
   if (typeof document === "undefined") return null;
   return createPortal(
@@ -50,6 +46,7 @@ export function AttachmentPreview({
       onClick={onClose}
     >
       <div
+        {...modal}
         className="attach-preview-panel"
         onClick={(e) => e.stopPropagation()}
       >

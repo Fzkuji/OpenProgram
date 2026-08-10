@@ -13,6 +13,7 @@ import {
   FolderCodeIcon,
   FolderOpenIcon,
 } from "@/components/animated-icons";
+import { activateOnKey } from "@/lib/utils";
 
 // --- tree node model -----------------------------------------------------
 
@@ -113,6 +114,9 @@ function TreeBranch({
     <div>
       <div
         role="button"
+        tabIndex={0}
+        aria-expanded={isOpen}
+        onKeyDown={activateOnKey(() => toggleExpanded(node.path))}
         onClick={() => toggleExpanded(node.path)}
         onMouseEnter={() => folderIconRef.current?.startAnimation?.()}
         onMouseLeave={() => folderIconRef.current?.stopAnimation?.()}

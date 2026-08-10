@@ -5,6 +5,7 @@ import styles from "./plugins.module.css";
 import { ManagePageHeader, managePageStyles as shared } from "@/components/ui/manage-page";
 import { usePluginsStore } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
+import { useModalA11y } from "@/lib/use-modal-a11y";
 import { InstalledList } from "./views/installed-list";
 import { MarketplaceBrowser } from "./views/marketplace-browser";
 import { PluginErrors } from "./views/plugin-errors";
@@ -71,9 +72,16 @@ function ManualInstallDialog({ onClose }: { onClose: () => void }) {
     }
   };
 
+  // Escape / Tab-trap / focus restore for this hand-rolled panel.
+  const modal = useModalA11y(onClose, text("Manual plugin install", "手动安装插件"));
+
   return (
     <div className={styles.dialogBackdrop} onClick={onClose}>
-      <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
+      <div
+        {...modal}
+        className={styles.dialog}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.dialogTitle}>{text("Manual plugin install", "手动安装插件")}</div>
         <div className={styles.dialogBody}>
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>

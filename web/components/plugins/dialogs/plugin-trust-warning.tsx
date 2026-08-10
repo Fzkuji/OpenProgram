@@ -4,6 +4,7 @@ import { useState } from "react";
 import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
+import { useModalA11y } from "@/lib/use-modal-a11y";
 
 interface Props {
   name: string;
@@ -30,9 +31,16 @@ export function PluginTrustWarning({ name, currentLevel, onDone, onCancel }: Pro
     }
   };
 
+  // Escape / Tab-trap / focus restore for this hand-rolled panel.
+  const modal = useModalA11y(onCancel, text(`Raise trust level for ${name}`, `提升 ${name} 的 trust 等级`));
+
   return (
     <div className={styles.dialogBackdrop} onClick={onCancel}>
-      <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
+      <div
+        {...modal}
+        className={styles.dialog}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.dialogTitle}>{text(`Raise trust level for ${name}`, `提升 ${name} 的 trust 等级`)}</div>
         <div className={styles.dialogBody}>
           <p>

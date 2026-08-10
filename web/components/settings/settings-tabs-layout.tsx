@@ -55,13 +55,18 @@ export function SettingsTabsLayout({
         <div
           className={styles.body + (isWide ? " " + styles.providersWide : "")}
         >
-          <div className={styles.nav}>
+          {/* Landmark + current-page marker: these are real <Link>s, so
+              they already tab and activate; what was missing is a screen
+              reader being able to find the tab column and hear which
+              tab is open. */}
+          <nav className={styles.nav} aria-label={t("settings.title")}>
             <Link
               href="/settings/providers"
               className={
                 styles.navItem +
                 (active === "providers" ? " " + styles.active : "")
               }
+              aria-current={active === "providers" ? "page" : undefined}
             >
               {t("settings.tab.providers")}
             </Link>
@@ -71,6 +76,7 @@ export function SettingsTabsLayout({
                 styles.navItem +
                 (active === "usage" ? " " + styles.active : "")
               }
+              aria-current={active === "usage" ? "page" : undefined}
             >
               {t("settings.tab.usage")}
             </Link>
@@ -80,6 +86,7 @@ export function SettingsTabsLayout({
                 styles.navItem +
                 (active === "search" ? " " + styles.active : "")
               }
+              aria-current={active === "search" ? "page" : undefined}
             >
               {t("settings.tab.search")}
             </Link>
@@ -89,6 +96,7 @@ export function SettingsTabsLayout({
                 styles.navItem +
                 (active === "channels" ? " " + styles.active : "")
               }
+              aria-current={active === "channels" ? "page" : undefined}
             >
               {t("settings.tab.channels")}
             </Link>
@@ -98,6 +106,7 @@ export function SettingsTabsLayout({
                 styles.navItem +
                 (active === "general" ? " " + styles.active : "")
               }
+              aria-current={active === "general" ? "page" : undefined}
             >
               {t("settings.tab.general")}
             </Link>
@@ -107,10 +116,11 @@ export function SettingsTabsLayout({
                 styles.navItem +
                 (active === "system" ? " " + styles.active : "")
               }
+              aria-current={active === "system" ? "page" : undefined}
             >
               {t("settings.tab.system")}
             </Link>
-          </div>
+          </nav>
           <div className={styles.content}>{children}</div>
         </div>
       </div>

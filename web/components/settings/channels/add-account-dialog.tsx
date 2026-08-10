@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import styles from "./channels.module.css";
 import { useTranslation } from "@/lib/i18n";
+import { useModalA11y } from "@/lib/use-modal-a11y";
 import { PLATFORMS, PLATFORM_LABEL } from "./types";
 
 interface Props {
@@ -72,9 +73,16 @@ export function AddAccountDialog({ onClose, onAdded }: Props) {
     }
   };
 
+  // Escape / Tab-trap / focus restore for this hand-rolled panel.
+  const modal = useModalA11y(onClose, text("Add a bot", "添加 bot"));
+
   return (
     <div className={styles.modalBackdrop} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+      <div
+        {...modal}
+        className={styles.modal}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.modalHeader}>
           <span className={styles.modalTitle}>{text("Add a bot", "添加 bot")}</span>
           <button

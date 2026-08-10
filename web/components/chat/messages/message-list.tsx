@@ -358,6 +358,11 @@ function PendingReplyIndicator() {
       <div
         className="pending-body"
         style={{ paddingLeft: 36 }}
+        /* Short, discrete turn status ("thinking…") — the one thing in
+           the transcript worth announcing. Streaming token deltas are
+           deliberately left silent (see assistant-bubble). */
+        role="status"
+        aria-live="polite"
       >
         <span className="thinking-spinner" aria-hidden="true" />
         <span className="pending-label">{text("thinking…", "思考中…")}</span>

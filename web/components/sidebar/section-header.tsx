@@ -33,6 +33,7 @@ import {
   ChevronDownIcon,
   type AnimatedNavIconHandle,
 } from "@/components/animated-icons";
+import { activateOnKey } from "@/lib/utils";
 
 export function SectionHeader({
   name,
@@ -73,6 +74,12 @@ export function SectionHeader({
           Recents filter) is never a surprise collapse target. */}
       <div
         onClick={collapsible ? onToggle : undefined}
+        /* Only the collapsible variant is interactive — a plain header
+           must not become a tab stop that does nothing. */
+        role={collapsible ? "button" : undefined}
+        tabIndex={collapsible ? 0 : undefined}
+        aria-expanded={collapsible ? !collapsed : undefined}
+        onKeyDown={collapsible ? activateOnKey(onToggle) : undefined}
         className={
           "flex min-w-0 flex-1 items-center gap-1" +
           (collapsible ? " cursor-pointer" : "")

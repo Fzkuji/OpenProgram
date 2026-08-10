@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import styles from "../plugins.module.css";
 import { usePluginsStore } from "@/lib/state/plugins-store";
 import { useTranslation } from "@/lib/i18n";
+import { useModalA11y } from "@/lib/use-modal-a11y";
 
 interface Check {
   name: string;
@@ -28,9 +29,16 @@ export function ValidatePluginDialog({ name, onClose }: Props) {
       .catch((e) => setErr(String(e)));
   }, [name, validate]);
 
+  // Escape / Tab-trap / focus restore for this hand-rolled panel.
+  const modal = useModalA11y(onClose, text(`Validate ${name}`, `校验 ${name}`));
+
   return (
     <div className={styles.dialogBackdrop} onClick={onClose}>
-      <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
+      <div
+        {...modal}
+        className={styles.dialog}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.dialogTitle}>{text(`Validate ${name}`, `校验 ${name}`)}</div>
         <div className={styles.dialogBody}>
           {err && <div style={{ color: "#ef4444" }}>{err}</div>}

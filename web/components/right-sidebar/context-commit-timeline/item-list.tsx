@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { ItemRow } from "./item-row";
 import type { CommitItem } from "./types";
+import { activateOnKey } from "@/lib/utils";
 
 const ITEM_PAGE = 100;
 
@@ -24,6 +25,8 @@ export function ItemList(props: { items: CommitItem[] }) {
         <div
           onClick={() => setShown((n) => n + ITEM_PAGE)}
           role="button"
+          tabIndex={0}
+          onKeyDown={activateOnKey(() => setShown((n) => n + ITEM_PAGE))}
           style={{
             padding: "6px 12px",
             fontSize: 11,

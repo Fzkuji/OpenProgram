@@ -26,6 +26,7 @@ import { getSocket } from "@/lib/runtime-bridge/state";
 import { CommitGroupRow } from "./commit-group-row";
 import type { CommitDetail, CommitMeta } from "./types";
 import { groupCommits, wsSend } from "./utils";
+import { activateOnKey } from "@/lib/utils";
 
 export function ContextCommitTimeline() {
   const sessionId = useSessionStore((s) => s.currentSessionId);
@@ -191,6 +192,8 @@ export function ContextCommitTimeline() {
           }}
           onClick={onRefreshClick}
           role="button"
+          tabIndex={0}
+          onKeyDown={activateOnKey(onRefreshClick)}
         >
           {phase === "loading" ? "…" : phase === "done" ? "Done!" : "Refresh"}
         </span>

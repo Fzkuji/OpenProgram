@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import styles from "./channels.module.css";
 import { useTranslation } from "@/lib/i18n";
+import { useModalA11y } from "@/lib/use-modal-a11y";
 import { PLATFORM_LABEL } from "./types";
 import type { ChannelAccount } from "./types";
 
@@ -82,9 +83,16 @@ export function AddBindingDialog({ accounts, onClose, onAdded }: Props) {
     }
   };
 
+  // Escape / Tab-trap / focus restore for this hand-rolled panel.
+  const modal = useModalA11y(onClose, text("Add a dispatch rule", "添加分发规则"));
+
   return (
     <div className={styles.modalBackdrop} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+      <div
+        {...modal}
+        className={styles.modal}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.modalHeader}>
           <span className={styles.modalTitle}>{text("Add a dispatch rule", "添加分发规则")}</span>
           <button

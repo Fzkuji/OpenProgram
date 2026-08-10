@@ -74,10 +74,16 @@ function SettingsDropdown<T extends string>({
   value,
   options,
   onChange,
+  label,
 }: {
   value: T;
   options: DropdownOption<T>[];
   onChange: (v: T) => void;
+  /** Name of the setting this dropdown controls. The visible row label
+   *  is a plain <div>, so it can't be associated with htmlFor — pass the
+   *  same string here and the trigger announces "Font, Inter" instead of
+   *  a bare value. */
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -107,6 +113,7 @@ function SettingsDropdown<T extends string>({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={label}
       >
         <span style={current?.style}>{current?.label}</span>
         <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden>
@@ -419,10 +426,15 @@ export function GeneralSection() {
                       }
                       onClick={() => setTheme(id)}
                       title={THEME_LABELS[id]}
+                      /* The active card is marked only by a CSS class;
+                         aria-pressed tells a screen reader which theme
+                         is currently in effect. */
+                      aria-pressed={theme === id}
                     >
                       <span
                         className={styles.themeSwatch}
                         data-theme={previewTheme(id)}
+                        aria-hidden="true"
                       >
                         <span
                           className={styles.themeDot}
@@ -453,6 +465,7 @@ export function GeneralSection() {
               <div className={styles.value + " " + styles.valueWide}>
                 <textarea
                   className={styles.customCssArea}
+                  aria-label={text("Custom CSS", "自定义 CSS")}
                   value={customCss}
                   spellCheck={false}
                   // Chrome 会在刷新时"恢复"表单里上一次的文本，这会盖掉
@@ -480,6 +493,7 @@ export function GeneralSection() {
                   value={font}
                   options={FONT_SELECT_OPTIONS}
                   onChange={setFont}
+                  label={t("general.font")}
                 />
               </div>
             </div>
@@ -491,6 +505,7 @@ export function GeneralSection() {
                   value={locale}
                   options={LANG_OPTIONS}
                   onChange={setLocale}
+                  label={t("general.language")}
                 />
               </div>
             </div>

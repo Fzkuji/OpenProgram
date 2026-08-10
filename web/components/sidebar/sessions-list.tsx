@@ -33,6 +33,7 @@ import { useSessionStore } from "@/lib/session-store";
 import type { ConvSummary } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
+import { activateOnKey } from "@/lib/utils";
 import { useRecentsView } from "@/lib/prefs/recents-view";
 import { wsRequest } from "@/lib/net/ws-request";
 import { projectGroups } from "@/lib/project-groups";
@@ -691,8 +692,11 @@ function ProjectGroupHeader({
     <div
       className={sidebarNavItemClass + " select-none"}
       role="button"
+      tabIndex={0}
+      aria-expanded={!collapsed}
       title={path || undefined}
       onClick={onToggle}
+      onKeyDown={activateOnKey(onToggle)}
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
     >
@@ -837,7 +841,7 @@ function ConvItem({
   onCopyLink: () => void;
   onDelete: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, text } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(label);
@@ -927,6 +931,15 @@ function ConvItem({
     <Popover open={menuOpen} onOpenChange={setMenuOpen}>
       <div
         className={`${base} ${colorCls} ${stateCls}`}
+        /* The row is a div (the marquee/mask layering and the nested ⋮
+           trigger rule out a real <button>), so it needs the button role
+           plus explicit keyboard activation to be reachable at all.
+           While renaming, the inner <input> owns the keyboard — drop the
+           role and the tab stop so Tab/Enter go to the text field. */
+        role={renaming ? undefined : "button"}
+        tabIndex={renaming ? undefined : 0}
+        aria-current={active ? "true" : undefined}
+        onKeyDown={renaming ? undefined : activateOnKey(onClick)}
         onClick={renaming ? undefined : onClick}
         onMouseEnter={renaming ? undefined : measureMarquee}
         onMouseLeave={stopMarquee}
@@ -1014,7 +1027,11 @@ function ConvItem({
               e.stopPropagation();
               setMenuOpen((v) => !v);
             }}
-            aria-label={t("sidebar.filter")}
+            /* Was "Filter & sort" — that's the Recents header's button,
+               not this row's. This one opens the conversation menu. */
+            aria-label={text(`Options for ${label}`, `${label} 的操作`)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
             className="absolute right-[4px] top-1/2 flex size-[24px] -translate-y-1/2
               items-center justify-center rounded-[6px] text-text-muted
               opacity-0 pointer-events-none transition-opacity duration-150 ease-out
@@ -1024,7 +1041,7 @@ function ConvItem({
             data-state={menuOpen ? "open" : "closed"}
           >
             {/* Vertical ⋮ (matches Claude's row menu trigger). */}
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
               <circle cx="8" cy="3" r="1.4" />
               <circle cx="8" cy="8" r="1.4" />
               <circle cx="8" cy="13" r="1.4" />

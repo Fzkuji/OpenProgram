@@ -29,6 +29,7 @@ import { wsRequest } from "@/lib/net/ws-request";
 import { closeAllPopovers } from "@/lib/runtime-bridge/ui";
 import { useBoundChat } from "./bound-chat";
 import { GROUP_LABEL, MENU_PANEL, MENU_SEPARATOR, itemCls } from "./menu-styles";
+import { activateOnKey } from "@/lib/utils";
 
 /** Stable empty list so the zustand selector doesn't churn renders. */
 const NO_WORKING_DIRS: string[] = [];
@@ -168,9 +169,13 @@ export function WorkingDirChips() {
           <X
             size={13}
             role="button"
+            tabIndex={0}
             aria-label={text("Remove folder", "移除文件夹")}
             className="workdir-remove"
             onClick={() => applyWorkingDirs(workingDirs.filter((d) => d !== dir))}
+            onKeyDown={activateOnKey(() =>
+              applyWorkingDirs(workingDirs.filter((d) => d !== dir)),
+            )}
           />
         </span>
       ))}
