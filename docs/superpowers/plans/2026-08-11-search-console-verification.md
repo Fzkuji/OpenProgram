@@ -47,7 +47,7 @@ google-site-verification: google01b0015fda12129e.html
 
 - [ ] **Step 3: Promote and check the proof in the workflow**
 
-Extend the existing root-file loop with `google*.html`, then add:
+Extend the existing root-file loop with `google01b0015fda12129e.html`, then add:
 
 ```bash
 grep -Fx 'google-site-verification: google01b0015fda12129e.html' \
@@ -64,7 +64,7 @@ OPENPROGRAM_DOCS_BASE=/docs/ OPENPROGRAM_DOCS_ORIGIN=https://openprogram.io \
 python -m tools.docs_site.checklinks
 ```
 
-Repeat the workflow assembly locally and verify the proof, sitemap, robots file, and URL count.
+Repeat the workflow assembly locally and verify the proof, sitemap, robots file, and that the URL count has not fallen below the pre-change count of 443.
 
 - [ ] **Step 5: Publish and verify online**
 

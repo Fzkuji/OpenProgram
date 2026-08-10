@@ -17,6 +17,6 @@ Keep OpenProgram's build-generated sitemap as the canonical sitemap and publish 
 Run the documentation build with the production origin and base path, reproduce the workflow assembly locally, and verify:
 
 - the ownership proof exists at the assembled root with the exact Google token;
-- `sitemap.xml` is at the assembled root and contains 443 URLs;
+- `sitemap.xml` is at the assembled root and contains every page from the current build;
 - `robots.txt` references `https://openprogram.io/sitemap.xml`;
 - documentation links still pass the existing checker.
