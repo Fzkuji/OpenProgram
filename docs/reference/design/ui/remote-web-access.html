@@ -128,7 +128,7 @@
   .checklist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 24px;margin:12px 0 0;padding:0;counter-reset:test}
   .checklist li{counter-increment:test;list-style:none;position:relative;padding:8px 0 8px 34px;border-top:1px solid var(--line)}
   .checklist li::before{content:counter(test,decimal-leading-zero);position:absolute;left:0;top:9px;color:var(--cyan);font:10px/1.4 "IBM Plex Mono",Menlo,monospace}
-  .status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:13px 0}
+  .status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:13px 0}
   .status-card{border:1px solid var(--line);border-top:4px solid var(--state);background:var(--panel);padding:15px;border-radius:7px;min-height:185px}
   .status-card .state{color:var(--state);font:10px/1.4 "IBM Plex Mono",Menlo,monospace;letter-spacing:.14em;margin-bottom:10px}
   .status-card ul{margin:0;padding-left:16px;font-size:12px}
@@ -308,18 +308,18 @@
   <section class="section" id="current">
     <div class="section-head">
       <div class="num">02</div>
-      <div><h2>当前实现与待补控制</h2><p>默认 loopback、lifespan 和浏览器 Origin/Host guard 已存在；调用方认证、外部绑定 fail-closed 和 secret 不可取回尚未实现。</p></div>
+      <div><h2>当前实现与待补控制</h2><p>Owner process token、canonical Origin、fragment bootstrap、共同 HTTP/WS 认证边界、auth-url 和最小 health 已进入生产路径；secret 不可取回与完整部署验收仍未完成。</p></div>
     </div>
     <div class="grid2">
-      <article class="card current">
-        <div class="k">Current behavior</div><h3>当前 guard 不认证调用方</h3>
-        <p><code>BrowserOriginGuard</code> 会先接受未经验证的 <code>allowed_origins</code> 精确字符串；未命中该分支时才拒绝显式 cross-site、opaque Origin 和 loopback 下的外部 Host。配置的 <code>null</code> 或 cross-site Origin、以及无 <code>Origin</code> 请求仍可能通过；非 loopback bind 会关闭现有 Host enforcement。Uvicorn 也尚未关闭自身 proxy-header 改写。</p>
-        <p><code>/ws</code> 在认证前执行 <code>accept()</code>，HTTP 与 SSE 也没有共同认证 dependency。</p>
+      <article class="card cyan">
+        <div class="k">Current behavior</div><h3>OwnerAuthMiddleware 先认证</h3>
+        <p><code>OwnerAuthState</code> 生成 32 字节 token、持有 per-state lock、写 owner-only token file 与不含 token 的 <code>access.json</code>，并派生 profile-specific cookie。<code>OwnerAuthMiddleware</code> 在 route dispatch 前验证 Host/request origin 与 cookie 或 Bearer。</p>
+        <p>认证成功后才附加当前 profile 的 owner authority；WebSocket 校验发生在 <code>accept()</code> 前。Uvicorn 使用 <code>proxy_headers=False</code>。</p>
       </article>
-      <article class="card target">
-        <div class="k">Required behavior</div><h3>所有 transport 先认证</h3>
-        <p>Host 与 Origin 校验后，cookie 或 Bearer token 必须验证成功，随后才附加 owner authority 并执行 HTTP route、SSE generator 或 WebSocket accept。</p>
-        <p>有效 Bearer native client，或无副作用的安全 cookie 请求可以省略 <code>Origin</code>；缺少 Origin 本身不表示可信。</p>
+      <article class="card amber">
+        <div class="k">Remaining work</div><h3>收敛 secret 与验收范围</h3>
+        <p>两条 plaintext reveal 路径和 frontend control 仍需删除，并实现独立的 config-key 与 account replace/preserve/delete schema。</p>
+        <p>还缺少直接 HTTP startup warning、独立 SSE、真实 browser bootstrap/WS、restart、bind-failure、multi-profile 与 nginx/Caddy smoke 验收。</p>
       </article>
     </div>
     <div class="table-wrap" tabindex="0" role="region" aria-label="当前实现与缺失控制表">
@@ -327,12 +327,13 @@
         <caption>当前实现与缺失控制</caption>
         <thead><tr><th>当前对象</th><th>已实现</th><th>缺失或风险</th></tr></thead>
         <tbody>
-          <tr><td><code>web.host</code></td><td class="yes">默认 127.0.0.1</td><td>外部监听没有强制 token 与非空 Origin</td></tr>
-          <tr><td><code>BrowserOriginGuard</code></td><td class="partial">HTTP / WS 共用；早期接受未经验证的 allowlist</td><td>不是认证；配置 null/cross-site 与无 Origin 可通过；外部 bind 无 Host enforcement</td></tr>
-          <tr><td><code>/ws</code></td><td class="partial">Origin guard 在 accept 前</td><td>调用方认证缺失，handler 自身立即 accept</td></tr>
-          <tr><td>Owner authority</td><td class="yes">principal、owner档位与固定capability表已实现</td><td>Web 请求在获得 owner authority 前没有 token 证明</td></tr>
+          <tr><td><code>OwnerAuthState</code></td><td class="yes">token、lock、owner-only files、access snapshot、cookie、常数时间比较</td><td>真实 bind-failure、restart 与 multi-profile 验收缺失</td></tr>
+          <tr><td>Canonical Origin</td><td class="yes">effective Origin、非 loopback fail-closed、本地 HTTP 网段</td><td>startup 输出尚缺完整字段与直接 HTTP 警告</td></tr>
+          <tr><td><code>OwnerAuthMiddleware</code></td><td class="yes">HTTP/WS、cookie/Bearer、Host/Origin/CSRF、owner authority</td><td>缺少独立 SSE 与真实 browser WS 验收</td></tr>
+          <tr><td>Fragment bootstrap</td><td class="yes">backend、frontend gate、同步清除、无 Web Storage、auth-url</td><td>缺少 browser-level end-to-end 验收</td></tr>
+          <tr><td>Reverse proxy</td><td class="partial"><code>proxy_headers=False</code> 与 loopback-only forwarded scheme</td><td>nginx/Caddy HTTPS、WS、SSE smoke 未测试</td></tr>
           <tr><td>Provider secret</td><td class="partial">部分响应默认掩码</td><td>两个 reveal 路径返回明文</td></tr>
-          <tr><td><code>/healthz</code></td><td class="partial">liveness 已存在</td><td>返回 revision、DB、会话和工具 metadata，不能公开</td></tr>
+          <tr><td><code>/healthz</code></td><td class="yes">只返回 status=ok；详细字段位于受保护的 <code>/api/diagnostics</code></td><td>完整 response-class cache audit 尚未完成</td></tr>
         </tbody>
       </table>
     </div>
@@ -403,7 +404,7 @@
 
     <div class="steps">
       <div class="step"><b>生成</b>32 个随机字节，编码为 43 字符 unpadded base64url。</div>
-      <div class="step"><b>锁定并保存</b>先持有 <code>&lt;state&gt;/web.lock</code>，再原子写 owner-only token。</div>
+      <div class="step"><b>锁定并保存</b>先持有 <code>&lt;state&gt;/web.lock</code>，再原子写 owner-only token 与无 token 的 <code>access.json</code>。</div>
       <div class="step"><b>派生并比较</b><code>openprogram_owner_&lt;owner16&gt;</code> 使用固定 HMAC domain；解码后只用 <code>compare_digest</code>。</div>
       <div class="step"><b>失效</b>进程重启更换 token，原 Bearer 与 cookie 同时失效。</div>
     </div>
@@ -449,8 +450,8 @@
         <g transform="translate(776,81)">
           <rect width="126" height="86" rx="6" fill="#15232a" stroke="#8bcf9a"/>
           <text x="63" y="32" fill="#e7eee9" font-size="12" text-anchor="middle">Owner scope</text>
-          <text x="63" y="55" fill="#7f9595" font-size="9" text-anchor="middle" class="m">local_owner_</text>
-          <text x="63" y="69" fill="#7f9595" font-size="9" text-anchor="middle" class="m">authority()</text>
+          <text x="63" y="55" fill="#7f9595" font-size="9" text-anchor="middle" class="m">owner_authority(</text>
+          <text x="63" y="69" fill="#7f9595" font-size="9" text-anchor="middle" class="m">principal_id)</text>
         </g>
         <g transform="translate(926,81)">
           <rect width="150" height="86" rx="6" fill="#192c34" stroke="#8bcf9a"/>
@@ -467,7 +468,7 @@
         <text x="539" y="242" fill="#ef7772" font-size="11" text-anchor="middle" class="m">403</text><text x="539" y="260" fill="#9f8584" font-size="10" text-anchor="middle">Origin / CSRF</text>
         <rect x="619" y="220" width="140" height="53" rx="5" fill="#211d20" stroke="#ef7772"/>
         <text x="689" y="242" fill="#ef7772" font-size="11" text-anchor="middle" class="m">401</text><text x="689" y="260" fill="#9f8584" font-size="10" text-anchor="middle">authentication</text>
-        <text x="42" y="305" fill="#7f9595" font-size="10">公共 static shell、bootstrap 和最小 health 仍执行 Host / browser-context 校验；只有 credential check 按 route policy 省略或内置。</text>
+        <text x="42" y="305" fill="#7f9595" font-size="10">公共 static shell、ownership challenge、bootstrap 和最小 health 仍执行 Host 校验；只有 credential check 按 route policy 省略或内置。</text>
       </svg>
     </div>
 
@@ -513,10 +514,12 @@
     </div>
 
     <div class="grid3">
-      <article class="card cyan"><div class="k">Public allowlist</div><h3>仅三个公共类别</h3><p>静态 shell/asset、bootstrap、最小 health。Shell 使用 CSP <code>frame-ancestors 'none'</code> 与 <code>X-Frame-Options: DENY</code>。</p></article>
+      <article class="card cyan"><div class="k">Public allowlist</div><h3>仅四个公共类别</h3><p>静态 shell/asset、ownership challenge、bootstrap、最小 health。Shell 使用 CSP <code>frame-ancestors 'none'</code> 与 <code>X-Frame-Options: DENY</code>。</p></article>
       <article class="card amber"><div class="k">Browser cookie</div><h3>CSRF 校验保留</h3><p><code>GET/HEAD/OPTIONS</code> 必须无副作用。Unsafe method 与 WS 要求 Origin 等于 <code>request_origin</code>；safe 请求只允许省略 Origin。</p></article>
       <article class="card violet"><div class="k">Native client</div><h3>Header-only Bearer</h3><p>HTTP、SSE 和原生 WS 使用 Bearer。不接受 query token；除 bootstrap 外，一旦存在 Authorization，错误 Bearer 不能回退 cookie。Bootstrap 出现 Authorization 时直接返回同一 401。</p></article>
     </div>
+
+    <div class="note"><b>Listener ownership：</b><code>&lt;state&gt;/web/access.json</code> 冻结 bind、port、effective Origin 与 token fingerprint，但不包含 token。CLI 核对 worker PID/port 后，只向 <code>GET /api/auth/challenge</code> 发送新的 32 字节 nonce，并在本机验证 <code>HMAC-SHA256(raw_token, "openprogram-web-challenge-v1\0" || nonce || "\0" || revision)</code>；token 不发送到被探测端口。</div>
 
     <h3 style="margin-top:25px">认证矩阵</h3>
     <div class="table-wrap" tabindex="0" role="region" aria-label="HTTP SSE WebSocket 认证矩阵表">
@@ -529,6 +532,7 @@
           <tr><td>Cookie + safe HTTP/SSE</td><td>必须</td><td>存在时必须相等；同源 navigation 可省略</td><td><code>401</code> 或 <code>403</code></td></tr>
           <tr><td>Bearer HTTP/SSE</td><td>必须</td><td>可省略；存在时必须相等</td><td><code>401</code> 或 <code>403</code></td></tr>
           <tr><td>Bearer WebSocket</td><td>accept 前必须</td><td>原生客户端可省略；存在时必须相等</td><td>Upgrade HTTP <code>401/403</code></td></tr>
+          <tr><td>Listener ownership challenge</td><td>无 credential；nonce + 可选 revision</td><td>可省略；存在时必须相等</td><td><code>400</code> 或 <code>403</code></td></tr>
           <tr><td>Fragment bootstrap</td><td>仅 body token；Authorization 拒绝</td><td>等于 <code>request_origin</code></td><td><code>401</code> 或 <code>403</code></td></tr>
         </tbody>
       </table>
@@ -590,51 +594,40 @@ openprogram web auth-url \
       <li>nginx/Caddy HTTPS 下 HTTP、SSE、WS 均能认证，backend 保持 loopback。</li>
       <li>Channel turn 保留 paired authority tier，不取得 Web owner authority。</li>
       <li>同 hostname、不同端口的 profile server 使用不同 cookie 名称并独立认证。</li>
+      <li>Listener ownership probe 核对 worker PID/port 与 access snapshot，只发送随机 nonce，验证 versioned token-HMAC proof，并拒绝 foreign listener、stale snapshot 及 port/fingerprint/proof/revision mismatch。</li>
     </ol>
   </section>
 
   <section class="section" id="status">
     <div class="section-head">
       <div class="num">07</div>
-      <div><h2>实现进度</h2><p>四档严格分开。设计正文不是实现证据；只有当前生产代码与测试用于归类。</p></div>
+      <div><h2>实现进度</h2><p>三档严格分开。设计正文不是实现证据；只有当前生产代码与测试用于归类。</p></div>
     </div>
 
     <div class="diagram" tabindex="0" role="region" aria-label="实现状态分层图">
-      <svg viewBox="0 0 1120 270" role="img" aria-label="远程 Web 访问四档实现状态">
+      <svg viewBox="0 0 1120 270" role="img" aria-label="远程 Web 访问三档实现状态">
         <rect x="18" y="18" width="1084" height="234" rx="9" fill="#0b1216" stroke="#294049"/>
         <g transform="translate(42,47)">
-          <rect width="244" height="172" rx="7" fill="#15232a" stroke="#8bcf9a"/>
-          <rect width="244" height="34" rx="7" fill="#183027"/>
+          <rect width="330" height="172" rx="7" fill="#15232a" stroke="#8bcf9a"/>
+          <rect width="330" height="34" rx="7" fill="#183027"/>
           <text x="16" y="22" fill="#8bcf9a" font-size="11" class="m">IMPLEMENTED</text>
-          <text x="16" y="63" fill="#e7eee9" font-size="12">默认 loopback</text>
-          <text x="16" y="87" fill="#e7eee9" font-size="12">FastAPI lifespan</text>
-          <text x="16" y="111" fill="#e7eee9" font-size="12">per-profile owner / scope</text>
-          <text x="16" y="135" fill="#e7eee9" font-size="11">可复用 file helper（非 Web token）</text>
+          <text x="16" y="63" fill="#e7eee9" font-size="12">process token / cookie / middleware</text>
+          <text x="16" y="87" fill="#e7eee9" font-size="12">fragment bootstrap / auth-url / health</text>
+          <text x="16" y="111" fill="#e7eee9" font-size="12">secret 不可取回 / BackendEndpoint</text>
+          <text x="16" y="135" fill="#e7eee9" font-size="12">真实 listener HTTP / SSE / WS 验收</text>
           <text x="16" y="157" fill="#7f9595" font-size="10">当前代码与测试有证据</text>
         </g>
-        <g transform="translate(306,47)">
-          <rect width="244" height="172" rx="7" fill="#15232a" stroke="#e8ad67"/>
-          <rect width="244" height="34" rx="7" fill="#322819"/>
+        <g transform="translate(392,47)">
+          <rect width="330" height="172" rx="7" fill="#15232a" stroke="#e8ad67"/>
+          <rect width="330" height="34" rx="7" fill="#322819"/>
           <text x="16" y="22" fill="#e8ad67" font-size="11" class="m">PARTIAL</text>
-          <text x="16" y="63" fill="#e7eee9" font-size="12">Origin / Host guard</text>
-          <text x="16" y="87" fill="#e7eee9" font-size="12">allowed_origins 读取</text>
-          <text x="16" y="111" fill="#e7eee9" font-size="12">Web owner 归因</text>
-          <text x="16" y="135" fill="#e7eee9" font-size="12">secret mask / health</text>
-          <text x="16" y="157" fill="#7f9595" font-size="10">存在生产路径，但安全契约不完整</text>
+          <text x="16" y="63" fill="#e7eee9" font-size="12">browser 驱动的 asset / navigation audit</text>
+          <text x="16" y="87" fill="#e7eee9" font-size="12">nginx 与 Caddy smoke deployment</text>
+          <text x="16" y="157" fill="#7f9595" font-size="10">生产路径存在，验收范围未完成</text>
         </g>
-        <g transform="translate(570,47)">
-          <rect width="244" height="172" rx="7" fill="#15232a" stroke="#ef7772"/>
-          <rect width="244" height="34" rx="7" fill="#321d20"/>
-          <text x="16" y="22" fill="#ef7772" font-size="11" class="m">NOT IMPLEMENTED</text>
-          <text x="16" y="63" fill="#e7eee9" font-size="12">Web process token</text>
-          <text x="16" y="87" fill="#e7eee9" font-size="12">fragment / cookie bootstrap</text>
-          <text x="16" y="111" fill="#e7eee9" font-size="12">HTTP / SSE / WS auth</text>
-          <text x="16" y="135" fill="#e7eee9" font-size="12">proxy trust / reveal removal</text>
-          <text x="16" y="157" fill="#7f9595" font-size="10">设计不能计作实现</text>
-        </g>
-        <g transform="translate(834,47)">
-          <rect width="244" height="172" rx="7" fill="#15232a" stroke="#b89ae8"/>
-          <rect width="244" height="34" rx="7" fill="#28213a"/>
+        <g transform="translate(742,47)">
+          <rect width="330" height="172" rx="7" fill="#15232a" stroke="#b89ae8"/>
+          <rect width="330" height="34" rx="7" fill="#28213a"/>
           <text x="16" y="22" fill="#b89ae8" font-size="11" class="m">EXPLICITLY OUT OF SCOPE</text>
           <text x="16" y="63" fill="#e7eee9" font-size="12">账号 / RBAC / project ACL</text>
           <text x="16" y="87" fill="#e7eee9" font-size="12">OAuth 代替 token</text>
@@ -646,9 +639,8 @@ openprogram web auth-url \
     </div>
 
     <div class="status-grid">
-      <article class="status-card" style="--state:var(--green)"><div class="state">已实现</div><ul><li>默认 loopback bind</li><li>FastAPI lifespan</li><li>稳定 per-profile owner principal、owner档位与固定capability表</li><li>可复用文件权限/原子写入基础设施；Web token 本身未实现</li></ul></article>
-      <article class="status-card" style="--state:var(--amber)"><div class="state">部分实现</div><ul><li>Browser Origin/Host guard</li><li><code>web.allowed_origins</code> 读取</li><li>Web owner authority 附加</li><li>默认 secret mask 与详细 health</li></ul></article>
-      <article class="status-card" style="--state:var(--red)"><div class="state">未实现</div><ul><li>进程 token 与 auth-url</li><li>fragment/cookie bootstrap</li><li>HTTP/SSE/WS 统一认证</li><li>外部 bind fail-closed、proxy trust</li><li>删除 reveal 与端到端测试</li></ul></article>
+      <article class="status-card" style="--state:var(--green)"><div class="state">已实现</div><ul><li>默认 loopback、lifespan 与 per-profile owner</li><li><code>OwnerAuthState</code> token、lock、cookie</li><li>canonical Origin 与共同 middleware</li><li>fragment bootstrap、auth-url、最小 health</li><li><code>proxy_headers=False</code> 与 loopback-only forwarded scheme</li><li>两条 plaintext reveal 已删除、严格 secret schema 与统一掩码</li><li><code>BackendEndpoint</code> 驱动 TUI 与 MCP CLI 的 Bearer 认证</li><li>startup 报告 bind、Origin、fingerprint 与明文 HTTP 告警</li><li>真实 Uvicorn listener 上的 HTTP/SSE/WS、bind-failure、轮换、双 profile 与泄露扫描验收</li></ul></article>
+      <article class="status-card" style="--state:var(--amber)"><div class="state">部分实现</div><ul><li>browser 驱动的 asset/navigation audit</li><li>nginx 与 Caddy smoke deployment</li></ul></article>
       <article class="status-card" style="--state:var(--violet)"><div class="state">明确不做</div><ul><li>账号、RBAC、项目权限</li><li>OAuth/SSO 替代 token</li><li>内置 TLS 与证书管理</li><li>公网 relay、托管 tunnel、pairing</li><li>认证关闭与 plaintext reveal</li></ul></article>
     </div>
   </section>

@@ -4,8 +4,10 @@
 > from the same machine, a trusted LAN or VPN, an SSH tunnel, or an
 > owner-operated HTTPS reverse proxy. The English text is normative; the
 > Chinese translation and the standalone HTML page present the same design.
-> Related code: `openprogram/webui/`, `openprogram/agent/authority.py`,
-> `openprogram/mcp/token_storage.py`, and `openprogram/_compat.py`.
+> Related code: `openprogram/webui/owner_auth.py`,
+> `openprogram/webui/server.py`, `openprogram/_cli_cmds/web.py`,
+> `web/lib/net/owner-auth-bootstrap.ts`, and
+> `openprogram/agent/authority.py`.
 > Related designs: [speaker identity](../memory/speaker-identity.md),
 > [permission model](../runtime/permission-model.md), and
 > [MCP server](../integrations/mcp-server.md).
@@ -79,30 +81,31 @@ when any of them is present.
 
 `_web_config()` in `openprogram/webui/server.py` defaults to `127.0.0.1` and
 loads `web.host` plus `web.allowed_origins`. `create_app()` uses a FastAPI
-lifespan context and installs `BrowserOriginGuard` for both HTTP and WebSocket
-scopes. The guard currently evaluates rules in this order:
+lifespan context and installs `OwnerAuthMiddleware` from
+`openprogram/webui/owner_auth.py` for HTTP and WebSocket ASGI scopes. The
+middleware validates the canonical request origin before route dispatch,
+applies one cookie-or-Bearer authentication policy to protected HTTP, SSE, and
+WebSocket traffic, and attaches the active profile's owner authority only after
+authentication. The WebSocket check occurs before `websocket.accept`.
 
-- requires a loopback `Host` only while the configured bind host is loopback;
-- accepts an exact string in the unvalidated `allowed_origins` list before
-  inspecting `Sec-Fetch-Site`, including a configured `null` value;
-- otherwise rejects `Sec-Fetch-Site: cross-site` and an opaque `null` Origin;
-- otherwise accepts a matching Host origin or a loopback origin;
-- accepts requests with no `Origin`, for terminal and native clients.
+`OwnerAuthState` generates a 32-byte process token, acquires the per-state
+`web.lock`, writes the owner-only `web/token` plus the token-free
+`web/access.json` policy snapshot, derives the profile-specific HttpOnly
+cookie, and removes owned state on close. `canonicalize_origin()` and
+`resolve_effective_origins()` validate exact origins, add only the applicable
+loopback defaults, and reject a non-loopback bind with no configured origin.
+Uvicorn starts with `proxy_headers=False`; only `OwnerAuthMiddleware` may use a
+single `X-Forwarded-Proto` supplied by an immediate loopback peer.
 
-These rules reduce browser-origin and DNS-rebinding exposure, but they do not
-authenticate a caller. When `web.host` is non-loopback,
-`enforce_loopback_host` becomes false, so the existing Host restriction is
-disabled. `allowed_origins` values are compared as normalized strings rather
-than parsed and validated origin authorities.
-The current Uvicorn startup does not disable its proxy-header processing, so an
-OpenProgram middleware cannot yet rely on the ASGI client and scheme as the raw
-socket peer and transport.
-
-The `/ws` handler accepts the connection before any caller authentication and
-then exposes the full `WS_ACTIONS` registry. HTTP routes and SSE endpoints have
-no common authentication dependency. Web chat entry points already attach the
-owner authority object, but today they do so before proving that the
-request came from the owner.
+The public `POST /api/auth/bootstrap` exchanges the fragment token for the
+derived cookie. The frontend coordinator in
+`web/lib/net/owner-auth-bootstrap.ts` removes the fragment synchronously,
+performs that exchange before mounting the application subtree, and does not
+use Web Storage. `openprogram web auth-url --base-url ...` first verifies the
+active listener through the nonce/HMAC ownership challenge, then prints a
+fragment URL only for an effective origin. `/healthz` now returns only
+`{"status":"ok"}`; authenticated operational diagnostics are available at
+`/api/diagnostics`.
 
 Credential responses are masked by default in part of the provider API, while
 two production paths still return plaintext:
@@ -110,16 +113,20 @@ two production paths still return plaintext:
 - `GET /api/providers/{provider}/accounts/{name}/reveal`;
 - `GET /api/config/key/{env_var}?reveal=1`.
 
-The existing `/healthz` response is also too detailed for a public unauthenticated
-probe: it includes code revision, uptime, database state, session visibility,
-recent-message counts, and tool counts.
+The remaining implementation gaps are narrower than the final contract. The
+two reveal paths and their frontend controls still exist. Startup reporting
+does not yet emit every field and direct-HTTP warning specified in section 6.1.
+The current executable coverage includes middleware, token lifecycle,
+bootstrap coordination, CLI URL generation, HTTP, and WebSocket cases, but not
+the complete browser, SSE, restart, multi-profile, or nginx/Caddy acceptance
+matrix in section 6.3.
 
 ### 2.2 Why loopback still requires a token
 
 Loopback limits which network interfaces accept connections; it does not
 authenticate a browser request or another local process.
 
-| Caller | What the current boundary permits | Required final control |
+| Caller | Residual threat | Required control |
 |---|---|---|
 | Arbitrary Web page | It can send some HTTP requests to localhost; WebSocket is not protected by the HTTP same-origin read rule | Token plus exact Origin/Host checks before any action |
 | DNS-rebinding page | It can make a hostile name resolve to a loopback address and present a foreign Host | Fail-closed Host authority validation |
@@ -137,7 +144,7 @@ experience, not a claim that both products have identical code or threat sets.
 
 ### 2.3 Security invariants
 
-The final implementation preserves these invariants:
+The design and implementation preserve these invariants:
 
 1. No protected application state, session data, project or user file bytes,
    secret metadata, SSE event, or WebSocket frame is returned before
@@ -233,6 +240,9 @@ token:
 - exists for one Web process lifetime and changes after restart;
 - is atomically written to `<state-dir>/web/token` before the listener becomes
   ready;
+- is accompanied by an owner-only `<state-dir>/web/access.json` snapshot with
+  exactly `version`, `bind_host`, `port`, canonical `effective_origins`, and
+  `token_fingerprint`; the snapshot contains no token;
 - is created with owner-only permissions and passed through
   `openprogram._compat.restrict_to_user()` for cross-platform hardening;
 - is never accepted from configuration, a command-line argument, or an
@@ -247,10 +257,14 @@ token:
 The file write reuses the atomic temp-file, `os.replace`, and permission
 patterns already used by `openprogram/mcp/token_storage.py`. Startup fails if
 OpenProgram cannot acquire the lock or create and read back the token file
-safely. If binding or later startup fails, the process removes the token only
-while it still owns the lock and the file still contains its token. Orderly
-shutdown applies the same ownership check. An unlocked stale file is replaced
-atomically after the next process acquires the lock.
+safely. `read_active_web_access()` returns `ActiveWebAccess` only when the
+snapshot schema and origins are valid and its fingerprint matches the live
+token file. If binding
+or later startup fails, the process removes the token only while it still owns
+the lock and the file still contains its token; it removes `access.json` only
+when the stored fingerprint is its own. Orderly shutdown applies the same
+ownership checks. Unlocked stale files are replaced atomically after the next
+process acquires the lock.
 
 ### 5.2 Credential forms
 
@@ -268,7 +282,8 @@ different ports from overwriting one another; cookies themselves are not
 port-scoped. The cookie value is also exactly 43 base64url characters. It is
 not a user session and has no database row. Its expected value is recomputed
 from the current token, so a server restart invalidates it. Authentication maps
-either valid form to `local_owner_authority()`. On protected routes other than
+either valid form to `owner_authority(owner_principal_id)`, using the principal
+captured for the active profile when `OwnerAuthState` starts. On protected routes other than
 the bootstrap endpoint, an `Authorization` header selects only the Bearer path:
 a non-Bearer scheme, malformed value, or incorrect token returns `401` and
 never falls back to a valid cookie.
@@ -318,10 +333,14 @@ The public remote command is explicit:
 openprogram web auth-url --base-url https://agent.example.com
 ```
 
-It reads the live token file and writes one full fragment URL to the invoking
-terminal. It does not write the URL to application logs. `--base-url` must be a
-canonical effective origin and must contain no path, query, fragment, or user
-information. HTTP is accepted only for exact `localhost` while the actual
+It first verifies that the worker PID/port files, `access.json`, and listening
+process agree by sending a fresh random nonce to `GET /api/auth/challenge` and
+checking the returned token-HMAC proof locally. The owner token is never sent
+to the probed port. Only after that check does the command read the live token
+file and write one full fragment URL to the invoking terminal. It does not
+write the URL to application logs. `--base-url` must be a canonical effective
+origin frozen in `access.json` and must contain no path, query, fragment, or
+user information. HTTP is accepted only for exact `localhost` while the actual
 listener is loopback, or for an IP literal in the explicit local/overlay range
 set defined in section 5.5; every other DNS name requires HTTPS.
 
@@ -332,8 +351,21 @@ middleware:
 
 - the static application shell and immutable static assets;
 - `POST /api/auth/bootstrap`, which performs its own token validation;
+- `GET /api/auth/challenge?nonce=<43-character-base64url>` with an optional
+  `revision=<40-lowercase-hex>` constraint, which returns only a versioned
+  token-HMAC proof of the supplied nonce after Host validation;
 - `GET /healthz`, reduced to a non-identifying liveness response such as
   `{"status":"ok"}`.
+
+The ownership challenge accepts exactly one 32-byte unpadded-base64url nonce
+and at most one revision. When present, the revision must be the 40-character
+lowercase revision currently served by the process. Its successful response is
+exactly `200 {"proof":"<43-character-base64url>"}`, where the decoded proof is
+`HMAC-SHA256(key=raw_token_bytes,
+msg=b"openprogram-web-challenge-v1\0" + raw_nonce_bytes + b"\0" +
+revision_ascii)`. The ownership probe sends no credential; the endpoint does
+not use a credential to construct the proof, emits no token or diagnostics,
+and cannot substitute for normal request authentication.
 
 Every other HTTP route, raw file response, provider route, diagnostic route,
 SSE stream, and WebSocket upgrade requires a valid cookie or Bearer token.
@@ -355,10 +387,13 @@ Authentication failures use stable generic responses:
   `WWW-Authenticate: Bearer realm="OpenProgram"`;
 - invalid Host, Origin, or browser request context: HTTP `403` with
   `{"error":"request_origin_rejected"}`;
+- malformed or revision-mismatched ownership challenge: HTTP `400` with
+  `{"error":"invalid_challenge"}`;
 - invalid non-loopback startup configuration: no listener is started.
 
-Bootstrap responses, authentication failures, protected API responses,
-credential-status responses, and SSE responses send `Cache-Control: no-store`.
+Bootstrap and ownership-challenge responses, authentication failures,
+protected API responses, credential-status responses, and SSE responses send
+`Cache-Control: no-store`.
 Only content-addressed immutable static assets use long-lived caching.
 
 WebSocket authentication and Host/Origin validation occur before
@@ -424,6 +459,7 @@ reports protocol metadata. Every mutation uses `POST`, `PUT`, `PATCH`, or
 | Cookie, safe HTTP/SSE | Required | Explicit Origin must equal `request_origin`; same-origin navigation may omit it | `request_origin` must be effective |
 | Bearer HTTP/SSE | Required | May omit Origin; if present it must equal `request_origin` | `request_origin` must be effective |
 | Bearer WebSocket | Required before accept | Native client may omit Origin; if present it must equal `request_origin` | `request_origin` must be effective |
+| Listener-ownership challenge | No credential; bounded nonce and optional revision only | May omit Origin; if present it must equal `request_origin` | `request_origin` must be effective |
 | Fragment bootstrap | Token in body | Exact `request_origin` required | `request_origin` must be effective |
 
 `Sec-Fetch-Site: cross-site` remains a rejection signal for browser requests.
@@ -592,7 +628,8 @@ secret value.
 
 The stable mask is the first three ASCII characters, U+2026, and the last four
 characters only for values of at least twelve characters, which hides at least
-five characters. Values shorter than twelve use the fixed string `••••••••`.
+five characters. Values shorter than twelve, and values whose visible
+characters are not ASCII, use the fixed string `••••••••`.
 The mask therefore does not encode the original length for short credentials.
 It is presentation-only and is never accepted in a write payload.
 
@@ -606,9 +643,9 @@ authentication; it is not a credential-retrieval endpoint.
 
 ### 6.1 Startup contract
 
-The server validates configuration, generates and secures the token, computes
-the token fingerprint, and only then starts accepting connections. The startup
-log states:
+The server validates configuration, generates and secures the token, writes and
+validates the frozen `access.json` snapshot, computes the token fingerprint,
+and only then starts accepting connections. The startup log states:
 
 - the actual bind address and whether it is loopback;
 - the configured public origins;
@@ -632,15 +669,17 @@ request
   -> immediate peer, trusted effective scheme, canonical Host/request_origin
   -> route + method + credential-source classification
   -> Origin / Sec-Fetch-Site / CSRF policy
-  -> public, bootstrap, cookie, or Bearer authentication rule
+  -> public, ownership-challenge, bootstrap, cookie, or Bearer rule
   -> owner authority attachment
   -> HTTP route, SSE generator, or WebSocket accept
 ```
 
 Public static routes skip credential authentication but not Host and browser
 context validation. The bootstrap route replaces the common credential check
-with its constant-time body-token exchange. No route implements an independent
-authentication interpretation.
+with its constant-time body-token exchange. The ownership-challenge route
+performs only its bounded nonce/revision proof contract and grants no
+authority. No application route implements an independent authentication
+interpretation.
 
 ### 6.3 Required tests
 
@@ -670,7 +709,8 @@ The feature is complete only when these behaviors are executable tests:
    non-HTTPS effective scheme is rejected, and direct WS plus Caddy-proxied WSS
    produce the expected browser-equivalent origin.
 9. A second Web process for the same state directory cannot modify the live
-   token; bind failure removes only the token owned by the failing process.
+   token or access snapshot; bind failure removes only the files owned by the
+   failing process.
 10. Restart rotates the token and invalidates the prior Bearer token and cookie.
 11. An invalid or malformed Authorization header never falls back to a valid
     cookie.
@@ -690,6 +730,12 @@ The feature is complete only when these behaviors are executable tests:
 17. Two profile servers on the same loopback hostname and different ports use
     distinct cookie names, authenticate independently, and ignore each other's
     cookie.
+18. The listener-ownership probe checks worker PID/port plus the frozen access
+    snapshot, sends only a fresh 32-byte nonce, validates the exact versioned
+    HMAC proof, optionally binds the proof to the served revision, disables
+    ambient HTTP proxies, and never sends or logs the owner token. A foreign
+    listener, stale snapshot, mismatched fingerprint, port, proof, or revision
+    is not treated as the active owner server.
 
 ## 7. Implementation status
 
@@ -703,31 +749,24 @@ production paths and tests.
 | Default loopback bind | `_web_config()` in `openprogram/webui/server.py` defaults to `127.0.0.1` |
 | FastAPI lifespan | `create_app()` uses `_lifespan`; deprecated `@app.on_event` handlers are absent |
 | Stable per-profile owner principal and explicit owner/paired authority tiers | `openprogram/agent/authority.py`; Web, TUI, desktop, runtime, and paired channel entry points attach a tier; `tests/unit/test_authority_scope.py` and permission tests cover the fixed tier table |
-| Cross-platform file-permission helper and atomic credential-file pattern | `openprogram._compat.restrict_to_user()` and `openprogram/mcp/token_storage.py` are available for reuse; the Web-token implementation still has to enforce its fail-closed contract |
+| Owner process credential | `OwnerAuthState` in `openprogram/webui/owner_auth.py` generates the 32-byte token, holds `<state-dir>/web.lock`, atomically writes the owner-only `<state-dir>/web/token`, derives the profile-specific cookie, compares decoded tokens with `hmac.compare_digest`, and removes only its owned state; `test_process_token_is_owner_only_locked_and_replaced_after_release` covers lock, mode, replacement, redacted representation, and rotation after release |
+| Canonical effective origins | `canonicalize_origin()` and `resolve_effective_origins()` validate exact origins, enforce the explicit HTTP network set, add narrow loopback defaults, and fail a non-loopback bind without an origin; parameterized owner-auth tests cover accepted and rejected forms |
+| Common owner-auth boundary | `OwnerAuthMiddleware` is installed by `create_app()` before routing, protects HTTP and WebSocket ASGI scopes, applies cookie/Bearer selection, Host/Origin/CSRF checks, generic `401`/`403` responses, no-store headers, and owner-authority attachment; owner-auth tests cover HTTP mutation and pre-accept WebSocket cases |
+| Fragment bootstrap backend and frontend coordinator | `POST /api/auth/bootstrap`, `web/lib/net/owner-auth-bootstrap.ts`, and `OwnerAuthBoundary` implement body-token exchange, synchronous fragment removal, no Web Storage, and application gating; `web/scripts/check-owner-auth-bootstrap.mjs`, TypeScript checking, and the production Web build exercise the frontend contract |
+| Authenticated URL command | `openprogram web auth-url --base-url ...`, `build_owner_auth_url()`, and `tests/unit/test_web_auth_url.py` cover active-server lookup and effective-origin validation; normal CLI browser launch uses the same fragment URL |
+| Minimal public liveness | `/healthz` returns only `{"status":"ok"}` with `no-store`; operational fields are on protected `/api/diagnostics`; integration and owner-auth tests cover both routes |
+| Raw-peer proxy boundary | Uvicorn is configured with `proxy_headers=False`; `OwnerAuthMiddleware` accepts a single forwarded scheme only from the immediate loopback peer and tests the HTTPS-origin match |
+| Secret non-retrievability | Both plaintext reveal forms are gone: the account reveal route is removed and `GET /api/config/key/{env_var}?reveal=1` returns `404`; `_credential_secrets` supplies the single mask and the declared-name check; `/api/config`, `/api/settings`, `/api/config/verify`, `DELETE /api/config/key/{env_var}`, and the account routes accept only their exact bounded schemas and never return a full secret; the frontend has no reveal action, control, or response type |
+| Internal client authentication | `resolve_backend_endpoint()` returns a challenge-verified `BackendEndpoint` (base URL, WebSocket URL, origin, and token) so the credential is read only after the listener proves it holds the same token; `cli_ink.py` passes it to the TUI environment, `_cli_cmds/mcp.py` uses it for the MCP CLI, and the Node client sends the Bearer header only to backend URLs (`cli/src/utils/backend.ts`, `cli/tests/backendAuth.test.ts`) |
+| Startup reporting | `start_server()` prints the bind address, binding scope, effective origins, forwarded-scheme trust boundary, and token fingerprint, and warns when an effective origin is non-loopback plaintext HTTP; `test_startup_logs_warn_about_plaintext_http_for_remote_origins` asserts each field |
+| Real-listener transport acceptance | `tests/unit/test_web_owner_auth_listener.py` binds a real Uvicorn socket on an ephemeral port and covers authenticated and unauthenticated HTTP, SSE authentication with `no-store`, the raw WebSocket handshake rejected with `401` and Bearer-realm/`no-store` headers before accept, bind-failure cleanup, wire-level token rotation, two-profile cookie isolation, the reverse-proxy origin matrix, and a sweep proving the token appears in no response body, header, log, or rendered page |
 
 ### Partially implemented
 
 | Item | Implemented part | Missing part |
 |---|---|---|
-| Browser Origin/Host guard | HTTP and WS share `BrowserOriginGuard`; outside an early unvalidated `allowed_origins` match, explicit cross-site, opaque Origin, and loopback foreign Host cases are rejected | It is not authentication; a configured `null` or cross-site Origin can pass through the early allowlist branch; missing Origin passes; Host enforcement is disabled for non-loopback binds; proxy trust and canonical origin validation are absent |
-| `web.allowed_origins` | Configuration is loaded and exact strings can be allowed | No schema validation, parsed `effective_origins`, non-loopback fail-closed rule, or public-HTTPS rule |
-| Web owner attribution | Web chat requests receive the owner authority object | The caller is not authenticated before receiving that authority |
-| Secret masking | `/api/config/key/{env_var}` masks by default | Two plaintext reveal paths and their frontend controls remain |
-| Health endpoint | `/healthz` exists | Its unauthenticated response is not minimal and exposes operational metadata |
-
-### Not implemented
-
-| Item | Required result |
-|---|---|
-| Web process token | Per-start generation, `<state-dir>/web.lock`, `<state-dir>/web/token`, safe atomic lifecycle, constant-time validation, fingerprint-only logs |
-| Browser bootstrap | Fragment parsing and removal, `POST /api/auth/bootstrap`, derived HttpOnly Strict cookie |
-| Unified authentication | One HTTP/SSE/WS middleware policy, Bearer support, pre-accept WS `401`, generic failures |
-| Remote URL command | `openprogram web auth-url --base-url ...` with canonical effective-origin validation |
-| External-bind startup validation | Non-empty exact origins, parsed Host authorities, HTTPS/public-address rules, direct-HTTP warning |
-| Trusted reverse-proxy handling | Uvicorn proxy rewriting disabled, raw-peer loopback-only forwarded-scheme trust, and tested nginx/Caddy behavior |
-| Public-route reduction | Static shell, bootstrap, and minimal liveness only; detailed health behind auth |
-| Secret non-retrievability | Removal of both plaintext reveal forms, frontend actions, types, and plaintext response paths; distinct config-key and account mutation contracts |
-| End-to-end security tests | Browser, native client, WebSocket, SSE, restart, proxy, DNS-rebinding, and secret tests listed above |
+| Browser-level audit | The shell is served with CSP, framing, referrer, content-type, and cache headers, and server-side tests assert that responses and rendered HTML carry no token | No browser-driven audit yet walks every exported asset and navigation path to prove none embeds dynamic data |
+| Deployment operations | The reverse-proxy contract is covered by a real-listener origin matrix over `X-Forwarded-Proto` and `X-Forwarded-Host`, and the raw-peer boundary is enforced | nginx and Caddy HTTPS/WS/SSE smoke deployments are untested |
 
 ### Explicitly out of scope
 

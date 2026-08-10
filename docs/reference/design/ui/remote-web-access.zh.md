@@ -2,9 +2,10 @@
 
 > 本文定义所有者如何在本机、可信局域网或 VPN、SSH 隧道，以及所有者自行运维的
 > HTTPS 反向代理上使用 OpenProgram 现有 Web UI。英文正文是规范基准；本文和独立
-> HTML 页面表达同一设计。关联代码：`openprogram/webui/`、
-> `openprogram/agent/authority.py`、`openprogram/mcp/token_storage.py`、
-> `openprogram/_compat.py`。关联设计：[说话人身份](../memory/speaker-identity.md)、
+> HTML 页面表达同一设计。关联代码：`openprogram/webui/owner_auth.py`、
+> `openprogram/webui/server.py`、`openprogram/_cli_cmds/web.py`、
+> `web/lib/net/owner-auth-bootstrap.ts`、`openprogram/agent/authority.py`。
+> 关联设计：[说话人身份](../memory/speaker-identity.md)、
 > [权限模型](../runtime/permission-model.md)、[MCP 服务端](../integrations/mcp-server.md)。
 
 OpenProgram 在所有部署方式下使用同一 authority 模型：进程生命周期内有效的实例
@@ -62,38 +63,42 @@ SSH、VPN、nginx、Caddy 和证书自动化是独立运维组件。使用这些
 
 `openprogram/webui/server.py` 中的 `_web_config()` 默认使用 `127.0.0.1`，并读取
 `web.host` 和 `web.allowed_origins`。`create_app()` 使用 FastAPI lifespan context，
-并为 HTTP 与 WebSocket scope 安装 `BrowserOriginGuard`。该 guard 当前按以下顺序处理：
+并为 HTTP 与 WebSocket ASGI scope 安装
+`openprogram/webui/owner_auth.py` 中的 `OwnerAuthMiddleware`。该 middleware 在 route
+dispatch 前验证 canonical request origin，对受保护的 HTTP、SSE 与 WebSocket 使用同一套
+cookie 或 Bearer 认证规则，并且只在认证成功后附加当前 profile 的 owner authority。
+WebSocket 校验发生在 `websocket.accept` 之前。
 
-- 仅在监听地址是 loopback 时要求 `Host` 也是 loopback；
-- 在检查 `Sec-Fetch-Site` 前接受未验证 `allowed_origins` 中精确匹配的字符串，包括配置的
-  `null`；
-- 其他情况下拒绝 `Sec-Fetch-Site: cross-site` 和 opaque `null` Origin；
-- 否则接受与 Host 相同的 Origin 或 loopback Origin；
-- 为终端和原生客户端接受不带 `Origin` 的请求。
+`OwnerAuthState` 生成 32 字节进程 token，取得 per-state `web.lock`，写入 owner-only
+`web/token` 与不含 token 的 `web/access.json` policy snapshot，派生 profile-specific
+HttpOnly cookie，并在关闭时清理自己拥有的状态。
+`canonicalize_origin()` 与 `resolve_effective_origins()` 验证精确 Origin，只加入适用的
+loopback 默认值，并拒绝没有配置 Origin 的非 loopback bind。Uvicorn 以
+`proxy_headers=False` 启动；只有 `OwnerAuthMiddleware` 可以使用原始 immediate peer 为
+loopback 时提供的单一 `X-Forwarded-Proto`。
 
-这些规则减少一部分浏览器 Origin 和 DNS rebinding 风险，但不认证调用方。`web.host`
-为非 loopback 时，`enforce_loopback_host` 变成 false，现有 Host 限制随之关闭。
-`allowed_origins` 目前按规范化后的字符串比较，没有解析和验证 Origin authority。
-当前 Uvicorn 启动没有关闭自身 proxy-header 处理，因此 OpenProgram middleware 还不能把
-ASGI client 和 scheme 当成原始 socket peer 与 transport。
-
-`/ws` handler 在认证调用方之前就接受连接，随后暴露完整 `WS_ACTIONS` registry。HTTP
-route 和 SSE endpoint 没有共同的认证 dependency。Web chat 的调用位置已经附加
-owner authority 对象，但当前并未先证明请求来自所有者。
+公共 `POST /api/auth/bootstrap` 把 fragment token 交换为派生 cookie。前端
+`web/lib/net/owner-auth-bootstrap.ts` 中的 coordinator 同步清除 fragment，在挂载应用子树
+之前完成交换，并且不使用 Web Storage。`openprogram web auth-url --base-url ...` 先通过
+nonce/HMAC ownership challenge 验证 active listener，再只为 effective Origin 输出 fragment
+URL。`/healthz` 现在只返回 `{"status":"ok"}`；需要认证的
+运维诊断位于 `/api/diagnostics`。
 
 Provider API 的部分响应默认掩码，但仍有两条生产路径返回明文：
 
 - `GET /api/providers/{provider}/accounts/{name}/reveal`；
 - `GET /api/config/key/{env_var}?reveal=1`。
 
-现有 `/healthz` 也不适合作为公网无认证探针：它会返回代码 revision、uptime、数据库状态、
-会话可见性、最近消息数量和工具数量。
+当前剩余缺口小于最终契约的完整范围：两条 reveal 路径及其 frontend control 仍然存在；
+启动输出还没有包含 6.1 节要求的全部字段和直接 HTTP 警告。现有可执行覆盖包含 middleware、
+token 生命周期、bootstrap coordinator、CLI URL 生成、HTTP 和 WebSocket，但尚未覆盖 6.3
+节完整的 browser、SSE、restart、multi-profile 与 nginx/Caddy 验收矩阵。
 
 ### 2.2 为什么 loopback 也必须使用 token
 
 Loopback 只限制哪些网络接口接受连接，不认证浏览器请求，也不认证本机其他进程。
 
-| 调用方 | 当前边界允许的行为 | 最终必须增加的控制 |
+| 调用方 | 剩余威胁 | 必需控制 |
 |---|---|---|
 | 任意网页 | 可以向 localhost 发送部分 HTTP 请求；WebSocket 不受 HTTP 同源读取规则保护 | 任何动作前同时验证 token、精确 Origin 和 Host |
 | DNS rebinding 网页 | 可以让恶意域名解析为 loopback 地址，并发送外部 Host | Host authority 必须 fail-closed 校验 |
@@ -109,7 +114,7 @@ Jupyter Notebook 4.3 默认启用 token 认证，并把生成的 token 提供给
 
 ### 2.3 安全不变量
 
-最终实现保持以下不变量：
+设计与实现保持以下不变量：
 
 1. 认证前不返回受保护的应用状态、会话数据、项目或用户文件字节、secret metadata、
    SSE event 或 WebSocket frame。
@@ -190,6 +195,9 @@ HTTP/WS/SSE 校验规则。不增加第二套 WebSocket ticket、用户 session 
 
 - 只在一个 Web 进程生命周期内有效，重启后更换；
 - 在 listener ready 前原子写入 `<state-dir>/web/token`；
+- 同时写入 owner-only `<state-dir>/web/access.json` snapshot，其中只能包含
+  `version`、`bind_host`、`port`、canonical `effective_origins` 与
+  `token_fingerprint`，不包含 token；
 - 创建时使用 owner-only 权限，再调用 `openprogram._compat.restrict_to_user()` 做跨平台
   权限限制；
 - 不从配置、命令行参数或环境变量读取；
@@ -198,9 +206,12 @@ HTTP/WS/SSE 校验规则。不增加第二套 WebSocket ticket、用户 session 
 - 日志只记录 `sha256:<sha256(raw_token_bytes).hexdigest()[:12]>`。
 
 文件写入复用 `openprogram/mcp/token_storage.py` 已有的临时文件、`os.replace` 和权限处理
-方式。OpenProgram 无法取得 lock，或无法安全创建、回读 token 文件时，启动失败。Bind
-或后续启动失败时，只有当前进程仍持有 lock 且文件内容仍是自身 token 才能删除文件；正常
-关闭采用相同 ownership 校验。下个进程取得 lock 后原子替换未加锁的遗留文件。
+方式。OpenProgram 无法取得 lock，或无法安全创建、回读 token 文件时，启动失败。
+`read_active_web_access()` 只有在 snapshot schema 与 Origin 都有效，并且 fingerprint 与
+live token file 匹配时才返回 `ActiveWebAccess`。Bind 或后续启动失败时，只有当前进程仍持有 lock 且文件
+内容仍是自身 token 才能删除 token；只有 `access.json` 中 fingerprint 是自己的值时才能
+删除 snapshot。正常关闭采用相同 ownership 校验。下个进程取得 lock 后原子替换未加锁的
+遗留文件。
 
 ### 5.2 Credential 形式
 
@@ -216,7 +227,8 @@ HTTP/WS/SSE 校验规则。不增加第二套 WebSocket ticket、用户 session 
 Per-profile 名称避免同一 hostname 不同端口上的多个 profile server 相互覆盖 cookie；cookie
 本身不按端口隔离。Cookie 值同样恰好是 43 个 base64url 字符。它不是用户 session，没有
 数据库记录。预期值由当前 token 重新计算，server 重启后原 cookie 自动失效。有效 cookie 或 Bearer 都映射到
-`local_owner_authority()`。除 bootstrap 外，受保护 route 的请求存在 `Authorization`
+`owner_authority(owner_principal_id)`，其中 principal 在 `OwnerAuthState` 为当前 profile
+启动时确定。除 bootstrap 外，受保护 route 的请求存在 `Authorization`
 header 时只使用 Bearer 路径：非 Bearer scheme、格式错误或 token 错误均返回 `401`，
 不能回退到有效 cookie。
 
@@ -263,10 +275,13 @@ header 或 server route。Bootstrap endpoint：
 openprogram web auth-url --base-url https://agent.example.com
 ```
 
-命令读取当前运行进程的 token 文件，只向调用它的终端输出一个完整 fragment URL，不写入
-应用日志。`--base-url` 必须是 effective canonical Origin，不得包含 path、query、fragment
-或 user information。只有实际 listener 是 loopback 时的精确 `localhost`，或属于 5.5 节
-显式本地/overlay 地址范围的 IP literal 可以使用 HTTP；其他 DNS name 都必须使用 HTTPS。
+命令先核对 worker PID/port 文件、`access.json` 与 listening process：向
+`GET /api/auth/challenge` 发送新的随机 nonce，并在本机验证返回的 token-HMAC proof。Owner
+token 不会发送到被探测端口。只有验证成功后，命令才读取 live token file，并只向调用它的
+终端输出一个完整 fragment URL，不写入应用日志。`--base-url` 必须是冻结在
+`access.json` 中的 effective canonical Origin，不得包含 path、query、fragment 或 user
+information。只有实际 listener 是 loopback 时的精确 `localhost`，或属于 5.5 节显式
+本地/overlay 地址范围的 IP literal 可以使用 HTTP；其他 DNS name 都必须使用 HTTPS。
 
 ### 5.4 Route 策略
 
@@ -274,7 +289,18 @@ openprogram web auth-url --base-url https://agent.example.com
 
 - 静态应用 shell 和不可变静态 asset；
 - `POST /api/auth/bootstrap`，它自己执行 token 校验；
+- `GET /api/auth/challenge?nonce=<43-character-base64url>`，可以附带
+  `revision=<40-lowercase-hex>`；它在 Host 校验后只返回输入 nonce 的 versioned
+  token-HMAC proof；
 - `GET /healthz`，缩减为 `{"status":"ok"}` 之类不暴露身份信息的 liveness response。
+
+Ownership challenge 只接受一个解码后为 32 字节的 unpadded-base64url nonce，最多再接受
+一个 revision；revision 存在时必须等于当前进程提供的 40 字符小写 revision。成功 response
+恰好是 `200 {"proof":"<43-character-base64url>"}`，decoded proof 等于
+`HMAC-SHA256(key=raw_token_bytes,
+msg=b"openprogram-web-challenge-v1\0" + raw_nonce_bytes + b"\0" +
+revision_ascii)`。Ownership probe 不发送 credential；endpoint 构造 proof 时不使用 request
+credential，不返回 token 或诊断字段，也不能代替正常请求认证。
 
 其他 HTTP route、raw file response、provider route、diagnostic route、SSE stream 和
 WebSocket Upgrade 都要求有效 cookie 或 Bearer token。详细 health 字段移到认证之后。
@@ -293,11 +319,13 @@ hash 或 nonce，不允许第三方 script 和 `unsafe-eval`。Shell 同时返�
   `WWW-Authenticate: Bearer realm="OpenProgram"`；
 - Host、Origin 或浏览器请求上下文无效：HTTP `403`，body 为
   `{"error":"request_origin_rejected"}`；
+- ownership challenge 格式错误或 revision 不匹配：HTTP `400`，body 为
+  `{"error":"invalid_challenge"}`；
 - 非 loopback 启动配置无效：不启动 listener。
 
-Bootstrap response、认证失败、受保护 API response、credential-status response 和 SSE
-response 都使用 `Cache-Control: no-store`。只有 content-addressed immutable static
-asset 使用长期缓存。
+Bootstrap 与 ownership-challenge response、认证失败、受保护 API response、
+credential-status response 和 SSE response 都使用 `Cache-Control: no-store`。只有
+content-addressed immutable static asset 使用长期缓存。
 
 WebSocket 在 `websocket.accept` 之前完成认证和 Host/Origin 校验。Credential 缺失或无效
 时返回 HTTP `401` Upgrade denial，而不是先接受 socket 再发送应用 close frame。
@@ -352,6 +380,7 @@ transport scheme 和解析后的 `Host` 构造 `request_origin`：`http`、`ws` 
 | Cookie、安全 HTTP/SSE | 必须 | 显式 Origin 必须等于 `request_origin`；同源 navigation 可以省略 | `request_origin` 必须有效 |
 | Bearer HTTP/SSE | 必须 | 可以省略；存在时必须等于 `request_origin` | `request_origin` 必须有效 |
 | Bearer WebSocket | accept 前必须 | 原生客户端可以省略；存在时必须等于 `request_origin` | `request_origin` 必须有效 |
+| Listener ownership challenge | 无 credential；只允许有界 nonce 与可选 revision | 可以省略；存在时必须等于 `request_origin` | `request_origin` 必须有效 |
 | Fragment bootstrap | Body 中的 token | 必须精确匹配 `request_origin` | `request_origin` 必须有效 |
 
 `Sec-Fetch-Site: cross-site` 继续作为浏览器请求的拒绝信号。CORS header 控制浏览器代码
@@ -501,8 +530,8 @@ Provider detail、API-key settings 和 account manager 删除所有 reveal butto
 request。Backend 不把界面显示的掩码解释成 secret 值。
 
 只有长度至少为十二个字符的值才使用前三个 ASCII 字符、U+2026 和末四个字符作为稳定
-mask，保证至少隐藏五个字符。长度不足十二的值统一显示 `••••••••`，不会通过 mask 编码
-短 credential 的原始长度。Mask 只用于显示，write payload 永远不接受它。
+mask，保证至少隐藏五个字符。长度不足十二的值，以及可见字符不是 ASCII 的值，统一显示
+`••••••••`，不会通过 mask 编码短 credential 的原始长度。Mask 只用于显示，write payload 永远不接受它。
 
 Account reveal route 整体删除并返回 `404`。Config-key 掩码状态 route 保留，但带
 `reveal` query parameter 的请求返回 `404`，不能改变为明文 response。无关的
@@ -513,8 +542,8 @@ endpoint。
 
 ### 6.1 启动契约
 
-Server 依次完成配置验证、token 生成与安全保存、fingerprint 计算，然后才接受连接。启动日志
-记录：
+Server 依次完成配置验证、token 生成与安全保存、冻结 `access.json` snapshot 的写入与验证、
+fingerprint 计算，然后才接受连接。启动日志记录：
 
 - 实际 bind address，以及它是否为 loopback；
 - 配置的公网 Origin；
@@ -536,14 +565,15 @@ request
   -> immediate peer, trusted effective scheme, canonical Host/request_origin
   -> route + method + credential-source classification
   -> Origin / Sec-Fetch-Site / CSRF policy
-  -> public, bootstrap, cookie, or Bearer authentication rule
+  -> public, ownership-challenge, bootstrap, cookie, or Bearer rule
   -> owner authority attachment
   -> HTTP route, SSE generator, or WebSocket accept
 ```
 
 公共静态 route 可以省略 credential authentication，但不能省略 Host 和浏览器上下文校验。
-Bootstrap route 用自身的常数时间 body-token exchange 替代共同 credential check。其他
-route 不得各自定义第二种认证解释。
+Bootstrap route 用自身的常数时间 body-token exchange 替代共同 credential check。
+Ownership-challenge route 只执行有界 nonce/revision proof 契约，不授予 authority。其他
+应用 route 不得各自定义第二种认证解释。
 
 ### 6.3 必需测试
 
@@ -568,8 +598,8 @@ route 不得各自定义第二种认证解释。
    所有非 loopback peer 的值；伪造 `X-Forwarded-For` 不能改变信任，公网 bootstrap 的
    effective scheme 不是 HTTPS 时拒绝，direct WS 与 Caddy proxy WSS 都生成预期的浏览器
    等价 Origin。
-9. 同一 state directory 的第二个 Web 进程不能修改 live token；bind 失败只能清理失败
-   进程自身持有的 token。
+9. 同一 state directory 的第二个 Web 进程不能修改 live token 或 access snapshot；bind
+   失败只能清理失败进程自身持有的文件。
 10. 重启会更换 token，使旧 Bearer 和 cookie 都失效。
 11. 错误或 malformed Authorization header 不能回退到有效 cookie。
 12. 静态 asset 和缩减后的 liveness response 不包含进程 token、session 数据、filesystem
@@ -585,6 +615,11 @@ route 不得各自定义第二种认证解释。
 16. Channel message 保留 paired authority tier，不继承 Web owner authority。
 17. 同一 loopback hostname、不同端口上的两个 profile server 使用不同 cookie 名称，独立
     认证并忽略对方 cookie。
+18. Listener ownership probe 同时核对 worker PID/port 与冻结 access snapshot，只发送新的
+    32 字节 nonce，验证精确的 versioned HMAC proof，可以把 proof 绑定到 served revision，
+    禁用 ambient HTTP proxy，并且绝不发送或记录 owner token。Foreign listener、stale
+    snapshot，以及 fingerprint、port、proof 或 revision 不匹配时，不能判定为当前 owner
+    server。
 
 ## 7. 实现进度
 
@@ -597,31 +632,24 @@ route 不得各自定义第二种认证解释。
 | 默认 loopback bind | `openprogram/webui/server.py` 中的 `_web_config()` 默认使用 `127.0.0.1` |
 | FastAPI lifespan | `create_app()` 使用 `_lifespan`，不存在已弃用的 `@app.on_event` handler |
 | 稳定的 per-profile owner principal 与显式 owner/paired authority tier | `openprogram/agent/authority.py`；Web、TUI、desktop、runtime 和已配对 channel 入口附加 tier；`tests/unit/test_authority_scope.py` 与 permission 测试覆盖固定档位表 |
-| 跨平台文件权限 helper 与原子 credential 文件写法 | 已有 `openprogram._compat.restrict_to_user()` 和 `openprogram/mcp/token_storage.py` 可复用；Web token 实现仍需执行自身 fail-closed 契约 |
+| Owner 进程 credential | `openprogram/webui/owner_auth.py` 中的 `OwnerAuthState` 生成 32 字节 token、持有 `<state-dir>/web.lock`、原子写入 owner-only `<state-dir>/web/token`、派生 profile-specific cookie、使用 `hmac.compare_digest` 比较解码后的 token，并且只清理自己拥有的状态；`test_process_token_is_owner_only_locked_and_replaced_after_release` 覆盖 lock、mode、替换、repr 隐去 token 和 release 后轮换 |
+| Canonical effective Origin | `canonicalize_origin()` 与 `resolve_effective_origins()` 验证精确 Origin、执行显式 HTTP 网段限制、加入有限 loopback 默认值，并在非 loopback bind 没有 Origin 时失败；参数化 owner-auth 测试覆盖接受与拒绝的输入 |
+| 共同 owner-auth 边界 | `create_app()` 在 route 前安装 `OwnerAuthMiddleware`，保护 HTTP 和 WebSocket ASGI scope，并执行 cookie/Bearer 选择、Host/Origin/CSRF 校验、通用 `401`/`403`、no-store 与 owner-authority 附加；owner-auth 测试覆盖 HTTP mutation 与 accept 前 WebSocket |
+| Fragment bootstrap backend 与 frontend coordinator | `POST /api/auth/bootstrap`、`web/lib/net/owner-auth-bootstrap.ts` 和 `OwnerAuthBoundary` 已实现 body-token 交换、同步清除 fragment、禁止 Web Storage 与应用挂载 gate；`web/scripts/check-owner-auth-bootstrap.mjs`、TypeScript 检查和 production Web build 验证 frontend 契约 |
+| 认证 URL 命令 | `openprogram web auth-url --base-url ...`、`build_owner_auth_url()` 与 `tests/unit/test_web_auth_url.py` 覆盖 active-server 查找和 effective-Origin 校验；正常 CLI browser launch 使用同一 fragment URL |
+| 最小公共 liveness | `/healthz` 只返回 `{"status":"ok"}` 并带 `no-store`；运维字段位于受保护的 `/api/diagnostics`；integration 与 owner-auth 测试覆盖两条 route |
+| Raw-peer proxy 边界 | Uvicorn 使用 `proxy_headers=False`；`OwnerAuthMiddleware` 只接受 immediate loopback peer 的单一 forwarded scheme，并测试 HTTPS Origin 匹配 |
+| Secret 不可取回 | 两种明文 reveal 形式都已删除：account reveal route 整体移除，`GET /api/config/key/{env_var}?reveal=1` 返回 `404`；`_credential_secrets` 提供统一掩码与 declared-name 校验；`/api/config`、`/api/settings`、`/api/config/verify`、`DELETE /api/config/key/{env_var}` 和 account route 只接受各自的精确 bounded schema，且不返回完整 secret；frontend 不存在 reveal action、control 或 response type |
+| 内部客户端认证 | `resolve_backend_endpoint()` 返回经 challenge 验证的 `BackendEndpoint`（base URL、WebSocket URL、Origin 和 token），credential 只在 listener 证明持有同一 token 之后才读取；`cli_ink.py` 将其传入 TUI 环境，`_cli_cmds/mcp.py` 用于 MCP CLI，Node 客户端只对 backend URL 发送 Bearer header（`cli/src/utils/backend.ts`、`cli/tests/backendAuth.test.ts`） |
+| 启动输出 | `start_server()` 打印 bind 地址、binding scope、effective Origin、forwarded-scheme 信任边界和 token fingerprint，并在 effective Origin 是非 loopback 明文 HTTP 时告警；`test_startup_logs_warn_about_plaintext_http_for_remote_origins` 逐项断言 |
+| 真实 listener transport 验收 | `tests/unit/test_web_owner_auth_listener.py` 在 ephemeral 端口绑定真实 Uvicorn socket，覆盖带认证与无认证 HTTP、带 `no-store` 的 SSE 认证、accept 前以 `401` 加 Bearer-realm/`no-store` header 拒绝的原始 WebSocket handshake、bind-failure 清理、wire 层 token 轮换、双 profile cookie 隔离、reverse-proxy Origin 矩阵，以及证明 token 不出现在任何 response body、header、日志和渲染页面中的全面扫描 |
 
 ### 部分实现
 
 | 项目 | 已实现部分 | 缺失部分 |
 |---|---|---|
-| Browser Origin/Host guard | HTTP 与 WS 共用 `BrowserOriginGuard`；未先命中未经验证的 `allowed_origins` 时，显式 cross-site、opaque Origin 和 loopback 外部 Host 被拒绝 | 它不是认证；配置的 `null` 或 cross-site Origin 可以经早期 allowlist 分支通过；缺少 Origin 会通过；非 loopback bind 关闭 Host enforcement；没有 proxy trust 和 canonical Origin validation |
-| `web.allowed_origins` | 配置已读取，可以允许精确字符串 | 没有 schema validation、解析后的 `effective_origins`、非 loopback fail-closed 规则或公网 HTTPS 规则 |
-| Web owner 归因 | Web chat request 已取得 owner authority 对象 | 取得该 authority 前没有认证调用方 |
-| Secret 掩码 | `/api/config/key/{env_var}` 默认返回掩码 | 两条明文 reveal path 及其 frontend control 仍存在 |
-| Health endpoint | `/healthz` 已存在 | 无认证 response 不是最小内容，会暴露运维 metadata |
-
-### 未实现
-
-| 项目 | 必需结果 |
-|---|---|
-| Web 进程 token | 每次启动生成、`<state-dir>/web.lock`、`<state-dir>/web/token`、安全原子生命周期、常数时间校验、日志只记 fingerprint |
-| Browser bootstrap | Fragment 解析与清除、`POST /api/auth/bootstrap`、派生的 HttpOnly Strict cookie |
-| 统一认证 | 一组 HTTP/SSE/WS middleware 规则、Bearer 支持、accept 前 WS `401`、通用失败结构 |
-| 远程 URL 命令 | `openprogram web auth-url --base-url ...`，并校验 canonical effective Origin |
-| 外部 bind 启动校验 | 非空精确 Origin、解析后的 Host authority、HTTPS/公网地址规则、直接 HTTP 警告 |
-| 可信反向代理处理 | 关闭 Uvicorn proxy 改写，只信任 raw peer loopback forwarded scheme，并测试 nginx/Caddy 行为 |
-| 公共 route 缩减 | 只保留静态 shell、bootstrap 和最小 liveness；详细 health 需要认证 |
-| Secret 不可取回 | 删除两种明文 reveal 请求、frontend action、type 和明文 response path，并实现独立 config-key/account mutation 契约 |
-| 端到端安全测试 | 上述 browser、native client、WebSocket、SSE、重启、proxy、DNS rebinding 和 secret 测试 |
+| Browser-level audit | Shell 带 CSP、frame、referrer、content-type 与 cache header，server 端测试断言 response 和渲染 HTML 不含 token | 尚无 browser 驱动的 audit 遍历所有导出 asset 与 navigation path 证明其不嵌入 dynamic data |
+| 部署运维 | Reverse-proxy 契约由真实 listener 的 `X-Forwarded-Proto`/`X-Forwarded-Host` Origin 矩阵覆盖，raw-peer 边界已强制 | nginx 与 Caddy 的 HTTPS/WS/SSE smoke deployment 未测试 |
 
 ### 明确不做
 

@@ -138,7 +138,7 @@
   <div class="q" style="border-top-color:#e0445a">
     <div class="k">最弱</div>
     <h4>只有入口没有出口，别的程序驱动不了我们</h4>
-    <p>我们能调所有人：31个provider、MCP客户端、skills、plugins。<b>反过来没有一条路进得来。</b>没有MCP server（claude-code、codex、hermes、openclaw四家都有），没有ACP（opencode、hermes、openclaw、weclaw四家都有），没有OpenAI兼容端点（hermes、openclaw、codex三家有），没有IDE扩展，没有公开的headless协议（pi-mono的RPC模式光文档就1400行）。对外只有一个无鉴权的本机WS和一个Python库入口。</p>
+    <p>我们能调所有人：31个provider、MCP客户端、skills、plugins。<b>反过来没有一条路进得来。</b>没有MCP server（claude-code、codex、hermes、openclaw四家都有），没有ACP（opencode、hermes、openclaw、weclaw四家都有），没有OpenAI兼容端点（hermes、openclaw、codex三家有），没有IDE扩展，没有公开的headless协议（pi-mono的RPC模式光文档就1400行）。对外只有一个owner认证的本机WS和一个Python库入口。</p>
     <p>连带的一条：项目说明文件我们和openclaw同一派，放在agent工作区而不是仓库里，这本身站得住。但openclaw另外做了<code>migrate-claude</code>和<code>migrate-hermes</code>两个导入扩展，codex有一整个<code>external-agent-migration</code> crate把别人的会话、配置、skills搬进来。我们连搬家的口子都没开。</p>
     <span class="ev">openprogram/mcp/ 下只有client.py · 无acp / otel / lsp命中 · agent/management/workspace.py:36</span>
   </div>
@@ -237,7 +237,7 @@
   <text x="794" y="210" fill="#8a8675" font-size="10">Markdown，后台线程写</text>
   <text x="794" y="225" fill="#8a8675" font-size="10">6个memory_* 工具读</text>
 
-  <text x="16" y="272" fill="#8a8675" font-size="10.5">网页与WS接口无鉴权，只靠回环绑定加origin_guard兜底：这是一个单人本机框架，不是多租户服务。</text>
+  <text x="16" y="272" fill="#8a8675" font-size="10.5">网页与WS接口由owner_auth强制单owner认证：per-start token加profile专属cookie，这是一个单人框架，不是多租户服务。</text>
   <text x="16" y="290" fill="#8a8675" font-size="10.5">聊天渠道那一侧有配对与白名单（channels/_access.py），是全框架唯一的身份边界。</text>
 </svg>
 </div>

@@ -45,25 +45,26 @@ execute: Callable[
 这个签名里已经有协议服务端需要的三样东西：参数字典、取消用的 `Event`、增量更新回调。
 缺的只是一层把它们说给外部进程听的传输。
 
-### 认证：没有，而且 origin guard 不算认证
+### Web 已有认证；MCP 调用方身份仍不存在
 
-`start_server()` 绑定 `web.host`（默认 `127.0.0.1`），并且**全程没有任何认证** ——
-没有 token、没有 API key、没有会话 cookie、没有认证中间件。唯一的闸是
-`BrowserOriginGuard`（`openprogram/webui/origin_guard.py`），它自己的调用点注释就写着
-"nothing here authenticates a caller"。它拒绝 `Sec-Fetch-Site: cross-site` 和不在
-白名单里的 `Origin`，而**不带 `Origin` 头的请求无条件放行** —— 这是刻意的，为了让
-curl、TUI 和 Python 客户端能用。
+`start_server()` 绑定 `web.host`（默认 `127.0.0.1`），并在 route dispatch 前安装
+`openprogram/webui/owner_auth.py` 中的 `OwnerAuthMiddleware`。当前 Web 进程持有每次启动
+重新生成的 token。Browser 用 fragment token 换取 profile-specific HttpOnly cookie；
+native HTTP、SSE 与 WebSocket client 使用 `Authorization: Bearer`。Canonical Host 与
+effective Origin 在认证前校验，非 loopback bind 没有显式 Origin 时拒绝启动，WebSocket
+在 `accept()` 前认证。成功请求取得当前 profile 的完整 owner authority。
 
-两个后果构成本设计的安全前提：
+该边界改变了安全前提，但没有实现本 MCP 设计：
 
-1. 任何能连到端口的非浏览器客户端都能访问每一条路由。
-2. 把 `web.host` 设成 `"0.0.0.0"` 会让 `is_loopback_hostname` 为假，从而
-   `enforce_loopback_host=False`，**整条 Host 校验规则被关掉** —— 最需要它的那种
-   部署方式恰好是把它关掉的那种。
+1. 内部 FastAPI 与 WebSocket surface 已受保护，但仍是未版本化、完整 owner 权限的应用
+   interface，不是外部 integration contract。
+2. MCP client 不能取得 Web owner token。它需要独立 client identity、默认空的 tool
+   whitelist 与低权限 authority mapping；这些 MCP server component 当前都不存在。
 
-这个面上还有 `POST /api/register`，它按请求体里给的模块路径做任意 import；以及
-`GET /api/providers/{provider}/accounts/{name}/reveal`，它返回明文 provider 密钥。
-在没有认证的前提下加一个协议服务端只会把一个已经敞开的面扩大，所以认证是本设计的
+这个面上还有 `POST /api/register`，它按请求体里给的模块路径做任意 import。已保存的
+provider credential 不再可取回明文：两种 reveal 形式都已删除，account 与 config-key
+route 只返回掩码。Web owner 认证限制谁能访问这些内部 route，但不会使其 shape 适合外部
+调用方，也不会使 full-owner credential 适合 MCP client。因此 MCP 认证与低权限授权仍是
 前置条件，不是后续加固项。
 
 ### 审批机制已经存在，而且就是正确的挂载点
@@ -134,9 +135,9 @@ curl、TUI 和 Python 客户端能用。
 - `test_mcp_detail_route_contract_and_missing_status` —— 详情形状，以及不存在的 server
   返回 404 `{"detail": "server '<name>' not loaded"}`。
 
-每个测试都新建一个裸 `FastAPI()` 再调模块的 `register(app)`，所以 origin guard 不在
-路径上。断言用精确相等，加字段就会挂。这是对当前状态的准确描述：这两条是构造出来的契约，
-不是政策上的契约。
+每个测试都新建一个裸 `FastAPI()` 再调模块的 `register(app)`，所以
+`OwnerAuthMiddleware` 不在路径上。断言用精确相等，加字段就会挂。这是对当前状态的准确
+描述：这些 route 是构造出来的契约，不是政策上的契约。
 
 ## 层二 —— 参考框架怎么做
 
@@ -193,8 +194,8 @@ claude-code-leaked 每次调用新建一个 `AbortController`，但从不接到�
 ### 传输与入口
 
 `openprogram mcp serve` 用 **stdio 单一传输** 跑 MCP 服务端。stdio 是被调查的每个实现
-最先支持的传输，它继承拉起进程那方的信任边界，而且不会在一个已经无认证的监听面上再加一个
-端口。HTTP 传输等 webui 自己有了认证再说。
+最先支持的传输，它继承拉起进程那方的信任边界，而且不把内部 full-owner Web API 暴露成
+integration surface。HTTP 传输要等 stdio contract 稳定并形成独立 deployment design 后再做。
 
 服务端放在 `openprogram/mcp_server/`，与 `openprogram/mcp/` 平级的顶层模块。它不复用
 客户端模块 —— `client.py` 和 `adapter.py` 翻译的是相反方向 —— 但它共用
@@ -382,8 +383,8 @@ WebSocket 动作是随前端变化的内部面，其中两条钉了形状。在�
 
 ## 附录：实现状态
 
-层三的内容一件都没实现。当前状态是层一：一个没有服务端对应物的 MCP 客户端，一个无认证的
-本地 HTTP 面，以及一条对本地轮次有效的审批阶梯。
+层三的内容一件都没实现。当前状态是层一：一个没有服务端对应物的 MCP 客户端，一个已做 owner
+认证但仍是内部且未版本化的 Web surface，以及一条对本地轮次有效的审批阶梯。
 
 | 项 | 状态 | 阻塞条件 |
 |---|---|---|
@@ -401,6 +402,7 @@ WebSocket 动作是随前端变化的内部面，其中两条钉了形状。在�
 | 入站 webhook | 本轮不做 | 依赖沙箱批次 I 与第 05B 步的固化 job capability |
 | 客户端 SDK | 本轮不做 | 需要一个稳定到可以承诺的工具面 |
 
-关于当前面的两个事实是本设计的前提而不是本设计的条目：webui 没有认证，以及
-`web.host = "0.0.0.0"` 会关掉 origin guard 的 Host 规则。两者都记在
-[`sandbox.md`](../runtime/sandbox.md)，加一个 MCP 服务端并不修复它们。
+当前 Web 边界是本设计的前提，不是 MCP server 条目：`OwnerAuthMiddleware` 认证 singleton
+owner，并按 [`remote-web-access.zh.md`](../ui/remote-web-access.zh.md) 保护 HTTP、SSE 与
+WebSocket。它不认证外部 MCP client，不把 client 限制在 tool whitelist，也不分配这里定义的
+低权限 scope。增加 MCP server 时必须另外实现这些控制，并且不能复用 Web owner token。

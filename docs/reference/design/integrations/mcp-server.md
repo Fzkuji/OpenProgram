@@ -51,30 +51,36 @@ That signature already has the three things a protocol server needs: an
 argument dict, a cancellation `Event`, and an incremental-update callback. The
 missing piece is a transport that speaks them to a foreign process.
 
-### Authentication: none, and the guard is not one
+### Web authentication exists; MCP caller identity does not
 
-`start_server()` binds `web.host` (default `127.0.0.1`) and there is **no
-authentication anywhere** — no token, no API key, no session cookie, no auth
-middleware. The single gate is `BrowserOriginGuard`
-(`openprogram/webui/origin_guard.py`), whose own call site comments that
-"nothing here authenticates a caller." It rejects `Sec-Fetch-Site: cross-site`
-and disallowed `Origin` values, and **a request with no `Origin` header passes
-unconditionally** — deliberately, so curl, the TUI and Python clients work.
+`start_server()` binds `web.host` (default `127.0.0.1`) and installs
+`OwnerAuthMiddleware` from `openprogram/webui/owner_auth.py` before route
+dispatch. The active Web process owns a per-start token. Browsers exchange a
+fragment token for a profile-specific HttpOnly cookie; native HTTP, SSE, and
+WebSocket clients use `Authorization: Bearer`. Canonical Host and effective
+Origin checks apply before authentication, a non-loopback bind without an
+explicit origin fails startup, and WebSocket authentication occurs before
+`accept()`. Successful requests receive the current profile's full owner
+authority.
 
-Two consequences define the security premise of this design:
+That boundary changes the security premise but does not implement this MCP
+design:
 
-1. Any non-browser client that can reach the port reaches every route.
-2. Setting `web.host = "0.0.0.0"` makes `is_loopback_hostname` false, which
-   sets `enforce_loopback_host=False` and **disables the Host-validation rule
-   entirely** — the one deployment that most needs it is the one that turns it
-   off.
+1. The internal FastAPI and WebSocket surfaces are protected, but remain
+   unversioned, full-owner application interfaces rather than an external
+   integration contract.
+2. An MCP client must not receive the Web owner token. It needs its own client
+   identity, default-empty tool whitelist, and low-privilege authority mapping;
+   none of those MCP-server components exists yet.
 
-On that surface sit `POST /api/register`, which imports an arbitrary module
-path taken from the request body, and
-`GET /api/providers/{provider}/accounts/{name}/reveal`, which returns plaintext
-provider keys. Adding a protocol server without authentication would widen an
-already-open surface, which is why authentication is a precondition here rather
-than a later hardening step.
+On that surface sits `POST /api/register`, which imports an arbitrary module
+path taken from the request body. Stored provider credentials are no longer
+retrievable in plaintext: both reveal forms are gone, so the account and
+config-key routes return masks only. Web owner authentication limits who can
+reach these internal routes, but it does not make their shapes suitable for
+external callers or make a full-owner credential suitable for an MCP client.
+MCP authentication and low-privilege authorization therefore remain
+preconditions rather than later hardening.
 
 ### Approval already exists and is the right hook
 
@@ -156,7 +162,7 @@ response shapes, and it covers two routes out of 198:
   a missing server returning 404 `{"detail": "server '<name>' not loaded"}`.
 
 Each test builds a bare `FastAPI()` and calls the module's `register(app)`, so
-the origin guard is not in the path. The assertions use exact equality, which
+`OwnerAuthMiddleware` is not in the path. The assertions use exact equality, which
 makes them brittle to additive change — an accurate description of the current
 state, since these are contracts by construction rather than by policy.
 
@@ -228,9 +234,9 @@ default-off posture that the acceptance bar for this work rules out.
 
 `openprogram mcp serve` runs an MCP server over **stdio only**. Stdio is the
 transport every surveyed implementation ships first, it inherits the trust
-boundary of whoever spawned the process, and it adds no new listening port to a
-surface that already has one without authentication. HTTP transport waits until
-the webui itself has authentication.
+boundary of whoever spawned the process, and it does not expose the internal
+full-owner Web API as an integration surface. HTTP transport waits until the
+stdio contract is stable and a separate deployment design exists.
 
 The server lives in `openprogram/mcp_server/`, a top-level module beside
 `openprogram/mcp/`. It does not reuse the client modules — `client.py` and
@@ -470,8 +476,8 @@ routing external callers away from them.
 ## Appendix: Implementation Status
 
 Nothing in Layer 3 is implemented. The current state is Layer 1: an MCP client
-with no server counterpart, an unauthenticated local HTTP surface, and an
-approval ladder that works for local turns.
+with no server counterpart, an owner-authenticated but internal and unversioned
+Web surface, and an approval ladder that works for local turns.
 
 | Item | Status | Blocking condition |
 |---|---|---|
@@ -489,7 +495,10 @@ approval ladder that works for local turns.
 | Inbound webhooks | Not planned this round | Frozen job capability from sandbox batch I and step 05B |
 | Client SDK | Not planned this round | A tool surface stable enough to promise |
 
-Two facts about the current surface are premises of this design rather than
-items on it: the webui has no authentication, and `web.host = "0.0.0.0"`
-disables the origin guard's Host rule. Both are recorded in
-[`sandbox.md`](../runtime/sandbox.md) and are not fixed by adding an MCP server.
+The current Web boundary is a premise of this design rather than an MCP-server
+item: `OwnerAuthMiddleware` authenticates the singleton owner and protects
+HTTP, SSE, and WebSocket, as specified in
+[`remote-web-access.md`](../ui/remote-web-access.md). It does not authenticate
+an external MCP client, restrict that client to a tool whitelist, or assign the
+low-privilege scope defined here. Adding an MCP server must implement those
+separate controls and must not reuse the Web owner token.

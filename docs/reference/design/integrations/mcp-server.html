@@ -95,7 +95,7 @@
 <div class="wrap">
 
   <h1>MCP 服务端：现状、九家对标与最小能力集</h1>
-  <p class="sub">这页分四层：<b>我们现在怎么做</b>（只有客户端、198 条无认证路由、审批阶梯已就位）、
+  <p class="sub">这页分四层：<b>我们现在怎么做</b>（只有 MCP 客户端、内部 Web 面已做 owner 认证、审批阶梯已就位）、
     <b>别人怎么做</b>（<code>references/</code> 下九个框架逐一，包括两个明确不做的和两个反面案例）、
     <b>我们计划怎么优化</b>（六个工具、白名单、外部低权档位、默认开启的认证、取消与进度对齐规范）、
     <b>理想状态</b>（ACP、入站 webhook、SDK 各自的差距和为什么现在不做）。
@@ -132,9 +132,9 @@
   <div class="band L1" id="L1">
     <span class="lv">LAYER 1</span>
     <h2>我们现在怎么做</h2>
-    <p class="w">MCP 在我们这里只有客户端半边。外部控制面是 198 条 FastAPI 路由加约 100 个 WebSocket 动作，
-      全部没有认证；唯一的闸 <code>BrowserOriginGuard</code> 自己的注释就写着它不认证任何调用方。
-      审批阶梯、按轮次取消 token、工具注册表这三样已经就位，缺的只是一层协议传输。</p>
+    <p class="w">MCP 在我们这里只有客户端半边。内部控制面是 198 条 FastAPI 路由加约 100 个 WebSocket 动作，
+      由 <code>OwnerAuthMiddleware</code> 统一执行 process token、cookie/Bearer、Host/Origin 与 accept 前 WebSocket 认证。
+      审批阶梯、按轮次取消 token、工具注册表已经就位；MCP server transport、独立 client identity、低权限 scope 和白名单仍不存在。</p>
   </div>
 
   <h2 id="dir"><span class="num">01</span>方向：MCP 只做了一半</h2>
@@ -177,60 +177,60 @@
     缺的只是把它们说给外部进程听的那层传输。</div>
   </div>
 
-  <h2 id="surf"><span class="num">02</span>三个外部面，零认证</h2>
-  <p class="lead">现有外部面全是本地 HTTP，都没有版本化承诺，也都没有认证。<code>BrowserOriginGuard</code> 是浏览器同源防护，不是认证。</p>
+  <h2 id="surf"><span class="num">02</span>三个内部面，Web 边界已认证</h2>
+  <p class="lead">FastAPI 与 WebSocket 面仍没有版本化承诺，但已由 <code>OwnerAuthMiddleware</code> 保护，并在认证成功后映射为完整 owner authority。该认证不是 MCP client identity，也不是低权限外部协议契约。</p>
 
   <div class="card">
-  <svg viewBox="0 0 1160 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="三个外部面与 origin guard 的两个绕过口">
+  <svg viewBox="0 0 1160 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="三个内部面与 OwnerAuthMiddleware 认证边界">
     <defs>
       <marker id="g-or" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#d4843a"/></marker>
       <marker id="g-rd" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#e0445a"/></marker>
     </defs>
-    <text x="24" y="30" fill="#d4843a" font-size="16" font-weight="700">调用方 → origin guard → 198 条路由</text>
-    <text x="24" y="53" fill="#8a8675" font-size="12.5">红色路径表示防护不起作用的两种情况。</text>
+    <text x="24" y="30" fill="#d4843a" font-size="16" font-weight="700">调用方 → OwnerAuthMiddleware → 内部路由</text>
+    <text x="24" y="53" fill="#8a8675" font-size="12.5">所有路径先校验 Host；受保护路径再验证 cookie 或 Bearer。</text>
 
     <!-- 三类调用方 -->
     <rect x="24" y="82" width="228" height="52" rx="9" fill="#12110b" stroke="#4f8ef7" stroke-width="1.4"/>
-    <text x="44" y="104" fill="#4f8ef7" font-size="12.5" font-weight="700">浏览器同源</text>
-    <text x="44" y="124" fill="#8a8675" font-size="11">带 Origin，被检查</text>
+    <text x="44" y="104" fill="#4f8ef7" font-size="12.5" font-weight="700">浏览器</text>
+    <text x="44" y="124" fill="#8a8675" font-size="11">HttpOnly cookie + Origin / CSRF</text>
 
-    <rect x="24" y="146" width="228" height="52" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="44" y="168" fill="#e0445a" font-size="12.5" font-weight="700">curl / TUI / 任意脚本</text>
-    <text x="44" y="188" fill="#a5a190" font-size="11">不带 Origin → 无条件放行</text>
+    <rect x="24" y="146" width="228" height="52" rx="9" fill="#12110b" stroke="#d4843a" stroke-width="1.4"/>
+    <text x="44" y="168" fill="#d4843a" font-size="12.5" font-weight="700">native HTTP / SSE / WS</text>
+    <text x="44" y="188" fill="#a5a190" font-size="11">Bearer 必须；Origin 可省略</text>
 
-    <rect x="24" y="210" width="228" height="52" rx="9" fill="#2a1215" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="44" y="232" fill="#e0445a" font-size="12.5" font-weight="700">局域网任意主机</text>
-    <text x="44" y="252" fill="#a5a190" font-size="11">web.host=0.0.0.0 时 Host 规则失效</text>
+    <rect x="24" y="210" width="228" height="52" rx="9" fill="#12110b" stroke="#5aad4e" stroke-width="1.4"/>
+    <text x="44" y="232" fill="#5aad4e" font-size="12.5" font-weight="700">非 loopback bind</text>
+    <text x="44" y="252" fill="#a5a190" font-size="11">显式 effective Origin + token</text>
 
     <!-- guard -->
     <rect x="322" y="112" width="176" height="120" rx="10" fill="#241f10" stroke="#d4843a" stroke-width="1.5"/>
-    <text x="410" y="140" fill="#d4843a" font-size="13" font-weight="700" text-anchor="middle">BrowserOriginGuard</text>
-    <text x="410" y="164" fill="#a5a190" font-size="11" text-anchor="middle">Sec-Fetch-Site 检查</text>
-    <text x="410" y="184" fill="#a5a190" font-size="11" text-anchor="middle">Origin 白名单</text>
-    <text x="410" y="204" fill="#a5a190" font-size="11" text-anchor="middle">loopback Host 检查</text>
-    <text x="410" y="224" fill="#e0445a" font-size="11" text-anchor="middle" font-weight="700">不做任何认证</text>
+    <text x="410" y="140" fill="#d4843a" font-size="13" font-weight="700" text-anchor="middle">OwnerAuthMiddleware</text>
+    <text x="410" y="164" fill="#a5a190" font-size="11" text-anchor="middle">canonical Host / Origin</text>
+    <text x="410" y="184" fill="#a5a190" font-size="11" text-anchor="middle">cookie / Bearer</text>
+    <text x="410" y="204" fill="#a5a190" font-size="11" text-anchor="middle">CSRF / no-store</text>
+    <text x="410" y="224" fill="#5aad4e" font-size="11" text-anchor="middle" font-weight="700">认证后附加 owner authority</text>
 
     <line x1="256" y1="108" x2="318" y2="140" stroke="#d4843a" stroke-width="1.6" marker-end="url(#g-or)"/>
-    <line x1="256" y1="172" x2="318" y2="172" stroke="#e0445a" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#g-rd)"/>
-    <line x1="256" y1="236" x2="318" y2="206" stroke="#e0445a" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#g-rd)"/>
+    <line x1="256" y1="172" x2="318" y2="172" stroke="#d4843a" stroke-width="1.6" marker-end="url(#g-or)"/>
+    <line x1="256" y1="236" x2="318" y2="206" stroke="#d4843a" stroke-width="1.6" marker-end="url(#g-or)"/>
 
     <!-- 后面的面 -->
     <line x1="502" y1="172" x2="562" y2="172" stroke="#d4843a" stroke-width="1.6" marker-end="url(#g-or)"/>
 
     <rect x="566" y="82" width="570" height="54" rx="9" fill="#12110b" stroke="#2e2c20"/>
     <text x="586" y="106" fill="#f0eee6" font-size="13" font-weight="700">198 条 FastAPI 路由</text>
-    <text x="586" y="126" fill="#8a8675" font-size="11.5">其中 2 条有契约测试；含 /api/register 任意 import 与 /accounts/…/reveal 明文密钥</text>
+    <text x="586" y="126" fill="#8a8675" font-size="11.5">protected by default；内部 shape 不是外部协议承诺</text>
 
     <rect x="566" y="146" width="570" height="54" rx="9" fill="#12110b" stroke="#2e2c20"/>
     <text x="586" y="170" fill="#f0eee6" font-size="13" font-weight="700">WebSocket /ws · 约 100 个动作</text>
-    <text x="586" y="190" fill="#8a8675" font-size="11.5">accept() 之后无任何校验；约 120 种服务端→客户端事件</text>
+    <text x="586" y="190" fill="#8a8675" font-size="11.5">middleware 在 accept() 前认证；约 120 种服务端→客户端事件</text>
 
     <rect x="566" y="210" width="570" height="54" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.3"/>
     <text x="586" y="234" fill="#5aad4e" font-size="13" font-weight="700">工具注册表 _registry</text>
     <text x="586" y="254" fill="#a5a190" font-size="11.5">register / get / filter_for；三层开关：toolset、expose、defer</text>
 
     <rect x="24" y="282" width="1112" height="34" rx="8" fill="#2a1418" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="580" y="304" fill="#e0445a" font-size="12.5" font-weight="700" text-anchor="middle">安全前提：在这个面上加协议服务端只会扩大已经敞开的面，所以认证是前置条件而不是后续加固</text>
+    <text x="580" y="304" fill="#e0445a" font-size="12.5" font-weight="700" text-anchor="middle">MCP 不能复用 full-owner Web token：必须有独立 client identity、默认空白名单与低权限 scope</text>
   </svg>
   </div>
 
@@ -243,10 +243,9 @@
   </table>
   </div>
 
-  <div class="note warn"><b>两个已知安全前提</b>：webui 全程没有 token、API key、会话 cookie 或认证中间件；
-    把 <code>web.host</code> 设成 <code>0.0.0.0</code> 会让 <code>is_loopback_hostname</code> 为假，从而
-    <code>enforce_loopback_host=False</code>，整条 Host 校验规则被关掉。两者记在
-    <a href="../runtime/sandbox.html">sandbox.md</a>，加 MCP 服务端不修复它们。</div>
+  <div class="note warn"><b>边界不是复用关系</b>：<code>OwnerAuthMiddleware</code> 已保护 Web 的 HTTP、SSE 与 WebSocket，
+    但认证结果是 singleton owner 的完整 authority。MCP server 必须单独认证 external client、执行默认空白名单并分配低权限 scope，
+    不能向 client 提供或复用 Web owner token。</div>
 
   <h2 id="ladder"><span class="num">03</span>审批阶梯：九级，顺序固定</h2>
   <p class="lead"><code>wrap_with_approval</code> 返回一个 <code>execute</code> 被换成 <code>_gated_execute</code> 的 <code>AgentTool</code> 副本。
@@ -333,7 +332,7 @@
 
   <div class="note"><b>已有契约测试</b>：<code>tests/unit/test_diagnostic_mcp_route_contracts.py</code> 钉住
     <code>/api/doctor</code> 的 <code>{"results", "all_ok"}</code>、<code>/api/mcp/servers</code> 的 15 键 status 字典、
-    以及缺失 server 的 404 形状。三个测试都新建裸 <code>FastAPI()</code> 再 <code>register(app)</code>，所以 origin guard 不在路径上；断言用精确相等，加字段就挂。</div>
+    以及缺失 server 的 404 形状。三个测试都新建裸 <code>FastAPI()</code> 再 <code>register(app)</code>，所以 <code>OwnerAuthMiddleware</code> 不在路径上；断言用精确相等，加字段就挂。</div>
 
   <!-- ══════════════════ 层二 ══════════════════ -->
   <div class="band L2" id="L2">
@@ -358,7 +357,7 @@
     <tr><td><b>pi-ai</b></td><td class="g">无</td><td class="g">无</td><td class="g">无</td><td class="g">不适用，本身是 provider 客户端库</td></tr>
     <tr><td><b>pi-mono</b></td><td class="n">无，README 明写 <b>"No MCP."</b></td><td class="n">无</td><td class="n">无，只有进程内 <code>pi.send()</code></td><td class="g">只有内嵌用的包</td></tr>
     <tr><td><b>weclaw</b></td><td class="n">无</td><td class="n">只有 ACP <b>客户端</b>，自动放行所有权限请求</td><td class="n"><code>POST /api/send</code>，<b>零认证</b></td><td class="n">无</td></tr>
-    <tr><td class="us"><b>OpenProgram</b></td><td class="us">无</td><td class="us">无</td><td class="us">198 条路由，零认证</td><td class="us">无</td></tr>
+    <tr><td class="us"><b>OpenProgram</b></td><td class="us">无</td><td class="us">无</td><td class="us">内部 Web 路由，owner token/cookie 认证</td><td class="us">无</td></tr>
   </table>
   </div>
 
@@ -522,8 +521,8 @@
       <div class="k">TRANSPORT</div>
       <h3 style="color:#4f8ef7">stdio 单一传输</h3>
       <div class="noun">openprogram mcp serve　模块 openprogram/mcp_server/</div>
-      <div class="row"><div class="t">为什么</div><div class="v">被调查的每个实现都最先支持 stdio；它<b>继承拉起进程那方的信任边界</b>；而且不在一个已经无认证的监听面上再加端口。</div></div>
-      <div class="row"><div class="t">HTTP</div><div class="v">等 webui 自己有了认证再说。</div></div>
+      <div class="row"><div class="t">为什么</div><div class="v">被调查的每个实现都最先支持 stdio；它<b>继承拉起进程那方的信任边界</b>；而且不把内部 full-owner Web API 暴露成 integration surface。</div></div>
+      <div class="row"><div class="t">HTTP</div><div class="v">等 stdio contract 稳定并形成独立 deployment design 后再做。</div></div>
       <div class="row"><div class="t">模块位置</div><div class="v">与 <code>openprogram/mcp/</code> 平级的顶层模块，<b>不复用客户端模块</b>（翻译方向相反），但共用 <code>_runtime.py</code> 与审批阶梯 —— 共用这两样正是全部意义。</div></div>
     </div>
   </div>
@@ -640,7 +639,7 @@
     本设计的做法是把外部调用方引开。</div>
 
   <h2 id="status"><span class="num">12</span>实现状态</h2>
-  <p class="lead">层三的内容一件都没实现。当前状态是层一：一个没有服务端对应物的 MCP 客户端、一个无认证的本地 HTTP 面、以及一条对本地轮次有效的审批阶梯。</p>
+  <p class="lead">层三的内容一件都没实现。当前状态是层一：一个没有服务端对应物的 MCP 客户端、一个已做 owner 认证但仍是内部且未版本化的 Web surface、以及一条对本地轮次有效的审批阶梯。</p>
 
   <div class="tbl">
   <table>
@@ -661,9 +660,8 @@
   </table>
   </div>
 
-  <div class="note warn"><b>两个前提不是本设计的条目</b>：webui 没有认证，以及 <code>web.host = "0.0.0.0"</code>
-    会关掉 origin guard 的 Host 规则。两者都记在 <a href="../runtime/sandbox.html">sandbox.md</a>，
-    加一个 MCP 服务端并不修复它们。本设计的做法是让 MCP 服务端走 stdio，不在那个面上再开端口。</div>
+  <div class="note warn"><b>当前 Web 边界不是 MCP server 条目</b>：<code>OwnerAuthMiddleware</code> 已保护 singleton owner 的 HTTP、SSE 与 WebSocket，
+    但它不认证 external MCP client、不执行 tool whitelist，也不分配这里定义的低权限 scope。MCP server 必须另外实现这些控制，不能复用 Web owner token。</div>
 
 </div>
 </body>

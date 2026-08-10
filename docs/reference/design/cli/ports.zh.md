@@ -73,9 +73,12 @@ openprogram ports --port 9100     # 设置并持久化
 模块 `openprogram/_ports.py` 中：
 
 - **liveness** —— `port_in_use(port)`：一次裸的 TCP 连接。
-- **identity** —— `backend_is_ours(port)` 探测 `/healthz` 以查找
-  openprogram 的特征 JSON（`status` + `uptime_seconds`），用于将 *我们的*
-  实例与同一端口上的陌生程序区分开。
+- **identity** —— `backend_is_ours(port)` 先核对受管理 worker 的 PID 与 port 文件，以及
+  当前 profile 中 owner-only 的 `web/access.json` snapshot，再向
+  `/api/auth/challenge` 发送新的随机 nonce，并在本机验证返回的 token-HMAC proof。
+  Probe 不会向 listener 发送 owner token 或 Bearer header，因此同一端口上的陌生进程
+  无法取得 credential。可选 `expected_revision` 会把 proof 绑定到 upgrade target 当前
+  提供的 revision。
 - **ownership** —— `describe_port_owner(port)` / `port_owner_hint(port)`：
   用 `lsof` / `netstat` + `/proc` / `ps` / `wmic` 来标识占用的 PID 与命令
   行，并归类为我们的还是外部的。正是它让"端口被占用"错误能说出 *谁* 在

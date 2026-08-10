@@ -4,18 +4,6 @@
 超时进程误报成功、问答模式过期闭包、Finder 重复文件）；本文只收**需要讨论后再动**
 的项，按影响排序。讨论定案一条就删一条。*
 
-## 安全姿态（需要产品决策，建议优先讨论）
-
-1. **无调用方认证**。默认绑定已是 `127.0.0.1`（`webui/server.py:1302`），
-   剩余缺陷：显式设置 `web.host` 对外绑定时，HTTP/WS/SSE 仍无 token 认证。
-   方案已定稿（实例 token + fragment bootstrap cookie，见
-   remote-web-access 设计文档），随该文档实施后删除本条。
-2. **明文取 key 接口 ×2**：`GET /api/providers/{p}/accounts/{n}/reveal`
-   （`webui/routes/accounts.py:396`）与 `GET /api/config/key/{env_var}?reveal=1`
-   （`webui/routes/providers.py:254`）。已定稿为整体删除（密钥仅录入时可见，
-   之后只显示掩码），前端 provider detail / API key 设置 / account manager
-   随之改造。随 remote-web-access 实施后删除本条。
-
 ## 打包 / 分发
 
 3. ~~**pip wheel 缺数据文件**~~ —— 已修。`pyproject.toml` 现有

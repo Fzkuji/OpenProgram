@@ -79,9 +79,13 @@ a random port. This mirrors openclaw. All probing lives in one module,
 `openprogram/_ports.py`:
 
 - **liveness** — `port_in_use(port)`: a bare TCP connect.
-- **identity** — `backend_is_ours(port)` probes `/healthz` for
-  openprogram's signature JSON (`status` + `uptime_seconds`).
-  Distinguishes *our* instance from a stranger on the same port.
+- **identity** — `backend_is_ours(port)` first checks the managed worker PID and
+  port files plus the active profile's owner-only `web/access.json` snapshot,
+  then sends a fresh random nonce to `/api/auth/challenge` and verifies the
+  returned token-HMAC proof locally. The probe never sends the owner token or a
+  Bearer header to the listener; a foreign process on the port cannot obtain
+  the credential. An optional `expected_revision` binds the proof to the
+  revision served by an upgrade target.
 - **ownership** — `describe_port_owner(port)` / `port_owner_hint(port)`:
   `lsof` / `netstat` + `/proc` / `ps` / `wmic` to name the holding PID
   and command line, classified ours-vs-foreign. This is what lets a
