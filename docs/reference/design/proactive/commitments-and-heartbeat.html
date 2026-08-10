@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>承诺与心跳：agent在正确的时刻主动开口</title>
+<style>
+  :root{
+    --bg:#16150f; --pan:#1d1c14; --bd:#2e2c20; --tx:#bdb9a6; --acc:#d4843a;
+    --cb:#12110b; --dim:#8a8675;
+    --ok:#5aad4e; --info:#4f8ef7; --warn:#d4b23a; --no:#e0445a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:40px 24px 96px}
+  .wrap{max-width:1060px;margin:0 auto}
+  h1{font-size:23px;color:#f0eee6;margin:0 0 6px}
+  .sub{color:var(--dim);margin:0 0 26px;max-width:80ch}
+  h2{font-size:16px;color:var(--acc);margin:38px 0 6px}
+  h2 .num{color:var(--dim);font-size:12px;margin-right:8px;letter-spacing:.16em}
+  .lead{color:var(--dim);font-size:13px;margin:0 0 14px;max-width:82ch}
+  code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
+  .card{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px}
+
+  /* 场景对话 */
+  .scene{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .day{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:14px}
+  .day h3{margin:0 0 10px;font-size:13px;color:var(--dim);letter-spacing:.08em}
+  .msg{border-radius:10px;padding:8px 12px;font-size:12.5px;margin-bottom:8px;max-width:92%}
+  .msg.you{background:var(--cb);border:1px solid var(--bd);color:#d8d4c2}
+  .msg.agent{background:#1a2416;border:1px solid #2c4425;color:#c9dcc2;margin-left:auto}
+  .msg .who{display:block;font-size:10px;letter-spacing:.12em;color:var(--dim);margin-bottom:2px}
+
+  /* 流水线 */
+  .pipe{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+  .stage{flex:1;min-width:150px;background:var(--cb);border:1px solid var(--bd);
+    border-radius:10px;padding:10px 12px;position:relative}
+  .stage h4{margin:0 0 4px;font-size:13px;color:#f0eee6}
+  .stage p{margin:0;font-size:12px;color:var(--dim);line-height:1.6}
+  .arrow{align-self:center;color:var(--acc);font-size:18px;padding:0 6px;flex:0}
+  .stage .reuse{position:absolute;top:-9px;right:10px;font-size:10px;letter-spacing:.12em;
+    background:var(--bg);color:var(--info);border:1px solid var(--info);border-radius:99px;padding:0 8px}
+
+  /* 防打扰规则 */
+  .rules{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .rule{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:13px;
+    border-left:3px solid var(--warn)}
+  .rule h3{margin:0 0 3px;font-size:13.5px;color:#f0eee6}
+  .rule p{margin:0;font-size:12.5px;color:var(--tx)}
+
+  .not{border-left:3px solid var(--no)}
+  .record{font:12px Menlo,monospace;background:var(--cb);border:1px solid var(--bd);
+    border-radius:10px;padding:12px;line-height:1.9;overflow-x:auto}
+  .record .k{color:var(--dim)} .record .v{color:#d8d4c2} .record .hl{color:var(--acc)}
+  @media(max-width:820px){.scene,.rules{grid-template-columns:1fr}.pipe{flex-direction:column}.arrow{transform:rotate(90deg);margin-left:60px;align-self:flex-start}}
+</style>
+</head>
+<body><div class="wrap">
+
+<h1>承诺与心跳：agent在正确的时刻主动开口</h1>
+<p class="sub">现在的agent只在被问的时候回答。这个设计让它记住对话里出现过的承诺（"周三交rebuttal"、"下周换服务器密码"），在到期的时刻主动提醒你。两个机制一个循环：承诺是状态，心跳是钟。设计正文见<code>commitments-and-heartbeat.md</code>，本页是给人看的。</p>
+
+<h2><span class="num">01</span>用起来是什么样</h2>
+<div class="scene">
+  <div class="day">
+    <h3>周一 · 正常聊天</h3>
+    <div class="msg you"><span class="who">你</span>rebuttal我周三之前必须交，实验今晚先跑上</div>
+    <div class="msg agent"><span class="who">AGENT</span>好，实验已经在跑了。<br>（后台：记忆整理时提取出承诺"周三交rebuttal"，带原文引用）</div>
+  </div>
+  <div class="day">
+    <h3>周三 08:00 · 心跳自动触发</h3>
+    <div class="msg agent"><span class="who">AGENT · 主动消息</span>今天是rebuttal的截止日（你周一说的）。实验昨晚跑完了，要我先把结果表整理出来吗？</div>
+    <div class="msg you"><span class="who">你</span>已经交了</div>
+    <div class="msg agent"><span class="who">AGENT</span>（后台：下次整理时该承诺标记done，不再提醒）</div>
+  </div>
+</div>
+
+<h2><span class="num">02</span>机制：全部骑在已有设施上</h2>
+<p class="lead">不建新管道。五个环节里四个是现成子系统，新写的只有提取规则和提醒判断。</p>
+<div class="card">
+  <div class="pipe">
+    <div class="stage"><span class="reuse">复用writer</span>
+      <h4>1 提取</h4>
+      <p>记忆writer整理会话时顺带识别承诺。只从trusted来源提取：陌生人塞不进你的任务清单。相对日期当场换算成绝对日期。</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="stage"><span class="reuse">复用派生视图</span>
+      <h4>2 存储</h4>
+      <p><code>commitments.jsonl</code>，与recent_events同级的派生视图，writer重建，带Source引用。</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="stage"><span class="reuse">复用cron</span>
+      <h4>3 心跳</h4>
+      <p>一个内置定时任务，默认每天一次。冻结沙盒策略、非交互runtime授权，批准不了任何事。</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="stage">
+      <h4>4 判断</h4>
+      <p>读open承诺对照今天：有到期/逾期的才开口，没有就沉默。这是唯一的新逻辑。</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="stage"><span class="reuse">复用channels</span>
+      <h4>5 送达</h4>
+      <p>走你已绑定的渠道正常发消息。你回一句"已经交了"，下次整理自动闭环。</p>
+    </div>
+  </div>
+</div>
+
+<h2><span class="num">03</span>一条承诺长什么样</h2>
+<div class="record">
+{ <span class="k">"text"</span>: <span class="v">"提交NeurIPS rebuttal"</span>,<br>
+&nbsp;&nbsp;<span class="k">"due"</span>: <span class="hl">"2026-08-13"</span>,&nbsp;&nbsp;<span class="k">// "周三之前"在提取时就换算成绝对日期</span><br>
+&nbsp;&nbsp;<span class="k">"speaker_id"</span>: <span class="v">"owner/local"</span>,&nbsp;&nbsp;<span class="k">// 谁许下的，来自authority不是猜的</span><br>
+&nbsp;&nbsp;<span class="k">"source"</span>: <span class="v">"../sources/openprogram/_v2/session-xxx.md#source-…"</span>,&nbsp;&nbsp;<span class="k">// 原话可溯</span><br>
+&nbsp;&nbsp;<span class="k">"status"</span>: <span class="hl">"open"</span> }&nbsp;&nbsp;<span class="k">// open / done / dismissed</span>
+</div>
+
+<h2><span class="num">04</span>四条防打扰规则（不做成唐僧是设计目标）</h2>
+<div class="rules">
+  <div class="rule"><h3>没事不说话</h3><p>心跳发现没有到期/逾期承诺就静默结束，不发"今日无事"这种噪音。</p></div>
+  <div class="rule"><h3>每条承诺每档只提一次</h3><p>到期时提醒一次，逾期到配置的间隔再提一次，不是每次心跳都念。提醒状态记录在承诺上。</p></div>
+  <div class="rule"><h3>安静时段</h3><p>默认23:00–08:00不发，攒到下一个允许的心跳。</p></div>
+  <div class="rule"><h3>一个开关</h3><p><code>proactive.heartbeat</code>：daily（默认）/ hourly / off。关掉后提取照做（memory status里能看），只是不推送。</p></div>
+</div>
+
+<h2><span class="num">05</span>明确不做的</h2>
+<div class="rules">
+  <div class="rule not"><h3>不做任务管理器</h3><p>没有子任务、优先级、项目分组。就是一张自己会写自己的带引用日期清单，比todo app多的只有"不用你自己记"这一件事。</p></div>
+  <div class="rule not"><h3>不自主执行</h3><p>心跳只提醒不动手："你说过要换密码"在范围内，自己跑去换密码不在。执行永远是你发起的正常轮次。</p></div>
+</div>
+
+</div></body>
+</html>
