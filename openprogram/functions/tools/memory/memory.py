@@ -328,12 +328,22 @@ def memory_update(
     try:
         # The workspace stages a copy of memory under the temp directory;
         # dropped without closing, one copy is left behind per call.
+        from openprogram.agent.run_control import get_current_session_id
+        from openprogram.store import _current_turn_id
+
+        session_id = get_current_session_id() or ""
+        authority = normalize_authority(authority_from_message(
+            session_id, _current_turn_id.get() or "",
+        ))
         with closing(MemoryWorkspace(_root())) as space:
             result = space.update(
                 base_revision=base_revision,
                 patch=patch,
                 sources=sources,
                 commit_message=commit_message,
+                # Only an explicitly persisted owner turn may rewrite or
+                # delete existing memory. Missing context fails closed.
+                append_only=authority.get("authority_tier") != "owner",
             )
     except TransactionError as exc:
         return _fail(exc)
@@ -349,7 +359,7 @@ def memory_update(
 
 PROMOTE_NAME = "memory_promote"
 PROMOTE_DESC = (
-    "Promote one pending shared-channel source into trusted memory. "
+    "Promote one pending unpaired-group source, then distill it into Topics. "
     "Only the local owner in an interactive turn can do this."
 )
 PROMOTE_SPEC: dict[str, Any] = {
@@ -458,7 +468,16 @@ def memory_promote(source_id: str | None = None, **_: Any) -> str:
 
         session_id = get_current_session_id() or ""
         authority = authority_from_message(session_id, _current_turn_id.get() or "")
-        return _dump(_promote_source(_root(), str(source_id), authority))
+        root = _root()
+        result = _promote_source(root, str(source_id), authority)
+        from openprogram.memory.scriptorium.writing import (
+            distill_promoted_source,
+        )
+
+        changed = distill_promoted_source(root, str(source_id))
+        result["distilled"] = changed is None or bool(changed)
+        result["changed_files"] = changed or []
+        return _dump(result)
     except TransactionError as exc:
         return _fail(exc)
     except (AuthorityError, ValueError) as exc:

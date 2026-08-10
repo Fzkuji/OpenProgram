@@ -35,11 +35,15 @@ class AgentExecutionError(RuntimeError):
         *,
         system_prompt: str = "",
         prompt: str = "",
+        retryable: bool | None = None,
+        reason: str | None = None,
     ):
         super().__init__(message)
         self.turns = turns or []
         self.system_prompt = system_prompt
         self.prompt = prompt
+        self.retryable = retryable
+        self.reason = reason
 
 
 # Enough of a tool call to see what a turn attempted and whether it worked,

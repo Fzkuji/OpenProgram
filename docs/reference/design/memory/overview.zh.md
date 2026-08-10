@@ -184,7 +184,7 @@ speakerless记录为`false`；speaker过滤仍兼容命中v2身份与legacy hint
 没有等价的可信speaker字段，所以`method=embedding`与`speaker`同时使用时返回
 `INVALID_ARGUMENT`，不会忽略过滤条件。
 
-BM25持久缓存格式是v6；v5可能缓存从现已归为legacy的文件解析出的speaker，因此会被忽略并
+BM25持久缓存格式是v8；旧缓存缺少当前speaker或trust字段，因此会被忽略并
 按v2-only信任规则重建。没有可信speaker的
 网页、命令行、TUI和assistant source记录，即使正文提到某个人，也不会被该人的speaker过滤
 命中。
@@ -425,8 +425,22 @@ topic结果继续使用`#^block-id`。
 历史正文前缀做有限检索hint。同一source id在v2有合法记录时，检索、链接和校验优先使用v2；
 否则仍可读取legacy。legacy正文前缀不具备v2协议的真实性。
 
-BM25缓存格式是v6，`speaker`可按稳定id、规范化显示名或标签做不区分大小写的精确
+BM25缓存格式是v8，`speaker`可按稳定id、规范化显示名或标签做不区分大小写的精确
 过滤，并与路径、日期和排序组合；带speaker的结果只来自`sources/`。
 `memory_search`已经传递这个参数，`MemoryProvider.search`和`memory_grep`保持不变。
 embedding结果没有等价身份字段，因此`method=embedding`与`speaker`组合会显式返回
 `INVALID_ARGUMENT`，不会静默忽略过滤。
+
+权限和自动写入已按2026-08-10定案实现。请求只携带`owner`或`paired`档位，唯一工具检查在
+`_gated_execute`中按固定常量表执行；未配对消息不进入agent，未配对群聊正文以`pending`
+source归档并排除主动提炼。已配对内容与owner内容都进入可信提炼。`memory_promote`仅允许本地
+交互owner提升pending来源并写审计记录，随后用同一writer事务将该来源提炼进Topic；已有Topic引用时
+直接跳过。paired可调用`memory_status`和`memory_update`，但工作区
+只允许其新建或按字节追加；缺少持久化owner字段时不能改写或删除已有内容。
+
+后台writer通过`AgentSession`沿用默认聊天agent的provider、模型和凭据，
+`memory.writer.model`只覆盖writer模型且实时生效。provider返回的认证和配置错误保留
+`retryable=false`，不会进入闲置观察器的重复重试。`memory.backend=none`使用空provider，并在
+启动前停止记忆工具、系统提示、每轮召回、自动写入、夜间整理、闲置观察器和未配对群聊归档。
+真实默认provider已在隔离工作区完成Topic写入和事务校验；正式工作区的既有无authority来源继续
+保持pending，不做推断身份或自动迁移。

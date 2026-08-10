@@ -346,7 +346,7 @@ def test_below_the_threshold_is_not_a_failure(memory_root, written):
 
 
 def test_a_busy_workspace_is_reported_on_the_per_turn_call(
-    memory_root, provider, monkeypatch,
+    memory_root, provider, written, monkeypatch,
 ):
     """The lock used to become a bare False here, indistinguishable from
     'not enough yet', so a turn that never got written said nothing."""
@@ -400,6 +400,29 @@ def test_a_raising_write_is_retryable(memory_root, provider, monkeypatch):
     left = _watch()
     assert left is not None and left.retryable
     assert "model unreachable" in left.reason
+
+
+def test_provider_permanent_verdict_stops_the_idle_retry_loop(
+    memory_root, provider, monkeypatch,
+):
+    """An auth/config verdict from the chat provider must not be retried.
+
+    The writer used to erase ``retryable=False`` when it converted every
+    exception into ``WriteIncomplete``.  The idle watcher then repeated a
+    permanent login failure every five minutes.
+    """
+    from openprogram.memory.scriptorium import writing
+
+    class PermanentProviderError(RuntimeError):
+        retryable = False
+
+    def _denied(*_a, **_kw):
+        raise PermanentProviderError("not authenticated")
+
+    monkeypatch.setattr(writing, "write", _denied)
+    left = _watch()
+    assert left is not None and left.retryable is False
+    assert left.reason == "not authenticated"
 
 
 def test_a_rejected_batch_is_not_retryable(memory_root, provider, monkeypatch):

@@ -204,6 +204,13 @@ SETTINGS: list[SettingSpec] = [
         help="`local` = on-disk memory tool; `none` = disabled.",
     ),
     SettingSpec(
+        key="memory.writer.model", path=("memory", "writer", "model"),
+        group="Memory", label="Memory writer model", widget="text",
+        apply=APPLY_LIVE, default="",
+        help="Empty uses the default chat agent's provider and model. Set "
+             "provider/model to override only background memory writing.",
+    ),
+    SettingSpec(
         key="goal.max_turns", path=("goal", "max_turns"), group="Goal",
         label="Goal max auto-continue turns", widget="number",
         apply=APPLY_LIVE, default=None,

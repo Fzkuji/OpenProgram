@@ -109,11 +109,9 @@ dependencies = [
     # optional — search reports that it is unavailable rather than
     # silently returning something else.
     "rank-bm25>=0.2.2",
-    # The writer that turns conversation into topic files. Imported only
-    # where a writer is constructed, so reading memory works without it,
-    # but writing is a core feature and should not need a second install
-    # step. It drives the Claude Code CLI; when that is absent the write
-    # is deferred and logged rather than lost.
+    # Managed memory-tool schema plus the legacy Claude Code adapter used by
+    # benchmark paths. The product writer itself follows OpenProgram's default
+    # chat provider through AgentSession.
     # 0.1.51 is where `permission_mode="dontAsk"` became a permission mode;
     # an older SDK sends the writer's runs with a mode the CLI rejects.
     "claude-agent-sdk>=0.1.51",

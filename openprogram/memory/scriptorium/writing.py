@@ -37,15 +37,14 @@ RUNTIME_SOURCES = frozenset({"task_followup", "merge_turn"})
 
 
 def _agent(model: str | None = None) -> Any:
-    """A writer that runs on the user's own login.
+    """A detached writer on the configured chat-agent provider stack."""
+    from openprogram.setup import _read_config
+    from .agent_runtime import OpenProgramAgent
 
-    Memory is written on the user's behalf, out of the quota they are
-    already paying for, so it asks for no separate credential and no
-    separate model.
-    """
-    from .agent_runtime import ClaudeCodeAgent, ClaudeCodeConfig
-
-    return ClaudeCodeAgent(ClaudeCodeConfig.inherited(model=model))
+    configured = (((_read_config().get("memory") or {}).get("writer") or {})
+                  .get("model"))
+    override = model or (str(configured).strip() if configured else None)
+    return OpenProgramAgent(model=override)
 
 
 def _counter() -> Any:
@@ -176,8 +175,11 @@ def archive_unpaired_group_message(
     timestamp: float = 0.0,
 ) -> str:
     """Archive denied group speech as pending evidence, without an agent turn."""
-    from .. import store
+    from .. import is_enabled, store
     from .management import MemoryWorkspace
+
+    if not is_enabled():
+        return ""
 
     native_id = str(message_id or "").strip()
     seed = "\x1f".join((
@@ -392,6 +394,10 @@ def write(
     ``write_session`` raises travels up to the provider, which is where
     a transaction code becomes retryable or not.
     """
+    from .. import is_enabled
+
+    if not is_enabled():
+        return None
     if not session_id:
         return WriteIncomplete("no session id", retryable=False)
     from .. import store
@@ -443,6 +449,63 @@ def _changed_files(audit: list[dict[str, Any]]) -> list[str]:
     })
 
 
+def distill_promoted_source(
+    memory_dir: Any,
+    source_id: str,
+    *,
+    model: str | None = None,
+) -> list[str] | None:
+    """Write one newly trusted archived source into Topics.
+
+    ``None`` means an existing Topic already cites the source. An empty list
+    means the writer ran but made no accepted edit, so a later explicit
+    promotion can retry without duplicating an already cited source.
+    """
+    from pathlib import Path
+
+    from .markdown import parse_topic_tree
+    from .retrieval.bm25 import parse_source_file
+    from .source_format import provider_source_location
+
+    root = Path(memory_dir).resolve()
+    with workspace_write_lock(root, timeout_s=5.0):
+        if any(
+            source_id in unit.source_refs
+            for unit in parse_topic_tree(root / "topics")
+        ):
+            return None
+        location = provider_source_location(source_id, v2=True)
+        if location is None or not (root / location[0]).is_file():
+            raise ValueError(f"source not found: {source_id}")
+        event = next(
+            (
+                row
+                for row in parse_source_file(root / location[0], root / "sources")
+                if row.event_id == source_id
+            ),
+            None,
+        )
+        if event is None or event.trust_state != "trusted":
+            raise ValueError(f"source is not trusted: {source_id}")
+        audit = _run_agent(
+            root,
+            agent=_agent(model),
+            task=render_writer_task([{
+                "observation_date": event.date or "undated",
+                "turns": [(
+                    event.speaker_label
+                    or event.speaker_display
+                    or event.speaker_id
+                    or "user",
+                    event.content,
+                )],
+                "refs": [source_id],
+            }]),
+            stage="promote",
+        )
+    return _changed_files(audit)
+
+
 def reorganize(*, model: str | None = None) -> dict[str, Any]:
     """Rewrite every topic file. Called by the nightly scheduler.
 
@@ -457,7 +520,10 @@ def reorganize(*, model: str | None = None) -> dict[str, Any]:
     criterion. An empty list is what makes that visible, and ``topics``
     beside it counts the files the pass looked at.
     """
-    from .. import store
+    from .. import is_enabled, store
+
+    if not is_enabled():
+        return {"status": "disabled"}
 
     root = store.ensure()
     topics = list((root / "topics").rglob("*.md"))

@@ -60,12 +60,21 @@ def memory(tmp_path, monkeypatch):
 # ---- the memory_update tool -------------------------------------------
 
 
-def test_memory_update_cleans_up_on_both_paths(memory):
+def test_memory_update_cleans_up_on_both_paths(memory, monkeypatch):
     import json
 
-    from openprogram.functions.tools.memory.memory import (
-        memory_status, memory_update,
-    )
+    from openprogram.functions.tools.memory import memory as memory_tools
+
+    monkeypatch.setattr(memory_tools, "authority_from_message", lambda *_: {
+        "speaker_kind": "owner",
+        "speaker_id": "owner/local",
+        "speaker_display": "Owner",
+        "principal_id": "owner/install/0123456789abcdef",
+        "authority_tier": "owner",
+        "interaction": "interactive",
+    })
+    memory_status = memory_tools.memory_status
+    memory_update = memory_tools.memory_update
     before = _stage_dirs()
 
     rejected = memory_update(base_revision="not-the-revision", patch=PATCH)

@@ -134,7 +134,9 @@ def test_unpaired_sources_are_archived_and_retrievable_but_not_distilled(tmp_pat
     )["matches"]
 
 
-def test_only_local_owner_can_promote_an_unpaired_source(tmp_path, authorities):
+def test_only_local_owner_can_promote_an_unpaired_source(
+    tmp_path, authorities, monkeypatch,
+):
     from openprogram.agent.authority import AuthorityError
     from openprogram.functions.tools.memory.memory import _promote_source
     from openprogram.memory.scriptorium.management import MemoryWorkspace
@@ -164,3 +166,123 @@ def test_only_local_owner_can_promote_an_unpaired_source(tmp_path, authorities):
     assert row["source_id"] == pending.source_id
     assert row["principal_id"] == local["principal_id"]
     assert row["authority_tier"] == "owner"
+
+    from openprogram.functions.tools.memory import memory as memory_tools
+    from openprogram.memory.scriptorium import writing
+
+    monkeypatch.setattr(memory_tools, "_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        memory_tools, "authority_from_message", lambda *_: local,
+    )
+    monkeypatch.setattr(
+        writing, "distill_promoted_source",
+        lambda root, source_id: ["topics/review.md"],
+    )
+    public = json.loads(memory_tools.memory_promote(pending.source_id))
+    assert public["promoted"] is False
+    assert public["distilled"] is True
+    assert public["changed_files"] == ["topics/review.md"]
+
+
+def test_promoted_source_is_sent_to_writer_once(tmp_path, monkeypatch):
+    from openprogram.memory.scriptorium import writing
+    from openprogram.memory.scriptorium.management import MemoryWorkspace
+
+    trusted = _record(
+        "m1", "approved group context", trust="trusted", tier=None,
+    )
+    with closing(MemoryWorkspace(tmp_path)) as workspace:
+        workspace.archive_source_records([trusted])
+
+    seen = {}
+    agent = object()
+    monkeypatch.setattr(writing, "_agent", lambda _model=None: agent)
+
+    def run(root, **kwargs):
+        seen.update({"root": root, **kwargs})
+        return [{
+            "tool": "commit", "status": "ok",
+            "topic_paths": ["topics/group.md"],
+        }]
+
+    monkeypatch.setattr(writing, "_run_agent", run)
+    assert writing.distill_promoted_source(
+        tmp_path, trusted.source_id,
+    ) == ["topics/group.md"]
+    assert seen["agent"] is agent
+    assert seen["stage"] == "promote"
+    assert trusted.source_id in seen["task"]
+    assert "approved group context" in seen["task"]
+
+    monkeypatch.setattr(
+        "openprogram.memory.scriptorium.markdown.parse_topic_tree",
+        lambda _root: [SimpleNamespace(source_refs=(trusted.source_id,))],
+    )
+    monkeypatch.setattr(
+        writing, "_agent",
+        lambda _model=None: pytest.fail("already cited source reran writer"),
+    )
+    assert writing.distill_promoted_source(tmp_path, trusted.source_id) is None
+
+
+def test_paired_append_boundary_cannot_rewrite_existing_topics(
+    tmp_path, monkeypatch,
+):
+    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.scriptorium.management.transaction import (
+        TransactionError,
+    )
+
+    root = tmp_path / "memory"
+    space = MemoryWorkspace(root)
+    create = (
+        "--- /dev/null\n"
+        "+++ b/topics/note.md\n"
+        "@@ -0,0 +1,5 @@\n"
+        "+# Note\n"
+        "+\n"
+        "+Original fact.[^e1]\n"
+        "+\n"
+        "+[^e1]: Time: `2026-08-10`; Sources: new-source-fact\n"
+    )
+    sources = [{
+        "label": "new-source-fact",
+        "role": "user",
+        "content": "original evidence",
+        "observed_at": "2026-08-10",
+    }]
+    try:
+        space.update(
+            base_revision=space.revision(), patch=create, sources=sources,
+            git_commit="off", append_only=True,
+        )
+        original = (root / "topics/note.md").read_text(encoding="utf-8")
+        original_fact = original.splitlines()[2]
+        rewrite = (
+            "--- a/topics/note.md\n"
+            "+++ b/topics/note.md\n"
+            "@@ -3,1 +3,1 @@\n"
+            f"-{original_fact}\n"
+            f"+{original_fact.replace('Original', 'Rewritten')}\n"
+        )
+        with pytest.raises(TransactionError) as caught:
+            space.update(
+                base_revision=space.revision(), patch=rewrite,
+                git_commit="off", append_only=True,
+            )
+        assert caught.value.code == "APPEND_ONLY_REQUIRED"
+        assert (root / "topics/note.md").read_text(encoding="utf-8") == original
+
+        from openprogram.functions.tools.memory import memory as memory_tools
+
+        monkeypatch.setattr(memory_tools, "_root", lambda: root)
+        monkeypatch.setattr(
+            memory_tools, "authority_from_message", lambda *_: {},
+        )
+        rejected = json.loads(memory_tools.memory_update(
+            base_revision=space.revision(), patch=rewrite,
+        ))
+        assert rejected["error"]["code"] == "APPEND_ONLY_REQUIRED"
+        assert (root / "topics/note.md").read_text(encoding="utf-8") == original
+    finally:
+        space.close()

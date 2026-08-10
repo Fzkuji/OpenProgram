@@ -7,7 +7,7 @@ Functions exposed (all self-register via @function on import):
   memory_get    — read a file, a section, or one block
   memory_browse — list what memory holds
   memory_update — correct or add one thing
-  memory_promote — trust one pending shared-channel source
+  memory_promote — trust and distill one pending unpaired-group source
   memory_status — size and current revision
 
 Recording the conversation is not among them. That happens in the

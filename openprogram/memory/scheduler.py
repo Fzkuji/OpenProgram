@@ -38,16 +38,20 @@ def _seconds_until_next_3am() -> float:
 
 def start_nightly_reorganizer(
     *,
-    model: str | None = None,             # defaults to the user's own
+    model: str | None = None,             # defaults to the chat agent
     daily_at: int = 3,                    # hour-of-day local
     initial_delay: float | None = None,   # override for tests
 ) -> threading.Thread | None:
     """Spawn the sleep scheduler thread. Returns the thread or None if disabled.
 
-    ``model`` overrides what the reorganizing pass runs on; left unset it
-    uses the login and default model the user's own CLI already has, so
-    background work needs no separate credential.
+    ``model`` overrides the reorganizing pass. Left unset, the writer uses
+    the default chat agent's provider, model, and existing credential.
     """
+    from . import is_enabled
+
+    if not is_enabled():
+        logger.info("memory sleep scheduler disabled by memory.backend=none")
+        return None
     if os.environ.get("OPENPROGRAM_NO_SLEEP", "").strip() in ("1", "true", "yes"):
         logger.info("memory sleep scheduler disabled by OPENPROGRAM_NO_SLEEP")
         return None

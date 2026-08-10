@@ -76,7 +76,11 @@ def _dispatch_access_verb(args, parser) -> None:
                       f"code={row.get('code','')}")
         return
     if verb == "approve":
-        uid = _access.approve(args.channel, args.id, args.code)
+        try:
+            uid = _access.approve(args.channel, args.id, args.code)
+        except ValueError as e:
+            print(f"[error] {e}")
+            sys.exit(1)
         if uid is None:
             print(f"[error] no pending pairing with code {args.code!r} "
                   f"on {args.channel}:{args.id} (codes expire after 1h)")
@@ -92,7 +96,12 @@ def _dispatch_access_verb(args, parser) -> None:
         print(f"Allowlisted {args.user_id} on {args.channel}:{args.id}")
         return
     if verb == "revoke":
-        if _access.revoke(args.channel, args.id, args.user_id):
+        try:
+            removed = _access.revoke(args.channel, args.id, args.user_id)
+        except ValueError as e:
+            print(f"[error] {e}")
+            sys.exit(1)
+        if removed:
             print(f"Revoked {args.user_id} on {args.channel}:{args.id}")
         else:
             print(f"{args.user_id} was not on {args.channel}:{args.id}")

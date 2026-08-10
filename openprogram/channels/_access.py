@@ -38,6 +38,7 @@ import json
 import logging
 import math
 import os
+import re
 import secrets
 import tempfile
 import threading
@@ -56,6 +57,7 @@ DEFAULT_POLICY = "pairing"
 #: 配对码字符集 — 去掉易混淆的 0/O/1/I.
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _CODE_LENGTH = 8
+_PATH_ID = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
 #: pending 配对码有效期 (秒).
 PENDING_TTL = 3600.0
 #: 单个 channel account 同时保留的待配对请求上限.
@@ -97,6 +99,10 @@ def _safe_display(value: str) -> str:
 
 
 def access_path(channel: str, account_id: str) -> Path:
+    if not _PATH_ID.fullmatch(str(channel)):
+        raise ValueError("invalid channel id")
+    if not _PATH_ID.fullmatch(str(account_id)):
+        raise ValueError("invalid channel account id")
     return _accounts.account_dir(channel, account_id) / "access.json"
 
 

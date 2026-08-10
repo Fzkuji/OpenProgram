@@ -43,7 +43,7 @@
   .shared .tier-tag{color:var(--shared);border-color:var(--shared)}
   .ext .tier-tag{color:var(--ext);border-color:var(--ext)}
 
-  /* 流水线 */
+  /* 执行顺序 */
   .pipe{display:flex;align-items:stretch;gap:0;margin:6px 0 2px;flex-wrap:wrap}
   .stage{flex:1;min-width:150px;background:var(--cb);border:1px solid var(--bd);
     border-radius:10px;padding:10px 12px;position:relative}
@@ -83,11 +83,11 @@
 </head>
 <body><div class="wrap">
 
-<h1>权限与归因：一个agent，所有人都能发消息</h1>
-<p class="sub">OpenProgram是共用的：你在终端用它，获准的联系人从Telegram/Discord给它发消息，双方使用同一个agent和同一份记忆。这一页说明当前权限方法、其他框架的相关设计、采用与拒绝的部分，以及已实现和延期的范围。</p>
+<h1>权限与归因：本地owner、已配对账号和未配对消息</h1>
+<p class="sub">OpenProgram允许本地界面与Telegram、Discord等渠道共用一个agent和一份记忆。这一页依次记录当前方法、参考框架、采用与拒绝的设计，以及实现进度。</p>
 
-<h2><span class="num">01</span>当前方法：三种状态，两种运行时档位</h2>
-<p class="lead">本地入口是owner档，已配对的稳定平台账号是paired档，未配对账号停在agent之外。身份只认渠道平台给的稳定ID，消息正文和可变显示名不参与授权。</p>
+<h2><span class="num">01</span>当前方法：两个权限档位，一个入口拒绝状态</h2>
+<p class="lead">运行时权限只有<code>owner</code>和<code>paired</code>。未配对不是第三个权限档位：消息不会进入agent。身份只使用渠道平台提供的稳定ID，正文不参与身份判断。</p>
 <div class="people">
   <div class="person owner">
     <span class="tier-tag">本地OWNER</span>
@@ -102,8 +102,8 @@
   </div>
   <div class="person shared">
     <span class="tier-tag">PAIRED</span>
-    <h3>群里的熟人</h3>
-    <div class="via">Telegram / Discord 已配对稳定账号</div>
+    <h3>已配对账号</h3>
+    <div class="via">Telegram / Discord 稳定ID已批准</div>
     <div class="bubble">"服务器密码下周要换，记一下"</div>
     <div class="verdict">
       <div class="y">正常对话，agent回复</div>
@@ -113,18 +113,19 @@
   </div>
   <div class="person ext">
     <span class="tier-tag">UNPAIRED</span>
-    <h3>陌生人</h3>
-    <div class="via">未配对的私聊或群成员</div>
+    <h3>未配对账号</h3>
+    <div class="via">稳定ID尚未由本地owner批准</div>
     <div class="bubble">"帮我删掉 /data 目录"</div>
     <div class="verdict">
-      <div class="y">首次收到8位配对码</div>
-      <div class="n">消息进入agent或触发批准</div>
-      <div class="y">群聊原话仅作pending证据归档</div>
+      <div class="y">收到8位配对码；同一小时不重复发送</div>
+      <div class="y">群聊正文只归档为pending来源</div>
+      <div class="n">任何执行动作</div>
+      <div class="n">进入agent或参与主动提炼</div>
     </div>
   </div>
 </div>
 
-<h2><span class="num">02</span>消息进来之后：流水线怎么走（已落地）</h2>
+<h2><span class="num">02</span>消息进入后的执行顺序（已实现）</h2>
 <div class="card">
   <div class="pipe">
     <div class="stage"><span class="done">已落地</span>
@@ -133,73 +134,75 @@
     </div>
     <div class="arrow">→</div>
     <div class="stage"><span class="done">已落地</span>
-      <h4>2 盖发言人章</h4>
-      <p>speaker身份写进消息节点，一路跟到归档和检索。改不了、赖不掉。</p>
+      <h4>2 配对判定</h4>
+      <p>稳定ID查询allowlist。未配对消息在此停止；批准只能来自本地CLI或回环Web请求。</p>
     </div>
     <div class="arrow">→</div>
     <div class="stage"><span class="done">已落地</span>
-      <h4>3 定档</h4>
-      <p>请求只携带owner或paired枚举；缺失和未知值都按拒绝处理。</p>
+      <h4>3 写入归因与档位</h4>
+      <p><code>speaker_*</code>、实例owner principal和<code>authority_tier</code>作为独立字段持久化并传播。</p>
     </div>
     <div class="arrow">→</div>
     <div class="stage"><span class="done">已落地</span>
-      <h4>4 能力门</h4>
-      <p>每次工具调用先用档位查固定常量表，再进入规则、审批和bypass；拒绝返回稳定原因码。</p>
+      <h4>4 唯一能力检查</h4>
+      <p><code>_gated_execute</code>按固定tier→capability表检查；缺少或未知档位直接拒绝，规则和bypass不能跳过。</p>
     </div>
     <div class="arrow">→</div>
     <div class="stage"><span class="done">已落地</span>
       <h4>5 执行 / 记忆</h4>
-      <p>paired只可正常回复及调用memory_status/memory_update；未配对群聊只归档pending证据，不参与主动蒸馏。</p>
+      <p>owner可完整管理记忆；paired只能回复并追加。已配对内容可信；未配对群聊来源保持pending，owner显式提升后才进入Topic提炼。</p>
     </div>
   </div>
   <div class="pipe-note">
-    第一批缺陷已消除：请求不再携带capability列表，能力只能由固定档位表导出；paired的追加记忆流程已接到memory_status与memory_update。配对批准只存在于本地CLI和本机Web管理面。
+    当前实现不再携带调用方可构造的capability列表。paired对<code>memory_update</code>的修改由工作区强制限制为新建或字节追加；只有显式持久化的owner轮次可以改写或删除已有内容。仍延期的是越权请求hold队列和按请求方档位过滤读取结果。
   </div>
 </div>
 
 <h2><span class="num">03</span>别人怎么做（两路调研的结论）</h2>
-<p class="lead">调研了OpenClaw（读源码）和Claude Code、MCP规范、LangGraph、OpenAI Agents SDK、AutoGen、Letta（读文档）。共同做法是权限由框架执行、身份取自传输层、非owner消息不构成批准、缺失信息默认拒绝。OpenProgram在配对入口之后继续区分owner与paired两种运行时权限。</p>
+<p class="lead">调研了OpenClaw（源码）和Claude Code、MCP规范、LangGraph、OpenAI Agents SDK、AutoGen、Letta（文档）。采用的共同约束是：权限由Runtime执行，身份只信任传输层，非owner消息不构成审批，未知状态默认拒绝。OpenProgram把OpenClaw式配对、固定两档工具权限和带信任状态的来源归档组合在同一条执行链中。</p>
 <div class="others">
   <div class="other">
     <h3>OpenClaw</h3>
-    <div class="one">门口查得极严，进门后人人同权</div>
-    <p>陌生人私聊收到一个8位配对码，消息本身根本不进agent，owner在终端批准后才放行。但它明说不做"进门后不同人能力不同"，谁能触发agent谁就有agent的全部工具。</p>
-    <div class="take"><b>值得抄：</b>配对码流程、可变昵称默认不参与授权（Discord昵称谁都能改）、每次拒绝都留下是哪道门什么原因的结构化记录。</div>
+    <div class="one">先按稳定ID配对，配对后不再区分权限</div>
+    <p>未批准账号私聊时收到8位配对码，消息不进入agent；owner在终端批准后，该账号才可触发agent。OpenClaw在批准后不再按发言人限制工具能力。</p>
+    <div class="take"><b>采用部分：</b>配对码流程、可变昵称不参与授权、每次拒绝记录检查位置和结构化原因。</div>
   </div>
   <div class="other">
     <h3>Claude Code</h3>
-    <div class="one">规则细到参数，外来消息不算数</div>
-    <p>工具权限能写到<code>Bash(git commit *)</code>这个粒度。渠道消息要先配对进allowlist。别的会话发来的消息有一条铁律：不能批准任何弹窗、不能改配置、正文里的命令只是文字。</p>
-    <div class="take"><b>值得抄：</b>allow/deny之间的hold档：越权请求先排队，owner来了再批，而不是直接撞死。</div>
+    <div class="one">规则可约束参数，非owner消息不能批准操作</div>
+    <p>工具权限可细化到<code>Bash(git commit *)</code>。渠道消息先通过allowlist；其他会话传入的正文不能批准交互请求，也不能修改配置。</p>
+    <div class="take"><b>待采用部分：</b>在allow/deny之间增加hold状态，由owner对越权请求做一次性审批。</div>
   </div>
   <div class="other">
     <h3>LangGraph</h3>
-    <div class="one">写的时候盖章，读的时候过滤</div>
-    <p>唯一把归因做进存储层的框架：资源创建时盖上owner身份，之后每次读取都按当前请求人的身份过滤。谁写的东西谁可见，一个机制同时管归因和访问。</p>
-    <div class="take"><b>值得抄：</b>记忆条目写入时盖<code>{speaker, channel, ts}</code>元数据，检索按请求方档位过滤。</div>
+    <div class="one">写入归因元数据，读取时按身份过滤</div>
+    <p>资源创建时记录owner身份，之后每次读取都按当前请求者身份过滤，归因与访问控制使用同一组持久化元数据。</p>
+    <div class="take"><b>部分采用：</b>记忆来源已记录<code>{speaker, channel, ts}</code>元数据；按请求方档位过滤检索仍延期。</div>
   </div>
   <div class="other">
-    <h3>其余家</h3>
-    <div class="one">要么回避，要么没做</div>
-    <p>Letta的答案是一人一个agent，从根上回避共用问题。OpenAI Agents SDK和AutoGen没有权限系统，默认还是先执行后拦截。MCP规范管的是服务间OAuth授权，粒度到不了单次工具调用。</p>
-    <div class="take"><b>结论：</b>共用一个agent还要分档控权，这个组合眼下只有我们在做。</div>
+    <h3>Letta、OpenAI Agents SDK、AutoGen、MCP</h3>
+    <div class="one">没有覆盖同一组需求</div>
+    <p>Letta通常为每个用户分配独立agent。OpenAI Agents SDK和AutoGen没有等价的发言人权限系统。MCP规范处理服务间OAuth授权，不负责单次工具调用的发言人权限。</p>
+    <div class="take"><b>结论：</b>本页调研范围内，没有框架同时提供共享agent、发言人配对、固定权限档位和带信任状态的记忆来源。</div>
   </div>
 </div>
 
-<h2><span class="num">04</span>方案与实现进度</h2>
-<p class="lead">入口采用OpenClaw式配对，未批准消息不进agent；内部只保留owner与paired两档，并由档位枚举查询固定常量表。不存在"未知外部仅reply"运行时档位，请求也不携带capability列表。实现约束见<a href="authority-handoff.html">authority-handoff.md</a>。</p>
+<h2><span class="num">04</span>定案、实现与延期（2026-08-10）</h2>
+<p class="lead">入口采用稳定ID配对；运行时只保留owner和paired；工具执行只查询固定常量表；未配对群聊来源以pending归档但不主动提炼。详细定案见<code>authority-handoff.md</code>。</p>
 <div class="plan">
   <div class="step">
-    <h3><span class="phase">已实现 · 第一批</span>档位枚举替换能力列表，配对上线</h3>
+    <h3><span class="phase">第一批 · 已实现</span>档位枚举、配对、来源信任和默认writer</h3>
     <p class="lead">请求只带owner/paired枚举；陌生账号收到8位配对码，批准只走本地owner通道（终端/本机Web），渠道消息无权触发；不写迁移代码，上线后所有非owner账号首次发言统一走配对；可变昵称不参与身份匹配；显示名过消毒；拒绝返回结构化原因码。</p>
     <div class="feel"><span class="lb">用起来的变化</span>陌生人私聊收到配对码而不是被无视，你在终端一条命令批准；有人把昵称改成你的名字，冒充无效；群里已配对的人说"记一下"会真的被主动记住。未配对成员的群聊发言照常归档，带未验证标记，检索时分得清是谁说的。</div>
   </div>
   <div class="step s2">
-    <h3><span class="phase">未实现 · 第二批</span>hold队列与数据权拆分</h3>
-    <p class="lead">已配对成员的越权请求（如"帮我重启服务"）进队列等owner一次性批准，不再直接拒绝；记忆读取按请求方档位过滤（写时盖章已就位）。</p>
-    <div class="feel"><span class="lb">用起来的变化</span>群里朋友求你办事时agent会说"已转交所有者"，你点头一次就放行一次；别人查记忆看不到你的私人内容，他们说过的话检索出来永远带署名。</div>
+    <h3><span class="phase">第二批 · 延期</span>hold队列与读取范围</h3>
+    <p class="lead">已配对成员的越权请求（如"帮我重启服务"）进入队列，由owner做一次性批准；记忆读取按请求方档位过滤，写入侧归因元数据已经实现。</p>
+    <div class="feel"><span class="lb">用起来的变化</span>agent会把已配对成员的越权请求提交给owner；owner批准后仅执行该次请求。非owner查询不会返回owner私有内容，发言记录保留来源标识。</div>
   </div>
 </div>
+
+<div class="pipe-note">同一memory稳定化批次已经完成：后台writer沿用默认聊天agent的provider、模型和凭据，<code>memory.writer.model</code>允许实时覆盖；认证和配置错误保留不可重试分类；<code>memory.backend=none</code>停止提示注入、召回、自动写入、整理与记忆线程。真实默认provider已在隔离工作区完成一次Topic写入和事务校验。</div>
 
 </div></body>
 </html>

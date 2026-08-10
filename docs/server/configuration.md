@@ -37,7 +37,8 @@ Every setting has an apply mode: `live` (takes effect immediately) or `next star
 | `ui.port` | the single worker port (API + WebSocket + web UI); `ui.web_port` is a legacy alias | 18100 | next start |
 | `ui.open_browser` | whether `openprogram web` opens the browser automatically | true | next start |
 | `search.default_provider` | default web search provider (`auto` picks the highest-priority configured one) | auto | live |
-| `memory.backend` | memory backend: `local` (on disk) or `none` (disabled) | local | next start |
+| `memory.backend` | `local` (on disk) or `none` (no prompt memory, recall, automatic writes, organizer, or memory threads) | local | next start |
+| `memory.writer.model` | optional `provider/model` for background writing; empty follows the default chat agent and its credentials | empty | live |
 | `tools.disabled.<name>` | per-tool switch (written into the `tools.disabled` list) | all enabled | live |
 
 `config list` also shows read-only `providers.<name>` status rows — they cannot be changed with `config set`; configure them with `openprogram providers login` or the Providers page in the Web UI.

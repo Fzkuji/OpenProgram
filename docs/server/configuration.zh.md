@@ -37,7 +37,8 @@ openprogram config set <key> <value> # 改一个设置
 | `ui.port` | worker 单端口（API + WebSocket + web UI）；`ui.web_port` 是遗留别名 | 18100 | next start |
 | `ui.open_browser` | `openprogram web` 是否自动打开浏览器 | true | next start |
 | `search.default_provider` | 默认 web 搜索 provider（`auto` 选优先级最高的已配置项） | auto | live |
-| `memory.backend` | 记忆后端：`local`（磁盘）或 `none`（禁用） | local | next start |
+| `memory.backend` | `local`（磁盘）或 `none`（不注入、不召回、不自动写入、不整理，也不启动记忆线程） | local | next start |
+| `memory.writer.model` | 后台写入使用的可选 `provider/model`；留空时沿用默认聊天 agent 及其凭据 | 空 | live |
 | `tools.disabled.<name>` | 逐个工具的开关（写入 `tools.disabled` 列表） | 全部启用 | live |
 
 `config list` 还会显示只读的 `providers.<name>` 状态行 —— 它们不能用 `config set` 改，要用 `openprogram providers login` 或 Web UI 的 Providers 页配置。

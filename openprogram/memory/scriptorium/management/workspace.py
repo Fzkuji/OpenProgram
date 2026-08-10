@@ -230,6 +230,7 @@ class MemoryWorkspace(
         commit_message: str | None = None,
         git_commit: str = "auto",
         limits: TransactionLimits | None = None,
+        append_only: bool = False,
     ) -> TransactionResult:
         """Apply sources and a topic patch as one atomic transaction.
 
@@ -273,6 +274,20 @@ class MemoryWorkspace(
                     self.archive_source_records(records, root=self.stage_dir)
                 resolved = resolve_source_labels(patch, mapping)
                 changed = apply_patch(self.stage_dir, resolved)
+                if append_only:
+                    for relative in changed:
+                        before = self.memory_dir / relative
+                        after = self.stage_dir / relative
+                        if before.exists() and (
+                            not after.is_file()
+                            or not after.read_bytes().startswith(before.read_bytes())
+                        ):
+                            raise TransactionError(
+                                "APPEND_ONLY_REQUIRED",
+                                "paired memory updates may create or append, "
+                                "but cannot rewrite existing content",
+                                path=relative,
+                            )
                 install_state(self, before_units, before_block_ids)
             except TransactionError:
                 self._refresh_stage()

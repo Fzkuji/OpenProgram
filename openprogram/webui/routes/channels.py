@@ -216,11 +216,14 @@ def register(app: FastAPI) -> None:
         _require_local_request(request)
         from openprogram.channels import _access
 
-        user_id = _access.approve(
-            body.channel.strip().lower(),
-            body.account_id.strip() or "default",
-            body.code,
-        )
+        try:
+            user_id = _access.approve(
+                body.channel.strip().lower(),
+                body.account_id.strip() or "default",
+                body.code,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         if user_id is None:
             raise HTTPException(
                 status_code=404,
@@ -238,6 +241,10 @@ def register(app: FastAPI) -> None:
         _require_local_request(request)
         from openprogram.channels import _access
 
-        if not _access.revoke(channel, account_id, user_id):
+        try:
+            removed = _access.revoke(channel, account_id, user_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if not removed:
             raise HTTPException(status_code=404, detail="paired sender not found")
         return JSONResponse(content={"ok": True, "user_id": user_id})

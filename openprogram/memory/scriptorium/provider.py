@@ -128,7 +128,10 @@ class ScriptoriumMemoryProvider(MemoryProvider):
             # conversation is safe in the session store, so the next
             # pass costs nothing and loses nothing.
             logger.debug("memory write deferred: %s", exc)
-            return WriteIncomplete(str(exc))
+            verdict = getattr(exc, "retryable", None)
+            return WriteIncomplete(
+                str(exc), retryable=True if verdict is None else bool(verdict),
+            )
 
     def reorganize(self, **kwargs: Any) -> dict[str, Any]:
         """Rewrite topic files. Called by the nightly scheduler."""
@@ -139,4 +142,3 @@ class ScriptoriumMemoryProvider(MemoryProvider):
         except Exception as exc:  # noqa: BLE001
             logger.warning("memory reorganize failed: %s", exc)
             return {"status": "failed", "error": str(exc)}
-

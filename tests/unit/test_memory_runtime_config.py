@@ -1,0 +1,54 @@
+"""Runtime-level memory configuration contracts."""
+
+from __future__ import annotations
+
+
+def test_writer_model_setting_is_live_and_defaults_to_chat_agent():
+    from openprogram.config_schema import get_settings
+
+    row = next(
+        item for item in get_settings() if item["key"] == "memory.writer.model"
+    )
+    assert row["value"] == ""
+    assert row["apply"] == "live"
+
+
+def test_backend_none_disables_every_runtime_surface(monkeypatch, tmp_path):
+    import openprogram.memory as memory
+
+    monkeypatch.setattr(
+        "openprogram.paths.get_state_dir", lambda: tmp_path / "state",
+    )
+    monkeypatch.setattr(
+        "openprogram.setup._read_config",
+        lambda: {"memory": {"backend": "none"}},
+    )
+    monkeypatch.setattr(memory, "_provider", None)
+
+    provider = memory.get_provider()
+    assert provider.name == "none"
+    assert provider.system_prompt() == ""
+    assert provider.search("remember this") == ""
+    assert provider.write(session_id="s1", force=True) is None
+    assert provider.reorganize() == {"status": "disabled"}
+
+    from openprogram.memory.scriptorium import writing
+
+    assert writing.write("s1", token_threshold=1, force=True) is None
+    assert writing.reorganize() == {"status": "disabled"}
+
+    from openprogram.memory.scheduler import start_nightly_reorganizer
+    from openprogram.memory.session_watcher import start_idle_session_watcher
+
+    assert start_nightly_reorganizer(initial_delay=0) is None
+    assert start_idle_session_watcher(poll_interval=1) is None
+
+    from openprogram.memory.scriptorium.writing import (
+        archive_unpaired_group_message,
+    )
+
+    assert archive_unpaired_group_message(
+        channel="telegram", account_id="main", chat_id="group-1",
+        message_id="m1", user_id="u1", user_display="U", text="pending",
+    ) == ""
+    assert not (tmp_path / "state" / "memory").exists()

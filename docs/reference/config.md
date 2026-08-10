@@ -18,7 +18,8 @@ The settings registry is defined in `openprogram/config_schema.py` (the single s
 | `ui.web_port` | Ports | legacy alias for the single port (kept for the deprecation window) | 18100 | next start |
 | `ui.open_browser` | Ports | whether `openprogram web` opens the browser automatically | true | next start |
 | `search.default_provider` | Search | default web search provider; `auto` picks the highest-priority configured one | auto | live |
-| `memory.backend` | Memory | `local` (on-disk memory tools) or `none` (disabled) | local | next start |
+| `memory.backend` | Memory | `local` (on-disk memory) or `none` (no prompt memory, recall, automatic writes, organizer, or memory threads) | local | next start |
+| `memory.writer.model` | Memory | optional `provider/model` override for background writing; empty uses the default chat agent's provider, model, and credentials | empty | live |
 | `sandbox.mode` | Sandbox | `off`, or `workspace-write` to apply the host-native sandbox to local model-driven commands: writes are limited to the working directory/configured roots, deny-read paths are blocked, and network is disabled | workspace-write | live |
 | `sandbox.writable_roots` | Sandbox | extra directories a sandboxed command may write, as a JSON list | [] | live |
 | `sandbox.deny_read` | Sandbox | globs a sandboxed command cannot read; defaults include credential paths. Linux cannot enforce middle-wildcard patterns such as `**/.env`: use an exact path or a concrete directory deny such as `/absolute/path/to/secrets/**` for sensitive content | see `openprogram config get sandbox.deny_read` | live |
@@ -39,6 +40,7 @@ The top-level keys actually written to `~/.openprogram/config.json` (do not edit
 |----|------|------|
 | `ui` | `{port, web_port, open_browser}`, see the table above | `openprogram/config_schema.py` |
 | `search` | `{default_provider}` | `openprogram/setup.py` |
+| `memory` | `{backend, writer: {model}}`, see the table above | `openprogram/config_schema.py`, `openprogram/memory/` |
 | `tools` | `{disabled: [tool name, ...]}` | `openprogram/setup.py`, `openprogram/config_schema.py` |
 | `sandbox` | `{mode, writable_roots, deny_read, deny_write, network, pass_env, on_unavailable}`, see the table above | `openprogram/sandbox/__init__.py`, `openprogram/config_schema.py` |
 | `default_provider` | Default LLM provider (written by the setup wizard) | `openprogram/setup.py` |

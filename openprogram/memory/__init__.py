@@ -26,6 +26,21 @@ from .provider import MemoryProvider
 _provider: MemoryProvider | None = None
 
 
+class _DisabledMemoryProvider(MemoryProvider):
+    @property
+    def name(self) -> str:
+        return "none"
+
+    def reorganize(self, **kwargs) -> dict:
+        return {"status": "disabled"}
+
+
+def is_enabled() -> bool:
+    from openprogram.setup import _read_config
+
+    return ((_read_config().get("memory") or {}).get("backend") != "none")
+
+
 def get_provider() -> MemoryProvider:
     """The memory system in use.
 
@@ -34,9 +49,12 @@ def get_provider() -> MemoryProvider:
     """
     global _provider
     if _provider is None:
-        from .scriptorium import ScriptoriumMemoryProvider
+        if not is_enabled():
+            _provider = _DisabledMemoryProvider()
+        else:
+            from .scriptorium import ScriptoriumMemoryProvider
 
-        _provider = ScriptoriumMemoryProvider()
+            _provider = ScriptoriumMemoryProvider()
     return _provider
 
 
@@ -50,4 +68,4 @@ def set_provider(instance: MemoryProvider | None) -> None:
     _provider = instance
 
 
-__all__ = ["MemoryProvider", "get_provider", "set_provider"]
+__all__ = ["MemoryProvider", "get_provider", "is_enabled", "set_provider"]

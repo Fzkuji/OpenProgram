@@ -27,6 +27,13 @@ def test_default_policy_is_pairing() -> None:
     assert data["policy"] == "pairing"
 
 
+def test_access_scope_cannot_escape_the_channel_state_directory() -> None:
+    with pytest.raises(ValueError, match="invalid channel id"):
+        _access.describe("../outside", "default")
+    with pytest.raises(ValueError, match="invalid channel account id"):
+        _access.describe("telegram", "../outside")
+
+
 def test_unknown_sender_blocked_and_gets_code() -> None:
     decision = _access.check_inbound("telegram", "a1", "999", "Eve")
     assert decision.allowed is False

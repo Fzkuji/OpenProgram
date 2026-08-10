@@ -357,7 +357,8 @@ fall back to the legacy anchor. A forged legacy frame cannot override a v2
 event. Without a corresponding valid v2 record, a legacy prefix remains
 limited compatibility, not evidence with v2 authenticity.
 
-The BM25 cache schema is version 6. Version 5 could cache a structured
+The BM25 cache schema is version 8. Older versions can omit current speaker
+or trust fields, so they are ignored. Version 5 could cache a structured
 speaker parsed from what is now a legacy file, so it is ignored and rebuilt
 under the v2-only trust rule. Tests cover trusted
 dispatch persistence, JSONL writer collision resistance and exact value
@@ -650,7 +651,31 @@ trusted speaker fields or deduplication IDs, and retain only the restricted
 `user` body-prefix retrieval hint. A valid v2 event wins when both trees
 contain the same source ID. Before any archive write, NFC/casefold-equivalent
 provider or thread paths are rejected as one batch, leaving the source tree
-unchanged. BM25 cache v6 exposes source-only speaker filtering by stable id
+unchanged. BM25 cache v8 exposes source-only speaker filtering by stable id
 or readable label. Public `memory_search` source results use the real
 `#source-...` anchor and show `speaker_trusted`, `speaker_id` and
 `speaker_display`; an embedding request with `speaker` is rejected explicitly.
+
+The authority and automatic-writing batch settled on 2026-08-10 is also
+implemented. Requests carry only an `owner` or `paired` tier, and the single
+tool check in `_gated_execute` consults a fixed constant table. Unpaired
+messages do not enter the agent; unpaired group text is archived as a
+`pending` source and excluded from active distillation. Paired and owner text
+both enter trusted distillation. Only an interactive local owner can use
+`memory_promote`, which records an audit event and then sends the source
+through the same Topic-writing transaction; an existing citation is skipped.
+Paired callers can use
+`memory_status` and `memory_update`, but the workspace limits them to creating
+or byte-appending files; a call without persisted owner authority cannot
+rewrite or delete existing content.
+
+The background writer now uses `AgentSession` with the default chat agent's
+provider, model and credentials. `memory.writer.model` is a live writer-only
+override. Provider authentication and configuration failures retain
+`retryable=false`, so the idle watcher does not repeat them. With
+`memory.backend=none`, the disabled provider emits no memory system prompt or
+recall and performs no automatic writes or organization; memory schedulers,
+idle watchers and unpaired-group archiving do not start or write. The real
+default provider completed a Topic write and transaction validation in an
+isolated workspace. Existing production sources without authority metadata
+remain pending; no identity inference or trust migration is performed.

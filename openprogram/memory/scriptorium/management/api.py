@@ -38,7 +38,7 @@ def writer_protocol_sha256() -> str:
             "system": SYSTEM_PROMPT,
             "write_memory": WRITE_MEMORY,
             "tools": TOOLS[:1],
-            "runtime": "claude-agent-sdk",
+            "runtime": "openprogram-agent-session",
             "contract": "topic-core-v4-jsonl-runtime-ids",
         },
         ensure_ascii=False,
@@ -101,4 +101,3 @@ def organize_topics(
         usage_logger=usage_logger,
         config=config,
     )
-

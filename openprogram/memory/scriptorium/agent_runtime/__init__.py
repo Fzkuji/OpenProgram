@@ -6,10 +6,12 @@ from .claude_code import (
     ClaudeCodeAgent,
     ClaudeCodeConfig,
 )
+from .openprogram_agent import OpenProgramAgent
 
 __all__ = [
     "AgentExecutionError",
     "AgentResult",
     "ClaudeCodeAgent",
     "ClaudeCodeConfig",
+    "OpenProgramAgent",
 ]

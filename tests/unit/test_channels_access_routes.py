@@ -101,6 +101,22 @@ def test_web_approval_rejects_unknown_or_expired_code(monkeypatch):
     assert response.json()["detail"] == "pending pairing code not found or expired"
 
 
+def test_web_access_rejects_invalid_account_paths(monkeypatch):
+    client = _client(monkeypatch)
+
+    response = client.post(
+        "/api/channels/access/approve",
+        json={
+            "channel": "telegram",
+            "account_id": "../outside",
+            "code": "ABCDEFGH",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid channel account id"
+
+
 def test_channels_settings_exposes_pairing_management():
     from pathlib import Path
 

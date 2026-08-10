@@ -58,6 +58,11 @@ def start_idle_session_watcher(
 ) -> threading.Thread | None:
     """Spawn the watcher thread. Returns the thread or None if disabled."""
     import os
+    from . import is_enabled
+
+    if not is_enabled():
+        logger.info("memory session-end watcher disabled by memory.backend=none")
+        return None
     if os.environ.get("OPENPROGRAM_NO_SESSION_END", "").strip() in ("1", "true", "yes"):
         logger.info("memory session-end watcher disabled by env")
         return None

@@ -18,7 +18,8 @@ openprogram config set ui.port 8101
 | `ui.web_port` | Ports | 单端口的遗留别名（弃用过渡期保留） | 18100 | next start |
 | `ui.open_browser` | Ports | `openprogram web` 是否自动开浏览器 | true | next start |
 | `search.default_provider` | Search | 默认 web 搜索 provider，`auto` 选优先级最高的已配置项 | auto | live |
-| `memory.backend` | Memory | `local`（磁盘记忆工具）或 `none`（禁用） | local | next start |
+| `memory.backend` | Memory | `local`（磁盘记忆）或 `none`（不注入记忆、不召回、不自动写入、不整理，也不启动记忆线程） | local | next start |
+| `memory.writer.model` | Memory | 后台写入使用的可选 `provider/model`；留空时沿用默认聊天 agent 的 provider、模型和凭据 | 空 | live |
 | `sandbox.mode` | Sandbox | `off`，或`workspace-write`：对本地模型驱动命令使用宿主原生沙箱，写入限制在工作目录/已配置根，deny-read路径不可读，网络禁用 | workspace-write | live |
 | `sandbox.writable_roots` | Sandbox | 沙箱内额外可写的目录，JSON列表 | [] | live |
 | `sandbox.deny_read` | Sandbox | 沙箱内不可读的glob，默认包含凭证路径。Linux不能强制`**/.env`这类中段通配；敏感内容要使用精确路径，或`/absolute/path/to/secrets/**`这类具有确定前缀的目录级deny | 见`openprogram config get sandbox.deny_read` | live |
@@ -39,6 +40,7 @@ openprogram config set ui.port 8101
 |----|------|------|
 | `ui` | `{port, web_port, open_browser}`，见上表 | `openprogram/config_schema.py` |
 | `search` | `{default_provider}` | `openprogram/setup.py` |
+| `memory` | `{backend, writer: {model}}`，见上表 | `openprogram/config_schema.py`、`openprogram/memory/` |
 | `tools` | `{disabled: [工具名, ...]}` | `openprogram/setup.py`、`openprogram/config_schema.py` |
 | `sandbox` | `{mode, writable_roots, deny_read, deny_write, network, pass_env, on_unavailable}`，见上表 | `openprogram/sandbox/__init__.py`、`openprogram/config_schema.py` |
 | `default_provider` | 默认 LLM provider（setup 向导写入） | `openprogram/setup.py` |
