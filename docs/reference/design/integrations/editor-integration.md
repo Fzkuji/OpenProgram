@@ -52,5 +52,11 @@ rows stay open in the matrix by choice.
 
 ## Implementation status
 
-Nothing landed yet. Order: LSP tools → ACP server → matrix re-audit of the
-GUI row. Queued independently of the memory stabilization batch.
+LSP tools have landed. The client lives in `openprogram/lsp/` (JSON-RPC over
+stdio, one server per language per workspace, started on first use and shut
+down at exit); the three tools live in `openprogram/functions/tools/lsp/` and
+are documented for users in [Language server tools](../../../capabilities/lsp.md).
+Server processes go through the same sandbox-wrapping entry as every other
+child, so `sandbox.mode` applies to them unchanged.
+
+Still open, in order: ACP server, then the matrix re-audit of the GUI row.
