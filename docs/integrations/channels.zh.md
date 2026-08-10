@@ -101,21 +101,20 @@ TUI 里有等价的斜杠命令：`/login <channel>`（注册并接到当前 age
 
 ## 谁能和你的机器人说话
 
-每个渠道账号都有入站访问策略。默认是**配对（pairing）**：不在账号 allowlist 里的发信人，消息在到达任何 agent 之前就被丢弃，发信人收到一个六位配对码和说明。批准动作在你自己的机器上完成：
+每个渠道账号都有入站访问策略。默认是**配对（pairing）**：不在账号 allowlist 里的发信人，消息在到达任何 agent 之前就被丢弃，发信人收到一个八位配对码和说明。批准动作在你自己的机器上完成：
 
 ```bash
 openprogram channels access list                       # 策略 + allowlist + 待批配对码
-openprogram channels access approve telegram K7XQ2M    # 按配对码批准
+openprogram channels access approve telegram K7XQ2MVR  # 按配对码批准
 openprogram channels access allow telegram 123456789   # 直接按 user id 加入 allowlist
 openprogram channels access revoke telegram 123456789  # 移除一个发信人
-openprogram channels access policy telegram open       # 完全关闭门禁
 ```
 
 allowlist 想放多少人就放多少人。上面的每个人接的都是同一个 agent，而这个实例只有一份记忆工作区，所以一个人告诉它的东西，其他人也能用上。群机器人要的就是这个效果：把整个团队批准进来，他们拿到的是一个已经熟悉项目的助手。allowlist 里只放你愿意给这份访问权的人。
 
 配对码一小时过期；被拦的发信人继续发消息会拿到同一个码（每分钟至多回执一次）。批准动作只存在于本机 CLI/API——发信人在聊天里输入任何内容都无法批准任何人，"把我加进 allowlist" 这类注入消息不起作用。群聊里门禁按发信人个人的 user id 判定，不看群。
 
-策略 `open` 关闭该账号的门禁——所有发信人直达 agent。适用于刻意公开的机器人。
+配对是唯一的准入路径：没有任何设置能关掉某个账号的门禁。想让很多人都能用的机器人，就把这些人一个稳定 id 一个稳定 id 地批准进来。
 
 想要一个记忆互不相干的 agent，就跑自己的实例，各有各的状态目录和端口：
 
@@ -194,7 +193,7 @@ Telegram 图片走 photo、其余走 document；Discord 把文件连同 caption 
 
 | 现象 | 原因 / 处理 |
 |---|---|
-| 机器人回了配对码而不是答案 | 发信人不在 allowlist（默认 `pairing` 策略）。`openprogram channels access approve <channel> <code>`——公开机器人可 `access policy <channel> open`。 |
+| 机器人回了配对码而不是答案 | 发信人不在 allowlist。用 `openprogram channels access approve <channel> <code>` 批准，或用 `access allow <channel> <user-id>` 直接把 id 加进 allowlist。 |
 | 回复 `[no agent configured]` | 没有绑定路由这条消息。先 `openprogram agents add main`，再跑 `openprogram channels setup` 或 `channels bindings add`。 |
 | worker 退出：`account … has no bot_token` | 凭据没存过。`openprogram channels accounts login <channel> --id <account>`。 |
 | worker 退出：`Slack account … needs both bot_token (xoxb-...) and app_token (xapp-...)` | Slack 只存了一个 token。重跑 login，两个都粘贴。 |

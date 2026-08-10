@@ -8,7 +8,7 @@
   :root{
     --bg:#16150f; --pan:#1d1c14; --bd:#2e2c20; --tx:#bdb9a6; --acc:#d4843a;
     --cb:#12110b; --dim:#8a8675;
-    --owner:#5aad4e; --shared:#4f8ef7; --ext:#9d6fe0; --no:#e0445a; --warn:#d4b23a;
+    --owner:#5aad4e; --paired:#4f8ef7; --unpaired:#9d6fe0; --no:#e0445a; --warn:#d4b23a;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--tx);
@@ -27,8 +27,8 @@
   .person{background:var(--pan);border:1px solid var(--bd);border-radius:12px;padding:14px;
     border-top:3px solid var(--bd)}
   .person.owner{border-top-color:var(--owner)}
-  .person.shared{border-top-color:var(--shared)}
-  .person.ext{border-top-color:var(--ext)}
+  .person.paired{border-top-color:var(--paired)}
+  .person.unpaired{border-top-color:var(--unpaired)}
   .person h3{margin:0 0 2px;font-size:14px;color:#f0eee6}
   .person .via{font-size:11.5px;color:var(--dim);margin-bottom:10px}
   .bubble{background:var(--cb);border:1px solid var(--bd);border-radius:10px;
@@ -40,8 +40,8 @@
   .tier-tag{display:inline-block;font-size:10px;letter-spacing:.14em;border:1px solid;
     border-radius:99px;padding:1px 8px;margin-bottom:8px}
   .owner .tier-tag{color:var(--owner);border-color:var(--owner)}
-  .shared .tier-tag{color:var(--shared);border-color:var(--shared)}
-  .ext .tier-tag{color:var(--ext);border-color:var(--ext)}
+  .paired .tier-tag{color:var(--paired);border-color:var(--paired)}
+  .unpaired .tier-tag{color:var(--unpaired);border-color:var(--unpaired)}
 
   /* 执行顺序 */
   .pipe{display:flex;align-items:stretch;gap:0;margin:6px 0 2px;flex-wrap:wrap}
@@ -71,8 +71,8 @@
   .step{position:relative;margin-bottom:18px}
   .step::before{content:"";position:absolute;left:-28px;top:6px;width:9px;height:9px;
     border-radius:99px;background:var(--acc)}
-  .step.s2::before{background:var(--shared)}
-  .step.s3::before{background:var(--ext)}
+  .step.s2::before{background:var(--paired)}
+  .step.s3::before{background:var(--unpaired)}
   .step h3{margin:0 0 4px;font-size:14px;color:#f0eee6}
   .step h3 .phase{font-size:10px;letter-spacing:.14em;color:var(--dim);margin-right:8px}
   .feel{background:var(--cb);border:1px solid var(--bd);border-radius:10px;
@@ -100,7 +100,7 @@
       <div class="y">全部能力，无限制</div>
     </div>
   </div>
-  <div class="person shared">
+  <div class="person paired">
     <span class="tier-tag">PAIRED</span>
     <h3>已配对账号</h3>
     <div class="via">Telegram / Discord 稳定ID已批准</div>
@@ -111,7 +111,7 @@
       <div class="n">指挥agent执行命令、写文件</div>
     </div>
   </div>
-  <div class="person ext">
+  <div class="person unpaired">
     <span class="tier-tag">UNPAIRED</span>
     <h3>未配对账号</h3>
     <div class="via">稳定ID尚未由本地owner批准</div>
@@ -187,13 +187,13 @@
   </div>
 </div>
 
-<h2><span class="num">04</span>定案、实现与延期（2026-08-10）</h2>
+<h2><span class="num">04</span>定案、实现与延期</h2>
 <p class="lead">入口采用稳定ID配对；运行时只保留owner和paired；工具执行只查询固定常量表；未配对群聊来源以pending归档但不主动提炼。详细定案见<code>authority-handoff.md</code>。</p>
 <div class="plan">
   <div class="step">
     <h3><span class="phase">第一批 · 已实现</span>档位枚举、配对、来源信任和默认writer</h3>
     <p class="lead">请求只带owner/paired枚举；陌生账号收到8位配对码，批准只走本地owner通道（终端/本机Web），渠道消息无权触发；不写迁移代码，上线后所有非owner账号首次发言统一走配对；可变昵称不参与身份匹配；显示名过消毒；拒绝返回结构化原因码。</p>
-    <div class="feel"><span class="lb">用起来的变化</span>陌生人私聊收到配对码而不是被无视，你在终端一条命令批准；有人把昵称改成你的名字，冒充无效；群里已配对的人说"记一下"会真的被主动记住。未配对成员的群聊发言照常归档，带未验证标记，检索时分得清是谁说的。</div>
+    <div class="feel"><span class="lb">用起来的变化</span>陌生人私聊收到配对码而不是被无视，你在终端一条命令批准；有人把昵称改成你的名字，冒充无效；群里已配对的人说"记一下"会真的被主动记住。未配对成员的群聊发言照常归档，<code>trust_state</code>记为pending，检索时分得清是谁说的，也不会被自动召回带进上下文。</div>
   </div>
   <div class="step s2">
     <h3><span class="phase">第二批 · 延期</span>hold队列与读取范围</h3>

@@ -40,7 +40,7 @@ ACL.
 
 Shared human participation remains a channel concern. Telegram, Discord, and
 other channel messages retain speaker attribution and the restricted
-`shared-channel` capability set. A channel participant never becomes the Web
+`paired` authority tier. A channel participant never becomes the Web
 owner because a channel turn exists.
 
 ### 1.2 Four supported access modes
@@ -685,7 +685,7 @@ The feature is complete only when these behaviors are executable tests:
     full-secret response field.
 15. nginx and Caddy smoke deployments carry authenticated HTTP, SSE, and
     WebSocket traffic over HTTPS while the backend remains loopback.
-16. Channel messages retain shared-channel authority and do not inherit Web
+16. Channel messages retain their `paired` authority tier and do not inherit Web
     owner authority.
 17. Two profile servers on the same loopback hostname and different ports use
     distinct cookie names, authenticate independently, and ignore each other's

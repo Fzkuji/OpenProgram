@@ -29,7 +29,7 @@ The settings registry is defined in `openprogram/config_schema.py` (the single s
 | `tools.disabled.<name>` | Tools | per-tool switch; written as members of the `tools.disabled` list | all enabled | live |
 | `providers.<name>` | Providers | read-only status row (configured or not); configure with `openprogram providers login` or the Web UI | — | — |
 
-The local sandbox is host-native: Seatbelt on macOS and bubblewrap on Linux. Windows and unsupported platforms refuse commands while the sandbox is enabled unless the owner explicitly selects the unsafe `sandbox.unavailable_policy=warn` or turns the sandbox off. Docker is not an automatic fallback.
+The local sandbox is host-native: Seatbelt on macOS and bubblewrap on Linux. Windows and unsupported platforms refuse commands while the sandbox is enabled unless the owner explicitly selects the unsafe `sandbox.unavailable_policy=warn` or sets `sandbox.mode=danger-full-access`. Docker is not an automatic fallback.
 
 ## Top-level keys in config.json
 

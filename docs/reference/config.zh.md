@@ -29,7 +29,7 @@ openprogram config set ui.web_port 8101
 | `tools.disabled.<name>` | Tools | 逐工具开关；写入的是 `tools.disabled` 列表的成员 | 全部启用 | live |
 | `providers.<name>` | Providers | 只读状态行（是否已配置）；用 `openprogram providers login` 或 Web UI 配置 | — | — |
 
-本地沙箱使用宿主原生实现：macOS使用Seatbelt，Linux使用bubblewrap。Windows和其他不支持的平台在沙箱开启时默认拒绝命令；只有owner显式设置不安全的`sandbox.unavailable_policy=warn`或关闭沙箱才会改变该行为。Docker不是自动回退后端。
+本地沙箱使用宿主原生实现：macOS使用Seatbelt，Linux使用bubblewrap。Windows和其他不支持的平台在沙箱开启时默认拒绝命令；只有owner显式设置不安全的`sandbox.unavailable_policy=warn`或`sandbox.mode=danger-full-access`才会改变该行为。Docker不是自动回退后端。
 
 ## config.json 顶层键
 

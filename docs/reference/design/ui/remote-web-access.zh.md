@@ -28,7 +28,7 @@ token”，而不是“请求来自哪一个已注册用户”。
 OpenProgram 不保存 Web 用户表、密码库、成员关系、角色分配或项目 ACL。
 
 多人参与继续由 channel 层处理。Telegram、Discord 等渠道消息保留 speaker 归因和受限的
-`shared-channel` capability 集。渠道中存在某个参与者，不会使该参与者取得 Web 所有者
+`paired` authority tier。渠道中存在某个参与者，不会使该参与者取得 Web 所有者
 权限。
 
 ### 1.2 四种支持的访问方式
@@ -582,7 +582,7 @@ route 不得各自定义第二种认证解释。
     full-secret response field。
 15. nginx 与 Caddy smoke deployment 可以通过 HTTPS 传输已认证 HTTP、SSE、WebSocket，
     backend 保持 loopback。
-16. Channel message 保留 shared-channel authority，不继承 Web owner authority。
+16. Channel message 保留 paired authority tier，不继承 Web owner authority。
 17. 同一 loopback hostname、不同端口上的两个 profile server 使用不同 cookie 名称，独立
     认证并忽略对方 cookie。
 

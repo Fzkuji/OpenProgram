@@ -11,7 +11,7 @@
 ## In one sentence
 
 Expose a small, fixed set of OpenProgram tools over MCP stdio, authenticate
-every caller, map the external caller onto a low-privilege `authority_scope`
+every caller, map the external caller onto a low-privilege authority tier
 that routes tool calls through the same approval ladder a local turn uses, and
 align cancellation, progress and errors with the MCP specification — so a
 protocol client gets a contract it can build on, not a snapshot of an internal
@@ -103,13 +103,15 @@ and emits `question.asked` carrying `tool`, `args` and
 `(approved, reason, scope ∈ {once, always})`, and `always` persists an allow
 rule into `<project>/.openprogram/settings.json`.
 
-`authority_scope` is **not in the code**. It is the design concept from
-[`sandbox-architecture.html`](../runtime/sandbox-architecture.html) and
-[`speaker-identity.md`](../memory/speaker-identity.md): a serializable
-capability set carried on the request boundary, distinct from `principal`, with
-the execution rule
-`allow = hard_constraints ∧ authority_scope.contains(capability) ∧ permission_or_exact_owner_approval ∧ enforcement_boundary`.
-Batch I of the sandbox plan introduces it. This design consumes it.
+Authority is a **two-tier enum**, `owner` / `paired`, carried on the request
+boundary as `authority_tier` and distinct from `principal_id`. The gate maps the
+tier onto a fixed capability set through the `TIER_CAPABILITIES` constant in
+`openprogram/agent/authority.py`; a request never carries a capability list of
+its own, so there is nothing a caller can mint. The execution rule is
+`allow = hard_constraints ∧ TIER_CAPABILITIES[tier] ∋ capability ∧ permission_or_exact_owner_approval ∧ enforcement_boundary`,
+and it is fail-closed: a missing or unrecognized tier denies every capability
+rather than falling back to a reduced set. This design consumes that gate; see
+[`authority-handoff.md`](../memory/authority-handoff.md) for the tier model.
 
 ### Cancellation
 
@@ -247,7 +249,7 @@ escape hatch:
 | `session_get` | Fetch one session's messages | `reply` |
 | `prompt_send` | Start a turn in a session and return its result | `reply` |
 | `prompt_cancel` | Cancel an in-flight turn started by this caller | `reply` |
-| `tools_list` | List the tools the caller's scope permits, with schemas | `reply` |
+| `tools_list` | List the tools the caller's tier permits, with schemas | `reply` |
 | `tool_call` | Invoke one named tool with arguments | per-tool |
 
 `prompt_send` is the codex `codex`/`codex-reply` shape collapsed into one call
@@ -266,28 +268,34 @@ approval ladder like any other.
 keys. The config key `mcp_server.exposed_tools` holds a list of tool names; the
 default is empty, so a fresh install exposes no tools through `tool_call` until
 the owner names them. `tools_list` returns the intersection of the allowlist
-with what the caller's scope permits, so a client never sees a tool it cannot
+with what the caller's tier permits, so a client never sees a tool it cannot
 call.
 
 The whitelist is a filter placed **before** the approval ladder, not a
 replacement for it. Naming a tool in `mcp_server.exposed_tools` makes it
 reachable; whether a given call runs is still the ladder's decision.
 
-### Authority scope for external callers
+### Authority tier for external callers
 
 An MCP client is a request source in exactly the sense
 [`sandbox-architecture.html`](../runtime/sandbox-architecture.html) defines, and
 it takes its place in that table as the lowest-privilege entry:
 
-| Request source | principal | Default `authority_scope` | Missing-field handling |
+| Request source | principal | `authority_tier` | Missing-field handling |
 |---|---|---|---|
-| Authenticated local Web / CLI / TUI | `principal_id=owner`, `interaction=interactive` | Expanded from the local-owner profile, includes `approval.request` | The entry point must construct it; invalid auth denies |
-| Shared channel | Instance owner, speaker stored separately | `{reply, memory.source.append}` | Falls back to `{reply}` |
-| **External MCP client** | **Instance owner, client id stored separately** | **`{reply}`, plus one capability per whitelisted tool** | **Absent or unverified client identity denies the connection** |
-| continuation / subagent | Explicitly inherited owner | A subset of the caller's scope | Missing field is a state error, deny |
+| Authenticated local Web / CLI / TUI | `principal_id=owner`, `interaction=interactive` | `owner`, which holds `approval.request` | The entry point must construct it; invalid auth denies |
+| Paired channel account | Instance owner, speaker stored separately | `paired`, which holds `reply` and `memory.source.append` | A message with no tier is denied, never downgraded |
+| **External MCP client** | **Instance owner, client id stored separately** | **`paired`, intersected with the exposed-tool whitelist** | **Absent or unverified client identity denies the connection** |
+| continuation / subagent | Explicitly inherited owner | The caller's tier, inherited unchanged and never widened | Missing field is a state error, deny |
 | cron trigger | Owner approved at creation | The job capability frozen at approval | Never recomputed as interactive |
 
-Three consequences follow from that row.
+`runtime_authority()` implements the subagent row: it copies the parent's
+normalized authority, rewrites only the speaker fields and `interaction`, and
+leaves `authority_tier` untouched. A spawned child therefore holds exactly its
+parent's tier — a `paired` turn cannot spawn an `owner` subagent — and a parent
+with no valid authority yields `{}`, which the gate denies.
+
+Three consequences follow from the MCP row.
 
 `interaction` is **never** `interactive` for an MCP caller. It therefore never
 holds `approval.request`, so it cannot request a one-shot capability escalation.
@@ -319,8 +327,8 @@ or not the operator thought about it — and it deliberately does not mirror
 opencode's warn-and-continue or weclaw's no-auth endpoint.
 
 The token identifies a client, and the client id is recorded on every request
-for audit. It does not identify the *owner*: presenting it grants the `{reply}`
-scope above, not owner authority.
+for audit. It does not identify the *owner*: presenting it grants the `paired`
+tier above, not owner authority.
 
 ### Cancellation
 
@@ -360,7 +368,7 @@ The split the reference implementations converge on:
 | Arguments fail schema validation | JSON-RPC error, invalid params |
 | Token missing or wrong | `initialize` fails, no session established |
 | Tool not in `mcp_server.exposed_tools` | JSON-RPC error, treated as unknown tool — the caller learns nothing about tools it may not use |
-| Scope lacks the capability | `isError: true`, text names the missing capability |
+| Tier lacks the capability | `isError: true`, text names the missing capability |
 | Approval denied or unavailable | `isError: true`, text carries the denial reason |
 | Tool ran and failed | `isError: true`, text is the tool's error content |
 | Turn cancelled | `isError: true`, text states cancellation |
@@ -408,7 +416,7 @@ file tools read the host directly. openclaw's own documentation lists
 as unsupported — a full implementation is a substantial mapping exercise.
 
 We do not do it now because the same session-mapping work benefits MCP first,
-and because MCP settles the authority-scope and approval questions that ACP
+and because MCP settles the authority-tier and approval questions that ACP
 would otherwise have to answer independently. ACP becomes worth evaluating once
 `prompt_send` and `prompt_cancel` have a proven session mapping.
 
@@ -422,7 +430,7 @@ inbound trigger by default.
 
 The gap is that a webhook is a *push* trigger arriving with no owner present,
 which puts it in the same category as a cron trigger: it needs a frozen job
-capability approved at registration time, not a scope computed at delivery.
+capability approved at registration time, not a tier computed at delivery.
 Batch I of the sandbox plan and step 05B (cron creation and management) build
 exactly that machinery. Doing webhooks before it means either inventing a
 parallel mechanism or accepting an unattended trigger with an interactive-shaped
@@ -471,7 +479,7 @@ approval ladder that works for local turns.
 | Six-tool minimum set | Not implemented | — |
 | `mcp_server.exposed_tools` whitelist, default empty | Not implemented | — |
 | Token authentication, no disable flag | Not implemented | — |
-| External-caller `authority_scope` row | Not implemented | Requires `authority_scope` and `principal_id` on `TurnRequest` — batch I of [`sandbox.md`](../runtime/sandbox.md) |
+| External-caller `authority_tier` row | Not implemented | The tier gate itself exists (`openprogram/agent/authority.py`); what is missing is an MCP entry point that constructs a request carrying it |
 | External source in `_hard_constraint_violation()` | Not implemented | Independent of batch I; can land with the server |
 | `notifications/cancelled` → `CancelToken` | Not implemented | Uses `run_control.py` as-is |
 | `notifications/progress` from `on_update` | Not implemented | Uses the existing `execute` signature as-is |

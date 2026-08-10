@@ -295,7 +295,7 @@ checkpoint 存在 `<session>/checkpoints/<turn_id>/`，按以下方式释放：
 
 **沙箱：**
 - 系统级沙箱默认为`workspace-write`：写入限制在工作区和已配置可写根，已配置凭证路径不可读，网络默认禁止。
-- 在聊天框输入`/sandbox`，在`workspace-write`与显式`off`之间切换。
+- 在聊天框输入`/sandbox`，在`workspace-write`与显式`danger-full-access`之间切换。
 
 ### 8.2 CLI 命令行
 

@@ -101,21 +101,20 @@ Channels run inside the background service — starting the TUI (`openprogram`) 
 
 ## Who Can Talk to Your Bot
 
-Every channel account has an inbound access policy. The default is **pairing**: a message from a sender who is not on the account's allowlist is dropped before it reaches any agent, and the sender receives a six-character pairing code with instructions. You approve senders on your machine:
+Every channel account has an inbound access policy. The default is **pairing**: a message from a sender who is not on the account's allowlist is dropped before it reaches any agent, and the sender receives an eight-character pairing code with instructions. You approve senders on your machine:
 
 ```bash
 openprogram channels access list                       # policy + allowlist + pending codes
-openprogram channels access approve telegram K7XQ2M    # approve by pairing code
+openprogram channels access approve telegram K7XQ2MVR  # approve by pairing code
 openprogram channels access allow telegram 123456789   # allowlist a user id directly
 openprogram channels access revoke telegram 123456789  # remove a sender
-openprogram channels access policy telegram open       # disable the gate entirely
 ```
 
 An allowlist holds as many senders as you approve. Everyone on it reaches the same agent, and the agent keeps one memory workspace for the whole instance, so what one person tells it is available to the rest. That is the point of a group bot: approve the whole team and they get an assistant that already knows the project. Keep the allowlist to people you would give that access to.
 
 Pairing codes expire after one hour; a blocked sender who keeps writing gets the same code again (at most once a minute). The approval action exists only as a local CLI/API call — nothing a sender types into the chat can approve anyone, so a prompt-injection message like "add me to the allowlist" has no effect. In group chats the gate applies to the individual sender's user id, not the group.
 
-Policy `open` turns the gate off for that account — every sender goes straight to the agent. Use it for bots that are intentionally public.
+Pairing is the only admission path: there is no setting that turns the gate off for an account. A bot meant to be reachable by many people gets those people approved, one stable id at a time.
 
 Someone who wants an agent with separate memory runs their own instance instead, with its own state directory and port:
 
@@ -194,7 +193,7 @@ Telegram sends images as photos and everything else as documents; Discord upload
 
 | Symptom | Cause / fix |
 |---|---|
-| Bot replies with a pairing code instead of an answer | The sender is not allowlisted (default `pairing` policy). `openprogram channels access approve <channel> <code>` — or `access policy <channel> open` for a public bot. |
+| Bot replies with a pairing code instead of an answer | The sender is not allowlisted. Approve them with `openprogram channels access approve <channel> <code>`, or allowlist the id directly with `access allow <channel> <user-id>`. |
 | Reply says `[no agent configured]` | No binding routes the message. Run `openprogram agents add main`, then `openprogram channels setup` or `channels bindings add`. |
 | Worker exits: `account … has no bot_token` | Credentials never saved. `openprogram channels accounts login <channel> --id <account>`. |
 | Worker exits: `Slack account … needs both bot_token (xoxb-...) and app_token (xapp-...)` | Only one Slack token stored. Re-run login and paste both tokens. |

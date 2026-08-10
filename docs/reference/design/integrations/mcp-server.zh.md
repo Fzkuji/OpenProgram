@@ -10,7 +10,7 @@
 ## 一句话概括
 
 用 MCP stdio 暴露一组小而固定的 OpenProgram 工具，对每个调用方做认证，把外部调用方
-映射成一个低权 `authority_scope`，让工具调用走本地轮次同一条审批阶梯，并把取消、进度
+映射成一个低权权限档位，让工具调用走本地轮次同一条审批阶梯，并把取消、进度
 和错误语义对齐 MCP 规范。协议客户端拿到的是一份能依赖的契约，不是内部路由表的快照。
 
 ## 层一 —— 我们现在怎么做
@@ -91,12 +91,13 @@ curl、TUI 和 Python 客户端能用。
 返回 `(approved, reason, scope ∈ {once, always})`，`always` 会把 allow 规则写进
 `<project>/.openprogram/settings.json`。
 
-`authority_scope` **不在代码里**。它是
-[`sandbox-architecture.html`](../runtime/sandbox-architecture.html) 和
-[`speaker-identity.md`](../memory/speaker-identity.md) 定义的设计概念：在请求边界
-序列化的能力集合，与 `principal` 相区别，执行判定是
-`allow = hard_constraints ∧ authority_scope.contains(capability) ∧ permission_or_exact_owner_approval ∧ enforcement_boundary`。
-沙箱计划的批次 I 引入它，本设计消费它。
+权限是一个**两档枚举**，`owner` / `paired`，以 `authority_tier` 字段挂在请求边界上，
+与 `principal_id` 相区别。门口通过 `openprogram/agent/authority.py` 里的
+`TIER_CAPABILITIES` 常量表把档位映射成固定能力集合；请求自己不携带能力列表，
+调用方也就没有可构造的东西。执行判定是
+`allow = hard_constraints ∧ TIER_CAPABILITIES[tier] ∋ capability ∧ permission_or_exact_owner_approval ∧ enforcement_boundary`，
+并且fail-closed：档位缺失或无法识别时拒绝全部能力，不回落到某个缩小的集合。
+本设计消费这个门口，档位模型见[`authority-handoff.md`](../memory/authority-handoff.md)。
 
 ### 取消
 
@@ -209,7 +210,7 @@ claude-code-leaked 每次调用新建一个 `AbortController`，但从不接到�
 | `session_get` | 取一个会话的消息 | `reply` |
 | `prompt_send` | 在会话里开一轮并返回结果 | `reply` |
 | `prompt_cancel` | 取消本调用方开的在途轮次 | `reply` |
-| `tools_list` | 列出调用方 scope 允许的工具及其 schema | `reply` |
+| `tools_list` | 列出调用方档位允许的工具及其 schema | `reply` |
 | `tool_call` | 按名调用一个工具 | 按工具而定 |
 
 `prompt_send` 是把 codex 的 `codex`/`codex-reply` 收成一次调用，会话 id 可选。
@@ -223,26 +224,30 @@ claude-code-leaked 每次调用新建一个 `AbortController`，但从不接到�
 
 `tool_call` 按显式白名单解析，不按 `_registry` 的键解析。配置键
 `mcp_server.exposed_tools` 存一个工具名列表，默认为空，所以新装的实例在 owner 点名之前
-`tool_call` 一个工具都不暴露。`tools_list` 返回白名单与调用方 scope 允许集合的交集，
+`tool_call` 一个工具都不暴露。`tools_list` 返回白名单与调用方档位允许集合的交集，
 所以客户端永远看不到自己调不了的工具。
 
 白名单是放在审批阶梯**之前**的过滤器，不是它的替代品。把工具写进
 `mcp_server.exposed_tools` 只让它可达；某次调用跑不跑仍由阶梯判定。
 
-### 外部调用方的 authority scope
+### 外部调用方的权限档位
 
 MCP 客户端正好是 [`sandbox-architecture.html`](../runtime/sandbox-architecture.html)
 定义意义上的一种请求来源，它在那张表里占最低权的一行：
 
-| 请求来源 | principal | 默认 `authority_scope` | 缺失字段处理 |
+| 请求来源 | principal | `authority_tier` | 缺失字段处理 |
 |---|---|---|---|
-| 认证本地 Web / CLI / TUI | `principal_id=owner`，`interaction=interactive` | 由 local-owner profile 展开，含 `approval.request` | 入口必须主动构造；认证无效即拒绝 |
-| 共享渠道 | 实例 owner，speaker 另存 | `{reply, memory.source.append}` | 退到 `{reply}` |
-| **外部 MCP 客户端** | **实例 owner，客户端 id 另存** | **`{reply}`，加每个白名单工具对应的一项能力** | **客户端身份缺失或未通过校验即拒绝连接** |
-| continuation / subagent | 显式继承 owner | caller scope 的子集 | 缺字段即状态错误，deny |
+| 认证本地 Web / CLI / TUI | `principal_id=owner`，`interaction=interactive` | `owner`，持有 `approval.request` | 入口必须主动构造；认证无效即拒绝 |
+| 已配对渠道账号 | 实例 owner，speaker 另存 | `paired`，持有 `reply` 与 `memory.source.append` | 不带档位的消息直接拒绝，不做降档 |
+| **外部 MCP 客户端** | **实例 owner，客户端 id 另存** | **`paired`，再与暴露工具白名单取交集** | **客户端身份缺失或未通过校验即拒绝连接** |
+| continuation / subagent | 显式继承 owner | 原样继承调用方档位，永不扩权 | 缺字段即状态错误，deny |
 | cron 触发 | 创建时批准的 owner | 批准时固化的 job capability | 触发时不重算为 interactive |
 
-这一行推出三个结论。
+subagent 那一行由 `runtime_authority()` 实现：它复制父轮次规范化后的权限，只改写
+speaker 字段和 `interaction`，`authority_tier` 原封不动。子 agent 因此恰好持有父轮次的
+档位，`paired` 轮次不可能派生出 `owner` 子 agent；父轮次没有有效权限时返回 `{}`，门口拒绝。
+
+MCP 那一行推出三个结论。
 
 MCP 调用方的 `interaction` **永不**为 `interactive`。因此它永远不持有
 `approval.request`，也就无法申请一次性能力升级。一次需要审批而现场没有本地 owner 的工具
@@ -266,7 +271,7 @@ hard constraints 一如既往最先跑，本设计把外部来源加进 `_hard_c
 token 都存在；也刻意不对齐 opencode 的"警告后继续"和 weclaw 的无认证端点。
 
 token 标识的是一个客户端，客户端 id 记进每条请求供审计。它不标识 *owner*：出示它拿到的是
-上表那个 `{reply}` scope，不是 owner 权限。
+上表那个 `paired` 档位，不是 owner 权限。
 
 ### 取消
 
@@ -298,7 +303,7 @@ token 标识的是一个客户端，客户端 id 记进每条请求供审计。�
 | 参数不过 schema 校验 | JSON-RPC 错误，invalid params |
 | token 缺失或错误 | `initialize` 失败，不建立会话 |
 | 工具不在 `mcp_server.exposed_tools` 里 | JSON-RPC 错误，按工具名不存在处理 —— 调用方得不到关于自己无权使用的工具的任何信息 |
-| scope 不含该能力 | `isError: true`，正文点名缺失的能力 |
+| 档位不含该能力 | `isError: true`，正文点名缺失的能力 |
 | 审批被拒或无法审批 | `isError: true`，正文带拒绝原因 |
 | 工具跑了并失败 | `isError: true`，正文是工具的错误内容 |
 | 轮次被取消 | `isError: true`，正文说明已取消 |
@@ -338,7 +343,7 @@ option id。
 标为不支持 —— 完整实现是一项分量不轻的映射工作。
 
 现在不做，是因为同一份会话映射工作先服务 MCP，而且 MCP 会先把 ACP 否则要独立回答的
-authority-scope 和审批问题定下来。等 `prompt_send` 和 `prompt_cancel` 把会话映射跑通了，
+authority-tier 和审批问题定下来。等 `prompt_send` 和 `prompt_cancel` 把会话映射跑通了，
 ACP 才值得评估。
 
 ### 入站 webhook
@@ -348,7 +353,7 @@ hermes 和 openclaw 都有，hermes 那版说明了正确性的代价：按路�
 webhook 默认就是一个无认证的入站触发器。
 
 差距在于 webhook 是**推**式触发，到达时没有 owner 在场，这把它归到跟 cron 触发同一类：
-它需要注册时批准并固化的 job capability，而不是投递时算出来的 scope。沙箱计划的批次 I 和
+它需要注册时批准并固化的 job capability，而不是投递时算出来的档位。沙箱计划的批次 I 和
 第 05B 步（cron 创建与管理）造的正是这套机制。在它之前做 webhook，要么另造一套平行机制，
 要么接受一个无人值守触发器带着交互形状的 scope。
 
@@ -386,7 +391,7 @@ WebSocket 动作是随前端变化的内部面，其中两条钉了形状。在�
 | 六工具最小集 | 未实施 | — |
 | `mcp_server.exposed_tools` 白名单，默认为空 | 未实施 | — |
 | token 认证，无关闭开关 | 未实施 | — |
-| 外部调用方的 `authority_scope` 行 | 未实施 | 需要 `TurnRequest` 上有 `authority_scope` 与 `principal_id` —— [`sandbox.md`](../runtime/sandbox.md) 的批次 I |
+| 外部调用方的 `authority_tier` 行 | 未实施 | 档位门口本身已存在（`openprogram/agent/authority.py`）；缺的是构造带该字段请求的 MCP 入口 |
 | 外部来源进 `_hard_constraint_violation()` | 未实施 | 不依赖批次 I，可与服务端同批落地 |
 | `notifications/cancelled` → `CancelToken` | 未实施 | 直接用现有 `run_control.py` |
 | `notifications/progress` 由 `on_update` 驱动 | 未实施 | 直接用现有 `execute` 签名 |

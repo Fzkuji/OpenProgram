@@ -1168,7 +1168,7 @@
     parser遇非法frame停止，只有合法v2 frame中的marker可信。合法但没有marker的记录保持speakerless。BM25 v8按稳定id、显示名或标签过滤，
     与路径和日期过滤组合，结果只来自<code>sources/</code>。<code>memory_search</code>已暴露<code>speaker</code>，
     embedding与speaker组合会显式返回<code>INVALID_ARGUMENT</code>，不会忽略过滤。<br>
-    本地Web入口和经dispatcher启动的本地CLI轮次显式写入<code>owner/local</code>；共享渠道保留渠道提供的
+    本地Web入口和经dispatcher启动的本地CLI轮次显式写入<code>owner/local</code>；已配对渠道保留渠道提供的
     稳定speaker id。缺少可信字段的历史节点与旧framed记录仍保持speakerless。
     只有unframed且记录头严格为<code>user</code>的旧记录可从历史正文前缀做有限检索兼容；旧归档冻结且不参与v2去重。
     同一source id的合法v2事件在检索、链接和校验中优先于legacy；没有v2时仍可读取legacy。

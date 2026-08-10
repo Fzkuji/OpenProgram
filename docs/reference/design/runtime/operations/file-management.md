@@ -298,7 +298,7 @@ For casual chats not bound to a real directory:
 
 **Sandbox:**
 - The system-level sandbox starts in `workspace-write`: writes stay inside the workspace and configured writable roots, configured credential paths are unreadable, and network access is disabled.
-- Type `/sandbox` in the chat box to toggle between `workspace-write` and an explicit `off`.
+- Type `/sandbox` in the chat box to toggle between `workspace-write` and an explicit `danger-full-access`.
 
 ### 8.2 CLI
 

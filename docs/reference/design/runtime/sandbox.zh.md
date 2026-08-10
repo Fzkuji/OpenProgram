@@ -107,7 +107,7 @@ CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以�
 
 **开关使用持久化配置。**开关原来使用`ContextVar`，每一个新上下文边界都会丢失该值。其中三个边界位于实际调用路径：Web UI在websocket的asyncio任务里设置，agent轮次运行于普通`threading.Thread`；`openprogram/agent/process_runner.py`使用`mp.get_context("spawn")`，spawn不携带上下文变量；嵌套CLI是独立进程。在每个交接点增加`copy_context()`也不等价：spawn子agent可以把开关传入worker线程，但实测followup线程仍会恢复默认值。按调用链计数的执行状态继续使用上下文变量，并在每个线程入口重新绑定；安装级策略不使用上下文变量。修改后实测，Web worker线程在沙箱内执行并看到空的`OPENAI_API_KEY`，spawn子进程也得到相同结果。
 
-**只有本地interactive owner可以申请一次精确重试并放宽可配置限制。**重试仍使用OS沙箱，凭证环境过滤和不可配置的agentics禁写保持生效；cron、subagent和共享渠道不能使用该路径。`permission_mode="bypass"`也不能取消hard floor或沙箱。
+**只有本地interactive owner可以申请一次精确重试并放宽可配置限制。**重试仍使用OS沙箱，凭证环境过滤和不可配置的agentics禁写保持生效；cron、subagent和paired渠道不能使用该路径。`permission_mode="bypass"`也不能取消hard floor或沙箱。
 
 **平台后端不可用时默认拒绝执行。**`sandbox.mode`开着、平台后端缺失或所需隔离探测失败、`sandbox.unavailable_policy`是`refuse`时，`_invocation`抛`SandboxUnavailable`，`LocalBackend.run`把它变成失败的`RunResult`，文案给出原因和显式的不安全替代设置。`warn`恢复原来不受保护的执行行为，附一行日志。
 
@@ -277,7 +277,7 @@ CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以�
 
 **1. 可用性，已完成。**`process-exec`不再限制，子进程继承profile，所以`git`、`python3`、`make`、`clang`、conda python以及`/sbin`和`/usr/sbin`下的东西都能跑。`/dev/null`、`/dev/zero`、`/dev/random`、`/dev/urandom`、`/dev/tty`通过`require-all`加`vnode-type CHARACTER-DEVICE`可读可写，`2>/dev/null`正常。Linux上`--tmpfs /tmp`发在cwd bind之前，工作目录落在`/tmp`下也不会消失。macOS上仍然挡着的是`ps`和`top`，因为Seatbelt根本不允许把setuid二进制exec进沙箱。
 
-**2. 凭证屏蔽，已完成。**deny-read清单出厂装弹（§1.3）。macOS上每条glob同时发`deny file-read*`和`deny file-write-unlink`，被禁读的路径不能用删除操作反推存在性；Linux上目录用`--perms 0000 --tmpfs`、文件用`--ro-bind /dev/null`屏蔽，宿主上不存在的路径跳过，因为只读的根让bubblewrap没地方创建挂载点。子进程环境变量用白名单而不是从provider注册表推导的黑名单：推导出来的名单要跟着注册表一起重建，白名单会自己丢掉没见过的名字，`openclaw`那条兜底名字pattern留作`sandbox.pass_env`的底线。Linux加上`--unshare-pid`，否则刚从子进程里去掉的key又能从`/proc/<agent_pid>/environ`读回来。deny-write覆盖agentics目录且任何配置都删不掉；git hook和git config是同一形状的逃逸，但保持opt-in，因为禁掉`.git/hooks/**`会让`git init`和`git clone`失败，而在第5步之前没有升级路径。
+**2. 凭证屏蔽，已完成。**deny-read清单出厂装弹（§1.3）。macOS上每条glob同时发`deny file-read*`和`deny file-write-unlink`，被禁读的路径不能用删除操作反推存在性；Linux上目录用`--perms 0000 --tmpfs`、文件用`--ro-bind /dev/null`屏蔽，宿主上不存在的路径跳过，因为只读的根让bubblewrap没地方创建挂载点。子进程环境变量用白名单而不是从provider注册表推导的黑名单：推导出来的名单要跟着注册表一起重建，白名单会自己丢掉没见过的名字，`openclaw`那条兜底名字pattern留作`sandbox.pass_env`的底线。Linux加上`--unshare-pid`，否则刚从子进程里去掉的key又能从`/proc/<agent_pid>/environ`读回来。deny-write覆盖agentics目录，这层保护按操作面分成两半。文件工具面（`write`、`edit`、`apply_patch`）上它无条件成立：`validate_write_path()`在解析任何策略之前就拒绝写入agentics目录和agentic源注册表，任何配置都够不到这道检查。命令面（`bash`、`execute_code`）上这层保护存在于沙箱策略里，因此在`workspace-write`和`read-only`下成立，在`sandbox.mode=danger-full-access`下不成立——该模式下shell面本就不设防，这正是这个模式的含义。git hook和git config是同一形状的逃逸，但保持opt-in，因为禁掉`.git/hooks/**`会让`git init`和`git clone`失败，而在第5步之前没有升级路径。
 
 **3. 开关语义，已完成。**`ContextVar`已经删掉。策略在包装命令的那一刻从配置里的`sandbox.*`解析，asyncio任务到线程、spawn子进程、嵌套CLI三个边界都扛得住，因为文件不属于任何上下文。它同时坐在权限层之下，所以`permission_mode="bypass"`短路掉的是审批卡而不是沙箱。`wrap_command`接收显式策略供手上有策略的调用方使用；目前还没有按工具或按调用点给出不同策略的地方，那正是"调用点可覆盖"原本要买到的东西。平台工具不可用时默认拒绝执行，并给出两条出路。
 
@@ -328,7 +328,7 @@ CLI进程仍不进入OS沙箱，因为它需要访问Anthropic API。它自带�
 
 已知限制：
 
-- Windows没有宿主原生沙箱后端。启用沙箱时默认拒绝命令，OpenProgram不会自动选择Docker。owner必须显式关闭沙箱，或显式设置不安全的`sandbox.unavailable_policy=warn`。
+- Windows没有宿主原生沙箱后端。启用沙箱时默认拒绝命令，OpenProgram不会自动选择Docker。owner必须显式设置`sandbox.mode=danger-full-access`，或显式设置不安全的`sandbox.unavailable_policy=warn`。
 - macOS拒绝在该Seatbelt profile中执行setuid二进制，因此`ps`和`top`不可用。
 - Linux不能表达`**/.env`这类中段通配deny-read；已知具体路径会被遮蔽，该glob只在macOS生效。Linux敏感内容要使用精确路径，或`/absolute/path/to/secrets/**`这类具有确定前缀的目录级规则。
 - 沙箱策略以安装为粒度，不支持per-tool沙箱覆盖；authority与权限规则继续提供逐操作控制。

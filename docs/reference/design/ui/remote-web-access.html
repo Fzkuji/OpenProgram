@@ -588,7 +588,7 @@ openprogram web auth-url \
       <li>CSP/X-Frame-Options 阻止 framing；认证与敏感 response 使用 no-store。</li>
       <li>两种 reveal 请求为 404；config key 与 account 各自执行精确 replace/preserve/delete schema，8–11 字符使用固定 mask，frontend type 无明文 field。</li>
       <li>nginx/Caddy HTTPS 下 HTTP、SSE、WS 均能认证，backend 保持 loopback。</li>
-      <li>Channel turn 保留 shared-channel authority，不取得 Web owner authority。</li>
+      <li>Channel turn 保留 paired authority tier，不取得 Web owner authority。</li>
       <li>同 hostname、不同端口的 profile server 使用不同 cookie 名称并独立认证。</li>
     </ol>
   </section>

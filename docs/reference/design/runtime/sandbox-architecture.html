@@ -440,7 +440,7 @@
     <rect x="568" y="58" width="250" height="88" rx="9" fill="#12110b" stroke="#9d6fe0" stroke-width="1.4"/>
     <text x="586" y="82" fill="#9d6fe0" font-size="12.5" font-weight="700">02 规则或精确owner审批</text>
     <text x="586" y="106" fill="#bdb9a6" font-size="11">只有认证本地interactive可申请</text>
-    <text x="586" y="126" fill="#bdb9a6" font-size="11">cron / subagent / shared-channel不升级</text>
+    <text x="586" y="126" fill="#bdb9a6" font-size="11">cron / subagent / paired渠道不升级</text>
 
     <line x1="820" y1="102" x2="852" y2="102" stroke="#6f6b5c" stroke-width="1.5" marker-end="url(#a-gy)"/>
     <rect x="856" y="58" width="280" height="88" rx="9" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
@@ -565,7 +565,7 @@
   </table>
   </div>
 
-  <div class="legend"><b>清单结果</b>：U03—U09与U12的模型影响面已处理；U04/U05的测试证明共享渠道不能创建、修改、重排或删除job，owner批准生成的job capability在触发时不能扩大。
+  <div class="legend"><b>清单结果</b>：U03—U09与U12的模型影响面已处理；U04/U05的测试证明paired渠道不能创建、修改、重排或删除job，owner批准生成的job capability在触发时不能扩大。
     U01—U02明确使用外部边界并保留审批；U10—U11、U13—U15固定owner配置边界；U16—U23通过固定argv或管理员入口及回归测试保留宿主权限。任何新增或重新接入的执行面必须先加入此表，再决定是否使用OS沙箱。</div>
 
   <p class="lead">下面保留修复前的自动导入流程。它说明为什么只修改<code>wrap_command</code>不够：直接文件工具和进程内导入需要各自的强制边界。当前实现已经在文件工具写入检查和owner登记来源两处阻止该流程。</p>
@@ -1158,7 +1158,7 @@
     <tr><th>图外的OpenProgram执行面</th><th>不能直接采用的处理</th><th>采用的处理</th><th>步骤</th></tr>
     <tr><td><b>write/edit/apply_patch</b></td><td>把所有文件操作改写成shell</td><td>共享路径规范化与写入根检查；禁止模型可写目录被自动导入</td><td>04</td></tr>
     <tr><td><b>execute_code</b></td><td>继续直接<code>subprocess.run</code></td><td>本地路径复用<code>LocalBackend.run</code>及其<code>_invocation</code>和SandboxPolicy</td><td>05A</td></tr>
-    <tr><td><b>cron direct / prompt</b></td><td>让共享渠道直接保存job，或触发时尝试弹交互审批</td><td>05A先完成触发隔离、固定执行spec与ask→deny；身份批次I完成后，05B再让创建检查<code>schedule.create</code>，修改、重排或删除检查<code>schedule.manage</code>，共享渠道在持久化变更前deny</td><td>05A / 05B</td></tr>
+    <tr><td><b>cron direct / prompt</b></td><td>让paired渠道直接保存job，或触发时尝试弹交互审批</td><td>05A先完成触发隔离、固定执行spec与ask→deny；身份批次I完成后，05B再让创建检查<code>schedule.create</code>，修改、重排或删除检查<code>schedule.manage</code>，paired渠道在持久化变更前deny</td><td>05A / 05B</td></tr>
     <tr><td><b>U01—U23执行面清单</b></td><td>用“其他执行点”概括或全部机械包装</td><td>逐项记录来源类、强制策略、保留理由与测试；模型可影响项全部是默认开启阻断项</td><td>05A</td></tr>
     <tr><td><b>嵌套Claude Code CLI</b></td><td>把需要API网络的整个CLI放入无网沙箱</td><td>协议层拒绝内置文件/命令工具，注入OpenProgram受管替代工具</td><td>06</td></tr>
   </table>
@@ -1178,7 +1178,7 @@
     <div class="step s2">
       <div class="n">STEP 02 · 已完成</div>
       <h4>凭证屏蔽</h4>
-      <div class="d">两个平台预置deny-read清单，macOS上deny读和deny删除成对设置。子进程环境变量采用<b>白名单</b>，未列出的变量不传入；名称正则作为<code>pass_env</code>的强制限制。Linux增加<code>--unshare-pid</code>。沙箱内命令不能写入或删除函数watcher的agentics目录。</div>
+      <div class="d">两个平台预置deny-read清单，macOS上deny读和deny删除成对设置。子进程环境变量采用<b>白名单</b>，未列出的变量不传入；名称正则作为<code>pass_env</code>的强制限制。Linux增加<code>--unshare-pid</code>。文件工具对agentics目录和agentic源注册表的禁写在策略之前判定，无条件成立；沙箱内命令的同一禁写由策略提供，<code>danger-full-access</code>下的shell面按该模式定义不设防。</div>
       <div class="x"><b>实测结果</b>：SSH私钥、<code>~/.openprogram/auth/**</code>、keychain等具体路径不可读且不可删除；macOS的<code>**/.env</code>规则有效，Linux不具备同等glob表达力。164字符的<code>OPENAI_API_KEY</code>在子进程里是空串；Linux上宿主进程的<code>/proc/&lt;pid&gt;/environ</code>不可读，且不能向宿主PID发送信号。git hook和git config保持opt-in，因为禁止后会导致<code>git init</code>和<code>git clone</code>失败。</div>
       <div class="src">参考：hermes-agent的provider注册表；openclaw的敏感变量名正则；claude-code的写保护范围</div>
     </div>
@@ -1214,7 +1214,7 @@
       <div class="n">STEP 05B · 已完成</div>
       <h4>cron创建与管理授权</h4>
       <div class="d">把cron创建、修改、重排和删除定义为宿主副作用；创建映射到<code>schedule.create</code>，修改、重排和删除映射到<code>schedule.manage</code>。<code>paired</code>档的固定常量表不含这两项，必须在任何job持久化变更前deny。只有认证本地owner的精确批准可以生成新的不可变job authority；其中固化<code>principal_id</code>、creator speaker审计值、<code>authority_tier=owner</code>、command或prompt、cwd、SandboxPolicy与hash。触发时只能读取该记录，不能重算为interactive或改变权限档。</div>
-      <div class="x"><b>验收</b>：用共享渠道成员B验证创建、修改、重排和删除均在持久化状态改变前deny；用认证本地owner批准一个精确job，证明未批准字段不能改变，direct与prompt触发时均无审批升级。</div>
+      <div class="x"><b>验收</b>：用paired渠道成员B验证创建、修改、重排和删除均在持久化状态改变前deny；用认证本地owner批准一个精确job，证明未批准字段不能改变，direct与prompt触发时均无审批升级。</div>
       <div class="src">依赖：owner principal、渠道配对状态和显式序列化的权限档字段</div>
     </div>
     <div class="step s7">
@@ -1269,7 +1269,7 @@
     <tr><td><b>05A cron触发与执行面</b></td><td class="y">已完成</td><td>cron保存签名不可变执行spec，worker强制sandbox并记录policy hash；execute_code、U03—U09和U12均已处理</td><td>U01/U02使用配置的Docker或SSH执行后端自身边界，不计为宿主原生沙箱</td></tr>
     <tr><td><b>06 嵌套agent</b></td><td class="y">已完成</td><td>Claude Code内置副作用工具被禁用，文件与命令改用OpenProgram受管MCP工具</td><td>CLI的API网络仍保留在外部进程</td></tr>
     <tr><td><b>I authority scope依赖</b></td><td class="y">已完成</td><td>owner principal、speaker、interaction和capability集合显式进入TurnRequest、Task、inbox、continuation、subagent与spawn snapshot</td><td>恢复缺字段时对宿主副作用deny，不使用ContextVar补值</td></tr>
-    <tr><td><b>05B cron创建与管理</b></td><td class="y">已完成</td><td>创建消费<code>schedule.create</code>，修改/重排/删除消费<code>schedule.manage</code>；job capability固化owner、scope、policy与内容hash</td><td>共享渠道在持久化改变前deny</td></tr>
+    <tr><td><b>05B cron创建与管理</b></td><td class="y">已完成</td><td>创建消费<code>schedule.create</code>，修改/重排/删除消费<code>schedule.manage</code>；job capability固化owner、scope、policy与内容hash</td><td>paired渠道在持久化改变前deny</td></tr>
     <tr><td><b>07 审批联动</b></td><td class="y">已完成</td><td>scope先判定；违规结构化；只有本地interactive owner可精确单次升级；Always allow精确到规范化operation</td><td>hard floor与凭证环境过滤不能被批准取消</td></tr>
     <tr><td><b>08 默认开启</b></td><td class="y">已完成</td><td><code>sandbox.mode</code>默认<code>workspace-write</code>；macOS与Linux的git/python/npm/make/conda及拒绝矩阵通过</td><td>保留显式<code>danger-full-access</code>；未知平台默认refuse</td></tr>
   </table>
