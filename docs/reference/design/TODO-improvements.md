@@ -6,14 +6,15 @@
 
 ## 安全姿态（需要产品决策，建议优先讨论）
 
-1. **服务绑定 `0.0.0.0` 且无认证**（`openprogram/webui/server.py:1507`）。
-   所有 WS 变更操作和 HTTP 路由都暴露给局域网。选项：默认改绑
-   `127.0.0.1` + 配置键开放；或保持现状但加 token 认证。改默认值可能影响
-   你从其他设备访问的场景，所以没有直接改。
-2. **明文取 key 接口**：`GET /api/providers/{p}/accounts/{n}/reveal`
-   （`webui/routes/accounts.py:395`）返回解密后的完整 API key，无认证。
-   前端"显示密钥"按钮依赖它。与上一条组合 = 局域网内可窃取全部凭据。
-   若绑定改 localhost，此接口风险大幅下降；两条应一起定。
+1. **无调用方认证**。默认绑定已是 `127.0.0.1`（`webui/server.py:1302`），
+   剩余缺陷：显式设置 `web.host` 对外绑定时，HTTP/WS/SSE 仍无 token 认证。
+   方案已定稿（实例 token + fragment bootstrap cookie，见
+   remote-web-access 设计文档），随该文档实施后删除本条。
+2. **明文取 key 接口 ×2**：`GET /api/providers/{p}/accounts/{n}/reveal`
+   （`webui/routes/accounts.py:396`）与 `GET /api/config/key/{env_var}?reveal=1`
+   （`webui/routes/providers.py:254`）。已定稿为整体删除（密钥仅录入时可见，
+   之后只显示掩码），前端 provider detail / API key 设置 / account manager
+   随之改造。随 remote-web-access 实施后删除本条。
 
 ## 打包 / 分发
 
@@ -62,5 +63,5 @@
 
 ## 清理
 
-8. **FastAPI 弃用的 `@app.on_event`** ×8（`webui/server.py`）：迁到
-    lifespan 上下文管理器，顺手事，但动 server.py 建议和第 1 条一起做。
+8. ~~**FastAPI 弃用的 `@app.on_event`**~~ —— 已完成。`create_app()` 已用
+   `_lifespan` 上下文管理器（`webui/server.py:1448`），`@app.on_event` 零残留。
