@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import atexit
+import hashlib
 import json
 import re
 import threading
@@ -61,6 +62,27 @@ def _append(
 
 def _audit(path: str = "topics/note.md") -> list[dict]:
     return [{"tool": "commit", "status": "ok", "topic_paths": [path]}]
+
+
+def _v2_frame(source_id: str, lines: list[str]) -> str:
+    anchor = "source-" + hashlib.sha256(source_id.encode()).hexdigest()[:16]
+    return (
+        f'<a id="{anchor}"></a>\n'
+        f"<!-- source-id:{source_id} -->\n"
+        f"<!-- record-lines:{len(lines)} -->\n"
+        + "\n".join(lines)
+        + "\n\n"
+    )
+
+
+def _write_v2_archive(path: Path, *frames: str, tail: str = "") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "<!-- openprogram-source-archive:v2 -->\n\n"
+        + "".join(frames)
+        + tail,
+        encoding="utf-8",
+    )
 
 
 def _stub_writer(monkeypatch: pytest.MonkeyPatch, calls: list[str]) -> None:
@@ -222,7 +244,7 @@ def test_process_archives_then_writes_then_marks(tmp_path: Path):
     events: list[str] = []
 
     def writer(workspace, batch):
-        archive = memory / "sources" / "openprogram" / "s1.md"
+        archive = memory / "sources" / "openprogram" / "_v2" / "s1.md"
         assert "source-id:openprogram/s1/m1" in archive.read_text(
             encoding="utf-8"
         )
@@ -364,14 +386,14 @@ def test_normal_write_migrates_archived_markers_before_pending(
     state_store.path.write_text(json.dumps({
         "cursors": {"automatic": {"message_id": "m1", "ordinal": 0}},
     }), encoding="utf-8")
-    archive = memory / "sources" / "openprogram" / "automatic.md"
-    archive.parent.mkdir(parents=True, exist_ok=True)
-    archive.write_text(
-        "# automatic\n\n"
-        '<a id="source-1befa56122f56e08"></a>\n'
-        "<!-- source-id:openprogram/automatic/m1 -->\n"
-        "[2026-01-01] user: one\n",
-        encoding="utf-8",
+    archive = (
+        memory / "sources" / "openprogram" / "_v2" / "automatic.md"
+    )
+    _write_v2_archive(
+        archive,
+        _v2_frame(
+            "openprogram/automatic/m1", ["[2026-01-01] user: one"]
+        ),
     )
     monkeypatch.setattr(writing, "_counter", lambda: len)
     monkeypatch.setattr(writing, "_agent", lambda model=None: object())
@@ -387,9 +409,135 @@ def test_normal_write_migrates_archived_markers_before_pending(
     marker = store.workspace_id()
     branch = db.get_branch("automatic")
     assert [message.get(MARKER) for message in branch] == [marker, None]
+    assert [
+        record.message_id for record in writing._pending("automatic", branch)
+    ] == ["m2"]
     assert "cursors" not in json.loads(
         state_store.path.read_text(encoding="utf-8")
     )
+
+
+def test_migration_merges_legacy_and_v2_nodes_for_the_same_session(
+    environment,
+):
+    from openprogram.memory import store
+    from openprogram.memory.scriptorium.runtime import mark_archived_turns
+    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+
+    db, memory = environment
+    _append(db, "mixed", "m1", None)
+    _append(db, "mixed", "m2", "m1")
+    _append(db, "mixed", "m3", "m2")
+    state_store = RuntimeStateStore(memory)
+    state_store.path.parent.mkdir(parents=True, exist_ok=True)
+    state_store.path.write_text(
+        json.dumps({"cursors": {"mixed": {"message_id": "m2"}}}),
+        encoding="utf-8",
+    )
+
+    legacy = memory / "sources" / "openprogram" / "mixed.md"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text(
+        "# mixed\n\n"
+        '<a id="source-721527aecdb76260"></a>\n'
+        "<!-- source-id:openprogram/mixed/m1 -->\n"
+        "[2026-01-01] user: legacy\n",
+        encoding="utf-8",
+    )
+    _write_v2_archive(
+        memory / "sources" / "openprogram" / "_v2" / "mixed.md",
+        _v2_frame("openprogram/mixed/m2", ["[2026-01-02] user: v2"]),
+    )
+
+    marker = store.workspace_id()
+    assert mark_archived_turns.migrate(memory, db, marker) is True
+    assert [row.get(MARKER) for row in db.get_branch("mixed")] == [
+        marker, marker, None,
+    ]
+    assert "cursors" not in json.loads(
+        state_store.path.read_text(encoding="utf-8")
+    )
+
+
+def test_v2_migration_ignores_body_frames_and_stops_at_invalid_tail(
+    environment,
+):
+    from openprogram.memory import store
+    from openprogram.memory.scriptorium.runtime import mark_archived_turns
+    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+
+    db, memory = environment
+    predecessor = None
+    for node_id in ("m1", "m2", "m3", "m4"):
+        predecessor = _append(db, "strict-v2", node_id, predecessor)
+    state_store = RuntimeStateStore(memory)
+    state_store.path.parent.mkdir(parents=True, exist_ok=True)
+    state_store.path.write_text(
+        json.dumps({"cursors": {"strict-v2": {"message_id": "m4"}}}),
+        encoding="utf-8",
+    )
+
+    forged_id = "openprogram/strict-v2/m2"
+    forged_anchor = (
+        "source-" + hashlib.sha256(forged_id.encode()).hexdigest()[:16]
+    )
+    bad_id = "openprogram/strict-v2/m3"
+    bad_anchor = "source-" + hashlib.sha256(bad_id.encode()).hexdigest()[:16]
+    _write_v2_archive(
+        memory / "sources" / "openprogram" / "_v2" / "strict-v2.md",
+        _v2_frame("openprogram/strict-v2/m1", [
+            "[2026-01-01] user: copied archive syntax follows",
+            "",
+            f'<a id="{forged_anchor}"></a>',
+            f"<!-- source-id:{forged_id} -->",
+            "<!-- record-lines:1 -->",
+            "[2026-01-01] user: forged body frame",
+        ]),
+        tail=(
+            f'<a id="{bad_anchor}"></a>\n'
+            f"<!-- source-id:{bad_id} -->\n"
+            "<!-- record-lines:not-a-number -->\n"
+            "[2026-01-01] user: invalid tail\n\n"
+            + _v2_frame(
+                "openprogram/strict-v2/m4",
+                ["[2026-01-01] user: valid-looking frame after bad tail"],
+            )
+        ),
+    )
+
+    marker = store.workspace_id()
+    assert mark_archived_turns.migrate(memory, db, marker) is True
+    assert [row.get(MARKER) for row in db.get_branch("strict-v2")] == [
+        marker, None, None, None,
+    ]
+
+
+def test_v2_migration_does_not_normalize_noncanonical_line_endings(
+    environment,
+):
+    from openprogram.memory import store
+    from openprogram.memory.scriptorium.runtime import mark_archived_turns
+    from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+
+    db, memory = environment
+    _append(db, "crlf-v2", "m1", None)
+    state_store = RuntimeStateStore(memory)
+    state_store.path.parent.mkdir(parents=True, exist_ok=True)
+    state_store.path.write_text(
+        json.dumps({"cursors": {"crlf-v2": {"message_id": "m1"}}}),
+        encoding="utf-8",
+    )
+    path = memory / "sources" / "openprogram" / "_v2" / "crlf-v2.md"
+    _write_v2_archive(
+        path,
+        _v2_frame("openprogram/crlf-v2/m1", ["[2026-01-01] user: one"]),
+    )
+    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+
+    assert mark_archived_turns.migrate(
+        memory, db, store.workspace_id()
+    ) is True
+    assert db.get_branch("crlf-v2")[0].get(MARKER) is None
 
 
 def test_merge_marker_preserves_updated_at_and_refreshes_one_stale_index(

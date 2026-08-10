@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
+from ..source_format import scan_v2_archive
 from .state import RuntimeStateStore
 
 
@@ -46,6 +47,24 @@ def _archived_node_ids(archive: Path) -> tuple[str, list[str]] | None:
     return session_id, node_ids
 
 
+def _v2_archived_nodes(
+    archive: Path, memory_dir: Path,
+) -> list[tuple[str, str]]:
+    """Session and node IDs from the archive's strictly valid prefix."""
+    try:
+        with archive.open("r", encoding="utf-8", newline="") as handle:
+            text = handle.read()
+        relative = archive.relative_to(memory_dir)
+    except (OSError, ValueError):
+        return []
+    nodes: list[tuple[str, str]] = []
+    for frame in scan_v2_archive(text, relative).frames:
+        parts = frame.source_id.split("/", 2)
+        if len(parts) == 3 and parts[0] == "openprogram":
+            nodes.append((parts[1], parts[2]))
+    return nodes
+
+
 def migrate(memory_dir: Path, session_store, workspace_id: str) -> bool:
     """Seed markers from archived source IDs and then remove cursors."""
     state_store = RuntimeStateStore(Path(memory_dir))
@@ -70,6 +89,13 @@ def migrate(memory_dir: Path, session_store, workspace_id: str) -> bool:
                     node_id: {MARKER: workspace_id}
                     for node_id in node_ids
                 })
+            for archive in sorted((source_dir / "_v2").glob("*.md")):
+                for session_id, node_id in _v2_archived_nodes(
+                    archive, Path(memory_dir),
+                ):
+                    grouped.setdefault(session_id, {})[node_id] = {
+                        MARKER: workspace_id,
+                    }
         for session_id, patches in grouped.items():
             session_store.merge_node_metadata_batch(session_id, patches)
         state_store.save(state_store.load())
