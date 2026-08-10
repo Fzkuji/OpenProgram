@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import sys
+
+import pytest
+
 
 def test_writer_model_setting_is_live_and_defaults_to_chat_agent():
     from openprogram.config_schema import get_settings
@@ -51,4 +55,37 @@ def test_backend_none_disables_every_runtime_surface(monkeypatch, tmp_path):
         channel="telegram", account_id="main", chat_id="group-1",
         message_id="m1", user_id="u1", user_display="U", text="pending",
     ) == ""
+    assert not (tmp_path / "state" / "memory").exists()
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["status"],
+        ["recall", "anything"],
+        ["show", "topics/example.md"],
+        ["edit", "topics/example.md"],
+        ["sleep"],
+        ["export"],
+    ],
+)
+def test_backend_none_rejects_every_cli_memory_verb(
+    monkeypatch, tmp_path, capsys, arguments
+):
+    monkeypatch.setattr(
+        "openprogram.paths.get_state_dir", lambda: tmp_path / "state",
+    )
+    monkeypatch.setattr(
+        "openprogram.setup._read_config",
+        lambda: {"memory": {"backend": "none"}},
+    )
+    monkeypatch.setattr(sys, "argv", ["openprogram", "memory", *arguments])
+
+    from openprogram.cli import main
+
+    with pytest.raises(SystemExit) as stopped:
+        main()
+
+    assert stopped.value.code == 1
+    assert "memory is disabled by memory.backend=none" in capsys.readouterr().out
     assert not (tmp_path / "state" / "memory").exists()

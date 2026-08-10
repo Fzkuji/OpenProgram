@@ -24,6 +24,7 @@ from __future__ import annotations
 from .provider import MemoryProvider
 
 _provider: MemoryProvider | None = None
+DISABLED_MESSAGE = "memory is disabled by memory.backend=none"
 
 
 class _DisabledMemoryProvider(MemoryProvider):
@@ -68,4 +69,7 @@ def set_provider(instance: MemoryProvider | None) -> None:
     _provider = instance
 
 
-__all__ = ["MemoryProvider", "get_provider", "is_enabled", "set_provider"]
+__all__ = [
+    "DISABLED_MESSAGE", "MemoryProvider", "get_provider", "is_enabled",
+    "set_provider",
+]

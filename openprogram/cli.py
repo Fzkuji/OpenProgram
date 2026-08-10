@@ -1331,6 +1331,11 @@ def main():
             return
 
     if args.command == "memory":
+        from openprogram.memory import DISABLED_MESSAGE, is_enabled
+
+        if not is_enabled():
+            print(DISABLED_MESSAGE)
+            sys.exit(1)
         verb = getattr(args, "memory_verb", None)
         from openprogram.memory import store as _mstore
         from openprogram.memory.scriptorium.retrieval import inspect as _inspect

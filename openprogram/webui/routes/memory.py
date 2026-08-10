@@ -21,13 +21,23 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
-from fastapi import Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 # How long a save waits for the background writer to finish its transaction
 # before giving up. Long enough to cover one write, short enough that a
 # click does not look hung.
 WRITE_LOCK_TIMEOUT_S = 5.0
+
+
+def _require_memory_enabled() -> None:
+    from openprogram.memory import DISABLED_MESSAGE, is_enabled
+
+    if not is_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "MEMORY_DISABLED", "message": DISABLED_MESSAGE},
+        )
 
 
 def _title_of(text: str, fallback: str) -> str:
@@ -63,9 +73,11 @@ def _staged_edit(
 
 
 def register(app):
+    router = APIRouter(dependencies=[Depends(_require_memory_enabled)])
+
     # -- topics ------------------------------------------------------------
 
-    @app.get("/api/memory/topics")
+    @router.get("/api/memory/topics")
     async def list_topics():
         from openprogram.memory import store
         root = store.topics_dir()
@@ -87,7 +99,7 @@ def register(app):
             })
         return JSONResponse(content=pages)
 
-    @app.get("/api/memory/topics/{path:path}")
+    @router.get("/api/memory/topics/{path:path}")
     async def get_topic(path: str):
         from openprogram.memory import store
         target = _within(store.topics_dir(), path)
@@ -100,7 +112,7 @@ def register(app):
             "content": target.read_text(encoding="utf-8"),
         })
 
-    @app.put("/api/memory/topics/{path:path}")
+    @router.put("/api/memory/topics/{path:path}")
     async def save_topic(path: str, request: Request):
         from openprogram.memory import store
         root = store.ensure()
@@ -121,7 +133,7 @@ def register(app):
             return JSONResponse(content={"error": message}, status_code=400)
         return JSONResponse(content={"ok": True})
 
-    @app.delete("/api/memory/topics/{path:path}")
+    @router.delete("/api/memory/topics/{path:path}")
     async def delete_topic(path: str):
         from openprogram.memory import store
         root = store.ensure()
@@ -146,7 +158,7 @@ def register(app):
 
     # -- timeline ----------------------------------------------------------
 
-    @app.get("/api/memory/timeline")
+    @router.get("/api/memory/timeline")
     async def list_timeline_days():
         """The dates the timeline covers, newest first.
 
@@ -168,7 +180,7 @@ def register(app):
         days.sort(key=lambda day: day["date"], reverse=True)
         return JSONResponse(content=days)
 
-    @app.get("/api/memory/timeline/{date}")
+    @router.get("/api/memory/timeline/{date}")
     async def get_timeline_day(date: str):
         from openprogram.memory import store
         from openprogram.memory.scriptorium.markdown.models import (
@@ -191,7 +203,7 @@ def register(app):
 
     # -- recent ------------------------------------------------------------
 
-    @app.get("/api/memory/recent")
+    @router.get("/api/memory/recent")
     async def list_recent():
         """The last units written, newest first.
 
@@ -229,7 +241,7 @@ def register(app):
         master = store.topics_dir() / "core.md"
         return master if master.is_file() else store.core()
 
-    @app.get("/api/memory/core")
+    @router.get("/api/memory/core")
     async def get_core():
         path = _core_master()
         if not path.is_file():
@@ -241,7 +253,7 @@ def register(app):
             "mtime": stat.st_mtime,
         })
 
-    @app.put("/api/memory/core")
+    @router.put("/api/memory/core")
     async def save_core(request: Request):
         from openprogram.memory import store
         root = store.ensure()
@@ -258,3 +270,5 @@ def register(app):
         if not ok:
             return JSONResponse(content={"error": message}, status_code=400)
         return JSONResponse(content={"ok": True})
+
+    app.include_router(router)

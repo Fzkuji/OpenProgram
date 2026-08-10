@@ -217,3 +217,44 @@ def test_stage_directories_are_cleaned_up_on_both_paths(client):
     assert accepted.status_code == 200, accepted.text
 
     assert _stage_dirs() == before
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("GET", "/api/memory/topics", None),
+        ("GET", "/api/memory/topics/example.md", None),
+        ("PUT", "/api/memory/topics/example.md", {"content": "# Example\n"}),
+        ("DELETE", "/api/memory/topics/example.md", None),
+        ("GET", "/api/memory/timeline", None),
+        ("GET", "/api/memory/timeline/2026-01-01", None),
+        ("GET", "/api/memory/recent", None),
+        ("GET", "/api/memory/core", None),
+        ("PUT", "/api/memory/core", {"content": "# Core\n"}),
+    ],
+)
+def test_backend_none_rejects_every_web_memory_route(
+    monkeypatch, tmp_path, method, path, body
+):
+    monkeypatch.setattr(
+        "openprogram.paths.get_state_dir", lambda: tmp_path / "state",
+    )
+    monkeypatch.setattr(
+        "openprogram.setup._read_config",
+        lambda: {"memory": {"backend": "none"}},
+    )
+
+    from openprogram.webui.routes import memory as routes
+
+    app = FastAPI()
+    routes.register(app)
+    response = TestClient(app).request(method, path, json=body)
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": {
+            "code": "MEMORY_DISABLED",
+            "message": "memory is disabled by memory.backend=none",
+        }
+    }
+    assert not (tmp_path / "state" / "memory").exists()
