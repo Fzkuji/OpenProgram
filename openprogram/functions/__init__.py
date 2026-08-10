@@ -67,7 +67,7 @@ from .tools.memory import MEMORY_TOOL_NAMES
 
 
 # The safe default set: file ops + shell + search + multi-file patch +
-# the todo planning board. Omits ``process`` (long-lived
+# transactional memory + the todo planning board. Omits ``process`` (long-lived
 # background sessions) — opt-in via toolset="coding" instead.
 DEFAULT_TOOLS: list[str] = [
     "bash",
@@ -112,6 +112,10 @@ DEFAULT_TOOLS: list[str] = [
     "read_mcp_resource",
     "list_mcp_prompts",
     "get_mcp_prompt",
+    # Persistent memory is available in ordinary chats. Its schemas are
+    # deferred below, so the model sees the names and descriptions here but
+    # only loads the full contracts when it needs to inspect or edit memory.
+    *MEMORY_TOOL_NAMES,
     # Agentic harness entry points — these are the user-facing
     # programs (gui_agent / research_agent / wiki_agent) that the
     # LLM should know about by default. Without them in DEFAULT_TOOLS
@@ -130,6 +134,7 @@ DEFAULT_TOOLS: list[str] = [
 # 入选标准：schema 大 + 调用频率低。四个大头合计 ~2.5k token，占常驻 ~7.9k 的三分之一，
 # 而绝大多数会话一次都不调它们。
 DEFERRED_DEFAULT_TOOLS: set = {
+    *MEMORY_TOOL_NAMES,
     # 1052 tok。进 plan mode 有两条路：用户在 web chip / TUI 选 "Plan mode"
     # 档位（agent/plan_mode.py sync_tier，不经此工具），或模型自己判断要规划。
     # 后者罕见，且一旦 plan mode 激活，plan_mode 系统提示块会明确点名

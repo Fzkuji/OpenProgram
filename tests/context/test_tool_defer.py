@@ -57,7 +57,7 @@ def test_apply_is_idempotent():
 
 # --- DEFERRED_DEFAULT_TOOLS: available but not resident ---------------------
 #
-# These four are in DEFAULT_TOOLS (the model may call them any time) but
+# These are in DEFAULT_TOOLS (the model may call them any time) but
 # their schemas stay out of the per-turn request. The three properties
 # below are exactly what makes that safe: absent from the provider array,
 # discoverable in the catalog, loadable via tool_search.
@@ -87,6 +87,42 @@ def test_deferred_defaults_appear_in_catalog_line():
     text = deferred_catalog_text(catalog)
     for name in DEFERRED_DEFAULT_TOOLS:
         assert name in text, name
+
+
+def test_default_web_prompt_advertises_deferred_memory_tools(monkeypatch):
+    """Ordinary chats can discover memory without paying for its schemas."""
+    import openprogram.setup as setup
+    from openprogram.context.components import build_system_prompt
+
+    monkeypatch.setattr(setup, "_read_config", lambda: {})
+    install_loaded_deferred()
+    apply_default_deferral()
+    tools = agent_tools(source="web", only_available=True)
+    provider_tools, catalog = split_tools_for_dispatch(tools)
+    provider_names = {tool.name for tool in provider_tools}
+    catalog_names = {name for name, _ in catalog}
+    expected = {"memory_search", "memory_update", "memory_status"}
+
+    assert expected <= {tool.name for tool in tools}
+    assert not (expected & provider_names)
+    assert expected <= catalog_names
+
+    prompt = build_system_prompt(None, tools=tools)
+    for name in expected:
+        assert name in prompt
+
+
+def test_disabled_memory_backend_removes_default_memory_tools(monkeypatch):
+    import openprogram.setup as setup
+
+    monkeypatch.setattr(
+        setup, "_read_config", lambda: {"memory": {"backend": "none"}},
+    )
+
+    names = {
+        tool.name for tool in agent_tools(source="web", only_available=True)
+    }
+    assert not {name for name in names if name.startswith("memory_")}
 
 
 def test_tool_search_loads_a_deferred_default():
