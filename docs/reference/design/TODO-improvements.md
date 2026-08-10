@@ -47,19 +47,13 @@
    `window.__sessionStore` 38 处。另有 30+ 处 `window.dispatchEvent`
    无类型字符串事件总线（阶段文档未列的第五类）。按设计文档这是阶段 2
    完成后的事，规模大，需专项排期。
-6. **4 个无引用 npm 依赖**：`@heroicons/react`、`@phosphor-icons/react`、
-   `next-themes`、`d3-hierarchy`（含 `@types/d3-hierarchy`；唯一"引用"是
-   注释里的一句话）。可直接删，列在这里只因要跑一次完整回归确认。
-7. **滚动条轮询**（`web/lib/runtime-bridge/scrollbar.ts:161`）：常驻
-   `setInterval(2000)` 全文档 querySelectorAll + 永不移除的 resize
-   监听。MutationObserver 可替代。
-8. **WS 层用无类型 CustomEvent 二次广播 store 帧**
+6. **WS 层用无类型 CustomEvent 二次广播 store 帧**
    （`web/lib/net/use-ws.ts` 六处）：与 store 平行的第二条状态通路，
    detail 无类型。属于 window.* 退役的同族问题，可并入第 5 条专项。
 
 ## 模块规模（>1000 行且多职责，重构窗口另排）
 
-9. `web/components/center-tabs/center-tab-strip.tsx`（2045 行：DnD、路由
+7. `web/components/center-tabs/center-tab-strip.tsx`（2045 行：DnD、路由
    推导、容器、复合 tab 渲染混在一起）；
    `web/components/chat/composer/index.tsx`（2007 行单函数）；
    `openprogram/agentic_programming/runtime.py`（2040）；
@@ -68,13 +62,5 @@
 
 ## 清理
 
-10. **死目录** `openprogram/webui/static/`（13 个 JS/CSS/HTML）与
-    `static/_legacy_archive/`：零引用（`webui/frontend.py` 只服务
-    `web/out/`）。确认无历史包袱后可整目录删除。
-11. **FastAPI 弃用的 `@app.on_event`** ×8（`webui/server.py`）：迁到
+8. **FastAPI 弃用的 `@app.on_event`** ×8（`webui/server.py`）：迁到
     lifespan 上下文管理器，顺手事，但动 server.py 建议和第 1 条一起做。
-12. **死代码**：`agent/streaming/registry.py` 的 `_persist`/`_broadcast`
-    是 TODO 空壳，`open_stream` 全仓库零调用——流式状态从未持久化/推送。
-    要么排进流式恢复的实施计划，要么删。
-13. **过时迁移文档**：`web/MIGRATION.md`、`web/MIGRATION_PLAN.md`
-    （2026-05-17 后未动）。确认迁移已完成即可删。
