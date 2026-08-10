@@ -39,7 +39,7 @@ def writer_protocol_sha256() -> str:
             "write_memory": WRITE_MEMORY,
             "tools": TOOLS[:1],
             "runtime": "claude-agent-sdk",
-            "contract": "topic-core-v3-runtime-ids",
+            "contract": "topic-core-v4-jsonl-runtime-ids",
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -101,5 +101,4 @@ def organize_topics(
         usage_logger=usage_logger,
         config=config,
     )
-
 

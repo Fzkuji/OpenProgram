@@ -357,8 +357,9 @@ limited compatibility, not evidence with v2 authenticity.
 The BM25 cache schema is version 6. Version 5 could cache a structured
 speaker parsed from what is now a legacy file, so it is ignored and rebuilt
 under the v2-only trust rule. Tests cover trusted
-dispatch persistence, prompt and archive rendering, complete forged
-blocks, literal newline preservation, display-only reserved labels,
+dispatch persistence, JSONL writer collision resistance and exact value
+round-trips, archive rendering, complete forged blocks, literal newline
+preservation, display-only reserved labels,
 speakerless framed records, legacy user fallback, source-only filtering,
 cache rebuilds and public positional-constructor compatibility.
 
