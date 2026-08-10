@@ -648,12 +648,16 @@ async def handle_chat(ws, cmd: dict):
 
     parsed = _s._parse_chat_input(text)
 
+    from openprogram.agent.authority import local_owner_authority
+    _local_authority = local_owner_authority()
+
     user_msg = {
         "role": "user",
         "id": msg_id,
         "content": text,
         "timestamp": time.time(),
         "source": "web",
+        **_local_authority,
     }
     if parsed["action"] == "spawn":
         # SYNC path only: tag the /task user msg so the DAG layout

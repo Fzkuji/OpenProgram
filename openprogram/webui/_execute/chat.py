@@ -264,6 +264,15 @@ def run_query(
         f"resolved={_model_override!r}"
     )
 
+    from openprogram.agent.authority import (
+        authority_from_message, local_owner_authority,
+    )
+    _authority = authority_from_message(session_id, msg_id)
+    if not _authority:
+        # This is an authenticated local entry, including retries of rows
+        # written before authority metadata existed. Invalid owner state raises
+        # and rejects the turn instead of becoming an external/unknown request.
+        _authority = local_owner_authority()
     req_obj = _TurnRequest(
         session_id=session_id,
         user_text=query,
@@ -279,6 +288,7 @@ def run_query(
         user_already_persisted=True,
         model_override=_model_override,
         attachments=attachments,
+        **_authority,
     )
 
     try:

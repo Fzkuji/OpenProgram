@@ -169,6 +169,14 @@ class Task:
     result_text: Optional[str] = None
     error: Optional[str] = None
     attempt: int = 0
+    # Appended so positional construction of the pre-authority Task schema
+    # remains compatible.
+    speaker_kind: Optional[str] = None
+    speaker_id: Optional[str] = None
+    speaker_display: Optional[str] = None
+    principal_id: Optional[str] = None
+    authority_scope: Optional[dict[str, Any]] = None
+    interaction: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

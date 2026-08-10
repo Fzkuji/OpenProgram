@@ -202,6 +202,15 @@ def wrap_with_approval(
         if hard_violation:
             return _denied(f"[denied] hard constraint: {hard_violation}")
 
+        # Scope is a runtime field, not a model-visible label. Missing fields
+        # and missing capabilities deny before rules, approval, or bypass.
+        from openprogram.agent.authority import capability_for_tool, has_capability
+        capability = capability_for_tool(name, args)
+        if not has_capability(req, capability):
+            return _denied(
+                f"[denied] authority scope does not contain {capability}"
+            )
+
         # ① 规则层 deny/ask —— bypass 之前，最高安全优先级
         verdict = _match_rule(getattr(req, "permission_rules", None), name, args)
         if verdict == "deny":

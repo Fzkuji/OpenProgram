@@ -117,10 +117,17 @@ class TurnRequest:
     advance_head: bool = True
     # 路径安全的额外工作目录集（acceptEdits / safetyCheck 用，§3.5）。
     additional_working_dirs: list = field(default_factory=list)
-    # Trusted inbound sender identity. Appended after all existing fields so
-    # external positional constructors retain their historical meaning.
+    # Runtime-owned provenance and authorization. Appended after all existing
+    # fields so external positional constructors retain their historical
+    # meaning. Production entry points construct these explicitly; internal
+    # reconstruction that loses them may render/reply but cannot perform a
+    # host side effect.
+    speaker_kind: Optional[str] = None
     speaker_id: Optional[str] = None
     speaker_display: Optional[str] = None
+    principal_id: Optional[str] = None
+    authority_scope: Optional[dict[str, Any]] = None
+    interaction: Optional[str] = None
 
 
 @dataclass

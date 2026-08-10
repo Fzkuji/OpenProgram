@@ -161,10 +161,14 @@ def render_dag_messages(graph: Graph, read_ids: list[str],
 
         if node.is_user():
             last_assistant = None
+            from openprogram.agent.authority import render_model_input_from
             messages.append(UserMessage(
                 role="user",
                 content=[TextContent(type="text",
-                                      text=_elide(_text(node.output), node))],
+                                      text=render_model_input_from(
+                                          node.metadata or {},
+                                          _elide(_text(node.output), node),
+                                      ))],
                 timestamp=ts_ms,
             ))
 

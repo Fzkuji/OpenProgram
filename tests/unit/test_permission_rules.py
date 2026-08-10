@@ -125,11 +125,30 @@ def _make_tool(name: str):
     return tool, ran
 
 
+def _ensure_test_authority(req):
+    if req.authority_scope is not None:
+        return
+    req.speaker_kind = "owner"
+    req.speaker_id = "owner/local"
+    req.speaker_display = "Owner"
+    req.principal_id = "owner/install/0123456789abcdef"
+    req.authority_scope = {
+        "origin": "local-owner",
+        "capabilities": [
+            "reply", "memory.source.append", "memory.trusted.promote",
+            "schedule.create", "schedule.manage", "fs.read", "fs.write",
+            "process.exec", "network.send", "approval.request",
+        ],
+    }
+    req.interaction = "interactive"
+
+
 def _run(tool, req, approve=True, scope="once"):
     """Wrap tool with approval under req, run its execute, return (result, ran)."""
     async def _fake_approval(*, req, tool_name, args, on_event, timeout=300.0):
         return (approve, None, scope)
 
+    _ensure_test_authority(req)
     wrapped = _approval.wrap_with_approval(tool, req, on_event=lambda e: None)
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(_approval, "await_user_approval", _fake_approval)
@@ -200,6 +219,7 @@ def test_acceptedits_auto_allows_safe_file_tool(tmp_path, monkeypatch):
     # path inside cwd → safe → auto-allow
     async def _fake(*a, **k): return (False, None, "once")  # would deny if asked
     import openprogram.agent.internals._approval as _ap
+    _ensure_test_authority(req)
     wrapped = _ap.wrap_with_approval(tool, req, on_event=lambda e: None)
     import asyncio
     with pytest.MonkeyPatch.context() as mp:
@@ -296,6 +316,7 @@ def _run_with_args(tool, req, args, approve=True, scope="once"):
     import asyncio
     import openprogram.agent.internals._approval as _ap
     async def _fake(*a, **k): return (approve, None, scope)
+    _ensure_test_authority(req)
     wrapped = _ap.wrap_with_approval(tool, req, on_event=lambda e: None)
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(_ap, "await_user_approval", _fake)

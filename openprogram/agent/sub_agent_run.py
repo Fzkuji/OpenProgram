@@ -25,7 +25,7 @@ referencing all of them.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -48,6 +48,7 @@ def run_agent_turn(
     spawn_caller: Optional[str] = None,
     advance_head: bool = True,
     tools_override: Optional[list[str]] = None,
+    authority: Optional[dict[str, Any]] = None,
 ) -> AgentTurnResult:
     """Run one agent turn inside ``session_id``.
 
@@ -103,6 +104,7 @@ def run_agent_turn(
     # timeout and return ``[denied]`` for every tool call. Spawning a
     # sub-agent is itself an explicit user act, so the user has
     # already consented to tool use within that turn.
+    from openprogram.agent.authority import runtime_authority
     req = TurnRequest(
         session_id=session_id,
         user_text=prompt,
@@ -123,6 +125,7 @@ def run_agent_turn(
         advance_head=advance_head,
         tools_override=tools_override,
         model_override=model_override,
+        **runtime_authority(authority or {}, "agent_spawn"),
     )
     try:
         turn = process_user_turn(req)
@@ -395,6 +398,7 @@ def run_agent_turn_async(
     caller_chain_generations: int = 0,
     archive_when_done: bool = False,
     task_id: Optional[str] = None,
+    authority: Optional[dict[str, Any]] = None,
 ) -> str:
     """Submit an agent turn to the task runner, return ``task_id``.
 
@@ -431,4 +435,5 @@ def run_agent_turn_async(
         caller_chain_generations=caller_chain_generations,
         archive_when_done=archive_when_done,
         task_id=task_id,
+        authority=authority,
     )

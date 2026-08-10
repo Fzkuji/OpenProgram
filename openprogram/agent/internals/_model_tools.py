@@ -511,8 +511,9 @@ def history_to_agent_messages(history: list[dict]) -> list:
         content = m.get("content") or ""
         ts = int((m.get("timestamp") or time.time()) * 1000)
         if role == "user":
+            from openprogram.agent.authority import render_model_input_from
             out.append(UserMessage(
-                content=[TextContent(text=content)],
+                content=[TextContent(text=render_model_input_from(m, content))],
                 timestamp=ts,
             ))
         elif role == "assistant":

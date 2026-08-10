@@ -151,6 +151,7 @@ def agent_loop(
                 system_prompt=context.system_prompt,
                 messages=list(context.messages) + list(prompts),
                 tools=context.tools,
+                memory_prefetch=context.memory_prefetch,
             )
 
             ev_stream.push(AgentEventAgentStart())
@@ -208,6 +209,7 @@ def agent_loop_continue(
                 system_prompt=context.system_prompt,
                 messages=list(context.messages),
                 tools=context.tools,
+                memory_prefetch=context.memory_prefetch,
             )
 
             ev_stream.push(AgentEventAgentStart())

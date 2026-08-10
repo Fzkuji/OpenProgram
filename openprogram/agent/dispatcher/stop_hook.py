@@ -80,6 +80,7 @@ def continue_stop_hook_turns(
             return result
 
         reason = "; ".join(outcome.reasons) or "hook denied the stop"
+        from openprogram.agent.authority import runtime_authority
         next_req = replace(
             prev_req,
             user_text=f"[hook] {reason}。继续。",
@@ -90,6 +91,7 @@ def continue_stop_hook_turns(
             history_override=None,
             attachments=None,
             spawn_caller=None,
+            **runtime_authority(prev_req, "hook_continue"),
         )
         result = run_turn(next_req, on_event=on_event,
                           cancel_event=cancel_event)

@@ -244,6 +244,8 @@ def _dispatch_to_existing(
             "[agent error] no active parent turn — agent(to=…) must be "
             "called from inside an assistant turn."
         )
+    from openprogram.agent.authority import authority_from_message, normalize_authority
+    caller_authority = authority_from_message(sid, aid)
     chosen_agent = (agent_id or "").strip() or parent_agent or "main"
 
     # Budget guard: a dispatch to an existing agent spends the message
@@ -327,6 +329,7 @@ def _dispatch_to_existing(
                 chain_generations=generations,
                 caller_chain_generations=generations,
                 status=TaskStatus.PENDING,
+                **normalize_authority(caller_authority),
             )
             save_task(run_session, task)
             try:
@@ -341,6 +344,7 @@ def _dispatch_to_existing(
                     chain_generations=generations,
                     target_head_id=target_tip,
                     task_id=task.id,
+                    authority=caller_authority,
                 )
             except Exception as e:  # noqa: BLE001
                 try:
@@ -404,6 +408,7 @@ def _dispatch_to_existing(
             chain_messages=messages + 1,
             chain_generations=generations,
             caller_chain_generations=generations,
+            authority=caller_authority,
         )
     except Exception as e:  # noqa: BLE001
         return f"[agent error] {type(e).__name__}: {e}"
@@ -457,6 +462,8 @@ def _agent_impl(
             "from inside an assistant turn (the dispatcher sets the "
             "session + turn ContextVars on entry)."
         )
+    from openprogram.agent.authority import authority_from_message
+    caller_authority = authority_from_message(sid, aid)
     chosen_agent = (agent_id or "").strip() or parent_agent or "main"
 
     label = (description or "").strip()
@@ -599,6 +606,7 @@ def _agent_impl(
                 # it at terminal state if the spawn asked for that.
                 archive_when_done=archive_when_done,
                 attach_pointer_id=attach_id,
+                authority=caller_authority,
             )
             # Live counterpart of the placeholder row above, so the card
             # appears without a reload. Terminal state still arrives via
@@ -670,6 +678,7 @@ def _agent_impl(
                 # path's sub-branch rendered as an unrelated root-level fork.
                 spawn_caller=aid if branch_from is None else None,
                 advance_head=False,  # same-session spawn never steals head
+                authority=caller_authority,
             )
         finally:
             for _token in _chain_tokens:

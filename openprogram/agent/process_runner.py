@@ -64,6 +64,7 @@ def _child_entry(
     answer_queue: "Optional[mp.Queue]" = None,
     stop_queue: "Optional[mp.Queue]" = None,
     usage_ctx_snapshot: Optional[dict] = None,
+    authority_snapshot: Optional[dict] = None,
 ) -> None:
     # Detach into our own process group so ``killpg`` from the parent
     # takes down every grandchild (browser, subprocess providers, ...).
@@ -262,6 +263,7 @@ def _child_entry(
             user_text="",
             agent_id="main",
             source="web",
+            **(authority_snapshot or {}),
         )
 
         # Bridge child-side on_event into the parent via the queue.
@@ -442,6 +444,7 @@ def run_agentic_in_subprocess(
     work_dir: Optional[str] = None,
     on_event: Optional[Callable[[dict], None]] = None,
     parent_call_id: Optional[str] = None,
+    authority: Optional[dict] = None,
 ) -> dict:
     """Run a single @agentic_function tool in a fork()'d subprocess.
 
@@ -474,12 +477,12 @@ def run_agentic_in_subprocess(
         usage_ctx_snapshot: Optional[dict] = _uctx_snapshot()
     except Exception:
         usage_ctx_snapshot = None
-
     p = ctx.Process(
         target=_child_entry,
         args=(tool_name, dict(kwargs or {}), session_id, anchor_msg_id,
               work_dir, result_path, event_queue, parent_call_id,
-              answer_queue, stop_queue, usage_ctx_snapshot),
+              answer_queue, stop_queue, usage_ctx_snapshot,
+              authority),
         daemon=False,
     )
     p.start()

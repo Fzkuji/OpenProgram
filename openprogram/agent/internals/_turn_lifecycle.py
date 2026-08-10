@@ -56,6 +56,7 @@ def insert_placeholder(
     user_msg_id: str,
     source: str,
     advance_head: bool = True,
+    authority: Optional[dict[str, Any]] = None,
 ) -> bool:
     """Write the empty assistant placeholder at turn start.
 
@@ -70,6 +71,7 @@ def insert_placeholder(
         from openprogram.store import GraphStoreShim
 
         now = time.time()
+        from openprogram.agent.authority import normalize_authority
         node = Call(
             id=assistant_msg_id,
             created_at=now,
@@ -81,6 +83,7 @@ def insert_placeholder(
                 "status": "running",
                 "worker_id": current_worker_id(),
                 "started_at": now,
+                **normalize_authority(authority or {}),
             },
         )
         shim = GraphStoreShim(db, session_id, advance_head=advance_head)

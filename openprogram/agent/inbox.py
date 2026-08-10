@@ -119,6 +119,7 @@ def enqueue(
     target_head_id: Optional[str],
     chain_generations: int = 0,
     task_id: Optional[str] = None,
+    authority: Optional[dict[str, Any]] = None,
 ) -> str:
     """Queue a message for a busy target session.
 
@@ -150,6 +151,7 @@ def enqueue(
                 and now - float(e.get("enqueued_at") or 0) <= DEDUP_WINDOW_SECS
             ):
                 return "duplicate"
+        from openprogram.agent.authority import normalize_authority
         entries.append({
             "id": uuid.uuid4().hex[:12],
             "message": message,
@@ -162,6 +164,7 @@ def enqueue(
             "target_head_id": target_head_id,
             "task_id": task_id,
             "enqueued_at": now,
+            **normalize_authority(authority or {}),
         })
         dropped = None
         if len(entries) > MAX_PENDING:
@@ -358,6 +361,7 @@ def _deliver(session_id: str, entry: dict[str, Any]) -> None:
         # the sender runs at the same one.
         chain_generations=int(entry.get("chain_generations") or 0),
         caller_chain_generations=int(entry.get("chain_generations") or 0),
+        authority=entry,
     )
 
 

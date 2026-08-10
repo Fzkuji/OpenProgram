@@ -124,6 +124,8 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
                 # Lineage breadcrumbs (future tooling / debugging).
                 "forked_from": src_user.get("id"),
             }
+            from openprogram.agent.authority import local_owner_authority
+            new_user.update(local_owner_authority())
             if src_user.get("display"):
                 new_user["display"] = src_user["display"]
             if new_content is not None:

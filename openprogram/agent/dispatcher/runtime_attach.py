@@ -149,6 +149,7 @@ def _wrap_agentic_runtime_block(
                 # we already emitted above are anchored to the same
                 # runtime_id so the second write is a no-op upsert.
                 loop = _asyncio.get_event_loop()
+                from openprogram.agent.authority import runtime_authority
                 out = await loop.run_in_executor(
                     None,
                     lambda: run_agentic_in_subprocess(
@@ -164,6 +165,9 @@ def _wrap_agentic_runtime_block(
                         # of inventing a ``forced_<random>`` and leaving
                         # us with two orphan placeholders for one call.
                         parent_call_id=call_id,
+                        authority=runtime_authority(
+                            req, f"agentic/{tool_name}"
+                        ),
                     ),
                 )
                 if out.get("killed"):

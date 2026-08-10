@@ -235,6 +235,7 @@ class TaskRunner:
         caller_chain_generations: int = 0,
         archive_when_done: bool = False,
         task_id: Optional[str] = None,
+        authority: Optional[dict] = None,
     ) -> str:
         """Create a Task entity, persist it, queue it on the pool.
 
@@ -266,11 +267,14 @@ class TaskRunner:
                 # Spawned from inside a running task's turn — record the
                 # chain so cascading cancel can find this child.
                 parent_task_id = _current_task_id.get()
+        from openprogram.agent.authority import normalize_authority
+        task_authority = normalize_authority(authority or existing or {})
         task = Task(
             id=task_id or mint_task_id(),
             parent_session_id=session_id,
             prompt=prompt,
             agent_id=agent_id,
+            **task_authority,
             subject=subject or (prompt[:60] or "task"),
             description=description or prompt,
             context_mode=context_mode if context_mode in ("inherit", "clean") else "inherit",
@@ -696,7 +700,8 @@ class TaskRunner:
                 except Exception:
                     pass
                 try:
-                    result = run_agent_turn(
+                    from openprogram.agent.authority import normalize_authority
+                    _turn_kwargs = dict(
                         session_id=session_id,
                         prompt=task.prompt,
                         agent_id=task.agent_id,
@@ -709,6 +714,10 @@ class TaskRunner:
                         # Same-session spawn: never steal the head.
                         advance_head=False,
                     )
+                    _task_authority = normalize_authority(task)
+                    if _task_authority:
+                        _turn_kwargs["authority"] = _task_authority
+                    result = run_agent_turn(**_turn_kwargs)
                 finally:
                     for _tok in _chain_tokens:
                         try:
@@ -1143,6 +1152,7 @@ class TaskRunner:
                 from openprogram.agent.dispatcher import (
                     TurnRequest, process_user_turn,
                 )
+                from openprogram.agent.authority import runtime_authority
                 # Followup prompt — push the parent agent to synthesize a
                 # reply, not echo the sub-agent's last line. With an attach
                 # pointer the sub-agent transcript is already in context via
@@ -1183,6 +1193,7 @@ class TaskRunner:
                     user_text=followup_text,
                     agent_id=task.agent_id or "main",
                     source="task_followup",
+                    **runtime_authority(task, "task_followup"),
                     # branch_from is left at INHERIT_PARENT: the dispatcher
                     # resolves it to the delivery session's HEAD and advances
                     # it, which is exactly the serial chain this method's

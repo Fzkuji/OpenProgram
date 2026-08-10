@@ -206,6 +206,7 @@ def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
         if undone:
             next_text += "\n未完成项：\n" + "\n".join(
                 f"{i}. {it.get('text')}" for i, it in undone)
+        from openprogram.agent.authority import runtime_authority
         next_req = replace(
             prev_req,
             user_text=next_text,
@@ -218,6 +219,7 @@ def continue_goal_turns(req: Any, result: Any, *, run_turn: Callable,
             spawn_caller=None,
             tools_override=_goal._tools_with_forced_web_search(
                 prev_req.tools_override),
+            **runtime_authority(prev_req, "goal_continue"),
         )
         result = run_turn(next_req, on_event=on_event,
                           cancel_event=cancel_event)

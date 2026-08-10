@@ -363,9 +363,11 @@ def _handle_goal(args: list[str], console, agent, session_id: str) -> bool:
             console.print(f"\n[red]{data.get('content')}[/]")
 
     try:
+        from openprogram.agent.authority import local_owner_authority
         process_user_turn(
             TurnRequest(session_id=session_id, user_text=send_text,
-                        agent_id=agent.id, source="cli"),
+                        agent_id=agent.id, source="cli",
+                        **local_owner_authority()),
             on_event=_print_event,
         )
         console.print()

@@ -41,6 +41,7 @@ def enqueue_for_busy_target(
     agent_id: str,
     chain_messages: int,
     chain_generations: int = 0,
+    authority: dict | None = None,
 ) -> str | None:
     """Busy target → inbox (design §5.4: don't interrupt, don't drop —
     queue). Returns the status string to hand back to the sender, or
@@ -65,6 +66,7 @@ def enqueue_for_busy_target(
             chain_messages=chain_messages,
             chain_generations=chain_generations,
             target_head_id=branch_from,
+            authority=authority,
         )
     except Exception as e:  # noqa: BLE001
         return f"[send_message error] {type(e).__name__}: {e}"

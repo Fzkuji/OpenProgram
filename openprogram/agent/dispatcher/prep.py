@@ -106,6 +106,8 @@ def prepare_turn(
         # below — the pair lets the UI tag both halves of a turn.
         "agent_id": req.agent_id,
     }
+    from openprogram.agent.authority import normalize_authority
+    user_msg.update(normalize_authority(req))
     # System-internal triggers — task_followup auto-notification,
     # merge prompt assembly — write a user-role node so the LLM
     # treats it as a turn, but they're NOT chats the human typed.

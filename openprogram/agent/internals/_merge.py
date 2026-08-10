@@ -340,12 +340,17 @@ def process_merge_turn(
     # the predecessor chain and reach ensure_latest_commit. With
     # history_override=[] (legacy behaviour) the generator wouldn't
     # see them and the attach expansion path would be a no-op.
+    from openprogram.agent.authority import authority_from_message, runtime_authority
+    _parent_authority = authority_from_message(
+        target_session_id, target_head or "",
+    )
     req = TurnRequest(
         session_id=target_session_id,
         user_text=merge_prompt,
         agent_id=agent_id,
         source="merge_turn",
         history_override=None,
+        **runtime_authority(_parent_authority, "merge_turn"),
     )
     try:
         turn = process_user_turn(req)

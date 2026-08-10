@@ -232,7 +232,16 @@ def run_loop_blocking(
     # stamped it on the user node; read it back from the branch so the block
     # the loop renders is byte-identical to the one replay will reproduce.
     _memory_prefetch = ""
-    for _m in reversed(history or []):
+    _prefetch_history = history
+    _prefetch_head = assistant_msg_id or req.user_msg_id
+    if _prefetch_head:
+        # ``history`` intentionally excludes the current user node. Follow the
+        # current branch to that node so we reuse the exact persisted recall
+        # instead of issuing a second search.
+        _prefetch_history = (
+            db.get_branch(req.session_id, _prefetch_head) or history
+        )
+    for _m in reversed(_prefetch_history or []):
         if _m.get("role") == "user":
             _memory_prefetch = _m.get("memory_prefetch") or ""
             break
@@ -315,7 +324,10 @@ def run_loop_blocking(
         )
         content_blocks: list = []
         if req.user_text:
-            content_blocks.append(TextContent(text=req.user_text))
+            from openprogram.agent.authority import render_model_input_from
+            content_blocks.append(TextContent(
+                text=render_model_input_from(req, req.user_text)
+            ))
         for att in (req.attachments or []):
             if not isinstance(att, dict):
                 continue

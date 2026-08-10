@@ -96,6 +96,8 @@ def _send_message_impl(
             "from inside an assistant turn (the dispatcher sets the session "
             "+ turn ContextVars on entry)."
         )
+    from openprogram.agent.authority import authority_from_message
+    caller_authority = authority_from_message(sid, aid)
 
     # Message-budget guard (§5.1): refuse deliveries once the chain has
     # spent its messages, so A↔B / runaway recursion can't blow up. The
@@ -166,6 +168,7 @@ def _send_message_impl(
             agent_id=chosen_agent,
             chain_messages=messages,
             chain_generations=generations,
+            authority=caller_authority,
         )
         if queued is not None:
             return queued
@@ -204,6 +207,7 @@ def _send_message_impl(
             # run at the generation count this send was made at.
             chain_generations=generations,
             caller_chain_generations=generations,
+            authority=caller_authority,
         )
     except Exception as e:  # noqa: BLE001
         return f"[send_message error] {type(e).__name__}: {e}"

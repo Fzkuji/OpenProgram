@@ -285,6 +285,11 @@ def _run_session_turn(
                     break
             _maybe_edit("\n".join(progress_lines))
 
+    from openprogram.agent.authority import shared_channel_authority
+    _authority = shared_channel_authority(
+        channel, account_id, speaker_id or "",
+        speaker_display or user_display,
+    )
     req = TurnRequest(
         session_id=session_key,
         user_text=user_text,
@@ -292,8 +297,6 @@ def _run_session_turn(
         source=channel,
         peer_display=user_display or str(peer_id),
         peer_id=str(peer_id),
-        speaker_id=speaker_id,
-        speaker_display=speaker_display,
         permission_mode=permission_from_config(
             run_cfg, default=_pdef.get("permission_mode") or "ask"),
         permission_rules=_load_merged_rules(session_key),
@@ -301,6 +304,7 @@ def _run_session_turn(
         tools_override=tools_override_from_config(run_cfg),
         thinking_effort=run_cfg.thinking_effort or _pdef.get("thinking_effort"),
         attachments=attachments or None,
+        **_authority,
     )
     # 让本 turn 期间的 runtime.ask 知道"有前端能答"（can_ask=True）且
     # question.asked 带上正确的 channel session_id —— 否则裸 runtime.ask

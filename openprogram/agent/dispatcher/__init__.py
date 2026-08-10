@@ -257,6 +257,7 @@ def _process_turn_once(
     started_at = time.time()
     on_event = on_event or _noop
     user_msg_id = req.user_msg_id or uuid.uuid4().hex[:12]
+    req.user_msg_id = user_msg_id
 
     # Usage metering: label every LLM call in this turn with its source.
     # Default to "chat", but DON'T clobber a source an outer scope already
