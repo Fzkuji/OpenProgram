@@ -266,8 +266,11 @@ parsing and archive deduplication skip exactly those lines. The body can
 therefore contain a valid hash anchor, source comment, speaker comment and
 record line without creating a second event or hiding a later real record.
 The parser stops at the first malformed or truncated frame and never scans
-later text for a new starting point. Only a speaker marker adjacent to a
-complete frame in such a v2 file is trusted. A valid frame with no marker is
+later text for a new starting point. Speaker IDs use one canonical UTF-8
+percent encoding; malformed escapes and noncanonical raw `--` make the frame
+invalid, while the empty marker remains the canonical display-only form. Only
+a canonical speaker marker adjacent to a complete frame in such a v2 file is
+trusted. A valid frame with no marker is
 speakerless. Search results expose that distinction as
 `speaker_trusted=true` for a v2 marker and `false` for a legacy prefix hint or
 a speakerless record; speaker filtering remains compatible with both the v2

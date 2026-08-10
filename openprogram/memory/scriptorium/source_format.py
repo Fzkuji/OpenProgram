@@ -6,7 +6,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote_to_bytes
 
 
 V2_FORMAT_MARKER = "<!-- openprogram-source-archive:v2 -->"
@@ -64,6 +64,19 @@ def valid_v2_source_id(ref: str) -> bool:
     )
 
 
+def encode_speaker_id(value: str) -> str:
+    """Canonical UTF-8 percent encoding for a v2 speaker marker."""
+    return quote(value, safe="").replace("-", "%2D")
+
+
+def is_canonical_speaker_id(value: str) -> bool:
+    try:
+        decoded = unquote_to_bytes(value).decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return encode_speaker_id(decoded) == value
+
+
 def is_v2_source_path(relative: str | Path) -> bool:
     parts = Path(relative).parts
     if parts[:1] == ("sources",):
@@ -110,6 +123,8 @@ def scan_v2_archive(text: str, relative: str | Path) -> V2Scan:
         speaker = _SPEAKER_RE.fullmatch(lines[cursor])
         if speaker is not None:
             encoded_speaker_id = speaker.group(1)
+            if not is_canonical_speaker_id(encoded_speaker_id):
+                return V2Scan(tuple(frames), False)
             cursor += 1
             if cursor >= len(lines):
                 return V2Scan(tuple(frames), False)

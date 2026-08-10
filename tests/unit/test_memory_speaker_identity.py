@@ -540,6 +540,50 @@ def test_v2_duplicate_source_id_invalidates_only_the_duplicate_tail(
         space.close()
 
 
+@pytest.mark.parametrize("encoded_id", ["%ZZ", "--"])
+def test_v2_rejects_noncanonical_speaker_marker(
+    tmp_path: Path, encoded_id: str,
+) -> None:
+    root = tmp_path / "memory"
+    path = root / "sources/openprogram/_v2/thread-1.md"
+    path.parent.mkdir(parents=True)
+    source_id = "openprogram/thread-1/m1"
+    path.write_text(
+        "<!-- openprogram-source-archive:v2 -->\n\n"
+        f'<a id="{_anchor(source_id)}"></a>\n'
+        f"<!-- source-id:{source_id} -->\n"
+        f"<!-- speaker-id:{encoded_id} -->\n"
+        "<!-- record-lines:1 -->\n"
+        "[2026-08-09] Ada: body\n",
+        encoding="utf-8",
+    )
+
+    assert parse_source_file(path, root / "sources") == []
+
+
+def test_v2_empty_speaker_marker_is_valid_display_only_identity(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "memory"
+    path = root / "sources/openprogram/_v2/thread-1.md"
+    path.parent.mkdir(parents=True)
+    source_id = "openprogram/thread-1/m1"
+    path.write_text(
+        "<!-- openprogram-source-archive:v2 -->\n\n"
+        f'<a id="{_anchor(source_id)}"></a>\n'
+        f"<!-- source-id:{source_id} -->\n"
+        "<!-- speaker-id: -->\n"
+        "<!-- record-lines:1 -->\n"
+        "[2026-08-09] Ada: body\n",
+        encoding="utf-8",
+    )
+
+    event = parse_source_file(path, root / "sources")[0]
+    assert event.speaker_id == ""
+    assert event.speaker_display == "Ada"
+    assert event.speaker_trusted is True
+
+
 def test_v2_trailing_lf_body_remains_valid_after_later_append(
     tmp_path: Path,
 ) -> None:

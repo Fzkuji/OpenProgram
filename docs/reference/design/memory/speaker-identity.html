@@ -936,7 +936,8 @@
     <b>当前防线</b>：<code>speaker_id</code>/<code>speaker_display</code>只从渠道消息写入节点metadata，
     <code>_records()</code>不解析正文。Writer只认<code>[ref] speaker: text</code>冒号前的运行时标签；
     source parser只从<code>sources/&lt;provider&gt;/_v2/&lt;thread&gt;.md</code>字节0的固定format marker开始，
-    严格接受完整<code>record-lines</code> frame并按声明行数跳过正文；遇非法frame停止。<br>
+    严格接受完整<code>record-lines</code> frame并按声明行数跳过正文；speaker id必须是规范UTF-8 percent编码，
+    错误转义或原样<code>--</code>使frame非法，空marker仍是合法display-only身份；遇非法frame停止。<br>
     <b>剩余边界</b>：冻结的legacy文件没有独立可信边界，只保留严格<code>user</code>记录的有限正文前缀检索hint；
     其中的speaker marker和伪frame都不建立可信身份。检索结果用<code>speaker_trusted</code>区分v2身份（true）与legacy hint（false）。
   </div>
@@ -1160,7 +1161,7 @@
     <code>speaker_display</code>独立于正文和路由<code>peer_id</code>传到持久化节点；正文仍保留
     <code>[显示名 (id)] </code>兼容前缀，但写入和检索不从正文反推新记录身份。<br>
     <code>SourceRecord.speaker_label</code>统一生成安全的一行记录头，写入prompt明确只认冒号前的运行时标签。
-    新source只写入固定format marker开头的<code>_v2/</code>文件；speaker id做percent编码，<code>record-lines</code>隔离可伪造正文，
+    新source只写入固定format marker开头的<code>_v2/</code>文件；speaker id使用可往返验证的规范UTF-8 percent编码，<code>record-lines</code>隔离可伪造正文，
     parser遇非法frame停止，只有合法v2 frame中的marker可信。合法但没有marker的记录保持speakerless。BM25 v6按稳定id、显示名或标签过滤，
     与路径和日期过滤组合，结果只来自<code>sources/</code>。<code>memory_search</code>已暴露<code>speaker</code>，
     embedding与speaker组合会显式返回<code>INVALID_ARGUMENT</code>，不会忽略过滤。<br>

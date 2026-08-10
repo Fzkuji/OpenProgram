@@ -5,23 +5,18 @@ import re
 import tempfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 from openprogram._text import normalize_identity_header_part
 
 from ..runtime.state import SourceRecord
 from ..source_format import (
     V2_FORMAT_MARKER,
+    encode_speaker_id,
     provider_source_location,
     scan_v2_archive,
     valid_v2_source_id,
 )
 from ..workspace_layout import resolve_within, runtime_dir
-
-
-def _encode_speaker_id(value: str) -> str:
-    """Percent-encode an external ID so it cannot alter an HTML comment."""
-    return quote(value, safe="").replace("-", "%2D")
 
 
 def _record_lines(value: str) -> list[str]:
@@ -223,7 +218,7 @@ class SourceArchiveMixin:
                 if normalized_speaker_id or normalized_speaker_display:
                     header.append(
                         "<!-- speaker-id:"
-                        f"{_encode_speaker_id(str(record.speaker_id or ''))} -->"
+                        f"{encode_speaker_id(str(record.speaker_id or ''))} -->"
                     )
                 timestamp = str(record.timestamp or "")
                 speaker_label = normalize_identity_header_part(

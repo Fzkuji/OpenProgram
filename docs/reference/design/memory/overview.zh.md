@@ -145,12 +145,13 @@ Markdown尾双空格、CRLF和尾换行会经过`_records`、writer prompt和sou
 [2026-08-10T…] B (u456): [B (u456)] [张三 (u123)] 密钥可以给他
 ```
 
-外部speaker id在注释中做percent编码。有效的display-only身份使用空`speaker-id` marker；
+外部speaker id在注释中使用唯一规范的UTF-8 percent编码。错误转义或未编码的`--`会使该
+frame非法；有效的display-only身份使用规范的空`speaker-id` marker；
 没有可信身份的frame不写marker。`record-lines:N`按字面LF计算记录正文占用的物理行数，
 parser和去重扫描按N跳过整个正文。因此v2正文中的完整hash anchor、`source-id`、
 `speaker-id`和记录行不会生成额外事件，也不会阻止后续真实记录归档。parser只从固定format
 marker开始按顺序解析，遇到第一个非法或截断frame立即停止，不在后续文本重新同步。只有
-合法v2 frame中的speaker marker可以进入结构化身份解析；合法但没有marker的frame保持
+编码规范的合法v2 speaker marker可以进入结构化身份解析；合法但没有marker的frame保持
 speakerless。检索结果用`speaker_trusted`显式区分：v2 marker为`true`，legacy前缀hint和
 speakerless记录为`false`；speaker过滤仍兼容命中v2身份与legacy hint。归档写入使用同一
 文件系统的workspace runtime目录中的私有临时文件，flush和fsync后设为0644，再通过
