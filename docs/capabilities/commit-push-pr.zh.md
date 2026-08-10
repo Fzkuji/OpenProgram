@@ -16,7 +16,7 @@ agent 能把做完的活从工作区一路送到可评审的 pull request：从�
 
 1. **先切分支。** 先探测仓库的默认分支（`git symbolic-ref refs/remotes/origin/HEAD`，失败退到 `git remote show origin`，没有 remote 时按 `main`/`master` 算）。如果 HEAD 就在默认分支上，先建话题分支再提交。绝不往默认分支上提交。
 2. **按路径暂存。** 先读 `git status --short -uall`，只 add 这次请求涉及的文件。不对没看过的工作区做无差别 `git add -A`；你没提到的文件保持未暂存状态并如实汇报。
-3. **写提交信息**用 [`/commit-message`](../reference/cli/README.zh.md)：它读暂存区 diff，返回一句祈使式标题，必要时带正文。
+3. **写提交信息**用 `/commit-message`：它读暂存区 diff，返回一句祈使式标题，必要时带正文。
 4. **从消息文件提交**（`git commit -F`），不用容易被引号折断的行内 `-m`。钩子一律执行，不加 `--no-verify`。pre-commit 钩子改写了文件就 amend 一次然后停下，不进入循环。
 5. **推送**用 `git push -u origin <branch>`。被判 non-fast-forward 就 rebase 后重试一次。强推必须你明确要求，而且用 `--force-with-lease`。
 6. **开 PR** 用 `gh pr create --base <default> --head <branch> --title ... --body-file ...`，之前先查 `gh auth status`。PR 正文由该分支的提交和相对基线的 diff 生成，分为摘要、改了什么、怎么测三节。

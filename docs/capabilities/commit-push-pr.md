@@ -16,7 +16,7 @@ Typical phrasings that also fire it: "commit and push", "open a PR for this", "p
 
 1. **Branches first.** It detects the repository's default branch (`git symbolic-ref refs/remotes/origin/HEAD`, falling back to `git remote show origin`, and to `main`/`master` when there is no remote). If you are sitting on it, the agent creates a topic branch before committing. It never commits onto the default branch.
 2. **Stages named paths.** It reads `git status --short -uall` and adds the files the request is about. No blanket `git add -A` over a tree it did not inspect; files you did not mention stay unstaged and get reported.
-3. **Writes the message** with [`/commit-message`](../reference/cli/README.md), which reads the staged diff and returns one imperative subject plus a body when the change needs one.
+3. **Writes the message** with `/commit-message`, which reads the staged diff and returns one imperative subject plus a body when the change needs one.
 4. **Commits from a message file** (`git commit -F`), never a fragile inline `-m`. Hooks always run — no `--no-verify`. If a pre-commit hook rewrites files the agent amends once and stops rather than looping.
 5. **Pushes** with `git push -u origin <branch>`. A non-fast-forward rejection gets a rebase and one retry. Force-pushing needs you to ask for it explicitly, and then it uses `--force-with-lease`.
 6. **Opens the PR** with `gh pr create --base <default> --head <branch> --title ... --body-file ...`, after checking `gh auth status`. The body is built from the branch's commits and its diff against the base, in summary / what changed / testing sections.
