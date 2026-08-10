@@ -186,6 +186,13 @@ interface ChatResponseData {
 }
 
 export function wsHandleChatResponse(data: ChatResponseData): void {
+  // `run_active` is a REJECTION of a turn that never started, not the end
+  // of one. The chat-stream reducer re-queues the text; this side must
+  // stay out of it entirely — falling through would clear the running
+  // task of the run that is still going and append an assistant row for
+  // a reply that will never exist.
+  if (data && data.type === "error"
+      && (data as { code?: unknown }).code === "run_active") return;
   // Cancelled envelope without a msg_id is the force-stop signal.
   if (data && data.type === "cancelled") {
     const sid = responseSessionId(data, runtimeState.currentSessionId);

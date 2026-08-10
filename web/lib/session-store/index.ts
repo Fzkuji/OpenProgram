@@ -713,6 +713,19 @@ export const useSessionStore = create<ConvState>((set) => ({
       // from) in step — this setter is the entry point for WS frames and
       // legacy bridges, which have no React context to write through.
       pushToSessionStore(sessionId, { running: t });
+      // Turn finished → hand the client-side send queue its chance to
+      // ship the next parked message. This setter is the single choke
+      // point every run-end path funnels through (WS running_task_clear,
+      // the composer's optimistic stop, fn-form rollback), so the queue
+      // needs no polling of its own. Deferred a tick so the drain's own
+      // store writes don't re-enter this `set`.
+      if (!t) {
+        queueMicrotask(() => {
+          void import("@/lib/state/send-queue").then((m) =>
+            m.useSendQueue.getState().drain(sessionId),
+          );
+        });
+      }
       return { runningTasks: next };
     }),
   setPaused: (p) => set({ paused: p }),

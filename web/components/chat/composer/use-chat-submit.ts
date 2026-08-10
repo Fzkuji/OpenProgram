@@ -3,9 +3,10 @@
 /**
  * Chat turn submit + stop.
  *
- * `submit` covers three outcomes in priority order: a mid-run STEER (a
- * message typed while a task runs is routed into the live run so the user
- * can course-correct), a slash command, or a normal turn. A normal turn
+ * `submit` covers three outcomes in priority order: a mid-run QUEUE (a
+ * message typed while a task runs is parked in the client-side send
+ * queue and dispatched when the turn ends), a slash command, or a
+ * normal turn. A normal turn
  * expands long-paste tokens and `@path` mentions, converts pending docs
  * into path mentions plus `type:"document"` attachments, and hands the
  * payload to `sendChatMessage` — the bridge that fires the optimistic user
@@ -19,6 +20,7 @@
 import { useCallback } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
+import { enqueueMessage } from "@/lib/state/send-queue";
 import { expandAtMentions } from "./attach/at-mention";
 import { expandPasteTokens, missingPasteIds } from "./paste/paste-store";
 import { sendChatMessage } from "./legacy-send";
@@ -74,15 +76,27 @@ export function useChatSubmit({
   const submit = useCallback(async () => {
     const submitOwnerKey = activeChatKey ?? currentSessionId;
     const trimmed = input.trim();
-    // While a task is running, a sent message is a MID-RUN STEER, not a new
-    // turn: route it to the live run so the user can course-correct just by
-    // typing into the same box. The running loop picks it up at its next step
-    // boundary. (Plain text only — attachments / slash go through the normal
-    // path, which is disabled while running.)
+    // While a task is running, a sent message is QUEUED, not dispatched:
+    // the backend rejects a concurrent `chat` outright (`code:"run_active"`
+    // in ws_actions/chat.py), so the only honest options are "refuse" or
+    // "hold it until the turn ends". We hold it — the row appears in the
+    // transcript right away as a dimmed "queued" bubble and goes out on
+    // its own when the running task clears. The user can drop it or stop
+    // the current turn to jump it ahead from that row.
+    // (Plain text only — attachments / slash go through the normal path,
+    // which is disabled while running.)
     if (isRunning) {
       if (!trimmed || !submitOwnerKey) return;
-      send({ action: "steer", session_id: submitOwnerKey, message: trimmed });
+      enqueueMessage(submitOwnerKey, {
+        text: trimmed,
+        thinking,
+        toolsEnabled,
+        webSearchEnabled,
+        serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
+        background: bound !== null,
+      });
       setComposerInputFor(submitOwnerKey, "");
+      setHistoryIndex(-1);
       return;
     }
     // Allow image-only submits — the LLM can answer "describe this
@@ -227,6 +241,22 @@ export function useChatSubmit({
       activeChatKey,
     );
     if (!targetSessionId) return;
+    stopSession(targetSessionId, send);
+  }
+
+  return { submit, stop };
+}
+
+/**
+ * Stop the run on `sessionId`: flip the UI optimistically, then write
+ * the socket. Shared by the composer's stop button and the queued-row
+ * "stop current and send now" action, so both paths cancel identically.
+ */
+export function stopSession(
+  targetSessionId: string,
+  send: (payload: unknown) => boolean,
+): void {
+  {
     // Optimistic UI flip: clear runningTask immediately so the Stop
     // button turns back into Send right when the user clicks. Don't
     // wait for the backend's stopped envelope — the dispatcher main
@@ -263,6 +293,4 @@ export function useChatSubmit({
     }
     send({ action: "stop", session_id: targetSessionId });
   }
-
-  return { submit, stop };
 }

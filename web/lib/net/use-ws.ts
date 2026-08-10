@@ -91,31 +91,15 @@ export function useWS(): void {
         case "status":
           wsHandleStatus(msg as never);
           return true;
-        case "steer_ack": {
-          // queued=false means there was no live run to receive it — the
-          // message is gone server-side. The composer already cleared on
-          // send, so put the text back and say so; silently swallowing it
-          // is how a typed course-correction vanishes with no trace.
-          const sid = d?.session_id as string | undefined;
-          if (!sid || d?.queued) return true;
-          const text = (d?.message as string | undefined) ?? "";
-          void import("@/lib/session-store").then(({ useSessionStore }) => {
-            const store = useSessionStore.getState();
-            if (text && !store.composerDrafts?.[sid]) {
-              store.setComposerInputFor(sid, text);
-            }
-          });
-          void import("@/lib/format-utils/toast").then(({ showToast }) => {
-            showToast(
-              translateText(
-                "The run has ended — this message was not delivered",
-                "任务已结束，这条消息没有送达",
-              ),
-              { tone: "error" },
-            );
-          });
-          return true;
-        }
+        // `steer_ack` is the broadcast echo of a `steer` action. The web
+        // composer no longer sends one — a message typed during a run
+        // goes into the client-side send queue (lib/state/send-queue)
+        // and is dispatched as a real turn when the run ends, so it
+        // lands in the transcript instead of a file inbox that only the
+        // research_agent loop drains. Any ack reaching this client now
+        // belongs to a steer some OTHER surface (TUI / CLI) issued, and
+        // recovering its text into this composer would hand the user
+        // words they never typed here.
         case "session_reload": {
           const sid = d?.session_id as string | undefined;
           if (sid && sid === runtimeState.currentSessionId) {

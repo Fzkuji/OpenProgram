@@ -31,7 +31,9 @@ import {
 } from "@/lib/session-store";
 
 import { useTranslation } from "@/lib/i18n";
-import { runtimeState } from "@/lib/runtime-bridge/state";
+import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
+import { promoteToHead } from "@/lib/state/send-queue";
+import { stopSession } from "@/components/chat/composer/use-chat-submit";
 import { useAgentProfile } from "@/lib/format-utils/agent-style";
 import {
   readChatScroll,
@@ -47,6 +49,7 @@ import { AgentBranchBanner } from "./agent-branch-banner";
 import { RuntimeBlock } from "./runtime-block";
 import { SpawnedFromCard } from "./spawned-from-card";
 import { UserBubble } from "./user-bubble";
+import { QueuedMessages } from "./queued-messages";
 
 /** goal 循环的内部 spawn 轮 label（openprogram/functions/agentics/goal/
  *  __init__.py 的 run_agent_turn(label=...)，经 spawnedFrom.label 到达）。
@@ -490,6 +493,25 @@ export function MessageList() {
   // placeholder bubble + the standalone, double-rendering.
   const showPending = runningTask !== null && lastRole === "user";
 
+  // "Stop current and send now" on a queued row: promote it to the head
+  // of the queue, then stop the run. The stop clears the running task,
+  // which is what triggers the queue drain — so the promoted message is
+  // the one that goes out, and everything ahead of it just waits its
+  // turn behind it instead of being dropped.
+  const stopAndSend = useCallback(
+    (queuedId: string) => {
+      if (!sessionId) return;
+      promoteToHead(sessionId, queuedId);
+      stopSession(sessionId, (payload) => {
+        const sock = getSocket();
+        if (!sock || sock.readyState !== WebSocket.OPEN) return false;
+        sock.send(JSON.stringify(payload));
+        return true;
+      });
+    },
+    [sessionId],
+  );
+
   // Session switch with nothing cached yet: skeleton placeholder
   // instead of an empty area / welcome flash. Minimap etc. wait too.
   if (sessionId && loadingId === sessionId && ids.length === 0) {
@@ -504,6 +526,9 @@ export function MessageList() {
         <MessageRow key={id} id={id} />
       ))}
       {showPending ? <PendingReplyIndicator /> : null}
+      {/* Messages typed during the run — dimmed rows under the live
+          turn, drained one at a time when it ends. */}
+      <QueuedMessages sessionId={sessionId} onStopAndSend={stopAndSend} />
       {detached && ids.length > 0 ? (
         <div className="jump-latest-anchor">
           <button

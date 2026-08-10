@@ -41,7 +41,10 @@ import {
   type ChatToolCall,
 } from "@/lib/session-store";
 import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
-import { getPendingUserText } from "@/lib/pending-user-text";
+import {
+  clearPendingUserText,
+  getPendingUserText,
+} from "@/lib/pending-user-text";
 
 interface StreamEvent {
   type: "text" | "thinking" | "tool_use" | "tool_result" | "sub_agent";
@@ -94,6 +97,12 @@ interface ChatResponseData {
   reason?: string;
   retryable?: boolean;
   retry_after_s?: number;
+  /** Rejection code. ``"run_active"`` means the backend refused the turn
+   *  because that session already had one running. */
+  code?: string;
+  /** The rejected message text, echoed back so the client can re-send it
+   *  without the user retyping. Only present on a ``run_active`` error. */
+  retry_query?: string;
 }
 
 /** Names of LLM-callable @agentic_function tools. When the LLM invokes
@@ -218,6 +227,25 @@ function handleResponse(d: ChatResponseData | undefined): void {
   if (!sid) return;
   if (d.type === "result" || d.type === "error" || d.type === "cancelled") {
     sessionByMsgId.delete(d.msg_id);
+  }
+
+  // `run_active`: the client believed the session was idle and dispatched
+  // a turn the backend then refused, because a run really was in flight
+  // (its own optimistic state can trail the server's by a beat). Nothing
+  // is wrong from the user's point of view — the message just needs to
+  // wait. Put it back in the send queue instead of surfacing an error
+  // bubble for a race they didn't cause and can't act on. The frame
+  // carries a msg_id of its own with no reply row behind it, so this
+  // must return BEFORE finalize() would mint a stray error bubble.
+  if (d.type === "error" && d.code === "run_active") {
+    const rejected = typeof d.retry_query === "string" ? d.retry_query : "";
+    if (rejected) {
+      void import("@/lib/state/send-queue").then((m) =>
+        m.requeueRejected(sid, rejected),
+      );
+    }
+    clearPendingUserText(sid);
+    return;
   }
 
   // A user turn — either echoed back by the server or broadcast from a

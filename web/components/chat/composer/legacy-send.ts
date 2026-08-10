@@ -5,6 +5,10 @@ import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import { setWelcomeVisible } from "@/lib/runtime-bridge/helpers";
 import { setRunning } from "@/lib/runtime-bridge/ui";
 import {
+  registerChatSender,
+  rememberSendSettings,
+} from "@/lib/state/send-queue";
+import {
   draftChannelChoiceFor,
   draftChannelChoiceHost,
 } from "@/lib/runtime-bridge/draft-channel-choice";
@@ -121,6 +125,14 @@ export function sendChatMessage({
 }: SendMessageBridgeArgs): boolean {
   const ws = getSocket();
   if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  // Remember the knobs this turn rode out under, so a `run_active`
+  // rejection (which echoes only the text back) can be re-queued with
+  // the same settings instead of guessed defaults.
+  if (sessionId) {
+    rememberSendSettings(sessionId, {
+      thinking, toolsEnabled, webSearchEnabled, serviceTier, background,
+    });
+  }
   const rollbackPendingSend = reservePendingChatSend(sessionId, text);
   if (!rollbackPendingSend) {
     // A second browser event before the first ACK is already represented by
@@ -226,3 +238,8 @@ export function sendChatMessage({
   if (!background) setRunning(true);
   return true;
 }
+
+// The send queue drains through this exact function; registering the
+// reference here (rather than importing it there) keeps the store free
+// of a dependency on the composer tree.
+registerChatSender(sendChatMessage);

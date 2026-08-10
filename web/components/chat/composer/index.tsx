@@ -63,6 +63,7 @@ import { ScopedDropOverlay } from "./scoped-drop-overlay";
 import { ComposerBody } from "./composer-body";
 import { QuestionPanel } from "./question-panel";
 import { sendChatMessage } from "./legacy-send";
+import { enqueueMessage } from "@/lib/state/send-queue";
 import styles from "./composer.module.css";
 
 /* Single shared WebSocket, owned by `lib/net/use-ws.ts` and reached
@@ -191,9 +192,9 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // 右下角圆按钮是否该显示红色停止 ■：仅当任务真在跑、且当前没有 decision
   // 占据输入区。decision 在场时函数虽“运行”着，但它在等用户答题——此刻这个
   // 按钮要当“提交”用，不能变停止键（否则点了是中断函数，不是交答案）。
-  // 跑着的时候输入框里有字 = 用户在写 steer（占位符就是这么提示的），
-  // 此刻圆钮必须是发送：显示成停止键的话，点下去杀的是任务本身，写好的
-  // 那句话一个字都没送出去。空输入才是停止键。
+  // 跑着的时候输入框里有字 = 用户在写下一条消息（占位符就是这么提示的），
+  // 此刻圆钮必须是发送（送进队列）：显示成停止键的话，点下去杀的是任务
+  // 本身，写好的那句话一个字都没送出去。空输入才是停止键。
   // askDecision（顶部面板在等答案）时同理：圆钮要当「提交答案」用，不能变
   // 停止键。
   const showStop =
@@ -602,15 +603,24 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const onSendButtonClick = fnFormActive ? submitFnForm : submitWithPanel;
 
   // Goal 挂起提问卡点选项 = 把选项 label 当一条普通聊天消息发出去，与
-  // 手打回车同一条路：跑着 → steer；空闲 → sendChatMessage（乐观气泡 /
-  // welcome 隐藏 / running 翻转都由它做）。true = 已发出，卡片乐观隐藏。
+  // 手打回车同一条路：跑着 → 进发送队列（本轮结束自动发出）；空闲 →
+  // sendChatMessage（乐观气泡 / welcome 隐藏 / running 翻转都由它做）。
+  // true = 已受理，卡片乐观隐藏。
   const sendGoalAnswer = useCallback(
     (label: string): boolean => {
       const owner = activeChatKey ?? currentSessionId;
       const trimmed = label.trim();
       if (!owner || !trimmed) return false;
       if (isRunning) {
-        return send({ action: "steer", session_id: owner, message: trimmed });
+        enqueueMessage(owner, {
+          text: trimmed,
+          thinking,
+          toolsEnabled,
+          webSearchEnabled,
+          serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
+          background: bound !== null,
+        });
+        return true;
       }
       if (noEnabledModels) {
         promptNeedModel();
@@ -872,8 +882,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           setInput={setInput}
           isRunning={isRunning}
           runningPlaceholder={text(
-            "type to steer the running task…",
-            "输入以干预正在运行的任务…",
+            "type to queue the next message…",
+            "输入下一条消息，本轮结束后自动发送…",
           )}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
