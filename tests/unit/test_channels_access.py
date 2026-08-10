@@ -28,31 +28,57 @@ def test_default_policy_is_pairing() -> None:
 
 
 def test_unknown_sender_blocked_and_gets_code() -> None:
-    allowed, reply = _access.check_inbound("telegram", "a1", "999", "Eve")
-    assert allowed is False
-    assert reply is not None
+    decision = _access.check_inbound("telegram", "a1", "999", "Eve")
+    assert decision.allowed is False
+    assert decision.admission == "unpaired"
+    assert decision.check == "stable_sender_allowlist"
+    assert decision.reason_code == "PAIRING_REQUIRED"
+    assert decision.reply is not None
     pending = _access.describe("telegram", "a1")["pending"]
     assert "999" in pending
     code = pending["999"]["code"]
-    assert code in reply
-    assert "openprogram channels access approve telegram" in reply
+    assert len(code) == 8
+    assert set(code) <= set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+    assert code in decision.reply
+    assert "openprogram channels access approve telegram" in decision.reply
+    assert _access.access_path("telegram", "a1").stat().st_mode & 0o777 == 0o600
 
 
-def test_repeat_messages_reuse_code_and_throttle_reply() -> None:
-    _, first = _access.check_inbound("telegram", "a1", "999", "Eve")
-    allowed, second = _access.check_inbound("telegram", "a1", "999", "Eve")
-    assert allowed is False
-    assert second is None          # within the notify interval → silent
+def test_repeat_messages_reuse_code_and_stay_silent_for_full_hour(monkeypatch) -> None:
+    monkeypatch.setattr(_access.time, "time", lambda: 1_000.0)
+    first = _access.check_inbound("telegram", "a1", "999", "Eve")
+    monkeypatch.setattr(_access.time, "time", lambda: 4_599.0)
+    second = _access.check_inbound("telegram", "a1", "999", "Renamed")
+    assert second.allowed is False
+    assert second.reply is None
+    assert second.reason_code == "PAIRING_ALREADY_PENDING"
     pending = _access.describe("telegram", "a1")["pending"]
-    assert pending["999"]["code"] in first
+    assert pending["999"]["code"] in first.reply
+
+
+def test_only_three_pairing_requests_can_be_pending_per_account() -> None:
+    for user_id in ("u1", "u2", "u3"):
+        assert _access.check_inbound(
+            "telegram", "a1", user_id, user_id,
+        ).reason_code == "PAIRING_REQUIRED"
+
+    fourth = _access.check_inbound("telegram", "a1", "u4", "Fourth")
+    assert fourth.allowed is False
+    assert fourth.reply is None
+    assert fourth.reason_code == "PAIRING_PENDING_LIMIT"
+    assert set(_access.describe("telegram", "a1")["pending"]) == {
+        "u1", "u2", "u3",
+    }
 
 
 def test_approve_by_code_allows_sender() -> None:
     _access.check_inbound("discord", "a1", "42", "Bob")
     code = _access.describe("discord", "a1")["pending"]["42"]["code"]
     assert _access.approve("discord", "a1", code.lower()) == "42"
-    allowed, reply = _access.check_inbound("discord", "a1", "42", "Bob")
-    assert allowed is True and reply is None
+    decision = _access.check_inbound("discord", "a1", "42", "Bob")
+    assert decision.allowed is True and decision.reply is None
+    assert decision.admission == "paired"
+    assert decision.reason_code == "PAIRED_SENDER"
     assert _access.describe("discord", "a1")["pending"] == {}
 
 
@@ -67,16 +93,29 @@ def test_approve_bad_or_expired_code_returns_none(monkeypatch) -> None:
 
 def test_approve_user_and_revoke() -> None:
     _access.approve_user("slack", "a1", "U7", display="Carol")
-    assert _access.check_inbound("slack", "a1", "U7")[0] is True
+    assert _access.check_inbound("slack", "a1", "U7").allowed is True
     assert _access.revoke("slack", "a1", "U7") is True
     assert _access.revoke("slack", "a1", "U7") is False  # already gone
-    assert _access.check_inbound("slack", "a1", "U7")[0] is False
+    assert _access.check_inbound("slack", "a1", "U7").allowed is False
 
 
-def test_open_policy_lets_everyone_through() -> None:
-    _access.set_policy("wechat", "a1", "open")
-    allowed, reply = _access.check_inbound("wechat", "a1", "stranger")
-    assert allowed is True and reply is None
+def test_legacy_open_policy_is_ignored_fail_closed() -> None:
+    path = _access.access_path("wechat", "a1")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('{"policy":"open","allowlist":{},"pending":{}}')
+
+    decision = _access.check_inbound("wechat", "a1", "stranger")
+    assert decision.allowed is False
+    assert _access.describe("wechat", "a1")["policy"] == "pairing"
+
+
+def test_cli_cannot_disable_pairing_policy() -> None:
+    from openprogram.cli import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args([
+            "channels", "access", "policy", "telegram", "open",
+        ])
 
 
 # ---------------------------------------------------------------------------
@@ -95,8 +134,8 @@ def test_a_second_sender_is_approved_by_pairing_code() -> None:
     data = _access.describe("telegram", "a1")
     assert sorted(data["allowlist"]) == ["111", "222"]
     assert data["pending"] == {}
-    assert _access.check_inbound("telegram", "a1", "111")[0] is True
-    assert _access.check_inbound("telegram", "a1", "222")[0] is True
+    assert _access.check_inbound("telegram", "a1", "111").allowed is True
+    assert _access.check_inbound("telegram", "a1", "222").allowed is True
 
 
 def test_a_second_sender_is_approved_by_direct_allow() -> None:
@@ -115,8 +154,8 @@ def test_revoking_one_sender_leaves_the_others() -> None:
     assert _access.revoke("telegram", "a1", "111") is True
 
     assert list(_access.describe("telegram", "a1")["allowlist"]) == ["222"]
-    assert _access.check_inbound("telegram", "a1", "111")[0] is False
-    assert _access.check_inbound("telegram", "a1", "222")[0] is True
+    assert _access.check_inbound("telegram", "a1", "111").allowed is False
+    assert _access.check_inbound("telegram", "a1", "222").allowed is True
 
 
 def test_re_approving_the_same_sender_updates_the_display_name() -> None:
@@ -127,14 +166,21 @@ def test_re_approving_the_same_sender_updates_the_display_name() -> None:
     assert allowed["U7"]["display"] == "Ada Lovelace"
 
 
-def test_set_policy_validates() -> None:
-    with pytest.raises(ValueError):
-        _access.set_policy("wechat", "a1", "everyone")
+def test_mutable_display_name_never_matches_the_allowlist() -> None:
+    _access.approve_user("slack", "a1", "U7", display="Shared Name")
+
+    assert _access.check_inbound(
+        "slack", "a1", "U7", "Renamed",
+    ).allowed is True
+    assert _access.check_inbound(
+        "slack", "a1", "U8", "Shared Name",
+    ).allowed is False
 
 
 def test_empty_sender_id_is_dropped_silently() -> None:
-    allowed, reply = _access.check_inbound("telegram", "a1", "")
-    assert allowed is False and reply is None
+    decision = _access.check_inbound("telegram", "a1", "")
+    assert decision.allowed is False and decision.reply is None
+    assert decision.reason_code == "STABLE_SENDER_ID_MISSING"
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +219,47 @@ def test_unknown_sender_never_reaches_dispatch(monkeypatch) -> None:
     assert called == []                       # agent never ran
     assert len(ch.sent) == 1                  # pairing instructions sent
     assert "pairing code" in ch.sent[0][1].lower()
+
+
+def test_unpaired_group_message_is_archived_without_entering_agent(
+    monkeypatch,
+) -> None:
+    from openprogram.paths import get_state_dir
+    from openprogram.memory.scriptorium.retrieval.bm25 import MemoryBM25Index
+
+    called = []
+    monkeypatch.setattr(
+        "openprogram.channels._conversation.dispatch_inbound",
+        lambda **kw: called.append(kw) or "reply",
+    )
+    ch = _GateChannel()
+    ch._dispatch_and_reply(_msg(
+        text="group context",
+        chat_id="group-42",
+        chat_type="group",
+        message_id="m-9",
+        user_display="[Bob]\n\u202e",
+    ))
+
+    assert called == []
+    hits = MemoryBM25Index(
+        get_state_dir() / "memory",
+        persist=False,
+    ).search("group context")
+    assert hits[0]["trust_state"] == "pending"
+    assert hits[0]["speaker_trusted"] is False
+    assert hits[0]["speaker_id"] == "7"
+    assert hits[0]["speaker_display"] == "(Bob)"
+
+
+def test_unpaired_direct_message_is_not_archived() -> None:
+    from openprogram.paths import get_state_dir
+    from openprogram.memory.scriptorium.retrieval.bm25 import MemoryBM25Index
+
+    ch = _GateChannel()
+    ch._dispatch_and_reply(_msg(text="direct private", message_id="m-10"))
+    memory_root = get_state_dir() / "memory"
+    assert MemoryBM25Index(memory_root, persist=False).search("direct private") == []
 
 
 def test_channel_message_cannot_approve_itself(monkeypatch) -> None:

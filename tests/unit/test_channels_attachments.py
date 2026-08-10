@@ -163,7 +163,7 @@ def test_base_passes_attachments_into_dispatch(
     monkeypatch: pytest.MonkeyPatch, tmp_path,
 ) -> None:
     from openprogram.channels import _access
-    _access.set_policy("faketg", "acct1", "open")
+    _access.approve_user("faketg", "acct1", "7")
 
     img = tmp_path / "x.png"
     img.write_bytes(b"IMG")

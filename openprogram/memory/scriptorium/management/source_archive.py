@@ -12,6 +12,7 @@ from openprogram._text import normalize_identity_header_part
 from ..runtime.state import SourceRecord
 from ..source_format import (
     V2_FORMAT_MARKER,
+    encode_source_metadata,
     encode_speaker_id,
     provider_source_location,
     scan_v2_archive,
@@ -281,6 +282,12 @@ class SourceArchiveMixin:
                         "<!-- speaker-id:"
                         f"{encode_speaker_id(str(record.speaker_id or ''))} -->"
                     )
+                header.append(encode_source_metadata({
+                    "trust_state": record.trust_state,
+                    "speaker_kind": record.speaker_kind,
+                    "principal_id": record.principal_id,
+                    "authority_tier": record.authority_tier,
+                }))
                 timestamp = str(record.timestamp or "")
                 speaker_label = normalize_identity_header_part(
                     str(record.speaker_label)

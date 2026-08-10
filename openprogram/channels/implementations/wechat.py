@@ -158,6 +158,9 @@ class WechatChannel(Channel):
             chat_id=str(from_id),
             user_id=str(from_id),
             user_display=str(from_id),
+            message_id=str(
+                msg.get("message_id") or msg.get("msg_id") or ""
+            ),
             chat_type="direct",
             ts=float(msg.get("ts") or 0),
         )

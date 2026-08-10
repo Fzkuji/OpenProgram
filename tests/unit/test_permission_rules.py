@@ -126,21 +126,12 @@ def _make_tool(name: str):
 
 
 def _ensure_test_authority(req):
-    if req.authority_scope is not None:
+    if req.authority_tier is not None:
         return
-    req.speaker_kind = "owner"
-    req.speaker_id = "owner/local"
-    req.speaker_display = "Owner"
-    req.principal_id = "owner/install/0123456789abcdef"
-    req.authority_scope = {
-        "origin": "local-owner",
-        "capabilities": [
-            "reply", "memory.source.append", "memory.trusted.promote",
-            "schedule.create", "schedule.manage", "fs.read", "fs.write",
-            "process.exec", "network.send", "approval.request",
-        ],
-    }
-    req.interaction = "interactive"
+    from openprogram.agent.authority import local_owner_authority
+
+    for key, value in local_owner_authority().items():
+        setattr(req, key, value)
 
 
 def _run(tool, req, approve=True, scope="once"):

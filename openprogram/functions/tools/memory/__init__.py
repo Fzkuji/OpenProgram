@@ -7,6 +7,7 @@ Functions exposed (all self-register via @function on import):
   memory_get    — read a file, a section, or one block
   memory_browse — list what memory holds
   memory_update — correct or add one thing
+  memory_promote — trust one pending shared-channel source
   memory_status — size and current revision
 
 Recording the conversation is not among them. That happens in the
@@ -19,6 +20,7 @@ from .memory import (
     GET_NAME, GET_SPEC, memory_get,
     BROWSE_NAME, BROWSE_SPEC, memory_browse,
     UPDATE_NAME, UPDATE_SPEC, memory_update,
+    PROMOTE_NAME, PROMOTE_SPEC, memory_promote,
     STATUS_NAME, STATUS_SPEC, memory_status,
 )
 
@@ -38,6 +40,7 @@ _register(GREP_NAME, GREP_SPEC, memory_grep, max_chars=20_000)
 _register(GET_NAME, GET_SPEC, memory_get, max_chars=30_000)
 _register(BROWSE_NAME, BROWSE_SPEC, memory_browse, max_chars=30_000)
 _register(UPDATE_NAME, UPDATE_SPEC, memory_update, max_chars=8_000)
+_register(PROMOTE_NAME, PROMOTE_SPEC, memory_promote, max_chars=8_000)
 _register(STATUS_NAME, STATUS_SPEC, memory_status, max_chars=8_000)
 
 
@@ -46,12 +49,13 @@ _register(STATUS_NAME, STATUS_SPEC, memory_status, max_chars=8_000)
 # that hides them when there is no backing store. Written once here so a
 # renamed tool cannot leave one of those lists quietly pointing at nothing.
 MEMORY_TOOL_NAMES: tuple[str, ...] = (
-    SEARCH_NAME, GREP_NAME, GET_NAME, BROWSE_NAME, UPDATE_NAME, STATUS_NAME,
+    SEARCH_NAME, GREP_NAME, GET_NAME, BROWSE_NAME, UPDATE_NAME, PROMOTE_NAME,
+    STATUS_NAME,
 )
 
 
 __all__ = [
     "SEARCH_NAME", "GREP_NAME", "GET_NAME",
-    "BROWSE_NAME", "UPDATE_NAME", "STATUS_NAME",
+    "BROWSE_NAME", "UPDATE_NAME", "PROMOTE_NAME", "STATUS_NAME",
     "MEMORY_TOOL_NAMES",
 ]

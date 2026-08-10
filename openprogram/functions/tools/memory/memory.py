@@ -13,18 +13,37 @@ memory, ``sources/**`` the read-only evidence it cites, and
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from contextlib import closing
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
+from openprogram.agent.authority import (
+    AuthorityError,
+    authority_from_message,
+    has_capability,
+    normalize_authority,
+    owner_principal_id,
+)
 from openprogram.memory import store
 from openprogram.memory.scriptorium.management import MemoryWorkspace
 from openprogram.memory.scriptorium.management.transaction import (
     TransactionError,
+    workspace_write_lock,
     workspace_revision,
 )
 from openprogram.memory.provider import sanitize_context
 from openprogram.memory.scriptorium.retrieval import inspect
-from openprogram.memory.scriptorium.source_format import provider_source_location
+from openprogram.memory.scriptorium.source_format import (
+    encode_source_metadata,
+    provider_source_location,
+    scan_v2_archive,
+)
+from openprogram.memory.scriptorium.runtime.state import RuntimeStateStore
+from openprogram.memory.scriptorium.workspace_layout import runtime_dir
 
 MAX_SNIPPETS = 8
 
@@ -111,7 +130,7 @@ def memory_search(
                 suffix = f"#^{block}"
         metadata = ""
         if source:
-            metadata = "\nspeaker: " + json.dumps({
+            speaker_metadata = {
                 "speaker_trusted": hit.get("speaker_trusted") is True,
                 "speaker_id": sanitize_context(
                     str(hit.get("speaker_id") or "")
@@ -119,12 +138,20 @@ def memory_search(
                 "speaker_display": sanitize_context(
                     str(hit.get("speaker_display") or "")
                 ),
-            }, ensure_ascii=False, separators=(",", ":"))
+            }
+            if hit.get("trust_state") == "pending":
+                speaker_metadata["trust_state"] = "pending"
+            if "authority_tier" in hit:
+                speaker_metadata["authority_tier"] = hit["authority_tier"]
+            metadata = "\nspeaker: " + json.dumps(
+                speaker_metadata, ensure_ascii=False, separators=(",", ":"),
+            )
         lines.append(
             f"--- {where}{suffix}{metadata}\n"
             f"{sanitize_context(str(hit.get('content') or ''))}"
         )
-    return "\n\n".join(lines)
+    rendered = "\n\n".join(lines)
+    return rendered
 
 
 # -- grep ------------------------------------------------------------------
@@ -318,6 +345,126 @@ def memory_update(
     })
 
 
+# -- trust promotion -------------------------------------------------------
+
+PROMOTE_NAME = "memory_promote"
+PROMOTE_DESC = (
+    "Promote one pending shared-channel source into trusted memory. "
+    "Only the local owner in an interactive turn can do this."
+)
+PROMOTE_SPEC: dict[str, Any] = {
+    "name": PROMOTE_NAME,
+    "description": PROMOTE_DESC,
+    "parameters": {
+        "type": "object",
+        "properties": {"source_id": {"type": "string"}},
+        "required": ["source_id"],
+    },
+}
+
+
+def _promote_source(
+    root: Path, source_id: str, authority: dict[str, Any],
+) -> dict[str, Any]:
+    root = Path(root).resolve()
+    auth = normalize_authority(authority)
+    if not (
+        auth
+        and auth["speaker_kind"] == "owner"
+        and auth["interaction"] == "interactive"
+        and auth["principal_id"] == owner_principal_id()
+        and has_capability(auth, "memory.trusted.promote")
+    ):
+        raise AuthorityError("only the local owner can promote memory")
+
+    with workspace_write_lock(root, timeout_s=1.0):
+        location = provider_source_location(str(source_id), v2=True)
+        if location is None:
+            raise ValueError("source_id must be provider/thread/message")
+        path = root / location[0]
+        if not path.is_file():
+            raise ValueError(f"source not found: {source_id}")
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            original = handle.read()
+        scan = scan_v2_archive(original, location[0])
+        if not scan.complete:
+            raise ValueError("source archive is invalid or truncated")
+        frame = next(
+            (item for item in scan.frames if item.source_id == source_id), None,
+        )
+        if frame is None:
+            raise ValueError(f"source not found: {source_id}")
+        if frame.metadata is None or frame.metadata_index is None:
+            raise ValueError("source has no recorded authority metadata")
+        if frame.metadata.get("trust_state") == "trusted":
+            return {
+                "source_id": source_id,
+                "promoted": False,
+                "trust_state": "trusted",
+            }
+
+        metadata = {**frame.metadata, "trust_state": "trusted"}
+        lines = original.split("\n")
+        lines[frame.metadata_index] = encode_source_metadata(metadata)
+        descriptor, temporary = tempfile.mkstemp(
+            prefix="memory-promote-", dir=path.parent,
+        )
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
+                handle.write("\n".join(lines))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(temporary, path.stat().st_mode & 0o777)
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+        audit_path = runtime_dir(root) / "trust-audit.jsonl"
+        audit_path.parent.mkdir(parents=True, exist_ok=True)
+        audit = json.dumps({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "action": "promote",
+            "source_id": source_id,
+            "principal_id": auth["principal_id"],
+            "speaker_id": unquote(frame.encoded_speaker_id or ""),
+            "authority_tier": auth["authority_tier"],
+        }, ensure_ascii=False, separators=(",", ":")) + "\n"
+        audit_fd = os.open(
+            audit_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600,
+        )
+        try:
+            if os.write(audit_fd, audit.encode("utf-8")) != len(audit.encode("utf-8")):
+                raise OSError("short memory trust audit write")
+            os.fsync(audit_fd)
+        finally:
+            os.close(audit_fd)
+        RuntimeStateStore(root).git_commit(
+            f"Scriptorium: trust source {source_id}"
+        )
+        return {
+            "source_id": source_id,
+            "promoted": True,
+            "trust_state": "trusted",
+        }
+
+
+def memory_promote(source_id: str | None = None, **_: Any) -> str:
+    if not (source_id or "").strip():
+        return "memory_promote needs a source_id."
+    try:
+        from openprogram.agent.run_control import get_current_session_id
+        from openprogram.store import _current_turn_id
+
+        session_id = get_current_session_id() or ""
+        authority = authority_from_message(session_id, _current_turn_id.get() or "")
+        return _dump(_promote_source(_root(), str(source_id), authority))
+    except TransactionError as exc:
+        return _fail(exc)
+    except (AuthorityError, ValueError) as exc:
+        return _dump({"ok": False, "error": str(exc)})
+
+
 # -- status ----------------------------------------------------------------
 
 STATUS_NAME = "memory_status"
@@ -348,5 +495,6 @@ __all__ = [
     "GET_NAME", "GET_SPEC", "memory_get",
     "BROWSE_NAME", "BROWSE_SPEC", "memory_browse",
     "UPDATE_NAME", "UPDATE_SPEC", "memory_update",
+    "PROMOTE_NAME", "PROMOTE_SPEC", "memory_promote",
     "STATUS_NAME", "STATUS_SPEC", "memory_status",
 ]

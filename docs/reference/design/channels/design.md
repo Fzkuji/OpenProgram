@@ -93,8 +93,8 @@ This document describes the structure and message flow. For the requirements and
         c1. _access.check_inbound(platform, account, user_id) — the
             allowlist/pairing gate. Unknown sender → the message is
             dropped and a pairing code goes back; approval happens only
-            via the local CLI (`channels access approve`), never from
-            channel text (injection boundary).
+            via the local CLI (`channels access approve`) or local Web UI,
+            never from channel text (injection boundary).
         c2. _attachments.download_inbound(...) — files land under the
             account state dir; small images become TurnRequest image
             blocks, every file appends an [attachment: path] note to
@@ -253,7 +253,7 @@ The caller can distinguish between "token expired, please log in again" vs "wron
 
 ### 4.5 Inbound Access Control
 
-`_access.py` holds one `access.json` per (channel, account): `policy` (`pairing` default / `open`), an `allowlist` keyed by platform user id, and `pending` pairing codes (1 h TTL). `base._dispatch_and_reply` calls `check_inbound` before routing; a sender not on the allowlist never reaches `dispatch_inbound` — they receive a 6-character pairing code (re-notified at most once per minute). The mutating operations (`approve` / `approve_user` / `revoke` / `set_policy`) are exposed only through the local CLI (`openprogram channels access …`); the inbound path can only read the allowlist and mint pending codes, so no channel message can approve anyone.
+`_access.py` holds one `access.json` per (channel, account). Admission is always `pairing`: the file contains an `allowlist` keyed only by stable platform user id and at most three `pending` requests. A legacy `policy: "open"` field is ignored. A new request gets an 8-character uppercase code without `0O1I`; it expires after 1 hour, and the same sender is not prompted again during that hour. Excess requests are silently ignored. `base._dispatch_and_reply` calls `check_inbound` before routing, so an unpaired sender never reaches `dispatch_inbound`. The mutating operations (`approve` / `approve_user` / `revoke`) are available only through the local CLI and loopback Web UI; the inbound path can only read the allowlist and mint pending codes, so no channel message can approve anyone.
 
 ### 4.6 Plugin Extension Point
 
@@ -296,7 +296,7 @@ openprogram/channels/
 ├── _format.py           outbound markdown → telegram HTML / slack
 │                        mrkdwn / discord passthrough / wechat plain
 ├── _access.py           inbound allowlist + pairing gate (access.json;
-│                        approval is local-CLI-only)
+│                        approval is local-owner-only)
 ├── _attachments.py      inbound attachment download + turn-input
 │                        conversion (image blocks + path notes)
 ├── _message.py          ChannelMessage + Attachment neutral dataclasses
@@ -330,7 +330,7 @@ How to read it: each module deals only with the callers it declares; there are n
 |---|---|---|
 | `_transport.py` | the only place that sends bytes outward: chunk → render → hard-cap split → rate-limit retry, 4 platforms' HTTP (text/edit/file) | outbound + base.send_text/send_file |
 | `_format.py` | markdown → per-platform wire format | _transport |
-| `_access.py` | allowlist + pairing gate (`access.json`) | base.handle_inbound (check), CLI `channels access` (mutation) |
+| `_access.py` | allowlist + pairing gate (`access.json`) | base.handle_inbound (check), CLI / loopback Web UI (mutation) |
 | `_attachments.py` | inbound attachment download + turn-input conversion | base.handle_inbound |
 | `_message.py` | ChannelMessage + Attachment neutral structures | adapter entry |
 | `base.py` | Channel ABC + MessageHandle + handle_inbound + run_forever | adapter subclasses, worker, dispatch_inbound |
@@ -376,11 +376,10 @@ openprogram channels accounts
   └── rm <channel> <account_id>                    delete account + associated bindings
 
 openprogram channels access
-  ├── list [<channel>]                             policy + allowlist + pending codes
+  ├── list [<channel>]                             allowlist + pending codes
   ├── approve <channel> <code> --id <name>         approve by pairing code
   ├── allow <channel> <user_id> --id <name>        allowlist a user id directly
-  ├── revoke <channel> <user_id> --id <name>       remove a sender
-  └── policy <channel> pairing|open --id <name>    set the inbound policy
+  └── revoke <channel> <user_id> --id <name>       remove a sender
 
 openprogram channels bindings
   ├── list                                         list all routing rules
@@ -405,9 +404,9 @@ openprogram channels bindings
 |---|---|
 | Topbar channel popover | `web/components/chat/top-bar/channel-menu.tsx` |
 | Health badge status API | `/api/channels/{platform}/{account_id}/status` returns alive/stale/unknown |
+| Local access management | `web/components/settings/channels/access-list.tsx` calls the loopback-only `/api/channels/access` list/approve/revoke routes |
 
-Account and bindings management goes through the CLI. A Web config UI would add
-its API in `openprogram/webui/routes/channels.py`.
+The CLI remains available for account, binding, and access management.
 
 ## 8. Extension Points
 
@@ -417,7 +416,6 @@ its API in `openprogram/webui/routes/channels.py`.
 | Thread-scoped session isolation | `ChannelMessage.thread_id` is parsed; the work is folding it into the session key |
 | Reaction approval (✓/✗ confirming a dangerous tool) | an adapter-side reaction listener plus a bridge to the approval path |
 | Token-level text streaming | edits currently happen at tool boundaries; editing on reply-text deltas has to weigh the platform rate limit |
-| webui access management | `_access` describe/approve/revoke are plain functions; a webui route can call them the same way the CLI does |
 
 ## 9. References
 

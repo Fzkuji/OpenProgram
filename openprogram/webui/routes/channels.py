@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import time
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -47,6 +47,24 @@ class AddBindingRequest(BaseModel):
     account_id: str | None = None
     peer: str | None = None
     peer_kind: str | None = "direct"
+
+
+class ApprovePairingRequest(BaseModel):
+    channel: str
+    account_id: str = "default"
+    code: str
+
+
+def _require_local_request(request: Request) -> None:
+    """Pairing codes and mutations are available only on loopback."""
+    from openprogram.webui.origin_guard import is_loopback_hostname
+
+    host = getattr(getattr(request, "client", None), "host", "")
+    if not is_loopback_hostname(host):
+        raise HTTPException(
+            status_code=403,
+            detail="channel access management requires a local owner request",
+        )
 
 
 def register(app: FastAPI) -> None:
@@ -168,3 +186,58 @@ def register(app: FastAPI) -> None:
         if not removed:
             raise HTTPException(404, f"no binding {binding_id!r}")
         return JSONResponse(content={"ok": True, "binding_id": binding_id})
+
+    # ----- paired senders --------------------------------------------------
+    @app.get("/api/channels/access")
+    def list_access(request: Request):
+        _require_local_request(request)
+        from openprogram.channels import _access
+        from openprogram.channels import accounts as _acc
+
+        rows = []
+        for account in _acc.list_all_accounts():
+            data = _access.describe(account.channel, account.account_id)
+            rows.append({
+                "channel": account.channel,
+                "account_id": account.account_id,
+                "paired": [
+                    {"user_id": user_id, **entry}
+                    for user_id, entry in sorted(data["allowlist"].items())
+                ],
+                "pending": [
+                    {"user_id": user_id, **entry}
+                    for user_id, entry in sorted(data["pending"].items())
+                ],
+            })
+        return JSONResponse(content={"accounts": rows})
+
+    @app.post("/api/channels/access/approve")
+    def approve_pairing(request: Request, body: ApprovePairingRequest):
+        _require_local_request(request)
+        from openprogram.channels import _access
+
+        user_id = _access.approve(
+            body.channel.strip().lower(),
+            body.account_id.strip() or "default",
+            body.code,
+        )
+        if user_id is None:
+            raise HTTPException(
+                status_code=404,
+                detail="pending pairing code not found or expired",
+            )
+        return JSONResponse(content={"ok": True, "user_id": user_id})
+
+    @app.delete("/api/channels/access/{channel}/{account_id}/{user_id}")
+    def revoke_pairing(
+        request: Request,
+        channel: str,
+        account_id: str,
+        user_id: str,
+    ):
+        _require_local_request(request)
+        from openprogram.channels import _access
+
+        if not _access.revoke(channel, account_id, user_id):
+            raise HTTPException(status_code=404, detail="paired sender not found")
+        return JSONResponse(content={"ok": True, "user_id": user_id})

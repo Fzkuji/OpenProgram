@@ -53,6 +53,8 @@ class ChannelMessage:
                           空时退回 chat_id.
     * ``user_display``  — 显示名 (username / global_name / chat title).
                           UI 上给人看的, 不参与 routing.
+    * ``message_id``    — platform-native stable message identifier. 用于
+                          未配对群聊证据的幂等归档；拿不到时留空.
     * ``chat_type``     — ``direct`` / ``group`` / ``channel`` /
                           ``thread``. 影响 ``dispatch_inbound``
                           ``peer_kind`` 参数.
@@ -72,6 +74,7 @@ class ChannelMessage:
     chat_id: str
     user_id: str = ""
     user_display: str = ""
+    message_id: str = ""
     chat_type: str = "direct"
     ts: float = 0.0
     reply_to_id: str = ""

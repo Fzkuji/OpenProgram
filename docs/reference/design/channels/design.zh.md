@@ -87,8 +87,8 @@
       daemon 线程 (turn 停在 runtime.ask 时不能堵 poll loop), 线程里:
         c1. _access.check_inbound(平台, 账号, user_id) — allowlist/配对
             门禁. 未知发信人 → 消息丢弃、回一个配对码; 批准只能走本机
-            CLI (`channels access approve`), 永远不由 channel 文本触发
-            (注入边界).
+            CLI (`channels access approve`) 或本地 Web UI，永远不由 channel
+            文本触发（注入边界）。
         c2. _attachments.download_inbound(...) — 文件落到账号状态目录;
             小图片转成 TurnRequest image block, 每个文件在 user_text
             里追加一行 [attachment: 路径].
@@ -239,7 +239,7 @@ class SendResult:
 
 ### 4.5 入站 access 门禁
 
-`_access.py` 给每个 (channel, account) 维护一份 `access.json`：`policy`（默认 `pairing` / 可选 `open`）、按平台 user id 索引的 `allowlist`、带 1 小时 TTL 的 `pending` 配对码。`base._dispatch_and_reply` 在路由之前调 `check_inbound`；不在 allowlist 里的发信人永远到不了 `dispatch_inbound`——他们收到一个 6 位配对码（每分钟至多回执一次）。写操作（`approve` / `approve_user` / `revoke` / `set_policy`）只暴露给本机 CLI（`openprogram channels access …`）；入站路径只能读 allowlist、刷 pending 码，任何 channel 消息都无法批准任何人。
+`_access.py` 给每个 (channel, account) 维护一份 `access.json`。准入策略固定为 `pairing`：文件只包含按平台稳定 user id 索引的 `allowlist`，以及最多 3 个 `pending` 请求；旧文件中的 `policy: "open"` 会被忽略。新请求生成排除 `0O1I` 的 8 位大写码，1 小时过期；同一发信人在有效期内不重复提示，超过 pending 上限的请求静默忽略。`base._dispatch_and_reply` 在路由之前调 `check_inbound`，因此未配对发信人永远到不了 `dispatch_inbound`。写操作（`approve` / `approve_user` / `revoke`）只暴露给本机 CLI 和 loopback Web UI；入站路径只能读 allowlist、生成 pending 码，任何 channel 消息都无法批准任何人。
 
 ### 4.6 plugin 扩展点
 
@@ -281,7 +281,7 @@ openprogram/channels/
 ├── _format.py           出站 markdown → telegram HTML / slack mrkdwn /
 │                        discord 透传 / wechat 纯文本
 ├── _access.py           入站 allowlist + 配对门禁 (access.json;
-│                        批准只走本机 CLI)
+│                        批准只走本地 owner 界面)
 ├── _attachments.py      入站附件下载 + turn 输入转换
 │                        (image block + 路径注记)
 ├── _message.py          ChannelMessage + Attachment 中性结构 dataclass
@@ -314,7 +314,7 @@ openprogram/channels/
 |---|---|---|
 | `_transport.py` | 唯一往外发字节: chunk → render → 硬上限二次切分 → 限流重试, 4 个平台 HTTP (文本/编辑/文件) | outbound + base.send_text/send_file |
 | `_format.py` | markdown → 各平台线上格式 | _transport |
-| `_access.py` | allowlist + 配对门禁 (`access.json`) | base.handle_inbound (判定), CLI `channels access` (写操作) |
+| `_access.py` | allowlist + 配对门禁 (`access.json`) | base.handle_inbound (判定), CLI / loopback Web UI (写操作) |
 | `_attachments.py` | 入站附件下载 + turn 输入转换 | base.handle_inbound |
 | `_message.py` | ChannelMessage + Attachment 中性结构 | adapter 入口 |
 | `base.py` | Channel ABC + MessageHandle + handle_inbound + run_forever | adapter 子类、worker、dispatch_inbound |
@@ -360,11 +360,10 @@ openprogram channels accounts
   └── rm <channel> <account_id>                    删账号 + 关联 bindings
 
 openprogram channels access
-  ├── list [<channel>]                             策略 + allowlist + 待批配对码
+  ├── list [<channel>]                             allowlist + 待批配对码
   ├── approve <channel> <code> --id <name>         按配对码批准
   ├── allow <channel> <user_id> --id <name>        直接按 user id 加 allowlist
-  ├── revoke <channel> <user_id> --id <name>       移除发信人
-  └── policy <channel> pairing|open --id <name>    设入站策略
+  └── revoke <channel> <user_id> --id <name>       移除发信人
 
 openprogram channels bindings
   ├── list                                         列所有路由规则
@@ -389,9 +388,9 @@ openprogram channels bindings
 |---|---|
 | Topbar channel popover | `web/components/chat/top-bar/channel-menu.tsx` |
 | Health badge status API | `/api/channels/{platform}/{account_id}/status` 返回 alive/stale/unknown |
+| 本地 access 管理 | `web/components/settings/channels/access-list.tsx` 调用仅限 loopback 的 `/api/channels/access` 查询、批准和撤销路由 |
 
-账号与 bindings 管理走 CLI。若要做 Web 端配置 UI，对应 API 加在
-`openprogram/webui/routes/channels.py` 里。
+CLI 继续提供账号、binding 和 access 管理。
 
 ## 8. 扩展点
 
@@ -401,7 +400,6 @@ openprogram channels bindings
 | thread 级会话隔离 | `ChannelMessage.thread_id` 已 parse，要做的是把它折进 session key |
 | Reaction approval（✓/✗ 确认 dangerous tool） | adapter 侧的 reaction listener 加上接到 approval 路径的桥 |
 | Token-level text streaming | 目前只在 tool 边界 edit；按 reply text delta 编辑要权衡平台 rate limit |
-| webui access 管理 | `_access` 的 describe/approve/revoke 是普通函数，webui route 跟 CLI 一样直接调 |
 
 ## 9. 参考
 

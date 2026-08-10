@@ -25,7 +25,7 @@ import time
 import uuid
 from dataclasses import dataclass, field, asdict
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 
 class TaskStatus(str, Enum):
@@ -175,7 +175,7 @@ class Task:
     speaker_id: Optional[str] = None
     speaker_display: Optional[str] = None
     principal_id: Optional[str] = None
-    authority_scope: Optional[dict[str, Any]] = None
+    authority_tier: Optional[Literal["owner", "paired"]] = None
     interaction: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:

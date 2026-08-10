@@ -31,12 +31,13 @@ def _tmp_state(tmp_path, monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture(autouse=True)
-def _open_access(_tmp_state):
+def _paired_access(_tmp_state):
     """These tests exercise the dispatch path, not the access gate —
-    let the fake sender through. Depends on _tmp_state so the policy
-    file lands in the isolated tree, never the real one."""
+    pair their fixed fake senders through the local management API."""
     from openprogram.channels import _access
-    _access.set_policy("faketg", "acct1", "open")
+
+    for sender_id in ("7", "701", "702", "u456", "9", "42"):
+        _access.approve_user("faketg", "acct1", sender_id)
 
 
 class _FakeChannel(Channel):
@@ -278,7 +279,7 @@ def test_display_name_is_squashed_to_one_line(
     assert texts[0] == "[Eve (Ada (701)) fired (9)] hi"
     assert texts[0].splitlines() == [texts[0]]
     assert texts[1] == f"[{'N' * SENDER_NAME_MAX_CHARS}… (9)] hi"
-    assert texts[2] == "hi"       # no identity to state, no prefix
+    assert texts[2] == "[42] hi"  # a direct chat ID is the stable sender fallback
 
 
 def test_web_and_cli_turns_are_untouched() -> None:

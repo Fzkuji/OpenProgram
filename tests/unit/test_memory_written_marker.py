@@ -48,11 +48,14 @@ def _append(
     content: str | None = None,
     timestamp: float = 1_700_000_000.0,
 ) -> str:
+    from openprogram.agent.authority import local_owner_authority
+
     message = {
         "id": node_id,
         "role": role,
         "content": content if content is not None else node_id,
         "timestamp": timestamp,
+        **local_owner_authority(),
     }
     if predecessor is not None:
         message["predecessor"] = predecessor

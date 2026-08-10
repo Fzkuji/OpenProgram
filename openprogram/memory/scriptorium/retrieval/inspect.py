@@ -17,6 +17,7 @@ from typing import Any
 from ..management.transaction import TransactionError, workspace_revision
 from ..workspace_layout import is_internal_path
 from ..markdown import parse_topic_tree
+from ..source_format import is_v2_source_path, scan_v2_archive
 
 DERIVED_DIRS = ("timeline",)
 DERIVED_FILES = ("recent_events.jsonl", "relations.json")
@@ -150,6 +151,22 @@ def _is_derived(relative: str) -> bool:
     return head in DERIVED_DIRS or relative in DERIVED_FILES
 
 
+def _visible_source_lines(
+    text: str, relative: str,
+) -> list[tuple[int, str]]:
+    lines = text.split("\n")
+    if not is_v2_source_path(relative):
+        return list(enumerate(lines, start=1))
+    scan = scan_v2_archive(text, relative)
+    visible: list[tuple[int, str]] = []
+    for frame in scan.frames:
+        for index in range(frame.frame_start, frame.record_end + 1):
+            if index == frame.metadata_index:
+                continue
+            visible.append((index + 1, lines[index]))
+    return visible
+
+
 def read_file(
     memory_dir: Path,
     path: str,
@@ -174,6 +191,10 @@ def read_file(
             "INVALID_ARGUMENT", "file does not exist", path=str(path)
         )
     text = target.read_text(encoding="utf-8")
+    relative = target.relative_to(Path(memory_dir).resolve()).as_posix()
+    if relative.startswith("sources/"):
+        source_lines = _visible_source_lines(text, relative)
+        text = "\n".join(line for _number, line in source_lines)
     if block_id:
         content = _extract_block(text, block_id, path=str(path))
         mode = "block"
@@ -283,7 +304,12 @@ def grep(
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        for number, line in enumerate(text.splitlines(), start=1):
+        lines = (
+            _visible_source_lines(text, relative)
+            if relative.startswith("sources/")
+            else list(enumerate(text.splitlines(), start=1))
+        )
+        for number, line in lines:
             if not pattern.search(line):
                 continue
             total += 1
@@ -322,7 +348,7 @@ def search(
                 "speaker filter is not supported with embedding search",
             )
         return {"method": "embedding", "results": _embedding_search(
-            root, query, capped, path_prefix, date_from, date_to
+            root, query, capped, path_prefix, date_from, date_to,
         )}
     from .bm25 import MemoryBM25Index
 
@@ -351,7 +377,9 @@ def _embedding_search(
 
         index = MemoryEmbeddingIndex(root)
         # The encoder loads lazily, so an absent backend only surfaces here.
-        hits = index.search(query, top_k=top_k, date_from=date_from, date_to=date_to)
+        hits = index.search(
+            query, top_k=top_k, date_from=date_from, date_to=date_to,
+        )
     except Exception as exc:
         # Never silently fall back to BM25: the caller asked for embeddings
         # and a different method would be a different answer.
@@ -374,7 +402,8 @@ def _present(hit: dict[str, Any]) -> dict[str, Any]:
     keep = (
         "event_id", "path", "line", "headings", "date", "dates",
         "content", "refs", "speaker_id", "speaker_display", "speaker_label",
-        "speaker_trusted", "final_score", "score",
+        "speaker_trusted", "trust_state", "speaker_kind", "principal_id",
+        "authority_tier", "final_score", "score",
     )
     result = {key: hit[key] for key in keep if key in hit}
     if isinstance(result.get("content"), str):

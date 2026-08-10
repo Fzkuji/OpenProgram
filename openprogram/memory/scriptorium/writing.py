@@ -11,9 +11,12 @@ nodes themselves record which memory workspace has written them.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from contextlib import closing
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import quote
 
 from ..provider import WriteIncomplete
 from .management import organize_topics
@@ -131,6 +134,16 @@ def _records(
         message_id = str(message.get("id") or "").strip()
         if not message_id:
             raise ValueError("memory source message requires a stable id")
+        from openprogram.agent.authority import (
+            has_capability,
+            normalize_authority,
+        )
+
+        authority = normalize_authority(message)
+        if authority and not has_capability(
+            authority, "memory.source.append"
+        ):
+            continue
         rows.append(SourceRecord(
             provider=PROVIDER,
             thread_id=session_id or "session",
@@ -139,10 +152,60 @@ def _records(
             role=role,
             content=text,
             timestamp=_observed_at(message.get("timestamp")),
-            speaker_id=message.get("speaker_id"),
-            speaker_display=message.get("speaker_display"),
+            speaker_id=authority.get("speaker_id", message.get("speaker_id")),
+            speaker_display=authority.get(
+                "speaker_display", message.get("speaker_display")
+            ),
+            speaker_kind=authority.get("speaker_kind", "unknown"),
+            principal_id=authority.get("principal_id", "unknown"),
+            authority_tier=authority.get("authority_tier"),
+            trust_state="trusted",
         ))
     return rows
+
+
+def archive_unpaired_group_message(
+    *,
+    channel: str,
+    account_id: str,
+    chat_id: str,
+    message_id: str,
+    user_id: str,
+    user_display: str,
+    text: str,
+    timestamp: float = 0.0,
+) -> str:
+    """Archive denied group speech as pending evidence, without an agent turn."""
+    from .. import store
+    from .management import MemoryWorkspace
+
+    native_id = str(message_id or "").strip()
+    seed = "\x1f".join((
+        str(channel), str(account_id), str(chat_id), native_id,
+        str(user_id), str(timestamp), str(text),
+    ))
+    record = SourceRecord(
+        provider="channel-" + quote(str(channel), safe="-_."),
+        thread_id=quote(
+            f"{account_id}:{chat_id}", safe="-_.",
+        ),
+        message_id=hashlib.sha256(seed.encode("utf-8")).hexdigest()[:24],
+        ordinal=int(float(timestamp or 0) * 1000),
+        role="user",
+        content=str(text),
+        timestamp=_observed_at(timestamp) if timestamp else None,
+        speaker_id=str(user_id or "") or None,
+        speaker_display=str(user_display or "") or None,
+        speaker_kind="human",
+        principal_id="unknown",
+        authority_tier=None,
+        trust_state="pending",
+    )
+    root = store.ensure()
+    with workspace_write_lock(root, timeout_s=1.0):
+        with closing(MemoryWorkspace(root)) as workspace:
+            workspace.archive_source_records([record])
+    return record.source_id
 
 
 def _marked_ids(
@@ -205,7 +268,13 @@ def write_session(
         return False
     pending = _first_batch(pending, counter, token_threshold)
 
-    agent = _agent(model)
+    agent = None
+
+    def get_agent():
+        nonlocal agent
+        if agent is None:
+            agent = _agent(model)
+        return agent
 
     def writer(space: Any, batch: tuple[SourceRecord, ...]) -> list[str]:
         observed = next(
@@ -217,7 +286,7 @@ def write_session(
         )
         audit = _run_agent(
             space.memory_dir,
-            agent=agent,
+            agent=get_agent(),
             task=render_writer_task([{
                 "observation_date": observed,
                 "turns": [(r.speaker_label, r.content) for r in batch],
@@ -234,7 +303,7 @@ def write_session(
         })
 
     def organizer(space: Any) -> None:
-        organize_topics(space.memory_dir, agent=agent)
+        organize_topics(space.memory_dir, agent=get_agent())
 
     # Short wait: a chat session writing right now is ordinary, and the
     # next turn brings this back around. The busy workspace raises

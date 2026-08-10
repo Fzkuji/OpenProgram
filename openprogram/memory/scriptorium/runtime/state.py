@@ -26,6 +26,10 @@ class SourceRecord:
     timestamp: str | None = None
     speaker_id: str | None = None
     speaker_display: str | None = None
+    speaker_kind: str = "unknown"
+    principal_id: str = "unknown"
+    authority_tier: str | None = None
+    trust_state: str = "trusted"
 
     @property
     def source_id(self) -> str:

@@ -97,10 +97,6 @@ def _dispatch_access_verb(args, parser) -> None:
         else:
             print(f"{args.user_id} was not on {args.channel}:{args.id}")
         return
-    if verb == "policy":
-        _access.set_policy(args.channel, args.id, args.policy)
-        print(f"{args.channel}:{args.id} access policy = {args.policy}")
-        return
     parser.print_help()
 
 

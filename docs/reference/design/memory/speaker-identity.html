@@ -1165,14 +1165,14 @@
     <code>SourceRecord.speaker_label</code>统一生成规范标签。Writer将每个turn序列化为一个紧凑JSON对象和一个物理行，
     <code>ref</code>、<code>speaker</code>、<code>content</code>分字段；prompt只认<code>speaker</code>字段，不解析<code>content</code>中的标签。
     新source只写入固定format marker开头的<code>_v2/</code>文件；speaker id使用可往返验证的规范UTF-8 percent编码，<code>record-lines</code>隔离可伪造正文，
-    parser遇非法frame停止，只有合法v2 frame中的marker可信。合法但没有marker的记录保持speakerless。BM25 v6按稳定id、显示名或标签过滤，
+    parser遇非法frame停止，只有合法v2 frame中的marker可信。合法但没有marker的记录保持speakerless。BM25 v8按稳定id、显示名或标签过滤，
     与路径和日期过滤组合，结果只来自<code>sources/</code>。<code>memory_search</code>已暴露<code>speaker</code>，
     embedding与speaker组合会显式返回<code>INVALID_ARGUMENT</code>，不会忽略过滤。<br>
     本地Web入口和经dispatcher启动的本地CLI轮次显式写入<code>owner/local</code>；共享渠道保留渠道提供的
     稳定speaker id。缺少可信字段的历史节点与旧framed记录仍保持speakerless。
     只有unframed且记录头严格为<code>user</code>的旧记录可从历史正文前缀做有限检索兼容；旧归档冻结且不参与v2去重。
     同一source id的合法v2事件在检索、链接和校验中优先于legacy；没有v2时仍可读取legacy。
-    <code>speaker_trusted</code>对v2 marker为true、对legacy hint或speakerless记录为false。Markdown尾双空格、
+    <code>speaker_trusted</code>只对trusted状态的v2 marker为true；pending、legacy hint和speakerless记录为false。Markdown尾双空格、
     CRLF/尾换行、完整伪造块、截断停止、v5缓存重建和独立进程导入均有回归测试。<br>
     归档写入会在任何目录或文件变化前整批拒绝NFC/casefold等价的provider/thread路径冲突；
     <code>memory_search</code>的source结果使用真实<code>#source-...</code> anchor，并向调用agent显示
@@ -1181,15 +1181,16 @@
     严格v2合法前缀，按session合并节点标记后才删除旧字段，不从正文或非法尾部之后提取ID。<br>
     文字说明在<code>docs/reference/design/memory/overview.md</code>的"谁说的"一节，
     产品侧在<code>docs/integrations/channels.md</code>。<br>
-    <b>Authority层已实现。</b>运行时将speaker归因、实例owner principal和本轮authority scope分开保存：
+    <b>Authority层已实现。</b>运行时将speaker归因、实例owner principal和本轮authority tier分开保存：
     <code>owner/install/&lt;16 hex&gt;</code>只从实例状态目录的<code>owner.json</code>读取或首次创建，不从发言人推导。
-    capability分三档：本地owner取得完整的local-owner集合；可信共享渠道默认只有<code>reply</code>与
-    <code>memory.source.append</code>；身份不完整的外部事件只有<code>reply</code>。共享渠道不会取得owner全集。
+    请求档位只有owner和paired：本地owner取得完整集合；已配对稳定平台账号只有<code>reply</code>与
+    <code>memory.source.append</code>。未配对消息不构造请求、不进入agent；首次返回8位配对码，批准只走本地CLI或本机Web管理面。
     唯一的工具执行检查位于<code>openprogram/agent/internals/_approval.py::_gated_execute</code>，顺序是不可配置的
-    hard constraint之后、permission rules、审批与<code>bypass</code>之前；它只读取<code>principal_id</code>和
-    <code>authority_scope</code>，不读取正文speaker。同步continuation、Task、inbox、subagent及spawn子进程都通过
-    可序列化字段显式传播并只能继承现有scope。该改动没有修改Source v2的<code>record-lines:N</code> framing或
-    <code>speaker-id</code> percent编码格式。远程Web token、共享记忆跨scope约束和memory默认开启仍不属于本批次。
+    hard constraint之后、permission rules、审批与<code>bypass</code>之前；它只读取请求上的档位枚举并查询固定capability表，
+    不读取正文speaker或请求提供的capability列表。同步continuation、Task、inbox、subagent及spawn子进程都显式继承档位。
+    该改动没有修改Source v2的<code>record-lines:N</code> framing或<code>speaker-id</code> percent编码格式。
+    paired对话按trusted来源进入正常蒸馏；未配对群成员原话按pending来源归档、可检索但不主动蒸馏，提升仅允许本地owner执行。
+    按请求方档位过滤记忆读取仍属于后续批次；远程Web token不属于本批次。
   </div>
 
   </section>

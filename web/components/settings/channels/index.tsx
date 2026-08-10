@@ -21,15 +21,18 @@ import styles from "./channels.module.css";
 import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
 import { useTranslation } from "@/lib/i18n";
 import { AccountsList } from "./accounts-list";
+import { AccessList } from "./access-list";
 import { BindingsList } from "./bindings-list";
 import type {
-  ChannelAccount, ChannelBinding, ChannelHealthStatus, StatusMap,
+  ChannelAccessAccount, ChannelAccount, ChannelBinding,
+  ChannelHealthStatus, StatusMap,
 } from "./types";
 
 export function ChannelsSection() {
   const { t, text } = useTranslation();
   const [accounts, setAccounts] = useState<ChannelAccount[]>([]);
   const [bindings, setBindings] = useState<ChannelBinding[]>([]);
+  const [access, setAccess] = useState<ChannelAccessAccount[]>([]);
   const [statuses, setStatuses] = useState<StatusMap>({});
   const [loading, setLoading] = useState(true);
 
@@ -70,13 +73,19 @@ export function ChannelsSection() {
         invalidate("/api/channels/accounts");
         invalidate("/api/channels/bindings");
       }
-      const [accountsData, bindingsData] = await Promise.all([
+      const [accountsData, bindingsData, accessResponse] = await Promise.all([
         cachedFetch<{ accounts?: ChannelAccount[] }>("/api/channels/accounts"),
         cachedFetch<{ bindings?: ChannelBinding[] }>("/api/channels/bindings"),
+        fetch("/api/channels/access"),
       ]);
+      if (!accessResponse.ok) throw new Error(`access HTTP ${accessResponse.status}`);
+      const accessData = await accessResponse.json() as {
+        accounts?: ChannelAccessAccount[];
+      };
       const accountsList: ChannelAccount[] = accountsData.accounts || [];
       setAccounts(accountsList);
       setBindings(bindingsData.bindings || []);
+      setAccess(accessData.accounts || []);
       await refreshStatuses(accountsList);
     } catch (e) {
       console.error("channels reload failed:", e);
@@ -105,8 +114,8 @@ export function ChannelsSection() {
         <h2 className={shellStyles.pageTitle}>{t("settings.tab.channels")}</h2>
         <p className={shellStyles.pageMeta}>
           {text(
-            "Let your agents send and receive messages on Telegram / Discord / Slack / WeChat. Two steps: 1) add a bot account (paste a bot token, or scan a QR for WeChat); 2) add rules that decide which platform / sender goes to which agent.",
-            "让 Agent 在 Telegram / Discord / Slack / WeChat 上收发消息。两步：1）添加 bot 账号（粘贴 bot token，或为 WeChat 扫码）；2）添加规则，决定哪个平台 / 发送者转给哪个 Agent。",
+            "Let your agents send and receive messages on Telegram / Discord / Slack / WeChat. Three steps: add a bot account, approve senders, then route them to an agent.",
+            "让 Agent 在 Telegram / Discord / Slack / WeChat 上收发消息。共三步：添加 bot 账号、批准发送者，再把他们路由到 Agent。",
           )}
         </p>
       </div>
@@ -121,6 +130,9 @@ export function ChannelsSection() {
                 statuses={statuses}
                 onChange={() => reload(true)}
               />
+            </div>
+            <div className={styles.detailSection}>
+              <AccessList access={access} onChange={() => reload(true)} />
             </div>
             <div className={styles.detailSection}>
               <BindingsList

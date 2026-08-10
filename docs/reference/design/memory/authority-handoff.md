@@ -98,6 +98,21 @@ that prompt-injection surface entirely.
   (write-time stamping is already in place; read-time filtering per
   LangGraph's owner-filter pattern).
 
+## Review follow-up queue (2026-08-10)
+
+- **D2 — deferred:** unpaired group-message archival has no independent
+  frequency or storage cap. Add a bounded archive policy before deployments
+  where unpaired group traffic is not externally rate-limited.
+- **D3 — resolved in the authority batch:** both channel design documents now
+  describe pairing-only admission, 8-character codes, and local owner
+  approval interfaces.
+- **D4 — deferred:** remove the no-op residue at
+  `openprogram/functions/tools/memory/memory.py:151` in the memory cleanup
+  batch.
+- **Memory batch:** isolate staging directories used by
+  `test_memory_routes.py::test_stage_directories_are_cleaned_up_on_both_paths`;
+  the current shared location can fail intermittently under `pytest -n auto`.
+
 ## Sequencing
 
 Unchanged relative to existing plans: this redesign slots where the

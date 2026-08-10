@@ -150,6 +150,7 @@ class TelegramChannel(Channel):
             user_id=user_id,
             user_display=(str(from_user.get("username") or "").strip()
                           or user_name or user_id),
+            message_id=str(msg.get("message_id") or ""),
             chat_type="group" if is_group else "direct",
             ts=float(msg.get("date") or 0),
             reply_to_id=str(reply_to.get("message_id") or ""),

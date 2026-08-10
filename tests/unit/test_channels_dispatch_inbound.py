@@ -204,6 +204,7 @@ def test_dispatch_inbound_broadcasts_channel_turn(
                 channel="wechat", account_id="acct1",
                 peer_kind="direct", peer_id="alice",
                 user_text="ping", user_display="Alice",
+                speaker_id="alice",
             )
     finally:
         unsub()
@@ -232,10 +233,12 @@ def test_dispatch_inbound_replay_continues_session(
         C.dispatch_inbound(
             channel="wechat", account_id="a", peer_kind="direct",
             peer_id="bob", user_text="one", user_display="Bob",
+            speaker_id="bob",
         )
         C.dispatch_inbound(
             channel="wechat", account_id="a", peer_kind="direct",
             peer_id="bob", user_text="two", user_display="Bob",
+            speaker_id="bob",
         )
 
     sessions = tmp_db.list_sessions()
@@ -272,6 +275,7 @@ def test_same_session_concurrent_turns_serialize(
         C.dispatch_inbound(
             channel="wechat", account_id="a", peer_kind="direct",
             peer_id="carol", user_text=f"msg {i}", user_display="Carol",
+            speaker_id="carol",
         )
 
     threads = [threading.Thread(target=_one, args=(i,)) for i in range(2)]
@@ -312,6 +316,7 @@ def test_different_sessions_run_in_parallel(
         C.dispatch_inbound(
             channel="wechat", account_id="a", peer_kind="direct",
             peer_id=peer, user_text="hi", user_display=peer,
+            speaker_id=peer,
         )
 
     threads = [threading.Thread(target=_one, args=(p,))
@@ -362,6 +367,7 @@ def test_dispatch_inbound_uses_bound_session_run_config(
             peer_id="alice",
             user_text="hi",
             user_display="Alice",
+            speaker_id="alice",
         )
 
     assert reply == "configured"

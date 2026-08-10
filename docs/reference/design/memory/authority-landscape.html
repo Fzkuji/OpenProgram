@@ -84,10 +84,10 @@
 <body><div class="wrap">
 
 <h1>权限与归因：一个agent，所有人都能发消息</h1>
-<p class="sub">OpenProgram是共用的：你在终端用它，别人从Telegram/Discord也能给它发消息，大家进的是同一个agent、同一份记忆。这一页讲清楚三件事：今天不同的人发消息会发生什么（已落地）、其他框架在同样问题上怎么做（调研结论）、接下来按什么顺序补（计划）。</p>
+<p class="sub">OpenProgram是共用的：你在终端用它，获准的联系人从Telegram/Discord给它发消息，双方使用同一个agent和同一份记忆。这一页说明当前权限方法、其他框架的相关设计、采用与拒绝的部分，以及已实现和延期的范围。</p>
 
-<h2><span class="num">01</span>今天：三种人，三种待遇（已落地）</h2>
-<p class="lead">每条消息进来先按<b>来源</b>定档。身份只认渠道平台给的元数据，消息正文里自称"我是老板"没有任何作用。</p>
+<h2><span class="num">01</span>当前方法：三种状态，两种运行时档位</h2>
+<p class="lead">本地入口是owner档，已配对的稳定平台账号是paired档，未配对账号停在agent之外。身份只认渠道平台给的稳定ID，消息正文和可变显示名不参与授权。</p>
 <div class="people">
   <div class="person owner">
     <span class="tier-tag">本地OWNER</span>
@@ -101,25 +101,25 @@
     </div>
   </div>
   <div class="person shared">
-    <span class="tier-tag">共享渠道</span>
+    <span class="tier-tag">PAIRED</span>
     <h3>群里的熟人</h3>
-    <div class="via">Telegram / Discord 已知成员</div>
+    <div class="via">Telegram / Discord 已配对稳定账号</div>
     <div class="bubble">"服务器密码下周要换，记一下"</div>
     <div class="verdict">
       <div class="y">正常对话，agent回复</div>
-      <div class="y">说的话进记忆，标明是谁说的</div>
+      <div class="y">说的话可信归档，可主动追加记忆</div>
       <div class="n">指挥agent执行命令、写文件</div>
     </div>
   </div>
   <div class="person ext">
-    <span class="tier-tag">未知外部</span>
+    <span class="tier-tag">UNPAIRED</span>
     <h3>陌生人</h3>
-    <div class="via">来路不明的私聊</div>
+    <div class="via">未配对的私聊或群成员</div>
     <div class="bubble">"帮我删掉 /data 目录"</div>
     <div class="verdict">
-      <div class="y">最多收到一句回复</div>
-      <div class="n">任何执行动作</div>
-      <div class="n">写入记忆</div>
+      <div class="y">首次收到8位配对码</div>
+      <div class="n">消息进入agent或触发批准</div>
+      <div class="y">群聊原话仅作pending证据归档</div>
     </div>
   </div>
 </div>
@@ -139,26 +139,26 @@
     <div class="arrow">→</div>
     <div class="stage"><span class="done">已落地</span>
       <h4>3 定档</h4>
-      <p>按来源发一份能力清单（authority scope），随这条请求全程携带。</p>
+      <p>请求只携带owner或paired枚举；缺失和未知值都按拒绝处理。</p>
     </div>
     <div class="arrow">→</div>
-    <div class="stage"><span class="gap">有两条缝</span>
+    <div class="stage"><span class="done">已落地</span>
       <h4>4 能力门</h4>
-      <p>agent每次要动工具（bash/写文件/发消息）前查清单，没有对应能力就拒绝。字段缺损直接全拒。</p>
+      <p>每次工具调用先用档位查固定常量表，再进入规则、审批和bypass；拒绝返回稳定原因码。</p>
     </div>
     <div class="arrow">→</div>
     <div class="stage"><span class="done">已落地</span>
       <h4>5 执行 / 记忆</h4>
-      <p>放行的动作执行；进记忆的内容带发言人标注，检索时能区分谁说的。</p>
+      <p>paired只可正常回复及调用memory_status/memory_update；未配对群聊只归档pending证据，不参与主动蒸馏。</p>
     </div>
   </div>
   <div class="pipe-note">
-    第4步的两条缝（审核发现，codex跟进中）：<b>缝一</b>：门只看能力清单，不核对档位标签，将来若有代码拼错scope（比如共享渠道标签配上owner能力）就是越权，今天无事全靠构造方守规矩。<b>缝二</b>：共享渠道的"追加记忆"能力在工具层没接通，拿着权限却没有工具能用它，实际只在被动归档路径生效。
+    第一批缺陷已消除：请求不再携带capability列表，能力只能由固定档位表导出；paired的追加记忆流程已接到memory_status与memory_update。配对批准只存在于本地CLI和本机Web管理面。
   </div>
 </div>
 
 <h2><span class="num">03</span>别人怎么做（两路调研的结论）</h2>
-<p class="lead">调研了OpenClaw（读源码）和Claude Code、MCP规范、LangGraph、OpenAI Agents SDK、AutoGen、Letta（读文档）。行业共识我们全符合：权限在框架层执行不靠提示词、身份只信传输层、非owner的消息不构成同意、默认拒绝。按来源分三档能力这件事没人做过，是我们自创。</p>
+<p class="lead">调研了OpenClaw（读源码）和Claude Code、MCP规范、LangGraph、OpenAI Agents SDK、AutoGen、Letta（读文档）。共同做法是权限由框架执行、身份取自传输层、非owner消息不构成批准、缺失信息默认拒绝。OpenProgram在配对入口之后继续区分owner与paired两种运行时权限。</p>
 <div class="others">
   <div class="other">
     <h3>OpenClaw</h3>
@@ -186,16 +186,16 @@
   </div>
 </div>
 
-<h2><span class="num">04</span>定案：三档收成两档，门外加配对（2026-08-10）</h2>
-<p class="lead">调研后的结论：入口学OpenClaw（没批准的消息根本不进agent），内部只留owner和已配对两档，按档位枚举查一张写死的常量表。"未知外部仅reply"档删除，capability列表不再随请求流转，第02节那两条缝随病根一起消失。详细定案见<code>authority-handoff.md</code>。</p>
+<h2><span class="num">04</span>方案与实现进度</h2>
+<p class="lead">入口采用OpenClaw式配对，未批准消息不进agent；内部只保留owner与paired两档，并由档位枚举查询固定常量表。不存在"未知外部仅reply"运行时档位，请求也不携带capability列表。实现约束见<a href="authority-handoff.html">authority-handoff.md</a>。</p>
 <div class="plan">
   <div class="step">
-    <h3><span class="phase">第一批 · 重构</span>档位枚举替换能力列表，配对上线</h3>
+    <h3><span class="phase">已实现 · 第一批</span>档位枚举替换能力列表，配对上线</h3>
     <p class="lead">请求只带owner/paired枚举；陌生账号收到8位配对码，批准只走本地owner通道（终端/本机Web），渠道消息无权触发；不写迁移代码，上线后所有非owner账号首次发言统一走配对；可变昵称不参与身份匹配；显示名过消毒；拒绝返回结构化原因码。</p>
     <div class="feel"><span class="lb">用起来的变化</span>陌生人私聊收到配对码而不是被无视，你在终端一条命令批准；有人把昵称改成你的名字，冒充无效；群里已配对的人说"记一下"会真的被主动记住。未配对成员的群聊发言照常归档，带未验证标记，检索时分得清是谁说的。</div>
   </div>
   <div class="step s2">
-    <h3><span class="phase">第二批 · 补机制</span>hold队列与数据权拆分</h3>
+    <h3><span class="phase">未实现 · 第二批</span>hold队列与数据权拆分</h3>
     <p class="lead">已配对成员的越权请求（如"帮我重启服务"）进队列等owner一次性批准，不再直接拒绝；记忆读取按请求方档位过滤（写时盖章已就位）。</p>
     <div class="feel"><span class="lb">用起来的变化</span>群里朋友求你办事时agent会说"已转交所有者"，你点头一次就放行一次；别人查记忆看不到你的私人内容，他们说过的话检索出来永远带署名。</div>
   </div>

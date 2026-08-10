@@ -205,19 +205,117 @@ def wrap_with_approval(
     orig_execute = agent_tool.execute
     name = agent_tool.name
 
-    def _denied(text: str) -> "AgentToolResult":
+    def _denied(
+        text: str,
+        reason_code: str,
+        authority_decision=None,
+    ) -> "AgentToolResult":
+        details = {
+            "is_error": True,
+            "denied": True,
+            "reason_code": reason_code,
+        }
+        if authority_decision is not None:
+            details["authority_decision"] = authority_decision.to_dict()
         return AgentToolResult(
             content=[TextContent(text=text)],
-            details={"is_error": True, "denied": True},
+            details=details,
         )
 
+    def _approval_authorized() -> bool:
+        from openprogram.agent.authority import (
+            has_capability, normalize_authority, owner_principal_id,
+        )
+
+        authority = normalize_authority(req)
+        try:
+            is_owner = authority.get("principal_id") == owner_principal_id()
+        except Exception:
+            is_owner = False
+        return bool(
+            authority
+            and is_owner
+            and authority.get("authority_tier") == "owner"
+            and authority.get("speaker_kind") == "owner"
+            and authority.get("interaction") == "interactive"
+            and has_capability(authority, "approval.request")
+        )
+
+    def _sandbox_metadata(result) -> dict | None:
+        details = getattr(result, "details", None)
+        if not isinstance(details, dict):
+            return None
+        direct = details.get("sandbox")
+        nested = details.get("json")
+        value = direct if isinstance(direct, dict) else (
+            nested.get("sandbox") if isinstance(nested, dict) else None
+        )
+        return value if isinstance(value, dict) else None
+
+    async def _run_original(call_id, args, cancel, on_update):
+        result = await orig_execute(call_id, args, cancel, on_update)
+        sandbox = _sandbox_metadata(result)
+        if not sandbox or sandbox.get("kind") != "denied":
+            return result
+
+        event = {
+            "type": "sandbox.violation",
+            "data": {
+                "session_id": req.session_id,
+                "tool": name,
+                "args": args,
+                "sandbox": sandbox,
+            },
+        }
+        try:
+            on_event(event)
+        except Exception:
+            pass
+
+        if not _approval_authorized():
+            return _denied(
+                "[denied] sandbox escalation requires an interactive local owner",
+                "SANDBOX_ESCALATION_OWNER_REQUIRED",
+            )
+        hard_violation = _hard_constraint_violation(name, args, req)
+        if hard_violation:
+            return _denied(
+                f"[denied] hard constraint: {hard_violation}",
+                "HARD_CONSTRAINT_DENIED",
+            )
+        approval_args = {
+            **args,
+            "_sandbox_escalation": {
+                "from": sandbox.get("backend", "sandbox"),
+                "to": "hard-constraints-only",
+            },
+        }
+        approved, reason, _scope = await await_user_approval(
+            req=req,
+            tool_name=f"{name}:sandbox-escalation",
+            args=approval_args,
+            on_event=on_event,
+        )
+        if not approved:
+            msg = (f"[denied] {reason.strip()}" if isinstance(reason, str)
+                   and reason.strip() else "[denied] sandbox escalation not approved")
+            return _denied(msg, "SANDBOX_ESCALATION_NOT_APPROVED")
+        from openprogram.sandbox import escalated_policy
+        with escalated_policy():
+            return await orig_execute(call_id, args, cancel, on_update)
+
     async def _approve_then_run(call_id, args, cancel, on_update):
+        if not _approval_authorized():
+            return _denied(
+                "[denied] approval requires an interactive local owner",
+                "APPROVAL_LOCAL_OWNER_REQUIRED",
+            )
         approved, reason, scope = await await_user_approval(
             req=req, tool_name=name, args=args, on_event=on_event)
         if not approved:
             msg = (f"[denied] {reason.strip()}" if isinstance(reason, str)
                    and reason.strip() else f"[denied] user did not approve {name}")
-            return _denied(msg)
+            return _denied(msg, "APPROVAL_DENIED")
         if scope == "always":
             _persist_always_allow_rule(req.session_id, name)
         return await orig_execute(call_id, args, cancel, on_update)
@@ -231,25 +329,36 @@ def wrap_with_approval(
         # stored allow rule nor permission_mode can remove them.
         hard_violation = _hard_constraint_violation(name, args, req)
         if hard_violation:
-            return _denied(f"[denied] hard constraint: {hard_violation}")
-
-        # Scope is a runtime field, not a model-visible label. Missing fields
-        # and missing capabilities deny before rules, approval, or bypass.
-        from openprogram.agent.authority import capability_for_tool, has_capability
-        capability = capability_for_tool(name, args)
-        if not has_capability(req, capability):
             return _denied(
-                f"[denied] authority scope does not contain {capability}"
+                f"[denied] hard constraint: {hard_violation}",
+                "HARD_CONSTRAINT_DENIED",
+            )
+
+        # Tier is runtime-owned, not a model-visible label. The request carries
+        # one enum; capabilities are read only from the fixed process table.
+        # Missing/unknown tiers deny before rules, approval, or bypass.
+        from openprogram.agent.authority import decide_tool_authority
+        authority_decision = decide_tool_authority(req, name, args)
+        if not authority_decision.allowed:
+            return _denied(
+                "[denied] authority tier does not allow "
+                f"{authority_decision.capability}",
+                authority_decision.reason_code,
+                authority_decision,
             )
 
         # ① 规则层 deny/ask —— bypass 之前，最高安全优先级
         verdict = _match_rule(getattr(req, "permission_rules", None), name, args)
         if verdict == "deny":
-            return _denied(f"[denied] blocked by deny rule: {name}")
+            return _denied(
+                f"[denied] blocked by deny rule: {name}",
+                "PERMISSION_RULE_DENY",
+            )
         if verdict == "ask":
             if req.source in _NON_INTERACTIVE_SOURCES:
                 return _denied(
-                    f"[denied] non-interactive {req.source} cannot approve {name}"
+                    f"[denied] non-interactive {req.source} cannot approve {name}",
+                    "APPROVAL_UNAVAILABLE_NON_INTERACTIVE",
                 )
             return await _approve_then_run(call_id, args, cancel, on_update)
 
@@ -257,7 +366,8 @@ def wrap_with_approval(
         if force_ask:
             if req.source in _NON_INTERACTIVE_SOURCES:
                 return _denied(
-                    f"[denied] non-interactive {req.source} cannot approve {name}"
+                    f"[denied] non-interactive {req.source} cannot approve {name}",
+                    "APPROVAL_UNAVAILABLE_NON_INTERACTIVE",
                 )
             return await _approve_then_run(call_id, args, cancel, on_update)
 
@@ -287,16 +397,23 @@ def wrap_with_approval(
         #    明显安全在 ⑤ 已放行；明显危险→拒；拿不准→问一次 haiku。
         if mode == "auto":
             if name in RISKY_AUTO_DENYLIST:
-                return _denied(f"[denied] auto mode: risky tool blocked: {name}")
+                return _denied(
+                    f"[denied] auto mode: risky tool blocked: {name}",
+                    "AUTO_RISK_DENY",
+                )
             should_block, reason = await auto_classify_tool(name, args)
             if should_block:
-                return _denied(f"[denied] auto classifier: {reason}")
-            return await orig_execute(call_id, args, cancel, on_update)
+                return _denied(
+                    f"[denied] auto classifier: {reason}",
+                    "AUTO_CLASSIFIER_DENY",
+                )
+            return await _run_original(call_id, args, cancel, on_update)
 
         # ⑧ 弹卡片阻塞等答（ask / plan / acceptEdits 的命令类都落这里）
         if req.source in _NON_INTERACTIVE_SOURCES:
             return _denied(
-                f"[denied] non-interactive {req.source} cannot approve {name}"
+                f"[denied] non-interactive {req.source} cannot approve {name}",
+                "APPROVAL_UNAVAILABLE_NON_INTERACTIVE",
             )
         return await _approve_then_run(call_id, args, cancel, on_update)
 

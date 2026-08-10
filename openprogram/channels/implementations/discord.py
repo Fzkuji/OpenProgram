@@ -88,6 +88,7 @@ class DiscordChannel(Channel):
                 chat_id=str(msg.channel.id),
                 user_id=str(msg.author.id),
                 user_display=str(msg.author),
+                message_id=str(msg.id),
                 chat_type="direct" if msg.guild is None else "channel",
                 ts=float(msg.created_at.timestamp()) if msg.created_at else 0.0,
                 reply_to_id=(

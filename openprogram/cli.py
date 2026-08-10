@@ -856,15 +856,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_cha_revoke.add_argument("user_id", help="Platform-native sender id")
     p_cha_revoke.add_argument("--id", default="default",
         help="Account id (default: 'default')")
-    p_cha_policy = p_chaccess_sub.add_parser("policy",
-        help="Set the inbound policy: pairing (default, unknown senders "
-             "get a code) or open (everyone gets through)")
-    p_cha_policy.add_argument("channel",
-        choices=["wechat", "telegram", "discord", "slack"])
-    p_cha_policy.add_argument("policy", choices=["pairing", "open"])
-    p_cha_policy.add_argument("--id", default="default",
-        help="Account id (default: 'default')")
-
     # ---- channels bindings --------------------------------------------
     p_chb = channels_sub.add_parser("bindings",
         help="Route inbound channel messages to agents")

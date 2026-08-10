@@ -45,3 +45,18 @@ export interface ChannelHealthStatus {
 }
 
 export type StatusMap = Record<string, ChannelHealthStatus>;
+
+export interface ChannelAccessSender {
+  user_id: string;
+  display: string;
+  code?: string;
+  requested_at?: number;
+  approved_at?: number;
+}
+
+export interface ChannelAccessAccount {
+  channel: string;
+  account_id: string;
+  paired: ChannelAccessSender[];
+  pending: Array<ChannelAccessSender & { code: string }>;
+}

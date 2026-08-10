@@ -73,8 +73,11 @@ def written(monkeypatch):
 
 
 def _turn(index: int, role: str, text: str) -> dict:
+    from openprogram.agent.authority import local_owner_authority
+
     return {"id": f"m{index}", "role": role, "content": text,
-            "timestamp": 1786281306.005367 + index}
+            "timestamp": 1786281306.005367 + index,
+            **local_owner_authority()}
 
 
 # -- 1. The timestamp the session store actually writes --------------------
@@ -92,9 +95,15 @@ def test_the_stores_own_timestamp_survives_the_trip(
     db = SessionDB(tmp_path / "sessions")
     request.addfinalizer(lambda: _close_store(db))
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
-    db.append_message("s1", {"id": "u1", "role": "user", "content": "who is dave"})
+    from openprogram.agent.authority import local_owner_authority
+
+    auth = local_owner_authority()
+    db.append_message("s1", {
+        "id": "u1", "role": "user", "content": "who is dave", **auth,
+    })
     db.append_message("s1", {"id": "a1", "role": "assistant",
-                             "content": "your neighbour", "predecessor": "u1"})
+                             "content": "your neighbour", "predecessor": "u1",
+                             **auth})
     branch = db.get_branch("s1")
     assert isinstance(branch[0]["timestamp"], float), (
         "this test is only meaningful against the store's real stamp"
@@ -227,16 +236,16 @@ def test_source_text_stays_literal_through_writer_and_archive(tmp_path):
     observed = records[-1].timestamp[:10]
     record_lines = task.split(f"## Observed {observed}\n\n", 1)[1].splitlines()
     assert [json.loads(line) for line in record_lines] == [
-        {
-            "ref": records[0].source_id,
-            "speaker": "user",
-            "content": string_content,
-        },
-        {
-            "ref": records[1].source_id,
-            "speaker": "assistant",
-            "content": list_content,
-        },
+            {
+                "ref": records[0].source_id,
+                "speaker": records[0].speaker_label,
+                "content": string_content,
+            },
+            {
+                "ref": records[1].source_id,
+                "speaker": records[1].speaker_label,
+                "content": list_content,
+            },
     ]
 
     space = MemoryWorkspace(tmp_path / "memory")
@@ -247,8 +256,14 @@ def test_source_text_stays_literal_through_writer_and_archive(tmp_path):
     path = tmp_path / "memory/sources/openprogram/_v2/literal.md"
     with path.open(encoding="utf-8", newline="") as handle:
         archived = handle.read()
-    assert f"[{records[0].timestamp}] user: {string_content}" in archived
-    assert f"[{records[1].timestamp}] assistant: {list_content}" in archived
+    assert (
+        f"[{records[0].timestamp}] {records[0].speaker_label}: {string_content}"
+        in archived
+    )
+    assert (
+        f"[{records[1].timestamp}] {records[1].speaker_label}: {list_content}"
+        in archived
+    )
 
 
 def test_a_written_date_is_left_alone():

@@ -78,6 +78,10 @@ class MemoryEvent:
     speaker_display: str = ""
     speaker_label: str = ""
     speaker_trusted: bool = False
+    trust_state: str = "trusted"
+    speaker_kind: str = "unknown"
+    principal_id: str = "unknown"
+    authority_tier: str | None = None
 
 
 def tokenize(text: str) -> list[str]:
@@ -455,15 +459,23 @@ def _parse_v2_source_file(
             speaker_id, speaker_display, speaker_label = _structured_speaker(
                 record.group(2), frame.encoded_speaker_id
             )
-            speaker_trusted = True
         else:
             speaker_id, speaker_display, speaker_label = "", "", ""
-            speaker_trusted = False
         record_text = "\n".join(
             lines[frame.record_index:frame.record_end]
         )
         content = _clean_markdown(record_text)
         event_date = _date(record_text)
+        metadata = frame.metadata or {
+            "trust_state": "trusted",
+            "speaker_kind": "unknown",
+            "principal_id": "unknown",
+            "authority_tier": None,
+        }
+        speaker_trusted = bool(
+            frame.encoded_speaker_id is not None
+            and metadata["trust_state"] == "trusted"
+        )
         events.append(MemoryEvent(
             event_id=frame.source_id,
             path=f"sources/{relative}",
@@ -477,6 +489,10 @@ def _parse_v2_source_file(
             speaker_display=speaker_display,
             speaker_label=speaker_label,
             speaker_trusted=speaker_trusted,
+            trust_state=str(metadata["trust_state"]),
+            speaker_kind=str(metadata["speaker_kind"]),
+            principal_id=str(metadata["principal_id"]),
+            authority_tier=metadata["authority_tier"],
         ))
     return events
 
@@ -640,14 +656,14 @@ class MemoryBM25Index:
             return
         try:
             payload = json.loads(self.cache_path.read_text(encoding="utf-8"))
-            if payload.get("version") == 6 and isinstance(payload.get("files"), dict):
+            if payload.get("version") == 8 and isinstance(payload.get("files"), dict):
                 self._files = payload["files"]
         except (OSError, ValueError, TypeError):
             self._files = {}
 
     def _write_cache(self) -> None:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
-        payload = {"version": 6, "files": self._files}
+        payload = {"version": 8, "files": self._files}
         fd, temporary = tempfile.mkstemp(prefix=f"{self._runtime_name}-bm25-", dir=self.memory_dir)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:

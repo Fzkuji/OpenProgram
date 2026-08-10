@@ -126,7 +126,7 @@ class TurnRequest:
     speaker_id: Optional[str] = None
     speaker_display: Optional[str] = None
     principal_id: Optional[str] = None
-    authority_scope: Optional[dict[str, Any]] = None
+    authority_tier: Optional[Literal["owner", "paired"]] = None
     interaction: Optional[str] = None
 
 

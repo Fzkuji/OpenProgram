@@ -126,6 +126,12 @@ class MemoryEmbeddingIndex:
                 "date": event.date,
                 "content": event.content,
                 "refs": event.refs,
+                "trust_state": event.trust_state,
+                "speaker_kind": event.speaker_kind,
+                "speaker_id": event.speaker_id,
+                "speaker_display": event.speaker_display,
+                "principal_id": event.principal_id,
+                "authority_tier": event.authority_tier,
                 "similarity": float(similarity),
             }
             for event, similarity in zip(candidate_events, similarities)

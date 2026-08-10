@@ -128,6 +128,7 @@ class SlackChannel(Channel):
                 chat_id=str(channel_id or ""),
                 user_id=str(user or ""),
                 user_display=str(user or channel_id or ""),
+                message_id=str(event.get("ts") or ""),
                 chat_type=(
                     "direct" if (channel_id or "").startswith("D")
                     else "channel"

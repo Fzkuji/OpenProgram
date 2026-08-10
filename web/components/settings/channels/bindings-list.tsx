@@ -58,7 +58,7 @@ export function BindingsList({ bindings, accounts, onChange }: Props) {
     <>
       <div className={styles.sectionHeader}>
         <div>
-          <div className={styles.sectionTitle}>{text("Step 2 - Dispatch rules", "步骤 2 - 分发规则")}</div>
+          <div className={styles.sectionTitle}>{text("Step 3 - Dispatch rules", "步骤 3 - 分发规则")}</div>
           <div className={styles.sectionSub}>
             {text(
               "Decide which agent handles which incoming messages. Without any rule, every message goes to the default agent. Add a rule to route a specific platform / group / sender to a chosen agent. Most-specific rule wins.",

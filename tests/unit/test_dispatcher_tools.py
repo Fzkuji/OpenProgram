@@ -65,21 +65,11 @@ def _stub_model() -> Model:
 
 
 def _owner_turn(**kwargs) -> D.TurnRequest:
+    from openprogram.agent.authority import local_owner_authority
+
     return D.TurnRequest(
         **kwargs,
-        speaker_kind="owner",
-        speaker_id="owner/local",
-        speaker_display="Owner",
-        principal_id="owner/install/0123456789abcdef",
-        authority_scope={
-            "origin": "local-owner",
-            "capabilities": [
-                "reply", "memory.source.append", "memory.trusted.promote",
-                "schedule.create", "schedule.manage", "fs.read", "fs.write",
-                "process.exec", "network.send", "approval.request",
-            ],
-        },
-        interaction="interactive",
+        **local_owner_authority(),
     )
 
 

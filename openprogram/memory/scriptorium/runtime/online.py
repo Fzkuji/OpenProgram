@@ -111,19 +111,30 @@ class OnlineMemoryRuntime:
             self.memory_dir,
             config=self.memory_config,
         )) as workspace:
-            workspace.archive_source_records(list(batch))
-            changed_files = writer(workspace, batch)
-            if not changed_files:
-                return False
+            trusted = tuple(
+                record for record in batch if record.trust_state == "trusted"
+            )
+            pending_records = tuple(
+                record for record in batch if record.trust_state != "trusted"
+            )
+            if trusted:
+                workspace.archive_source_records(list(trusted))
+                if not writer(workspace, trusted):
+                    return False
+            if pending_records:
+                workspace.archive_source_records(list(pending_records))
 
             if mark is not None:
                 mark(batch)
 
             state = self.store.load()
-            state.local_batches += 1
-            state.local_tokens += token_count
-            state.write_commits_since_global += 1
-            if local_manager and should_local_reorganize(
+            trusted_tokens = sum(
+                self.token_counter(record.content) for record in trusted
+            )
+            state.local_batches += int(bool(trusted))
+            state.local_tokens += trusted_tokens
+            state.write_commits_since_global += int(bool(trusted))
+            if trusted and local_manager and should_local_reorganize(
                 state.local_batches,
                 state.local_tokens,
                 batch_threshold=self.local_batch_threshold,
@@ -133,7 +144,7 @@ class OnlineMemoryRuntime:
                 state.local_batches = 0
                 state.local_tokens = 0
             last_global = _parse(state.last_global_at)
-            if global_manager and should_global_manage(
+            if trusted and global_manager and should_global_manage(
                 last_global,
                 now,
                 new_write_commits=state.write_commits_since_global,

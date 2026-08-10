@@ -23,6 +23,7 @@ SAFE_AUTO_ALLOWLIST = frozenset({
     "web_search", "web_fetch", "tool_search", "todo",
     "ask_user_question", "send_message", "sleep",
     "enter_plan_mode", "exit_plan_mode",
+    "memory_status", "memory_update",
 })
 
 # 明显危险的代码执行工具——auto 档直接拒，永不调 LLM。

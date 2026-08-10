@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Mapping
 from urllib.parse import quote, unquote_to_bytes
 
 
@@ -14,6 +17,7 @@ V2_FORMAT_MARKER = "<!-- openprogram-source-archive:v2 -->"
 _ANCHOR_RE = re.compile(r'<a id="([^"]+)"></a>')
 _SOURCE_RE = re.compile(r"<!-- source-id:([^>]+) -->")
 _SPEAKER_RE = re.compile(r"<!-- speaker-id:([^>]*) -->")
+_SOURCE_META_RE = re.compile(r"<!-- source-meta:([A-Za-z0-9_-]+) -->")
 _RECORD_LINES_RE = re.compile(r"<!-- record-lines:(\d{1,9}) -->")
 _SOURCE_RECORD_RE = re.compile(r"^\[[^]]*\]\s+.+?: .*$")
 
@@ -21,7 +25,10 @@ _SOURCE_RECORD_RE = re.compile(r"^\[[^]]*\]\s+.+?: .*$")
 @dataclass(frozen=True)
 class V2Frame:
     source_id: str
+    frame_start: int
     encoded_speaker_id: str | None
+    metadata: dict[str, Any] | None
+    metadata_index: int | None
     record_index: int
     record_end: int
 
@@ -84,6 +91,48 @@ def is_v2_source_path(relative: str | Path) -> bool:
     return len(parts) >= 3 and parts[-2] == "_v2"
 
 
+def normalize_source_metadata(value: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping):
+        return None
+    authority_tier = value.get("authority_tier")
+    if authority_tier not in {None, "owner", "paired"}:
+        return None
+    trust_state = value.get("trust_state")
+    if trust_state not in {"pending", "trusted"}:
+        return None
+    return {
+        "version": 1,
+        "trust_state": trust_state,
+        "speaker_kind": str(value.get("speaker_kind") or "unknown"),
+        "principal_id": str(value.get("principal_id") or "unknown"),
+        "authority_tier": authority_tier,
+    }
+
+
+def encode_source_metadata(value: Mapping[str, Any]) -> str:
+    normalized = normalize_source_metadata(value)
+    if normalized is None:
+        raise ValueError("invalid source trust metadata")
+    raw = json.dumps(
+        normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    token = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    return f"<!-- source-meta:{token} -->"
+
+
+def decode_source_metadata(token: str) -> dict[str, Any] | None:
+    try:
+        padding = "=" * (-len(token) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(token + padding))
+    except (ValueError, TypeError):
+        return None
+    normalized = normalize_source_metadata(payload)
+    if normalized is None:
+        return None
+    marker = encode_source_metadata(normalized)
+    return normalized if marker == f"<!-- source-meta:{token} -->" else None
+
+
 def scan_v2_archive(text: str, relative: str | Path) -> V2Scan:
     """Parse the valid v2 prefix without resynchronizing after an error."""
     lines = text.split("\n")
@@ -129,6 +178,18 @@ def scan_v2_archive(text: str, relative: str | Path) -> V2Scan:
             if cursor >= len(lines):
                 return V2Scan(tuple(frames), False)
 
+        metadata = None
+        metadata_index = None
+        metadata_match = _SOURCE_META_RE.fullmatch(lines[cursor])
+        if metadata_match is not None:
+            metadata_index = cursor
+            metadata = decode_source_metadata(metadata_match.group(1))
+            if metadata is None:
+                return V2Scan(tuple(frames), False)
+            cursor += 1
+            if cursor >= len(lines):
+                return V2Scan(tuple(frames), False)
+
         count = _RECORD_LINES_RE.fullmatch(lines[cursor])
         if count is None:
             return V2Scan(tuple(frames), False)
@@ -144,7 +205,10 @@ def scan_v2_archive(text: str, relative: str | Path) -> V2Scan:
             return V2Scan(tuple(frames), False)
         frames.append(V2Frame(
             source_id=source_id,
+            frame_start=index,
             encoded_speaker_id=encoded_speaker_id,
+            metadata=metadata,
+            metadata_index=metadata_index,
             record_index=record_index,
             record_end=record_end,
         ))

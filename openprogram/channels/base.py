@@ -199,23 +199,50 @@ class Channel(abc.ABC):
     def _dispatch_and_reply(self, ch_msg) -> None:
         peer_id = self.peer_id_for(ch_msg)
         snippet = ch_msg.text[:60] + ("..." if len(ch_msg.text) > 60 else "")
-        who = ch_msg.user_display or ch_msg.user_id or peer_id
+        safe_display = _one_line(ch_msg.user_display)
+        who = safe_display or ch_msg.user_id or peer_id
         print(f"[{self.platform_id}:{self.account_id}] <{who}> {snippet}")
 
         # ---- access 门禁: 未知发信人不进 agent --------------------------
         # 配对确认只能走本机 CLI/webui (_access 模块 docstring), 这里
         # 只可能发配对码回执, 绝不放行.
         from openprogram.channels import _access
-        allowed, gate_reply = _access.check_inbound(
-            self.platform_id, self.account_id,
-            ch_msg.user_id or ch_msg.chat_id,
-            display=ch_msg.user_display,
+        stable_sender_id = ch_msg.user_id or (
+            ch_msg.chat_id if ch_msg.is_dm else ""
         )
-        if not allowed:
+        access_decision = _access.check_inbound(
+            self.platform_id, self.account_id,
+            stable_sender_id,
+            display=safe_display,
+        )
+        if not access_decision.allowed:
             print(f"[{self.platform_id}:{self.account_id}] <{who}> "
-                  f"blocked by access policy")
-            if gate_reply:
-                self.send_text_full(peer_id, gate_reply)
+                  "blocked by access policy "
+                  f"({access_decision.reason_code})")
+            if ch_msg.chat_type in {"group", "channel", "thread"} \
+                    and ch_msg.text:
+                try:
+                    from openprogram.memory.scriptorium.writing import (
+                        archive_unpaired_group_message,
+                    )
+
+                    archive_unpaired_group_message(
+                        channel=self.platform_id,
+                        account_id=self.account_id,
+                        chat_id=ch_msg.chat_id,
+                        message_id=ch_msg.message_id,
+                        user_id=stable_sender_id,
+                        user_display=safe_display,
+                        text=ch_msg.text,
+                        timestamp=ch_msg.ts,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    print(
+                        f"[{self.platform_id}:{self.account_id}] "
+                        f"pending evidence archive failed: {exc}"
+                    )
+            if access_decision.reply:
+                self.send_text_full(peer_id, access_decision.reply)
             return
 
         # ---- 附件下载 + quoted 块 → agent 可见的 user_text ---------------
@@ -236,7 +263,7 @@ class Channel(abc.ABC):
 
         # 正文前缀是模型可见兼容副本；可信身份只走独立 speaker 字段，
         # 下游不得从正文反推。
-        user_text = speaker_prefix(ch_msg.user_id, ch_msg.user_display) + user_text
+        user_text = speaker_prefix(stable_sender_id, safe_display) + user_text
 
         from openprogram.channels._conversation import dispatch_inbound
         reply_text = dispatch_inbound(
@@ -245,9 +272,9 @@ class Channel(abc.ABC):
             peer_kind=ch_msg.chat_type,
             peer_id=peer_id,
             user_text=user_text,
-            user_display=ch_msg.user_display or peer_id,
-            speaker_id=ch_msg.user_id or None,
-            speaker_display=ch_msg.user_display or None,
+            user_display=safe_display or peer_id,
+            speaker_id=stable_sender_id or None,
+            speaker_display=safe_display or None,
             progress_stream=self.progress_stream,
             attachments=turn_attachments or None,
         )
