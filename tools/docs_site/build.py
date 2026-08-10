@@ -615,6 +615,11 @@ def _write_sitemap() -> None:
         else:
             urls.append(base + rel)
 
+    # When the docs are mounted below the domain root, the landing page at the
+    # root is a separate document that no built page covers.
+    if DEPLOY_BASE != "/":
+        urls.insert(0, SITE_ORIGIN.rstrip("/") + "/")
+
     body = "\n".join(
         f"  <url><loc>{_html.escape(u)}</loc></url>" for u in urls)
     (OUT_ROOT / "sitemap.xml").write_text(
