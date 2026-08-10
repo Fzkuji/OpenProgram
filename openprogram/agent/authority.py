@@ -1,14 +1,16 @@
-"""Runtime-owned speaker attribution and authorization scope."""
+"""Runtime-owned speaker attribution and two-tier authorization."""
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import threading
 import uuid
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 from urllib.parse import quote
 
 
@@ -16,7 +18,9 @@ class AuthorityError(RuntimeError):
     pass
 
 
-LOCAL_OWNER_CAPABILITIES = frozenset({
+AuthorityTier = Literal["owner", "paired"]
+
+_OWNER_CAPABILITIES = frozenset({
     "reply",
     "memory.source.append",
     "memory.trusted.promote",
@@ -27,15 +31,35 @@ LOCAL_OWNER_CAPABILITIES = frozenset({
     "process.exec",
     "network.send",
     "approval.request",
+    "runtime.control",
 })
-SHARED_CHANNEL_CAPABILITIES = frozenset({
+_PAIRED_CAPABILITIES = frozenset({
     "reply", "memory.source.append",
 })
-UNKNOWN_EXTERNAL_CAPABILITIES = frozenset({"reply"})
+TIER_CAPABILITIES: Mapping[AuthorityTier, frozenset[str]] = {
+    "owner": _OWNER_CAPABILITIES,
+    "paired": _PAIRED_CAPABILITIES,
+}
 
 _OWNER_RE = re.compile(r"^owner/install/[0-9a-f]{16}$")
 _owner_cache: dict[Path, str] = {}
 _owner_lock = threading.Lock()
+_log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class AuthorityDecision:
+    """One auditable result from the fixed tier-capability table."""
+
+    allowed: bool
+    admission: str
+    check: str
+    reason_code: str
+    tier: str | None
+    capability: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 def _owner_path() -> Path:
@@ -88,20 +112,13 @@ def _reset_owner_cache_for_tests() -> None:
     _owner_cache.clear()
 
 
-def _scope(origin: str, capabilities) -> dict[str, Any]:
-    return {
-        "origin": str(origin),
-        "capabilities": sorted({str(item) for item in capabilities if str(item)}),
-    }
-
-
 def local_owner_authority() -> dict[str, Any]:
     return {
         "speaker_kind": "owner",
         "speaker_id": "owner/local",
         "speaker_display": "Owner",
         "principal_id": owner_principal_id(),
-        "authority_scope": _scope("local-owner", LOCAL_OWNER_CAPABILITIES),
+        "authority_tier": "owner",
         "interaction": "interactive",
     }
 
@@ -112,31 +129,26 @@ def shared_channel_authority(
     user_id: str,
     user_display: str,
 ) -> dict[str, Any]:
-    trusted_speaker = bool(str(channel).strip() and str(account_id).strip()
-                           and str(user_id).strip())
-    capabilities = (SHARED_CHANNEL_CAPABILITIES if trusted_speaker
-                    else UNKNOWN_EXTERNAL_CAPABILITIES)
-    speaker_id = "unknown"
-    if trusted_speaker:
-        # Preserve the channel-provided stable ID byte-for-byte. Source v2
-        # owns its existing percent-encoding and framing contract downstream.
-        speaker_id = str(user_id)
+    if not all(str(value).strip() for value in (channel, account_id, user_id)):
+        raise AuthorityError("paired authority requires platform stable IDs")
+    # Preserve the channel-provided stable ID byte-for-byte. Source v2 owns
+    # its existing percent-encoding and framing contract downstream.
+    speaker_id = str(user_id)
     return {
-        "speaker_kind": "human" if trusted_speaker else "unknown",
+        "speaker_kind": "human",
         "speaker_id": speaker_id,
-        "speaker_display": str(user_display or user_id or "unknown"),
-        "principal_id": owner_principal_id(),
-        "authority_scope": _scope(
-            "shared-channel" if trusted_speaker else "unknown-external",
-            capabilities,
+        "speaker_display": sanitize_speaker_display(
+            str(user_display or user_id)
         ),
+        "principal_id": owner_principal_id(),
+        "authority_tier": "paired",
         "interaction": "shared",
     }
 
 
 _AUTHORITY_FIELDS = (
     "speaker_kind", "speaker_id", "speaker_display", "principal_id",
-    "authority_scope", "interaction",
+    "authority_tier", "interaction",
 )
 
 
@@ -145,24 +157,16 @@ def normalize_authority(value: Mapping[str, Any] | Any) -> dict[str, Any]:
     raw = value if isinstance(value, Mapping) else {
         key: getattr(value, key, None) for key in _AUTHORITY_FIELDS
     }
-    strings = {
-        key: raw.get(key) for key in _AUTHORITY_FIELDS if key != "authority_scope"
-    }
+    strings = {key: raw.get(key) for key in _AUTHORITY_FIELDS}
     if not all(isinstance(item, str) and item.strip() for item in strings.values()):
         return {}
-    scope = raw.get("authority_scope")
-    if not isinstance(scope, Mapping):
+    if strings["authority_tier"] not in TIER_CAPABILITIES:
         return {}
-    origin = scope.get("origin")
-    capabilities = scope.get("capabilities")
-    if not isinstance(origin, str) or not origin.strip() \
-            or not isinstance(capabilities, (list, tuple, set, frozenset)) \
-            or not all(isinstance(item, str) and item for item in capabilities):
-        return {}
-    return {
-        **{key: str(value) for key, value in strings.items()},
-        "authority_scope": _scope(origin, capabilities),
-    }
+    normalized = {key: str(item) for key, item in strings.items()}
+    normalized["speaker_display"] = sanitize_speaker_display(
+        normalized["speaker_display"]
+    )
+    return normalized
 
 
 def runtime_authority(parent: Mapping[str, Any] | Any, source: str) -> dict[str, Any]:
@@ -179,8 +183,39 @@ def runtime_authority(parent: Mapping[str, Any] | Any, source: str) -> dict[str,
 
 
 def has_capability(value: Mapping[str, Any] | Any, capability: str) -> bool:
-    authority = normalize_authority(value)
-    return bool(authority and capability in authority["authority_scope"]["capabilities"])
+    return decide_capability(value, capability).allowed
+
+
+def _raw_tier(value: Mapping[str, Any] | Any) -> Any:
+    if isinstance(value, Mapping):
+        return value.get("authority_tier")
+    return getattr(value, "authority_tier", None)
+
+
+def decide_capability(
+    value: Mapping[str, Any] | Any,
+    capability: str,
+) -> AuthorityDecision:
+    raw_tier = _raw_tier(value)
+    if raw_tier is None:
+        decision = AuthorityDecision(
+            False, "denied", "tier_capability_table",
+            "AUTHORITY_TIER_MISSING", None, str(capability),
+        )
+    elif raw_tier not in TIER_CAPABILITIES:
+        decision = AuthorityDecision(
+            False, "denied", "tier_capability_table",
+            "AUTHORITY_TIER_UNKNOWN", str(raw_tier), str(capability),
+        )
+    else:
+        allowed = str(capability) in TIER_CAPABILITIES[raw_tier]
+        decision = AuthorityDecision(
+            allowed, str(raw_tier), "tier_capability_table",
+            "AUTHORITY_ALLOWED" if allowed else "AUTHORITY_CAPABILITY_DENIED",
+            str(raw_tier), str(capability),
+        )
+    _log.info("authority decision %s", decision.to_dict())
+    return decision
 
 
 def render_model_input(
@@ -194,13 +229,27 @@ def render_model_input(
     return json.dumps({
         "speaker_kind": str(speaker_kind or "unknown"),
         "speaker_id": str(speaker_id or "unknown"),
-        "speaker_display": str(speaker_display or "unknown"),
+        "speaker_display": sanitize_speaker_display(
+            str(speaker_display or "unknown")
+        ),
         "content": str(content or ""),
     }, ensure_ascii=False, separators=(",", ":"))
 
 
+def sanitize_speaker_display(value: str) -> str:
+    from openprogram._text import normalize_identity_header_part
+
+    return normalize_identity_header_part(str(value or "")) or "unknown"
+
+
 def render_model_input_from(value: Mapping[str, Any] | Any, content: str) -> str:
+    # The JSON envelope exists to attribute channel speech; a node with no
+    # authority metadata is the local owner's own turn (or pre-authority
+    # history) and renders as plain text — wrapping it would present the
+    # owner to the model as an unknown speaker on every turn.
     authority = normalize_authority(value)
+    if not authority:
+        return content
     return render_model_input(
         content,
         speaker_kind=authority.get("speaker_kind", "unknown"),
@@ -259,7 +308,11 @@ def capability_for_tool(tool_name: str, args: Mapping[str, Any] | None = None) -
         return "schedule.create" if action == "create" else (
             "schedule.manage" if action == "delete" else "fs.read"
         )
-    if name == "memory_update" or name == "memory_promote":
+    if name in {"memory_status", "memory_update"}:
+        # memory_update requires the revision returned by memory_status;
+        # both calls form the append handshake and expose no memory content.
+        return "memory.source.append"
+    if name == "memory_promote":
         return "memory.trusted.promote"
     if name in _READ_TOOLS:
         return "fs.read"
@@ -270,17 +323,26 @@ def capability_for_tool(tool_name: str, args: Mapping[str, Any] | None = None) -
     if name in _NETWORK_TOOLS:
         return "network.send"
     if name in _REPLY_LOCAL_TOOLS:
-        return "reply"
+        return "runtime.control"
     # Installed agentic and MCP extensions may use arbitrary names. Treat an
     # unclassified extension as executable code: local-owner can still use
     # existing extensions, while shared and unknown external scopes cannot.
     return "process.exec"
 
 
+def decide_tool_authority(
+    value: Mapping[str, Any] | Any,
+    tool_name: str,
+    args: Mapping[str, Any] | None = None,
+) -> AuthorityDecision:
+    return decide_capability(value, capability_for_tool(tool_name, args))
+
+
 __all__ = [
-    "AuthorityError", "LOCAL_OWNER_CAPABILITIES", "SHARED_CHANNEL_CAPABILITIES",
+    "AuthorityError", "AuthorityDecision", "AuthorityTier", "TIER_CAPABILITIES",
     "owner_principal_id", "local_owner_authority", "shared_channel_authority",
     "runtime_authority", "normalize_authority",
-    "authority_from_message", "has_capability",
-    "render_model_input", "render_model_input_from", "capability_for_tool",
+    "authority_from_message", "has_capability", "decide_capability",
+    "render_model_input", "render_model_input_from", "sanitize_speaker_display",
+    "capability_for_tool", "decide_tool_authority",
 ]

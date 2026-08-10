@@ -122,6 +122,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "build>=1.2",
+    # test_wheel_contains_both_runtime_shims builds with --no-isolation, so
+    # the backend must be importable in the dev env (not bundled on 3.12+)
+    "setuptools>=68,<75",
     "pytest>=8.0.0",
     "pytest-timeout>=2.3",
     # full-suite runs go 126s -> 27s with -n auto; keep serial default so
