@@ -10,6 +10,7 @@
  * once engaged (`index >= 0`) the arrows keep stepping regardless of caret.
  */
 import React, { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { useSessionStore } from "@/lib/session-store";
 
@@ -20,6 +21,10 @@ import { useSessionStore } from "@/lib/session-store";
  *  the original message in the chat transcript to re-use it. */
 export const HISTORY_RECALL_MAX = 5000;
 
+/** Stable empty result so a session with no transcript doesn't hand the
+ *  shallow compare a fresh array every read. */
+const EMPTY_HISTORY: string[] = [];
+
 export function useHistoryRecall(
   bound: string | null,
   currentSessionId: string | null,
@@ -28,29 +33,33 @@ export function useHistoryRecall(
   // oldest-first to match TUI semantics. Built from
   // ``messageOrder[currentSessionId]`` filtered to user role. Resets
   // automatically whenever the session changes via the useEffect below.
-  const messagesById = useSessionStore((s) => s.messagesById);
-  const messageOrder = useSessionStore((s) => {
-    const sid = bound ?? s.currentSessionId;
-    return sid ? s.messageOrder[sid] : undefined;
-  });
-  const history = React.useMemo<string[]>(() => {
-    if (!messageOrder) return [];
-    const out: string[] = [];
-    for (const id of messageOrder) {
-      const m = messagesById[id];
-      if (m && m.role === "user" && typeof m.content === "string"
-          && m.content.trim()
-          // Skip giant messages — recalling them into the textarea
-          // would bloat the persisted draft (the per-keystroke write
-          // to ``composerDrafts``) and is rarely useful: long messages
-          // are typically expanded pastes, not commands the user wants
-          // to step back through with ↑/↓.
-          && m.content.length <= HISTORY_RECALL_MAX) {
-        out.push(m.content);
+  // Derived INSIDE the selector, compared shallowly: subscribing to the
+  // whole ``messagesById`` map re-rendered the composer on every single
+  // streaming token, because ``updateMessage`` hands back a fresh map
+  // object each delta. User turns don't change while the assistant
+  // streams, so the shallow compare makes those deltas free here.
+  const history = useSessionStore(
+    useShallow((s): string[] => {
+      const sid = bound ?? s.currentSessionId;
+      const order = sid ? s.messageOrder[sid] : undefined;
+      if (!order) return EMPTY_HISTORY;
+      const out: string[] = [];
+      for (const id of order) {
+        const m = s.messagesById[id];
+        if (m && m.role === "user" && typeof m.content === "string"
+            && m.content.trim()
+            // Skip giant messages — recalling them into the textarea
+            // would bloat the persisted draft (the per-keystroke write
+            // to ``composerDrafts``) and is rarely useful: long messages
+            // are typically expanded pastes, not commands the user wants
+            // to step back through with ↑/↓.
+            && m.content.length <= HISTORY_RECALL_MAX) {
+          out.push(m.content);
+        }
       }
-    }
-    return out;
-  }, [messageOrder, messagesById]);
+      return out;
+    }),
+  );
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
   // Reset history index when the session switches.
   useEffect(() => {

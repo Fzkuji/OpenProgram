@@ -43,6 +43,18 @@ function readBackendDefault(): string | undefined {
   return runtimeState._thinkingConfig?.default;
 }
 
+/** Cheap identity of the current thinking config — the poll below
+ *  compares this instead of re-rendering blind. The config is a short
+ *  option list written once per agent/model switch, so stringifying it
+ *  every 500ms costs nothing next to the render it replaces. */
+function configFingerprint(): string {
+  const cfg = runtimeState._thinkingConfig;
+  if (!cfg) return "";
+  return `${cfg.default ?? ""}|${(cfg.options ?? [])
+    .map((o) => o.value)
+    .join(",")}`;
+}
+
 export interface ThinkingEffortHook {
   thinking: ThinkingEffort;
   options: ThinkingOption[];
@@ -63,13 +75,20 @@ export function useThinkingEffort(): ThinkingEffortHook {
   const setComposerSettings = useBoundSetComposerSettings();
   const stored: ThinkingEffort = storedRaw || DEFAULT_THINKING;
   const [menuOpen, setMenuOpen] = useState(false);
-  // `_thinkingConfig` is mutated in place by legacy providers.js when
-  // the agent/model changes. A 500ms poll just bumps a counter to
-  // force a re-render so `options` / `thinking` below pick up the
-  // new config — they're read live, not cached in state.
+  // `_thinkingConfig` is mutated in place by providers.ts when the
+  // agent/model changes, so it has to be polled. The poll re-renders
+  // ONLY when the config actually changed: this hook lives inside the
+  // Composer, and an unconditional tick re-rendered that whole subtree
+  // twice a second for the life of the page.
   const [, forceTick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => forceTick((t) => t + 1), 500);
+    let seen = configFingerprint();
+    const id = setInterval(() => {
+      const now = configFingerprint();
+      if (now === seen) return;
+      seen = now;
+      forceTick((t) => t + 1);
+    }, 500);
     return () => clearInterval(id);
   }, []);
 

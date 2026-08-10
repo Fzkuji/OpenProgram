@@ -10,6 +10,7 @@
  * 平滑滚到那条消息并闪一下。sticky 挂在滚动容器（#chatArea）里。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { useSessionStore } from "@/lib/session-store";
 import { Markdown } from "@/lib/format-utils/markdown";
@@ -31,45 +32,79 @@ type RailMsg = {
   assistantSummary?: string;
 };
 
+/** Delimiter for the packed form below. Message text can contain any
+ *  ordinary character including tabs and newlines, so the separator
+ *  has to be one that cannot appear in it: U+241F SYMBOL FOR UNIT
+ *  SEPARATOR. */
+const RAIL_SEP = "\u241f";
+
+/** Flatten one rail row into scalars so the subscription can compare
+ *  shallowly — `useShallow` only looks one level deep, and fresh row
+ *  OBJECTS would defeat it on every read. */
+function packRow(r: RailMsg): string {
+  return [r.id, r.content, r.preview, r.assistantId ?? "", r.assistantSummary ?? ""]
+    .join(RAIL_SEP);
+}
+
+function unpackRow(packed: string): RailMsg {
+  const [id, content, preview, assistantId, assistantSummary] =
+    packed.split(RAIL_SEP);
+  return {
+    id,
+    content,
+    preview,
+    assistantId: assistantId || undefined,
+    assistantSummary: assistantSummary || undefined,
+  };
+}
+
 function useUserMessages(): RailMsg[] {
-  // 订阅稳定引用（selector 里造新数组会无限重渲染，React #185），
-  // 派生列表用 useMemo。
-  const sid = useSessionStore((s) => s.currentSessionId);
-  const order = useSessionStore((s) =>
-    (sid ? s.messageOrder[sid] : undefined) || EMPTY_ORDER);
-  const byId = useSessionStore((s) => s.messagesById);
-  return useMemo(() => {
-    const out: RailMsg[] = [];
-    for (let i = 0; i < order.length; i++) {
-      const m = byId[order[i]];
-      if (!m || m.role !== "user") continue;
-      if (m.display === "runtime") continue;
-      const preview = (m.content || "").replace(/\s+/g, " ").trim();
-      if (!preview) continue;
-      // 紧随其后的第一条非-runtime 助手回复：取它的 id + 开头摘要。
-      let assistantId: string | undefined;
-      let assistantSummary: string | undefined;
-      for (let j = i + 1; j < order.length; j++) {
-        const a = byId[order[j]];
-        if (!a) continue;
-        if (a.role === "user") break;
-        if (a.role !== "assistant" || a.display === "runtime") continue;
-        assistantId = a.id;
-        const t = a.blocks?.find((b) => b.type === "text")?.text ?? a.content ?? "";
-        // 保留原始空白/换行，让预览卡按 markdown 渲染；只按长度截断。
-        assistantSummary = t.trim().slice(0, 200);
-        break;
+  // Derived in the selector and shallow-compared as flat strings. The
+  // rail used to subscribe to the whole ``messagesById`` map, so every
+  // streaming token invalidated it: an O(n²) rebuild plus three effects
+  // (one of them a ResizeObserver reconnect, one a per-message DOM
+  // query) tearing down and re-running per delta. The rail only depends
+  // on USER turns and the head of each reply, neither of which moves
+  // while the assistant streams — the compare makes those deltas free.
+  const packed = useSessionStore(
+    useShallow((s): string[] => {
+      const sid = s.currentSessionId;
+      const order = (sid ? s.messageOrder[sid] : undefined) || EMPTY_ORDER;
+      const out: string[] = [];
+      for (let i = 0; i < order.length; i++) {
+        const m = s.messagesById[order[i]];
+        if (!m || m.role !== "user") continue;
+        if (m.display === "runtime") continue;
+        const preview = (m.content || "").replace(/\s+/g, " ").trim();
+        if (!preview) continue;
+        // 紧随其后的第一条非-runtime 助手回复：取它的 id + 开头摘要。
+        let assistantId: string | undefined;
+        let assistantSummary: string | undefined;
+        for (let j = i + 1; j < order.length; j++) {
+          const a = s.messagesById[order[j]];
+          if (!a) continue;
+          if (a.role === "user") break;
+          if (a.role !== "assistant" || a.display === "runtime") continue;
+          assistantId = a.id;
+          const t = a.blocks?.find((b) => b.type === "text")?.text ?? a.content ?? "";
+          // 保留原始空白/换行，让预览卡按 markdown 渲染；只按长度截断。
+          assistantSummary = t.trim().slice(0, 200);
+          break;
+        }
+        out.push(
+          packRow({
+            id: order[i],
+            content: m.content || "",
+            preview: preview.slice(0, 60),
+            assistantId,
+            assistantSummary: assistantSummary || undefined,
+          }),
+        );
       }
-      out.push({
-        id: order[i],
-        content: m.content || "",
-        preview: preview.slice(0, 60),
-        assistantId,
-        assistantSummary: assistantSummary || undefined,
-      });
-    }
-    return out;
-  }, [order, byId]);
+      return out;
+    }),
+  );
+  return useMemo(() => packed.map(unpackRow), [packed]);
 }
 
 function scrollToMsg(id: string): void {
