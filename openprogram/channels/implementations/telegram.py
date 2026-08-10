@@ -137,14 +137,19 @@ class TelegramChannel(Channel):
         # Parse platform-native msg → ChannelMessage.
         from openprogram.channels._message import ChannelMessage
         from_user = msg.get("from", {}) or {}
+        user_id = str(from_user.get("id") or "")
+        user_name = " ".join(
+            part for part in (
+                str(from_user.get("first_name") or "").strip(),
+                str(from_user.get("last_name") or "").strip(),
+            ) if part
+        )
         ch_msg = ChannelMessage(
             text=text,
             chat_id=str(chat_id),
-            user_id=str(from_user.get("id") or ""),
-            user_display=(
-                from_user.get("username") or chat.get("username")
-                or chat.get("title") or str(chat_id)
-            ),
+            user_id=user_id,
+            user_display=(str(from_user.get("username") or "").strip()
+                          or user_name or user_id),
             chat_type="group" if is_group else "direct",
             ts=float(msg.get("date") or 0),
             reply_to_id=str(reply_to.get("message_id") or ""),

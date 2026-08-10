@@ -89,6 +89,24 @@ def test_per_user_group_sessions_scope_peer_id() -> None:
     assert ch.peer_id_for(dm[0]) == "-100123"
 
 
+@pytest.mark.parametrize(("sender", "expected"), [
+    ({"id": 666, "username": "alice", "first_name": "Ignored"}, "alice"),
+    ({"id": 777, "first_name": "Alice", "last_name": "Ng"}, "Alice Ng"),
+    ({"id": 888}, "888"),
+])
+def test_group_sender_display_never_falls_back_to_the_chat(
+    sender: dict, expected: str,
+) -> None:
+    ch = _adapter()
+    update = _update("hi")
+    update["message"]["from"] = sender
+    update["message"]["chat"]["username"] = "team_handle"
+
+    got = _capture(ch, update)
+
+    assert got[0].user_display == expected
+
+
 def test_transport_splits_per_user_target() -> None:
     from openprogram.channels._transport import _tg_chat_id
     assert _tg_chat_id("-100123_777") == -100123
