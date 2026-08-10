@@ -4,12 +4,20 @@
 
 Trusted inbound speaker identity is carried separately from message content and
 the routing peer, persisted on user nodes, rendered into memory record headers,
-archived with an injection-safe structured marker, and exposed as an exact
-source-only BM25 filter.
+archived only in a strict version-2 source format, and exposed as an exact
+source-only BM25 filter. Historical source files remain frozen compatibility
+input and cannot establish a trusted speaker or suppress a v2 append.
 
-Implementation commit:
-`ffec5d29eaf823a42a5d7196ea48b6a483caa6eb`
-(`feat(memory): add trusted speaker identity filtering`).
+Implementation commits:
+
+- `ffec5d29eaf823a42a5d7196ea48b6a483caa6eb`
+  (`feat(memory): add trusted speaker identity filtering`)
+- `e0c0c996af9c80405729766d4d6bf8595a36f82e`
+  (`fix(memory): trust only framed speaker metadata`)
+- `388e512b35bfdad73e219c5bb66805f35e8a9d3e`
+  (`fix(memory): isolate trusted source archive v2`)
+- `411061add8d0007b196c48c8b25dee0c9b242def`
+  (`fix(memory): validate canonical speaker markers`)
 
 The report itself is committed separately so it can contain the immutable
 implementation commit SHA.
@@ -79,11 +87,12 @@ visible-file and stage-copy surfaces.
 | Header-safe identity | Shared low-level normalizer; tests cover controls, brackets, colon delimiters, truncation, and normalized search input |
 | SourceRecord compatibility | Optional fields appended after old fields; old positional constructor test |
 | TurnRequest compatibility | Fields appended at the end; old seventh/eighth positional argument regression |
-| Safe archive identity | Percent-encoded ID comment, display-only empty marker, normalized-empty identity suppression |
-| Complete body-forgery boundary | Literal `record-lines:N` framing; valid hash/source/speaker/record forged block stays inside its real event and cannot suppress a later real source ID |
-| New and legacy retrieval | New structured records plus unframed legacy `user` fallback in one index; assistant and framed speakerless false-positive tests |
+| Safe archive identity | Byte-zero v2 format marker, canonical round-trippable speaker-ID encoding, display-only empty marker, strict non-resynchronizing frames |
+| Complete body-forgery boundary | New records live under `_v2/`; `record-lines:N` keeps complete forged blocks inside a body, while all old same-thread text remains legacy |
+| New and legacy retrieval | Valid v2 events override duplicate legacy IDs; legacy `user` prefix hints remain readable with `speaker_trusted=false` |
 | Speaker filter semantics | Case-insensitive exact ID/display/label match, query normalization, source-only candidates, path/date/ranking composition |
-| Cache/API behavior | BM25 cache v4 ignored and rebuilt as v5; tool schema forwards `speaker`; embedding combination rejected explicitly |
+| Cache/API behavior | BM25 cache v5 ignored and rebuilt as v6; tool schema forwards `speaker`; embedding combination rejected explicitly |
+| Failure and transaction behavior | Atomic runtime-dir temporary plus fsync/0644/replace; writer retry idempotence; staged v2 link install and rollback |
 | Import boundary | Clean-process smoke test imports memory state/BM25 without loading `openprogram.channels.implementations.*` |
 | Documentation | English and Chinese overview status, HTML section 11 framing diagram/boundary, and HTML section 12 implementation status |
 
@@ -114,6 +123,28 @@ Additional RED cases were added before their fixes:
 - old positional `TurnRequest` arguments silently shifted;
 - control-only display, id, or both emitted a misleading structured marker.
 
+The formal-review RED case then put a complete hash-valid framed block after a
+blank line inside a multiline legacy body. The first implementation suppressed
+the real later record (`1 failed`: expected two physical source-id occurrences,
+observed only the forged one). This proved that no syntax inside an unbounded
+legacy body can authenticate a later in-file boundary. The protocol was
+therefore corrected before changing the test expectation: legacy files are
+frozen and v2 starts in a separate deterministic path.
+
+Further RED coverage fixed strict-v2 and failure boundaries: malformed and
+truncated tails, duplicate source IDs, a body ending in literal LF followed by
+another append, dot-segment providers, a provider literally named `_v2`,
+transaction stage/link rollback, online writer failure/retry, atomic replace
+failure, old logical path-prefix compatibility, and BM25/embedding v2
+preference.
+
+The final differential review also showed that malformed `%ZZ` and raw `--`
+speaker marker payloads were accepted as trusted. RED produced `2 failed,
+1 passed`: both noncanonical forms parsed as trusted while the empty
+display-only marker passed. The shared format helper now UTF-8 decodes and
+re-encodes each marker with the writer's canonical encoder before accepting
+the frame.
+
 Each case failed for the named reason and passed after the local change. The
 actual `inspect.search` forwarding assertion was also mutation-checked by
 temporarily removing its `speaker` forwarding: the focused test failed, then
@@ -122,36 +153,32 @@ passed after restoration.
 Final focused command:
 
 ```text
-TMPDIR="$(mktemp -d)" python -m pytest -q \
-  tests/unit/test_channels_base_inbound.py \
-  tests/unit/test_channels_dispatch_inbound.py \
-  tests/unit/test_memory_writing.py::test_writer_uses_trusted_speaker_header_and_preserves_body \
-  tests/unit/test_memory_speaker_identity.py
+python -m pytest -q \
+  tests/unit/test_memory_speaker_identity.py \
+  tests/unit/test_memory_writing.py
 ```
 
-Result: `35 passed`.
+Result: `52 passed`.
 
 ## Final verification
 
-- `TMPDIR="$(mktemp -d)" python -m pytest -q tests/unit`
-  - `2040 passed, 3 skipped`
-- `TMPDIR="$(mktemp -d)" python -m pytest -q tests/context`
+- `python -m pytest -q tests/unit/test_memory*.py tests/context/test_memory_core_budget.py`
+  - `94 passed`
+- `python -m pytest -q tests/unit`
+  - `2055 passed, 3 skipped`
+- `python -m pytest -q tests/context`
   - `37 passed`
-- Collection without exclusions identified the repository's known broken
-  import in `tests/integration/test_test_framework.py`:
-  `ModuleNotFoundError: openprogram.functions.agentics.test_framework`.
-- `TMPDIR="$(mktemp -d)" python -m pytest -q tests --ignore=tests/integration/test_test_framework.py`
-  - `2548 passed, 7 skipped, 2 deselected, 1 xfailed, 11 failed`
-  - The 11 failures are the existing TestClient origin-policy baseline:
-    `test_attach_lazy_session.py` (4), `test_healthz.py` (3),
-    `test_ws_qr_login.py` (1), and `test_ws_search.py` (3), all HTTP 403 or
-    WebSocket 1008.
-  - The live sibling baseline has the identical 11-failure set
-    (`11 failed, 2556 passed, 7 skipped, 2 deselected, 1 xfailed`); its extra
-    passes come from that sibling branch's additional tests.
+- `python -m tools.docs_site.build`
+  - `built 415 pages`
 - `ruff check` on every changed Python file: passed.
 - `python -m py_compile` on every changed Python file: passed.
 - `git diff --check` and cached diff check: passed.
+
+The full unit and context runs were taken at the v2 checkpoint
+`388e512b`. The final marker-canonicalization follow-up changed only the shared
+encoder/scanner, its caller, tests and documentation; after that commit the
+focused 52-test set, related 94-test set, ruff, py_compile, docs build and diff
+checks were rerun as required by the final review.
 
 The warnings were the existing SWIG deprecations and local
 `requests`/`urllib3` dependency-version warning.
@@ -164,8 +191,10 @@ The warnings were the existing SWIG deprecations and local
 - Header and memory records: `openprogram/_text.py`,
   `memory/scriptorium/runtime/state.py`, `writing.py`, and
   `prompts/write.py`.
-- Archive and retrieval: `management/source_archive.py`,
-  `retrieval/bm25.py`, `retrieval/inspect.py`, and the memory tool.
+- Archive and retrieval: shared `source_format.py`,
+  `management/source_archive.py`, link/validation callers,
+  `retrieval/bm25.py`, `retrieval/embedding.py`, `retrieval/inspect.py`, and
+  the memory tool.
 - Tests: channel boundary/dispatch, writer prompt, and the dedicated speaker
   identity suite.
 - Documentation: both memory overviews and the speaker-identity HTML sections
@@ -173,9 +202,13 @@ The warnings were the existing SWIG deprecations and local
 
 ## Residual constraints
 
-- Historical unframed archives have no trustworthy multiline body boundary.
-  Their compatibility parser is intentionally limited to a `user` header and
-  its first physical record line; old archives are not rewritten.
+- Historical archives have no trustworthy multiline body boundary. They are
+  frozen and never supply v2 deduplication or trusted speaker markers. Their
+  `user` prefix remains a compatibility hint, explicitly surfaced as
+  `speaker_trusted=false`; old archives are not rewritten.
+- The written-marker integration must enumerate strict v2 frames in addition
+  to its historical `sources/openprogram/*.md` migration scan. The shared
+  dependency-light `source_format.py` is the intended reuse point.
 - Embedding search does not support `speaker` until its result contract carries
   equivalent trusted fields.
 - Identity alias merging and cross-platform person resolution remain outside
