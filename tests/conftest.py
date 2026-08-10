@@ -210,6 +210,24 @@ def _restore_shipped_tools():
 
 
 @pytest.fixture(autouse=True)
+def _reset_process_sandbox_policy():
+    """Un-pin a process-wide sandbox policy a test left installed.
+
+    ``install_policy_snapshot`` writes a module global on purpose: a cron
+    worker and an ``@agentic_function`` subprocess each run one job and
+    must not be widened afterwards. Under pytest every test shares that
+    one process, so a test that runs the real ``_run_prompt_job`` pins a
+    workspace-write policy for the whole rest of the session. Later tests
+    then run their commands under a real bwrap/Seatbelt sandbox they never
+    asked for — which is how CI failed on Linux while macOS stayed green.
+    """
+    from openprogram import sandbox
+
+    yield
+    sandbox._process_policy_override = sandbox._NO_PROCESS_POLICY
+
+
+@pytest.fixture(autouse=True)
 def _reset_spawn_fanout():
     """Clear the per-turn spawn fan-out counter between tests.
 

@@ -237,6 +237,14 @@ def _append_manifest(root: Path, entry: dict[str, Any]) -> None:
                 os.close(fd)
 
 
+def _unlink_quietly(path: Path) -> None:
+    """Drop a sidecar marker whose record now lives in the manifest."""
+    try:
+        _unlink(path)
+    except OSError:
+        pass
+
+
 def _write_all(fd: int, data: bytes) -> None:
     offset = 0
     while offset < len(data):
@@ -290,14 +298,25 @@ def move_to_trash(
         "kind": kind,
         "deleted_at": time.time(),
     }
-    recorded = False
+    pending = root / "pending" / f"{entry_id}.json"
 
     def record_cross_filesystem_copy(cleanup_path: str) -> None:
-        nonlocal recorded
-        entry["source_cleanup_path"] = cleanup_path
-        entry["source_cleanup_status"] = "pending"
-        _append_manifest(root, entry)
-        recorded = True
+        # The copy is complete and the source is parked at *cleanup_path*;
+        # a crash from here until the manifest append would otherwise lose
+        # both the recovery record and the parked source. This marker is a
+        # sidecar file rather than a manifest line because the cross-device
+        # path is the *normal* path under bubblewrap — each --bind is its
+        # own mount, so renaming the workspace into the trash root always
+        # raises EXDEV — and a manifest that carries two lines per deletion
+        # there but one per deletion on macOS is a record format that
+        # depends on the platform.
+        pending.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write(
+            pending,
+            json.dumps({**entry, "source_cleanup_path": cleanup_path,
+                        "source_cleanup_status": "pending"}),
+            0o600,
+        )
 
     try:
         _move(source, str(destination), kind, record_cross_filesystem_copy)
@@ -309,12 +328,11 @@ def move_to_trash(
             "source_cleanup_error": f"{type(failure.error).__name__}: {failure.error}",
         }
         _append_manifest(root, failed_entry)
+        _unlink_quietly(pending)
         raise failure.error
     try:
-        if recorded:
-            _append_manifest(root, {**entry, "source_cleanup_status": "complete"})
-        else:
-            _append_manifest(root, entry)
+        _append_manifest(root, entry)
+        _unlink_quietly(pending)
     except Exception:
         try:
             _move(str(destination), source, kind)
@@ -325,7 +343,20 @@ def move_to_trash(
 
 def _latest_manifest_entries(manifest: Path) -> list[dict[str, Any]]:
     latest: dict[str, dict[str, Any]] = {}
-    for line in manifest.read_text(encoding="utf-8").splitlines():
+    # Sidecars first, so a deletion that later reached the manifest is
+    # reported from the manifest and an interrupted one is still listed.
+    for sidecar in sorted(manifest.parent.glob("pending/*.json")):
+        try:
+            candidate = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(candidate, dict) and isinstance(candidate.get("id"), str):
+            latest[candidate["id"]] = candidate
+    try:
+        lines = manifest.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        lines = []
+    for line in lines:
         try:
             candidate = json.loads(line)
         except (json.JSONDecodeError, TypeError):
@@ -337,13 +368,17 @@ def _latest_manifest_entries(manifest: Path) -> list[dict[str, Any]]:
 
 
 def _run_entries(trash_base: Path):
-    for manifest in sorted(trash_base.glob("*/*/manifest.jsonl")):
+    # A run that crashed mid-deletion has a pending sidecar and no manifest
+    # yet, so the run directories are collected rather than the manifests.
+    runs = {p.parent for p in trash_base.glob("*/*/manifest.jsonl")}
+    runs |= {p.parent.parent for p in trash_base.glob("*/*/pending/*.json")}
+    for run in sorted(runs):
         try:
-            entries = _latest_manifest_entries(manifest)
+            entries = _latest_manifest_entries(run / "manifest.jsonl")
         except OSError:
             continue
         for entry in entries:
-            yield manifest.parent, entry
+            yield run, entry
 
 
 def list_deleted(

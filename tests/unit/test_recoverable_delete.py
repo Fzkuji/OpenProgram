@@ -173,10 +173,80 @@ def test_exdev_cleanup_failure_keeps_a_manifest_for_the_complete_copy(tmp_path, 
         rd.move_to_trash(source)
 
     records = _manifest(trash)
-    assert len(records) == 2
+    assert len(records) == 1
     assert records[-1]["source_cleanup_error"] == "PermissionError: cleanup refused"
     assert records[-1]["source_cleanup_status"] == "error"
     assert (Path(records[-1]["trash_path"]) / "child.txt").read_text() == "complete copy"
+    # The sidecar is superseded by the error record, not left behind.
+    assert not list(trash.glob("pending/*.json"))
+
+
+def test_exdev_deletion_records_one_manifest_line_and_drops_its_sidecar(
+    tmp_path, monkeypatch,
+):
+    """Every --bind under bubblewrap is its own mount, so the workspace ->
+    trash rename always raises EXDEV there. The record format must not
+    depend on which path ran."""
+    import openprogram.sandbox.recoverable_delete as rd
+
+    trash = tmp_path / "trash"
+    target = tmp_path / "work" / "gone.txt"
+    target.parent.mkdir()
+    target.write_text("payload")
+    monkeypatch.setenv("OPENPROGRAM_RECOVERABLE_TRASH", str(trash))
+    real_rename = rd._rename
+    calls = 0
+
+    def exdev_once(source_path, destination):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError(errno.EXDEV, "cross-device link")
+        return real_rename(source_path, destination)
+
+    monkeypatch.setattr(rd, "_rename", exdev_once)
+    entry = rd.move_to_trash(target)
+
+    assert not target.exists()
+    assert len(_manifest(trash)) == 1
+    assert not list(trash.glob("pending/*.json"))
+    assert rd.restore_deleted(entry["id"], trash_root=trash) == target
+    assert target.read_text() == "payload"
+
+
+def test_a_deletion_interrupted_after_the_copy_is_still_listed(tmp_path, monkeypatch):
+    """The sidecar is the crash-window record the manifest line replaced."""
+    import openprogram.sandbox.recoverable_delete as rd
+
+    base = tmp_path / "trash"
+    trash = base / "session" / "run"
+    target = tmp_path / "work" / "interrupted.txt"
+    target.parent.mkdir()
+    target.write_text("payload")
+    monkeypatch.setenv("OPENPROGRAM_RECOVERABLE_TRASH", str(trash))
+    real_rename = rd._rename
+    calls = 0
+
+    def exdev_once(source_path, destination):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError(errno.EXDEV, "cross-device link")
+        return real_rename(source_path, destination)
+
+    monkeypatch.setattr(rd, "_rename", exdev_once)
+    monkeypatch.setattr(
+        rd, "_append_manifest",
+        lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        rd.move_to_trash(target)
+
+    assert not (trash / "manifest.jsonl").exists()
+    listed = rd.list_deleted(trash_base=base)
+    assert [record["original_path"] for record in listed] == [str(target)]
+    assert listed[0]["source_cleanup_status"] == "pending"
 
 
 def test_manifest_short_writes_are_serialized_within_the_process(tmp_path, monkeypatch):

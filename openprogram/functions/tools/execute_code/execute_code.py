@@ -115,8 +115,16 @@ def execute(
     sandbox_error = None
 
     if isinstance(backend, LocalBackend):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False,
-                                         encoding="utf-8") as f:
+        # The script has to live where the sandboxed child can read it.
+        # The host TMPDIR is not that place: bubblewrap mounts a fresh
+        # tmpfs over /tmp, so a NamedTemporaryFile written here is simply
+        # absent inside the sandbox ("can't open file /tmp/tmpXXX.py").
+        # The execution directory is always a writable root, on both
+        # backends, so the script goes there.
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", prefix=".openprogram-execute-",
+            dir=cwd or os.getcwd(), delete=False, encoding="utf-8",
+        ) as f:
             f.write(code)
             script_path = f.name
         try:
