@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram 远程 Web 访问设计</title>
+<style>
+  :root{
+    --bg:#0f171c;
+    --panel:#15232a;
+    --panel-2:#192c34;
+    --ink:#e7eee9;
+    --text:#b7c5c3;
+    --muted:#7f9595;
+    --line:#294049;
+    --cyan:#67c9c7;
+    --blue:#70a7e8;
+    --amber:#e8ad67;
+    --green:#8bcf9a;
+    --red:#ef7772;
+    --violet:#b89ae8;
+    --code:#0b1216;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    padding:38px 24px 90px;
+    overflow-x:hidden;
+    color:var(--text);
+    background:
+      linear-gradient(rgba(103,201,199,.035) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(103,201,199,.035) 1px,transparent 1px),
+      var(--bg);
+    background-size:32px 32px;
+    font:14px/1.72 "Avenir Next","Segoe UI","PingFang SC",sans-serif;
+  }
+  .wrap{max-width:1180px;margin:0 auto}
+  a{color:var(--cyan);text-underline-offset:3px}
+  a:hover{color:var(--ink)}
+  a:focus-visible{outline:2px solid var(--amber);outline-offset:4px;border-radius:3px}
+  code,pre,.mono,.tag,.eyebrow,.num{
+    font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  code{padding:1px 5px;border-radius:4px;background:var(--code);color:var(--amber);font-size:.9em}
+  pre{
+    margin:10px 0 0;padding:15px 17px;overflow:auto;border:1px solid var(--line);
+    border-radius:8px;background:var(--code);color:#c8d8d5;font-size:12px;line-height:1.65;
+  }
+  h1,h2,h3,h4{color:var(--ink);font-weight:650}
+  h1{font:600 clamp(31px,5.2vw,66px)/1.02 "Iowan Old Style","Palatino Linotype",serif;letter-spacing:-.035em;margin:7px 0 18px;max-width:850px}
+  h2{font-size:22px;margin:0 0 7px;letter-spacing:-.015em}
+  h3{font-size:16px;margin:0 0 6px}
+  h4{font-size:14px;margin:0 0 5px}
+  p{margin:0 0 12px}
+  .hero{position:relative;padding:30px 0 26px;border-bottom:1px solid var(--line)}
+  .hero-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,.75fr);gap:52px;align-items:end}
+  .hero-grid > *, .grid2 > *, .grid3 > *, .grid4 > *, .steps > *, .status-grid > *{min-width:0}
+  .eyebrow{font-size:10px;letter-spacing:.22em;color:var(--cyan);text-transform:uppercase}
+  .hero .lead{font-size:16px;line-height:1.78;max-width:760px;color:#bfcfcb}
+  .owner-card{border:1px solid var(--line);border-left:4px solid var(--cyan);background:rgba(21,35,42,.92);padding:18px 19px;border-radius:5px;overflow-wrap:anywhere}
+  .owner-card .label{font:10px/1.2 "IBM Plex Mono",Menlo,monospace;letter-spacing:.18em;color:var(--muted);margin-bottom:10px}
+  .owner-card .principal{font:14px/1.4 "IBM Plex Mono",Menlo,monospace;color:var(--ink);word-break:break-all}
+  .owner-card .scope{margin-top:12px;padding-top:11px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+  .protocol{
+    display:grid;grid-template-columns:repeat(6,1fr);margin-top:27px;border:1px solid var(--line);
+    border-radius:7px;overflow:hidden;background:var(--panel);
+  }
+  .protocol div{position:relative;padding:11px 13px;border-right:1px solid var(--line)}
+  .protocol div:last-child{border-right:0}
+  .protocol b{display:block;color:var(--ink);font:11px/1.25 "IBM Plex Mono",Menlo,monospace;letter-spacing:.08em}
+  .protocol span{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
+  .protocol div:not(:last-child)::after{content:"›";position:absolute;right:-7px;top:15px;z-index:2;color:var(--cyan);background:var(--panel);padding:0 2px}
+  .toc{display:flex;flex-wrap:wrap;gap:7px;padding:17px 0 2px}
+  .toc a{color:var(--text);text-decoration:none;border:1px solid var(--line);background:var(--panel);padding:5px 10px;border-radius:5px;font-size:11px}
+  .toc a:hover{border-color:var(--cyan);color:var(--ink)}
+  .section{padding:52px 0 0;scroll-margin-top:18px}
+  .section-head{display:grid;grid-template-columns:58px minmax(0,1fr);gap:14px;margin-bottom:18px}
+  .num{font-size:12px;color:var(--cyan);border-top:2px solid var(--cyan);padding-top:7px}
+  .section-head p{color:var(--muted);max-width:820px;margin:0}
+  .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+  .grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  .card{background:rgba(21,35,42,.94);border:1px solid var(--line);border-radius:8px;padding:16px}
+  .card p:last-child{margin-bottom:0}
+  .card .k{font:9.5px/1.3 "IBM Plex Mono",Menlo,monospace;letter-spacing:.17em;color:var(--muted);margin-bottom:7px;text-transform:uppercase}
+  .card.current{border-top:3px solid var(--red)}
+  .card.target{border-top:3px solid var(--green)}
+  .card.cyan{border-top:3px solid var(--cyan)}
+  .card.blue{border-top:3px solid var(--blue)}
+  .card.amber{border-top:3px solid var(--amber)}
+  .card.violet{border-top:3px solid var(--violet)}
+  .note{border-left:3px solid var(--cyan);padding:4px 0 4px 13px;margin:14px 0;color:var(--muted);max-width:900px}
+  .note.warn{border-color:var(--red)}
+  .note b{color:var(--ink)}
+  .diagram{margin:14px 0;background:var(--code);border:1px solid var(--line);border-radius:8px;padding:8px;overflow:auto}
+  svg{display:block;width:100%;height:auto;min-width:720px}
+  svg text{font-family:"Avenir Next","Segoe UI","PingFang SC",sans-serif}
+  svg .m{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,monospace}
+  .legend{display:flex;gap:17px;flex-wrap:wrap;padding:4px 7px 8px;font-size:11px;color:var(--muted)}
+  .legend span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;background:var(--swatch);vertical-align:-1px}
+  .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel);margin:13px 0}
+  .table-wrap:focus-visible{outline:2px solid var(--amber);outline-offset:3px}
+  table{width:100%;border-collapse:collapse;min-width:780px;font-size:12px}
+  caption{text-align:left;padding:10px 12px;color:var(--muted);font:10px/1.35 "IBM Plex Mono",Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;background:#122027;border-bottom:1px solid var(--line)}
+  th{text-align:left;color:var(--muted);font:10px/1.35 "IBM Plex Mono",Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;padding:10px 12px;border-bottom:1px solid var(--line);background:#122027}
+  td{padding:10px 12px;vertical-align:top;border-bottom:1px solid #223741;line-height:1.62}
+  tr:last-child td{border-bottom:0}
+  td:first-child{color:var(--ink);font-weight:600}
+  .yes{color:var(--green)}
+  .partial{color:var(--amber)}
+  .no{color:var(--red)}
+  .out{color:var(--violet)}
+  .tag{display:inline-block;padding:2px 7px;border:1px solid var(--line);border-radius:4px;font-size:9.5px;letter-spacing:.08em;color:var(--muted)}
+  .decision{display:grid;grid-template-columns:120px 1fr;gap:9px 13px;padding:13px 0;border-top:1px solid var(--line)}
+  .decision:first-child{border-top:0}
+  .decision .status{font:10px/1.4 "IBM Plex Mono",Menlo,monospace;letter-spacing:.13em}
+  .decision .status.adopt{color:var(--green)}
+  .decision .status.modify{color:var(--amber)}
+  .decision .status.reject{color:var(--red)}
+  .mode{min-height:205px;display:flex;flex-direction:column}
+  .mode .bind{font:12px/1.5 "IBM Plex Mono",Menlo,monospace;color:var(--cyan);margin:7px 0}
+  .mode .rule{margin-top:auto;border-top:1px solid var(--line);padding-top:10px;color:var(--muted);font-size:12px}
+  .steps{counter-reset:step;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  .step{counter-increment:step;background:var(--panel);border:1px solid var(--line);padding:14px;border-radius:7px}
+  .step::before{content:counter(step,decimal-leading-zero);display:block;color:var(--cyan);font:10px/1 "IBM Plex Mono",Menlo,monospace;margin-bottom:9px}
+  .step b{color:var(--ink);display:block;margin-bottom:5px}
+  .checklist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 24px;margin:12px 0 0;padding:0;counter-reset:test}
+  .checklist li{counter-increment:test;list-style:none;position:relative;padding:8px 0 8px 34px;border-top:1px solid var(--line)}
+  .checklist li::before{content:counter(test,decimal-leading-zero);position:absolute;left:0;top:9px;color:var(--cyan);font:10px/1.4 "IBM Plex Mono",Menlo,monospace}
+  .status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:13px 0}
+  .status-card{border:1px solid var(--line);border-top:4px solid var(--state);background:var(--panel);padding:15px;border-radius:7px;min-height:185px}
+  .status-card .state{color:var(--state);font:10px/1.4 "IBM Plex Mono",Menlo,monospace;letter-spacing:.14em;margin-bottom:10px}
+  .status-card ul{margin:0;padding-left:16px;font-size:12px}
+  .status-card li{margin:4px 0}
+  .foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}
+  .foot code{font-size:10px}
+  @media(max-width:900px){
+    body{padding:22px 15px 70px}
+    .hero-grid,.grid2,.grid3,.grid4,.status-grid{grid-template-columns:1fr}
+    .protocol{grid-template-columns:1fr}
+    .protocol div{border-right:0;border-bottom:1px solid var(--line)}
+    .protocol div:last-child{border-bottom:0}
+    .protocol div::after{display:none}
+    .section-head{grid-template-columns:42px 1fr}
+    .steps{grid-template-columns:1fr 1fr}
+    .checklist{grid-template-columns:1fr}
+  }
+  @media(max-width:560px){.steps{grid-template-columns:1fr}.hero .lead{font-size:14px}}
+  @media(prefers-reduced-motion:no-preference){
+    .protocol{animation:reveal .45s ease-out both}
+    @keyframes reveal{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="hero">
+    <div class="hero-grid">
+      <div>
+        <div class="eyebrow">Remote Web Access / Owner only / Self-hosted</div>
+        <h1>四种访问方式，一套所有者认证</h1>
+        <p class="lead">同机、局域网或 VPN、SSH 隧道、所有者域名与 HTTPS 反向代理全部支持。
+          每次 Web 启动生成实例 token；HTTP、SSE、WebSocket 使用同一认证规则；
+          OpenProgram 不运营公网中转，不增加账号、RBAC 或项目权限。</p>
+      </div>
+      <aside class="owner-card" aria-label="单一所有者 authority 摘要">
+        <div class="label">AUTHORITY RESULT</div>
+        <div class="principal">owner/install/&lt;16hex&gt;</div>
+        <div class="scope">当前 profile/state 实例 · token possession → <b style="color:var(--ink)">owner tier · fixed capability set</b><br>
+          paired channel speaker → paired tier · fixed capability set</div>
+      </aside>
+    </div>
+    <div class="protocol" aria-label="请求认证处理顺序摘要">
+      <div><b>HOST</b><span>解析 authority</span></div>
+      <div><b>CLASSIFY</b><span>route / method / source</span></div>
+      <div><b>ORIGIN</b><span>浏览器与 CSRF</span></div>
+      <div><b>TOKEN</b><span>cookie 或 Bearer</span></div>
+      <div><b>AUTHORITY</b><span>映射 owner tier</span></div>
+      <div><b>ACTION</b><span>HTTP / SSE / WS</span></div>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="页内目录">
+    <a href="#method">01 方法与边界</a>
+    <a href="#current">02 当前实现</a>
+    <a href="#survey">03 框架对比</a>
+    <a href="#synthesis">04 采用与拒绝</a>
+    <a href="#design">05 最终设计</a>
+    <a href="#contract">06 验收契约</a>
+    <a href="#status">07 实现进度</a>
+  </nav>
+
+  <section class="section" id="method">
+    <div class="section-head">
+      <div class="num">01</div>
+      <div><h2>方法与产品边界</h2><p>Web UI 是一个完整的所有者管理权限边界。多人协作继续使用 channel speaker 归因与受限 capability，不转化为 Web 账号。</p></div>
+    </div>
+
+    <div class="grid4">
+      <article class="card mode cyan">
+        <div class="k">Same machine</div><h3>同机访问</h3>
+        <div class="bind">127.0.0.1</div>
+        <p>CLI 自动打开带 fragment token 的 loopback URL。</p>
+        <div class="rule">token 始终开启；Host 与 Origin 仍校验。</div>
+      </article>
+      <article class="card mode blue">
+        <div class="k">LAN / VPN</div><h3>直接网络访问</h3>
+        <div class="bind">web.host = 0.0.0.0</div>
+        <p>必须显式配置完整、精确的 <code>allowed_origins</code>。</p>
+        <div class="rule">HTTP 仅限显式本地/overlay 地址范围并警告；其他情况使用 HTTPS。</div>
+      </article>
+      <article class="card mode amber">
+        <div class="k">SSH tunnel</div><h3>SSH 端口转发</h3>
+        <div class="bind">127.0.0.1</div>
+        <p>浏览器连接本地转发端口，SSH 提供传输加密。</p>
+        <div class="rule">不修改 <code>web.host</code>，实例 token 继续认证。</div>
+      </article>
+      <article class="card mode violet">
+        <div class="k">Public domain</div><h3>HTTPS 反向代理</h3>
+        <div class="bind">proxy → 127.0.0.1</div>
+        <p>nginx 或 Caddy 在同机终结 HTTPS，保留公网 Host。</p>
+        <div class="rule">只信任 loopback proxy；OpenProgram 不管理证书。</div>
+      </article>
+    </div>
+
+    <div class="diagram" tabindex="0" role="region" aria-label="四种远程 Web 访问部署拓扑图">
+      <svg viewBox="0 0 1120 390" role="img" aria-label="四种远程 Web 访问部署拓扑">
+        <rect x="18" y="18" width="1084" height="354" rx="9" fill="#0b1216" stroke="#294049"/>
+        <text x="42" y="51" fill="#7f9595" font-size="11" class="m" letter-spacing="1.6">FOUR SUPPORTED DEPLOYMENTS · ONE APPLICATION CREDENTIAL</text>
+
+        <g transform="translate(42,78)">
+          <rect width="238" height="236" rx="7" fill="#15232a" stroke="#67c9c7"/>
+          <text x="18" y="29" fill="#67c9c7" font-size="11" class="m">LOCAL</text>
+          <rect x="28" y="59" width="70" height="48" rx="5" fill="#192c34" stroke="#70a7e8"/>
+          <text x="63" y="88" fill="#e7eee9" font-size="12" text-anchor="middle">Browser</text>
+          <path d="M103 83 H137" stroke="#67c9c7" stroke-width="2"/>
+          <path d="M132 78 L139 83 L132 88" fill="none" stroke="#67c9c7" stroke-width="2"/>
+          <rect x="143" y="51" width="68" height="64" rx="5" fill="#192c34" stroke="#8bcf9a"/>
+          <text x="177" y="77" fill="#e7eee9" font-size="11" text-anchor="middle">Open-</text>
+          <text x="177" y="92" fill="#e7eee9" font-size="11" text-anchor="middle">Program</text>
+          <text x="119" y="138" fill="#7f9595" font-size="10" text-anchor="middle" class="m">127.0.0.1</text>
+          <rect x="22" y="163" width="194" height="45" rx="4" fill="#0b1216" stroke="#294049"/>
+          <text x="119" y="182" fill="#e8ad67" font-size="10" text-anchor="middle" class="m">TOKEN + HOST + ORIGIN</text>
+          <text x="119" y="198" fill="#7f9595" font-size="10" text-anchor="middle">本机也不豁免认证</text>
+        </g>
+
+        <g transform="translate(306,78)">
+          <rect width="238" height="236" rx="7" fill="#15232a" stroke="#70a7e8"/>
+          <text x="18" y="29" fill="#70a7e8" font-size="11" class="m">LAN / VPN</text>
+          <rect x="20" y="56" width="70" height="54" rx="5" fill="#192c34" stroke="#70a7e8"/>
+          <text x="55" y="88" fill="#e7eee9" font-size="12" text-anchor="middle">Device</text>
+          <path d="M95 83 H137" stroke="#70a7e8" stroke-width="2"/>
+          <path d="M132 78 L139 83 L132 88" fill="none" stroke="#70a7e8" stroke-width="2"/>
+          <rect x="143" y="51" width="68" height="64" rx="5" fill="#192c34" stroke="#8bcf9a"/>
+          <text x="177" y="77" fill="#e7eee9" font-size="11" text-anchor="middle">Open-</text>
+          <text x="177" y="92" fill="#e7eee9" font-size="11" text-anchor="middle">Program</text>
+          <text x="119" y="138" fill="#7f9595" font-size="10" text-anchor="middle" class="m">EXPLICIT web.host</text>
+          <rect x="22" y="163" width="194" height="45" rx="4" fill="#0b1216" stroke="#294049"/>
+          <text x="119" y="182" fill="#e8ad67" font-size="10" text-anchor="middle" class="m">NONEMPTY EXACT ORIGINS</text>
+          <text x="119" y="198" fill="#7f9595" font-size="10" text-anchor="middle">缺少配置时拒绝启动</text>
+        </g>
+
+        <g transform="translate(570,78)">
+          <rect width="238" height="236" rx="7" fill="#15232a" stroke="#e8ad67"/>
+          <text x="18" y="29" fill="#e8ad67" font-size="11" class="m">SSH TUNNEL</text>
+          <rect x="17" y="56" width="63" height="54" rx="5" fill="#192c34" stroke="#70a7e8"/>
+          <text x="49" y="88" fill="#e7eee9" font-size="11" text-anchor="middle">Browser</text>
+          <rect x="93" y="56" width="52" height="54" rx="5" fill="#192c34" stroke="#e8ad67"/>
+          <text x="119" y="88" fill="#e7eee9" font-size="11" text-anchor="middle">SSH</text>
+          <rect x="158" y="51" width="63" height="64" rx="5" fill="#192c34" stroke="#8bcf9a"/>
+          <text x="190" y="77" fill="#e7eee9" font-size="10" text-anchor="middle">Open-</text>
+          <text x="190" y="92" fill="#e7eee9" font-size="10" text-anchor="middle">Program</text>
+          <path d="M80 83 H92 M145 83 H157" stroke="#e8ad67" stroke-width="2"/>
+          <text x="119" y="138" fill="#7f9595" font-size="10" text-anchor="middle" class="m">BACKEND LOOPBACK</text>
+          <rect x="22" y="163" width="194" height="45" rx="4" fill="#0b1216" stroke="#294049"/>
+          <text x="119" y="182" fill="#e8ad67" font-size="10" text-anchor="middle" class="m">SSH ENCRYPTION + TOKEN</text>
+          <text x="119" y="198" fill="#7f9595" font-size="10" text-anchor="middle">不修改 web.host</text>
+        </g>
+
+        <g transform="translate(834,78)">
+          <rect width="238" height="236" rx="7" fill="#15232a" stroke="#b89ae8"/>
+          <text x="18" y="29" fill="#b89ae8" font-size="11" class="m">PUBLIC HTTPS</text>
+          <rect x="12" y="56" width="60" height="54" rx="5" fill="#192c34" stroke="#70a7e8"/>
+          <text x="42" y="88" fill="#e7eee9" font-size="11" text-anchor="middle">Browser</text>
+          <rect x="88" y="56" width="58" height="54" rx="5" fill="#192c34" stroke="#b89ae8"/>
+          <text x="117" y="79" fill="#e7eee9" font-size="10" text-anchor="middle">nginx /</text>
+          <text x="117" y="94" fill="#e7eee9" font-size="10" text-anchor="middle">Caddy</text>
+          <rect x="162" y="51" width="63" height="64" rx="5" fill="#192c34" stroke="#8bcf9a"/>
+          <text x="194" y="77" fill="#e7eee9" font-size="10" text-anchor="middle">Open-</text>
+          <text x="194" y="92" fill="#e7eee9" font-size="10" text-anchor="middle">Program</text>
+          <path d="M72 83 H87 M146 83 H161" stroke="#b89ae8" stroke-width="2"/>
+          <text x="119" y="138" fill="#7f9595" font-size="10" text-anchor="middle" class="m">HTTPS → LOOPBACK</text>
+          <rect x="22" y="163" width="194" height="45" rx="4" fill="#0b1216" stroke="#294049"/>
+          <text x="119" y="182" fill="#e8ad67" font-size="10" text-anchor="middle" class="m">OWNER DOMAIN + TOKEN</text>
+          <text x="119" y="198" fill="#7f9595" font-size="10" text-anchor="middle">无 OpenProgram relay</text>
+        </g>
+      </svg>
+      <div class="legend">
+        <span style="--swatch:var(--cyan)">本机</span><span style="--swatch:var(--blue)">直接网络</span>
+        <span style="--swatch:var(--amber)">SSH</span><span style="--swatch:var(--violet)">公网 HTTPS</span>
+      </div>
+    </div>
+
+    <div class="note"><b>边界：</b>不做 Web 账号、RBAC、项目权限、OAuth/SSO、内置 TLS、证书生命周期、公网中转、托管隧道、公共分享 URL 或关闭认证模式。</div>
+  </section>
+
+  <section class="section" id="current">
+    <div class="section-head">
+      <div class="num">02</div>
+      <div><h2>当前实现与待补控制</h2><p>默认 loopback、lifespan 和浏览器 Origin/Host guard 已存在；调用方认证、外部绑定 fail-closed 和 secret 不可取回尚未实现。</p></div>
+    </div>
+    <div class="grid2">
+      <article class="card current">
+        <div class="k">Current behavior</div><h3>当前 guard 不认证调用方</h3>
+        <p><code>BrowserOriginGuard</code> 会先接受未经验证的 <code>allowed_origins</code> 精确字符串；未命中该分支时才拒绝显式 cross-site、opaque Origin 和 loopback 下的外部 Host。配置的 <code>null</code> 或 cross-site Origin、以及无 <code>Origin</code> 请求仍可能通过；非 loopback bind 会关闭现有 Host enforcement。Uvicorn 也尚未关闭自身 proxy-header 改写。</p>
+        <p><code>/ws</code> 在认证前执行 <code>accept()</code>，HTTP 与 SSE 也没有共同认证 dependency。</p>
+      </article>
+      <article class="card target">
+        <div class="k">Required behavior</div><h3>所有 transport 先认证</h3>
+        <p>Host 与 Origin 校验后，cookie 或 Bearer token 必须验证成功，随后才附加 owner authority 并执行 HTTP route、SSE generator 或 WebSocket accept。</p>
+        <p>有效 Bearer native client，或无副作用的安全 cookie 请求可以省略 <code>Origin</code>；缺少 Origin 本身不表示可信。</p>
+      </article>
+    </div>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="当前实现与缺失控制表">
+      <table>
+        <caption>当前实现与缺失控制</caption>
+        <thead><tr><th>当前对象</th><th>已实现</th><th>缺失或风险</th></tr></thead>
+        <tbody>
+          <tr><td><code>web.host</code></td><td class="yes">默认 127.0.0.1</td><td>外部监听没有强制 token 与非空 Origin</td></tr>
+          <tr><td><code>BrowserOriginGuard</code></td><td class="partial">HTTP / WS 共用；早期接受未经验证的 allowlist</td><td>不是认证；配置 null/cross-site 与无 Origin 可通过；外部 bind 无 Host enforcement</td></tr>
+          <tr><td><code>/ws</code></td><td class="partial">Origin guard 在 accept 前</td><td>调用方认证缺失，handler 自身立即 accept</td></tr>
+          <tr><td>Owner authority</td><td class="yes">principal、owner档位与固定capability表已实现</td><td>Web 请求在获得 owner authority 前没有 token 证明</td></tr>
+          <tr><td>Provider secret</td><td class="partial">部分响应默认掩码</td><td>两个 reveal 路径返回明文</td></tr>
+          <tr><td><code>/healthz</code></td><td class="partial">liveness 已存在</td><td>返回 revision、DB、会话和工具 metadata，不能公开</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note warn"><b>Loopback 不是认证。</b>任意网页可以向 localhost 发送请求；WebSocket 不受 HTTP 同源读取规则保护；本机进程可以省略 Origin；DNS rebinding 可以提供外部 Host。因此 token 在本机也强制开启。</div>
+  </section>
+
+  <section class="section" id="survey">
+    <div class="section-head">
+      <div class="num">03</div>
+      <div><h2>开源实现调查</h2><p>范围包括现有参考语料与具备远程 Web、认证、反向代理或 secret 处理能力的补充系统；目标能力不存在时明确标为不适用。</p></div>
+    </div>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="开源框架远程访问设计对比表">
+      <table style="min-width:1080px">
+        <caption>开源框架远程访问设计对比</caption>
+        <thead><tr><th>系统</th><th>默认与认证</th><th>远程方式</th><th>采用</th><th>拒绝或不适用</th></tr></thead>
+        <tbody>
+          <tr><td><a href="https://github.com/openclaw/openclaw/blob/main/docs/gateway/remote.md">OpenClaw</a></td><td>loopback；外部需要认证；显式 Origin</td><td>SSH、反向代理、其他外部网络方式</td><td>fragment、Host/Origin、proxy trust</td><td>tokenless identity 替代</td></tr>
+          <tr><td><a href="https://github.com/jupyter/notebook/blob/4.x/docs/source/changelog.rst">Jupyter Server</a></td><td>Notebook 4.3 默认 token；首次访问转 cookie</td><td>SSH、HTTPS public server</td><td>自动 token → cookie 体验</td><td>query token、密码模式</td></tr>
+          <tr><td><a href="https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/web-dashboard.md#when-the-gate-engages">Hermes Agent</a></td><td>loopback；外部 bind 强制 auth provider 并 fail closed</td><td>session cookie；单次 WS ticket</td><td>外部 fail-closed、secret redaction</td><td>auth-provider 账号、第二套 ticket、reveal</td></tr>
+          <tr><td><a href="https://github.com/agent0ai/agent-zero/blob/main/helpers/settings.py">Agent Zero</a></td><td>本地；可选单组登录；cookie + CSRF</td><td>反向代理、VPS、内置 tunnel</td><td>cookie/CSRF/Origin/WS、secret mask</td><td>可关闭认证、内置公网 tunnel</td></tr>
+          <tr><td><a href="https://github.com/OpenHands/OpenHands/blob/main/docs/SELF_HOSTING.md">OpenHands</a></td><td>session API key；HTTP/WS</td><td>SSH、nginx/HTTPS</td><td>实例 key、loopback backend</td><td>公共 HTML/browser storage 暴露 token、明文 secret retrieval</td></tr>
+          <tr><td><a href="https://github.com/sst/opencode/blob/dev/packages/web/src/content/docs/server.mdx">opencode</a></td><td>loopback；未设置密码时无认证</td><td>外部 host、CORS origins；另有 WS ticket</td><td>loopback default</td><td>可选认证、第二套 WS ticket</td></tr>
+          <tr><td><a href="https://github.com/open-webui/docs/blob/main/docs/reference/https/nginx.md">Open WebUI</a></td><td>账号、角色、JWT/cookie</td><td>nginx/Caddy、WS、SSE</td><td>proxy、Upgrade、SSE buffering 配置</td><td>账号、group、RBAC</td></tr>
+          <tr><td><a href="https://github.com/langgenius/dify/blob/main/api/core/entities/provider_configuration.py">Dify</a></td><td>account/workspace/role</td><td>反向代理</td><td>credential obfuscation 与替换语义</td><td>tenant 与 role 层</td></tr>
+          <tr><td><a href="https://github.com/LibreChat-AI/librechat.ai/blob/main/content/docs/features/authentication.mdx">LibreChat</a></td><td>注册、JWT、角色与 ACL</td><td>nginx HTTPS/WS</td><td>proxy 细节</td><td>用户身份数据模型</td></tr>
+          <tr><td><a href="https://github.com/Mintplex-Labs/anything-llm/blob/master/server/utils/middleware/validatedRequest.js">AnythingLLM</a></td><td>单用户或多用户；单用户密码可选</td><td>Docker port</td><td>单一 owner credential 概念</td><td>可选认证、role system</td></tr>
+          <tr><td><a href="https://github.com/microsoft/autogen/blob/main/python/packages/autogen-studio/autogenstudio/web/auth/manager.py">AutoGen Studio</a></td><td>loopback；默认无认证；可选 OAuth/JWT</td><td>research prototype</td><td>loopback default</td><td>query/localStorage token、post-accept auth</td></tr>
+          <tr><td><a href="https://github.com/SWE-agent/SWE-agent/tree/main/docs">SWE-agent</a></td><td>当前仓库提供命令行 agent</td><td>无 owner Web control UI</td><td>记录能力缺失</td><td class="out">远程安全设计不适用</td></tr>
+          <tr><td><a href="https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/rpc.md">pi-mono / pi-ai</a></td><td>TUI、SDK、RPC/provider transport</td><td>无 packaged owner Web server</td><td>记录能力缺失</td><td class="out">远程 Web ownership 不适用</td></tr>
+          <tr><td><a href="https://github.com/fastclaw-ai/weclaw/blob/main/README.md">WeClaw</a></td><td>WeChat gateway + HTTP API</td><td>listen address 可配</td><td>记录外部 HTTP 与 Web UI 的区别</td><td class="out">浏览器 owner UI 不存在</td></tr>
+          <tr><td><a href="https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md">Codex CLI</a></td><td>app-server 与实验性 WS</td><td>service-mediated pairing/remote control</td><td>记录协议差异</td><td>不采用 relay 型 remote control</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="三类远程身份设计对比表">
+      <table>
+        <caption>三类远程身份设计</caption>
+        <thead><tr><th>类型</th><th>框架或能力</th><th>OpenProgram 处理</th></tr></thead>
+        <tbody>
+          <tr><td>实例 credential</td><td>Jupyter、OpenClaw、OpenHands</td><td class="yes">采用：一个 owner，一种 credential</td></tr>
+          <tr><td>应用账号</td><td>Open WebUI、Dify、LibreChat、AnythingLLM</td><td class="no">不采用：不需要注册、role、resource ACL</td></tr>
+          <tr><td>托管远程控制</td><td>pairing、hosted tunnel、relay service</td><td class="no">不采用：OpenProgram 不运营外部服务</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section" id="synthesis">
+    <div class="section-head">
+      <div class="num">04</div>
+      <div><h2>采用、修改与拒绝</h2><p>最终设计只保留完成当前需求所需的一种实例 credential、一套浏览器 bootstrap 和一组 HTTP/WS/SSE 认证规则。</p></div>
+    </div>
+    <div class="card">
+      <div class="decision"><div class="status adopt">采用</div><div><b>OpenClaw</b> 的精确 Origin、Host/DNS rebinding 控制、SSH 与 proxy trust 限制。</div></div>
+      <div class="decision"><div class="status modify">修改</div><div><b>Jupyter</b> 的自动 launch-token 体验：query 改为 fragment，随后换取 HttpOnly cookie。</div></div>
+      <div class="decision"><div class="status adopt">采用</div><div>标准库生成 32 个随机字节，并对解码后的 credential 使用常数时间比较；该构造属于 OpenProgram 自身的实例 token 设计。</div></div>
+      <div class="decision"><div class="status adopt">采用</div><div><b>Agent Zero</b> 的 cookie、CSRF、Origin、WebSocket 组合校验，以及仅掩码 secret 更新。</div></div>
+      <div class="decision"><div class="status modify">修改</div><div>外部 proxy 或 VPN 可以增加传输与访问控制，但不能替代 OpenProgram token。</div></div>
+      <div class="decision"><div class="status reject">拒绝</div><div>认证关闭、query/localStorage token、明文 secret reveal、多用户账号、RBAC、内置 tunnel 和公网 relay。</div></div>
+    </div>
+  </section>
+
+  <section class="section" id="design">
+    <div class="section-head">
+      <div class="num">05</div>
+      <div><h2>最终认证与部署设计</h2><p>每个 profile/state 实例只运行一个 Web 进程。Token 每次启动更换；浏览器用 fragment 单次引导后转派生的 HttpOnly cookie，原生客户端使用 Bearer header。</p></div>
+    </div>
+
+    <div class="steps">
+      <div class="step"><b>生成</b>32 个随机字节，编码为 43 字符 unpadded base64url。</div>
+      <div class="step"><b>锁定并保存</b>先持有 <code>&lt;state&gt;/web.lock</code>，再原子写 owner-only token。</div>
+      <div class="step"><b>派生并比较</b><code>openprogram_owner_&lt;owner16&gt;</code> 使用固定 HMAC domain；解码后只用 <code>compare_digest</code>。</div>
+      <div class="step"><b>失效</b>进程重启更换 token，原 Bearer 与 cookie 同时失效。</div>
+    </div>
+
+    <h3 style="margin-top:25px">统一请求处理顺序</h3>
+    <div class="diagram" tabindex="0" role="region" aria-label="统一认证请求处理顺序图">
+      <svg viewBox="0 0 1120 350" role="img" aria-label="HTTP SSE WebSocket 统一认证处理顺序">
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#67c9c7" stroke-width="1.5"/></marker>
+          <marker id="redarr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#ef7772" stroke-width="1.5"/></marker>
+        </defs>
+        <rect x="18" y="18" width="1084" height="314" rx="9" fill="#0b1216" stroke="#294049"/>
+        <text x="42" y="49" fill="#7f9595" font-size="11" class="m" letter-spacing="1.5">COMMON ASGI ORDER · NO ACTION BEFORE AUTHENTICATION</text>
+        <g transform="translate(36,81)">
+          <rect width="116" height="86" rx="6" fill="#15232a" stroke="#70a7e8"/>
+          <text x="58" y="35" fill="#e7eee9" font-size="13" text-anchor="middle">Request</text>
+          <text x="58" y="57" fill="#7f9595" font-size="9" text-anchor="middle" class="m">HTTP · SSE · WS</text>
+        </g>
+        <g transform="translate(176,81)">
+          <rect width="126" height="86" rx="6" fill="#15232a" stroke="#67c9c7"/>
+          <text x="63" y="31" fill="#e7eee9" font-size="12" text-anchor="middle">Host + scheme</text>
+          <text x="63" y="53" fill="#7f9595" font-size="9" text-anchor="middle">canonical parse</text>
+          <text x="63" y="68" fill="#7f9595" font-size="9" text-anchor="middle" class="m">request_origin</text>
+        </g>
+        <g transform="translate(326,81)">
+          <rect width="126" height="86" rx="6" fill="#15232a" stroke="#67c9c7"/>
+          <text x="63" y="31" fill="#e7eee9" font-size="12" text-anchor="middle">Classify</text>
+          <text x="63" y="53" fill="#7f9595" font-size="9" text-anchor="middle">route · method</text>
+          <text x="63" y="68" fill="#7f9595" font-size="9" text-anchor="middle">credential source</text>
+        </g>
+        <g transform="translate(476,81)">
+          <rect width="126" height="86" rx="6" fill="#15232a" stroke="#67c9c7"/>
+          <text x="63" y="31" fill="#e7eee9" font-size="12" text-anchor="middle">Origin / CSRF</text>
+          <text x="63" y="53" fill="#7f9595" font-size="9" text-anchor="middle">Sec-Fetch-Site</text>
+          <text x="63" y="68" fill="#7f9595" font-size="9" text-anchor="middle">safe / unsafe rules</text>
+        </g>
+        <g transform="translate(626,81)">
+          <rect width="126" height="86" rx="6" fill="#15232a" stroke="#e8ad67"/>
+          <text x="63" y="31" fill="#e7eee9" font-size="12" text-anchor="middle">Authentication</text>
+          <text x="63" y="53" fill="#7f9595" font-size="9" text-anchor="middle">cookie · Bearer</text>
+          <text x="63" y="68" fill="#7f9595" font-size="9" text-anchor="middle">bootstrap body</text>
+        </g>
+        <g transform="translate(776,81)">
+          <rect width="126" height="86" rx="6" fill="#15232a" stroke="#8bcf9a"/>
+          <text x="63" y="32" fill="#e7eee9" font-size="12" text-anchor="middle">Owner scope</text>
+          <text x="63" y="55" fill="#7f9595" font-size="9" text-anchor="middle" class="m">local_owner_</text>
+          <text x="63" y="69" fill="#7f9595" font-size="9" text-anchor="middle" class="m">authority()</text>
+        </g>
+        <g transform="translate(926,81)">
+          <rect width="150" height="86" rx="6" fill="#192c34" stroke="#8bcf9a"/>
+          <text x="75" y="32" fill="#e7eee9" font-size="12" text-anchor="middle">Route / stream</text>
+          <text x="75" y="54" fill="#7f9595" font-size="9" text-anchor="middle">WS accept occurs</text>
+          <text x="75" y="69" fill="#7f9595" font-size="9" text-anchor="middle">only here</text>
+        </g>
+        <path d="M152 124 H174 M302 124 H324 M452 124 H474 M602 124 H624 M752 124 H774 M902 124 H924" stroke="#67c9c7" stroke-width="2" marker-end="url(#arr)"/>
+
+        <path d="M239 168 V216 M539 168 V216 M689 168 V216" stroke="#ef7772" stroke-width="1.6" marker-end="url(#redarr)"/>
+        <rect x="169" y="220" width="140" height="53" rx="5" fill="#211d20" stroke="#ef7772"/>
+        <text x="239" y="242" fill="#ef7772" font-size="11" text-anchor="middle" class="m">403</text><text x="239" y="260" fill="#9f8584" font-size="10" text-anchor="middle">Host / scheme</text>
+        <rect x="469" y="220" width="140" height="53" rx="5" fill="#211d20" stroke="#ef7772"/>
+        <text x="539" y="242" fill="#ef7772" font-size="11" text-anchor="middle" class="m">403</text><text x="539" y="260" fill="#9f8584" font-size="10" text-anchor="middle">Origin / CSRF</text>
+        <rect x="619" y="220" width="140" height="53" rx="5" fill="#211d20" stroke="#ef7772"/>
+        <text x="689" y="242" fill="#ef7772" font-size="11" text-anchor="middle" class="m">401</text><text x="689" y="260" fill="#9f8584" font-size="10" text-anchor="middle">authentication</text>
+        <text x="42" y="305" fill="#7f9595" font-size="10">公共 static shell、bootstrap 和最小 health 仍执行 Host / browser-context 校验；只有 credential check 按 route policy 省略或内置。</text>
+      </svg>
+    </div>
+
+    <h3 style="margin-top:25px">Fragment 转 HttpOnly cookie</h3>
+    <div class="diagram" tabindex="0" role="region" aria-label="Fragment bootstrap 交互时序图">
+      <svg viewBox="0 0 1120 480" role="img" aria-label="浏览器 fragment token bootstrap 时序">
+        <defs><marker id="seqarr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#67c9c7" stroke-width="1.5"/></marker></defs>
+        <rect x="18" y="18" width="1084" height="444" rx="9" fill="#0b1216" stroke="#294049"/>
+        <text x="42" y="49" fill="#7f9595" font-size="11" class="m" letter-spacing="1.5">FRAGMENT BOOTSTRAP · TOKEN DOES NOT ENTER THE INITIAL HTTP REQUEST</text>
+        <g>
+          <rect x="92" y="72" width="210" height="43" rx="5" fill="#15232a" stroke="#70a7e8"/>
+          <text x="197" y="98" fill="#e7eee9" font-size="13" text-anchor="middle">CLI</text>
+          <rect x="455" y="72" width="210" height="43" rx="5" fill="#15232a" stroke="#e8ad67"/>
+          <text x="560" y="98" fill="#e7eee9" font-size="13" text-anchor="middle">Browser</text>
+          <rect x="818" y="72" width="210" height="43" rx="5" fill="#15232a" stroke="#8bcf9a"/>
+          <text x="923" y="98" fill="#e7eee9" font-size="13" text-anchor="middle">Web server</text>
+          <path d="M197 115 V430 M560 115 V430 M923 115 V430" stroke="#294049" stroke-dasharray="5 6"/>
+        </g>
+        <text x="215" y="150" fill="#7f9595" font-size="10" class="m">01</text>
+        <path d="M225 156 H548" stroke="#67c9c7" stroke-width="2" marker-end="url(#seqarr)"/>
+        <text x="387" y="147" fill="#e7eee9" font-size="11" text-anchor="middle" class="m">open /#token=&lt;token&gt;</text>
+
+        <text x="578" y="200" fill="#7f9595" font-size="10" class="m">02</text>
+        <path d="M585 206 H911" stroke="#67c9c7" stroke-width="2" marker-end="url(#seqarr)"/>
+        <text x="748" y="197" fill="#e7eee9" font-size="11" text-anchor="middle" class="m">GET /  · fragment absent</text>
+        <path d="M911 239 H573" stroke="#8bcf9a" stroke-width="2" marker-end="url(#seqarr)"/>
+        <text x="742" y="231" fill="#8bcf9a" font-size="11" text-anchor="middle">public static shell</text>
+
+        <text x="578" y="282" fill="#7f9595" font-size="10" class="m">03</text>
+        <rect x="596" y="259" width="245" height="47" rx="5" fill="#192c34" stroke="#e8ad67"/>
+        <text x="718" y="279" fill="#e7eee9" font-size="11" text-anchor="middle">read token into memory</text>
+        <text x="718" y="296" fill="#e8ad67" font-size="10" text-anchor="middle" class="m">history.replaceState()</text>
+
+        <text x="578" y="337" fill="#7f9595" font-size="10" class="m">04</text>
+        <path d="M585 343 H911" stroke="#67c9c7" stroke-width="2" marker-end="url(#seqarr)"/>
+        <text x="748" y="334" fill="#e7eee9" font-size="11" text-anchor="middle" class="m">POST /api/auth/bootstrap · exact JSON ≤ 256 B</text>
+        <path d="M911 378 H573" stroke="#8bcf9a" stroke-width="2" marker-end="url(#seqarr)"/>
+        <text x="742" y="369" fill="#8bcf9a" font-size="11" text-anchor="middle" class="m">204 · Set-Cookie derived HMAC; HttpOnly; SameSite=Strict</text>
+
+        <rect x="455" y="404" width="573" height="33" rx="5" fill="#15232a" stroke="#8bcf9a"/>
+        <text x="742" y="425" fill="#e7eee9" font-size="11" text-anchor="middle">后续 HTTP / SSE / WebSocket 使用 cookie；server restart 后 cookie 失效</text>
+      </svg>
+    </div>
+
+    <div class="grid3">
+      <article class="card cyan"><div class="k">Public allowlist</div><h3>仅三个公共类别</h3><p>静态 shell/asset、bootstrap、最小 health。Shell 使用 CSP <code>frame-ancestors 'none'</code> 与 <code>X-Frame-Options: DENY</code>。</p></article>
+      <article class="card amber"><div class="k">Browser cookie</div><h3>CSRF 校验保留</h3><p><code>GET/HEAD/OPTIONS</code> 必须无副作用。Unsafe method 与 WS 要求 Origin 等于 <code>request_origin</code>；safe 请求只允许省略 Origin。</p></article>
+      <article class="card violet"><div class="k">Native client</div><h3>Header-only Bearer</h3><p>HTTP、SSE 和原生 WS 使用 Bearer。不接受 query token；除 bootstrap 外，一旦存在 Authorization，错误 Bearer 不能回退 cookie。Bootstrap 出现 Authorization 时直接返回同一 401。</p></article>
+    </div>
+
+    <h3 style="margin-top:25px">认证矩阵</h3>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="HTTP SSE WebSocket 认证矩阵表">
+      <table>
+        <caption>HTTP、SSE 与 WebSocket 认证矩阵</caption>
+        <thead><tr><th>请求形式</th><th>Credential</th><th>Origin</th><th>失败结果</th></tr></thead>
+        <tbody>
+          <tr><td>Cookie + unsafe HTTP</td><td>必须</td><td>等于 <code>request_origin</code>；missing 拒绝</td><td><code>401</code> 或 <code>403</code></td></tr>
+          <tr><td>Cookie + WebSocket</td><td>accept 前必须</td><td>等于 <code>request_origin</code>；missing 拒绝</td><td>Upgrade HTTP <code>401/403</code></td></tr>
+          <tr><td>Cookie + safe HTTP/SSE</td><td>必须</td><td>存在时必须相等；同源 navigation 可省略</td><td><code>401</code> 或 <code>403</code></td></tr>
+          <tr><td>Bearer HTTP/SSE</td><td>必须</td><td>可省略；存在时必须相等</td><td><code>401</code> 或 <code>403</code></td></tr>
+          <tr><td>Bearer WebSocket</td><td>accept 前必须</td><td>原生客户端可省略；存在时必须相等</td><td>Upgrade HTTP <code>401/403</code></td></tr>
+          <tr><td>Fragment bootstrap</td><td>仅 body token；Authorization 拒绝</td><td>等于 <code>request_origin</code></td><td><code>401</code> 或 <code>403</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid2" style="margin-top:22px">
+      <article class="card">
+        <div class="k">SSH</div><h3>后端保持 loopback</h3>
+        <pre>ssh -N -L 18100:127.0.0.1:18100 owner@remote-host
+
+openprogram web auth-url \
+  --base-url http://127.0.0.1:18100</pre>
+      </article>
+      <article class="card">
+        <div class="k">Reverse proxy</div><h3>公网域名使用 HTTPS</h3>
+        <pre>{
+  "web": {
+    "host": "127.0.0.1",
+    "allowed_origins": ["https://agent.example.com"]
+  }
+}
+
+# proxy preserves Host and Upgrade,
+# overwrites X-Forwarded-Proto, clears unused forwarded headers,
+# and disables SSE buffering</pre>
+      </article>
+    </div>
+
+    <div class="note"><b>Origin 与 proxy trust：</b>默认 loopback 自动加入当前端口的精确 <code>localhost</code> 与实际监听 literal；其他 Origin 必须在 <code>config.json</code> 显式配置。HTTP 只允许该 localhost、loopback、RFC 1918、IPv4/IPv6 link-local、IPv6 ULA 与 RFC 6598；其他地址和 DNS name 要求 HTTPS。每个请求只接受一个合法 Host；<code>http/ws</code> 与 <code>https/wss</code> 分别映射为相同浏览器 Origin。Uvicorn 使用 <code>proxy_headers=False</code>；OpenProgram 不信任 <code>X-Forwarded-For</code>，只接受原始 loopback peer 的单一 <code>X-Forwarded-Proto</code>。由 scheme + Host 构造的 <code>request_origin</code> 必须有效。</div>
+
+    <h3 style="margin-top:25px">Secret 不可取回</h3>
+    <div class="grid3">
+      <article class="card current"><div class="k">Remove</div><h3>删除两条 reveal</h3><p>Account reveal route 返回 404；config-key status 保留掩码，但出现 <code>reveal</code> query 时返回 404。</p></article>
+      <article class="card target"><div class="k">Return</div><h3>响应只含掩码</h3><p>返回 <code>has_value</code> 与 <code>masked</code>/<code>masked_key</code>。长度至少 12 时格式为 <code>sk-…abc4</code>，保证隐藏至少五位；短值固定八个圆点。</p></article>
+      <article class="card target"><div class="k">Replace / delete</div><h3>两类动作分别定义</h3><p>Config key 用 <code>POST /api/config</code> 替换、<code>DELETE /api/config/key/{env}</code> 删除；API-key account 用专用 update 替换、<code>accounts/remove</code> 删除整个 account。空值和 mask 都无效。</p></article>
+    </div>
+  </section>
+
+  <section class="section" id="contract">
+    <div class="section-head">
+      <div class="num">06</div>
+      <div><h2>实现契约与验收</h2><p>配置验证、token 安全保存和 fingerprint 计算完成后才接受连接。设计完成的判断依据是可执行行为测试，不是文档描述。</p></div>
+    </div>
+    <ol class="checklist">
+      <li>Loopback HTTP、SSE、WS 无 credential 时失败。</li>
+      <li>正确 Bearer 在无 Origin 时成功；错误 token 无动作且返回相同 401。</li>
+      <li>Fragment 在其他 fetch 前清除；bootstrap 只接受精确有界 JSON，拒绝混合 Authorization，并派生规定 HMAC cookie。</li>
+      <li>Cookie unsafe HTTP 与 WS 拒绝 missing、opaque、cross-site Origin。</li>
+      <li>Loopback、direct bind、proxy 都拒绝外部、重复、unspecified 与 multicast Host，并验证 HTTP/WS scheme 映射。</li>
+      <li>默认 loopback 只接受隐式 Origin；其他 SSH 本地端口必须显式配置。</li>
+      <li>非 loopback bind 缺少有效 Origin list 时拒绝启动；显式本地/overlay HTTP 范围带警告接受，其他地址拒绝。</li>
+      <li>关闭 Uvicorn proxy-header 改写；scheme 只信任原始 loopback peer，X-Forwarded-For 不改变信任，direct WS 与 Caddy WSS 校验 scheme 映射。</li>
+      <li>同 state directory 的第二进程不能修改 live token；失败清理验证 ownership。</li>
+      <li>重启更换 token，旧 Bearer 与 cookie 失效。</li>
+      <li>Malformed Authorization 不能回退到有效 cookie。</li>
+      <li>静态 asset 与最小 health 不含 session、filesystem、credential metadata。</li>
+      <li>CSP/X-Frame-Options 阻止 framing；认证与敏感 response 使用 no-store。</li>
+      <li>两种 reveal 请求为 404；config key 与 account 各自执行精确 replace/preserve/delete schema，8–11 字符使用固定 mask，frontend type 无明文 field。</li>
+      <li>nginx/Caddy HTTPS 下 HTTP、SSE、WS 均能认证，backend 保持 loopback。</li>
+      <li>Channel turn 保留 shared-channel authority，不取得 Web owner authority。</li>
+      <li>同 hostname、不同端口的 profile server 使用不同 cookie 名称并独立认证。</li>
+    </ol>
+  </section>
+
+  <section class="section" id="status">
+    <div class="section-head">
+      <div class="num">07</div>
+      <div><h2>实现进度</h2><p>四档严格分开。设计正文不是实现证据；只有当前生产代码与测试用于归类。</p></div>
+    </div>
+
+    <div class="diagram" tabindex="0" role="region" aria-label="实现状态分层图">
+      <svg viewBox="0 0 1120 270" role="img" aria-label="远程 Web 访问四档实现状态">
+        <rect x="18" y="18" width="1084" height="234" rx="9" fill="#0b1216" stroke="#294049"/>
+        <g transform="translate(42,47)">
+          <rect width="244" height="172" rx="7" fill="#15232a" stroke="#8bcf9a"/>
+          <rect width="244" height="34" rx="7" fill="#183027"/>
+          <text x="16" y="22" fill="#8bcf9a" font-size="11" class="m">IMPLEMENTED</text>
+          <text x="16" y="63" fill="#e7eee9" font-size="12">默认 loopback</text>
+          <text x="16" y="87" fill="#e7eee9" font-size="12">FastAPI lifespan</text>
+          <text x="16" y="111" fill="#e7eee9" font-size="12">per-profile owner / scope</text>
+          <text x="16" y="135" fill="#e7eee9" font-size="11">可复用 file helper（非 Web token）</text>
+          <text x="16" y="157" fill="#7f9595" font-size="10">当前代码与测试有证据</text>
+        </g>
+        <g transform="translate(306,47)">
+          <rect width="244" height="172" rx="7" fill="#15232a" stroke="#e8ad67"/>
+          <rect width="244" height="34" rx="7" fill="#322819"/>
+          <text x="16" y="22" fill="#e8ad67" font-size="11" class="m">PARTIAL</text>
+          <text x="16" y="63" fill="#e7eee9" font-size="12">Origin / Host guard</text>
+          <text x="16" y="87" fill="#e7eee9" font-size="12">allowed_origins 读取</text>
+          <text x="16" y="111" fill="#e7eee9" font-size="12">Web owner 归因</text>
+          <text x="16" y="135" fill="#e7eee9" font-size="12">secret mask / health</text>
+          <text x="16" y="157" fill="#7f9595" font-size="10">存在生产路径，但安全契约不完整</text>
+        </g>
+        <g transform="translate(570,47)">
+          <rect width="244" height="172" rx="7" fill="#15232a" stroke="#ef7772"/>
+          <rect width="244" height="34" rx="7" fill="#321d20"/>
+          <text x="16" y="22" fill="#ef7772" font-size="11" class="m">NOT IMPLEMENTED</text>
+          <text x="16" y="63" fill="#e7eee9" font-size="12">Web process token</text>
+          <text x="16" y="87" fill="#e7eee9" font-size="12">fragment / cookie bootstrap</text>
+          <text x="16" y="111" fill="#e7eee9" font-size="12">HTTP / SSE / WS auth</text>
+          <text x="16" y="135" fill="#e7eee9" font-size="12">proxy trust / reveal removal</text>
+          <text x="16" y="157" fill="#7f9595" font-size="10">设计不能计作实现</text>
+        </g>
+        <g transform="translate(834,47)">
+          <rect width="244" height="172" rx="7" fill="#15232a" stroke="#b89ae8"/>
+          <rect width="244" height="34" rx="7" fill="#28213a"/>
+          <text x="16" y="22" fill="#b89ae8" font-size="11" class="m">EXPLICITLY OUT OF SCOPE</text>
+          <text x="16" y="63" fill="#e7eee9" font-size="12">账号 / RBAC / project ACL</text>
+          <text x="16" y="87" fill="#e7eee9" font-size="12">OAuth 代替 token</text>
+          <text x="16" y="111" fill="#e7eee9" font-size="12">内置 TLS / certificate</text>
+          <text x="16" y="135" fill="#e7eee9" font-size="12">relay / tunnel / insecure</text>
+          <text x="16" y="157" fill="#7f9595" font-size="10">产品边界明确排除</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="status-grid">
+      <article class="status-card" style="--state:var(--green)"><div class="state">已实现</div><ul><li>默认 loopback bind</li><li>FastAPI lifespan</li><li>稳定 per-profile owner principal、owner档位与固定capability表</li><li>可复用文件权限/原子写入基础设施；Web token 本身未实现</li></ul></article>
+      <article class="status-card" style="--state:var(--amber)"><div class="state">部分实现</div><ul><li>Browser Origin/Host guard</li><li><code>web.allowed_origins</code> 读取</li><li>Web owner authority 附加</li><li>默认 secret mask 与详细 health</li></ul></article>
+      <article class="status-card" style="--state:var(--red)"><div class="state">未实现</div><ul><li>进程 token 与 auth-url</li><li>fragment/cookie bootstrap</li><li>HTTP/SSE/WS 统一认证</li><li>外部 bind fail-closed、proxy trust</li><li>删除 reveal 与端到端测试</li></ul></article>
+      <article class="status-card" style="--state:var(--violet)"><div class="state">明确不做</div><ul><li>账号、RBAC、项目权限</li><li>OAuth/SSO 替代 token</li><li>内置 TLS 与证书管理</li><li>公网 relay、托管 tunnel、pairing</li><li>认证关闭与 plaintext reveal</li></ul></article>
+    </div>
+  </section>
+
+  <footer class="foot">规范源：<code>remote-web-access.md</code> · 中文：<code>remote-web-access.zh.md</code> · 可视化源：<code>remote-web-access.html</code></footer>
+</main>
+</body>
+</html>
