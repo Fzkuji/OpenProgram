@@ -59,10 +59,9 @@ that prompt-injection surface entirely.
    active memory distillation. Group memory needs the whole conversation;
    the marking layer from the speaker batch already carries this.
 2. **Approval only from the local owner channel** (see mechanism 4).
-3. **Existing members auto-migrate.** On rollout, scan bound channels'
-   conversation history; every account already seen is marked paired. Codes
-   go to new faces only. Binding the channel was the owner's authorization;
-   re-pairing incumbents is ceremony.
+3. **No migration.** Adoption is small enough that everyone pairs fresh;
+   do not write history-scanning migration code. Rollout day, every
+   non-owner account gets a pairing code on first contact.
 
 ## Deferred (second batch, after the above lands)
 
