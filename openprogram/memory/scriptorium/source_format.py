@@ -20,6 +20,7 @@ _SPEAKER_RE = re.compile(r"<!-- speaker-id:([^>]*) -->")
 _SOURCE_META_RE = re.compile(r"<!-- source-meta:([A-Za-z0-9_-]+) -->")
 _RECORD_LINES_RE = re.compile(r"<!-- record-lines:(\d{1,9}) -->")
 _SOURCE_RECORD_RE = re.compile(r"^\[[^]]*\]\s+.+?: .*$")
+_LEGACY_SCOPE_ORIGINS = {"legacy-unknown", "local-owner"}
 
 
 @dataclass(frozen=True)
@@ -109,15 +110,49 @@ def normalize_source_metadata(value: Mapping[str, Any] | None) -> dict[str, Any]
     }
 
 
+def _metadata_token(value: Mapping[str, Any]) -> str:
+    raw = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _normalize_legacy_source_metadata(
+    value: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    # The pre-tier authority batch wrote these fields under the same v1 marker.
+    # Read that exact canonical shape without rewriting append-only archives.
+    if not isinstance(value, Mapping) or set(value) != {
+        "version", "trust_state", "speaker_kind", "principal_id",
+        "origin_scope",
+    } or value.get("version") != 1:
+        return None
+    scope = value.get("origin_scope")
+    if not isinstance(scope, Mapping) or set(scope) != {
+        "origin", "capabilities",
+    }:
+        return None
+    origin = scope.get("origin")
+    capabilities = scope.get("capabilities")
+    if origin not in _LEGACY_SCOPE_ORIGINS or not isinstance(capabilities, list):
+        return None
+    if not all(
+        isinstance(capability, str) and capability for capability in capabilities
+    ) or capabilities != sorted(set(capabilities)):
+        return None
+    return normalize_source_metadata({
+        "trust_state": value.get("trust_state"),
+        "speaker_kind": value.get("speaker_kind"),
+        "principal_id": value.get("principal_id"),
+        "authority_tier": "owner" if origin == "local-owner" else None,
+    })
+
+
 def encode_source_metadata(value: Mapping[str, Any]) -> str:
     normalized = normalize_source_metadata(value)
     if normalized is None:
         raise ValueError("invalid source trust metadata")
-    raw = json.dumps(
-        normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-    ).encode("utf-8")
-    token = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
-    return f"<!-- source-meta:{token} -->"
+    return f"<!-- source-meta:{_metadata_token(normalized)} -->"
 
 
 def decode_source_metadata(token: str) -> dict[str, Any] | None:
@@ -127,10 +162,10 @@ def decode_source_metadata(token: str) -> dict[str, Any] | None:
     except (ValueError, TypeError):
         return None
     normalized = normalize_source_metadata(payload)
-    if normalized is None:
-        return None
-    marker = encode_source_metadata(normalized)
-    return normalized if marker == f"<!-- source-meta:{token} -->" else None
+    if normalized is not None and _metadata_token(normalized) == token:
+        return normalized
+    legacy = _normalize_legacy_source_metadata(payload)
+    return legacy if legacy is not None and _metadata_token(payload) == token else None
 
 
 def scan_v2_archive(text: str, relative: str | Path) -> V2Scan:

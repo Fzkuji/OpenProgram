@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import sys
 from contextlib import closing
@@ -60,6 +61,56 @@ def _record(
         principal_id="owner/install/0123456789abcdef" if tier else "unknown",
         authority_tier=tier,
     )
+
+
+def _legacy_metadata(origin: str, capabilities: list[str]) -> str:
+    payload = {
+        "origin_scope": {
+            "capabilities": capabilities,
+            "origin": origin,
+        },
+        "principal_id": "owner/install/0123456789abcdef",
+        "speaker_kind": "owner" if origin == "local-owner" else "unknown",
+        "trust_state": "trusted",
+        "version": 1,
+    }
+    raw = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def test_v2_scanner_accepts_pre_tier_scope_metadata():
+    from openprogram.memory.scriptorium.source_format import (
+        V2_FORMAT_MARKER,
+        encode_speaker_id,
+        provider_source_location,
+        scan_v2_archive,
+    )
+
+    refs = ["openprogram/s1/m1", "openprogram/s1/m2"]
+    lines = [V2_FORMAT_MARKER, ""]
+    for ref, origin, capabilities in (
+        (refs[0], "legacy-unknown", []),
+        (refs[1], "local-owner", ["memory.source.append"]),
+    ):
+        location = provider_source_location(ref, v2=True)
+        assert location is not None
+        lines.extend([
+            f'<a id="{location[1]}"></a>',
+            f"<!-- source-id:{ref} -->",
+            f"<!-- speaker-id:{encode_speaker_id('owner/local')} -->",
+            f"<!-- source-meta:{_legacy_metadata(origin, capabilities)} -->",
+            "<!-- record-lines:1 -->",
+            "[2026-08-10] Owner: retained fact",
+            "",
+        ])
+
+    scan = scan_v2_archive("\n".join(lines), "sources/openprogram/_v2/s1.md")
+    assert scan.complete
+    assert [frame.metadata["authority_tier"] for frame in scan.frames] == [
+        None, "owner",
+    ]
 
 
 def test_records_keep_owner_paired_and_legacy_memory_trusted(authorities):
