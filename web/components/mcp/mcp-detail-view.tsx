@@ -22,9 +22,32 @@ import { PlugZapIcon } from "@/components/animated-icons";
 
 import styles from "./mcp-page.module.css";
 
+/**
+ * A stored `env` / `header` value as the API returns it: presence and
+ * shape, never the value. The backend masks every value rather than
+ * only the key-shaped names, because an MCP server's env is free-form
+ * and any entry can hold a credential.
+ */
+export interface SecretPreview {
+  has_value: boolean;
+  masked: string;
+}
+/** `{NAME: preview}` — names are visible, values never are. */
+export type SecretMap = Record<string, SecretPreview>;
+
 export interface ServerAuthInfo {
   kind: "none" | "bearer" | "oauth";
   authenticated: boolean;
+  // bearer — presence + mask only, no stored token
+  has_token?: boolean;
+  masked_token?: string;
+  // oauth — client_id is not a secret; the secret is presence + mask
+  client_name?: string;
+  client_id?: string;
+  scope?: string;
+  redirect_port?: number;
+  has_client_secret?: boolean;
+  masked_client_secret?: string;
 }
 export interface ServerStatus {
   name: string;
@@ -42,10 +65,10 @@ export interface ServerStatus {
   source_entry_hash?: string | null;
   // local
   command?: string[];
-  env?: Record<string, string>;
+  env?: SecretMap;
   // remote
   url?: string;
-  headers?: Record<string, string>;
+  headers?: SecretMap;
   auth?: ServerAuthInfo;
 }
 export interface ToolSchema {
@@ -241,6 +264,19 @@ export function DetailView({
                 server.auth ? (
                   <span>
                     {server.auth.kind}
+                    {/* Stored credential shown as a mask so the user can
+                        tell one is set — never as the value itself. */}
+                    {server.auth.has_token && server.auth.masked_token && (
+                      <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>
+                        {server.auth.masked_token}
+                      </span>
+                    )}
+                    {server.auth.has_client_secret
+                      && server.auth.masked_client_secret && (
+                      <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>
+                        {server.auth.masked_client_secret}
+                      </span>
+                    )}
                     {server.auth.kind !== "none" && (
                       <span
                         style={{
@@ -273,16 +309,19 @@ export function DetailView({
       </div>
 
       {Object.keys(server.env || {}).length > 0 && (
-        <div className="rounded-md border p-3 font-mono text-xs"
-             style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider"
-               style={{ color: "var(--text-muted)" }}>
-            {text("Environment", "环境变量")}
-          </div>
-          {Object.entries(server.env || {}).map(([k, v]) => (
-            <div key={k}>{k}=<span style={{ color: "var(--text-primary)" }}>{v}</span></div>
-          ))}
-        </div>
+        <SecretMapPanel
+          title={text("Environment", "环境变量")}
+          entries={server.env || {}}
+          separator="="
+        />
+      )}
+
+      {Object.keys(server.headers || {}).length > 0 && (
+        <SecretMapPanel
+          title={text("Headers", "请求头")}
+          entries={server.headers || {}}
+          separator=": "
+        />
       )}
 
       {/* Tools */}
@@ -363,6 +402,38 @@ function ReauthButton({ name, onDone }: { name: string; onDone: () => void }) {
   );
 }
 
+
+/**
+ * Renders an `env` / `headers` map. Names are shown in full; values
+ * only ever as the mask the API returned — this view has no access to
+ * the stored value and no control that would fetch one.
+ */
+function SecretMapPanel({
+  title, entries, separator,
+}: {
+  title: string;
+  entries: SecretMap;
+  separator: string;
+}) {
+  const { text } = useTranslation();
+  return (
+    <div className="rounded-md border p-3 font-mono text-xs"
+         style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider"
+           style={{ color: "var(--text-muted)" }}>
+        {title}
+      </div>
+      {Object.entries(entries).map(([k, v]) => (
+        <div key={k}>
+          {k}{separator}
+          <span style={{ color: "var(--text-muted)" }}>
+            {v.has_value ? v.masked : text("(empty)", "（空）")}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function Sep() {
   return (

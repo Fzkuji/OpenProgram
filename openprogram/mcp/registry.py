@@ -26,7 +26,7 @@ from typing import Any, Optional
 
 from .adapter import register_remote_tool
 from .client import MCPClient
-from .config import MCPServerConfig, load_configs
+from .config import MCPServerConfig, load_configs, mask_secret_map
 
 
 # Module-level state — single set of MCP clients per process.
@@ -104,13 +104,20 @@ def _status_dict(name: str, client: MCPClient) -> dict[str, Any]:
             _registered_tool_names.get(name, [])
         ),
     }
+    # Masked values only — this dict is what ``GET /api/mcp/servers``
+    # and ``GET /api/mcp/servers/{name}`` return, and ``env`` / ``headers``
+    # routinely hold API keys. Names stay visible so the UI can show what
+    # is configured; values are presence + mask.
     if cfg.type == "local":
         out["command"] = list(cfg.command)
-        out["env"] = dict(cfg.env)
+        out["env"] = mask_secret_map(cfg.env)
     else:
         out["url"] = cfg.url
-        out["headers"] = dict(cfg.headers)
-        out["auth"] = client.auth_status()
+        out["headers"] = mask_secret_map(cfg.headers)
+        # ``auth_status`` reports kind + whether a credential is present;
+        # the stored bearer / client secret is masked alongside it.
+        out["auth"] = {**client.auth_status(),
+                       **cfg.to_response_dict()["auth"]}
     return out
 
 

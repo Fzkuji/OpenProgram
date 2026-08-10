@@ -181,8 +181,11 @@ OpenProgram 使用第一类。第二类会引入当前产品不需要的状态�
 | Agent Zero 内置隧道和托管 remote-control relay | 拒绝 | 只记录 SSH 和所有者管理的 HTTPS；OpenProgram 不创建公网 endpoint |
 | 登录后明文 reveal secret | 拒绝 | Owner 认证允许替换和使用，不允许通过 UI 取回明文 |
 
-最终设计只有一种 credential、一套浏览器 bootstrap、一种应用 authorization 映射，以及一组
-HTTP/WS/SSE 校验规则。不增加第二套 WebSocket ticket、用户 session database 或 OAuth flow。
+最终设计只有一个根密钥、两种传输凭证形式，配一套浏览器 bootstrap、一种应用 authorization
+映射，以及一组 HTTP/WS/SSE 校验规则。根密钥就是每次启动生成的实例 token，它到达 server 的
+形式有两种：`Bearer` header（原生 HTTP、SSE、WebSocket 和内部客户端），或浏览器用 fragment
+token 换取的 profile 作用域 HttpOnly cookie。两种形式携带同一个密钥、走同一套校验，因此
+不增加第二套 WebSocket ticket、用户 session database 或 OAuth flow。
 
 ## 5. 最终远程访问设计
 
@@ -640,7 +643,7 @@ Ownership-challenge route 只执行有界 nonce/revision proof 契约，不授�
 | 认证 URL 命令 | `openprogram web auth-url --base-url ...`、`build_owner_auth_url()` 与 `tests/unit/test_web_auth_url.py` 覆盖 active-server 查找和 effective-Origin 校验；正常 CLI browser launch 使用同一 fragment URL |
 | 最小公共 liveness | `/healthz` 只返回 `{"status":"ok"}` 并带 `no-store`；运维字段位于受保护的 `/api/diagnostics`；integration 与 owner-auth 测试覆盖两条 route |
 | Raw-peer proxy 边界 | Uvicorn 使用 `proxy_headers=False`；`OwnerAuthMiddleware` 只接受 immediate loopback peer 的单一 forwarded scheme，并测试 HTTPS Origin 匹配 |
-| Secret 不可取回 | 两种明文 reveal 形式都已删除：account reveal route 整体移除，`GET /api/config/key/{env_var}?reveal=1` 返回 `404`；`_credential_secrets` 提供统一掩码与 declared-name 校验；`/api/config`、`/api/settings`、`/api/config/verify`、`DELETE /api/config/key/{env_var}` 和 account route 只接受各自的精确 bounded schema，且不返回完整 secret；frontend 不存在 reveal action、control 或 response type |
+| Secret 不可取回 | 两种明文 reveal 形式都已删除：account reveal route 整体移除，`GET /api/config/key/{env_var}?reveal=1` 返回 `404`；`_credential_secrets` 提供统一掩码与 declared-name 校验；`/api/config`、`/api/settings`、`/api/config/verify`、`DELETE /api/config/key/{env_var}` 和 account route 只接受各自的精确 bounded schema，且不返回完整 secret；frontend 不存在 reveal action、control 或 response type。MCP 服务器凭证遵循同一套契约：`MCPServerConfig.to_storage_dict()` 只用于写配置文件、保留完整值，`to_response_dict()` 把每一个 `env` 和 `headers` 值以及 bearer token、OAuth client secret 都替换成掩码，因此 `/api/mcp/servers`、`/api/mcp/servers/{name}`、`/api/mcp/catalog`、`/api/mcp/catalog/diff` 返回的是 `{has_value, masked}` 而不是值；`PATCH /api/mcp/servers/{name}` 采用 preserve（未提交）/ replace（提交新值）/ delete（显式空值）语义，且只在 restart 成功后才落盘；`mcp_servers.json` 经临时文件、`fsync`、`os.replace` 以 `0600` 写入；`tests/unit/test_mcp_secret_non_retrievability.py` 与 `web/scripts/check-secret-non-retrieval.mjs` 分别覆盖响应、权限、preserve 语义和前端显示 |
 | 内部客户端认证 | `resolve_backend_endpoint()` 返回经 challenge 验证的 `BackendEndpoint`（base URL、WebSocket URL、Origin 和 token），credential 只在 listener 证明持有同一 token 之后才读取；`cli_ink.py` 将其传入 TUI 环境，`_cli_cmds/mcp.py` 用于 MCP CLI，Node 客户端只对 backend URL 发送 Bearer header（`cli/src/utils/backend.ts`、`cli/tests/backendAuth.test.ts`） |
 | 启动输出 | `start_server()` 打印 bind 地址、binding scope、effective Origin、forwarded-scheme 信任边界和 token fingerprint，并在 effective Origin 是非 loopback 明文 HTTP 时告警；`test_startup_logs_warn_about_plaintext_http_for_remote_origins` 逐项断言 |
 | 真实 listener transport 验收 | `tests/unit/test_web_owner_auth_listener.py` 在 ephemeral 端口绑定真实 Uvicorn socket，覆盖带认证与无认证 HTTP、带 `no-store` 的 SSE 认证、accept 前以 `401` 加 Bearer-realm/`no-store` header 拒绝的原始 WebSocket handshake、bind-failure 清理、wire 层 token 轮换、双 profile cookie 隔离、reverse-proxy Origin 矩阵，以及证明 token 不出现在任何 response body、header、日志和渲染页面中的全面扫描 |

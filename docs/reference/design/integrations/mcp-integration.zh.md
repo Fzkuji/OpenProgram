@@ -62,6 +62,24 @@ MCP 是协议,定义"工具的提供方"(server)和"工具的消费方"(client)�
 
 文件缺失或解析失败都不致命——`load_configs()` 返回空 list,worker 正常启动,日志一行 warning。MCP 是 opt-in 功能。
 
+### 凭证
+
+`env` 和 `headers` 是自由格式,任何一项都可能装着凭证:`ENDPOINT` 可以是一个带签名的 URL,和 `API_KEY` 装 key 没有区别。因此不按名字猜,这两个 map 里的每一个值都当作密钥处理,bearer token 和 OAuth client secret 同样。
+
+两套序列化把这条界线写死。`MCPServerConfig.to_storage_dict()` 保留完整值,只用于写 `mcp_servers.json`。`to_response_dict()` 把每个值换成 `{"has_value": bool, "masked": str}`,把 auth 密钥收敛成 `has_token` / `has_client_secret` 加一个掩码,所有 route 返回的都是它:`/api/mcp/servers`、`/api/mcp/servers/{name}`、`/api/mcp/catalog`、`/api/mcp/catalog/diff`。没有任何 route 返回已存储的 MCP 凭证。
+
+所以 `PATCH /api/mcp/servers/{name}` 不需要客户端把看到的东西再传回来。它按名称执行 preserve / replace / delete:
+
+| 请求体 | 含义 |
+|------|------|
+| 名称未出现(或整个 `env` / `headers` 字段未出现) | **preserve**,保持已存值 |
+| 名称出现且带值 | **replace**,替换为该值 |
+| 名称出现且值为空字符串 | **delete**,删除该名称 |
+
+`auth.token` 和 `auth.client_secret` 适用同一规则。改动 `auth.kind` 会丢弃另一种方式的密钥,因为它既取不回也没有用途。Web UI 的密钥输入框一律从空开始,只列出已存的名称,未改动的字段就不会出现在请求体里,于是被保留。
+
+配置文件装着这些密钥,所以 `save_configs()` 按 owner-only 写入:临时文件在一次系统调用里以 `0600` 创建,`fsync`,再 `os.replace`。旧版本留下的 `0644` 文件会在下次保存时收紧。落盘发生在 restart 成功之后,因此一次启动失败的编辑不会破坏已存的凭证。
+
 ## 代码结构
 
 ```

@@ -117,28 +117,46 @@ def register(app: FastAPI) -> None:
         """Body may include any of ``command`` / ``env`` / ``enabled``
         / ``timeout_seconds`` / ``type``. The server is restarted with
         the new config.
+
+        Secret-bearing fields (``env`` and ``headers`` values, the
+        bearer token, the OAuth client secret) follow preserve /
+        replace / delete: a name the body omits keeps its stored value,
+        a name carrying a new value replaces it, and a name carrying an
+        explicit empty string deletes it. See :func:`_merge_secret_map`.
         """
         all_cfgs = load_configs(include_disabled=True)
         match = next((c for c in all_cfgs if c.name == name), None)
         if match is None:
             raise HTTPException(status_code=404,
                                 detail=f"server '{name}' not in config")
-        merged = match.to_dict()
-        for k in ("type", "command", "env", "url", "headers", "auth",
+        merged = match.to_storage_dict()
+        for k in ("type", "command", "url",
                   "enabled", "timeout_seconds", "always_load"):
             if k in body:
                 merged[k] = body[k]
+        for k in ("env", "headers"):
+            if k in body:
+                merged[k] = _merge_secret_map(merged.get(k) or {}, body[k])
+        if "auth" in body:
+            merged["auth"] = _merge_auth(merged.get("auth") or {}, body["auth"])
         new_cfg = parse_entry(name, merged)
         if new_cfg is None:
             raise HTTPException(status_code=400, detail="invalid config")
-        # Replace in list, persist, then restart.
-        new_list = [c if c.name != name else new_cfg for c in all_cfgs]
-        save_configs(new_list)
+        # Restart first, persist only on success: a config that can't
+        # start must not overwrite the stored one, or a typo'd edit
+        # destroys a working server's credentials with no way back.
         try:
             status = await restart_server(name, new_cfg=new_cfg)
         except Exception as e:  # noqa: BLE001
+            # Put the previous config back on the live registry so a
+            # failed edit leaves the running server as it was.
+            try:
+                await restart_server(name, new_cfg=match)
+            except Exception:  # noqa: BLE001
+                pass
             raise HTTPException(status_code=500,
                                 detail=f"restart failed: {type(e).__name__}: {e}")
+        save_configs([c if c.name != name else new_cfg for c in all_cfgs])
         return JSONResponse(content=status)
 
     @app.delete("/api/mcp/servers/{name}")
@@ -289,7 +307,7 @@ def register(app: FastAPI) -> None:
                 fresh = config_to_catalog_dict(cfg)
                 catalog_by_name[name.strip()] = (
                     catalog_entry_hash(fresh),
-                    {**cfg.to_dict(), "name": name.strip()},
+                    {**cfg.to_response_dict(), "name": name.strip()},
                 )
 
             local_from_this_catalog = [
@@ -390,14 +408,20 @@ def register(app: FastAPI) -> None:
             config_to_catalog_dict(new_cfg)
         )
 
-        new_list = [c if c.name != name else new_cfg for c in all_cfgs]
-        save_configs(new_list)
+        # Restart first, persist on success — same reason as PATCH: a
+        # catalog entry that no longer starts must not overwrite the
+        # working local config (and its credentials).
         try:
             status = await restart_server(name, new_cfg=new_cfg)
         except Exception as e:  # noqa: BLE001
+            try:
+                await restart_server(name, new_cfg=match)
+            except Exception:  # noqa: BLE001
+                pass
             raise HTTPException(status_code=500,
                                 detail=f"restart failed: "
                                        f"{type(e).__name__}: {e}")
+        save_configs([c if c.name != name else new_cfg for c in all_cfgs])
         return JSONResponse(content=status)
 
     @app.get("/api/mcp/catalog/suggested")
@@ -523,8 +547,10 @@ def register(app: FastAPI) -> None:
             if cfg is None:
                 continue
             # Echo back the (canonicalised) installable config + carry
-            # any catalog-only annotations along for display.
-            out: dict = cfg.to_dict()
+            # any catalog-only annotations along for display. Masked
+            # form: a catalog entry can ship a placeholder token, and
+            # this response is a route like any other.
+            out: dict = cfg.to_response_dict()
             out["name"] = name.strip()
             # Hash uses the canonical config shape so install and
             # later-diff see the same digest.
@@ -745,6 +771,73 @@ def register(app: FastAPI) -> None:
     async def config_path():
         from openprogram.mcp.config import get_config_path as _p
         return JSONResponse(content={"path": str(_p())})
+
+
+def _merge_secret_map(stored: dict, submitted: object) -> dict:
+    """Apply a submitted ``env`` / ``headers`` patch to the stored map.
+
+    Per name:
+
+      * absent from the patch  → **preserve** the stored value
+      * present with a value   → **replace** with that value
+      * present, empty string  → **delete** the name
+
+    The frontend never posts a mask back, so a masked string arriving
+    here would be a bug rather than an intent; the only way to keep a
+    value is to leave its name out. A patch entry that is a dict (the
+    ``{"has_value", "masked"}`` response shape echoed back by a
+    careless caller) is treated as preserve for the same reason — it
+    carries no new secret, so it must not clobber one.
+    """
+    if not isinstance(submitted, dict):
+        return dict(stored)
+    out = dict(stored)
+    for key, value in submitted.items():
+        name = str(key)
+        if isinstance(value, dict):
+            continue                       # echoed mask → preserve
+        if value is None or str(value) == "":
+            out.pop(name, None)            # explicit empty → delete
+        else:
+            out[name] = str(value)         # new value → replace
+    return out
+
+
+def _merge_auth(stored: dict, submitted: object) -> dict:
+    """Apply an ``auth`` patch under the same preserve/replace/delete rule.
+
+    Non-secret fields (``kind``, ``client_name``, ``scope``,
+    ``client_id``, ``redirect_port``) replace outright. The two secrets
+    — ``token`` and ``client_secret`` — preserve when omitted, replace
+    when a value arrives, and delete on an explicit empty string.
+
+    Switching ``kind`` drops the other kind's secret: a server moving
+    from bearer to oauth has no use for the old bearer token, and
+    keeping it around would leave a live credential nobody can see.
+    """
+    if not isinstance(submitted, dict):
+        return dict(stored)
+    secret_fields = ("token", "client_secret")
+    kind = submitted.get("kind", stored.get("kind"))
+    out = {k: v for k, v in stored.items() if k not in secret_fields}
+    out.update({k: v for k, v in submitted.items()
+                if k not in secret_fields})
+    out["kind"] = kind
+    keep_secrets = kind == stored.get("kind")
+    for field_name in secret_fields:
+        if field_name in submitted:
+            value = submitted[field_name]
+            if value is None or str(value) == "":
+                continue                   # explicit empty → delete
+            out[field_name] = str(value)   # new value → replace
+        elif keep_secrets and field_name in stored:
+            out[field_name] = stored[field_name]   # omitted → preserve
+    # Response-shape presence flags are never storage fields.
+    for flag in ("has_token", "masked_token",
+                 "has_client_secret", "masked_client_secret",
+                 "authenticated"):
+        out.pop(flag, None)
+    return out
 
 
 def _parse_body(body: dict) -> MCPServerConfig:

@@ -222,9 +222,13 @@ does not operate.
 | Agent Zero built-in tunnels and managed remote-control relays | Reject | Document SSH and owner-managed HTTPS only; OpenProgram does not create public endpoints |
 | Plaintext secret reveal after login | Reject | Owner authentication authorizes replacement and use, not retrieval through the UI |
 
-The resulting design has one credential type, one browser bootstrap, one
-application authorization mapping, and one set of HTTP/WS/SSE checks. It does
-not add a second WebSocket ticket, a user-session database, or an OAuth flow.
+The resulting design has one root secret in two transport forms, one browser
+bootstrap, one application authorization mapping, and one set of HTTP/WS/SSE
+checks. The root secret is the per-start instance token; it reaches the server
+either as a `Bearer` header (native HTTP, SSE, WebSocket, and internal clients)
+or as a profile-scoped HttpOnly cookie the browser receives in exchange for the
+fragment token. Both forms carry the same secret and pass the same checks, so
+there is no second WebSocket ticket, user-session database, or OAuth flow.
 
 ## 5. Final remote-access design
 
@@ -757,7 +761,7 @@ production paths and tests.
 | Authenticated URL command | `openprogram web auth-url --base-url ...`, `build_owner_auth_url()`, and `tests/unit/test_web_auth_url.py` cover active-server lookup and effective-origin validation; normal CLI browser launch uses the same fragment URL |
 | Minimal public liveness | `/healthz` returns only `{"status":"ok"}` with `no-store`; operational fields are on protected `/api/diagnostics`; integration and owner-auth tests cover both routes |
 | Raw-peer proxy boundary | Uvicorn is configured with `proxy_headers=False`; `OwnerAuthMiddleware` accepts a single forwarded scheme only from the immediate loopback peer and tests the HTTPS-origin match |
-| Secret non-retrievability | Both plaintext reveal forms are gone: the account reveal route is removed and `GET /api/config/key/{env_var}?reveal=1` returns `404`; `_credential_secrets` supplies the single mask and the declared-name check; `/api/config`, `/api/settings`, `/api/config/verify`, `DELETE /api/config/key/{env_var}`, and the account routes accept only their exact bounded schemas and never return a full secret; the frontend has no reveal action, control, or response type |
+| Secret non-retrievability | Both plaintext reveal forms are gone: the account reveal route is removed and `GET /api/config/key/{env_var}?reveal=1` returns `404`; `_credential_secrets` supplies the single mask and the declared-name check; `/api/config`, `/api/settings`, `/api/config/verify`, `DELETE /api/config/key/{env_var}`, and the account routes accept only their exact bounded schemas and never return a full secret; the frontend has no reveal action, control, or response type. MCP server credentials follow the same contract: `MCPServerConfig.to_storage_dict()` holds full values for the config file while `to_response_dict()` masks every `env` and `headers` value plus the bearer token and OAuth client secret, so `/api/mcp/servers`, `/api/mcp/servers/{name}`, `/api/mcp/catalog`, and `/api/mcp/catalog/diff` return `{has_value, masked}` rather than values; `PATCH /api/mcp/servers/{name}` applies preserve (omitted) / replace (new value) / delete (explicit empty) and persists only after the restart succeeds; `mcp_servers.json` is written `0600` through a temp file, `fsync`, and `os.replace`; `tests/unit/test_mcp_secret_non_retrievability.py` and `web/scripts/check-secret-non-retrieval.mjs` cover the response, permission, preserve, and frontend-display halves |
 | Internal client authentication | `resolve_backend_endpoint()` returns a challenge-verified `BackendEndpoint` (base URL, WebSocket URL, origin, and token) so the credential is read only after the listener proves it holds the same token; `cli_ink.py` passes it to the TUI environment, `_cli_cmds/mcp.py` uses it for the MCP CLI, and the Node client sends the Bearer header only to backend URLs (`cli/src/utils/backend.ts`, `cli/tests/backendAuth.test.ts`) |
 | Startup reporting | `start_server()` prints the bind address, binding scope, effective origins, forwarded-scheme trust boundary, and token fingerprint, and warns when an effective origin is non-loopback plaintext HTTP; `test_startup_logs_warn_about_plaintext_http_for_remote_origins` asserts each field |
 | Real-listener transport acceptance | `tests/unit/test_web_owner_auth_listener.py` binds a real Uvicorn socket on an ephemeral port and covers authenticated and unauthenticated HTTP, SSE authentication with `no-store`, the raw WebSocket handshake rejected with `401` and Bearer-realm/`no-store` headers before accept, bind-failure cleanup, wire-level token rotation, two-profile cookie isolation, the reverse-proxy origin matrix, and a sweep proving the token appears in no response body, header, log, or rendered page |

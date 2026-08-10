@@ -373,7 +373,7 @@
         <caption>三类远程身份设计</caption>
         <thead><tr><th>类型</th><th>框架或能力</th><th>OpenProgram 处理</th></tr></thead>
         <tbody>
-          <tr><td>实例 credential</td><td>Jupyter、OpenClaw、OpenHands</td><td class="yes">采用：一个 owner，一种 credential</td></tr>
+          <tr><td>实例 credential</td><td>Jupyter、OpenClaw、OpenHands</td><td class="yes">采用：一个 owner，一个根密钥，两种传输凭证形式</td></tr>
           <tr><td>应用账号</td><td>Open WebUI、Dify、LibreChat、AnythingLLM</td><td class="no">不采用：不需要注册、role、resource ACL</td></tr>
           <tr><td>托管远程控制</td><td>pairing、hosted tunnel、relay service</td><td class="no">不采用：OpenProgram 不运营外部服务</td></tr>
         </tbody>
@@ -384,7 +384,7 @@
   <section class="section" id="synthesis">
     <div class="section-head">
       <div class="num">04</div>
-      <div><h2>采用、修改与拒绝</h2><p>最终设计只保留完成当前需求所需的一种实例 credential、一套浏览器 bootstrap 和一组 HTTP/WS/SSE 认证规则。</p></div>
+      <div><h2>采用、修改与拒绝</h2><p>最终设计只保留完成当前需求所需的一个根密钥（实例 token）、两种传输凭证形式（Bearer header 与 profile 作用域 HttpOnly cookie）、一套浏览器 bootstrap 和一组 HTTP/WS/SSE 认证规则。</p></div>
     </div>
     <div class="card">
       <div class="decision"><div class="status adopt">采用</div><div><b>OpenClaw</b> 的精确 Origin、Host/DNS rebinding 控制、SSH 与 proxy trust 限制。</div></div>
@@ -639,7 +639,7 @@ openprogram web auth-url \
     </div>
 
     <div class="status-grid">
-      <article class="status-card" style="--state:var(--green)"><div class="state">已实现</div><ul><li>默认 loopback、lifespan 与 per-profile owner</li><li><code>OwnerAuthState</code> token、lock、cookie</li><li>canonical Origin 与共同 middleware</li><li>fragment bootstrap、auth-url、最小 health</li><li><code>proxy_headers=False</code> 与 loopback-only forwarded scheme</li><li>两条 plaintext reveal 已删除、严格 secret schema 与统一掩码</li><li><code>BackendEndpoint</code> 驱动 TUI 与 MCP CLI 的 Bearer 认证</li><li>startup 报告 bind、Origin、fingerprint 与明文 HTTP 告警</li><li>真实 Uvicorn listener 上的 HTTP/SSE/WS、bind-failure、轮换、双 profile 与泄露扫描验收</li></ul></article>
+      <article class="status-card" style="--state:var(--green)"><div class="state">已实现</div><ul><li>默认 loopback、lifespan 与 per-profile owner</li><li><code>OwnerAuthState</code> token、lock、cookie</li><li>canonical Origin 与共同 middleware</li><li>fragment bootstrap、auth-url、最小 health</li><li><code>proxy_headers=False</code> 与 loopback-only forwarded scheme</li><li>两条 plaintext reveal 已删除、严格 secret schema 与统一掩码</li><li>MCP 服务器凭证：存盘与响应序列化分离，<code>env</code>/<code>headers</code>/bearer/client secret 全掩码，编辑走 preserve/replace/delete，配置文件 <code>0600</code> 原子写</li><li><code>BackendEndpoint</code> 驱动 TUI 与 MCP CLI 的 Bearer 认证</li><li>startup 报告 bind、Origin、fingerprint 与明文 HTTP 告警</li><li>真实 Uvicorn listener 上的 HTTP/SSE/WS、bind-failure、轮换、双 profile 与泄露扫描验收</li></ul></article>
       <article class="status-card" style="--state:var(--amber)"><div class="state">部分实现</div><ul><li>browser 驱动的 asset/navigation audit</li><li>nginx 与 Caddy smoke deployment</li></ul></article>
       <article class="status-card" style="--state:var(--violet)"><div class="state">明确不做</div><ul><li>账号、RBAC、项目权限</li><li>OAuth/SSO 替代 token</li><li>内置 TLS 与证书管理</li><li>公网 relay、托管 tunnel、pairing</li><li>认证关闭与 plaintext reveal</li></ul></article>
     </div>

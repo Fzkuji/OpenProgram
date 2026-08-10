@@ -128,6 +128,93 @@ for (const forbidden of ["identity", "can_reveal", "value", "reveal"]) {
   );
 }
 
+// --- MCP server env / headers / auth secrets -------------------------
+//
+// An MCP server's `env` and `headers` hold arbitrary credentials, so the
+// API returns `{has_value, masked}` per name rather than the value. These
+// assertions pin the two halves of that contract on the frontend: the
+// types cannot carry a plaintext value, and the edit dialog never
+// prefills a secret input from a server response.
+
+const mcpSecretMapFields = interfaceProperties(
+  "components/mcp/mcp-detail-view.tsx",
+  "SecretPreview",
+).sort();
+assert.deepEqual(
+  mcpSecretMapFields,
+  ["has_value", "masked"],
+  "MCP SecretPreview must be masked-only",
+);
+
+const mcpAuthFields = interfaceProperties(
+  "components/mcp/mcp-detail-view.tsx",
+  "ServerAuthInfo",
+);
+for (const forbidden of ["token", "client_secret", "value", "reveal"]) {
+  assert.equal(
+    mcpAuthFields.includes(forbidden),
+    false,
+    `ServerAuthInfo must not include plaintext field ${forbidden}`,
+  );
+}
+for (const required of ["has_token", "masked_token", "has_client_secret"]) {
+  assert.ok(
+    mcpAuthFields.includes(required),
+    `ServerAuthInfo must include ${required}`,
+  );
+}
+
+// `ServerStatus.env` / `.headers` must be the masked map, never a plain
+// `Record<string, string>` that could hold values.
+{
+  const sourceFile = parse("components/mcp/mcp-detail-view.tsx");
+  let statusMembers = null;
+  for (const statement of sourceFile.statements) {
+    if (ts.isInterfaceDeclaration(statement) && statement.name.text === "ServerStatus") {
+      statusMembers = statement.members.filter(ts.isPropertySignature);
+    }
+  }
+  assert.ok(statusMembers, "mcp-detail-view must declare ServerStatus");
+  for (const field of ["env", "headers"]) {
+    const member = statusMembers.find(
+      (m) => m.name.getText(sourceFile).replace(/["']/g, "") === field,
+    );
+    assert.ok(member, `ServerStatus must declare ${field}`);
+    assert.equal(
+      member.type.getText(sourceFile),
+      "SecretMap",
+      `ServerStatus.${field} must be the masked SecretMap, not a plaintext record`,
+    );
+  }
+}
+
+// The edit dialog opens with empty secret inputs. Prefilling any of them
+// from a server response is what would put a mask (or worse, a value)
+// back on the wire, so the initializer literals must be empty strings.
+{
+  const sourceFile = parse("components/mcp/mcp-page.tsx");
+  const emptySecretFields = ["env", "headers", "bearerToken", "oauthClientSecret"];
+  const assignments = [];
+  function visit(node) {
+    if (ts.isPropertyAssignment(node)) {
+      const key = node.name.getText(sourceFile).replace(/["']/g, "");
+      if (emptySecretFields.includes(key)) assignments.push([key, node.initializer]);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  for (const field of emptySecretFields) {
+    const found = assignments.filter(([key]) => key === field);
+    assert.ok(found.length > 0, `mcp-page must initialize ${field}`);
+    for (const [, initializer] of found) {
+      assert.ok(
+        ts.isStringLiteralLike(initializer) && initializer.text === "",
+        `mcp-page must open the MCP edit dialog with an empty ${field}, got ${initializer.getText(sourceFile)}`,
+      );
+    }
+  }
+}
+
 let replacement;
 try {
   replacement = await import("../lib/net/secret-replacement.ts");

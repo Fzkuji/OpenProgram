@@ -52,6 +52,10 @@ from typing import Any, Iterable, Optional
 # tests. Going through the module ensures every call reads the
 # attribute live.
 from openprogram import paths as _paths
+# One mask shape across the whole product — the same helper the
+# provider-credential routes use, so an MCP env value and an API key
+# render identically in the UI.
+from openprogram.webui.routes._credential_secrets import mask_credential
 
 
 CONFIG_FILENAME = "mcp_servers.json"
@@ -84,7 +88,8 @@ class OAuthSettings:
     # the server's allowlist requires a fixed redirect_uri.
     redirect_port: int = 0
 
-    def to_dict(self) -> dict:
+    def to_storage_dict(self) -> dict:
+        """Full values — for the on-disk config file only."""
         out: dict = {"client_name": self.client_name,
                      "redirect_port": int(self.redirect_port)}
         if self.client_id:
@@ -153,7 +158,7 @@ class MCPServerConfig:
     def is_remote(self) -> bool:
         return self.type in (HTTP, SSE)
 
-    def to_dict(self) -> dict:
+    def _common_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
             "type": self.type,
             "enabled": self.enabled,
@@ -166,17 +171,76 @@ class MCPServerConfig:
             out["source_entry_hash"] = self.source_entry_hash
         if self.type == LOCAL:
             out["command"] = list(self.command)
-            out["env"] = dict(self.env)
         else:
             out["url"] = self.url
+        return out
+
+    def to_storage_dict(self) -> dict:
+        """Full config including every secret — on-disk form only.
+
+        Never hand this to an HTTP response; use
+        :meth:`to_response_dict` there.
+        """
+        out = self._common_dict()
+        if self.type == LOCAL:
+            out["env"] = dict(self.env)
+        else:
             out["headers"] = dict(self.headers)
             auth_obj: dict[str, Any] = {"kind": self.auth_kind}
             if self.auth_kind == AUTH_BEARER and self.bearer_token:
                 auth_obj["token"] = self.bearer_token
             if self.auth_kind == AUTH_OAUTH and self.oauth is not None:
-                auth_obj.update(self.oauth.to_dict())
+                auth_obj.update(self.oauth.to_storage_dict())
             out["auth"] = auth_obj
         return out
+
+    def to_response_dict(self) -> dict:
+        """API-safe config: every ``env`` / ``header`` / auth-secret value
+        replaced by a mask, so no route hands back a stored secret.
+
+        Values are masked wholesale rather than by name-matching: an MCP
+        server's ``env`` is free-form, so ``ENDPOINT`` can hold a signed
+        URL just as easily as ``API_KEY`` holds a key. Names stay visible
+        (the UI needs them to show what is configured); values never are.
+        """
+        out = self._common_dict()
+        if self.type == LOCAL:
+            out["env"] = mask_secret_map(self.env)
+        else:
+            out["headers"] = mask_secret_map(self.headers)
+            auth_obj: dict[str, Any] = {"kind": self.auth_kind}
+            if self.auth_kind == AUTH_BEARER:
+                auth_obj["has_token"] = bool(self.bearer_token)
+                if self.bearer_token:
+                    auth_obj["masked_token"] = mask_credential(
+                        self.bearer_token)
+            if self.auth_kind == AUTH_OAUTH and self.oauth is not None:
+                auth_obj["client_name"] = self.oauth.client_name
+                auth_obj["redirect_port"] = int(self.oauth.redirect_port)
+                if self.oauth.scope:
+                    auth_obj["scope"] = self.oauth.scope
+                if self.oauth.client_id:
+                    auth_obj["client_id"] = self.oauth.client_id
+                auth_obj["has_client_secret"] = bool(self.oauth.client_secret)
+                if self.oauth.client_secret:
+                    auth_obj["masked_client_secret"] = mask_credential(
+                        self.oauth.client_secret)
+            out["auth"] = auth_obj
+        return out
+
+
+def mask_secret_map(values: dict[str, str]) -> dict[str, dict[str, Any]]:
+    """Render an ``env`` / ``headers`` map for an API response.
+
+    Each name maps to ``{"has_value": bool, "masked": str}`` — presence
+    and shape, never the value. The dict-valued shape (rather than a
+    masked plain string) makes it impossible for a caller to mistake a
+    response map for something it can post straight back.
+    """
+    return {
+        str(k): {"has_value": bool(v), "masked": mask_credential(str(v))}
+        for k, v in values.items()
+    }
 
 
 def get_config_path() -> Path:
@@ -227,13 +291,7 @@ def load_roots() -> list[dict[str, str]]:
 def save_roots(roots: list[dict[str, str]]) -> Path:
     """Persist the roots list, preserving the ``servers`` block."""
     path = get_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
-    except Exception:  # noqa: BLE001
-        raw = {}
-    if not isinstance(raw, dict):
-        raw = {}
+    raw = _read_raw(path)
     cleaned: list[dict[str, str]] = []
     for entry in roots:
         if isinstance(entry, str):
@@ -246,8 +304,8 @@ def save_roots(roots: list[dict[str, str]]) -> Path:
         name = entry.get("name") or _name_from_uri(uri)
         cleaned.append({"uri": uri, "name": str(name)})
     raw["roots"] = cleaned
-    path.write_text(json.dumps(raw, indent=2, ensure_ascii=False),
-                    encoding="utf-8")
+    # Same file as the server configs, so the same owner-only write.
+    _write_private_json(path, raw)
     return path
 
 
@@ -315,15 +373,68 @@ def save_configs(configs: Iterable[MCPServerConfig]) -> Path:
     The file is rewritten as a whole (read-modify-write style).
     Callers are expected to pass the *complete* desired set — adding
     or removing entries is the caller's job.
+
+    Preserves any sibling top-level keys (``roots``) the same way
+    :func:`save_roots` preserves ``servers``.
     """
     path = get_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "servers": {cfg.name: cfg.to_dict() for cfg in configs},
-    }
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False),
-                    encoding="utf-8")
+    raw = _read_raw(path)
+    raw["servers"] = {cfg.name: cfg.to_storage_dict() for cfg in configs}
+    _write_private_json(path, raw)
     return path
+
+
+def _read_raw(path: Path) -> dict:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — missing / corrupt → start fresh
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _write_private_json(path: Path, payload: dict) -> None:
+    """Owner-only atomic write — this file holds bearer tokens, OAuth
+    client secrets, and arbitrary ``env`` values.
+
+    Same shape as the OAuth token file's writer
+    (:mod:`openprogram.mcp.token_storage`): create the temp file with
+    ``0600`` in one syscall so it is never briefly world-readable,
+    fsync before the rename so a crash can't leave a truncated config,
+    then ``os.replace`` for atomicity. ``restrict_to_user`` afterwards
+    tightens the ACL on Windows (where POSIX mode bits do nothing) and
+    re-applies ``0600`` to a pre-existing file created before this
+    hardening landed — an existing 0644 config narrows on its next save.
+
+    The state directory itself keeps its normal mode: every other
+    subsystem reads ``~/.openprogram/``, and 0600 on a directory would
+    strip the traversal bit they need. The file's own mode is what
+    keeps the secrets private.
+    """
+    import os
+
+    from openprogram._compat import restrict_to_user
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        os.unlink(tmp)
+    except FileNotFoundError:
+        pass
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(tmp, flags, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    os.replace(tmp, path)
+    restrict_to_user(path)
 
 
 def parse_entry(name: str, entry: dict) -> Optional[MCPServerConfig]:
@@ -469,8 +580,12 @@ def config_to_catalog_dict(cfg: "MCPServerConfig") -> dict:
     :func:`catalog_entry_hash` produces the same digest on both
     sides. Drops local-only state (enabled / always_load /
     source_*) — they aren't part of the catalog identity.
+
+    Hashes the *storage* form: the digest has to change when a secret
+    changes, and it never leaves the process (only the hex digest is
+    returned to callers).
     """
-    out = cfg.to_dict()
+    out = cfg.to_storage_dict()
     out.pop("enabled", None)
     out.pop("always_load", None)
     out.pop("source_catalog_url", None)

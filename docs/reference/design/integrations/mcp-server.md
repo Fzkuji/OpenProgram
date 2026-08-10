@@ -76,7 +76,9 @@ design:
 On that surface sits `POST /api/register`, which imports an arbitrary module
 path taken from the request body. Stored provider credentials are no longer
 retrievable in plaintext: both reveal forms are gone, so the account and
-config-key routes return masks only. Web owner authentication limits who can
+config-key routes return masks only, and the MCP management routes mask every
+stored `env` value, header value, bearer token, and OAuth client secret the
+same way. Web owner authentication limits who can
 reach these internal routes, but it does not make their shapes suitable for
 external callers or make a full-owner credential suitable for an MCP client.
 MCP authentication and low-privilege authorization therefore remain

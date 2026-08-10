@@ -28,21 +28,53 @@ export interface EditTarget {
   transport: "local" | "http" | "sse";
   // local
   command: string;
+  /**
+   * Secret-bearing inputs always start empty, in edit mode too: the API
+   * returns masks rather than values, so there is nothing to prefill.
+   * The PATCH body carries only what the user typed, and every name the
+   * body omits keeps its stored value (preserve). Typing `NAME=` with
+   * an empty value deletes that name.
+   */
   env: string;
+  /** Names already stored, for display — no values. */
+  storedEnvNames: string[];
   // remote
   url: string;
   headers: string;            // "Key: Value" per line
+  storedHeaderNames: string[];
   authKind: "none" | "bearer" | "oauth";
   bearerToken: string;
+  hasStoredBearerToken: boolean;
   oauthClientName: string;
   oauthScope: string;
   oauthClientId: string;
   oauthClientSecret: string;
+  hasStoredClientSecret: boolean;
   oauthRedirectPort: number;
   // shared
   enabled: boolean;
   timeout_seconds: number;
   alwaysLoad: boolean;
+}
+
+/**
+ * Names already stored for `env` / `headers`, with the preserve rule
+ * spelled out. Values are deliberately absent — this dialog never
+ * receives them, and re-typing a name is how you replace one.
+ */
+function StoredNames({ names }: { names: string[] }) {
+  const { text } = useTranslation();
+  if (names.length === 0) return null;
+  return (
+    <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+      {text("Stored (values hidden): ", "已保存（值不显示）：")}
+      <code>{names.join(", ")}</code>
+      {text(
+        " — leave a name out to keep it, retype it to replace it, or set it to an empty value to delete it.",
+        " — 不写该名称即保持不变，重新填写即替换，填空值即删除。",
+      )}
+    </div>
+  );
 }
 
 export function EditDialog({
@@ -63,6 +95,13 @@ export function EditDialog({
   const saving = busy !== null;
   const isAdd = target.mode === "add";
 
+  /**
+   * Parse the KEY=VALUE / Key: Value textarea into a patch map.
+   *
+   * A line with an empty value keeps the empty string, which the
+   * backend reads as an explicit delete. Names the user never typed
+   * simply do not appear, which the backend reads as preserve.
+   */
   function parseKV(text: string, sep: string): Record<string, string> {
     const out: Record<string, string> = {};
     for (const line of text.split(/\n+/)) {
@@ -92,36 +131,37 @@ export function EditDialog({
     if (state.transport === "local") {
       const cmd = splitCommand(state.command);
       if (cmd.length === 0) return { ok: false, err: text("command is required", "命令为必填项") };
-      return { ok: true, body: { ...base, command: cmd, env: parseEnv(state.env) } };
+      const body: Record<string, unknown> = { ...base, command: cmd };
+      const env = parseEnv(state.env);
+      // Omit the whole field when the user typed nothing, so every
+      // stored name is preserved rather than wiped.
+      if (Object.keys(env).length > 0 || isAdd) body.env = env;
+      return { ok: true, body };
     }
     if (!state.url.trim()) return { ok: false, err: text("url is required", "URL 为必填项") };
-    let auth: Record<string, unknown>;
+    const auth: Record<string, unknown> = { kind: state.authKind };
     if (state.authKind === "bearer") {
-      if (!state.bearerToken.trim())
+      // On edit, an empty box means "keep the stored token", so it is
+      // only required when there is nothing stored to keep.
+      if (!state.bearerToken.trim() && !state.hasStoredBearerToken)
         return { ok: false, err: text("bearer token is required", "Bearer token 为必填项") };
-      auth = { kind: "bearer", token: state.bearerToken.trim() };
+      if (state.bearerToken.trim()) auth.token = state.bearerToken.trim();
     } else if (state.authKind === "oauth") {
-      auth = {
-        kind: "oauth",
-        client_name: state.oauthClientName.trim() || "OpenProgram",
-        redirect_port: state.oauthRedirectPort || 0,
-      };
+      auth.client_name = state.oauthClientName.trim() || "OpenProgram";
+      auth.redirect_port = state.oauthRedirectPort || 0;
       if (state.oauthScope.trim()) auth.scope = state.oauthScope.trim();
       if (state.oauthClientId.trim()) auth.client_id = state.oauthClientId.trim();
       if (state.oauthClientSecret.trim())
         auth.client_secret = state.oauthClientSecret.trim();
-    } else {
-      auth = { kind: "none" };
     }
-    return {
-      ok: true,
-      body: {
-        ...base,
-        url: state.url.trim(),
-        headers: parseHeaders(state.headers),
-        auth,
-      },
+    const body: Record<string, unknown> = {
+      ...base,
+      url: state.url.trim(),
+      auth,
     };
+    const headers = parseHeaders(state.headers);
+    if (Object.keys(headers).length > 0 || isAdd) body.headers = headers;
+    return { ok: true, body };
   }
 
   async function save() {
@@ -242,6 +282,7 @@ export function EditDialog({
                               placeholder:text-muted-foreground
                               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
+                <StoredNames names={state.storedEnvNames} />
               </div>
             </>
           ) : (
@@ -268,6 +309,7 @@ export function EditDialog({
                               placeholder:text-muted-foreground
                               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
+                <StoredNames names={state.storedHeaderNames} />
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -294,7 +336,11 @@ export function EditDialog({
                     type="password"
                     value={state.bearerToken}
                     onChange={(e) => setState({ ...state, bearerToken: e.target.value })}
-                    placeholder={text("paste token", "粘贴 token")}
+                    placeholder={
+                      state.hasStoredBearerToken
+                        ? text("stored — leave blank to keep", "已保存 — 留空则保持不变")
+                        : text("paste token", "粘贴 token")
+                    }
                     className="font-mono"
                   />
                 </div>
@@ -341,6 +387,11 @@ export function EditDialog({
                       value={state.oauthClientSecret}
                       onChange={(e) =>
                         setState({ ...state, oauthClientSecret: e.target.value })}
+                      placeholder={
+                        state.hasStoredClientSecret
+                          ? text("stored — leave blank to keep", "已保存 — 留空则保持不变")
+                          : ""
+                      }
                       className="font-mono"
                     />
                   </div>

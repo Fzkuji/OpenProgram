@@ -113,12 +113,22 @@ def _render_env(env: dict | None) -> str:
     An MCP server's env is where API keys and bot tokens live, so the
     values never reach stdout — only the key names, plus a masked hint so
     the reader can tell two configured credentials apart.
+
+    The API already returns ``{"has_value", "masked"}`` per name rather
+    than the value, so this renders what it was given. Older responses
+    (a plain string) are masked here instead, which also covers anyone
+    piping a hand-written config through this formatter.
     """
     if not env:
         return "(empty)"
     from openprogram.auth.cli import _mask
 
-    return ", ".join(f"{key}={_mask(str(env[key]))}" for key in sorted(env))
+    def shown(value) -> str:
+        if isinstance(value, dict):
+            return value.get("masked", "") if value.get("has_value") else "(empty)"
+        return _mask(str(value))
+
+    return ", ".join(f"{key}={shown(env[key])}" for key in sorted(env))
 
 
 def _render_detail(server: dict) -> str:

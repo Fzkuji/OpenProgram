@@ -63,7 +63,8 @@ effective Origin 在认证前校验，非 loopback bind 没有显式 Origin 时�
 
 这个面上还有 `POST /api/register`，它按请求体里给的模块路径做任意 import。已保存的
 provider credential 不再可取回明文：两种 reveal 形式都已删除，account 与 config-key
-route 只返回掩码。Web owner 认证限制谁能访问这些内部 route，但不会使其 shape 适合外部
+route 只返回掩码，MCP 管理 route 同样把已存的每个 `env` 值、header 值、bearer token
+与 OAuth client secret 全部掩码。Web owner 认证限制谁能访问这些内部 route，但不会使其 shape 适合外部
 调用方，也不会使 full-owner credential 适合 MCP client。因此 MCP 认证与低权限授权仍是
 前置条件，不是后续加固项。
 

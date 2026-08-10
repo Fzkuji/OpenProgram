@@ -63,6 +63,24 @@ For a full side-by-side, see `references/opencode/packages/opencode/src/mcp/`. O
 
 A missing file or a parse failure is non-fatal — `load_configs()` returns an empty list, the worker starts normally, and one warning line is logged. MCP is an opt-in feature.
 
+### Credentials
+
+`env` and `headers` are free-form, so any entry can hold a credential: `ENDPOINT` can carry a signed URL as readily as `API_KEY` carries a key. Rather than guess from names, every value in both maps is treated as a secret, alongside the bearer token and the OAuth client secret.
+
+Two serializations keep that separation explicit. `MCPServerConfig.to_storage_dict()` carries full values and is used only to write `mcp_servers.json`. `to_response_dict()` replaces each value with `{"has_value": bool, "masked": str}` and reduces the auth secrets to `has_token` / `has_client_secret` plus a mask, and it is what every route returns — `/api/mcp/servers`, `/api/mcp/servers/{name}`, `/api/mcp/catalog`, and `/api/mcp/catalog/diff`. No route returns a stored MCP credential.
+
+`PATCH /api/mcp/servers/{name}` therefore cannot ask the client to send back what it was shown. It applies preserve / replace / delete per name:
+
+| Body | Meaning |
+|------|------|
+| name absent (or the whole `env` / `headers` field absent) | **preserve** the stored value |
+| name present with a value | **replace** with that value |
+| name present with an empty string | **delete** the name |
+
+The same rule covers `auth.token` and `auth.client_secret`. Changing `auth.kind` drops the other kind's secret, since it is no longer reachable or useful. The Web UI opens its secret inputs empty and lists only the stored names, so an untouched field is omitted and preserved.
+
+The config file holds these secrets, so `save_configs()` writes it owner-only: a temp file created `0600` in one syscall, `fsync`, then `os.replace`. A file left `0644` by an older version narrows on its next save. The route persists only after the restart succeeds, so an edit that fails to start leaves the stored credentials intact.
+
 ## Code structure
 
 ```
