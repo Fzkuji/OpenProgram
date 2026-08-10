@@ -29,6 +29,45 @@ from openprogram._ports import (
 _FRONTEND_PORT = 18100
 
 
+def _active_owner_auth_url(base_url: str, port: int) -> str:
+    """Return a bootstrap URL only when ``base_url`` is an effective Origin."""
+    from openprogram.webui.owner_auth import (
+        build_owner_auth_url,
+        read_active_web_access,
+        read_web_token,
+    )
+    from openprogram.webui.owner_auth import OwnerAuthError
+
+    if _backend_is_ours(port) is not True:
+        raise OwnerAuthError("active Web server is not owned by this profile")
+    active_access = read_active_web_access()
+    if active_access.port != port:
+        raise OwnerAuthError("active Web port does not match the worker port")
+    return build_owner_auth_url(
+        base_url,
+        token=read_web_token(),
+        effective_origins=active_access.effective_origins,
+    )
+
+
+def _cmd_web_auth_url(base_url: str) -> int:
+    """Print a fragment-bootstrap URL for the active Web server."""
+    from openprogram.worker.lifecycle import read_worker_port
+    from openprogram.webui.owner_auth import OwnerAuthError
+
+    port = read_worker_port()
+    if port is None:
+        print("error: no active OpenProgram Web server", file=sys.stderr)
+        return 1
+    try:
+        url = _active_owner_auth_url(base_url, port)
+    except OwnerAuthError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(url)
+    return 0
+
+
 # ponytail: _find_web_dir / _frontend_command / _start_frontend /
 # _stop_frontend are no longer called — _cmd_web now delegates the whole
 # backend+frontend boot to the detached worker (spawn_detached → worker
@@ -194,7 +233,7 @@ def _stop_frontend(proc: subprocess.Popen | None) -> None:
             pass
 
 
-def _cmd_web(web_port, open_browser):
+def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
     """Start the web UI (single port — API, /ws and the frontend export).
 
     ``web_port`` / ``open_browser`` = None means "use the user's stored
@@ -235,7 +274,12 @@ def _cmd_web(web_port, open_browser):
             print("  Or stop the other instance first:  pkill -f 'openprogram web'")
             if open_browser:
                 import webbrowser
-                webbrowser.open(ui)
+                from openprogram.webui.owner_auth import OwnerAuthError
+
+                try:
+                    webbrowser.open(_active_owner_auth_url(ui, port))
+                except OwnerAuthError as exc:
+                    print(f"  Browser not opened: {exc}")
             return
         # Held by something that is NOT an openprogram backend. The port is
         # pinned on purpose (a stable UI URL), so refuse with an actionable
@@ -282,7 +326,12 @@ def _cmd_web(web_port, open_browser):
 
     if open_browser:
         import webbrowser
-        webbrowser.open(ui_url)
+        from openprogram.webui.owner_auth import OwnerAuthError
+
+        try:
+            webbrowser.open(_active_owner_auth_url(ui_url, web_port))
+        except OwnerAuthError as exc:
+            print(f"Browser not opened: {exc}")
 
     print(f"Web UI: {ui_url}")
     print("Running in the background — close this terminal any time.")

@@ -111,15 +111,22 @@ def _reset_owner_cache_for_tests() -> None:
     _owner_cache.clear()
 
 
-def local_owner_authority() -> dict[str, Any]:
+def owner_authority(principal_id: str) -> dict[str, Any]:
+    """Build owner authority for one validated installation principal."""
+    if not _OWNER_RE.fullmatch(str(principal_id)):
+        raise AuthorityError("owner principal ID is invalid")
     return {
         "speaker_kind": "owner",
         "speaker_id": "owner/local",
         "speaker_display": "Owner",
-        "principal_id": owner_principal_id(),
+        "principal_id": str(principal_id),
         "authority_tier": "owner",
         "interaction": "interactive",
     }
+
+
+def local_owner_authority() -> dict[str, Any]:
+    return owner_authority(owner_principal_id())
 
 
 def paired_channel_authority(
@@ -339,7 +346,8 @@ def decide_tool_authority(
 
 __all__ = [
     "AuthorityError", "AuthorityDecision", "AuthorityTier", "TIER_CAPABILITIES",
-    "owner_principal_id", "local_owner_authority", "paired_channel_authority",
+    "owner_principal_id", "owner_authority", "local_owner_authority",
+    "paired_channel_authority",
     "runtime_authority", "normalize_authority",
     "authority_from_message", "has_capability", "decide_capability",
     "render_model_input", "render_model_input_from", "sanitize_speaker_display",

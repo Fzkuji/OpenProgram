@@ -1284,33 +1284,28 @@ async def _handle_ws_command(ws, cmd: dict):
 # ---------------------------------------------------------------------------
 
 def _web_config() -> dict:
-    """Bind host + extra allowed origins for the web surface.
-
-    Default is loopback: the service has no authentication, so binding
-    0.0.0.0 hands the sessions and the plaintext keys behind
-    ``/accounts/…/reveal`` to the whole LAN. A user who needs access from
-    another device sets ``web.host`` (and owns the risk); ``web.allowed_origins``
-    is the matching escape hatch for a reverse proxy in front of it.
-    """
-    host, allowed = "127.0.0.1", ()
+    """Return the configured bind host and explicit browser origins."""
+    bind_host, allowed_origins = "127.0.0.1", ()
     try:
         from openprogram.setup import _read_config
         web = _read_config().get("web") or {}
-        host = str(web.get("host") or "127.0.0.1")
+        bind_host = str(web.get("host") or "127.0.0.1")
         raw = web.get("allowed_origins") or ()
-        allowed = tuple(str(o) for o in raw) if isinstance(raw, (list, tuple)) else ()
+        allowed_origins = (
+            tuple(str(origin) for origin in raw)
+            if isinstance(raw, (list, tuple))
+            else ()
+        )
     except Exception as e:  # noqa: BLE001 — an unreadable config must not
         _log(f"[web] config unreadable, defaulting to loopback: {e}")
-    from .origin_guard import is_loopback_hostname
     return {
-        "host": host,
-        "bound_to_loopback": is_loopback_hostname(host),
-        "allowed_origins": allowed,
+        "bind_host": bind_host,
+        "allowed_origins": allowed_origins,
     }
 
 
-def create_app():
-    """Create and return the FastAPI application."""
+def create_app(*, owner_auth=None, port: int = 18100):
+    """Create the FastAPI application with mandatory owner authentication."""
     from contextlib import asynccontextmanager
 
     from fastapi import FastAPI
@@ -1452,15 +1447,23 @@ def create_app():
         lifespan=_lifespan,
     )
 
-    # Nothing here authenticates a caller, so a browser visiting any site
-    # must not be able to reach it. Refuse cross-site requests and foreign
-    # Host headers before routing — see webui/origin_guard.py.
-    from .origin_guard import BrowserOriginGuard
-    _web_cfg = _web_config()
+    from .owner_auth import OwnerAuthMiddleware, OwnerAuthState
+    if owner_auth is None:
+        import secrets
+        from openprogram.agent.authority import owner_principal_id
+
+        _web_cfg = _web_config()
+        owner_auth = OwnerAuthState.from_raw_token(
+            secrets.token_bytes(32),
+            owner_principal_id=owner_principal_id(),
+            bind_host=_web_cfg["bind_host"],
+            port=port,
+            allowed_origins=_web_cfg["allowed_origins"],
+        )
+    app.state.owner_auth = owner_auth
     app.add_middleware(
-        BrowserOriginGuard,
-        allowed_origins=_web_cfg["allowed_origins"],
-        enforce_loopback_host=_web_cfg["bound_to_loopback"],
+        OwnerAuthMiddleware,
+        auth_state=owner_auth,
     )
 
     # Auth v2 REST + SSE routes. Kept in a dedicated module so server.py
@@ -1634,6 +1637,7 @@ def create_app():
 # ---------------------------------------------------------------------------
 
 _server_thread: Optional[threading.Thread] = None
+_owner_auth_state = None
 
 
 def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thread:
@@ -1642,11 +1646,22 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
 
     Returns the thread object. The server runs until the process exits.
     """
-    global _server_thread, _loop
+    global _server_thread, _loop, _owner_auth_state
 
     if _server_thread is not None and _server_thread.is_alive():
         print(f"Visualizer already running")
         return _server_thread
+
+    from openprogram.paths import get_state_dir
+    from .owner_auth import OwnerAuthState
+
+    _web_cfg = _web_config()
+    _owner_auth_state = OwnerAuthState.start(
+        state_dir=get_state_dir(),
+        bind_host=_web_cfg["bind_host"],
+        port=port,
+        allowed_origins=_web_cfg["allowed_origins"],
+    )
 
     # Session restore is disk-bound and can take ~200–800ms on a busy
     # transcript dir. Defer it into a background thread so the uvicorn
@@ -1682,33 +1697,79 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
                 "Install with: pip install openprogram[web]"
             )
 
-        app = create_app()
-        _host = _web_config()["host"]
-        config = uvicorn.Config(
-            app, host=_host, port=port,
-            log_level="warning",
-            access_log=False,
-        )
-        server = uvicorn.Server(config)
-        _loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(_loop)
-        _loop.run_until_complete(server.serve())
+        try:
+            app = create_app(owner_auth=_owner_auth_state, port=port)
+            _host = _owner_auth_state.bind_host
+            config = uvicorn.Config(
+                app, host=_host, port=port,
+                log_level="warning",
+                access_log=False,
+                proxy_headers=False,
+            )
+            server = uvicorn.Server(config)
+            _loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(_loop)
+            _loop.run_until_complete(server.serve())
+        finally:
+            if _owner_auth_state is not None:
+                _owner_auth_state.close()
 
     _server_thread = threading.Thread(target=_run, daemon=True, name="openprogram-visualizer")
     _server_thread.start()
 
     url = f"http://localhost:{port}"
-    print(f"OpenProgram API running at {url}")
+    from urllib.parse import urlsplit
+    from .owner_auth import is_loopback_host
+
+    binding_scope = (
+        "loopback"
+        if is_loopback_host(_owner_auth_state.bind_host)
+        else "external"
+    )
+    print(
+        f"OpenProgram API bind={_owner_auth_state.bind_host}:{port} "
+        f"binding_scope={binding_scope} "
+        f"allowed_origins={sorted(_owner_auth_state.effective_origins)} "
+        "forwarded_proto_trust=loopback-peer-only "
+        f"token_fingerprint={_owner_auth_state.fingerprint}"
+    )
+    plaintext_remote_origins = [
+        origin
+        for origin in sorted(_owner_auth_state.effective_origins)
+        if urlsplit(origin).scheme == "http"
+        and not is_loopback_host(urlsplit(origin).hostname or "")
+    ]
+    if plaintext_remote_origins:
+        print(
+            "WARNING: owner token traffic uses unencrypted HTTP for "
+            + ", ".join(plaintext_remote_origins)
+        )
 
     if open_browser:
-        # 单端口：本进程既是 API 也托管前端静态导出，直接弹自己。
-        ui_url = url
+        ui_url = (
+            url
+            if url in _owner_auth_state.effective_origins
+            else sorted(_owner_auth_state.effective_origins)[0]
+        )
 
         def _open():
             import time
-            time.sleep(0.8)
             import webbrowser
-            webbrowser.open(ui_url)
+
+            from openprogram._ports import backend_accepts_owner_challenge
+            from .owner_auth import build_owner_auth_url
+
+            deadline = time.monotonic() + 10.0
+            while time.monotonic() < deadline:
+                if backend_accepts_owner_challenge(port):
+                    webbrowser.open(build_owner_auth_url(
+                        ui_url,
+                        token=_owner_auth_state.token,
+                        effective_origins=_owner_auth_state.effective_origins,
+                    ))
+                    return
+                time.sleep(0.2)
+            print("Browser not opened: Web listener ownership was not verified")
         threading.Thread(target=_open, daemon=True).start()
 
     return _server_thread

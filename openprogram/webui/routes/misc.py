@@ -46,34 +46,40 @@ def register(app):
 
     @app.get("/healthz")
     async def healthz():
-        """Liveness + readiness probe. Reports DB connectivity, tool count, uptime."""
+        """Non-identifying liveness probe available before authentication."""
+        return JSONResponse(content={"status": "ok"})
+
+    @app.get("/api/diagnostics")
+    async def runtime_diagnostics():
+        """Authenticated runtime and storage diagnostics."""
         import time as _time
         from openprogram.webui import server as _s
+
         info: dict = {
             "status": "ok",
             "checked_at": _time.time(),
             "uptime_seconds": int(_time.time() - _s._SERVER_START_TIME),
-            # Which code is actually serving — `openprogram upgrade`
-            # verifies the restarted instance against this.
-            "sha": _head_sha(),
+            "revision": _head_sha(),
         }
         try:
             from openprogram.agent.session_db import default_db
+
             db = default_db()
-            session_count = len(db.list_sessions(limit=1))
-            info["db_ok"] = True
-            info["sessions_visible"] = session_count
-            cutoff = _time.time() - 24 * 3600
-            info["messages_24h"] = db.count_recent_nodes(cutoff)
-        except Exception as e:
-            info["db_ok"] = False
-            info["db_error"] = f"{type(e).__name__}: {e}"
+            info["database_ok"] = True
+            info["has_visible_sessions"] = bool(db.list_sessions(limit=1))
+            info["message_count_24h"] = db.count_recent_nodes(
+                _time.time() - 24 * 3600
+            )
+        except Exception as exc:  # noqa: BLE001
+            info["database_ok"] = False
+            info["database_error"] = f"{type(exc).__name__}: {exc}"
             info["status"] = "degraded"
         try:
             from openprogram.functions import list_registered_agent_tools
-            info["tools_registered"] = len(list_registered_agent_tools())
-        except Exception:
-            info["tools_registered"] = 0
+
+            info["registered_tool_count"] = len(list_registered_agent_tools())
+        except Exception:  # noqa: BLE001
+            info["registered_tool_count"] = 0
         return JSONResponse(content=info)
 
     @app.post("/api/register")

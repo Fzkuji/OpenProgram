@@ -318,7 +318,7 @@ describe('handleSlash', () => {
     expect(handleSlash('/doctor', ctx)).toBe(true);
 
     await vi.waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('http://backend.test/api/doctor');
+      expect(fetchMock).toHaveBeenCalledWith('http://backend.test/api/doctor', expect.anything());
       expect(ctx.pushSystem).toHaveBeenCalledWith(
         'Doctor report\n\n✓ Python - 3.12\n✗ MCP - unavailable\n\nSome checks failed.',
       );
@@ -356,7 +356,7 @@ describe('handleSlash', () => {
     expect(handleSlash('/mcp', ctx)).toBe(true);
 
     await vi.waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('http://backend.test/api/mcp/servers');
+      expect(fetchMock).toHaveBeenCalledWith('http://backend.test/api/mcp/servers', expect.anything());
       expect(ctx.pushSystem).toHaveBeenCalledWith('MCP servers:\n✓ filesystem — ready (2 tools)');
     });
   });
@@ -436,7 +436,7 @@ describe('handleSlash', () => {
     handleSlash('/mcp show repo/fs', ctx);
 
     await vi.waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('http://backend.test/api/mcp/servers/repo%2Ffs');
+      expect(fetchMock).toHaveBeenCalledWith('http://backend.test/api/mcp/servers/repo%2Ffs', expect.anything());
     });
   });
 
@@ -455,7 +455,7 @@ describe('handleSlash', () => {
     await vi.waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         `http://backend.test/api/mcp/servers/filesystem/${action}`,
-        { method: 'POST' },
+        expect.objectContaining({ method: 'POST' }),
       );
       expect(ctx.pushSystem).toHaveBeenCalledWith(`MCP server filesystem ${result}.`);
     });

@@ -1,3 +1,5 @@
+import { backendBase, backendFetch } from '../utils/backend.js';
+
 export interface SlashCommand {
   name: string;
   description: string;
@@ -51,11 +53,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'quit', description: 'Exit OpenProgram' },
 ];
 
-export const backendHttpBase = (): string =>
-  process.env.OPENPROGRAM_BACKEND_URL
-  || process.env.OPENPROGRAM_WS?.replace('ws://', 'http://').replace('/ws', '')
-  || 'http://127.0.0.1:8765';
-
 let backendCommands: SlashCommand[] = [];
 
 /** Fetch the unified command registry (skill / user / project / plugin /
@@ -64,7 +61,7 @@ let backendCommands: SlashCommand[] = [];
  *  again to refresh; a fetch failure keeps the previous snapshot. */
 export async function loadBackendCommands(): Promise<void> {
   try {
-    const r = await fetch(`${backendHttpBase()}/api/commands`);
+    const r = await backendFetch(`${backendBase()}/api/commands`);
     if (!r.ok) return;
     const d = (await r.json()) as { commands?: Array<Record<string, unknown>> };
     const locals = new Set(SLASH_COMMANDS.map((c) => c.name));
@@ -106,7 +103,7 @@ export async function invokeBackendCommand(
   sessionId?: string,
 ): Promise<InvokeResult | null> {
   try {
-    const r = await fetch(`${backendHttpBase()}/api/commands/invoke`, {
+    const r = await backendFetch(`${backendBase()}/api/commands/invoke`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, session_id: sessionId ?? '' }),

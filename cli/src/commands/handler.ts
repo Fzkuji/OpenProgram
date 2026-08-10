@@ -2,7 +2,8 @@ import { BackendClient } from '../ws/client.js';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PickerKind } from '../screens/repl/types.js';
-import { allSlashCommands, backendHttpBase } from './registry.js';
+import { allSlashCommands } from './registry.js';
+import { backendBase, backendFetch, openInBrowser, webUiUrls } from '../utils/backend.js';
 
 type ThinkingEffort = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 type PermissionMode = 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass';
@@ -316,9 +317,9 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
         return true;
       }
       const provider = args[0]!;
-      const base = backendHttpBase();
+      const base = backendBase();
       ctx.pushSystem(`Fetching models for ${provider}...`);
-      void fetch(`${base}/api/providers/${encodeURIComponent(provider)}/fetch-models`, {
+      void backendFetch(`${base}/api/providers/${encodeURIComponent(provider)}/fetch-models`, {
         method: 'POST',
       })
         .then((r) => r.json())
@@ -566,27 +567,16 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
     }
 
     case 'web': {
-      // Try to open the local web UI in the browser. Falls back to printing
-      // the URL if the open package isn't available.
+      // Open the local web UI, authenticated. The browser gets the
+      // fragment-bootstrap URL (token in the fragment, never sent to a
+      // server); the transcript only ever shows the token-free URL.
       try {
-        const wsUrl = process.env.OPENPROGRAM_WS ?? '';
-        const m = wsUrl.match(/^ws:\/\/(?:[^/]+):(\d+)/);
-        if (m) {
-          const port = m[1];
-          const httpUrl = `http://localhost:${port}`;
-          import('child_process').then(({ spawn }) => {
-            const opener =
-              process.platform === 'darwin' ? 'open'
-              : process.platform === 'win32' ? 'start' : 'xdg-open';
-            try {
-              spawn(opener, [httpUrl], { stdio: 'ignore', detached: true }).unref();
-            } catch {
-              // ignore
-            }
-          });
-          ctx.pushSystem(`Web UI: ${httpUrl}`);
+        const urls = webUiUrls();
+        if (urls) {
+          openInBrowser(urls.bootstrap);
+          ctx.pushSystem(`Web UI: ${urls.display}`);
         } else {
-          ctx.pushSystem('Could not determine web UI URL from OPENPROGRAM_WS.');
+          ctx.pushSystem('Could not determine the web UI URL — no verified backend endpoint.');
         }
       } catch (e) {
         ctx.pushSystem(`/web failed: ${(e as Error).message}`);
@@ -739,7 +729,7 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
     }
 
     case 'doctor': {
-      void fetch(`${backendHttpBase()}/api/doctor`)
+      void backendFetch(`${backendBase()}/api/doctor`)
         .then(async (response) => {
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const data = await response.json() as {
@@ -759,9 +749,9 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
 
     case 'mcp': {
       const [verb = 'list', name] = args;
-      const base = `${backendHttpBase()}/api/mcp/servers`;
+      const base = `${backendBase()}/api/mcp/servers`;
       if (verb === 'list') {
-        void fetch(base)
+        void backendFetch(base)
           .then(async (response) => {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json() as { servers?: McpServer[] };
@@ -780,7 +770,7 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
           ctx.pushSystem('Usage: /mcp show <name>');
           return true;
         }
-        void fetch(`${base}/${encodeURIComponent(name)}`)
+        void backendFetch(`${base}/${encodeURIComponent(name)}`)
           .then(async (response) => {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const server = await response.json() as McpServer;
@@ -797,7 +787,7 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
           return true;
         }
         const result = verb === 'restart' ? 'restarted' : `${verb}d`;
-        void fetch(`${base}/${encodeURIComponent(name)}/${verb}`, { method: 'POST' })
+        void backendFetch(`${base}/${encodeURIComponent(name)}/${verb}`, { method: 'POST' })
           .then((response) => {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             ctx.pushSystem(`MCP server ${name} ${result}.`);

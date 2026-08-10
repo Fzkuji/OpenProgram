@@ -57,10 +57,10 @@ class ApprovePairingRequest(BaseModel):
 
 def _require_local_request(request: Request) -> None:
     """Pairing codes and mutations are available only on loopback."""
-    from openprogram.webui.origin_guard import is_loopback_hostname
+    from openprogram.webui.owner_auth import is_loopback_host
 
     host = getattr(getattr(request, "client", None), "host", "")
-    if not is_loopback_hostname(host):
+    if not is_loopback_host(host):
         raise HTTPException(
             status_code=403,
             detail="channel access management requires a local owner request",

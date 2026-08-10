@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { backendAuthHeaders, isBackendUrl } from '../utils/backend.js';
 
 export type ChatRequest = {
   action: 'chat';
@@ -395,7 +396,12 @@ export class BackendClient {
 
   connect(): void {
     this.setState('connecting');
-    this.ws = new WebSocket(this.url);
+    // The owner token rides in the Authorization header, never in the URL
+    // query, and only when the URL is our own backend.
+    this.ws = new WebSocket(
+      this.url,
+      isBackendUrl(this.url) ? { headers: backendAuthHeaders() } : undefined,
+    );
     this.ws.on('open', () => {
       this.setState('connected');
       this.hasConnected = true;

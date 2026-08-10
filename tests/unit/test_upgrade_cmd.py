@@ -324,6 +324,26 @@ def test_persist_channel_writes_known(monkeypatch):
 # -------------------------------------------------------------- healthz
 
 
+def test_backend_poll_uses_challenge_revision_proof(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "openprogram._ports.backend_is_ours",
+        lambda port, *, expected_revision=None: calls.append(
+            (port, expected_revision)
+        ) or True,
+    )
+
+    ok, detail = up._poll_backend_identity(
+        18100,
+        timeout=1.0,
+        expected_revision="a" * 40,
+    )
+
+    assert ok is True
+    assert detail == "serving aaaaaaaaaaaa"
+    assert calls == [(18100, "a" * 40)]
+
+
 def test_healthz_reports_sha(monkeypatch):
     from openprogram.webui.routes import misc
     monkeypatch.setattr(misc, "_HEAD_SHA", None)

@@ -189,30 +189,27 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-def _poll_healthz(port: int, timeout: float,
-                  want_sha: Optional[str] = None) -> tuple[bool, str]:
-    """Poll ``/healthz`` until it answers (and matches ``want_sha`` when
-    given), or ``timeout`` seconds elapse. Returns ``(ok, detail)``."""
-    import urllib.request
+def _poll_backend_identity(
+    port: int,
+    timeout: float,
+    expected_revision: Optional[str] = None,
+) -> tuple[bool, str]:
+    """Wait for a token-HMAC listener proof and optional revision match."""
+    from openprogram._ports import backend_is_ours
+
     deadline = time.monotonic() + timeout
     last = "no response"
     while time.monotonic() < deadline:
-        try:
-            with urllib.request.urlopen(
-                f"http://127.0.0.1:{port}/healthz", timeout=2.0
-            ) as resp:
-                body = json.loads(resp.read(65536))
-        except Exception as e:  # noqa: BLE001 — the server may not be up yet
-            last = f"{type(e).__name__}"
-            time.sleep(0.5)
-            continue
-        if want_sha is None:
+        identified = backend_is_ours(
+            port,
+            expected_revision=expected_revision,
+        )
+        if identified is True and expected_revision is None:
             return True, "healthy"
-        got = (body or {}).get("sha") or ""
-        if got == want_sha:
-            return True, f"serving {want_sha[:12]}"
-        last = f"serving {got[:12] or '(unknown)'}, expected {want_sha[:12]}"
-        time.sleep(1.0)
+        if identified is True:
+            return True, f"serving {expected_revision[:12]}"
+        last = "listener ownership or revision proof not ready"
+        time.sleep(0.5)
     return False, f"timed out after {timeout:.0f}s — {last}"
 
 
@@ -235,7 +232,7 @@ def _cold_start_probe(root: Path, target_sha: str) -> str:
         stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
     )
     try:
-        ok, detail = _poll_healthz(port, timeout=60.0)
+        ok, detail = _poll_backend_identity(port, timeout=60.0)
         if not ok:
             raise UpgradeError("probe-failed", f"cold start on :{port} {detail}")
     finally:
@@ -394,7 +391,11 @@ def run_upgrade(*, channel: Optional[str] = None, dry_run: bool = False,
         started = time.monotonic()
         from openprogram.worker.lifecycle import resolve_worker_port
         port = resolve_worker_port()
-        ok, detail = _poll_healthz(port, timeout=90.0, want_sha=target)
+        ok, detail = _poll_backend_identity(
+            port,
+            timeout=90.0,
+            expected_revision=target,
+        )
         steps.record("verify", ok, detail, started)
         if not ok:
             if not as_json:

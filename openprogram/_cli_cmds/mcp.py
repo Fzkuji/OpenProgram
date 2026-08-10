@@ -19,40 +19,45 @@ import urllib.request
 from typing import Any, Optional
 
 
-def _worker_base_url() -> Optional[str]:
-    """Resolve the running worker's HTTP base URL via the port file
-    ``<state>/worker.port``. Returns ``None`` if no worker is up.
+def _require_backend_endpoint():
+    """Resolve the challenge-verified backend endpoint, or exit.
+
+    The endpoint carries the owner token, so it is only produced after the
+    listener proves — via the nonce/HMAC challenge — that it belongs to this
+    profile (see ``webui.owner_auth.resolve_backend_endpoint``).
     """
-    from openprogram.worker.lifecycle import read_worker_port
-    port = read_worker_port()
-    if port is None:
-        return None
-    return f"http://127.0.0.1:{port}"
+    from openprogram.webui.owner_auth import (
+        OwnerAuthError,
+        resolve_backend_endpoint,
+    )
 
-
-def _require_worker() -> str:
-    base = _worker_base_url()
-    if base is None:
-        print("Error: openprogram worker is not running.",
-              file=sys.stderr)
+    try:
+        return resolve_backend_endpoint()
+    except OwnerAuthError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         print("Start it with: openprogram worker start", file=sys.stderr)
         sys.exit(1)
-    return base
 
 
 def _request(method: str, path: str,
               body: Optional[dict] = None) -> tuple[int, Any]:
-    base = _require_worker()
-    url = base + path
+    endpoint = _require_backend_endpoint()
+    url = endpoint.base_url + path
     data: Optional[bytes] = None
-    headers = {"Accept": "application/json"}
+    headers = {
+        "Accept": "application/json",
+        "Authorization": endpoint.authorization_header,
+        "Host": endpoint.host,
+        "X-Forwarded-Proto": endpoint.scheme,
+    }
     if body is not None:
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, method=method,
                                   headers=headers)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with opener.open(req, timeout=120) as resp:
             text = resp.read().decode("utf-8")
             payload = json.loads(text) if text else None
             return resp.status, payload

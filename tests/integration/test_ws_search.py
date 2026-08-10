@@ -23,7 +23,11 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("openprogram.agent.session_db.default_db",
                         lambda: db)
     app = create_app()
-    with TestClient(app) as client:
+    with TestClient(
+        app,
+        base_url="http://127.0.0.1:18100",
+        headers={"Authorization": f"Bearer {app.state.owner_auth.token}"},
+    ) as client:
         yield client, db
 
 
@@ -57,7 +61,9 @@ def test_search_returns_matching_messages(env) -> None:
         "timestamp": 3.0, "predecessor": None,
     })
 
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(
+        "/ws", headers={"host": "127.0.0.1:18100"}
+    ) as ws:
         _drain_bootstrap(ws)
         ws.send_text(json.dumps({
             "action": "search_messages",
@@ -90,7 +96,9 @@ def test_search_empty_query_returns_zero(env) -> None:
         "timestamp": 1.0, "predecessor": None,
     })
 
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(
+        "/ws", headers={"host": "127.0.0.1:18100"}
+    ) as ws:
         _drain_bootstrap(ws)
         ws.send_text(json.dumps({
             "action": "search_messages",
@@ -117,7 +125,9 @@ def test_search_filters_by_agent(env) -> None:
         "timestamp": 2.0, "predecessor": None,
     })
 
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(
+        "/ws", headers={"host": "127.0.0.1:18100"}
+    ) as ws:
         _drain_bootstrap(ws)
         ws.send_text(json.dumps({
             "action": "search_messages",

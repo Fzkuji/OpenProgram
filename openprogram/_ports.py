@@ -48,31 +48,91 @@ def port_in_use(port: int, host: str = "127.0.0.1", timeout: float = 0.4) -> boo
 # identity probes (HTTP signature)
 
 
-def backend_is_ours(port: int) -> Optional[bool]:
-    """Probe ``/healthz`` to tell OUR backend from a squatter.
+def backend_is_ours(
+    port: int,
+    *,
+    expected_revision: str | None = None,
+) -> Optional[bool]:
+    """Verify a listener with the worker files and a token-HMAC challenge.
 
-    True → the port answers with openprogram's health JSON (a running
-    instance — reuse it / point the user at the UI); False → it answers
-    like something else; None → inconclusive (no/garbled response).
+    The request sends only a random nonce. The owner token remains local and is
+    used to verify the response, so an unrelated process holding the port
+    cannot obtain the credential from this identity probe.
     """
-    import json
-    import urllib.request
-    try:
-        with urllib.request.urlopen(
-            f"http://127.0.0.1:{port}/healthz", timeout=1.0
-        ) as resp:
-            body = resp.read(4096)
-    except Exception:
+    from openprogram.worker import paths
+    from openprogram.worker.lifecycle import current_worker_pid
+
+    if current_worker_pid() is None:
         return None
     try:
-        data = json.loads(body)
+        worker_port = int(paths.port_path().read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    if worker_port != int(port):
+        return False
+    return backend_accepts_owner_challenge(
+        port,
+        expected_revision=expected_revision,
+    )
+
+
+def backend_accepts_owner_challenge(
+    port: int,
+    *,
+    expected_revision: str | None = None,
+) -> bool:
+    """Verify the active listener without sending the owner credential."""
+    import base64
+    import hmac
+    import json
+    import secrets
+    import urllib.parse
+    import urllib.request
+
+    from openprogram.webui.owner_auth import (
+        OwnerAuthError,
+        create_owner_challenge_proof,
+        read_active_web_access,
+        read_web_token,
+        select_connect_host,
+        select_request_origin,
+    )
+
+    try:
+        active_access = read_active_web_access()
+        token = read_web_token()
+    except OwnerAuthError:
+        return False
+    if active_access.port != int(port):
+        return False
+
+    request_origin = select_request_origin(active_access)
+    parsed_origin = urllib.parse.urlsplit(request_origin)
+    url_host = select_connect_host(active_access.bind_host)
+    nonce = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode("ascii")
+    query = {"nonce": nonce}
+    if expected_revision is not None:
+        query["revision"] = expected_revision
+    request = urllib.request.Request(
+        f"http://{url_host}:{port}/api/auth/challenge?{urllib.parse.urlencode(query)}",
+        headers={
+            "Host": parsed_origin.netloc,
+            "X-Forwarded-Proto": parsed_origin.scheme,
+        },
+    )
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(request, timeout=1.0) as response:
+            payload = json.loads(response.read(4096))
+        expected_proof = create_owner_challenge_proof(
+            token=token,
+            nonce=nonce,
+            revision=expected_revision or "",
+        )
     except Exception:
         return False
-    # openprogram's /healthz always carries these distinctive keys
-    # (see webui/routes/misc.py).
-    if isinstance(data, dict) and "uptime_seconds" in data and "status" in data:
-        return True
-    return False
+    proof = payload.get("proof") if isinstance(payload, dict) else None
+    return isinstance(proof, str) and hmac.compare_digest(proof, expected_proof)
 
 
 def frontend_is_ours(port: int) -> Optional[bool]:

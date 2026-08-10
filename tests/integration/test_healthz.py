@@ -1,78 +1,46 @@
-"""``/healthz`` liveness/readiness probe.
-
-Used by load balancers and humans curl-checking the server. Reports
-SessionDB connectivity, registered tool count, recent activity, and
-uptime. Returns 200 always — body's ``status`` field tells the
-caller whether the system is "ok" or "degraded".
-"""
+"""The public health probe is non-identifying and needs no credential."""
 from __future__ import annotations
 
-import json
+import base64
+import hashlib
+import re
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from openprogram.agent.session_db import SessionDB
 from openprogram.webui.server import create_app
 
 
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    db = SessionDB(tmp_path / "sessions.sqlite")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db",
-                        lambda: db)
     app = create_app()
-    with TestClient(app) as c:
-        yield c, db
+    with TestClient(app, base_url="http://127.0.0.1:18100") as c:
+        yield c
 
 
-def test_healthz_reports_ok_when_db_responds(client) -> None:
-    c, db = client
-    db.create_session("c1", "main", title="t")
-    db.append_message("c1", {
-        "id": "m1", "role": "user", "content": "x",
-        "timestamp": __import__("time").time(), "predecessor": None,
-    })
-
-    r = c.get("/healthz")
+def test_healthz_is_minimal_and_public(client) -> None:
+    r = client.get("/healthz")
     assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "ok"
-    assert body["db_ok"] is True
-    assert body["sessions_visible"] >= 1
-    assert body["messages_24h"] >= 1
-    assert body["tools_registered"] >= 20    # every built-in tool
-    assert "uptime_seconds" in body
+    assert r.json() == {"status": "ok"}
+    assert r.headers["cache-control"] == "no-store"
 
 
-def test_healthz_includes_tool_count(client) -> None:
-    c, _ = client
-    body = c.get("/healthz").json()
-    # Every built-in dict tool gets auto-wrapped at registry import
-    # (tools/__init__.py:_autoload_agent_registry). Drop here would
-    # mean some tool's @tool decorator isn't firing on import.
-    assert body["tools_registered"] >= 20
-
-
-def test_healthz_returns_200_even_when_degraded(
-    client, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """If the DB ping raises (broken file / missing perms / replaced
-    schema), healthz should still return 200 with ``status=degraded``
-    so the LB / human can read the body and decide. Returning 503 is a
-    deployment policy choice — we leave that to the consumer."""
-    c, _ = client
-
-    # Force the db ping to fail by patching default_db to raise
-    def _broken():
-        raise RuntimeError("simulated db fault")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db",
-                        _broken)
-
-    r = c.get("/healthz")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "degraded"
-    assert body["db_ok"] is False
-    assert "simulated db fault" in body["db_error"]
+def test_static_shell_csp_authorizes_only_its_built_inline_scripts(client) -> None:
+    response = client.get("/chat")
+    assert response.status_code == 200
+    policy = response.headers["content-security-policy"]
+    scripts = [
+        body.encode()
+        for attributes, body in re.findall(
+            r"<script([^>]*)>(.*?)</script\s*>",
+            response.text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if not re.search(r"\bsrc\s*=", attributes, re.IGNORECASE)
+    ]
+    assert scripts
+    for script in scripts:
+        digest = base64.b64encode(hashlib.sha256(script).digest()).decode()
+        assert f"'sha256-{digest}'" in policy
+    assert "'unsafe-inline'" not in policy

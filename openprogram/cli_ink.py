@@ -352,8 +352,26 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
         os.dup2(log_fd, 2)
         os.close(log_fd)
 
-    ws_url = f"ws://127.0.0.1:{port}/ws"
+    # Resolve the backend endpoint once, challenge-verified, and hand the
+    # owner token to the TUI through the child's environment only — never
+    # on argv (world-readable via ps) and never in a URL query.
+    from openprogram.webui.owner_auth import (
+        OwnerAuthError,
+        resolve_backend_endpoint,
+    )
+
     env = os.environ.copy()
+    try:
+        endpoint = resolve_backend_endpoint()
+    except OwnerAuthError:
+        endpoint = None
+    if endpoint is not None and endpoint.port == port:
+        ws_url = endpoint.websocket_url
+        env["OPENPROGRAM_BACKEND_URL"] = endpoint.base_url
+        env["OPENPROGRAM_BACKEND_ORIGIN"] = endpoint.origin
+        env["OPENPROGRAM_BACKEND_TOKEN"] = endpoint.token
+    else:
+        ws_url = f"ws://127.0.0.1:{port}/ws"
     env["OPENPROGRAM_WS"] = ws_url
     if agent is not None and getattr(agent, "id", None):
         env["OPENPROGRAM_AGENT"] = agent.id

@@ -24,7 +24,11 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("openprogram.agent.session_db.default_db",
                         lambda: db)
     app = create_app()
-    with TestClient(app) as c:
+    with TestClient(
+        app,
+        base_url="http://127.0.0.1:18100",
+        headers={"Authorization": f"Bearer {app.state.owner_auth.token}"},
+    ) as c:
         yield c
 
 
@@ -78,7 +82,9 @@ def test_qr_login_streams_phases_to_ws(
         _fake_login,
     )
 
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(
+        "/ws", headers={"host": "127.0.0.1:18100"}
+    ) as ws:
         _drain_bootstrap(ws)
         ws.send_text(json.dumps({
             "action": "start_channel_login",
@@ -103,7 +109,9 @@ def test_qr_login_unsupported_channel_emits_error(
 ) -> None:
     """Telegram has a token-based path, not QR. Asking for QR there
     should fail fast with an ``error`` envelope, not silently hang."""
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(
+        "/ws", headers={"host": "127.0.0.1:18100"}
+    ) as ws:
         _drain_bootstrap(ws)
         ws.send_text(json.dumps({
             "action": "start_channel_login",
@@ -135,7 +143,9 @@ def test_qr_login_expired_propagates(
         _fake_login,
     )
 
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(
+        "/ws", headers={"host": "127.0.0.1:18100"}
+    ) as ws:
         _drain_bootstrap(ws)
         ws.send_text(json.dumps({
             "action": "start_channel_login",

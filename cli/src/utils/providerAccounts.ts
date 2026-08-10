@@ -11,7 +11,7 @@
  *   - "code_paste"  claude-code's interactive OAuth (startAdd → submitCode)
  *   - "login"       the shared /login/* flow (startLogin → pollLogin → submitLogin)
  */
-import { backendBase } from './backend.js';
+import { backendBase, backendFetch } from './backend.js';
 
 export interface LoginMethod {
   id: string;
@@ -67,7 +67,7 @@ export interface LoginPoll {
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 async function postTo(path: string, body: unknown): Promise<any> {
-  const r = await fetch(`${backendBase()}${path}`, {
+  const r = await backendFetch(`${backendBase()}${path}`, {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify(body ?? {}),
@@ -76,7 +76,7 @@ async function postTo(path: string, body: unknown): Promise<any> {
 }
 
 async function getJson(path: string): Promise<any> {
-  const r = await fetch(`${backendBase()}${path}`);
+  const r = await backendFetch(`${backendBase()}${path}`);
   return r.json();
 }
 

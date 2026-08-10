@@ -670,6 +670,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_web.add_argument("--web-port", type=int, default=None,
         help="Web UI port for this run (default: stored pref, then 18100)")
     p_web.add_argument("--no-browser", action="store_true", help="Don't open browser")
+    web_sub = p_web.add_subparsers(dest="web_verb", metavar="verb")
+    p_web_auth_url = web_sub.add_parser(
+        "auth-url",
+        help="Print an authenticated browser bootstrap URL for the active Web server",
+    )
+    p_web_auth_url.add_argument(
+        "--base-url",
+        required=True,
+        help="Canonical browser Origin, for example https://agent.example.com",
+    )
 
     p_ports = sub.add_parser("ports",
         help="Show or set the web UI port; takes effect next start")
@@ -1275,6 +1285,10 @@ def main():
         return
 
     if args.command == "web":
+        if getattr(args, "web_verb", None) == "auth-url":
+            from openprogram._cli_cmds.web import _cmd_web_auth_url
+
+            sys.exit(_cmd_web_auth_url(args.base_url))
         _cmd_web(getattr(args, "web_port", None),
                  False if args.no_browser else None)
         return

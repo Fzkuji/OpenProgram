@@ -38,7 +38,11 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("openprogram.paths.get_state_dir",
                         lambda: state_root)
     app = create_app()
-    with TestClient(app) as c:
+    with TestClient(
+        app,
+        base_url="http://127.0.0.1:18100",
+        headers={"Authorization": f"Bearer {app.state.owner_auth.token}"},
+    ) as c:
         yield c, db
 
 
@@ -52,7 +56,9 @@ def test_attach_creates_missing_session(env) -> None:
     NEW_ID = "local_freshxx"
     assert db.get_session(NEW_ID) is None  # baseline
 
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(
+        "/ws", headers={"host": "127.0.0.1:18100"}
+    ) as ws:
         ws.send_text(json.dumps({
             "action": "attach_session",
             "session_id": NEW_ID,
@@ -94,7 +100,9 @@ def test_attach_does_not_disturb_existing_session(env) -> None:
     db.create_session("c1", "research-bot", title="My investigation",
                        source="web")
 
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(
+        "/ws", headers={"host": "127.0.0.1:18100"}
+    ) as ws:
         ws.send_text(json.dumps({
             "action": "attach_session",
             "session_id": "c1",
@@ -122,7 +130,9 @@ def test_attach_reports_replaced_binding(env) -> None:
     db.create_session("conv-a", "main", title="A", source="tui")
     db.create_session("conv-b", "main", title="B", source="tui")
 
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(
+        "/ws", headers={"host": "127.0.0.1:18100"}
+    ) as ws:
         # First attach: peer=* → conv-a. No replaced.
         ws.send_text(json.dumps({
             "action": "attach_session",
@@ -159,7 +169,9 @@ def test_attach_reports_replaced_binding(env) -> None:
 
 def test_attach_rejects_empty_session_id(env) -> None:
     client, _ = env
-    with client.websocket_connect("/ws") as ws:
+    with client.websocket_connect(
+        "/ws", headers={"host": "127.0.0.1:18100"}
+    ) as ws:
         ws.send_text(json.dumps({
             "action": "attach_session",
             "session_id": "",

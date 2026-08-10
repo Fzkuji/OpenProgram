@@ -18,6 +18,7 @@
  */
 import { Turn, TurnBlock } from '../../../components/Turn.js';
 import { stripProviderPrefix } from '../helpers.js';
+import { backendBase, backendFetch } from '../../../utils/backend.js';
 import {
   upsertStreamingText,
   appendStreamingTool,
@@ -307,11 +308,8 @@ async function fetchBranchTokenStats(
   sessionId: string,
 ): Promise<BranchTokenStats | null> {
   try {
-    const base = process.env.OPENPROGRAM_BACKEND_URL
-      || process.env.OPENPROGRAM_WS?.replace('ws://', 'http://').replace('/ws', '')
-      || 'http://127.0.0.1:8765';
-    const r = await fetch(
-      `${base}/api/sessions/${encodeURIComponent(sessionId)}/tokens`,
+    const r = await backendFetch(
+      `${backendBase()}/api/sessions/${encodeURIComponent(sessionId)}/tokens`,
     );
     if (!r.ok) return null;
     const d = (await r.json()) as Partial<BranchTokenStats>;

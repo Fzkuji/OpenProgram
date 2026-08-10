@@ -57,6 +57,31 @@ def _validate_port(v: Any) -> Optional[str]:
     return None
 
 
+def _validate_web_origins(value: Any) -> Optional[str]:
+    if not isinstance(value, list) or not all(
+        isinstance(origin, str) for origin in value
+    ):
+        return "must be a JSON list of Origin strings"
+    from openprogram.webui.owner_auth import OwnerAuthError, canonicalize_origin
+
+    for origin in value:
+        try:
+            canonicalize_origin(origin)
+        except OwnerAuthError as exc:
+            return f"invalid Origin {origin!r}: {exc}"
+    return None
+
+
+def _validate_web_bind_host(value: Any) -> Optional[str]:
+    from openprogram.webui.owner_auth import OwnerAuthError, canonicalize_bind_host
+
+    try:
+        canonicalize_bind_host(str(value))
+    except OwnerAuthError as exc:
+        return str(exc)
+    return None
+
+
 def _search_choices() -> list[str]:
     """``auto`` + every registered web_search provider. Best-effort: an
     import failure degrades to just ``auto`` rather than breaking the
@@ -165,22 +190,22 @@ SETTINGS: list[SettingSpec] = [
         key="web.host", path=("web", "host"), group="Ports",
         label="Bind address", widget="text",
         apply=APPLY_NEXT_START, default="127.0.0.1",
+        validate=_validate_web_bind_host,
         help="Network interface the server listens on. The default only "
              "accepts connections from this machine. Setting 0.0.0.0 exposes "
-             "the UI — and every stored API key — to your whole network; the "
-             "server has no authentication, so only do that on a network you "
-             "fully trust.",
+             "the authenticated UI to other interfaces and requires at least "
+             "one exact web.allowed_origins entry. Prefer HTTPS through a "
+             "same-host reverse proxy for any untrusted network.",
     ),
     SettingSpec(
         key="web.allowed_origins", path=("web", "allowed_origins"),
-        group="Ports", label="Extra allowed origins", widget="text",
+        group="Ports", label="Allowed browser origins", widget="json",
         apply=APPLY_NEXT_START, default=[],
-        help="Browser origins the server accepts besides its own. It "
-             "otherwise refuses any request a page on another site makes, "
-             "which is what stops a site you visit from driving the agent. "
-             "Add an entry only for a front end you run yourself, such as a "
-             "reverse proxy: the full origin, e.g. "
-             "https://agent.example.com.",
+        validate=_validate_web_origins,
+        help="Exact browser Origins allowed to address this OpenProgram "
+             "instance. Each value is scheme://host[:port], such as "
+             "https://agent.example.com. This is a request-Origin and Host "
+             "allowlist, not a CORS list for cross-origin frontends.",
     ),
     SettingSpec(
         key="search.default_provider", path=("search", "default_provider"),
