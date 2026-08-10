@@ -1,8 +1,8 @@
 """Append-only source archive and stable source links."""
 
-import hashlib
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -10,15 +10,13 @@ from urllib.parse import quote
 from openprogram._text import normalize_identity_header_part
 
 from ..runtime.state import SourceRecord
-
-
-_ANCHOR_LINE_RE = re.compile(r'\s*<a id="([^"]+)"></a>\s*')
-_SOURCE_ID_LINE_RE = re.compile(r"\s*<!--\s*source-id:([^>]+?)\s*-->\s*")
-_SPEAKER_ID_LINE_RE = re.compile(r"\s*<!--\s*speaker-id:[^>]*?\s*-->\s*")
-_RECORD_LINES_LINE_RE = re.compile(
-    r"\s*<!--\s*record-lines:(\d{1,9})\s*-->\s*"
+from ..source_format import (
+    V2_FORMAT_MARKER,
+    provider_source_location,
+    scan_v2_archive,
+    valid_v2_source_id,
 )
-_SOURCE_RECORD_RE = re.compile(r"^\[[^]]*\]\s+.+?: .*$")
+from ..workspace_layout import resolve_within, runtime_dir
 
 
 def _encode_speaker_id(value: str) -> str:
@@ -36,9 +34,21 @@ def _read_literal_text(path: Path) -> str:
         return handle.read()
 
 
-def _write_literal_text(path: Path, value: str) -> None:
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        handle.write(value)
+def _write_literal_text(path: Path, value: str, *, temporary_dir: Path) -> None:
+    temporary_dir.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix="source-archive-", suffix=".tmp", dir=temporary_dir
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o644)
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 
 
 class SourceArchiveMixin:
@@ -100,19 +110,27 @@ class SourceArchiveMixin:
 
     @staticmethod
     def _provider_source_location(ref: str) -> tuple[Path, str] | None:
-        parts = ref.split("/", 2)
-        if len(parts) != 3 or any(not part for part in parts):
-            return None
-        provider, thread_id, _message_id = parts
-        path = Path("sources") / quote(provider, safe="-_.") / (
-            quote(thread_id, safe="-_.") + ".md"
-        )
-        anchor = "source-" + hashlib.sha256(ref.encode()).hexdigest()[:16]
-        return path, anchor
+        return provider_source_location(ref)
 
     @staticmethod
+    def _provider_v2_source_location(ref: str) -> tuple[Path, str] | None:
+        return provider_source_location(ref, v2=True)
+
+    def _valid_v2_source_location(
+        self, ref: str
+    ) -> tuple[Path, str] | None:
+        location = self._provider_v2_source_location(ref)
+        if location is None:
+            return None
+        relative, _anchor = location
+        path = self.stage_dir / relative
+        if not path.is_file():
+            return None
+        scan = scan_v2_archive(_read_literal_text(path), relative)
+        return location if ref in scan.known_source_ids else None
+
     def _source_link(
-        topic_path: Path, ref: str, label: str | None = None
+        self, topic_path: Path, ref: str, label: str | None = None
     ) -> str:
         legacy = re.fullmatch(r"D(\d+):(\d+)", ref)
         if legacy:
@@ -120,7 +138,9 @@ class SourceArchiveMixin:
             target = Path("sources") / f"D{conversation}.md"
             anchor = f"d{conversation}-{turn}"
         else:
-            location = SourceArchiveMixin._provider_source_location(ref)
+            location = self._valid_v2_source_location(ref)
+            if location is None:
+                location = self._provider_source_location(ref)
             if location is None:
                 raise ValueError(f"invalid source reference: {ref}")
             target, anchor = location
@@ -151,24 +171,45 @@ class SourceArchiveMixin:
                 value.ordinal,
             ),
         ):
-            location = self._provider_source_location(record.source_id)
+            location = self._provider_v2_source_location(record.source_id)
             if location is None:
                 raise ValueError(
                     "provider source IDs require provider/thread/message"
                 )
+            if not valid_v2_source_id(record.source_id):
+                raise ValueError("source ID is not safe for a v2 header")
+            timestamp = str(record.timestamp or "")
+            if any(
+                not character.isprintable() or character in "[]\r\n"
+                for character in timestamp
+            ):
+                raise ValueError("source timestamp is not safe for a header")
+            if not normalize_identity_header_part(str(record.speaker_label)):
+                raise ValueError("source record role/speaker label is empty")
             grouped.setdefault(location[0], []).append(record)
         refs = []
         for relative, rows in grouped.items():
-            path = target_root / relative
+            path = resolve_within(target_root, relative.as_posix())
+            sources_root = (target_root / "sources").resolve()
+            if path is None or not path.is_relative_to(sources_root):
+                raise ValueError("source archive path escapes sources")
             path.parent.mkdir(parents=True, exist_ok=True)
             text = _read_literal_text(path) if path.exists() else ""
-            known = self._known_source_ids(text)
+            if text:
+                scan = scan_v2_archive(text, relative)
+                if not scan.complete:
+                    raise ValueError(f"invalid or truncated v2 archive: {relative}")
+                known = scan.known_source_ids
+            else:
+                known = set()
             additions = []
             for record in rows:
                 refs.append(record.source_id)
                 if record.source_id in known:
                     continue
-                _target, anchor = self._provider_source_location(record.source_id)
+                _target, anchor = self._provider_v2_source_location(
+                    record.source_id
+                )
                 header = [
                     f'<a id="{anchor}"></a>',
                     f"<!-- source-id:{record.source_id} -->",
@@ -184,10 +225,13 @@ class SourceArchiveMixin:
                         "<!-- speaker-id:"
                         f"{_encode_speaker_id(str(record.speaker_id or ''))} -->"
                     )
-                record_text = (
-                    f"[{record.timestamp or ''}] "
-                    f"{record.speaker_label}: {record.content}"
+                timestamp = str(record.timestamp or "")
+                speaker_label = normalize_identity_header_part(
+                    str(record.speaker_label)
                 )
+                if not speaker_label:
+                    raise ValueError("source record role/speaker label is empty")
+                record_text = f"[{timestamp}] {speaker_label}: {record.content}"
                 record_lines = _record_lines(record_text)
                 additions.extend([
                     *header,
@@ -202,70 +246,17 @@ class SourceArchiveMixin:
                 if path.exists():
                     path.chmod(0o644)
                 if text:
-                    separator = (
-                        "" if text.endswith("\n\n")
-                        else "\n" if text.endswith("\n")
-                        else "\n\n"
-                    )
+                    separator = "\n" if text.endswith("\n") else "\n\n"
                     prefix = text + separator
                 else:
-                    prefix = f"# {rows[0].thread_id}\n\n"
+                    prefix = V2_FORMAT_MARKER + "\n\n"
                 _write_literal_text(
                     path,
                     prefix + "\n".join(additions),
+                    temporary_dir=runtime_dir(target_root),
                 )
         if root is None:
             self._refresh_stage()
         else:
             self._protect_staged_sources()
         return refs
-
-    @staticmethod
-    def _known_source_ids(text: str) -> set[str]:
-        """Read runtime headers and skip declared multi-line record bodies."""
-        lines = text.split("\n")
-        known: set[str] = set()
-        index = 0
-        while index + 1 < len(lines):
-            anchor = _ANCHOR_LINE_RE.fullmatch(lines[index])
-            source = _SOURCE_ID_LINE_RE.fullmatch(lines[index + 1])
-            if source is None or anchor is None:
-                index += 1
-                continue
-            source_id = source.group(1).strip()
-            location = SourceArchiveMixin._provider_source_location(source_id)
-            if location is None or anchor.group(1) != location[1]:
-                index += 1
-                continue
-            cursor = index + 2
-            if (
-                cursor < len(lines)
-                and _SPEAKER_ID_LINE_RE.fullmatch(lines[cursor]) is not None
-            ):
-                cursor += 1
-            count = (
-                _RECORD_LINES_LINE_RE.fullmatch(lines[cursor])
-                if cursor < len(lines)
-                else None
-            )
-            if count is not None:
-                record_count = int(count.group(1))
-                record_index = cursor + 1
-                record_end = record_index + record_count
-                if (
-                    record_count < 1
-                    or record_end > len(lines)
-                    or _SOURCE_RECORD_RE.match(lines[record_index]) is None
-                ):
-                    index += 1
-                    continue
-                known.add(source_id)
-                index = record_end
-                continue
-            if cursor < len(lines) and _SOURCE_RECORD_RE.match(lines[cursor]):
-                # Historical records remain readable but cannot establish
-                # trusted deduplication identity without a body boundary.
-                index = cursor + 1
-                continue
-            index += 1
-        return known

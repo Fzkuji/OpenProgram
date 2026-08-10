@@ -38,7 +38,9 @@ class BlockViewsMixin:
             source = self.stage_dir / "sources" / f"D{conversation}.md"
             anchor = f'<a id="d{conversation}-{turn}"></a>'
         else:
-            location = self._provider_source_location(ref)
+            location = self._valid_v2_source_location(ref)
+            if location is None:
+                location = self._provider_source_location(ref)
             if location is None:
                 raise ValueError(f"invalid source reference: {ref}")
             relative, source_anchor = location

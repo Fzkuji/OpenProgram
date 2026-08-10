@@ -47,7 +47,7 @@ OpenProgram 怎么让 agent 跨会话"记住"事情。
 ```markdown
 Craig is building a budget tracker in Flask, due 2024-04-15.[^e-1175dea39c] ^f888f60e
 
-[^e-1175dea39c]: Time: `2024-03-15`; Sources: [openprogram/sess-7f2a/msg_2f9b](../sources/openprogram/sess-7f2a.md#source-8339b8d3)
+[^e-1175dea39c]: Time: `2024-03-15`; Sources: [openprogram/sess-7f2a/msg_2f9b](../sources/openprogram/_v2/sess-7f2a.md#source-8339b8d3)
 ```
 
 块 ID 是其他视图和链接找到这个段落的凭据，编辑和移动都不改变它。脚注是
@@ -132,9 +132,12 @@ Writer看到的记录头则是：
 Markdown尾双空格、CRLF和尾换行会经过`_records`、writer prompt和source archive保持
 不变。这样不需要修改用户输入，也不会让正文标签进入新记录的speaker字段。
 
-新source记录使用如下结构：
+历史文件冻结在`sources/<provider>/<thread>.md`；所有新source记录只写入
+`sources/<provider>/_v2/<thread>.md`。v2文件从字节0开始使用如下结构：
 
 ```
+<!-- openprogram-source-archive:v2 -->
+
 <a id="source-…"></a>
 <!-- source-id:openprogram/group/m3 -->
 <!-- speaker-id:u456 -->
@@ -143,28 +146,34 @@ Markdown尾双空格、CRLF和尾换行会经过`_records`、writer prompt和sou
 ```
 
 外部speaker id在注释中做percent编码。有效的display-only身份使用空`speaker-id` marker；
-没有可信身份的framed记录不写marker。`record-lines:N`按字面LF计算记录正文占用的物理行数，
-parser和去重扫描按N跳过整个正文。因此framed正文中的完整hash anchor、`source-id`、
-`speaker-id`和记录行不会生成额外事件，也不会阻止后续真实记录归档。只有紧邻有效
-`record-lines` frame的speaker marker可以进入结构化身份解析；unframed marker不可信并被
-忽略，framed但没有marker的记录保持speakerless。
+没有可信身份的frame不写marker。`record-lines:N`按字面LF计算记录正文占用的物理行数，
+parser和去重扫描按N跳过整个正文。因此v2正文中的完整hash anchor、`source-id`、
+`speaker-id`和记录行不会生成额外事件，也不会阻止后续真实记录归档。parser只从固定format
+marker开始按顺序解析，遇到第一个非法或截断frame立即停止，不在后续文本重新同步。只有
+合法v2 frame中的speaker marker可以进入结构化身份解析；合法但没有marker的frame保持
+speakerless。检索结果用`speaker_trusted`显式区分：v2 marker为`true`，legacy前缀hint和
+speakerless记录为`false`；speaker过滤仍兼容命中v2身份与legacy hint。归档写入使用同一
+文件系统的workspace runtime目录中的私有临时文件，flush和fsync后设为0644，再通过
+`os.replace`发布；runtime临时文件不进入revision、可见文件列表或stage copy，读取和写入
+都用`newline=""`保留CRLF与尾换行。
 
 ### 旧格式的受限兼容
 
-旧source archive不改写。只有unframed且记录头label严格等于`user`的历史记录，才会从
-第一行正文开头的`[显示名 (id)]`做只读检索兼容；非`user`记录、framed speakerless记录和
-unframed speaker marker都不会获得身份。该兼容不会把身份写回文件。
+旧source archive不改写，整个legacy文件中的speaker marker都不可信，任何看似完整的frame也
+不参与新归档去重。只有unframed且记录头label严格等于`user`的历史记录，才会从第一行正文
+开头的`[显示名 (id)]`做只读检索兼容；非`user`记录不会获得该hint。该兼容不会把身份写回
+文件，也不具有v2协议的真实性。
 
-去重只接受有效的framed runtime block。旧unframed记录不能把同一`source-id`标记为known，
-因此运行时重放时可以追加一份framed canonical copy；该副本写入后，后续重放由frame去重，
-不会继续追加。旧unframed多行正文没有独立可信的inventory或正文边界，所以其中的`user`
-前缀只能提供有限的历史检索兼容，不能提供与新framed协议相同的真实性保证。
+同一`source-id`首次从legacy重放时会写一份v2 canonical record，之后只按v2 known集合去重，
+因此重复归档字节不变。检索聚合、source link和校验在v2中存在该合法frame时优先使用v2，
+否则回退legacy anchor；legacy正文中的伪frame不能覆盖真实v2事件。
 
 ### 按发言人查
 
 `SourceRecord`保存可选的`speaker_id`和`speaker_display`，`speaker_label`提供规范化可读标签。
 `MemoryBM25Index.search(..., speaker=...)`对稳定id、显示名或完整标签做不区分大小写的精确
-匹配，并与`path_prefix`、日期范围和排序组合；带speaker的候选只来自`sources/`。主题段落
+匹配，并与`path_prefix`、日期范围和排序组合；带speaker的候选只来自`sources/`。结果中的
+`speaker_trusted`区分可信v2身份与legacy兼容hint。主题段落
 表示关于某个主题的整理结果，不表示某个人说过的话，因此不会被speaker过滤命中。
 
 `memory_search`在工具schema中公开`speaker`并传给`inspect.search`；`MemoryProvider.search`
@@ -172,7 +181,8 @@ unframed speaker marker都不会获得身份。该兼容不会把身份写回文
 没有等价的可信speaker字段，所以`method=embedding`与`speaker`同时使用时返回
 `INVALID_ARGUMENT`，不会忽略过滤条件。
 
-BM25持久缓存格式是v5，事件行包含speaker字段；v4缓存会被忽略并重建。没有可信speaker的
+BM25持久缓存格式是v6；v5可能缓存从现已归为legacy的文件解析出的speaker，因此会被忽略并
+按v2-only信任规则重建。没有可信speaker的
 网页、命令行、TUI和assistant source记录，即使正文提到某个人，也不会被该人的speaker过滤
 命中。
 
@@ -384,18 +394,17 @@ agents。在这个接口上再开一条私路，只会变成绕过它的办法�
 assistant轮次不合成身份。`SourceRecord.speaker_label`只规范化运行时字段来生成记录
 头，正文保持原样，写入prompt也明确只有`[ref] speaker: text`冒号前的名字建立身份。
 
-新source记录在`source-id`和可选的percent编码`speaker-id`之后写
-`record-lines:N`。归档和parser按字面LF计数并跳过整段正文，所以正文里的完整合法
-anchor/source/speaker伪块不会生成事件或干扰去重，Markdown尾双空格、CRLF和尾换行在
-消息正文经过writer和archive时保持不变。`speaker-id`只有紧邻有效`record-lines` frame时
-才可信；unframed marker被忽略，framed但没有marker的记录保持speakerless。
+新source记录只写入从固定marker开始的`_v2/`文件，并在`source-id`和可选的percent编码
+`speaker-id`之后写`record-lines:N`。归档和parser按字面LF计数并跳过整段正文；parser遇到
+首个非法frame停止。因此正文里的完整合法anchor/source/speaker伪块不会生成事件或干扰
+去重，Markdown尾双空格、CRLF和尾换行在消息正文经过writer和原子archive替换时保持不变。
+只有合法v2 frame中的`speaker-id`可信；合法但没有marker的frame保持speakerless。
 
-没有`record-lines`的旧记录不改写；只有record-header label严格为`user`的旧记录可从
-历史正文前缀做只读检索兼容。unframed记录不进入archive去重，因此重放可以追加一次
-framed canonical copy，之后由该frame阻止重复追加。没有独立可信inventory时，旧正文前缀
-不具备新framed协议的真实性。
+旧文件冻结且不参与新归档去重；只有record-header label严格为`user`的旧unframed记录可从
+历史正文前缀做有限检索hint。同一source id在v2有合法记录时，检索、链接和校验优先使用v2；
+否则仍可读取legacy。legacy正文前缀不具备v2协议的真实性。
 
-BM25缓存格式是v5，`speaker`可按稳定id、规范化显示名或标签做不区分大小写的精确
+BM25缓存格式是v6，`speaker`可按稳定id、规范化显示名或标签做不区分大小写的精确
 过滤，并与路径、日期和排序组合；带speaker的结果只来自`sources/`。
 `memory_search`已经传递这个参数，`MemoryProvider.search`和`memory_grep`保持不变。
 embedding结果没有等价身份字段，因此`method=embedding`与`speaker`组合会显式返回

@@ -360,12 +360,12 @@ def _embedding_search(
         ) from exc
     if path_prefix:
         # Same prefix semantics as BM25; embedding search has no built-in filter.
-        from .bm25 import _normalize_path_prefix
+        from .bm25 import _normalize_path_prefix, event_matches_path_prefix
 
         normalized = _normalize_path_prefix(str(path_prefix))
         hits = [
             hit for hit in hits
-            if str(hit.get("path", "")).startswith(normalized)
+            if event_matches_path_prefix(str(hit.get("path", "")), normalized)
         ]
     return [_present(hit) for hit in hits]
 
@@ -374,7 +374,7 @@ def _present(hit: dict[str, Any]) -> dict[str, Any]:
     keep = (
         "event_id", "path", "line", "headings", "date", "dates",
         "content", "refs", "speaker_id", "speaker_display", "speaker_label",
-        "final_score", "score",
+        "speaker_trusted", "final_score", "score",
     )
     result = {key: hit[key] for key in keep if key in hit}
     if isinstance(result.get("content"), str):

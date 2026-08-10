@@ -935,10 +935,10 @@
   <div class="legend">
     <b>当前防线</b>：<code>speaker_id</code>/<code>speaker_display</code>只从渠道消息写入节点metadata，
     <code>_records()</code>不解析正文。Writer只认<code>[ref] speaker: text</code>冒号前的运行时标签；
-    source parser只在<code>speaker-id</code>紧邻有效<code>record-lines</code> frame时接受结构化身份，
-    并按声明行数跳过正文。正文和真实source ref仍完整保留供审计。<br>
-    <b>剩余边界</b>：旧unframed <code>user</code>记录没有独立可信inventory，只能保留有限的正文前缀检索兼容；
-    该兼容不具有新framed协议的真实性。
+    source parser只从<code>sources/&lt;provider&gt;/_v2/&lt;thread&gt;.md</code>字节0的固定format marker开始，
+    严格接受完整<code>record-lines</code> frame并按声明行数跳过正文；遇非法frame停止。<br>
+    <b>剩余边界</b>：冻结的legacy文件没有独立可信边界，只保留严格<code>user</code>记录的有限正文前缀检索hint；
+    其中的speaker marker和伪frame都不建立可信身份。检索结果用<code>speaker_trusted</code>区分v2身份（true）与legacy hint（false）。
   </div>
 
   <h2 id="repair"><span class="num">10</span>三项处理如何组合</h2>
@@ -957,8 +957,8 @@
 
   <div class="dec" style="border-left-color:#5aad4e">
     <p class="q">加字段：把发言人放进运行时自己填的槽位</p>
-    <p class="a">结构化字段与framing均已实现。</p>
-    <div class="opt pick"><span class="tag">边界</span><span class="txt"><b>写入方读到的记录头是</b><code>[ref] speaker: text</code>，冒号前的标签由运行时字段生成。source archive把percent编码的<code>speaker-id</code>与有效<code>record-lines</code> frame绑定；unframed marker不建立身份。正文标签仍保留，因为处理当前轮次的agent只读<code>content</code>。</span></div>
+    <p class="a">结构化字段与v2 framing均已实现。</p>
+    <div class="opt pick"><span class="tag">边界</span><span class="txt"><b>写入方读到的记录头是</b><code>[ref] speaker: text</code>，冒号前的标签由运行时字段生成。新source只写入固定marker开头的<code>_v2/</code>文件，percent编码的<code>speaker-id</code>只在严格合法的<code>record-lines</code> frame中可信。正文标签仍保留，因为处理当前轮次的agent只读<code>content</code>。</span></div>
   </div>
 
   <div class="tbl">
@@ -1066,7 +1066,7 @@
 
     <rect x="376" y="288" width="336" height="120" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.5"/>
     <text x="392" y="310" fill="#5aad4e" font-size="12" font-weight="700">出口二 · sources/归档</text>
-    <text x="392" y="330" fill="#6b6a63" font-size="10" font-family="Menlo,monospace">身份注释 + 正文字面行数边界</text>
+    <text x="392" y="330" fill="#6b6a63" font-size="10" font-family="Menlo,monospace">_v2/ · format marker + 严格frame</text>
     <text x="392" y="350" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">&lt;!-- source-id:openprogram/g1/m3 --&gt;</text>
     <text x="392" y="366" font-size="10.5" font-family="Menlo,monospace"><tspan fill="#2db3d5">&lt;!-- speaker-id:702 --&gt;</tspan></text>
     <text x="392" y="382" fill="#d4843a" font-size="10.5" font-family="Menlo,monospace">&lt;!-- record-lines:1 --&gt;</text>
@@ -1088,21 +1088,23 @@
 
     <rect x="592" y="424" width="544" height="80" rx="8" fill="#241f10" stroke="#d4843a" stroke-width="1.4"/>
     <text x="608" y="446" fill="#d4843a" font-size="12" font-weight="700">旧格式的信任限制</text>
-    <text x="608" y="466" fill="#8a8675" font-size="10.5">unframed speaker marker不归属，也不参与archive去重；运行时可</text>
-    <text x="608" y="482" fill="#8a8675" font-size="10.5">追加一次framed canonical copy。旧user正文前缀没有独立可信</text>
-    <text x="608" y="498" fill="#8a8675" font-size="10.5">inventory，不具备新frame协议的真实性。</text>
+    <text x="608" y="466" fill="#8a8675" font-size="10.5">legacy文件冻结，不提供known IDs；首次重放写入_v2/，以后</text>
+    <text x="608" y="482" fill="#8a8675" font-size="10.5">只按严格v2 frame去重。合法v2存在时，检索与链接优先v2；</text>
+    <text x="608" y="498" fill="#8a8675" font-size="10.5">否则保留有限legacy user hint，但不把伪frame当可信speaker。</text>
   </svg>
   </div>
   <div class="legend">
     <b>过滤只在<code>sources/</code>底下有意义</b>：一条主题段落是写入方关于某个主题写的话，没有人说过它。
     所以"张三说了什么"和"关于张三知道什么"是两个问题，后一个是<code>path_prefix=topics/people/</code>，今天就能用。
     带上发言人就是把检索收到源记录上，并在结果里说明这一点。<br>
-    <b>正文边界</b>：新归档用<code>record-lines:N</code>声明该记录占用的字面LF行数，parser和去重扫描都按N跳过正文。
+    <b>正文边界</b>：新归档只写固定format marker开头的<code>sources/&lt;provider&gt;/_v2/&lt;thread&gt;.md</code>，
+    用<code>record-lines:N</code>声明该记录占用的字面LF行数，parser和去重扫描从文件起点严格按N跳过正文。
     因此正文即使包含合法hash anchor、<code>source-id</code>、<code>speaker-id</code>和记录行，也不能生成第二条事件或阻止后续真实记录归档。
-    <code>speaker-id</code>只有与有效frame紧邻时可信；unframed marker被忽略，unframed记录不进入去重。
-    Markdown尾双空格、CRLF和尾换行经过writer/archive保持不变。没有该边界的旧格式只做受限兼容解析，不改写旧文件。<br>
+    parser遇非法或截断frame停止；只有合法v2 frame中的<code>speaker-id</code>可信。Markdown尾双空格、CRLF和尾换行经过
+    writer及workspace runtime目录临时文件的flush/fsync/<code>os.replace</code>保持不变；临时文件不进入revision、可见列表或stage copy。
+    旧文件冻结，只做受限兼容解析，不参与v2去重。检索结果以<code>speaker_trusted=false</code>标明legacy hint。<br>
     <b>改动面</b>：dispatcher传输、记忆记录和两个渲染出口、source framing、BM25/inspect和工具。
-    BM25索引每次调用仍从文件重建（<code>persist=False</code>），持久缓存格式升到v5并忽略v4数据。
+    BM25索引每次调用仍从文件重建（<code>persist=False</code>），持久缓存格式升到v6并忽略v5数据。
   </div>
 
   <div class="tbl">
@@ -1158,14 +1160,15 @@
     <code>speaker_display</code>独立于正文和路由<code>peer_id</code>传到持久化节点；正文仍保留
     <code>[显示名 (id)] </code>兼容前缀，但写入和检索不从正文反推新记录身份。<br>
     <code>SourceRecord.speaker_label</code>统一生成安全的一行记录头，写入prompt明确只认冒号前的运行时标签。
-    source归档对speaker id做percent编码，并用<code>record-lines</code>隔离可伪造正文；marker只有紧邻有效frame时可信，
-    unframed marker被忽略，framed但没有marker的记录保持speakerless。BM25 v5按稳定id、显示名或标签过滤，
+    新source只写入固定format marker开头的<code>_v2/</code>文件；speaker id做percent编码，<code>record-lines</code>隔离可伪造正文，
+    parser遇非法frame停止，只有合法v2 frame中的marker可信。合法但没有marker的记录保持speakerless。BM25 v6按稳定id、显示名或标签过滤，
     与路径和日期过滤组合，结果只来自<code>sources/</code>。<code>memory_search</code>已暴露<code>speaker</code>，
     embedding与speaker组合会显式返回<code>INVALID_ARGUMENT</code>，不会忽略过滤。<br>
     网页、命令行、TUI以及assistant轮次没有可信speaker字段；新framed记录保持speakerless。
-    只有unframed且记录头严格为<code>user</code>的旧记录可从历史正文前缀做有限检索兼容；旧归档不改写，
-    unframed记录不参与去重，重放可追加一次framed canonical copy。没有独立可信inventory时，旧正文前缀
-    不具备新framed协议的真实性。Markdown尾双空格、CRLF/尾换行、完整伪造块、v4缓存重建和独立进程导入均有回归测试。<br>
+    只有unframed且记录头严格为<code>user</code>的旧记录可从历史正文前缀做有限检索兼容；旧归档冻结且不参与v2去重。
+    同一source id的合法v2事件在检索、链接和校验中优先于legacy；没有v2时仍可读取legacy。
+    <code>speaker_trusted</code>对v2 marker为true、对legacy hint或speakerless记录为false。Markdown尾双空格、
+    CRLF/尾换行、完整伪造块、截断停止、v5缓存重建和独立进程导入均有回归测试。<br>
     文字说明在<code>docs/reference/design/memory/overview.md</code>的"谁说的"一节，
     产品侧在<code>docs/integrations/channels.md</code>。
   </div>

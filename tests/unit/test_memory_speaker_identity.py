@@ -182,7 +182,7 @@ def test_archive_encodes_ids_and_parses_only_runtime_headers(tmp_path: Path) -> 
     finally:
         space.close()
 
-    path = root / "sources/openprogram/thread-1.md"
+    path = root / "sources/openprogram/_v2/thread-1.md"
     with path.open(encoding="utf-8", newline="") as handle:
         archived = handle.read()
     assert "<!-- speaker-id:u123 -->" in archived
@@ -251,12 +251,6 @@ def test_new_and_legacy_speakers_filter_without_text_false_positives(
     assistant_id = "openprogram/thread-1/m3"
     (sources / "thread-1.md").write_text(
         "# thread-1\n\n"
-        + _block(
-            new_id,
-            "[2026-08-09] Ada (u456): budget alpha",
-            speaker_id="u456",
-        )
-        + "\n"
         + _legacy_block(
             legacy_id,
             "[2026-08-10] user: [Bo (u789)] budget beta",
@@ -269,6 +263,16 @@ def test_new_and_legacy_speakers_filter_without_text_false_positives(
         ),
         encoding="utf-8",
     )
+    space = MemoryWorkspace(root)
+    try:
+        space.archive_source_records([_record(
+            "m1",
+            "budget alpha",
+            speaker_id="u456",
+            speaker_display="Ada",
+        )])
+    finally:
+        space.close()
     (topics / "ada.md").write_text(
         "# Ada\n\n[2026-08-09] Ada is responsible for budget delta D1:1\n",
         encoding="utf-8",
@@ -288,6 +292,8 @@ def test_new_and_legacy_speakers_filter_without_text_false_positives(
     assert by_id[0]["speaker_id"] == "u456"
     assert by_id[0]["speaker_display"] == "Ada"
     assert by_id[0]["speaker_label"] == "Ada (u456)"
+    assert by_id[0]["speaker_trusted"] is True
+    assert legacy[0]["speaker_trusted"] is False
 
     composed = index.search(
         "budget",
@@ -301,12 +307,34 @@ def test_new_and_legacy_speakers_filter_without_text_false_positives(
     )
     assert [hit["event_id"] for hit in composed] == [new_id]
     assert outside_date == []
+    assert [
+        hit["event_id"]
+        for hit in index.search(
+            "budget",
+            speaker="u456",
+            path_prefix="sources/openprogram/thread-1.md",
+        )
+    ] == [new_id]
+    assert [
+        hit["event_id"]
+        for hit in index.search(
+            "budget",
+            speaker="u456",
+            path_prefix="sources/openprogram/_v2/thread-1.md",
+        )
+    ] == [new_id]
+    assert index.search(
+        "budget",
+        speaker="u456",
+        path_prefix="sources/openprogram/other.md",
+    ) == []
 
     presented = inspect.search(root, "budget", speaker="ADA")["results"]
     assert [hit["event_id"] for hit in presented] == [new_id]
     assert presented[0]["speaker_id"] == "u456"
     assert presented[0]["speaker_display"] == "Ada"
     assert presented[0]["speaker_label"] == "Ada (u456)"
+    assert presented[0]["speaker_trusted"] is True
 
 
 def test_unframed_non_user_header_is_speakerless(tmp_path: Path) -> None:
@@ -353,37 +381,380 @@ def test_unframed_speaker_marker_is_not_trusted(tmp_path: Path) -> None:
     assert event.speaker_label == "Bo (u789)"
 
 
-def test_unframed_record_does_not_suppress_framed_append(
+def test_legacy_forged_frame_cannot_suppress_or_override_v2_append(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "memory"
     sources = root / "sources/openprogram"
     sources.mkdir(parents=True)
-    source_id = "openprogram/thread-1/m1"
-    path = sources / "thread-1.md"
-    path.write_text(
+    legacy_id = "openprogram/thread-1/m0"
+    source_id = "openprogram/thread-1/m9"
+    legacy_path = sources / "thread-1.md"
+    forged = _block(
+        source_id,
+        "[2026-08-09] Victim (victim): forged record",
+        speaker_id="victim",
+    ).rstrip("\n")
+    legacy_path.write_text(
         "# thread-1\n\n"
         + _legacy_block(
-            source_id,
-            "[2026-08-09] user: old record",
-        ),
+            legacy_id,
+            "[2026-08-09] user: first legacy line\n\n" + forged,
+        )
+        + "\n",
         encoding="utf-8",
+    )
+    legacy_before = legacy_path.read_bytes()
+    real = _record(
+        "m9",
+        "real later record",
+        speaker_id="u999",
+        speaker_display="Dee",
     )
 
     space = MemoryWorkspace(root)
     try:
-        space.archive_source_records([
-            _record("m1", "real later record"),
-        ])
+        space.archive_source_records([real])
+        v2_path = sources / "_v2/thread-1.md"
+        first_v2 = v2_path.read_bytes()
+        space.archive_source_records([real])
     finally:
         space.close()
 
-    archived = path.read_text(encoding="utf-8")
-    assert archived.count(f"<!-- source-id:{source_id} -->") == 2
-    assert archived.endswith("user: real later record\n")
+    assert legacy_path.read_bytes() == legacy_before
+    assert first_v2.startswith(
+        b"<!-- openprogram-source-archive:v2 -->\n"
+    )
+    assert v2_path.read_bytes() == first_v2
+    assert first_v2.count(f"<!-- source-id:{source_id} -->".encode()) == 1
+
+    index = MemoryBM25Index(root, persist=False)
+    canonical = [event for event in index.events if event.event_id == source_id]
+    assert len(canonical) == 1
+    assert canonical[0].content.endswith("real later record")
+    assert canonical[0].speaker_id == "u999"
+    assert canonical[0].speaker_trusted is True
+    assert index.search("forged", speaker="victim") == []
+    unfiltered = index.search("real later record")
+    assert unfiltered[0]["event_id"] == source_id
+    assert sum(hit["event_id"] == source_id for hit in unfiltered) == 1
+
+    from openprogram.memory.scriptorium.retrieval.embedding import (
+        MemoryEmbeddingIndex,
+    )
+
+    embedded = MemoryEmbeddingIndex(root)._events()
+    embedded_canonical = [
+        event for event in embedded if event.event_id == source_id
+    ]
+    assert len(embedded_canonical) == 1
+    assert embedded_canonical[0].content.endswith("real later record")
 
 
-def test_structured_speaker_disables_legacy_body_fallback(tmp_path: Path) -> None:
+def test_v2_stops_at_truncated_frame_and_refuses_later_append(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "memory"
+    path = root / "sources/openprogram/_v2/thread-1.md"
+    path.parent.mkdir(parents=True)
+    first_id = "openprogram/thread-1/m1"
+    truncated_id = "openprogram/thread-1/m2"
+    hidden_id = "openprogram/thread-1/m3"
+    text = (
+        "<!-- openprogram-source-archive:v2 -->\n\n"
+        + _block(first_id, "[2026-08-09] user: first")
+        + "\n"
+        + f'<a id="{_anchor(truncated_id)}"></a>\n'
+        + f"<!-- source-id:{truncated_id} -->\n"
+        + "<!-- record-lines:2 -->\n"
+        + "[2026-08-09] user: truncated\n"
+        + _block(hidden_id, "[2026-08-09] user: must stay hidden")
+    )
+    path.write_text(text, encoding="utf-8")
+
+    events = parse_source_file(path, root / "sources")
+
+    assert [event.event_id for event in events] == [first_id]
+    before = path.read_bytes()
+    space = MemoryWorkspace(root)
+    try:
+        with pytest.raises(ValueError, match="invalid or truncated"):
+            space.archive_source_records([_record("m4", "must not append")])
+    finally:
+        space.close()
+    assert path.read_bytes() == before
+
+
+def test_v2_missing_final_separator_is_truncated(tmp_path: Path) -> None:
+    root = tmp_path / "memory"
+    path = root / "sources/openprogram/_v2/thread-1.md"
+    path.parent.mkdir(parents=True)
+    source_id = "openprogram/thread-1/m1"
+    path.write_text(
+        "<!-- openprogram-source-archive:v2 -->\n\n"
+        + _block(source_id, "[2026-08-09] user: incomplete").rstrip("\n"),
+        encoding="utf-8",
+    )
+
+    assert parse_source_file(path, root / "sources") == []
+    space = MemoryWorkspace(root)
+    try:
+        with pytest.raises(ValueError, match="invalid or truncated"):
+            space.archive_source_records([_record("m2", "not visible")])
+    finally:
+        space.close()
+
+
+def test_v2_duplicate_source_id_invalidates_only_the_duplicate_tail(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "memory"
+    path = root / "sources/openprogram/_v2/thread-1.md"
+    path.parent.mkdir(parents=True)
+    source_id = "openprogram/thread-1/m1"
+    path.write_text(
+        "<!-- openprogram-source-archive:v2 -->\n\n"
+        + _block(
+            source_id,
+            "[2026-08-09] Ada (u1): first",
+            speaker_id="u1",
+        )
+        + "\n"
+        + _block(
+            source_id,
+            "[2026-08-09] Victim (u2): duplicate",
+            speaker_id="u2",
+        ),
+        encoding="utf-8",
+    )
+
+    events = parse_source_file(path, root / "sources")
+
+    assert len(events) == 1
+    assert events[0].speaker_id == "u1"
+    space = MemoryWorkspace(root)
+    try:
+        with pytest.raises(ValueError, match="invalid or truncated"):
+            space.archive_source_records([_record("m2", "not appended")])
+    finally:
+        space.close()
+
+
+def test_v2_trailing_lf_body_remains_valid_after_later_append(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "memory"
+    space = MemoryWorkspace(root)
+    try:
+        space.archive_source_records([_record("m1", "alpha\r\nbeta\n")])
+        space.archive_source_records([_record("m2", "later")])
+    finally:
+        space.close()
+
+    path = root / "sources/openprogram/_v2/thread-1.md"
+    events = parse_source_file(path, root / "sources")
+    assert [event.event_id for event in events] == [
+        "openprogram/thread-1/m1",
+        "openprogram/thread-1/m2",
+    ]
+
+
+def test_atomic_archive_failure_preserves_previous_v2_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.memory.scriptorium.management import source_archive
+
+    root = tmp_path / "memory"
+    space = MemoryWorkspace(root)
+    observed: dict[str, object] = {}
+    try:
+        space.archive_source_records([_record("m1", "first")])
+        path = root / "sources/openprogram/_v2/thread-1.md"
+        before = path.read_bytes()
+        from openprogram.memory.scriptorium.management.transaction import (
+            workspace_revision,
+        )
+        from openprogram.memory.scriptorium.retrieval.inspect import visible_files
+
+        revision_before = workspace_revision(root)
+
+        def fail_replace(_source, _target):
+            observed["revision"] = workspace_revision(root)
+            observed["visible"] = [
+                item.relative_to(root).as_posix() for item in visible_files(root)
+            ]
+            raise OSError("replace interrupted")
+
+        monkeypatch.setattr(source_archive.os, "replace", fail_replace)
+        with pytest.raises(OSError, match="replace interrupted"):
+            space.archive_source_records([_record("m2", "second")])
+    finally:
+        space.close()
+
+    assert path.read_bytes() == before
+    assert list((root / ".scriptorium").glob("source-archive-*.tmp")) == []
+    assert observed["revision"] == revision_before
+    assert observed["visible"] == ["sources/openprogram/_v2/thread-1.md"]
+
+
+def test_online_writer_failure_retry_keeps_one_v2_record(
+    tmp_path: Path,
+) -> None:
+    from openprogram.memory.scriptorium.runtime.online import OnlineMemoryRuntime
+
+    root = tmp_path / "memory"
+    record = _record("m1", "retry evidence")
+    runtime = OnlineMemoryRuntime(root, token_counter=len)
+
+    def fail_writer(_workspace, _batch):
+        raise RuntimeError("writer failed")
+
+    with pytest.raises(RuntimeError, match="writer failed"):
+        runtime.process([record], fail_writer, force=True)
+    path = root / "sources/openprogram/_v2/thread-1.md"
+    first = path.read_bytes()
+
+    assert runtime.process(
+        [record],
+        lambda _workspace, _batch: ["topics/note.md"],
+        force=True,
+    ) is True
+    assert path.read_bytes() == first
+    assert first.count(b"<!-- source-id:openprogram/thread-1/m1 -->") == 1
+
+
+def test_transaction_stages_v2_source_link_and_rolls_back_failure(
+    tmp_path: Path,
+) -> None:
+    patch = (
+        "--- /dev/null\n"
+        "+++ b/topics/note.md\n"
+        "@@ -0,0 +1,5 @@\n"
+        "+# Note\n"
+        "+\n"
+        "+Fact.[^e1]\n"
+        "+\n"
+        "+[^e1]: Time: `2026-08-10`; Sources: new-source-fact\n"
+    )
+    source = [{
+        "label": "new-source-fact",
+        "role": "user",
+        "content": "transaction evidence",
+        "observed_at": "2026-08-10",
+    }]
+    root = tmp_path / "committed"
+    space = MemoryWorkspace(root)
+    try:
+        result = space.update(
+            base_revision=space.revision(),
+            patch=patch,
+            sources=source,
+            git_commit="off",
+        )
+        source_id = result.source_ids["new-source-fact"]
+        topic = (root / "topics/note.md").read_text(encoding="utf-8")
+        assert "../sources/claude-code/_v2/" in topic
+        assert f"[{source_id}]" in topic
+        space._validate_source_reference(source_id)
+    finally:
+        space.close()
+
+    failed_root = tmp_path / "rolled-back"
+    failed = MemoryWorkspace(failed_root)
+    bad_patch = patch.replace("b/topics/note.md", "b/topics/note.txt")
+    try:
+        with pytest.raises(TransactionError):
+            failed.update(
+                base_revision=failed.revision(),
+                patch=bad_patch,
+                sources=source,
+                git_commit="off",
+            )
+    finally:
+        failed.close()
+    assert not (failed_root / "sources").exists()
+
+
+def test_source_links_choose_valid_v2_per_id_then_legacy(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "memory"
+    legacy_ref = "openprogram/thread-1/m1"
+    v2_ref = "openprogram/thread-1/m2"
+    legacy_path = root / "sources/openprogram/thread-1.md"
+    legacy_path.parent.mkdir(parents=True)
+    legacy_path.write_text(
+        "# thread-1\n\n"
+        + _legacy_block(legacy_ref, "[2026-08-09] user: legacy"),
+        encoding="utf-8",
+    )
+    space = MemoryWorkspace(root)
+    try:
+        space.archive_source_records([_record("m2", "v2")])
+        legacy_link = space._source_link(Path("topics/note.md"), legacy_ref)
+        v2_link = space._source_link(Path("topics/note.md"), v2_ref)
+        space._validate_source_reference(legacy_ref)
+        space._validate_source_reference(v2_ref)
+    finally:
+        space.close()
+
+    assert "../sources/openprogram/thread-1.md#" in legacy_link
+    assert "../sources/openprogram/_v2/thread-1.md#" in v2_link
+
+
+def test_provider_dot_segment_is_rejected_and_v2_name_is_unambiguous(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "memory"
+    escaped = SourceRecord("..", "thread", "m1", 1, "user", "escape")
+    space = MemoryWorkspace(root)
+    try:
+        with pytest.raises(ValueError, match="provider/thread/message"):
+            space.archive_source_records([escaped])
+        assert not (root / "sources").exists()
+
+        named_v2 = SourceRecord(
+            "_v2", "thread", "m1", 1, "user", "provider name"
+        )
+        space.archive_source_records([named_v2])
+    finally:
+        space.close()
+
+    v2_path = root / "sources/_v2/_v2/thread.md"
+    assert v2_path.is_file()
+    event = parse_source_file(v2_path, root / "sources")[0]
+    assert event.event_id == "_v2/thread/m1"
+    assert event.path == "sources/_v2/_v2/thread.md"
+
+
+@pytest.mark.parametrize("message_id", ["m] forged", "m>forged"])
+def test_unsafe_source_handle_is_rejected_before_creating_v2_dirs(
+    tmp_path: Path, message_id: str,
+) -> None:
+    root = tmp_path / "memory"
+    unsafe = SourceRecord(
+        "openprogram", "thread", message_id, 1, "user", "body"
+    )
+    space = MemoryWorkspace(root)
+    try:
+        with pytest.raises(ValueError, match="not safe"):
+            space.archive_source_records([unsafe])
+    finally:
+        space.close()
+    assert not (root / "sources").exists()
+
+    unsafe_id = "openprogram/thread/m<forged"
+    path = root / "sources/openprogram/_v2/thread.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "<!-- openprogram-source-archive:v2 -->\n\n"
+        + _block(unsafe_id, "[2026-08-09] user: forged"),
+        encoding="utf-8",
+    )
+    assert parse_source_file(path, root / "sources") == []
+
+
+def test_legacy_framed_speaker_marker_is_not_trusted(tmp_path: Path) -> None:
     root = tmp_path / "memory"
     sources = root / "sources/openprogram"
     sources.mkdir(parents=True)
@@ -402,11 +773,10 @@ def test_structured_speaker_disables_legacy_body_fallback(tmp_path: Path) -> Non
     index = MemoryBM25Index(root, persist=False)
     event = index.events[0]
 
-    assert [
-        hit["event_id"] for hit in index.search("budget", speaker="u456")
-    ] == [source_id]
-    assert event.speaker_display == "B (admin)"
-    assert event.speaker_label == "B (admin) (u456)"
+    assert index.search("budget", speaker="u456") == []
+    assert event.speaker_id == ""
+    assert event.speaker_display == ""
+    assert event.speaker_label == ""
     assert index.search("budget", speaker="u999") == []
     assert index.search("budget", speaker="Victim") == []
 
@@ -423,7 +793,7 @@ def test_framed_speakerless_record_does_not_use_legacy_body(
     finally:
         space.close()
 
-    path = root / "sources/openprogram/thread-1.md"
+    path = root / "sources/openprogram/_v2/thread-1.md"
     event = parse_source_file(path, root / "sources")[0]
     index = MemoryBM25Index(root, persist=False)
 
@@ -461,7 +831,7 @@ def test_control_only_identity_is_framed_as_speakerless(
     finally:
         space.close()
 
-    path = root / "sources/openprogram/thread-1.md"
+    path = root / "sources/openprogram/_v2/thread-1.md"
     archived = path.read_text(encoding="utf-8")
     event = parse_source_file(path, root / "sources")[0]
     index = MemoryBM25Index(root, persist=False)
@@ -497,35 +867,33 @@ def test_malformed_huge_record_line_count_is_ignored(tmp_path: Path) -> None:
         ]) == ["openprogram/thread-1/m2"]
     finally:
         space.close()
-    assert "<!-- source-id:openprogram/thread-1/m2 -->" in path.read_text(
+    v2_path = sources / "_v2/thread-1.md"
+    assert "<!-- source-id:openprogram/thread-1/m2 -->" in v2_path.read_text(
         encoding="utf-8"
     )
+    assert "openprogram/thread-1/m2" not in path.read_text(encoding="utf-8")
 
 
-def test_version_four_cache_is_rebuilt_as_version_five(tmp_path: Path) -> None:
+def test_version_five_cache_is_rebuilt_as_version_six(tmp_path: Path) -> None:
     root = tmp_path / "memory"
-    sources = root / "sources/openprogram"
-    sources.mkdir(parents=True)
     source_id = "openprogram/thread-1/m1"
-    path = sources / "thread-1.md"
-    path.write_text(
-        "# thread-1\n\n"
-        + _block(
-            source_id,
-            "[2026-08-09] Ada (u456): budget",
-            speaker_id="u456",
-        ),
-        encoding="utf-8",
-    )
+    space = MemoryWorkspace(root)
+    try:
+        space.archive_source_records([_record(
+            "m1", "budget", speaker_id="u456", speaker_display="Ada"
+        )])
+    finally:
+        space.close()
+    path = root / "sources/openprogram/_v2/thread-1.md"
     cache = root / ".scriptorium-bm25.json"
     cache.write_text(json.dumps({
-        "version": 4,
+        "version": 5,
         "files": {
-            "sources/openprogram/thread-1.md": {
+            "sources/openprogram/_v2/thread-1.md": {
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                 "events": [{
                     "event_id": source_id,
-                    "path": "sources/openprogram/thread-1.md",
+                    "path": "sources/openprogram/_v2/thread-1.md",
                     "line": 4,
                     "headings": ["thread-1"],
                     "date": "2026-08-09",
@@ -541,7 +909,7 @@ def test_version_four_cache_is_rebuilt_as_version_five(tmp_path: Path) -> None:
 
     assert index.events[0].content != "stale cache row"
     assert index.events[0].speaker_id == "u456"
-    assert json.loads(cache.read_text(encoding="utf-8"))["version"] == 5
+    assert json.loads(cache.read_text(encoding="utf-8"))["version"] == 6
 
 
 def test_inspect_rejects_embedding_with_speaker(tmp_path: Path) -> None:

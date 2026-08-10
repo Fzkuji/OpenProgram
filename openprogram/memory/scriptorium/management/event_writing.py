@@ -82,8 +82,9 @@ class EventWritingMixin:
             "headings": clean_headings,
         }
 
-    @staticmethod
-    def _append_event(path: Path, event: dict[str, Any]) -> None:
+    def _append_event(
+        self, path: Path, event: dict[str, Any]
+    ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         text = path.read_text(encoding="utf-8") if path.exists() else ""
         memory_id = event.get("memory_id") or event["event_id"].removeprefix(
@@ -152,7 +153,7 @@ class EventWritingMixin:
                 evidence_id,
                 None if event["when"] == "undated" else event["when"],
                 (
-                    SourceArchiveMixin._source_link(
+                    self._source_link(
                         Path("topics") / event["topic_path"], ref
                     )
                     for ref in event["refs"]

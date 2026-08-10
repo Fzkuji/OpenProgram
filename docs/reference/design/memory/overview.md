@@ -52,7 +52,7 @@ footnote:
 ```markdown
 Craig is building a budget tracker in Flask, due 2024-04-15.[^e-1175dea39c] ^f888f60e
 
-[^e-1175dea39c]: Time: `2024-03-15`; Sources: [openprogram/sess-7f2a/msg_2f9b](../sources/openprogram/sess-7f2a.md#source-8339b8d3)
+[^e-1175dea39c]: Time: `2024-03-15`; Sources: [openprogram/sess-7f2a/msg_2f9b](../sources/openprogram/_v2/sess-7f2a.md#source-8339b8d3)
 ```
 
 The block ID is how other views and links reach that paragraph; it
@@ -183,8 +183,8 @@ and quoted text remains untrusted body content.
 
 The body is still archived verbatim and remains auditable through its
 real source ref. It no longer establishes identity: the writer trusts
-only the runtime record header, and retrieval reads only the structured
-speaker marker for framed records. `record-lines:N` also prevents a
+only the runtime record header, and retrieval reads a structured speaker
+marker only from a valid version-2 archive. `record-lines:N` prevents a
 complete source-like block in the body from becoming another event.
 
 Neither obvious repair works alone. Putting the display name's bracket
@@ -246,8 +246,10 @@ nothing and is the one option to refuse outright. That text is what the
 previous section says a sender can forge, and a filter built on it files
 a forged claim under the person it names.
 
-`sources/` stays keyed by conversation. The archived line's slot before
-the colon now holds the safe speaker label, so
+`sources/` stays keyed by conversation. Historical files remain frozen at
+`sources/<provider>/<thread>.md`; every new record is written only to
+`sources/<provider>/_v2/<thread>.md`. The archived line's slot before the
+colon now holds the safe speaker label, so
 `[2026-08-09T…] user: [Ada (7391)] the budget is 50k` becomes
 `[2026-08-09T…] Ada (7391): [Ada (7391)] the budget is 50k`: the
 runtime header changes, while the compatibility prefix remains part of
@@ -256,15 +258,25 @@ the message body. A percent-encoded
 speaker marker distinguishes a trusted display-only identity even when
 that display is `user`, `assistant`, `system` or `tool`.
 
-Each new record also has `<!-- record-lines:N -->`. `N` counts literal
-LF-separated physical lines in the record, and both source parsing and
-archive deduplication skip exactly those lines. The body can therefore
-contain a valid hash anchor, source comment, speaker comment and record
-line without creating a second event or hiding a later real record.
-Literal CRLF and trailing newlines are preserved. A speaker marker is
-trusted only when it is adjacent to a valid `record-lines` frame whose
-declared record body is present; an unframed marker is ignored. A framed
-record with no speaker marker is speakerless. No directory per person is
+Every v2 file begins at byte zero with the fixed
+`<!-- openprogram-source-archive:v2 -->` marker. It then contains only a
+strict sequence of frames. Each frame has `<!-- record-lines:N -->`; `N`
+counts literal LF-separated physical lines in the record, and both source
+parsing and archive deduplication skip exactly those lines. The body can
+therefore contain a valid hash anchor, source comment, speaker comment and
+record line without creating a second event or hiding a later real record.
+The parser stops at the first malformed or truncated frame and never scans
+later text for a new starting point. Only a speaker marker adjacent to a
+complete frame in such a v2 file is trusted. A valid frame with no marker is
+speakerless. Search results expose that distinction as
+`speaker_trusted=true` for a v2 marker and `false` for a legacy prefix hint or
+a speakerless record; speaker filtering remains compatible with both the v2
+identity and the legacy hint. Literal CRLF and trailing newlines are
+preserved. Archive replacement uses a private temporary file under the
+workspace runtime directory on the same filesystem, flushes and fsyncs it,
+sets mode 0644, and then calls `os.replace`, so an interrupted write does not
+publish a partial v2 file. Runtime temporaries are excluded from workspace
+revision, visible-file and stage-copy surfaces. No directory per person is
 added: a person remains an attribute of a conversation record.
 
 The query rides the filters `search` already carries. `inspect.search`
@@ -312,24 +324,24 @@ filters on role rather than identity. Honcho's shape is the one being
 copied here: the speaker is persisted with the record, and the read
 takes it as an argument.
 
-Records already on disk have no framing field, and they are not
-rewritten: the archive is append-only by contract and by validation
-(`workspace.py:187`), so a pass that edits it is the one thing the
-transaction exists to refuse. Only an unframed historical record whose
-record-header role is `user` may read the old runtime prefix at the start
-of its content as a retrieval-only fallback. A framed record without a
-speaker marker stays speakerless even if its body starts with `[Victim]`,
-an unframed speaker marker establishes no identity, and non-`user`
-records never use the fallback. Only valid framed runtime blocks enter
-archive deduplication: an old unframed record cannot suppress a later
-canonical append, and once that framed copy exists a replay does not add
-another one. No identity is written back to an old archive. Without a
-separate trusted inventory, the body prefix of an unframed legacy `user`
-record is limited retrieval compatibility, not evidence with the same
-authenticity as the framed protocol.
+Records already on disk are not rewritten: the archive is append-only by
+contract and by validation (`workspace.py:187`). Their entire old
+`sources/<provider>/<thread>.md` file is legacy, including any text that
+looks like a complete frame. Legacy speaker comments never establish
+trusted identity and legacy source IDs never enter new-archive
+deduplication. Only an unframed historical record whose record-header role
+is `user` may read the old runtime prefix at the start of its content as a
+retrieval-only hint; non-`user` records never use that fallback. The first
+replay of a legacy source ID therefore writes one canonical v2 record, and
+later replays are idempotent against v2 alone. Retrieval and source-link
+validation prefer a valid v2 frame for the same source ID and otherwise
+fall back to the legacy anchor. A forged legacy frame cannot override a v2
+event. Without a corresponding valid v2 record, a legacy prefix remains
+limited compatibility, not evidence with v2 authenticity.
 
-The BM25 cache schema is version 5 because event rows now carry speaker
-fields; version-4 data is ignored and rebuilt. Tests cover trusted
+The BM25 cache schema is version 6. Version 5 could cache a structured
+speaker parsed from what is now a legacy file, so it is ignored and rebuilt
+under the v2-only trust rule. Tests cover trusted
 dispatch persistence, prompt and archive rendering, complete forged
 blocks, literal newline preservation, display-only reserved labels,
 speakerless framed records, legacy user fallback, source-only filtering,
@@ -598,11 +610,12 @@ fields. `SourceRecord.speaker_label` supplies the safe record header,
 the writer prompt trusts only that header, and the message body is
 preserved through `_records`, writer rendering and source archiving,
 including Markdown trailing spaces, CRLF and trailing LF. New source
-records percent-encode the speaker id and use `record-lines:N` to keep
-complete source-like blocks inside the body. A speaker marker is trusted
-only with a valid adjacent frame; unframed markers are ignored and
-unframed records do not participate in archive deduplication. Only
-unframed historical `user` records use the limited legacy body-prefix
-fallback. BM25 cache v5 exposes source-only speaker filtering by stable
-id or readable label; `memory_search` forwards it, while an embedding
-request with `speaker` is rejected explicitly.
+records go only to a marker-led `_v2/` archive, percent-encode the speaker
+id and use `record-lines:N` to keep complete source-like blocks inside the
+body. Parsing and deduplication proceed strictly from the v2 marker and
+stop at the first invalid frame. Legacy files are frozen, never contribute
+trusted speaker fields or deduplication IDs, and retain only the restricted
+`user` body-prefix retrieval hint. A valid v2 event wins when both trees
+contain the same source ID. BM25 cache v6 exposes source-only speaker
+filtering by stable id or readable label; `memory_search` forwards it,
+while an embedding request with `speaker` is rejected explicitly.

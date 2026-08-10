@@ -15,6 +15,7 @@ from .bm25 import (
     _query_time_window,
     parse_source_file,
     parse_topic_file,
+    prefer_v2_source_events,
 )
 
 
@@ -65,7 +66,7 @@ class MemoryEmbeddingIndex:
                     events.extend(parse_source_file(path, self.sources_dir))
                 else:
                     events.extend(parse_topic_file(path, self.topics_dir))
-            self._events_cache = events
+            self._events_cache = prefer_v2_source_events(events)
         return self._events_cache
 
     @staticmethod

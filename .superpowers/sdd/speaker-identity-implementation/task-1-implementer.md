@@ -16,6 +16,27 @@ implementation commit SHA.
 
 ## Design preflight and decisions
 
+### Post-review archive protocol correction
+
+The first implementation placed framed records after historical unframed
+records in the same file. That cannot establish a trustworthy boundary: an
+arbitrary legacy multiline body can contain every syntactic frame delimiter.
+It also cannot provide both forgery resistance and replay idempotence by
+choosing a different resynchronization rule.
+
+The corrected protocol freezes `sources/<provider>/<thread>.md` as legacy and
+writes new records only to `sources/<provider>/_v2/<thread>.md`. A v2 file has
+a fixed byte-zero format marker and a strict, non-resynchronizing frame
+sequence. Legacy files supply neither trusted speaker markers nor deduplication
+IDs. A valid v2 record wins over a legacy event with the same source ID;
+otherwise legacy retrieval remains available. This uses the source tree's
+existing stage/install path and requires no key, sidecar or second transaction.
+Publication of each rewritten v2 file uses a private temporary under the
+workspace runtime directory on the same filesystem, flush/fsync, mode 0644
+and `os.replace` so a failed write cannot expose a partially rewritten
+archive. The runtime location keeps the temporary out of workspace revision,
+visible-file and stage-copy surfaces.
+
 - `peer_id` remains the group/direct routing and reply target. Trusted
   `speaker_id` and `speaker_display` originate only from
   `ChannelMessage.user_id/user_display` and travel through

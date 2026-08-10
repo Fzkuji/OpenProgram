@@ -178,7 +178,7 @@ def test_source_text_stays_literal_through_writer_and_archive(tmp_path):
         space.archive_source_records(records)
     finally:
         space.close()
-    path = tmp_path / "memory/sources/openprogram/literal.md"
+    path = tmp_path / "memory/sources/openprogram/_v2/literal.md"
     with path.open(encoding="utf-8", newline="") as handle:
         archived = handle.read()
     assert f"[{records[0].timestamp}] user: {string_content}" in archived

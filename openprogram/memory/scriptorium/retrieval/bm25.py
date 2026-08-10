@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, unquote
+from urllib.parse import unquote
 
 from rank_bm25 import BM25Plus
 
@@ -28,6 +28,11 @@ from ..markdown.syntax import (
     source_reference,
 )
 from ..workspace_layout import runtime_dir
+from ..source_format import (
+    is_v2_source_path,
+    provider_source_location,
+    scan_v2_archive,
+)
 
 # The cache sits beside the runtime directory and takes its name, so a
 # workspace built before the rename keeps every file it already has.
@@ -40,7 +45,7 @@ _UNSEGMENTED_RE = re.compile(
     r"|[\U00020000-\U0002a6df]"
 )
 _REF_RE = re.compile(r"D\d+:\d+(?:-(?:D\d+:)?\d+)?")
-_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+_DATE_RE = re.compile(r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)")
 _TEMPORAL_VALUE_RE = re.compile(r"\d{4}(?:-\d{2}(?:-\d{2})?)?")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _EVENT_RE = re.compile(r"<!--\s*memory-event:(ev_[0-9a-f]+)\s*-->")
@@ -72,6 +77,7 @@ class MemoryEvent:
     speaker_id: str = ""
     speaker_display: str = ""
     speaker_label: str = ""
+    speaker_trusted: bool = False
 
 
 def tokenize(text: str) -> list[str]:
@@ -155,6 +161,36 @@ def _normalize_path_prefix(path_prefix: str) -> str:
     if head in ("topics", "sources"):
         return normalized
     return f"topics/{normalized}"
+
+
+def event_matches_path_prefix(event_path: str, normalized: str) -> bool:
+    """Match physical v2 paths and their legacy logical source path."""
+    if event_path.startswith(normalized):
+        return True
+    if event_path.startswith("sources/") and is_v2_source_path(event_path):
+        parts = list(Path(event_path).parts)
+        del parts[-2]
+        logical = Path(*parts).as_posix()
+        return logical.startswith(normalized)
+    return False
+
+
+def prefer_v2_source_events(events: list[MemoryEvent]) -> list[MemoryEvent]:
+    """Drop legacy copies only when a valid v2 event has the same ID."""
+    v2_ids = {
+        event.event_id
+        for event in events
+        if event.path.startswith("sources/") and is_v2_source_path(event.path)
+    }
+    return [
+        event
+        for event in events
+        if not (
+            event.path.startswith("sources/")
+            and not is_v2_source_path(event.path)
+            and event.event_id in v2_ids
+        )
+    ]
 
 
 def _query_time_window(
@@ -358,17 +394,11 @@ def _runtime_source_id(
     if anchor is None or source is None:
         return ""
     source_id = source.group(1).strip()
-    parts = source_id.split("/", 2)
-    if len(parts) != 3 or any(not part for part in parts):
+    location = provider_source_location(source_id)
+    if location is None:
         return ""
-    provider, thread_id, _message_id = parts
-    expected_path = (
-        Path(quote(provider, safe="-_."))
-        / f"{quote(thread_id, safe='-_.')}.md"
-    ).as_posix()
-    expected_anchor = "source-" + hashlib.sha256(
-        source_id.encode()
-    ).hexdigest()[:16]
+    expected_path = location[0].relative_to("sources").as_posix()
+    expected_anchor = location[1]
     if relative != expected_path or anchor.group(1) != expected_anchor:
         return ""
     return source_id
@@ -411,11 +441,54 @@ def _legacy_speaker(label: str, body: str) -> tuple[str, str, str]:
     return "", legacy_label, legacy_label
 
 
+def _parse_v2_source_file(
+    path: Path, sources_root: Path, relative: str, text: str
+) -> list[MemoryEvent]:
+    lines = text.split("\n")
+    scan = scan_v2_archive(text, relative)
+    events = []
+    for frame in scan.frames:
+        record = _SOURCE_RECORD_RE.match(lines[frame.record_index])
+        if record is None:  # The shared scanner already enforces this.
+            break
+        if frame.encoded_speaker_id is not None:
+            speaker_id, speaker_display, speaker_label = _structured_speaker(
+                record.group(2), frame.encoded_speaker_id
+            )
+            speaker_trusted = True
+        else:
+            speaker_id, speaker_display, speaker_label = "", "", ""
+            speaker_trusted = False
+        record_text = "\n".join(
+            lines[frame.record_index:frame.record_end]
+        )
+        content = _clean_markdown(record_text)
+        event_date = _date(record_text)
+        events.append(MemoryEvent(
+            event_id=frame.source_id,
+            path=f"sources/{relative}",
+            line=frame.record_index + 1,
+            headings=[],
+            date=event_date,
+            dates=[event_date] if event_date else [],
+            content=content,
+            refs=[frame.source_id],
+            speaker_id=speaker_id,
+            speaker_display=speaker_display,
+            speaker_label=speaker_label,
+            speaker_trusted=speaker_trusted,
+        ))
+    return events
+
+
 def parse_source_file(path: Path, sources_root: Path) -> list[MemoryEvent]:
-    """Parse each archived source turn as one searchable record."""
+    """Parse a strict v2 archive or a compatibility-only legacy file."""
     relative = path.relative_to(sources_root).as_posix()
     with path.open("r", encoding="utf-8", newline="") as handle:
-        lines = handle.read().split("\n")
+        text = handle.read()
+    if is_v2_source_path(relative):
+        return _parse_v2_source_file(path, sources_root, relative, text)
+    lines = text.split("\n")
     headings: list[str] = []
     events: list[MemoryEvent] = []
     index = 0
@@ -431,11 +504,9 @@ def parse_source_file(path: Path, sources_root: Path) -> list[MemoryEvent]:
         source_id = _runtime_source_id(lines, index, relative)
         if source_id:
             record_index = index + 2
-            encoded_id = None
             if record_index < len(lines):
                 speaker = _SPEAKER_ID_LINE_RE.fullmatch(lines[record_index])
                 if speaker is not None:
-                    encoded_id = speaker.group(1).strip()
                     record_index += 1
             record_count = 1
             framed = False
@@ -454,11 +525,7 @@ def parse_source_file(path: Path, sources_root: Path) -> list[MemoryEvent]:
                     and record_count > 0
                     and record_end <= len(lines)
                 ):
-                    if framed and encoded_id is not None:
-                        speaker_id, speaker_display, speaker_label = (
-                            _structured_speaker(record.group(2), encoded_id)
-                        )
-                    elif framed:
+                    if framed:
                         speaker_id, speaker_display, speaker_label = "", "", ""
                     else:
                         speaker_id, speaker_display, speaker_label = (
@@ -573,14 +640,14 @@ class MemoryBM25Index:
             return
         try:
             payload = json.loads(self.cache_path.read_text(encoding="utf-8"))
-            if payload.get("version") == 5 and isinstance(payload.get("files"), dict):
+            if payload.get("version") == 6 and isinstance(payload.get("files"), dict):
                 self._files = payload["files"]
         except (OSError, ValueError, TypeError):
             self._files = {}
 
     def _write_cache(self) -> None:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
-        payload = {"version": 5, "files": self._files}
+        payload = {"version": 6, "files": self._files}
         fd, temporary = tempfile.mkstemp(prefix=f"{self._runtime_name}-bm25-", dir=self.memory_dir)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -624,11 +691,11 @@ class MemoryBM25Index:
             }
 
         self._files = refreshed
-        self.events = [
+        self.events = prefer_v2_source_events([
             MemoryEvent(**row)
             for relative in sorted(self._files)
             for row in self._files[relative].get("events", [])
-        ]
+        ])
         if changed and self.persist:
             self._write_cache()
 
@@ -696,7 +763,7 @@ class MemoryBM25Index:
         for event in self.events:
             if path_prefix:
                 normalized = _normalize_path_prefix(path_prefix)
-                if not event.path.startswith(normalized):
+                if not event_matches_path_prefix(event.path, normalized):
                     continue
             if not _event_overlaps_window(event, time_window):
                 continue
