@@ -39,17 +39,6 @@ export function setCoverageSet(
 export let _highlightMode: HighlightMode = "viewport";
 export function setHighlightMode(v: HighlightMode): void { _highlightMode = v; }
 
-// Layout engine selector — "legacy" uses the hand-rolled
-// lane/tier/depth pipeline; "d3" runs d3-hierarchy's Reingold-Tilford
-// tree layout on function-call subtrees so deep+wide agentic calls
-if (typeof window !== "undefined") {
-  try {
-    // placeholder for future layout mode persistence
-  } catch {
-    /* ignore */
-  }
-}
-
 // ── visibility / ancestry / internal sets ─────────────────────────
 export let _visibleIds: Record<string, boolean> = Object.create(null);
 export function setVisibleIds(v: Record<string, boolean>): void {
