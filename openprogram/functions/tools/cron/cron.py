@@ -28,6 +28,8 @@ is deferred.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -75,6 +77,10 @@ SPEC: dict[str, Any] = {
             "command": {
                 "type": "string",
                 "description": "Shell command to run when the schedule fires — runs directly, no agent involved. Mutually exclusive with `prompt`. Example: `python backup.py` or `rsync -a ~/src /backup/`.",
+            },
+            "cwd": {
+                "type": "string",
+                "description": "Absolute working directory to freeze into the execution spec. Defaults to the active project directory.",
             },
             "notes": {
                 "type": "string",
@@ -132,11 +138,94 @@ def _mint_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
+def _json_hash(value: dict) -> str:
+    raw = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _build_execution_spec(
+    *, kind: str, body: str, cwd: str, entry_id: str,
+) -> dict[str, Any]:
+    from openprogram import sandbox
+
+    policy = sandbox.resolve_policy(required=True)
+    assert policy is not None
+    spec: dict[str, Any] = {
+        "version": 1,
+        "kind": kind,
+        kind: body,
+        "cwd": os.path.realpath(cwd),
+        "sandbox_policy": sandbox.policy_to_dict(policy),
+        "policy_hash": sandbox.policy_hash(policy),
+    }
+    if kind == "prompt":
+        from openprogram.agent.run_control import get_current_session_id
+
+        session_id = get_current_session_id() or f"cron-{entry_id}"
+        agent_id = "main"
+        try:
+            from openprogram.agent.session_db import default_db
+            session = default_db().get_session(session_id) or {}
+            agent_id = session.get("agent_id") or agent_id
+        except Exception:
+            pass
+        spec.update({
+            "session_id": session_id,
+            "agent_id": agent_id,
+            "permission_mode": "ask",
+        })
+    spec["spec_hash"] = _json_hash(spec)
+    return spec
+
+
+def _verify_execution_spec(
+    value: Any,
+) -> tuple[dict[str, Any] | None, Any | None, str | None]:
+    from openprogram import sandbox
+
+    if not isinstance(value, dict):
+        return None, None, "missing immutable execution spec"
+    expected_spec_hash = value.get("spec_hash")
+    unsigned = {k: v for k, v in value.items() if k != "spec_hash"}
+    if not isinstance(expected_spec_hash, str) or not hmac.compare_digest(
+        expected_spec_hash, _json_hash(unsigned)
+    ):
+        return None, None, "execution spec hash mismatch"
+    try:
+        policy = sandbox.policy_from_dict(value.get("sandbox_policy"))
+    except ValueError as exc:
+        return None, None, str(exc)
+    expected_policy_hash = value.get("policy_hash")
+    if not isinstance(expected_policy_hash, str) or not hmac.compare_digest(
+        expected_policy_hash, sandbox.policy_hash(policy)
+    ):
+        return None, None, "sandbox policy hash mismatch"
+    kind = value.get("kind")
+    if kind not in {"command", "prompt"}:
+        return None, None, "execution spec kind must be command or prompt"
+    if not isinstance(value.get(kind), str) or not value[kind].strip():
+        return None, None, f"execution spec {kind} is empty"
+    cwd = value.get("cwd")
+    if not isinstance(cwd, str) or not os.path.isabs(cwd):
+        return None, None, "execution spec cwd must be absolute"
+    if not os.path.isdir(cwd):
+        return None, None, f"execution spec cwd does not exist: {cwd}"
+    if kind == "prompt" and not all(
+        isinstance(value.get(key), str) and value[key]
+        for key in ("session_id", "agent_id")
+    ):
+        return None, None, "prompt execution spec needs session_id and agent_id"
+    return value, policy, None
+
+
 def execute(
     action: str | None = None,
     cron: str | None = None,
     prompt: str | None = None,
     command: str | None = None,
+    cwd: str | None = None,
     notes: str | None = None,
     id: str | None = None,
     **kw: Any,
@@ -145,6 +234,7 @@ def execute(
     cron_expr = cron or read_string_param(kw, "cron", "schedule", "expression")
     prompt = prompt or read_string_param(kw, "prompt", "task", "text")
     command = command or read_string_param(kw, "command", "cmd", "shell")
+    cwd = cwd or read_string_param(kw, "cwd", "working_dir")
     notes = notes or read_string_param(kw, "notes", "note", "description")
     entry_id = id or read_string_param(kw, "id", "entry_id", "slug")
 
@@ -197,6 +287,13 @@ def execute(
                 f"Error: {cron_expr!r} doesn't look like a cron expression "
                 "(want 5 fields like `0 9 * * *`, or a macro like `@daily`)."
             )
+        if cwd and not os.path.isabs(cwd):
+            return f"Error: cwd must be absolute, got {cwd!r}."
+        if cwd and not os.path.isdir(cwd):
+            return f"Error: cwd does not exist: {cwd}"
+        if not cwd:
+            from openprogram.worktree.context import current_worktree_path
+            cwd = current_worktree_path() or os.getcwd()
         new_entry: dict[str, Any] = {
             "id": _mint_id(),
             "cron": cron_expr.strip(),
@@ -209,6 +306,12 @@ def execute(
         else:
             new_entry["command"] = command
             body_label, body_value = "command", command
+        new_entry["execution"] = _build_execution_spec(
+            kind=body_label,
+            body=body_value,
+            cwd=cwd,
+            entry_id=new_entry["id"],
+        )
         entries.append(new_entry)
         _save(path, entries)
         return (

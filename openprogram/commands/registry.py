@@ -204,6 +204,17 @@ def register_shared_builtins() -> None:
     handler (the Rich REPL's ``register_repl_builtins``) keeps its
     shadow — that host maps the marker to a richer local action, and
     ``reload()`` running after it must not steal the name back."""
+    with _lock:
+        existing_commit = _buckets.get("builtin", {}).get("commit-message")
+    if existing_commit is None:
+        from .commit_message import commit_message_builtin_handler
+
+        register_builtin(
+            "commit-message",
+            handler=commit_message_builtin_handler,
+            description="generate a commit message from the current Git diff",
+        )
+
     try:
         from openprogram.agent.goal import goal_builtin_handler
     except Exception:

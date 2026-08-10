@@ -12,6 +12,8 @@ composer's "expand into message" semantics.
 """
 from __future__ import annotations
 
+import os
+
 
 # Builtin REPL actions: (name, aliases, argument_hint, description).
 # Registered into the commands registry at dispatch time; /help reads
@@ -128,7 +130,11 @@ def _handle_slash(cmd: str, console, rt,
         if callable(res.local_handler):
             # Builtin registered by other host code with a real handler
             # (contract: handler(session_ctx, raw_args) -> result dict).
-            out = res.local_handler({"session_id": session_id}, res.raw_args)
+            out = res.local_handler(
+                {"session_id": session_id, "cwd": os.getcwd()}, res.raw_args,
+            )
+            if isinstance(out, dict) and out.get("text"):
+                console.print(str(out["text"]))
             return bool(isinstance(out, dict) and out.get("exit"))
         console.print(
             f"[yellow]/{res.command_name} has no local implementation "

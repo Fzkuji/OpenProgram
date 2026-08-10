@@ -461,7 +461,7 @@ export function handleRunningTaskClear(sessionId: string | undefined): void {
   store.setRunningTaskFor(sessionId, null);
   // If the clear is for the currently-active session, also drop the
   // legacy single-task / button state so the composer un-locks.
-  if (store.currentSessionId === sessionId) {
+  if ((store.activeChatKey ?? store.currentSessionId) === sessionId) {
     setRunning(false);
   }
   // One-shot reload requested by the Function-call Retry button: the
@@ -507,14 +507,22 @@ export function handleChatResponse(data: ChatResponseData): void {
     // as a transient system row in the transcript. Not persisted
     // server-side (same as a REPL console print), so it drops on reload.
     const content = String((data as { content?: unknown }).content ?? "");
+    const store = useSessionStore.getState();
+    const targetsActiveLocal = targetsActive || (!!sid && store.activeChatKey === sid);
+    if (sid) {
+      clearPendingUserText(sid);
+      clearPendingFirstAck(sid);
+      handleRunningTaskClear(sid);
+      if (targetsActiveLocal) setRunActive(false);
+    }
     if (sid && content) {
-      useSessionStore.getState().appendMessage(sid, {
+      store.appendMessage(sid, {
         id: "local_cmd_" + Date.now().toString(36),
         role: "system",
         content,
         status: "done",
       });
-      if (targetsActive) scrollToBottom();
+      if (targetsActiveLocal) scrollToBottom();
     }
     return;
   }

@@ -545,3 +545,37 @@ def test_cancel_propagates_to_tool(
 
     assert cancelled_by_caller.is_set()
     assert saw_cancel.is_set(), "tool never observed cancel signal"
+
+
+def test_agent_spawn_bypass_hard_constraint_is_installed_in_dispatcher(
+    tmp_db: SessionDB, captured, collector, fresh_registry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executed = {"n": 0}
+
+    @function(name="bash", description="Shell probe")
+    def bash_probe(command: str) -> str:
+        """Execute a shell probe."""
+        executed["n"] += 1
+        return command
+
+    monkeypatch.setattr(D, "_load_agent_profile",
+                        _stub_profile_with_tools(["bash"]))
+    stream = make_two_phase_stream("spawn-call", "bash", {"command": "echo x"})
+
+    with patch.object(D, "_run_loop_blocking", _patched_run_loop(stream)):
+        result = D.process_user_turn(
+            D.TurnRequest(session_id="c1", user_text="run", agent_id="worker",
+                          source="agent_spawn", permission_mode="bypass"),
+            on_event=collector,
+        )
+
+    assert result.failed is False
+    assert executed["n"] == 0
+    tool_results = [
+        e["data"]["event"]["result"] for e in captured
+        if e["type"] == "chat_response"
+        and e["data"].get("event", {}).get("type") == "tool_result"
+    ]
+    assert any("hard constraint" in text and "denied" in text
+               for text in tool_results)

@@ -1,4 +1,4 @@
-"""Tests for cron tool's ``command`` field (shell entries).
+"""Tests for cron entries and their non-interactive execution boundary.
 
 Agent-prompt entries already have their create/list/delete semantics
 exercised implicitly by other tests; this file pins the new shell path:
@@ -7,7 +7,7 @@ exercised implicitly by other tests; this file pins the new shell path:
 - creating with both prompt+command is rejected
 - creating with neither is rejected
 - list-mode preview renders shell entries with the ``$`` marker
-- worker._spawn runs shell commands via shell=True
+- worker uses the frozen execution spec and explicit sandbox policy
 """
 from __future__ import annotations
 
@@ -32,13 +32,19 @@ def _create(**kw) -> str:
 
 
 def test_create_with_command_persists_command_field(sched):
-    out = _create(cron="*/5 * * * *", command="echo hi")
+    out = _create(cron="*/5 * * * *", command="echo hi", cwd=str(sched.parent))
     assert "Created cron entry" in out
     entries = cron_tool._load(str(sched))
     assert len(entries) == 1
     entry = entries[0]
     assert entry["command"] == "echo hi"
     assert "prompt" not in entry
+    spec = entry["execution"]
+    assert spec["kind"] == "command"
+    assert spec["command"] == "echo hi"
+    assert spec["cwd"] == str(sched.parent.resolve())
+    assert len(spec["policy_hash"]) == 64
+    assert len(spec["spec_hash"]) == 64
 
 
 def test_create_rejects_both_prompt_and_command(sched):
@@ -62,19 +68,129 @@ def test_list_shows_shell_marker(sched):
     assert "> summarize today" in out
 
 
-def test_worker_spawn_runs_shell_command(tmp_path):
+def test_worker_spawn_uses_frozen_command_and_explicit_policy(
+    sched, tmp_path, monkeypatch,
+):
     marker = tmp_path / "ran.txt"
-    entry = {
-        "id": "test01",
-        "cron": "@hourly",
-        "command": f"echo ok > {marker}",
-    }
+    tampered = tmp_path / "tampered.txt"
+    _create(cron="@hourly", command=f"echo ok > {marker}", cwd=str(tmp_path))
+    entry = cron_tool._load(str(sched))[0]
+    entry["command"] = f"echo bad > {tampered}"
+    captured = {}
+
+    def fake_invocation(command, cwd=None, *, policy=None, force_sandbox=False):
+        captured.update(command=command, cwd=cwd, policy=policy,
+                        force_sandbox=force_sandbox)
+        return command, True, None
+
+    monkeypatch.setattr(worker, "_invocation", fake_invocation)
     log_dir = tmp_path / "logs"
     proc = worker._spawn(entry, str(log_dir))
     assert proc is not None
     proc.wait(timeout=5)
     assert marker.exists()
     assert marker.read_text().strip() == "ok"
+    assert not tampered.exists()
+    assert captured["cwd"] == str(tmp_path.resolve())
+    assert captured["force_sandbox"] is True
+    assert captured["policy"] is not None
+    assert entry["execution"]["policy_hash"] in next(log_dir.iterdir()).read_text()
+
+
+def test_worker_direct_command_uses_real_forced_sandbox(sched, tmp_path):
+    from openprogram import sandbox
+
+    if not sandbox.is_available():
+        pytest.skip("sandbox backend unavailable")
+    marker = tmp_path / "real.txt"
+    _create(cron="@hourly", command=f"printf real > {marker}", cwd=str(tmp_path))
+    entry = cron_tool._load(str(sched))[0]
+    proc = worker._spawn(entry, str(tmp_path / "real-logs"))
+    assert proc is not None
+    assert proc.wait(timeout=10) == 0
+    assert marker.read_text() == "real"
+
+
+def test_worker_direct_refuses_when_sandbox_is_unavailable(
+    sched, tmp_path, monkeypatch,
+):
+    marker = tmp_path / "must-not-exist"
+    _create(cron="@hourly", command=f"touch {marker}", cwd=str(tmp_path))
+    entry = cron_tool._load(str(sched))[0]
+    monkeypatch.setattr(worker._sandbox, "unavailable_reason", lambda: "missing")
+    assert worker._spawn(entry, str(tmp_path / "refusal-logs")) is None
+    assert not marker.exists()
+    log = next((tmp_path / "refusal-logs").iterdir()).read_text()
+    assert "refused" in log.lower() and "missing" in log
+
+
+def test_worker_refuses_a_tampered_execution_spec(sched, tmp_path):
+    _create(cron="@hourly", command="echo ok", cwd=str(tmp_path))
+    entry = cron_tool._load(str(sched))[0]
+    entry["execution"]["command"] = "echo changed"
+    assert worker._spawn(entry, str(tmp_path / "logs")) is None
+    log = next((tmp_path / "logs").iterdir()).read_text()
+    assert "refused" in log.lower() and "spec hash" in log.lower()
+
+
+def test_prompt_job_rebuilds_a_noninteractive_cron_turn(sched, tmp_path,
+                                                         monkeypatch):
+    _create(cron="@daily", prompt="summarize", cwd=str(tmp_path))
+    spec = cron_tool._load(str(sched))[0]["execution"]
+    seen = {}
+
+    class Result:
+        failed = False
+        final_text = "done"
+        error = None
+
+    def fake_turn(req, **_):
+        seen["req"] = req
+        return Result()
+
+    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", fake_turn)
+    log_path = tmp_path / "prompt.log"
+    worker._run_prompt_job(spec, str(log_path))
+    req = seen["req"]
+    assert req.source == "cron"
+    assert req.permission_mode == "ask"
+    assert req.advance_head is False
+    assert req.user_text == "summarize"
+    assert "policy_hash=" + spec["policy_hash"] in log_path.read_text()
+
+
+def test_worker_spawn_prompt_uses_managed_prompt_entry(
+    sched, tmp_path, monkeypatch,
+):
+    _create(cron="@daily", prompt="summarize", cwd=str(tmp_path))
+    entry = cron_tool._load(str(sched))[0]
+    seen = {}
+
+    class Result:
+        failed = False
+        final_text = "done"
+        error = None
+
+    def fake_turn(req, **_):
+        seen["req"] = req
+        return Result()
+
+    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", fake_turn)
+
+    class InlineProcess:
+        pid = 123
+
+        def __init__(self, *, target, args, name):
+            self.target, self.args, self.name = target, args, name
+
+        def start(self):
+            self.target(*self.args)
+
+    monkeypatch.setattr(worker.multiprocessing, "Process", InlineProcess)
+    proc = worker._spawn(entry, str(tmp_path / "prompt-logs"))
+    assert proc is not None
+    assert seen["req"].source == "cron"
+    assert "done" in next((tmp_path / "prompt-logs").iterdir()).read_text()
 
 
 def test_worker_spawn_returns_none_for_empty_entry(tmp_path):

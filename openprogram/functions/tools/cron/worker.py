@@ -29,16 +29,20 @@ Design notes:
 
 from __future__ import annotations
 
+from contextlib import redirect_stderr, redirect_stdout
 import datetime as dt
 import json
+import multiprocessing
 import os
 import signal
 import subprocess
-import sys
 import time
 from typing import Any
 
-from .cron import _load, _resolve_path
+from openprogram.backend.local import _invocation
+from openprogram import sandbox as _sandbox
+
+from .cron import _load, _resolve_path, _verify_execution_spec
 
 
 _MACRO_EXPANSIONS = {
@@ -163,13 +167,34 @@ def _save_state(state: dict[str, str]) -> None:
         json.dump(state, f, indent=2, ensure_ascii=False)
 
 
-def _spawn(entry: dict[str, Any], log_dir: str) -> subprocess.Popen[bytes] | None:
-    """Fire an entry. Prompt entries launch ``openprogram deep-work``;
-    command entries run the shell string directly. Returns ``None`` when
-    the entry has neither field set."""
+def _run_prompt_job(spec: dict[str, Any], log_path: str) -> None:
+    """Child-process entry for one non-interactive agent prompt."""
+    with open(log_path, "a", buffering=1, encoding="utf-8") as log_fh:
+        with redirect_stdout(log_fh), redirect_stderr(log_fh):
+            print(f"# policy_hash={spec['policy_hash']}")
+            try:
+                from openprogram.agent.dispatcher import TurnRequest, process_user_turn
+                result = process_user_turn(TurnRequest(
+                    session_id=spec["session_id"],
+                    user_text=spec["prompt"],
+                    agent_id=spec["agent_id"],
+                    source="cron",
+                    permission_mode="ask",
+                    advance_head=False,
+                ))
+                if result.final_text:
+                    print(result.final_text)
+                if result.failed:
+                    print(f"# failed: {result.error or 'unknown turn failure'}")
+            except Exception as exc:
+                print(f"# failed: {type(exc).__name__}: {exc}")
+
+
+def _spawn(entry: dict[str, Any], log_dir: str) -> Any | None:
+    """Fire an entry from its verified immutable execution spec."""
     prompt = (entry.get("prompt") or "").strip()
     command = (entry.get("command") or "").strip()
-    if not prompt and not command:
+    if not prompt and not command and not entry.get("execution"):
         return None
     os.makedirs(log_dir, exist_ok=True)
     ts = dt.datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -178,31 +203,46 @@ def _spawn(entry: dict[str, Any], log_dir: str) -> subprocess.Popen[bytes] | Non
     try:
         log_fh.write(f"# cron fire — entry {entry.get('id')} @ {ts}\n")
         log_fh.write(f"# expr: {entry.get('cron')}\n")
-        if command:
-            log_fh.write(f"# command: {command}\n\n")
+        spec, policy, error = _verify_execution_spec(entry.get("execution"))
+        if error:
+            log_fh.write(f"# refused: {error}\n")
+            return None
+        assert spec is not None and policy is not None
+        kind = spec["kind"]
+        body = spec[kind]
+        log_fh.write(f"# {kind}: {body}\n")
+        log_fh.write(f"# cwd: {spec['cwd']}\n")
+        log_fh.write(f"# policy_hash={spec['policy_hash']}\n\n")
+        if kind == "command":
             log_fh.flush()
-            proc = subprocess.Popen(
-                command,
-                shell=True,
+            try:
+                args, use_shell, env = _invocation(
+                    body,
+                    cwd=spec["cwd"],
+                    policy=policy,
+                    force_sandbox=True,
+                )
+            except _sandbox.SandboxUnavailable as exc:
+                log_fh.write(f"# refused: {exc}\n")
+                return None
+            proc: Any = subprocess.Popen(
+                args,
+                shell=use_shell,
+                cwd=spec["cwd"],
+                env=env,
                 stdout=log_fh,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
             )
         else:
-            log_fh.write(f"# prompt: {prompt}\n\n")
             log_fh.flush()
-            cmd = [
-                sys.executable, "-m", "openprogram.cli",
-                "deep-work", prompt, "--no-interactive",
-            ]
-            proc = subprocess.Popen(
-                cmd,
-                stdout=log_fh,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
+            proc = multiprocessing.Process(
+                target=_run_prompt_job,
+                args=(spec, log_path),
+                name=f"openprogram-cron-{entry.get('id', 'noid')}",
             )
+            proc.start()
     finally:
         # Popen dup'd our fd into the child's stdout; we don't need the
         # parent-side handle anymore. Leaving it open leaks an fd per
@@ -241,8 +281,10 @@ def _tick(state: dict[str, str], *, reboot: bool = False) -> int:
         if not reboot:
             state[eid] = stamp
         fired += 1
-        body = entry.get("prompt") or entry.get("command") or ""
-        kind = "$" if entry.get("command") else ">"
+        execution = entry.get("execution") or {}
+        spec_kind = execution.get("kind")
+        body = execution.get(spec_kind) or ""
+        kind = "$" if spec_kind == "command" else ">"
         print(f"[{stamp}] fire {eid}  pid={proc.pid}  ({expr}) {kind} {body[:60]}")
     return fired
 

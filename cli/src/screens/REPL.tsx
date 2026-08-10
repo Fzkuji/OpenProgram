@@ -478,6 +478,8 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         void invokeBackendCommand(text, conversationId).then((res) => {
           if (res?.ok && res.kind === 'prompt' && res.rendered) {
             sendChat(res.rendered);
+          } else if (res?.ok && res.kind === 'local') {
+            sendChat(text);
           } else {
             pushSystem(res?.error || `/${head}: command failed to render.`);
           }

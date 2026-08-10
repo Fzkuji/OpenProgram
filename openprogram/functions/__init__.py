@@ -320,17 +320,10 @@ def _resolve_folder_toolset(folder_name: str) -> list[str] | None:
     tool-name list for the folder, or None if it doesn't exist (so the
     caller falls through to DEFAULT_TOOLS). New folders default to all
     exposed tools, so a fresh folder = full set."""
-    import os as _os
     try:
-        import openprogram.webui as _webui_mod
-        meta_path = _os.path.join(
-            _os.path.dirname(_webui_mod.__file__), "functions_meta.json",
-        )
-        if not _os.path.isfile(meta_path):
-            return None
-        import json as _json
-        with open(meta_path, encoding="utf-8") as f:
-            meta = _json.load(f)
+        from .meta_storage import load_functions_meta
+
+        meta = load_functions_meta({})
         tools = meta.get("profiles", meta.get("folders", {})).get(folder_name)
         return list(tools) if isinstance(tools, list) else None
     except Exception:

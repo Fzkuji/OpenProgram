@@ -108,10 +108,6 @@ def register(app):
     # tools (immutable). New profile = copy of default; user removes
     # tools they don't need for that scenario.
 
-    def _functions_meta_path():
-        from openprogram.webui import server as _s
-        return os.path.join(os.path.dirname(_s.__file__), "functions_meta.json")
-
     def _all_tool_names() -> list[str]:
         """Every exposed tool name — leaf tools AND agentic programs.
         Profiles cover everything the model can use."""
@@ -144,21 +140,21 @@ def register(app):
         return data
 
     def _load_profiles() -> dict:
-        p = _functions_meta_path()
-        if os.path.isfile(p):
-            with open(p, encoding="utf-8") as f:
-                data = json.load(f)
-            # migrate old {folders:} shape if present
-            if "folders" in data and "profiles" not in data:
-                data["profiles"] = data.pop("folders")
-            return data
-        return {"profiles": {"full": _all_tool_names()}, "active": "full"}
+        from openprogram.functions.meta_storage import load_functions_meta
+
+        data = load_functions_meta(
+            {"profiles": {"full": _all_tool_names()}, "active": "full"},
+        )
+        # migrate old {folders:} shape if present
+        if "folders" in data and "profiles" not in data:
+            data["profiles"] = data.pop("folders")
+        return data
 
     def _save_profiles(data: dict):
+        from openprogram.functions.meta_storage import save_functions_meta
+
         _ensure_defaults(data)
-        p = _functions_meta_path()
-        with open(p, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        save_functions_meta(data)
 
     @app.get("/api/tool-profiles")
     async def get_tool_profiles():
@@ -404,17 +400,13 @@ def register(app):
 
     @app.get("/api/programs/meta")
     async def get_programs_meta():
-        from openprogram.webui import server as _s
-        meta_path = os.path.join(os.path.dirname(_s.__file__), "programs_meta.json")
-        if os.path.isfile(meta_path):
-            with open(meta_path, encoding="utf-8") as f:
-                return JSONResponse(content=json.load(f))
-        return JSONResponse(content={"favorites": [], "folders": {}})
+        from openprogram.functions.meta_storage import load_programs_meta
+
+        return JSONResponse(content=load_programs_meta({"favorites": [], "folders": {}}))
 
     @app.post("/api/programs/meta")
     async def save_programs_meta(body: dict = None):
-        from openprogram.webui import server as _s
-        meta_path = os.path.join(os.path.dirname(_s.__file__), "programs_meta.json")
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(body, f, indent=2)
+        from openprogram.functions.meta_storage import save_programs_meta as save
+
+        save(body or {})
         return JSONResponse(content={"ok": True})
