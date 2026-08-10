@@ -76,7 +76,7 @@ def register(app):
     router = APIRouter(dependencies=[Depends(_require_memory_enabled)])
 
     @router.get("/api/memory/status")
-    async def get_status():
+    def get_status():
         from openprogram.memory import store
         from openprogram.memory.scriptorium.retrieval import inspect
 

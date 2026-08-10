@@ -37,7 +37,138 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
+
+
+class MemoryWriteFailureCode(StrEnum):
+    """Closed, non-sensitive failure taxonomy for memory writes."""
+
+    MISSING_SESSION_ID = "MISSING_SESSION_ID"
+    SESSION_NODES_UNAVAILABLE = "SESSION_NODES_UNAVAILABLE"
+    WRITER_NO_PROGRESS = "WRITER_NO_PROGRESS"
+    WRITER_PRECONDITION_FAILED = "WRITER_PRECONDITION_FAILED"
+    MEMORY_PROVIDER_RESOLUTION_FAILED = "MEMORY_PROVIDER_RESOLUTION_FAILED"
+    MODEL_TRANSPORT = "MODEL_TRANSPORT"
+    MODEL_RATE_LIMIT = "MODEL_RATE_LIMIT"
+    MODEL_PROVIDER_INTERNAL = "MODEL_PROVIDER_INTERNAL"
+    MODEL_AUTHENTICATION = "MODEL_AUTHENTICATION"
+    MODEL_AUTHORIZATION = "MODEL_AUTHORIZATION"
+    MODEL_INVALID_REQUEST = "MODEL_INVALID_REQUEST"
+    MODEL_CONTEXT_LENGTH = "MODEL_CONTEXT_LENGTH"
+    MODEL_CONTENT_POLICY = "MODEL_CONTENT_POLICY"
+    MODEL_TIMEOUT = "MODEL_TIMEOUT"
+    MODEL_FAILURE_UNKNOWN = "MODEL_FAILURE_UNKNOWN"
+    APPEND_ONLY_REQUIRED = "APPEND_ONLY_REQUIRED"
+    COMMIT_REJECTED = "COMMIT_REJECTED"
+    CONCURRENT_UPDATE = "CONCURRENT_UPDATE"
+    EMBEDDING_UNAVAILABLE = "EMBEDDING_UNAVAILABLE"
+    GIT_COMMIT_FAILED = "GIT_COMMIT_FAILED"
+    INVALID_ARGUMENT = "INVALID_ARGUMENT"
+    INVALID_TOPIC_FORMAT = "INVALID_TOPIC_FORMAT"
+    MISSING_SOURCE = "MISSING_SOURCE"
+    PATCH_CONFLICT = "PATCH_CONFLICT"
+    PATH_OUTSIDE_WORKSPACE = "PATH_OUTSIDE_WORKSPACE"
+    READ_ONLY_PATH = "READ_ONLY_PATH"
+    TRANSACTION_FAILURE_UNKNOWN = "TRANSACTION_FAILURE_UNKNOWN"
+    WRITER_FAILURE_UNKNOWN = "WRITER_FAILURE_UNKNOWN"
+
+
+@dataclass(frozen=True)
+class MemoryWriteFailureClassification:
+    reason_code: MemoryWriteFailureCode
+    retryable: bool
+
+
+_MODEL_REASON_CODES: dict[str, MemoryWriteFailureCode] = {
+    "transport": MemoryWriteFailureCode.MODEL_TRANSPORT,
+    "rate_limit": MemoryWriteFailureCode.MODEL_RATE_LIMIT,
+    "provider": MemoryWriteFailureCode.MODEL_PROVIDER_INTERNAL,
+    "auth": MemoryWriteFailureCode.MODEL_AUTHENTICATION,
+    "authz": MemoryWriteFailureCode.MODEL_AUTHORIZATION,
+    "invalid": MemoryWriteFailureCode.MODEL_INVALID_REQUEST,
+    "context": MemoryWriteFailureCode.MODEL_CONTEXT_LENGTH,
+    "policy": MemoryWriteFailureCode.MODEL_CONTENT_POLICY,
+    "timeout": MemoryWriteFailureCode.MODEL_TIMEOUT,
+    "unknown": MemoryWriteFailureCode.MODEL_FAILURE_UNKNOWN,
+}
+_TRANSACTION_REASON_CODES = frozenset({
+    MemoryWriteFailureCode.APPEND_ONLY_REQUIRED,
+    MemoryWriteFailureCode.COMMIT_REJECTED,
+    MemoryWriteFailureCode.CONCURRENT_UPDATE,
+    MemoryWriteFailureCode.EMBEDDING_UNAVAILABLE,
+    MemoryWriteFailureCode.GIT_COMMIT_FAILED,
+    MemoryWriteFailureCode.INVALID_ARGUMENT,
+    MemoryWriteFailureCode.INVALID_TOPIC_FORMAT,
+    MemoryWriteFailureCode.MISSING_SOURCE,
+    MemoryWriteFailureCode.PATCH_CONFLICT,
+    MemoryWriteFailureCode.PATH_OUTSIDE_WORKSPACE,
+    MemoryWriteFailureCode.READ_ONLY_PATH,
+})
+
+
+def classify_memory_write_failure(
+    exc: BaseException,
+) -> MemoryWriteFailureClassification:
+    """Map a runtime exception to the closed memory-writer taxonomy."""
+    from openprogram.providers.utils.errors import ErrorReason, classify_error
+
+    try:
+        from .scriptorium.management.transaction import TransactionError
+    except ImportError:  # pragma: no cover - base provider can load alone
+        TransactionError = ()  # type: ignore[assignment,misc]
+
+    if isinstance(exc, TransactionError):
+        try:
+            code = MemoryWriteFailureCode(exc.code)
+        except ValueError:
+            code = MemoryWriteFailureCode.TRANSACTION_FAILURE_UNKNOWN
+        if code not in _TRANSACTION_REASON_CODES:
+            code = MemoryWriteFailureCode.TRANSACTION_FAILURE_UNKNOWN
+        retryable = code is MemoryWriteFailureCode.CONCURRENT_UPDATE
+        if code is MemoryWriteFailureCode.EMBEDDING_UNAVAILABLE:
+            _reason, retryable = classify_error(exc.__cause__ or exc)
+        return MemoryWriteFailureClassification(code, retryable)
+
+    explicit_reason = getattr(exc, "reason", None)
+    try:
+        model_reason = ErrorReason(
+            explicit_reason.value
+            if isinstance(explicit_reason, ErrorReason)
+            else explicit_reason
+        )
+    except (TypeError, ValueError):
+        model_reason = None
+    if model_reason is not None:
+        verdict = getattr(exc, "retryable", None)
+        if not isinstance(verdict, bool):
+            _classified, verdict = classify_error(exc.__cause__ or exc)
+        return MemoryWriteFailureClassification(
+            _MODEL_REASON_CODES[model_reason.value], bool(verdict),
+        )
+
+    classified_reason, classified_retryable = classify_error(
+        exc.__cause__ or exc
+    )
+    if classified_reason is not ErrorReason.UNKNOWN:
+        verdict = getattr(exc, "retryable", None)
+        return MemoryWriteFailureClassification(
+            _MODEL_REASON_CODES[classified_reason.value],
+            classified_retryable if not isinstance(verdict, bool) else verdict,
+        )
+    if isinstance(exc, ValueError):
+        return MemoryWriteFailureClassification(
+            MemoryWriteFailureCode.WRITER_PRECONDITION_FAILED, False,
+        )
+    if hasattr(exc, "turns") and hasattr(exc, "prompt"):
+        return MemoryWriteFailureClassification(
+            MemoryWriteFailureCode.MODEL_FAILURE_UNKNOWN,
+            bool(getattr(exc, "retryable", False)),
+        )
+    return MemoryWriteFailureClassification(
+        MemoryWriteFailureCode.WRITER_FAILURE_UNKNOWN,
+        bool(getattr(exc, "retryable", False)),
+    )
 
 
 @dataclass(frozen=True)
@@ -52,10 +183,12 @@ class WriteFailure:
     """
 
     reason: str
-    retryable: bool = True
+    retryable: bool = False
     # Stable, non-sensitive classification for persisted status. ``reason``
     # remains the detailed runtime diagnostic and may contain provider text.
-    status_reason: str | None = None
+    reason_code: MemoryWriteFailureCode = (
+        MemoryWriteFailureCode.WRITER_FAILURE_UNKNOWN
+    )
 
 
 # Context fencing

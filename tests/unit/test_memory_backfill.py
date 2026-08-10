@@ -163,6 +163,33 @@ class _WriterAgent:
         )
 
 
+class _SourceVisibilityAgent(_WriterAgent):
+    """Attempt to substitute staged Source content for the selected batch."""
+
+    def run(self, *, prompt: str, cwd: Path, **kwargs):
+        exposed = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (Path(cwd) / "sources").rglob("*.md")
+        )
+        rows = [
+            json.loads(line)
+            for line in prompt.splitlines()
+            if line.startswith('{"ref":')
+        ]
+        if "pending source must remain hidden" in exposed:
+            rows[0]["content"] = "pending source must remain hidden"
+        refs = [row["ref"] for row in rows]
+        self.calls.append(refs)
+        _append_topic(
+            Path(cwd), refs, contents=[row["content"] for row in rows],
+        )
+        return SimpleNamespace(
+            turns=[], reply="", text="", num_turns=1,
+            input_tokens=1, output_tokens=1, stop_reason="end_turn",
+            anthropic_equivalent_cost_usd=0.0,
+        )
+
+
 def _topic_refs(root: Path) -> set[str]:
     from openprogram.memory.scriptorium.markdown import parse_topic_tree
 
@@ -199,7 +226,7 @@ def test_backfill_ignores_markers_and_sends_only_uncited_trusted_sources(
         lambda: pytest.fail("backfill must not consult session written markers"),
     )
 
-    report = writing.backfill(root, token_limit=10_000)
+    report = writing.backfill(root, batch_token_budget=10_000)
 
     assert report["candidates"] == 3
     assert report["processed"] == 3
@@ -237,7 +264,7 @@ def test_backfill_is_idempotent_and_does_not_construct_an_agent_twice(
     agent = _WriterAgent()
     monkeypatch.setattr(writing, "_agent", lambda _model=None: agent)
     monkeypatch.setattr(writing, "_counter", lambda: len)
-    first = writing.backfill(root, token_limit=10_000)
+    first = writing.backfill(root, batch_token_budget=10_000)
     first_revision = workspace_revision(root)
 
     monkeypatch.setattr(
@@ -245,7 +272,7 @@ def test_backfill_is_idempotent_and_does_not_construct_an_agent_twice(
         "_agent",
         lambda _model=None: pytest.fail("an already cited source was resent"),
     )
-    second = writing.backfill(root, token_limit=10_000)
+    second = writing.backfill(root, batch_token_budget=10_000)
 
     assert first["processed"] == 1
     assert second == {
@@ -276,11 +303,39 @@ def test_backfill_transaction_rejects_a_pending_ref_the_agent_reads_itself(
     monkeypatch.setattr(writing, "_agent", lambda _model=None: agent)
     monkeypatch.setattr(writing, "_counter", lambda: len)
 
-    with pytest.raises(TransactionError, match="selected batch"):
-        writing.backfill(root, token_limit=10_000)
+    # A pending Source is refused by the central trust rule before the
+    # batch-locality rule ever sees it; either refusal keeps it out.
+    with pytest.raises(TransactionError, match="not trusted|selected batch"):
+        writing.backfill(root, batch_token_budget=10_000)
 
     assert agent.calls == [[trusted.source_id], [trusted.source_id]]
     assert list((root / "topics").rglob("*.md")) == []
+
+
+def test_backfill_does_not_expose_unselected_sources_to_the_writer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from openprogram.memory.scriptorium import writing
+
+    root = tmp_path / "memory"
+    trusted = _record("trusted-visible", "selected trusted source", ordinal=1)
+    pending = _record(
+        "pending-hidden",
+        "pending source must remain hidden",
+        ordinal=2,
+        trust_state="pending",
+    )
+    _archive(root, trusted, pending)
+    agent = _SourceVisibilityAgent()
+    monkeypatch.setattr(writing, "_agent", lambda _model=None: agent)
+    monkeypatch.setattr(writing, "_counter", lambda: len)
+
+    report = writing.backfill(root, batch_token_budget=10_000)
+
+    assert report["processed"] == 1
+    topic = (root / "topics/core.md").read_text(encoding="utf-8")
+    assert "selected trusted source" in topic
+    assert "pending source must remain hidden" not in topic
 
 
 def test_backfill_restricts_intermediate_workspace_commits(
@@ -331,8 +386,8 @@ def test_backfill_restricts_intermediate_workspace_commits(
     monkeypatch.setattr(writing, "_agent", lambda _model=None: agent)
     monkeypatch.setattr(writing, "_counter", lambda: len)
 
-    with pytest.raises(ValueError, match="selected batch"):
-        writing.backfill(root, token_limit=10_000)
+    with pytest.raises(ValueError, match="not trusted|selected batch"):
+        writing.backfill(root, batch_token_budget=10_000)
 
     assert agent.calls == [[trusted.source_id]]
     assert list((root / "topics").rglob("*.md")) == []
@@ -385,7 +440,7 @@ def test_a_failed_batch_rolls_back_and_a_retry_resumes_at_its_first_uncited_ref(
     monkeypatch.setattr(writing, "_counter", lambda: len)
 
     with pytest.raises(RuntimeError, match="writer unavailable"):
-        writing.backfill(root, token_limit=10)
+        writing.backfill(root, batch_token_budget=10)
 
     assert failing.calls == [[records[0].source_id], [records[1].source_id]]
     assert _topic_refs(root) == {records[0].source_id}
@@ -396,7 +451,7 @@ def test_a_failed_batch_rolls_back_and_a_retry_resumes_at_its_first_uncited_ref(
 
     resumed = _WriterAgent()
     monkeypatch.setattr(writing, "_agent", lambda _model=None: resumed)
-    report = writing.backfill(root, token_limit=10)
+    report = writing.backfill(root, batch_token_budget=10)
 
     assert resumed.calls == [[records[1].source_id], [records[2].source_id]]
     assert report["candidates"] == 2
@@ -429,7 +484,7 @@ def test_first_batch_failure_preserves_the_only_legacy_core_and_source(
     monkeypatch.setattr(writing, "_counter", lambda: len)
 
     with pytest.raises(RuntimeError, match="writer unavailable"):
-        writing.backfill(root, token_limit=10_000)
+        writing.backfill(root, batch_token_budget=10_000)
 
     assert source.read_bytes() == source_before
     assert (root / "core.md").read_bytes() == core_before
@@ -447,7 +502,7 @@ def test_first_batch_failure_preserves_the_only_legacy_core_and_source(
 
     agent = _WriterAgent()
     monkeypatch.setattr(writing, "_agent", lambda _model=None: agent)
-    report = writing.backfill(root, token_limit=10_000)
+    report = writing.backfill(root, batch_token_budget=10_000)
 
     assert report["remaining"] == 0
     assert migration_sources[0].read_bytes() == migration_before

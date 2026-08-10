@@ -134,7 +134,7 @@ def test_status_route_returns_the_inspect_status_contract(
             "last_success_at": None,
             "last_failure": {
                 "at": "2026-08-10T12:00:00+00:00",
-                "reason": "ProviderUnavailable",
+                "reason_code": "MODEL_PROVIDER_UNAVAILABLE",
                 "retryable": True,
             },
             "pending_turns": 3,

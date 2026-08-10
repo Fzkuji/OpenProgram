@@ -21,7 +21,13 @@ shared across every agent and conversation on the machine).
 
 from __future__ import annotations
 
-from .provider import MemoryProvider
+from .provider import (
+    MemoryProvider,
+    MemoryWriteFailureClassification,
+    MemoryWriteFailureCode,
+    WriteFailure,
+    classify_memory_write_failure,
+)
 
 _provider: MemoryProvider | None = None
 DISABLED_MESSAGE = "memory is disabled by memory.backend=none"
@@ -70,6 +76,8 @@ def set_provider(instance: MemoryProvider | None) -> None:
 
 
 __all__ = [
-    "DISABLED_MESSAGE", "MemoryProvider", "get_provider", "is_enabled",
-    "set_provider",
+    "DISABLED_MESSAGE", "MemoryProvider",
+    "MemoryWriteFailureClassification", "MemoryWriteFailureCode",
+    "WriteFailure", "classify_memory_write_failure", "get_provider",
+    "is_enabled", "set_provider",
 ]

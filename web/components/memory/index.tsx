@@ -86,7 +86,10 @@ export function MemoryPage() {
         return r.json();
       })
       .then((data: MemoryStatus) => setMemoryStatus(data))
-      .catch(() => setStatusLoadFailed(true));
+      .catch(() => {
+        setMemoryStatus(null);
+        setStatusLoadFailed(true);
+      });
   }, []);
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
@@ -240,12 +243,12 @@ export function MemoryPage() {
 
   const topicGroups = groupByFolder(filteredTopics);
   const writer = memoryStatus?.writer ?? null;
-  const writerState = writer ? writerStatusState(writer) : "unavailable";
+  const writerState = writer ? writerStatusState(writer) : null;
   const statusClass = writerState === "failed"
     ? styles.writerStatusFailed
     : writerState === "pending"
       ? styles.writerStatusPending
-      : writerState === "idle"
+      : writerState === "up_to_date"
         ? styles.writerStatusIdle
         : styles.writerStatusEmpty;
 
@@ -280,13 +283,13 @@ export function MemoryPage() {
           {!writer && statusLoadFailed && (
             <span className={styles.writerStatusLabel}>{text("Writer status unavailable", "无法获取写入器状态")}</span>
           )}
-          {writer && writerState === "empty" && (
+          {writer && writerState === "unrecorded" && (
             <span className={styles.writerStatusLabel}>{text("No writer status recorded yet", "尚无写入器状态记录")}</span>
           )}
           {writer && writerState === "failed" && writer.last_failure && (
             <>
               <span className={styles.writerStatusLabel}>{text("Memory writer failed", "记忆写入失败")}</span>
-              <code className={styles.writerStatusReason}>{writer.last_failure.reason}</code>
+              <code className={styles.writerStatusReason}>{writer.last_failure.reason_code}</code>
               <span>{writer.last_failure.retryable
                 ? text("Retryable", "可重试")
                 : text("Not retryable", "不可重试")}</span>
@@ -296,10 +299,10 @@ export function MemoryPage() {
           {writer && writerState === "pending" && (
             <span className={styles.writerStatusLabel}>{text("Memory writes pending", "存在待处理记忆")}</span>
           )}
-          {writer && writerState === "idle" && (
-            <span className={styles.writerStatusLabel}>{text("Memory writer idle", "记忆写入器空闲")}</span>
+          {writer && writerState === "up_to_date" && (
+            <span className={styles.writerStatusLabel}>{text("Memory is up to date", "记忆已写入最新状态")}</span>
           )}
-          {writer && writerState === "unavailable" && (
+          {writer && writerState === "pending_count_unavailable" && (
             <span className={styles.writerStatusLabel}>{text("Pending count unavailable", "无法获取待处理数")}</span>
           )}
           {writer && writer.pending_turns !== null && (
@@ -311,7 +314,7 @@ export function MemoryPage() {
           {writer?.last_failure && writerState !== "failed" && (
             <span>
               {text("Last failure", "最近失败")}:{" "}
-              <code className={styles.writerStatusReason}>{writer.last_failure.reason}</code>{" "}
+              <code className={styles.writerStatusReason}>{writer.last_failure.reason_code}</code>{" "}
               ({writer.last_failure.retryable
                 ? text("retryable", "可重试")
                 : text("not retryable", "不可重试")};{" "}

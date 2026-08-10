@@ -12,16 +12,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..provider import MemoryProvider, WriteFailure, fence_memory
+from ..provider import (
+    MemoryProvider,
+    WriteFailure,
+    classify_memory_write_failure,
+    fence_memory,
+)
 
 logger = logging.getLogger(__name__)
-
-# Transaction codes that clear on their own. Everything else the write
-# transaction raises is a verdict on the content the writer produced,
-# and the same content next poll gets the same verdict.
-RETRYABLE_CODES = frozenset({
-    "CONCURRENT_UPDATE", "GIT_COMMIT_FAILED", "EMBEDDING_UNAVAILABLE",
-})
 
 # How much conversation to gather before asking the model to write it up.
 # Small enough that a long session is written in several passes rather
@@ -115,7 +113,6 @@ class ScriptoriumMemoryProvider(MemoryProvider):
         would mark the session done with nothing ever coming back for
         those turns.
         """
-        from .management.transaction import TransactionError
         from . import writing
 
         try:
@@ -123,22 +120,16 @@ class ScriptoriumMemoryProvider(MemoryProvider):
                 session_id or self._session_id, messages,
                 token_threshold=WRITE_TOKEN_THRESHOLD, force=force,
             )
-        except TransactionError as exc:
-            logger.debug("memory write rejected: %s", exc)
-            return WriteFailure(
-                f"{exc.code}: {exc.message}",
-                retryable=exc.code in RETRYABLE_CODES,
-                status_reason=exc.code,
-            )
         except Exception as exc:  # noqa: BLE001
             # Memory must never take a conversation down with it. Retry only
             # exceptions that explicitly classify themselves as transient;
             # an unknown exception may be a permanent config/auth failure.
             logger.debug("memory write deferred: %s", exc)
-            verdict = getattr(exc, "retryable", None)
+            failure = classify_memory_write_failure(exc)
             return WriteFailure(
-                str(exc), retryable=False if verdict is None else bool(verdict),
-                status_reason=type(exc).__name__,
+                str(exc),
+                retryable=failure.retryable,
+                reason_code=failure.reason_code,
             )
 
     def reorganize(self, **kwargs: Any) -> dict[str, Any]:

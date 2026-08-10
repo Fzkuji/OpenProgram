@@ -115,28 +115,37 @@ def _memory_write(session_id: str) -> None:
     takes a turn down with it."""
     if not session_id:
         return
-    try:
-        from openprogram.memory import get_provider
-        left = get_provider().write(session_id=session_id)
-    except Exception as exc:
-        from openprogram.memory.scriptorium.runtime.writer_status import (
-            record_current_failure,
-        )
+    from openprogram.memory import (
+        MemoryWriteFailureCode,
+        classify_memory_write_failure,
+        get_provider,
+    )
+    from openprogram.memory.scriptorium.runtime.writer_status import (
+        record_active_workspace_failure,
+    )
 
-        verdict = getattr(exc, "retryable", None)
-        record_current_failure(
-            type(exc).__name__,
-            retryable=False if verdict is None else bool(verdict),
+    try:
+        provider = get_provider()
+    except Exception as exc:
+        record_active_workspace_failure(
+            MemoryWriteFailureCode.MEMORY_PROVIDER_RESOLUTION_FAILED,
+            retryable=False,
+        )
+        _log.debug("memory provider unavailable", exc_info=True)
+        return
+    try:
+        left = provider.write(session_id=session_id)
+    except Exception as exc:
+        failure = classify_memory_write_failure(exc)
+        record_active_workspace_failure(
+            failure.reason_code,
+            retryable=failure.retryable,
         )
         _log.debug("memory write failed for %s", session_id, exc_info=True)
         return
     if left is not None:
-        from openprogram.memory.scriptorium.runtime.writer_status import (
-            record_current_failure,
-        )
-
-        record_current_failure(
-            getattr(left, "status_reason", None),
+        record_active_workspace_failure(
+            getattr(left, "reason_code", None),
             retryable=left.retryable,
         )
         # Nothing to do about it here — the next turn comes back around,

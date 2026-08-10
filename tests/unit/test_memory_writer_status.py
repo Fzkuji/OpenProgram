@@ -65,7 +65,7 @@ def test_status_counts_all_eligible_unmarked_session_turns_read_only(
     _append(db, "two", "u2")
     _append(db, "two", "runtime", "u2", display="runtime")
     db.merge_node_metadata("one", "u1", {
-        writing.MARKER: store.workspace_id(),
+        writing.WRITTEN_NODE_MARKER: store.workspace_id(),
     })
     before_rows = {
         sid: db.get_messages(sid) for sid in ("one", "two")
@@ -79,6 +79,7 @@ def test_status_counts_all_eligible_unmarked_session_turns_read_only(
     result = inspect.status(root)
 
     assert result["writer"] == {
+        "last_outcome": None,
         "last_success_at": None,
         "last_failure": None,
         "pending_turns": 2,
@@ -119,7 +120,9 @@ def test_success_and_per_turn_failure_are_persisted_without_sensitive_text(
     revision = workspace_revision(root)
     secret = "private prompt text api_key=sk-must-not-be-stored"
     failure = SimpleNamespace(
-        reason=secret, retryable=True, status_reason="ProviderUnavailable",
+        reason=secret,
+        retryable=True,
+        reason_code="MODEL_TRANSPORT",
     )
     monkeypatch.setattr(
         "openprogram.memory.get_provider",
@@ -131,7 +134,10 @@ def test_success_and_per_turn_failure_are_persisted_without_sensitive_text(
 
     result = inspect.status(root)
     assert result["writer"]["last_success_at"] == stamp
-    assert result["writer"]["last_failure"]["reason"] == "ProviderUnavailable"
+    assert (
+        result["writer"]["last_failure"]["reason_code"]
+        == "MODEL_TRANSPORT"
+    )
     assert result["writer"]["last_failure"]["retryable"] is True
     status_path = store.state_dir() / "writer-status.json"
     serialized = status_path.read_text(encoding="utf-8")
@@ -170,7 +176,7 @@ def test_failure_before_agent_creation_is_reported_by_per_turn_path(
     writer = inspect.status(root)["writer"]
     assert writer["last_failure"] == {
         "at": writer["last_failure"]["at"],
-        "reason": "RuntimeError",
+        "reason_code": "WRITER_FAILURE_UNKNOWN",
         "retryable": False,
     }
     serialized = (store.state_dir() / "writer-status.json").read_text(
@@ -179,7 +185,7 @@ def test_failure_before_agent_creation_is_reported_by_per_turn_path(
     assert private_turn not in serialized
     assert "sk-private-credential" not in serialized
     assert writer["pending_turns"] == 1
-    assert db.get_branch("agent-error")[0].get(writing.MARKER) is None
+    assert db.get_branch("agent-error")[0].get(writing.WRITTEN_NODE_MARKER) is None
 
 
 def test_idle_watcher_records_retryable_failure(environment, monkeypatch):
@@ -190,7 +196,7 @@ def test_idle_watcher_records_retryable_failure(environment, monkeypatch):
     _append(db, "idle", "u1")
     left = SimpleNamespace(
         reason="model temporarily unavailable", retryable=True,
-        status_reason=None,
+        reason_code=None,
     )
     monkeypatch.setattr(
         "openprogram.memory.get_provider",
@@ -201,7 +207,7 @@ def test_idle_watcher_records_retryable_failure(environment, monkeypatch):
 
     assert _process_session("idle", db.get_branch("idle")) is left
     failure = inspect.status(root)["writer"]["last_failure"]
-    assert failure["reason"] == "UnknownFailure"
+    assert failure["reason_code"] == "WRITER_FAILURE_UNKNOWN"
     assert failure["retryable"] is True
 
 
@@ -218,7 +224,7 @@ def test_status_root_failure_never_escapes_memory_hooks(
     left = SimpleNamespace(
         reason="details stay outside status",
         retryable=False,
-        status_reason="ProviderUnavailable",
+        reason_code="MODEL_TRANSPORT",
     )
     monkeypatch.setattr(
         "openprogram.memory.get_provider",
@@ -247,7 +253,7 @@ def test_status_store_failure_never_changes_per_turn_return(
     left = SimpleNamespace(
         reason="details stay outside status",
         retryable=True,
-        status_reason="ProviderUnavailable",
+        reason_code="MODEL_TRANSPORT",
     )
     monkeypatch.setattr(
         "openprogram.memory.get_provider",
@@ -256,7 +262,7 @@ def test_status_store_failure_never_changes_per_turn_return(
         })(),
     )
     monkeypatch.setattr(
-        writer_status.WriterStatusStore,
+        writer_status._WriterStatusStore,
         "record_failure",
         lambda *_a, **_kw: (_ for _ in ()).throw(RuntimeError("status down")),
     )
@@ -270,14 +276,14 @@ def test_concurrent_success_and_failure_preserve_both_fields(
     from openprogram.memory.scriptorium.runtime import writer_status
 
     _db, root = environment
-    original_load = writer_status.WriterStatusStore.load
+    original_load = writer_status._WriterStatusStore.load
 
     def slow_load(self):
         payload = original_load(self)
         time.sleep(0.05)
         return payload
 
-    monkeypatch.setattr(writer_status.WriterStatusStore, "load", slow_load)
+    monkeypatch.setattr(writer_status._WriterStatusStore, "load", slow_load)
     start = threading.Barrier(3)
     threads = [
         threading.Thread(
@@ -288,7 +294,7 @@ def test_concurrent_success_and_failure_preserve_both_fields(
         threading.Thread(
             target=lambda: (
                 start.wait(), writer_status.record_failure(
-                    root, "ProviderUnavailable", retryable=True,
+                    root, "MODEL_TRANSPORT", retryable=True,
                 )
             ),
         ),
@@ -300,10 +306,13 @@ def test_concurrent_success_and_failure_preserve_both_fields(
         thread.join(timeout=2)
         assert not thread.is_alive()
 
-    result = writer_status.WriterStatusStore(root).load()
+    result = writer_status._WriterStatusStore(root).load()
     assert result["last_success_at"] is not None
     assert result["last_failure"] is not None
-    assert result["last_failure"]["reason"] == "ProviderUnavailable"
+    assert (
+        result["last_failure"]["reason_code"]
+        == "MODEL_TRANSPORT"
+    )
     assert result["last_failure"]["retryable"] is True
 
 
@@ -313,6 +322,7 @@ def test_memory_status_tool_exposes_the_same_writer_contract(environment):
     _db, _root = environment
     result = json.loads(memory_tools.memory_status())
     assert result["writer"] == {
+        "last_outcome": None,
         "last_success_at": None,
         "last_failure": None,
         "pending_turns": 0,
@@ -332,7 +342,49 @@ def test_cli_memory_status_exposes_the_same_writer_contract(
     output = capsys.readouterr().out
     result = json.loads(output[output.index("{"):])
     assert result["writer"] == {
+        "last_outcome": None,
         "last_success_at": None,
         "last_failure": None,
         "pending_turns": 0,
     }
+
+
+def test_persisted_status_carries_a_schema_version(environment):
+    from openprogram.memory.scriptorium.runtime import writer_status
+
+    _db, root = environment
+    writer_status.record_failure(root, "MODEL_TRANSPORT", retryable=True)
+    path = writer_status.runtime_dir(root) / writer_status.STATUS_FILE
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["version"] == writer_status.STATUS_SCHEMA_VERSION
+    assert payload["last_outcome"] == "failure"
+
+    # A file from another schema version is not half-interpreted.
+    path.write_text(
+        json.dumps({**payload, "version": 999}), encoding="utf-8",
+    )
+    assert writer_status._WriterStatusStore(root).load() == {
+        "last_outcome": None,
+        "last_success_at": None,
+        "last_failure": None,
+    }
+
+
+def test_last_outcome_orders_two_writes_inside_one_timestamp(
+    environment, monkeypatch,
+):
+    from openprogram.memory.scriptorium.runtime import writer_status
+
+    _db, root = environment
+    monkeypatch.setattr(
+        writer_status, "_now", lambda: "2026-08-11T00:00:00+00:00",
+    )
+    writer_status.record_failure(root, "MODEL_TRANSPORT", retryable=True)
+    writer_status.record_success(root)
+    assert writer_status._WriterStatusStore(root).load()["last_outcome"] == (
+        "success"
+    )
+    writer_status.record_failure(root, "COMMIT_REJECTED", retryable=False)
+    stored = writer_status._WriterStatusStore(root).load()
+    assert stored["last_outcome"] == "failure"
+    assert stored["last_success_at"] == "2026-08-11T00:00:00+00:00"

@@ -34,13 +34,16 @@ export interface RecentEvent {
 
 export interface WriterFailure {
   at: string;
-  reason: string;
+  reason_code: string;
   retryable: boolean;
 }
 
 export interface WriterStatus {
+  /** Which of the two records below the writer stamped most recently. */
+  last_outcome: "success" | "failure" | null;
   last_success_at: string | null;
   last_failure: WriterFailure | null;
+  /** Number of eligible user/assistant message nodes not yet written. */
   pending_turns: number | null;
 }
 

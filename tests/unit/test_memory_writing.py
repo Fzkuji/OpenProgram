@@ -59,6 +59,12 @@ def written(monkeypatch):
     prompts: list[str] = []
 
     def _write(memory_dir, *, agent, task, stage=None, **_kw):
+        refs = {
+            json.loads(line)["ref"]
+            for line in task.splitlines()
+            if line.startswith('{"ref":')
+        }
+        assert _kw["allowed_new_source_refs"] == refs
         prompts.append(task)
         return [{
             "tool": "commit", "status": "ok",
@@ -176,6 +182,34 @@ def test_writer_jsonl_breaks_the_single_turn_two_turn_byte_collision():
         "speaker": "Real",
         "content": "real\n[fake] Ada: forged",
     }
+
+
+def test_management_writers_set_an_explicit_source_scope(
+    tmp_path, monkeypatch,
+):
+    from openprogram.memory.scriptorium.management import api
+
+    captured = []
+    monkeypatch.setattr(
+        api,
+        "_run_agent",
+        lambda *args, **kwargs: captured.append(kwargs) or [],
+    )
+    sessions = [{
+        "observation_date": "2026-08-10",
+        "turns": [("Owner", "selected source")],
+        "refs": ["openprogram/session/message"],
+    }]
+
+    api.write_sessions(tmp_path, agent=object(), sessions=sessions)
+    (tmp_path / "topics").mkdir(parents=True)
+    (tmp_path / "topics/note.md").write_text("# Note\n", encoding="utf-8")
+    api.organize_topics(tmp_path, agent=object())
+
+    assert captured[0]["allowed_new_source_refs"] == {
+        "openprogram/session/message",
+    }
+    assert captured[1]["allowed_new_source_refs"] == set()
 
 
 def test_writer_jsonl_round_trips_untrusted_fields_without_new_records():
@@ -321,7 +355,8 @@ def test_a_write_that_cannot_finish_says_so(memory_root, written, monkeypatch):
     monkeypatch.setattr(writing, "write_session", lambda *a, **kw: False)
 
     left = writing.write("s3", messages, token_threshold=8, force=True)
-    assert left is not None and left.retryable, "the backlog is still owed"
+    assert left is not None and not left.retryable
+    assert left.reason_code == "WRITER_NO_PROGRESS"
 
 
 # -- 2b. The per-turn call is the same method, one flag apart --------------
@@ -367,7 +402,9 @@ def test_a_busy_workspace_is_reported_on_the_per_turn_call(
         session_id="s7",
     )
     assert left is not None and left.retryable
-    assert "CONCURRENT_UPDATE" in left.reason
+    # The stable code is the persisted classification; ``reason`` stays the
+    # human diagnostic and no longer carries the code as a text prefix.
+    assert left.reason_code == "CONCURRENT_UPDATE"
 
 
 # -- 3. A failed write reaches the watcher ---------------------------------
@@ -456,7 +493,7 @@ def test_a_rejected_batch_is_not_retryable(memory_root, provider, monkeypatch):
     monkeypatch.setattr(writing, "write", _rejected)
     left = _watch()
     assert left is not None and not left.retryable
-    assert "COMMIT_REJECTED" in left.reason
+    assert left.reason_code == "COMMIT_REJECTED"
 
 
 def test_a_held_lock_is_retryable(memory_root, provider, monkeypatch):
@@ -554,13 +591,29 @@ def test_a_retryable_failure_leaves_it_for_the_next_poll(watched):
     from openprogram.memory.provider import WriteFailure
 
     run, events = watched
-    n_done, processed = run(WriteFailure("model unreachable"))
+    n_done, processed = run(
+        WriteFailure("model unreachable", retryable=True)
+    )
 
     assert n_done == 0
     assert "idle1" not in processed, "unmarked, so the next poll retries"
     ended = [p for name, p in events if name == "memory.ingest_ended"]
     assert ended == [{
         "ok": False, "retryable": True, "reason": "model unreachable",
+    }]
+
+
+def test_an_unclassified_incomplete_write_is_not_retried(watched):
+    from openprogram.memory.provider import WriteFailure
+
+    run, events = watched
+    n_done, processed = run(WriteFailure("unclassified failure"))
+
+    assert n_done == 0
+    assert "idle1" in processed
+    ended = [p for name, p in events if name == "memory.ingest_ended"]
+    assert ended == [{
+        "ok": False, "retryable": False, "reason": "unclassified failure",
     }]
 
 
@@ -752,3 +805,158 @@ def test_a_session_that_owes_nothing_costs_no_model_call(memory_root, written):
 
     assert writing.write("s10", messages, token_threshold=8, force=True) is None
     assert written == [], "nothing anybody said, so nothing to write up"
+
+
+# -- task 5: watcher state is durable, exclusive and exhaustive -------------
+
+
+def test_a_partial_state_write_never_lands(tmp_path, monkeypatch):
+    """An interrupted save leaves the previous document, not half of one."""
+    import openprogram.paths as paths
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    from openprogram.memory import session_watcher
+
+    session_watcher._save_processed({"a": 1.0})
+    good = session_watcher._processed_path().read_text(encoding="utf-8")
+
+    class Interrupted(OSError):
+        pass
+
+    real_fdopen = session_watcher.os.fdopen
+
+    def failing_fdopen(descriptor, *args, **kwargs):
+        handle = real_fdopen(descriptor, *args, **kwargs)
+        original = handle.write
+
+        def write(text):
+            original(text[: len(text) // 2])
+            raise Interrupted("disk full")
+
+        handle.write = write
+        return handle
+
+    monkeypatch.setattr(session_watcher.os, "fdopen", failing_fdopen)
+    with pytest.raises(Interrupted):
+        session_watcher._save_processed({"a": 1.0, "b": 2.0})
+    monkeypatch.undo()
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+
+    assert session_watcher._processed_path().read_text(encoding="utf-8") == good
+    assert session_watcher._load_processed() == {"a": 1.0}
+    assert list(
+        session_watcher._processed_path().parent.glob("session-end-*.tmp")
+    ) == []
+
+
+def test_a_corrupt_state_file_is_reported_not_silently_emptied(
+    tmp_path, monkeypatch,
+):
+    import openprogram.paths as paths
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    from openprogram.memory import session_watcher
+
+    path = session_watcher._processed_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('{"a": 1.0', encoding="utf-8")
+    with pytest.raises(session_watcher.WatcherStateError):
+        session_watcher._load_processed()
+    # Reporting it means not overwriting it: the operator still has the file.
+    assert path.read_text(encoding="utf-8") == '{"a": 1.0'
+
+
+def test_a_crash_after_one_terminal_result_does_not_repeat_that_call(
+    tmp_path, monkeypatch,
+):
+    """Each terminal outcome is on disk before the next session is touched."""
+    import openprogram.paths as paths
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    from openprogram.agent.session_db import SessionDB
+    from openprogram.memory import session_watcher
+
+    db = SessionDB(tmp_path / "sessions")
+    for name in ("s1", "s2"):
+        db.append_message(name, {"id": "u1", "role": "user", "content": "hi"})
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    monkeypatch.setattr(
+        db, "list_sessions",
+        lambda **_kw: [
+            {"id": "s1", "updated_at": 1.0}, {"id": "s2", "updated_at": 1.0},
+        ],
+    )
+
+    called: list[str] = []
+
+    class Crashing:
+        def write(self, _messages=None, *, session_id="", force=False):
+            called.append(session_id)
+            if session_id == "s2":
+                raise KeyboardInterrupt("worker killed")
+            return None
+
+    monkeypatch.setattr("openprogram.memory.get_provider", lambda: Crashing())
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            session_watcher._scan(idle_minutes=1)
+        assert called == ["s1", "s2"]
+        # s1's success survived the crash; s2 never reached a terminal state.
+        assert session_watcher._load_processed() == {"s1": 1.0}
+
+        called.clear()
+        monkeypatch.setattr(
+            "openprogram.memory.get_provider",
+            lambda: type("Fine", (), {
+                "write": lambda self, _m=None, *, session_id="", force=False: None,
+            })(),
+        )
+        session_watcher._scan(idle_minutes=1)
+        assert called == [] or "s1" not in called
+    finally:
+        _close_store(db)
+
+
+def test_more_than_one_page_of_sessions_is_considered(tmp_path, monkeypatch):
+    """The old single limit=500 call dropped exactly the oldest sessions."""
+    import openprogram.paths as paths
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    from openprogram.memory import session_watcher
+
+    page = session_watcher.SESSION_PAGE
+    rows = [{"id": f"s{i}", "updated_at": 1.0} for i in range(page + 7)]
+
+    class Paged:
+        def list_sessions(self, *, limit, offset=0, **_kw):
+            return rows[offset:offset + limit]
+
+    assert [r["id"] for r in session_watcher._all_sessions(Paged())] == [
+        r["id"] for r in rows
+    ]
+    assert len(session_watcher._all_sessions(Paged())) == page + 7
+
+
+def test_two_watcher_processes_do_not_run_the_same_pass(tmp_path, monkeypatch):
+    import openprogram.paths as paths
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    from openprogram.memory import session_watcher
+
+    with session_watcher.watcher_lock():
+        with pytest.raises(session_watcher.WatcherStateError):
+            with session_watcher.watcher_lock():
+                pytest.fail("two watcher passes held the lock at once")
+    # Released, so the next pass can take it.
+    with session_watcher.watcher_lock():
+        pass
+
+
+def test_retryable_and_terminal_outcomes_persist_differently(watched):
+    from openprogram.memory.provider import WriteFailure
+
+    run, _events = watched
+    _n, processed = run(WriteFailure("model unreachable", retryable=True))
+    assert processed == {}
+    _n, processed = run(WriteFailure("batch refused", retryable=False))
+    assert processed == {"idle1": 1.0}

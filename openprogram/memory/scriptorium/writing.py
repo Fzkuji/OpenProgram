@@ -12,13 +12,18 @@ nodes themselves record which memory workspace has written them.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
+import math
+import time
+from collections.abc import Callable
 from contextlib import closing
 from datetime import datetime, timezone
-from typing import Any
+from pathlib import Path
+from typing import Any, TYPE_CHECKING
 from urllib.parse import quote
 
-from ..provider import WriteFailure
+from ..provider import MemoryWriteFailureCode, WriteFailure
 from .management import organize_topics
 from .management.agent import _run_agent
 from .management.api import render_writer_task
@@ -30,6 +35,10 @@ from .management.transaction import (
 from .runtime.online import OnlineMemoryRuntime
 from .runtime.state import SourceRecord
 
+if TYPE_CHECKING:
+    from .agent_runtime import OpenProgramAgent
+    from .retrieval.bm25 import MemoryEvent
+
 logger = logging.getLogger(__name__)
 
 PROVIDER = "openprogram"
@@ -39,8 +48,16 @@ WRITTEN_NODE_MARKER = "memory_written_scriptorium"
 # sub-agent posts back, and the prompt a branch merge assembles.
 RUNTIME_SOURCES = frozenset({"task_followup", "merge_turn"})
 
+UNPAIRED_ARCHIVE_WINDOW_SECONDS = 60 * 60
+UNPAIRED_ARCHIVE_MAX_PER_WINDOW = 600
+UNPAIRED_ARCHIVE_MAX_TOTAL_BYTES = 64 * 1024 * 1024
+UNPAIRED_ARCHIVE_MAX_MESSAGE_BYTES = 64 * 1024
+UNPAIRED_ARCHIVE_MAX_IDENTITY_BYTES = 4 * 1024
+UNPAIRED_ARCHIVE_FRAME_RESERVE_BYTES = 16 * 1024
+_UNPAIRED_ARCHIVE_QUOTA_FILE = "unpaired-archive-quota.json"
 
-def _agent(model: str | None = None) -> Any:
+
+def _agent(model: str | None = None) -> OpenProgramAgent:
     """A detached writer on the configured chat-agent provider stack."""
     from openprogram.setup import _read_config
     from .agent_runtime import OpenProgramAgent
@@ -51,7 +68,7 @@ def _agent(model: str | None = None) -> Any:
     return OpenProgramAgent(model=override)
 
 
-def _counter() -> Any:
+def _counter() -> Callable[[str], int]:
     from .runtime.tokenization import TokenCounter
 
     return TokenCounter.resolve(requested_model="claude").count
@@ -167,6 +184,67 @@ def _records(
     return rows
 
 
+def _unpaired_archive_bytes(root: Any) -> int:
+    """Current on-disk size of Runtime-created unpaired channel archives."""
+    total = 0
+    sources = root / "sources"
+    if not sources.is_dir():
+        return 0
+    for provider in sources.iterdir():
+        if not provider.is_dir() or not provider.name.startswith("channel-"):
+            continue
+        for path in provider.rglob("*"):
+            if path.is_file() and not path.is_symlink():
+                total += path.stat().st_size
+    return total
+
+
+def _reserve_unpaired_archive(root: Any, *, message_bytes: int) -> bool:
+    """Persist one global rate slot before appending pending evidence.
+
+    Called under ``workspace_write_lock``, so the read-modify-write of the
+    quota file and the archive append it authorizes are one reservation:
+    two processes cannot both see the last free slot.
+    """
+    from openprogram.store.session.git_session import atomic_write_text
+
+    from .workspace_layout import runtime_dir
+
+    if (
+        message_bytes > UNPAIRED_ARCHIVE_MAX_MESSAGE_BYTES
+        or _unpaired_archive_bytes(root)
+        + message_bytes
+        + UNPAIRED_ARCHIVE_FRAME_RESERVE_BYTES
+        > UNPAIRED_ARCHIVE_MAX_TOTAL_BYTES
+    ):
+        return False
+
+    now = time.time()
+    path = runtime_dir(root) / _UNPAIRED_ARCHIVE_QUOTA_FILE
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        raw = payload.get("accepted_at", []) if payload.get("version") == 1 else []
+    except (OSError, TypeError, ValueError, AttributeError):
+        raw = []
+    cutoff = now - UNPAIRED_ARCHIVE_WINDOW_SECONDS
+    accepted_at = [
+        float(value)
+        for value in raw
+        if isinstance(value, (int, float))
+        and math.isfinite(float(value))
+        and float(value) > cutoff
+    ]
+    if len(accepted_at) >= UNPAIRED_ARCHIVE_MAX_PER_WINDOW:
+        return False
+    accepted_at.append(now)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(path, json.dumps({
+        "version": 1,
+        "accepted_at": accepted_at,
+    }, separators=(",", ":")) + "\n")
+    return True
+
+
 def archive_unpaired_group_message(
     *,
     channel: str,
@@ -185,6 +263,16 @@ def archive_unpaired_group_message(
     if not is_enabled():
         return ""
 
+    text = str(text)
+    identity_bytes = sum(len(str(value).encode("utf-8")) for value in (
+        channel, account_id, chat_id, user_id, user_display,
+    ))
+    if (
+        not text
+        or identity_bytes > UNPAIRED_ARCHIVE_MAX_IDENTITY_BYTES
+    ):
+        return ""
+
     native_id = str(message_id or "").strip()
     seed = "\x1f".join((
         str(channel), str(account_id), str(chat_id), native_id,
@@ -198,7 +286,7 @@ def archive_unpaired_group_message(
         message_id=hashlib.sha256(seed.encode("utf-8")).hexdigest()[:24],
         ordinal=int(float(timestamp or 0) * 1000),
         role="user",
-        content=str(text),
+        content=text,
         timestamp=_observed_at(timestamp) if timestamp else None,
         speaker_id=str(user_id or "") or None,
         speaker_display=str(user_display or "") or None,
@@ -209,6 +297,11 @@ def archive_unpaired_group_message(
     )
     root = store.ensure()
     with workspace_write_lock(root, timeout_s=1.0):
+        if not _reserve_unpaired_archive(
+            root, message_bytes=len(text.encode("utf-8")),
+        ):
+            logger.debug("memory: unpaired group archive quota reached")
+            return ""
         with closing(MemoryWorkspace(root)) as workspace:
             workspace.archive_source_records([record])
     return record.source_id
@@ -355,14 +448,12 @@ def _pending(
     ).pending(records, _marked_ids(messages, workspace_id))
 
 
-def _force_branches(
+def _eligible_session_branches(
+    db: Any,
     session_id: str,
     fallback: list[dict[str, Any]] | None,
-) -> tuple[Any, list[tuple[str | None, list[dict[str, Any]]]]]:
+) -> list[tuple[str | None, list[dict[str, Any]]]]:
     """Current head path first, followed by the other live tip paths."""
-    from openprogram.agent.session_db import default_db
-
-    db = default_db()
     session = db.get_session(session_id)
     current = (session or {}).get("head_id")
     heads: list[str] = [current] if current else []
@@ -375,7 +466,17 @@ def _force_branches(
     ]
     if not branches and fallback is not None:
         branches.append((None, fallback))
-    return db, branches
+    return branches
+
+
+def _force_branches(
+    session_id: str,
+    fallback: list[dict[str, Any]] | None,
+) -> tuple[Any, list[tuple[str | None, list[dict[str, Any]]]]]:
+    from openprogram.agent.session_db import default_db
+
+    db = default_db()
+    return db, _eligible_session_branches(db, session_id, fallback)
 
 
 def write(
@@ -411,7 +512,7 @@ def write(
     if not session_id:
         return WriteFailure(
             "no session id", retryable=False,
-            status_reason="MissingSessionId",
+            reason_code=MemoryWriteFailureCode.MISSING_SESSION_ID,
         )
     from .. import store
     from openprogram.agent.session_db import default_db
@@ -446,12 +547,17 @@ def write(
                 # Pending turns reached no topic file, so no source node
                 # was marked and a later pass must retry this branch.
                 return WriteFailure(
-                    "the writer made no progress", status_reason="NoProgress"
+                    "the writer made no progress",
+                    retryable=False,
+                    reason_code=MemoryWriteFailureCode.WRITER_NO_PROGRESS,
                 )
             if head is None:
                 return WriteFailure(
                     "session nodes unavailable",
-                    status_reason="SessionNodesUnavailable",
+                    retryable=False,
+                    reason_code=(
+                        MemoryWriteFailureCode.SESSION_NODES_UNAVAILABLE
+                    ),
                 )
             branch_rows = db.get_branch(session_id, head) or []
     return None
@@ -468,7 +574,7 @@ def _changed_files(audit: list[dict[str, Any]]) -> list[str]:
 
 
 def distill_promoted_source(
-    memory_dir: Any,
+    memory_dir: str | Path,
     source_id: str,
     *,
     model: str | None = None,
@@ -479,8 +585,6 @@ def distill_promoted_source(
     means the writer ran but made no accepted edit, so a later explicit
     promotion can retry without duplicating an already cited source.
     """
-    from pathlib import Path
-
     from .markdown import parse_topic_tree
     from .retrieval.bm25 import parse_source_file
     from .source_format import provider_source_location
@@ -520,14 +624,15 @@ def distill_promoted_source(
                 "refs": [source_id],
             }]),
             stage="promote",
+            allowed_new_source_refs={source_id},
         )
     return _changed_files(audit)
 
 
-def _backfill_candidates(memory_dir: Any) -> list[tuple[str, Any]]:
+def _backfill_candidates(
+    memory_dir: str | Path,
+) -> list[tuple[str, MemoryEvent]]:
     """Trusted source records that no Topic cites, in filesystem order."""
-    from pathlib import Path
-
     from .markdown import parse_topic_tree
     from .retrieval.bm25 import parse_source_file, prefer_v2_source_events
 
@@ -543,7 +648,7 @@ def _backfill_candidates(memory_dir: Any) -> list[tuple[str, Any]]:
         if path.is_file() and not path.is_symlink()
         for event in parse_source_file(path, root / "sources")
     ])
-    candidates: dict[str, Any] = {}
+    candidates: dict[str, MemoryEvent] = {}
     for event in events:
         if event.trust_state != "trusted":
             continue
@@ -557,10 +662,8 @@ def _backfill_candidates(memory_dir: Any) -> list[tuple[str, Any]]:
     )
 
 
-def _prepare_legacy_core(memory_dir: Any) -> None:
+def _prepare_legacy_core(memory_dir: str | Path) -> None:
     """Promote a valid legacy core or archive an invalid one as evidence."""
-    from pathlib import Path
-
     from openprogram.agent.authority import owner_principal_id
 
     from .management import MemoryWorkspace
@@ -599,22 +702,26 @@ def _prepare_legacy_core(memory_dir: Any) -> None:
 
 
 def _backfill_batch(
-    candidates: list[tuple[str, Any]], counter: Any, token_limit: int,
-) -> list[tuple[str, Any]]:
-    if token_limit < 1:
-        raise ValueError("token_limit must be positive")
-    batch: list[tuple[str, Any]] = []
+    candidates: list[tuple[str, MemoryEvent]],
+    counter: Callable[[str], int],
+    batch_token_budget: int,
+) -> list[tuple[str, MemoryEvent]]:
+    if batch_token_budget < 1:
+        raise ValueError("batch_token_budget must be positive")
+    batch: list[tuple[str, MemoryEvent]] = []
     tokens = 0
     for candidate in candidates:
         size = max(1, int(counter(candidate[1].content)))
-        if batch and tokens + size > token_limit:
+        if batch and tokens + size > batch_token_budget:
             break
         batch.append(candidate)
         tokens += size
     return batch
 
 
-def _backfill_sessions(batch: list[tuple[str, Any]]) -> list[dict[str, Any]]:
+def _backfill_sessions(
+    batch: list[tuple[str, MemoryEvent]],
+) -> list[dict[str, Any]]:
     """Writer input with each source's own observation date, in source order."""
     sessions: list[dict[str, Any]] = []
     for ref, event in batch:
@@ -637,18 +744,16 @@ def _backfill_sessions(batch: list[tuple[str, Any]]) -> list[dict[str, Any]]:
 
 
 def backfill(
-    memory_dir: Any,
+    memory_dir: str | Path,
     *,
     model: str | None = None,
-    token_limit: int | None = None,
-) -> dict[str, Any]:
+    batch_token_budget: int | None = None,
+) -> dict[str, str | int]:
     """Write every uncited trusted source, resumable at batch boundaries."""
-    from pathlib import Path
-
-    if token_limit is None:
+    if batch_token_budget is None:
         from .provider import WRITE_TOKEN_THRESHOLD
 
-        token_limit = WRITE_TOKEN_THRESHOLD
+        batch_token_budget = WRITE_TOKEN_THRESHOLD
     root = Path(memory_dir).resolve()
     counter = _counter()
     with workspace_write_lock(root, timeout_s=5.0):
@@ -657,7 +762,9 @@ def backfill(
         remaining = initial
         agent = None
         while remaining:
-            batch = _backfill_batch(remaining, counter, token_limit)
+            batch = _backfill_batch(
+                remaining, counter, batch_token_budget,
+            )
             if agent is None:
                 agent = _agent(model)
             _run_agent(
@@ -665,7 +772,7 @@ def backfill(
                 agent=agent,
                 task=render_writer_task(_backfill_sessions(batch)),
                 stage="backfill",
-                allowed_source_refs={ref for ref, _event in batch},
+                allowed_new_source_refs={ref for ref, _event in batch},
             )
             updated = _backfill_candidates(root)
             if {ref for ref, _event in updated} == {

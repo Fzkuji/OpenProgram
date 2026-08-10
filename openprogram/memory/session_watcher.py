@@ -17,10 +17,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+
+from openprogram import _compat as fcntl
 
 from . import store
 from .provider import WriteFailure
@@ -31,24 +36,122 @@ DEFAULT_IDLE_MINUTES = 30
 DEFAULT_POLL_INTERVAL = 300  # seconds — 5 min
 
 
+SESSION_PAGE = 500
+
+
+class WatcherStateError(RuntimeError):
+    """The persisted watcher state is unreadable and was not overwritten."""
+
+
 def _processed_path() -> Path:
     return store.state_dir() / "session-end.json"
 
 
+def _watcher_lock_path() -> Path:
+    return store.state_dir() / "session-end.lock"
+
+
+@contextmanager
+def watcher_lock(*, timeout_s: float = 0.0):
+    """Exclusive cross-process claim on one watcher pass.
+
+    Two workers polling the same session DB would otherwise both call the
+    writer for the same idle session, paying twice for one write and
+    racing each other's processed state.
+    """
+    path = _watcher_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    deadline = time.monotonic() + timeout_s
+    try:
+        while True:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise WatcherStateError(
+                        "another memory watcher holds the session-end lock"
+                    ) from None
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+            except OSError:
+                pass
+    finally:
+        os.close(handle)
+
+
 def _load_processed() -> dict[str, float]:
+    """Terminal outcomes recorded so far.
+
+    A corrupt file is reported rather than treated as an empty set: read as
+    empty, every session in it would be handed to the model again, which is
+    the expensive way to lose this file.
+    """
     p = _processed_path()
     if not p.exists():
         return {}
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+        payload = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise WatcherStateError(f"watcher state is unreadable: {p}") from exc
+    if not isinstance(payload, dict):
+        raise WatcherStateError(f"watcher state is not an object: {p}")
+    return {
+        str(key): float(value)
+        for key, value in payload.items()
+        if isinstance(value, (int, float))
+    }
 
 
 def _save_processed(state: dict[str, float]) -> None:
-    _processed_path().write_text(
-        json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8"
+    """Replace the state file whole: write, flush, fsync, rename.
+
+    An interrupted write must not leave half a JSON document behind, so
+    nothing is ever written into the real path directly.
+    """
+    path = _processed_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix="session-end-", suffix=".json.tmp", dir=path.parent,
     )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(state, indent=2, ensure_ascii=False))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o644)
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+def _all_sessions(db: Any) -> list[dict[str, Any]]:
+    """Every session, paged, so the list size cannot silently drop old ones.
+
+    A single ``limit=500`` call returns the 500 most recently updated
+    sessions — which are exactly the ones least likely to be idle.
+    """
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    offset = 0
+    while True:
+        page = db.list_sessions(limit=SESSION_PAGE, offset=offset)
+        if not page:
+            return rows
+        for row in page:
+            session_id = str(row.get("id") or "")
+            if session_id and session_id not in seen:
+                seen.add(session_id)
+                rows.append(row)
+        if len(page) < SESSION_PAGE:
+            return rows
+        offset += SESSION_PAGE
 
 
 def start_idle_session_watcher(
@@ -89,11 +192,15 @@ def _scan(idle_minutes: int) -> int:
     except Exception:
         return 0
     db = default_db()
+    with watcher_lock():
+        return _scan_locked(db, idle_minutes)
+
+
+def _scan_locked(db: Any, idle_minutes: int) -> int:
     cutoff = time.time() - idle_minutes * 60
     processed = _load_processed()
-    sessions = db.list_sessions(limit=500)
     n_done = 0
-    for s in sessions:
+    for s in _all_sessions(db):
         sid = s.get("id")
         updated_at = float(s.get("updated_at", 0))
         if not sid or updated_at == 0:
@@ -110,6 +217,7 @@ def _scan(idle_minutes: int) -> int:
             continue
         if not messages:
             processed[sid] = updated_at
+            _save_processed(processed)
             continue
         left = _process_session(sid, messages)
         # 事件层 tap：空闲会话写入记忆的起止（B 类）。懒 import 防循环。
@@ -124,20 +232,25 @@ def _scan(idle_minutes: int) -> int:
             pass
         if left is None:
             n_done += 1
-            processed[sid] = updated_at
-        elif not left.retryable:
+        elif left.retryable:
+            # Nothing terminal happened, so nothing is recorded: the next
+            # poll offers this session again.
+            logger.info(
+                "memory: write incomplete for %s (%s); will retry",
+                sid, left.reason,
+            )
+            continue
+        else:
             # Offering it again produces the same refusal, so stop
             # offering it. The event above is what says so out loud.
             logger.warning(
                 "memory: giving up on %s (%s)", sid, left.reason
             )
-            processed[sid] = updated_at
-        else:
-            logger.info(
-                "memory: write incomplete for %s (%s); will retry",
-                sid, left.reason,
-            )
-    _save_processed(processed)
+        # A terminal outcome is persisted before the next session is
+        # touched: a crash mid-pass must not replay a model call that
+        # already happened.
+        processed[sid] = updated_at
+        _save_processed(processed)
     return n_done
 
 
@@ -175,13 +288,15 @@ def _process_session(
         verdict = getattr(exc, "retryable", None)
         left = WriteFailure(
             str(exc), retryable=False if verdict is None else bool(verdict),
-            status_reason=type(exc).__name__,
+            reason_code="WRITER_FAILURE_UNKNOWN",
         )
     if left is not None:
-        from .scriptorium.runtime.writer_status import record_current_failure
+        from .scriptorium.runtime.writer_status import (
+            record_active_workspace_failure,
+        )
 
-        record_current_failure(
-            getattr(left, "status_reason", None),
+        record_active_workspace_failure(
+            getattr(left, "reason_code", None),
             retryable=left.retryable,
         )
     return left

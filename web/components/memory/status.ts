@@ -1,26 +1,19 @@
 import type { WriterStatus } from "./types";
 
 export type WriterStatusState =
-  | "empty"
-  | "idle"
+  | "unrecorded"
+  | "up_to_date"
   | "pending"
   | "failed"
-  | "unavailable";
+  | "pending_count_unavailable";
 
+// Ordering comes from the server-stamped `last_outcome`, never from comparing
+// the two timestamps here: two writes inside one millisecond are ordered on
+// the writer's side and indistinguishable on this one.
 export function writerStatusState(status: WriterStatus): WriterStatusState {
-  const failureAt = status.last_failure
-    ? Date.parse(status.last_failure.at)
-    : Number.NaN;
-  const successAt = status.last_success_at
-    ? Date.parse(status.last_success_at)
-    : Number.NaN;
-  if (status.last_failure && (
-    !Number.isFinite(successAt)
-    || !Number.isFinite(failureAt)
-    || failureAt > successAt
-  )) return "failed";
-  if (status.pending_turns === null) return "unavailable";
+  if (status.last_failure && status.last_outcome === "failure") return "failed";
+  if (status.pending_turns === null) return "pending_count_unavailable";
   if (status.pending_turns > 0) return "pending";
-  if (!status.last_success_at && !status.last_failure) return "empty";
-  return "idle";
+  if (!status.last_success_at && !status.last_failure) return "unrecorded";
+  return "up_to_date";
 }

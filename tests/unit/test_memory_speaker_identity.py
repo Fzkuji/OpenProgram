@@ -706,6 +706,7 @@ def test_transaction_stages_v2_source_link_and_rolls_back_failure(
             base_revision=space.revision(),
             patch=patch,
             sources=source,
+            provenance=_test_provenance(),
             git_commit="off",
         )
         source_id = result.source_ids["new-source-fact"]
@@ -725,6 +726,7 @@ def test_transaction_stages_v2_source_link_and_rolls_back_failure(
                 base_revision=failed.revision(),
                 patch=bad_patch,
                 sources=source,
+                provenance=_test_provenance(),
                 git_commit="off",
             )
     finally:
@@ -1167,4 +1169,20 @@ def test_memory_search_schema_and_function_forward_speaker(
     assert (
         'speaker: {"speaker_trusted":false,"speaker_id":"u789",'
         '"speaker_display":"Bo"}' in rendered
+    )
+
+
+def _test_provenance(tier: str = "owner"):
+    """Runtime provenance a direct workspace.update() test must supply."""
+    from openprogram.memory.scriptorium.management.transaction import (
+        SourceProvenance,
+    )
+
+    return SourceProvenance(
+        principal_id="owner/install/0123456789abcdef",
+        speaker_kind="owner" if tier == "owner" else "human",
+        speaker_id="owner/local" if tier == "owner" else "telegram/main/u456",
+        authority_tier=tier,
+        origin_id="session-test/turn-1",
+        speaker_display="Owner" if tier == "owner" else "B",
     )
