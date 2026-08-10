@@ -134,9 +134,11 @@ def test_dispatch_inbound_persists_via_session_db(
             channel="wechat",
             account_id="acct1",
             peer_kind="direct",
-            peer_id="alice",
+            peer_id="group-42",
             user_text="hi there",
             user_display="Alice",
+            speaker_id="user-7",
+            speaker_display="Alice",
         )
     assert reply == "Hello from agent"
 
@@ -153,7 +155,24 @@ def test_dispatch_inbound_persists_via_session_db(
     roles = [m["role"] for m in msgs]
     assert roles == ["user", "assistant"]
     assert msgs[0]["content"] == "hi there"
+    assert msgs[0]["peer_id"] == "group-42"
+    assert msgs[0]["speaker_id"] == "user-7"
+    assert msgs[0]["speaker_display"] == "Alice"
     assert msgs[1]["content"] == "Hello from agent"
+
+
+def test_turn_request_keeps_existing_positional_field_order() -> None:
+    from openprogram.agent.dispatcher import TurnRequest
+
+    request = TurnRequest(
+        "session", "text", "agent", "tui", "Peer", "peer-id",
+        "model-name", "high",
+    )
+
+    assert request.model_override == "model-name"
+    assert request.thinking_effort == "high"
+    assert request.speaker_id is None
+    assert request.speaker_display is None
 
 
 def test_dispatch_inbound_broadcasts_channel_turn(

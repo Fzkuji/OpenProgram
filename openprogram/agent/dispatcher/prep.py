@@ -99,6 +99,8 @@ def prepare_turn(
         "source": req.source,
         "peer_display": req.peer_display,
         "peer_id": req.peer_id,
+        "speaker_id": req.speaker_id,
+        "speaker_display": req.speaker_display,
         # Stamp which agent this turn was sent to so the UI can render
         # per-agent avatar / label / colour. Same field on assistant
         # below — the pair lets the UI tag both halves of a turn.

@@ -1071,11 +1071,11 @@
 
     <rect x="376" y="288" width="336" height="120" rx="8" fill="#12110b" stroke="#5aad4e" stroke-width="1.5"/>
     <text x="392" y="310" fill="#5aad4e" font-size="12" font-weight="700">出口二 · sources/归档</text>
-    <text x="392" y="330" fill="#6b6a63" font-size="10" font-family="Menlo,monospace">同一个槽位，外加一行给索引的注释</text>
-    <text x="392" y="354" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">&lt;!-- source-id:openprogram/g1/m3 --&gt;</text>
-    <text x="392" y="371" font-size="10.5" font-family="Menlo,monospace"><tspan fill="#2db3d5">&lt;!-- speaker-id:702 --&gt;</tspan></text>
-    <text x="392" y="388" font-size="10.5" font-family="Menlo,monospace"><tspan fill="#6b6a63">[2026-…] </tspan><tspan fill="#5aad4e">乙 (702)</tspan><tspan fill="#6b6a63">: 预算8万</tspan></text>
-    <text x="392" y="402" fill="#6b6a63" font-size="9.5">不按人分目录：归档按对话归，人是最容易变的那个属性</text>
+    <text x="392" y="330" fill="#6b6a63" font-size="10" font-family="Menlo,monospace">身份注释 + 正文字面行数边界</text>
+    <text x="392" y="350" fill="#bdb9a6" font-size="10.5" font-family="Menlo,monospace">&lt;!-- source-id:openprogram/g1/m3 --&gt;</text>
+    <text x="392" y="366" font-size="10.5" font-family="Menlo,monospace"><tspan fill="#2db3d5">&lt;!-- speaker-id:702 --&gt;</tspan></text>
+    <text x="392" y="382" fill="#d4843a" font-size="10.5" font-family="Menlo,monospace">&lt;!-- record-lines:1 --&gt;</text>
+    <text x="392" y="399" font-size="10.5" font-family="Menlo,monospace"><tspan fill="#6b6a63">[2026-…] </tspan><tspan fill="#5aad4e">乙 (702)</tspan><tspan fill="#6b6a63">: 预算8万</tspan></text>
 
     <rect x="728" y="288" width="408" height="120" rx="8" fill="#0f2429" stroke="#2db3d5" stroke-width="1.6"/>
     <text x="744" y="310" fill="#2db3d5" font-size="12" font-weight="700">读 · 搭在search已经有的过滤上</text>
@@ -1088,23 +1088,25 @@
     <rect x="24" y="424" width="552" height="80" rx="8" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
     <text x="40" y="446" fill="#5aad4e" font-size="12" font-weight="700">旧记录怎么办：不改写，索引退一步读</text>
     <text x="40" y="466" fill="#8a8675" font-size="10.5">归档按契约和按校验都是只追加的（workspace.py:187），对它做一趟迁移，</text>
-    <text x="40" y="482" fill="#8a8675" font-size="10.5">恰好是这套事务存在就是为了拒掉的那件事。没有speaker-id那行的记录，</text>
-    <text x="40" y="498" fill="#8a8675" font-size="10.5">标签从content最前面读，那正是前缀落地之后运行时一直在写的形状。</text>
+    <text x="40" y="482" fill="#8a8675" font-size="10.5">恰好是这套事务存在就是为了拒掉的那件事。没有record-lines的历史记录，</text>
+    <text x="40" y="498" fill="#8a8675" font-size="10.5">仅当记录头是user时，才从第一行content前缀做只读兼容解析。</text>
 
     <rect x="592" y="424" width="544" height="80" rx="8" fill="#241f10" stroke="#d4843a" stroke-width="1.4"/>
     <text x="608" y="446" fill="#d4843a" font-size="12" font-weight="700">在这一处信正文，为什么可以</text>
-    <text x="608" y="466" fill="#8a8675" font-size="10.5">结果是一个检索过滤，不是存下来的事实；另一条路是至今写下的</text>
-    <text x="608" y="482" fill="#8a8675" font-size="10.5">所有记录都答不了。没有人说过的行（网页/命令行/TUI，以及每一条</text>
-    <text x="608" y="498" fill="#8a8675" font-size="10.5">assistant回复）不带发言人，任何发言人过滤都不命中，这是答案本身。</text>
+    <text x="608" y="466" fill="#8a8675" font-size="10.5">只为没有正文边界的旧user记录保留检索兼容；新格式即使</text>
+    <text x="608" y="482" fill="#8a8675" font-size="10.5">正文以[名字]开头，也只认结构化header。网页/命令行/TUI和</text>
+    <text x="608" y="498" fill="#8a8675" font-size="10.5">assistant不带发言人，任何发言人过滤都不命中。</text>
   </svg>
   </div>
   <div class="legend">
     <b>过滤只在<code>sources/</code>底下有意义</b>：一条主题段落是写入方关于某个主题写的话，没有人说过它。
     所以"张三说了什么"和"关于张三知道什么"是两个问题，后一个是<code>path_prefix=topics/people/</code>，今天就能用。
     带上发言人就是把检索收到源记录上，并在结果里说明这一点。<br>
-    <b>改动面</b>：十二个文件，约四十五行。四个把id带过dispatcher，四个是记忆记录和它的两个渲染出口，
-    三个是检索和工具，一个是写入prompt里那句话。BM25索引每次调用都从文件重建
-    （<code>persist=False</code>，<code>inspect.py:323</code>），磁盘上没有要迁移的东西。
+    <b>正文边界</b>：新归档用<code>record-lines:N</code>声明该记录占用的字面LF行数，parser和去重扫描都按N跳过正文。
+    因此正文即使包含合法hash anchor、<code>source-id</code>、<code>speaker-id</code>和记录行，也不能生成第二条事件或阻止后续真实记录归档。
+    CRLF和尾换行按字面保留。没有该边界的旧格式只做受限兼容解析，不改写旧文件。<br>
+    <b>改动面</b>：dispatcher传输、记忆记录和两个渲染出口、source framing、BM25/inspect和工具。
+    BM25索引每次调用仍从文件重建（<code>persist=False</code>），持久缓存格式升到v5并忽略v4数据。
   </div>
 
   <div class="tbl">
@@ -1156,17 +1158,16 @@
 
   <h2 id="status"><span class="num">12</span>实现状态</h2>
   <div class="note">
-    <b>第06到08节已经在跑。</b>入站消息的正文由<code>channels/base.py</code>的
-    <code>speaker_prefix()</code>加上<code>[显示名 (id)] </code>，写入prompt里加了一句告诉模型这个名字是谁说的。
-    下游一个字段都没加：<code>_records()</code>仍然只取<code>role</code>，
-    <code>SourceRecord</code>、<code>render_conversation</code>、<code>source_archive</code>一行未动，
-    身份跟着<code>content</code>自己走到了主题文件。<br>
-    网页、命令行、TUI不经过<code>channels/base.py</code>，输出跟改之前逐字一致，
-    <code>test_channels_base_inbound.py</code>里有一条测试盯着这一点。<br>
-    <b>第09到11节还没写。</b>今天没有任何东西清洗正文，<code>prompts/write.py</code>没有说哪个标签是运行时写的，
-    也没有哪条记录带着发言人可以摆到冒号前面；<code>inspect.search</code>只按路径和日期过滤。
-    <code>channels/_access.py</code>的docstring已经写着每条user消息带<code>peer_display</code>和<code>sender_id</code>
-    一路到<code>SourceRecord</code>，这句话今天不成立，第11节落地之后才成立。<br>
+    <b>第06到11节已经实现。</b>渠道入口把实际发信人的<code>speaker_id</code>和
+    <code>speaker_display</code>独立于正文和路由<code>peer_id</code>传到持久化节点；正文仍保留
+    <code>[显示名 (id)] </code>兼容前缀，但写入和检索不从正文反推新记录身份。<br>
+    <code>SourceRecord.speaker_label</code>统一生成安全的一行记录头，写入prompt明确只认冒号前的运行时标签。
+    source归档对speaker id做percent编码，并用<code>record-lines</code>隔离可伪造正文；BM25 v5按稳定id、显示名或标签过滤，
+    与路径和日期过滤组合，结果只来自<code>sources/</code>。<code>memory_search</code>已暴露<code>speaker</code>，
+    embedding与speaker组合会显式返回<code>INVALID_ARGUMENT</code>，不会忽略过滤。<br>
+    网页、命令行、TUI以及assistant轮次没有可信speaker字段；新framed记录保持speakerless。
+    只有没有<code>record-lines</code>的旧user记录可从历史正文前缀做检索兼容，旧归档不改写。
+    完整伪造块、保留role显示名、CRLF/尾换行、v4缓存重建和独立进程导入均有回归测试。<br>
     文字说明在<code>docs/reference/design/memory/overview.md</code>的"谁说的"一节，
     产品侧在<code>docs/integrations/channels.md</code>。
   </div>

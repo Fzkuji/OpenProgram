@@ -31,7 +31,7 @@ policy:
 
 多人共用: allowlist 放多少人都行, 一个群里的每个人都可以批准. 他们共
 用同一个 agent 和同一份记忆工作区 (``<state>/memory/``), 记忆按发言人
-记录谁说了什么 —— 每条 user 消息带 ``peer_display`` 和 ``sender_id``,
+记录谁说了什么 —— 每条渠道 user 消息带 ``speaker_display`` 和 ``speaker_id``,
 一路带到 ``memory/scriptorium`` 的 ``SourceRecord``. 门禁判定的是"这
 个人能不能进", 不是"能进几个人".
 """

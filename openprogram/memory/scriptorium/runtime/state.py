@@ -10,6 +10,8 @@ from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from openprogram._text import normalize_identity_header_part
+
 from ..workspace_layout import runtime_dir
 
 
@@ -22,10 +24,24 @@ class SourceRecord:
     role: str
     content: str
     timestamp: str | None = None
+    speaker_id: str | None = None
+    speaker_display: str | None = None
 
     @property
     def source_id(self) -> str:
         return f"{self.provider}/{self.thread_id}/{self.message_id}"
+
+    @property
+    def speaker_label(self) -> str:
+        display = normalize_identity_header_part(
+            "" if self.speaker_display is None else str(self.speaker_display)
+        )
+        speaker_id = normalize_identity_header_part(
+            "" if self.speaker_id is None else str(self.speaker_id)
+        )
+        if display and speaker_id and display != speaker_id:
+            return f"{display} ({speaker_id})"
+        return display or speaker_id or self.role
 
 
 @dataclass

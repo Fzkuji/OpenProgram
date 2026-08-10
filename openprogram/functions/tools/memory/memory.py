@@ -65,6 +65,10 @@ SEARCH_SPEC: dict[str, Any] = {
                 "type": "string",
                 "description": "restrict to a subtree, e.g. topics/people/",
             },
+            "speaker": {
+                "type": "string",
+                "description": "restrict source records to this speaker ID or label",
+            },
         },
         "required": ["query"],
     },
@@ -75,6 +79,7 @@ def memory_search(
     query: str | None = None,
     top_k: int = MAX_SNIPPETS,
     path_prefix: str | None = None,
+    speaker: str | None = None,
     **_: Any,
 ) -> str:
     if not (query or "").strip():
@@ -83,6 +88,7 @@ def memory_search(
         found = inspect.search(
             _root(), query, top_k=int(top_k or MAX_SNIPPETS),
             path_prefix=path_prefix or None,
+            speaker=speaker or None,
         )
     except TransactionError as exc:
         return _fail(exc)

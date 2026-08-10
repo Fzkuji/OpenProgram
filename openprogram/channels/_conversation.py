@@ -74,6 +74,8 @@ def dispatch_inbound(
     peer_id: str,
     user_text: str,
     user_display: str = "",
+    speaker_id: str | None = None,
+    speaker_display: str | None = None,
     progress_stream: bool = False,
     attachments: Optional[list[dict]] = None,
 ) -> Optional[str]:
@@ -156,7 +158,8 @@ def dispatch_inbound(
         return _run_session_turn(
             channel=channel, account_id=account_id, peer=peer,
             peer_id=peer_id, user_text=user_text,
-            user_display=user_display, progress_stream=progress_stream,
+            user_display=user_display, speaker_id=speaker_id,
+            speaker_display=speaker_display, progress_stream=progress_stream,
             agent_id=agent_id, session_key=session_key,
             attachments=attachments,
         )
@@ -170,6 +173,8 @@ def _run_session_turn(
     peer_id: str,
     user_text: str,
     user_display: str,
+    speaker_id: str | None,
+    speaker_display: str | None,
     progress_stream: bool,
     agent_id: str,
     session_key: str,
@@ -287,6 +292,8 @@ def _run_session_turn(
         source=channel,
         peer_display=user_display or str(peer_id),
         peer_id=str(peer_id),
+        speaker_id=speaker_id,
+        speaker_display=speaker_display,
         permission_mode=permission_from_config(
             run_cfg, default=_pdef.get("permission_mode") or "ask"),
         permission_rules=_load_merged_rules(session_key),

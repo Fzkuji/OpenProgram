@@ -24,6 +24,11 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
+from openprogram._text import (
+    IDENTITY_HEADER_PART_MAX_CHARS,
+    normalize_identity_header_part,
+)
+
 
 #: quoted 文本进 agent 上下文的截断上限 — 被引用消息只是背景, 不值得
 #: 占大量 token.
@@ -31,7 +36,7 @@ QUOTED_MAX_CHARS = 500
 
 #: 发言人标签里显示名的截断上限. 显示名是发信人自己在平台上填的, 长度
 #: 由平台管, 这里只挡住病态长度不让它盖过消息本身.
-SENDER_NAME_MAX_CHARS = 64
+SENDER_NAME_MAX_CHARS = IDENTITY_HEADER_PART_MAX_CHARS
 
 
 def _quoted_block(quoted: str) -> str:
@@ -44,27 +49,17 @@ def _quoted_block(quoted: str) -> str:
 
 
 def _one_line(value: str) -> str:
-    """身份字段压成一行, 方括号换成圆括号.
-
-    显示名是发信人在平台上自己设的任意文本. 换行会把记忆归档里的一条
-    记录劈成两条, 让证据脚注指向的行对不上内容; 方括号能在正文里伪造
-    出第二个发言人前缀. 两样都在这里消掉 — openclaw 的
-    ``sanitizeEnvelopeHeaderPart`` 同理.
-    """
-    s = value.replace("[", "(").replace("]", ")")
-    s = " ".join(s.split())
-    if len(s) > SENDER_NAME_MAX_CHARS:
-        s = s[:SENDER_NAME_MAX_CHARS] + "…"
-    return s
+    """Compatibility wrapper for the shared runtime-header normalizer."""
+    return normalize_identity_header_part(value)
 
 
 def speaker_prefix(user_id: str, user_display: str) -> str:
     """入站正文的发言人前缀 ``"[显示名 (id)] "``, 无身份可用时是空串.
 
     一个群 (或 ``session_scope: main`` 的 agent) 把好几个人放进同一条
-    会话, 而消息本身只有 ``role: user``. 身份走正文而不走结构化字段:
-    正文往下每一站原样搬运, session store、分支、写入 prompt、sources
-    归档都不用为它加字段.
+    会话, 而消息本身只有 ``role: user``. 这个正文前缀只保留给模型可见
+    的兼容表示；可信 ``speaker_id`` / ``speaker_display`` 独立传递并持久
+    化，记忆写入禁止从正文前缀反推身份.
 
     显示名读得出是谁, 但会改也会重名; id 不变但读不出是谁, 所以两个
     都带上.
@@ -239,7 +234,8 @@ class Channel(abc.ABC):
         if ch_msg.quoted_text:
             user_text = _quoted_block(ch_msg.quoted_text) + "\n\n" + user_text
 
-        # ---- 谁说的 → 正文最前面, 下游一个字段都不加 --------------------
+        # 正文前缀是模型可见兼容副本；可信身份只走独立 speaker 字段，
+        # 下游不得从正文反推。
         user_text = speaker_prefix(ch_msg.user_id, ch_msg.user_display) + user_text
 
         from openprogram.channels._conversation import dispatch_inbound
@@ -250,6 +246,8 @@ class Channel(abc.ABC):
             peer_id=peer_id,
             user_text=user_text,
             user_display=ch_msg.user_display or peer_id,
+            speaker_id=ch_msg.user_id or None,
+            speaker_display=ch_msg.user_display or None,
             progress_stream=self.progress_stream,
             attachments=turn_attachments or None,
         )

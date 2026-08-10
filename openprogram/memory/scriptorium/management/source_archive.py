@@ -7,7 +7,38 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from openprogram._text import normalize_identity_header_part
+
 from ..runtime.state import SourceRecord
+
+
+_ANCHOR_LINE_RE = re.compile(r'\s*<a id="([^"]+)"></a>\s*')
+_SOURCE_ID_LINE_RE = re.compile(r"\s*<!--\s*source-id:([^>]+?)\s*-->\s*")
+_SPEAKER_ID_LINE_RE = re.compile(r"\s*<!--\s*speaker-id:[^>]*?\s*-->\s*")
+_RECORD_LINES_LINE_RE = re.compile(
+    r"\s*<!--\s*record-lines:(\d{1,9})\s*-->\s*"
+)
+_SOURCE_RECORD_RE = re.compile(r"^\[[^]]*\]\s+.+?: .*$")
+
+
+def _encode_speaker_id(value: str) -> str:
+    """Percent-encode an external ID so it cannot alter an HTML comment."""
+    return quote(value, safe="").replace("-", "%2D")
+
+
+def _record_lines(value: str) -> list[str]:
+    """Split on literal LF so joining with LF reproduces ``value`` exactly."""
+    return value.split("\n")
+
+
+def _read_literal_text(path: Path) -> str:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return handle.read()
+
+
+def _write_literal_text(path: Path, value: str) -> None:
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(value)
 
 
 class SourceArchiveMixin:
@@ -130,35 +161,112 @@ class SourceArchiveMixin:
         for relative, rows in grouped.items():
             path = target_root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
-            text = path.read_text(encoding="utf-8") if path.exists() else ""
-            known = set(re.findall(r"<!-- source-id:([^>]+) -->", text))
+            text = _read_literal_text(path) if path.exists() else ""
+            known = self._known_source_ids(text)
             additions = []
             for record in rows:
                 refs.append(record.source_id)
                 if record.source_id in known:
                     continue
                 _target, anchor = self._provider_source_location(record.source_id)
-                additions.extend([
+                header = [
                     f'<a id="{anchor}"></a>',
                     f"<!-- source-id:{record.source_id} -->",
-                    f"[{record.timestamp or ''}] {record.role}: {record.content}",
+                ]
+                normalized_speaker_id = normalize_identity_header_part(
+                    str(record.speaker_id or "")
+                )
+                normalized_speaker_display = normalize_identity_header_part(
+                    str(record.speaker_display or "")
+                )
+                if normalized_speaker_id or normalized_speaker_display:
+                    header.append(
+                        "<!-- speaker-id:"
+                        f"{_encode_speaker_id(str(record.speaker_id or ''))} -->"
+                    )
+                record_text = (
+                    f"[{record.timestamp or ''}] "
+                    f"{record.speaker_label}: {record.content}"
+                )
+                record_lines = _record_lines(record_text)
+                additions.extend([
+                    *header,
+                    f"<!-- record-lines:{len(record_lines)} -->",
+                    *record_lines,
                     "",
                 ])
                 known.add(record.source_id)
             if additions:
-                body = text.rstrip()
                 # Staged sources are read-only to the writer; archiving is the
                 # Runtime's own append and restores the mode afterwards.
                 if path.exists():
                     path.chmod(0o644)
-                path.write_text(
-                    (body + "\n\n" if body else f"# {rows[0].thread_id}\n\n")
-                    + "\n".join(additions).rstrip()
-                    + "\n",
-                    encoding="utf-8",
+                if text:
+                    separator = (
+                        "" if text.endswith("\n\n")
+                        else "\n" if text.endswith("\n")
+                        else "\n\n"
+                    )
+                    prefix = text + separator
+                else:
+                    prefix = f"# {rows[0].thread_id}\n\n"
+                _write_literal_text(
+                    path,
+                    prefix + "\n".join(additions),
                 )
         if root is None:
             self._refresh_stage()
         else:
             self._protect_staged_sources()
         return refs
+
+    @staticmethod
+    def _known_source_ids(text: str) -> set[str]:
+        """Read runtime headers and skip declared multi-line record bodies."""
+        lines = text.split("\n")
+        known: set[str] = set()
+        index = 0
+        while index + 1 < len(lines):
+            anchor = _ANCHOR_LINE_RE.fullmatch(lines[index])
+            source = _SOURCE_ID_LINE_RE.fullmatch(lines[index + 1])
+            if source is None or anchor is None:
+                index += 1
+                continue
+            source_id = source.group(1).strip()
+            location = SourceArchiveMixin._provider_source_location(source_id)
+            if location is None or anchor.group(1) != location[1]:
+                index += 1
+                continue
+            cursor = index + 2
+            if (
+                cursor < len(lines)
+                and _SPEAKER_ID_LINE_RE.fullmatch(lines[cursor]) is not None
+            ):
+                cursor += 1
+            count = (
+                _RECORD_LINES_LINE_RE.fullmatch(lines[cursor])
+                if cursor < len(lines)
+                else None
+            )
+            if count is not None:
+                record_count = int(count.group(1))
+                record_index = cursor + 1
+                record_end = record_index + record_count
+                if (
+                    record_count < 1
+                    or record_end > len(lines)
+                    or _SOURCE_RECORD_RE.match(lines[record_index]) is None
+                ):
+                    index += 1
+                    continue
+                known.add(source_id)
+                index = record_end
+                continue
+            if cursor < len(lines) and _SOURCE_RECORD_RE.match(lines[cursor]):
+                # Historical archives have no body boundary. Compatibility is
+                # intentionally limited to their first physical record line.
+                known.add(source_id)
+                index = cursor + 1
+                continue
+            index += 1
+        return known

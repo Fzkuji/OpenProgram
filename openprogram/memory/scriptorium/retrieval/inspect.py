@@ -305,6 +305,7 @@ def search(
     path_prefix: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    speaker: str | None = None,
 ) -> dict[str, Any]:
     if method not in ("bm25", "embedding"):
         raise TransactionError(
@@ -315,6 +316,11 @@ def search(
     capped = max(1, min(int(top_k), 10))
     root = Path(memory_dir).resolve()
     if method == "embedding":
+        if speaker is not None:
+            raise TransactionError(
+                "INVALID_ARGUMENT",
+                "speaker filter is not supported with embedding search",
+            )
         return {"method": "embedding", "results": _embedding_search(
             root, query, capped, path_prefix, date_from, date_to
         )}
@@ -327,6 +333,7 @@ def search(
         path_prefix=path_prefix,
         date_from=date_from,
         date_to=date_to,
+        speaker=speaker,
     )
     return {"method": "bm25", "results": [_present(hit) for hit in hits]}
 
@@ -366,7 +373,8 @@ def _embedding_search(
 def _present(hit: dict[str, Any]) -> dict[str, Any]:
     keep = (
         "event_id", "path", "line", "headings", "date", "dates",
-        "content", "refs", "final_score", "score",
+        "content", "refs", "speaker_id", "speaker_display", "speaker_label",
+        "final_score", "score",
     )
     result = {key: hit[key] for key in keep if key in hit}
     if isinstance(result.get("content"), str):

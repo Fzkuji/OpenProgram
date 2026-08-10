@@ -17,8 +17,11 @@ from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, unquote
 
 from rank_bm25 import BM25Plus
+
+from openprogram._text import normalize_identity_header_part
 
 from ..markdown.syntax import (
     definition_match,
@@ -41,7 +44,14 @@ _DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _TEMPORAL_VALUE_RE = re.compile(r"\d{4}(?:-\d{2}(?:-\d{2})?)?")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _EVENT_RE = re.compile(r"<!--\s*memory-event:(ev_[0-9a-f]+)\s*-->")
-_SOURCE_ID_RE = re.compile(r"<!--\s*source-id:([^>]+?)\s*-->")
+_SOURCE_ID_LINE_RE = re.compile(r"\s*<!--\s*source-id:([^>]+?)\s*-->\s*")
+_SPEAKER_ID_LINE_RE = re.compile(r"\s*<!--\s*speaker-id:([^>]*?)\s*-->\s*")
+_RECORD_LINES_LINE_RE = re.compile(
+    r"\s*<!--\s*record-lines:(\d{1,9})\s*-->\s*"
+)
+_ANCHOR_LINE_RE = re.compile(r'\s*<a id="([^"]+)"></a>\s*')
+_SOURCE_RECORD_RE = re.compile(r"^\[([^]]*)\]\s+(.+?): (.*)$")
+_LEGACY_SPEAKER_RE = re.compile(r"^\[([^]\r\n]+)\]\s*(.*)$")
 _COMMENT_RE = re.compile(r"<!--.*?-->")
 _MARKDOWN_LINK_RE = re.compile(r"\[([^]]+)\]\(([^)]+)\)")
 _BLOCK_SUFFIX_RE = re.compile(r"\s+\^([A-Za-z0-9-]+)\s*$")
@@ -59,6 +69,9 @@ class MemoryEvent:
     dates: list[str]
     content: str
     refs: list[str]
+    speaker_id: str = ""
+    speaker_display: str = ""
+    speaker_label: str = ""
 
 
 def tokenize(text: str) -> list[str]:
@@ -334,44 +347,164 @@ def parse_topic_file(path: Path, topics_root: Path) -> list[MemoryEvent]:
     return events
 
 
+def _runtime_source_id(
+    lines: list[str], index: int, relative: str
+) -> str:
+    """Return an adjacent runtime anchor/source header pair, or empty."""
+    if index + 1 >= len(lines):
+        return ""
+    anchor = _ANCHOR_LINE_RE.fullmatch(lines[index])
+    source = _SOURCE_ID_LINE_RE.fullmatch(lines[index + 1])
+    if anchor is None or source is None:
+        return ""
+    source_id = source.group(1).strip()
+    parts = source_id.split("/", 2)
+    if len(parts) != 3 or any(not part for part in parts):
+        return ""
+    provider, thread_id, _message_id = parts
+    expected_path = (
+        Path(quote(provider, safe="-_."))
+        / f"{quote(thread_id, safe='-_.')}.md"
+    ).as_posix()
+    expected_anchor = "source-" + hashlib.sha256(
+        source_id.encode()
+    ).hexdigest()[:16]
+    if relative != expected_path or anchor.group(1) != expected_anchor:
+        return ""
+    return source_id
+
+
+def _structured_speaker(
+    label: str, encoded_id: str
+) -> tuple[str, str, str]:
+    """Decode identity only from a runtime speaker marker and safe label."""
+    speaker_id = unquote(encoded_id, errors="replace")
+    normalized_id = normalize_identity_header_part(speaker_id)
+    raw_label = label.strip()
+    suffix = f" ({normalized_id})" if normalized_id else ""
+    if suffix and raw_label.endswith(suffix):
+        display_value = raw_label[:-len(suffix)]
+    elif raw_label != normalized_id:
+        display_value = raw_label
+    else:
+        display_value = ""
+    display = normalize_identity_header_part(display_value)
+    if display and normalized_id and display != normalized_id:
+        safe_label = f"{display} ({normalized_id})"
+    else:
+        safe_label = display or normalized_id
+    return speaker_id, display, safe_label
+
+
+def _legacy_speaker(label: str, body: str) -> tuple[str, str, str]:
+    """Read the historical body prefix only for a ``user`` record."""
+    safe_label = normalize_identity_header_part(label.strip())
+    if safe_label.casefold() not in {"user", "assistant", "system", "tool"}:
+        return "", safe_label, safe_label
+    if safe_label.casefold() != "user":
+        return "", "", ""
+    legacy = _LEGACY_SPEAKER_RE.match(body)
+    if legacy is None:
+        return "", "", ""
+    legacy_label = normalize_identity_header_part(legacy.group(1).strip())
+    both = re.fullmatch(r"(.+) \(([^()]*)\)", legacy_label)
+    if both is not None:
+        return both.group(2), both.group(1), legacy_label
+    return "", legacy_label, legacy_label
+
+
 def parse_source_file(path: Path, sources_root: Path) -> list[MemoryEvent]:
     """Parse each archived source turn as one searchable record."""
     relative = path.relative_to(sources_root).as_posix()
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        lines = handle.read().split("\n")
     headings: list[str] = []
-    pending_source_id = ""
     events: list[MemoryEvent] = []
-    for line_number, line in enumerate(
-        path.read_text(encoding="utf-8").splitlines(), start=1
-    ):
+    index = 0
+    while index < len(lines):
+        line = lines[index]
         heading = _HEADING_RE.match(line)
         if heading:
             level = len(heading.group(1))
             headings = headings[: level - 1] + [heading.group(2).strip()]
+            index += 1
             continue
-        source_id = _SOURCE_ID_RE.search(line)
+
+        source_id = _runtime_source_id(lines, index, relative)
         if source_id:
-            pending_source_id = source_id.group(1).strip()
-            continue
+            record_index = index + 2
+            encoded_id = None
+            if record_index < len(lines):
+                speaker = _SPEAKER_ID_LINE_RE.fullmatch(lines[record_index])
+                if speaker is not None:
+                    encoded_id = speaker.group(1).strip()
+                    record_index += 1
+            record_count = 1
+            framed = False
+            if record_index < len(lines):
+                count = _RECORD_LINES_LINE_RE.fullmatch(lines[record_index])
+                if count is not None:
+                    framed = True
+                    record_count = int(count.group(1))
+                    record_index += 1
+            if record_index < len(lines):
+                record_line = lines[record_index]
+                record = _SOURCE_RECORD_RE.match(record_line)
+                record_end = record_index + record_count
+                if (
+                    record is not None
+                    and record_count > 0
+                    and record_end <= len(lines)
+                ):
+                    if encoded_id is not None:
+                        speaker_id, speaker_display, speaker_label = (
+                            _structured_speaker(record.group(2), encoded_id)
+                        )
+                    elif framed:
+                        speaker_id, speaker_display, speaker_label = "", "", ""
+                    else:
+                        speaker_id, speaker_display, speaker_label = (
+                            _legacy_speaker(record.group(2), record.group(3))
+                        )
+                    record_text = "\n".join(lines[record_index:record_end])
+                    content = _clean_markdown(record_text)
+                    event_date = _date(record_text)
+                    events.append(MemoryEvent(
+                        event_id=source_id,
+                        path=f"sources/{relative}",
+                        line=record_index + 1,
+                        headings=list(headings),
+                        date=event_date,
+                        dates=[event_date] if event_date else [],
+                        content=content,
+                        refs=[source_id],
+                        speaker_id=speaker_id,
+                        speaker_display=speaker_display,
+                        speaker_label=speaker_label,
+                    ))
+                    index = record_end
+                    continue
+
         if not line.strip() or line.lstrip().startswith(("<a ", "<!--")):
+            index += 1
             continue
-        refs = [pending_source_id] if pending_source_id else _refs(line)
+        refs = _refs(line)
         content = _clean_markdown(line)
-        if not refs or not content:
-            continue
-        event_date = _date(line)
-        events.append(MemoryEvent(
-            event_id=pending_source_id or _stable_id(
-                f"sources/{relative}", line_number, content, refs
-            ),
-            path=f"sources/{relative}",
-            line=line_number,
-            headings=list(headings),
-            date=event_date,
-            dates=[event_date] if event_date else [],
-            content=content,
-            refs=refs,
-        ))
-        pending_source_id = ""
+        if refs and content:
+            event_date = _date(line)
+            events.append(MemoryEvent(
+                event_id=_stable_id(
+                    f"sources/{relative}", index + 1, content, refs
+                ),
+                path=f"sources/{relative}",
+                line=index + 1,
+                headings=list(headings),
+                date=event_date,
+                dates=[event_date] if event_date else [],
+                content=content,
+                refs=refs,
+            ))
+        index += 1
     return events
 
 
@@ -442,14 +575,14 @@ class MemoryBM25Index:
             return
         try:
             payload = json.loads(self.cache_path.read_text(encoding="utf-8"))
-            if payload.get("version") == 4 and isinstance(payload.get("files"), dict):
+            if payload.get("version") == 5 and isinstance(payload.get("files"), dict):
                 self._files = payload["files"]
         except (OSError, ValueError, TypeError):
             self._files = {}
 
     def _write_cache(self) -> None:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
-        payload = {"version": 4, "files": self._files}
+        payload = {"version": 5, "files": self._files}
         fd, temporary = tempfile.mkstemp(prefix=f"{self._runtime_name}-bm25-", dir=self.memory_dir)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -545,6 +678,7 @@ class MemoryBM25Index:
         path_prefix: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
+        speaker: str | None = None,
         rerank: bool = True,
     ) -> list[dict[str, Any]]:
         self.refresh()
@@ -553,6 +687,13 @@ class MemoryBM25Index:
             return []
 
         time_window = _query_time_window(date_from, date_to)
+        speaker_keys: set[str] = set()
+        if speaker:
+            speaker_value = str(speaker).strip()
+            speaker_keys = {
+                speaker_value.casefold(),
+                normalize_identity_header_part(speaker_value).casefold(),
+            }
         candidates = []
         for event in self.events:
             if path_prefix:
@@ -561,6 +702,20 @@ class MemoryBM25Index:
                     continue
             if not _event_overlaps_window(event, time_window):
                 continue
+            if speaker_keys:
+                identities = (
+                    event.speaker_id,
+                    event.speaker_display,
+                    event.speaker_label,
+                )
+                identity_keys = {
+                    value.casefold() for value in identities if value
+                }
+                if (
+                    not event.path.startswith("sources/")
+                    or speaker_keys.isdisjoint(identity_keys)
+                ):
+                    continue
             candidates.append(event)
         if not candidates:
             return []

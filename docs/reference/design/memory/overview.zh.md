@@ -434,7 +434,7 @@ agents。在这个接口上再开一条私路，只会变成绕过它的办法�
 
 ## 附录：实现状态
 
-除了"哪些轮次已经写进记忆"和"谁说的"最后那两节，上面的内容都已经在跑。
+除了"哪些轮次已经写进记忆"最后一节，上面的内容都已经在跑。
 
 "哪些轮次已经写进记忆"现在跑的仍是位置游标：`runtime.json`里放
 `cursors: {thread: {message_id, ordinal}}`，`runtime/online.py`只认领序号大于
@@ -442,8 +442,18 @@ agents。在这个接口上再开一条私路，只会变成绕过它的办法�
 [`written-marker.zh.md`](written-marker.zh.md)；周边这些选择从哪来、还有哪一条
 被否掉了，见[`memory-adoption.html`](memory-adoption.html)。
 
-"正文能伪造出第二个标签"今天是个缺陷，补法还没写。`speaker_prefix`清洗显示名和
-id，没有任何东西清洗正文；`prompts/write.py`没有说哪个标签是运行时写的；也没有
-哪条记录带着发言人可以摆到冒号前面。"按发言人查"就是那个字段加上那个过滤，两样
-都不存在：`SourceRecord`只有`role`和`content`，`render_conversation`和归档两处印
-的都是`role`，`inspect.search`只按路径和日期过滤。
+"谁说的"已经按独立可信字段实现。渠道入口把实际发信人的`speaker_id`和
+`speaker_display`与路由`peer_id`、正文分开传到持久化节点；网页、命令行、TUI和
+assistant轮次不合成身份。`SourceRecord.speaker_label`只规范化运行时字段来生成记录
+头，正文保持原样，写入prompt也明确只有`[ref] speaker: text`冒号前的名字建立身份。
+
+新source记录在`source-id`和可选的percent编码`speaker-id`之后写
+`record-lines:N`。归档和parser按字面LF计数并跳过整段正文，所以正文里的完整合法
+anchor/source/speaker伪块不会生成事件或干扰去重，CRLF和尾换行仍原样保存。没有
+`record-lines`的旧记录不改写；只有旧`user`记录可从历史正文前缀做只读检索兼容。
+
+BM25缓存格式是v5，`speaker`可按稳定id、规范化显示名或标签做不区分大小写的精确
+过滤，并与路径、日期和排序组合；带speaker的结果只来自`sources/`。
+`memory_search`已经传递这个参数，`MemoryProvider.search`和`memory_grep`保持不变。
+embedding结果没有等价身份字段，因此`method=embedding`与`speaker`组合会显式返回
+`INVALID_ARGUMENT`，不会静默忽略过滤。

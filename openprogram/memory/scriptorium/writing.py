@@ -139,6 +139,8 @@ def _records(
             role=role,
             content=text,
             timestamp=_observed_at(message.get("timestamp")),
+            speaker_id=message.get("speaker_id"),
+            speaker_display=message.get("speaker_display"),
         ))
     return rows
 
@@ -218,7 +220,7 @@ def write_session(
             agent=agent,
             task=render_writer_task([{
                 "observation_date": observed,
-                "turns": [(r.role, r.content) for r in batch],
+                "turns": [(r.speaker_label, r.content) for r in batch],
                 "refs": [r.source_id for r in batch],
             }]),
             stage="write",
