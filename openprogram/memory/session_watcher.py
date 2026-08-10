@@ -169,11 +169,13 @@ def _process_session(
             messages, session_id=session_id, force=True,
         )
     except Exception as exc:  # noqa: BLE001
-        # A provider that lets an exception out says nothing about
-        # whether the next poll would fare better, and the conversation
-        # is safe in the session store either way — so retry.
+        # Only an explicit transient verdict justifies another poll. An
+        # unclassified exception may be a permanent config/auth failure.
         logger.info("memory: write deferred for %s (%s)", session_id, exc)
-        return WriteIncomplete(str(exc))
+        verdict = getattr(exc, "retryable", None)
+        return WriteIncomplete(
+            str(exc), retryable=False if verdict is None else bool(verdict),
+        )
 
 
 def run_now(*, idle_minutes: int = DEFAULT_IDLE_MINUTES) -> int:

@@ -91,11 +91,11 @@ that prompt-injection surface entirely.
    reveal routes remain a remote-Web security item; they were not the source
    of this incident and are not closed by this memory batch. The exposed
    keys still require revocation by the owner.
-5. **Remaining merge gate**: unknown exceptions default non-retryable at
-   every `WriteIncomplete` construction site (provider and session_watcher
-   alike), transient ones carry `retryable=True` explicitly; then distill
-   the live workspace's pending records to a valid committed Topic as the
-   post-merge acceptance (must not run on unmerged code). Corrected live
+5. **Retry classification is complete; live acceptance remains**: unknown
+   exceptions default non-retryable in both the provider and session watcher,
+   while explicitly classified transient exceptions preserve
+   `retryable=True`. Distill the live workspace's pending records to a valid
+   committed Topic as the post-merge acceptance. Corrected live
    numbers: 23 sources, 152 of 154 records pre-marked written, `core.md`
    at 39.6% of the o200k_base budget — the workspace is not degraded, and
    legacy authority-less frames are already trusted in both reader and

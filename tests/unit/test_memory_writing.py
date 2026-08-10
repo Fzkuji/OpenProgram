@@ -404,6 +404,21 @@ def test_an_unclassified_value_error_is_not_retryable(
     assert left.reason == "API key required"
 
 
+def test_watcher_does_not_retry_an_unclassified_provider_exception(
+    monkeypatch,
+):
+    class BrokenProvider:
+        def write(self, *_args, **_kwargs):
+            raise ValueError("provider configuration is invalid")
+
+    monkeypatch.setattr(
+        "openprogram.memory.get_provider", lambda: BrokenProvider()
+    )
+    left = _watch()
+    assert left is not None and left.retryable is False
+    assert left.reason == "provider configuration is invalid"
+
+
 def test_provider_permanent_verdict_stops_the_idle_retry_loop(
     memory_root, provider, monkeypatch,
 ):
