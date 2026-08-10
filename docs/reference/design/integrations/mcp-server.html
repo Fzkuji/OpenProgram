@@ -246,7 +246,7 @@
   <div class="note warn"><b>两个已知安全前提</b>：webui 全程没有 token、API key、会话 cookie 或认证中间件；
     把 <code>web.host</code> 设成 <code>0.0.0.0</code> 会让 <code>is_loopback_hostname</code> 为假，从而
     <code>enforce_loopback_host=False</code>，整条 Host 校验规则被关掉。两者记在
-    <a href="../runtime/sandbox.md">sandbox.md</a>，加 MCP 服务端不修复它们。</div>
+    <a href="../runtime/sandbox.html">sandbox.md</a>，加 MCP 服务端不修复它们。</div>
 
   <h2 id="ladder"><span class="num">03</span>审批阶梯：九级，顺序固定</h2>
   <p class="lead"><code>wrap_with_approval</code> 返回一个 <code>execute</code> 被换成 <code>_gated_execute</code> 的 <code>AgentTool</code> 副本。
@@ -649,7 +649,7 @@
     <tr><td><b>六工具最小集</b></td><td class="n">未实施</td><td class="g">—</td></tr>
     <tr><td><b><code>mcp_server.exposed_tools</code> 白名单，默认为空</b></td><td class="n">未实施</td><td class="g">—</td></tr>
     <tr><td><b>token 认证，无关闭开关</b></td><td class="n">未实施</td><td class="g">—</td></tr>
-    <tr><td><b>外部调用方的 <code>authority_scope</code> 行</b></td><td class="n">未实施</td><td class="m">需要 <code>TurnRequest</code> 上有 <code>authority_scope</code> 与 <code>principal_id</code> —— <a href="../runtime/sandbox.md">sandbox.md</a> 的批次 I</td></tr>
+    <tr><td><b>外部调用方的 <code>authority_scope</code> 行</b></td><td class="n">未实施</td><td class="m">需要 <code>TurnRequest</code> 上有 <code>authority_scope</code> 与 <code>principal_id</code> —— <a href="../runtime/sandbox.html">sandbox.md</a> 的批次 I</td></tr>
     <tr><td><b>外部来源进 <code>_hard_constraint_violation()</code></b></td><td class="n">未实施</td><td class="y">不依赖批次 I，可与服务端同批落地</td></tr>
     <tr><td><b><code>notifications/cancelled</code> → <code>CancelToken</code></b></td><td class="n">未实施</td><td class="y">直接用现有 <code>run_control.py</code></td></tr>
     <tr><td><b><code>notifications/progress</code> 由 <code>on_update</code> 驱动</b></td><td class="n">未实施</td><td class="y">直接用现有 <code>execute</code> 签名</td></tr>
@@ -662,7 +662,7 @@
   </div>
 
   <div class="note warn"><b>两个前提不是本设计的条目</b>：webui 没有认证，以及 <code>web.host = "0.0.0.0"</code>
-    会关掉 origin guard 的 Host 规则。两者都记在 <a href="../runtime/sandbox.md">sandbox.md</a>，
+    会关掉 origin guard 的 Host 规则。两者都记在 <a href="../runtime/sandbox.html">sandbox.md</a>，
     加一个 MCP 服务端并不修复它们。本设计的做法是让 MCP 服务端走 stdio，不在那个面上再开端口。</div>
 
 </div>
