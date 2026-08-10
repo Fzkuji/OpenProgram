@@ -124,6 +124,9 @@ dev = [
     "build>=1.2",
     "pytest>=8.0.0",
     "pytest-timeout>=2.3",
+    # full-suite runs go 126s -> 27s with -n auto; keep serial default so
+    # single-file debugging stays overhead-free
+    "pytest-xdist>=3.5",
     "ruff>=0.16",
 ]
 # The LLM SDKs (anthropic / openai / google-genai) and the web stack are
