@@ -223,7 +223,7 @@ def create_pending_call_node(
     ``caller`` / ``forced_predecessor`` default to the ambient ContextVars
     (``_call_id`` / ``_forced_predecessor``) so the wrapper needs no extra
     args; the parent path passes them explicitly. ``store`` (a
-    GraphStoreShim) is only needed to resolve the current head when this is
+    SessionNodeWriter) is only needed to resolve the current head when this is
     a top-level call with no forced predecessor — pass the parent's shim, or
     let it default to the ambient ``_store``.
 

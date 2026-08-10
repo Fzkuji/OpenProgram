@@ -8,7 +8,7 @@ OpenProgram 只监听一个端口（API、WebSocket 和 web UI 同端口，默�
 
 ```bash
 openprogram ports                    # 查看当前端口
-openprogram ports --frontend 18110   # 持久修改，下次启动生效
+openprogram ports --port 18110   # 持久修改，下次启动生效
 ```
 
 只想改一次运行，用环境变量 `OPENPROGRAM_WEB_PORT` 覆盖。如果占端口的是残留进程，`lsof -ti:18100 | xargs kill` 释放后重启。

@@ -119,7 +119,7 @@ Proactivity applications (built on the base):
 | Doc | Topic |
 |---|---|
 | [`cli/redesign.md`](cli/redesign.md) | CLI / TUI redesign (schema-driven settings, config panel) — current |
-| [`cli/ports.md`](cli/ports.md) | Web UI ports (architecture, config, conflict handling) |
+| [`cli/ports.md`](cli/ports.md) | Web UI port (config surface, conflict handling) |
 | [`cli/slash-commands.md`](cli/slash-commands.md) | Slash commands |
 | [`cli/slash-commands-references.md`](cli/slash-commands-references.md) | Slash-command reference snapshot |
 | [`cli/drop-run-command.md`](cli/drop-run-command.md) | Function execution path from the Web UI |

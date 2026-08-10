@@ -13,7 +13,7 @@ per-turn file commits and is git-agnostic. Its hook API is
 
 The turn id is the assistant message id. The dispatcher sets the
 `_current_turn_id` ContextVar to `assistant_msg_id`, and the `write`, `edit`,
-and `apply_patch` tools call `backup_for_current_turn(path)` before mutating the
+and `apply_patch` tools call `checkpoint_before_edit(path)` before mutating the
 filesystem. `_runtime.py` wraps the sync-tool executor in
 `copy_context().run(...)` so ContextVars propagate into the thread pool.
 

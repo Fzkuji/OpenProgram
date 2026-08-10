@@ -125,7 +125,7 @@ def _apply_add(path: str, body: list[str]) -> str:
     # Baseline the new file so a later Update in the same session doesn't
     # trip the "never read" gate (the agent just created it).
     try:
-        from openprogram.store import read_tracking as _rt
+        from openprogram.store.snapshot import read_tracking as _rt
         _rt.mark_seen(path)
     except Exception:
         pass
@@ -150,7 +150,7 @@ def _apply_update(path: str, body: list[str]) -> str:
     # read, or one changed on disk since, is refused (Claude-Code-style)
     # so a concurrent user change isn't clobbered. No-op outside a turn.
     try:
-        from openprogram.store import read_tracking as _rt
+        from openprogram.store.snapshot import read_tracking as _rt
         _fresh = _rt.check_fresh(path)
         if _fresh in (_rt.NEVER_READ, _rt.STALE):
             return _rt.stale_message(path, _fresh)
@@ -221,7 +221,7 @@ def _apply_update(path: str, body: list[str]) -> str:
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
     try:
-        from openprogram.store import read_tracking as _rt
+        from openprogram.store.snapshot import read_tracking as _rt
         _rt.mark_seen(path)
     except Exception:
         pass

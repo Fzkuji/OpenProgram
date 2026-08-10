@@ -46,7 +46,7 @@ Every other interaction with the bus is asynchronous observation.
 | context | Emits `context.*` from within its existing callback |
 | channels | Emits `channel.*`; the direct frontend connection remains alongside |
 | memory | Emits at processing start and end, which turns its periodic poll into events |
-| file changes | Emits `file.changed` at `backup_for_current_turn` |
+| file changes | Emits `file.changed` at `checkpoint_before_edit` |
 | plugin hooks | Internally unified onto the bus; hooks remain as a plugin API, wrapped in a subscription layer |
 | webui server | Subscribes to the bus rather than receiving direct connections |
 | EventBus | The hub itself: type-based subscription plus singleton access |

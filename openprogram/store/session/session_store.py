@@ -251,10 +251,7 @@ class SessionStore:
     One instance per process (use ``default_store()``). Methods are
     thread-safe — per-session locks live on the GitSession / index.
 
-    ``db_path`` attr is kept for compatibility (e.g. webui code that
-    inspects ``default_db().db_path`` to derive other paths). It maps
-    to the root directory holding per-session repos, not a single
-    SQLite file.
+    ``root_path`` is the directory holding per-session git repos.
     """
 
     def __init__(
@@ -285,13 +282,6 @@ class SessionStore:
         self._index_timer: Optional[threading.Timer] = None
         self._load_index()
         atexit.register(self._flush_index)
-
-    # Compatibility shim. Old code does ``db.db_path / "subdir"`` for
-    # ancillary files — point that at the root so existing usage doesn't
-    # break before we audit each call site.
-    @property
-    def db_path(self) -> Path:
-        return self.root_path
 
     # Location index (per-project session placement)
 
@@ -447,7 +437,7 @@ class SessionStore:
         forever."""
         self._forget_location(session_id)
         try:
-            from openprogram.store import project_store as _projects
+            from openprogram.store.project import project_store as _projects
             _projects.unbind_session(session_id)
         except Exception as e:  # noqa: BLE001 — reverse index is best-effort
             _log.warning("session %s NOT unbound from its project: %s",
@@ -684,7 +674,7 @@ class SessionStore:
         # All guarded — a project/git failure must never block session
         # creation; we degrade to the home root.
         try:
-            from openprogram.store import project_store as _projects
+            from openprogram.store.project import project_store as _projects
             if project_path:
                 proj = _projects.resolve_project(project_path)
             elif project_id and project_id != _projects.DEFAULT_PROJECT_ID:
@@ -763,7 +753,7 @@ class SessionStore:
         # best-effort.
         if project_id:
             try:
-                from openprogram.store import project_store as _projects
+                from openprogram.store.project import project_store as _projects
                 _projects.bind_session(session_id, project_id)
             except Exception as e:  # noqa: BLE001 — reverse index is best-effort
                 _log.warning("session %s NOT bound to project %s: %s",
@@ -828,7 +818,7 @@ class SessionStore:
         self._forget_location(session_id)
         # 从项目反向索引解绑（配对 bind_session），避免 session_ids 只增不减。
         try:
-            from openprogram.store import project_store as _projects
+            from openprogram.store.project import project_store as _projects
             _projects.unbind_session(session_id)
         except Exception as e:  # noqa: BLE001 — reverse index is best-effort
             _log.warning("session %s NOT unbound from its project: %s",
@@ -1114,7 +1104,7 @@ class SessionStore:
         conversation stays the active branch while the agent runs
         (context/compaction.md §5, HEAD single-writer).
         """
-        from .graphstore_shim import GraphStoreShim
+        from .session_node_writer import SessionNodeWriter
 
         meta = dict(metadata or {})
         meta["source"] = source
@@ -1129,7 +1119,7 @@ class SessionStore:
             predecessor=None,
             metadata=meta,
         )
-        GraphStoreShim(self, session_id).append(node)
+        SessionNodeWriter(self, session_id).append(node)
         if register_head:
             # Register the branch head so mid-run loads resolve onto
             # the new branch (shim skips set_head for caller-tagged

@@ -206,7 +206,7 @@ provider的名字分不开这两者，因为那台机器跑的是同一个provid
 往已经存下来的节点上写，也不是新事。`_rewind.py`给它退掉的轮次盖上
 `rewound`并重写它们的history文件，`internals/_revert.py`用`reverted`做同
 一件事，`dispatcher/finalize.py`就地重写节点文件去盖shadow-git的检查点戳记。
-而`GraphStoreShim.update`已经在做标记所需要的那个动作：把一个metadata补丁
+而`SessionNodeWriter.update`已经在做标记所需要的那个动作：把一个metadata补丁
 合进节点、重写这个节点的history文件、别的什么都不碰。
 
 追加不变量也不挡路。`_check_append_invariant`是在追加一个节点的时候检查的，
@@ -367,12 +367,12 @@ head往回走会把整个会话都收进来。
   比对这个值（`session_watcher._scan`里的
   `if processed.get(sid) == updated_at`），动了它等于把这个会话直接送回一次
   强制写入，以及里面那次模型调用。`SessionStore.append_message`和
-  `GraphStoreShim.append`都会推这个值，打标记的路径不能走它们任何一条。
+  `SessionNodeWriter.append`都会推这个值，打标记的路径不能走它们任何一条。
 - 标记不能走那条"把会话记成已同步"的路径。`GitSession.write_history`会顺手
   调`mark_synced()`，而那个指纹会盖住打标记的进程从没读过的写入，一个漏掉
   了那些节点的索引从此再也不会重建。打标记的路径先经`SessionStore._open`
   （它在交出`(git, idx)`之前会把过期的索引重建掉），然后用
-  `atomic_write_text`直接重写节点文件，这正是`GraphStoreShim.update`和
+  `atomic_write_text`直接重写节点文件，这正是`SessionNodeWriter.update`和
   `dispatcher/finalize.py`已经在做的事。
 
 ### 反面意见，以及标记为什么仍然赢
@@ -420,7 +420,7 @@ head往回走会把整个会话都收进来。
 | # | 文件 | 改什么 | 量 |
 |---|---|---|---|
 | 1 | `openprogram/store/session/session_store.py` | 新增`merge_node_metadata(session_id, node_id, patch)`：`_open`，合进`node.metadata`，用`atomic_write_text`重写history文件。不碰`_persist_meta`，不碰`updated_at`，不走`write_history` | 新增约20行 |
-| 2 | `openprogram/store/session/graphstore_shim.py` | `update`把metadata重写委托给第1项，不再自己重复一遍 | 删约12行 |
+| 2 | `openprogram/store/session/session_node_writer.py` | `update`把metadata重写委托给第1项，不再自己重复一遍 | 删约12行 |
 | 3 | `openprogram/memory/store.py` | 新增`workspace_id()`：在`state_dir()`里读出或生成一个十六进制标识 | 新增约12行 |
 | 4 | `openprogram/memory/scriptorium/runtime/state.py` | 去掉`RuntimeState.cursors`和`advance_cursor`，留下计数器；`RuntimeStateStore.load`读不出文件时返回空状态 | 删约10行，改约4行 |
 | 5 | `openprogram/memory/scriptorium/runtime/online.py` | `pending`改成`unwritten_turns(records, marked_ids)`；`process`收一个`mark`回调，只在写入器报出改过文件时调用它 | 改约25行 |
@@ -539,7 +539,7 @@ head往回走会把整个会话都收进来。
 - `SessionStore.merge_node_metadata_batch`在一次`_open`中合并同一会话一批
   节点的metadata并逐文件原子重写history；它不改会话`updated_at`，不调用
   `write_history`或`mark_synced`。单节点merge复用该批量原语；
-  `GraphStoreShim.update`通过一次`_open`同时更新普通字段、metadata和spill，
+  `SessionNodeWriter.update`通过一次`_open`同时更新普通字段、metadata和spill，
   然后只重写一次节点。批后当前进程和其他进程的旧索引各在下一次读取时重建
   一次。
 - `RuntimeState.cursors`和`advance_cursor`已经移除，其余整理计数器保留；

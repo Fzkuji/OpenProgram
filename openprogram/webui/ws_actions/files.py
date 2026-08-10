@@ -89,7 +89,7 @@ def _resolve(project_id: str, path: str) -> tuple[str | None, str | None]:
     # ones that would resolve inside the root.
     if os.path.isabs(path):
         return None, "path escapes project root"
-    from openprogram.store import project_store as _projects
+    from openprogram.store.project import project_store as _projects
     proj = _projects.get_project(project_id)
     if proj is None or not proj.path:
         return None, f"unknown project {project_id!r}"

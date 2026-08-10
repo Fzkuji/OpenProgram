@@ -78,7 +78,7 @@ def record_system_prompt(store: Any, session_id: str, text: str) -> Optional[str
             return None
 
         from openprogram.context.nodes import Call, ROLE_CODE
-        from openprogram.store import GraphStoreShim
+        from openprogram.store import SessionNodeWriter
 
         node = Call(
             id="ctxsp_" + uuid.uuid4().hex[:10],
@@ -91,7 +91,7 @@ def record_system_prompt(store: Any, session_id: str, text: str) -> Optional[str
             metadata={"display": "runtime",
                       "prompt_hash": prompt_hash(text)},
         )
-        GraphStoreShim(store, session_id).append(node)
+        SessionNodeWriter(store, session_id).append(node)
         return node.id
     except Exception:
         return None

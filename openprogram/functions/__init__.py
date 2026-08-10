@@ -26,7 +26,6 @@ relies on.
 from __future__ import annotations
 
 from ._helpers import (
-    is_available as _is_available_legacy_dict,
     is_available_agent_tool as _is_available_agent_tool,
 )
 from ._runtime import (

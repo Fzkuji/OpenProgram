@@ -8,7 +8,7 @@ OpenProgram listens on a single port (API, WebSocket, and web UI together; defau
 
 ```bash
 openprogram ports                    # show current port
-openprogram ports --frontend 18110   # persistent change, takes effect on next start
+openprogram ports --port 18110   # persistent change, takes effect on next start
 ```
 
 To change just one run, override with the environment variable `OPENPROGRAM_WEB_PORT`. If the port is held by a leftover process, free it with `lsof -ti:18100 | xargs kill` and restart.

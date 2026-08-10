@@ -7,7 +7,7 @@ runtime_attach piece). ``_wrap_agentic_runtime_block`` takes an
 ``display=runtime`` placeholder, streams the live Execution DAG, and
 finalizes the row — so an LLM-issued call renders identically to a manual
 ``/run <fn>``. It depends only on the stdlib + ``types`` here; everything
-heavy (SessionDB, GraphStoreShim, build_exec_dag, the subprocess runner)
+heavy (SessionDB, SessionNodeWriter, build_exec_dag, the subprocess runner)
 is pulled in via in-function local imports, so this stays a leaf.
 
 The package ``__init__`` re-exports ``_wrap_agentic_runtime_block`` so
@@ -62,7 +62,7 @@ def _wrap_agentic_runtime_block(
             _forced_predecessor as _forced_pred_var,
             _forced_node_id as _forced_node_var,
         )
-        from openprogram.store import GraphStoreShim
+        from openprogram.store import SessionNodeWriter
         from openprogram.webui._exec_dag import build_exec_dag
 
         db = default_db()

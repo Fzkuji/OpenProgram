@@ -59,8 +59,7 @@ def main() -> int:
         _rmtree_retry(state)
     print(f"# state dir = {state}")
 
-    from openprogram.store import read_tracking as rt
-
+    from openprogram.store.snapshot import read_tracking as rt
     work = Path(tempfile.mkdtemp(prefix="op_rbe_"))
     try:
         # ── A. module logic, explicit session_id ──────────────────
@@ -96,7 +95,7 @@ def main() -> int:
         # ── B. real tools end-to-end via _store ContextVar ────────
         import asyncio
         from openprogram.store.session.session_store import SessionStore
-        from openprogram.store import GraphStoreShim, _store, _current_turn_id
+        from openprogram.store import SessionNodeWriter, _store, _current_turn_id
         from openprogram.functions.tools.read.read import read as read_tool
         from openprogram.functions.tools.edit.edit import edit as edit_tool
         from openprogram.functions.tools.write.write import write as write_tool
@@ -117,7 +116,7 @@ def main() -> int:
 
         store = SessionStore()
         store.create_session("rbe1", "main", title="rbe")
-        shim = GraphStoreShim(store, "rbe1")
+        shim = SessionNodeWriter(store, "rbe1")
         tok = _store.set(shim)
         tok2 = _current_turn_id.set("turn1")
         try:

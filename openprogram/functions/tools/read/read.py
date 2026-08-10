@@ -110,7 +110,7 @@ def _mark_read_baseline(file_path: str) -> None:
     about the file changing on disk, not the page. No-op outside a turn.
     """
     try:
-        from openprogram.store import read_tracking as _rt
+        from openprogram.store.snapshot import read_tracking as _rt
         _rt.mark_seen(file_path)
     except Exception:
         pass

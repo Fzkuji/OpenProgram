@@ -36,7 +36,7 @@ class FakeWS:
 def store(tmp_path: Path, monkeypatch) -> SessionStore:
     s = SessionStore(root_path=tmp_path / "sessions")
     monkeypatch.setattr(
-        "openprogram.store.session_store._default_store", s, raising=False,
+        "openprogram.store.session.session_store._default_store", s, raising=False,
     )
     monkeypatch.setattr(
         "openprogram.store.session.session_store._default_store", s,

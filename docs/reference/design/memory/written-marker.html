@@ -611,7 +611,7 @@
     <code>content</code> <code>predecessor</code> <code>caller</code> <code>timestamp</code>
     <code>status</code> 这些都被占了）。往已存节点上写也不是新事：<code>rewind</code>盖
     <code>rewound</code>、<code>revert</code>盖<code>reverted</code>、一轮的收尾流程就地重写节点文件盖检查点戳记；
-    而<code>GraphStoreShim.update</code>已经在做标记需要的那个动作，只是它先经过
+    而<code>SessionNodeWriter.update</code>已经在做标记需要的那个动作，只是它先经过
     <code>SessionStore._open</code>（会把过期索引重建掉），再用<code>atomic_write_text</code>直接重写，
     绕开了上面两条。<br>
     <b>实测过的代价。</b>会话索引缓存会重建一次，289个节点、4.2 MB是<b>14到50毫秒</b>，而且自限。
@@ -633,7 +633,7 @@
       <text x="38" y="83" fill="#bdb9a6">新增 merge_node_metadata　<tspan fill="#8a8675">新增约20行</tspan></text>
 
       <rect x="24" y="100" width="250" height="46" rx="7" fill="#151b22" stroke="#4f8ef7"/>
-      <text x="38" y="120" fill="#4f8ef7" font-size="11" font-weight="700">2 · graphstore_shim.py</text>
+      <text x="38" y="120" fill="#4f8ef7" font-size="11" font-weight="700">2 · session_node_writer.py</text>
       <text x="38" y="137" fill="#bdb9a6">update 委托给第1项　<tspan fill="#8a8675">删约12行</tspan></text>
 
       <rect x="24" y="154" width="250" height="46" rx="7" fill="#151b22" stroke="#4f8ef7"/>

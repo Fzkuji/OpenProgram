@@ -68,7 +68,7 @@ def insert_placeholder(
     """
     try:
         from openprogram.context.nodes import Call, ROLE_LLM
-        from openprogram.store import GraphStoreShim
+        from openprogram.store import SessionNodeWriter
 
         now = time.time()
         from openprogram.agent.authority import normalize_authority
@@ -86,7 +86,7 @@ def insert_placeholder(
                 **normalize_authority(authority or {}),
             },
         )
-        shim = GraphStoreShim(db, session_id, advance_head=advance_head)
+        shim = SessionNodeWriter(db, session_id, advance_head=advance_head)
         shim.append(node)
         return True
     except Exception:
@@ -105,22 +105,19 @@ def mark_terminal_status(assistant_msg: dict, *, cancelled: bool) -> None:
 
 
 def fold_error_into_placeholder(
-    db_path: Any,
     session_id: str,
     assistant_msg_id: str,
     exc: BaseException,
 ) -> Optional[str]:
     """Overwrite the assistant placeholder with error content.
 
-    ``db_path`` is kept as the first arg for caller-compat but it's now
-    a SessionStore instance (legacy code passed a Path). We don't need
-    a path — we resolve a per-session shim from default_store().
+    Resolves a per-session writer from ``default_store()``.
     """
     err_text = f"[error] {type(exc).__name__}: {exc}"
     trace = traceback.format_exc()[:2000]
     try:
-        from openprogram.store import GraphStoreShim, default_store
-        shim = GraphStoreShim(default_store(), session_id)
+        from openprogram.store import SessionNodeWriter, default_store
+        shim = SessionNodeWriter(default_store(), session_id)
         shim.update(
             assistant_msg_id,
             output=err_text,

@@ -17,7 +17,7 @@ from openprogram.agent import dispatcher as D
 from openprogram.agent.session_db import SessionDB
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
-from openprogram.store import GraphStoreShim as GraphStore
+from openprogram.store import SessionNodeWriter as GraphStore
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     db = SessionDB(tmp_path / "sessions-git")
     monkeypatch.setattr("openprogram.agent.session_db.default_db",
                         lambda: db)
-    monkeypatch.setattr("openprogram.store.session_store.default_store",
+    monkeypatch.setattr("openprogram.store.session.session_store.default_store",
                         lambda: db)
     monkeypatch.setattr("openprogram.store.default_store", lambda: db)
 
@@ -43,11 +43,11 @@ def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     # dispatcher overrides these with its own real instances via reset
     # tokens; the test still passes because the stub overrides the
     # runtime's ``_call`` to return deterministic text either way.
-    from openprogram.store import _store as _store_var, GraphStoreShim
+    from openprogram.store import _store as _store_var, SessionNodeWriter
     from openprogram.agentic_programming.function import (
         _current_runtime as _runtime_var,
     )
-    _store_token = _store_var.set(GraphStoreShim(db, "s1"))
+    _store_token = _store_var.set(SessionNodeWriter(db, "s1"))
     _runtime_token = _runtime_var.set(
         Runtime(call=lambda content, model="default",
                 response_format=None: "outline")

@@ -63,7 +63,7 @@ def _main_project(session_id: str):
     if not session_id:
         return None
     try:
-        from openprogram.store import project_store as _projects
+        from openprogram.store.project import project_store as _projects
         return (_projects.project_for_session(session_id)
                 or _projects.get_default_project())
     except Exception:

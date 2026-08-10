@@ -42,10 +42,10 @@ worker 只监听一个端口（默认 18100），承载全部内容：API、WebS
 持久化修改：
 
 ```bash
-openprogram ports --frontend 8101
+openprogram ports --port 8101
 ```
 
-单次运行覆盖：环境变量 `OPENPROGRAM_WEB_PORT`，或 `openprogram web --port <p>`。优先级：显式参数 → 环境变量 → 持久化偏好 → 默认值。`OPENPROGRAM_BACKEND_PORT` 是同一端口的遗留别名，被读到时 worker 会打警告。
+单次运行覆盖：环境变量 `OPENPROGRAM_WEB_PORT`，或 `openprogram web --web-port <p>`。优先级：显式参数 → 环境变量 → 持久化偏好 → 默认值。
 
 ## 日志
 

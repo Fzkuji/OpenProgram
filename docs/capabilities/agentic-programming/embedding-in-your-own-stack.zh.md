@@ -108,9 +108,9 @@ with session_scope(store, "review-42"):
 顺着 `caller` 就能把扁平节点列表还原成调用树：
 
 ```python
-from openprogram.store import GraphStoreShim
+from openprogram.store import SessionNodeWriter
 
-graph = GraphStoreShim(store, "review-42").load()
+graph = SessionNodeWriter(store, "review-42").load()
 for node in graph:
     kind = "fn" if node.is_code() else "llm" if node.is_llm() else "usr"
     print(kind, node.name, "→", node.output)

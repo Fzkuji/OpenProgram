@@ -17,7 +17,7 @@ import pytest
 
 from openprogram.context import aging
 from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM, ROLE_CODE
-from openprogram.store import GraphStoreShim, SessionStore
+from openprogram.store import SessionNodeWriter, SessionStore
 from openprogram.webui.routes.tree import _coverage_nodes
 
 
@@ -37,7 +37,7 @@ def store(tmp_path: Path):
 
 def _turns(store: SessionStore, n: int) -> list[str]:
     """n turns of user → llm → tool. Returns the node ids in order."""
-    shim = GraphStoreShim(store, "s1")
+    shim = SessionNodeWriter(store, "s1")
     ids: list[str] = []
     prev = None
     for i in range(n):
@@ -75,7 +75,7 @@ def test_old_code_nodes_report_aged(store):
 
 def test_spilled_metadata_surfaces(store):
     ids = _turns(store, 1)
-    shim = GraphStoreShim(store, "s1")
+    shim = SessionNodeWriter(store, "s1")
     shim.append(Call(
         id="big", role=ROLE_CODE, name="bash", caller="a0",
         input={"cmd": "cat huge.log"}, output="[spilled]",

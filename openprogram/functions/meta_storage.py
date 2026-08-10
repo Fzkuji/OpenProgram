@@ -58,8 +58,31 @@ def save_functions_meta(data: dict[str, Any]) -> None:
     save_meta(FUNCTIONS_META, data)
 
 
+# Icon values stored before the emoji → flat-icon switch. Rewritten to
+# slugs once, on read, so every consumer sees slugs only.
+_EMOJI_TO_SLUG = {
+    "📦": "box", "🤖": "bot", "🌐": "earth", "🔍": "telescope",
+    "📚": "scan-text", "🖥": "cpu", "📄": "scan-text",
+    "📊": "chart-column", "🎨": "pen-tool", "✏️": "feather",
+    "🛠": "hammer", "⚡": "gauge", "💡": "atom", "🔥": "flame",
+    "⭐": "compass", "🎯": "route", "📷": "eye", "🎵": "mic",
+    "🧠": "atom", "💬": "mic", "🎮": "rocket", "🚀": "rocket",
+    "🧪": "atom", "✨": "flame",
+}
+
+
 def load_programs_meta(default: dict[str, Any]) -> dict[str, Any]:
-    return load_meta(PROGRAMS_META, default)
+    data = load_meta(PROGRAMS_META, default)
+    icons = data.get("icons")
+    if isinstance(icons, dict):
+        rewritten = {
+            name: _EMOJI_TO_SLUG.get(value, value)
+            for name, value in icons.items()
+        }
+        if rewritten != icons:
+            data["icons"] = rewritten
+            save_programs_meta(data)
+    return data
 
 
 def save_programs_meta(data: dict[str, Any]) -> None:

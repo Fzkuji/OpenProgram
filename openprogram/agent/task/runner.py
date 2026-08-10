@@ -901,7 +901,7 @@ class TaskRunner:
             return
         try:
             from openprogram.agent.session_db import default_db
-            from openprogram.store import GraphStoreShim
+            from openprogram.store import SessionNodeWriter
             db = default_db()
             pair = db._open(task.parent_session_id)  # noqa: SLF001
             if pair is None:
@@ -915,7 +915,7 @@ class TaskRunner:
             except Exception:
                 baseline_seq = -1
             last_patched_id: Optional[str] = None
-            shim = GraphStoreShim(db, task.parent_session_id)
+            shim = SessionNodeWriter(db, task.parent_session_id)
         except Exception:
             return
         while not stop_ev.is_set():
@@ -1055,8 +1055,8 @@ class TaskRunner:
             # Update the persisted node's metadata + output text.
             output = task.result_text or error_text or node.output or ""
             try:
-                from openprogram.store import GraphStoreShim
-                shim = GraphStoreShim(db, task.parent_session_id)
+                from openprogram.store import SessionNodeWriter
+                shim = SessionNodeWriter(db, task.parent_session_id)
                 shim.update(
                     task.attach_pointer_id,
                     output=output,

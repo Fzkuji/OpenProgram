@@ -1,7 +1,7 @@
 # 单端口架构
 
-> 本文描述单端口运行时：一个进程、一个端口，Python worker 是唯一源站。
-> 它取代的双端口拆分见 [ports.zh.md](ports.zh.md)。
+> 一个进程、一个端口，Python worker 是唯一源站。端口的配置入口与冲突
+> 处理见 [ports.zh.md](ports.zh.md)。
 
 ## 1. 三进程带来的问题
 

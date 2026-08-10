@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from openprogram.store import project_store
+from openprogram.store.project import project_store
 from openprogram.webui.ws_actions import files as ws_files
 
 

@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.store import SessionStore, GraphStoreShim
+from openprogram.store import SessionStore, SessionNodeWriter
 from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM
 
 
@@ -34,7 +34,7 @@ def db(tmp_path: Path) -> SessionStore:
 def _write_user_turn(db: SessionStore, sid: str, uid: str, text: str) -> None:
     """Mirror the fixed webui _append_msg user-node write: caller=ROOT,
     predecessor resolved from the authoritative store head."""
-    shim = GraphStoreShim(db, sid)
+    shim = SessionNodeWriter(db, sid)
     if not db.message_exists(sid, "ROOT"):
         shim.append(Call(id="ROOT", role=ROLE_USER, output="",
                          metadata={"display": "root"}))
@@ -48,7 +48,7 @@ def _write_user_turn(db: SessionStore, sid: str, uid: str, text: str) -> None:
 
 def _write_reply(db: SessionStore, sid: str, rid: str, uid: str) -> None:
     """Mirror persist_assistant_message: reply predecessor = user id."""
-    shim = GraphStoreShim(db, sid)
+    shim = SessionNodeWriter(db, sid)
     shim.append(Call(id=rid, role=ROLE_LLM, output="reply",
                      predecessor=uid, metadata={"source": "web"}))
     db.set_head(sid, rid)

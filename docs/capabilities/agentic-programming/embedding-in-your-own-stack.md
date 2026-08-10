@@ -125,9 +125,9 @@ output, and a `caller` edge. Following `caller` turns the flat node list into
 the call tree:
 
 ```python
-from openprogram.store import GraphStoreShim
+from openprogram.store import SessionNodeWriter
 
-graph = GraphStoreShim(store, "review-42").load()
+graph = SessionNodeWriter(store, "review-42").load()
 for node in graph:
     kind = "fn" if node.is_code() else "llm" if node.is_llm() else "usr"
     print(kind, node.name, "→", node.output)

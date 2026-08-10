@@ -86,7 +86,7 @@ def session_context(
     from openprogram.store import (
         _store as _store_var,
         _current_turn_id as _turn_id_var,
-        GraphStoreShim,
+        SessionNodeWriter,
     )
     from openprogram.agentic_programming.function import (
         _current_runtime as _runtime_var,
@@ -116,7 +116,7 @@ def session_context(
 
     # Install. Each entry: (ContextVar, token). Reset in reverse on exit.
     installed: list[tuple[Any, Any]] = []
-    installed.append((_store_var, _store_var.set(GraphStoreShim(db, sid))))
+    installed.append((_store_var, _store_var.set(SessionNodeWriter(db, sid))))
     installed.append((_turn_id_var, _turn_id_var.set(tid)))
     if rt is not None:
         installed.append((_runtime_var, _runtime_var.set(rt)))

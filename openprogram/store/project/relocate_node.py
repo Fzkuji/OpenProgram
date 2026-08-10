@@ -36,7 +36,7 @@ def record_relocate(store: Any, session_id: str, *, project_id: str,
         return None
     try:
         from openprogram.context.nodes import Call, ROLE_CODE
-        from openprogram.store import GraphStoreShim
+        from openprogram.store import SessionNodeWriter
 
         node = Call(
             id="reloc_" + uuid.uuid4().hex[:10],
@@ -51,7 +51,7 @@ def record_relocate(store: Any, session_id: str, *, project_id: str,
                       "old_path": old_path,
                       "new_path": new_path},
         )
-        GraphStoreShim(store, session_id).append(node)
+        SessionNodeWriter(store, session_id).append(node)
         return node.id
     except Exception:
         return None

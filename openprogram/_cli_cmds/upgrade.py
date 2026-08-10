@@ -228,7 +228,6 @@ def _cold_start_probe(root: Path, target_sha: str) -> str:
     port = _free_port()
     env["OPENPROGRAM_PROFILE"] = "upgrade-probe"
     env["OPENPROGRAM_WEB_PORT"] = str(port)
-    env.pop("OPENPROGRAM_BACKEND_PORT", None)
 
     child = subprocess.Popen(
         [sys.executable, "-m", "openprogram.cli", "worker", "run"],

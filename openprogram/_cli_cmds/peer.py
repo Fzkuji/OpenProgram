@@ -1,4 +1,4 @@
-"""``openprogram agent`` — spawn / merge agent branches from the shell.
+"""``openprogram peer`` — spawn / merge peer agent branches from the shell.
 
 These commands invoke ``run_agent_turn`` / ``process_merge_turn``
 directly against the in-process ``SessionStore`` singleton — no WS, no
@@ -6,9 +6,9 @@ webui. Useful for scripting batch agent fan-out from CI / shell
 pipelines.
 
 Same-session multi-agent model: every spawn lands as a branch (or
-new root) inside the target session's git repo. The command name
-``subagent`` is kept for backwards-compatibility with existing
-scripts but the model is now peer-agent, not parent/sub.
+new root) inside the target session's git repo. Agents are peers, not
+parent/sub — a spawn is a sibling branch, and a merge folds N peer
+branches back into one turn.
 
 Output is JSON for easy piping; ``--json=false`` prints a human-readable
 summary instead.
@@ -37,7 +37,7 @@ def _print(payload: dict[str, Any], *, as_json: bool) -> None:
             print(f"{k}: {v}")
 
 
-def _cmd_subagent_spawn(
+def _cmd_peer_spawn(
     session: str,
     prompt: str,
     *,
@@ -108,7 +108,7 @@ def _cmd_subagent_spawn(
     return 1 if result.failed else 0
 
 
-def _cmd_subagent_merge(
+def _cmd_peer_merge(
     target: str,
     subs: list[str],
     message: str,

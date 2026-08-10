@@ -32,7 +32,7 @@
    │
    ├─▶ 4. 绑定 turn 上下文（ContextVar）            :366–436
    │       _current_turn_id.set(assistant_msg_id) :379   ← turn 内任何协程都读得到同一 turn id
-   │       _store.set(GraphStoreShim)            :435   ← 深层 runtime/工具/@agentic_function 写同一 DAG
+   │       _store.set(SessionNodeWriter)            :435   ← 深层 runtime/工具/@agentic_function 写同一 DAG
    │       assistant_msg_id = user_msg_id+"_reply" :164
    │       写 assistant 占位行 + set_head           :460；status="running" :464
    │
@@ -120,7 +120,7 @@
 
 ### DAG 更新——贯穿全程，不是单独一步
 
-user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_function` 内部节点，都通过 `_store` ContextVar 落入同一 `GraphStoreShim`，turn 末 `commit_turn`（`session_store.py:504`）把整棵工作树作为一次 turn 提交——append-only、无可变"当前态"镜像文件，两个 agent 并发写不会撞同一文件。
+user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_function` 内部节点，都通过 `_store` ContextVar 落入同一 `SessionNodeWriter`，turn 末 `commit_turn`（`session_store.py:504`）把整棵工作树作为一次 turn 提交——append-only、无可变"当前态"镜像文件，两个 agent 并发写不会撞同一文件。
 
 ---
 

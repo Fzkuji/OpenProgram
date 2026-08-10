@@ -62,7 +62,7 @@ def edit(file_path: str,
     # last saw it — so a concurrent user edit is never silently
     # overwritten. No-op outside a dispatcher turn.
     try:
-        from openprogram.store import read_tracking as _rt
+        from openprogram.store.snapshot import read_tracking as _rt
         _fresh = _rt.check_fresh(file_path)
         if _fresh in (_rt.NEVER_READ, _rt.STALE):
             return _rt.stale_message(file_path, _fresh)
@@ -97,7 +97,7 @@ def edit(file_path: str,
     # Refresh the baseline to what we just wrote, so the agent can edit
     # this file again without re-reading.
     try:
-        from openprogram.store import read_tracking as _rt
+        from openprogram.store.snapshot import read_tracking as _rt
         _rt.mark_seen(file_path)
     except Exception:
         pass

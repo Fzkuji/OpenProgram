@@ -10,7 +10,7 @@ Modules:
   * ``git_session``      — GitSession: thin wrapper over the ``git`` CLI
                            for one session repo.
   * ``memory_index``     — SessionMemoryIndex: in-memory DAG index.
-  * ``graphstore_shim``  — back-compat shim for the old GraphStore API.
+  * ``session_node_writer``  — by-node DAG writes onto one session repo.
   * ``_msg_adapter``     — message-dict ⇄ Call-node translation.
   * ``search``           — cross-session message search (ripgrep).
 
@@ -19,7 +19,7 @@ Importable straight from this sub-package, e.g.
 """
 from .git_session import GitSession
 from .memory_index import SessionMemoryIndex
-from .graphstore_shim import GraphStoreShim
+from .session_node_writer import SessionNodeWriter
 # Provenance read-layer — the LLM-free seam memory maps from (cheap to
 # import: only pulls in context.nodes, already loaded by memory_index).
 from .provenance import (
@@ -47,7 +47,7 @@ def __getattr__(name):
 __all__ = [
     "GitSession",
     "SessionMemoryIndex",
-    "GraphStoreShim",
+    "SessionNodeWriter",
     "SessionStore",
     "default_store",
     "Provenance",

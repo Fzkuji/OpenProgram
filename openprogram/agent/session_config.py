@@ -198,7 +198,7 @@ def project_defaults(session_id: str) -> dict:
     新会话没自己设这些时的回落值。规则见 permission-model.md §2.3；这里是
     档位默认（非规则）。项目没设 → {}。"""
     try:
-        from openprogram.store import project_store as _projects
+        from openprogram.store.project import project_store as _projects
         proj = _projects.project_for_session(session_id) or _projects.get_default_project()
         s = _projects.load_project_settings(proj.id)
         return {

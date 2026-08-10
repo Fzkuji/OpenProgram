@@ -374,5 +374,5 @@ If you remember nothing else from this skill, remember these:
 4. No `system=` kwarg on `runtime.exec`.
 5. Every LLM-visible parameter needs a `description` in `input={...}`.
 6. No `Args:` / `Returns:` sections in the docstring.
-7. Save to `openprogram/functions/agentics/<name>/__init__.py` unless the user said otherwise. Add `("<name>", None)` to `openprogram/functions/_registry.py::AGENTIC_MODULES` so the loader actually imports it (otherwise the @agentic_function decorator never fires and the function won't be discoverable).
+7. Save to `openprogram/functions/agentics/<name>/__init__.py` unless the user said otherwise. Add `"<name>"` to `openprogram/functions/_registry.py::AGENTIC_MODULES` so the loader actually imports it (otherwise the @agentic_function decorator never fires and the function won't be discoverable).
 8. A registered function is LLM-visible by default. To keep one Python-only (an internal helper), register it with `expose=False`; `exposed_names()` is the live set of what LLMs can see.

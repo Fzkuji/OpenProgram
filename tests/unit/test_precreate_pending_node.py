@@ -19,7 +19,7 @@ import threading
 
 import pytest
 
-from openprogram.store import GraphStoreShim, _store as _store_var
+from openprogram.store import SessionNodeWriter, _store as _store_var
 from openprogram.store.session.session_store import SessionStore
 
 
@@ -112,7 +112,7 @@ def test_child_reuse_leaves_single_node_and_finalizes(tmp_path):
 
     store = SessionStore(tmp_path / "sessions-git")
     store.create_session("s1", "main", title="t")
-    shim = GraphStoreShim(store, "s1")
+    shim = SessionNodeWriter(store, "s1")
 
     # Parent pre-creates the top-level node.
     nid = "abc123abc123"
@@ -155,7 +155,7 @@ def test_in_process_run_without_forced_id_single_node(tmp_path):
 
     store = SessionStore(tmp_path / "sessions-git")
     store.create_session("s1", "main", title="t")
-    shim = GraphStoreShim(store, "s1")
+    shim = SessionNodeWriter(store, "s1")
 
     @agentic_function
     def wc2(text):
@@ -180,7 +180,7 @@ def test_create_pending_call_node_matches_wrapper_shape(tmp_path):
 
     store = SessionStore(tmp_path / "sessions-git")
     store.create_session("s1", "main", title="t")
-    shim = GraphStoreShim(store, "s1")
+    shim = SessionNodeWriter(store, "s1")
 
     node = create_pending_call_node(
         pending_id="nid1", function_name="fn", arguments={"a": 1},
@@ -210,7 +210,7 @@ def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
 
     store = SessionStore(tmp_path / "sessions-git")
     store.create_session("s1", "main", title="t")
-    shim = GraphStoreShim(store, "s1")
+    shim = SessionNodeWriter(store, "s1")
     node = create_pending_call_node(
         pending_id="stuck1", function_name="wc", arguments={"text": "hi"},
         expose="io", caller="", store=shim)

@@ -52,7 +52,7 @@ def handle_turn_error(
     err_text: Optional[str] = None
     if placeholder_inserted:
         err_text = _fold_error_into_placeholder(
-            db.db_path, req.session_id, assistant_msg_id, e,
+            req.session_id, assistant_msg_id, e,
         )
         if err_text is not None:
             head_for_next = assistant_msg_id

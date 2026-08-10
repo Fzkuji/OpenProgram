@@ -269,7 +269,3 @@ def list_for_account(channel: str, account_id: str) -> list[dict[str, Any]]:
             and r["match"].get("account_id") == account_id
         ]
 
-
-# Back-compat shim: the old conversation-centric callers used
-# auto_bind / attach / detach. Those move onto the new "session"
-# concept inside agents; this module is now pure routing.

@@ -125,11 +125,11 @@ def test_function_executes_with_host_supplied_call(no_implicit_state_dir):
 def test_execution_persists_to_explicit_directory(tmp_path, no_implicit_state_dir):
     """Session state lands in the caller's directory and reads back as a DAG."""
     from openprogram import agentic_function, Runtime
-    from openprogram.store import GraphStoreShim, SessionStore, session_scope
+    from openprogram.store import SessionNodeWriter, SessionStore, session_scope
 
     store = SessionStore(tmp_path / "host_sessions")
     store.create_session("embedded", agent_id="main")
-    shim = GraphStoreShim(store, "embedded")
+    shim = SessionNodeWriter(store, "embedded")
 
     runtime = Runtime(call=echo_call, model="test")
 

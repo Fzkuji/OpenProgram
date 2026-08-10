@@ -73,7 +73,7 @@ is one frozen spec:
 ```python
 @dataclass(frozen=True)
 class SettingSpec:
-    key: str                 # stable id, e.g. "ui.port"
+    key: str                 # stable id, e.g. "ui.web_port"
     path: tuple[str, ...]    # dot-path into config.json, e.g. ("ui","port")
     group: str               # "Ports" | "Model" | "Theme" | ...
     label: str
@@ -95,7 +95,7 @@ only access path:
   writer for `api_keys`), falling back to a generic dot-path write otherwise.
 
 The generic dot-path write carries a blocked-key guard against
-prototype-pollution keys. This is what makes `config set ui.port 19000` safe
+prototype-pollution keys. This is what makes `config set ui.web_port 19000` safe
 regardless of which surface issued it.
 
 ### Where values live
@@ -112,7 +112,7 @@ one panel edit both.
 Each spec declares whether its change takes effect this session or at the next
 start, and `set_setting` returns which one applied. Fields that are re-read per
 use (theme, effort, model, search default, tool toggles) are `live`. Fields
-that are read once at bind time (`ui.port`, `ui.web_port`, `memory.backend`)
+that are read once at bind time (`ui.web_port`, `memory.backend`)
 are `next-start`, and the surface says so at the moment of the edit rather than
 leaving the user to discover that nothing happened.
 
@@ -129,7 +129,6 @@ checkbox fields reuse `Picker` directly; number and text fields use
 
 | Group | Field | Widget | Apply | Backing |
 |---|---|---|---|---|
-| Ports | backend port | number | next-start | `ui.port` |
 | | frontend port | number | next-start | `ui.web_port` |
 | | open browser | toggle | next-start | `ui.open_browser` |
 | Model | default model | picker | live | `default_provider` / `default_model` |

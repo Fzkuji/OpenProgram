@@ -3,9 +3,9 @@
  * the framework-neutral `font-stacks.ts` so the SSR root layout can read
  * the same data and paint the correct font on the FIRST frame.
  *
- * Persistence: the cookie is the source of truth (server reads it during
- * SSR). We also mirror to localStorage and broadcast to subscribers so
- * open tabs update live. Base CSS binds `body { font-family:
+ * Persistence: the cookie is the single source of truth (the server
+ * reads it during SSR); changes broadcast to in-page subscribers so
+ * every mounted picker updates live. Base CSS binds `body { font-family:
  * var(--font-sans); }`, so overriding that variable on <html> cascades
  * through the whole UI.
  */
@@ -14,7 +14,6 @@
 import { useEffect, useState } from "react";
 import {
   FONT_STACKS,
-  FONT_STORAGE_KEY,
   FONT_COOKIE,
   DEFAULT_FONT,
   coerceFontKey,
@@ -53,9 +52,7 @@ function readCookie(): FontKey | null {
 
 function readStored(): FontKey {
   if (typeof window === "undefined") return DEFAULT_FONT;
-  // Cookie first (matches what SSR used); fall back to legacy
-  // localStorage, then default.
-  return readCookie() ?? coerceFontKey(localStorage.getItem(FONT_STORAGE_KEY));
+  return readCookie() ?? DEFAULT_FONT;
 }
 
 function applyFont(font: FontKey): void {
@@ -70,7 +67,6 @@ export function setFont(next: FontKey): void {
   current = next;
   if (typeof window !== "undefined") {
     writeCookie(next);
-    localStorage.setItem(FONT_STORAGE_KEY, next);
     applyFont(next);
   }
   subscribers.forEach((s) => s(next));
@@ -87,9 +83,6 @@ export function useFontPref() {
     current = stored;
     applyFont(stored);
     setFontState(stored);
-    // Heal a missing cookie (e.g. a user who only ever had localStorage
-    // from before this change) so the NEXT SSR paint is already correct.
-    if (readCookie() == null) writeCookie(stored);
     const sub = (v: FontKey) => setFontState(v);
     subscribers.add(sub);
     return () => {

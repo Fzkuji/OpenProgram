@@ -19,7 +19,7 @@ OPENPROGRAM_PROFILE=dev openprogram  # 或环境变量，二者等价（两者�
 
 ```bash
 # 1. 持久化到该 profile 的配置（推荐，之后启动不用再带参数）
-openprogram --profile dev ports --frontend 18200
+openprogram --profile dev ports --port 18200
 
 # 2. 环境变量，覆盖本次运行
 OPENPROGRAM_WEB_PORT=18200 openprogram web
@@ -28,7 +28,6 @@ OPENPROGRAM_WEB_PORT=18200 openprogram web
 openprogram web --port 18200
 ```
 
-`OPENPROGRAM_BACKEND_PORT` 和 `ports --backend` 仍可用，是同一个单端口的遗留别名（环境变量被读到时 worker 会打警告）。
 
 `ports` 的设置写进当前 profile 的 config，所以每个 profile 记住自己的端口。
 
@@ -41,7 +40,7 @@ openprogram web --port 18200
 openprogram web                        # http://localhost:18100
 
 # 开发实例：先把端口写进 dev profile（一次性）
-openprogram --profile dev ports --frontend 18200
+openprogram --profile dev ports --port 18200
 
 # 之后每次这样启动
 openprogram --profile dev web          # http://localhost:18200

@@ -213,8 +213,8 @@ def persist_assistant_message(
         # directly, skipping the _msg_to_node round-trip
         # (dag/overview.md step 5).
         try:
-            from openprogram.store import GraphStoreShim
-            _shim = GraphStoreShim(db, req.session_id)
+            from openprogram.store import SessionNodeWriter
+            _shim = SessionNodeWriter(db, req.session_id)
             _meta = {
                 k: v for k, v in assistant_msg.items()
                 if k not in {"id", "role", "content", "timestamp"}

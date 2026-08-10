@@ -16,10 +16,10 @@ caches over git.
 ## The three groups
 
 The files are split into three sub-packages by concern. Each sub-package
-re-exports its public names, and the top-level `store/__init__.py`
-re-exports the historical surface — so `from openprogram.store import
-SessionStore` and `from openprogram.store import project_commit` keep
-working unchanged.
+re-exports its public names; the top-level `store/__init__.py` re-exports
+only the classes and the per-turn ContextVars (`SessionStore`,
+`default_store`, `SessionNodeWriter`, …). Modules are imported from their
+own sub-package: `from openprogram.store.project import project_commit`.
 
 ```
 store/
@@ -33,7 +33,8 @@ store/
 │                           checkout). UTF-8 forced so CJK commits work.
 │    memory_index.py        SessionMemoryIndex: in-memory DAG index, rebuilt
 │                           from git on cache miss
-│    graphstore_shim.py     back-compat shim emulating the old GraphStore API
+│    session_node_writer.py   SessionNodeWriter: by-node DAG writes (append /
+│                           update / load) onto one session repo
 │    _msg_adapter.py        message-dict ⇄ Call-node translation
 │    search.py              cross-session message search (ripgrep)
 │
@@ -55,16 +56,16 @@ store/
        paths.py               layout + backup-name hashing
        gc.py                  evict_old: cap retained turn-dirs (called at
                               turn end by the dispatcher)
-       helpers.py             backup_for_current_turn — one-line tool hook
+       helpers.py             checkpoint_before_edit — one-line tool hook
 ```
 
 > **Import paths** after the regroup: the canonical forms are
 > `from openprogram.store.session import SessionStore`,
 > `from openprogram.store.project import ProjectGit, resolve_project`,
 > `from openprogram.store.snapshot import read_tracking` /
-> `from openprogram.store.snapshot.file_backup import BackupStore`. The old
-> flat paths (`openprogram.store.session_store`, `…project_commit`, etc.)
-> still resolve via top-level aliases, so existing call sites didn't break.
+> `from openprogram.store.snapshot.file_backup import BackupStore`. Every
+> module lives under its sub-package — there are no flat top-level module
+> aliases.
 
 Designs: [`git-as-entity-memory.md`](../../docs/design/memory/git-as-entity-memory.md)
 (why git), [`overview.md`](../../docs/design/memory/overview.md) (entity layer),

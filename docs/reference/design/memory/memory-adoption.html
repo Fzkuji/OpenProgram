@@ -587,7 +587,7 @@
 
   <p class="note no"><b>而且"离开一条分支"在我们这里不是一个能观察到的事件。</b>
   事件注册表里没有任何 head 移动或者分支切换的事件；head 的写入散在五处
-  （<code>set_head</code>、<code>append_message</code> 的链式前进、<code>GraphStoreShim.append</code>、
+  （<code>set_head</code>、<code>append_message</code> 的链式前进、<code>SessionNodeWriter.append</code>、
   <code>update_session</code>、<code>_rewind.py</code> 直接改索引），它们唯一共同经过的地方是
   <code>SessionMemoryIndex.set_head</code>，而那里把旧值直接丢掉了。
   照抄 pi-mono 就得先在这条链路上开一个新事件、并让它记住上一个 head 是谁，

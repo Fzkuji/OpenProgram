@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from openprogram.context.nodes import Call, Graph, ROLE_USER, ROLE_LLM
-from openprogram.store import SessionStore, GraphStoreShim
+from openprogram.store import SessionStore, SessionNodeWriter
 from openprogram.store.session.session_store import (
     BrokenPredecessorChainError,
     PredecessorMissingError,
@@ -88,7 +88,7 @@ def test_append_without_predecessor_rejected(db):
 def test_shim_append_without_predecessor_rejected(db):
     _seed_turn(db, "s1")
     with pytest.raises(PredecessorMissingError):
-        GraphStoreShim(db, "s1").append(
+        SessionNodeWriter(db, "s1").append(
             Call(id="u2", role=ROLE_USER, output="orphan", caller="ROOT"))
 
 
@@ -105,7 +105,7 @@ def test_spawn_root_exempt_and_code_nodes_ignored(db):
     rid = db.spawn_branch("s1", "a1", source="agent_spawn", prompt="sub")
     assert db.message_exists("s1", rid)
     # Code nodes are not conversational — the invariant ignores them.
-    GraphStoreShim(db, "s1").append(
+    SessionNodeWriter(db, "s1").append(
         Call(id="c1", role="code", name="fn", input={}, output=None))
 
 

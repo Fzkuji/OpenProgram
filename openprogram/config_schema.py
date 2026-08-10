@@ -31,7 +31,7 @@ APPLY_NEXT_START = "next_start"
 
 @dataclass(frozen=True)
 class SettingSpec:
-    key: str                              # stable id, e.g. "ui.port"
+    key: str                              # stable id, e.g. "ui.web_port"
     path: tuple[str, ...]                 # dot-path into config.json
     group: str                            # "Ports" | "Memory" | ...
     label: str
@@ -145,15 +145,6 @@ def _validate_hooks(v: Any) -> Optional[str]:
 # the registry
 
 SETTINGS: list[SettingSpec] = [
-    SettingSpec(
-        key="ui.port", path=("ui", "port"), group="Ports",
-        label="Backend port", widget="number",
-        apply=APPLY_NEXT_START, default=_setup.DEFAULT_BACKEND_PORT,
-        validate=_validate_port,
-        help="The port the API + WebSocket backend (FastAPI worker) listens "
-             "on. The web UI and TUI both talk to it here. Rebinds on the "
-             "next start.",
-    ),
     SettingSpec(
         key="ui.web_port", path=("ui", "web_port"), group="Ports",
         label="Frontend port", widget="number",
@@ -534,9 +525,7 @@ def set_setting(key: str, value: Any) -> dict:
             return {"error": f"{spec.label}: must be one of {', '.join(opts)}"}
 
     # route to the typed writer that already owns this key, else dot-path
-    if spec.key == "ui.port":
-        _setup.set_ui_ports(backend_port=coerced)
-    elif spec.key == "ui.web_port":
+    if spec.key == "ui.web_port":
         _setup.set_ui_ports(web_port=coerced)
     elif spec.key == "ui.open_browser":
         _setup.set_ui_ports(open_browser=coerced)
@@ -549,7 +538,7 @@ def set_setting(key: str, value: Any) -> dict:
 
     # surface a port conflict the way `openprogram ports` does, so the
     # editor can warn "that port is taken by <who>" right after saving.
-    if spec.key in ("ui.port", "ui.web_port"):
+    if spec.key == "ui.web_port":
         try:
             from openprogram._ports import describe_port_owner
             owner = describe_port_owner(coerced)

@@ -38,9 +38,9 @@ The implementation pattern is uniformly "`store=_store.get(); if store is None: 
 ```
 SessionDB (default_db / SessionStore)           # persistence backend (per-session git repo)
    └─ ~/.openprogram/sessions/<session_id>/      # history/ + context/ + meta.json
-GraphStoreShim(db, session_id)                   # thin wrapper: append/update/load DAG nodes
+SessionNodeWriter(db, session_id)                   # thin wrapper: append/update/load DAG nodes
 ContextVars (per turn, must be set+reset in pairs):
-   _store           = GraphStoreShim(...)         # deep code reads it to write the DAG / render docs
+   _store           = SessionNodeWriter(...)         # deep code reads it to write the DAG / render docs
    _current_turn_id = assistant_msg_id            # which message a file backup is attributed to
    _current_runtime = create_runtime()            # used for @agentic_function auto-injection
    _call_id         = (set by the @agentic_function wrapper)  # node called_by attribution
@@ -86,7 +86,7 @@ def session_context(
     tid = turn_id or ("turn_" + _short_uuid())
 
     tokens = []
-    tokens.append(("_store",  _store.set(GraphStoreShim(db, sid))))
+    tokens.append(("_store",  _store.set(SessionNodeWriter(db, sid))))
     tokens.append(("_turn",   _current_turn_id.set(tid)))
     if rt is not None:
         tokens.append(("_rt", _current_runtime.set(rt)))

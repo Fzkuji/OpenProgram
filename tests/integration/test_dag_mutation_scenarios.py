@@ -122,7 +122,7 @@ def test_prompt_after_compaction_is_summary_plus_tail(store):
     segment's position, subsequent turns unaffected."""
     from openprogram.context.nodes import render_context
     from openprogram.context.persistence import Persister, rendered_history
-    from openprogram.store.session.graphstore_shim import GraphStoreShim
+    from openprogram.store.session.session_node_writer import SessionNodeWriter
 
     tip = _seed(store, "s", 5)
     msgs = store.get_messages("s")
@@ -130,7 +130,7 @@ def test_prompt_after_compaction_is_summary_plus_tail(store):
         "s", summary_text="recap", cut_idx=6, history=msgs)
     assert sid
 
-    graph = GraphStoreShim(store, "s").load()
+    graph = SessionNodeWriter(store, "s").load()
     head = (store.get_session("s") or {}).get("head_id")
     ids = render_context(graph, head_id=head, frame_entry_seq=-1)
     covered = {m["id"] for m in msgs[:6]}
@@ -148,7 +148,7 @@ def test_prompt_after_compaction_is_summary_plus_tail(store):
 def test_double_compaction_extends_coverage_and_keeps_one_active(store):
     from openprogram.context.nodes import active_summary, render_context
     from openprogram.context.persistence import Persister, rendered_history
-    from openprogram.store.session.graphstore_shim import GraphStoreShim
+    from openprogram.store.session.session_node_writer import SessionNodeWriter
 
     tip = _seed(store, "s", 6)
     first = Persister().insert_summary_node(
@@ -161,7 +161,7 @@ def test_double_compaction_extends_coverage_and_keeps_one_active(store):
         "s", summary_text="recap 2", cut_idx=3, history=view)
     assert second
 
-    graph = GraphStoreShim(store, "s").load()
+    graph = SessionNodeWriter(store, "s").load()
     assert active_summary(graph).id == second
     covers = graph.nodes[second].metadata["covers_ids"]
     assert first not in covers, "coverage names real turns, not summaries"

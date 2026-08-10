@@ -365,8 +365,6 @@ export function useWS(): void {
             updateAgentBadges();
           }
           return true;
-        case "full_tree": // legacy no-op
-          return true;
         case "event":
           return true;
         // runtime.ask/confirm/approval —— 系统停下来等用户决定。入 composer
@@ -411,8 +409,6 @@ export function useWS(): void {
             useFunctions.getState().setFunctions((d || []) as never[]);
           });
           loadProgramsMeta().then(() => renderFunctions());
-          return true;
-        case "history_list": // legacy no-op
           return true;
         case "channel_accounts":
           onChannelAccountsMessage(d as never);

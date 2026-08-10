@@ -67,42 +67,13 @@ export type FunctionIconSlug = keyof typeof FUNCTION_ICONS;
 
 export const DEFAULT_ICON: FunctionIconSlug = "box";
 
-/** programs-meta values stored before the emoji → flat-icon switch.
- *  Map each legacy emoji onto the closest slug so an old pick still
- *  resolves to an icon instead of silently falling back to default. */
-const LEGACY_EMOJI_TO_SLUG: Record<string, FunctionIconSlug> = {
-  "📦": "box",
-  "🤖": "bot",
-  "🌐": "earth",
-  "🔍": "telescope",
-  "📚": "scan-text",
-  "🖥": "cpu",
-  "📄": "scan-text",
-  "📊": "chart-column",
-  "🎨": "pen-tool",
-  "✏️": "feather",
-  "🛠": "hammer",
-  "⚡": "gauge",
-  "💡": "atom",
-  "🔥": "flame",
-  "⭐": "compass",
-  "🎯": "route",
-  "📷": "eye",
-  "🎵": "mic",
-  "🧠": "atom",
-  "💬": "mic",
-  "🎮": "rocket",
-  "🚀": "rocket",
-  "🧪": "atom",
-  "✨": "flame",
-};
-
-/** Resolve whatever programs-meta holds (slug, legacy emoji, or
- *  nothing) to a valid slug. */
+/** Resolve whatever programs-meta holds to a valid slug. The backend
+ *  rewrites pre-flat-icon emoji values to slugs on read, so anything
+ *  unrecognised here is genuinely unset. */
 export function normalizeIcon(value: string | undefined | null): FunctionIconSlug {
   if (!value) return DEFAULT_ICON;
   if (value in FUNCTION_ICONS) return value as FunctionIconSlug;
-  return LEGACY_EMOJI_TO_SLUG[value] ?? DEFAULT_ICON;
+  return DEFAULT_ICON;
 }
 
 export function IconPicker({

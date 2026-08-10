@@ -1,7 +1,7 @@
 # Single-Port Architecture
 
-> This document describes the single-port runtime: one process, one port, the
-> Python worker as sole origin. For the dual-port split it replaces, see
+> One process, one port, the Python worker as sole origin. The port's
+> configuration surface and conflict handling live in
 > [ports.md](ports.md).
 
 ## 1. The problem with three processes

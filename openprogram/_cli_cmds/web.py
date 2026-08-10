@@ -194,13 +194,12 @@ def _stop_frontend(proc: subprocess.Popen | None) -> None:
             pass
 
 
-def _cmd_web(port, open_browser, web_port=None):
+def _cmd_web(web_port, open_browser):
     """Start the web UI (single port — API, /ws and the frontend export).
 
-    ``port`` / ``web_port`` / ``open_browser`` = None means "use the
-    user's stored pref" (``openprogram ports`` / ``openprogram setup
-    ui``). Single-port resolution: explicit --web-port → explicit
-    --port (legacy alias) → env / pref / default via
+    ``web_port`` / ``open_browser`` = None means "use the user's stored
+    pref" (``openprogram ports`` / ``openprogram setup ui``). Port
+    resolution: explicit ``--web-port`` → env / pref / default via
     ``resolve_worker_port``.
     """
     try:
@@ -220,8 +219,6 @@ def _cmd_web(port, open_browser, web_port=None):
         open_browser = True
 
     from openprogram.worker.lifecycle import resolve_worker_port
-    if web_port is None:
-        web_port = port  # --port is a legacy alias for the single port
     port = web_port = int(web_port) if web_port else resolve_worker_port()
 
     # Backend port already held? Binding again raises a bare errno-48

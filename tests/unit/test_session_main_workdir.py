@@ -61,7 +61,7 @@ def _add_turn(db, session_id: str) -> None:
 
 def test_bind_allowed_while_session_has_no_turns(env, tmp_path: Path):
     db = env
-    from openprogram.store import project_store as P
+    from openprogram.store.project import project_store as P
     proj = P.resolve_project(tmp_path / "proj_a", name="a")
     (tmp_path / "proj_a").mkdir(exist_ok=True)
     db.create_session("s1", "main")
@@ -77,7 +77,7 @@ def test_bind_allowed_while_session_has_no_turns(env, tmp_path: Path):
 
 def test_rebind_rejected_once_session_has_turns(env, tmp_path: Path):
     db = env
-    from openprogram.store import project_store as P
+    from openprogram.store.project import project_store as P
     (tmp_path / "a").mkdir()
     (tmp_path / "b").mkdir()
     a = P.resolve_project(tmp_path / "a", name="a")
@@ -101,7 +101,7 @@ def test_rebind_to_same_project_still_allowed_after_turns(env, tmp_path: Path):
     """草稿转正：第一帧带 project_id 建库，chat_ack 再补一次幂等 bind，
     此时会话已有轮次——同项目重绑必须放行，否则反向索引写不进去。"""
     db = env
-    from openprogram.store import project_store as P
+    from openprogram.store.project import project_store as P
     (tmp_path / "a").mkdir()
     a = P.resolve_project(tmp_path / "a", name="a")
     # create_session(project_id=...) 就是 handle_chat 走的那条路，它已经
@@ -125,7 +125,7 @@ def test_project_workdir_none_when_directory_missing(env, tmp_path: Path,
     """目录消失 → 不回落到默认项目（家目录），返回 None 让调用方用
     会话 workdir/ 兜底。"""
     from openprogram.agent.internals import _workdir
-    from openprogram.store import project_store as P
+    from openprogram.store.project import project_store as P
     gone = tmp_path / "gone"
     gone.mkdir()
     proj = P.resolve_project(gone, name="gone")
@@ -139,7 +139,7 @@ def test_project_workdir_none_when_directory_missing(env, tmp_path: Path,
 
 def test_project_path_missing_none_when_directory_present(env, tmp_path: Path):
     from openprogram.agent.internals import _workdir
-    from openprogram.store import project_store as P
+    from openprogram.store.project import project_store as P
     live = tmp_path / "live"
     live.mkdir()
     proj = P.resolve_project(live, name="live")
@@ -151,7 +151,7 @@ def test_project_path_missing_none_when_directory_present(env, tmp_path: Path):
 
 
 def test_list_projects_reports_path_missing(env, tmp_path: Path):
-    from openprogram.store import project_store as P
+    from openprogram.store.project import project_store as P
     gone = tmp_path / "gone"
     gone.mkdir()
     P.resolve_project(gone, name="gone")
@@ -167,7 +167,7 @@ def test_list_projects_reports_path_missing(env, tmp_path: Path):
 
 
 def test_relocate_project_moves_path_and_keeps_id(env, tmp_path: Path):
-    from openprogram.store import project_store as P
+    from openprogram.store.project import project_store as P
     old = tmp_path / "old"
     old.mkdir()
     new = tmp_path / "new"
@@ -181,7 +181,7 @@ def test_relocate_project_moves_path_and_keeps_id(env, tmp_path: Path):
 
 
 def test_relocate_default_project_refused(env):
-    from openprogram.store import project_store as P
+    from openprogram.store.project import project_store as P
     default = P.get_default_project()
     with pytest.raises(P.ProjectStoreError):
         P.relocate_project(default.id, Path.home())
@@ -189,7 +189,7 @@ def test_relocate_default_project_refused(env):
 
 def test_relocate_records_a_graph_node(env, tmp_path: Path):
     db = env
-    from openprogram.store import project_store as P
+    from openprogram.store.project import project_store as P
     from openprogram.store.project.relocate_node import NODE_NAME
     old = tmp_path / "old"
     old.mkdir()
@@ -230,7 +230,7 @@ def test_relocate_records_a_graph_node(env, tmp_path: Path):
 
 
 def test_relocate_rejects_non_directory(env, tmp_path: Path):
-    from openprogram.store import project_store as P
+    from openprogram.store.project import project_store as P
     old = tmp_path / "old"
     old.mkdir()
     proj = P.resolve_project(old, name="old")
@@ -251,7 +251,7 @@ def test_relocate_rejects_non_directory(env, tmp_path: Path):
 def test_additional_dirs_still_editable_after_freeze(env, tmp_path: Path):
     """主目录定格不牵连追加目录——有轮次的会话仍能增删。"""
     db = env
-    from openprogram.store import project_store as P
+    from openprogram.store.project import project_store as P
     (tmp_path / "a").mkdir()
     a = P.resolve_project(tmp_path / "a", name="a")
     db.create_session("s1", "main")

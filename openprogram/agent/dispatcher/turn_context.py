@@ -54,7 +54,7 @@ class TurnBindings:
         # can create its own runtime as before — DAG persistence
         # gracefully degrades to off for this turn.
         from openprogram.store import (
-            GraphStoreShim as _GraphStore,
+            SessionNodeWriter as _GraphStore,
             _store as _store_var,
             _current_turn_id as _turn_id_var,
         )
@@ -119,7 +119,7 @@ class TurnBindings:
         # uncommitted work apart from the agent's edits (Strategy A). None
         # when disabled / ad-hoc session. Best-effort — never blocks a turn.
         try:
-            from openprogram.store import project_commit as _pc
+            from openprogram.store.project import project_commit as _pc
             self.project_baseline = _pc.snapshot_baseline(req.session_id)
         except Exception:
             self.project_baseline = None

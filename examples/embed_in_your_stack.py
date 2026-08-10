@@ -20,7 +20,7 @@ from pathlib import Path
 
 from openprogram import agentic_function, Runtime
 from openprogram.agentic_programming.tool_format import to_openai_tools
-from openprogram.store import GraphStoreShim, SessionStore, session_scope
+from openprogram.store import SessionNodeWriter, SessionStore, session_scope
 
 
 # ── 1. Your LLM call ────────────────────────────────────────────
@@ -115,7 +115,7 @@ def main():
     # ``caller`` edge. Following ``caller`` turns the flat list into the
     # call tree — this is the context later calls are assembled from.
 
-    graph = GraphStoreShim(store, "review-42").load()
+    graph = SessionNodeWriter(store, "review-42").load()
     print("\n── Execution DAG ──")
     for node in graph:
         kind = "fn " if node.is_code() else "llm" if node.is_llm() else "usr"

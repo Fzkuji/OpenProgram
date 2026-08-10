@@ -32,7 +32,7 @@ echo 'export PATH="$(python3 -m site --user-base)/bin:$PATH"' >> ~/.zshrc
 export OPENPROGRAM_WEB_PORT=8101         # 单端口（默认 18100）
 ```
 
-或持久化该偏好：`openprogram ports --frontend 8101`。`OPENPROGRAM_BACKEND_PORT` 是同一端口的遗留别名。
+或持久化该偏好：`openprogram ports --port 8101`。
 
 ## 本地开发安装（多仓库）
 

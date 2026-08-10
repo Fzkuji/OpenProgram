@@ -114,7 +114,7 @@ def tmp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
         "openprogram.agent.session_db.default_db",
         lambda: db,
     )
-    monkeypatch.setattr("openprogram.store.session_store.default_store",
+    monkeypatch.setattr("openprogram.store.session.session_store.default_store",
                         lambda: db)
     monkeypatch.setattr("openprogram.store.default_store", lambda: db)
     return db

@@ -20,7 +20,7 @@ import openprogram.functions.tools.edit.edit  # noqa: F401
 import openprogram.functions.tools.apply_patch.apply_patch  # noqa: F401
 
 from openprogram.functions._runtime import get as get_tool
-from openprogram.store import _store, _current_turn_id, SessionStore, GraphStoreShim
+from openprogram.store import _store, _current_turn_id, SessionStore, SessionNodeWriter
 from openprogram.store.snapshot.checkpoint import CheckpointStore
 
 
@@ -49,7 +49,7 @@ def turn_ctx(session_root, tmp_path):
     """Install per-turn ContextVars the way the dispatcher does."""
     from openprogram.worktree.context import reset_worktree, set_worktree
 
-    shim = GraphStoreShim(session_root, SESSION_ID)
+    shim = SessionNodeWriter(session_root, SESSION_ID)
     store_tok = _store.set(shim)
     turn_tok = _current_turn_id.set(TURN_ID)
     worktree_tok = set_worktree(str(tmp_path))

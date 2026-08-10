@@ -248,7 +248,7 @@ def load_merged_rules(session_id: str):
 
     # 项目层（主要载体）——session → project → project settings 的 permission_rules
     try:
-        from openprogram.store import project_store as _projects
+        from openprogram.store.project import project_store as _projects
         proj = _projects.project_for_session(session_id)
         if proj is not None:
             _extend(_projects.load_project_settings(proj.id).get("permission_rules"))

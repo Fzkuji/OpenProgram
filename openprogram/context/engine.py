@@ -488,11 +488,11 @@ class DefaultContextEngine(ContextEngine):
             raise RuntimeError("dag render path requires session_id")
         from openprogram.context.nodes import render_context
         from openprogram.context.render import render_dag_messages
-        from openprogram.store.session.graphstore_shim import GraphStoreShim
+        from openprogram.store.session.session_node_writer import SessionNodeWriter
         from openprogram.agent.session_db import default_db
 
         db = default_db()
-        shim = GraphStoreShim(db, session_id)
+        shim = SessionNodeWriter(db, session_id)
         graph = shim.load()
 
         branch = db.get_branch(session_id) or history or []

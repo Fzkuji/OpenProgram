@@ -986,14 +986,6 @@ class Runtime:
             return default
         raise AskTimeout(prompt)
 
-    def ask_many(self, questions: list, *, prompt: str = "",
-                 timeout: float = 300.0, default: list | None = None):
-        """已并入 ``ask``。保留为薄别名（向后兼容现有调用）：等价于
-        ``ask(questions=questions, prompt=prompt, ...)``。新代码直接用
-        ``runtime.ask(questions=[...])``。"""
-        return self.ask(questions=questions, prompt=prompt,
-                        timeout=timeout, default=default)
-
     # --- Working directory ---
 
     def set_workdir(self, path: str) -> None:

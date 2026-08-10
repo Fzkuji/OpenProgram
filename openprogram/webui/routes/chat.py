@@ -260,7 +260,7 @@ def run_agentic_function_call(
     try:
         from openprogram.agent.session_db import default_db
         from openprogram.context.nodes import Call as _C, ROLE_USER as _RU
-        from openprogram.store import GraphStoreShim as _GS
+        from openprogram.store import SessionNodeWriter as _GS
         _db = default_db()
         if not _db.message_exists(session_id, "ROOT"):
             _GS(_db, session_id).append(_C(
@@ -288,7 +288,7 @@ def run_agentic_function_call(
             create_pending_call_node as _mk_node,
             _registry as _fn_registry,
         )
-        from openprogram.store import GraphStoreShim as _GS2
+        from openprogram.store import SessionNodeWriter as _GS2
         _inst = _fn_registry.get(name) or next(
             (v for v in _fn_registry.values()
              if getattr(v, "tool_name", None) == name), None,

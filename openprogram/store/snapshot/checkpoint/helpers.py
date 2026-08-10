@@ -46,7 +46,3 @@ def checkpoint_before_edit(abs_path: str, content_src: str | None = None) -> Non
             turn_id, abs_path, content_src=content_src)
     except Exception:
         return
-
-
-# Backward-compatible alias
-backup_for_current_turn = checkpoint_before_edit

@@ -968,7 +968,7 @@ def test_graphstore_update_keeps_fields_across_an_interleaved_external_append(
     expect_spill: bool,
 ):
     from openprogram.agent.session_db import SessionDB
-    from openprogram.store.session.graphstore_shim import GraphStoreShim
+    from openprogram.store.session.session_node_writer import SessionNodeWriter
 
     root = tmp_path / "sessions"
     writer = SessionDB(root)
@@ -1002,7 +1002,7 @@ def test_graphstore_update_keeps_fields_across_an_interleaved_external_append(
         return pair
 
     monkeypatch.setattr(writer, "_open", open_then_append)
-    GraphStoreShim(writer, "interleaved").update("pointer", **update_fields)
+    SessionNodeWriter(writer, "interleaved").update("pointer", **update_fields)
 
     reader = SessionDB(root)
     request.addfinalizer(lambda: _close_store(reader))

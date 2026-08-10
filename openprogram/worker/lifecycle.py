@@ -1,8 +1,7 @@
 """Lifecycle controls for the persistent worker process.
 
-Mirrors the channels worker (``openprogram.channels.worker``) but
-generalized: the worker now hosts the webui WebSocket server even when
-no channel is configured. Channel polling remains an optional add-on.
+The worker hosts the webui WebSocket server even when no channel is
+configured. Channel polling remains an optional add-on.
 
 Public functions:
 
@@ -71,35 +70,25 @@ def read_worker_port() -> Optional[int]:
     return None
 
 
-def resolve_worker_port(*, warn_legacy: bool = False) -> int:
+def resolve_worker_port() -> int:
     """Single-port resolution (docs/reference/design/cli/single-port.md).
 
-    Priority: ``OPENPROGRAM_WEB_PORT`` (the single port) →
-    ``OPENPROGRAM_BACKEND_PORT`` (legacy alias from the dual-port era) →
-    UI pref ``web_port`` → UI pref ``port`` → 18100.
+    Priority: ``OPENPROGRAM_WEB_PORT`` → UI pref ``web_port`` → 18100.
 
     Multi-instance setups (a stable and a dev worker side by side)
-    differ only by profile + env; a dev alias that still sets BOTH env
-    vars gets the web one (e.g. 18200 wins over 18209).
+    differ only by profile + env.
     """
-    for env_name, legacy in (("OPENPROGRAM_WEB_PORT", False),
-                             ("OPENPROGRAM_BACKEND_PORT", True)):
-        raw = os.environ.get(env_name, "").strip()
-        if raw:
-            try:
-                port = int(raw)
-            except ValueError:
-                continue
-            if legacy and warn_legacy:
-                print("[worker] OPENPROGRAM_BACKEND_PORT is a legacy alias — "
-                      "web and backend ports are merged; use OPENPROGRAM_WEB_PORT")
-            return port
+    raw = os.environ.get("OPENPROGRAM_WEB_PORT", "").strip()
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
     try:
         from openprogram.setup import _read_config
         ui = _read_config().get("ui") or {}
-        for key in ("web_port", "port"):
-            if ui.get(key):
-                return int(ui[key])
+        if ui.get("web_port"):
+            return int(ui["web_port"])
     except Exception:
         pass
     return 18100

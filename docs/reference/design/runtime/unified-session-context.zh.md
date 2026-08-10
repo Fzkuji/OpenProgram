@@ -38,9 +38,9 @@ OpenProgram 的几个核心能力——**函数 docstring 自动进 prompt**、*
 ```
 SessionDB (default_db / SessionStore)           持久化后端(per-session git 仓库)
    └─ ~/.openprogram/sessions/<session_id>/      history/ + context/ + meta.json
-GraphStoreShim(db, session_id)                   瘦包装:append/update/load DAG 节点
+SessionNodeWriter(db, session_id)                   瘦包装:append/update/load DAG 节点
 ContextVars(per turn,必须 set+reset 配对):
-   _store           = GraphStoreShim(...)         深层代码读它写 DAG / 渲染 doc
+   _store           = SessionNodeWriter(...)         深层代码读它写 DAG / 渲染 doc
    _current_turn_id = assistant_msg_id            文件备份归属到哪条消息
    _current_runtime = create_runtime()            @agentic_function 自动注入用
    _call_id         = (由 @agentic_function 包装设)  节点 called_by 归属
@@ -86,7 +86,7 @@ def session_context(
     tid = turn_id or ("turn_" + _short_uuid())
 
     tokens = []
-    tokens.append(("_store",  _store.set(GraphStoreShim(db, sid))))
+    tokens.append(("_store",  _store.set(SessionNodeWriter(db, sid))))
     tokens.append(("_turn",   _current_turn_id.set(tid)))
     if rt is not None:
         tokens.append(("_rt", _current_runtime.set(rt)))

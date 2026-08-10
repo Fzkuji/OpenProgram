@@ -1,21 +1,23 @@
-"""Backward-compat shim emulating the old ``GraphStore`` API on top of
-``SessionStore``.
+"""Node-level write handle onto one session's DAG.
 
-A handful of call sites (``agentic_programming/runtime.py``,
-``agentic_programming/function.py``, ``agent/_turn_lifecycle.py``)
-pull a ``GraphStore`` instance out of a ``ContextVar`` and call:
+The dispatcher binds a ``SessionNodeWriter`` into the ``_store``
+ContextVar for the duration of a turn, so deep code
+(``agentic_programming/runtime.py``, ``agentic_programming/function.py``,
+``agent/internals/_turn_lifecycle.py``) writes DAG nodes without
+threading ``(store, session_id)`` through every layer:
 
-  * ``store.append(node)``      to persist a fresh node
-  * ``store.update(node_id, **fields)`` to fill in a placeholder
+  * ``append(node)``               persist a fresh Call
+  * ``update(node_id, **fields)``  fill in a placeholder in place
+  * ``load()``                     the session's DAG as a graph
 
-The new ``SessionStore`` doesn't expose those by id (it deals in
-sessions). Rather than rewrite every call site we wrap a
-(SessionStore + session_id) pair in this thin shim so the legacy
-interface keeps working.
+``SessionStore`` itself deals in whole sessions and message dicts; this
+is the by-node seam onto the same repo. It also carries the HEAD
+single-writer rule (context/compaction.md §5): ``advance_head=False``
+lets a spawned same-session turn write its nodes without stealing the
+session head.
 
-Only ``append`` and ``update`` are emulated — that's all those call
-sites use. Anything else raises so we notice quickly if more usage
-creeps in.
+Node writes go through here and nowhere else — anything not listed
+above raises, so a new write path is noticed immediately.
 """
 from __future__ import annotations
 
@@ -27,8 +29,8 @@ if TYPE_CHECKING:
     from .session_store import SessionStore
 
 
-class GraphStoreShim:
-    """``GraphStore``-shaped facade backed by ``SessionStore``."""
+class SessionNodeWriter:
+    """Per-node write handle onto one session, backed by ``SessionStore``."""
 
     def __init__(self, store: "SessionStore", session_id: str,
                  *, advance_head: bool = True):
@@ -42,9 +44,8 @@ class GraphStoreShim:
     def append(self, node: Call) -> None:
         """Persist a Call directly into the per-session index + history.
 
-        Mirrors the legacy ``GraphStore.append`` semantics: writes the
-        Call as-is (no lossy chat-msg round trip), assigns a seq, and
-        bumps head for conversation nodes. Idempotent on id.
+        Writes the Call as-is (no lossy chat-msg round trip), assigns
+        a seq, and bumps head for conversation nodes. Idempotent on id.
         """
         import time as _time
         pair = self.store._open(self.session_id, create_if_missing=True)

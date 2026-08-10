@@ -24,32 +24,9 @@ from __future__ import annotations
 import json
 import os
 import threading
-from pathlib import Path
 from typing import Any, Callable
 
 from openprogram.paths import get_config_path
-
-
-# Back-compat export — many readers used to import CONFIG_PATH directly.
-# Kept as a property-like getter: evaluating it returns the current
-# profile's config path rather than a value frozen at import time.
-class _ConfigPathProxy:
-    def __fspath__(self) -> str:
-        return str(get_config_path())
-    def __str__(self) -> str:
-        return str(get_config_path())
-    def __repr__(self) -> str:
-        return f"ConfigPath({get_config_path()!s})"
-    @property
-    def parent(self) -> Path:
-        return get_config_path().parent
-    def read_text(self, *a, **kw):
-        return get_config_path().read_text(*a, **kw, encoding="utf-8")
-    def write_text(self, *a, **kw):
-        return get_config_path().write_text(*a, **kw, encoding="utf-8")
-
-
-CONFIG_PATH: Any = _ConfigPathProxy()
 
 
 # --- storage helpers --------------------------------------------------------
@@ -173,9 +150,7 @@ def write_search_default_provider(name: str | None) -> None:
 # (< 49152, so it never collides with the OS ephemeral range); the
 # 18xxx block is rarely used by mainstream services. Single-port
 # architecture: the FastAPI worker serves the API, /ws AND the frontend
-# static export on one port. ``web_port`` remains as the preferred pref
-# name; ``port`` is the legacy backend-port pref, kept as an alias.
-DEFAULT_BACKEND_PORT = 18100
+# static export on one port, stored under the ``web_port`` pref.
 DEFAULT_WEB_PORT = 18100
 
 
@@ -183,7 +158,6 @@ def read_ui_prefs() -> dict[str, Any]:
     cfg = _read_config()
     ui = cfg.get("ui", {}) or {}
     return {
-        "port": int(ui.get("port") or DEFAULT_BACKEND_PORT),
         "web_port": int(ui.get("web_port") or DEFAULT_WEB_PORT),
         "open_browser": bool(ui.get("open_browser", True)),
     }
@@ -191,34 +165,22 @@ def read_ui_prefs() -> dict[str, Any]:
 
 def set_ui_ports(
     *,
-    backend_port: int | None = None,
     web_port: int | None = None,
     open_browser: bool | None = None,
 ) -> dict[str, Any]:
-    """Persist UI port prefs to the config. Only the keys passed are
+    """Persist UI prefs to the config. Only the keys passed are
     changed; the rest keep their stored values. Returns the resulting
     ``read_ui_prefs()`` dict. Takes effect on the next ``openprogram web``
     / ``worker`` start — nothing live is rebound here.
     """
     def _mut(cfg: dict) -> None:
         ui = cfg.setdefault("ui", {})
-        if backend_port is not None:
-            ui["port"] = int(backend_port)
         if web_port is not None:
             ui["web_port"] = int(web_port)
         if open_browser is not None:
             ui["open_browser"] = bool(open_browser)
     update_config(_mut)
     return read_ui_prefs()
-
-
-def read_agent_prefs() -> dict[str, Any]:
-    """Back-compat shim for callers that want a loose "what are the
-    agent defaults?" dict. Pulls from the default agent record."""
-    from openprogram.agent.management import manager as _agents
-    agent = _agents.get_default()
-    effort = (agent.thinking_effort if agent else None) or "medium"
-    return {"thinking_effort": effort}
 
 
 def prompt_schema_group(group: str) -> int:

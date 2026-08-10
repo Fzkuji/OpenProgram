@@ -308,15 +308,15 @@ async def handle_stop(ws, cmd: dict):
     # ~10ms for a small session.
     try:
         from openprogram.agent.session_db import default_db
-        from openprogram.store import GraphStoreShim
+        from openprogram.store import SessionNodeWriter
         _db = default_db()
         _msgs = _db.get_messages(session_id) or []
-        _shim: GraphStoreShim | None = None
+        _shim: SessionNodeWriter | None = None
         for _m in _msgs:
             if (_m.get("status") or "done") != "running":
                 continue
             if _shim is None:
-                _shim = GraphStoreShim(_db, session_id)
+                _shim = SessionNodeWriter(_db, session_id)
             _shim.update(
                 _m["id"],
                 metadata={

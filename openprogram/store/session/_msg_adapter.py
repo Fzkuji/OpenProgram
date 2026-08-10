@@ -1,16 +1,16 @@
 """Message-dict ⇄ Call-node translation helpers.
 
-Lifted out of the retired ``openprogram/context/session_db.py``. The
-legacy ``DagSessionDB`` adapter (SQLite-backed) is gone, but these
-pure-function translators are still needed by:
+The message dict is the boundary shape the dispatcher, channels and
+webui speak; ``Call`` is the on-disk DAG node. These pure functions
+are the one place that converts between them:
 
-  * ``openprogram/store/session_store.py`` — the new git-backed
-    SessionStore exposes message-dict shapes on its boundary for
-    backward compat with dispatcher / channels / webui call sites.
-  * ``openprogram/agent/dispatcher.py`` — the placeholder-update
-    path converts a tiny message-shape patch back into Call fields.
+  * ``openprogram/store/session/session_store.py`` — SessionStore's
+    public surface takes and returns message dicts, and translates
+    here on the way in and out.
+  * ``openprogram/agent/dispatcher/`` — the placeholder-update path
+    converts a small message-shape patch back into Call fields.
 
-No SQLite, no I/O — just shape conversion. Keep stateless.
+No I/O — just shape conversion. Keep stateless.
 """
 from __future__ import annotations
 

@@ -344,7 +344,7 @@ def _run_spawn_async(
     # Stitch task_id into the attach card's extra blob (re-write).
     try:
         from openprogram.agent.session_db import default_db
-        from openprogram.store import GraphStoreShim
+        from openprogram.store import SessionNodeWriter
         db = default_db()
         pair = db._open(session_id)  # noqa: SLF001
         if pair is not None:
@@ -386,7 +386,7 @@ def _run_spawn_async(
                 # card and can't render the Cancel button while the
                 # task is still running.
                 md["attach"] = attach
-                shim = GraphStoreShim(db, session_id)
+                shim = SessionNodeWriter(db, session_id)
                 shim.update(attach_node_id, output="(running)", metadata=md)
                 db.commit_turn(session_id, f"task: stitch {task_id}")
     except Exception:

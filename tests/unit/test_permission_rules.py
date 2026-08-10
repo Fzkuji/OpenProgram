@@ -462,8 +462,7 @@ def test_ask_runs_when_user_approves():
 
 
 def test_always_allow_persists_exact_normalized_operation(monkeypatch):
-    from openprogram.store import project_store
-
+    from openprogram.store.project import project_store
     saved = {}
     project = type("Project", (), {"id": "p"})()
     monkeypatch.setattr(project_store, "project_for_session", lambda _sid: project)
@@ -482,8 +481,7 @@ def test_always_allow_persists_exact_normalized_operation(monkeypatch):
 
 
 def test_always_allow_does_not_persist_complex_shell(monkeypatch):
-    from openprogram.store import project_store
-
+    from openprogram.store.project import project_store
     saved = []
     project = type("Project", (), {"id": "p"})()
     monkeypatch.setattr(project_store, "project_for_session", lambda _sid: project)

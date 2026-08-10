@@ -1,7 +1,7 @@
 """session_db — git-backed SessionStore facade.
 
 ``SessionDB`` is now an alias for :class:`SessionStore` (see
-``openprogram.store.session_store``). The old SQLite-backed
+``openprogram.store.session.session_store``). The old SQLite-backed
 ``DagSessionDB`` is retired; all session memory lives in
 ``~/.openprogram/sessions/<session_id>/`` git repos (or, for a
 project-bound session, inside the project's ``.openprogram/sessions/``).

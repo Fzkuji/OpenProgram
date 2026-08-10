@@ -52,7 +52,7 @@ def write(file_path: str, content: str) -> str:
     # a turn.
     if os.path.exists(file_path) and not os.path.isdir(file_path):
         try:
-            from openprogram.store import read_tracking as _rt
+            from openprogram.store.snapshot import read_tracking as _rt
             _fresh = _rt.check_fresh(file_path)
             if _fresh in (_rt.NEVER_READ, _rt.STALE):
                 return _rt.stale_message(file_path, _fresh)
@@ -78,7 +78,7 @@ def write(file_path: str, content: str) -> str:
     # Baseline the freshly-written content so the agent can edit/rewrite
     # this file again without re-reading.
     try:
-        from openprogram.store import read_tracking as _rt
+        from openprogram.store.snapshot import read_tracking as _rt
         _rt.mark_seen(file_path)
     except Exception:
         pass

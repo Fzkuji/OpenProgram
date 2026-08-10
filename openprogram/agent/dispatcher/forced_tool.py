@@ -145,7 +145,7 @@ def dispatch_forced_tool_call(
         # this is a belt-and-suspenders cleanup.
         try:
             from openprogram.agent.session_db import default_db as _ddb
-            from openprogram.store import GraphStoreShim as _GS
+            from openprogram.store import SessionNodeWriter as _GS
             _db = _ddb()
             _shim = _GS(_db, session_id)
             for _m in (_db.get_messages(session_id) or []):
@@ -179,7 +179,7 @@ def dispatch_forced_tool_call(
         # so this is a no-op for them.
         try:
             from openprogram.agent.session_db import default_db as _ddb
-            from openprogram.store import GraphStoreShim as _GS
+            from openprogram.store import SessionNodeWriter as _GS
             _db = _ddb()
             _db.invalidate_cache(session_id)
             _shim = _GS(_db, session_id)

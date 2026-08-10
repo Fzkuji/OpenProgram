@@ -421,7 +421,7 @@ def finalize_turn(
     # pre-existing uncommitted work, per Strategy A. Off unless opted in
     # (config ``project_auto_commit`` / env). Best-effort.
     try:
-        from openprogram.store import project_commit as _pc
+        from openprogram.store.project import project_commit as _pc
         _commit_sha = _pc.commit_turn_changes(
             req.session_id, req.user_text or "",
             _project_baseline, on_event=on_event,
@@ -531,7 +531,7 @@ def finalize_error_turn(
     # Project auto-commit: the agent may well have edited files before
     # failing, and those edits are just as real as a successful turn's.
     try:
-        from openprogram.store import project_commit as _pc
+        from openprogram.store.project import project_commit as _pc
         _pc.commit_turn_changes(
             req.session_id, req.user_text or "",
             _project_baseline, on_event=on_event,

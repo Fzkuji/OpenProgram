@@ -25,9 +25,9 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                         lambda: db)
     # The handler also probes the channel worker — short-circuit so
     # tests don't accidentally spawn the long-poll loop in tmp.
-    monkeypatch.setattr("openprogram.channels.worker.current_worker_pid",
+    monkeypatch.setattr("openprogram.worker.current_worker_pid",
                         lambda: 1)   # pretend worker already up
-    monkeypatch.setattr("openprogram.channels.worker.spawn_detached",
+    monkeypatch.setattr("openprogram.worker.spawn_detached",
                         lambda: 0)
     # session_aliases reads/writes ~/.agentic/session_aliases.json by
     # default — without this redirect, attach_session would clobber

@@ -1,45 +1,33 @@
-# Web UI Ports — Architecture, Configuration, and Conflict Handling
+# Web UI Port — Configuration and Conflict Handling
 
-> The single-port architecture described in [single-port.md](single-port.md)
-> replaces the dual-port split covered here.
+How OpenProgram chooses, configures, and defends the port its web UI runs
+on: the configuration surface (`openprogram ports`) and what happens when
+the port is occupied. The runtime that makes one port sufficient is
+described in [single-port.md](single-port.md).
 
-How OpenProgram chooses, configures, and defends the ports its web UI runs
-on under the dual-port split: the two roles, the configuration surface
-(`openprogram ports`), and what happens when a port is occupied.
+## The port at a glance
 
-## Ports at a glance
+| Default | Serves | Configured by |
+|---------|--------|---------------|
+| `18100` | FastAPI `/api/*`, `/ws`, `/healthz`, and the static web UI export | `ports --port`, `OPENPROGRAM_WEB_PORT`, `ui.web_port` |
 
-| Role | Default | Serves | Configured by |
-|------|---------|--------|---------------|
-| Backend | `18109` | FastAPI: `/api/*`, `/ws`, `/healthz` | `ports --backend`, `OPENPROGRAM_BACKEND_PORT`, `ui.port` |
-| Frontend | `18100` | Next.js web UI (proxies `/api`, `/ws` to the backend) | `ports --frontend`, `OPENPROGRAM_WEB_PORT`, `ui.web_port` |
+The browser, the TUI and the CLI all talk to this one port. There is no
+proxy hop and no second process.
 
-The browser talks to the **frontend** port; the frontend proxies API +
-WebSocket traffic to the **backend** port (`/api/*` via the Node route
-handler `web/app/api/[...path]/route.ts`, which reads the live
-`worker.port`; `/ws` + `/healthz` via `next.config.mjs` rewrites against
-`OPENPROGRAM_BACKEND_URL`).
+### Why 18100
 
-### Why 18109 / 18100
+A fixed, uncommon, 5-digit value chosen so it almost never collides with
+something already running:
 
-Both are fixed, uncommon, 5-digit values chosen so they almost never
-collide with something already running:
-
-- In the **registered-port** range (`< 49152`), so they never clash with
+- In the **registered-port** range (`< 49152`), so it never clashes with
   the OS *ephemeral* range the kernel hands out to outbound sockets.
 - The `18xxx` block is rarely used by mainstream dev tooling — unlike
-  `3000` / `8080` / `5000` / `8888`, which collide constantly. (The old
-  defaults were `:3000` frontend and `:8109` backend; `:3000` in
-  particular was a frequent squatter.)
-- openclaw makes the same choice for the same reason — its gateway is
-  pinned to `18789`.
+  3000 / 5173 / 8000 / 8080, which any other project may already hold.
 
-The two values are adjacent only for memorability; nothing requires it.
-Under the dual-port architecture they **must differ**.
+A fixed port also means a stable, bookmarkable URL and a browser session
+(localStorage, service worker scope) that survives restarts.
 
-## Configuration
-
-Precedence, applied independently to each port:
+## Configuration surface
 
 ```
 explicit flag / arg  >  environment variable  >  stored pref  >  built-in default
@@ -48,41 +36,39 @@ explicit flag / arg  >  environment variable  >  stored pref  >  built-in defaul
 ### `openprogram ports`
 
 ```
-openprogram ports                                    # show current ports
-openprogram ports --backend 18109 --frontend 18100   # set + persist both
-openprogram ports --frontend 9100                    # set just one
+openprogram ports                 # show the current port
+openprogram ports --port 9100     # set + persist
 ```
 
-Writes to `~/.openprogram/config.json` under `ui.port` / `ui.web_port`.
-**Nothing live is rebound** — the change takes effect on the next
-`openprogram web` / `openprogram worker` start. Setting backend == frontend
-is rejected with a warning.
+Writes to `~/.openprogram/config.json` under `ui.web_port`. **Nothing
+live is rebound** — the change takes effect on the next `openprogram web`
+/ `openprogram worker` start.
 
 ### `openprogram setup ui`
 
-The interactive wizard asks for both ports (and the auto-open-browser
-pref), validates range `1–65535`, and rejects equal ports.
+The interactive wizard asks for the port (and the auto-open-browser
+pref) and validates range `1–65535`.
 
-### Environment overrides (single run, not persisted)
+### Environment override (single run, not persisted)
 
-- `OPENPROGRAM_BACKEND_PORT` — backend for this process.
-- `OPENPROGRAM_WEB_PORT` — frontend for this process.
-- `OPENPROGRAM_WEB_NO_FRONTEND=1` — start the backend only.
+- `OPENPROGRAM_WEB_PORT` — the port for this process.
 
-### Per-launch flags
+### Per-launch flag
 
-`openprogram web --port <backend> --web-port <frontend>` override for that
-run without persisting.
+`openprogram web --web-port <p>` overrides for that run without
+persisting.
 
 ### Where each entry point reads from
 
-| Entry point | Backend port | Frontend port |
-|-------------|--------------|---------------|
-| `openprogram web` (`_cli_cmds/web.py:_cmd_web`) | `--port` → pref → 18109 | `--web-port` → `OPENPROGRAM_WEB_PORT` → pref → 18100 |
-| `openprogram worker` (`worker/runner.py`) | `OPENPROGRAM_BACKEND_PORT` → pref → 18109 | `worker/web.py`: arg → `OPENPROGRAM_WEB_PORT` → pref → 18100 |
+| Entry point | Port |
+|-------------|------|
+| `openprogram web` (`_cli_cmds/web.py:_cmd_web`) | `--web-port` → `resolve_worker_port()` |
+| `openprogram worker` (`worker/runner.py`) | `resolve_worker_port()` |
 
+`resolve_worker_port()` in `openprogram/worker/lifecycle.py` is the one
+resolution path: `OPENPROGRAM_WEB_PORT` → pref `ui.web_port` → 18100.
 `read_ui_prefs()` / `set_ui_ports()` in `openprogram/setup.py` are the one
-read/write path for the persisted `ui.port` / `ui.web_port`.
+read/write path for the persisted pref.
 
 ## Conflict handling
 
@@ -94,10 +80,8 @@ a random port. This mirrors openclaw. All probing lives in one module,
 
 - **liveness** — `port_in_use(port)`: a bare TCP connect.
 - **identity** — `backend_is_ours(port)` probes `/healthz` for
-  openprogram's signature JSON (`status` + `uptime_seconds`);
-  `frontend_is_ours(port)` probes `/` for a Next.js signature
-  (`/_next/`, `__next`, `x-powered-by: Next.js`). Distinguishes *our*
-  instance from a stranger on the same port.
+  openprogram's signature JSON (`status` + `uptime_seconds`).
+  Distinguishes *our* instance from a stranger on the same port.
 - **ownership** — `describe_port_owner(port)` / `port_owner_hint(port)`:
   `lsof` / `netstat` + `/proc` / `ps` / `wmic` to name the holding PID
   and command line, classified ours-vs-foreign. This is what lets a
@@ -109,7 +93,6 @@ a random port. This mirrors openclaw. All probing lives in one module,
 |--------------------|-------------------|----------------------|
 | free | binds, starts | binds, starts |
 | held by **our** instance | reuse it, point the browser at the UI | the worker lock already prevents a second worker |
-| held by **our** leftover Next (frontend) | n/a | `_reclaim_web_port` kills only the orphaned `next-server`, then binds |
 | held by a **foreign** program | refuse; print *who* holds it (PID + cmdline) + how to free it or change the port; do **not** open a browser at it | name the holder, then fall back to a free port and report it (the UI URL tracks it) — the worker also hosts channels, so it must still come up |
 | recently-exited (TIME_WAIT) | uvicorn's `SO_REUSEADDR` rebinds it | `_port_available` uses `SO_REUSEADDR`, so a quick self-restart does **not** drift |
 
@@ -133,13 +116,3 @@ Notably, openclaw's `lsof` diagnostic is **not** on its main gateway-start
 path (only on the SSH-tunnel path), so its gateway-start "port in use"
 error can't name the holder. OpenProgram wires the owner diagnostic into
 the actual start path.
-
-## Relationship to the single-port architecture
-
-The two-port split is transitional. [`single-port.md`](single-port.md)
-static-exports the Next.js SPA and serves it from the FastAPI backend,
-collapsing to **one** port that serves both UI and API. There the frontend
-port, its separate launcher, the proxy, and most of `worker/web.py` do not
-exist, and "frontend port in use" is not a possible state. The
-`openprogram ports` surface stays; `--frontend` becomes a no-op alias with
-a single port.

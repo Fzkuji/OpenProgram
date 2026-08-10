@@ -333,7 +333,7 @@ def test_dispatcher_appends_the_marker_to_the_reply(state, tmp_path,
 
     db = SessionDB(tmp_path / "sessions-git")
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
-    monkeypatch.setattr("openprogram.store.session_store.default_store",
+    monkeypatch.setattr("openprogram.store.session.session_store.default_store",
                         lambda: db)
     monkeypatch.setattr("openprogram.store.default_store", lambda: db)
 
@@ -369,7 +369,7 @@ def test_the_default_project_is_not_a_root(state, monkeypatch):
         id, path, is_default = "default", str(Path.home()), True
 
     monkeypatch.setattr(
-        "openprogram.store.project_store.project_for_session",
+        "openprogram.store.project.project_store.project_for_session",
         lambda sid: _Proj())
     assert att.sendable_roots("s1") == [(state / "sessions").resolve()]
     assert Path.home().resolve() not in att.readable_roots("s1")
@@ -383,6 +383,6 @@ def test_a_real_bound_project_is_a_root(state, tmp_path, monkeypatch):
         id, path, is_default = "p1", str(proj_dir), False
 
     monkeypatch.setattr(
-        "openprogram.store.project_store.project_for_session",
+        "openprogram.store.project.project_store.project_for_session",
         lambda sid: _Proj())
     assert proj_dir.resolve() in att.sendable_roots("s1")

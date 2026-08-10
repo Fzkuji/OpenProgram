@@ -29,7 +29,7 @@ def store_fixture(tmp_path, monkeypatch):
     from openprogram.agent import session_db as sdb_mod
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
-    monkeypatch.setattr("openprogram.store.session_store.default_store", lambda: s)
+    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: s)
     monkeypatch.setattr("openprogram.store.default_store", lambda: s)
     for sid in ("p1", "p2", "p3"):
         s.create_session(sid, "main", title=sid)

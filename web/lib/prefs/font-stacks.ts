@@ -17,10 +17,6 @@ export type FontKey = "system" | "inter" | "serif" | "mono";
 /** Cookie name holding the FontKey. Mirrored by the client setter. */
 export const FONT_COOKIE = "agentic_font";
 
-/** Legacy localStorage key — still written for backward compat and
- *  cross-tab sync; the cookie is the SSR source of truth. */
-export const FONT_STORAGE_KEY = "agentic_font";
-
 export const DEFAULT_FONT: FontKey = "inter";
 
 // Latin face + CJK fallback per option. Every stack starts with a real,

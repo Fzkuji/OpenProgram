@@ -21,7 +21,7 @@ def store_with_session(tmp_path: Path, monkeypatch):
     default_store singleton so revert_turn picks it up."""
     store = SessionStore(root_path=tmp_path / "sessions")
     monkeypatch.setattr(
-        "openprogram.store.session_store._default_store", store,
+        "openprogram.store.session.session_store._default_store", store,
         raising=False,
     )
     return store

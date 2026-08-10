@@ -305,13 +305,6 @@ from openprogram.webui._runtime_management import (
 
 
 
-# Use the centralized path helper so --profile / OPENPROGRAM_PROFILE
-# reroutes config reads. str() so the callers that pass it to open()
-# get a plain path string.
-from openprogram.paths import get_config_path as _get_config_path
-def _CONFIG_PATH() -> str:  # noqa: N802  (keeping legacy name)
-    return str(_get_config_path())
-
 from openprogram.webui import persistence as _persist
 
 
@@ -816,7 +809,7 @@ def _append_msg(conv: dict, msg: dict) -> None:
     # the final reply), update the existing entry in place instead of
     # appending a duplicate. The on-disk side handles its own
     # dedup — ``SessionStore.append_message`` is idempotent on id
-    # and the final reply uses ``GraphStoreShim.update()`` to patch
+    # and the final reply uses ``SessionNodeWriter.update()`` to patch
     # the persisted node.
     _existing_idx = -1
     if msg.get("id"):
@@ -859,7 +852,7 @@ def _append_msg(conv: dict, msg: dict) -> None:
         if msg.get("role") == "user":
             try:
                 from openprogram.context.nodes import Call as _C, ROLE_USER as _RU
-                from openprogram.store import GraphStoreShim as _GS
+                from openprogram.store import SessionNodeWriter as _GS
                 _ROOT_ID = "ROOT"
                 if not db.message_exists(cid, _ROOT_ID):
                     _GS(db, cid).append(_C(

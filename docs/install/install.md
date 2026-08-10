@@ -202,7 +202,7 @@ One port serves everything — the FastAPI worker hosts the API, the WebSocket, 
 |------|---------|-------|
 | **18100** | Python worker (API + WebSocket + web UI) | `http://localhost:18100` |
 
-Change with `openprogram ports --frontend <p>` (or `OPENPROGRAM_WEB_PORT` for one run).
+Change with `openprogram ports --port <p>` (or `OPENPROGRAM_WEB_PORT` for one run).
 
 ---
 

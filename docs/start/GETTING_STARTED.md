@@ -37,7 +37,7 @@ Sanity check: `openprogram providers` lists the detected credentials.
 openprogram web
 ```
 
-This starts the background worker and opens your browser at **http://localhost:18100** — a single port serving the web UI, the API, and the WebSocket. Change it with `openprogram ports --frontend <p>`.
+This starts the background worker and opens your browser at **http://localhost:18100** — a single port serving the web UI, the API, and the WebSocket. Change it with `openprogram ports --port <p>`.
 
 ## Step 4: Send your first message
 

@@ -84,7 +84,7 @@ async def handle_list_projects(ws, cmd: dict):
     projects: list[dict] = []
     current_project_id: str | None = None
     try:
-        from openprogram.store import project_store as _projects
+        from openprogram.store.project import project_store as _projects
         _projects.get_default_project()  # ensure the default label exists
         alive = _alive_session_ids()
         _projects.prune_sessions(alive)   # 清孤立引用（修 882-bug），只增不减的历史遗留
@@ -114,7 +114,7 @@ async def handle_create_project(ws, cmd: dict):
         error = f"not a directory: {path}"
     else:
         try:
-            from openprogram.store import project_store as _projects
+            from openprogram.store.project import project_store as _projects
             proj = _projects.resolve_project(path, name=name)
             proj_dict = _project_dict(proj)
             ok = True
@@ -154,7 +154,7 @@ def _binding_is_frozen(session_id: str, project_id: str) -> bool:
     if not session_has_turns(session_id):
         return False
     try:
-        from openprogram.store import project_store as _projects
+        from openprogram.store.project import project_store as _projects
         current = _projects.project_for_session(session_id)
         if current is None:
             current = _projects.get_default_project()
@@ -178,7 +178,7 @@ async def handle_set_session_project(ws, cmd: dict):
         error = FROZEN_ERROR
     else:
         try:
-            from openprogram.store import project_store as _projects
+            from openprogram.store.project import project_store as _projects
             from openprogram.agent.session_db import default_db
             if _projects.get_project(project_id) is None:
                 error = "unknown project"
@@ -214,7 +214,7 @@ async def handle_relocate_project(ws, cmd: dict):
         error = f"not a directory: {path}"
     else:
         try:
-            from openprogram.store import project_store as _projects
+            from openprogram.store.project import project_store as _projects
             before = _projects.get_project(project_id)
             old_path = before.path if before else None
             _projects.relocate_project(project_id, path)
@@ -250,7 +250,7 @@ def _resolve_workdirs(session_id: str) -> list[str]:
     dirs: list[str] = []
     # main project path
     try:
-        from openprogram.store import project_store as _projects
+        from openprogram.store.project import project_store as _projects
         proj = _projects.project_for_session(session_id)
         if proj and proj.path:
             dirs.append(proj.path)
@@ -331,7 +331,7 @@ async def handle_get_project_config(ws, cmd: dict):
     project_id = (cmd.get("project_id") or "").strip()
     cfg: dict = {}
     try:
-        from openprogram.store import project_store as _projects
+        from openprogram.store.project import project_store as _projects
         s = _projects.load_project_settings(project_id)
         cfg = {k: s.get(k) for k in _PROJECT_CONFIG_KEYS if s.get(k) is not None}
     except Exception:
@@ -349,7 +349,7 @@ async def handle_set_project_config(ws, cmd: dict):
     value = cmd.get("value")
     if project_id and key in _PROJECT_CONFIG_KEYS:
         try:
-            from openprogram.store import project_store as _projects
+            from openprogram.store.project import project_store as _projects
             s = _projects.load_project_settings(project_id)
             if value in (None, "", "inherit"):
                 s.pop(key, None)
@@ -367,7 +367,7 @@ async def handle_list_project_sessions(ws, cmd: dict):
     project_id = (cmd.get("project_id") or "").strip()
     sessions: list[dict] = []
     try:
-        from openprogram.store import project_store as _projects
+        from openprogram.store.project import project_store as _projects
         from openprogram.agent.session_db import default_db
         proj = _projects.get_project(project_id)
         db = default_db()

@@ -8,7 +8,7 @@
 openprogram web
 ```
 
-浏览器打开 `http://localhost:18100`。页面是由本地 FastAPI worker 直接提供的静态导出——`/api`、`/ws` 和 UI 都在同一个端口（默认 18100）。数据全部来自 worker，会话与终端 TUI、CLI 单发共用，见[界面总览](README.md)。改端口用 `openprogram ports --frontend`。
+浏览器打开 `http://localhost:18100`。页面是由本地 FastAPI worker 直接提供的静态导出——`/api`、`/ws` 和 UI 都在同一个端口（默认 18100）。数据全部来自 worker，会话与终端 TUI、CLI 单发共用，见[界面总览](README.md)。改端口用 `openprogram ports --port`。
 
 ![聊天页](../images/chat_hero.png)
 

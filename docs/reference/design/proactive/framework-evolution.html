@@ -153,7 +153,7 @@ footer a{color:var(--cyan); text-decoration:none}
     <tr><td><b>auth</b></td><td>自己的 _emit/subscribe<span class="good">（已经做对了）</span></td><td><b>自身不动</b>，一段桥接翻译进总线</td><td><span class="chg xs">极小</span></td></tr>
     <tr><td><b>context</b></td><td>on_event 回调</td><td>回调里顺手 emit <code>context.*</code></td><td><span class="chg xs">极小</span></td></tr>
     <tr><td><b>memory</b></td><td><span class="bad">定时 poll，无信号</span></td><td>处理起止 emit，"定时"包装成事件</td><td><span class="chg xs">极小</span></td></tr>
-    <tr><td><b>文件改动</b></td><td><span class="bad">默默备份，无信号</span></td><td>backup_for_current_turn 处 emit <code>file.changed</code></td><td><span class="chg xs">极小</span></td></tr>
+    <tr><td><b>文件改动</b></td><td><span class="bad">默默备份，无信号</span></td><td>checkpoint_before_edit 处 emit <code>file.changed</code></td><td><span class="chg xs">极小</span></td></tr>
     <tr><td><b>plugin hooks</b></td><td>observe-only，6 个 fire 点</td><td>内部统一走总线；hooks 保留为插件 API 或逐步退役</td><td><span class="chg m">决策点</span></td></tr>
   </table>
 </section>
@@ -170,7 +170,7 @@ footer a{color:var(--cyan); text-decoration:none}
     </div>
     <div class="step">
       <div class="t"><b>补两个洞</b><span class="badge add">纯加法</span><span class="badge add">✅ 已落地 2026-06-13</span></div>
-      <p><code>file.changed</code> 事件（挂 backup_for_current_turn）；<code>tool.before</code> 同步问询点（复用 _approval，对 subagent 生效）。</p>
+      <p><code>file.changed</code> 事件（挂 checkpoint_before_edit）；<code>tool.before</code> 同步问询点（复用 _approval，对 subagent 生效）。</p>
       <div class="ver"><b>验收</b>：改文件能收到事件；测试订阅者能真的拦下指定命令</div>
     </div>
     <div class="step">

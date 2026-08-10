@@ -11,7 +11,7 @@ abs_path)` 与 `BackupStore.restore_turn(turn_id)`。
 
 turn id 就是 assistant 消息 id。Dispatcher 把 `_current_turn_id` ContextVar 设为
 `assistant_msg_id`，`write`、`edit`、`apply_patch` 工具在改动文件系统前调用
-`backup_for_current_turn(path)`。`_runtime.py` 用 `copy_context().run(...)` 包裹
+`checkpoint_before_edit(path)`。`_runtime.py` 用 `copy_context().run(...)` 包裹
 同步工具执行器，使 ContextVar 传播到线程池。
 
 回滚以 dispatcher 函数 `revert_turn(session_id, assistant_msg_id)` 和 WS action

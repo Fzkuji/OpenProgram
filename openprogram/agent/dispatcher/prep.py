@@ -155,7 +155,7 @@ def prepare_turn(
     _ROOT_ID = "ROOT"
     try:
         from openprogram.context.nodes import Call as _RCall, ROLE_USER as _RU
-        from openprogram.store import GraphStoreShim as _GShim0
+        from openprogram.store import SessionNodeWriter as _GShim0
         if not db.message_exists(req.session_id, _ROOT_ID):
             _GShim0(db, req.session_id, advance_head=False).append(_RCall(
                 id=_ROOT_ID, created_at=time.time(), role=_RU,

@@ -38,7 +38,7 @@ def test_resolve_parent_falls_back_to_head(tmp_path, monkeypatch):
 
     s = SessionStore(tmp_path / "g")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
-    monkeypatch.setattr("openprogram.store.session_store.default_store", lambda: s)
+    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: s)
     monkeypatch.setattr("openprogram.store.default_store", lambda: s)
     s.create_session("px", "main", title="t")
     s.append_message("px", {"id": "ux", "role": "user", "content": "hi",
@@ -72,7 +72,7 @@ def parent_turn(tmp_path, monkeypatch):
 
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
-    monkeypatch.setattr("openprogram.store.session_store.default_store", lambda: s)
+    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: s)
     monkeypatch.setattr("openprogram.store.default_store", lambda: s)
     s.create_session("p1", "main", title="parent")
     s.append_message("p1", {"id": "u1", "role": "user", "content": "hi",

@@ -26,7 +26,7 @@ from openprogram.store import SessionStore
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionStore:
     store = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
-    monkeypatch.setattr("openprogram.store.session_store.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: store)
     monkeypatch.setattr("openprogram.store.default_store", lambda: store)
     return store
 
@@ -34,11 +34,11 @@ def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionStore:
 def _persist_user(db: SessionStore, sid: str, uid: str, text: str) -> None:
     """Mirror of webui server._append_msg's SessionDB writes."""
     from openprogram.context.nodes import Call, ROLE_USER
-    from openprogram.store import GraphStoreShim
+    from openprogram.store import SessionNodeWriter
 
     if db.get_session(sid) is None:
         db.create_session(sid, "main")
-    shim = GraphStoreShim(db, sid)
+    shim = SessionNodeWriter(db, sid)
     if not db.message_exists(sid, "ROOT"):
         shim.append(Call(id="ROOT", role=ROLE_USER, output="",
                          metadata={"display": "root"}))
@@ -148,8 +148,8 @@ def test_dag_render_excludes_prompt_and_placeholder(db: SessionStore):
     _persist_user(db, sid, "u1", "hello")
     insert_placeholder(db, sid, "u1_reply", "u1", "web")
     db.set_head(sid, "u1_reply")
-    from openprogram.store import GraphStoreShim
-    GraphStoreShim(db, sid).update("u1_reply", output="reply 1",
+    from openprogram.store import SessionNodeWriter
+    SessionNodeWriter(db, sid).update("u1_reply", output="reply 1",
                                    metadata={"status": "completed"})
     _persist_user(db, sid, "u2", "second question")
     insert_placeholder(db, sid, "u2_reply", "u2", "web")

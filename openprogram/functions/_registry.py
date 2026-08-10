@@ -2,9 +2,10 @@
 
 Two mechanisms, in order:
 
-  1. **AGENTIC_MODULES** — hand-maintained list of internal agentics
-     (``openprogram/functions/agentics/<name>/``). Loaded explicitly so
-     that import order and dependency conditions are obvious.
+  1. **AGENTIC_MODULES** — hand-maintained list of internal agentic
+     module names (``openprogram/functions/agentics/<name>/``). Loaded
+     explicitly so that import order and dependency conditions are
+     obvious.
 
   2. **Auto-discovered external harnesses** — owner-recorded symlinks and
      directories under ``openprogram/functions/agentics/`` are treated as
@@ -41,20 +42,20 @@ from typing import Iterator, Optional
 logger = logging.getLogger(__name__)
 
 
-AGENTIC_MODULES: list[tuple[str, Optional[str]]] = [
+AGENTIC_MODULES: list[str] = [
     # Framework primitive: ask_user is the in-execution "ask the human"
     # channel every agentic function can call — infrastructure, not a
     # user-facing app (the UI lists it under regular tools).
-    ("ask_user", None),
+    "ask_user",
     # The goal decision agent — the single judgment entry called by
     # openprogram/agent/goal/ (the deterministic loop), runnable from the
     # Functions panel; the module also holds the goal-spec refiner.
-    ("goal", None),
+    "goal",
     # Domain functions
-    ("extract_pdf_figures", None),
-    ("extract_pdf_tables", None),
+    "extract_pdf_figures",
+    "extract_pdf_tables",
     # 交互自测：串行走一遍 ask/confirm/form/ask_many 各形态（手动点 Run 体验）。
-    ("interaction_demo", None),
+    "interaction_demo",
 ]
 
 
@@ -75,14 +76,11 @@ def load_agentic_modules(agentics_dir: str) -> None:
     swallowed errors.
     """
     # 1. Internal explicit list
-    for mod_name, file_override in AGENTIC_MODULES:
+    for mod_name in AGENTIC_MODULES:
         try:
-            if file_override is None:
-                importlib.import_module(
-                    f"openprogram.functions.agentics.{mod_name}"
-                )
-            else:
-                _load_external_file(agentics_dir, mod_name, file_override)
+            importlib.import_module(
+                f"openprogram.functions.agentics.{mod_name}"
+            )
         except Exception as e:
             _debug_registry_error(mod_name, e)
             continue
@@ -249,29 +247,24 @@ def _import_external_harness(harness_root: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Legacy file-override loader (kept for AGENTIC_MODULES entries that need it)
+# Single-file loader — the WebUI hot-reload path for external harness sources
 # ---------------------------------------------------------------------------
 
 
 def _load_external_file(
     agentics_dir: str, mod_name: str, rel_path: str
 ) -> None:
-    """Legacy loader: import a specific file as ``agentics.<mod_name>``.
+    """Import one file as ``agentics.<mod_name>``.
 
-    Use sparingly — the AGENTIC_FUNCTIONS auto-discovery above replaces
-    this for ordinary external harnesses. Only kept for the rare case
-    where you must bind a non-standard file path to a specific module name.
+    Used by the WebUI function loader to re-execute an external
+    harness's source file so an edit the user just made takes effect
+    without a restart. The path must be owner-recorded.
     """
     abs_path = os.path.join(agentics_dir, rel_path)
     if not os.path.isfile(abs_path):
         return
     from openprogram.functions._programs import is_owner_controlled_program_path
-    explicit = {
-        os.path.realpath(os.path.join(agentics_dir, override))
-        for _name, override in AGENTIC_MODULES if override is not None
-    }
-    if (os.path.realpath(abs_path) not in explicit
-            and not is_owner_controlled_program_path(abs_path)):
+    if not is_owner_controlled_program_path(abs_path):
         raise PermissionError(
             f"refusing to import unrecorded agentic source: {abs_path}"
         )
@@ -307,18 +300,13 @@ def iter_agentic_files(agentics_dir: str) -> Iterator[tuple[str, str, bool]]:
     Entries whose file is missing on this machine are silently skipped.
     """
     # Internal explicit list
-    for mod_name, file_override in AGENTIC_MODULES:
-        if file_override is None:
-            simple = os.path.join(agentics_dir, f"{mod_name}.py")
-            pkg = os.path.join(agentics_dir, mod_name, "__init__.py")
-            if os.path.isfile(simple):
-                yield mod_name, simple, False
-            elif os.path.isfile(pkg):
-                yield mod_name, pkg, False
-        else:
-            abs_path = os.path.join(agentics_dir, file_override)
-            if os.path.isfile(abs_path):
-                yield mod_name, abs_path, True
+    for mod_name in AGENTIC_MODULES:
+        simple = os.path.join(agentics_dir, f"{mod_name}.py")
+        pkg = os.path.join(agentics_dir, mod_name, "__init__.py")
+        if os.path.isfile(simple):
+            yield mod_name, simple, False
+        elif os.path.isfile(pkg):
+            yield mod_name, pkg, False
 
     # Auto-discovered external harnesses — yield the actual source file
     # of every function listed in AGENTIC_FUNCTIONS, so the WebUI scanner

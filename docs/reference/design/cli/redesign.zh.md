@@ -55,7 +55,7 @@ web 页面中，无需任何按界面单写的代码。
 ```python
 @dataclass(frozen=True)
 class SettingSpec:
-    key: str                 # 稳定 id，例如 "ui.port"
+    key: str                 # 稳定 id，例如 "ui.web_port"
     path: tuple[str, ...]    # 进入 config.json 的点路径，例如 ("ui","port")
     group: str               # "Ports" | "Model" | "Theme" | ...
     label: str
@@ -76,7 +76,7 @@ class SettingSpec:
   写入器），否则回退到通用的点路径写入。
 
 通用点路径写入带有针对原型污染键的拦截防护。正是这一点让
-`config set ui.port 19000` 无论由哪个界面发起都是安全的。
+`config set ui.web_port 19000` 无论由哪个界面发起都是安全的。
 
 ### 值存放在哪里
 
@@ -91,7 +91,7 @@ profile 感知的。逐 agent 的设置（model、effort、skills）留在 agent
 每条 spec 声明它的更改是本会话生效还是下次启动生效，`set_setting`
 返回实际生效的那一种。每次使用时都重新读取的字段（theme、effort、
 model、search 默认值、工具开关）是 `live`。在绑定时只读一次的字段
-（`ui.port`、`ui.web_port`、`memory.backend`）是 `next-start`，界面在
+（`ui.web_port`、`memory.backend`）是 `next-start`，界面在
 用户编辑的当下就说明这一点，而不是让用户自己去发现什么都没发生。
 
 ## 4. TUI 设置面板
@@ -106,7 +106,6 @@ model、search 默认值、工具开关）是 `live`。在绑定时只读一次�
 
 | 分组 | 字段 | 部件 | 生效 | 后端 |
 |---|---|---|---|---|
-| Ports | backend 端口 | number | next-start | `ui.port` |
 | | frontend 端口 | number | next-start | `ui.web_port` |
 | | 打开浏览器 | toggle | next-start | `ui.open_browser` |
 | Model | 默认模型 | picker | live | `default_provider` / `default_model` |

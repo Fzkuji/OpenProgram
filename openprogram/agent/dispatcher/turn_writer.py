@@ -56,7 +56,7 @@ class TurnWriter:
             ``set_head`` only when the policy allows.
         """
         from openprogram.context.nodes import Call, ROLE_USER
-        from openprogram.store import GraphStoreShim
+        from openprogram.store import SessionNodeWriter
 
         req = self.req
         try:
@@ -102,7 +102,7 @@ class TurnWriter:
                     predecessor=user_caller_id or _ROOT_ID,
                     metadata=user_meta,
                 )
-                GraphStoreShim(
+                SessionNodeWriter(
                     self.db, req.session_id, advance_head=self.advance,
                 ).append(node)
         except Exception:

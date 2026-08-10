@@ -257,9 +257,9 @@ def _poll(session_id: str, msg_id: str, func_name: str,
                     # so a refresh after the run also shows it done.
                     try:
                         if state["shim"] is None:
-                            from openprogram.store import GraphStoreShim
+                            from openprogram.store import SessionNodeWriter
                             from openprogram.agent.session_db import default_db
-                            state["shim"] = GraphStoreShim(
+                            state["shim"] = SessionNodeWriter(
                                 default_db(), session_id)
                         _root_status = (tree.get("status")
                                         if isinstance(tree, dict) else None)
@@ -370,17 +370,17 @@ def reconcile_interrupted_runs() -> int:
     Returns the count fixed.
     """
     from openprogram.agent.session_db import default_db
-    from openprogram.store import GraphStoreShim
+    from openprogram.store import SessionNodeWriter
 
     store = default_db()
     fixed = 0
     # Walk every session's nodes; the in-memory index already knows
     # them. For any node whose metadata.status == "running", flip to
-    # "interrupted" via GraphStoreShim.update which rewrites the
+    # "interrupted" via SessionNodeWriter.update which rewrites the
     # on-disk JSON.
     for sess in store.list_sessions(limit=10**9):
         sid = sess["id"]
-        shim = GraphStoreShim(store, sid)
+        shim = SessionNodeWriter(store, sid)
         for node in store.get_nodes(sid):
             meta = node.metadata or {}
             if meta.get("status") != "running":

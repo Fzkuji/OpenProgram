@@ -59,4 +59,26 @@ are documented for users in [Language server tools](../../../capabilities/lsp.md
 Server processes go through the same sandbox-wrapping entry as every other
 child, so `sandbox.mode` applies to them unchanged.
 
-Still open, in order: ACP server, then the matrix re-audit of the GUI row.
+The ACP server has landed. `openprogram/acp/` holds the JSON-RPC ndjson
+transport (`jsonrpc.py`) and the protocol mapping (`server.py`), reached via
+`openprogram acp`. It implements protocol version 1: `initialize`,
+`session/new`, `session/load`, `session/prompt` and `session/cancel` from the
+editor, `session/update` and `session/request_permission` back to it.
+Users configure it in [Editor (ACP)](../../../interfaces/acp.md).
+
+The adapter sits on `dispatcher.process_user_turn`, the same non-HTTP entry
+the webui thread, sub-agents and the task runner use, so tool gating,
+authority and persistence are shared rather than reimplemented. Turns carry
+`local_owner_authority()` — an editor on the same machine is the owner
+speaking interactively, which is what makes `approval.request` available at
+all. Approvals reach the editor by subscribing to the `question.asked` event
+and answering through `resolve_question_and_broadcast`, so the existing gate,
+its rules, and the "always allow" rule-persistence path are untouched.
+
+Deliberately unimplemented: `session/set_mode` and `session/set_model` (the
+agent id and permission mode are process flags), the editor's `fs/*` and
+`terminal/*` client capabilities (OpenProgram's own tools already read and
+write the working tree), and MCP servers passed in `session/new` (OpenProgram
+uses its own MCP configuration).
+
+Still open: the matrix re-audit of the GUI row.

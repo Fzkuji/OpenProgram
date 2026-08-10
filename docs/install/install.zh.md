@@ -181,7 +181,7 @@ export ANTHROPIC_API_KEY=sk-ant-...             # …or an API key (Windows: $en
 |------|---------|-------|
 | **18100** | Python worker（API + WebSocket + web UI） | `http://localhost:18100` |
 
-使用 `openprogram ports --frontend <p>` 修改（单次运行可用 `OPENPROGRAM_WEB_PORT`）。
+使用 `openprogram ports --port <p>` 修改（单次运行可用 `OPENPROGRAM_WEB_PORT`）。
 
 ---
 

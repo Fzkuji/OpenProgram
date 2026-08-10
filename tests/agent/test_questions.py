@@ -91,12 +91,11 @@ def test_ask_blocking_timeout_retracts_card(monkeypatch):
 # runtime.ask / confirm（用 fake runtime 不依赖 webui/LLM）
 
 class _FakeRuntime:
-    """只复用 Runtime 的 ask/confirm/form/ask_many，跳过 __init__ 的 provider 解析。"""
+    """只复用 Runtime 的 ask/confirm/form，跳过 __init__ 的 provider 解析。"""
     from openprogram.agentic_programming.runtime import Runtime
     ask = Runtime.ask
     confirm = Runtime.confirm
     form = Runtime.form
-    ask_many = Runtime.ask_many
     can_ask = Runtime.can_ask
     _ask_raw = Runtime._ask_raw
     _ui_session_id = lambda self: "s"   # 假装有前端
@@ -191,32 +190,32 @@ def test_runtime_form_non_dict_answer_coerced_to_empty():
     assert rt.form("配置", {"x": {"type": "string"}}, timeout=5) == {}
 
 
-# runtime.ask_many（一组问题打包，答案是 list）
+# runtime.ask(questions=[...])（一组问题打包，答案是 list）
 
-def test_runtime_ask_many_returns_list():
+def test_runtime_ask_questions_returns_list():
     rt = _FakeRuntime()
     _answer_with(None, "answered", ["全栈", ["AWS", "GCP"]])
-    out = rt.ask_many([
+    out = rt.ask(questions=[
         {"prompt": "角色?", "options": ["前端", "全栈"]},
         {"prompt": "云?", "options": ["AWS", "GCP"], "multi": True},
     ], timeout=5)
     assert out == ["全栈", ["AWS", "GCP"]]
 
 
-def test_runtime_ask_many_declined_raises():
+def test_runtime_ask_questions_declined_raises():
     rt = _FakeRuntime()
     _answer_with(None, "declined", None)
     with pytest.raises(UserDeclined):
-        rt.ask_many([{"prompt": "q?"}], timeout=5)
+        rt.ask(questions=[{"prompt": "q?"}], timeout=5)
 
 
-def test_runtime_ask_many_timeout_default():
+def test_runtime_ask_questions_timeout_default():
     rt = _FakeRuntime()
-    assert rt.ask_many([{"prompt": "q?"}], timeout=0.05, default=["x"]) == ["x"]
+    assert rt.ask(questions=[{"prompt": "q?"}], timeout=0.05, default=["x"]) == ["x"]
 
 
-def test_ask_many_questions_reach_pending():
-    """ask_many 的问题数组进了 PendingQuestion.questions（前端据此渲染切换）。"""
+def test_ask_questions_reach_pending():
+    """ask(questions=[...]) 的问题数组进了 PendingQuestion.questions（前端据此渲染切换）。"""
     captured = {}
     def worker():
         time.sleep(0.05)
@@ -228,7 +227,7 @@ def test_ask_many_questions_reach_pending():
             reg.resolve(ps[0].id, "answered", ["a", "b"])
     threading.Thread(target=worker, daemon=True).start()
     rt = _FakeRuntime()
-    rt.ask_many([{"prompt": "q1", "options": ["a"]}, {"prompt": "q2"}], timeout=5)
+    rt.ask(questions=[{"prompt": "q1", "options": ["a"]}, {"prompt": "q2"}], timeout=5)
     assert captured["kind"] == "ask_many"
     assert [q["prompt"] for q in captured["questions"]] == ["q1", "q2"]
 

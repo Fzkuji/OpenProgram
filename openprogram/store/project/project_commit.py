@@ -89,7 +89,7 @@ def _project_for(session_id: str):
     and any resolution failure → None (caller no-ops).
     """
     try:
-        from openprogram.store import project_store as _projects
+        from openprogram.store.project import project_store as _projects
         proj = _projects.project_for_session(session_id)
     except (ImportError, OSError, ValueError) as e:
         logger.debug("project lookup failed for %s: %s", session_id, e)

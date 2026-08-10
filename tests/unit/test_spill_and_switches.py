@@ -57,8 +57,8 @@ def test_rendering_writes_nothing(store, tmp_path):
     large = tmp_path / "sessions" / "s" / "large_nodes"
     before = sorted(p.name for p in large.iterdir())
 
-    from openprogram.store.session.graphstore_shim import GraphStoreShim
-    g = GraphStoreShim(store, "s").load()
+    from openprogram.store.session.session_node_writer import SessionNodeWriter
+    g = SessionNodeWriter(store, "s").load()
     for _ in range(3):
         render_dag_messages(g, list(g.nodes), None)
 
@@ -102,8 +102,8 @@ def test_spill_switch_off_writes_no_file(store, tmp_path, monkeypatch):
     assert not (tmp_path / "sessions" / "s" / "large_nodes").exists()
 
     # …and the render falls back to char truncation, not full text.
-    from openprogram.store.session.graphstore_shim import GraphStoreShim
-    g = GraphStoreShim(store, "s").load()
+    from openprogram.store.session.session_node_writer import SessionNodeWriter
+    g = SessionNodeWriter(store, "s").load()
     text = render_dag_messages(g, list(g.nodes), None)[0].content[0].text
     assert len(text) < len(BIG)
     assert "chars elided" in text

@@ -6,7 +6,7 @@ The directory holds three groups (README has the details):
 
   1. **Session storage** — one git repo per conversation. The original
      job of this package: ``session_store`` / ``git_session`` /
-     ``memory_index`` / ``graphstore_shim`` / ``_msg_adapter`` /
+     ``memory_index`` / ``session_node_writer`` / ``_msg_adapter`` /
      ``search``. Replaces the old SQLite ``DagSessionDB`` + ``GraphStore``.
   2. **Project entity layer + auto-commit** — ``project_store`` (the
      user's working dir as a git-backed Project, with safe auto-init and
@@ -57,7 +57,7 @@ from typing import Optional, TYPE_CHECKING
 # see README). The top-level package re-exports the historical public
 # surface so ``from openprogram.store import SessionStore`` etc. keep
 # working unchanged after the physical regroup.
-from .session import GitSession, SessionMemoryIndex, GraphStoreShim
+from .session import GitSession, SessionMemoryIndex, SessionNodeWriter
 # Provenance read-layer — the LLM-free seam memory maps from
 # (docs/design/memory/entity-session-cache.md §5).
 from .session import (
@@ -77,7 +77,7 @@ if TYPE_CHECKING:
 # write DAG nodes via the same handle without threading args through
 # every layer. Default None = standalone, no persistence (still works,
 # just writes nothing).
-_store: ContextVar[Optional[GraphStoreShim]] = ContextVar(
+_store: ContextVar[Optional[SessionNodeWriter]] = ContextVar(
     "_store", default=None,
 )
 
@@ -104,7 +104,7 @@ def session_scope(store, session_id: str):
     ``Runtime.exec`` and ``@agentic_function`` persist their nodes to
     the given session; on exit the previous binding is restored.
     """
-    token = _store.set(GraphStoreShim(store, session_id))
+    token = _store.set(SessionNodeWriter(store, session_id))
     try:
         yield
     finally:
@@ -114,7 +114,7 @@ def session_scope(store, session_id: str):
 __all__ = [
     "GitSession",
     "SessionMemoryIndex",
-    "GraphStoreShim",
+    "SessionNodeWriter",
     "SessionStore",
     "default_store",
     "session_scope",
@@ -138,23 +138,4 @@ def __getattr__(name):
     if name == "default_store":
         from .session.session_store import default_store as _ds
         return _ds
-    # Back-compat module aliases after the session/ project/ snapshot/
-    # regroup: ``from openprogram.store import project_commit`` (and the
-    # other moved modules) keeps resolving to the real submodule in its
-    # new sub-package, so callers that used the convenience form don't
-    # all need rewriting. These are plain submodule re-exports, not magic.
-    _MOVED = {
-        "project_store":   "project.project_store",
-        "project_commit":  "project.project_commit",
-        "read_tracking":   "snapshot.read_tracking",
-        "session_store":   "session.session_store",
-        "git_session":     "session.git_session",
-        "memory_index":    "session.memory_index",
-        "graphstore_shim": "session.graphstore_shim",
-        "search":          "session.search",
-    }
-    target = _MOVED.get(name)
-    if target:
-        import importlib
-        return importlib.import_module(f"{__name__}.{target}")
     raise AttributeError(name)

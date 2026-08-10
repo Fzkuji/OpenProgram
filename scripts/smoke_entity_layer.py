@@ -81,8 +81,7 @@ def main() -> int:
         state.mkdir(parents=True, exist_ok=True)
 
     from openprogram.store.session.session_store import SessionStore, _default_root
-    from openprogram.store import project_store as P
-
+    from openprogram.store.project import project_store as P
     # A scratch dir to act as the user's "real project directory".
     proj_dir = Path(tempfile.mkdtemp(prefix="op_proj_"))
 
@@ -234,8 +233,7 @@ def main() -> int:
               f"{len(log)} commits")
 
         # ── 7. project_commit dispatcher wiring (auto-commit, default ON) ──
-        from openprogram.store import project_commit as PC
-
+        from openprogram.store.project import project_commit as PC
         # 7a. default is ON (no env, no config).
         os.environ.pop("OPENPROGRAM_PROJECT_AUTOCOMMIT", None)
         check("auto-commit ON by default", PC.is_enabled() is True, "default on")

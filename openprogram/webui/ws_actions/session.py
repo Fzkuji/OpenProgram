@@ -805,7 +805,7 @@ def _resolve_project_id(cmd: dict) -> str | None:
     if not sid:
         return None
     try:
-        from openprogram.store import project_store as _projects
+        from openprogram.store.project import project_store as _projects
         proj = _projects.project_for_session(sid) or _projects.get_default_project()
         return proj.id if proj else None
     except Exception:
@@ -813,7 +813,7 @@ def _resolve_project_id(cmd: dict) -> str | None:
 
 
 def _project_rules(project_id: str) -> dict:
-    from openprogram.store import project_store as _projects
+    from openprogram.store.project import project_store as _projects
     settings = _projects.load_project_settings(project_id)
     r = settings.get("permission_rules") or {}
     return {"allow": list(r.get("allow") or []),
@@ -842,7 +842,7 @@ def _mutate_project_rule(cmd: dict, *, add: bool) -> None:
     rule = (cmd.get("rule") or "").strip()
     if not (pid and behavior in ("allow", "deny", "ask") and rule):
         return
-    from openprogram.store import project_store as _projects
+    from openprogram.store.project import project_store as _projects
     settings = _projects.load_project_settings(pid)
     rules = settings.get("permission_rules") or {"allow": [], "deny": [], "ask": []}
     lst = rules.setdefault(behavior, [])
@@ -957,7 +957,7 @@ def _project_name_map() -> tuple[dict[str, str], str]:
     registry once (not per-conversation).
     """
     try:
-        from openprogram.store import project_store as _ps
+        from openprogram.store.project import project_store as _ps
         default_name = _ps.get_default_project().name or "Home"
         m: dict[str, str] = {}
         for p in _ps.list_projects():

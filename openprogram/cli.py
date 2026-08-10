@@ -556,6 +556,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run sanity checks: python, node, skills, plugins, providers, mcp, cache, worker")
     p_doctor.add_argument("--json", action="store_true", help="Emit JSON")
 
+    p_acp = sub.add_parser("acp",
+        help="Serve the Agent Client Protocol on stdio, for editors like Zed")
+    p_acp.add_argument("--agent", default="main",
+                       help="Agent id to run sessions as (default: main)")
+    p_acp.add_argument("--permission", default="ask",
+                       choices=["ask", "acceptEdits", "plan", "auto", "bypass"],
+                       help="Permission mode for tool calls (default: ask)")
+
     # ---- recoverable local deletions -------------------------------------
     p_trash = sub.add_parser(
         "trash",
@@ -602,17 +610,17 @@ def build_parser() -> argparse.ArgumentParser:
     sessions_sub.add_parser("aliases",
         help="List every session↔channel-peer alias")
 
-    # ---- subagent ---------------------------------------------------------
-    # Peer-session attach / merge ops. See ``openprogram/agent/sub_agent_run.py``
+    # ---- peer -------------------------------------------------------------
+    # Peer-session spawn / merge ops. See ``openprogram/agent/sub_agent_run.py``
     # and ``openprogram/agent/_merge.py`` for the model. These commands run
     # against the in-process SessionStore singleton — no WS, no webui.
-    p_subagent = sub.add_parser("subagent",
-        help="Spawn / merge peer sub-agent sessions.")
-    subagent_sub = p_subagent.add_subparsers(
-        dest="subagent_verb", metavar="verb",
+    p_peer = sub.add_parser("peer",
+        help="Spawn / merge peer agent sessions.")
+    peer_sub = p_peer.add_subparsers(
+        dest="peer_verb", metavar="verb",
     )
 
-    p_sa_spawn = subagent_sub.add_parser("spawn",
+    p_sa_spawn = peer_sub.add_parser("spawn",
         help="Spawn an agent in the given session as a new branch.")
     p_sa_spawn.add_argument("--session", required=True,
         help="Session id to spawn into (the new branch / root lives here)")
@@ -635,7 +643,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_sa_spawn.add_argument("--no-json", action="store_true",
         help="Print human-readable summary instead of JSON")
 
-    p_sa_merge = subagent_sub.add_parser("merge",
+    p_sa_merge = peer_sub.add_parser("merge",
         help="Merge N peer sessions into the target with a new turn.")
     p_sa_merge.add_argument("--target", required=True,
         help="Target session id (gets the merge reply + multi-parent commit)")
@@ -658,17 +666,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ---- web --------------------------------------------------------------
     p_web = sub.add_parser("web", help="Start the Web UI")
-    p_web.add_argument("--port", type=int, default=None,
-        help="Port for this run (default: stored pref, then 18100)")
     p_web.add_argument("--web-port", type=int, default=None,
-        help="Frontend port for this run (default: stored pref, then 18100)")
+        help="Web UI port for this run (default: stored pref, then 18100)")
     p_web.add_argument("--no-browser", action="store_true", help="Don't open browser")
 
     p_ports = sub.add_parser("ports",
-        help="Show or set the web UI ports (backend / frontend); takes effect next start")
-    p_ports.add_argument("--backend", type=int, default=None, metavar="PORT",
-        help="Legacy alias for --frontend (ports are merged). Default 18100.")
-    p_ports.add_argument("--frontend", type=int, default=None, metavar="PORT",
+        help="Show or set the web UI port; takes effect next start")
+    p_ports.add_argument("--port", type=int, default=None, metavar="PORT",
         help="Persist the single web UI port. Default 18100.")
 
     # ---- config (scriptable settings: the same schema the TUI edits) ------
@@ -677,9 +681,9 @@ def build_parser() -> argparse.ArgumentParser:
     config_sub = p_config.add_subparsers(dest="config_verb", metavar="verb")
     config_sub.add_parser("list", help="List every setting with its value, group, and apply mode")
     p_cget = config_sub.add_parser("get", help="Print one setting's current value")
-    p_cget.add_argument("key", help="Setting id, e.g. ui.port (see `config list`)")
+    p_cget.add_argument("key", help="Setting id, e.g. ui.web_port (see `config list`)")
     p_cset = config_sub.add_parser("set", help="Change one setting; some take effect on next start")
-    p_cset.add_argument("key", help="Setting id, e.g. ui.port")
+    p_cset.add_argument("key", help="Setting id, e.g. ui.web_port")
     p_cset.add_argument("value", help="New value")
 
     # ---- memory (persistent, machine-wide knowledge) ----------------------
@@ -1029,7 +1033,7 @@ def build_parser() -> argparse.ArgumentParser:
     # 但它们是本函数局部变量 — 经 set_defaults 盖进 args,嵌套子命令
     # 由更深一层覆盖,args._cmd_parser 恒为选中路径上最深的一个。
     for _p in (p_logs, p_programs, p_skills, p_plugins, p_trash, p_sessions,
-               p_subagent, p_memory, p_worker, p_channels, p_chacct,
+               p_peer, p_memory, p_worker, p_channels, p_chacct,
                p_chaccess, p_chb, p_mcp, p_browser, p_agents,
                p_config, p_upgrade, p_providers):
         _p.set_defaults(_cmd_parser=_p)
@@ -1167,6 +1171,11 @@ def main():
         from openprogram._cli_cmds.doctor import _cmd_doctor
         sys.exit(_cmd_doctor(getattr(args, "json", False)))
 
+    if args.command == "acp":
+        from openprogram._cli_cmds.acp import _cmd_acp
+        sys.exit(_cmd_acp(getattr(args, "agent", "main"),
+                          getattr(args, "permission", "ask")))
+
     if args.command == "trash":
         from openprogram._cli_cmds.trash import _cmd_trash_list, _cmd_trash_restore
 
@@ -1265,8 +1274,8 @@ def main():
         return
 
     if args.command == "web":
-        _cmd_web(args.port, False if args.no_browser else None,
-                 web_port=getattr(args, "web_port", None))
+        _cmd_web(getattr(args, "web_port", None),
+                 False if args.no_browser else None)
         return
 
     if args.command == "ports":
@@ -1275,22 +1284,19 @@ def main():
         def _valid(p):
             return p is None or 1 <= p <= 65535
 
-        if not _valid(args.backend) or not _valid(args.frontend):
+        if not _valid(args.port):
             print("Port must be in 1–65535.")
             return
-        if args.backend is None and args.frontend is None:
+        if args.port is None:
             prefs = read_ui_prefs()
-            print(f"backend  (API + WebSocket):  {prefs['port']}")
-            print(f"frontend (web UI):           {prefs['web_port']}")
+            print(f"web UI (API + WebSocket + frontend):  {prefs['web_port']}")
             print()
-            print("Change with:  openprogram ports --backend <port> --frontend <port>")
-            print("Override one run via env:  OPENPROGRAM_BACKEND_PORT / OPENPROGRAM_WEB_PORT")
+            print("Change with:  openprogram ports --port <port>")
+            print("Override one run via env:  OPENPROGRAM_WEB_PORT")
             return
-        prefs = set_ui_ports(backend_port=args.backend, web_port=args.frontend)
-        # Single-port: equal backend/frontend prefs are the normal state.
+        prefs = set_ui_ports(web_port=args.port)
         print("Saved. Takes effect on the next `openprogram web` / `openprogram worker` start.")
-        print(f"  backend  (API + WebSocket):  {prefs['port']}")
-        print(f"  frontend (web UI):           {prefs['web_port']}")
+        print(f"  web UI:  {prefs['web_port']}")
         return
 
     if args.command == "config":
@@ -1541,14 +1547,14 @@ def main():
         _dispatch_agents_verb(args, args._cmd_parser)
         return
 
-    if args.command == "subagent":
-        verb = getattr(args, "subagent_verb", None)
+    if args.command == "peer":
+        verb = getattr(args, "peer_verb", None)
         as_json = not getattr(args, "no_json", False)
         if verb == "spawn":
             context = getattr(args, "context", "inherit") or "inherit"
             if getattr(args, "clean", False):
                 context = "clean"
-            sys.exit(_cmd_subagent_spawn(
+            sys.exit(_cmd_peer_spawn(
                 session=args.session,
                 prompt=args.prompt,
                 parent_msg=getattr(args, "parent_msg", None),
@@ -1558,7 +1564,7 @@ def main():
                 as_json=as_json,
             ))
         if verb == "merge":
-            sys.exit(_cmd_subagent_merge(
+            sys.exit(_cmd_peer_merge(
                 target=args.target,
                 subs=list(getattr(args, "sub", []) or []),
                 message=getattr(args, "message", ""),
@@ -1649,9 +1655,9 @@ from openprogram._cli_cmds.browser import (  # noqa: E402,F401
     _cmd_browser_list,
     _cmd_browser_rm,
 )
-from openprogram._cli_cmds.subagent import (  # noqa: E402,F401
-    _cmd_subagent_spawn,
-    _cmd_subagent_merge,
+from openprogram._cli_cmds.peer import (  # noqa: E402,F401
+    _cmd_peer_spawn,
+    _cmd_peer_merge,
 )
 
 from openprogram._cli_cmds.sessions import (  # noqa: E402,F401

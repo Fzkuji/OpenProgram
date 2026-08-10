@@ -254,7 +254,7 @@ Nor is writing to a stored node new. `_rewind.py` stamps `rewound` on
 the turns it retires and rewrites their history files;
 `internals/_revert.py` does the same with `reverted`;
 `dispatcher/finalize.py` rewrites a node file in place to stamp its
-shadow-git checkpoint. And `GraphStoreShim.update` already does exactly
+shadow-git checkpoint. And `SessionNodeWriter.update` already does exactly
 the operation the mark needs — merge a metadata patch into a node,
 rewrite that node's history file, touch nothing else.
 
@@ -459,7 +459,7 @@ the session.**
   (`session_watcher._scan`: `if processed.get(sid) == updated_at`), so
   moving it hands the session straight back to a forced write and the
   model call inside it. `SessionStore.append_message` and
-  `GraphStoreShim.append` both bump it; the marking path must not go
+  `SessionNodeWriter.append` both bump it; the marking path must not go
   through either.
 - The mark must not go through the path that records the session as
   synced. `GitSession.write_history` calls `mark_synced()` as a side
@@ -468,7 +468,7 @@ the session.**
   marking path opens through `SessionStore._open` — which rebuilds a
   stale index before handing back `(git, idx)` — and then rewrites the
   node file with `atomic_write_text` directly, which is what
-  `GraphStoreShim.update` and `dispatcher/finalize.py` already do.
+  `SessionNodeWriter.update` and `dispatcher/finalize.py` already do.
 
 ### The case against the mark, and why it still wins
 
@@ -525,7 +525,7 @@ migration.
 | # | File | Change | Size |
 |---|---|---|---|
 | 1 | `openprogram/store/session/session_store.py` | New `merge_node_metadata(session_id, node_id, patch)`: `_open`, merge into `node.metadata`, rewrite the history file with `atomic_write_text`. No `_persist_meta`, no `updated_at`, no `write_history` | ~20 new |
-| 2 | `openprogram/store/session/graphstore_shim.py` | `update` delegates its metadata rewrite to #1 instead of repeating it | ~12 removed |
+| 2 | `openprogram/store/session/session_node_writer.py` | `update` delegates its metadata rewrite to #1 instead of repeating it | ~12 removed |
 | 3 | `openprogram/memory/store.py` | New `workspace_id()`: read or generate a hex id in `state_dir()` | ~12 new |
 | 4 | `openprogram/memory/scriptorium/runtime/state.py` | Drop `RuntimeState.cursors` and `advance_cursor`; keep the counters; `RuntimeStateStore.load` returns an empty state on an unreadable file | ~10 removed, ~4 changed |
 | 5 | `openprogram/memory/scriptorium/runtime/online.py` | `pending` becomes `unwritten_turns(records, marked_ids)`; `process` takes a `mark` callback and calls it only when the writer reported changed files | ~25 changed |

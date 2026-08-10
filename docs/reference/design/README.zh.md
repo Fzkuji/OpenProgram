@@ -115,7 +115,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | Doc | Topic |
 |---|---|
 | [`cli/redesign.md`](cli/redesign.md) | CLI / TUI 重设计（schema 驱动的设置、配置面板）—— 当前 |
-| [`cli/ports.md`](cli/ports.md) | Web UI 端口（架构、配置、冲突处理） |
+| [`cli/ports.md`](cli/ports.md) | Web UI 端口（配置入口、冲突处理） |
 | [`cli/slash-commands.md`](cli/slash-commands.md) | 斜杠命令 |
 | [`cli/slash-commands-references.md`](cli/slash-commands-references.md) | 斜杠命令参考快照 |
 | [`cli/drop-run-command.md`](cli/drop-run-command.md) | 从 Web UI 触发的函数执行路径 |

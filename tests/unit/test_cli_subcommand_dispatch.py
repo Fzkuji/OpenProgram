@@ -21,7 +21,7 @@ MISSING_VERB_COMMANDS = [
     ["skills"],
     ["plugins"],
     ["sessions"],
-    ["subagent"],
+    ["peer"],
     ["memory"],
     ["worker"],
     ["channels"],

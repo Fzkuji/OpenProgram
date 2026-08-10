@@ -148,7 +148,7 @@ def _bound_project_dir(session_id: str | None) -> list[Path]:
     if not session_id:
         return []
     try:
-        from openprogram.store import project_store as _projects
+        from openprogram.store.project import project_store as _projects
         proj = _projects.project_for_session(session_id)
     except Exception:  # noqa: BLE001
         return []

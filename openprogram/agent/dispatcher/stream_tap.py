@@ -71,7 +71,7 @@ def make_stream_tap(
                     default_db as _db,
                 )
                 from openprogram.context.nodes import Call, ROLE_CODE
-                from openprogram.store import GraphStoreShim
+                from openprogram.store import SessionNodeWriter
 
                 _tool_name = (meta.get("tool")
                               or evt.get("tool") or "")
@@ -88,7 +88,7 @@ def make_stream_tap(
                         "is_error": bool(evt.get("is_error")),
                     },
                 )
-                GraphStoreShim(
+                SessionNodeWriter(
                     _db(), req.session_id,
                 ).append(_node)
         except Exception:

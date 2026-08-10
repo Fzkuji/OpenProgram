@@ -19,7 +19,7 @@ Each instance listens on a single port (API, WebSocket, and the web UI together)
 
 ```bash
 # 1. Persist into that profile's config (recommended — no flags needed on later starts)
-openprogram --profile dev ports --frontend 18200
+openprogram --profile dev ports --port 18200
 
 # 2. Environment variable, override one run
 OPENPROGRAM_WEB_PORT=18200 openprogram web
@@ -28,7 +28,6 @@ OPENPROGRAM_WEB_PORT=18200 openprogram web
 openprogram web --port 18200
 ```
 
-`OPENPROGRAM_BACKEND_PORT` and `ports --backend` still work as legacy aliases for the same single port (the worker logs a warning when the env var is used).
 
 `ports` writes into the current profile's config, so each profile remembers its own ports.
 
@@ -41,7 +40,7 @@ The stable instance uses the default profile and default port; the development i
 openprogram web                        # http://localhost:18100
 
 # Development instance: write the port into the dev profile (once)
-openprogram --profile dev ports --frontend 18200
+openprogram --profile dev ports --port 18200
 
 # From then on, start it like this
 openprogram --profile dev web          # http://localhost:18200

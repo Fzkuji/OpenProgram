@@ -44,7 +44,7 @@ user types a sentence
    │
    ├─▶ 4. turn context bound (ContextVar)           :366–436
    │       _current_turn_id.set(assistant_msg_id) :379   ← every coroutine in the turn reads the same turn id
-   │       _store.set(GraphStoreShim)            :435   ← deep runtime / tools / @agentic_function write the same DAG
+   │       _store.set(SessionNodeWriter)            :435   ← deep runtime / tools / @agentic_function write the same DAG
    │       assistant_msg_id = user_msg_id+"_reply" :164
    │       assistant placeholder row written + set_head  :460; status="running" :464
    │
@@ -189,7 +189,7 @@ more tool".
 ### DAG updates run throughout, not as a separate step
 
 The user node (`:298`), the assistant placeholder, every tool result, and the
-nodes inside an `@agentic_function` all land in the same `GraphStoreShim` through
+nodes inside an `@agentic_function` all land in the same `SessionNodeWriter` through
 the `_store` ContextVar. At the end of the turn `commit_turn`
 (`session_store.py:504`) commits the whole working tree as one turn — append-only,
 with no mutable "current state" mirror file, so two agents writing concurrently

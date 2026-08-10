@@ -37,7 +37,7 @@ export GEMINI_API_KEY=...               # Gemini（GOOGLE_API_KEY 也可以）
 openprogram web
 ```
 
-它会启动后台 worker 并打开浏览器到 **http://localhost:18100**——web UI、API 和 WebSocket 共用这一个端口。改端口用 `openprogram ports --frontend <p>`。
+它会启动后台 worker 并打开浏览器到 **http://localhost:18100**——web UI、API 和 WebSocket 共用这一个端口。改端口用 `openprogram ports --port <p>`。
 
 ## 第 4 步：发第一条消息
 

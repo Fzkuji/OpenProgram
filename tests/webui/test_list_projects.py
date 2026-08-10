@@ -8,7 +8,7 @@ import types
 
 import pytest
 
-from openprogram.store import project_store
+from openprogram.store.project import project_store
 from openprogram.webui.ws_actions import project as ws_project
 
 

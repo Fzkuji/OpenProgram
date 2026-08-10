@@ -32,7 +32,7 @@ Set this env var before starting the worker (one port serves API, WebSocket, and
 export OPENPROGRAM_WEB_PORT=8101         # single port (defaults to 18100)
 ```
 
-Or persist the preference: `openprogram ports --frontend 8101`. `OPENPROGRAM_BACKEND_PORT` is a legacy alias for the same port.
+Or persist the preference: `openprogram ports --port 8101`.
 
 ## Local-development install (multi-repo)
 

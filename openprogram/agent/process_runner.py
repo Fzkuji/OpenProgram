@@ -198,7 +198,7 @@ def _child_entry(
     # would still work.
     try:
         from openprogram.store import (
-            GraphStoreShim,
+            SessionNodeWriter,
             _store as _store_var,
             _current_turn_id as _turn_id_var,
         )
@@ -228,7 +228,7 @@ def _child_entry(
             pass
 
         db = default_db()
-        _store_var.set(GraphStoreShim(db, session_id))
+        _store_var.set(SessionNodeWriter(db, session_id))
         _turn_id_var.set(anchor_msg_id)
         _set_cid(session_id)
 

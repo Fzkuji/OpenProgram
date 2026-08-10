@@ -27,9 +27,9 @@ def _coverage_nodes(db, session_id: str, node_ids: list) -> list:
     spilled: set = set()
     try:
         from openprogram.context.render import _aged_code_ids
-        from openprogram.store.session.graphstore_shim import GraphStoreShim
+        from openprogram.store.session.session_node_writer import SessionNodeWriter
 
-        graph = GraphStoreShim(db, session_id).load()
+        graph = SessionNodeWriter(db, session_id).load()
         aged, _boundary = _aged_code_ids(graph, list(node_ids))
         spilled = {
             nid for nid in node_ids

@@ -439,7 +439,7 @@ footer a{color:var(--cyan); text-decoration:none}
     <tr><td><span class="b bA">A</span></td><td><code>model.response_started / .completed</code></td><td>模型开始 / 说完回复</td><td class="src">AgentEventMessageStart/End</td></tr>
     <tr><td><span class="b bA">A</span></td><td><code>tool.before</code></td><td>工具即将执行（可拦截）</td><td class="src">AgentEventToolStart</td></tr>
     <tr><td><span class="b bA">A</span></td><td><code>tool.after</code></td><td>工具执行完</td><td class="src">AgentEventToolEnd</td></tr>
-    <tr><td><span class="b bA">A</span></td><td><code>file.changed</code><span class="new">新增</span></td><td>文件被改</td><td class="src">挂 backup_for_current_turn</td></tr>
+    <tr><td><span class="b bA">A</span></td><td><code>file.changed</code><span class="new">新增</span></td><td>文件被改</td><td class="src">挂 checkpoint_before_edit</td></tr>
     <tr><td><span class="b bA">A</span></td><td><code>turn.ended</code></td><td>一轮结束</td><td class="src">AgentEventTurnEnd</td></tr>
     <tr><td><span class="b bA">A</span></td><td><code>subagent.started / .ended</code></td><td>子任务起止</td><td class="src">TaskRunner 广播</td></tr>
     <tr><td><span class="b bB">B</span></td><td><code>credential.cooldown / .exhausted / .rotated</code></td><td>凭据限流 / 池耗尽 / 轮换</td><td class="src">AuthStore._emit</td></tr>

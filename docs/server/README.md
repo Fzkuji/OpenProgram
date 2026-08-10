@@ -42,10 +42,10 @@ The worker listens on a single port (default 18100) that serves everything: the 
 Persistent change:
 
 ```bash
-openprogram ports --frontend 8101
+openprogram ports --port 8101
 ```
 
-One-off override: the environment variable `OPENPROGRAM_WEB_PORT`, or `openprogram web --port <p>`. Precedence: explicit flag → environment variable → persisted preference → default. `OPENPROGRAM_BACKEND_PORT` is a legacy alias for the same port; the worker logs a warning when it is used.
+One-off override: the environment variable `OPENPROGRAM_WEB_PORT`, or `openprogram web --web-port <p>`. Precedence: explicit flag → environment variable → persisted preference → default.
 
 ## Logs
 

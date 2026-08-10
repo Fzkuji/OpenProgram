@@ -175,8 +175,8 @@ def test_persister_splices_summary_at_the_segment_start(store: SessionStore):
     assert node["predecessor"] == (covered[0].get("predecessor") or "")
     assert "the recap" in node["content"]
 
-    from openprogram.store.session.graphstore_shim import GraphStoreShim
-    graph = GraphStoreShim(store, "s1").load()
+    from openprogram.store.session.session_node_writer import SessionNodeWriter
+    graph = SessionNodeWriter(store, "s1").load()
     assert graph.nodes[sid].metadata.get("covers_ids") == \
         [m["id"] for m in covered]
 
@@ -269,8 +269,8 @@ def test_recompaction_extends_the_covered_segment(store: SessionStore):
     )
     assert second
 
-    from openprogram.store.session.graphstore_shim import GraphStoreShim
-    graph = GraphStoreShim(store, "s8").load()
+    from openprogram.store.session.session_node_writer import SessionNodeWriter
+    graph = SessionNodeWriter(store, "s8").load()
     covers = graph.nodes[second].metadata.get("covers_ids")
     assert covers == [m["id"] for m in msgs[:6]]
     assert first not in covers

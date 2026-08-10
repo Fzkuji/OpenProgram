@@ -27,7 +27,7 @@ def parent_store(tmp_path, monkeypatch):
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
     monkeypatch.setattr(
-        "openprogram.store.session_store.default_store", lambda: s,
+        "openprogram.store.session.session_store.default_store", lambda: s,
     )
 
     s.create_session("p1", "main", title="parent")

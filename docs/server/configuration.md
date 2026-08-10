@@ -26,7 +26,7 @@ The main files and subdirectories, grouped by purpose:
 
 ```bash
 openprogram config list              # list every setting: value, group, when it applies
-openprogram config get <key>         # read one setting, e.g. ui.port
+openprogram config get <key>         # read one setting, e.g. ui.web_port
 openprogram config set <key> <value> # change one setting
 ```
 
@@ -34,7 +34,7 @@ Every setting has an apply mode: `live` (takes effect immediately) or `next star
 
 | key | Meaning | Default | Applies |
 |-----|------|------|------|
-| `ui.port` | the single worker port (API + WebSocket + web UI); `ui.web_port` is a legacy alias | 18100 | next start |
+| `ui.web_port` | the single worker port (API + WebSocket + web UI) | 18100 | next start |
 | `ui.open_browser` | whether `openprogram web` opens the browser automatically | true | next start |
 | `search.default_provider` | default web search provider (`auto` picks the highest-priority configured one) | auto | live |
 | `memory.backend` | `local` (on disk) or `none` (no prompt memory, recall, automatic writes, organizer, or memory threads) | local | next start |
@@ -49,7 +49,7 @@ Every setting has an apply mode: `live` (takes effect immediately) or `next star
 
 ```bash
 openprogram ports                    # view
-openprogram ports --frontend 8101    # persist a change (--backend is a legacy alias)
+openprogram ports --port 8101        # persist a change
 ```
 
 ## Who can reach the server

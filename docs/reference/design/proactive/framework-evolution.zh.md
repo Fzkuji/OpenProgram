@@ -40,7 +40,7 @@ dispatcher 回调链到达。webui 是个 UI 组件，让它当路由点就等�
 | context | 在已有回调里顺手 emit `context.*` |
 | channels | emit `channel.*`；前端直连并存 |
 | memory | 处理起止 emit，把定时 poll 包装成事件 |
-| 文件改动 | 在 `backup_for_current_turn` 处 emit `file.changed` |
+| 文件改动 | 在 `checkpoint_before_edit` 处 emit `file.changed` |
 | plugin hooks | 内部统一走总线；hooks 保留为插件 API，包一层订阅 |
 | webui server | 订阅总线，而不是接收各路直连 |
 | EventBus | 中枢本身：按类型订阅 + 单例访问 |

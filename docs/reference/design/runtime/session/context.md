@@ -24,7 +24,7 @@ def session_context(
     tid = turn_id or ("turn_" + _short_uuid())
 
     tokens = []
-    tokens.append(("_store",  _store.set(GraphStoreShim(db, sid))))
+    tokens.append(("_store",  _store.set(SessionNodeWriter(db, sid))))
     tokens.append(("_turn",   _current_turn_id.set(tid)))
     if rt is not None:
         tokens.append(("_rt", _current_runtime.set(rt)))

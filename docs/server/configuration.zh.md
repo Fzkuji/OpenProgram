@@ -26,7 +26,7 @@ OpenProgram 的全部状态存在 `~/.openprogram/` 一个目录里。本页说�
 
 ```bash
 openprogram config list              # 列出每个设置：值、分组、生效方式
-openprogram config get <key>         # 读一个设置，如 ui.port
+openprogram config get <key>         # 读一个设置，如 ui.web_port
 openprogram config set <key> <value> # 改一个设置
 ```
 
@@ -34,7 +34,7 @@ openprogram config set <key> <value> # 改一个设置
 
 | key | 含义 | 默认 | 生效 |
 |-----|------|------|------|
-| `ui.port` | worker 单端口（API + WebSocket + web UI）；`ui.web_port` 是遗留别名 | 18100 | next start |
+| `ui.web_port` | worker 单端口（API + WebSocket + web UI） | 18100 | next start |
 | `ui.open_browser` | `openprogram web` 是否自动打开浏览器 | true | next start |
 | `search.default_provider` | 默认 web 搜索 provider（`auto` 选优先级最高的已配置项） | auto | live |
 | `memory.backend` | `local`（磁盘）或 `none`（不注入、不召回、不自动写入、不整理，也不启动记忆线程） | local | next start |
@@ -49,7 +49,7 @@ openprogram config set <key> <value> # 改一个设置
 
 ```bash
 openprogram ports                    # 查看
-openprogram ports --frontend 8101    # 持久化修改（--backend 是遗留别名）
+openprogram ports --port 8101        # 持久化修改
 ```
 
 ## 谁能连上这个服务

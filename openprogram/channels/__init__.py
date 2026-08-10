@@ -211,26 +211,11 @@ def build_channel(channel: str,
     return cls(account_id=account_id)
 
 
-# Back-compat shims ---------------------------------------------------------
-
-def list_channels_status() -> list[dict[str, Any]]:
-    return list_status()
-
-
-def list_enabled_platforms() -> list[str]:
-    return sorted({
-        row["platform"] for row in list_status()
-        if row["enabled"] and row["configured"]
-    })
-
-
 __all__ = [
     "Channel",
     "CHANNEL_CLASSES",
     "register_channel",
     "all_channel_classes",
     "list_status",
-    "list_channels_status",
-    "list_enabled_platforms",
     "build_channel",
 ]

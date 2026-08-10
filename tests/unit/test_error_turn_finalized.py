@@ -24,7 +24,7 @@ from openprogram.store import SessionStore
 def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionStore:
     store = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
-    monkeypatch.setattr("openprogram.store.session_store.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: store)
     monkeypatch.setattr("openprogram.store.default_store", lambda: store)
     return store
 
@@ -32,11 +32,11 @@ def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionStore:
 def _persist_user(db: SessionStore, sid: str, uid: str, text: str) -> None:
     """Mirror of webui server._append_msg's SessionDB writes."""
     from openprogram.context.nodes import Call, ROLE_USER
-    from openprogram.store import GraphStoreShim
+    from openprogram.store import SessionNodeWriter
 
     if db.get_session(sid) is None:
         db.create_session(sid, "main")
-    shim = GraphStoreShim(db, sid)
+    shim = SessionNodeWriter(db, sid)
     if not db.message_exists(sid, "ROOT"):
         shim.append(Call(id="ROOT", role=ROLE_USER, output="",
                          metadata={"display": "root"}))
@@ -215,7 +215,7 @@ def test_render_context_skips_the_failed_branch(db: SessionStore):
     a branch the new head does not descend from.
     """
     from openprogram.context.nodes import render_context
-    from openprogram.store.session.graphstore_shim import GraphStoreShim
+    from openprogram.store.session.session_node_writer import SessionNodeWriter
 
     sid = "s-err-render"
     _persist_user(db, sid, "u1", "first")
@@ -227,7 +227,7 @@ def test_render_context_skips_the_failed_branch(db: SessionStore):
     _retry_fork(db, sid, "u2", "u2r")
     _run_turn(sid, "u2r", "second", "reply 2 retry")
 
-    graph = GraphStoreShim(db, sid).load()
+    graph = SessionNodeWriter(db, sid).load()
     read_ids = render_context(graph, head_id="u2r_reply")
 
     assert "u1_reply" in read_ids, "shared prefix missing from context"

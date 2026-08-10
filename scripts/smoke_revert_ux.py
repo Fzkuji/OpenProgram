@@ -121,7 +121,7 @@ def main() -> int:
 
     # ── B. revert_turn end-to-end with a project commit ───────────
     from openprogram.store.session.session_store import SessionStore
-    from openprogram.store import project_commit as PC
+    from openprogram.store.project import project_commit as PC
     from openprogram.agent._revert import revert_turn
 
     proj = Path(tempfile.mkdtemp(prefix="op_revux_e2e_"))

@@ -174,7 +174,7 @@ def run_foreground() -> int:
     from openprogram.webui import start_web
     from .lifecycle import resolve_worker_port
 
-    fixed_port = resolve_worker_port(warn_legacy=True)
+    fixed_port = resolve_worker_port()
     port = fixed_port
     if not _port_available(port):
         # The fixed port is genuinely held by another live listener

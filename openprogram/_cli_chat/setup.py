@@ -57,10 +57,10 @@ def _get_chat_runtime():
         return None, None
 
     try:
-        from openprogram.setup import read_agent_prefs
-        effort = read_agent_prefs().get("thinking_effort")
-        if effort:
-            rt.thinking_level = effort
+        from openprogram.agent.management import manager as _agents
+        agent = _agents.get_default()
+        effort = (agent.thinking_effort if agent else None) or "medium"
+        rt.thinking_level = effort
     except Exception:
         pass
     return provider_name, rt

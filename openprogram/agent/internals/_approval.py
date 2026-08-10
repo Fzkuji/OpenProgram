@@ -172,8 +172,7 @@ def _persist_always_allow_rule(session_id: str, tool_name: str, args: dict) -> b
         from openprogram.functions.permission_rule import (
             exact_rule_for_call, rule_to_string,
         )
-        from openprogram.store import project_store as _projects
-
+        from openprogram.store.project import project_store as _projects
         value = exact_rule_for_call(tool_name, args)
         if value is None:
             return False
