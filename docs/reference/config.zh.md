@@ -25,7 +25,7 @@ openprogram config set ui.port 8101
 | `sandbox.deny_write` | Sandbox | 沙箱内不可写的glob，函数watcher自动导入的目录始终禁写、不在此列 | [] | live |
 | `sandbox.network` | Sandbox | 沙箱内是否有网络 | false | live |
 | `sandbox.pass_env` | Sandbox | 内置白名单之外还要透传的环境变量名 | [] | live |
-| `sandbox.on_unavailable` | Sandbox | 平台工具缺失时，`refuse`让命令失败，`warn`允许命令在没有沙箱的情况下执行 | refuse | live |
+| `sandbox.on_unavailable` | Sandbox | 平台后端缺失或无法创建所需隔离时，`refuse`让命令失败，`warn`允许命令在没有沙箱的情况下执行 | refuse | live |
 | `tools.disabled.<name>` | Tools | 逐工具开关；写入的是 `tools.disabled` 列表的成员 | 全部启用 | live |
 | `providers.<name>` | Providers | 只读状态行（是否已配置）；用 `openprogram providers login` 或 Web UI 配置 | — | — |
 

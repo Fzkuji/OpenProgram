@@ -25,7 +25,7 @@ The settings registry is defined in `openprogram/config_schema.py` (the single s
 | `sandbox.deny_write` | Sandbox | globs a sandboxed command cannot write, on top of the always-blocked function-watcher directory | [] | live |
 | `sandbox.network` | Sandbox | whether a sandboxed command has network access | false | live |
 | `sandbox.pass_env` | Sandbox | environment variable names to pass through besides the built-in allowlist | [] | live |
-| `sandbox.on_unavailable` | Sandbox | `refuse` fails the command when the platform tool is missing; `warn` runs it unsandboxed | refuse | live |
+| `sandbox.on_unavailable` | Sandbox | `refuse` fails the command when the platform backend is missing or cannot create its required isolation; `warn` runs it unsandboxed | refuse | live |
 | `tools.disabled.<name>` | Tools | per-tool switch; written as members of the `tools.disabled` list | all enabled | live |
 | `providers.<name>` | Providers | read-only status row (configured or not); configure with `openprogram providers login` or the Web UI | — | — |
 

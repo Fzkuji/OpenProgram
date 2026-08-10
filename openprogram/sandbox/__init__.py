@@ -28,12 +28,14 @@ What the boundary is, on both platforms:
 from __future__ import annotations
 
 import contextvars
+import functools
 import hashlib
 import json
 import logging
 import os
 import re
 import shutil
+import subprocess
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -144,10 +146,44 @@ def unavailable_reason() -> str | None:
             return None
         return "macOS needs /usr/bin/sandbox-exec"
     if sys.platform.startswith("linux"):
-        if shutil.which("bwrap"):
-            return None
-        return "Linux needs bubblewrap (install the `bubblewrap` package)"
+        executable = shutil.which("bwrap")
+        if not executable:
+            return "Linux needs bubblewrap (install the `bubblewrap` package)"
+        return _bwrap_unavailable_reason(executable)
     return f"no sandbox backend for platform {sys.platform!r}"
+
+
+@functools.cache
+def _bwrap_unavailable_reason(executable: str) -> str | None:
+    """Probe the namespaces required by our policy, once per bwrap binary."""
+    try:
+        proc = subprocess.run(
+            [
+                executable,
+                "--new-session",
+                "--die-with-parent",
+                "--unshare-pid",
+                "--unshare-ipc",
+                "--unshare-uts",
+                "--unshare-net",
+                "--cap-drop", "ALL",
+                "--ro-bind", "/", "/",
+                "--proc", "/proc",
+                "--dev", "/dev",
+                "--", "/bin/true",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            env={},
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"Linux bubblewrap probe failed: {exc}"
+    if proc.returncode == 0:
+        return None
+    lines = (proc.stderr or proc.stdout).strip().splitlines()
+    detail = f": {lines[-1]}" if lines else ""
+    return "Linux bubblewrap cannot create the required namespaces" + detail
 
 
 def is_available() -> bool:

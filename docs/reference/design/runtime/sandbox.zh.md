@@ -67,6 +67,8 @@ bwrap --new-session --die-with-parent --unshare-pid --unshare-ipc --unshare-uts
 
 `--unshare-user`是故意不加的。非setuid的构建本来就自己建用户命名空间，加了没有增量；setuid的构建根本不支持这个参数。
 
+可用性按实际执行能力判断，不只检查PATH中是否存在文件。Linux针对每个`bwrap`可执行文件的首次检查会用策略要求的PID、IPC、UTS、网络、挂载和capability限制执行`/bin/true`。因此，已经安装`bwrap`但禁止非特权用户命名空间的宿主会被判为不可用，并按`sandbox.on_unavailable`处理；普通宿主执行不会被标记为已进入沙箱。
+
 #### 1.3 屏蔽清单里有什么
 
 出厂清单不是空的：`~/.ssh/**`、`~/.aws/**`、`~/.gnupg/**`、`~/.openprogram/auth/**`、`~/.claude.json`、`~/.claude/.credentials.json`、`~/.config/gh/**`、`~/.netrc`、`~/Library/Keychains/**`、`**/.env`。启用沙箱后的实测结果是：具体凭证路径在macOS上报`Operation not permitted`，在Linux上报`Permission denied`；`rm -f ~/.ssh/id_ed25519`同样被拒，不会泄露文件是否存在。`**/.env`这种中段通配只在macOS正则profile中可强制执行。Linux上的敏感内容必须配置精确路径，或`/absolute/path/to/secrets/**`这类具有确定前缀的目录级deny；bubblewrap不能实现全文件系统中段通配匹配。
@@ -99,7 +101,7 @@ Linux上光洗环境变量不够。没有`--unshare-pid`时，`/proc/<agent_pid>
 | `sandbox.deny_write` | 沙箱内不可写的glob | `[]`，外加常开的agentics目录 |
 | `sandbox.network` | 沙箱内是否有网络 | `false` |
 | `sandbox.pass_env` | 额外透传的环境变量名 | `[]` |
-| `sandbox.on_unavailable` | 平台工具缺失时`refuse`还是`warn` | `refuse` |
+| `sandbox.on_unavailable` | 平台后端缺失或无法创建所需隔离时`refuse`还是`warn` | `refuse` |
 
 CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以这个开关是持久的，不是单次会话的。
 
@@ -107,7 +109,7 @@ CLI REPL和Web UI的`/sandbox`都通过`set_setting`写`sandbox.mode`，所以�
 
 **只有本地interactive owner可以申请一次精确重试并放宽可配置限制。**重试仍使用OS沙箱，凭证环境过滤和不可配置的agentics禁写保持生效；cron、subagent和共享渠道不能使用该路径。`permission_mode="bypass"`也不能取消hard floor或沙箱。
 
-**平台工具缺失时默认拒绝执行。**`sandbox.mode`开着、平台工具缺失、`sandbox.on_unavailable`是`refuse`时，`_invocation`抛`SandboxUnavailable`，`LocalBackend.run`把它变成失败的`RunResult`，文案给出两条出路：装工具，或者把`sandbox.mode`设成`off`。`warn`恢复原来那种不受保护地跑掉的行为，附一行日志。
+**平台后端不可用时默认拒绝执行。**`sandbox.mode`开着、平台后端缺失或所需隔离探测失败、`sandbox.on_unavailable`是`refuse`时，`_invocation`抛`SandboxUnavailable`，`LocalBackend.run`把它变成失败的`RunResult`，文案给出原因和显式的不安全替代设置。`warn`恢复原来不受保护的执行行为，附一行日志。
 
 粒度仍然是整个安装一个设置：不分agent、不分工具、不分命令。`wrap_command`接收显式策略，手上有策略的调用方可以传进去，但目前没有任何地方按调用点给出不同的策略。
 

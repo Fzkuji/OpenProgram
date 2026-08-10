@@ -134,9 +134,11 @@ def test_worker_direct_command_uses_real_forced_sandbox(sched, tmp_path):
     marker = tmp_path / "real.txt"
     _create(cron="@hourly", command=f"printf real > {marker}", cwd=str(tmp_path))
     entry = cron_tool._load(str(sched))[0]
-    proc = worker._spawn(entry, str(tmp_path / "real-logs"))
+    log_dir = tmp_path / "real-logs"
+    proc = worker._spawn(entry, str(log_dir))
     assert proc is not None
-    assert proc.wait(timeout=10) == 0
+    exit_code = proc.wait(timeout=10)
+    assert exit_code == 0, next(log_dir.iterdir()).read_text()
     assert marker.read_text() == "real"
 
 

@@ -269,6 +269,7 @@
       <div class="row"><div class="t">机制</div><div class="v">挂载视图重建：根只读，工作目录单独bind成可写，net / pid / ipc / uts四个命名空间隔离，capability全丢。</div></div>
       <div class="row"><div class="t">屏蔽写法</div><div class="v">目录用<code>--perms 0000 --tmpfs</code>遮蔽，文件用<code>--ro-bind /dev/null</code>替代。<code>--cap-drop ALL</code>移除<b>DAC_OVERRIDE</b>，所以容器内子进程是root时权限位仍然生效，实测返回<code>Permission denied</code>。</div></div>
       <div class="row"><div class="t">进程隔离</div><div class="v"><code>--unshare-pid</code>之后实测：沙箱内只看得到4个PID，读宿主进程的<code>/proc/&lt;pid&gt;/environ</code>报文件不存在，<code>kill -9</code>报进程不存在，宿主进程照常活着。没有它的话，洗干净子进程环境也没用。</div></div>
+      <div class="row"><div class="t">可用性探测</div><div class="v">不只检查PATH。每个<code>bwrap</code>可执行文件首次使用前，以正式策略所需的mount、PID、IPC、UTS、network和capability限制执行<code>/bin/true</code>；已安装但被宿主禁止创建非特权user namespace时，按后端不可用处理。</div></div>
       <div class="row bad"><div class="t">挂载顺序</div><div class="v"><code>--tmpfs /tmp</code>必须位于cwd bind<b>之前</b>，否则<code>/tmp</code>下的工作目录会被tmpfs遮蔽。拒绝访问的挂载还必须跳过宿主上不存在的路径：根是只读绑定，bubblewrap无法创建挂载点，强制挂载会使调用失败。两项均由运行测试确认。</div></div>
     </div>
   </div>
@@ -402,7 +403,7 @@
     <tr><td><b>CLI</b>：REPL同线程</td><td class="y">有效</td><td class="y">有效，且跨会话保持</td></tr>
     <tr><td><b>spawn</b>：<code>@agentic_function</code>的子解释器</td><td class="n">读回false，全部无沙箱执行</td><td class="y">子进程内写工作目录之外被拒，<code>$OPENAI_API_KEY</code>长度为0</td></tr>
     <tr><td><b>审批bypass</b>：<code>permission_mode="bypass"</code></td><td class="n">短路到工具自己的execute</td><td class="y">照样被包住：策略在权限层之下解析，实测写越界和读SSH私钥都失败</td></tr>
-    <tr><td><b>平台工具缺失</b></td><td class="n">静默改为普通执行</td><td class="y">默认<code>refuse</code>，错误信息给出两种修复操作；<code>warn</code>可选</td></tr>
+    <tr><td><b>平台后端不可用</b></td><td class="n">静默改为普通执行</td><td class="y">工具缺失或隔离机制探测失败时默认<code>refuse</code>并说明原因；<code>warn</code>可选</td></tr>
   </table>
   </div>
   <div class="legend">
@@ -1184,7 +1185,7 @@
     <div class="step s3">
       <div class="n">STEP 03 · 已完成</div>
       <h4>开关语义</h4>
-      <div class="d">移除ContextVar。策略在包装命令时从配置中的<code>sandbox.*</code>解析，不依赖执行线程或调用链。<code>SETTINGS</code>增加七个键。后端不可用时默认拒绝执行并给出明确原因。</div>
+      <div class="d">移除ContextVar。策略在包装命令时从配置中的<code>sandbox.*</code>解析，不依赖执行线程或调用链。<code>SETTINGS</code>增加七个键。后端可用性按实际隔离能力探测；工具缺失或所需namespace无法创建时默认拒绝并给出明确原因。</div>
       <div class="x"><b>实测结果</b>：Web那条形状里裸线程被包住、spawn子进程被包住、审批bypass也照样被包住。<code>wrap_command</code>接收显式策略，但目前还没有按工具或按调用点给出不同策略的地方。</div>
       <div class="src">参考：codex-cli的per-command策略；openclaw的拒绝信息与doctor预检</div>
     </div>
@@ -1261,7 +1262,7 @@
   <div class="tbl">
   <table>
     <tr><th>步骤</th><th>状态</th><th>实现与验证结果</th><th>剩余限制 / 记录</th></tr>
-    <tr><td><b>01 可用性</b></td><td class="y">已完成</td><td>常用编译、Git、Python与<code>/tmp</code>工作区已验证</td><td>macOS <code>ps</code>/<code>top</code>限制保留</td></tr>
+    <tr><td><b>01 可用性</b></td><td class="y">已完成</td><td>常用编译、Git、Python与<code>/tmp</code>工作区已验证；Linux会执行namespace能力探测</td><td>macOS <code>ps</code>/<code>top</code>限制保留</td></tr>
     <tr><td><b>02 凭证屏蔽</b></td><td class="y">已完成</td><td>默认deny-read、环境白名单、Linux pid隔离已验证</td><td>Linux中段glob不能声明为已强制</td></tr>
     <tr><td><b>03 开关语义</b></td><td class="y">已完成</td><td>Web线程、spawn与bypass bash都能读取有效配置；不可用默认refuse</td><td>当前仍为全局策略，没有per-tool覆盖</td></tr>
     <tr><td><b>04 subagent强制约束</b></td><td class="y">已完成</td><td>hard constraint和capability检查位于<code>bypass</code>之前；bash/process/execute_code及文件工具的越界操作在执行前拒绝</td><td>subagent始终非交互，不能申请升级</td></tr>

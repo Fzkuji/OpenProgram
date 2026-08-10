@@ -353,8 +353,9 @@ SETTINGS: list[SettingSpec] = [
         group="Sandbox", label="When the sandbox cannot run", widget="enum",
         apply=APPLY_LIVE, default="refuse",
         choices=lambda: list(_sandbox_on_unavailable()),
-        help="What happens when the mode is on but the platform tool is "
-             "missing. `refuse` fails the command and says why. `warn` "
+        help="What happens when the mode is on but the platform backend is "
+             "missing or cannot create its required isolation. `refuse` "
+             "fails the command and says why. `warn` "
              "runs it unsandboxed and logs a warning — convenient, and "
              "the reason a security setting can end up doing nothing "
              "without anyone noticing.",

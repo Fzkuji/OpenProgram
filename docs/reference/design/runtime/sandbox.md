@@ -67,6 +67,8 @@ Mount order matters and is not cosmetic. `--tmpfs /tmp` is emitted **before** th
 
 `--unshare-user` is deliberately absent. The non-setuid build already creates a user namespace on its own, so the flag adds nothing, and the setuid build does not support it at all.
 
+Availability is an execution check, not only a PATH check. The first Linux check for each `bwrap` executable starts `/bin/true` with the PID, IPC, UTS, network, mount and capability restrictions required by the policy. A host that has `bwrap` installed but forbids unprivileged user namespaces is therefore treated as unavailable and follows `sandbox.on_unavailable`; it is never reported as sandboxed after an unsandboxed fallback.
+
 #### 1.3 What the deny list holds
 
 The list ships loaded rather than empty: `~/.ssh/**`, `~/.aws/**`, `~/.gnupg/**`, `~/.openprogram/auth/**`, `~/.claude.json`, `~/.claude/.credentials.json`, `~/.config/gh/**`, `~/.netrc`, `~/Library/Keychains/**`, `**/.env`. Measured with the sandbox on, the concrete credential paths fail with `Operation not permitted` on macOS and `Permission denied` on Linux, and `rm -f ~/.ssh/id_ed25519` fails instead of revealing whether the file exists. The middle-wildcard `**/.env` rule is enforceable only by the macOS regex profile. Linux users must name an exact path or a concrete directory deny such as `/absolute/path/to/secrets/**`; bubblewrap cannot implement a filesystem-wide middle-wildcard match.
@@ -99,7 +101,7 @@ The policy is read from `sandbox.*` in `~/.openprogram/config.json` at the momen
 | `sandbox.deny_write` | globs no sandboxed command may write | `[]`, plus the always-on agentics directory |
 | `sandbox.network` | network inside the sandbox | `false` |
 | `sandbox.pass_env` | extra environment names to pass through | `[]` |
-| `sandbox.on_unavailable` | `refuse` or `warn` when the platform tool is missing | `refuse` |
+| `sandbox.on_unavailable` | `refuse` or `warn` when the platform backend is missing or cannot create its required isolation | `refuse` |
 
 `/sandbox` in the CLI REPL and in the web UI both write `sandbox.mode` through `set_setting`, so the toggle is persistent rather than per-session.
 
@@ -107,7 +109,7 @@ The policy is read from `sandbox.*` in `~/.openprogram/config.json` at the momen
 
 **Only a local interactive owner can request one exact retry with relaxed configurable restrictions.** The rerun still uses the OS sandbox, preserves credential filtering and the non-configurable agentics write prohibition, and never applies to cron, subagents or shared channels. `permission_mode="bypass"` cannot remove the hard floor or the sandbox.
 
-**An unavailable backend refuses by default.** `_invocation` raises `SandboxUnavailable` when `sandbox.mode` is on, the platform tool is missing and `sandbox.on_unavailable` is `refuse`; `LocalBackend.run` turns that into a failed `RunResult` whose message names the two ways out — install the tool, or set `sandbox.mode` to `off`. `warn` restores the old behaviour of running unprotected, with a log line.
+**An unavailable backend refuses by default.** `_invocation` raises `SandboxUnavailable` when `sandbox.mode` is on, the platform backend is missing or its required isolation probe fails, and `sandbox.on_unavailable` is `refuse`; `LocalBackend.run` turns that into a failed `RunResult` whose message names the reason and the explicit unsafe alternatives. `warn` restores the old behaviour of running unprotected, with a log line.
 
 Granularity is still one setting for the whole installation: not per agent, not per tool, not per command. `wrap_command` takes an explicit policy, so a caller that has one can pass it, but nothing supplies a different policy per call site yet.
 

@@ -16,6 +16,7 @@ from openprogram.sandbox import (
     MODE_WORKSPACE_WRITE,
     SandboxPolicy,
     SandboxUnavailable,
+    _bwrap_unavailable_reason,
     _bwrap_args,
     _glob_to_regex,
     _seatbelt_profile,
@@ -346,6 +347,18 @@ def test_bwrap_masks_an_existing_deny_read_file(tmp_path):
 def test_bwrap_ends_with_bash():
     args = _bwrap_args("echo hi", "/w", SandboxPolicy())
     assert args[-3:] == ["/bin/bash", "-c", "echo hi"]
+
+
+def test_bwrap_availability_requires_working_namespaces(monkeypatch):
+    class FailedProbe:
+        returncode = 1
+        stdout = ""
+        stderr = "bwrap: No permissions to create new namespace"
+
+    monkeypatch.setattr(sandbox.subprocess, "run", lambda *a, **kw: FailedProbe())
+    reason = _bwrap_unavailable_reason("/test/bwrap-no-userns")
+    assert reason is not None
+    assert "cannot create the required namespaces" in reason
 
 
 # --- child environment -----------------------------------------------------
