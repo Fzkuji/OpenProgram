@@ -94,20 +94,23 @@ that prompt-injection surface entirely.
 5. **Retry classification and live acceptance are complete**: unknown
    exceptions default non-retryable in both the provider and session watcher,
    while explicitly classified transient exceptions preserve
-   `retryable=True`. A post-merge writer run distilled the two pending live
-   records into three Topic files with five validated blocks; the runtime
-   recorded one local batch, rebuilt derived `core.md`, and every resulting
-   evidence link resolves to its source anchor. The corrected pre-run state
-   was 23 sources, 152 of 154 records pre-marked written, and legacy `core.md`
-   at 39.6% of the o200k_base budget. Legacy authority-less frames were
-   already trusted in both reader and writer, so this acceptance verified the
-   writer transaction rather than a trust migration.
+   `retryable=True`. The first live attempt exposed an in-place v1 schema
+   break: all 23 source files (154 frames) still carried the pre-tier
+   `origin_scope` field and the new decoder required `authority_tier`.
+   Commit `68c15cc3` accepts that exact canonical legacy shape without
+   rewriting the append-only archives; all 23 files then parsed completely.
+   The repeated pass distilled the two pending live records into 3 Topic files
+   with 5 unique blocks. All 6 source links and relation targets validated,
+   both session nodes received the workspace marker, and a second watcher pass
+   processed 0 sessions with an unchanged revision. The rendered `core.md` is
+   now 464 / 2000 o200k_base tokens.
 6. **Backfill (first item of the follow-up batch)**: 152 records were
    pre-marked while zero Topics existed, and the acceptance run processed only
    the two pending records, so most existing history remains outside Topics.
    Add a one-shot backfill that runs the writer over every source not cited by
-   any Topic, ignoring markers, then rebuilds derived `core.md` from the full
-   result. Also in that batch: queryable writer
+   any Topic, ignoring markers. The acceptance transaction already promoted
+   the legacy core into `topics/core.md`; backfill must preserve that result.
+   Also in that batch: queryable writer
    status (last write time, last failure with retryable verdict, pending
    count), `memory.backend=none` enforced at the shared CLI/Web boundary
    (reads included, explicit disabled response), and the composed

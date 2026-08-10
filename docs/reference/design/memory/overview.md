@@ -679,7 +679,10 @@ idle watchers and unpaired-group archiving do not start or write.
 CLI memory verbs and `/api/memory/*` routes do not yet enforce that disabled
 state; their shared guard is deferred to the next memory batch. The real
 default provider completed a Topic write and transaction validation in an
-isolated workspace. Existing production sources without authority metadata
-retain the legacy trusted default; this batch does not reclassify them. A real
-distillation against the degraded live workspace remains pending until after
-merge because it mutates user data, not because it changes source trust.
+isolated workspace. The post-merge live pass also completed: a compatibility
+reader accepted the exact pre-tier `origin_scope` metadata shape in all 23
+append-only source files (154 frames), then one pending two-message session
+committed 3 Topic files and 5 blocks. Six source references and all relation
+targets validated, both message nodes were marked, and a second pass changed
+neither the workspace nor its revision. The remaining 152 uncited historical
+frames require the deferred one-shot backfill.

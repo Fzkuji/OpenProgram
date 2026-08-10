@@ -443,6 +443,8 @@ source归档并排除主动提炼。已配对内容与owner内容都进入可信
 `retryable=false`，不会进入闲置观察器的重复重试。`memory.backend=none`使用空provider，并在
 启动前停止记忆工具、系统提示、每轮召回、自动写入、夜间整理、闲置观察器和未配对群聊归档。
 CLI memory动词与`/api/memory/*`路由尚未执行同一关闭校验，该共享guard留到下一批实现。
-真实默认provider已在隔离工作区完成Topic写入和事务校验；正式工作区的既有无authority来源继续
-沿用legacy trusted默认值，本批不重新分类。正式工作区的真实提炼仍须在合并后验收；延后原因是
-该操作会修改已退化的用户数据，不是来源信任发生变化。
+真实默认provider已在隔离工作区完成Topic写入和事务校验，合并后的正式工作区验收也已完成：
+兼容读取器接受23个append-only source文件中154个frame使用的旧`origin_scope`元数据格式，随后
+一个含2条消息的待处理会话提交了3个Topic文件和5个block。6个source引用与全部relation目标均
+通过校验，两条消息都写入workspace marker；第二次扫描没有处理会话，revision保持不变。
+剩余152个未被Topic引用的历史frame仍需后续一次性backfill。
