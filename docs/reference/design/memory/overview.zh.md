@@ -405,7 +405,8 @@ assistant轮次不合成身份。`SourceRecord.speaker_label`只规范化运行�
 因此最终协议改为每个真实turn只占一个JSONL物理行，
 对象里的`ref`、`speaker`和`content`分字段传输；只有`speaker`字段建立身份，
 `content`里的换行、引号、伪记录和JSON文本都只是正文。标准JSON转义保证解码后精确恢复
-CRLF、尾换行和Markdown，不清洗或改写用户原文。Observed日期标题仍由runtime在JSONL外生成。该协议和碰撞、精确往返回归测试已实现。
+CRLF、尾换行和Markdown，不清洗或改写用户原文。渲染器额外转义可能被模型显示为换行的
+U+2028 line separator和U+2029 paragraph separator，解码后仍恢复原字符。Observed日期标题仍由runtime在JSONL外生成。该协议和碰撞、精确往返回归测试已实现。
 
 新source记录只写入从固定marker开始的`_v2/`文件，并在`source-id`和可选的percent编码
 `speaker-id`之后写`record-lines:N`。归档和parser按字面LF计数并跳过整段正文；parser遇到

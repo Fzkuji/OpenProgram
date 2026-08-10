@@ -21,10 +21,14 @@ def render_conversation(
     turns: list[tuple[str, str]], refs: list[str]
 ) -> str:
     return "\n".join(
-        json.dumps(
-            {"ref": ref, "speaker": speaker, "content": text},
-            ensure_ascii=False,
-            separators=(",", ":"),
+        (
+            json.dumps(
+                {"ref": ref, "speaker": speaker, "content": text},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            .replace("\u2028", "\\u2028")
+            .replace("\u2029", "\\u2029")
         )
         for (speaker, text), ref in zip(turns, refs)
     )

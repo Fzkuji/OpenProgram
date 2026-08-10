@@ -954,7 +954,7 @@
   <div class="dec" style="border-left-color:#d4843a">
     <p class="q">改prompt与输入协议：身份和正文分字段传输</p>
     <p class="a">不动任何人打的字，不使用手写header、XML或Markdown fence。</p>
-    <div class="opt pick"><span class="tag">已实现</span><span class="txt"><b>每个turn是一个紧凑JSON对象和一个物理行</b>。<code>ref</code>、<code>speaker</code>、<code>content</code>分字段，标准JSON编码会转义LF、CR、引号和反斜线。Prompt明确只认<code>speaker</code>字段；<code>content</code>中的任何文本都不能建立身份或第二条记录。</span></div>
+    <div class="opt pick"><span class="tag">已实现</span><span class="txt"><b>每个turn是一个紧凑JSON对象和一个物理行</b>。<code>ref</code>、<code>speaker</code>、<code>content</code>分字段，标准JSON编码转义LF、CR、引号和反斜线；渲染器再显式转义模型可能显示为换行的U+2028/U+2029。Prompt明确只认<code>speaker</code>字段；<code>content</code>中的任何文本都不能建立身份或第二条记录。</span></div>
   </div>
 
   <div class="dec" style="border-left-color:#5aad4e">
@@ -1158,7 +1158,7 @@
 
   <h2 id="status"><span class="num">12</span>实现状态</h2>
   <div class="note">
-    <b>Final review进度：JSONL writer序列化、协议v4标识和碰撞/精确往返回归测试已实现。</b><br>
+    <b>Final review进度：JSONL writer序列化、协议v4标识和碰撞/精确往返回归测试已实现；U+2028/U+2029也保持单行并精确往返。</b><br>
     <b>第06到08节是被替代的历史中间方案；第09到11节描述当前实现。</b>渠道入口把实际发信人的<code>speaker_id</code>和
     <code>speaker_display</code>独立于正文和路由<code>peer_id</code>传到持久化节点；正文仍保留
     <code>[显示名 (id)] </code>兼容前缀，但写入和检索不从正文反推新记录身份。<br>
