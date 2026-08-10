@@ -33,6 +33,8 @@ import hmac
 import json
 import os
 import re
+import secrets
+import tempfile
 import time
 import uuid
 from typing import Any
@@ -129,9 +131,20 @@ def _load(path: str) -> list[dict[str, Any]]:
 
 
 def _save(path: str, entries: list[dict[str, Any]]) -> None:
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({"entries": entries}, f, indent=2, ensure_ascii=False)
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix="schedule-", dir=directory)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump({"entries": entries}, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def _mint_id() -> str:
@@ -145,8 +158,84 @@ def _json_hash(value: dict) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _canonical_json(value: dict) -> bytes:
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    ).encode("utf-8")
+
+
+def _signing_key_path() -> str:
+    return os.path.join(os.path.dirname(_resolve_path()) or ".", ".signing-key")
+
+
+def _signing_key(*, create: bool) -> bytes:
+    path = _signing_key_path()
+    try:
+        key = open(path, "rb").read()
+    except FileNotFoundError:
+        if not create:
+            raise ValueError("cron signing key is missing")
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        key = secrets.token_bytes(32)
+        try:
+            descriptor = os.open(
+                path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600,
+            )
+        except FileExistsError:
+            key = open(path, "rb").read()
+        else:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(key)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(path, 0o600)
+    if len(key) != 32:
+        raise ValueError("cron signing key is invalid")
+    return key
+
+
+def _signature(value: dict, *, create_key: bool) -> str:
+    return hmac.new(
+        _signing_key(create=create_key), _canonical_json(value), hashlib.sha256,
+    ).hexdigest()
+
+
+def _caller_authority() -> dict[str, Any]:
+    from openprogram.agent.authority import authority_from_message
+    from openprogram.agent.run_control import get_current_session_id
+    from openprogram.store import _current_turn_id
+
+    return authority_from_message(
+        get_current_session_id() or "", _current_turn_id.get() or "",
+    )
+
+
+def _authorize(action: str) -> tuple[dict[str, Any], str | None]:
+    from openprogram.agent.authority import (
+        has_capability,
+        normalize_authority,
+        owner_principal_id,
+    )
+
+    authority = normalize_authority(_caller_authority())
+    capability = (
+        "schedule.create" if action == "create" else
+        "schedule.manage" if action == "delete" else "fs.read"
+    )
+    if not authority or not has_capability(authority, capability):
+        return {}, f"Error: authority tier does not allow {capability}."
+    if action in {"create", "delete"} and not (
+        authority["speaker_kind"] == "owner"
+        and authority["interaction"] == "interactive"
+        and authority["principal_id"] == owner_principal_id()
+    ):
+        return {}, "Error: schedule changes require the local interactive owner."
+    return authority, None
+
+
 def _build_execution_spec(
     *, kind: str, body: str, cwd: str, entry_id: str,
+    authority: dict[str, Any],
 ) -> dict[str, Any]:
     from openprogram import sandbox
 
@@ -160,6 +249,21 @@ def _build_execution_spec(
         "sandbox_policy": sandbox.policy_to_dict(policy),
         "policy_hash": sandbox.policy_hash(policy),
     }
+    job_authority: dict[str, Any] = {
+        "version": 1,
+        "principal_id": authority["principal_id"],
+        "creator": {
+            "speaker_kind": authority["speaker_kind"],
+            "speaker_id": authority["speaker_id"],
+            "speaker_display": authority["speaker_display"],
+            "interaction": authority["interaction"],
+        },
+        "authority_tier": authority["authority_tier"],
+        "kind": kind,
+        "created_at": int(time.time()),
+    }
+    job_authority["authority_hash"] = _json_hash(job_authority)
+    spec["job_authority"] = job_authority
     if kind == "prompt":
         from openprogram.agent.run_control import get_current_session_id
 
@@ -177,6 +281,7 @@ def _build_execution_spec(
             "permission_mode": "ask",
         })
     spec["spec_hash"] = _json_hash(spec)
+    spec["signature"] = _signature(spec, create_key=True)
     return spec
 
 
@@ -187,12 +292,24 @@ def _verify_execution_spec(
 
     if not isinstance(value, dict):
         return None, None, "missing immutable execution spec"
+    signature = value.get("signature")
     expected_spec_hash = value.get("spec_hash")
-    unsigned = {k: v for k, v in value.items() if k != "spec_hash"}
+    unsigned = {
+        k: v for k, v in value.items() if k not in {"spec_hash", "signature"}
+    }
     if not isinstance(expected_spec_hash, str) or not hmac.compare_digest(
         expected_spec_hash, _json_hash(unsigned)
     ):
         return None, None, "execution spec hash mismatch"
+    signed = {k: v for k, v in value.items() if k != "signature"}
+    try:
+        expected_signature = _signature(signed, create_key=False)
+    except ValueError as exc:
+        return None, None, str(exc)
+    if not isinstance(signature, str) or not hmac.compare_digest(
+        signature, expected_signature,
+    ):
+        return None, None, "execution spec owner signature mismatch"
     try:
         policy = sandbox.policy_from_dict(value.get("sandbox_policy"))
     except ValueError as exc:
@@ -217,6 +334,29 @@ def _verify_execution_spec(
         for key in ("session_id", "agent_id")
     ):
         return None, None, "prompt execution spec needs session_id and agent_id"
+    job_authority = value.get("job_authority")
+    if not isinstance(job_authority, dict):
+        return None, None, "missing immutable job authority"
+    expected_authority_hash = job_authority.get("authority_hash")
+    raw_authority = {
+        key: item for key, item in job_authority.items()
+        if key != "authority_hash"
+    }
+    if not isinstance(expected_authority_hash, str) or not hmac.compare_digest(
+        expected_authority_hash, _json_hash(raw_authority),
+    ):
+        return None, None, "job authority hash mismatch"
+    if job_authority.get("authority_tier") != "owner" \
+            or job_authority.get("kind") != kind:
+        return None, None, "job authority does not match execution kind"
+    try:
+        from openprogram.agent.authority import owner_principal_id
+
+        current_owner = owner_principal_id()
+    except Exception as exc:
+        return None, None, f"owner identity unavailable: {exc}"
+    if job_authority.get("principal_id") != current_owner:
+        return None, None, "job authority belongs to a different owner"
     return value, policy, None
 
 
@@ -241,6 +381,11 @@ def execute(
     if not action:
         return "Error: `action` is required (create / list / delete / get)."
     action = action.lower()
+    if action not in {"create", "list", "delete", "get"}:
+        return f"Error: unknown action {action!r}. Expected create / list / delete / get."
+    authority, authority_error = _authorize(action)
+    if authority_error:
+        return authority_error
 
     path = _resolve_path()
     entries = _load(path)
@@ -311,6 +456,7 @@ def execute(
             body=body_value,
             cwd=cwd,
             entry_id=new_entry["id"],
+            authority=authority,
         )
         entries.append(new_entry)
         _save(path, entries)
@@ -323,7 +469,7 @@ def execute(
             "  openprogram cron-worker --list     # show which entries match now"
         )
 
-    return f"Error: unknown action {action!r}. Expected create / list / delete / get."
+    raise AssertionError("validated cron action was not handled")
 
 
 # Register as an AgentTool. ``execute`` stays a plain callable so any

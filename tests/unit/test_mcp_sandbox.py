@@ -19,7 +19,7 @@ def test_forced_local_mcp_uses_shared_sandbox_invocation(tmp_path, monkeypatch):
     def fake_invocation(command, cwd=None, *, policy=None, force_sandbox=False):
         captured.update(command=command, cwd=cwd, policy=policy,
                         force_sandbox=force_sandbox)
-        return ["sandbox-wrapper", "--", command], False, {"PATH": "/bin"}
+        return ["sandbox-wrapper", "--", command], False, {"PATH": "/bin"}, True
 
     monkeypatch.setattr(local, "_invocation", fake_invocation)
     cfg = MCPServerConfig(

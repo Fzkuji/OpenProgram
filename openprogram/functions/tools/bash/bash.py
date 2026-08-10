@@ -6,6 +6,8 @@ this function's signature + docstring.
 
 from __future__ import annotations
 
+import sys
+
 from openprogram.backend import get_active_backend
 from openprogram.functions._runtime import function
 from openprogram.worktree.context import current_worktree_path
@@ -65,4 +67,20 @@ def bash(command: str,
         parts.append(f"--- stdout ---\n{result.stdout.rstrip()}")
     if result.stderr:
         parts.append(f"--- stderr ---\n{result.stderr.rstrip()}")
-    return "\n".join(parts)
+    text = "\n".join(parts)
+    if result.sandbox_error == "denied":
+        from openprogram.agent.types import AgentToolResult
+        from openprogram.providers.types import TextContent
+
+        return AgentToolResult(
+            content=[TextContent(text=text)],
+            details={
+                "is_error": True,
+                "sandbox": {
+                    "kind": result.sandbox_error,
+                    "backend": "seatbelt" if sys.platform == "darwin"
+                    else "bubblewrap",
+                },
+            },
+        )
+    return text

@@ -55,6 +55,7 @@ procedure (the canonical install flow, written to be agent-executable):
 
 from __future__ import annotations
 
+import configparser
 import importlib
 import importlib.util
 import json
@@ -68,6 +69,22 @@ from typing import Iterator, Optional
 
 _GH = "https://github.com/Fzkuji"
 _PROGRAM_SOURCES_FILE = "program-sources.json"
+
+
+def _canonical_repo_url(value: str) -> str:
+    return str(value or "").strip().rstrip("/").removesuffix(".git")
+
+
+def _catalogued_clone_origin(root: str, expected: str) -> str | None:
+    config_path = Path(root) / ".git" / "config"
+    parser = configparser.RawConfigParser()
+    try:
+        with config_path.open(encoding="utf-8") as handle:
+            parser.read_file(handle)
+        origin = parser.get('remote "origin"', "url")
+    except (OSError, configparser.Error):
+        return None
+    return origin if _canonical_repo_url(origin) == _canonical_repo_url(expected) else None
 
 
 def _program_sources_path() -> Path:
@@ -253,6 +270,18 @@ class Program:
         """
         pkg_dir = self.in_tree_pkg_dir()
         if pkg_dir:
+            if is_owner_controlled_program_path(pkg_dir):
+                return True
+            root = os.path.dirname(pkg_dir)
+            origin = _catalogued_clone_origin(root, self.repo)
+            if origin is None:
+                return False
+            try:
+                record_program_source(
+                    root, source=origin, kind="git-migration",
+                )
+            except (OSError, ValueError):
+                return False
             return is_owner_controlled_program_path(pkg_dir)
         try:
             return importlib.util.find_spec(self.package) is not None
@@ -350,6 +379,8 @@ def import_installed_programs() -> list[str]:
     base = agentics_dir()
     registered: list[str] = []
     for prog in KNOWN_PROGRAMS:
+        if not prog.is_installed():
+            continue
         # Make an in-tree clone importable by putting its repo dir (the
         # parent of the package) on sys.path.
         pkg_dir = prog.in_tree_pkg_dir(base)
@@ -357,8 +388,6 @@ def import_installed_programs() -> list[str]:
             repo_dir = os.path.dirname(pkg_dir)
             if repo_dir not in sys.path:
                 sys.path.insert(0, repo_dir)
-        if not prog.is_installed():
-            continue
         try:
             # Import the harness's ``agentics`` sub-package — that's the
             # registration contract (it exposes AGENTIC_FUNCTIONS, whose

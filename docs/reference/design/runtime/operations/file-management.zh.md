@@ -95,7 +95,7 @@ AI coding agent 管理文件修改，行业里分成两条路线：
  │     "回滚"                 "历史"                 │   │     "文件隔离"          "权限限制"         │
  │     turn 级, 临时          独立 store, 持久        │   │     独立副本            限制 bash 范围     │
  │     不碰用户 git           不碰用户 git            │   │     agent 显式进入      配置开关           │
- │     永远开, 自动           默认开, 自动            │   │     按需                默认关             │
+ │     永远开, 自动           默认开, 自动            │   │     按需                默认 workspace-write │
  │                                                  │   │                                         │
  └──────────────────────────────────────────────────┘   └─────────────────────────────────────────┘
 ```
@@ -110,7 +110,7 @@ AI coding agent 管理文件修改，行业里分成两条路线：
 | **碰用户的 git 吗** | **完全不碰** | **完全不碰** | 用独立 worktree，merge 才回主线 | **完全不碰** |
 | **触发** | 统一入口（所有工具执行前） | turn 结束（自动 commit 本 turn 变更） | agent 显式调 `worktree_create` | 配置开关 |
 | **bash 覆盖** | **是**（统一入口触发） | **是**（turn 结束 commit 含 bash 改动） | N/A（隔离环境内） | **是**（内核级拦截） |
-| **默认** | **一直开** | **默认开** | 按需 | **默认关** |
+| **默认** | **一直开** | **默认开** | 按需 | **`workspace-write`** |
 | **代码** | `store/snapshot/checkpoint/` | `store/shadow_git/` | `worktree/` | `sandbox/` |
 | **回退入口** | `/rewind` | `/rewind` 联动 | `worktree_discard` | N/A（预防性，不需要回退） |
 
@@ -271,11 +271,11 @@ checkpoint 存在 `<session>/checkpoints/<turn_id>/`，按以下方式释放：
 
 | 我想要 | 配置 | 得到 |
 |---|---|---|
-| 像 Claude Code 那样，有撤销键就够 | 默认 | ① Checkpoint + ② Shadow git |
-| 看 agent 改了什么（diff） | 默认 | ② Shadow git 提供 `git diff` / `git log` |
+| 像 Claude Code 那样，有撤销键就够 | 默认 | ① Checkpoint + ② Shadow git + ④ 系统级沙箱 |
+| 看 agent 改了什么（diff） | 默认 | ② Shadow git 提供 `git diff` / `git log`；④保持开启 |
 | 不想任何额外存储 | 关掉 shadow git | 只有 ① Checkpoint |
 | agent 做高风险大改，又不弄乱工作树 | （agent 自行调用）`worktree_create` | ③ 隔离，改好 merge / 改砸 discard |
-| 限制 bash 别碰 cwd 以外的文件 | 开启系统级沙箱 | ④ bash 只能读写当前项目目录 |
+| 限制bash写入工作区，并禁止读取已配置凭证和访问网络 | 默认`workspace-write` | ④宿主原生进程限制 |
 | 最安全模式 | Worktree + 系统级沙箱 | ③ + ④ 文件隔离 + 权限限制 |
 
 ---
@@ -294,8 +294,8 @@ checkpoint 存在 `<session>/checkpoints/<turn_id>/`，按以下方式释放：
 - 在聊天框输入 `/rewind N`——回退到第 N 个回退点（N 从列表中选）
 
 **沙箱：**
-- 在聊天框输入 `/sandbox`——开启系统级沙箱（限制 bash 只能读写当前项目目录）
-- 再次输入 `/sandbox`——关闭沙箱
+- 系统级沙箱默认为`workspace-write`：写入限制在工作区和已配置可写根，已配置凭证路径不可读，网络默认禁止。
+- 在聊天框输入`/sandbox`，在`workspace-write`与显式`off`之间切换。
 
 ### 8.2 CLI 命令行
 
@@ -334,13 +334,13 @@ Checkpoint、Shadow git、沙箱都是自动运行的底层机制，不暴露为
 
 ## 9. 沙箱隔离 — ③ Worktree + ④ 系统级沙箱
 
-沙箱有三种实现方式，隔离级别从低到高：
+下面三种机制的执行环境和运行要求不同：
 
 | 方案 | 代表框架 | 隔离级别 | 启动延迟 | 实现技术 | 适合场景 |
 |---|---|---|---|---|---|
 | **Git worktree** | 我们 ③、Claude Code `--worktree` | 仅文件（独立副本），无进程/网络隔离 | 秒级 | `git worktree add` | 高风险代码改动 |
 | **系统级沙箱** | 我们 ④、Claude Code `/sandbox`、Cursor | 文件系统 + 网络（进程级限制） | 毫秒级 | Seatbelt / bubblewrap / Landlock | 本地交互，限制 bash 范围 |
-| **容器沙箱** | OpenHands / SWE-agent / Devin | 完整隔离（文件/网络/进程） | 30-60 秒 | Docker / Podman | 无人值守、不信任代码 |
+| **容器沙箱** | OpenHands / SWE-agent / Devin | 容器namespace与显式挂载的宿主路径 | 30-60 秒 | Docker / Podman | 可重现的独立Linux环境 |
 
 ### 9.1 ③ Worktree — 文件隔离
 
@@ -351,22 +351,24 @@ agent 调 `worktree_create` 创建独立工作目录副本，改好了 `worktree
 ### 9.2 ④ 系统级沙箱 — 权限限制
 
 用 OS 内核机制限制 bash 进程能做什么：
-- **文件系统**：只能读写 cwd 及子目录，`rm ~/.ssh/id_rsa` → `Operation not permitted`
-- **网络**：不能直连，通过代理 allowlist 控制
+- **文件系统**：除已配置`deny_read`路径外允许宿主读取；写入限制在cwd和已配置可写根
+- **网络**：默认禁止
 - **实现**：macOS 用 Seatbelt（sandbox-exec），Linux 用 bubblewrap
-- **代码**：`openprogram/sandbox/__init__.py`（`sandbox_enabled` contextvar + `wrap_command`）、`backend/local.py`（`_invocation` 集成）
+- **代码**：`openprogram/sandbox/__init__.py`（`resolve_policy` + `wrap_command`）、`backend/local.py`（`_invocation` 集成）
 - **命令**：`/sandbox` 开关（CLI `_cli_chat/handlers.py` + webui `ws_actions/chat.py`）
+
+这是OpenProgram已确定的运行时边界：命令直接使用宿主已安装的Git、Python、Conda、npm和编译器。macOS与Linux分别实现；不支持的平台默认拒绝受沙箱命令，Docker不是自动回退后端。
 
 ### 9.3 ③ 和 ④ 的关系
 
 两者解决不同问题，可以组合：
 - **单独用 ③**：在副本里改动，但 bash 不受限制
 - **单独用 ④**：在原目录改动，但 bash 的范围受限
-- **组合使用**：在副本里改动，且 bash 受限，安全级别最高
+- **组合使用**：在副本里改动，bash同时受宿主原生策略限制
 
-### 9.4 容器沙箱（远期方向）
+### 9.4 可选容器后端（不在当前范围）
 
-research_agent 等无人值守 agentic function 的长时间运行场景，需要 Docker 完整隔离。这不属于当前设计范围，等 agentic function 成熟后再考虑。
+OpenProgram不把Docker作为无人值守执行的必要条件。authority与pairing决定哪些发件人可以进入agent；沙箱限制已接纳agent的副作用，同时保留宿主开发环境。以后如果有明确的独立Linux环境需求，可将Docker增加为用户显式选择的第二后端。当前不实现，也不代替原生沙箱或作为自动回退。
 
 ---
 
@@ -374,9 +376,9 @@ research_agent 等无人值守 agentic function 的长时间运行场景，需�
 
 四层机制——① Checkpoint、② Shadow git、③ Worktree、④ 系统级沙箱——均已实现，read-before-edit 防护以及 webui、CLI、TUI 三端的 `/rewind` 与 `/sandbox` 命令同样已实现。
 
-尚未实现：
+独立事项：
 
 | 项 | 说明 |
 |---|---|
 | UI 明示当前会话的"主回退路径" | 后端就绪，待前端 |
-| 容器沙箱（远期） | research_agent 等无人值守场景，需 Docker 集成 |
+| 可选容器后端 | 明确不在当前沙箱范围；只在出现具体独立环境需求时重新评估 |

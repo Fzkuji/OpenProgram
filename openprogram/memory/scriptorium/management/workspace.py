@@ -130,7 +130,7 @@ class MemoryWorkspace(
 
         policy = _sandbox.resolve_policy(required=True)
         assert policy is not None
-        args, use_shell, env = _invocation(
+        args, use_shell, env, _sandboxed = _invocation(
             command,
             str(self.stage_dir),
             policy=policy,

@@ -36,6 +36,9 @@ def cfg(monkeypatch):
     """A config the sandbox module reads, without touching the real one."""
     state: dict = {}
     monkeypatch.setattr("openprogram.setup._read_config", lambda: state)
+    monkeypatch.setattr(
+        sandbox, "_process_policy_override", sandbox._NO_PROCESS_POLICY,
+    )
     return state
 
 
@@ -45,7 +48,12 @@ def on(cfg: dict, **extra) -> None:
 
 # --- policy resolution -----------------------------------------------------
 
-def test_off_by_default(cfg):
+def test_workspace_write_by_default(cfg):
+    assert resolve_policy() is not None
+
+
+def test_explicit_off_disables_sandbox(cfg):
+    cfg["sandbox"] = {"mode": "off"}
     assert resolve_policy() is None
 
 
@@ -230,6 +238,22 @@ def test_seatbelt_profile_limits_signals_to_the_sandbox():
     assert "(allow process-info* (target same-sandbox))" in p
 
 
+def test_seatbelt_profile_limits_sysctl_and_mach_services():
+    p = _seatbelt_profile("/w", SandboxPolicy())
+    assert '(sysctl-name-prefix "hw.")' in p
+    assert '(sysctl-name "kern.ostype")' in p
+    assert "(allow sysctl-read)" not in p
+    assert "mach-lookup" not in p
+
+
+def test_seatbelt_profile_only_allows_the_current_tmpdir(monkeypatch):
+    tmpdir = "/private/var/folders/example/T"
+    monkeypatch.setenv("TMPDIR", tmpdir)
+    p = _seatbelt_profile("/w", SandboxPolicy())
+    assert f'(allow file-write* (subpath "{tmpdir}"))' in p
+    assert '(allow file-write* (subpath "/private/var/folders"))' not in p
+
+
 def test_seatbelt_deny_read_emits_both_rules():
     p = _seatbelt_profile("/w", SandboxPolicy(deny_read=("/secret/**",),
                                               deny_write=()))
@@ -365,8 +389,10 @@ def test_is_available_returns_bool():
 
 def test_invocation_plain_when_off(cfg):
     from openprogram.backend.local import _invocation
-    args, shell, env = _invocation("echo hi", cwd="/tmp")
+    cfg["sandbox"] = {"mode": "off"}
+    args, shell, env, sandboxed = _invocation("echo hi", cwd="/tmp")
     assert env is None
+    assert sandboxed is False
     if sys.platform != "win32":
         assert (args, shell) == ("echo hi", True)
 
@@ -376,9 +402,10 @@ def test_invocation_wraps_when_on(cfg):
     on(cfg)
     if not is_available():
         pytest.skip("no sandbox backend on this machine")
-    args, shell, env = _invocation("echo hi", cwd="/tmp")
+    args, shell, env, sandboxed = _invocation("echo hi", cwd="/tmp")
     assert isinstance(args, list) and shell is False
     assert "OPENAI_API_KEY" not in env
+    assert sandboxed is True
 
 
 def test_invocation_refuses_when_unavailable(cfg, monkeypatch):
@@ -397,8 +424,9 @@ def test_invocation_warns_and_runs_when_configured_to(cfg, monkeypatch):
     on(cfg)
     cfg["sandbox"]["on_unavailable"] = "warn"
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "no tool here")
-    args, shell, env = _invocation("echo hi", cwd="/tmp")
+    args, shell, env, sandboxed = _invocation("echo hi", cwd="/tmp")
     assert env is None
+    assert sandboxed is False
 
 
 def test_run_reports_the_refusal_instead_of_raising(cfg, monkeypatch):
@@ -408,16 +436,47 @@ def test_run_reports_the_refusal_instead_of_raising(cfg, monkeypatch):
     r = LocalBackend().run("echo hi", timeout=5, cwd="/tmp")
     assert r.exit_code == 1
     assert "no tool here" in r.stderr
+    assert r.sandbox_error == "unavailable"
+
+
+@pytest.mark.parametrize(("stderr", "sandbox_error"), [
+    ("bash: /outside/file: Operation not permitted", "denied"),
+    ("ordinary command failure", None),
+])
+def test_run_structures_only_likely_sandbox_denials(
+    cfg, monkeypatch, stderr, sandbox_error,
+):
+    from openprogram.backend.local import LocalBackend
+
+    on(cfg)
+    monkeypatch.setattr(sandbox, "unavailable_reason", lambda: None)
+    completed = subprocess.CompletedProcess([], 1, stdout="", stderr=stderr)
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: completed)
+    result = LocalBackend().run("false", timeout=5, cwd="/tmp")
+    assert result.sandbox_error == sandbox_error
+
+
+def test_escalated_policy_preserves_only_the_hard_floor(cfg):
+    on(cfg, deny_read=["/secret"], network=False)
+    with sandbox.escalated_policy():
+        policy = resolve_policy()
+    assert policy is not None
+    assert policy.network is True
+    assert policy.deny_read == ()
+    assert "/" in policy.writable_roots
+    assert any(p.endswith(os.path.join("agentics", "**"))
+               for p in policy.deny_write)
 
 
 # --- config surface --------------------------------------------------------
 
 def test_sandbox_settings_are_registered():
-    from openprogram.config_schema import SETTINGS
+    from openprogram.config_schema import SETTINGS, _BY_KEY
     keys = {s.key for s in SETTINGS}
     assert {"sandbox.mode", "sandbox.deny_read", "sandbox.deny_write",
             "sandbox.writable_roots", "sandbox.network",
             "sandbox.on_unavailable", "sandbox.pass_env"} <= keys
+    assert _BY_KEY["sandbox.mode"].default == MODE_WORKSPACE_WRITE
 
 
 def test_deny_read_ships_loaded():

@@ -173,14 +173,26 @@ def _run_prompt_job(spec: dict[str, Any], log_path: str) -> None:
         with redirect_stdout(log_fh), redirect_stderr(log_fh):
             print(f"# policy_hash={spec['policy_hash']}")
             try:
+                verified, _policy, error = _verify_execution_spec(spec)
+                if error or verified is None:
+                    print(f"# refused: {error or 'invalid execution spec'}")
+                    return
+                spec = verified
+                job_authority = spec["job_authority"]
                 from openprogram.agent.dispatcher import TurnRequest, process_user_turn
                 result = process_user_turn(TurnRequest(
                     session_id=spec["session_id"],
                     user_text=spec["prompt"],
                     agent_id=spec["agent_id"],
                     source="cron",
-                    permission_mode="ask",
+                    permission_mode=spec["permission_mode"],
                     advance_head=False,
+                    speaker_kind="runtime",
+                    speaker_id="runtime/cron",
+                    speaker_display="cron",
+                    principal_id=job_authority["principal_id"],
+                    authority_tier=job_authority["authority_tier"],
+                    interaction="non-interactive",
                 ))
                 if result.final_text:
                     print(result.final_text)
@@ -216,7 +228,7 @@ def _spawn(entry: dict[str, Any], log_dir: str) -> Any | None:
         if kind == "command":
             log_fh.flush()
             try:
-                args, use_shell, env = _invocation(
+                args, use_shell, env, _sandboxed = _invocation(
                     body,
                     cwd=spec["cwd"],
                     policy=policy,

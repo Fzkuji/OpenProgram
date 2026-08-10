@@ -45,14 +45,18 @@ def session_root(tmp_path: Path):
 
 
 @pytest.fixture
-def turn_ctx(session_root):
+def turn_ctx(session_root, tmp_path):
     """Install per-turn ContextVars the way the dispatcher does."""
+    from openprogram.worktree.context import reset_worktree, set_worktree
+
     shim = GraphStoreShim(session_root, SESSION_ID)
     store_tok = _store.set(shim)
     turn_tok = _current_turn_id.set(TURN_ID)
+    worktree_tok = set_worktree(str(tmp_path))
     try:
         yield session_root._session_dir(SESSION_ID)
     finally:
+        reset_worktree(worktree_tok)
         _current_turn_id.reset(turn_tok)
         _store.reset(store_tok)
 
@@ -121,8 +125,14 @@ def test_apply_patch_add_then_restore_deletes(turn_ctx, tmp_path):
 def test_tools_noop_without_turn_context(tmp_path):
     """No ContextVars installed → tools still work, no backup recorded
     (and crucially, no crash)."""
-    target = tmp_path / "lone.txt"
-    target.write_text("a")
-    out = _run_tool("write", {"file_path": str(target), "content": "b"})
-    assert "Wrote" in out
-    assert target.read_text() == "b"
+    from openprogram.worktree.context import reset_worktree, set_worktree
+
+    token = set_worktree(str(tmp_path))
+    try:
+        target = tmp_path / "lone.txt"
+        target.write_text("a")
+        out = _run_tool("write", {"file_path": str(target), "content": "b"})
+        assert "Wrote" in out
+        assert target.read_text() == "b"
+    finally:
+        reset_worktree(token)

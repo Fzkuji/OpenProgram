@@ -19,15 +19,17 @@ openprogram config set ui.port 8101
 | `ui.open_browser` | Ports | `openprogram web` 是否自动开浏览器 | true | next start |
 | `search.default_provider` | Search | 默认 web 搜索 provider，`auto` 选优先级最高的已配置项 | auto | live |
 | `memory.backend` | Memory | `local`（磁盘记忆工具）或 `none`（禁用） | local | next start |
-| `sandbox.mode` | Sandbox | `off`，或`workspace-write`：把每条bash命令包起来，只能写工作目录、读不到被屏蔽的路径、没有网络 | off | live |
+| `sandbox.mode` | Sandbox | `off`，或`workspace-write`：对本地模型驱动命令使用宿主原生沙箱，写入限制在工作目录/已配置根，deny-read路径不可读，网络禁用 | workspace-write | live |
 | `sandbox.writable_roots` | Sandbox | 沙箱内额外可写的目录，JSON列表 | [] | live |
-| `sandbox.deny_read` | Sandbox | 沙箱内不可读的glob，出厂就装着凭证路径 | 见`openprogram config get sandbox.deny_read` | live |
+| `sandbox.deny_read` | Sandbox | 沙箱内不可读的glob，默认包含凭证路径。Linux不能强制`**/.env`这类中段通配；敏感内容要使用精确路径，或`/absolute/path/to/secrets/**`这类具有确定前缀的目录级deny | 见`openprogram config get sandbox.deny_read` | live |
 | `sandbox.deny_write` | Sandbox | 沙箱内不可写的glob，函数watcher自动导入的目录始终禁写、不在此列 | [] | live |
 | `sandbox.network` | Sandbox | 沙箱内是否有网络 | false | live |
 | `sandbox.pass_env` | Sandbox | 内置白名单之外还要透传的环境变量名 | [] | live |
-| `sandbox.on_unavailable` | Sandbox | 平台工具缺失时，`refuse`让命令失败，`warn`不带沙箱跑掉 | refuse | live |
+| `sandbox.on_unavailable` | Sandbox | 平台工具缺失时，`refuse`让命令失败，`warn`允许命令在没有沙箱的情况下执行 | refuse | live |
 | `tools.disabled.<name>` | Tools | 逐工具开关；写入的是 `tools.disabled` 列表的成员 | 全部启用 | live |
 | `providers.<name>` | Providers | 只读状态行（是否已配置）；用 `openprogram providers login` 或 Web UI 配置 | — | — |
+
+本地沙箱使用宿主原生实现：macOS使用Seatbelt，Linux使用bubblewrap。Windows和其他不支持的平台在沙箱开启时默认拒绝命令；只有owner显式设置不安全的`sandbox.on_unavailable=warn`或关闭沙箱才会改变该行为。Docker不是自动回退后端。
 
 ## config.json 顶层键
 

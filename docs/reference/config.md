@@ -19,15 +19,17 @@ The settings registry is defined in `openprogram/config_schema.py` (the single s
 | `ui.open_browser` | Ports | whether `openprogram web` opens the browser automatically | true | next start |
 | `search.default_provider` | Search | default web search provider; `auto` picks the highest-priority configured one | auto | live |
 | `memory.backend` | Memory | `local` (on-disk memory tools) or `none` (disabled) | local | next start |
-| `sandbox.mode` | Sandbox | `off`, or `workspace-write` to wrap every bash command so it can only write inside the working directory, cannot read the blocked paths, and has no network | off | live |
+| `sandbox.mode` | Sandbox | `off`, or `workspace-write` to apply the host-native sandbox to local model-driven commands: writes are limited to the working directory/configured roots, deny-read paths are blocked, and network is disabled | workspace-write | live |
 | `sandbox.writable_roots` | Sandbox | extra directories a sandboxed command may write, as a JSON list | [] | live |
-| `sandbox.deny_read` | Sandbox | globs a sandboxed command cannot read; ships loaded with the credential paths | see `openprogram config get sandbox.deny_read` | live |
+| `sandbox.deny_read` | Sandbox | globs a sandboxed command cannot read; defaults include credential paths. Linux cannot enforce middle-wildcard patterns such as `**/.env`: use an exact path or a concrete directory deny such as `/absolute/path/to/secrets/**` for sensitive content | see `openprogram config get sandbox.deny_read` | live |
 | `sandbox.deny_write` | Sandbox | globs a sandboxed command cannot write, on top of the always-blocked function-watcher directory | [] | live |
 | `sandbox.network` | Sandbox | whether a sandboxed command has network access | false | live |
 | `sandbox.pass_env` | Sandbox | environment variable names to pass through besides the built-in allowlist | [] | live |
 | `sandbox.on_unavailable` | Sandbox | `refuse` fails the command when the platform tool is missing; `warn` runs it unsandboxed | refuse | live |
 | `tools.disabled.<name>` | Tools | per-tool switch; written as members of the `tools.disabled` list | all enabled | live |
 | `providers.<name>` | Providers | read-only status row (configured or not); configure with `openprogram providers login` or the Web UI | — | — |
+
+The local sandbox is host-native: Seatbelt on macOS and bubblewrap on Linux. Windows and unsupported platforms refuse commands while the sandbox is enabled unless the owner explicitly selects the unsafe `sandbox.on_unavailable=warn` or turns the sandbox off. Docker is not an automatic fallback.
 
 ## Top-level keys in config.json
 

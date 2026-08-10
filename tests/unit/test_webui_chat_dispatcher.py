@@ -250,6 +250,10 @@ def test_write_tool_checkpoints_when_dag_runtime_unavailable(
     )
 
     target = tmp_path / "undo_test.txt"
+    monkeypatch.setattr(
+        "openprogram.worktree.context.current_worktree_path",
+        lambda: str(tmp_path),
+    )
     user_msg_id = "u-write"
     assistant_msg_id = user_msg_id + "_reply"
 
@@ -331,6 +335,10 @@ def test_shadow_git_commits_on_webui_turn(
 
     project = tmp_path / "proj"
     project.mkdir()
+    monkeypatch.setattr(
+        "openprogram.worktree.context.current_worktree_path",
+        lambda: str(project),
+    )
     target = project / "undo_test.txt"
     shadow_root = tmp_path / "shadow"
     shadow_root.mkdir()

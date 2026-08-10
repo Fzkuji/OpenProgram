@@ -128,3 +128,30 @@ def test_model_file_policy_protects_source_registry(tmp_path, monkeypatch):
     violation = sandbox.validate_write_path(state / "Program-Sources.JSON")
 
     assert violation and "source registry" in violation
+
+
+def test_catalogued_clone_with_matching_origin_is_migrated_once(tmp_path, monkeypatch):
+    from openprogram.functions import _programs
+    import openprogram.paths as paths
+
+    state = tmp_path / "state"
+    base = tmp_path / "agentics"
+    base.mkdir()
+    repo = _harness(base, "Official-Harness")
+    (repo / ".git").mkdir()
+    (repo / ".git" / "config").write_text(
+        '[remote "origin"]\n'
+        "\turl = https://github.com/example/Official-Harness.git\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(paths, "get_state_dir", lambda: state)
+    monkeypatch.setattr(_programs, "agentics_dir", lambda: str(base))
+    program = _programs.Program(
+        function="official_agent", package="demo_pkg", extra="official",
+        repo="https://github.com/example/Official-Harness", summary="test",
+    )
+
+    assert program.is_installed()
+    assert _programs.is_owner_controlled_program_path(repo / "demo_pkg")
+    row = json.loads((state / "program-sources.json").read_text())["programs"][0]
+    assert row["kind"] == "git-migration"

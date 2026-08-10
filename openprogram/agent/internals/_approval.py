@@ -162,24 +162,33 @@ def _hard_constraint_violation(
     return None
 
 
-def _persist_always_allow_rule(session_id: str, tool_name: str) -> None:
-    """把 "总是允许" 写成一条 per-tool allow 规则，落到**项目**层
+def _persist_always_allow_rule(session_id: str, tool_name: str, args: dict) -> bool:
+    """把 "总是允许" 写成一条精确操作规则，落到**项目**层
     （<project>/.openprogram/settings.json 的 permission_rules.allow）。
     规则跟项目走——切会话仍生效、长期记住。见 permission-model.md §2.3。"""
     if not session_id:
-        return
+        return False
     try:
+        from openprogram.functions.permission_rule import (
+            exact_rule_for_call, rule_to_string,
+        )
         from openprogram.store import project_store as _projects
+
+        value = exact_rule_for_call(tool_name, args)
+        if value is None:
+            return False
+        serialized = rule_to_string(value)
         proj = _projects.project_for_session(session_id) or _projects.get_default_project()
         settings = _projects.load_project_settings(proj.id)
         rules = settings.get("permission_rules") or {"allow": [], "deny": [], "ask": []}
         allow = rules.setdefault("allow", [])
-        if tool_name not in allow:
-            allow.append(tool_name)
+        if serialized not in allow:
+            allow.append(serialized)
         settings["permission_rules"] = rules
         _projects.save_project_settings(proj.id, settings)
+        return True
     except Exception:
-        pass
+        return False
 
 
 def wrap_with_approval(
@@ -317,8 +326,8 @@ def wrap_with_approval(
                    and reason.strip() else f"[denied] user did not approve {name}")
             return _denied(msg, "APPROVAL_DENIED")
         if scope == "always":
-            _persist_always_allow_rule(req.session_id, name)
-        return await orig_execute(call_id, args, cancel, on_update)
+            _persist_always_allow_rule(req.session_id, name, args)
+        return await _run_original(call_id, args, cancel, on_update)
 
     async def _gated_execute(call_id, args, cancel, on_update):
         mode = req.permission_mode
@@ -373,11 +382,11 @@ def wrap_with_approval(
 
         # ③ bypass 短路（deny/ask/force 之后）
         if mode == "bypass":
-            return await orig_execute(call_id, args, cancel, on_update)
+            return await _run_original(call_id, args, cancel, on_update)
 
         # ④ 规则层 allow —— bypass 之后
         if verdict == "allow":
-            return await orig_execute(call_id, args, cancel, on_update)
+            return await _run_original(call_id, args, cancel, on_update)
 
         # ⑤ 只读安全工具全模式放行（对齐 CC：Ask / Accept edits / Plan 下
         #    read/grep/glob 这类只读调用不弹卡，审批只留给会改状态的）。
@@ -386,12 +395,12 @@ def wrap_with_approval(
             auto_classify_tool, SAFE_AUTO_ALLOWLIST, RISKY_AUTO_DENYLIST,
         )
         if name in SAFE_AUTO_ALLOWLIST:
-            return await orig_execute(call_id, args, cancel, on_update)
+            return await _run_original(call_id, args, cancel, on_update)
 
         # ⑥ acceptEdits：写安全工具自动放行；命令类落审批
         if mode == "acceptEdits" and getattr(agent_tool, "_accept_edits_safe", False) \
                 and _path_is_safe(name, args, req):
-            return await orig_execute(call_id, args, cancel, on_update)
+            return await _run_original(call_id, args, cancel, on_update)
 
         # ⑦ auto：LLM 分类器判定（对齐 CC "Auto mode"）。三级过滤省调用：
         #    明显安全在 ⑤ 已放行；明显危险→拒；拿不准→问一次 haiku。

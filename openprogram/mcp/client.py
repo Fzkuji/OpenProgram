@@ -538,7 +538,7 @@ class MCPClient:
 
             policy = sandbox.resolve_policy(required=True)
             command = shlex.join(cmd)
-            args, use_shell, env = _invocation(
+            args, use_shell, env, _sandboxed = _invocation(
                 command,
                 cwd=self.sandbox_cwd,
                 policy=policy,

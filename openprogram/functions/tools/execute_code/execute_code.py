@@ -1,7 +1,7 @@
 """execute_code tool — run a Python snippet in a fresh subprocess.
 
-Runs the code via ``python -c`` in an isolated subprocess so the agent
-can do scratch computation / data munging without bash-quoting hell.
+Runs the code in a separate Python subprocess so the agent can perform
+scratch computation and data processing without shell-quoting requirements.
 Captures stdout + stderr + exit code + elapsed seconds.
 
 Why a subprocess (not exec() in-process):
@@ -10,11 +10,10 @@ Why a subprocess (not exec() in-process):
   * native crashes (segfault) don't take the agent down
   * timeouts are enforceable
 
-Why not a proper sandbox (docker, firejail, nsjail):
-  * out of scope here; the tool is a conveniency for trusted agents
-    running locally, not a hostile-code firewall. If you're exposing
-    this to an untrusted LLM, wrap the whole runtime in your own
-    container — not this tool's job.
+Security boundary:
+  * the local backend uses the configured host-native OpenProgram sandbox
+    through ``LocalBackend.run``
+  * Docker and SSH backends execute inside their configured external boundary
 
 Inspired by hermes-agent's ``code_execution_tool`` but trimmed:
 no Modal / no Docker integration, just local Python. Users who want
@@ -32,7 +31,7 @@ import time
 from typing import Any
 
 from ..._helpers import read_int_param, read_string_param
-from ..._runtime import function
+from ..._runtime import ToolReturn, function
 
 
 NAME = "execute_code"
@@ -44,8 +43,9 @@ MAX_OUTPUT_BYTES = 256 * 1024  # captured streams are truncated past this
 DESCRIPTION = (
     "Run a Python snippet in a fresh subprocess and return stdout + "
     "stderr + exit code + elapsed time. Isolated from the agent's "
-    "own process. Not a security sandbox — runs with the same privileges "
-    "as OpenProgram itself. Use this for data wrangling, quick maths, "
+    "own process. The local backend applies the configured OpenProgram "
+    "sandbox; Docker and SSH use their configured execution boundary. "
+    "Use this for data wrangling, quick maths, "
     "library probes, plotting to disk — prefer bash for shell commands."
 )
 
@@ -112,6 +112,7 @@ def execute(
 
     backend = get_active_backend()
     started = time.time()
+    sandbox_error = None
 
     if isinstance(backend, LocalBackend):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False,
@@ -133,6 +134,7 @@ def execute(
                     f"## stderr (partial)\n{completed.stderr[:4000]}"
                 )
             return_code = completed.exit_code
+            sandbox_error = completed.sandbox_error
             stdout_b = completed.stdout.encode("utf-8")
             stderr_b = completed.stderr.encode("utf-8")
         finally:
@@ -185,7 +187,20 @@ def execute(
             "## stderr" + (" (truncated)" if err_truncated else ""),
             err_text or "(empty)",
         ]
-    return "\n".join(parts)
+    text = "\n".join(parts)
+    if sandbox_error == "denied":
+        return ToolReturn(
+            text=text,
+            is_error=True,
+            json_data={
+                "sandbox": {
+                    "kind": sandbox_error,
+                    "backend": "seatbelt" if sys.platform == "darwin"
+                    else "bubblewrap",
+                }
+            },
+        )
+    return text
 
 
 

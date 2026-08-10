@@ -58,8 +58,8 @@ def _windows_bash() -> str | None:
 def _invocation(command: str, cwd: str | None = None, *,
                 policy: _sandbox.SandboxPolicy | None = None,
                 force_sandbox: bool = False,
-                ) -> tuple[str | list[str], bool, dict | None]:
-    """Return ``(args, shell, env)`` for the host run. POSIX: the command
+                ) -> tuple[str | list[str], bool, dict | None, bool]:
+    """Return ``(args, shell, env, sandboxed)`` for the host run. POSIX: the command
     string via the host shell (unchanged). Windows: a real bash via
     ``[bash, "-c", command]`` (shell=False) when available, else the
     command string via cmd.exe (shell=True) as a last resort. ``env`` is
@@ -95,7 +95,7 @@ def _invocation(command: str, cwd: str | None = None, *,
         reason = _sandbox.unavailable_reason()
         if reason is None:
             args, shell = _sandbox.wrap_command(command, cwd or os.getcwd(), policy)
-            return (args, shell, prepared_env)
+            return (args, shell, prepared_env, True)
         if (force_sandbox
                 or _sandbox.on_unavailable() == _sandbox.ON_UNAVAILABLE_REFUSE):
             raise _sandbox.SandboxUnavailable(
@@ -108,8 +108,8 @@ def _invocation(command: str, cwd: str | None = None, *,
     if sys.platform == "win32":
         bash = _windows_bash()
         if bash:
-            return ([bash, "-c", command], False, prepare_child_env())
-    return (command, True, prepare_child_env())
+            return ([bash, "-c", command], False, prepare_child_env(), False)
+    return (command, True, prepare_child_env(), False)
 
 
 class LocalBackend(Backend):
@@ -118,11 +118,14 @@ class LocalBackend(Backend):
     def run(self, command: str, timeout: float,
             cwd: str | None = None) -> RunResult:
         try:
-            args, use_shell, env = _invocation(command, cwd=cwd)
+            args, use_shell, env, sandboxed = _invocation(command, cwd=cwd)
         except _sandbox.SandboxUnavailable as e:
             # The Backend contract is to report failures as a result, not
             # to raise them at the tool.
-            return RunResult(exit_code=1, stdout="", stderr=str(e))
+            return RunResult(
+                exit_code=1, stdout="", stderr=str(e),
+                sandbox_error="unavailable",
+            )
         try:
             proc = subprocess.run(
                 args,
@@ -133,7 +136,16 @@ class LocalBackend(Backend):
                 cwd=cwd,
                 env=env,
             )
-            return RunResult(proc.returncode, proc.stdout, proc.stderr)
+            sandbox_error = (
+                "denied" if _sandbox.is_likely_violation(
+                    proc.returncode, proc.stdout, proc.stderr,
+                    sandboxed=sandboxed,
+                ) else None
+            )
+            return RunResult(
+                proc.returncode, proc.stdout, proc.stderr,
+                sandbox_error=sandbox_error,
+            )
         except subprocess.TimeoutExpired as e:
             return RunResult(
                 exit_code=-1,
@@ -144,8 +156,8 @@ class LocalBackend(Backend):
 
     def spawn(self, command: str,
               cwd: str | None = None) -> subprocess.Popen:
-        args, use_shell, env = _invocation(command, cwd=cwd)
-        return subprocess.Popen(
+        args, use_shell, env, sandboxed = _invocation(command, cwd=cwd)
+        proc = subprocess.Popen(
             args,
             shell=use_shell,
             cwd=cwd or None,
@@ -156,3 +168,5 @@ class LocalBackend(Backend):
             text=True,
             bufsize=1,
         )
+        setattr(proc, "_openprogram_sandboxed", sandboxed)
+        return proc

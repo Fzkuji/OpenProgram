@@ -27,6 +27,7 @@ What the boundary is, on both platforms:
 """
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import json
 import logging
@@ -34,6 +35,7 @@ import os
 import re
 import shutil
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
@@ -96,6 +98,18 @@ _SECRET_NAME = re.compile(
 _CHAR_DEVICES = ("/dev/null", "/dev/zero", "/dev/random", "/dev/urandom",
                  "/dev/tty")
 
+# Node needs hardware sysctls during startup; uname-based Python tooling
+# needs these four stable kernel names.  A blanket sysctl grant also exposes
+# unrelated kernel state, while a blanket mach-lookup grant makes services
+# such as the pasteboard reachable.  Common CLI tooling does not need Mach
+# service discovery.
+_MACOS_SYSCTL_NAMES = (
+    "kern.hostname",
+    "kern.osrelease",
+    "kern.ostype",
+    "kern.version",
+)
+
 
 class SandboxUnavailable(RuntimeError):
     """Config asks for a sandbox the platform cannot provide."""
@@ -114,6 +128,11 @@ class SandboxPolicy:
 
 _NO_PROCESS_POLICY = object()
 _process_policy_override: object | SandboxPolicy | None = _NO_PROCESS_POLICY
+_execution_policy_override: contextvars.ContextVar[
+    object | SandboxPolicy | None
+] = contextvars.ContextVar(
+    "openprogram_sandbox_execution_policy", default=_NO_PROCESS_POLICY,
+)
 
 
 # --- availability ----------------------------------------------------------
@@ -164,12 +183,18 @@ def resolve_policy(*, required: bool = False) -> SandboxPolicy | None:
     Read per command, so a toggle takes effect on the next command in
     every process rather than only in the context that flipped it.
     """
+    execution_override = _execution_policy_override.get()
+    if execution_override is not _NO_PROCESS_POLICY:
+        if execution_override is None:
+            return _with_hard_floor(SandboxPolicy()) if required else None
+        return execution_override  # type: ignore[return-value]
     if _process_policy_override is not _NO_PROCESS_POLICY:
         if _process_policy_override is None:
             return _with_hard_floor(SandboxPolicy()) if required else None
         return _process_policy_override  # type: ignore[return-value]
     sb = _config_section()
-    if (str(sb.get("mode") or MODE_OFF).strip().lower() != MODE_WORKSPACE_WRITE
+    if (str(sb.get("mode") or MODE_WORKSPACE_WRITE).strip().lower()
+            != MODE_WORKSPACE_WRITE
             and not required):
         return None
     deny_r = sb.get("deny_read")
@@ -181,6 +206,44 @@ def resolve_policy(*, required: bool = False) -> SandboxPolicy | None:
                     else DEFAULT_DENY_WRITE),
         network=bool(sb.get("network") or False),
         pass_env=tuple(sb.get("pass_env") or ()),
+    ))
+
+
+@contextmanager
+def escalated_policy():
+    """Relax configurable restrictions for one approved execution.
+
+    The OS sandbox remains active solely to enforce the non-configurable
+    agentics write prohibition. Credentials also stay out of the child
+    environment; approval changes execution reach, not secret handling.
+    """
+    policy = _with_hard_floor(SandboxPolicy(
+        writable_roots=("/",),
+        deny_read=(),
+        deny_write=(),
+        network=True,
+        pass_env=(),
+    ))
+    token = _execution_policy_override.set(policy)
+    try:
+        yield
+    finally:
+        _execution_policy_override.reset(token)
+
+
+def is_likely_violation(
+    exit_code: int, stdout: str, stderr: str, *, sandboxed: bool,
+) -> bool:
+    """Classify a failed sandboxed command without treating all failures alike."""
+    if not sandboxed or exit_code == 0:
+        return False
+    text = f"{stdout}\n{stderr}".lower()
+    return any(marker in text for marker in (
+        "operation not permitted",
+        "permission denied",
+        "read-only file system",
+        "sandbox-exec:",
+        "bwrap:",
     ))
 
 
@@ -446,14 +509,17 @@ def _seatbelt_profile(cwd: str, policy: SandboxPolicy) -> str:
         "(allow signal (target same-sandbox))",
         "(allow ipc-posix-sem)",   # python multiprocessing
         "(allow ipc-posix-shm)",
-        "(allow sysctl-read)",
-        "(allow mach-lookup)",
+        "(allow sysctl-read",
+        '  (sysctl-name-prefix "hw.")',
+        *(f'  (sysctl-name "{name}")' for name in _MACOS_SYSCTL_NAMES),
+        ")",
         '(allow file-read* (subpath "/"))',
     ]
     for root in _writable_roots(cwd, policy):
         lines.append(f"(allow file-write* (subpath {_sbpl_str(root)}))")
+    tmpdir = os.path.realpath(os.environ.get("TMPDIR") or "/tmp")
     lines += [
-        '(allow file-write* (subpath "/private/var/folders"))',
+        f"(allow file-write* (subpath {_sbpl_str(tmpdir)}))",
         '(allow file-write* (subpath "/private/tmp"))',
         '(allow file-write* (subpath "/tmp"))',
     ]

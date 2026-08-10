@@ -12,6 +12,7 @@ class RunResult:
     stdout: str
     stderr: str
     timed_out: bool = False
+    sandbox_error: str | None = None
 
 
 def decode_maybe(x) -> str:

@@ -50,12 +50,36 @@ def test_parse_command_bash():
     assert parse_command("bash", {"command": "git status"}) == "git status"
 
 
+def test_parse_command_normalizes_unicode_ansi_and_nul():
+    command = "\x1b[31mｅｎｖ\x1b[0m Ｘ=1 ｇｉｔ status\x00"
+    assert parse_command("bash", {"command": command}) == "env X=1 git status"
+
+
+def test_env_wrapper_matches_real_executable():
+    command = parse_command("bash", {"command": "env X=1 git status"})
+    assert command is not None
+    assert pattern_matches("git:*", command)
+    assert not pattern_matches("rm:*", command)
+
+
+def test_env_wrapper_cannot_evade_deny_rule():
+    rules = PermissionRules(deny=["bash(rm:*)"])
+    assert _match_rule(rules, "bash", {"command": "env X=1 rm -rf build"}) == "deny"
+
+
+def test_compound_shell_command_never_matches_prefix_rule():
+    rules = PermissionRules(allow=["bash(git:*)"])
+    assert _match_rule(
+        rules, "bash", {"command": "git status; rm -rf build"}
+    ) is None
+
+
 def test_parse_command_write():
     assert parse_command("write_file", {"path": "/tmp/x"}) == "/tmp/x"
 
 
 def test_parse_command_no_field():
-    assert parse_command("web_search", {"query": "x"}) is None
+    assert parse_command("web_search", {"query": "x"}) == '{"query":"x"}'
 
 
 # ── _match_rule precedence deny > ask > allow ──
@@ -435,3 +459,223 @@ def test_ask_runs_when_user_approves():
                       permission_mode="ask")
     _run(tool, req, approve=True)
     assert ran["called"]
+
+
+def test_always_allow_persists_exact_normalized_operation(monkeypatch):
+    from openprogram.store import project_store
+
+    saved = {}
+    project = type("Project", (), {"id": "p"})()
+    monkeypatch.setattr(project_store, "project_for_session", lambda _sid: project)
+    monkeypatch.setattr(project_store, "load_project_settings", lambda _pid: {})
+    monkeypatch.setattr(
+        project_store, "save_project_settings",
+        lambda _pid, settings: saved.update(settings),
+    )
+
+    assert _approval._persist_always_allow_rule(
+        "s", "bash", {"command": "env X=1 ｇｉｔ status"}
+    )
+    assert saved["permission_rules"]["allow"] == [
+        "bash(env X=1 git status)"
+    ]
+
+
+def test_always_allow_does_not_persist_complex_shell(monkeypatch):
+    from openprogram.store import project_store
+
+    saved = []
+    project = type("Project", (), {"id": "p"})()
+    monkeypatch.setattr(project_store, "project_for_session", lambda _sid: project)
+    monkeypatch.setattr(project_store, "load_project_settings", lambda _pid: {})
+    monkeypatch.setattr(
+        project_store, "save_project_settings",
+        lambda _pid, settings: saved.append(settings),
+    )
+
+    assert not _approval._persist_always_allow_rule(
+        "s", "bash", {"command": "git status && rm -rf build"}
+    )
+    assert saved == []
+
+
+@pytest.mark.parametrize(("speaker_kind", "interaction", "tier"), [
+    ("owner", "interactive", "paired"),
+    ("human", "shared", "owner"),
+    ("owner", "non-interactive", "owner"),
+])
+def test_only_interactive_owner_can_request_approval(
+    speaker_kind, interaction, tier, monkeypatch,
+):
+    from openprogram.agent.authority import owner_principal_id
+
+    tool, ran = _make_tool("bash")
+    req = TurnRequest(
+        session_id="s", user_text="", agent_id="main", source="web",
+        permission_mode="ask", speaker_kind=speaker_kind,
+        speaker_id="owner/local" if speaker_kind == "owner" else "u456",
+        speaker_display="Owner" if speaker_kind == "owner" else "B",
+        principal_id=owner_principal_id(), interaction=interaction,
+        authority_tier=tier,
+    )
+
+    async def _unexpected(**_kwargs):
+        raise AssertionError("approval UI must not be opened")
+
+    wrapped = _approval.wrap_with_approval(tool, req, on_event=lambda _e: None)
+    monkeypatch.setattr(_approval, "await_user_approval", _unexpected)
+    result = asyncio.run(wrapped.execute(
+        "c", {"command": "git status"}, None, None
+    ))
+    assert _denied(result)
+    assert not ran["called"]
+
+
+def test_sandbox_denial_emits_event_and_retries_under_escalated_policy(monkeypatch):
+    from contextlib import contextmanager
+    from openprogram.providers.types import TextContent
+
+    calls = []
+    approvals = []
+    events = []
+    escalated = []
+
+    async def _exec(call_id, args, cancel, on_update):
+        calls.append(dict(args))
+        if len(calls) == 1:
+            return AgentToolResult(
+                content=[TextContent(text="Operation not permitted")],
+                details={
+                    "is_error": True,
+                    "sandbox": {"kind": "denied", "backend": "seatbelt"},
+                },
+            )
+        return AgentToolResult(
+            content=[TextContent(text="exit_code=0")], details={"ok": True}
+        )
+
+    async def _approve(**kwargs):
+        approvals.append(kwargs)
+        return True, None, "once"
+
+    @contextmanager
+    def _escalated():
+        escalated.append(True)
+        yield
+
+    req = TurnRequest(
+        session_id="s", user_text="", agent_id="main", source="web",
+        permission_mode="bypass",
+    )
+    _ensure_test_authority(req)
+    tool = AgentTool(
+        name="bash", description="", parameters={}, label="bash", execute=_exec,
+    )
+    wrapped = _approval.wrap_with_approval(tool, req, on_event=events.append)
+    monkeypatch.setattr(_approval, "await_user_approval", _approve)
+    monkeypatch.setattr("openprogram.sandbox.escalated_policy", _escalated)
+    result = asyncio.run(wrapped.execute(
+        "c", {"command": "cat /outside/file"}, None, None
+    ))
+
+    assert result.details == {"ok": True}
+    assert calls == [
+        {"command": "cat /outside/file"},
+        {"command": "cat /outside/file"},
+    ]
+    assert len(approvals) == 1
+    assert escalated == [True]
+    assert events[0]["type"] == "sandbox.violation"
+
+
+def test_ordinary_nonzero_tool_result_does_not_trigger_sandbox_approval(monkeypatch):
+    from openprogram.providers.types import TextContent
+
+    async def _exec(call_id, args, cancel, on_update):
+        return AgentToolResult(
+            content=[TextContent(text="exit_code=1\nordinary failure")],
+            details={"is_error": True},
+        )
+
+    async def _unexpected(**_kwargs):
+        raise AssertionError("ordinary failures must not request approval")
+
+    req = TurnRequest(
+        session_id="s", user_text="", agent_id="main", source="web",
+        permission_mode="bypass",
+    )
+    _ensure_test_authority(req)
+    tool = AgentTool(
+        name="bash", description="", parameters={}, label="bash", execute=_exec,
+    )
+    wrapped = _approval.wrap_with_approval(tool, req, on_event=lambda _e: None)
+    monkeypatch.setattr(_approval, "await_user_approval", _unexpected)
+    result = asyncio.run(wrapped.execute("c", {"command": "false"}, None, None))
+    assert result.details == {"is_error": True}
+
+
+# ── production install point ──
+# The gate above is only worth anything if the real dispatcher installs it
+# on every turn. These run the actual run_loop_blocking and capture the
+# tools it hands to agent_loop, then execute them directly.
+
+def _tools_handed_to_agent_loop(req, tool_names):
+    """Run the real run_loop_blocking; return the tools agent_loop received."""
+    _ensure_test_authority(req)
+    import sys
+    import openprogram.agent.dispatcher.loop_runner as _lr
+    _al = sys.modules["openprogram.agent.agent_loop"]
+    from openprogram.agent import dispatcher as _dispatcher
+
+    captured: list = []
+
+    async def _fake_loop(prompts, context, config, cancel, stream_fn):
+        captured.extend(context.tools or [])
+        if False:
+            yield None
+
+    probes = {}
+    resolved = []
+    for n in tool_names:
+        t, ran = _make_tool(n)
+        probes[n] = ran
+        resolved.append(t)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_al, "agent_loop", _fake_loop)
+        mp.setattr(_lr, "_resolve_tools", lambda *a, **k: resolved)
+        mp.setattr(_dispatcher, "_load_agent_profile", lambda _id: {})
+        mp.setattr(_dispatcher, "_resolve_model", lambda *a, **k: _stub_model_for_gate())
+        _lr.run_loop_blocking(req=req, history=[], on_event=lambda e: None,
+                              cancel_event=None)
+    return {t.name: t for t in captured}, probes
+
+
+def _stub_model_for_gate():
+    from openprogram.providers.types import Model
+    return Model(id="stub", name="stub", api="completion", provider="openai",
+                 base_url="https://api.openai.com/v1")
+
+
+def test_dispatcher_installs_gate_on_every_turn(tmp_path, monkeypatch):
+    """Default production path wraps tools — not just the opt-in gate API."""
+    monkeypatch.chdir(tmp_path)
+    req = TurnRequest(session_id="s", user_text="hi", agent_id="worker",
+                      source="agent_spawn", permission_mode="bypass",
+                      history_override=[],
+                      permission_rules=PermissionRules(allow=["bash"]))
+    tools, probes = _tools_handed_to_agent_loop(req, ["bash", "read"])
+    assert set(tools) == {"bash", "read"}
+
+    # bash is a hard-constraint violation for a spawned turn even with an
+    # allow rule and permission_mode="bypass".
+    result = asyncio.run(tools["bash"].execute(
+        "c", {"command": "echo x"}, None, None))
+    assert _denied(result)
+    assert not probes["bash"]["called"]
+
+    # A safe read still runs — the gate denies, it does not disable spawning.
+    result = asyncio.run(tools["read"].execute(
+        "c", {"file_path": str(tmp_path / "f.txt")}, None, None))
+    assert not _denied(result)
+    assert probes["read"]["called"]

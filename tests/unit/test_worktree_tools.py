@@ -148,14 +148,12 @@ def test_edit_resolves_relative_inside_worktree(worktree_root):
     assert (worktree_root / "inside.txt").read_text() == "world\n"
 
 
-def test_write_outside_worktree_warns(worktree_root, tmp_path):
+def test_write_outside_worktree_is_blocked_by_default_sandbox(worktree_root, tmp_path):
     from openprogram.functions.tools.write import write as write_tool
     target = tmp_path / "elsewhere.txt"
     out = _exec_tool(write_tool, file_path=str(target), content="x")
-    assert "[outside worktree]" in out
-    # The write still happens (warn-not-block).
-    assert target.exists()
-    assert target.read_text() == "x"
+    assert "Error: sandbox policy: path is outside writable roots" in out
+    assert not target.exists()
 
 
 def test_clear_worktree_returns_to_default():

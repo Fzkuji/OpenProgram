@@ -22,7 +22,15 @@ from openprogram.functions.tools.cron import worker
 
 @pytest.fixture
 def sched(tmp_path, monkeypatch):
+    import openprogram.paths as paths
+    from openprogram.agent import authority
+
     path = tmp_path / "schedule.json"
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    authority._reset_owner_cache_for_tests()
+    monkeypatch.setattr(
+        cron_tool, "_caller_authority", authority.local_owner_authority,
+    )
     monkeypatch.setenv(cron_tool.DEFAULT_CRON_ENV, str(path))
     yield path
 
@@ -45,6 +53,27 @@ def test_create_with_command_persists_command_field(sched):
     assert spec["cwd"] == str(sched.parent.resolve())
     assert len(spec["policy_hash"]) == 64
     assert len(spec["spec_hash"]) == 64
+    assert len(spec["signature"]) == 64
+    assert spec["job_authority"]["principal_id"].startswith("owner/install/")
+    assert spec["job_authority"]["authority_tier"] == "owner"
+
+
+def test_shared_channel_cannot_create_or_delete_jobs(sched, monkeypatch):
+    from openprogram.agent.authority import shared_channel_authority
+
+    assert "Created cron entry" in _create(cron="@daily", command="echo kept")
+    entry_id = cron_tool._load(str(sched))[0]["id"]
+    monkeypatch.setattr(
+        cron_tool,
+        "_caller_authority",
+        lambda: shared_channel_authority("telegram", "main", "u456", "B"),
+    )
+    out = _create(cron="@daily", command="echo no")
+    assert "authority" in out.lower()
+    deleted = cron_tool.execute(action="delete", id=entry_id)
+    assert "authority" in deleted.lower()
+    entries = cron_tool._load(str(sched))
+    assert len(entries) == 1 and entries[0]["id"] == entry_id
 
 
 def test_create_rejects_both_prompt_and_command(sched):
@@ -81,7 +110,7 @@ def test_worker_spawn_uses_frozen_command_and_explicit_policy(
     def fake_invocation(command, cwd=None, *, policy=None, force_sandbox=False):
         captured.update(command=command, cwd=cwd, policy=policy,
                         force_sandbox=force_sandbox)
-        return command, True, None
+        return command, True, None, True
 
     monkeypatch.setattr(worker, "_invocation", fake_invocation)
     log_dir = tmp_path / "logs"
@@ -133,6 +162,20 @@ def test_worker_refuses_a_tampered_execution_spec(sched, tmp_path):
     assert "refused" in log.lower() and "spec hash" in log.lower()
 
 
+def test_worker_refuses_rehashed_tampering_without_owner_signature(sched, tmp_path):
+    _create(cron="@hourly", command="echo ok", cwd=str(tmp_path))
+    entry = cron_tool._load(str(sched))[0]
+    entry["execution"]["command"] = "echo changed"
+    unsigned = {
+        key: value for key, value in entry["execution"].items()
+        if key not in {"spec_hash", "signature"}
+    }
+    entry["execution"]["spec_hash"] = cron_tool._json_hash(unsigned)
+    assert worker._spawn(entry, str(tmp_path / "logs")) is None
+    log = next((tmp_path / "logs").iterdir()).read_text()
+    assert "signature" in log.lower()
+
+
 def test_prompt_job_rebuilds_a_noninteractive_cron_turn(sched, tmp_path,
                                                          monkeypatch):
     _create(cron="@daily", prompt="summarize", cwd=str(tmp_path))
@@ -156,6 +199,10 @@ def test_prompt_job_rebuilds_a_noninteractive_cron_turn(sched, tmp_path,
     assert req.permission_mode == "ask"
     assert req.advance_head is False
     assert req.user_text == "summarize"
+    assert req.speaker_kind == "runtime"
+    assert req.interaction == "non-interactive"
+    assert req.principal_id == spec["job_authority"]["principal_id"]
+    assert req.authority_tier == "owner"
     assert "policy_hash=" + spec["policy_hash"] in log_path.read_text()
 
 

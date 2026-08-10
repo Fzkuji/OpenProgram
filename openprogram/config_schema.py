@@ -272,12 +272,12 @@ SETTINGS: list[SettingSpec] = [
     SettingSpec(
         key="sandbox.mode", path=("sandbox", "mode"), group="Sandbox",
         label="Sandbox mode", widget="enum", apply=APPLY_LIVE,
-        default="off", choices=lambda: list(_sandbox_modes()),
-        help="`off` runs shell commands with your full user authority. "
-             "`workspace-write` wraps every command the bash tool runs "
-             "(macOS sandbox-exec, Linux bubblewrap) so it can write only "
-             "inside the working directory, cannot read the paths listed "
-             "under Blocked read paths, and has no network. Read per "
+        default="workspace-write", choices=lambda: list(_sandbox_modes()),
+        help="`off` runs local model-driven commands with your full user "
+             "authority. `workspace-write` applies the host-native sandbox "
+             "(macOS sandbox-exec, Linux bubblewrap), restricts writes to "
+             "the working directory and configured roots, blocks the paths "
+             "listed under Blocked read paths, and disables network. Read per "
              "command, so a change applies to the next command everywhere "
              "— including background threads and spawned subprocesses.",
     ),
@@ -305,7 +305,10 @@ SETTINGS: list[SettingSpec] = [
              "context. `**` matches any depth; on Linux a pattern "
              "containing a wildcard in the middle has no equivalent and "
              "is skipped, since bubblewrap masks paths rather than "
-             "matching them.",
+             "matching them. Protect sensitive Linux content with an "
+             "exact path or a directory-level deny whose prefix is "
+             "concrete, such as `/absolute/path/to/secrets/**`; do not "
+             "rely on `**/.env` there.",
     ),
     SettingSpec(
         key="sandbox.deny_write", path=("sandbox", "deny_write"),

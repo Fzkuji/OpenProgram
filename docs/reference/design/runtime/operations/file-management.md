@@ -96,7 +96,7 @@ Each of the four layers handles one concern, with no overlap. Removing any one o
  │     "rollback"                 "history"                 │   │     "file isolation"          "permission restriction"         │
  │     turn-level, temporary          independent store, persistent        │   │     independent copy            restricts bash scope     │
  │     doesn't touch user git           doesn't touch user git            │   │     agent enters explicitly      config toggle           │
- │     always on, automatic           on by default, automatic            │   │     on demand                default off             │
+ │     always on, automatic           on by default, automatic            │   │     on demand                workspace-write default │
  │                                                  │   │                                         │
  └──────────────────────────────────────────────────┘   └─────────────────────────────────────────┘
 ```
@@ -111,7 +111,7 @@ Each of the four layers handles one concern, with no overlap. Removing any one o
 | **Touches user git?** | **Never** | **Never** | Uses an independent worktree, only merges back to the main line | **Never** |
 | **Trigger** | Unified entry (before all tool executions) | End of turn (auto-commits this turn's changes) | Agent explicitly calls `worktree_create` | Config toggle |
 | **bash coverage** | **Yes** (unified entry trigger) | **Yes** (end-of-turn commit includes bash changes) | N/A (inside the isolated environment) | **Yes** (kernel-level interception) |
-| **Default** | **Always on** | **On by default** | On demand | **Off by default** |
+| **Default** | **Always on** | **On by default** | On demand | **`workspace-write`** |
 | **Code** | `store/snapshot/checkpoint/` | `store/shadow_git/` | `worktree/` | `sandbox/` |
 | **Rollback entry** | `/rewind` | `/rewind` integration | `worktree_discard` | N/A (preventive, no rollback needed) |
 
@@ -274,11 +274,11 @@ For casual chats not bound to a real directory:
 
 | I want | Configuration | I get |
 |---|---|---|
-| Like Claude Code, the undo key is enough | Default | ① Checkpoint + ② Shadow git |
-| To see what the agent changed (diff) | Default | ② Shadow git provides `git diff` / `git log` |
+| Like Claude Code, the undo key is enough | Default | ① Checkpoint + ② Shadow git + ④ system-level sandbox |
+| To see what the agent changed (diff) | Default | ② Shadow git provides `git diff` / `git log`; ④ remains enabled |
 | No extra storage at all | Turn off shadow git | Only ① Checkpoint |
 | The agent makes a high-risk large change without messing up the working tree | (agent does it itself) `worktree_create` | ③ Isolation, merge if it works / discard if it fails |
-| Restrict bash from touching files outside cwd | Enable system-level sandbox | ④ bash can only read/write the current project directory |
+| Restrict bash writes to the workspace and block configured credentials and network | Default `workspace-write` | ④ host-native process restriction |
 | The safest mode | Worktree + system-level sandbox | ③ + ④ file isolation + permission restriction |
 
 ---
@@ -297,8 +297,8 @@ For casual chats not bound to a real directory:
 - Type `/rewind N` in the chat box — roll back to the N-th rollback point (N chosen from the list)
 
 **Sandbox:**
-- Type `/sandbox` in the chat box — enable the system-level sandbox (restricts bash to read/write only the current project directory)
-- Type `/sandbox` again — disable the sandbox
+- The system-level sandbox starts in `workspace-write`: writes stay inside the workspace and configured writable roots, configured credential paths are unreadable, and network access is disabled.
+- Type `/sandbox` in the chat box to toggle between `workspace-write` and an explicit `off`.
 
 ### 8.2 CLI
 
@@ -337,13 +337,13 @@ Checkpoint, Shadow git, and the sandbox are all automatically running low-level 
 
 ## 9. Sandbox Isolation — ③ Worktree + ④ System-level Sandbox
 
-There are three ways to implement sandboxing, with isolation levels from low to high:
+The three mechanisms below have different execution environments and operational requirements:
 
 | Solution | Representative framework | Isolation level | Startup latency | Implementation technology | Best for |
 |---|---|---|---|---|---|
 | **Git worktree** | Our ③, Claude Code `--worktree` | Files only (independent copy), no process/network isolation | Second-level | `git worktree add` | High-risk code changes |
 | **System-level sandbox** | Our ④, Claude Code `/sandbox`, Cursor | File system + network (process-level restriction) | Millisecond-level | Seatbelt / bubblewrap / Landlock | Local interaction, restricting bash scope |
-| **Container sandbox** | OpenHands / SWE-agent / Devin | Full isolation (file/network/process) | 30–60 seconds | Docker / Podman | Unattended, untrusted code |
+| **Container sandbox** | OpenHands / SWE-agent / Devin | Container namespaces plus explicitly mounted host paths | 30–60 seconds | Docker / Podman | Reproducible isolated Linux environments |
 
 ### 9.1 ③ Worktree — File Isolation
 
@@ -354,22 +354,24 @@ The agent calls `worktree_create` to create an independent copy of the working d
 ### 9.2 ④ System-level Sandbox — Permission Restriction
 
 Uses OS kernel mechanisms to restrict what the bash process can do:
-- **File system**: can only read/write cwd and its subdirectories, `rm ~/.ssh/id_rsa` → `Operation not permitted`
-- **Network**: no direct connections, controlled through a proxy allowlist
+- **File system**: reads are broadly available except configured `deny_read` paths; writes stay inside cwd and configured writable roots
+- **Network**: disabled by default
 - **Implementation**: Seatbelt (sandbox-exec) on macOS, bubblewrap on Linux
-- **Code**: `openprogram/sandbox/__init__.py` (`sandbox_enabled` contextvar + `wrap_command`), `backend/local.py` (`_invocation` integration)
+- **Code**: `openprogram/sandbox/__init__.py` (`resolve_policy` + `wrap_command`), `backend/local.py` (`_invocation` integration)
 - **Command**: `/sandbox` toggle (CLI `_cli_chat/handlers.py` + webui `ws_actions/chat.py`)
+
+This is the selected OpenProgram runtime boundary because commands use the host's actual Git, Python, Conda, npm, and compiler installations. It is implemented separately for macOS and Linux. Unsupported platforms refuse sandboxed execution by default; Docker is not an automatic fallback.
 
 ### 9.3 The Relationship Between ③ and ④
 
 The two solve different problems and can be combined:
 - **Using ③ alone**: changes happen in a copy, but bash is unrestricted
 - **Using ④ alone**: changes happen in the original directory, but bash is scope-restricted
-- **Combined**: changes happen in a copy and bash is restricted too — the highest level of safety
+- **Combined**: changes happen in a copy and bash is also restricted by the host-native policy
 
-### 9.4 Container Sandbox (Long-term Direction)
+### 9.4 Optional Container Backend (Not in the Current Scope)
 
-Long-running scenarios for unattended agentic functions such as research_agent require full Docker isolation. This is not part of the current design; it will be considered once agentic functions mature.
+OpenProgram does not require Docker for unattended execution. Authority and pairing decide which senders may enter the agent; the sandbox limits side effects made by an admitted agent while preserving the host development environment. Docker may be added later as an explicitly selected second backend when a concrete product requirement needs a separate Linux environment. It is not implemented now and will not replace or automatically back up the native sandbox.
 
 ---
 
@@ -377,9 +379,9 @@ Long-running scenarios for unattended agentic functions such as research_agent r
 
 All four layers — ① Checkpoint, ② Shadow git, ③ Worktree, ④ System-level sandbox — are implemented, along with the read-before-edit guard and the `/rewind` and `/sandbox` commands across webui, CLI, and TUI.
 
-Not yet built:
+Separate work:
 
 | Item | Description |
 |---|---|
 | UI indication of the current session's "main rollback path" | Backend is ready, frontend pending |
-| Container sandbox (long term) | Unattended scenarios such as research_agent, requiring Docker integration |
+| Optional container backend | Deliberately outside the current sandbox scope; reconsider only for a concrete separate-environment requirement |
