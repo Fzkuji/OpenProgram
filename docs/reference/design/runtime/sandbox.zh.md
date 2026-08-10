@@ -324,7 +324,7 @@ CLI进程仍不进入OS沙箱，因为它需要访问Anthropic API。它自带�
 - 沙箱拒绝采用结构化结果。只有本地interactive owner可以批准一次精确重试；重试策略仍保留hard floor和凭证过滤。持久批准保存规范化后的精确操作，复杂shell只能单次批准。
 - 嵌套Claude Code内置副作用工具已禁用，改用受管MCP文件与shell工具。
 
-完整单元测试结果为2263 passed、4 skipped、0 failed。macOS Seatbelt与Linux bubblewrap真实矩阵覆盖git、Python、npm、make、conda、凭证拒读、工作区外拒写和网络拒绝。
+最终验证记录（2026-08-10）：本机完整受跟踪测试集（排除integration）为2731 passed、4 skipped、1 xfailed；GitHub Actions run 31398444213的Python 3.11、3.12、3.13、Web、文档和示例job全部通过，其中Linux Python 3.11为2723 passed、12 skipped、1 xfailed。该runner先启用Ubuntu 24.04的非特权user namespace能力，再执行真实cron bubblewrap用例，因此不会把“已安装但不能工作”的二进制计入Linux覆盖。macOS Seatbelt与Linux bubblewrap真实矩阵覆盖git、Python、npm、make、conda、凭证拒读、工作区外拒写和网络拒绝。
 
 已知限制：
 
