@@ -186,22 +186,18 @@
   </div>
 </div>
 
-<h2><span class="num">04</span>接下来做什么（按序，每条写你能感知到的变化）</h2>
+<h2><span class="num">04</span>定案：三档收成两档，门外加配对（2026-08-10）</h2>
+<p class="lead">调研后的结论：入口学OpenClaw（没批准的消息根本不进agent），内部只留owner和已配对两档，按档位枚举查一张写死的常量表。"未知外部仅reply"档删除，capability列表不再随请求流转，第02节那两条缝随病根一起消失。详细定案见<code>authority-handoff.md</code>。</p>
 <div class="plan">
   <div class="step">
-    <h3><span class="phase">第一批 · 补缝</span>把已有的门拧紧</h3>
-    <p class="lead">origin与能力清单一致性校验、memory工具接通追加能力、可变昵称降级、发言人显示名过消毒。</p>
-    <div class="feel"><span class="lb">用起来的变化</span>群里熟人说"记一下这件事"真的会被主动记住（现在只有被动归档）；有人把Discord昵称改成你的名字，冒充无效；昵称里藏指令注入不进模型。</div>
+    <h3><span class="phase">第一批 · 重构</span>档位枚举替换能力列表，配对上线</h3>
+    <p class="lead">请求只带owner/paired枚举；陌生账号收到8位配对码，批准只走本地owner通道（终端/本机Web），渠道消息无权触发；已绑定渠道的存量成员自动迁移为已配对；可变昵称不参与身份匹配；显示名过消毒；拒绝返回结构化原因码。</p>
+    <div class="feel"><span class="lb">用起来的变化</span>陌生人私聊收到配对码而不是被无视，你在终端一条命令批准；群里老成员无感知，一切照旧；有人把昵称改成你的名字，冒充无效；群里已配对的人说"记一下"会真的被主动记住。未配对成员的群聊发言照常归档，带未验证标记，检索时分得清是谁说的。</div>
   </div>
   <div class="step s2">
-    <h3><span class="phase">第二批 · 补机制</span>拒绝变得可解释、可补救</h3>
-    <p class="lead">检查点返回结构化决策（哪道门、什么原因码，全程留档）；陌生人改走配对码；共享渠道的越权请求进hold队列。</p>
-    <div class="feel"><span class="lb">用起来的变化</span>陌生人私聊收到配对码而不是被无视，你在终端一条命令批准；群里朋友说"帮我重启下服务"不再直接被拒，而是排队等你点头，一次有效；出问题时能查到每次拒绝的确切原因。</div>
-  </div>
-  <div class="step s3">
-    <h3><span class="phase">第三批 · 概念修正</span>工具权和数据权分开</h3>
-    <p class="lead">现在"能用哪些工具"和"能看哪些数据"混在一档里。拆开后记忆按写时盖章、读时过滤运作。</p>
-    <div class="feel"><span class="lb">用起来的变化</span>共享渠道的人可以查公开记忆但看不到你的私人内容；他们追加的内容检索出来永远带着"是谁说的"，不会被当成你说的。</div>
+    <h3><span class="phase">第二批 · 补机制</span>hold队列与数据权拆分</h3>
+    <p class="lead">已配对成员的越权请求（如"帮我重启服务"）进队列等owner一次性批准，不再直接拒绝；记忆读取按请求方档位过滤（写时盖章已就位）。</p>
+    <div class="feel"><span class="lb">用起来的变化</span>群里朋友求你办事时agent会说"已转交所有者"，你点头一次就放行一次；别人查记忆看不到你的私人内容，他们说过的话检索出来永远带署名。</div>
   </div>
 </div>
 
