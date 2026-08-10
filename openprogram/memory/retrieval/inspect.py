@@ -72,8 +72,37 @@ def visible_files(memory_dir: Path) -> list[Path]:
     return sorted(result, key=lambda item: item.relative_to(root).as_posix())
 
 
-def status(memory_dir: Path, *, embedding_available: bool = False) -> dict[str, Any]:
-    """Committed workspace counts. Never rebuilds and never calls a model."""
+def workspace_identity(memory_dir: Path) -> str:
+    """A stable name for a workspace that discloses nothing about the host.
+
+    The absolute path names the account, the home directory layout and
+    often the person; it is the owner's own information and belongs in
+    the owner's own surfaces, not in a tool result a model can quote back
+    into a channel. Callers that need somewhere to point a human — the
+    CLI, the web UI — read ``workspace_path`` instead.
+    """
+    from ..workspace_layout import runtime_dir
+
+    identity = runtime_dir(Path(memory_dir)) / "workspace-id"
+    try:
+        value = identity.read_text(encoding="utf-8").strip()
+    except OSError:
+        value = ""
+    return value or "workspace"
+
+
+def status(
+    memory_dir: Path,
+    *,
+    embedding_available: bool = False,
+    include_path: bool = False,
+) -> dict[str, Any]:
+    """Committed workspace counts. Never rebuilds and never calls a model.
+
+    ``include_path`` adds the on-disk location under ``workspace_path``.
+    Off by default so the model-facing tool cannot leak it by omission;
+    the owner-only CLI and web views ask for it explicitly.
+    """
     root = Path(memory_dir).resolve()
     units = parse_topic_tree(root / "topics") if (root / "topics").is_dir() else []
     files = visible_files(root)
@@ -95,7 +124,8 @@ def status(memory_dir: Path, *, embedding_available: bool = False) -> dict[str, 
     from ..runtime.writer_status import status as writer_status
 
     return {
-        "workspace": str(root),
+        "workspace": workspace_identity(root),
+        **({"workspace_path": str(root)} if include_path else {}),
         "revision": workspace_revision(root),
         "topic_files": sum(
             1 for path in files

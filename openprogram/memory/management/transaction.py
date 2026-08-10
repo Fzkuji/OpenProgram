@@ -21,7 +21,12 @@ from typing import Any
 
 from ..markdown import parse_topic_tree
 from ..runtime.state import RuntimeStateStore, SourceRecord
-from ..workspace_layout import is_internal_path, is_state_file, runtime_dir
+from ..workspace_layout import (
+    ensure_runtime_dir,
+    is_internal_path,
+    is_state_file,
+    runtime_dir,
+)
 
 WRITABLE_PREFIX = "topics/"
 SOURCE_LABEL_PATTERN = re.compile(r"new-source-[a-z0-9-]+")
@@ -158,10 +163,11 @@ def workspace_revision(memory_dir: Path) -> str:
 @contextmanager
 def workspace_write_lock(memory_dir: Path, *, timeout_s: float = 10.0):
     """Exclusive cross-process lock covering one transaction."""
-    lock_dir = runtime_dir(memory_dir)
-    lock_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = lock_dir / "write.lock"
-    handle = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+    lock_path = ensure_runtime_dir(memory_dir) / "write.lock"
+    # Owner-only like everything else under the profile. The lock holds no
+    # memory, but a file another account can open is one it can hold, and
+    # that is enough to stall every write this workspace attempts.
+    handle = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
         _acquire(handle, lock_path, timeout_s)
         try:

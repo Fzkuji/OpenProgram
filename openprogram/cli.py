@@ -1368,7 +1368,12 @@ def main():
             root = _mstore.ensure()
             import json as _json
             print(f"memory root:     {root}")
-            print(_json.dumps(_inspect.status(root), indent=2, ensure_ascii=False))
+            # The local terminal is the owner's own surface, so the path
+            # belongs here — unlike the tool result a model can quote.
+            print(_json.dumps(
+                _inspect.status(root, include_path=True),
+                indent=2, ensure_ascii=False,
+            ))
             sys.exit(0)
         if verb == "recall":
             root = _mstore.ensure()

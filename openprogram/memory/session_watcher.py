@@ -28,7 +28,7 @@ from typing import Any
 from openprogram import _compat as fcntl
 
 from . import store
-from .backend import WriteFailure
+from .backend import MemoryWriteFailureCode, WriteFailure
 
 logger = logging.getLogger(__name__)
 
@@ -109,10 +109,16 @@ def _load_processed() -> dict[str, float]:
 
 
 def _save_processed(state: dict[str, float]) -> None:
-    """Replace the state file whole: write, flush, fsync, rename.
+    """Replace the state file whole: write, flush, fsync, rename, fsync.
 
     An interrupted write must not leave half a JSON document behind, so
     nothing is ever written into the real path directly.
+
+    The second fsync is of the parent directory, and it is what makes the
+    rename durable. Flushing the temp file's contents alone leaves the
+    rename in the directory's own unwritten cache, so a power loss
+    restores the previous cursor and hands every session it named to the
+    model a second time — one model call per session, for nothing.
     """
     path = _processed_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,8 +130,13 @@ def _save_processed(state: dict[str, float]) -> None:
             handle.write(json.dumps(state, indent=2, ensure_ascii=False))
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temporary, 0o644)
+        # Records which conversations were fed to the model; owner-only
+        # like the rest of the profile.
+        os.chmod(temporary, 0o600)
         os.replace(temporary, path)
+        from openprogram.store.session.git_session import _fsync_directory
+
+        _fsync_directory(path.parent)
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
@@ -288,7 +299,7 @@ def _process_session(
         verdict = getattr(exc, "retryable", None)
         left = WriteFailure(
             str(exc), retryable=False if verdict is None else bool(verdict),
-            reason_code="WRITER_FAILURE_UNKNOWN",
+            reason_code=MemoryWriteFailureCode.WRITER_FAILURE_UNKNOWN,
         )
     if left is not None:
         from .runtime.writer_status import (

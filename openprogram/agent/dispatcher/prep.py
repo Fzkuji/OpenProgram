@@ -86,8 +86,18 @@ def prepare_turn(
     memory_prefetch = ""
     if req.user_text:
         try:
+            from openprogram.agent.authority import normalize_authority
             from openprogram.memory import get_backend
-            memory_prefetch = get_backend().search(req.user_text) or ""
+
+            # The tier of the turn being prepared, resolved here and passed
+            # down. The backend must not re-derive it: by the time recall
+            # runs, a pairing could have changed, and the answer belongs to
+            # the request as it was authorized.
+            memory_prefetch = get_backend().search(
+                req.user_text,
+                session_id=req.session_id,
+                tier=normalize_authority(req).get("authority_tier"),
+            ) or ""
         except Exception:
             memory_prefetch = ""
     user_msg: dict[str, Any] = {
@@ -106,8 +116,13 @@ def prepare_turn(
         # below — the pair lets the UI tag both halves of a turn.
         "agent_id": req.agent_id,
     }
-    from openprogram.agent.authority import normalize_authority
+    from openprogram.agent.authority import normalize_authority, stamp_schema
     user_msg.update(normalize_authority(req))
+    # Marks the node as written by a build that records authority, so a
+    # later reader can tell "this turn was never attributed" from "this
+    # turn predates attribution" instead of granting both the benefit of
+    # the doubt.
+    stamp_schema(user_msg)
     # System-internal triggers — task_followup auto-notification,
     # merge prompt assembly — write a user-role node so the LLM
     # treats it as a turn, but they're NOT chats the human typed.

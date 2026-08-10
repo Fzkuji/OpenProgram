@@ -385,7 +385,15 @@ PROMOTE_SPEC: dict[str, Any] = {
 
 
 def _restore_source_bytes(path: Path, original: str, mode: int) -> None:
-    """Put the pre-promotion archive bytes back, atomically."""
+    """Put the pre-promotion archive bytes back, atomically.
+
+    The rename is what has to happen; the fsync before it only decides
+    whether the restored bytes survive a power loss. So a failing fsync
+    is not allowed to abandon the rollback — the very failure being
+    undone here can be an fsync failure, and letting it stop the restore
+    would leave the Source trusted with no audit entry, which is the one
+    outcome promotion exists to prevent.
+    """
     descriptor, temporary = tempfile.mkstemp(
         prefix="memory-promote-undo-", dir=path.parent,
     )
@@ -393,12 +401,40 @@ def _restore_source_bytes(path: Path, original: str, mode: int) -> None:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
             handle.write(original)
             handle.flush()
-            os.fsync(handle.fileno())
+            try:
+                os.fsync(handle.fileno())
+            except OSError:
+                pass
         os.chmod(temporary, mode)
         os.replace(temporary, path)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def _restore_audit_append(path: Path, length: int, existed: bool) -> None:
+    """Undo a partial append: cut the file back to the length it had.
+
+    Truncation rather than a rewrite, because the file is append-only and
+    every byte below ``length`` is an entry some earlier promotion already
+    committed. A file that did not exist before is removed outright.
+
+    Best-effort by construction: this runs while an error is already on
+    its way up, and raising a second one here would replace the failure
+    the caller needs to see with the failure of cleaning up after it.
+    """
+    try:
+        if not existed:
+            path.unlink(missing_ok=True)
+            return
+        descriptor = os.open(path, os.O_WRONLY)
+        try:
+            os.ftruncate(descriptor, length)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    except OSError:
+        pass
 
 
 def _promote_source(
@@ -461,12 +497,20 @@ def _promote_source(
 
         # A trusted Source with no audit record is the one outcome this must
         # never leave behind, so the audit append is what commits the
-        # promotion: if it fails at any point, the original bytes go back and
-        # the caller sees the error. Repeating the promotion then re-runs
-        # both halves and produces exactly one audit entry.
+        # promotion: if it fails at any point, both files go back to what
+        # they were and the caller sees the error. Repeating the promotion
+        # then re-runs both halves and produces exactly one audit entry.
+        #
+        # Both files, not just the Source. A partial append leaves a
+        # truncated JSON line that no later reader can parse, and rolling
+        # back only the archive would keep that line forever — so the
+        # audit file's original length is recorded first and truncated
+        # back to it, which is exactly undoing an append.
+        audit_path = runtime_dir(root) / "trust-audit.jsonl"
+        audit_path.parent.mkdir(parents=True, exist_ok=True)
+        audit_existed = audit_path.exists()
+        audit_length = audit_path.stat().st_size if audit_existed else 0
         try:
-            audit_path = runtime_dir(root) / "trust-audit.jsonl"
-            audit_path.parent.mkdir(parents=True, exist_ok=True)
             audit = json.dumps({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "action": "promote",
@@ -480,13 +524,22 @@ def _promote_source(
                 audit_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600,
             )
             try:
-                if os.write(audit_fd, payload) != len(payload):
-                    raise OSError("short memory trust audit write")
+                # A short write is a normal outcome of os.write, not an
+                # error: the kernel is free to accept part of the buffer.
+                # Treating one as failure aborted a promotion that had
+                # already half-landed, so the remainder is written instead.
+                written = 0
+                while written < len(payload):
+                    count = os.write(audit_fd, payload[written:])
+                    if count <= 0:
+                        raise OSError("memory trust audit write made no progress")
+                    written += count
                 os.fsync(audit_fd)
             finally:
                 os.close(audit_fd)
         except BaseException:
             _restore_source_bytes(path, original, mode)
+            _restore_audit_append(audit_path, audit_length, audit_existed)
             raise
         RuntimeStateStore(root).git_commit(
             f"memory: trust source {source_id}"
@@ -543,7 +596,7 @@ def memory_status(**_: Any) -> str:
     except TransactionError as exc:
         return _fail(exc)
     except Exception:  # noqa: BLE001
-        return _dump({"workspace": str(root),
+        return _dump({"workspace": inspect.workspace_identity(root),
                       "revision": workspace_revision(root)})
 
 

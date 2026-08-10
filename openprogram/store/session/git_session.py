@@ -58,16 +58,49 @@ def atomic_write_text(fpath: Path, text: str) -> Path:
     title / head / branches), and the loser of the rename race raised
     FileNotFoundError. ``os.replace`` is atomic per file, so a private
     temp per write makes last-writer-wins the only outcome.
+
+    Written 0600. Every caller of this is per-profile state — session
+    transcripts, branch metadata, memory bookkeeping — and the mode a
+    temp file inherits from the umask is 0644, which published all of it
+    to every other account on the machine.
+
+    The parent directory is fsynced after the rename, not just the file.
+    A rename is a directory change, so fsyncing only the file's contents
+    leaves the rename itself unflushed: a power loss then reverts the
+    destination to its previous bytes even though the write "succeeded".
     """
     tmp = fpath.with_name(f"{fpath.name}.{uuid.uuid4().hex}.tmp")
     try:
-        tmp.write_text(text, encoding="utf-8")
+        with open(tmp, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp, 0o600)
         tmp.replace(fpath)
+        _fsync_directory(fpath.parent)
     finally:
         # No-op after a successful replace; cleans up when write_text
         # or replace raised so a failed write leaves no litter.
         tmp.unlink(missing_ok=True)
     return fpath
+
+
+def _fsync_directory(directory: Path) -> None:
+    """Flush a directory entry, where the platform has such a thing.
+
+    Windows has no directory descriptor to sync and raises trying; that
+    is not a failure of the write, which has already landed.
+    """
+    try:
+        descriptor = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        pass
+    finally:
+        os.close(descriptor)
 
 
 # GitSession

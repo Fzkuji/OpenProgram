@@ -742,26 +742,33 @@ def test_a_failed_trust_audit_leaves_no_trusted_source(
     audit_path = runtime_dir(root) / "trust-audit.jsonl"
 
     real_open, real_write, real_fsync = _os.open, _os.write, _os.fsync
+    # Break only the audit descriptor. Patching os.write outright also hits
+    # the archive rewrite and the lock, so the test used to pass on a
+    # failure that never reached the audit append it claims to exercise.
+    audit_fds: set[int] = set()
 
     def broken_open(path, *args, **kwargs):
-        if str(path) == str(audit_path) and break_at == "open":
-            raise OSError("audit unavailable")
+        if str(path) == str(audit_path):
+            if break_at == "open":
+                raise OSError("audit unavailable")
+            fd = real_open(path, *args, **kwargs)
+            audit_fds.add(fd)
+            return fd
         return real_open(path, *args, **kwargs)
 
     def broken_write(fd, data):
-        if break_at == "write":
+        if fd in audit_fds and break_at == "write":
             raise OSError("audit write failed")
         return real_write(fd, data)
 
     def broken_fsync(fd):
-        if break_at == "fsync":
+        if fd in audit_fds and break_at == "fsync":
             raise OSError("audit fsync failed")
         return real_fsync(fd)
 
     monkeypatch.setattr(memory_tools.os, "open", broken_open)
-    if break_at != "open":
-        monkeypatch.setattr(memory_tools.os, "write", broken_write)
-        monkeypatch.setattr(memory_tools.os, "fsync", broken_fsync)
+    monkeypatch.setattr(memory_tools.os, "write", broken_write)
+    monkeypatch.setattr(memory_tools.os, "fsync", broken_fsync)
 
     with pytest.raises(OSError):
         memory_tools._promote_source(root, pending.source_id, owner)
@@ -800,3 +807,405 @@ def test_a_failed_trust_audit_leaves_no_trusted_source(
         line for line in audit_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]) == 1
+
+
+# -- task 1: a Topic is only as trusted as the Sources it cites -------------
+
+
+def _topic_citing(root, source_ids, *, path="topics/note.md", block="b1"):
+    """Write one Topic block citing ``source_ids``, bypassing the writer."""
+    target = root / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    citations = "".join(f"[^e{n}]" for n, _ in enumerate(source_ids, start=1))
+    definitions = "\n".join(
+        f"[^e{n}]: Time: `2026-08-10`; Sources: [{ref}](../sources/x#a)"
+        for n, ref in enumerate(source_ids, start=1)
+    )
+    target.write_text(
+        f"# Note\n\nthe distilled claim{citations} ^{block}\n\n{definitions}\n",
+        encoding="utf-8",
+    )
+    return target
+
+
+def _archive(root, *records):
+    from openprogram.memory.management import MemoryWorkspace
+
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records(list(records))
+
+
+def _search_paths(root, query):
+    from openprogram.memory.retrieval import inspect
+
+    return {
+        (hit["path"], hit.get("trust_state"))
+        for hit in inspect.search(root, query, top_k=10)["results"]
+    }
+
+
+def test_a_topic_citing_only_trusted_sources_is_recallable(tmp_path):
+    root = tmp_path / "memory"
+    trusted = _record("m1", "vouched evidence", trust="trusted", tier="owner")
+    _archive(root, trusted)
+    _topic_citing(root, [trusted.source_id])
+
+    found = _search_paths(root, "distilled claim")
+    assert ("topics/note.md", "trusted") in found
+
+
+def test_a_topic_citing_a_pending_source_is_not_recallable(tmp_path):
+    """The regression: prose written from unvouched speech read as trusted."""
+    root = tmp_path / "memory"
+    pending = _record("m1", "unvouched evidence", trust="pending", tier=None)
+    _archive(root, pending)
+    _topic_citing(root, [pending.source_id])
+
+    found = _search_paths(root, "distilled claim")
+    assert ("topics/note.md", "pending") in found
+    assert ("topics/note.md", "trusted") not in found
+
+
+def test_one_pending_citation_makes_the_whole_topic_pending(tmp_path):
+    root = tmp_path / "memory"
+    trusted = _record("m1", "vouched", trust="trusted", tier="owner")
+    pending = _record("m2", "unvouched", trust="pending", tier=None)
+    _archive(root, trusted, pending)
+    _topic_citing(root, [trusted.source_id, pending.source_id])
+
+    assert ("topics/note.md", "pending") in _search_paths(root, "distilled claim")
+
+
+def test_a_topic_citing_an_unresolvable_source_is_not_trusted(tmp_path):
+    root = tmp_path / "memory"
+    trusted = _record("m1", "vouched", trust="trusted", tier="owner")
+    _archive(root, trusted)
+    _topic_citing(root, ["openprogram/s1/does-not-exist"])
+
+    assert ("topics/note.md", "pending") in _search_paths(root, "distilled claim")
+
+
+def test_pending_backed_topics_never_reach_the_turn_context(tmp_path, monkeypatch):
+    """``LocalMemoryBackend.search`` is the unasked-for injection point."""
+    from openprogram.memory import local_backend, store
+
+    root = tmp_path / "memory"
+    pending = _record("m1", "unvouched evidence", trust="pending", tier=None)
+    _archive(root, pending)
+    _topic_citing(root, [pending.source_id])
+    monkeypatch.setattr(store, "ensure", lambda: root)
+
+    assert local_backend.LocalMemoryBackend().search("distilled claim") == ""
+
+    # Promoting the evidence is all it takes to bring the block back.
+    from openprogram.functions.tools.memory import memory as memory_tools
+    import openprogram.paths as paths
+    from openprogram.agent import authority
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    authority._reset_owner_cache_for_tests()
+    memory_tools._promote_source(
+        root, pending.source_id, authority.local_owner_authority(),
+    )
+    assert "distilled claim" in local_backend.LocalMemoryBackend().search(
+        "distilled claim"
+    )
+
+
+def test_core_renders_only_blocks_whose_sources_are_trusted(tmp_path):
+    """core.md is injected unasked, so pending evidence must not reach it."""
+    from openprogram.memory.runtime.derived_views import render_core_block
+
+    root = tmp_path / "memory"
+    trusted = _record("m1", "vouched", trust="trusted", tier="owner")
+    pending = _record("m2", "unvouched", trust="pending", tier=None)
+    _archive(root, trusted, pending)
+    (root / "topics").mkdir(parents=True, exist_ok=True)
+    (root / "topics" / "core.md").write_text(
+        "# Core\n\n"
+        "a vouched always-on fact[^e1] ^keepme\n\n"
+        "[^e1]: Time: `2026-08-10`; Sources: "
+        f"[{trusted.source_id}](../sources/x#a)\n\n"
+        "an unvouched always-on fact[^e2] ^dropme\n\n"
+        "[^e2]: Time: `2026-08-10`; Sources: "
+        f"[{pending.source_id}](../sources/x#a)\n",
+        encoding="utf-8",
+    )
+
+    block = render_core_block(root, budget_tokens=10_000)
+    rendered = (root / "core.md").read_text(encoding="utf-8")
+    assert "a vouched always-on fact" in rendered
+    assert "an unvouched always-on fact" not in rendered
+    assert "dropme" in block.dropped
+
+
+def test_a_short_audit_write_completes_rather_than_aborting(tmp_path, authorities, monkeypatch):
+    """os.write may accept part of the buffer; that is not a failure."""
+    import os as _os
+
+    from openprogram.functions.tools.memory import memory as memory_tools
+    from openprogram.memory.workspace_layout import runtime_dir
+
+    owner, _paired = authorities
+    root = tmp_path / "memory"
+    pending = _record("m1", "review before trust", trust="pending", tier=None)
+    _archive(root, pending)
+    audit_path = runtime_dir(root) / "trust-audit.jsonl"
+
+    real_open, real_write = _os.open, _os.write
+    audit_fds: set[int] = set()
+
+    def tracking_open(path, *args, **kwargs):
+        fd = real_open(path, *args, **kwargs)
+        if str(path) == str(audit_path):
+            audit_fds.add(fd)
+        return fd
+
+    def short_write(fd, data):
+        # One byte at a time on the audit descriptor only.
+        return real_write(fd, data[:1]) if fd in audit_fds else real_write(fd, data)
+
+    monkeypatch.setattr(memory_tools.os, "open", tracking_open)
+    monkeypatch.setattr(memory_tools.os, "write", short_write)
+
+    assert memory_tools._promote_source(
+        root, pending.source_id, owner,
+    )["promoted"] is True
+
+    lines = [
+        line for line in audit_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(lines) == 1
+    # Whole and parseable, not a truncated prefix.
+    assert json.loads(lines[0])["source_id"] == pending.source_id
+
+
+def test_a_failed_audit_append_leaves_no_partial_line(tmp_path, authorities, monkeypatch):
+    """A half-written entry must not survive; earlier entries must."""
+    import os as _os
+
+    from openprogram.functions.tools.memory import memory as memory_tools
+    from openprogram.memory.workspace_layout import runtime_dir
+
+    owner, _paired = authorities
+    root = tmp_path / "memory"
+    first = _record("m1", "already promoted", trust="pending", tier=None)
+    second = _record("m2", "fails midway", trust="pending", tier=None)
+    _archive(root, first, second)
+    audit_path = runtime_dir(root) / "trust-audit.jsonl"
+
+    # One committed entry the rollback must not touch.
+    memory_tools._promote_source(root, first.source_id, owner)
+    committed = audit_path.read_text(encoding="utf-8")
+    assert len(committed.splitlines()) == 1
+
+    real_open, real_write = _os.open, _os.write
+    audit_fds: set[int] = set()
+
+    def tracking_open(path, *args, **kwargs):
+        fd = real_open(path, *args, **kwargs)
+        if str(path) == str(audit_path):
+            audit_fds.add(fd)
+        return fd
+
+    def truncating_write(fd, data):
+        if fd not in audit_fds:
+            return real_write(fd, data)
+        # Land a few bytes, then fail: exactly the partial-line case.
+        real_write(fd, data[:5])
+        raise OSError("audit write failed midway")
+
+    monkeypatch.setattr(memory_tools.os, "open", tracking_open)
+    monkeypatch.setattr(memory_tools.os, "write", truncating_write)
+
+    with pytest.raises(OSError):
+        memory_tools._promote_source(root, second.source_id, owner)
+
+    # The stray five bytes are gone and the earlier entry is intact.
+    assert audit_path.read_text(encoding="utf-8") == committed
+    for line in audit_path.read_text(encoding="utf-8").splitlines():
+        json.loads(line)
+    # The second source stayed pending, so nothing was trusted unaudited.
+    assert _source_frame(root, second.source_id).metadata[
+        "trust_state"
+    ] == "pending"
+
+
+# -- task 4/6/7: permissions, fail-closed authority, quota, path -----------
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX modes are not meaningful on Windows"
+)
+def test_memory_files_are_owner_only(tmp_path, monkeypatch):
+    """Archived speech must not be readable by other accounts on the host."""
+    import openprogram.paths as paths
+    from openprogram.memory import store
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    root = store.ensure()
+    _archive(root, _record("m1", "private speech", trust="trusted", tier="owner"))
+
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            continue
+        mode = path.stat().st_mode & 0o777
+        assert mode & 0o077 == 0, f"{path} is group/world accessible ({mode:o})"
+    assert (tmp_path / "state").stat().st_mode & 0o777 == 0o700
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX modes are not meaningful on Windows"
+)
+def test_an_existing_world_readable_workspace_is_migrated(tmp_path, monkeypatch):
+    import openprogram.paths as paths
+    from openprogram.memory import store
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    root = store.ensure()
+    _archive(root, _record("m1", "older speech", trust="trusted", tier="owner"))
+
+    # Put the workspace back the way an older install left it.
+    for path in root.rglob("*"):
+        path.chmod(0o755 if path.is_dir() else 0o644)
+    root.chmod(0o755)
+    store._permissions_migrated.discard(root)
+
+    store.ensure()
+
+    for path in root.rglob("*"):
+        assert path.stat().st_mode & 0o077 == 0, path
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX modes are not meaningful on Windows"
+)
+def test_the_workspace_lock_is_owner_only(tmp_path):
+    from openprogram.memory.management.transaction import workspace_write_lock
+    from openprogram.memory.workspace_layout import runtime_dir
+
+    root = tmp_path / "memory"
+    root.mkdir()
+    with workspace_write_lock(root, timeout_s=1.0):
+        pass
+    lock = runtime_dir(root) / "write.lock"
+    assert lock.stat().st_mode & 0o077 == 0
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX modes are not meaningful on Windows"
+)
+def test_permission_migration_does_not_follow_symlinks(tmp_path):
+    from openprogram.memory import store
+
+    root = tmp_path / "memory"
+    (root / "topics").mkdir(parents=True)
+    outsider = tmp_path / "outside.md"
+    outsider.write_text("not ours\n", encoding="utf-8")
+    outsider.chmod(0o644)
+    (root / "topics" / "link.md").symlink_to(outsider)
+
+    store.restrict_workspace_permissions(root)
+
+    # The link's target belongs to somebody else and keeps its mode.
+    assert outsider.stat().st_mode & 0o777 == 0o644
+
+
+def test_a_message_without_authority_is_refused(tmp_path):
+    """principal_id=unknown at trust=trusted is the combination to prevent."""
+    from openprogram.agent.authority import stamp_schema
+    from openprogram.memory import writing
+
+    stamped = stamp_schema({
+        "role": "user", "id": "m1", "content": "unattributed speech",
+    })
+    with pytest.raises(ValueError, match="requires authority"):
+        writing._records("s1", [stamped])
+
+
+def test_history_written_before_authority_is_still_accepted(tmp_path):
+    """A node with no schema stamp predates attribution and stays readable."""
+    from openprogram.memory import writing
+
+    rows = writing._records("s1", [
+        {"role": "user", "id": "m1", "content": "old conversation"},
+    ])
+    assert len(rows) == 1
+    assert rows[0].trust_state == "trusted"
+
+
+def test_cli_turns_carry_owner_authority(tmp_path, monkeypatch):
+    """The root cause: CLI messages reached the writer unattributed."""
+    import openprogram.paths as paths
+    from openprogram.agent import authority
+    from openprogram.memory import writing
+
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    authority._reset_owner_cache_for_tests()
+    owner = authority.local_owner_authority()
+
+    user_msg = authority.stamp_schema({
+        "role": "user", "id": "m1", "content": "hello", **owner,
+    })
+    reply_msg = authority.stamp_schema({
+        "role": "assistant", "id": "m1_reply", "content": "hi",
+        **authority.runtime_authority(owner, "cli"),
+    })
+
+    rows = writing._records("s1", [user_msg, reply_msg])
+    assert len(rows) == 2
+    assert all(row.principal_id == owner["principal_id"] for row in rows)
+    assert all(row.principal_id != "unknown" for row in rows)
+    assert [row.authority_tier for row in rows] == ["owner", "owner"]
+
+
+def test_a_failed_archive_does_not_consume_a_quota_slot(tmp_path, monkeypatch):
+    from openprogram.memory import store, writing
+    from openprogram.memory.workspace_layout import runtime_dir
+
+    root = tmp_path / "memory"
+    root.mkdir()
+    monkeypatch.setattr(store, "ensure", lambda: root)
+    monkeypatch.setattr("openprogram.memory.is_enabled", lambda: True)
+    quota_path = runtime_dir(root) / writing._UNPAIRED_ARCHIVE_QUOTA_FILE
+
+    def failing_archive(self, records, **kwargs):
+        raise OSError("archive unavailable")
+
+    monkeypatch.setattr(
+        "openprogram.memory.management.MemoryWorkspace.archive_source_records",
+        failing_archive,
+    )
+
+    message = dict(
+        channel="telegram", account_id="main", chat_id="c1",
+        message_id="x1", user_id="u456", user_display="B",
+        text="denied speech", timestamp=1.0,
+    )
+    with pytest.raises(OSError):
+        writing.archive_unpaired_group_message(**message)
+
+    # No slot was spent on an archive that never happened.
+    assert not quota_path.exists() or json.loads(
+        quota_path.read_text(encoding="utf-8")
+    )["accepted_at"] == []
+
+
+def test_status_does_not_disclose_the_workspace_path(tmp_path, monkeypatch):
+    from openprogram.functions.tools.memory import memory as memory_tools
+    from openprogram.memory import store
+    from openprogram.memory.retrieval import inspect
+
+    root = tmp_path / "a-revealing-directory-name" / "memory"
+    (root / "topics").mkdir(parents=True)
+    monkeypatch.setattr(store, "ensure", lambda: root)
+
+    payload = json.loads(memory_tools.memory_status())
+    assert "a-revealing-directory-name" not in json.dumps(payload)
+    assert payload["workspace"] != str(root)
+    assert "workspace_path" not in payload
+
+    # The owner's own surface still gets the real location.
+    owner_view = inspect.status(root, include_path=True)
+    assert owner_view["workspace_path"] == str(root)

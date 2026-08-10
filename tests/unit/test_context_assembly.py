@@ -301,9 +301,12 @@ def fake_prefetch(monkeypatch: pytest.MonkeyPatch):
     """Memory that recalls a different block for every query — the shape
     that used to poison the system prompt on every single turn."""
     class _Provider:
-        def search(self, text):
+        # Signature mirrors MemoryBackend.search: the dispatcher swallows a
+        # TypeError here, so a stub that drifts from the real interface
+        # fails as "no memory recalled" rather than as a broken stub.
+        def search(self, text, *, session_id="", tier=None):
             return f"<memory-context>\nrecalled for: {text}\n</memory-context>"
-        def system_prompt(self): return ""
+        def system_prompt(self, *, tier=None): return ""
         def write(self, *a, **kw): return None
     monkeypatch.setattr("openprogram.memory.get_backend", lambda: _Provider())
 

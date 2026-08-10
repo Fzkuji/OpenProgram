@@ -435,7 +435,16 @@ embedding结果没有等价身份字段，因此`method=embedding`与`speaker`�
 
 权限和自动写入已按2026-08-10定案实现。请求只携带`owner`或`paired`档位，唯一工具检查在
 `_gated_execute`中按固定常量表执行；未配对消息不进入agent，未配对群聊正文以`pending`
-source归档并排除主动提炼。已配对内容与owner内容都进入可信提炼。`memory_promote`仅允许本地
+source归档并排除主动提炼。已配对内容与owner内容都进入可信提炼。
+
+Topic block本身不携带独立信任，而是继承其引用Source的信任。解析Topic文件时无法得知这一点
+（信任记录在Source归档里），因此`resolve_topic_trust`在整个工作区读取完成后统一计算并写回事件。
+规则是全有或全无：只要有一条引用是pending或无法解析，整个block即为pending，因为一个段落就是
+一条主张，无法从正文分辨哪半句依赖哪条引用。pending block不进入`search`召回，也不渲染进
+`core.md`；它们既不被删除也不会自动转正，把其依赖的Source提升即可自然恢复，无需额外记账。
+信任资格与可见范围是两件事：可见范围复用`AuthorityTier`词汇记在事件的`visibility`字段上，
+而不是另造一套字符串。
+`memory_promote`仅允许本地
 交互owner提升pending来源并写审计记录，随后用同一writer事务将该来源提炼进Topic；已有Topic引用时
 直接跳过。paired可调用`memory_status`和`memory_update`，但工作区
 只允许其新建或按字节追加；缺少持久化owner字段时不能改写或删除已有内容。
@@ -460,8 +469,8 @@ best-effort，位于记忆事务之外；状态文件失败不会改变Topic事�
 兼容读取器接受23个append-only source文件中154个frame使用的旧`origin_scope`元数据格式，随后
 一个含2条消息的待处理会话提交了3个Topic文件和5个block。6个source引用与全部relation目标均
 通过校验，两条消息都写入workspace marker；第二次扫描没有处理会话，revision保持不变。
-这次真实验收没有执行历史backfill，因此正式工作区仍有152个未被Topic引用的历史frame；这是部署
-操作未执行，不再是功能未实现。
+此后历史backfill已在该工作区执行完毕：154个frame中有137个被至少一个Topic block引用，
+共232次引用出现。
 
 组合集成测试覆盖SessionDB、默认writer模型解析、managed writer工具、暂存事务、Topic安装、节点marker
 和idle watcher状态，并验证model unavailable与lazy credential失败不可重试、下一次watcher扫描会跳过。

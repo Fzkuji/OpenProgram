@@ -11,6 +11,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from openprogram.memory.backend import MemoryWriteFailureCode
+
 
 def _close_store(store) -> None:
     store._flush_index()
@@ -122,7 +124,7 @@ def test_success_and_per_turn_failure_are_persisted_without_sensitive_text(
     failure = SimpleNamespace(
         reason=secret,
         retryable=True,
-        reason_code="MODEL_TRANSPORT",
+        reason_code=MemoryWriteFailureCode.MODEL_TRANSPORT,
     )
     monkeypatch.setattr(
         "openprogram.memory.get_backend",
@@ -136,7 +138,7 @@ def test_success_and_per_turn_failure_are_persisted_without_sensitive_text(
     assert result["writer"]["last_success_at"] == stamp
     assert (
         result["writer"]["last_failure"]["reason_code"]
-        == "MODEL_TRANSPORT"
+        == MemoryWriteFailureCode.MODEL_TRANSPORT
     )
     assert result["writer"]["last_failure"]["retryable"] is True
     status_path = store.state_dir() / "writer-status.json"
@@ -176,7 +178,7 @@ def test_failure_before_agent_creation_is_reported_by_per_turn_path(
     writer = inspect.status(root)["writer"]
     assert writer["last_failure"] == {
         "at": writer["last_failure"]["at"],
-        "reason_code": "WRITER_FAILURE_UNKNOWN",
+        "reason_code": MemoryWriteFailureCode.WRITER_FAILURE_UNKNOWN,
         "retryable": False,
     }
     serialized = (store.state_dir() / "writer-status.json").read_text(
@@ -207,7 +209,7 @@ def test_idle_watcher_records_retryable_failure(environment, monkeypatch):
 
     assert _process_session("idle", db.get_branch("idle")) is left
     failure = inspect.status(root)["writer"]["last_failure"]
-    assert failure["reason_code"] == "WRITER_FAILURE_UNKNOWN"
+    assert failure["reason_code"] == MemoryWriteFailureCode.WRITER_FAILURE_UNKNOWN
     assert failure["retryable"] is True
 
 
@@ -224,7 +226,7 @@ def test_status_root_failure_never_escapes_memory_hooks(
     left = SimpleNamespace(
         reason="details stay outside status",
         retryable=False,
-        reason_code="MODEL_TRANSPORT",
+        reason_code=MemoryWriteFailureCode.MODEL_TRANSPORT,
     )
     monkeypatch.setattr(
         "openprogram.memory.get_backend",
@@ -253,7 +255,7 @@ def test_status_store_failure_never_changes_per_turn_return(
     left = SimpleNamespace(
         reason="details stay outside status",
         retryable=True,
-        reason_code="MODEL_TRANSPORT",
+        reason_code=MemoryWriteFailureCode.MODEL_TRANSPORT,
     )
     monkeypatch.setattr(
         "openprogram.memory.get_backend",
@@ -294,7 +296,7 @@ def test_concurrent_success_and_failure_preserve_both_fields(
         threading.Thread(
             target=lambda: (
                 start.wait(), writer_status.record_failure(
-                    root, "MODEL_TRANSPORT", retryable=True,
+                    root, MemoryWriteFailureCode.MODEL_TRANSPORT, retryable=True,
                 )
             ),
         ),
@@ -311,7 +313,7 @@ def test_concurrent_success_and_failure_preserve_both_fields(
     assert result["last_failure"] is not None
     assert (
         result["last_failure"]["reason_code"]
-        == "MODEL_TRANSPORT"
+        == MemoryWriteFailureCode.MODEL_TRANSPORT
     )
     assert result["last_failure"]["retryable"] is True
 
@@ -353,7 +355,7 @@ def test_persisted_status_carries_a_schema_version(environment):
     from openprogram.memory.runtime import writer_status
 
     _db, root = environment
-    writer_status.record_failure(root, "MODEL_TRANSPORT", retryable=True)
+    writer_status.record_failure(root, MemoryWriteFailureCode.MODEL_TRANSPORT, retryable=True)
     path = writer_status.runtime_dir(root) / writer_status.STATUS_FILE
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["version"] == writer_status.STATUS_SCHEMA_VERSION
@@ -379,7 +381,7 @@ def test_last_outcome_orders_two_writes_inside_one_timestamp(
     monkeypatch.setattr(
         writer_status, "_now", lambda: "2026-08-11T00:00:00+00:00",
     )
-    writer_status.record_failure(root, "MODEL_TRANSPORT", retryable=True)
+    writer_status.record_failure(root, MemoryWriteFailureCode.MODEL_TRANSPORT, retryable=True)
     writer_status.record_success(root)
     assert writer_status._WriterStatusStore(root).load()["last_outcome"] == (
         "success"

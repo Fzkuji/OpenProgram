@@ -20,8 +20,30 @@ class AuthorityError(RuntimeError):
 
 AuthorityTier = Literal["owner", "paired"]
 
+# Stamped on every turn node this build persists. Its presence is what
+# separates "written before authority existed" from "written now and
+# missing it": without a positive marker the two are the same absence,
+# and a permanent "no field means legacy" rule would keep accepting
+# unattributed writes forever — including any a bug started producing
+# tomorrow. Legacy nodes are the closed set that predates this constant.
+MESSAGE_SCHEMA_VERSION = 1
+MESSAGE_SCHEMA_FIELD = "authority_schema"
+
+
+def stamp_schema(message: dict[str, Any]) -> dict[str, Any]:
+    """Mark a turn node as written by a build that records authority."""
+    message[MESSAGE_SCHEMA_FIELD] = MESSAGE_SCHEMA_VERSION
+    return message
+
+
+def is_legacy_message(value: Mapping[str, Any] | Any) -> bool:
+    """Whether a node predates authority stamping and may lack it."""
+    raw = value if isinstance(value, Mapping) else {}
+    return raw.get(MESSAGE_SCHEMA_FIELD) is None
+
 _OWNER_CAPABILITIES = frozenset({
     "reply",
+    "memory.read",
     "memory.source.append",
     "memory.trusted.promote",
     "schedule.create",
@@ -33,8 +55,15 @@ _OWNER_CAPABILITIES = frozenset({
     "approval.request",
     "runtime.control",
 })
+# Reading memory is its own capability, separate from ``fs.read``. A
+# paired speaker gets the first and not the second: they may ask what
+# memory holds about the conversation they are part of, which is what
+# makes them useful to talk to, without thereby gaining the ability to
+# read arbitrary files off the owner's disk. Folding memory reads into
+# ``fs.read`` forced a choice between those two, and the safe answer
+# there was to deny both.
 _PAIRED_CAPABILITIES = frozenset({
-    "reply", "memory.source.append",
+    "reply", "memory.read", "memory.source.append",
 })
 TIER_CAPABILITIES: Mapping[AuthorityTier, frozenset[str]] = {
     "owner": _OWNER_CAPABILITIES,
@@ -285,8 +314,14 @@ def authority_from_message(session_id: str, message_id: str) -> dict[str, Any]:
 
 _READ_TOOLS = {
     "read", "read_file", "grep", "glob", "list", "list_files",
+    "read_conversation", "list_agents", "list_tasks",
+}
+# Reads that stay inside the memory workspace. They reach no other part
+# of the filesystem, so they are gated on ``memory.read`` rather than on
+# ``fs.read``.
+_MEMORY_READ_TOOLS = {
     "memory_search", "memory_grep", "memory_get", "memory_browse",
-    "memory_status", "read_conversation", "list_agents", "list_tasks",
+    "memory_status",
 }
 _WRITE_TOOLS = {
     "write", "write_file", "edit", "edit_file", "apply_patch",
@@ -314,12 +349,14 @@ def capability_for_tool(tool_name: str, args: Mapping[str, Any] | None = None) -
         return "schedule.create" if action == "create" else (
             "schedule.manage" if action == "delete" else "fs.read"
         )
-    if name in {"memory_status", "memory_update"}:
+    if name == "memory_update":
         # memory_update requires the revision returned by memory_status;
         # both calls form the append handshake and expose no memory content.
         return "memory.source.append"
     if name == "memory_promote":
         return "memory.trusted.promote"
+    if name in _MEMORY_READ_TOOLS:
+        return "memory.read"
     if name in _READ_TOOLS:
         return "fs.read"
     if name in _WRITE_TOOLS:
@@ -346,6 +383,8 @@ def decide_tool_authority(
 
 __all__ = [
     "AuthorityError", "AuthorityDecision", "AuthorityTier", "TIER_CAPABILITIES",
+    "MESSAGE_SCHEMA_VERSION", "MESSAGE_SCHEMA_FIELD",
+    "stamp_schema", "is_legacy_message",
     "owner_principal_id", "owner_authority", "local_owner_authority",
     "paired_channel_authority",
     "runtime_authority", "normalize_authority",

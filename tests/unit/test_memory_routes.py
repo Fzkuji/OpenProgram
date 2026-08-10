@@ -140,12 +140,21 @@ def test_status_route_returns_the_inspect_status_contract(
             "pending_turns": 3,
         },
     }
-    monkeypatch.setattr(inspect, "status", lambda _root: expected)
+    seen = {}
+
+    def _status(_root, *, include_path=False):
+        seen["include_path"] = include_path
+        return expected
+
+    monkeypatch.setattr(inspect, "status", _status)
 
     response = client.get("/api/memory/status")
 
     assert response.status_code == 200
     assert response.json() == expected
+    # The web UI is the owner's own surface, so it asks for the path the
+    # model-facing tool must not be given.
+    assert seen["include_path"] is True
 
 
 # ---- a save either lands whole or not at all --------------------------

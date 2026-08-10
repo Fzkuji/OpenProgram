@@ -78,6 +78,12 @@ def resolve_within(root: Path | str, relative: str) -> Path | None:
     return target if target.is_relative_to(base) else None
 
 
+# The runtime area holds the write lock, the trust audit and the cursor
+# recording which conversations went to a model. Owner-only, like the
+# memory beside it.
+RUNTIME_DIR_MODE = 0o700
+
+
 def runtime_dir(memory_dir: Path | str) -> Path:
     """This workspace's runtime directory, keeping the name it already has."""
     root = Path(memory_dir)
@@ -85,6 +91,27 @@ def runtime_dir(memory_dir: Path | str) -> Path:
         if (root / legacy).is_dir():
             return root / legacy
     return root / RUNTIME_DIR
+
+
+def ensure_runtime_dir(memory_dir: Path | str) -> Path:
+    """The runtime directory, created owner-only if it is not there yet.
+
+    Every caller that creates it goes through here, so the mode is set
+    once at the point of creation rather than by each of them
+    remembering to. ``mkdir(mode=...)`` alone is not enough: the mode
+    argument is masked by the umask, and an existing directory keeps
+    whatever mode it already had.
+    """
+    path = runtime_dir(memory_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    try:
+        if not path.is_symlink() and (
+            path.stat().st_mode & 0o777
+        ) != RUNTIME_DIR_MODE:
+            path.chmod(RUNTIME_DIR_MODE)
+    except OSError:
+        pass
+    return path
 
 
 def has_runtime_dir(memory_dir: Path | str) -> bool:

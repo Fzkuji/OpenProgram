@@ -19,10 +19,17 @@ logger = logging.getLogger(__name__)
 
 def root() -> Path:
     """The memory workspace, created on first use."""
-    from openprogram.paths import get_state_dir
+    from openprogram.paths import _restrict_to_owner, get_state_dir
 
-    path = get_state_dir() / "memory"
+    state = get_state_dir()
+    path = state / "memory"
     path.mkdir(parents=True, exist_ok=True)
+    # ``get_state_dir`` protects the profile root when it creates it, but
+    # this is the call that brings it into being on a fresh install — the
+    # mkdir above makes both levels — so the mode is set here too rather
+    # than left to whichever call happened to come first.
+    _restrict_to_owner(state, 0o700)
+    _restrict_to_owner(path, 0o700)
     return path
 
 
@@ -49,11 +56,9 @@ def state_dir() -> Path:
     A file that changed on every poll would otherwise look like a
     concurrent write to anything holding a revision.
     """
-    from .workspace_layout import runtime_dir
+    from .workspace_layout import ensure_runtime_dir
 
-    path = runtime_dir(root())
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return ensure_runtime_dir(root())
 
 
 _WORKSPACE_ID = re.compile(r"w-[0-9a-f]{8}")
@@ -116,12 +121,58 @@ def _set_aside_superseded(base: Path) -> Path | None:
     return archive
 
 
+_MEMORY_FILE_MODE = 0o600
+_MEMORY_DIR_MODE = 0o700
+_permissions_migrated: set[Path] = set()
+
+
+def restrict_workspace_permissions(base: Path) -> int:
+    """Make an existing workspace owner-only. Returns files changed.
+
+    A workspace created before memory files were owner-only is still full
+    of 0644 transcripts, and nothing rewrites a file that is never edited
+    again — so the modes have to be corrected in place rather than waiting
+    for the next write to do it.
+
+    Symlinks are skipped rather than followed: ``chmod`` through one
+    changes whatever it points at, and a link planted in the workspace
+    would be a way to have this walk re-mode a file outside it.
+    """
+    changed = 0
+    for path in [base, *base.rglob("*")]:
+        try:
+            if path.is_symlink():
+                continue
+            mode = path.stat().st_mode & 0o777
+            wanted = _MEMORY_DIR_MODE if path.is_dir() else _MEMORY_FILE_MODE
+            if mode != wanted:
+                path.chmod(wanted)
+                changed += 1
+        except OSError:
+            # One unreadable file does not justify leaving the rest of the
+            # workspace world-readable.
+            continue
+    return changed
+
+
+def _migrate_permissions_once(base: Path) -> None:
+    if base in _permissions_migrated:
+        return
+    _permissions_migrated.add(base)
+    changed = restrict_workspace_permissions(base)
+    if changed:
+        logger.info(
+            "memory: restricted %d workspace path(s) to owner-only", changed,
+        )
+
+
 def ensure() -> Path:
     """Create the workspace skeleton if it is not there yet."""
     base = root()
     _set_aside_superseded(base)
     for name in ("topics", "sources"):
         (base / name).mkdir(parents=True, exist_ok=True)
+    _migrate_permissions_once(base)
     # Nothing seeds the always-on block. It is rendered from
     # ``topics/core.md``, so an empty workspace has no block, and a
     # placeholder written here would look like a master to the render and

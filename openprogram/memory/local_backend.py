@@ -42,8 +42,15 @@ class LocalMemoryBackend(MemoryBackend):
 
     # -- Reading --------------------------------------------------------
 
-    def system_prompt(self) -> str:
-        """Core memory, injected into every session."""
+    def system_prompt(self, *, tier: str | None = None) -> str:
+        """Core memory, injected into every session.
+
+        ``core.md`` is rendered only from blocks whose evidence is
+        trusted, so what lands here is already filtered by trust. ``tier``
+        is accepted so the caller's resolved authority reaches the
+        backend rather than being looked up again here; per-tier
+        redaction of the block itself is not yet rendered.
+        """
         from . import store
 
         try:
@@ -56,15 +63,44 @@ class LocalMemoryBackend(MemoryBackend):
         ).strip()
         return fence_memory(text) if body else ""
 
-    def search(self, query: str, *, session_id: str = "") -> str:
+    def search(
+        self,
+        query: str,
+        *,
+        session_id: str = "",
+        tier: str | None = None,
+    ) -> str:
         """Whatever memory bears on the turn about to run.
 
         Pending evidence — text archived from an unpaired speaker — is
         dropped here. It stays reachable through the ``memory_search``
         tool, where the model asks for it and sees its trust_state, but
         it never enters the turn's context unasked.
+
+        A Topic block counts as pending when any Source it cites is,
+        which the index resolves before this sees it. Without that a
+        block written from unvouched speech would be recalled as
+        ordinary memory: the prose carries no trust marker of its own,
+        so filtering the archive alone let the claim through while
+        stopping only the quote it came from.
         """
         if not query or not query.strip():
+            return ""
+        from openprogram.agent.authority import TIER_CAPABILITIES
+
+        # The tier arrives already resolved by the caller that authorized
+        # the turn; this only reads the fixed table, and never re-checks
+        # the pairing state, which could have changed since.
+        #
+        # A turn with no tier at all is the local owner's, the same
+        # reading ``render_model_input_from`` applies to a node with no
+        # authority record: the envelope exists to attribute *channel*
+        # speech, so its absence means nobody but the owner was involved.
+        # Every channel turn carries a tier by construction, so this
+        # cannot be reached by widening a paired request.
+        if tier is not None and "memory.read" not in TIER_CAPABILITIES.get(
+            tier, frozenset()
+        ):
             return ""
         try:
             from .retrieval import inspect

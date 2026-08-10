@@ -86,7 +86,24 @@ def get_state_dir() -> Path:
         canonical = Path.home() / _CANONICAL_BASENAME
         legacy = Path.home() / _LEGACY_BASENAME
     _maybe_migrate_legacy_state(legacy, canonical)
+    # Every path in this module funnels through here, so this is the one
+    # place that can promise the profile root is owner-only however it
+    # came to exist — including the directories created before the
+    # promise existed. Guarded by a process-level flag so the common
+    # case is a single boolean test, not a stat per path lookup.
+    _restrict_profile_root_once(canonical)
     return canonical
+
+
+_root_mode_checked: set[Path] = set()
+
+
+def _restrict_profile_root_once(canonical: Path) -> None:
+    if canonical in _root_mode_checked:
+        return
+    _root_mode_checked.add(canonical)
+    if canonical.is_dir():
+        _restrict_to_owner(canonical, 0o700)
 
 
 def _maybe_migrate_legacy_state(legacy: Path, canonical: Path) -> None:
@@ -166,9 +183,42 @@ def get_usage_db_path() -> Path:
 
 
 def ensure_state_dir() -> Path:
+    """Create the profile root and keep it readable only by its owner.
+
+    Everything a session ever produced lives under here — transcripts,
+    memory, credentials — and the default 0755 a ``mkdir`` inherits from
+    the umask hands all of it to every other account on the machine. On a
+    shared host that is the whole conversation history readable by anyone
+    in the ``staff`` group.
+
+    Applied on every call rather than only at creation, because the
+    directory this protects mostly already exists: an installation that
+    predates this line is exactly the one that needs the mode fixed, and
+    it would never be created again. ``chmod`` on the resolved directory
+    only, so a symlink planted at the profile path cannot redirect the
+    mode change onto something else.
+    """
     d = get_state_dir()
     d.mkdir(parents=True, exist_ok=True)
+    _restrict_to_owner(d, 0o700)
     return d
+
+
+def _restrict_to_owner(path: Path, mode: int) -> None:
+    """Best-effort ``chmod``, skipping symlinks and foreign filesystems.
+
+    Never raises: a state directory whose mode cannot be tightened —
+    a mounted share, a read-only parent, Windows — is still a usable
+    state directory, and refusing to start over it would trade a
+    privacy weakness for an outage.
+    """
+    try:
+        if path.is_symlink():
+            return
+        if (path.stat().st_mode & 0o777) != mode:
+            os.chmod(path, mode)
+    except OSError:
+        pass
 
 
 def get_default_workdir() -> str:

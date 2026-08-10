@@ -168,6 +168,50 @@ def decode_source_metadata(token: str) -> dict[str, Any] | None:
     return legacy if legacy is not None and _metadata_token(payload) == token else None
 
 
+def trusted_source_ids(memory_dir: Path | str) -> set[str]:
+    """Every archived Source ID a claim may rest on, by workspace scan.
+
+    Two archives answer the same way. A v2 file carries the trust verdict
+    in each frame's metadata, and a frame written before that header
+    existed is legacy evidence the owner already accepted, so it counts as
+    trusted — the same reading the retrieval index applies. A pre-v2 file
+    has no per-record framing at all, so every anchor in it is legacy and
+    trusted for the same reason.
+
+    Only IDs that are actually present come back. A caller asking whether
+    a reference is trusted gets "no" for one that resolves to nothing,
+    which is what keeps a dangling citation from reading as vouched-for.
+    """
+    root = Path(memory_dir) / "sources"
+    if not root.is_dir():
+        return set()
+    trusted: set[str] = set()
+    for path in sorted(root.rglob("*.md")):
+        if not path.is_file() or path.is_symlink():
+            continue
+        relative = path.relative_to(Path(memory_dir)).as_posix()
+        try:
+            with path.open("r", encoding="utf-8", newline="") as handle:
+                text = handle.read()
+        except OSError:
+            continue
+        if is_v2_source_path(relative):
+            for frame in scan_source_archive(text, relative).frames:
+                if (frame.metadata or {"trust_state": "trusted"}).get(
+                    "trust_state"
+                ) == "trusted":
+                    trusted.add(frame.source_id)
+            continue
+        trusted.update(_SOURCE_RE.findall(text))
+        trusted.update(
+            f"D{conversation}:{turn}"
+            for conversation, turn in re.findall(
+                r'<a id="d(\d+)-(\d+)"></a>', text
+            )
+        )
+    return trusted
+
+
 def scan_source_archive(text: str, relative: str | Path) -> V2Scan:
     """Parse the valid v2 prefix without resynchronizing after an error."""
     lines = text.split("\n")

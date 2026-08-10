@@ -65,9 +65,9 @@ transaction.
 The memory tool surface, CLI and Web UI are registered. The committed baseline
 includes writer status, one-shot trusted-Source backfill,
 `memory.backend=none` guards, and a composed integration test from SessionDB to
-watcher state. The live writer acceptance processed two eligible messages, but
-the live workspace has not executed historical backfill for its 152 uncited
-Source records.
+watcher state. The live writer acceptance processed two eligible messages, and
+historical backfill has since run over the live workspace: 137 of its 154
+frames are cited, across 232 citation occurrences.
 
 A Topic reference new to a block must resolve to a `trusted` Source frame and
 must belong to the current transaction's own evidence, so no tool path can cite
@@ -76,7 +76,10 @@ classify into one closed `MemoryWriteFailureCode` taxonomy shared by the status
 file, CLI, tool, API and web UI; the idle watcher persists each terminal
 outcome durably under a cross-process lock; and unpaired group archival has
 explicit rate and storage ceilings. Read-time filtering by requester tier is
-designed in [`authority-handoff.md`](authority-handoff.md) but not implemented.
+partly implemented: `memory.read` is its own capability, the read path takes
+the tier its caller resolved, and blocks resting on pending evidence reach
+neither recall nor Core. Per-tier redaction of block content is still designed
+only, in [`authority-handoff.md`](authority-handoff.md).
 Hold-and-approve requests, branch-semantic provenance, cross-session spawn
 relations and event-driven writer notification remain separate deferred
 designs.

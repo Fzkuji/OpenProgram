@@ -258,25 +258,43 @@ class MemoryBackend(ABC):
 
     # -- System prompt --------------------------------------------------------
 
-    def system_prompt(self) -> str:
+    def system_prompt(self, *, tier: str | None = None) -> str:
         """Static text injected into the system prompt at session start.
 
         The shipped backend returns ``core.md``. A plugin can return a
         brief backend-specific instruction line instead. Fence anything
         recalled from memory with ``fence_memory`` before returning it.
         Empty string skips injection.
+
+        ``tier`` carries the same meaning as in ``search``: the authority
+        of whoever this prompt is being built for, resolved by the caller
+        rather than looked up here.
         """
         return ""
 
     # -- Reading --------------------------------------------------------------
 
-    def search(self, query: str, *, session_id: str = "") -> str:
+    def search(
+        self,
+        query: str,
+        *,
+        session_id: str = "",
+        tier: str | None = None,
+    ) -> str:
         """Find whatever memory bears on the upcoming turn.
 
         Called with the user's message right before the model is asked
         to respond. Return text already fenced with ``fence_memory``, or
         empty string for no contribution. Should be fast — block on a
         tight budget (~200ms).
+
+        ``tier`` is the ``AuthorityTier`` of whoever is speaking this
+        turn, passed in by the caller that already resolved it. A backend
+        must not go looking the tier up for itself: the request being
+        answered is the one whose authority counts, and re-reading the
+        pairing state mid-turn would answer with whatever it says now
+        instead. ``None`` means no authority was resolved, which is
+        treated as the narrowest audience rather than the widest.
         """
         return ""
 

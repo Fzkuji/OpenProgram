@@ -112,8 +112,9 @@ def persist_assistant_message(
         # same session.
         "agent_id": req.agent_id,
     }
-    from openprogram.agent.authority import runtime_authority
+    from openprogram.agent.authority import runtime_authority, stamp_schema
     assistant_msg.update(runtime_authority(req, f"agent/{req.agent_id}"))
+    stamp_schema(assistant_msg)
     # Stamp terminal lifecycle status — see _turn_lifecycle for the
     # state machine. ``cancel_event.is_set()`` here means the user
     # clicked stop mid-stream and the agent loop returned early with

@@ -666,7 +666,20 @@ implemented. Requests carry only an `owner` or `paired` tier, and the single
 tool check in `_gated_execute` consults a fixed constant table. Unpaired
 messages do not enter the agent; unpaired group text is archived as a
 `pending` source and excluded from active distillation. Paired and owner text
-both enter trusted distillation. Only an interactive local owner can use
+both enter trusted distillation.
+
+A Topic block carries the trust of the Sources it cites rather than a trust of
+its own. Parsing a Topic file cannot know that trust — it lives in the Source
+archive — so `resolve_topic_trust` computes the verdict once the whole
+workspace has been read and stamps it on the event. The rule is
+all-or-nothing: one pending or unresolvable citation makes the whole block
+pending, because a paragraph is a single claim and there is no way to tell
+from the prose which half rests on which citation. Pending blocks are excluded
+from `search` recall and from the rendered `core.md`; they are neither deleted
+nor auto-promoted, and promoting the Sources under them restores them with no
+further bookkeeping. Trust eligibility and audience visibility are separate:
+visibility is expressed with the `AuthorityTier` vocabulary on the event's
+`visibility` field rather than a parallel string. Only an interactive local owner can use
 `memory_promote`, which records an audit event and then sends the source
 through the same Topic-writing transaction; an existing citation is skipped.
 Paired callers can use
@@ -702,12 +715,12 @@ first remaining uncited reference after a failed batch. A legacy root
 The real default provider completed a Topic write and transaction validation in
 an isolated workspace. The post-merge live writer pass also completed: a
 compatibility reader accepted the exact pre-tier `origin_scope` metadata shape
-in all 23 append-only source files (154 frames), then one pending two-message
+in all 23 source files (154 frames), then one pending two-message
 session committed 3 Topic files and 5 blocks. Six source references and all
 relation targets validated, both message nodes were marked, and a second pass
-changed neither the workspace nor its revision. This live acceptance did not
-execute historical backfill, so the 152 uncited historical frames remain in the
-owner's workspace even though the backfill command is implemented.
+changed neither the workspace nor its revision. Historical backfill has since
+run over that workspace: 137 of the 154 frames are cited by at least one Topic
+block, across 232 citation occurrences.
 
 The composed integration test covers SessionDB, default writer-model
 resolution, managed writer tools, staging, transactional Topic installation,

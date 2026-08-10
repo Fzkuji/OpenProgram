@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
+
 
 def _archive(writing, message_id: str, text: str) -> str:
     return writing.archive_unpaired_group_message(
@@ -129,42 +131,58 @@ def test_a_rejected_message_leaves_no_partial_state(tmp_path, monkeypatch):
     ) == archived_before
 
 
-def test_concurrent_attempts_cannot_exceed_the_window_quota(
-    tmp_path, monkeypatch,
-):
-    """The reservation happens under the workspace write lock, so parallel
-    senders share one counter rather than each seeing the last free slot."""
-    import threading
+def test_concurrent_attempts_cannot_exceed_the_window_quota(tmp_path):
+    """Two real processes share one counter, not one per interpreter.
 
-    from openprogram.memory import writing
+    The reservation is guarded by ``workspace_write_lock``, an ``flock``
+    on a file. Threads in one interpreter cannot contend for that lock —
+    the same process already holds it — so a threaded version of this
+    test passes whether the cross-process lock works or not, and would
+    have kept passing if the guard were an in-process ``threading.Lock``.
+    Separate interpreters are the only way to exercise what the code
+    actually relies on.
+    """
+    import subprocess
+    import sys
+    from concurrent.futures import ThreadPoolExecutor
+
     from openprogram.memory.source_format import scan_source_archive
 
-    monkeypatch.setattr(
-        "openprogram.paths.get_state_dir", lambda: tmp_path / "state",
-    )
-    monkeypatch.setattr(writing, "UNPAIRED_ARCHIVE_MAX_PER_WINDOW", 3)
-    monkeypatch.setattr(writing.time, "time", lambda: 1000.0)
+    workers = 8
+    quota = 3
+    # Each child archives one message with the same frozen clock and the
+    # same quota ceiling, then prints the source ID it managed to claim.
+    program = f"""
+import sys
+from openprogram.memory import writing
+import openprogram.paths as paths
 
-    accepted: list[str] = []
-    guard = threading.Lock()
-    start = threading.Barrier(8)
+paths.get_state_dir = lambda: __import__("pathlib").Path({str(tmp_path / "state")!r})
+writing.UNPAIRED_ARCHIVE_MAX_PER_WINDOW = {quota}
+writing.time.time = lambda: 1000.0
+print(writing.archive_unpaired_group_message(
+    channel="telegram", account_id="main", chat_id="group-1",
+    message_id=sys.argv[1], user_id="u1", user_display="U",
+    text="message " + sys.argv[1], timestamp=1.0,
+) or "")
+"""
 
-    def attempt(index: int) -> None:
-        start.wait()
-        result = _archive(writing, f"m{index}", f"message {index}")
-        if result:
-            with guard:
-                accepted.append(result)
+    def attempt(index: int) -> str:
+        done = subprocess.run(
+            [sys.executable, "-c", program, f"m{index}"],
+            capture_output=True, text=True, timeout=120,
+            cwd=str(pathlib.Path(__file__).resolve().parents[2]),
+        )
+        assert done.returncode == 0, done.stderr
+        return done.stdout.strip()
 
-    threads = [threading.Thread(target=attempt, args=(i,)) for i in range(8)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join(timeout=30)
-        assert not thread.is_alive()
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(attempt, range(workers)))
 
-    assert len(accepted) == 3
-    assert len(set(accepted)) == 3
+    accepted = [value for value in results if value]
+    assert len(accepted) == quota
+    assert len(set(accepted)) == quota
+
     files = list((tmp_path / "state/memory/sources").rglob("*.md"))
     assert len(files) == 1
     relative = files[0].relative_to(tmp_path / "state/memory")

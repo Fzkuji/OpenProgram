@@ -13,7 +13,7 @@ import os
 import re
 import tempfile
 import threading
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -78,10 +78,18 @@ class MemoryEvent:
     speaker_display: str = ""
     speaker_label: str = ""
     speaker_trusted: bool = False
-    trust_state: str = "trusted"
+    trust_state: str = "unknown"
     speaker_kind: str = "unknown"
     principal_id: str = "unknown"
     authority_tier: str | None = None
+    # Audience visibility, expressed with the same vocabulary as
+    # ``AuthorityTier``. A record a paired speaker may read is
+    # ``"paired"``; anything narrower is ``"owner"``. Kept apart from
+    # ``trust_state`` on purpose: trust decides whether a claim may be
+    # believed, visibility decides who may see it, and one is not the
+    # other. ``None`` means the event carries no visibility of its own
+    # and inherits the workspace default.
+    visibility: str | None = None
 
 
 def tokenize(text: str) -> list[str]:
@@ -177,6 +185,46 @@ def event_matches_path_prefix(event_path: str, normalized: str) -> bool:
         logical = Path(*parts).as_posix()
         return logical.startswith(normalized)
     return False
+
+
+def resolve_topic_trust(events: list[MemoryEvent]) -> list[MemoryEvent]:
+    """Give every Topic event the trust of the Sources it cites.
+
+    A Topic block is a claim written *from* evidence, so it can be no more
+    trusted than that evidence. Parsing a Topic file cannot know this — the
+    trust lives in the Source archive — so the verdict is computed here,
+    once the whole workspace has been read, and stamped onto the event.
+
+    All-or-nothing, deliberately. A paragraph citing one trusted and one
+    pending Source is partly built on speech nobody has vouched for, and
+    there is no way to tell from the prose which half came from which. So
+    a single pending citation makes the whole block pending, and it stays
+    that way until every Source it rests on is promoted. Promoting them is
+    what brings the block back, with no extra bookkeeping to undo.
+
+    A reference naming no known Source leaves the block pending too:
+    unresolvable evidence is not evidence, and failing open here is what
+    would let a dangling ref launder an unvouched claim into recall.
+    """
+    trust_by_source = {
+        event.event_id: event.trust_state
+        for event in events
+        if event.path.startswith("sources/")
+    }
+    resolved = []
+    for event in events:
+        if event.path.startswith("sources/") or not event.refs:
+            resolved.append(event)
+            continue
+        states = {
+            trust_by_source.get(str(ref), "unknown") for ref in event.refs
+        }
+        trust = "trusted" if states == {"trusted"} else "pending"
+        resolved.append(
+            event if event.trust_state == trust
+            else replace(event, trust_state=trust)
+        )
+    return resolved
 
 
 def prefer_v2_source_events(events: list[MemoryEvent]) -> list[MemoryEvent]:
@@ -466,6 +514,10 @@ def _parse_v2_source_file(
         )
         content = _clean_markdown(record_text)
         event_date = _date(record_text)
+        # A frame with no recorded metadata predates the authority header.
+        # It is legacy evidence the local owner already accepted, so it
+        # stays trusted; naming that here keeps the one place where an
+        # absent header becomes a trust verdict visible.
         metadata = frame.metadata or {
             "trust_state": "trusted",
             "speaker_kind": "unknown",
@@ -562,6 +614,10 @@ def parse_source_file(path: Path, sources_root: Path) -> list[MemoryEvent]:
                         speaker_id=speaker_id,
                         speaker_display=speaker_display,
                         speaker_label=speaker_label,
+                        # A pre-v2 archive has no per-record trust header
+                        # at all, so every record in it is evidence the
+                        # owner accepted before the header existed.
+                        trust_state="trusted",
                     ))
                     index = record_end
                     continue
@@ -584,6 +640,7 @@ def parse_source_file(path: Path, sources_root: Path) -> list[MemoryEvent]:
                 dates=[event_date] if event_date else [],
                 content=content,
                 refs=refs,
+                trust_state="trusted",
             ))
         index += 1
     return events
@@ -656,14 +713,14 @@ class MemoryBM25Index:
             return
         try:
             payload = json.loads(self.cache_path.read_text(encoding="utf-8"))
-            if payload.get("version") == 8 and isinstance(payload.get("files"), dict):
+            if payload.get("version") == 9 and isinstance(payload.get("files"), dict):
                 self._files = payload["files"]
         except (OSError, ValueError, TypeError):
             self._files = {}
 
     def _write_cache(self) -> None:
         self.memory_dir.mkdir(parents=True, exist_ok=True)
-        payload = {"version": 8, "files": self._files}
+        payload = {"version": 9, "files": self._files}
         fd, temporary = tempfile.mkstemp(prefix=f"{self._runtime_name}-bm25-", dir=self.memory_dir)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -707,11 +764,15 @@ class MemoryBM25Index:
             }
 
         self._files = refreshed
-        self.events = prefer_v2_source_events([
+        # Trust is resolved after the whole workspace is parsed, not inside
+        # the per-file cache: a Topic's verdict depends on Source files it
+        # does not contain, so a cached per-file answer would go stale the
+        # moment a Source was promoted.
+        self.events = resolve_topic_trust(prefer_v2_source_events([
             MemoryEvent(**row)
             for relative in sorted(self._files)
             for row in self._files[relative].get("events", [])
-        ])
+        ]))
         if changed and self.persist:
             self._write_cache()
 

@@ -159,6 +159,7 @@ def _records(
             raise ValueError("memory source message requires a stable id")
         from openprogram.agent.authority import (
             has_capability,
+            is_legacy_message,
             normalize_authority,
         )
 
@@ -167,6 +168,21 @@ def _records(
             authority, "memory.source.append"
         ):
             continue
+        if not authority:
+            # A node this build wrote always carries authority. Missing it
+            # on a stamped node means the turn reached here by a path that
+            # never attributed it, and the old behaviour — principal
+            # "unknown" at trust "trusted" — archived unattributed speech
+            # as vouched-for. ``transaction.py`` already declares that
+            # combination impossible, so it is refused here rather than
+            # written and believed.
+            if not is_legacy_message(message):
+                raise ValueError(
+                    "memory source message requires authority: " + message_id
+                )
+            # Genuinely pre-authority history. It predates channels
+            # entirely, so it is the local owner's own conversation, and
+            # it keeps the attribution it has always had.
         rows.append(SourceRecord(
             provider=PROVIDER,
             thread_id=session_id or "session",
@@ -298,16 +314,48 @@ def archive_unpaired_group_message(
         authority_tier=None,
         trust_state="pending",
     )
+    from .workspace_layout import runtime_dir
+
     root = store.ensure()
     with workspace_write_lock(root, timeout_s=1.0):
+        quota_path = runtime_dir(root) / _UNPAIRED_ARCHIVE_QUOTA_FILE
+        try:
+            before = quota_path.read_bytes()
+        except OSError:
+            before = None
         if not _reserve_unpaired_archive(
             root, message_bytes=len(text.encode("utf-8")),
         ):
             logger.debug("memory: unpaired group archive quota reached")
             return ""
-        with closing(MemoryWorkspace(root)) as workspace:
-            workspace.archive_source_records([record])
+        try:
+            with closing(MemoryWorkspace(root)) as workspace:
+                workspace.archive_source_records([record])
+        except BaseException:
+            # The slot was reserved for an archive that never happened.
+            # Left spent, a workspace that fails every append still burns
+            # its whole hourly allowance, so a sender is rate-limited out
+            # of a queue nothing ever entered. Restoring under the same
+            # lock that took it makes reserve-and-append one step: no
+            # other writer can have touched the file in between.
+            _restore_unpaired_quota(quota_path, before)
+            raise
     return record.source_id
+
+
+def _restore_unpaired_quota(path: Any, before: bytes | None) -> None:
+    """Put the quota file back to its pre-reservation bytes, best effort."""
+    from openprogram.store.session.git_session import atomic_write_text
+
+    try:
+        if before is None:
+            path.unlink(missing_ok=True)
+        else:
+            atomic_write_text(path, before.decode("utf-8"))
+    except (OSError, UnicodeDecodeError):
+        # Raised while another error is already travelling up; failing to
+        # hand back one slot must not replace the failure worth reporting.
+        pass
 
 
 def _marked_ids(

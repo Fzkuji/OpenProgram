@@ -57,13 +57,23 @@ def _run_turn_with_history(
             "source": "cli",
         }
 
+    # Someone typing into the local terminal is the owner by definition —
+    # reaching this process at all means holding the account it runs as.
+    # Stamping it here is what keeps the memory writer from seeing an
+    # unattributed turn and archiving it as principal "unknown", trusted.
+    from openprogram.agent.authority import (
+        local_owner_authority, runtime_authority, stamp_schema,
+    )
+
+    owner = local_owner_authority()
     user_id = _uuid.uuid4().hex[:12]
-    user_msg = {
+    user_msg = stamp_schema({
         "role": "user", "id": user_id,
         "predecessor": messages[-1]["id"] if messages else None,
         "content": message, "timestamp": _time.time(),
         "source": "cli", "peer_display": "you",
-    }
+        **owner,
+    })
     messages.append(user_msg)
 
     system_prompt = build_system_prompt(agent)
@@ -88,11 +98,14 @@ def _run_turn_with_history(
         if console is not None:
             console.print(f"\n[red]{reply_text}[/]")
 
-    reply_msg = {
+    # The reply is the runtime speaking under the same principal, which is
+    # what ``runtime_authority`` expresses: inherited tier, runtime kind.
+    reply_msg = stamp_schema({
         "role": "assistant", "id": user_id + "_reply",
         "predecessor": user_id,
         "content": reply_text, "timestamp": _time.time(), "source": "cli",
-    }
+        **runtime_authority(owner, "cli"),
+    })
     messages.append(reply_msg)
     meta["_last_touched"] = _time.time()
 

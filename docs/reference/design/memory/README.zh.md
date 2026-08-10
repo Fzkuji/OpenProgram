@@ -53,6 +53,6 @@ LLM Context
 
 已提交实现保存append-only Source证据、由模型写入的Topic block，以及Runtime确定性生成的Core、Timeline、Recent和Relations视图。每条Source都带Runtime确定的authority provenance：SessionDB writer和通用`memory_update`事务都从持久化的轮次authority构造，不接受调用方payload里的身份字段；缺少完整authority时创建Source直接失败。自动writer读取SessionDB分支，把成功处理状态记在来源节点上，默认使用聊天agent的provider和模型，`memory.writer.model`只覆盖writer模型；所有修改通过暂存事务安装。
 
-记忆工具、CLI和Web UI已经注册。已提交基线包含writer状态、一次性trusted Source backfill、`memory.backend=none`边界以及从SessionDB到watcher状态的组合集成测试。真实writer验收已处理2条符合写入条件的消息，但正式工作区尚未对152条未引用Source执行历史backfill。
+记忆工具、CLI和Web UI已经注册。已提交基线包含writer状态、一次性trusted Source backfill、`memory.backend=none`边界以及从SessionDB到watcher状态的组合集成测试。真实writer验收已处理2条符合写入条件的消息，此后历史backfill已在正式工作区执行完毕：154个frame中有137个被引用，共232次引用出现。
 
-Topic block新增的Source引用必须解析到`trusted` frame，并且必须属于本次事务自己归档的证据，因此任何工具路径都无法引用`pending` Source或把无关Source挂到新段落上。写入失败归入一个封闭的`MemoryWriteFailureCode`枚举，状态文件、CLI、工具、API和Web UI共用同一契约；idle watcher在跨进程锁下逐条持久化终态结果；未配对群聊归档有明确的频率与存储上限。按请求方档位过滤读取在[`authority-handoff.md`](authority-handoff.md)中已完成设计但尚未实现。越权请求hold队列、分支语义provenance、跨会话spawn关系和事件通知writer仍作为独立设计延期。
+Topic block新增的Source引用必须解析到`trusted` frame，并且必须属于本次事务自己归档的证据，因此任何工具路径都无法引用`pending` Source或把无关Source挂到新段落上。写入失败归入一个封闭的`MemoryWriteFailureCode`枚举，状态文件、CLI、工具、API和Web UI共用同一契约；idle watcher在跨进程锁下逐条持久化终态结果；未配对群聊归档有明确的频率与存储上限。按请求方档位过滤读取已部分实现：`memory.read`独立成capability，读取路径接收调用方解析好的档位，pending证据支撑的block不进入召回与Core；按档位删改block正文仍见[`authority-handoff.md`](authority-handoff.md)设计。越权请求hold队列、分支语义provenance、跨会话spawn关系和事件通知writer仍作为独立设计延期。

@@ -904,15 +904,24 @@ def test_a_crash_after_one_terminal_result_does_not_repeat_that_call(
         # s1's success survived the crash; s2 never reached a terminal state.
         assert session_watcher._load_processed() == {"s1": 1.0}
 
-        called.clear()
-        monkeypatch.setattr(
-            "openprogram.memory.get_backend",
-            lambda: type("Fine", (), {
-                "write": lambda self, _m=None, *, session_id="", force=False: None,
-            })(),
-        )
+        # The resumed pass gets its own recorder. Reusing ``called`` made
+        # the assertion vacuous: only ``Crashing`` ever appended to it, so
+        # the list was empty whether the second backend ran or not — and
+        # the test passed even if the retry never happened at all.
+        resumed: list[str] = []
+
+        class Fine:
+            def write(self, _messages=None, *, session_id="", force=False):
+                resumed.append(session_id)
+                return None
+
+        monkeypatch.setattr("openprogram.memory.get_backend", lambda: Fine())
         session_watcher._scan(idle_minutes=1)
-        assert called == [] or "s1" not in called
+
+        # s2 is retried because it never reached a terminal state; s1 is
+        # not, because its success was on disk before the crash.
+        assert resumed == ["s2"]
+        assert session_watcher._load_processed() == {"s1": 1.0, "s2": 1.0}
     finally:
         _close_store(db)
 

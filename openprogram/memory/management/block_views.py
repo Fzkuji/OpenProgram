@@ -20,6 +20,11 @@ from ..markdown import (
 )
 from ..workspace_layout import runtime_dir
 
+# Committed memory is owner-only, matching the source archive and the
+# profile root. One constant so the install path and the archive cannot
+# drift into disagreeing about the mode of the same file.
+MEMORY_FILE_MODE = 0o600
+
 
 class BlockViewsMixin:
     def _synchronize(self) -> str:
@@ -234,12 +239,17 @@ class BlockViewsMixin:
                 # Staged sources are read-only so the writer cannot edit them.
                 # That guard belongs to the stage: the committed workspace is
                 # an ordinary tree the Runtime keeps appending to.
+                #
+                # Owner-only, because installing is where every memory file
+                # gets its committed mode. Handing them 0644 here undid the
+                # archive's own 0600 on the very next write, which is how
+                # world-readable memory kept coming back after being fixed.
                 if destination.is_file():
-                    destination.chmod(0o644)
+                    destination.chmod(MEMORY_FILE_MODE)
                 elif destination.is_dir():
                     for path in destination.rglob("*"):
-                        if path.is_file():
-                            path.chmod(0o644)
+                        if path.is_file() and not path.is_symlink():
+                            path.chmod(MEMORY_FILE_MODE)
                 installed.append(relative)
         except Exception:
             for relative in reversed(installed):

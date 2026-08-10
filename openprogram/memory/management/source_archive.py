@@ -18,7 +18,17 @@ from ..source_format import (
     scan_source_archive,
     valid_v2_source_id,
 )
-from ..workspace_layout import resolve_within, runtime_dir
+from ..workspace_layout import RUNTIME_DIR_MODE, resolve_within, runtime_dir
+
+
+# Archived speech is the rawest thing memory holds — verbatim quotes from
+# every conversation. A world-readable 0644 handed it to every other
+# account on the machine, so the archive is owner-only like the rest of
+# the profile.
+SOURCE_FILE_MODE = 0o600
+# Directory names inside sources/ are themselves identity: provider, then
+# thread. Owner-only for the same reason the files are.
+DIRECTORY_MODE = 0o700
 
 
 def _record_lines(value: str) -> list[str]:
@@ -32,7 +42,15 @@ def _read_literal_text(path: Path) -> str:
 
 
 def _write_literal_text(path: Path, value: str, *, temporary_dir: Path) -> None:
+    # Staging happens inside the runtime directory, so this is one of the
+    # places that can bring it into being; created bare it would inherit
+    # the umask's 0755 and expose the trust audit and cursor beside it.
     temporary_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        if not temporary_dir.is_symlink():
+            temporary_dir.chmod(RUNTIME_DIR_MODE)
+    except OSError:
+        pass
     descriptor, temporary = tempfile.mkstemp(
         prefix="source-archive-", suffix=".tmp", dir=temporary_dir
     )
@@ -41,11 +59,35 @@ def _write_literal_text(path: Path, value: str, *, temporary_dir: Path) -> None:
             handle.write(value)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temporary, 0o644)
+        os.chmod(temporary, SOURCE_FILE_MODE)
         os.replace(temporary, path)
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
+
+
+def _make_owner_only_dirs(directory: Path, root: Path) -> None:
+    """Create a source subtree owner-only, not at whatever the umask says.
+
+    ``mkdir(parents=True)`` gives each new level 0755, so the directory
+    names alone — provider, then thread — would tell any other account on
+    the machine which services the owner talks on and to whom. The mode
+    is applied to each level this call creates, up to but not including
+    the workspace root, which the workspace itself owns.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    current = directory
+    while True:
+        try:
+            if current.is_symlink() or current.resolve() == Path(root).resolve():
+                break
+            if (current.stat().st_mode & 0o777) != DIRECTORY_MODE:
+                current.chmod(DIRECTORY_MODE)
+        except OSError:
+            break
+        if current.parent == current:
+            break
+        current = current.parent
 
 
 def _source_path_key(relative: Path) -> str:
@@ -270,7 +312,7 @@ class SourceArchiveMixin:
         refs = []
         for relative, rows in grouped.items():
             path = paths[relative]
-            path.parent.mkdir(parents=True, exist_ok=True)
+            _make_owner_only_dirs(path.parent, target_root)
             text, known = existing[relative]
             additions = []
             for record in rows:
@@ -320,7 +362,7 @@ class SourceArchiveMixin:
                 # Staged sources are read-only to the writer; archiving is the
                 # Runtime's own append and restores the mode afterwards.
                 if path.exists():
-                    path.chmod(0o644)
+                    path.chmod(SOURCE_FILE_MODE)
                 if text:
                     separator = "\n" if text.endswith("\n") else "\n\n"
                     prefix = text + separator

@@ -80,7 +80,11 @@ def register(app):
         from openprogram.memory import store
         from openprogram.memory.retrieval import inspect
 
-        return JSONResponse(content=inspect.status(store.ensure()))
+        # Owner-only surface (the whole memory router is), so the on-disk
+        # location is shown; the model-facing tool omits it.
+        return JSONResponse(
+            content=inspect.status(store.ensure(), include_path=True)
+        )
 
     # -- topics ------------------------------------------------------------
 

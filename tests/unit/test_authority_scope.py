@@ -72,7 +72,8 @@ def test_runtime_authority_changes_speaker_without_expanding_tier(authority_stat
     assert runtime["interaction"] == "non-interactive"
 
 
-def test_tier_table_allows_only_memory_append_for_paired(authority_state):
+def test_tier_table_allows_memory_read_and_append_for_paired(authority_state):
+    """Paired speakers may read memory, and only memory."""
     authority = authority_state
     local = authority.local_owner_authority()
     paired = authority.paired_channel_authority(
@@ -83,13 +84,25 @@ def test_tier_table_allows_only_memory_append_for_paired(authority_state):
     append = authority.decide_tool_authority(paired, "memory_update")
     assert append.allowed is True
     assert append.capability == "memory.source.append"
-    status = authority.decide_tool_authority(paired, "memory_status")
-    assert status.allowed is True
-    assert status.capability == "memory.source.append"
 
-    for tool in ("bash", "read", "memory_search", "memory_promote", "clarify"):
+    # Reads inside the memory workspace ride their own capability, so
+    # granting them does not also hand over the filesystem.
+    for tool in (
+        "memory_search", "memory_grep", "memory_get", "memory_browse",
+        "memory_status",
+    ):
         decision = authority.decide_tool_authority(paired, tool)
-        assert decision.allowed is False
+        assert decision.allowed is True, tool
+        assert decision.capability == "memory.read"
+
+    # ``fs.read`` stays owner-only: reading a file off the disk is not
+    # the same act as reading what memory recorded.
+    assert authority.decide_tool_authority(paired, "read").capability == (
+        "fs.read"
+    )
+    for tool in ("bash", "read", "memory_promote", "clarify"):
+        decision = authority.decide_tool_authority(paired, tool)
+        assert decision.allowed is False, tool
         assert decision.tier == "paired"
         assert decision.check == "tier_capability_table"
         assert decision.reason_code == "AUTHORITY_CAPABILITY_DENIED"

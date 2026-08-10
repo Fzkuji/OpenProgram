@@ -1061,7 +1061,7 @@ def test_malformed_huge_record_line_count_is_ignored(tmp_path: Path) -> None:
     assert "openprogram/thread-1/m2" not in path.read_text(encoding="utf-8")
 
 
-def test_version_five_cache_is_rebuilt_as_version_eight(tmp_path: Path) -> None:
+def test_version_five_cache_is_rebuilt_as_the_current_version(tmp_path: Path) -> None:
     root = tmp_path / "memory"
     source_id = "openprogram/thread-1/m1"
     space = MemoryWorkspace(root)
@@ -1096,7 +1096,7 @@ def test_version_five_cache_is_rebuilt_as_version_eight(tmp_path: Path) -> None:
 
     assert index.events[0].content != "stale cache row"
     assert index.events[0].speaker_id == "u456"
-    assert json.loads(cache.read_text(encoding="utf-8"))["version"] == 8
+    assert json.loads(cache.read_text(encoding="utf-8"))["version"] == 9
 
 
 def test_inspect_rejects_embedding_with_speaker(tmp_path: Path) -> None:
