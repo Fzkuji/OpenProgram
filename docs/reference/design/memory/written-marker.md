@@ -664,7 +664,7 @@ not, and nothing is currently lost by waiting.
 
 ## Appendix: Implementation status
 
-As of 2026-08-10, Layer 1 describes the implementation that was replaced,
+As of 2026-08-11, Layer 1 describes the implementation that was replaced,
 Layer 2 remains the open-source framework audit, and Layer 3 is implemented.
 Session nodes carry `metadata.memory_written_scriptorium = <workspace-id>`;
 pending work is the unmarked suffix of each branch; a successful non-empty
@@ -679,4 +679,14 @@ then filtered on their real DAG paths with `writing._records`, and only the
 continuous archived prefix before the first gap is marked. Later legacy
 headers, body-forged headers, candidates after a gap and frames after a bad v2
 tail are ignored. The old field is removed only after every marker batch
-succeeds. Layer 4 remains unimplemented and unscheduled.
+succeeds.
+
+Historical backfill is deliberately outside this marker rule. The implemented
+`openprogram memory backfill` command selects trusted Source records that no
+Topic cites and therefore ignores a marker that may have been written by the
+pre-migration runtime. It excludes pending Sources and does not add or remove
+session-node markers. This keeps the marker's definition unchanged: it records
+successful online writer handling for one workspace, while Topic citations
+determine whether archived historical evidence still needs backfill. The live
+workspace has not run this historical backfill. Layer 4 remains unimplemented
+and unscheduled.

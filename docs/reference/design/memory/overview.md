@@ -481,7 +481,7 @@ way.
 | `memory_get` | Read a file, a section, or one block with its footnotes |
 | `memory_browse` | See what exists |
 | `memory_update` | Correct or add one thing, as a unified diff |
-| `memory_status` | Size and the current revision |
+| `memory_status` | Workspace size/revision plus writer outcome, last failure code and pending turns |
 
 There is no tool for "save this". Recording the conversation is the
 background writer's job. `memory_update` is for what the user asked to
@@ -519,7 +519,7 @@ openprogram/memory/           the framework side
         retrieval/            BM25 and embedding search
         markdown/             the topic format
         prompts/              what the writer is told
-        runtime/              node-mark migration, thresholds, derived views
+        runtime/              node-mark migration, thresholds, derived views, writer status
         agent_runtime/        the process that does the writing
 ```
 
@@ -537,13 +537,17 @@ and `scheduler.start_nightly_reorganizer(model=...)` override it.
 
 The workspace kept its location, so an existing installation finds
 memory in the same place. What is inside changed: `journal/` and `wiki/`
-are gone, replaced by `sources/` and `topics/`; `core.md` is unchanged.
+are gone, replaced by `sources/` and `topics/`; root `core.md` is now a
+derived view rendered from `topics/core.md`.
 
 On first use, `store.ensure()` moves `journal/`, `wiki/`, `.state/` and
 `index.sqlite` to `<state>/memory-superseded/`. Moved, not deleted, and
 to a sibling directory rather than a subdirectory: inside the workspace
 they would still be listed, and deleting someone's notes to make room
-for a new format is not a migration.
+for a new format is not a migration. A valid legacy `core.md` is promoted
+into `topics/core.md` by the normal transaction path. Historical backfill
+preserves an invalid legacy core as trusted migration Source evidence before
+the writer converts it to a valid Topic.
 
 ## Failure modes
 
@@ -675,15 +679,37 @@ override. Provider authentication and configuration failures retain
 `retryable=false`, so the idle watcher does not repeat them. With
 `memory.backend=none`, the disabled provider emits no memory system prompt or
 recall and performs no automatic writes or organization; memory schedulers,
-idle watchers and unpaired-group archiving do not start or write. Every CLI
-memory verb and all nine `/api/memory/*` routes reject the disabled state before
-any workspace accessor runs; the Web routes share one router dependency and
-return a structured `MEMORY_DISABLED` response. The real
-default provider completed a Topic write and transaction validation in an
-isolated workspace. The post-merge live pass also completed: a compatibility
-reader accepted the exact pre-tier `origin_scope` metadata shape in all 23
-append-only source files (154 frames), then one pending two-message session
-committed 3 Topic files and 5 blocks. Six source references and all relation
-targets validated, both message nodes were marked, and a second pass changed
-neither the workspace nor its revision. The remaining 152 uncited historical
-frames require the deferred one-shot backfill.
+idle watchers and unpaired-group archiving do not start or write.
+The same backend check now rejects every CLI memory verb and every
+`/api/memory/*` route before workspace initialization; the Web API returns the
+stable `MEMORY_DISABLED` response.
+
+The writer persists a small operational status containing its latest success,
+latest failure classification and retryability, and a read-only count of
+eligible unmarked turns. `memory_status`, `openprogram memory status` and
+`GET /api/memory/status` expose the same contract. Status persistence is
+best-effort and is outside the memory transaction, so an observability failure
+cannot turn a successful Topic write into a failure.
+
+`openprogram memory backfill` is implemented for historical trusted Source
+records that no Topic cites. It ignores node markers, excludes pending Sources,
+uses bounded batches and the normal writer transaction, and resumes from the
+first remaining uncited reference after a failed batch. A legacy root
+`core.md` is preserved as Source evidence before it is promoted to
+`topics/core.md`. Repeated execution is citation-idempotent.
+
+The real default provider completed a Topic write and transaction validation in
+an isolated workspace. The post-merge live writer pass also completed: a
+compatibility reader accepted the exact pre-tier `origin_scope` metadata shape
+in all 23 append-only source files (154 frames), then one pending two-message
+session committed 3 Topic files and 5 blocks. Six source references and all
+relation targets validated, both message nodes were marked, and a second pass
+changed neither the workspace nor its revision. This live acceptance did not
+execute historical backfill, so the 152 uncited historical frames remain in the
+owner's workspace even though the backfill command is implemented.
+
+The composed integration test covers SessionDB, default writer-model
+resolution, managed writer tools, staging, transactional Topic installation,
+node markers and idle-watcher state. It also verifies that unavailable-model
+and lazy-credential failures are non-retryable and are skipped by the next
+watcher poll.

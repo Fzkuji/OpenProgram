@@ -126,6 +126,94 @@ Retry classification is conservative in both the provider and the session
 watcher: an unknown exception is non-retryable, and only explicitly classified
 transient exceptions retry.
 
+## Read scoping: stamp on write, filter on read
+
+The policy follows LangGraph's store model: visibility is decided once, when
+the content is written, and recorded on the content itself. A read carries the
+requester's tier and keeps only what that tier may see. No read path recomputes
+authority from conversation state, and no read path consults the pairing store.
+
+**Visibility label.** Every Topic block carries one `visibility` value:
+
+| Value | Written when | Readable by |
+|---|---|---|
+| `shared` | Every Source the block cites is `authority_tier=paired`, or the owner marked the block shared | owner, paired |
+| `owner` | Any cited Source is `authority_tier=owner`, or the block cites no Source | owner |
+
+Two values, not a per-speaker scope. A paired requester reads all `shared`
+Topics rather than only its own Source-derived memory: the memory is one shared
+workspace by product decision, speakers are already attributed inside it, and a
+per-speaker scope would need a second identity index on every read for a
+distinction the product does not make. Pending Sources have no visibility label
+because they are not readable content at all; they are reachable only through
+the owner's explicit review path.
+
+**Where the label lives.** In the Topic block's own definition line, beside
+`Time:` and `Sources:`, so it travels with the block through the existing
+Markdown parse and needs no side table that could drift from the prose. The
+default for an unlabeled block is `owner`, which makes the migration a no-op:
+today's entire workspace stays owner-only until a write relabels a block.
+
+**Derivation, not declaration.** The writer never asks the model for a
+visibility value. `install_state` computes it from the trust metadata of the
+block's cited Sources, which task 2 now guarantees is Runtime-owned. A model
+that could name its own visibility could publish owner content to a paired
+reader by writing one word.
+
+**Mixed-authority blocks.** A block whose cited Sources span both tiers is
+`owner`. The alternative — splitting the prose — would hand a paired reader a
+sentence fragment whose meaning depends on the removed half. The block is the
+smallest unit of meaning the format has, so it is the smallest unit visibility
+can act on. Where a mixed block is genuinely wanted in shared scope, the owner
+splits it into two blocks; that is a memory-organization act, not a filter.
+
+**Core injection.** `core.md` is rendered from `topics/core.md` on every write.
+Rendering gains a second output: `core.md` (owner) and `core.shared.md`
+(shared blocks only). `system_prompt()` picks the file by the session's tier.
+Rendering both at write time rather than filtering at injection time keeps the
+per-turn path free of a parse, and keeps the two views impossible to skew.
+
+**Caches and indexes.** The lexical and embedding indexes keep indexing
+everything and filter at query time on the label, rather than maintaining one
+index per tier. Two indexes would double both the build cost and the ways they
+can disagree. The filter is applied inside `MemoryBM25Index.search` and
+`MemoryEmbeddingIndex.search`, below every caller, so a new caller cannot
+forget it. Persisted index files stay a single artifact; the label is a stored
+field on each row.
+
+**Owner review of pending evidence.** Unchanged by this design and explicitly
+exempt from the filter: the owner's explicit review path returns pending Source
+records with `speaker_id`, `speaker_display`, `principal_id`, `trust_state` and
+`authority_tier` intact, because deciding whether to promote is exactly the act
+of reading who said it. Pending text never enters automatic context on any
+tier, which remote `9b47a45e` already enforces at the recall boundary.
+
+**Acceptance matrix.** Each row names the Runtime entry point that enforces
+the policy and the case its test has to cover.
+
+| # | Read surface | Enforcing Runtime entry point | Case | Test level |
+|---|---|---|---|---|
+| 1 | Core system prompt | `ScriptoriumMemoryProvider.system_prompt` | A paired session receives `core.shared.md`; no owner block appears in it | unit |
+| 2 | Automatic per-turn recall | `ScriptoriumMemoryProvider.search` | A paired session's recall returns no `owner` block and no pending Source | unit |
+| 3 | Explicit `memory_search` | `MemoryBM25Index.search` | A paired requester's hits exclude `owner` blocks at every `top_k` | unit |
+| 4 | Embedding search | `MemoryEmbeddingIndex.search` | Same exclusion as row 3, same requester, same query | unit |
+| 5 | `memory_get` | `inspect.read_file` | A paired requester reading a Topic file receives only its `shared` blocks; an all-`owner` file is a not-found, not an empty file | unit |
+| 6 | `memory_grep` | `inspect.grep` | A literal string present only in an `owner` block produces no match for a paired requester | unit |
+| 7 | `memory_browse` | `inspect.list_files` | A file with no `shared` block is absent from a paired listing, and block counts reflect the visible subset | unit |
+| 8 | Mixed-authority block | `install_state` visibility derivation | A block citing one owner and one paired Source is labeled `owner` and never partially rendered | unit |
+| 9 | Web reads | `/api/memory/*` route dependency | Every memory route resolves the requester tier and applies the same filter as the tool path | integration |
+| 10 | Owner pending review | `memory_promote` review path | Pending results retain speaker, principal, trust and tier metadata | unit |
+| 11 | Cache coherence | `MemoryBM25Index` persisted rows | A relabeled block changes what the next query returns without an index rebuild | unit |
+| 12 | Fail-closed | tier resolution helper | An unresolvable or unknown requester tier reads as `owner`-only-denied, never as owner | unit |
+
+**Migration impact.** None required. Unlabeled blocks read as `owner`, so an
+existing workspace is unchanged and stays owner-only. Labels appear as blocks
+are rewritten. No history-scanning migration code, consistent with product
+decision 3.
+
+**Not in this design.** Per-speaker read scoping, redaction inside a block, and
+a hold queue for over-tier reads. Each needs its own design.
+
 ## Appendix: Implementation Status
 
 The tier enum, the constant-table gate, fail-closed denial, structured decision
@@ -136,7 +224,7 @@ approval, stable-ID matching, display-name sanitization, the `pending` /
 | Item | Status | Note |
 |---|---|---|
 | Hold queue for over-tier requests | Not implemented | A paired sender's over-tier request (for example "restart the service") queues for one-shot owner approval instead of flat denial. Parameters to adopt: a message cap, an expiry timeout, and re-evaluation of the queue when a sender's tier changes. |
-| Read-time filtering by requester tier | Not implemented | Write-time attribution is in place; filtering retrieval results by the requesting speaker's tier is not. |
-| Backfill of pre-marked sources | Not implemented | History marked before any Topic existed remains outside Topics. A one-shot pass should run the writer over every source not cited by a Topic, ignoring markers, and preserve the already-promoted core. |
-| Queryable writer status | Not implemented | Last successful write time, latest failure reason with its retryable verdict, and pending count, exposed in both status output and the web UI. |
-| Bounded archive policy for unpaired group traffic | Not implemented | Unpaired group archival has no independent frequency or storage cap. Needed before deployments where that traffic is not externally rate-limited. |
+| Read-time filtering by requester tier | Designed, not implemented | The policy above fixes visibility for Core, Topics, the explicit memory tools, the retrieval indexes and the web reads as one decision. Write-time attribution is in place; the filter is not. |
+| Backfill of pre-marked sources | Implemented, not yet run on live history | `openprogram memory backfill` runs the writer over every trusted source no Topic cites, ignores node markers, excludes pending sources, and promotes a legacy root `core.md` into `topics/core.md` rather than discarding it. It is idempotent against existing citations and resumable after a failed batch. |
+| Queryable writer status | Implemented | Latest success time, `last_outcome`, and a failure classified into the closed `MemoryWriteFailureCode` taxonomy with its retryable verdict, plus a pending-turn count, under one versioned schema shared by the status file, CLI, tool, API and web UI. |
+| Bounded archive policy for unpaired group traffic | Implemented | Unpaired group archival has a per-hour message limit, per-message and per-identity size limits, and a total archive byte ceiling. The reservation runs inside `workspace_write_lock` with the append it authorizes, so concurrent processes cannot both claim the last slot. |

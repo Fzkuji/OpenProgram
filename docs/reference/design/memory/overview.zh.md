@@ -274,7 +274,7 @@ BM25持久缓存格式是v8；旧缓存缺少当前speaker或trust字段，因�
 | `memory_get` | 读一个文件、一节，或带脚注的单个块 |
 | `memory_browse` | 看有什么 |
 | `memory_update` | 以 unified diff 更正或新增某一处 |
-| `memory_status` | 规模与当前版本号 |
+| `memory_status` | 工作区规模与版本号，以及writer结果、最近失败原因码和待处理轮次 |
 
 没有"保存这个"的工具。记录对话是后台写入器的职责。`memory_update` 是给
 两种情况用的：用户明确要求现在记住的事，以及模型看得出记错了的地方。
@@ -307,7 +307,7 @@ openprogram/memory/           框架侧
         retrieval/            BM25 与向量检索
         markdown/             topic 格式
         prompts/              对写入模型说的话
-        runtime/              节点标记迁移、阈值、派生视图
+        runtime/              节点标记迁移、阈值、派生视图、writer状态
         agent_runtime/        实际执行写入的进程
 ```
 
@@ -322,12 +322,14 @@ agent 循环、工具、网页端、CLI 都不指名任何实现，一律调 `ge
 ## 从旧记忆层迁移
 
 工作区位置没变，已有安装还在原地找到记忆。变的是里面的东西：`journal/`
-和 `wiki/` 没有了，换成 `sources/` 和 `topics/`；`core.md` 不变。
+和 `wiki/` 没有了，换成 `sources/` 和 `topics/`；根目录`core.md`现在是从
+`topics/core.md`确定性生成的派生视图。
 
 首次使用时，`store.ensure()` 把 `journal/`、`wiki/`、`.state/`、
 `index.sqlite` 移到 `<state>/memory-superseded/`。是移动不是删除，而且移到
-同级目录而非子目录：留在工作区里仍然会被列出来，而为了腾地方给新格式就
-删掉别人的笔记，那不叫迁移。
+同级目录而非子目录：留在工作区里仍然会被列出来，而为了新格式直接删除旧笔记
+不属于迁移。合法旧`core.md`由正常事务提升为`topics/core.md`；历史backfill会先把
+不合法的旧core保存成trusted migration Source证据，再由writer转换成合法Topic。
 
 ## 失效模式
 
@@ -442,10 +444,25 @@ source归档并排除主动提炼。已配对内容与owner内容都进入可信
 `memory.writer.model`只覆盖writer模型且实时生效。provider返回的认证和配置错误保留
 `retryable=false`，不会进入闲置观察器的重复重试。`memory.backend=none`使用空provider，并在
 启动前停止记忆工具、系统提示、每轮召回、自动写入、夜间整理、闲置观察器和未配对群聊归档。
-全部CLI memory动词和九个`/api/memory/*`路由会在任何工作区访问前拒绝；Web路由共用一个
-router dependency并返回结构化`MEMORY_DISABLED`响应。
-真实默认provider已在隔离工作区完成Topic写入和事务校验，合并后的正式工作区验收也已完成：
+同一backend检查现已在工作区初始化前拒绝全部CLI memory动词和`/api/memory/*`路由，Web API
+返回稳定的`MEMORY_DISABLED`错误。
+
+writer把最近成功时间、最近失败分类及其`retryable`判定、只读待处理轮次数写入工作区runtime目录。
+`memory_status`、`openprogram memory status`和`GET /api/memory/status`返回同一契约。状态写入是
+best-effort，位于记忆事务之外；状态文件失败不会改变Topic事务的结果。
+
+`openprogram memory backfill`已经实现。它选择未被任何Topic引用的trusted Source，忽略节点marker，
+排除pending Source，按token预算分批，并复用正常writer事务。某批失败时不安装该批修改，再次执行
+从第一个仍未引用的Source继续。旧根目录`core.md`先按Source证据保存，再提升为`topics/core.md`；
+重复执行通过Topic引用保持幂等。
+
+真实默认provider已在隔离工作区完成Topic写入和事务校验，合并后的正式工作区writer验收也已完成：
 兼容读取器接受23个append-only source文件中154个frame使用的旧`origin_scope`元数据格式，随后
 一个含2条消息的待处理会话提交了3个Topic文件和5个block。6个source引用与全部relation目标均
 通过校验，两条消息都写入workspace marker；第二次扫描没有处理会话，revision保持不变。
-剩余152个未被Topic引用的历史frame仍需后续一次性backfill。
+这次真实验收没有执行历史backfill，因此正式工作区仍有152个未被Topic引用的历史frame；这是部署
+操作未执行，不再是功能未实现。
+
+组合集成测试覆盖SessionDB、默认writer模型解析、managed writer工具、暂存事务、Topic安装、节点marker
+和idle watcher状态，并验证model unavailable与lazy credential失败不可重试、下一次watcher扫描会跳过。
+写入失败原因码是一个封闭枚举，受限writer阶段看不到Source归档。

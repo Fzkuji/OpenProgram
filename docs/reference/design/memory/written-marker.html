@@ -864,14 +864,16 @@
   </svg>
   </div></div>
 
-  <div class="note"><b>实现状态（2026-08-10）。</b>第一层记录迁移前的实现，第二层是开源框架审计，第三层已经实现：
+  <div class="note"><b>实现状态（2026-08-11）。</b>第一层记录迁移前的实现，第二层是开源框架审计，第三层已经实现：
     会话节点用<code>metadata.memory_written_scriptorium = &lt;workspace-id&gt;</code>记录写入状态，当前分支按节点标记计算待写后缀，
     成功且实际修改记忆的批次才打标记；会话结束时先处理当前head，再处理其他活分支。
     <code>RuntimeState.cursors</code>和<code>advance_cursor</code>已经移除。旧安装首次写入时同时校验legacy header和
     <code>sources/openprogram/_v2/*.md</code>的严格合法前缀：legacy只接受标题后第一组合法header，v2遇到非法frame停止。
     候选ID在真实DAG路径上经过与在线写入相同的记录过滤，只标记第一个缺口之前的连续前缀；缺口后的尾部允许重写。
     所有session标记成功后才删除旧<code>cursors</code>，失败时保留供重试。
-    结构化speaker字段、可信v2 frame和speaker过滤也已经实现。第四层仍未实现。</div>
+    结构化speaker字段、可信v2 frame和speaker过滤也已经实现。历史<code>memory backfill</code>有意忽略节点marker，
+    只选择未被Topic引用的trusted Source并排除pending；它不增加或删除session marker。节点marker记录在线writer处理状态，
+    Topic引用记录历史Source是否已经进入可召回内容，两项定义互不替代。正式工作区尚未执行历史backfill。第四层仍未实现。</div>
 
 </div>
 </body>

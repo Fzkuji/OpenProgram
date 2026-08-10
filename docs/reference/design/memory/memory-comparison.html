@@ -89,9 +89,9 @@
       <p><code>references/</code> 下全部八家。没有这个功能的照样列出来，因为"不做"本身是一种选择。</p>
     </div>
     <div class="st" style="border-top-color:#9d6fe0">
-      <div class="k">第三层 · 我们计划</div>
+      <div class="k">第三层 · 我们的定案</div>
       <h3>紫色行</h3>
-      <p>定稿但还没落地的两处：<b>游标</b>（第 04、05、09 节）和<b>常驻块</b>（第 07 节）。
+      <p>节点marker（第04、05、09节）和由<code>topics/core.md</code>生成常驻块（第07节）均已实现。
         权威描述见 <a href="written-marker.html">written-marker.md</a> 和 <a href="overview.html">overview.md</a> 的「常驻块」一节。</p>
     </div>
   </div>
@@ -433,8 +433,8 @@
 
   <!-- ══════════ 04 ══════════ -->
   <h2 id="cursor"><span class="num">04</span>怎么知道哪些还没写<span class="tier t2">第二层</span></h2>
-  <p class="lead">这是全页最关键的一格。八家给出五种形状：不记、记一个数、记一个身份、把标记塞进数据本身、记一整套身份。
-    只有最后一种是我们计划要走的，而目前没有第二家在用。</p>
+  <p class="lead">八家给出五种进度记录：不记录、标量位置、单个消息身份、数据内标记、逐节点身份。
+    OpenProgram当前使用最后一种，本页参考框架中没有第二个相同实现。</p>
 
   <div class="card">
   <svg viewBox="0 0 1160 630" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="游标的五种形状">
@@ -459,7 +459,7 @@
 
     <!-- B 记一个数 -->
     <text x="152" y="182" fill="#e0445a" font-size="12.5" font-weight="700" text-anchor="end">B · 记一个数</text>
-    <text x="152" y="198" fill="#8a8675" font-size="10.5" text-anchor="end">codex · OpenProgram 现在</text>
+    <text x="152" y="198" fill="#8a8675" font-size="10.5" text-anchor="end">codex · OpenProgram 迁移前</text>
     <g>
       <g font-size="11" text-anchor="middle">
         <rect x="176" y="166" width="52" height="26" rx="6" fill="#101a10" stroke="#5aad4e"/><text x="202" y="184" fill="#5aad4e">m1</text>
@@ -517,7 +517,7 @@
 
     <!-- E 身份集合 -->
     <text x="152" y="470" fill="#9d6fe0" font-size="12.5" font-weight="700" text-anchor="end">E · 记一整套身份</text>
-    <text x="152" y="486" fill="#8a8675" font-size="10.5" text-anchor="end">OpenProgram 计划</text>
+    <text x="152" y="486" fill="#8a8675" font-size="10.5" text-anchor="end">OpenProgram 当前</text>
     <g>
       <g font-size="11" text-anchor="middle">
         <rect x="176" y="454" width="52" height="26" rx="6" fill="#221a30" stroke="#9d6fe0" stroke-width="1.6"/><text x="202" y="472" fill="#9d6fe0">m1</text>
@@ -528,9 +528,9 @@
         <rect x="516" y="454" width="52" height="26" rx="6" fill="#12110b" stroke="#3a382c"/><text x="542" y="472" fill="#8a8675">m6</text>
       </g>
       <rect x="584" y="454" width="290" height="26" rx="6" fill="#221a30" stroke="#9d6fe0" stroke-width="1.5"/>
-      <text x="729" y="472" fill="#9d6fe0" font-size="11" text-anchor="middle" font-family="Menlo,monospace">{"written": ["m1","m2","m3"]}</text>
-      <text x="890" y="472" fill="#8a8675" font-size="11.5">每个线程一个文件</text>
-      <text x="176" y="504" fill="#9d6fe0" font-size="11">不需要"从哪开始扫"，因为集合本身就是答案：不在集合里的就是欠的。</text>
+      <text x="729" y="472" fill="#9d6fe0" font-size="10" text-anchor="middle" font-family="Menlo,monospace">metadata.memory_written_scriptorium</text>
+      <text x="890" y="472" fill="#8a8675" font-size="11.5">标记保存在各消息节点</text>
+      <text x="176" y="504" fill="#9d6fe0" font-size="11">当前分支从最新节点向前检查，遇到本工作区marker即停止；中间未标记节点就是待写后缀。</text>
     </g>
 
     <line x1="32" y1="530" x2="1128" y2="530" stroke="#2e2c20" stroke-width="1"/>
@@ -551,8 +551,8 @@
     <tr><td><b>pi-ai</b></td><td class="n">无</td><td>—</td><td class="q">—</td></tr>
     <tr><td><b>pi-mono</b></td><td>单条 entry id <code>firstKeptEntryId</code>，向后走</td><td>写在压缩记录里，和转录同一个文件</td><td class="q"><span class="src">packages/coding-agent/src/core/session-manager.ts:67-77,315-422</span></td></tr>
     <tr><td><b>weclaw</b></td><td class="n">无；只有一个按条数硬切的上限</td><td>—</td><td class="q"><span class="src">agent/http_agent.go:151-154</span></td></tr>
-    <tr class="us"><td><b>OpenProgram 现在</b></td><td class="n">整数序号，位置</td><td><code>runtime.json</code></td><td class="q"><span class="src">openprogram/memory/scriptorium/runtime/state.py:39-43<br>runtime/online.py:60-64</span></td></tr>
-    <tr class="plan"><td><b>OpenProgram 计划</b></td><td>节点上的「已写」标记</td><td>会话节点的 <code>metadata</code></td><td class="q"><span class="src">written-marker.md 第三层</span></td></tr>
+    <tr class="us"><td><b>OpenProgram迁移前</b></td><td class="n">整数序号，位置</td><td><code>runtime.json</code></td><td class="q"><span class="src">written-marker.md 第一层</span></td></tr>
+    <tr class="plan"><td><b>OpenProgram当前</b></td><td>节点上的workspace marker</td><td>会话节点的<code>metadata</code></td><td class="q"><span class="src">written-marker.md 第三层</span></td></tr>
   </table>
   </div>
 
@@ -724,8 +724,8 @@
     <!-- 我们 -->
     <line x1="32" y1="412" x2="1128" y2="412" stroke="#2e2c20" stroke-width="1"/>
     <rect x="32" y="424" width="1096" height="62" rx="9" fill="#241015" stroke="#e0445a" stroke-width="1.6"/>
-    <text x="52" y="450" fill="#e0445a" font-size="13" font-weight="700">我们现在 · 三种都没做</text>
-    <text x="52" y="472" fill="#bdb9a6" font-size="11.5">分叉不换会话id，所以作用域不换；分叉不拷贝，所以没有新坐标可以翻译；<tspan font-family="Menlo,monospace">get_branch</tspan>从head一路走回起点，所以前缀进视野。而游标还是一个下标。</text>
+    <text x="52" y="450" fill="#e0445a" font-size="13" font-weight="700">迁移前实现 · 三种都没做</text>
+    <text x="52" y="472" fill="#bdb9a6" font-size="11.5">当时分叉不换会话id、不拷贝节点，<tspan font-family="Menlo,monospace">get_branch</tspan>从head走到起点，而进度仍是一个位置下标；这正是节点marker迁移替换的实现。</text>
   </svg>
   </div>
 
@@ -739,8 +739,8 @@
     <tr><td><b>hermes-agent</b></td><td>换新会话，下标手动推到拷贝长度</td><td class="y">不会。压缩换会话时反而重置为0，因为新会话真的是空的</td><td class="q"><span class="src">cli.py:6701-6705,6744-6756,6776-6777<br>agent/agent_init.py:1026<br>agent/conversation_compression.py:379-380,407-408</span></td></tr>
     <tr><td><b>pi-mono</b></td><td>不需要：只取叶子到最近公共祖先的增量</td><td class="y">不会，被走法排除</td><td class="q"><span class="src">packages/agent/src/harness/compaction/branch-summarization.ts:87-97<br>packages/agent/src/harness/agent-harness.ts:737-834</span></td></tr>
     <tr><td><b>pi-ai</b> · <b>weclaw</b></td><td class="q">没有会话分叉</td><td class="q">不适用</td><td class="q"><span class="src">weclaw agent/http_agent.go:76-78（/new就是清空）</span></td></tr>
-    <tr class="us"><td><b>OpenProgram现在</b></td><td class="n">不换：同一个会话id，同一个游标，同一条下标轴</td><td class="n">不重抽，但整条分支被读成已写</td><td class="q"><span class="src">openprogram/memory/scriptorium/runtime/online.py:55-65<br>.../writing.py:111-142,231-234</span></td></tr>
-    <tr class="plan"><td><b>OpenProgram计划</b></td><td>不换作用域，改成从分支尖端往回走：没标记的就是欠的</td><td class="y">不会。共享前缀早已带标记，走行停在那里</td><td class="q"><span class="src">written-marker.md 第三层</span></td></tr>
+    <tr class="us"><td><b>OpenProgram迁移前</b></td><td class="n">不换：同一个会话id，同一个位置游标</td><td class="n">不重抽，但分叉后可能把未写节点判断为已写</td><td class="q"><span class="src">written-marker.md 第一层</span></td></tr>
+    <tr class="plan"><td><b>OpenProgram当前</b></td><td>不换作用域，从当前分支末端向前检查workspace marker</td><td class="y">不会；共享前缀节点已有marker，检查在该节点停止</td><td class="q"><span class="src">written-marker.md 第三层</span></td></tr>
   </table>
   </div>
 
@@ -969,7 +969,7 @@
     <tr><td><b>pi-ai</b></td><td class="n">没有</td><td class="q">—</td><td class="q">—</td><td class="q">—</td><td class="q">—</td><td class="q">—</td></tr>
     <tr><td><b>pi-mono</b></td><td class="y">有 AGENTS.md</td><td class="n">无闸，整份拼进去</td><td class="q">—</td><td class="q">—</td><td class="q">—</td><td class="q"><span class="src">packages/coding-agent/src/core/system-prompt.ts:61-68</span></td></tr>
     <tr><td><b>weclaw</b></td><td class="n">没有</td><td class="q">配置里的固定系统提示词，不含学到的东西</td><td class="q">—</td><td class="q">—</td><td class="q">—</td><td class="q"><span class="src">config/config.go:28</span></td></tr>
-    <tr class="us"><td><b>OpenProgram</b> core.md</td><td class="y">有</td><td class="fw">2000 token</td><td>整笔事务拒绝，工作区逐字节不变</td><td>确定性拒绝 + 模型改写</td><td class="y">修复话术给写入模型，允许重来一次</td><td class="q"><span class="src">openprogram/memory/scriptorium/management/config.py:7<br>.../block_views.py:27-36<br>.../agent.py:96-99</span></td></tr>
+    <tr class="us"><td><b>OpenProgram</b> topics/core.md → core.md</td><td class="y">有</td><td class="fw">2000 token渲染预算</td><td>Runtime按确定性顺序生成预算内常驻块；Topic正本不删除</td><td>确定性渲染</td><td class="y">未进入常驻块的Topic仍可检索</td><td class="q"><span class="src">openprogram/memory/scriptorium/management/config.py<br>.../block_views.py</span></td></tr>
   </table>
   </div>
 
@@ -1041,16 +1041,16 @@
 
     <!-- 我们 -->
     <line x1="32" y1="386" x2="1128" y2="386" stroke="#2e2c20" stroke-width="1"/>
-    <text x="180" y="418" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="end">OpenProgram现在</text>
-    <text x="180" y="434" fill="#8a8675" font-size="10.5" text-anchor="end">core.md</text>
-    <rect x="196" y="400" width="300" height="42" rx="7" fill="#241015" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="210" y="419" fill="#bdb9a6" font-size="11.5">它自己就是正本</text>
-    <text x="210" y="436" fill="#8a8675" font-size="10.5">写入方直接编辑它，和主题文件同一套契约</text>
-    <rect x="520" y="400" width="352" height="42" rx="7" fill="#241015" stroke="#e0445a" stroke-width="1.4"/>
-    <text x="534" y="419" fill="#e0445a" font-size="11.5">没有。夜间整理的文件列表只从topics/**.md来</text>
-    <text x="534" y="436" fill="#8a8675" font-size="10.5">老实现里有一条确定性重建流程，重构时删掉了</text>
-    <text x="912" y="415" fill="#e0445a" font-size="12" font-weight="700">进不来。<tspan fill="#f0eee6">八家里没有第二个是这样</tspan></text>
-    <text x="912" y="433" fill="#8a8675" font-size="10.5">修复话术回给后台写入方，写的是"别动它"</text>
+    <text x="180" y="418" fill="#5aad4e" font-size="12.5" font-weight="700" text-anchor="end">OpenProgram当前</text>
+    <text x="180" y="434" fill="#8a8675" font-size="10.5" text-anchor="end">topics/core.md → core.md</text>
+    <rect x="196" y="400" width="300" height="42" rx="7" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
+    <text x="210" y="419" fill="#bdb9a6" font-size="11.5">Topic文件是正本</text>
+    <text x="210" y="436" fill="#8a8675" font-size="10.5">core.md是Runtime按预算生成的派生视图</text>
+    <rect x="520" y="400" width="352" height="42" rx="7" fill="#101a10" stroke="#5aad4e" stroke-width="1.4"/>
+    <text x="534" y="419" fill="#5aad4e" font-size="11.5">有。每次事务安装后确定性重建</text>
+    <text x="534" y="436" fill="#8a8675" font-size="10.5">夜间整理只修改Topic，派生视图随后重建</text>
+    <text x="912" y="415" fill="#5aad4e" font-size="12" font-weight="700">可以继续写入Topic</text>
+    <text x="912" y="433" fill="#8a8675" font-size="10.5">未进入常驻预算的内容仍可检索</text>
   </svg>
   </div>
 
@@ -1062,21 +1062,16 @@
     <tr><td><b>openclaw</b></td><td>文件自己</td><td class="y">每天03:00的cron，做梦管道跑完往里升</td><td class="y">升之前按预算丢最老的自动段落；全丢光也照样写入新的</td><td class="q"><span class="src">src/memory-host-sdk/dreaming.ts:17<br>extensions/memory-core/src/memory-budget.ts:25,100-164<br>.../short-term-promotion.ts:1706-1727</span></td></tr>
     <tr><td><b>hermes-agent</b></td><td>文件自己</td><td class="n">没有</td><td class="h">硬拒这一次写入，把用量和上限回给正在对话的主模型，由它replace或remove腾地方</td><td class="q"><span class="src">tools/memory_tool.py:149,295-306<br>consolidate / distill / prune / compact / dream全部无命中</span></td></tr>
     <tr><td><b>opencode</b> · <b>pi-mono</b></td><td>人手写的文件</td><td class="q">不适用</td><td class="q">没有闸</td><td class="q"><span class="src">packages/opencode/src/session/instruction.ts:60-93<br>packages/coding-agent/src/core/resource-loader.ts:57-100</span></td></tr>
-    <tr class="us"><td><b>OpenProgram现在</b></td><td>文件自己</td><td class="n">没有。<code>organize_topics</code>只列<code>topics/**.md</code></td><td class="n">整笔事务拒绝，修复话术让写入方别动它</td><td class="q"><span class="src">openprogram/memory/scriptorium/management/api.py:83-94<br>.../block_views.py:24-36<br>.../agent.py:96-99</span></td></tr>
-    <tr class="plan"><td><b>OpenProgram计划</b></td><td><code>topics/core.md</code></td><td>每次写入事务装成之后跟着重建，和别的派生视图一起</td><td>装到预算为止，装不下的留在正本，检索照样命中</td><td class="q"><span class="src">overview.md「常驻块」</span></td></tr>
+    <tr class="us"><td><b>OpenProgram迁移前</b></td><td>根目录<code>core.md</code></td><td class="n">没有；<code>organize_topics</code>只处理<code>topics/**.md</code></td><td class="n">事务拒绝超预算写入</td><td class="q"><span class="src">memory-adoption.html 第02节</span></td></tr>
+    <tr class="plan"><td><b>OpenProgram当前</b></td><td><code>topics/core.md</code></td><td>每次事务安装后与其他派生视图一起确定性重建</td><td>按预算渲染，未进入常驻块的Topic内容仍可检索</td><td class="q"><span class="src">overview.md「常驻块」</span></td></tr>
   </table>
   </div>
 
   <div class="note k">
-    <b>这一格才是我们和别人真正分开的地方。</b>八家里没有一家会因为常驻块写满就永久停止接收。
-    三家有维护通道：claude-code的dream分身、codex的整合分身、openclaw的每日cron，
-    满了就重写或者按预算腾地方。hermes没有维护通道，做法和我们最像，也是硬拒；
-    但它的拒绝信息回给的是<b>正在对话的那个主模型</b>，附上当前用量和上限两个数，模型下一步就能删一条再写。
-    我们的拒绝回给的是后台写入方，而且话术明确写着"别动它，这条放进主题文件"，
-    于是唯一能腾出地方的那个动作被指名禁止了。所以别家的"满"是这一刻满，我们的"满"是永久满。
-    <br><b>还有一条形状上的：</b>claude-code的MEMORY.md提示词里写着"绝不要把记忆内容直接写进这个文件"，
-    它是主题文件目录的<b>索引</b>；在它的常驻会话模式里，这份索引干脆由夜间dream从日志和主题文件重新蒸馏出来。
-    我们计划中的"<code>core.md</code>是<code>topics/core.md</code>的渲染结果"和这条是同一个形状，不是我们独创的。
+    <b>采用记录。</b>claude-code、codex和openclaw都把可编辑正本与注入预算分开；OpenProgram按同一原则把
+    <code>topics/core.md</code>作为正本，<code>core.md</code>作为确定性派生视图。与它们不同的是，OpenProgram不删除
+    超出常驻预算的Topic内容，检索仍可返回这些block。迁移前根目录<code>core.md</code>直接充当正本且超预算时拒绝事务，
+    该实现已经替换。
   </div>
 
   <div class="note k">
@@ -1167,8 +1162,8 @@
 
   <!-- ══════════ 09 ══════════ -->
   <h2 id="plan"><span class="num">09</span>我们的方案落在哪<span class="tier t3">第三层</span></h2>
-  <p class="lead">把前八节的格子叠起来，我们计划中的位置就清楚了：多数格子里我们和最成熟的那几家重合，
-    只有游标这一格是我们独走，原因在第 05 节已经画清楚。</p>
+  <p class="lead">前八节给出了当前方案在各维度上的位置。多数维度复用已有框架的成熟做法；
+    节点marker由SessionDAG的分支语义决定，原因见第05节。</p>
 
   <div class="card">
   <svg viewBox="0 0 1160 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="我们的方案在各维度上的位置">
@@ -1201,7 +1196,7 @@
       <text x="200" y="236" fill="#8a8675" text-anchor="end">常驻块闸门</text>
       <rect x="216" y="220" width="470" height="26" rx="6" fill="#141a12" stroke="#5aad4e" stroke-width="1.5"/>
       <text x="232" y="238" fill="#5aad4e">确定性拒绝加留痕，和 hermes 一样</text>
-      <text x="706" y="238" fill="#e0445a" font-size="11">但没有维护通道，写满就永久拒收，八家里独一份，见第 07 节</text>
+      <text x="706" y="238" fill="#8a8675" font-size="11">topics/core.md是正本，core.md按2000 token预算确定性生成，见第07节</text>
 
       <text x="200" y="276" fill="#8a8675" text-anchor="end">夜间整理</text>
       <rect x="216" y="260" width="470" height="26" rx="6" fill="#141a12" stroke="#5aad4e" stroke-width="1.5"/>
@@ -1239,20 +1234,15 @@
   </div>
 
   <div class="note">
-    <b>五件从对标里带回来、还没做的事。</b>
-    一，检索多加一条路：给每个 topic 文件写一句自我描述，让小模型从清单里挑，不建索引（claude-code，第 06 节）。
-    二，给core.md一条维护通道：把它变成<code>topics/core.md</code>的渲染结果，2000 token从闸门变成渲染预算，装不下的留在正本（claude-code和openclaw，第 07 节）。
-    三，用户放弃一条分支时给它留一份摘要，补上 overview.md 里承认的"只有 head 底下那条会被写"这个缺口（pi-mono，第 05 节）。
-    四，去重记两处并互相印证：游标集合之外，在 topic 正文的脚注里也留下来源 id，任一边丢了另一边还拦得住（openclaw，第 04 节）。
-    五，让使用情况回流到夜间重整：记录哪些块被检索命中过，把它当合并和淘汰的一个输入（codex，第 06 节）。
+    <b>对标决策的当前状态。</b>
+    已实现：<code>topics/core.md</code>作为常驻块正本、节点workspace marker、会话边界枚举活分支、Topic脚注保留Source引用。
+    尚未实现：给Topic生成自描述后由小模型选择文件的无索引检索路径（claude-code，第06节）；把检索使用情况作为夜间整理输入（codex，第06节）；在head变化时直接通知writer，而不是等待轮后阈值或idle watcher。
   </div>
 
   <div class="legend">
-    <b>一句话收尾</b>：八家里四家有长期记忆，四家把这件事推给用户手写的文件或者别的进程；
-    分支这件事六家线性或者另开会话，只有 pi-mono 和我们把分支放在同一条会话里；
-    常驻块写满了没有一道闸交给模型自由裁，只有截断和拒绝两类，而且没有一家满了就永久不收。
-    我们有两处独一份，性质相反：<b>id集合游标</b>是被会话结构逼出来的，别人的形状搬过来会漏掉整条分支；
-    <b>写满就永久拒收的常驻块</b>不是逼出来的，是维护通道在重构时丢了没补。
+    <b>实现记录（2026-08-11）</b>：八家中四家有长期记忆；按消息分支的会话结构只见于pi-mono、openclaw和OpenProgram。
+    OpenProgram已经用节点workspace marker替换位置游标，并用<code>topics/core.md</code>提供可维护的常驻块正本。
+    本页仍保留迁移前行作为问题证据，紫色行表示当前实现，不再表示未来计划。
   </div>
 
 </div>

@@ -511,7 +511,7 @@
   空列表就是"这次什么都没动"，让它可见。判据本身另说，但看不见的时候连该不该改判据都无从谈起。</p>
 
   <!-- ============================ 03 ============================ -->
-  <h2 id="branch"><span class="num">03</span>离开的分支<span class="verd vmod">改造后采纳</span></h2>
+  <h2 id="branch"><span class="num">03</span>离开的分支<span class="verd vmod">改造后采纳 · 已落地</span></h2>
   <p class="lead">pi-mono在用户离开一条分支时给它生成一份摘要接在树上。这正对着 overview.md 承认的缺口：两条写入路径都只要 head 底下那条分支，用户中途放弃的分支再也没有人走回去。目的照收，摘要节点不要。</p>
 
   <div class="card scroll">
@@ -600,7 +600,7 @@
   所以非head分支只走第一条，把 <code>idle_after</code> 关掉。这是这条方案唯一需要新增的判断。</p>
 
   <!-- ============================ 04 ============================ -->
-  <h2 id="cursor"><span class="num">04</span>游标兜底<span class="verd vyes">采纳</span></h2>
+  <h2 id="cursor"><span class="num">04</span>游标兜底<span class="verd vyes">采纳 · 已落地</span></h2>
   <p class="lead">claude-code在游标指的那条消息找不到时，选择把全部消息重新当成没写过，注释写明返回零条会让抽取在这个会话剩下的时间里彻底停摆。我们的写入游标方案里"从原话档案播种"是同一个取舍。问题是它只覆盖了迁移那一次，日常运行里还有一条同形状的路没有堵。</p>
 
   <div class="card scroll">
@@ -738,16 +738,16 @@
     </svg>
   </div>
 
-  <p class="note"><b>这张表不含把位置游标换成ID集合本身。</b>
-  那是这四条之外的一次改动，落在<code>runtime/state.py</code>、<code>runtime/online.py</code>和
-  <code>writing.py</code>的<code>_records</code>，迁移从原话档案播种，
-  完整写法在 <a href="written-marker.html">written-marker.md</a>。
-  上面第二块的"会话边界写全部分支"要等它先落地：位置游标下枚举再多分支也没用，
-  分叉出来的那条本来就整条读成已写。</p>
+  <p class="note"><b>节点marker已经替换位置游标。</b>
+  实现位于SessionDB节点metadata、<code>runtime/online.py</code>和<code>writing.py</code>的
+  <code>_records</code>边界，legacy迁移从严格解析的Source前缀恢复可验证节点。
+  会话边界现在先处理当前head，再枚举其他活分支；共享前缀由节点marker去重。
+  完整定义见 <a href="written-marker.html">written-marker.md</a>。</p>
 
-  <p class="note k"><b>实现状态</b>：这一页四条都还没落地，正文写法见
-  <a href="overview.html">overview.md</a>的对应小节和文末的实现状态附录。
-  01节是判决不做，不占实现状态里的位置。</p>
+  <p class="note k"><b>实现状态（2026-08-11）</b>：01节的无索引模型选择按延迟实测拒绝；
+  02节<code>topics/core.md</code>正本与确定性<code>core.md</code>派生视图已实现；03节会话边界枚举
+  活分支已实现；04节损坏状态按空状态恢复并配合严格legacy迁移与节点marker实现。
+  当前仍使用轮后阈值和idle watcher，没有由head变化事件直接通知writer。</p>
 
 </div>
 </body>

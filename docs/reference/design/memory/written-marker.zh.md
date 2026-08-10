@@ -524,7 +524,7 @@ head往回走会把整个会话都收进来。
 
 ## 附录：实现状态
 
-截至2026年8月10日，第一层描述的是迁移前的实现，第二层仍是对开源框架的
+截至2026年8月11日，第一层描述的是迁移前的实现，第二层仍是对开源框架的
 观察，第三层已经落地：
 
 - 会话节点用`metadata.memory_written_scriptorium = <workspace-id>`记录当前
@@ -567,3 +567,9 @@ head往回走会把整个会话都收进来。
 来源写进记忆块或检索结果；没有用事件通知替换轮询；没有加入跨会话spawn
 链接、压缩摘要语义或通用的前缀不变量检查。调度器设计、GUI记忆端点和
 feature matrix也未改动。
+
+历史backfill有意不使用这套marker判定。已经实现的`openprogram memory backfill`
+选择未被任何Topic引用的trusted Source，因此会忽略旧runtime可能提前写入的节点
+marker；pending Source被排除，命令也不增加或删除会话节点marker。两项定义保持分离：
+节点marker表示某个工作区的在线writer已成功处理该轮，Topic引用表示历史Source是否
+已经进入可召回的Topic。正式工作区尚未执行这次历史backfill。

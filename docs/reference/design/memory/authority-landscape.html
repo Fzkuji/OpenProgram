@@ -66,6 +66,11 @@
   .other .take{margin-top:8px;font-size:12px;color:var(--dim)}
   .other .take b{color:#f0eee6;font-weight:600}
 
+  .matrix{width:100%;border-collapse:collapse;margin:10px 0 16px;font-size:12px}
+  .matrix th,.matrix td{border:1px solid var(--bd);padding:9px 10px;text-align:left;vertical-align:top}
+  .matrix th{background:var(--cb);color:#f0eee6;font-weight:600}
+  .matrix td:first-child{white-space:nowrap;color:var(--acc);font-weight:600}
+
   /* 计划 */
   .plan{border-left:2px solid var(--bd);margin-left:8px;padding-left:22px}
   .step{position:relative;margin-bottom:18px}
@@ -158,36 +163,43 @@
   </div>
 </div>
 
-<h2><span class="num">03</span>别人怎么做（两路调研的结论）</h2>
-<p class="lead">调研了OpenClaw（源码）和Claude Code、MCP规范、LangGraph、OpenAI Agents SDK、AutoGen、Letta（文档）。采用的共同约束是：权限由Runtime执行，身份只信任传输层，非owner消息不构成审批，未知状态默认拒绝。OpenProgram把OpenClaw式配对、固定两档工具权限和带信任状态的来源归档组合在同一条执行链中。</p>
+<h2><span class="num">03</span>本地参考框架的实现与缺失能力</h2>
+<p class="lead">以下结论核对自<code>refs-a/</code>与<code>refs-b/</code>的本地源码快照：Codex <code>f344a80a</code>、OpenCode <code>0bff28de</code>、OpenClaw <code>c71c29ec</code>、Hermes Agent <code>3bd844ed</code>、pi-mono <code>936aff00</code>、WeClaw <code>10711d0c</code>。外部文档调研还覆盖Claude Code、MCP规范、LangGraph、OpenAI Agents SDK、AutoGen与Letta；本节只把可由本地代码复核的权限和记忆机制列为实现证据。</p>
 <div class="others">
   <div class="other">
     <h3>OpenClaw</h3>
-    <div class="one">先按稳定ID配对，配对后不再区分权限</div>
-    <p>未批准账号私聊时收到8位配对码，消息不进入agent；owner在终端批准后，该账号才可触发agent。OpenClaw在批准后不再按发言人限制工具能力。</p>
-    <div class="take"><b>采用部分：</b>配对码流程、可变昵称不参与授权、每次拒绝记录检查位置和结构化原因。</div>
+    <div class="one"><code>refs-b/openclaw/src/pairing/pairing-store.ts</code></div>
+    <p>配对码固定8位，排除<code>0O1I</code>，有效期1小时，每个channel account最多3个待处理请求。<code>docs/channels/pairing.md</code>明确未知DM不会被处理；DM admission、command owner与group authorization是不同状态。</p>
+    <div class="take"><b>采用：</b>配对常量、稳定ID授权、未知消息在agent入口前拒绝。<b>修改：</b>OpenProgram另设owner/paired工具权限档位，不把已配对等同于owner。</div>
   </div>
   <div class="other">
-    <h3>Claude Code</h3>
-    <div class="one">规则可约束参数，非owner消息不能批准操作</div>
-    <p>工具权限可细化到<code>Bash(git commit *)</code>。渠道消息先通过allowlist；其他会话传入的正文不能批准交互请求，也不能修改配置。</p>
-    <div class="take"><b>待采用部分：</b>在allow/deny之间增加hold状态，由owner对越权请求做一次性审批。</div>
+    <h3>Codex</h3>
+    <div class="one"><code>refs-a/codex/codex-rs/memories/README.md</code></div>
+    <p>记忆提取按rollout领取有界任务，任务带租约和失败退避；全局整合只允许一个writer修改共享工作区，并记录成功或失败。它以thread级水位管理进度，不解决同一SessionDAG内的分支来源。</p>
+    <div class="take"><b>采用：</b>有界批次、单writer、失败分类。<b>拒绝：</b>不增加独立任务数据库；OpenProgram已有节点marker、Source引用和workspace revision。</div>
   </div>
   <div class="other">
-    <h3>LangGraph</h3>
-    <div class="one">写入归因元数据，读取时按身份过滤</div>
-    <p>资源创建时记录owner身份，之后每次读取都按当前请求者身份过滤，归因与访问控制使用同一组持久化元数据。</p>
-    <div class="take"><b>部分采用：</b>记忆来源已记录<code>{speaker, channel, ts}</code>元数据；按请求方档位过滤检索仍延期。</div>
+    <h3>Hermes Agent</h3>
+    <div class="one"><code>refs-b/hermes-agent/agent/memory_manager.py</code></div>
+    <p><code>sync_all</code>在完成一轮后调用全部provider，<code>MemoryProvider.on_session_switch</code>提供会话切换通知。记忆写入本身没有持久化的待处理游标，provider是否处理切换取决于各实现。</p>
+    <div class="take"><b>采用：</b>统一provider入口和轮后触发。<b>修改：</b>模型写入按token阈值与idle watcher执行，不在每一轮无条件调用模型。</div>
   </div>
   <div class="other">
-    <h3>Letta、OpenAI Agents SDK、AutoGen、MCP</h3>
-    <div class="one">没有覆盖同一组需求</div>
-    <p>Letta通常为每个用户分配独立agent。OpenAI Agents SDK和AutoGen没有等价的发言人权限系统。MCP规范处理服务间OAuth授权，不负责单次工具调用的发言人权限。</p>
-    <div class="take"><b>结论：</b>本页调研范围内，没有框架同时提供共享agent、发言人配对、固定权限档位和带信任状态的记忆来源。</div>
+    <h3>OpenCode、pi-mono、WeClaw</h3>
+    <div class="one"><code>refs-a/opencode</code>与<code>refs-b/{pi-mono,weclaw}</code></div>
+    <p>这三个快照没有与本页等价的长期记忆写入链。pi-mono的SessionDAG使用追加式<code>label</code>/<code>leaf</code>记录；OpenCode保存线性消息并以revert管理尾部；WeClaw只保留下游session标识或有限进程内历史。</p>
+    <div class="take"><b>采用：</b>pi-mono证明节点关联记录可使用稳定节点ID。<b>缺失：</b>三者均没有可信Source、Topic事务、历史backfill和writer状态的完整组合。</div>
   </div>
 </div>
 
-<h2><span class="num">04</span>定案、实现与延期</h2>
+<table class="matrix" aria-label="参考设计采用、修改和拒绝记录">
+  <tr><th>判定</th><th>来源</th><th>OpenProgram正式方案</th></tr>
+  <tr><td>采用</td><td>OpenClaw pairing；Codex有界任务和单writer；Hermes统一provider入口</td><td>稳定ID admission、owner/paired固定权限表、统一writer入口、持久化状态与有界backfill。</td></tr>
+  <tr><td>修改后采用</td><td>OpenClaw session-backfill与memory status</td><td>backfill只选择未被Topic引用的trusted Source；status只做本地只读统计，不主动加载模型或修复工作区。</td></tr>
+  <tr><td>拒绝</td><td>Codex独立任务数据库；Hermes每轮同步；OpenClaw允许外部archive进入backfill预览</td><td>复用节点marker、Source引用、workspace revision和文件锁；达到阈值或闲置时才调用模型；外部archive不进入可信提炼。</td></tr>
+</table>
+
+<h2><span class="num">04</span>定案、实现与延期（2026-08-10）</h2>
 <p class="lead">入口采用稳定ID配对；运行时只保留owner和paired；工具执行只查询固定常量表；未配对群聊来源以pending归档但不主动提炼。详细定案见<code>authority-handoff.md</code>。</p>
 <div class="plan">
   <div class="step">
@@ -196,13 +208,18 @@
     <div class="feel"><span class="lb">用起来的变化</span>陌生人私聊收到配对码而不是被无视，你在终端一条命令批准；有人把昵称改成你的名字，冒充无效；群里已配对的人说"记一下"会真的被主动记住。未配对成员的群聊发言照常归档，<code>trust_state</code>记为pending，检索时分得清是谁说的，也不会被自动召回带进上下文。</div>
   </div>
   <div class="step s2">
+    <h3><span class="phase">稳定化批次 · 已实现</span>backfill、writer状态、禁用边界和组合测试</h3>
+    <p class="lead"><code>openprogram memory backfill</code>处理未被Topic引用的trusted Source并排除pending；失败批次不安装，重复执行跳过已引用来源。writer状态通过工具、CLI和Web返回最近成功、最近失败分类、retryable判定与待处理数。<code>memory.backend=none</code>在创建工作区前拒绝全部CLI memory动词和<code>/api/memory/*</code>路由。</p>
+    <div class="feel"><span class="lb">验证边界</span>组合测试包含SessionDB、默认模型解析、managed tools、暂存事务、Topic、marker和watcher状态。真实工作区只执行了2条pending消息的writer验收；152条历史未引用Source尚未执行backfill。</div>
+  </div>
+  <div class="step s2">
     <h3><span class="phase">第二批 · 延期</span>hold队列与读取范围</h3>
     <p class="lead">已配对成员的越权请求（如"帮我重启服务"）进入队列，由owner做一次性批准；记忆读取按请求方档位过滤，写入侧归因元数据已经实现。</p>
     <div class="feel"><span class="lb">用起来的变化</span>agent会把已配对成员的越权请求提交给owner；owner批准后仅执行该次请求。非owner查询不会返回owner私有内容，发言记录保留来源标识。</div>
   </div>
 </div>
 
-<div class="pipe-note">同一memory稳定化批次已经完成：后台writer沿用默认聊天agent的provider、模型和凭据，<code>memory.writer.model</code>允许实时覆盖；未分类异常默认不可重试；<code>memory.backend=none</code>停止提示注入、召回、自动写入、整理与记忆线程，CLI memory动词和全部<code>/api/memory/*</code>入口也会在访问工作区前拒绝。正式工作区的23个旧v1 source文件经精确兼容读取后全部通过frame校验，一次真实写入把2条待处理消息提交为3个Topic文件、5个block；重复扫描没有改动revision。152个未引用frame的backfill、状态可观测字段和组合端到端测试仍在后续批次。</div>
+<div class="pipe-note"><b>实现记录（2026-08-11）</b>：后台writer沿用默认聊天agent的provider、模型和凭据，<code>memory.writer.model</code>允许实时覆盖；未知异常默认不可重试。真实工作区的23个旧v1 source文件经精确兼容读取后，154个frame全部通过解析；一次真实writer验收把2条待处理消息提交为3个Topic文件和5个block，重复扫描处理0个会话且revision不变。backfill、writer状态、CLI/Web禁用边界、paired命名和组合测试已经实现；真实工作区的152条历史未引用Source尚未执行backfill。写入失败原因码是一个封闭枚举，受限writer阶段看不到Source归档。</div>
 
 </div></body>
 </html>
