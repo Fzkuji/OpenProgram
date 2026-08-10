@@ -1,4 +1,6 @@
 import { BackendClient } from '../ws/client.js';
+import { existsSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { PickerKind } from '../screens/repl/types.js';
 import { allSlashCommands, backendHttpBase } from './registry.js';
 
@@ -84,6 +86,24 @@ const detachUsage = (
 
 const tokenize = (s: string): string[] =>
   s.trim().split(/\s+/).filter((x) => x.length > 0);
+
+const requestError = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+type McpServer = {
+  name: string;
+  enabled: boolean;
+  ready: boolean;
+  error: string | null;
+  tool_count: number;
+  tools?: string[];
+};
+
+const mcpState = (server: McpServer): string => {
+  if (!server.enabled || server.error === 'disabled') return 'disabled';
+  if (server.ready) return 'ready';
+  return server.error ? `error: ${server.error}` : 'starting';
+};
 
 /**
  * Try to handle a slash line in-process. Returns true when the command was
@@ -577,29 +597,36 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
     case 'init': {
       try {
         const cwd = process.cwd();
-        import('fs').then(({ writeFileSync, existsSync }) => {
-          const seeds: Array<[string, string]> = [
-            [
-              'AGENTS.md',
-              '# Agents\n\nDescribe agent personas in this directory: name, role, what they should know.\n',
-            ],
-            [
-              'SOUL.md',
-              '# Soul\n\nThe project\'s mission, voice, and guardrails go here.\n',
-            ],
-            [
-              'USER.md',
-              '# User profile\n\nWho the user is, how they communicate, what to remember.\n',
-            ],
-          ];
-          for (const [name, content] of seeds) {
-            const p = `${cwd}/${name}`;
-            if (!existsSync(p)) writeFileSync(p, content);
+        const seeds: Array<[string, string]> = [
+          [
+            'AGENTS.md',
+            '# Agents\n\nDescribe agent personas in this directory: name, role, what they should know.\n',
+          ],
+          [
+            'SOUL.md',
+            '# Soul\n\nThe project\'s mission, voice, and guardrails go here.\n',
+          ],
+          [
+            'USER.md',
+            '# User profile\n\nWho the user is, how they communicate, what to remember.\n',
+          ],
+        ];
+        const created: string[] = [];
+        const skipped: string[] = [];
+        for (const [name, content] of seeds) {
+          const path = join(cwd, name);
+          if (existsSync(path)) {
+            skipped.push(name);
+          } else {
+            writeFileSync(path, content);
+            created.push(name);
           }
-          ctx.pushSystem(
-            `Initialized OpenProgram workspace at ${cwd}: AGENTS.md, SOUL.md, USER.md`,
-          );
-        });
+        }
+        ctx.pushSystem(
+          `Initialized OpenProgram workspace at ${cwd}\n` +
+          `Created: ${created.join(', ') || 'none'}\n` +
+          `Skipped existing: ${skipped.join(', ') || 'none'}`,
+        );
       } catch (e) {
         ctx.pushSystem(`/init failed: ${(e as Error).message}`);
       }
@@ -695,11 +722,94 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
     }
 
     case 'memory':
-    case 'mcp':
-    case 'doctor':
     case 'review':
-    case 'compact': {
+    {
       ctx.pushSystem(`/${cmd} is not implemented in the TUI yet — try \`openprogram ${cmd}\` from the shell.`);
+      return true;
+    }
+
+    case 'compact': {
+      const session_id = ctx.currentConversation;
+      if (!session_id) {
+        ctx.pushSystem('No active session to compact.');
+        return true;
+      }
+      ctx.client.send({ action: 'compact', session_id });
+      return true;
+    }
+
+    case 'doctor': {
+      void fetch(`${backendHttpBase()}/api/doctor`)
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = await response.json() as {
+            results: Array<{ ok: boolean; label: string; detail: string }>;
+            all_ok: boolean;
+          };
+          const results = data.results.map(
+            (result) => `${result.ok ? '✓' : '✗'} ${result.label} - ${result.detail}`,
+          );
+          ctx.pushSystem(
+            `Doctor report\n\n${results.join('\n')}\n\n${data.all_ok ? 'All checks passed.' : 'Some checks failed.'}`,
+          );
+        })
+        .catch((error) => ctx.pushSystem(`Doctor check failed: ${requestError(error)}`));
+      return true;
+    }
+
+    case 'mcp': {
+      const [verb = 'list', name] = args;
+      const base = `${backendHttpBase()}/api/mcp/servers`;
+      if (verb === 'list') {
+        void fetch(base)
+          .then(async (response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json() as { servers?: McpServer[] };
+            const servers = data.servers ?? [];
+            ctx.pushSystem(servers.length
+              ? `MCP servers:\n${servers.map((server) =>
+                `${mcpState(server) === 'ready' ? '✓' : '✗'} ${server.name} — ${mcpState(server)} (${server.tool_count} tools)`,
+              ).join('\n')}`
+              : 'MCP servers: none configured.');
+          })
+          .catch((error) => ctx.pushSystem(`MCP list failed: ${requestError(error)}`));
+        return true;
+      }
+      if (verb === 'show') {
+        if (!name) {
+          ctx.pushSystem('Usage: /mcp show <name>');
+          return true;
+        }
+        void fetch(`${base}/${encodeURIComponent(name)}`)
+          .then(async (response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const server = await response.json() as McpServer;
+            ctx.pushSystem(
+              `MCP server: ${server.name}\nstate: ${mcpState(server)}\ntools: ${(server.tools ?? []).join(', ') || 'none'}`,
+            );
+          })
+          .catch((error) => ctx.pushSystem(`MCP show failed: ${requestError(error)}`));
+        return true;
+      }
+      if (verb === 'restart' || verb === 'enable' || verb === 'disable') {
+        if (!name) {
+          ctx.pushSystem(`Usage: /mcp ${verb} <name>`);
+          return true;
+        }
+        const result = verb === 'restart' ? 'restarted' : `${verb}d`;
+        void fetch(`${base}/${encodeURIComponent(name)}/${verb}`, { method: 'POST' })
+          .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            ctx.pushSystem(`MCP server ${name} ${result}.`);
+          })
+          .catch((error) => ctx.pushSystem(`MCP ${verb} failed for ${name}: ${requestError(error)}`));
+        return true;
+      }
+      if (verb === 'add' || verb === 'edit' || verb === 'remove' || verb === 'rm' || verb === 'delete') {
+        ctx.pushSystem('MCP add, edit, and remove require the shell CLI; removal is not available in the TUI.');
+        return true;
+      }
+      ctx.pushSystem('Usage: /mcp [list|show|restart|enable|disable] [name]');
       return true;
     }
 

@@ -292,7 +292,8 @@ def test_web_and_cli_turns_are_untouched() -> None:
     callers = sorted(
         p.relative_to(root).as_posix()
         for p in root.rglob("*.py")
-        if "speaker_prefix(" in p.read_text(encoding="utf-8")
+        if ".venv" not in p.parts
+        and "speaker_prefix(" in p.read_text(encoding="utf-8")
     )
     assert callers == ["channels/base.py"]
 

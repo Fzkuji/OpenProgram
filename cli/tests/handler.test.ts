@@ -1,5 +1,16 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { handleSlash, SlashContext } from '../src/commands/handler.js';
+
+const originalCwd = process.cwd();
 
 const makeCtx = (overrides: Partial<SlashContext> = {}): SlashContext => ({
   client: { send: vi.fn() } as never,
@@ -18,6 +29,12 @@ const makeCtx = (overrides: Partial<SlashContext> = {}): SlashContext => ({
 });
 
 describe('handleSlash', () => {
+  afterEach(() => {
+    process.chdir(originalCwd);
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
   it('returns false for non-slash input', () => {
     expect(handleSlash('plain text', makeCtx())).toBe(false);
   });
@@ -218,5 +235,229 @@ describe('handleSlash', () => {
     const ctx = makeCtx({ setTheme });
     handleSlash('/theme bogus', ctx);
     expect(ctx.pushSystem).toHaveBeenCalledWith(expect.stringContaining('Unknown theme'));
+  });
+
+  it('/compact requires an active conversation', () => {
+    const send = vi.fn();
+    const ctx = makeCtx({ client: { send } as never });
+
+    expect(handleSlash('/compact', ctx)).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+    expect(ctx.pushSystem).toHaveBeenCalledWith('No active session to compact.');
+  });
+
+  it('/compact sends the existing compact action for the active conversation', () => {
+    const send = vi.fn();
+    const ctx = makeCtx({
+      client: { send } as never,
+      currentConversation: 'session-123',
+    });
+
+    expect(handleSlash('/compact', ctx)).toBe(true);
+    expect(send).toHaveBeenCalledWith({ action: 'compact', session_id: 'session-123' });
+  });
+
+  it('/init reports exactly which seed files were created and skipped', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'openprogram-init-'));
+    try {
+      writeFileSync(join(workspace, 'SOUL.md'), 'keep me\n');
+      process.chdir(workspace);
+      const cwd = process.cwd();
+      const ctx = makeCtx();
+
+      expect(handleSlash('/init', ctx)).toBe(true);
+
+      expect(ctx.pushSystem).toHaveBeenCalledWith(
+        `Initialized OpenProgram workspace at ${cwd}\n` +
+        'Created: AGENTS.md, USER.md\n' +
+        'Skipped existing: SOUL.md',
+      );
+      expect(readFileSync(join(workspace, 'SOUL.md'), 'utf8')).toBe('keep me\n');
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('/init reports a synchronous seed write failure', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'openprogram-init-failure-'));
+    try {
+      symlinkSync(
+        join(workspace, 'missing-parent', 'AGENTS.md'),
+        join(workspace, 'AGENTS.md'),
+      );
+      process.chdir(workspace);
+      const ctx = makeCtx();
+
+      expect(handleSlash('/init', ctx)).toBe(true);
+
+      expect(ctx.pushSystem).toHaveBeenCalledWith(
+        expect.stringContaining('/init failed:'),
+      );
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('/doctor renders the backend health report', async () => {
+    vi.stubEnv('OPENPROGRAM_BACKEND_URL', 'http://backend.test');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          { ok: true, label: 'Python', detail: '3.12' },
+          { ok: false, label: 'MCP', detail: 'unavailable' },
+        ],
+        all_ok: false,
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const ctx = makeCtx();
+
+    expect(handleSlash('/doctor', ctx)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('http://backend.test/api/doctor');
+      expect(ctx.pushSystem).toHaveBeenCalledWith(
+        'Doctor report\n\n✓ Python - 3.12\n✗ MCP - unavailable\n\nSome checks failed.',
+      );
+    });
+  });
+
+  it('/doctor reports HTTP and network failures', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }));
+    const httpCtx = makeCtx();
+
+    handleSlash('/doctor', httpCtx);
+    await vi.waitFor(() => {
+      expect(httpCtx.pushSystem).toHaveBeenCalledWith('Doctor check failed: HTTP 503');
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('connection refused')));
+    const networkCtx = makeCtx();
+    handleSlash('/doctor', networkCtx);
+    await vi.waitFor(() => {
+      expect(networkCtx.pushSystem).toHaveBeenCalledWith('Doctor check failed: connection refused');
+    });
+  });
+
+  it('/mcp lists server status without arguments', async () => {
+    vi.stubEnv('OPENPROGRAM_BACKEND_URL', 'http://backend.test');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        servers: [{ name: 'filesystem', enabled: true, ready: true, error: null, tool_count: 2 }],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const ctx = makeCtx();
+
+    expect(handleSlash('/mcp', ctx)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('http://backend.test/api/mcp/servers');
+      expect(ctx.pushSystem).toHaveBeenCalledWith('MCP servers:\n✓ filesystem — ready (2 tools)');
+    });
+  });
+
+  it('/mcp reports list HTTP errors and show network errors', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }));
+    const listCtx = makeCtx();
+
+    handleSlash('/mcp', listCtx);
+    await vi.waitFor(() => {
+      expect(listCtx.pushSystem).toHaveBeenCalledWith('MCP list failed: HTTP 503');
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('connection refused')));
+    const showCtx = makeCtx();
+    handleSlash('/mcp show filesystem', showCtx);
+    await vi.waitFor(() => {
+      expect(showCtx.pushSystem).toHaveBeenCalledWith(
+        'MCP show failed: connection refused',
+      );
+    });
+  });
+
+  it.each(['show', 'restart', 'enable', 'disable'])('/mcp %s requires a server name', (verb) => {
+    const ctx = makeCtx();
+
+    handleSlash(`/mcp ${verb}`, ctx);
+
+    expect(ctx.pushSystem).toHaveBeenCalledWith(`Usage: /mcp ${verb} <name>`);
+  });
+
+  it('/mcp reports an empty server list', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ servers: [] }),
+    }));
+    const ctx = makeCtx();
+
+    handleSlash('/mcp', ctx);
+
+    await vi.waitFor(() => {
+      expect(ctx.pushSystem).toHaveBeenCalledWith('MCP servers: none configured.');
+    });
+  });
+
+  it('/mcp show renders one server and its tools', async () => {
+    vi.stubEnv('OPENPROGRAM_BACKEND_URL', 'http://backend.test');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: 'filesystem', enabled: true, ready: true, error: null, tool_count: 2,
+        tools: ['read_file', 'write_file'],
+      }),
+    }));
+    const ctx = makeCtx();
+
+    handleSlash('/mcp show filesystem', ctx);
+
+    await vi.waitFor(() => {
+      expect(ctx.pushSystem).toHaveBeenCalledWith(
+        'MCP server: filesystem\nstate: ready\ntools: read_file, write_file',
+      );
+    });
+  });
+
+  it('/mcp show URL-encodes the server name', async () => {
+    vi.stubEnv('OPENPROGRAM_BACKEND_URL', 'http://backend.test');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        name: 'repo/fs', enabled: true, ready: true, error: null, tool_count: 0,
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const ctx = makeCtx();
+
+    handleSlash('/mcp show repo/fs', ctx);
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('http://backend.test/api/mcp/servers/repo%2Ffs');
+    });
+  });
+
+  it.each([
+    ['restart', 'restarted'],
+    ['enable', 'enabled'],
+    ['disable', 'disabled'],
+  ])('/mcp %s invokes the server action', async (action, result) => {
+    vi.stubEnv('OPENPROGRAM_BACKEND_URL', 'http://backend.test');
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    const ctx = makeCtx();
+
+    handleSlash(`/mcp ${action} filesystem`, ctx);
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        `http://backend.test/api/mcp/servers/filesystem/${action}`,
+        { method: 'POST' },
+      );
+      expect(ctx.pushSystem).toHaveBeenCalledWith(`MCP server filesystem ${result}.`);
+    });
   });
 });

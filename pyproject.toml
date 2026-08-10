@@ -121,6 +121,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "build>=1.2",
     "pytest>=8.0.0",
     "pytest-timeout>=2.3",
     "ruff>=0.16",
@@ -205,6 +206,8 @@ exclude = ["openprogram.functions.agentics.*"]
 # installs but blows up on first use: `openprogram providers` finds zero
 # providers, the web UI 404s its own assets, bundled skills vanish.
 "openprogram" = [
+    "sandbox/shims/*.cjs",
+    "sandbox/shims/*.py",
     # Provider registry — endpoints/model metadata read by
     # providers/_provider_meta.py and enabled_models.py.
     "providers/provider.json",
@@ -214,10 +217,14 @@ exclude = ["openprogram.functions.agentics.*"]
     # Bundled skills discovered by skills/loader.py:_bundled_dir().
     "skills_bundled/*/SKILL.md",
     "skills_bundled/*/*.md",
-    # Web UI: Functions and Programs page metadata read by
-    # webui/routes/tree.py.
-    "webui/functions_meta.json",
-    "webui/programs_meta.json",
+]
+
+[tool.setuptools.exclude-package-data]
+"openprogram.webui" = [
+    # Mutable per-profile state. Older installations are read once for
+    # migration, but new wheels must never seed or overwrite user settings.
+    "functions_meta.json",
+    "programs_meta.json",
 ]
 
 [tool.pytest.ini_options]

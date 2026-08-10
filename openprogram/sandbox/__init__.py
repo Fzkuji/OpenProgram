@@ -27,6 +27,8 @@ What the boundary is, on both platforms:
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import re
@@ -139,25 +141,82 @@ def _config_section() -> dict:
         return {}
 
 
-def resolve_policy() -> SandboxPolicy | None:
+def _with_hard_floor(policy: SandboxPolicy) -> SandboxPolicy:
+    agentics = _agentics_dir()
+    if agentics in policy.deny_write:
+        return policy
+    return SandboxPolicy(
+        writable_roots=policy.writable_roots,
+        deny_read=policy.deny_read,
+        deny_write=policy.deny_write + (agentics,),
+        network=policy.network,
+        pass_env=policy.pass_env,
+    )
+
+
+def resolve_policy(*, required: bool = False) -> SandboxPolicy | None:
     """The policy configured right now, or None when the sandbox is off.
 
     Read per command, so a toggle takes effect on the next command in
     every process rather than only in the context that flipped it.
     """
     sb = _config_section()
-    if str(sb.get("mode") or MODE_OFF).strip().lower() != MODE_WORKSPACE_WRITE:
+    if (str(sb.get("mode") or MODE_OFF).strip().lower() != MODE_WORKSPACE_WRITE
+            and not required):
         return None
     deny_r = sb.get("deny_read")
     deny_w = sb.get("deny_write")
-    return SandboxPolicy(
+    return _with_hard_floor(SandboxPolicy(
         writable_roots=tuple(sb.get("writable_roots") or ()),
         deny_read=tuple(deny_r) if isinstance(deny_r, list) else DEFAULT_DENY_READ,
         deny_write=(tuple(deny_w) if isinstance(deny_w, list)
-                    else DEFAULT_DENY_WRITE) + (_agentics_dir(),),
+                    else DEFAULT_DENY_WRITE),
         network=bool(sb.get("network") or False),
         pass_env=tuple(sb.get("pass_env") or ()),
-    )
+    ))
+
+
+def policy_to_dict(policy: SandboxPolicy) -> dict:
+    policy = _with_hard_floor(policy)
+    return {
+        "writable_roots": list(policy.writable_roots),
+        "deny_read": list(policy.deny_read),
+        "deny_write": list(policy.deny_write),
+        "network": policy.network,
+        "pass_env": list(policy.pass_env),
+    }
+
+
+def policy_from_dict(data: dict) -> SandboxPolicy:
+    if not isinstance(data, dict):
+        raise ValueError("sandbox policy must be an object")
+
+    def _strings(key: str) -> tuple[str, ...]:
+        value = data.get(key, ())
+        if not isinstance(value, (list, tuple)) or not all(
+            isinstance(item, str) for item in value
+        ):
+            raise ValueError(f"sandbox policy {key} must be a string list")
+        return tuple(value)
+
+    network = data.get("network", False)
+    if not isinstance(network, bool):
+        raise ValueError("sandbox policy network must be a boolean")
+    return _with_hard_floor(SandboxPolicy(
+        writable_roots=_strings("writable_roots"),
+        deny_read=_strings("deny_read"),
+        deny_write=_strings("deny_write"),
+        network=network,
+        pass_env=_strings("pass_env"),
+    ))
+
+
+def policy_hash(policy: SandboxPolicy) -> str:
+    payload = json.dumps(
+        policy_to_dict(policy), sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _agentics_dir() -> str:

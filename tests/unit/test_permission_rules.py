@@ -302,6 +302,89 @@ def _run_with_args(tool, req, args, approve=True, scope="once"):
         return asyncio.run(wrapped.execute("c", args, None, None))
 
 
+@pytest.mark.parametrize(("tool_name", "args"), [
+    ("bash", {"command": "echo harmless"}),
+    ("process", {"action": "start", "command": "echo harmless"}),
+    ("execute_code", {"code": "print('harmless')"}),
+])
+def test_agent_spawn_bypass_denies_execution_tools(tool_name, args):
+    tool, ran = _make_tool(tool_name)
+    req = TurnRequest(session_id="s", user_text="", agent_id="worker",
+                      source="agent_spawn", permission_mode="bypass",
+                      permission_rules=PermissionRules(allow=[tool_name]))
+    result = _run_with_args(tool, req, args)
+    assert _denied(result)
+    assert not ran["called"]
+
+
+@pytest.mark.parametrize(("tool_name", "args"), [
+    ("write", {"file_path": "/outside/new.txt", "content": "x"}),
+    ("edit", {"file_path": "/outside/existing.txt",
+              "old_string": "a", "new_string": "b"}),
+    ("apply_patch", {"patch": "*** Begin Patch\n"
+                                "*** Add File: /outside/new.txt\n"
+                                "+x\n"
+                                "*** End Patch"}),
+])
+def test_agent_spawn_bypass_denies_outside_writes(tmp_path, monkeypatch,
+                                                   tool_name, args):
+    monkeypatch.chdir(tmp_path)
+    tool, ran = _make_tool(tool_name)
+    req = TurnRequest(session_id="s", user_text="", agent_id="worker",
+                      source="agent_spawn", permission_mode="bypass")
+    result = _run_with_args(tool, req, args)
+    assert _denied(result)
+    assert not ran["called"]
+
+
+def test_agent_spawn_bypass_allows_workspace_write_and_safe_read(tmp_path,
+                                                                 monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    req = TurnRequest(session_id="s", user_text="", agent_id="worker",
+                      source="agent_spawn", permission_mode="bypass")
+    for name, args in (
+        ("write", {"file_path": str(tmp_path / "new.txt"), "content": "x"}),
+        ("read", {"file_path": str(tmp_path / "input.txt")}),
+    ):
+        tool, ran = _make_tool(name)
+        result = _run_with_args(tool, req, args)
+        assert not _denied(result)
+        assert ran["called"]
+
+
+def test_agent_spawn_ask_rule_denies_without_waiting_for_approval():
+    tool, ran = _make_tool("write")
+    req = TurnRequest(
+        session_id="s", user_text="", agent_id="worker",
+        source="agent_spawn", permission_mode="bypass",
+        permission_rules=PermissionRules(ask=["write"]),
+    )
+    result = _run_with_args(tool, req, {"file_path": "inside.txt", "content": "x"},
+                            approve=True)
+    assert _denied(result)
+    assert not ran["called"]
+
+
+def test_agent_spawn_force_ask_denies_without_waiting_for_approval():
+    tool, ran = _make_tool("exit_plan_mode")
+    req = TurnRequest(session_id="s", user_text="", agent_id="worker",
+                      source="agent_spawn", permission_mode="bypass")
+    result = _run_with_args(tool, req, {}, approve=True)
+    assert _denied(result)
+    assert not ran["called"]
+
+
+@pytest.mark.parametrize("tool_name", ["bash", "write", "send_message"])
+def test_cron_noninteractive_turn_denies_side_effect_tools(tool_name):
+    tool, ran = _make_tool(tool_name)
+    req = TurnRequest(session_id="s", user_text="", agent_id="main",
+                      source="cron", permission_mode="ask",
+                      permission_rules=PermissionRules(allow=[tool_name]))
+    result = _run_with_args(tool, req, {"command": "echo x"}, approve=True)
+    assert _denied(result)
+    assert not ran["called"]
+
+
 def test_ask_denies_when_user_declines():
     tool, ran = _make_tool("bash")
     req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",

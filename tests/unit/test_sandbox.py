@@ -20,6 +20,9 @@ from openprogram.sandbox import (
     _seatbelt_profile,
     child_env,
     is_available,
+    policy_from_dict,
+    policy_hash,
+    policy_to_dict,
     resolve_policy,
     wrap_command,
 )
@@ -49,6 +52,30 @@ def test_mode_on_resolves_a_policy(cfg):
     assert pol is not None
     assert pol.deny_read == DEFAULT_DENY_READ
     assert pol.network is False
+
+
+def test_required_policy_stays_on_when_config_mode_is_off(cfg):
+    pol = resolve_policy(required=True)
+    assert pol is not None
+    assert any(p.endswith(os.path.join("agentics", "**"))
+               for p in pol.deny_write)
+
+
+def test_policy_json_roundtrip_keeps_hash_and_hard_floor(cfg):
+    original = SandboxPolicy(
+        writable_roots=("/workspace/extra",),
+        deny_read=("/secret",),
+        deny_write=(),
+        network=True,
+        pass_env=("CARGO_HOME",),
+    )
+    encoded = policy_to_dict(original)
+    restored = policy_from_dict(encoded)
+    assert policy_hash(restored) == policy_hash(policy_from_dict(encoded))
+    assert restored.writable_roots == original.writable_roots
+    assert restored.network is True
+    assert any(p.endswith(os.path.join("agentics", "**"))
+               for p in restored.deny_write)
 
 
 def test_unknown_mode_reads_as_off(cfg):

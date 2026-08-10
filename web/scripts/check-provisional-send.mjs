@@ -98,6 +98,30 @@ assert.ok(
   "the provisional chat key becomes running immediately",
 );
 
+// Callable local commands return no chat_ack/result envelope. Their dedicated
+// response must release the provisional send reservation and running state so
+// the same draft can still send a normal turn afterwards.
+useSessionStore.getState().setCurrentDraft(provisional);
+const { handleChatResponse } = await import(
+  "../lib/runtime-bridge/chat-handlers.ts"
+);
+handleChatResponse({
+  type: "local_command",
+  session_id: provisional,
+  content: "local output",
+});
+assert.equal(pendingUserText.hasPendingFirstAck(provisional), false);
+assert.equal(pendingUserText.getPendingUserText(provisional), undefined);
+assert.equal(useSessionStore.getState().runningTasks[provisional], undefined);
+assert.equal(runtimeState.isRunning, false);
+assert.equal(send("after local command"), true);
+assert.equal(sent.length, 2, "a local command response must allow the next send");
+handleChatResponse({
+  type: "local_command",
+  session_id: provisional,
+  content: "second local output",
+});
+
 const throwingDraft = "local_send-throws";
 useSessionStore.getState().setRunningTaskFor(throwingDraft, {
   session_id: throwingDraft,

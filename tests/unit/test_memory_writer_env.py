@@ -60,6 +60,18 @@ def test_inherited_login_adds_nothing_to_the_environment(tmp_path, recorder):
     assert recorder.options.env == {}
 
 
+def test_nested_claude_disables_builtin_file_and_command_tools(tmp_path, recorder):
+    from openprogram.memory.scriptorium.agent_runtime import ClaudeCodeConfig
+
+    _run(ClaudeCodeConfig.inherited(), recorder, tmp_path)
+
+    assert recorder.options.tools == []
+    assert recorder.options.allowed_tools == []
+    assert {"Read", "Write", "Edit", "Grep", "Glob", "Bash"} <= set(
+        recorder.options.disallowed_tools
+    )
+
+
 def test_a_provisioned_credential_still_overrides_the_environment(
     tmp_path, recorder
 ):

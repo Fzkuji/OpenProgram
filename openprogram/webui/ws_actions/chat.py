@@ -6,6 +6,7 @@ retry / channel-bind actions are ws-only.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 import time
@@ -541,8 +542,11 @@ async def handle_chat(ws, cmd: dict):
             _local_res = None
         if _local_res is not None:
             try:
-                _out = _local_res.local_handler(
-                    {"session_id": session_id}, _local_res.raw_args) or {}
+                _out = await asyncio.to_thread(
+                    _local_res.local_handler,
+                    {"session_id": session_id},
+                    _local_res.raw_args,
+                ) or {}
             except Exception as _cmd_err:  # noqa: BLE001 — reply, don't drop the WS
                 _out = {"text": (f"/{_local_res.command_name} failed: "
                                  f"{type(_cmd_err).__name__}: {_cmd_err}")}
@@ -1014,7 +1018,20 @@ async def handle_compact(ws, cmd: dict):
         }))
         return
 
-    conv = _s._get_or_create_session(session_id)
+    from openprogram.agent.session_db import default_db
+    try:
+        session_exists = default_db().get_session(session_id) is not None
+    except Exception:
+        session_exists = False
+    if not session_exists:
+        await ws.send_text(json.dumps({
+            "type": "chat_response",
+            "data": {"type": "error",
+                     "session_id": session_id,
+                     "content": f"compact: unknown session {session_id}"},
+        }))
+        return
+
     agent_id = _db_agent_id(session_id)
     keep_recent_tokens = cmd.get("keep_recent_tokens")
     if keep_recent_tokens is not None:

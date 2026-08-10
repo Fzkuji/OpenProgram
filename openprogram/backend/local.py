@@ -16,6 +16,7 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import replace
 
 from openprogram.backend.base import Backend, RunResult, decode_maybe
 from openprogram import sandbox as _sandbox
@@ -54,7 +55,9 @@ def _windows_bash() -> str | None:
     return chosen
 
 
-def _invocation(command: str, cwd: str | None = None
+def _invocation(command: str, cwd: str | None = None, *,
+                policy: _sandbox.SandboxPolicy | None = None,
+                force_sandbox: bool = False,
                 ) -> tuple[str | list[str], bool, dict | None]:
     """Return ``(args, shell, env)`` for the host run. POSIX: the command
     string via the host shell (unchanged). Windows: a real bash via
@@ -72,13 +75,29 @@ def _invocation(command: str, cwd: str | None = None
     ``refuse`` — silently running the command unprotected is how a
     security setting turns into a placebo.
     """
-    policy = _sandbox.resolve_policy()
+    if policy is None:
+        policy = (_sandbox.resolve_policy(required=True) if force_sandbox
+                  else _sandbox.resolve_policy())
+    from openprogram.sandbox.recoverable_delete import (
+        prepare_child_env,
+        sandbox_writable_root,
+    )
     if policy is not None:
+        trash_root = sandbox_writable_root()
+        if trash_root:
+            prepared_env = prepare_child_env(_sandbox.child_env(policy))
+            policy = replace(
+                policy,
+                writable_roots=policy.writable_roots + (trash_root,),
+            )
+        else:
+            prepared_env = _sandbox.child_env(policy)
         reason = _sandbox.unavailable_reason()
         if reason is None:
             args, shell = _sandbox.wrap_command(command, cwd or os.getcwd(), policy)
-            return (args, shell, _sandbox.child_env(policy))
-        if _sandbox.on_unavailable() == _sandbox.ON_UNAVAILABLE_REFUSE:
+            return (args, shell, prepared_env)
+        if (force_sandbox
+                or _sandbox.on_unavailable() == _sandbox.ON_UNAVAILABLE_REFUSE):
             raise _sandbox.SandboxUnavailable(
                 f"sandbox.mode is on but the sandbox cannot run here: {reason}. "
                 "Install it, or set sandbox.on_unavailable=warn to run without "
@@ -89,8 +108,8 @@ def _invocation(command: str, cwd: str | None = None
     if sys.platform == "win32":
         bash = _windows_bash()
         if bash:
-            return ([bash, "-c", command], False, None)
-    return (command, True, None)
+            return ([bash, "-c", command], False, prepare_child_env())
+    return (command, True, prepare_child_env())
 
 
 class LocalBackend(Backend):

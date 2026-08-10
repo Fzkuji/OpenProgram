@@ -24,6 +24,7 @@ those can swap the subprocess call for their own runner.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -118,29 +119,22 @@ def execute(
             f.write(code)
             script_path = f.name
         try:
-            try:
-                completed = subprocess.run(
-                    [python, script_path],
-                    cwd=cwd or None,
-                    capture_output=True,
-                    timeout=timeout,
-                    check=False,
-                )
-            except subprocess.TimeoutExpired as e:
-                out_text = (e.stdout or b"").decode("utf-8", errors="replace")
-                err_text = (e.stderr or b"").decode("utf-8", errors="replace")
+            completed = backend.run(
+                f"{shlex.quote(python)} {shlex.quote(script_path)}",
+                timeout=timeout,
+                cwd=cwd,
+            )
+            if completed.timed_out:
                 elapsed = time.time() - started
                 return (
                     f"Error: timed out after {timeout:.1f}s "
                     f"(elapsed {elapsed:.1f}s)\n\n"
-                    f"## stdout (partial)\n{out_text[:4000]}\n\n"
-                    f"## stderr (partial)\n{err_text[:4000]}"
+                    f"## stdout (partial)\n{completed.stdout[:4000]}\n\n"
+                    f"## stderr (partial)\n{completed.stderr[:4000]}"
                 )
-            except FileNotFoundError:
-                return f"Error: python interpreter not found at {python!r}"
-            return_code = completed.returncode
-            stdout_b = completed.stdout
-            stderr_b = completed.stderr
+            return_code = completed.exit_code
+            stdout_b = completed.stdout.encode("utf-8")
+            stderr_b = completed.stderr.encode("utf-8")
         finally:
             try:
                 os.unlink(script_path)

@@ -17,6 +17,8 @@ off the active branch.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import time
 from pathlib import Path
 from typing import AsyncGenerator
@@ -352,3 +354,38 @@ def test_trigger_compaction_inserts_summary_and_moves_head(
     done = [e for e in captured
             if e["data"].get("type") == "compaction_finished"]
     assert len(done) == 1
+
+
+def test_web_compact_rejects_an_unknown_session(monkeypatch):
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions.chat import handle_compact
+
+    class EmptyDB:
+        def get_session(self, session_id):
+            return None
+
+    class FakeWS:
+        def __init__(self):
+            self.messages = []
+
+        async def send_text(self, payload):
+            self.messages.append(json.loads(payload))
+
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: EmptyDB())
+    monkeypatch.setattr(
+        server,
+        "_get_or_create_session",
+        lambda _session_id: pytest.fail("compact must not create an unknown session"),
+    )
+    ws = FakeWS()
+
+    asyncio.run(handle_compact(ws, {"session_id": "stale-session"}))
+
+    assert ws.messages == [{
+        "type": "chat_response",
+        "data": {
+            "type": "error",
+            "session_id": "stale-session",
+            "content": "compact: unknown session stale-session",
+        },
+    }]

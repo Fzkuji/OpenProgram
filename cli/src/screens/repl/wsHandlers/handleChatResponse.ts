@@ -64,6 +64,15 @@ export function handleChatResponse(
     handleResult(d.content, c);
     return;
   }
+  if (d.type === 'local_command' && typeof d.content === 'string') {
+    c.setStreaming(null);
+    c.setCommitted((m) => [
+      ...m,
+      { id: `local-${Date.now()}`, role: 'system', text: d.content as string },
+    ]);
+    c.finishTurn();
+    return;
+  }
   if (d.type === 'error' && typeof d.content === 'string') {
     c.setStreaming(null);
     c.setCommitted((m) => [
@@ -134,6 +143,18 @@ function routeForeignConv(
         },
       };
     });
+    return;
+  }
+  if (d.type === 'local_command' && typeof d.content === 'string') {
+    c.setChannelActivityByConv((m) => ({
+      ...m,
+      [dConvId]: {
+        ...(m[dConvId] ?? { convId: dConvId }),
+        finalText: d.content,
+        streaming: false,
+        lastUpdate: Date.now(),
+      },
+    }));
     return;
   }
   // status / error for foreign convs — refresh timestamp so stale

@@ -34,6 +34,16 @@ EventCallback = Callable[[dict], None]
 _FORCE_APPROVAL_TOOLS = {"exit_plan_mode"}
 # auto 档下即便未声明 requires_approval 也仍要审批的高风险工具。
 _RISKY_TOOLS = {"bash", "exec", "shell", "execute_code", "process"}
+_WRITE_TOOLS = {"write", "write_file", "edit"}
+_PATCH_PATH_PREFIXES = (
+    "*** Add File: ",
+    "*** Update File: ",
+    "*** Delete File: ",
+)
+_NON_INTERACTIVE_SOURCES = {"agent_spawn", "cron"}
+_CRON_READ_ONLY_TOOLS = {
+    "read", "read_file", "grep", "glob", "list", "list_files", "tool_search",
+}
 
 
 # 审批合流到 QuestionRegistry（kind="approval"）——不再有独立的 ApprovalRegistry。
@@ -85,6 +95,40 @@ def _path_is_safe(tool_name: str, args: dict, req: "TurnRequest") -> bool:
     work_dirs = [current_worktree_path() or os.getcwd(),
                  *getattr(req, "additional_working_dirs", [])]
     return check_path_safety(path, work_dirs)["safe"]
+
+
+def _hard_constraint_violation(
+    tool_name: str,
+    args: dict,
+    req: "TurnRequest",
+) -> str | None:
+    """Return the non-configurable constraint violated by a spawned turn."""
+    if req.source == "cron":
+        if tool_name not in _CRON_READ_ONLY_TOOLS:
+            return f"cron cannot execute side-effect tool {tool_name}"
+        return None
+    if req.source != "agent_spawn":
+        return None
+    if tool_name in _RISKY_TOOLS:
+        return f"agent_spawn cannot execute {tool_name}"
+    if tool_name in _WRITE_TOOLS:
+        if not _path_is_safe(tool_name, args, req):
+            return f"agent_spawn cannot write outside its working directories: {tool_name}"
+        return None
+    if tool_name != "apply_patch":
+        return None
+
+    patch = args.get("patch") if isinstance(args, dict) else None
+    if not isinstance(patch, str):
+        return None
+    for line in patch.splitlines():
+        prefix = next((p for p in _PATCH_PATH_PREFIXES if line.startswith(p)), None)
+        if prefix is None:
+            continue
+        path = line[len(prefix):].strip()
+        if not _path_is_safe("write", {"file_path": path}, req):
+            return "agent_spawn cannot apply a patch outside its working directories"
+    return None
 
 
 def _persist_always_allow_rule(session_id: str, tool_name: str) -> None:
@@ -151,15 +195,30 @@ def wrap_with_approval(
         mode = req.permission_mode
         force_ask = name in _FORCE_APPROVAL_TOOLS
 
+        # Non-interactive spawned turns have no approval surface. These
+        # constraints are evaluated before rules and bypass, so neither a
+        # stored allow rule nor permission_mode can remove them.
+        hard_violation = _hard_constraint_violation(name, args, req)
+        if hard_violation:
+            return _denied(f"[denied] hard constraint: {hard_violation}")
+
         # ① 规则层 deny/ask —— bypass 之前，最高安全优先级
         verdict = _match_rule(getattr(req, "permission_rules", None), name, args)
         if verdict == "deny":
             return _denied(f"[denied] blocked by deny rule: {name}")
         if verdict == "ask":
+            if req.source in _NON_INTERACTIVE_SOURCES:
+                return _denied(
+                    f"[denied] non-interactive {req.source} cannot approve {name}"
+                )
             return await _approve_then_run(call_id, args, cancel, on_update)
 
         # ② force_ask（exit_plan_mode），bypass 也不能跳
         if force_ask:
+            if req.source in _NON_INTERACTIVE_SOURCES:
+                return _denied(
+                    f"[denied] non-interactive {req.source} cannot approve {name}"
+                )
             return await _approve_then_run(call_id, args, cancel, on_update)
 
         # ③ bypass 短路（deny/ask/force 之后）
@@ -195,6 +254,10 @@ def wrap_with_approval(
             return await orig_execute(call_id, args, cancel, on_update)
 
         # ⑧ 弹卡片阻塞等答（ask / plan / acceptEdits 的命令类都落这里）
+        if req.source in _NON_INTERACTIVE_SOURCES:
+            return _denied(
+                f"[denied] non-interactive {req.source} cannot approve {name}"
+            )
         return await _approve_then_run(call_id, args, cancel, on_update)
 
     wrapped = AgentTool(

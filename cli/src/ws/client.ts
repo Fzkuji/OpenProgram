@@ -59,6 +59,7 @@ export type WsRequest =
   | { action: 'question_reject'; id: string; reason?: string }
   | { action: 'sandbox'; session_id?: string }
   | { action: 'context'; session_id?: string }
+  | { action: 'compact'; session_id: string }
   | { action: 'rewind'; session_id: string }
   // Branch surface — mirrors webui/ws_actions/branch.py. handler.ts and
   // pickerRouter drive these from /branch and the branch picker;

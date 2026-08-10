@@ -90,7 +90,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
     bypass_words = {
         "agents", "sessions", "channels", "config", "programs", "skills", "plugins", "doctor",
         "providers", "web", "resume", "init", "doctor", "browser",
-        "worker", "update", "memory", "mcp",
+        "worker", "update", "memory", "mcp", "trash",
         "stop", "status", "restart", "upgrade", "help",
     }
     bypass_flags = {
@@ -364,6 +364,7 @@ def build_parser() -> argparse.ArgumentParser:
             "    plugins         manage installed plugins\n"
             "    channels        chat-channel bots (Telegram, Discord, Slack, WeChat)\n"
             "    memory          inspect / manage persistent memory\n"
+            "    trash           list / restore recoverable local deletions\n"
             "\n"
             "  maintenance\n"
             "    doctor          health checks\n"
@@ -554,6 +555,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor = sub.add_parser("doctor",
         help="Run sanity checks: python, node, skills, plugins, providers, mcp, cache, worker")
     p_doctor.add_argument("--json", action="store_true", help="Emit JSON")
+
+    # ---- recoverable local deletions -------------------------------------
+    p_trash = sub.add_parser(
+        "trash",
+        help="List or restore local deletions captured during agent turns",
+    )
+    trash_sub = p_trash.add_subparsers(dest="trash_verb", metavar="verb")
+    trash_sub.add_parser("list", help="List recorded deletions and their status")
+    p_trash_restore = trash_sub.add_parser(
+        "restore", help="Restore one recorded deletion without overwriting"
+    )
+    p_trash_restore.add_argument("entry_id", help="Deletion id from `trash list`")
 
     # ---- sessions ---------------------------------------------------------
     p_sessions = sub.add_parser("sessions",
@@ -1024,7 +1037,7 @@ def build_parser() -> argparse.ArgumentParser:
     # main() 的 dispatch 需要这些子 parser(缺 verb 时打印对应 help),
     # 但它们是本函数局部变量 — 经 set_defaults 盖进 args,嵌套子命令
     # 由更深一层覆盖,args._cmd_parser 恒为选中路径上最深的一个。
-    for _p in (p_logs, p_programs, p_skills, p_plugins, p_sessions,
+    for _p in (p_logs, p_programs, p_skills, p_plugins, p_trash, p_sessions,
                p_subagent, p_memory, p_worker, p_channels, p_chacct,
                p_chaccess, p_chb, p_mcp, p_browser, p_agents,
                p_config, p_upgrade, p_providers):
@@ -1162,6 +1175,16 @@ def main():
     if args.command == "doctor":
         from openprogram._cli_cmds.doctor import _cmd_doctor
         sys.exit(_cmd_doctor(getattr(args, "json", False)))
+
+    if args.command == "trash":
+        from openprogram._cli_cmds.trash import _cmd_trash_list, _cmd_trash_restore
+
+        verb = getattr(args, "trash_verb", None)
+        if verb == "list":
+            sys.exit(_cmd_trash_list())
+        if verb == "restore":
+            sys.exit(_cmd_trash_restore(args.entry_id))
+        _need_subcommand(args._cmd_parser)
 
     if args.command == "plugins":
         from openprogram._cli_cmds.plugins import (
