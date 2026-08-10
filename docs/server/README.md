@@ -69,4 +69,5 @@ macOS uses launchd (`~/Library/LaunchAgents/ai.openprogram.worker.plist`); Linux
 ## Related pages
 
 - [Configuration and data directory](configuration.md) — what lives in `~/.openprogram/` and how to use `openprogram config`
+- [Backup and restore](backup.md) — snapshot memory, sessions, and config with `openprogram backup`
 - [Troubleshooting](troubleshooting.md) — the recurring "it doesn't work" cases

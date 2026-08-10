@@ -90,7 +90,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
     bypass_words = {
         "agents", "sessions", "channels", "config", "programs", "skills", "plugins", "doctor",
         "providers", "web", "resume", "init", "doctor", "browser",
-        "worker", "update", "memory", "mcp", "trash",
+        "worker", "update", "memory", "mcp", "trash", "backup",
         "stop", "status", "restart", "upgrade", "help",
     }
     bypass_flags = {
@@ -365,6 +365,7 @@ def build_parser() -> argparse.ArgumentParser:
             "    channels        chat-channel bots (Telegram, Discord, Slack, WeChat)\n"
             "    memory          inspect / manage persistent memory\n"
             "    trash           list / restore recoverable local deletions\n"
+            "    backup          snapshot / restore your profile state\n"
             "\n"
             "  maintenance\n"
             "    doctor          health checks\n"
@@ -575,6 +576,35 @@ def build_parser() -> argparse.ArgumentParser:
         "restore", help="Restore one recorded deletion without overwriting"
     )
     p_trash_restore.add_argument("entry_id", help="Deletion id from `trash list`")
+
+    # ---- backup -----------------------------------------------------------
+    p_backup = sub.add_parser(
+        "backup",
+        help="Snapshot / restore the profile state dir (memory, sessions, "
+             "config, bindings)",
+    )
+    backup_sub = p_backup.add_subparsers(dest="backup_verb", metavar="verb")
+    p_bk_create = backup_sub.add_parser(
+        "create", help="Write a tar.gz snapshot into <state>/backups/")
+    p_bk_create.add_argument(
+        "--include-credentials", action="store_true",
+        help="Also archive auth/ and mcp_tokens/ — plaintext secrets, "
+             "off by default")
+    backup_sub.add_parser("list", help="List existing backups with size + contents")
+    p_bk_restore = backup_sub.add_parser(
+        "restore", help="Restore a backup over the current state dir")
+    p_bk_restore.add_argument(
+        "name", help="Backup filename from `backup list`, or a path")
+    p_bk_restore.add_argument(
+        "--dry-run", action="store_true",
+        help="Show what would be overwritten, change nothing")
+    p_bk_restore.add_argument(
+        "-y", "--yes", action="store_true", help="Skip the confirmation prompt")
+    p_bk_prune = backup_sub.add_parser(
+        "prune", help="Delete all but the newest N backups")
+    p_bk_prune.add_argument(
+        "--keep", type=int, default=5,
+        help="Number of newest backups to keep (default: 5)")
 
     # ---- sessions ---------------------------------------------------------
     p_sessions = sub.add_parser("sessions",
@@ -1047,7 +1077,7 @@ def build_parser() -> argparse.ArgumentParser:
     # main() 的 dispatch 需要这些子 parser(缺 verb 时打印对应 help),
     # 但它们是本函数局部变量 — 经 set_defaults 盖进 args,嵌套子命令
     # 由更深一层覆盖,args._cmd_parser 恒为选中路径上最深的一个。
-    for _p in (p_logs, p_programs, p_skills, p_plugins, p_trash, p_sessions,
+    for _p in (p_logs, p_programs, p_skills, p_plugins, p_trash, p_backup, p_sessions,
                p_subagent, p_memory, p_worker, p_channels, p_chacct,
                p_chaccess, p_chb, p_mcp, p_browser, p_agents,
                p_config, p_upgrade, p_providers):
@@ -1199,6 +1229,28 @@ def main():
             sys.exit(_cmd_trash_list())
         if verb == "restore":
             sys.exit(_cmd_trash_restore(args.entry_id))
+        _need_subcommand(args._cmd_parser)
+
+    if args.command == "backup":
+        from openprogram._cli_cmds.backup import (
+            _cmd_backup_create, _cmd_backup_list, _cmd_backup_prune,
+            _cmd_backup_restore,
+        )
+
+        verb = getattr(args, "backup_verb", None)
+        if verb == "create":
+            sys.exit(_cmd_backup_create(
+                include_credentials=getattr(args, "include_credentials", False)))
+        if verb == "list":
+            sys.exit(_cmd_backup_list())
+        if verb == "restore":
+            sys.exit(_cmd_backup_restore(
+                args.name,
+                dry_run=getattr(args, "dry_run", False),
+                yes=getattr(args, "yes", False),
+            ))
+        if verb == "prune":
+            sys.exit(_cmd_backup_prune(args.keep))
         _need_subcommand(args._cmd_parser)
 
     if args.command == "plugins":
