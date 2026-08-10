@@ -25,11 +25,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Literal
 
 from ..types import (
+    AuthExternalProcessError,
     Credential,
     CredentialData,
     LoginMethod,
@@ -63,7 +65,8 @@ class ExternalProcessMethod(LoginMethod):
     The login flow doesn't actually persist a cached token — it just
     records the helper invocation shape. Every API call later re-runs
     the helper (via ``CredentialData(kind="external_process")``), subject to
-    ``cache_seconds`` de-dup in the manager.
+    the ``cache_seconds`` de-dup window applied by :func:`token_for_payload`
+    on the resolver's path.
     """
 
     method_id = "external_process"
@@ -110,6 +113,125 @@ class ExternalProcessMethod(LoginMethod):
             source=f"{self.method_id}:{self.provider_id}",
             metadata=self._metadata,
         )
+
+
+def config_from_payload(data: dict) -> ExternalProcessConfig:
+    """Rebuild the helper config from a stored ``CredentialData.data``.
+
+    Missing keys fall back to :class:`ExternalProcessConfig` defaults, so
+    a credential written by an older/leaner producer (the web UI stores
+    only ``command``) still runs with sane parsing + cache behaviour.
+    """
+    command = list(data.get("command") or [])
+    if not command:
+        raise AuthExternalProcessError("external_process credential has no command")
+    defaults = ExternalProcessConfig(command=command)
+    return ExternalProcessConfig(
+        command=command,
+        parses=data.get("parses") or defaults.parses,
+        json_key_path=list(data.get("json_key_path") or []),
+        cache_seconds=int(data.get("cache_seconds", defaults.cache_seconds)),
+        cwd=data.get("cwd"),
+        env=dict(data.get("env") or {}),
+        timeout_seconds=float(data.get("timeout_seconds", defaults.timeout_seconds)),
+    )
+
+
+def _parse_output(cfg: ExternalProcessConfig, output: str) -> str:
+    if cfg.parses == "text":
+        return output.strip()
+    try:
+        node: object = json.loads(output)
+    except json.JSONDecodeError as e:
+        raise AuthExternalProcessError(f"helper output is not valid JSON: {e}") from e
+    for key in cfg.json_key_path:
+        if not isinstance(node, dict) or key not in node:
+            raise AuthExternalProcessError(
+                f"helper JSON has no key path {'.'.join(cfg.json_key_path)!r}"
+            )
+        node = node[key]
+    if not isinstance(node, str) or not node:
+        raise AuthExternalProcessError("helper JSON key path did not yield a non-empty string")
+    return node
+
+
+# ponytail: process-local dict cache, no eviction. The key space is
+# "credentials the user configured" — a handful. Swap for an LRU if that
+# ever stops being true.
+_token_cache: dict[tuple, tuple[float, str]] = {}
+_cache_lock = threading.Lock()
+
+
+def _cache_key(cfg: ExternalProcessConfig, scope: str) -> tuple:
+    return (scope, tuple(cfg.command), cfg.parses, tuple(cfg.json_key_path), cfg.cwd)
+
+
+def token_for_payload(data: dict, *, scope: str = "") -> str:
+    """Run the helper (or reuse a cached run) and return the token.
+
+    ``scope`` separates cache entries that share a command but must not
+    share a token — pass ``f"{provider_id}/{profile_id}"``.
+
+    Raises :class:`AuthExternalProcessError` on any failure. Callers must
+    NOT swallow it: the user explicitly configured this helper, so a
+    silent fallback to some other credential layer is exactly the
+    failure mode this method exists to avoid.
+    """
+    cfg = config_from_payload(data)
+    key = _cache_key(cfg, scope)
+    now = time.monotonic()
+    with _cache_lock:
+        hit = _token_cache.get(key)
+        if hit is not None and now < hit[0]:
+            return hit[1]
+    try:
+        output = _run_helper_sync(cfg)
+    except AuthExternalProcessError:
+        raise
+    except Exception as e:  # noqa: BLE001 — normalize to our error type
+        raise AuthExternalProcessError(str(e)) from e
+    token = _parse_output(cfg, output)
+    if cfg.cache_seconds > 0:
+        with _cache_lock:
+            _token_cache[key] = (time.monotonic() + cfg.cache_seconds, token)
+    return token
+
+
+def clear_token_cache() -> None:
+    """Drop every cached helper token. For tests and credential edits."""
+    with _cache_lock:
+        _token_cache.clear()
+
+
+def _run_helper_sync(cfg: ExternalProcessConfig) -> str:
+    """Sync bridge for :func:`_run_helper`.
+
+    The resolver is sync by design (see :mod:`auth.resolver`), and it may
+    itself be called from inside a running loop. Mirrors
+    :meth:`AuthManager.acquire_sync`: own loop when free, private thread
+    when a loop is already running on this thread.
+    """
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    if running is None:
+        return asyncio.run(_run_helper(cfg))
+
+    box: dict = {}
+
+    def _runner() -> None:
+        try:
+            box["out"] = asyncio.run(_run_helper(cfg))
+        except BaseException as e:  # noqa: BLE001
+            box["err"] = e
+
+    t = threading.Thread(target=_runner, daemon=True, name="external-process-helper")
+    t.start()
+    t.join()
+    if "err" in box:
+        raise box["err"]
+    return box["out"]
 
 
 async def _run_helper(cfg: ExternalProcessConfig) -> str:

@@ -5,7 +5,7 @@ rows persisted under config ``providers.<p>.models``) plus anything registered
 dynamically at runtime (custom-model side-effect registration in the webui,
 and the codex runtime-registration helper). Subscription providers no longer
 seed rows at import — their default set is written to config as an enable at
-login (``openprogram.auth.login_enable``). ``_load()`` reads those config spec
+login (``openprogram.auth.login_seed_models``). ``_load()`` reads those config spec
 rows, fills
 each row's missing api/base_url from the provider's ``providers/<p>/provider.json``
 endpoints (row values win), and keys them ``"<key_prefix or provider>/<id>"``.

@@ -31,7 +31,7 @@ export interface Provider {
    * drive for this provider, excluding plain api_key (the ApiKey field handles
    * that). Present only for providers with a real native flow; absent/empty for
    * key-only providers. Drives the <ProviderLogin/> "Sign in" panel. Source of
-   * truth: openprogram/auth/login_methods.py.
+   * truth: openprogram/auth/login_method_registry.py.
    */
   login_methods?: { id: string; label: string }[];
 }

@@ -1,4 +1,4 @@
-"""ProviderAuthAdapter — the contract every provider's auth_adapter.py obeys.
+"""ProviderAuthContract — the contract every provider's auth_adapter.py obeys.
 
 Each provider with authenticated HTTP traffic ships an ``auth_adapter``
 module that plugs its credential semantics into :mod:`openprogram.auth`.
@@ -16,14 +16,15 @@ Four things every adapter does:
    can adopt on first use.
 4. Optionally provide refresh helpers the registered config can point at.
 
-The :class:`ProviderAuthAdapter` Protocol below describes (1)+(3) — the
+The :class:`ProviderAuthContract` Protocol below describes (1)+(3) — the
 parts a Runtime's ``_ensure_credential`` helper talks to. (2) and (4)
 are side effects / dependency injection, not part of the call surface,
 so they stay implicit.
 
-Conformance check: :func:`validate_adapter` walks a module and confirms
-it exposes the required attributes. Tests enumerate the known adapter
-modules and call this, so renames / removals break CI instead of users.
+Conformance check: :func:`validate_provider_auth_module` walks a module
+and confirms it exposes the required attributes. Tests enumerate the
+known adapter modules and call this, so renames / removals break CI
+instead of users.
 """
 
 from __future__ import annotations
@@ -34,11 +35,11 @@ from .types import Credential
 
 
 @runtime_checkable
-class ProviderAuthAdapter(Protocol):
+class ProviderAuthContract(Protocol):
     """Structural type for a provider auth_adapter module.
 
     Adapters are **modules**, not classes — `runtime_checkable` lets us
-    use ``isinstance(module, ProviderAuthAdapter)`` to validate the
+    use ``isinstance(module, ProviderAuthContract)`` to validate the
     shape at test time.
 
     - ``PROVIDER_ID``: matches the key the adapter registers with
@@ -63,11 +64,11 @@ class ProviderAuthAdapter(Protocol):
 
 
 class AdapterConformanceError(Exception):
-    """Raised by :func:`validate_adapter` for a bad adapter module."""
+    """Raised by :func:`validate_provider_auth_module` for a bad adapter module."""
 
 
-def validate_adapter(module, *, require_import: bool = False) -> None:
-    """Assert that ``module`` looks like a ProviderAuthAdapter.
+def validate_provider_auth_module(module, *, require_import: bool = False) -> None:
+    """Assert that ``module`` looks like a ProviderAuthContract.
 
     - ``PROVIDER_ID`` must be a non-empty string attribute.
     - If the adapter offers a file-import path, it must be reachable as
@@ -101,7 +102,7 @@ def validate_adapter(module, *, require_import: bool = False) -> None:
 
 
 __all__ = [
-    "ProviderAuthAdapter",
+    "ProviderAuthContract",
     "AdapterConformanceError",
-    "validate_adapter",
+    "validate_provider_auth_module",
 ]

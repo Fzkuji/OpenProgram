@@ -38,7 +38,7 @@ def acquire_pooled(
     caller then falls back to its own key resolution, e.g. ``opts.api_key`` /
     an env var / a Meridian token).
 
-    Normally the provider's ACTIVE account (profile, ``auth/active.py``) is used.
+    Normally the provider's ACTIVE account (profile, ``auth/account_selection.py``) is used.
     When rotation is ON for the provider (``auth/rotation.py``), a request instead
     rotates across ALL the provider's accounts (profiles) by the chosen strategy,
     skipping ones whose credential is cooling down — so a 429 on one account fails
@@ -46,7 +46,7 @@ def acquire_pooled(
     rotation.
     """
     from .store import get_store
-    from .active import get_active_profile
+    from .account_selection import get_active_account
     from .manager import get_manager
     from .types import AuthError, AuthConfigError
     from .resolver import resolve_connection
@@ -77,8 +77,8 @@ def acquire_pooled(
         # Drop accounts the user turned OFF for rotation. If that leaves
         # nothing (every account disabled), ignore the exclusions rather than
         # break the request.
-        from .enabled import get_disabled
-        disabled = get_disabled(provider_id)
+        from .rotation import get_accounts_out_of_rotation
+        disabled = get_accounts_out_of_rotation(provider_id)
         kept = [p for p in pools if p.profile_id not in disabled]
         pools = kept or pools
         chosen = _pick_account(provider_id, pools, rot["strategy"])
@@ -88,7 +88,7 @@ def acquire_pooled(
                 return got
         # fall through to the active account if rotation found nothing usable
 
-    return _resolve(get_active_profile(provider_id))
+    return _resolve(get_active_account(provider_id))
 
 
 # Round-robin cursor per provider for account rotation (process-lifetime; a
@@ -114,8 +114,8 @@ def _pick_account(provider_id: str, pools: list, strategy: str):
         return None
     import time as _t
     now = int(_t.time() * 1000)
-    from .order import sort_key
-    _k = sort_key(provider_id)             # the user's drag order is the priority
+    from .account_priority import account_priority_key
+    _k = account_priority_key(provider_id)             # the user's drag order is the priority
     pools = sorted(pools, key=lambda p: _k(p.profile_id))
     healthy = [p for p in pools if _account_healthy(p, now)]
     candidates = healthy or pools  # all cooling → use one anyway (better than nothing)

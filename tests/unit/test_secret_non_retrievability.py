@@ -21,14 +21,14 @@ _NEW_SECRET = "sk-new-secret-abc4"
 def secret_api(tmp_path, monkeypatch):
     """Minimal route app with isolated config, environment and AuthStore."""
     from openprogram import setup
-    from openprogram.auth import active, enabled, order, rotation
+    from openprogram.auth import account_priority, account_selection, rotation
     from openprogram.webui._model_listing import credentials
 
     config_path = tmp_path / "config.json"
     monkeypatch.setattr(setup, "get_config_path", lambda: config_path)
 
     sidecar_root = tmp_path / "sidecars"
-    for module in (active, enabled, order, rotation):
+    for module in (account_priority, account_selection, rotation):
         monkeypatch.setattr(module, "DEFAULT_ROOT", sidecar_root)
 
     for name in (
@@ -414,10 +414,10 @@ def test_account_update_validate_false_skips_probe(secret_api, monkeypatch):
 
 
 def test_account_remove_has_exact_response_and_clears_active_pin(secret_api):
-    from openprogram.auth.active import get_active_pin, set_active_profile
+    from openprogram.auth.account_selection import get_active_pin, set_active_account
 
     _put_credential(secret_api.store)
-    set_active_profile("openai", "work")
+    set_active_account("openai", "work")
 
     response = secret_api.client.post(
         "/api/providers/openai/accounts/remove",

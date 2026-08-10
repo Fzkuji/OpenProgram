@@ -128,7 +128,7 @@ def _reap() -> None:
 def register(app):
     @app.get("/api/providers/{name}/login/methods")
     async def login_methods_list(name: str):
-        from openprogram.auth.login_methods import login_methods
+        from openprogram.auth.login_method_registry import login_methods
         methods = login_methods(name)
         return JSONResponse(content={
             "methods": [{"id": mid, "label": label} for mid, label in methods],
@@ -150,7 +150,7 @@ def register(app):
         api_key = b.get("api_key")
         method = (b.get("method") or "").strip()
         if not method:
-            from openprogram.auth.login_methods import default_method
+            from openprogram.auth.login_method_registry import default_method
             method = default_method(name)
 
         # An account == a profile == one credential. If the user named the
@@ -174,7 +174,7 @@ def register(app):
                 # default model set into config on first login (no-op if the
                 # provider already has spec rows) — see login_enable.
                 try:
-                    from openprogram.auth.login_enable import (
+                    from openprogram.auth.login_seed_models import (
                         enable_default_models_on_login,
                     )
                     enable_default_models_on_login(name)

@@ -232,7 +232,7 @@ def list_providers() -> list[dict[str, Any]]:
     """
     from openprogram.providers import get_providers, get_models
     from openprogram.auth.aliases import resolve as _resolve_alias
-    from openprogram.auth.login_methods import login_methods as _login_methods
+    from openprogram.auth.login_method_registry import login_methods as _login_methods
 
     from openprogram.providers.metadata import provider_base_url
 
@@ -299,7 +299,7 @@ def list_providers() -> list[dict[str, Any]]:
             e["setup_hint"] = hint
         # Native login methods (OAuth / device-code / import-from-CLI) the web
         # can drive — excluding plain api_key, which the ApiKey field already
-        # handles. Single source of truth: openprogram/auth/login_methods.py.
+        # handles. Single source of truth: openprogram/auth/login_method_registry.py.
         native = [
             {"id": mid, "label": label}
             for mid, label in _login_methods(pid)

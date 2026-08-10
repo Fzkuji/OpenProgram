@@ -164,7 +164,12 @@ class AddCredentialBody(BaseModel):
     refresh_token: Optional[str] = None
     expires_at_ms: Optional[int] = None
     client_id: Optional[str] = None
+    # external_process: helper argv plus how to read its stdout. Defaults
+    # mirror ExternalProcessConfig so a command-only body still behaves.
     command: Optional[list[str]] = None
+    parses: str = "json"
+    json_key_path: Optional[list[str]] = None
+    cache_seconds: int = 300
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -320,13 +325,29 @@ def _build_credential(
     if kind == "external_process":
         if not body.command:
             raise ValueError("command is required for type=external_process")
+        if body.parses not in ("json", "text"):
+            raise ValueError("parses must be 'json' or 'text'")
         return Credential(
             provider_id=provider_id,
             profile_id=profile_id,
             kind="external_process",
-            payload=CredentialData(kind="external_process", data={"command": list(body.command)}),
+            payload=CredentialData(
+                kind="external_process",
+                data={
+                    "command": list(body.command),
+                    "parses": body.parses,
+                    "json_key_path": list(body.json_key_path or []),
+                    "cache_seconds": body.cache_seconds,
+                },
+            ),
             source="webui_paste",
             metadata=dict(body.metadata),
+        )
+    if kind == "sso":
+        raise ValueError(
+            "enterprise SSO is not implemented — kind='sso' credentials "
+            "cannot be created or used. Open an issue naming your IdP "
+            "(Okta / Azure AD / Auth0 / …) if you need it."
         )
     raise ValueError(f"unsupported type: {kind!r}")
 

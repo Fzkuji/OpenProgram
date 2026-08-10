@@ -453,7 +453,7 @@ def _cmd_login(provider: str, profile: str, method: Optional[str], *,
     # pool, but the models belong under claude-code). No-op when the provider
     # already has spec rows — a disabled default never resurrects.
     try:
-        from openprogram.auth.login_enable import enable_default_models_on_login
+        from openprogram.auth.login_seed_models import enable_default_models_on_login
         written = enable_default_models_on_login(provider)
         if written:
             print(f"  enabled default models: {', '.join(written)}")
@@ -481,11 +481,11 @@ def _cmd_login(provider: str, profile: str, method: Optional[str], *,
 def _available_login_methods(provider: str) -> list[tuple[str, str]]:
     """Login methods the CLI can drive for ``provider`` (first = default).
 
-    Delegates to the shared registry in ``openprogram/auth/login_methods.py``
+    Delegates to the shared registry in ``openprogram/auth/login_method_registry.py``
     so the CLI, web and TUI all offer the SAME set instead of each keeping its
     own map.
     """
-    from openprogram.auth.login_methods import login_methods
+    from openprogram.auth.login_method_registry import login_methods
     return login_methods(provider)
 
 
@@ -754,8 +754,8 @@ def _cmd_use(provider: str, profile: str) -> int:
     """Set which account (profile) a provider runs on. Empty profile clears the
     pin (back to the default). This is what makes a second logged-in account
     actually take effect at request time."""
-    from openprogram.auth.active import set_active_profile, get_active_pin
-    set_active_profile(provider, profile)
+    from openprogram.auth.account_selection import set_active_account, get_active_pin
+    set_active_account(provider, profile)
     pin = get_active_pin(provider)
     if pin:
         print(f"✓ {provider} now runs on account '{pin}'.")
@@ -799,7 +799,7 @@ def _cmd_list(profile_filter: Optional[str], as_json: bool) -> int:
         print("  openprogram providers login <prov>    # add one manually")
         return 0
 
-    from openprogram.auth.active import get_active_pin
+    from openprogram.auth.account_selection import get_active_pin
     print(f"{'provider':28s}  {'profile':16s}  credential")
     for p in pools:
         # Mark the profile this provider is pinned to run on (→ active); an

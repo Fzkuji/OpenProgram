@@ -1,4 +1,4 @@
-"""Conformance tests for ProviderAuthAdapter.
+"""Conformance tests for ProviderAuthContract.
 
 For each shipped provider auth_adapter module, assert it matches the
 Protocol: non-empty PROVIDER_ID and at least one import_from_<source>
@@ -11,9 +11,9 @@ import importlib
 
 import pytest
 
-from openprogram.auth.adapter import (
+from openprogram.auth.provider_contract import (
     AdapterConformanceError,
-    validate_adapter,
+    validate_provider_auth_module,
 )
 
 
@@ -32,7 +32,7 @@ _ADAPTER_MODULES = [
 @pytest.mark.parametrize("module_path,require_import", _ADAPTER_MODULES)
 def test_shipped_adapter_conforms(module_path: str, require_import: bool) -> None:
     mod = importlib.import_module(module_path)
-    validate_adapter(mod, require_import=require_import)
+    validate_provider_auth_module(mod, require_import=require_import)
     assert isinstance(mod.PROVIDER_ID, str) and mod.PROVIDER_ID
 
 
@@ -41,7 +41,7 @@ def test_validate_rejects_missing_provider_id():
         __name__ = "fake.adapter"
         # no PROVIDER_ID
     with pytest.raises(AdapterConformanceError, match="PROVIDER_ID"):
-        validate_adapter(Fake())
+        validate_provider_auth_module(Fake())
 
 
 def test_validate_rejects_missing_import_when_required():
@@ -49,7 +49,7 @@ def test_validate_rejects_missing_import_when_required():
         __name__ = "fake.adapter"
         PROVIDER_ID = "fake"
     with pytest.raises(AdapterConformanceError, match="import_from"):
-        validate_adapter(Fake(), require_import=True)
+        validate_provider_auth_module(Fake(), require_import=True)
 
 
 def test_validate_accepts_legacy_import_from_name():
@@ -60,7 +60,7 @@ def test_validate_accepts_legacy_import_from_name():
         def import_from_my_vendor(*, profile_id: str = "default"):
             return None
     # Doesn't raise — ``import_from_<source>`` counts.
-    validate_adapter(Fake(), require_import=True)
+    validate_provider_auth_module(Fake(), require_import=True)
 
 
 def test_validate_accepts_canonical_import_from_external():
@@ -70,4 +70,4 @@ def test_validate_accepts_canonical_import_from_external():
         @staticmethod
         def import_from_external(*, profile_id: str = "default"):
             return None
-    validate_adapter(Fake(), require_import=True)
+    validate_provider_auth_module(Fake(), require_import=True)

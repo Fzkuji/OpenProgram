@@ -46,8 +46,8 @@ without them the rest of the surface is decoration:
 1. **Active-profile selection at request time.** `AuthManager.acquire` defaults
    to `profile_id="default"`, so unless the request path enters
    `auth_scope(...)` a user cannot actually run on "work" rather than
-   "personal". `auth/active.py` provides `get_active_profile(provider)` /
-   `set_active_profile(provider)` plus `get_active_pin`; `acquire` and the
+   "personal". `auth/account_selection.py` provides `get_active_account(provider)` /
+   `set_active_account(provider)` plus `get_active_pin`; `acquire` and the
    resolver default to it, and the chat/execute entry enters the scope. The
    default stays `"default"`, so activating another profile is opt-in.
 2. **Outcome reporting from the call path.** `report_failure` and
@@ -108,7 +108,7 @@ key; a login add is the shared login flow with `profile=<name>`.
 
 ## Implementation status
 
-In place: active-profile infrastructure (`auth/active.py`, CLI `providers use
+In place: active-profile infrastructure (`auth/account_selection.py`, CLI `providers use
 <provider> [profile]`, the `← active` marker in `providers list`); the generic
 accounts REST surface and the unified web and TUI components; and the rotation
 wiring with its control surface (`routes/accounts.py` strategy/retry/keys

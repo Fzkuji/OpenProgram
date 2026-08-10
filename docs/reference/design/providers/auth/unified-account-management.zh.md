@@ -41,8 +41,8 @@ profile。既然这个模型同样适用于 api-key provider，那么"账号 = p
 
 1. **请求时的激活 profile 选择。** `AuthManager.acquire` 默认
    `profile_id="default"`，因此除非请求路径进入 `auth_scope(...)`，用户无法真正
-   以"work"而非"personal"运行。`auth/active.py` 提供
-   `get_active_profile(provider)` / `set_active_profile(provider)` 以及
+   以"work"而非"personal"运行。`auth/account_selection.py` 提供
+   `get_active_account(provider)` / `set_active_account(provider)` 以及
    `get_active_pin`；`acquire` 与 resolver 以它为默认，chat/execute 入口进入
    该作用域。默认仍是 `"default"`，激活其他 profile 是可选行为。
 2. **调用路径回报结果。** `report_failure` 与 `report_success` 只有在 provider
@@ -97,7 +97,7 @@ web。
 
 ## 实现状态
 
-已就位：激活 profile 的基础设施（`auth/active.py`、CLI
+已就位：激活 profile 的基础设施（`auth/account_selection.py`、CLI
 `providers use <provider> [profile]`、`providers list` 中的 `← active` 标记）；
 通用账号 REST 界面与统一的 web、TUI 组件；以及轮换的接线与其控制界面
 （`routes/accounts.py` 的 strategy/retry/keys 端点，`pool-controls.tsx` 中的

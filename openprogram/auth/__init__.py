@@ -17,7 +17,8 @@ mocking the network.
 from .types import (
     AuthBillingBlockedError, AuthConfigError,
     AuthCorruptCredentialError, AuthError, AuthEvent, AuthEventListener,
-    AuthEventType, AuthExpiredError, AuthNeedsReauthError,
+    AuthEventType, AuthExpiredError, AuthExternalProcessError,
+    AuthNeedsReauthError,
     AuthPoolExhaustedError, AuthRateLimitedError, AuthReadOnlyError,
     AuthRefreshError, AuthRevokedError, AuthRotationConsumedError,
     Credential, CredentialData, CredentialKind, CredentialPayload,
@@ -37,6 +38,7 @@ __all__ = [
     "AuthReadOnlyError", "AuthRefreshError", "AuthRotationConsumedError",
     "AuthExpiredError", "AuthRateLimitedError", "AuthBillingBlockedError",
     "AuthRevokedError", "AuthNeedsReauthError", "AuthPoolExhaustedError",
+    "AuthExternalProcessError",
     "RemovalStep", "CredentialSource", "LoginMethod", "LoginUi",
     # store
     "AuthStore", "get_store", "set_store_for_testing",

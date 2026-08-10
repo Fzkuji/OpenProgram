@@ -116,7 +116,7 @@ def ensure_codex_model_registered(mid: str) -> None:
 # No import-time registry seeding. The registry is built from config spec
 # rows only (docs/design/providers/models/overview.md §4.2). The default Codex
 # model set is written to config as an *enable* on the user's behalf at login
-# — see ``openprogram.auth.login_enable``. ``ensure_codex_model_registered``
+# — see ``openprogram.auth.login_seed_models``. ``ensure_codex_model_registered``
 # below stays as the runtime-registration helper the live Fetch and the
 # runtime miss-path use once a config-backed codex template exists.
 # ``_KNOWN_CODEX_MODELS`` remains the offline hand-list for ``list_models``.

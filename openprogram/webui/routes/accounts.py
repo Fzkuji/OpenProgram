@@ -6,7 +6,7 @@ claude-code keeps its Meridian-backed routes (the literal
 ``/api/providers/claude-code/accounts/*`` handlers in ``routes/providers.py``,
 registered first so they shadow the ``{provider}`` routes here); every OTHER
 provider is served from this module, backed by the AuthStore (one credential
-pool per profile) and the per-provider active selector (``auth/active.py``). The
+pool per profile) and the per-provider active selector (``auth/account_selection.py``). The
 response shapes deliberately match claude-code's — ``{installed, ready, active,
 accounts:[{name,email,...}]}`` — so a single ``<ProviderAccounts>`` React
 component and a single Ink picker drive every provider without branching on
@@ -242,19 +242,19 @@ def _generic_summary(provider: str) -> dict:
     effective active account, the rotation toggle + strategy, and how "add"
     works (paste a key vs sign in)."""
     from openprogram.auth.store import get_store
-    from openprogram.auth.active import get_active_profile, get_active_pin
+    from openprogram.auth.account_selection import get_active_account, get_active_pin
     from openprogram.auth.rotation import get_rotation, STRATEGIES
-    from openprogram.auth.order import sort_key
-    from openprogram.auth.enabled import get_disabled
-    from openprogram.auth.login_methods import login_methods, default_method
+    from openprogram.auth.account_priority import account_priority_key
+    from openprogram.auth.rotation import get_accounts_out_of_rotation
+    from openprogram.auth.login_method_registry import login_methods, default_method
 
     pool = _pool_id(provider)
     store = get_store()
-    active = get_active_profile(pool)  # effective: pin, else "default"
+    active = get_active_account(pool)  # effective: pin, else "default"
     pinned = get_active_pin(pool)      # explicit pin only ("" ⇒ none active)
-    disabled = get_disabled(pool)      # accounts turned OFF for rotation
+    disabled = get_accounts_out_of_rotation(pool)      # accounts turned OFF for rotation
     pools = [p for p in store.list_pools() if p.provider_id == pool]
-    _k = sort_key(pool)                # honour the user's drag order
+    _k = account_priority_key(pool)                # honour the user's drag order
     pools.sort(key=lambda p: _k(p.profile_id))
     accounts = [_account_record(p, pinned, disabled) for p in pools]
     rot = get_rotation(pool)
@@ -295,15 +295,15 @@ def register(app):
             return JSONResponse(
                 content={"error": "invalid account id"}, status_code=400
             )
-        from openprogram.auth.active import set_active_profile, get_active_profile
+        from openprogram.auth.account_selection import set_active_account, get_active_account
         from openprogram.auth.store import get_store
         pool = _pool_id(provider)
         if name and get_store().find_pool(pool, name) is None:
             return JSONResponse(
                 content={"error": "account id not found"}, status_code=404
             )
-        set_active_profile(pool, name)
-        return JSONResponse(content={"active": get_active_profile(pool)})
+        set_active_account(pool, name)
+        return JSONResponse(content={"active": get_active_account(pool)})
 
     @app.post("/api/providers/{provider}/accounts/remove")
     def api_accounts_remove(provider: str, body: Any = Body(default=None)):
@@ -324,7 +324,7 @@ def register(app):
                 status_code=400,
             )
         from openprogram.auth.store import get_store
-        from openprogram.auth.active import get_active_pin, set_active_profile
+        from openprogram.auth.account_selection import get_active_pin, set_active_account
         provider_id = _pool_id(provider)
         store = get_store()
         if store.find_pool(provider_id, name) is None:
@@ -335,7 +335,7 @@ def register(app):
         cleared = get_active_pin(provider_id) == name
         store.delete_pool(provider_id, name)
         if cleared:
-            set_active_profile(provider_id, "")
+            set_active_account(provider_id, "")
         return JSONResponse(content={
             "removed": True,
             "name": name,
@@ -349,7 +349,7 @@ def register(app):
         if error is not None:
             return JSONResponse(content={"error": error}, status_code=400)
         from openprogram.auth.store import get_store
-        from openprogram.auth.active import get_active_pin, set_active_profile
+        from openprogram.auth.account_selection import get_active_pin, set_active_account
         from openprogram.auth.types import CredentialPool
 
         pid = _pool_id(provider)
@@ -390,7 +390,7 @@ def register(app):
         store.put_pool(moved)
         store.delete_pool(pid, old)
         if get_active_pin(pid) == old:
-            set_active_profile(pid, new)
+            set_active_account(pid, new)
         return JSONResponse(content={"ok": True, "name": new})
 
     @app.post("/api/providers/{provider}/accounts/add")
@@ -403,7 +403,7 @@ def register(app):
         error = check_request_body(body, allowed={"name"})
         if error is not None:
             return JSONResponse(content={"error": error}, status_code=400)
-        from openprogram.auth.login_methods import login_methods, default_method
+        from openprogram.auth.login_method_registry import login_methods, default_method
         name = body.get("name", "")
         if name != "" and not is_nonempty_printable_ascii(name):
             return JSONResponse(
@@ -475,7 +475,7 @@ def register(app):
             except Exception:
                 pass
         from openprogram.auth.store import get_store
-        from openprogram.auth.active import get_active_pin, set_active_profile
+        from openprogram.auth.account_selection import get_active_pin, set_active_account
         from openprogram.auth.types import Credential, CredentialData
         store = get_store()
         pid = _pool_id(provider)
@@ -494,7 +494,7 @@ def register(app):
             payload=CredentialData(kind="api_key", auth_value=key), source="webui_add",
         ))
         if not existing and not get_active_pin(pid):
-            set_active_profile(pid, name)   # first account becomes active
+            set_active_account(pid, name)   # first account becomes active
         return JSONResponse(content={"ok": True, "name": name, "validation": validation})
 
     @app.post("/api/providers/{provider}/accounts/{name}/update")
@@ -624,8 +624,8 @@ def register(app):
                 content={"error": "order must not repeat an account id"},
                 status_code=400,
             )
-        from openprogram.auth.order import set_order
-        set_order(_pool_id(provider), order)
+        from openprogram.auth.account_priority import set_account_priority
+        set_account_priority(_pool_id(provider), order)
         return JSONResponse(content={"ok": True, "order": order})
 
     @app.post("/api/providers/{provider}/accounts/enabled")
@@ -643,15 +643,17 @@ def register(app):
             return JSONResponse(
                 content={"error": "invalid enabled body"}, status_code=400
             )
-        from openprogram.auth.enabled import set_enabled, get_disabled
+        from openprogram.auth.rotation import (
+            set_account_in_rotation, get_accounts_out_of_rotation,
+        )
         from openprogram.auth.store import get_store
         pid = _pool_id(provider)
         if get_store().find_pool(pid, name) is None:
             return JSONResponse(
                 content={"error": "account id not found"}, status_code=404
             )
-        set_enabled(pid, name, enabled)
-        return JSONResponse(content={"ok": True, "disabled": sorted(get_disabled(pid))})
+        set_account_in_rotation(pid, name, enabled)
+        return JSONResponse(content={"ok": True, "disabled": sorted(get_accounts_out_of_rotation(pid))})
 
     @app.post("/api/providers/{provider}/accounts/{name}/retry")
     def api_account_retry(provider: str, name: str):

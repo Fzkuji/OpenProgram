@@ -463,6 +463,17 @@ class AuthNeedsReauthError(AuthError):
     Webui listens for this, surfaces a banner, doesn't retry."""
 
 
+class AuthExternalProcessError(AuthError):
+    """A configured ``external_process`` helper failed to produce a token.
+
+    Deliberately NOT swallowed by the resolver's fall-through ladder: the
+    user explicitly configured a helper command, so silently dropping to
+    a different credential layer would hide a broken helper behind
+    whatever key happened to be lying around. Surface it, name the
+    command, let the user fix it.
+    """
+
+
 class AuthPoolExhaustedError(AuthError):
     """Every credential in the pool is cooled-down, revoked, or needs
     re-auth. Manager escalates to fallback_chain; if that's empty too,
@@ -579,6 +590,7 @@ __all__ = [
     "AuthReadOnlyError", "AuthRefreshError", "AuthRotationConsumedError",
     "AuthExpiredError", "AuthRateLimitedError", "AuthBillingBlockedError",
     "AuthRevokedError", "AuthNeedsReauthError", "AuthPoolExhaustedError",
+    "AuthExternalProcessError",
     "RemovalStep",
     "CredentialSource", "LoginMethod", "LoginUi",
 ]

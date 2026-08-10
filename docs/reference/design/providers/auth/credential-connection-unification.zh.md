@@ -27,7 +27,7 @@
 
 如果最后一步把 `Credential` 压成一个 str 再交出去（按 6 种 payload 各自抽出一根
 字符串：`ApiKeyPayload→api_key`、`OAuth/DeviceCode→access_token`、
-`CliDelegated→读外部文件`、`external_process/sso→None`），那么凭据知道的
+`CliDelegated→读外部文件`、`external_process→执行辅助命令`、`sso→不支持`），那么凭据知道的
 base_url、headers 以及自己的 kind 就全部丢失。后果有两个：凭据里即使存了
 `base_url`，wire 层也读不到；anthropic wire 只能靠 `"sk-ant-oat" in key`
 猜这是不是 OAuth token，因为 kind 信息也一并没了。
@@ -89,7 +89,10 @@ class ResolvedConnection:
 def resolve_connection(cred: Credential) -> ResolvedConnection | None:
     """把一份 Credential 翻译成一次请求的连接信息。
     cli_delegated 在此现读外部文件取 token（保持它「外部 CLI 权威」的语义）。
-    external_process/sso 未落地 → 返回 None，调用方按当前逻辑向下一层回退。"""
+    external_process 在这里执行辅助命令，命中 cache_seconds 缓存窗口则复用；
+    命令失败抛 AuthExternalProcessError，resolver 各层原样上抛不再回退，
+    因为用户显式配置的取值方式不该被别处的凭据悄悄顶替。
+    sso 抛 AuthConfigError：该类型是预留的，没有任何流程能产出或使用它。"""
 ```
 
 `auth.usage.acquire_pooled` 返回 `(conn: ResolvedConnection, profile, cred_id)`
@@ -170,7 +173,9 @@ payload，迁移器跳过它们。
 ## 测试
 
 - `resolve_connection`：每种 kind 各一条 —— api_key 带/不带 base_url、oauth 出
-  access_token、cli_delegated 现读外部文件、external_process/sso 返回 None。
+  access_token、cli_delegated 现读外部文件、external_process 跑假辅助脚本
+  （json 与 text 两种解析、缓存窗口内不重复 fork、各类失败一律报错不回落）、
+  sso 报错。
 - 序列化往返：`CredentialData` → dict → `CredentialData` 字段一致（含 `data`）。
 - wire 取值规则：凭据带 base_url 用凭据的，不带用 `model.base_url`；
   `kind=oauth` 时 `is_oauth` 为真且不依赖前缀。

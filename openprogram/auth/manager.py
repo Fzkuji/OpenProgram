@@ -232,7 +232,7 @@ class AuthManager:
         """Return a usable credential for ``(provider, profile)``.
 
         When ``profile_id`` is None the provider's ACTIVE profile is used
-        (:func:`auth.active.get_active_profile` — its pinned account, else the
+        (:func:`auth.account_selection.get_active_account` — its pinned account, else the
         ambient ``auth_scope``, else ``"default"``), so a request runs on
         whichever account the user activated for that provider.
 
@@ -247,8 +247,8 @@ class AuthManager:
         :meth:`report_failure`.
         """
         if profile_id is None:
-            from .active import get_active_profile
-            profile_id = get_active_profile(provider_id)
+            from .account_selection import get_active_account
+            profile_id = get_active_account(provider_id)
         return await self._acquire_recursive(provider_id, profile_id, visited=set())
 
     async def _acquire_recursive(

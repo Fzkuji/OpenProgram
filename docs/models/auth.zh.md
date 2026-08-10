@@ -48,6 +48,24 @@ openprogram providers adopt codex_cli # 导入某一项；--all 全部导入
 
 Gemini CLI 的登录态不走 discover：`google-gemini-cli` provider 直接读 `~/.gemini/oauth_creds.json`，装好 Gemini CLI 并登录即可用。Claude 订阅同样不在扫描列表里，走上面的 OAuth 登录。
 
+### 辅助命令（外部进程）
+
+有些企业环境的 token 由厂商或自研 CLI 签发（`aws`、`sso-helper`、`token-fetcher`），拿不到可以直接粘贴的 API key。这类 provider 在 Settings → Providers 里按 `external_process` 类型添加：填命令 argv、stdout 的解析方式、缓存窗口。
+
+| 字段 | 含义 | 默认值 |
+|---|---|---|
+| `command` | 辅助命令的 argv 列表。直接执行不过 shell，无需转义 | 必填 |
+| `parses` | `json` 表示按 JSON 解析 stdout，`text` 表示 stdout 去空白后即 token | `json` |
+| `json_key_path` | 在 JSON 里下钻的键路径，例如 `["creds", "token"]`。留空则文档本身必须是字符串 | `[]` |
+| `cache_seconds` | 一个 token 复用多久后重新执行命令。`0` 表示每次调用都执行 | `300` |
+| `timeout_seconds` | 单次执行的墙钟上限 | `60` |
+
+每次 API 调用只要 token 不在缓存窗口内就会执行该命令；登录冒烟测试也会执行一次，命令有问题在配置阶段就能发现。
+
+命令执行失败（非零退出、超时、输出无法解析、键路径不存在）会让请求直接报错，错误信息里带上命令和它的 stderr，不会回落到其他凭据。这是刻意配置的取值方式，悄悄换成别处的 token 只会掩盖故障。修好命令，或者删掉该凭据改用别的来源。
+
+企业 SSO（`sso`）尚未实现。该凭据类型是预留的，API 和 resolver 都会明确拒绝，不接受一份永远不会生效的配置。
+
 ## 管理与排障
 
 ```bash

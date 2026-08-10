@@ -7,7 +7,7 @@ its OWN ``LoginUi`` (forwarding ``open_url`` / ``prompt`` / ``show_progress`` /
 
 This is the piece that lets web and TUI offer the same native logins the CLI
 has, instead of punting to "use the other surface". The method ids come from
-``openprogram/auth/login_methods.py``:
+``openprogram/auth/login_method_registry.py``:
 
   api_key          paste a static key (prompted through the ui if not supplied)
   import_from_cli  copy/link an existing vendor-CLI credential (no interaction)

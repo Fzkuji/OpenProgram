@@ -72,13 +72,13 @@ def _normalize_in_browser_code(cases: list[tuple[str, str]]) -> list[str | None]
 def secret_flow(tmp_path, monkeypatch):
     """Live route app whose credential probe always accepts."""
     from openprogram import setup
-    from openprogram.auth import active, enabled, order, rotation
+    from openprogram.auth import account_priority, account_selection, rotation
     from openprogram.webui._model_listing import credentials
 
     monkeypatch.setattr(setup, "get_config_path", lambda: tmp_path / "config.json")
 
     sidecar_root = tmp_path / "sidecars"
-    for module in (active, enabled, order, rotation):
+    for module in (account_priority, account_selection, rotation):
         monkeypatch.setattr(module, "DEFAULT_ROOT", sidecar_root)
 
     for name in ("OPENAI_API_KEY", "TAVILY_API_KEY"):

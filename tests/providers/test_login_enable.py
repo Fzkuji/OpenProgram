@@ -12,7 +12,7 @@ writing to the same config list. These tests pin:
 """
 from __future__ import annotations
 
-import openprogram.auth.login_enable as le
+import openprogram.auth.login_seed_models as le
 import openprogram.providers._config_read as cr
 import openprogram.providers.enabled_models as mg
 import openprogram.providers.storage as st

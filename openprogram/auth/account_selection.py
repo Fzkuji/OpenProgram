@@ -1,4 +1,4 @@
-"""Per-provider active account (profile) selection.
+"""Per-provider active account selection.
 
 When a request resolves a credential for a provider WITHOUT an explicit profile,
 it uses that provider's *active* profile — so a user can run "openai on the work
@@ -48,7 +48,7 @@ def _write(data: dict) -> None:
         pass
 
 
-def get_active_profile(provider_id: str) -> str:
+def get_active_account(provider_id: str) -> str:
     """Profile a request uses for ``provider_id`` when none is passed
     explicitly: the per-provider active pin if set, else the ambient scope
     (``"default"`` unless an ``auth_scope`` is entered)."""
@@ -67,7 +67,7 @@ def get_active_pin(provider_id: str) -> str:
         return _read().get(provider_id, "") or ""
 
 
-def set_active_profile(provider_id: str, profile_id: str) -> None:
+def set_active_account(provider_id: str, profile_id: str) -> None:
     """Pin ``provider_id`` to ``profile_id``. An empty ``profile_id`` clears the
     pin (back to the ambient default)."""
     provider_id = (provider_id or "").strip()

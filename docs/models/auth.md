@@ -48,6 +48,24 @@ Imports take one of two forms: while the external CLI is still on the machine, a
 
 The Gemini CLI login state does not go through discover: the `google-gemini-cli` provider reads `~/.gemini/oauth_creds.json` directly — install the Gemini CLI, log in, and it works. Claude subscriptions are likewise not on the scan list; use the OAuth login above.
 
+### Helper command (external process)
+
+Some corporate setups issue tokens through a vendor or in-house CLI (`aws`, `sso-helper`, `token-fetcher`) rather than an API key you can paste. Add such a provider in Settings → Providers with type `external_process`: the command's argv, how to read its stdout, and a cache window.
+
+| Field | Meaning | Default |
+|---|---|---|
+| `command` | Helper argv, as a list. Run directly — no shell, so there is nothing to escape | required |
+| `parses` | `json` to parse stdout as JSON, `text` to take the stripped stdout as the token | `json` |
+| `json_key_path` | Key path to walk into the JSON, e.g. `["creds", "token"]`. Empty means the document itself must be a string | `[]` |
+| `cache_seconds` | How long one token is reused before the helper runs again. `0` runs the helper on every call | `300` |
+| `timeout_seconds` | Wall-clock limit for one helper run | `60` |
+
+The helper runs on every API call whose token is not within the cache window, and the login smoke test runs it once so a broken command is reported while you are still configuring it.
+
+A helper that fails — non-zero exit, timeout, unparseable output, or a missing key path — makes the request fail with an error naming the command and its stderr. It does not fall back to another credential: you configured this helper deliberately, so a token quietly sourced from somewhere else would hide the breakage. Fix the helper, or remove the credential to use a different source.
+
+Enterprise SSO (`sso`) is not implemented. The credential kind is reserved, and both the API and the resolver reject it explicitly rather than accepting configuration that could never take effect.
+
 ## Management and troubleshooting
 
 ```bash

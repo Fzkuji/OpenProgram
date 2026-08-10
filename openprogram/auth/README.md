@@ -20,18 +20,26 @@ mocking the network.
 
 ## Files in this directory
 
-- **`adapter.py`** — ProviderAuthAdapter
+- **`_migrate_payload.py`** — One-shot migration: old 6-payload JSON → new CredentialData structure
+- **`account_priority.py`** — Per-provider account priority
+- **`account_selection.py`** — Per-provider active account selection
 - **`aliases.py`** — Provider alias table
 - **`cli.py`** — Command-line entry points for auth v2
 - **`context.py`** — Ambient auth context
 - **`interactive.py`** — Interactive auth wizard
+- **`login_driver.py`** — Surface-agnostic login driver
+- **`login_method_registry.py`** — Single source of truth for which login methods each provider offers,
+- **`login_seed_models.py`** — Subscription-login → config enablement
 - **`manager.py`** — Auth v2
 - **`pool.py`** — Auth v2
 - **`profiles.py`** — Profile manager
+- **`provider_contract.py`** — ProviderAuthContract
 - **`resolver.py`** — Single entry point callers use to resolve "the right credential, now"
+- **`rotation.py`** — Per-provider rotation setting, and per-account membership in that rotation
 - **`store.py`** — Auth v2
 - **`tui.py`** — Clack-style terminal UI primitives
 - **`types.py`** — Auth v2
+- **`usage.py`** — Feed provider call outcomes back to the credential pool so rotation /
 
 ## Sub-packages
 

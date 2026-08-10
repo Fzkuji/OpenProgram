@@ -1,8 +1,8 @@
-"""Per-provider account (profile) order.
+"""Per-provider account priority.
 
-Accounts are profiles. When rotation is on, requests try them in THIS order
-(the user drags to set priority — who's used first, then next). Stored as a
-small JSON map at ``~/.openprogram/auth/_order.json`` (``provider_id -> [profile
+When rotation is on, requests try a provider's accounts in THIS order (the user
+drags to set priority — who's used first, then next). Stored as a small JSON map
+at ``~/.openprogram/auth/_account_priority.json`` (``provider_id -> [profile
 names]``), like ``_active.json``. Empty / missing ⇒ the default order
 (``default`` first, then alphabetical), so nothing changes until a user reorders.
 """
@@ -18,7 +18,7 @@ _LOCK = threading.RLock()
 
 
 def _path():
-    return DEFAULT_ROOT / "auth" / "_order.json"
+    return DEFAULT_ROOT / "auth" / "_account_priority.json"
 
 
 def _read() -> dict:
@@ -26,7 +26,24 @@ def _read() -> dict:
         data = json.loads(_path().read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
+        return _migrate_legacy()
+
+
+def _migrate_legacy() -> dict:
+    """One-time move of the old ``_order.json`` to the current filename."""
+    old = DEFAULT_ROOT / "auth" / "_order.json"
+    try:
+        data = json.loads(old.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
         return {}
+    if not isinstance(data, dict):
+        data = {}
+    _write(data)
+    try:
+        old.unlink()
+    except OSError:
+        pass
+    return data
 
 
 def _write(data: dict) -> None:
@@ -41,14 +58,14 @@ def _write(data: dict) -> None:
         pass
 
 
-def get_order(provider_id: str) -> list:
-    """The saved profile order for ``provider_id`` (``[]`` if none set)."""
+def get_account_priority(provider_id: str) -> list:
+    """The saved account order for ``provider_id`` (``[]`` if none set)."""
     with _LOCK:
         v = _read().get(provider_id)
     return list(v) if isinstance(v, list) else []
 
 
-def set_order(provider_id: str, order: list) -> None:
+def set_account_priority(provider_id: str, order: list) -> None:
     provider_id = (provider_id or "").strip()
     if not provider_id:
         return
@@ -58,10 +75,11 @@ def set_order(provider_id: str, order: list) -> None:
         _write(data)
 
 
-def sort_key(provider_id: str):
-    """A key fn that sorts profile names by the saved order (unknown names keep
-    a stable position after the ordered ones, default-first then alphabetical)."""
-    order = get_order(provider_id)
+def account_priority_key(provider_id: str):
+    """A key fn that sorts account names by the saved priority (unknown names
+    keep a stable position after the ranked ones, default-first then
+    alphabetical)."""
+    order = get_account_priority(provider_id)
     index = {name: i for i, name in enumerate(order)}
 
     def key(profile: str):
@@ -70,3 +88,6 @@ def sort_key(provider_id: str):
         return (1, 0 if profile == "default" else 1, profile)
 
     return key
+
+
+__all__ = ["get_account_priority", "set_account_priority", "account_priority_key"]

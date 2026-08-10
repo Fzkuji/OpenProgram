@@ -25,14 +25,14 @@ _SECRET = "sk-123456789abc4"
 def account_api(tmp_path, monkeypatch):
     """Route app over an isolated AuthStore, sidecar root and config file."""
     from openprogram import setup
-    from openprogram.auth import active, enabled, order, rotation
+    from openprogram.auth import account_priority, account_selection, rotation
     from openprogram.providers import storage as provider_storage
     from openprogram.webui._model_listing import credentials
 
     monkeypatch.setattr(setup, "get_config_path", lambda: tmp_path / "config.json")
 
     sidecar_root = tmp_path / "sidecars"
-    for module in (active, enabled, order, rotation):
+    for module in (account_priority, account_selection, rotation):
         monkeypatch.setattr(module, "DEFAULT_ROOT", sidecar_root)
 
     monkeypatch.setattr(
@@ -90,7 +90,7 @@ def _account_state(store: AuthStore) -> list[tuple[str, str]]:
 
 
 def test_accounts_use_activates_a_real_account(account_api):
-    from openprogram.auth.active import get_active_pin
+    from openprogram.auth.account_selection import get_active_pin
 
     _put_account(account_api.store)
 
@@ -104,10 +104,10 @@ def test_accounts_use_activates_a_real_account(account_api):
 
 
 def test_accounts_use_empty_id_clears_the_pin(account_api):
-    from openprogram.auth.active import get_active_pin, set_active_profile
+    from openprogram.auth.account_selection import get_active_pin, set_active_account
 
     _put_account(account_api.store)
-    set_active_profile("openai", "work")
+    set_active_account("openai", "work")
 
     response = account_api.client.post(
         "/api/providers/openai/accounts/use", json={"id": ""}
@@ -133,10 +133,10 @@ def test_accounts_use_empty_id_clears_the_pin(account_api):
 def test_accounts_use_invalid_request_leaves_the_pin_untouched(
     account_api, body, status
 ):
-    from openprogram.auth.active import get_active_pin, set_active_profile
+    from openprogram.auth.account_selection import get_active_pin, set_active_account
 
     _put_account(account_api.store)
-    set_active_profile("openai", "work")
+    set_active_account("openai", "work")
 
     response = account_api.client.post(
         "/api/providers/openai/accounts/use", json=body
@@ -256,7 +256,7 @@ def test_accounts_rotation_rejects_claude_code(account_api):
 
 
 def test_accounts_reorder_stores_the_order(account_api):
-    from openprogram.auth.order import get_order
+    from openprogram.auth.account_priority import get_account_priority
 
     response = account_api.client.post(
         "/api/providers/openai/accounts/reorder",
@@ -265,7 +265,7 @@ def test_accounts_reorder_stores_the_order(account_api):
 
     assert response.status_code == 200
     assert response.json() == {"ok": True, "order": ["work", "other"]}
-    assert get_order("openai") == ["work", "other"]
+    assert get_account_priority("openai") == ["work", "other"]
 
 
 @pytest.mark.parametrize(
@@ -283,16 +283,16 @@ def test_accounts_reorder_stores_the_order(account_api):
     ],
 )
 def test_accounts_reorder_invalid_request_does_not_mutate(account_api, body):
-    from openprogram.auth.order import get_order, set_order
+    from openprogram.auth.account_priority import get_account_priority, set_account_priority
 
-    set_order("openai", ["work", "other"])
+    set_account_priority("openai", ["work", "other"])
 
     response = account_api.client.post(
         "/api/providers/openai/accounts/reorder", json=body
     )
 
     assert response.status_code == 400
-    assert get_order("openai") == ["work", "other"]
+    assert get_account_priority("openai") == ["work", "other"]
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +301,7 @@ def test_accounts_reorder_invalid_request_does_not_mutate(account_api, body):
 
 
 def test_accounts_enabled_disables_one_account(account_api):
-    from openprogram.auth.enabled import get_disabled
+    from openprogram.auth.rotation import get_accounts_out_of_rotation
 
     _put_account(account_api.store)
 
@@ -311,7 +311,7 @@ def test_accounts_enabled_disables_one_account(account_api):
     )
 
     assert response.status_code == 200
-    assert get_disabled("openai") == {"work"}
+    assert get_accounts_out_of_rotation("openai") == {"work"}
 
 
 @pytest.mark.parametrize(
@@ -330,7 +330,7 @@ def test_accounts_enabled_disables_one_account(account_api):
     ],
 )
 def test_accounts_enabled_invalid_request_does_not_mutate(account_api, body, status):
-    from openprogram.auth.enabled import get_disabled
+    from openprogram.auth.rotation import get_accounts_out_of_rotation
 
     _put_account(account_api.store)
 
@@ -339,7 +339,7 @@ def test_accounts_enabled_invalid_request_does_not_mutate(account_api, body, sta
     )
 
     assert response.status_code == status
-    assert get_disabled("openai") == set()
+    assert get_accounts_out_of_rotation("openai") == set()
 
 
 # ---------------------------------------------------------------------------

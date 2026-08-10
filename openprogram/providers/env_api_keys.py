@@ -63,7 +63,15 @@ def resolve_provider_key(provider: str) -> str | None:
         return "<authenticated>" if _vertex_adc_ok() else None
     try:
         from openprogram.auth.resolver import resolve_store_api_key_sync
+        from openprogram.auth.types import AuthExternalProcessError
+    except ImportError:
+        return None
+    try:
         return resolve_store_api_key_sync(provider)
+    except AuthExternalProcessError:
+        # A configured helper that fails is an error the user must see,
+        # not a "no key here" shrug — see auth.resolver's module docstring.
+        raise
     except Exception:
         return None
 

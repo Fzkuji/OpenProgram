@@ -34,7 +34,7 @@ tracks, a credential can only contribute half of the answer:
 If the last step squeezes `Credential` into a str before handing it over
 (pulling one string out of each of the 6 payloads: `ApiKeyPayload→api_key`,
 `OAuth/DeviceCode→access_token`, `CliDelegated→read external file`,
-`external_process/sso→None`), then the base_url, headers, and kind the
+`external_process→run the helper`, `sso→unsupported`), then the base_url, headers, and kind the
 credential knows about are all lost. Two consequences follow: even when a
 credential stores a `base_url`, the wire layer cannot read it; and the anthropic
 wire can only guess whether a token is OAuth via `"sk-ant-oat" in key`, because
@@ -113,8 +113,11 @@ def resolve_connection(cred: Credential) -> ResolvedConnection | None:
     """Translate one Credential into the connection information for a request.
     cli_delegated reads the external file here to obtain the token (preserving its
     "the external CLI is authoritative" semantics).
-    external_process/sso are not implemented -> return None, and the caller falls
-    through to the next layer per its current logic."""
+    external_process runs its helper here, reusing a token cached for
+    cache_seconds; a helper failure raises AuthExternalProcessError, which the
+    resolver ladder re-raises instead of falling through, because a helper the
+    user configured deliberately must not be silently replaced by another layer.
+    sso raises AuthConfigError -- the kind is reserved and no flow implements it."""
 ```
 
 `auth.usage.acquire_pooled` returns `(conn: ResolvedConnection, profile,
@@ -211,7 +214,9 @@ skips them.
 
 - `resolve_connection`: one case per kind — api_key with and without base_url,
   oauth yielding access_token, cli_delegated reading the external file live,
-  external_process/sso returning None.
+  external_process running a fake helper script (json and text parsing, the
+  cache window de-duplicating forks, and every failure mode raising rather than
+  falling through), sso raising.
 - Serialization round trip: `CredentialData` → dict → `CredentialData` with
   identical fields (including `data`).
 - Wire value rules: a credential with base_url wins, without one

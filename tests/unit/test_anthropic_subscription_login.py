@@ -93,7 +93,7 @@ def test_refresh_posts_refresh_token(monkeypatch):
 
 @pytest.mark.parametrize("provider", ["anthropic", "claude-code"])
 def test_claude_login_methods(provider):
-    from openprogram.auth.login_methods import login_methods, default_method
+    from openprogram.auth.login_method_registry import login_methods, default_method
     ids = [m[0] for m in login_methods(provider)]
     assert ids == ["pkce_oauth", "setup_token"]
     assert default_method(provider) == "pkce_oauth"
