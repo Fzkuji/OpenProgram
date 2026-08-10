@@ -8,7 +8,7 @@ Functions exposed (all self-register via @function on import):
   memory_browse — list what memory holds
   memory_update — correct or add one thing
   memory_promote — trust and distill one pending unpaired-group source
-  memory_status — size and current revision
+  memory_status — size, revision, writer health, and pending turns
 
 Recording the conversation is not among them. That happens in the
 background once enough has been said; see ``openprogram/memory``.

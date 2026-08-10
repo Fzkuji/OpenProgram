@@ -313,7 +313,7 @@ def write_session(
     # tell "not enough to write yet" from "somebody else holds the
     # lock" has nothing truthful to report about either.
     with workspace_write_lock(root, timeout_s=1.0):
-        return runtime.process(
+        wrote = runtime.process(
             pending,
             writer,
             marked_ids=marked_ids,
@@ -322,6 +322,11 @@ def write_session(
             global_manager=organizer,
             force=force,
         )
+    if wrote:
+        from .runtime.writer_status import record_success
+
+        record_success(root)
+    return wrote
 
 
 def _branch(session_id: str) -> list[dict[str, Any]]:
@@ -399,7 +404,10 @@ def write(
     if not is_enabled():
         return None
     if not session_id:
-        return WriteFailure("no session id", retryable=False)
+        return WriteFailure(
+            "no session id", retryable=False,
+            status_reason="MissingSessionId",
+        )
     from .. import store
     from openprogram.agent.session_db import default_db
     from .runtime.mark_archived_turns import migrate
@@ -432,9 +440,14 @@ def write(
             ):
                 # Pending turns reached no topic file, so no source node
                 # was marked and a later pass must retry this branch.
-                return WriteFailure("the writer made no progress")
+                return WriteFailure(
+                    "the writer made no progress", status_reason="NoProgress"
+                )
             if head is None:
-                return WriteFailure("session nodes unavailable")
+                return WriteFailure(
+                    "session nodes unavailable",
+                    status_reason="SessionNodesUnavailable",
+                )
             branch_rows = db.get_branch(session_id, head) or []
     return None
 

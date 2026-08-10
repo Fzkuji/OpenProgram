@@ -702,7 +702,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Inspect / manage persistent memory (topics + sources + core).")
     memory_sub = p_memory.add_subparsers(dest="memory_verb", metavar="verb")
     memory_sub.add_parser("status",
-        help="Show the workspace path, what it holds, and its revision.")
+        help="Show workspace contents, revision, writer health, and pending turns.")
     p_mr = memory_sub.add_parser("recall",
         help="Search memory and print the matching paragraphs.")
     p_mr.add_argument("query", nargs="+", help="Words to recall memories for")

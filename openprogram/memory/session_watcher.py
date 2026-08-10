@@ -165,7 +165,7 @@ def _process_session(
 
     try:
         from . import get_provider
-        return get_provider().write(
+        left = get_provider().write(
             messages, session_id=session_id, force=True,
         )
     except Exception as exc:  # noqa: BLE001
@@ -173,9 +173,18 @@ def _process_session(
         # unclassified exception may be a permanent config/auth failure.
         logger.info("memory: write deferred for %s (%s)", session_id, exc)
         verdict = getattr(exc, "retryable", None)
-        return WriteFailure(
+        left = WriteFailure(
             str(exc), retryable=False if verdict is None else bool(verdict),
+            status_reason=type(exc).__name__,
         )
+    if left is not None:
+        from .scriptorium.runtime.writer_status import record_current_failure
+
+        record_current_failure(
+            getattr(left, "status_reason", None),
+            retryable=left.retryable,
+        )
+    return left
 
 
 def run_now(*, idle_minutes: int = DEFAULT_IDLE_MINUTES) -> int:

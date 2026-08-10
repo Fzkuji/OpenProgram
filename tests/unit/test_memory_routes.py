@@ -122,6 +122,32 @@ def test_timeline_refuses_a_date_that_is_really_a_path(client):
     assert client.get("/api/memory/timeline/2026-01-02").status_code == 200
 
 
+def test_status_route_returns_the_inspect_status_contract(
+    client, monkeypatch,
+):
+    from openprogram.memory.scriptorium.retrieval import inspect
+
+    expected = {
+        "workspace": "/memory",
+        "revision": "abc",
+        "writer": {
+            "last_success_at": None,
+            "last_failure": {
+                "at": "2026-08-10T12:00:00+00:00",
+                "reason": "ProviderUnavailable",
+                "retryable": True,
+            },
+            "pending_turns": 3,
+        },
+    }
+    monkeypatch.setattr(inspect, "status", lambda _root: expected)
+
+    response = client.get("/api/memory/status")
+
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
 # ---- a save either lands whole or not at all --------------------------
 
 

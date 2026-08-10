@@ -118,10 +118,27 @@ def _memory_write(session_id: str) -> None:
     try:
         from openprogram.memory import get_provider
         left = get_provider().write(session_id=session_id)
-    except Exception:
+    except Exception as exc:
+        from openprogram.memory.scriptorium.runtime.writer_status import (
+            record_current_failure,
+        )
+
+        verdict = getattr(exc, "retryable", None)
+        record_current_failure(
+            type(exc).__name__,
+            retryable=False if verdict is None else bool(verdict),
+        )
         _log.debug("memory write failed for %s", session_id, exc_info=True)
         return
     if left is not None:
+        from openprogram.memory.scriptorium.runtime.writer_status import (
+            record_current_failure,
+        )
+
+        record_current_failure(
+            getattr(left, "status_reason", None),
+            retryable=left.retryable,
+        )
         # Nothing to do about it here — the next turn comes back around,
         # and the idle watcher is what finally has to finish the session.
         _log.debug("memory write incomplete for %s (%s)", session_id, left.reason)

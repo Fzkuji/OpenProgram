@@ -32,6 +32,33 @@ export interface RecentEvent {
   when: string | null;
 }
 
+export interface WriterFailure {
+  at: string;
+  reason: string;
+  retryable: boolean;
+}
+
+export interface WriterStatus {
+  last_success_at: string | null;
+  last_failure: WriterFailure | null;
+  pending_turns: number | null;
+}
+
+/** Exact response contract of GET /api/memory/status. */
+export interface MemoryStatus {
+  workspace: string;
+  revision: string;
+  topic_files: number;
+  blocks: number;
+  source_files: number;
+  timeline_files: number;
+  recent_events: number;
+  relations: number;
+  core_exists: boolean;
+  embedding_available: boolean;
+  writer: WriterStatus;
+}
+
 /**
  * The four things memory holds. `topics` is what the model edits;
  * `timeline` and `recent` are derived from it; `core` is the block on

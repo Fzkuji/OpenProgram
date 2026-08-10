@@ -487,8 +487,8 @@ def memory_promote(source_id: str | None = None, **_: Any) -> str:
 
 STATUS_NAME = "memory_status"
 STATUS_DESC = (
-    "How much memory exists and the current revision, which "
-    "`memory_update` needs."
+    "Memory size, current revision, writer health, and pending turn count. "
+    "The revision is required by `memory_update`."
 )
 STATUS_SPEC: dict[str, Any] = {
     "name": STATUS_NAME, "description": STATUS_DESC,

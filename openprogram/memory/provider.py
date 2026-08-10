@@ -53,6 +53,9 @@ class WriteFailure:
 
     reason: str
     retryable: bool = True
+    # Stable, non-sensitive classification for persisted status. ``reason``
+    # remains the detailed runtime diagnostic and may contain provider text.
+    status_reason: str | None = None
 
 
 # Context fencing

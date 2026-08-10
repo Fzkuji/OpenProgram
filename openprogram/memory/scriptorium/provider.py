@@ -128,6 +128,7 @@ class ScriptoriumMemoryProvider(MemoryProvider):
             return WriteFailure(
                 f"{exc.code}: {exc.message}",
                 retryable=exc.code in RETRYABLE_CODES,
+                status_reason=exc.code,
             )
         except Exception as exc:  # noqa: BLE001
             # Memory must never take a conversation down with it. Retry only
@@ -137,6 +138,7 @@ class ScriptoriumMemoryProvider(MemoryProvider):
             verdict = getattr(exc, "retryable", None)
             return WriteFailure(
                 str(exc), retryable=False if verdict is None else bool(verdict),
+                status_reason=type(exc).__name__,
             )
 
     def reorganize(self, **kwargs: Any) -> dict[str, Any]:

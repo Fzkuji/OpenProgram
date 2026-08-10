@@ -41,6 +41,79 @@
   border: 1px solid var(--border);
 }
 
+.writerStatus {
+  min-height: 38px;
+  padding: 6px 24px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.writerStatusFailed {
+  background: color-mix(in srgb, var(--accent-red) 7%, var(--bg-secondary));
+}
+
+.writerStatusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+
+.writerStatusFailed .writerStatusDot { background: var(--accent-red); }
+.writerStatusPending .writerStatusDot { background: var(--accent-yellow); }
+.writerStatusIdle .writerStatusDot { background: var(--accent-green); }
+
+.writerStatusText {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.writerStatusLabel {
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+.writerStatusReason {
+  font-family: "JetBrains Mono", "Fira Code", "Menlo", monospace;
+  color: inherit;
+}
+
+.writerStatusRefresh {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.writerStatusRefresh:hover {
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+
+.writerStatusRefresh:focus-visible {
+  outline: 1.5px solid var(--accent-blue);
+  outline-offset: 1px;
+}
+
 /* ─── Tab bar ─────────────────────────────────────────── */
 /* Tabs occupy row 1 column 1 of .layout grid (240px column).
    Editor in column 2 spans both rows so it starts right under the topbar. */

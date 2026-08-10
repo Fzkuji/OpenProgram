@@ -92,6 +92,8 @@ def status(memory_dir: Path, *, embedding_available: bool = False) -> dict[str, 
             relation_count = len(payload) if isinstance(payload, (list, dict)) else 0
         except ValueError:
             relation_count = 0
+    from ..runtime.writer_status import status as writer_status
+
     return {
         "workspace": str(root),
         "revision": workspace_revision(root),
@@ -112,6 +114,7 @@ def status(memory_dir: Path, *, embedding_available: bool = False) -> dict[str, 
         "relations": relation_count,
         "core_exists": (root / "core.md").is_file(),
         "embedding_available": embedding_available,
+        "writer": writer_status(root),
     }
 
 
