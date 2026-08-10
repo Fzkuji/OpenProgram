@@ -31,18 +31,47 @@ class BlockViewsMixin:
             parse_topic_tree(self.stage_dir / "topics")
         )
 
-    def _validate_source_reference(self, ref: str) -> None:
+    def _committed_refs_by_block(self) -> dict[str, set[str]]:
+        """Source references each committed block already carries.
+
+        Keyed by block ID rather than pooled workspace-wide: a new paragraph
+        must not be able to borrow a reference merely because some other
+        Topic already cites it.
+        """
+        return {
+            unit.memory_id: set(unit.source_refs)
+            for unit in parse_topic_tree(self.memory_dir / "topics")
+        }
+
+    def _validate_source_reference(self, ref: str, *, is_new: bool = False) -> None:
+        """Check one Topic Source reference against the staged archive.
+
+        ``is_new`` marks a reference this transaction is adding. Only a new
+        reference is held to the trust rule: prose already committed keeps
+        citing what it cited, and re-validating it would make an unrelated
+        edit fail on a neighbouring paragraph's history.
+        """
         legacy = re.fullmatch(r"D(\d+):(\d+)", ref)
         if legacy:
             conversation, turn = legacy.groups()
             source = self.stage_dir / "sources" / f"D{conversation}.md"
             anchor = f'<a id="d{conversation}-{turn}"></a>'
         else:
-            location = self._valid_v2_source_location(ref)
+            location, frame = self.resolve_v2_source(ref)
             if location is None:
+                # Legacy non-v2 provider archives carry no trust metadata and
+                # keep the documented strict compatibility policy.
                 location = self._provider_source_location(ref)
+                frame = None
             if location is None:
                 raise ValueError(f"invalid source reference: {ref}")
+            if is_new and frame is not None:
+                trust = (frame.metadata or {}).get("trust_state")
+                if trust != "trusted":
+                    raise ValueError(
+                        "source reference is not trusted; promote it first: "
+                        f"{ref}"
+                    )
             relative, source_anchor = location
             source = self.stage_dir / relative
             anchor = f'<a id="{source_anchor}"></a>'
@@ -124,14 +153,26 @@ class BlockViewsMixin:
         self._rewrite_block_links(units)
         units = parse_topic_tree(self.stage_dir / "topics")
         ids = {unit.memory_id for unit in units}
+        committed_refs = self._committed_refs_by_block()
+        # Set only by the structured transaction: the evidence it archived in
+        # this very install. None means "no transaction-local restriction",
+        # which is what a hand edit or the experiment path gets.
+        local_refs = getattr(self, "_transaction_source_refs", None)
         for unit in units:
             missing_targets = set(unit.relation_targets) - ids
             if missing_targets:
                 raise ValueError(
                     f"dangling block link: {sorted(missing_targets)[0]}"
                 )
+            already = committed_refs.get(unit.memory_id, set())
             for ref in unit.source_refs:
-                self._validate_source_reference(ref)
+                is_new = ref not in already
+                self._validate_source_reference(ref, is_new=is_new)
+                if is_new and local_refs is not None and ref not in local_refs:
+                    raise ValueError(
+                        "source reference is not evidence of this "
+                        f"transaction: {ref}"
+                    )
 
         limit = self.config.recent_limit
         state_store = RuntimeStateStore(self.stage_dir)

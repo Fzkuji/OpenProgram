@@ -299,6 +299,7 @@ def write_session(
                 "refs": [r.source_id for r in batch],
             }]),
             stage="write",
+            allowed_new_source_refs={record.source_id for record in batch},
         )
         return _changed_files(audit)
 

@@ -155,7 +155,7 @@ def _run_agent(
     config: MemoryConfig | None = None,
     history_dir: str | Path | None = None,
     stage: str | None = None,
-    allowed_source_refs: set[str] | None = None,
+    allowed_new_source_refs: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     config = config or MemoryConfig()
     # Verification runs against a throwaway copy of the memory. Its history
@@ -164,7 +164,7 @@ def _run_agent(
     workspace = MemoryWorkspace(
         memory_dir,
         config=config,
-        allowed_new_source_refs=allowed_source_refs,
+        allowed_new_source_refs=allowed_new_source_refs,
     )
     try:
         if source_sessions:

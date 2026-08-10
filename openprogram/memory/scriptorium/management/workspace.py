@@ -18,6 +18,7 @@ from .patching import apply_patch
 from .source_archive import SourceArchiveMixin
 from .topic_normalization import TopicNormalizationMixin
 from .transaction import (
+    SourceProvenance,
     TransactionError,
     TransactionLimits,
     TransactionResult,
@@ -57,6 +58,8 @@ class MemoryWorkspace(
             else frozenset(allowed_new_source_refs)
         )
         self.committed = False
+        # Set for the duration of one structured transaction; see update().
+        self._transaction_source_refs: frozenset[str] | None = None
         self.last_changed_topics: list[str] = []
         self.last_created_blocks = 0
         self._refresh_stage()
@@ -102,7 +105,26 @@ class MemoryWorkspace(
         staged_runtime.parent.mkdir(parents=True, exist_ok=True)
         if runtime.exists():
             shutil.copy2(runtime, staged_runtime)
-        self._protect_staged_sources()
+        if self._allowed_new_source_refs is None:
+            self._protect_staged_sources()
+        else:
+            # A selected writer batch already receives its complete source
+            # text in the prompt. Hiding the archive prevents it from reading
+            # pending or out-of-batch evidence and attributing that content to
+            # one of the selected references.
+            shutil.rmtree(self.stage_dir / "sources", ignore_errors=True)
+
+    def _restore_staged_sources(self) -> None:
+        """Restore the committed archive after a restricted agent turn."""
+        staged = self.stage_dir / "sources"
+        if staged.exists():
+            for path in staged.rglob("*"):
+                if path.is_file():
+                    path.chmod(0o644)
+            shutil.rmtree(staged)
+        committed = self.memory_dir / "sources"
+        if committed.exists():
+            shutil.copytree(committed, staged)
 
     def _protect_staged_sources(self) -> None:
         """Make the staged evidence record read-only on the filesystem.
@@ -187,6 +209,15 @@ class MemoryWorkspace(
         self.last_changed_topics = []
         self.last_created_blocks = 0
         try:
+            if self._allowed_new_source_refs is not None:
+                if self._tree_fingerprint(
+                    self.stage_dir / "sources"
+                ) != before_sources:
+                    raise ValueError("Source Memory is append-only")
+                self._restore_staged_sources()
+                before_sources = self._tree_fingerprint(
+                    self.stage_dir / "sources"
+                )
             if self._tree_fingerprint(self.stage_dir / "sources") != before_sources:
                 raise ValueError("Source Memory is append-only")
             self._normalize_topic_edits(before_block_ids)
@@ -201,19 +232,21 @@ class MemoryWorkspace(
                     for unit in parse_topic_tree(self.stage_dir / "topics")
                     for ref in unit.source_refs
                 }
-                forbidden = after_refs - before_refs - set(selected_refs)
-                if forbidden:
-                    raise ValueError(
-                        "source reference outside runtime-selected batch: "
-                        f"{sorted(forbidden)[0]}"
-                    )
                 removed = before_refs - after_refs
                 if removed:
                     raise ValueError(
                         "source reference cannot be removed during restricted "
                         f"write: {sorted(removed)[0]}"
                     )
-            self._synchronize()
+                # The batch the Runtime selected is this commit's evidence.
+                # _synchronize checks it per block, which a workspace-wide set
+                # difference cannot: a new paragraph would otherwise pass by
+                # reusing a reference some other Topic already cites.
+                self._transaction_source_refs = frozenset(selected_refs)
+            try:
+                self._synchronize()
+            finally:
+                self._transaction_source_refs = None
             after_units = parse_topic_tree(self.stage_dir / "topics")
             after_topics = self._topic_fingerprints(self.stage_dir / "topics")
             self.last_changed_topics = [
@@ -236,12 +269,20 @@ class MemoryWorkspace(
             for path in sorted(self.stage_dir.rglob("*"))
             if path.is_file()
             and not is_internal_path(path.relative_to(self.stage_dir))
+            and not (
+                self._allowed_new_source_refs is not None
+                and path.relative_to(self.stage_dir).parts[:1] == ("sources",)
+            )
         }
         committed = {
             path.relative_to(self.memory_dir).as_posix(): path.read_bytes()
             for path in sorted(self.memory_dir.rglob("*"))
             if path.is_file()
             and not is_internal_path(path.relative_to(self.memory_dir))
+            and not (
+                self._allowed_new_source_refs is not None
+                and path.relative_to(self.memory_dir).parts[:1] == ("sources",)
+            )
         }
         return staged != committed
 
@@ -259,11 +300,14 @@ class MemoryWorkspace(
         git_commit: str = "auto",
         limits: TransactionLimits | None = None,
         append_only: bool = False,
+        provenance: SourceProvenance | None = None,
     ) -> TransactionResult:
         """Apply sources and a topic patch as one atomic transaction.
 
         Sources are archived into the stage rather than ``memory_dir`` so that
         evidence and the topics citing it become visible in the same install.
+        ``provenance`` is the Runtime's own record of who the sources came
+        from; creating sources without it fails closed.
         """
         if git_commit not in ("auto", "on", "off"):
             raise TransactionError(
@@ -280,6 +324,11 @@ class MemoryWorkspace(
             char for char in message if char.isprintable()
         )[:limits.max_commit_message_chars] or "Update memory"
         parsed_sources = parse_sources(sources, limits)
+        if parsed_sources and provenance is None:
+            raise TransactionError(
+                "WRITER_PRECONDITION_FAILED",
+                "creating a source requires complete persisted authority",
+            )
 
         with workspace_write_lock(self.memory_dir):
             current = workspace_revision(self.memory_dir)
@@ -293,13 +342,17 @@ class MemoryWorkspace(
             before_files = self._committed_files()
             before_units, before_block_ids = committed_baseline(self)
             try:
-                records = source_records(parsed_sources)
+                records = source_records(parsed_sources, provenance)
                 mapping = {
                     item.label: record.source_id
                     for item, record in zip(parsed_sources, records)
                 }
                 if records:
                     self.archive_source_records(records, root=self.stage_dir)
+                # Evidence this transaction archived. A reference a block did
+                # not already carry must come from here, so a patch cannot
+                # attach an unrelated Source — trusted or not — to new prose.
+                self._transaction_source_refs = frozenset(mapping.values())
                 resolved = resolve_source_labels(patch, mapping)
                 changed = apply_patch(self.stage_dir, resolved)
                 if append_only:
@@ -325,6 +378,8 @@ class MemoryWorkspace(
                 raise TransactionError(
                     "INVALID_TOPIC_FORMAT", str(exc)
                 ) from exc
+            finally:
+                self._transaction_source_refs = None
 
             after_files = self._committed_files()
             changed_files = sorted(

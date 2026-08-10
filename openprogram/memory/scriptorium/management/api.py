@@ -64,6 +64,11 @@ def write_sessions(
         source_sessions=sessions,
         usage_logger=usage_logger,
         config=config,
+        allowed_new_source_refs={
+            str(ref)
+            for session in sessions
+            for ref in session.get("refs", [])
+        },
     )
 
 
@@ -100,4 +105,5 @@ def organize_topics(
         task=ORGANIZE_MEMORY.format(topic_paths="\n".join(paths)),
         usage_logger=usage_logger,
         config=config,
+        allowed_new_source_refs=set(),
     )

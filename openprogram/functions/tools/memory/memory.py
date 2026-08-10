@@ -32,6 +32,7 @@ from openprogram.memory import store
 from openprogram.memory.scriptorium.management import MemoryWorkspace
 from openprogram.memory.scriptorium.management.transaction import (
     TransactionError,
+    provenance_from_authority,
     workspace_write_lock,
     workspace_revision,
 )
@@ -331,15 +332,26 @@ def memory_update(
         from openprogram.store import _current_turn_id
 
         session_id = get_current_session_id() or ""
+        turn_id = _current_turn_id.get() or ""
         authority = normalize_authority(authority_from_message(
-            session_id, _current_turn_id.get() or "",
+            session_id, turn_id,
         ))
+        # Identity fields come from the Runtime's own record of this turn, so
+        # the model's payload cannot choose its trust state, tier or principal.
+        provenance = (
+            provenance_from_authority(
+                authority, origin_id=f"{session_id}/{turn_id}",
+            )
+            if sources
+            else None
+        )
         with closing(MemoryWorkspace(_root())) as space:
             result = space.update(
                 base_revision=base_revision,
                 patch=patch,
                 sources=sources,
                 commit_message=commit_message,
+                provenance=provenance,
                 # Only an explicitly persisted owner turn may rewrite or
                 # delete existing memory. Missing context fails closed.
                 append_only=authority.get("authority_tier") != "owner",
@@ -370,6 +382,23 @@ PROMOTE_SPEC: dict[str, Any] = {
         "required": ["source_id"],
     },
 }
+
+
+def _restore_source_bytes(path: Path, original: str, mode: int) -> None:
+    """Put the pre-promotion archive bytes back, atomically."""
+    descriptor, temporary = tempfile.mkstemp(
+        prefix="memory-promote-undo-", dir=path.parent,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
+            handle.write(original)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def _promote_source(
@@ -412,6 +441,7 @@ def _promote_source(
                 "trust_state": "trusted",
             }
 
+        mode = path.stat().st_mode & 0o777
         metadata = {**frame.metadata, "trust_state": "trusted"}
         lines = original.split("\n")
         lines[frame.metadata_index] = encode_source_metadata(metadata)
@@ -423,31 +453,41 @@ def _promote_source(
                 handle.write("\n".join(lines))
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.chmod(temporary, path.stat().st_mode & 0o777)
+            os.chmod(temporary, mode)
             os.replace(temporary, path)
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
 
-        audit_path = runtime_dir(root) / "trust-audit.jsonl"
-        audit_path.parent.mkdir(parents=True, exist_ok=True)
-        audit = json.dumps({
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "action": "promote",
-            "source_id": source_id,
-            "principal_id": auth["principal_id"],
-            "speaker_id": unquote(frame.encoded_speaker_id or ""),
-            "authority_tier": auth["authority_tier"],
-        }, ensure_ascii=False, separators=(",", ":")) + "\n"
-        audit_fd = os.open(
-            audit_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600,
-        )
+        # A trusted Source with no audit record is the one outcome this must
+        # never leave behind, so the audit append is what commits the
+        # promotion: if it fails at any point, the original bytes go back and
+        # the caller sees the error. Repeating the promotion then re-runs
+        # both halves and produces exactly one audit entry.
         try:
-            if os.write(audit_fd, audit.encode("utf-8")) != len(audit.encode("utf-8")):
-                raise OSError("short memory trust audit write")
-            os.fsync(audit_fd)
-        finally:
-            os.close(audit_fd)
+            audit_path = runtime_dir(root) / "trust-audit.jsonl"
+            audit_path.parent.mkdir(parents=True, exist_ok=True)
+            audit = json.dumps({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "action": "promote",
+                "source_id": source_id,
+                "principal_id": auth["principal_id"],
+                "speaker_id": unquote(frame.encoded_speaker_id or ""),
+                "authority_tier": auth["authority_tier"],
+            }, ensure_ascii=False, separators=(",", ":")) + "\n"
+            payload = audit.encode("utf-8")
+            audit_fd = os.open(
+                audit_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600,
+            )
+            try:
+                if os.write(audit_fd, payload) != len(payload):
+                    raise OSError("short memory trust audit write")
+                os.fsync(audit_fd)
+            finally:
+                os.close(audit_fd)
+        except BaseException:
+            _restore_source_bytes(path, original, mode)
+            raise
         RuntimeStateStore(root).git_commit(
             f"Scriptorium: trust source {source_id}"
         )

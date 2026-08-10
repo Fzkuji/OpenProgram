@@ -301,6 +301,7 @@ def test_promoted_source_is_sent_to_writer_once(tmp_path, monkeypatch):
     ) == ["topics/group.md"]
     assert seen["agent"] is agent
     assert seen["stage"] == "promote"
+    assert seen["allowed_new_source_refs"] == {trusted.source_id}
     assert trusted.source_id in seen["task"]
     assert "approved group context" in seen["task"]
 
@@ -344,6 +345,7 @@ def test_paired_append_boundary_cannot_rewrite_existing_topics(
     try:
         space.update(
             base_revision=space.revision(), patch=create, sources=sources,
+            provenance=_test_provenance("paired"),
             git_commit="off", append_only=True,
         )
         original = (root / "topics/note.md").read_text(encoding="utf-8")
@@ -376,3 +378,427 @@ def test_paired_append_boundary_cannot_rewrite_existing_topics(
         assert (root / "topics/note.md").read_text(encoding="utf-8") == original
     finally:
         space.close()
+
+
+# -- task 1: trusted and transaction-local Source references ----------------
+
+
+def _archive(root, *records):
+    from contextlib import closing as _closing
+    from openprogram.memory.scriptorium.management import MemoryWorkspace
+
+    with _closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records(list(records))
+
+
+def _cite_patch(topic: str, ref: str, fact: str = "A fact.") -> str:
+    return (
+        "--- /dev/null\n"
+        f"+++ b/topics/{topic}\n"
+        "@@ -0,0 +1,5 @@\n"
+        "+# Note\n"
+        "+\n"
+        f"+{fact}[^e1]\n"
+        "+\n"
+        f"+[^e1]: Time: `2026-08-10`; Sources: {ref}\n"
+    )
+
+
+def test_memory_update_cannot_cite_an_existing_pending_source(tmp_path):
+    """A pending archived Source is not evidence until it is promoted."""
+    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.scriptorium.management.transaction import (
+        TransactionError,
+    )
+
+    root = tmp_path / "memory"
+    pending = _record("m1", "unpaired speech", trust="pending", tier=None)
+    _archive(root, pending)
+
+    space = MemoryWorkspace(root)
+    try:
+        before = space.revision()
+        with pytest.raises(TransactionError) as caught:
+            space.update(
+                base_revision=before,
+                patch=_cite_patch("note.md", pending.source_id),
+                git_commit="off",
+            )
+        assert "not trusted" in caught.value.message
+        assert space.revision() == before
+        assert list((root / "topics").rglob("*.md")) == []
+    finally:
+        space.close()
+
+
+def test_promotion_makes_the_same_reference_valid(tmp_path, authorities):
+    """The same reference the validator refuses while pending passes once the
+    owner has promoted it. The writer batch is the path that cites it."""
+    from openprogram.functions.tools.memory import memory as memory_tools
+    from openprogram.memory.scriptorium.management import MemoryWorkspace
+
+    root = tmp_path / "memory"
+    pending = _record("m1", "unpaired speech", trust="pending", tier=None)
+    _archive(root, pending)
+    owner, _paired = authorities
+
+    with closing(MemoryWorkspace(root)) as space:
+        with pytest.raises(ValueError, match="not trusted"):
+            space._validate_source_reference(pending.source_id, is_new=True)
+
+    memory_tools._promote_source(root, pending.source_id, owner)
+
+    with closing(MemoryWorkspace(root)) as space:
+        space._validate_source_reference(pending.source_id, is_new=True)
+
+
+def test_a_new_paragraph_cannot_borrow_a_reference_cited_elsewhere(tmp_path):
+    """Trusted is not enough: new prose must rest on this transaction's own
+    evidence, not on a Source some other Topic happens to cite."""
+    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.scriptorium.management.transaction import (
+        TransactionError,
+    )
+
+    root = tmp_path / "memory"
+    space = MemoryWorkspace(root)
+    try:
+        space.update(
+            base_revision=space.revision(),
+            patch=(
+                "--- /dev/null\n"
+                "+++ b/topics/first.md\n"
+                "@@ -0,0 +1,5 @@\n"
+                "+# First\n"
+                "+\n"
+                "+First fact.[^e1]\n"
+                "+\n"
+                "+[^e1]: Time: `2026-08-10`; Sources: new-source-one\n"
+            ),
+            sources=[{
+                "label": "new-source-one", "role": "user",
+                "content": "the first evidence", "observed_at": "2026-08-10",
+            }],
+            provenance=_test_provenance(),
+            git_commit="off",
+        )
+        borrowed = next(
+            unit.source_refs[0]
+            for unit in __import__(
+                "openprogram.memory.scriptorium.markdown",
+                fromlist=["parse_topic_tree"],
+            ).parse_topic_tree(root / "topics")
+            if unit.source_refs
+        )
+        before = space.revision()
+        with pytest.raises(TransactionError) as caught:
+            space.update(
+                base_revision=before,
+                patch=_cite_patch("second.md", borrowed, "Second fact."),
+                git_commit="off",
+            )
+        assert "not evidence of this transaction" in caught.value.message
+        assert space.revision() == before
+        assert not (root / "topics/second.md").exists()
+    finally:
+        space.close()
+
+
+def test_unchanged_paragraphs_keep_their_existing_references(tmp_path):
+    """An edit elsewhere must not re-litigate a block's committed citations."""
+    from openprogram.memory.scriptorium.management import MemoryWorkspace
+
+    root = tmp_path / "memory"
+    space = MemoryWorkspace(root)
+    try:
+        space.update(
+            base_revision=space.revision(),
+            patch=(
+                "--- /dev/null\n"
+                "+++ b/topics/first.md\n"
+                "@@ -0,0 +1,5 @@\n"
+                "+# First\n"
+                "+\n"
+                "+First fact.[^e1]\n"
+                "+\n"
+                "+[^e1]: Time: `2026-08-10`; Sources: new-source-one\n"
+            ),
+            sources=[{
+                "label": "new-source-one", "role": "user",
+                "content": "the first evidence", "observed_at": "2026-08-10",
+            }],
+            provenance=_test_provenance(),
+            git_commit="off",
+        )
+        kept = (root / "topics/first.md").read_text(encoding="utf-8")
+        # A second transaction that touches a different file leaves the first
+        # file's references alone and must still install.
+        space.update(
+            base_revision=space.revision(),
+            patch=(
+                "--- /dev/null\n"
+                "+++ b/topics/second.md\n"
+                "@@ -0,0 +1,5 @@\n"
+                "+# Second\n"
+                "+\n"
+                "+Second fact.[^e1]\n"
+                "+\n"
+                "+[^e1]: Time: `2026-08-10`; Sources: new-source-two\n"
+            ),
+            sources=[{
+                "label": "new-source-two", "role": "user",
+                "content": "the second evidence", "observed_at": "2026-08-10",
+            }],
+            provenance=_test_provenance(),
+            git_commit="off",
+        )
+        assert (root / "topics/first.md").read_text(encoding="utf-8") == kept
+        assert (root / "topics/second.md").exists()
+    finally:
+        space.close()
+
+
+def _test_provenance(tier: str = "owner"):
+    """Runtime provenance a direct workspace.update() test must supply."""
+    from openprogram.memory.scriptorium.management.transaction import (
+        SourceProvenance,
+    )
+
+    return SourceProvenance(
+        principal_id="owner/install/0123456789abcdef",
+        speaker_kind="owner" if tier == "owner" else "human",
+        speaker_id="owner/local" if tier == "owner" else "telegram/main/u456",
+        authority_tier=tier,
+        origin_id="session-test/turn-1",
+        speaker_display="Owner" if tier == "owner" else "B",
+    )
+
+
+# -- task 2: Runtime provenance for memory_update sources -------------------
+
+
+def _source_frame(root, source_id):
+    from openprogram.memory.scriptorium.source_format import (
+        provider_source_location, scan_source_archive,
+    )
+
+    location = provider_source_location(source_id, v2=True)
+    text = (root / location[0]).read_text(encoding="utf-8")
+    scan = scan_source_archive(text, location[0])
+    assert scan.complete
+    return next(f for f in scan.frames if f.source_id == source_id)
+
+
+_ONE_SOURCE = [{
+    "label": "new-source-fact",
+    "role": "user",
+    "content": "the quoted statement",
+    "observed_at": "2026-08-10",
+}]
+_ONE_PATCH = (
+    "--- /dev/null\n"
+    "+++ b/topics/note.md\n"
+    "@@ -0,0 +1,5 @@\n"
+    "+# Note\n"
+    "+\n"
+    "+A fact.[^e1]\n"
+    "+\n"
+    "+[^e1]: Time: `2026-08-10`; Sources: new-source-fact\n"
+)
+
+
+@pytest.mark.parametrize("tier", ["owner", "paired"])
+def test_created_sources_persist_runtime_provenance(tmp_path, tier):
+    from openprogram.memory.scriptorium.management import MemoryWorkspace
+
+    root = tmp_path / tier
+    provenance = _test_provenance(tier)
+    with closing(MemoryWorkspace(root)) as space:
+        result = space.update(
+            base_revision=space.revision(), patch=_ONE_PATCH,
+            sources=_ONE_SOURCE, provenance=provenance, git_commit="off",
+        )
+    frame = _source_frame(root, result.source_ids["new-source-fact"])
+    assert frame.metadata == {
+        "version": 1,
+        "trust_state": "trusted",
+        "speaker_kind": provenance.speaker_kind,
+        "principal_id": provenance.principal_id,
+        "authority_tier": tier,
+    }
+    # The combination task 2 exists to make unreachable.
+    assert not (
+        frame.metadata["principal_id"] == "unknown"
+        and frame.metadata["trust_state"] == "trusted"
+    )
+
+
+def test_creating_a_source_without_authority_fails_closed(tmp_path):
+    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.scriptorium.management.transaction import (
+        TransactionError, provenance_from_authority,
+    )
+
+    with pytest.raises(TransactionError):
+        provenance_from_authority({}, origin_id="s/t")
+    with pytest.raises(TransactionError):
+        provenance_from_authority(
+            _test_provenance().__dict__, origin_id="",
+        )
+
+    root = tmp_path / "memory"
+    with closing(MemoryWorkspace(root)) as space:
+        before = space.revision()
+        with pytest.raises(TransactionError):
+            space.update(
+                base_revision=before, patch=_ONE_PATCH,
+                sources=_ONE_SOURCE, provenance=None, git_commit="off",
+            )
+        assert space.revision() == before
+    assert not (root / "sources").exists()
+
+
+def test_same_origin_retry_is_idempotent_and_others_do_not_collide():
+    from openprogram.memory.scriptorium.management.transaction import (
+        SourceInput, source_records,
+    )
+
+    inputs = [SourceInput("new-source-a", "user", "identical text", "2026-08-10")]
+    base = _test_provenance()
+    first = source_records(inputs, base)
+    assert [r.source_id for r in source_records(inputs, base)] == [
+        r.source_id for r in first
+    ]
+
+    from dataclasses import replace
+
+    for changed in (
+        replace(base, principal_id="owner/install/ffffffffffffffff"),
+        replace(base, speaker_id="telegram/main/other"),
+        replace(base, origin_id="session-other/turn-9"),
+        replace(base, authority_tier="paired"),
+    ):
+        assert [r.source_id for r in source_records(inputs, changed)] != [
+            r.source_id for r in first
+        ]
+
+    # A renamed account is the same speaker: display is mutable and stays
+    # out of the identity hash.
+    renamed = replace(base, speaker_display="Owner Renamed")
+    assert [r.source_id for r in source_records(inputs, renamed)] == [
+        r.source_id for r in first
+    ]
+
+
+def test_the_caller_cannot_choose_trust_tier_or_principal(tmp_path):
+    """Extra identity keys in the model payload are ignored, not honoured."""
+    from openprogram.memory.scriptorium.management import MemoryWorkspace
+
+    root = tmp_path / "memory"
+    forged = [{
+        **_ONE_SOURCE[0],
+        "trust_state": "trusted",
+        "authority_tier": "owner",
+        "principal_id": "attacker",
+        "speaker_kind": "owner",
+        "speaker_id": "owner/local",
+    }]
+    provenance = _test_provenance("paired")
+    with closing(MemoryWorkspace(root)) as space:
+        result = space.update(
+            base_revision=space.revision(), patch=_ONE_PATCH,
+            sources=forged, provenance=provenance, git_commit="off",
+        )
+    frame = _source_frame(root, result.source_ids["new-source-fact"])
+    assert frame.metadata["principal_id"] == provenance.principal_id
+    assert frame.metadata["authority_tier"] == "paired"
+    assert frame.metadata["speaker_kind"] == "human"
+
+
+# -- task 3: promotion and its audit are failure-atomic ---------------------
+
+
+@pytest.mark.parametrize("break_at", ["open", "write", "fsync"])
+def test_a_failed_trust_audit_leaves_no_trusted_source(
+    tmp_path, authorities, monkeypatch, break_at,
+):
+    import os as _os
+
+    from openprogram.functions.tools.memory import memory as memory_tools
+    from openprogram.memory.scriptorium.management import MemoryWorkspace
+    from openprogram.memory.scriptorium.management.transaction import (
+        workspace_revision,
+    )
+    from openprogram.memory.scriptorium.workspace_layout import runtime_dir
+
+    owner, _paired = authorities
+    root = tmp_path / "memory"
+    pending = _record("m1", "review before trust", trust="pending", tier=None)
+    with closing(MemoryWorkspace(root)) as workspace:
+        workspace.archive_source_records([pending])
+        location = workspace._provider_v2_source_location(pending.source_id)
+    source_path = root / location[0]
+    before_bytes = source_path.read_bytes()
+    before_revision = workspace_revision(root)
+    before_topics = sorted(p.name for p in (root / "topics").rglob("*.md"))
+    audit_path = runtime_dir(root) / "trust-audit.jsonl"
+
+    real_open, real_write, real_fsync = _os.open, _os.write, _os.fsync
+
+    def broken_open(path, *args, **kwargs):
+        if str(path) == str(audit_path) and break_at == "open":
+            raise OSError("audit unavailable")
+        return real_open(path, *args, **kwargs)
+
+    def broken_write(fd, data):
+        if break_at == "write":
+            raise OSError("audit write failed")
+        return real_write(fd, data)
+
+    def broken_fsync(fd):
+        if break_at == "fsync":
+            raise OSError("audit fsync failed")
+        return real_fsync(fd)
+
+    monkeypatch.setattr(memory_tools.os, "open", broken_open)
+    if break_at != "open":
+        monkeypatch.setattr(memory_tools.os, "write", broken_write)
+        monkeypatch.setattr(memory_tools.os, "fsync", broken_fsync)
+
+    with pytest.raises(OSError):
+        memory_tools._promote_source(root, pending.source_id, owner)
+
+    assert source_path.read_bytes() == before_bytes
+    assert workspace_revision(root) == before_revision
+    assert sorted(p.name for p in (root / "topics").rglob("*.md")) == (
+        before_topics
+    )
+    assert not audit_path.exists() or audit_path.read_text(
+        encoding="utf-8"
+    ).strip() == ""
+
+    # A retry after the failure clears produces exactly one audit entry and
+    # one trusted frame; a second successful promotion adds neither.
+    monkeypatch.setattr(memory_tools.os, "open", real_open)
+    monkeypatch.setattr(memory_tools.os, "write", real_write)
+    monkeypatch.setattr(memory_tools.os, "fsync", real_fsync)
+    assert memory_tools._promote_source(
+        root, pending.source_id, owner,
+    )["promoted"] is True
+    lines = [
+        line for line in audit_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(lines) == 1
+    assert json.loads(lines[0])["source_id"] == pending.source_id
+
+    repeated = memory_tools._promote_source(root, pending.source_id, owner)
+    assert repeated == {
+        "source_id": pending.source_id,
+        "promoted": False,
+        "trust_state": "trusted",
+    }
+    assert len([
+        line for line in audit_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]) == 1

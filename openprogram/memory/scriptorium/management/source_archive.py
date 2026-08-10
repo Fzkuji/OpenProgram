@@ -167,18 +167,31 @@ class SourceArchiveMixin:
     def _provider_v2_source_location(ref: str) -> tuple[Path, str] | None:
         return provider_source_location(ref, v2=True)
 
-    def _valid_v2_source_location(
-        self, ref: str
-    ) -> tuple[Path, str] | None:
+    def resolve_v2_source(self, ref: str):
+        """The staged v2 archive frame a Topic reference names, or None.
+
+        One resolver for every caller that has to know what a reference
+        points at. Location alone answers "is there an anchor"; the frame
+        also carries the trust metadata, and a reference cannot be checked
+        for trust by a caller that only got a path back.
+        """
         location = self._provider_v2_source_location(ref)
         if location is None:
-            return None
+            return None, None
         relative, _anchor = location
         path = self.stage_dir / relative
         if not path.is_file():
-            return None
+            return None, None
         scan = scan_source_archive(_read_literal_text(path), relative)
-        return location if ref in scan.known_source_ids else None
+        frame = next(
+            (item for item in scan.frames if item.source_id == ref), None
+        )
+        return (location, frame) if frame is not None else (None, None)
+
+    def _valid_v2_source_location(
+        self, ref: str
+    ) -> tuple[Path, str] | None:
+        return self.resolve_v2_source(ref)[0]
 
     def _source_link(
         self, topic_path: Path, ref: str, label: str | None = None

@@ -55,6 +55,62 @@ class SourceInput:
     observed_at: str | None = None
 
 
+@dataclass(frozen=True)
+class SourceProvenance:
+    """Who a Source came from, as the Runtime persisted it.
+
+    Every field here is read from Runtime state, never from the model's
+    payload: a caller that could name its own ``principal_id`` or
+    ``trust_state`` would be writing its own trust decision into the
+    archive. ``speaker_display`` is mutable and deliberately absent from
+    the identity hash — a renamed account must not mint new Source IDs
+    for speech it already said.
+    """
+
+    principal_id: str
+    speaker_kind: str
+    speaker_id: str
+    authority_tier: str
+    origin_id: str
+    speaker_display: str = ""
+
+    def identity_seed(self) -> str:
+        return "\x1f".join((
+            self.principal_id,
+            self.speaker_kind,
+            self.speaker_id,
+            self.authority_tier,
+            self.origin_id,
+        ))
+
+
+def provenance_from_authority(
+    authority: Any, *, origin_id: str,
+) -> SourceProvenance:
+    """Build provenance from persisted authority, or fail closed.
+
+    An incomplete authority record is not a reason to fall back to
+    ``principal_id=unknown`` with ``trust_state=trusted``: that exact
+    combination is what task 2 exists to make unreachable.
+    """
+    from openprogram.agent.authority import normalize_authority
+
+    normalized = normalize_authority(authority)
+    if not normalized or not str(origin_id).strip():
+        raise TransactionError(
+            "WRITER_PRECONDITION_FAILED",
+            "creating a source requires complete persisted authority",
+        )
+    return SourceProvenance(
+        principal_id=normalized["principal_id"],
+        speaker_kind=normalized["speaker_kind"],
+        speaker_id=normalized["speaker_id"],
+        authority_tier=normalized["authority_tier"],
+        origin_id=str(origin_id),
+        speaker_display=normalized["speaker_display"],
+    )
+
+
 @dataclass
 class TransactionResult:
     revision: str
@@ -305,19 +361,30 @@ def _normalize_timestamp(value: str, index: int) -> str:
         ) from exc
 
 
-def source_records(sources: list[SourceInput]) -> list[SourceRecord]:
-    """Derive content-addressed identity so a retried transaction is idempotent."""
+def source_records(
+    sources: list[SourceInput], provenance: SourceProvenance,
+) -> list[SourceRecord]:
+    """Derive identity from Runtime provenance plus content.
+
+    Identity combines the provenance seed with role, content, observation
+    time and ordinal. A retry by the same subject in the same origin lands
+    on the same IDs and is idempotent; a different principal, speaker or
+    origin does not collide even when the quoted text is identical.
+    """
     if not sources:
         return []
+    seed_prefix = provenance.identity_seed()
     canonical = "\n".join(
-        f"{item.role}\x1f{item.content}\x1f{item.observed_at or ''}"
-        for item in sources
+        [seed_prefix] + [
+            f"{item.role}\x1f{item.content}\x1f{item.observed_at or ''}"
+            for item in sources
+        ]
     )
     thread_id = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
     records = []
     for ordinal, item in enumerate(sources, start=1):
         seed = (
-            f"{thread_id}\x1f{ordinal}\x1f{item.role}"
+            f"{seed_prefix}\x1f{thread_id}\x1f{ordinal}\x1f{item.role}"
             f"\x1f{item.content}\x1f{item.observed_at or ''}"
         )
         message_id = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
@@ -329,6 +396,12 @@ def source_records(sources: list[SourceInput]) -> list[SourceRecord]:
             role=item.role,
             content=item.content,
             timestamp=item.observed_at,
+            speaker_id=provenance.speaker_id,
+            speaker_display=provenance.speaker_display,
+            speaker_kind=provenance.speaker_kind,
+            principal_id=provenance.principal_id,
+            authority_tier=provenance.authority_tier,
+            trust_state="trusted",
         ))
     return records
 
