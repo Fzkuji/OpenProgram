@@ -18,7 +18,10 @@ design 是虚拟 Tab——没有 docs/design/ 目录，nav.py 的 tab_of() 把 r
    （演变历史看 git），禁止 v2 副本、"Decision N/裁决"式变更记录、日期与
    commit sha。未实现的设计写进正文，在文末"实现状态"附录集中标注。
    不要把工程记录写进产品 Tab。
-3. **生成参考页**（`docs/reference/cli/`、`config-keys.md`、`provider-registry.md`）：
+3. **站点根静态文件**（`docs/_static_root/`）：原样拷到站点根，不进导航、不进
+   sitemap。放搜索引擎所有权验证文件、`robots.txt` 这类必须能从确切根 URL
+   取到的文件。
+4. **生成参考页**（`docs/reference/cli/`、`config-keys.md`、`provider-registry.md`）：
    构建时由 `tools/docs_site/generate_reference.py` 从代码（argparse 树、
    config_schema.SETTINGS、provider.json）重新生成，已 gitignore，禁止手改——
    要改内容就改代码里的 help/说明文字。

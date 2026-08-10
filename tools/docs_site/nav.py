@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # Folders that are never part of the docs site.
-EXCLUDE_DIRS = {"_site", "_site.tmp", "_site.old", "images", "slides"}
+EXCLUDE_DIRS = {"_site", "_site.tmp", "_site.old", "_static_root",
+                "images", "slides"}
 
 # Top-level tabs. Each top-level directory under docs/ is one tab in the top
 # navbar; the sidebar only shows the current tab's tree. Order here is the
