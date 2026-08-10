@@ -29,8 +29,34 @@ from openprogram._ports import (
 _FRONTEND_PORT = 18100
 
 
+def _browser_url(port: int) -> str:
+    """The URL a browser should open for the active Web server.
+
+    ``http://localhost:<port>`` is only right for a loopback bind. When
+    the server binds a LAN address, a VPN address, or sits behind an
+    HTTPS proxy, its effective Origins say so and localhost is not among
+    them — opening it lands the user on a dead page, and minting a token
+    URL for it fails outright. Ask the live snapshot instead, and fall
+    back to localhost only when there is no snapshot to ask.
+    """
+    from openprogram.backend_endpoint import (
+        OwnerAuthError,
+        read_active_web_access,
+        select_request_origin,
+    )
+
+    try:
+        active_access = read_active_web_access()
+        if active_access.port == int(port):
+            return select_request_origin(active_access)
+    except OwnerAuthError:
+        pass
+    return f"http://localhost:{port}"
+
+
 def _active_owner_auth_url(base_url: str, port: int) -> str:
     """Return a bootstrap URL only when ``base_url`` is an effective Origin."""
+    from openprogram._ports import backend_accepts_owner_challenge
     from openprogram.backend_endpoint import (
         build_owner_auth_url,
         read_active_web_access,
@@ -43,6 +69,12 @@ def _active_owner_auth_url(base_url: str, port: int) -> str:
     active_access = read_active_web_access()
     if active_access.port != port:
         raise OwnerAuthError("active Web port does not match the worker port")
+    # The token rides in the fragment, which the *page* that loads can
+    # read. Being ours on loopback does not make ``base_url`` ours: a
+    # configured DNS name or proxy Origin may resolve somewhere else
+    # entirely. Challenge that exact URL before minting a token for it.
+    if not backend_accepts_owner_challenge(port, origin=base_url):
+        raise OwnerAuthError(f"{base_url} did not prove it is this Web server")
     return build_owner_auth_url(
         base_url,
         token=read_web_token(),
@@ -268,7 +300,7 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
     if _port_in_use(port):
         ours = _backend_is_ours(port)
         if ours is True:
-            ui = f"http://localhost:{port}"
+            ui = _browser_url(port)
             print(f"openprogram web is already running (port {port} in use).")
             print(f"  Open the UI:  {ui}")
             print("  Or stop the other instance first:  pkill -f 'openprogram web'")
@@ -314,8 +346,6 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
               "(the port may be in use). Try `openprogram status`.")
         sys.exit(1)
 
-    ui_url = f"http://localhost:{web_port}"
-
     # Wait briefly for the frontend to bind before opening the browser, so
     # the user doesn't land on a connection-refused page.
     try:
@@ -323,6 +353,11 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
         _wait_until_listening(web_port, timeout=10.0)
     except Exception:
         pass
+
+    # Only now: the access snapshot naming the real browser Origin is
+    # written by the server as it binds, so reading it earlier would
+    # always miss and fall back to localhost.
+    ui_url = _browser_url(web_port)
 
     if open_browser:
         import webbrowser

@@ -1,4 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { spawn, spawnSync } from 'child_process';
+import { fileURLToPath } from 'url';
+
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import WebSocket from 'ws';
 
 import {
   backendAuthHeaders,
@@ -132,4 +136,97 @@ describe('webUiUrls', () => {
   it('returns null without a verified endpoint', () => {
     expect(webUiUrls()).toBeNull();
   });
+});
+
+/**
+ * Real-server round trip.
+ *
+ * Every test above stubs `fetch`, so they assert which headers we build
+ * and never whether the server accepts them. That gap let a 403 ship: the
+ * launcher points the base at the loopback IP but sets Origin to the
+ * canonical `http://localhost:PORT`, and the owner-auth middleware used
+ * to require the two to be the same spelling. These tests run
+ * `backendFetch` and the real `ws` client against a live Python listener,
+ * with no stubbing, so the header set is judged by the actual server.
+ *
+ * Skipped when the Python side is unavailable (e.g. a bare `npm test`).
+ */
+describe('against the real backend listener', () => {
+  // fileURLToPath, not .pathname: a repo path containing spaces comes
+  // back percent-encoded from .pathname and no longer exists on disk.
+  const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
+  const python = (() => {
+    const r = spawnSync('python3', ['-c', 'import openprogram, uvicorn'], {
+      cwd: repoRoot,
+    });
+    return r.status === 0 ? 'python3' : null;
+  })();
+
+  let server: ReturnType<typeof spawn> | null = null;
+  let port = 0;
+  let token = '';
+
+  beforeAll(async () => {
+    if (!python) return;
+    server = spawn(python, ['-m', 'tests.helpers.owner_auth_listener'], {
+      cwd: repoRoot,
+      stdio: ['ignore', 'pipe', 'inherit'],
+    });
+    // The helper prints one JSON line once it is bound and serving.
+    const line = await new Promise<string>((resolve, reject) => {
+      let buf = '';
+      server!.stdout!.on('data', (c) => {
+        buf += String(c);
+        const nl = buf.indexOf('\n');
+        if (nl >= 0) resolve(buf.slice(0, nl));
+      });
+      server!.on('exit', (code) => reject(new Error(`helper exited ${code}`)));
+      setTimeout(() => reject(new Error('helper did not start')), 30000);
+    });
+    ({ port, token } = JSON.parse(line));
+  }, 40000);
+
+  afterAll(() => {
+    server?.kill();
+  });
+
+  const maybe = python ? it : it.skip;
+
+  maybe('accepts the launcher header set over HTTP and WebSocket', async () => {
+    // Exactly what cli_ink.py exports: base on the IP, Origin on localhost.
+    process.env.OPENPROGRAM_BACKEND_URL = `http://127.0.0.1:${port}`;
+    process.env.OPENPROGRAM_BACKEND_ORIGIN = `http://localhost:${port}`;
+    process.env.OPENPROGRAM_BACKEND_TOKEN = token;
+
+    const posted = await backendFetch(
+      `http://127.0.0.1:${port}/api/x`,
+      { method: 'POST' },
+    );
+    expect(posted.status).toBe(200);
+    expect(await posted.json()).toEqual({ tier: 'owner' });
+
+    const status = await new Promise<number | string>((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
+        headers: backendAuthHeaders(),
+      });
+      let code = 0;
+      ws.on('upgrade', (m) => { code = m.statusCode ?? 0; });
+      ws.on('open', () => { ws.close(); resolve(code || 101); });
+      ws.on('error', (e) => resolve(code || String(e)));
+      setTimeout(() => resolve(code || 'timeout'), 15000);
+    });
+    expect(status).toBe(101);
+  }, 40000);
+
+  maybe('is refused when the Origin is not an effective origin', async () => {
+    process.env.OPENPROGRAM_BACKEND_URL = `http://127.0.0.1:${port}`;
+    process.env.OPENPROGRAM_BACKEND_ORIGIN = 'http://evil.example.com';
+    process.env.OPENPROGRAM_BACKEND_TOKEN = token;
+
+    const posted = await backendFetch(
+      `http://127.0.0.1:${port}/api/x`,
+      { method: 'POST' },
+    );
+    expect(posted.status).toBe(403);
+  }, 40000);
 });

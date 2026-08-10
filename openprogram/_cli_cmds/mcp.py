@@ -107,13 +107,27 @@ def _render_list(servers: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _render_env(env: dict | None) -> str:
+    """Render a server's env for the terminal without printing its values.
+
+    An MCP server's env is where API keys and bot tokens live, so the
+    values never reach stdout — only the key names, plus a masked hint so
+    the reader can tell two configured credentials apart.
+    """
+    if not env:
+        return "(empty)"
+    from openprogram.auth.cli import _mask
+
+    return ", ".join(f"{key}={_mask(str(env[key]))}" for key in sorted(env))
+
+
 def _render_detail(server: dict) -> str:
     lines = [
         f"name:           {server['name']}",
         f"state:          {_fmt_state(server['ready'], server['error'])}",
         f"type:           {server['type']}",
         f"command:        {' '.join(server.get('command', []))}",
-        f"env:            {server.get('env') or '(empty)'}",
+        f"env:            {_render_env(server.get('env'))}",
         f"enabled:        {server.get('enabled')}",
         f"timeout_sec:    {server.get('timeout_seconds')}",
         f"tool_count:     {server['tool_count']}",

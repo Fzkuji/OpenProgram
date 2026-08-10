@@ -12,7 +12,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import shutil
 import socket
+import subprocess
 import threading
 import time
 from contextlib import closing, contextmanager
@@ -544,3 +547,163 @@ def test_snapshot_rejects_a_tampered_token_fingerprint(tmp_path: Path):
             read_active_web_access(tmp_path)
     finally:
         state.close()
+
+
+# ---------------------------------------------------------------------------
+# Real Node client against the real listener.
+#
+# Every test above drives the middleware from Python, which is why the
+# TUI's 403 survived a green suite: the Node client reaches the loopback
+# listener by IP (Host: 127.0.0.1:PORT, from BackendEndpoint.base_url) but
+# presents the canonical effective Origin (http://localhost:PORT, from
+# BackendEndpoint.origin). No Python test ever sent that combination, so
+# nothing covered the one request shape the TUI actually makes. These
+# tests spawn a real `node` and send it, over both HTTP and the WebSocket
+# handshake, using the same header construction as cli/src.
+# ---------------------------------------------------------------------------
+
+_NODE = shutil.which("node")
+_CLI_DIR = Path(__file__).resolve().parents[2] / "cli"
+requires_node = pytest.mark.skipif(
+    _NODE is None or not (_CLI_DIR / "node_modules" / "ws").is_dir(),
+    reason="node with cli/node_modules (for the real `ws` client) is required",
+)
+
+
+def _run_node(script: str, env_extra: dict[str, str]) -> dict:
+    """Run ``script`` under the real node, in cli/ so `ws` resolves.
+
+    The script prints one JSON object; we return it parsed. Written into
+    cli/ rather than tmp_path because Node resolves bare imports against
+    the directory tree of the *file*, so `import 'ws'` only works from
+    inside the package that depends on it.
+    """
+    path = _CLI_DIR / f".auth_probe_{os.getpid()}_{threading.get_ident()}.mjs"
+    path.write_text(script, encoding="utf-8")
+    try:
+        proc = subprocess.run(
+            [_NODE, str(path)],
+            cwd=str(_CLI_DIR),
+            env={**os.environ, **env_extra},
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    finally:
+        path.unlink(missing_ok=True)
+    assert proc.returncode == 0, f"node failed:\n{proc.stdout}\n{proc.stderr}"
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
+# Mirrors cli/src/utils/backend.ts backendAuthHeaders() + backendFetch(),
+# and cli/src/ws/client.ts connect(): Authorization from the token env var,
+# Origin from OPENPROGRAM_BACKEND_ORIGIN, dialling OPENPROGRAM_BACKEND_URL.
+_PROBE = """
+import WebSocket from 'ws';
+
+const base = process.env.OPENPROGRAM_BACKEND_URL;
+const headers = {
+  Authorization: `Bearer ${process.env.OPENPROGRAM_BACKEND_TOKEN}`,
+};
+const origin = process.env.OPENPROGRAM_BACKEND_ORIGIN;
+if (origin) headers.Origin = origin;
+
+const out = {};
+const post = await fetch(`${base}/api/x`, {
+  method: 'POST',
+  headers,
+  redirect: 'error',
+});
+out.http_status = post.status;
+out.http_body = await post.text();
+
+const get = await fetch(`${base}/api/x`, { headers, redirect: 'error' });
+out.get_status = get.status;
+
+out.ws_status = await new Promise((resolve) => {
+  const ws = new WebSocket(`${base.replace(/^http/, 'ws')}/ws`, { headers });
+  let status = 0;
+  ws.on('upgrade', (m) => { status = m.statusCode; });
+  ws.on('open', () => { ws.close(); resolve(status || 101); });
+  ws.on('error', (e) => resolve(status || String(e)));
+  setTimeout(() => resolve(status || 'timeout'), 15000);
+});
+
+console.log(JSON.stringify(out));
+"""
+
+
+@requires_node
+def test_real_node_client_is_accepted_with_the_launcher_origin(live):
+    """The exact shape cli_ink.py hands the TUI must authenticate.
+
+    ``BackendEndpoint`` dials the loopback IP but carries the canonical
+    ``http://localhost:PORT`` Origin, so Host and Origin are two spellings
+    of the same server. A bearer request must be accepted anyway.
+    """
+    state, base_url, port = live
+    result = _run_node(
+        _PROBE,
+        {
+            "OPENPROGRAM_BACKEND_URL": base_url,
+            "OPENPROGRAM_BACKEND_ORIGIN": f"http://localhost:{port}",
+            "OPENPROGRAM_BACKEND_TOKEN": state.token,
+        },
+    )
+    assert result["http_status"] == 200, result
+    assert json.loads(result["http_body"]) == {"tier": "owner"}
+    assert result["get_status"] == 200, result
+    assert result["ws_status"] == 101, result
+
+
+@requires_node
+def test_real_node_client_is_accepted_when_origin_matches_the_host(live):
+    """The other effective origin — dialled and declared identically."""
+    state, base_url, port = live
+    result = _run_node(
+        _PROBE,
+        {
+            "OPENPROGRAM_BACKEND_URL": base_url,
+            "OPENPROGRAM_BACKEND_ORIGIN": f"http://127.0.0.1:{port}",
+            "OPENPROGRAM_BACKEND_TOKEN": state.token,
+        },
+    )
+    assert result["http_status"] == 200, result
+    assert result["ws_status"] == 101, result
+
+
+@requires_node
+def test_real_node_client_with_a_foreign_origin_is_still_rejected(live):
+    """Relaxing Origin for bearer must not open a cross-origin hole.
+
+    An Origin outside the effective set is refused even with a valid
+    token, so a page on another site cannot drive the listener.
+    """
+    state, base_url, _ = live
+    result = _run_node(
+        _PROBE,
+        {
+            "OPENPROGRAM_BACKEND_URL": base_url,
+            "OPENPROGRAM_BACKEND_ORIGIN": "http://evil.example.com",
+            "OPENPROGRAM_BACKEND_TOKEN": state.token,
+        },
+    )
+    assert result["http_status"] == 403, result
+    assert json.loads(result["http_body"]) == {"error": "request_origin_rejected"}
+    assert result["ws_status"] != 101, result
+
+
+@requires_node
+def test_real_node_client_with_a_bad_token_is_rejected(live):
+    """A mismatched Origin is only tolerated for a token that verifies."""
+    _state_unused, base_url, port = live
+    result = _run_node(
+        _PROBE,
+        {
+            "OPENPROGRAM_BACKEND_URL": base_url,
+            "OPENPROGRAM_BACKEND_ORIGIN": f"http://localhost:{port}",
+            "OPENPROGRAM_BACKEND_TOKEN": "f" * 43,
+        },
+    )
+    assert result["http_status"] == 403, result
+    assert result["ws_status"] != 101, result

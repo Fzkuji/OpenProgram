@@ -312,8 +312,24 @@ def _request_origin(
     if origin is not None:
         if origin.strip().lower() == "null":
             raise OwnerAuthError("opaque Origin")
-        if canonicalize_origin(origin) != request_origin:
-            raise OwnerAuthError("Origin does not match request origin")
+        canonical_origin = canonicalize_origin(origin)
+        if canonical_origin != request_origin:
+            # A browser always sends the Origin that matches the Host it
+            # dialled, so a mismatch there is CSRF and stays fatal. Native
+            # clients (the Node TUI) reach the loopback listener by IP but
+            # present the canonical effective Origin, which is a different
+            # spelling of the same server. Tolerate that only for a bearer
+            # request: bearer is a stronger credential than Origin, and it
+            # is never attached ambiently the way a cookie is, so no CSRF
+            # reasoning depends on it. Cookie requests keep the exact match
+            # enforced below.
+            bearer_provided, bearer_token = _bearer_token(headers)
+            if not (
+                bearer_provided
+                and canonical_origin in state.effective_origins
+                and state.verify_token(bearer_token)
+            ):
+                raise OwnerAuthError("Origin does not match request origin")
     if (_one_header(headers, "sec-fetch-site") or "").lower() == "cross-site":
         raise OwnerAuthError("cross-site request")
     return request_origin, origin

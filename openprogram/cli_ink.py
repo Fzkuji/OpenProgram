@@ -361,17 +361,27 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
     )
 
     env = os.environ.copy()
+    # No degraded launch. Without a verified endpoint the TUI has no owner
+    # token, so every request it makes is rejected and the user sees an
+    # unexplained dead UI. Fail here, where the reason is still known.
     try:
         endpoint = resolve_backend_endpoint()
-    except OwnerAuthError:
-        endpoint = None
-    if endpoint is not None and endpoint.port == port:
-        ws_url = endpoint.websocket_url
-        env["OPENPROGRAM_BACKEND_URL"] = endpoint.base_url
-        env["OPENPROGRAM_BACKEND_ORIGIN"] = endpoint.origin
-        env["OPENPROGRAM_BACKEND_TOKEN"] = endpoint.token
-    else:
-        ws_url = f"ws://127.0.0.1:{port}/ws"
+    except OwnerAuthError as exc:
+        _tty_write(
+            f"openprogram: cannot verify the Web server on port {port}: {exc}\n"
+            "  Try `openprogram status`, or stop it and start again.\n"
+        )
+        sys.exit(2)
+    if endpoint.port != port:
+        _tty_write(
+            f"openprogram: the verified Web server is on port {endpoint.port}, "
+            f"not {port}.\n  Try `openprogram status`.\n"
+        )
+        sys.exit(2)
+    ws_url = endpoint.websocket_url
+    env["OPENPROGRAM_BACKEND_URL"] = endpoint.base_url
+    env["OPENPROGRAM_BACKEND_ORIGIN"] = endpoint.origin
+    env["OPENPROGRAM_BACKEND_TOKEN"] = endpoint.token
     env["OPENPROGRAM_WS"] = ws_url
     if agent is not None and getattr(agent, "id", None):
         env["OPENPROGRAM_AGENT"] = agent.id

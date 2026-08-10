@@ -86,8 +86,20 @@ def test_web_auth_url_command_prints_only_the_requested_bootstrap_url(
         "openprogram.backend_endpoint.read_web_token",
         lambda: TOKEN,
     )
+    # The requested URL must prove it is this server before a token is
+    # minted for it (the fragment is readable by whatever page loads).
+    challenged: list[str | None] = []
+
+    def accept(port, **kwargs):
+        challenged.append(kwargs.get("origin"))
+        return True
+
+    monkeypatch.setattr(
+        "openprogram._ports.backend_accepts_owner_challenge", accept
+    )
 
     assert _cmd_web_auth_url("http://127.0.0.1:18100") == 0
+    assert challenged == ["http://127.0.0.1:18100"]
     captured = capsys.readouterr()
     assert captured.err == ""
     assert captured.out == f"http://127.0.0.1:18100/#token={TOKEN}\n"

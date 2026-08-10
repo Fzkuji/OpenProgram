@@ -80,8 +80,16 @@ def backend_accepts_owner_challenge(
     port: int,
     *,
     expected_revision: str | None = None,
+    origin: str | None = None,
 ) -> bool:
-    """Verify the active listener without sending the owner credential."""
+    """Verify the active listener without sending the owner credential.
+
+    ``origin`` names the exact Origin to verify, dialled as written. That
+    matters before a token is handed out for it: proving *some* loopback
+    listener is ours says nothing about the host a browser would actually
+    open, which may be a proxy or a DNS name pointing somewhere else.
+    Defaults to the internal client's own request Origin.
+    """
     import base64
     import hmac
     import json
@@ -94,7 +102,6 @@ def backend_accepts_owner_challenge(
         create_owner_challenge_proof,
         read_active_web_access,
         read_web_token,
-        select_connect_host,
         select_request_origin,
     )
 
@@ -106,19 +113,18 @@ def backend_accepts_owner_challenge(
     if active_access.port != int(port):
         return False
 
-    request_origin = select_request_origin(active_access)
-    parsed_origin = urllib.parse.urlsplit(request_origin)
-    url_host = select_connect_host(active_access.bind_host)
+    request_origin = origin or select_request_origin(active_access)
+    if request_origin not in active_access.effective_origins:
+        return False
     nonce = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode("ascii")
     query = {"nonce": nonce}
     if expected_revision is not None:
         query["revision"] = expected_revision
+    # Dial the Origin itself — no Host rewrite. The listener sees the same
+    # authority the caller will later use, so a proof here is a proof for
+    # that exact URL, TLS and all.
     request = urllib.request.Request(
-        f"http://{url_host}:{port}/api/auth/challenge?{urllib.parse.urlencode(query)}",
-        headers={
-            "Host": parsed_origin.netloc,
-            "X-Forwarded-Proto": parsed_origin.scheme,
-        },
+        f"{request_origin}/api/auth/challenge?{urllib.parse.urlencode(query)}",
     )
     try:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))

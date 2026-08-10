@@ -306,15 +306,43 @@ class BackendEndpoint:
     Produced only by :func:`resolve_backend_endpoint`, which verifies the
     listener with the nonce/HMAC challenge *before* the owner token is read,
     so the credential is never handed to a stranger holding the port.
+
+    Every URL field derives from one canonical Origin, so the Host a
+    client dials and the Origin it declares are always the same spelling
+    of the same server. Storing them independently once let the two drift
+    ("localhost" Origin against a "127.0.0.1" Host), which the owner-auth
+    middleware correctly refused as a cross-origin request.
     """
 
-    base_url: str
-    websocket_url: str
     origin: str
-    host: str
-    scheme: str
-    port: int
     token: str = field(repr=False)
+
+    @property
+    def _parts(self) -> tuple[str, str, int]:
+        parsed = urlsplit(self.origin)
+        return parsed.scheme, parsed.netloc, int(parsed.port or 0)
+
+    @property
+    def scheme(self) -> str:
+        return self._parts[0]
+
+    @property
+    def host(self) -> str:
+        """Authority (host[:port]) — exactly what goes in the Host header."""
+        return self._parts[1]
+
+    @property
+    def port(self) -> int:
+        return self._parts[2]
+
+    @property
+    def base_url(self) -> str:
+        return self.origin
+
+    @property
+    def websocket_url(self) -> str:
+        scheme, netloc, _ = self._parts
+        return f"{'wss' if scheme == 'https' else 'ws'}://{netloc}/ws"
 
     @property
     def authorization_header(self) -> str:
@@ -333,7 +361,10 @@ def select_connect_host(bind_host: str) -> str:
     except ValueError:
         return value
     if address.is_unspecified:
-        return "::1" if address.version == 6 else "127.0.0.1"
+        # Bracketed, like every other IPv6 literal here: the result goes
+        # straight into a URL authority, and bare "::1:18100" parses as a
+        # malformed host rather than host + port.
+        return "[::1]" if address.version == 6 else "127.0.0.1"
     return f"[{address.compressed}]" if address.version == 6 else str(address)
 
 
@@ -358,25 +389,17 @@ def resolve_backend_endpoint(state_dir: Path | None = None) -> BackendEndpoint:
     from openprogram._ports import backend_accepts_owner_challenge
 
     active_access = read_active_web_access(state_dir)
-    if not backend_accepts_owner_challenge(active_access.port):
-        raise OwnerAuthError("active Web port is not owned by this profile")
     origin = select_request_origin(active_access)
-    parsed = urlsplit(origin)
-    host = parsed.netloc
-    scheme = parsed.scheme
-    url_host = select_connect_host(active_access.bind_host)
-    return BackendEndpoint(
-        base_url=f"{scheme}://{url_host}:{active_access.port}",
-        websocket_url=(
-            f"{'wss' if scheme == 'https' else 'ws'}://"
-            f"{url_host}:{active_access.port}/ws"
-        ),
-        origin=origin,
-        host=host,
-        scheme=scheme,
-        port=active_access.port,
-        token=read_web_token(state_dir),
-    )
+    if not backend_accepts_owner_challenge(active_access.port, origin=origin):
+        raise OwnerAuthError("active Web port is not owned by this profile")
+    token = read_web_token(state_dir)
+    # The snapshot and the token are two files; a restart between the two
+    # reads would pair an old policy with a new credential. Re-read the
+    # snapshot and require it to be the same state we just challenged, so
+    # a rotation during this window fails instead of half-applying.
+    if read_active_web_access(state_dir) != active_access:
+        raise OwnerAuthError("active Web state changed while resolving")
+    return BackendEndpoint(origin=origin, token=token)
 
 
 __all__ = [
