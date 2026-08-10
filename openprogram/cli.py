@@ -716,6 +716,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reorganise topic files now, instead of waiting for tonight.")
     p_msleep.add_argument("--model", default=None,
         help="Model to reorganise with (default: whatever your own CLI uses)")
+    p_mbackfill = memory_sub.add_parser("backfill",
+        help="Write trusted source records that no Topic cites.")
+    p_mbackfill.add_argument("--model", default=None,
+        help="Model to write with (default: the configured memory writer)")
     p_mexp = memory_sub.add_parser("export",
         help="Tar+gzip the entire memory dir to a path.")
     p_mexp.add_argument("--out", default=None,
@@ -1400,6 +1404,14 @@ def main():
                 indent=2, ensure_ascii=False,
             ))
             sys.exit(0)
+        if verb == "backfill":
+            from openprogram.memory.scriptorium.writing import backfill
+            import json as _json
+            report = backfill(
+                _mstore.ensure(), model=getattr(args, "model", None),
+            )
+            print(_json.dumps(report, indent=2, ensure_ascii=False))
+            sys.exit(0 if report.get("remaining") == 0 else 1)
         if verb == "export":
             import datetime as _dt
             import tarfile as _tar

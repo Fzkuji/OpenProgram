@@ -44,12 +44,18 @@ class MemoryWorkspace(
         memory_dir: str | Path,
         *,
         config: MemoryConfig | None = None,
+        allowed_new_source_refs: set[str] | None = None,
     ):
         self.memory_dir = Path(memory_dir).resolve()
         self.memory_dir.mkdir(parents=True, exist_ok=True)
         self.stage_dir = Path(tempfile.mkdtemp(prefix=f"{TEMPORARY_PREFIX}topics-"))
         self.pending: dict[str, dict[str, Any]] = {}
         self.config = config or MemoryConfig()
+        self._allowed_new_source_refs = (
+            None
+            if allowed_new_source_refs is None
+            else frozenset(allowed_new_source_refs)
+        )
         self.committed = False
         self.last_changed_topics: list[str] = []
         self.last_created_blocks = 0
@@ -185,6 +191,28 @@ class MemoryWorkspace(
                 raise ValueError("Source Memory is append-only")
             self._normalize_topic_edits(before_block_ids)
             self._validate_topic_contract(before_units, before_block_ids)
+            selected_refs = self._allowed_new_source_refs
+            if selected_refs is not None:
+                before_refs = {
+                    ref for unit in before_units for ref in unit.source_refs
+                }
+                after_refs = {
+                    ref
+                    for unit in parse_topic_tree(self.stage_dir / "topics")
+                    for ref in unit.source_refs
+                }
+                forbidden = after_refs - before_refs - set(selected_refs)
+                if forbidden:
+                    raise ValueError(
+                        "source reference outside runtime-selected batch: "
+                        f"{sorted(forbidden)[0]}"
+                    )
+                removed = before_refs - after_refs
+                if removed:
+                    raise ValueError(
+                        "source reference cannot be removed during restricted "
+                        f"write: {sorted(removed)[0]}"
+                    )
             self._synchronize()
             after_units = parse_topic_tree(self.stage_dir / "topics")
             after_topics = self._topic_fingerprints(self.stage_dir / "topics")

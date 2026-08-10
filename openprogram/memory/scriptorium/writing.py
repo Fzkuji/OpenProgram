@@ -22,7 +22,11 @@ from ..provider import WriteFailure
 from .management import organize_topics
 from .management.agent import _run_agent
 from .management.api import render_writer_task
-from .management.transaction import TransactionError, workspace_write_lock
+from .management.transaction import (
+    TransactionError,
+    workspace_revision,
+    workspace_write_lock,
+)
 from .runtime.online import OnlineMemoryRuntime
 from .runtime.state import SourceRecord
 
@@ -517,6 +521,167 @@ def distill_promoted_source(
             stage="promote",
         )
     return _changed_files(audit)
+
+
+def _backfill_candidates(memory_dir: Any) -> list[tuple[str, Any]]:
+    """Trusted source records that no Topic cites, in filesystem order."""
+    from pathlib import Path
+
+    from .markdown import parse_topic_tree
+    from .retrieval.bm25 import parse_source_file, prefer_v2_source_events
+
+    root = Path(memory_dir)
+    cited = {
+        ref
+        for unit in parse_topic_tree(root / "topics")
+        for ref in unit.source_refs
+    }
+    events = prefer_v2_source_events([
+        event
+        for path in sorted((root / "sources").rglob("*.md"))
+        if path.is_file() and not path.is_symlink()
+        for event in parse_source_file(path, root / "sources")
+    ])
+    candidates: dict[str, Any] = {}
+    for event in events:
+        if event.trust_state != "trusted":
+            continue
+        for raw_ref in event.refs:
+            ref = str(raw_ref).strip()
+            if ref and ref not in cited:
+                candidates.setdefault(ref, event)
+    return sorted(
+        candidates.items(),
+        key=lambda item: (item[1].path, item[1].line, item[0]),
+    )
+
+
+def _prepare_legacy_core(memory_dir: Any) -> None:
+    """Promote a valid legacy core or archive an invalid one as evidence."""
+    from pathlib import Path
+
+    from openprogram.agent.authority import owner_principal_id
+
+    from .management import MemoryWorkspace
+    from .runtime.derived_views import promote_legacy_core
+
+    root = Path(memory_dir)
+    legacy = root / "core.md"
+    if (root / "topics/core.md").is_file() or not legacy.is_file():
+        return
+    raw = legacy.read_bytes()
+    if not raw.strip():
+        return
+    text = raw.decode("utf-8")
+    with closing(MemoryWorkspace(root)) as workspace:
+        baseline = workspace.baseline()
+        if promote_legacy_core(workspace.stage_dir):
+            workspace.commit_edits(*baseline)
+            return
+
+        digest = hashlib.sha256(raw).hexdigest()
+        record = SourceRecord(
+            provider="openprogram-migration",
+            thread_id="legacy-core",
+            message_id=digest[:24],
+            ordinal=0,
+            role="system",
+            content=text,
+            speaker_id="runtime:legacy-core",
+            speaker_display="Legacy core migration",
+            speaker_kind="runtime",
+            principal_id=owner_principal_id(),
+            authority_tier="owner",
+            trust_state="trusted",
+        )
+        workspace.archive_source_records([record])
+
+
+def _backfill_batch(
+    candidates: list[tuple[str, Any]], counter: Any, token_limit: int,
+) -> list[tuple[str, Any]]:
+    if token_limit < 1:
+        raise ValueError("token_limit must be positive")
+    batch: list[tuple[str, Any]] = []
+    tokens = 0
+    for candidate in candidates:
+        size = max(1, int(counter(candidate[1].content)))
+        if batch and tokens + size > token_limit:
+            break
+        batch.append(candidate)
+        tokens += size
+    return batch
+
+
+def _backfill_sessions(batch: list[tuple[str, Any]]) -> list[dict[str, Any]]:
+    """Writer input with each source's own observation date, in source order."""
+    sessions: list[dict[str, Any]] = []
+    for ref, event in batch:
+        observed = event.date or "undated"
+        if not sessions or sessions[-1]["observation_date"] != observed:
+            sessions.append({
+                "observation_date": observed,
+                "turns": [],
+                "refs": [],
+            })
+        sessions[-1]["turns"].append((
+            event.speaker_label
+            or event.speaker_display
+            or event.speaker_id
+            or "user",
+            event.content,
+        ))
+        sessions[-1]["refs"].append(ref)
+    return sessions
+
+
+def backfill(
+    memory_dir: Any,
+    *,
+    model: str | None = None,
+    token_limit: int | None = None,
+) -> dict[str, Any]:
+    """Write every uncited trusted source, resumable at batch boundaries."""
+    from pathlib import Path
+
+    if token_limit is None:
+        from .provider import WRITE_TOKEN_THRESHOLD
+
+        token_limit = WRITE_TOKEN_THRESHOLD
+    root = Path(memory_dir).resolve()
+    counter = _counter()
+    with workspace_write_lock(root, timeout_s=5.0):
+        _prepare_legacy_core(root)
+        initial = _backfill_candidates(root)
+        remaining = initial
+        agent = None
+        while remaining:
+            batch = _backfill_batch(remaining, counter, token_limit)
+            if agent is None:
+                agent = _agent(model)
+            _run_agent(
+                root,
+                agent=agent,
+                task=render_writer_task(_backfill_sessions(batch)),
+                stage="backfill",
+                allowed_source_refs={ref for ref, _event in batch},
+            )
+            updated = _backfill_candidates(root)
+            if {ref for ref, _event in updated} == {
+                ref for ref, _event in remaining
+            }:
+                break
+            remaining = updated
+
+        initial_refs = {ref for ref, _event in initial}
+        remaining_refs = {ref for ref, _event in remaining}
+        return {
+            "status": "ok" if not remaining else "incomplete",
+            "candidates": len(initial),
+            "processed": len(initial_refs - remaining_refs),
+            "remaining": len(remaining),
+            "revision": workspace_revision(root),
+        }
 
 
 def reorganize(*, model: str | None = None) -> dict[str, Any]:

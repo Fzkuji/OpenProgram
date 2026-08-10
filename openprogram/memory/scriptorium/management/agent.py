@@ -155,12 +155,17 @@ def _run_agent(
     config: MemoryConfig | None = None,
     history_dir: str | Path | None = None,
     stage: str | None = None,
+    allowed_source_refs: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     config = config or MemoryConfig()
     # Verification runs against a throwaway copy of the memory. Its history
     # belongs with the real workspace, or it is deleted with the copy.
     history_dir = memory_dir if history_dir is None else history_dir
-    workspace = MemoryWorkspace(memory_dir, config=config)
+    workspace = MemoryWorkspace(
+        memory_dir,
+        config=config,
+        allowed_new_source_refs=allowed_source_refs,
+    )
     try:
         if source_sessions:
             workspace.archive_sessions(source_sessions)
