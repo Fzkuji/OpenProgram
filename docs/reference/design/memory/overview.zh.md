@@ -401,7 +401,11 @@ v2 frame之后重新开始解析。完整方案和实测代价见
 "谁说的"已经按独立可信字段实现。渠道入口把实际发信人的`speaker_id`和
 `speaker_display`与路由`peer_id`、正文分开传到持久化节点；网页、命令行、TUI和
 assistant轮次不合成身份。`SourceRecord.speaker_label`只规范化运行时字段来生成记录
-头，正文保持原样，写入prompt也明确只有`[ref] speaker: text`冒号前的名字建立身份。
+标签，正文保持原样。Final review证明裸的`[ref] speaker: text`存在单记录与多记录同字节歧义，
+因此最终协议改为每个真实turn只占一个JSONL物理行，
+对象里的`ref`、`speaker`和`content`分字段传输；只有`speaker`字段建立身份，
+`content`里的换行、引号、伪记录和JSON文本都只是正文。标准JSON转义保证解码后精确恢复
+CRLF、尾换行和Markdown，不清洗或改写用户原文。Observed日期标题仍由runtime在JSONL外生成。该协议在本节实现进度中记为待实现。
 
 新source记录只写入从固定marker开始的`_v2/`文件，并在`source-id`和可选的percent编码
 `speaker-id`之后写`record-lines:N`。归档和parser按字面LF计数并跳过整段正文；parser遇到
