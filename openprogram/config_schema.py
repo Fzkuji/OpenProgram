@@ -62,7 +62,7 @@ def _validate_web_origins(value: Any) -> Optional[str]:
         isinstance(origin, str) for origin in value
     ):
         return "must be a JSON list of Origin strings"
-    from openprogram.webui.owner_auth import OwnerAuthError, canonicalize_origin
+    from openprogram.backend_endpoint import OwnerAuthError, canonicalize_origin
 
     for origin in value:
         try:
@@ -73,7 +73,7 @@ def _validate_web_origins(value: Any) -> Optional[str]:
 
 
 def _validate_web_bind_host(value: Any) -> Optional[str]:
-    from openprogram.webui.owner_auth import OwnerAuthError, canonicalize_bind_host
+    from openprogram.backend_endpoint import OwnerAuthError, canonicalize_bind_host
 
     try:
         canonicalize_bind_host(str(value))

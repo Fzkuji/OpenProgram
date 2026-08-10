@@ -24,9 +24,9 @@ def _require_backend_endpoint():
 
     The endpoint carries the owner token, so it is only produced after the
     listener proves — via the nonce/HMAC challenge — that it belongs to this
-    profile (see ``webui.owner_auth.resolve_backend_endpoint``).
+    profile (see ``backend_endpoint.resolve_backend_endpoint``).
     """
-    from openprogram.webui.owner_auth import (
+    from openprogram.backend_endpoint import (
         OwnerAuthError,
         resolve_backend_endpoint,
     )

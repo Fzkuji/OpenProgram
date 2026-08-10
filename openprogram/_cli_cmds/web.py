@@ -31,12 +31,12 @@ _FRONTEND_PORT = 18100
 
 def _active_owner_auth_url(base_url: str, port: int) -> str:
     """Return a bootstrap URL only when ``base_url`` is an effective Origin."""
-    from openprogram.webui.owner_auth import (
+    from openprogram.backend_endpoint import (
         build_owner_auth_url,
         read_active_web_access,
         read_web_token,
     )
-    from openprogram.webui.owner_auth import OwnerAuthError
+    from openprogram.backend_endpoint import OwnerAuthError
 
     if _backend_is_ours(port) is not True:
         raise OwnerAuthError("active Web server is not owned by this profile")
@@ -53,7 +53,7 @@ def _active_owner_auth_url(base_url: str, port: int) -> str:
 def _cmd_web_auth_url(base_url: str) -> int:
     """Print a fragment-bootstrap URL for the active Web server."""
     from openprogram.worker.lifecycle import read_worker_port
-    from openprogram.webui.owner_auth import OwnerAuthError
+    from openprogram.backend_endpoint import OwnerAuthError
 
     port = read_worker_port()
     if port is None:
@@ -274,7 +274,7 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
             print("  Or stop the other instance first:  pkill -f 'openprogram web'")
             if open_browser:
                 import webbrowser
-                from openprogram.webui.owner_auth import OwnerAuthError
+                from openprogram.backend_endpoint import OwnerAuthError
 
                 try:
                     webbrowser.open(_active_owner_auth_url(ui, port))
@@ -326,7 +326,7 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
 
     if open_browser:
         import webbrowser
-        from openprogram.webui.owner_auth import OwnerAuthError
+        from openprogram.backend_endpoint import OwnerAuthError
 
         try:
             webbrowser.open(_active_owner_auth_url(ui_url, web_port))

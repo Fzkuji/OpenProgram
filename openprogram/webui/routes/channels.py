@@ -57,7 +57,7 @@ class ApprovePairingRequest(BaseModel):
 
 def _require_local_request(request: Request) -> None:
     """Pairing codes and mutations are available only on loopback."""
-    from openprogram.webui.owner_auth import is_loopback_host
+    from openprogram.backend_endpoint import is_loopback_host
 
     host = getattr(getattr(request, "client", None), "host", "")
     if not is_loopback_host(host):

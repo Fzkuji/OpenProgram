@@ -3,6 +3,7 @@
 > 本文定义所有者如何在本机、可信局域网或 VPN、SSH 隧道，以及所有者自行运维的
 > HTTPS 反向代理上使用 OpenProgram 现有 Web UI。英文正文是规范基准；本文和独立
 > HTML 页面表达同一设计。关联代码：`openprogram/webui/owner_auth.py`、
+> `openprogram/backend_endpoint.py`、
 > `openprogram/webui/server.py`、`openprogram/_cli_cmds/web.py`、
 > `web/lib/net/owner-auth-bootstrap.ts`、`openprogram/agent/authority.py`。
 > 关联设计：[说话人身份](../memory/speaker-identity.md)、

@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from openprogram.webui.owner_auth import (
+from openprogram.backend_endpoint import (
     ActiveWebAccess,
     OwnerAuthError,
-    OwnerAuthState,
     resolve_backend_endpoint,
     select_connect_host,
     select_request_origin,
 )
+from openprogram.webui.owner_auth import OwnerAuthState
 
 
 RAW_TOKEN = bytes(range(32))
@@ -144,7 +144,7 @@ def test_resolve_backend_endpoint_never_transmits_the_token(
 def test_mcp_cli_sends_bearer_only_to_the_verified_endpoint(monkeypatch):
     """``openprogram mcp`` authenticates instead of assuming 127.0.0.1."""
     from openprogram._cli_cmds import mcp as mcp_cli
-    from openprogram.webui.owner_auth import BackendEndpoint
+    from openprogram.backend_endpoint import BackendEndpoint
 
     endpoint = BackendEndpoint(
         base_url=f"http://127.0.0.1:{EPHEMERAL_PORT}",
@@ -156,7 +156,7 @@ def test_mcp_cli_sends_bearer_only_to_the_verified_endpoint(monkeypatch):
         token=TOKEN,
     )
     monkeypatch.setattr(
-        "openprogram.webui.owner_auth.resolve_backend_endpoint",
+        "openprogram.backend_endpoint.resolve_backend_endpoint",
         lambda *_args, **_kwargs: endpoint,
     )
 
@@ -203,7 +203,7 @@ def test_mcp_cli_exits_when_no_verified_endpoint(monkeypatch, capsys):
         raise OwnerAuthError("no active Web access snapshot")
 
     monkeypatch.setattr(
-        "openprogram.webui.owner_auth.resolve_backend_endpoint", refuse
+        "openprogram.backend_endpoint.resolve_backend_endpoint", refuse
     )
     with pytest.raises(SystemExit) as exit_info:
         mcp_cli._request("GET", "/api/mcp/servers")

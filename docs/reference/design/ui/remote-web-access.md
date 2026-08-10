@@ -5,6 +5,7 @@
 > owner-operated HTTPS reverse proxy. The English text is normative; the
 > Chinese translation and the standalone HTML page present the same design.
 > Related code: `openprogram/webui/owner_auth.py`,
+> `openprogram/backend_endpoint.py`,
 > `openprogram/webui/server.py`, `openprogram/_cli_cmds/web.py`,
 > `web/lib/net/owner-auth-bootstrap.ts`, and
 > `openprogram/agent/authority.py`.

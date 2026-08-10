@@ -16,14 +16,16 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from openprogram.webui.owner_auth import (
-    OwnerAuthMiddleware,
+from openprogram.backend_endpoint import (
     OwnerAuthError,
-    OwnerAuthState,
     canonicalize_bind_host,
     canonicalize_origin,
     create_owner_challenge_proof,
     read_active_web_access,
+)
+from openprogram.webui.owner_auth import (
+    OwnerAuthMiddleware,
+    OwnerAuthState,
 )
 
 

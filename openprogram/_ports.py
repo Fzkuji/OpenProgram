@@ -89,7 +89,7 @@ def backend_accepts_owner_challenge(
     import urllib.parse
     import urllib.request
 
-    from openprogram.webui.owner_auth import (
+    from openprogram.backend_endpoint import (
         OwnerAuthError,
         create_owner_challenge_proof,
         read_active_web_access,

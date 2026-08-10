@@ -1719,7 +1719,7 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
 
     url = f"http://localhost:{port}"
     from urllib.parse import urlsplit
-    from .owner_auth import is_loopback_host
+    from openprogram.backend_endpoint import is_loopback_host
 
     binding_scope = (
         "loopback"
@@ -1757,7 +1757,7 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
             import webbrowser
 
             from openprogram._ports import backend_accepts_owner_challenge
-            from .owner_auth import build_owner_auth_url
+            from openprogram.backend_endpoint import build_owner_auth_url
 
             deadline = time.monotonic() + 10.0
             while time.monotonic() < deadline:

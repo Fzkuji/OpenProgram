@@ -25,8 +25,8 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
 from starlette.routing import Route, WebSocketRoute
 
+from openprogram.backend_endpoint import OwnerAuthError
 from openprogram.webui.owner_auth import (
-    OwnerAuthError,
     OwnerAuthMiddleware,
     OwnerAuthState,
 )
@@ -521,7 +521,7 @@ def test_token_never_appears_in_logs_responses_urls_or_rendered_html(
 
 def test_snapshot_rejects_a_tampered_token_fingerprint(tmp_path: Path):
     """A snapshot that no longer matches the token file is not trusted."""
-    from openprogram.webui.owner_auth import read_active_web_access
+    from openprogram.backend_endpoint import read_active_web_access
 
     state = OwnerAuthState.start(
         state_dir=tmp_path,

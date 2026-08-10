@@ -355,7 +355,7 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
     # Resolve the backend endpoint once, challenge-verified, and hand the
     # owner token to the TUI through the child's environment only — never
     # on argv (world-readable via ps) and never in a URL query.
-    from openprogram.webui.owner_auth import (
+    from openprogram.backend_endpoint import (
         OwnerAuthError,
         resolve_backend_endpoint,
     )

@@ -47,7 +47,7 @@ from openprogram.mcp.config import (
 def _require_local_request(request: Request) -> None:
     """Allow loopback clients; browser requests must also be same-origin."""
     from urllib.parse import urlsplit
-    from openprogram.webui.owner_auth import is_loopback_host
+    from openprogram.backend_endpoint import is_loopback_host
 
     client_host = getattr(getattr(request, "client", None), "host", "")
     host = request.headers.get("host", "").strip().lower()

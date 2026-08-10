@@ -3,10 +3,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from openprogram._ports import backend_is_ours
-from openprogram.webui.owner_auth import (
-    OwnerAuthState,
-    create_owner_challenge_proof,
-)
+from openprogram.backend_endpoint import create_owner_challenge_proof
+from openprogram.webui.owner_auth import OwnerAuthState
 
 
 RAW_TOKEN = bytes(range(32))
