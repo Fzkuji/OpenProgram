@@ -27,6 +27,7 @@ from openprogram.agent.run_control import (
 def agent_run(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setattr("openprogram.paths._migration_checked", True)
+    monkeypatch.setattr("openprogram.setup._read_config", lambda: {"sandbox": {"mode": "off"}})
     token = begin_turn("session/one", "turn:two")
     sid_token = set_current_session_id("session/one")
     try:
