@@ -1,0 +1,58 @@
+name: Docs site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "tools/docs_site/**"
+      - ".github/workflows/docs-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push supersedes a queued one but never
+# cancels a running deploy.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # The site is served at the domain root, so links and sitemap entries carry
+    # no path prefix. The generated reference pages are produced from the real
+    # argparse tree and config schema, which is why the package is installed.
+    env:
+      OPENPROGRAM_DOCS_BASE: /
+      OPENPROGRAM_DOCS_ORIGIN: https://openprogram.io
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install package and docs build dependencies
+        run: pip install -e . markdown-it-py mdit-py-plugins pygments
+      - name: Generate reference pages
+        run: python -m tools.docs_site.generate_reference
+      - name: Build docs site
+        run: python -m tools.docs_site.build
+      - name: Check docs links
+        run: python -m tools.docs_site.checklinks
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
