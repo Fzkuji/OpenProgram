@@ -1,0 +1,68 @@
+import pytest
+
+from openprogram.providers.structured_output import (
+    StructuredOutputSchemaError,
+    StructuredOutputValidationError,
+    normalize_response_format,
+    parse_and_validate_json,
+)
+
+
+SCHEMA = {
+    "type": "object",
+    "properties": {"answer": {"type": "integer"}},
+    "required": ["answer"],
+    "additionalProperties": False,
+}
+
+
+def test_normalize_bare_schema_without_mutating_caller():
+    original = {**SCHEMA, "properties": dict(SCHEMA["properties"])}
+
+    output = normalize_response_format(original)
+    output.schema["properties"]["answer"]["minimum"] = 0
+
+    assert output.name == "response"
+    assert output.fallback == "auto"
+    assert "minimum" not in original["properties"]["answer"]
+
+
+def test_normalize_envelope_and_reject_invalid_schema_before_request():
+    output = normalize_response_format({
+        "type": "json_schema",
+        "schema": SCHEMA,
+        "name": "answer_1",
+        "fallback": "prompt",
+        "max_validation_retries": 0,
+    })
+    assert output.name == "answer_1"
+    assert output.max_validation_retries == 0
+
+    with pytest.raises(StructuredOutputSchemaError) as exc:
+        normalize_response_format({"type": "object", "properties": {"x": {"type": "not-a-type"}}})
+    assert exc.value.code == "invalid_schema"
+
+
+@pytest.mark.parametrize("raw", [
+    '```json\n{"answer": 1}\n```',
+    '{"answer": 1} trailing',
+    '{"answer": NaN}',
+    '{"answer": Infinity}',
+])
+def test_parser_rejects_non_json_wrappers_and_non_finite_numbers(raw):
+    output = normalize_response_format(SCHEMA)
+    with pytest.raises(StructuredOutputValidationError) as exc:
+        parse_and_validate_json(raw, output)
+    assert exc.value.code == "invalid_json"
+
+
+def test_validation_returns_typed_value_and_bounded_deterministic_issues():
+    output = normalize_response_format(SCHEMA)
+    assert parse_and_validate_json('{"answer": 3}', output) == {"answer": 3}
+
+    with pytest.raises(StructuredOutputValidationError) as exc:
+        parse_and_validate_json('{"answer": "no", "extra": true}', output)
+
+    assert exc.value.code == "validation_failed"
+    assert [issue["path"] for issue in exc.value.issues] == ["", "/answer"]
+    assert all(len(issue["message"]) <= 500 for issue in exc.value.issues)

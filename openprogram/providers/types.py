@@ -8,6 +8,8 @@ from typing import Any, AsyncGenerator, Awaitable, Callable, Literal, Union
 
 from pydantic import BaseModel, Field
 
+from .structured_output import JsonSchemaOutput
+
 # Provider / API identifiers
 
 KnownApi = Literal[
@@ -132,6 +134,7 @@ class StreamOptions(BaseModel):
     # model runs the search server-side and folds results into its output.
     # ``None`` / False = no web search. Read via ``opts.get("web_search")``.
     web_search: bool | None = None
+    response_format: JsonSchemaOutput | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -260,6 +263,9 @@ class AssistantMessage(BaseModel):
     error_reason: str | None = None         # ErrorReason value, e.g. "rate_limit"
     error_retryable: bool | None = None
     error_retry_after_s: float | None = None
+    structured_output: Any | None = None
+    structured_output_mode: Literal["native", "tool", "prompt"] | None = None
+    structured_output_attempt: int | None = None
     timestamp: int  # Unix ms
 
 
@@ -312,6 +318,7 @@ class Model(BaseModel):
     provider: Provider
     base_url: str
     reasoning: bool = False
+    structured_output: bool | None = None
     # Declared thinking capability. Empty list = model doesn't support
     # reasoning; UI hides the menu entirely. `reasoning: bool` stays as the
     # simple "anything at all?" flag (kept for backward compat with
