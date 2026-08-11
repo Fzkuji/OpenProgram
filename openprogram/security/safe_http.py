@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import ipaddress
+import os
 import ssl
+import tempfile
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
+from time import monotonic
 from types import MappingProxyType
 from typing import Any, Iterator
+from urllib.parse import urljoin
 
 import httpcore
 import httpx
@@ -21,8 +27,21 @@ from .url_policy import (
     URLPolicyError,
     URLTrustClass,
     evaluate_url,
+    normalize_origin,
+    normalize_url,
     resolve_all,
 )
+
+
+_MAX_RESPONSE_HEADERS = 100
+_MAX_ENCODED_HEADER_BYTES = 65_536
+_CONNECT_TIMEOUT = 10.0
+_READ_TIMEOUT = 30.0
+_WRITE_TIMEOUT = 30.0
+_POOL_TIMEOUT = 5.0
+_OVERALL_TIMEOUT = 120.0
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_SUPPORTED_ENCODINGS = frozenset({"identity", "gzip", "deflate"})
 
 
 class SDKDisposition(str, Enum):
@@ -45,6 +64,7 @@ class ConsumerSpec:
     max_decoded_body_bytes: int
     accepted_mime_prefixes: tuple[str, ...]
     credential_origin_policy: str
+    credential_headers: frozenset[str]
     allow_owner_exceptions: bool
     sdk_disposition: SDKDisposition | None = None
 
@@ -55,6 +75,9 @@ _PUBLIC_PORTS = frozenset({80, 443})
 _READ_METHODS = frozenset({"GET", "HEAD"})
 _API_METHODS = frozenset({"GET", "HEAD", "POST"})
 _ANY_MIME = ("application/", "audio/", "image/", "text/", "video/")
+_CREDENTIAL_HEADERS = frozenset(
+    {"authorization", "cookie", "proxy-authorization", "x-api-key"}
+)
 _NO_FIXED_ORIGINS: frozenset[str] = frozenset()
 _AUDITED_FIXED_ORIGINS = MappingProxyType(
     {
@@ -173,6 +196,7 @@ def _download(consumer: str, trust_class: URLTrustClass) -> ConsumerSpec:
         max_decoded_body_bytes=32 * 1024 * 1024,
         accepted_mime_prefixes=_ANY_MIME,
         credential_origin_policy="same_origin" if configured else "none",
+        credential_headers=_CREDENTIAL_HEADERS,
         allow_owner_exceptions=configured,
     )
 
@@ -199,6 +223,7 @@ def _api(
         max_decoded_body_bytes=16 * 1024 * 1024,
         accepted_mime_prefixes=("application/", "text/"),
         credential_origin_policy="same_origin",
+        credential_headers=_CREDENTIAL_HEADERS,
         allow_owner_exceptions=configured,
         sdk_disposition=sdk_disposition,
     )
@@ -217,6 +242,7 @@ def _callback(consumer: str) -> ConsumerSpec:
         max_decoded_body_bytes=1024 * 1024,
         accepted_mime_prefixes=("application/", "text/"),
         credential_origin_policy="none",
+        credential_headers=_CREDENTIAL_HEADERS,
         allow_owner_exceptions=False,
     )
 
@@ -319,18 +345,43 @@ def _map_httpcore_exceptions() -> Iterator[None]:
 
 
 @dataclass(frozen=True)
+class PolicyProxyConfig:
+    url: str
+    enforces_target_policy: bool
+
+
+@dataclass(frozen=True)
+class AuditEvent:
+    consumer: str
+    reason: str
+    safe_origin: str
+    delegated_to_policy_proxy: bool
+    timestamp: str
+
+
+@dataclass(frozen=True)
 class OutboundSecurityConfig:
     resolver: Resolver = resolve_all
     owner_exceptions: tuple[OwnerURLException, ...] = ()
     ca_bundle: str | None = None
     retries: int = 0
     policy_proxy_identity: str | None = None
+    policy_proxy: PolicyProxyConfig | None = None
 
     def __post_init__(self) -> None:
         if self.ca_bundle is not None and not isinstance(self.ca_bundle, str):
             raise TypeError("ca_bundle must be a CA bundle path")
         if self.retries < 0:
             raise ValueError("retries must be non-negative")
+        if (
+            self.policy_proxy is not None
+            and not self.policy_proxy.enforces_target_policy
+        ):
+            try:
+                safe_origin = normalize_origin(self.policy_proxy.url)
+            except URLPolicyError as exc:
+                safe_origin = exc.safe_url
+            raise URLPolicyError("POLICY_PROXY_ENFORCEMENT_REQUIRED", safe_origin)
 
 
 def _canonical_peer(stream: Any, decision: URLDecision):
@@ -560,6 +611,98 @@ class _AsyncResponseStream(httpx.AsyncByteStream):
                 await self._close_pool()
 
 
+def _validate_response_headers(
+    headers: list[tuple[bytes, bytes]], spec: ConsumerSpec, safe_origin: str
+) -> None:
+    if len(headers) > _MAX_RESPONSE_HEADERS:
+        raise URLPolicyError("TOO_MANY_HEADERS", safe_origin)
+    encoded_size = sum(len(name) + len(value) + 4 for name, value in headers)
+    if encoded_size > _MAX_ENCODED_HEADER_BYTES:
+        raise URLPolicyError("HEADERS_TOO_LARGE", safe_origin)
+    values = {name.lower(): value for name, value in headers}
+    encoding = values.get(b"content-encoding", b"identity")
+    try:
+        encodings = {
+            item.strip().lower()
+            for item in encoding.decode("ascii").split(",")
+            if item.strip()
+        } or {"identity"}
+    except UnicodeDecodeError as exc:
+        raise URLPolicyError("CONTENT_ENCODING_FORBIDDEN", safe_origin) from exc
+    if not encodings <= _SUPPORTED_ENCODINGS:
+        raise URLPolicyError("CONTENT_ENCODING_FORBIDDEN", safe_origin)
+    content_type = values.get(b"content-type")
+    if content_type is not None:
+        mime = content_type.decode("latin-1").split(";", 1)[0].strip().lower()
+        if not any(mime.startswith(prefix) for prefix in spec.accepted_mime_prefixes):
+            raise URLPolicyError("MIME_TYPE_FORBIDDEN", safe_origin)
+    content_length = values.get(b"content-length")
+    if content_length is not None:
+        try:
+            declared = int(content_length)
+        except ValueError:
+            declared = 0
+        if declared > spec.max_decoded_body_bytes:
+            raise URLPolicyError("BODY_TOO_LARGE", safe_origin)
+
+
+class _LimitedResponse(httpx.Response):
+    def __init__(
+        self,
+        *args,
+        max_decoded_body_bytes: int,
+        deadline: float,
+        safe_origin: str,
+        on_error,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._max_decoded_body_bytes = max_decoded_body_bytes
+        self._safe_origin = safe_origin
+        self._deadline = deadline
+        self._on_limit_error = on_error
+
+    def _check(self, size: int) -> None:
+        reason = None
+        if monotonic() > self._deadline:
+            reason = "OVERALL_TIMEOUT"
+        elif size > self._max_decoded_body_bytes:
+            reason = "BODY_TOO_LARGE"
+        if reason is not None:
+            error = URLPolicyError(reason, self._safe_origin)
+            self._on_limit_error(error)
+            raise error
+
+    def iter_bytes(self, chunk_size: int | None = None):
+        if hasattr(self, "_content"):
+            yield from super().iter_bytes(chunk_size)
+            return
+        size = 0
+        try:
+            for chunk in super().iter_bytes(chunk_size):
+                size += len(chunk)
+                self._check(size)
+                yield chunk
+        except BaseException:
+            self.close()
+            raise
+
+    async def aiter_bytes(self, chunk_size: int | None = None):
+        if hasattr(self, "_content"):
+            async for chunk in super().aiter_bytes(chunk_size):
+                yield chunk
+            return
+        size = 0
+        try:
+            async for chunk in super().aiter_bytes(chunk_size):
+                size += len(chunk)
+                self._check(size)
+                yield chunk
+        except BaseException:
+            await self.aclose()
+            raise
+
+
 class _ManagedTransportBase:
     def __init__(
         self,
@@ -575,12 +718,28 @@ class _ManagedTransportBase:
         self._configured_origin = configured_origin
         self._callback_origin = callback_origin
         self._security = security or OutboundSecurityConfig()
+        self._audit_events: list[AuditEvent] = []
         verify = self._security.ca_bundle
         if verify is not None:
             verify = ssl.create_default_context(cafile=verify)
         else:
             verify = True
         self._ssl_context = httpx.create_ssl_context(verify=verify, trust_env=False)
+
+    @property
+    def audit_events(self) -> tuple[AuditEvent, ...]:
+        return tuple(self._audit_events)
+
+    def _record(self, reason: str, safe_origin: str) -> None:
+        self._audit_events.append(
+            AuditEvent(
+                consumer=self._consumer,
+                reason=reason,
+                safe_origin=safe_origin,
+                delegated_to_policy_proxy=self._security.policy_proxy is not None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+        )
 
     def _evaluate(self, method: str, url: str) -> URLDecision:
         spec = CONSUMER_REGISTRY[self._consumer]
@@ -593,29 +752,64 @@ class _ManagedTransportBase:
             if spec.allow_owner_exceptions
             else ()
         )
-        return evaluate_url(
-            self._consumer,
-            method,
-            url,
-            trust_class=spec.trust_class,
-            allowed_schemes=spec.allowed_schemes,
-            allowed_methods=spec.allowed_methods,
-            allowed_ports=spec.allowed_ports,
-            fixed_origins=spec.fixed_origins,
-            configured_origin=self._configured_origin,
-            callback_origin=self._callback_origin,
-            exceptions=exceptions,
-            resolver=self._security.resolver,
+        try:
+            decision = evaluate_url(
+                self._consumer,
+                method,
+                url,
+                trust_class=spec.trust_class,
+                allowed_schemes=spec.allowed_schemes,
+                allowed_methods=spec.allowed_methods,
+                allowed_ports=spec.allowed_ports,
+                fixed_origins=spec.fixed_origins,
+                configured_origin=self._configured_origin,
+                callback_origin=self._callback_origin,
+                exceptions=exceptions,
+                resolver=self._security.resolver,
+            )
+        except URLPolicyError as exc:
+            self._record(exc.reason, exc.safe_url)
+            raise
+        self._record("ALLOWED", decision.origin)
+        return decision
+
+    def _evaluate_proxy(self) -> URLDecision:
+        proxy = self._security.policy_proxy
+        if proxy is None:
+            raise RuntimeError("policy proxy is not configured")
+        exceptions = tuple(
+            exception
+            for exception in self._security.owner_exceptions
+            if exception.consumer == "runtime.local_probe"
         )
+        try:
+            decision = evaluate_url(
+                "runtime.local_probe",
+                "GET",
+                proxy.url,
+                trust_class=URLTrustClass.CONFIGURED_SERVICE,
+                allowed_schemes=_HTTP_SCHEMES,
+                allowed_methods=_READ_METHODS,
+                allowed_ports=None,
+                configured_origin=proxy.url,
+                exceptions=exceptions,
+                resolver=self._security.resolver,
+            )
+        except URLPolicyError as exc:
+            self._record(exc.reason, exc.safe_url)
+            raise
+        self._record("PROXY_DELEGATED", decision.origin)
+        return decision
 
     @staticmethod
     def _request_metadata(request: httpx.Request, decision: URLDecision):
         headers = [
             (name, value)
             for name, value in request.headers.raw
-            if name.lower() != b"host"
+            if name.lower() not in {b"host", b"proxy-authorization", b"accept-encoding"}
         ]
         headers.append((b"Host", decision.origin.split("://", 1)[1].encode("ascii")))
+        headers.append((b"Accept-Encoding", b"gzip, deflate"))
         extensions = dict(request.extensions)
         extensions["sni_hostname"] = decision.hostname
         return headers, extensions
@@ -640,11 +834,23 @@ class ManagedHTTPTransport(_ManagedTransportBase, httpx.BaseTransport):
         self._pools_lock = threading.Lock()
 
     def _pool(self, decision: URLDecision) -> httpcore.ConnectionPool:
-        pool = httpcore.ConnectionPool(
-            ssl_context=self._ssl_context,
-            retries=self._security.retries,
-            network_backend=DecisionNetworkBackend(decision),
-        )
+        if self._security.policy_proxy is None:
+            pool = httpcore.ConnectionPool(
+                ssl_context=self._ssl_context,
+                retries=self._security.retries,
+                network_backend=DecisionNetworkBackend(decision),
+            )
+        else:
+            proxy = self._evaluate_proxy()
+            pool = httpcore.HTTPProxy(
+                proxy_url=proxy.normalized_url,
+                ssl_context=self._ssl_context,
+                proxy_ssl_context=(
+                    self._ssl_context if proxy.origin.startswith("https://") else None
+                ),
+                retries=self._security.retries,
+                network_backend=DecisionNetworkBackend(proxy),
+            )
         with self._pools_lock:
             self._active_pools.add(pool)
         return pool
@@ -675,12 +881,29 @@ class ManagedHTTPTransport(_ManagedTransportBase, httpx.BaseTransport):
             raise
         extensions = dict(response.extensions)
         extensions["url_decision"] = decision
-        return httpx.Response(
-            status_code=response.status,
-            headers=response.headers,
-            stream=_ResponseStream(response.stream, lambda: self._close_pool(pool)),
-            extensions=extensions,
-        )
+        spec = CONSUMER_REGISTRY[self._consumer]
+        try:
+            _validate_response_headers(response.headers, spec, decision.origin)
+            deadline = request.extensions.get("safe_overall_deadline")
+            if deadline is None:
+                deadline = monotonic() + _OVERALL_TIMEOUT
+            return _LimitedResponse(
+                status_code=response.status,
+                headers=response.headers,
+                stream=_ResponseStream(response.stream, lambda: self._close_pool(pool)),
+                extensions=extensions,
+                max_decoded_body_bytes=spec.max_decoded_body_bytes,
+                deadline=deadline,
+                safe_origin=decision.origin,
+                on_error=lambda error: self._record(error.reason, error.safe_url),
+            )
+        except BaseException as exc:
+            if isinstance(exc, URLPolicyError):
+                self._record(exc.reason, exc.safe_url)
+            with _map_httpcore_exceptions():
+                response.stream.close()
+            self._close_pool(pool)
+            raise
 
     def close(self) -> None:
         with self._pools_lock:
@@ -708,11 +931,23 @@ class AsyncManagedHTTPTransport(_ManagedTransportBase, httpx.AsyncBaseTransport)
         self._active_pools: set[httpcore.AsyncConnectionPool] = set()
 
     def _pool(self, decision: URLDecision) -> httpcore.AsyncConnectionPool:
-        pool = httpcore.AsyncConnectionPool(
-            ssl_context=self._ssl_context,
-            retries=self._security.retries,
-            network_backend=AsyncDecisionNetworkBackend(decision),
-        )
+        if self._security.policy_proxy is None:
+            pool = httpcore.AsyncConnectionPool(
+                ssl_context=self._ssl_context,
+                retries=self._security.retries,
+                network_backend=AsyncDecisionNetworkBackend(decision),
+            )
+        else:
+            proxy = self._evaluate_proxy()
+            pool = httpcore.AsyncHTTPProxy(
+                proxy_url=proxy.normalized_url,
+                ssl_context=self._ssl_context,
+                proxy_ssl_context=(
+                    self._ssl_context if proxy.origin.startswith("https://") else None
+                ),
+                retries=self._security.retries,
+                network_backend=AsyncDecisionNetworkBackend(proxy),
+            )
         self._active_pools.add(pool)
         return pool
 
@@ -741,14 +976,31 @@ class AsyncManagedHTTPTransport(_ManagedTransportBase, httpx.AsyncBaseTransport)
             raise
         extensions = dict(response.extensions)
         extensions["url_decision"] = decision
-        return httpx.Response(
-            status_code=response.status,
-            headers=response.headers,
-            stream=_AsyncResponseStream(
-                response.stream, lambda: self._close_pool(pool)
-            ),
-            extensions=extensions,
-        )
+        spec = CONSUMER_REGISTRY[self._consumer]
+        try:
+            _validate_response_headers(response.headers, spec, decision.origin)
+            deadline = request.extensions.get("safe_overall_deadline")
+            if deadline is None:
+                deadline = monotonic() + _OVERALL_TIMEOUT
+            return _LimitedResponse(
+                status_code=response.status,
+                headers=response.headers,
+                stream=_AsyncResponseStream(
+                    response.stream, lambda: self._close_pool(pool)
+                ),
+                extensions=extensions,
+                max_decoded_body_bytes=spec.max_decoded_body_bytes,
+                deadline=deadline,
+                safe_origin=decision.origin,
+                on_error=lambda error: self._record(error.reason, error.safe_url),
+            )
+        except BaseException as exc:
+            if isinstance(exc, URLPolicyError):
+                self._record(exc.reason, exc.safe_url)
+            with _map_httpcore_exceptions():
+                await response.stream.aclose()
+            await self._close_pool(pool)
+            raise
 
     async def aclose(self) -> None:
         pools = tuple(self._active_pools)
@@ -757,18 +1009,289 @@ class AsyncManagedHTTPTransport(_ManagedTransportBase, httpx.AsyncBaseTransport)
             await pool.aclose()
 
 
+def _timeout() -> httpx.Timeout:
+    return httpx.Timeout(
+        _READ_TIMEOUT,
+        connect=_CONNECT_TIMEOUT,
+        write=_WRITE_TIMEOUT,
+        pool=_POOL_TIMEOUT,
+    )
+
+
+def _redirect_request(
+    client: httpx.Client | httpx.AsyncClient,
+    request: httpx.Request,
+    response: httpx.Response,
+    target_url: str,
+) -> httpx.Request:
+    method = request.method
+    content = None
+    headers = httpx.Headers(request.headers)
+    if response.status_code == 303 or (
+        response.status_code in {301, 302} and method != "HEAD"
+    ):
+        method = "GET"
+        for name in ("content-length", "content-type", "transfer-encoding"):
+            headers.pop(name, None)
+    elif response.status_code in {307, 308}:
+        try:
+            content = request.content
+        except (httpx.RequestNotRead, httpx.StreamConsumed) as exc:
+            raise URLPolicyError(
+                "NON_REWINDABLE_BODY", normalize_origin(str(request.url))
+            ) from exc
+    extensions = dict(request.extensions)
+    return client.build_request(
+        method,
+        target_url,
+        content=content,
+        headers=headers,
+        extensions=extensions,
+    )
+
+
+def _sanitize_credentials(request: httpx.Request, spec: ConsumerSpec) -> None:
+    request.headers.pop("proxy-authorization", None)
+    if spec.credential_origin_policy == "none":
+        for name in spec.credential_headers:
+            request.headers.pop(name, None)
+
+
 class SafeClient(httpx.Client):
     def __init__(self, transport: ManagedHTTPTransport):
         if type(transport) is not ManagedHTTPTransport:
             raise TypeError("SafeClient requires ManagedHTTPTransport")
-        super().__init__(transport=transport, trust_env=False, follow_redirects=False)
+        super().__init__(
+            transport=transport,
+            trust_env=False,
+            follow_redirects=False,
+            timeout=_timeout(),
+        )
+
+    @property
+    def audit_events(self) -> tuple[AuditEvent, ...]:
+        return self._transport.audit_events
+
+    def send(
+        self,
+        request: httpx.Request,
+        *,
+        stream: bool = False,
+        auth: Any = None,
+        follow_redirects: Any = None,
+    ) -> httpx.Response:
+        del follow_redirects
+        spec = CONSUMER_REGISTRY[self._transport._consumer]
+        deadline = request.extensions.setdefault(
+            "safe_overall_deadline", monotonic() + _OVERALL_TIMEOUT
+        )
+        try:
+            seen = {normalize_url(str(request.url)).normalized_url}
+        except URLPolicyError as exc:
+            self._transport._record(exc.reason, exc.safe_url)
+            raise
+        history: list[httpx.Response] = []
+        current = request
+        while True:
+            if monotonic() > deadline:
+                error = URLPolicyError(
+                    "OVERALL_TIMEOUT", normalize_origin(str(current.url))
+                )
+                self._transport._record(error.reason, error.safe_url)
+                raise error
+            _sanitize_credentials(current, spec)
+            try:
+                response = super().send(
+                    current,
+                    stream=True,
+                    auth=None if spec.credential_origin_policy == "none" else auth,
+                    follow_redirects=False,
+                )
+            except URLPolicyError:
+                raise
+            if (
+                response.status_code not in _REDIRECT_STATUSES
+                or "location" not in response.headers
+            ):
+                response.history = history
+                if not stream:
+                    response.read()
+                return response
+            if spec.redirect_policy == "deny":
+                response.close()
+                error = URLPolicyError(
+                    "REDIRECT_FORBIDDEN", normalize_origin(str(current.url))
+                )
+                self._transport._record(error.reason, error.safe_url)
+                raise error
+            if len(history) >= spec.max_redirects:
+                response.close()
+                error = URLPolicyError(
+                    "TOO_MANY_REDIRECTS", normalize_origin(str(current.url))
+                )
+                self._transport._record(error.reason, error.safe_url)
+                raise error
+            target = normalize_url(
+                urljoin(str(current.url), response.headers["location"])
+            )
+            current_origin = normalize_origin(str(current.url))
+            if current.url.scheme == "https" and target.scheme == "http":
+                response.close()
+                error = URLPolicyError("HTTPS_DOWNGRADE", target.origin)
+                self._transport._record(error.reason, error.safe_url)
+                raise error
+            if (
+                spec.redirect_policy == "same_origin"
+                and target.origin != current_origin
+            ):
+                response.close()
+                error = URLPolicyError("REDIRECT_ORIGIN_FORBIDDEN", target.origin)
+                self._transport._record(error.reason, error.safe_url)
+                raise error
+            if target.normalized_url in seen:
+                response.close()
+                error = URLPolicyError("REDIRECT_LOOP", target.origin)
+                self._transport._record(error.reason, error.safe_url)
+                raise error
+            seen.add(target.normalized_url)
+            history.append(response)
+            current = _redirect_request(self, current, response, target.normalized_url)
+            current.extensions["safe_overall_deadline"] = deadline
+            response.close()
+
+    def download(self, url: str, destination: str | os.PathLike[str]) -> Path:
+        target = Path(destination)
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=f".{target.name}.", dir=target.parent
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                with self.stream("GET", url) as response:
+                    for chunk in response.iter_bytes():
+                        output.write(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, target)
+            return target
+        finally:
+            Path(temporary).unlink(missing_ok=True)
 
 
 class SafeAsyncClient(httpx.AsyncClient):
     def __init__(self, transport: AsyncManagedHTTPTransport):
         if type(transport) is not AsyncManagedHTTPTransport:
             raise TypeError("SafeAsyncClient requires AsyncManagedHTTPTransport")
-        super().__init__(transport=transport, trust_env=False, follow_redirects=False)
+        super().__init__(
+            transport=transport,
+            trust_env=False,
+            follow_redirects=False,
+            timeout=_timeout(),
+        )
+
+    @property
+    def audit_events(self) -> tuple[AuditEvent, ...]:
+        return self._transport.audit_events
+
+    async def send(
+        self,
+        request: httpx.Request,
+        *,
+        stream: bool = False,
+        auth: Any = None,
+        follow_redirects: Any = None,
+    ) -> httpx.Response:
+        del follow_redirects
+        spec = CONSUMER_REGISTRY[self._transport._consumer]
+        deadline = request.extensions.setdefault(
+            "safe_overall_deadline", monotonic() + _OVERALL_TIMEOUT
+        )
+        try:
+            seen = {normalize_url(str(request.url)).normalized_url}
+        except URLPolicyError as exc:
+            self._transport._record(exc.reason, exc.safe_url)
+            raise
+        history: list[httpx.Response] = []
+        current = request
+        while True:
+            if monotonic() > deadline:
+                error = URLPolicyError(
+                    "OVERALL_TIMEOUT", normalize_origin(str(current.url))
+                )
+                self._transport._record(error.reason, error.safe_url)
+                raise error
+            _sanitize_credentials(current, spec)
+            response = await super().send(
+                current,
+                stream=True,
+                auth=None if spec.credential_origin_policy == "none" else auth,
+                follow_redirects=False,
+            )
+            if (
+                response.status_code not in _REDIRECT_STATUSES
+                or "location" not in response.headers
+            ):
+                response.history = history
+                if not stream:
+                    await response.aread()
+                return response
+            if spec.redirect_policy == "deny":
+                await response.aclose()
+                error = URLPolicyError(
+                    "REDIRECT_FORBIDDEN", normalize_origin(str(current.url))
+                )
+                self._transport._record(error.reason, error.safe_url)
+                raise error
+            if len(history) >= spec.max_redirects:
+                await response.aclose()
+                error = URLPolicyError(
+                    "TOO_MANY_REDIRECTS", normalize_origin(str(current.url))
+                )
+                self._transport._record(error.reason, error.safe_url)
+                raise error
+            target = normalize_url(
+                urljoin(str(current.url), response.headers["location"])
+            )
+            current_origin = normalize_origin(str(current.url))
+            if current.url.scheme == "https" and target.scheme == "http":
+                await response.aclose()
+                error = URLPolicyError("HTTPS_DOWNGRADE", target.origin)
+                self._transport._record(error.reason, error.safe_url)
+                raise error
+            if (
+                spec.redirect_policy == "same_origin"
+                and target.origin != current_origin
+            ):
+                await response.aclose()
+                error = URLPolicyError("REDIRECT_ORIGIN_FORBIDDEN", target.origin)
+                self._transport._record(error.reason, error.safe_url)
+                raise error
+            if target.normalized_url in seen:
+                await response.aclose()
+                error = URLPolicyError("REDIRECT_LOOP", target.origin)
+                self._transport._record(error.reason, error.safe_url)
+                raise error
+            seen.add(target.normalized_url)
+            history.append(response)
+            current = _redirect_request(self, current, response, target.normalized_url)
+            current.extensions["safe_overall_deadline"] = deadline
+            await response.aclose()
+
+    async def download(self, url: str, destination: str | os.PathLike[str]) -> Path:
+        target = Path(destination)
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=f".{target.name}.", dir=target.parent
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as output:
+                async with self.stream("GET", url) as response:
+                    async for chunk in response.aiter_bytes():
+                        output.write(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, target)
+            return target
+        finally:
+            Path(temporary).unlink(missing_ok=True)
 
 
 def safe_client(
@@ -806,6 +1329,7 @@ def safe_async_client(
 
 
 __all__ = [
+    "AuditEvent",
     "AsyncDecisionNetworkBackend",
     "AsyncManagedHTTPTransport",
     "CONSUMER_REGISTRY",
@@ -813,6 +1337,7 @@ __all__ = [
     "DecisionNetworkBackend",
     "ManagedHTTPTransport",
     "OutboundSecurityConfig",
+    "PolicyProxyConfig",
     "SDKDisposition",
     "SafeAsyncClient",
     "SafeClient",
