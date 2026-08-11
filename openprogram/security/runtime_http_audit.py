@@ -328,11 +328,19 @@ class _HTTPVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for type_param in getattr(node, "type_params", ()):
+            self.visit(type_param)
+        for base in node.bases:
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword)
         outer_collector = self._flow_collector
         self._flow_collector = None
         self.scope.append(node.name)
         try:
-            self.generic_visit(node)
+            self._visit_block_flow_from(node.body, self.managed_values)
         finally:
             self.scope.pop()
             self._flow_collector = outer_collector

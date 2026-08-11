@@ -242,6 +242,30 @@ Fourth quality re-review fix:
   Fresh pre-commit focused and shared-cache verification passed `111 passed in
   1.39s`; the checker again reported all four categories as zero.
 
+Fifth quality re-review fix:
+
+- The fourth scoped re-review found that executable class bodies still used
+  generic AST traversal, so a class-level `finally: raise` did not suppress an
+  unreachable SDK constructor. Adding the exact public scanner regression
+  failed only the class case: `1 failed, 6 passed, 54 deselected`; the matching
+  function, async-function, reachable-SDK, and nested-scope cases passed.
+- Class roots now scan decorators, bases, and keywords normally, then analyze
+  the executable body through an isolated block-flow collector. The three
+  root kinds now share the terminating-finally expectation, while reachable
+  bare SDK calls after nested functions/classes remain detected. A separate
+  regression preserves class decorator, base, and metaclass-keyword scanning.
+- Python 3.12 type-parameter bounds were also visited by the prior generic
+  traversal. The public preservation regression failed `1 failed, 62
+  deselected` before class-root header handling added a Python-3.11-compatible
+  `type_params` visit. Combined targeted GREEN: `9 passed, 54 deselected`.
+- The complete inventory file passed `63 passed in 1.36s`; Task 7 focused and
+  shared-client cache lifecycle passed `116 passed in 1.54s`. The repository
+  checker reported `unregistered=0 active_unmanaged=0
+  registry_without_consumer=0 stale_exclusions=0`; complete `tests/security`
+  passed `578 passed in 77.86s`.
+- Required Ruff lint passed, both changed Python files were already formatted,
+  `uv lock --check` passed, and `git diff --check` passed.
+
 ## Concerns
 
 - Browser navigation, arbitrary-code networking, and owner control-plane

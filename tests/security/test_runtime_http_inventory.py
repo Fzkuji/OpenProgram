@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -780,7 +781,7 @@ openai.AsyncOpenAI(http_client=client)
 
 
 @pytest.mark.parametrize(
-    "function_body",
+    "root_source",
     [
         """
 def build():
@@ -807,18 +808,26 @@ async def build():
         raise RuntimeError
     openai.AsyncOpenAI(http_client=client)
 """,
+        """
+class Build:
+    try:
+        client = object()
+    finally:
+        raise RuntimeError
+    openai.AsyncOpenAI(http_client=client)
+""",
     ],
 )
 def test_scanner_skips_sdk_unreachable_after_terminating_finally(
     tmp_path,
-    function_body,
+    root_source,
 ):
     from openprogram.security.safe_http import SDKDisposition
 
     package = tmp_path / "runtime"
     package.mkdir()
     (package / "unreachable.py").write_text(
-        "import openai\n" + function_body,
+        "import openai\n" + root_source,
         encoding="utf-8",
     )
     registry = {
@@ -837,15 +846,10 @@ def test_scanner_skips_sdk_unreachable_after_terminating_finally(
     assert result.active_unmanaged_transports == ()
 
 
-def test_function_root_flow_keeps_reachable_sdk_after_nested_scopes(tmp_path):
-    from openprogram.security.safe_http import SDKDisposition
-
-    package = tmp_path / "runtime"
-    package.mkdir()
-    (package / "reachable.py").write_text(
+@pytest.mark.parametrize(
+    "root_source",
+    [
         """
-import openai
-
 def build():
     def nested_function():
         return None
@@ -855,6 +859,106 @@ def build():
             return None
 
     openai.AsyncOpenAI(http_client=object())
+""",
+        """
+async def build():
+    def nested_function():
+        return None
+
+    class NestedClass:
+        def nested_method(self):
+            return None
+
+    openai.AsyncOpenAI(http_client=object())
+""",
+        """
+class Build:
+    def nested_function():
+        return None
+
+    class NestedClass:
+        def nested_method(self):
+            return None
+
+    openai.AsyncOpenAI(http_client=object())
+""",
+    ],
+)
+def test_root_flow_keeps_reachable_sdk_after_nested_scopes(tmp_path, root_source):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "reachable.py").write_text(
+        "import openai\n" + root_source,
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == ["sdk.openai.AsyncOpenAI"]
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+def test_class_root_flow_keeps_scanning_header_expressions(tmp_path):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "class_header.py").write_text(
+        """
+import openai
+
+@openai.AsyncOpenAI(http_client=object())
+class Build(
+    openai.AsyncOpenAI(http_client=object()),
+    metaclass=openai.AsyncOpenAI(http_client=object()),
+):
+    pass
+""",
+        encoding="utf-8",
+    )
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == [
+        "sdk.openai.AsyncOpenAI",
+        "sdk.openai.AsyncOpenAI",
+        "sdk.openai.AsyncOpenAI",
+    ]
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="requires PEP 695 syntax")
+def test_class_root_flow_keeps_scanning_type_parameter_bounds(tmp_path):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    (package / "class_type_params.py").write_text(
+        """
+import openai
+
+class Build[T: openai.AsyncOpenAI(http_client=object())]:
+    pass
 """,
         encoding="utf-8",
     )
