@@ -1070,8 +1070,8 @@ class Runtime:
                               Ignored on the default AgentSession path,
                               which builds history from the DAG.
 
-            response_format:  Expected output format (JSON schema).
-                              Passed to _call() for provider-native handling.
+            response_format:  JSON Schema or JsonSchemaOutput envelope. The
+                              final reply is strictly parsed and validated.
 
             model:            Override the default model for this call.
 
@@ -1135,9 +1135,9 @@ class Runtime:
                               progress.
 
         Returns:
-            ``str`` — the LLM's reply text. When ``choices`` is set,
-            returns the resolved decision instead (a function option's
-            return value, or a value option's value).
+            ``str`` for ordinary calls; a Python JSON value for structured
+            output calls. When ``choices`` is set, returns the resolved
+            decision instead.
         """
         if self._closed:
             raise RuntimeError("Runtime is closed. Create a new runtime instance.")
@@ -1438,7 +1438,7 @@ class Runtime:
         model: Optional[str] = None,
         timeout_s: Optional[float] = None,
         on_retry: Optional["Callable[[RetryInfo], None]"] = None,
-    ) -> str:
+    ) -> Any:
         """Async version of :meth:`exec`. Same ``timeout_s`` /
         ``on_retry`` semantics; ``await``-friendly throughout.
 
