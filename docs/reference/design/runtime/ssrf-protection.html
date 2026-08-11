@@ -5,34 +5,63 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>出站 URL 与 SSRF 防护设计</title>
 <style>
-  :root{--bg:#16150f;--pan:#1d1c14;--bd:#2e2c20;--tx:#bdb9a6;--dim:#8a8675;
-    --acc:#d4843a;--blue:#4f8ef7;--green:#5aad4e;--purple:#9d6fe0;--red:#e0445a;--code:#12110b}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--tx);
-    font:14px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:40px 24px 96px}
-  .wrap{max-width:1120px;margin:auto} h1{color:#f0eee6;font-size:24px;margin:0 0 6px}
-  h2{color:var(--acc);font-size:17px;margin:36px 0 8px;scroll-margin-top:18px}
-  h3{color:#f0eee6;font-size:14px;margin:24px 0 8px}.sub,.lead{color:var(--dim);max-width:90ch}
-  .toc{display:flex;gap:7px;flex-wrap:wrap;margin:18px 0}.toc a{color:var(--tx);text-decoration:none;
-    border:1px solid var(--bd);border-radius:99px;padding:4px 11px;font-size:12px;background:var(--pan)}
-  .band{border:1px solid var(--bd);border-left:4px solid var(--blue);border-radius:11px;
-    padding:12px 15px;background:var(--pan);margin:36px 0 12px}.band.ref{border-left-color:var(--purple)}
-  .band.plan{border-left-color:var(--green)}.band b{color:#f0eee6}.num{color:var(--dim);margin-right:8px}
-  .note{border-left:3px solid var(--acc);padding:4px 0 4px 13px;color:var(--dim);max-width:92ch;margin:12px 0}
-  .note.red{border-left-color:var(--red)}.note.green{border-left-color:var(--green)}.note b{color:#f0eee6}
-  code{background:var(--code);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
-  .tbl{overflow-x:auto;border:1px solid var(--bd);border-radius:11px;background:var(--pan);margin:12px 0 18px}
-  table{width:100%;border-collapse:collapse;min-width:760px;font-size:13px}th{text-align:left;color:var(--dim);
-    font-size:11px;letter-spacing:.08em;padding:10px 13px;border-bottom:1px solid var(--bd)}
-  td{padding:10px 13px;vertical-align:top;border-bottom:1px solid #26241a}tr:last-child td{border:0}
-  td b{color:#f0eee6}.yes{color:var(--green)}.no{color:var(--red)}.partial{color:var(--acc)}
-  .flow{display:grid;grid-template-columns:1fr 38px 1fr 38px 1fr;gap:8px;align-items:stretch;margin:14px 0}
-  .box{border:1px solid var(--bd);border-radius:10px;background:var(--pan);padding:12px}.box h3{margin:0 0 5px}
-  .arrow{display:grid;place-items:center;color:var(--acc);font-size:22px}.small{font-size:12px;color:var(--dim)}
-  ul{padding-left:20px;max-width:94ch}li{margin:6px 0}a{color:#7ca7f8}
-  @media(max-width:820px){.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}}
+  :root{--bg:#151611;--pan:#1d1f18;--pan-2:#23251d;--bd:#34372b;--tx:#d2cfbd;--dim:#9c9988;
+    --ink:#f5f2e8;--acc:#e09348;--blue:#6a9cf7;--green:#6ab95f;--purple:#ad82ed;--red:#ec6374;--code:#10110d}
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.78 -apple-system,BlinkMacSystemFont,
+    "PingFang SC","Segoe UI",sans-serif;padding:52px 30px 120px;text-rendering:optimizeLegibility}
+  .wrap{max-width:1240px;margin:auto}
+  h1,h2,h3{color:var(--ink);text-wrap:balance}
+  h1{font-family:"Avenir Next Condensed","Arial Narrow","PingFang SC",sans-serif;font-size:42px;
+    line-height:1.12;letter-spacing:.015em;margin:0 0 14px}
+  h2{font-size:23px;line-height:1.35;margin:50px 0 14px;scroll-margin-top:92px}
+  h3{font-size:18px;line-height:1.45;margin:34px 0 11px;scroll-margin-top:92px}
+  p{margin:0 0 14px}.sub,.lead{color:var(--dim);max-width:76ch}.sub{font-size:17px;line-height:1.7}
+  .eyebrow{color:var(--acc);font:700 12px/1.4 Menlo,monospace;letter-spacing:.16em;margin:0 0 13px}
+  .toc{position:sticky;top:12px;z-index:20;display:flex;gap:8px;flex-wrap:wrap;margin:28px 0 42px;
+    padding:10px;background:color-mix(in srgb,var(--bg) 88%,transparent);border:1px solid var(--bd);
+    border-radius:14px;backdrop-filter:blur(14px)}
+  .toc a{color:var(--tx);text-decoration:none;border:1px solid transparent;border-radius:8px;padding:7px 12px;
+    font-size:14px;font-weight:600;background:var(--pan)}
+  .toc a:hover{color:var(--ink);border-color:var(--acc)}
+  a:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+  .band{display:grid;grid-template-columns:150px minmax(0,1fr);gap:24px;align-items:start;border:1px solid var(--bd);
+    border-top:4px solid var(--blue);border-radius:14px;padding:24px;background:var(--pan);margin:54px 0 18px;
+    scroll-margin-top:92px}.band.ref{border-top-color:var(--purple)}.band.plan{border-top-color:var(--green)}
+  .part{color:var(--blue);font:700 13px/1.4 Menlo,monospace;letter-spacing:.12em;text-transform:uppercase}
+  .band.ref .part{color:var(--purple)}.band.plan .part{color:var(--green)}
+  .band b{display:block;color:var(--ink);font-size:21px;line-height:1.35;margin-bottom:7px}.band p{margin:0;max-width:80ch}
+  .num{display:inline-block;color:var(--dim);font:600 12px/1 Menlo,monospace;margin-right:10px;letter-spacing:.08em}
+  .note{border-left:4px solid var(--acc);padding:10px 0 10px 17px;color:var(--dim);max-width:88ch;margin:18px 0;
+    font-size:15.5px}.note.red{border-left-color:var(--red)}.note.green{border-left-color:var(--green)}
+  .note b{color:var(--ink)}
+  code{background:var(--code);color:#efaa67;padding:2px 6px;border-radius:5px;font:13.5px/1.5 Menlo,monospace;
+    overflow-wrap:anywhere}
+  .tbl{overflow:auto;border:1px solid var(--bd);border-radius:14px;background:var(--pan);margin:16px 0 25px;
+    scrollbar-color:var(--dim) var(--code)}
+  table{width:100%;border-collapse:separate;border-spacing:0;min-width:940px;font-size:14.5px;line-height:1.62}
+  th{text-align:left;color:#aaa795;background:var(--pan-2);font-size:12.5px;letter-spacing:.075em;padding:13px 16px;
+    border-bottom:1px solid var(--bd);white-space:nowrap}
+  td{padding:14px 16px;vertical-align:top;border-bottom:1px solid #2b2d24}
+  th:first-child,td:first-child{position:sticky;left:0;z-index:2;background:var(--pan);box-shadow:1px 0 var(--bd)}
+  th:first-child{z-index:3;background:var(--pan-2)}
+  tr:last-child td{border-bottom:0}tr:hover td{background:#22241c}tr:hover td:first-child{background:#22241c}
+  td b{color:var(--ink)}.yes{color:#79c970}.no{color:#f07384}.partial{color:#efa457}
+  .flow{display:grid;grid-template-columns:1fr 44px 1fr 44px 1fr;gap:10px;align-items:stretch;margin:20px 0 28px}
+  .box{border:1px solid var(--bd);border-radius:13px;background:var(--pan);padding:18px}.box h3{margin:0 0 8px}
+  .arrow{display:grid;place-items:center;color:var(--acc);font-size:28px}.small{font-size:13.5px;color:var(--dim)}
+  ul{padding-left:24px;max-width:88ch}li{margin:9px 0}a{color:#8bb2fb;text-underline-offset:3px}
+  @media(max-width:820px){
+    body{padding:32px 16px 80px;font-size:16px}h1{font-size:34px}h2{font-size:21px;margin-top:42px}
+    .toc{position:static;margin-bottom:34px}.band{grid-template-columns:1fr;gap:8px;padding:19px;margin-top:42px}
+    .flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg);height:26px}table{min-width:820px}
+  }
+  @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 </style>
 </head>
 <body><main class="wrap">
+<p class="eyebrow">SECURITY DESIGN · RUNTIME NETWORK</p>
 <h1>出站 URL 与 SSRF 防护</h1>
 <p class="sub">设计快照：2026-08-11。本页只定义设计与验收口径，尚不表示功能已经实现。
 内容固定按 OpenProgram 当前状态、其他项目设计、OpenProgram 后续完整方案排列。</p>
@@ -42,9 +71,9 @@
   <a href="#decision">04 采用与拒绝</a><a href="#target">05 目标设计</a><a href="#acceptance">06 完整验收</a>
 </nav>
 
-<section class="band" id="current"><b>第一部分 · OpenProgram 当前状态</b><br>
-当前有入站 Web 身份和 Origin/Host 校验，也有默认断网的本地命令沙箱；但 Runtime 自己发起的 HTTP 请求没有统一目标校验。
-因此 Origin 校验不能作为 SSRF 证据，功能矩阵中的该项在实现前应为未确认，而不是部分确认。</section>
+<section class="band" id="current"><span class="part">Part I · 现状</span><div><b>OpenProgram 当前状态</b>
+<p>当前有入站 Web 身份和 Origin/Host 校验，也有默认断网的本地命令沙箱；但 Runtime 自己发起的 HTTP 请求没有统一目标校验。
+因此 Origin 校验不能作为 SSRF 证据，功能矩阵中的该项在实现前应为未确认，而不是部分确认。</p></div></section>
 
 <h2><span class="num">01</span>已经存在的边界</h2>
 <div class="tbl"><table>
@@ -72,8 +101,8 @@
 <div class="note red"><b>当前判定：</b>Runtime-owned 非可信 URL 获取没有统一防护。功能矩阵中的该行改名为
 “Runtime URL 获取 SSRF 防护”并记为未确认；浏览器导航、CDP 和页面派生请求随现有“浏览器控制”条目单独设计；模型命令的网络隔离继续归入“操作系统级沙箱”。</div>
 
-<section class="band ref" id="references"><b>第二部分 · 其他项目怎么设计</b><br>
-逐项核对功能矩阵中的 12 个外部参考列，并以 OWASP 作为实现无关的安全基线。比较不只记录“有没有”：Runtime URL 校验、工具权限、进程网络代理和浏览器请求策略属于不同边界；上游包装器与协议库不重复计为独立实现。</section>
+<section class="band ref" id="references"><span class="part">Part II · 对比</span><div><b>其他项目怎么设计</b>
+<p>逐项核对功能矩阵中的 12 个外部参考列，并以 OWASP 作为实现无关的安全基线。比较不只记录“有没有”：Runtime URL 校验、工具权限、进程网络代理和浏览器请求策略属于不同边界；上游包装器与协议库不重复计为独立实现。</p></div></section>
 
 <h2><span class="num">03</span>参考机制比较</h2>
 <div class="note"><b>证据边界：</b>功能矩阵是固定版本快照；本节同时引用 2026-08-11 可访问的当前官方文档，用于后续设计，不据此回改旧版本分数。源码或文档没有确认的能力写成“本快照未确认”，不写成绝对不存在。</div>
@@ -120,8 +149,8 @@
 <tr><td class="no">拒绝</td><td>把所有 HTTP 客户端强行套用公网-only 规则</td><td>会破坏用户明确配置的本地模型、MCP 和内网服务</td></tr>
 </table></div>
 
-<section class="band plan" id="target"><b>第三部分 · OpenProgram 后续完整方案</b><br>
-目标不是增加一个 URL 检查函数，而是让每个 Runtime-owned 出站入口带上来源类型，经统一策略决定目标、重定向、凭据和响应限制；无法进入统一边界的入口不能计为完成。</section>
+<section class="band plan" id="target"><span class="part">Part III · 计划</span><div><b>OpenProgram 后续完整方案</b>
+<p>目标不是增加一个 URL 检查函数，而是让每个 Runtime-owned 出站入口带上来源类型，经统一策略决定目标、重定向、凭据和响应限制；无法进入统一边界的入口不能计为完成。</p></div></section>
 
 <h2><span class="num">05</span>目标数据流</h2>
 <div class="flow">
