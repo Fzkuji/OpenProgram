@@ -73,8 +73,11 @@ def run_cli_chat(oneshot: str | None = None,
     # Provider detection probes 5+ providers (CLI binaries + API hosts)
     # on cold cache; that takes several seconds. Tell the user something
     # is happening so the TUI launch doesn't look frozen.
-    with console.status("Detecting providers…", spinner="dots"):
+    if oneshot:
         provider, rt = _get_chat_runtime()
+    else:
+        with console.status("Detecting providers…", spinner="dots"):
+            provider, rt = _get_chat_runtime()
     if rt is None:
         if not _prompt_first_run_setup(console):
             sys.exit(1)

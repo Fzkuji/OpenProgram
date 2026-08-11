@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import json
+import errno
+import os
+import pty
+import subprocess
 import sys
+import textwrap
+import tty
 
 import pytest
 
@@ -119,3 +125,69 @@ def test_one_shot_structured_result_is_json_only(monkeypatch, capsys):
     )
     cli_chat.run_cli_chat(oneshot="answer", tui=False, response_format=SCHEMA)
     assert capsys.readouterr().out == '{"answer":3}\n'
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="PTY is POSIX-only")
+def test_one_shot_structured_result_is_json_only_on_tty():
+    script = textwrap.dedent(
+        """
+        import time
+
+        from openprogram import cli_chat
+        from openprogram.agent.management import manager
+
+        class Agent:
+            id = "main"
+
+        def delayed_runtime():
+            time.sleep(0.5)
+            return "test", object()
+
+        cli_chat._get_chat_runtime = delayed_runtime
+        cli_chat._run_turn_with_history = lambda *args, **kwargs: {"answer": 3}
+        manager.get_default = lambda: Agent()
+        cli_chat.run_cli_chat(
+            oneshot="answer",
+            tui=False,
+            response_format={"type": "object"},
+        )
+        """
+    )
+    master_fd, slave_fd = pty.openpty()
+    tty.setraw(slave_fd)
+    env = os.environ.copy()
+    env["TERM"] = "xterm-256color"
+    env["COLORTERM"] = "truecolor"
+    env.pop("NO_COLOR", None)
+    try:
+        process = subprocess.Popen(
+            [sys.executable, "-c", script],
+            stdout=slave_fd,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        os.close(slave_fd)
+        slave_fd = -1
+        chunks = []
+        while True:
+            try:
+                chunk = os.read(master_fd, 4096)
+            except OSError as exc:
+                if exc.errno == errno.EIO:
+                    break
+                raise
+            if not chunk:
+                break
+            chunks.append(chunk)
+        process.wait(timeout=10)
+        assert process.stderr is not None
+        stderr = process.stderr.read()
+    finally:
+        os.close(master_fd)
+        if slave_fd >= 0:
+            os.close(slave_fd)
+
+    stdout = b"".join(chunks).decode("utf-8")
+    assert process.returncode == 0, stderr.decode("utf-8", errors="replace")
+    assert stdout == '{"answer":3}\n'
+    assert json.loads(stdout) == {"answer": 3}
