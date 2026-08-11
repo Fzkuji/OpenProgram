@@ -61,20 +61,22 @@ _GOOGLE_CAPABILITIES = StructuredOutputCapabilities(
     native="supported",
     dialect="google",
     streaming=True,
-    schema_profile="none",
+    schema_profile="google_json_schema",
 )
 _BEDROCK_CAPABILITIES = StructuredOutputCapabilities(
-    native="supported",
+    native="unknown",
     dialect="bedrock",
     streaming=True,
     schema_profile="none",
+    native_model_opt_in=True,
 )
 _AZURE_RESPONSES_CAPABILITIES = StructuredOutputCapabilities(
-    native="supported",
+    native="unknown",
     dialect="azure_openai_responses",
     streaming=True,
     strict_tool=True,
     schema_profile="openai_strict",
+    native_model_opt_in=True,
 )
 _STRICT_TOOL_ONLY_CAPABILITIES = StructuredOutputCapabilities(
     strict_tool=True,

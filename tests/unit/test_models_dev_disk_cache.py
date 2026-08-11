@@ -98,3 +98,81 @@ def test_structured_output_tri_state_survives_disk_model_and_web_listing(
         ]
     finally:
         _reset_mem_cache()
+
+
+def test_structured_output_tri_state_survives_real_fetch_persist_reload_and_web(
+    tmp_path, monkeypatch
+):
+    import copy
+    import httpx
+    import openprogram.providers._config_read as config_read
+    import openprogram.providers.enabled_models as enabled_models
+    import openprogram.setup as setup
+    from openprogram.providers import storage
+    from openprogram.webui._model_listing import listing, toggle
+
+    cache = tmp_path / "cache" / "models_dev.json"
+    store = {
+        "acme": {
+            "enabled": True,
+            "base_url": "https://acme.example/v1",
+        }
+    }
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "acme": {
+                    "name": "Acme",
+                    "models": {
+                        "yes": {"structured_output": True},
+                        "no": {"structured_output": False},
+                        "unknown": {},
+                    },
+                }
+            }
+
+    def save(config):
+        store.clear()
+        store.update(copy.deepcopy(config["providers"]))
+
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: Response())
+    monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
+    monkeypatch.setattr(setup, "_read_config", lambda: {"providers": copy.deepcopy(store)})
+    monkeypatch.setattr(setup, "_write_config", save)
+    monkeypatch.setattr(config_read, "read_providers_config", lambda: copy.deepcopy(store))
+    monkeypatch.setattr(storage, "_read_providers_cfg", lambda: copy.deepcopy(store))
+    monkeypatch.setattr(toggle, "_read_providers_cfg", lambda: copy.deepcopy(store))
+    storage._reset_spec_migration()
+    listing._reset_browse_cache()
+    _reset_mem_cache()
+    enabled_models.reload()
+    try:
+        assert set(models_dev.list_models("acme")) == {"yes", "no", "unknown"}
+        assert json.loads(cache.read_text())["acme"]["models"]["no"][
+            "structured_output"
+        ] is False
+
+        for model_id in ("yes", "no", "unknown"):
+            toggle.toggle_model("acme", model_id, True)
+
+        persisted = {row["id"]: row for row in store["acme"]["models"]}
+        assert persisted["yes"]["structured_output"] is True
+        assert persisted["no"]["structured_output"] is False
+        assert "structured_output" not in persisted["unknown"]
+
+        enabled_models.reload()
+        listed = {row["id"]: row for row in listing.list_enabled_models()}
+        assert [listed[mid]["structured_output"] for mid in ("yes", "no", "unknown")] == [
+            True,
+            False,
+            None,
+        ]
+    finally:
+        store.clear()
+        enabled_models.reload()
+        listing._reset_browse_cache()
+        _reset_mem_cache()

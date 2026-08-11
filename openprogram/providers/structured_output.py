@@ -33,6 +33,7 @@ class StructuredOutputCapabilities:
     with_tools: bool = False
     strict_tool: bool = False
     schema_profile: str = "none"
+    native_model_opt_in: bool = False
 
 
 @dataclass(frozen=True)
@@ -180,6 +181,30 @@ def _project_schema(
 ) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
     if profile in {"none", "passthrough"}:
         return copy.deepcopy(schema), None
+    if profile == "google_json_schema":
+        path = _first_unsupported_google_schema_path(schema)
+        message = "Google response_json_schema does not support this constraint"
+        if path is None:
+            try:
+                from google.genai import types as google_types
+
+                google_types.Schema.model_validate(_google_schema_validation_copy(schema))
+            except Exception as exc:
+                errors = getattr(exc, "errors", lambda: [])()
+                if errors:
+                    aliases = {"defs": "$defs", "ref": "$ref"}
+                    path = _pointer(aliases.get(part, part) for part in errors[0]["loc"])
+                else:
+                    path = ""
+                message = "Installed google-genai Schema rejected this constraint"
+        if path is not None:
+            return None, {
+                "code": "unsupported_schema_constraint",
+                "path": path,
+                "schema_path": path,
+                "message": message,
+            }
+        return copy.deepcopy(schema), None
 
     from openprogram.providers._schema import normalize
 
@@ -226,6 +251,106 @@ def _first_schema_difference(original: Any, projected: Any, path: tuple[Any, ...
             return _pointer((*path, min(len(original), len(projected))))
         return ""
     return "" if original == projected else _pointer(path)
+
+
+_GOOGLE_SCHEMA_KEYWORDS = frozenset({
+    "$defs",
+    "$ref",
+    "additionalProperties",
+    "anyOf",
+    "default",
+    "description",
+    "enum",
+    "example",
+    "format",
+    "items",
+    "maxItems",
+    "maxLength",
+    "maxProperties",
+    "maximum",
+    "minItems",
+    "minLength",
+    "minProperties",
+    "minimum",
+    "nullable",
+    "pattern",
+    "properties",
+    "propertyOrdering",
+    "required",
+    "title",
+    "type",
+})
+
+
+def _first_unsupported_google_schema_path(
+    schema: Any,
+    path: tuple[Any, ...] = (),
+) -> str | None:
+    if not isinstance(schema, dict):
+        return _pointer(path)
+    for key in sorted(schema):
+        if key not in _GOOGLE_SCHEMA_KEYWORDS:
+            return _pointer((*path, key))
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        for name in sorted(properties):
+            issue = _first_unsupported_google_schema_path(
+                properties[name],
+                (*path, "properties", name),
+            )
+            if issue is not None:
+                return issue
+    definitions = schema.get("$defs")
+    if isinstance(definitions, dict):
+        for name in sorted(definitions):
+            issue = _first_unsupported_google_schema_path(
+                definitions[name],
+                (*path, "$defs", name),
+            )
+            if issue is not None:
+                return issue
+    items = schema.get("items")
+    if items is not None:
+        issue = _first_unsupported_google_schema_path(items, (*path, "items"))
+        if issue is not None:
+            return issue
+    for index, branch in enumerate(schema.get("anyOf") or []):
+        issue = _first_unsupported_google_schema_path(
+            branch,
+            (*path, "anyOf", index),
+        )
+        if issue is not None:
+            return issue
+    additional = schema.get("additionalProperties")
+    if isinstance(additional, dict):
+        return _first_unsupported_google_schema_path(
+            additional,
+            (*path, "additionalProperties"),
+        )
+    return None
+
+
+def _google_schema_validation_copy(schema: Any) -> Any:
+    if not isinstance(schema, dict):
+        return copy.deepcopy(schema)
+    aliases = {"$defs": "defs", "$ref": "ref"}
+    validated: dict[str, Any] = {}
+    for key, value in schema.items():
+        output_key = aliases.get(key, key)
+        if key in {"properties", "$defs"} and isinstance(value, dict):
+            validated[output_key] = {
+                name: _google_schema_validation_copy(subschema)
+                for name, subschema in value.items()
+            }
+        elif key == "anyOf" and isinstance(value, list):
+            validated[output_key] = [
+                _google_schema_validation_copy(subschema) for subschema in value
+            ]
+        elif key in {"items", "additionalProperties"} and isinstance(value, dict):
+            validated[output_key] = _google_schema_validation_copy(value)
+        else:
+            validated[output_key] = copy.deepcopy(value)
+    return validated
 
 
 def _tool_choice_allows_hidden_submit(tool_choice: Any) -> bool:
@@ -291,7 +416,13 @@ def _build_plan(
     has_tools = bool(tools)
 
     native_available = (
-        capabilities.native == "supported"
+        (
+            capabilities.native == "supported"
+            or (
+                capabilities.native_model_opt_in
+                and getattr(model, "structured_output", None) is True
+            )
+        )
         and _adapter_contract_matches(model, capabilities)
         and getattr(model, "structured_output", None) is not False
         and capabilities.streaming

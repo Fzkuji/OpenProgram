@@ -284,6 +284,13 @@ async def stream_simple(
                     total_tokens=um.total_token_count or 0,
                 )
 
+            prompt_feedback = getattr(chunk, "prompt_feedback", None)
+            block_reason = getattr(prompt_feedback, "block_reason", None)
+            if block_reason is not None and str(
+                getattr(block_reason, "value", block_reason)
+            ) != "BLOCKED_REASON_UNSPECIFIED":
+                terminal_reason = "error"
+
             for candidate in (chunk.candidates or []):
                 finish_reason = getattr(candidate, "finish_reason", None)
                 if finish_reason is not None:

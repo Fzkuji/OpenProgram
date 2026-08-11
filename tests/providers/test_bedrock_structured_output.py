@@ -1,7 +1,15 @@
 import json
 
+import pytest
+
 from openprogram.providers.amazon_bedrock import amazon_bedrock
-from openprogram.providers.structured_output import normalize_response_format
+from openprogram.providers.api_registry import get_structured_output_capabilities
+from openprogram.providers.structured_output import (
+    StructuredOutputUnsupportedError,
+    negotiate_structured_output,
+    normalize_response_format,
+)
+from openprogram.providers.types import Model
 
 
 SCHEMA = {
@@ -68,3 +76,29 @@ def test_installed_botocore_accepts_documented_output_config_shape():
             }
         },
     }, shape)
+
+
+def test_bedrock_native_requires_explicit_model_support_metadata():
+    capabilities = get_structured_output_capabilities("bedrock-converse-stream")
+    base = Model(
+        id="anthropic.claude-test-v1:0",
+        name="Claude test",
+        api="bedrock-converse-stream",
+        provider="amazon-bedrock",
+        base_url="https://bedrock-runtime.us-east-1.amazonaws.com",
+    )
+    output = normalize_response_format({
+        "type": "json_schema",
+        "schema": SCHEMA,
+        "fallback": "none",
+    })
+
+    assert capabilities.native == "unknown"
+    with pytest.raises(StructuredOutputUnsupportedError):
+        negotiate_structured_output(base, capabilities, output, [])
+    assert negotiate_structured_output(
+        base.model_copy(update={"structured_output": True}),
+        capabilities,
+        output,
+        [],
+    ).mode == "native"

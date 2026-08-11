@@ -123,6 +123,29 @@ def test_azure_responses_builder_maps_literal_text_format():
     }}
 
 
+def test_azure_native_requires_explicit_deployment_support_metadata():
+    capabilities = get_structured_output_capabilities("azure-openai-responses")
+    model = _model("azure-openai-responses").model_copy(update={
+        "provider": "azure-openai-responses",
+        "base_url": "https://unit.openai.azure.com/openai/v1",
+    })
+    output = normalize_response_format({
+        "type": "json_schema",
+        "schema": SCHEMA,
+        "fallback": "none",
+    })
+
+    assert capabilities.native == "unknown"
+    with pytest.raises(StructuredOutputUnsupportedError):
+        negotiate_structured_output(model, capabilities, output, [])
+    assert negotiate_structured_output(
+        model.model_copy(update={"structured_output": True}),
+        capabilities,
+        output,
+        [],
+    ).mode == "native"
+
+
 def test_community_openai_endpoint_fails_closed_before_payload_building():
     model = _model("openai-responses").model_copy(update={
         "base_url": "https://community.example/v1",
@@ -216,6 +239,52 @@ def test_native_provider_terminal_reasons_preserve_refusal_and_incomplete():
     assert _map_stop_reason_bedrock("max_tokens") == "length"
 
 
+@pytest.mark.parametrize(
+    ("reason", "expected"),
+    [("max_output_tokens", "length"), ("content_filter", "error")],
+)
+def test_real_openai_response_incomplete_event_preserves_reason(reason, expected):
+    from openai.types.responses import Response, ResponseIncompleteEvent
+    from openai.types.responses.response import IncompleteDetails
+
+    response = Response.model_construct(
+        id="resp_test",
+        created_at=0.0,
+        model="gpt-5",
+        object="response",
+        output=[],
+        parallel_tool_calls=False,
+        tool_choice="none",
+        tools=[],
+        status="incomplete",
+        incomplete_details=IncompleteDetails(reason=reason),
+    )
+    event = ResponseIncompleteEvent(
+        type="response.incomplete",
+        sequence_number=1,
+        response=response,
+    )
+
+    class Collector:
+        def push(self, event):
+            pass
+
+    async def events():
+        yield event
+
+    model = _model("openai-responses")
+    output = AssistantMessage(
+        content=[],
+        api=model.api,
+        provider=model.provider,
+        model=model.id,
+        usage=Usage(),
+        timestamp=0,
+    )
+    asyncio.run(process_responses_stream(events(), output, Collector(), model))
+    assert output.stop_reason == expected
+
+
 def test_chat_completions_maps_normalized_schema_to_response_format(monkeypatch):
     captured = {}
 
@@ -256,10 +325,20 @@ def test_chat_completions_maps_normalized_schema_to_response_format(monkeypatch)
         api_key="test-key",
         response_format=normalize_response_format(SCHEMA),
     )
+    context = Context(tools=[Tool(
+        name="lookup",
+        description="Look up a value",
+        parameters={
+            "type": "object",
+            "properties": {"key": {"type": "string"}},
+            "required": ["key"],
+            "additionalProperties": False,
+        },
+    )])
 
     async def consume():
         return [event async for event in openai_completions.stream_simple(
-            _model("openai-completions"), Context(), options
+            _model("openai-completions"), context, options
         )]
 
     asyncio.run(consume())
@@ -272,6 +351,20 @@ def test_chat_completions_maps_normalized_schema_to_response_format(monkeypatch)
             "schema": SCHEMA,
         },
     }
+    assert captured["tools"] == [{
+        "type": "function",
+        "function": {
+            "name": "lookup",
+            "description": "Look up a value",
+            "parameters": {
+                "type": "object",
+                "properties": {"key": {"type": "string"}},
+                "required": ["key"],
+                "additionalProperties": False,
+            },
+            "strict": True,
+        },
+    }]
 
 
 def test_anthropic_merges_json_schema_with_existing_output_config(monkeypatch):

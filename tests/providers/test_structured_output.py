@@ -371,8 +371,8 @@ def test_builtin_capabilities_are_explicit_and_unknown_adapters_fail_closed():
     assert openai.with_tools is True
     assert api_registry.get_structured_output_capabilities("anthropic-messages").native == "supported"
     assert api_registry.get_structured_output_capabilities("google-generative-ai").native == "supported"
-    assert api_registry.get_structured_output_capabilities("bedrock-converse-stream").native == "supported"
-    assert api_registry.get_structured_output_capabilities("azure-openai-responses").native == "supported"
+    assert api_registry.get_structured_output_capabilities("bedrock-converse-stream").native == "unknown"
+    assert api_registry.get_structured_output_capabilities("azure-openai-responses").native == "unknown"
     assert codex.native == "unknown"
     assert codex.strict_tool is True
     assert gemini_subscription.native == "unknown"
