@@ -59,7 +59,7 @@ from .structured_output import JsonSchemaOutput
 from .models import calculate_cost, get_model, get_models, get_providers, models_are_equal, supports_xhigh
 
 # API registry
-from .api_registry import get_api_provider, register_api_provider
+from .api_registry import configure_provider_transform, get_api_provider, register_api_provider
 
 # Environment API keys
 from .env_api_keys import resolve_provider_key
@@ -95,7 +95,7 @@ __all__ = [
     # Models
     "get_model", "get_providers", "get_models", "calculate_cost", "supports_xhigh", "models_are_equal",
     # Registry
-    "register_api_provider", "get_api_provider",
+    "register_api_provider", "get_api_provider", "configure_provider_transform",
     # Runtime factory / detection
     "PROVIDERS", "detect_provider", "create_runtime", "check_providers",
     # Keys

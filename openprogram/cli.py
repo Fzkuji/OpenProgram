@@ -352,6 +352,7 @@ def build_parser() -> argparse.ArgumentParser:
             "    setup           first-run setup wizard\n"
             "    providers       manage LLM providers / keys (login, available, status)\n"
             "    config          view / change settings\n"
+            "    recordings      record, replay, inspect, and prune provider calls\n"
             "    ports           show / set the web UI ports\n"
             "    mcp             manage MCP servers\n"
             "    browser         install / maintain the browser tools\n"
@@ -727,6 +728,32 @@ def build_parser() -> argparse.ArgumentParser:
     p_cset.add_argument("key", help="Setting id, e.g. ui.web_port")
     p_cset.add_argument("value", help="New value")
 
+    # ---- provider request recordings ------------------------------------
+    p_recordings = sub.add_parser(
+        "recordings", help="Configure and manage provider request recordings"
+    )
+    recordings_sub = p_recordings.add_subparsers(dest="recordings_verb", metavar="verb")
+    p_rec_status = recordings_sub.add_parser("status", help="Show configured mode and file")
+    p_rec_status.add_argument("--json", action="store_true")
+    p_rec_record = recordings_sub.add_parser("record", help="Record provider calls next start")
+    p_rec_record.add_argument("--name", default=None, help="Managed recording ID")
+    p_rec_replay = recordings_sub.add_parser("replay", help="Replay a recording next start")
+    p_rec_replay.add_argument("selector", help="Managed ID or explicit file path")
+    recordings_sub.add_parser("off", help="Disable record/replay next start")
+    p_rec_list = recordings_sub.add_parser("list", help="List managed recordings")
+    p_rec_list.add_argument("--json", action="store_true")
+    p_rec_show = recordings_sub.add_parser("show", help="Show recording metadata")
+    p_rec_show.add_argument("selector", help="Managed ID or explicit file path")
+    p_rec_show.add_argument("--json", action="store_true")
+    p_rec_show.add_argument("--content", action="store_true")
+    p_rec_delete = recordings_sub.add_parser("delete", help="Delete one managed recording")
+    p_rec_delete.add_argument("recording_id", help="Managed recording ID")
+    p_rec_delete.add_argument("--yes", action="store_true")
+    p_rec_prune = recordings_sub.add_parser("prune", help="Delete old managed recordings")
+    p_rec_prune.add_argument("--older-than-days", type=int, required=True, metavar="N")
+    p_rec_prune.add_argument("--dry-run", action="store_true")
+    p_rec_prune.add_argument("--yes", action="store_true")
+
     # ---- memory (persistent, machine-wide knowledge) ----------------------
     p_memory = sub.add_parser("memory",
         help="Inspect / manage persistent memory (topics + sources + core).")
@@ -1080,7 +1107,7 @@ def build_parser() -> argparse.ArgumentParser:
     for _p in (p_logs, p_programs, p_skills, p_plugins, p_trash, p_backup, p_sessions,
                p_subagent, p_memory, p_worker, p_channels, p_chacct,
                p_chaccess, p_chb, p_mcp, p_browser, p_agents,
-               p_config, p_upgrade, p_providers):
+               p_config, p_recordings, p_upgrade, p_providers):
         _p.set_defaults(_cmd_parser=_p)
 
     return parser
@@ -1406,6 +1433,11 @@ def main():
             if res.get("note"):
                 print(f"  note: {res['note']}")
             return
+
+    if args.command == "recordings":
+        from openprogram.providers.recording import dispatch_recordings
+
+        sys.exit(dispatch_recordings(args))
 
     if args.command == "memory":
         from openprogram.memory import DISABLED_MESSAGE, is_enabled

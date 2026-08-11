@@ -65,6 +65,7 @@ def restore_api_registry() -> Iterator[None]:
     from openprogram.providers import api_registry
     if previous is None:
         api_registry._registry.pop(_API, None)
+        api_registry._original_registry.pop(_API, None)
     else:
         register_api_provider(_API, previous)
 

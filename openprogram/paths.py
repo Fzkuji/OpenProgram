@@ -24,6 +24,8 @@ active profile after import.
 from __future__ import annotations
 
 import os
+import stat
+import sys
 from pathlib import Path
 
 _ENV_PROFILE = "OPENPROGRAM_PROFILE"
@@ -171,8 +173,12 @@ def get_logs_dir() -> Path:
 def get_recordings_dir() -> Path:
     """Owner-private directory for managed provider recordings."""
     directory = get_state_dir() / "recordings"
+    if directory.is_symlink():
+        raise PermissionError(f"recordings directory must not be a symlink: {directory}")
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     _restrict_to_owner(directory, 0o700)
+    if sys.platform != "win32" and stat.S_IMODE(directory.stat().st_mode) != 0o700:
+        raise PermissionError(f"recordings directory must have mode 0700: {directory}")
     return directory
 
 

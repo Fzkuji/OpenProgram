@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 from openprogram import setup as _setup
@@ -248,6 +249,19 @@ SETTINGS: list[SettingSpec] = [
         apply=APPLY_LIVE, default="",
         help="Empty uses the default chat agent's provider and model. Set "
              "provider/model to override only background memory writing.",
+    ),
+    SettingSpec(
+        key="record_replay.mode", path=("record_replay", "mode"),
+        group="Recordings", label="Provider record/replay mode", widget="enum",
+        apply=APPLY_NEXT_START, default="off",
+        choices=lambda: ["off", "record", "replay"],
+        help="Record or strictly replay all LLM provider calls on the next process start.",
+    ),
+    SettingSpec(
+        key="record_replay.file", path=("record_replay", "file"),
+        group="Recordings", label="Provider recording selector", widget="text",
+        apply=APPLY_NEXT_START, default="",
+        help="Managed recording ID or an explicit replay file path; record mode accepts IDs only.",
     ),
     SettingSpec(
         key="goal.max_turns", path=("goal", "max_turns"), group="Goal",
@@ -615,6 +629,27 @@ def set_setting(key: str, value: Any) -> dict:
         opts = list(spec.choices())
         if coerced not in opts:
             return {"error": f"{spec.label}: must be one of {', '.join(opts)}"}
+
+    if spec.key in {"record_replay.mode", "record_replay.file"}:
+        current = _setup._read_config().get("record_replay", {})
+        candidate_mode = coerced if spec.key.endswith(".mode") else current.get("mode", "off")
+        candidate_file = coerced if spec.key.endswith(".file") else current.get("file", "")
+        if candidate_mode in {"record", "replay"} and not str(candidate_file).strip():
+            return {"error": "record_replay.file is required when mode is record or replay"}
+        if candidate_mode == "record" and (
+            Path(str(candidate_file)).is_absolute()
+            or "/" in str(candidate_file)
+            or "\\" in str(candidate_file)
+        ):
+            return {"error": "record mode requires a managed recording ID"}
+        if candidate_mode == "replay":
+            try:
+                from openprogram.providers.recording import resolve_recording_selector
+                from openprogram.providers.replay import ReplayProvider
+
+                ReplayProvider(resolve_recording_selector(str(candidate_file)))
+            except (OSError, ValueError, RuntimeError) as exc:
+                return {"error": f"invalid replay recording: {exc}"}
 
     # route to the typed writer that already owns this key, else dot-path
     if spec.key == "ui.web_port":

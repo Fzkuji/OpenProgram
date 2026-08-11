@@ -18,9 +18,13 @@ import re
 import stat
 import sys
 import threading
+import time
 from contextlib import contextmanager
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator, Iterator
+import secrets
 
 from openprogram import _compat
 from openprogram._compat import restrict_to_user
@@ -36,6 +40,7 @@ from .types import (
 # Bump when the line shape changes. replay.py refuses a recording file whose header
 # version differs from this value.
 RECORDING_FORMAT_VERSION = 1
+REDACTION_VERSION = 1
 
 PLACEHOLDER = "[secret removed]"
 
@@ -183,8 +188,10 @@ class RecordingSink:
         self.path = Path(recording_path)
         self.lock_path = self.path.with_name(self.path.name + ".lock")
         self._thread_lock = threading.RLock()
+        parent_existed = self.path.parent.exists()
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        os.chmod(self.path.parent, 0o700)
+        if not parent_existed:
+            os.chmod(self.path.parent, 0o700)
         with self._locked():
             self._ensure_header_locked()
 
@@ -343,3 +350,317 @@ def activate_record_replay_from_config() -> None:
         configure_provider_transform(lambda api, provider: replay)
         return
     raise ValueError(f"unsupported record_replay.mode: {mode!r}")
+
+
+class RecordingManagementError(RuntimeError):
+    """A managed recording operation is unsafe or cannot be completed."""
+
+
+@dataclass(frozen=True)
+class RecordingInfo:
+    recording_id: str
+    path: Path
+    created_at: str
+    modified_at: float
+    size: int
+    call_count: int
+    valid: bool
+    active: bool = False
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["path"] = str(self.path)
+        return value
+
+
+_RECORDING_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
+def _validated_recording_id(name: str | None) -> str:
+    recording_id = name or (
+        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-") + secrets.token_hex(4)
+    )
+    if recording_id.endswith(".jsonl"):
+        recording_id = recording_id[:-6]
+    if not _RECORDING_ID.fullmatch(recording_id) or recording_id in {".", ".."}:
+        raise RecordingManagementError(
+            "recording ID must contain only letters, digits, dot, underscore, or hyphen"
+        )
+    return recording_id
+
+
+def _managed_path(recording_id: str) -> Path:
+    from openprogram.paths import get_recordings_dir
+
+    clean_id = _validated_recording_id(recording_id)
+    return get_recordings_dir() / f"{clean_id}.jsonl"
+
+
+def create_managed_recording(name: str | None = None) -> RecordingInfo:
+    """Create a new header-only managed recording without overwriting."""
+    recording_id = _validated_recording_id(name)
+    path = _managed_path(recording_id)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    fd = os.open(path, flags, 0o600)
+    try:
+        restrict_to_user(path)
+        _verify_private_regular_file(fd, path)
+        _write_all(fd, _encode_line({
+            "type": "header",
+            "format_version": RECORDING_FORMAT_VERSION,
+            "recording_id": recording_id,
+            "created_at": created_at,
+            "redaction_version": REDACTION_VERSION,
+        }))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    info = path.stat()
+    return RecordingInfo(
+        recording_id=recording_id,
+        path=path,
+        created_at=created_at,
+        modified_at=info.st_mtime,
+        size=info.st_size,
+        call_count=0,
+        valid=True,
+    )
+
+
+def _update_mode(mode: str, selector: str | None = None) -> dict[str, Any]:
+    from openprogram import setup
+
+    def mutate(config: dict[str, Any]) -> None:
+        setting = config.setdefault("record_replay", {})
+        setting["mode"] = mode
+        if selector is not None:
+            setting["file"] = selector
+
+    return setup.update_config(mutate)
+
+
+def set_record_mode(name: str | None = None) -> RecordingInfo:
+    info = create_managed_recording(name)
+    try:
+        _update_mode("record", info.recording_id)
+    except Exception:
+        try:
+            info.path.unlink()
+        except OSError:
+            pass
+        raise
+    return info
+
+
+def set_replay_mode(selector: str) -> RecordingInfo:
+    path = resolve_recording_selector(selector)
+    read_recording_file = _read_recording_file()
+    read_recording_file(path)
+    info = _recording_info(path)
+    stored_selector = info.recording_id if path.parent == _managed_root_resolved() else str(path)
+    _update_mode("replay", stored_selector)
+    return info
+
+
+def set_record_replay_off() -> None:
+    _update_mode("off")
+
+
+def _read_recording_file():
+    from openprogram.providers.replay import read_recording_file
+
+    return read_recording_file
+
+
+def _managed_root_resolved() -> Path:
+    from openprogram.paths import get_recordings_dir
+
+    return get_recordings_dir().resolve()
+
+
+def _active_managed_id() -> str | None:
+    from openprogram import setup
+
+    setting = setup._read_config().get("record_replay", {})
+    if setting.get("mode") not in {"record", "replay"}:
+        return None
+    selector = setting.get("file", "")
+    if not selector or Path(selector).is_absolute() or "/" in selector or "\\" in selector:
+        return None
+    try:
+        return _validated_recording_id(selector)
+    except RecordingManagementError:
+        return None
+
+
+def _recording_info(path: Path) -> RecordingInfo:
+    recording_id = path.name[:-6] if path.name.endswith(".jsonl") else path.name
+    if path.is_symlink():
+        return RecordingInfo(recording_id, path, "", 0, 0, 0, False, error="symlink")
+    info = path.stat()
+    try:
+        calls = _read_recording_file()(path)
+        header = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+        return RecordingInfo(
+            recording_id=recording_id,
+            path=path,
+            created_at=header.get(
+                "created_at",
+                datetime.fromtimestamp(info.st_ctime, timezone.utc).isoformat().replace("+00:00", "Z"),
+            ),
+            modified_at=info.st_mtime,
+            size=info.st_size,
+            call_count=len(calls),
+            valid=True,
+            active=recording_id == _active_managed_id(),
+        )
+    except Exception as exc:
+        return RecordingInfo(
+            recording_id, path, "", info.st_mtime, info.st_size, 0, False,
+            active=recording_id == _active_managed_id(), error=str(exc),
+        )
+
+
+def list_recordings() -> list[RecordingInfo]:
+    root = _managed_root_resolved()
+    return sorted(
+        (_recording_info(path) for path in root.iterdir() if path.name.endswith(".jsonl")),
+        key=lambda item: (item.modified_at, item.recording_id),
+        reverse=True,
+    )
+
+
+def show_recording(selector: str, *, include_content: bool = False) -> dict[str, Any]:
+    path = resolve_recording_selector(selector)
+    info = _recording_info(path)
+    result = info.to_dict()
+    if include_content:
+        restrict_recording_file(path)
+        result["content"] = [
+            json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    return result
+
+
+@contextmanager
+def _management_lock(path: Path) -> Iterator[None]:
+    lock_path = path.with_name(path.name + ".lock")
+    flags = os.O_RDWR | os.O_CREAT
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(lock_path, flags, 0o600)
+    try:
+        restrict_to_user(lock_path)
+        _verify_private_regular_file(fd, lock_path)
+        try:
+            _compat.flock(fd, _compat.LOCK_EX | _compat.LOCK_NB)
+        except (BlockingIOError, OSError) as exc:
+            raise RecordingManagementError(f"recording is locked: {path.name}") from exc
+        yield
+    finally:
+        _compat.flock(fd, _compat.LOCK_UN)
+        os.close(fd)
+
+
+def delete_recording(recording_id: str) -> int:
+    if Path(recording_id).is_absolute() or "/" in recording_id or "\\" in recording_id:
+        raise RecordingManagementError("delete requires a managed ID")
+    clean_id = _validated_recording_id(recording_id)
+    path = _managed_path(clean_id)
+    if path.is_symlink():
+        raise RecordingManagementError("refusing to delete a symlink")
+    if clean_id == _active_managed_id():
+        raise RecordingManagementError("refusing to delete the active recording")
+    if not path.is_file():
+        raise RecordingManagementError(f"recording does not exist: {clean_id}")
+    size = path.stat().st_size
+    lock_path = path.with_name(path.name + ".lock")
+    with _management_lock(path):
+        path.unlink()
+    try:
+        lock_path.unlink()
+    except FileNotFoundError:
+        pass
+    return size
+
+
+def prune_recordings(older_than_days: int, *, dry_run: bool = False) -> dict[str, Any]:
+    if isinstance(older_than_days, bool) or older_than_days <= 0:
+        raise RecordingManagementError("older-than-days must be a positive integer")
+    cutoff = time.time() - older_than_days * 86400
+    result: dict[str, Any] = {"matched": 0, "deleted": 0, "failed": 0, "bytes": 0, "recordings": []}
+    active = _active_managed_id()
+    for info in list_recordings():
+        if info.recording_id == active or info.modified_at >= cutoff or not info.valid:
+            continue
+        result["matched"] += 1
+        result["recordings"].append(info.recording_id)
+        if dry_run:
+            continue
+        try:
+            result["bytes"] += delete_recording(info.recording_id)
+            result["deleted"] += 1
+        except RecordingManagementError:
+            result["failed"] += 1
+    return result
+
+
+def _print_json(value: Any) -> None:
+    print(json.dumps(value, ensure_ascii=False, sort_keys=True))
+
+
+def _confirmed(action: str, target: str, assume_yes: bool) -> bool:
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        print(f"error: {action} requires --yes when stdin is not a TTY", file=sys.stderr)
+        return False
+    return input(f"Type {target} to confirm {action}: ").strip() == target
+
+
+def dispatch_recordings(args: Any) -> int:
+    """Execute one parsed `openprogram recordings` command."""
+    try:
+        verb = args.recordings_verb
+        if verb == "status":
+            from openprogram import setup
+            setting = setup._read_config().get("record_replay", {})
+            payload = {"mode": setting.get("mode", "off"), "file": setting.get("file", "")}
+            _print_json(payload) if args.json else print(f"mode: {payload['mode']}\nfile: {payload['file'] or '-'}")
+        elif verb == "record":
+            info = set_record_mode(args.name)
+            print(f"recording {info.recording_id}; takes effect next start")
+        elif verb == "replay":
+            info = set_replay_mode(args.selector)
+            print(f"replaying {info.recording_id}; takes effect next start")
+        elif verb == "off":
+            set_record_replay_off()
+            print("record/replay disabled; takes effect next start")
+        elif verb == "list":
+            rows = [item.to_dict() for item in list_recordings()]
+            _print_json(rows) if args.json else [print(item["recording_id"]) for item in rows]
+        elif verb == "show":
+            payload = show_recording(args.selector, include_content=args.content)
+            _print_json(payload) if args.json else print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+        elif verb == "delete":
+            if not _confirmed("delete", args.recording_id, args.yes):
+                return 2
+            delete_recording(args.recording_id)
+            print(f"deleted {args.recording_id}")
+        elif verb == "prune":
+            if not args.dry_run and not _confirmed("prune", "prune", args.yes):
+                return 2
+            payload = prune_recordings(args.older_than_days, dry_run=args.dry_run)
+            _print_json(payload)
+        else:
+            args._cmd_parser.print_help()
+            return 2
+        return 0
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
