@@ -11,6 +11,7 @@ from jsonschema import SchemaError, validators
 
 
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]{0,63}$")
+HIDDEN_SUBMIT_TOOL_NAME = "__openprogram_submit_json"
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,24 @@ class JsonSchemaOutput:
     fallback: Literal["auto", "none", "prompt"] = "auto"
     max_validation_retries: Literal[0, 1] = 1
     type: Literal["json_schema"] = "json_schema"
+
+
+@dataclass(frozen=True)
+class StructuredOutputCapabilities:
+    native: Literal["supported", "unsupported", "unknown"] = "unknown"
+    dialect: str | None = None
+    streaming: bool = True
+    with_tools: bool = False
+    strict_tool: bool = False
+    schema_profile: str = "none"
+
+
+@dataclass(frozen=True)
+class StructuredOutputPlan:
+    mode: Literal["native", "tool", "prompt"]
+    original_schema: dict[str, Any]
+    provider_schema: dict[str, Any]
+    submit_tool_name: str | None = None
 
 
 class StructuredOutputError(ValueError):
@@ -155,25 +174,147 @@ def build_repair_prompt(error: StructuredOutputValidationError) -> str:
     )[:3999]
 
 
-def negotiate_structured_output(model: Any, output: JsonSchemaOutput) -> Literal["native", "prompt"]:
-    """Choose only modes backed by a request-contract implementation."""
+def _project_schema(
+    schema: dict[str, Any],
+    profile: str,
+) -> dict[str, Any] | None:
+    if profile in {"none", "passthrough"}:
+        return copy.deepcopy(schema)
+
+    from openprogram.providers._schema import normalize
+
+    try:
+        projected = normalize(schema, profile)  # type: ignore[arg-type]
+    except Exception:
+        return None
+    # Existing dialect normalizers may strengthen or delete constraints.
+    # Response schemas may use them only when the projection is unchanged.
+    return projected if projected == schema else None
+
+
+def _tool_choice_allows_hidden_submit(tool_choice: Any) -> bool:
+    if tool_choice in (None, "auto", "required"):
+        return True
+    if isinstance(tool_choice, dict):
+        name = tool_choice.get("name")
+        function = tool_choice.get("function")
+        if isinstance(function, dict):
+            name = function.get("name", name)
+        return name == HIDDEN_SUBMIT_TOOL_NAME
+    return False
+
+
+def _adapter_contract_matches(model: Any, capabilities: StructuredOutputCapabilities) -> bool:
+    expected_provider = {
+        "openai_chat": "openai",
+        "openai_responses": "openai",
+        "anthropic": "anthropic",
+    }.get(capabilities.dialect)
+    return expected_provider is None or getattr(model, "provider", "") == expected_provider
+
+
+def _build_plan(
+    model: Any,
+    capabilities: StructuredOutputCapabilities,
+    output: JsonSchemaOutput,
+    tools: list[Any],
+    *,
+    tool_choice: Any = None,
+    parallel_tool_calls: bool | None = None,
+) -> StructuredOutputPlan:
+    original_schema = copy.deepcopy(output.schema)
+    provider_schema = _project_schema(output.schema, capabilities.schema_profile)
+    has_tools = bool(tools)
+
+    native_available = (
+        capabilities.native == "supported"
+        and _adapter_contract_matches(model, capabilities)
+        and getattr(model, "structured_output", None) is not False
+        and capabilities.streaming
+        and (not has_tools or capabilities.with_tools)
+        and provider_schema is not None
+    )
+    if native_available:
+        return StructuredOutputPlan(
+            mode="native",
+            original_schema=original_schema,
+            provider_schema=provider_schema,
+        )
+
+    hidden_conflict = (
+        parallel_tool_calls is True
+        or not _tool_choice_allows_hidden_submit(tool_choice)
+        or any(getattr(tool, "name", None) == HIDDEN_SUBMIT_TOOL_NAME for tool in tools)
+    )
+    if (
+        output.fallback == "auto"
+        and capabilities.strict_tool
+        and _adapter_contract_matches(model, capabilities)
+        and capabilities.streaming
+        and provider_schema is not None
+        and not hidden_conflict
+    ):
+        return StructuredOutputPlan(
+            mode="tool",
+            original_schema=original_schema,
+            provider_schema=provider_schema,
+            submit_tool_name=HIDDEN_SUBMIT_TOOL_NAME,
+        )
+
+    if output.fallback == "prompt":
+        return StructuredOutputPlan(
+            mode="prompt",
+            original_schema=original_schema,
+            provider_schema=copy.deepcopy(output.schema),
+        )
+
     provider = getattr(model, "provider", "")
     api = getattr(model, "api", "")
-    declared = getattr(model, "structured_output", None)
-    if provider == "callable":
-        return "native"
-    native = (
-        (provider == "openai" and api in {"openai-completions", "openai-responses"})
-        or (provider == "anthropic" and api == "anthropic-messages")
-    )
-    if native:
-        if declared is not False:
-            return "native"
-    if output.fallback == "prompt":
-        return "prompt"
     raise StructuredOutputUnsupportedError(
         f"Structured output is not verified for provider={provider!r}, api={api!r}",
         code="unsupported",
+    )
+
+
+def negotiate_structured_output(
+    model: Any,
+    capabilities_or_output: StructuredOutputCapabilities | JsonSchemaOutput,
+    output: JsonSchemaOutput | None = None,
+    tools: list[Any] | None = None,
+    *,
+    tool_choice: Any = None,
+    parallel_tool_calls: bool | None = None,
+) -> StructuredOutputPlan | Literal["native", "tool", "prompt"]:
+    """Choose a verified mode without weakening caller controls.
+
+    The two-argument form remains for existing Runtime callers until their
+    typed-result migration; new callers receive the complete immutable plan.
+    """
+    if isinstance(capabilities_or_output, JsonSchemaOutput):
+        legacy_output = capabilities_or_output
+        if getattr(model, "provider", "") == "callable":
+            return "native"
+        from openprogram.providers.api_registry import get_structured_output_capabilities
+
+        plan = _build_plan(
+            model,
+            get_structured_output_capabilities(getattr(model, "api", "")),
+            legacy_output,
+            tools or [],
+            tool_choice=tool_choice,
+            parallel_tool_calls=parallel_tool_calls,
+        )
+        return plan.mode
+
+    if output is None:
+        raise TypeError("output is required when capabilities are provided")
+    return _build_plan(
+        model,
+        capabilities_or_output,
+        output,
+        tools or [],
+        tool_choice=tool_choice,
+        parallel_tool_calls=parallel_tool_calls,
     )
 
 

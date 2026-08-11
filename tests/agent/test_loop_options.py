@@ -146,7 +146,12 @@ def test_defaults_leave_stream_opts_unset():
 
 def test_response_format_reaches_stream_opts():
     stream_fn, state = _make_stream_fn([_text_msg()])
-    response_format = normalize_response_format({"type": "string"})
+    response_format = normalize_response_format({
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+        "additionalProperties": False,
+    })
     session = _session(stream_fn, response_format=response_format)
 
     asyncio.run(session.run("go"))

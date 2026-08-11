@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import time
+from dataclasses import replace
 from typing import Any, AsyncGenerator
 
 from openprogram.providers import stream_simple as _default_stream_simple
@@ -15,6 +17,7 @@ from openprogram.providers.types import (
     AssistantMessage,
     Context,
     TextContent,
+    Tool,
     ToolCall,
     ToolResultMessage,
     Usage,
@@ -240,6 +243,20 @@ async def _run_loop(
     if config.get_steering_messages:
         pending_messages = await config.get_steering_messages()
 
+    structured_plan = None
+    if config.response_format is not None:
+        from openprogram.providers.api_registry import get_structured_output_capabilities
+        from openprogram.providers.structured_output import negotiate_structured_output
+
+        structured_plan = negotiate_structured_output(
+            config.model,
+            get_structured_output_capabilities(config.model.api),
+            config.response_format,
+            list(current_context.tools or []),
+            tool_choice=config.tool_choice,
+            parallel_tool_calls=config.parallel_tool_calls,
+        )
+
     # Hard cap on the inner tool-call loop so a model that keeps asking
     # for "one more tool call" can't churn the runtime forever. 50 is
     # plenty for a real task; anything beyond that is the model spinning.
@@ -288,7 +305,12 @@ async def _run_loop(
 
             # Stream assistant response
             message = await _stream_assistant_response(
-                current_context, config, cancel_event, ev_stream, stream_fn
+                current_context,
+                config,
+                cancel_event,
+                ev_stream,
+                stream_fn,
+                structured_plan,
             )
             new_messages.append(message)
 
@@ -301,6 +323,45 @@ async def _run_loop(
             # Check for tool calls
             tool_calls = [c for c in message.content if isinstance(c, ToolCall)]
             has_more_tool_calls = len(tool_calls) > 0
+
+            if structured_plan is not None and structured_plan.mode == "tool":
+                submit_calls = [
+                    call
+                    for call in tool_calls
+                    if call.name == structured_plan.submit_tool_name
+                ]
+                if submit_calls and len(tool_calls) != 1:
+                    from openprogram.providers.structured_output import (
+                        StructuredOutputValidationError,
+                    )
+
+                    raise StructuredOutputValidationError(
+                        "The hidden structured-output submission must be the only tool call",
+                        code="mixed_submission",
+                    )
+                if submit_calls:
+                    from openprogram.providers.structured_output import parse_and_validate_json
+
+                    validation_output = replace(
+                        config.response_format,
+                        schema=structured_plan.original_schema,
+                    )
+                    message.structured_output = parse_and_validate_json(
+                        json.dumps(submit_calls[0].arguments, ensure_ascii=False),
+                        validation_output,
+                    )
+                    message.structured_output_mode = "tool"
+                    message.structured_output_attempt = 0
+                    has_more_tool_calls = False
+                elif not tool_calls:
+                    from openprogram.providers.structured_output import (
+                        StructuredOutputValidationError,
+                    )
+
+                    raise StructuredOutputValidationError(
+                        "The model did not call the hidden structured-output submission tool",
+                        code="missing_submission",
+                    )
 
             tool_results: list[ToolResultMessage] = []
             if has_more_tool_calls:
@@ -349,6 +410,7 @@ async def _stream_assistant_response(
     cancel_event: asyncio.Event | None,
     ev_stream: EventStream[AgentEvent, list[AgentMessage]],
     stream_fn: StreamFn | None,
+    structured_plan: Any | None = None,
 ) -> AssistantMessage:
     """
     Stream an assistant response from the LLM.
@@ -404,6 +466,15 @@ async def _stream_assistant_response(
     _provider_tools, _ = split_tools_for_dispatch(
         list(context.tools or [])
     )
+    if structured_plan is not None and structured_plan.mode == "tool":
+        _provider_tools = [
+            *_provider_tools,
+            Tool(
+                name=structured_plan.submit_tool_name,
+                description="Submit the final response matching the required schema.",
+                parameters=structured_plan.provider_schema,
+            ),
+        ]
     llm_context = Context(
         system_prompt=sys_prompt,
         messages=llm_messages,
@@ -440,6 +511,13 @@ async def _stream_assistant_response(
             key_result = await key_result
         resolved_api_key = key_result or resolved_api_key
 
+    provider_response_format = None
+    if structured_plan is not None and structured_plan.mode == "native":
+        provider_response_format = replace(
+            config.response_format,
+            schema=structured_plan.provider_schema,
+        )
+
     from openprogram.providers import SimpleStreamOptions
     stream_opts = SimpleStreamOptions(
         reasoning=config.reasoning,
@@ -457,9 +535,13 @@ async def _stream_assistant_response(
         metadata=config.metadata,
         service_tier=config.service_tier,
         tool_choice=config.tool_choice,
-        parallel_tool_calls=config.parallel_tool_calls,
+        parallel_tool_calls=(
+            False
+            if structured_plan is not None and structured_plan.mode == "tool"
+            else config.parallel_tool_calls
+        ),
         web_search=config.web_search,
-        response_format=config.response_format,
+        response_format=provider_response_format,
     )
 
     partial_message: AssistantMessage | None = None

@@ -8,6 +8,7 @@ OpenAI Codex, Google (Generative AI + Vertex + Gemini CLI), and Amazon Bedrock.
 from __future__ import annotations
 
 from openprogram.providers.api_registry import register_api_provider
+from openprogram.providers.structured_output import StructuredOutputCapabilities
 # Provider submodules are imported lazily inside register_builtins()
 # below. Importing them at module top would force re-entry into the
 # parent providers package while it's still being initialized, which
@@ -32,6 +33,35 @@ class _StreamFnProvider:
 
 _registered = False
 
+_OPENAI_CHAT_CAPABILITIES = StructuredOutputCapabilities(
+    native="supported",
+    dialect="openai_chat",
+    streaming=True,
+    with_tools=True,
+    strict_tool=True,
+    schema_profile="openai_strict",
+)
+_OPENAI_RESPONSES_CAPABILITIES = StructuredOutputCapabilities(
+    native="supported",
+    dialect="openai_responses",
+    streaming=True,
+    with_tools=True,
+    strict_tool=True,
+    schema_profile="openai_strict",
+)
+_ANTHROPIC_CAPABILITIES = StructuredOutputCapabilities(
+    native="supported",
+    dialect="anthropic",
+    streaming=True,
+    with_tools=True,
+    schema_profile="none",
+)
+_STRICT_TOOL_ONLY_CAPABILITIES = StructuredOutputCapabilities(
+    strict_tool=True,
+    schema_profile="openai_strict",
+)
+_UNKNOWN_CAPABILITIES = StructuredOutputCapabilities()
+
 
 def register_builtins() -> None:
     """Register all built-in API providers. Safe to call multiple times."""
@@ -54,6 +84,7 @@ def register_builtins() -> None:
         register_api_provider(
             "anthropic-messages",
             _StreamFnProvider(anthropic.stream_simple, anthropic.stream_simple),
+            _ANTHROPIC_CAPABILITIES,
         )
         # Side-effect import: registers the anthropic OAuth refresh fn with
         # CredentialProvider (register_anthropic_auth). Without it the subscription
@@ -69,6 +100,7 @@ def register_builtins() -> None:
         register_api_provider(
             "openai-completions",
             _StreamFnProvider(openai_completions.stream_simple, openai_completions.stream_simple),
+            _OPENAI_CHAT_CAPABILITIES,
         )
     except ImportError:
         pass
@@ -89,6 +121,7 @@ def register_builtins() -> None:
         register_api_provider(
             "openai-responses",
             _StreamFnProvider(stream_openai_responses, stream_simple_openai_responses),
+            _OPENAI_RESPONSES_CAPABILITIES,
         )
     except ImportError:
         pass
@@ -100,6 +133,7 @@ def register_builtins() -> None:
         register_api_provider(
             "openai-codex",
             _StreamFnProvider(stream_openai_codex_responses, stream_simple_openai_codex_responses),
+            _STRICT_TOOL_ONLY_CAPABILITIES,
         )
         # Side-effect import: registers the OAuth refresh fn with
         # CredentialProvider so codex's stream funcs can acquire/refresh the
@@ -116,6 +150,7 @@ def register_builtins() -> None:
     register_api_provider(
         "google-generative-ai",
         _StreamFnProvider(google.stream_simple, google.stream_simple),
+        _UNKNOWN_CAPABILITIES,
     )
 
     # Google Gemini CLI / Cloud Code Assist
@@ -128,6 +163,7 @@ def register_builtins() -> None:
         register_api_provider(
             "gemini-subscription",
             _StreamFnProvider(stream_google_gemini_cli, stream_simple_google_gemini_cli),
+            _UNKNOWN_CAPABILITIES,
         )
     except ImportError:
         pass
@@ -139,6 +175,7 @@ def register_builtins() -> None:
         register_api_provider(
             "bedrock-converse-stream",
             _StreamFnProvider(stream_bedrock, stream_simple_bedrock),
+            _UNKNOWN_CAPABILITIES,
         )
     except ImportError:
         pass
@@ -150,6 +187,7 @@ def register_builtins() -> None:
         register_api_provider(
             "azure-openai-responses",
             _StreamFnProvider(stream_azure_openai_responses, stream_simple_azure_openai_responses),
+            _STRICT_TOOL_ONLY_CAPABILITIES,
         )
     except ImportError:
         pass
