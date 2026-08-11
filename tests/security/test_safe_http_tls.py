@@ -286,10 +286,13 @@ def test_safe_async_client_rejects_unmanaged_direct_transports():
     asyncio.run(exercise())
 
 
-def test_security_config_rejects_an_insecure_ssl_context():
-    insecure = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    insecure.check_hostname = False
-    insecure.verify_mode = ssl.CERT_NONE
-
-    with pytest.raises(ValueError, match="TLS verification cannot be disabled"):
-        OutboundSecurityConfig(ca_bundle=insecure)
+@pytest.mark.parametrize(
+    "context",
+    [
+        ssl.create_default_context(),
+        ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT),
+    ],
+)
+def test_security_config_rejects_caller_owned_ssl_context(context):
+    with pytest.raises(TypeError, match="CA bundle path"):
+        OutboundSecurityConfig(ca_bundle=context)

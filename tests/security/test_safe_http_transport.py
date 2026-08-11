@@ -5,14 +5,20 @@ import ipaddress
 import socketserver
 import threading
 
+import anyio
 import httpcore
+import httpx
 import pytest
 
 from openprogram.security.safe_http import (
     AsyncDecisionNetworkBackend,
+    AsyncManagedHTTPTransport,
     ManagedHTTPTransport,
     OutboundSecurityConfig,
     DecisionNetworkBackend,
+    SafeAsyncClient,
+    _AsyncResponseStream,
+    _ResponseStream,
     safe_async_client,
     safe_client,
 )
@@ -31,6 +37,8 @@ class _RecordingHTTPServer(socketserver.ThreadingTCPServer):
     def __init__(self):
         self.accepted_targets: list[str] = []
         self.host_headers: list[str] = []
+        self.closed_connections = 0
+        self._closed_condition = threading.Condition()
         super().__init__(("127.0.0.1", 0), _HTTPHandler)
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
@@ -44,33 +52,44 @@ class _RecordingHTTPServer(socketserver.ThreadingTCPServer):
         self.server_close()
         self.thread.join(timeout=2)
 
+    def wait_for_closed_connections(self, count: int, timeout: float = 1.0) -> bool:
+        with self._closed_condition:
+            return self._closed_condition.wait_for(
+                lambda: self.closed_connections >= count, timeout=timeout
+            )
+
 
 class _HTTPHandler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
-        self.request.settimeout(2)
-        while True:
-            try:
-                request_line = self.rfile.readline()
-            except TimeoutError:
-                return
-            if not request_line:
-                return
-            headers: dict[str, str] = {}
+        server = self.server
+        assert isinstance(server, _RecordingHTTPServer)
+        self.request.settimeout(10)
+        try:
             while True:
-                line = self.rfile.readline()
-                if line in {b"", b"\r\n"}:
-                    break
-                name, value = line.decode("latin-1").split(":", 1)
-                headers[name.lower()] = value.strip()
-            server = self.server
-            assert isinstance(server, _RecordingHTTPServer)
-            server.accepted_targets.append(self.request.getsockname()[0])
-            server.host_headers.append(headers["host"])
-            self.wfile.write(
-                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n"
-                b"Connection: keep-alive\r\n\r\nok"
-            )
-            self.wfile.flush()
+                try:
+                    request_line = self.rfile.readline()
+                except TimeoutError:
+                    return
+                if not request_line:
+                    return
+                headers: dict[str, str] = {}
+                while True:
+                    line = self.rfile.readline()
+                    if line in {b"", b"\r\n"}:
+                        break
+                    name, value = line.decode("latin-1").split(":", 1)
+                    headers[name.lower()] = value.strip()
+                server.accepted_targets.append(self.request.getsockname()[0])
+                server.host_headers.append(headers["host"])
+                self.wfile.write(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n"
+                    b"Connection: keep-alive\r\n\r\nok"
+                )
+                self.wfile.flush()
+        finally:
+            with server._closed_condition:
+                server.closed_connections += 1
+                server._closed_condition.notify_all()
 
 
 @pytest.fixture
@@ -148,6 +167,28 @@ def test_async_request_resolves_once_and_connects_to_the_approved_peer(http_serv
     assert (
         ipaddress.ip_address(http_server.accepted_targets[0]) in decision.resolved_ips
     )
+
+
+@pytest.mark.parametrize("async_backend", ["asyncio", "trio"])
+def test_async_transport_uses_public_anyio_backend_on_supported_runtimes(
+    http_server, async_backend
+):
+    url = f"http://safe.test:{http_server.port}/resource"
+
+    async def exercise():
+        transport = AsyncManagedHTTPTransport(
+            "runtime.local_probe",
+            configured_origin=url,
+            security=_security(lambda _hostname, _port: ("127.0.0.1",)),
+        )
+        decision = transport._evaluate("GET", url)
+        network_backend = AsyncDecisionNetworkBackend(decision)
+        assert type(network_backend._underlying) is httpcore.AnyIOBackend
+        async with SafeAsyncClient(transport) as client:
+            response = await client.get(url)
+        assert response.content == b"ok"
+
+    anyio.run(exercise, backend=async_backend)
 
 
 def test_sync_request_replaces_a_hostile_host_header(http_server):
@@ -262,6 +303,154 @@ def test_async_backend_rejects_a_peer_outside_the_decision():
     assert closed
 
 
+class _FailingResponseStream:
+    def __init__(self, error: Exception):
+        self.error = error
+
+    def __iter__(self):
+        raise self.error
+        yield b""  # pragma: no cover
+
+    def close(self) -> None:
+        pass
+
+
+class _AsyncFailingResponseStream:
+    def __init__(self, error: Exception):
+        self.error = error
+
+    async def __aiter__(self):
+        raise self.error
+        yield b""  # pragma: no cover
+
+    async def aclose(self) -> None:
+        pass
+
+
+@pytest.mark.parametrize(
+    ("core_error", "expected_type"),
+    [
+        (httpcore.ReadTimeout("late timeout"), httpx.ReadTimeout),
+        (httpcore.ReadError("late read"), httpx.ReadError),
+    ],
+)
+def test_sync_response_stream_maps_late_httpcore_errors(core_error, expected_type):
+    stream = _ResponseStream(_FailingResponseStream(core_error))
+
+    with pytest.raises(expected_type) as exc:
+        list(stream)
+
+    assert type(exc.value) is expected_type
+
+
+@pytest.mark.parametrize(
+    ("core_error", "expected_type"),
+    [
+        (httpcore.ReadTimeout("late timeout"), httpx.ReadTimeout),
+        (httpcore.ReadError("late read"), httpx.ReadError),
+    ],
+)
+def test_async_response_stream_maps_late_httpcore_errors(core_error, expected_type):
+    async def exercise():
+        stream = _AsyncResponseStream(_AsyncFailingResponseStream(core_error))
+        with pytest.raises(expected_type) as exc:
+            [chunk async for chunk in stream]
+        return exc.value
+
+    error = asyncio.run(exercise())
+
+    assert type(error) is expected_type
+
+
+def test_response_stream_preserves_url_policy_error():
+    error = URLPolicyError("PEER_ADDRESS_MISMATCH", "https://safe.test")
+    stream = _ResponseStream(_FailingResponseStream(error))
+
+    with pytest.raises(URLPolicyError) as exc:
+        list(stream)
+
+    assert exc.value is error
+
+
+def test_async_response_stream_preserves_url_policy_error():
+    async def exercise():
+        error = URLPolicyError("PEER_ADDRESS_MISMATCH", "https://safe.test")
+        stream = _AsyncResponseStream(_AsyncFailingResponseStream(error))
+        with pytest.raises(URLPolicyError) as exc:
+            [chunk async for chunk in stream]
+        return error, exc.value
+
+    error, raised = asyncio.run(exercise())
+    assert raised is error
+
+
+class _FailingPool:
+    def __init__(self, error: Exception):
+        self.error = error
+
+    def handle_request(self, _request):
+        raise self.error
+
+
+class _AsyncFailingPool:
+    def __init__(self, error: Exception):
+        self.error = error
+
+    async def handle_async_request(self, _request):
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    ("core_error", "expected_type"),
+    [
+        (httpcore.ConnectTimeout("connect timeout"), httpx.ConnectTimeout),
+        (httpcore.RemoteProtocolError("bad protocol"), httpx.RemoteProtocolError),
+    ],
+)
+def test_sync_transport_maps_request_httpcore_errors(core_error, expected_type):
+    url = "http://safe.test:8080/resource"
+    transport = ManagedHTTPTransport(
+        "runtime.local_probe",
+        configured_origin=url,
+        security=_security(lambda _hostname, _port: ("127.0.0.1",)),
+    )
+    transport._pool = lambda _decision: _FailingPool(core_error)
+    try:
+        with pytest.raises(expected_type) as exc:
+            transport.handle_request(httpx.Request("GET", url))
+    finally:
+        transport.close()
+
+    assert type(exc.value) is expected_type
+
+
+@pytest.mark.parametrize(
+    ("core_error", "expected_type"),
+    [
+        (httpcore.ConnectTimeout("connect timeout"), httpx.ConnectTimeout),
+        (httpcore.RemoteProtocolError("bad protocol"), httpx.RemoteProtocolError),
+    ],
+)
+def test_async_transport_maps_request_httpcore_errors(core_error, expected_type):
+    async def exercise():
+        url = "http://safe.test:8080/resource"
+        transport = AsyncManagedHTTPTransport(
+            "runtime.local_probe",
+            configured_origin=url,
+            security=_security(lambda _hostname, _port: ("127.0.0.1",)),
+        )
+        transport._pool = lambda _decision: _AsyncFailingPool(core_error)
+        try:
+            with pytest.raises(expected_type) as exc:
+                await transport.handle_async_request(httpx.Request("GET", url))
+        finally:
+            await transport.aclose()
+        return exc.value
+
+    error = asyncio.run(exercise())
+    assert type(error) is expected_type
+
+
 def test_retries_stay_with_the_decision_and_a_new_request_gets_a_new_decision(
     http_server,
 ):
@@ -296,50 +485,42 @@ def test_retries_stay_with_the_decision_and_a_new_request_gets_a_new_decision(
     assert http_server.accepted_targets == ["127.0.0.1", "127.0.0.1"]
 
 
-@pytest.mark.parametrize(
-    ("consumer", "origin", "answers", "proxy_identity"),
-    [
-        ("runtime.local_probe", "http://safe.test", ("127.0.0.1",), None),
-        ("mcp.configured.http", "http://safe.test", ("127.0.0.1",), None),
-        ("runtime.local_probe", "http://other.test", ("127.0.0.1",), None),
-        ("runtime.local_probe", "http://safe.test", ("127.0.0.2",), None),
-        ("runtime.local_probe", "http://safe.test", ("127.0.0.1",), "proxy-a"),
-    ],
-)
-def test_pool_key_isolates_consumer_scope_origin_addresses_and_proxy_identity(
-    consumer, origin, answers, proxy_identity
-):
-    port = 8080
-    normalized_origin = f"{origin}:{port}"
-    exceptions = (
-        OwnerURLException(
-            consumer=consumer,
-            network=ipaddress.ip_network("127.0.0.0/8"),
-        ),
-    )
-    transport = ManagedHTTPTransport(
-        consumer,
-        configured_origin=normalized_origin,
-        security=OutboundSecurityConfig(
-            resolver=lambda _hostname, _port: answers,
-            owner_exceptions=exceptions,
-            policy_proxy_identity=proxy_identity,
-        ),
-    )
-    decision = transport._evaluate("GET", f"{normalized_origin}/resource")
-    try:
-        key = transport._pool_key(decision)
-    finally:
-        transport.close()
+def test_sync_dns_churn_closes_idle_pool_without_closing_active_response(http_server):
+    answers = iter((("127.0.0.1", "127.0.0.2"), ("127.0.0.1",)))
+    url = f"http://safe.test:{http_server.port}/resource"
+    with safe_client(
+        "runtime.local_probe",
+        configured_origin=url,
+        security=_security(lambda _hostname, _port: next(answers)),
+    ) as client:
+        first = client.send(client.build_request("GET", url), stream=True)
+        second = client.get(url)
 
-    expected = (
-        consumer,
-        URLTrustClass.CONFIGURED_SERVICE.value,
-        normalized_origin,
-        answers,
-        proxy_identity,
-    )
-    assert key == expected
+        assert second.content == b"ok"
+        assert http_server.wait_for_closed_connections(1)
+        assert first.read() == b"ok"
+        assert http_server.wait_for_closed_connections(2)
+
+
+def test_async_dns_churn_closes_idle_pool_without_closing_active_response(http_server):
+    answers = iter((("127.0.0.1", "127.0.0.2"), ("127.0.0.1",)))
+    url = f"http://safe.test:{http_server.port}/resource"
+
+    async def exercise():
+        async with safe_async_client(
+            "runtime.local_probe",
+            configured_origin=url,
+            security=_security(lambda _hostname, _port: next(answers)),
+        ) as client:
+            first = await client.send(client.build_request("GET", url), stream=True)
+            second = await client.get(url)
+
+            assert second.content == b"ok"
+            assert http_server.wait_for_closed_connections(1)
+            assert await first.aread() == b"ok"
+            assert http_server.wait_for_closed_connections(2)
+
+    asyncio.run(exercise())
 
 
 def test_unknown_registry_key_is_rejected_by_both_factories():

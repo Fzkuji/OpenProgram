@@ -130,6 +130,7 @@ dev = [
     # single-file debugging stays overhead-free
     "pytest-xdist>=3.5",
     "cryptography>=42",
+    "trio>=0.30",
     "ruff>=0.16",
 ]
 # The LLM SDKs (anthropic / openai / google-genai) and the web stack are
