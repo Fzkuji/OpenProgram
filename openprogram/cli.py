@@ -1198,7 +1198,12 @@ def main():
                             ) from exc
                     try:
                         parsed_schema = json.loads(raw_schema)
-                    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                    except (
+                        TypeError,
+                        ValueError,
+                        RecursionError,
+                        json.JSONDecodeError,
+                    ) as exc:
                         raise StructuredOutputSchemaError(
                             "JSON schema file is not valid JSON", code="invalid_schema"
                         ) from exc

@@ -84,6 +84,30 @@ def test_cli_invalid_envelope_does_not_echo_schema_text(tmp_path, monkeypatch, c
     assert "secret" not in capsys.readouterr().err
 
 
+def test_cli_deep_stdin_schema_is_bounded_usage_error():
+    deep_schema = "[" * 10_000 + "0" + "]" * 10_000
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "openprogram.cli",
+            "--print",
+            "answer",
+            "--json-schema",
+            "-",
+        ],
+        input=deep_schema,
+        text=True,
+        capture_output=True,
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr == "invalid_schema: Structured output request is invalid\n"
+    assert "Traceback" not in result.stderr
+
+
 @pytest.mark.parametrize(
     ("error", "exit_code"),
     [
