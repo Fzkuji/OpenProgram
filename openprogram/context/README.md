@@ -230,7 +230,7 @@ render_range['subcalls']        in-frame 节点最多保留多少（默认 -1 �
 
 - 接受 AgentSpec 对象或 dict，内部用 `_attr(obj, name, default)` 统一访问，webui 传 profile dict、CLI 传 AgentSpec 都能用
 - 任何一层抛异常都被吞掉，最差情况退化到只返回 `agent.system_prompt`，绝不让系统提示装配失败拖崩整个 turn
-- 工作区文件读取走 `openprogram.agents.workspace`，命中文件系统但有内部缓存
+- 工作区文件读取走 `openprogram.agent.management.workspace`，命中文件系统但有内部缓存
 - Skill 索引限 20 条，超出显示 `... (+N more)`，避免 skill 多的 agent 把 system prompt 撑爆
 
 ## 2. Token 预算

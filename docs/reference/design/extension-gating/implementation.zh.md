@@ -75,7 +75,7 @@ class AgentSpec:
 5. 否则像以往一样将 SKILL.md 展开进用户回合。
 
 ```python
-from openprogram.agents.gating import gate as _gate
+from openprogram.agent.management.gating import gate as _gate
 gate_error = _gate(
     name=resolved.name,
     category=resolved.category or "",

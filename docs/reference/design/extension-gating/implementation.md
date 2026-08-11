@@ -75,7 +75,7 @@ When the user types `/skill X` the handler:
 5. Otherwise expands SKILL.md into the user turn as before.
 
 ```python
-from openprogram.agents.gating import gate as _gate
+from openprogram.agent.management.gating import gate as _gate
 gate_error = _gate(
     name=resolved.name,
     category=resolved.category or "",

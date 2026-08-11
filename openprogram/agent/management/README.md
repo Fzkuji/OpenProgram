@@ -1,4 +1,4 @@
-# `openprogram/agents/`
+# `openprogram/agent/management/`
 
 > Multi-agent support — one OpenProgram install can host many agents.
 
@@ -13,7 +13,7 @@ bindings.
 
 Public API (module-level convenience):
 
-    from openprogram.agents import agents as A
+    from openprogram.agent import management as A
 
     A.list_all()                # -> [AgentSpec]
     A.get(agent_id)             # -> AgentSpec | None
