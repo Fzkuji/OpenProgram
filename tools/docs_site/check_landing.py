@@ -92,8 +92,14 @@ def main() -> int:
                 for item in page.structured_data),
             "missing SoftwareSourceCode structured data", failures)
 
-    for section_id in ("how", "mechanisms", "interfaces", "start"):
+    for section_id in ("how", "mechanisms", "interfaces", "papers", "start"):
         require(section_id in page.ids, f"missing #{section_id} section", failures)
+
+    for arxiv_id in ("2606.15874", "2608.03270"):
+        require(f"https://arxiv.org/abs/{arxiv_id}" in source,
+                f"missing related paper arXiv:{arxiv_id}", failures)
+    require("KDD 2026 AgenticSE Workshop" not in visible_text,
+            "landing page still emphasizes the workshop venue", failures)
 
     install = "curl -fsSL https://raw.githubusercontent.com/Fzkuji/OpenProgram/main/scripts/install.sh | bash"
     require(install in visible_text, "missing documented installer", failures)

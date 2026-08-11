@@ -37,7 +37,8 @@
   "runtimePlatform": "Python 3.11 or later",
   "sameAs": [
     "https://github.com/Fzkuji/OpenProgram",
-    "https://arxiv.org/abs/2606.15874"
+    "https://arxiv.org/abs/2606.15874",
+    "https://arxiv.org/abs/2608.03270"
   ]
 }
 </script>
@@ -211,6 +212,18 @@ h2{font-size:clamp(30px,3.6vw,46px);line-height:1.09;letter-spacing:-.04em;font-
 .surface-list{display:flex;flex-wrap:wrap;gap:9px;margin-top:25px}
 .surface-list span{border:1px solid var(--border);border-radius:999px;padding:6px 11px;color:var(--muted);font-size:12px}
 
+.papers{border-top:1px solid var(--border);background:var(--surface)}
+.paper-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.paper{
+  display:flex;flex-direction:column;min-height:210px;padding:27px;
+  border:1px solid var(--border);border-radius:13px;background:var(--bg);
+  transition:border-color .2s,transform .2s;
+}
+.paper:hover{border-color:var(--border-hi);transform:translateY(-2px)}
+.paper-id{color:var(--teal);font:12px/1.4 var(--mono);margin-bottom:24px}
+.paper h3{font-size:21px;line-height:1.35;letter-spacing:-.025em}
+.paper-link-label{margin-top:auto;padding-top:24px;color:var(--teal);font-size:13px}
+
 .start{border-top:1px solid var(--border);background:var(--surface)}
 .start-panel{
   display:grid;grid-template-columns:.8fr 1.2fr;gap:50px;align-items:center;
@@ -242,6 +255,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
   .anatomy article:nth-child(2){border-right:0}.anatomy article:nth-child(-n+2){border-bottom:1px solid var(--border)}
   .mechanism-grid{grid-template-columns:1fr}
   .mechanism{min-height:240px}
+  .paper-grid{grid-template-columns:1fr}
 }
 @media(max-width:680px){
   .wrap{width:min(100% - 30px,1160px)}
@@ -274,7 +288,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
     <div class="navlinks">
       <a href="#how">How it works</a>
       <a href="/docs/">Docs</a>
-      <a class="paper-link" href="https://arxiv.org/abs/2606.15874">Paper</a>
+      <a class="paper-link" href="#papers">Papers</a>
       <a href="https://github.com/Fzkuji/OpenProgram">GitHub</a>
       <a class="nav-install" href="#start">Install</a>
     </div>
@@ -325,7 +339,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
       <div class="proof-item"><span class="proof-label">License</span><span class="proof-value">Open source · AGPL-3.0</span></div>
       <div class="proof-item"><span class="proof-label">Runtime</span><span class="proof-value">Python 3.11+</span></div>
       <div class="proof-item"><span class="proof-label">Platforms</span><span class="proof-value">macOS · Linux · Windows</span></div>
-      <div class="proof-item"><span class="proof-label">Research</span><span class="proof-value">KDD 2026 AgenticSE Workshop</span></div>
+      <div class="proof-item"><span class="proof-label">Research</span><span class="proof-value">2 related papers</span></div>
     </div>
   </aside>
 
@@ -402,6 +416,27 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
     </div>
   </section>
 
+  <section class="papers" id="papers">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <div><p class="kicker">Research</p><h2>Related papers.</h2></div>
+        <p class="lead">Research related to OpenProgram and its agent runtime.</p>
+      </div>
+      <div class="paper-grid reveal">
+        <a class="paper" href="https://arxiv.org/abs/2606.15874">
+          <span class="paper-id">arXiv:2606.15874</span>
+          <h3>LLM-as-Code: Agentic Programming for Agent Harness</h3>
+          <span class="paper-link-label">Read on arXiv →</span>
+        </a>
+        <a class="paper" href="https://arxiv.org/abs/2608.03270">
+          <span class="paper-id">arXiv:2608.03270</span>
+          <h3>GUI-Lens: Coarse-to-Fine Cropping for GUI Grounding with General-Purpose VLMs</h3>
+          <span class="paper-link-label">Read on arXiv →</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
   <section class="start" id="start">
     <div class="wrap">
       <div class="start-panel reveal">
@@ -428,7 +463,7 @@ footer{border-top:1px solid var(--border);padding:34px 0;color:var(--faint);font
     <span>OpenProgram · AGPL-3.0</span>
     <div class="footer-links">
       <a href="https://github.com/Fzkuji/OpenProgram">GitHub</a>
-      <a href="https://arxiv.org/abs/2606.15874">LLM-as-Code paper</a>
+      <a href="#papers">Related papers</a>
       <a href="/docs/">Documentation</a>
       <a href="/sitemap.xml">Sitemap</a>
     </div>
