@@ -1,0 +1,143 @@
+from __future__ import annotations
+
+import multiprocessing
+from pathlib import Path
+
+import pytest
+
+from openprogram.providers import api_registry
+from openprogram.providers.api_registry import (
+    configure_provider_transform,
+    get_api_provider,
+    register_api_provider,
+)
+from openprogram.providers.recording import RecordingSink
+from openprogram.providers.recording import RecordingProvider, activate_record_replay_from_config
+from openprogram.providers.replay import ReplayProvider
+from openprogram.providers.replay import read_recording_file
+
+
+class Provider:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+class WrappedProvider:
+    def __init__(self, api: str, inner: Provider) -> None:
+        self.api = api
+        self.inner = inner
+
+
+@pytest.fixture(autouse=True)
+def isolated_registry(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(api_registry, "_registry", {})
+    monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_provider_transform", None)
+
+
+def test_transform_wraps_existing_and_future_registry_entries() -> None:
+    first = Provider("first")
+    second = Provider("second")
+    transform = lambda api, provider: WrappedProvider(api, provider)
+    register_api_provider("first-api", first)
+
+    configure_provider_transform(transform)
+    register_api_provider("second-api", second)
+
+    assert get_api_provider("first-api").inner is first
+    assert get_api_provider("second-api").inner is second
+    assert get_api_provider("first-api").api == "first-api"
+
+
+def test_transform_is_idempotent_only_for_the_same_callable() -> None:
+    transform = lambda api, provider: WrappedProvider(api, provider)
+    configure_provider_transform(transform)
+    configure_provider_transform(transform)
+
+    with pytest.raises(RuntimeError, match="already configured"):
+        configure_provider_transform(lambda api, provider: WrappedProvider(api, provider))
+
+
+def test_transform_failure_does_not_partially_replace_registry() -> None:
+    first = Provider("first")
+    second = Provider("second")
+    register_api_provider("first-api", first)
+    register_api_provider("second-api", second)
+
+    def fail_on_second(api, provider):
+        if api == "second-api":
+            raise ValueError("cannot wrap")
+        return WrappedProvider(api, provider)
+
+    with pytest.raises(ValueError, match="cannot wrap"):
+        configure_provider_transform(fail_on_second)
+
+    assert get_api_provider("first-api") is first
+    assert get_api_provider("second-api") is second
+
+
+def _write_calls(path: str, count: int) -> None:
+    sink = RecordingSink(path)
+    for marker in range(count):
+        call_index = sink.begin_call({
+            "model": {"id": f"model-{marker}"},
+            "context": {"messages": []},
+            "options": None,
+        })
+        sink.end_call(call_index, 0)
+
+
+def test_multiprocess_sink_allocates_contiguous_parseable_calls(tmp_path: Path) -> None:
+    recording = tmp_path / "concurrent.jsonl"
+    context = multiprocessing.get_context("spawn")
+    processes = [context.Process(target=_write_calls, args=(str(recording), 5)) for _ in range(3)]
+
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(20)
+        assert process.exitcode == 0
+
+    calls = read_recording_file(recording)
+    assert [call.call_index for call in calls] == list(range(15))
+
+
+def test_record_activation_uses_one_sink_for_every_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = Provider("first")
+    second = Provider("second")
+    register_api_provider("first-api", first)
+    register_api_provider("second-api", second)
+    monkeypatch.setattr("openprogram.paths.get_recordings_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        "openprogram.setup._read_config",
+        lambda: {"record_replay": {"mode": "record", "file": "calls"}},
+    )
+
+    activate_record_replay_from_config()
+
+    wrapped_first = get_api_provider("first-api")
+    wrapped_second = get_api_provider("second-api")
+    assert isinstance(wrapped_first, RecordingProvider)
+    assert isinstance(wrapped_second, RecordingProvider)
+    assert wrapped_first._sink is wrapped_second._sink
+
+
+def test_replay_activation_uses_one_provider_for_every_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recording = tmp_path / "calls.jsonl"
+    RecordingSink(recording)
+    register_api_provider("first-api", Provider("first"))
+    register_api_provider("second-api", Provider("second"))
+    monkeypatch.setattr(
+        "openprogram.setup._read_config",
+        lambda: {"record_replay": {"mode": "replay", "file": str(recording)}},
+    )
+
+    activate_record_replay_from_config()
+
+    replay = get_api_provider("first-api")
+    assert isinstance(replay, ReplayProvider)
+    assert get_api_provider("second-api") is replay

@@ -17,9 +17,12 @@ import os
 import re
 import stat
 import sys
+import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, Iterator
 
+from openprogram import _compat
 from openprogram._compat import restrict_to_user
 
 from .types import (
@@ -115,44 +118,16 @@ class RecordingProvider:
         register_api_provider(api, RecordingProvider(real_provider, recording_path))
     """
 
-    def __init__(self, provider: Any, recording_path: str | Path) -> None:
+    def __init__(self, provider: Any, recording_path: str | Path | RecordingSink) -> None:
         self._provider = provider
-        self._recording_path = Path(recording_path)
-        self._call_index = 0
-        self._start_recording_file()
+        self._sink = (
+            recording_path if isinstance(recording_path, RecordingSink) else RecordingSink(recording_path)
+        )
+        self._recording_path = self._sink.path
 
     @property
     def recording_path(self) -> Path:
         return self._recording_path
-
-    def _start_recording_file(self) -> None:
-        self._recording_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        os.chmod(self._recording_path.parent, 0o700)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
-        if hasattr(os, "O_NOFOLLOW"):
-            flags |= os.O_NOFOLLOW
-        fd = os.open(self._recording_path, flags, 0o600)
-        try:
-            restrict_to_user(self._recording_path)
-            _verify_private_regular_file(fd, self._recording_path)
-            if os.fstat(fd).st_size == 0:
-                _write_all(fd, _encode_line({
-                    "type": "header",
-                    "format_version": RECORDING_FORMAT_VERSION,
-                }))
-        finally:
-            os.close(fd)
-
-    def _write(self, line: dict[str, Any]) -> None:
-        flags = os.O_WRONLY | os.O_APPEND
-        if hasattr(os, "O_NOFOLLOW"):
-            flags |= os.O_NOFOLLOW
-        fd = os.open(self._recording_path, flags)
-        try:
-            _verify_private_regular_file(fd, self._recording_path)
-            _write_all(fd, _encode_line(line))
-        finally:
-            os.close(fd)
 
     def stream(
         self,
@@ -179,11 +154,7 @@ class RecordingProvider:
         context: Context,
         options: Any,
     ) -> AsyncGenerator[AssistantMessageEvent, None]:
-        call_index = self._call_index
-        self._call_index += 1
-        self._write({
-            "type": "request",
-            "call_index": call_index,
+        call_index = self._sink.begin_call({
             "model": _dump(model),
             "context": _dump(context),
             "options": _dump(options),
@@ -191,27 +162,106 @@ class RecordingProvider:
         event_index = 0
         ended = False
         async for event in source:
-            self._write({
-                "type": "event",
-                "call_index": call_index,
-                "event_index": event_index,
-                "event": _dump(event),
-            })
+            self._sink.append_event(call_index, event_index, _dump(event))
             event_index += 1
             if getattr(event, "type", None) in {"done", "error"}:
-                self._write({
-                    "type": "call_end",
-                    "call_index": call_index,
-                    "event_count": event_index,
-                })
+                self._sink.end_call(call_index, event_index)
                 ended = True
             yield event
         if not ended:
-            self._write({
+            self._sink.end_call(call_index, event_index)
+
+
+class RecordingSink:
+    """Cross-thread and cross-process append coordinator for one JSONL file."""
+
+    def __init__(self, recording_path: str | Path) -> None:
+        self.path = Path(recording_path)
+        self.lock_path = self.path.with_name(self.path.name + ".lock")
+        self._thread_lock = threading.RLock()
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(self.path.parent, 0o700)
+        with self._locked():
+            self._ensure_header_locked()
+
+    def begin_call(self, request: dict[str, Any]) -> int:
+        with self._locked():
+            call_indexes = []
+            for raw in self.path.read_text(encoding="utf-8").splitlines():
+                if not raw.strip():
+                    continue
+                row = json.loads(raw)
+                if row.get("type") == "request":
+                    call_indexes.append(row["call_index"])
+            call_index = max(call_indexes, default=-1) + 1
+            self._append_locked({
+                "type": "request",
+                "call_index": call_index,
+                **remove_secret_values(request),
+            })
+            return call_index
+
+    def append_event(self, call_index: int, event_index: int, event: dict[str, Any]) -> None:
+        with self._locked():
+            self._append_locked({
+                "type": "event",
+                "call_index": call_index,
+                "event_index": event_index,
+                "event": remove_secret_values(event),
+            })
+
+    def end_call(self, call_index: int, event_count: int) -> None:
+        with self._locked():
+            self._append_locked({
                 "type": "call_end",
                 "call_index": call_index,
-                "event_count": event_index,
-            })
+                "event_count": event_count,
+            }, fsync=True)
+
+    @contextmanager
+    def _locked(self) -> Iterator[None]:
+        with self._thread_lock:
+            flags = os.O_RDWR | os.O_CREAT
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            lock_fd = os.open(self.lock_path, flags, 0o600)
+            try:
+                restrict_to_user(self.lock_path)
+                _verify_private_regular_file(lock_fd, self.lock_path)
+                _compat.flock(lock_fd, _compat.LOCK_EX)
+                yield
+            finally:
+                _compat.flock(lock_fd, _compat.LOCK_UN)
+                os.close(lock_fd)
+
+    def _ensure_header_locked(self) -> None:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(self.path, flags, 0o600)
+        try:
+            restrict_to_user(self.path)
+            _verify_private_regular_file(fd, self.path)
+            if os.fstat(fd).st_size == 0:
+                _write_all(fd, _encode_line({
+                    "type": "header",
+                    "format_version": RECORDING_FORMAT_VERSION,
+                }))
+        finally:
+            os.close(fd)
+
+    def _append_locked(self, row: dict[str, Any], *, fsync: bool = False) -> None:
+        flags = os.O_WRONLY | os.O_APPEND
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(self.path, flags)
+        try:
+            _verify_private_regular_file(fd, self.path)
+            _write_all(fd, _encode_line(row))
+            if fsync:
+                os.fsync(fd)
+        finally:
+            os.close(fd)
 
 
 def _encode_line(line: dict[str, Any]) -> bytes:
@@ -249,3 +299,43 @@ def restrict_recording_file(path: str | Path) -> None:
         _verify_private_regular_file(fd, recording_path)
     finally:
         os.close(fd)
+
+
+def resolve_recording_selector(selector: str) -> Path:
+    """Resolve a managed ID or explicit filesystem selector."""
+    value = selector.strip()
+    if not value:
+        raise ValueError("recording file selector is required")
+    if Path(value).is_absolute() or "/" in value or "\\" in value:
+        return Path(value).expanduser().resolve()
+    from openprogram.paths import get_recordings_dir
+    filename = value if value.endswith(".jsonl") else f"{value}.jsonl"
+    return get_recordings_dir() / filename
+
+
+def activate_record_replay_from_config() -> None:
+    """Install the configured process-wide mode after built-ins register."""
+    from openprogram import setup
+    from openprogram.providers.api_registry import configure_provider_transform
+
+    config = setup._read_config().get("record_replay", {})
+    mode = config.get("mode", "off")
+    if mode == "off":
+        return
+    selector = config.get("file", "")
+    path = resolve_recording_selector(selector)
+    if mode == "record":
+        if Path(selector).is_absolute() or "/" in selector or "\\" in selector:
+            raise ValueError("record mode requires a managed recording ID")
+        sink = RecordingSink(path)
+        configure_provider_transform(
+            lambda api, provider: RecordingProvider(provider, sink)
+        )
+        return
+    if mode == "replay":
+        from openprogram.providers.replay import ReplayProvider
+
+        replay = ReplayProvider(path)
+        configure_provider_transform(lambda api, provider: replay)
+        return
+    raise ValueError(f"unsupported record_replay.mode: {mode!r}")

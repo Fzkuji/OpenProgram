@@ -117,3 +117,7 @@ __all__ = [
 from .stream import _ensure_builtins as _stream_ensure_builtins
 _stream_ensure_builtins()
 del _stream_ensure_builtins
+
+from .recording import activate_record_replay_from_config as _activate_record_replay
+_activate_record_replay()
+del _activate_record_replay
