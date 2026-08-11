@@ -51,6 +51,7 @@ def build_base_options(
         tool_choice=options.tool_choice if options else None,
         parallel_tool_calls=options.parallel_tool_calls if options else None,
         web_search=options.web_search if options else None,
+        response_format=options.response_format if options else None,
     )
 
 

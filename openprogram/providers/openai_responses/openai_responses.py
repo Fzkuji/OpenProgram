@@ -144,6 +144,8 @@ def stream_simple_openai_responses(
 
     base = build_base_options(model, options, api_key)
     base_dict = base.model_dump() if hasattr(base, "model_dump") else dict(base)
+    if base.response_format is not None:
+        base_dict["response_format"] = base.response_format
 
     reasoning = getattr(options, "reasoning", None) if options else None
     if reasoning:
@@ -237,6 +239,18 @@ def _build_params(
         params["max_output_tokens"] = opts["max_tokens"]
     if opts.get("temperature") is not None:
         params["temperature"] = opts["temperature"]
+
+    output = opts.get("response_format")
+    if output is not None:
+        format_payload = {
+            "type": "json_schema",
+            "name": output.name,
+            "strict": output.strict,
+            "schema": output.schema,
+        }
+        if output.description is not None:
+            format_payload["description"] = output.description
+        params["text"] = {"format": format_payload}
 
     tools = getattr(context, "tools", None)
     if tools:

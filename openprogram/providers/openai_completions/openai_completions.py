@@ -359,6 +359,20 @@ async def stream_simple(
     if opts.temperature is not None:
         params["temperature"] = opts.temperature
 
+    output = opts.response_format
+    if output is not None:
+        schema_payload = {
+            "name": output.name,
+            "strict": output.strict,
+            "schema": output.schema,
+        }
+        if output.description is not None:
+            schema_payload["description"] = output.description
+        params["response_format"] = {
+            "type": "json_schema",
+            "json_schema": schema_payload,
+        }
+
     if tools:
         params["tools"] = tools
         # Caller-set pick policy. Chat Completions takes "auto" /
