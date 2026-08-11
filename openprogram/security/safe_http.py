@@ -1,16 +1,28 @@
-"""Consumer declarations for the future managed HTTP transport.
-
-Task 1 intentionally defines policy data only. Network I/O is added in later
-tasks after the transport has its own socket-level tests.
-"""
+"""Consumer declarations and peer-constrained Runtime HTTP clients."""
 
 from __future__ import annotations
 
+import ipaddress
+import ssl
+import threading
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
+from typing import Any
 
-from .url_policy import URLTrustClass
+import httpcore
+import httpx
+from httpcore._backends.auto import AutoBackend
+
+from .url_policy import (
+    OwnerURLException,
+    Resolver,
+    URLDecision,
+    URLPolicyError,
+    URLTrustClass,
+    evaluate_url,
+    resolve_all,
+)
 
 
 class SDKDisposition(str, Enum):
@@ -270,4 +282,451 @@ if any(
 CONSUMER_REGISTRY = MappingProxyType({spec.consumer: spec for spec in _SPECS})
 
 
-__all__ = ["CONSUMER_REGISTRY", "ConsumerSpec", "SDKDisposition"]
+PoolKey = tuple[str, str, str, tuple[str, ...], str | None]
+
+
+@dataclass(frozen=True)
+class OutboundSecurityConfig:
+    resolver: Resolver = resolve_all
+    owner_exceptions: tuple[OwnerURLException, ...] = ()
+    ca_bundle: ssl.SSLContext | str | None = None
+    retries: int = 0
+    policy_proxy_identity: str | None = None
+
+    def __post_init__(self) -> None:
+        insecure_context = isinstance(self.ca_bundle, ssl.SSLContext) and (
+            not self.ca_bundle.check_hostname
+            or self.ca_bundle.verify_mode != ssl.CERT_REQUIRED
+        )
+        if isinstance(self.ca_bundle, bool) or insecure_context:
+            raise ValueError("TLS verification cannot be disabled")
+        if self.retries < 0:
+            raise ValueError("retries must be non-negative")
+
+
+def _canonical_peer(stream: Any, decision: URLDecision):
+    server_addr = stream.get_extra_info("server_addr")
+    try:
+        value = server_addr[0]
+        peer = ipaddress.ip_address(value)
+    except (TypeError, ValueError, IndexError) as exc:
+        raise URLPolicyError("PEER_ADDRESS_MISMATCH", decision.origin) from exc
+    if isinstance(peer, ipaddress.IPv6Address) and peer.ipv4_mapped is not None:
+        peer = peer.ipv4_mapped
+    if peer not in decision.resolved_ips:
+        raise URLPolicyError("PEER_ADDRESS_MISMATCH", decision.origin)
+    return peer
+
+
+class _DecisionNetworkStream(httpcore.NetworkStream):
+    def __init__(self, stream: httpcore.NetworkStream, decision: URLDecision):
+        self._stream = stream
+        self._decision = decision
+        try:
+            _canonical_peer(stream, decision)
+        except URLPolicyError:
+            stream.close()
+            raise
+
+    def read(self, max_bytes: int, timeout: float | None = None) -> bytes:
+        return self._stream.read(max_bytes, timeout)
+
+    def write(self, buffer: bytes, timeout: float | None = None) -> None:
+        self._stream.write(buffer, timeout)
+
+    def close(self) -> None:
+        self._stream.close()
+
+    def start_tls(
+        self,
+        ssl_context: ssl.SSLContext,
+        server_hostname: str | None = None,
+        timeout: float | None = None,
+    ) -> httpcore.NetworkStream:
+        stream = self._stream.start_tls(
+            ssl_context, server_hostname=server_hostname, timeout=timeout
+        )
+        return _DecisionNetworkStream(stream, self._decision)
+
+    def get_extra_info(self, info: str):
+        value = self._stream.get_extra_info(info)
+        if info == "server_addr":
+            _canonical_peer(self._stream, self._decision)
+        return value
+
+
+class _AsyncDecisionNetworkStream(httpcore.AsyncNetworkStream):
+    def __init__(self, stream: httpcore.AsyncNetworkStream, decision: URLDecision):
+        self._stream = stream
+        self._decision = decision
+        _canonical_peer(stream, decision)
+
+    async def read(self, max_bytes: int, timeout: float | None = None) -> bytes:
+        return await self._stream.read(max_bytes, timeout)
+
+    async def write(self, buffer: bytes, timeout: float | None = None) -> None:
+        await self._stream.write(buffer, timeout)
+
+    async def aclose(self) -> None:
+        await self._stream.aclose()
+
+    async def start_tls(
+        self,
+        ssl_context: ssl.SSLContext,
+        server_hostname: str | None = None,
+        timeout: float | None = None,
+    ) -> httpcore.AsyncNetworkStream:
+        stream = await self._stream.start_tls(
+            ssl_context, server_hostname=server_hostname, timeout=timeout
+        )
+        try:
+            return _AsyncDecisionNetworkStream(stream, self._decision)
+        except URLPolicyError:
+            await stream.aclose()
+            raise
+
+    def get_extra_info(self, info: str):
+        value = self._stream.get_extra_info(info)
+        if info == "server_addr":
+            _canonical_peer(self._stream, self._decision)
+        return value
+
+
+class DecisionNetworkBackend(httpcore.NetworkBackend):
+    def __init__(
+        self,
+        decision: URLDecision,
+        *,
+        underlying: httpcore.NetworkBackend | None = None,
+    ):
+        self._decision = decision
+        self._underlying = underlying or httpcore.SyncBackend()
+        self._next_address = 0
+        self._lock = threading.Lock()
+
+    def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options=None,
+    ) -> httpcore.NetworkStream:
+        if host != self._decision.hostname or port != self._decision.port:
+            raise URLPolicyError("DECISION_TARGET_MISMATCH", self._decision.origin)
+        with self._lock:
+            address = self._decision.resolved_ips[
+                self._next_address % len(self._decision.resolved_ips)
+            ]
+            self._next_address += 1
+        stream = self._underlying.connect_tcp(
+            str(address),
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+        return _DecisionNetworkStream(stream, self._decision)
+
+    def connect_unix_socket(self, path, timeout=None, socket_options=None):
+        raise URLPolicyError("UNIX_SOCKET_FORBIDDEN", self._decision.origin)
+
+    def sleep(self, seconds: float) -> None:
+        self._underlying.sleep(seconds)
+
+
+class AsyncDecisionNetworkBackend(httpcore.AsyncNetworkBackend):
+    def __init__(
+        self,
+        decision: URLDecision,
+        *,
+        underlying: httpcore.AsyncNetworkBackend | None = None,
+    ):
+        self._decision = decision
+        self._underlying = underlying or AutoBackend()
+        self._next_address = 0
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options=None,
+    ) -> httpcore.AsyncNetworkStream:
+        if host != self._decision.hostname or port != self._decision.port:
+            raise URLPolicyError("DECISION_TARGET_MISMATCH", self._decision.origin)
+        address = self._decision.resolved_ips[
+            self._next_address % len(self._decision.resolved_ips)
+        ]
+        self._next_address += 1
+        stream = await self._underlying.connect_tcp(
+            str(address),
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+        try:
+            return _AsyncDecisionNetworkStream(stream, self._decision)
+        except URLPolicyError:
+            await stream.aclose()
+            raise
+
+    async def connect_unix_socket(self, path, timeout=None, socket_options=None):
+        raise URLPolicyError("UNIX_SOCKET_FORBIDDEN", self._decision.origin)
+
+    async def sleep(self, seconds: float) -> None:
+        await self._underlying.sleep(seconds)
+
+
+class _ResponseStream(httpx.SyncByteStream):
+    def __init__(self, stream):
+        self._stream = stream
+
+    def __iter__(self):
+        yield from self._stream
+
+    def close(self) -> None:
+        self._stream.close()
+
+
+class _AsyncResponseStream(httpx.AsyncByteStream):
+    def __init__(self, stream):
+        self._stream = stream
+
+    async def __aiter__(self):
+        async for chunk in self._stream:
+            yield chunk
+
+    async def aclose(self) -> None:
+        await self._stream.aclose()
+
+
+class _ManagedTransportBase:
+    def __init__(
+        self,
+        consumer: str,
+        *,
+        configured_origin: str | None,
+        callback_origin: str | None,
+        security: OutboundSecurityConfig | None,
+    ):
+        if consumer not in CONSUMER_REGISTRY:
+            raise KeyError(consumer)
+        self._consumer = consumer
+        self._configured_origin = configured_origin
+        self._callback_origin = callback_origin
+        self._security = security or OutboundSecurityConfig()
+        verify = self._security.ca_bundle
+        if isinstance(verify, str):
+            verify = ssl.create_default_context(cafile=verify)
+        elif verify is None:
+            verify = True
+        self._ssl_context = httpx.create_ssl_context(verify=verify, trust_env=False)
+
+    def _evaluate(self, method: str, url: str) -> URLDecision:
+        spec = CONSUMER_REGISTRY[self._consumer]
+        return evaluate_url(
+            self._consumer,
+            method,
+            url,
+            trust_class=spec.trust_class,
+            allowed_schemes=spec.allowed_schemes,
+            allowed_methods=spec.allowed_methods,
+            allowed_ports=spec.allowed_ports,
+            fixed_origins=spec.fixed_origins,
+            configured_origin=self._configured_origin,
+            callback_origin=self._callback_origin,
+            exceptions=self._security.owner_exceptions,
+            resolver=self._security.resolver,
+        )
+
+    def _pool_key(self, decision: URLDecision) -> PoolKey:
+        return (
+            decision.consumer,
+            decision.trust_class.value,
+            decision.origin,
+            tuple(map(str, decision.resolved_ips)),
+            self._security.policy_proxy_identity,
+        )
+
+
+class ManagedHTTPTransport(_ManagedTransportBase, httpx.BaseTransport):
+    def __init__(
+        self,
+        consumer: str,
+        *,
+        configured_origin: str | None = None,
+        callback_origin: str | None = None,
+        security: OutboundSecurityConfig | None = None,
+    ):
+        super().__init__(
+            consumer,
+            configured_origin=configured_origin,
+            callback_origin=callback_origin,
+            security=security,
+        )
+        self._pools: dict[PoolKey, httpcore.ConnectionPool] = {}
+        self._pools_lock = threading.Lock()
+
+    def _pool(self, decision: URLDecision) -> httpcore.ConnectionPool:
+        key = self._pool_key(decision)
+        with self._pools_lock:
+            pool = self._pools.get(key)
+            if pool is None:
+                pool = httpcore.ConnectionPool(
+                    ssl_context=self._ssl_context,
+                    retries=self._security.retries,
+                    network_backend=DecisionNetworkBackend(decision),
+                )
+                self._pools[key] = pool
+        return pool
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        decision = self._evaluate(request.method, str(request.url))
+        core_request = httpcore.Request(
+            method=request.method,
+            url=decision.normalized_url,
+            headers=request.headers.raw,
+            content=request.stream,
+            extensions=request.extensions,
+        )
+        try:
+            response = self._pool(decision).handle_request(core_request)
+        except httpcore.ConnectError as exc:
+            raise httpx.ConnectError(str(exc), request=request) from exc
+        extensions = dict(response.extensions)
+        extensions["url_decision"] = decision
+        return httpx.Response(
+            status_code=response.status,
+            headers=response.headers,
+            stream=_ResponseStream(response.stream),
+            extensions=extensions,
+        )
+
+    def close(self) -> None:
+        with self._pools_lock:
+            pools = tuple(self._pools.values())
+            self._pools.clear()
+        for pool in pools:
+            pool.close()
+
+
+class AsyncManagedHTTPTransport(_ManagedTransportBase, httpx.AsyncBaseTransport):
+    def __init__(
+        self,
+        consumer: str,
+        *,
+        configured_origin: str | None = None,
+        callback_origin: str | None = None,
+        security: OutboundSecurityConfig | None = None,
+    ):
+        super().__init__(
+            consumer,
+            configured_origin=configured_origin,
+            callback_origin=callback_origin,
+            security=security,
+        )
+        self._pools: dict[PoolKey, httpcore.AsyncConnectionPool] = {}
+
+    def _pool(self, decision: URLDecision) -> httpcore.AsyncConnectionPool:
+        key = self._pool_key(decision)
+        pool = self._pools.get(key)
+        if pool is None:
+            pool = httpcore.AsyncConnectionPool(
+                ssl_context=self._ssl_context,
+                retries=self._security.retries,
+                network_backend=AsyncDecisionNetworkBackend(decision),
+            )
+            self._pools[key] = pool
+        return pool
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        decision = self._evaluate(request.method, str(request.url))
+        core_request = httpcore.Request(
+            method=request.method,
+            url=decision.normalized_url,
+            headers=request.headers.raw,
+            content=request.stream,
+            extensions=request.extensions,
+        )
+        try:
+            response = await self._pool(decision).handle_async_request(core_request)
+        except httpcore.ConnectError as exc:
+            raise httpx.ConnectError(str(exc), request=request) from exc
+        extensions = dict(response.extensions)
+        extensions["url_decision"] = decision
+        return httpx.Response(
+            status_code=response.status,
+            headers=response.headers,
+            stream=_AsyncResponseStream(response.stream),
+            extensions=extensions,
+        )
+
+    async def aclose(self) -> None:
+        pools = tuple(self._pools.values())
+        self._pools.clear()
+        for pool in pools:
+            await pool.aclose()
+
+
+class SafeClient(httpx.Client):
+    def __init__(self, transport: ManagedHTTPTransport):
+        super().__init__(transport=transport, trust_env=False, follow_redirects=False)
+
+
+class SafeAsyncClient(httpx.AsyncClient):
+    def __init__(self, transport: AsyncManagedHTTPTransport):
+        super().__init__(transport=transport, trust_env=False, follow_redirects=False)
+
+
+def safe_client(
+    consumer: str,
+    *,
+    configured_origin: str | None = None,
+    callback_origin: str | None = None,
+    security: OutboundSecurityConfig | None = None,
+) -> SafeClient:
+    return SafeClient(
+        ManagedHTTPTransport(
+            consumer,
+            configured_origin=configured_origin,
+            callback_origin=callback_origin,
+            security=security,
+        )
+    )
+
+
+def safe_async_client(
+    consumer: str,
+    *,
+    configured_origin: str | None = None,
+    callback_origin: str | None = None,
+    security: OutboundSecurityConfig | None = None,
+) -> SafeAsyncClient:
+    return SafeAsyncClient(
+        AsyncManagedHTTPTransport(
+            consumer,
+            configured_origin=configured_origin,
+            callback_origin=callback_origin,
+            security=security,
+        )
+    )
+
+
+__all__ = [
+    "AsyncDecisionNetworkBackend",
+    "AsyncManagedHTTPTransport",
+    "CONSUMER_REGISTRY",
+    "ConsumerSpec",
+    "DecisionNetworkBackend",
+    "ManagedHTTPTransport",
+    "OutboundSecurityConfig",
+    "PoolKey",
+    "SDKDisposition",
+    "SafeAsyncClient",
+    "SafeClient",
+    "safe_async_client",
+    "safe_client",
+]
