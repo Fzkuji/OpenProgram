@@ -107,3 +107,41 @@ Task 8 does not modify those files.
 - Runtime inventory checker: exit 0 with all four categories zero.
 - Changed-file Ruff, Ruff format check, `uv lock --check`, and `git diff --check`:
   exit 0.
+
+## Spec-review fix round 2
+
+### F1: every literal row drives local-socket enforcement
+
+- Added a 41-row `SafeClient`/local HTTP-server contract.  Each row executes
+  every literal allowed method and, through the managed transport, verifies its
+  redirect disposition, accepted MIME, rejected MIME, streamed decoded-body
+  cap, credential forwarding or stripping, and (where declared) exact
+  owner-exception allow and deny behavior.  The per-row test changes only the
+  test-local origin, port, and socket destination needed to keep all traffic
+  local; public rows retain the managed transport's public-peer validation.
+- The fixed-origin literal table remains the independent full set: every
+  declared member is accepted by the policy boundary and every fixed consumer
+  rejects a non-member.  Existing literal policy tests continue to cover the
+  declared allowed scheme and port sets plus their rejected counterparts.
+- RED, with only the named consumer implementation checks disabled:
+  `channel.telegram.attachment` credential stripping,
+  `tts.fixed_api` MIME validation, and
+  `channel.attachment.download` decoded-body checking returned `3 failed`.
+  The local server respectively observed the leaked Authorization header, did
+  not produce `MIME_TYPE_FORBIDDEN`, and did not produce
+  `BODY_TOO_LARGE`.  No external address is a possible socket target.
+- GREEN:
+  `uv run pytest -q tests/security/test_runtime_http_compatibility.py tests/security/test_runtime_http_acceptance.py`
+  returned `161 passed in 32.97s`.
+- SDK disposition remains bound to the executable runtime-inventory checker;
+  disabled SDK consumers are also fail-closed by
+  `require_active_sdk_transport`.  Existing SDK transport tests exercise the
+  injected provider/MCP adapters and disabled gateway imports.
+
+### Round-2 verification
+
+- `uv run pytest -q tests/security`: exit 0, `739 passed in 110.73s`.
+- `uv run pytest -q tests/meta_functions tests/providers tests/unit tests/webui tests/integration/test_mcp_client.py`:
+  exit 0, `2932 passed, 12 skipped, 1 xfailed, 4 warnings in 176.80s`.
+  The four warnings are existing websockets/uvicorn deprecations.
+- No production file changed and F2's proxy-outage sentinel was not modified.

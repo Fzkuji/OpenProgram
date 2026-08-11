@@ -884,23 +884,36 @@ class _CompatibilityHandler(http.server.BaseHTTPRequestHandler):
 
     def _reply(self) -> None:
         type(self).requests.append((self.command, self.path, dict(self.headers)))
-        if self.path == "/redirect":
-            self.send_response(302)
-            self.send_header("Location", "http://127.0.0.1:1/forbidden")
+        path = self.path.split("?", 1)[0]
+        if path == "/redirect":
+            self.send_response(int(self.headers.get("X-Compatibility-Redirect", "302")))
+            self.send_header(
+                "Location",
+                "http://127.0.0.1:1/forbidden"
+                if self.path.endswith("?cross")
+                else "/ok",
+            )
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        body = b"12345" if self.path == "/over-cap" else b"ok"
+        body = b"12345" if path == "/over-cap" else b"ok"
         self.send_response(200)
         self.send_header(
-            "Content-Type", "image/png" if self.path == "/wrong-mime" else "text/plain"
+            "Content-Type",
+            "model/invalid"
+            if path == "/wrong-mime"
+            else self.headers.get("X-Compatibility-Mime", "text/plain"),
         )
-        self.send_header("Content-Length", str(len(body)))
+        if path != "/over-cap":
+            self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     do_GET = _reply
+    do_HEAD = _reply
     do_POST = _reply
+    do_PATCH = _reply
 
     def log_message(self, *_args) -> None:
         return
@@ -957,6 +970,126 @@ class _PublicLoopbackBackend(httpcore.NetworkBackend):
 
     def sleep(self, seconds: float) -> None:
         self._backend.sleep(seconds)
+
+
+def _literal_accepted_mime(prefixes: tuple[str, ...]) -> str:
+    for prefix, mime in (
+        ("application/octet-stream", "application/octet-stream"),
+        ("application/", "application/json"),
+        ("audio/", "audio/mpeg"),
+        ("image/", "image/png"),
+        ("text/", "text/plain"),
+        ("video/", "video/mp4"),
+    ):
+        if prefix in prefixes:
+            return mime
+    raise AssertionError(f"no accepted MIME fixture for {prefixes!r}")
+
+
+@pytest.mark.parametrize("consumer, expected", COMPATIBILITY_FIXTURES.items())
+def test_every_literal_row_enforces_its_socket_contract(
+    monkeypatch, compatibility_server, consumer, expected
+) -> None:
+    (
+        trust_class,
+        _selected_method,
+        _selected_origin,
+        _selected_port,
+        _schemes,
+        methods,
+        _ports,
+        redirect_policy,
+        _redirects,
+        _body_cap,
+        mime_prefixes,
+        credential_policy,
+        owner_exceptions,
+        _sdk_disposition,
+    ) = expected
+    port = compatibility_server.server_address[1]
+    is_configured = trust_class == "configured_service"
+    is_callback = trust_class == "loopback_callback"
+    hostname = "127.0.0.1" if is_configured or is_callback else "public.example.test"
+    origin = f"http://{hostname}:{port}"
+    registry = dict(safe_http.CONSUMER_REGISTRY)
+    spec = registry[consumer]
+    registry[consumer] = replace(
+        spec,
+        allowed_schemes=frozenset({"http"}),
+        allowed_ports=frozenset({port}),
+        fixed_origins=frozenset({origin})
+        if trust_class == "fixed_public_service"
+        else frozenset(),
+        max_decoded_body_bytes=4,
+    )
+    monkeypatch.setattr(safe_http, "CONSUMER_REGISTRY", MappingProxyType(registry))
+    if not (is_configured or is_callback):
+        original = safe_http.DecisionNetworkBackend
+        monkeypatch.setattr(
+            safe_http,
+            "DecisionNetworkBackend",
+            lambda decision: original(
+                decision,
+                underlying=_PublicLoopbackBackend(str(decision.resolved_ips[0])),
+            ),
+        )
+    exception = (
+        OwnerURLException(consumer=consumer, origin=origin)
+        if owner_exceptions
+        else None
+    )
+    security = OutboundSecurityConfig(
+        resolver=lambda *_args: (
+            ("127.0.0.1",) if (is_configured or is_callback) else ("93.184.216.34",)
+        ),
+        owner_exceptions=(() if exception is None else (exception,)),
+    )
+    kwargs = {}
+    if is_configured:
+        kwargs["configured_origin"] = origin
+    if is_callback:
+        kwargs["callback_origin"] = origin
+    headers = {
+        "Authorization": "Bearer row-secret",
+        "X-Compatibility-Mime": _literal_accepted_mime(mime_prefixes),
+        "X-Compatibility-Redirect": "302" if "GET" in methods else "307",
+    }
+    first_method = methods[0]
+    with safe_client(consumer, security=security, **kwargs) as client:
+        for method in methods:
+            assert (
+                client.request(method, origin + "/ok", headers=headers).status_code
+                == 200
+            )
+        if redirect_policy == "deny":
+            with pytest.raises(URLPolicyError, match="REDIRECT_FORBIDDEN"):
+                client.request(first_method, origin + "/redirect", headers=headers)
+        else:
+            response = client.request(
+                first_method, origin + "/redirect", headers=headers
+            )
+            assert len(response.history) == 1
+        with pytest.raises(URLPolicyError, match="MIME_TYPE_FORBIDDEN"):
+            client.request(first_method, origin + "/wrong-mime", headers=headers)
+        with pytest.raises(URLPolicyError, match="BODY_TOO_LARGE"):
+            client.request(first_method, origin + "/over-cap", headers=headers)
+
+    credential_request = next(
+        request
+        for request in compatibility_server.RequestHandlerClass.requests
+        if request[1] == "/ok"
+    )
+    if credential_policy == "none":
+        assert "Authorization" not in credential_request[2]
+    else:
+        assert credential_request[2]["Authorization"] == "Bearer row-secret"
+    if owner_exceptions:
+        no_exception_security = replace(security, owner_exceptions=())
+        with safe_client(consumer, security=no_exception_security, **kwargs) as client:
+            with pytest.raises(URLPolicyError):
+                client.request(
+                    first_method, origin + "/owner-required", headers=headers
+                )
 
 
 def test_public_client_strips_credentials_before_a_real_local_socket_send(
@@ -1047,7 +1180,9 @@ def test_configured_client_rejects_cross_origin_redirect_before_a_second_send(
         ) as client,
         pytest.raises(URLPolicyError, match="REDIRECT_ORIGIN_FORBIDDEN"),
     ):
-        client.get(origin + "/redirect", headers={"Authorization": "Bearer local"})
+        client.get(
+            origin + "/redirect?cross", headers={"Authorization": "Bearer local"}
+        )
 
     assert len(compatibility_server.RequestHandlerClass.requests) == 1
     assert (
