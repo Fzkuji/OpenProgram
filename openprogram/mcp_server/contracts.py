@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import copy
+import json
+import math
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
@@ -10,34 +11,9 @@ from typing import Any
 import mcp.types as mcp_types
 from jsonschema import Draft202012Validator
 from mcp.shared.exceptions import McpError
-from pydantic import ConfigDict, field_serializer
 
 
 _NON_BLANK_STRING = {"type": "string", "minLength": 1, "pattern": r"\S"}
-
-
-class _FrozenTool(mcp_types.Tool):
-    model_config = ConfigDict(extra="allow", frozen=True)
-
-    @field_serializer("inputSchema")
-    def _serialize_input_schema(self, value):
-        return _thaw(value)
-
-
-def _freeze(value):
-    if isinstance(value, dict):
-        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
-    if isinstance(value, list):
-        return tuple(_freeze(item) for item in value)
-    return value
-
-
-def _thaw(value):
-    if isinstance(value, Mapping):
-        return {key: _thaw(item) for key, item in value.items()}
-    if isinstance(value, tuple):
-        return [_thaw(item) for item in value]
-    return value
 
 
 def _object(
@@ -53,7 +29,7 @@ def _object(
     return schema
 
 
-_TOOL_DEFINITIONS: tuple[tuple[str, str, dict[str, Any]], ...] = (
+_RAW_TOOL_DEFINITIONS: tuple[tuple[str, str, dict[str, Any]], ...] = (
     ("sessions_list", "List recent OpenProgram sessions.", _object({})),
     (
         "session_get",
@@ -87,26 +63,32 @@ _TOOL_DEFINITIONS: tuple[tuple[str, str, dict[str, Any]], ...] = (
     ),
 )
 
-
-MCP_TOOL_SCHEMAS: tuple[mcp_types.Tool, ...] = tuple(
-    _FrozenTool(name=name, description=description, inputSchema=schema)
-    for name, description, schema in _TOOL_DEFINITIONS
+_TOOL_DEFINITIONS = tuple(
+    (name, description, json.dumps(schema, separators=(",", ":")))
+    for name, description, schema in _RAW_TOOL_DEFINITIONS
 )
-for _tool in MCP_TOOL_SCHEMAS:
-    object.__setattr__(_tool, "inputSchema", _freeze(_tool.inputSchema))
+del _RAW_TOOL_DEFINITIONS
 
-TOOL_BY_NAME: Mapping[str, mcp_types.Tool] = MappingProxyType(
-    {tool.name: tool for tool in MCP_TOOL_SCHEMAS}
-)
 _VALIDATORS = MappingProxyType(
     {
-        tool.name: Draft202012Validator(_thaw(tool.inputSchema))
-        for tool in MCP_TOOL_SCHEMAS
+        name: Draft202012Validator(json.loads(schema_json))
+        for name, _, schema_json in _TOOL_DEFINITIONS
     }
 )
 
-for _tool in MCP_TOOL_SCHEMAS:
-    Draft202012Validator.check_schema(_thaw(_tool.inputSchema))
+for _, _, _schema_json in _TOOL_DEFINITIONS:
+    Draft202012Validator.check_schema(json.loads(_schema_json))
+
+
+def get_mcp_tools() -> tuple[mcp_types.Tool, ...]:
+    return tuple(
+        mcp_types.Tool(
+            name=name,
+            description=description,
+            inputSchema=json.loads(schema_json),
+        )
+        for name, description, schema_json in _TOOL_DEFINITIONS
+    )
 
 
 def _error(code: int, message: str) -> McpError:
@@ -119,6 +101,23 @@ def _error_path(error) -> str:
         f"[{part}]" if part.isdigit() else f".{part}" for part in parts
     )
     return path[:160]
+
+
+def _copy_json(value):
+    if isinstance(value, Mapping):
+        copied = {}
+        for key, item in value.items():
+            if type(key) is not str:
+                raise TypeError("object keys must be strings")
+            copied[key] = _copy_json(item)
+        return copied
+    if isinstance(value, list):
+        return [_copy_json(item) for item in value]
+    if value is None or type(value) in (str, bool, int):
+        return value
+    if type(value) is float and math.isfinite(value):
+        return value
+    raise TypeError("value is not JSON-compatible")
 
 
 def validate_tool_call(
@@ -134,7 +133,7 @@ def validate_tool_call(
     elif isinstance(arguments, Mapping):
         copy_failed = False
         try:
-            normalized = copy.deepcopy(dict(arguments))
+            normalized = _copy_json(arguments)
         except Exception:
             copy_failed = True
         if copy_failed:
@@ -158,4 +157,4 @@ def validate_tool_call(
     return normalized
 
 
-__all__ = ["MCP_TOOL_SCHEMAS", "TOOL_BY_NAME", "validate_tool_call"]
+__all__ = ["get_mcp_tools", "validate_tool_call"]

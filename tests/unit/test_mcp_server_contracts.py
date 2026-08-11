@@ -8,8 +8,7 @@ import pytest
 from mcp.shared.exceptions import McpError
 
 from openprogram.mcp_server.contracts import (
-    MCP_TOOL_SCHEMAS,
-    TOOL_BY_NAME,
+    get_mcp_tools,
     validate_tool_call,
 )
 
@@ -63,7 +62,8 @@ EXPECTED_SCHEMAS = {
 
 
 def test_contract_exposes_exact_ordered_wrapper_tools_and_schemas() -> None:
-    assert [tool.name for tool in MCP_TOOL_SCHEMAS] == [
+    tools = get_mcp_tools()
+    assert [tool.name for tool in tools] == [
         "sessions_list",
         "session_get",
         "prompt_send",
@@ -72,10 +72,9 @@ def test_contract_exposes_exact_ordered_wrapper_tools_and_schemas() -> None:
         "tool_call",
     ]
     assert {
-        tool.name: tool.model_dump()["inputSchema"] for tool in MCP_TOOL_SCHEMAS
+        tool.name: tool.model_dump()["inputSchema"] for tool in tools
     } == EXPECTED_SCHEMAS
-    assert tuple(TOOL_BY_NAME) == tuple(EXPECTED_SCHEMAS)
-    assert all(TOOL_BY_NAME[tool.name] is tool for tool in MCP_TOOL_SCHEMAS)
+    assert mcp_types.ListToolsResult(tools=list(tools)).model_dump_json()
 
 
 @pytest.mark.parametrize(
@@ -169,32 +168,28 @@ def test_contract_matches_locked_mcp_protocol_without_startup_side_effects() -> 
 
 
 def test_exported_tool_schema_mutation_cannot_change_validation_contract() -> None:
-    tool = TOOL_BY_NAME["sessions_list"]
-    with pytest.raises((AttributeError, TypeError, ValueError)):
-        tool.inputSchema["properties"]["unexpected"] = {"type": "string"}
+    first = get_mcp_tools()
+    object.__setattr__(first[0], "name", "mutated")
+    first[0].inputSchema["properties"]["unexpected"] = {"type": "string"}
+    first[0].model_extra["injected"] = "yes"
+    second = get_mcp_tools()
+    assert second[0].name == "sessions_list"
+    assert "unexpected" not in second[0].inputSchema["properties"]
+    assert "injected" not in second[0].model_extra
     with pytest.raises(McpError) as exc_info:
         validate_tool_call("sessions_list", {"unexpected": "value"})
     assert exc_info.value.error.code == mcp_types.INVALID_PARAMS
 
 
-def test_exported_tool_contracts_are_immutable_and_sdk_serializable() -> None:
-    tool = TOOL_BY_NAME["sessions_list"]
-    with pytest.raises((AttributeError, TypeError, ValueError)):
-        tool.name = "mutated"
-    with pytest.raises((AttributeError, TypeError, ValueError)):
-        tool.inputSchema["properties"]["unexpected"] = {"type": "string"}
-    with pytest.raises((AttributeError, TypeError, ValueError)):
-        tool.inputSchema |= {"unexpected": True}
-    assert "unexpected" not in tool.inputSchema
-    required = TOOL_BY_NAME["session_get"].inputSchema["required"]
-    with pytest.raises((AttributeError, TypeError, ValueError)):
-        required += ["unexpected"]
-    assert required == ("session_id",)
-    with pytest.raises((AttributeError, TypeError, ValueError)):
-        dict.__setitem__(tool.inputSchema, "unexpected", True)
-    with pytest.raises((AttributeError, TypeError, ValueError)):
-        list.append(required, "unexpected")
-    assert '"name":"sessions_list"' in tool.model_dump_json()
+def test_nested_mapping_is_copied_without_using_custom_deepcopy() -> None:
+    class StickyDict(dict):
+        def __deepcopy__(self, memo):
+            return self
+
+    nested = StickyDict({"path": "a.txt"})
+    result = validate_tool_call("tool_call", {"name": "read", "arguments": nested})
+    assert result["arguments"] == {"path": "a.txt"}
+    assert result["arguments"] is not nested
 
 
 def test_mapping_copy_failure_is_sanitized_as_invalid_params() -> None:
@@ -206,6 +201,21 @@ def test_mapping_copy_failure_is_sanitized_as_invalid_params() -> None:
 
     with pytest.raises(McpError) as exc_info:
         validate_tool_call("sessions_list", {"extra": HostileValue()})
+    assert exc_info.value.error.code == mcp_types.INVALID_PARAMS
+    assert secret not in f"{exc_info.value!s} {exc_info.value!r}"
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+
+
+def test_hostile_non_string_key_is_sanitized_without_string_conversion() -> None:
+    secret = "PEER-SECRET-IN-KEY"
+
+    class HostileKey:
+        def __str__(self):
+            raise RuntimeError(secret)
+
+    with pytest.raises(McpError) as exc_info:
+        validate_tool_call("sessions_list", {HostileKey(): True})
     assert exc_info.value.error.code == mcp_types.INVALID_PARAMS
     assert secret not in f"{exc_info.value!s} {exc_info.value!r}"
     assert exc_info.value.__cause__ is None
