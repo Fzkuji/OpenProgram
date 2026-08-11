@@ -311,8 +311,13 @@ class AuthStore:
                         key = (canon, pool_file.stem)
                         if key in found:
                             continue
-                        loaded = self._load_from_disk((prov_dir.name, pool_file.stem))
+                        disk_key = (prov_dir.name, pool_file.stem)
+                        loaded = self._load_from_disk(disk_key)
                         if loaded is not None:
+                            if disk_key != key:
+                                revision = self._revisions.pop(disk_key, None)
+                                if revision is not None:
+                                    self._revisions[key] = revision
                             loaded.provider_id = canon
                             self._pools[key] = loaded
                             found[key] = loaded

@@ -71,23 +71,22 @@ def save_default_model(provider: str | None, model: str | None) -> None:
     if isinstance(model, str) and provider and model.startswith(f"{provider}:"):
         model = model[len(provider) + 1:]
     with _cache_lock:
-        cfg = _setup._read_config()
-        if provider:
-            cfg["default_provider"] = provider
-        else:
-            cfg.pop("default_provider", None)
-        if model:
-            cfg["default_model"] = model
-        else:
-            cfg.pop("default_model", None)
-        _setup._write_config(cfg)
+        def update(cfg: dict) -> None:
+            if provider:
+                cfg["default_provider"] = provider
+            else:
+                cfg.pop("default_provider", None)
+            if model:
+                cfg["default_model"] = model
+            else:
+                cfg.pop("default_model", None)
+
+        _setup.update_config(update)
 
 
 def _write_providers_cfg(providers_cfg: dict[str, dict[str, Any]]) -> None:
     from openprogram import setup as _setup
-    cfg = _setup._read_config()
-    cfg["providers"] = providers_cfg
-    _setup._write_config(cfg)
+    _setup.update_config(lambda cfg: cfg.__setitem__("providers", providers_cfg))
     # Every mutation of ``providers.<p>.models`` (toggle enable/disable, custom-
     # model add/remove, fetch replace, migration backfill) routes through here.
     # Rebuild the in-memory registry in place so the chat picker
@@ -223,9 +222,9 @@ def _spec_migration_version() -> int:
 
 def _bump_spec_migration_version() -> None:
     from openprogram import setup as _setup
-    cfg = _setup._read_config()
-    cfg["spec_migration_version"] = _SPEC_MIGRATION_VERSION
-    _setup._write_config(cfg)
+    _setup.update_config(
+        lambda cfg: cfg.__setitem__("spec_migration_version", _SPEC_MIGRATION_VERSION)
+    )
 
 
 def _repair_over_merged_specs(providers: dict[str, dict[str, Any]]) -> bool:
@@ -587,11 +586,13 @@ def delete_custom_provider(provider_id: str) -> dict[str, Any]:
         _write_providers_cfg(cfg)
         try:
             from openprogram import setup as _setup
-            root = _setup._read_config()
-            if root.get("default_provider") == pid:
-                root.pop("default_provider", None)
-                root.pop("default_model", None)
-                _setup._write_config(root)
+
+            def clear_default(root: dict) -> None:
+                if root.get("default_provider") == pid:
+                    root.pop("default_provider", None)
+                    root.pop("default_model", None)
+
+            _setup.update_config(clear_default)
         except Exception:
             pass  # best-effort cleanup; the startup probe degrades gracefully
     return {"ok": True, "id": pid, "removed": True}

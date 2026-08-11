@@ -39,9 +39,36 @@ from openprogram.mcp import (
 from openprogram.mcp.config import (
     MCPServerConfig,
     load_configs,
+    load_configs_with_revision,
     parse_entry,
-    save_configs,
+    save_configs_revision,
 )
+from openprogram.credential_files import PrivateAtomicWriteError
+
+
+def _save_expected(configs: list[MCPServerConfig], revision: str) -> str:
+    try:
+        return save_configs_revision(configs, expected_revision=revision)
+    except PrivateAtomicWriteError as exc:
+        if exc.code == "conflict":
+            raise HTTPException(
+                status_code=409,
+                detail="MCP config changed concurrently; retry the request",
+            ) from exc
+        raise
+
+
+async def _resync_server_from_disk(name: str) -> None:
+    """Best-effort runtime resync after rollback loses an external-edit race."""
+    current, _revision_value = load_configs_with_revision(include_disabled=True)
+    match = next((cfg for cfg in current if cfg.name == name), None)
+    try:
+        if match is None:
+            await remove_server(name)
+        else:
+            await restart_server(name, new_cfg=match)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _require_local_request(request: Request) -> None:
@@ -103,12 +130,12 @@ def register(app: FastAPI) -> None:
         """
         cfg = _parse_body(body)
         # Persist alongside existing entries (read-modify-write).
-        all_cfgs = load_configs(include_disabled=True)
+        all_cfgs, revision = load_configs_with_revision(include_disabled=True)
         if any(c.name == cfg.name for c in all_cfgs):
             raise HTTPException(status_code=409,
                                 detail=f"server '{cfg.name}' already exists")
         all_cfgs.append(cfg)
-        save_configs(all_cfgs)
+        _save_expected(all_cfgs, revision)
         status = await add_server(cfg)
         return JSONResponse(content=status, status_code=201)
 
@@ -124,7 +151,7 @@ def register(app: FastAPI) -> None:
         a name carrying a new value replaces it, and a name carrying an
         explicit empty string deletes it. See :func:`_merge_secret_map`.
         """
-        all_cfgs = load_configs(include_disabled=True)
+        all_cfgs, revision = load_configs_with_revision(include_disabled=True)
         match = next((c for c in all_cfgs if c.name == name), None)
         if match is None:
             raise HTTPException(status_code=404,
@@ -142,31 +169,39 @@ def register(app: FastAPI) -> None:
         new_cfg = parse_entry(name, merged)
         if new_cfg is None:
             raise HTTPException(status_code=400, detail="invalid config")
-        # Restart first, persist only on success: a config that can't
-        # start must not overwrite the stored one, or a typo'd edit
-        # destroys a working server's credentials with no way back.
+        new_list = [c if c.name != name else new_cfg for c in all_cfgs]
+        published_revision = _save_expected(new_list, revision)
         try:
             status = await restart_server(name, new_cfg=new_cfg)
         except Exception as e:  # noqa: BLE001
-            # Put the previous config back on the live registry so a
-            # failed edit leaves the running server as it was.
+            try:
+                save_configs_revision(
+                    all_cfgs, expected_revision=published_revision
+                )
+            except PrivateAtomicWriteError as rollback_error:
+                if rollback_error.code != "conflict":
+                    raise
+                await _resync_server_from_disk(name)
+                raise HTTPException(
+                    status_code=409,
+                    detail="MCP config changed while a failed restart was rolled back",
+                ) from rollback_error
             try:
                 await restart_server(name, new_cfg=match)
             except Exception:  # noqa: BLE001
                 pass
             raise HTTPException(status_code=500,
                                 detail=f"restart failed: {type(e).__name__}: {e}")
-        save_configs([c if c.name != name else new_cfg for c in all_cfgs])
         return JSONResponse(content=status)
 
     @app.delete("/api/mcp/servers/{name}")
     async def delete_one(name: str):
-        all_cfgs = load_configs(include_disabled=True)
+        all_cfgs, revision = load_configs_with_revision(include_disabled=True)
         new_list = [c for c in all_cfgs if c.name != name]
         if len(new_list) == len(all_cfgs):
             raise HTTPException(status_code=404,
                                 detail=f"server '{name}' not in config")
-        save_configs(new_list)
+        _save_expected(new_list, revision)
         await remove_server(name)
         return JSONResponse(content={"removed": name})
 
@@ -352,12 +387,10 @@ def register(app: FastAPI) -> None:
         from openprogram.mcp.config import (
             catalog_entry_hash,
             config_to_catalog_dict,
-            load_configs,
-            save_configs,
         )
         import httpx
 
-        all_cfgs = load_configs(include_disabled=True)
+        all_cfgs, revision = load_configs_with_revision(include_disabled=True)
         match = next((c for c in all_cfgs if c.name == name), None)
         if match is None:
             raise HTTPException(status_code=404,
@@ -408,12 +441,23 @@ def register(app: FastAPI) -> None:
             config_to_catalog_dict(new_cfg)
         )
 
-        # Restart first, persist on success — same reason as PATCH: a
-        # catalog entry that no longer starts must not overwrite the
-        # working local config (and its credentials).
+        new_list = [c if c.name != name else new_cfg for c in all_cfgs]
+        published_revision = _save_expected(new_list, revision)
         try:
             status = await restart_server(name, new_cfg=new_cfg)
         except Exception as e:  # noqa: BLE001
+            try:
+                save_configs_revision(
+                    all_cfgs, expected_revision=published_revision
+                )
+            except PrivateAtomicWriteError as rollback_error:
+                if rollback_error.code != "conflict":
+                    raise
+                await _resync_server_from_disk(name)
+                raise HTTPException(
+                    status_code=409,
+                    detail="MCP config changed while a failed restart was rolled back",
+                ) from rollback_error
             try:
                 await restart_server(name, new_cfg=match)
             except Exception:  # noqa: BLE001
@@ -421,7 +465,6 @@ def register(app: FastAPI) -> None:
             raise HTTPException(status_code=500,
                                 detail=f"restart failed: "
                                        f"{type(e).__name__}: {e}")
-        save_configs([c if c.name != name else new_cfg for c in all_cfgs])
         return JSONResponse(content=status)
 
     @app.get("/api/mcp/catalog/suggested")

@@ -178,15 +178,24 @@ def create(
         # Empty credentials.json with 0600 so later secrets don't
         # briefly live world-readable.
         cred_path = account_credentials_path(channel, account_id)
-        if not cred_path.exists():
-            from openprogram.credential_files import _private_atomic_write
-            from openprogram.paths import get_state_dir
+        from openprogram.credential_files import (
+            _private_atomic_write,
+            _private_file_lock,
+            _read_private_bytes,
+            _revision,
+        )
+        from openprogram.paths import get_state_dir
 
-            _private_atomic_write(
-                cred_path,
-                lambda handle: handle.write(b"{}\n"),
-                root=get_state_dir(),
-            )
+        root = get_state_dir()
+        with _private_file_lock(cred_path, root=root):
+            raw = _read_private_bytes(cred_path, root=root)
+            if raw is None:
+                _private_atomic_write(
+                    cred_path,
+                    lambda handle: handle.write(b"{}\n"),
+                    root=root,
+                    expected_revision=_revision(None),
+                )
         return acct
 
 

@@ -4,10 +4,21 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import stat
+import sys
+import time
 from pathlib import Path
 
 import pytest
+
+
+def _wait_for_path(path: Path) -> None:
+    deadline = time.monotonic() + 5
+    while not path.exists():
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"timed out waiting for {path}")
+        time.sleep(0.01)
 
 
 def _symlink_target(root: Path, relative: str) -> tuple[Path, Path]:
@@ -260,3 +271,58 @@ def test_legacy_auth_pool_migration_rejects_symlink_target(tmp_path: Path) -> No
         _migrate_file(target, root=root)
     assert target.is_symlink()
     assert "__type__" in outside.read_text(encoding="utf-8")
+
+
+def test_channel_create_does_not_overwrite_concurrent_process_credentials(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    ready = tmp_path / "create-ready"
+    attempted = tmp_path / "save-attempted"
+    release = tmp_path / "release"
+    env = {**os.environ, "HOME": os.fspath(home)}
+    create_script = """
+import sys, time
+from pathlib import Path
+from openprogram import credential_files
+from openprogram.channels import accounts
+ready, release = map(Path, sys.argv[1:])
+real_write = credential_files._private_atomic_write
+def paused_write(*args, **kwargs):
+    ready.write_text('ready')
+    while not release.exists():
+        time.sleep(0.01)
+    return real_write(*args, **kwargs)
+credential_files._private_atomic_write = paused_write
+accounts.create('telegram', 'default')
+"""
+    save_script = """
+import sys
+from pathlib import Path
+from openprogram.channels import accounts
+attempted = Path(sys.argv[1])
+attempted.write_text('attempted')
+accounts.save_credentials('telegram', 'default', {'bot_token': 'secret'})
+"""
+    creator = subprocess.Popen(
+        [sys.executable, "-c", create_script, os.fspath(ready), os.fspath(release)],
+        cwd=Path(__file__).parents[2],
+        env=env,
+    )
+    _wait_for_path(ready)
+    saver = subprocess.Popen(
+        [sys.executable, "-c", save_script, os.fspath(attempted)],
+        cwd=Path(__file__).parents[2],
+        env=env,
+    )
+    _wait_for_path(attempted)
+    time.sleep(0.2)
+    release.write_text("go", encoding="utf-8")
+
+    assert creator.wait(timeout=10) == 0
+    assert saver.wait(timeout=10) == 0
+    stored = (
+        home / ".openprogram" / "channels/telegram/accounts/default/credentials.json"
+    )
+    assert json.loads(stored.read_text(encoding="utf-8")) == {"bot_token": "secret"}

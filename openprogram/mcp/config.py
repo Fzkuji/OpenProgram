@@ -358,20 +358,41 @@ def load_configs(*, include_disabled: bool = False) -> list[MCPServerConfig]:
     Missing file → empty list. Malformed file → empty list + log to
     stderr (don't crash worker startup over a typo).
     """
+    configs, _revision_value = load_configs_with_revision(
+        include_disabled=include_disabled
+    )
+    return configs
+
+
+def load_configs_with_revision(
+    *, include_disabled: bool = False
+) -> tuple[list[MCPServerConfig], str]:
+    """Load configs plus the fingerprint of the exact bytes that were parsed."""
     path = get_config_path()
-    if not path.is_file():
-        return []
+    root = _paths.get_state_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    from openprogram.credential_files import (
+        _private_file_lock,
+        _read_private_bytes,
+        _revision,
+    )
+
+    with _private_file_lock(path, root=root):
+        raw_bytes = _read_private_bytes(path, root=root)
+        revision = _revision(raw_bytes)
+    if raw_bytes is None:
+        return [], revision
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw = json.loads(raw_bytes.decode("utf-8"))
     except Exception as e:  # noqa: BLE001
         import sys
 
         print(f"[mcp] failed to parse {path}: {e}", file=sys.stderr)
-        return []
+        return [], revision
 
     servers_obj = raw.get("servers") if isinstance(raw, dict) else None
     if not isinstance(servers_obj, dict):
-        return []
+        return [], revision
 
     out: list[MCPServerConfig] = []
     for name, entry in servers_obj.items():
@@ -382,7 +403,7 @@ def load_configs(*, include_disabled: bool = False) -> list[MCPServerConfig]:
             continue
         if cfg.enabled or include_disabled:
             out.append(cfg)
-    return out
+    return out, revision
 
 
 def save_configs(
@@ -397,6 +418,14 @@ def save_configs(
     Preserves any sibling top-level keys (``roots``) the same way
     :func:`save_roots` preserves ``servers``.
     """
+    save_configs_revision(configs, expected_revision=expected_revision)
+    return get_config_path()
+
+
+def save_configs_revision(
+    configs: Iterable[MCPServerConfig], *, expected_revision: str | None = None
+) -> str:
+    """Persist a complete server set and return the published byte revision."""
     path = get_config_path()
     servers = {cfg.name: cfg.to_storage_dict() for cfg in configs}
 
@@ -409,8 +438,10 @@ def save_configs(
 
     root = _paths.get_state_dir()
     root.mkdir(parents=True, exist_ok=True)
-    _private_atomic_update(path, update, root=root, expected_revision=expected_revision)
-    return path
+    result = _private_atomic_update(
+        path, update, root=root, expected_revision=expected_revision
+    )
+    return result.revision
 
 
 def _read_raw(path: Path) -> dict:

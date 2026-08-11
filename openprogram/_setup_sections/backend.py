@@ -10,8 +10,13 @@ def run_backend_section() -> int:
     Wizard surfaces local/docker/ssh so users can record intent; only
     'local' is currently implemented at runtime.
     """
-    from openprogram.setup import _choose_one, _read_config, _text, _write_config
-    cfg = _read_config()
+    from openprogram.setup import (
+        _choose_one,
+        _text,
+        read_config_with_revision,
+        update_config,
+    )
+    cfg, revision = read_config_with_revision()
     be = cfg.get("backend", {}) or {}
     cur_terminal = be.get("terminal") or "local"
 
@@ -28,8 +33,10 @@ def run_backend_section() -> int:
     elif picked == "ssh":
         host = _text("SSH host (user@host):", default=be.get("ssh_target", ""))
         entry["ssh_target"] = host or ""
-    cfg["backend"] = entry
-    _write_config(cfg)
+    update_config(
+        lambda current: current.__setitem__("backend", entry),
+        expected_revision=revision,
+    )
     print(f"Terminal backend: {picked}")
     if picked != "local":
         print("[info] Only the 'local' backend is currently implemented at "

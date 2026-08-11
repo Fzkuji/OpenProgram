@@ -39,6 +39,26 @@ def _read_config() -> dict[str, Any]:
         return {}
 
 
+def read_config_with_revision() -> tuple[dict[str, Any], str]:
+    """Read a prompt snapshot and its exact-byte revision under the file lock."""
+    path = get_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    from openprogram.credential_files import (
+        _private_file_lock,
+        _read_private_bytes,
+        _revision,
+    )
+
+    with _private_file_lock(path, root=path.parent):
+        raw = _read_private_bytes(path, root=path.parent)
+        revision = _revision(raw)
+    try:
+        config = json.loads(raw.decode("utf-8")) if raw is not None else {}
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        config = {}
+    return config, revision
+
+
 def _write_config(cfg: dict[str, Any], *, expected_revision: str | None = None):
     path = get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
