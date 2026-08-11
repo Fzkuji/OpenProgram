@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import time
 
 import pytest
@@ -240,6 +241,76 @@ def test_ordinary_async_callable_preserves_direct_baseline_without_agent_session
     assert seen_content == [[{"type": "text", "text": "hello"}]]
     assert session_runs == []
     assert stream_events == []
+
+
+def test_async_exec_cancellation_stops_before_structured_repair_and_waits_cleanup(
+    monkeypatch,
+):
+    first_started = threading.Event()
+    release_first = threading.Event()
+    repair_started = threading.Event()
+    session_finished = threading.Event()
+    calls = []
+    sessions = []
+
+    def call(content, model="test", response_format=None):
+        calls.append(content)
+        if len(calls) == 1:
+            first_started.set()
+            assert release_first.wait(timeout=2)
+            return '{"answer":"wrong"}'
+        repair_started.set()
+        return '{"answer":9}'
+
+    from openprogram.agent.session import AgentSession
+
+    original_run = AgentSession.run
+
+    async def capture_session(self, *args, **kwargs):
+        sessions.append(self)
+        try:
+            return await original_run(self, *args, **kwargs)
+        finally:
+            session_finished.set()
+
+    monkeypatch.setattr(AgentSession, "run", capture_session)
+    stream_events = []
+    closed_nodes = []
+    runtime = Runtime(call=call, model="dummy", max_retries=3)
+    runtime.on_stream = stream_events.append
+    original_close = runtime._close_model_call_node
+
+    def capture_close(node_id, **kwargs):
+        closed_nodes.append(kwargs.get("status", "completed"))
+        return original_close(node_id, **kwargs)
+
+    monkeypatch.setattr(runtime, "_close_model_call_node", capture_close)
+
+    async def scenario():
+        task = asyncio.create_task(
+            runtime.async_exec("question", response_format=SCHEMA)
+        )
+        assert await asyncio.to_thread(first_started.wait, 1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        release_first.set()
+        assert await asyncio.to_thread(session_finished.wait, 1)
+        await asyncio.sleep(0.05)
+
+    asyncio.run(scenario())
+
+    assert len(calls) == 1
+    assert not repair_started.is_set()
+    assert len(sessions) == 1
+    assert not any(
+        message.role == "assistant" for message in sessions[0]._agent.state.messages
+    )
+    assert not any(
+        event["type"] in ("structured_output_retry", "structured_output_end", "done")
+        for event in stream_events
+    )
+    assert "completed" not in closed_nodes
 
 
 def test_async_exec_returns_validated_python_value():

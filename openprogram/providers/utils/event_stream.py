@@ -34,6 +34,20 @@ class EventStream(Generic[T, R]):
         self._result: R | None = None
         self._result_event = asyncio.Event()
         self._error: BaseException | None = None
+        self._producer_task: asyncio.Task | None = None
+
+    def attach_producer(self, task: asyncio.Task) -> None:
+        self._producer_task = task
+
+    async def cancel_producer(self) -> None:
+        task = self._producer_task
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except BaseException:
+            pass
 
     def push(self, event: T) -> None:
         """Push an event into the stream.

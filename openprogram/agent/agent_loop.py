@@ -190,7 +190,7 @@ def agent_loop(
                 else:
                     raise
 
-    asyncio.ensure_future(_run())
+    ev_stream.attach_producer(asyncio.ensure_future(_run()))
     return ev_stream
 
 
@@ -238,7 +238,7 @@ def agent_loop_continue(
             else:
                 raise
 
-    asyncio.ensure_future(_run())
+    ev_stream.attach_producer(asyncio.ensure_future(_run()))
     return ev_stream
 
 
@@ -782,6 +782,10 @@ async def _stream_assistant_response(
     response_stream = fn(config.model, llm_context, stream_opts)
 
     async for event in response_stream:
+        if cancel_event and cancel_event.is_set():
+            from openprogram.providers.utils.errors import ExecInterrupt
+
+            raise ExecInterrupt("cancelled")
         if event.type == "start":
             partial_message = event.partial
             if structured_plan is None:

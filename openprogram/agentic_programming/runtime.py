@@ -1647,6 +1647,17 @@ class Runtime:
         content: list[dict],
         response_format: dict = None,
     ) -> Any:
+        return _run_async(
+            self._async_call_via_providers(content, response_format)
+        )
+
+    async def _async_call_via_providers(
+        self,
+        content: list[dict],
+        response_format: dict = None,
+        *,
+        offload_sync_callable: bool = False,
+    ) -> Any:
         """
         Default _call implementation for ``model="provider:model_id"`` usage.
 
@@ -1807,6 +1818,10 @@ class Runtime:
         # otherwise the runtime's own _stream_fn (set when Runtime(call=fn)
         # wraps a callable into a CallableModel). None → real provider.
         _stream_fn = _current_stream_fn.get(None) or getattr(self, "_stream_fn", None)
+        if offload_sync_callable and self._call_fn is not None:
+            from openprogram.providers.callable_model import make_callable_stream_fn
+
+            _stream_fn = make_callable_stream_fn(self._call_fn, offload_sync=True)
         # Inner tools go through the SAME gate as the outer agent loop.
         # Without this a program spawned from a turn handed its agent raw
         # tools: no hard constraints, no authority tier, no deny rules —
@@ -1947,7 +1962,7 @@ class Runtime:
 
         try:
             session.replace_messages(history)
-            final = _run_async(session.run(current))
+            final = await session.run(current)
         finally:
             if _frame_token is not None:
                 try:
@@ -2021,10 +2036,10 @@ class Runtime:
                 return await result
             return result
         if self.api_model is not None:
-            return await asyncio.to_thread(
-                self._call_via_providers,
+            return await self._async_call_via_providers(
                 content,
                 response_format,
+                offload_sync_callable=True,
             )
         raise NotImplementedError(
             "No async LLM provider configured. Either pass an async `call` to Runtime(), "
