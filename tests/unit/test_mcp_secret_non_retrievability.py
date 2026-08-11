@@ -75,6 +75,22 @@ def secrets_absent(blob: str) -> None:
         assert secret not in blob, f"response leaked {secret!r}"
 
 
+def exception_chain(exc: BaseException):
+    pending = [exc]
+    seen = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        yield current
+        pending.extend(
+            linked
+            for linked in (current.__cause__, current.__context__)
+            if linked is not None
+        )
+
+
 # --- serialization split ---------------------------------------------
 
 
@@ -422,74 +438,150 @@ def test_patch_conflict_resync_failure_reports_sanitized_runtime_state(
 
 
 @pytest.mark.parametrize(
-    ("config_present", "restart_error", "remove_error"),
+    ("config_present", "restart_error", "remove_error", "status_code"),
     [
+        pytest.param(
+            True,
+            RuntimeError("peer-secret-value resync failed"),
+            None,
+            503,
+            id="ordinary-resync",
+        ),
         pytest.param(
             True,
             asyncio.CancelledError("peer-secret-value resync cancelled"),
             None,
+            503,
             id="cancelled-resync",
         ),
         pytest.param(
             True,
             RuntimeError("peer-secret-value resync failed"),
+            RuntimeError("peer-secret-value stop failed"),
+            500,
+            id="ordinary-stop-after-resync",
+        ),
+        pytest.param(
+            True,
+            RuntimeError("peer-secret-value resync failed"),
             asyncio.CancelledError("peer-secret-value stop cancelled"),
+            500,
             id="cancelled-stop-after-resync",
         ),
         pytest.param(
             False,
             None,
+            RuntimeError("peer-secret-value stop failed"),
+            500,
+            id="ordinary-stop-after-delete",
+        ),
+        pytest.param(
+            False,
+            None,
             asyncio.CancelledError("peer-secret-value stop cancelled"),
+            500,
             id="cancelled-stop-after-delete",
         ),
     ],
 )
-def test_resync_failure_exception_has_no_runtime_secret_in_any_representation(
+def test_restart_then_publish_failure_has_no_secret_in_recursive_exception_chain(
     monkeypatch,
+    state_dir,
     config_present,
     restart_error,
     remove_error,
+    status_code,
 ):
     from fastapi import HTTPException
 
+    from openprogram.credential_files import PrivateAtomicWriteError
     from openprogram.webui.routes import mcp
 
     secret = "peer-secret-value"
-    cfg = local_config()
+    previous = local_config()
+    previous.env = {"TOKEN": secret}
+    updated = local_config()
+    updated.command = ["new"]
+    updated.env = dict(previous.env)
+    actual = local_config()
+    actual.command = ["actual"]
+    actual.env = dict(previous.env)
 
     monkeypatch.setattr(
         mcp,
         "load_configs_with_revision",
-        lambda **_kwargs: ([cfg] if config_present else [], "sha256:actual"),
+        lambda **_kwargs: ([actual] if config_present else [], "sha256:actual"),
     )
 
-    async def failed_restart(*_args, **_kwargs):
-        raise restart_error
+    restarts = []
+
+    async def failed_restart(_name, *, new_cfg):
+        restarts.append(new_cfg.command)
+        if len(restarts) == 2 and restart_error is not None:
+            raise restart_error
+        return {"name": previous.name, "ready": True}
 
     async def stopped(_name):
         if remove_error is not None:
             raise remove_error
         return True
 
+    def conflict(*_args, **_kwargs):
+        raise PrivateAtomicWriteError(
+            "conflict",
+            state_dir / f"{secret}-mcp.json",
+            committed=False,
+            cause=RuntimeError(f"{secret} config conflict"),
+        )
+
     monkeypatch.setattr(mcp, "restart_server", failed_restart)
     monkeypatch.setattr(mcp, "remove_server", stopped)
+    monkeypatch.setattr(mcp, "save_configs_revision", conflict)
 
     with pytest.raises(HTTPException) as caught:
-        asyncio.run(mcp._resync_server_from_disk(cfg.name))
+        asyncio.run(
+            mcp._restart_then_publish(
+                previous.name,
+                previous=previous,
+                updated=updated,
+                configs=[updated],
+                expected_revision="sha256:stale",
+            )
+        )
 
+    assert caught.value.status_code == status_code
+    chain = list(exception_chain(caught.value))
     rendered = "\n".join(
-        (
-            str(caught.value),
-            repr(caught.value),
-            "".join(traceback.format_exception(caught.value)),
+        representation
+        for exception in chain
+        for representation in (
+            str(exception),
+            repr(exception),
+            "".join(traceback.format_exception(exception)),
         )
     )
     assert secret not in rendered
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
 
 
-def test_patch_conflict_deleted_config_cancelled_stop_reports_unknown(
+@pytest.mark.parametrize(
+    "remove_error",
+    [
+        pytest.param(
+            RuntimeError("peer-secret-value stop failed"),
+            id="ordinary-stop",
+        ),
+        pytest.param(
+            asyncio.CancelledError("peer-secret-value stop cancelled"),
+            id="cancelled-stop",
+        ),
+    ],
+)
+def test_patch_conflict_deleted_config_cleanup_failure_reports_unknown(
     monkeypatch,
     state_dir,
+    remove_error,
 ):
     from openprogram.credential_files import PrivateAtomicWriteError
     from openprogram.webui.routes import mcp
@@ -503,9 +595,9 @@ def test_patch_conflict_deleted_config_cancelled_stop_reports_unknown(
     async def started(_name, *, new_cfg):
         return {"name": new_cfg.name, "ready": True}
 
-    async def cancelled_remove(name):
+    async def failed_remove(name):
         removals.append(name)
-        raise asyncio.CancelledError("peer-secret-value stop cancelled")
+        raise remove_error
 
     def external_delete(*_args, **_kwargs):
         save_configs([])
@@ -517,7 +609,7 @@ def test_patch_conflict_deleted_config_cancelled_stop_reports_unknown(
     monkeypatch.setattr(mcp, "load_configs_with_revision", lambda **_kwargs: next(loads))
     monkeypatch.setattr(mcp, "save_configs_revision", external_delete)
     monkeypatch.setattr(mcp, "restart_server", started)
-    monkeypatch.setattr(mcp, "remove_server", cancelled_remove)
+    monkeypatch.setattr(mcp, "remove_server", failed_remove)
     app = FastAPI()
     mcp.register(app)
 

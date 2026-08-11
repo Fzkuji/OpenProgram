@@ -59,50 +59,60 @@ def _save_expected(configs: list[MCPServerConfig], revision: str) -> str:
         raise
 
 
-async def _resync_server_from_disk(name: str) -> None:
-    """Match runtime to disk or fail closed with a sanitized state response."""
+async def _resync_server_from_disk(name: str) -> tuple[int, dict[str, str]] | None:
+    """Match runtime to disk, returning a sanitized failure outcome."""
     current, _revision_value = load_configs_with_revision(include_disabled=True)
     match = next((cfg for cfg in current if cfg.name == name), None)
     if match is None:
+        cleanup_failed = False
         try:
             await remove_server(name)
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
-            raise HTTPException(
-                status_code=500,
-                detail={
+            cleanup_failed = True
+        if cleanup_failed:
+            return (
+                500,
+                {
                     "code": "mcp_runtime_state_unknown",
                     "persisted_config": "unchanged",
                     "runtime_state": "unknown",
                     "action": "retry_or_restart",
                 },
-            ) from None
+            )
         return
 
+    resync_failed = False
     try:
         await restart_server(name, new_cfg=match)
-        return
     except (asyncio.CancelledError, Exception):  # noqa: BLE001
-        try:
-            await remove_server(name)
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "code": "mcp_runtime_state_unknown",
-                    "persisted_config": "unchanged",
-                    "runtime_state": "unknown",
-                    "action": "retry_or_restart",
-                },
-            ) from None
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "code": "mcp_runtime_resync_failed",
+        resync_failed = True
+    if not resync_failed:
+        return None
+
+    cleanup_failed = False
+    try:
+        await remove_server(name)
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+        cleanup_failed = True
+    if cleanup_failed:
+        return (
+            500,
+            {
+                "code": "mcp_runtime_state_unknown",
                 "persisted_config": "unchanged",
-                "runtime_state": "stopped",
+                "runtime_state": "unknown",
                 "action": "retry_or_restart",
             },
-        ) from None
+        )
+    return (
+        503,
+        {
+            "code": "mcp_runtime_resync_failed",
+            "persisted_config": "unchanged",
+            "runtime_state": "stopped",
+            "action": "retry_or_restart",
+        },
+    )
 
 
 async def _restart_then_publish(
@@ -126,18 +136,30 @@ async def _restart_then_publish(
             detail=f"restart failed: {type(exc).__name__}: {exc}",
         ) from exc
 
+    conflict = False
+    uncommitted_error = None
     try:
         save_configs_revision(configs, expected_revision=expected_revision)
     except PrivateAtomicWriteError as exc:
         if exc.code == "conflict":
-            await _resync_server_from_disk(name)
-            raise HTTPException(
-                status_code=409,
-                detail="MCP config changed concurrently; runtime was resynced",
-            ) from exc
-        if not exc.committed:
-            await _resync_server_from_disk(name)
-        raise
+            conflict = True
+        elif exc.committed:
+            raise
+        else:
+            uncommitted_error = exc
+
+    if conflict or uncommitted_error is not None:
+        resync_failure = await _resync_server_from_disk(name)
+        if resync_failure is not None:
+            status_code, detail = resync_failure
+            raise HTTPException(status_code=status_code, detail=detail)
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail="MCP config changed concurrently; runtime was resynced",
+        )
+    if uncommitted_error is not None:
+        raise uncommitted_error
     return status
 
 
