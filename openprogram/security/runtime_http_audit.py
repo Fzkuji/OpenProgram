@@ -373,6 +373,134 @@ class _HTTPVisitor(ast.NodeVisitor):
                 return value
         return frozenset()
 
+    def _visit_block_from(
+        self,
+        statements: list[ast.stmt],
+        initial: Mapping[tuple[tuple[str, ...], str], frozenset[str]],
+    ) -> dict[tuple[tuple[str, ...], str], frozenset[str]]:
+        outer = self.managed_values
+        self.managed_values = dict(initial)
+        try:
+            for statement in statements:
+                self.visit(statement)
+            return dict(self.managed_values)
+        finally:
+            self.managed_values = outer
+
+    @staticmethod
+    def _merge_managed_values(
+        states: list[Mapping[tuple[tuple[str, ...], str], frozenset[str]]],
+    ) -> dict[tuple[tuple[str, ...], str], frozenset[str]]:
+        if not states:
+            return {}
+        first = states[0]
+        return {
+            key: value
+            for key, value in first.items()
+            if all(state.get(key) == value for state in states[1:])
+        }
+
+    def visit_If(self, node: ast.If) -> None:
+        self.visit(node.test)
+        initial = dict(self.managed_values)
+        body = self._visit_block_from(node.body, initial)
+        other = self._visit_block_from(node.orelse, initial)
+        self.managed_values = self._merge_managed_values([body, other])
+
+    def _visit_try(self, node: ast.Try | ast.TryStar) -> None:
+        initial = dict(self.managed_values)
+        normal = self._visit_block_from(node.body, initial)
+        normal = self._visit_block_from(node.orelse, normal)
+        exits = [normal]
+        for handler in node.handlers:
+            handler_initial = dict(initial)
+            if handler.name:
+                handler_initial.pop((tuple(self.scope), handler.name), None)
+            outer = self.managed_values
+            self.managed_values = handler_initial
+            try:
+                if handler.type is not None:
+                    self.visit(handler.type)
+                exits.append(self._visit_block_from(handler.body, self.managed_values))
+            finally:
+                self.managed_values = outer
+        if node.finalbody:
+            exits = [self._visit_block_from(node.finalbody, state) for state in exits]
+        self.managed_values = self._merge_managed_values(exits)
+
+    def visit_Try(self, node: ast.Try) -> None:
+        self._visit_try(node)
+
+    def visit_TryStar(self, node: ast.TryStar) -> None:
+        self._visit_try(node)
+
+    def _visit_loop(
+        self,
+        *,
+        body: list[ast.stmt],
+        orelse: list[ast.stmt],
+    ) -> None:
+        initial = dict(self.managed_values)
+        after_body = self._visit_block_from(body, initial)
+        exits = [initial, after_body]
+        if orelse:
+            exits.extend(
+                [
+                    self._visit_block_from(orelse, initial),
+                    self._visit_block_from(orelse, after_body),
+                ]
+            )
+        self.managed_values = self._merge_managed_values(exits)
+
+    def visit_For(self, node: ast.For) -> None:
+        self.visit(node.target)
+        self.visit(node.iter)
+        self._visit_loop(body=node.body, orelse=node.orelse)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self.visit(node.target)
+        self.visit(node.iter)
+        self._visit_loop(body=node.body, orelse=node.orelse)
+
+    def visit_While(self, node: ast.While) -> None:
+        self.visit(node.test)
+        self._visit_loop(body=node.body, orelse=node.orelse)
+
+    @staticmethod
+    def _match_pattern_is_irrefutable(pattern: ast.pattern) -> bool:
+        if isinstance(pattern, ast.MatchAs):
+            return (
+                pattern.pattern is None
+                or _HTTPVisitor._match_pattern_is_irrefutable(pattern.pattern)
+            )
+        if isinstance(pattern, ast.MatchOr):
+            return any(
+                _HTTPVisitor._match_pattern_is_irrefutable(item)
+                for item in pattern.patterns
+            )
+        return False
+
+    def visit_Match(self, node: ast.Match) -> None:
+        self.visit(node.subject)
+        initial = dict(self.managed_values)
+        exits: list[Mapping[tuple[tuple[str, ...], str], frozenset[str]]] = []
+        exhaustive = False
+        for case in node.cases:
+            outer = self.managed_values
+            self.managed_values = dict(initial)
+            try:
+                self.visit(case.pattern)
+                if case.guard is not None:
+                    self.visit(case.guard)
+                exits.append(self._visit_block_from(case.body, self.managed_values))
+            finally:
+                self.managed_values = outer
+            if case.guard is None and self._match_pattern_is_irrefutable(case.pattern):
+                exhaustive = True
+        if not exhaustive:
+            exits.append(initial)
+        self.managed_values = self._merge_managed_values(exits)
+
     def _managed_factory_consumer(self, call: ast.Call) -> str | None:
         name = _qualname(call.func, self.aliases)
         if name in _MANAGED_FACTORY_NAMES:

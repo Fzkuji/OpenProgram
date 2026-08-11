@@ -152,6 +152,24 @@ Second spec re-review fix:
   passed in 1.40s`; complete `tests/security`: `538 passed in 77.78s`; Ruff,
   format, lock, and diff checks passed.
 
+Quality-review control-flow fix:
+
+- The independent quality review found that managed-value provenance was
+  updated in AST traversal order, so a later managed branch could hide an
+  unmanaged reachable exit. Eight negative cases cover both branch orders for
+  `if`, `try`, and `match`, plus zero-iteration and interrupted loop exits;
+  four positive cases require the same exact consumer on every analyzed exit.
+  RED: `5 failed, 7 passed, 23 deselected`.
+- `If`, `Try`/`TryStar`, `For`/`AsyncFor`/`While`, and `Match` now analyze each
+  alternative from the same incoming state and retain provenance only when
+  every possible continuing state has the same exact consumer. GREEN: `12
+  passed, 23 deselected`.
+- Final focused Task 7 and cache lifecycle suite: `88 passed in 1.59s`.
+  Static checker: `unregistered=0 active_unmanaged=0
+  registry_without_consumer=0 stale_exclusions=0`. Complete
+  `tests/security`: `550 passed in 77.55s`. Ruff lint, scoped Ruff format,
+  `uv lock --check`, and `git diff --check` passed.
+
 ## Concerns
 
 - Browser navigation, arbitrary-code networking, and owner control-plane

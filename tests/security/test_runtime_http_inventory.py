@@ -369,6 +369,156 @@ openai.AsyncOpenAI(**{k: v for k, v in kwargs.items()})
     assert result.registry_without_consumer == ()
 
 
+@pytest.mark.parametrize(
+    "control_flow",
+    [
+        """
+if flag:
+    client = object()
+else:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+if flag:
+    client = safe_async_client("provider.openai.sdk")
+else:
+    client = object()
+""",
+        """
+try:
+    client = object()
+except Exception:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+try:
+    client = safe_async_client("provider.openai.sdk")
+except Exception:
+    client = object()
+""",
+        """
+client = object()
+for item in items:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+for item in items:
+    client = object()
+    break
+else:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+match value:
+    case 0:
+        client = object()
+    case _:
+        client = safe_async_client("provider.openai.sdk")
+""",
+        """
+match value:
+    case 0:
+        client = safe_async_client("provider.openai.sdk")
+    case _:
+        client = object()
+""",
+    ],
+)
+def test_sdk_injection_rejects_any_unmanaged_control_flow_exit(
+    tmp_path,
+    control_flow,
+):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    source = f"""
+import openai
+from openprogram.security.safe_http import safe_async_client
+
+{control_flow}
+openai.AsyncOpenAI(http_client=client)
+"""
+    (package / "branches.py").write_text(source, encoding="utf-8")
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert [issue.kind for issue in result.unregistered] == ["sdk.openai.AsyncOpenAI"]
+    assert result.active_unmanaged_transports == ("provider.openai.sdk",)
+
+
+@pytest.mark.parametrize(
+    "control_flow",
+    [
+        """
+if flag:
+    client = safe_async_client("provider.openai.sdk")
+else:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+try:
+    client = safe_async_client("provider.openai.sdk")
+except Exception:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+client = safe_async_client("provider.openai.sdk")
+for item in items:
+    client = safe_async_client("provider.openai.sdk")
+else:
+    client = safe_async_client("provider.openai.sdk")
+""",
+        """
+match value:
+    case 0:
+        client = safe_async_client("provider.openai.sdk")
+    case _:
+        client = safe_async_client("provider.openai.sdk")
+""",
+    ],
+)
+def test_sdk_injection_accepts_same_consumer_on_every_control_flow_exit(
+    tmp_path,
+    control_flow,
+):
+    from openprogram.security.safe_http import SDKDisposition
+
+    package = tmp_path / "runtime"
+    package.mkdir()
+    source = f"""
+import openai
+from openprogram.security.safe_http import safe_async_client
+
+{control_flow}
+openai.AsyncOpenAI(http_client=client)
+"""
+    (package / "branches.py").write_text(source, encoding="utf-8")
+    registry = {
+        "provider.openai.sdk": SimpleNamespace(
+            sdk_disposition=SDKDisposition.INJECTED_TRANSPORT
+        )
+    }
+
+    result = runtime_http_audit.scan_runtime_http(
+        package,
+        exclusions=(),
+        registry=registry,
+    )
+
+    assert result.unregistered == ()
+    assert result.active_unmanaged_transports == ()
+
+
 def test_scanner_detects_socket_create_connection_and_imported_alias(tmp_path):
     package = tmp_path / "runtime"
     package.mkdir()
