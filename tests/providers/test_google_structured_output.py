@@ -288,6 +288,94 @@ def test_google_response_json_schema_rejects_only_required_reference_cycles(requ
         assert _negotiate_google(schema).provider_schema == schema
 
 
+@pytest.mark.parametrize("reference_style", ["pointer", "anchor"])
+@pytest.mark.parametrize("required", [False, True])
+def test_google_required_property_rejects_reachable_cycle_outside_root(
+    reference_style,
+    required,
+):
+    if reference_style == "pointer":
+        definitions = {
+            "a": {"$ref": "#/$defs/b"},
+            "b": {"$ref": "#/$defs/a"},
+        }
+        root_ref = "#/$defs/a"
+    else:
+        definitions = {
+            "a": {"$anchor": "a", "$ref": "#b"},
+            "b": {"$anchor": "b", "$ref": "#a"},
+        }
+        root_ref = "#a"
+    schema = {
+        "$defs": definitions,
+        "type": "object",
+        "properties": {"root": {"$ref": root_ref}},
+    }
+    if required:
+        schema["required"] = ["root"]
+        with pytest.raises(StructuredOutputUnsupportedError) as exc:
+            _negotiate_google(schema)
+        assert exc.value.issues[0]["path"] == "/required/0"
+    else:
+        assert _negotiate_google(schema).provider_schema == schema
+
+
+def test_google_required_property_accepts_acyclic_local_ref_chain():
+    schema = {
+        "$defs": {
+            "a": {"$ref": "#/$defs/b"},
+            "b": {"type": "string"},
+        },
+        "type": "object",
+        "properties": {"root": {"$ref": "#/$defs/a"}},
+        "required": ["root"],
+    }
+    assert _negotiate_google(schema).provider_schema == schema
+
+
+def test_google_required_reachable_cycle_fails_before_credentials_and_network():
+    schema = {
+        "$defs": {
+            "a": {"$ref": "#/$defs/b"},
+            "b": {"$ref": "#/$defs/a"},
+        },
+        "type": "object",
+        "properties": {"root": {"$ref": "#/$defs/a"}},
+        "required": ["root"],
+    }
+    credentials = []
+    provider_calls = []
+
+    async def stream_fn(*args):
+        provider_calls.append(args)
+        if False:
+            yield None
+
+    async def run():
+        stream = agent_loop(
+            [UserMessage(content="answer", timestamp=1)],
+            AgentContext(tools=[]),
+            AgentLoopConfig(
+                model=_google_model(),
+                response_format=normalize_response_format({
+                    "type": "json_schema",
+                    "schema": schema,
+                    "fallback": "none",
+                }),
+                get_api_key=lambda provider: credentials.append(provider),
+                convert_to_llm=lambda messages: messages,
+            ),
+            stream_fn=stream_fn,
+        )
+        return await stream.result()
+
+    with pytest.raises(StructuredOutputUnsupportedError) as exc:
+        asyncio.run(run())
+    assert exc.value.issues[0]["path"] == "/required/0"
+    assert credentials == []
+    assert provider_calls == []
+
+
 def test_google_real_prompt_feedback_block_is_terminal_error(monkeypatch):
     from google.genai import types as gtypes
     from google.genai.types import BlockedReason

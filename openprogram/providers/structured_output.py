@@ -398,21 +398,26 @@ def _first_required_google_reference_cycle_path(schema: dict[str, Any]) -> str |
         if target in nodes:
             edges[path].append(target)
 
-    def reaches(start: tuple[Any, ...], target: tuple[Any, ...]) -> bool:
-        pending = [start]
-        seen: set[tuple[Any, ...]] = set()
-        while pending:
-            current = pending.pop()
-            if current == target:
-                return True
-            if current in seen:
-                continue
-            seen.add(current)
-            pending.extend(edges.get(current, ()))
-        return False
+    def reaches_cycle(start: tuple[Any, ...]) -> bool:
+        active: set[tuple[Any, ...]] = set()
+        complete: set[tuple[Any, ...]] = set()
 
-    for source, child, issue_path in sorted(required_edges, key=lambda edge: edge[2]):
-        if reaches(child, source):
+        def visit(current: tuple[Any, ...]) -> bool:
+            if current in active:
+                return True
+            if current in complete:
+                return False
+            active.add(current)
+            if any(visit(child) for child in edges.get(current, ())):
+                return True
+            active.remove(current)
+            complete.add(current)
+            return False
+
+        return visit(start)
+
+    for _source, child, issue_path in sorted(required_edges, key=lambda edge: edge[2]):
+        if reaches_cycle(child):
             return _pointer(issue_path)
     return None
 
