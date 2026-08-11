@@ -139,19 +139,92 @@ def create_backup(
     )
 
     included_secret_kinds: set[str] = set()
-    redacted_secret_kinds: set[str] = {
-        entry.kind
-        for entry in SECRET_INVENTORY
-        if entry.backup_policy == "redact_default" and not include_credentials
-    }
-    excluded_secret_kinds: set[str] = {
-        entry.kind
-        for entry in SECRET_INVENTORY
-        if entry.backup_policy == "include_on_opt_in" and not include_credentials
-    }
+    redacted_secret_kinds: set[str] = set()
+    excluded_secret_kinds: set[str] = set()
+
+    def _selector_has_secret(node: object, parts: list[str]) -> bool:
+        if not isinstance(node, dict) or not parts:
+            return False
+        head, *tail = parts
+        if head == "*":
+            return any(_selector_has_secret(value, tail) for value in node.values())
+        if head not in node:
+            return False
+        if tail:
+            return _selector_has_secret(node[head], tail)
+        value = node[head]
+        return (
+            bool(value)
+            if isinstance(value, (str, bytes, dict, list))
+            else value is not None
+        )
+
+    def _entry_has_secret(entry, raw: bytes) -> bool:
+        if entry.whole_file:
+            return True
+        try:
+            payload = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return True
+        return any(
+            _selector_has_secret(payload, selector.split("."))
+            for selector in entry.secret_fields
+        )
+
+    def _profile_member_allowed(source: Path, arcname: str) -> bool:
+        parts = Path(arcname).parts
+        if not parts or parts[0] != "profiles":
+            return True
+        if len(parts) <= 2:
+            return True
+        if len(parts) == 3:
+            return parts[2] in {"metadata.json", ".env", "auth"}
+        if parts[2] != "auth":
+            return False
+        return source.is_dir() or bool(inventory_for_path(arcname))
+
+    def _is_secret_writer_temporary(arcname: str) -> bool:
+        if not arcname.endswith(".tmp"):
+            return False
+        if inventory_for_path(arcname[: -len(".tmp")]):
+            return True
+        parts = Path(arcname).parts
+        if parts and parts[0] in {"auth", "mcp_tokens"}:
+            return True
+        if len(parts) >= 3 and parts[0] == "profiles" and parts[2] == "auth":
+            return True
+        return (
+            len(parts) >= 5
+            and parts[0] == "channels"
+            and parts[-1].startswith("access-")
+            and parts[-1].endswith(".json.tmp")
+        )
+
+    if not include_credentials:
+        for top_name in CREDENTIAL_ENTRIES:
+            credential_root = state / top_name
+            if not credential_root.is_dir():
+                continue
+            for source in credential_root.rglob("*"):
+                arcname = source.relative_to(state).as_posix()
+                if (
+                    not source.is_file()
+                    or _excluded(source)
+                    or _is_secret_writer_temporary(arcname)
+                ):
+                    continue
+                excluded_secret_kinds.update(
+                    entry.kind
+                    for entry in inventory_for_path(arcname)
+                    if entry.backup_policy == "include_on_opt_in"
+                )
 
     def _add_path(tar: tarfile.TarFile, source: Path, arcname: str) -> None:
-        if _excluded(source):
+        if (
+            _excluded(source)
+            or not _profile_member_allowed(source, arcname)
+            or _is_secret_writer_temporary(arcname)
+        ):
             return
         info = tar.gettarinfo(str(source), arcname=arcname)
         if info.issym() or info.islnk():
@@ -176,6 +249,8 @@ def create_backup(
                 excluded_secret_kinds.update(entry.kind for entry in inventory)
                 return
             for entry in inventory:
+                if not _entry_has_secret(entry, raw):
+                    continue
                 if entry.backup_policy == "never_backup":
                     redacted_secret_kinds.add(entry.kind)
                 elif include_credentials:
@@ -201,13 +276,15 @@ def create_backup(
                 "included_secret_kinds": sorted(included_secret_kinds),
                 "redacted_secret_kinds": sorted(redacted_secret_kinds),
                 "excluded_secret_kinds": sorted(excluded_secret_kinds),
-                "never_backed_up_secret_kinds": sorted(
-                    {
-                        entry.kind
-                        for entry in SECRET_INVENTORY
-                        if entry.backup_policy == "never_backup"
-                    }
-                ),
+                "credential_policy": {
+                    "never_backed_up_secret_kinds": sorted(
+                        {
+                            entry.kind
+                            for entry in SECRET_INVENTORY
+                            if entry.backup_policy == "never_backup"
+                        }
+                    )
+                },
             }
             payload = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
             info = tarfile.TarInfo(_MANIFEST_NAME)
@@ -402,6 +479,7 @@ def _extract(tar: tarfile.TarFile, dest: Path) -> None:
         if not str(target).startswith(str(dest) + os.sep):
             raise tarfile.TarError(f"unsafe path in archive: {member.name}")
     from openprogram.credential_files import (
+        _private_atomic_write,
         inventory_for_path,
         preserve_local_secret_bytes,
     )
@@ -416,19 +494,22 @@ def _extract(tar: tarfile.TarFile, dest: Path) -> None:
             for entry in inventory
         ):
             continue
-        mixed = bool(inventory) and all(not entry.whole_file for entry in inventory)
-        if member.isfile() and mixed:
+        if member.isfile() and inventory:
             source = tar.extractfile(member)
             if source is None:
                 raise tarfile.TarError(f"cannot read archive member: {member.name}")
             restored = source.read()
-            try:
-                local = target.read_bytes()
-            except FileNotFoundError:
-                local = None
-            merged = preserve_local_secret_bytes(member.name, restored, local)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(merged)
+            if all(not entry.whole_file for entry in inventory):
+                try:
+                    local = target.read_bytes()
+                except FileNotFoundError:
+                    local = None
+                restored = preserve_local_secret_bytes(member.name, restored, local)
+            _private_atomic_write(
+                target,
+                lambda handle: handle.write(restored),
+                root=dest,
+            )
             continue
         try:
             tar.extract(member, dest, filter="data")

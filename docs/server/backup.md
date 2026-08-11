@@ -50,14 +50,16 @@ make the archive bigger:
 - `logs/` and any `*.log`
 - Locks, PID files, and port files (`*.lock`, `*.pid`, `*.port`)
 - The web token, which is regenerated every launch
+- Credential-writer temporary files such as `.env.tmp` and `*.json.tmp`
+- Credential-account `profiles/*/home/` trees. Only `metadata.json` and the
+  registered `.env` and AuthStore inventory paths are eligible.
 - `node_modules/` anywhere in the tree
 - Symlinks, which are skipped rather than followed — a link out of the state
   directory would pull unrelated trees into the archive
 
 ## Credentials
 
-By default, the backup manifest reports that credentials are excluded. The
-archive omits `auth/`, `mcp_tokens/`, profile AuthStore files and `.env` files,
+By default, the archive omits `auth/`, `mcp_tokens/`, profile AuthStore files and `.env` files,
 and Channel `credentials.json` files. It removes `config.json[api_keys]` and MCP
 server env, header, bearer-token, and OAuth client-secret fields while keeping
 the rest of those mixed configuration files.
@@ -71,10 +73,11 @@ openprogram backup create --include-credentials
 
 This opts in to every registered persistent credential category and prints an
 accurate plaintext warning. Store the resulting file with the same access
-restrictions as the original credentials. `backup-manifest.json` records the
-opt-in, included, redacted, excluded, and never-backed-up categories without
-recording secret values. If you only need to move to a new machine, logging in
-again is usually safer than copying the archive.
+restrictions as the original credentials. `backup-manifest.json` records only
+credential categories that were actually included, redacted, or excluded in
+that archive. Global never-backup rules are reported separately under
+`credential_policy`, without recording secret values. If you only need to move
+to a new machine, logging in again is usually safer than copying the archive.
 
 ## Restoring
 

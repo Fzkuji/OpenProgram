@@ -242,36 +242,56 @@ def _preserve_selector(
     parts: list[str],
     *,
     always_local: bool,
-) -> None:
+) -> bool:
     if not isinstance(incoming, dict) or not isinstance(current, dict) or not parts:
-        return
+        return False
     head, *tail = parts
     if head == "*":
+        preserved = False
         for key in incoming.keys() & current.keys():
-            _preserve_selector(
-                incoming[key],
-                current[key],
-                tail,
-                always_local=always_local,
+            preserved = (
+                _preserve_selector(
+                    incoming[key],
+                    current[key],
+                    tail,
+                    always_local=always_local,
+                )
+                or preserved
             )
-        return
+        return preserved
     if not tail:
         if head not in current:
-            return
+            return False
         if always_local or head not in incoming or _is_redacted(incoming[head]):
             incoming[head] = current[head]
+            return True
         elif isinstance(incoming[head], dict) and isinstance(current[head], dict):
+            preserved = False
             for key, value in current[head].items():
                 if key not in incoming[head] or _is_redacted(incoming[head][key]):
                     incoming[head][key] = value
-        return
-    if head in incoming and head in current:
-        _preserve_selector(
+                    preserved = True
+            return preserved
+        return False
+    if head not in current or not isinstance(current[head], dict):
+        return False
+    if head in incoming:
+        return _preserve_selector(
             incoming[head],
             current[head],
             tail,
             always_local=always_local,
         )
+    restored_parent: dict[str, object] = {}
+    if _preserve_selector(
+        restored_parent,
+        current[head],
+        tail,
+        always_local=always_local,
+    ):
+        incoming[head] = restored_parent
+        return True
+    return False
 
 
 def _is_redacted(value: object) -> bool:
@@ -373,6 +393,13 @@ def _private_atomic_write(
         except OSError as exc:
             raise PrivateAtomicWriteError(
                 "write",
+                target,
+                committed=False,
+                cause=exc,
+            ) from exc
+        except Exception as exc:
+            raise PrivateAtomicWriteError(
+                "serialization",
                 target,
                 committed=False,
                 cause=exc,

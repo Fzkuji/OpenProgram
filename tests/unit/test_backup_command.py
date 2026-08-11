@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import os
 import stat
 import tarfile
 from pathlib import Path
@@ -86,6 +88,15 @@ def _archive_bytes(path: Path) -> dict[str, bytes]:
             assert handle is not None
             result[member.name] = handle.read()
         return result
+
+
+def _tar_with_files(path: Path, files: dict[str, bytes]) -> tarfile.TarFile:
+    with tarfile.open(path, "w:gz") as tar:
+        for name, payload in files.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+    return tarfile.open(path, "r:gz")
 
 
 def _seed_registered_secrets(profile: Path) -> dict[str, bytes]:
@@ -277,8 +288,10 @@ def test_default_backup_contains_no_registered_raw_secret(profile: Path):
         "mcp_server_secrets",
         "channel_pairing_codes",
     }
-    assert "web_runtime_token" in manifest["never_backed_up_secret_kinds"]
-    assert "channel_pairing_codes" in manifest["never_backed_up_secret_kinds"]
+    assert set(manifest["credential_policy"]["never_backed_up_secret_kinds"]) == {
+        "channel_pairing_codes",
+        "web_runtime_token",
+    }
 
 
 def test_opt_in_backup_contains_exactly_allowed_persistent_secrets(profile: Path):
@@ -317,6 +330,120 @@ def test_opt_in_backup_contains_exactly_allowed_persistent_secrets(profile: Path
         "mcp_server_secrets",
         "mcp_tokens",
     }
+
+
+@pytest.mark.parametrize("include_credentials", [False, True])
+def test_profile_allowlist_and_secret_writer_temps_never_leak(
+    profile: Path,
+    include_credentials: bool,
+) -> None:
+    from openprogram._cli_cmds.backup import create_backup
+
+    _seed_registered_secrets(profile)
+    account = profile / "profiles" / "work"
+    (account / "metadata.json").write_text('{"display_name":"Work"}')
+    leaks = {
+        account / "home" / ".codex" / "auth.json": b"nested-home-secret",
+        account / ".env.tmp": b"dotenv-temp-secret",
+        account / "auth" / "openai" / "default.json.tmp": b"auth-temp-secret",
+        profile
+        / "channels"
+        / "slack"
+        / "accounts"
+        / "default"
+        / "credentials.json.tmp": b"channel-temp-secret",
+        profile
+        / "channels"
+        / "slack"
+        / "accounts"
+        / "default"
+        / "access-random.json.tmp": b"pairing-temp-secret",
+        profile / "auth" / "openai" / "orphan.json.tmp": b"root-auth-temp-secret",
+        profile / "mcp_tokens" / "github.json.tmp": b"mcp-token-temp-secret",
+    }
+    for path, payload in leaks.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+
+    archived = _archive_bytes(create_backup(include_credentials=include_credentials))
+    combined = b"\n".join(archived.values())
+
+    assert all(secret not in combined for secret in leaks.values())
+    assert "profiles/work/metadata.json" in archived
+    assert not any(name.startswith("profiles/work/home/") for name in archived)
+    assert not any(name.endswith(".tmp") for name in archived)
+    manifest = json.loads(archived["backup-manifest.json"])
+    if include_credentials:
+        assert set(manifest["included_secret_kinds"]) == {
+            "config_api_keys",
+            "auth_store",
+            "profile_auth_store",
+            "profile_env",
+            "channel_credentials",
+            "mcp_server_secrets",
+            "mcp_tokens",
+        }
+    else:
+        assert set(manifest["excluded_secret_kinds"]) == {
+            "auth_store",
+            "profile_auth_store",
+            "profile_env",
+            "channel_credentials",
+            "mcp_tokens",
+        }
+
+
+def test_manifest_is_empty_when_no_inventory_member_exists(profile: Path) -> None:
+    from openprogram._cli_cmds.backup import create_backup
+
+    (profile / "config.json").unlink()
+    (profile / "auth" / "anthropic.json").unlink()
+    (profile / "mcp_tokens" / "t.json").unlink()
+    manifest = json.loads(_archive_bytes(create_backup())["backup-manifest.json"])
+
+    assert manifest["included_secret_kinds"] == []
+    assert manifest["redacted_secret_kinds"] == []
+    assert manifest["excluded_secret_kinds"] == []
+    assert set(manifest["credential_policy"]["never_backed_up_secret_kinds"]) == {
+        "channel_pairing_codes",
+        "web_runtime_token",
+    }
+
+
+def test_manifest_reports_only_present_secret_fields(profile: Path) -> None:
+    from openprogram._cli_cmds.backup import create_backup
+
+    (profile / "config.json").write_text(
+        '{"theme":"dark","api_keys":{"OPENAI_API_KEY":"present"}}',
+        encoding="utf-8",
+    )
+    (profile / "auth" / "anthropic.json").unlink()
+    (profile / "mcp_tokens" / "t.json").unlink()
+    default = json.loads(_archive_bytes(create_backup())["backup-manifest.json"])
+    opted_in = json.loads(
+        _archive_bytes(create_backup(include_credentials=True))["backup-manifest.json"]
+    )
+
+    assert default["redacted_secret_kinds"] == ["config_api_keys"]
+    assert default["excluded_secret_kinds"] == []
+    assert opted_in["included_secret_kinds"] == ["config_api_keys"]
+    assert opted_in["redacted_secret_kinds"] == []
+
+
+def test_manifest_marks_malformed_mixed_secret_as_actually_excluded(
+    profile: Path,
+) -> None:
+    from openprogram._cli_cmds.backup import create_backup
+
+    (profile / "config.json").write_bytes(b'{"api_keys":"unknown-secret"')
+    (profile / "auth" / "anthropic.json").unlink()
+    (profile / "mcp_tokens" / "t.json").unlink()
+    archived = _archive_bytes(create_backup())
+    manifest = json.loads(archived["backup-manifest.json"])
+
+    assert "config.json" not in archived
+    assert manifest["redacted_secret_kinds"] == []
+    assert manifest["excluded_secret_kinds"] == ["config_api_keys"]
 
 
 def test_default_restore_preserves_local_secrets(profile: Path):
@@ -392,6 +519,135 @@ def test_opt_in_restore_replaces_persistent_secrets(profile: Path):
 
     assert secrets["auth_store"] in auth_path.read_bytes()
     assert secrets["profile_env"] in env_path.read_bytes()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode contract")
+def test_restore_inventory_files_are_atomically_published_owner_only(
+    profile: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram import credential_files
+    from openprogram._cli_cmds.backup import _extract
+
+    config = profile / "config.json"
+    config.write_text(
+        '{"theme":"local","api_keys":{"OPENAI_API_KEY":"local-secret"}}',
+        encoding="utf-8",
+    )
+    config.chmod(0o644)
+    auth = profile / "auth" / "openai" / "default.json"
+    auth.parent.mkdir(parents=True, exist_ok=True)
+    auth.write_bytes(b"old-auth")
+    auth.chmod(0o644)
+    archive = tmp_path / "restore.tar.gz"
+    mcp_token = profile / "mcp_tokens" / "restored.json"
+    observed: dict[str, tuple[int, bytes | None]] = {}
+    real_replace = os.replace
+
+    def inspect_replace(source, destination) -> None:
+        destination = Path(destination)
+        if destination in {config, auth, mcp_token}:
+            observed[destination.name] = (
+                stat.S_IMODE(Path(source).stat().st_mode),
+                destination.read_bytes() if destination.exists() else None,
+            )
+        real_replace(source, destination)
+
+    monkeypatch.setattr(credential_files.os, "replace", inspect_replace)
+    with _tar_with_files(
+        archive,
+        {
+            "config.json": b'{"theme":"archived"}',
+            "auth/openai/default.json": b"archived-auth",
+            "mcp_tokens/restored.json": b"archived-mcp-token",
+        },
+    ) as tar:
+        _extract(tar, profile)
+
+    assert json.loads(config.read_text()) == {
+        "theme": "archived",
+        "api_keys": {"OPENAI_API_KEY": "local-secret"},
+    }
+    assert auth.read_bytes() == b"archived-auth"
+    assert mcp_token.read_bytes() == b"archived-mcp-token"
+    assert observed == {
+        "config.json": (
+            0o600,
+            b'{"theme":"local","api_keys":{"OPENAI_API_KEY":"local-secret"}}',
+        ),
+        "default.json": (0o600, b"old-auth"),
+        "restored.json": (0o600, None),
+    }
+    assert stat.S_IMODE(config.stat().st_mode) == 0o600
+    assert stat.S_IMODE(auth.stat().st_mode) == 0o600
+    assert stat.S_IMODE(mcp_token.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("failure", ["write", "fsync", "replace"])
+def test_restore_inventory_failure_preserves_old_file_and_cleans_temp(
+    profile: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    from openprogram import credential_files
+    from openprogram._cli_cmds.backup import _extract
+
+    target = profile / "auth" / "openai" / "default.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"old-auth")
+    archive = tmp_path / "restore-failure.tar.gz"
+    real_fdopen = os.fdopen
+
+    if failure == "write":
+
+        class FailingWrite:
+            def __init__(self, handle):
+                self.handle = handle
+
+            def __enter__(self):
+                self.handle.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return self.handle.__exit__(*args)
+
+            def write(self, _payload):
+                raise OSError("write failed")
+
+            def __getattr__(self, name):
+                return getattr(self.handle, name)
+
+        monkeypatch.setattr(
+            credential_files.os,
+            "fdopen",
+            lambda fd, mode: FailingWrite(real_fdopen(fd, mode)),
+        )
+    elif failure == "fsync":
+        monkeypatch.setattr(
+            credential_files.os,
+            "fsync",
+            lambda _fd: (_ for _ in ()).throw(OSError("fsync failed")),
+        )
+    else:
+        monkeypatch.setattr(
+            credential_files.os,
+            "replace",
+            lambda _source, _target: (_ for _ in ()).throw(OSError("replace failed")),
+        )
+
+    with _tar_with_files(
+        archive,
+        {"auth/openai/default.json": b"archived-auth"},
+    ) as tar:
+        with pytest.raises(credential_files.PrivateAtomicWriteError) as exc:
+            _extract(tar, profile)
+
+    assert exc.value.code == failure
+    assert exc.value.committed is False
+    assert target.read_bytes() == b"old-auth"
+    assert list(target.parent.glob(".default.json.*.tmp")) == []
 
 
 def test_backup_cli_warning_and_manifest_report_same_scope(profile: Path, capsys):

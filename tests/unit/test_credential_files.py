@@ -102,6 +102,109 @@ def test_restore_preserves_masked_secret_values() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("archived_auth", "expected_auth"),
+    [
+        (None, {"token": "local-token"}),
+        ({"kind": "bearer"}, {"kind": "bearer", "token": "local-token"}),
+        (
+            {"kind": "bearer", "token": "<redacted>"},
+            {"kind": "bearer", "token": "local-token"},
+        ),
+    ],
+)
+def test_restore_recreates_only_missing_mcp_secret_path(
+    archived_auth: dict[str, str] | None,
+    expected_auth: dict[str, str],
+) -> None:
+    from openprogram.credential_files import preserve_local_secret_bytes
+
+    archived_server = {"type": "http", "label": "archived"}
+    if archived_auth is not None:
+        archived_server["auth"] = archived_auth
+    restored = json.dumps(
+        {"servers": {"remote": archived_server}, "roots": ["archived"]}
+    ).encode()
+    local = json.dumps(
+        {
+            "servers": {
+                "remote": {
+                    "type": "stdio",
+                    "local_only": "must-not-copy",
+                    "auth": {
+                        "kind": "bearer",
+                        "token": "local-token",
+                        "local_auth_only": "must-not-copy",
+                    },
+                }
+            },
+            "roots": ["local"],
+        }
+    ).encode()
+
+    merged = json.loads(
+        preserve_local_secret_bytes("mcp_servers.json", restored, local)
+    )
+
+    assert merged == {
+        "roots": ["archived"],
+        "servers": {
+            "remote": {
+                "type": "http",
+                "label": "archived",
+                "auth": expected_auth,
+            }
+        },
+    }
+
+
+def test_restore_recreates_missing_mcp_oauth_client_secret_only() -> None:
+    from openprogram.credential_files import preserve_local_secret_bytes
+
+    restored = json.dumps(
+        {
+            "servers": {
+                "oauth": {
+                    "type": "http",
+                    "auth": {"kind": "oauth", "client_id": "archived-id"},
+                }
+            }
+        }
+    ).encode()
+    local = json.dumps(
+        {
+            "servers": {
+                "oauth": {
+                    "type": "stdio",
+                    "auth": {
+                        "kind": "oauth",
+                        "client_id": "local-id",
+                        "client_secret": "local-secret",
+                        "token_endpoint": "local-only",
+                    },
+                }
+            }
+        }
+    ).encode()
+
+    merged = json.loads(
+        preserve_local_secret_bytes("mcp_servers.json", restored, local)
+    )
+
+    assert merged == {
+        "servers": {
+            "oauth": {
+                "type": "http",
+                "auth": {
+                    "kind": "oauth",
+                    "client_id": "archived-id",
+                    "client_secret": "local-secret",
+                },
+            }
+        }
+    }
+
+
 def test_windows_acl_verification_rejects_an_extra_principal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -365,6 +468,32 @@ def test_private_atomic_write_preserves_old_file_before_commit_failures(
     assert exc.value.code == "replace"
     assert exc.value.committed is False
     assert target.read_bytes() == b"old"
+
+
+def test_private_atomic_write_wraps_callback_value_error_and_cleans_temp(
+    tmp_path: Path,
+) -> None:
+    from openprogram.credential_files import (
+        PrivateAtomicWriteError,
+        _private_atomic_write,
+    )
+
+    root = tmp_path / "state"
+    root.mkdir(mode=0o700)
+    target = root / "config.json"
+    target.write_bytes(b"old")
+
+    def invalid_serialization(_handle) -> None:
+        raise ValueError("cannot serialize")
+
+    with pytest.raises(PrivateAtomicWriteError) as exc:
+        _private_atomic_write(target, invalid_serialization, root=root)
+
+    assert exc.value.code == "serialization"
+    assert exc.value.committed is False
+    assert isinstance(exc.value.__cause__, ValueError)
+    assert target.read_bytes() == b"old"
+    assert list(root.glob(".config.json.*.tmp")) == []
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX directory fsync contract")

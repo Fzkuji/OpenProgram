@@ -48,13 +48,16 @@ fsync 所在目录。
 - `logs/` 以及任何 `*.log`
 - 锁文件、PID 文件、端口文件（`*.lock`、`*.pid`、`*.port`）
 - web token，每次启动都会重新生成
+- `.env.tmp`、`*.json.tmp` 等凭据 writer 临时文件
+- 凭据账号的 `profiles/*/home/` 目录；profile 只允许 `metadata.json`，以及
+  inventory 注册的 `.env` 和 AuthStore 路径进入归档
 - 目录树里任何位置的 `node_modules/`
 - 符号链接：跳过而不是跟随，否则一条指向状态目录外的链接会把无关的目录树拉进归档
 
 ## 凭据
 
-默认情况下，备份 manifest 会记录凭据未包含。归档会排除 `auth/`、
-`mcp_tokens/`、profile AuthStore 文件和 `.env` 文件、Channel
+默认情况下，归档会排除 `auth/`、`mcp_tokens/`、profile AuthStore 文件和
+`.env` 文件、Channel
 `credentials.json`；同时从混合配置中删除 `config.json[api_keys]`，以及
 MCP server 的 env、header、bearer token 和 OAuth client secret 字段，
 其余非秘密配置继续保留。
@@ -68,7 +71,8 @@ openprogram backup create --include-credentials
 
 这样会显式包含 inventory 中允许备份的全部长期凭据，并打印准确的明文凭据警告。
 生成的文件必须采用与原始凭据相同的访问限制。归档内的 `backup-manifest.json`
-会记录 opt-in、包含、redacted、排除和永不备份的类别，但不记录秘密值。
+只记录本次归档实际包含、redacted 或排除的凭据类别；全局 never-backup 规则
+单独记录在 `credential_policy` 下，且不记录秘密值。
 如果你只是要换一台机器，重新登录通常比拷贝归档更安全。
 
 ## 恢复
