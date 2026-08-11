@@ -22,6 +22,7 @@ from openprogram.providers.types import (
     TextContent,
     ToolCall,
 )
+from openprogram.providers.structured_output import normalize_response_format
 from openprogram.agentic_programming.runtime import (
     Runtime,
     _current_loop_opts,
@@ -141,6 +142,16 @@ def test_defaults_leave_stream_opts_unset():
     opts = state["opts"][0]
     assert opts.tool_choice is None
     assert opts.parallel_tool_calls is None
+
+
+def test_response_format_reaches_stream_opts():
+    stream_fn, state = _make_stream_fn([_text_msg()])
+    response_format = normalize_response_format({"type": "string"})
+    session = _session(stream_fn, response_format=response_format)
+
+    asyncio.run(session.run("go"))
+
+    assert state["opts"][0].response_format == response_format
 
 
 # exec → _current_loop_opts normalisation

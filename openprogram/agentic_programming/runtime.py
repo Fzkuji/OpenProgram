@@ -37,6 +37,8 @@ import random
 import time
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from openprogram.providers.structured_output import StructuredOutputError
+
 if TYPE_CHECKING:
     from openprogram.providers.utils.errors import (
         ErrorReason, LLMError, RetryInfo,
@@ -307,6 +309,10 @@ _current_tool_policy: contextvars.ContextVar[Optional[dict]] = contextvars.Conte
 # stored; missing keys mean "provider / loop default".
 _current_loop_opts: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar(
     "_current_loop_opts", default=None,
+)
+
+_current_response_format: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
+    "_current_response_format", default=None,
 )
 
 # Per-exec stream-fn override. exec(stream_fn=...) sets it so the dispatcher
@@ -1133,6 +1139,11 @@ class Runtime:
         if self._closed:
             raise RuntimeError("Runtime is closed. Create a new runtime instance.")
 
+        structured_format = None
+        if response_format is not None:
+            from openprogram.providers.structured_output import normalize_response_format
+            structured_format = normalize_response_format(response_format)
+
         # Cancel check — lets long-running loops inside one function also abort.
         from openprogram.agentic_programming.function import _run_pre_invocation_hooks
         _run_pre_invocation_hooks()
@@ -1198,6 +1209,7 @@ class Runtime:
         loop_opts_token = (
             _current_loop_opts.set(_loop_opts) if _loop_opts else None
         )
+        response_format_token = None
         reply = None
         _exec_start = time.monotonic()
         if not (timeout_s and timeout_s > 0):
@@ -1209,6 +1221,8 @@ class Runtime:
         # capping the total. See docs/design/providers/reliability/error-and-timeout-mechanism.html.
         from openprogram.providers.utils.errors import ExecInterrupt
         from openprogram.providers.utils import deadline as _dl
+        if structured_format is not None:
+            response_format_token = _current_response_format.set(structured_format)
         _deadline_token = _dl.set_deadline(_deadline)
         # One exec == one llm node. Open it now (status=running); the
         # tool loop inside _call_via_providers repoints _call_id to this
@@ -1251,7 +1265,11 @@ class Runtime:
 
                 try:
                     reply = self._call(call_input, model=use_model, response_format=response_format)
-                    self._close_model_call_node(_llm_node_id, reply=reply)
+                    raw_reply = reply
+                    if structured_format is not None:
+                        from openprogram.providers.structured_output import parse_and_validate_json
+                        reply = parse_and_validate_json(raw_reply, structured_format)
+                    self._close_model_call_node(_llm_node_id, reply=raw_reply)
                     _llm_closed = True
                     break
                 except ExecInterrupt:
@@ -1263,6 +1281,8 @@ class Runtime:
                     # embedded install without the agent/tool extra). Retrying
                     # can't make a module appear, and the default budget would
                     # otherwise spend ~50s of backoff before reporting it.
+                    raise
+                except StructuredOutputError:
                     raise
                 except Exception as e:
                     errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
@@ -1337,6 +1357,8 @@ class Runtime:
                 _current_tool_policy.reset(policy_token)
             if loop_opts_token is not None:
                 _current_loop_opts.reset(loop_opts_token)
+            if response_format_token is not None:
+                _current_response_format.reset(response_format_token)
 
         # No choices — the raw reply text is the result.
         if choices is None:
@@ -1403,6 +1425,12 @@ class Runtime:
         if self._closed:
             raise RuntimeError("Runtime is closed. Create a new runtime instance.")
 
+        structured_format = None
+        if response_format is not None:
+            from openprogram.providers.structured_output import normalize_response_format
+            structured_format = normalize_response_format(response_format)
+        response_format_token = None
+
         # Cancel check — lets long-running loops inside one function also abort.
         from openprogram.agentic_programming.function import _run_pre_invocation_hooks
         _run_pre_invocation_hooks()
@@ -1429,6 +1457,8 @@ class Runtime:
         # loop and SSE parser read it. See error-and-timeout-mechanism.html.
         from openprogram.providers.utils.errors import ExecInterrupt
         from openprogram.providers.utils import deadline as _dl
+        if structured_format is not None:
+            response_format_token = _current_response_format.set(structured_format)
         _deadline_token = _dl.set_deadline(_deadline)
         # One exec == one llm node (see exec() for the rationale).
         _llm_node_id = self._open_model_call_node(
@@ -1457,12 +1487,18 @@ class Runtime:
 
             try:
                 reply = await self._async_call(call_input, model=use_model, response_format=response_format)
-                self._close_model_call_node(_llm_node_id, reply=reply)
+                raw_reply = reply
+                if structured_format is not None:
+                    from openprogram.providers.structured_output import parse_and_validate_json
+                    reply = parse_and_validate_json(raw_reply, structured_format)
+                self._close_model_call_node(_llm_node_id, reply=raw_reply)
                 _llm_closed = True
                 return reply
             except ExecInterrupt:
                 raise  # caller hard-stop — bypass the retry layer
             except (TypeError, NotImplementedError):
+                raise
+            except StructuredOutputError:
                 raise
             except Exception as e:
                 errors.append(f"Attempt {attempt + 1}: {type(e).__name__}: {e}")
@@ -1520,6 +1556,8 @@ class Runtime:
                 )
             self._active_llm_node_id = None
             _dl.reset_deadline(_deadline_token)
+            if response_format_token is not None:
+                _current_response_format.reset(response_format_token)
 
     def _call(self, content: list[dict], model: str = "default", response_format: dict = None) -> str:
         """
@@ -1736,6 +1774,10 @@ class Runtime:
             self._pending_system_prompt = ""
 
         loop_opts = _current_loop_opts.get(None) or {}
+        structured_format = _current_response_format.get(None)
+        if structured_format is None and response_format is not None:
+            from openprogram.providers.structured_output import normalize_response_format
+            structured_format = normalize_response_format(response_format)
         # stream_fn injection: a per-call override (set by exec via the
         # _current_stream_fn contextvar, used by the dispatcher / tests) wins;
         # otherwise the runtime's own _stream_fn (set when Runtime(call=fn)
@@ -1759,6 +1801,7 @@ class Runtime:
             parallel_tool_calls=loop_opts.get("parallel_tool_calls"),
             max_iterations=loop_opts.get("max_iterations"),
             web_search=loop_opts.get("web_search"),
+            response_format=structured_format,
             stream_fn=_stream_fn,
         )
 
@@ -2158,5 +2201,3 @@ def _adapt_tools(raw_tools: list) -> list:
             execute=_run,
         ))
     return adapted
-
-

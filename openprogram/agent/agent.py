@@ -67,6 +67,7 @@ class AgentOptions:
         parallel_tool_calls: bool | None = None,
         max_iterations: int | None = None,
         web_search: bool | None = None,
+        response_format: Any | None = None,
     ):
         self.initial_state = initial_state
         self.convert_to_llm = convert_to_llm
@@ -84,6 +85,7 @@ class AgentOptions:
         self.parallel_tool_calls = parallel_tool_calls
         self.max_iterations = max_iterations
         self.web_search = web_search
+        self.response_format = response_format
 
     @classmethod
     def from_dict(cls, opts_dict: dict[str, Any]) -> "AgentOptions":
@@ -139,6 +141,7 @@ class Agent:
         self._parallel_tool_calls: bool | None = opts.parallel_tool_calls
         self._max_iterations: int | None = opts.max_iterations
         self._web_search: bool | None = opts.web_search
+        self._response_format = opts.response_format
 
         self._listeners: set[Callable[[AgentEvent], None]] = set()
         self._cancel_event: asyncio.Event | None = None
@@ -405,6 +408,7 @@ class Agent:
             parallel_tool_calls=self._parallel_tool_calls,
             max_iterations=self._max_iterations,
             web_search=self._web_search,
+            response_format=self._response_format,
             convert_to_llm=self._convert_to_llm,
             transform_context=self._transform_context,
             get_api_key=self.get_api_key,

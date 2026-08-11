@@ -108,7 +108,9 @@ def make_callable_stream_fn(
 
         # Call the user's fn the way the legacy path did: positional content,
         # plus model / response_format kwargs. Most callables accept **kw.
-        result = fn(content, model=model_id, response_format=response_format)
+        normalized = getattr(options, "response_format", None)
+        public_format = normalized.schema if normalized is not None else response_format
+        result = fn(content, model=model_id, response_format=public_format)
         if inspect.iscoroutine(result):
             result = await result
         reply = result if isinstance(result, str) else str(result)
