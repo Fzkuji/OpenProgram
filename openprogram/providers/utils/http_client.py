@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import socket
+import threading
 from typing import Any
 
 from openprogram.security.safe_http import (
@@ -84,6 +85,8 @@ _shared: dict[tuple[Any, ...], SafeAsyncClient] = {}
 _MAX_SHARED_CLIENTS_PER_LOOP = 32
 _MAX_SHARED_CLIENTS_TOTAL = 32
 _loop_cleanup_tasks: dict[asyncio.AbstractEventLoop, asyncio.Task[None]] = {}
+_shared_reservations: set[tuple[Any, ...]] = set()
+_shared_lock = threading.Lock()
 
 
 async def _close_client(client: SafeAsyncClient) -> None:
@@ -94,8 +97,13 @@ async def _close_client(client: SafeAsyncClient) -> None:
 
 
 async def _close_loop_clients(loop: asyncio.AbstractEventLoop) -> None:
-    for cache_key in [key for key in _shared if key[-1] is loop]:
-        await _close_client(_shared.pop(cache_key))
+    if asyncio.get_running_loop() is not loop:
+        raise RuntimeError("shared provider clients must close on their owner loop")
+    with _shared_lock:
+        cache_keys = [key for key in _shared if key[-1] is loop]
+        clients = [_shared.pop(cache_key) for cache_key in cache_keys]
+    for client in clients:
+        await _close_client(client)
 
 
 async def _cleanup_loop(loop: asyncio.AbstractEventLoop) -> None:
@@ -103,11 +111,12 @@ async def _cleanup_loop(loop: asyncio.AbstractEventLoop) -> None:
         await asyncio.Future()
     finally:
         await _close_loop_clients(loop)
-        if _loop_cleanup_tasks.get(loop) is asyncio.current_task():
-            _loop_cleanup_tasks.pop(loop, None)
+        with _shared_lock:
+            if _loop_cleanup_tasks.get(loop) is asyncio.current_task():
+                _loop_cleanup_tasks.pop(loop, None)
 
 
-def _ensure_loop_cleanup(loop: asyncio.AbstractEventLoop) -> None:
+def _ensure_loop_cleanup_locked(loop: asyncio.AbstractEventLoop) -> None:
     task = _loop_cleanup_tasks.get(loop)
     if task is None or task.done():
         _loop_cleanup_tasks[loop] = loop.create_task(_cleanup_loop(loop))
@@ -135,9 +144,7 @@ def get_shared_async_client(
         )
     origin = normalize_origin(configured_origin)
     effective_force_ipv4 = (
-        _env_flag("OPENPROGRAM_FORCE_IPV4", False)
-        if force_ipv4 is None
-        else force_ipv4
+        _env_flag("OPENPROGRAM_FORCE_IPV4", False) if force_ipv4 is None else force_ipv4
     )
     cache_key = (
         key,
@@ -149,19 +156,27 @@ def get_shared_async_client(
         _keepalive_socket_options(),
         loop,
     )
-    for stale_key in [
-        cached_key
-        for cached_key, cached_client in _shared.items()
-        if cached_client.is_closed
-    ]:
-        _shared.pop(stale_key, None)
-    client = _shared.get(cache_key)
-    if client is None or client.is_closed:
-        loop_entries = sum(1 for cached_key in _shared if cached_key[-1] is loop)
+    with _shared_lock:
+        for stale_key in [
+            cached_key
+            for cached_key, cached_client in _shared.items()
+            if cached_client.is_closed
+        ]:
+            _shared.pop(stale_key, None)
+        client = _shared.get(cache_key)
+        if client is not None and not client.is_closed:
+            return client
+        loop_entries = sum(
+            1
+            for cached_key in (*_shared, *_shared_reservations)
+            if cached_key[-1] is loop
+        )
         if loop_entries >= _MAX_SHARED_CLIENTS_PER_LOOP:
             raise RuntimeError("shared provider client cache limit exceeded")
-        if len(_shared) >= _MAX_SHARED_CLIENTS_TOTAL:
+        if len(_shared) + len(_shared_reservations) >= _MAX_SHARED_CLIENTS_TOTAL:
             raise RuntimeError("shared provider client cache limit exceeded")
+        _shared_reservations.add(cache_key)
+    try:
         client = build_async_client(
             consumer=consumer,
             configured_origin=origin,
@@ -169,8 +184,14 @@ def get_shared_async_client(
             timeout=timeout,
             force_ipv4=effective_force_ipv4,
         )
+    except BaseException:
+        with _shared_lock:
+            _shared_reservations.discard(cache_key)
+        raise
+    with _shared_lock:
+        _shared_reservations.discard(cache_key)
         _shared[cache_key] = client
-        _ensure_loop_cleanup(loop)
+        _ensure_loop_cleanup_locked(loop)
     return client
 
 
@@ -200,13 +221,13 @@ def build_google_http_options(
 
 
 async def aclose_shared_clients() -> None:
-    clients = list(_shared.values())
-    _shared.clear()
-    for client in clients:
-        try:
-            await client.aclose()
-        except Exception:
-            pass
+    loop = asyncio.get_running_loop()
+    with _shared_lock:
+        if any(cache_key[-1] is not loop for cache_key in _shared):
+            raise RuntimeError(
+                "shared provider clients must close on their owner loops"
+            )
+    await _close_loop_clients(loop)
 
 
 async def aclose_current_loop_clients() -> None:
@@ -214,13 +235,15 @@ async def aclose_current_loop_clients() -> None:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         return
-    cleanup_task = _loop_cleanup_tasks.get(loop)
+    with _shared_lock:
+        cleanup_task = _loop_cleanup_tasks.get(loop)
     if cleanup_task is not None and cleanup_task is not asyncio.current_task():
         cleanup_task.cancel()
         await asyncio.gather(cleanup_task, return_exceptions=True)
     await _close_loop_clients(loop)
-    if _loop_cleanup_tasks.get(loop) is cleanup_task:
-        _loop_cleanup_tasks.pop(loop, None)
+    with _shared_lock:
+        if _loop_cleanup_tasks.get(loop) is cleanup_task:
+            _loop_cleanup_tasks.pop(loop, None)
 
 
 __all__ = [

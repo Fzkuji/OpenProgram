@@ -224,3 +224,26 @@ Tests changed or added:
 - Post-fix Task 1-6 security suite: `481 passed in 76.69s`.
 - Ruff check: PASS. New security test format check: PASS. `uv lock --check`:
   PASS. `git diff --check`: PASS.
+
+## Spec re-review concurrent-cap fix
+
+- RED command:
+  `uv run --frozen --extra dev pytest -q tests/providers/test_shared_client_leak.py -k 'concurrent_loops_reserve_process_capacity_atomically or failed_shared_client_construction_restores_capacity'`
+- RED result: `1 failed, 1 passed, 8 deselected`. Forty active
+  thread-owned event loops inserted 40 live clients while the process limit was
+  32; the expected assertion failed as `assert 40 == 32`. The independent
+  construction-failure capacity regression passed before the production change.
+- GREEN command: the same two-test command.
+- GREEN result: `2 passed, 8 deselected`. A process-global reservation now
+  makes capacity check through insertion atomic without holding the lock during
+  client construction. Construction failure releases its reservation. Cleanup
+  removes the owner loop's entries under the same lock and closes them outside
+  the lock on that owner loop. The concurrency regression admits exactly 32
+  live clients, rejects eight surplus calls with the stable cache-limit error,
+  closes every accepted client on its owner loop, and leaves `_shared` and
+  `_loop_cleanup_tasks` empty after shutdown.
+- Complete shared-client lifecycle file: `10 passed in 0.09s`.
+- Task 6 brief affected set: `276 passed, 2 skipped, 1 xfailed in 11.17s`.
+- Complete `tests/security`: `481 passed in 76.70s`.
+- Ruff lint: PASS. Ruff format check: both changed Python files formatted.
+  `uv lock --check`: PASS. `git diff --check`: PASS.

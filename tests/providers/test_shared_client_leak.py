@@ -13,6 +13,7 @@ not grow without bound across repeated calls.
 """
 
 import asyncio
+import threading
 
 import pytest
 
@@ -48,8 +49,7 @@ class _FakeAsyncClient:
 def _clean_shared_and_patch(monkeypatch):
     """Empty the module cache around each test; build fake clients (no sockets)."""
     hc._shared.clear()
-    monkeypatch.setattr(hc, "build_async_client",
-                        lambda **kw: _FakeAsyncClient(**kw))
+    monkeypatch.setattr(hc, "build_async_client", lambda **kw: _FakeAsyncClient(**kw))
     yield
     hc._shared.clear()
 
@@ -80,6 +80,7 @@ def test_current_loop_reap_closes_and_evicts():
 
 def test_reap_leaves_other_loops_untouched():
     """Only the running loop's entries are evicted; a foreign entry survives."""
+
     async def _body():
         hc.get_shared_async_client("openai-codex", **_SCOPE)
         # Inject an entry keyed to a different live loop.
@@ -131,6 +132,7 @@ def test_direct_short_lived_loops_reap_closed_loop_clients(monkeypatch):
     monkeypatch.setattr(hc, "build_async_client", _build)
 
     for index in range(hc._MAX_SHARED_CLIENTS_PER_LOOP * 3):
+
         async def _one_call():
             hc.get_shared_async_client(f"short-loop-{index}", **_SCOPE)
 
@@ -139,6 +141,93 @@ def test_direct_short_lived_loops_reap_closed_loop_clients(monkeypatch):
     assert hc._shared == {}
     assert all(client.closed for client in created)
     assert all(client.closed_loop is client.owner_loop for client in created)
+
+
+def test_concurrent_loops_reserve_process_capacity_atomically(monkeypatch):
+    """Concurrent loop threads never exceed the process-wide live-client cap."""
+    limit = hc._MAX_SHARED_CLIENTS_TOTAL
+    total = limit + 8
+    capacity_gate = threading.Barrier(total)
+    ready_gate = threading.Barrier(total + 1)
+    release = threading.Event()
+    results_lock = threading.Lock()
+    accepted = []
+    errors = []
+
+    def _build(**kwargs):
+        capacity_gate.wait(timeout=10)
+        return _FakeAsyncClient(**kwargs)
+
+    monkeypatch.setattr(hc, "build_async_client", _build)
+
+    async def _one_call(index):
+        try:
+            client = hc.get_shared_async_client(f"concurrent-{index}", **_SCOPE)
+        except BaseException as exc:
+            with results_lock:
+                errors.append(exc)
+            capacity_gate.wait(timeout=10)
+        else:
+            with results_lock:
+                accepted.append(client)
+        ready_gate.wait(timeout=10)
+        if "client" in locals():
+            await asyncio.to_thread(release.wait, 10)
+
+    def _worker(index):
+        asyncio.run(_one_call(index))
+
+    threads = [
+        threading.Thread(target=_worker, args=(index,)) for index in range(total)
+    ]
+    for thread in threads:
+        thread.start()
+
+    ready_gate.wait(timeout=15)
+    live_cache_size = len(hc._shared)
+    cleanup_task_count = len(hc._loop_cleanup_tasks)
+    release.set()
+    for thread in threads:
+        thread.join(timeout=15)
+
+    assert live_cache_size == limit
+    assert cleanup_task_count == limit
+    assert len(accepted) == limit
+    assert len(errors) == total - limit
+    assert all(type(exc) is RuntimeError for exc in errors)
+    assert {str(exc) for exc in errors} == {
+        "shared provider client cache limit exceeded"
+    }
+    assert all(not thread.is_alive() for thread in threads)
+    assert all(client.closed_loop is client.owner_loop for client in accepted)
+    assert hc._shared == {}
+    assert hc._loop_cleanup_tasks == {}
+
+
+def test_failed_shared_client_construction_restores_capacity(monkeypatch):
+    attempts = 0
+
+    def _build(**kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("construction failed")
+        return _FakeAsyncClient(**kwargs)
+
+    monkeypatch.setattr(hc, "build_async_client", _build)
+
+    async def _body():
+        with pytest.raises(RuntimeError, match="construction failed"):
+            hc.get_shared_async_client("failed", **_SCOPE)
+        clients = [
+            hc.get_shared_async_client(f"replacement-{index}", **_SCOPE)
+            for index in range(hc._MAX_SHARED_CLIENTS_PER_LOOP)
+        ]
+        assert len(clients) == hc._MAX_SHARED_CLIENTS_PER_LOOP
+        with pytest.raises(RuntimeError, match="cache limit"):
+            hc.get_shared_async_client("overflow", **_SCOPE)
+
+    asyncio.run(_body())
 
 
 def test_shared_cache_does_not_inherit_owner_authorization():
