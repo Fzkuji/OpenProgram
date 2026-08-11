@@ -53,6 +53,7 @@ from .types import (
     UserMessage,
     VercelGatewayRouting,
 )
+from .structured_output import JsonSchemaOutput
 
 # Model registry
 from .models import calculate_cost, get_model, get_models, get_providers, models_are_equal, supports_xhigh
@@ -80,7 +81,7 @@ __all__ = [
     # Types
     "Api", "KnownApi", "KnownProvider", "Provider",
     "ThinkingLevel", "ThinkingBudgets", "CacheRetention", "Transport", "StopReason",
-    "StreamOptions", "SimpleStreamOptions",
+    "StreamOptions", "SimpleStreamOptions", "JsonSchemaOutput",
     "TextContent", "ThinkingContent", "ImageContent", "ToolCall",
     "Usage", "UsageCost",
     "UserMessage", "AssistantMessage", "ToolResultMessage", "Message",

@@ -1,5 +1,6 @@
 import pytest
 
+from openprogram.providers import JsonSchemaOutput
 from openprogram.providers.structured_output import (
     StructuredOutputSchemaError,
     StructuredOutputValidationError,
@@ -17,6 +18,10 @@ SCHEMA = {
     "required": ["answer"],
     "additionalProperties": False,
 }
+
+
+def test_json_schema_output_is_public_provider_api():
+    assert JsonSchemaOutput(schema=SCHEMA).type == "json_schema"
 
 
 def test_normalize_bare_schema_without_mutating_caller():
