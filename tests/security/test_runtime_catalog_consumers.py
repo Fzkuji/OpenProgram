@@ -74,8 +74,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        if self.server.mode in {"index", "index_wrong_mime"}:
-            body = b'{"skills": []}'
+        if self.server.mode in {"index", "index_wrong_mime", "index_invalid"}:
+            body = (
+                b'{"skills":[{"name":{"echo":"QUERY-SECRET"},"files":[]}]}'
+                if self.server.mode == "index_invalid"
+                else b'{"skills": []}'
+            )
             content_type = (
                 "text/html"
                 if self.server.mode == "index_wrong_mime"
@@ -588,6 +592,33 @@ def test_configured_model_fetcher_hides_4xx_peer_body(monkeypatch, server):
     assert "TOKEN-PATH" not in result["error"]
 
 
+@pytest.mark.parametrize("status", [302, 304])
+def test_configured_model_fetcher_rejects_non_2xx_without_leaking(
+    monkeypatch, server, status
+):
+    from openprogram.webui._model_listing.fetchers import openai_compat
+
+    origin = f"http://127.0.0.1:{server.port}"
+    base = f"{origin}/redirect-without-location/{status}/TOKEN-PATH?sig=QUERY-SECRET"
+    monkeypatch.setattr(
+        "openprogram.providers.env_api_keys.resolve_api_key_with_auth_store",
+        lambda _provider: "HEADER-SECRET",
+    )
+    monkeypatch.setattr(
+        "openprogram.providers.storage._resolve_base_url", lambda _provider: base
+    )
+
+    result = openai_compat._fetch_openai_compat("custom", 1)
+
+    assert f"HTTP {status}" in result["error"]
+    assert origin in result["error"]
+    assert "accepted-302" not in repr(result)
+    assert "TOKEN-PATH" not in result["error"]
+    assert "QUERY-SECRET" not in result["error"]
+    assert "HEADER-SECRET" not in result["error"]
+    assert "PEER-BODY-SECRET" not in result["error"]
+
+
 def test_web_mcp_catalog_route_uses_configured_registry_client(
     monkeypatch, managed_clients, tmp_path
 ):
@@ -735,6 +766,81 @@ def test_skills_web_status_error_hides_signed_source_url(server):
     assert "TOKEN-PATH" not in rendered
     assert "QUERY-SECRET" not in rendered
     assert "HEADER-SECRET" not in rendered
+
+
+@pytest.mark.parametrize("operation", ["browse", "pull", "install"])
+def test_skills_invalid_index_hides_peer_values_from_runtime_entries(server, operation):
+    from openprogram.skills import discovery
+
+    server.mode = "index_invalid"
+    url = f"http://127.0.0.1:{server.port}/catalog.json?sig=QUERY-SECRET"
+
+    with pytest.raises(RuntimeError) as caught:
+        if operation == "browse":
+            discovery.browse(url)
+        elif operation == "pull":
+            discovery.pull(url)
+        else:
+            discovery.install_one(url, "demo")
+
+    rendered = _render_exception(caught.value)
+    assert "Invalid skill index" in rendered
+    assert f"http://127.0.0.1:{server.port}" in rendered
+    assert "QUERY-SECRET" not in rendered
+    assert "input_value" not in rendered
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("get", "/api/skills/discovery/browse", None),
+        ("post", "/api/skills/discovery/pull", {}),
+        ("post", "/api/skills/discovery/install", {"name": "demo"}),
+    ],
+)
+def test_skills_invalid_index_hides_peer_values_from_web_routes(
+    server, method, path, body
+):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from openprogram.webui.routes import skills
+
+    server.mode = "index_invalid"
+    url = f"http://127.0.0.1:{server.port}/catalog.json?sig=QUERY-SECRET"
+    app = FastAPI()
+    skills.register(app)
+    client = TestClient(app)
+    response = (
+        client.get(path, params={"url": url})
+        if method == "get"
+        else client.post(path, json={"url": url, **(body or {})})
+    )
+
+    assert response.status_code == 502
+    rendered = response.text
+    assert "Invalid skill index" in rendered
+    assert f"http://127.0.0.1:{server.port}" in rendered
+    assert "QUERY-SECRET" not in rendered
+    assert "input_value" not in rendered
+
+
+def test_skills_invalid_index_hides_peer_values_from_cli(server):
+    from openprogram._cli_cmds.skills import _cmd_skills_install, _cmd_skills_search
+
+    server.mode = "index_invalid"
+    url = f"http://127.0.0.1:{server.port}/catalog.json?sig=QUERY-SECRET"
+
+    for call in (
+        lambda: _cmd_skills_search("", source=url),
+        lambda: _cmd_skills_install("demo", source=url),
+    ):
+        with pytest.raises(RuntimeError) as caught:
+            call()
+        rendered = _render_exception(caught.value)
+        assert "Invalid skill index" in rendered
+        assert f"http://127.0.0.1:{server.port}" in rendered
+        assert "QUERY-SECRET" not in rendered
+        assert "input_value" not in rendered
 
 
 def test_marketplace_cli_and_web_status_errors_hide_signed_source_url(

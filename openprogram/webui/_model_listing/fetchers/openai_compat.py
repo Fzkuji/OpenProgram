@@ -37,7 +37,7 @@ def _fetch_openai_compat(provider_id: str, timeout: float) -> Any:
             ),
         ) as client:
             r = client.get(base + "/models", headers=headers, timeout=timeout)
-            if r.status_code >= 400:
+            if not 200 <= r.status_code < 300:
                 return {"error": f"HTTP {r.status_code} for {normalize_origin(base)}"}
             data = r.json()
     except Exception as e:

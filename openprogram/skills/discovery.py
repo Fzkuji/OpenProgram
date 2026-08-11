@@ -68,6 +68,16 @@ class Index(BaseModel):
     skills: list[IndexSkill] = Field(default_factory=list)
 
 
+def _parse_index(raw: str, url: str) -> Index:
+    try:
+        return Index.model_validate_json(raw)
+    except ValueError:
+        pass
+    raise RuntimeError(
+        f"Invalid skill index for {normalize_origin(url)}"
+    ) from None
+
+
 # ---------------------------------------------------------------------------
 # GitHub repo descriptor
 # ---------------------------------------------------------------------------
@@ -203,7 +213,7 @@ async def _pull_from_index(
     client: httpx.AsyncClient, url: str, namespace: str | None = None,
 ) -> list[str]:
     raw = await _get_json_text(client, url)
-    index = Index.model_validate_json(raw)
+    index = _parse_index(raw, url)
     base = url.rsplit("/", 1)[0] + "/"
     sem = asyncio.Semaphore(_MAX_CONCURRENCY)
     results = await asyncio.gather(
@@ -582,7 +592,7 @@ def _sha256(text: str) -> str:
 
 async def _browse_index(client: httpx.AsyncClient, url: str) -> list[CatalogEntry]:
     raw = await _get_json_text(client, url)
-    index = Index.model_validate_json(raw)
+    index = _parse_index(raw, url)
     base = url.rsplit("/", 1)[0] + "/"
     out: list[CatalogEntry] = []
     for s in index.skills:
@@ -764,7 +774,7 @@ async def _install_one_async(
                 )
         # JSON index
         raw = await _get_json_text(client, url)
-        index = Index.model_validate_json(raw)
+        index = _parse_index(raw, url)
         match = next((s for s in index.skills if s.name == name), None)
         if match is None:
             return None
