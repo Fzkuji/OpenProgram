@@ -312,6 +312,80 @@ def test_patch_revision_conflict_resyncs_runtime_to_external_config(
     assert restarts == [45, 99]
 
 
+@pytest.mark.parametrize(
+    ("remove_fails", "status_code", "code", "runtime_state"),
+    [
+        (False, 503, "mcp_runtime_resync_failed", "stopped"),
+        (True, 500, "mcp_runtime_state_unknown", "unknown"),
+    ],
+)
+def test_patch_conflict_resync_failure_reports_sanitized_runtime_state(
+    monkeypatch,
+    state_dir,
+    remove_fails,
+    status_code,
+    code,
+    runtime_state,
+):
+    from openprogram.credential_files import PrivateAtomicWriteError
+    from openprogram.webui.routes import mcp
+
+    original = local_config()
+    original.command = ["old"]
+    original.env = {"TOKEN": "peer-secret-value"}
+    external = local_config()
+    external.command = ["old"]
+    external.env = dict(original.env)
+    save_configs([original])
+    restarts = []
+    removals = []
+
+    async def observed_restart(_name, *, new_cfg):
+        restarts.append(new_cfg.command)
+        if len(restarts) == 2:
+            raise RuntimeError("peer-secret-value resync failed")
+        return {"name": original.name, "ready": True}
+
+    async def observed_remove(name):
+        removals.append(name)
+        if remove_fails:
+            raise RuntimeError("peer-secret-value stop failed")
+
+    loads = iter([([original], "sha256:stale"), ([external], "sha256:actual")])
+    monkeypatch.setattr(mcp, "load_configs_with_revision", lambda **_kwargs: next(loads))
+    monkeypatch.setattr(
+        mcp,
+        "save_configs_revision",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            PrivateAtomicWriteError(
+                "conflict", state_dir / "mcp_servers.json", committed=False
+            )
+        ),
+    )
+    monkeypatch.setattr(mcp, "restart_server", observed_restart)
+    monkeypatch.setattr(mcp, "remove_server", observed_remove)
+    app = FastAPI()
+    mcp.register(app)
+
+    response = TestClient(app).patch(
+        f"/api/mcp/servers/{original.name}", json={"command": ["new"]}
+    )
+
+    assert response.status_code == status_code
+    assert response.json()["detail"] == {
+        "code": code,
+        "persisted_config": "unchanged",
+        "runtime_state": runtime_state,
+        "action": "retry_or_restart",
+    }
+    assert "peer-secret-value" not in response.text
+    assert restarts == [["new"], ["old"]]
+    assert removals == [original.name]
+    stored = load_configs(include_disabled=True)[0]
+    assert stored.command == ["old"]
+    assert stored.env == original.env
+
+
 def test_patch_cancelled_restart_leaves_disk_unchanged(monkeypatch, state_dir):
     from openprogram.webui.routes import mcp
 

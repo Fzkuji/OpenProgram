@@ -59,16 +59,49 @@ def _save_expected(configs: list[MCPServerConfig], revision: str) -> str:
 
 
 async def _resync_server_from_disk(name: str) -> None:
-    """Best-effort runtime resync after rollback loses an external-edit race."""
+    """Match runtime to disk or fail closed with a sanitized state response."""
     current, _revision_value = load_configs_with_revision(include_disabled=True)
     match = next((cfg for cfg in current if cfg.name == name), None)
-    try:
-        if match is None:
+    if match is None:
+        try:
             await remove_server(name)
-        else:
-            await restart_server(name, new_cfg=match)
-    except Exception:  # noqa: BLE001
-        pass
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "mcp_runtime_state_unknown",
+                    "persisted_config": "unchanged",
+                    "runtime_state": "unknown",
+                    "action": "retry_or_restart",
+                },
+            ) from exc
+        return
+
+    try:
+        await restart_server(name, new_cfg=match)
+        return
+    except Exception as resync_error:  # noqa: BLE001
+        try:
+            await remove_server(name)
+        except Exception as stop_error:  # noqa: BLE001
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "mcp_runtime_state_unknown",
+                    "persisted_config": "unchanged",
+                    "runtime_state": "unknown",
+                    "action": "retry_or_restart",
+                },
+            ) from stop_error
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "mcp_runtime_resync_failed",
+                "persisted_config": "unchanged",
+                "runtime_state": "stopped",
+                "action": "retry_or_restart",
+            },
+        ) from resync_error
 
 
 async def _restart_then_publish(
