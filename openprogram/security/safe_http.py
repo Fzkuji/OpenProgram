@@ -1434,6 +1434,38 @@ def safe_async_client(
     )
 
 
+def configured_safe_client(consumer: str, configured_url: str) -> SafeClient:
+    """Freeze an owner-configured exact origin before any request is built."""
+    origin = normalize_origin(configured_url)
+    return safe_client(
+        consumer,
+        configured_origin=origin,
+        security=OutboundSecurityConfig(
+            owner_exceptions=(OwnerURLException(consumer=consumer, origin=origin),)
+        ),
+    )
+
+
+def configured_safe_async_client(consumer: str, configured_url: str) -> SafeAsyncClient:
+    """Async exact-origin counterpart to :func:`configured_safe_client`."""
+    origin = normalize_origin(configured_url)
+    return safe_async_client(
+        consumer,
+        configured_origin=origin,
+        security=OutboundSecurityConfig(
+            owner_exceptions=(OwnerURLException(consumer=consumer, origin=origin),)
+        ),
+    )
+
+
+def require_json_mime(response: httpx.Response) -> None:
+    """Reject catalog metadata not explicitly served as JSON."""
+    content_type = response.headers.get("content-type", "")
+    mime = content_type.split(";", 1)[0].strip().lower()
+    if mime != "application/json" and not mime.endswith("+json"):
+        raise URLPolicyError("MIME_TYPE_FORBIDDEN", normalize_origin(str(response.url)))
+
+
 __all__ = [
     "AuditEvent",
     "AsyncDecisionNetworkBackend",
@@ -1447,6 +1479,9 @@ __all__ = [
     "SDKDisposition",
     "SafeAsyncClient",
     "SafeClient",
+    "configured_safe_async_client",
+    "configured_safe_client",
+    "require_json_mime",
     "safe_async_client",
     "safe_client",
 ]

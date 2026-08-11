@@ -177,6 +177,8 @@ def test_catalog_route_returns_no_plaintext(monkeypatch, state_dir):
 
     class FakeResponse:
         status_code = 200
+        headers = {"content-type": "application/json"}
+        url = "https://catalog.example/c.json"
 
         def raise_for_status(self):
             return None
@@ -185,9 +187,6 @@ def test_catalog_route_returns_no_plaintext(monkeypatch, state_dir):
             return catalog
 
     class FakeAsyncClient:
-        def __init__(self, *a, **k):
-            pass
-
         async def __aenter__(self):
             return self
 
@@ -197,9 +196,13 @@ def test_catalog_route_returns_no_plaintext(monkeypatch, state_dir):
         async def get(self, *a, **k):
             return FakeResponse()
 
-    import httpx
+    from openprogram.security import safe_http
 
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        safe_http,
+        "configured_safe_async_client",
+        lambda _consumer, _url: FakeAsyncClient(),
+    )
     app = FastAPI()
     mcp.register(app)
 

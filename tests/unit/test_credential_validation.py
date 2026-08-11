@@ -7,8 +7,8 @@ closed status enum per provider KIND, with a 60s cache and a layer-1 (auth-only)
 vs layer-2 (named-model inference ping) split. A status->outcome regression
 here ships silently everywhere, so the mapping is pinned by these tests.
 
-No network: the layer-1 probe (``_http_get``) and the layer-2 ping
-(``httpx.post``) are monkeypatched, and key/base resolution is stubbed.
+No network: the layer-1 probe (``_http_get``) and the layer-2 safe client are
+monkeypatched, and key/base resolution is stubbed.
 """
 from __future__ import annotations
 
@@ -104,7 +104,9 @@ def stub_base(monkeypatch):
 def _patch_http_get(monkeypatch, result):
     calls = {"n": 0}
 
-    def fake(url, *, headers=None, params=None, timeout=15.0):
+    def fake(
+        url, *, headers=None, params=None, timeout=15.0, configured_url=None
+    ):
         calls["n"] += 1
         return result
 
@@ -141,9 +143,12 @@ def test_validate_anthropic_compat_probes_own_host_v1_models(monkeypatch):
     )
     seen = {}
 
-    def fake(url, *, headers=None, params=None, timeout=15.0):
+    def fake(
+        url, *, headers=None, params=None, timeout=15.0, configured_url=None
+    ):
         seen["url"] = url
         seen["headers"] = headers or {}
+        seen["configured_url"] = configured_url
         return (200, '{"data":[{"id":"MiniMax-M2.5"}]}', 11)
 
     monkeypatch.setattr(cr, "_http_get", fake)
@@ -153,6 +158,7 @@ def test_validate_anthropic_compat_probes_own_host_v1_models(monkeypatch):
     assert seen["url"] == "https://api.minimaxi.com/anthropic/v1/models"
     assert seen["headers"].get("x-api-key") == "k"
     assert "anthropic-version" in seen["headers"]
+    assert seen["configured_url"] == "https://api.minimaxi.com/anthropic"
 
 
 def test_validate_anthropic_compat_rejects_bad_key(monkeypatch):
@@ -208,12 +214,35 @@ class _FakeResp:
         self.text = text
 
 
-def test_validate_layer2_model_unavailable(monkeypatch):
-    import httpx
-    monkeypatch.setattr(st, "_resolve_base_url", lambda pid: "https://openrouter.ai/api/v1")
+class _FakeClient:
+    def __init__(self, response):
+        self.response = response
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def post(self, *_args, **_kwargs):
+        return self.response
+
+
+def _patch_layer2(monkeypatch, response):
+    from openprogram.security import safe_http
+
     monkeypatch.setattr(
-        httpx, "post",
-        lambda url, **kw: _FakeResp(503, '{"error":{"message":"no healthy upstream"}}'),
+        safe_http,
+        "configured_safe_client",
+        lambda consumer, _base: _FakeClient(response),
+    )
+
+
+def test_validate_layer2_model_unavailable(monkeypatch):
+    monkeypatch.setattr(st, "_resolve_base_url", lambda pid: "https://openrouter.ai/api/v1")
+    _patch_layer2(
+        monkeypatch,
+        _FakeResp(503, '{"error":{"message":"no healthy upstream"}}'),
     )
     r = cr.validate_credential("openrouter", model="x/y:free", api_key="k", use_cache=False)
     # key authenticated, that one model is just down right now
@@ -221,9 +250,8 @@ def test_validate_layer2_model_unavailable(monkeypatch):
 
 
 def test_validate_layer2_ok(monkeypatch):
-    import httpx
     monkeypatch.setattr(st, "_resolve_base_url", lambda pid: "https://api.example/v1")
-    monkeypatch.setattr(httpx, "post", lambda url, **kw: _FakeResp(200, '{"choices":[]}'))
+    _patch_layer2(monkeypatch, _FakeResp(200, '{"choices":[]}'))
     r = cr.validate_credential("deepseek", model="deepseek-chat", api_key="k", use_cache=False)
     assert r.status == cr.VALID and r.model == "deepseek-chat"
 

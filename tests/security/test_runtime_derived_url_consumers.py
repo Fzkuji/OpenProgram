@@ -598,27 +598,14 @@ def test_image_result_http_error_traceback_does_not_retain_signed_url(
     assert "QUERY-SECRET" not in rendered
 
 
-class _GeminiAPIResponse:
-    headers: dict[str, str] = {}
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        return None
-
-    def read(self) -> bytes:
-        return json.dumps(
-            {"candidates": [{"content": {"parts": [{"text": "seen"}]}}]}
-        ).encode()
-
-
 def test_gemini_url_image_ingestion_uses_managed_fetch(
     server: _Server, managed_clients, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(gemini.GeminiVisionProvider, "_resolve_key", lambda _self: "k")
     monkeypatch.setattr(
-        gemini.urllib.request, "urlopen", lambda *_a, **_k: _GeminiAPIResponse()
+        gemini,
+        "post_json",
+        lambda *_a, **_k: {"candidates": [{"content": {"parts": [{"text": "seen"}]}}]},
     )
 
     result = gemini.GeminiVisionProvider().analyze(

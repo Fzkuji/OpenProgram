@@ -10,10 +10,9 @@ without an extra normalisation step.
 """
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.request
 from typing import Optional
+
+from openprogram.security import safe_http
 
 
 HTTP_TIMEOUT = 5.0
@@ -37,17 +36,17 @@ def latest_release_tag(
     """
     url = _release_url(owner, repo)
     try:
-        req = urllib.request.Request(
-            url,
-            headers={
+        with safe_http.safe_client("updater.github") as client:
+            response = client.get(
+                url,
+                headers={
                 "User-Agent": "openprogram-updater",
                 "Accept": "application/vnd.github+json",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
-        return None
+                },
+                timeout=HTTP_TIMEOUT,
+            )
+            response.raise_for_status()
+            payload = response.json()
     except Exception:
         return None
     tag = payload.get("tag_name")
@@ -68,15 +67,17 @@ def asset_for(
     """
     url = _release_url(owner, repo)
     try:
-        req = urllib.request.Request(
-            url,
-            headers={
+        with safe_http.safe_client("updater.github") as client:
+            response = client.get(
+                url,
+                headers={
                 "User-Agent": "openprogram-updater",
                 "Accept": "application/vnd.github+json",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
+                },
+                timeout=HTTP_TIMEOUT,
+            )
+            response.raise_for_status()
+            payload = response.json()
     except Exception:
         return None
     for asset in payload.get("assets") or []:

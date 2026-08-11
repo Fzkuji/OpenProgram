@@ -15,6 +15,8 @@ import threading
 import time
 from typing import Any
 
+from openprogram.security import safe_http
+
 
 _CATALOGUE_URL = "https://models.dev/api.json"
 _TTL_SECONDS = 3600  # 1 hour on success
@@ -45,11 +47,12 @@ def _load() -> dict[str, Any]:
         elif data is not None:  # empty/failed result — short retry window
             if time.time() - _cache["fetched_at"] < _FAIL_TTL_SECONDS:
                 return data
-        import httpx
         try:
-            r = httpx.get(_CATALOGUE_URL, timeout=10)
-            r.raise_for_status()
-            data = r.json()
+            with safe_http.safe_client("webui.model_listing.fixed") as client:
+                response = client.get(_CATALOGUE_URL, timeout=10)
+                response.raise_for_status()
+                safe_http.require_json_mime(response)
+                data = response.json()
             if not isinstance(data, dict):
                 data = {}
         except Exception:

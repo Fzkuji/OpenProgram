@@ -160,22 +160,28 @@ def _is_no_balance(status: int, body: str) -> bool:
     )
 
 
-def _short(body: str | None, n: int = 200) -> str:
-    return (body or "")[:n]
-
-
 # auth-only HTTP probe
 def _http_get(
     url: str, *, headers: dict | None = None, params: dict | None = None,
-    timeout: float = 15.0,
+    timeout: float = 15.0, configured_url: str | None = None,
 ) -> tuple[int, str, int] | None:
     """``(status, body, latency_ms)`` or ``None`` on a transport error."""
-    import httpx
+    from openprogram.security import safe_http
 
     t0 = time.time()
     try:
-        r = httpx.get(url, headers=headers or {}, params=params or {}, timeout=timeout)
-    except httpx.RequestError:
+        client = (
+            safe_http.configured_safe_client(
+                "webui.model_listing.configured", configured_url
+            )
+            if configured_url is not None
+            else safe_http.safe_client("webui.model_listing.fixed")
+        )
+        with client:
+            r = client.get(
+                url, headers=headers or {}, params=params or {}, timeout=timeout
+            )
+    except Exception:
         return None
     return (r.status_code, r.text, int((time.time() - t0) * 1000))
 
@@ -212,7 +218,7 @@ def _interpret(
     if status in (401, 403):
         return _result(provider_id, INVALID_CREDENTIAL, kind=kind, via=via,
                        http_status=status, latency_ms=latency,
-                       detail=f"Key rejected (HTTP {status}). Re-check the key or re-login. {_short(body)}".strip())
+                       detail=f"Key rejected (HTTP {status}). Re-check the key or re-login.")
     if _is_no_balance(status, body):
         return _result(provider_id, VALID_NO_BALANCE, kind=kind, via=via,
                        http_status=status, latency_ms=latency,
@@ -220,7 +226,7 @@ def _interpret(
     # 404/400/5xx on the *auth* endpoint is ambiguous for key validity — don't
     # brand the key bad; report unknown so a save still succeeds.
     return _result(provider_id, UNKNOWN, kind=kind, via=via, http_status=status,
-                   latency_ms=latency, detail=f"HTTP {status}: {_short(body)}")
+                   latency_ms=latency, detail=f"HTTP {status}.")
 
 
 def _layer1_probe(provider_id: str, kind: str, api_key: str, base: str | None,
@@ -228,7 +234,8 @@ def _layer1_probe(provider_id: str, kind: str, api_key: str, base: str | None,
     """Model-independent auth probe — the canonical "is THIS KEY valid"."""
     if kind == "openrouter_key":
         res = _http_get(base.rstrip("/") + "/key",
-                        headers={"Authorization": f"Bearer {api_key}"}, timeout=timeout)
+                        headers={"Authorization": f"Bearer {api_key}"}, timeout=timeout,
+                        configured_url=base)
         return _interpret(provider_id, kind, res, via="GET /key", balance_body=True)
     if kind == "anthropic_native":
         res = _http_get("https://api.anthropic.com/v1/models",
@@ -242,7 +249,7 @@ def _layer1_probe(provider_id: str, kind: str, api_key: str, base: str | None,
         # an inference call.
         res = _http_get(base.rstrip("/") + "/v1/models",
                         headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
-                        timeout=timeout)
+                        timeout=timeout, configured_url=base)
         return _interpret(provider_id, kind, res, via="GET /v1/models")
     if kind == "google_query":
         res = _http_get("https://generativelanguage.googleapis.com/v1beta/models",
@@ -250,7 +257,8 @@ def _layer1_probe(provider_id: str, kind: str, api_key: str, base: str | None,
         return _interpret(provider_id, kind, res, via="GET /v1beta/models")
     # openai_bearer (default)
     res = _http_get(base.rstrip("/") + "/models",
-                    headers={"Authorization": f"Bearer {api_key}"}, timeout=timeout)
+                    headers={"Authorization": f"Bearer {api_key}"}, timeout=timeout,
+                    configured_url=base)
     return _interpret(provider_id, kind, res, via="GET /models")
 
 
@@ -263,15 +271,22 @@ def _layer2_ping(provider_id: str, kind: str, api_key: str, base: str | None,
         r = _layer1_probe(provider_id, kind, api_key, base, timeout)
         return dataclasses.replace(r, model=model)
 
-    import httpx
+    from openprogram.security import safe_http
     url = base.rstrip("/") + "/chat/completions"
     body = {"model": model, "messages": [{"role": "user", "content": "PING"}], "max_tokens": 4}
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
     t0 = time.time()
     try:
-        r = httpx.post(url, headers=headers, json=body, timeout=timeout)
-    except httpx.RequestError as e:
-        return _result(provider_id, UNKNOWN, kind=kind, model=model, detail=f"Request failed: {e}")
+        with safe_http.configured_safe_client(
+            "webui.model_listing.configured", base
+        ) as client:
+            r = client.post(url, headers=headers, json=body, timeout=timeout)
+    except Exception as e:
+        from openprogram.security.url_policy import normalize_origin
+        return _result(
+            provider_id, UNKNOWN, kind=kind, model=model,
+            detail=f"Request failed: {type(e).__name__} for {normalize_origin(url)}",
+        )
     latency = int((time.time() - t0) * 1000)
     status, text = r.status_code, r.text
     if status == 200:
@@ -282,16 +297,16 @@ def _layer2_ping(provider_id: str, kind: str, api_key: str, base: str | None,
                        via="POST /chat/completions", http_status=status, latency_ms=latency,
                        model=model,
                        detail=(f"Key authenticated. Model {model} is unavailable right now "
-                               f"(HTTP {status}: {_short(text)})."))
+                               f"(HTTP {status})."))
     if status in (401, 403):
         return _result(provider_id, INVALID_CREDENTIAL, kind=kind, http_status=status,
-                       latency_ms=latency, model=model, detail=f"HTTP {status}: {_short(text)}")
+                       latency_ms=latency, model=model, detail=f"HTTP {status}.")
     if _is_no_balance(status, text):
         return _result(provider_id, VALID_NO_BALANCE, kind=kind, http_status=status,
                        latency_ms=latency, model=model,
                        detail="Key works — account has no balance/credits.")
     return _result(provider_id, INVALID_CREDENTIAL, kind=kind, http_status=status,
-                   latency_ms=latency, model=model, detail=f"HTTP {status}: {_short(text)}")
+                   latency_ms=latency, model=model, detail=f"HTTP {status}.")
 
 
 def _oauth_check(provider_id: str, kind: str) -> CredentialResult:

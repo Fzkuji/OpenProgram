@@ -9,12 +9,10 @@ Docs: https://docs.tavily.com/docs/rest-api/api-reference
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 
+from .._http import post_json
 from ..registry import SearchResult
 
 
@@ -35,7 +33,7 @@ class TavilyProvider:
         key = os.environ.get("TAVILY_API_KEY", "")
         if not key:
             raise RuntimeError("TAVILY_API_KEY not set")
-        payload = json.dumps({
+        payload = {
             "api_key": key,
             "query": query,
             "max_results": max(1, min(int(num_results), 20)),
@@ -44,21 +42,14 @@ class TavilyProvider:
             # web_fetch a URL if they need more body.
             "search_depth": "basic",
             "include_answer": False,
-        }).encode("utf-8")
-        req = urllib.request.Request(
+        }
+        data = post_json(
             API_URL,
-            data=payload,
+            body=payload,
             headers={"Content-Type": "application/json"},
+            timeout=TIMEOUT,
+            provider_label="Tavily",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"Tavily HTTP {e.code}: {body}") from e
         results: list[SearchResult] = []
         for r in data.get("results", []):
             results.append(SearchResult(

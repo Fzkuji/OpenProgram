@@ -74,6 +74,28 @@ def _one_shot_client(cfg: MCPServerConfig, sandbox_cwd: str):
     return MCPClient(cfg, force_sandbox=True, sandbox_cwd=sandbox_cwd)
 
 
+async def _fetch_catalog_json(url: str):
+    from openprogram.security import safe_http
+    from openprogram.security.url_policy import normalize_origin
+
+    try:
+        async with safe_http.configured_safe_async_client(
+            "webui.mcp.catalog", url
+        ) as client:
+            response = await client.get(url, timeout=15.0)
+            if response.status_code >= 400:
+                raise RuntimeError(
+                    f"HTTP {response.status_code} for {normalize_origin(url)}"
+                )
+            safe_http.require_json_mime(response)
+            return response.json()
+    except Exception as e:
+        detail = f"{type(e).__name__} for {normalize_origin(url)}"
+        if isinstance(e, RuntimeError) and str(e).startswith("HTTP "):
+            detail = str(e)
+        raise RuntimeError(detail) from None
+
+
 def register(app: FastAPI) -> None:
     @app.get("/api/mcp/servers")
     async def list_servers():
@@ -232,7 +254,6 @@ def register(app: FastAPI) -> None:
         any locally-installed server — handy for a global "any
         updates?" check at startup.
         """
-        import httpx
         from openprogram.mcp.config import (
             catalog_entry_hash,
             config_to_catalog_dict,
@@ -275,22 +296,21 @@ def register(app: FastAPI) -> None:
             ]
 
         for cat_url in targets:
+            from openprogram.security.url_policy import normalize_origin
+            safe_catalog = normalize_origin(cat_url)
             try:
-                async with httpx.AsyncClient(timeout=15.0) as cx:
-                    resp = await cx.get(cat_url, follow_redirects=True)
-                    resp.raise_for_status()
-                    data = resp.json()
+                data = await _fetch_catalog_json(cat_url)
             except Exception as e:  # noqa: BLE001
-                result["catalog_errors"][cat_url] = (
+                result["catalog_errors"][safe_catalog] = (
                     f"{type(e).__name__}: {e}"
                 )
                 continue
             if not isinstance(data, dict):
-                result["catalog_errors"][cat_url] = "root is not an object"
+                result["catalog_errors"][safe_catalog] = "root is not an object"
                 continue
             raw_servers = data.get("servers") or []
             if not isinstance(raw_servers, list):
-                result["catalog_errors"][cat_url] = "servers is not a list"
+                result["catalog_errors"][safe_catalog] = "servers is not a list"
                 continue
 
             # Index catalog entries by name + compute their hashes.
@@ -355,7 +375,6 @@ def register(app: FastAPI) -> None:
             load_configs,
             save_configs,
         )
-        import httpx
 
         all_cfgs = load_configs(include_disabled=True)
         match = next((c for c in all_cfgs if c.name == name), None)
@@ -370,11 +389,7 @@ def register(app: FastAPI) -> None:
                         f"installed servers."))
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as cx:
-                resp = await cx.get(match.source_catalog_url,
-                                     follow_redirects=True)
-                resp.raise_for_status()
-                data = resp.json()
+            data = await _fetch_catalog_json(match.source_catalog_url)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=502,
                                 detail=f"catalog fetch failed: {e}")
@@ -507,15 +522,8 @@ def register(app: FastAPI) -> None:
                 status_code=400,
                 detail="url must be an http(s) URL",
             )
-        import httpx
         try:
-            async with httpx.AsyncClient(timeout=15.0) as cx:
-                resp = await cx.get(url, follow_redirects=True)
-                resp.raise_for_status()
-                data = resp.json()
-        except httpx.HTTPError as e:
-            raise HTTPException(status_code=502,
-                                detail=f"catalog fetch failed: {e}")
+            data = await _fetch_catalog_json(url)
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=502,
                                 detail=f"catalog parse failed: {type(e).__name__}: {e}")

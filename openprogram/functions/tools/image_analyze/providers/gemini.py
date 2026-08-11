@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
 
 import httpx
 
+from openprogram.functions.tools.web_search._http import post_json
 from openprogram.security.safe_http import safe_client
 from openprogram.security.url_policy import normalize_origin
 
@@ -67,20 +65,14 @@ class GeminiVisionProvider:
 
         url = f"{API_BASE}/{mdl}:generateContent?key={key}"
         payload = {"contents": [{"parts": parts}]}
-        req = urllib.request.Request(
+        data = post_json(
             url,
-            data=json.dumps(payload).encode("utf-8"),
+            body=payload,
             headers={"Content-Type": "application/json"},
+            timeout=TIMEOUT,
+            provider_label="Gemini vision",
+            consumer="tool.image_api.fixed",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"Gemini vision HTTP {e.code}: {body}") from e
 
         candidates = data.get("candidates") or []
         if not candidates:

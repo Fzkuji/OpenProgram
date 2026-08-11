@@ -16,13 +16,11 @@ Signup: https://platform.minimax.io/user-center/basic-information/interface-key
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
 import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 
+from .._http import post_json
 from ..registry import SearchResult
 
 
@@ -72,25 +70,15 @@ class MiniMaxProvider:
                 "MINIMAX_CODING_API_KEY, or MINIMAX_API_KEY in the environment."
             )
         endpoint = _resolve_endpoint()
-        payload = json.dumps({"q": query}).encode("utf-8")
-        req = urllib.request.Request(
+        data = post_json(
             endpoint,
-            data=payload,
+            body={"q": query},
             headers={
                 "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-            },
+            }, timeout=TIMEOUT, provider_label="MiniMax",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"MiniMax HTTP {e.code}: {body}") from e
 
         # MiniMax returns a base_resp envelope even on HTTP 200.
         base_resp = data.get("base_resp") or {}

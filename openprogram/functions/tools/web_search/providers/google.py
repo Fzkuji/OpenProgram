@@ -10,13 +10,10 @@ Docs: https://developers.google.com/custom-search/v1/overview
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 
+from .._http import get_json
 from ..registry import SearchResult
 
 
@@ -45,26 +42,17 @@ class GoogleProvider:
         # PSE's `num` is 1-10 per page; for >10 we'd need pagination
         # via `start`. Keep this simple and cap at 10 — agents that
         # need more should run the query twice.
-        params = urllib.parse.urlencode({
+        params = {
             "key": key,
             "cx": cx,
             "q": query,
             "num": max(1, min(int(num_results), 10)),
             "safe": "off",
-        })
-        req = urllib.request.Request(
-            f"{API_URL}?{params}",
-            headers={"Accept": "application/json"},
+        }
+        data = get_json(
+            API_URL, params=params, headers={"Accept": "application/json"},
+            timeout=TIMEOUT, provider_label="Google PSE",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"Google PSE HTTP {e.code}: {body}") from e
         results: list[SearchResult] = []
         for r in data.get("items", []) or []:
             results.append(SearchResult(

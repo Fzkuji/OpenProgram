@@ -6,7 +6,7 @@ success for the full hour (or the community-provider tier vanishes
 until the TTL expires), and a good fetch must surface as tier-2 rows
 in ``list_providers()``.
 
-No network: httpx.get is stubbed at the seam models_dev binds it.
+No network: the registry-keyed safe client is stubbed at the seam models_dev binds.
 """
 from __future__ import annotations
 
@@ -34,12 +34,35 @@ def _reset_cache(tmp_path, monkeypatch):
 class _Resp:
     def __init__(self, payload):
         self._payload = payload
+        self.headers = {"content-type": "application/json"}
 
     def raise_for_status(self):
         pass
 
     def json(self):
         return self._payload
+
+
+class _Client:
+    def __init__(self, get):
+        self._get = get
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def get(self, url, **kwargs):
+        return self._get(url, **kwargs)
+
+
+def _patch_safe_get(monkeypatch, get):
+    def factory(consumer):
+        assert consumer == "webui.model_listing.fixed"
+        return _Client(get)
+
+    monkeypatch.setattr(md.safe_http, "safe_client", factory)
 
 
 def test_empty_fetch_not_cached_as_success(monkeypatch):
@@ -54,9 +77,7 @@ def test_empty_fetch_not_cached_as_success(monkeypatch):
             raise RuntimeError("network down")  # first fetch fails
         return _Resp({"openrouter": {"models": {"x": {}}}})
 
-    # httpx is imported lazily inside _load; patch the real module attr.
-    import httpx
-    monkeypatch.setattr(httpx, "get", _get)
+    _patch_safe_get(monkeypatch, _get)
 
     assert md._load() == {}  # failure → empty
     assert md.list_providers() == []
@@ -76,8 +97,7 @@ def test_success_cached_for_full_ttl(monkeypatch):
         calls["n"] += 1
         return _Resp({"openrouter": {"models": {"x": {}}}})
 
-    import httpx
-    monkeypatch.setattr(httpx, "get", _get)
+    _patch_safe_get(monkeypatch, _get)
 
     assert "openrouter" in md._load()
     # A non-expired success is served from cache — no second fetch.
@@ -96,8 +116,7 @@ def test_tier2_providers_appear_in_list_providers(monkeypatch):
             "togetherai": {"name": "Together", "models": {"m1": {}}},
         })
 
-    import httpx
-    monkeypatch.setattr(httpx, "get", _get)
+    _patch_safe_get(monkeypatch, _get)
     monkeypatch.setattr(st, "_read_providers_cfg", lambda: {})
 
     ids = {p["id"] for p in listing.list_providers()}
@@ -120,8 +139,7 @@ def test_failed_fetch_falls_back_to_disk_cache(monkeypatch, tmp_path):
     def _get(url, timeout=10):
         raise RuntimeError("network down")
 
-    import httpx
-    monkeypatch.setattr(httpx, "get", _get)
+    _patch_safe_get(monkeypatch, _get)
 
     data = md._load()
     assert data and "openrouter" in data

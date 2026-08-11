@@ -20,26 +20,24 @@ message format) can still branch on it.
 
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.parse
-import urllib.request
 from typing import Any
+
+import httpx
+
+from openprogram.security import safe_http
+from openprogram.security.url_policy import normalize_origin
 
 
 class ProviderHTTPError(RuntimeError):
-    """HTTP error from a search provider — wraps the upstream status +
-    body so the agent sees what the API actually said. Use the helpers
-    below instead of catching ``urllib.error.HTTPError`` directly.
-    """
+    """HTTP error reduced to a stable status and normalized origin."""
 
-    def __init__(self, provider_label: str, status: int, body: str) -> None:
+    def __init__(self, provider_label: str, status: int, url: str) -> None:
         self.provider = provider_label
         self.status = status
-        self.body = body
-        # Truncate the body in the str() so the agent prompt doesn't
-        # balloon when a provider returns a 1MB HTML error page.
-        super().__init__(f"{provider_label} HTTP {status}: {body[:300]}")
+        self.body = ""
+        super().__init__(
+            f"{provider_label} HTTP {status} for {normalize_origin(url)}"
+        )
 
 
 def get_json(
@@ -49,18 +47,24 @@ def get_json(
     params: dict[str, Any] | None = None,
     timeout: float = 20.0,
     provider_label: str = "provider",
+    configured_url: str | None = None,
+    consumer: str = "tool.web_search.fixed_api",
 ) -> Any:
     """GET ``url`` with optional query params + headers, parse JSON.
 
-    Raises ``ProviderHTTPError`` on non-2xx with the upstream body
-    included. Network-level failures (DNS, connection refused, …) get
-    re-raised as ``RuntimeError`` with the same provider label.
+    Raises ``ProviderHTTPError`` on non-2xx. Network failures are reduced to
+    their stable exception type and normalized origin.
     """
-    if params:
-        sep = "&" if ("?" in url) else "?"
-        url = f"{url}{sep}{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(url, headers=headers or {})
-    return _execute(req, timeout=timeout, provider_label=provider_label)
+    return _execute(
+        "GET",
+        url,
+        headers=headers,
+        params=params,
+        timeout=timeout,
+        provider_label=provider_label,
+        configured_url=configured_url,
+        consumer=consumer,
+    )
 
 
 def post_json(
@@ -70,19 +74,24 @@ def post_json(
     body: dict[str, Any] | None = None,
     timeout: float = 20.0,
     provider_label: str = "provider",
+    configured_url: str | None = None,
+    consumer: str = "tool.web_search.fixed_api",
 ) -> Any:
     """POST ``url`` with a JSON body, parse the JSON response.
 
     Auto-sets ``Content-Type: application/json`` when ``body`` is given
     and the caller didn't already provide one.
     """
-    headers = dict(headers or {})
-    data = None
-    if body is not None:
-        data = json.dumps(body).encode("utf-8")
-        headers.setdefault("Content-Type", "application/json")
-    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    return _execute(req, timeout=timeout, provider_label=provider_label)
+    return _execute(
+        "POST",
+        url,
+        headers=headers,
+        json=body,
+        timeout=timeout,
+        provider_label=provider_label,
+        configured_url=configured_url,
+        consumer=consumer,
+    )
 
 
 def get_bytes(
@@ -97,36 +106,63 @@ def get_bytes(
     return XML / RSS / Atom (ArXiv) rather than JSON. Same error-
     unwrapping semantics as ``get_json``.
     """
-    if params:
-        sep = "&" if ("?" in url) else "?"
-        url = f"{url}{sep}{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(url, headers=headers or {})
+    client = safe_http.safe_client("tool.web_search.fixed_api")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read()
-    except urllib.error.HTTPError as e:
-        raise ProviderHTTPError(provider_label, e.code, _safe_body(e)) from e
+        with client:
+            response = client.get(
+                url, headers=headers or {}, params=params, timeout=timeout
+            )
+            _raise_status(response, provider_label)
+            return response.content
+    except httpx.RequestError as exc:
+        raise _safe_request_error(provider_label, url, exc) from None
 
 
 def _execute(
-    req: urllib.request.Request,
+    method: str,
+    url: str,
     *,
+    headers: dict[str, str] | None,
     timeout: float,
     provider_label: str,
+    configured_url: str | None,
+    consumer: str,
+    **kwargs,
 ) -> Any:
+    client = (
+        safe_http.configured_safe_client(
+            "tool.web_search.configured_api", configured_url
+        )
+        if configured_url is not None
+        else safe_http.safe_client(consumer)
+    )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
-    except urllib.error.HTTPError as e:
-        raise ProviderHTTPError(provider_label, e.code, _safe_body(e)) from e
-    if not raw:
+        with client:
+            send = client.get if method == "GET" else client.post
+            response = send(url, headers=headers or {}, timeout=timeout, **kwargs)
+            _raise_status(response, provider_label)
+    except httpx.RequestError as exc:
+        raise _safe_request_error(provider_label, url, exc) from None
+    if not response.content:
         return None
-    return json.loads(raw.decode("utf-8"))
-
-
-def _safe_body(e: urllib.error.HTTPError) -> str:
-    """Best-effort decode of an HTTPError's body without raising."""
     try:
-        return e.read().decode("utf-8", errors="replace")
-    except Exception:
-        return str(e)
+        return response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            f"{provider_label} {type(exc).__name__} for {normalize_origin(url)}"
+        ) from None
+
+
+def _raise_status(response: httpx.Response, provider_label: str) -> None:
+    if response.status_code >= 400:
+        raise ProviderHTTPError(
+            provider_label, response.status_code, str(response.url)
+        )
+
+
+def _safe_request_error(
+    provider_label: str, url: str, exc: httpx.RequestError
+) -> RuntimeError:
+    return RuntimeError(
+        f"{provider_label} {type(exc).__name__} for {normalize_origin(url)}"
+    )

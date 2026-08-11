@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import os
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
+
+from openprogram.functions.tools.web_search._http import post_json
 
 from .._encode import read_b64, sniff_mime
 from ..registry import ImageInput
@@ -73,24 +72,16 @@ class AnthropicVisionProvider:
             "max_tokens": 1024,
             "messages": [{"role": "user", "content": content}],
         }
-        req = urllib.request.Request(
+        data = post_json(
             API_URL,
-            data=json.dumps(payload).encode("utf-8"),
+            body=payload,
             headers={
                 "Content-Type": "application/json",
                 "x-api-key": key,
                 "anthropic-version": "2023-06-01",
-            },
+            }, timeout=TIMEOUT, provider_label="Anthropic vision",
+            consumer="tool.image_api.fixed",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            try:
-                body = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                body = str(e)
-            raise RuntimeError(f"Anthropic vision HTTP {e.code}: {body}") from e
 
         parts = data.get("content") or []
         # Concatenate any text parts in case Claude returned multiple.
