@@ -38,22 +38,24 @@ class ApiProvider(Protocol):
 
 
 @dataclass(frozen=True)
-class _ApiProviderEntry:
-    provider: ApiProvider
+class ApiProviderSnapshot:
+    """One atomic, immutable view of a registered provider contract."""
+
+    provider: ApiProvider | None
     structured_output: StructuredOutputCapabilities
 
 
 # One registry entry owns both the provider and its verified capabilities.
-_registry: dict[str, _ApiProviderEntry | ApiProvider] = {}
-_original_registry: dict[str, _ApiProviderEntry | ApiProvider] = {}
+_registry: dict[str, ApiProviderSnapshot | ApiProvider] = {}
+_original_registry: dict[str, ApiProviderSnapshot | ApiProvider] = {}
 _provider_transform: Callable[[str, ApiProvider], ApiProvider] | None = None
 _registry_lock = threading.RLock()
 
 
-def _entry(value: _ApiProviderEntry | ApiProvider) -> _ApiProviderEntry:
-    if isinstance(value, _ApiProviderEntry):
+def _entry(value: ApiProviderSnapshot | ApiProvider) -> ApiProviderSnapshot:
+    if isinstance(value, ApiProviderSnapshot):
         return value
-    return _ApiProviderEntry(value, StructuredOutputCapabilities())
+    return ApiProviderSnapshot(value, StructuredOutputCapabilities())
 
 
 def register_api_provider(
@@ -63,7 +65,7 @@ def register_api_provider(
 ) -> None:
     """Register an API provider implementation."""
     with _registry_lock:
-        original = _ApiProviderEntry(
+        original = ApiProviderSnapshot(
             provider,
             structured_output or StructuredOutputCapabilities(),
         )
@@ -71,36 +73,52 @@ def register_api_provider(
         registered = (
             _provider_transform(api, provider) if _provider_transform is not None else provider
         )
-        _registry[api] = _ApiProviderEntry(registered, original.structured_output)
+        _registry[api] = ApiProviderSnapshot(registered, original.structured_output)
+
+
+def get_api_provider_snapshot(api: Api) -> ApiProviderSnapshot | None:
+    """Atomically capture a provider and the capabilities registered with it."""
+    with _registry_lock:
+        value = _registry.get(api)
+        return _entry(value) if value is not None else None
 
 
 def get_api_provider(api: Api) -> ApiProvider | None:
     """Get a registered API provider."""
-    with _registry_lock:
-        value = _registry.get(api)
-        return _entry(value).provider if value is not None else None
+    snapshot = get_api_provider_snapshot(api)
+    return snapshot.provider if snapshot is not None else None
 
 
 def get_structured_output_capabilities(api: Api) -> StructuredOutputCapabilities:
     """Return verified API capabilities, defaulting to fail-closed unknown."""
-    with _registry_lock:
-        value = _registry.get(api)
-        if value is None:
-            return StructuredOutputCapabilities()
-        return _entry(value).structured_output
+    snapshot = get_api_provider_snapshot(api)
+    if snapshot is None:
+        return StructuredOutputCapabilities()
+    return snapshot.structured_output
+
+
+def resolve_api_provider_snapshot(model: Model) -> ApiProviderSnapshot:
+    """Capture the concrete adapter contract used for one request."""
+    if model.provider == "callable" and model.api == "completion":
+        return ApiProviderSnapshot(
+            None,
+            StructuredOutputCapabilities(
+                native="supported",
+                dialect="callable",
+                streaming=True,
+                with_tools=False,
+                schema_profile="none",
+            ),
+        )
+    return get_api_provider_snapshot(model.api) or ApiProviderSnapshot(
+        None,
+        StructuredOutputCapabilities(),
+    )
 
 
 def resolve_structured_output_capabilities(model: Model) -> StructuredOutputCapabilities:
     """Resolve the capability contract for the concrete adapter model."""
-    if model.provider == "callable" and model.api == "completion":
-        return StructuredOutputCapabilities(
-            native="supported",
-            dialect="callable",
-            streaming=True,
-            with_tools=False,
-            schema_profile="none",
-        )
-    return get_structured_output_capabilities(model.api)
+    return resolve_api_provider_snapshot(model).structured_output
 
 
 def configure_provider_transform(
@@ -116,7 +134,7 @@ def configure_provider_transform(
         transformed = {}
         for api, value in _original_registry.items():
             original = _entry(value)
-            transformed[api] = _ApiProviderEntry(
+            transformed[api] = ApiProviderSnapshot(
                 transform(api, original.provider),
                 original.structured_output,
             )

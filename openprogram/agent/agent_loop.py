@@ -12,7 +12,6 @@ import time
 from dataclasses import replace
 from typing import Any, AsyncGenerator
 
-from openprogram.providers import stream_simple as _default_stream_simple
 from openprogram.providers.types import (
     AssistantMessage,
     Context,
@@ -243,14 +242,16 @@ async def _run_loop(
     if config.get_steering_messages:
         pending_messages = await config.get_steering_messages()
 
+    from openprogram.providers.api_registry import resolve_api_provider_snapshot
+
+    provider_snapshot = resolve_api_provider_snapshot(config.model)
     structured_plan = None
     if config.response_format is not None:
-        from openprogram.providers.api_registry import resolve_structured_output_capabilities
         from openprogram.providers.structured_output import negotiate_structured_output
 
         structured_plan = negotiate_structured_output(
             config.model,
-            resolve_structured_output_capabilities(config.model),
+            provider_snapshot.structured_output,
             config.response_format,
             list(current_context.tools or []),
             tool_choice=config.tool_choice,
@@ -320,6 +321,7 @@ async def _run_loop(
                 ev_stream,
                 stream_fn,
                 structured_plan,
+                provider_snapshot,
             )
             new_messages.append(message)
 
@@ -420,6 +422,7 @@ async def _stream_assistant_response(
     ev_stream: EventStream[AgentEvent, list[AgentMessage]],
     stream_fn: StreamFn | None,
     structured_plan: Any | None = None,
+    provider_snapshot: Any | None = None,
 ) -> AssistantMessage:
     """
     Stream an assistant response from the LLM.
@@ -495,7 +498,7 @@ async def _stream_assistant_response(
         tools=_provider_tools,
     )
 
-    fn = stream_fn or _default_stream_simple
+    fn = stream_fn
 
     # Provider/model failover — ON by default, conservatively.
     # resolve_fallback_models() defaults to the user's other enabled models of
@@ -506,6 +509,21 @@ async def _stream_assistant_response(
     # default fn is wrapped (a caller-supplied stream_fn is left untouched);
     # wrapped in try/except so failover can never break the normal path.
     if stream_fn is None:
+        from openprogram.providers.stream import stream_simple_with_provider
+
+        dispatch_snapshots = {id(config.model): provider_snapshot}
+
+        def snapshot_stream(candidate, candidate_context, candidate_options):
+            snapshot = dispatch_snapshots.get(id(candidate))
+            provider = snapshot.provider if snapshot is not None else None
+            return stream_simple_with_provider(
+                provider,
+                candidate,
+                candidate_context,
+                candidate_options,
+            )
+
+        fn = snapshot_stream
         try:
             from openprogram.providers.utils.failover import (
                 resolve_fallback_models,
@@ -513,17 +531,18 @@ async def _stream_assistant_response(
             )
             _fallbacks = resolve_fallback_models(config.model)
             if structured_plan is not None:
-                from openprogram.providers.api_registry import (
-                    resolve_structured_output_capabilities,
-                )
+                from openprogram.providers.api_registry import resolve_api_provider_snapshot
                 from openprogram.providers.structured_output import negotiate_structured_output
 
                 compatible = []
                 for fallback in _fallbacks:
+                    fallback_snapshot = resolve_api_provider_snapshot(fallback)
+                    if fallback_snapshot.provider is None:
+                        continue
                     try:
                         fallback_plan = negotiate_structured_output(
                             fallback,
-                            resolve_structured_output_capabilities(fallback),
+                            fallback_snapshot.structured_output,
                             config.response_format,
                             list(context.tools or []),
                             tool_choice=config.tool_choice,
@@ -536,11 +555,23 @@ async def _stream_assistant_response(
                         and fallback_plan.provider_schema == structured_plan.provider_schema
                     ):
                         compatible.append(fallback)
+                        dispatch_snapshots[id(fallback)] = fallback_snapshot
                 _fallbacks = compatible
+            else:
+                available = []
+                for fallback in _fallbacks:
+                    fallback_snapshot = resolve_api_provider_snapshot(fallback)
+                    if fallback_snapshot.provider is None:
+                        continue
+                    available.append(fallback)
+                    dispatch_snapshots[id(fallback)] = fallback_snapshot
+                _fallbacks = available
             if _fallbacks:
                 fn = failover_stream_fn(fn, _fallbacks)
         except Exception:
             pass
+
+    assert fn is not None
 
     # Resolve API key
     resolved_api_key = config.api_key

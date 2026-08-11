@@ -13,8 +13,11 @@ from openprogram.agent.types import (
     AgentTool,
     AgentToolResult,
 )
+from openprogram.providers import register_api_provider
+from openprogram.providers import api_registry
 from openprogram.providers.structured_output import (
     HIDDEN_SUBMIT_TOOL_NAME,
+    StructuredOutputCapabilities,
     StructuredOutputValidationError,
     normalize_response_format,
 )
@@ -274,45 +277,52 @@ def test_iteration_cap_without_hidden_submission_is_missing_submission():
 def test_cross_provider_unknown_fallback_never_receives_native_options(monkeypatch):
     import openprogram.providers.utils.failover as failover_module
 
-    loop_module = importlib.import_module("openprogram.agent.agent_loop")
+    monkeypatch.setattr(api_registry, "_registry", {})
+    monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_provider_transform", None)
+
+    primary_api = "cross-provider-primary-api"
+    fallback_api = "cross-provider-unknown-api"
 
     primary = Model(
         id="primary",
         name="Primary",
-        api="openai-completions",
-        provider="openai",
-        base_url="https://api.openai.com/v1",
+        api=primary_api,
+        provider="primary-provider",
+        base_url="https://example.invalid",
         structured_output=True,
     )
     unknown = Model(
         id="fallback",
         name="Fallback",
-        api="openai-completions",
-        provider="openrouter",
+        api=fallback_api,
+        provider="unknown-provider",
         base_url="https://example.invalid",
         structured_output=True,
     )
     calls = []
 
-    def base_stream(model, context, options):
-        calls.append((model.provider, options.response_format))
+    class Provider:
+        requires_credentials = False
 
-        async def events():
-            if model.provider == "openai":
+        def __init__(self, name):
+            self.name = name
+
+        def stream_simple(self, model, context, options):
+            calls.append((self.name, options.response_format))
+
+            async def events():
                 raise ConnectionError("primary unavailable")
-            message = AssistantMessage(
-                content=[TextContent(text='{"answer": 4}')],
-                api=model.api,
-                provider=model.provider,
-                model=model.id,
-                timestamp=1,
-            )
-            yield EventStart(partial=message)
-            yield EventDone(reason="stop", message=message)
+                yield
 
-        return events()
+            return events()
 
-    monkeypatch.setattr(loop_module, "_default_stream_simple", base_stream)
+    register_api_provider(
+        primary_api,
+        Provider("primary-native"),
+        StructuredOutputCapabilities(native="supported", schema_profile="none"),
+    )
+    register_api_provider(fallback_api, Provider("fallback-unknown"))
     monkeypatch.setattr(
         failover_module,
         "resolve_fallback_models",
@@ -330,7 +340,165 @@ def test_cross_provider_unknown_fallback_never_receives_native_options(monkeypat
     with pytest.raises(ConnectionError):
         asyncio.run(run())
 
-    assert [provider for provider, _options in calls] == ["openai"]
+    assert [provider for provider, _options in calls] == ["primary-native"]
+
+
+def test_registry_replacement_cannot_split_negotiation_from_dispatch(monkeypatch):
+    monkeypatch.setattr(api_registry, "_registry", {})
+    monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_provider_transform", None)
+    monkeypatch.setenv("OPENPROGRAM_FALLBACK_MODELS", "off")
+    calls = []
+
+    class Provider:
+        requires_credentials = False
+
+        def __init__(self, name):
+            self.name = name
+
+        def stream_simple(self, model, context, options):
+            calls.append((self.name, options.response_format))
+            message = AssistantMessage(
+                content=[TextContent(text='{"answer": 4}')],
+                api=model.api,
+                provider=model.provider,
+                model=model.id,
+                timestamp=1,
+            )
+
+            async def events():
+                yield EventStart(partial=message)
+                yield EventDone(reason="stop", message=message)
+
+            return events()
+
+    api = "replacement-race-api"
+    original = Provider("original-native")
+    replacement = Provider("replacement-unknown")
+    register_api_provider(
+        api,
+        original,
+        StructuredOutputCapabilities(native="supported", schema_profile="none"),
+    )
+
+    async def replace_after_negotiation(messages, _cancel_event):
+        register_api_provider(api, replacement)
+        return messages
+
+    model = Model(
+        id="race-model",
+        name="Race model",
+        api=api,
+        provider="race-provider",
+        base_url="https://example.invalid",
+        structured_output=True,
+    )
+
+    async def run():
+        stream = agent_loop(
+            [UserMessage(content="answer", timestamp=1)],
+            AgentContext(tools=[]),
+            _config(model=model, transform_context=replace_after_negotiation),
+        )
+        return await stream.result()
+
+    asyncio.run(run())
+
+    assert calls == [("original-native", _config().response_format)]
+
+
+def test_failover_candidate_dispatch_uses_its_negotiated_registry_snapshot(monkeypatch):
+    import openprogram.providers.utils.failover as failover_module
+
+    monkeypatch.setattr(api_registry, "_registry", {})
+    monkeypatch.setattr(api_registry, "_original_registry", {})
+    monkeypatch.setattr(api_registry, "_provider_transform", None)
+    calls = []
+
+    primary_api = "snapshot-primary-api"
+    fallback_api = "snapshot-fallback-api"
+
+    class Provider:
+        requires_credentials = False
+
+        def __init__(self, name, on_stream=None):
+            self.name = name
+            self.on_stream = on_stream
+
+        def stream_simple(self, model, context, options):
+            calls.append((self.name, options.response_format))
+            if self.on_stream is not None:
+                self.on_stream()
+
+            async def events():
+                if self.name == "primary-native":
+                    raise ConnectionError("primary unavailable")
+                message = AssistantMessage(
+                    content=[TextContent(text='{"answer": 4}')],
+                    api=model.api,
+                    provider=model.provider,
+                    model=model.id,
+                    timestamp=1,
+                )
+                yield EventStart(partial=message)
+                yield EventDone(reason="stop", message=message)
+
+            return events()
+
+    fallback_original = Provider("fallback-native")
+    fallback_replacement = Provider("fallback-unknown")
+
+    def replace_fallback():
+        register_api_provider(fallback_api, fallback_replacement)
+
+    capabilities = StructuredOutputCapabilities(
+        native="supported",
+        schema_profile="none",
+    )
+    register_api_provider(
+        primary_api,
+        Provider("primary-native", replace_fallback),
+        capabilities,
+    )
+    register_api_provider(fallback_api, fallback_original, capabilities)
+
+    primary = Model(
+        id="primary",
+        name="Primary",
+        api=primary_api,
+        provider="primary-provider",
+        base_url="https://example.invalid",
+        structured_output=True,
+    )
+    fallback = Model(
+        id="fallback",
+        name="Fallback",
+        api=fallback_api,
+        provider="fallback-provider",
+        base_url="https://example.invalid",
+        structured_output=True,
+    )
+    monkeypatch.setattr(
+        failover_module,
+        "resolve_fallback_models",
+        lambda _model: [fallback],
+    )
+
+    async def run():
+        stream = agent_loop(
+            [UserMessage(content="answer", timestamp=1)],
+            AgentContext(tools=[]),
+            _config(model=primary),
+        )
+        return await stream.result()
+
+    asyncio.run(run())
+
+    assert [name for name, _options in calls] == [
+        "primary-native",
+        "fallback-native",
+    ]
+    assert all(options is not None for _name, options in calls)
 
 
 def test_hidden_submission_is_validated_against_the_original_schema():
