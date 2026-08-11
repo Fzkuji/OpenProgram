@@ -191,6 +191,8 @@ def test_deny_rule_blocks_even_under_bypass():
                       permission_rules=PermissionRules(deny=["bash"]))
     result = _run(tool, req)
     assert _denied(result)
+    assert result.is_error is True
+    assert "is_error" not in result.details
     assert not ran["called"]
 
 
@@ -544,9 +546,9 @@ def test_sandbox_denial_emits_event_and_retries_under_escalated_policy(monkeypat
             return AgentToolResult(
                 content=[TextContent(text="Operation not permitted")],
                 details={
-                    "is_error": True,
                     "sandbox": {"kind": "denied", "backend": "seatbelt"},
                 },
+                is_error=True,
             )
         return AgentToolResult(
             content=[TextContent(text="exit_code=0")], details={"ok": True}
@@ -592,7 +594,7 @@ def test_ordinary_nonzero_tool_result_does_not_trigger_sandbox_approval(monkeypa
     async def _exec(call_id, args, cancel, on_update):
         return AgentToolResult(
             content=[TextContent(text="exit_code=1\nordinary failure")],
-            details={"is_error": True},
+            is_error=True,
         )
 
     async def _unexpected(**_kwargs):
@@ -609,7 +611,8 @@ def test_ordinary_nonzero_tool_result_does_not_trigger_sandbox_approval(monkeypa
     wrapped = _approval.wrap_with_approval(tool, req, on_event=lambda _e: None)
     monkeypatch.setattr(_approval, "await_user_approval", _unexpected)
     result = asyncio.run(wrapped.execute("c", {"command": "false"}, None, None))
-    assert result.details == {"is_error": True}
+    assert result.is_error is True
+    assert result.details is None
 
 
 # ── production install point ──

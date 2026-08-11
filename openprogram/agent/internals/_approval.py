@@ -223,7 +223,6 @@ def wrap_with_approval(
         authority_decision=None,
     ) -> "AgentToolResult":
         details = {
-            "is_error": True,
             "denied": True,
             "reason_code": reason_code,
         }
@@ -232,6 +231,7 @@ def wrap_with_approval(
         return AgentToolResult(
             content=[TextContent(text=text)],
             details=details,
+            is_error=True,
         )
 
     def _approval_authorized() -> bool:

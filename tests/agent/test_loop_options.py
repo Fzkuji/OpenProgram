@@ -21,6 +21,13 @@ from openprogram.providers.types import (
     EventStart,
     TextContent,
     ToolCall,
+    ToolResultMessage,
+)
+from openprogram.functions._runtime import (
+    ToolReturn,
+    function,
+    restore_registry,
+    snapshot_registry,
 )
 from openprogram.providers.structured_output import normalize_response_format
 from openprogram.agentic_programming.runtime import (
@@ -142,6 +149,45 @@ def test_defaults_leave_stream_opts_unset():
     opts = state["opts"][0]
     assert opts.tool_choice is None
     assert opts.parallel_tool_calls is None
+
+
+def test_runtime_typed_error_reaches_tool_result_message() -> None:
+    saved = snapshot_registry()
+    try:
+        @function(name="typed_failure_chain")
+        def typed_failure_chain() -> ToolReturn:
+            return ToolReturn(text="failed", is_error=True)
+
+        stream_fn, _state = _make_stream_fn([
+            _assistant([
+                ToolCall(
+                    id="typed-call",
+                    name="typed_failure_chain",
+                    arguments={},
+                )
+            ]),
+            _text_msg(),
+        ])
+        session = AgentSession(
+            model=_fake_model(),
+            tools=[typed_failure_chain],
+        )
+        session._agent.stream_fn = stream_fn
+
+        asyncio.run(session.run("go"))
+
+        messages = [
+            message
+            for message in session._agent.state.messages
+            if isinstance(message, ToolResultMessage)
+        ]
+        assert len(messages) == 1
+        assert messages[0].is_error is True
+        assert messages[0].details is None or (
+            "is_error" not in messages[0].details
+        )
+    finally:
+        restore_registry(saved)
 
 
 def test_response_format_reaches_stream_opts():

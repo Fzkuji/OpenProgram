@@ -75,12 +75,12 @@ def bash(command: str,
         return AgentToolResult(
             content=[TextContent(text=text)],
             details={
-                "is_error": True,
                 "sandbox": {
                     "kind": result.sandbox_error,
                     "backend": "seatbelt" if sys.platform == "darwin"
                     else "bubblewrap",
                 },
             },
+            is_error=True,
         )
     return text

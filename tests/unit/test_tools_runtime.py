@@ -8,12 +8,16 @@ registry filtering.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import time
 from pathlib import Path
 from typing import Optional
 
 import pytest
+from mcp.types import CallToolResult, TextContent as MCPTextContent
 
+from openprogram.agent.types import AgentToolResult
+from openprogram.backend import RunResult
 from openprogram.functions import _runtime as R
 from openprogram.functions._runtime import (
     DEFAULT_HEAD_RATIO,
@@ -34,6 +38,8 @@ from openprogram.functions._runtime import (
     function,
     tool_requires_approval,
 )
+from openprogram.mcp.adapter import convert_call_result
+from openprogram.providers.types import TextContent
 
 
 @pytest.fixture(autouse=True)
@@ -221,8 +227,19 @@ def test_exception_caught_and_wrapped() -> None:
         raise RuntimeError("boom")
 
     result = _run(bad.execute("call_1", {"x": 1}, None, None))
-    assert result.details and result.details.get("is_error")
+    assert result.is_error is True
+    assert result.details and "is_error" not in result.details
     assert "boom" in result.content[0].text
+
+
+def test_agent_tool_result_bridges_legacy_details_error_bit() -> None:
+    result = AgentToolResult(
+        content=[TextContent(text="legacy")],
+        details={"is_error": True, "reason_code": "LEGACY"},
+    )
+
+    assert result.is_error is True
+    assert result.details == {"is_error": True, "reason_code": "LEGACY"}
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +298,22 @@ def test_tool_return_error_flag() -> None:
         return ToolReturn(text="oops", is_error=True)
 
     result = _run(failing.execute("c1", {}, None, None))
-    assert result.details["is_error"] is True
+    assert result.is_error is True
+    assert result.details is None or "is_error" not in result.details
+
+
+def test_remote_mcp_error_flag_is_typed_not_stored_in_details() -> None:
+    result = convert_call_result(
+        CallToolResult(
+            content=[MCPTextContent(type="text", text="remote failed")],
+            isError=True,
+        ),
+        server="remote",
+        tool_name="probe",
+    )
+
+    assert result.is_error is True
+    assert result.details == {"mcp_server": "remote", "mcp_tool": "probe"}
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +398,23 @@ def test_cache_skips_errors() -> None:
     assert counter["n"] == 2
 
 
+def test_cache_skips_typed_errors_without_details() -> None:
+    counter = {"n": 0}
+
+    @function(cache=True, cache_ttl=60)
+    def typed_failure() -> AgentToolResult:
+        counter["n"] += 1
+        return AgentToolResult(
+            content=[TextContent(text="failed")],
+            is_error=True,
+        )
+
+    _run(typed_failure.execute("c1", {}, None, None))
+    _run(typed_failure.execute("c2", {}, None, None))
+
+    assert counter["n"] == 2
+
+
 # ---------------------------------------------------------------------------
 # Cancel + on_update injection
 # ---------------------------------------------------------------------------
@@ -408,7 +457,37 @@ def test_timeout_kills_long_tool() -> None:
         return "never"
 
     result = _run(slow.execute("c1", {}, None, None))
+    assert result.is_error is True
     assert result.details and result.details.get("timeout")
+    assert "is_error" not in result.details
+
+
+def test_bash_sandbox_denial_uses_typed_error(monkeypatch) -> None:
+    bash_module = importlib.import_module(
+        "openprogram.functions.tools.bash.bash"
+    )
+
+    class DeniedBackend:
+        backend_id = "local"
+
+        def run(self, command, timeout, cwd=None):
+            return RunResult(
+                exit_code=1,
+                stdout="",
+                stderr="denied",
+                sandbox_error="denied",
+            )
+
+    monkeypatch.setattr(bash_module, "get_active_backend", DeniedBackend)
+    result = _run(
+        bash_module.bash.execute(
+            "bash-denied", {"command": "blocked"}, None, None
+        )
+    )
+
+    assert result.is_error is True
+    assert result.details["sandbox"]["kind"] == "denied"
+    assert "is_error" not in result.details
 
 
 # ---------------------------------------------------------------------------

@@ -942,7 +942,7 @@ class agentic_function:
                     return AgentToolResult(content=[TextContent(text=(
                         f"[error] function {name} timed out after "
                         f"{exec_timeout}s"
-                    ))])
+                    ))], is_error=True)
             else:
                 raw = await _invoke()
 
@@ -956,7 +956,7 @@ class agentic_function:
                     persist_full=persist_full,
                     head_ratio=head_ratio,
                 )
-            if use_cache:
+            if use_cache and not result.is_error:
                 _cache_set(_cache_key(name, kwargs), result, cache_ttl)
             return result
 
@@ -1554,4 +1554,3 @@ def auto_trace_package(pkg_dir, pkg_name=None):
                 except Exception:
                     continue
             auto_trace_module(mod, trace_pkg=pkg_dir)
-

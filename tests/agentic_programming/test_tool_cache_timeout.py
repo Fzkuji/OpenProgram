@@ -68,6 +68,7 @@ def test_timeout_returns_error_result_for_sync_body():
 
     result, elapsed = asyncio.run(_go())
     assert "timed out" in result.content[0].text
+    assert result.is_error is True
     assert elapsed < 1.5
 
 
@@ -81,6 +82,7 @@ def test_timeout_returns_error_result_for_async_body():
     tool = slow_async_fn._agent_tool
     result = asyncio.run(tool.execute("cid", {"x": "a"}, None, None))
     assert "timed out" in result.content[0].text
+    assert result.is_error is True
 
 
 def test_fast_body_unaffected_by_timeout():
